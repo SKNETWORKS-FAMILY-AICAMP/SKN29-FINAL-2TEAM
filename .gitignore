@@ -1,0 +1,12 @@
+# 작업/빌드 산출물 (git 추적 제외)
+outputs/
+.codex_tmp/
+.codex_work/
+.codex-review/
+
+# 정리 대기 (직접 삭제)
+_to_delete/
+
+# OS
+.DS_Store
+Thumbs.db
