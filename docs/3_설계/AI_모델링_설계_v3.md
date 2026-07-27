@@ -24,7 +24,7 @@ AI가 생성한 결과는 업무 추출·분배 초안으로 제공하며, 팀�
 
 ### 2.1 프로젝트 관련 비정형 문서 (Google Drive)
 
-프로젝트 기획서, 요구사항 정의서, 회의록, 프로젝트 계획서, 기술 설계서, 일정·마일스톤 자료, 의사결정 기록, 리스크·제약사항 문서. 이들에서 목표·범위·요구사항·일정·제약조건·완료 조건·담당 영역을 추출한다.
+프로젝트 기획서, 요구사항 정의서, 회의록, 프로젝트 계획서, 기술 설계서, 일정·마일스톤 자료, 의사결정 기록, 리스크·제약사항 문서. 이들에서 목표·포함/제외 범위·사용자·기능/비기능 요구사항·결정·제약·가정·일정·의존관계·리스크·완료 조건·성공지표·담당 영역·미결 질문을 추출한다.
 
 ### 2.2 Jira 업무 데이터
 
@@ -80,7 +80,7 @@ Google Drive 문서는 파일 형식별 파서로 구조화한다. 파서는 의
 
 문서 유형은 회사가 사전 정의한 카테고리 중 LLM이 선택하며 새 유형을 임의 생성하지 않는다. (예: 기획서, 요구사항 문서, 회의록, 프로젝트 계획서, 기술 설계서, 일정 문서, 의사결정 기록, 리스크 문서, 기타, 분류 불가)
 
-하나의 문서에 여러 성격이 섞일 수 있으므로 문서 전체 유형과 청크 수준의 의미 유형(`semantic_type`)을 별도 분류한다. semantic_type 허용값: objective, scope, requirement, decision, constraint, milestone, dependency, risk, acceptance_criteria, role_or_ownership.
+하나의 문서에 여러 성격이 섞일 수 있으므로 문서 전체 유형과 Block 수준의 의미 유형(`semantic_type`)을 별도 분류한다. semantic_type 허용값: objective, scope, stakeholder_or_user, requirement, decision, constraint, assumption, milestone, dependency, risk, acceptance_criteria, deliverable, success_metric, role_or_ownership, open_question. `scope_type`과 `requirement_kind`는 하위 분류 필드로 관리한다.
 
 ## 6. 청킹 전략과 DocumentBlock·ChildChunk 구조
 
@@ -132,9 +132,11 @@ LLM은 파싱된 Block을 분석하여 업무상 의미가 같은 Block들을 �
 → ProjectKnowledgeModel (프로젝트 전체 범위·관계·근거를 고정)
 ```
 
-- **KnowledgeItem**: Block에서 구조화한 단일 지식 항목(목표·요구사항·결정·제약·일정·리스크·완료조건·담당 영역). 각 항목은 원문 Block 근거를 가진다.
+- **KnowledgeItem**: Block에서 구조화한 단일 지식 항목(목표·범위·요구사항·결정·제약·가정·일정·의존관계·리스크·완료조건·산출물·성공지표·사용자·담당 영역·미결 질문). 각 항목은 원문 Block 근거를 가진다.
 - **FeatureCluster**: 여러 문서의 동일 기능·요구사항을 통합한 묶음.
 - **ProjectKnowledgeModel**: 중복을 통합하고 상충·최신 버전을 해결한 프로젝트 단위 구조. **업무 추출의 기준 입력**이다.
+
+공개 개발 문서 샘플 검증 결과에 따라 `stakeholder_or_user`, `assumption`, `success_metric`, `open_question`, `deliverable`을 의미 유형에 포함한다. `scope`는 포함·제외 범위를 구분한다. `requirement`는 국내 요구사항 정의서·RFP를 수용하도록 기능·운영유지관리·성능·인터페이스·데이터·시험·보안·품질·제약·프로젝트 관리·프로젝트 지원·컴플라이언스·기타 유형으로 정규화하며, 원문 요구사항 ID·분류코드·의무 여부·검증방법은 별도 속성으로 보존한다. 공수·세부 일정·우선순위·요구 역할은 문서에 없을 수 있으므로 추출 단계에서 임의로 확정하지 않고 PM 보완 대상으로 남긴다.
 
 ```json
 { "cluster": "소셜 로그인", "business_scope": "회원",

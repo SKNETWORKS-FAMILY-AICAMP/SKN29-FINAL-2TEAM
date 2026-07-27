@@ -219,7 +219,7 @@ flowchart LR
 | ExistingTaskSnapshot | Jira 이슈를 통일된 업무 단위로 정규화 | 담당자, 기간, 상태, 예상·잔여·사용 공수, Story Point, Sprint, 일정 중복 |
 | CalendarEventSnapshot | 후속 Calendar 연동 시 기간별 이벤트 반영 | 유형, 시작·종료, 참석 상태, 가용성 영향 |
 | DocumentIndex | 문서·Block·검색 인덱스 상태 | 문서 ID, 파일 버전, Block, 메타데이터, ACL, 임베딩 버전 |
-| KnowledgeItem | 문서에서 추출한 의미 정보 | objective, scope, requirement, decision, constraint, milestone, risk, acceptance, ownership |
+| KnowledgeItem | 문서에서 추출한 의미 정보 | 목표·범위·요구사항·결정·제약·가정·일정·의존관계·리스크·완료조건·산출물·성공지표·사용자·담당책임·미결질문 |
 | ProjectKnowledgeModel | 프로젝트 전체 지식의 통합 모델 | 지식 항목, Feature Cluster, 관계, 최신성, 출처 |
 | NewTaskSnapshot | PM 확인을 마친 신규 업무 | 업무, 역할, 기간, 공수, 우선순위, 조건, 출처 |
 | WorkloadResult | 사람·기간별 부하·가용성 계산 | 총 근무용량, 유효 가용용량, 현재 할당량, 잔여 가용시간, 부하율, 충돌, 계산 근거 |
@@ -394,9 +394,21 @@ LLM은 각 Document Block에서 다음 의미 유형을 구조화한다.
 - milestone, dependency
 - risk
 - acceptance_criteria
+- deliverable
 - role_or_ownership
+- stakeholder_or_user
+- assumption
+- success_metric
+- open_question
 
 추출 결과는 KnowledgeItem으로 저장하고, 여러 문서에서 같은 기능이나 요구사항을 설명하는 항목은 FeatureCluster로 통합한다. 최신 버전·상충 관계·원본 출처를 함께 보존한 Project Knowledge Model이 Task 추출의 기준 입력이 된다.
+
+- `scope`는 `scopeType=IN_SCOPE/OUT_OF_SCOPE`로 구분한다.
+- `requirement`는 `requirementKind=FUNCTIONAL/OPERATION_MAINTENANCE/PERFORMANCE/INTERFACE/DATA/TEST/SECURITY/QUALITY/CONSTRAINT/PROJECT_MANAGEMENT/PROJECT_SUPPORT/COMPLIANCE/OTHER`로 구분한다.
+- 국내 요구사항 정의서·제안요청서의 원문 요구사항 번호와 분류코드는 `sourceRequirementId`, `sourceCategoryCode`로 보존한다. 의무 여부와 확인 방식은 `mandatory`, `verificationMethod`로 관리한다.
+- 요구사항·단계·Task의 결과물은 `deliverable`로 추출하고 요구사항 및 완료 조건과 관계로 연결한다.
+- 목표·포함 범위 또는 기능·요구사항·원문 근거는 PKM 생성 필수다.
+- 일정·공수·우선순위·요구 역할이 문서에 없으면 사실처럼 생성하지 않고 PM 보완 대상으로 표시한다. 이 값은 PM 확인 후 `NewTaskSnapshot` 확정 시 필수다.
 
 ### 8.6 AI의 보조 RAG 검색 절차
 
@@ -436,7 +448,7 @@ flowchart LR
 ### 9.2 추출 단계
 
 1. 프로젝트 문서 범위와 문서 역할을 확인한다.
-2. 선택 문서 전체에서 생성된 Project Knowledge Model의 목표·범위·요구사항·결정·제약·일정·위험·완료 조건·담당 영역을 확인한다.
+2. 선택 문서 전체에서 생성된 Project Knowledge Model의 목표·포함/제외 범위·사용자·기능/비기능 요구사항·결정·제약·가정·일정·의존관계·위험·완료 조건·성공지표·담당 영역·미결 질문을 확인한다.
 3. LLM이 지식 항목과 Feature Cluster를 기준으로 Task 후보와 의존관계를 구조화한다.
 4. 필요한 경우에만 RAG로 유사 표현·과거 Jira 업무·추가 원문 근거를 보완한다.
 5. 코드가 필수 필드, 날짜, 공수 단위, 중복, 상하위 관계를 검사한다.
