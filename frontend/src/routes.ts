@@ -5,6 +5,7 @@ export interface RouteEntry {
 }
 
 export const ROUTES: RouteEntry[] = [
+  { path: '/', label: '랜딩 페이지', group: '마케팅' },
   { path: '/login', label: '로그인', group: '인증' },
   { path: '/signup', label: '회원가입', group: '인증' },
   { path: '/find-password', label: '비밀번호 찾기', group: '인증' },
@@ -28,6 +29,7 @@ export const ROUTES: RouteEntry[] = [
  */
 export const MAIN_NAV_TABS = [
   { label: '대시보드', to: '/dashboard' },
+  { label: '문서 등록', to: '/files/new' },
   { label: '프로젝트', to: '/projects' },
   { label: '커넥터', to: '/onboarding/connectors' },
   { label: '설정', to: '/onboarding/connectors' },

@@ -79,7 +79,7 @@ export default function NewFilesPage() {
         ))}
       </div>
 
-      <TopNav tabs={MAIN_NAV_TABS} activeTo="/projects" userLabel="관리자" />
+      <TopNav tabs={MAIN_NAV_TABS} activeTo="/files/new" userLabel="관리자" />
 
       <div className={styles.contentContainer}>
         {demoState === 'empty' && (

@@ -4,6 +4,7 @@ import { ToastProvider } from './components';
 import { ROUTES } from './routes';
 import styles from './App.module.css';
 
+const LandingPage = lazy(() => import('./pages/LandingPage/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage/SignupPage'));
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
@@ -18,7 +19,6 @@ const WorkspacePage = lazy(() => import('./pages/WorkspacePage/WorkspacePage'));
 const TaskDistributionPage = lazy(() => import('./pages/TaskDistributionPage/TaskDistributionPage'));
 const TaskRecommendationPage = lazy(() => import('./pages/TaskRecommendationPage/TaskRecommendationPage'));
 const AssignmentResultPage = lazy(() => import('./pages/AssignmentResultPage/AssignmentResultPage'));
-const LandingPage = lazy(() => import('./pages/LandingPage/LandingPage'));
 
 function DevIndexPage() {
   const groups = Array.from(new Set(ROUTES.map((r) => r.group)));
@@ -55,6 +55,7 @@ function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/screens" element={<DevIndexPage />} />
           <Route path="/dev/screens" element={<DevIndexPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
