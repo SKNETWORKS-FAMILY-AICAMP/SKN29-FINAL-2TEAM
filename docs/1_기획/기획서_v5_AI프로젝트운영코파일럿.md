@@ -29,7 +29,7 @@ AI 프로젝트 운영 코파일럿은 조직·역량·업무량·일정·프로
 | 추천 입력 | 추천 요청 직전 최신성을 확인하고 불변 Snapshot 생성 |
 | 사용자 식별 | 내부 personId 중심 Identity Mapping, 외부 계정 매핑 실패는 영향 범위에 따라 부분 결과 처리 |
 | 실행 제어 | Orchestrator가 병렬 실행·상태·재시도·사용자 승인 대기를 관리 |
-| 저장 구조 | PostgreSQL + Vector DB + Object Storage 역할 분리 |
+| 저장 구조 | PostgreSQL+pgvector + Object Storage. pgvector 검색 인덱스, 프로젝트 분석 RDBMS, 플랫폼 운영 RDBMS로 역할 분리 |
 | 단계별 범위 | 1차 구현은 추천·검증 결과 출력까지, Jira 쓰기는 후속 단계 |
 
 ---
@@ -107,7 +107,7 @@ AI 프로젝트 운영 코파일럿은 조직·역량·현재 업무량·휴가�
 - **Deterministic where possible**: 시간·휴가·부하율·필수조건은 규칙과 수식으로 계산한다.
 - **Bounded LLM**: LLM은 비정형 문서 해석과 PM용 설명에 사용하고 최종 제약 판정을 맡기지 않는다.
 - **Partial degradation**: 선택 데이터 또는 외부 ID 매핑이 부족해도 가능한 범위의 결과를 제공한다.
-- **Tenant-configurable policy**: 필수 필드, 가중치, 조직 제한, 기준 근무시간은 고객 정책으로 설정한다.
+- **Project-configurable policy**: 필수 필드, 가중치, 조직 제한, 기준 근무시간은 프로젝트 또는 도입 조직 정책으로 설정한다.
 - **Traceability**: 입력 문서 청크, 계산식, 검증 결과, PM 조치를 추적할 수 있어야 한다.
 
 ### 3.2 LLM·코드·PM 역할
@@ -205,11 +205,17 @@ flowchart LR
 
 | 저장소 | 저장 대상 | 선택 이유 |
 |---|---|---|
-| PostgreSQL | 사람, 조직, Skill, 업무, ID 매핑, 문서 구조, Project Knowledge Model, Snapshot, 추천·검증 결과 | 관계·정합성·버전·감사 |
-| Vector DB(pgvector 또는 Chroma) | 검색 보조용 임베딩과 청크 메타데이터 | 유사 정보·과거 업무·원본 근거 검색 |
+| PostgreSQL RDBMS | 사람, 조직, Skill, 업무, ID 매핑, 문서 구조, Project Knowledge Model, Snapshot, 추천·검증 결과, 회원·권한·연동·감사 데이터 | 관계·정합성·버전·권한·감사 |
+| PostgreSQL pgvector | 검색 보조용 Chunk 임베딩과 최소 필터 메타데이터 | 유사 정보·과거 업무·원본 근거 검색 |
 | Object Storage | 원본 PDF/DOCX/PPTX와 파싱 산출물 | 원본 보존, 재파싱, 근거 추적 |
 
-초기 구현은 운영 단순성을 위해 PostgreSQL+pgvector를 우선 선택할 수 있다. Vector 인터페이스는 교체 가능하게 분리한다.
+초기 구현은 PostgreSQL+pgvector를 사용한다. Figma Page 3의 저장 구조는 물리 서버 개수가 아니라 역할을 기준으로 다음과 같이 구분한다.
+
+- **3-A pgvector 검색 인덱스**: `VECTOR_INDEX`에 `chunk_id`, embedding, 검색 필터용 최소 metadata를 저장한다.
+- **3-B 프로젝트 분석·추천 RDBMS**: 프로젝트·문서·Block·Chunk·지식 모델·People·Jira·Snapshot·추천·검증·PM 결정을 저장한다.
+- **3-C 플랫폼 운영·권한 RDBMS**: `USER_ACCOUNT`, `PROJECT_MEMBER`, `CONNECTOR_CONNECTION`, `PROJECT_SOURCE`, `AUDIT_LOG`를 저장한다.
+
+3-A와 3-B·3-C는 모두 동일한 PostgreSQL에 배치할 수 있다. `CHILD_CHUNK.chunk_id`와 `VECTOR_INDEX.chunk_id`가 검색 인덱스와 원문을 연결한다. 별도 고객사 입점형 SaaS를 전제로 하지 않으므로 `TENANT`, `TENANT_MEMBER`, 공통 `tenantId`는 1차 모델에서 사용하지 않는다.
 
 ### 5.2 핵심 객체
 
@@ -228,7 +234,7 @@ flowchart LR
 
 ### 5.3 공통 추적 필드
 
-모든 Snapshot과 결과에는 tenantId, schemaVersion, mappingVersion, sourceUpdatedAt, lastSyncedAt, snapshotAsOf, createdAt, sourceRefs, dataReadinessStatus를 둔다.
+모든 Snapshot과 결과에는 projectId, schemaVersion, mappingVersion, sourceUpdatedAt, lastSyncedAt, snapshotAsOf, createdAt, createdBy 또는 requestedBy, sourceRefs, dataReadinessStatus를 둔다.
 
 ---
 
@@ -357,7 +363,7 @@ flowchart LR
 
 ~~~json
 {
-  "tenantId": "TENANT001",
+  "projectId": "PRJ001",
   "documentId": "DOC001",
   "driveFileId": "1AbCdEf",
   "fileName": "2026_AI_Project.pdf",
@@ -382,7 +388,7 @@ flowchart LR
 }
 ~~~
 
-Document Block은 원본 구조화와 출처 추적의 기준이며, Child Chunk는 검색 전용 파생 데이터다. Vector 고유 키는 tenantId:driveFileId:fileRevision:chunk:embeddingVersion으로 구성한다.
+Document Block은 원본 구조화와 출처 추적의 기준이며, Child Chunk는 검색 전용 파생 데이터다. Vector 고유 키는 projectId:driveFileId:fileRevision:chunk:embeddingVersion으로 구성한다.
 
 ### 8.5 Project Knowledge Model 구성
 
@@ -415,7 +421,7 @@ LLM은 각 Document Block에서 다음 의미 유형을 구조화한다.
 ~~~mermaid
 flowchart LR
     A["지식 모델 또는 특정 업무의 보완 필요"] --> B["검색 목적·Semantic Type 결정"]
-    B --> C["tenant·project·ACL·문서 역할 필터"]
+    B --> C["project·ACL·문서 역할 필터"]
     C --> D["Vector 유사도 검색"]
     D --> E["키워드·요구사항 ID 검색 결합"]
     E --> F["재순위화·중복 제거"]
@@ -426,7 +432,7 @@ flowchart LR
 ~~~
 
 - Hybrid Search(Vector+키워드)를 사용한다.
-- ACL과 tenantId는 검색 전에 필터링한다.
+- projectId와 ACL은 검색 전에 필터링한다.
 - RAG는 전체 문서 누락 여부를 판단하거나 프로젝트 전체 업무 구조를 직접 생성하지 않는다.
 - 주요 용도는 유사한 표현 통합, 과거 Jira 업무 검색, 추가 근거 확인, PM의 근거 질의다.
 - 각 구조화 필드와 Task는 최소 하나의 sourceRef를 가진다.
@@ -817,7 +823,7 @@ flowchart TB
     E["5. Feature Readiness 계층<br/>기능별 준비도·정책 검사"]
     F["6. 정규화·지식 모델·Snapshot 계층<br/>Canonical Model·Project Knowledge Model·버전"]
     G["7. 수집·문서 처리 계층<br/>Connector·구조 보존 파싱·Block·보조 검색"]
-    H["8. 저장 계층<br/>PostgreSQL·Vector DB·Object Storage"]
+    H["8. 저장 계층<br/>PostgreSQL RDBMS·pgvector·Object Storage"]
     I["데이터 소스<br/>내부 People DB·Jira·Drive·정책<br/>(Calendar 후속)"]
     I --> G --> H
     H --> F --> E --> D --> C --> B --> A
@@ -840,7 +846,7 @@ flowchart TB
 
 ### 15.3 보안·운영 횡단 계층
 
-- Tenant 격리, RBAC, 프로젝트 권한, Row Level Security
+- 플랫폼 로그인, RBAC, 프로젝트별 접근권한
 - Drive 원본 ACL 기반 검색 필터
 - 전송·저장 암호화와 Secret Manager
 - PII 마스킹과 최소 수집
@@ -1095,7 +1101,7 @@ AI_SUGGESTED_MISSING_TASK는 일반 추출 Task와 다른 배지로 구분한다
 - 원본, 임베딩, Snapshot, 결과, 로그마다 보존기간을 정의한다.
 - 운영 로그에는 원문·PII를 기본 기록하지 않는다.
 - 감사 로그에는 요청자, 입력 Snapshot, 후보 변경, 검증, 승인·반려, 외부 쓰기 여부를 기록한다.
-- 모델 입력·출력에 tenant, 접근권한, 데이터 분류 정책을 적용한다.
+- 모델 입력·출력에 projectId, 사용자 접근권한, 데이터 분류 정책을 적용한다.
 
 ---
 
@@ -1137,6 +1143,9 @@ AI_SUGGESTED_MISSING_TASK는 일반 추출 Task와 다른 배지로 구분한다
 18. HR 관련 물리 테이블명에는 mock을 사용하지 않고, 합성 여부는 data_origin과 dataset_version으로 구분한다.
 19. 프로젝트 전체 업무 추출은 Project Knowledge Model을 기준으로 하며 RAG는 정보 통합·과거 업무·근거 검색을 보조한다.
 20. Graph DB와 WorkGraph는 1차 구현의 필수 구성요소로 사용하지 않는다. 필요한 관계는 PostgreSQL의 Canonical Data Model로 관리한다.
+21. 1차 플랫폼은 단일 조직 사용을 전제로 하며 `TENANT`, `TENANT_MEMBER`를 사용하지 않는다.
+22. 플랫폼 운영 데이터는 `USER_ACCOUNT`, `PROJECT_MEMBER`, `CONNECTOR_CONNECTION`, `PROJECT_SOURCE`, `AUDIT_LOG`로 관리한다.
+23. `CONNECTOR_CONNECTION`은 사용자 OAuth 연결 상태를, `PROJECT_SOURCE`는 프로젝트가 분석할 Drive 폴더 또는 Jira 프로젝트를 관리한다.
 
 ---
 
