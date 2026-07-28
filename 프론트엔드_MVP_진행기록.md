@@ -5,7 +5,7 @@
 > 시작 기준 커밋: `595bbaa` (`Extract HTML from Figma`)
 > 시작 시각: 2026-07-28 14:06 KST
 > 최신 `main` 기준 커밋: `5e0bffb`
-> 최종 갱신: 2026-07-28 15:14 KST
+> 최종 갱신: 2026-07-28 15:15 KST
 
 ## 0. 빠른 현황
 
@@ -307,6 +307,8 @@
   - 현재 프론트 변경을 보존한 채 fast-forward 통합
   - 기존 원격 `juneok`이 최신 `main`의 조상임을 확인
   - 최신 `main` 기준 로컬 `juneok` 브랜치로 전환
+  - 프론트 MVP 변경을 `9bc814c`(`feat: connect frontend MVP flow`)로 커밋
+  - 강제 갱신 없이 원격 `juneok`에 fast-forward 푸시
 - 최신 main 반영 내용:
   - People DB 합성 목업 SQL
   - People HR DB 설계 문서
