@@ -2,24 +2,25 @@
 
 > 대상: AI 프로젝트 운영 코파일럿 백엔드 작업자  
 > 기준일: 2026-07-28  
-> 범위: Django + PostgreSQL/pgvector + React/Vite 로컬 공통 환경. React 화면 구현은 Figma/프론트엔드 팀 작업 범위다.
+> 범위: Django + PostgreSQL/pgvector + ChromaDB + React/Vite 로컬 공통 환경. React 화면 구현은 Figma/프론트엔드 팀 작업 범위다.
 
 ---
 
 ## 1. 이 매뉴얼을 사용하는 이유
 
-팀원마다 Python·PostgreSQL을 직접 설치하면 버전과 데이터가 달라진다. 이 프로젝트는 Docker Compose로 다음 두 서비스를 같은 방식으로 실행한다.
+팀원마다 Python·PostgreSQL을 직접 설치하면 버전과 데이터가 달라진다. 이 프로젝트는 Docker Compose로 다음 서비스를 같은 방식으로 실행한다.
 
 ```text
 Docker Desktop
-├─ db  : PostgreSQL 17 + pgvector (호스트 포트 5432)
-├─ web : Django + DRF 개발 서버 (호스트 포트 8000)
+├─ db       : PostgreSQL 17 + pgvector (호스트 포트 5432)
+├─ chroma   : ChromaDB 벡터 DB 서버 (호스트 포트 8001)
+├─ web      : Django + DRF 개발 서버 (호스트 포트 8000)
 └─ frontend : React + Vite 개발 서버 (호스트 포트 5173)
 ```
 
 Docker Compose 프로젝트 이름은 `skn29-final-2team`으로 고정된다. 따라서 컨테이너는 `skn29-final-2team-db-1`, `skn29-final-2team-web-1`처럼 표시된다.
 
-각 팀원의 DB는 서로 독립적이다. 테이블 구조는 Migration, 공통 기본 데이터는 Seed 명령으로 동일하게 맞춘다.
+각 팀원의 DB는 서로 독립적이다. 테이블 구조는 Migration(Django)과 `DB/schema.sql`(원본 도메인 스키마)로, 공통 기본 데이터는 Seed 명령으로 동일하게 맞춘다.
 
 ---
 
@@ -37,7 +38,7 @@ docker info
 
 `docker info`에서 Docker daemon 연결 오류가 나면 Docker Desktop을 먼저 실행한다.
 
-Python 가상환경은 Docker 방식으로만 개발할 때 필수가 아니다. 문서 파싱·AI 모듈을 컨테이너 밖에서 개별 실험할 때만 별도로 구성한다.
+Python 가상환경은 Docker 방식으로만 개발할 때 필수가 아니다. 문서 파싱·AI 모듈을 컨테이너 밖에서 개별 실험할 때, 그리고 아래 7장의 `chroma_setup.py` 실행 시에만 별도로 구성한다.
 
 ---
 
@@ -59,6 +60,17 @@ Copy-Item .env.example .env
 | `SECRET_KEY` | 개발용 값 | 공유·배포 환경 구성 시 |
 
 `DATABASE_URL`은 호스트에서 Django를 직접 실행할 때의 주소다. Docker `web` 컨테이너 안에서는 Compose가 서비스명 `db` 주소로 자동 교체하므로 수정하지 않는다.
+
+**주의:** `docker compose` 명령은 항상 아래 두 방식 중 하나로 실행한다. `docker-compose.yml`이 프로젝트 루트가 아니라 `infra/docker/`에 있기 때문에, 그냥 루트에서 `docker compose up`만 치면 `no configuration file provided: not found` 오류가 난다.
+
+```powershell
+# 방법 A: 루트에서 -f로 경로 지정 (이 문서의 예시는 전부 이 방식)
+docker compose -f infra/docker/docker-compose.yml up -d
+
+# 방법 B: 디렉터리 이동 후 실행
+cd infra/docker
+docker compose up -d
+```
 
 ---
 
@@ -82,9 +94,10 @@ docker compose -f infra/docker/docker-compose.yml ps
 정상 상태 예시:
 
 ```text
-db   Up (healthy)   0.0.0.0:5432->5432/tcp
-web  Up             0.0.0.0:8000->8000/tcp
-frontend Up         0.0.0.0:5173->5173/tcp
+chroma   Up (healthy)   0.0.0.0:8001->8000/tcp
+db       Up (healthy)   0.0.0.0:5432->5432/tcp
+web      Up             0.0.0.0:8000->8000/tcp
+frontend Up             0.0.0.0:5173->5173/tcp
 ```
 
 ### 4.3 상태 확인
@@ -101,7 +114,32 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/
 
 ---
 
-## 5. 최초 데이터 준비
+## 5. DB 스키마 자동 생성 확인 (`DB/schema.sql`)
+
+`DB/schema.sql`은 `db` 컨테이너의 `/docker-entrypoint-initdb.d/01_schema.sql`로 마운트되어 있다. Postgres의 init 스크립트는 **데이터 디렉터리가 완전히 빈 상태, 즉 `postgres_data` 볼륨을 최초로 생성할 때 단 한 번만** 실행된다.
+
+- 저장소를 처음 clone하고 처음 `up`하는 경우: 볼륨이 없으므로 자동 실행된다. 별도 작업 불필요.
+- 이미 한 번이라도 `db`를 띄운 적 있는 PC에서 `schema.sql`을 수정한 경우: 자동으로 재실행되지 않는다.
+
+**테이블이 만들어졌는지 확인:**
+
+```powershell
+docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
+```
+
+`user_account`, `org`, `person`, `doc`, `chunk` 등 40개 테이블이 보이면 정상이다. GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
+
+**`schema.sql`을 고친 뒤 다시 반영하고 싶을 때** (주의: 로컬 DB 데이터가 전부 삭제된다):
+
+```powershell
+docker compose -f infra/docker/docker-compose.yml down
+docker volume rm skn29-final-2team_postgres_data
+docker compose -f infra/docker/docker-compose.yml up -d db
+```
+
+---
+
+## 6. 최초 데이터 준비 (Django)
 
 웹 컨테이너 안에서 Migration과 합성 People DB 데이터를 준비한다.
 
@@ -126,7 +164,32 @@ http://127.0.0.1:8000/admin/
 
 ---
 
-## 6. React 팀 연동 기준
+## 7. ChromaDB 설정 (`chroma_setup.py`)
+
+벡터 검색용 ChromaDB는 `chroma` 서비스로 자동 기동된다. 컨테이너 내부는 8000번 포트지만 `web`이 이미 호스트 8000을 쓰고 있어서, 호스트 쪽만 **8001**로 뺐다. 데이터는 `chroma_data` 볼륨에 영속화되어 `db`처럼 컨테이너를 껐다 켜도 유지된다.
+
+`chroma_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다.
+
+```powershell
+pip install chromadb --break-system-packages
+python backend/services/createDB/chroma_setup.py
+```
+
+정상 실행되면 다음과 같이 출력된다.
+
+```text
+컬렉션 'chunks_embed-1.0'에 저장 완료. 현재 문서 수: 1
+```
+
+**Chroma 서버 자체가 살아있는지 확인:**
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8001/api/v1/heartbeat
+```
+
+---
+
+## 8. React 팀 연동 기준
 
 React + Vite 실행 환경은 이 저장소의 `frontend/`에 포함되어 있다. 화면 HTML/CSS와 Figma 디자인의 React 컴포넌트 변환은 프론트 팀이 진행한다. `src/App.tsx`는 의도적으로 빈 상태다.
 
@@ -154,7 +217,7 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 
 ---
 
-## 7. 개발 중 자주 쓰는 명령
+## 9. 개발 중 자주 쓰는 명령
 
 ```powershell
 # 실행 중인 서비스 상태
@@ -166,6 +229,9 @@ docker compose -f infra/docker/docker-compose.yml logs -f web
 # PostgreSQL 로그
 docker compose -f infra/docker/docker-compose.yml logs -f db
 
+# ChromaDB 로그
+docker compose -f infra/docker/docker-compose.yml logs -f chroma
+
 # 모델 변경 후 Migration 생성·적용
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py makemigrations
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py migrate
@@ -173,35 +239,37 @@ docker compose -f infra/docker/docker-compose.yml exec web python manage.py migr
 # 자동 테스트
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py test tests
 
-# 서비스만 중지 (DB 데이터 유지)
+# 서비스만 중지 (DB/Chroma 데이터 유지)
 docker compose -f infra/docker/docker-compose.yml stop
 
-# 서비스와 네트워크 제거 (DB Volume 유지)
+# 서비스와 네트워크 제거 (DB/Chroma Volume 유지)
 docker compose -f infra/docker/docker-compose.yml down
 
-# DB까지 완전 초기화 — 주의: 로컬 DB 데이터 삭제
+# DB·Chroma까지 완전 초기화 — 주의: 로컬 데이터 전부 삭제
 docker compose -f infra/docker/docker-compose.yml down -v
 ```
 
-`down -v` 후에는 다시 `up`, `migrate`, `createsuperuser`, `seed_demo_people`를 실행해야 한다.
+`down -v` 후에는 다시 `up`, `migrate`, `createsuperuser`, `seed_demo_people`, `chroma_setup.py`를 실행해야 한다.
 
 ---
 
-## 8. 문제 해결
+## 10. 문제 해결
 
 | 증상 | 원인·해결 |
 |---|---|
+| `docker compose up` 실행 시 `no configuration file provided: not found` | 프로젝트 루트가 아니라 `infra/docker/`에 compose 파일이 있음. `-f infra/docker/docker-compose.yml`을 붙이거나 `cd infra/docker` 후 실행 |
 | Docker daemon 연결 실패 | Docker Desktop을 실행한 뒤 재시도 |
 | `db`가 `healthy`가 되지 않음 | `docker compose ... logs db`로 오류 확인 후 포트 5432 충돌 여부 확인 |
 | 웹 컨테이너가 DB에 연결하지 못함 | `.env`의 `DATABASE_URL`을 임의로 `db`로 바꾸지 말고 Compose 환경변수 설정 유지 |
-| 5432 포트 충돌 | `docker-compose.yml`의 `"5432:5432"`를 `"5433:5432"`로 변경. 웹 컨테이너 설정은 변경 불필요 |
-| 8000 포트 충돌 | `"8000:8000"`을 `"8001:8000"`으로 변경하고 React API 주소도 함께 변경 |
+| 8000 포트 충돌 | `"8000:8000"`을 `"8001:8000"`으로 변경하고 React API 주소도 함께 변경 (단, `chroma`가 이미 호스트 8001을 쓰므로 겹치지 않게 다른 포트를 고른다) |
+| `schema.sql`을 고쳤는데 반영이 안 됨 | init 스크립트는 볼륨이 빌 때만 실행된다. 5장을 참고해 `postgres_data` 볼륨 삭제 후 재기동 |
+| `localhost:8001`(Chroma) 접속 실패 | `docker compose ps`로 `chroma` 컨테이너 상태 확인, 8001 포트를 다른 프로세스가 점유하고 있는지 확인 |
 | 모델 변경이 반영되지 않음 | `makemigrations` 후 `migrate` 실행 |
-| 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed 재실행 |
+| 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB·Chroma 초기화 후 Seed·`chroma_setup.py` 재실행 |
 
 ---
 
-## 9. 현재 구현 범위 확인
+## 11. 현재 구현 범위 확인
 
 이 환경은 백엔드 기반과 데이터 관리용이다. 아래 기능은 아직 미구현이므로 실행 결과가 나오지 않는 것이 정상이다.
 

@@ -25,3 +25,7 @@ staticfiles/
 frontend/node_modules/
 frontend/dist/
 frontend/.env
+
+# 저장소 루트에서 실수로 npm install 시 생기는 lockfile (정상 위치: frontend/package-lock.json)
+/package-lock.json
+/node_modules/
