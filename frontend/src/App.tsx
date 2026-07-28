@@ -56,6 +56,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/screens" element={<DevIndexPage />} />
+          <Route path="/dev/screens" element={<DevIndexPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/find-password" element={<FindPasswordPage />} />
@@ -70,7 +71,7 @@ function App() {
           <Route path="/tasks/distribution" element={<TaskDistributionPage />} />
           <Route path="/tasks/recommendation" element={<TaskRecommendationPage />} />
           <Route path="/tasks/result" element={<AssignmentResultPage />} />
-          <Route path="*" element={<DevIndexPage />} />
+          <Route path="*" element={<LandingPage />} />
         </Routes>
       </Suspense>
     </ToastProvider>

@@ -53,7 +53,6 @@ export default function WorkspacePage() {
   const [requirements, setRequirements] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const { showToast } = useToast();
-  const navigate = useNavigate();
 
   const members = isDemo ? MEMBERS : apiMembers;
   const selectionCount = checkedIds.size;

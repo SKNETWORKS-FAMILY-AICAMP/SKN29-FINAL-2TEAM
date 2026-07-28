@@ -115,7 +115,6 @@ export default function ProjectListPage() {
   const [loadState, setLoadState] = useState<LoadState>(isDemo ? 'demo' : 'loading');
   const [loadReason, setLoadReason] = useState('');
   const { showToast } = useToast();
-  const navigate = useNavigate();
 
   const query = search.trim().toLowerCase();
   const activeProjects = useMemo(
