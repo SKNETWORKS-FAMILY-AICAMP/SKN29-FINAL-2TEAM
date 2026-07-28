@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Icon, TopNav } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';

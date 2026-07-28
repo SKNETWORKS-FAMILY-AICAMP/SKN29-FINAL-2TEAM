@@ -1,6 +1,6 @@
-# page3-A 스키마 상세 설명 — 테이블 · 연결관계 · 필드
+# Page 3-A·3-B 문서 저장 스키마 상세 설명 — 테이블 · 연결관계 · 필드
 
-> 대상: Figma `page3-A-v2 | TABLE ERD · 문서 → 지식 모델 → Task → Snapshot` (node 498:5169), 15개 테이블 + 관계표 1개
+> 대상: Figma `Page 3-A | pgvector 검색 인덱스`와 `Page 3-B | 프로젝트 분석·추천 RDBMS`의 문서·지식 모델 영역
 > 이 문서는 Figma에 실제로 반영된 **최종 스키마**를 그대로 기준으로 작성했다. `VectorDB_저장대상_검증.md`는 "GPT 피드백에 대한 판단 근거"를 남긴 별도 문서이고, 이 문서는 그 판단이 끝난 뒤의 **결과물(스키마 자체)을 읽는 용도**다.
 > 작성일: 2026-07-28
 
@@ -27,7 +27,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
  └─ ANA_SNAPSHOT(특정 시점에 이 모델로 어떤 분석을 돌렸는지 기록)
 ```
 
-한 줄로 요약하면: **PostgreSQL이 진짜 데이터(문서·지식·업무)를 갖고 있고, Vector DB(`VEC_IDX`)는 그중 CHUNK 텍스트를 검색하기 위한 보조 인덱스일 뿐**이다. 15개 테이블 중 Vector DB에 들어가는 건 `VEC_IDX` 하나뿐이고, 나머지 14개는 전부 PostgreSQL이다.
+한 줄로 요약하면: **3-B PostgreSQL RDBMS가 진짜 데이터(문서·지식·업무)를 갖고 있고, 3-A pgvector의 `VEC_IDX`는 그중 CHUNK 텍스트를 검색하기 위한 보조 인덱스일 뿐**이다. 초기 구현에서는 둘 다 같은 PostgreSQL 인스턴스에 저장한다.
 
 ---
 
@@ -59,7 +59,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 ### Depth 1 — 프로젝트
 
 #### `PROJ` (프로젝트)
-프로젝트 자체의 기준 정보. 이 스키마의 최상위 테넌트 하위 단위.
+프로젝트 자체의 기준 정보이자 플랫폼의 분석 작업공간.
 
 | 필드 | 한글명 | 타입 | 저장 내용 | 저장 방식 | 사용처 |
 |---|---|---|---|---|---|
@@ -67,7 +67,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 | `name` | 이름 | VARCHAR | 프로젝트명 | 사용자 입력 문자열 | 화면 표시, 검색 |
 | `status` | 상태 | VARCHAR | 진행중/종료 등 프로젝트 상태 | 코드값(예: `ACTIVE`/`ARCHIVED`) | 목록 필터링, 종료 프로젝트 처리 제외 |
 | `tz` | 시간대 | VARCHAR | 프로젝트 기준 시간대 | IANA 타임존 문자열(예: `Asia/Seoul`) | `TASK.start_at/due_at` 등 시각 필드를 사용자 로컬로 환산할 때 기준값 |
-| `tenant_id` | 테넌트 ID | UUID | 이 프로젝트가 속한 고객사(테넌트) | 내부 생성 UUID | 멀티테넌트 격리(RLS) 기준 — 3장 참고 |
+| `owner_account_id` (FK) | 프로젝트 소유자 계정 ID | BIGINT | 프로젝트를 생성·관리하는 PM 계정 | Django `AUTH_USER_MODEL` PK 참조 | 프로젝트 소유권과 기본 관리 권한 |
 
 ---
 
@@ -86,7 +86,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 | `cur_revision` | 현재 리비전 | VARCHAR | 이 문서의 최신 리비전 값(예: Drive의 revisionId 또는 자체 증가값) | 문자열/버전 토큰 | `DOC_BLOCK.revision`, `DOC_SYNC.revision`과 비교해서 "이 블록이 최신 버전인지" 판단하는 기준점 |
 | `content_hash` | 내용 해시 | VARCHAR | 문서 원본 내용의 해시값 | SHA-256 등 | 재처리 필요 여부 판단(해시가 같으면 재파싱 스킵) |
 | `security` | 보안 등급 | VARCHAR | 문서 보안 등급(대외비/일반 등) | 코드값 | 접근 제어, 화면 표시 시 워터마크/마스킹 여부 결정 |
-| `tenant_id` | 테넌트 ID | UUID | 소속 테넌트 | 내부 UUID(정규화상 `PROJ`를 통해도 알 수 있지만, RLS 정책을 문서 테이블 자체에 걸기 위해 중복 저장) | 멀티테넌트 격리(RLS) |
+| `source_type` | 원천 유형 | VARCHAR | 문서가 유입된 외부 소스 | `GOOGLE_DRIVE`/`JIRA` 등 코드값 | Connector·파서 라우팅과 출처 표시 |
 | `file_name` | 파일명 | VARCHAR | 원본 파일명 | 문자열 | 화면 표시, Citation에 "출처: OOO.pdf" 표기 |
 | `mime_type` | 형식 | VARCHAR | 파일 MIME 타입 | 예: `application/pdf`, `application/vnd.google-apps.document` | 어떤 파서를 태울지 라우팅 |
 | `doc_role` | 문서 역할 | VARCHAR | 이 문서가 기획서/회의록/RFP 중 무엇인지 | 코드값(`PLAN`/`MEETING_NOTE`/`RFP` 등) | Vector 검색 시 문서 유형 필터, 파싱 규칙 분기(기획서 우선순위가 RFP보다 높다는 정책과 연결) |
@@ -275,10 +275,10 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 ---
 
-### Depth 5 — Vector DB
+### Page 3-A — pgvector 검색 인덱스
 
 #### `VEC_IDX` (벡터 검색 인덱스)
-`CHUNK`를 임베딩한 벡터와, 검색 필터링에 필요한 최소한의 메타데이터만 담는 테이블. **이 스키마에서 유일하게 Vector DB(pgvector 기준)에 들어가는 테이블.**
+`CHUNK`를 임베딩한 벡터와 검색 필터링에 필요한 최소한의 메타데이터만 담는 테이블. **Figma 3-A에 배치되는 유일한 검색 인덱스 테이블**이다.
 
 연결: `CHUNK`와 1:1.
 
@@ -287,7 +287,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 | `vec_id` (PK) | 벡터 ID | UUID | 벡터 레코드 고유 식별자 | 내부 생성 UUID | — |
 | `chunk_id` (FK) | 청크 ID | UUID | 원본 청크 | `CHUNK.chunk_id` 참조, 1:1 | 검색 결과를 원문 청크/블록까지 역추적 |
 | `embedding` | 임베딩 값 | VECTOR | 청크 텍스트를 벡터화한 값 | pgvector `vector(N)` 타입(N은 `embed_dim`과 동일) | 유사도 검색(코사인/유클리드 거리 계산)의 대상 데이터 |
-| `metadata` | 메타데이터 | JSONB | 검색 필터 전용 메타데이터 | 예: `{"tenant_id":"...","proj_id":"...","doc_role":"PLAN","security":"GENERAL","acl_principals":[...]}` — **업무 의미(담당자·마감일 등)는 넣지 않음** | 검색 시 tenant/project/권한 범위로 먼저 필터링(사전 필터), 업무 의미 필터링은 `CHUNK→KNOW_ITEM_SRC→KNOW_ITEM.semantic_type` JOIN으로 별도 수행 |
+| `metadata` | 메타데이터 | JSONB | 검색 필터 전용 메타데이터 | 예: `{"proj_id":"...","document_id":"...","doc_role":"PLAN","security":"GENERAL","acl_principals":[...]}` — **업무 의미(담당자·마감일 등)는 넣지 않음** | 검색 시 project/권한 범위로 먼저 필터링하고, 업무 의미는 `CHUNK→KNOW_ITEM_SRC→KNOW_ITEM.semantic_type` JOIN으로 조회 |
 | `indexed_at` | 인덱싱 시각 | TIMESTAMP | 벡터가 생성/저장된 시각 | ISO 8601 timestamp | 인덱싱 지연 모니터링 |
 | `embed_model` | 임베딩 모델 | VARCHAR | 어떤 임베딩 모델을 썼는지 | 모델명 문자열 | 모델이 다른 벡터끼리는 거리 비교가 무의미하므로, 검색 시 모델 일치 필터 |
 | `embed_ver` | 임베딩 버전 | VARCHAR | 임베딩 파이프라인 버전 | 버전 문자열 | 재임베딩 대상 판별 |
@@ -301,8 +301,8 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 ## 3. 이 스키마가 지키고 있는 설계 원칙 (요약)
 
-1. **저장소 역할 분리** — PostgreSQL은 진짜 데이터(14개 테이블), Vector DB는 검색용 보조 인덱스(`VEC_IDX` 1개)뿐이다. Vector DB가 사라져도 원본 데이터는 전혀 손실되지 않는다.
-2. **tenant_id vs proj_id** — `tenant_id`는 고객사 단위 격리(테넌트 간 벽), `proj_id`는 같은 테넌트 안에서의 구분이다. 테넌트 간 데이터가 절대 섞이면 안 되므로 주요 테이블에 `tenant_id`를 직접 갖는다.
+1. **저장소 역할 분리** — 3-B RDBMS는 진짜 데이터(14개 테이블), 3-A pgvector는 검색용 보조 인덱스(`VEC_IDX` 1개)다. 검색 인덱스를 재생성해도 원본 데이터와 계보는 손실되지 않는다.
+2. **프로젝트 범위 격리** — 문서·Block·Chunk·지식·Task·Snapshot은 `proj_id`를 기준으로 조회 범위를 제한한다. 플랫폼 접근권한은 3-C의 `PROJECT_MEMBER`가 관리한다.
 3. **리비전은 별도 테이블 없이 스탬프로 추적** — `DOC.cur_revision`이 "지금 최신이 뭔지"를 가리키고, `DOC_BLOCK`/`VEC_IDX`/`DOC_SYNC`는 자기가 만들어진 시점의 `revision` 값을 스탬프처럼 찍어둔다. "이게 최신인가?"는 `내_revision == DOC.cur_revision` 비교로 계산하며, 과거 리비전 데이터를 지우지 않아도 최신 데이터만 조회할 수 있다.
 4. **계산 가능한 값은 저장하지 않는다** — 예: `heading_level`은 `heading_path` 배열 길이로 계산, 블록/청크 개수는 COUNT 쿼리로 계산. 다만 `parse_status`처럼 "처리 결과 자체"인 값은 계산으로 만들 수 없으므로 저장한다.
 5. **Evidence-first(근거 우선) 원칙** — `KNOW_ITEM_SRC`, `TASK_KNOW_SRC`가 "이 지식/업무가 어디서 왜 나왔는지"를 문장(`quote_text`, `rationale`) 단위까지 저장한다. 결과만 보여주지 않고 항상 원문으로 되짚어갈 수 있게 한다.
@@ -312,6 +312,6 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 ## 4. 참고
 
-- 이 문서의 필드 목록은 Figma page3-A-v2(node 498:5169)에 실제로 반영된 상태를 그대로 읽어 작성했다(2026-07-28 기준).
+- 이 문서의 필드 목록은 Figma Page 3-A·3-B에 실제로 반영된 상태를 기준으로 작성했다(2026-07-28 기준).
 - 각 필드를 "왜 넣었는지/왜 뺐는지"에 대한 판단 근거(GPT 피드백 평가 등)는 `VectorDB_저장대상_검증.md`에 별도로 정리돼 있다.
 - 1단계/후속으로 미룬 항목(리비전 이력 테이블, OCR 관련 필드, `chunk_strategy`, RFP 세부분류, Action/Object 분리 등)은 이 문서에 없다 — 해당 단계 착수 시 다시 설계한다.

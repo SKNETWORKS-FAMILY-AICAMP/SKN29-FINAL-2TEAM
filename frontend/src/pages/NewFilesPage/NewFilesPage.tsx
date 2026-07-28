@@ -55,10 +55,12 @@ export default function NewFilesPage() {
   }
 
   function handleSubmit() {
-    showToast(`선택한 ${selected.size}개 파일을 등록합니다.`, 'success');
+    showToast(`선택한 ${selected.size}개 파일 등록이 완료되었습니다.`, 'success');
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('view');
-    navigate(`/workspace?${nextParams.toString()}`);
+    setTimeout(() => {
+      navigate(`/workspace?${nextParams.toString()}`);
+    }, 900);
   }
 
   return (
