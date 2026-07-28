@@ -5,6 +5,7 @@ export interface RouteEntry {
 }
 
 export const ROUTES: RouteEntry[] = [
+  { path: '/', label: '랜딩 페이지', group: '마케팅' },
   { path: '/login', label: '로그인', group: '인증' },
   { path: '/signup', label: '회원가입', group: '인증' },
   { path: '/find-password', label: '비밀번호 찾기', group: '인증' },
