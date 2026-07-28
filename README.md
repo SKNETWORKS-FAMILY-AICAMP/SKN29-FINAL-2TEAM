@@ -1,38 +1,39 @@
 # AI 프로젝트 운영 코파일럿
 
-Django·Django REST Framework 기반 API와 React·Vite 프론트엔드 실행 환경을 포함한 PM 지원 플랫폼 베이스 코드다. React 화면 HTML/CSS는 Figma 담당 팀원이 별도로 구현한다.
+Django·Django REST Framework를 HTTP/API 계층으로 사용하고, PostgreSQL
+테이블은 `DB/schema.sql`과 직접 SQL Repository로 관리하는 PM 지원 플랫폼
+베이스 코드다. React 화면은 Figma 담당 팀원이 별도로 구현한다.
 
 ## 현재 구현
 
-- Django Admin 기반 People DB 관리 기반
-- DRF 기반 프로젝트·조직·직원 조회와 분석 실행 생성·상태 조회 API
-- React + Vite + TypeScript 실행 환경과 API Client
-- PostgreSQL/pgvector Docker Compose 구성
-- 로컬·AWS 전환을 위한 설정 경계
+- PostgreSQL 17 + pgvector 단일 DB
+- `DB/schema.sql` 기반 41개 테이블
+- `DB/peopleDB/peopledb_mock.sql` 기반 합성 People 데이터
+- psycopg 기반 프로젝트·조직·직원·배정 실행 Repository
+- DRF 기반 조회·생성 API
+- Block·Chunk UUID와 `VEC_IDX` pgvector 검색 인덱스
+- React + Vite + TypeScript 실행 환경
 
-문서 파싱, PKM, Snapshot, Readiness, 업무량, 추천, 검증 엔진은 서비스 모듈 경계만 마련된 상태다.
+Django ORM, Migration, Admin, 기본 Auth 테이블은 사용하지 않는다. 회원가입과
+권한 API는 `user_account` 테이블 기준으로 후속 구현한다.
 
 ## 로컬 실행
 
 ```powershell
 Copy-Item .env.example .env
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements\local.txt
-$env:USE_SQLITE = "True"
-python manage.py makemigrations
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py seed_demo_people
-python manage.py runserver
-```
-
-관리자 화면은 `http://127.0.0.1:8000/admin/`, 상태 확인 API는 `/api/health/`, React 개발 서버는 `http://127.0.0.1:5173/`로 접근한다. React 화면은 현재 의도적으로 비어 있다.
-
-PostgreSQL 컨테이너를 사용할 때는 `.env`의 `USE_SQLITE=False`를 유지하고 다음을 실행한다.
-
-```powershell
 docker compose -f infra/docker/docker-compose.yml up --build
 ```
 
-팀원별 Docker 설치·실행은 `docs/0_개발환경/로컬_Docker_개발환경_설치_매뉴얼.md`, 구현 상태와 다음 작업은 `docs/0_개발환경/초기_구성_상태.md`를 따른다.
+최초 DB 생성 후 People 목업 데이터를 한 번 적재한다.
+
+```powershell
+Get-Content -Raw DB/peopleDB/peopledb_mock.sql |
+  docker compose -f infra/docker/docker-compose.yml exec -T db `
+  psql -U project_copilot -d project_copilot
+```
+
+- API 상태: `http://127.0.0.1:8000/api/health/`
+- React: `http://127.0.0.1:5173/`
+
+DB 설치·초기화 절차는
+`docs/0_개발환경/로컬_Docker_개발환경_설치_매뉴얼.md`를 따른다.

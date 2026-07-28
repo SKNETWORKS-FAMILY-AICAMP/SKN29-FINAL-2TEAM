@@ -137,27 +137,22 @@ docker compose -f infra/docker/docker-compose.yml up -d db
 
 ---
 
-## 6. 최초 데이터 준비 (Django)
+## 6. 최초 People 목업 데이터 준비
 
-웹 컨테이너 안에서 Migration과 합성 People DB 데이터를 준비한다.
+PostgreSQL에 합성 People DB 데이터를 한 번 적재한다. Django Migration과
+Admin Seed는 사용하지 않는다.
 
 ```powershell
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py migrate
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py createsuperuser
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py seed_demo_people
+Get-Content -Raw DB/peopleDB/peopledb_mock.sql |
+  docker compose -f infra/docker/docker-compose.yml exec -T db `
+  psql -U project_copilot -d project_copilot
 ```
 
-`seed_demo_people`는 다음 합성 데이터를 반복 실행해도 중복 없이 생성·갱신한다.
+정상 적재 여부는 다음 명령으로 확인한다.
 
-- 조직 2개: AI Platform, Delivery
-- 직원 3명
-- Skill 4개: Python, Django, React, Jira
-- 직원별 Skill·숙련도 및 주 40시간 근무 일정
-
-관리 데이터는 아래 주소에서 확인한다.
-
-```text
-http://127.0.0.1:8000/admin/
+```powershell
+docker compose -f infra/docker/docker-compose.yml exec db `
+  psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM person;"
 ```
 
 ---
@@ -166,7 +161,7 @@ http://127.0.0.1:8000/admin/
 
 벡터 검색은 별도 서비스 없이 `db`의 `vec_idx` 테이블(pgvector)로 처리한다. `pgvector/pgvector:pg17` 이미지가 `vector` 확장을 이미 포함하고 있어서, `schema.sql`의 `CREATE EXTENSION IF NOT EXISTS vector;`만으로 준비가 끝난다.
 
-`vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. `vec_idx.chunk_id`에는 `chunk`를 가리키는 실FK가 걸려 있으므로, 스크립트가 데모용 `proj → doc → doc_block → chunk` 체인을 먼저 만든 뒤 그 청크에 벡터를 저장한다.
+`vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. DB FK 제약은 사용하지 않으며, 스크립트가 `chunk_id` 존재 여부를 확인한다. 데모용 `proj → doc → doc_block → chunk` 체인을 먼저 만든 뒤 벡터를 저장한다.
 
 ```powershell
 pip install "psycopg[binary]"
@@ -228,10 +223,6 @@ docker compose -f infra/docker/docker-compose.yml logs -f web
 # PostgreSQL 로그
 docker compose -f infra/docker/docker-compose.yml logs -f db
 
-# 모델 변경 후 Migration 생성·적용
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py makemigrations
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py migrate
-
 # 자동 테스트
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py test tests
 
@@ -245,7 +236,7 @@ docker compose -f infra/docker/docker-compose.yml down
 docker compose -f infra/docker/docker-compose.yml down -v
 ```
 
-`down -v` 후에는 다시 `up`, `migrate`, `createsuperuser`, `seed_demo_people`, `vec_idx_setup.py`를 실행해야 한다.
+`down -v` 후에는 다시 `up`, People 목업 SQL 적재, `vec_idx_setup.py`를 실행해야 한다.
 
 ---
 
@@ -260,7 +251,7 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | 8000 포트 충돌 | `"8000:8000"`을 `"8001:8000"`으로 변경하고 React API 주소도 함께 변경 |
 | `schema.sql`을 고쳤는데 반영이 안 됨 | init 스크립트는 볼륨이 빌 때만 실행된다. 5장을 참고해 `postgres_data` 볼륨 삭제 후 재기동 |
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `vector` 확장을 아직 안 탄 볼륨. 7장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
-| 모델 변경이 반영되지 않음 | `makemigrations` 후 `migrate` 실행 |
+| SQL 구조 변경이 반영되지 않음 | `schema.sql`은 빈 볼륨 최초 기동 때만 실행됨. 개발 데이터 백업 후 볼륨을 재생성 |
 | 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed·`vec_idx_setup.py` 재실행 |
 
 ---

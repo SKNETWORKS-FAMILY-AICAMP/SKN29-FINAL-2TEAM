@@ -1,17 +1,32 @@
-from rest_framework import permissions
-from rest_framework.generics import ListAPIView
+import psycopg
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import Organization, Person
-from .serializers import OrganizationSerializer, PersonSerializer
+from backend.db import OrganizationRepository, PersonRepository
 
-
-class OrganizationListAPIView(ListAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-    serializer_class = OrganizationSerializer
-    queryset = Organization.objects.select_related("parent").filter(is_active=True)
+from .serializers import organization_response, person_response
 
 
-class PersonListAPIView(ListAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-    serializer_class = PersonSerializer
-    queryset = Person.objects.select_related("organization").filter(is_active=True)
+class OrganizationListAPIView(APIView):
+    def get(self, request):
+        try:
+            rows = OrganizationRepository.list_active()
+        except psycopg.Error as exc:
+            return Response(
+                {"detail": "조직 데이터를 조회할 수 없습니다.", "error": exc.__class__.__name__},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response([organization_response(row) for row in rows])
+
+
+class PersonListAPIView(APIView):
+    def get(self, request):
+        try:
+            rows = PersonRepository.list_active()
+        except psycopg.Error as exc:
+            return Response(
+                {"detail": "직원 데이터를 조회할 수 없습니다.", "error": exc.__class__.__name__},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response([person_response(row) for row in rows])

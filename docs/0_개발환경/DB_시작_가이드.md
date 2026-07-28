@@ -12,7 +12,7 @@
 
 | 종류 | 정의 파일 | 저장 내용 |
 |---|---|---|
-| PostgreSQL/pgvector | `DB/schema.sql` | `person`, `org`, `doc`, `chunk`, `vec_idx` 등 도메인 스키마(Figma 설계 기준) + Django ORM 테이블(`accounts_*`, `people_*`, `projects_*`, `auth_*` 등) |
+| PostgreSQL/pgvector | `DB/schema.sql` | `person`, `org`, `doc`, `chunk`, `vec_idx` 등 전체 물리 스키마. Django ORM 테이블은 생성하지 않음 |
 | PostgreSQL/pgvector (목업) | `DB/peopleDB/peopledb_mock.sql` | `schema.sql`이 만든 People DB 테이블(`org`/`level`/`skill`/`person`/`person_skill`/`sched`/`absence`/`person_link`)에 채우는 목업 INSERT. `schema.sql`처럼 자동 실행되지 않고 수동 실행 필요(5장 참고) |
 | pgvector 예시 스크립트 | `backend/services/createDB/vec_idx_setup.py` | `vec_idx` 테이블에 청크 임베딩을 저장·검색하는 예시(6장 참고) |
 
@@ -81,7 +81,7 @@ skn29-final-2team-db-1   Up (healthy)   0.0.0.0:5432->5432/tcp
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx` 등 `schema.sql` 기반 테이블이 보이면 정상이다(Django `migrate`를 아직 안 돌렸다면 `accounts_*`, `people_*` 등은 이후 6장에서 생긴다).
+`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx` 등 `schema.sql` 기반 41개 테이블이 보이면 정상이다.
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
@@ -117,7 +117,7 @@ cat DB/peopleDB/peopledb_mock.sql | docker compose -f infra/docker/docker-compos
 **주의:**
 - 이 스크립트는 `schema.sql` 실행 이후에만 실행할 것(People DB 테이블이 먼저 있어야 함).
 - INSERT가 멱등적이지 않다(`ON CONFLICT` 처리 없음). 이미 데이터가 들어있는 상태에서 다시 실행하면 PK 중복 에러(`duplicate key value violates unique constraint`)가 난다 — 한 PC당 한 번만 실행하면 된다.
-- 데이터를 다시 채우고 싶으면 `person`부터 역순으로 지우거나(FK 의존성 때문에), `down -v`로 볼륨을 통째로 초기화한 뒤 `schema.sql` 자동 실행 → 이 명령 재실행 순서로 한다.
+- 데이터를 다시 채우고 싶으면 목업 테이블을 초기화하거나, `down -v`로 볼륨을 통째로 초기화한 뒤 `schema.sql` 자동 실행 → 이 명령 재실행 순서로 한다.
 
 확인:
 
@@ -129,21 +129,21 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 ---
 
-## 6. Django 쪽 테이블도 필요하면
+## 6. API 서버 실행
 
-Django ORM 테이블(`accounts_*`, `people_*`, `projects_*`, `auth_*`)은 `web` 컨테이너를 기동하면 자동으로 `migrate`가 실행되면서 생성된다. `web`까지 포함해서 전체 스택을 올리려면:
+Django는 API 계층으로만 사용하며 ORM Migration을 실행하지 않는다. 전체 스택을 올리려면:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml up -d
 ```
 
-자세한 내용(관리자 계정 생성, People 데모 데이터 시드, API 목록 등)은 `로컬_Docker_개발환경_설치_매뉴얼.md`의 5장 이후를 참고한다.
+API는 psycopg Repository를 통해 `schema.sql` 테이블을 직접 조회한다.
 
 ---
 
 ## 7. VEC_IDX 예시로 벡터 저장·검색해보기 (선택)
 
-`vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. `VEC_IDX.chunk_id`에는 `CHUNK`를 가리키는 실FK가 걸려 있어서(Chroma와 달리 참조 무결성이 강제됨), 이 스크립트는 실행 시 데모용 `proj → doc → doc_block → chunk` 체인을 먼저 만든 뒤 그 청크에 대한 벡터를 저장한다.
+`vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. FK 제약은 사용하지 않으며, 스크립트가 `chunk_id` 존재 여부를 검사한 뒤 벡터를 저장한다. 데모 실행 시 `proj → doc → doc_block → chunk` 체인을 먼저 만든다.
 
 ```bash
 pip install "psycopg[binary]"

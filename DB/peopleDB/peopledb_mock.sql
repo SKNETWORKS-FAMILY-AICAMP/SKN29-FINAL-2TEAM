@@ -16,10 +16,9 @@
 --   link     : 테이블명을 schema.sql 기준인 person_link로, link_id를
 --              person_link_id로 변경(나머지 컬럼은 동일)
 --
--- org.mgr_id는 schema.sql에서 person을 참조하는 실FK다(ALTER TABLE ...
--- ADD CONSTRAINT fk_org_mgr). org와 person이 서로를 참조하는 순환
--- 구조라서, org를 mgr_id=NULL로 먼저 넣고 person을 넣은 다음
--- UPDATE로 mgr_id를 채운다.
+-- org.mgr_id는 person을 가리키는 설계상 참조이며 DB FK 제약은 없다.
+-- 목업 데이터의 논리적 참조를 명확히 유지하기 위해 org를
+-- mgr_id=NULL로 먼저 넣고 person을 넣은 다음 UPDATE로 mgr_id를 채운다.
 -- ============================================================
 
 -- 1. org (mgr_id는 아래 person 이후 UPDATE로 채운다) -----------

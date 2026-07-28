@@ -4,6 +4,9 @@
 --
 -- =====================================================================
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS vector;
+
 
 -- =====================================================================
 -- PAGE 3-C | 플랫폼 운영·권한 — Tier 0 (의존성 없음)
@@ -174,6 +177,49 @@ CREATE TABLE cal_event (
 );
 
 -- =====================================================================
+-- PAGE 3-C | 플랫폼 운영·권한 — Tier 2 (PERSON 의존)
+-- 팀장이 HR PERSON을 지정해 초대 코드를 발급하고, 팀원이 로그인 후
+-- 코드를 수락하면 USER_ACCOUNT와 PERSON이 매핑된다. 이메일 비교가 아니라
+-- 초대 코드가 특정 PERSON에 미리 연결되어 있는 방식(PERSON_LINK의
+-- ext_email 매칭과는 다른 신뢰 모델)이라 PERSON_LINK를 재사용하지 않고
+-- 별도 테이블로 둔다. FK는 다른 테이블과 동일하게 걸지 않고 Repository의
+-- _require_record()로 참조를 검증한다.
+-- =====================================================================
+
+CREATE TABLE member_invite (
+    invite_id     VARCHAR(5) PRIMARY KEY,
+    team_org_id   VARCHAR(5) NOT NULL,   -- 초대 스코프 조직 = org.org_id(FK 없음)
+    person_id     VARCHAR(5) NOT NULL,   -- 연결 대상 HR 직원 = person.person_id(FK 없음)
+    invited_by    VARCHAR(5) NOT NULL,   -- 초대한 팀장 계정 = user_account.account_id(FK 없음)
+    token_hash    VARCHAR(255) NOT NULL UNIQUE,  -- 초대 코드 원문은 저장하지 않고 해시만 저장
+    status        VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING / ACCEPTED / EXPIRED / REVOKED
+    expires_at    TIMESTAMPTZ NOT NULL,
+    accepted_at   TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 같은 PERSON에게 동시에 유효한(PENDING) 초대가 두 개 이상 발급되는 것을 방지
+CREATE UNIQUE INDEX ux_member_invite_pending_person
+    ON member_invite (person_id)
+    WHERE status = 'PENDING';
+
+CREATE TABLE user_person_link (
+    link_id          VARCHAR(5) PRIMARY KEY,
+    account_id       VARCHAR(5) NOT NULL,   -- user_account.account_id(FK 없음)
+    person_id        VARCHAR(5) NOT NULL,   -- person.person_id(FK 없음)
+    invite_id        VARCHAR(5),            -- 근거가 된 member_invite.invite_id(FK 없음)
+    mapping_status   VARCHAR(20) NOT NULL DEFAULT 'VERIFIED',  -- VERIFIED / REVOKED
+    match_method     VARCHAR(30) NOT NULL DEFAULT 'TEAM_INVITATION',
+    linked_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at       TIMESTAMPTZ
+);
+
+-- 유효(VERIFIED)한 매핑 기준으로 PERSON 1명은 계정 1개에만 연결
+CREATE UNIQUE INDEX ux_user_person_link_active_person
+    ON user_person_link (person_id)
+    WHERE mapping_status = 'VERIFIED';
+
+-- =====================================================================
 -- PAGE 3-A | 문서→지식→Task 파이프라인 — Tier 2 (PROJ 의존)
 -- =====================================================================
 
@@ -217,7 +263,7 @@ CREATE TABLE proj_know_model (
 -- =====================================================================
 
 CREATE TABLE doc_block (
-    block_id         VARCHAR(5) PRIMARY KEY,
+    block_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     doc_id            VARCHAR(5) NOT NULL,
     block_type        VARCHAR(20) NOT NULL,   -- HEADING / PARAGRAPH / TABLE / LIST
     page              INT,
@@ -281,9 +327,9 @@ CREATE TABLE task (
 -- =====================================================================
 
 CREATE TABLE chunk (
-    chunk_id       VARCHAR(5) PRIMARY KEY,
-    block_id        VARCHAR(5) NOT NULL,
-    up_chunk_id     VARCHAR(5),
+    chunk_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    block_id        UUID NOT NULL,
+    up_chunk_id     UUID,
     search_text     TEXT NOT NULL,
     is_active       BOOLEAN NOT NULL DEFAULT true,
     chunk_idx       INT NOT NULL,
@@ -292,13 +338,29 @@ CREATE TABLE chunk (
     chunker_ver     VARCHAR(30)
 );
 
+-- CHUNK와 1:1인 pgvector 검색 인덱스.
+-- FK 제약은 사용하지 않으며 chunk_id 존재 여부는 적재 코드에서 검증한다.
+CREATE TABLE vec_idx (
+    chunk_id        UUID PRIMARY KEY,
+    embedding       VECTOR(1536) NOT NULL,
+    metadata        JSONB NOT NULL DEFAULT '{}',
+    indexed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embed_model     VARCHAR(100),
+    embed_ver       VARCHAR(30),
+    embed_dim       INT,
+    dist_metric     VARCHAR(20) NOT NULL DEFAULT 'COSINE',
+    content_hash    VARCHAR(100),
+    revision        VARCHAR(50),
+    is_active       BOOLEAN NOT NULL DEFAULT true
+);
+
 CREATE TABLE know_item_src (
     know_item_id   VARCHAR(5) NOT NULL,
-    block_id        VARCHAR(5) NOT NULL,
+    block_id        UUID NOT NULL,
     rel_type        VARCHAR(20) NOT NULL DEFAULT 'PRIMARY',
     src_ver         VARCHAR(50),
     confidence      NUMERIC(4,3),
-    chunk_id        VARCHAR(5),
+    chunk_id        UUID,
     quote_text      TEXT,
     quote_hash      VARCHAR(100),
     src_locator     JSONB,

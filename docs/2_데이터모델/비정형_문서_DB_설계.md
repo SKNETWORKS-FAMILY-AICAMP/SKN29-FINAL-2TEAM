@@ -284,8 +284,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 | 필드 | 한글명 | 타입 | 저장 내용 | 저장 방식 | 사용처 |
 |---|---|---|---|---|---|
-| `vec_id` (PK) | 벡터 ID | UUID | 벡터 레코드 고유 식별자 | 내부 생성 UUID | — |
-| `chunk_id` (FK) | 청크 ID | UUID | 원본 청크 | `CHUNK.chunk_id` 참조, 1:1 | 검색 결과를 원문 청크/블록까지 역추적 |
+| `chunk_id` (PK, 설계상 참조) | 청크 ID | UUID | 원본 청크이자 벡터 레코드 식별자 | `CHUNK.chunk_id`와 동일, 1:1 | 검색 결과를 원문 청크/블록까지 역추적 |
 | `embedding` | 임베딩 값 | VECTOR | 청크 텍스트를 벡터화한 값 | pgvector `vector(N)` 타입(N은 `embed_dim`과 동일) | 유사도 검색(코사인/유클리드 거리 계산)의 대상 데이터 |
 | `metadata` | 메타데이터 | JSONB | 검색 필터 전용 메타데이터 | 예: `{"proj_id":"...","document_id":"...","doc_role":"PLAN","security":"GENERAL","acl_principals":[...]}` — **업무 의미(담당자·마감일 등)는 넣지 않음** | 검색 시 project/권한 범위로 먼저 필터링하고, 업무 의미는 `CHUNK→KNOW_ITEM_SRC→KNOW_ITEM.semantic_type` JOIN으로 조회 |
 | `indexed_at` | 인덱싱 시각 | TIMESTAMP | 벡터가 생성/저장된 시각 | ISO 8601 timestamp | 인덱싱 지연 모니터링 |

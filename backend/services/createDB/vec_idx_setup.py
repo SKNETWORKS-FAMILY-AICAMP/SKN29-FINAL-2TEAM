@@ -5,8 +5,8 @@ VectorDB_저장대상_검증.md 7~8장 설계를 그대로 따른다:
 - 별도 Vector DB(ChromaDB 등)를 쓰지 않고, VEC_IDX 테이블 하나로 3-B와
   같은 PostgreSQL 인스턴스에 저장한다(schema.sql 참고, pgvector/pgvector
   이미지가 vector 확장을 지원).
-- CHUNK와 VEC_IDX는 1:1이고 vec_idx.chunk_id에 실FK가 걸려 있어서,
-  Chroma 때와 달리 참조 대상 chunk가 실제로 존재해야 한다. 아래 데모는
+- CHUNK와 VEC_IDX는 1:1이다. DB FK 제약은 사용하지 않으므로 적재 전에
+  참조 대상 chunk의 존재를 코드에서 확인한다. 아래 데모는
   page3-A 시나리오 문서(CHK-018)와 동일한 예시를 최소 체인
   (proj → doc → doc_block → chunk)까지 만들어서 넣는다.
 
@@ -51,6 +51,10 @@ def upsert_vector(
     그 자체로 버그이기 때문에 입력을 신뢰하지 않고 여기서 다시 계산한다).
     """
     with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM chunk WHERE chunk_id = %s", (chunk_id,))
+        if cur.fetchone() is None:
+            raise ValueError(f"존재하지 않는 chunk_id입니다: {chunk_id}")
+
         cur.execute(
             """
             INSERT INTO vec_idx
@@ -121,22 +125,21 @@ if __name__ == "__main__":
     conn = get_conn()
 
     # 예시: page3-A 시나리오 문서의 CHK-018 청크를 저장한다고 가정.
-    # VEC_IDX.chunk_id에 실FK가 걸려 있으므로 proj→doc→doc_block→chunk까지
-    # 최소 체인을 먼저 만든다(각 단계 UUID는 데모 재실행 시 그대로 재사용하도록
-    # 고정 이름으로 upsert).
+    # DB FK는 없지만 적재 코드에서 참조 무결성을 확인하므로
+    # proj→doc→doc_block→chunk 최소 체인을 먼저 만든다.
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO proj (proj_id, name)
-            VALUES ('00000000-0000-0000-0000-0000000000a1', '2026 AI Project')
+            VALUES ('PJ001', '2026 AI Project')
             ON CONFLICT (proj_id) DO NOTHING
             """
         )
         cur.execute(
             """
             INSERT INTO doc (doc_id, proj_id, file_name, source_type, security)
-            VALUES ('00000000-0000-0000-0000-0000000000d1',
-                    '00000000-0000-0000-0000-0000000000a1',
+            VALUES ('D0001',
+                    'PJ001',
                     '2026_AI_Project.pdf', 'DRIVE', 'Internal')
             ON CONFLICT (doc_id) DO NOTHING
             """
@@ -145,7 +148,7 @@ if __name__ == "__main__":
             """
             INSERT INTO doc_block (block_id, doc_id, block_type, content, sequence, revision)
             VALUES ('00000000-0000-0000-0000-0000000000b1',
-                    '00000000-0000-0000-0000-0000000000d1',
+                    'D0001',
                     'PARAGRAPH',
                     '로그인 기능은 2026-08-06까지 완료. 담당자는 백엔드팀 김OO 대리.',
                     1, 'v3')
