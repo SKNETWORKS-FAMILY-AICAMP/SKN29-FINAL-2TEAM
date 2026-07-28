@@ -1,4 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ApiError } from '../../api/http';
+import { getProjects } from '../../api/projects';
+import type { Project } from '../../api/types';
 import type { BadgeTone } from '../../components';
 import { Icon, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -8,6 +12,7 @@ import styles from './ProjectListPage.module.css';
 type ActiveStatus = 'progress' | 'notstarted' | 'ontrack' | 'delayed';
 type FilterValue = 'all' | ActiveStatus;
 type SortValue = 'date' | 'progress';
+type LoadState = 'loading' | 'ready' | 'empty' | 'blocked' | 'error' | 'demo';
 
 interface ActiveProject {
   id: string;
@@ -73,21 +78,96 @@ const FILTER_CHIPS: Array<{ value: FilterValue; label: string }> = [
 ];
 
 function formatDate(iso: string): string {
-  return iso.replace(/-/g, '.');
+  return iso.slice(0, 10).replace(/-/g, '.');
+}
+
+function toActiveProject(project: Project): ActiveProject {
+  return {
+    id: project.project_id,
+    title: project.name,
+    desc: project.description,
+    status: project.status === 'DRAFT' ? 'notstarted' : 'progress',
+    date: project.updated_at,
+    progressText: '진행 정보 없음',
+    progressValue: 0,
+  };
+}
+
+function toCompletedProject(project: Project): CompletedProject {
+  return {
+    id: project.project_id,
+    title: project.name,
+    desc: project.description,
+    date: project.updated_at,
+  };
 }
 
 export default function ProjectListPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isDemo = searchParams.get('mode') === 'demo';
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterValue>('all');
   const [sort, setSort] = useState<SortValue>('date');
   const [selectedActiveId, setSelectedActiveId] = useState<string | null>(null);
   const [selectedCompletedId, setSelectedCompletedId] = useState<string | null>(null);
+  const [apiProjects, setApiProjects] = useState<Project[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>(isDemo ? 'demo' : 'loading');
+  const [loadReason, setLoadReason] = useState('');
   const { showToast } = useToast();
 
   const query = search.trim().toLowerCase();
+  const activeProjects = useMemo(
+    () => (isDemo ? ACTIVE_PROJECTS : apiProjects.filter((project) => project.status !== 'ARCHIVED').map(toActiveProject)),
+    [apiProjects, isDemo],
+  );
+  const completedProjects = useMemo(
+    () => (isDemo ? COMPLETED_PROJECTS : apiProjects.filter((project) => project.status === 'ARCHIVED').map(toCompletedProject)),
+    [apiProjects, isDemo],
+  );
+  const visibleFilterChips = isDemo
+    ? FILTER_CHIPS
+    : FILTER_CHIPS.filter((chip) => chip.value === 'all' || chip.value === 'progress' || chip.value === 'notstarted');
+
+  useEffect(() => {
+    setFilter('all');
+    setSelectedActiveId(null);
+    setSelectedCompletedId(null);
+
+    if (isDemo) {
+      setLoadState('demo');
+      setLoadReason('');
+      return;
+    }
+
+    let cancelled = false;
+    setLoadState('loading');
+    setLoadReason('');
+
+    getProjects()
+      .then((projects) => {
+        if (cancelled) return;
+        setApiProjects(projects);
+        setLoadState(projects.length > 0 ? 'ready' : 'empty');
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          setLoadState('blocked');
+          setLoadReason('인증된 세션이 필요하지만 React 로그인 연동이 아직 확정되지 않았습니다.');
+          return;
+        }
+        setLoadState('error');
+        setLoadReason(error instanceof Error ? error.message : '프로젝트 API 응답을 확인할 수 없습니다.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDemo]);
 
   const filteredActive = useMemo(() => {
-    const matches = ACTIVE_PROJECTS.filter((project) => {
+    const matches = activeProjects.filter((project) => {
       const matchesSearch =
         !query || project.title.toLowerCase().includes(query) || project.desc.toLowerCase().includes(query);
       const matchesFilter = filter === 'all' || project.status === filter;
@@ -97,30 +177,40 @@ export default function ProjectListPage() {
       sort === 'progress' ? b.progressValue - a.progressValue : new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
     return sorted;
-  }, [query, filter, sort]);
+  }, [activeProjects, query, filter, sort]);
 
   const filteredCompleted = useMemo(
     () =>
-      COMPLETED_PROJECTS.filter(
+      completedProjects.filter(
         (project) => !query || project.title.toLowerCase().includes(query) || project.desc.toLowerCase().includes(query),
       ),
-    [query],
+    [completedProjects, query],
   );
 
   function handleSelectActive(project: ActiveProject) {
-    setSelectedActiveId((prev) => {
-      const next = prev === project.id ? null : project.id;
-      if (next) showToast(`${project.title} 선택됨`, 'info');
-      return next;
-    });
+    const next = selectedActiveId === project.id ? null : project.id;
+    setSelectedActiveId(next);
+    if (next) showToast(`${project.title} 선택됨`, 'info');
   }
 
   function handleSelectCompleted(project: CompletedProject) {
-    setSelectedCompletedId((prev) => {
-      const next = prev === project.id ? null : project.id;
-      if (next) showToast(`${project.title} 선택됨`, 'info');
-      return next;
-    });
+    const next = selectedCompletedId === project.id ? null : project.id;
+    setSelectedCompletedId(next);
+    if (next) showToast(`${project.title} 선택됨`, 'info');
+  }
+
+  function handleStartWorkflow() {
+    if (!isDemo) {
+      showToast('BLOCKED · 실제 파일 등록 API와 Connector가 연결되지 않아 업무 분배를 시작할 수 없습니다.', 'error');
+      return;
+    }
+
+    if (!selectedActiveId) {
+      showToast('업무 분배를 시작할 진행 중 프로젝트를 먼저 선택해 주세요.', 'info');
+      return;
+    }
+
+    navigate(`/files/new?projectId=${encodeURIComponent(selectedActiveId)}&view=review&mode=demo`);
   }
 
   return (
@@ -136,14 +226,48 @@ export default function ProjectListPage() {
           <div className={styles.quickStats}>
             <div className={styles.statItem}>
               <span className={styles.statLabel}>진행중인 프로젝트</span>
-              <span className={styles.statValue}>{ACTIVE_PROJECTS.length}개</span>
+              <span className={styles.statValue}>{activeProjects.length}개</span>
             </div>
             <div className={styles.statDivider} />
             <div className={styles.statItem}>
               <span className={styles.statLabel}>완료된 프로젝트</span>
-              <span className={styles.statValue}>{COMPLETED_PROJECTS.length}개</span>
+              <span className={styles.statValue}>{completedProjects.length}개</span>
             </div>
           </div>
+        </div>
+
+        <div
+          className={[
+            styles.statusPanel,
+            loadState === 'blocked' || loadState === 'error' ? styles.statusBlocked : '',
+            loadState === 'demo' ? styles.statusDemo : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          role="status"
+        >
+          <div>
+            <strong>
+              {loadState === 'loading' && '프로젝트 API 연결 중'}
+              {loadState === 'ready' && 'CONDITIONAL · 실제 프로젝트 목록'}
+              {loadState === 'empty' && 'CONDITIONAL · 등록된 프로젝트 없음'}
+              {loadState === 'blocked' && 'BLOCKED · 프로젝트 조회 불가'}
+              {loadState === 'error' && 'BLOCKED · 프로젝트 API 오류'}
+              {loadState === 'demo' && 'DEMO · 정적 프로젝트 데이터'}
+            </strong>
+            <p>
+              {loadState === 'loading' && '백엔드에서 프로젝트를 불러오고 있습니다.'}
+              {loadState === 'ready' && '목록은 실제 API 데이터입니다. 진행률과 파일 등록 데이터가 없어 업무 분배 시작은 차단됩니다.'}
+              {loadState === 'empty' && 'API 연결은 성공했지만 표시할 프로젝트가 없습니다.'}
+              {(loadState === 'blocked' || loadState === 'error') && loadReason}
+              {loadState === 'demo' && 'UI 흐름 검증용 데이터이며 실제 프로젝트나 분석 결과가 아닙니다.'}
+            </p>
+          </div>
+          {!isDemo && (
+            <button type="button" className={styles.demoButton} onClick={() => setSearchParams({ mode: 'demo' })}>
+              정적 데모 보기
+            </button>
+          )}
         </div>
 
         <div className={styles.toolbar}>
@@ -158,7 +282,7 @@ export default function ProjectListPage() {
             />
           </div>
           <div className={styles.filterChips}>
-            {FILTER_CHIPS.map((chip) => (
+            {visibleFilterChips.map((chip) => (
               <button
                 key={chip.value}
                 type="button"
@@ -238,7 +362,9 @@ export default function ProjectListPage() {
       <button
         type="button"
         className={styles.floatingCta}
-        onClick={() => showToast('업무 분배 워크플로우로 이동합니다', 'info')}
+        onClick={handleStartWorkflow}
+        disabled={!isDemo}
+        title={!isDemo ? '실제 파일 등록 API와 Connector 연동이 필요합니다.' : undefined}
       >
         <Icon name="sparkles" size={20} color="#fff" />
         <span>업무 분배 시작</span>

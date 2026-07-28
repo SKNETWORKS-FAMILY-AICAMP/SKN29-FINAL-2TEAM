@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Icon, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import { FileRegistrationTable, FILE_ROWS, DEFAULT_SELECTED_IDS } from './FileRegistrationTable';
@@ -25,7 +26,10 @@ const TOGGLE_OPTIONS: Array<{ target: DemoState; label: string }> = [
 ];
 
 export default function NewFilesPage() {
-  const [demoState, setDemoState] = useState<DemoState>('empty');
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialDemoState: DemoState = searchParams.get('view') === 'review' ? 'reviewA' : 'empty';
+  const [demoState, setDemoState] = useState<DemoState>(initialDemoState);
   const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTED_IDS));
   const { showToast } = useToast();
 
@@ -52,6 +56,9 @@ export default function NewFilesPage() {
 
   function handleSubmit() {
     showToast(`선택한 ${selected.size}개 파일을 등록합니다.`, 'success');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('view');
+    navigate(`/workspace?${nextParams.toString()}`);
   }
 
   return (

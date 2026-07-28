@@ -10,7 +10,7 @@ export default function FindPasswordPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('재설정 링크를 전송했습니다.', 'success');
+    showToast('BLOCKED · 비밀번호 재설정 API와 메일 발송이 아직 연결되지 않았습니다.', 'error');
   }
 
   return (

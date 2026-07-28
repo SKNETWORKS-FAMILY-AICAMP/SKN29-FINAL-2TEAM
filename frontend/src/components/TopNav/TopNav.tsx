@@ -40,7 +40,7 @@ export function TopNav({
             const isActive = tab.to === currentPath;
             return (
               <NavLink
-                key={tab.to}
+                key={`${tab.label}:${tab.to}`}
                 to={tab.to}
                 className={() => [styles.tab, isActive ? styles.tabActive : ''].filter(Boolean).join(' ')}
               >

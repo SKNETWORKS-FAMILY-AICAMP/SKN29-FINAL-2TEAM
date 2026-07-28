@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, Icon, TopNav, useToast } from '../../components';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Badge, Button, Icon, TopNav } from '../../components';
 import type { BadgeTone } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import styles from './TaskRecommendationPage.module.css';
@@ -81,10 +82,13 @@ const TASKS: TaskCard[] = [
 ];
 
 export default function TaskRecommendationPage() {
-  const { showToast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [tasks, setTasks] = useState<TaskCard[]>(TASKS);
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [notifOpen, setNotifOpen] = useState(false);
+  const [hasManualChange, setHasManualChange] = useState(false);
   const notifRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -100,10 +104,39 @@ export default function TaskRecommendationPage() {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, [notifOpen]);
 
-  const visibleTasks = activeFilter === 'all' ? TASKS : TASKS.filter((task) => task.flags.includes(activeFilter));
+  const visibleTasks = activeFilter === 'all' ? tasks : tasks.filter((task) => task.flags.includes(activeFilter));
 
   function toggleCandidates(taskId: string) {
     setExpanded((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
+  }
+
+  function selectCandidate(taskId: string, candidate: AltCandidate) {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              assigneeName: candidate.name,
+              assigneeInitial: candidate.initial,
+              avatarColor: candidate.avatarColor,
+              fitTone: 'info',
+              fitLabel: '수동 선택',
+              needsVerify: true,
+              flags: Array.from(new Set<FilterKey>([...task.flags, 'verify', 'unconfirmed'])),
+              reasons: ['PM이 대안 후보를 수동 선택함', ...task.reasons],
+            }
+          : task,
+      ),
+    );
+    setHasManualChange(true);
+    setExpanded((prev) => ({ ...prev, [taskId]: false }));
+  }
+
+  function handleNext() {
+    const params = new URLSearchParams(location.search);
+    if (hasManualChange) params.set('adjusted', '1');
+    const query = params.toString();
+    navigate(`/tasks/result${query ? `?${query}` : ''}`);
   }
 
   return (
@@ -124,8 +157,8 @@ export default function TaskRecommendationPage() {
 
         <main className={styles.mainBody}>
           <div className={styles.pageHeading}>
-            <h1>업무 추천 결과</h1>
-            <p>4개 업무 후보에 대한 배정 추천이에요</p>
+            <h1>데모 업무 추천 결과</h1>
+            <p>UI 흐름 검증용 정적 예시이며 실제 데이터 판정이 아닙니다.</p>
           </div>
 
           <div className={styles.filterBar}>
@@ -217,7 +250,12 @@ export default function TaskRecommendationPage() {
                   {isExpanded && (
                     <div className={styles.altCandidates}>
                       {task.altCandidates.map((candidate) => (
-                        <div className={styles.altCandidate} key={candidate.name}>
+                        <button
+                          type="button"
+                          className={styles.altCandidate}
+                          key={candidate.name}
+                          onClick={() => selectCandidate(task.id, candidate)}
+                        >
                           <div
                             className={`${styles.avatar} ${styles.avatarXs}`}
                             style={{ background: candidate.avatarColor }}
@@ -226,7 +264,7 @@ export default function TaskRecommendationPage() {
                           </div>
                           <span>{candidate.name}</span>
                           <span className={styles.altScore}>적합도 {candidate.score}%</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -238,10 +276,10 @@ export default function TaskRecommendationPage() {
       </div>
 
       <footer className={styles.bottomBar}>
-        <Button variant="secondary" onClick={() => showToast('이전 단계로 이동합니다.')}>
+        <Button variant="secondary" onClick={() => navigate(`/tasks/distribution${location.search}`)}>
           이전 단계
         </Button>
-        <Button variant="primary" onClick={() => showToast('검증 결과 확인 단계로 이동합니다.')}>
+        <Button variant="primary" onClick={handleNext}>
           다음: 검증 결과 확인
         </Button>
       </footer>

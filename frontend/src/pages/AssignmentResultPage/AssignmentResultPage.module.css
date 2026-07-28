@@ -200,6 +200,7 @@
   padding: var(--space-4) var(--space-6);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
+  cursor: pointer;
 }
 
 .trow:last-child {
@@ -208,6 +209,13 @@
 
 .trowHighlight {
   background: var(--color-bg);
+}
+
+.emptyTableRow {
+  padding: var(--space-8);
+  color: var(--color-placeholder);
+  font-size: 13px;
+  text-align: center;
 }
 
 .trow .colTask {

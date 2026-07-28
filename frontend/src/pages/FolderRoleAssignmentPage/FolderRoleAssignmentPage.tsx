@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Icon, Select } from '../../components';
 import styles from './FolderRoleAssignmentPage.module.css';
 
@@ -67,6 +68,7 @@ const FOLDERS: RoleFolder[] = [
 ];
 
 export default function FolderRoleAssignmentPage() {
+  const navigate = useNavigate();
   const [folderRoles, setFolderRoles] = useState<Record<string, string>>(() =>
     Object.fromEntries(FOLDERS.map((f) => [f.id, f.defaultRole])),
   );
@@ -172,11 +174,20 @@ export default function FolderRoleAssignmentPage() {
         </div>
 
         <div className={styles.footer}>
-          <Button variant="outline" className={styles.prevButton} iconLeft={<Icon name="arrow-left" size={16} />}>
+          <Button
+            variant="outline"
+            className={styles.prevButton}
+            iconLeft={<Icon name="arrow-left" size={16} />}
+            onClick={() => navigate('/onboarding/folders?mode=demo')}
+          >
             이전 단계
           </Button>
-          <Button variant="primary" iconRight={<Icon name="arrow-right" size={16} />}>
-            다음: 워크로드 설정
+          <Button
+            variant="primary"
+            iconRight={<Icon name="arrow-right" size={16} />}
+            onClick={() => navigate('/onboarding/jira-project?mode=demo')}
+          >
+            다음: Jira 프로젝트 선택
           </Button>
         </div>
       </div>

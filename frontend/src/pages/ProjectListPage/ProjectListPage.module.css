@@ -81,6 +81,53 @@
   width: 100%;
 }
 
+.statusPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-lg);
+  background: var(--color-warning-bg);
+  color: var(--color-body);
+}
+
+.statusPanel strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.statusPanel p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.statusBlocked {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.statusDemo {
+  border-color: var(--color-info);
+  background: var(--color-info-bg);
+}
+
+.demoButton {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  padding: 8px var(--space-3);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .searchBox {
   display: flex;
   align-items: center;
@@ -258,6 +305,16 @@
   transform: translateY(-2px);
 }
 
+.floatingCta:disabled {
+  background: var(--color-placeholder);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.floatingCta:disabled:hover {
+  transform: none;
+}
+
 @media (max-width: 900px) {
   .mainContent {
     padding: var(--space-8) 24px 100px;
@@ -274,5 +331,10 @@
   .pageHeader {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .statusPanel {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

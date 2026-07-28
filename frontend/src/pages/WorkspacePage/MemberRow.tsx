@@ -3,7 +3,7 @@ import { Badge, Checkbox } from '../../components';
 import type { BadgeTone } from '../../components';
 import styles from './MemberRow.module.css';
 
-export type MemberStatus = 'available' | 'busy' | 'overloaded';
+export type MemberStatus = 'available' | 'busy' | 'overloaded' | 'unknown';
 
 export interface WorkspaceMember {
   id: string;
@@ -19,12 +19,14 @@ const STATUS_LABEL: Record<MemberStatus, string> = {
   available: '가용',
   busy: '작업중',
   overloaded: '과부하',
+  unknown: '확인 필요',
 };
 
 const STATUS_TONE: Record<MemberStatus, BadgeTone> = {
   available: 'success',
   busy: 'warning',
   overloaded: 'danger',
+  unknown: 'neutral',
 };
 
 interface MemberRowProps {

@@ -15,7 +15,7 @@ export default function SignupPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('회원가입 시도 중입니다.', 'info');
+    showToast('BLOCKED · 회원가입 API가 아직 연결되지 않았습니다.', 'error');
   }
 
   return (

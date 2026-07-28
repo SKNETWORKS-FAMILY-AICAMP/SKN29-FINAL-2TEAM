@@ -29,6 +29,36 @@
   color: var(--color-body);
 }
 
+.statusPanel {
+  padding: var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-lg);
+  background: var(--color-warning-bg);
+}
+
+.statusPanel strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.statusPanel p {
+  color: var(--color-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.statusBlocked {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.statusDemo {
+  border-color: var(--color-info);
+  background: var(--color-info-bg);
+}
+
 .creationCard {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -94,6 +124,13 @@
   background: var(--color-surface);
   max-height: 334px;
   overflow-y: auto;
+}
+
+.emptyRow {
+  padding: var(--space-6);
+  color: var(--color-placeholder);
+  font-size: 13px;
+  text-align: center;
 }
 
 .additionalRequirementsSection {

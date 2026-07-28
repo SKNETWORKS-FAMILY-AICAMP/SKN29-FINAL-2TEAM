@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Icon, Select, ToggleSwitch, TopNav } from '../../components';
 import styles from './FolderSelectPage.module.css';
 
@@ -40,6 +41,7 @@ const DEPTH_OPTIONS = [
 ];
 
 export default function FolderSelectPage() {
+  const navigate = useNavigate();
   const [state, setState] = useState<PageState>('empty');
   const [folders, setFolders] = useState<SelectedFolder[]>(SELECTED_FOLDERS);
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
@@ -98,8 +100,12 @@ export default function FolderSelectPage() {
             </div>
 
             <div className={styles.stepFooter}>
-              <Button variant="outline">이전 단계</Button>
-              <Button variant="link">건너뛰기</Button>
+              <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
+                이전 단계
+              </Button>
+              <Button variant="link" onClick={() => navigate('/onboarding/jira-project?mode=demo')}>
+                건너뛰기
+              </Button>
               <Button variant="primary" disabled>
                 다음: 폴더 역할 지정
               </Button>
@@ -182,8 +188,12 @@ export default function FolderSelectPage() {
             </div>
 
             <div className={styles.stepFooter}>
-              <Button variant="outline">이전 단계</Button>
-              <Button variant="primary">다음: 폴더 역할 지정</Button>
+              <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
+                이전 단계
+              </Button>
+              <Button variant="primary" onClick={() => navigate('/onboarding/folder-roles?mode=demo')}>
+                다음: 폴더 역할 지정
+              </Button>
             </div>
           </>
         )}

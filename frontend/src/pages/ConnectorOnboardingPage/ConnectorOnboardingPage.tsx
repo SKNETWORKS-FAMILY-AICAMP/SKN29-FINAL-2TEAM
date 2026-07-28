@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Badge, Button, Card, Icon, TopNav } from '../../components';
+import { useNavigate } from 'react-router-dom';
+import { Badge, Button, Card, Icon, TopNav, useToast } from '../../components';
 import styles from './ConnectorOnboardingPage.module.css';
 
 type ConnectorStatus = 'disconnected' | 'connected';
@@ -32,17 +33,6 @@ function DriveIcon() {
   );
 }
 
-function CalendarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="#0052cc" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  );
-}
-
 const CONNECTORS: ConnectorDef[] = [
   {
     id: 'jira',
@@ -61,14 +51,6 @@ const CONNECTORS: ConnectorDef[] = [
     initialStatus: 'disconnected',
   },
   {
-    id: 'google-calendar',
-    name: 'Google Calendar',
-    desc: '일정 및 캘린더 관리, 사내 스케줄과 미팅 정보를 실시간으로 연결해 분석에 활용합니다.',
-    iconBg: 'rgba(0,82,204,0.07)',
-    icon: <CalendarIcon />,
-    initialStatus: 'disconnected',
-  },
-  {
     id: 'people-db',
     name: 'People DB',
     desc: '인력 정보 데이터베이스. 팀원별 스킬, 가용성, 역할 정보를 연동합니다.',
@@ -79,12 +61,15 @@ const CONNECTORS: ConnectorDef[] = [
 ];
 
 export default function ConnectorOnboardingPage() {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
   const [statuses, setStatuses] = useState<Record<string, ConnectorStatus>>(() =>
     Object.fromEntries(CONNECTORS.map((c) => [c.id, c.initialStatus])),
   );
 
   function handleConnectClick(id: string) {
     setStatuses((prev) => ({ ...prev, [id]: 'connected' }));
+    showToast('데모 연결 상태입니다. 실제 외부 서비스 인증은 아직 연결되지 않았습니다.', 'info');
   }
 
   return (
@@ -135,10 +120,17 @@ export default function ConnectorOnboardingPage() {
         </div>
 
         <div className={styles.actions}>
-          <Button variant="primary" size="lg" className={styles.nextButton}>
+          <Button
+            variant="primary"
+            size="lg"
+            className={styles.nextButton}
+            onClick={() => navigate('/onboarding/folders?mode=demo')}
+          >
             다음 단계로
           </Button>
-          <Button variant="link">나중에 하기</Button>
+          <Button variant="link" onClick={() => navigate('/dashboard')}>
+            나중에 하기
+          </Button>
         </div>
       </div>
     </div>
