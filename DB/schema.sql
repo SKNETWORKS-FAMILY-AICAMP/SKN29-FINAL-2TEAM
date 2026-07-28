@@ -2,7 +2,10 @@
 -- AI 프로젝트 운영 코파일럿 — 전체 PostgreSQL 스키마
 -- Figma "PAGE3-v2" 섹션(PAGE 3-A/3-B/3-C) 현재 상태를 그대로 옮긴 DDL
 -- 생성일: 2026-07-28
-
+--
+-- 주의: VEC_IDX(벡터 검색 인덱스)는 이 파일에 없다 — ChromaDB로 확정되어
+-- PostgreSQL 테이블이 아니다. chroma_setup.py를 참고.
+--
 -- 실행 순서: 이 파일 하나만 위에서 아래로 실행하면 된다(의존성 순서로 정렬됨).
 -- =====================================================================
 
@@ -11,7 +14,6 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid() 사용
 -- =====================================================================
 -- PAGE 3-C | 플랫폼 운영·권한 — Tier 0 (의존성 없음)
 -- =====================================================================
-
 
 CREATE TABLE user_account (
     account_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,6 +27,8 @@ CREATE TABLE user_account (
 
 -- =====================================================================
 -- PAGE 3-B | People DB — Tier 0 (의존성 없음)
+-- Figma 표기가 VARCHAR(5) 짧은 코드(person_id="P0001" 형태)를 쓰고 있어서
+-- 그대로 따랐다. org/level/skill도 전부 VARCHAR(5) 코드 체계.
 -- =====================================================================
 
 CREATE TABLE org (
@@ -55,9 +59,6 @@ CREATE TABLE skill (
 -- PAGE 3-A | 문서→지식→Task 파이프라인 — Tier 1
 -- =====================================================================
 
--- ⚠ 발견한 이슈: PROJ.owner_account_id는 USER_ACCOUNT를 참조하는데, 원래
--- 세션 초반에 설계했던 tenant_id는 Figma 상에서 이미 빠져있었다(3-C가
--- 독자적으로 만들어지면서 owner_account_id로 대체된 것으로 보임). 그대로 반영.
 CREATE TABLE proj (
     proj_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name              VARCHAR(200) NOT NULL,
@@ -70,8 +71,8 @@ CREATE TABLE proj (
 -- PAGE 3-C | 플랫폼 운영·권한 — Tier 2 (PROJ, USER_ACCOUNT 의존)
 -- =====================================================================
 
-CREATE TABLE project_member (
-    project_member_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE proj_member (
+    proj_member_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     proj_id             UUID NOT NULL REFERENCES proj(proj_id) ON DELETE CASCADE,
     account_id          UUID NOT NULL REFERENCES user_account(account_id) ON DELETE CASCADE,
     access_role         VARCHAR(20) NOT NULL,   -- OWNER / EDITOR / VIEWER
@@ -79,8 +80,8 @@ CREATE TABLE project_member (
     UNIQUE (proj_id, account_id)
 );
 
-CREATE TABLE connector_connection (
-    connection_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE connector_conn (
+    conn_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     account_id                UUID NOT NULL REFERENCES user_account(account_id) ON DELETE CASCADE,
     connector_type            VARCHAR(30) NOT NULL,   -- GOOGLE_DRIVE / JIRA
     granted_scopes            JSONB NOT NULL DEFAULT '[]',
@@ -89,10 +90,10 @@ CREATE TABLE connector_connection (
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE project_source (
-    project_source_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE proj_source (
+    proj_source_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     proj_id              UUID NOT NULL REFERENCES proj(proj_id) ON DELETE CASCADE,
-    connection_id        UUID NOT NULL REFERENCES connector_connection(connection_id) ON DELETE CASCADE,
+    conn_id        UUID NOT NULL REFERENCES connector_conn(conn_id) ON DELETE CASCADE,
     source_type          VARCHAR(30) NOT NULL,   -- DRIVE_FOLDER / JIRA_PROJECT
     external_source_id   VARCHAR(255) NOT NULL,  -- 실제 Drive 폴더 ID / Jira 프로젝트 키
     sync_status           VARCHAR(20) NOT NULL DEFAULT 'PENDING'
@@ -127,8 +128,8 @@ CREATE TABLE person_skill (
 );
 
 -- Figma 레이어명은 IDENTITY_LINK, 테이블 표시명은 "link"
-CREATE TABLE identity_link (
-    link_id     VARCHAR(5) PRIMARY KEY,
+CREATE TABLE person_link (
+    person_link_id     VARCHAR(5) PRIMARY KEY,
     person_id   VARCHAR(5) NOT NULL REFERENCES person(person_id) ON DELETE CASCADE,
     sys_type    VARCHAR(30) NOT NULL,   -- 외부 시스템 유형(JIRA 등)
     ext_email   VARCHAR(255) NOT NULL,
@@ -157,8 +158,8 @@ CREATE TABLE absence (
     status         VARCHAR(20) NOT NULL DEFAULT 'REQUESTED'
 );
 
-CREATE TABLE existing_task (
-    existing_task_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE exist_task (
+    exist_task_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     assignee_person_id   VARCHAR(5) REFERENCES person(person_id), 
     jira_issue_id        VARCHAR(50) NOT NULL,
     status                VARCHAR(20),
@@ -169,8 +170,8 @@ CREATE TABLE existing_task (
     spent                 NUMERIC(6,2)
 );
 
-CREATE TABLE calendar_event (
-    calendar_event_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE cal_event (
+    cal_event_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     person_id             VARCHAR(5) NOT NULL REFERENCES person(person_id) ON DELETE CASCADE,
     event_type            VARCHAR(30) NOT NULL,
     start_at              TIMESTAMPTZ NOT NULL,
@@ -362,7 +363,7 @@ CREATE TABLE audit_log (
 -- PAGE 3-B | People DB — Tier 2 (ANA_SNAPSHOT / PERSON / EXISTING_TASK 의존)
 -- =====================================================================
 
-CREATE TABLE feature_readiness_result (
+CREATE TABLE feat_ready_result (
     readiness_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     snapshot_id        UUID NOT NULL REFERENCES ana_snapshot(snap_id) ON DELETE CASCADE,
     feature_type        VARCHAR(50) NOT NULL,
@@ -373,8 +374,8 @@ CREATE TABLE feature_readiness_result (
     checked_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE person_snapshot (
-    person_snapshot_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE person_snap (
+    person_snap_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     snapshot_id           UUID NOT NULL REFERENCES ana_snapshot(snap_id) ON DELETE CASCADE,
     person_id             VARCHAR(5) NOT NULL REFERENCES person(person_id),
     role_json              JSONB,
@@ -384,10 +385,10 @@ CREATE TABLE person_snapshot (
     source_version           VARCHAR(30)
 );
 
-CREATE TABLE existing_task_snapshot (
-    task_snapshot_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE exist_task_snap (
+    exist_task_snap_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     snapshot_id            UUID NOT NULL REFERENCES ana_snapshot(snap_id) ON DELETE CASCADE,
-    existing_task_id        UUID NOT NULL REFERENCES existing_task(existing_task_id),
+    exist_task_id        UUID NOT NULL REFERENCES exist_task(exist_task_id),
     assignee_person_id      VARCHAR(5) REFERENCES person(person_id),
     estimate                 NUMERIC(6,2),
     remaining                NUMERIC(6,2)
@@ -397,10 +398,10 @@ CREATE TABLE existing_task_snapshot (
 -- PAGE 3-B | People DB — Tier 3 (배정 실행)
 -- =====================================================================
 
-CREATE TABLE assignment_run (
+CREATE TABLE assign_run (
     run_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     snapshot_id      UUID NOT NULL REFERENCES ana_snapshot(snap_id),
-    readiness_id     UUID REFERENCES feature_readiness_result(readiness_id),
+    readiness_id     UUID REFERENCES feat_ready_result(readiness_id),
     model_version     VARCHAR(30),
     policy_version    VARCHAR(30),
     status            VARCHAR(20) NOT NULL DEFAULT 'RUNNING',
@@ -413,7 +414,7 @@ CREATE TABLE assignment_run (
 
 CREATE TABLE workload_result (
     workload_result_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id                 UUID NOT NULL REFERENCES assignment_run(run_id) ON DELETE CASCADE,
+    run_id                 UUID NOT NULL REFERENCES assign_run(run_id) ON DELETE CASCADE,
     person_id              VARCHAR(5) NOT NULL REFERENCES person(person_id),
     effective_capacity      NUMERIC(6,2),
     current_allocation      NUMERIC(6,2),
@@ -421,9 +422,9 @@ CREATE TABLE workload_result (
     load_rate                NUMERIC(5,2)
 );
 
-CREATE TABLE recommendation_result (
-    recommendation_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id                UUID NOT NULL REFERENCES assignment_run(run_id) ON DELETE CASCADE,
+CREATE TABLE reco_result (
+    reco_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id                UUID NOT NULL REFERENCES assign_run(run_id) ON DELETE CASCADE,
     task_id               UUID NOT NULL REFERENCES task(task_id),
     status                 VARCHAR(20) NOT NULL,   -- PASS / CONDITIONAL_PASS / REJECT
     confidence              NUMERIC(4,3),
@@ -436,9 +437,9 @@ CREATE TABLE recommendation_result (
 -- PAGE 3-B | People DB — Tier 5 (후보/검증)
 -- =====================================================================
 
-CREATE TABLE recommendation_candidate (
-    candidate_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    recommendation_id   UUID NOT NULL REFERENCES recommendation_result(recommendation_id) ON DELETE CASCADE,
+CREATE TABLE reco_cand (
+    cand_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reco_id   UUID NOT NULL REFERENCES reco_result(reco_id) ON DELETE CASCADE,
     person_id            VARCHAR(5) NOT NULL REFERENCES person(person_id),
     rank                  INT,
     fit_score              NUMERIC(5,2),
@@ -446,9 +447,9 @@ CREATE TABLE recommendation_candidate (
     is_alternative           BOOLEAN NOT NULL DEFAULT false
 );
 
-CREATE TABLE validation_result (
-    validation_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    recommendation_id     UUID NOT NULL REFERENCES recommendation_result(recommendation_id) ON DELETE CASCADE,
+CREATE TABLE valid_result (
+    valid_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reco_id     UUID NOT NULL REFERENCES reco_result(reco_id) ON DELETE CASCADE,
     status                  VARCHAR(20) NOT NULL,
     missing_data             JSONB,
     confidence                NUMERIC(4,3)
@@ -458,9 +459,9 @@ CREATE TABLE validation_result (
 -- PAGE 3-B | People DB — Tier 6 (근거/체크/결정)
 -- =====================================================================
 
-CREATE TABLE recommendation_evidence (
+CREATE TABLE reco_evidence (
     evidence_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    candidate_id       UUID NOT NULL REFERENCES recommendation_candidate(candidate_id) ON DELETE CASCADE,
+    cand_id       UUID NOT NULL REFERENCES reco_cand(cand_id) ON DELETE CASCADE,
     evidence_type        VARCHAR(30) NOT NULL,
     source_id             UUID,   -- 다형 참조(어느 테이블의 근거인지 evidence_type으로 구분) — FK 강제 안 함
     reason                 TEXT,
@@ -468,9 +469,9 @@ CREATE TABLE recommendation_evidence (
     verified                BOOLEAN NOT NULL DEFAULT false
 );
 
-CREATE TABLE validation_check (
-    validation_check_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    validation_id           UUID NOT NULL REFERENCES validation_result(validation_id) ON DELETE CASCADE,
+CREATE TABLE valid_check (
+    valid_check_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    valid_id           UUID NOT NULL REFERENCES valid_result(valid_id) ON DELETE CASCADE,
     check_type                VARCHAR(50) NOT NULL,
     result                     VARCHAR(20) NOT NULL,
     actual_value                JSONB,
@@ -478,13 +479,17 @@ CREATE TABLE validation_check (
     severity                       VARCHAR(20)
 );
 
-CREATE TABLE decision_record (
+CREATE TABLE decision_rec (
     decision_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    recommendation_id          UUID NOT NULL REFERENCES recommendation_result(recommendation_id),
-    validation_id                UUID REFERENCES validation_result(validation_id),
+    reco_id          UUID NOT NULL REFERENCES reco_result(reco_id),
+    valid_id                UUID REFERENCES valid_result(valid_id),
     pm_action                     VARCHAR(20) NOT NULL,  -- APPROVE / MODIFY / REJECT
     reason                          TEXT,
-    modified_candidate_id            UUID REFERENCES recommendation_candidate(candidate_id),
+    modified_cand_id            UUID REFERENCES reco_cand(cand_id),
     decided_by                        UUID REFERENCES user_account(account_id),
     decided_at                          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- =====================================================================
+-- 끝. 총 40개 테이블 (VEC_IDX 제외 — ChromaDB, chroma_setup.py 참고)
+-- =====================================================================
