@@ -11,11 +11,19 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../../DB/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U project_copilot -d project_copilot"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
 
   web:
     build:
@@ -49,4 +57,5 @@ services:
 
 volumes:
   postgres_data:
+  chroma_data:
   frontend_node_modules:
