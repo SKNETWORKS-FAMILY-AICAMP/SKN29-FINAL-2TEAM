@@ -2,7 +2,7 @@
 
 > 대상: AI 프로젝트 운영 코파일럿 백엔드 작업자  
 > 기준일: 2026-07-28  
-> 범위: Django + PostgreSQL/pgvector + ChromaDB + React/Vite 로컬 공통 환경. React 화면 구현은 Figma/프론트엔드 팀 작업 범위다.
+> 범위: Django + PostgreSQL/pgvector + React/Vite 로컬 공통 환경. React 화면 구현은 Figma/프론트엔드 팀 작업 범위다.
 
 ---
 
@@ -12,8 +12,7 @@
 
 ```text
 Docker Desktop
-├─ db       : PostgreSQL 17 + pgvector (호스트 포트 5432)
-├─ chroma   : ChromaDB 벡터 DB 서버 (호스트 포트 8001)
+├─ db       : PostgreSQL 17 + pgvector, VEC_IDX 벡터 검색 포함 (호스트 포트 5432)
 ├─ web      : Django + DRF 개발 서버 (호스트 포트 8000)
 └─ frontend : React + Vite 개발 서버 (호스트 포트 5173)
 ```
@@ -38,7 +37,7 @@ docker info
 
 `docker info`에서 Docker daemon 연결 오류가 나면 Docker Desktop을 먼저 실행한다.
 
-Python 가상환경은 Docker 방식으로만 개발할 때 필수가 아니다. 문서 파싱·AI 모듈을 컨테이너 밖에서 개별 실험할 때, 그리고 아래 7장의 `chroma_setup.py` 실행 시에만 별도로 구성한다.
+Python 가상환경은 Docker 방식으로만 개발할 때 필수가 아니다. 문서 파싱·AI 모듈을 컨테이너 밖에서 개별 실험할 때, 그리고 아래 7장의 `vec_idx_setup.py` 실행 시에만 별도로 구성한다.
 
 ---
 
@@ -94,7 +93,6 @@ docker compose -f infra/docker/docker-compose.yml ps
 정상 상태 예시:
 
 ```text
-chroma   Up (healthy)   0.0.0.0:8001->8000/tcp
 db       Up (healthy)   0.0.0.0:5432->5432/tcp
 web      Up             0.0.0.0:8000->8000/tcp
 frontend Up             0.0.0.0:5173->5173/tcp
@@ -127,7 +125,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk` 등 40개 테이블이 보이면 정상이다. GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
+`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx` 등 41개 테이블이 보이면 정상이다. GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
 
 **`schema.sql`을 고친 뒤 다시 반영하고 싶을 때** (주의: 로컬 DB 데이터가 전부 삭제된다):
 
@@ -164,27 +162,28 @@ http://127.0.0.1:8000/admin/
 
 ---
 
-## 7. ChromaDB 설정 (`chroma_setup.py`)
+## 7. VEC_IDX(pgvector) 설정 (`vec_idx_setup.py`)
 
-벡터 검색용 ChromaDB는 `chroma` 서비스로 자동 기동된다. 컨테이너 내부는 8000번 포트지만 `web`이 이미 호스트 8000을 쓰고 있어서, 호스트 쪽만 **8001**로 뺐다. 데이터는 `chroma_data` 볼륨에 영속화되어 `db`처럼 컨테이너를 껐다 켜도 유지된다.
+벡터 검색은 별도 서비스 없이 `db`의 `vec_idx` 테이블(pgvector)로 처리한다. `pgvector/pgvector:pg17` 이미지가 `vector` 확장을 이미 포함하고 있어서, `schema.sql`의 `CREATE EXTENSION IF NOT EXISTS vector;`만으로 준비가 끝난다.
 
-`chroma_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다.
+`vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. `vec_idx.chunk_id`에는 `chunk`를 가리키는 실FK가 걸려 있으므로, 스크립트가 데모용 `proj → doc → doc_block → chunk` 체인을 먼저 만든 뒤 그 청크에 벡터를 저장한다.
 
 ```powershell
-pip install chromadb --break-system-packages
-python backend/services/createDB/chroma_setup.py
+pip install "psycopg[binary]"
+$env:DATABASE_URL = "postgres://project_copilot:project_copilot@localhost:5432/project_copilot"
+python backend/services/createDB/vec_idx_setup.py
 ```
 
 정상 실행되면 다음과 같이 출력된다.
 
 ```text
-컬렉션 'chunks_embed-1.0'에 저장 완료. 현재 문서 수: 1
+VEC_IDX에 저장 완료. 현재 벡터 수: 1
 ```
 
-**Chroma 서버 자체가 살아있는지 확인:**
+**`vector` 확장이 설치돼 있는지 확인:**
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8001/api/v1/heartbeat
+docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dx"
 ```
 
 ---
@@ -229,9 +228,6 @@ docker compose -f infra/docker/docker-compose.yml logs -f web
 # PostgreSQL 로그
 docker compose -f infra/docker/docker-compose.yml logs -f db
 
-# ChromaDB 로그
-docker compose -f infra/docker/docker-compose.yml logs -f chroma
-
 # 모델 변경 후 Migration 생성·적용
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py makemigrations
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py migrate
@@ -239,17 +235,17 @@ docker compose -f infra/docker/docker-compose.yml exec web python manage.py migr
 # 자동 테스트
 docker compose -f infra/docker/docker-compose.yml exec web python manage.py test tests
 
-# 서비스만 중지 (DB/Chroma 데이터 유지)
+# 서비스만 중지 (DB 데이터 유지)
 docker compose -f infra/docker/docker-compose.yml stop
 
-# 서비스와 네트워크 제거 (DB/Chroma Volume 유지)
+# 서비스와 네트워크 제거 (DB Volume 유지)
 docker compose -f infra/docker/docker-compose.yml down
 
-# DB·Chroma까지 완전 초기화 — 주의: 로컬 데이터 전부 삭제
+# DB까지 완전 초기화 — 주의: 로컬 데이터 전부 삭제
 docker compose -f infra/docker/docker-compose.yml down -v
 ```
 
-`down -v` 후에는 다시 `up`, `migrate`, `createsuperuser`, `seed_demo_people`, `chroma_setup.py`를 실행해야 한다.
+`down -v` 후에는 다시 `up`, `migrate`, `createsuperuser`, `seed_demo_people`, `vec_idx_setup.py`를 실행해야 한다.
 
 ---
 
@@ -261,11 +257,11 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | Docker daemon 연결 실패 | Docker Desktop을 실행한 뒤 재시도 |
 | `db`가 `healthy`가 되지 않음 | `docker compose ... logs db`로 오류 확인 후 포트 5432 충돌 여부 확인 |
 | 웹 컨테이너가 DB에 연결하지 못함 | `.env`의 `DATABASE_URL`을 임의로 `db`로 바꾸지 말고 Compose 환경변수 설정 유지 |
-| 8000 포트 충돌 | `"8000:8000"`을 `"8001:8000"`으로 변경하고 React API 주소도 함께 변경 (단, `chroma`가 이미 호스트 8001을 쓰므로 겹치지 않게 다른 포트를 고른다) |
+| 8000 포트 충돌 | `"8000:8000"`을 `"8001:8000"`으로 변경하고 React API 주소도 함께 변경 |
 | `schema.sql`을 고쳤는데 반영이 안 됨 | init 스크립트는 볼륨이 빌 때만 실행된다. 5장을 참고해 `postgres_data` 볼륨 삭제 후 재기동 |
-| `localhost:8001`(Chroma) 접속 실패 | `docker compose ps`로 `chroma` 컨테이너 상태 확인, 8001 포트를 다른 프로세스가 점유하고 있는지 확인 |
+| `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `vector` 확장을 아직 안 탄 볼륨. 7장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
 | 모델 변경이 반영되지 않음 | `makemigrations` 후 `migrate` 실행 |
-| 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB·Chroma 초기화 후 Seed·`chroma_setup.py` 재실행 |
+| 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed·`vec_idx_setup.py` 재실행 |
 
 ---
 

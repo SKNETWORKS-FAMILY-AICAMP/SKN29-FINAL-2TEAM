@@ -302,11 +302,11 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 ## 3. 이 스키마가 지키고 있는 설계 원칙 (요약)
 
 1. **저장소 역할 분리** — 3-B RDBMS는 진짜 데이터(14개 테이블), 3-A pgvector는 검색용 보조 인덱스(`VEC_IDX` 1개)다. 검색 인덱스를 재생성해도 원본 데이터와 계보는 손실되지 않는다.
-2. **프로젝트 범위 격리** — 문서·Block·Chunk·지식·Task·Snapshot은 `proj_id`를 기준으로 조회 범위를 제한한다. 플랫폼 접근권한은 3-C의 `PROJECT_MEMBER`가 관리한다.
+2. **프로젝트 범위 격리** — 문서·Block·Chunk·지식·Task·Snapshot은 `proj_id`를 기준으로 조회 범위를 제한한다. 플랫폼 접근권한은 3-C의 `PROJ_MEMBER`가 관리한다.
 3. **리비전은 별도 테이블 없이 스탬프로 추적** — `DOC.cur_revision`이 "지금 최신이 뭔지"를 가리키고, `DOC_BLOCK`/`VEC_IDX`/`DOC_SYNC`는 자기가 만들어진 시점의 `revision` 값을 스탬프처럼 찍어둔다. "이게 최신인가?"는 `내_revision == DOC.cur_revision` 비교로 계산하며, 과거 리비전 데이터를 지우지 않아도 최신 데이터만 조회할 수 있다.
 4. **계산 가능한 값은 저장하지 않는다** — 예: `heading_level`은 `heading_path` 배열 길이로 계산, 블록/청크 개수는 COUNT 쿼리로 계산. 다만 `parse_status`처럼 "처리 결과 자체"인 값은 계산으로 만들 수 없으므로 저장한다.
 5. **Evidence-first(근거 우선) 원칙** — `KNOW_ITEM_SRC`, `TASK_KNOW_SRC`가 "이 지식/업무가 어디서 왜 나왔는지"를 문장(`quote_text`, `rationale`) 단위까지 저장한다. 결과만 보여주지 않고 항상 원문으로 되짚어갈 수 있게 한다.
-6. **JOIN을 활용한 중복 제거** — pgvector를 쓰는 한, `CHUNK`나 `VEC_IDX`에 업무 메타데이터를 중복 저장하지 않고 `CHUNK → KNOW_ITEM_SRC → KNOW_ITEM.semantic_type` JOIN으로 "업무 관련 Chunk만" 걸러낼 수 있다. (Chroma 같은 네이티브 Vector DB로 바꾸면 JOIN이 안 되므로 이 전제는 재검토가 필요하다.)
+6. **JOIN을 활용한 중복 제거** — `VEC_IDX`가 3-B와 같은 PostgreSQL 인스턴스의 pgvector 테이블이므로, `CHUNK`나 `VEC_IDX`에 업무 메타데이터를 중복 저장하지 않고 `CHUNK → KNOW_ITEM_SRC → KNOW_ITEM.semantic_type` JOIN으로 "업무 관련 Chunk만" 걸러낼 수 있다.
 
 ---
 

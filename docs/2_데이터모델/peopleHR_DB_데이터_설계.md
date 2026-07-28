@@ -206,7 +206,7 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 
 Workday의 실제 WorkerSkill 모델은 proficiency(레벨: Not Applicable/Beginner/Intermediate/Experienced/Advanced/Expert)와 endorsement(동료·매니저의 확인)로 구성된다 — 우리 `verify_status`(VERIFIED/SELF_REPORTED/UNKNOWN)가 이 endorsement 개념과 대응한다. 다만 Workday의 WorkerSkill은 "Workday라는 단일 출처" 안에서만 동작하면 되는 반면, 우리 시스템은 HR 동기화 + 이력서 파싱 + AI 추론 + 본인 입력까지 여러 출처의 스킬 정보를 같이 다뤄야 한다. 그래서 `source`(어디서 왔는지)와 `confidence`(추론 신뢰도)는 Workday에 없는, 우리 시스템 요구사항에서 나온 필드다.
 
-**`descr`이 필요한 이유**: Workday 자신도 Skills Cloud에서 스킬을 이력서·직무기술서 같은 문서와 "같은 언어(스킬 그래프)"로 표현해서 텍스트 임베딩 기반으로 매칭한다(아래 출처 참고). 우리 프로젝트도 ChromaDB 임베딩으로 문서·업무를 매칭하는 파이프라인을 쓰므로, `skill.descr`이 있으면 스킬명 완전일치가 아니라 "이 업무 설명과 의미적으로 가까운 스킬"을 임베딩으로 찾는 매칭이 가능해진다.
+**`descr`이 필요한 이유**: Workday 자신도 Skills Cloud에서 스킬을 이력서·직무기술서 같은 문서와 "같은 언어(스킬 그래프)"로 표현해서 텍스트 임베딩 기반으로 매칭한다(아래 출처 참고). 우리 프로젝트도 pgvector(`VEC_IDX`) 임베딩으로 문서·업무를 매칭하는 파이프라인을 쓰므로, `skill.descr`이 있으면 스킬명 완전일치가 아니라 "이 업무 설명과 의미적으로 가까운 스킬"을 임베딩으로 찾는 매칭이 가능해진다.
 
 **뺀 것**: Workday의 실제 Skill 객체(`id`, `name`, `locale`, `category`, `description`) 중 `locale`(언어)만 뺐다. 단일 언어(한국어) 데모에는 `locale`이 의미가 없어서다.
 
