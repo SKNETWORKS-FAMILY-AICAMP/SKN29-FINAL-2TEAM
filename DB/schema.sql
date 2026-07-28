@@ -3,13 +3,16 @@
 -- Figma "PAGE3-v2" 섹션(PAGE 3-A/3-B/3-C) 현재 상태를 그대로 옮긴 DDL
 -- 생성일: 2026-07-28
 --
--- 주의: VEC_IDX(벡터 검색 인덱스)는 이 파일에 없다 — ChromaDB로 확정되어
--- PostgreSQL 테이블이 아니다. chroma_setup.py를 참고.
+-- VEC_IDX(벡터 검색 인덱스)는 pgvector 기반으로 이 파일에 포함된다(Tier 4,
+-- CHUNK 하위). 별도 Vector DB(ChromaDB 등)는 쓰지 않는다 — pgvector/pgvector
+-- 이미지가 이미 vector 확장을 지원하므로 3-B와 같은 PostgreSQL 인스턴스에
+-- 그대로 저장한다.
 --
 -- 실행 순서: 이 파일 하나만 위에서 아래로 실행하면 된다(의존성 순서로 정렬됨).
 -- =====================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid() 사용
+CREATE EXTENSION IF NOT EXISTS vector;    -- VEC_IDX.embedding용 vector 타입
 
 -- =====================================================================
 -- PAGE 3-C | 플랫폼 운영·권한 — Tier 0 (의존성 없음)
@@ -298,6 +301,24 @@ CREATE TABLE chunk (
     chunker_ver     VARCHAR(30)
 );
 
+-- CHUNK와 1:1. embed_dim은 embedding vector(N)의 N과 항상 같아야 하며,
+-- 임베딩 모델 교체로 차원이 달라지면 새 embed_ver로 재임베딩해서 별도 행을
+-- 쌓는다(기존 행을 고치지 않음 — is_active로 최신 여부만 표시).
+CREATE TABLE vec_idx (
+    vec_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chunk_id        UUID NOT NULL UNIQUE REFERENCES chunk(chunk_id) ON DELETE CASCADE,
+    embedding       VECTOR(1536) NOT NULL,
+    metadata        JSONB NOT NULL DEFAULT '{}',
+    indexed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embed_model     VARCHAR(100),
+    embed_ver       VARCHAR(30),
+    embed_dim       INT,
+    dist_metric     VARCHAR(20) NOT NULL DEFAULT 'COSINE',
+    content_hash    VARCHAR(100),
+    revision        VARCHAR(50),
+    is_active       BOOLEAN NOT NULL DEFAULT true
+);
+
 CREATE TABLE know_item_src (
     know_item_id   UUID NOT NULL REFERENCES know_item(know_item_id) ON DELETE CASCADE,
     block_id        UUID NOT NULL REFERENCES doc_block(block_id) ON DELETE CASCADE,
@@ -491,5 +512,5 @@ CREATE TABLE decision_rec (
 );
 
 -- =====================================================================
--- 끝. 총 40개 테이블 (VEC_IDX 제외 — ChromaDB, chroma_setup.py 참고)
+-- 끝. 총 41개 테이블 (VEC_IDX 포함, pgvector 기반)
 -- =====================================================================

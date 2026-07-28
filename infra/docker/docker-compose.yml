@@ -18,13 +18,6 @@ services:
       timeout: 5s
       retries: 10
 
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-
   web:
     build:
       context: ../..
@@ -57,5 +50,4 @@ services:
 
 volumes:
   postgres_data:
-  chroma_data:
   frontend_node_modules:
