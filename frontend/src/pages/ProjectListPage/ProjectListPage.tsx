@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { BadgeTone } from '../../components';
 import { Icon, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -83,6 +84,7 @@ export default function ProjectListPage() {
   const [selectedActiveId, setSelectedActiveId] = useState<string | null>(null);
   const [selectedCompletedId, setSelectedCompletedId] = useState<string | null>(null);
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const query = search.trim().toLowerCase();
 
@@ -238,7 +240,12 @@ export default function ProjectListPage() {
       <button
         type="button"
         className={styles.floatingCta}
-        onClick={() => showToast('업무 분배 워크플로우로 이동합니다', 'info')}
+        onClick={() => {
+          showToast('업무 분배 워크플로우로 이동합니다', 'info');
+          setTimeout(() => {
+            navigate('/workspace');
+          }, 700);
+        }}
       >
         <Icon name="sparkles" size={20} color="#fff" />
         <span>업무 분배 시작</span>

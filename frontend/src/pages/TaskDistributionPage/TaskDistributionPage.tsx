@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Icon, TopNav } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import styles from './TaskDistributionPage.module.css';
@@ -84,7 +85,15 @@ function weightClassName(weight: StepWeight): string {
 
 export default function TaskDistributionPage() {
   const [screenState, setScreenState] = useState<ScreenState>('loading');
+  const navigate = useNavigate();
   const config = STATE_CONFIG[screenState];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      navigate('/tasks/recommendation');
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [navigate]);
 
   return (
     <div className={styles.page}>

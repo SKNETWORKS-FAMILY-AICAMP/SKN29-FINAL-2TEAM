@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Icon, Modal, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import { MemberRow } from './MemberRow';
@@ -28,6 +29,7 @@ export default function WorkspacePage() {
   const [requirements, setRequirements] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const selectionCount = checkedIds.size;
 
@@ -46,6 +48,9 @@ export default function WorkspacePage() {
   function handleConfirm() {
     setModalOpen(false);
     showToast('업무 분배가 시작되었습니다.', 'success');
+    setTimeout(() => {
+      navigate('/tasks/distribution');
+    }, 700);
   }
 
   const modalFooter = (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Icon, TopNav, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -82,6 +83,7 @@ const TASKS: TaskCard[] = [
 
 export default function TaskRecommendationPage() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [notifOpen, setNotifOpen] = useState(false);
@@ -238,10 +240,26 @@ export default function TaskRecommendationPage() {
       </div>
 
       <footer className={styles.bottomBar}>
-        <Button variant="secondary" onClick={() => showToast('이전 단계로 이동합니다.')}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            showToast('이전 단계로 이동합니다.');
+            setTimeout(() => {
+              navigate('/tasks/distribution');
+            }, 500);
+          }}
+        >
           이전 단계
         </Button>
-        <Button variant="primary" onClick={() => showToast('검증 결과 확인 단계로 이동합니다.')}>
+        <Button
+          variant="primary"
+          onClick={() => {
+            showToast('검증 결과 확인 단계로 이동합니다.');
+            setTimeout(() => {
+              navigate('/tasks/result');
+            }, 700);
+          }}
+        >
           다음: 검증 결과 확인
         </Button>
       </footer>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Badge, Icon, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import { FileRegistrationTable, FILE_ROWS, DEFAULT_SELECTED_IDS } from './FileRegistrationTable';
@@ -28,6 +29,7 @@ export default function NewFilesPage() {
   const [demoState, setDemoState] = useState<DemoState>('empty');
   const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTED_IDS));
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const supportedIds = useMemo(() => FILE_ROWS.filter((row) => row.supported).map((row) => row.id), []);
 
@@ -51,7 +53,10 @@ export default function NewFilesPage() {
   }
 
   function handleSubmit() {
-    showToast(`선택한 ${selected.size}개 파일을 등록합니다.`, 'success');
+    showToast(`선택한 ${selected.size}개 파일 등록이 완료되었습니다.`, 'success');
+    setTimeout(() => {
+      navigate('/projects');
+    }, 900);
   }
 
   return (
@@ -72,7 +77,7 @@ export default function NewFilesPage() {
         ))}
       </div>
 
-      <TopNav tabs={MAIN_NAV_TABS} activeTo="/projects" userLabel="관리자" />
+      <TopNav tabs={MAIN_NAV_TABS} activeTo="/files/new" userLabel="관리자" />
 
       <div className={styles.contentContainer}>
         {demoState === 'empty' && (
