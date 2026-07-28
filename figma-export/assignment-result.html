@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>halil — 업무 배정 결과 대시보드</title>
+<style>
+  :root{
+    --bg:#f8fafc;
+    --primary:#1e3a5f;
+    --border:#e2e8f0;
+    --heading:#0f172a;
+    --body:#475569;
+    --muted:#94a3b8;
+    --danger:#ef4444;
+    --danger-bg:#fee2e2;
+    --danger-text:#dc2626;
+    --success-bg:#ecfdf5;
+    --success:#10b981;
+    --warning-bg:#fffbeb;
+    --warning:#f59e0b;
+    --muted-bg:#f1f5f9;
+    --muted-text:#64748b;
+    --info:#3b82f6;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--font);
+    background:#e7ebf0;
+    color:var(--body);
+    -webkit-font-smoothing:antialiased;
+  }
+  svg{display:block;}
+
+  /* ---------- Demo toggle bar ---------- */
+  .demo-toggle-bar{
+    position:sticky;
+    top:0;
+    z-index:100;
+    display:flex;
+    align-items:center;
+    gap:16px;
+    padding:14px 24px;
+    background:var(--primary);
+    color:#fff;
+    flex-wrap:wrap;
+  }
+  .demo-toggle-title{
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:.02em;
+    opacity:.85;
+    white-space:nowrap;
+  }
+  .demo-toggle-buttons{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .demo-toggle-btn{
+    font-family:var(--font);
+    font-size:13px;
+    font-weight:600;
+    padding:8px 16px;
+    border-radius:8px;
+    border:1px solid rgba(255,255,255,0.3);
+    background:transparent;
+    color:#fff;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+  }
+  .demo-toggle-btn:hover{
+    background:rgba(255,255,255,0.12);
+  }
+  .demo-toggle-btn.active{
+    background:#fff;
+    color:var(--primary);
+    border-color:#fff;
+  }
+
+  /* ---------- Screen shell ---------- */
+  .state-screen{
+    background:var(--bg);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    min-height:100vh;
+  }
+  .screen-inner{
+    width:1440px;
+    max-width:100%;
+    background:var(--bg);
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    position:relative;
+  }
+  @media (max-width:1460px){
+    .screen-inner{ width:100%; overflow-x:auto; }
+  }
+
+  /* ---------- Top nav ---------- */
+  .topnav{
+    background:#fff;
+    border-bottom:0.5px solid var(--border);
+    height:64px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 40px;
+    flex-shrink:0;
+  }
+  .nav-left{
+    display:flex;
+    align-items:center;
+    gap:48px;
+  }
+  .logo{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .logo-mark{
+    width:28px;
+    height:28px;
+    border-radius:6px;
+    background:var(--primary);
+  }
+  .logo-text{
+    font-size:20px;
+    font-weight:800;
+    color:var(--primary);
+  }
+  .nav-tabs{
+    display:flex;
+    align-items:center;
+    gap:32px;
+  }
+  .tab{
+    font-size:15px;
+    font-weight:500;
+    color:var(--body);
+    padding:22px 0 18px;
+    position:relative;
+    cursor:default;
+  }
+  .tab.active{
+    font-weight:700;
+    color:var(--primary);
+  }
+  .tab.active::after{
+    content:"";
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    height:2px;
+    background:var(--primary);
+  }
+  .nav-right{
+    display:flex;
+    align-items:center;
+    gap:20px;
+  }
+  .icon-btn{
+    width:40px;
+    height:40px;
+    border-radius:20px;
+    border:none;
+    background:transparent;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:var(--body);
+    cursor:pointer;
+  }
+  .icon-btn:hover{ background:var(--bg); }
+  .admin-profile{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .admin-profile span{
+    font-size:14px;
+    font-weight:600;
+    color:var(--heading);
+  }
+  .avatar{
+    border-radius:50%;
+    background:var(--border);
+    color:var(--heading);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+    flex-shrink:0;
+    overflow:hidden;
+  }
+  .avatar.sz-32{ width:32px; height:32px; font-size:13px; }
+  .avatar.sz-24{ width:24px; height:24px; font-size:11px; }
+  .avatar.sz-48{ width:48px; height:48px; font-size:17px; background:#c7d2e5; }
+
+  /* ---------- Main container ---------- */
+  .main-container{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:28px;
+    padding:40px 40px 120px;
+  }
+  .page-header h1{
+    margin:0;
+    font-size:26px;
+    font-weight:800;
+    color:var(--heading);
+  }
+  .page-header p{
+    margin:8px 0 0;
+    font-size:15px;
+    font-weight:500;
+    color:var(--body);
+  }
+
+  .grid-split{
+    display:flex;
+    align-items:flex-start;
+    gap:24px;
+    width:100%;
+  }
+
+  /* ---------- Left column: table card ---------- */
+  .left-column{
+    flex:1 1 0;
+    min-width:0;
+    background:#fff;
+    border:0.5px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+  }
+  .table-action-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:20px;
+    border-bottom:0.5px solid var(--border);
+  }
+  .table-action-header h2{
+    margin:0;
+    font-size:16px;
+    font-weight:700;
+    color:var(--heading);
+  }
+  .table-controls{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .search-box{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    width:220px;
+    padding:8px 12px;
+    background:var(--bg);
+    border:0.5px solid var(--border);
+    border-radius:6px;
+    color:var(--muted);
+  }
+  .search-box input{
+    border:none;
+    background:transparent;
+    outline:none;
+    font-family:var(--font);
+    font-size:13px;
+    color:var(--heading);
+    width:100%;
+  }
+  .search-box input::placeholder{ color:var(--muted); }
+  .filter-btn{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:8px 12px;
+    background:#fff;
+    border:0.5px solid var(--border);
+    border-radius:6px;
+    font-family:var(--font);
+    font-size:13px;
+    font-weight:500;
+    color:var(--body);
+    cursor:pointer;
+  }
+  .filter-btn:hover{ background:var(--bg); }
+
+  .task-table{ width:100%; }
+  .thead-row{
+    display:flex;
+    background:var(--bg);
+    border-bottom:0.5px solid var(--border);
+    padding:12px 24px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--body);
+  }
+  .col-task{ flex:1 1 0; min-width:0; }
+  .col-id{ width:120px; flex-shrink:0; }
+  .col-status{ width:120px; flex-shrink:0; }
+  .col-assignee{ width:160px; flex-shrink:0; }
+
+  .trow{
+    display:flex;
+    align-items:center;
+    padding:16px 24px;
+    border-bottom:0.5px solid var(--border);
+    background:#fff;
+  }
+  .trow:last-child{ border-bottom:none; }
+  .trow.highlight{ background:var(--bg); }
+  .trow .col-task{
+    font-size:14px;
+    font-weight:600;
+    color:var(--heading);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .trow .col-id{ font-size:14px; color:var(--body); }
+
+  .status-badge{
+    display:inline-flex;
+    padding:4px 10px;
+    border-radius:6px;
+    font-size:12px;
+    font-weight:600;
+  }
+  .status-badge.success{ background:var(--success-bg); color:var(--success); }
+  .status-badge.warning{ background:var(--warning-bg); color:var(--warning); }
+  .status-badge.muted{ background:var(--muted-bg); color:var(--muted-text); }
+  .status-badge.danger{ background:var(--danger-bg); color:var(--danger-text); }
+
+  .assignee-pill{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    width:160px;
+    padding:6px 8px;
+    background:#f0f4ff;
+    border:0.5px solid var(--border);
+    border-radius:6px;
+    cursor:pointer;
+    position:relative;
+  }
+  .assignee-pill.empty{ background:transparent; border-color:transparent; padding-left:0; }
+  .assignee-pill span.name{
+    font-size:14px;
+    font-weight:500;
+    color:var(--heading);
+    flex:1 1 0;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .assignee-pill .placeholder{ font-size:14px; color:var(--muted); flex:1; }
+  .assignee-pill .chev{
+    color:var(--body);
+    transition:transform .15s ease;
+    flex-shrink:0;
+  }
+  .assignee-pill.open .chev{ transform:rotate(180deg); }
+  .assignee-dropdown{
+    display:none;
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    right:0;
+    background:#fff;
+    border:0.5px solid var(--border);
+    border-radius:6px;
+    box-shadow:0 4px 12px rgba(15,23,42,0.12);
+    z-index:20;
+    overflow:hidden;
+  }
+  .assignee-pill.open .assignee-dropdown{ display:block; }
+  .assignee-dropdown div{
+    padding:8px 12px;
+    font-size:13px;
+    color:var(--body);
+    cursor:pointer;
+  }
+  .assignee-dropdown div:hover{ background:var(--bg); color:var(--heading); }
+
+  .pagination{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px;
+    border-top:0.5px solid var(--border);
+  }
+  .pagination p{ margin:0; font-size:13px; color:var(--body); }
+  .page-nav{ display:flex; align-items:center; gap:8px; }
+  .page-arrow{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:6px;
+    background:#fff;
+    border:0.5px solid var(--border);
+    border-radius:4px;
+    color:var(--body);
+    cursor:pointer;
+  }
+  .page-arrow:hover{ background:var(--bg); }
+  .page-btn{
+    padding:4px 10px;
+    border-radius:4px;
+    font-size:13px;
+    color:var(--body);
+    background:#fff;
+    border:none;
+    font-family:var(--font);
+    cursor:pointer;
+  }
+  .page-btn.active{
+    background:var(--primary);
+    color:#fff;
+    font-weight:700;
+  }
+
+  /* ---------- Right column: rationale panel ---------- */
+  .right-column{
+    width:380px;
+    flex-shrink:0;
+    background:#fff;
+    border:0.5px solid var(--border);
+    border-radius:12px;
+    padding:24px;
+    display:flex;
+    flex-direction:column;
+    gap:24px;
+  }
+  .right-header h3{
+    margin:0;
+    font-size:16px;
+    font-weight:700;
+    color:var(--heading);
+  }
+  .right-header p{
+    margin:4px 0 0;
+    font-size:12px;
+    color:var(--body);
+  }
+  .selected-task-card{
+    background:var(--bg);
+    border-radius:8px;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .selected-task-card > .task-title{
+    font-size:14px;
+    font-weight:700;
+    color:var(--primary);
+  }
+  .selected-task-card hr{
+    border:none;
+    border-top:0.5px solid var(--border);
+    margin:0;
+    width:100%;
+  }
+  .assignee-detail-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .assignee-meta{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .assignee-meta .a-name{ font-size:15px; font-weight:700; color:var(--heading); }
+  .assignee-meta .a-role{ font-size:12px; color:var(--body); }
+
+  .rationale-section{ display:flex; flex-direction:column; gap:16px; }
+  .rationale-section > h4{
+    margin:0;
+    font-size:13px;
+    font-weight:700;
+    color:var(--heading);
+  }
+  .rationale-bullets{ display:flex; flex-direction:column; gap:12px; }
+  .bullet{ display:flex; gap:8px; align-items:flex-start; }
+  .bullet .dot{
+    width:6px;
+    height:6px;
+    border-radius:3px;
+    background:var(--primary);
+    margin-top:6px;
+    flex-shrink:0;
+  }
+  .bullet p{
+    margin:0;
+    font-size:13px;
+    line-height:1.5;
+    color:var(--body);
+  }
+
+  .reassignment-notice{
+    background:var(--bg);
+    border:0.5px solid var(--border);
+    border-radius:8px;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .notice-header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .notice-icon{
+    width:28px;
+    height:28px;
+    border-radius:8px;
+    background:var(--muted-bg);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:var(--muted-text);
+    flex-shrink:0;
+  }
+  .notice-header p{
+    margin:0;
+    font-size:13px;
+    font-weight:600;
+    color:var(--body);
+  }
+  .reassignment-notice .diff-line{
+    margin:0;
+    font-size:13px;
+    color:var(--body);
+  }
+  .reassignment-notice .disclaimer{
+    margin:0;
+    font-size:12px;
+    color:var(--muted);
+  }
+
+  /* ---------- Bottom action bar ---------- */
+  .bottom-bar{
+    position:sticky;
+    bottom:0;
+    background:#fff;
+    border-top:0.5px solid var(--border);
+    height:80px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 40px;
+    flex-shrink:0;
+    margin-top:auto;
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:12px 24px;
+    border-radius:8px;
+    font-family:var(--font);
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    border:0.5px solid transparent;
+  }
+  .btn-secondary{
+    background:#fff;
+    border-color:var(--border);
+    color:var(--body);
+  }
+  .btn-secondary:hover{ background:var(--bg); }
+  .btn-outline{
+    background:#fff;
+    border-color:var(--primary);
+    color:var(--primary);
+  }
+  .btn-outline:hover{ background:#f0f4ff; }
+  .btn-primary{
+    background:var(--primary);
+    border-color:var(--primary);
+    color:#fff;
+  }
+  .btn-primary:hover{ background:#16304d; }
+  .bottom-bar-right{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    margin-left:auto;
+  }
+</style>
+</head>
+<body>
+
+  <div class="demo-toggle-bar">
+    <span class="demo-toggle-title">미리보기 상태 전환</span>
+    <div class="demo-toggle-buttons">
+      <button class="demo-toggle-btn active" data-target="state-dashboard" type="button">배정 완료 대시보드</button>
+      <button class="demo-toggle-btn" data-target="state-reassigned" type="button">업무 재배정 후</button>
+    </div>
+  </div>
+
+  <!-- ================= STATE 1: assignment-result-dashboard (173:4) ================= -->
+  <div id="state-dashboard" class="state-screen">
+    <div class="screen-inner">
+
+      <div class="topnav">
+        <div class="nav-left">
+          <div class="logo">
+            <div class="logo-mark"></div>
+            <span class="logo-text">halil</span>
+          </div>
+          <div class="nav-tabs">
+            <div class="tab">대시보드</div>
+            <div class="tab">문서 등록</div>
+            <div class="tab active">프로젝트</div>
+            <div class="tab">커넥터</div>
+            <div class="tab">설정</div>
+          </div>
+        </div>
+        <div class="nav-right">
+          <button class="icon-btn" type="button" aria-label="알림" title="알림">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+          <div class="admin-profile">
+            <div class="avatar sz-32">관</div>
+            <span>관리자</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-container">
+        <div class="page-header">
+          <h1>업무 배정 결과 대시보드</h1>
+          <p>4개 업무 후보에 대한 배정 추천이에요</p>
+        </div>
+
+        <div class="grid-split">
+          <div class="left-column">
+            <div class="table-action-header">
+              <h2>Assignment Table</h2>
+              <div class="table-controls">
+                <div class="search-box">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input type="text" placeholder="업무 검색...">
+                </div>
+                <button class="filter-btn" type="button">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
+                  필터
+                </button>
+              </div>
+            </div>
+
+            <div class="task-table">
+              <div class="thead-row">
+                <div class="col-task">Task</div>
+                <div class="col-id">작업 ID</div>
+                <div class="col-status">배정현황</div>
+                <div class="col-assignee">배정 인원</div>
+              </div>
+
+              <div class="trow highlight">
+                <div class="col-task">API 인증 모듈 리팩토링</div>
+                <div class="col-id">AS20001</div>
+                <div class="col-status"><span class="status-badge success">배정완료</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">김</div>
+                    <span class="name">김민수</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">결제 시스템 에러 핸들링 개선</div>
+                <div class="col-id">AS20002</div>
+                <div class="col-status"><span class="status-badge success">배정완료</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">이</div>
+                    <span class="name">이지은</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">API 인증 모듈 프론트엔드 적용</div>
+                <div class="col-id">AS20003</div>
+                <div class="col-status"><span class="status-badge warning">검토중</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">박</div>
+                    <span class="name">박서준</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">결제 시스템 배치 테스트 작성</div>
+                <div class="col-id">AS20004</div>
+                <div class="col-status"><span class="status-badge success">배정완료</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">최</div>
+                    <span class="name">최유진</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">결제 시스템 배치 연동 테스트</div>
+                <div class="col-id">AS20005</div>
+                <div class="col-status"><span class="status-badge muted">미배정</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill empty">
+                    <span class="placeholder">-</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">API 인증 모듈 문서화</div>
+                <div class="col-id">AS20006</div>
+                <div class="col-status"><span class="status-badge warning">검토중</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">김</div>
+                    <span class="name">김민수</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pagination">
+              <p>총 20건 / 4 페이지 중 1</p>
+              <div class="page-nav">
+                <button class="page-arrow" type="button" aria-label="이전 페이지">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                </button>
+                <button class="page-btn active" type="button">1</button>
+                <button class="page-btn" type="button">2</button>
+                <button class="page-btn" type="button">3</button>
+                <button class="page-btn" type="button">4</button>
+                <button class="page-arrow" type="button" aria-label="다음 페이지">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="right-column">
+            <div class="right-header">
+              <h3>Assignment Rationale &amp; Controls</h3>
+              <p>선택된 업무에 대한 배정 근거입니다</p>
+            </div>
+
+            <div class="selected-task-card">
+              <div class="task-title">API 인증 모듈 리팩토링</div>
+              <hr>
+              <div class="assignee-detail-row">
+                <div class="avatar sz-48">김</div>
+                <div class="assignee-meta">
+                  <span class="a-name">김민수</span>
+                  <span class="a-role">Senior Software Engineer</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="rationale-section">
+              <h4>추천 배정 사유</h4>
+              <div class="rationale-bullets">
+                <div class="bullet">
+                  <span class="dot"></span>
+                  <p>이전 인증 시스템 관련 모듈 개발 이력이 3회 이상 존재하여 도메인 숙련도가 매우 높습니다.</p>
+                </div>
+                <div class="bullet">
+                  <span class="dot"></span>
+                  <p>현재 진행 중인 프로젝트 스프린트 잔여 공수 리소스가 가장 충분하여 빠른 리팩토링 착수가 가능합니다.</p>
+                </div>
+                <div class="bullet">
+                  <span class="dot"></span>
+                  <p>최근 리팩토링 프로젝트 코드 리뷰 만족도 및 완성도 지표 1위를 기록하였습니다.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <button class="btn btn-secondary" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          이전 단계
+        </button>
+        <div class="bottom-bar-right">
+          <button class="btn btn-outline" type="button" id="reassign-btn-1">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            업무 재배정
+          </button>
+          <button class="btn btn-primary" type="button">
+            다음: 승인 결과 확인
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= STATE 2: assignment-result-reassigned (175:2) ================= -->
+  <div id="state-reassigned" class="state-screen" style="display:none;">
+    <div class="screen-inner">
+
+      <div class="topnav">
+        <div class="nav-left">
+          <div class="logo">
+            <div class="logo-mark"></div>
+            <span class="logo-text">halil</span>
+          </div>
+          <div class="nav-tabs">
+            <div class="tab">대시보드</div>
+            <div class="tab">문서 등록</div>
+            <div class="tab active">프로젝트</div>
+            <div class="tab">커넥터</div>
+            <div class="tab">설정</div>
+          </div>
+        </div>
+        <div class="nav-right">
+          <button class="icon-btn" type="button" aria-label="알림" title="알림">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+          <div class="admin-profile">
+            <div class="avatar sz-32">관</div>
+            <span>관리자</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-container">
+        <div class="page-header">
+          <h1>업무 배정 결과 대시보드</h1>
+          <p>4개 업무 후보에 대한 배정 추천이에요</p>
+        </div>
+
+        <div class="grid-split">
+          <div class="left-column">
+            <div class="table-action-header">
+              <h2>Assignment Table</h2>
+              <div class="table-controls">
+                <div class="search-box">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input type="text" placeholder="업무 검색...">
+                </div>
+                <button class="filter-btn" type="button">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
+                  필터
+                </button>
+              </div>
+            </div>
+
+            <div class="task-table">
+              <div class="thead-row">
+                <div class="col-task">Task</div>
+                <div class="col-id">작업 ID</div>
+                <div class="col-status">배정현황</div>
+                <div class="col-assignee">배정 인원</div>
+              </div>
+
+              <div class="trow highlight">
+                <div class="col-task">API 인증 모듈 리팩토링</div>
+                <div class="col-id">AS20001</div>
+                <div class="col-status"><span class="status-badge danger">변경됨</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">이</div>
+                    <span class="name">이지은</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">결제 시스템 에러 핸들링 개선</div>
+                <div class="col-id">AS20002</div>
+                <div class="col-status"><span class="status-badge success">배정완료</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">이</div>
+                    <span class="name">이지은</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">API 인증 모듈 프론트엔드 적용</div>
+                <div class="col-id">AS20003</div>
+                <div class="col-status"><span class="status-badge danger">변경됨</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">최</div>
+                    <span class="name">최유진</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">결제 시스템 배치 테스트 작성</div>
+                <div class="col-id">AS20004</div>
+                <div class="col-status"><span class="status-badge success">배정완료</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">최</div>
+                    <span class="name">최유진</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">결제 시스템 배치 연동 테스트</div>
+                <div class="col-id">AS20005</div>
+                <div class="col-status"><span class="status-badge muted">미배정</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill empty">
+                    <span class="placeholder">-</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="trow">
+                <div class="col-task">API 인증 모듈 문서화</div>
+                <div class="col-id">AS20006</div>
+                <div class="col-status"><span class="status-badge warning">검토중</span></div>
+                <div class="col-assignee">
+                  <div class="assignee-pill">
+                    <div class="avatar sz-24">김</div>
+                    <span class="name">김민수</span>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <div class="assignee-dropdown">
+                      <div>김민수</div><div>이지은</div><div>박서준</div><div>최유진</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pagination">
+              <p>총 20건 / 4 페이지 중 1</p>
+              <div class="page-nav">
+                <button class="page-arrow" type="button" aria-label="이전 페이지">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                </button>
+                <button class="page-btn active" type="button">1</button>
+                <button class="page-btn" type="button">2</button>
+                <button class="page-btn" type="button">3</button>
+                <button class="page-btn" type="button">4</button>
+                <button class="page-arrow" type="button" aria-label="다음 페이지">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="right-column">
+            <div class="right-header">
+              <h3>Assignment Rationale &amp; Controls</h3>
+              <p>선택된 업무에 대한 배정 근거입니다</p>
+            </div>
+
+            <div class="selected-task-card">
+              <div class="task-title">API 인증 모듈 리팩토링</div>
+              <hr>
+              <div class="assignee-detail-row">
+                <div class="avatar sz-48">김</div>
+                <div class="assignee-meta">
+                  <span class="a-name">김민수</span>
+                  <span class="a-role">Senior Software Engineer</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="reassignment-notice">
+              <div class="notice-header">
+                <div class="notice-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </div>
+                <p>배정이 수동으로 변경되었습니다</p>
+              </div>
+              <p class="diff-line">변경 전: 김민수 → 변경 후: 이지은</p>
+              <p class="disclaimer">수동 변경된 업무는 AI 추천 근거를 제공하지 않습니다</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <button class="btn btn-secondary" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          이전 단계
+        </button>
+        <div class="bottom-bar-right">
+          <button class="btn btn-outline" type="button" id="reassign-btn-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            업무 재배정
+          </button>
+          <button class="btn btn-primary" type="button">
+            다음: 승인 결과 확인
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+  // ---- Demo state toggle ----
+  (function(){
+    var toggleBtns = document.querySelectorAll('.demo-toggle-btn');
+    var screens = document.querySelectorAll('.state-screen');
+    toggleBtns.forEach(function(btn){
+      btn.addEventListener('click', function(){
+        toggleBtns.forEach(function(b){ b.classList.remove('active'); });
+        btn.classList.add('active');
+        var target = btn.getAttribute('data-target');
+        screens.forEach(function(s){
+          s.style.display = (s.id === target) ? 'flex' : 'none';
+        });
+      });
+    });
+  })();
+
+  // ---- Assignee dropdown toggle ----
+  (function(){
+    var pills = document.querySelectorAll('.assignee-pill');
+    pills.forEach(function(pill){
+      pill.addEventListener('click', function(e){
+        var wasOpen = pill.classList.contains('open');
+        pills.forEach(function(p){ p.classList.remove('open'); });
+        if(!wasOpen){ pill.classList.add('open'); }
+        e.stopPropagation();
+      });
+    });
+    document.addEventListener('click', function(){
+      pills.forEach(function(p){ p.classList.remove('open'); });
+    });
+
+    // Selecting a name in the dropdown updates the pill label (demo only)
+    document.querySelectorAll('.assignee-dropdown div').forEach(function(opt){
+      opt.addEventListener('click', function(e){
+        e.stopPropagation();
+        var pill = opt.closest('.assignee-pill');
+        var nameEl = pill.querySelector('.name') || pill.querySelector('.placeholder');
+        if(nameEl){ nameEl.textContent = opt.textContent; }
+        var avatarEl = pill.querySelector('.avatar');
+        if(avatarEl){ avatarEl.textContent = opt.textContent.charAt(0); }
+        pill.classList.remove('open');
+      });
+    });
+  })();
+
+  // ---- Pagination buttons ----
+  (function(){
+    document.querySelectorAll('.page-nav').forEach(function(nav){
+      var btns = nav.querySelectorAll('.page-btn');
+      btns.forEach(function(btn){
+        btn.addEventListener('click', function(){
+          btns.forEach(function(b){ b.classList.remove('active'); });
+          btn.classList.add('active');
+        });
+      });
+    });
+  })();
+
+  // ---- Reassign button: jump straight to the "reassigned" demo state ----
+  (function(){
+    var reassignBtns = [document.getElementById('reassign-btn-1'), document.getElementById('reassign-btn-2')];
+    reassignBtns.forEach(function(btn){
+      if(!btn) return;
+      btn.addEventListener('click', function(){
+        var target = document.querySelector('.demo-toggle-btn[data-target="state-reassigned"]');
+        if(target){ target.click(); }
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

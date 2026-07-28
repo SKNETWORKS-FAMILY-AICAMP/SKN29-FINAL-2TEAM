@@ -1,0 +1,94 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 10px var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  transition: background 0.12s ease;
+  cursor: pointer;
+  width: 100%;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  font-family: inherit;
+  text-align: left;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: var(--color-bg);
+}
+
+.row.checked {
+  background: var(--color-primary-soft);
+}
+
+.row.checked:hover {
+  background: var(--color-primary-soft-strong);
+}
+
+.checkboxCell {
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.avatarCell {
+  width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.name,
+.role,
+.team {
+  flex: 1 0 0;
+  min-width: 0;
+}
+
+.nameText {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-heading);
+  white-space: nowrap;
+}
+
+.roleText,
+.teamText {
+  font-size: 14px;
+  color: var(--color-body);
+  white-space: nowrap;
+}
+
+.teamText.dash {
+  color: var(--color-placeholder);
+}
+
+.status {
+  width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>halil - 업무 분배 팀원 선택</title>
+<style>
+  :root{
+    --bg:#f8fafc;
+    --brand:#1e3a5f;
+    --border:#e2e8f0;
+    --heading:#0f172a;
+    --body:#475569;
+    --muted:#94a3b8;
+    --danger:#ef4444;
+    --success-bg:#def7ec;
+    --success-text:#03543f;
+    --warning-bg:#fef08a;
+    --warning-text:#713f12;
+    --danger-bg:#fde8e8;
+    --danger-text:#9b1c1c;
+    --info:#3b82f6;
+    --navy:#1e293b;
+    --white:#ffffff;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--body);
+    -webkit-font-smoothing:antialiased;
+  }
+  p{ margin:0; }
+  button{ font-family:inherit; cursor:pointer; }
+
+  /* ---------- Navbar ---------- */
+  .navbar{
+    background:var(--white);
+    border-bottom:1px solid var(--border);
+    height:72px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 80px;
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  .navbar-left{ display:flex; align-items:center; gap:48px; height:100%; }
+  .logo-group{ display:flex; align-items:center; gap:8px; }
+  .logo-mark{
+    background:var(--navy);
+    width:28px; height:28px;
+    border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--white);
+    font-weight:800;
+    font-size:16px;
+  }
+  .logo-text{ font-weight:800; font-size:20px; color:var(--heading); }
+
+  .tabs{ display:flex; gap:24px; height:100%; align-items:center; }
+  .tab-btn{
+    background:none; border:none;
+    height:100%;
+    display:flex; align-items:center;
+    font-size:14px;
+    color:var(--body);
+    font-weight:500;
+    border-bottom:3px solid transparent;
+    padding:0;
+  }
+  .tab-btn.active{
+    color:var(--navy);
+    font-weight:700;
+    border-bottom-color:var(--navy);
+  }
+
+  .navbar-right{ display:flex; align-items:center; gap:20px; }
+  .bell-btn{
+    background:#f1f5f9;
+    border:none;
+    border-radius:999px;
+    width:34px; height:34px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--body);
+  }
+  .profile-group{ display:flex; align-items:center; gap:8px; }
+  .avatar-circle{
+    width:32px; height:32px;
+    border-radius:16px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--white);
+    font-size:12px;
+    font-weight:700;
+    flex-shrink:0;
+  }
+  .profile-name{ font-size:14px; font-weight:600; color:var(--heading); }
+
+  /* ---------- Workspace container ---------- */
+  .workspace-container{
+    display:flex;
+    flex-direction:column;
+    gap:32px;
+    padding:40px 80px 80px;
+    width:100%;
+  }
+  .page-header{ display:flex; flex-direction:column; gap:8px; width:100%; }
+  .page-title{ font-weight:800; font-size:24px; color:var(--heading); }
+  .page-subtitle{ font-size:14px; color:var(--body); }
+
+  .creation-card{
+    background:var(--white);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:32px;
+    display:flex;
+    flex-direction:column;
+    gap:32px;
+    width:100%;
+  }
+
+  .section-title{ font-weight:700; font-size:16px; color:var(--heading); }
+
+  .team-selection-section{ display:flex; flex-direction:column; gap:16px; width:100%; }
+
+  .table-box{
+    border:1px solid var(--border);
+    border-radius:12px;
+    width:100%;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  .table-header{
+    background:var(--bg);
+    border-bottom:1px solid var(--border);
+    height:44px;
+    display:flex;
+    align-items:center;
+    gap:16px;
+    padding:12px 20px;
+  }
+  .col-checkbox{ width:40px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .col-avatar{ width:48px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .col-name, .col-role, .col-team{ flex:1 0 0; min-width:0; }
+  .col-status{ width:120px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .th-label{ font-weight:700; font-size:13px; color:var(--body); white-space:nowrap; }
+
+  .table-body{
+    background:var(--white);
+    max-height:334px;
+    overflow-y:auto;
+  }
+  .member-row{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    padding:10px 20px;
+    border-bottom:1px solid var(--border);
+    background:var(--white);
+    transition:background .12s ease;
+    cursor:pointer;
+  }
+  .member-row:last-child{ border-bottom:none; }
+  .member-row:hover{ background:#f8fafc; }
+  .member-row.checked{ background:#f0f5fa; }
+  .member-row.checked:hover{ background:#e9f0f8; }
+
+  .checkbox-box{
+    width:18px; height:18px;
+    border-radius:4px;
+    display:flex; align-items:center; justify-content:center;
+    border:1.5px solid var(--muted);
+    background:var(--white);
+    flex-shrink:0;
+  }
+  .member-row.checked .checkbox-box{
+    background:var(--navy);
+    border-color:var(--navy);
+  }
+  .checkbox-box svg{ display:none; width:10px; height:10px; }
+  .member-row.checked .checkbox-box svg{ display:block; }
+
+  .member-avatar{
+    width:32px; height:32px;
+    border-radius:16px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--white);
+    font-size:12px;
+    font-weight:700;
+    flex-shrink:0;
+  }
+
+  .member-name{ font-weight:600; font-size:14px; color:var(--heading); white-space:nowrap; }
+  .member-role, .member-team{ font-size:14px; color:var(--body); white-space:nowrap; }
+  .member-team.dash{ color:var(--muted); }
+
+  .status-badge{
+    display:inline-flex;
+    align-items:center;
+    padding:4px 8px;
+    border-radius:6px;
+    font-weight:600;
+    font-size:12px;
+    white-space:nowrap;
+  }
+  .status-available{ background:var(--success-bg); color:var(--success-text); }
+  .status-busy{ background:var(--warning-bg); color:var(--warning-text); }
+  .status-overloaded{ background:var(--danger-bg); color:var(--danger-text); }
+
+  .additional-requirements-section{
+    display:flex; flex-direction:column; gap:12px;
+    padding-top:16px;
+    width:100%;
+  }
+  .textarea-box{
+    background:var(--white);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px;
+    width:100%;
+    height:96px;
+  }
+  .req-textarea{
+    width:100%; height:100%;
+    border:none; outline:none; resize:none;
+    font-family:inherit;
+    font-size:14px;
+    color:var(--heading);
+    background:transparent;
+  }
+  .req-textarea::placeholder{ color:var(--muted); }
+
+  .actions-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    width:100%;
+  }
+  .selection-count-group{ display:flex; gap:6px; font-size:14px; }
+  .selection-count-label{ color:var(--body); }
+  .selection-count-value{ font-weight:700; color:var(--navy); }
+
+  .btn-submit{
+    background:var(--navy);
+    color:var(--white);
+    border:none;
+    border-radius:8px;
+    padding:12px 24px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-weight:600;
+    font-size:14px;
+  }
+  .btn-submit:hover{ background:#0f172a; }
+  .btn-submit svg{ width:16px; height:16px; }
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.5);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:100;
+  }
+  .modal-overlay.open{ display:flex; }
+
+  .modal-container{
+    background:var(--white);
+    border-radius:12px;
+    padding:32px;
+    width:480px;
+    max-width:calc(100vw - 32px);
+    max-height:calc(100vh - 32px);
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:24px;
+    position:relative;
+    box-shadow:0px 20px 20px rgba(15,23,42,0.1);
+  }
+
+  .modal-close-btn{
+    position:absolute;
+    top:24px;
+    right:24px;
+    width:36px; height:36px;
+    border-radius:18px;
+    border:none;
+    background:transparent;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:var(--muted);
+  }
+  .modal-close-btn:hover{ background:#f1f5f9; color:var(--body); }
+  .modal-close-btn svg{ width:20px; height:20px; }
+
+  .modal-header{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:16px;
+    width:100%;
+  }
+  .circle-success-icon{
+    width:56px; height:56px;
+    border-radius:28px;
+    background:#e6f4ea;
+    display:flex; align-items:center; justify-content:center;
+    color:#10b981;
+  }
+  .circle-success-icon svg{ width:24px; height:24px; }
+  .modal-title{
+    font-weight:700;
+    font-size:20px;
+    color:var(--heading);
+    text-align:center;
+  }
+  .modal-body-text{
+    font-size:14px;
+    line-height:1.5;
+    color:#334155;
+    text-align:center;
+    width:100%;
+  }
+
+  .file-list-box{
+    background:var(--bg);
+    border-radius:8px;
+    padding:12px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    width:100%;
+  }
+  .file-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    width:100%;
+  }
+  .file-row svg{ width:16px; height:16px; flex-shrink:0; color:var(--body); }
+  .file-row.more svg{ color:var(--muted); }
+  .file-name{ font-size:12px; color:#334155; flex:1 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .file-name.more{ font-weight:600; color:var(--muted); }
+
+  .modal-footer{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    width:100%;
+  }
+  .button-group{ display:flex; gap:12px; width:100%; }
+  .btn-secondary, .btn-primary{
+    flex:1 0 0;
+    height:48px;
+    border-radius:8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:600;
+    font-size:15px;
+    border:none;
+  }
+  .btn-secondary{
+    background:var(--white);
+    border:1px solid var(--border);
+    color:#334155;
+  }
+  .btn-secondary:hover{ background:#f8fafc; }
+  .btn-primary{
+    background:var(--brand);
+    color:var(--white);
+  }
+  .btn-primary:hover{ background:#16304d; }
+  .modal-hint{
+    font-size:12px;
+    color:var(--muted);
+    text-align:right;
+    width:100%;
+  }
+
+  .toast{
+    position:fixed;
+    bottom:32px;
+    left:50%;
+    transform:translateX(-50%) translateY(20px);
+    background:var(--navy);
+    color:var(--white);
+    padding:12px 20px;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:600;
+    opacity:0;
+    transition:opacity .25s ease, transform .25s ease;
+    z-index:200;
+    pointer-events:none;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .toast.show{
+    opacity:1;
+    transform:translateX(-50%) translateY(0);
+  }
+  .toast svg{ width:16px; height:16px; color:#10b981; }
+
+  /* scrollbar styling to echo figma track/thumb */
+  .table-body::-webkit-scrollbar{ width:8px; }
+  .table-body::-webkit-scrollbar-track{ background:#edf2f7; border-radius:4px; }
+  .table-body::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:4px; }
+</style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-left">
+      <div class="logo-group">
+        <div class="logo-mark">h</div>
+        <div class="logo-text">halil</div>
+      </div>
+      <div class="tabs" id="tabs">
+        <button class="tab-btn" data-tab="dashboard">대시보드</button>
+        <button class="tab-btn" data-tab="docs">문서 등록</button>
+        <button class="tab-btn active" data-tab="project">프로젝트</button>
+        <button class="tab-btn" data-tab="connector">커넥터</button>
+        <button class="tab-btn" data-tab="settings">설정</button>
+      </div>
+    </div>
+    <div class="navbar-right">
+      <button class="bell-btn" aria-label="알림" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+        </svg>
+      </button>
+      <div class="profile-group">
+        <div class="avatar-circle" style="background:#64748b;">관</div>
+        <span class="profile-name">관리자</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Workspace container -->
+  <main class="workspace-container">
+    <div class="page-header">
+      <p class="page-title">업무 분배 팀원 선택</p>
+      <p class="page-subtitle">프로젝트에 참여할 팀원을 지정하고 역할 및 가용 상태를 검토하세요.</p>
+    </div>
+
+    <section class="creation-card">
+      <div class="team-selection-section">
+        <p class="section-title">팀원 선택</p>
+
+        <div class="table-box">
+          <div class="table-header">
+            <div class="col-checkbox">
+              <div class="checkbox-box" style="background:var(--navy);border-color:var(--navy);">
+                <svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg>
+              </div>
+            </div>
+            <div class="col-avatar"></div>
+            <div class="col-name"><span class="th-label">이름</span></div>
+            <div class="col-role"><span class="th-label">역할</span></div>
+            <div class="col-team"><span class="th-label">소속팀</span></div>
+            <div class="col-status"><span class="th-label">상태</span></div>
+          </div>
+
+          <div class="table-body" id="memberTable">
+            <!-- rows injected/declared statically below -->
+            <div class="member-row checked" data-checked="true">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#3b82f6;">김</div></div>
+              <div class="col-name"><span class="member-name">김민수</span></div>
+              <div class="col-role"><span class="member-role">팀장</span></div>
+              <div class="col-team"><span class="member-team dash">-</span></div>
+              <div class="col-status"><span class="status-badge status-available">가용</span></div>
+            </div>
+
+            <div class="member-row" data-checked="false">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#0ea5e9;">박</div></div>
+              <div class="col-name"><span class="member-name">박서준</span></div>
+              <div class="col-role"><span class="member-role">백엔드팀장</span></div>
+              <div class="col-team"><span class="member-team">백엔드팀</span></div>
+              <div class="col-status"><span class="status-badge status-busy">작업중</span></div>
+            </div>
+
+            <div class="member-row" data-checked="false">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#8b5cf6;">이</div></div>
+              <div class="col-name"><span class="member-name">이동현</span></div>
+              <div class="col-role"><span class="member-role">사원</span></div>
+              <div class="col-team"><span class="member-team">백엔드팀</span></div>
+              <div class="col-status"><span class="status-badge status-overloaded">과부하</span></div>
+            </div>
+
+            <div class="member-row checked" data-checked="true">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#f59e0b;">최</div></div>
+              <div class="col-name"><span class="member-name">최영호</span></div>
+              <div class="col-role"><span class="member-role">사원</span></div>
+              <div class="col-team"><span class="member-team">백엔드팀</span></div>
+              <div class="col-status"><span class="status-badge status-available">가용</span></div>
+            </div>
+
+            <div class="member-row" data-checked="false">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#ec4899;">김</div></div>
+              <div class="col-name"><span class="member-name">김지은</span></div>
+              <div class="col-role"><span class="member-role">팀장</span></div>
+              <div class="col-team"><span class="member-team dash">-</span></div>
+              <div class="col-status"><span class="status-badge status-available">가용</span></div>
+            </div>
+
+            <div class="member-row" data-checked="false">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#14b8a6;">한</div></div>
+              <div class="col-name"><span class="member-name">한유진</span></div>
+              <div class="col-role"><span class="member-role">사원</span></div>
+              <div class="col-team"><span class="member-team dash">-</span></div>
+              <div class="col-status"><span class="status-badge status-busy">작업중</span></div>
+            </div>
+
+            <div class="member-row checked" data-checked="true">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#6366f1;">오</div></div>
+              <div class="col-name"><span class="member-name">오세영</span></div>
+              <div class="col-role"><span class="member-role">사원</span></div>
+              <div class="col-team"><span class="member-team dash">-</span></div>
+              <div class="col-status"><span class="status-badge status-available">가용</span></div>
+            </div>
+
+            <div class="member-row" data-checked="false">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#0891b2;">정</div></div>
+              <div class="col-name"><span class="member-name">정현우</span></div>
+              <div class="col-role"><span class="member-role">인프라팀장</span></div>
+              <div class="col-team"><span class="member-team">인프라팀</span></div>
+              <div class="col-status"><span class="status-badge status-busy">작업중</span></div>
+            </div>
+
+            <div class="member-row" data-checked="false">
+              <div class="col-checkbox"><div class="checkbox-box"><svg viewBox="0 0 10 10" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5l2.5 2.5L9 1.5"></path></svg></div></div>
+              <div class="col-avatar"><div class="member-avatar" style="background:#84603a;">송</div></div>
+              <div class="col-name"><span class="member-name">송민기</span></div>
+              <div class="col-role"><span class="member-role">사원</span></div>
+              <div class="col-team"><span class="member-team">인프라팀</span></div>
+              <div class="col-status"><span class="status-badge status-overloaded">과부하</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="additional-requirements-section">
+        <p class="section-title">추가 요구사항</p>
+        <div class="textarea-box">
+          <textarea class="req-textarea" placeholder="프로젝트 생성 및 업무 배정 시 참고해야 할 제약 조건이나 추가 요구사항을 적어주세요. (선택)"></textarea>
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <div class="selection-count-group">
+          <span class="selection-count-label">선택된 팀원:</span>
+          <span class="selection-count-value" id="selectionCount">3명</span>
+        </div>
+        <button class="btn-submit" id="openModalBtn" type="button">
+          <span>업무 분배 시작</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"></path>
+            <path d="M13 6l6 6-6 6"></path>
+          </svg>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: 업무 분배 확인 모달 -->
+  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-container" id="modalContainer">
+      <button class="modal-close-btn" id="modalCloseBtn" type="button" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M9.5 9.5l5 5M14.5 9.5l-5 5"></path>
+        </svg>
+      </button>
+
+      <div class="modal-header">
+        <div class="circle-success-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6L9 17l-5-5"></path>
+          </svg>
+        </div>
+        <p class="modal-title" id="modalTitle">업무 분배를 시작하겠습니다.</p>
+      </div>
+
+      <p class="modal-body-text">4개 파일이 등록됐어요. 이 파일들을 근거로 업무 분배를 진행할까요?</p>
+
+      <div class="file-list-box">
+        <div class="file-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <path d="M14 2v6h6"></path>
+          </svg>
+          <span class="file-name">프로젝트_요구사항_v2.docx</span>
+        </div>
+        <div class="file-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <path d="M14 2v6h6"></path>
+          </svg>
+          <span class="file-name">API_설계_초안.docx</span>
+        </div>
+        <div class="file-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <path d="M14 2v6h6"></path>
+          </svg>
+          <span class="file-name">스프린트3_회의록.docx</span>
+        </div>
+        <div class="file-row more">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 8v8M8 12h8"></path>
+          </svg>
+          <span class="file-name more">외 1건</span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div class="button-group">
+          <button class="btn-secondary" id="modalNoBtn" type="button">아니오</button>
+          <button class="btn-primary" id="modalYesBtn" type="button">예</button>
+        </div>
+        <p class="modal-hint">몇 분 정도 걸릴 수 있어요</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+    <span id="toastText">업무 분배가 시작되었습니다.</span>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- Tabs ---------- */
+  var tabs = document.querySelectorAll('.tab-btn');
+  tabs.forEach(function(tab){
+    tab.addEventListener('click', function(){
+      tabs.forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+    });
+  });
+
+  /* ---------- Member selection ---------- */
+  var rows = document.querySelectorAll('#memberTable .member-row');
+  var selectionCountEl = document.getElementById('selectionCount');
+
+  function updateSelectionCount(){
+    var count = document.querySelectorAll('#memberTable .member-row.checked').length;
+    selectionCountEl.textContent = count + '명';
+  }
+
+  rows.forEach(function(row){
+    row.addEventListener('click', function(){
+      var isChecked = row.classList.toggle('checked');
+      row.setAttribute('data-checked', isChecked ? 'true' : 'false');
+      updateSelectionCount();
+    });
+  });
+
+  updateSelectionCount();
+
+  /* ---------- Modal ---------- */
+  var modalOverlay = document.getElementById('modalOverlay');
+  var openModalBtn = document.getElementById('openModalBtn');
+  var modalCloseBtn = document.getElementById('modalCloseBtn');
+  var modalNoBtn = document.getElementById('modalNoBtn');
+  var modalYesBtn = document.getElementById('modalYesBtn');
+  var modalContainer = document.getElementById('modalContainer');
+
+  function openModal(){
+    modalOverlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal(){
+    modalOverlay.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  var toast = document.getElementById('toast');
+  var toastText = document.getElementById('toastText');
+  var toastTimer = null;
+
+  function showToast(message){
+    toastText.textContent = message;
+    toast.classList.add('show');
+    if (toastTimer) { clearTimeout(toastTimer); }
+    toastTimer = setTimeout(function(){
+      toast.classList.remove('show');
+    }, 2600);
+  }
+
+  openModalBtn.addEventListener('click', openModal);
+  modalCloseBtn.addEventListener('click', closeModal);
+  modalNoBtn.addEventListener('click', closeModal);
+
+  modalYesBtn.addEventListener('click', function(){
+    closeModal();
+    showToast('업무 분배가 시작되었습니다.');
+  });
+
+  modalOverlay.addEventListener('click', function(e){
+    if (e.target === modalOverlay){
+      closeModal();
+    }
+  });
+
+  modalContainer.addEventListener('click', function(e){
+    e.stopPropagation();
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && modalOverlay.classList.contains('open')){
+      closeModal();
+    }
+  });
+})();
+</script>
+</body>
+</html>

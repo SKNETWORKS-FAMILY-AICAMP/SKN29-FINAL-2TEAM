@@ -1,0 +1,289 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-bg);
+}
+
+.contentContainer {
+  width: 800px;
+  max-width: 100%;
+  padding: var(--space-8) var(--space-10) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.headerBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pageTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+}
+
+.pageSubtitle {
+  font-size: 14px;
+  color: var(--color-body);
+  margin: 0;
+}
+
+.devSwitch {
+  font-size: 12px;
+  color: var(--color-placeholder);
+  text-align: right;
+  margin: -16px 0 0;
+}
+
+.devSwitch button {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* empty state */
+.emptyBox {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-placeholder);
+  border-radius: var(--radius-lg);
+  padding: var(--space-12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  text-align: center;
+}
+
+.emptyIconWrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 32px;
+  background: var(--color-primary-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-heading);
+  margin: 0;
+}
+
+.emptyDesc {
+  font-size: 14px;
+  color: var(--color-body);
+  margin: 4px 0 0;
+}
+
+/* selected folders */
+.selectedFoldersBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.sectionLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+}
+
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  width: 100%;
+}
+
+.folderInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.folderIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.folderMeta p {
+  margin: 0;
+}
+
+.folderName {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.folderCount {
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.folderRemove {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-danger);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.addFolderBtn {
+  width: 100%;
+  height: 44px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* settings + preview */
+.settingsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.settingsItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settingsLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.depthSelect {
+  width: auto;
+  min-width: 140px;
+}
+
+.filePreviewCard {
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  width: 100%;
+  background: var(--color-surface);
+}
+
+.filePreviewHeader {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-4);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.fileList {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fileRow:last-child {
+  border-bottom: none;
+}
+
+.fileRowLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+  color: var(--color-heading);
+}
+
+.fileRowLeft.unsupported {
+  color: var(--color-placeholder);
+}
+
+.fileName {
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.helperNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-body);
+  width: 100%;
+  margin: 0;
+}
+
+.stepFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+  width: 100%;
+}

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>폴더 역할 지정 | halil</title>
+<link rel="stylesheet" href="wizard.css">
+<style>
+  body { background: #fff; }
+  .center-wrap { display: flex; justify-content: center; }
+</style>
+</head>
+<body>
+<div class="center-wrap">
+  <div class="role-panel">
+    <div class="role-header">
+      <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+        <div class="role-logo">
+          <span class="mark">h</span>
+          <span class="name">halil</span>
+        </div>
+        <span class="step-pill">스텝 3 / 4</span>
+      </div>
+    </div>
+
+    <div class="role-titles" style="margin-top:24px;">
+      <h1>폴더 역할 지정</h1>
+      <p>각 폴더가 어떤 문서를 담고 있는지 알려주세요. 지정된 역할은 내부 파일에 자동으로 상속됩니다.</p>
+    </div>
+
+    <div style="margin-top:32px;">
+      <!-- Row 1: collapsed -->
+      <div class="role-row-collapsed" style="cursor:default;">
+        <div class="role-row-left" id="left-1">
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          <svg class="folder-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6l2 3h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path></svg>
+          <span class="role-folder-name">2025_프로젝트_기획</span>
+          <span class="role-folder-count">12개 파일</span>
+        </div>
+        <select class="dropdown-select small" style="width:180px;" onclick="event.stopPropagation()">
+          <option selected>기획서</option>
+          <option>회의록</option>
+          <option>일일보고서</option>
+          <option>기타</option>
+        </select>
+      </div>
+
+      <!-- Row 2: expanded by default -->
+      <div class="role-row-collapsed" onclick="toggleRow(this, 'children-2')">
+        <div class="role-row-left expanded" id="left-2">
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          <svg class="folder-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2Z"></path><path d="m3 10 1.4 8.4a2 2 0 0 0 2 1.6h11.2a2 2 0 0 0 2-1.6L21 10Z"></path></svg>
+          <span class="role-folder-name">회의록_모음</span>
+          <span class="role-folder-count">8개 파일</span>
+        </div>
+        <select class="dropdown-select small" style="width:180px;" onclick="event.stopPropagation()">
+          <option selected>회의록</option>
+          <option>기획서</option>
+          <option>일일보고서</option>
+          <option>기타</option>
+        </select>
+      </div>
+      <div class="role-children open" id="children-2">
+        <div class="role-file-row">
+          <div class="role-file-left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <span class="role-file-name">주간회의_0106.docx</span>
+          </div>
+          <select class="dropdown-select small" style="width:220px; color:var(--text-placeholder);">
+            <option selected>폴더 역할 상속 (회의록)</option>
+            <option>기획서</option>
+            <option>일일보고서</option>
+            <option>기타</option>
+          </select>
+        </div>
+        <div class="role-file-row">
+          <div class="role-file-left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <span class="role-file-name">킥오프_회의록.docx</span>
+          </div>
+          <select class="dropdown-select small" style="width:220px; color:var(--text-placeholder);">
+            <option selected>폴더 역할 상속 (회의록)</option>
+            <option>기획서</option>
+            <option>일일보고서</option>
+            <option>기타</option>
+          </select>
+        </div>
+        <div class="role-file-row">
+          <div class="role-file-left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <span class="role-file-name">스프린트_리뷰.docx</span>
+          </div>
+          <select class="dropdown-select small" style="width:220px;">
+            <option>폴더 역할 상속 (회의록)</option>
+            <option selected>기획서</option>
+            <option>일일보고서</option>
+            <option>기타</option>
+          </select>
+        </div>
+        <div class="role-file-row">
+          <div class="role-file-left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <span class="role-file-name">데일리_스크럼_0108.docx</span>
+          </div>
+          <select class="dropdown-select small" style="width:220px; color:var(--text-placeholder);">
+            <option selected>폴더 역할 상속 (회의록)</option>
+            <option>기획서</option>
+            <option>일일보고서</option>
+            <option>기타</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 3: collapsed -->
+      <div class="role-row-collapsed" style="cursor:default;">
+        <div class="role-row-left" id="left-3">
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          <svg class="folder-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6l2 3h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path></svg>
+          <span class="role-folder-name">일일보고서_2025</span>
+          <span class="role-folder-count">23개 파일</span>
+        </div>
+        <select class="dropdown-select small" style="width:180px;" onclick="event.stopPropagation()">
+          <option selected>일일보고서</option>
+          <option>기획서</option>
+          <option>회의록</option>
+          <option>기타</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="role-footer">
+      <button class="btn btn-prev">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        이전 단계
+      </button>
+      <button class="btn btn-next">
+        다음: 워크로드 설정
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleRow(rowEl, childrenId) {
+    const left = rowEl.querySelector('.role-row-left');
+    const children = document.getElementById(childrenId);
+    left.classList.toggle('expanded');
+    children.classList.toggle('open');
+  }
+</script>
+</body>
+</html>

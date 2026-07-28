@@ -1,0 +1,233 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.panelTitle {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-heading);
+}
+
+.panelSubtitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-body);
+}
+
+.summaryRow {
+  display: flex;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.summaryCard {
+  flex: 1;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.summaryLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-body);
+}
+
+.summaryValue {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.sectionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.cardTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.orgChartCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.pmWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.vConnector {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border);
+}
+
+.deptHeadsRow {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  width: 100%;
+  justify-content: center;
+  position: relative;
+  padding-top: var(--space-6);
+}
+
+.deptHeadsRow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 96px;
+  right: 96px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.deptColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+  position: relative;
+}
+
+.deptColumn::before {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  width: 1px;
+  height: 24px;
+  background: var(--color-border);
+}
+
+.deptLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-body);
+}
+
+.deptLine {
+  height: 24px;
+  width: 100%;
+  position: relative;
+}
+
+.deptLine::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.membersRow {
+  display: flex;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.membersRow .memberCard {
+  flex: 1;
+  min-width: 0;
+}
+
+.memberCard {
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+  text-align: left;
+  align-items: flex-start;
+}
+
+.memberCard:hover {
+  border-color: var(--color-primary);
+}
+
+.memberCard.selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft-strong);
+}
+
+.memberCard.pm {
+  width: 180px;
+}
+
+.memberName {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--color-heading);
+}
+
+.memberRole {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-body);
+}
+
+@media (max-width: 1100px) {
+  .deptHeadsRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .deptHeadsRow::before,
+  .deptColumn::before {
+    display: none;
+  }
+
+  .membersRow {
+    flex-direction: column;
+  }
+
+  .summaryRow {
+    flex-direction: column;
+  }
+}

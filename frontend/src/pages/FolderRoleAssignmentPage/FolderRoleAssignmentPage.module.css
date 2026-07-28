@@ -1,0 +1,186 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  background: var(--color-surface);
+}
+
+.panel {
+  width: 800px;
+  max-width: 100%;
+  padding: 60px 0 120px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+  width: 100%;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mark {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wordmark {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.stepPill {
+  background: var(--color-bg);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+}
+
+.titles {
+  margin-top: var(--space-6);
+}
+
+.titles h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0 0 var(--space-2);
+}
+
+.titles p {
+  font-size: 14px;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.folderTree {
+  margin-top: var(--space-8);
+}
+
+.rowCollapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  width: 100%;
+  cursor: default;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.rowLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  color: var(--color-muted);
+}
+
+.chevronSpacer {
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.rowLeft.expanded .chevron {
+  transform: rotate(90deg);
+}
+
+.folderName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folderCount {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.roleSelect {
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.children {
+  background: var(--color-bg);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
+  display: none;
+}
+
+.children.open {
+  display: block;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px var(--space-4);
+}
+
+.fileLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fileName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSelect {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-6);
+  width: 100%;
+  margin-top: var(--space-6);
+}
+
+.prevButton {
+  flex-direction: row;
+}

@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>대시보드 | halil</title>
+<style>
+  :root{
+    --bg:#f8fafc;
+    --primary:#1e3a5f;
+    --border:#e2e8f0;
+    --heading:#0f172a;
+    --body:#475569;
+    --muted:#94a3b8;
+    --white:#ffffff;
+    --danger:#ef4444;
+    --danger-bg:#fee2e2;
+    --danger-text:#991b1b;
+    --success:#10b981;
+    --success-bg:#d1fae5;
+    --success-text:#065f46;
+    --warning:#f59e0b;
+    --warning-bg:#fef3c7;
+    --warning-text:#92400e;
+    --info:#3b82f6;
+    --info-bg:#eff6ff;
+    --info-text:#1e40af;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--body);
+    -webkit-font-smoothing:antialiased;
+  }
+  p{ margin:0; }
+  button{ font-family:inherit; cursor:pointer; }
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+
+  /* ---------- Navbar ---------- */
+  .navbar{
+    background:var(--white);
+    border-bottom:1px solid var(--border);
+    height:64px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 32px;
+    position:sticky;
+    top:0;
+    z-index:100;
+  }
+  .nav-left{ display:flex; align-items:center; gap:48px; height:100%; }
+  .logo-group{ display:flex; align-items:center; gap:8px; }
+  .logo-mark{
+    background:var(--primary);
+    width:32px; height:32px;
+    border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--white);
+    font-weight:800;
+    font-size:18px;
+  }
+  .logo-text{ font-weight:800; font-size:20px; color:var(--primary); }
+
+  .nav-tabs{ display:flex; gap:8px; align-items:center; height:100%; }
+  .nav-tab{
+    background:none; border:none;
+    height:64px;
+    display:flex; align-items:center;
+    font-size:15px;
+    color:var(--body);
+    font-weight:500;
+    border-bottom:3px solid transparent;
+    padding:0 16px;
+  }
+  .nav-tab.active{
+    color:var(--primary);
+    font-weight:700;
+    border-bottom-color:var(--primary);
+  }
+  .nav-tab:hover:not(.active){ color:var(--heading); }
+
+  .nav-right{ display:flex; align-items:center; gap:20px; }
+  .icon-btn{
+    background:none;
+    border:none;
+    border-radius:8px;
+    width:40px; height:40px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--body);
+    position:relative;
+  }
+  .icon-btn:hover{ background:var(--bg); }
+  .notif-dot{
+    position:absolute; top:8px; right:9px;
+    width:8px; height:8px; border-radius:50%;
+    background:var(--danger);
+    border:2px solid var(--white);
+  }
+
+  .user-menu{ position:relative; }
+  .user-trigger{
+    display:flex; gap:12px; align-items:center;
+    background:none; border:none; padding:2px;
+    border-radius:8px;
+  }
+  .user-trigger:hover{ background:var(--bg); }
+  .avatar-circle{
+    width:36px; height:36px;
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--white);
+    background:var(--primary);
+    font-size:13px;
+    font-weight:700;
+    flex-shrink:0;
+  }
+  .user-info{ display:flex; flex-direction:column; gap:2px; align-items:flex-start; }
+  .user-name{ font-size:14px; font-weight:700; color:var(--heading); }
+  .user-org{ font-size:11px; font-weight:400; color:var(--body); }
+
+  .dropdown{
+    position:absolute; top:calc(100% + 8px); right:0;
+    background:var(--white);
+    border:1px solid var(--border);
+    border-radius:12px;
+    box-shadow:0 8px 20px rgba(15,23,42,0.10);
+    min-width:200px;
+    overflow:hidden;
+    z-index:200;
+    display:none;
+  }
+  .dropdown.show{ display:block; }
+  .dropdown-header{ padding:12px 16px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); font-weight:600; }
+  .dropdown-item{ padding:10px 16px; font-size:14px; color:var(--body); font-weight:500; display:flex; align-items:center; gap:8px; }
+  .dropdown-item:hover{ background:var(--bg); color:var(--heading); }
+  .dropdown-item svg{ flex-shrink:0; color:var(--muted); }
+  .notif-item{ padding:12px 16px; border-bottom:1px solid var(--border); }
+  .notif-item:last-child{ border-bottom:none; }
+  .notif-item p.n-title{ font-size:13px; font-weight:600; color:var(--heading); margin-bottom:2px; }
+  .notif-item p.n-time{ font-size:11px; color:var(--muted); }
+
+  /* ---------- Content layout ---------- */
+  .content{
+    display:flex;
+    gap:24px;
+    align-items:flex-start;
+    padding:32px;
+    max-width:1760px;
+    margin:0 auto;
+  }
+  .left-panel{ flex:1040 1 0; display:flex; flex-direction:column; gap:24px; min-width:0; }
+  .right-panel{ flex:640 1 0; display:flex; flex-direction:column; gap:24px; min-width:0; max-width:640px; }
+
+  .panel-header{ display:flex; align-items:baseline; justify-content:space-between; width:100%; flex-wrap:wrap; gap:6px; }
+  .panel-title{ font-size:24px; font-weight:700; line-height:1.3; color:var(--heading); }
+  .panel-subtitle{ font-size:14px; font-weight:500; line-height:1.5; color:var(--body); }
+  .panel-header-col{ display:flex; flex-direction:column; gap:4px; }
+
+  .card{
+    background:var(--white);
+    border:0.5px solid var(--border);
+    border-radius:12px;
+    box-shadow:0 4px 6px rgba(15,23,42,0.03);
+    width:100%;
+  }
+  .card-pad{ padding:24px; }
+  .card-title{ font-size:18px; font-weight:600; line-height:1.3; color:var(--heading); }
+
+  /* summary cards */
+  .summary-row{ display:flex; gap:16px; width:100%; }
+  .summary-card{
+    flex:1;
+    background:var(--white);
+    border:0.5px solid var(--border);
+    border-radius:12px;
+    box-shadow:0 4px 6px rgba(15,23,42,0.03);
+    padding:20px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    min-width:0;
+  }
+  .summary-label{ font-size:12px; font-weight:500; line-height:1.4; color:var(--body); }
+  .summary-value-row{ display:flex; align-items:baseline; justify-content:space-between; width:100%; gap:8px; }
+  .summary-value{ font-size:28px; font-weight:700; color:var(--heading); white-space:nowrap; }
+  .summary-delta{ font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap; }
+  .delta-info{ background:var(--info-bg); color:var(--info-text); }
+  .delta-success{ background:var(--success-bg); color:var(--success-text); }
+  .delta-danger{ background:var(--danger-bg); color:var(--danger-text); }
+
+  /* team list / org chart */
+  .section-block{ display:flex; flex-direction:column; gap:16px; width:100%; }
+  .org-chart{ display:flex; flex-direction:column; align-items:center; gap:0; padding:24px; width:100%; }
+
+  .pm-wrap{ display:flex; flex-direction:column; align-items:center; width:100%; }
+  .member-card{
+    background:var(--white);
+    border:0.5px solid var(--border);
+    border-radius:12px;
+    box-shadow:0 4px 6px rgba(15,23,42,0.03);
+    padding:12px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    cursor:pointer;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .member-card:hover{ border-color:var(--primary); }
+  .member-card.selected{ border-color:var(--primary); box-shadow:0 0 0 2px rgba(30,58,95,0.25); }
+  .member-card.pm{ width:180px; }
+  .member-name{ font-size:14px; font-weight:700; line-height:1.5; color:var(--heading); }
+  .member-role{ font-size:11px; font-weight:500; line-height:1.4; color:var(--body); }
+  .status-badge{
+    display:inline-flex; align-items:center;
+    padding:2px 8px;
+    border-radius:6px;
+    font-size:11px;
+    font-weight:700;
+    white-space:nowrap;
+    width:fit-content;
+  }
+  .status-available{ background:var(--success-bg); color:var(--success-text); }
+  .status-overload{ background:var(--danger-bg); color:var(--danger-text); }
+  .status-working{ background:var(--warning-bg); color:var(--warning-text); }
+
+  .v-connector{ width:1px; height:24px; background:var(--border); }
+  .dept-heads-row{ display:flex; gap:24px; align-items:flex-start; width:100%; justify-content:center; position:relative; padding-top:24px; }
+  .dept-heads-row::before{
+    content:'';
+    position:absolute; top:0; left:96px; right:96px; height:1px;
+    background:var(--border);
+  }
+  .dept-column{ display:flex; flex-direction:column; gap:12px; flex:1; min-width:0; max-width:320px; position:relative; }
+  .dept-column::before{
+    content:'';
+    position:absolute; top:-24px; left:50%; width:1px; height:24px; background:var(--border);
+  }
+  .dept-label{ font-size:12px; font-weight:700; line-height:1.4; color:var(--body); }
+  .dept-line{ height:24px; width:100%; position:relative; }
+  .dept-line::before{ content:''; position:absolute; top:12px; left:0; right:0; height:1px; background:var(--border); }
+  .members-row{ display:flex; gap:12px; width:100%; }
+  .members-row .member-card{ flex:1; min-width:0; }
+
+  /* workload analysis */
+  .workload-row{ display:flex; gap:16px; align-items:center; width:100%; }
+  .workload-label{ width:80px; flex-shrink:0; font-size:14px; font-weight:500; line-height:1.5; color:var(--heading); }
+  .workload-bar-wrap{ display:flex; flex:1; gap:12px; align-items:center; min-width:0; }
+  .workload-track{ flex:1; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; min-width:0; }
+  .workload-fill{ height:100%; border-radius:6px; transition:width .4s ease; }
+  .workload-pct{ font-size:14px; font-weight:700; color:var(--heading); width:40px; text-align:right; flex-shrink:0; }
+
+  /* top 5 */
+  .top5-list{ display:flex; flex-direction:column; gap:8px; width:100%; }
+  .top5-row{
+    display:flex; align-items:center; gap:12px;
+    padding:8px 12px;
+    border-radius:10px;
+    background:var(--bg);
+    width:100%;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  .top5-row:hover{ background:#eef1f6; }
+  .top5-row.selected{ outline:1.5px solid var(--primary); }
+  .top5-rank{ width:24px; text-align:center; font-size:14px; font-weight:700; color:var(--heading); flex-shrink:0; }
+  .top5-avatar{
+    width:24px; height:24px; border-radius:12px;
+    background:var(--border);
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:var(--body);
+    flex-shrink:0;
+  }
+  .top5-name{ flex:1; min-width:0; font-size:14px; font-weight:600; color:var(--heading); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .top5-team{ width:120px; flex-shrink:0; font-size:14px; font-weight:500; color:var(--body); }
+  .top5-progress{ display:flex; gap:8px; align-items:center; width:220px; flex-shrink:0; }
+  .top5-track{ flex:1; height:8px; background:var(--bg); border-radius:4px; overflow:hidden; min-width:0; }
+  .top5-fill{ height:100%; border-radius:4px; }
+  .top5-pct{ font-size:14px; font-weight:700; color:var(--heading); width:36px; text-align:right; flex-shrink:0; }
+
+  /* status distribution */
+  .status-bar{ display:flex; height:24px; width:100%; border-radius:6px; overflow:hidden; }
+  .status-seg{ height:100%; transition:opacity .2s; }
+  .status-legend{ display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px; }
+  .legend-item{ display:flex; gap:6px; align-items:center; font-size:12px; font-weight:500; color:var(--body); background:none; border:none; padding:4px 6px; border-radius:6px; transition:opacity .2s; }
+  .legend-item:hover{ background:var(--bg); }
+  .legend-item.dimmed{ opacity:0.35; }
+  .legend-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+  /* donut */
+  .donut-card{ display:flex; gap:24px; align-items:center; width:100%; }
+  .donut{
+    width:140px; height:140px; border-radius:50%; flex-shrink:0;
+    background:conic-gradient(var(--info) 0% 50%, var(--warning) 50% 83%, var(--success) 83% 100%);
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .donut::before{ content:''; position:absolute; inset:22px; background:var(--white); border-radius:50%; }
+  .donut-center{ position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .donut-eta{ font-size:20px; font-weight:800; color:var(--heading); }
+  .donut-sub{ font-size:11px; font-weight:400; color:var(--body); }
+  .donut-info{ flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  .donut-legend{ display:flex; flex-direction:column; gap:8px; }
+  .donut-legend-row{ display:flex; justify-content:space-between; font-size:12px; }
+  .donut-legend-label{ font-weight:500; color:var(--body); }
+  .donut-legend-value{ font-weight:700; }
+  .c-info{ color:var(--info); }
+  .c-warning{ color:var(--warning); }
+  .c-success{ color:var(--success); }
+
+  /* calendar */
+  .calendar-header{ display:flex; align-items:center; justify-content:space-between; width:100%; }
+  .calendar-nav{ display:flex; gap:8px; }
+  .chevron-btn{
+    width:24px; height:24px; border-radius:6px;
+    background:none; border:none;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--body);
+  }
+  .chevron-btn:hover{ background:var(--bg); color:var(--heading); }
+  .calendar-weekdays{ display:flex; justify-content:space-between; width:100%; }
+  .weekday{ width:36px; text-align:center; font-size:11px; font-weight:700; color:var(--muted); }
+  .calendar-grid{ display:flex; flex-direction:column; gap:4px; width:100%; }
+  .calendar-row{ display:flex; justify-content:space-between; width:100%; }
+  .day-cell{
+    width:36px; height:36px; border-radius:18px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:400; color:var(--heading);
+    background:transparent; border:none;
+  }
+  .day-cell.empty{ visibility:hidden; cursor:default; }
+  .day-cell:not(.empty):hover{ background:var(--bg); }
+  .day-cell.highlight{ background:var(--info-bg); color:var(--primary); font-weight:700; }
+  .day-cell.selected{ background:var(--primary); color:var(--white); font-weight:700; }
+
+  /* recent updates */
+  .updates-list{ display:flex; flex-direction:column; gap:0; width:100%; }
+  .update-row{ display:flex; gap:12px; align-items:center; padding:8px 4px; width:100%; border-radius:8px; }
+  .update-row:hover{ background:var(--bg); }
+  .update-row.read{ opacity:0.5; }
+  .update-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .update-content{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .update-title{ font-size:14px; font-weight:500; color:var(--heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .update-meta{ display:flex; gap:8px; font-size:12px; }
+  .update-meta .author{ color:var(--body); }
+  .update-meta .sep, .update-meta .time{ color:var(--muted); }
+  .update-tag{ background:var(--bg); padding:4px 8px; border-radius:6px; font-size:11px; color:var(--body); flex-shrink:0; }
+  .update-divider{ height:1px; background:var(--border); width:100%; }
+
+  @media (max-width: 1100px){
+    .content{ flex-direction:column; }
+    .left-panel, .right-panel{ max-width:100%; flex:1 1 auto; width:100%; }
+    .dept-heads-row{ flex-direction:column; align-items:stretch; }
+    .dept-heads-row::before{ display:none; }
+    .dept-column::before{ display:none; }
+    .members-row{ flex-direction:column; }
+    .summary-row{ flex-direction:column; }
+    .top5-team, .top5-progress{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============ Navigation ============ -->
+  <nav class="navbar" data-name="navigation">
+    <div class="nav-left">
+      <div class="logo-group">
+        <div class="logo-mark">H</div>
+        <span class="logo-text">halil</span>
+      </div>
+      <div class="nav-tabs" id="navTabs">
+        <button class="nav-tab active" data-tab="dashboard">대시보드</button>
+        <button class="nav-tab" data-tab="project">프로젝트</button>
+        <button class="nav-tab" data-tab="connector">커넥터</button>
+        <button class="nav-tab" data-tab="settings">설정</button>
+      </div>
+    </div>
+    <div class="nav-right">
+      <button class="icon-btn" id="notifBtn" aria-label="알림" title="알림">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="notif-dot" id="notifDot"></span>
+        <div class="dropdown" id="notifDropdown">
+          <div class="dropdown-header">알림 3건</div>
+          <div class="notif-item"><p class="n-title">박서준 님의 업무 부하가 90%를 초과했습니다</p><p class="n-time">10분 전</p></div>
+          <div class="notif-item"><p class="n-title">서버 환경 이중화 테스트가 실패했습니다</p><p class="n-time">5시간 전</p></div>
+          <div class="notif-item"><p class="n-title">API 연동 규격서 작성이 완료되었습니다</p><p class="n-time">1시간 전</p></div>
+        </div>
+      </button>
+      <div class="user-menu">
+        <button class="user-trigger" id="userBtn">
+          <div class="avatar-circle">김</div>
+          <div class="user-info">
+            <span class="user-name">김민우</span>
+            <span class="user-org">Contra Labs</span>
+          </div>
+        </button>
+        <div class="dropdown" id="userDropdown" style="min-width:180px;">
+          <div class="dropdown-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>내 프로필</div>
+          <div class="dropdown-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>설정</div>
+          <div class="dropdown-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>로그아웃</div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============ Content ============ -->
+  <div class="content">
+
+    <!-- ============ Left Panel ============ -->
+    <div class="left-panel">
+
+      <div class="panel-header">
+        <p class="panel-title">조직도 현황</p>
+        <p class="panel-subtitle">팀별 업무 분배 및 가용 인원 모니터링</p>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-card">
+          <p class="summary-label">전체 팀원</p>
+          <div class="summary-value-row"><p class="summary-value">12명</p></div>
+        </div>
+        <div class="summary-card">
+          <p class="summary-label">가용 팀원</p>
+          <div class="summary-value-row"><p class="summary-value">5명</p></div>
+        </div>
+        <div class="summary-card">
+          <p class="summary-label">과부하 상태</p>
+          <div class="summary-value-row"><p class="summary-value">3명</p></div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <p class="card-title">팀원 리스트</p>
+        <div class="card card-pad org-chart">
+          <div class="pm-wrap">
+            <div class="member-card pm" data-member="김민수">
+              <div>
+                <p class="member-name">김민수</p>
+                <p class="member-role">PM/관리자</p>
+              </div>
+              <span class="status-badge status-available">가용</span>
+            </div>
+            <div class="v-connector"></div>
+          </div>
+
+          <div class="dept-heads-row">
+            <!-- 백엔드팀 -->
+            <div class="dept-column">
+              <p class="dept-label">백엔드팀</p>
+              <div class="member-card" data-member="박서준">
+                <div>
+                  <p class="member-name">박서준</p>
+                  <p class="member-role">팀장</p>
+                </div>
+                <span class="status-badge status-overload">과부하</span>
+              </div>
+              <div class="dept-line"></div>
+              <div class="members-row">
+                <div class="member-card" data-member="이동현">
+                  <div>
+                    <p class="member-name">이동현</p>
+                    <p class="member-role">사원</p>
+                  </div>
+                  <span class="status-badge status-overload">과부하</span>
+                </div>
+                <div class="member-card" data-member="최영호">
+                  <div>
+                    <p class="member-name">최영호</p>
+                    <p class="member-role">사원</p>
+                  </div>
+                  <span class="status-badge status-available">가용</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 프론트엔드팀 -->
+            <div class="dept-column">
+              <p class="dept-label">프론트엔드팀</p>
+              <div class="member-card" data-member="김지은">
+                <div>
+                  <p class="member-name">김지은</p>
+                  <p class="member-role">팀장</p>
+                </div>
+                <span class="status-badge status-working">작업중</span>
+              </div>
+              <div class="dept-line"></div>
+              <div class="members-row">
+                <div class="member-card" data-member="한유진">
+                  <div>
+                    <p class="member-name">한유진</p>
+                    <p class="member-role">사원</p>
+                  </div>
+                  <span class="status-badge status-available">가용</span>
+                </div>
+                <div class="member-card" data-member="오세영">
+                  <div>
+                    <p class="member-name">오세영</p>
+                    <p class="member-role">사원</p>
+                  </div>
+                  <span class="status-badge status-available">가용</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 인프라팀 -->
+            <div class="dept-column">
+              <p class="dept-label">인프라팀</p>
+              <div class="member-card" data-member="정현우">
+                <div>
+                  <p class="member-name">정현우</p>
+                  <p class="member-role">팀장</p>
+                </div>
+                <span class="status-badge status-working">작업중</span>
+              </div>
+              <div class="dept-line"></div>
+              <div class="members-row">
+                <div class="member-card" data-member="송민기">
+                  <div>
+                    <p class="member-name">송민기</p>
+                    <p class="member-role">사원</p>
+                  </div>
+                  <span class="status-badge status-working">작업중</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="display:flex;flex-direction:column;gap:20px;">
+        <p class="card-title">팀별 업무 부하 분석</p>
+        <div style="display:flex;flex-direction:column;gap:16px;width:100%;">
+          <div class="workload-row">
+            <p class="workload-label">백엔드팀</p>
+            <div class="workload-bar-wrap">
+              <div class="workload-track"><div class="workload-fill" style="width:88%;background:var(--danger);"></div></div>
+              <p class="workload-pct">88%</p>
+            </div>
+          </div>
+          <div class="workload-row">
+            <p class="workload-label">프론트엔드팀</p>
+            <div class="workload-bar-wrap">
+              <div class="workload-track"><div class="workload-fill" style="width:65%;background:var(--info);"></div></div>
+              <p class="workload-pct">65%</p>
+            </div>
+          </div>
+          <div class="workload-row">
+            <p class="workload-label">인프라팀</p>
+            <div class="workload-bar-wrap">
+              <div class="workload-track"><div class="workload-fill" style="width:50%;background:var(--warning);"></div></div>
+              <p class="workload-pct">50%</p>
+            </div>
+          </div>
+          <div class="workload-row">
+            <p class="workload-label">기획&amp;디자인</p>
+            <div class="workload-bar-wrap">
+              <div class="workload-track"><div class="workload-fill" style="width:30%;background:var(--success);"></div></div>
+              <p class="workload-pct">30%</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="display:flex;flex-direction:column;gap:16px;">
+        <p class="card-title">부하도 Top 5</p>
+        <div class="top5-list" id="top5List">
+          <div class="top5-row" data-rank="1">
+            <p class="top5-rank">1</p>
+            <div class="top5-avatar">박</div>
+            <p class="top5-name">박서준</p>
+            <p class="top5-team">백엔드팀</p>
+            <div class="top5-progress">
+              <div class="top5-track"><div class="top5-fill" style="width:95%;background:var(--danger);"></div></div>
+              <p class="top5-pct">95%</p>
+            </div>
+          </div>
+          <div class="top5-row" data-rank="2">
+            <p class="top5-rank">2</p>
+            <div class="top5-avatar">이</div>
+            <p class="top5-name">이동현</p>
+            <p class="top5-team">백엔드팀</p>
+            <div class="top5-progress">
+              <div class="top5-track"><div class="top5-fill" style="width:90%;background:var(--danger);"></div></div>
+              <p class="top5-pct">90%</p>
+            </div>
+          </div>
+          <div class="top5-row" data-rank="3">
+            <p class="top5-rank">3</p>
+            <div class="top5-avatar">김</div>
+            <p class="top5-name">김지은</p>
+            <p class="top5-team">프론트엔드팀</p>
+            <div class="top5-progress">
+              <div class="top5-track"><div class="top5-fill" style="width:82%;background:var(--warning);"></div></div>
+              <p class="top5-pct">82%</p>
+            </div>
+          </div>
+          <div class="top5-row" data-rank="4">
+            <p class="top5-rank">4</p>
+            <div class="top5-avatar">한</div>
+            <p class="top5-name">한유진</p>
+            <p class="top5-team">프론트엔드팀</p>
+            <div class="top5-progress">
+              <div class="top5-track"><div class="top5-fill" style="width:78%;background:var(--warning);"></div></div>
+              <p class="top5-pct">78%</p>
+            </div>
+          </div>
+          <div class="top5-row" data-rank="5">
+            <p class="top5-rank">5</p>
+            <div class="top5-avatar">정</div>
+            <p class="top5-name">정현우</p>
+            <p class="top5-team">인프라팀</p>
+            <div class="top5-progress">
+              <div class="top5-track"><div class="top5-fill" style="width:72%;background:var(--warning);"></div></div>
+              <p class="top5-pct">72%</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ Right Panel ============ -->
+    <div class="right-panel">
+
+      <div class="panel-header-col">
+        <p class="panel-title">Task 현황</p>
+        <p class="panel-subtitle">실시간 프로젝트 태스크 진행 지표</p>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-card">
+          <p class="summary-label">진행중 태스크</p>
+          <div class="summary-value-row">
+            <p class="summary-value">13건</p>
+            <span class="summary-delta delta-info">+2건</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p class="summary-label">태스크 완료율</p>
+          <div class="summary-value-row">
+            <p class="summary-value">36%</p>
+            <span class="summary-delta delta-success">+4%</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p class="summary-label">지연된 태스크</p>
+          <div class="summary-value-row">
+            <p class="summary-value">4건</p>
+            <span class="summary-delta delta-danger">-1건</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="display:flex;flex-direction:column;gap:16px;">
+        <p class="card-title">상태별 업무 현황</p>
+        <div class="status-bar" id="statusBar">
+          <div class="status-seg" data-seg="progress" style="width:42%;background:var(--info);"></div>
+          <div class="status-seg" data-seg="waiting" style="width:28%;background:var(--warning);"></div>
+          <div class="status-seg" data-seg="done" style="width:20%;background:var(--success);"></div>
+          <div class="status-seg" data-seg="delayed" style="width:10%;background:var(--danger);"></div>
+        </div>
+        <div class="status-legend" id="statusLegend">
+          <button class="legend-item" data-seg="progress"><span class="legend-dot" style="background:var(--info);"></span>진행중 (42%)</button>
+          <button class="legend-item" data-seg="waiting"><span class="legend-dot" style="background:var(--warning);"></span>대기 (28%)</button>
+          <button class="legend-item" data-seg="done"><span class="legend-dot" style="background:var(--success);"></span>완료 (20%)</button>
+          <button class="legend-item" data-seg="delayed"><span class="legend-dot" style="background:var(--danger);"></span>지연 (10%)</button>
+        </div>
+      </div>
+
+      <div class="card card-pad donut-card">
+        <div class="donut">
+          <div class="donut-center">
+            <p class="donut-eta">ETA</p>
+            <p class="donut-sub">업무그룹별</p>
+          </div>
+        </div>
+        <div class="donut-info">
+          <p class="card-title">업무 그룹별 기한 준수율</p>
+          <div class="donut-legend">
+            <div class="donut-legend-row">
+              <p class="donut-legend-label">UI/UX 디자인</p>
+              <p class="donut-legend-value c-info">D-1 이하 (50%)</p>
+            </div>
+            <div class="donut-legend-row">
+              <p class="donut-legend-label">기능 개발</p>
+              <p class="donut-legend-value c-warning">D-3 이하 (33%)</p>
+            </div>
+            <div class="donut-legend-row">
+              <p class="donut-legend-label">운영 및 테스트</p>
+              <p class="donut-legend-value c-success">여유 (17%)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="display:flex;flex-direction:column;gap:16px;">
+        <div class="calendar-header">
+          <p class="card-title" id="calendarTitle">2023년 11월 업무 일정</p>
+          <div class="calendar-nav">
+            <button class="chevron-btn" id="calPrev" aria-label="이전 달">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button class="chevron-btn" id="calNext" aria-label="다음 달">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6 6-6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="calendar-weekdays">
+          <span class="weekday">일</span><span class="weekday">월</span><span class="weekday">화</span>
+          <span class="weekday">수</span><span class="weekday">목</span><span class="weekday">금</span><span class="weekday">토</span>
+        </div>
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </div>
+
+      <div class="card card-pad" style="display:flex;flex-direction:column;gap:16px;">
+        <p class="card-title">최근 업데이트</p>
+        <div class="updates-list" id="updatesList">
+          <div class="update-row" data-color="var(--info)">
+            <span class="update-dot" style="background:var(--info);"></span>
+            <div class="update-content">
+              <p class="update-title">메인 대시보드 화면 설계 수정</p>
+              <div class="update-meta"><span class="author">이지원</span><span class="sep">&bull;</span><span class="time">10분 전</span></div>
+            </div>
+            <span class="update-tag">디자인</span>
+          </div>
+          <div class="update-divider"></div>
+          <div class="update-row" data-color="var(--danger)">
+            <span class="update-dot" style="background:var(--danger);"></span>
+            <div class="update-content">
+              <p class="update-title">API 연동 규격서 작성 완료</p>
+              <div class="update-meta"><span class="author">이정재</span><span class="sep">&bull;</span><span class="time">1시간 전</span></div>
+            </div>
+            <span class="update-tag">개발</span>
+          </div>
+          <div class="update-divider"></div>
+          <div class="update-row" data-color="var(--success)">
+            <span class="update-dot" style="background:var(--success);"></span>
+            <div class="update-content">
+              <p class="update-title">런칭 프로모션 기획 검토</p>
+              <div class="update-meta"><span class="author">한예슬</span><span class="sep">&bull;</span><span class="time">3시간 전</span></div>
+            </div>
+            <span class="update-tag">기획</span>
+          </div>
+          <div class="update-divider"></div>
+          <div class="update-row" data-color="var(--warning)">
+            <span class="update-dot" style="background:var(--warning);"></span>
+            <div class="update-content">
+              <p class="update-title">서버 환경 이중화 테스트 실패</p>
+              <div class="update-meta"><span class="author">강동원</span><span class="sep">&bull;</span><span class="time">5시간 전</span></div>
+            </div>
+            <span class="update-tag">인프라</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+(function(){
+  // ---------- Nav tabs ----------
+  var navTabs = document.querySelectorAll('.nav-tab');
+  navTabs.forEach(function(tab){
+    tab.addEventListener('click', function(){
+      navTabs.forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+    });
+  });
+
+  // ---------- Dropdowns ----------
+  var notifBtn = document.getElementById('notifBtn');
+  var notifDropdown = document.getElementById('notifDropdown');
+  var notifDot = document.getElementById('notifDot');
+  var userBtn = document.getElementById('userBtn');
+  var userDropdown = document.getElementById('userDropdown');
+
+  function closeAllDropdowns(except){
+    [notifDropdown, userDropdown].forEach(function(d){
+      if(d !== except) d.classList.remove('show');
+    });
+  }
+
+  notifBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var willShow = !notifDropdown.classList.contains('show');
+    closeAllDropdowns(notifDropdown);
+    notifDropdown.classList.toggle('show', willShow);
+    if(willShow && notifDot) notifDot.style.display = 'none';
+  });
+
+  userBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var willShow = !userDropdown.classList.contains('show');
+    closeAllDropdowns(userDropdown);
+    userDropdown.classList.toggle('show', willShow);
+  });
+
+  document.addEventListener('click', function(){ closeAllDropdowns(null); });
+
+  // ---------- Org chart member selection ----------
+  document.querySelectorAll('.member-card').forEach(function(card){
+    card.addEventListener('click', function(){
+      var wasSelected = card.classList.contains('selected');
+      document.querySelectorAll('.member-card.selected').forEach(function(c){ c.classList.remove('selected'); });
+      if(!wasSelected) card.classList.add('selected');
+    });
+  });
+
+  // ---------- Top 5 row selection ----------
+  document.querySelectorAll('.top5-row').forEach(function(row){
+    row.addEventListener('click', function(){
+      row.classList.toggle('selected');
+    });
+  });
+
+  // ---------- Status legend filter ----------
+  var legendItems = document.querySelectorAll('.legend-item');
+  var statusSegs = document.querySelectorAll('.status-seg');
+  var activeSeg = null;
+  legendItems.forEach(function(item){
+    item.addEventListener('click', function(){
+      var seg = item.getAttribute('data-seg');
+      if(activeSeg === seg){
+        activeSeg = null;
+      } else {
+        activeSeg = seg;
+      }
+      legendItems.forEach(function(li){
+        li.classList.toggle('dimmed', activeSeg !== null && li.getAttribute('data-seg') !== activeSeg);
+      });
+      statusSegs.forEach(function(s){
+        s.style.opacity = (activeSeg === null || s.getAttribute('data-seg') === activeSeg) ? '1' : '0.25';
+      });
+    });
+  });
+
+  // ---------- Recent updates read toggle ----------
+  document.querySelectorAll('.update-row').forEach(function(row){
+    row.addEventListener('click', function(){
+      row.classList.toggle('read');
+    });
+  });
+
+  // ---------- Calendar ----------
+  var calendarTitle = document.getElementById('calendarTitle');
+  var calendarGrid = document.getElementById('calendarGrid');
+  var calPrev = document.getElementById('calPrev');
+  var calNext = document.getElementById('calNext');
+
+  var current = { year: 2023, month: 10 }; // month is 0-indexed, Nov = 10
+  var selectedDay = { year: 2023, month: 10, day: 8 };
+  var highlightDays = [2, 13, 14]; // only meaningful for Nov 2023 (matches design)
+
+  function renderCalendar(){
+    calendarTitle.textContent = current.year + '년 ' + (current.month + 1) + '월 업무 일정';
+    calendarGrid.innerHTML = '';
+
+    var firstWeekday = new Date(current.year, current.month, 1).getDay();
+    var daysInMonth = new Date(current.year, current.month + 1, 0).getDate();
+
+    var cells = [];
+    for(var i = 0; i < firstWeekday; i++){ cells.push(null); }
+    for(var d = 1; d <= daysInMonth; d++){ cells.push(d); }
+
+    var isNov2023 = (current.year === 2023 && current.month === 10);
+
+    var rowEl = null;
+    cells.forEach(function(day, idx){
+      if(idx % 7 === 0){
+        rowEl = document.createElement('div');
+        rowEl.className = 'calendar-row';
+        calendarGrid.appendChild(rowEl);
+      }
+      var cell = document.createElement('button');
+      cell.className = 'day-cell';
+      if(day === null){
+        cell.classList.add('empty');
+      } else {
+        cell.textContent = day;
+        if(isNov2023 && highlightDays.indexOf(day) !== -1){
+          cell.classList.add('highlight');
+        }
+        if(current.year === selectedDay.year && current.month === selectedDay.month && day === selectedDay.day){
+          cell.classList.add('selected');
+        }
+        cell.addEventListener('click', function(){
+          selectedDay = { year: current.year, month: current.month, day: day };
+          renderCalendar();
+        });
+      }
+      rowEl.appendChild(cell);
+    });
+  }
+
+  calPrev.addEventListener('click', function(){
+    current.month -= 1;
+    if(current.month < 0){ current.month = 11; current.year -= 1; }
+    renderCalendar();
+  });
+  calNext.addEventListener('click', function(){
+    current.month += 1;
+    if(current.month > 11){ current.month = 0; current.year += 1; }
+    renderCalendar();
+  });
+
+  renderCalendar();
+})();
+</script>
+</body>
+</html>

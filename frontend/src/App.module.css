@@ -1,0 +1,74 @@
+.indexPage {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 64px 40px 120px;
+}
+
+.indexTitle {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--color-heading);
+  margin-bottom: 8px;
+}
+
+.indexSubtitle {
+  font-size: 15px;
+  color: var(--color-body);
+  margin-bottom: 40px;
+}
+
+.indexGroup {
+  margin-bottom: 32px;
+}
+
+.indexGroupTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.indexList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.indexLink {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-decoration: none;
+  color: var(--color-heading);
+  font-weight: 600;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.indexLink:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.indexPath {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-placeholder);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--color-body);
+  font-size: 14px;
+}

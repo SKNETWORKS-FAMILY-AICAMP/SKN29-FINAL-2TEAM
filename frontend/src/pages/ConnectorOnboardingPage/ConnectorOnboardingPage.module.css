@@ -1,0 +1,120 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-bg);
+}
+
+.wizardArea {
+  width: 1000px;
+  max-width: 100%;
+  padding: var(--space-12) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.badge {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--color-heading);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 16px;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.cardsRow {
+  display: flex;
+  gap: var(--space-4);
+  width: 100%;
+  align-items: stretch;
+}
+
+.connectorCard {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: var(--shadow-card-md);
+}
+
+.cardTop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.iconRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.connectorIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.connectorIcon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.connectorName {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+}
+
+.connectorDesc {
+  font-size: 14px;
+  color: var(--color-muted);
+  line-height: 1.5;
+  margin: var(--space-2) 0 0;
+}
+
+.cardAction {
+  padding-top: var(--space-6);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+}
+
+.nextButton {
+  width: 320px;
+  box-shadow: var(--shadow-lift);
+}

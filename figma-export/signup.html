@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회원가입 | halil</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="page" style="padding: 60px 40px;">
+  <div class="bg-blob bg-blob-tl"></div>
+  <div class="bg-blob bg-blob-br"></div>
+
+  <div class="auth-container wide">
+    <div class="header">
+      <div class="logo-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        <span>halil</span>
+      </div>
+      <p class="tagline">AI 기반 업무 배정 코파일럿</p>
+    </div>
+
+    <div class="card">
+      <div>
+        <h1 class="card-title">회원가입</h1>
+        <p class="card-subtitle">halil과 함께 지능형 업무 배정을 경험해 보세요.</p>
+      </div>
+
+      <div class="tabs-row">새 팀 만들기</div>
+
+      <form class="field-group">
+        <div class="field">
+          <label for="name">이름 <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <input type="text" id="name" name="name" placeholder="홍길동" autocomplete="name">
+          </div>
+        </div>
+        <div class="field">
+          <label for="signup-email">이메일 주소 <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <input type="email" id="signup-email" name="email" placeholder="name@company.com" autocomplete="email">
+          </div>
+        </div>
+        <div class="field">
+          <label for="signup-password">비밀번호 <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <input type="password" id="signup-password" name="password" placeholder="8자 이상의 영문, 숫자 조합" autocomplete="new-password">
+            <svg class="eye-toggle" data-target="signup-password" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+              <line x1="2" y1="2" x2="22" y2="22"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="field">
+          <label for="signup-password-confirm">비밀번호 확인 <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <input type="password" id="signup-password-confirm" name="password_confirm" placeholder="비밀번호를 한번 더 입력해 주세요" autocomplete="new-password">
+            <svg class="eye-toggle" data-target="signup-password-confirm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+              <line x1="2" y1="2" x2="22" y2="22"></line>
+            </svg>
+          </div>
+        </div>
+      </form>
+
+      <button type="submit" class="btn-primary">가입하기</button>
+
+      <div class="divider">
+        <div class="line"></div>
+        <span>또는</span>
+        <div class="line"></div>
+      </div>
+    </div>
+
+    <div class="footer-links">
+      <p style="margin:0;">이미 계정이 있으신가요? <a href="login.html">로그인</a></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.eye-toggle').forEach(icon => {
+    icon.addEventListener('click', () => {
+      const input = document.getElementById(icon.dataset.target);
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-body);
+  display: flex;
+  align-items: center;
+}
+
+.required {
+  color: var(--color-danger);
+}
+
+.wrapper {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+}
+
+.wrapper:focus-within {
+  border-color: var(--color-primary);
+}
+
+.wrapperError {
+  border-color: var(--color-danger);
+}
+
+.input {
+  border: none;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  font-size: 15px;
+  color: var(--color-heading);
+  font-family: inherit;
+  background: transparent;
+}
+
+.input::placeholder {
+  color: var(--color-placeholder);
+}
+
+.rightElement {
+  display: flex;
+  align-items: center;
+  margin-left: var(--space-2);
+  flex-shrink: 0;
+}
+
+.error {
+  font-size: 13px;
+  color: var(--color-danger);
+  margin: 0;
+}

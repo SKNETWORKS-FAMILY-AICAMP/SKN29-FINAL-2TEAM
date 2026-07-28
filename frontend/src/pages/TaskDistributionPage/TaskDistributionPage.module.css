@@ -1,0 +1,265 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+/* ---------- demo state toggle bar ---------- */
+.demoBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--color-heading);
+  padding: var(--space-3) var(--space-6);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.demoLabel {
+  color: var(--color-placeholder);
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: var(--space-1);
+  letter-spacing: 0.02em;
+}
+
+.demoBtn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-border);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.demoBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.demoBtnActive {
+  background: var(--color-surface);
+  color: var(--color-heading);
+  border-color: var(--color-surface);
+}
+
+/* ---------- workspace / center card ---------- */
+.workspace {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  width: 100%;
+  min-height: calc(100vh - 68px);
+}
+
+.centerCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  align-items: flex-start;
+  padding: var(--space-10);
+  width: 640px;
+  max-width: 100%;
+}
+
+.cardHeading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.cardHeading h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.cardHeading p {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--color-body);
+}
+
+/* ---------- step list ---------- */
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  align-items: flex-start;
+  width: 100%;
+}
+
+.stepRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-start;
+  width: 100%;
+}
+
+.stepRowMain {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  width: 100%;
+}
+
+.stepIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconDone {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.iconActive {
+  border: 2px solid var(--color-info);
+  color: var(--color-info);
+}
+
+.iconPending {
+  border: 2px solid var(--color-border);
+}
+
+.iconWarning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.stepLabel {
+  flex: 1 0 0;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--color-heading);
+}
+
+.weightMedium {
+  font-weight: 500;
+}
+
+.weightSemibold {
+  font-weight: 600;
+}
+
+.weightMuted {
+  color: var(--color-placeholder);
+  font-weight: 500;
+}
+
+.stepSubnote {
+  padding-left: 36px;
+  width: 100%;
+}
+
+.stepSubnote p {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-warning);
+}
+
+/* ---------- progress ---------- */
+.progressBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  width: 100%;
+}
+
+.progressLabels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 13px;
+}
+
+.pLabel {
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.pValue {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.progressTrack {
+  background: var(--color-bg);
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.progressFill {
+  background: var(--color-primary);
+  height: 8px;
+  border-radius: var(--radius-sm);
+  transition: width 0.4s ease;
+}
+
+/* ---------- amber notice banner ---------- */
+.amberBanner {
+  background: var(--color-warning-bg);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  width: 100%;
+  color: var(--color-warning);
+}
+
+.amberBanner p {
+  flex: 1 0 0;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  width: 100%;
+}
+
+.footnoteRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  color: var(--color-placeholder);
+}
+
+.footnoteRow p {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-placeholder);
+  white-space: nowrap;
+}
