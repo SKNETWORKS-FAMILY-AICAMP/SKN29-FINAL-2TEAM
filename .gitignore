@@ -10,3 +10,18 @@ _to_delete/
 # OS
 .DS_Store
 Thumbs.db
+
+# Django·Python 로컬 환경
+.env
+.venv/
+__pycache__/
+*.py[cod]
+db.sqlite3
+media/
+staticfiles/
+.pytest_cache/
+
+# React·Vite 로컬 환경
+frontend/node_modules/
+frontend/dist/
+frontend/.env

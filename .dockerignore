@@ -1,0 +1,11 @@
+.git
+.venv
+.env
+__pycache__/
+*.py[cod]
+db.sqlite3
+media/
+staticfiles/
+outputs/
+.codex_tmp/
+.codex_work/
