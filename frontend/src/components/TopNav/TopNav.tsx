@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
 import styles from './TopNav.module.css';
 
@@ -29,10 +29,10 @@ export function TopNav({
 
   return (
     <header className={styles.nav}>
-      <div className={styles.logo}>
+      <Link to="/dashboard" className={styles.logo} aria-label="대시보드로 이동">
         <span className={styles.mark}>h</span>
         <span className={styles.wordmark}>halil</span>
-      </div>
+      </Link>
 
       {tabs.length > 0 && !stepBadge && (
         <nav className={styles.tabs}>
