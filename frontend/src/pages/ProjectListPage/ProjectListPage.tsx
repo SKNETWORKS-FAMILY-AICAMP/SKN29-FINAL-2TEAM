@@ -115,6 +115,7 @@ export default function ProjectListPage() {
   const [loadState, setLoadState] = useState<LoadState>(isDemo ? 'demo' : 'loading');
   const [loadReason, setLoadReason] = useState('');
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const query = search.trim().toLowerCase();
   const activeProjects = useMemo(
@@ -210,7 +211,10 @@ export default function ProjectListPage() {
       return;
     }
 
-    navigate(`/files/new?projectId=${encodeURIComponent(selectedActiveId)}&view=review&mode=demo`);
+    showToast('업무 분배 워크플로우로 이동합니다', 'info');
+    setTimeout(() => {
+      navigate(`/files/new?projectId=${encodeURIComponent(selectedActiveId)}&view=review&mode=demo`);
+    }, 700);
   }
 
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Badge, Button, Icon, TopNav } from '../../components';
+import { Badge, Button, Icon, TopNav, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import styles from './TaskRecommendationPage.module.css';
@@ -84,6 +84,7 @@ const TASKS: TaskCard[] = [
 export default function TaskRecommendationPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [tasks, setTasks] = useState<TaskCard[]>(TASKS);
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -136,7 +137,10 @@ export default function TaskRecommendationPage() {
     const params = new URLSearchParams(location.search);
     if (hasManualChange) params.set('adjusted', '1');
     const query = params.toString();
-    navigate(`/tasks/result${query ? `?${query}` : ''}`);
+    showToast('검증 결과 확인 단계로 이동합니다.');
+    setTimeout(() => {
+      navigate(`/tasks/result${query ? `?${query}` : ''}`);
+    }, 700);
   }
 
   return (
@@ -276,7 +280,15 @@ export default function TaskRecommendationPage() {
       </div>
 
       <footer className={styles.bottomBar}>
-        <Button variant="secondary" onClick={() => navigate(`/tasks/distribution${location.search}`)}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            showToast('이전 단계로 이동합니다.');
+            setTimeout(() => {
+              navigate(`/tasks/distribution${location.search}`);
+            }, 500);
+          }}
+        >
           이전 단계
         </Button>
         <Button variant="primary" onClick={handleNext}>

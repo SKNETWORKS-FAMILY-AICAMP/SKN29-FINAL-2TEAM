@@ -53,6 +53,7 @@ export default function WorkspacePage() {
   const [requirements, setRequirements] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const members = isDemo ? MEMBERS : apiMembers;
   const selectionCount = checkedIds.size;
@@ -113,7 +114,9 @@ export default function WorkspacePage() {
 
     setModalOpen(false);
     showToast('업무 분배가 시작되었습니다.', 'success');
-    navigate(`/tasks/distribution${location.search}`);
+    setTimeout(() => {
+      navigate(`/tasks/distribution${location.search}`);
+    }, 700);
   }
 
   const modalFooter = (

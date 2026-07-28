@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Icon, TopNav } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -87,7 +87,15 @@ export default function TaskDistributionPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [screenState, setScreenState] = useState<ScreenState>('loading');
+  const navigate = useNavigate();
   const config = STATE_CONFIG[screenState];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      navigate('/tasks/recommendation');
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [navigate]);
 
   return (
     <div className={styles.page}>
