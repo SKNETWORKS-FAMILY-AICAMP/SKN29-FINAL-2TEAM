@@ -13,6 +13,7 @@
 | 종류 | 정의 파일 | 저장 내용 |
 |---|---|---|
 | PostgreSQL/pgvector | `DB/schema.sql` | `person`, `org`, `doc`, `chunk` 등 도메인 스키마(Figma 설계 기준) + Django ORM 테이블(`accounts_*`, `people_*`, `projects_*`, `auth_*` 등) |
+| PostgreSQL/pgvector (목업) | `DB/peopleDB/peopledb_mock.sql` | `schema.sql`이 만든 People DB 테이블(`org`/`level`/`skill`/`person`/`person_skill`/`sched`/`absence`/`person_link`)에 채우는 목업 INSERT. `schema.sql`처럼 자동 실행되지 않고 수동 실행 필요(5장 참고) |
 | ChromaDB | `backend/services/createDB/chroma_setup.py` | 청크 임베딩 벡터 컬렉션(`chunks_{embed_ver}`) |
 
 둘 다 `infra/docker/docker-compose.yml`에 서비스로 정의되어 있고, git clone 후 한 번만 제대로 기동하면 이후로는 그대로 유지된다.
@@ -103,7 +104,33 @@ curl http://127.0.0.1:8001/api/v1/heartbeat
 
 ---
 
-## 5. Django 쪽 테이블도 필요하면
+## 5. People DB 목업 데이터 넣기 (`peopledb_mock.sql`)
+
+`DB/schema.sql`은 `db` 컨테이너에 자동으로 마운트되어 최초 기동 시 실행되지만, `DB/peopleDB/peopledb_mock.sql`은 **`docker-compose.yml`에 마운트되어 있지 않아 자동 실행되지 않는다.** People DB(조직/직급/스킬/인력/근무/휴가/외부계정 연동) 목업 데이터가 필요하면 아래처럼 직접 실행한다.
+
+```bash
+cat DB/peopleDB/peopledb_mock.sql | docker compose -f infra/docker/docker-compose.yml exec -T db \
+  psql -U project_copilot -d project_copilot -v ON_ERROR_STOP=1
+```
+
+정상 실행되면 `INSERT 0 9`, `INSERT 0 57` 같은 결과가 순서대로 출력된다(org 9, level 8, person 57, skill 14, person_skill 111, sched 57, absence 23, person_link 70건).
+
+**주의:**
+- 이 스크립트는 `schema.sql` 실행 이후에만 실행할 것(People DB 테이블이 먼저 있어야 함).
+- INSERT가 멱등적이지 않다(`ON CONFLICT` 처리 없음). 이미 데이터가 들어있는 상태에서 다시 실행하면 PK 중복 에러(`duplicate key value violates unique constraint`)가 난다 — 한 PC당 한 번만 실행하면 된다.
+- 데이터를 다시 채우고 싶으면 `person`부터 역순으로 지우거나(FK 의존성 때문에), `down -v`로 볼륨을 통째로 초기화한 뒤 `schema.sql` 자동 실행 → 이 명령 재실행 순서로 한다.
+
+확인:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM person;"
+```
+
+`57`이 나오면 정상이다.
+
+---
+
+## 6. Django 쪽 테이블도 필요하면
 
 Django ORM 테이블(`accounts_*`, `people_*`, `projects_*`, `auth_*`)은 `web` 컨테이너를 기동하면 자동으로 `migrate`가 실행되면서 생성된다. `web`까지 포함해서 전체 스택을 올리려면:
 
@@ -115,7 +142,7 @@ docker compose -f infra/docker/docker-compose.yml up -d
 
 ---
 
-## 6. ChromaDB 예시 컬렉션 만들어보기 (선택)
+## 7. ChromaDB 예시 컬렉션 만들어보기 (선택)
 
 `chroma_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다.
 
@@ -134,7 +161,7 @@ python backend/services/createDB/chroma_setup.py
 
 ---
 
-## 7. 자주 쓰는 명령
+## 8. 자주 쓰는 명령
 
 ```bash
 # DB/Chroma 로그
@@ -150,7 +177,7 @@ docker compose -f infra/docker/docker-compose.yml down -v
 
 ---
 
-## 8. 문제 해결
+## 9. 문제 해결
 
 | 증상 | 원인·해결 |
 |---|---|
@@ -158,5 +185,6 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | `db`가 `healthy`가 되지 않음 | `docker compose ... logs db`로 오류 확인, 5432 포트를 로컬 Postgres가 이미 쓰고 있는지 `lsof -nP -iTCP:5432 -sTCP:LISTEN`으로 확인 |
 | GUI 앱 접속 시 `role "project_copilot" does not exist` | 5432 포트를 로컬 Postgres가 먼저 점유하고 있어서 docker가 아닌 그쪽에 연결된 것. 위 1장 참고해 포트 충돌 해소 후 재접속 |
 | `schema.sql`을 고쳤는데 반영이 안 됨 | init 스크립트는 볼륨이 빌 때만 실행된다. `down -v`로 `postgres_data` 볼륨 삭제 후 `up -d db`로 재기동(로컬 데이터 전부 삭제되니 주의) |
+| `peopledb_mock.sql` 실행 시 `duplicate key value violates unique constraint` | 이미 목업 데이터가 들어있는 상태에서 재실행한 것. 5장 참고해 데이터 삭제 후 재실행하거나 무시(이미 들어있으면 다시 넣을 필요 없음) |
 | `localhost:8001`(Chroma) 접속 실패 | `docker compose ps`로 `chroma` 컨테이너 상태 확인, 8001 포트를 다른 프로세스가 점유하고 있는지 확인 |
 | `chroma_setup.py` 실행 시 `ModuleNotFoundError: No module named 'chromadb'` | `pip install chromadb --break-system-packages` 먼저 실행 |
