@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, Icon, TopNav, useToast } from '../../components';
+import { CONNECTOR_STATUS_STORAGE_KEY } from '../../utils/connectorStatus';
+import type { ConnectorStatus } from '../../utils/connectorStatus';
 import styles from './ConnectorOnboardingPage.module.css';
 
-type ConnectorStatus = 'disconnected' | 'connected';
+const STATUS_STORAGE_KEY = CONNECTOR_STATUS_STORAGE_KEY;
 
 interface ConnectorDef {
   id: string;
@@ -35,6 +37,14 @@ function DriveIcon() {
 
 const CONNECTORS: ConnectorDef[] = [
   {
+    id: 'people-db',
+    name: 'People DB',
+    desc: '인력 정보 데이터베이스. 팀원별 스킬, 가용성, 역할 정보를 연동합니다.',
+    iconBg: 'rgba(16,185,129,0.07)',
+    icon: <Icon name="database" size={24} color="#10b981" />,
+    initialStatus: 'disconnected',
+  },
+  {
     id: 'jira',
     name: 'Jira',
     desc: '프로젝트 보드, 이슈 진행 상황, 그리고 개발 태스크 백로그를 할릴 AI가 직접 읽고 동기화합니다.',
@@ -50,30 +60,65 @@ const CONNECTORS: ConnectorDef[] = [
     icon: <DriveIcon />,
     initialStatus: 'disconnected',
   },
-  {
-    id: 'people-db',
-    name: 'People DB',
-    desc: '인력 정보 데이터베이스. 팀원별 스킬, 가용성, 역할 정보를 연동합니다.',
-    iconBg: 'rgba(16,185,129,0.07)',
-    icon: <Icon name="database" size={24} color="#10b981" />,
-    initialStatus: 'connected',
-  },
 ];
+
+function loadStoredStatuses(): Record<string, ConnectorStatus> {
+  const defaults = Object.fromEntries(CONNECTORS.map((c) => [c.id, c.initialStatus]));
+  try {
+    const raw = sessionStorage.getItem(STATUS_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Record<string, ConnectorStatus>;
+    return { ...defaults, ...parsed };
+  } catch {
+    return defaults;
+  }
+}
 
 export default function ConnectorOnboardingPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const [statuses, setStatuses] = useState<Record<string, ConnectorStatus>>(() =>
-    Object.fromEntries(CONNECTORS.map((c) => [c.id, c.initialStatus])),
-  );
+  const [statuses, setStatuses] = useState<Record<string, ConnectorStatus>>(loadStoredStatuses);
+  const allConnected = CONNECTORS.every((c) => statuses[c.id] === 'connected');
+
+  useEffect(() => {
+    sessionStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(statuses));
+  }, [statuses]);
 
   function handleConnectClick(id: string) {
+    if (id === 'google-drive') {
+      showToast('데이터 소스 설정을 완료하면 연결됩니다.', 'info');
+      setTimeout(() => {
+        navigate('/onboarding/folders?mode=demo');
+      }, 700);
+      return;
+    }
+
+    if (id === 'jira') {
+      showToast('Jira 프로젝트 선택을 완료하면 연결됩니다.', 'info');
+      setTimeout(() => {
+        navigate('/onboarding/jira-project?mode=demo');
+      }, 700);
+      return;
+    }
+
     setStatuses((prev) => ({ ...prev, [id]: 'connected' }));
     showToast('데모 연결 상태입니다. 실제 외부 서비스 인증은 아직 연결되지 않았습니다.', 'info');
   }
 
+  function handleResetStatuses() {
+    sessionStorage.removeItem(STATUS_STORAGE_KEY);
+    setStatuses(Object.fromEntries(CONNECTORS.map((c) => [c.id, c.initialStatus])));
+    showToast('커넥터 연결 상태를 초기화했습니다.', 'info');
+  }
+
   return (
     <div className={styles.page}>
+      {import.meta.env.DEV && (
+        <button type="button" className={styles.devResetButton} onClick={handleResetStatuses}>
+          연결 상태 초기화 (dev)
+        </button>
+      )}
+
       <TopNav tabs={[]} stepBadge="Step 1 of 2" />
 
       <div className={styles.wizardArea}>
@@ -87,6 +132,8 @@ export default function ConnectorOnboardingPage() {
           {CONNECTORS.map((connector) => {
             const status = statuses[connector.id];
             const connected = status === 'connected';
+            const peopleDbConnected = statuses['people-db'] === 'connected';
+            const locked = connector.id !== 'people-db' && !peopleDbConnected;
             return (
               <Card key={connector.id} padding="md" className={styles.connectorCard}>
                 <div className={styles.cardTop}>
@@ -108,6 +155,10 @@ export default function ConnectorOnboardingPage() {
                     <Button variant="outline" fullWidth onClick={() => handleConnectClick(connector.id)}>
                       설정 관리
                     </Button>
+                  ) : locked ? (
+                    <Button variant="primary" fullWidth disabled title="People DB를 먼저 연결해주세요.">
+                      연결하기
+                    </Button>
                   ) : (
                     <Button variant="primary" fullWidth onClick={() => handleConnectClick(connector.id)}>
                       연결하기
@@ -124,9 +175,11 @@ export default function ConnectorOnboardingPage() {
             variant="primary"
             size="lg"
             className={styles.nextButton}
-            onClick={() => navigate('/onboarding/folders?mode=demo')}
+            disabled={!allConnected}
+            title={allConnected ? undefined : '모든 커넥터를 연결해주세요.'}
+            onClick={() => navigate('/dashboard')}
           >
-            다음 단계로
+            {allConnected ? '커넥터 설정 완료' : '다음 단계로'}
           </Button>
           <Button variant="link" onClick={() => navigate('/dashboard')}>
             나중에 하기

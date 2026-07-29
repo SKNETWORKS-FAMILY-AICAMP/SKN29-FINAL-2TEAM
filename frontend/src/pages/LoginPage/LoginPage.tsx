@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
 import styles from './LoginPage.module.css';
 
@@ -25,13 +25,17 @@ function JiraLogo() {
 
 export default function LoginPage() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('BLOCKED · React 로그인 API와 세션 계약이 아직 연결되지 않았습니다.', 'error');
+    showToast('로그인되었습니다.', 'success');
+    setTimeout(() => {
+      navigate('/onboarding/connectors');
+    }, 700);
   }
 
   function handleSocialLogin(provider: string) {

@@ -1,9 +1,31 @@
 .page {
+  position: relative;
   min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   background: var(--color-bg);
+}
+
+.devResetButton {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-6);
+  z-index: 10;
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-placeholder);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px var(--space-3);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.devResetButton:hover {
+  color: var(--color-body);
+  border-color: var(--color-placeholder);
 }
 
 .wizardArea {

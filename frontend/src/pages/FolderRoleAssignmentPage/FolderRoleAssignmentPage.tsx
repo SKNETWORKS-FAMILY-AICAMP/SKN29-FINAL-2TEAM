@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Icon, Select } from '../../components';
+import { markConnectorConnected } from '../../utils/connectorStatus';
 import styles from './FolderRoleAssignmentPage.module.css';
 
 const ROLE_OPTIONS = [
@@ -34,38 +35,7 @@ interface RoleFolder {
   files?: RoleFile[];
 }
 
-const FOLDERS: RoleFolder[] = [
-  {
-    id: 'folder-1',
-    name: '2025_프로젝트_기획',
-    fileCount: 12,
-    icon: <Icon name="folder" size={20} color="var(--color-primary)" />,
-    defaultRole: 'plan',
-    expandable: false,
-  },
-  {
-    id: 'folder-2',
-    name: '회의록_모음',
-    fileCount: 8,
-    icon: <Icon name="folder-open" size={20} color="var(--color-primary)" />,
-    defaultRole: 'meeting',
-    expandable: true,
-    files: [
-      { id: 'file-2-1', name: '주간회의_0106.docx', defaultValue: 'inherit:meeting' },
-      { id: 'file-2-2', name: '킥오프_회의록.docx', defaultValue: 'inherit:meeting' },
-      { id: 'file-2-3', name: '스프린트_리뷰.docx', defaultValue: 'plan' },
-      { id: 'file-2-4', name: '데일리_스크럼_0108.docx', defaultValue: 'inherit:meeting' },
-    ],
-  },
-  {
-    id: 'folder-3',
-    name: '일일보고서_2025',
-    fileCount: 23,
-    icon: <Icon name="folder" size={20} color="var(--color-primary)" />,
-    defaultRole: 'daily-report',
-    expandable: false,
-  },
-];
+const FOLDERS: RoleFolder[] = [];
 
 export default function FolderRoleAssignmentPage() {
   const navigate = useNavigate();
@@ -116,6 +86,7 @@ export default function FolderRoleAssignmentPage() {
         </div>
 
         <div className={styles.folderTree}>
+          {FOLDERS.length === 0 && <p className={styles.emptyNote}>지정할 폴더가 없습니다.</p>}
           {FOLDERS.map((folder) => {
             const isExpanded = expandedFolders[folder.id];
             const currentRole = folderRoles[folder.id];
@@ -185,9 +156,12 @@ export default function FolderRoleAssignmentPage() {
           <Button
             variant="primary"
             iconRight={<Icon name="arrow-right" size={16} />}
-            onClick={() => navigate('/onboarding/jira-project?mode=demo')}
+            onClick={() => {
+              markConnectorConnected('google-drive');
+              navigate('/onboarding/connectors');
+            }}
           >
-            다음: Jira 프로젝트 선택
+            Drive 설정 완료
           </Button>
         </div>
       </div>

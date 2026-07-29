@@ -2,7 +2,7 @@
   min-height: 100%;
   display: flex;
   justify-content: center;
-  background: var(--color-surface);
+  background: var(--color-bg);
 }
 
 .panel {
@@ -170,6 +170,14 @@
 .fileSelect {
   width: 220px;
   flex-shrink: 0;
+}
+
+.emptyNote {
+  padding: var(--space-6);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-placeholder);
+  margin: 0;
 }
 
 .footer {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Checkbox, Icon, StepIndicator } from '../../components';
+import { markConnectorConnected } from '../../utils/connectorStatus';
 import styles from './JiraProjectSelectPage.module.css';
 
 type LoadState = 'loading' | 'loaded';
@@ -20,22 +21,7 @@ interface ProjectItem {
   boards?: BoardItem[];
 }
 
-const INITIAL_PROJECTS: ProjectItem[] = [
-  { id: 'backend', name: 'halil-backend', key: 'HBAK', desc: '백엔드 개발', checked: true },
-  {
-    id: 'frontend',
-    name: 'halil-frontend',
-    key: 'HFNT',
-    desc: '프론트엔드 개발',
-    checked: true,
-    boards: [
-      { id: 'sprint', name: 'Sprint Board', checked: true },
-      { id: 'kanban', name: 'Kanban Board', checked: false },
-    ],
-  },
-  { id: 'infra', name: 'halil-infra', key: 'HINF', desc: '인프라/DevOps', checked: false },
-  { id: 'design', name: 'halil-design', key: 'HDSN', desc: '디자인 시스템', checked: false },
-];
+const INITIAL_PROJECTS: ProjectItem[] = [];
 
 const STEPS = ['Jira 연동', '프로젝트 및 보드 선택', '필드 매핑'];
 
@@ -43,7 +29,7 @@ export default function JiraProjectSelectPage() {
   const navigate = useNavigate();
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [projects, setProjects] = useState<ProjectItem[]>(INITIAL_PROJECTS);
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>('frontend');
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoadState('loaded'), 1200);
@@ -101,6 +87,7 @@ export default function JiraProjectSelectPage() {
           <div className={[styles.mainCard, styles.selectedCard].join(' ')}>
             <p className={styles.projectSectionTitle}>Jira 프로젝트 목록</p>
             <div className={styles.projectList}>
+              {projects.length === 0 && <p className={styles.emptyNote}>표시할 프로젝트가 없습니다.</p>}
               {projects.map((project) => {
                 const isExpanded = expandedProjectId === project.id && Boolean(project.boards);
                 return (
@@ -156,15 +143,18 @@ export default function JiraProjectSelectPage() {
         )}
 
         <div className={styles.actionsBar}>
-          <Button variant="outline" onClick={() => navigate('/onboarding/folder-roles?mode=demo')}>
+          <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
             이전 단계
           </Button>
           <Button
             variant="primary"
             disabled={loadState === 'loading'}
-            onClick={() => navigate('/dashboard')}
+            onClick={() => {
+              markConnectorConnected('jira');
+              navigate('/onboarding/connectors');
+            }}
           >
-            데모 설정 완료 · 대시보드
+            설정 완료
           </Button>
         </div>
       </div>

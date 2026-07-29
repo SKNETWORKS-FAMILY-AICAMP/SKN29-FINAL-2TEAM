@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
 import styles from './SignupPage.module.css';
 
 export default function SignupPage() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,7 +16,10 @@ export default function SignupPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('BLOCKED · 회원가입 API가 아직 연결되지 않았습니다.', 'error');
+    showToast('회원가입이 완료되었습니다.', 'success');
+    setTimeout(() => {
+      navigate('/login');
+    }, 700);
   }
 
   return (

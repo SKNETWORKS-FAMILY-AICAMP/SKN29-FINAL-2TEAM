@@ -123,6 +123,14 @@
   overflow: hidden;
 }
 
+.emptyNote {
+  padding: var(--space-6);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-placeholder);
+  margin: 0;
+}
+
 .projectRow {
   display: flex;
   align-items: center;

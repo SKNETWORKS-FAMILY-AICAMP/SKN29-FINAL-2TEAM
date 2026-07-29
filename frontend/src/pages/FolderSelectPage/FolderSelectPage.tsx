@@ -19,19 +19,9 @@ interface PreviewFile {
   supported: boolean;
 }
 
-const SELECTED_FOLDERS: SelectedFolder[] = [
-  { id: 'f1', name: '2025_프로젝트_기획', fileCount: 12 },
-  { id: 'f2', name: '회의록_모음', fileCount: 8 },
-  { id: 'f3', name: '일일보고서_2025', fileCount: 23 },
-];
+const SELECTED_FOLDERS: SelectedFolder[] = [];
 
-const PREVIEW_FILES: PreviewFile[] = [
-  { id: 'p1', name: '프로젝트_요구사항.docx', icon: <Icon name="file-text" size={18} />, supported: true },
-  { id: 'p2', name: '회의록_0112.docx', icon: <Icon name="file-text" size={18} />, supported: true },
-  { id: 'p3', name: '일정표.xlsx', icon: <Icon name="file-spreadsheet" size={18} />, supported: true },
-  { id: 'p4', name: '디자인시안.psd', icon: <Icon name="file-image" size={18} />, supported: false },
-  { id: 'p5', name: 'API_명세서.pdf', icon: <Icon name="file-text" size={18} />, supported: true },
-];
+const PREVIEW_FILES: PreviewFile[] = [];
 
 const DEPTH_OPTIONS = [
   { label: '1단계까지', value: '1' },
@@ -69,19 +59,6 @@ export default function FolderSelectPage() {
           </p>
         </div>
 
-        {import.meta.env.DEV && (
-          <p className={styles.devSwitch}>
-            미리보기 상태 전환:{' '}
-            <button type="button" onClick={() => setState('empty')}>
-              빈 상태
-            </button>{' '}
-            /{' '}
-            <button type="button" onClick={() => setState('complete')}>
-              폴더 선택 완료 상태
-            </button>
-          </p>
-        )}
-
         {state === 'empty' ? (
           <>
             <div className={styles.emptyBox}>
@@ -103,9 +80,6 @@ export default function FolderSelectPage() {
               <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
                 이전 단계
               </Button>
-              <Button variant="link" onClick={() => navigate('/onboarding/jira-project?mode=demo')}>
-                건너뛰기
-              </Button>
               <Button variant="primary" disabled>
                 다음: 폴더 역할 지정
               </Button>
@@ -116,6 +90,7 @@ export default function FolderSelectPage() {
             <div className={styles.selectedFoldersBlock}>
               <p className={styles.sectionLabel}>선택된 폴더</p>
               <div className={styles.folderList}>
+                {folders.length === 0 && <p className={styles.emptyNote}>선택된 폴더가 없습니다.</p>}
                 {folders.map((folder) => (
                   <div key={folder.id} className={styles.folderRow}>
                     <div className={styles.folderInfo}>
@@ -163,6 +138,7 @@ export default function FolderSelectPage() {
               <div className={styles.filePreviewCard}>
                 <div className={styles.filePreviewHeader}>가져올 파일 목록 미리보기</div>
                 <div className={styles.fileList}>
+                  {PREVIEW_FILES.length === 0 && <p className={styles.emptyNote}>가져올 파일이 없습니다.</p>}
                   {PREVIEW_FILES.map((file) => (
                     <div key={file.id} className={styles.fileRow}>
                       <div
@@ -181,14 +157,16 @@ export default function FolderSelectPage() {
                 </div>
               </div>
 
-              <p className={styles.helperNote}>
-                <Icon name="circle-help" size={14} color="var(--color-placeholder)" />
-                {unsupportedCount}개 파일은 지원되지 않는 형식이라 제외돼요
-              </p>
+              {unsupportedCount > 0 && (
+                <p className={styles.helperNote}>
+                  <Icon name="circle-help" size={14} color="var(--color-placeholder)" />
+                  {unsupportedCount}개 파일은 지원되지 않는 형식이라 제외돼요
+                </p>
+              )}
             </div>
 
             <div className={styles.stepFooter}>
-              <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
+              <Button variant="outline" onClick={() => setState('empty')}>
                 이전 단계
               </Button>
               <Button variant="primary" onClick={() => navigate('/onboarding/folder-roles?mode=demo')}>
