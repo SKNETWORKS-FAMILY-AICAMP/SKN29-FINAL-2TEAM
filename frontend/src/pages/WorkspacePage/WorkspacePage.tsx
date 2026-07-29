@@ -8,13 +8,13 @@ import rowStyles from './MemberRow.module.css';
 import styles from './WorkspacePage.module.css';
 
 const MEMBERS: WorkspaceMember[] = [
-  { id: '김민수', name: '김민수', role: '팀장', team: null, status: 'available', avatarColor: '#3b82f6', avatarInitial: '김' },
+  { id: '김민수', name: '김민수', role: '팀장', team: '프론트엔드팀', status: 'available', avatarColor: '#3b82f6', avatarInitial: '김' },
   { id: '박서준', name: '박서준', role: '백엔드팀장', team: '백엔드팀', status: 'busy', avatarColor: '#0ea5e9', avatarInitial: '박' },
   { id: '이동현', name: '이동현', role: '사원', team: '백엔드팀', status: 'overloaded', avatarColor: '#8b5cf6', avatarInitial: '이' },
   { id: '최영호', name: '최영호', role: '사원', team: '백엔드팀', status: 'available', avatarColor: '#f59e0b', avatarInitial: '최' },
-  { id: '김지은', name: '김지은', role: '팀장', team: null, status: 'available', avatarColor: '#ec4899', avatarInitial: '김' },
-  { id: '한유진', name: '한유진', role: '사원', team: null, status: 'busy', avatarColor: '#14b8a6', avatarInitial: '한' },
-  { id: '오세영', name: '오세영', role: '사원', team: null, status: 'available', avatarColor: '#6366f1', avatarInitial: '오' },
+  { id: '김지은', name: '김지은', role: '팀장', team: '기획팀', status: 'available', avatarColor: '#ec4899', avatarInitial: '김' },
+  { id: '한유진', name: '한유진', role: '사원', team: '프론트엔드팀', status: 'busy', avatarColor: '#14b8a6', avatarInitial: '한' },
+  { id: '오세영', name: '오세영', role: '사원', team: 'QA팀', status: 'available', avatarColor: '#6366f1', avatarInitial: '오' },
   { id: '정현우', name: '정현우', role: '인프라팀장', team: '인프라팀', status: 'busy', avatarColor: '#0891b2', avatarInitial: '정' },
   { id: '송민기', name: '송민기', role: '사원', team: '인프라팀', status: 'overloaded', avatarColor: '#84603a', avatarInitial: '송' },
 ];
@@ -88,7 +88,6 @@ export default function WorkspacePage() {
                     <Icon name="check" size={10} color="#fff" />
                   </div>
                 </div>
-                <div className={rowStyles.avatarCell} />
                 <div className={rowStyles.name}>
                   <span className={styles.thLabel}>이름</span>
                 </div>

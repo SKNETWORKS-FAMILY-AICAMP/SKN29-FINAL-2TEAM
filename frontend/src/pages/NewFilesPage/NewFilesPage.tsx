@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Badge, Icon, TopNav, useToast } from '../../components';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Badge, Button, Icon, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import { FileRegistrationTable, FILE_ROWS, DEFAULT_SELECTED_IDS } from './FileRegistrationTable';
 import styles from './NewFilesPage.module.css';
@@ -22,16 +22,33 @@ const HISTORY: HistoryItem[] = [
 const TOGGLE_OPTIONS: Array<{ target: DemoState; label: string }> = [
   { target: 'empty', label: '빈 상태 (new-files-empty)' },
   { target: 'reviewA', label: '검토 상태 · 신규 파일 (new-files-review A)' },
-  { target: 'reviewB', label: '검토 상태 · 업무 분배 미리보기 (new-files-review B)' },
 ];
 
 export default function NewFilesPage() {
-  const [demoState, setDemoState] = useState<DemoState>('empty');
+  const [searchParams] = useSearchParams();
+  const [demoState, setDemoState] = useState<DemoState>(
+    searchParams.get('preview') === 'distribution' ? 'reviewB' : 'empty',
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTED_IDS));
   const { showToast } = useToast();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    setDemoState(searchParams.get('preview') === 'distribution' ? 'reviewB' : 'empty');
+  }, [searchParams]);
+
+  function handleGoToWorkspace() {
+    showToast('팀원 선택 화면으로 이동합니다.', 'info');
+    setTimeout(() => {
+      navigate('/workspace');
+    }, 700);
+  }
+
   const supportedIds = useMemo(() => FILE_ROWS.filter((row) => row.supported).map((row) => row.id), []);
+  const registeredRows = useMemo(
+    () => FILE_ROWS.filter((row) => DEFAULT_SELECTED_IDS.includes(row.id)),
+    [],
+  );
 
   function toggleRow(id: string) {
     setSelected((prev) => {
@@ -61,23 +78,29 @@ export default function NewFilesPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.demoToggleBar}>
-        <span className={styles.demoLabel}>미리보기 상태 전환</span>
-        {TOGGLE_OPTIONS.map((option) => (
-          <button
-            key={option.target}
-            type="button"
-            className={[styles.toggleBtn, demoState === option.target ? styles.toggleBtnActive : '']
-              .filter(Boolean)
-              .join(' ')}
-            onClick={() => setDemoState(option.target)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      {demoState !== 'reviewB' && (
+        <div className={styles.demoToggleBar}>
+          <span className={styles.demoLabel}>미리보기 상태 전환</span>
+          {TOGGLE_OPTIONS.map((option) => (
+            <button
+              key={option.target}
+              type="button"
+              className={[styles.toggleBtn, demoState === option.target ? styles.toggleBtnActive : '']
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => setDemoState(option.target)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <TopNav tabs={MAIN_NAV_TABS} activeTo="/files/new" userLabel="관리자" />
+      <TopNav
+        tabs={MAIN_NAV_TABS}
+        activeTo={demoState === 'reviewB' ? '/projects' : '/files/new'}
+        userLabel="관리자"
+      />
 
       <div className={styles.contentContainer}>
         {demoState === 'empty' && (
@@ -137,6 +160,7 @@ export default function NewFilesPage() {
               onToggleAll={toggleAll}
               mode="submit"
               onSubmit={handleSubmit}
+              showSupport={false}
             />
 
             <HistoryBlock />
@@ -151,12 +175,23 @@ export default function NewFilesPage() {
             </div>
 
             <FileRegistrationTable
-              rows={FILE_ROWS}
+              rows={registeredRows}
               selected={selected}
               onToggleRow={toggleRow}
               onToggleAll={toggleAll}
               mode="readonly"
+              showSupport={false}
             />
+
+            <div className={styles.nextStepRow}>
+              <Button
+                variant="primary"
+                iconRight={<Icon name="arrow-right" size={14} color="currentColor" />}
+                onClick={handleGoToWorkspace}
+              >
+                다음: 팀원 선택
+              </Button>
+            </div>
           </>
         )}
       </div>

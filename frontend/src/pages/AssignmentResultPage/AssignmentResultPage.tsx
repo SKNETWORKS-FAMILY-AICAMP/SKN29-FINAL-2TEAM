@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Icon, TopNav } from '../../components';
 import type { BadgeTone } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -122,6 +122,22 @@ const REASSIGNED_ROWS: TaskRow[] = [
   },
 ];
 
+const STATUS_ORDER: Record<string, number> = {
+  미배정: 0,
+  검토중: 1,
+  배정완료: 2,
+  변경됨: 3,
+};
+
+function sortRows(rows: TaskRow[]): TaskRow[] {
+  return [...rows].sort((a, b) => {
+    const orderA = STATUS_ORDER[a.statusLabel] ?? Number.MAX_SAFE_INTEGER;
+    const orderB = STATUS_ORDER[b.statusLabel] ?? Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.title.localeCompare(b.title, 'ko');
+  });
+}
+
 function ReassignIcon() {
   return (
     <svg
@@ -171,8 +187,8 @@ export default function AssignmentResultPage() {
   const [mode, setMode] = useState<Mode>('dashboard');
   const [rows, setRows] = useState<TaskRow[]>(DASHBOARD_ROWS);
   const [openRowId, setOpenRowId] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const tableRef = useRef<HTMLDivElement | null>(null);
+  const sortedRows = useMemo(() => sortRows(rows), [rows]);
 
   useEffect(() => {
     if (!openRowId) return;
@@ -252,89 +268,63 @@ export default function AssignmentResultPage() {
                 <div className={styles.colAssignee}>배정 인원</div>
               </div>
 
-              {rows.map((row) => (
-                <div className={[styles.trow, row.highlight ? styles.trowHighlight : ''].join(' ')} key={row.id}>
-                  <div className={styles.colTask}>{row.title}</div>
-                  <div className={styles.colId}>{row.taskId}</div>
-                  <div className={styles.colStatus}>
-                    <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
-                  </div>
-                  <div className={styles.colAssignee}>
-                    <div className={styles.assigneePillWrap}>
-                      <button
-                        type="button"
-                        className={[styles.assigneePill, row.assigneeName ? '' : styles.assigneePillEmpty].join(' ')}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenRowId((prev) => (prev === row.id ? null : row.id));
-                        }}
-                      >
-                        {row.assigneeName ? (
-                          <>
-                            <div className={styles.pillAvatar}>{row.assigneeName.charAt(0)}</div>
-                            <span className={styles.pillName}>{row.assigneeName}</span>
-                          </>
-                        ) : (
-                          <span className={styles.pillPlaceholder}>-</span>
-                        )}
-                        <Icon
-                          name="chevron-down"
-                          size={14}
-                          className={[styles.pillChevron, openRowId === row.id ? styles.pillChevronOpen : ''].join(
+              <div className={styles.tableScrollBody}>
+                {sortedRows.map((row) => (
+                  <div className={[styles.trow, row.highlight ? styles.trowHighlight : ''].join(' ')} key={row.id}>
+                    <div className={styles.colTask}>{row.title}</div>
+                    <div className={styles.colId}>{row.taskId}</div>
+                    <div className={styles.colStatus}>
+                      <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
+                    </div>
+                    <div className={styles.colAssignee}>
+                      <div className={styles.assigneePillWrap}>
+                        <button
+                          type="button"
+                          className={[styles.assigneePill, row.assigneeName ? '' : styles.assigneePillEmpty].join(
                             ' ',
                           )}
-                        />
-                      </button>
-                      {openRowId === row.id && (
-                        <div className={styles.assigneeDropdown}>
-                          {ASSIGNEE_OPTIONS.map((name) => (
-                            <div
-                              key={name}
-                              onClick={() => selectAssignee(row.id, name)}
-                              className={styles.assigneeOption}
-                            >
-                              {name}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenRowId((prev) => (prev === row.id ? null : row.id));
+                          }}
+                        >
+                          {row.assigneeName ? (
+                            <>
+                              <div className={styles.pillAvatar}>{row.assigneeName.charAt(0)}</div>
+                              <span className={styles.pillName}>{row.assigneeName}</span>
+                            </>
+                          ) : (
+                            <span className={styles.pillPlaceholder}>-</span>
+                          )}
+                          <Icon
+                            name="chevron-down"
+                            size={14}
+                            className={[styles.pillChevron, openRowId === row.id ? styles.pillChevronOpen : ''].join(
+                              ' ',
+                            )}
+                          />
+                        </button>
+                        {openRowId === row.id && (
+                          <div className={styles.assigneeDropdown}>
+                            {ASSIGNEE_OPTIONS.map((name) => (
+                              <div
+                                key={name}
+                                onClick={() => selectAssignee(row.id, name)}
+                                className={styles.assigneeOption}
+                              >
+                                {name}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-
-            <div className={styles.pagination}>
-              <p>총 20건 / 4 페이지 중 {currentPage}</p>
-              <div className={styles.pageNav}>
-                <button
-                  className={styles.pageArrow}
-                  type="button"
-                  aria-label="이전 페이지"
-                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                >
-                  <Icon name="arrow-left" size={16} />
-                </button>
-                {[1, 2, 3, 4].map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    className={[styles.pageBtn, currentPage === page ? styles.pageBtnActive : ''].join(' ')}
-                    onClick={() => setCurrentPage(page)}
-                  >
-                    {page}
-                  </button>
                 ))}
-                <button
-                  className={styles.pageArrow}
-                  type="button"
-                  aria-label="다음 페이지"
-                  onClick={() => setCurrentPage((page) => Math.min(4, page + 1))}
-                >
-                  <Icon name="arrow-right" size={16} />
-                </button>
               </div>
             </div>
+
+            <p className={styles.totalCount}>총 {sortedRows.length}건</p>
           </div>
 
           <div className={styles.rightColumn}>

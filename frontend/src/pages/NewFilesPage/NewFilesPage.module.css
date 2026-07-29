@@ -241,6 +241,12 @@
   white-space: nowrap;
 }
 
+.nextStepRow {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
 .footnote {
   padding: var(--space-6) 40px var(--space-2);
   font-size: 12px;

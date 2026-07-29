@@ -29,6 +29,7 @@ interface FileRegistrationTableProps {
   onToggleAll: () => void;
   mode: 'submit' | 'readonly';
   onSubmit?: () => void;
+  showSupport?: boolean;
 }
 
 export function FileRegistrationTable({
@@ -38,6 +39,7 @@ export function FileRegistrationTable({
   onToggleAll,
   mode,
   onSubmit,
+  showSupport = true,
 }: FileRegistrationTableProps) {
   const supportedRows = rows.filter((row) => row.supported);
   const checkedCount = supportedRows.filter((row) => selected.has(row.id)).length;
@@ -55,7 +57,7 @@ export function FileRegistrationTable({
         <span className={[styles.colFolder, styles.thActive].join(' ')}>소속 폴더</span>
         <span className={[styles.colDate, styles.thActive].join(' ')}>감지일</span>
         <span className={[styles.colRole, styles.thActive].join(' ')}>역할</span>
-        <span className={[styles.colSupport, styles.thActive].join(' ')}>지원 여부</span>
+        {showSupport && <span className={[styles.colSupport, styles.thActive].join(' ')}>지원 여부</span>}
       </div>
 
       <div>
@@ -94,9 +96,11 @@ export function FileRegistrationTable({
               <div className={styles.rowRole}>
                 <Badge tone="neutral">{row.role}</Badge>
               </div>
-              <div className={styles.rowSupport}>
-                <Badge tone={row.supported ? 'success' : 'neutral'}>{row.supported ? '지원됨' : '미지원'}</Badge>
-              </div>
+              {showSupport && (
+                <div className={styles.rowSupport}>
+                  <Badge tone={row.supported ? 'success' : 'neutral'}>{row.supported ? '지원됨' : '미지원'}</Badge>
+                </div>
+              )}
             </div>
           );
         })}

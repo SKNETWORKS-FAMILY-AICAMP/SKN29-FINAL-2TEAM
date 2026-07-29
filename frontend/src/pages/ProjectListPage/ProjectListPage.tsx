@@ -1,20 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { BadgeTone } from '../../components';
 import { Icon, TopNav, useToast } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import { ProjectRow } from './ProjectRow';
 import styles from './ProjectListPage.module.css';
 
-type ActiveStatus = 'progress' | 'notstarted' | 'ontrack' | 'delayed';
-type FilterValue = 'all' | ActiveStatus;
 type SortValue = 'date' | 'progress';
 
 interface ActiveProject {
   id: string;
   title: string;
   desc: string;
-  status: ActiveStatus;
   date: string;
   progressText: string;
   progressValue: number;
@@ -27,29 +23,15 @@ interface CompletedProject {
   date: string;
 }
 
-const STATUS_LABEL: Record<ActiveStatus, string> = {
-  progress: '진행중',
-  notstarted: '시작 전',
-  ontrack: '순조',
-  delayed: '지연',
-};
-
-const STATUS_TONE: Record<ActiveStatus, BadgeTone> = {
-  progress: 'info',
-  notstarted: 'warning',
-  ontrack: 'success',
-  delayed: 'danger',
-};
-
 const ACTIVE_PROJECTS: ActiveProject[] = [
-  { id: 'a1', title: '결제 시스템 개선', desc: '토스페이먼츠 및 카카오페이 신규 연동 및 결제 실패율 감소를 위한 트랜잭션 에러 트래킹 고도화', status: 'progress', date: '2025-01-15', progressText: '2/6 업무 완료', progressValue: 33 },
-  { id: 'a2', title: '모바일 앱 v2', desc: 'React Native 기반 프론트엔드 전체 마이그레이션 및 푸시 알림 수신 성공률 최적화', status: 'progress', date: '2025-01-20', progressText: '1/4 업무 완료', progressValue: 25 },
-  { id: 'a3', title: '보안 감사 대응', desc: '', status: 'notstarted', date: '2025-01-22', progressText: '0/5 업무 완료', progressValue: 0 },
-  { id: 'a4', title: '사용자 인증 개선', desc: '', status: 'ontrack', date: '2025-01-25', progressText: '3/5 업무 완료', progressValue: 60 },
-  { id: 'a5', title: '데이터 파이프라인 구축', desc: '', status: 'delayed', date: '2025-01-28', progressText: '1/7 업무 완료', progressValue: 14 },
-  { id: 'a6', title: '관리자 대시보드 개발', desc: '', status: 'progress', date: '2025-02-02', progressText: '2/9 업무 완료', progressValue: 22 },
-  { id: 'a7', title: '고객 지원 챗봇 도입', desc: 'GPT 기반 1차 응대 자동화 및 상담원 라우팅 규칙 최적화', status: 'ontrack', date: '2025-02-05', progressText: '4/6 업무 완료', progressValue: 67 },
-  { id: 'a8', title: '인프라 비용 최적화', desc: '유휴 리소스 정리 및 오토스케일링 정책 재설계로 클라우드 비용 절감', status: 'notstarted', date: '2025-02-10', progressText: '0/4 업무 완료', progressValue: 0 },
+  { id: 'a1', title: '결제 시스템 개선', desc: '토스페이먼츠 및 카카오페이 신규 연동 및 결제 실패율 감소를 위한 트랜잭션 에러 트래킹 고도화', date: '2025-01-15', progressText: '2/6 업무 완료', progressValue: 33 },
+  { id: 'a2', title: '모바일 앱 v2', desc: 'React Native 기반 프론트엔드 전체 마이그레이션 및 푸시 알림 수신 성공률 최적화', date: '2025-01-20', progressText: '1/4 업무 완료', progressValue: 25 },
+  { id: 'a3', title: '보안 감사 대응', desc: '', date: '2025-01-22', progressText: '0/5 업무 완료', progressValue: 0 },
+  { id: 'a4', title: '사용자 인증 개선', desc: '', date: '2025-01-25', progressText: '3/5 업무 완료', progressValue: 60 },
+  { id: 'a5', title: '데이터 파이프라인 구축', desc: '', date: '2025-01-28', progressText: '1/7 업무 완료', progressValue: 14 },
+  { id: 'a6', title: '관리자 대시보드 개발', desc: '', date: '2025-02-02', progressText: '2/9 업무 완료', progressValue: 22 },
+  { id: 'a7', title: '고객 지원 챗봇 도입', desc: 'GPT 기반 1차 응대 자동화 및 상담원 라우팅 규칙 최적화', date: '2025-02-05', progressText: '4/6 업무 완료', progressValue: 67 },
+  { id: 'a8', title: '인프라 비용 최적화', desc: '유휴 리소스 정리 및 오토스케일링 정책 재설계로 클라우드 비용 절감', date: '2025-02-10', progressText: '0/4 업무 완료', progressValue: 0 },
 ];
 
 const COMPLETED_PROJECTS: CompletedProject[] = [
@@ -65,21 +47,12 @@ const COMPLETED_PROJECTS: CompletedProject[] = [
   { id: 'c10', title: '디자인 시스템 v1 구축', desc: '', date: '2024-09-28' },
 ];
 
-const FILTER_CHIPS: Array<{ value: FilterValue; label: string }> = [
-  { value: 'all', label: '전체' },
-  { value: 'progress', label: '진행중' },
-  { value: 'notstarted', label: '시작 전' },
-  { value: 'ontrack', label: '순조' },
-  { value: 'delayed', label: '지연' },
-];
-
 function formatDate(iso: string): string {
   return iso.replace(/-/g, '.');
 }
 
 export default function ProjectListPage() {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<FilterValue>('all');
   const [sort, setSort] = useState<SortValue>('date');
   const [selectedActiveId, setSelectedActiveId] = useState<string | null>(null);
   const [selectedCompletedId, setSelectedCompletedId] = useState<string | null>(null);
@@ -89,17 +62,15 @@ export default function ProjectListPage() {
   const query = search.trim().toLowerCase();
 
   const filteredActive = useMemo(() => {
-    const matches = ACTIVE_PROJECTS.filter((project) => {
-      const matchesSearch =
-        !query || project.title.toLowerCase().includes(query) || project.desc.toLowerCase().includes(query);
-      const matchesFilter = filter === 'all' || project.status === filter;
-      return matchesSearch && matchesFilter;
-    });
+    const matches = ACTIVE_PROJECTS.filter(
+      (project) =>
+        !query || project.title.toLowerCase().includes(query) || project.desc.toLowerCase().includes(query),
+    );
     const sorted = [...matches].sort((a, b) =>
       sort === 'progress' ? b.progressValue - a.progressValue : new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
     return sorted;
-  }, [query, filter, sort]);
+  }, [query, sort]);
 
   const filteredCompleted = useMemo(
     () =>
@@ -159,18 +130,6 @@ export default function ProjectListPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
-          <div className={styles.filterChips}>
-            {FILTER_CHIPS.map((chip) => (
-              <button
-                key={chip.value}
-                type="button"
-                className={[styles.chip, filter === chip.value ? styles.chipActive : ''].filter(Boolean).join(' ')}
-                onClick={() => setFilter(chip.value)}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         <section className={styles.section}>
@@ -200,8 +159,6 @@ export default function ProjectListPage() {
                 key={project.id}
                 title={project.title}
                 desc={project.desc || undefined}
-                statusLabel={STATUS_LABEL[project.status]}
-                statusTone={STATUS_TONE[project.status]}
                 date={formatDate(project.date)}
                 progressText={project.progressText}
                 selected={selectedActiveId === project.id}
@@ -223,8 +180,6 @@ export default function ProjectListPage() {
                 key={project.id}
                 title={project.title}
                 desc={project.desc || undefined}
-                statusLabel="완료"
-                statusTone="success"
                 date={formatDate(project.date)}
                 progressText="완료"
                 done
@@ -243,7 +198,7 @@ export default function ProjectListPage() {
         onClick={() => {
           showToast('업무 분배 워크플로우로 이동합니다', 'info');
           setTimeout(() => {
-            navigate('/workspace');
+            navigate('/files/new?preview=distribution');
           }, 700);
         }}
       >
