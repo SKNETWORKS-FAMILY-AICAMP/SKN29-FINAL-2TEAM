@@ -4,22 +4,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
 import styles from './LoginPage.module.css';
 
-function GoogleLogo() {
+function InviteIcon() {
   return (
-    <span className={styles.googleLogo}>
-      <span className={styles.googleR} />
-      <span className={styles.googleY} />
-      <span className={styles.googleG} />
-      <span className={styles.googleB} />
-    </span>
-  );
-}
-
-function JiraLogo() {
-  return (
-    <span className={styles.jiraLogo}>
-      <span className={styles.jiraSquare} />
-    </span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={18} height={18}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="22" y1="11" x2="16" y2="11" />
+    </svg>
   );
 }
 
@@ -36,10 +28,6 @@ export default function LoginPage() {
     setTimeout(() => {
       navigate('/onboarding/connectors');
     }, 700);
-  }
-
-  function handleSocialLogin(provider: string) {
-    showToast(`BLOCKED · ${provider} OAuth 연동이 아직 구현되지 않았습니다.`, 'error');
   }
 
   return (
@@ -99,30 +87,14 @@ export default function LoginPage() {
             로그인
           </Button>
 
-          <div className={styles.divider}>
-            <div className={styles.line} />
-            <span className={styles.dividerLabel}>또는</span>
-            <div className={styles.line} />
-          </div>
-
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             fullWidth
-            iconLeft={<GoogleLogo />}
-            onClick={() => handleSocialLogin('Google')}
+            iconLeft={<InviteIcon />}
+            onClick={() => navigate('/invite-code')}
           >
-            Google 계정으로 로그인
-          </Button>
-
-          <Button
-            type="button"
-            variant="secondary"
-            fullWidth
-            iconLeft={<JiraLogo />}
-            onClick={() => handleSocialLogin('Jira')}
-          >
-            Jira 계정으로 로그인
+            초대코드로 회원가입
           </Button>
         </div>
 

@@ -7,6 +7,7 @@ import styles from './App.module.css';
 const LandingPage = lazy(() => import('./pages/LandingPage/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage/SignupPage'));
+const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'));
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
 const ConnectorOnboardingPage = lazy(() => import('./pages/ConnectorOnboardingPage/ConnectorOnboardingPage'));
 const FolderSelectPage = lazy(() => import('./pages/FolderSelectPage/FolderSelectPage'));
@@ -60,6 +61,7 @@ function App() {
           <Route path="/dev/screens" element={<DevIndexPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/invite-code" element={<InviteCodePage />} />
           <Route path="/find-password" element={<FindPasswordPage />} />
           <Route path="/onboarding/connectors" element={<ConnectorOnboardingPage />} />
           <Route path="/onboarding/folders" element={<FolderSelectPage />} />

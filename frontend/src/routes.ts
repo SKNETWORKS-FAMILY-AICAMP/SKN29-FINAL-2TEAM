@@ -8,6 +8,7 @@ export const ROUTES: RouteEntry[] = [
   { path: '/', label: '랜딩 페이지', group: '마케팅' },
   { path: '/login', label: '로그인', group: '인증' },
   { path: '/signup', label: '회원가입', group: '인증' },
+  { path: '/invite-code', label: '초대코드로 회원가입', group: '인증' },
   { path: '/find-password', label: '비밀번호 찾기', group: '인증' },
   { path: '/onboarding/connectors', label: '외부 서비스 연결', group: '온보딩' },
   { path: '/onboarding/folders', label: '데이터 소스 설정', group: '온보딩' },

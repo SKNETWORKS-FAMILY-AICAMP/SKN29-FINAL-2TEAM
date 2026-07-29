@@ -100,17 +100,6 @@
   width: 100%;
 }
 
-.eyeToggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--color-placeholder);
-}
-
 .footerLinks {
   display: flex;
   flex-direction: column;
@@ -120,10 +109,6 @@
   font-size: 14px;
   color: var(--color-body);
   text-align: center;
-}
-
-.footerText {
-  margin: 0;
 }
 
 .link {
