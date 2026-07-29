@@ -1,7 +1,14 @@
 .page {
   display: flex;
+  flex-direction: column;
   min-height: 100dvh;
   background: var(--color-bg);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ---------- sidebar ---------- */
@@ -14,8 +21,8 @@
   border-right: 1px solid var(--color-border);
   padding: var(--space-6) var(--space-4);
   position: sticky;
-  top: 0;
-  height: 100dvh;
+  top: 68px;
+  height: calc(100dvh - 68px);
 }
 
 .sidebarHeader {
@@ -24,35 +31,11 @@
   margin-bottom: var(--space-4);
 }
 
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.mark {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: #fff;
-  font-weight: 800;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.wordmark {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-primary);
-}
-
 .sidebarSubtitle {
-  margin: var(--space-2) 0 0;
-  font-size: 12px;
-  color: var(--color-muted);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-heading);
 }
 
 .sidebarNav {

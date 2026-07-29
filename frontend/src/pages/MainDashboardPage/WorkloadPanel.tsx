@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import styles from './WorkloadPanel.module.css';
 
 type Tone = 'danger' | 'info' | 'warning' | 'success';
@@ -9,13 +8,18 @@ interface TeamWorkload {
   tone: Tone;
 }
 
-interface TopMember {
-  rank: number;
+interface LeaveMember {
+  id: string;
   name: string;
-  avatar: string;
   team: string;
-  pct: number;
-  tone: Tone;
+  dateLabel: string;
+}
+
+interface LeaveSection {
+  key: string;
+  label: string;
+  items: LeaveMember[];
+  emptyText: string;
 }
 
 const TEAM_WORKLOAD: TeamWorkload[] = [
@@ -25,12 +29,14 @@ const TEAM_WORKLOAD: TeamWorkload[] = [
   { team: '기획&디자인', pct: 30, tone: 'success' },
 ];
 
-const TOP5: TopMember[] = [
-  { rank: 1, name: '박서준', avatar: '박', team: '백엔드팀', pct: 95, tone: 'danger' },
-  { rank: 2, name: '이동현', avatar: '이', team: '백엔드팀', pct: 90, tone: 'danger' },
-  { rank: 3, name: '김지은', avatar: '김', team: '프론트엔드팀', pct: 82, tone: 'warning' },
-  { rank: 4, name: '한유진', avatar: '한', team: '프론트엔드팀', pct: 78, tone: 'warning' },
-  { rank: 5, name: '정현우', avatar: '정', team: '인프라팀', pct: 72, tone: 'warning' },
+const CURRENT_LEAVE: LeaveMember[] = [];
+const UPCOMING_LEAVE: LeaveMember[] = [];
+const RETURNING_LEAVE: LeaveMember[] = [];
+
+const LEAVE_SECTIONS: LeaveSection[] = [
+  { key: 'current', label: '현재 휴가자', items: CURRENT_LEAVE, emptyText: '현재 휴가 중인 팀원이 없습니다.' },
+  { key: 'upcoming', label: '이번주 휴가 예정자', items: UPCOMING_LEAVE, emptyText: '이번주 휴가 예정인 팀원이 없습니다.' },
+  { key: 'returning', label: '휴가 복귀 예정자', items: RETURNING_LEAVE, emptyText: '휴가 복귀 예정인 팀원이 없습니다.' },
 ];
 
 const TONE_CLASS: Record<Tone, string> = {
@@ -41,20 +47,6 @@ const TONE_CLASS: Record<Tone, string> = {
 };
 
 export function WorkloadPanel() {
-  const [selectedRanks, setSelectedRanks] = useState<Set<number>>(new Set());
-
-  function toggleRank(rank: number) {
-    setSelectedRanks((prev) => {
-      const next = new Set(prev);
-      if (next.has(rank)) {
-        next.delete(rank);
-      } else {
-        next.add(rank);
-      }
-      return next;
-    });
-  }
-
   return (
     <>
       <div className={styles.card}>
@@ -78,33 +70,27 @@ export function WorkloadPanel() {
       </div>
 
       <div className={styles.card}>
-        <p className={styles.cardTitle}>부하도 Top 5</p>
-        <div className={styles.top5List}>
-          {TOP5.map((member) => {
-            const selected = selectedRanks.has(member.rank);
-            return (
-              <button
-                type="button"
-                key={member.rank}
-                className={[styles.top5Row, selected ? styles.top5RowSelected : ''].filter(Boolean).join(' ')}
-                onClick={() => toggleRank(member.rank)}
-              >
-                <p className={styles.top5Rank}>{member.rank}</p>
-                <div className={styles.top5Avatar}>{member.avatar}</div>
-                <p className={styles.top5Name}>{member.name}</p>
-                <p className={styles.top5Team}>{member.team}</p>
-                <div className={styles.top5Progress}>
-                  <div className={styles.top5Track}>
-                    <div
-                      className={[styles.top5Fill, TONE_CLASS[member.tone]].join(' ')}
-                      style={{ width: `${member.pct}%` }}
-                    />
+        <p className={styles.cardTitle}>휴가자 현황</p>
+        <div className={styles.leaveSections}>
+          {LEAVE_SECTIONS.map((section) => (
+            <div key={section.key} className={styles.leaveSection}>
+              <div className={styles.leaveSectionHeader}>
+                <p className={styles.leaveSectionLabel}>{section.label}</p>
+                <span className={styles.leaveSectionCount}>{section.items.length}명</span>
+              </div>
+              <div className={styles.leaveList}>
+                {section.items.length === 0 && <p className={styles.leaveEmpty}>{section.emptyText}</p>}
+                {section.items.map((member) => (
+                  <div key={member.id} className={styles.leaveRow}>
+                    <div className={styles.leaveAvatar}>{member.name.charAt(0)}</div>
+                    <p className={styles.leaveName}>{member.name}</p>
+                    <p className={styles.leaveTeam}>{member.team}</p>
+                    <p className={styles.leaveDate}>{member.dateLabel}</p>
                   </div>
-                  <p className={styles.top5Pct}>{member.pct}%</p>
-                </div>
-              </button>
-            );
-          })}
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </>

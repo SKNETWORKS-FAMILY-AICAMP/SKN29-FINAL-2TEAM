@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import { MAIN_NAV_TABS } from '../../routes';
 import { Icon } from '../Icon/Icon';
 import type { IconName } from '../Icon/Icon';
+import { TopNav } from '../TopNav/TopNav';
 import styles from './SettingsLayout.module.css';
 
 export interface SettingsNavItem {
@@ -30,33 +32,38 @@ function scrollToSection(id: string) {
 export function SettingsLayout({ subtitle, navItems, footerLabel, onFooterClick, children }: SettingsLayoutProps) {
   return (
     <div className={styles.page}>
-      <aside className={styles.sidebar}>
-        <div className={styles.sidebarHeader}>
-          <div className={styles.logo}>
-            <span className={styles.mark}>h</span>
-            <span className={styles.wordmark}>halil</span>
+      <TopNav tabs={MAIN_NAV_TABS} activeTo="/settings/team" />
+
+      <div className={styles.body}>
+        <aside className={styles.sidebar}>
+          <div className={styles.sidebarHeader}>
+            <p className={styles.sidebarSubtitle}>{subtitle}</p>
           </div>
-          <p className={styles.sidebarSubtitle}>{subtitle}</p>
-        </div>
 
-        <nav className={styles.sidebarNav}>
-          {navItems.map((item) => (
-            <button key={item.id} type="button" className={styles.navItem} onClick={() => scrollToSection(item.id)}>
-              <Icon name={item.icon} size={18} />
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
+          <nav className={styles.sidebarNav}>
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={styles.navItem}
+                onClick={() => scrollToSection(item.id)}
+              >
+                <Icon name={item.icon} size={18} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
 
-        <button type="button" className={styles.sidebarFooter} onClick={onFooterClick}>
-          <span className={styles.footerAvatar}>
-            <Icon name="user" size={16} color="var(--color-muted)" />
-          </span>
-          <span className={styles.footerLabel}>{footerLabel}</span>
-        </button>
-      </aside>
+          <button type="button" className={styles.sidebarFooter} onClick={onFooterClick}>
+            <span className={styles.footerAvatar}>
+              <Icon name="user" size={16} color="var(--color-muted)" />
+            </span>
+            <span className={styles.footerLabel}>{footerLabel}</span>
+          </button>
+        </aside>
 
-      <main className={styles.main}>{children}</main>
+        <main className={styles.main}>{children}</main>
+      </div>
     </div>
   );
 }

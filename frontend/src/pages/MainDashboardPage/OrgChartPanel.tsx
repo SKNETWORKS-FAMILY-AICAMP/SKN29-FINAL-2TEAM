@@ -106,7 +106,7 @@ export function OrgChartPanel() {
           <p className={styles.summaryValue}>5명</p>
         </div>
         <div className={styles.summaryCard}>
-          <p className={styles.summaryLabel}>과부하 상태</p>
+          <p className={styles.summaryLabel}>휴가 인원</p>
           <p className={styles.summaryValue}>3명</p>
         </div>
       </div>
