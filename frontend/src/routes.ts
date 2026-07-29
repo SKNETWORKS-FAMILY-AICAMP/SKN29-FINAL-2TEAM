@@ -31,6 +31,5 @@ export const MAIN_NAV_TABS = [
   { label: '대시보드', to: '/dashboard' },
   { label: '문서 등록', to: '/files/new' },
   { label: '프로젝트', to: '/projects' },
-  { label: '커넥터', to: '/onboarding/connectors' },
   { label: '설정', to: '/onboarding/connectors' },
 ];
