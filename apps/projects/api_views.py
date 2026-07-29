@@ -1,46 +1,93 @@
-from django.shortcuts import get_object_or_404
-from rest_framework import permissions, status
+import psycopg
+from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
 from rest_framework.views import APIView
 
-from services.orchestration.analysis_run_service import create_analysis_run
+from backend.db import AnalysisRunRepository, ProjectRepository, database_status
+from backend.db.errors import RecordNotFound, ReferenceNotFound, RepositoryError
 
-from .models import AnalysisRun, Project
-from .serializers import AnalysisRunSerializer, ProjectSerializer
+from .serializers import (
+    AssignmentRunCreateSerializer,
+    ProjectCreateSerializer,
+    assignment_run_response,
+    project_response,
+)
+
+
+def _repository_error_response(exc: Exception) -> Response:
+    if isinstance(exc, RecordNotFound):
+        return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, ReferenceNotFound):
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+    if isinstance(exc, RepositoryError):
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(
+        {"detail": "데이터베이스 요청을 처리할 수 없습니다.", "error": exc.__class__.__name__},
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
 
 
 class HealthAPIView(APIView):
-    permission_classes = [permissions.AllowAny]
-
     def get(self, request):
-        return Response({"status": "ok", "service": "ai-project-operation-copilot"})
+        return Response(
+            {
+                "status": "ok",
+                "service": "ai-project-operation-copilot",
+                "database": database_status(),
+            }
+        )
 
 
-class ProjectListCreateAPIView(ListCreateAPIView):
-    serializer_class = ProjectSerializer
+class ProjectListCreateAPIView(APIView):
+    def get(self, request):
+        try:
+            rows = ProjectRepository.list_all()
+        except psycopg.Error as exc:
+            return _repository_error_response(exc)
+        return Response([project_response(row) for row in rows])
 
-    def get_queryset(self):
-        return Project.objects.select_related("owner").all()
+    def post(self, request):
+        serializer = ProjectCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        try:
+            row = ProjectRepository.create(**serializer.validated_data)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(project_response(row), status=status.HTTP_201_CREATED)
 
 
-class ProjectDetailAPIView(RetrieveAPIView):
-    serializer_class = ProjectSerializer
-    lookup_field = "project_id"
-    queryset = Project.objects.select_related("owner").all()
+class ProjectDetailAPIView(APIView):
+    def get(self, request, project_id):
+        try:
+            row = ProjectRepository.get(project_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(project_response(row))
 
 
 class ProjectAnalysisRunAPIView(APIView):
+    """현재 `assign_run` 테이블에 배정 실행을 생성한다."""
+
     def post(self, request, project_id):
-        project = get_object_or_404(Project, project_id=project_id)
-        run = create_analysis_run(project=project, requested_by=request.user)
-        return Response(AnalysisRunSerializer(run).data, status=status.HTTP_201_CREATED)
+        serializer = AssignmentRunCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            row = AnalysisRunRepository.create(
+                proj_id=project_id,
+                **serializer.validated_data,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        row["proj_id"] = project_id
+        return Response(assignment_run_response(row), status=status.HTTP_201_CREATED)
 
 
 class AnalysisRunDetailAPIView(APIView):
     def get(self, request, run_id):
-        run = get_object_or_404(AnalysisRun, run_id=run_id)
-        return Response(AnalysisRunSerializer(run).data)
+        try:
+            row = AnalysisRunRepository.get(run_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(assignment_run_response(row))

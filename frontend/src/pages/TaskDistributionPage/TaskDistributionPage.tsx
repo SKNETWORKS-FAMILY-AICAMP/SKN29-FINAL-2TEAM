@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Icon, TopNav } from '../../components';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Button, Icon, TopNav } from '../../components';
 import { MAIN_NAV_TABS } from '../../routes';
 import styles from './TaskDistributionPage.module.css';
 
@@ -84,16 +84,10 @@ function weightClassName(weight: StepWeight): string {
 }
 
 export default function TaskDistributionPage() {
-  const [screenState, setScreenState] = useState<ScreenState>('loading');
+  const location = useLocation();
   const navigate = useNavigate();
+  const [screenState, setScreenState] = useState<ScreenState>('loading');
   const config = STATE_CONFIG[screenState];
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      navigate('/tasks/recommendation');
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [navigate]);
 
   return (
     <div className={styles.page}>
@@ -162,6 +156,16 @@ export default function TaskDistributionPage() {
           <div className={styles.footnoteRow}>
             <Icon name="circle-help" size={13} />
             <p>이 화면을 벗어나도 진행은 계속돼요</p>
+          </div>
+
+          <div className={styles.nextAction}>
+            <Button
+              variant="primary"
+              iconRight={<Icon name="arrow-right" size={14} />}
+              onClick={() => navigate(`/tasks/recommendation${location.search}`)}
+            >
+              데모 분석 완료 · 추천 결과 보기
+            </Button>
           </div>
         </div>
       </div>

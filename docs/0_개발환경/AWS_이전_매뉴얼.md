@@ -86,7 +86,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 EC2의 `.env` 예시는 다음과 같다. RDS endpoint와 실제 계정 정보로 교체한다.
 
 ```text
-USE_SQLITE=False
 DATABASE_URL=postgresql://<DB_USER>:<DB_PASSWORD>@<RDS_ENDPOINT>:5432/project_copilot?sslmode=require
 AWS_STORAGE_BUCKET_NAME=skn29-final-2team-files-<고유값>
 AWS_S3_REGION_NAME=ap-northeast-2
@@ -96,11 +95,12 @@ SECURE_SSL_REDIRECT=False
 
 현재 시연 구조는 HTTPS 도메인 없이 EC2 공인 IP와 HTTP를 사용하므로 `SECURE_SSL_REDIRECT=False`로 둔다. 도메인과 HTTPS를 적용하는 시점에는 `True`로 바꾼다.
 
-RDS 생성 뒤에는 EC2의 Django 컨테이너에서 migration과 seed를 실행한다.
+RDS 생성 뒤에는 `DB/schema.sql`과 People 목업 SQL을 직접 적용한다. Django
+Migration은 사용하지 않는다.
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py migrate
-docker compose -f infra/docker/docker-compose.yml exec web python manage.py seed_demo_people
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f DB/schema.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f DB/peopleDB/peopledb_mock.sql
 ```
 
 RDS PostgreSQL에서 지원하는 확장과 버전은 생성 시점에 [AWS RDS PostgreSQL 확장 목록](https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-extensions.html)으로 다시 확인한다.
@@ -177,7 +177,6 @@ EC2에서 기본 실행 명령은 아래와 같다.
 ```bash
 git pull
 docker compose -f infra/docker/docker-compose.aws.yml up --build -d
-docker compose -f infra/docker/docker-compose.aws.yml exec web python manage.py migrate
 curl http://localhost:8000/api/health/
 ```
 
@@ -190,7 +189,7 @@ curl http://localhost:8000/api/health/
 | `requirements/production.txt` | `boto3`, `django-storages` 추가 완료 |
 | `config/settings/production.py` | S3 `STORAGES`, 실제 `ALLOWED_HOSTS`, CORS/CSRF 설정 추가 |
 | 문서 저장 서비스 | S3 업로드 후 `bucket`, `storage_key`, `version_id` 기록 |
-| 배포 스크립트 또는 매뉴얼 | `migrate`, `collectstatic`, Health Check 순서 명시 |
+| 배포 스크립트 또는 매뉴얼 | SQL 스키마 적용, `collectstatic`, Health Check 순서 명시 |
 
 ## 9. 발표 체크리스트
 

@@ -263,3 +263,9 @@
   color: var(--color-placeholder);
   white-space: nowrap;
 }
+
+.nextAction {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Checkbox, Icon, StepIndicator } from '../../components';
 import styles from './JiraProjectSelectPage.module.css';
 
@@ -39,6 +40,7 @@ const INITIAL_PROJECTS: ProjectItem[] = [
 const STEPS = ['Jira 연동', '프로젝트 및 보드 선택', '필드 매핑'];
 
 export default function JiraProjectSelectPage() {
+  const navigate = useNavigate();
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [projects, setProjects] = useState<ProjectItem[]>(INITIAL_PROJECTS);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>('frontend');
@@ -154,9 +156,15 @@ export default function JiraProjectSelectPage() {
         )}
 
         <div className={styles.actionsBar}>
-          <Button variant="outline">이전 단계</Button>
-          <Button variant="primary" disabled={loadState === 'loading'}>
-            다음: 필드 매핑 확인
+          <Button variant="outline" onClick={() => navigate('/onboarding/folder-roles?mode=demo')}>
+            이전 단계
+          </Button>
+          <Button
+            variant="primary"
+            disabled={loadState === 'loading'}
+            onClick={() => navigate('/dashboard')}
+          >
+            데모 설정 완료 · 대시보드
           </Button>
         </div>
       </div>

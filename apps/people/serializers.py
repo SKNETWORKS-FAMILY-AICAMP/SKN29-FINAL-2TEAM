@@ -1,30 +1,43 @@
-from rest_framework import serializers
+"""현재 People SQL 스키마의 API 표현 변환."""
 
-from .models import Organization, Person
-
-
-class OrganizationSerializer(serializers.ModelSerializer):
-    parent_organization_id = serializers.UUIDField(source="parent.organization_id", read_only=True, allow_null=True)
-
-    class Meta:
-        model = Organization
-        fields = ("organization_id", "name", "code", "parent_organization_id", "is_active")
+from typing import Any
 
 
-class PersonSerializer(serializers.ModelSerializer):
-    organization_name = serializers.CharField(source="organization.name", read_only=True)
+def organization_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "org_id": row["org_id"],
+        "organization_id": row["org_id"],
+        "up_org_id": row["up_org_id"],
+        "parent_organization_id": row["up_org_id"],
+        "mgr_id": row["mgr_id"],
+        "name": row["name"],
+        "org_type": row["org_type"],
+        "status": row["status"],
+        "is_active": row["status"] == "ACTIVE",
+    }
 
-    class Meta:
-        model = Person
-        fields = (
-            "person_id",
-            "employee_id",
-            "name",
-            "email",
-            "organization",
-            "organization_name",
-            "job_role",
-            "employment_status",
-            "timezone",
-            "fte",
-        )
+
+def person_response(row: dict[str, Any]) -> dict[str, Any]:
+    fte = row["fte"]
+    return {
+        "person_id": row["person_id"],
+        "emp_id": row["emp_id"],
+        "employee_id": row["emp_id"],
+        "name": row["name"],
+        "email": row["email"],
+        "org_id": row["org_id"],
+        "organization": row["org_id"],
+        "org_name": row["org_name"],
+        "organization_name": row["org_name"],
+        "job_role": row["job_role"],
+        "level_id": row["level_id"],
+        "level_name": row["level_name"],
+        "emp_status": row["emp_status"],
+        "employment_status": row["emp_status"],
+        "timezone": row["tz"] or "Asia/Seoul",
+        "fte": str(fte) if fte is not None else None,
+        "weekly_hours": str(row["wk_hours"]) if row["wk_hours"] is not None else None,
+        "default_weekly_hours": (
+            str(row["def_wk_hours"]) if row["def_wk_hours"] is not None else None
+        ),
+    }

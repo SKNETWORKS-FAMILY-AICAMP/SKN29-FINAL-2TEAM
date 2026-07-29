@@ -1,7 +1,7 @@
 # Workday 참고 자료 및 Jira Connector 조사 설계
 
 > **문서 상태: 참고 조사 이력(SUPERSEDED)**  
-> 현재 구현 기준은 `기획서_v5_AI프로젝트운영코파일럿.md`와 `Canonical Data Model` 폴더의 문서다. 1차 구현에서는 PostgreSQL **People DB**의 `person`, `organization`, `responsibility_level`, `skill`, `person_skill`, `work_schedule`, `person_absence`, `external_identity` 테이블을 사용한다. 아래의 `mock_hr.*`, HR Mock DB, OrgGraph 설계는 구현하지 않으며 Workday 관련 내용은 향후 실제 HR Connector 검토용 참고 자료로만 사용한다. Jira Connector 조사 내용은 현재 구현 참고로 유효하다.
+> 현재 구현 기준은 `기획서_v5_AI프로젝트운영코파일럿.md`와 `Canonical Data Model` 폴더의 문서다. 1차 구현에서는 PostgreSQL **People DB**의 `person`, `organization`, `responsibility_level`, `skill`, `person_skill`, `work_schedule`, `person_absence`, `external_identity` 테이블을 사용한다. 아래의 `mock_hr.*`, HR Mock DB, OrgGraph 설계는 구현하지 않으며 Workday 관련 내용은 향후 실제 HR Connector 검토용 참고 자료로만 사용한다. Jira Connector 조사 내용은 현재 구현 참고로 유효하다. 1차 플랫폼은 단일 조직 기준이므로 아래 조사안의 `tenant_id`는 구현 필드로 사용하지 않는다.
 
 - 작성일: 2026-07-22
 - 적용 대상: AI 프로젝트 운영 코파일럿
@@ -79,13 +79,12 @@ mock_hr.work_capacity
 mock_hr.absence
 ```
 
-모든 주요 테이블은 멀티테넌트 확장을 고려해 `tenant_id`를 포함한다.
+현재 구현은 단일 조직 기준이므로 `tenant_id`를 포함하지 않는다. 아래 표의 식별자는 People DB 내부 PK와 외부 원천 ID로 구분한다.
 
 ### 3.2 `mock_hr.worker`
 
 | 필드 | 타입 예시 | 필수 여부 | 의미 |
 | --- | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 필수 | 고객사 식별자 |
 | `worker_id` | `varchar(50)` | 필수 | 내부 직원 식별자 |
 | `employee_number` | `varchar(50)` | 선택 | 사번 |
 | `descriptor` | `varchar(200)` | 필수 | 직원 표시명 |
@@ -105,7 +104,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `org_id` | `varchar(50)` | 조직 식별자 |
 | `org_name` | `varchar(200)` | 조직명 |
 | `org_type` | `varchar(30)` | `TEAM`, `DEPARTMENT`, `DIVISION` 등 |
@@ -120,7 +118,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `job_profile_id` | `varchar(50)` | 직무 프로필 식별자 |
 | `job_code` | `varchar(50)` | 직무 코드 |
 | `job_name` | `varchar(200)` | 직무명 |
@@ -132,7 +129,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `assignment_id` | `varchar(50)` | 직무 배정 식별자 |
 | `worker_id` | `varchar(50)` | 직원 식별자 |
 | `job_profile_id` | `varchar(50)` | 직무 프로필 |
@@ -149,7 +145,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `level_id` | `varchar(50)` | 책임수준 식별자 |
 | `level_code` | `varchar(30)` | 예: `L1`, `L2`, `LEAD` |
 | `level_name` | `varchar(100)` | 표시명 |
@@ -162,7 +157,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `location_id` | `varchar(50)` | 위치 식별자 |
 | `location_name` | `varchar(200)` | 위치명 |
 | `country_code` | `varchar(10)` | 국가 코드 |
@@ -175,7 +169,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `skill_id` | `varchar(50)` | Skill 식별자 |
 | `skill_name` | `varchar(200)` | Skill명 |
 | `normalized_name` | `varchar(200)` | 정규화된 Skill명 |
@@ -185,7 +178,6 @@ mock_hr.absence
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `worker_id` | `varchar(50)` | 직원 |
 | `skill_id` | `varchar(50)` | Skill |
 | `proficiency_level` | `integer` | 숙련도. 값이 없으면 `NULL` |
@@ -200,7 +192,6 @@ Skill 또는 숙련도가 없으면 불충족으로 단정하지 않고 `UNKNOWN
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `worker_id` | `varchar(50)` | 직원 |
 | `effective_from` | `date` | 적용 시작일 |
 | `effective_to` | `date` | 적용 종료일 |
@@ -229,7 +220,6 @@ FTE = scheduled_weekly_hours / default_weekly_hours
 
 | 필드 | 타입 예시 | 의미 |
 | --- | --- | --- |
-| `tenant_id` | `varchar(50)` | 고객사 식별자 |
 | `absence_id` | `varchar(50)` | 부재 식별자 |
 | `worker_id` | `varchar(50)` | 직원 |
 | `absence_type` | `varchar(30)` | `PAID_LEAVE`, `SICK_LEAVE`, `BUSINESS_TRIP`, `LEAVE_OF_ABSENCE` |
@@ -345,7 +335,7 @@ integration.jira_board_config
 
 | 필드 | 의미 |
 | --- | --- |
-| `tenant_id` | 고객사 식별자 |
+| `connection_id` | `CONNECTOR_CONNECTION` 식별자 |
 | `cloud_id` | Jira Cloud 식별자 |
 | `base_url` | Jira 사이트 URL |
 | `auth_status` | 인증 상태 |
@@ -356,7 +346,7 @@ integration.jira_board_config
 
 | 필드 | 의미 |
 | --- | --- |
-| `tenant_id` | 고객사 식별자 |
+| `connection_id` | `CONNECTOR_CONNECTION` 식별자 |
 | `project_id` | 프로젝트 ID |
 | `logical_field` | 내부 논리 필드명 |
 | `jira_field_id` | Jira 실제 필드 ID |
@@ -485,7 +475,6 @@ HR 직원과 Jira 사용자는 별도의 매핑 테이블로 연결한다.
 
 ```text
 integration.identity_mapping
-- tenant_id
 - person_id
 - external_system
 - external_account_id

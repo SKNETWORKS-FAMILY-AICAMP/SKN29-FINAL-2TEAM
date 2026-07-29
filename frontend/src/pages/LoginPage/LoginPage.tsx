@@ -31,11 +31,11 @@ export default function LoginPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('로그인 시도 중입니다.', 'info');
+    showToast('BLOCKED · React 로그인 API와 세션 계약이 아직 연결되지 않았습니다.', 'error');
   }
 
   function handleSocialLogin(provider: string) {
-    showToast(`${provider} 계정으로 로그인 시도 중입니다.`, 'info');
+    showToast(`BLOCKED · ${provider} OAuth 연동이 아직 구현되지 않았습니다.`, 'error');
   }
 
   return (

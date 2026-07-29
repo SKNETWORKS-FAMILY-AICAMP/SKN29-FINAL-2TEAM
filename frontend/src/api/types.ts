@@ -18,6 +18,19 @@ export interface Project {
   updated_at: string
 }
 
+export interface Person {
+  person_id: string
+  employee_id: string
+  name: string
+  email: string
+  organization: string | null
+  organization_name: string | null
+  job_role: string
+  employment_status: string
+  timezone: string
+  fte: string
+}
+
 export interface AnalysisRun {
   run_id: string
   project_id: string

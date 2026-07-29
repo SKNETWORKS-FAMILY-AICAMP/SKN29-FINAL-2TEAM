@@ -5,8 +5,8 @@ import styles from './ProjectRow.module.css';
 export interface ProjectRowProps {
   title: string;
   desc?: string;
-  statusLabel?: string;
-  statusTone?: BadgeTone;
+  statusLabel: string;
+  statusTone: BadgeTone;
   date: string;
   progressText: string;
   done?: boolean;
@@ -35,11 +35,9 @@ export function ProjectRow({
         <span className={styles.name}>{title}</span>
         {desc && <span className={styles.desc}>{desc}</span>}
       </div>
-      {statusLabel && statusTone && (
-        <div className={styles.colStatus}>
-          <Badge tone={statusTone}>{statusLabel}</Badge>
-        </div>
-      )}
+      <div className={styles.colStatus}>
+        <Badge tone={statusTone}>{statusLabel}</Badge>
+      </div>
       <div className={styles.colDate}>{date}</div>
       <div className={[styles.colProgress, done ? styles.doneText : ''].filter(Boolean).join(' ')}>
         {progressText}
