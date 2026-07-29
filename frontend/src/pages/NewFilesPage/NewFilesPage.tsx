@@ -5,7 +5,7 @@ import { MAIN_NAV_TABS } from '../../routes';
 import { FileRegistrationTable, FILE_ROWS, DEFAULT_SELECTED_IDS } from './FileRegistrationTable';
 import styles from './NewFilesPage.module.css';
 
-type DemoState = 'empty' | 'reviewA' | 'reviewB';
+type DemoState = 'empty' | 'reviewB';
 
 interface HistoryItem {
   date: string;
@@ -13,29 +13,20 @@ interface HistoryItem {
   status: '완료' | 'PARTIAL_RESULT';
 }
 
-const HISTORY: HistoryItem[] = [
-  { date: '2025.01.18', label: '문서 3건 등록', status: '완료' },
-  { date: '2025.01.15', label: '문서 5건 등록 · 업무 분배', status: '완료' },
-  { date: '2025.01.12', label: '문서 2건 등록', status: 'PARTIAL_RESULT' },
-];
-
-const TOGGLE_OPTIONS: Array<{ target: DemoState; label: string }> = [
-  { target: 'empty', label: '빈 상태 (new-files-empty)' },
-  { target: 'reviewA', label: '검토 상태 · 신규 파일 (new-files-review A)' },
-];
+const HISTORY: HistoryItem[] = [];
 
 export default function NewFilesPage() {
   const [searchParams] = useSearchParams();
-  const [demoState, setDemoState] = useState<DemoState>(
-    searchParams.get('preview') === 'distribution' ? 'reviewB' : 'empty',
-  );
+  const isDistributionPreview =
+    searchParams.get('preview') === 'distribution' || searchParams.get('view') === 'review';
+  const [demoState, setDemoState] = useState<DemoState>(isDistributionPreview ? 'reviewB' : 'empty');
   const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTED_IDS));
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    setDemoState(searchParams.get('preview') === 'distribution' ? 'reviewB' : 'empty');
-  }, [searchParams]);
+    setDemoState(isDistributionPreview ? 'reviewB' : 'empty');
+  }, [isDistributionPreview]);
 
   function handleGoToWorkspace() {
     showToast('팀원 선택 화면으로 이동합니다.', 'info');
@@ -69,8 +60,8 @@ export default function NewFilesPage() {
     });
   }
 
-  function handleSubmit() {
-    showToast(`선택한 ${selected.size}개 파일 등록이 완료되었습니다.`, 'success');
+  function handleRegisterClick() {
+    showToast('파일 등록이 완료되었습니다.', 'success');
     setTimeout(() => {
       navigate('/projects');
     }, 900);
@@ -78,24 +69,6 @@ export default function NewFilesPage() {
 
   return (
     <div className={styles.page}>
-      {demoState !== 'reviewB' && (
-        <div className={styles.demoToggleBar}>
-          <span className={styles.demoLabel}>미리보기 상태 전환</span>
-          {TOGGLE_OPTIONS.map((option) => (
-            <button
-              key={option.target}
-              type="button"
-              className={[styles.toggleBtn, demoState === option.target ? styles.toggleBtnActive : '']
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => setDemoState(option.target)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       <TopNav
         tabs={MAIN_NAV_TABS}
         activeTo={demoState === 'reviewB' ? '/projects' : '/files/new'}
@@ -134,34 +107,16 @@ export default function NewFilesPage() {
               </div>
 
               <div className={styles.actionBar}>
-                <span className={[styles.summaryCount, styles.isDisabled].join(' ')}>0개 파일 선택됨</span>
-                <button type="button" className={styles.disabledSubmitBtn} disabled>
-                  <span>선택 파일 등록</span>
-                  <Icon name="arrow-right" size={14} />
-                </button>
+                <span className={styles.summaryCount}>0개 파일 선택됨</span>
+                <Button
+                  variant="primary"
+                  iconRight={<Icon name="arrow-right" size={14} color="currentColor" />}
+                  onClick={handleRegisterClick}
+                >
+                  선택 파일 등록
+                </Button>
               </div>
             </div>
-
-            <HistoryBlock />
-          </>
-        )}
-
-        {demoState === 'reviewA' && (
-          <>
-            <div className={styles.pageHeading}>
-              <h1>신규 파일</h1>
-              <p>새로 추가된 문서를 검토하고 등록하세요</p>
-            </div>
-
-            <FileRegistrationTable
-              rows={FILE_ROWS}
-              selected={selected}
-              onToggleRow={toggleRow}
-              onToggleAll={toggleAll}
-              mode="submit"
-              onSubmit={handleSubmit}
-              showSupport={false}
-            />
 
             <HistoryBlock />
           </>
@@ -215,6 +170,7 @@ function HistoryBlock() {
             <Badge tone={item.status === '완료' ? 'success' : 'warning'}>{item.status}</Badge>
           </div>
         ))}
+        {HISTORY.length === 0 && <p className={styles.historyEmpty}>최근 처리 이력이 없습니다.</p>}
       </div>
     </div>
   );

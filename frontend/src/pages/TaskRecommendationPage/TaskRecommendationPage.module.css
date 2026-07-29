@@ -42,6 +42,12 @@
   border-top: none;
 }
 
+.notifEmpty {
+  font-size: 13px;
+  color: var(--color-placeholder);
+  padding: var(--space-2) 0;
+}
+
 /* ---------- main body ---------- */
 .mainBody {
   display: flex;
