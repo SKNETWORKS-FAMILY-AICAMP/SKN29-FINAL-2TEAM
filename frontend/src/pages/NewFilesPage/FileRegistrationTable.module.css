@@ -54,6 +54,13 @@
   flex-shrink: 0;
 }
 
+.emptyRow {
+  padding: var(--space-6);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-placeholder);
+}
+
 .fileRow {
   display: flex;
   gap: var(--space-4);

@@ -1,9 +1,8 @@
 import type { MouseEvent } from 'react';
-import { Badge, Checkbox } from '../../components';
-import type { BadgeTone } from '../../components';
+import { Checkbox } from '../../components';
 import styles from './MemberRow.module.css';
 
-export type MemberStatus = 'available' | 'busy' | 'overloaded' | 'unknown';
+export type MemberStatus = 'available' | 'busy' | 'overloaded';
 
 export interface WorkspaceMember {
   id: string;
@@ -19,14 +18,12 @@ const STATUS_LABEL: Record<MemberStatus, string> = {
   available: '가용',
   busy: '작업중',
   overloaded: '과부하',
-  unknown: '확인 필요',
 };
 
-const STATUS_TONE: Record<MemberStatus, BadgeTone> = {
-  available: 'success',
-  busy: 'warning',
-  overloaded: 'danger',
-  unknown: 'neutral',
+const STATUS_CLASS: Record<MemberStatus, string> = {
+  available: styles.statusAvailable,
+  busy: styles.statusBusy,
+  overloaded: styles.statusOverloaded,
 };
 
 interface MemberRowProps {
@@ -49,11 +46,6 @@ export function MemberRow({ member, checked, onToggle }: MemberRowProps) {
       <div className={styles.checkboxCell} onClick={handleCheckboxWrapperClick}>
         <Checkbox checked={checked} onChange={() => onToggle(member.id)} />
       </div>
-      <div className={styles.avatarCell}>
-        <div className={styles.avatar} style={{ background: member.avatarColor }}>
-          {member.avatarInitial}
-        </div>
-      </div>
       <div className={styles.name}>
         <span className={styles.nameText}>{member.name}</span>
       </div>
@@ -66,7 +58,9 @@ export function MemberRow({ member, checked, onToggle }: MemberRowProps) {
         </span>
       </div>
       <div className={styles.status}>
-        <Badge tone={STATUS_TONE[member.status]}>{STATUS_LABEL[member.status]}</Badge>
+        <span className={[styles.statusText, STATUS_CLASS[member.status]].join(' ')}>
+          {STATUS_LABEL[member.status]}
+        </span>
       </div>
     </button>
   );

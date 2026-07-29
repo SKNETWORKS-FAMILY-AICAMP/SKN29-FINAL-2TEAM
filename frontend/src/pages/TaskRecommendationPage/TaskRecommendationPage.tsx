@@ -36,50 +36,9 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'unconfirmed', label: '미확정 정보 포함' },
 ];
 
-const NOTIFICATIONS = [
-  '새로운 업무 추천 결과가 도착했어요.',
-  '김민수님이 배정을 확인했어요.',
-  '스프린트3 회의록이 업데이트됐어요.',
-];
+const NOTIFICATIONS: string[] = [];
 
-const TASKS: TaskCard[] = [
-  {
-    id: 'task-1',
-    fileName: '프로젝트_기획.docx',
-    title: 'API 인증 모듈 리팩토링',
-    assigneeName: '김민수',
-    assigneeInitial: '김',
-    avatarColor: 'var(--color-primary)',
-    fitTone: 'success',
-    fitLabel: '높음',
-    reasons: ['최근 유사 업무 3건 처리 이력', '이번 주 가용 시간 14시간', '인증 모듈 도메인 전문성 보유'],
-    duration: '3일',
-    flags: [],
-    needsVerify: false,
-    altCandidates: [
-      { name: '이지은', initial: '이', avatarColor: 'var(--color-info)', score: 78 },
-      { name: '박서준', initial: '박', avatarColor: 'var(--color-placeholder)', score: 65 },
-    ],
-  },
-  {
-    id: 'task-2',
-    fileName: '스프린트3_회의록.docx',
-    title: '결제 시스템 에러 핸들링 개선',
-    assigneeName: '이지은',
-    assigneeInitial: '이',
-    avatarColor: 'var(--color-info)',
-    fitTone: 'warning',
-    fitLabel: '보통',
-    reasons: ['결제 도메인 경험 2년', '현재 진행 업무 2건으로 여유 있음'],
-    duration: '5일',
-    flags: ['verify'],
-    needsVerify: true,
-    altCandidates: [
-      { name: '김민수', initial: '김', avatarColor: 'var(--color-primary)', score: 71 },
-      { name: '최도현', initial: '최', avatarColor: 'var(--color-placeholder)', score: 58 },
-    ],
-  },
-];
+const TASKS: TaskCard[] = [];
 
 export default function TaskRecommendationPage() {
   const location = useLocation();
@@ -156,12 +115,13 @@ export default function TaskRecommendationPage() {
                 {message}
               </div>
             ))}
+            {NOTIFICATIONS.length === 0 && <p className={styles.notifEmpty}>새 알림이 없습니다.</p>}
           </div>
         )}
 
         <main className={styles.mainBody}>
           <div className={styles.pageHeading}>
-            <h1>데모 업무 추천 결과</h1>
+            <h1>업무 추천 결과</h1>
             <p>UI 흐름 검증용 정적 예시이며 실제 데이터 판정이 아닙니다.</p>
           </div>
 

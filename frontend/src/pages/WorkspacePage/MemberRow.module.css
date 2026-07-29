@@ -92,3 +92,20 @@
   justify-content: center;
   flex-shrink: 0;
 }
+
+.statusText {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.statusAvailable {
+  color: var(--color-success);
+}
+
+.statusBusy {
+  color: var(--color-warning);
+}
+
+.statusOverloaded {
+  color: var(--color-danger);
+}

@@ -10,17 +10,9 @@ export interface FileRow {
   supported: boolean;
 }
 
-export const FILE_ROWS: FileRow[] = [
-  { id: '1', name: '프로젝트_요구사항_v2.docx', folder: '2025_프로젝트_기획', date: '2025.01.20', role: '기획서', supported: true },
-  { id: '2', name: 'API_설계_초안.docx', folder: '2025_프로젝트_기획', date: '2025.01.20', role: '기획서', supported: true },
-  { id: '3', name: '스프린트3_회의록.docx', folder: '회의록_모음', date: '2025.01.19', role: '회의록', supported: true },
-  { id: '4', name: '주간보고_0120.docx', folder: '일일보고서_2025', date: '2025.01.20', role: '일일보고서', supported: true },
-  { id: '5', name: '디자인_목업.fig', folder: '2025_프로젝트_기획', date: '2025.01.18', role: '기획서', supported: false },
-  { id: '6', name: '인프라_구성도.pdf', folder: '2025_프로젝트_기획', date: '2025.01.19', role: '기획서', supported: true },
-];
+export const FILE_ROWS: FileRow[] = [];
 
-// Rows checked by default in the source mockup (row 4 starts unchecked).
-export const DEFAULT_SELECTED_IDS = ['1', '2', '3', '6'];
+export const DEFAULT_SELECTED_IDS: string[] = [];
 
 interface FileRegistrationTableProps {
   rows: FileRow[];
@@ -29,6 +21,7 @@ interface FileRegistrationTableProps {
   onToggleAll: () => void;
   mode: 'submit' | 'readonly';
   onSubmit?: () => void;
+  showSupport?: boolean;
 }
 
 export function FileRegistrationTable({
@@ -38,6 +31,7 @@ export function FileRegistrationTable({
   onToggleAll,
   mode,
   onSubmit,
+  showSupport = true,
 }: FileRegistrationTableProps) {
   const supportedRows = rows.filter((row) => row.supported);
   const checkedCount = supportedRows.filter((row) => selected.has(row.id)).length;
@@ -55,10 +49,11 @@ export function FileRegistrationTable({
         <span className={[styles.colFolder, styles.thActive].join(' ')}>소속 폴더</span>
         <span className={[styles.colDate, styles.thActive].join(' ')}>감지일</span>
         <span className={[styles.colRole, styles.thActive].join(' ')}>역할</span>
-        <span className={[styles.colSupport, styles.thActive].join(' ')}>지원 여부</span>
+        {showSupport && <span className={[styles.colSupport, styles.thActive].join(' ')}>지원 여부</span>}
       </div>
 
       <div>
+        {rows.length === 0 && <p className={styles.emptyRow}>표시할 파일이 없습니다.</p>}
         {rows.map((row, idx) => {
           const isChecked = row.supported && selected.has(row.id);
           const rowClasses = [
@@ -94,9 +89,11 @@ export function FileRegistrationTable({
               <div className={styles.rowRole}>
                 <Badge tone="neutral">{row.role}</Badge>
               </div>
-              <div className={styles.rowSupport}>
-                <Badge tone={row.supported ? 'success' : 'neutral'}>{row.supported ? '지원됨' : '미지원'}</Badge>
-              </div>
+              {showSupport && (
+                <div className={styles.rowSupport}>
+                  <Badge tone={row.supported ? 'success' : 'neutral'}>{row.supported ? '지원됨' : '미지원'}</Badge>
+                </div>
+              )}
             </div>
           );
         })}

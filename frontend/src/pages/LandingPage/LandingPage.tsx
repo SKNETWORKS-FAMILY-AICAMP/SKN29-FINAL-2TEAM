@@ -113,7 +113,7 @@ export default function LandingPage() {
           </div>
           <div className={styles.heroActions}>
             <PrimaryLink to="/signup">무료로 시작하기</PrimaryLink>
-            <Link className={styles.secondaryButton} to="/projects?mode=demo">
+            <Link className={styles.secondaryButton} to="/projects">
               데모 보기
             </Link>
           </div>

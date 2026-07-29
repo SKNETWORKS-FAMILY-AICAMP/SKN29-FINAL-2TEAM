@@ -325,56 +325,16 @@
   color: var(--color-heading);
 }
 
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.tableScrollBody {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.totalCount {
   padding: var(--space-4);
   border-top: 1px solid var(--color-border);
-}
-
-.pagination p {
   font-size: 13px;
   color: var(--color-body);
-}
-
-.pageNav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.pageArrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-body);
-  cursor: pointer;
-}
-
-.pageArrow:hover {
-  background: var(--color-bg);
-}
-
-.pageBtn {
-  padding: 4px var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--color-body);
-  background: var(--color-surface);
-  border: none;
-  font-family: var(--font-sans);
-  cursor: pointer;
-}
-
-.pageBtnActive {
-  background: var(--color-primary);
-  color: #fff;
-  font-weight: 700;
 }
 
 /* ---------- right column: rationale panel ---------- */
