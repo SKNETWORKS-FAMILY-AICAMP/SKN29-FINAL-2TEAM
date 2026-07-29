@@ -85,30 +85,29 @@ function PrimaryLink({ children, to }: { children: string; to: string }) {
 export default function LandingPage() {
   return (
     <div className={styles.page}>
-      <section className={styles.hero}>
-        <header className={styles.navbar}>
+      <header className={styles.navbar}>
+        <div className={styles.navbarInner}>
           <Logo />
-          <nav className={styles.navLinks} aria-label="랜딩페이지 주요 메뉴">
-            <a href="#features">기능</a>
-            <a href="#integrations">연동 서비스</a>
-            <a href="#pricing">요금제</a>
-            <a href="#contact">문의하기</a>
-          </nav>
           <div className={styles.navActions}>
             <Link className={styles.loginLink} to="/login">
               로그인
             </Link>
-            <PrimaryLink to="/signup">무료로 시작하기</PrimaryLink>
+            <Link className={styles.loginLink} to="/signup">
+              회원가입
+            </Link>
           </div>
-        </header>
+        </div>
+      </header>
 
+      <section className={styles.hero}>
         <div className={styles.heroBody}>
           <p className={styles.releaseBadge}>✨ AI 기반 업무 배정 코파일럿 halil 출시</p>
           <div className={styles.heroCopy}>
             <h1>흩어진 업무, AI가 정리하고 배정까지</h1>
             <p>
-              문서·업무·인력 데이터를 연결하면 halil이 담당자 후보와 근거를 제안합니다. PM의 검토와 승인으로 더 투명하게
-              업무를 배정하세요.
+              문서·업무·인력 데이터를 연결하면 halil이 담당자 후보와 근거를 제안합니다.
+              <br />
+              PM의 검토와 승인으로 더 투명하게 업무를 배정하세요.
             </p>
           </div>
           <div className={styles.heroActions}>
