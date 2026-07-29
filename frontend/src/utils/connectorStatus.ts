@@ -26,3 +26,22 @@ export function markConnectorConnected(id: string) {
     // ignore storage failures (e.g. private browsing)
   }
 }
+
+/**
+ * Loads the shared connector status map, merged over the given defaults.
+ * Any page that needs to display connector status (onboarding, team leader
+ * settings, etc.) should read through this helper so they all stay in sync.
+ */
+export function loadConnectorStatuses(
+  defaults: Record<string, ConnectorStatus>,
+): Record<string, ConnectorStatus> {
+  return { ...defaults, ...readStatuses() };
+}
+
+export function saveConnectorStatuses(statuses: Record<string, ConnectorStatus>) {
+  try {
+    sessionStorage.setItem(CONNECTOR_STATUS_STORAGE_KEY, JSON.stringify(statuses));
+  } catch {
+    // ignore storage failures (e.g. private browsing)
+  }
+}

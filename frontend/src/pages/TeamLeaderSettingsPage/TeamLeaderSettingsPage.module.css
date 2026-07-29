@@ -1,0 +1,250 @@
+.pageHeader h1 {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--color-heading);
+  margin: 0 0 6px;
+}
+
+.pageHeader p {
+  font-size: 14px;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.sectionBlock {
+  scroll-margin-top: var(--space-6);
+}
+
+.sectionHeading h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0 0 4px;
+}
+
+.sectionHeading p {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin: 0 0 var(--space-5);
+}
+
+/* ---------- HR read-only box ---------- */
+.hrBox {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.hrBoxHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  margin-bottom: var(--space-4);
+}
+
+.hrFieldGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.hrField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hrFieldLabel {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.hrFieldValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.subheading {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0 0 var(--space-3);
+}
+
+.accountRow {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.accountRow > * {
+  flex: 1;
+  min-width: 220px;
+}
+
+.sectionHeadingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* ---------- connector cards ---------- */
+.connectorGrid {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.connectorCard {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+
+.connectorIconBox {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.connectorIconBox svg {
+  width: 20px;
+  height: 20px;
+}
+
+.connectorInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.connectorName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+}
+
+/* ---------- team table ---------- */
+.tableCaption {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+  margin: 0 0 var(--space-3);
+}
+
+.teamTable {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.teamTableHead,
+.teamTableRow {
+  display: grid;
+  grid-template-columns: 1.2fr 1.6fr 1fr 1fr 0.8fr;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+}
+
+.teamTableHead {
+  background: var(--color-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.teamTableRow {
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.teamTableRow:last-child {
+  border-bottom: none;
+}
+
+.memberName {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.memberEmail {
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cancelLink {
+  background: none;
+  border: none;
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+
+.emptyNote {
+  padding: var(--space-6);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-placeholder);
+  margin: 0;
+}
+
+/* ---------- workload thresholds ---------- */
+.workloadRow {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.workloadRow > * {
+  flex: 1;
+  min-width: 200px;
+}
+
+.unitLabel {
+  font-size: 13px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.helperNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: var(--space-4) 0 0;
+}
+
+.saveRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}
+

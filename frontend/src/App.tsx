@@ -12,6 +12,7 @@ const ConnectorOnboardingPage = lazy(() => import('./pages/ConnectorOnboardingPa
 const FolderSelectPage = lazy(() => import('./pages/FolderSelectPage/FolderSelectPage'));
 const FolderRoleAssignmentPage = lazy(() => import('./pages/FolderRoleAssignmentPage/FolderRoleAssignmentPage'));
 const JiraProjectSelectPage = lazy(() => import('./pages/JiraProjectSelectPage/JiraProjectSelectPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
 const MainDashboardPage = lazy(() => import('./pages/MainDashboardPage/MainDashboardPage'));
 const NewFilesPage = lazy(() => import('./pages/NewFilesPage/NewFilesPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
@@ -64,6 +65,7 @@ function App() {
           <Route path="/onboarding/folders" element={<FolderSelectPage />} />
           <Route path="/onboarding/folder-roles" element={<FolderRoleAssignmentPage />} />
           <Route path="/onboarding/jira-project" element={<JiraProjectSelectPage />} />
+          <Route path="/settings/team" element={<SettingsPage />} />
           <Route path="/dashboard" element={<MainDashboardPage />} />
           <Route path="/files/new" element={<NewFilesPage />} />
           <Route path="/projects" element={<ProjectListPage />} />

@@ -13,6 +13,7 @@ export const ROUTES: RouteEntry[] = [
   { path: '/onboarding/folders', label: '데이터 소스 설정', group: '온보딩' },
   { path: '/onboarding/folder-roles', label: '폴더 역할 지정', group: '온보딩' },
   { path: '/onboarding/jira-project', label: 'Jira 프로젝트 선택', group: '온보딩' },
+  { path: '/settings/team', label: '팀장 설정', group: '설정' },
   { path: '/dashboard', label: '대시보드', group: '메인' },
   { path: '/files/new', label: '신규 파일', group: '메인' },
   { path: '/projects', label: '프로젝트 목록', group: '메인' },
@@ -31,5 +32,5 @@ export const MAIN_NAV_TABS = [
   { label: '대시보드', to: '/dashboard' },
   { label: '문서 등록', to: '/files/new' },
   { label: '프로젝트', to: '/projects' },
-  { label: '설정', to: '/onboarding/connectors' },
+  { label: '설정', to: '/settings/team' },
 ];
