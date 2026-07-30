@@ -94,10 +94,11 @@ export function OpsSearchField({
 export function OpsDataTable({
   children,
   minWidth = 920,
+  maxHeight = 560,
   ...props
-}: TableHTMLAttributes<HTMLTableElement> & { minWidth?: number }) {
+}: TableHTMLAttributes<HTMLTableElement> & { minWidth?: number; maxHeight?: number }) {
   return (
-    <div className={styles.tableWrap}>
+    <div className={styles.tableWrap} style={{ maxHeight }}>
       <table {...props} style={{ minWidth }}>
         {children}
       </table>

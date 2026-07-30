@@ -1511,3 +1511,138 @@ class OpsConnectorRepository:
                     """
                 )
                 return list(cursor.fetchall())
+
+
+class OpsAuditRepository:
+    """운영자 콘솔 `감사 로그`(`GET /api/ops/audit/...`) 전용. 전부 읽기 전용이다.
+
+    "운영 활동" 탭(`list_operations`)은 지금 바로 데이터가 쌓이지만(계정 잠금·
+    초대 폐기 등 이 콘솔 자체의 조치 기록), "분석·결정 기록" 탭 4개
+    (`list_assignment_runs`/`list_recommendations`/`list_validations`/
+    `list_decisions`)가 조회하는 `reco_result`/`valid_result`/`decision_rec`는
+    이 저장소에 아직 그 테이블에 쓰는 추천 파이프라인이 없어 항상 빈 목록을
+    반환한다(`assign_run`만 `AnalysisRunRepository.create()`로 실제로 쓰임).
+    파이프라인이 나중에 이 테이블에 쓰기 시작하면 이 API들은 코드 변경 없이
+    바로 채워진다.
+    """
+
+    OPERATIONS_LIMIT = 200
+
+    @staticmethod
+    def list_operations() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        al.audit_id,
+                        al.actor_account_id,
+                        ua.display_name AS actor_display_name,
+                        ua.email AS actor_email,
+                        al.action,
+                        al.proj_id,
+                        al.target_type,
+                        al.target_id,
+                        al.payload,
+                        al.occurred_at
+                    FROM audit_log AS al
+                    LEFT JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    ORDER BY al.occurred_at DESC
+                    LIMIT %s
+                    """,
+                    (OpsAuditRepository.OPERATIONS_LIMIT,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_assignment_runs() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        ar.run_id,
+                        ar.snapshot_id,
+                        sn.proj_id,
+                        ar.readiness_id,
+                        ar.model_version,
+                        ar.policy_version,
+                        ar.status,
+                        ar.requested_by,
+                        ua.display_name AS requester_display_name,
+                        ua.email AS requester_email
+                    FROM assign_run AS ar
+                    LEFT JOIN ana_snapshot AS sn ON sn.snap_id = ar.snapshot_id
+                    LEFT JOIN user_account AS ua ON ua.account_id = ar.requested_by
+                    ORDER BY ar.run_id DESC
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_recommendations() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        rr.reco_id,
+                        rr.run_id,
+                        rr.task_id,
+                        t.task_name,
+                        rr.status,
+                        rr.confidence,
+                        rr.missing_data,
+                        rr.limitations,
+                        rr.assumptions
+                    FROM reco_result AS rr
+                    LEFT JOIN task AS t ON t.task_id = rr.task_id
+                    ORDER BY rr.reco_id DESC
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_validations() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        vr.valid_id,
+                        vr.reco_id,
+                        rr.run_id,
+                        rr.task_id,
+                        vr.status,
+                        vr.confidence,
+                        vr.missing_data
+                    FROM valid_result AS vr
+                    LEFT JOIN reco_result AS rr ON rr.reco_id = vr.reco_id
+                    ORDER BY vr.valid_id DESC
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_decisions() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        dr.decision_id,
+                        dr.reco_id,
+                        dr.valid_id,
+                        dr.pm_action,
+                        dr.reason,
+                        dr.modified_cand_id,
+                        dr.decided_by,
+                        ua.display_name AS decider_display_name,
+                        ua.email AS decider_email,
+                        dr.decided_at
+                    FROM decision_rec AS dr
+                    LEFT JOIN user_account AS ua ON ua.account_id = dr.decided_by
+                    ORDER BY dr.decided_at DESC
+                    """
+                )
+                return list(cursor.fetchall())

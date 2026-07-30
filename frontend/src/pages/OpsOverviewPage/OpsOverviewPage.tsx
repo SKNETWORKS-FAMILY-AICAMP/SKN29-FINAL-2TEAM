@@ -11,6 +11,7 @@ import type { OpsTone } from '../../components';
 import { fetchOverview } from '../../api/opsOverview';
 import type { OpsOverview } from '../../api/opsOverview';
 import { ApiError } from '../../api/client';
+import { actionLabel } from '../../utils/auditActions';
 import { loadOpsSession } from '../../utils/opsSession';
 import { pct } from '../../utils/percent';
 import { timeAgo } from '../../utils/relativeTime';
@@ -22,15 +23,6 @@ interface ActionItem {
   title: string;
   to: string;
   actionLabel: string;
-}
-
-const ACTION_LABELS: Record<string, string> = {
-  OPS_LOGIN: '운영자 로그인',
-  OPS_LOGOUT: '운영자 로그아웃',
-};
-
-function actionLabel(action: string) {
-  return ACTION_LABELS[action] ?? action;
 }
 
 function actorLabel(activity: OpsOverview['recent_activity'][number]) {

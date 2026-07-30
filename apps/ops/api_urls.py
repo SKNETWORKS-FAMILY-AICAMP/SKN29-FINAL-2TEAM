@@ -1,6 +1,13 @@
 from django.urls import path
 
 from .views.accounts import AccountListView, AccountLockView, AccountUnlinkPersonView, AccountUnlockView
+from .views.audit import (
+    AssignmentRunLogView,
+    DecisionLogView,
+    OperationLogView,
+    RecommendationLogView,
+    ValidationLogView,
+)
 from .views.connectors import ConnectorListView
 from .views.invites import InviteDiscardView, InviteListView, InviteUnlinkView
 from .views.login import LoginView, LogoutView, MeView
@@ -25,4 +32,9 @@ urlpatterns = [
     path("invites/<str:invite_id>/discard/", InviteDiscardView.as_view(), name="api_ops_invite_discard"),
     path("invites/<str:invite_id>/unlink/", InviteUnlinkView.as_view(), name="api_ops_invite_unlink"),
     path("connectors/", ConnectorListView.as_view(), name="api_ops_connector_list"),
+    path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
+    path("audit/assignment-runs/", AssignmentRunLogView.as_view(), name="api_ops_audit_assignment_runs"),
+    path("audit/recommendations/", RecommendationLogView.as_view(), name="api_ops_audit_recommendations"),
+    path("audit/validations/", ValidationLogView.as_view(), name="api_ops_audit_validations"),
+    path("audit/decisions/", DecisionLogView.as_view(), name="api_ops_audit_decisions"),
 ]
