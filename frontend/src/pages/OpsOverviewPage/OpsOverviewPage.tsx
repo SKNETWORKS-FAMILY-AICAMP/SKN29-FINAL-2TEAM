@@ -12,6 +12,7 @@ import { fetchOverview } from '../../api/opsOverview';
 import type { OpsOverview } from '../../api/opsOverview';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
+import { pct } from '../../utils/percent';
 import { timeAgo } from '../../utils/relativeTime';
 import styles from '../OpsShared/OpsPages.module.css';
 
@@ -34,11 +35,6 @@ function actionLabel(action: string) {
 
 function actorLabel(activity: OpsOverview['recent_activity'][number]) {
   return activity.actor_display_name ?? activity.actor_email ?? '시스템';
-}
-
-/** 0으로 나누지 않도록 막은 백분율 계산 — 전체 건수가 0인 초기 상태에서도 NaN이 나오지 않는다. */
-function pct(part: number, total: number) {
-  return total > 0 ? (part / total) * 100 : 0;
 }
 
 function buildActionItems(data: OpsOverview): ActionItem[] {

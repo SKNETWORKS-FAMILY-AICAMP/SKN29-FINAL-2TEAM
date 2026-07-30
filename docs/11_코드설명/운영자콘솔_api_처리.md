@@ -1,20 +1,22 @@
-# 운영자 콘솔 API 처리 — 섹션 1(관리자 로그인) · 섹션 2(운영 현황)
+# 운영자 콘솔 API 처리 — 섹션 1(관리자 로그인) · 섹션 2(운영 현황) · 섹션 3(연결 조직 현황)
 
 > 기준일: 2026-07-30
-> 범위: `apps/ops` 백엔드가 실제로 구현·검증한 두 섹션의 엔드포인트별 동작을 경로 하나하나 정리한다.
-> 나머지 6개 섹션(연결 조직/계정 관리/계정 연결·초대/연결 서비스/감사 로그/전역 정책)은 아직 목업 데이터이며,
-> 이 문서에는 포함하지 않는다. 전체 8개 섹션 계획은 프로젝트 채팅 세션의 계획 문서(`fizzy-orbiting-goose.md`)를 참고한다.
+> 범위: `apps/ops` 백엔드가 제공하는 API의 기능과, 모든 입력·인증 상태·서버 상태 경로에서
+> 어떻게 응답하는지를 엔드포인트 단위로 정리한 명세다. 나머지 5개 섹션(계정 관리/계정 연결·초대/
+> 연결 서비스/감사 로그/전역 정책)은 아직 구현되지 않았고, 이 문서에는 포함하지 않는다.
+> 섹션이 새로 구현될 때마다 이 문서에 절을 추가한다.
 
 ---
 
 ## 0. 공통 구조
 
-- 앱 위치: `apps/ops/`(Django, ORM 미사용 — `DB/schema.sql` 테이블을 `backend/db/repositories.py`의 Repository가 raw SQL로 직접 조회).
-- 라우트 prefix: `config/urls.py`에서 `path("api/ops/", include("apps.ops.api_urls"))`.
-- 인증: `Authorization: Bearer <토큰>` 헤더. 토큰은 `apps/ops/tokens.py`가 발급하는 서명 토큰(유효기간 2시간, salt `halil.auth.ops` — 일반 로그인 토큰과 완전히 분리).
-- **관리자 인증이 필요한 모든 API**(`AdminView` 상속 — `/auth/me/`, `/auth/logout/`, `/overview/`)는 토큰 서명·만료만 보는 게 아니라, **요청마다 DB를 다시 조회**해서 `user_account.is_admin = true`와 `account_status = 'ACTIVE'`를 재확인한다(`apps/ops/authentication.py`의 `OpsBearerTokenAuthentication`). 로그인 이후에 관리자 권한이 회수되거나 계정이 잠기면, 아직 유효기간이 남은 토큰이라도 **그 즉시** 막힌다.
-- 관리자 권한 부여/회수는 API에 없다. `backend/services/createDB/grant_admin.py`를 호스트에서 직접 실행해야만 바뀐다(자기 자신·타인을 API로 승격시키는 경로 자체가 없음).
-- DB 오류는 어디서 나든 `{"detail": "데이터베이스 요청을 처리할 수 없습니다."}` + `503`으로 통일해서 응답한다(`backend/api_errors.py`).
+- 앱 위치: `apps/ops/`(Django, ORM 미사용 — `DB/schema.sql` 테이블을 Repository가 raw SQL로 직접 조회).
+- 라우트 prefix: `/api/ops/`.
+- 인증: `Authorization: Bearer <토큰>` 헤더. 토큰 유효기간은 2시간이며, 일반 로그인 토큰과는 서명 salt가 달라 서로 바꿔 쓸 수 없다.
+- **관리자 인증이 필요한 API**(`/auth/me/`, `/auth/logout/`, `/overview/`, `/organizations/`)는 토큰 서명·만료 확인에 더해 **요청마다 DB를 다시 조회**해서 계정이 여전히 관리자(`is_admin = true`)이고 상태가 `ACTIVE`인지 재확인한다. 로그인 이후 관리자 권한이 회수되거나 계정이 잠기면, 유효기간이 남은 토큰이라도 다음 요청부터 즉시 차단된다.
+- 관리자 권한 부여·회수는 API로 할 수 없다. 별도 스크립트를 호스트에서 직접 실행해야만 바뀐다.
+- DB 조회·연결 실패는 인증 단계에서 발생하든 요청 처리 중 발생하든 관계없이 전부 `{"detail": "데이터베이스 요청을 처리할 수 없습니다."}` + `503`으로 통일해서 응답한다.
+- 정의되지 않은 HTTP 메서드로 호출하면(예: 조회 전용 API에 `POST`) `405`와 `{"detail": "메서드 \"POST\"는 허용되지 않습니다."}`를 반환한다. 정의되지 않은 쿼리 파라미터는 조용히 무시된다.
 
 ---
 
@@ -26,41 +28,41 @@
 
 | # | 입력·상황 | HTTP | 응답 `detail` | 비고 |
 |---|---|---|---|---|
-| 1 | `email` 필드 누락 | 400 | `{"email": ["이 필드는 필수 항목입니다."]}` | DRF 시리얼라이저 기본 검증(자동 한글화) |
-| 2 | `password` 필드 누락 | 400 | `{"password": ["이 필드는 필수 항목입니다."]}` | 〃 |
-| 3 | 이메일 형식이 아님(`not-an-email`) | 400 | `{"email": ["유효한 이메일 주소를 입력하세요."]}` | 〃 |
-| 4 | 빈 JSON(`{}`) | 400 | 두 필드 오류를 함께 반환 | 〃 |
-| 5 | JSON 자체가 깨짐 | 400 | `{"detail": "JSON parse error - ..."}` | DRF `JSONParser`가 만드는 진단 메시지라 영어 그대로임(전 앱 공통 동작, 이 프로젝트만의 문제 아님) |
+| 1 | `email` 필드 누락 | 400 | `{"email": ["이 필드는 필수 항목입니다."]}` | |
+| 2 | `password` 필드 누락 | 400 | `{"password": ["이 필드는 필수 항목입니다."]}` | |
+| 3 | 이메일 형식이 아님 | 400 | `{"email": ["유효한 이메일 주소를 입력하세요."]}` | |
+| 4 | 빈 JSON(`{}`) | 400 | 두 필드 오류를 함께 반환 | |
+| 5 | JSON 자체가 깨짐 | 400 | `{"detail": "JSON parse error - ..."}` | 파서가 만드는 진단 메시지라 영어로 나온다 |
 | 6 | 가입되지 않은 이메일 | 401 | `이메일 또는 비밀번호가 올바르지 않습니다.` | 계정 존재 여부를 노출하지 않으려고 비밀번호 오류와 문구를 통일 |
-| 7 | 비밀번호 불일치 | 401 | `이메일 또는 비밀번호가 올바르지 않습니다.` | 〃 |
-| 8 | 가입은 됐지만 `is_admin = false` | 403 | `관리자 권한이 없는 계정입니다.` | 비밀번호까지 맞아야 이 문구가 나오므로, 존재하는 다른 이메일의 관리자 여부는 알 수 없음 |
+| 7 | 비밀번호 불일치 | 401 | `이메일 또는 비밀번호가 올바르지 않습니다.` | |
+| 8 | 가입은 됐지만 `is_admin = false` | 403 | `관리자 권한이 없는 계정입니다.` | 비밀번호까지 맞아야 이 문구가 나오므로, 다른 이메일의 관리자 여부는 알 수 없음 |
 | 9 | 계정 상태 `LOCKED` | 403 | `사용할 수 없는 계정입니다. 관리자에게 문의해 주세요.` | 관리자 여부 확인보다 먼저 체크 |
-| 10 | 계정 상태 `WITHDRAWN` | 403 | 〃 | 〃 |
-| 11 | 이메일·비밀번호·`is_admin=true`·`ACTIVE` 모두 정상 | 200 | `{"token": "...", "admin": {"account_id","email","display_name"}}` | `user_account.last_login_at` 갱신 + `audit_log`에 `action="OPS_LOGIN"` 기록 |
-| 12 | 로그인 처리 도중 DB 연결 불가 | 503 | `데이터베이스 요청을 처리할 수 없습니다.` | db 컨테이너를 내려서 재현·확인함 |
+| 10 | 계정 상태 `WITHDRAWN` | 403 | 〃 | |
+| 11 | 이메일·비밀번호·`is_admin=true`·`ACTIVE` 모두 정상 | 200 | `{"token": "...", "admin": {"account_id","email","display_name"}}` | 로그인 시각 기록 + 감사 로그에 `OPS_LOGIN` 기록 |
+| 12 | 로그인 처리 도중 DB 연결 불가 | 503 | `데이터베이스 요청을 처리할 수 없습니다.` | |
 
 ### 1.2 `GET /api/ops/auth/me/`
 
 | # | 입력·상황 | HTTP | 응답 `detail` | 비고 |
 |---|---|---|---|---|
-| 1 | `Authorization` 헤더 없음 | 401 | `자격 인증 데이터가 제공되지 않았습니다.` | DRF `IsAuthenticated`의 기본 메시지 — `LANGUAGE_CODE=ko-kr` 덕분에 자동으로 한글 렌더링됨(추가 코드 불필요) |
-| 2 | `Authorization: Basic ...`(다른 스킴) | 401 | 〃 | 우리 인증 클래스가 `Bearer`가 아니면 그냥 넘어가고, 결국 미인증 처리 |
-| 3 | `Authorization: Bearer`(토큰 파트 없음) | 401 | `인증 헤더 형식이 올바르지 않습니다.` | 공백으로 split했을 때 파트가 2개가 아님 |
-| 4 | `Authorization: Bearer a b`(파트 3개) | 401 | 〃 | 〃 |
-| 5 | 서명이 위조/손상된 토큰 | 401 | `유효하지 않은 인증 정보입니다.` | `django.core.signing.BadSignature` |
-| 6 | 유효기간이 지난 토큰 | 401 | `로그인이 만료됐습니다. 다시 로그인해 주세요.` | `TOKEN_MAX_AGE_SECONDS`를 1초로 낮춰 실제 만료를 재현해 단위 테스트로 확인(2시간을 실시간으로 기다릴 수 없어 `apps.ops.tokens`를 직접 호출) |
-| 7 | 서명은 정상인데 로그인 이후 계정이 `LOCKED`로 바뀜 | 401 | `관리자 권한이 해제됐거나 계정을 사용할 수 없습니다. 다시 로그인해 주세요.` | 매 요청 DB 재조회가 실제로 동작함을 확인(같은 토큰으로 상태 변경 전후 비교) |
-| 8 | 서명은 정상인데 로그인 이후 `is_admin`이 회수됨 | 401 | 〃 | 〃 |
+| 1 | `Authorization` 헤더 없음 | 401 | `자격 인증 데이터가 제공되지 않았습니다.` | |
+| 2 | `Authorization: Basic ...`(다른 스킴) | 401 | 〃 | |
+| 3 | `Authorization: Bearer`(토큰 파트 없음) | 401 | `인증 헤더 형식이 올바르지 않습니다.` | |
+| 4 | `Authorization: Bearer a b`(파트 3개) | 401 | 〃 | |
+| 5 | 서명이 위조·손상된 토큰 | 401 | `유효하지 않은 인증 정보입니다.` | |
+| 6 | 유효기간이 지난 토큰 | 401 | `로그인이 만료됐습니다. 다시 로그인해 주세요.` | |
+| 7 | 로그인 이후 계정이 `LOCKED`로 바뀜 | 401 | `관리자 권한이 해제됐거나 계정을 사용할 수 없습니다. 다시 로그인해 주세요.` | 같은 토큰이라도 매 요청 DB 재조회로 즉시 반영됨 |
+| 8 | 로그인 이후 `is_admin`이 회수됨 | 401 | 〃 | |
 | 9 | 정상 토큰 | 200 | `{"account_id","email","display_name"}` | |
-| 10 | 인증 재조회 도중 DB 연결 불가 | 503 | `데이터베이스 요청을 처리할 수 없습니다.` | ⚠️ 처음 구현 시 이 경로가 500(진단 traceback)으로 새는 버그가 있었음 — 2장 참고 |
+| 10 | 인증 재조회 도중 DB 연결 불가 | 503 | `데이터베이스 요청을 처리할 수 없습니다.` | |
 
 ### 1.3 `POST /api/ops/auth/logout/`
 
 | # | 입력·상황 | HTTP | 비고 |
 |---|---|---|---|
-| 1 | 인증 실패(헤더 없음/형식 오류/위조/만료/권한없음) | 401 | 1.2절과 동일한 인증 매트릭스를 그대로 공유(`AdminView` 상속) |
-| 2 | 정상 토큰 | 204 | `audit_log`에 `action="OPS_LOGOUT"` 기록 |
-| 3 | 로그아웃 후 같은 토큰으로 다시 API 호출 | 200(그대로 통과) | **알려진 설계상 한계**: 서버에 세션을 두지 않는 구조(`apps/accounts/tokens.py`와 동일 설계)라 토큰 자체를 무효화할 수는 없다. 로그아웃은 "감사 로그에 기록을 남기는 것"과 "클라이언트가 들고 있는 토큰을 스스로 지우는 것"까지가 전부이고, 실제 접근 차단은 토큰 만료(2시간) 또는 관리자 권한 회수로만 가능하다. |
+| 1 | 인증 실패(헤더 없음/형식 오류/위조/만료/권한없음) | 401 | 1.2절과 동일한 인증 처리를 공유 |
+| 2 | 정상 토큰 | 204 | 감사 로그에 `OPS_LOGOUT` 기록 |
+| 3 | 로그아웃 후 같은 토큰으로 다시 API 호출 | 그대로 통과 | 서버에 세션을 두지 않는 구조라 토큰 자체를 무효화할 수는 없다. 실제 접근 차단은 토큰 만료(2시간) 또는 관리자 권한 회수로만 이뤄진다. |
 
 ---
 
@@ -68,15 +70,15 @@
 
 ### 2.1 `GET /api/ops/overview/`
 
-읽기 전용, 입력값 없음. 인증 매트릭스는 1.2절과 완전히 동일(같은 `AdminView`/`OpsBearerTokenAuthentication` 사용).
+읽기 전용, 입력값 없음. 인증 실패 응답은 1.2절과 동일하다.
 
 | # | 입력·상황 | HTTP | 비고 |
 |---|---|---|---|
 | 1~8 | 인증 실패 케이스 전부 | 401 | 1.2절 표와 동일 |
 | 9 | 정상 토큰 | 200 | 아래 2.2절 응답 구조 |
-| 10 | 조회 도중 DB 연결 불가 | 503 | db 컨테이너를 내려서 재현·확인함 |
+| 10 | 조회 도중 DB 연결 불가 | 503 | `데이터베이스 요청을 처리할 수 없습니다.` |
 
-### 2.2 응답 구조와 실제 DB 매핑
+### 2.2 응답 구조
 
 ```json
 {
@@ -91,63 +93,76 @@
 }
 ```
 
-값이 어디서 나오는지(하드코딩 없이 전부 실시간 SQL 집계 — `backend/db/repositories.py`의 `OpsOverviewRepository.summary()`):
+각 필드의 산출 방식:
 
 | 필드 | 산출 방식 |
 |---|---|
-| `org_count` | `SELECT count(*) FROM org WHERE status='ACTIVE'` |
-| `accounts.total` | `SELECT count(*) FROM user_account` |
-| `accounts.locked` | 위 중 `account_status='LOCKED'` |
-| `accounts.duplicate_mapping` | `user_person_link`에서 `mapping_status='VERIFIED'`인 링크가 계정 1개당 2개 이상인 계정 수(스키마상 한 계정이 여러 PERSON에 연결되는 걸 막지 않음 — `repositories.py`의 `_linked_person()` 주석 참고) |
-| `accounts.needs_review` | `locked`이거나 `duplicate_mapping`인 계정의 합집합(중복 집계 없이) |
-| `connectors.*` | `connector_conn`을 `auth_status`(`CONNECTED`/`EXPIRED`/`ERROR`)로 집계 |
-| `invites.pending` | `member_invite`에서 `status='PENDING' AND expires_at > now()` |
-| `invites.expiring_today` | 위 조건에 `expires_at::date = CURRENT_DATE` 추가 |
-| `recent_activity` | `audit_log` 최신 5건 + `user_account.display_name`/`email` LEFT JOIN |
+| `org_count` | 활성 상태(`status='ACTIVE'`)인 조직 수 |
+| `accounts.total` | 전체 계정 수 |
+| `accounts.locked` | 그중 상태가 `LOCKED`인 계정 수 |
+| `accounts.duplicate_mapping` | 유효한(`VERIFIED`) 직원 연결이 2개 이상인 계정 수(계정 1개가 여러 직원에 연결되는 것을 스키마가 막지 않음) |
+| `accounts.needs_review` | `locked`이거나 `duplicate_mapping`인 계정의 합(중복 집계 없이) |
+| `connectors.*` | 연결 서비스 상태(`CONNECTED`/`EXPIRED`/`ERROR`)별 건수 |
+| `invites.pending` | 아직 만료되지 않은 대기 중 초대 수 |
+| `invites.expiring_today` | 그중 오늘 만료 예정인 수 |
+| `recent_activity` | 최근 감사 로그 5건(수행자 이름·이메일 포함) |
 
-프론트엔드(`OpsOverviewPage.tsx`)는 이 숫자만 받아서 화면을 그린다 — "오늘 확인할 일" 카드도 `accounts.needs_review`/`connectors.expired+error`/`invites.expiring_today`가 0보다 클 때만 동적으로 만들어지고, 하나도 없으면 "확인이 필요한 항목이 없습니다."를 보여준다. 예전 목업처럼 "제품전략팀", "직원 18" 같은 특정 이름이 박힌 카드는 없다(그 정보는 아직 없는 연결 조직/계정 관리 섹션의 상세 데이터라 지금은 만들 수 없음).
+"오늘 확인할 일" 카드는 `accounts.needs_review`, `connectors.expired + connectors.error`, `invites.expiring_today` 값이 각각 0보다 클 때만 하나씩 생성되고, 셋 다 0이면 "확인이 필요한 항목이 없습니다."를 표시한다. 카드에는 건수와 이동 링크만 있고 조직명·직원 ID 같은 세부 항목은 포함하지 않는다.
 
-계정·연결서비스 총합이 0일 때 막대그래프 퍼센트가 `NaN%`이 되지 않도록 `pct(part, total)`가 `total === 0`이면 `0`을 반환하도록 처리했고, `accounts.total === 0`/`connectors.total === 0`일 때는 막대 대신 "등록된 계정이 없습니다."/"연결된 서비스가 없습니다." 문구로 대체한다.
-
----
-
-## 3. 테스트 중 발견하고 수정한 버그
-
-**증상**: `db` 컨테이너가 완전히 죽어서 접속 자체가 안 되는 상황(단순 쿼리 실패가 아니라 `psycopg.OperationalError: failed to resolve host`)에서, `/auth/me/`·`/auth/logout/`·`/overview/`처럼 `AdminView`를 쓰는 모든 엔드포인트가 503이 아니라 **500(Django 진단 traceback)**을 반환했다.
-
-**원인**: `OpsBearerTokenAuthentication.authenticate()`가 매 요청마다 관리자 권한을 재확인하려고 `AccountRepository.find_credentials_by_id()`를 호출하는데(1.2절 인증 매트릭스의 핵심 기능), 이 호출에 `try/except`가 없었다. DRF는 인증 단계에서 발생한 `AuthenticationFailed` 계열 예외만 정해진 상태코드로 변환하고, `psycopg.OperationalError` 같은 임의의 예외는 그대로 흘려보내 Django 기본 에러 처리(500)로 떨어진다. `LoginView`(`POST /auth/login/`)는 인증이 필요 없는 뷰라 이 코드 경로를 타지 않아서 처음부터 503이 정상 동작했었다 — 그래서 로그인은 되는데 로그인 이후 화면들만 500이 나는 형태로 드러났다.
-
-**수정**: `backend/api_errors.py`에 `ServiceUnavailable`(DRF `APIException`, `status_code=503`, 기본 메시지 `데이터베이스 요청을 처리할 수 없습니다.`)를 추가하고, `apps/ops/authentication.py`의 그 DB 조회를 `try/except psycopg.Error: raise ServiceUnavailable()`로 감쌌다. `Response`를 직접 만들 수 없는 인증 클래스 안에서도 DRF 예외 처리 파이프라인을 통해 깔끔한 503 JSON으로 렌더링된다.
-
-**재검증**: db 컨테이너를 내렸다 올리면서 `/auth/login/`, `/auth/me/`, `/overview/` 세 엔드포인트 모두 503 + 동일한 한글 메시지로 응답하는 것을 확인했고, db 복구 후 정상 200 응답도 다시 확인했다.
+계정·연결 서비스 총합이 0일 때는 비율 계산에서 0으로 나누지 않도록 처리해 그래프가 항상 0%로 표시되며, `accounts.total`/`connectors.total`이 0이면 막대그래프 대신 "등록된 계정이 없습니다."/"연결된 서비스가 없습니다." 문구를 보여준다.
 
 ---
 
-## 4. 실행해 본 검증 절차 요약
+## 3. 섹션 3 — 연결 조직 현황
 
-1. `docker compose -f infra/docker/docker-compose.yml up -d`로 db/web/frontend 기동.
-2. `POST /api/auth/signup/`으로 테스트 계정 생성 → `grant_admin.py`로 관리자 지정 → `POST /api/ops/auth/login/` 성공 확인.
-3. 위 1·2장의 표에 있는 모든 케이스를 `curl`로 하나씩 재현(비밀번호 오류, 미가입 이메일, 잠금/탈퇴 계정, 비관리자 계정, 헤더 누락/형식 오류/위조 토큰, 로그인 중 권한·상태 변경 후 같은 토큰 재사용 등).
-4. 토큰 만료는 실시간 2시간을 기다릴 수 없어 `apps.ops.tokens.TOKEN_MAX_AGE_SECONDS`를 1초로 낮춘 별도 스크립트로 단위 검증.
-5. `db` 컨테이너를 직접 멈춰서 503 경로를 재현 → 3장의 버그 발견·수정 → 재현 케이스 재실행으로 수정 확인.
-6. 프론트엔드 소스(`OpsOverviewPage.tsx`, `OpsLoginPage.tsx`, `api/ops.ts`, `api/opsOverview.ts`)에 예전 목업 숫자(89, 86, 96.6% 등)나 `opsMockData` 참조가 남아있지 않은지 grep으로 확인.
-7. `tsc --noEmit`(프론트) / `manage.py check`(백엔드) 통과 확인.
-8. 테스트로 만든 임시 계정·데이터는 정리하고, 실제 관리자 계정(`rhksflwk@halil.com`)과 실제 감사 로그 기록은 남겨둠.
+### 3.1 `GET /api/ops/organizations/`
 
----
+읽기 전용, 입력값 없음. 인증 실패 응답은 1.2절과 동일하다.
 
-## 5. 관련 파일
+| # | 입력·상황 | HTTP | 비고 |
+|---|---|---|---|
+| 1~8 | 인증 실패 케이스 전부 | 401 | 1.2절 표와 동일 |
+| 9 | 정상 토큰, 조직이 1개 이상 존재 | 200 | 아래 3.2절 응답 구조 |
+| 10 | 정상 토큰, 활성 조직이 0개 | 200 | 빈 배열(`[]`) — 오류가 아니라 정상적인 빈 목록으로 처리 |
+| 11 | 조회 도중 DB 연결 불가 | 503 | `데이터베이스 요청을 처리할 수 없습니다.` |
 
-| 구분 | 경로 |
+### 3.2 응답 구조
+
+```json
+[
+  {
+    "org_id": "A002", "up_org_id": "A001", "mgr_id": "PX002", "name": "개발팀",
+    "org_type": "DEPARTMENT", "status": "ACTIVE",
+    "member_count": 1, "total_member_count": 18, "mapped_count": 0, "issue_count": 0
+  }
+]
+```
+
+각 필드의 산출 방식:
+
+| 필드 | 산출 방식 |
 |---|---|
-| 인증/토큰 | `apps/ops/authentication.py`, `apps/ops/tokens.py` |
-| 뷰 | `apps/ops/views/login.py`, `apps/ops/views/overview.py` |
-| URL | `apps/ops/api_urls.py`, `config/urls.py` |
-| Repository | `backend/db/repositories.py`(`OpsOverviewRepository`), `backend/db/audit.py`, `backend/db/__init__.py` |
-| 공용 에러 처리 | `backend/api_errors.py`(`to_response`, `ServiceUnavailable`) |
-| 관리자 부여 스크립트 | `backend/services/createDB/grant_admin.py` |
-| 스키마 | `DB/schema.sql`(`user_account.is_admin`) |
-| 프론트 API | `frontend/src/api/ops.ts`, `frontend/src/api/opsClient.ts`, `frontend/src/api/opsOverview.ts` |
-| 프론트 화면 | `frontend/src/pages/OpsLoginPage/OpsLoginPage.tsx`, `frontend/src/pages/OpsOverviewPage/OpsOverviewPage.tsx`, `frontend/src/components/OpsLayout/OpsLayout.tsx` |
-| 프론트 세션 | `frontend/src/utils/opsSession.ts` |
-| 공용 유틸 | `frontend/src/utils/relativeTime.ts`(`timeAgo` — 감사 로그 섹션에서도 재사용 예정) |
+| `org_id`/`up_org_id`/`mgr_id`/`name`/`org_type`/`status` | 조직 원본 정보. `status='ACTIVE'`인 조직만 포함 |
+| `member_count` | 그 조직에 **직속**된 직원 중 재직 상태(`emp_status='ACTIVE'`)인 인원 수 |
+| `total_member_count` | 그 조직 자신 + 모든 하위 조직에 직속된 인원까지 합친 전체 인원 수. 하위 조직이 없으면 `member_count`와 같다 |
+| `mapped_count` | `member_count`(직속) 중 플랫폼 계정에 유효하게 연결된 인원 수. `member_count - mapped_count`가 아직 계정이 연결되지 않은 인원 수다 |
+| `issue_count` | 직속 직원 중, 연결된 계정이 잠김(`LOCKED`) 상태이거나 중복 연결(2.2절 `duplicate_mapping`과 같은 정의) 상태인 경우의 수 |
+
+`mapped_count`/`issue_count`는 `total_member_count`가 아니라 `member_count`(직속) 기준으로 계산된다. 모든 값은 조회 시점 기준으로 계산되어, 계정 상태가 바뀌면 다음 조회부터 바로 반영된다.
+
+`up_org_id`는 DB 제약으로 참조 무결성이 강제되지 않는 컬럼이라 다음 두 가지 비정상 데이터도 오류 없이 처리한다.
+
+- 가리키는 상위 조직이 존재하지 않는 경우: 조직 하나하나가 독립적으로 조회되므로 깨진 상위 참조가 있어도 그 값을 그대로 반환하고 전체 목록 조회에는 영향이 없다.
+- `up_org_id`가 순환 참조를 이루는 경우(예: A의 상위가 B, B의 상위가 다시 A): `total_member_count` 집계 쿼리가 조직마다 정확히 한 번만 방문하도록 처리되어 있어 요청이 멈추거나 오류를 내지 않고 정상 응답한다.
+
+### 3.3 화면 처리
+
+이 화면은 운영자가 People DB 조직도 자체를 열람하는 화면이 아니라, **조직별로 플랫폼 연동이 얼마나 돼 있는지**를 확인하는 화면이다. 그래서 조직을 선택했을 때 하위 조직 목록을 보여주는 대신, 그 조직의 계정 연동 현황(직속 인원, 전체 인원, `계정 연결 M명 / N명`, `확인 필요 건수`)을 보여준다. 확인 필요 건수가 0보다 크면 계정 관리 화면으로 이동하는 버튼만 제공하고, 어떤 계정이 문제인지 목록으로 나열하지는 않는다(그 목록은 계정 관리 화면의 역할).
+
+- 조직 트리는 상위 조직 아래에 하위 조직이 접히고 펼쳐지는 방식으로 표시된다. 하위 조직이 있는 조직에는 펼침·접힘 화살표가 붙고, 접으면 그 아래 하위 조직 전체가 화면에서 숨겨진다(하위 조직이 많은 트리에서 스크롤을 줄이기 위함). 검색 중에는 접기·펼치기 대신 검색어와 일치하는 조직만 평면 목록으로 보여준다.
+- 트리에 표시되는 "구성원" 수치는 `total_member_count`(하위 조직 포함 전체 인원)를 쓴다. 하위 조직이 없는 조직은 `member_count`와 같은 값이라 차이가 없다.
+- 트리의 들여쓰기는 `up_org_id`를 실제로 따라 올라가며 계산한 깊이를 쓴다. 상위 조직이 없거나(참조가 끊긴 경우) 순환 참조가 있으면 그 지점에서 계산을 멈춰 무한 루프에 빠지지 않는다. 화면에는 2단계까지만 들여쓰기가 있어 그보다 깊은 조직은 2단계로 표시한다.
+- `org_type` 값은 `COMPANY`(회사), `DEPARTMENT`(본부), `SUPERVISORY`(팀), `COST_CENTER`(비용 센터)로 화면에 표시하고, 매핑에 없는 값이 오면 원본 값을 그대로 보여준다.
+- 선택한 조직에 소속 직원이 없으면 계정 연결 현황 대신 "소속 직원이 없습니다."를 표시한다.
+- 연결된 조직이 하나도 없으면 "연결된 조직이 없습니다."를, 검색 결과만 없으면 "조건에 맞는 연결 조직이 없습니다."(목록)와 "검색 조건을 변경하면 조직 상세를 확인할 수 있습니다."(상세 패널)를 구분해서 보여준다.
+- 조회에 실패하면 오류 메시지와 "다시 시도" 버튼을 보여주고, 인증이 만료된 경우(401)에는 관리자 로그인 화면으로 이동시킨다.

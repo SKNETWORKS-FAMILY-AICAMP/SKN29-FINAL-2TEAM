@@ -4,9 +4,22 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from .audit import log_with
 from .codes import next_short_code
 from .connection import database_connection
-from .errors import DuplicateRecord, PermissionDenied, RecordNotFound, ReferenceNotFound
+from .errors import DuplicateRecord, PermissionDenied, RecordNotFound, ReferenceNotFound, RepositoryError
+
+# "중복 연결" 판정(계정 1개에 VERIFIED 직원 링크가 2개 이상)은 운영 현황·연결
+# 조직 현황·계정 관리 세 곳에서 똑같이 쓰는 정의라 CTE 텍스트를 여기 한 곳에만 둔다.
+_DUP_ACCOUNTS_CTE = """
+    dup_accounts AS (
+        SELECT account_id
+        FROM user_person_link
+        WHERE mapping_status = 'VERIFIED'
+        GROUP BY account_id
+        HAVING count(*) > 1
+    )
+"""
 
 
 def _require_record(cursor, *, table: str, column: str, value: str, label: str) -> None:
@@ -1040,9 +1053,8 @@ class ConnectorRepository:
 class OpsOverviewRepository:
     """운영자 콘솔 `운영 현황`(`GET /api/ops/overview/`) 집계 전용.
 
-    "중복 연결" 계정(= VERIFIED `user_person_link`가 2개 이상인 계정)은 계정 관리
-    섹션에서도 같은 정의를 쓸 예정이라, 그 섹션을 만들 때 이 조회 로직을
-    공용 헬퍼로 뽑아내는 걸 고려한다.
+    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 계정 관리·연결 조직
+    현황과 항상 같은 정의를 쓴다.
     """
 
     @staticmethod
@@ -1050,14 +1062,8 @@ class OpsOverviewRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
-                    WITH dup_accounts AS (
-                        SELECT account_id
-                        FROM user_person_link
-                        WHERE mapping_status = 'VERIFIED'
-                        GROUP BY account_id
-                        HAVING count(*) > 1
-                    )
+                    f"""
+                    WITH {_DUP_ACCOUNTS_CTE}
                     SELECT
                         (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
                         (SELECT count(*) FROM user_account) AS account_total,
@@ -1125,8 +1131,7 @@ class OpsOrganizationRepository:
 
     `OrganizationRepository.list_active()`는 조직 원본 컬럼만 돌려주고, 여긴
     거기에 구성원 수·확인 필요 계정 수까지 집계해서 붙인다. "중복 연결" 판정은
-    `OpsOverviewRepository.summary()`와 같은 정의를 또 쓴다 — 계정 관리
-    섹션을 만들 때 이 중복 서브쿼리를 공용 헬퍼로 뽑아내는 걸 고려한다.
+    `_DUP_ACCOUNTS_CTE`를 공유해서 운영 현황·계정 관리와 항상 같은 정의를 쓴다.
     """
 
     @staticmethod
@@ -1134,14 +1139,8 @@ class OpsOrganizationRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
-                    WITH dup_accounts AS (
-                        SELECT account_id
-                        FROM user_person_link
-                        WHERE mapping_status = 'VERIFIED'
-                        GROUP BY account_id
-                        HAVING count(*) > 1
-                    ),
+                    f"""
+                    WITH RECURSIVE {_DUP_ACCOUNTS_CTE},
                     person_account AS (
                         SELECT person_id, account_id
                         FROM user_person_link
@@ -1151,6 +1150,9 @@ class OpsOrganizationRepository:
                         SELECT
                             p.org_id,
                             count(*) FILTER (WHERE p.emp_status = 'ACTIVE') AS member_count,
+                            count(*) FILTER (
+                                WHERE p.emp_status = 'ACTIVE' AND pa.account_id IS NOT NULL
+                            ) AS mapped_count,
                             count(*) FILTER (
                                 WHERE p.emp_status = 'ACTIVE'
                                   AND pa.account_id IS NOT NULL
@@ -1163,6 +1165,28 @@ class OpsOrganizationRepository:
                         LEFT JOIN person_account AS pa ON pa.person_id = p.person_id
                         LEFT JOIN user_account AS ua ON ua.account_id = pa.account_id
                         GROUP BY p.org_id
+                    ),
+                    -- `person.org_id`는 소속 최소 단위(직속)만 가리켜서, 상위 조직은
+                    -- 그 자체 인원만 세면 하위 조직 인원이 전부 빠진 것처럼 보인다
+                    -- (예: "개발팀" 직속 1명 + 그 아래 "백엔드파트" 9명 + "프론트엔드파트" 8명).
+                    -- 하위 조직까지 포함한 전체 인원수를 이 재귀 CTE로 따로 계산한다.
+                    -- UNION(ALL 아님)이 같은 (root_id, org_id) 조합을 걸러내므로
+                    -- up_org_id가 순환 참조를 갖는 비정상 데이터가 있어도 무한 루프에 빠지지 않는다.
+                    subtree(root_id, member_org_id) AS (
+                        SELECT org_id, org_id FROM org WHERE status = 'ACTIVE'
+                        UNION
+                        SELECT s.root_id, o.org_id
+                        FROM org AS o
+                        JOIN subtree AS s ON o.up_org_id = s.member_org_id
+                        WHERE o.status = 'ACTIVE'
+                    ),
+                    org_totals AS (
+                        SELECT
+                            s.root_id,
+                            count(p.person_id) FILTER (WHERE p.emp_status = 'ACTIVE') AS total_member_count
+                        FROM subtree AS s
+                        LEFT JOIN person AS p ON p.org_id = s.member_org_id
+                        GROUP BY s.root_id
                     )
                     SELECT
                         o.org_id,
@@ -1172,11 +1196,157 @@ class OpsOrganizationRepository:
                         o.org_type,
                         o.status,
                         COALESCE(os.member_count, 0) AS member_count,
+                        COALESCE(ot.total_member_count, 0) AS total_member_count,
+                        COALESCE(os.mapped_count, 0) AS mapped_count,
                         COALESCE(os.issue_count, 0) AS issue_count
                     FROM org AS o
                     LEFT JOIN org_stats AS os ON os.org_id = o.org_id
+                    LEFT JOIN org_totals AS ot ON ot.root_id = o.org_id
                     WHERE o.status = 'ACTIVE'
                     ORDER BY o.org_id
                     """
                 )
                 return list(cursor.fetchall())
+
+
+class OpsAccountRepository:
+    """운영자 콘솔 `계정 관리`(`GET/POST /api/ops/accounts/...`) 전용.
+
+    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 운영 현황·연결 조직
+    현황과 항상 같은 정의를 쓴다. `mapping_status`(UNMAPPED/LINKED/DUPLICATE)
+    는 여기서 계산하지 않고 API 응답 계층(`apps/ops/serializers.py`)에서
+    `link_count`로부터 계산한다 — Repository는 원자료만 돌려준다.
+    """
+
+    @staticmethod
+    def list() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    WITH link_counts AS (
+                        SELECT account_id, count(*) AS link_count
+                        FROM user_person_link
+                        WHERE mapping_status = 'VERIFIED'
+                        GROUP BY account_id
+                    ),
+                    representative_link AS (
+                        -- 계정 1개가 여러 PERSON에 연결될 수 있어(중복 연결), 대표로 보여줄
+                        -- 1건만 고른다 — 가장 먼저 연결된 것을 대표로 삼는다
+                        -- (`_linked_person()`과 같은 규칙).
+                        SELECT DISTINCT ON (account_id) account_id, person_id
+                        FROM user_person_link
+                        WHERE mapping_status = 'VERIFIED'
+                        ORDER BY account_id, linked_at
+                    ),
+                    connected_services AS (
+                        SELECT account_id, array_agg(DISTINCT connector_type ORDER BY connector_type) AS services
+                        FROM connector_conn
+                        WHERE auth_status = 'CONNECTED'
+                        GROUP BY account_id
+                    )
+                    SELECT
+                        ua.account_id,
+                        ua.email,
+                        ua.display_name,
+                        ua.account_status,
+                        COALESCE(lc.link_count, 0) AS link_count,
+                        p.person_id,
+                        p.name AS person_name,
+                        p.org_id,
+                        o.name AS org_name,
+                        cs.services
+                    FROM user_account AS ua
+                    LEFT JOIN link_counts AS lc ON lc.account_id = ua.account_id
+                    LEFT JOIN representative_link AS rl ON rl.account_id = ua.account_id
+                    LEFT JOIN person AS p ON p.person_id = rl.person_id
+                    LEFT JOIN org AS o ON o.org_id = p.org_id
+                    LEFT JOIN connected_services AS cs ON cs.account_id = ua.account_id
+                    ORDER BY ua.account_id
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def lock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+        return OpsAccountRepository._set_status(
+            account_id=account_id,
+            actor_account_id=actor_account_id,
+            new_status="LOCKED",
+            action="ACCOUNT_LOCK",
+        )
+
+    @staticmethod
+    def unlock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+        return OpsAccountRepository._set_status(
+            account_id=account_id,
+            actor_account_id=actor_account_id,
+            new_status="ACTIVE",
+            action="ACCOUNT_UNLOCK",
+        )
+
+    @staticmethod
+    def _set_status(*, account_id: str, actor_account_id: str, new_status: str, action: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                # 동시에 들어온 잠금/해제 요청이 서로 낡은 상태를 덮어쓰지 않도록 잠근다.
+                cursor.execute(
+                    "SELECT account_id, account_status FROM user_account WHERE account_id = %s FOR UPDATE",
+                    (account_id,),
+                )
+                account = cursor.fetchone()
+                if account is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+                if account["account_status"] == "WITHDRAWN":
+                    raise RepositoryError("탈퇴한 계정은 상태를 변경할 수 없습니다.")
+                if new_status == "LOCKED" and account_id == actor_account_id:
+                    raise PermissionDenied("본인 계정은 잠글 수 없습니다.")
+                if account["account_status"] == new_status:
+                    raise RepositoryError("이미 처리된 상태입니다.")
+
+                cursor.execute(
+                    "UPDATE user_account SET account_status = %s WHERE account_id = %s",
+                    (new_status, account_id),
+                )
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action=action,
+                    target_type="ACCOUNT",
+                    target_id=account_id,
+                    payload={"before": account["account_status"], "after": new_status},
+                )
+
+        return {"account_id": account_id, "account_status": new_status}
+
+    @staticmethod
+    def unlink_all(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM user_account WHERE account_id = %s", (account_id,))
+                if cursor.fetchone() is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+
+                cursor.execute(
+                    """
+                    UPDATE user_person_link
+                    SET mapping_status = 'REVOKED', revoked_at = now()
+                    WHERE account_id = %s AND mapping_status = 'VERIFIED'
+                    RETURNING person_id
+                    """,
+                    (account_id,),
+                )
+                revoked_person_ids = [row["person_id"] for row in cursor.fetchall()]
+                if not revoked_person_ids:
+                    raise RecordNotFound("연결된 직원 정보가 없습니다.")
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="ACCOUNT_UNLINK_PERSON",
+                    target_type="ACCOUNT",
+                    target_id=account_id,
+                    payload={"revoked_person_ids": revoked_person_ids},
+                )
+
+        return {"account_id": account_id, "revoked_person_ids": revoked_person_ids}
