@@ -35,9 +35,24 @@ state = TimestampSigner(salt="halil.connector.state").sign_object({
 - 콜백에서 서명·만료를 검증하고 `account_id`를 꺼낸다
 - 서명이 있으므로 CSRF 방지와 주체 식별을 한 값으로 해결한다
 
+`authorize` 엔드포인트는 콜백과 달리 프론트엔드가 직접 부르므로 **Bearer 인증을 강제한다.** 그리고 경로의 `{type}`을 그대로 `state`나 외부 요청에 싣지 않고 **허용 목록(`GOOGLE_DRIVE` / `JIRA`)으로 검증**한다. 목록에 없으면 404로 끝낸다 — 임의의 `connector_type` 값이 `connector_conn`에 들어가거나, 알 수 없는 provider로 리다이렉트가 만들어지는 것을 막는다.
+
+### 콜백 실패 처리
+
+콜백은 브라우저가 보는 URL이므로 **토큰이나 상세 오류를 쿼리 파라미터에 싣지 않는다.** 사용자가 승인을 거부한 경우(`error=access_denied`), provider가 오류를 준 경우, `state` 검증에 실패한 경우 모두 같은 방식으로 처리한다.
+
+```
+성공 → {FRONTEND_BASE_URL}/onboarding/connectors?connector=jira&status=ok
+실패 → {FRONTEND_BASE_URL}/onboarding/connectors?connector=jira&status=error
+```
+
+- 리다이렉트 대상은 **`FRONTEND_BASE_URL` + 고정 경로 허용 목록**으로만 만든다. `state`나 쿼리에서 받은 값으로 경로를 조립하지 않는다(open redirect 방지)
+- 실패 사유는 서버 로그에만 남긴다. 화면에는 "연결하지 못했습니다. 다시 시도해 주세요." 수준으로 표시하고, 상세는 노출하지 않는다
+- 토큰·`code`·`state` 값은 어떤 경우에도 리다이렉트 URL에 포함하지 않는다
+
 ### 토큰 보관
 
-`connector_conn.encrypted_credential_ref`에 **Fernet 암호문**을 넣는다. 스키마 주석이 이미 그렇게 갱신돼 있다.
+`connector_conn.encrypted_credential_ref`에 **Fernet 암호문**을 넣는다.
 
 > `encrypted_credential_ref` — 외부 자격증명의 DB 저장용 암호문(기존 ref 명칭 유지). People DB는 자격증명이 없어 NULL
 
@@ -46,6 +61,29 @@ state = TimestampSigner(salt="halil.connector.state").sign_object({
 - `granted_scopes`(JSONB)에는 범위 문자열만 둔다. 자격증명이나 식별자를 섞지 않는다
 
 Secret Manager를 쓰지 않는 이유는 부트캠프 범위에서 과하기 때문이다. 컬럼명이 `ref`인데 실제로는 암호문이 들어가는 불일치는 감수하고 주석으로 남겼다.
+
+#### 컬럼 타입은 TEXT여야 한다 (선행 조건)
+
+`encrypted_credential_ref`는 원래 `VARCHAR(255)`였다. Secret Manager 참조 키를 담는다는 전제였기 때문인데, 암호문을 넣기로 바꾼 지금은 **길이가 전혀 맞지 않는다.** 실측값이다.
+
+| 케이스 | 평문 | Fernet 암호문 |
+|---|---|---|
+| Jira (JWT access_token 830 + refresh 250 + cloud_id) | 1209 | **1700** |
+| Google Drive (access 230 + refresh 103) | 412 | **632** |
+| 최소 가정 (access 120 + refresh 60) | 259 | **440** |
+
+Fernet 오버헤드(버전·타임스탬프·IV·HMAC 57바이트) + AES 패딩 + Base64 4/3 확장 때문에, `VARCHAR(255)`에 담을 수 있는 **평문은 최대 127바이트**다. 토큰 하나도 들어가지 않는다.
+
+PostgreSQL은 초과 시 **절단하지 않고 에러(SQLSTATE 22001)를 던진다** — 조용한 손상이 아니라 연결 시도가 즉시 실패하는 형태로 드러난다. 그래도 작업 1번을 시작하기 전에 반드시 고쳐야 한다.
+
+`DB/schema.sql`은 `TEXT`로 갱신했다. **이미 DB를 만들어 둔 사람은 다음을 실행해야 한다.**
+
+```sql
+ALTER TABLE connector_conn
+    ALTER COLUMN encrypted_credential_ref TYPE TEXT;
+```
+
+기존 값은 NULL(People DB만 연결된 상태)이므로 변환 손실이 없다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 스키마 변경은 이렇게 수동 `ALTER`로 공유한다.
 
 ### 토큰 갱신
 
@@ -138,10 +176,15 @@ proj_source      proj_id + conn_id + external_source_id  이 프로젝트가 저
 ## 5. 작업 순서 제안
 
 ```
+0. 선행 조건 — encrypted_credential_ref를 TEXT로 변경
+   ALTER TABLE connector_conn ALTER COLUMN encrypted_credential_ref TYPE TEXT;
+   → 검증: 1700자 문자열 저장·조회 성공
+
 1. 공통 기반
    backend/connectors/oauth.py   state 서명, 토큰 교환·갱신, Fernet 암·복호화
    ConnectorRepository           upsert 시 암호문 저장, EXPIRED 전이
-   → 검증: 암호문 왕복, 만료된 state 거부, 잘못된 서명 거부
+   → 검증: 암호문 왕복, 만료된 state 거부, 잘못된 서명 거부,
+           실제 토큰 길이(Jira JWT 기준)로 저장 성공
 
 2. Jira 인가 흐름 (Drive보다 제약이 적어 먼저)
    authorize / callback + cloudId 조회

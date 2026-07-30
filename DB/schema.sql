@@ -86,7 +86,8 @@ CREATE TABLE connector_conn (
     connector_type            VARCHAR(30) NOT NULL,   -- PEOPLE_DB / GOOGLE_DRIVE / JIRA
     granted_scopes            JSONB NOT NULL DEFAULT '[]',
     auth_status                VARCHAR(20) NOT NULL DEFAULT 'CONNECTED',  -- CONNECTED / EXPIRED / ERROR
-    encrypted_credential_ref  VARCHAR(255),   -- 외부 자격증명의 DB 저장용 암호문(기존 ref 명칭 유지). People DB는 자격증명이 없어 NULL
+    encrypted_credential_ref  TEXT,           -- 외부 자격증명의 DB 저장용 암호문(기존 ref 명칭 유지). People DB는 자격증명이 없어 NULL
+                                              -- VARCHAR(255)로는 부족하다: Fernet 암호문이 Jira 1700자, Drive 632자다(255자는 평문 127바이트까지만 수용)
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
