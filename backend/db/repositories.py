@@ -1350,3 +1350,121 @@ class OpsAccountRepository:
                 )
 
         return {"account_id": account_id, "revoked_person_ids": revoked_person_ids}
+
+
+class OpsInviteRepository:
+    """운영자 콘솔 `계정 연결·초대 현황`(`GET/POST /api/ops/invites/...`) 전용.
+
+    `MemberInviteRepository.list_by_inviter()`와 EXPIRED 계산 규칙은 같지만
+    특정 초대자로 좁히지 않고 전 조직 초대를 대상으로 한다(운영자 권한).
+    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 다른 섹션과 항상 같은
+    정의를 쓴다.
+    """
+
+    @staticmethod
+    def list() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    WITH {_DUP_ACCOUNTS_CTE}
+                    SELECT
+                        mi.invite_id,
+                        mi.person_id,
+                        p.name AS person_name,
+                        p.email AS person_email,
+                        mi.team_org_id AS org_id,
+                        o.name AS org_name,
+                        mi.invited_by,
+                        inviter.email AS inviter_email,
+                        CASE
+                            WHEN mi.status = 'PENDING' AND mi.expires_at <= now() THEN 'EXPIRED'
+                            ELSE mi.status
+                        END AS status,
+                        mi.expires_at,
+                        mi.accepted_at,
+                        mi.created_at,
+                        upl.account_id AS linked_account_id,
+                        (
+                            upl.account_id IS NOT NULL
+                            AND upl.account_id IN (SELECT account_id FROM dup_accounts)
+                        ) AS linked_account_duplicate
+                    FROM member_invite AS mi
+                    LEFT JOIN person AS p ON p.person_id = mi.person_id
+                    LEFT JOIN org AS o ON o.org_id = mi.team_org_id
+                    LEFT JOIN user_account AS inviter ON inviter.account_id = mi.invited_by
+                    LEFT JOIN user_person_link AS upl
+                        ON upl.person_id = mi.person_id AND upl.mapping_status = 'VERIFIED'
+                    ORDER BY mi.created_at DESC
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def discard(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
+        """대기 중(`PENDING`)인 초대만 폐기(`REVOKED`)한다.
+
+        존재하지 않는 초대와, 존재하지만 이미 수락·만료 처리·취소된 초대를
+        구분하지 않고 같은 메시지로 응답한다 — `MemberInviteRepository.revoke()`
+        와 같은 방식.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE member_invite
+                    SET status = 'REVOKED'
+                    WHERE invite_id = %s AND status = 'PENDING'
+                    RETURNING invite_id, person_id
+                    """,
+                    (invite_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("폐기할 수 있는 초대가 아닙니다.")
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="INVITE_DISCARD",
+                    target_type="MEMBER_INVITE",
+                    target_id=invite_id,
+                    payload={"person_id": row["person_id"]},
+                )
+
+        return {"invite_id": invite_id, "status": "REVOKED"}
+
+    @staticmethod
+    def unlink_by_invite(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
+        """이 초대로 연결된 계정의 직원 링크를 전부 해제한다.
+
+        해제 자체는 `OpsAccountRepository.unlink_all()`을 그대로 재사용한다
+        (계정 1개가 여러 직원에 연결돼 있으면 전부 해제 — 계정 관리 화면과
+        동일한 동작).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT person_id FROM member_invite WHERE invite_id = %s",
+                    (invite_id,),
+                )
+                invite = cursor.fetchone()
+                if invite is None:
+                    raise RecordNotFound(f"존재하지 않는 초대입니다: {invite_id}")
+
+                cursor.execute(
+                    """
+                    SELECT account_id FROM user_person_link
+                    WHERE person_id = %s AND mapping_status = 'VERIFIED'
+                    """,
+                    (invite["person_id"],),
+                )
+                link = cursor.fetchone()
+                if link is None:
+                    raise RecordNotFound("이미 연결이 해제됐거나 연결된 적이 없는 초대입니다.")
+                account_id = link["account_id"]
+
+        result = OpsAccountRepository.unlink_all(account_id=account_id, actor_account_id=actor_account_id)
+        return {"invite_id": invite_id, **result}
