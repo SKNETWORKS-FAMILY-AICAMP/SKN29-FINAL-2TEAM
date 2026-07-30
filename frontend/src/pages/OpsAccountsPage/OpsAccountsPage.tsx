@@ -248,7 +248,7 @@ export default function OpsAccountsPage() {
             <strong>직원 매핑</strong>
             <p>
               {selected.person
-                ? `${selected.person.person_id} · ${selected.person.name} · ${selected.person.org_name ?? '조직 미지정'}`
+                ? `${selected.person.person_id} · ${selected.person.name ?? '직원 정보 없음(연결 대상이 삭제됨)'} · ${selected.person.org_name ?? '조직 미지정'}`
                 : '미연결'}
               {selected.mapping_status === 'DUPLICATE' ? ` · 연결 ${selected.link_count}건` : ''}
             </p>

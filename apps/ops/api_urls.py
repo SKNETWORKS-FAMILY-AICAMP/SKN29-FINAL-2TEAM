@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views.accounts import AccountListView, AccountLockView, AccountUnlinkPersonView, AccountUnlockView
+from .views.connectors import ConnectorListView
 from .views.invites import InviteDiscardView, InviteListView, InviteUnlinkView
 from .views.login import LoginView, LogoutView, MeView
 from .views.organizations import OrganizationsView
@@ -23,4 +24,5 @@ urlpatterns = [
     path("invites/", InviteListView.as_view(), name="api_ops_invite_list"),
     path("invites/<str:invite_id>/discard/", InviteDiscardView.as_view(), name="api_ops_invite_discard"),
     path("invites/<str:invite_id>/unlink/", InviteUnlinkView.as_view(), name="api_ops_invite_unlink"),
+    path("connectors/", ConnectorListView.as_view(), name="api_ops_connector_list"),
 ]

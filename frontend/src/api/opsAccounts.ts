@@ -4,7 +4,9 @@ export type OpsMappingStatus = 'UNMAPPED' | 'LINKED' | 'DUPLICATE';
 
 export interface OpsAccountPerson {
   person_id: string;
-  name: string;
+  // 링크는 있지만 대상 직원 레코드가 삭제된 경우(참조 무결성이 DB 제약으로
+  // 강제되지 않음) name/org가 null일 수 있다.
+  name: string | null;
   org_id: string | null;
   org_name: string | null;
 }

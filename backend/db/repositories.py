@@ -10,7 +10,7 @@ from .connection import database_connection
 from .errors import DuplicateRecord, PermissionDenied, RecordNotFound, ReferenceNotFound, RepositoryError
 
 # "중복 연결" 판정(계정 1개에 VERIFIED 직원 링크가 2개 이상)은 운영 현황·연결
-# 조직 현황·계정 관리 세 곳에서 똑같이 쓰는 정의라 CTE 텍스트를 여기 한 곳에만 둔다.
+# 조직 현황·계정 관리·초대 현황 네 곳에서 똑같이 쓰는 정의라 CTE 텍스트를 여기 한 곳에만 둔다.
 _DUP_ACCOUNTS_CTE = """
     dup_accounts AS (
         SELECT account_id
@@ -18,6 +18,18 @@ _DUP_ACCOUNTS_CTE = """
         WHERE mapping_status = 'VERIFIED'
         GROUP BY account_id
         HAVING count(*) > 1
+    )
+"""
+
+# 계정 1개가 여러 PERSON에 연결될 수 있어(중복 연결), 화면에 대표로 보여줄 1건만
+# 고를 때 쓴다 — 가장 먼저 연결된 것을 대표로 삼는다(`_linked_person()`과 같은 규칙).
+# 계정 관리·연결 서비스 현황에서 공유한다.
+_REPRESENTATIVE_LINK_CTE = """
+    representative_link AS (
+        SELECT DISTINCT ON (account_id) account_id, person_id
+        FROM user_person_link
+        WHERE mapping_status = 'VERIFIED'
+        ORDER BY account_id, linked_at
     )
 """
 
@@ -1223,22 +1235,14 @@ class OpsAccountRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     WITH link_counts AS (
                         SELECT account_id, count(*) AS link_count
                         FROM user_person_link
                         WHERE mapping_status = 'VERIFIED'
                         GROUP BY account_id
                     ),
-                    representative_link AS (
-                        -- 계정 1개가 여러 PERSON에 연결될 수 있어(중복 연결), 대표로 보여줄
-                        -- 1건만 고른다 — 가장 먼저 연결된 것을 대표로 삼는다
-                        -- (`_linked_person()`과 같은 규칙).
-                        SELECT DISTINCT ON (account_id) account_id, person_id
-                        FROM user_person_link
-                        WHERE mapping_status = 'VERIFIED'
-                        ORDER BY account_id, linked_at
-                    ),
+                    {_REPRESENTATIVE_LINK_CTE},
                     connected_services AS (
                         SELECT account_id, array_agg(DISTINCT connector_type ORDER BY connector_type) AS services
                         FROM connector_conn
@@ -1251,7 +1255,7 @@ class OpsAccountRepository:
                         ua.display_name,
                         ua.account_status,
                         COALESCE(lc.link_count, 0) AS link_count,
-                        p.person_id,
+                        rl.person_id,
                         p.name AS person_name,
                         p.org_id,
                         o.name AS org_name,
@@ -1468,3 +1472,42 @@ class OpsInviteRepository:
 
         result = OpsAccountRepository.unlink_all(account_id=account_id, actor_account_id=actor_account_id)
         return {"invite_id": invite_id, **result}
+
+
+class OpsConnectorRepository:
+    """운영자 콘솔 `연결 서비스 현황`(`GET /api/ops/connectors/`) 전용. 읽기 전용이다
+    (실제 재연결은 계정 소유자가 설정 화면에서 하고, 운영자 콘솔에는 쓰기 작업이 없음).
+
+    대표 직원(`person`)은 `_REPRESENTATIVE_LINK_CTE`를 공유해서 계정 관리와 항상
+    같은 규칙(가장 먼저 연결된 것)을 쓴다. `auth_status`에 대응하는 진단·다음 조치
+    문구는 저장된 컬럼이 아니라 API 응답 계층(`apps/ops/serializers.py`)에서
+    상태값으로부터 만든다 — Repository는 원자료만 돌려준다.
+    """
+
+    @staticmethod
+    def list() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    WITH {_REPRESENTATIVE_LINK_CTE}
+                    SELECT
+                        cc.conn_id,
+                        cc.account_id,
+                        ua.email AS owner_email,
+                        cc.connector_type,
+                        cc.auth_status,
+                        cc.connected_at,
+                        rl.person_id,
+                        p.name AS person_name,
+                        p.org_id,
+                        o.name AS org_name
+                    FROM connector_conn AS cc
+                    LEFT JOIN user_account AS ua ON ua.account_id = cc.account_id
+                    LEFT JOIN representative_link AS rl ON rl.account_id = cc.account_id
+                    LEFT JOIN person AS p ON p.person_id = rl.person_id
+                    LEFT JOIN org AS o ON o.org_id = p.org_id
+                    ORDER BY cc.connected_at DESC
+                    """
+                )
+                return list(cursor.fetchall())

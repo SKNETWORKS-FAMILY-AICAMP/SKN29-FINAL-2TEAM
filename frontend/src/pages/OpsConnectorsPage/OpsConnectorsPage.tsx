@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Button,
   OpsDataTable,
   OpsDetailPanel,
   OpsFilterBar,
@@ -10,39 +11,145 @@ import {
   OpsSummaryCard,
   OpsSummaryGrid,
 } from '../../components';
-import { OPS_CONNECTORS } from '../../data/opsMockData';
-import type { OpsConnector } from '../../data/opsMockData';
+import type { OpsTone } from '../../components';
+import { fetchConnectors } from '../../api/opsConnectors';
+import type { OpsConnector } from '../../api/opsConnectors';
+import { ApiError } from '../../api/client';
+import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
 
-function connectorTone(status: OpsConnector['status']) {
-  if (status === '연결됨') return 'success';
-  if (status === '확인 필요') return 'warning';
-  return 'danger';
+const TYPE_LABELS: Record<string, string> = {
+  PEOPLE_DB: '인사 정보',
+  GOOGLE_DRIVE: '구글 드라이브',
+  JIRA: 'Jira',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  CONNECTED: '연결됨',
+  EXPIRED: '확인 필요',
+  ERROR: '오류',
+};
+
+const STATUS_TONES: Record<string, OpsTone> = {
+  CONNECTED: 'success',
+  EXPIRED: 'warning',
+  ERROR: 'danger',
+};
+
+function typeLabel(type: string) {
+  return TYPE_LABELS[type] ?? type;
+}
+
+function statusLabel(status: string) {
+  return STATUS_LABELS[status] ?? status;
+}
+
+function statusTone(status: string): OpsTone {
+  return STATUS_TONES[status] ?? 'neutral';
+}
+
+function formatConnectedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${mm}.${dd} ${hh}:${min}`;
 }
 
 export default function OpsConnectorsPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [connectors, setConnectors] = useState<OpsConnector[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('전체');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '전체');
-  const [selectedId, setSelectedId] = useState('연결 07');
+  const [selectedId, setSelectedId] = useState('');
+
+  async function load() {
+    const session = loadOpsSession();
+    if (!session) {
+      navigate('/ops/login', { replace: true });
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      setConnectors(await fetchConnectors(session.token));
+    } catch (thrown) {
+      if (thrown instanceof ApiError && thrown.status === 401) {
+        navigate('/ops/login', { replace: true });
+        return;
+      }
+      setError(thrown instanceof ApiError ? thrown.message : '연결 서비스 현황을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
+    const all = connectors ?? [];
     const normalized = query.trim().toLowerCase();
-    return OPS_CONNECTORS.filter((connector) => {
-      const matchesQuery = !normalized || [connector.id, connector.owner, connector.organization]
-        .some((value) => value.toLowerCase().includes(normalized));
-      const matchesType = typeFilter === '전체' || connector.type === typeFilter;
-      const matchesStatus = statusFilter === '전체' || connector.status === statusFilter;
+    return all.filter((connector) => {
+      const matchesQuery = !normalized || [
+        connector.conn_id,
+        connector.owner_email ?? '',
+        connector.person?.org_name ?? '',
+      ].some((value) => value.toLowerCase().includes(normalized));
+      const matchesType = typeFilter === '전체' || typeLabel(connector.connector_type) === typeFilter;
+      const matchesStatus = statusFilter === '전체' || statusLabel(connector.auth_status) === statusFilter;
       return matchesQuery && matchesType && matchesStatus;
     });
-  }, [query, statusFilter, typeFilter]);
+  }, [connectors, query, statusFilter, typeFilter]);
 
-  const selected = filtered.find((connector) => connector.id === selectedId) ?? filtered[0] ?? null;
+  const selected = filtered.find((connector) => connector.conn_id === selectedId) ?? filtered[0] ?? null;
 
   function applyTypeFilter(type: string) {
     setTypeFilter(type);
     setStatusFilter('전체');
+  }
+
+  if (loading && !connectors) {
+    return (
+      <div className={styles.page}>
+        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <p className={styles.inlineEmpty}>불러오는 중…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.page}>
+        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <p className={styles.inlineEmpty} role="alert">{error}</p>
+        <Button variant="outline" onClick={load}>다시 시도</Button>
+      </div>
+    );
+  }
+
+  const all = connectors ?? [];
+  const countByType = (type: string) => all.filter((c) => c.connector_type === type).length;
+  const countByStatus = (list: OpsConnector[], status: string) => list.filter((c) => c.auth_status === status).length;
+  const summaryDetail = (list: OpsConnector[]) =>
+    `정상 ${countByStatus(list, 'CONNECTED')} · 확인 필요 ${countByStatus(list, 'EXPIRED')} · 오류 ${countByStatus(list, 'ERROR')}`;
+
+  if (all.length === 0) {
+    return (
+      <div className={styles.page}>
+        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <p className={styles.inlineEmpty}>연결된 서비스가 없습니다.</p>
+      </div>
+    );
   }
 
   return (
@@ -53,10 +160,25 @@ export default function OpsConnectorsPage() {
       />
 
       <OpsSummaryGrid>
-        <OpsSummaryCard label="전체 연결" value={31} detail="정상 26 · 확인 필요 2 · 오류 3" onClick={() => applyTypeFilter('전체')} />
-        <OpsSummaryCard label="인사 정보" value={1} detail="연결 조직 범위 동기화" tone="success" onClick={() => applyTypeFilter('인사 정보')} />
-        <OpsSummaryCard label="구글 드라이브" value={15} detail="정상 13 · 확인 필요 2" tone="warning" onClick={() => applyTypeFilter('구글 드라이브')} />
-        <OpsSummaryCard label="Jira" value={15} detail="정상 12 · 오류 3" tone="danger" onClick={() => applyTypeFilter('Jira')} />
+        <OpsSummaryCard label="전체 연결" value={all.length} detail={summaryDetail(all)} onClick={() => applyTypeFilter('전체')} />
+        <OpsSummaryCard
+          label="인사 정보"
+          value={countByType('PEOPLE_DB')}
+          detail={summaryDetail(all.filter((c) => c.connector_type === 'PEOPLE_DB'))}
+          onClick={() => applyTypeFilter('인사 정보')}
+        />
+        <OpsSummaryCard
+          label="구글 드라이브"
+          value={countByType('GOOGLE_DRIVE')}
+          detail={summaryDetail(all.filter((c) => c.connector_type === 'GOOGLE_DRIVE'))}
+          onClick={() => applyTypeFilter('구글 드라이브')}
+        />
+        <OpsSummaryCard
+          label="Jira"
+          value={countByType('JIRA')}
+          detail={summaryDetail(all.filter((c) => c.connector_type === 'JIRA'))}
+          onClick={() => applyTypeFilter('Jira')}
+        />
       </OpsSummaryGrid>
 
       <OpsFilterBar>
@@ -89,13 +211,13 @@ export default function OpsConnectorsPage() {
         </thead>
         <tbody>
           {filtered.length > 0 ? filtered.map((connector) => (
-            <tr key={connector.id} aria-selected={selected?.id === connector.id} onClick={() => setSelectedId(connector.id)}>
-              <td>{connector.id}</td>
-              <td>{connector.type}</td>
-              <td>{connector.owner}</td>
-              <td>{connector.organization}</td>
-              <td><OpsStatusBadge tone={connectorTone(connector.status)}>{connector.status}</OpsStatusBadge></td>
-              <td>{connector.checkedAt}</td>
+            <tr key={connector.conn_id} aria-selected={selected?.conn_id === connector.conn_id} onClick={() => setSelectedId(connector.conn_id)}>
+              <td>{connector.conn_id}</td>
+              <td>{typeLabel(connector.connector_type)}</td>
+              <td>{connector.owner_email ?? '알 수 없음'}</td>
+              <td>{connector.person?.org_name ?? '-'}</td>
+              <td><OpsStatusBadge tone={statusTone(connector.auth_status)}>{statusLabel(connector.auth_status)}</OpsStatusBadge></td>
+              <td>{formatConnectedAt(connector.connected_at)}</td>
               <td>{connector.diagnosis}</td>
             </tr>
           )) : (
@@ -104,19 +226,19 @@ export default function OpsConnectorsPage() {
         </tbody>
       </OpsDataTable>
 
-      {selected ? <OpsDetailPanel title={`선택 연결 · ${selected.id} · ${selected.type} · ${selected.status}`}>
+      {selected ? <OpsDetailPanel title={`선택 연결 · ${selected.conn_id} · ${typeLabel(selected.connector_type)} · ${statusLabel(selected.auth_status)}`}>
         <div className={styles.detailCards}>
           <div className={styles.detailCard}>
             <strong>연결 계정</strong>
-            <p>{selected.owner}<br />{selected.organization}</p>
+            <p>{selected.owner_email ?? '알 수 없음'}<br />{selected.person?.org_name ?? '연결 조직 미지정'}</p>
           </div>
           <div className={styles.detailCard}>
             <strong>오류 진단</strong>
-            <p>{selected.diagnosis}<br />최근 확인 {selected.checkedAt}</p>
+            <p>{selected.diagnosis}<br />최근 확인 {formatConnectedAt(selected.connected_at)}</p>
           </div>
           <div className={styles.detailCard}>
             <strong>다음 조치</strong>
-            <p>{selected.nextAction}<br />운영자는 원인과 영향만 확인</p>
+            <p>{selected.next_action}<br />운영자는 원인과 영향만 확인</p>
           </div>
         </div>
         <p className={styles.detailText}>
