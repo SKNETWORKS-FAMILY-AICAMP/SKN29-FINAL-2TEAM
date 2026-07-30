@@ -1,11 +1,29 @@
 from django.urls import path
 
-from .api_views import AnalysisRunDetailAPIView, HealthAPIView, ProjectAnalysisRunAPIView, ProjectDetailAPIView, ProjectListCreateAPIView
+from .api_views import (
+    AnalysisRunDetailAPIView,
+    HealthAPIView,
+    ProjectAnalysisRunAPIView,
+    ProjectDetailAPIView,
+    ProjectDocumentAPIView,
+    ProjectListCreateAPIView,
+    ProjectSourceAPIView,
+)
 
 urlpatterns = [
     path("health/", HealthAPIView.as_view(), name="api_health"),
     path("projects/", ProjectListCreateAPIView.as_view(), name="api_project_list_create"),
     path("projects/<str:project_id>/", ProjectDetailAPIView.as_view(), name="api_project_detail"),
+    path(
+        "projects/<str:project_id>/sources/",
+        ProjectSourceAPIView.as_view(),
+        name="api_project_sources",
+    ),
+    path(
+        "projects/<str:project_id>/documents/",
+        ProjectDocumentAPIView.as_view(),
+        name="api_project_documents",
+    ),
     path(
         "projects/<str:project_id>/assignment-runs/",
         ProjectAnalysisRunAPIView.as_view(),

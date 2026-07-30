@@ -2,6 +2,12 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from apps.accounts.tokens import issue_token
+
+
+def auth_header(account_id="UA001"):
+    return {"authorization": f"Bearer {issue_token(account_id)}"}
+
 
 class HealthApiTests(SimpleTestCase):
     @patch(
@@ -17,20 +23,20 @@ class HealthApiTests(SimpleTestCase):
 
 
 class ProjectApiTests(SimpleTestCase):
-    @patch("apps.projects.api_views.ProjectRepository.list_all")
-    def test_project_list_uses_direct_repository(self, list_all):
-        list_all.return_value = [
+    @patch("apps.projects.api_views.ProjectRepository.list_for_owner")
+    def test_project_list_uses_direct_repository(self, list_for_owner):
+        list_for_owner.return_value = [
             {
                 "proj_id": "PJ001",
                 "name": "AI 코파일럿 시연",
                 "status": "DRAFT",
                 "tz": "Asia/Seoul",
-                "owner_account_id": None,
+                "owner_account_id": "UA001",
                 "owner_name": None,
             }
         ]
 
-        response = self.client.get("/api/projects/")
+        response = self.client.get("/api/projects/", headers=auth_header())
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]["proj_id"], "PJ001")
@@ -43,7 +49,7 @@ class ProjectApiTests(SimpleTestCase):
             "name": "AI 코파일럿 시연",
             "status": "DRAFT",
             "tz": "Asia/Seoul",
-            "owner_account_id": None,
+            "owner_account_id": "UA001",
             "owner_name": None,
         }
 
@@ -55,6 +61,7 @@ class ProjectApiTests(SimpleTestCase):
                 "tz": "Asia/Seoul",
             },
             content_type="application/json",
+            headers=auth_header(),
         )
 
         self.assertEqual(response.status_code, 201)
@@ -62,5 +69,5 @@ class ProjectApiTests(SimpleTestCase):
             name="AI 코파일럿 시연",
             status="DRAFT",
             tz="Asia/Seoul",
-            owner_account_id=None,
+            owner_account_id="UA001",
         )

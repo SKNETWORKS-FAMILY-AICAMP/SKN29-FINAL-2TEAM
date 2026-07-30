@@ -4,8 +4,11 @@ from .api_views import (
     ConnectorListAPIView,
     GoogleDriveAuthorizeAPIView,
     GoogleDriveCallbackAPIView,
+    GoogleDriveFileListAPIView,
+    GoogleDriveFolderListAPIView,
     JiraAuthorizeAPIView,
     JiraCallbackAPIView,
+    JiraProjectListAPIView,
     PeopleDbConnectAPIView,
     PeopleDbIdentityAPIView,
     PeopleDbSummaryAPIView,
@@ -38,6 +41,21 @@ urlpatterns = [
         GoogleDriveCallbackAPIView.as_view(),
         name="api_connector_google_drive_callback",
     ),
+    path(
+        "connectors/google-drive/folders/",
+        GoogleDriveFolderListAPIView.as_view(),
+        name="api_connector_google_drive_folders",
+    ),
+    path(
+        "connectors/google-drive/files/",
+        GoogleDriveFileListAPIView.as_view(),
+        name="api_connector_google_drive_files",
+    ),
     path("connectors/jira/authorize/", JiraAuthorizeAPIView.as_view(), name="api_connector_jira_authorize"),
     path("connectors/jira/callback/", JiraCallbackAPIView.as_view(), name="api_connector_jira_callback"),
+    path(
+        "connectors/jira/projects/",
+        JiraProjectListAPIView.as_view(),
+        name="api_connector_jira_projects",
+    ),
 ]

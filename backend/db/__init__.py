@@ -5,20 +5,24 @@ from .repositories import (
     AccountRepository,
     AnalysisRunRepository,
     ConnectorRepository,
+    DocumentRepository,
     MemberInviteRepository,
     OrganizationRepository,
     PersonRepository,
     ProjectRepository,
+    ProjectSourceRepository,
 )
 
 __all__ = [
     "AccountRepository",
     "AnalysisRunRepository",
     "ConnectorRepository",
+    "DocumentRepository",
     "MemberInviteRepository",
     "OrganizationRepository",
     "PersonRepository",
     "ProjectRepository",
+    "ProjectSourceRepository",
     "database_connection",
     "database_status",
 ]

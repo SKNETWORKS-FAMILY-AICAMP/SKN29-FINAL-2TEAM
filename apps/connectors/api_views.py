@@ -18,6 +18,14 @@ from backend.db.errors import (
     RepositoryError,
 )
 
+from .clients import (
+    DRIVE_ROOT_ID,
+    MAX_SCAN_DEPTH,
+    get_drive_folders,
+    list_drive_files,
+    list_drive_folders,
+    list_jira_projects,
+)
 from .serializers import connector_response, people_db_summary_response, person_response
 from .oauth import (
     GOOGLE_DRIVE,
@@ -33,6 +41,25 @@ from .oauth import (
 
 LEADER_ONLY_DETAIL = "팀장만 외부 서비스를 연결할 수 있습니다."
 logger = logging.getLogger(__name__)
+
+
+def _safe_drive_id(value: str) -> bool:
+    """Drive 검색식에 그대로 들어가는 값이라 따옴표·백슬래시를 막는다."""
+
+    return "'" not in value and "\\" not in value
+
+
+def _parse_depth(raw: str | None) -> int | None:
+    """`proj_source.max_depth`와 같은 규약. `unlimited`·빈 값은 None이다."""
+
+    if raw is None or raw == "":
+        return 1
+    if raw == "unlimited":
+        return None
+    depth = int(raw)  # ValueError는 호출자가 400으로 바꾼다.
+    if depth < 1 or depth > MAX_SCAN_DEPTH:
+        raise ValueError(f"탐색 깊이는 1~{MAX_SCAN_DEPTH} 사이여야 합니다.")
+    return depth
 
 
 def _repository_error_response(exc: Exception) -> Response:
@@ -241,3 +268,81 @@ class JiraCallbackAPIView(APIView):
             return _jira_callback_redirect("error")
 
         return _jira_callback_redirect("ok")
+
+
+class GoogleDriveFolderListAPIView(AuthenticatedAPIView):
+    """Drive 폴더 조회. 선택 결과 저장은 `proj_source`(프로젝트 단위)의 일이다.
+
+    `ids`를 주면 그 폴더들만, 없으면 `parent` 바로 아래를 돌려준다. 저장된 선택은
+    폴더 id만 남기 때문에 이름을 되짚을 방법이 필요하다.
+    """
+
+    def get(self, request):
+        raw_ids = request.query_params.get("ids")
+        if raw_ids:
+            folder_ids = [value for value in (part.strip() for part in raw_ids.split(",")) if value]
+            try:
+                folders = get_drive_folders(account_id=request.user.account_id, folder_ids=folder_ids)
+            except OAuthError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+            except (RepositoryError, psycopg.Error) as exc:
+                return _repository_error_response(exc)
+            return Response(folders)
+
+        parent_id = request.query_params.get("parent") or DRIVE_ROOT_ID
+        if not _safe_drive_id(parent_id):
+            return Response({"detail": "폴더 식별자가 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            folders = list_drive_folders(account_id=request.user.account_id, parent_id=parent_id)
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response(folders)
+
+
+class GoogleDriveFileListAPIView(AuthenticatedAPIView):
+    """`parent` 폴더 아래의 파일. 어떤 문서가 들어올지 확인하는 용도다.
+
+    `depth`는 선택한 폴더를 1단계로 센다. 생략하면 1(직속 파일만),
+    `unlimited`면 제한 없음.
+    """
+
+    def get(self, request):
+        parent_id = request.query_params.get("parent") or ""
+        if not parent_id or not _safe_drive_id(parent_id):
+            return Response({"detail": "폴더 식별자가 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            max_depth = _parse_depth(request.query_params.get("depth"))
+        except ValueError:
+            return Response({"detail": "탐색 깊이가 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            files = list_drive_files(
+                account_id=request.user.account_id,
+                parent_id=parent_id,
+                max_depth=max_depth,
+            )
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response(files)
+
+
+class JiraProjectListAPIView(AuthenticatedAPIView):
+    """연결된 Jira 사이트의 프로젝트 목록. 조회만 한다."""
+
+    def get(self, request):
+        try:
+            projects = list_jira_projects(account_id=request.user.account_id)
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response(projects)

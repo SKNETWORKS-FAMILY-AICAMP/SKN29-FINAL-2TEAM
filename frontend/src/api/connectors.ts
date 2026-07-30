@@ -65,3 +65,73 @@ export function beginJiraAuthorization(token: string) {
 export function fetchPeopleDbSummary(token: string) {
   return apiRequest<PeopleDbSummary>('/connectors/people-db/summary/', { token });
 }
+
+/** 내 드라이브 최상단을 가리키는 Drive의 별칭. */
+export const DRIVE_ROOT_ID = 'root';
+
+export interface DriveFolder {
+  folder_id: string;
+  name: string;
+  modified_at: string | null;
+}
+
+export interface JiraProject {
+  project_key: string;
+  project_id: string | null;
+  name: string;
+  description: string | null;
+  project_type: string | null;
+  lead_name: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * `parentId` 바로 아래의 폴더. 한 단계씩 내려가며 탐색한다. Drive 전체를 한 번에
+ * 받으면 무관한 폴더에 묻히기 때문이다. 미연결이면 404, 재연결이 필요하면 502.
+ */
+export function listDriveFolders(token: string, parentId: string = DRIVE_ROOT_ID) {
+  return apiRequest<DriveFolder[]>(
+    `/connectors/google-drive/folders/?parent=${encodeURIComponent(parentId)}`,
+    { token },
+  );
+}
+
+export interface DriveFile {
+  file_id: string;
+  name: string;
+  mime_type: string | null;
+  modified_at: string | null;
+  /** 본문에서 업무를 뽑아낼 수 있는 형식인지. 미지원 파일은 등록되지 않는다. */
+  supported: boolean;
+  /** 선택한 폴더 기준 상대 경로. 직속 파일은 빈 문자열이다. */
+  folder_path: string;
+}
+
+/**
+ * `parentId` 폴더 아래의 파일. `maxDepth`는 선택한 폴더를 1단계로 세고,
+ * null이면 제한 없이 하위 폴더를 따라 내려간다.
+ */
+export function listDriveFiles(token: string, parentId: string, maxDepth: number | null = 1) {
+  const depth = maxDepth === null ? 'unlimited' : String(maxDepth);
+  return apiRequest<DriveFile[]>(
+    `/connectors/google-drive/files/?parent=${encodeURIComponent(parentId)}&depth=${depth}`,
+    { token },
+  );
+}
+
+/**
+ * 저장된 폴더 id로 이름을 되짚는다. `proj_source`에는 id만 남기 때문에
+ * 저장된 선택을 다시 보여주려면 Drive에 물어봐야 한다.
+ */
+export function getDriveFolders(token: string, folderIds: string[]) {
+  if (folderIds.length === 0) return Promise.resolve<DriveFolder[]>([]);
+  return apiRequest<DriveFolder[]>(
+    `/connectors/google-drive/folders/?ids=${encodeURIComponent(folderIds.join(','))}`,
+    { token },
+  );
+}
+
+/** 연결된 Jira 사이트의 프로젝트. 미연결이면 404, 재연결이 필요하면 502. */
+export function listJiraProjects(token: string) {
+  return apiRequest<JiraProject[]>('/connectors/jira/projects/', { token });
+}

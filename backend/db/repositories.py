@@ -105,6 +105,31 @@ class ProjectRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def list_for_owner(account_id: str) -> list[dict[str, Any]]:
+        """내가 소유한 프로젝트. 온보딩 중인 DRAFT를 찾는 데도 쓴다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        p.proj_id,
+                        p.name,
+                        p.status,
+                        p.tz,
+                        p.owner_account_id,
+                        ua.display_name AS owner_name
+                    FROM proj AS p
+                    LEFT JOIN user_account AS ua
+                      ON ua.account_id = p.owner_account_id
+                    WHERE p.owner_account_id = %s
+                    ORDER BY p.proj_id
+                    """,
+                    (account_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def get(proj_id: str) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -177,6 +202,261 @@ class ProjectRepository:
 
         project["owner_name"] = None
         return project
+
+
+class ProjectSourceRepository:
+    """프로젝트가 어느 폴더·어느 Jira 프로젝트를 읽는지(`proj_source`).
+
+    커넥터 연결은 계정 단위지만 소스는 프로젝트 단위다. `conn_id`는 요청에서
+    받지 않고 소유자의 연결에서 찾는다 — 남의 연결에 소스를 매달 수 없어야 한다.
+    """
+
+    DRIVE_FOLDER = "DRIVE_FOLDER"
+    JIRA_PROJECT = "JIRA_PROJECT"
+
+    _CONNECTOR_BY_SOURCE = {
+        DRIVE_FOLDER: "GOOGLE_DRIVE",
+        JIRA_PROJECT: "JIRA",
+    }
+
+    @staticmethod
+    def _require_owner(cursor, *, proj_id: str, account_id: str) -> None:
+        cursor.execute("SELECT owner_account_id FROM proj WHERE proj_id = %s", (proj_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound(f"존재하지 않는 프로젝트입니다: {proj_id}")
+        if row["owner_account_id"] != account_id:
+            raise PermissionDenied("본인이 소유한 프로젝트만 수정할 수 있습니다.")
+
+    @staticmethod
+    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT proj_source_id, proj_id, conn_id, source_type, external_source_id,
+                           sync_status, default_doc_role, max_depth
+                    FROM proj_source
+                    WHERE proj_id = %s
+                    ORDER BY proj_source_id
+                    """,
+                    (proj_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def replace(
+        *,
+        proj_id: str,
+        account_id: str,
+        source_type: str,
+        external_source_ids: list[str],
+        max_depth: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """해당 종류의 소스를 넘겨받은 목록으로 교체한다.
+
+        선택 화면은 항상 전체 선택 상태를 보내므로 교체가 맞다. 덧붙이면 화면에서
+        해제한 폴더가 남는다. 계속 선택된 폴더의 `default_doc_role`은 지키고
+        넘어간다 — 폴더를 다시 저장했다고 역할 지정을 날릴 이유가 없다.
+
+        `max_depth`는 이번에 저장하는 모든 폴더에 같은 값으로 들어간다. 화면의
+        탐색 깊이 설정이 폴더별이 아니라 하나이기 때문이다.
+        """
+
+        connector_type = ProjectSourceRepository._CONNECTOR_BY_SOURCE.get(source_type)
+        if connector_type is None:
+            raise ValueError(f"지원하지 않는 소스 종류입니다: {source_type}")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+
+                cursor.execute(
+                    """
+                    SELECT conn_id
+                    FROM connector_conn
+                    WHERE account_id = %s AND connector_type = %s AND auth_status = 'CONNECTED'
+                    ORDER BY connected_at DESC
+                    LIMIT 1
+                    """,
+                    (account_id, connector_type),
+                )
+                connection_row = cursor.fetchone()
+                if connection_row is None:
+                    raise ReferenceNotFound(f"{connector_type} 커넥터가 연결되지 않았습니다.")
+
+                cursor.execute(
+                    """
+                    SELECT external_source_id, default_doc_role
+                    FROM proj_source
+                    WHERE proj_id = %s AND source_type = %s
+                    """,
+                    (proj_id, source_type),
+                )
+                kept_roles = {row["external_source_id"]: row["default_doc_role"] for row in cursor.fetchall()}
+
+                cursor.execute(
+                    "DELETE FROM proj_source WHERE proj_id = %s AND source_type = %s",
+                    (proj_id, source_type),
+                )
+
+                rows = []
+                # 같은 폴더를 두 번 보내도 한 행만 남긴다.
+                for external_source_id in dict.fromkeys(external_source_ids):
+                    proj_source_id = next_short_code(
+                        cursor,
+                        table="proj_source",
+                        column="proj_source_id",
+                        prefix="PS",
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO proj_source
+                            (proj_source_id, proj_id, conn_id, source_type, external_source_id,
+                             default_doc_role, max_depth)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        RETURNING proj_source_id, proj_id, conn_id, source_type, external_source_id,
+                                  sync_status, default_doc_role, max_depth
+                        """,
+                        (
+                            proj_source_id,
+                            proj_id,
+                            connection_row["conn_id"],
+                            source_type,
+                            external_source_id,
+                            kept_roles.get(external_source_id),
+                            max_depth if source_type == ProjectSourceRepository.DRIVE_FOLDER else None,
+                        ),
+                    )
+                    rows.append(cursor.fetchone())
+
+        return rows
+
+
+class DocumentRepository:
+    """프로젝트가 읽을 문서(`doc`). 역할 지정 화면이 쓰는 유일한 쓰기 경로다."""
+
+    DRIVE = "DRIVE"
+    DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
+
+    @staticmethod
+    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT doc_id, proj_id, src_file_id, source_type, file_name,
+                           mime_type, doc_role, src_modified_at, deleted
+                    FROM doc
+                    WHERE proj_id = %s AND deleted = false
+                    ORDER BY doc_id
+                    """,
+                    (proj_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def save_drive_documents(
+        *,
+        proj_id: str,
+        account_id: str,
+        folder_roles: dict[str, str],
+        documents: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """폴더 역할과 문서 목록을 한 트랜잭션으로 기록한다.
+
+        `doc` 행은 지우고 다시 만들지 않고 `src_file_id`로 갱신한다. 파싱이
+        채워 둔 `content_hash`·`cur_revision`을 역할만 바꿨다고 날릴 수 없다.
+        목록에서 빠진 문서는 `deleted`로 표시한다(스키마가 이를 위해 둔 컬럼이다).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+
+                for external_source_id, role in folder_roles.items():
+                    cursor.execute(
+                        """
+                        UPDATE proj_source
+                           SET default_doc_role = %s
+                         WHERE proj_id = %s
+                           AND source_type = %s
+                           AND external_source_id = %s
+                        """,
+                        (role, proj_id, ProjectSourceRepository.DRIVE_FOLDER, external_source_id),
+                    )
+
+                seen = []
+                for document in documents:
+                    src_file_id = document["src_file_id"]
+                    seen.append(src_file_id)
+                    cursor.execute(
+                        """
+                        UPDATE doc
+                           SET file_name = %s,
+                               mime_type = %s,
+                               doc_role = %s,
+                               src_modified_at = %s,
+                               deleted = false
+                         WHERE proj_id = %s AND src_file_id = %s
+                        """,
+                        (
+                            document["file_name"],
+                            document["mime_type"],
+                            document["doc_role"],
+                            document["src_modified_at"],
+                            proj_id,
+                            src_file_id,
+                        ),
+                    )
+                    if cursor.rowcount:
+                        continue
+
+                    doc_id = next_short_code(cursor, table="doc", column="doc_id", prefix="DC")
+                    cursor.execute(
+                        """
+                        INSERT INTO doc
+                            (doc_id, proj_id, src_file_id, source_type, file_name,
+                             mime_type, doc_role, src_modified_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            doc_id,
+                            proj_id,
+                            src_file_id,
+                            DocumentRepository.DRIVE,
+                            document["file_name"],
+                            document["mime_type"],
+                            document["doc_role"],
+                            document["src_modified_at"],
+                        ),
+                    )
+
+                # 선택이 해제된 폴더의 문서는 더 이상 읽지 않는다.
+                cursor.execute(
+                    """
+                    UPDATE doc
+                       SET deleted = true
+                     WHERE proj_id = %s
+                       AND source_type = %s
+                       AND NOT (src_file_id = ANY(%s))
+                    """,
+                    (proj_id, DocumentRepository.DRIVE, seen),
+                )
+
+                cursor.execute(
+                    """
+                    SELECT doc_id, proj_id, src_file_id, source_type, file_name,
+                           mime_type, doc_role, src_modified_at, deleted
+                    FROM doc
+                    WHERE proj_id = %s AND deleted = false
+                    ORDER BY doc_id
+                    """,
+                    (proj_id,),
+                )
+                return list(cursor.fetchall())
 
 
 class AnalysisRunRepository:
@@ -954,6 +1234,58 @@ class ConnectorRepository:
                         Jsonb(granted_scopes),
                         encrypted_credential,
                     ),
+                )
+
+    @staticmethod
+    def get_credential(*, account_id: str, connector_type: str) -> str:
+        """저장된 암호문을 돌려준다. 연결이 없거나 끊겼으면 재연결을 요구한다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT auth_status, encrypted_credential_ref
+                    FROM connector_conn
+                    WHERE account_id = %s AND connector_type = %s
+                    """,
+                    (account_id, connector_type),
+                )
+                row = cursor.fetchone()
+
+        if row is None or not row["encrypted_credential_ref"]:
+            raise RecordNotFound("연결되지 않은 서비스입니다. 먼저 연결해 주세요.")
+        if row["auth_status"] != "CONNECTED":
+            raise RepositoryError("연결이 만료됐습니다. 다시 연결해 주세요.")
+        return row["encrypted_credential_ref"]
+
+    @staticmethod
+    def update_credential(*, account_id: str, connector_type: str, encrypted_credential: str) -> None:
+        """토큰 갱신 결과를 덮어쓴다. connected_at은 최초 연결 시각으로 남긴다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE connector_conn
+                    SET encrypted_credential_ref = %s, auth_status = 'CONNECTED'
+                    WHERE account_id = %s AND connector_type = %s
+                    """,
+                    (encrypted_credential, account_id, connector_type),
+                )
+
+    @staticmethod
+    def mark_expired(*, account_id: str, connector_type: str) -> None:
+        """갱신이 실패하면 화면이 재연결을 유도할 수 있도록 상태만 바꾼다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE connector_conn
+                    SET auth_status = 'EXPIRED'
+                    WHERE account_id = %s AND connector_type = %s
+                    """,
+                    (account_id, connector_type),
                 )
 
     @staticmethod
