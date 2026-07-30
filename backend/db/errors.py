@@ -15,3 +15,11 @@ class ReferenceNotFound(RepositoryError):
 
 class IdSpaceExhausted(RepositoryError):
     """5자리 코드의 가용 범위를 모두 사용함."""
+
+
+class DuplicateRecord(RepositoryError):
+    """유니크 제약과 충돌하는 레코드를 만들려고 함."""
+
+
+class PermissionDenied(RepositoryError):
+    """요청자가 대상 레코드를 다룰 권한이 없음."""

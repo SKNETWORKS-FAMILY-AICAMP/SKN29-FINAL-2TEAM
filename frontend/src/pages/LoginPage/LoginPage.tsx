@@ -2,6 +2,9 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
+import { login } from '../../api/auth';
+import { ApiError } from '../../api/client';
+import { saveSession } from '../../utils/session';
 import styles from './LoginPage.module.css';
 
 function InviteIcon() {
@@ -21,13 +24,28 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('로그인되었습니다.', 'success');
-    setTimeout(() => {
-      navigate('/onboarding/connectors');
-    }, 700);
+    if (submitting) return;
+
+    setFormError('');
+    setSubmitting(true);
+    try {
+      const result = await login(email.trim(), password);
+      saveSession(result);
+      showToast('로그인되었습니다.', 'success');
+      // 팀원 대시보드는 아직 없으므로 팀원은 본인 설정 화면으로 보낸다.
+      navigate(result.account.role === 'member' ? '/settings/team' : '/onboarding/connectors');
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : '로그인하지 못했습니다.';
+      setFormError(message);
+      showToast(message, 'error');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -58,6 +76,7 @@ export default function LoginPage() {
               name="email"
               placeholder="name@company.com"
               autoComplete="email"
+              required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
@@ -68,6 +87,7 @@ export default function LoginPage() {
               name="password"
               placeholder="비밀번호를 입력하세요"
               autoComplete="current-password"
+              required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               rightElement={
@@ -83,8 +103,14 @@ export default function LoginPage() {
             />
           </form>
 
-          <Button type="submit" form="login-form" variant="primary" fullWidth>
-            로그인
+          {formError && (
+            <p className={styles.formError} role="alert">
+              {formError}
+            </p>
+          )}
+
+          <Button type="submit" form="login-form" variant="primary" fullWidth disabled={submitting}>
+            {submitting ? '로그인 중…' : '로그인'}
           </Button>
 
           <Button

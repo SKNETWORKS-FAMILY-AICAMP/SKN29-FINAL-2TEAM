@@ -2,15 +2,34 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
+import { requestPasswordReset } from '../../api/auth';
+import { ApiError } from '../../api/client';
 import styles from './FindPasswordPage.module.css';
 
 export default function FindPasswordPage() {
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [sentTo, setSentTo] = useState('');
+  const [formError, setFormError] = useState('');
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    showToast('BLOCKED · 비밀번호 재설정 API와 메일 발송이 아직 연결되지 않았습니다.', 'error');
+    if (submitting) return;
+
+    setFormError('');
+    setSubmitting(true);
+    try {
+      const address = email.trim();
+      await requestPasswordReset(address);
+      setSentTo(address);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : '요청을 처리하지 못했습니다.';
+      setFormError(message);
+      showToast(message, 'error');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -35,23 +54,45 @@ export default function FindPasswordPage() {
             </p>
           </div>
 
-          <form id="find-password-form" className={styles.fieldGroup} onSubmit={handleSubmit}>
-            <Input
-              label="이메일 주소"
-              required
-              type="email"
-              id="recovery-email"
-              name="email"
-              placeholder="name@company.com"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </form>
+          {sentTo ? (
+            <p className={styles.sentNotice}>
+              <strong>{sentTo}</strong> 로 재설정 링크를 보냈습니다. 가입된 이메일이라면 곧 도착합니다.
+              <br />
+              링크는 1시간 동안만 유효합니다.
+            </p>
+          ) : (
+            <>
+              <form id="find-password-form" className={styles.fieldGroup} onSubmit={handleSubmit}>
+                <Input
+                  label="이메일 주소"
+                  required
+                  type="email"
+                  id="recovery-email"
+                  name="email"
+                  placeholder="name@company.com"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </form>
 
-          <Button type="submit" form="find-password-form" variant="primary" fullWidth>
-            재설정 링크 보내기
-          </Button>
+              {formError && (
+                <p className={styles.formError} role="alert">
+                  {formError}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                form="find-password-form"
+                variant="primary"
+                fullWidth
+                disabled={submitting}
+              >
+                {submitting ? '보내는 중…' : '재설정 링크 보내기'}
+              </Button>
+            </>
+          )}
         </div>
 
         <div className={styles.footerLinks}>

@@ -9,6 +9,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage/SignupPage'));
 const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'));
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage/ResetPasswordPage'));
 const ConnectorOnboardingPage = lazy(() => import('./pages/ConnectorOnboardingPage/ConnectorOnboardingPage'));
 const FolderSelectPage = lazy(() => import('./pages/FolderSelectPage/FolderSelectPage'));
 const FolderRoleAssignmentPage = lazy(() => import('./pages/FolderRoleAssignmentPage/FolderRoleAssignmentPage'));
@@ -63,6 +64,7 @@ function App() {
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/invite-code" element={<InviteCodePage />} />
           <Route path="/find-password" element={<FindPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/onboarding/connectors" element={<ConnectorOnboardingPage />} />
           <Route path="/onboarding/folders" element={<FolderSelectPage />} />
           <Route path="/onboarding/folder-roles" element={<FolderRoleAssignmentPage />} />

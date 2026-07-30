@@ -26,6 +26,9 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 
+# 실제 팀원 이름·이메일이 담긴 목업 오버라이드 (team_overrides.example.sql만 커밋)
+DB/peopleDB/team_overrides.sql
+
 # 저장소 루트에서 실수로 npm install 시 생기는 lockfile (정상 위치: frontend/package-lock.json)
 /package-lock.json
 /node_modules/
