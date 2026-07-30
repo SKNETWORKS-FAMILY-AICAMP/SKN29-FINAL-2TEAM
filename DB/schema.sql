@@ -19,6 +19,10 @@ CREATE TABLE user_account (
     password_hash   VARCHAR(255) NOT NULL,           -- 애플리케이션에서 bcrypt/argon2로 해싱 후 저장, 평문 절대 금지
     display_name    VARCHAR(100) NOT NULL,
     account_status  VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / LOCKED / WITHDRAWN
+    -- [운영자 콘솔] 관리자 로그인 허용 플래그(2026-07-30 추가). 이메일 패턴 매칭이
+    -- 아니라 이 플래그로만 관리자를 판별한다. API로 자기 자신·타인을 승격시키는
+    -- 경로는 없고, backend/services/createDB/grant_admin.py로만 켤 수 있다.
+    is_admin        BOOLEAN      NOT NULL DEFAULT false,
     last_login_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );

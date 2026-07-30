@@ -159,6 +159,23 @@ docker compose -f infra/docker/docker-compose.yml up -d
 
 API는 psycopg Repository를 통해 `schema.sql` 테이블을 직접 조회한다.
 
+### 6.1 운영자 콘솔 관리자 계정 지정 (`grant_admin.py`)
+
+운영자 콘솔(`/ops`)은 `user_account.is_admin = true`인 계정만 로그인할 수 있다. 이 플래그는 API로는 켤 수
+없고(자기 자신·타인을 API로 관리자로 승격시키는 경로 자체가 없음), `vec_idx_setup.py`와 같은 방식으로 호스트에서
+직접 실행하는 스크립트로만 켠다. 대상 이메일은 먼저 일반 회원가입으로 `user_account`에 존재해야 한다.
+
+```bash
+DATABASE_URL="postgres://project_copilot:project_copilot@localhost:5432/project_copilot" \
+  python backend/services/createDB/grant_admin.py <가입된 이메일>
+```
+
+권한을 회수하려면 `--revoke`를 붙인다.
+
+```bash
+python backend/services/createDB/grant_admin.py <가입된 이메일> --revoke
+```
+
 ---
 
 ## 7. VEC_IDX 예시로 벡터 저장·검색해보기 (선택)
@@ -216,3 +233,5 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | `peopledb_mock.sql` 실행 시 `duplicate key value violates unique constraint` | 이미 목업 데이터가 들어있는 상태에서 재실행한 것. 5장 참고해 데이터 삭제 후 재실행하거나 무시(이미 들어있으면 다시 넣을 필요 없음) |
 | `vec_idx_setup.py` 실행 시 `ModuleNotFoundError: No module named 'psycopg'` | `pip install "psycopg[binary]"` 먼저 실행 |
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `schema.sql`의 `CREATE EXTENSION IF NOT EXISTS vector;`를 아직 안 탄 볼륨. 4.2장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
+| 운영자 콘솔 로그인 시 `관리자 권한이 없는 계정입니다` | 6.1장의 `grant_admin.py`로 `is_admin`을 켜지 않은 계정. 스크립트 실행 후 재로그인 |
+| `schema.sql`에 `is_admin` 컬럼을 추가했는데 기존 볼륨에는 없음(`column "is_admin" does not exist`) | init 스크립트는 볼륨이 빌 때만 실행된다(4장 참고). 기존 볼륨을 유지하려면 수동으로 반영: `docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "ALTER TABLE user_account ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;"` |

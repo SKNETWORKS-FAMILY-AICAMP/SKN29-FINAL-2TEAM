@@ -24,7 +24,7 @@ export class ApiError extends Error {
  * `{ field: ['...'] }` for serializer validation errors. Flatten both into a
  * message plus a per-field map the forms can bind to.
  */
-function parseErrorBody(body: unknown, status: number): ApiError {
+export function parseErrorBody(body: unknown, status: number): ApiError {
   if (body && typeof body === 'object') {
     const record = body as Record<string, unknown>;
     if (typeof record.detail === 'string') {

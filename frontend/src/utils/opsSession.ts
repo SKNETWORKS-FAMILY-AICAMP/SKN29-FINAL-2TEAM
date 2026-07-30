@@ -1,7 +1,10 @@
+import type { OpsAdmin } from '../api/ops';
+
 const OPS_SESSION_KEY = 'halil.opsSession';
 
 export interface OpsSession {
-  email: string;
+  token: string;
+  admin: OpsAdmin;
   signedInAt: string;
 }
 
@@ -10,15 +13,20 @@ export function loadOpsSession(): OpsSession | null {
     const raw = sessionStorage.getItem(OPS_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as OpsSession;
-    return parsed.email ? parsed : null;
+    return parsed?.token ? parsed : null;
   } catch {
     return null;
   }
 }
 
-export function saveOpsSession(email: string) {
+export function loadOpsToken(): string | null {
+  return loadOpsSession()?.token ?? null;
+}
+
+export function saveOpsSession(token: string, admin: OpsAdmin) {
   const session: OpsSession = {
-    email,
+    token,
+    admin,
     signedInAt: new Date().toISOString(),
   };
 

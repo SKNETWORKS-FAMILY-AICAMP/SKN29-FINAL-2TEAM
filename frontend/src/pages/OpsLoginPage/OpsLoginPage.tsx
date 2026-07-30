@@ -1,6 +1,9 @@
 import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Input } from '../../components';
+import { opsLogin } from '../../api/ops';
+import { ApiError } from '../../api/client';
 import { loadOpsSession, saveOpsSession } from '../../utils/opsSession';
 import styles from './OpsLoginPage.module.css';
 
@@ -13,6 +16,7 @@ export default function OpsLoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const target = (location.state as LoginLocationState | null)?.from ?? '/ops';
 
@@ -20,15 +24,25 @@ export default function OpsLoginPage() {
     return <Navigate to={target} replace />;
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     if (!email.trim() || !password) {
       setError('관리자 이메일과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
-    saveOpsSession(email.trim());
-    navigate(target, { replace: true });
+    setError('');
+    setSubmitting(true);
+    try {
+      const result = await opsLogin(email.trim(), password);
+      saveOpsSession(result.token, result.admin);
+      navigate(target, { replace: true });
+    } catch (thrown) {
+      setError(thrown instanceof ApiError ? thrown.message : '로그인하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -71,8 +85,8 @@ export default function OpsLoginPage() {
           </p>
         )}
 
-        <Button type="submit" variant="primary" size="lg" className={styles.submit}>
-          로그인
+        <Button type="submit" variant="primary" size="lg" className={styles.submit} disabled={submitting}>
+          {submitting ? '로그인 중…' : '로그인'}
         </Button>
         <p className={styles.note}>로그인 기록은 운영 감사 대상으로 관리됩니다.</p>
       </form>

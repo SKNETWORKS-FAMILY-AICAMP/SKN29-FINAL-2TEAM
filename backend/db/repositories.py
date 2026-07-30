@@ -475,7 +475,7 @@ class AccountRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT account_id, email, password_hash, display_name, account_status
+                    SELECT account_id, email, password_hash, display_name, account_status, is_admin
                     FROM user_account
                     WHERE lower(email) = lower(%s)
                     """,
@@ -489,7 +489,7 @@ class AccountRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT account_id, email, password_hash, display_name, account_status
+                    SELECT account_id, email, password_hash, display_name, account_status, is_admin
                     FROM user_account
                     WHERE account_id = %s
                     """,

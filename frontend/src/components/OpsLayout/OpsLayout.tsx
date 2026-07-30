@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
 import type { IconName } from '../Icon/Icon';
+import { opsLogout } from '../../api/ops';
 import { clearOpsSession, loadOpsSession } from '../../utils/opsSession';
 import styles from './OpsLayout.module.css';
 
@@ -26,8 +27,11 @@ export function OpsLayout() {
   const session = loadOpsSession();
 
   function handleLogout() {
+    const token = session?.token;
     clearOpsSession();
     navigate('/ops/login', { replace: true });
+    // 로그아웃 감사 기록은 화면 전환을 막지 않는다 — 실패해도 클라이언트 세션은 이미 지워졌다.
+    if (token) opsLogout(token).catch(() => {});
   }
 
   return (
@@ -39,7 +43,7 @@ export function OpsLayout() {
         </NavLink>
 
         <div className={styles.operator}>
-          <span className={styles.operatorEmail}>{session?.email ?? '운영자'}</span>
+          <span className={styles.operatorEmail}>{session?.admin.email ?? '운영자'}</span>
           <span aria-hidden="true">·</span>
           <button type="button" onClick={handleLogout}>
             로그아웃
