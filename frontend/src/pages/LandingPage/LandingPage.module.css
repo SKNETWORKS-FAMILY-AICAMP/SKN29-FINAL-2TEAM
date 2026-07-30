@@ -948,3 +948,20 @@
     gap: 32px;
   }
 }
+
+.loginName {
+  color: var(--color-heading);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.logoutButton {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-body);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}

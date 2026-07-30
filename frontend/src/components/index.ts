@@ -36,3 +36,6 @@ export type { IconProps, IconName } from './Icon/Icon';
 
 export { SettingsLayout } from './SettingsLayout/SettingsLayout';
 export type { SettingsLayoutProps, SettingsNavItem } from './SettingsLayout/SettingsLayout';
+
+export { RequireAuth } from './RequireAuth/RequireAuth';
+export type { RequireAuthProps } from './RequireAuth/RequireAuth';

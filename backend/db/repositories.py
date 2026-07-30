@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from .codes import next_short_code
 from .connection import database_connection
 from .errors import DuplicateRecord, PermissionDenied, RecordNotFound, ReferenceNotFound
@@ -284,8 +286,8 @@ class AnalysisRunRepository:
         return row
 
 
-def _linked_person_id(cursor, account_id: str) -> str | None:
-    """계정에 연결된(VERIFIED) PERSON을 하나 돌려준다.
+def _linked_person(cursor, account_id: str) -> dict[str, Any] | None:
+    """계정에 연결된(VERIFIED) PERSON 링크를 하나 돌려준다.
 
     한 계정이 여러 팀의 PERSON에 연결되는 것을 정책상 막지 않으므로
     (`팀원_초대_계정_매핑_정책.md`) 가장 먼저 연결된 것을 대표로 쓴다.
@@ -293,7 +295,7 @@ def _linked_person_id(cursor, account_id: str) -> str | None:
 
     cursor.execute(
         """
-        SELECT person_id
+        SELECT person_id, match_method
         FROM user_person_link
         WHERE account_id = %s AND mapping_status = 'VERIFIED'
         ORDER BY linked_at
@@ -301,15 +303,20 @@ def _linked_person_id(cursor, account_id: str) -> str | None:
         """,
         (account_id,),
     )
-    row = cursor.fetchone()
-    return row["person_id"] if row else None
+    return cursor.fetchone()
 
 
-def _managed_org_ids(cursor, person_id: str | None) -> list[str]:
-    """PERSON이 관리하는 조직과 그 하위 조직 전체를 반환한다.
+def _linked_person_id(cursor, account_id: str) -> str | None:
+    link = _linked_person(cursor, account_id)
+    return link["person_id"] if link else None
 
-    팀장 여부와 초대 가능 범위는 둘 다 `org.mgr_id`에서 출발한다
-    (`역할별_권한_정책.md` 핵심 원칙 3).
+
+def _scope_org_ids(cursor, person_id: str | None) -> list[str]:
+    """PERSON이 속한 조직과 그 하위 조직 전체를 반환한다.
+
+    초대 가능 범위 정의(`팀원_초대_계정_매핑_정책.md` 핵심 원칙 4):
+    "초대자 본인이 연결된 person.org_id부터 org.up_org_id 재귀로 이어지는
+    하위 조직 전체". 조직장(`org.mgr_id`) 여부가 아니라 소속이 기준이다.
     """
 
     if person_id is None:
@@ -317,17 +324,18 @@ def _managed_org_ids(cursor, person_id: str | None) -> list[str]:
 
     cursor.execute(
         """
-        WITH RECURSIVE managed AS (
-            SELECT org_id
-            FROM org
-            WHERE mgr_id = %s AND status = 'ACTIVE'
+        WITH RECURSIVE scope AS (
+            SELECT o.org_id
+            FROM org AS o
+            JOIN person AS p ON p.org_id = o.org_id
+            WHERE p.person_id = %s AND o.status = 'ACTIVE'
             UNION
             SELECT child.org_id
             FROM org AS child
-            JOIN managed ON child.up_org_id = managed.org_id
+            JOIN scope ON child.up_org_id = scope.org_id
             WHERE child.status = 'ACTIVE'
         )
-        SELECT org_id FROM managed ORDER BY org_id
+        SELECT org_id FROM scope ORDER BY org_id
         """,
         (person_id,),
     )
@@ -382,9 +390,12 @@ class AccountRepository:
     ) -> dict[str, Any]:
         """계정을 만들고 PERSON 매핑까지 한 트랜잭션에서 처리한다.
 
-        초대 토큰이 있으면 그 초대를 수락해 매핑하고, 없으면 HR 이메일이
-        일치하는 PERSON에 스스로 연결한다. 일치하는 PERSON이 없으면 매핑
-        없이 가입만 진행한다.
+        초대 토큰이 있으면 그 초대를 수락해 PERSON까지 매핑한다.
+
+        초대 없이 가입하는 팀장은 여기서 매핑하지 않는다. HR 시스템을
+        연결해야 비로소 본인 PERSON을 조회할 수 있다는 것이 원래 설계이고
+        (`팀원_초대_계정_매핑_정책.md` 시나리오 2단계), 그 조회는 People DB
+        커넥터를 연결하는 시점에 `link_by_hr_email()`이 수행한다.
         """
 
         with database_connection() as connection:
@@ -419,17 +430,16 @@ class AccountRepository:
                         token_hash=invite_token_hash,
                         account_id=account_id,
                     )
-                else:
-                    AccountRepository._link_by_hr_email(cursor, account_id=account_id, email=email)
 
                 return AccountRepository._profile(cursor, account_id) or account
 
     @staticmethod
-    def _link_by_hr_email(cursor, *, account_id: str, email: str) -> None:
-        """HR 이메일이 같은 PERSON에 계정을 연결한다(팀장 셀프 확인 경로).
+    def link_by_hr_email(cursor, *, account_id: str, email: str) -> str | None:
+        """HR 이메일이 같은 PERSON에 계정을 연결하고 person_id를 반환한다.
 
-        초대 기반 매핑에서 이메일 비교를 금지한 것과 달리, 팀장이 가입 직후
-        본인 PERSON 레코드를 확인하는 경로는 정책 시나리오 2단계에 해당한다.
+        초대 기반 매핑에서 이메일 비교를 금지한 것과 달리, 팀장이 HR 시스템을
+        연결하며 본인 PERSON 레코드를 확인하는 경로는 정책 시나리오 2단계에
+        해당한다. 일치하는 PERSON이 없으면 None.
         """
 
         cursor.execute(
@@ -448,7 +458,7 @@ class AccountRepository:
         )
         row = cursor.fetchone()
         if row is None:
-            return
+            return None
 
         _link_person_to_account(
             cursor,
@@ -457,6 +467,7 @@ class AccountRepository:
             invite_id=None,
             match_method="SELF_EMAIL",
         )
+        return row["person_id"]
 
     @staticmethod
     def find_credentials(email: str) -> dict[str, Any] | None:
@@ -535,7 +546,8 @@ class AccountRepository:
         if account is None:
             return None
 
-        person_id = _linked_person_id(cursor, account_id)
+        link = _linked_person(cursor, account_id)
+        person_id = link["person_id"] if link else None
         person = None
         if person_id is not None:
             cursor.execute(
@@ -550,7 +562,10 @@ class AccountRepository:
             person = cursor.fetchone()
 
         account["person"] = person
-        account["managed_org_ids"] = _managed_org_ids(cursor, person_id)
+        # 초대로 들어온 계정만 팀원이다. 그 외(직접 가입)는 팀장으로 본다 —
+        # HR 시스템을 연결할 권한이 회사에서 팀장에게만 주어진다는 전제.
+        account["invited"] = bool(link and link["match_method"] == "TEAM_INVITATION")
+        account["scope_org_ids"] = _scope_org_ids(cursor, person_id)
         return account
 
 
@@ -563,7 +578,7 @@ class MemberInviteRepository:
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                scope = _managed_org_ids(cursor, _linked_person_id(cursor, account_id))
+                scope = _scope_org_ids(cursor, _linked_person_id(cursor, account_id))
                 if not scope:
                     return []
 
@@ -607,11 +622,11 @@ class MemberInviteRepository:
                     label="직원",
                 )
 
-                scope = _managed_org_ids(cursor, _linked_person_id(cursor, invited_by))
+                scope = _scope_org_ids(cursor, _linked_person_id(cursor, invited_by))
                 cursor.execute("SELECT org_id FROM person WHERE person_id = %s", (person_id,))
                 person_org_id = cursor.fetchone()["org_id"]
                 if person_org_id is None or person_org_id not in scope:
-                    raise PermissionDenied("본인이 관리하는 조직의 직원만 초대할 수 있습니다.")
+                    raise PermissionDenied("본인이 속한 조직과 그 하위 조직의 직원만 초대할 수 있습니다.")
 
                 if _person_already_linked(cursor, person_id):
                     raise DuplicateRecord("이미 다른 계정에 연결된 직원입니다.")
@@ -764,3 +779,210 @@ class MemberInviteRepository:
             match_method="TEAM_INVITATION",
         )
         return invite["invite_id"]
+
+
+class ConnectorRepository:
+    """`connector_conn` — 계정별 외부 서비스 연결 상태.
+
+    People DB는 지금 같은 PostgreSQL 안에 있어서 주고받을 자격증명이 없다
+    (`encrypted_credential_ref`는 NULL). 원래 기획은 외부 HR 시스템이었고,
+    부트캠프 범위상 DB로 대체한 것이라 "연결"은 곧 HR 데이터를 조회해
+    본인 PERSON을 확인하는 행위를 뜻한다.
+    """
+
+    PEOPLE_DB = "PEOPLE_DB"
+    PEOPLE_DB_SCOPES = ["org:read", "person:read"]
+
+    @staticmethod
+    def list_for_account(account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT conn_id, connector_type, granted_scopes, auth_status, connected_at
+                    FROM connector_conn
+                    WHERE account_id = %s
+                    ORDER BY connected_at
+                    """,
+                    (account_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def connect_people_db(*, account_id: str, email: str) -> dict[str, Any]:
+        """HR 데이터를 확인하고 본인 PERSON에 연결한 뒤 연결 상태를 기록한다.
+
+        HR에서 본인을 못 찾으면 연결 자체가 실패한다. 조직을 모르면 팀원
+        초대도 업무 배정도 할 수 없어서, 연결됐다고 표시하는 것이 거짓이 된다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
+                        (SELECT count(*) FROM person WHERE emp_status = 'ACTIVE') AS person_count
+                    """
+                )
+                totals = cursor.fetchone()
+                if not totals["org_count"] or not totals["person_count"]:
+                    raise ReferenceNotFound(
+                        "HR 시스템에서 조직·직원 데이터를 찾을 수 없습니다. 관리자에게 문의해 주세요."
+                    )
+
+                person_id = _linked_person_id(cursor, account_id)
+                if person_id is None:
+                    person_id = AccountRepository.link_by_hr_email(
+                        cursor,
+                        account_id=account_id,
+                        email=email,
+                    )
+                if person_id is None:
+                    raise RecordNotFound(
+                        "가입한 이메일과 일치하는 직원 정보가 HR 시스템에 없습니다. "
+                        "회사 이메일로 가입했는지 확인해 주세요."
+                    )
+
+                ConnectorRepository._upsert(
+                    cursor,
+                    account_id=account_id,
+                    connector_type=ConnectorRepository.PEOPLE_DB,
+                    granted_scopes=ConnectorRepository.PEOPLE_DB_SCOPES,
+                )
+                return ConnectorRepository._people_db_summary(cursor, account_id)
+
+    @staticmethod
+    def find_identity(*, account_id: str, email: str) -> dict[str, Any]:
+        """가입 이메일로 찾은 본인 후보. 확인 전이므로 링크를 만들지 않는다.
+
+        정책 시나리오 2단계의 "본인 이메일로 자신의 PERSON 레코드를 찾아
+        확인한다"에서 '찾아'에 해당한다. '확인'은 사용자가 모달에서 누른다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                person_id = _linked_person_id(cursor, account_id)
+                if person_id is not None:
+                    cursor.execute(
+                        """
+                        SELECT p.person_id, p.name, p.email, p.org_id, p.job_role,
+                               o.name AS org_name
+                        FROM person AS p
+                        LEFT JOIN org AS o ON o.org_id = p.org_id
+                        WHERE p.person_id = %s
+                        """,
+                        (person_id,),
+                    )
+                    return cursor.fetchone()
+
+                cursor.execute(
+                    """
+                    SELECT p.person_id, p.name, p.email, p.org_id, p.job_role,
+                           o.name AS org_name
+                    FROM person AS p
+                    LEFT JOIN org AS o ON o.org_id = p.org_id
+                    WHERE lower(p.email) = lower(%s)
+                      AND p.emp_status = 'ACTIVE'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM user_person_link AS l
+                          WHERE l.person_id = p.person_id AND l.mapping_status = 'VERIFIED'
+                      )
+                    """,
+                    (email,),
+                )
+                row = cursor.fetchone()
+
+        if row is None:
+            raise RecordNotFound(
+                "가입한 이메일과 일치하는 직원 정보가 HR 시스템에 없습니다. "
+                "회사 이메일로 가입했는지 확인해 주세요."
+            )
+        return row
+
+    @staticmethod
+    def people_db_summary(account_id: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                return ConnectorRepository._people_db_summary(cursor, account_id)
+
+    @staticmethod
+    def _upsert(cursor, *, account_id: str, connector_type: str, granted_scopes: list[str]) -> None:
+        """(account_id, connector_type)에 유니크 제약이 없어 직접 확인한다."""
+
+        cursor.execute(
+            """
+            UPDATE connector_conn
+            SET granted_scopes = %s, auth_status = 'CONNECTED', connected_at = now()
+            WHERE account_id = %s AND connector_type = %s
+            RETURNING conn_id
+            """,
+            (Jsonb(granted_scopes), account_id, connector_type),
+        )
+        if cursor.fetchone() is not None:
+            return
+
+        conn_id = next_short_code(cursor, table="connector_conn", column="conn_id", prefix="CN")
+        cursor.execute(
+            """
+            INSERT INTO connector_conn
+                (conn_id, account_id, connector_type, granted_scopes, auth_status)
+            VALUES (%s, %s, %s, %s, 'CONNECTED')
+            """,
+            (conn_id, account_id, connector_type, Jsonb(granted_scopes)),
+        )
+
+    @staticmethod
+    def _people_db_summary(cursor, account_id: str) -> dict[str, Any]:
+        """연결 확인 화면에 보여줄 요약. 전체 규모와 본인 조직 기준 인원."""
+
+        cursor.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
+                (SELECT count(*) FROM person WHERE emp_status = 'ACTIVE') AS person_count
+            """
+        )
+        summary = dict(cursor.fetchone())
+
+        person_id = _linked_person_id(cursor, account_id)
+        summary["person"] = None
+        summary["my_org_name"] = None
+        summary["my_org_person_count"] = 0
+        summary["scope_person_count"] = 0
+
+        if person_id is None:
+            return summary
+
+        cursor.execute(
+            """
+            SELECT p.person_id, p.name, p.email, p.org_id, p.job_role, o.name AS org_name
+            FROM person AS p
+            LEFT JOIN org AS o ON o.org_id = p.org_id
+            WHERE p.person_id = %s
+            """,
+            (person_id,),
+        )
+        person = cursor.fetchone()
+        summary["person"] = person
+        summary["my_org_name"] = person["org_name"] if person else None
+
+        scope = _scope_org_ids(cursor, person_id)
+        if not scope:
+            return summary
+
+        cursor.execute(
+            """
+            SELECT
+                count(*) FILTER (WHERE org_id = %s) AS my_org_count,
+                count(*) AS scope_count
+            FROM person
+            WHERE org_id = ANY(%s) AND emp_status = 'ACTIVE'
+            """,
+            (person["org_id"], scope),
+        )
+        counts = cursor.fetchone()
+        summary["my_org_person_count"] = counts["my_org_count"]
+        summary["scope_person_count"] = counts["scope_count"]
+        return summary

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
 import { login } from '../../api/auth';
 import { ApiError } from '../../api/client';
@@ -21,6 +21,9 @@ function InviteIcon() {
 export default function LoginPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  // RequireAuth가 막아서 여기로 온 경우, 로그인 후 원래 가려던 곳으로 되돌린다.
+  const from = (location.state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -38,7 +41,9 @@ export default function LoginPage() {
       saveSession(result);
       showToast('로그인되었습니다.', 'success');
       // 팀원 대시보드는 아직 없으므로 팀원은 본인 설정 화면으로 보낸다.
-      navigate(result.account.role === 'member' ? '/settings/team' : '/onboarding/connectors');
+      const fallback =
+        result.account.role === 'member' ? '/settings/team' : '/onboarding/connectors';
+      navigate(from ?? fallback, { replace: true });
     } catch (error) {
       const message = error instanceof ApiError ? error.message : '로그인하지 못했습니다.';
       setFormError(message);

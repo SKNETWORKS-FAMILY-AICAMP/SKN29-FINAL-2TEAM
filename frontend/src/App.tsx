@@ -1,6 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
-import { ToastProvider } from './components';
+import { RequireAuth, ToastProvider } from './components';
 import { ROUTES } from './routes';
 import styles from './App.module.css';
 
@@ -65,18 +65,19 @@ function App() {
           <Route path="/invite-code" element={<InviteCodePage />} />
           <Route path="/find-password" element={<FindPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/onboarding/connectors" element={<ConnectorOnboardingPage />} />
-          <Route path="/onboarding/folders" element={<FolderSelectPage />} />
-          <Route path="/onboarding/folder-roles" element={<FolderRoleAssignmentPage />} />
-          <Route path="/onboarding/jira-project" element={<JiraProjectSelectPage />} />
-          <Route path="/settings/team" element={<SettingsPage />} />
-          <Route path="/dashboard" element={<MainDashboardPage />} />
-          <Route path="/files/new" element={<NewFilesPage />} />
-          <Route path="/projects" element={<ProjectListPage />} />
-          <Route path="/workspace" element={<WorkspacePage />} />
-          <Route path="/tasks/distribution" element={<TaskDistributionPage />} />
-          <Route path="/tasks/recommendation" element={<TaskRecommendationPage />} />
-          <Route path="/tasks/result" element={<AssignmentResultPage />} />
+          {/* 아래는 로그인이 필요한 화면. 세션이 없으면 /login으로 보내고 원래 가려던 곳을 기억한다. */}
+          <Route path="/onboarding/connectors" element={<RequireAuth><ConnectorOnboardingPage /></RequireAuth>} />
+          <Route path="/onboarding/folders" element={<RequireAuth><FolderSelectPage /></RequireAuth>} />
+          <Route path="/onboarding/folder-roles" element={<RequireAuth><FolderRoleAssignmentPage /></RequireAuth>} />
+          <Route path="/onboarding/jira-project" element={<RequireAuth><JiraProjectSelectPage /></RequireAuth>} />
+          <Route path="/settings/team" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path="/dashboard" element={<RequireAuth><MainDashboardPage /></RequireAuth>} />
+          <Route path="/files/new" element={<RequireAuth><NewFilesPage /></RequireAuth>} />
+          <Route path="/projects" element={<RequireAuth><ProjectListPage /></RequireAuth>} />
+          <Route path="/workspace" element={<RequireAuth><WorkspacePage /></RequireAuth>} />
+          <Route path="/tasks/distribution" element={<RequireAuth><TaskDistributionPage /></RequireAuth>} />
+          <Route path="/tasks/recommendation" element={<RequireAuth><TaskRecommendationPage /></RequireAuth>} />
+          <Route path="/tasks/result" element={<RequireAuth><AssignmentResultPage /></RequireAuth>} />
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </Suspense>

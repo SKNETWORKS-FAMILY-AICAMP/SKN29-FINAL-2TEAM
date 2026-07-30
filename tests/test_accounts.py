@@ -15,27 +15,49 @@ from backend.db.errors import DuplicateRecord, PermissionDenied, RecordNotFound
 
 
 def leader_profile(account_id="UA001", email="leader@halil.com"):
+    """HR 연결까지 마친 팀장. 직접 가입했으므로 invited=False."""
+
     return {
         "account_id": account_id,
         "email": email,
-        "display_name": "윤수아",
+        "display_name": "임준",
         "account_status": "ACTIVE",
         "person": {
             "person_id": "PX002",
-            "name": "윤수아",
+            "name": "임준",
             "email": email,
             "org_id": "A002",
             "org_name": "개발팀",
-            "job_role": "본부장",
+            "job_role": "팀장",
         },
-        "managed_org_ids": ["A002", "A003"],
+        "invited": False,
+        "scope_org_ids": ["A002", "A003", "A004"],
     }
 
 
-def unlinked_profile():
+def member_profile():
+    """초대 코드로 들어온 팀원."""
+
+    profile = leader_profile(account_id="UA002", email="member@halil.com")
+    profile["display_name"] = "성주연"
+    profile["person"] = {
+        "person_id": "PB002",
+        "name": "성주연",
+        "email": "member@halil.com",
+        "org_id": "A002",
+        "org_name": "개발팀",
+        "job_role": "사원",
+    }
+    profile["invited"] = True
+    return profile
+
+
+def fresh_leader_profile():
+    """가입 직후. HR을 아직 연결하지 않아 PERSON도 조직 범위도 없다."""
+
     profile = leader_profile(account_id="UA009", email="nobody@halil.com")
     profile["person"] = None
-    profile["managed_org_ids"] = []
+    profile["scope_org_ids"] = []
     return profile
 
 
@@ -53,32 +75,34 @@ class TokenTests(SimpleTestCase):
 
 class SignupApiTests(SimpleTestCase):
     @patch("apps.accounts.api_views.AccountRepository.create")
-    def test_signup_links_person_and_returns_token(self, create):
-        create.return_value = leader_profile()
+    def test_direct_signup_is_a_leader_without_hr_link_yet(self, create):
+        create.return_value = fresh_leader_profile()
 
         response = self.client.post(
             "/api/auth/signup/",
-            {"email": "leader@halil.com", "password": "halil1234", "display_name": "윤수아"},
+            {"email": "nobody@halil.com", "password": "halil1234", "display_name": "임준"},
             content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 201)
         body = response.json()
-        self.assertEqual(read_token(body["token"]), "UA001")
+        self.assertEqual(read_token(body["token"]), "UA009")
+        # 가입 경로가 역할을 정한다. HR 매칭은 People DB 커넥터 연결 때 일어난다.
         self.assertEqual(body["account"]["role"], "leader")
-        self.assertEqual(body["account"]["person"]["person_id"], "PX002")
+        self.assertIsNone(body["account"]["person"])
+        self.assertEqual(body["account"]["scope_org_ids"], [])
         self.assertIsNone(create.call_args.kwargs["invite_token_hash"])
 
     @patch("apps.accounts.api_views.AccountRepository.create")
-    def test_signup_forwards_invite_code_as_hash(self, create):
-        create.return_value = unlinked_profile()
+    def test_invited_signup_is_a_member(self, create):
+        create.return_value = member_profile()
 
         response = self.client.post(
             "/api/auth/signup/",
             {
                 "email": "member@halil.com",
                 "password": "halil1234",
-                "display_name": "권다인",
+                "display_name": "성주연",
                 "invite_code": " abc123 ",
             },
             content_type="application/json",
@@ -86,7 +110,8 @@ class SignupApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(create.call_args.kwargs["invite_token_hash"], hash_invite_code("abc123"))
-        self.assertEqual(response.json()["account"]["role"], "unlinked")
+        self.assertEqual(response.json()["account"]["role"], "member")
+        self.assertEqual(response.json()["account"]["person"]["person_id"], "PB002")
 
     @patch("apps.accounts.api_views.AccountRepository.create")
     def test_signup_stores_hashed_password_only(self, create):

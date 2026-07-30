@@ -83,7 +83,7 @@ CREATE TABLE proj_member (
 CREATE TABLE connector_conn (
     conn_id             VARCHAR(5) PRIMARY KEY,
     account_id                VARCHAR(5) NOT NULL,
-    connector_type            VARCHAR(30) NOT NULL,   -- GOOGLE_DRIVE / JIRA
+    connector_type            VARCHAR(30) NOT NULL,   -- PEOPLE_DB / GOOGLE_DRIVE / JIRA
     granted_scopes            JSONB NOT NULL DEFAULT '[]',
     auth_status                VARCHAR(20) NOT NULL DEFAULT 'CONNECTED',  -- CONNECTED / EXPIRED / ERROR
     encrypted_credential_ref  VARCHAR(255),   -- 실제 토큰이 아니라 Secret Manager 참조 키

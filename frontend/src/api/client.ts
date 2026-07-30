@@ -1,3 +1,5 @@
+import { clearSession, loadSessionToken } from '../utils/session';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
 
 /**
@@ -66,6 +68,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     });
   } catch {
     throw new ApiError('서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해 주세요.', 0);
+  }
+
+  // 토큰이 만료되거나 무효해졌다면 들고 있어도 쓸모가 없다. 세션을 비우면
+  // 이를 구독하는 화면들이 로그인으로 되돌린다. 로그인 실패의 401은 애초에
+  // 지울 세션이 없으므로 그냥 통과한다.
+  if (response.status === 401 && token && token === loadSessionToken()) {
+    clearSession();
   }
 
   if (response.status === 204) return undefined as T;

@@ -1,7 +1,10 @@
 import { apiRequest } from './client';
 
-/** 팀장/팀원 구분은 서버가 `org.mgr_id`로 판정한다. HR PERSON에 아직 연결되지 않은 계정은 'unlinked'. */
-export type AccountRole = 'leader' | 'member' | 'unlinked';
+/**
+ * 가입 경로로 정해지는 역할. 초대 코드로 들어온 계정만 팀원이고 직접 가입은
+ * 팀장이다 — HR 시스템 연결 권한이 회사에서 팀장에게만 주어진다는 전제.
+ */
+export type AccountRole = 'leader' | 'member';
 
 export interface AccountPerson {
   person_id: string;
@@ -18,7 +21,8 @@ export interface Account {
   display_name: string;
   account_status: string;
   role: AccountRole;
-  managed_org_ids: string[];
+  /** 본인 조직 + 하위 조직. 팀원 초대 범위와 같은 기준. HR 미연결이면 빈 배열. */
+  scope_org_ids: string[];
   person: AccountPerson | null;
 }
 

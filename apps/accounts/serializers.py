@@ -55,13 +55,14 @@ class InviteCreateSerializer(serializers.Serializer):
 
 
 def account_role(profile: dict[str, Any]) -> str:
-    """`org.mgr_id` 기준 역할. HR PERSON에 연결되기 전에는 판정할 수 없다."""
+    """가입 경로로 정해지는 역할.
 
-    if profile["managed_org_ids"]:
-        return "leader"
-    if profile["person"]:
-        return "member"
-    return "unlinked"
+    초대 코드로 들어온 계정만 팀원이다. 직접 가입은 팀장으로 본다 — HR
+    시스템을 연결할 권한이 회사에서 팀장에게만 주어진다는 전제이고, HR 매칭에
+    실패하면 온보딩에서 더 진행되지 않으므로 권한이 실제로 열리지도 않는다.
+    """
+
+    return "member" if profile["invited"] else "leader"
 
 
 def account_response(profile: dict[str, Any]) -> dict[str, Any]:
@@ -72,7 +73,7 @@ def account_response(profile: dict[str, Any]) -> dict[str, Any]:
         "display_name": profile["display_name"],
         "account_status": profile["account_status"],
         "role": account_role(profile),
-        "managed_org_ids": profile["managed_org_ids"],
+        "scope_org_ids": profile["scope_org_ids"],
         "person": None
         if person is None
         else {

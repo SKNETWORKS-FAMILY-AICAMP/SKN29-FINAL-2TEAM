@@ -1,5 +1,6 @@
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
+import { clearSession, useSession } from '../../utils/session';
 import styles from './TopNav.module.css';
 
 export interface NavTabItem {
@@ -25,7 +26,16 @@ export function TopNav({
   userLabel,
 }: TopNavProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const session = useSession();
   const currentPath = activeTo ?? location.pathname;
+  // 아바타에는 로그인한 계정 이름을 쓴다. userLabel은 명시적으로 넘긴 경우만 우선한다.
+  const label = userLabel ?? session?.account.display_name;
+
+  function handleLogout() {
+    clearSession();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <header className={styles.nav}>
@@ -65,9 +75,14 @@ export function TopNav({
               <Icon name="bell" size={20} />
               {unreadCount > 0 && <span className={styles.dot} aria-hidden="true" />}
             </button>
-            <div className={styles.avatar}>
-              {userLabel ? userLabel : <Icon name="user" size={16} />}
+            <div className={styles.avatar} title={label}>
+              {label ? label.slice(0, 1) : <Icon name="user" size={16} />}
             </div>
+            {session && (
+              <button type="button" className={styles.logoutButton} onClick={handleLogout}>
+                로그아웃
+              </button>
+            )}
           </>
         )}
       </div>

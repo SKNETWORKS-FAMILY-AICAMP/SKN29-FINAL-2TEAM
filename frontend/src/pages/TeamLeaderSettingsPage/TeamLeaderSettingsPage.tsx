@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, Icon, Input, Modal, Select, SettingsLayout, useToast } from '../../components';
 import type { BadgeTone, SettingsNavItem } from '../../components';
 import { ApiError } from '../../api/client';
+import { listConnectors } from '../../api/connectors';
+import { CONNECTOR_TYPE_BY_ID } from '../../api/connectors';
 import {
   createInvite,
   listInviteCandidates,
@@ -55,7 +57,7 @@ export default function TeamLeaderSettingsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
-  const [connectorStatuses] = useState<Record<string, ConnectorStatus>>(() =>
+  const [connectorStatuses, setConnectorStatuses] = useState<Record<string, ConnectorStatus>>(() =>
     loadConnectorStatuses(Object.fromEntries(CONNECTOR_DEFS.map((c) => [c.id, c.initialStatus]))),
   );
   const [baseHours, setBaseHours] = useState('40');
@@ -89,6 +91,34 @@ export default function TeamLeaderSettingsPage() {
   useEffect(() => {
     void refreshInvites();
   }, [refreshInvites]);
+
+  // 서버에 실제로 기록된 연결(현재는 People DB)을 데모 상태 위에 덮어쓴다.
+  useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+    listConnectors(token)
+      .then((connections) => {
+        if (cancelled) return;
+        const fromServer: Record<string, ConnectorStatus> = {};
+        for (const def of CONNECTOR_DEFS) {
+          const type = CONNECTOR_TYPE_BY_ID[def.id];
+          if (!type) continue;
+          const match = connections.find((c) => c.connector_type === type);
+          if (match) {
+            fromServer[def.id] = match.auth_status === 'CONNECTED' ? 'connected' : 'disconnected';
+          }
+        }
+        setConnectorStatuses((prev) => ({ ...prev, ...fromServer }));
+      })
+      .catch(() => {
+        // 연동 상태 조회 실패는 화면을 막지 않는다. 데모 상태를 그대로 보여준다.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   async function handleOpenInviteModal() {
     if (!token) {

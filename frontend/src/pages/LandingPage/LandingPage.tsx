@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { clearSession, useSession } from '../../utils/session';
 import arrowLeftRight from '../../assets/landing/arrow-left-right.svg';
 import avatar from '../../assets/landing/avatar.png';
 import badgeCheck from '../../assets/landing/badge-check.svg';
@@ -83,18 +84,34 @@ function PrimaryLink({ children, to }: { children: string; to: string }) {
 }
 
 export default function LandingPage() {
+  const session = useSession();
+
   return (
     <div className={styles.page}>
       <header className={styles.navbar}>
         <div className={styles.navbarInner}>
           <Logo />
           <div className={styles.navActions}>
-            <Link className={styles.loginLink} to="/login">
-              로그인
-            </Link>
-            <Link className={styles.loginLink} to="/signup">
-              회원가입
-            </Link>
+            {session ? (
+              <>
+                <span className={styles.loginName}>{session.account.display_name} 님</span>
+                <Link className={styles.loginLink} to="/dashboard">
+                  대시보드
+                </Link>
+                <button type="button" className={styles.logoutButton} onClick={clearSession}>
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <>
+                <Link className={styles.loginLink} to="/login">
+                  로그인
+                </Link>
+                <Link className={styles.loginLink} to="/signup">
+                  회원가입
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>

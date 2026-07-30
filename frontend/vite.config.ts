@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// 이 파일만 Node에서 실행되므로 process가 존재한다. @types/node를 추가하면
+// 팀원 전원이 재설치하고 프론트 이미지도 다시 빌드해야 해서, 필요한 최소한만 선언한다.
+declare const process: { env: Record<string, string | undefined> }
+
 export default defineConfig({
   plugins: [react()],
   server: {

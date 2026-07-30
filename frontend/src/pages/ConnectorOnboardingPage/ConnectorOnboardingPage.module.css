@@ -140,3 +140,25 @@
   width: 320px;
   box-shadow: var(--shadow-lift);
 }
+
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.noticeLink {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.badgeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
