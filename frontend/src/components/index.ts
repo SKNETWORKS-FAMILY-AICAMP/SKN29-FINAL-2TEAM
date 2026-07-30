@@ -39,3 +39,20 @@ export type { SettingsLayoutProps, SettingsNavItem } from './SettingsLayout/Sett
 
 export { RequireAuth } from './RequireAuth/RequireAuth';
 export type { RequireAuthProps } from './RequireAuth/RequireAuth';
+
+export { OpsLayout } from './OpsLayout/OpsLayout';
+export { OpsRouteGuard } from './OpsRouteGuard/OpsRouteGuard';
+
+export {
+  OpsDataTable,
+  OpsDetailPanel,
+  OpsEmpty,
+  OpsFilterBar,
+  OpsPageHeader,
+  OpsSearchField,
+  OpsSectionCard,
+  OpsStatusBadge,
+  OpsSummaryCard,
+  OpsSummaryGrid,
+} from './OpsUi/OpsUi';
+export type { OpsTone } from './OpsUi/OpsUi';
