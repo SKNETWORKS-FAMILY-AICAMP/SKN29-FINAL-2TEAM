@@ -1035,3 +1035,148 @@ class ConnectorRepository:
         summary["my_org_person_count"] = counts["my_org_count"]
         summary["scope_person_count"] = counts["scope_count"]
         return summary
+
+
+class OpsOverviewRepository:
+    """운영자 콘솔 `운영 현황`(`GET /api/ops/overview/`) 집계 전용.
+
+    "중복 연결" 계정(= VERIFIED `user_person_link`가 2개 이상인 계정)은 계정 관리
+    섹션에서도 같은 정의를 쓸 예정이라, 그 섹션을 만들 때 이 조회 로직을
+    공용 헬퍼로 뽑아내는 걸 고려한다.
+    """
+
+    @staticmethod
+    def summary() -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    WITH dup_accounts AS (
+                        SELECT account_id
+                        FROM user_person_link
+                        WHERE mapping_status = 'VERIFIED'
+                        GROUP BY account_id
+                        HAVING count(*) > 1
+                    )
+                    SELECT
+                        (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
+                        (SELECT count(*) FROM user_account) AS account_total,
+                        (SELECT count(*) FROM user_account WHERE account_status = 'LOCKED') AS account_locked,
+                        (SELECT count(*) FROM dup_accounts) AS account_duplicate_mapping,
+                        (
+                            SELECT count(*) FROM user_account ua
+                            WHERE ua.account_status = 'LOCKED'
+                               OR ua.account_id IN (SELECT account_id FROM dup_accounts)
+                        ) AS account_needs_review,
+                        (SELECT count(*) FROM connector_conn) AS connector_total,
+                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'CONNECTED') AS connector_connected,
+                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'EXPIRED') AS connector_expired,
+                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'ERROR') AS connector_error,
+                        (
+                            SELECT count(*) FROM member_invite
+                            WHERE status = 'PENDING' AND expires_at > now()
+                        ) AS invite_pending,
+                        (
+                            SELECT count(*) FROM member_invite
+                            WHERE status = 'PENDING' AND expires_at > now()
+                              AND expires_at::date = CURRENT_DATE
+                        ) AS invite_expiring_today
+                    """
+                )
+                totals = cursor.fetchone()
+
+                cursor.execute(
+                    """
+                    SELECT
+                        al.audit_id, al.action, al.target_type, al.target_id, al.occurred_at,
+                        ua.display_name AS actor_display_name, ua.email AS actor_email
+                    FROM audit_log AS al
+                    LEFT JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    ORDER BY al.occurred_at DESC
+                    LIMIT 5
+                    """
+                )
+                recent_activity = list(cursor.fetchall())
+
+        return {
+            "org_count": totals["org_count"],
+            "accounts": {
+                "total": totals["account_total"],
+                "locked": totals["account_locked"],
+                "duplicate_mapping": totals["account_duplicate_mapping"],
+                "needs_review": totals["account_needs_review"],
+            },
+            "connectors": {
+                "total": totals["connector_total"],
+                "connected": totals["connector_connected"],
+                "expired": totals["connector_expired"],
+                "error": totals["connector_error"],
+            },
+            "invites": {
+                "pending": totals["invite_pending"],
+                "expiring_today": totals["invite_expiring_today"],
+            },
+            "recent_activity": recent_activity,
+        }
+
+
+class OpsOrganizationRepository:
+    """운영자 콘솔 `연결 조직 현황`(`GET /api/ops/organizations/`) 전용.
+
+    `OrganizationRepository.list_active()`는 조직 원본 컬럼만 돌려주고, 여긴
+    거기에 구성원 수·확인 필요 계정 수까지 집계해서 붙인다. "중복 연결" 판정은
+    `OpsOverviewRepository.summary()`와 같은 정의를 또 쓴다 — 계정 관리
+    섹션을 만들 때 이 중복 서브쿼리를 공용 헬퍼로 뽑아내는 걸 고려한다.
+    """
+
+    @staticmethod
+    def list_with_stats() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    WITH dup_accounts AS (
+                        SELECT account_id
+                        FROM user_person_link
+                        WHERE mapping_status = 'VERIFIED'
+                        GROUP BY account_id
+                        HAVING count(*) > 1
+                    ),
+                    person_account AS (
+                        SELECT person_id, account_id
+                        FROM user_person_link
+                        WHERE mapping_status = 'VERIFIED'
+                    ),
+                    org_stats AS (
+                        SELECT
+                            p.org_id,
+                            count(*) FILTER (WHERE p.emp_status = 'ACTIVE') AS member_count,
+                            count(*) FILTER (
+                                WHERE p.emp_status = 'ACTIVE'
+                                  AND pa.account_id IS NOT NULL
+                                  AND (
+                                      ua.account_status = 'LOCKED'
+                                      OR pa.account_id IN (SELECT account_id FROM dup_accounts)
+                                  )
+                            ) AS issue_count
+                        FROM person AS p
+                        LEFT JOIN person_account AS pa ON pa.person_id = p.person_id
+                        LEFT JOIN user_account AS ua ON ua.account_id = pa.account_id
+                        GROUP BY p.org_id
+                    )
+                    SELECT
+                        o.org_id,
+                        o.up_org_id,
+                        o.mgr_id,
+                        o.name,
+                        o.org_type,
+                        o.status,
+                        COALESCE(os.member_count, 0) AS member_count,
+                        COALESCE(os.issue_count, 0) AS issue_count
+                    FROM org AS o
+                    LEFT JOIN org_stats AS os ON os.org_id = o.org_id
+                    WHERE o.status = 'ACTIVE'
+                    ORDER BY o.org_id
+                    """
+                )
+                return list(cursor.fetchall())

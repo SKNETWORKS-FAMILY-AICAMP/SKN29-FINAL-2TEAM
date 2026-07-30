@@ -8,11 +8,13 @@
 
 from dataclasses import dataclass
 
+import psycopg
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from backend.api_errors import ServiceUnavailable
 from backend.db import AccountRepository
 
 from .tokens import InvalidToken, read_token
@@ -46,7 +48,11 @@ class OpsBearerTokenAuthentication(BaseAuthentication):
         except (UnicodeDecodeError, InvalidToken) as exc:
             raise AuthenticationFailed(str(exc) or "유효하지 않은 인증 정보입니다.") from exc
 
-        account = AccountRepository.find_credentials_by_id(account_id)
+        try:
+            account = AccountRepository.find_credentials_by_id(account_id)
+        except psycopg.Error as exc:
+            raise ServiceUnavailable() from exc
+
         if account is None or not account["is_admin"] or account["account_status"] != "ACTIVE":
             raise AuthenticationFailed(REVOKED_DETAIL)
 
