@@ -11,7 +11,8 @@
 3. `USER_ACCOUNT`는 플랫폼 로그인 사용자이고 `PERSON`은 업무 배정 후보 직원이다.
 4. 프로젝트 분석·추천 데이터의 중심은 기존 3-B `PROJECT`다.
 5. Connector 계정 연결과 프로젝트별 분석 범위를 분리한다.
-6. 비밀번호, OAuth access token, refresh token 원문을 일반 컬럼·응답·로그에 저장하지 않는다.
+6. 비밀번호 평문과 외부 서비스 자격증명 원문을 API 응답·애플리케이션 로그·`AUDIT_LOG.payload`에 남기지 않는다.
+7. Google Drive/Jira 자격증명은 별도 Secret Manager 참조가 아니라 애플리케이션에서 암호화한 암호문을 DB의 `encrypted_credential_ref`에 저장한다. 컬럼명은 기존 설계 호환을 위해 유지하지만 실제 값은 참조 키가 아니라 암호문이다. 현재 구현된 People DB 연결은 별도 자격증명이 없어 이 컬럼을 `NULL`로 둔다.
 
 ## 2. 전체 관계
 
@@ -87,17 +88,17 @@ USER_ACCOUNT
 
 ### 3.4 CONNECTOR_CONNECTION
 
-사용자가 Google Drive 또는 Jira 계정을 연결한 상태를 관리한다.
+사용자가 People DB, Google Drive 또는 Jira를 연결한 상태를 관리한다. 논리 모델명은 `CONNECTOR_CONNECTION`, 현재 물리 스키마명은 `connector_conn`이다. 물리 구현의 최종 기준은 `DB/schema.sql`이다.
 
 | 필드 | 타입 예시 | 제약 | 의미 |
 |---|---|---|---|
 | `connection_id` | UUID | PK | Connector 연결 ID |
 | `account_id` | BIGINT | FK, NOT NULL | 연결을 생성한 플랫폼 사용자 |
-| `connector_type` | VARCHAR(30) | NOT NULL | `GOOGLE_DRIVE/JIRA` |
+| `connector_type` | VARCHAR(30) | NOT NULL | `PEOPLE_DB/GOOGLE_DRIVE/JIRA` |
 | `provider_account_id` | VARCHAR | NULL | 외부 서비스 계정 ID |
 | `provider_email` | VARCHAR(320) | NULL | 사용자 확인용 외부 계정 이메일 |
 | `auth_status` | VARCHAR(20) | NOT NULL | `CONNECTED/EXPIRED/REVOKED/ERROR` |
-| `encrypted_credential_ref` | VARCHAR | NOT NULL | 암호화된 자격증명 저장소 참조 |
+| `encrypted_credential_ref` | VARCHAR | NULL | 외부 자격증명을 애플리케이션에서 암호화한 암호문. 기존 `*_ref` 명칭은 유지하되 참조 키로 해석하지 않는다. People DB는 `NULL` |
 | `granted_scopes` | JSONB | NOT NULL | OAuth에서 허용된 Scope |
 | `connected_at` | TIMESTAMPTZ | NOT NULL | 연결 시각 |
 | `expires_at` | TIMESTAMPTZ | NULL | 자격증명 만료 예정 시각 |
@@ -105,6 +106,13 @@ USER_ACCOUNT
 | `updated_at` | TIMESTAMPTZ | NOT NULL | 상태 수정 시각 |
 
 자격증명 원문은 API 응답, 애플리케이션 로그, `AUDIT_LOG.payload`에 포함하지 않는다.
+
+### 자격증명 저장 결정
+
+- **People DB:** 부트캠프 구현에서는 같은 PostgreSQL의 HR 모의 데이터를 조회하므로 별도 토큰·비밀번호가 없다. `encrypted_credential_ref=NULL`로 저장한다.
+- **Google Drive/Jira:** 현재는 데모이며 OAuth 연결·암호화 저장이 미구현이다. 실제 구현 시 access/refresh token을 애플리케이션 키로 암호화한 뒤 암호문을 해당 컬럼에 저장한다.
+- **컬럼명 불일치:** `encrypted_credential_ref`는 초기 Secret Manager 참조 설계에서 남은 이름이다. 마이그레이션 비용을 피하기 위해 당장은 이름을 유지하고, 문서·코드에서 “DB 암호문 저장 컬럼”으로 일관되게 해석한다.
+- **키 관리:** 암호화 키는 `.env` 또는 배포 환경의 비밀 주입 수단으로 제공하며 DB에 함께 저장하지 않는다. 키 교체·재암호화 절차는 Drive/Jira 실제 연동 시 확정한다.
 
 ### 3.5 PROJECT_SOURCE
 

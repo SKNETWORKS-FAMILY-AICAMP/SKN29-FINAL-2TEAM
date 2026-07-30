@@ -1,7 +1,7 @@
 # 로컬 Docker 개발환경 설치 매뉴얼
 
 > 대상: AI 프로젝트 운영 코파일럿 백엔드 작업자  
-> 기준일: 2026-07-28  
+> 기준일: 2026-07-30
 > 범위: Django + PostgreSQL/pgvector + React/Vite 로컬 공통 환경. React 화면 구현은 Figma/프론트엔드 팀 작업 범위다.
 
 ---
@@ -19,7 +19,7 @@ Docker Desktop
 
 Docker Compose 프로젝트 이름은 `skn29-final-2team`으로 고정된다. 따라서 컨테이너는 `skn29-final-2team-db-1`, `skn29-final-2team-web-1`처럼 표시된다.
 
-각 팀원의 DB는 서로 독립적이다. 테이블 구조는 Migration(Django)과 `DB/schema.sql`(원본 도메인 스키마)로, 공통 기본 데이터는 Seed 명령으로 동일하게 맞춘다.
+각 팀원의 DB는 서로 독립적이다. 애플리케이션 테이블 구조는 Django ORM Migration이 아니라 `DB/schema.sql`을 기준으로 하며, 공통 People 데이터는 SQL 파일을 정해진 순서로 실행해 맞춘다.
 
 ---
 
@@ -57,6 +57,9 @@ Copy-Item .env.example .env
 | `ANALYSIS_EXECUTION_MODE` | `stub` | 실제 분석 Worker 연결 시 |
 | `OBJECT_STORAGE_PROVIDER` | `local` | S3 또는 MinIO 연결 시 |
 | `SECRET_KEY` | 개발용 값 | 공유·배포 환경 구성 시 |
+| `FRONTEND_BASE_URL` | `http://localhost:5173` | 비밀번호 재설정 링크의 프론트 주소 변경 시 |
+| `EMAIL_BACKEND` | console 백엔드 | Gmail SMTP 실제 발송이 필요할 때 |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | 비어 있음 | Gmail 계정·앱 비밀번호 설정 시 |
 
 `DATABASE_URL`은 호스트에서 Django를 직접 실행할 때의 주소다. Docker `web` 컨테이너 안에서는 Compose가 서비스명 `db` 주소로 자동 교체하므로 수정하지 않는다.
 
@@ -125,7 +128,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx` 등 41개 테이블이 보이면 정상이다. GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
+`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link` 등 43개 테이블이 보이면 정상이다. GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
 
 **`schema.sql`을 고친 뒤 다시 반영하고 싶을 때** (주의: 로컬 DB 데이터가 전부 삭제된다):
 
@@ -154,6 +157,20 @@ Get-Content -Raw DB/peopleDB/peopledb_mock.sql |
 docker compose -f infra/docker/docker-compose.yml exec db `
   psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM person;"
 ```
+
+목업 데이터에 실제 팀원 이름·이메일을 덮어쓰려면 `.gitignore` 대상인 `DB/peopleDB/team_overrides.sql`을 별도로 전달받아 다음 순서로 실행한다.
+
+```powershell
+Get-Content -Raw DB/peopleDB/team_overrides.sql |
+  docker compose -f infra/docker/docker-compose.yml exec -T db `
+  psql -U project_copilot -d project_copilot -v ON_ERROR_STOP=1
+```
+
+```text
+schema.sql → peopledb_mock.sql → team_overrides.sql
+```
+
+직접 가입한 팀장은 People DB 연결 시 가입 이메일과 `person.email`이 일치해야 `SELF_EMAIL` 매핑을 만들 수 있다. `team_overrides.sql`의 이메일과 가입 이메일을 동일하게 유지한다. 팀원 역할은 `org.mgr_id`가 아니라 초대 코드 가입(`TEAM_INVITATION`)으로 결정된다.
 
 ---
 
@@ -185,7 +202,7 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 ## 8. React 팀 연동 기준
 
-React + Vite 실행 환경은 이 저장소의 `frontend/`에 포함되어 있다. 화면 HTML/CSS와 Figma 디자인의 React 컴포넌트 변환은 프론트 팀이 진행한다. `src/App.tsx`는 의도적으로 빈 상태다.
+React + Vite 실행 환경과 로그인·설정·커넥터 화면은 `frontend/`에 포함되어 있다.
 
 프론트 팀은 아래 백엔드 주소를 환경변수로 사용한다.
 
@@ -195,7 +212,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000/api
 
 Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확인한다. 화면 구현 전에는 빈 화면이 표시되는 것이 정상이다.
 
-현재 제공 API:
+현재 주요 API:
 
 | Method | URL | 설명 | 인증 |
 |---|---|---|---|
@@ -206,8 +223,29 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 | GET | `/api/analysis-runs/{runId}/` | 분석 실행 상태 | 필요 |
 | GET | `/api/organizations/` | 조직 목록 | 필요 |
 | GET | `/api/people/` | 직원 목록 | 필요 |
+| POST | `/api/auth/signup/` | 직접/초대 회원가입 | 불필요 |
+| POST | `/api/auth/login/` | 로그인, 12시간 서명 토큰 발급 | 불필요 |
+| GET | `/api/auth/me/` | 현재 계정·역할·HR 연결 조회 | Bearer |
+| POST | `/api/auth/password-reset/` | 비밀번호 재설정 메일 요청 | 불필요 |
+| POST | `/api/auth/password-reset/confirm/` | 재설정 토큰으로 비밀번호 변경 | 불필요 |
+| GET | `/api/connectors/` | 계정의 커넥터 상태 조회 | Bearer |
+| POST | `/api/connectors/people-db/` | People DB 본인 확인·연결 | Bearer |
+| GET | `/api/connectors/people-db/identity/` | HR 본인 매핑 결과 조회 | Bearer |
+| GET | `/api/connectors/people-db/summary/` | People DB 요약 조회(현재 호출처 없음) | Bearer |
+| GET, POST | `/api/invites/` | 팀원 초대 현황·발급 | Bearer |
+| GET | `/api/invites/candidates/` | 초대 가능 인원 조회 | Bearer |
+| POST | `/api/invites/preview/` | 가입 전 초대 코드 확인 | 불필요 |
+| POST | `/api/invites/{inviteId}/revoke/` | 미수락 초대 취소 | Bearer |
 
-현재는 React용 로그인 API가 아직 없다. 보호 API의 인증 방식은 화면 개발 착수 전 `세션 인증` 또는 `JWT` 중 하나로 팀에서 확정한다. 그 전에는 Health API와 Mock 응답으로 화면 연동을 진행한다.
+인증은 `Authorization: Bearer <서명 토큰>` 방식이며 토큰은 12시간 유효하다. 프론트는 `localStorage`에 세션을 저장하고 보호 API의 401 응답 시 세션을 삭제한다. Google Drive와 Jira 커넥터는 아직 데모 상태다.
+
+### 8.1 Windows에서 화면 변경이 반영되지 않을 때
+
+Docker 바인드 마운트에서 Vite 파일 감시가 `EIO`로 중단되면 `git checkout`, `merge`, `pull` 후 코드가 바뀌어도 브라우저 화면이 그대로일 수 있다. `VITE_USE_POLLING=true`가 Compose에 설정돼 있지만 감시 프로세스가 이미 죽었다면 프론트 컨테이너를 재시작한다.
+
+```powershell
+docker compose -f infra/docker/docker-compose.yml restart frontend
+```
 
 ---
 
@@ -236,7 +274,7 @@ docker compose -f infra/docker/docker-compose.yml down
 docker compose -f infra/docker/docker-compose.yml down -v
 ```
 
-`down -v` 후에는 다시 `up`, People 목업 SQL 적재, `vec_idx_setup.py`를 실행해야 한다.
+`down -v`는 `postgres_data` 볼륨을 삭제한다. 복구 순서는 `up -d db`로 `schema.sql` 자동 실행 → `peopledb_mock.sql` → `team_overrides.sql` → 나머지 서비스 기동이다. 벡터 예시 데이터가 필요할 때만 마지막에 `vec_idx_setup.py`를 실행한다.
 
 ---
 
@@ -253,6 +291,8 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `vector` 확장을 아직 안 탄 볼륨. 7장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
 | SQL 구조 변경이 반영되지 않음 | `schema.sql`은 빈 볼륨 최초 기동 때만 실행됨. 개발 데이터 백업 후 볼륨을 재생성 |
 | 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed·`vec_idx_setup.py` 재실행 |
+| `git checkout`·`merge`·`pull` 후 React 화면이 안 바뀜 | Windows 바인드 마운트에서 Vite 감시자가 종료됐을 수 있음. `docker compose -f infra/docker/docker-compose.yml restart frontend` 실행 |
+| 비밀번호 재설정 메일이 도착하지 않음 | 기본값은 console 백엔드이므로 `docker compose ... logs web`에서 링크 확인. 실제 발송은 `.env`에 Gmail SMTP와 앱 비밀번호 설정 |
 
 ---
 
@@ -265,6 +305,7 @@ docker compose -f infra/docker/docker-compose.yml down -v
 - Project Knowledge Model
 - AnalysisSnapshot·Feature Readiness
 - 업무량 계산·추천·검증 Agent
-- React 로그인·권한 연동
+- 로그인 상태에서 비밀번호 변경
+- 서버 측 세션 강제 종료
 
 구체적인 상태와 다음 수정 위치는 `초기_구성_상태.md`를 함께 확인한다.

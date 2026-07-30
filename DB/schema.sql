@@ -86,7 +86,7 @@ CREATE TABLE connector_conn (
     connector_type            VARCHAR(30) NOT NULL,   -- PEOPLE_DB / GOOGLE_DRIVE / JIRA
     granted_scopes            JSONB NOT NULL DEFAULT '[]',
     auth_status                VARCHAR(20) NOT NULL DEFAULT 'CONNECTED',  -- CONNECTED / EXPIRED / ERROR
-    encrypted_credential_ref  VARCHAR(255),   -- 실제 토큰이 아니라 Secret Manager 참조 키
+    encrypted_credential_ref  VARCHAR(255),   -- 외부 자격증명의 DB 저장용 암호문(기존 ref 명칭 유지). People DB는 자격증명이 없어 NULL
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

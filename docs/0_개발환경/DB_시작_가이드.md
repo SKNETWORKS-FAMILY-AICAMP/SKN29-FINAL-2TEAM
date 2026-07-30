@@ -81,7 +81,7 @@ skn29-final-2team-db-1   Up (healthy)   0.0.0.0:5432->5432/tcp
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx` 등 `schema.sql` 기반 41개 테이블이 보이면 정상이다.
+`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link` 등 `schema.sql` 기반 43개 테이블이 보이면 정상이다.
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
@@ -127,6 +127,26 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 `57`이 나오면 정상이다.
 
+### 5.1 팀원 실제 이름·이메일 오버라이드
+
+`DB/peopleDB/team_overrides.example.sql`을 복사해 Git에 올라가지 않는 `team_overrides.sql`을 만들고 실제 팀원 이름·이메일을 채운다. 이 파일은 `.gitignore` 대상이므로 팀원에게 별도로 전달해야 한다.
+
+```powershell
+Copy-Item DB/peopleDB/team_overrides.example.sql DB/peopleDB/team_overrides.sql
+
+Get-Content -Raw DB/peopleDB/team_overrides.sql |
+  docker compose -f infra/docker/docker-compose.yml exec -T db `
+  psql -U project_copilot -d project_copilot -v ON_ERROR_STOP=1
+```
+
+실행 순서는 반드시 다음과 같다.
+
+```text
+DB/schema.sql → DB/peopleDB/peopledb_mock.sql → DB/peopleDB/team_overrides.sql
+```
+
+직접 가입한 팀장은 People DB 커넥터에서 가입 이메일과 `person.email`을 비교해 `SELF_EMAIL` 매핑을 만든다. 두 이메일이 다르면 HR 본인 확인과 팀원 초대가 막히므로 `team_overrides.sql`의 주소를 먼저 확인한다. 팀원 역할은 데이터의 `org.mgr_id`가 아니라 초대 코드 가입(`TEAM_INVITATION`)으로 결정된다.
+
 ---
 
 ## 6. API 서버 실행
@@ -170,8 +190,17 @@ docker compose -f infra/docker/docker-compose.yml logs -f db
 # 중지 (데이터 유지)
 docker compose -f infra/docker/docker-compose.yml stop db
 
-# 완전 초기화 — 주의: 로컬 DB 데이터 전부 삭제, 다음 up 때 schema.sql이 다시 자동 실행됨
+# 완전 초기화 — 주의: 로컬 DB 데이터 전부 삭제
 docker compose -f infra/docker/docker-compose.yml down -v
+```
+
+`down -v` 후 복구 순서:
+
+```text
+1. docker compose ... up -d db        # schema.sql 자동 실행
+2. peopledb_mock.sql 수동 실행
+3. team_overrides.sql 수동 실행
+4. docker compose ... up -d web frontend
 ```
 
 ---
