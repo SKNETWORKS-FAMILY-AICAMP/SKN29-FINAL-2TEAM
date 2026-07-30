@@ -8,6 +8,10 @@ const ACTION_LABELS: Record<string, string> = {
   ACCOUNT_UNLOCK: '계정 재활성',
   ACCOUNT_UNLINK_PERSON: '직원 연결 해제',
   INVITE_DISCARD: '초대 폐기',
+  POLICY_INVITE_TTL_CHANGE: '초대 정책 변경',
+  NOTICE_CREATE: '공지 생성',
+  NOTICE_UPDATE: '공지 수정',
+  NOTICE_DELETE: '공지 삭제',
 };
 
 export function actionLabel(action: string): string {

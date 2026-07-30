@@ -293,6 +293,11 @@
   color: var(--color-surface);
 }
 
+.treeButtonActive:hover,
+.historyButtonActive:hover {
+  background: var(--color-primary);
+}
+
 .treeMeta,
 .historyMeta {
   display: block;
@@ -305,6 +310,17 @@
 .treeButtonActive .treeMeta,
 .historyButtonActive .historyMeta {
   color: rgba(255, 255, 255, 0.76);
+}
+
+.historyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.historyTitle {
+  flex: 1;
+  min-width: 0;
 }
 
 .treeIndent1 {
@@ -591,6 +607,11 @@
 
 .inlinePolicy .fieldGroup {
   width: 180px;
+}
+
+.inlinePolicyReason {
+  margin-top: 14px;
+  max-width: 480px;
 }
 
 .noticeItem {

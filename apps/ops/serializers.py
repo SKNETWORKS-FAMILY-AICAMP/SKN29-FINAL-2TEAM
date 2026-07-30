@@ -10,6 +10,29 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(max_length=128, write_only=True)
 
 
+class InviteTtlSerializer(serializers.Serializer):
+    days = serializers.IntegerField()
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
+class NoticeSerializer(serializers.Serializer):
+    # 제목/내용/일정 필드는 Repository가 정확한 한글 문구로 검증하도록
+    # 여기서는 타입만 확인하고 공백·누락 여부는 걸러내지 않는다(allow_blank/
+    # required=False). status/schedule_mode는 값 종류 자체가 코드 오류에
+    # 가까워 DRF 기본 메시지로 충분하다고 보고 ChoiceField로 막는다.
+    title = serializers.CharField(max_length=200, allow_blank=True, required=False, default="")
+    content = serializers.CharField(allow_blank=True, required=False, default="")
+    status = serializers.ChoiceField(choices=["PUBLISHED", "SCHEDULED", "ENDED"])
+    schedule_date = serializers.DateField(required=False, allow_null=True, default=None)
+    schedule_time = serializers.TimeField(required=False, allow_null=True, default=None)
+    schedule_mode = serializers.ChoiceField(choices=["FROM", "UNTIL"])
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
+class NoticeDeleteSerializer(serializers.Serializer):
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
 def admin_response(account: dict[str, Any]) -> dict[str, Any]:
     return {
         "account_id": account["account_id"],
@@ -85,4 +108,33 @@ def connector_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "person": person,
         "diagnosis": _CONNECTOR_DIAGNOSIS.get(auth_status, f"알 수 없는 연결 상태입니다: {auth_status}"),
         "next_action": _CONNECTOR_NEXT_ACTION.get(auth_status, "계정 소유자에게 연결 상태 확인 요청"),
+    }
+
+
+def notice_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "notice_id": row["notice_id"],
+        "title": row["title"],
+        "content": row["content"],
+        "status": row["status"],
+        "schedule_at": row["schedule_at"],
+        "schedule_mode": row["schedule_mode"],
+        "created_by": row["created_by"],
+        "created_by_name": row["created_by_name"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def policy_change_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "audit_id": row["audit_id"],
+        "action": row["action"],
+        "target_type": row["target_type"],
+        "target_id": row["target_id"],
+        "payload": row["payload"],
+        "actor_account_id": row["actor_account_id"],
+        "actor_display_name": row["actor_display_name"],
+        "actor_email": row["actor_email"],
+        "occurred_at": row["occurred_at"],
     }

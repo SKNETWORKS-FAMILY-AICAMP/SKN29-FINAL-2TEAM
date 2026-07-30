@@ -81,7 +81,7 @@ skn29-final-2team-db-1   Up (healthy)   0.0.0.0:5432->5432/tcp
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link` 등 `schema.sql` 기반 43개 테이블이 보이면 정상이다.
+`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 등 `schema.sql` 기반 45개 테이블이 보이면 정상이다.
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
@@ -235,3 +235,4 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `schema.sql`의 `CREATE EXTENSION IF NOT EXISTS vector;`를 아직 안 탄 볼륨. 4.2장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
 | 운영자 콘솔 로그인 시 `관리자 권한이 없는 계정입니다` | 6.1장의 `grant_admin.py`로 `is_admin`을 켜지 않은 계정. 스크립트 실행 후 재로그인 |
 | `schema.sql`에 `is_admin` 컬럼을 추가했는데 기존 볼륨에는 없음(`column "is_admin" does not exist`) | init 스크립트는 볼륨이 빌 때만 실행된다(4장 참고). 기존 볼륨을 유지하려면 수동으로 반영: `docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "ALTER TABLE user_account ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;"` |
+| `schema.sql`에 `sys_setting`/`sys_notice`(전역 정책)를 추가했는데 기존 볼륨에는 없음(`relation "sys_setting" does not exist`) | 마찬가지로 기존 볼륨을 유지하려면 수동으로 반영: `docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "CREATE TABLE IF NOT EXISTS sys_setting (setting_key VARCHAR(50) PRIMARY KEY, setting_value TEXT NOT NULL, updated_by VARCHAR(5), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()); INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14') ON CONFLICT (setting_key) DO NOTHING; CREATE TABLE IF NOT EXISTS sys_notice (notice_id VARCHAR(5) PRIMARY KEY, title VARCHAR(200) NOT NULL, content TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED', schedule_at TIMESTAMPTZ NOT NULL, schedule_mode VARCHAR(10) NOT NULL, created_by VARCHAR(5), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now());"` |

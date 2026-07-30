@@ -13,6 +13,7 @@ from .views.invites import InviteDiscardView, InviteListView, InviteUnlinkView
 from .views.login import LoginView, LogoutView, MeView
 from .views.organizations import OrganizationsView
 from .views.overview import OverviewView
+from .views.policies import InviteTtlView, NoticeDetailView, NoticeListCreateView, PolicyChangeListView
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="api_ops_auth_login"),
@@ -37,4 +38,8 @@ urlpatterns = [
     path("audit/recommendations/", RecommendationLogView.as_view(), name="api_ops_audit_recommendations"),
     path("audit/validations/", ValidationLogView.as_view(), name="api_ops_audit_validations"),
     path("audit/decisions/", DecisionLogView.as_view(), name="api_ops_audit_decisions"),
+    path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
+    path("policies/notices/", NoticeListCreateView.as_view(), name="api_ops_policies_notice_list"),
+    path("policies/notices/<str:notice_id>/", NoticeDetailView.as_view(), name="api_ops_policies_notice_detail"),
+    path("policies/changes/", PolicyChangeListView.as_view(), name="api_ops_policies_changes"),
 ]

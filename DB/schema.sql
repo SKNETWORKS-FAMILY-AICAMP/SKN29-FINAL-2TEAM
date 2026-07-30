@@ -420,6 +420,30 @@ CREATE TABLE audit_log (
     occurred_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- [운영자 콘솔] 플랫폼 전역 설정 키-값 저장소(2026-07-30 추가). 첫 사용처는
+-- 초대 코드 만료 기간(기존에는 MemberInviteRepository.INVITE_TTL_DAYS에 14일로
+-- 하드코딩돼 있던 값)을 운영자가 화면에서 바꿀 수 있게 하는 것.
+CREATE TABLE sys_setting (
+    setting_key    VARCHAR(50) PRIMARY KEY,
+    setting_value  TEXT NOT NULL,
+    updated_by     VARCHAR(5),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14');
+
+-- [운영자 콘솔] 플랫폼 시스템 공지(2026-07-30 추가).
+CREATE TABLE sys_notice (
+    notice_id      VARCHAR(5) PRIMARY KEY,
+    title          VARCHAR(200) NOT NULL,
+    content        TEXT NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',  -- PUBLISHED / SCHEDULED / ENDED
+    schedule_at    TIMESTAMPTZ NOT NULL,
+    schedule_mode  VARCHAR(10) NOT NULL,  -- FROM / UNTIL (부터 / 까지)
+    created_by     VARCHAR(5),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- =====================================================================
 -- PAGE 3-B | People DB — Tier 2 (ANA_SNAPSHOT / PERSON / EXISTING_TASK 의존)
 -- =====================================================================

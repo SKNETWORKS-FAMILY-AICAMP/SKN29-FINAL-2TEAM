@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/)",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Bearer garbage.invalid.token')",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Bearer')",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Basic abc123')",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' -X DELETE http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w \"\\\\n[%{http_code}]\\\\n\" -X POST http://localhost:8000/api/ops/auth/login/ -H \"Content-Type: application/json\" -d '{\"email\":\"test-nonadmin@halil.com\",\"password\":\"testpass1234\"}')",
+      "Bash(node -e \"require\\('playwright'\\); console.log\\('playwright available'\\)\" --prefix /private/tmp/claude-501/-Users-jy-Documents-sk-family-SKN29-FINAL-2TEAM/7beb4f31-b82e-4f01-a265-db446ee5e411/scratchpad)",
+      "Bash(node -e \"require\\('playwright'\\); console.log\\('OK'\\)\")",
+      "Bash(node check_policies.mjs)",
+      "Bash(curl -s http://localhost:8000/api/ops/policies/notices/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s http://localhost:8000/api/ops/policies/changes/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node check_history.mjs)",
+      "Bash(node check_badges.mjs)",
+      "Bash(node check_hover_and_reason.mjs)"
+    ]
+  }
+}

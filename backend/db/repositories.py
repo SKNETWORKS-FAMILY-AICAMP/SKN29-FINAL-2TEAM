@@ -595,8 +595,6 @@ class AccountRepository:
 
 
 class MemberInviteRepository:
-    INVITE_TTL_DAYS = 14
-
     @staticmethod
     def list_candidates(account_id: str) -> list[dict[str, Any]]:
         """초대 가능한 하위 조직 PERSON 목록(이미 연결·초대된 사람 제외)."""
@@ -683,7 +681,7 @@ class MemberInviteRepository:
                         person_id,
                         invited_by,
                         token_hash,
-                        MemberInviteRepository.INVITE_TTL_DAYS,
+                        OpsPolicyRepository.get_invite_ttl_days(),
                     ),
                 )
                 invite = cursor.fetchone()
@@ -1644,5 +1642,267 @@ class OpsAuditRepository:
                     LEFT JOIN user_account AS ua ON ua.account_id = dr.decided_by
                     ORDER BY dr.decided_at DESC
                     """
+                )
+                return list(cursor.fetchall())
+
+
+def _notice_snapshot(notice: dict[str, Any]) -> dict[str, Any]:
+    """감사 로그 payload에 남길 공지 스냅샷. `schedule_at`은 JSONB 저장을 위해 문자열로 바꾼다."""
+
+    schedule_at = notice["schedule_at"]
+    return {
+        "title": notice["title"],
+        "status": notice["status"],
+        "schedule_at": schedule_at.isoformat() if schedule_at else None,
+        "schedule_mode": notice["schedule_mode"],
+    }
+
+
+class OpsPolicyRepository:
+    """운영자 콘솔 `전역 정책`(`GET/PUT/POST/DELETE /api/ops/policies/...`) 전용.
+
+    초대 만료 기간은 `sys_setting`의 단일 행을 키-값으로 쓰고(첫 사용처가
+    `MemberInviteRepository.create()`), 시스템 공지는 `sys_notice` CRUD,
+    정책 변경 이력은 새 테이블 없이 기존 `audit_log`를 `action`으로 필터링해
+    재사용한다.
+    """
+
+    INVITE_TTL_KEY = "INVITE_EXPIRE_DAYS"
+    INVITE_TTL_MIN_DAYS = 1
+    INVITE_TTL_MAX_DAYS = 90
+    # `sys_setting` 시드 행이 없거나(볼륨을 비우지 않고 수동 반영한 경우) 값이
+    # 손상돼도 초대 발급 전체가 막히지 않도록 두는 안전망 기본값. schema.sql의
+    # 시드값과 같다.
+    DEFAULT_INVITE_TTL_DAYS = 14
+
+    POLICY_ACTIONS = (
+        "POLICY_INVITE_TTL_CHANGE",
+        "NOTICE_CREATE",
+        "NOTICE_UPDATE",
+        "NOTICE_DELETE",
+    )
+
+    @staticmethod
+    def get_invite_ttl_days() -> int:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT setting_value FROM sys_setting WHERE setting_key = %s",
+                    (OpsPolicyRepository.INVITE_TTL_KEY,),
+                )
+                row = cursor.fetchone()
+
+        if row is None:
+            return OpsPolicyRepository.DEFAULT_INVITE_TTL_DAYS
+        try:
+            return int(row["setting_value"])
+        except (TypeError, ValueError):
+            return OpsPolicyRepository.DEFAULT_INVITE_TTL_DAYS
+
+    @staticmethod
+    def set_invite_ttl_days(*, days: int, actor_account_id: str, reason: str = "") -> dict[str, Any]:
+        if not (OpsPolicyRepository.INVITE_TTL_MIN_DAYS <= days <= OpsPolicyRepository.INVITE_TTL_MAX_DAYS):
+            raise RepositoryError("초대 만료 기간은 1일에서 90일 사이로 입력해 주세요.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                # 동시에 들어온 저장 요청이 서로 낡은 "변경 없음" 판정을 내리지
+                # 않도록 이 설정 행을 잠근다(계정 잠금/해제와 같은 패턴).
+                cursor.execute(
+                    "SELECT setting_value FROM sys_setting WHERE setting_key = %s FOR UPDATE",
+                    (OpsPolicyRepository.INVITE_TTL_KEY,),
+                )
+                row = cursor.fetchone()
+                current: int | None = None
+                if row is not None:
+                    try:
+                        current = int(row["setting_value"])
+                    except (TypeError, ValueError):
+                        current = None
+
+                if current == days:
+                    raise RepositoryError("변경된 초대 정책이 없습니다.")
+
+                if row is None:
+                    cursor.execute(
+                        "INSERT INTO sys_setting (setting_key, setting_value, updated_by) VALUES (%s, %s, %s)",
+                        (OpsPolicyRepository.INVITE_TTL_KEY, str(days), actor_account_id),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE sys_setting
+                        SET setting_value = %s, updated_by = %s, updated_at = now()
+                        WHERE setting_key = %s
+                        """,
+                        (str(days), actor_account_id, OpsPolicyRepository.INVITE_TTL_KEY),
+                    )
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="POLICY_INVITE_TTL_CHANGE",
+                    target_type="SYS_SETTING",
+                    # `audit_log.target_id`는 VARCHAR(5)라 "INVITE_EXPIRE_DAYS" 키를
+                    # 그대로 담을 수 없다 — 어차피 이 action은 이 설정 하나뿐이라
+                    # target_type만으로 식별 가능하므로 비워둔다.
+                    target_id=None,
+                    payload={"before": current, "after": days, "reason": reason.strip() or None},
+                )
+
+        return {"days": days}
+
+    @staticmethod
+    def list_notices() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        n.notice_id, n.title, n.content, n.status,
+                        n.schedule_at, n.schedule_mode,
+                        n.created_by, ua.display_name AS created_by_name,
+                        n.created_at, n.updated_at
+                    FROM sys_notice AS n
+                    LEFT JOIN user_account AS ua ON ua.account_id = n.created_by
+                    ORDER BY n.created_at DESC
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def create_notice(
+        *,
+        title: str,
+        content: str,
+        status: str,
+        schedule_at: Any,
+        schedule_mode: str,
+        actor_account_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        title = (title or "").strip()
+        content = (content or "").strip()
+        if not title or not content:
+            raise RepositoryError("공지 제목과 내용을 입력해 주세요.")
+        if schedule_at is None:
+            raise RepositoryError("공지 날짜와 시간을 선택해 주세요.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                notice_id = next_short_code(cursor, table="sys_notice", column="notice_id", prefix="NT")
+                cursor.execute(
+                    """
+                    INSERT INTO sys_notice
+                        (notice_id, title, content, status, schedule_at, schedule_mode, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING notice_id, title, content, status, schedule_at, schedule_mode,
+                              created_by, created_at, updated_at
+                    """,
+                    (notice_id, title, content, status, schedule_at, schedule_mode, actor_account_id),
+                )
+                notice = cursor.fetchone()
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="NOTICE_CREATE",
+                    target_type="SYS_NOTICE",
+                    target_id=notice_id,
+                    payload={"after": _notice_snapshot(notice), "reason": reason.strip() or None},
+                )
+
+        notice["created_by_name"] = None
+        return notice
+
+    @staticmethod
+    def update_notice(
+        *,
+        notice_id: str,
+        title: str,
+        content: str,
+        status: str,
+        schedule_at: Any,
+        schedule_mode: str,
+        actor_account_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        title = (title or "").strip()
+        content = (content or "").strip()
+        if not title or not content:
+            raise RepositoryError("공지 제목과 내용을 입력해 주세요.")
+        if schedule_at is None:
+            raise RepositoryError("공지 날짜와 시간을 선택해 주세요.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM sys_notice WHERE notice_id = %s FOR UPDATE", (notice_id,))
+                before = cursor.fetchone()
+                if before is None:
+                    raise RecordNotFound("존재하지 않는 공지입니다.")
+
+                cursor.execute(
+                    """
+                    UPDATE sys_notice
+                    SET title = %s, content = %s, status = %s,
+                        schedule_at = %s, schedule_mode = %s, updated_at = now()
+                    WHERE notice_id = %s
+                    RETURNING notice_id, title, content, status, schedule_at, schedule_mode,
+                              created_by, created_at, updated_at
+                    """,
+                    (title, content, status, schedule_at, schedule_mode, notice_id),
+                )
+                notice = cursor.fetchone()
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="NOTICE_UPDATE",
+                    target_type="SYS_NOTICE",
+                    target_id=notice_id,
+                    payload={
+                        "before": _notice_snapshot(before),
+                        "after": _notice_snapshot(notice),
+                        "reason": reason.strip() or None,
+                    },
+                )
+
+        notice["created_by_name"] = None
+        return notice
+
+    @staticmethod
+    def delete_notice(*, notice_id: str, actor_account_id: str, reason: str = "") -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM sys_notice WHERE notice_id = %s RETURNING *", (notice_id,))
+                before = cursor.fetchone()
+                if before is None:
+                    raise RecordNotFound("존재하지 않는 공지입니다.")
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="NOTICE_DELETE",
+                    target_type="SYS_NOTICE",
+                    target_id=notice_id,
+                    payload={"before": _notice_snapshot(before), "reason": reason.strip() or None},
+                )
+
+    @staticmethod
+    def list_policy_changes() -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        al.audit_id, al.action, al.target_type, al.target_id, al.payload,
+                        al.actor_account_id, ua.display_name AS actor_display_name,
+                        ua.email AS actor_email, al.occurred_at
+                    FROM audit_log AS al
+                    LEFT JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    WHERE al.action = ANY(%s)
+                    ORDER BY al.occurred_at DESC
+                    """,
+                    (list(OpsPolicyRepository.POLICY_ACTIONS),),
                 )
                 return list(cursor.fetchall())
