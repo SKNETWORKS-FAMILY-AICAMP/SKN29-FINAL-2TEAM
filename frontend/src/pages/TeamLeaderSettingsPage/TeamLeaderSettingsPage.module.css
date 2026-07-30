@@ -248,3 +248,35 @@
   margin-top: var(--space-5);
 }
 
+
+.inviteResult {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: 14px;
+  color: var(--color-body);
+  line-height: 1.6;
+}
+
+.inviteResult p {
+  margin: 0;
+}
+
+.inviteCode {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: var(--font-mono, monospace);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-heading);
+  word-break: break-all;
+}
+
+.inviteHint {
+  font-size: 13px;
+  color: var(--color-muted);
+}

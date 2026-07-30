@@ -131,3 +131,13 @@
   font-weight: 600;
   text-decoration: underline;
 }
+
+.formError {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 13px;
+  line-height: 1.5;
+}

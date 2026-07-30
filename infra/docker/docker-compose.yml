@@ -42,6 +42,7 @@ services:
       dockerfile: Dockerfile
     environment:
       VITE_API_BASE_URL: http://localhost:8000/api
+      VITE_USE_POLLING: "true"
     ports:
       - "5173:5173"
     volumes:

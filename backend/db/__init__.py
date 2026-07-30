@@ -2,14 +2,18 @@
 
 from .connection import database_connection, database_status
 from .repositories import (
+    AccountRepository,
     AnalysisRunRepository,
+    MemberInviteRepository,
     OrganizationRepository,
     PersonRepository,
     ProjectRepository,
 )
 
 __all__ = [
+    "AccountRepository",
     "AnalysisRunRepository",
+    "MemberInviteRepository",
     "OrganizationRepository",
     "PersonRepository",
     "ProjectRepository",

@@ -1,10 +1,19 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, Icon, Input, SettingsLayout, useToast } from '../../components';
+import { Badge, Button, Card, Icon, Input, Modal, Select, SettingsLayout, useToast } from '../../components';
 import type { BadgeTone, SettingsNavItem } from '../../components';
+import { ApiError } from '../../api/client';
+import {
+  createInvite,
+  listInviteCandidates,
+  listInvites,
+  revokeInvite,
+} from '../../api/invites';
+import type { Invite, InviteCandidate, InviteStatus, IssuedInvite } from '../../api/invites';
 import { CONNECTOR_DEFS } from '../../data/connectorDefs';
 import { loadConnectorStatuses } from '../../utils/connectorStatus';
 import type { ConnectorStatus } from '../../utils/connectorStatus';
+import { loadSessionToken } from '../../utils/session';
 import styles from './TeamLeaderSettingsPage.module.css';
 
 const NAV_ITEMS: SettingsNavItem[] = [
@@ -14,16 +23,21 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'workload', label: '팀 업무량 기준', icon: 'sliders' },
 ];
 
-interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  statusLabel: string;
-  statusTone: BadgeTone;
-  invitedAt: string;
-}
+const INVITE_STATUS_LABEL: Record<InviteStatus, string> = {
+  PENDING: '초대됨',
+  ACCEPTED: '가입 완료',
+  EXPIRED: '만료됨',
+  REVOKED: '취소됨',
+};
 
-const TEAM_MEMBERS: TeamMember[] = [];
+const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
+  PENDING: 'warning',
+  ACCEPTED: 'success',
+  EXPIRED: 'neutral',
+  REVOKED: 'neutral',
+};
+
+const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
 
 interface HrField {
   label: string;
@@ -50,12 +64,82 @@ export default function TeamLeaderSettingsPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
 
-  function handleSaveProfile() {
-    showToast('계정 정보를 저장했습니다.', 'success');
+  const [token] = useState(loadSessionToken);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviteError, setInviteError] = useState('');
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [candidates, setCandidates] = useState<InviteCandidate[]>([]);
+  const [selectedPersonId, setSelectedPersonId] = useState('');
+  const [issuing, setIssuing] = useState(false);
+  const [issued, setIssued] = useState<IssuedInvite | null>(null);
+
+  const refreshInvites = useCallback(async () => {
+    if (!token) {
+      setInviteError('BLOCKED · 로그인해야 팀원 초대 현황을 볼 수 있습니다.');
+      return;
+    }
+    try {
+      setInvites(await listInvites(token));
+      setInviteError('');
+    } catch (error) {
+      setInviteError(error instanceof ApiError ? error.message : '초대 현황을 불러오지 못했습니다.');
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void refreshInvites();
+  }, [refreshInvites]);
+
+  async function handleOpenInviteModal() {
+    if (!token) {
+      showToast('BLOCKED · 로그인해야 팀원을 초대할 수 있습니다.', 'error');
+      return;
+    }
+
+    setIssued(null);
+    setSelectedPersonId('');
+    setInviteModalOpen(true);
+    try {
+      const rows = await listInviteCandidates(token);
+      setCandidates(rows);
+      setSelectedPersonId(rows[0]?.person_id ?? '');
+    } catch (error) {
+      showToast(
+        error instanceof ApiError ? error.message : '초대 가능한 팀원을 불러오지 못했습니다.',
+        'error',
+      );
+      setInviteModalOpen(false);
+    }
   }
 
-  function handleInviteMember() {
-    showToast('팀원 초대 기능은 아직 연결되지 않았습니다.', 'info');
+  async function handleIssueInvite() {
+    if (!token || !selectedPersonId || issuing) return;
+
+    setIssuing(true);
+    try {
+      setIssued(await createInvite(token, selectedPersonId));
+      await refreshInvites();
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : '초대를 발급하지 못했습니다.', 'error');
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  async function handleRevokeInvite(inviteId: string) {
+    if (!token) return;
+
+    try {
+      await revokeInvite(token, inviteId);
+      showToast('초대를 취소했습니다.', 'success');
+      await refreshInvites();
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : '초대를 취소하지 못했습니다.', 'error');
+    }
+  }
+
+  function handleSaveProfile() {
+    showToast('계정 정보를 저장했습니다.', 'success');
   }
 
   function handleSaveWorkload() {
@@ -147,12 +231,17 @@ export default function TeamLeaderSettingsPage() {
               <h2>팀원 관리</h2>
               <p>팀 내부 멤버를 초대하고 활성화 상태를 모니터링합니다.</p>
             </div>
-            <Button variant="primary" size="sm" iconLeft={<Icon name="users" size={14} />} onClick={handleInviteMember}>
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={<Icon name="users" size={14} />}
+              onClick={handleOpenInviteModal}
+            >
               팀원 초대하기
             </Button>
           </div>
 
-          <p className={styles.tableCaption}>전체 팀원 ({TEAM_MEMBERS.length}명)</p>
+          <p className={styles.tableCaption}>보낸 초대 ({invites.length}건)</p>
 
           <div className={styles.teamTable}>
             <div className={styles.teamTableHead}>
@@ -162,25 +251,86 @@ export default function TeamLeaderSettingsPage() {
               <span>초대일</span>
               <span>작업</span>
             </div>
-            {TEAM_MEMBERS.length === 0 && <p className={styles.emptyNote}>아직 초대된 팀원이 없습니다.</p>}
-            {TEAM_MEMBERS.map((member) => (
-              <div key={member.id} className={styles.teamTableRow}>
-                <span className={styles.memberName}>{member.name}</span>
-                <span className={styles.memberEmail}>{member.email}</span>
+            {inviteError && <p className={styles.emptyNote}>{inviteError}</p>}
+            {!inviteError && invites.length === 0 && (
+              <p className={styles.emptyNote}>아직 초대된 팀원이 없습니다.</p>
+            )}
+            {invites.map((invite) => (
+              <div key={invite.invite_id} className={styles.teamTableRow}>
+                <span className={styles.memberName}>{invite.person_name}</span>
+                <span className={styles.memberEmail}>{invite.person_email}</span>
                 <span>
-                  <Badge tone={member.statusTone}>{member.statusLabel}</Badge>
+                  <Badge tone={INVITE_STATUS_TONE[invite.status]}>
+                    {INVITE_STATUS_LABEL[invite.status]}
+                  </Badge>
                 </span>
-                <span>{member.invitedAt}</span>
+                <span>{DATE_FORMAT.format(new Date(invite.created_at))}</span>
                 <span>
-                  <button type="button" className={styles.cancelLink}>
-                    초대 취소
-                  </button>
+                  {invite.status === 'PENDING' && (
+                    <button
+                      type="button"
+                      className={styles.cancelLink}
+                      onClick={() => void handleRevokeInvite(invite.invite_id)}
+                    >
+                      초대 취소
+                    </button>
+                  )}
                 </span>
               </div>
             ))}
           </div>
         </Card>
       </section>
+
+      <Modal
+        open={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        title="팀원 초대하기"
+        footer={
+          issued ? (
+            <Button variant="primary" onClick={() => setInviteModalOpen(false)}>
+              닫기
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={() => void handleIssueInvite()}
+              disabled={issuing || !selectedPersonId}
+            >
+              {issuing ? '발급 중…' : '초대 코드 발급'}
+            </Button>
+          )
+        }
+      >
+        {issued ? (
+          <div className={styles.inviteResult}>
+            <p>
+              <strong>{issued.person_name}</strong> 님의 초대 코드입니다. 이 화면을 닫으면 다시 볼 수
+              없으니 지금 복사해서 전달해 주세요.
+            </p>
+            <code className={styles.inviteCode}>{issued.code}</code>
+            <p className={styles.inviteHint}>
+              유효기간 {DATE_FORMAT.format(new Date(issued.expires_at))}까지
+            </p>
+          </div>
+        ) : candidates.length === 0 ? (
+          <p className={styles.emptyNote}>
+            초대할 수 있는 팀원이 없습니다. 이미 연결됐거나 초대가 진행 중인 직원은 제외됩니다.
+          </p>
+        ) : (
+          <div className={styles.inviteResult}>
+            <p className={styles.inviteHint}>초대할 직원을 선택하세요. 내 하위 조직 직원만 보입니다.</p>
+            <Select
+              options={candidates.map((candidate) => ({
+                value: candidate.person_id,
+                label: `${candidate.name} · ${candidate.org_name ?? '소속 미상'} · ${candidate.email}`,
+              }))}
+              value={selectedPersonId}
+              onChange={(event) => setSelectedPersonId(event.target.value)}
+            />
+          </div>
+        )}
+      </Modal>
 
       <section id="workload" className={styles.sectionBlock}>
         <Card padding="lg">
