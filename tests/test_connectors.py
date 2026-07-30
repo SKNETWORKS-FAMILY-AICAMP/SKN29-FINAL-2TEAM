@@ -1,8 +1,18 @@
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from apps.accounts.tokens import issue_token
+from apps.connectors.oauth import (
+    GOOGLE_DRIVE,
+    JIRA,
+    GoogleDriveOAuth,
+    JiraOAuth,
+    decrypt_credential,
+    encrypt_credential,
+    issue_state,
+)
 from backend.db.errors import RecordNotFound, ReferenceNotFound
 
 from .test_accounts import fresh_leader_profile, leader_profile, member_profile
@@ -185,6 +195,171 @@ class PeopleDbSummaryApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 404)
         summary.assert_not_called()
+
+
+@override_settings(
+    GOOGLE_DRIVE_CLIENT_ID="google-client-id",
+    GOOGLE_DRIVE_CLIENT_SECRET="google-client-secret",
+    GOOGLE_DRIVE_REDIRECT_URI="http://localhost:8000/api/connectors/google-drive/callback/",
+)
+class GoogleDriveOAuthApiTests(SimpleTestCase):
+    @patch("apps.connectors.api_views.AccountRepository.get_profile")
+    def test_authorize_requires_leader_and_returns_google_url(self, get_profile):
+        get_profile.return_value = leader_profile()
+
+        response = self.client.get(
+            "/api/connectors/google-drive/authorize/",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        query = parse_qs(urlparse(response.json()["authorization_url"]).query)
+        self.assertEqual(query["client_id"], ["google-client-id"])
+        self.assertEqual(query["redirect_uri"], ["http://localhost:8000/api/connectors/google-drive/callback/"])
+        self.assertEqual(query["access_type"], ["offline"])
+        self.assertEqual(query["prompt"], ["consent"])
+        self.assertIn("state", query)
+
+    @patch("apps.connectors.api_views.AccountRepository.get_profile")
+    def test_authorize_rejects_member(self, get_profile):
+        get_profile.return_value = member_profile()
+
+        response = self.client.get(
+            "/api/connectors/google-drive/authorize/",
+            headers=auth_header("UA002"),
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    @patch("apps.connectors.api_views.ConnectorRepository.connect_oauth")
+    @patch("apps.connectors.api_views.GoogleDriveOAuth.exchange_code")
+    def test_callback_stores_encrypted_credential_then_redirects_without_secret(self, exchange_code, connect_oauth):
+        exchange_code.return_value = {
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+            "expires_at": "2026-08-01T00:00:00+00:00",
+        }
+        state = issue_state(account_id="UA001", connector_type=GOOGLE_DRIVE)
+
+        response = self.client.get(
+            "/api/connectors/google-drive/callback/",
+            {"code": "authorization-code", "state": state},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            "http://localhost:5173/onboarding/connectors?connector=google-drive&status=ok",
+        )
+        self.assertNotIn("authorization-code", response["Location"])
+        self.assertNotIn("access-token", response["Location"])
+        self.assertEqual(connect_oauth.call_args.kwargs["account_id"], "UA001")
+        self.assertEqual(connect_oauth.call_args.kwargs["connector_type"], GOOGLE_DRIVE)
+        self.assertEqual(
+            decrypt_credential(connect_oauth.call_args.kwargs["encrypted_credential"])["refresh_token"],
+            "refresh-token",
+        )
+
+    @patch("apps.connectors.api_views.ConnectorRepository.connect_oauth")
+    def test_callback_denial_has_only_fixed_error_redirect(self, connect_oauth):
+        state = issue_state(account_id="UA001", connector_type=GOOGLE_DRIVE)
+
+        response = self.client.get(
+            "/api/connectors/google-drive/callback/",
+            {"error": "access_denied", "state": state, "error_description": "secret-like-detail"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            "http://localhost:5173/onboarding/connectors?connector=google-drive&status=error",
+        )
+        self.assertNotIn("secret-like-detail", response["Location"])
+        connect_oauth.assert_not_called()
+
+    @override_settings(GOOGLE_DRIVE_CLIENT_ID="", GOOGLE_DRIVE_CLIENT_SECRET="")
+    @patch("apps.connectors.api_views.AccountRepository.get_profile")
+    def test_authorize_reports_unavailable_when_credentials_are_missing(self, get_profile):
+        get_profile.return_value = leader_profile()
+
+        response = self.client.get(
+            "/api/connectors/google-drive/authorize/",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 503)
+
+
+class OAuthCredentialCryptoTests(SimpleTestCase):
+    def test_credential_round_trip_is_encrypted(self):
+        payload = {"access_token": "a" * 120, "refresh_token": "r" * 60, "expires_at": "2026-08-01T00:00:00+00:00"}
+
+        ciphertext = encrypt_credential(payload)
+
+        self.assertNotIn(payload["access_token"], ciphertext)
+        self.assertEqual(decrypt_credential(ciphertext), payload)
+
+
+@override_settings(
+    JIRA_CLIENT_ID="jira-client-id",
+    JIRA_CLIENT_SECRET="jira-client-secret",
+    JIRA_REDIRECT_URI="http://localhost:8000/api/connectors/jira/callback/",
+)
+class JiraOAuthApiTests(SimpleTestCase):
+    @patch("apps.connectors.api_views.AccountRepository.get_profile")
+    def test_authorize_returns_atlassian_url_with_resource_api_audience(self, get_profile):
+        get_profile.return_value = leader_profile()
+
+        response = self.client.get("/api/connectors/jira/authorize/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        query = parse_qs(urlparse(response.json()["authorization_url"]).query)
+        self.assertEqual(query["audience"], ["api.atlassian.com"])
+        self.assertEqual(query["client_id"], ["jira-client-id"])
+        self.assertEqual(query["redirect_uri"], ["http://localhost:8000/api/connectors/jira/callback/"])
+        self.assertEqual(query["scope"], ["read:jira-work read:jira-user offline_access"])
+        self.assertIn("state", query)
+
+    @patch("apps.connectors.api_views.ConnectorRepository.connect_oauth")
+    @patch("apps.connectors.api_views.JiraOAuth.exchange_code")
+    def test_callback_stores_cloud_id_and_redirects_without_credentials(self, exchange_code, connect_oauth):
+        exchange_code.return_value = {
+            "access_token": "jira-access-token",
+            "refresh_token": "jira-refresh-token",
+            "expires_at": "2026-08-01T00:00:00+00:00",
+            "cloud_id": "cloud-123",
+        }
+        state = issue_state(account_id="UA001", connector_type=JIRA)
+
+        response = self.client.get(
+            "/api/connectors/jira/callback/",
+            {"code": "jira-authorization-code", "state": state},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            "http://localhost:5173/onboarding/connectors?connector=jira&status=ok",
+        )
+        stored = decrypt_credential(connect_oauth.call_args.kwargs["encrypted_credential"])
+        self.assertEqual(connect_oauth.call_args.kwargs["connector_type"], JIRA)
+        self.assertEqual(stored["cloud_id"], "cloud-123")
+        self.assertNotIn("jira-access-token", response["Location"])
+
+    @patch("apps.connectors.api_views.ConnectorRepository.connect_oauth")
+    def test_callback_denial_uses_fixed_error_redirect(self, connect_oauth):
+        state = issue_state(account_id="UA001", connector_type=JIRA)
+
+        response = self.client.get(
+            "/api/connectors/jira/callback/",
+            {"error": "access_denied", "state": state},
+        )
+
+        self.assertEqual(
+            response["Location"],
+            "http://localhost:5173/onboarding/connectors?connector=jira&status=error",
+        )
+        connect_oauth.assert_not_called()
 
     @patch("apps.connectors.api_views.ConnectorRepository.people_db_summary")
     @patch("apps.connectors.api_views.ConnectorRepository.list_for_account")

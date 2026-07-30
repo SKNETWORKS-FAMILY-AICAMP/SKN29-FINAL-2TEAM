@@ -1,31 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, TopNav, useToast } from '../../components';
 import { ApiError } from '../../api/client';
-import { listConnectors } from '../../api/connectors';
+import { beginGoogleDriveAuthorization, beginJiraAuthorization, listConnectors } from '../../api/connectors';
 import { PeopleDbConnectModal } from './PeopleDbConnectModal';
 import { CONNECTOR_DEFS as CONNECTORS } from '../../data/connectorDefs';
-import { loadConnectorStatuses, saveConnectorStatuses } from '../../utils/connectorStatus';
 import type { ConnectorStatus } from '../../utils/connectorStatus';
 import { loadSession } from '../../utils/session';
 import styles from './ConnectorOnboardingPage.module.css';
 
-/** People DB만 서버에 실제로 기록된다. 나머지는 목업 흐름이라 세션에 남는다. */
-const REAL_CONNECTOR_ID = 'people-db';
-
-function loadStoredStatuses(): Record<string, ConnectorStatus> {
-  const defaults = Object.fromEntries(CONNECTORS.map((c) => [c.id, c.initialStatus]));
-  return loadConnectorStatuses(defaults);
-}
+/** 모든 커넥터 연결 상태는 서버가 원본이다. */
+const REAL_CONNECTOR_IDS = new Set(['people-db', 'google-drive', 'jira']);
+type OAuthConnectorId = 'google-drive' | 'jira';
 
 export default function ConnectorOnboardingPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { showToast } = useToast();
   const [session] = useState(loadSession);
-  const [statuses, setStatuses] = useState<Record<string, ConnectorStatus>>(loadStoredStatuses);
   const [peopleDbConnected, setPeopleDbConnected] = useState(false);
-  const [peopleDbError, setPeopleDbError] = useState('');
+  const [googleDriveConnected, setGoogleDriveConnected] = useState(false);
+  const [jiraConnected, setJiraConnected] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [oauthStarting, setOauthStarting] = useState<OAuthConnectorId | null>(null);
+  const handledOAuthCallback = useRef<string | null>(null);
 
   const isLeader = session?.account.role === 'leader';
 
@@ -34,67 +32,77 @@ export default function ConnectorOnboardingPage() {
 
     try {
       const connections = await listConnectors(session.token);
-      setPeopleDbConnected(
-        connections.some((c) => c.connector_type === 'PEOPLE_DB' && c.auth_status === 'CONNECTED'),
-      );
+      setPeopleDbConnected(connections.some((c) => c.connector_type === 'PEOPLE_DB' && c.auth_status === 'CONNECTED'));
+      setGoogleDriveConnected(connections.some((c) => c.connector_type === 'GOOGLE_DRIVE' && c.auth_status === 'CONNECTED'));
+      setJiraConnected(connections.some((c) => c.connector_type === 'JIRA' && c.auth_status === 'CONNECTED'));
     } catch (error) {
-      setPeopleDbError(
-        error instanceof ApiError ? error.message : 'HR 연결 상태를 불러오지 못했습니다.',
-      );
+      showToast(error instanceof ApiError ? error.message : '연결 상태를 불러오지 못했습니다.', 'error');
     }
-  }, [session]);
+  }, [session, showToast]);
 
   useEffect(() => {
     void refreshPeopleDb();
   }, [refreshPeopleDb]);
 
-  // 데모 커넥터 상태만 세션에 남긴다. People DB는 서버가 원본이다.
   useEffect(() => {
-    saveConnectorStatuses(statuses);
-  }, [statuses]);
+    const query = new URLSearchParams(location.search);
+    const connector = query.get('connector');
+    if (connector !== 'google-drive' && connector !== 'jira') {
+      handledOAuthCallback.current = null;
+      return;
+    }
+    // React StrictMode는 개발 중 effect를 한 번 더 실행한다. 같은 OAuth 결과는
+    // 토스트·상태 갱신을 한 번만 처리하고, URL이 비워진 뒤 다음 연결은 허용한다.
+    if (handledOAuthCallback.current === location.search) return;
+    handledOAuthCallback.current = location.search;
+
+    if (query.get('status') === 'ok') {
+      showToast(connector === 'jira' ? 'Jira를 연결했습니다.' : 'Google Drive를 연결했습니다.', 'success');
+      void refreshPeopleDb();
+    } else if (query.get('status') === 'error') {
+      showToast(connector === 'jira' ? 'Jira 연결에 실패했습니다. 잠시 후 다시 시도해주세요.' : 'Google Drive 연결에 실패했습니다. 잠시 후 다시 시도해주세요.', 'error');
+    }
+    navigate('/onboarding/connectors', { replace: true });
+  }, [location.search, navigate, refreshPeopleDb, showToast]);
 
   function handleConnected() {
     setPeopleDbConnected(true);
-    setPeopleDbError('');
     showToast('HR 시스템을 연결했습니다.', 'success');
   }
 
-  function handleConnectClick(id: string) {
-    if (id === REAL_CONNECTOR_ID) {
-      setPeopleDbError('');
+  async function handleConnectClick(id: string) {
+    if (id === 'people-db') {
       setModalOpen(true);
       return;
     }
 
-    if (id === 'google-drive') {
-      showToast('데모 흐름입니다. 데이터 소스 설정을 완료하면 연결된 것으로 표시됩니다.', 'info');
-      setTimeout(() => {
-        navigate('/onboarding/folders?mode=demo');
-      }, 700);
+    if (id === 'google-drive' || id === 'jira') {
+      if (!session) return;
+      const oauthConnector = id as OAuthConnectorId;
+      setOauthStarting(oauthConnector);
+      try {
+        const { authorization_url } = oauthConnector === 'jira'
+          ? await beginJiraAuthorization(session.token)
+          : await beginGoogleDriveAuthorization(session.token);
+        window.location.assign(authorization_url);
+      } catch (error) {
+        showToast(
+          error instanceof ApiError
+            ? error.message
+            : oauthConnector === 'jira' ? 'Jira 연결을 시작하지 못했습니다.' : 'Google Drive 연결을 시작하지 못했습니다.',
+          'error',
+        );
+        setOauthStarting(null);
+      }
       return;
     }
-
-    if (id === 'jira') {
-      showToast('데모 흐름입니다. Jira 프로젝트 선택을 완료하면 연결된 것으로 표시됩니다.', 'info');
-      setTimeout(() => {
-        navigate('/onboarding/jira-project?mode=demo');
-      }, 700);
-      return;
-    }
-
-    setStatuses((prev) => ({ ...prev, [id]: 'connected' }));
-  }
-
-  function handleResetStatuses() {
-    const defaults = Object.fromEntries(CONNECTORS.map((c) => [c.id, c.initialStatus]));
-    saveConnectorStatuses(defaults);
-    setStatuses(defaults);
-    showToast('데모 커넥터 상태를 초기화했습니다. HR 연결은 서버에 남아 있습니다.', 'info');
   }
 
   function statusOf(id: string): ConnectorStatus {
-    if (id === REAL_CONNECTOR_ID) return peopleDbConnected ? 'connected' : 'disconnected';
-    return statuses[id];
+    if (id === 'people-db') return peopleDbConnected ? 'connected' : 'disconnected';
+    if (id === 'google-drive') return googleDriveConnected ? 'connected' : 'disconnected';
+    if (id === 'jira') return jiraConnected ? 'connected' : 'disconnected';
+    return 'disconnected';
   }
 
   const allConnected = CONNECTORS.every((c) => statusOf(c.id) === 'connected');
@@ -102,12 +110,6 @@ export default function ConnectorOnboardingPage() {
 
   return (
     <div className={styles.page}>
-      {import.meta.env.DEV && (
-        <button type="button" className={styles.devResetButton} onClick={handleResetStatuses}>
-          연결 상태 초기화 (dev)
-        </button>
-      )}
-
       <TopNav tabs={[]} stepBadge="Step 1 of 2" />
 
       <div className={styles.wizardArea}>
@@ -132,17 +134,12 @@ export default function ConnectorOnboardingPage() {
           </p>
         )}
 
-        {peopleDbError && (
-          <p className={styles.notice} role="alert">
-            {peopleDbError}
-          </p>
-        )}
-
         <div className={styles.cardsRow}>
           {CONNECTORS.map((connector) => {
             const connected = statusOf(connector.id) === 'connected';
-            const isReal = connector.id === REAL_CONNECTOR_ID;
-            const locked = !isReal && !peopleDbConnected;
+            const isReal = REAL_CONNECTOR_IDS.has(connector.id);
+            const isOAuthConnector = connector.id === 'google-drive' || connector.id === 'jira';
+            const locked = connector.id !== 'people-db' && !peopleDbConnected;
             return (
               <Card key={connector.id} padding="md" className={styles.connectorCard}>
                 <div className={styles.cardTop}>
@@ -168,7 +165,7 @@ export default function ConnectorOnboardingPage() {
                       연결하기
                     </Button>
                   ) : connected ? (
-                    <Button variant="outline" fullWidth onClick={() => handleConnectClick(connector.id)}>
+                    <Button variant="outline" fullWidth disabled={isOAuthConnector && oauthStarting !== null} onClick={() => void handleConnectClick(connector.id)}>
                       {isReal ? '다시 연결' : '설정 관리'}
                     </Button>
                   ) : locked ? (
@@ -176,8 +173,8 @@ export default function ConnectorOnboardingPage() {
                       연결하기
                     </Button>
                   ) : (
-                    <Button variant="primary" fullWidth onClick={() => handleConnectClick(connector.id)}>
-                      연결하기
+                    <Button variant="primary" fullWidth disabled={isOAuthConnector && oauthStarting !== null} onClick={() => void handleConnectClick(connector.id)}>
+                      {oauthStarting === 'google-drive' ? 'Google로 이동 중…' : oauthStarting === 'jira' ? 'Atlassian으로 이동 중…' : '연결하기'}
                     </Button>
                   )}
                 </div>

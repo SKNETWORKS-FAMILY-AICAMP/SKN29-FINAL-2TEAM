@@ -32,8 +32,7 @@ function DriveIcon() {
 /**
  * Shared connector catalog used by both the connector onboarding flow and
  * the team leader settings page, so the two stay in sync (same ids, names,
- * icons). Connection state itself lives in sessionStorage — see
- * `utils/connectorStatus`.
+ * icons). 실제 OAuth 연결 상태는 서버의 `connector_conn`이 원본이다.
  */
 export const CONNECTOR_DEFS: ConnectorDef[] = [
   {

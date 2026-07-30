@@ -87,6 +87,20 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="halil <noreply@localhost
 # 재설정 링크가 가리킬 프론트엔드 주소.
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
 
+# Google Drive OAuth 웹 애플리케이션 자격증명. 실제 값은 로컬 `.env`에만 둔다.
+GOOGLE_DRIVE_CLIENT_ID = env("GOOGLE_DRIVE_CLIENT_ID", default="")
+GOOGLE_DRIVE_CLIENT_SECRET = env("GOOGLE_DRIVE_CLIENT_SECRET", default="")
+GOOGLE_DRIVE_REDIRECT_URI = env(
+    "GOOGLE_DRIVE_REDIRECT_URI",
+    default="http://localhost:8000/api/connectors/google-drive/callback/",
+)
+JIRA_CLIENT_ID = env("JIRA_CLIENT_ID", default="")
+JIRA_CLIENT_SECRET = env("JIRA_CLIENT_SECRET", default="")
+JIRA_REDIRECT_URI = env(
+    "JIRA_REDIRECT_URI",
+    default="http://localhost:8000/api/connectors/jira/callback/",
+)
+
 # 파일 저장소는 settings 값만 보고 선택한다. 애플리케이션 코드는 S3 SDK를 직접 호출하지 않는다.
 OBJECT_STORAGE_PROVIDER = env("OBJECT_STORAGE_PROVIDER", default="local")
 ANALYSIS_EXECUTION_MODE = env("ANALYSIS_EXECUTION_MODE", default="stub")

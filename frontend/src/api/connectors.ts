@@ -1,6 +1,6 @@
 import { apiRequest } from './client';
 
-/** `connector_conn.connector_type`. People DB만 실제로 연결 가능하고 나머지는 아직 데모다. */
+/** `connector_conn.connector_type`. Google Drive는 OAuth로 실제 연결한다. */
 export type ConnectorType = 'PEOPLE_DB' | 'GOOGLE_DRIVE' | 'JIRA';
 
 /** 화면의 커넥터 카드 id ↔ 서버의 connector_type 대응. */
@@ -49,6 +49,16 @@ export function fetchPeopleDbIdentity(token: string) {
 /** HR 시스템 연결. 본인 PERSON을 찾지 못하면 실패한다. */
 export function connectPeopleDb(token: string) {
   return apiRequest<PeopleDbSummary>('/connectors/people-db/', { method: 'POST', token });
+}
+
+/** Google OAuth 동의 화면으로 이동하기 위한 서버 생성 URL. */
+export function beginGoogleDriveAuthorization(token: string) {
+  return apiRequest<{ authorization_url: string }>('/connectors/google-drive/authorize/', { token });
+}
+
+/** Atlassian OAuth 동의 화면으로 이동하기 위한 서버 생성 URL. */
+export function beginJiraAuthorization(token: string) {
+  return apiRequest<{ authorization_url: string }>('/connectors/jira/authorize/', { token });
 }
 
 /** 이미 연결된 계정의 HR 요약. 미연결이면 404. */

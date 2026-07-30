@@ -1,4 +1,8 @@
+import logging
+
 import psycopg
+from django.conf import settings
+from django.http import HttpResponseRedirect
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -15,8 +19,20 @@ from backend.db.errors import (
 )
 
 from .serializers import connector_response, people_db_summary_response, person_response
+from .oauth import (
+    GOOGLE_DRIVE,
+    GOOGLE_DRIVE_SCOPES,
+    JIRA,
+    JIRA_SCOPES,
+    GoogleDriveOAuth,
+    JiraOAuth,
+    OAuthError,
+    encrypt_credential,
+    read_state,
+)
 
 LEADER_ONLY_DETAIL = "팀장만 외부 서비스를 연결할 수 있습니다."
+logger = logging.getLogger(__name__)
 
 
 def _repository_error_response(exc: Exception) -> Response:
@@ -115,3 +131,113 @@ class PeopleDbSummaryAPIView(AuthenticatedAPIView):
             return _repository_error_response(exc)
 
         return Response(people_db_summary_response(summary))
+
+
+def _google_drive_callback_redirect(result: str) -> HttpResponseRedirect:
+    """Provider 입력을 URL에 되돌려 보내지 않는 고정 프론트 경로 리다이렉트."""
+
+    path = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/onboarding/connectors"
+    return HttpResponseRedirect(f"{path}?connector=google-drive&status={result}")
+
+
+def _jira_callback_redirect(result: str) -> HttpResponseRedirect:
+    path = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/onboarding/connectors"
+    return HttpResponseRedirect(f"{path}?connector=jira&status={result}")
+
+
+class GoogleDriveAuthorizeAPIView(AuthenticatedAPIView):
+    """Bearer 인증을 받은 팀장만 Google 인가 URL을 발급받는다."""
+
+    def get(self, request):
+        try:
+            profile = AccountRepository.get_profile(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        if account_role(profile) != "leader":
+            return Response({"detail": LEADER_ONLY_DETAIL}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            authorization_url = GoogleDriveOAuth.authorization_url(account_id=profile["account_id"])
+        except OAuthError as exc:
+            logger.warning("Google Drive authorization URL generation failed: %s", exc)
+            return Response({"detail": "Google Drive 연결을 시작할 수 없습니다."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        return Response({"authorization_url": authorization_url})
+
+
+class GoogleDriveCallbackAPIView(APIView):
+    """Google이 브라우저로 호출하는 OAuth 콜백. Bearer 인증을 사용하지 않는다."""
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def get(self, request):
+        state = request.query_params.get("state", "")
+        try:
+            account_id = read_state(state=state, connector_type=GOOGLE_DRIVE)
+            # 사용자가 Google 동의 화면에서 거부한 경우도 상태만 고정 URL로 전달한다.
+            if request.query_params.get("error") or not request.query_params.get("code"):
+                raise OAuthError("Google Drive authorization was denied or incomplete.")
+
+            credential = GoogleDriveOAuth.exchange_code(code=request.query_params["code"])
+            ConnectorRepository.connect_oauth(
+                account_id=account_id,
+                connector_type=GOOGLE_DRIVE,
+                granted_scopes=GOOGLE_DRIVE_SCOPES,
+                encrypted_credential=encrypt_credential(credential),
+            )
+        except (OAuthError, RepositoryError, psycopg.Error) as exc:
+            # code, state, provider 오류 원문에는 인증 정보가 포함될 수 있어 URL·응답에 싣지 않는다.
+            logger.warning("Google Drive OAuth callback failed: %s", exc)
+            return _google_drive_callback_redirect("error")
+
+        return _google_drive_callback_redirect("ok")
+
+
+class JiraAuthorizeAPIView(AuthenticatedAPIView):
+    """Bearer 인증을 받은 팀장만 Atlassian 인가 URL을 발급받는다."""
+
+    def get(self, request):
+        try:
+            profile = AccountRepository.get_profile(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        if account_role(profile) != "leader":
+            return Response({"detail": LEADER_ONLY_DETAIL}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            authorization_url = JiraOAuth.authorization_url(account_id=profile["account_id"])
+        except OAuthError as exc:
+            logger.warning("Jira authorization URL generation failed: %s", exc)
+            return Response({"detail": "Jira 연결을 시작할 수 없습니다."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        return Response({"authorization_url": authorization_url})
+
+
+class JiraCallbackAPIView(APIView):
+    """Atlassian이 브라우저로 호출하는 OAuth 콜백. Bearer 인증을 사용하지 않는다."""
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def get(self, request):
+        state = request.query_params.get("state", "")
+        try:
+            account_id = read_state(state=state, connector_type=JIRA)
+            if request.query_params.get("error") or not request.query_params.get("code"):
+                raise OAuthError("Jira authorization was denied or incomplete.")
+
+            credential = JiraOAuth.exchange_code(code=request.query_params["code"])
+            ConnectorRepository.connect_oauth(
+                account_id=account_id,
+                connector_type=JIRA,
+                granted_scopes=JIRA_SCOPES,
+                encrypted_credential=encrypt_credential(credential),
+            )
+        except (OAuthError, RepositoryError, psycopg.Error) as exc:
+            logger.warning("Jira OAuth callback failed: %s", exc)
+            return _jira_callback_redirect("error")
+
+        return _jira_callback_redirect("ok")

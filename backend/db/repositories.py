@@ -791,6 +791,8 @@ class ConnectorRepository:
     """
 
     PEOPLE_DB = "PEOPLE_DB"
+    GOOGLE_DRIVE = "GOOGLE_DRIVE"
+    JIRA = "JIRA"
     PEOPLE_DB_SCOPES = ["org:read", "person:read"]
 
     @staticmethod
@@ -906,6 +908,53 @@ class ConnectorRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 return ConnectorRepository._people_db_summary(cursor, account_id)
+
+    @staticmethod
+    def connect_oauth(
+        *,
+        account_id: str,
+        connector_type: str,
+        granted_scopes: list[str],
+        encrypted_credential: str,
+    ) -> None:
+        """외부 OAuth 연결을 암호문과 함께 한 행으로 기록한다."""
+
+        if connector_type not in {ConnectorRepository.GOOGLE_DRIVE, ConnectorRepository.JIRA}:
+            raise RepositoryError("지원하지 않는 OAuth 커넥터입니다.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE connector_conn
+                    SET granted_scopes = %s,
+                        encrypted_credential_ref = %s,
+                        auth_status = 'CONNECTED',
+                        connected_at = now()
+                    WHERE account_id = %s AND connector_type = %s
+                    RETURNING conn_id
+                    """,
+                    (Jsonb(granted_scopes), encrypted_credential, account_id, connector_type),
+                )
+                if cursor.fetchone() is not None:
+                    return
+
+                conn_id = next_short_code(cursor, table="connector_conn", column="conn_id", prefix="CN")
+                cursor.execute(
+                    """
+                    INSERT INTO connector_conn
+                        (conn_id, account_id, connector_type, granted_scopes,
+                         encrypted_credential_ref, auth_status)
+                    VALUES (%s, %s, %s, %s, %s, 'CONNECTED')
+                    """,
+                    (
+                        conn_id,
+                        account_id,
+                        connector_type,
+                        Jsonb(granted_scopes),
+                        encrypted_credential,
+                    ),
+                )
 
     @staticmethod
     def _upsert(cursor, *, account_id: str, connector_type: str, granted_scopes: list[str]) -> None:
