@@ -1,0 +1,185 @@
+.page {
+  min-height: 100dvh;
+  background: var(--color-bg);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-primary);
+  font-size: 18px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.brandMark {
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.operator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.operator button {
+  border: 0;
+  padding: 6px 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.operator button:hover {
+  color: var(--color-primary);
+}
+
+.operatorEmail {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  display: flex;
+  min-height: calc(100dvh - 68px);
+}
+
+.sidebar {
+  position: sticky;
+  top: 68px;
+  width: 240px;
+  height: calc(100dvh - 68px);
+  flex: 0 0 240px;
+  padding: 28px 16px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+
+.sidebarLabel {
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navItem {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  color: var(--color-body);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.navItem:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.navItemActive,
+.navItemActive:hover {
+  background: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.main {
+  min-width: 0;
+  flex: 1;
+  padding: 36px 40px 56px;
+}
+
+@media (max-width: 900px) {
+  .header {
+    padding: 0 20px;
+  }
+
+  .operatorEmail {
+    display: none;
+  }
+
+  .sidebar {
+    width: 200px;
+    flex-basis: 200px;
+  }
+
+  .main {
+    padding: 28px 24px 48px;
+  }
+}
+
+@media (max-width: 720px) {
+  .header {
+    height: 60px;
+  }
+
+  .brand {
+    font-size: 15px;
+  }
+
+  .body {
+    min-height: calc(100dvh - 60px);
+    flex-direction: column;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 60px;
+    z-index: 15;
+    width: 100%;
+    height: auto;
+    flex-basis: auto;
+    padding: 10px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+    overflow-x: auto;
+  }
+
+  .sidebarLabel {
+    display: none;
+  }
+
+  .navigation {
+    width: max-content;
+    flex-direction: row;
+  }
+
+  .navItem {
+    height: 36px;
+    white-space: nowrap;
+  }
+
+  .main {
+    padding: 24px 16px 40px;
+  }
+}

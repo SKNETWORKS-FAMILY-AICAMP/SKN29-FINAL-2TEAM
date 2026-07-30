@@ -23,6 +23,14 @@ export const ROUTES: RouteEntry[] = [
   { path: '/tasks/distribution', label: '업무 분배 진행', group: '업무 분배' },
   { path: '/tasks/recommendation', label: '업무 추천 결과', group: '업무 분배' },
   { path: '/tasks/result', label: '배정 결과', group: '업무 분배' },
+  { path: '/ops/login', label: '관리자 로그인', group: '운영자 콘솔' },
+  { path: '/ops', label: '운영 현황', group: '운영자 콘솔' },
+  { path: '/ops/organizations', label: '연결 조직 현황', group: '운영자 콘솔' },
+  { path: '/ops/accounts', label: '계정 관리', group: '운영자 콘솔' },
+  { path: '/ops/mappings', label: '계정 연결·초대 현황', group: '운영자 콘솔' },
+  { path: '/ops/connectors', label: '연결 서비스 현황', group: '운영자 콘솔' },
+  { path: '/ops/audit', label: '감사 로그', group: '운영자 콘솔' },
+  { path: '/ops/policies', label: '전역 정책', group: '운영자 콘솔' },
 ];
 
 /**

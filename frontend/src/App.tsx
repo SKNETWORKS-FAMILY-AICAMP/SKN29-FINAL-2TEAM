@@ -1,6 +1,6 @@
 import { Suspense, lazy } from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
-import { RequireAuth, ToastProvider } from './components';
+import { Routes, Route, Link, Navigate } from 'react-router-dom';
+import { OpsLayout, OpsRouteGuard, RequireAuth, ToastProvider } from './components';
 import { ROUTES } from './routes';
 import styles from './App.module.css';
 
@@ -22,6 +22,14 @@ const WorkspacePage = lazy(() => import('./pages/WorkspacePage/WorkspacePage'));
 const TaskDistributionPage = lazy(() => import('./pages/TaskDistributionPage/TaskDistributionPage'));
 const TaskRecommendationPage = lazy(() => import('./pages/TaskRecommendationPage/TaskRecommendationPage'));
 const AssignmentResultPage = lazy(() => import('./pages/AssignmentResultPage/AssignmentResultPage'));
+const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
+const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
+const OpsOrganizationsPage = lazy(() => import('./pages/OpsOrganizationsPage/OpsOrganizationsPage'));
+const OpsAccountsPage = lazy(() => import('./pages/OpsAccountsPage/OpsAccountsPage'));
+const OpsMappingsPage = lazy(() => import('./pages/OpsMappingsPage/OpsMappingsPage'));
+const OpsConnectorsPage = lazy(() => import('./pages/OpsConnectorsPage/OpsConnectorsPage'));
+const OpsAuditPage = lazy(() => import('./pages/OpsAuditPage/OpsAuditPage'));
+const OpsPoliciesPage = lazy(() => import('./pages/OpsPoliciesPage/OpsPoliciesPage'));
 
 function DevIndexPage() {
   const groups = Array.from(new Set(ROUTES.map((r) => r.group)));
@@ -78,6 +86,19 @@ function App() {
           <Route path="/tasks/distribution" element={<RequireAuth><TaskDistributionPage /></RequireAuth>} />
           <Route path="/tasks/recommendation" element={<RequireAuth><TaskRecommendationPage /></RequireAuth>} />
           <Route path="/tasks/result" element={<RequireAuth><AssignmentResultPage /></RequireAuth>} />
+          <Route path="/ops/login" element={<OpsLoginPage />} />
+          <Route element={<OpsRouteGuard />}>
+            <Route path="/ops" element={<OpsLayout />}>
+              <Route index element={<OpsOverviewPage />} />
+              <Route path="organizations" element={<OpsOrganizationsPage />} />
+              <Route path="accounts" element={<OpsAccountsPage />} />
+              <Route path="mappings" element={<OpsMappingsPage />} />
+              <Route path="connectors" element={<OpsConnectorsPage />} />
+              <Route path="audit" element={<OpsAuditPage />} />
+              <Route path="policies" element={<OpsPoliciesPage />} />
+              <Route path="*" element={<Navigate to="/ops" replace />} />
+            </Route>
+          </Route>
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </Suspense>
