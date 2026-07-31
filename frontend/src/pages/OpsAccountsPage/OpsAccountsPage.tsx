@@ -66,6 +66,8 @@ export default function OpsAccountsPage() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '전체');
+  // 팀 현황에서 팀을 눌러 넘어온 경우 그 팀으로 좁혀 보여준다.
+  const teamFilter = searchParams.get('team');
   const [selectedId, setSelectedId] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -106,21 +108,20 @@ export default function OpsAccountsPage() {
     return all.filter((account) => {
       const matchesQuery = !normalized || [
         account.email,
-        account.account_id,
-        account.person?.person_id ?? '',
         account.person?.name ?? '',
         account.person?.org_name ?? '',
       ].some((value) => value.toLowerCase().includes(normalized));
 
+      const matchesTeam = !teamFilter || account.team_id === teamFilter;
       const matchesStatus = statusFilter === '전체'
         || (statusFilter === '확인 필요' && (account.mapping_status !== 'LINKED' || account.account_status === 'LOCKED'))
         || (statusFilter === '정상' && account.account_status === 'ACTIVE')
         || (statusFilter === '잠김' && account.account_status === 'LOCKED')
         || (statusFilter === '탈퇴' && account.account_status === 'WITHDRAWN');
 
-      return matchesQuery && matchesStatus;
+      return matchesQuery && matchesStatus && matchesTeam;
     });
-  }, [accounts, query, statusFilter]);
+  }, [accounts, query, statusFilter, teamFilter]);
 
   const selected = filtered.find((account) => account.account_id === selectedId) ?? filtered[0] ?? null;
 
@@ -199,7 +200,7 @@ export default function OpsAccountsPage() {
       />
 
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="계정 이메일 또는 직원 ID 검색" />
+        <OpsSearchField value={query} onChange={setQuery} placeholder="계정 이메일 또는 직원 이름 검색" />
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="계정 상태">
           <option>전체</option>
           <option>확인 필요</option>
@@ -213,8 +214,9 @@ export default function OpsAccountsPage() {
         <thead>
           <tr>
             <th>플랫폼 로그인 계정</th>
-            <th>직원 ID</th>
-            <th>연결 팀·조직</th>
+            <th>연결된 직원</th>
+            <th>팀</th>
+            <th>HR 조직</th>
             <th>매핑 상태</th>
             <th>계정 상태</th>
             <th>연결 서비스</th>
@@ -229,7 +231,8 @@ export default function OpsAccountsPage() {
               onClick={() => setSelectedId(account.account_id)}
             >
               <td>{account.email}</td>
-              <td>{account.person?.person_id ?? '미연결'}</td>
+              <td>{account.person?.name ?? '미연결'}</td>
+              <td>{account.team_name ?? '미소속'}</td>
               <td>{account.person?.org_name ?? '-'}</td>
               <td><OpsStatusBadge tone={MAPPING_TONES[account.mapping_status]}>{MAPPING_LABELS[account.mapping_status]}</OpsStatusBadge></td>
               <td><OpsStatusBadge tone={statusTone(account.account_status)}>{statusLabel(account.account_status)}</OpsStatusBadge></td>
@@ -237,7 +240,7 @@ export default function OpsAccountsPage() {
               <td><button type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(account.account_id); }}>상세 보기</button></td>
             </tr>
           )) : (
-            <tr><td className={styles.emptyCell} colSpan={7}>조건에 맞는 계정이 없습니다.</td></tr>
+            <tr><td className={styles.emptyCell} colSpan={8}>조건에 맞는 계정이 없습니다.</td></tr>
           )}
         </tbody>
       </OpsDataTable>
@@ -248,7 +251,7 @@ export default function OpsAccountsPage() {
             <strong>직원 매핑</strong>
             <p>
               {selected.person
-                ? `${selected.person.person_id} · ${selected.person.name ?? '직원 정보 없음(연결 대상이 삭제됨)'} · ${selected.person.org_name ?? '조직 미지정'}`
+                ? `${selected.person.name ?? '직원 정보 없음(연결 대상이 삭제됨)'} · ${selected.person.org_name ?? '조직 미지정'}`
                 : '미연결'}
               {selected.mapping_status === 'DUPLICATE' ? ` · 연결 ${selected.link_count}건` : ''}
             </p>

@@ -4,6 +4,8 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from backend.services import hr
+
 from .audit import log_with
 from .codes import next_short_code
 from .connection import database_connection
@@ -48,63 +50,6 @@ def _require_record(cursor, *, table: str, column: str, value: str, label: str) 
     cursor.execute(f"SELECT 1 FROM {table} WHERE {column} = %s", (value,))
     if cursor.fetchone() is None:
         raise ReferenceNotFound(f"존재하지 않는 {label}입니다: {value}")
-
-
-class OrganizationRepository:
-    @staticmethod
-    def list_active() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT org_id, up_org_id, mgr_id, name, org_type, status
-                    FROM org
-                    WHERE status = 'ACTIVE'
-                    ORDER BY org_id
-                    """
-                )
-                return list(cursor.fetchall())
-
-
-class PersonRepository:
-    @staticmethod
-    def list_active() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        p.person_id,
-                        p.emp_id,
-                        p.name,
-                        p.email,
-                        p.org_id,
-                        o.name AS org_name,
-                        p.job_role,
-                        p.level_id,
-                        lv.name AS level_name,
-                        p.emp_status,
-                        sc.tz,
-                        sc.fte,
-                        sc.wk_hours,
-                        sc.def_wk_hours
-                    FROM person AS p
-                    LEFT JOIN org AS o ON o.org_id = p.org_id
-                    LEFT JOIN level AS lv ON lv.level_id = p.level_id
-                    LEFT JOIN LATERAL (
-                        SELECT s.tz, s.fte, s.wk_hours, s.def_wk_hours
-                        FROM sched AS s
-                        WHERE s.person_id = p.person_id
-                          AND s.eff_from <= CURRENT_DATE
-                          AND (s.eff_to IS NULL OR s.eff_to >= CURRENT_DATE)
-                        ORDER BY s.eff_from DESC
-                        LIMIT 1
-                    ) AS sc ON true
-                    WHERE p.emp_status = 'ACTIVE'
-                    ORDER BY p.person_id
-                    """
-                )
-                return list(cursor.fetchall())
 
 
 class ProjectRepository:
@@ -591,6 +536,48 @@ class AnalysisRunRepository:
         return row
 
 
+def _attach_person_display(
+    rows: list[dict[str, Any]],
+    *,
+    person_key: str = "person_id",
+    org_key: str | None = None,
+) -> list[dict[str, Any]]:
+    """플랫폼 행에 HR 표시 정보(사람 이름·조직 이름)를 붙인다.
+
+    예전에는 `LEFT JOIN person/org`로 한 쿼리에 묶었지만, HR을 실제 외부 API로
+    바꾸려면 조인이 성립하지 않는다. 필요한 id만 모아 어댑터에서 한 번 읽고
+    파이썬에서 붙인다.
+
+    참조 무결성이 FK로 강제되지 않는 구조라(`VARCHAR(5)` 코드 직접 관리) 가리키는
+    대상이 사라진 행이 실제로 생긴다. 그 경우 화면을 죽이지 않고 원본 id는 남긴 채
+    이름만 `None`으로 둔다 — 운영자 콘솔 전체가 지키는 규칙이다.
+
+    `org_key`를 주면 그 컬럼의 조직 이름도 붙인다(초대처럼 사람과 무관하게 조직을
+    가리키는 행). 주지 않으면 사람이 속한 조직 이름을 붙인다.
+    """
+
+    person_ids = [row[person_key] for row in rows if row.get(person_key)]
+    persons = hr.lookup_persons(person_ids)
+
+    if org_key:
+        org_ids = [row[org_key] for row in rows if row.get(org_key)]
+    else:
+        org_ids = [p["org_id"] for p in persons.values() if p.get("org_id")]
+    orgs = hr.lookup_orgs(org_ids)
+
+    for row in rows:
+        person = persons.get(row.get(person_key)) if row.get(person_key) else None
+        row["person_name"] = person["name"] if person else None
+        row["person_email"] = person["email"] if person else None
+        if org_key:
+            org = orgs.get(row.get(org_key)) if row.get(org_key) else None
+        else:
+            row["org_id"] = person["org_id"] if person else None
+            org = orgs.get(row["org_id"]) if row.get("org_id") else None
+        row["org_name"] = org["name"] if org else None
+    return rows
+
+
 def _linked_person(cursor, account_id: str) -> dict[str, Any] | None:
     """계정에 연결된(VERIFIED) PERSON 링크를 하나 돌려준다.
 
@@ -614,37 +601,6 @@ def _linked_person(cursor, account_id: str) -> dict[str, Any] | None:
 def _linked_person_id(cursor, account_id: str) -> str | None:
     link = _linked_person(cursor, account_id)
     return link["person_id"] if link else None
-
-
-def _scope_org_ids(cursor, person_id: str | None) -> list[str]:
-    """PERSON이 속한 조직과 그 하위 조직 전체를 반환한다.
-
-    초대 가능 범위 정의(`팀원_초대_계정_매핑_정책.md` 핵심 원칙 4):
-    "초대자 본인이 연결된 person.org_id부터 org.up_org_id 재귀로 이어지는
-    하위 조직 전체". 조직장(`org.mgr_id`) 여부가 아니라 소속이 기준이다.
-    """
-
-    if person_id is None:
-        return []
-
-    cursor.execute(
-        """
-        WITH RECURSIVE scope AS (
-            SELECT o.org_id
-            FROM org AS o
-            JOIN person AS p ON p.org_id = o.org_id
-            WHERE p.person_id = %s AND o.status = 'ACTIVE'
-            UNION
-            SELECT child.org_id
-            FROM org AS child
-            JOIN scope ON child.up_org_id = scope.org_id
-            WHERE child.status = 'ACTIVE'
-        )
-        SELECT org_id FROM scope ORDER BY org_id
-        """,
-        (person_id,),
-    )
-    return [row["org_id"] for row in cursor.fetchall()]
 
 
 def _link_person_to_account(
@@ -745,25 +701,18 @@ class AccountRepository:
         초대 기반 매핑에서 이메일 비교를 금지한 것과 달리, 팀장이 HR 시스템을
         연결하며 본인 PERSON 레코드를 확인하는 경로는 정책 시나리오 2단계에
         해당한다. 일치하는 PERSON이 없으면 None.
+
+        이 계정의 회사가 아직 정해지지 않은 시점이라 회사 스코프를 걸 수 없다.
+        목업의 알려진 한계이며, 회사는 여기서 사람을 확정한 직후에 정해진다.
         """
 
-        cursor.execute(
-            """
-            SELECT p.person_id
-            FROM person AS p
-            WHERE lower(p.email) = lower(%s)
-              AND p.emp_status = 'ACTIVE'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM user_person_link AS l
-                  WHERE l.person_id = p.person_id AND l.mapping_status = 'VERIFIED'
-              )
-            """,
-            (email,),
-        )
-        row = cursor.fetchone()
-        if row is None:
+        person = hr.discover_person_by_email(email)
+        if person is None:
             return None
+        # 이미 다른 계정이 가져간 사람에는 연결하지 않는다.
+        if _person_already_linked(cursor, person["person_id"]):
+            return None
+        row = {"person_id": person["person_id"]}
 
         _link_person_to_account(
             cursor,
@@ -828,6 +777,23 @@ class AccountRepository:
                 )
 
     @staticmethod
+    def team_id(account_id: str) -> str | None:
+        """이 계정이 속한 팀(테넌트). 팀을 아직 만들지도 들어가지도 않았으면 None.
+
+        팀은 조직도에서 유도하지 않고 저장된 값을 읽는다 — 조직도만으로는
+        "어디까지가 우리 그룹인가"를 알 수 없기 때문이다([[HR_어댑터와_테넌트_경계]]).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT team_id FROM user_account WHERE account_id = %s",
+                    (account_id,),
+                )
+                row = cursor.fetchone()
+        return row["team_id"] if row else None
+
+    @staticmethod
     def get_profile(account_id: str) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -841,7 +807,7 @@ class AccountRepository:
     def _profile(cursor, account_id: str) -> dict[str, Any] | None:
         cursor.execute(
             """
-            SELECT account_id, email, display_name, account_status
+            SELECT account_id, email, display_name, account_status, team_id
             FROM user_account
             WHERE account_id = %s
             """,
@@ -853,58 +819,194 @@ class AccountRepository:
 
         link = _linked_person(cursor, account_id)
         person_id = link["person_id"] if link else None
-        person = None
-        if person_id is not None:
-            cursor.execute(
-                """
-                SELECT p.person_id, p.name, p.email, p.org_id, p.job_role, o.name AS org_name
-                FROM person AS p
-                LEFT JOIN org AS o ON o.org_id = p.org_id
-                WHERE p.person_id = %s
-                """,
-                (person_id,),
-            )
-            person = cursor.fetchone()
+        person = hr.get_person(person_id)
 
         account["person"] = person
         # 초대로 들어온 계정만 팀원이다. 그 외(직접 가입)는 팀장으로 본다 —
         # HR 시스템을 연결할 권한이 회사에서 팀장에게만 주어진다는 전제.
         account["invited"] = bool(link and link["match_method"] == "TEAM_INVITATION")
-        account["scope_org_ids"] = _scope_org_ids(cursor, person_id)
+        # 초대 가능 범위 = 본인 소속 조직과 그 하위 전체
+        # (`팀원_초대_계정_매핑_정책.md` 핵심 원칙 4). 조직장 여부가 아니라 소속이 기준이다.
+        account["scope_org_ids"] = hr.subtree_org_ids(person["org_id"]) if person else []
         return account
+
+
+class TeamRepository:
+    """`team` / `team_member` — 우리 플랫폼을 쓰는 단위.
+
+    HR 조직(`org`)과 다르다. HR에서는 한 회사지만 플랫폼을 쓰는 것은 회사 전체가
+    아니라 그 안의 그룹이다. 그래서 팀은 조직도에서 유도하지 않고 팀장이 온보딩에서
+    이름을 붙여 만든다 — 조직도만으로는 "어디까지가 우리 그룹인가"에 표시가 없어
+    팀원의 소속을 알 수 없기 때문이다.
+
+    `user_account.team_id`가 테넌트 경계다. 업무 배정 대상은 계정이 아니라 사람이라
+    팀원 명부(`team_member`)는 PERSON 단위로 둔다 — 아직 가입하지 않은 사람도
+    팀원이다.
+    """
+
+    @staticmethod
+    def add_member(cursor, *, team_id: str, person_id: str) -> None:
+        """팀원 명부에 추가한다. 이미 있으면 아무 일도 하지 않는다."""
+
+        team_member_id = next_short_code(
+            cursor, table="team_member", column="team_member_id", prefix="TM"
+        )
+        cursor.execute(
+            """
+            INSERT INTO team_member (team_member_id, team_id, person_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (team_id, person_id) DO NOTHING
+            """,
+            (team_member_id, team_id, person_id),
+        )
+
+    @staticmethod
+    def create(*, owner_account_id: str, name: str, person_ids: list[str]) -> dict[str, Any]:
+        """팀장이 팀명을 붙여 팀을 만들고 팀원을 담는다.
+
+        팀장 본인은 고르지 않아도 항상 팀원이다 — 팀장도 업무 배정 대상이다.
+        고른 사람이 초대 가능 범위(본인 소속 조직의 하위) 밖이면 거절한다.
+        """
+
+        name = name.strip()
+        if not name:
+            raise RepositoryError("팀 이름을 입력해 주세요.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT team_id FROM user_account WHERE account_id = %s",
+                    (owner_account_id,),
+                )
+                account = cursor.fetchone()
+                if account is None:
+                    raise RecordNotFound("존재하지 않는 계정입니다.")
+                if account["team_id"] is not None:
+                    raise DuplicateRecord("이미 팀이 있습니다. 팀은 계정당 하나입니다.")
+
+                owner_person_id = _linked_person_id(cursor, owner_account_id)
+                if owner_person_id is None:
+                    raise PermissionDenied(
+                        "HR 시스템에서 본인 확인을 먼저 마쳐야 팀을 만들 수 있습니다."
+                    )
+
+                owner = hr.get_person(owner_person_id)
+                if owner is None:
+                    raise RecordNotFound("HR에서 본인 정보를 찾을 수 없습니다.")
+
+                allowed = set(hr.subtree_org_ids(owner["org_id"]))
+                members = hr.list_persons(person_ids=person_ids) if person_ids else []
+                found = {p["person_id"] for p in members}
+                missing = [pid for pid in person_ids if pid not in found]
+                if missing:
+                    raise RecordNotFound(f"HR에서 찾을 수 없는 직원이 있습니다: {', '.join(missing)}")
+
+                outside = [p["person_id"] for p in members if p["org_id"] not in allowed]
+                if outside:
+                    raise PermissionDenied(
+                        "본인이 속한 조직과 그 하위 조직의 직원만 팀에 담을 수 있습니다."
+                    )
+
+                team_id = next_short_code(cursor, table="team", column="team_id", prefix="TE")
+                cursor.execute(
+                    """
+                    INSERT INTO team (team_id, name, owner_account_id, src_org_id)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING team_id, name, owner_account_id, src_org_id, created_at
+                    """,
+                    (team_id, name, owner_account_id, owner["org_id"]),
+                )
+                team = cursor.fetchone()
+
+                for person_id in {owner_person_id, *found}:
+                    TeamRepository.add_member(cursor, team_id=team_id, person_id=person_id)
+
+                cursor.execute(
+                    "UPDATE user_account SET team_id = %s WHERE account_id = %s",
+                    (team_id, owner_account_id),
+                )
+
+                log_with(
+                    cursor,
+                    actor_account_id=owner_account_id,
+                    action="TEAM_CREATE",
+                    target_type="TEAM",
+                    target_id=team_id,
+                    payload={"name": name, "member_count": len(found) + 1},
+                )
+
+        team["member_count"] = len(found) + 1
+        return team
+
+    @staticmethod
+    def get(team_id: str | None) -> dict[str, Any] | None:
+        if team_id is None:
+            return None
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT t.team_id, t.name, t.owner_account_id, t.src_org_id, t.created_at,
+                           (SELECT count(*) FROM team_member tm WHERE tm.team_id = t.team_id)
+                               AS member_count
+                    FROM team AS t
+                    WHERE t.team_id = %s
+                    """,
+                    (team_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def member_person_ids(team_id: str | None) -> list[str]:
+        """팀에 속한 PERSON id. 팀이 없으면 빈 목록 — 아무도 못 본다는 뜻이다."""
+
+        if team_id is None:
+            return []
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT person_id FROM team_member WHERE team_id = %s ORDER BY person_id",
+                    (team_id,),
+                )
+                return [row["person_id"] for row in cursor.fetchall()]
 
 
 class MemberInviteRepository:
     @staticmethod
     def list_candidates(account_id: str) -> list[dict[str, Any]]:
-        """초대 가능한 하위 조직 PERSON 목록(이미 연결·초대된 사람 제외)."""
+        """초대 가능한 하위 조직 PERSON 목록(이미 연결·초대된 사람 제외).
+
+        후보 범위는 **HR 기준**(본인 소속 조직의 하위)이다. 팀이 이미 있어도
+        아직 팀에 없는 사람을 부르는 것이 초대이므로, 여기서는 팀이 아니라
+        조직도를 본다. 팀 경계는 초대를 수락한 뒤부터 적용된다.
+        """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                scope = _scope_org_ids(cursor, _linked_person_id(cursor, account_id))
-                if not scope:
+                person_id = _linked_person_id(cursor, account_id)
+                if person_id is None:
                     return []
-
+                # 이미 계정에 연결됐거나 초대가 대기 중인 사람은 후보에서 뺀다.
                 cursor.execute(
                     """
-                    SELECT p.person_id, p.name, p.email, p.org_id, p.job_role, o.name AS org_name
-                    FROM person AS p
-                    LEFT JOIN org AS o ON o.org_id = p.org_id
-                    WHERE p.org_id = ANY(%s)
-                      AND p.emp_status = 'ACTIVE'
-                      AND NOT EXISTS (
-                          SELECT 1 FROM user_person_link AS l
-                          WHERE l.person_id = p.person_id AND l.mapping_status = 'VERIFIED'
-                      )
-                      AND NOT EXISTS (
-                          SELECT 1 FROM member_invite AS mi
-                          WHERE mi.person_id = p.person_id AND mi.status = 'PENDING'
-                      )
-                    ORDER BY p.name
-                    """,
-                    (scope,),
+                    SELECT person_id FROM user_person_link WHERE mapping_status = 'VERIFIED'
+                    UNION
+                    SELECT person_id FROM member_invite WHERE status = 'PENDING'
+                    """
                 )
-                return list(cursor.fetchall())
+                taken = {row["person_id"] for row in cursor.fetchall()}
+
+        me = hr.get_person(person_id)
+        if me is None:
+            return []
+
+        candidates = hr.list_persons(org_ids=hr.subtree_org_ids(me["org_id"]))
+        return sorted(
+            (p for p in candidates if p["person_id"] not in taken),
+            key=lambda p: p["name"],
+        )
 
     @staticmethod
     def create(*, invited_by: str, person_id: str, token_hash: str) -> dict[str, Any]:
@@ -917,17 +1019,25 @@ class MemberInviteRepository:
                     value=invited_by,
                     label="초대자 계정",
                 )
-                _require_record(
-                    cursor,
-                    table="person",
-                    column="person_id",
-                    value=person_id,
-                    label="직원",
-                )
+                inviter_person_id = _linked_person_id(cursor, invited_by)
+                inviter = hr.get_person(inviter_person_id)
+                if inviter is None:
+                    raise PermissionDenied("본인이 속한 조직과 그 하위 조직의 직원만 초대할 수 있습니다.")
 
-                scope = _scope_org_ids(cursor, _linked_person_id(cursor, invited_by))
-                cursor.execute("SELECT org_id FROM person WHERE person_id = %s", (person_id,))
-                person_org_id = cursor.fetchone()["org_id"]
+                target = hr.get_person(person_id)
+                if target is None:
+                    raise RecordNotFound("직원을 찾을 수 없습니다.")
+
+                # 초대는 초대자의 팀으로 들어온다. 수락하면 이 팀이 그 계정의 테넌트가 된다.
+                cursor.execute(
+                    "SELECT team_id FROM user_account WHERE account_id = %s", (invited_by,)
+                )
+                inviter_team_id = cursor.fetchone()["team_id"]
+                if inviter_team_id is None:
+                    raise PermissionDenied("팀을 먼저 만들어야 팀원을 초대할 수 있습니다.")
+
+                scope = hr.subtree_org_ids(inviter["org_id"])
+                person_org_id = target["org_id"]
                 if person_org_id is None or person_org_id not in scope:
                     raise PermissionDenied("본인이 속한 조직과 그 하위 조직의 직원만 초대할 수 있습니다.")
 
@@ -950,14 +1060,15 @@ class MemberInviteRepository:
                 cursor.execute(
                     """
                     INSERT INTO member_invite
-                        (invite_id, team_org_id, person_id, invited_by, token_hash, expires_at)
-                    VALUES (%s, %s, %s, %s, %s, now() + make_interval(days => %s))
-                    RETURNING invite_id, team_org_id, person_id, invited_by, status,
+                        (invite_id, team_org_id, team_id, person_id, invited_by, token_hash, expires_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, now() + make_interval(days => %s))
+                    RETURNING invite_id, team_org_id, team_id, person_id, invited_by, status,
                               expires_at, accepted_at, created_at
                     """,
                     (
                         invite_id,
                         person_org_id,
+                        inviter_team_id,
                         person_id,
                         invited_by,
                         token_hash,
@@ -966,16 +1077,13 @@ class MemberInviteRepository:
                 )
                 invite = cursor.fetchone()
 
-                cursor.execute(
-                    """
-                    SELECT p.name AS person_name, p.email AS person_email, o.name AS org_name
-                    FROM person AS p
-                    LEFT JOIN org AS o ON o.org_id = p.org_id
-                    WHERE p.person_id = %s
-                    """,
-                    (person_id,),
-                )
-                return {**invite, **cursor.fetchone()}
+        # 조직 이름은 초대가 가리키는 팀 기준이다(위에서 `person_org_id`로 저장한 값).
+        return {
+            **invite,
+            "person_name": target["name"],
+            "person_email": target["email"],
+            "org_name": target["org_name"],
+        }
 
     @staticmethod
     def list_by_inviter(account_id: str) -> list[dict[str, Any]]:
@@ -986,9 +1094,7 @@ class MemberInviteRepository:
                     SELECT
                         mi.invite_id,
                         mi.person_id,
-                        p.name AS person_name,
-                        p.email AS person_email,
-                        o.name AS org_name,
+                        mi.team_org_id AS org_id,
                         mi.expires_at,
                         mi.accepted_at,
                         mi.created_at,
@@ -997,14 +1103,14 @@ class MemberInviteRepository:
                             ELSE mi.status
                         END AS status
                     FROM member_invite AS mi
-                    LEFT JOIN person AS p ON p.person_id = mi.person_id
-                    LEFT JOIN org AS o ON o.org_id = mi.team_org_id
                     WHERE mi.invited_by = %s
                     ORDER BY mi.created_at DESC
                     """,
                     (account_id,),
                 )
-                return list(cursor.fetchall())
+                rows = list(cursor.fetchall())
+
+        return _attach_person_display(rows, org_key="org_id")
 
     @staticmethod
     def revoke(*, invite_id: str, account_id: str) -> None:
@@ -1032,13 +1138,10 @@ class MemberInviteRepository:
                     """
                     SELECT
                         mi.invite_id,
-                        p.name AS person_name,
-                        p.email AS person_email,
-                        o.name AS org_name,
+                        mi.person_id,
+                        mi.team_org_id AS org_id,
                         mi.expires_at
                     FROM member_invite AS mi
-                    LEFT JOIN person AS p ON p.person_id = mi.person_id
-                    LEFT JOIN org AS o ON o.org_id = mi.team_org_id
                     WHERE mi.token_hash = %s
                       AND mi.status = 'PENDING'
                       AND mi.expires_at > now()
@@ -1049,7 +1152,7 @@ class MemberInviteRepository:
 
         if row is None:
             raise RecordNotFound("사용할 수 없는 초대 코드입니다. 만료됐거나 이미 사용된 코드인지 확인해 주세요.")
-        return row
+        return _attach_person_display([row], org_key="org_id")[0]
 
     @staticmethod
     def accept(cursor, *, token_hash: str, account_id: str) -> str:
@@ -1063,7 +1166,7 @@ class MemberInviteRepository:
             UPDATE member_invite
             SET status = 'ACCEPTED', accepted_at = now()
             WHERE token_hash = %s AND status = 'PENDING' AND expires_at > now()
-            RETURNING invite_id, person_id
+            RETURNING invite_id, person_id, team_id
             """,
             (token_hash,),
         )
@@ -1081,6 +1184,17 @@ class MemberInviteRepository:
             invite_id=invite["invite_id"],
             match_method="TEAM_INVITATION",
         )
+
+        # 수락하는 순간 초대가 실어온 팀이 이 계정의 테넌트가 된다. 팀원 명부에도
+        # 넣는다 — 팀장이 고를 때 이미 들어갔을 수 있으므로 중복은 무시한다.
+        if invite["team_id"] is not None:
+            cursor.execute(
+                "UPDATE user_account SET team_id = %s WHERE account_id = %s",
+                (invite["team_id"], account_id),
+            )
+            TeamRepository.add_member(
+                cursor, team_id=invite["team_id"], person_id=invite["person_id"]
+            )
         return invite["invite_id"]
 
 
@@ -1121,21 +1235,13 @@ class ConnectorRepository:
         초대도 업무 배정도 할 수 없어서, 연결됐다고 표시하는 것이 거짓이 된다.
         """
 
+        if not hr.is_available():
+            raise ReferenceNotFound(
+                "HR 시스템에서 조직·직원 데이터를 찾을 수 없습니다. 운영자에게 문의해 주세요."
+            )
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
-                        (SELECT count(*) FROM person WHERE emp_status = 'ACTIVE') AS person_count
-                    """
-                )
-                totals = cursor.fetchone()
-                if not totals["org_count"] or not totals["person_count"]:
-                    raise ReferenceNotFound(
-                        "HR 시스템에서 조직·직원 데이터를 찾을 수 없습니다. 운영자에게 문의해 주세요."
-                    )
-
                 person_id = _linked_person_id(cursor, account_id)
                 if person_id is None:
                     person_id = AccountRepository.link_by_hr_email(
@@ -1168,36 +1274,17 @@ class ConnectorRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 person_id = _linked_person_id(cursor, account_id)
-                if person_id is not None:
-                    cursor.execute(
-                        """
-                        SELECT p.person_id, p.name, p.email, p.org_id, p.job_role,
-                               o.name AS org_name
-                        FROM person AS p
-                        LEFT JOIN org AS o ON o.org_id = p.org_id
-                        WHERE p.person_id = %s
-                        """,
-                        (person_id,),
-                    )
-                    return cursor.fetchone()
 
-                cursor.execute(
-                    """
-                    SELECT p.person_id, p.name, p.email, p.org_id, p.job_role,
-                           o.name AS org_name
-                    FROM person AS p
-                    LEFT JOIN org AS o ON o.org_id = p.org_id
-                    WHERE lower(p.email) = lower(%s)
-                      AND p.emp_status = 'ACTIVE'
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM user_person_link AS l
-                          WHERE l.person_id = p.person_id AND l.mapping_status = 'VERIFIED'
-                      )
-                    """,
-                    (email,),
-                )
-                row = cursor.fetchone()
+                # 이미 확인이 끝난 계정이면 회사가 정해져 있으므로 그 안에서 찾는다.
+                if person_id is not None:
+                    return hr.get_person(person_id)
+
+                # 아직 확인 전이라 이 계정의 회사를 모른다. 목업의 유일한 비스코프
+                # 지점이다(어댑터의 `discover_person_by_email` 주석 참고).
+                row = hr.discover_person_by_email(email)
+                # 이미 다른 계정이 가져간 사람은 후보로 내놓지 않는다.
+                if row is not None and _person_already_linked(cursor, row["person_id"]):
+                    row = None
 
         if row is None:
             raise RecordNotFound(
@@ -1339,63 +1426,51 @@ class ConnectorRepository:
 
     @staticmethod
     def _people_db_summary(cursor, account_id: str) -> dict[str, Any]:
-        """연결 확인 화면에 보여줄 요약. 전체 규모와 본인 조직 기준 인원."""
+        """연결 확인 화면에 보여줄 요약.
 
-        cursor.execute(
-            """
-            SELECT
-                (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
-                (SELECT count(*) FROM person WHERE emp_status = 'ACTIVE') AS person_count
-            """
-        )
-        summary = dict(cursor.fetchone())
+        `scope_person_count`는 팀을 만들 때 고를 수 있는 범위(본인 소속 조직의
+        하위)다. 팀 인원이 아니라 **후보 인원**이라는 뜻이다 — 이 화면은 팀을
+        만들기 전에 보이기 때문이다.
+
+        `user_person_link`는 플랫폼 테이블이라 호출자의 커서로 읽는다(연결
+        트랜잭션이 방금 만든 링크를 봐야 한다). HR 데이터는 어댑터로 읽는다.
+        """
+
+        summary: dict[str, Any] = {
+            "org_count": 0,
+            "person_count": 0,
+            "person": None,
+            "my_org_name": None,
+            "my_org_person_count": 0,
+            "scope_person_count": 0,
+        }
 
         person_id = _linked_person_id(cursor, account_id)
-        summary["person"] = None
-        summary["my_org_name"] = None
-        summary["my_org_person_count"] = 0
-        summary["scope_person_count"] = 0
-
         if person_id is None:
             return summary
 
-        cursor.execute(
-            """
-            SELECT p.person_id, p.name, p.email, p.org_id, p.job_role, o.name AS org_name
-            FROM person AS p
-            LEFT JOIN org AS o ON o.org_id = p.org_id
-            WHERE p.person_id = %s
-            """,
-            (person_id,),
-        )
-        person = cursor.fetchone()
+        person = hr.get_person(person_id)
         summary["person"] = person
-        summary["my_org_name"] = person["org_name"] if person else None
+        if person is None:
+            return summary
+        summary["my_org_name"] = person["org_name"]
 
-        scope = _scope_org_ids(cursor, person_id)
+        scope = hr.subtree_org_ids(person["org_id"])
         if not scope:
             return summary
 
-        cursor.execute(
-            """
-            SELECT
-                count(*) FILTER (WHERE org_id = %s) AS my_org_count,
-                count(*) AS scope_count
-            FROM person
-            WHERE org_id = ANY(%s) AND emp_status = 'ACTIVE'
-            """,
-            (person["org_id"], scope),
-        )
-        counts = cursor.fetchone()
-        summary["my_org_person_count"] = counts["my_org_count"]
-        summary["scope_person_count"] = counts["scope_count"]
+        in_scope = hr.list_persons(org_ids=scope)
+        summary["org_count"] = len(scope)
+        summary["person_count"] = len(in_scope)
+        summary["scope_person_count"] = len(in_scope)
+        summary["my_org_person_count"] = sum(1 for p in in_scope if p["org_id"] == person["org_id"])
         return summary
 
 
 class OpsOverviewRepository:
     """운영자 콘솔 `운영 현황`(`GET /api/ops/overview/`) 집계 전용.
 
-    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 계정 관리·연결 조직
+    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 계정 관리·계정 연결
     현황과 항상 같은 정의를 쓴다.
     """
 
@@ -1407,7 +1482,7 @@ class OpsOverviewRepository:
                     f"""
                     WITH {_DUP_ACCOUNTS_CTE}
                     SELECT
-                        (SELECT count(*) FROM org WHERE status = 'ACTIVE') AS org_count,
+                        (SELECT count(*) FROM team) AS team_total,
                         (SELECT count(*) FROM user_account) AS account_total,
                         (SELECT count(*) FROM user_account WHERE account_status = 'LOCKED') AS account_locked,
                         (SELECT count(*) FROM dup_accounts) AS account_duplicate_mapping,
@@ -1447,7 +1522,8 @@ class OpsOverviewRepository:
                 recent_activity = list(cursor.fetchall())
 
         return {
-            "org_count": totals["org_count"],
+            "team_count": totals["team_total"],
+            "org_count": hr.count_orgs(),
             "accounts": {
                 "total": totals["account_total"],
                 "locked": totals["account_locked"],
@@ -1468,12 +1544,14 @@ class OpsOverviewRepository:
         }
 
 
-class OpsOrganizationRepository:
-    """운영자 콘솔 `연결 조직 현황`(`GET /api/ops/organizations/`) 전용.
+class OpsTeamRepository:
+    """운영자 콘솔 `팀 현황`(`GET /api/ops/teams/`) 전용.
 
-    `OrganizationRepository.list_active()`는 조직 원본 컬럼만 돌려주고, 여긴
-    거기에 구성원 수·확인 필요 계정 수까지 집계해서 붙인다. "중복 연결" 판정은
-    `_DUP_ACCOUNTS_CTE`를 공유해서 운영 현황·계정 관리와 항상 같은 정의를 쓴다.
+    운영자가 봐야 하는 단위는 HR 조직도가 아니라 **팀**이다. 우리 플랫폼을 쓰는
+    것이 팀이기 때문이다(회사 전체가 아니다 — [[HR_어댑터와_테넌트_경계]]).
+    조직도는 고객사 내부 사정이라 운영자가 알 필요가 없다.
+
+    HR(팀장·팀원 이름)은 어댑터로, 플랫폼(팀·계정)은 SQL로 읽어 파이썬에서 합친다.
     """
 
     @staticmethod
@@ -1481,80 +1559,47 @@ class OpsOrganizationRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    f"""
-                    WITH RECURSIVE {_DUP_ACCOUNTS_CTE},
-                    person_account AS (
-                        SELECT person_id, account_id
-                        FROM user_person_link
-                        WHERE mapping_status = 'VERIFIED'
-                    ),
-                    org_stats AS (
-                        SELECT
-                            p.org_id,
-                            count(*) FILTER (WHERE p.emp_status = 'ACTIVE') AS member_count,
-                            count(*) FILTER (
-                                WHERE p.emp_status = 'ACTIVE' AND pa.account_id IS NOT NULL
-                            ) AS mapped_count,
-                            count(*) FILTER (
-                                WHERE p.emp_status = 'ACTIVE'
-                                  AND pa.account_id IS NOT NULL
-                                  AND (
-                                      ua.account_status = 'LOCKED'
-                                      OR pa.account_id IN (SELECT account_id FROM dup_accounts)
-                                  )
-                            ) AS issue_count
-                        FROM person AS p
-                        LEFT JOIN person_account AS pa ON pa.person_id = p.person_id
-                        LEFT JOIN user_account AS ua ON ua.account_id = pa.account_id
-                        GROUP BY p.org_id
-                    ),
-                    -- `person.org_id`는 소속 최소 단위(직속)만 가리켜서, 상위 조직은
-                    -- 그 자체 인원만 세면 하위 조직 인원이 전부 빠진 것처럼 보인다
-                    -- (예: "개발팀" 직속 1명 + 그 아래 "백엔드파트" 9명 + "프론트엔드파트" 8명).
-                    -- 하위 조직까지 포함한 전체 인원수를 이 재귀 CTE로 따로 계산한다.
-                    -- UNION(ALL 아님)이 같은 (root_id, org_id) 조합을 걸러내므로
-                    -- up_org_id가 순환 참조를 갖는 비정상 데이터가 있어도 무한 루프에 빠지지 않는다.
-                    subtree(root_id, member_org_id) AS (
-                        SELECT org_id, org_id FROM org WHERE status = 'ACTIVE'
-                        UNION
-                        SELECT s.root_id, o.org_id
-                        FROM org AS o
-                        JOIN subtree AS s ON o.up_org_id = s.member_org_id
-                        WHERE o.status = 'ACTIVE'
-                    ),
-                    org_totals AS (
-                        SELECT
-                            s.root_id,
-                            count(p.person_id) FILTER (WHERE p.emp_status = 'ACTIVE') AS total_member_count
-                        FROM subtree AS s
-                        LEFT JOIN person AS p ON p.org_id = s.member_org_id
-                        GROUP BY s.root_id
-                    )
+                    """
                     SELECT
-                        o.org_id,
-                        o.up_org_id,
-                        o.mgr_id,
-                        o.name,
-                        o.org_type,
-                        o.status,
-                        COALESCE(os.member_count, 0) AS member_count,
-                        COALESCE(ot.total_member_count, 0) AS total_member_count,
-                        COALESCE(os.mapped_count, 0) AS mapped_count,
-                        COALESCE(os.issue_count, 0) AS issue_count
-                    FROM org AS o
-                    LEFT JOIN org_stats AS os ON os.org_id = o.org_id
-                    LEFT JOIN org_totals AS ot ON ot.root_id = o.org_id
-                    WHERE o.status = 'ACTIVE'
-                    ORDER BY o.org_id
+                        t.team_id,
+                        t.name,
+                        t.owner_account_id,
+                        t.src_org_id,
+                        t.created_at,
+                        owner.email AS owner_email,
+                        owner.display_name AS owner_display_name,
+                        (SELECT count(*) FROM team_member tm WHERE tm.team_id = t.team_id)
+                            AS member_count,
+                        (SELECT count(*) FROM user_account ua WHERE ua.team_id = t.team_id)
+                            AS account_count,
+                        (SELECT count(*) FROM user_account ua
+                          WHERE ua.team_id = t.team_id AND ua.account_status = 'LOCKED')
+                            AS locked_count,
+                        (SELECT count(*) FROM member_invite mi
+                          WHERE mi.team_id = t.team_id AND mi.status = 'PENDING'
+                            AND mi.expires_at > now())
+                            AS pending_invite_count
+                    FROM team AS t
+                    LEFT JOIN user_account AS owner ON owner.account_id = t.owner_account_id
+                    ORDER BY t.created_at DESC
                     """
                 )
-                return list(cursor.fetchall())
+                rows = list(cursor.fetchall())
+
+        # 팀장이 HR상 누구인지, 팀이 어느 조직에서 출발했는지 이름으로 보여준다.
+        org_names = hr.lookup_orgs([r["src_org_id"] for r in rows if r["src_org_id"]])
+        for row in rows:
+            org = org_names.get(row["src_org_id"]) if row["src_org_id"] else None
+            row["src_org_name"] = org["name"] if org else None
+            # 아직 계정을 만들지 않은 팀원. 초대 대기이거나 초대 전이다.
+            row["unregistered_count"] = max(row["member_count"] - row["account_count"], 0)
+        return rows
 
 
 class OpsAccountRepository:
     """운영자 콘솔 `계정 관리`(`GET/POST /api/ops/accounts/...`) 전용.
 
-    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 운영 현황·연결 조직
+    "중복 연결" 판정은 `_DUP_ACCOUNTS_CTE`를 공유해서 운영 현황·계정 연결
     현황과 항상 같은 정의를 쓴다. `mapping_status`(UNMAPPED/LINKED/DUPLICATE)
     는 여기서 계산하지 않고 API 응답 계층(`apps/ops/serializers.py`)에서
     `link_count`로부터 계산한다 — Repository는 원자료만 돌려준다.
@@ -1586,22 +1631,22 @@ class OpsAccountRepository:
                         ua.email,
                         ua.display_name,
                         ua.account_status,
+                        ua.team_id,
+                        t.name AS team_name,
                         COALESCE(lc.link_count, 0) AS link_count,
                         rl.person_id,
-                        p.name AS person_name,
-                        p.org_id,
-                        o.name AS org_name,
                         cs.services
                     FROM user_account AS ua
+                    LEFT JOIN team AS t ON t.team_id = ua.team_id
                     LEFT JOIN link_counts AS lc ON lc.account_id = ua.account_id
                     LEFT JOIN representative_link AS rl ON rl.account_id = ua.account_id
-                    LEFT JOIN person AS p ON p.person_id = rl.person_id
-                    LEFT JOIN org AS o ON o.org_id = p.org_id
                     LEFT JOIN connected_services AS cs ON cs.account_id = ua.account_id
                     ORDER BY ua.account_id
                     """
                 )
-                return list(cursor.fetchall())
+                rows = list(cursor.fetchall())
+
+        return _attach_person_display(rows)
 
     @staticmethod
     def lock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
@@ -1707,10 +1752,7 @@ class OpsInviteRepository:
                     SELECT
                         mi.invite_id,
                         mi.person_id,
-                        p.name AS person_name,
-                        p.email AS person_email,
                         mi.team_org_id AS org_id,
-                        o.name AS org_name,
                         mi.invited_by,
                         inviter.email AS inviter_email,
                         CASE
@@ -1721,20 +1763,23 @@ class OpsInviteRepository:
                         mi.accepted_at,
                         mi.created_at,
                         upl.account_id AS linked_account_id,
+                        linked.email AS linked_account_email,
                         (
                             upl.account_id IS NOT NULL
                             AND upl.account_id IN (SELECT account_id FROM dup_accounts)
                         ) AS linked_account_duplicate
                     FROM member_invite AS mi
-                    LEFT JOIN person AS p ON p.person_id = mi.person_id
-                    LEFT JOIN org AS o ON o.org_id = mi.team_org_id
                     LEFT JOIN user_account AS inviter ON inviter.account_id = mi.invited_by
                     LEFT JOIN user_person_link AS upl
                         ON upl.person_id = mi.person_id AND upl.mapping_status = 'VERIFIED'
+                    LEFT JOIN user_account AS linked ON linked.account_id = upl.account_id
                     ORDER BY mi.created_at DESC
                     """
                 )
-                return list(cursor.fetchall())
+                rows = list(cursor.fetchall())
+
+        # 조직은 초대가 가리키는 팀(`team_org_id`)이지 사람의 현재 소속이 아니다.
+        return _attach_person_display(rows, org_key="org_id")
 
     @staticmethod
     def discard(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
@@ -1835,20 +1880,17 @@ class OpsConnectorRepository:
                         cc.connector_type,
                         cc.auth_status,
                         cc.connected_at,
-                        rl.person_id,
-                        p.name AS person_name,
-                        p.org_id,
-                        o.name AS org_name
+                        rl.person_id
                     FROM connector_conn AS cc
                     LEFT JOIN user_account AS ua ON ua.account_id = cc.account_id
                     LEFT JOIN representative_link AS rl ON rl.account_id = cc.account_id
-                    LEFT JOIN person AS p ON p.person_id = rl.person_id
-                    LEFT JOIN org AS o ON o.org_id = p.org_id
                     WHERE cc.connector_type <> 'PEOPLE_DB'
                     ORDER BY cc.connected_at DESC
                     """
                 )
-                return list(cursor.fetchall())
+                rows = list(cursor.fetchall())
+
+        return _attach_person_display(rows)
 
 
 class OpsAuditRepository:

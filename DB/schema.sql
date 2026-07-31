@@ -23,8 +23,35 @@ CREATE TABLE user_account (
     -- 아니라 이 플래그로만 관리자를 판별한다. API로 자기 자신·타인을 승격시키는
     -- 경로는 없고, backend/services/createDB/grant_admin.py로만 켤 수 있다.
     is_admin        BOOLEAN      NOT NULL DEFAULT false,
+    -- 이 계정이 속한 팀(2026-07-31 추가) = team.team_id(FK 없음). 팀장은 팀 생성 시,
+    -- 팀원은 초대 수락 시 채워진다. 이 값이 곧 테넌트 경계다.
+    team_id         VARCHAR(5),
     last_login_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- [팀] 우리 플랫폼을 쓰는 단위(2026-07-31 추가).
+--
+-- HR 조직(`org`)과 다르다. HR에서는 한 회사지만 우리 플랫폼을 쓰는 것은 회사
+-- 전체가 아니라 그 안의 그룹이다. 그래서 팀은 조직도에서 유도하지 않고 팀장이
+-- 온보딩에서 이름을 붙여 명시적으로 만든다 — 그래야 팀원의 소속을 추론이 아니라
+-- 조회로 알 수 있다(조직도만으로는 "어디까지가 우리 그룹인가"에 표시가 없다).
+CREATE TABLE team (
+    team_id           VARCHAR(5) PRIMARY KEY,
+    name              VARCHAR(100) NOT NULL,   -- 팀장이 입력한 팀명
+    owner_account_id  VARCHAR(5)  NOT NULL,    -- 만든 팀장 = user_account.account_id(FK 없음)
+    src_org_id        VARCHAR(5),              -- 만들 당시 팀장의 HR 소속 = org.org_id. 후보 범위의 근거로 남긴다
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- [팀] 팀에 속한 HR 직원. 계정이 아직 없어도(초대 전·미수락) 팀원이다 —
+-- 업무 배정 대상은 계정이 아니라 사람이기 때문이다.
+CREATE TABLE team_member (
+    team_member_id  VARCHAR(5) PRIMARY KEY,
+    team_id         VARCHAR(5)  NOT NULL,   -- team.team_id(FK 없음)
+    person_id       VARCHAR(5)  NOT NULL,   -- person.person_id(FK 없음)
+    added_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (team_id, person_id)
 );
 
 -- =====================================================================
@@ -204,6 +231,7 @@ CREATE TABLE cal_event (
 CREATE TABLE member_invite (
     invite_id     VARCHAR(5) PRIMARY KEY,
     team_org_id   VARCHAR(5) NOT NULL,   -- 초대 스코프 조직 = org.org_id(FK 없음)
+    team_id       VARCHAR(5),            -- 어느 팀으로 들어오는 초대인가(2026-07-31 추가) = team.team_id(FK 없음)
     person_id     VARCHAR(5) NOT NULL,   -- 연결 대상 HR 직원 = person.person_id(FK 없음)
     invited_by    VARCHAR(5) NOT NULL,   -- 초대한 팀장 계정 = user_account.account_id(FK 없음)
     token_hash    VARCHAR(255) NOT NULL UNIQUE,  -- 초대 코드 원문은 저장하지 않고 해시만 저장

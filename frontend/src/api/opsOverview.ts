@@ -30,6 +30,7 @@ export interface OpsActivity {
 }
 
 export interface OpsOverview {
+  team_count: number;
   org_count: number;
   accounts: OpsAccountStats;
   connectors: OpsConnectorStats;

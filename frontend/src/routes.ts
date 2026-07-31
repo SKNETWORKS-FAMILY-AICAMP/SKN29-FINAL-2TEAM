@@ -25,7 +25,7 @@ export const ROUTES: RouteEntry[] = [
   { path: '/tasks/result', label: '배정 결과', group: '업무 분배' },
   { path: '/ops/login', label: '운영자 로그인', group: '운영자 콘솔' },
   { path: '/ops', label: '운영 현황', group: '운영자 콘솔' },
-  { path: '/ops/organizations', label: '연결 조직 현황', group: '운영자 콘솔' },
+  { path: '/ops/teams', label: '팀 현황', group: '운영자 콘솔' },
   { path: '/ops/accounts', label: '계정 관리', group: '운영자 콘솔' },
   { path: '/ops/mappings', label: '계정 연결·초대 현황', group: '운영자 콘솔' },
   { path: '/ops/connectors', label: '연결 서비스 현황', group: '운영자 콘솔' },

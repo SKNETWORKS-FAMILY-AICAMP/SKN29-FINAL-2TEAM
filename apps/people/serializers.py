@@ -41,3 +41,14 @@ def person_response(row: dict[str, Any]) -> dict[str, Any]:
             str(row["def_wk_hours"]) if row["def_wk_hours"] is not None else None
         ),
     }
+
+
+def team_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "team_id": row["team_id"],
+        "name": row["name"],
+        "owner_account_id": row["owner_account_id"],
+        "src_org_id": row["src_org_id"],
+        "member_count": row.get("member_count"),
+        "created_at": row["created_at"],
+    }

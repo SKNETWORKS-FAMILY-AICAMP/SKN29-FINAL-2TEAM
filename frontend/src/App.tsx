@@ -24,7 +24,7 @@ const TaskRecommendationPage = lazy(() => import('./pages/TaskRecommendationPage
 const AssignmentResultPage = lazy(() => import('./pages/AssignmentResultPage/AssignmentResultPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
 const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
-const OpsOrganizationsPage = lazy(() => import('./pages/OpsOrganizationsPage/OpsOrganizationsPage'));
+const OpsTeamsPage = lazy(() => import('./pages/OpsTeamsPage/OpsTeamsPage'));
 const OpsAccountsPage = lazy(() => import('./pages/OpsAccountsPage/OpsAccountsPage'));
 const OpsMappingsPage = lazy(() => import('./pages/OpsMappingsPage/OpsMappingsPage'));
 const OpsConnectorsPage = lazy(() => import('./pages/OpsConnectorsPage/OpsConnectorsPage'));
@@ -90,7 +90,7 @@ function App() {
           <Route element={<OpsRouteGuard />}>
             <Route path="/ops" element={<OpsLayout />}>
               <Route index element={<OpsOverviewPage />} />
-              <Route path="organizations" element={<OpsOrganizationsPage />} />
+              <Route path="teams" element={<OpsTeamsPage />} />
               <Route path="accounts" element={<OpsAccountsPage />} />
               <Route path="mappings" element={<OpsMappingsPage />} />
               <Route path="connectors" element={<OpsConnectorsPage />} />

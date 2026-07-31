@@ -184,7 +184,7 @@ function OperationsPanel({
   return (
     <PanelShell loading={loading} error={error} reload={reload} isEmpty={allCount === 0} emptyText="운영 활동 기록이 없습니다.">
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="기록 ID·수행자·대상 검색" />
+        <OpsSearchField value={query} onChange={setQuery} placeholder="수행자 또는 대상 검색" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="작업 종류">
           <option>전체</option>
           {actions.map((a) => <option key={a}>{a}</option>)}
@@ -194,27 +194,25 @@ function OperationsPanel({
       <p className={styles.resultSummary}>현재 {rows.length}건 표시 · 전체 기록 {allCount}건</p>
       <OpsDataTable minWidth={1100}>
         <thead>
-          <tr><th>기록 ID</th><th>시각</th><th>수행자</th><th>작업</th><th>대상</th></tr>
+          <tr><th>시각</th><th>수행자</th><th>작업</th><th>대상</th></tr>
         </thead>
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.audit_id} aria-selected={selected?.audit_id === row.audit_id} onClick={() => onSelect(row.audit_id)}>
-              <td>{row.audit_id}</td>
               <td>{timeAgo(row.occurred_at)}</td>
-              <td>{row.actor_display_name ?? row.actor_email ?? row.actor_account_id}</td>
+              <td>{row.actor_display_name ?? row.actor_email ?? '알 수 없음'}</td>
               <td>{actionLabel(row.action)}</td>
-              <td>{[row.target_type, row.target_id].filter(Boolean).join(' · ') || '-'}</td>
+              <td>{row.target_type ?? '-'}</td>
             </tr>
-          )) : <tr><td className={styles.emptyCell} colSpan={5}>조건에 맞는 기록이 없습니다.</td></tr>}
+          )) : <tr><td className={styles.emptyCell} colSpan={4}>조건에 맞는 기록이 없습니다.</td></tr>}
         </tbody>
       </OpsDataTable>
       {selected ? (
-        <OpsDetailPanel title={`선택 운영 활동 · ${selected.audit_id} · ${actionLabel(selected.action)}`}>
+        <OpsDetailPanel title={`선택 운영 활동 · ${actionLabel(selected.action)}`}>
           <p className={styles.detailText}>
-            수행자 {selected.actor_display_name ?? selected.actor_email ?? selected.actor_account_id} ·
+            수행자 {selected.actor_display_name ?? selected.actor_email ?? '알 수 없음'} ·
             {' '}{new Date(selected.occurred_at).toLocaleString('ko-KR')}
           </p>
-          {selected.proj_id && <p className={styles.detailText}>프로젝트 {selected.proj_id}</p>}
           <p className={styles.detailText}>
             {hasContent(selected.payload) ? JSON.stringify(selected.payload) : '추가 정보 없음'}
           </p>
@@ -240,7 +238,7 @@ function AssignmentRunsPanel({
       emptyText="아직 실행된 배정이 없습니다. 업무 분배 기능에서 배정을 실행하면 여기에 기록됩니다."
     >
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="실행 ID·스냅샷 ID·요청자 검색" />
+        <OpsSearchField value={query} onChange={setQuery} placeholder="요청자 또는 모델·정책 버전 검색" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태">
           <option>전체</option>
           {statuses.map((s) => <option key={s}>{s}</option>)}
@@ -249,30 +247,25 @@ function AssignmentRunsPanel({
       <p className={styles.resultSummary}>현재 {rows.length}건 표시 · 전체 기록 {allCount}건</p>
       <OpsDataTable minWidth={1100}>
         <thead>
-          <tr><th>실행 ID</th><th>스냅샷 ID</th><th>준비도 결과</th><th>모델 버전</th><th>정책 버전</th><th>요청자</th><th>상태</th></tr>
+          <tr><th>실행 시각</th><th>모델 버전</th><th>정책 버전</th><th>요청자</th><th>상태</th></tr>
         </thead>
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.run_id} aria-selected={selected?.run_id === row.run_id} onClick={() => onSelect(row.run_id)}>
-              <td>{row.run_id}</td>
-              <td>{row.snapshot_id}</td>
-              <td>{row.readiness_id ?? '-'}</td>
+              <td>{timeAgo(row.started_at ?? row.created_at)}</td>
               <td>{row.model_version ?? '-'}</td>
               <td>{row.policy_version ?? '-'}</td>
-              <td>{row.requester_display_name ?? row.requester_email ?? row.requested_by ?? '-'}</td>
+              <td>{row.requester_display_name ?? row.requester_email ?? '-'}</td>
               <td><OpsStatusBadge tone={statusTone(row.status)}>{row.status}</OpsStatusBadge></td>
             </tr>
-          )) : <tr><td className={styles.emptyCell} colSpan={7}>조건에 맞는 기록이 없습니다.</td></tr>}
+          )) : <tr><td className={styles.emptyCell} colSpan={5}>조건에 맞는 기록이 없습니다.</td></tr>}
         </tbody>
       </OpsDataTable>
       {selected ? (
-        <OpsDetailPanel title={`선택 배정 실행 · ${selected.run_id} · ${selected.status}`}>
-          <p className={styles.detailText}>
-            스냅샷 {selected.snapshot_id}{selected.proj_id ? ` · 프로젝트 ${selected.proj_id}` : ''} · 준비도 결과 {selected.readiness_id ?? '없음'}
-          </p>
+        <OpsDetailPanel title={`선택 배정 실행 · ${selected.status}`}>
           <p className={styles.detailText}>
             모델 버전 {selected.model_version ?? '-'} · 정책 버전 {selected.policy_version ?? '-'} ·
-            요청자 {selected.requester_display_name ?? selected.requester_email ?? selected.requested_by ?? '-'}
+            요청자 {selected.requester_display_name ?? selected.requester_email ?? '-'}
           </p>
         </OpsDetailPanel>
       ) : <div className={styles.inlineEmpty}>검색 조건을 변경하면 실행 상세를 확인할 수 있습니다.</div>}
@@ -296,7 +289,7 @@ function RecommendationsPanel({
       emptyText="아직 생성된 추천 결과가 없습니다. 업무 추천 기능이 실행되면 여기에 기록됩니다."
     >
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="추천 ID·실행 ID·업무 ID 검색" />
+        <OpsSearchField value={query} onChange={setQuery} placeholder="업무명 검색" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태">
           <option>전체</option>
           {statuses.map((s) => <option key={s}>{s}</option>)}
@@ -305,26 +298,24 @@ function RecommendationsPanel({
       <p className={styles.resultSummary}>현재 {rows.length}건 표시 · 전체 기록 {allCount}건</p>
       <OpsDataTable minWidth={1100}>
         <thead>
-          <tr><th>추천 ID</th><th>실행 ID</th><th>업무</th><th>신뢰도</th><th>누락 데이터</th><th>제한·가정</th><th>상태</th></tr>
+          <tr><th>업무</th><th>신뢰도</th><th>누락 데이터</th><th>제한·가정</th><th>상태</th></tr>
         </thead>
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.reco_id} aria-selected={selected?.reco_id === row.reco_id} onClick={() => onSelect(row.reco_id)}>
-              <td>{row.reco_id}</td>
-              <td>{row.run_id}</td>
-              <td>{row.task_name ?? row.task_id}</td>
+              <td>{row.task_name ?? '업무명 미상'}</td>
               <td>{formatConfidence(row.confidence)}</td>
               <td>{hasContent(row.missing_data) ? '있음' : '없음'}</td>
               <td>{hasContent(row.limitations) || hasContent(row.assumptions) ? '있음' : '없음'}</td>
               <td><OpsStatusBadge tone={statusTone(row.status)}>{row.status}</OpsStatusBadge></td>
             </tr>
-          )) : <tr><td className={styles.emptyCell} colSpan={7}>조건에 맞는 기록이 없습니다.</td></tr>}
+          )) : <tr><td className={styles.emptyCell} colSpan={5}>조건에 맞는 기록이 없습니다.</td></tr>}
         </tbody>
       </OpsDataTable>
       {selected ? (
-        <OpsDetailPanel title={`선택 추천 결과 · ${selected.reco_id} · ${selected.status}`}>
+        <OpsDetailPanel title={`선택 추천 결과 · ${selected.task_name ?? '업무명 미상'} · ${selected.status}`}>
           <p className={styles.detailText}>
-            배정 실행 {selected.run_id} · 업무 {selected.task_name ?? selected.task_id} · 신뢰도 {formatConfidence(selected.confidence)}
+            업무 {selected.task_name ?? '업무명 미상'} · 신뢰도 {formatConfidence(selected.confidence)}
           </p>
           <p className={styles.detailText}>
             누락 데이터 {hasContent(selected.missing_data) ? JSON.stringify(selected.missing_data) : '없음'}
@@ -355,7 +346,7 @@ function ValidationsPanel({
       emptyText="아직 생성된 검증 결과가 없습니다. 추천 결과가 생기면 여기에 기록됩니다."
     >
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="검증 ID·추천 ID 검색" />
+        <OpsSearchField value={query} onChange={setQuery} placeholder="업무명 검색" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태">
           <option>전체</option>
           {statuses.map((s) => <option key={s}>{s}</option>)}
@@ -364,26 +355,23 @@ function ValidationsPanel({
       <p className={styles.resultSummary}>현재 {rows.length}건 표시 · 전체 기록 {allCount}건</p>
       <OpsDataTable minWidth={1000}>
         <thead>
-          <tr><th>검증 ID</th><th>추천 ID</th><th>실행 ID</th><th>업무 ID</th><th>신뢰도</th><th>누락 데이터</th><th>상태</th></tr>
+          <tr><th>업무</th><th>신뢰도</th><th>누락 데이터</th><th>상태</th></tr>
         </thead>
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.valid_id} aria-selected={selected?.valid_id === row.valid_id} onClick={() => onSelect(row.valid_id)}>
-              <td>{row.valid_id}</td>
-              <td>{row.reco_id}</td>
-              <td>{row.run_id ?? '-'}</td>
-              <td>{row.task_id ?? '-'}</td>
+              <td>{row.task_name ?? '업무명 미상'}</td>
               <td>{formatConfidence(row.confidence)}</td>
               <td>{hasContent(row.missing_data) ? '있음' : '없음'}</td>
               <td><OpsStatusBadge tone={statusTone(row.status)}>{row.status}</OpsStatusBadge></td>
             </tr>
-          )) : <tr><td className={styles.emptyCell} colSpan={7}>조건에 맞는 기록이 없습니다.</td></tr>}
+          )) : <tr><td className={styles.emptyCell} colSpan={5}>조건에 맞는 기록이 없습니다.</td></tr>}
         </tbody>
       </OpsDataTable>
       {selected ? (
-        <OpsDetailPanel title={`선택 검증 결과 · ${selected.valid_id} · ${selected.status}`}>
+        <OpsDetailPanel title={`선택 검증 결과 · ${selected.status}`}>
           <p className={styles.detailText}>
-            추천 결과 {selected.reco_id} · 신뢰도 {formatConfidence(selected.confidence)}
+            신뢰도 {formatConfidence(selected.confidence)}
           </p>
           <p className={styles.detailText}>
             누락 데이터 {hasContent(selected.missing_data) ? JSON.stringify(selected.missing_data) : '없음'}
@@ -410,7 +398,7 @@ function DecisionsPanel({
       emptyText="아직 저장된 PM 결정이 없습니다. 검증 결과가 생기면 여기에 기록됩니다."
     >
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="결정 ID·추천 ID·검증 ID 검색" />
+        <OpsSearchField value={query} onChange={setQuery} placeholder="결정자 검색" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="조치">
           <option>전체</option>
           {actions.map((a) => <option key={a}>{a}</option>)}
@@ -419,29 +407,26 @@ function DecisionsPanel({
       <p className={styles.resultSummary}>현재 {rows.length}건 표시 · 전체 기록 {allCount}건</p>
       <OpsDataTable minWidth={1100}>
         <thead>
-          <tr><th>결정 ID</th><th>추천 ID</th><th>검증 ID</th><th>수정 후보</th><th>결정자</th><th>결정 시각</th><th>조치</th></tr>
+          <tr><th>수정 여부</th><th>결정자</th><th>결정 시각</th><th>조치</th></tr>
         </thead>
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.decision_id} aria-selected={selected?.decision_id === row.decision_id} onClick={() => onSelect(row.decision_id)}>
-              <td>{row.decision_id}</td>
-              <td>{row.reco_id}</td>
-              <td>{row.valid_id ?? '-'}</td>
-              <td>{row.modified_cand_id ?? '없음'}</td>
-              <td>{row.decider_display_name ?? row.decider_email ?? row.decided_by ?? '-'}</td>
+              <td>{row.modified_cand_id ? '수정함' : '수정 없음'}</td>
+              <td>{row.decider_display_name ?? row.decider_email ?? '-'}</td>
               <td>{new Date(row.decided_at).toLocaleString('ko-KR')}</td>
               <td><OpsStatusBadge tone={pmActionTone(row.pm_action)}>{pmActionLabel(row.pm_action)}</OpsStatusBadge></td>
             </tr>
-          )) : <tr><td className={styles.emptyCell} colSpan={7}>조건에 맞는 기록이 없습니다.</td></tr>}
+          )) : <tr><td className={styles.emptyCell} colSpan={5}>조건에 맞는 기록이 없습니다.</td></tr>}
         </tbody>
       </OpsDataTable>
       {selected ? (
-        <OpsDetailPanel title={`선택 PM 결정 · ${selected.decision_id} · ${pmActionLabel(selected.pm_action)}`}>
+        <OpsDetailPanel title={`선택 PM 결정 · ${pmActionLabel(selected.pm_action)}`}>
           <p className={styles.detailText}>
-            추천 결과 {selected.reco_id} · 검증 결과 {selected.valid_id ?? '없음'} · 수정 후보 {selected.modified_cand_id ?? '없음'}
+            {selected.modified_cand_id ? '추천 후보를 수정해 결정했습니다.' : '추천 후보를 그대로 결정했습니다.'}
           </p>
           <p className={styles.detailText}>
-            결정자 {selected.decider_display_name ?? selected.decider_email ?? selected.decided_by ?? '-'} ·
+            결정자 {selected.decider_display_name ?? selected.decider_email ?? '-'} ·
             결정 시각 {new Date(selected.decided_at).toLocaleString('ko-KR')}
           </p>
           {selected.reason && <p className={styles.detailText}>사유 {selected.reason}</p>}
@@ -510,12 +495,11 @@ export default function OpsAuditPage() {
     const all = operations.data ?? [];
     const normalized = query.trim().toLowerCase();
     return all.filter((row) => {
+      // 화면에 보이는 값으로만 검색한다 — 고유 번호는 표시하지 않으므로 검색어로 쓸 수 없다.
       const matchesQuery = !normalized || [
-        row.audit_id,
         row.actor_display_name ?? '',
         row.actor_email ?? '',
         row.target_type ?? '',
-        row.target_id ?? '',
       ].some((value) => value.toLowerCase().includes(normalized));
       const matchesAction = statusFilter === '전체' || row.action === statusFilter;
       return matchesQuery && matchesAction;
@@ -526,8 +510,9 @@ export default function OpsAuditPage() {
     const all = assignmentRuns.data ?? [];
     const normalized = query.trim().toLowerCase();
     return all.filter((row) => {
-      const matchesQuery = !normalized || [row.run_id, row.snapshot_id, row.requester_email ?? '']
-        .some((value) => value.toLowerCase().includes(normalized));
+      const matchesQuery = !normalized
+        || [row.requester_display_name ?? '', row.requester_email ?? '', row.model_version ?? '', row.policy_version ?? '']
+          .some((value) => value.toLowerCase().includes(normalized));
       const matchesStatus = statusFilter === '전체' || row.status === statusFilter;
       return matchesQuery && matchesStatus;
     });
@@ -537,8 +522,7 @@ export default function OpsAuditPage() {
     const all = recommendations.data ?? [];
     const normalized = query.trim().toLowerCase();
     return all.filter((row) => {
-      const matchesQuery = !normalized || [row.reco_id, row.run_id, row.task_id]
-        .some((value) => value.toLowerCase().includes(normalized));
+      const matchesQuery = !normalized || (row.task_name ?? '').toLowerCase().includes(normalized);
       const matchesStatus = statusFilter === '전체' || row.status === statusFilter;
       return matchesQuery && matchesStatus;
     });
@@ -548,8 +532,7 @@ export default function OpsAuditPage() {
     const all = validations.data ?? [];
     const normalized = query.trim().toLowerCase();
     return all.filter((row) => {
-      const matchesQuery = !normalized || [row.valid_id, row.reco_id]
-        .some((value) => value.toLowerCase().includes(normalized));
+      const matchesQuery = !normalized || (row.task_name ?? '').toLowerCase().includes(normalized);
       const matchesStatus = statusFilter === '전체' || row.status === statusFilter;
       return matchesQuery && matchesStatus;
     });
@@ -559,8 +542,9 @@ export default function OpsAuditPage() {
     const all = decisions.data ?? [];
     const normalized = query.trim().toLowerCase();
     return all.filter((row) => {
-      const matchesQuery = !normalized || [row.decision_id, row.reco_id, row.valid_id ?? '']
-        .some((value) => value.toLowerCase().includes(normalized));
+      const matchesQuery = !normalized
+        || [row.decider_display_name ?? '', row.decider_email ?? '']
+          .some((value) => value.toLowerCase().includes(normalized));
       const matchesStatus = statusFilter === '전체' || row.pm_action === statusFilter;
       return matchesQuery && matchesStatus;
     });

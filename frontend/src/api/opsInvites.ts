@@ -16,6 +16,7 @@ export interface OpsInvite {
   accepted_at: string | null;
   created_at: string;
   linked_account_id: string | null;
+  linked_account_email: string | null;
   linked_account_duplicate: boolean;
 }
 

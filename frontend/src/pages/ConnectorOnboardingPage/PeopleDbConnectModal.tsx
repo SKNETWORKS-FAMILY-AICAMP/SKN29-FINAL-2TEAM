@@ -5,14 +5,20 @@ import { connectPeopleDb, fetchPeopleDbIdentity } from '../../api/connectors';
 import type { HrPerson } from '../../api/connectors';
 import { createInvite, listInviteCandidates } from '../../api/invites';
 import type { InviteCandidate } from '../../api/invites';
+import { createTeam } from '../../api/teams';
+import { Input } from '../../components';
 import styles from './PeopleDbConnectModal.module.css';
 
 /**
  * HR 연결 3단계.
  *
  *   identity  가입 이메일로 찾은 본인이 맞는지 확인 (확인 전에는 매핑하지 않음)
- *   team      내 조직 인원 중 초대할 팀원 선택. 하위 조직은 접어 둔다
+ *   team      팀명을 짓고 팀원을 고른다. 하위 조직은 접어 둔다
  *   codes     발급된 초대 코드. 원문은 서버에 없으므로 이 화면에서만 볼 수 있다
+ *
+ * `team` 단계에서 실제로 팀이 만들어진다. 우리 플랫폼을 쓰는 단위는 회사 전체가
+ * 아니라 그 안의 그룹이고, 조직도만으로는 그 경계를 알 수 없어서 팀장이 이름을
+ * 붙여 명시적으로 만든다. 이 팀이 이후 모든 조회의 기준(테넌트)이 된다.
  */
 type Step = 'identity' | 'team' | 'codes';
 
@@ -56,6 +62,7 @@ export function PeopleDbConnectModal({
   const [identity, setIdentity] = useState<HrPerson | null>(null);
   const [myOrgId, setMyOrgId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<InviteCandidate[]>([]);
+  const [teamName, setTeamName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showOtherOrgs, setShowOtherOrgs] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -160,6 +167,9 @@ export function PeopleDbConnectModal({
       setSelected(
         new Set(rows.filter((r) => r.org_id === summary.person?.org_id).map((r) => r.person_id)),
       );
+      // 팀명 기본값은 HR상 소속 조직명. 팀은 조직과 다른 개념이지만 대개 여기서
+      // 출발하므로 채워 두고, 팀장이 바꿀 수 있게 한다.
+      setTeamName(summary.person?.org_name ?? '');
       setStep('team');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'HR 시스템을 연결하지 못했습니다.');
@@ -169,9 +179,21 @@ export function PeopleDbConnectModal({
   }
 
   async function handleIssueInvites() {
-    if (busy || selected.size === 0) return;
+    if (busy || !teamName.trim()) return;
 
+    setError('');
     setBusy(true);
+
+    // 초대보다 팀 생성이 먼저다. 초대는 "이 팀으로 들어오라"는 것이라
+    // 팀이 없으면 서버가 거절한다.
+    try {
+      await createTeam(token, teamName.trim(), [...selected]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '팀을 만들지 못했습니다.');
+      setBusy(false);
+      return;
+    }
+
     const codes: IssuedCode[] = [];
     const failures: FailedInvite[] = [];
     // 한 명이 실패해도 나머지는 발급한다 — "이미 초대됨"은 자연스러운 상황이다.
@@ -239,7 +261,21 @@ export function PeopleDbConnectModal({
   function renderTeam() {
     return (
       <div className={styles.body}>
-        <p>초대할 팀원을 선택하세요. 지금 넘어가고 나중에 설정에서 초대해도 됩니다.</p>
+        <Input
+          label="팀 이름"
+          id="team-name"
+          name="team-name"
+          placeholder="예: 플랫폼개발팀"
+          required
+          value={teamName}
+          onChange={(event) => setTeamName(event.target.value)}
+        />
+        <p className={styles.hint}>
+          이 팀이 업무 배정의 단위가 됩니다. 회사 전체가 아니라 실제로 함께 일하는 그룹으로
+          지어 주세요.
+        </p>
+
+        <p>함께할 팀원을 선택하세요. 지금 넘어가고 나중에 설정에서 초대해도 됩니다.</p>
 
         {myOrg.length === 0 ? (
           <p className={styles.hint}>내 조직에 초대할 수 있는 인원이 없습니다.</p>
@@ -362,9 +398,14 @@ export function PeopleDbConnectModal({
           <Button
             variant="primary"
             onClick={handleIssueInvites}
-            disabled={busy || selected.size === 0}
+            disabled={busy || !teamName.trim()}
+            title={teamName.trim() ? undefined : '팀 이름을 입력해 주세요.'}
           >
-            {busy ? '발급 중…' : `선택한 ${selected.size}명 초대하기`}
+            {busy
+              ? '만드는 중…'
+              : selected.size === 0
+                ? '팀 만들기'
+                : `팀 만들고 ${selected.size}명 초대하기`}
           </Button>
         </>
       );

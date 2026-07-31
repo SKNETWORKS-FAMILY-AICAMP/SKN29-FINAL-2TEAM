@@ -20,6 +20,26 @@ from backend.db.errors import RecordNotFound, ReferenceNotFound
 from .test_accounts import fresh_leader_profile, leader_profile, member_profile
 
 
+# `SimpleTestCase`는 Django ORM 접근만 막는다. 감사 로그(`log_audit`)는 psycopg로
+# 자기 연결을 열기 때문에 그 차단을 지나쳐 **실제 개발 DB에 INSERT**된다. 실제로
+# 테스트를 17번 돌린 흔적(SIGNUP·LOGIN 등 143행)이 로컬 DB에 쌓여 있었다.
+# 여기서 통째로 막는다 — 테스트는 감사 로그를 남기지 않는다.
+_audit_patchers = []
+
+
+def setUpModule():
+    for target in ("apps.accounts.api_views.log_audit", "apps.connectors.api_views.log_audit"):
+        patcher = patch(target)
+        patcher.start()
+        _audit_patchers.append(patcher)
+
+
+def tearDownModule():
+    for patcher in _audit_patchers:
+        patcher.stop()
+    _audit_patchers.clear()
+
+
 def people_db_connection():
     return {
         "conn_id": "CN001",

@@ -14,7 +14,7 @@ interface OpsNavItem {
 
 const OPS_NAV_ITEMS: OpsNavItem[] = [
   { label: '운영 현황', to: '/ops', icon: 'app-window', end: true },
-  { label: '연결 조직', to: '/ops/organizations', icon: 'chart-network' },
+  { label: '팀 현황', to: '/ops/teams', icon: 'chart-network' },
   { label: '계정 관리', to: '/ops/accounts', icon: 'users' },
   { label: '계정 연결·초대', to: '/ops/mappings', icon: 'link' },
   { label: '연결 서비스', to: '/ops/connectors', icon: 'database' },

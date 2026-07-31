@@ -102,7 +102,6 @@ export default function OpsConnectorsPage() {
     const normalized = query.trim().toLowerCase();
     return all.filter((connector) => {
       const matchesQuery = !normalized || [
-        connector.conn_id,
         connector.owner_email ?? '',
         connector.person?.org_name ?? '',
       ].some((value) => value.toLowerCase().includes(normalized));
@@ -194,7 +193,6 @@ export default function OpsConnectorsPage() {
       <OpsDataTable minWidth={1050}>
         <thead>
           <tr>
-            <th>연결 번호</th>
             <th>유형</th>
             <th>소유 계정</th>
             <th>연결 팀·조직</th>
@@ -206,7 +204,6 @@ export default function OpsConnectorsPage() {
         <tbody>
           {filtered.length > 0 ? filtered.map((connector) => (
             <tr key={connector.conn_id} aria-selected={selected?.conn_id === connector.conn_id} onClick={() => setSelectedId(connector.conn_id)}>
-              <td>{connector.conn_id}</td>
               <td>{typeLabel(connector.connector_type)}</td>
               <td>{connector.owner_email ?? '알 수 없음'}</td>
               <td>{connector.person?.org_name ?? '-'}</td>
@@ -220,7 +217,7 @@ export default function OpsConnectorsPage() {
         </tbody>
       </OpsDataTable>
 
-      {selected ? <OpsDetailPanel title={`선택 연결 · ${selected.conn_id} · ${typeLabel(selected.connector_type)} · ${statusLabel(selected.auth_status)}`}>
+      {selected ? <OpsDetailPanel title={`선택 연결 · ${typeLabel(selected.connector_type)} · ${statusLabel(selected.auth_status)}`}>
         <div className={styles.detailCards}>
           <div className={styles.detailCard}>
             <strong>연결 계정</strong>

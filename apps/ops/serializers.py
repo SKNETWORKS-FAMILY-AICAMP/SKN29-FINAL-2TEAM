@@ -64,6 +64,8 @@ def account_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "email": row["email"],
         "display_name": row["display_name"],
         "account_status": row["account_status"],
+        "team_id": row["team_id"],
+        "team_name": row["team_name"],
         "mapping_status": mapping_status,
         "link_count": link_count,
         "person": person,

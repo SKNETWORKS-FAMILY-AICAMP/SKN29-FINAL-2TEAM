@@ -16,6 +16,8 @@ export interface OpsAccount {
   email: string;
   display_name: string;
   account_status: string;
+  team_id: string | null;
+  team_name: string | null;
   mapping_status: OpsMappingStatus;
   link_count: number;
   person: OpsAccountPerson | null;

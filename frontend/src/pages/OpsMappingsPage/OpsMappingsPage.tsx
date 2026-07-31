@@ -97,8 +97,6 @@ export default function OpsMappingsPage() {
     const normalized = query.trim().toLowerCase();
     return all.filter((invite) => {
       const matchesQuery = !normalized || [
-        invite.invite_id,
-        invite.person_id,
         invite.person_name ?? '',
         invite.inviter_email ?? '',
       ].some((value) => value.toLowerCase().includes(normalized));
@@ -188,7 +186,7 @@ export default function OpsMappingsPage() {
       ) : (
         <>
           <OpsFilterBar>
-            <OpsSearchField value={query} onChange={setQuery} placeholder="초대 기록 ID 또는 직원 ID 검색" />
+            <OpsSearchField value={query} onChange={setQuery} placeholder="직원 이름 또는 초대자 이메일 검색" />
             <select value={organization} onChange={(event) => setOrganization(event.target.value)} aria-label="연결 팀·조직">
               {organizations.map((name) => <option key={name}>{name}</option>)}
             </select>
@@ -203,8 +201,7 @@ export default function OpsMappingsPage() {
           <OpsDataTable minWidth={1100}>
             <thead>
               <tr>
-                <th>초대 기록 ID</th>
-                <th>직원 ID</th>
+                <th>초대받은 직원</th>
                 <th>연결 팀·조직</th>
                 <th>초대자 이메일</th>
                 <th>상태</th>
@@ -215,14 +212,13 @@ export default function OpsMappingsPage() {
             <tbody>
               {filtered.length > 0 ? filtered.map((invite) => (
                 <tr key={invite.invite_id} aria-selected={selected?.invite_id === invite.invite_id} onClick={() => setSelectedId(invite.invite_id)}>
-                  <td>{invite.invite_id}</td>
-                  <td>{invite.person_id}</td>
+                  <td>{invite.person_name ?? '이름 미상'}</td>
                   <td>{invite.org_name ?? '-'}</td>
                   <td>{invite.inviter_email ?? '-'}</td>
                   <td><OpsStatusBadge tone={statusTone(invite.status)}>{statusLabel(invite.status)}</OpsStatusBadge></td>
                   <td>
                     {invite.linked_account_id
-                      ? `${invite.linked_account_id}${invite.linked_account_duplicate ? ' · 중복 연결' : ' · 연결됨'}`
+                      ? `${invite.linked_account_email ?? '연결된 계정'}${invite.linked_account_duplicate ? ' · 중복 연결' : ''}`
                       : '연결 안 됨'}
                   </td>
                   <td><button type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(invite.invite_id); }}>상세 보기</button></td>
@@ -233,13 +229,13 @@ export default function OpsMappingsPage() {
             </tbody>
           </OpsDataTable>
 
-          {selected ? <OpsDetailPanel title={`선택 초대 · ${selected.invite_id} · ${statusLabel(selected.status)}`}>
+          {selected ? <OpsDetailPanel title={`선택 초대 · ${selected.person_name ?? '이름 미상'} · ${statusLabel(selected.status)}`}>
             <p className={styles.detailText}>
-              {selected.person_id} · {selected.person_name ?? '이름 미상'} · {selected.org_name ?? '조직 미지정'} · 초대자 {selected.inviter_email ?? '-'}
+              {selected.person_email ?? '이메일 미상'} · {selected.org_name ?? '조직 미지정'} · 초대자 {selected.inviter_email ?? '-'}
             </p>
             <p className={styles.detailText}>
               {selected.linked_account_id
-                ? `연결된 계정 ${selected.linked_account_id}${selected.linked_account_duplicate ? ' (이 계정에 직원이 중복으로 연결되어 있습니다)' : ''}`
+                ? `연결된 계정 ${selected.linked_account_email ?? '(이메일 미상)'}${selected.linked_account_duplicate ? ' · 이 계정에 직원이 중복으로 연결되어 있습니다' : ''}`
                 : '아직 계정에 연결되지 않았습니다.'}
             </p>
             {(canDiscard || canUnlink) && (
@@ -272,7 +268,7 @@ export default function OpsMappingsPage() {
         )}
       >
         <p className={styles.modalCopy}>
-          {selected?.invite_id} 기록에 작업을 적용합니다. 초대와 연결 이력은 삭제하지 않고 상태 변경 내역을 남깁니다.
+          {selected?.person_name ?? '선택한'} 님의 초대 기록에 작업을 적용합니다. 초대와 연결 이력은 삭제하지 않고 상태 변경 내역을 남깁니다.
         </p>
       </Modal>
     </div>

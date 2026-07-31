@@ -3,6 +3,8 @@
 > **문서 상태: 참고 조사 이력(SUPERSEDED)**  
 > 현재 구현 기준은 `기획서_v5_AI프로젝트운영코파일럿.md`와 `Canonical Data Model` 폴더의 문서다. 1차 구현에서는 PostgreSQL **People DB**의 `person`, `organization`, `responsibility_level`, `skill`, `person_skill`, `work_schedule`, `person_absence`, `external_identity` 테이블을 사용한다. 아래의 `mock_hr.*`, HR Mock DB, OrgGraph 설계는 구현하지 않으며 Workday 관련 내용은 향후 실제 HR Connector 검토용 참고 자료로만 사용한다. Jira Connector 조사 내용은 현재 구현 참고로 유효하다. 1차 플랫폼은 단일 조직 기준이므로 아래 조사안의 `tenant_id`는 구현 필드로 사용하지 않는다.
 
+> **위 두 문장은 2026-07-31부터 일부만 맞다.** 조사안의 `tenant_id` 컬럼을 쓰지 않는 것은 그대로지만, **"단일 조직 기준"은 더 이상 아니다.** 테넌트 경계를 `team`으로 세웠다 — HR에서는 한 회사지만 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 그 안의 **그룹**이라, 팀장이 온보딩에서 팀명을 붙여 만든다. HR 조회는 팀원 명부(`team_member`) 기준으로 좁혀진다. `mock_hr` 스키마 분리는 여전히 구현하지 않았지만, 같은 목적의 경계를 **코드 계층**(`backend/services/hr/`)으로 세웠다. 자세한 내용은 [[HR_어댑터와_테넌트_경계]].
+
 - 작성일: 2026-07-22
 - 적용 대상: AI 프로젝트 운영 코파일럿
 - 목적: Workday 데이터 구조를 참고한 내부 HR Mock DB와 실제 Jira Connector의 데이터 수집·정규화 기준을 정의한다.

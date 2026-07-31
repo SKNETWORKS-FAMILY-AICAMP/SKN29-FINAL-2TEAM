@@ -133,10 +133,10 @@ export default function OpsOverviewPage() {
 
       <OpsSummaryGrid>
         <OpsSummaryCard
-          label="연결 조직 범위"
-          value={data.org_count}
-          detail="플랫폼에 연결된 범위"
-          onClick={() => navigate('/ops/organizations')}
+          label="사용 중인 팀"
+          value={data.team_count}
+          detail="플랫폼을 쓰는 단위"
+          onClick={() => navigate('/ops/teams')}
         />
         <OpsSummaryCard
           label="전체 계정"

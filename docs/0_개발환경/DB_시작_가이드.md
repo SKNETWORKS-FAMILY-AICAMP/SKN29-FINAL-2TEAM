@@ -132,6 +132,22 @@ CREATE TABLE IF NOT EXISTS sys_notice (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS team (
+    team_id           VARCHAR(5) PRIMARY KEY,
+    name              VARCHAR(100) NOT NULL,
+    owner_account_id  VARCHAR(5)  NOT NULL,
+    src_org_id        VARCHAR(5),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS team_member (
+    team_member_id  VARCHAR(5) PRIMARY KEY,
+    team_id         VARCHAR(5)  NOT NULL,
+    person_id       VARCHAR(5)  NOT NULL,
+    added_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (team_id, person_id)
+);
+ALTER TABLE user_account  ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+ALTER TABLE member_invite ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 "
 ```
 
@@ -142,6 +158,7 @@ CREATE TABLE IF NOT EXISTS sys_notice (
 | `proj_source.max_depth` 추가 | 폴더 탐색 깊이. `1`이면 선택한 폴더만, `NULL`이면 제한 없음. "하위 폴더 포함" 불리언을 따로 두지 않는다 — 끄는 것이 곧 `1`이고, 두 컬럼이면 어느 쪽이 이기는지 모른다 |
 | `user_account.is_admin` 추가 | 운영자 콘솔 로그인 허용 플래그. 이메일 패턴이 아니라 명시적 플래그로만 운영자를 판별한다 |
 | `sys_setting`, `sys_notice` 테이블 추가 | 운영자 콘솔 전역 정책(초대 만료 기간, 시스템 공지) 저장소. `INVITE_EXPIRE_DAYS`는 기존에 코드에 하드코딩돼 있던 14일 값을 그대로 시딩한다 |
+| `team`, `team_member` 테이블 + `user_account.team_id`, `member_invite.team_id` 추가 | 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 **회사 안의 그룹**이다. 조직도(`org`)에서 유도하면 팀원의 소속을 알 수 없어서, 팀장이 온보딩에서 팀명을 붙여 명시적으로 만든다. 이 `team_id`가 테넌트 경계다 — [[HR_어댑터와_테넌트_경계]] |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 
