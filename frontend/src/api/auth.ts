@@ -28,6 +28,8 @@ export interface Account {
 
 export interface AuthResult {
   token: string;
+  /** 토큰 만료 시각(ISO8601). 프론트엔드가 만료된 세션을 스스로 버리는 데 쓴다. */
+  expires_at: string;
   account: Account;
 }
 

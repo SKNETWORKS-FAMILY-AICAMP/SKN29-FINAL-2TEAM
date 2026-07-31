@@ -1,10 +1,14 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.hashers import make_password
 from django.core import mail
 from django.test import SimpleTestCase, override_settings
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from apps.accounts.tokens import (
+    TOKEN_MAX_AGE_SECONDS,
     InvalidToken,
     hash_invite_code,
     issue_password_reset_token,
@@ -190,6 +194,25 @@ class LoginApiTests(SimpleTestCase):
         self.assertEqual(read_token(response.json()["token"]), "UA001")
         self.assertEqual(response.json()["account"]["role"], "leader")
         touch.assert_called_once_with("UA001")
+
+    @patch("apps.accounts.api_views.AccountRepository.get_profile", return_value=leader_profile())
+    @patch("apps.accounts.api_views.AccountRepository.touch_last_login")
+    @patch("apps.accounts.api_views.AccountRepository.find_credentials")
+    def test_login_returns_token_expiry(self, find, _touch, _profile):
+        """프론트엔드가 만료된 세션을 스스로 버리려면 만료 시각이 필요하다."""
+
+        find.return_value = self.credentials()
+
+        response = self.client.post(
+            "/api/auth/login/",
+            {"email": "leader@halil.com", "password": "halil1234"},
+            content_type="application/json",
+        )
+
+        expires_at = parse_datetime(response.json()["expires_at"])
+        self.assertIsNotNone(expires_at)
+        expected = timezone.now() + timedelta(seconds=TOKEN_MAX_AGE_SECONDS)
+        self.assertLess(abs((expires_at - expected).total_seconds()), 60)
 
     @patch("apps.accounts.api_views.AccountRepository.find_credentials")
     def test_login_with_wrong_password_returns_401(self, find):
