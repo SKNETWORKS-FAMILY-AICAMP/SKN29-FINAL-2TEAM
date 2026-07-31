@@ -33,23 +33,23 @@
 
 -- 팀장(초대를 발급하는 쪽) — 초대 코드 없이 직접 가입한 뒤 People DB에서
 -- 이 이메일로 본인 확인(SELF_EMAIL)을 완료해야 초대 범위가 열린다.
-UPDATE person SET name = '팀장이름', email = 'leader@example.com',
+UPDATE mock_hr.person SET name = '팀장이름', email = 'leader@example.com',
                   org_id = 'A002', job_role = '팀장', level_id = 'L6'
 WHERE person_id = 'PX002';
 
 -- 팀원(초대를 받는 쪽) — 같은 조직으로 옮긴다.
-UPDATE person SET name = '팀원이름', email = 'member@example.com',
+UPDATE mock_hr.person SET name = '팀원이름', email = 'member@example.com',
                   org_id = 'A002', job_role = '사원', level_id = 'L1'
 WHERE person_id = 'PB002';
 
 -- 팀원이 원래 조직의 조직장이었다면 남은 인원에게 넘긴다.
--- UPDATE org SET mgr_id = 'PB003' WHERE org_id = 'A003';
+-- UPDATE mock_hr.org SET mgr_id = 'PB003' WHERE org_id = 'A003';
 
 -- 적용 결과 확인
 SELECT p.person_id, p.name, p.email, o.name AS org_name, p.job_role,
        (o2.org_id IS NOT NULL) AS is_manager
-FROM person AS p
-LEFT JOIN org AS o ON o.org_id = p.org_id
-LEFT JOIN org AS o2 ON o2.mgr_id = p.person_id
+FROM mock_hr.person AS p
+LEFT JOIN mock_hr.org AS o ON o.org_id = p.org_id
+LEFT JOIN mock_hr.org AS o2 ON o2.mgr_id = p.person_id
 WHERE p.email NOT LIKE '%@halil.com'
 ORDER BY p.person_id;

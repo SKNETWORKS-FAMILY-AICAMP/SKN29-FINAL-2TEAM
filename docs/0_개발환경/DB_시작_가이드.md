@@ -148,8 +148,31 @@ CREATE TABLE IF NOT EXISTS team_member (
 );
 ALTER TABLE user_account  ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 ALTER TABLE member_invite ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+CREATE SCHEMA IF NOT EXISTS mock_hr;
+DO \$\$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['org','level','skill','person','person_skill','person_link','sched','absence'] LOOP
+    IF to_regclass('public.' || t) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I SET SCHEMA mock_hr', t);
+    END IF;
+  END LOOP;
+END \$\$;
 "
 ```
+
+> 마지막 블록(`mock_hr`)은 **데이터를 옮기지 않는다.** `SET SCHEMA`는 테이블을 통째로 다른 네임스페이스에 재등록만 하므로 행·인덱스·제약이 그대로 따라가고, 되돌리려면 `mock_hr` → `public`으로 같은 명령을 반대로 주면 된다. `to_regclass` 검사 때문에 이미 옮긴 DB에서 다시 실행해도 아무 일도 일어나지 않는다.
+
+> ⚠ **`team_overrides.sql`을 쓰고 있다면 같이 고쳐야 한다.** 이 파일은 실제 이메일이 들어 있어 `.gitignore` 대상이라 **각자 로컬 사본을 직접 수정**해야 한다. 안 고치면 다음에 실행할 때 `relation "person" does not exist`가 난다.
+>
+> ```
+> UPDATE person ...  →  UPDATE mock_hr.person ...
+> UPDATE org    ...  →  UPDATE mock_hr.org    ...
+> FROM person AS p   →  FROM mock_hr.person AS p
+> LEFT JOIN org AS o →  LEFT JOIN mock_hr.org AS o
+> ```
+>
+> 고친 형태는 저장소에 있는 `DB/peopleDB/team_overrides.example.sql`과 같다. 그 파일을 그대로 복사해서 이름·이메일만 다시 채워도 된다.
 
 | 변경 | 이유 |
 |---|---|
@@ -159,6 +182,7 @@ ALTER TABLE member_invite ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 | `user_account.is_admin` 추가 | 운영자 콘솔 로그인 허용 플래그. 이메일 패턴이 아니라 명시적 플래그로만 운영자를 판별한다 |
 | `sys_setting`, `sys_notice` 테이블 추가 | 운영자 콘솔 전역 정책(초대 만료 기간, 시스템 공지) 저장소. `INVITE_EXPIRE_DAYS`는 기존에 코드에 하드코딩돼 있던 14일 값을 그대로 시딩한다 |
 | `team`, `team_member` 테이블 + `user_account.team_id`, `member_invite.team_id` 추가 | 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 **회사 안의 그룹**이다. 조직도(`org`)에서 유도하면 팀원의 소속을 알 수 없어서, 팀장이 온보딩에서 팀명을 붙여 명시적으로 만든다. 이 `team_id`가 테넌트 경계다 — [[HR_어댑터와_테넌트_경계]] |
+| HR 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 `mock_hr` 스키마로 이동 | 이 8개는 **고객사 HR 시스템의 데이터**지 우리가 소유한 데이터가 아니다. 경계는 코드(`backend/services/hr/`)로 세웠지만 DB에서는 `public`에 우리 테이블과 섞여 있어, 다음 사람이 무심코 조인하면 그만이었다. 스키마를 나누면 `mock_hr.`를 타이핑하지 않고는 건드릴 수 없다 — [[HR_어댑터와_테넌트_경계]] |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 

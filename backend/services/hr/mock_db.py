@@ -1,4 +1,4 @@
-"""HR 어댑터의 구현 — 실제 HR 시스템의 대역인 `person`/`org`를 읽는다.
+"""HR 어댑터의 구현 — 실제 HR 시스템의 대역인 `mock_hr.person`/`mock_hr.org`를 읽는다.
 
 `mock_db`라는 이름은 "언젠가 진짜로 바꿀 임시물"이라는 뜻이 아니다. Workday API를
 붙일 수 없어(결제한 기업 고객 전용) 같은 모양의 DB로 **대신하는 것**이고, 그 역할은
@@ -7,6 +7,10 @@
 HR 관련 SQL은 전부 이 파일 안에만 둔다. 바깥(`repositories.py`, `apps/*`)은
 `backend.services.hr`의 함수 이름만 알고 dict를 받는다 — HR을 남의 시스템처럼
 다룬다는 설정이 코드에서도 유지되게 하기 위함이다.
+
+HR 테이블은 `mock_hr` 스키마에 있고 **항상 스키마명을 붙여 쓴다.** `search_path`에
+넣어 생략할 수도 있지만 그러면 분리한 의미가 없다 — 바깥에서 다시 `JOIN person`이
+되기 때문이다. `mock_hr.`를 타이핑해야 닿는다는 사실 자체가 경계다.
 
 **여기에 테넌트 개념은 없다.** HR은 회사의 인사 시스템이고, 우리 플랫폼을 쓰는
 단위는 그 안의 팀이다. 팀 경계는 플랫폼 쪽(`team`/`team_member`)이 갖고, 이
@@ -31,15 +35,15 @@ _PERSON_FIELDS = """
 """
 
 _PERSON_FROM = """
-    FROM person AS p
-    LEFT JOIN org AS o ON o.org_id = p.org_id
-    LEFT JOIN level AS lv ON lv.level_id = p.level_id
+    FROM mock_hr.person AS p
+    LEFT JOIN mock_hr.org AS o ON o.org_id = p.org_id
+    LEFT JOIN mock_hr.level AS lv ON lv.level_id = p.level_id
 """
 
 _SCHEDULE_JOIN = """
     LEFT JOIN LATERAL (
         SELECT s.tz, s.fte, s.wk_hours, s.def_wk_hours
-        FROM sched AS s
+        FROM mock_hr.sched AS s
         WHERE s.person_id = p.person_id
           AND s.eff_from <= CURRENT_DATE
           AND (s.eff_to IS NULL OR s.eff_to >= CURRENT_DATE)
@@ -61,8 +65,8 @@ def is_available() -> bool:
             cursor.execute(
                 """
                 SELECT
-                    EXISTS (SELECT 1 FROM org WHERE status = 'ACTIVE') AS has_org,
-                    EXISTS (SELECT 1 FROM person WHERE emp_status = 'ACTIVE') AS has_person
+                    EXISTS (SELECT 1 FROM mock_hr.org WHERE status = 'ACTIVE') AS has_org,
+                    EXISTS (SELECT 1 FROM mock_hr.person WHERE emp_status = 'ACTIVE') AS has_person
                 """
             )
             row = cursor.fetchone()
@@ -85,10 +89,10 @@ def subtree_org_ids(root_org_id: str | None) -> list[str]:
             cursor.execute(
                 """
                 WITH RECURSIVE scope AS (
-                    SELECT org_id FROM org WHERE org_id = %s AND status = 'ACTIVE'
+                    SELECT org_id FROM mock_hr.org WHERE org_id = %s AND status = 'ACTIVE'
                     UNION
                     SELECT child.org_id
-                    FROM org AS child
+                    FROM mock_hr.org AS child
                     JOIN scope ON child.up_org_id = scope.org_id
                     WHERE child.status = 'ACTIVE'
                 )
@@ -119,7 +123,7 @@ def list_orgs(*, org_ids: list[str] | None = None) -> list[dict[str, Any]]:
             cursor.execute(
                 f"""
                 SELECT org_id, up_org_id, mgr_id, name, org_type, status
-                FROM org
+                FROM mock_hr.org
                 {where}
                 ORDER BY org_id
                 """,
@@ -221,7 +225,7 @@ def lookup_orgs(org_ids: list[str]) -> dict[str, dict[str, Any]]:
             cursor.execute(
                 """
                 SELECT org_id, up_org_id, mgr_id, name, org_type, status
-                FROM org
+                FROM mock_hr.org
                 WHERE org_id = ANY(%s)
                 """,
                 (sorted(set(org_ids)),),
@@ -234,7 +238,7 @@ def count_orgs() -> int:
 
     with database_connection() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT count(*) AS n FROM org WHERE status = 'ACTIVE'")
+            cursor.execute("SELECT count(*) AS n FROM mock_hr.org WHERE status = 'ACTIVE'")
             return cursor.fetchone()["n"]
 
 

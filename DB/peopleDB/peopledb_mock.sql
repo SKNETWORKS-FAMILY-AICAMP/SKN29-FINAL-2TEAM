@@ -22,7 +22,7 @@
 -- ============================================================
 
 -- 1. org (mgr_id는 아래 person 이후 UPDATE로 채운다) -----------
-INSERT INTO org (org_id, org_type, name, up_org_id, mgr_id) VALUES
+INSERT INTO mock_hr.org (org_id, org_type, name, up_org_id, mgr_id) VALUES
 ('A001', 'COMPANY', 'HALIL테크', NULL, NULL),
 ('A002', 'DEPARTMENT', '개발팀', 'A001', NULL),
 ('A003', 'SUPERVISORY', '백엔드파트', 'A002', NULL),
@@ -34,7 +34,7 @@ INSERT INTO org (org_id, org_type, name, up_org_id, mgr_id) VALUES
 ('A009', 'COST_CENTER', 'R&D비용센터', 'A001', NULL);
 
 -- 2. level -------------------------------------
-INSERT INTO level (level_id, code, name, rank_ord) VALUES
+INSERT INTO mock_hr.level (level_id, code, name, rank_ord) VALUES
 ('L1', 'L1', '사원', 1),
 ('L2', 'L2', '주임', 2),
 ('L3', 'L3', '대리', 3),
@@ -45,7 +45,7 @@ INSERT INTO level (level_id, code, name, rank_ord) VALUES
 ('L8', 'L8', '대표이사', 8);
 
 -- 3. person -----------------------------------------------------
-INSERT INTO person (person_id, emp_id, name, email, org_id, job_role, level_id, emp_status) VALUES
+INSERT INTO mock_hr.person (person_id, emp_id, name, email, org_id, job_role, level_id, emp_status) VALUES
 ('PX001', 'EMP001', '최서연', 'user001@halil.com', 'A001', '대표이사', 'L8', 'ACTIVE'),
 ('PX002', 'EMP002', '윤수아', 'user002@halil.com', 'A002', '본부장', 'L6', 'ACTIVE'),
 ('PB001', 'EMP003', '박승우', 'user003@halil.com', 'A003', '팀장', 'L6', 'ACTIVE'),
@@ -105,16 +105,16 @@ INSERT INTO person (person_id, emp_id, name, email, org_id, job_role, level_id, 
 ('PM011', 'EMP057', '정은서', 'user057@halil.com', 'A008', '대리', 'L3', 'ACTIVE');
 
 -- org.mgr_id 채우기 (person 생성 후) --------------------------
-UPDATE org SET mgr_id = 'PX002' WHERE org_id = 'A002';
-UPDATE org SET mgr_id = 'PB001' WHERE org_id = 'A003';
-UPDATE org SET mgr_id = 'PF001' WHERE org_id = 'A004';
-UPDATE org SET mgr_id = 'PN001' WHERE org_id = 'A005';
-UPDATE org SET mgr_id = 'PD001' WHERE org_id = 'A006';
-UPDATE org SET mgr_id = 'PQ001' WHERE org_id = 'A007';
-UPDATE org SET mgr_id = 'PM001' WHERE org_id = 'A008';
+UPDATE mock_hr.org SET mgr_id = 'PX002' WHERE org_id = 'A002';
+UPDATE mock_hr.org SET mgr_id = 'PB001' WHERE org_id = 'A003';
+UPDATE mock_hr.org SET mgr_id = 'PF001' WHERE org_id = 'A004';
+UPDATE mock_hr.org SET mgr_id = 'PN001' WHERE org_id = 'A005';
+UPDATE mock_hr.org SET mgr_id = 'PD001' WHERE org_id = 'A006';
+UPDATE mock_hr.org SET mgr_id = 'PQ001' WHERE org_id = 'A007';
+UPDATE mock_hr.org SET mgr_id = 'PM001' WHERE org_id = 'A008';
 
 -- 4. skill / person_skill -----------------------------------
-INSERT INTO skill (skill_id, name, category) VALUES
+INSERT INTO mock_hr.skill (skill_id, name, category) VALUES
 ('S001', 'Python', 'Technical'),
 ('S002', 'Java', 'Technical'),
 ('S003', 'React', 'Technical'),
@@ -130,7 +130,7 @@ INSERT INTO skill (skill_id, name, category) VALUES
 ('S013', 'Content Strategy', 'Marketing'),
 ('S014', 'QA Automation', 'Technical');
 
-INSERT INTO person_skill (person_id, skill_id, proficiency, source, confidence) VALUES
+INSERT INTO mock_hr.person_skill (person_id, skill_id, proficiency, source, confidence) VALUES
 ('PB001', 'S004', 1, 'HR', 0.9818),
 ('PB001', 'S007', 1, 'AI_INFERRED', 0.3562),
 ('PB001', 'S005', 3, 'HR', 0.9046),
@@ -244,7 +244,7 @@ INSERT INTO person_skill (person_id, skill_id, proficiency, source, confidence) 
 ('PM011', 'S013', 5, 'AI_INFERRED', 0.4149);
 
 -- 5. sched --------------------------------------------
-INSERT INTO sched (sched_id, person_id, wk_hours, def_wk_hours, fte, tz, eff_from) VALUES
+INSERT INTO mock_hr.sched (sched_id, person_id, wk_hours, def_wk_hours, fte, tz, eff_from) VALUES
 ('W001', 'PX001', 40.00, 40.00, 1.00, 'Asia/Seoul', '2026-01-01'),
 ('W002', 'PX002', 40.00, 40.00, 1.00, 'Asia/Seoul', '2026-01-01'),
 ('W003', 'PB001', 40.00, 40.00, 1.00, 'Asia/Seoul', '2026-01-01'),
@@ -304,7 +304,7 @@ INSERT INTO sched (sched_id, person_id, wk_hours, def_wk_hours, fte, tz, eff_fro
 ('W057', 'PM011', 40.00, 40.00, 1.00, 'Asia/Seoul', '2026-01-01');
 
 -- 6. absence ------------------------------------------
-INSERT INTO absence (absence_id, person_id, absence_type, start_at, end_at, status) VALUES
+INSERT INTO mock_hr.absence (absence_id, person_id, absence_type, start_at, end_at, status) VALUES
 ('B001', 'PB005', '육아휴직', '2026-06-01', '2026-12-31', 'APPROVED'),
 ('B002', 'PB006', '육아휴직', '2026-06-01', '2026-12-31', 'APPROVED'),
 ('B003', 'PB008', '육아휴직', '2026-06-01', '2026-12-31', 'APPROVED'),
@@ -330,7 +330,7 @@ INSERT INTO absence (absence_id, person_id, absence_type, start_at, end_at, stat
 ('B023', 'PN003', '연차', '2026-08-13', '2026-08-13', 'APPROVED');
 
 -- 7. person_link (마이페이지에서 본인이 등록한 예시) -----------
-INSERT INTO person_link (person_link_id, person_id, sys_type, ext_email) VALUES
+INSERT INTO mock_hr.person_link (person_link_id, person_id, sys_type, ext_email) VALUES
 ('I001', 'PM009', 'JIRA', 'user055@halil.com'),
 ('I002', 'PM006', 'JIRA', 'user052@halil.com'),
 ('I003', 'PD007', 'JIRA', 'user036@halil.com'),

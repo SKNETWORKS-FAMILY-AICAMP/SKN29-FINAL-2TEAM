@@ -125,10 +125,14 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/
 **테이블이 만들어졌는지 확인:**
 
 ```powershell
-docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
+docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt public.*" -c "\dt mock_hr.*"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link` 등 43개 테이블이 보이면 정상이다. GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
+`public` 39개 + `mock_hr` 8개 = **47개**가 보이면 정상이다.
+
+스키마가 두 개인 이유는, HR 데이터(`org`·`person`·`sched` 등 8개)가 **고객사 HR 시스템의 것**이지 우리가 소유한 데이터가 아니기 때문이다. `mock_hr`로 나눠 두면 실수로 우리 테이블과 조인하는 일이 생기지 않는다([[HR_어댑터와_테넌트_경계]] §8). 그냥 `\dt`만 치면 `public` 39개만 나오니 놀라지 않아도 된다.
+
+GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
 
 **`schema.sql`을 고친 뒤 다시 반영하고 싶을 때** (주의: 로컬 DB 데이터가 전부 삭제된다):
 

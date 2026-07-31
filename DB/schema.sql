@@ -7,6 +7,25 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- =====================================================================
+-- 네임스페이스 분리 (2026-07-31)
+--
+-- `mock_hr`  : 고객사 HR 시스템의 데이터. 우리가 만드는 것이 아니라 **읽기만**
+--              하는 남의 시스템이다. Workday API를 붙일 수 없어(결제한 기업
+--              고객 전용) 같은 모양의 DB로 대신하고 있을 뿐, 그 역할은 계속된다.
+-- `public`   : 우리 플랫폼이 소유하는 데이터. 계정·팀·프로젝트·문서·배정 등.
+--
+-- 나누는 이유는 "언젠가 진짜 HR로 교체하려고"가 아니다. 교체할 일은 없다.
+-- 설계 의도상 남의 시스템인데 코드가 우리 테이블처럼 조인해 쓰던 것을 막기
+-- 위해서다. 경계는 이미 코드(`backend/services/hr/`)로 세웠고, 스키마 분리는
+-- 그 경계를 DB에서도 눈에 보이게 만든다 — 앞으로 `mock_hr.`를 타이핑하지 않고
+-- HR 테이블을 건드리는 일은 없다.
+--
+-- 애플리케이션은 search_path에 기대지 않고 항상 `mock_hr.`를 명시한다.
+-- =====================================================================
+
+CREATE SCHEMA IF NOT EXISTS mock_hr;
+
 
 -- =====================================================================
 -- PAGE 3-C | 플랫폼 운영·권한 — Tier 0 (의존성 없음)
@@ -55,11 +74,13 @@ CREATE TABLE team_member (
 );
 
 -- =====================================================================
--- PAGE 3-B | People DB — Tier 0
+-- PAGE 3-B | People DB — Tier 0   [스키마: mock_hr]
 -- org/level/skill도 전부 VARCHAR(5) 코드 체계(위 설계 방침 참고).
+--
+-- 여기부터 mock_hr 스키마다. 우리가 쓰지 않고 읽기만 하는 고객사 HR 데이터.
 -- =====================================================================
 
-CREATE TABLE org (
+CREATE TABLE mock_hr.org (
     org_id      VARCHAR(5) PRIMARY KEY,
     up_org_id   VARCHAR(5),          -- 상위 조직(자기 참조, FK 없음)
     mgr_id      VARCHAR(5),          -- 조직 관리자 = person_id(FK 없음). ORG↔PERSON이 서로를 가리키는 순환 참조라 애초에 FK를 걸 수 없는 구조이기도 하다
@@ -68,7 +89,7 @@ CREATE TABLE org (
     status      VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
 );
 
-CREATE TABLE level (
+CREATE TABLE mock_hr.level (
     level_id  VARCHAR(5) PRIMARY KEY,
     code      VARCHAR(20) NOT NULL,
     name      VARCHAR(50) NOT NULL,
@@ -76,7 +97,7 @@ CREATE TABLE level (
     status    VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
 );
 
-CREATE TABLE skill (
+CREATE TABLE mock_hr.skill (
     skill_id  VARCHAR(5) PRIMARY KEY,
     name      VARCHAR(100) NOT NULL,
     category  VARCHAR(50),
@@ -142,10 +163,10 @@ CREATE TABLE proj_source (
 );
 
 -- =====================================================================
--- PAGE 3-B | People DB — Tier 1 (org/level 의존)
+-- PAGE 3-B | People DB — Tier 1 (org/level 의존)   [스키마: mock_hr]
 -- =====================================================================
 
-CREATE TABLE person (
+CREATE TABLE mock_hr.person (
     person_id   VARCHAR(5) PRIMARY KEY,
     emp_id      VARCHAR(30) NOT NULL UNIQUE,
     name        VARCHAR(100) NOT NULL,
@@ -157,7 +178,7 @@ CREATE TABLE person (
 );
 
 
-CREATE TABLE person_skill (
+CREATE TABLE mock_hr.person_skill (
     person_id    VARCHAR(5) NOT NULL,
     skill_id     VARCHAR(5) NOT NULL,
     proficiency  INT NOT NULL CHECK (proficiency BETWEEN 1 AND 5),
@@ -167,7 +188,7 @@ CREATE TABLE person_skill (
 );
 
 -- Figma 레이어명은 IDENTITY_LINK, 테이블 표시명은 "link"
-CREATE TABLE person_link (
+CREATE TABLE mock_hr.person_link (
     person_link_id     VARCHAR(5) PRIMARY KEY,
     person_id   VARCHAR(5) NOT NULL,
     sys_type    VARCHAR(30) NOT NULL,   -- 외부 시스템 유형(JIRA 등)
@@ -177,7 +198,7 @@ CREATE TABLE person_link (
     UNIQUE (person_id, sys_type)
 );
 
-CREATE TABLE sched (
+CREATE TABLE mock_hr.sched (
     sched_id       VARCHAR(5) PRIMARY KEY,
     person_id      VARCHAR(5) NOT NULL,
     wk_hours       NUMERIC(5,2),
@@ -188,7 +209,7 @@ CREATE TABLE sched (
     eff_to         DATE
 );
 
-CREATE TABLE absence (
+CREATE TABLE mock_hr.absence (
     absence_id     VARCHAR(5) PRIMARY KEY,
     person_id      VARCHAR(5) NOT NULL,
     absence_type   VARCHAR(30) NOT NULL,
@@ -484,6 +505,8 @@ CREATE TABLE sys_notice (
 
 -- =====================================================================
 -- PAGE 3-B | People DB — Tier 2 (ANA_SNAPSHOT / PERSON / EXISTING_TASK 의존)
+-- 아래는 public이다. FigJam에서 같은 페이지에 있을 뿐, HR이 주는 데이터가
+-- 아니라 우리가 분석해서 만든 결과다(스냅샷·배정 실행·추천·검증·결정).
 -- =====================================================================
 
 CREATE TABLE feat_ready_result (
