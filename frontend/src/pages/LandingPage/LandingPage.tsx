@@ -85,6 +85,9 @@ function PrimaryLink({ children, to }: { children: string; to: string }) {
 
 export default function LandingPage() {
   const session = useSession();
+  // 이미 로그인한 사람에게 가입을 다시 시키지 않는다. 헤더가 세션에 따라
+  // 로그인/회원가입과 대시보드를 바꿔 다는 것과 같은 기준이다.
+  const startHref = session ? '/dashboard' : '/signup';
 
   return (
     <div className={styles.page}>
@@ -128,7 +131,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className={styles.heroActions}>
-            <PrimaryLink to="/signup">무료로 시작하기</PrimaryLink>
+            <PrimaryLink to={startHref}>무료로 시작하기</PrimaryLink>
           </div>
 
           <div className={styles.preview}>
@@ -314,7 +317,7 @@ export default function LandingPage() {
                 <ul>
                   {plan.items.map((item) => <li key={item}><img src={check} alt="" />{item}</li>)}
                 </ul>
-                <Link className={plan.recommended ? styles.primaryButton : styles.outlineButton} to="/signup">{plan.action}</Link>
+                <Link className={plan.recommended ? styles.primaryButton : styles.outlineButton} to={startHref}>{plan.action}</Link>
               </article>
             ))}
           </div>
@@ -322,7 +325,7 @@ export default function LandingPage() {
 
         <section className={styles.cta} id="contact">
           <div><h2>지금 바로 halil과 함께 업무 배정을 혁신하세요</h2><p>중요한 의사결정에 집중하세요. 근거 정리와 후보 제안은 halil이 돕습니다.</p></div>
-          <div><Link to="/signup">무료로 시작하기</Link><a href="mailto:contact@halil.example">도입 상담 신청</a></div>
+          <div><Link to={startHref}>무료로 시작하기</Link><a href="mailto:contact@halil.example">도입 상담 신청</a></div>
         </section>
       </main>
 

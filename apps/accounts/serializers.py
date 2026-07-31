@@ -1,8 +1,12 @@
 """회원가입·로그인·팀원 초대의 입력 검증과 API 표현."""
 
+from datetime import timedelta
 from typing import Any
 
+from django.utils import timezone
 from rest_framework import serializers
+
+from .tokens import TOKEN_MAX_AGE_SECONDS, issue_token
 
 
 def validate_new_password(value: str) -> str:
@@ -63,6 +67,21 @@ def account_role(profile: dict[str, Any]) -> str:
     """
 
     return "member" if profile["invited"] else "leader"
+
+
+def auth_result_response(profile: dict[str, Any]) -> dict[str, Any]:
+    """로그인·가입이 돌려주는 세션.
+
+    서버에 세션 테이블이 없어 프론트엔드가 토큰을 들고 다니므로, 언제까지
+    유효한지도 함께 알려준다. 이게 없으면 프론트엔드는 보호 API가 401을 줄
+    때까지 만료를 알 수 없어 이미 죽은 토큰으로 로그인 상태를 표시한다.
+    """
+
+    return {
+        "token": issue_token(profile["account_id"]),
+        "expires_at": timezone.now() + timedelta(seconds=TOKEN_MAX_AGE_SECONDS),
+        "account": account_response(profile),
+    }
 
 
 def account_response(profile: dict[str, Any]) -> dict[str, Any]:

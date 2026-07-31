@@ -27,6 +27,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     SignupSerializer,
     account_response,
+    auth_result_response,
     invite_candidate_response,
     invite_preview_response,
     invite_response,
@@ -36,7 +37,6 @@ from .tokens import (
     generate_invite_code,
     hash_invite_code,
     issue_password_reset_token,
-    issue_token,
     password_fingerprint,
     read_password_reset_token,
 )
@@ -97,10 +97,7 @@ class SignupAPIView(APIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
-        return Response(
-            {"token": issue_token(profile["account_id"]), "account": account_response(profile)},
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(auth_result_response(profile), status=status.HTTP_201_CREATED)
 
 
 class LoginAPIView(APIView):
@@ -133,9 +130,7 @@ class LoginAPIView(APIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
-        return Response(
-            {"token": issue_token(profile["account_id"]), "account": account_response(profile)}
-        )
+        return Response(auth_result_response(profile))
 
 
 class PasswordResetRequestAPIView(APIView):

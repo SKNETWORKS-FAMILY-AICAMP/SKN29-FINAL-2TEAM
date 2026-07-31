@@ -3,9 +3,38 @@ import type { FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
 import { login } from '../../api/auth';
+import type { AuthResult } from '../../api/auth';
 import { ApiError } from '../../api/client';
+import { CONNECTOR_TYPE_BY_ID, listConnectors } from '../../api/connectors';
+import { CONNECTOR_DEFS } from '../../data/connectorDefs';
 import { saveSession } from '../../utils/session';
 import styles from './LoginPage.module.css';
+
+/** 온보딩 화면이 "커넥터 설정 완료"로 치는 것과 같은 기준. */
+const REQUIRED_CONNECTOR_TYPES = CONNECTOR_DEFS.map((c) => CONNECTOR_TYPE_BY_ID[c.id]);
+
+/**
+ * 로그인 직후 보낼 곳.
+ *
+ * 팀원은 아직 전용 대시보드가 없어 본인 설정 화면으로 보낸다. 팀장은 커넥터
+ * 온보딩을 이미 마쳤는지에 따라 갈린다 — 연결이 끝났는데도 매번 온보딩으로
+ * 보내면 이미 한 일을 다시 하라는 화면이 뜬다. 연결 상태를 확인하지 못하면
+ * 온보딩으로 보낸다. 어차피 연결을 손보는 곳이 거기다.
+ */
+async function landingRouteFor(result: AuthResult): Promise<string> {
+  if (result.account.role === 'member') return '/settings/team';
+
+  try {
+    const connections = await listConnectors(result.token);
+    const connected = new Set(
+      connections.filter((c) => c.auth_status === 'CONNECTED').map((c) => c.connector_type),
+    );
+    const onboarded = REQUIRED_CONNECTOR_TYPES.every((type) => connected.has(type));
+    return onboarded ? '/dashboard' : '/onboarding/connectors';
+  } catch {
+    return '/onboarding/connectors';
+  }
+}
 
 function InviteIcon() {
   return (
@@ -40,10 +69,7 @@ export default function LoginPage() {
       const result = await login(email.trim(), password);
       saveSession(result);
       showToast('로그인되었습니다.', 'success');
-      // 팀원 대시보드는 아직 없으므로 팀원은 본인 설정 화면으로 보낸다.
-      const fallback =
-        result.account.role === 'member' ? '/settings/team' : '/onboarding/connectors';
-      navigate(from ?? fallback, { replace: true });
+      navigate(from ?? (await landingRouteFor(result)), { replace: true });
     } catch (error) {
       const message = error instanceof ApiError ? error.message : '로그인하지 못했습니다.';
       setFormError(message);
