@@ -81,7 +81,7 @@ mock_hr.work_capacity
 mock_hr.absence
 ```
 
-현재 구현은 단일 조직 기준이므로 `tenant_id`를 포함하지 않는다. 아래 표의 식별자는 People DB 내부 PK와 외부 원천 ID로 구분한다.
+현재 구현은 `tenant_id`를 포함하지 않는다(경계는 플랫폼 쪽 `team`에 있다 — 문서 머리의 2026-07-31 주석 참고). 아래 표의 식별자는 People DB 내부 PK와 외부 원천 ID로 구분한다.
 
 ### 3.2 `mock_hr.worker`
 

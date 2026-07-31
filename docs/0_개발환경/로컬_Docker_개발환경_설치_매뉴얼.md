@@ -159,8 +159,10 @@ Get-Content -Raw DB/peopleDB/peopledb_mock.sql |
 
 ```powershell
 docker compose -f infra/docker/docker-compose.yml exec db `
-  psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM person;"
+  psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM mock_hr.person;"
 ```
+
+HR 테이블은 `mock_hr` 스키마에 있어 스키마명을 빼면 조회되지 않는다(위 "테이블이 만들어졌는지 확인" 참고).
 
 목업 데이터에 실제 팀원 이름·이메일을 덮어쓰려면 `.gitignore` 대상인 `DB/peopleDB/team_overrides.sql`을 별도로 전달받아 다음 순서로 실행한다.
 
@@ -225,8 +227,9 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 | GET | `/api/projects/{projectId}/` | 프로젝트 상세 | 필요 |
 | POST | `/api/projects/{projectId}/analysis-runs/` | 분석 실행 생성 | 필요 |
 | GET | `/api/analysis-runs/{runId}/` | 분석 실행 상태 | 필요 |
-| GET | `/api/organizations/` | 조직 목록 | 필요 |
-| GET | `/api/people/` | 직원 목록 | 필요 |
+| GET | `/api/organizations/` | 내 팀원이 속한 조직 목록 | Bearer |
+| GET | `/api/people/` | 내 팀원 목록 | Bearer |
+| GET, POST | `/api/teams/` | 내 팀 조회 · 온보딩에서 팀 생성 | Bearer |
 | POST | `/api/auth/signup/` | 직접/초대 회원가입 | 불필요 |
 | POST | `/api/auth/login/` | 로그인, 12시간 서명 토큰 발급 | 불필요 |
 | GET | `/api/auth/me/` | 현재 계정·역할·HR 연결 조회 | Bearer |
@@ -240,6 +243,9 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 | GET | `/api/invites/candidates/` | 초대 가능 인원 조회 | Bearer |
 | POST | `/api/invites/preview/` | 가입 전 초대 코드 확인 | 불필요 |
 | POST | `/api/invites/{inviteId}/revoke/` | 미수락 초대 취소 | Bearer |
+| — | `/api/ops/*` (20개) | 운영자 콘솔 전용. 로그인·현황·팀·계정·초대·커넥터·감사·정책 | **운영자 Bearer** |
+
+운영자 콘솔은 `/ops/login`으로 따로 들어가고 `user_account.is_admin = true`인 계정만 통과한다. 토큰도 일반 로그인과 다른 salt로 서명되며 2시간 유효하다. 엔드포인트별 상세는 [[운영자콘솔_api_처리]]에 있다.
 
 인증은 `Authorization: Bearer <서명 토큰>` 방식이며 토큰은 12시간 유효하다. 프론트는 `sessionStorage`에 세션을 저장하므로 탭·브라우저를 닫으면 로그아웃된다. 만료 시각이 지나거나 보호 API가 401을 주면 세션을 삭제한다.
 

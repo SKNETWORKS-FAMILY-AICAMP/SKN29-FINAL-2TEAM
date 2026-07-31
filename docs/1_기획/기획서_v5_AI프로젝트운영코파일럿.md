@@ -1141,9 +1141,11 @@ AI_SUGGESTED_MISSING_TASK는 일반 추출 Task와 다른 배지로 구분한다
 16. Jira 쓰기는 후속 단계에서 적용한다.
 17. 초기 운영 기준 템플릿과 기준 데이터 워크북은 사용하지 않는다. 고객별 근무·조직·권한 기준은 Policy 설정과 데이터베이스 버전으로 관리해 중복 관리와 버전 불일치를 방지한다.
 18. HR 관련 물리 테이블명에는 mock을 사용하지 않고, 합성 여부는 data_origin과 dataset_version으로 구분한다.
+    > **2026-07-31 보충.** 테이블명은 그대로 `person`·`org`다(mock 없음). 다만 이 8개 테이블을 **`mock_hr` 스키마**로 옮겼으므로 정규화된 이름은 `mock_hr.person`이 된다. 스키마명의 `mock`은 "합성 데이터"를 표시하려는 것이 아니라 **이 데이터가 우리 것이 아니라 고객사 HR 시스템의 것**임을 코드에서 강제하려는 것이다. 스키마명을 붙이지 않으면 조회 자체가 실패해, 실수로 우리 테이블과 조인하는 일이 생기지 않는다 — [[HR_어댑터와_테넌트_경계]] §8
 19. 프로젝트 전체 업무 추출은 Project Knowledge Model을 기준으로 하며 RAG는 정보 통합·과거 업무·근거 검색을 보조한다.
 20. Graph DB와 WorkGraph는 1차 구현의 필수 구성요소로 사용하지 않는다. 필요한 관계는 PostgreSQL의 Canonical Data Model로 관리한다.
 21. 1차 플랫폼은 단일 조직 사용을 전제로 하며 `TENANT`, `TENANT_MEMBER`를 사용하지 않는다.
+    > **2026-07-31 정정 — 앞부분은 더 이상 맞지 않는다.** `TENANT`·`TENANT_MEMBER`를 쓰지 않는 것은 그대로다. 그러나 **"단일 조직 전제"는 폐기됐다.** 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 **회사 안의 팀**이고(개발팀이 도입했다고 마케팅팀까지 쓰는 것이 아니다), 팀장이 온보딩에서 팀명을 적어 명시적으로 만든다. 물리 테이블은 `team`·`team_member`이며 `tenant_id` 컬럼은 여전히 없다. 이 경계가 없으면 업무 추출·분배에서 "누구에게 배정할 수 있는가"가 정해지지 않는다 — [[HR_어댑터와_테넌트_경계]]
 22. 플랫폼 운영 데이터는 `USER_ACCOUNT`, `PROJECT_MEMBER`, `CONNECTOR_CONNECTION`, `PROJECT_SOURCE`, `AUDIT_LOG`로 관리한다.
 23. `CONNECTOR_CONNECTION`은 사용자 OAuth 연결 상태를, `PROJECT_SOURCE`는 프로젝트가 분석할 Drive 폴더 또는 Jira 프로젝트를 관리한다.
 

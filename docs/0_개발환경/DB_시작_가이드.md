@@ -207,10 +207,10 @@ cat DB/peopleDB/peopledb_mock.sql | docker compose -f infra/docker/docker-compos
 확인:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM person;"
+docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "SELECT count(*) FROM mock_hr.person;"
 ```
 
-`57`이 나오면 정상이다.
+`57`이 나오면 정상이다. 스키마명 `mock_hr.`을 빼면 `relation "person" does not exist`가 난다 — HR 테이블은 `public`에 없다(§4.3).
 
 ### 5.1 팀원 실제 이름·이메일 오버라이드
 
