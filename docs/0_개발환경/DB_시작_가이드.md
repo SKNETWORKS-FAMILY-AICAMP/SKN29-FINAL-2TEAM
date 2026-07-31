@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS team_member (
 );
 ALTER TABLE user_account  ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 ALTER TABLE member_invite ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS storage_key VARCHAR(255);
+ALTER TABLE doc ALTER COLUMN cur_revision TYPE VARCHAR(100);
 CREATE SCHEMA IF NOT EXISTS mock_hr;
 DO \$\$
 DECLARE t text;
@@ -182,6 +184,8 @@ END \$\$;
 | `user_account.is_admin` 추가 | 운영자 콘솔 로그인 허용 플래그. 이메일 패턴이 아니라 명시적 플래그로만 운영자를 판별한다 |
 | `sys_setting`, `sys_notice` 테이블 추가 | 운영자 콘솔 전역 정책(초대 만료 기간, 시스템 공지) 저장소. `INVITE_EXPIRE_DAYS`는 기존에 코드에 하드코딩돼 있던 14일 값을 그대로 시딩한다 |
 | `team`, `team_member` 테이블 + `user_account.team_id`, `member_invite.team_id` 추가 | 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 **회사 안의 그룹**이다. 조직도(`org`)에서 유도하면 팀원의 소속을 알 수 없어서, 팀장이 온보딩에서 팀명을 붙여 명시적으로 만든다. 이 `team_id`가 테넌트 경계다 — [[HR_어댑터와_테넌트_경계]] |
+| `doc.storage_key` 추가 | Drive 원문을 내려받아 문서 저장소에 넣고 그 위치를 기록한다. 파일 경로가 아니라 **저장소 안의 키**라, 나중에 로컬 디스크에서 S3로 바꿔도 값이 그대로 쓰인다. 아직 안 받은 문서는 `NULL` |
+| `doc.cur_revision` → `VARCHAR(100)` | Google Drive의 `headRevisionId`가 **실측 51자**라 기존 `VARCHAR(50)`에 한 글자가 모자랐다. 실제로 내려받아 보기 전에는 안 드러났다(목킹 테스트는 짧은 문자열을 썼다). Drive가 길이를 보장한다는 문서가 없어 여유를 뒀다 |
 | HR 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 `mock_hr` 스키마로 이동 | 이 8개는 **고객사 HR 시스템의 데이터**지 우리가 소유한 데이터가 아니다. 경계는 코드(`backend/services/hr/`)로 세웠지만 DB에서는 `public`에 우리 테이블과 섞여 있어, 다음 사람이 무심코 조인하면 그만이었다. 스키마를 나누면 `mock_hr.`를 타이핑하지 않고는 건드릴 수 없다 — [[HR_어댑터와_테넌트_경계]] |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**

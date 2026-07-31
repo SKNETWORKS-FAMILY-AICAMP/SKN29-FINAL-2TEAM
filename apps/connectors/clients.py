@@ -40,6 +40,22 @@ _DRIVE_MAX_PAGES = 10
 _DRIVE_MAX_FOLDERS = 200
 # `proj_source.max_depth`가 받아들이는 상한. 이보다 깊으면 사실상 제한 없음이다.
 MAX_SCAN_DEPTH = 10
+# 원문 다운로드는 목록 조회보다 오래 걸린다(수십 MB PDF).
+_DOWNLOAD_TIMEOUT_SECONDS = 120
+
+# Google 문서에는 내려받을 실체 파일이 없다. 파서가 다룰 수 있는 Office 형식으로
+# 내보내야 한다.
+DRIVE_EXPORT_MIMES = {
+    "application/vnd.google-apps.document": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    "application/vnd.google-apps.spreadsheet": (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+    "application/vnd.google-apps.presentation": (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ),
+}
 
 # 본문에서 업무를 뽑아낼 수 있는 형식. 이미지·영상·압축 파일은 지금 파서로
 # 다룰 수 없어 목록에 보이되 제외 표시를 한다.
@@ -254,6 +270,55 @@ def get_drive_folders(*, account_id: str, folder_ids: list[str]) -> list[dict[st
                 }
             )
     return folders
+
+
+def download_drive_file(*, account_id: str, file_id: str, mime_type: str | None) -> dict[str, Any]:
+    """원문 바이트와 리비전 id.
+
+    Google 문서(Docs·Sheets·Slides)는 실체 파일이 없어 `alt=media`로 받을 수 없고
+    Office 형식으로 **내보내야** 한다. 목록 화면이 이 형식들을 "파싱 가능"으로
+    표시하므로, 여기서 못 받으면 고를 수는 있는데 받을 수 없는 문서가 된다.
+    """
+
+    credential = credential_for(account_id=account_id, connector_type=GOOGLE_DRIVE)
+    headers = {"Authorization": f"Bearer {credential['access_token']}"}
+    export_to = DRIVE_EXPORT_MIMES.get(mime_type or "")
+
+    try:
+        # 리비전은 본문과 같은 시점의 값이어야 해서 먼저 읽는다. Google 문서에는
+        # md5가 없으므로 변경 감지는 우리가 계산하는 content_hash로 한다.
+        meta = requests.get(
+            f"{DRIVE_FILES_ENDPOINT}/{file_id}",
+            headers=headers,
+            params={"fields": "id,headRevisionId,size"},
+            timeout=15,
+        )
+        meta.raise_for_status()
+        revision = meta.json().get("headRevisionId")
+
+        if export_to:
+            response = requests.get(
+                f"{DRIVE_FILES_ENDPOINT}/{file_id}/export",
+                headers=headers,
+                params={"mimeType": export_to},
+                timeout=_DOWNLOAD_TIMEOUT_SECONDS,
+            )
+        else:
+            response = requests.get(
+                f"{DRIVE_FILES_ENDPOINT}/{file_id}",
+                headers=headers,
+                params={"alt": "media"},
+                timeout=_DOWNLOAD_TIMEOUT_SECONDS,
+            )
+        response.raise_for_status()
+    except (requests.RequestException, ValueError) as exc:
+        raise OAuthError("Google Drive에서 원문을 내려받지 못했습니다.") from exc
+
+    return {
+        "content": response.content,
+        "mime_type": export_to or mime_type,
+        "revision": revision if isinstance(revision, str) else None,
+    }
 
 
 def list_jira_projects(*, account_id: str) -> list[dict[str, Any]]:

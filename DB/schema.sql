@@ -291,8 +291,14 @@ CREATE TABLE doc (
     doc_id            VARCHAR(5) PRIMARY KEY,
     proj_id            VARCHAR(5) NOT NULL,
     src_file_id        VARCHAR(255),
-    cur_revision       VARCHAR(50),
+    -- 원천의 리비전 식별자. Drive의 headRevisionId가 실측 51자라 VARCHAR(50)으로는
+    -- 한 글자가 모자랐다(2026-07-31 확대). 길이를 보장하는 문서가 없어 여유를 뒀다.
+    cur_revision       VARCHAR(100),
     content_hash       VARCHAR(100),
+    -- 내려받은 원문이 문서 저장소 어디에 있는가(2026-07-31 추가). 파일 경로 자체가
+    -- 아니라 저장소 안에서의 키다 — 지금은 로컬 디스크지만 나중에 S3로 바뀌어도
+    -- 이 값은 그대로 쓸 수 있어야 한다. 아직 안 받았으면 NULL.
+    storage_key        VARCHAR(255),
     security           VARCHAR(20) NOT NULL DEFAULT 'Internal',
     source_type        VARCHAR(20) NOT NULL,   -- DRIVE / JIRA
     file_name          VARCHAR(255),

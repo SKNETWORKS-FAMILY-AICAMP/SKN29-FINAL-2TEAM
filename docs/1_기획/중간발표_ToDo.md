@@ -28,7 +28,7 @@
 |---|---|
 | P0 시연 기준 확정 | 데이터는 준비됨, 시나리오·스키마 확정은 팀 논의 필요 |
 | P1 People DB | **데이터 입력 완료.** Skill·부재 조회 API만 남음 |
-| P2 Drive 문서 처리 | **연결·목록·메타데이터 저장 완료.** 원문 다운로드·저장부터 남음 |
+| P2 Drive 문서 처리 | **연결·목록·메타데이터·원문 다운로드·저장 완료.** 파싱이 이 저장소를 읽어 가는 것부터 남음 |
 | P3 PKM·Task 추출 | 미착수 |
 | P4 Jira | **연결·프로젝트 조회 완료.** 이슈·공수 수집부터 남음 |
 | P5 Feature Readiness | 미착수 |
@@ -120,11 +120,11 @@ doc_block 0 · chunk 0 · vec_idx 0   ← 여전히 0. 파싱이 아직 doc을 �
 
 - [x] Google Drive Connector 인증 구성 및 지정 폴더 읽기 연결 — OAuth 인가 흐름 + 토큰 갱신. 읽을 폴더를 골라 `proj_source`에 저장
 - [x] 선택 폴더의 파일 목록 조회 — `max_depth`만큼 하위 폴더까지. 파싱 가능 형식은 `supported`로 구분
-- [ ] PDF·DOCX 파일 다운로드 — **다음 작업.** `drive.readonly` 범위는 이미 받아 뒀고 `doc.src_file_id`로 내려받을 수 있다
-- [ ] 원문 파일 로컬 문서 저장소에 저장 — `DocumentStorage` 인터페이스부터 필요
+- [x] PDF·DOCX 파일 다운로드 — `POST /api/projects/{projId}/documents/download/`. 실계정 9건(md·docx·xlsx·pdf, 최대 21MB) 성공. Google 문서는 Office 형식으로 내보내 받는다
+- [x] 원문 파일 로컬 문서 저장소에 저장 — `backend/services/storage.py`. 컨테이너 볼륨 `document_storage`에 `{proj_id}/{doc_id}.{ext}`로 저장
 - [x] 문서 메타데이터 로컬 PostgreSQL에 저장 — `doc`에 `file_name`·`mime_type`·`doc_role`·`source_type` 저장. 폴더 역할을 파일이 상속
-- [ ] 원문 파일의 `storage_key`·해시·버전·수정 시각 저장 — 부분: `src_modified_at`만 저장됨. `content_hash`·`cur_revision`은 본문을 읽어야 채워지고, `storage_key` 컬럼 자체가 `doc`에 없다
-- [ ] PDF·DOCX 텍스트 파싱 — 파싱 작업 진행 중(WBS 2.4.1). 아직 `doc`을 입력으로 받지 않음
+- [x] 원문 파일의 `storage_key`·해시·버전·수정 시각 저장 — `storage_key` 컬럼을 추가하고 `content_hash`(sha256)·`cur_revision`(Drive headRevisionId)까지 채운다. 9건 전부 해시가 파일과 일치
+- [ ] PDF·DOCX 텍스트 파싱 — 파싱 작업 진행 중(WBS 2.4.1). **입력은 이제 준비됐다** — 원문이 문서 저장소에 있고 `doc.storage_key`로 찾을 수 있다. 남은 것은 파싱이 이 저장소를 읽어 가는 것(RunPod 전송 방식 확정 후)
 - [ ] ContentBlock 생성 — `doc_block` 0건
 - [ ] Chunk 생성 — `chunk` 0건
 - [ ] 문서·페이지·청크·원문 위치 연결

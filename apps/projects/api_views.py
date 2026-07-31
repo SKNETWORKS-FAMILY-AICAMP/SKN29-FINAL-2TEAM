@@ -5,8 +5,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
-from apps.connectors.clients import list_drive_files
+from apps.connectors.clients import download_drive_file, list_drive_files
 from apps.connectors.oauth import OAuthError
+from backend.services.storage import build_key
+from backend.services.storage import save as save_document
 from backend.db import (
     AnalysisRunRepository,
     DocumentRepository,
@@ -195,6 +197,78 @@ class ProjectDocumentAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response([document_response(row) for row in rows])
+
+
+class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
+    """선택된 문서의 원문을 Drive에서 받아 문서 저장소에 넣는다.
+
+    파싱은 이 저장소를 입력으로 삼는다. 파싱이 Drive를 직접 읽지 않는 이유는,
+    사용자 OAuth 토큰이 파싱 쪽으로 넘어가면 안 되기 때문이다 — 토큰 하나로
+    그 사람의 드라이브 전체를 읽을 수 있다.
+
+    한 건이 실패해도 나머지는 계속 받는다. Drive에서 지워졌거나 권한이 빠진
+    문서 하나 때문에 전체가 멈추면, 무엇이 문제인지 알 수 없는 채로 아무것도
+    안 받은 상태가 된다.
+    """
+
+    def post(self, request, project_id):
+        account_id = request.user.account_id
+        force = request.data.get("force") is True
+
+        try:
+            targets = DocumentRepository.list_pending_download(
+                proj_id=project_id,
+                account_id=account_id,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        downloaded, skipped, failed = [], [], []
+        for target in targets:
+            if target["storage_key"] and not force:
+                skipped.append(target["file_name"])
+                continue
+
+            try:
+                fetched = download_drive_file(
+                    account_id=account_id,
+                    file_id=target["src_file_id"],
+                    mime_type=target["mime_type"],
+                )
+            except OAuthError as exc:
+                failed.append({"file_name": target["file_name"], "detail": str(exc)})
+                continue
+
+            key = build_key(
+                proj_id=project_id,
+                doc_id=target["doc_id"],
+                mime_type=fetched["mime_type"],
+            )
+            try:
+                # 파일을 먼저 쓰고 DB에 기록한다. 반대 순서면 "DB에는 있는데 파일이
+                # 없는" 상태가 생기고, 파싱이 그걸 읽다가 죽는다.
+                content_hash = save_document(key, fetched["content"])
+                DocumentRepository.mark_stored(
+                    doc_id=target["doc_id"],
+                    storage_key=key,
+                    content_hash=content_hash,
+                    revision=fetched["revision"],
+                )
+            except OSError as exc:
+                failed.append({"file_name": target["file_name"], "detail": f"저장 실패: {exc}"})
+                continue
+            except (RepositoryError, psycopg.Error) as exc:
+                return _repository_error_response(exc)
+
+            downloaded.append({"file_name": target["file_name"], "bytes": len(fetched["content"])})
+
+        return Response(
+            {
+                "downloaded": downloaded,
+                "skipped": skipped,
+                "failed": failed,
+            }
+        )
 
 
 class ProjectAnalysisRunAPIView(AuthenticatedAPIView):

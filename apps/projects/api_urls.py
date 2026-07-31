@@ -6,6 +6,7 @@ from .api_views import (
     ProjectAnalysisRunAPIView,
     ProjectDetailAPIView,
     ProjectDocumentAPIView,
+    ProjectDocumentDownloadAPIView,
     ProjectListCreateAPIView,
     ProjectSourceAPIView,
 )
@@ -23,6 +24,11 @@ urlpatterns = [
         "projects/<str:project_id>/documents/",
         ProjectDocumentAPIView.as_view(),
         name="api_project_documents",
+    ),
+    path(
+        "projects/<str:project_id>/documents/download/",
+        ProjectDocumentDownloadAPIView.as_view(),
+        name="api_project_document_download",
     ),
     path(
         "projects/<str:project_id>/assignment-runs/",

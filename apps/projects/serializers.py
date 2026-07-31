@@ -131,6 +131,8 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         "mime_type": row["mime_type"],
         "doc_role": row["doc_role"],
         "src_modified_at": modified_at.isoformat() if modified_at else None,
+        # 원문을 받았는지만 알려준다. 저장소 키 자체는 서버 내부 사정이다.
+        "downloaded": bool(row.get("storage_key")),
     }
 
 

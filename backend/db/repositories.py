@@ -318,7 +318,7 @@ class DocumentRepository:
                 cursor.execute(
                     """
                     SELECT doc_id, proj_id, src_file_id, source_type, file_name,
-                           mime_type, doc_role, src_modified_at, deleted
+                           mime_type, doc_role, src_modified_at, deleted, storage_key
                     FROM doc
                     WHERE proj_id = %s AND deleted = false
                     ORDER BY doc_id
@@ -326,6 +326,55 @@ class DocumentRepository:
                     (proj_id,),
                 )
                 return list(cursor.fetchall())
+
+    @staticmethod
+    def list_pending_download(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        """아직 원문을 안 받았거나, 받은 뒤 Drive에서 수정된 문서.
+
+        `src_modified_at`이 저장 시각보다 최신인지를 보지 않고 **리비전이 비었거나
+        `storage_key`가 없는 것**만 고른다. 다시 받아야 하는지는 리비전 비교로
+        판정하는 것이 맞지만, 그러려면 매번 Drive를 조회해야 해서 여기서는
+        "아직 안 받은 것"만 다룬다. 재다운로드는 호출자가 강제할 수 있다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT doc_id, src_file_id, file_name, mime_type, storage_key, cur_revision
+                    FROM doc
+                    WHERE proj_id = %s
+                      AND deleted = false
+                      AND source_type = %s
+                      AND src_file_id IS NOT NULL
+                    ORDER BY doc_id
+                    """,
+                    (proj_id, DocumentRepository.DRIVE),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def mark_stored(*, doc_id: str, storage_key: str, content_hash: str, revision: str | None) -> None:
+        """원문을 저장소에 넣은 결과를 기록한다.
+
+        파일을 먼저 쓰고 이 기록을 나중에 한다. 순서가 반대면 "DB에는 있다는데
+        파일이 없는" 상태가 생기고, 그건 파싱이 읽다가 죽는다. 반대로 파일만
+        남는 것은 다음 다운로드가 덮어쓰므로 해가 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE doc
+                       SET storage_key = %s,
+                           content_hash = %s,
+                           cur_revision = %s
+                     WHERE doc_id = %s
+                    """,
+                    (storage_key, content_hash, revision, doc_id),
+                )
 
     @staticmethod
     def save_drive_documents(
