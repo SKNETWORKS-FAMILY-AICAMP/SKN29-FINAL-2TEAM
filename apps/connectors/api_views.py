@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.serializers import account_role
-from backend.db import AccountRepository, ConnectorRepository
+from backend.db import AccountRepository, ConnectorRepository, log_audit
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -104,6 +104,12 @@ class PeopleDbConnectAPIView(AuthenticatedAPIView):
                 account_id=profile["account_id"],
                 email=profile["email"],
             )
+            log_audit(
+                actor_account_id=profile["account_id"],
+                action="CONNECTOR_CONNECT",
+                target_type="CONNECTOR",
+                payload={"connector_type": ConnectorRepository.PEOPLE_DB},
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
@@ -187,6 +193,12 @@ class GoogleDriveCallbackAPIView(APIView):
                 granted_scopes=GOOGLE_DRIVE_SCOPES,
                 encrypted_credential=encrypt_credential(credential),
             )
+            log_audit(
+                actor_account_id=account_id,
+                action="CONNECTOR_CONNECT",
+                target_type="CONNECTOR",
+                payload={"connector_type": GOOGLE_DRIVE},
+            )
         except (OAuthError, RepositoryError, psycopg.Error) as exc:
             # code, state, provider 오류 원문에는 인증 정보가 포함될 수 있어 URL·응답에 싣지 않는다.
             logger.warning("Google Drive OAuth callback failed: %s", exc)
@@ -235,6 +247,12 @@ class JiraCallbackAPIView(APIView):
                 connector_type=JIRA,
                 granted_scopes=JIRA_SCOPES,
                 encrypted_credential=encrypt_credential(credential),
+            )
+            log_audit(
+                actor_account_id=account_id,
+                action="CONNECTOR_CONNECT",
+                target_type="CONNECTOR",
+                payload={"connector_type": JIRA},
             )
         except (OAuthError, RepositoryError, psycopg.Error) as exc:
             logger.warning("Jira OAuth callback failed: %s", exc)

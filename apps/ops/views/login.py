@@ -1,4 +1,4 @@
-"""관리자 로그인·세션 확인·로그아웃 API."""
+"""운영자 로그인·세션 확인·로그아웃 API."""
 
 import logging
 
@@ -18,8 +18,8 @@ from ..tokens import issue_token
 logger = logging.getLogger(__name__)
 
 INVALID_CREDENTIALS_DETAIL = "이메일 또는 비밀번호가 올바르지 않습니다."
-INACTIVE_ACCOUNT_DETAIL = "사용할 수 없는 계정입니다. 관리자에게 문의해 주세요."
-NOT_ADMIN_DETAIL = "관리자 권한이 없는 계정입니다."
+INACTIVE_ACCOUNT_DETAIL = "사용할 수 없는 계정입니다. 운영자에게 문의해 주세요."
+NOT_ADMIN_DETAIL = "운영자 권한이 없는 계정입니다."
 
 
 class LoginView(APIView):

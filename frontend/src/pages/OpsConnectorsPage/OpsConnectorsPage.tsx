@@ -18,8 +18,9 @@ import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
 
+// People DB는 본인 확인용 내부 커넥터라 이 화면(외부 데이터 소스 연결 상태 점검)
+// 대상이 아니다 — API 응답 자체에서 제외된다(OpsConnectorRepository.list()).
 const TYPE_LABELS: Record<string, string> = {
-  PEOPLE_DB: '인사 정보',
   GOOGLE_DRIVE: '구글 드라이브',
   JIRA: 'Jira',
 };
@@ -121,7 +122,7 @@ export default function OpsConnectorsPage() {
   if (loading && !connectors) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -130,7 +131,7 @@ export default function OpsConnectorsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -146,7 +147,7 @@ export default function OpsConnectorsPage() {
   if (all.length === 0) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
         <p className={styles.inlineEmpty}>연결된 서비스가 없습니다.</p>
       </div>
     );
@@ -156,17 +157,11 @@ export default function OpsConnectorsPage() {
     <div className={styles.page}>
       <OpsPageHeader
         title="연결 서비스 현황"
-        description="플랫폼에 연결된 인사 정보·구글 드라이브·Jira의 상태와 오류 원인을 확인합니다."
+        description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다."
       />
 
       <OpsSummaryGrid>
         <OpsSummaryCard label="전체 연결" value={all.length} detail={summaryDetail(all)} onClick={() => applyTypeFilter('전체')} />
-        <OpsSummaryCard
-          label="인사 정보"
-          value={countByType('PEOPLE_DB')}
-          detail={summaryDetail(all.filter((c) => c.connector_type === 'PEOPLE_DB'))}
-          onClick={() => applyTypeFilter('인사 정보')}
-        />
         <OpsSummaryCard
           label="구글 드라이브"
           value={countByType('GOOGLE_DRIVE')}
@@ -185,7 +180,6 @@ export default function OpsConnectorsPage() {
         <OpsSearchField value={query} onChange={setQuery} placeholder="계정·연결 조직 검색" />
         <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="연결 유형">
           <option>전체</option>
-          <option>인사 정보</option>
           <option>구글 드라이브</option>
           <option>Jira</option>
         </select>

@@ -11,7 +11,7 @@ interface OpsRequestOptions {
 
 /**
  * 운영자 콘솔 전용 fetch 래퍼. 일반 로그인 세션(`api/client.ts`의 `apiRequest`)과
- * 완전히 분리해서, 관리자 토큰이 만료·무효화됐을 때 ops 세션만 비운다.
+ * 완전히 분리해서, 운영자 토큰이 만료·무효화됐을 때 ops 세션만 비운다.
  */
 export async function opsRequest<T>(path: string, options: OpsRequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;

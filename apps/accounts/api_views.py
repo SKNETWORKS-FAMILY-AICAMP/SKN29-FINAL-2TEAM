@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.db import AccountRepository, MemberInviteRepository
+from backend.db import AccountRepository, MemberInviteRepository, log_audit
 from backend.db.errors import (
     DuplicateRecord,
     PermissionDenied,
@@ -82,6 +82,7 @@ class SignupAPIView(APIView):
                 display_name=data["display_name"],
                 invite_token_hash=hash_invite_code(invite_code) if invite_code else None,
             )
+            log_audit(actor_account_id=profile["account_id"], action="SIGNUP")
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
@@ -117,6 +118,7 @@ class LoginAPIView(APIView):
         try:
             AccountRepository.touch_last_login(account["account_id"])
             profile = AccountRepository.get_profile(account["account_id"])
+            log_audit(actor_account_id=account["account_id"], action="LOGIN")
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
@@ -195,6 +197,7 @@ class PasswordResetConfirmAPIView(APIView):
                 account_id=account["account_id"],
                 password_hash=make_password(data["password"]),
             )
+            log_audit(actor_account_id=account["account_id"], action="PASSWORD_RESET")
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 

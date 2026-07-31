@@ -853,7 +853,7 @@ class ConnectorRepository:
                 totals = cursor.fetchone()
                 if not totals["org_count"] or not totals["person_count"]:
                     raise ReferenceNotFound(
-                        "HR 시스템에서 조직·직원 데이터를 찾을 수 없습니다. 관리자에게 문의해 주세요."
+                        "HR 시스템에서 조직·직원 데이터를 찾을 수 없습니다. 운영자에게 문의해 주세요."
                     )
 
                 person_id = _linked_person_id(cursor, account_id)
@@ -1242,9 +1242,11 @@ class OpsAccountRepository:
                     ),
                     {_REPRESENTATIVE_LINK_CTE},
                     connected_services AS (
+                        -- People DB는 본인 확인용 내부 커넥터라 "연결 서비스"가 아니다
+                        -- (연결 서비스 현황과 같은 정의 — OpsConnectorRepository.list() 참고).
                         SELECT account_id, array_agg(DISTINCT connector_type ORDER BY connector_type) AS services
                         FROM connector_conn
-                        WHERE auth_status = 'CONNECTED'
+                        WHERE auth_status = 'CONNECTED' AND connector_type <> 'PEOPLE_DB'
                         GROUP BY account_id
                     )
                     SELECT
@@ -1476,6 +1478,11 @@ class OpsConnectorRepository:
     """운영자 콘솔 `연결 서비스 현황`(`GET /api/ops/connectors/`) 전용. 읽기 전용이다
     (실제 재연결은 계정 소유자가 설정 화면에서 하고, 운영자 콘솔에는 쓰기 작업이 없음).
 
+    People DB는 제외한다 — Drive/Jira처럼 프로젝트가 의존하는 외부 데이터 소스가
+    아니라, 가입 계정을 본인 PERSON에 연결하는 본인 확인 절차의 부산물일 뿐이다
+    (`역할별_권한_정책.md` 핵심 원칙 1). "연결 서비스"라는 화면 개념과 섞이면
+    운영자가 실제 점검해야 할 외부 연동 상태를 파악하기 어려워진다.
+
     대표 직원(`person`)은 `_REPRESENTATIVE_LINK_CTE`를 공유해서 계정 관리와 항상
     같은 규칙(가장 먼저 연결된 것)을 쓴다. `auth_status`에 대응하는 진단·다음 조치
     문구는 저장된 컬럼이 아니라 API 응답 계층(`apps/ops/serializers.py`)에서
@@ -1505,6 +1512,7 @@ class OpsConnectorRepository:
                     LEFT JOIN representative_link AS rl ON rl.account_id = cc.account_id
                     LEFT JOIN person AS p ON p.person_id = rl.person_id
                     LEFT JOIN org AS o ON o.org_id = p.org_id
+                    WHERE cc.connector_type <> 'PEOPLE_DB'
                     ORDER BY cc.connected_at DESC
                     """
                 )

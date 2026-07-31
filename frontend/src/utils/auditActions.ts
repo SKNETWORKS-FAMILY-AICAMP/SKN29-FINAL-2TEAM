@@ -12,6 +12,10 @@ const ACTION_LABELS: Record<string, string> = {
   NOTICE_CREATE: '공지 생성',
   NOTICE_UPDATE: '공지 수정',
   NOTICE_DELETE: '공지 삭제',
+  LOGIN: '로그인',
+  SIGNUP: '회원가입',
+  PASSWORD_RESET: '비밀번호 재설정',
+  CONNECTOR_CONNECT: '커넥터 연결',
 };
 
 export function actionLabel(action: string): string {

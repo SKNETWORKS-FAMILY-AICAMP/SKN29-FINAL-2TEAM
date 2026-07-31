@@ -15,7 +15,29 @@
       "Bash(curl -s http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(node check_history.mjs)",
       "Bash(node check_badges.mjs)",
-      "Bash(node check_hover_and_reason.mjs)"
+      "Bash(node check_hover_and_reason.mjs)",
+      "Bash(git fetch *)",
+      "Bash(git ls-tree *)",
+      "Bash(git merge-tree *)",
+      "Bash(echo \"=== exit code: $? ===\")",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: garbage')",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Bearer aaa.bbb.ccc')",
+      "Bash(curl -s -w '\\\\n[%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/invite-ttl/ -H 'Authorization: Basic dGVzdDp0ZXN0')",
+      "Bash(curl -s -w ' [%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/notices/)",
+      "Bash(curl -s -w ' [%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/notices/ -H 'Authorization: Bearer forged')",
+      "Bash(curl -s -w ' [%{http_code}]\\\\n' -X PUT http://localhost:8000/api/ops/policies/notices/NT999/)",
+      "Bash(curl -s -w ' [%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/changes/)",
+      "Bash(curl -s -w ' [%{http_code}]\\\\n' http://localhost:8000/api/ops/policies/changes/ -H 'Authorization: Bearer forged')",
+      "Bash(node check_section8_full.mjs)",
+      "Bash(curl -s -X POST http://localhost:8000/api/connectors/people-db/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"email\":\"user003@halil.com\"}')",
+      "Bash(curl -s http://localhost:8000/api/auth/me/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s -X POST http://localhost:8000/api/invites/preview/ -H 'Content-Type: application/json' -d '{\"code\":\"__CMDSUB_OUTPUT__\"}')",
+      "Bash(curl -s http://localhost:8000/api/ops/accounts/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s http://localhost:8000/api/ops/connectors/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(sed -n '/CREATE TABLE user_account/,/\\);/p' DB/schema.sql)",
+      "Bash(sed -n '/CREATE TABLE member_invite/,/\\);/p' DB/schema.sql)",
+      "Bash(sed -n '/CREATE TABLE connector_conn/,/\\);/p' DB/schema.sql)"
     ]
   }
 }

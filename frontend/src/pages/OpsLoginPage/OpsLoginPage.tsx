@@ -28,7 +28,7 @@ export default function OpsLoginPage() {
     event.preventDefault();
     if (submitting) return;
     if (!email.trim() || !password) {
-      setError('관리자 이메일과 비밀번호를 모두 입력해 주세요.');
+      setError('운영자 이메일과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
@@ -52,18 +52,18 @@ export default function OpsLoginPage() {
           <span>h</span>
           <strong>halil</strong>
         </div>
-        <h1>관리자 로그인</h1>
+        <h1>운영자 로그인</h1>
 
         <div className={styles.fields}>
           <Input
-            label="관리자 이메일"
+            label="운영자 이메일"
             type="email"
             value={email}
             onChange={(event) => {
               setEmail(event.target.value);
               setError('');
             }}
-            placeholder="관리자 이메일을 입력하세요"
+            placeholder="운영자 이메일을 입력하세요"
             autoComplete="username"
           />
           <Input
