@@ -7,6 +7,7 @@ from .repositories import (
     AccountRepository,
     AnalysisRunRepository,
     ConnectorRepository,
+    DocumentRepository,
     MemberInviteRepository,
     OpsAccountRepository,
     OpsAuditRepository,
@@ -18,12 +19,14 @@ from .repositories import (
     OrganizationRepository,
     PersonRepository,
     ProjectRepository,
+    ProjectSourceRepository,
 )
 
 __all__ = [
     "AccountRepository",
     "AnalysisRunRepository",
     "ConnectorRepository",
+    "DocumentRepository",
     "MemberInviteRepository",
     "OpsAccountRepository",
     "OpsAuditRepository",
@@ -35,6 +38,7 @@ __all__ = [
     "OrganizationRepository",
     "PersonRepository",
     "ProjectRepository",
+    "ProjectSourceRepository",
     "database_connection",
     "database_status",
     "log_audit",

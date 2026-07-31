@@ -107,12 +107,28 @@ USER_ACCOUNT
 
 자격증명 원문은 API 응답, 애플리케이션 로그, `AUDIT_LOG.payload`에 포함하지 않는다.
 
+#### 실제 구현과의 차이 (2026-07-30)
+
+`DB/schema.sql`의 `connector_conn`은 위 표보다 좁다. **구현을 기준으로 삼아야 한다.**
+
+```
+conn_id, account_id, connector_type, granted_scopes,
+auth_status, encrypted_credential_ref, connected_at
+```
+
+없는 것: `provider_account_id`, `provider_email`, `expires_at`, `last_error_code`, `updated_at`. PK도 UUID가 아니라 `VARCHAR(5)`(`CN001`…)이고 `account_id`는 `BIGINT`가 아니라 `VARCHAR(5)`다.
+
+- **`expires_at`이 없어도 된다** — 만료 시각은 암호문 payload 안에 함께 들어 있다. 컬럼으로 빼면 암호문과 어긋날 수 있고, 어차피 호출 직전에 복호화하므로 밖에서 읽을 이유가 없다.
+- **`auth_status`는 `CONNECTED`/`EXPIRED`/`ERROR`만 쓴다.** `REVOKED`는 사용하지 않는다 — 사용자가 외부 콘솔에서 권한을 회수하면 갱신이 실패하고 `EXPIRED`가 되며, 화면이 유도하는 행동(재연결)이 같다.
+- `provider_email`은 넣지 않았다. 어느 외부 계정으로 연결했는지 보여주려면 필요하지만 지금 화면이 요구하지 않는다.
+
 ### 자격증명 저장 결정
 
 - **People DB:** 부트캠프 구현에서는 같은 PostgreSQL의 HR 모의 데이터를 조회하므로 별도 토큰·비밀번호가 없다. `encrypted_credential_ref=NULL`로 저장한다.
-- **Google Drive/Jira:** 현재는 데모이며 OAuth 연결·암호화 저장이 미구현이다. 실제 구현 시 access/refresh token을 애플리케이션 키로 암호화한 뒤 암호문을 해당 컬럼에 저장한다.
+- **Google Drive/Jira:** **구현 완료.** access/refresh token(+ Jira는 `cloud_id`)을 JSON으로 묶어 Fernet으로 암호화한 뒤 암호문을 이 컬럼에 저장한다. 키는 `SECRET_KEY`를 sha256으로 파생해 만든다(`SECRET_KEY`를 그대로 쓰지 않는다). 호출 직전에 만료를 확인해 갱신하고 다시 저장하며, 갱신이 실패하면 `auth_status='EXPIRED'`로 전이시킨다. 자세한 내용은 [[Jira_Drive_커넥터_연결_설계]] §1.
+- **컬럼 타입:** `VARCHAR(255)`로는 담을 수 없어 `TEXT`로 바꿨다. Fernet 암호문이 Jira 1700자, Drive 632자다.
 - **컬럼명 불일치:** `encrypted_credential_ref`는 초기 Secret Manager 참조 설계에서 남은 이름이다. 마이그레이션 비용을 피하기 위해 당장은 이름을 유지하고, 문서·코드에서 “DB 암호문 저장 컬럼”으로 일관되게 해석한다.
-- **키 관리:** 암호화 키는 `.env` 또는 배포 환경의 비밀 주입 수단으로 제공하며 DB에 함께 저장하지 않는다. 키 교체·재암호화 절차는 Drive/Jira 실제 연동 시 확정한다.
+- **키 관리:** 암호화 키는 `SECRET_KEY`에서 파생되므로 `.env`로 주입되고 DB에 함께 저장되지 않는다. **`SECRET_KEY`를 바꾸면 저장된 모든 자격증명을 복호화할 수 없어 전원 재연결이 필요하다.** 키 교체·재암호화 절차는 아직 없다.
 
 ### 3.5 PROJECT_SOURCE
 
@@ -140,6 +156,25 @@ USER_ACCOUNT
 - 연결이 `EXPIRED/REVOKED`이면 신규 동기화를 시작하지 않는다.
 
 `CONNECTOR_SCOPE`는 이 테이블과 역할이 겹치므로 별도로 만들지 않는다.
+
+#### 실제 구현과의 차이 (2026-07-30)
+
+위 표는 설계안이고 `DB/schema.sql`의 `proj_source`는 더 좁다. **구현을 기준으로 삼아야 한다.**
+
+```
+proj_source_id  VARCHAR(5)   PK      (UUID 아님. 짧은 코드 PS001…)
+proj_id         VARCHAR(5)   NOT NULL
+conn_id         VARCHAR(5)   NOT NULL
+source_type     VARCHAR(30)  NOT NULL   DRIVE_FOLDER / JIRA_PROJECT
+external_source_id VARCHAR(255) NOT NULL
+sync_status     VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
+default_doc_role VARCHAR(30)          이 폴더의 기본 문서 역할. DOC.doc_role이 상속
+max_depth       INT                   폴더 탐색 깊이. 1=선택한 폴더만, NULL=제한 없음
+```
+
+없는 것: `display_name`, `last_synced_at`, `is_active`, `created_at`, `updated_at`. UNIQUE 제약도 없다 — 대신 저장 시 같은 `source_type`의 행을 통째로 교체하고 중복 `external_source_id`를 걸러낸다(`ProjectSourceRepository.replace`). `is_active` 대신 선택이 해제되면 행 자체가 사라지고, 그 폴더의 문서는 `DOC.deleted = true`가 된다.
+
+추가된 두 컬럼의 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다.
 
 ### 3.6 AUDIT_LOG
 

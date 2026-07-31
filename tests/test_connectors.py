@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 from django.test import SimpleTestCase, override_settings
@@ -9,6 +10,7 @@ from apps.connectors.oauth import (
     JIRA,
     GoogleDriveOAuth,
     JiraOAuth,
+    OAuthError,
     decrypt_credential,
     encrypt_credential,
     issue_state,
@@ -48,6 +50,24 @@ def people_db_summary():
 
 def auth_header(account_id="UA001"):
     return {"authorization": f"Bearer {issue_token(account_id)}"}
+
+
+def stored_credential(*, expired=False, **extra):
+    """저장돼 있는 상태 그대로의 암호문."""
+
+    offset = timedelta(hours=-1) if expired else timedelta(hours=1)
+    return encrypt_credential(
+        {
+            "access_token": "stored-access-token",
+            "refresh_token": "stored-refresh-token",
+            "expires_at": (datetime.now(UTC) + offset).isoformat(),
+            **extra,
+        }
+    )
+
+
+def json_response(payload):
+    return Mock(json=Mock(return_value=payload), raise_for_status=Mock())
 
 
 class ConnectorListApiTests(SimpleTestCase):
@@ -382,3 +402,375 @@ class JiraOAuthApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 404)
         summary.assert_not_called()
+
+
+@override_settings(
+    GOOGLE_DRIVE_CLIENT_ID="google-client-id",
+    GOOGLE_DRIVE_CLIENT_SECRET="google-client-secret",
+    JIRA_CLIENT_ID="jira-client-id",
+    JIRA_CLIENT_SECRET="jira-client-secret",
+)
+@patch("apps.connectors.clients.ConnectorRepository.update_credential")
+@patch("apps.connectors.clients.ConnectorRepository.mark_expired")
+@patch("apps.connectors.clients.ConnectorRepository.get_credential")
+class CredentialRefreshTests(SimpleTestCase):
+    """만료된 액세스 토큰은 조회 직전에 갱신되고 저장까지 마쳐야 한다."""
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_valid_credential_is_used_without_refreshing(self, drive_get, get_credential, mark_expired, update):
+        get_credential.return_value = stored_credential()
+        drive_get.return_value = json_response({"files": []})
+
+        response = self.client.get("/api/connectors/google-drive/folders/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        update.assert_not_called()
+        mark_expired.assert_not_called()
+        self.assertEqual(
+            drive_get.call_args.kwargs["headers"]["Authorization"],
+            "Bearer stored-access-token",
+        )
+
+    @patch("apps.connectors.clients.requests.get")
+    @patch("apps.connectors.oauth.requests.post")
+    def test_expired_credential_is_refreshed_and_saved(self, token_post, drive_get, get_credential, _expire, update):
+        get_credential.return_value = stored_credential(expired=True)
+        token_post.return_value = json_response({"access_token": "fresh-access-token", "expires_in": 3599})
+        drive_get.return_value = json_response({"files": []})
+
+        response = self.client.get("/api/connectors/google-drive/folders/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        # 갱신된 토큰으로 호출해야 하고, 다음 요청을 위해 저장돼 있어야 한다.
+        self.assertEqual(
+            drive_get.call_args.kwargs["headers"]["Authorization"],
+            "Bearer fresh-access-token",
+        )
+        saved = decrypt_credential(update.call_args.kwargs["encrypted_credential"])
+        self.assertEqual(saved["access_token"], "fresh-access-token")
+        # Google은 갱신 응답에 refresh_token을 주지 않으므로 기존 값을 지켜야 한다.
+        self.assertEqual(saved["refresh_token"], "stored-refresh-token")
+
+    @patch("apps.connectors.oauth.requests.post")
+    def test_failed_refresh_marks_expired_so_the_screen_can_reconnect(
+        self, token_post, get_credential, mark_expired, update
+    ):
+        get_credential.return_value = stored_credential(expired=True)
+        token_post.return_value = Mock(raise_for_status=Mock(side_effect=OAuthError("revoked")))
+
+        response = self.client.get("/api/connectors/google-drive/folders/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 502)
+        mark_expired.assert_called_once_with(account_id="UA001", connector_type=GOOGLE_DRIVE)
+        update.assert_not_called()
+
+    @patch("apps.connectors.clients.requests.get")
+    @patch("apps.connectors.oauth.requests.post")
+    def test_jira_refresh_replaces_the_rotated_refresh_token(
+        self, token_post, jira_get, get_credential, _expire, update
+    ):
+        get_credential.return_value = stored_credential(expired=True, cloud_id="cloud-123")
+        token_post.return_value = json_response(
+            {"access_token": "fresh-jira-token", "refresh_token": "rotated-refresh-token", "expires_in": 3600}
+        )
+        jira_get.return_value = json_response({"values": []})
+
+        response = self.client.get("/api/connectors/jira/projects/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        saved = decrypt_credential(update.call_args.kwargs["encrypted_credential"])
+        self.assertEqual(saved["refresh_token"], "rotated-refresh-token")
+        self.assertEqual(saved["cloud_id"], "cloud-123")
+
+
+@patch("apps.connectors.clients.ConnectorRepository.get_credential")
+class GoogleDriveFolderListApiTests(SimpleTestCase):
+    def folder_page(self, *names, next_page_token=None):
+        payload = {
+            "files": [
+                {"id": f"folder-{name}", "name": name, "modifiedTime": "2026-07-24T01:39:48.554Z"}
+                for name in names
+            ]
+        }
+        if next_page_token:
+            payload["nextPageToken"] = next_page_token
+        return json_response(payload)
+
+    def test_requires_login(self, _get_credential):
+        self.assertEqual(self.client.get("/api/connectors/google-drive/folders/").status_code, 401)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_defaults_to_my_drive_root(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.return_value = self.folder_page("SKN29")
+
+        response = self.client.get("/api/connectors/google-drive/folders/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {
+                    "folder_id": "folder-SKN29",
+                    "name": "SKN29",
+                    "modified_at": "2026-07-24T01:39:48.554Z",
+                }
+            ],
+        )
+        self.assertIn("'root' in parents", drive_get.call_args.kwargs["params"]["q"])
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_descends_into_the_requested_parent_only(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.return_value = self.folder_page("산출물")
+
+        response = self.client.get(
+            "/api/connectors/google-drive/folders/",
+            {"parent": "folder-SKN29"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("'folder-SKN29' in parents", drive_get.call_args.kwargs["params"]["q"])
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_quote_in_parent_is_rejected_before_reaching_drive(self, drive_get, _get_credential):
+        response = self.client.get(
+            "/api/connectors/google-drive/folders/",
+            {"parent": "x' or name != ''"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        drive_get.assert_not_called()
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_all_pages_are_collected(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.side_effect = [
+            self.folder_page("first", next_page_token="page-2"),
+            self.folder_page("second"),
+        ]
+
+        response = self.client.get("/api/connectors/google-drive/folders/", headers=auth_header())
+
+        self.assertEqual([row["name"] for row in response.json()], ["first", "second"])
+        self.assertEqual(drive_get.call_args_list[1].kwargs["params"]["pageToken"], "page-2")
+
+    def test_unconnected_account_gets_404(self, get_credential):
+        get_credential.side_effect = RecordNotFound("Google Drive가 연결되지 않았습니다.")
+
+        response = self.client.get("/api/connectors/google-drive/folders/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_ids_mode_resolves_names_one_by_one(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.side_effect = [
+            json_response({"id": "folder-a", "name": "SKN29", "modifiedTime": "2026-07-24T01:39:48.554Z"}),
+            json_response({"id": "folder-b", "name": "산출물", "modifiedTime": "2026-07-24T05:17:26.294Z"}),
+        ]
+
+        response = self.client.get(
+            "/api/connectors/google-drive/folders/",
+            {"ids": "folder-a,folder-b"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["name"] for row in response.json()], ["SKN29", "산출물"])
+        # 검색이 아니라 개별 조회다 — Drive 검색식은 id 비교를 지원하지 않는다.
+        self.assertTrue(drive_get.call_args_list[0].args[0].endswith("/folder-a"))
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_ids_mode_drops_folders_that_are_gone(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.side_effect = [
+            Mock(status_code=404, raise_for_status=Mock()),
+            json_response({"id": "folder-b", "name": "산출물", "modifiedTime": None}),
+        ]
+
+        response = self.client.get(
+            "/api/connectors/google-drive/folders/",
+            {"ids": "deleted-folder,folder-b"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual([row["folder_id"] for row in response.json()], ["folder-b"])
+
+
+@patch("apps.connectors.clients.ConnectorRepository.get_credential")
+class GoogleDriveFileListApiTests(SimpleTestCase):
+    def test_requires_login(self, _get_credential):
+        self.assertEqual(self.client.get("/api/connectors/google-drive/files/").status_code, 401)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_parent_is_required(self, drive_get, _get_credential):
+        response = self.client.get("/api/connectors/google-drive/files/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 400)
+        drive_get.assert_not_called()
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_folders_are_excluded_and_formats_are_flagged(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.return_value = json_response(
+            {
+                "files": [
+                    {
+                        "id": "file-plan",
+                        "name": "[기획] 프로젝트 기획서_2Team.docx",
+                        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "modifiedTime": "2026-07-24T05:20:18.540Z",
+                    },
+                    {
+                        "id": "file-zip",
+                        "name": "Apart Deal.zip",
+                        "mimeType": "application/x-zip-compressed",
+                        "modifiedTime": "2026-04-29T06:13:45.050Z",
+                    },
+                ]
+            }
+        )
+
+        response = self.client.get(
+            "/api/connectors/google-drive/files/",
+            {"parent": "folder-산출물"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {row["file_id"]: row["supported"] for row in response.json()},
+            {"file-plan": True, "file-zip": False},
+        )
+        query = drive_get.call_args.kwargs["params"]["q"]
+        self.assertIn("'folder-산출물' in parents", query)
+        self.assertIn("mimeType != 'application/vnd.google-apps.folder'", query)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_default_depth_does_not_descend(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.return_value = json_response({"files": []})
+
+        self.client.get(
+            "/api/connectors/google-drive/files/",
+            {"parent": "folder-SKN29"},
+            headers=auth_header(),
+        )
+
+        # 파일 조회 한 번뿐 — 하위 폴더를 찾는 두 번째 호출이 없어야 한다.
+        self.assertEqual(drive_get.call_count, 1)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_depth_two_collects_files_from_child_folders(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.side_effect = [
+            # SKN29의 파일
+            json_response({"files": [{"id": "file-top", "name": "top.pdf", "mimeType": "application/pdf"}]}),
+            # SKN29의 하위 폴더
+            json_response({"files": [{"id": "folder-산출물", "name": "산출물"}]}),
+            # 산출물의 파일
+            json_response({"files": [{"id": "file-plan", "name": "기획서.docx", "mimeType": "application/pdf"}]}),
+            # 산출물의 하위 폴더 — depth 2에서 멈추므로 호출되지 않는다
+        ]
+
+        response = self.client.get(
+            "/api/connectors/google-drive/files/",
+            {"parent": "folder-SKN29", "depth": "2"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [(row["file_id"], row["folder_path"]) for row in response.json()],
+            [("file-top", ""), ("file-plan", "산출물")],
+        )
+        self.assertEqual(drive_get.call_count, 3)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_unlimited_depth_keeps_descending(self, drive_get, get_credential):
+        get_credential.return_value = stored_credential()
+        drive_get.side_effect = [
+            json_response({"files": []}),
+            json_response({"files": [{"id": "folder-a", "name": "a"}]}),
+            json_response({"files": [{"id": "file-deep", "name": "deep.pdf", "mimeType": "application/pdf"}]}),
+            json_response({"files": [{"id": "folder-b", "name": "b"}]}),
+            json_response({"files": []}),
+            json_response({"files": []}),
+        ]
+
+        response = self.client.get(
+            "/api/connectors/google-drive/files/",
+            {"parent": "folder-root", "depth": "unlimited"},
+            headers=auth_header(),
+        )
+
+        self.assertEqual([row["folder_path"] for row in response.json()], ["a"])
+        self.assertEqual(drive_get.call_count, 6)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_absurd_depth_is_rejected(self, drive_get, _get_credential):
+        for value in ("999", "0", "deep"):
+            response = self.client.get(
+                "/api/connectors/google-drive/files/",
+                {"parent": "folder-SKN29", "depth": value},
+                headers=auth_header(),
+            )
+            self.assertEqual(response.status_code, 400, value)
+        drive_get.assert_not_called()
+
+
+@patch("apps.connectors.clients.ConnectorRepository.get_credential")
+class JiraProjectListApiTests(SimpleTestCase):
+    def test_requires_login(self, _get_credential):
+        self.assertEqual(self.client.get("/api/connectors/jira/projects/").status_code, 401)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_lists_projects_from_the_connected_site(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential(cloud_id="cloud-123")
+        jira_get.return_value = json_response(
+            {
+                "values": [
+                    {
+                        "key": "KAN",
+                        "id": "10001",
+                        "name": "SKN29_Final_2Team",
+                        "projectTypeKey": "software",
+                        "lead": {"displayName": "임준"},
+                        "avatarUrls": {"48x48": "https://example.invalid/avatar"},
+                    }
+                ]
+            }
+        )
+
+        response = self.client.get("/api/connectors/jira/projects/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {
+                    "project_key": "KAN",
+                    "project_id": "10001",
+                    "name": "SKN29_Final_2Team",
+                    "description": None,
+                    "project_type": "software",
+                    "lead_name": "임준",
+                    "avatar_url": "https://example.invalid/avatar",
+                }
+            ],
+        )
+        self.assertIn("cloud-123", jira_get.call_args.args[0])
+        # description·lead는 expand 없이는 응답에 담기지 않는다.
+        self.assertEqual(jira_get.call_args.kwargs["params"]["expand"], "description,lead")
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_missing_cloud_id_asks_for_reconnection(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential()
+
+        response = self.client.get("/api/connectors/jira/projects/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 502)
+        jira_get.assert_not_called()

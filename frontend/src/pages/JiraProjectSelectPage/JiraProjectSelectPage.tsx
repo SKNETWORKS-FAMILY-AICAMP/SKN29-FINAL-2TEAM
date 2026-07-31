@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Checkbox, Icon, StepIndicator } from '../../components';
+import { ApiError } from '../../api/client';
+import { listJiraProjects } from '../../api/connectors';
+import type { JiraProject } from '../../api/connectors';
+import {
+  ensureOnboardingProject,
+  findOnboardingProject,
+  listProjectSources,
+  replaceProjectSources,
+} from '../../api/projects';
 import { markConnectorConnected } from '../../utils/connectorStatus';
+import { useSession } from '../../utils/session';
 import styles from './JiraProjectSelectPage.module.css';
 
 type LoadState = 'loading' | 'loaded';
@@ -21,20 +31,100 @@ interface ProjectItem {
   boards?: BoardItem[];
 }
 
-const INITIAL_PROJECTS: ProjectItem[] = [];
-
 const STEPS = ['Jira 연동', '프로젝트 및 보드 선택', '필드 매핑'];
+
+/** 설명이 비어 있는 프로젝트가 많아 종류와 리드로 대신 채운다. */
+function projectDescription(project: JiraProject): string {
+  if (project.description) return project.description;
+  return [project.project_type, project.lead_name && `리드 ${project.lead_name}`]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 export default function JiraProjectSelectPage() {
   const navigate = useNavigate();
+  const session = useSession();
   const [loadState, setLoadState] = useState<LoadState>('loading');
-  const [projects, setProjects] = useState<ProjectItem[]>(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [needsReconnect, setNeedsReconnect] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const token = session?.token;
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoadState('loaded'), 1200);
-    return () => clearTimeout(timer);
-  }, []);
+    if (!token) return;
+
+    let cancelled = false;
+    setLoadState('loading');
+    void (async () => {
+      let rows: JiraProject[];
+      try {
+        rows = await listJiraProjects(token);
+      } catch (err) {
+        if (cancelled) return;
+        // 404는 아직 연결되지 않은 것, 502는 갱신이 실패해 재연결이 필요한 것.
+        if (err instanceof ApiError && (err.status === 404 || err.status === 502)) {
+          setNeedsReconnect(true);
+        }
+        setError(err instanceof ApiError ? err.message : '프로젝트 목록을 불러오지 못했습니다.');
+        setLoadState('loaded');
+        return;
+      }
+
+      // 저장된 선택은 프로젝트 키로 남아 있어 목록과 바로 맞춰볼 수 있다.
+      let savedKeys = new Set<string>();
+      try {
+        const project = await findOnboardingProject(token);
+        if (project) {
+          const sources = await listProjectSources(token, project.proj_id);
+          savedKeys = new Set(
+            sources.filter((s) => s.source_type === 'JIRA_PROJECT').map((s) => s.external_source_id),
+          );
+        }
+      } catch {
+        // 저장된 선택을 못 읽어도 목록은 보여준다. 다시 고르면 된다.
+      }
+
+      if (cancelled) return;
+      setProjects(
+        rows.map((project) => ({
+          id: project.project_key,
+          name: project.name,
+          key: project.project_key,
+          desc: projectDescription(project),
+          checked: savedKeys.has(project.project_key),
+        })),
+      );
+      setLoadState('loaded');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  async function handleSaveAndFinish() {
+    if (!token) return;
+
+    const checked = projects.filter((project) => project.checked);
+    setSaving(true);
+    try {
+      const project = await ensureOnboardingProject(token, checked[0]?.name ?? 'Jira 프로젝트');
+      await replaceProjectSources(
+        token,
+        project.proj_id,
+        'JIRA_PROJECT',
+        checked.map((item) => item.key),
+      );
+      markConnectorConnected('jira');
+      navigate('/onboarding/connectors');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '프로젝트를 저장하지 못했습니다.');
+      setSaving(false);
+    }
+  }
 
   function handleProjectCheckedChange(projectId: string, checked: boolean) {
     setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, checked } : p)));
@@ -83,6 +173,20 @@ export default function JiraProjectSelectPage() {
               </div>
             </div>
           </div>
+        ) : error ? (
+          <div className={[styles.mainCard, styles.loadingCard].join(' ')}>
+            <div className={styles.loadingInner}>
+              <Icon name="triangle-alert" size={48} color="var(--color-danger)" />
+              <div>
+                <p className={styles.loadingTitle}>{error}</p>
+                {needsReconnect && (
+                  <p className={styles.loadingSub}>
+                    커넥터 화면에서 Jira를 먼저 연결해 주세요.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         ) : (
           <div className={[styles.mainCard, styles.selectedCard].join(' ')}>
             <p className={styles.projectSectionTitle}>Jira 프로젝트 목록</p>
@@ -108,7 +212,7 @@ export default function JiraProjectSelectPage() {
                       >
                         <span className={styles.pName}>{project.name}</span>
                         <span className={styles.pKey}>({project.key})</span>
-                        <span className={styles.pDesc}>— {project.desc}</span>
+                        {project.desc && <span className={styles.pDesc}>— {project.desc}</span>}
                       </div>
                     </div>
 
@@ -148,13 +252,10 @@ export default function JiraProjectSelectPage() {
           </Button>
           <Button
             variant="primary"
-            disabled={loadState === 'loading'}
-            onClick={() => {
-              markConnectorConnected('jira');
-              navigate('/onboarding/connectors');
-            }}
+            disabled={loadState === 'loading' || Boolean(error) || saving}
+            onClick={() => void handleSaveAndFinish()}
           >
-            설정 완료
+            {saving ? '저장 중…' : '설정 완료'}
           </Button>
         </div>
       </div>

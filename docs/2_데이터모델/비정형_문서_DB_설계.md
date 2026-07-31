@@ -86,10 +86,10 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 | `cur_revision` | 현재 리비전 | VARCHAR | 이 문서의 최신 리비전 값(예: Drive의 revisionId 또는 자체 증가값) | 문자열/버전 토큰 | `DOC_BLOCK.revision`, `DOC_SYNC.revision`과 비교해서 "이 블록이 최신 버전인지" 판단하는 기준점 |
 | `content_hash` | 내용 해시 | VARCHAR | 문서 원본 내용의 해시값 | SHA-256 등 | 재처리 필요 여부 판단(해시가 같으면 재파싱 스킵) |
 | `security` | 보안 등급 | VARCHAR | 문서 보안 등급(대외비/일반 등) | 코드값 | 접근 제어, 화면 표시 시 워터마크/마스킹 여부 결정 |
-| `source_type` | 원천 유형 | VARCHAR | 문서가 유입된 외부 소스 | `GOOGLE_DRIVE`/`JIRA` 등 코드값 | Connector·파서 라우팅과 출처 표시 |
+| `source_type` | 원천 유형 | VARCHAR | 문서가 유입된 외부 소스 | `DRIVE`/`JIRA` — `schema.sql`과 구현이 쓰는 값이다(이 표의 앞선 `GOOGLE_DRIVE` 표기는 오기였다) | Connector·파서 라우팅과 출처 표시 |
 | `file_name` | 파일명 | VARCHAR | 원본 파일명 | 문자열 | 화면 표시, Citation에 "출처: OOO.pdf" 표기 |
 | `mime_type` | 형식 | VARCHAR | 파일 MIME 타입 | 예: `application/pdf`, `application/vnd.google-apps.document` | 어떤 파서를 태울지 라우팅 |
-| `doc_role` | 문서 역할 | VARCHAR | 이 문서가 기획서/회의록/RFP 중 무엇인지 | 코드값(`PLAN`/`MEETING_NOTE`/`RFP` 등) | Vector 검색 시 문서 유형 필터, 파싱 규칙 분기(기획서 우선순위가 RFP보다 높다는 정책과 연결) |
+| `doc_role` | 문서 역할 | VARCHAR | 이 문서가 기획서/회의록/일일보고서 중 무엇인지 | 구현이 쓰는 값은 `PLAN`/`MEETING_NOTE`/`DAILY_REPORT`/`OTHER` 네 개다. 역할 지정 화면(`/onboarding/folder-roles`)의 선택지와 1:1로 맞췄다. `RFP`는 화면에 없어서 넣지 않았다 | Vector 검색 시 문서 유형 필터, 파싱 규칙 분기(기획서 우선순위가 RFP보다 높다는 정책과 연결) |
 | `acl_principals` | 접근 권한 | ARRAY | 이 문서를 볼 수 있는 사용자/그룹 목록 | 문자열 배열(사용자ID 또는 그룹ID 나열) | 검색 결과·Citation 노출 전 접근 권한 필터링 |
 | `src_modified_at` | 원본 수정 시각 | TIMESTAMP | 원본 소스(Drive 등)에서 마지막으로 수정된 시각 | ISO 8601 timestamp | 동기화 주기 판단(원본이 로컬 캐시보다 최신이면 재동기화) |
 | `deleted` | 삭제 여부 | BOOLEAN | 원본이 삭제됐는지 | true/false | 삭제된 문서를 검색·Citation에서 제외 |

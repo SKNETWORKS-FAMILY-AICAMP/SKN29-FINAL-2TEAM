@@ -47,7 +47,7 @@ export function parseErrorBody(body: unknown, status: number): ApiError {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   body?: unknown;
   token?: string | null;
 }

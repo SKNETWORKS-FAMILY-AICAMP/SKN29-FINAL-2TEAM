@@ -13,6 +13,12 @@ import styles from './ConnectorOnboardingPage.module.css';
 const REAL_CONNECTOR_IDS = new Set(['people-db', 'google-drive', 'jira']);
 type OAuthConnectorId = 'google-drive' | 'jira';
 
+/** 연결이 끝난 커넥터가 이어지는 설정 화면. 연결만으로는 무엇을 읽을지 모른다. */
+const SETUP_STEP: Record<OAuthConnectorId, { label: string; path: string }> = {
+  'google-drive': { label: '폴더 선택하기', path: '/onboarding/folders' },
+  jira: { label: '프로젝트 선택하기', path: '/onboarding/jira-project' },
+};
+
 export default function ConnectorOnboardingPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -164,8 +170,21 @@ export default function ConnectorOnboardingPage() {
                     <Button variant="primary" fullWidth disabled title="팀장 계정으로 로그인해야 합니다.">
                       연결하기
                     </Button>
+                  ) : connected && isOAuthConnector ? (
+                    <>
+                      <Button
+                        variant="primary"
+                        fullWidth
+                        onClick={() => navigate(SETUP_STEP[connector.id as OAuthConnectorId].path)}
+                      >
+                        {SETUP_STEP[connector.id as OAuthConnectorId].label}
+                      </Button>
+                      <Button variant="link" onClick={() => void handleConnectClick(connector.id)} disabled={oauthStarting !== null}>
+                        다시 연결
+                      </Button>
+                    </>
                   ) : connected ? (
-                    <Button variant="outline" fullWidth disabled={isOAuthConnector && oauthStarting !== null} onClick={() => void handleConnectClick(connector.id)}>
+                    <Button variant="outline" fullWidth onClick={() => void handleConnectClick(connector.id)}>
                       {isReal ? '다시 연결' : '설정 관리'}
                     </Button>
                   ) : locked ? (

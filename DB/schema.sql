@@ -101,7 +101,17 @@ CREATE TABLE proj_source (
     conn_id        VARCHAR(5) NOT NULL,
     source_type          VARCHAR(30) NOT NULL,   -- DRIVE_FOLDER / JIRA_PROJECT
     external_source_id   VARCHAR(255) NOT NULL,  -- 실제 Drive 폴더 ID / Jira 프로젝트 키
-    sync_status           VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    sync_status           VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    default_doc_role      VARCHAR(30),           -- 이 폴더의 기본 문서 역할. DOC.doc_role이 상속한다
+                                                 -- (PLAN / MEETING_NOTE / DAILY_REPORT / OTHER)
+                                                 -- 폴더에 역할을 주고 파일이 물려받는 화면(/onboarding/folder-roles)이
+                                                 -- 요구한다. DOC.doc_role만으로는 나중에 추가되는 파일이 무엇을
+                                                 -- 상속할지 알 수 없다. JIRA_PROJECT 소스는 NULL
+    max_depth             INT                    -- 폴더 탐색 깊이. 1이면 선택한 폴더만(하위 폴더 미포함),
+                                                 -- 2면 한 단계 더, NULL이면 제한 없음
+                                                 -- "하위 폴더 포함" 불리언을 따로 두지 않는다 — 끄는 것이 곧
+                                                 -- max_depth = 1이고, 두 컬럼이면 어느 쪽이 이기는지 모른다
+                                                 -- JIRA_PROJECT 소스는 NULL
 );
 
 -- =====================================================================

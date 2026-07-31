@@ -237,7 +237,9 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 | POST | `/api/invites/preview/` | 가입 전 초대 코드 확인 | 불필요 |
 | POST | `/api/invites/{inviteId}/revoke/` | 미수락 초대 취소 | Bearer |
 
-인증은 `Authorization: Bearer <서명 토큰>` 방식이며 토큰은 12시간 유효하다. 프론트는 `localStorage`에 세션을 저장하고 보호 API의 401 응답 시 세션을 삭제한다. Google Drive와 Jira 커넥터는 아직 데모 상태다.
+인증은 `Authorization: Bearer <서명 토큰>` 방식이며 토큰은 12시간 유효하다. 프론트는 `localStorage`에 세션을 저장하고 보호 API의 401 응답 시 세션을 삭제한다.
+
+Google Drive와 Jira 커넥터는 실제 OAuth로 연결된다. 로컬에서 쓰려면 `.env`에 각 콘솔의 `client_id`/`client_secret`이 있어야 한다([[Jira_Drive_커넥터_연결_설계]] §2·§3). 값이 없으면 연결 시작 요청이 503으로 떨어진다. `.env`를 바꾼 뒤에는 컨테이너를 **재시작이 아니라 재생성**해야 반영된다(`docker compose ... up -d --force-recreate web`).
 
 ### 8.1 Windows에서 화면 변경이 반영되지 않을 때
 

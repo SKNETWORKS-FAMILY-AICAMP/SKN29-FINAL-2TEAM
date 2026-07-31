@@ -101,6 +101,29 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 목록에 `vector`가 보이면 정상이다.
 
+### 4.3 스키마 변경 반영 (이미 DB를 만들어 둔 사람)
+
+`DB/schema.sql`은 **`db` 컨테이너를 처음 만들 때만** 실행된다. 이미 볼륨이 있으면 이후 `schema.sql` 변경은 반영되지 않는다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 수동 `ALTER`로 공유한다.
+
+아래를 실행하면 최신 스키마가 된다. 모두 멱등이라 여러 번 실행해도 안전하다.
+
+```bash
+docker compose -f infra/docker/docker-compose.yml exec db \
+  psql -U project_copilot -d project_copilot -c "
+ALTER TABLE connector_conn ALTER COLUMN encrypted_credential_ref TYPE TEXT;
+ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS default_doc_role VARCHAR(30);
+ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS max_depth INT;
+"
+```
+
+| 변경 | 이유 |
+|---|---|
+| `connector_conn.encrypted_credential_ref` → `TEXT` | Fernet 암호문이 Jira 1700자, Drive 632자다. `VARCHAR(255)`로는 토큰 하나도 안 들어간다 |
+| `proj_source.default_doc_role` 추가 | 폴더에 역할을 주고 안의 파일이 물려받는다. `doc.doc_role`은 문서 단위라서 폴더에 파일이 추가될 때 상속 기준이 없다 |
+| `proj_source.max_depth` 추가 | 폴더 탐색 깊이. `1`이면 선택한 폴더만, `NULL`이면 제한 없음. "하위 폴더 포함" 불리언을 따로 두지 않는다 — 끄는 것이 곧 `1`이고, 두 컬럼이면 어느 쪽이 이기는지 모른다 |
+
+자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
+
 ---
 
 ## 5. People DB 목업 데이터 넣기 (`peopledb_mock.sql`)

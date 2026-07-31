@@ -4,19 +4,58 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.connectors.clients import MAX_SCAN_DEPTH
+
 
 class ProjectCreateSerializer(serializers.Serializer):
+    """소유자는 요청이 아니라 로그인 토큰에서 정한다."""
+
     name = serializers.CharField(max_length=200)
     status = serializers.ChoiceField(
         choices=("DRAFT", "ACTIVE", "ARCHIVED"),
         default="DRAFT",
     )
     tz = serializers.CharField(max_length=50, default="Asia/Seoul")
-    owner_account_id = serializers.CharField(
-        max_length=5,
+
+
+class ProjectSourceReplaceSerializer(serializers.Serializer):
+    """이 종류의 소스 전체 선택 상태. 빈 목록은 전부 해제한다는 뜻이다."""
+
+    source_type = serializers.ChoiceField(choices=("DRIVE_FOLDER", "JIRA_PROJECT"))
+    external_source_ids = serializers.ListField(
+        child=serializers.CharField(max_length=255),
+        allow_empty=True,
+    )
+    # 폴더 탐색 깊이. 1이면 선택한 폴더만, null이면 제한 없음.
+    # "하위 폴더 포함"을 끄는 것이 곧 1이다 — 별도 불리언을 두지 않는다.
+    max_depth = serializers.IntegerField(
+        min_value=1,
+        max_value=MAX_SCAN_DEPTH,
         allow_null=True,
         required=False,
-        default=None,
+        default=1,
+    )
+
+
+DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
+
+
+class DocumentRoleSaveSerializer(serializers.Serializer):
+    """역할 지정 화면의 저장 내용.
+
+    파일 목록과 이름은 받지 않는다 — 서버가 Drive에서 다시 읽는다. 클라이언트가
+    보낸 메타데이터를 그대로 `doc`에 넣으면 실재하지 않는 문서가 생길 수 있다.
+    """
+
+    folder_roles = serializers.DictField(
+        child=serializers.ChoiceField(choices=DOC_ROLES),
+        allow_empty=True,
+    )
+    file_roles = serializers.DictField(
+        child=serializers.ChoiceField(choices=DOC_ROLES),
+        allow_empty=True,
+        required=False,
+        default=dict,
     )
 
 
@@ -65,6 +104,33 @@ def project_response(row: dict[str, Any]) -> dict[str, Any]:
         "owner_name": row.get("owner_name"),
         "created_at": "",
         "updated_at": "",
+    }
+
+
+def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "proj_source_id": row["proj_source_id"],
+        "proj_id": row["proj_id"],
+        "conn_id": row["conn_id"],
+        "source_type": row["source_type"],
+        "external_source_id": row["external_source_id"],
+        "sync_status": row["sync_status"],
+        "default_doc_role": row.get("default_doc_role"),
+        "max_depth": row.get("max_depth"),
+    }
+
+
+def document_response(row: dict[str, Any]) -> dict[str, Any]:
+    modified_at = row.get("src_modified_at")
+    return {
+        "doc_id": row["doc_id"],
+        "proj_id": row["proj_id"],
+        "src_file_id": row["src_file_id"],
+        "source_type": row["source_type"],
+        "file_name": row["file_name"],
+        "mime_type": row["mime_type"],
+        "doc_role": row["doc_role"],
+        "src_modified_at": modified_at.isoformat() if modified_at else None,
     }
 
 

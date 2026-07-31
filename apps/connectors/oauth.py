@@ -145,6 +145,47 @@ class GoogleDriveOAuth:
             "expires_at": expires_at.isoformat(),
         }
 
+    @classmethod
+    def refresh(cls, credential: dict[str, Any]) -> dict[str, Any]:
+        """액세스 토큰을 새로 받는다.
+
+        Google은 갱신 응답에 refresh_token을 다시 주지 않으므로 기존 값을
+        유지한다. 테스트 상태의 앱은 refresh_token 자체가 7일 후 만료되며,
+        그때는 갱신도 실패하므로 재연결이 필요하다.
+        """
+
+        client_id, client_secret = cls._credentials()
+        refresh_token = credential.get("refresh_token")
+        if not isinstance(refresh_token, str):
+            raise OAuthError("저장된 연결 정보에 갱신 토큰이 없습니다. 다시 연결해 주세요.")
+
+        try:
+            response = requests.post(
+                cls.token_endpoint,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            token = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OAuthError("Google Drive 연결이 만료됐습니다. 다시 연결해 주세요.") from exc
+
+        access_token = token.get("access_token")
+        expires_in = token.get("expires_in")
+        if not isinstance(access_token, str) or not isinstance(expires_in, int):
+            raise OAuthError("Google Drive가 갱신된 연결 정보를 반환하지 않았습니다.")
+
+        return {
+            **credential,
+            "access_token": access_token,
+            "expires_at": (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat(),
+        }
+
 
 class JiraOAuth:
     """Atlassian OAuth 2.0 (3LO) 인가 코드 흐름과 site(cloudId) 조회."""
@@ -222,4 +263,46 @@ class JiraOAuth:
             "refresh_token": refresh_token,
             "expires_at": expires_at.isoformat(),
             "cloud_id": resource["id"],
+        }
+
+    @classmethod
+    def refresh(cls, credential: dict[str, Any]) -> dict[str, Any]:
+        """액세스 토큰을 새로 받는다.
+
+        Atlassian은 갱신마다 refresh_token을 회전시키므로 새로 받은 값으로
+        반드시 교체해야 한다. 옛 값을 그대로 두면 다음 갱신이 실패한다.
+        """
+
+        client_id, client_secret = cls._credentials()
+        refresh_token = credential.get("refresh_token")
+        if not isinstance(refresh_token, str):
+            raise OAuthError("저장된 연결 정보에 갱신 토큰이 없습니다. 다시 연결해 주세요.")
+
+        try:
+            response = requests.post(
+                cls.token_endpoint,
+                json={
+                    "grant_type": "refresh_token",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            token = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OAuthError("Jira 연결이 만료됐습니다. 다시 연결해 주세요.") from exc
+
+        access_token = token.get("access_token")
+        expires_in = token.get("expires_in")
+        if not isinstance(access_token, str) or not isinstance(expires_in, int):
+            raise OAuthError("Atlassian이 갱신된 연결 정보를 반환하지 않았습니다.")
+
+        rotated = token.get("refresh_token")
+        return {
+            **credential,
+            "access_token": access_token,
+            "refresh_token": rotated if isinstance(rotated, str) else refresh_token,
+            "expires_at": (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat(),
         }
