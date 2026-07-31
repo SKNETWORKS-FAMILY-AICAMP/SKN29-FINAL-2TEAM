@@ -48,6 +48,17 @@ RESET_REQUEST_DETAIL = "가입된 이메일이라면 재설정 링크를 보냈�
 DEAD_RESET_LINK_DETAIL = "이미 사용됐거나 유효하지 않은 재설정 링크입니다. 다시 요청해 주세요."
 
 
+def _log_audit_safely(**kwargs) -> None:
+    """감사 로그는 부수 기록이다. 여기서 실패해도 이미 끝난 본 작업(가입/로그인/
+    비밀번호 재설정)까지 오류로 되돌리면 안 된다 — 특히 가입은 계정이 만들어진
+    뒤라, 503으로 응답하면 재시도 시 '이미 존재하는 이메일'로 막힌다."""
+
+    try:
+        log_audit(**kwargs)
+    except psycopg.Error:
+        logger.warning("감사 로그 기록 실패: action=%s", kwargs.get("action"))
+
+
 def _repository_error_response(exc: Exception) -> Response:
     if isinstance(exc, RecordNotFound):
         return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
@@ -82,7 +93,7 @@ class SignupAPIView(APIView):
                 display_name=data["display_name"],
                 invite_token_hash=hash_invite_code(invite_code) if invite_code else None,
             )
-            log_audit(actor_account_id=profile["account_id"], action="SIGNUP")
+            _log_audit_safely(actor_account_id=profile["account_id"], action="SIGNUP")
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
@@ -118,7 +129,7 @@ class LoginAPIView(APIView):
         try:
             AccountRepository.touch_last_login(account["account_id"])
             profile = AccountRepository.get_profile(account["account_id"])
-            log_audit(actor_account_id=account["account_id"], action="LOGIN")
+            _log_audit_safely(actor_account_id=account["account_id"], action="LOGIN")
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
@@ -197,7 +208,7 @@ class PasswordResetConfirmAPIView(APIView):
                 account_id=account["account_id"],
                 password_hash=make_password(data["password"]),
             )
-            log_audit(actor_account_id=account["account_id"], action="PASSWORD_RESET")
+            _log_audit_safely(actor_account_id=account["account_id"], action="PASSWORD_RESET")
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 

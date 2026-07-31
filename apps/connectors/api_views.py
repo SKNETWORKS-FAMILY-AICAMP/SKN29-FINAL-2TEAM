@@ -43,6 +43,17 @@ LEADER_ONLY_DETAIL = "팀장만 외부 서비스를 연결할 수 있습니다."
 logger = logging.getLogger(__name__)
 
 
+def _log_audit_safely(**kwargs) -> None:
+    """감사 로그는 부수 기록이다. 특히 OAuth 콜백에서 실패하면 실제 연결은
+    끝났는데도 사용자에게 '연결 실패' 리다이렉트를 보내게 되므로, 여기서
+    실패해도 본 작업(연결) 결과에 영향을 주면 안 된다."""
+
+    try:
+        log_audit(**kwargs)
+    except psycopg.Error:
+        logger.warning("감사 로그 기록 실패: action=%s", kwargs.get("action"))
+
+
 def _safe_drive_id(value: str) -> bool:
     """Drive 검색식에 그대로 들어가는 값이라 따옴표·백슬래시를 막는다."""
 
@@ -131,7 +142,7 @@ class PeopleDbConnectAPIView(AuthenticatedAPIView):
                 account_id=profile["account_id"],
                 email=profile["email"],
             )
-            log_audit(
+            _log_audit_safely(
                 actor_account_id=profile["account_id"],
                 action="CONNECTOR_CONNECT",
                 target_type="CONNECTOR",
@@ -220,7 +231,7 @@ class GoogleDriveCallbackAPIView(APIView):
                 granted_scopes=GOOGLE_DRIVE_SCOPES,
                 encrypted_credential=encrypt_credential(credential),
             )
-            log_audit(
+            _log_audit_safely(
                 actor_account_id=account_id,
                 action="CONNECTOR_CONNECT",
                 target_type="CONNECTOR",
@@ -275,7 +286,7 @@ class JiraCallbackAPIView(APIView):
                 granted_scopes=JIRA_SCOPES,
                 encrypted_credential=encrypt_credential(credential),
             )
-            log_audit(
+            _log_audit_safely(
                 actor_account_id=account_id,
                 action="CONNECTOR_CONNECT",
                 target_type="CONNECTOR",

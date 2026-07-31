@@ -113,6 +113,25 @@ docker compose -f infra/docker/docker-compose.yml exec db \
 ALTER TABLE connector_conn ALTER COLUMN encrypted_credential_ref TYPE TEXT;
 ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS default_doc_role VARCHAR(30);
 ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS max_depth INT;
+ALTER TABLE user_account ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS sys_setting (
+    setting_key    VARCHAR(50) PRIMARY KEY,
+    setting_value  TEXT NOT NULL,
+    updated_by     VARCHAR(5),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14') ON CONFLICT (setting_key) DO NOTHING;
+CREATE TABLE IF NOT EXISTS sys_notice (
+    notice_id      VARCHAR(5) PRIMARY KEY,
+    title          VARCHAR(200) NOT NULL,
+    content        TEXT NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
+    schedule_at    TIMESTAMPTZ NOT NULL,
+    schedule_mode  VARCHAR(10) NOT NULL,
+    created_by     VARCHAR(5),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 "
 ```
 
@@ -121,6 +140,8 @@ ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS max_depth INT;
 | `connector_conn.encrypted_credential_ref` → `TEXT` | Fernet 암호문이 Jira 1700자, Drive 632자다. `VARCHAR(255)`로는 토큰 하나도 안 들어간다 |
 | `proj_source.default_doc_role` 추가 | 폴더에 역할을 주고 안의 파일이 물려받는다. `doc.doc_role`은 문서 단위라서 폴더에 파일이 추가될 때 상속 기준이 없다 |
 | `proj_source.max_depth` 추가 | 폴더 탐색 깊이. `1`이면 선택한 폴더만, `NULL`이면 제한 없음. "하위 폴더 포함" 불리언을 따로 두지 않는다 — 끄는 것이 곧 `1`이고, 두 컬럼이면 어느 쪽이 이기는지 모른다 |
+| `user_account.is_admin` 추가 | 운영자 콘솔 로그인 허용 플래그. 이메일 패턴이 아니라 명시적 플래그로만 운영자를 판별한다 |
+| `sys_setting`, `sys_notice` 테이블 추가 | 운영자 콘솔 전역 정책(초대 만료 기간, 시스템 공지) 저장소. `INVITE_EXPIRE_DAYS`는 기존에 코드에 하드코딩돼 있던 14일 값을 그대로 시딩한다 |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 
@@ -257,5 +278,4 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | `vec_idx_setup.py` 실행 시 `ModuleNotFoundError: No module named 'psycopg'` | `pip install "psycopg[binary]"` 먼저 실행 |
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `schema.sql`의 `CREATE EXTENSION IF NOT EXISTS vector;`를 아직 안 탄 볼륨. 4.2장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
 | 운영자 콘솔 로그인 시 `운영자 권한이 없는 계정입니다` | 6.1장의 `grant_admin.py`로 `is_admin`을 켜지 않은 계정. 스크립트 실행 후 재로그인 |
-| `schema.sql`에 `is_admin` 컬럼을 추가했는데 기존 볼륨에는 없음(`column "is_admin" does not exist`) | init 스크립트는 볼륨이 빌 때만 실행된다(4장 참고). 기존 볼륨을 유지하려면 수동으로 반영: `docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "ALTER TABLE user_account ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;"` |
-| `schema.sql`에 `sys_setting`/`sys_notice`(전역 정책)를 추가했는데 기존 볼륨에는 없음(`relation "sys_setting" does not exist`) | 마찬가지로 기존 볼륨을 유지하려면 수동으로 반영: `docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "CREATE TABLE IF NOT EXISTS sys_setting (setting_key VARCHAR(50) PRIMARY KEY, setting_value TEXT NOT NULL, updated_by VARCHAR(5), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()); INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14') ON CONFLICT (setting_key) DO NOTHING; CREATE TABLE IF NOT EXISTS sys_notice (notice_id VARCHAR(5) PRIMARY KEY, title VARCHAR(200) NOT NULL, content TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED', schedule_at TIMESTAMPTZ NOT NULL, schedule_mode VARCHAR(10) NOT NULL, created_by VARCHAR(5), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now());"` |
+| `column "is_admin" does not exist` / `relation "sys_setting" does not exist` 등 스키마 반영 누락 | 기존 볼륨을 쓰고 있다면 4.3장의 ALTER/CREATE 블록을 실행 |
