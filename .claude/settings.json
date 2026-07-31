@@ -37,7 +37,8 @@
       "Bash(curl -s http://localhost:8000/api/ops/connectors/ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(sed -n '/CREATE TABLE user_account/,/\\);/p' DB/schema.sql)",
       "Bash(sed -n '/CREATE TABLE member_invite/,/\\);/p' DB/schema.sql)",
-      "Bash(sed -n '/CREATE TABLE connector_conn/,/\\);/p' DB/schema.sql)"
+      "Bash(sed -n '/CREATE TABLE connector_conn/,/\\);/p' DB/schema.sql)",
+      "Bash(git pull *)"
     ]
   }
 }
