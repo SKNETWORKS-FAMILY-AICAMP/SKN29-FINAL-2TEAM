@@ -20,6 +20,7 @@ export const ROUTES: RouteEntry[] = [
   { path: '/files/new', label: '신규 파일', group: '메인' },
   { path: '/projects', label: '프로젝트 목록', group: '메인' },
   { path: '/workspace', label: '업무 분배 워크스페이스', group: '메인' },
+  { path: '/tasks/workload', label: '기간별 업무 부하', group: '업무 분배' },
   { path: '/tasks/distribution', label: '업무 분배 진행', group: '업무 분배' },
   { path: '/tasks/recommendation', label: '업무 추천 결과', group: '업무 분배' },
   { path: '/tasks/result', label: '배정 결과', group: '업무 분배' },

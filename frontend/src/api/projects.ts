@@ -111,3 +111,63 @@ export async function findOnboardingProject(token: string): Promise<Project | nu
 export async function ensureOnboardingProject(token: string, fallbackName: string): Promise<Project> {
   return (await findOnboardingProject(token)) ?? (await createProject(token, fallbackName));
 }
+
+export interface TaskSyncResult {
+  sources: { proj_source_id: string; project_key: string; fetched: number }[];
+  failed: { project_key: string; detail: string }[];
+  unmapped_assignees: number;
+  missing_estimate: number;
+  synced_at: string;
+}
+
+/** 연결된 Jira 프로젝트의 미완료 이슈를 가져와 `exist_task`를 교체한다. */
+export function syncProjectTasks(token: string, projId: string) {
+  return apiRequest<TaskSyncResult>(`/projects/${projId}/tasks/sync/`, { method: 'POST', token });
+}
+
+/** 어느 Jira 프로젝트에서 온 부하인지. "KAN만 90%" 분해가 이 값으로 나온다. */
+export interface WorkloadByProject {
+  project_key: string;
+  hours: number;
+  load_rate: number | null;
+}
+
+export interface PersonWorkload {
+  person_id: string;
+  name: string | null;
+  job_role: string | null;
+  gross_capacity: number | null;
+  absence_hours: number | null;
+  absent_days: number;
+  effective_capacity: number | null;
+  current_allocation: number;
+  remaining_capacity: number | null;
+  /** %. 용량이 0 이하거나 근무조건이 없으면 null이고 `blocked_reason`이 채워진다. */
+  load_rate: number | null;
+  blocked_reason: 'NO_SCHEDULE' | 'ON_LEAVE' | 'NO_EFFECTIVE_CAPACITY' | null;
+  by_project: WorkloadByProject[];
+  unscheduled_backlog_hours: number;
+  unscheduled_backlog_count: number;
+  missing_estimate_count: number;
+}
+
+export interface WorkloadResult {
+  period_start: string;
+  period_end: string;
+  workdays: number;
+  people: PersonWorkload[];
+  unmapped_assignee_count: number;
+  missing_estimate_count: number;
+  unscheduled_backlog_hours: number;
+  limitations: string[];
+  as_of: string;
+}
+
+/** 기간별 사람 부하. `from`·`to`를 안 주면 오늘부터 4주다. */
+export function getProjectWorkload(token: string, projId: string, from?: string, to?: string) {
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const suffix = query.toString() ? `?${query}` : '';
+  return apiRequest<WorkloadResult>(`/projects/${projId}/workload/${suffix}`, { token });
+}
