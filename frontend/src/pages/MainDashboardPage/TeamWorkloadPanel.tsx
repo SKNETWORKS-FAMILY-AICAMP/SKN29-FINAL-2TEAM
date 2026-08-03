@@ -94,13 +94,6 @@ export function TeamWorkloadPanel({ workload }: { workload: WorkloadResult }) {
         ))}
         {sorted.length === 0 && <p className={styles.empty}>팀원이 없습니다.</p>}
       </div>
-
-      {/* 제외한 것을 제외했다고 보여준다. 숨기면 신뢰를 잃는다. */}
-      <div className={styles.limitations}>
-        {workload.limitations.map((line) => (
-          <p key={line}>· {line}</p>
-        ))}
-      </div>
     </div>
   );
 }

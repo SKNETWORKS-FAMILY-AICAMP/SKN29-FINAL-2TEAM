@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Icon, TopNav } from '../../components';
+import { Button, TopNav } from '../../components';
 import { ApiError } from '../../api/client';
 import {
   findOnboardingProject,
@@ -242,14 +242,6 @@ export default function WorkloadPage() {
                   <span className={styles.diagnosticValue}>{result.unscheduled_backlog_hours}h</span>
                   <span className={styles.diagnosticLabel}>미일정 Backlog</span>
                 </div>
-              </div>
-
-              <div className={styles.limitations}>
-                {result.limitations.map((line) => (
-                  <p key={line}>
-                    <Icon name="triangle-alert" size={12} /> {line}
-                  </p>
-                ))}
               </div>
             </div>
           </>
