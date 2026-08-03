@@ -57,6 +57,19 @@ doc 17   ← 위 표의 doc 0에서 채워졌다 (Drive 폴더 선택 → 메타
 doc_block 0 · chunk 0 · vec_idx 0   ← 여전히 0. 파싱이 아직 doc을 입력으로 안 받는다
 ```
 
+2026-08-03 재확인. 로컬 Docker DB를 직접 조회한 값이다.
+
+```
+mock_hr  org 9 · level 8 · skill 14 · person 57 · person_skill 111
+         person_link 73 · sched 57 · absence 23
+public   team 1 · team_member 5 · user_account 2 · member_invite 4 · connector_conn 3
+         proj 1 · proj_source 6 · doc 9
+         doc_block 0 · chunk 0 · vec_idx 0 · exist_task 0 · know_item 0 · task 0
+```
+
+- `doc` 9건이 **시연 대상 문서 세트**다(기획서·요구사항 정의서·화면설계서·WBS·회의록 4건·수집 데이터 보고서). 07-31 블록의 17건은 교체 전 선택분이라 지금과 무관하다
+- `proj_source` 6건 = Drive 폴더 4개(PLAN·MEETING_NOTE·DAILY_REPORT·OTHER) + **Jira 프로젝트 2개(KAN·AIP)**. 부하 분해 시연("KAN만 90% → 합산 122%")의 전제다
+
 > 이 표는 점검 시점 기록이다. 항목을 완료하면 체크박스와 함께 위 표도 갱신할 것.
 
 ### 중간발표 실행 환경
@@ -82,11 +95,12 @@ doc_block 0 · chunk 0 · vec_idx 0   ← 여전히 0. 파싱이 아직 doc을 �
 
 ## P0. 시연 기준 확정
 
-- [ ] 모든 팀원이 로컬 Docker Compose를 실행할 수 있는지 확인 — 확인 필요. 스키마 변경 3건을 각자 실행해야 한다([[DB_시작_가이드]] §4.3)
+- [ ] 모든 팀원이 로컬 Docker Compose를 실행할 수 있는지 확인 — 확인 필요. [[DB_시작_가이드]] §4.3의 `ALTER` 블록을 각자 실행해야 한다(전체가 멱등이라 통째로 다시 실행하면 된다). **2026-08-03에 `exist_task` 변경이 추가됐으니 07-31에 이미 돌린 사람도 한 번 더 돌려야 한다**
 - [ ] 중간발표 종단 시나리오 1개 확정 — 확인 필요
 - [ ] 시연용 프로젝트 기획서 1~2개 선정 — 확인 필요. Drive `SKN29/산출물`에 5건 있고 `[기획] 프로젝트 기획서_2Team.docx` 포함. 등록 경로는 검증됨
 - [x] 시연용 직원 8~10명 구성 — `person` 57명(활성 56), 개발팀 5명 + 초대 범위 18명
-- [ ] 시연용 Jira 프로젝트와 이슈 준비 — 부분: 프로젝트 `KAN SKN29_Final_2Team` 확인. 이슈는 조회 코드가 없어 확인 못 함(P4)
+- [ ] 시연용 Jira 프로젝트와 이슈 준비 — 부분: 프로젝트 **KAN·AIP 2개**를 골라 `proj_source`에 저장했고, 목업 이슈 37건(KAN 25 + AIP 12, 라벨 `mock-workload`)을 Jira에 만들어 뒀다. **우리 DB로 가져오지는 못한다** — 수집 코드가 없어 `exist_task` 0행(P4). 추정치 재조정도 남았다([[Jira_부하계산_ToDo]] 단계 4)
+  > **2026-08-03 정정.** 이 항목은 "프로젝트 `KAN SKN29_Final_2Team` 확인. 이슈는 조회 코드가 없어 확인 못 함"이었다. 프로젝트는 2개가 됐고 이슈도 준비됐다 — 남은 것은 조회 코드뿐이다.
 - [ ] 최종 출력할 Task 수 결정 — 확인 필요
 - [ ] 정상 추천 시나리오 1개 준비
 - [ ] `PARTIAL_RESULT` 또는 `CONDITIONAL_PASS` 시나리오 1개 준비
@@ -177,6 +191,7 @@ Drive 파일
 - [x] 프로젝트 조회 — `GET /api/connectors/jira/projects/`. `description`·`lead`는 `expand`가 필요하다
 - [ ] 사용자 조회 — `read:jira-user` 범위는 받아 뒀고 호출 코드가 없다
 - [ ] Board·Sprint 조회 — **범위가 부족하다.** Agile API는 `read:board-scope:jira-software`가 필요한데 현재 요청 범위에 없어 콘솔 설정부터 고쳐야 한다
+  > **2026-08-03 — 중간발표 경로에서는 빠졌다.** 부하 계산에 Board·Sprint가 필요 없다는 것이 확인됐다. 이슈 수집은 `read:jira-work`만으로 되고([[Jira_부하계산_ToDo]] 단계 1-1), 기간 창은 스프린트가 아니라 `[기준일, 기준일+4주)`로 잡는다(D1). 콘솔 권한 추가는 **막고 있는 것이 아니라 중간발표 이후 과제다.**
 - [ ] 이슈·담당자·상태·우선순위 조회 — `read:jira-work` 범위는 있다. `exist_task` 0건
 - [ ] 예상·잔여·사용 공수 수집
 - [ ] 시작일·마감일 수집
@@ -298,7 +313,7 @@ Drive 파일
 
 - [ ] 새 PC에서 `.env` 복사 후 Docker Compose 실행 확인 — 확인 필요. `.env`에 Drive·Jira 자격증명이 있어야 하고, 바꾼 뒤에는 재시작이 아니라 **재생성**해야 반영된다
 - [x] `frontend`, `web`, `db` 컨테이너 상태 확인 — 3개 모두 정상. `db`는 healthy
-- [ ] ~~로컬 PostgreSQL Migration 실행 확인~~ — **해당 없음.** 이 프로젝트는 `DATABASES = {}`로 Django Migration을 쓰지 않는다. 대신 `DB/schema.sql`과 수동 `ALTER`로 관리한다([[DB_시작_가이드]] §4.3). 스키마 변경 3건이 미적용인 팀원이 있으면 폴더 저장에서 에러가 난다
+- [ ] ~~로컬 PostgreSQL Migration 실행 확인~~ — **해당 없음.** 이 프로젝트는 `DATABASES = {}`로 Django Migration을 쓰지 않는다. 대신 `DB/schema.sql`과 수동 `ALTER`로 관리한다([[DB_시작_가이드]] §4.3). §4.3이 미적용인 팀원이 있으면 폴더 저장에서 에러가 나고, 08-03 `exist_task` 변경이 빠지면 이슈 수집을 붙이는 순간 깨진다
 - [x] People DB와 프로젝트 시연 데이터 Seed 확인 — People DB 전 테이블 입력됨(P1). 프로젝트 데이터는 온보딩으로 생성되며 경로 검증됨
 - [x] 로컬 문서 저장 디렉터리 생성·쓰기 권한 확인 — 명명 볼륨 `document_storage`에 실계정 9건 저장·해시 일치 확인
   > **2026-08-03 정정.** 이 항목은 "원문 다운로드(P2)가 없어 아직 저장소를 쓰지 않는다"로 적혀 있었으나 **틀렸다.** 2026-07-31에 다운로드가 구현되면서(`backend/services/storage.py`) 저장소를 실제로 쓰고 있다.
@@ -382,4 +397,6 @@ AWS 작업은 중간발표 완료 조건에서 제외하지만 이후 이전을 
 
 양쪽 끝이 각각 되므로 남은 것은 연결 하나다. 파싱 쪽 상세 상태는 [[PROJECT_PROGRESS]] §7·§10.
 
-**Board·Sprint 조회는 콘솔 설정부터 막혀 있다.** Agile API에 `read:board-scope:jira-software`가 필요한데 현재 요청 범위에 없다. Atlassian Developer Console에서 권한을 추가하고 재연결해야 한다. 이슈 조회(`read:jira-work`)는 범위가 있으니 먼저 할 수 있다.
+**Jira 쪽 병목은 이슈 수집 코드다.** 연결·프로젝트 선택·스키마(08-03 ALTER)·수식이 다 확정됐는데 `exist_task`에 쓰는 코드가 없어 0행이다. 범위(`read:jira-work`)는 이미 있으니 지금 시작할 수 있고, 단계별로 쪼갠 것이 [[Jira_부하계산_ToDo]]에 있다. **이 경로는 문서 파싱과 완전히 독립이라** 위 병목이 안 풀려도 진행된다.
+
+> **2026-08-03 정정.** 이 자리에는 "Board·Sprint 조회가 콘솔 설정부터 막혀 있다"가 병목으로 적혀 있었으나, 부하 계산에 Board·Sprint가 필요 없는 것으로 확인돼 중간발표 경로에서 빠졌다. 콘솔 권한 추가는 중간발표 이후 과제다.

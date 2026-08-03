@@ -40,6 +40,15 @@ CREATE UNIQUE INDEX ux_exist_task_source_issue
     ON exist_task (proj_source_id, jira_issue_id);
 
 
+-- 4. Jira 표준 상태 카테고리 (같은 날 추가분)
+--    status 컬럼에는 Jira 표시 문자열이 들어가는데 이게 프로젝트마다 다르다.
+--    실측: 같은 statusCategory(new)인데 KAN은 '해야 할 일', AIP는 '할 일'로 온다.
+--    statusCategory.name 마저 한국어로 지역화되므로 안전한 값은 key 하나뿐이다.
+--    'new' | 'indeterminate' | 'done' 을 우리 어휘로 바꿔 여기 넣고, 로직은 이 값만 본다.
+ALTER TABLE exist_task
+    ADD COLUMN status_category VARCHAR(20);
+
+
 COMMIT;
 
 

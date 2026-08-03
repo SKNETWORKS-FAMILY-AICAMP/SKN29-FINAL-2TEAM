@@ -230,7 +230,12 @@ CREATE TABLE exist_task (
                                       -- 행을 버리지 않는다 — 버리면 부하 총량이 조용히 줄어든다.
                                       -- Readiness에서 "미매핑 담당자"로 올려 PM이 알게 한다.
     jira_issue_id        VARCHAR(50) NOT NULL,
-    status                VARCHAR(20),
+    status                VARCHAR(20),   -- Jira 표시 문자열(프로젝트마다 다름). 로직에 쓰지 말 것
+    -- Jira 표준 상태 카테고리(2026-08-03 추가). 로직은 이 값만 본다.
+    -- 같은 카테고리인데 KAN은 '해야 할 일', AIP는 '할 일'로 표시된다(실측).
+    -- statusCategory.name도 지역화되므로 안전한 값은 key 하나뿐이다.
+    -- 'TO_DO' | 'IN_PROGRESS' | 'DONE'  ← 수집 단계에서 key를 변환해 넣는다
+    status_category       VARCHAR(20),
     priority              VARCHAR(20),
     start_at              TIMESTAMPTZ,
     due_at                TIMESTAMPTZ,

@@ -150,6 +150,10 @@ ALTER TABLE user_account  ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 ALTER TABLE member_invite ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 ALTER TABLE doc ADD COLUMN IF NOT EXISTS storage_key VARCHAR(255);
 ALTER TABLE doc ALTER COLUMN cur_revision TYPE VARCHAR(100);
+ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS proj_source_id VARCHAR(5) NOT NULL;
+ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS estimate NUMERIC(6,2);
+ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS status_category VARCHAR(20);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_exist_task_source_issue ON exist_task (proj_source_id, jira_issue_id);
 CREATE SCHEMA IF NOT EXISTS mock_hr;
 DO \$\$
 DECLARE t text;
@@ -162,6 +166,8 @@ BEGIN
 END \$\$;
 "
 ```
+
+> `exist_task.proj_source_id`가 `NOT NULL`인데 기본값이 없다. **이 테이블이 비어 있어야 통과한다.** 2026-08-03 기준 `exist_task`에 쓰는 코드가 아직 없어서(이슈 수집 미구현) 모든 팀원의 DB가 0행이라 그냥 실행하면 된다. 혹시 행이 있어서 실패하면 `DB/migrations/2026-08-03_exist_task_source.sql`의 주석에 채워 넣고 `SET NOT NULL`하는 대안이 있다.
 
 > 마지막 블록(`mock_hr`)은 **데이터를 옮기지 않는다.** `SET SCHEMA`는 테이블을 통째로 다른 네임스페이스에 재등록만 하므로 행·인덱스·제약이 그대로 따라가고, 되돌리려면 `mock_hr` → `public`으로 같은 명령을 반대로 주면 된다. `to_regclass` 검사 때문에 이미 옮긴 DB에서 다시 실행해도 아무 일도 일어나지 않는다.
 
@@ -186,6 +192,9 @@ END \$\$;
 | `team`, `team_member` 테이블 + `user_account.team_id`, `member_invite.team_id` 추가 | 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 **회사 안의 그룹**이다. 조직도(`org`)에서 유도하면 팀원의 소속을 알 수 없어서, 팀장이 온보딩에서 팀명을 붙여 명시적으로 만든다. 이 `team_id`가 테넌트 경계다 — [[HR_어댑터와_테넌트_경계]] |
 | `doc.storage_key` 추가 | Drive 원문을 내려받아 문서 저장소에 넣고 그 위치를 기록한다. 파일 경로가 아니라 **저장소 안의 키**라, 나중에 로컬 디스크에서 S3로 바꿔도 값이 그대로 쓰인다. 아직 안 받은 문서는 `NULL` |
 | `doc.cur_revision` → `VARCHAR(100)` | Google Drive의 `headRevisionId`가 **실측 51자**라 기존 `VARCHAR(50)`에 한 글자가 모자랐다. 실제로 내려받아 보기 전에는 안 드러났다(목킹 테스트는 짧은 문자열을 썼다). Drive가 길이를 보장한다는 문서가 없어 여유를 뒀다 |
+| `exist_task.proj_source_id` 추가 + `ux_exist_task_source_issue` UNIQUE (2026-08-03) | 이 이슈를 **어느 소스에서 가져왔는지** 나타내는 컬럼이 하나도 없었다. 재동기화 때 지울 범위를 특정할 수 없어 최초 1회 적재밖에 못 하는 구조였고, "임준 196h = KAN 144h + AIP 52h" 분해도 안 나온다. `proj_id`가 아니라 `proj_source_id`인 이유는 프로젝트 하나가 Jira 프로젝트를 여러 개 읽을 수 있어서(N:M) 재동기화의 실제 단위가 `proj_source`이기 때문이다. UNIQUE는 같은 이슈가 두 줄이 되어 부하가 2배로 잡히는 것을 막는 마지막 방어선이다 — [[Jira_부하계산_ToDo]] 단계 1-3 |
+| `exist_task.estimate` 추가 (2026-08-03) | 최초 추정치. `exist_task_snap.estimate`가 복사해 갈 원본이 `exist_task`에 없어서 채울 곳이 없었다. Jira `timetracking.originalEstimateSeconds`를 시간으로 환산해 넣는다 |
+| `exist_task.status_category` 추가 (2026-08-03) | Jira 상태 **표시 문자열은 조직·프로젝트마다 다르다.** 실측에서 같은 카테고리(`new`)인데 KAN은 `'해야 할 일'`, AIP는 `'할 일'`로 왔다. `statusCategory.name`마저 한국어로 지역화되므로 안전한 값은 `statusCategory.key`(`new`/`indeterminate`/`done`) 하나뿐이다. 이걸 `TO_DO`/`IN_PROGRESS`/`DONE`으로 바꿔 저장하고 **부하 계산은 이 컬럼만 본다.** `status`에 한글이 들어가는 건 사람이 보기 위한 것이고, 조건문에 쓰면 다른 사이트에서 조용히 매치 0건이 된다 |
 | HR 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 `mock_hr` 스키마로 이동 | 이 8개는 **고객사 HR 시스템의 데이터**지 우리가 소유한 데이터가 아니다. 경계는 코드(`backend/services/hr/`)로 세웠지만 DB에서는 `public`에 우리 테이블과 섞여 있어, 다음 사람이 무심코 조인하면 그만이었다. 스키마를 나누면 `mock_hr.`를 타이핑하지 않고는 건드릴 수 없다 — [[HR_어댑터와_테넌트_경계]] |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
