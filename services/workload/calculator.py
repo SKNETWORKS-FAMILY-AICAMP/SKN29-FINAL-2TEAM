@@ -184,6 +184,8 @@ def calculate(
         backlog_count = 0
         missing_estimate = 0
         by_project: dict[str, float] = {}
+        # 키 → 표시 이름. 예전에 저장한 소스는 이름이 없어 키로 대체된다.
+        project_names: dict[str, str] = {}
 
         for task in by_person[person_id]:
             if task.get("status_category") == "DONE":
@@ -199,6 +201,7 @@ def calculate(
                 allocation += remaining
                 project_key = task.get("project_key") or "UNKNOWN"
                 by_project[project_key] = by_project.get(project_key, 0.0) + remaining
+                project_names.setdefault(project_key, task.get("project_name") or project_key)
             elif task.get("due_at") is None:
                 backlog_hours += remaining
                 backlog_count += 1
@@ -245,6 +248,7 @@ def calculate(
                 "by_project": [
                     {
                         "project_key": key,
+                        "project_name": project_names.get(key, key),
                         "hours": round(hours, 2),
                         "load_rate": None if blocked_reason is not None else _load_rate(hours, capacity),
                     }

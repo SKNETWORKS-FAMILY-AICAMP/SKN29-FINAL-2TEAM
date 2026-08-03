@@ -117,6 +117,11 @@ export default function JiraProjectSelectPage() {
         project.proj_id,
         'JIRA_PROJECT',
         checked.map((item) => item.key),
+        null,
+        // 이름을 지금 같이 넘긴다. 나중에 화면이 'KAN' 대신 실제 이름을 쓰려고
+        // Jira에 다시 물어보면, 토큰이 만료됐을 때 저장된 데이터는 멀쩡한데
+        // 이름을 못 읽어 화면이 깨진다.
+        Object.fromEntries(checked.map((item) => [item.key, item.name])),
       );
       markConnectorConnected('jira');
       navigate('/onboarding/connectors');

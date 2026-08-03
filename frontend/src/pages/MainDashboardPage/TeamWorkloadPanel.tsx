@@ -56,7 +56,7 @@ function MemberRow({ person, scale }: { person: PersonWorkload; scale: number })
           {person.by_project.map((entry, index) => (
             <span key={entry.project_key} className={styles.chip}>
               <span className={`${styles.legendDot} ${SEGMENT_CLASS[index % SEGMENT_CLASS.length]}`} />
-              {entry.project_key} {entry.hours}h ({entry.load_rate}%)
+              {entry.project_name || entry.project_key} {entry.hours}h ({entry.load_rate}%)
             </span>
           ))}
           {person.missing_estimate_count > 0 && (
@@ -73,9 +73,14 @@ export function TeamWorkloadPanel({ workload }: { workload: WorkloadResult }) {
   const maxRate = Math.max(100, ...workload.people.map((p) => p.load_rate ?? 0));
   const scale = Math.ceil(maxRate / 10) * 10;
 
-  const projectKeys = Array.from(
-    new Set(workload.people.flatMap((p) => p.by_project.map((e) => e.project_key))),
-  ).sort();
+  // 키로 묶되 표시는 이름으로 한다. 이름이 없는 예전 소스는 키가 그대로 온다.
+  const projectNames = new Map<string, string>();
+  for (const person of workload.people) {
+    for (const entry of person.by_project) {
+      projectNames.set(entry.project_key, entry.project_name || entry.project_key);
+    }
+  }
+  const projectKeys = [...projectNames.keys()].sort();
 
   const sorted = [...workload.people].sort((a, b) => (b.load_rate ?? -1) - (a.load_rate ?? -1));
 
@@ -96,7 +101,7 @@ export function TeamWorkloadPanel({ workload }: { workload: WorkloadResult }) {
           {projectKeys.map((key, index) => (
             <span key={key} className={styles.legendItem}>
               <span className={`${styles.legendDot} ${SEGMENT_CLASS[index % SEGMENT_CLASS.length]}`} />
-              {key}
+              {projectNames.get(key)}
             </span>
           ))}
         </div>

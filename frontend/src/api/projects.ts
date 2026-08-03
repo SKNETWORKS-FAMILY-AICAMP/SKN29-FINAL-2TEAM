@@ -19,6 +19,8 @@ export interface ProjectSource {
   source_type: ProjectSourceType;
   /** Drive 폴더 id 또는 Jira 프로젝트 키. */
   external_source_id: string;
+  /** 원본이 알려준 이름(`SKN29_Final_2Team`). 예전에 저장한 소스는 null이고 화면이 키로 대체한다. */
+  display_name: string | null;
   sync_status: string;
   /** 이 폴더의 기본 문서 역할. 안의 파일이 물려받는다. Jira 소스는 null. */
   default_doc_role: string | null;
@@ -43,6 +45,10 @@ export function listProjectSources(token: string, projId: string) {
 /**
  * 이 종류의 소스를 넘긴 목록으로 교체한다. 화면은 항상 전체 선택 상태를 보낸다.
  * `maxDepth`는 1이면 선택한 폴더만, null이면 제한 없음이다(Drive 폴더에만 쓰인다).
+ *
+ * `displayNames`(`{외부 id: 이름}`)를 함께 보내면 저장된다. 나중에 화면이 `KAN`이
+ * 아니라 `SKN29_Final_2Team`을 보여줄 수 있다 — 그때 원본에 다시 물어보면 화면이
+ * 커넥터 생존에 묶인다. 안 보내면 이전에 저장한 이름을 지킨다.
  */
 export function replaceProjectSources(
   token: string,
@@ -50,6 +56,7 @@ export function replaceProjectSources(
   sourceType: ProjectSourceType,
   externalSourceIds: string[],
   maxDepth: number | null = 1,
+  displayNames: Record<string, string> = {},
 ) {
   return apiRequest<ProjectSource[]>(`/projects/${projId}/sources/`, {
     method: 'PUT',
@@ -58,6 +65,7 @@ export function replaceProjectSources(
       source_type: sourceType,
       external_source_ids: externalSourceIds,
       max_depth: maxDepth,
+      display_names: displayNames,
     },
   });
 }
@@ -128,6 +136,8 @@ export function syncProjectTasks(token: string, projId: string) {
 /** 어느 Jira 프로젝트에서 온 부하인지. "KAN만 90%" 분해가 이 값으로 나온다. */
 export interface WorkloadByProject {
   project_key: string;
+  /** 저장된 표시 이름. 없으면 서버가 키를 그대로 채워 준다. */
+  project_name: string;
   hours: number;
   load_rate: number | null;
 }

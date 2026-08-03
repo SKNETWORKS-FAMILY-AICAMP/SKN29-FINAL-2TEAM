@@ -154,7 +154,58 @@ class ProjectSourceApiTests(SimpleTestCase):
                 "external_source_ids": ["folder-SKN29", "folder-산출물"],
                 # 보내지 않으면 하위 폴더를 따라 내려가지 않는다.
                 "max_depth": 1,
+                # 이름을 안 보내면 빈 map이고, 리포지토리가 이전에 저장한 이름을 지킨다.
+                "display_names": {},
             },
+        )
+
+    @patch("apps.projects.api_views.ProjectSourceRepository.replace")
+    def test_reselecting_the_same_sources_keeps_their_ids(self, replace):
+        """계속 선택된 소스는 `proj_source_id`가 그대로여야 한다.
+
+        전부 지우고 다시 넣으면 `next_short_code`가 같은 id를 **새 순서로**
+        재발급한다. `exist_task.proj_source_id`가 그 id를 참조하므로 KAN 업무가
+        AIP 소스에 붙는다 — 실제로 재현했고 화면에는 정상처럼 보인다.
+        """
+
+        replace.return_value = [
+            source_row(proj_source_id="PS009", source_type="JIRA_PROJECT", external="KAN"),
+            source_row(proj_source_id="PS010", source_type="JIRA_PROJECT", external="AIP"),
+        ]
+
+        response = self.client.put(
+            "/api/projects/PJ001/sources/",
+            # 화면이 보내는 순서가 저장 순서와 달라도 상관없어야 한다.
+            self.replace_body(ids=("AIP", "KAN")) | {"source_type": "JIRA_PROJECT"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {row["external_source_id"]: row["proj_source_id"] for row in response.json()}
+        self.assertEqual(by_key, {"KAN": "PS009", "AIP": "PS010"})
+
+    @patch("apps.projects.api_views.ProjectSourceRepository.replace")
+    def test_display_names_are_saved(self, replace):
+        """화면이 'KAN'이 아니라 'SKN29_Final_2Team'을 보여줄 수 있어야 한다.
+
+        나중에 원본에 다시 물어보면, 토큰이 만료됐을 때 저장된 데이터는 멀쩡한데
+        이름을 못 읽어 화면이 깨진다. 고르는 시점에 같이 저장한다.
+        """
+
+        replace.return_value = [source_row()]
+
+        response = self.client.put(
+            "/api/projects/PJ001/sources/",
+            self.replace_body(ids=("KAN",))
+            | {"source_type": "JIRA_PROJECT", "display_names": {"KAN": "SKN29_Final_2Team"}},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replace.call_args.kwargs["display_names"], {"KAN": "SKN29_Final_2Team"}
         )
 
     @patch("apps.projects.api_views.ProjectSourceRepository.replace")

@@ -67,7 +67,7 @@ function PersonRow({ person, scale }: { person: PersonWorkload; scale: number })
                 key={entry.project_key}
                 className={`${styles.segment} ${SEGMENT_CLASS[index % SEGMENT_CLASS.length]}`}
                 style={{ width: `${((entry.load_rate ?? 0) / scale) * 100}%` }}
-                title={`${entry.project_key} ${entry.hours}h (${entry.load_rate}%)`}
+                title={`${entry.project_name || entry.project_key} ${entry.hours}h (${entry.load_rate}%)`}
               />
             ))}
         </div>
@@ -82,7 +82,7 @@ function PersonRow({ person, scale }: { person: PersonWorkload; scale: number })
               <span
                 className={`${styles.chipDot} ${SEGMENT_CLASS[index % SEGMENT_CLASS.length]}`}
               />
-              {entry.project_key} {entry.hours}h ({entry.load_rate}%)
+              {entry.project_name || entry.project_key} {entry.hours}h ({entry.load_rate}%)
             </span>
           ))}
           {person.unscheduled_backlog_count > 0 && (

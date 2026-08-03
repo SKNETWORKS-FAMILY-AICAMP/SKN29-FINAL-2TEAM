@@ -26,6 +26,13 @@ class ProjectSourceReplaceSerializer(serializers.Serializer):
         child=serializers.CharField(max_length=255),
         allow_empty=True,
     )
+    # {외부 id: 원본이 알려준 이름}. 화면이 'KAN'이 아니라 'SKN29_Final_2Team'을
+    # 보여줄 수 있게 고를 때 함께 저장한다. 안 보내면 이전 값을 지킨다.
+    display_names = serializers.DictField(
+        child=serializers.CharField(max_length=255, allow_blank=True),
+        required=False,
+        default=dict,
+    )
     # 폴더 탐색 깊이. 1이면 선택한 폴더만, null이면 제한 없음.
     # "하위 폴더 포함"을 끄는 것이 곧 1이다 — 별도 불리언을 두지 않는다.
     max_depth = serializers.IntegerField(
@@ -114,6 +121,7 @@ def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
         "conn_id": row["conn_id"],
         "source_type": row["source_type"],
         "external_source_id": row["external_source_id"],
+        "display_name": row.get("display_name"),
         "sync_status": row["sync_status"],
         "default_doc_role": row.get("default_doc_role"),
         "max_depth": row.get("max_depth"),

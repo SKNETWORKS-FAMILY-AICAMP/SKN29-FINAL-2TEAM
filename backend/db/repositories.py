@@ -206,7 +206,7 @@ class ProjectSourceRepository:
                 cursor.execute(
                     """
                     SELECT proj_source_id, proj_id, conn_id, source_type, external_source_id,
-                           sync_status, default_doc_role, max_depth
+                           display_name, sync_status, default_doc_role, max_depth
                     FROM proj_source
                     WHERE proj_id = %s
                     ORDER BY proj_source_id
@@ -223,12 +223,17 @@ class ProjectSourceRepository:
         source_type: str,
         external_source_ids: list[str],
         max_depth: int | None = None,
+        display_names: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """해당 종류의 소스를 넘겨받은 목록으로 교체한다.
 
         선택 화면은 항상 전체 선택 상태를 보내므로 교체가 맞다. 덧붙이면 화면에서
         해제한 폴더가 남는다. 계속 선택된 폴더의 `default_doc_role`은 지키고
         넘어간다 — 폴더를 다시 저장했다고 역할 지정을 날릴 이유가 없다.
+
+        `display_names`는 `{외부 id: 원본이 알려준 이름}`이다. 화면이 `KAN`이
+        아니라 `SKN29_Final_2Team`을 보여줄 수 있도록 고르는 시점에 함께 저장한다
+        — 매번 원본에 물어보면 화면이 커넥터 생존에 묶인다.
 
         `max_depth`는 이번에 저장하는 모든 폴더에 같은 값으로 들어간다. 화면의
         탐색 깊이 설정이 폴더별이 아니라 하나이기 때문이다.
@@ -256,24 +261,59 @@ class ProjectSourceRepository:
                 if connection_row is None:
                     raise ReferenceNotFound(f"{connector_type} 커넥터가 연결되지 않았습니다.")
 
+                # 같은 항목을 두 번 보내도 한 행만 남긴다.
+                selected = list(dict.fromkeys(external_source_ids))
+                names = display_names or {}
+                folder_depth = (
+                    max_depth if source_type == ProjectSourceRepository.DRIVE_FOLDER else None
+                )
+
+                # 해제된 것만 지운다. 전부 지우고 다시 넣으면 `next_short_code`가
+                # 같은 id를 **새 순서로** 재발급해, `exist_task.proj_source_id` 처럼
+                # 이 id를 참조하는 행이 조용히 다른 소스에 붙는다(실제로 KAN 업무가
+                # AIP 소스에 붙는 것을 확인했다). 계속 선택된 소스는 행을 지킨다.
                 cursor.execute(
                     """
-                    SELECT external_source_id, default_doc_role
-                    FROM proj_source
+                    DELETE FROM proj_source
+                    WHERE proj_id = %s AND source_type = %s
+                      AND NOT (external_source_id = ANY(%s))
+                    """,
+                    (proj_id, source_type, selected),
+                )
+
+                cursor.execute(
+                    """
+                    SELECT external_source_id FROM proj_source
                     WHERE proj_id = %s AND source_type = %s
                     """,
                     (proj_id, source_type),
                 )
-                kept_roles = {row["external_source_id"]: row["default_doc_role"] for row in cursor.fetchall()}
+                existing = {row["external_source_id"] for row in cursor.fetchall()}
 
-                cursor.execute(
-                    "DELETE FROM proj_source WHERE proj_id = %s AND source_type = %s",
-                    (proj_id, source_type),
-                )
+                for external_source_id in selected:
+                    if external_source_id in existing:
+                        # 이름을 안 보냈으면 저장된 값을 지킨다 — 이름만 빠진 요청
+                        # 때문에 표시가 키로 되돌아가지 않도록.
+                        cursor.execute(
+                            """
+                            UPDATE proj_source
+                               SET display_name = COALESCE(%s, display_name),
+                                   max_depth = %s,
+                                   conn_id = %s
+                             WHERE proj_id = %s AND source_type = %s
+                               AND external_source_id = %s
+                            """,
+                            (
+                                names.get(external_source_id),
+                                folder_depth,
+                                connection_row["conn_id"],
+                                proj_id,
+                                source_type,
+                                external_source_id,
+                            ),
+                        )
+                        continue
 
-                rows = []
-                # 같은 폴더를 두 번 보내도 한 행만 남긴다.
-                for external_source_id in dict.fromkeys(external_source_ids):
                     proj_source_id = next_short_code(
                         cursor,
                         table="proj_source",
@@ -284,10 +324,8 @@ class ProjectSourceRepository:
                         """
                         INSERT INTO proj_source
                             (proj_source_id, proj_id, conn_id, source_type, external_source_id,
-                             default_doc_role, max_depth)
+                             display_name, max_depth)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        RETURNING proj_source_id, proj_id, conn_id, source_type, external_source_id,
-                                  sync_status, default_doc_role, max_depth
                         """,
                         (
                             proj_source_id,
@@ -295,13 +333,22 @@ class ProjectSourceRepository:
                             connection_row["conn_id"],
                             source_type,
                             external_source_id,
-                            kept_roles.get(external_source_id),
-                            max_depth if source_type == ProjectSourceRepository.DRIVE_FOLDER else None,
+                            names.get(external_source_id),
+                            folder_depth,
                         ),
                     )
-                    rows.append(cursor.fetchone())
 
-        return rows
+                cursor.execute(
+                    """
+                    SELECT proj_source_id, proj_id, conn_id, source_type, external_source_id,
+                           display_name, sync_status, default_doc_role, max_depth
+                    FROM proj_source
+                    WHERE proj_id = %s AND source_type = %s
+                    ORDER BY proj_source_id
+                    """,
+                    (proj_id, source_type),
+                )
+                return list(cursor.fetchall())
 
 
 class DocumentRepository:
@@ -492,7 +539,7 @@ class ExistTaskRepository:
                 ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
                 cursor.execute(
                     """
-                    SELECT proj_source_id, external_source_id
+                    SELECT proj_source_id, external_source_id, display_name
                     FROM proj_source
                     WHERE proj_id = %s AND source_type = %s
                     ORDER BY proj_source_id
@@ -517,7 +564,10 @@ class ExistTaskRepository:
                     SELECT et.exist_task_id, et.jira_issue_id, et.assignee_person_id,
                            et.status, et.status_category, et.due_at,
                            et.estimate, et.remaining, et.spent,
-                           ps.external_source_id AS project_key
+                           ps.external_source_id AS project_key,
+                           -- 화면이 키 대신 쓸 이름. 예전에 저장한 소스는 NULL이라
+                           -- 그때는 호출자가 키로 대체한다.
+                           ps.display_name AS project_name
                     FROM exist_task AS et
                     JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
                     WHERE ps.proj_id = %s AND ps.source_type = %s

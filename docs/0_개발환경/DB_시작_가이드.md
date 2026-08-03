@@ -153,6 +153,7 @@ ALTER TABLE doc ALTER COLUMN cur_revision TYPE VARCHAR(100);
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS proj_source_id VARCHAR(5) NOT NULL;
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS estimate NUMERIC(6,2);
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS status_category VARCHAR(20);
+ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exist_task_source_issue ON exist_task (proj_source_id, jira_issue_id);
 CREATE SCHEMA IF NOT EXISTS mock_hr;
 DO \$\$
@@ -194,6 +195,7 @@ END \$\$;
 | `doc.cur_revision` → `VARCHAR(100)` | Google Drive의 `headRevisionId`가 **실측 51자**라 기존 `VARCHAR(50)`에 한 글자가 모자랐다. 실제로 내려받아 보기 전에는 안 드러났다(목킹 테스트는 짧은 문자열을 썼다). Drive가 길이를 보장한다는 문서가 없어 여유를 뒀다 |
 | `exist_task.proj_source_id` 추가 + `ux_exist_task_source_issue` UNIQUE (2026-08-03) | 이 이슈를 **어느 소스에서 가져왔는지** 나타내는 컬럼이 하나도 없었다. 재동기화 때 지울 범위를 특정할 수 없어 최초 1회 적재밖에 못 하는 구조였고, "임준 196h = KAN 144h + AIP 52h" 분해도 안 나온다. `proj_id`가 아니라 `proj_source_id`인 이유는 프로젝트 하나가 Jira 프로젝트를 여러 개 읽을 수 있어서(N:M) 재동기화의 실제 단위가 `proj_source`이기 때문이다. UNIQUE는 같은 이슈가 두 줄이 되어 부하가 2배로 잡히는 것을 막는 마지막 방어선이다 — [[Jira_부하계산_ToDo]] 단계 1-3 |
 | `exist_task.estimate` 추가 (2026-08-03) | 최초 추정치. `exist_task_snap.estimate`가 복사해 갈 원본이 `exist_task`에 없어서 채울 곳이 없었다. Jira `timetracking.originalEstimateSeconds`를 시간으로 환산해 넣는다 |
+| `proj_source.display_name` 추가 (2026-08-03) | 화면이 Jira 프로젝트를 `KAN`·`AIP` 같은 **키로만** 보여줄 수 있었다. 실제 이름(`SKN29_Final_2Team`·`AI Platform`)이 저장돼 있지 않아서다. 매번 원본에 물어보면 대시보드가 커넥터 생존에 묶인다 — 토큰이 만료되면 저장된 부하 데이터는 멀쩡한데 이름을 못 읽어 화면이 깨진다. 고르는 시점에는 이미 이름을 알고 있으므로 그때 같이 저장한다. 기존 행은 NULL로 남고 화면이 키로 대체하며, 소스를 다시 저장하면 채워진다 |
 | `exist_task.status_category` 추가 (2026-08-03) | Jira 상태 **표시 문자열은 조직·프로젝트마다 다르다.** 실측에서 같은 카테고리(`new`)인데 KAN은 `'해야 할 일'`, AIP는 `'할 일'`로 왔다. `statusCategory.name`마저 한국어로 지역화되므로 안전한 값은 `statusCategory.key`(`new`/`indeterminate`/`done`) 하나뿐이다. 이걸 `TO_DO`/`IN_PROGRESS`/`DONE`으로 바꿔 저장하고 **부하 계산은 이 컬럼만 본다.** `status`에 한글이 들어가는 건 사람이 보기 위한 것이고, 조건문에 쓰면 다른 사이트에서 조용히 매치 0건이 된다 |
 | HR 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 `mock_hr` 스키마로 이동 | 이 8개는 **고객사 HR 시스템의 데이터**지 우리가 소유한 데이터가 아니다. 경계는 코드(`backend/services/hr/`)로 세웠지만 DB에서는 `public`에 우리 테이블과 섞여 있어, 다음 사람이 무심코 조인하면 그만이었다. 스키마를 나누면 `mock_hr.`를 타이핑하지 않고는 건드릴 수 없다 — [[HR_어댑터와_테넌트_경계]] |
 

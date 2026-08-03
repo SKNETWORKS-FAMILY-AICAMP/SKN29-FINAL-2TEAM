@@ -84,7 +84,7 @@ export function TeamDataPanel({ connectors, sources, documents }: Props) {
           <span className={styles.rowLabel}>Jira 프로젝트</span>
           <span className={styles.rowValue}>
             {jiraProjects.length > 0
-              ? jiraProjects.map((s) => s.external_source_id).join(' · ')
+              ? jiraProjects.map((s) => s.display_name || s.external_source_id).join(' · ')
               : '없음'}
           </span>
         </div>

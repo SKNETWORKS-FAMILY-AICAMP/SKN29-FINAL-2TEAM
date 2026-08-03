@@ -149,6 +149,11 @@ CREATE TABLE proj_source (
     conn_id        VARCHAR(5) NOT NULL,
     source_type          VARCHAR(30) NOT NULL,   -- DRIVE_FOLDER / JIRA_PROJECT
     external_source_id   VARCHAR(255) NOT NULL,  -- 실제 Drive 폴더 ID / Jira 프로젝트 키
+    -- 고를 때 원본이 알려준 표시 이름(2026-08-03 추가). 'KAN'이 아니라
+    -- 'SKN29_Final_2Team'을 화면에 쓰기 위한 것이다. 매번 원본에 물어보면
+    -- 화면이 커넥터 생존에 묶이므로 선택 시점에 같이 저장한다. 원본에서
+    -- 이름이 바뀌면 다시 고를 때 갱신된다. 비어 있으면 화면이 키로 대체한다.
+    display_name          VARCHAR(255),
     sync_status           VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     default_doc_role      VARCHAR(30),           -- 이 폴더의 기본 문서 역할. DOC.doc_role이 상속한다
                                                  -- (PLAN / MEETING_NOTE / DAILY_REPORT / OTHER)
