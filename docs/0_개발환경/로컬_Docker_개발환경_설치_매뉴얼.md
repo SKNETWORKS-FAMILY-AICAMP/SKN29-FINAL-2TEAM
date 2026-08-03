@@ -312,7 +312,8 @@ docker compose -f infra/docker/docker-compose.yml down -v
 
 이 환경은 백엔드 기반과 데이터 관리용이다. 아래 기능은 아직 미구현이므로 실행 결과가 나오지 않는 것이 정상이다.
 
-- Google Drive·Jira Connector
+> **2026-08-03 정정.** 이 목록의 맨 앞에 `Google Drive·Jira Connector`가 있었으나 **틀렸다.** 두 커넥터는 인가·토큰 갱신·조회·선택 저장·원문 다운로드까지 동작한다. `.env`에 자격증명이 있어야 하고, 값을 바꾸면 재시작이 아니라 **재생성**해야 반영된다(`up -d --force-recreate web`).
+
 - PDF/DOCX 파싱과 DocumentBlock
 - Project Knowledge Model
 - AnalysisSnapshot·Feature Readiness

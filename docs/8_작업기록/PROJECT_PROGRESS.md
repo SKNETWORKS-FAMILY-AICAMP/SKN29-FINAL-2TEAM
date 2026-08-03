@@ -114,7 +114,7 @@ Docling JSON의 `texts`, `tables`, `pictures`, `groups`는 요소를 보관하�
 
 ## 6. 정규화 전략 v1
 
-상세 전략은 [normalizer/normalization_strategy.md](normalizer/normalization_strategy.md)에 기록되어 있다. 현재 구현한 핵심 결정은 다음과 같다.
+상세 전략은 [normalization_strategy.md](normalization_strategy.md)에 기록되어 있다. 현재 구현한 핵심 결정은 다음과 같다.
 
 1. `body.children`을 문서의 기준 읽기 순서로 사용한다.
 2. 헤더·푸터·furniture는 검색 대상 본문에서 제외한다.
