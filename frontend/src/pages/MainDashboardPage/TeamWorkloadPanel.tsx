@@ -50,6 +50,20 @@ function MemberRow({ person, scale }: { person: PersonWorkload; scale: number })
         </div>
         <div className={styles.fullMark} style={{ left: `${(100 / scale) * 100}%` }} />
       </div>
+
+      {!blocked && person.by_project.length > 0 && (
+        <div className={styles.chips}>
+          {person.by_project.map((entry, index) => (
+            <span key={entry.project_key} className={styles.chip}>
+              <span className={`${styles.legendDot} ${SEGMENT_CLASS[index % SEGMENT_CLASS.length]}`} />
+              {entry.project_key} {entry.hours}h ({entry.load_rate}%)
+            </span>
+          ))}
+          {person.missing_estimate_count > 0 && (
+            <span className={styles.chip}>공수 미입력 {person.missing_estimate_count}건</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

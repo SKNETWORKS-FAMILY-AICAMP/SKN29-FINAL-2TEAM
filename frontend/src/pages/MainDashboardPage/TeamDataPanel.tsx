@@ -22,6 +22,9 @@ const STATUS_LABEL: Record<string, string> = {
   ERROR: '오류',
 };
 
+/** 전부 나열하면 카드가 길어진다. 나머지는 건수로만 알린다. */
+const DOCUMENT_PREVIEW = 5;
+
 function statusDot(status: string): string {
   if (status === 'CONNECTED') return styles.dotOk;
   if (status === 'EXPIRED' || status === 'ERROR') return styles.dotBad;
@@ -90,15 +93,30 @@ export function TeamDataPanel({ connectors, sources, documents }: Props) {
       <div className={styles.divider} />
 
       <div className={styles.rows}>
-        <p className={styles.sectionLabel}>등록된 문서 {documents.length}건</p>
-        {Object.entries(byRole)
-          .sort()
-          .map(([role, count]) => (
-            <div key={role} className={styles.row}>
-              <span className={styles.rowLabel}>{ROLE_LABEL[role as DocRole] ?? role}</span>
-              <span className={styles.rowValue}>{count}건</span>
-            </div>
-          ))}
+        <p className={styles.sectionLabel}>
+          등록된 문서 {documents.length}건
+          {documents.length > 0 && (
+            <>
+              {' · '}
+              {Object.entries(byRole)
+                .sort()
+                .map(([role, count]) => `${ROLE_LABEL[role as DocRole] ?? role} ${count}`)
+                .join(' · ')}
+            </>
+          )}
+        </p>
+        {/* 파일명까지 보여준다 — 건수만 있으면 무엇이 들어왔는지 알 수 없다. */}
+        {documents.slice(0, DOCUMENT_PREVIEW).map((doc) => (
+          <div key={doc.doc_id} className={styles.docRow}>
+            <span className={styles.docName}>{doc.file_name ?? doc.doc_id}</span>
+            <span className={styles.docRole}>
+              {doc.doc_role ? ROLE_LABEL[doc.doc_role] ?? doc.doc_role : '역할 미지정'}
+            </span>
+          </div>
+        ))}
+        {documents.length > DOCUMENT_PREVIEW && (
+          <p className={styles.more}>외 {documents.length - DOCUMENT_PREVIEW}건</p>
+        )}
         {documents.length === 0 && <p className={styles.empty}>등록된 문서가 없습니다.</p>}
       </div>
     </div>

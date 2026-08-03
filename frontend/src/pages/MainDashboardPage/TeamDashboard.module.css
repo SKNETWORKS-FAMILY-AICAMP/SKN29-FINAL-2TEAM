@@ -263,3 +263,78 @@
   color: var(--color-placeholder);
 }
 
+/* ── 인원별 행에 붙는 프로젝트 칩 ─────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 11px;
+  color: var(--color-body);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 프로젝트별 업무량 ─────────────────────────────── */
+
+.projectRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.projectHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+
+.projectKey {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.projectHours {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 문서 목록 ─────────────────────────────────────── */
+
+.docRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.docName {
+  color: var(--color-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docRole {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+
+.more {
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+

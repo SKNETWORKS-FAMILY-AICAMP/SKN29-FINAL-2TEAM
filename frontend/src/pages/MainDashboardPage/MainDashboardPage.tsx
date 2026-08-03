@@ -15,6 +15,7 @@ import type { Team } from '../../api/teams';
 import { MAIN_NAV_TABS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { TeamDataPanel } from './TeamDataPanel';
+import { TeamProjectPanel } from './TeamProjectPanel';
 import { TeamWorkloadPanel } from './TeamWorkloadPanel';
 import styles from './MainDashboardPage.module.css';
 import tiles from './TeamDashboard.module.css';
@@ -83,10 +84,17 @@ export default function MainDashboardPage() {
   const people = workload?.people ?? [];
   const rated = people.filter((person) => person.load_rate !== null);
   const overloaded = rated.filter((person) => (person.load_rate ?? 0) > 100).length;
-  const away = people.filter((person) => person.absent_days > 0).length;
-  const averageRate = rated.length
-    ? Math.round(rated.reduce((sum, person) => sum + (person.load_rate ?? 0), 0) / rated.length)
-    : null;
+
+  // 개인 부하율의 평균이 아니라 팀 전체 배정 ÷ 팀 전체 용량이다. 평균을 쓰면
+  // 용량이 작은 사람의 높은 비율이 팀 전체를 실제보다 과부하로 보이게 한다.
+  const allocated = people.reduce((sum, person) => sum + person.current_allocation, 0);
+  const capacity = rated.reduce((sum, person) => sum + (person.effective_capacity ?? 0), 0);
+  const teamRate = capacity > 0 ? Math.round((allocated / capacity) * 100) : null;
+
+  // 부하율 숫자에 안 들어간 것들. 이게 0이어야 퍼센트를 그대로 믿을 수 있다.
+  const needsReview =
+    (workload?.missing_estimate_count ?? 0) + (workload?.unmapped_assignee_count ?? 0);
+  const blocked = people.length - rated.length;
 
   return (
     <div className={styles.page}>
@@ -110,47 +118,35 @@ export default function MainDashboardPage() {
           <div className={styles.summary}>
             <div className={tiles.tiles}>
               <div className={tiles.tile}>
-                <span className={tiles.tileValue}>{people.length}명</span>
-                <span className={tiles.tileLabel}>팀원</span>
-              </div>
-              <div className={tiles.tile}>
                 <span className={`${tiles.tileValue} ${overloaded > 0 ? tiles.tileValueDanger : ''}`}>
                   {overloaded}명
                 </span>
-                <span className={tiles.tileLabel}>과부하 (100% 초과)</span>
+                <span className={tiles.tileLabel}>과부하</span>
+                <span className={tiles.tileSub}>부하율 100% 초과</span>
               </div>
               <div className={tiles.tile}>
-                <span className={tiles.tileValue}>{averageRate === null ? '—' : `${averageRate}%`}</span>
-                <span className={tiles.tileLabel}>평균 부하율</span>
-                {rated.length !== people.length && (
-                  <span className={tiles.tileSub}>계산 불가 {people.length - rated.length}명 제외</span>
-                )}
-              </div>
-              <div className={tiles.tile}>
-                <span className={tiles.tileValue}>{away}명</span>
-                <span className={tiles.tileLabel}>기간 내 부재</span>
-              </div>
-              <div className={tiles.tile}>
-                <span
-                  className={`${tiles.tileValue} ${
-                    (workload?.missing_estimate_count ?? 0) > 0 ? tiles.tileValueWarn : ''
-                  }`}
-                >
-                  {workload?.missing_estimate_count ?? 0}건
+                <span className={tiles.tileValue}>{teamRate === null ? '—' : `${teamRate}%`}</span>
+                <span className={tiles.tileLabel}>팀 부하율</span>
+                <span className={tiles.tileSub}>
+                  {Math.round(allocated)}h / {Math.round(capacity)}h
                 </span>
-                <span className={tiles.tileLabel}>공수 미입력</span>
-                <span className={tiles.tileSub}>부하율에 안 들어감</span>
               </div>
               <div className={tiles.tile}>
-                <span
-                  className={`${tiles.tileValue} ${
-                    (workload?.unmapped_assignee_count ?? 0) > 0 ? tiles.tileValueWarn : ''
-                  }`}
-                >
-                  {workload?.unmapped_assignee_count ?? 0}건
+                <span className={`${tiles.tileValue} ${needsReview > 0 ? tiles.tileValueWarn : ''}`}>
+                  {needsReview}건
                 </span>
-                <span className={tiles.tileLabel}>담당자 미매핑</span>
-                <span className={tiles.tileSub}>부하율에 안 들어감</span>
+                <span className={tiles.tileLabel}>확인 필요</span>
+                <span className={tiles.tileSub}>
+                  공수 미입력 {workload?.missing_estimate_count ?? 0} · 미매핑{' '}
+                  {workload?.unmapped_assignee_count ?? 0}
+                </span>
+              </div>
+              <div className={tiles.tile}>
+                <span className={`${tiles.tileValue} ${blocked > 0 ? tiles.tileValueWarn : ''}`}>
+                  {blocked}명
+                </span>
+                <span className={tiles.tileLabel}>부하율 계산 불가</span>
+                <span className={tiles.tileSub}>휴직·근무조건 없음</span>
               </div>
             </div>
           </div>
@@ -161,7 +157,7 @@ export default function MainDashboardPage() {
                 <TeamWorkloadPanel workload={workload} />
               ) : (
                 <div className={tiles.card}>
-                  <p className={tiles.cardTitle}>팀원 업무 부하</p>
+                  <p className={tiles.cardTitle}>인원별 업무 부하</p>
                   <p className={tiles.empty}>
                     연결된 프로젝트가 없습니다. 온보딩에서 Drive 폴더와 Jira 프로젝트를 먼저
                     선택해 주세요.
@@ -171,6 +167,7 @@ export default function MainDashboardPage() {
             </div>
 
             <div className={styles.rightPanel}>
+              {workload && <TeamProjectPanel workload={workload} />}
               <TeamDataPanel connectors={connectors} sources={sources} documents={documents} />
             </div>
           </div>
