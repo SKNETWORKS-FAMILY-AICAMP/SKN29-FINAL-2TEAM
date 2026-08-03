@@ -3,12 +3,6 @@ import type { ConnectorConnection } from '../../api/connectors';
 import type { DocRole, ProjectDocument, ProjectSource } from '../../api/projects';
 import styles from './TeamDashboard.module.css';
 
-const CONNECTOR_LABEL: Record<string, string> = {
-  PEOPLE_DB: '인사 정보',
-  GOOGLE_DRIVE: 'Google Drive',
-  JIRA: 'Jira',
-};
-
 const ROLE_LABEL: Record<DocRole, string> = {
   PLAN: '기획서',
   MEETING_NOTE: '회의록',
@@ -16,29 +10,24 @@ const ROLE_LABEL: Record<DocRole, string> = {
   OTHER: '기타',
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  CONNECTED: '연결됨',
-  EXPIRED: '재연결 필요',
-  ERROR: '오류',
-};
-
-/** 전부 나열하면 카드가 길어진다. 나머지는 건수로만 알린다. */
-const DOCUMENT_PREVIEW = 5;
-
-function statusDot(status: string): string {
-  if (status === 'CONNECTED') return styles.dotOk;
-  if (status === 'EXPIRED' || status === 'ERROR') return styles.dotBad;
-  return styles.dotIdle;
-}
-
 interface Props {
   connectors: ConnectorConnection[];
   sources: ProjectSource[];
   documents: ProjectDocument[];
 }
 
+/**
+ * 무엇이 연결돼 있고 무엇을 읽고 있는가.
+ *
+ * 매일 들여다보는 값이 아니라 "이 숫자들이 어디서 왔는지"를 확인하는 자리라
+ * 카드가 아니라 가로 한 줄로 둔다. 커넥터 상태·소스·문서를 각각 줄 세워 쌓으면
+ * 부하 분석보다 시선을 더 끌어간다.
+ */
 export function TeamDataPanel({ connectors, sources, documents }: Props) {
-  const driveFolders = sources.filter((s) => s.source_type === 'DRIVE_FOLDER');
+  const connected = connectors.filter((c) => c.auth_status === 'CONNECTED').length;
+  const allConnected = connectors.length > 0 && connected === connectors.length;
+
+  const driveFolders = sources.filter((s) => s.source_type === 'DRIVE_FOLDER').length;
   const jiraProjects = sources.filter((s) => s.source_type === 'JIRA_PROJECT');
 
   const byRole = documents.reduce<Record<string, number>>((acc, doc) => {
@@ -56,68 +45,50 @@ export function TeamDataPanel({ connectors, sources, documents }: Props) {
         </Link>
       </div>
 
-      <div className={styles.rows}>
-        <p className={styles.sectionLabel}>커넥터</p>
-        {connectors.map((connector) => (
-          <div key={connector.conn_id} className={styles.row}>
-            <span className={`${styles.dot} ${statusDot(connector.auth_status)}`} />
-            <span className={styles.rowLabel}>
-              {CONNECTOR_LABEL[connector.connector_type] ?? connector.connector_type}
-            </span>
-            <span className={styles.rowValue}>
-              {STATUS_LABEL[connector.auth_status] ?? connector.auth_status}
-            </span>
-          </div>
-        ))}
-        {connectors.length === 0 && <p className={styles.empty}>연결된 커넥터가 없습니다.</p>}
-      </div>
-
-      <div className={styles.divider} />
-
-      <div className={styles.rows}>
-        <p className={styles.sectionLabel}>읽고 있는 소스</p>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Drive 폴더</span>
-          <span className={styles.rowValue}>{driveFolders.length}개</span>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Jira 프로젝트</span>
-          <span className={styles.rowValue}>
-            {jiraProjects.length > 0
-              ? jiraProjects.map((s) => s.display_name || s.external_source_id).join(' · ')
-              : '없음'}
+      <div className={styles.strip}>
+        <div className={styles.stripItem}>
+          <span className={styles.stripLabel}>커넥터</span>
+          <span className={styles.stripValue}>
+            <span className={`${styles.dot} ${allConnected ? styles.dotOk : styles.dotBad}`} />
+            {connectors.length > 0 ? `${connected} / ${connectors.length}` : '없음'}
+          </span>
+          <span className={styles.stripSub}>
+            {connectors.length === 0
+              ? '연결된 커넥터가 없습니다'
+              : allConnected
+                ? '모두 연결됨'
+                : '재연결 필요'}
           </span>
         </div>
-      </div>
 
-      <div className={styles.divider} />
+        <div className={styles.stripItem}>
+          <span className={styles.stripLabel}>Drive 폴더</span>
+          <span className={styles.stripValue}>{driveFolders}개</span>
+          <span className={styles.stripSub}>문서를 읽어오는 폴더</span>
+        </div>
 
-      <div className={styles.rows}>
-        <p className={styles.sectionLabel}>
-          등록된 문서 {documents.length}건
-          {documents.length > 0 && (
-            <>
-              {' · '}
-              {Object.entries(byRole)
-                .sort()
-                .map(([role, count]) => `${ROLE_LABEL[role as DocRole] ?? role} ${count}`)
-                .join(' · ')}
-            </>
-          )}
-        </p>
-        {/* 파일명까지 보여준다 — 건수만 있으면 무엇이 들어왔는지 알 수 없다. */}
-        {documents.slice(0, DOCUMENT_PREVIEW).map((doc) => (
-          <div key={doc.doc_id} className={styles.docRow}>
-            <span className={styles.docName}>{doc.file_name ?? doc.doc_id}</span>
-            <span className={styles.docRole}>
-              {doc.doc_role ? ROLE_LABEL[doc.doc_role] ?? doc.doc_role : '역할 미지정'}
-            </span>
-          </div>
-        ))}
-        {documents.length > DOCUMENT_PREVIEW && (
-          <p className={styles.more}>외 {documents.length - DOCUMENT_PREVIEW}건</p>
-        )}
-        {documents.length === 0 && <p className={styles.empty}>등록된 문서가 없습니다.</p>}
+        <div className={styles.stripItem}>
+          <span className={styles.stripLabel}>Jira 프로젝트</span>
+          <span className={styles.stripValue}>{jiraProjects.length}개</span>
+          <span className={styles.stripSub}>
+            {jiraProjects.length > 0
+              ? jiraProjects.map((s) => s.display_name || s.external_source_id).join(' · ')
+              : '선택된 프로젝트 없음'}
+          </span>
+        </div>
+
+        <div className={styles.stripItem}>
+          <span className={styles.stripLabel}>등록 문서</span>
+          <span className={styles.stripValue}>{documents.length}건</span>
+          <span className={styles.stripSub}>
+            {documents.length > 0
+              ? Object.entries(byRole)
+                  .sort()
+                  .map(([role, count]) => `${ROLE_LABEL[role as DocRole] ?? role} ${count}`)
+                  .join(' · ')
+              : '등록된 문서 없음'}
+          </span>
+        </div>
       </div>
     </div>
   );

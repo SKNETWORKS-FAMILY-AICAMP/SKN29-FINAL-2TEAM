@@ -152,16 +152,18 @@ export default function MainDashboardPage() {
           </div>
 
           {/*
-            왼쪽은 부하 분석(인원별·프로젝트별), 오른쪽은 이 팀이 무엇을 연결해
-            두었는가다. 성격이 다른 둘을 한 열에 쌓으면 아래쪽 카드가 멀어진다.
+            "무엇이 연결돼 있나"는 매일 보는 값이 아니라 숫자의 출처를 확인하는
+            자리다. 카드로 세워 두면 부하 분석보다 시선을 끌어가므로 가로 한 줄로
+            깔고, 아래를 분석 두 장에 내준다.
           */}
+          <div className={styles.summary}>
+            <TeamDataPanel connectors={connectors} sources={sources} documents={documents} />
+          </div>
+
           <div className={styles.content}>
             <div className={styles.leftPanel}>
               {workload ? (
-                <>
-                  <TeamWorkloadPanel workload={workload} />
-                  <TeamProjectPanel workload={workload} />
-                </>
+                <TeamWorkloadPanel workload={workload} />
               ) : (
                 <div className={tiles.card}>
                   <p className={tiles.cardTitle}>인원별 업무 부하</p>
@@ -174,7 +176,7 @@ export default function MainDashboardPage() {
             </div>
 
             <div className={styles.rightPanel}>
-              <TeamDataPanel connectors={connectors} sources={sources} documents={documents} />
+              {workload && <TeamProjectPanel workload={workload} />}
             </div>
           </div>
         </>

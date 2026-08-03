@@ -203,29 +203,42 @@
   border-radius: 50%;
 }
 
-/* ── 목록 행 (커넥터·소스·문서) ─────────────────────── */
+/* ── 연결된 데이터 가로 스트립 ─────────────────────── */
 
-.rows {
+.strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-5);
+}
+
+.stripItem {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 2px;
+  min-width: 0;
 }
 
-.row {
+.stripLabel {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.stripValue {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  font-size: 13px;
-}
-
-.rowLabel {
+  gap: var(--space-2);
+  font-size: 18px;
+  font-weight: 600;
   color: var(--color-heading);
+  font-variant-numeric: tabular-nums;
 }
 
-.rowValue {
-  margin-left: auto;
-  color: var(--color-muted);
-  font-variant-numeric: tabular-nums;
+.stripSub {
+  font-size: 11px;
+  color: var(--color-placeholder);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dot {
@@ -241,21 +254,6 @@
 
 .dotBad {
   background: var(--color-danger);
-}
-
-.dotIdle {
-  background: var(--color-placeholder);
-}
-
-.divider {
-  height: 1px;
-  background: var(--color-border);
-}
-
-.sectionLabel {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-muted);
 }
 
 .empty {
@@ -309,32 +307,4 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 문서 목록 ─────────────────────────────────────── */
-
-.docRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: 12px;
-  min-width: 0;
-}
-
-.docName {
-  color: var(--color-body);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.docRole {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--color-placeholder);
-}
-
-.more {
-  font-size: 11px;
-  color: var(--color-placeholder);
-}
 
