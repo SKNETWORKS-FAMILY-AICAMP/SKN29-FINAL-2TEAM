@@ -37,6 +37,7 @@ from .mock_db import (
     list_orgs,
     list_persons,
     lookup_orgs,
+    lookup_person_ids_by_external_email,
     lookup_persons,
     subtree_org_ids,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "list_orgs",
     "list_persons",
     "lookup_orgs",
+    "lookup_person_ids_by_external_email",
     "lookup_persons",
     "subtree_org_ids",
 ]

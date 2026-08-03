@@ -242,6 +242,33 @@ def count_orgs() -> int:
             return cursor.fetchone()["n"]
 
 
+def lookup_person_ids_by_external_email(*, sys_type: str, emails: list[str]) -> dict[str, str]:
+    """외부 시스템 이메일 → `person_id` 조회표. 키는 소문자다.
+
+    Jira 이슈의 담당자는 `accountId`와 이메일로만 오므로, 그 사람이 우리 쪽
+    누구인지 알려면 이 표가 필요하다. `person_link`도 HR 테이블이라 여기 둔다.
+
+    이슈마다 조회하지 않고 한 번에 받는다 — 35건이면 35번 왕복할 이유가 없다.
+    **찾지 못한 이메일은 그냥 표에 없다.** 호출자가 그것을 미매핑으로 세고
+    행은 버리지 않는다(버리면 부하 총량이 조용히 줄어든다).
+    """
+
+    if not emails:
+        return {}
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT lower(ext_email) AS ext_email, person_id
+                FROM mock_hr.person_link
+                WHERE sys_type = %s AND lower(ext_email) = ANY(%s)
+                """,
+                (sys_type, sorted({email.lower() for email in emails})),
+            )
+            return {row["ext_email"]: row["person_id"] for row in cursor.fetchall()}
+
+
 def discover_person_by_email(email: str) -> dict[str, Any] | None:
     """이메일로 찾은 PERSON 후보. 온보딩의 본인 확인 한 곳에서만 쓴다.
 

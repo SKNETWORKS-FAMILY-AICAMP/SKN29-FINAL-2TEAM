@@ -321,6 +321,19 @@ def download_drive_file(*, account_id: str, file_id: str, mime_type: str | None)
     }
 
 
+# Jira 상태 표시 이름은 사이트·프로젝트마다 다르다. 실측에서 같은 카테고리인데
+# KAN은 '해야 할 일', AIP는 '할 일'로 왔고 statusCategory.name마저 한국어로
+# 지역화된다. 사이트가 바뀌어도 그대로인 값은 key 하나뿐이라 이것만 옮긴다.
+_JIRA_STATUS_CATEGORY = {
+    "new": "TO_DO",
+    "indeterminate": "IN_PROGRESS",
+    "done": "DONE",
+}
+_JIRA_SEARCH_PAGE_SIZE = 100
+# 한 프로젝트가 이보다 많으면 페이지를 더 따라가지 않는다(목록 조회와 같은 방침).
+_JIRA_MAX_PAGES = 10
+
+
 def list_jira_projects(*, account_id: str) -> list[dict[str, Any]]:
     """연결된 Jira 사이트의 프로젝트 목록."""
 
@@ -368,3 +381,101 @@ def list_jira_projects(*, account_id: str) -> list[dict[str, Any]]:
             }
         )
     return projects
+
+
+def _hours(seconds: Any) -> float | None:
+    """Jira의 초 단위 공수를 시간으로. `NUMERIC(6,2)`에 맞춰 반올림한다."""
+
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        return None
+    return round(seconds / 3600, 2)
+
+
+def _dict_at(source: dict[str, Any], key: str) -> dict[str, Any]:
+    value = source.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _jira_issue_row(item: dict[str, Any]) -> dict[str, Any]:
+    """검색 응답 한 건을 `exist_task` 한 행으로."""
+
+    fields = _dict_at(item, "fields")
+    status = _dict_at(fields, "status")
+    category = _dict_at(status, "statusCategory")
+    tracking = _dict_at(fields, "timetracking")
+
+    return {
+        "jira_issue_id": item["key"],
+        # 사람이 보는 값. 사이트마다 달라서 조건문에 쓰면 안 된다.
+        "status": status.get("name"),
+        # 모르는 key는 None으로 둔다. 임의로 TO_DO에 밀어넣으면 부하가 조용히 늘어난다.
+        "status_category": _JIRA_STATUS_CATEGORY.get(category.get("key")),
+        "priority": _dict_at(fields, "priority").get("name"),
+        # 프로필이 비공개면 응답에 아예 없다. 그때도 행은 버리지 않는다.
+        "assignee_email": _dict_at(fields, "assignee").get("emailAddress"),
+        "due_at": fields.get("duedate"),
+        # Jira 표준 이슈에는 시작일 필드가 없다. `fields.created`는 "이슈가 만들어진
+        # 날"이지 "일을 시작한 날"이 아니라서 여기에 넣지 않는다 — 넣으면 없는
+        # 정보를 있는 것처럼 만든다. 지금 부하 계산은 start_at을 쓰지 않는다.
+        "start_at": None,
+        "estimate": _hours(tracking.get("originalEstimateSeconds")),
+        "remaining": _hours(tracking.get("remainingEstimateSeconds")),
+        "spent": _hours(tracking.get("timeSpentSeconds")),
+    }
+
+
+def search_jira_issues(*, account_id: str, project_key: str) -> list[dict[str, Any]]:
+    """프로젝트의 미완료 이슈. 담당자·상태·마감·공수만 추린다."""
+
+    credential = credential_for(account_id=account_id, connector_type=JIRA)
+    cloud_id = credential.get("cloud_id")
+    if not isinstance(cloud_id, str):
+        raise OAuthError("연결된 Jira 사이트 정보를 찾을 수 없습니다. 다시 연결해 주세요.")
+
+    headers = {
+        "Authorization": f"Bearer {credential['access_token']}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    # 완료된 이슈는 부하에 안 잡힌다. 표시 이름이 아니라 표준 카테고리로 거른다.
+    body: dict[str, Any] = {
+        "jql": f'project = "{project_key}" AND statusCategory != Done ORDER BY key',
+        "fields": ["assignee", "status", "priority", "duedate", "timetracking"],
+        "maxResults": _JIRA_SEARCH_PAGE_SIZE,
+    }
+
+    issues: list[dict[str, Any]] = []
+    next_token: str | None = None
+    for _ in range(_JIRA_MAX_PAGES):
+        page_body = dict(body)
+        if next_token:
+            page_body["nextPageToken"] = next_token
+        try:
+            # 구 `GET /rest/api/3/search`는 Jira Cloud에서 제거됐다. 새 엔드포인트는
+            # POST이고 페이지네이션도 startAt이 아니라 nextPageToken이다 —
+            # startAt으로 짜면 오류 없이 첫 페이지만 돌아온다.
+            response = requests.post(
+                f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/search/jql",
+                headers=headers,
+                json=page_body,
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OAuthError(f"Jira 이슈를 가져오지 못했습니다({project_key}).") from exc
+
+        page = payload.get("issues")
+        if not isinstance(page, list):
+            raise OAuthError("Jira가 예상한 형식으로 응답하지 않았습니다.")
+        issues.extend(
+            _jira_issue_row(item)
+            for item in page
+            if isinstance(item, dict) and isinstance(item.get("key"), str)
+        )
+
+        next_token = payload.get("nextPageToken")
+        if not isinstance(next_token, str):
+            break
+
+    return issues

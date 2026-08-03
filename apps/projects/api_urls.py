@@ -9,6 +9,7 @@ from .api_views import (
     ProjectDocumentDownloadAPIView,
     ProjectListCreateAPIView,
     ProjectSourceAPIView,
+    ProjectTaskSyncAPIView,
 )
 
 urlpatterns = [
@@ -29,6 +30,11 @@ urlpatterns = [
         "projects/<str:project_id>/documents/download/",
         ProjectDocumentDownloadAPIView.as_view(),
         name="api_project_document_download",
+    ),
+    path(
+        "projects/<str:project_id>/tasks/sync/",
+        ProjectTaskSyncAPIView.as_view(),
+        name="api_project_task_sync",
     ),
     path(
         "projects/<str:project_id>/assignment-runs/",

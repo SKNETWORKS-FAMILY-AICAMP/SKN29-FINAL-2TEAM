@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import psycopg
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -5,13 +7,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
-from apps.connectors.clients import download_drive_file, list_drive_files
+from apps.connectors.clients import download_drive_file, list_drive_files, search_jira_issues
 from apps.connectors.oauth import OAuthError
+from backend.services.hr import lookup_person_ids_by_external_email
 from backend.services.storage import build_key
 from backend.services.storage import save as save_document
 from backend.db import (
     AnalysisRunRepository,
     DocumentRepository,
+    ExistTaskRepository,
     ProjectRepository,
     ProjectSourceRepository,
     database_status,
@@ -267,6 +271,86 @@ class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
                 "downloaded": downloaded,
                 "skipped": skipped,
                 "failed": failed,
+            }
+        )
+
+
+class ProjectTaskSyncAPIView(AuthenticatedAPIView):
+    """이 프로젝트가 읽기로 한 Jira 프로젝트들의 미완료 이슈를 `exist_task`로 가져온다.
+
+    부하 계산의 분자가 되는 데이터다. 소스 하나가 실패해도 나머지는 반영한다 —
+    Jira 프로젝트 두 개 중 하나가 권한 문제로 막혔다고 나머지 하나까지 못 읽으면,
+    보여줄 수 있었던 부하까지 사라진다.
+
+    담당자 매핑에 실패한 이슈도 **버리지 않는다.** `assignee_person_id`를 NULL로
+    넣고 건수를 응답에 담는다. 버리면 부하 총량이 조용히 줄어들어, 틀린 숫자가
+    맞는 숫자처럼 보인다.
+    """
+
+    def post(self, request, project_id):
+        account_id = request.user.account_id
+
+        try:
+            sources = ExistTaskRepository.list_jira_sources(
+                proj_id=project_id,
+                account_id=account_id,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        synced, failed = [], []
+        unmapped_assignees = 0
+        missing_estimate = 0
+
+        for source in sources:
+            project_key = source["external_source_id"]
+            try:
+                issues = search_jira_issues(account_id=account_id, project_key=project_key)
+            except OAuthError as exc:
+                failed.append({"project_key": project_key, "detail": str(exc)})
+                continue
+
+            # 이슈마다 조회하지 않고 이메일을 모아 한 번에 매핑한다.
+            person_by_email = lookup_person_ids_by_external_email(
+                sys_type="JIRA",
+                emails=[issue["assignee_email"] for issue in issues if issue["assignee_email"]],
+            )
+
+            rows = []
+            for issue in issues:
+                email = issue["assignee_email"]
+                person_id = person_by_email.get(email.lower()) if email else None
+                if person_id is None:
+                    unmapped_assignees += 1
+                # 공수가 없으면 정량 합계에 못 넣는다. 0으로 간주하지 않고 세어서
+                # 노출한다 — Readiness의 PARTIAL_RESULT 입력이 된다.
+                if issue["remaining"] is None:
+                    missing_estimate += 1
+                rows.append({**issue, "assignee_person_id": person_id})
+
+            try:
+                fetched = ExistTaskRepository.replace_for_source(
+                    proj_source_id=source["proj_source_id"],
+                    rows=rows,
+                )
+            except (RepositoryError, psycopg.Error) as exc:
+                return _repository_error_response(exc)
+
+            synced.append(
+                {
+                    "proj_source_id": source["proj_source_id"],
+                    "project_key": project_key,
+                    "fetched": fetched,
+                }
+            )
+
+        return Response(
+            {
+                "sources": synced,
+                "failed": failed,
+                "unmapped_assignees": unmapped_assignees,
+                "missing_estimate": missing_estimate,
+                "synced_at": datetime.now(UTC).isoformat(),
             }
         )
 

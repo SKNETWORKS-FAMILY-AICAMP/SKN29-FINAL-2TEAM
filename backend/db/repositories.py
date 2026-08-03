@@ -478,6 +478,91 @@ class DocumentRepository:
                 return list(cursor.fetchall())
 
 
+class ExistTaskRepository:
+    """Jira에서 읽어온 기존 업무. 부하 계산의 분자다."""
+
+    JIRA_PROJECT = "JIRA_PROJECT"
+
+    @staticmethod
+    def list_jira_sources(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        """이 프로젝트가 읽기로 한 Jira 프로젝트들."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT proj_source_id, external_source_id
+                    FROM proj_source
+                    WHERE proj_id = %s AND source_type = %s
+                    ORDER BY proj_source_id
+                    """,
+                    (proj_id, ExistTaskRepository.JIRA_PROJECT),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def replace_for_source(*, proj_source_id: str, rows: list[dict[str, Any]]) -> int:
+        """한 소스의 업무를 넘겨받은 목록으로 통째로 교체한다.
+
+        `ProjectSourceRepository.replace()`와 같은 delete-then-insert다. 소스 하나가
+        재동기화의 단위인 이유는 프로젝트가 Jira 프로젝트를 여러 개 읽을 수 있어서다
+        — `proj_id`로 지우면 남의 소스까지 날아간다.
+
+        완료된 이슈는 JQL(`statusCategory != Done`)에서 안 잡히므로 delete 단계에서
+        자연히 사라진다. 따로 지울 필요가 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM exist_task WHERE proj_source_id = %s",
+                    (proj_source_id,),
+                )
+
+                inserted = 0
+                # 같은 이슈가 응답에 두 번 와도 한 행만 남긴다. UNIQUE가 마지막
+                # 방어선이지만 여기서 걸러야 에러 대신 정상 처리가 된다.
+                seen: set[str] = set()
+                for row in rows:
+                    jira_issue_id = row["jira_issue_id"]
+                    if jira_issue_id in seen:
+                        continue
+                    seen.add(jira_issue_id)
+
+                    exist_task_id = next_short_code(
+                        cursor,
+                        table="exist_task",
+                        column="exist_task_id",
+                        prefix="ET",
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO exist_task
+                            (exist_task_id, proj_source_id, assignee_person_id, jira_issue_id,
+                             status, status_category, priority, start_at, due_at,
+                             estimate, remaining, spent)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            exist_task_id,
+                            proj_source_id,
+                            row.get("assignee_person_id"),
+                            jira_issue_id,
+                            row.get("status"),
+                            row.get("status_category"),
+                            row.get("priority"),
+                            row.get("start_at"),
+                            row.get("due_at"),
+                            row.get("estimate"),
+                            row.get("remaining"),
+                            row.get("spent"),
+                        ),
+                    )
+                    inserted += 1
+                return inserted
+
+
 class AnalysisRunRepository:
     @staticmethod
     def create(
