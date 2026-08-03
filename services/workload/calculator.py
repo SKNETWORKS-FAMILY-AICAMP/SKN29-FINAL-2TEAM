@@ -143,7 +143,7 @@ def calculate(
     absences: list[dict[str, Any]],
     tasks: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """기간 `[period_start, period_end)`의 사람별 부하.
+    """기간 `[period_start, period_end)`의 인원별 부하.
 
     `profiles`가 대상자를 정한다(재직 중인 팀원). `tasks`에 있지만 `profiles`에
     없는 담당자의 일은 개인 합계에 안 들어가고 `unmapped_assignee_count`로만

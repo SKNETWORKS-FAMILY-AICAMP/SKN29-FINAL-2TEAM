@@ -209,7 +209,7 @@ WITH target AS (
 
 ## 단계 3 — 노출 (P1, 2시간)
 
-- [ ] `GET /api/projects/<id>/workload/?from=&to=` — 사람별 부하율 + 진단값
+- [x] `GET /api/projects/<id>/workload/?from=&to=` — 인원별 부하율 + 진단값
 - [ ] 화면: 부하율 막대 + **프로젝트별 분해**(KAN 144h / AIP 52h)
   - 08-03 ALTER의 `proj_source_id`가 이 분해를 가능하게 한다
   - **"한 프로젝트만 보면 90%, 합치면 123%"가 시연의 핵심 장면**

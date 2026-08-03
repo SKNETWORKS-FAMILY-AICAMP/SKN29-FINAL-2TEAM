@@ -198,7 +198,7 @@ export default function WorkloadPage() {
           <>
             <div className={styles.card}>
               <div>
-                <p className={styles.cardTitle}>사람별 부하율</p>
+                <p className={styles.cardTitle}>인원별 부하율</p>
                 <p className={styles.cardNote}>
                   {result.period_start} ~ {result.period_end} · 근무일 {result.workdays}일 · 세로선이 100%
                 </p>
