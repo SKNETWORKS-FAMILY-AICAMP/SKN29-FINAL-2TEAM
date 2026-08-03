@@ -17,6 +17,8 @@ export interface OpsAssignmentRun {
   run_id: string;
   snapshot_id: string;
   proj_id: string | null;
+  /** 스냅샷을 뜬 시각. `assign_run`에는 시각 컬럼이 없어 이걸 기준으로 보여준다. */
+  snap_as_of: string | null;
   readiness_id: string | null;
   model_version: string | null;
   policy_version: string | null;
@@ -43,6 +45,7 @@ export interface OpsValidation {
   reco_id: string;
   run_id: string | null;
   task_id: string | null;
+  task_name: string | null;
   status: string;
   confidence: number | null;
   missing_data: unknown;

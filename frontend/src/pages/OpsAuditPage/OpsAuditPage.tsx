@@ -247,12 +247,12 @@ function AssignmentRunsPanel({
       <p className={styles.resultSummary}>현재 {rows.length}건 표시 · 전체 기록 {allCount}건</p>
       <OpsDataTable minWidth={1100}>
         <thead>
-          <tr><th>실행 시각</th><th>모델 버전</th><th>정책 버전</th><th>요청자</th><th>상태</th></tr>
+          <tr><th>분석 기준 시각</th><th>모델 버전</th><th>정책 버전</th><th>요청자</th><th>상태</th></tr>
         </thead>
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.run_id} aria-selected={selected?.run_id === row.run_id} onClick={() => onSelect(row.run_id)}>
-              <td>{timeAgo(row.started_at ?? row.created_at)}</td>
+              <td>{row.snap_as_of ? timeAgo(row.snap_as_of) : '-'}</td>
               <td>{row.model_version ?? '-'}</td>
               <td>{row.policy_version ?? '-'}</td>
               <td>{row.requester_display_name ?? row.requester_email ?? '-'}</td>

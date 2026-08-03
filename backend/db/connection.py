@@ -31,7 +31,10 @@ def database_status() -> dict[str, str]:
                     """
                     SELECT
                         to_regclass('public.proj') IS NOT NULL AS schema_ready,
-                        to_regclass('public.person') IS NOT NULL AS people_ready,
+                        -- HR 8개 테이블은 2026-07-31에 mock_hr 스키마로 옮겼다.
+                        -- 여기가 public을 계속 보고 있어서, 사람이 57명 들어 있어도
+                        -- 항상 missing으로 보고했다(2026-08-03 수정).
+                        to_regclass('mock_hr.person') IS NOT NULL AS people_ready,
                         to_regclass('public.vec_idx') IS NOT NULL AS vector_ready
                     """
                 )

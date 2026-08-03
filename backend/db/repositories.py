@@ -2104,6 +2104,10 @@ class OpsAuditRepository:
                         ar.run_id,
                         ar.snapshot_id,
                         sn.proj_id,
+                        -- assign_run에는 시각 컬럼이 없다. 스냅샷을 뜬 시각이
+                        -- 곧 그 실행이 입력을 얼린 시점이라 감사 화면은 이걸 쓴다.
+                        -- "실행 시각"이 따로 필요해지면 그때 컬럼을 추가한다.
+                        sn.snap_as_of,
                         ar.readiness_id,
                         ar.model_version,
                         ar.policy_version,
@@ -2153,11 +2157,15 @@ class OpsAuditRepository:
                         vr.reco_id,
                         rr.run_id,
                         rr.task_id,
+                        -- 형제 쿼리(list_recommendations)와 같은 조인이다. 화면이
+                        -- 업무명으로 검색·표시하는데 여기만 빠져 있었다.
+                        t.task_name,
                         vr.status,
                         vr.confidence,
                         vr.missing_data
                     FROM valid_result AS vr
                     LEFT JOIN reco_result AS rr ON rr.reco_id = vr.reco_id
+                    LEFT JOIN task AS t ON t.task_id = rr.task_id
                     ORDER BY vr.valid_id DESC
                     """
                 )
