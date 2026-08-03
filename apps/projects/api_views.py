@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import psycopg
 from rest_framework import status
@@ -9,17 +9,24 @@ from rest_framework.views import APIView
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.connectors.clients import download_drive_file, list_drive_files, search_jira_issues
 from apps.connectors.oauth import OAuthError
-from backend.services.hr import lookup_person_ids_by_external_email
+from backend.services.hr import (
+    list_absences,
+    list_capacity_profiles,
+    lookup_person_ids_by_external_email,
+)
 from backend.services.storage import build_key
 from backend.services.storage import save as save_document
 from backend.db import (
+    AccountRepository,
     AnalysisRunRepository,
     DocumentRepository,
     ExistTaskRepository,
     ProjectRepository,
     ProjectSourceRepository,
+    TeamRepository,
     database_status,
 )
+from services.workload import calculator
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -352,6 +359,74 @@ class ProjectTaskSyncAPIView(AuthenticatedAPIView):
                 "missing_estimate": missing_estimate,
                 "synced_at": datetime.now(UTC).isoformat(),
             }
+        )
+
+
+# Sprint 기간을 아직 수집하지 않아 기본 조회 창을 4주로 둔다. 과학적 상수가 아니라
+# 비교 가능한 화면을 위한 정책값이라 `from`·`to`로 바꿀 수 있게 열어 둔다.
+_DEFAULT_WORKLOAD_DAYS = 28
+
+
+def _parse_date(raw: str | None, fallback: date) -> date | None:
+    if not raw:
+        return fallback
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+class ProjectWorkloadAPIView(AuthenticatedAPIView):
+    """기간별 사람 부하. 계산은 `services/workload/calculator.py`가 한다.
+
+    **결과를 저장하지 않는다.** `workload_result.run_id`가 `assign_run` →
+    `ana_snapshot` 체인을 요구하는데 그쪽(P6 Snapshot)이 아직 없다. 지금 억지로
+    저장하면 어느 실행의 값인지 모르는 행이 쌓인다.
+    """
+
+    def get(self, request, project_id):
+        account_id = request.user.account_id
+
+        today = datetime.now(UTC).date()
+        period_start = _parse_date(request.query_params.get("from"), today)
+        default_end = (period_start or today) + timedelta(days=_DEFAULT_WORKLOAD_DAYS)
+        period_end = _parse_date(request.query_params.get("to"), default_end)
+
+        if period_start is None or period_end is None or period_end <= period_start:
+            return Response(
+                {"detail": "기간이 올바르지 않습니다. from < to 형식의 날짜여야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            tasks = ExistTaskRepository.list_for_project(
+                proj_id=project_id,
+                account_id=account_id,
+            )
+            # 대상자는 요청자의 팀이다. 부하는 남의 팀 사람까지 볼 일이 아니다.
+            person_ids = TeamRepository.member_person_ids(AccountRepository.team_id(account_id))
+            profiles = list_capacity_profiles(
+                person_ids=person_ids,
+                period_start=period_start,
+                period_end=period_end,
+            )
+            absences = list_absences(
+                person_ids=person_ids,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response(
+            calculator.calculate(
+                period_start=period_start,
+                period_end=period_end,
+                profiles=profiles,
+                absences=absences,
+                tasks=tasks,
+            )
+            | {"as_of": datetime.now(UTC).isoformat()}
         )
 
 

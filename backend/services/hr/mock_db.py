@@ -242,6 +242,85 @@ def count_orgs() -> int:
             return cursor.fetchone()["n"]
 
 
+def list_capacity_profiles(
+    *,
+    person_ids: list[str],
+    period_start: Any,
+    period_end: Any,
+) -> list[dict[str, Any]]:
+    """부하 계산의 분모가 되는 근무조건. 재직 중인 사람만 준다.
+
+    `sched`는 이력 테이블이라 사람마다 여러 행이 있을 수 있다. 기간과 겹치는 행
+    중 가장 최근에 시작한 것 하나만 고른다 — 안 그러면 과거 근무조건까지 합산돼
+    `wk_hours`가 부풀려진다.
+
+    `wk_hours`가 NULL인 사람은 그 필드가 비어 온다. **여기서 40시간 같은 값을
+    채우지 않는다** — 무엇이 없는지는 계산기가 알아야 `NO_SCHEDULE`로 판정할 수
+    있고, 조용히 채우면 없는 근무조건이 있는 것처럼 보인다.
+    """
+
+    if not person_ids:
+        return []
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.person_id, p.name, p.job_role,
+                       sc.wk_hours, sc.def_wk_hours, sc.fte, sc.tz
+                FROM mock_hr.person AS p
+                LEFT JOIN LATERAL (
+                    SELECT s.tz, s.fte, s.wk_hours, s.def_wk_hours
+                    FROM mock_hr.sched AS s
+                    WHERE s.person_id = p.person_id
+                      AND s.eff_from <= %s
+                      AND (s.eff_to IS NULL OR s.eff_to >= %s)
+                    ORDER BY s.eff_from DESC
+                    LIMIT 1
+                ) AS sc ON true
+                WHERE p.person_id = ANY(%s) AND p.emp_status = 'ACTIVE'
+                ORDER BY p.person_id
+                """,
+                (period_end, period_start, sorted(set(person_ids))),
+            )
+            return list(cursor.fetchall())
+
+
+def list_absences(
+    *,
+    person_ids: list[str],
+    period_start: Any,
+    period_end: Any,
+) -> list[dict[str, Any]]:
+    """기간과 겹치는 **승인된** 부재.
+
+    `status = 'APPROVED'` 화이트리스트다. "REQUESTED만 제외" 같은 블랙리스트로
+    짜면 나중에 반려·취소 상태가 생겼을 때 승인 휴가처럼 차감된다.
+
+    기간을 넘어가는 부재(육아휴직 214일)도 그대로 준다. 창으로 자르는 것은
+    계산기 몫이다 — 자르지 않고 통째로 빼면 가용용량이 음수가 된다.
+    """
+
+    if not person_ids:
+        return []
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT person_id, absence_type, start_at, end_at
+                FROM mock_hr.absence
+                WHERE person_id = ANY(%s)
+                  AND status = 'APPROVED'
+                  AND start_at < %s
+                  AND end_at >= %s
+                ORDER BY person_id, start_at
+                """,
+                (sorted(set(person_ids)), period_end, period_start),
+            )
+            return list(cursor.fetchall())
+
+
 def lookup_person_ids_by_external_email(*, sys_type: str, emails: list[str]) -> dict[str, str]:
     """외부 시스템 이메일 → `person_id` 조회표. 키는 소문자다.
 

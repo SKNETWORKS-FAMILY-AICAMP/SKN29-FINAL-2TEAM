@@ -502,6 +502,32 @@ class ExistTaskRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        """이 프로젝트가 읽어온 업무 전부. 부하 계산의 입력이다.
+
+        `project_key`를 함께 준다 — "KAN만 90%, 합치면 122%"를 보여주려면 어느
+        Jira 프로젝트에서 온 일인지 알아야 한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT et.exist_task_id, et.jira_issue_id, et.assignee_person_id,
+                           et.status, et.status_category, et.due_at,
+                           et.estimate, et.remaining, et.spent,
+                           ps.external_source_id AS project_key
+                    FROM exist_task AS et
+                    JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                    WHERE ps.proj_id = %s AND ps.source_type = %s
+                    ORDER BY ps.external_source_id, et.jira_issue_id
+                    """,
+                    (proj_id, ExistTaskRepository.JIRA_PROJECT),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def replace_for_source(*, proj_source_id: str, rows: list[dict[str, Any]]) -> int:
         """한 소스의 업무를 넘겨받은 목록으로 통째로 교체한다.
 

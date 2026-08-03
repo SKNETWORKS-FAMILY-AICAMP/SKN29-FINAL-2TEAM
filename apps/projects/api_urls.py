@@ -10,6 +10,7 @@ from .api_views import (
     ProjectListCreateAPIView,
     ProjectSourceAPIView,
     ProjectTaskSyncAPIView,
+    ProjectWorkloadAPIView,
 )
 
 urlpatterns = [
@@ -35,6 +36,11 @@ urlpatterns = [
         "projects/<str:project_id>/tasks/sync/",
         ProjectTaskSyncAPIView.as_view(),
         name="api_project_task_sync",
+    ),
+    path(
+        "projects/<str:project_id>/workload/",
+        ProjectWorkloadAPIView.as_view(),
+        name="api_project_workload",
     ),
     path(
         "projects/<str:project_id>/assignment-runs/",
