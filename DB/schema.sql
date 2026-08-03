@@ -220,15 +220,31 @@ CREATE TABLE mock_hr.absence (
 
 CREATE TABLE exist_task (
     exist_task_id     VARCHAR(5) PRIMARY KEY,
+    -- 이 이슈를 어느 소스에서 가져왔는가(2026-08-03 추가). 이 컬럼이 없던 동안은
+    -- 재동기화 때 지울 범위를 특정할 수 없어 최초 1회 적재밖에 못 하는 구조였다.
+    -- proj_id가 아니라 proj_source_id인 이유: 프로젝트 하나가 Jira 프로젝트를
+    -- 여러 개 읽을 수 있다(proj_source에 UNIQUE 없음). proj_id는 proj_source를 타고 얻는다.
+    proj_source_id       VARCHAR(5) NOT NULL,   -- proj_source.proj_source_id(FK 없음)
     assignee_person_id   VARCHAR(5),  -- person_id 참조(FK 없음)
+                                      -- NULL = 담당자 이메일이 person_link에 없음.
+                                      -- 행을 버리지 않는다 — 버리면 부하 총량이 조용히 줄어든다.
+                                      -- Readiness에서 "미매핑 담당자"로 올려 PM이 알게 한다.
     jira_issue_id        VARCHAR(50) NOT NULL,
     status                VARCHAR(20),
     priority              VARCHAR(20),
     start_at              TIMESTAMPTZ,
     due_at                TIMESTAMPTZ,
+    -- 최초 추정치(2026-08-03 추가). exist_task_snap.estimate가 이 값을 복사해 간다 —
+    -- 기존에는 snap에만 있고 원본에 없어 채울 곳이 없었다.
+    estimate              NUMERIC(6,2),
     remaining             NUMERIC(6,2),
     spent                 NUMERIC(6,2)
 );
+
+-- 같은 소스에서 같은 이슈를 두 번 넣으면 그 사람 부하가 2배로 잡힌다.
+-- 재동기화를 delete-then-insert로 짜든 upsert로 짜든 이 제약이 마지막 방어선이다.
+CREATE UNIQUE INDEX ux_exist_task_source_issue
+    ON exist_task (proj_source_id, jira_issue_id);
 
 CREATE TABLE cal_event (
     cal_event_id    VARCHAR(5) PRIMARY KEY,
