@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import styles from './WorkloadPanel.module.css';
 
 type Tone = 'danger' | 'info' | 'warning' | 'success';
@@ -50,7 +51,16 @@ export function WorkloadPanel() {
   return (
     <>
       <div className={styles.card}>
-        <p className={styles.cardTitle}>팀별 업무 부하 분석</p>
+        {/*
+          이 카드의 팀별 수치는 아직 목업이다. 실제 Jira·HR 데이터로 계산한
+          사람별 부하는 아래 링크의 화면에 있다.
+        */}
+        <div className={styles.cardHeader}>
+          <p className={styles.cardTitle}>팀별 업무 부하 분석</p>
+          <Link to="/tasks/workload" className={styles.cardLink}>
+            사람별 부하 보기 →
+          </Link>
+        </div>
         <div className={styles.workloadList}>
           {TEAM_WORKLOAD.map((item) => (
             <div key={item.team} className={styles.workloadRow}>

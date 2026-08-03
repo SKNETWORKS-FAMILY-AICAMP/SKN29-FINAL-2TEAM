@@ -16,6 +16,25 @@
   color: var(--color-heading);
 }
 
+.cardHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.cardLink {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cardLink:hover {
+  text-decoration: underline;
+}
+
 .workloadList {
   display: flex;
   flex-direction: column;
