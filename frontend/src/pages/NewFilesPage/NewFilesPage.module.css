@@ -132,6 +132,11 @@
   color: var(--color-heading);
 }
 
+/*
+ * 이력은 쌓이기만 하므로 페이지가 아니라 이 카드 안에서 스크롤한다. 안 그러면
+ * 등록을 반복할수록 페이지가 길어져 정작 위쪽의 신규 파일 목록이 밀려난다.
+ * 상한은 한 행 약 49px 기준 6행쯤 — 그보다 적으면 내용만큼만 차지한다.
+ */
 .historyCard {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -140,6 +145,8 @@
   flex-direction: column;
   padding: var(--space-2) 0;
   width: 100%;
+  max-height: 296px;
+  overflow-y: auto;
 }
 
 .historyRow {
