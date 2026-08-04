@@ -8,7 +8,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.http import FileResponse, HttpResponse
+
 from backend.db import AccountRepository, MemberInviteRepository, log_audit
+from backend.services import storage
 from backend.services.hr import list_person_skills
 from backend.db.errors import (
     DuplicateRecord,
@@ -24,6 +27,7 @@ from .serializers import (
     InviteCodeSerializer,
     InviteCreateSerializer,
     LoginSerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     SignupSerializer,
@@ -210,6 +214,126 @@ class PasswordResetConfirmAPIView(APIView):
             return _repository_error_response(exc)
 
         return Response({"detail": "비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요."})
+
+
+class PasswordChangeAPIView(AuthenticatedAPIView):
+    """로그인한 사용자가 스스로 비밀번호를 바꾼다.
+
+    현재 비밀번호를 확인한다 — 토큰만으로 바꾸게 하면 자리를 비운 사이 남이
+    세션을 잡아 비밀번호를 갈아 끼울 수 있다.
+
+    **틀렸을 때 이메일 존재 여부는 흘리지 않는다.** 이미 로그인한 사람이라
+    계정이 있다는 것은 서로 아는 사실이고, 여기서 감출 것은 비밀번호뿐이다.
+    """
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        account_id = request.user.account_id
+
+        try:
+            account = AccountRepository.find_credentials_by_id(account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        if account is None:
+            return Response(
+                {"detail": "존재하지 않는 계정입니다."}, status=status.HTTP_404_NOT_FOUND
+            )
+        if not check_password(data["current_password"], account["password_hash"]):
+            return Response(
+                {"detail": "현재 비밀번호가 일치하지 않습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            AccountRepository.update_password(
+                account_id=account_id,
+                password_hash=make_password(data["password"]),
+            )
+            _log_audit_safely(actor_account_id=account_id, action="PASSWORD_CHANGE")
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        # 토큰을 무효화하지 않는다. 서버가 발급 목록을 들고 있지 않아 지금은
+        # 그럴 수 없고, 있는 것처럼 안내하면 거짓이 된다.
+        return Response({"detail": "비밀번호를 변경했습니다."})
+
+
+# 프로필 사진 상한. 아바타는 화면에서 52px로 그려지므로 이보다 클 이유가 없다.
+# 상한이 없으면 한 번의 요청으로 디스크를 채울 수 있다.
+_AVATAR_MAX_BYTES = 2 * 1024 * 1024
+
+
+class CurrentAvatarAPIView(AuthenticatedAPIView):
+    """내 프로필 사진. 올리고, 보고, 지운다.
+
+    남의 사진 경로는 열지 않는다 — 지금 필요한 것은 본인 것뿐이고, 팀원 사진이
+    필요해지면 팀 범위를 확인하는 경로를 따로 만드는 편이 안전하다.
+    """
+
+    def get(self, request):
+        try:
+            key = AccountRepository.avatar_key(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        if not key or not storage.exists(key):
+            # 아직 안 올렸다. 화면은 이름 첫 글자로 대신하므로 404가 정상 흐름이다.
+            return Response({"detail": "등록된 프로필 사진이 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+
+        data = storage.load(key)
+        mime = storage.sniff_image_type(data) or "application/octet-stream"
+        response = HttpResponse(data, content_type=mime)
+        # 같은 URL로 새 사진이 올라오므로 캐시하면 옛 사진이 남는다.
+        response["Cache-Control"] = "no-store"
+        return response
+
+    def put(self, request):
+        upload = request.FILES.get("file")
+        if upload is None:
+            return Response({"detail": "파일을 첨부해 주세요."}, status=status.HTTP_400_BAD_REQUEST)
+        if upload.size > _AVATAR_MAX_BYTES:
+            return Response(
+                {"detail": "프로필 사진은 2MB 이하여야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = upload.read()
+        # Content-Type 은 보내는 쪽이 정하는 값이라 믿지 않는다. 실제 바이트로 본다.
+        mime = storage.sniff_image_type(data)
+        if mime is None:
+            return Response(
+                {"detail": "JPG, PNG, WEBP 이미지만 올릴 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        account_id = request.user.account_id
+        key = storage.build_avatar_key(account_id=account_id, mime_type=mime)
+        try:
+            # 파일을 먼저 쓰고 기록을 나중에 한다. 반대 순서면 "DB에는 있다는데
+            # 파일이 없는" 상태가 생겨 화면이 깨진 이미지를 그린다.
+            storage.save(key, data)
+            AccountRepository.set_avatar_key(account_id=account_id, avatar_key=key)
+        except OSError as exc:
+            return Response(
+                {"detail": f"사진을 저장하지 못했습니다: {exc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response({"detail": "프로필 사진을 변경했습니다."})
+
+    def delete(self, request):
+        """기록만 지운다. 파일은 같은 키로 덮어써지므로 남겨 둬도 새 사진을 막지 않는다."""
+
+        try:
+            AccountRepository.set_avatar_key(account_id=request.user.account_id, avatar_key=None)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response({"detail": "프로필 사진을 삭제했습니다."})
 
 
 class CurrentAccountAPIView(AuthenticatedAPIView):

@@ -50,6 +50,46 @@ def build_key(*, team_id: str, doc_id: str, mime_type: str | None) -> str:
     return f"{team_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
 
 
+# 프로필 사진으로 받을 형식. 확장자는 여기서 정한다 — 업로드된 파일명을 경로에
+# 쓰면 `..`이나 `/`로 저장소 밖을 가리킬 수 있다.
+AVATAR_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+# 파일 앞부분의 시그니처. Content-Type 은 보내는 쪽이 정하는 값이라 믿을 수 없다 —
+# 실제로 이미지인지는 바이트를 봐야 안다.
+_IMAGE_SIGNATURES = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+)
+
+
+def sniff_image_type(data: bytes) -> str | None:
+    """실제 바이트로 판정한 이미지 형식. 모르면 `None`.
+
+    WebP 는 `RIFF....WEBP` 구조라 앞 4바이트만으로는 구분되지 않아 따로 본다.
+    """
+
+    for signature, mime in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def build_avatar_key(*, account_id: str, mime_type: str) -> str:
+    """`user_account.avatar_key`에 넣을 값.
+
+    계정마다 한 장이라 파일명이 `account_id`다. 새로 올리면 같은 키를 덮어써서
+    옛 사진이 저장소에 남지 않는다.
+    """
+
+    return f"avatar/{account_id}{AVATAR_TYPES[mime_type]}"
+
+
 def _resolved(key: str) -> Path:
     root = storage_root().resolve()
     path = (root / key).resolve()

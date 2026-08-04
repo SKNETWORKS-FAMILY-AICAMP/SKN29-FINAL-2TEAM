@@ -45,6 +45,10 @@ CREATE TABLE user_account (
     -- 이 계정이 속한 팀(2026-07-31 추가) = team.team_id(FK 없음). 팀장은 팀 생성 시,
     -- 팀원은 초대 수락 시 채워진다. 이 값이 곧 테넌트 경계다.
     team_id         VARCHAR(5),
+    -- 프로필 사진이 저장소 어디에 있는가(2026-08-04 추가). 파일 경로가 아니라
+    -- 저장소 안에서의 키다 — 지금은 로컬 디스크지만 S3로 바뀌어도 이 값은
+    -- 그대로 쓴다. 안 올렸으면 NULL 이고 화면이 이름 첫 글자로 대신한다.
+    avatar_key      VARCHAR(255),
     last_login_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );

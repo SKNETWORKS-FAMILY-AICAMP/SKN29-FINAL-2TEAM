@@ -45,6 +45,27 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return validate_new_password(value)
 
 
+class PasswordChangeSerializer(serializers.Serializer):
+    """로그인한 상태에서 스스로 바꾸는 경로.
+
+    현재 비밀번호를 반드시 받는다. 토큰만으로 바꾸게 하면 자리를 비운 사이
+    남이 세션을 잡아 비밀번호를 갈아 끼울 수 있다.
+    """
+
+    current_password = serializers.CharField(max_length=128, write_only=True)
+    password = serializers.CharField(max_length=128, write_only=True)
+
+    def validate_password(self, value: str) -> str:
+        return validate_new_password(value)
+
+    def validate(self, attrs: dict) -> dict:
+        if attrs["current_password"] == attrs["password"]:
+            raise serializers.ValidationError(
+                {"password": "현재 비밀번호와 다른 값을 입력해 주세요."}
+            )
+        return attrs
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=255)
     password = serializers.CharField(max_length=128, write_only=True)
@@ -92,6 +113,8 @@ def account_response(profile: dict[str, Any]) -> dict[str, Any]:
         "display_name": profile["display_name"],
         "account_status": profile["account_status"],
         "role": account_role(profile),
+        # 사진이 있는지만 알려준다. 저장소 키는 서버 내부 사정이라 내보내지 않는다.
+        "has_avatar": bool(profile.get("avatar_key")),
         "scope_org_ids": profile["scope_org_ids"],
         "person": None
         if person is None

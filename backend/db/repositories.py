@@ -1522,6 +1522,40 @@ class AccountRepository:
                 return cursor.fetchone()
 
     @staticmethod
+    def avatar_key(account_id: str) -> str | None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT avatar_key FROM user_account WHERE account_id = %s",
+                    (account_id,),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+        return row["avatar_key"]
+
+    @staticmethod
+    def set_avatar_key(*, account_id: str, avatar_key: str | None) -> None:
+        """프로필 사진 키를 저장한다. `None`이면 지운 것이다.
+
+        파일을 먼저 쓰고 이 기록을 나중에 한다. 순서가 반대면 "DB에는 있다는데
+        파일이 없는" 상태가 생겨 화면이 깨진 이미지를 그린다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE user_account SET avatar_key = %s
+                     WHERE account_id = %s
+                    RETURNING account_id
+                    """,
+                    (avatar_key, account_id),
+                )
+                if cursor.fetchone() is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+
+    @staticmethod
     def update_password(*, account_id: str, password_hash: str) -> None:
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -1577,7 +1611,7 @@ class AccountRepository:
     def _profile(cursor, account_id: str) -> dict[str, Any] | None:
         cursor.execute(
             """
-            SELECT account_id, email, display_name, account_status, team_id
+            SELECT account_id, email, display_name, account_status, team_id, avatar_key
             FROM user_account
             WHERE account_id = %s
             """,

@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { API_BASE_URL, apiRequest, apiUpload } from './client';
 
 /**
  * 가입 경로로 정해지는 역할. 초대 코드로 들어온 계정만 팀원이고 직접 가입은
@@ -26,6 +26,8 @@ export interface Account {
   person: AccountPerson | null;
   /** HR이 아는 보유 스킬. 숙련도 높은 순. HR 미연결이거나 등록이 없으면 빈 배열. */
   skills: PersonSkill[];
+  /** 프로필 사진을 올렸는가. 저장소 키는 서버 내부 사정이라 내려오지 않는다. */
+  has_avatar: boolean;
 }
 
 /** `mock_hr.person_skill` 한 줄. */
@@ -89,4 +91,33 @@ export function confirmPasswordReset(token: string, password: string) {
     method: 'POST',
     body: { token, password },
   });
+}
+
+/**
+ * 로그인한 사용자가 스스로 비밀번호를 바꾼다. 현재 비밀번호를 함께 보낸다 —
+ * 토큰만으로 바꾸게 하면 자리를 비운 사이 남이 세션을 잡아 갈아 끼울 수 있다.
+ */
+export function changePassword(token: string, currentPassword: string, password: string) {
+  return apiRequest<{ detail: string }>('/auth/password/change/', {
+    method: 'POST',
+    token,
+    body: { current_password: currentPassword, password },
+  });
+}
+
+/**
+ * 내 프로필 사진 주소. 같은 URL로 새 사진이 올라오므로 바뀐 것을 화면이 알도록
+ * 캐시 무력화 값을 붙인다 — 안 붙이면 브라우저가 옛 사진을 계속 보여준다.
+ */
+export function avatarUrl(version: number | string): string {
+  return `${API_BASE_URL}/auth/me/avatar/?v=${version}`;
+}
+
+/** 프로필 사진을 올린다(JPG·PNG·WEBP, 2MB 이하). 같은 키를 덮어쓴다. */
+export function uploadAvatar(token: string, file: File) {
+  return apiUpload<{ detail: string }>('/auth/me/avatar/', file, { token });
+}
+
+export function deleteAvatar(token: string) {
+  return apiRequest<{ detail: string }>('/auth/me/avatar/', { method: 'DELETE', token });
 }

@@ -8,6 +8,8 @@ import {
   Input,
   Modal,
   Select,
+  AvatarPicker,
+  PasswordChangeCard,
   SettingsLayout,
   SkillList,
   useToast,
@@ -34,6 +36,7 @@ import styles from './TeamLeaderSettingsPage.module.css';
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'profile', label: '내 프로필', icon: 'user' },
   { id: 'skills', label: '보유 스킬', icon: 'sparkles' },
+  { id: 'password', label: '비밀번호 변경', icon: 'lock' },
   { id: 'connectors', label: '연동 관리', icon: 'link' },
   { id: 'team', label: '팀원 관리', icon: 'users' },
   { id: 'workload', label: '팀 업무량 기준', icon: 'sliders' },
@@ -94,22 +97,18 @@ export default function TeamLeaderSettingsPage() {
   }, [refreshInvites]);
 
   // 이름·부서·직급과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
-  useEffect(() => {
+  const reloadAccount = useCallback(async () => {
     if (!token) return;
-
-    let cancelled = false;
-    fetchCurrentAccount(token)
-      .then((row) => {
-        if (!cancelled) setAccount(row);
-      })
-      .catch(() => {
-        // 프로필을 못 읽어도 나머지 구획은 보여준다.
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    try {
+      setAccount(await fetchCurrentAccount(token));
+    } catch {
+      // 프로필을 못 읽어도 나머지 구획은 보여준다.
+    }
   }, [token]);
+
+  useEffect(() => {
+    void reloadAccount();
+  }, [reloadAccount]);
 
   // 서버에 실제로 기록된 연결(현재는 People DB)을 데모 상태 위에 덮어쓴다.
   useEffect(() => {
@@ -212,12 +211,13 @@ export default function TeamLeaderSettingsPage() {
           </div>
 
           <div className={styles.identityRow}>
-            {/* 사진을 담는 곳이 아직 없어 이름 첫 글자로 대신한다. 상단 내비게이션과 같은 방식이다. */}
-            <span className={styles.avatar} aria-hidden="true">
-              {(account?.person?.name ?? account?.display_name ?? '').slice(0, 1) || (
-                <Icon name="user" size={20} color="var(--color-muted)" />
-              )}
-            </span>
+            <AvatarPicker
+              token={token}
+              name={account?.person?.name ?? account?.display_name ?? ''}
+              hasAvatar={account?.has_avatar ?? false}
+              onChanged={() => void reloadAccount()}
+              onError={(message) => showToast(message, 'error')}
+            />
             <div className={styles.identityText}>
               <span className={styles.identityName}>
                 {account?.person?.name ?? account?.display_name ?? '-'}
@@ -278,6 +278,20 @@ export default function TeamLeaderSettingsPage() {
             <p>업무 배정 후보를 고를 때 근거가 되는 값입니다. 인사 시스템에서 옵니다.</p>
           </div>
           <SkillList skills={account?.skills ?? []} />
+        </Card>
+      </section>
+
+      <section id="password" className={styles.sectionBlock}>
+        <Card padding="lg">
+          <div className={styles.sectionHeading}>
+            <h2>비밀번호 변경</h2>
+            <p>현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다.</p>
+          </div>
+          <PasswordChangeCard
+            token={token}
+            onDone={(message) => showToast(message, 'success')}
+            onError={(message) => showToast(message, 'error')}
+          />
         </Card>
       </section>
 

@@ -26,7 +26,13 @@ _audit_patchers = []
 
 
 def setUpModule():
-    for target in ("apps.accounts.api_views.log_audit", "apps.connectors.api_views.log_audit"):
+    # `list_person_skills`도 psycopg로 자기 연결을 연다. 프로필 조회 테스트가
+    # 개발 DB의 mock_hr을 때리지 않도록 같이 막는다.
+    for target in (
+        "apps.accounts.api_views.log_audit",
+        "apps.connectors.api_views.log_audit",
+        "apps.accounts.api_views.list_person_skills",
+    ):
         patcher = patch(target)
         patcher.start()
         _audit_patchers.append(patcher)
@@ -432,6 +438,135 @@ class CurrentAccountApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["account_id"], "UA001")
         get_profile.assert_called_once_with("UA001")
+
+
+class PasswordChangeApiTests(SimpleTestCase):
+    """로그인한 사용자가 스스로 바꾸는 경로."""
+
+    def _post(self, body, account_id="UA001"):
+        return self.client.post(
+            "/api/auth/password/change/",
+            body,
+            content_type="application/json",
+            headers={"authorization": f"Bearer {issue_token(account_id)}"},
+        )
+
+    def test_requires_login(self):
+        response = self.client.post(
+            "/api/auth/password/change/",
+            {"current_password": "OldPass12", "password": "NewPass12"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @patch("apps.accounts.api_views.AccountRepository.update_password")
+    @patch("apps.accounts.api_views.AccountRepository.find_credentials_by_id")
+    def test_changes_when_current_password_matches(self, find, update):
+        find.return_value = {
+            "account_id": "UA001",
+            "password_hash": make_password("OldPass12"),
+            "account_status": "ACTIVE",
+        }
+
+        response = self._post({"current_password": "OldPass12", "password": "NewPass34"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(update.call_args.kwargs["account_id"], "UA001")
+        # 평문이 그대로 저장되면 안 된다.
+        self.assertNotEqual(update.call_args.kwargs["password_hash"], "NewPass34")
+
+    @patch("apps.accounts.api_views.AccountRepository.update_password")
+    @patch("apps.accounts.api_views.AccountRepository.find_credentials_by_id")
+    def test_wrong_current_password_writes_nothing(self, find, update):
+        """토큰만으로 바꿀 수 있으면 자리를 비운 사이 남이 갈아 끼울 수 있다."""
+
+        find.return_value = {
+            "account_id": "UA001",
+            "password_hash": make_password("OldPass12"),
+            "account_status": "ACTIVE",
+        }
+
+        response = self._post({"current_password": "WrongPass12", "password": "NewPass34"})
+
+        self.assertEqual(response.status_code, 400)
+        update.assert_not_called()
+
+    @patch("apps.accounts.api_views.AccountRepository.update_password")
+    @patch("apps.accounts.api_views.AccountRepository.find_credentials_by_id")
+    def test_weak_password_is_rejected_before_any_read(self, find, update):
+        response = self._post({"current_password": "OldPass12", "password": "short"})
+
+        self.assertEqual(response.status_code, 400)
+        find.assert_not_called()
+        update.assert_not_called()
+
+    @patch("apps.accounts.api_views.AccountRepository.update_password")
+    @patch("apps.accounts.api_views.AccountRepository.find_credentials_by_id")
+    def test_same_password_is_rejected(self, find, update):
+        response = self._post({"current_password": "SamePass12", "password": "SamePass12"})
+
+        self.assertEqual(response.status_code, 400)
+        update.assert_not_called()
+
+
+class AvatarApiTests(SimpleTestCase):
+    """프로필 사진. 형식은 Content-Type이 아니라 실제 바이트로 판정한다."""
+
+    PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+    def _headers(self):
+        return {"authorization": f"Bearer {issue_token('UA001')}"}
+
+    def test_requires_login(self):
+        self.assertEqual(self.client.get("/api/auth/me/avatar/").status_code, 401)
+
+    @patch("apps.accounts.api_views.AccountRepository.avatar_key", return_value=None)
+    def test_missing_avatar_is_404(self, _key):
+        response = self.client.get("/api/auth/me/avatar/", headers=self._headers())
+        self.assertEqual(response.status_code, 404)
+
+    @patch("apps.accounts.api_views.AccountRepository.set_avatar_key")
+    @patch("apps.accounts.api_views.storage.save")
+    def test_upload_stores_file_then_records_key(self, save, set_key):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from rest_framework.test import APIClient
+
+        response = APIClient().put(
+            "/api/auth/me/avatar/",
+            data={"file": SimpleUploadedFile("me.png", self.PNG, content_type="image/png")},
+            format="multipart",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        save.assert_called_once()
+        # 업로드된 파일명이 아니라 계정 id로 키를 만든다 — 이름에 `..`이 들어오면
+        # 저장소 밖을 가리킬 수 있다.
+        self.assertEqual(set_key.call_args.kwargs["avatar_key"], "avatar/UA001.png")
+
+    @patch("apps.accounts.api_views.AccountRepository.set_avatar_key")
+    @patch("apps.accounts.api_views.storage.save")
+    def test_non_image_is_rejected_even_when_content_type_lies(self, save, set_key):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from rest_framework.test import APIClient
+
+        response = APIClient().put(
+            "/api/auth/me/avatar/",
+            data={"file": SimpleUploadedFile("evil.png", b"<?php ?>", content_type="image/png")},
+            format="multipart",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        save.assert_not_called()
+        set_key.assert_not_called()
+
+    @patch("apps.accounts.api_views.AccountRepository.set_avatar_key")
+    def test_delete_clears_the_key(self, set_key):
+        response = self.client.delete("/api/auth/me/avatar/", headers=self._headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(set_key.call_args.kwargs["avatar_key"])
 
 
 class InviteApiTests(SimpleTestCase):

@@ -34,6 +34,10 @@ export type { ToastContextValue, ToastTone } from './Toast/Toast';
 export { Icon } from './Icon/Icon';
 export type { IconProps, IconName } from './Icon/Icon';
 
+export { AvatarPicker } from './AvatarPicker/AvatarPicker';
+export type { AvatarPickerProps } from './AvatarPicker/AvatarPicker';
+export { PasswordChangeCard } from './PasswordChangeCard/PasswordChangeCard';
+export type { PasswordChangeCardProps } from './PasswordChangeCard/PasswordChangeCard';
 export { SkillList } from './SkillList/SkillList';
 export type { SkillListProps } from './SkillList/SkillList';
 export { SettingsLayout } from './SettingsLayout/SettingsLayout';

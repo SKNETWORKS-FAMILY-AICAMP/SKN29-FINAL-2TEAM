@@ -1,6 +1,6 @@
 import { clearSession, loadSessionToken } from '../utils/session';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
 
 /**
  * A failed API call. `status` is 0 when the request never reached the server
@@ -47,7 +47,7 @@ export function parseErrorBody(body: unknown, status: number): ApiError {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   token?: string | null;
 }
@@ -82,6 +82,42 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
 
+  if (!response.ok) throw parseErrorBody(payload, response.status);
+  return payload as T;
+}
+
+/**
+ * 파일 업로드. `apiRequest`와 나눠 둔 이유는 **Content-Type을 직접 정하면 안 되기
+ * 때문**이다 — multipart 는 경계 문자열이 헤더에 들어가야 하고, 그 값은 브라우저가
+ * FormData 를 보면서 만든다. 직접 넣으면 서버가 본문을 파싱하지 못한다.
+ */
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  options: { method?: 'POST' | 'PUT'; token?: string | null; field?: string } = {},
+): Promise<T> {
+  const { method = 'PUT', token, field = 'file' } = options;
+
+  const form = new FormData();
+  form.append(field, file);
+
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { method, headers, body: form });
+  } catch {
+    throw new ApiError('서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해 주세요.', 0);
+  }
+
+  if (response.status === 401 && token && token === loadSessionToken()) {
+    clearSession();
+  }
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : null;
   if (!response.ok) throw parseErrorBody(payload, response.status);
   return payload as T;
 }

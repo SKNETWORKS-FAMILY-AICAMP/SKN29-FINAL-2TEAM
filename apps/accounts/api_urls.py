@@ -7,6 +7,8 @@ from .api_views import (
     InvitePreviewAPIView,
     InviteRevokeAPIView,
     LoginAPIView,
+    CurrentAvatarAPIView,
+    PasswordChangeAPIView,
     PasswordResetConfirmAPIView,
     PasswordResetRequestAPIView,
     SignupAPIView,
@@ -16,6 +18,12 @@ urlpatterns = [
     path("auth/signup/", SignupAPIView.as_view(), name="api_auth_signup"),
     path("auth/login/", LoginAPIView.as_view(), name="api_auth_login"),
     path("auth/me/", CurrentAccountAPIView.as_view(), name="api_auth_me"),
+    path("auth/me/avatar/", CurrentAvatarAPIView.as_view(), name="api_auth_me_avatar"),
+    path(
+        "auth/password/change/",
+        PasswordChangeAPIView.as_view(),
+        name="api_auth_password_change",
+    ),
     path(
         "auth/password-reset/",
         PasswordResetRequestAPIView.as_view(),

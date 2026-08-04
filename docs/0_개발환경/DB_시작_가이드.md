@@ -159,6 +159,7 @@ ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ;
 ALTER TABLE proj ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 ALTER TABLE proj ALTER COLUMN created_at SET DEFAULT now();
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exist_task_source_issue ON exist_task (proj_source_id, jira_issue_id);
+ALTER TABLE user_account ADD COLUMN IF NOT EXISTS avatar_key VARCHAR(255);
 ALTER TABLE proj ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 UPDATE proj SET team_id = (SELECT ua.team_id FROM user_account ua WHERE ua.account_id = proj.owner_account_id) WHERE team_id IS NULL;
 CREATE TABLE IF NOT EXISTS team_folder (
@@ -298,6 +299,15 @@ Get-Content -Raw DB/peopleDB/team_overrides.sql |
 
 ```text
 DB/schema.sql → DB/peopleDB/peopledb_mock.sql → DB/peopleDB/team_overrides.sql
+              → DB/peopleDB/demo_skills.sql
+```
+
+`demo_skills.sql`은 팀장 자리(`PX002`)의 보유 스킬을 넣는다. `peopledb_mock.sql`이 55명에게 스킬을 넣으면서 이 자리만 빠뜨려, 팀장으로 로그인하면 「내 프로필 → 보유 스킬」이 본인만 비어 보인다. 실명이 없어 저장소에 커밋돼 있고 여러 번 실행해도 안전하다.
+
+```powershell
+Get-Content -Raw DB/peopleDB/demo_skills.sql |
+  docker compose -f infra/docker/docker-compose.yml exec -T db `
+  psql -U project_copilot -d project_copilot -v ON_ERROR_STOP=1
 ```
 
 직접 가입한 팀장은 People DB 커넥터에서 가입 이메일과 `person.email`을 비교해 `SELF_EMAIL` 매핑을 만든다. 두 이메일이 다르면 HR 본인 확인과 팀원 초대가 막히므로 `team_overrides.sql`의 주소를 먼저 확인한다. 팀원 역할은 데이터의 `org.mgr_id`가 아니라 초대 코드 가입(`TEAM_INVITATION`)으로 결정된다.
