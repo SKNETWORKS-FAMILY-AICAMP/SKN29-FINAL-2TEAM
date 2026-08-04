@@ -226,8 +226,16 @@ export interface DocumentHistoryEntry {
   payload: Record<string, unknown>;
 }
 
-export function listDocumentHistory(token: string) {
-  return apiRequest<DocumentHistoryEntry[]>('/team/documents/history/', { token });
+export interface DocumentHistoryPage {
+  entries: DocumentHistoryEntry[];
+  /** 더 읽을 것이 남았는가. 남은 개수는 화면이 쓰지 않아 주지 않는다. */
+  has_more: boolean;
+}
+
+/** 이력 한 페이지(20건). `offset`으로 「더 보기」를 이어 받는다. */
+export function listDocumentHistory(token: string, offset = 0) {
+  const suffix = offset > 0 ? `?offset=${offset}` : '';
+  return apiRequest<DocumentHistoryPage>(`/team/documents/history/${suffix}`, { token });
 }
 
 export interface TaskSyncResult {

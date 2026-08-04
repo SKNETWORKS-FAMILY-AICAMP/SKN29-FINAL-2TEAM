@@ -283,11 +283,16 @@ class DocumentRegisterTests(SimpleTestCase):
 
 
 class DocumentHistoryTests(SimpleTestCase):
-    def _history(self, rows):
+    def _history(self, rows, has_more=False, query=""):
         with patch(
-            "apps.projects.api_views.DocumentRepository.list_history", return_value=rows
-        ):
-            return self.client.get("/api/team/documents/history/", **auth_header())
+            "apps.projects.api_views.DocumentRepository.list_history",
+            return_value=(rows, has_more),
+        ) as list_history:
+            response = self.client.get(
+                f"/api/team/documents/history/{query}", **auth_header()
+            )
+        self.call = list_history.call_args
+        return response
 
     def _row(self, action="DOCUMENT_REGISTER", payload=None):
         from datetime import UTC, datetime
@@ -302,8 +307,8 @@ class DocumentHistoryTests(SimpleTestCase):
 
     def test_clean_run_is_ok(self):
         body = self._history([self._row()]).json()
-        self.assertEqual(body[0]["status"], "OK")
-        self.assertEqual(body[0]["actor_display_name"], "임준")
+        self.assertEqual(body["entries"][0]["status"], "OK")
+        self.assertEqual(body["entries"][0]["actor_display_name"], "임준")
 
     def test_real_failure_is_flagged(self):
         """실패가 섞였는데 '완료'로만 보이면 몇 건이 빠졌는지 알 수 없다."""
@@ -311,11 +316,31 @@ class DocumentHistoryTests(SimpleTestCase):
         body = self._history(
             [self._row(action="DOCUMENT_DOWNLOAD", payload={"downloaded": 7, "failed": 2})]
         ).json()
-        self.assertEqual(body[0]["status"], "PARTIAL")
+        self.assertEqual(body["entries"][0]["status"], "PARTIAL")
 
     def test_skipped_is_not_a_failure(self):
         """미지원이라 걸러진 것은 하려다 안 된 것이 아니다. 건수는 payload에 남는다."""
 
         body = self._history([self._row(payload={"registered": 3, "skipped": 2})]).json()
-        self.assertEqual(body[0]["status"], "OK")
-        self.assertEqual(body[0]["payload"]["skipped"], 2)
+        self.assertEqual(body["entries"][0]["status"], "OK")
+        self.assertEqual(body["entries"][0]["payload"]["skipped"], 2)
+
+    def test_more_pages_are_announced(self):
+        """「더 보기」를 보일지는 화면이 정하지만, 남았다는 사실은 서버가 안다."""
+
+        self.assertTrue(self._history([self._row()], has_more=True).json()["has_more"])
+        self.assertFalse(self._history([self._row()]).json()["has_more"])
+
+    def test_offset_is_passed_through(self):
+        self._history([], query="?offset=20")
+        self.assertEqual(self.call.kwargs["offset"], 20)
+        self.assertEqual(self.call.kwargs["limit"], 20)
+
+    def test_broken_offset_falls_back_to_the_first_page(self):
+        """주소창을 손댄 값 때문에 이력이 통째로 안 보이면 안 된다."""
+
+        self._history([], query="?offset=abc")
+        self.assertEqual(self.call.kwargs["offset"], 0)
+
+        self._history([], query="?offset=-5")
+        self.assertEqual(self.call.kwargs["offset"], 0)

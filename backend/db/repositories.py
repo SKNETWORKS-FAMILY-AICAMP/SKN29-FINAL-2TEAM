@@ -711,21 +711,30 @@ class DocumentRepository:
                 return created
 
     @staticmethod
-    def list_history(*, account_id: str, limit: int = 20) -> list[dict[str, Any]]:
-        """이 팀의 문서 처리 이력.
+    def list_history(
+        *,
+        account_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """이 팀의 문서 처리 이력 한 페이지와 "더 있는가".
 
         `audit_log`를 그대로 읽는다 — 등록·다운로드가 언제 몇 건이었는지는
         따로 테이블을 둘 만큼 다른 정보가 아니다.
 
         `audit_log`에 팀 컬럼이 없어 **행위자의 팀**으로 거른다. 문서 등록은
         프로젝트와 무관해져서 `proj_id`로는 더 이상 찾을 수 없다.
+
+        전체 건수를 세지 않고 **한 행 더 읽어** 더 있는지 판단한다. 화면은 남은
+        개수를 쓰지 않고 「더 보기」를 보일지만 정하므로, 매 페이지마다 count(*)로
+        전체를 훑을 이유가 없다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _team_of(cursor, account_id)
                 if team_id is None:
-                    return []
+                    return [], False
                 cursor.execute(
                     """
                     SELECT al.audit_id, al.action, al.payload, al.occurred_at,
@@ -733,12 +742,14 @@ class DocumentRepository:
                     FROM audit_log AS al
                     JOIN user_account AS ua ON ua.account_id = al.actor_account_id
                     WHERE ua.team_id = %s AND al.target_type = %s
-                    ORDER BY al.occurred_at DESC
-                    LIMIT %s
+                    ORDER BY al.occurred_at DESC, al.audit_id DESC
+                    LIMIT %s OFFSET %s
                     """,
-                    (team_id, DocumentRepository.AUDIT_TARGET, limit),
+                    (team_id, DocumentRepository.AUDIT_TARGET, limit + 1, offset),
                 )
-                return list(cursor.fetchall())
+                rows = list(cursor.fetchall())
+
+        return rows[:limit], len(rows) > limit
 
     @staticmethod
     def mark_stored(*, doc_id: str, storage_key: str, content_hash: str, revision: str | None) -> None:

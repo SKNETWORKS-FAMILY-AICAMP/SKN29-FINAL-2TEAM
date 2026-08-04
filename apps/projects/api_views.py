@@ -421,14 +421,32 @@ class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
 
 
 class TeamDocumentHistoryAPIView(AuthenticatedAPIView):
-    """이 팀의 문서 등록·다운로드 이력."""
+    """이 팀의 문서 등록·다운로드 이력. `offset`으로 「더 보기」를 이어 받는다."""
+
+    PAGE_SIZE = 20
 
     def get(self, request):
         try:
-            rows = DocumentRepository.list_history(account_id=request.user.account_id)
+            offset = max(0, int(request.query_params.get("offset", 0)))
+        except ValueError:
+            offset = 0
+
+        try:
+            rows, has_more = DocumentRepository.list_history(
+                account_id=request.user.account_id,
+                limit=self.PAGE_SIZE,
+                offset=offset,
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response([document_history_response(row) for row in rows])
+
+        return Response(
+            {
+                "entries": [document_history_response(row) for row in rows],
+                # 화면이 「더 보기」를 보일지만 정하면 되므로 남은 개수는 주지 않는다.
+                "has_more": has_more,
+            }
+        )
 
 
 class TeamDocumentDownloadAPIView(AuthenticatedAPIView):

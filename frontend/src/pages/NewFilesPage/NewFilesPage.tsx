@@ -76,6 +76,8 @@ export default function NewFilesPage() {
   const [configured, setConfigured] = useState(false);
   const [candidates, setCandidates] = useState<NewDocumentCandidate[]>([]);
   const [history, setHistory] = useState<DocumentHistoryEntry[]>([]);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [roles, setRoles] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -92,15 +94,17 @@ export default function NewFilesPage() {
       if (folders.length === 0) {
         setCandidates([]);
         setHistory([]);
+        setHistoryHasMore(false);
         return;
       }
 
-      const [rows, historyRows] = await Promise.all([
+      const [rows, historyPage] = await Promise.all([
         listNewDocuments(token),
-        listDocumentHistory(token).catch(() => []),
+        listDocumentHistory(token).catch(() => ({ entries: [], has_more: false })),
       ]);
       setCandidates(rows);
-      setHistory(historyRows);
+      setHistory(historyPage.entries);
+      setHistoryHasMore(historyPage.has_more);
       // 폴더에 지정된 역할을 기본값으로 채운다. 없으면 '기타'로 두고 사용자가 고른다.
       setRoles(
         Object.fromEntries(rows.map((row) => [row.file_id, row.suggested_role ?? FALLBACK_ROLE])),
@@ -118,6 +122,21 @@ export default function NewFilesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 이미 받은 것 뒤부터 이어 받는다. 처음부터 다시 읽으면 스크롤이 튄다. */
+  async function handleLoadMoreHistory() {
+    if (!token || historyLoading) return;
+    setHistoryLoading(true);
+    try {
+      const page = await listDocumentHistory(token, history.length);
+      setHistory((prev) => [...prev, ...page.entries]);
+      setHistoryHasMore(page.has_more);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : '이력을 더 불러오지 못했습니다', 'error');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   const rows: FileRow[] = useMemo(
     () =>
@@ -239,13 +258,27 @@ export default function NewFilesPage() {
           />
         )}
 
-        {!loading && configured && <HistoryBlock entries={history} />}
+        {!loading && configured && (
+          <HistoryBlock
+            entries={history}
+            hasMore={historyHasMore}
+            loading={historyLoading}
+            onLoadMore={handleLoadMoreHistory}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function HistoryBlock({ entries }: { entries: DocumentHistoryEntry[] }) {
+interface HistoryBlockProps {
+  entries: DocumentHistoryEntry[];
+  hasMore: boolean;
+  loading: boolean;
+  onLoadMore: () => void;
+}
+
+function HistoryBlock({ entries, hasMore, loading, onLoadMore }: HistoryBlockProps) {
   return (
     <div className={styles.historyBlock}>
       <h2>최근 처리 이력</h2>
@@ -262,6 +295,16 @@ function HistoryBlock({ entries }: { entries: DocumentHistoryEntry[] }) {
           </div>
         ))}
         {entries.length === 0 && <p className={styles.historyEmpty}>최근 처리 이력이 없습니다.</p>}
+        {hasMore && (
+          <button
+            type="button"
+            className={styles.historyMore}
+            onClick={onLoadMore}
+            disabled={loading}
+          >
+            {loading ? '불러오는 중…' : '더 보기'}
+          </button>
+        )}
       </div>
     </div>
   );
