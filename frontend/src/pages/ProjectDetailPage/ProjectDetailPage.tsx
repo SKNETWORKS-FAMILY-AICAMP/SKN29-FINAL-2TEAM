@@ -270,16 +270,18 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
 
-              <div className={styles.tableHead}>
-                <span>이슈</span>
-                <span>제목</span>
-                <span>담당</span>
-                <span>상태</span>
-                <span className={styles.right}>추정</span>
-                <span className={styles.right}>잔여</span>
-                <span className={styles.right}>마감</span>
-              </div>
+              {/* 헤더를 스크롤 컨테이너 **안에** 둔다. 밖에 두면 목록에 스크롤바가
+                  생길 때 행만 그 너비만큼 좁아져 열이 어긋난다. */}
               <div className={styles.rowList}>
+                <div className={styles.tableHead}>
+                  <span>이슈</span>
+                  <span>제목</span>
+                  <span>담당</span>
+                  <span>상태</span>
+                  <span className={styles.right}>추정</span>
+                  <span className={styles.right}>잔여</span>
+                  <span className={styles.right}>마감</span>
+                </div>
                 {visibleTasks.map((task) => (
                   <div key={task.exist_task_id} className={styles.row}>
                     <span className={styles.issueKey}>{task.jira_issue_id}</span>
