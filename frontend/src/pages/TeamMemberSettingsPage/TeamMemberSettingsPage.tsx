@@ -114,29 +114,13 @@ export default function TeamMemberSettingsPage() {
               <span className={styles.identityMeta}>
                 {[account?.person?.org_name, account?.person?.job_role].filter(Boolean).join(' · ') || '-'}
               </span>
+              <span className={styles.identitySource}>
+                <Icon name="lock" size={12} color="var(--color-placeholder)" />
+                인사 시스템 연동 · 읽기 전용
+              </span>
             </div>
           </div>
 
-          <div className={styles.hrBox}>
-            <div className={styles.hrBoxHeader}>
-              <Icon name="lock" size={14} color="var(--color-placeholder)" />
-              <span>HR 연동 정보 (읽기 전용)</span>
-            </div>
-            <div className={styles.hrFieldGrid}>
-              <div className={styles.hrField}>
-                <span className={styles.hrFieldLabel}>이름</span>
-                <span className={styles.hrFieldValue}>{account?.person?.name ?? '-'}</span>
-              </div>
-              <div className={styles.hrField}>
-                <span className={styles.hrFieldLabel}>부서</span>
-                <span className={styles.hrFieldValue}>{account?.person?.org_name ?? '-'}</span>
-              </div>
-              <div className={styles.hrField}>
-                <span className={styles.hrFieldLabel}>직급</span>
-                <span className={styles.hrFieldValue}>{account?.person?.job_role ?? '-'}</span>
-              </div>
-            </div>
-          </div>
 
           <p className={styles.subheading}>계정 정보</p>
           <div className={styles.accountRow}>
