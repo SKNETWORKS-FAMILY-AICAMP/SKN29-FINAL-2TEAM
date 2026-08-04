@@ -425,7 +425,16 @@ def _jira_issue_row(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def search_jira_issues(*, account_id: str, project_key: str) -> list[dict[str, Any]]:
-    """프로젝트의 미완료 이슈. 담당자·상태·마감·공수만 추린다."""
+    """프로젝트의 이슈. 담당자·상태·마감·공수만 추린다.
+
+    **완료된 것도 가져온다.** 부하 계산에는 미완료만 쓰지만(계산기가
+    `status_category == 'DONE'`을 건너뛴다), 진행률은 "전체 중 얼마나 끝났나"라
+    완료분이 분자·분모 양쪽에 필요하다. 미완료만 모으면 끝난 일이 통계에서
+    사라져 진행률이 실제보다 낮게 나온다.
+
+    실제 프로젝트에서는 완료 이슈가 계속 쌓이므로 언젠가 기간 제한이 필요하다.
+    지금 목업은 37건이라 문제되지 않는다.
+    """
 
     credential = credential_for(account_id=account_id, connector_type=JIRA)
     cloud_id = credential.get("cloud_id")
@@ -437,9 +446,8 @@ def search_jira_issues(*, account_id: str, project_key: str) -> list[dict[str, A
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
-    # 완료된 이슈는 부하에 안 잡힌다. 표시 이름이 아니라 표준 카테고리로 거른다.
     body: dict[str, Any] = {
-        "jql": f'project = "{project_key}" AND statusCategory != Done ORDER BY key',
+        "jql": f'project = "{project_key}" ORDER BY key',
         "fields": ["assignee", "status", "priority", "duedate", "timetracking"],
         "maxResults": _JIRA_SEARCH_PAGE_SIZE,
     }

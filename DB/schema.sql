@@ -116,7 +116,12 @@ CREATE TABLE proj (
     name              VARCHAR(200) NOT NULL,
     status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
     tz                VARCHAR(50)  NOT NULL DEFAULT 'Asia/Seoul',
-    owner_account_id  VARCHAR(5)
+    owner_account_id  VARCHAR(5),
+    -- 만든 시각(2026-08-04 추가). 프로젝트 목록의 "최신순" 정렬과 날짜 표시가
+    -- 근거로 삼을 값이 없었다. 폴더를 고르는 행위가 프로젝트를 만드는 것이라
+    -- 그 시점이 곧 생성 시각이다. 이 컬럼이 생기기 전에 만들어진 행은 NULL이고
+    -- 화면이 '-'로 보여준다 — 모르는 날짜를 지어내지 않는다.
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 -- =====================================================================

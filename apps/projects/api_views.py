@@ -87,9 +87,13 @@ class ProjectListCreateAPIView(AuthenticatedAPIView):
     def get(self, request):
         try:
             rows = ProjectRepository.list_for_owner(request.user.account_id)
+            # 프로젝트마다 부르면 N+1이라 한 번에 집계해 붙인다.
+            progress = ExistTaskRepository.progress_by_project([row["proj_id"] for row in rows])
         except psycopg.Error as exc:
             return _repository_error_response(exc)
-        return Response([project_response(row) for row in rows])
+        return Response(
+            [project_response(row, progress.get(row["proj_id"])) for row in rows]
+        )
 
     def post(self, request):
         serializer = ProjectCreateSerializer(data=request.data)

@@ -106,8 +106,17 @@ class AssignmentRunCreateSerializer(serializers.Serializer):
     )
 
 
-def project_response(row: dict[str, Any]) -> dict[str, Any]:
-    """현재 SQL 필드와 기존 프론트 호환 필드를 함께 반환한다."""
+def project_response(row: dict[str, Any], progress: dict[str, Any] | None = None) -> dict[str, Any]:
+    """현재 SQL 필드와 기존 프론트 호환 필드를 함께 반환한다.
+
+    `progress`는 목록 화면이 쓰는 Jira 집계다. 프로젝트 단건 조회에서는 주지 않고
+    `null`로 둔다 — 화면이 "아직 안 읽었다"와 "집계할 업무가 없다"를 구분해야 한다.
+
+    `created_at`이 없는 프로젝트가 있다. 컬럼이 생기기 전에 만들어진 행이고,
+    모르는 날짜를 지어내지 않으려고 `null`로 내려보낸다.
+    """
+
+    created_at = row.get("created_at")
 
     return {
         "proj_id": row["proj_id"],
@@ -121,8 +130,8 @@ def project_response(row: dict[str, Any]) -> dict[str, Any]:
         "owner_account_id": row["owner_account_id"],
         "owner": row["owner_account_id"],
         "owner_name": row.get("owner_name"),
-        "created_at": "",
-        "updated_at": "",
+        "created_at": created_at.isoformat() if created_at else None,
+        "progress": progress,
     }
 
 

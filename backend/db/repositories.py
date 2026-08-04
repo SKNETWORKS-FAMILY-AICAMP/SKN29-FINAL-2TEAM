@@ -65,6 +65,7 @@ class ProjectRepository:
                         p.status,
                         p.tz,
                         p.owner_account_id,
+                        p.created_at,
                         ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua
@@ -88,6 +89,7 @@ class ProjectRepository:
                         p.status,
                         p.tz,
                         p.owner_account_id,
+                        p.created_at,
                         ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua
@@ -111,6 +113,7 @@ class ProjectRepository:
                         p.status,
                         p.tz,
                         p.owner_account_id,
+                        p.created_at,
                         ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua
@@ -148,7 +151,7 @@ class ProjectRepository:
                     """
                     INSERT INTO proj (proj_id, name, status, tz, owner_account_id)
                     VALUES (%s, %s, %s, %s, %s)
-                    RETURNING proj_id, name, status, tz, owner_account_id
+                    RETURNING proj_id, name, status, tz, owner_account_id, created_at
                     """,
                     (proj_id, name, status, tz, owner_account_id),
                 )
@@ -686,6 +689,69 @@ class ExistTaskRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def progress_by_project(proj_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """프로젝트별 공수 기준 진행률. 목록 화면이 한 번에 받아 간다.
+
+        ```
+        진행률 = (완료 공수 + 미완료 소진 공수) ÷ 전체 공수
+        소진   = estimate − remaining
+        ```
+
+        **건수가 아니라 공수 기준이다.** 건수로 세면 20시간짜리와 2시간짜리가
+        같아서, 큰 작업이 끝나도 진행률이 거의 안 움직인다.
+
+        `estimate`가 없는 이슈는 분모에서 빠진다 — 크기를 모르는 일을 0으로 치면
+        진행률이 부풀고, 전체로 치면 줄어든다. 어느 쪽도 사실이 아니라서 세어서
+        따로 알린다(`missing_estimate`).
+
+        프로젝트를 여러 개 받아 한 번에 집계한다. 목록에서 프로젝트마다 부르면
+        N+1이 된다.
+        """
+
+        if not proj_ids:
+            return {}
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        ps.proj_id,
+                        count(*) AS task_count,
+                        count(*) FILTER (WHERE et.status_category = 'DONE') AS done_count,
+                        count(*) FILTER (WHERE et.estimate IS NULL) AS missing_estimate,
+                        COALESCE(sum(et.estimate), 0) AS total_hours,
+                        COALESCE(sum(et.estimate)
+                                 FILTER (WHERE et.status_category = 'DONE'), 0) AS done_hours,
+                        -- 미완료분에서 이미 쓴 만큼. remaining 이 없으면 아직 손대지
+                        -- 않은 것으로 본다(과대평가하지 않는 쪽).
+                        COALESCE(sum(GREATEST(et.estimate - COALESCE(et.remaining, et.estimate), 0))
+                                 FILTER (WHERE et.status_category IS DISTINCT FROM 'DONE'), 0)
+                            AS burned_hours
+                    FROM exist_task AS et
+                    JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                    WHERE ps.proj_id = ANY(%s) AND ps.source_type = %s
+                    GROUP BY ps.proj_id
+                    """,
+                    (sorted(set(proj_ids)), ExistTaskRepository.JIRA_PROJECT),
+                )
+
+                result: dict[str, dict[str, Any]] = {}
+                for row in cursor.fetchall():
+                    total = float(row["total_hours"])
+                    completed = float(row["done_hours"]) + float(row["burned_hours"])
+                    result[row["proj_id"]] = {
+                        "task_count": row["task_count"],
+                        "done_count": row["done_count"],
+                        "missing_estimate": row["missing_estimate"],
+                        "total_hours": round(total, 2),
+                        "completed_hours": round(completed, 2),
+                        # 추정치가 하나도 없으면 진행률을 만들지 않는다.
+                        "progress": round(completed / total * 100, 1) if total > 0 else None,
+                    }
+                return result
+
+    @staticmethod
     def replace_for_source(*, proj_source_id: str, rows: list[dict[str, Any]]) -> int:
         """한 소스의 업무를 넘겨받은 목록으로 통째로 교체한다.
 
@@ -693,8 +759,8 @@ class ExistTaskRepository:
         재동기화의 단위인 이유는 프로젝트가 Jira 프로젝트를 여러 개 읽을 수 있어서다
         — `proj_id`로 지우면 남의 소스까지 날아간다.
 
-        완료된 이슈는 JQL(`statusCategory != Done`)에서 안 잡히므로 delete 단계에서
-        자연히 사라진다. 따로 지울 필요가 없다.
+        완료된 이슈도 함께 들어온다(진행률이 완료분을 필요로 한다). Jira에서 삭제된
+        이슈만 delete 단계에서 사라진다.
         """
 
         with database_connection() as connection:
