@@ -4,12 +4,7 @@ import { Badge, Button, Icon, Select, ToggleSwitch, TopNav, useToast } from '../
 import { ApiError } from '../../api/client';
 import { getDriveFolders, listDriveFiles } from '../../api/connectors';
 import type { DriveFile } from '../../api/connectors';
-import {
-  ensureOnboardingProject,
-  findOnboardingProject,
-  listProjectSources,
-  replaceProjectSources,
-} from '../../api/projects';
+import { listTeamFolders, replaceTeamFolders } from '../../api/projects';
 import { useSession } from '../../utils/session';
 import { DriveFolderPickerModal } from './DriveFolderPickerModal';
 import type { PickedFolder } from './DriveFolderPickerModal';
@@ -58,29 +53,27 @@ export default function FolderSelectPage() {
 
   const token = session?.token;
 
-  // 저장된 선택을 되살린다. proj_source에는 폴더 id만 남으므로 이름은 Drive에서
-  // 다시 가져온다. 화면을 열기만 했을 때는 프로젝트를 만들지 않는다.
+  // 저장된 선택을 되살린다. team_folder에는 폴더 id만 남으므로 이름은 Drive에서
+  // 다시 가져온다.
   useEffect(() => {
     if (!token) return;
 
     let cancelled = false;
     void (async () => {
       try {
-        const project = await findOnboardingProject(token);
-        if (!project || cancelled) return;
+        const saved = await listTeamFolders(token);
+        if (cancelled) return;
 
-        const sources = await listProjectSources(token, project.proj_id);
-        const driveSources = sources.filter((source) => source.source_type === 'DRIVE_FOLDER');
         const resolved = await getDriveFolders(
           token,
-          driveSources.map((source) => source.external_source_id),
+          saved.map((folder) => folder.external_folder_id),
         );
         if (cancelled) return;
 
         setFolders(resolved.map((folder) => ({ id: folder.folder_id, name: folder.name, path: '' })));
         // 저장된 깊이는 폴더마다 같은 값이므로 첫 행만 보면 된다.
-        if (driveSources.length > 0) {
-          const restored = fromMaxDepth(driveSources[0].max_depth);
+        if (saved.length > 0) {
+          const restored = fromMaxDepth(saved[0].max_depth);
           setIncludeSubfolders(restored.includeSubfolders);
           setDepth(restored.depth);
         }
@@ -142,13 +135,11 @@ export default function FolderSelectPage() {
 
     setSaving(true);
     try {
-      // 폴더를 고르는 것이 프로젝트를 만드는 것이다. 이름은 기획서를 읽고 나서
-      // 제대로 정할 수 있으므로 지금은 폴더명으로 둔다.
-      const project = await ensureOnboardingProject(token, folders[0].name);
-      await replaceProjectSources(
+      // 폴더를 고르는 것은 **프로젝트를 만드는 것이 아니다.** 폴더는 파일이
+      // 어디 있는지 알려주는 경로일 뿐이고, 그 안의 파일이 어느 프로젝트 것인지는
+      // 열어 봐야 안다. 그래서 팀에 매단다.
+      await replaceTeamFolders(
         token,
-        project.proj_id,
-        'DRIVE_FOLDER',
         folders.map((folder) => folder.id),
         toMaxDepth(includeSubfolders, depth),
         // 이름을 지금 같이 넘긴다. 나중에 "소속 폴더"를 보여주려고 Drive에 다시

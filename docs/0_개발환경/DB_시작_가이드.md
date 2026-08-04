@@ -154,9 +154,60 @@ ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS proj_source_id VARCHAR(5) NOT NU
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS estimate NUMERIC(6,2);
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS status_category VARCHAR(20);
 ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ;
 ALTER TABLE proj ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 ALTER TABLE proj ALTER COLUMN created_at SET DEFAULT now();
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exist_task_source_issue ON exist_task (proj_source_id, jira_issue_id);
+ALTER TABLE proj ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+UPDATE proj SET team_id = (SELECT ua.team_id FROM user_account ua WHERE ua.account_id = proj.owner_account_id) WHERE team_id IS NULL;
+CREATE TABLE IF NOT EXISTS team_folder (
+    team_folder_id      VARCHAR(5) PRIMARY KEY,
+    team_id             VARCHAR(5)  NOT NULL,
+    conn_id             VARCHAR(5)  NOT NULL,
+    external_folder_id  VARCHAR(255) NOT NULL,
+    display_name        VARCHAR(255),
+    default_doc_role    VARCHAR(30),
+    max_depth           INT,
+    UNIQUE (team_id, external_folder_id)
+);
+INSERT INTO team_folder (team_folder_id, team_id, conn_id, external_folder_id, display_name, default_doc_role, max_depth)
+SELECT 'TF' || lpad(((SELECT COALESCE(max(substring(team_folder_id FROM 3)::int), 0) FROM team_folder)
+                     + row_number() OVER (ORDER BY ps.proj_source_id))::text, 3, '0'),
+       p.team_id, ps.conn_id, ps.external_source_id, ps.display_name, ps.default_doc_role, ps.max_depth
+  FROM proj_source ps JOIN proj p ON p.proj_id = ps.proj_id
+ WHERE ps.source_type = 'DRIVE_FOLDER' AND p.team_id IS NOT NULL
+ON CONFLICT (team_id, external_folder_id) DO NOTHING;
+DELETE FROM proj_source WHERE source_type = 'DRIVE_FOLDER';
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+UPDATE doc SET team_id = (SELECT p.team_id FROM proj p WHERE p.proj_id = doc.proj_id) WHERE team_id IS NULL;
+ALTER TABLE doc ALTER COLUMN proj_id DROP NOT NULL;
+UPDATE doc SET proj_id = NULL WHERE proj_id IS NOT NULL;
+ALTER TABLE proj_source DROP COLUMN IF EXISTS default_doc_role;
+ALTER TABLE proj_source DROP COLUMN IF EXISTS max_depth;
+DO \$\$
+DECLARE r RECORD; new_proj_id VARCHAR(5);
+BEGIN
+  FOR r IN SELECT ps.proj_source_id, ps.display_name, ps.external_source_id, p.team_id, p.owner_account_id, p.tz
+             FROM (SELECT proj_source_id, proj_id, display_name, external_source_id,
+                          row_number() OVER (PARTITION BY proj_id ORDER BY proj_source_id) AS rn
+                     FROM proj_source) ps
+             JOIN proj p ON p.proj_id = ps.proj_id
+            WHERE ps.rn > 1
+  LOOP
+    SELECT 'PJ' || lpad((COALESCE(max(substring(proj_id FROM 3)::int), 0) + 1)::text, 3, '0') INTO new_proj_id FROM proj;
+    INSERT INTO proj (proj_id, name, status, tz, owner_account_id, team_id)
+    VALUES (new_proj_id, COALESCE(NULLIF(r.display_name, ''), r.external_source_id), 'ACTIVE', r.tz, r.owner_account_id, r.team_id);
+    UPDATE proj_source SET proj_id = new_proj_id WHERE proj_source_id = r.proj_source_id;
+  END LOOP;
+END \$\$;
+UPDATE proj p SET name = ps.display_name FROM proj_source ps WHERE ps.proj_id = p.proj_id AND NULLIF(ps.display_name, '') IS NOT NULL;
+UPDATE proj SET status = 'ACTIVE' WHERE status = 'DRAFT' AND proj_id IN (SELECT proj_id FROM proj_source);
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ux_proj_source_proj') THEN
+    ALTER TABLE proj_source ADD CONSTRAINT ux_proj_source_proj UNIQUE (proj_id);
+  END IF;
+END \$\$;
 CREATE SCHEMA IF NOT EXISTS mock_hr;
 DO \$\$
 DECLARE t text;

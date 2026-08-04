@@ -73,6 +73,22 @@ CREATE TABLE team_member (
     UNIQUE (team_id, person_id)
 );
 
+-- [팀] 읽어들일 Google Drive 폴더(2026-08-04 추가). **프로젝트가 아니라 팀에 매단다.**
+-- 폴더는 "파일이 어디 있는지"를 알려주는 경로일 뿐이고, 어느 프로젝트의 문서인지는
+-- 파일을 열어 봐야 안다. 프로젝트마다 폴더를 다시 고르게 하면 같은 경로를 프로젝트
+-- 수만큼 반복해서 등록하게 된다.
+CREATE TABLE team_folder (
+    team_folder_id      VARCHAR(5) PRIMARY KEY,
+    team_id             VARCHAR(5)  NOT NULL,   -- team.team_id(FK 없음)
+    conn_id             VARCHAR(5)  NOT NULL,   -- connector_conn.conn_id(FK 없음). 어느 연결로 읽는가
+    external_folder_id  VARCHAR(255) NOT NULL,  -- 실제 Drive 폴더 ID
+    display_name        VARCHAR(255),           -- 고를 때 Drive가 알려준 이름. 비면 화면이 ID로 대체한다
+    default_doc_role    VARCHAR(30),            -- 이 폴더의 기본 문서 역할. doc.doc_role이 상속한다
+                                                -- (PLAN / MEETING_NOTE / DAILY_REPORT / OTHER)
+    max_depth           INT,                    -- 탐색 깊이. 1이면 선택한 폴더만, NULL이면 제한 없음
+    UNIQUE (team_id, external_folder_id)
+);
+
 -- =====================================================================
 -- PAGE 3-B | People DB — Tier 0   [스키마: mock_hr]
 -- org/level/skill도 전부 VARCHAR(5) 코드 체계(위 설계 방침 참고).
@@ -117,9 +133,11 @@ CREATE TABLE proj (
     status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
     tz                VARCHAR(50)  NOT NULL DEFAULT 'Asia/Seoul',
     owner_account_id  VARCHAR(5),
+    -- 이 프로젝트를 하는 팀(2026-08-04 추가) = team.team_id(FK 없음). 소유 계정만으로는
+    -- 팀원이 팀의 프로젝트를 볼 수 없다. 테넌트 경계가 팀이므로 프로젝트도 팀에 매단다.
+    team_id           VARCHAR(5),
     -- 만든 시각(2026-08-04 추가). 프로젝트 목록의 "최신순" 정렬과 날짜 표시가
-    -- 근거로 삼을 값이 없었다. 폴더를 고르는 행위가 프로젝트를 만드는 것이라
-    -- 그 시점이 곧 생성 시각이다. 이 컬럼이 생기기 전에 만들어진 행은 NULL이고
+    -- 근거로 삼을 값이 없었다. 이 컬럼이 생기기 전에 만들어진 행은 NULL이고
     -- 화면이 '-'로 보여준다 — 모르는 날짜를 지어내지 않는다.
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -148,28 +166,27 @@ CREATE TABLE connector_conn (
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 이 프로젝트가 대응하는 Jira 프로젝트. **프로젝트 하나에 Jira 프로젝트 하나다**
+-- (2026-08-04). Jira 프로젝트 하나에는 프로젝트 하나의 업무가 들어 있으므로, 여러 개를
+-- 한 프로젝트에 매달면 서로 다른 프로젝트의 업무가 한 진행률로 뭉개진다.
+--
+-- Drive 폴더는 여기 없다 — 팀에 속하므로 team_folder로 옮겼다(2026-08-04).
 CREATE TABLE proj_source (
     proj_source_id   VARCHAR(5) PRIMARY KEY,
-    proj_id              VARCHAR(5) NOT NULL,
+    proj_id              VARCHAR(5) NOT NULL UNIQUE,   -- UNIQUE가 곧 1:1 강제다
     conn_id        VARCHAR(5) NOT NULL,
-    source_type          VARCHAR(30) NOT NULL,   -- DRIVE_FOLDER / JIRA_PROJECT
-    external_source_id   VARCHAR(255) NOT NULL,  -- 실제 Drive 폴더 ID / Jira 프로젝트 키
+    source_type          VARCHAR(30) NOT NULL,   -- JIRA_PROJECT
+    external_source_id   VARCHAR(255) NOT NULL,  -- Jira 프로젝트 키
     -- 고를 때 원본이 알려준 표시 이름(2026-08-03 추가). 'KAN'이 아니라
     -- 'SKN29_Final_2Team'을 화면에 쓰기 위한 것이다. 매번 원본에 물어보면
     -- 화면이 커넥터 생존에 묶이므로 선택 시점에 같이 저장한다. 원본에서
     -- 이름이 바뀌면 다시 고를 때 갱신된다. 비어 있으면 화면이 키로 대체한다.
     display_name          VARCHAR(255),
     sync_status           VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    default_doc_role      VARCHAR(30),           -- 이 폴더의 기본 문서 역할. DOC.doc_role이 상속한다
-                                                 -- (PLAN / MEETING_NOTE / DAILY_REPORT / OTHER)
-                                                 -- 폴더에 역할을 주고 파일이 물려받는 화면(/onboarding/folder-roles)이
-                                                 -- 요구한다. DOC.doc_role만으로는 나중에 추가되는 파일이 무엇을
-                                                 -- 상속할지 알 수 없다. JIRA_PROJECT 소스는 NULL
-    max_depth             INT                    -- 폴더 탐색 깊이. 1이면 선택한 폴더만(하위 폴더 미포함),
-                                                 -- 2면 한 단계 더, NULL이면 제한 없음
-                                                 -- "하위 폴더 포함" 불리언을 따로 두지 않는다 — 끄는 것이 곧
-                                                 -- max_depth = 1이고, 두 컬럼이면 어느 쪽이 이기는지 모른다
-                                                 -- JIRA_PROJECT 소스는 NULL
+    -- 이 소스를 마지막으로 읽어들인 시각(2026-08-04 추가). 화면이 "지금 보는 숫자가
+    -- 언제 것인지"를 말할 수 있어야 갱신 버튼을 누를지 판단할 수 있다. 한 번도
+    -- 안 읽었으면 NULL — 0건과 미수집은 다른 상태다
+    last_sync_at          TIMESTAMPTZ
 );
 
 -- =====================================================================
@@ -320,7 +337,13 @@ CREATE UNIQUE INDEX ux_user_person_link_active_person
 
 CREATE TABLE doc (
     doc_id            VARCHAR(5) PRIMARY KEY,
-    proj_id            VARCHAR(5) NOT NULL,
+    -- 이 문서를 등록한 팀(2026-08-04 추가) = team.team_id(FK 없음). 문서는 팀의
+    -- Drive 폴더에서 나오므로 등록 시점에는 팀에만 속한다.
+    team_id            VARCHAR(5),
+    -- 어느 프로젝트의 문서인가. **등록 시점에는 모른다**(2026-08-04 NULL 허용).
+    -- 파일을 열어 봐야 알 수 있고, 프로젝트의 메인·서브 문서로 지정될 때 채워진다.
+    -- NOT NULL이던 시절에는 폴더를 고르는 것만으로 프로젝트가 만들어져야 했다.
+    proj_id            VARCHAR(5),
     src_file_id        VARCHAR(255),
     -- 원천의 리비전 식별자. Drive의 headRevisionId가 실측 51자라 VARCHAR(50)으로는
     -- 한 글자가 모자랐다(2026-07-31 확대). 길이를 보장하는 문서가 없어 여유를 뒀다.

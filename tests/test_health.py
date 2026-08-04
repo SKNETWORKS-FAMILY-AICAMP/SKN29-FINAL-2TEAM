@@ -23,9 +23,9 @@ class HealthApiTests(SimpleTestCase):
 
 
 class ProjectApiTests(SimpleTestCase):
-    @patch("apps.projects.api_views.ProjectRepository.list_for_owner")
-    def test_project_list_uses_direct_repository(self, list_for_owner):
-        list_for_owner.return_value = [
+    @patch("apps.projects.api_views.ProjectRepository.list_for_team")
+    def test_project_list_uses_direct_repository(self, list_for_team):
+        list_for_team.return_value = [
             {
                 "proj_id": "PJ001",
                 "name": "AI 코파일럿 시연",

@@ -3,9 +3,9 @@ import { Badge, Icon, TopNav, useToast } from '../../components';
 import type { SelectOption } from '../../components';
 import { ApiError } from '../../api/client';
 import {
-  findOnboardingProject,
   listDocumentHistory,
   listNewDocuments,
+  listTeamFolders,
   registerDocuments,
 } from '../../api/projects';
 import type { DocRole, DocumentHistoryEntry, NewDocumentCandidate } from '../../api/projects';
@@ -72,7 +72,8 @@ export default function NewFilesPage() {
   const token = session?.token;
   const { showToast } = useToast();
 
-  const [projectId, setProjectId] = useState<string | null>(null);
+  // 폴더가 설정돼 있어야 스캔할 곳이 있다. 프로젝트와는 무관하다.
+  const [configured, setConfigured] = useState(false);
   const [candidates, setCandidates] = useState<NewDocumentCandidate[]>([]);
   const [history, setHistory] = useState<DocumentHistoryEntry[]>([]);
   const [roles, setRoles] = useState<Record<string, string>>({});
@@ -86,17 +87,17 @@ export default function NewFilesPage() {
     setLoading(true);
     setError('');
     try {
-      const project = await findOnboardingProject(token);
-      setProjectId(project?.proj_id ?? null);
-      if (!project) {
+      const folders = await listTeamFolders(token);
+      setConfigured(folders.length > 0);
+      if (folders.length === 0) {
         setCandidates([]);
         setHistory([]);
         return;
       }
 
       const [rows, historyRows] = await Promise.all([
-        listNewDocuments(token, project.proj_id),
-        listDocumentHistory(token, project.proj_id).catch(() => []),
+        listNewDocuments(token),
+        listDocumentHistory(token).catch(() => []),
       ]);
       setCandidates(rows);
       setHistory(historyRows);
@@ -152,7 +153,7 @@ export default function NewFilesPage() {
   }
 
   async function handleRegister() {
-    if (!token || !projectId) return;
+    if (!token || !configured) return;
     const files = supportedIds
       .filter((id) => selected.has(id))
       .map((id) => ({ file_id: id, doc_role: (roles[id] ?? FALLBACK_ROLE) as DocRole }));
@@ -161,7 +162,7 @@ export default function NewFilesPage() {
     setRegistering(true);
     setError('');
     try {
-      const result = await registerDocuments(token, projectId, files);
+      const result = await registerDocuments(token, files);
       const ok = result.registered.length;
       const skipped = result.skipped.length;
       if (skipped > 0) {
@@ -204,13 +205,13 @@ export default function NewFilesPage() {
           </div>
         )}
 
-        {!loading && !error && !projectId && (
+        {!loading && !error && !configured && (
           <p className={styles.stateRow}>
             연결된 프로젝트가 없습니다. 온보딩에서 폴더를 먼저 선택해 주세요.
           </p>
         )}
 
-        {!loading && !error && projectId && rows.length === 0 && (
+        {!loading && !error && configured && rows.length === 0 && (
           <div className={styles.tableCard}>
             <div className={styles.emptyBody}>
               <div className={styles.iconCircle}>
@@ -224,7 +225,7 @@ export default function NewFilesPage() {
           </div>
         )}
 
-        {!loading && !error && projectId && rows.length > 0 && (
+        {!loading && !error && configured && rows.length > 0 && (
           <FileRegistrationTable
             rows={rows}
             selected={selected}
@@ -238,7 +239,7 @@ export default function NewFilesPage() {
           />
         )}
 
-        {!loading && projectId && <HistoryBlock entries={history} />}
+        {!loading && configured && <HistoryBlock entries={history} />}
       </div>
     </div>
   );

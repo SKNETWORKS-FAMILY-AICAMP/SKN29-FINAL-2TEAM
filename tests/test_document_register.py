@@ -20,13 +20,11 @@ def auth_header():
 
 def folder_source(external="folder-01", role="PLAN", name="01_기획"):
     return {
-        "proj_source_id": "PS005",
-        "proj_id": "PJ001",
+        "team_folder_id": "TF001",
+        "team_id": "TE001",
         "conn_id": "CN002",
-        "source_type": "DRIVE_FOLDER",
-        "external_source_id": external,
+        "external_folder_id": external,
         "display_name": name,
-        "sync_status": "PENDING",
         "default_doc_role": role,
         "max_depth": 1,
     }
@@ -61,7 +59,7 @@ class NewDocumentScanTests(SimpleTestCase):
     def _patches(self, *, sources, files, known):
         return (
             patch(
-                "apps.projects.api_views.ProjectSourceRepository.list_for_project",
+                "apps.projects.api_views.TeamFolderRepository.list_for_team",
                 return_value=sources,
             ),
             patch(
@@ -78,7 +76,7 @@ class NewDocumentScanTests(SimpleTestCase):
             known={"F-old"},
         )
         with sources, known, drive:
-            response = self.client.get("/api/projects/PJ001/documents/new/", **auth_header())
+            response = self.client.get("/api/team/documents/new/", **auth_header())
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row["file_id"] for row in response.json()], ["F-new"])
@@ -93,7 +91,7 @@ class NewDocumentScanTests(SimpleTestCase):
             known={"F-dropped"},
         )
         with sources, known, drive:
-            response = self.client.get("/api/projects/PJ001/documents/new/", **auth_header())
+            response = self.client.get("/api/team/documents/new/", **auth_header())
 
         self.assertEqual(response.json(), [])
 
@@ -106,7 +104,7 @@ class NewDocumentScanTests(SimpleTestCase):
             known=set(),
         )
         with sources, known, drive:
-            rows = self.client.get("/api/projects/PJ001/documents/new/", **auth_header()).json()
+            rows = self.client.get("/api/team/documents/new/", **auth_header()).json()
 
         self.assertEqual(len(rows), 1)
         self.assertFalse(rows[0]["supported"])
@@ -118,7 +116,7 @@ class NewDocumentScanTests(SimpleTestCase):
             known=set(),
         )
         with sources, known, drive:
-            rows = self.client.get("/api/projects/PJ001/documents/new/", **auth_header()).json()
+            rows = self.client.get("/api/team/documents/new/", **auth_header()).json()
 
         self.assertEqual(rows[0]["suggested_role"], "MEETING_NOTE")
         self.assertEqual(rows[0]["folder_name"], "02_회의록")
@@ -130,7 +128,7 @@ class NewDocumentScanTests(SimpleTestCase):
             known=set(),
         )
         with sources, known, drive:
-            rows = self.client.get("/api/projects/PJ001/documents/new/", **auth_header()).json()
+            rows = self.client.get("/api/team/documents/new/", **auth_header()).json()
 
         self.assertEqual(rows[0]["folder_name"], "01_기획/하위")
 
@@ -140,7 +138,7 @@ class NewDocumentScanTests(SimpleTestCase):
             "apps.projects.api_views.list_drive_files",
             side_effect=OAuthError("Google Drive 파일 목록을 가져오지 못했습니다."),
         ):
-            response = self.client.get("/api/projects/PJ001/documents/new/", **auth_header())
+            response = self.client.get("/api/team/documents/new/", **auth_header())
 
         self.assertEqual(response.status_code, 502)
 
@@ -148,7 +146,7 @@ class NewDocumentScanTests(SimpleTestCase):
 class DocumentRegisterTests(SimpleTestCase):
     def _post(self, body, *, files, known=frozenset(), sources=None):
         with patch(
-            "apps.projects.api_views.ProjectSourceRepository.list_for_project",
+            "apps.projects.api_views.TeamFolderRepository.list_for_team",
             return_value=sources if sources is not None else [folder_source()],
         ), patch(
             "apps.projects.api_views.DocumentRepository.registered_file_ids",
@@ -162,7 +160,7 @@ class DocumentRegisterTests(SimpleTestCase):
             "apps.projects.api_views.log_audit"
         ) as audit:
             response = self.client.post(
-                "/api/projects/PJ001/documents/register/",
+                "/api/team/documents/register/",
                 body,
                 content_type="application/json",
                 **auth_header(),
@@ -243,14 +241,16 @@ class DocumentRegisterTests(SimpleTestCase):
 
         audit.assert_called_once()
         self.assertEqual(audit.call_args.kwargs["action"], "DOCUMENT_REGISTER")
-        self.assertEqual(audit.call_args.kwargs["proj_id"], "PJ001")
+        self.assertEqual(audit.call_args.kwargs["target_type"], "DOCUMENT")
+        # 문서 등록은 프로젝트와 무관해졌다. 이력은 행위자의 팀으로 찾는다.
+        self.assertNotIn("proj_id", audit.call_args.kwargs)
         self.assertEqual(audit.call_args.kwargs["payload"]["registered"], 1)
 
     def test_nothing_registered_leaves_no_history(self):
         """"파일 등록 0건"은 이력이 아니다 — 바뀐 게 없다."""
 
         with patch(
-            "apps.projects.api_views.ProjectSourceRepository.list_for_project",
+            "apps.projects.api_views.TeamFolderRepository.list_for_team",
             return_value=[folder_source()],
         ), patch(
             "apps.projects.api_views.DocumentRepository.registered_file_ids", return_value=set()
@@ -263,7 +263,7 @@ class DocumentRegisterTests(SimpleTestCase):
             "apps.projects.api_views.log_audit"
         ) as audit:
             response = self.client.post(
-                "/api/projects/PJ001/documents/register/",
+                "/api/team/documents/register/",
                 {"files": [{"file_id": "F-png"}]},
                 content_type="application/json",
                 **auth_header(),
@@ -274,7 +274,7 @@ class DocumentRegisterTests(SimpleTestCase):
 
     def test_empty_request_is_rejected(self):
         response = self.client.post(
-            "/api/projects/PJ001/documents/register/",
+            "/api/team/documents/register/",
             {"files": []},
             content_type="application/json",
             **auth_header(),
@@ -287,7 +287,7 @@ class DocumentHistoryTests(SimpleTestCase):
         with patch(
             "apps.projects.api_views.DocumentRepository.list_history", return_value=rows
         ):
-            return self.client.get("/api/projects/PJ001/documents/history/", **auth_header())
+            return self.client.get("/api/team/documents/history/", **auth_header())
 
     def _row(self, action="DOCUMENT_REGISTER", payload=None):
         from datetime import UTC, datetime

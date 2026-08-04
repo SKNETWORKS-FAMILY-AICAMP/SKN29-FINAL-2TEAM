@@ -19,6 +19,7 @@ export type IconName =
   | 'check'
   | 'check-circle'
   | 'loader'
+  | 'refresh'
   | 'triangle-alert'
   | 'bell'
   | 'search'
@@ -148,6 +149,15 @@ function renderPaths(name: IconName): ReactElement {
       );
     case 'loader':
       return <path d="M21 12a9 9 0 1 1-6.219-8.56" />;
+    case 'refresh':
+      return (
+        <>
+          <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+          <path d="M21 3v5h-5" />
+          <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+          <path d="M3 21v-5h5" />
+        </>
+      );
     case 'triangle-alert':
       return (
         <>

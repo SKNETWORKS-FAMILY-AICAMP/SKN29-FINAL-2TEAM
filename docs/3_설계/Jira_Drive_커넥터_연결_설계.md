@@ -89,7 +89,7 @@ ALTER TABLE connector_conn
 
 기존 값은 NULL(People DB만 연결된 상태)이므로 변환 손실이 없다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 스키마 변경은 이렇게 수동 `ALTER`로 공유한다.
 
-#### `proj_source`에 컬럼 두 개 추가 (선행 조건, 2026-07-30)
+#### `proj_source`에 컬럼 두 개 추가 (선행 조건, 2026-07-30 — 2026-08-04에 `team_folder`로 이관됨)
 
 ```sql
 ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS default_doc_role VARCHAR(30);
@@ -193,26 +193,59 @@ GET https://api.atlassian.com/oauth/token/accessible-resources
 
 ```
 connector_conn   account_id  + connector_type            계정이 서비스에 연결됨
-proj_source      proj_id + conn_id + external_source_id  이 프로젝트가 저 소스를 읽음
+team_folder      team_id + conn_id + external_folder_id   이 팀이 저 폴더를 읽음
+proj_source      proj_id + conn_id + external_source_id   이 프로젝트가 저 Jira 프로젝트다 (1:1)
 ```
 
-### 이 절의 앞선 서술은 틀렸다 (2026-07-30 수정)
+### 이 절의 앞선 서술은 두 번 틀렸다 (2026-08-04 재수정)
 
-원래 이 절은 "`proj_source.proj_id`가 NOT NULL이므로 **프로젝트 생성 흐름이 선행되어야 한다**"고 적었다. 테이블 의존 순서로는 맞지만, 그것을 **화면 순서**로 옮기면 제품 목적과 거꾸로 간다. 이 서비스는 Drive의 기획서를 읽어 프로젝트를 만들고 업무를 추출하는 것이 목적이다. 사람이 프로젝트를 먼저 정의해야 한다면 자동화할 것이 없다.
+**첫 번째 서술(2026-07-30):** "폴더를 고르는 행위가 프로젝트를 만드는 행위다."
 
-**해결: 폴더를 고르는 행위가 프로젝트를 만드는 행위다.** 별도 프로젝트 생성 화면을 두지 않는다.
+틀렸다. 폴더는 **파일이 어디 있는지 알려주는 경로**일 뿐이다. 그 안의 파일이 어느
+프로젝트 것인지는 열어 봐야 안다. 폴더를 고르는 것만으로 프로젝트가 생기면, 이름을
+최상위 폴더명에서 따올 수밖에 없고(실제로 PJ001이 「SKN29」였다) 프로젝트를 하나
+더 만들려면 같은 폴더를 다시 골라야 한다.
 
-`proj.status`에 이미 `DRAFT`가 있다(`ProjectCreateSerializer`의 기본값이기도 하다). 원래 설계도 "내용이 채워지기 전의 프로젝트"를 상정하고 있었다.
+**바로잡은 모델:**
 
 ```
-1. 커넥터 연결            connector_conn                    계정 단위
-2. 폴더·프로젝트 선택      proj(DRAFT) + proj_source          ← 여기서 프로젝트가 생긴다
-                          이름은 임시로 최상위 폴더명
-3. 파일 스캔·역할 지정     doc / doc_role
-4. 기획서 파싱             proj.name 갱신, DRAFT → ACTIVE
+팀
+ ├─ 커넥터 연결 (계정 단위)
+ ├─ Drive 폴더 (team_folder)   ← 팀에 매단다. 경로일 뿐이다
+ ├─ 문서 풀 (doc)              ← 팀에 매단다. 등록 시점에는 프로젝트를 모른다
+ └─ 프로젝트들
+     ├─ Jira 프로젝트 1개 (proj_source, 1:1)
+     └─ 메인·서브 문서          ← 문서 풀에서 지정 (파싱 이후)
+```
+
+Drive와 Jira는 역할이 다르다. 기획서 v5가 Drive를 「**신규** 프로젝트 업무와 근거」로
+적어 둔 그대로다.
+
+| | 역할 | 매다는 곳 |
+|---|---|---|
+| Drive 폴더 | 신규 프로젝트의 근거 문서가 있는 경로 | 팀 (N개) |
+| Jira 프로젝트 | 이미 진행 중인 프로젝트의 업무 | 프로젝트 (1:1) |
+
+**프로젝트는 두 경로로 생긴다.**
+
+1. **Jira 프로젝트를 고르면** 그것이 곧 우리 프로젝트로 등록된다. Jira 프로젝트
+   하나에는 프로젝트 하나의 업무가 들어 있으므로 1:1이다. 여러 개를 한 프로젝트에
+   매달면 서로 다른 프로젝트의 업무가 한 진행률로 뭉개진다.
+2. **메인 문서(기획서·제안요청서)를 고르면** 신규 프로젝트가 생긴다. 파싱이 붙어야
+   가능해서 아직 없다.
+
+`proj.status`의 `DRAFT`는 "온보딩이 만들다 만 프로젝트"를 뜻했는데, 이제 온보딩은
+프로젝트를 만들지 않는다. Jira에서 가져온 프로젝트는 이미 진행 중이라 `ACTIVE`다.
+
+```
+1. 커넥터 연결            connector_conn                     계정 단위
+2. 폴더 선택              team_folder                        ← 팀. 프로젝트를 만들지 않는다
+3. 파일 스캔·역할 지정     doc / doc_role                     ← 팀 문서 풀
+4. Jira 프로젝트 선택      proj(ACTIVE) + proj_source         ← 여기서 프로젝트가 생긴다 (1:1)
+5. 기획서 파싱             메인 문서 지정 → 신규 proj         (미구현)
                           know_item
-5. 업무 추출               task
-6. 배정                    assign_run
+6. 업무 추출               task
+7. 배정                    assign_run
 ```
 
 Drive 폴더와 Jira 프로젝트는 **같은 `proj`에 붙는다** — Drive는 기획서, Jira는 진행 상황인 한 프로젝트의 두 소스다. 어느 화면을 먼저 끝내도 진행 중인 `DRAFT`를 찾아 공유하고, 없을 때만 만든다(`ensureOnboardingProject`).
@@ -339,12 +372,13 @@ file_roles    { <file_id>: "MEETING_NOTE" }   → 폴더 역할을 덮어쓸 파
    데모 배지 제거, 실제 연결 상태·재연결 버튼
    → 검증: 새로고침해도 연결 유지, EXPIRED면 재연결 유도
 
-5. 폴더·프로젝트 선택 저장 → proj(DRAFT) + proj_source
+5. 폴더 선택 저장 → team_folder (팀 단위)
    → 검증: 저장 후 새로고침해도 선택이 남아 있음
+           프로젝트가 만들어지지 않음
 
-6. 선행 조건 — proj_source에 컬럼 두 개 추가
-   ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS default_doc_role VARCHAR(30);
-   ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS max_depth INT;
+6. Jira 프로젝트 선택 → proj + proj_source (1:1)
+   → 검증: 2개를 고르면 프로젝트가 2개 생기고 각자 진행률을 가짐
+           같은 프로젝트에 Jira가 둘 붙지 않음(UNIQUE (proj_id))
 
 7. 역할 지정 → doc 등록
    → 검증: 폴더 역할이 파일에 상속되고, 파일별 덮어쓰기가 이김
@@ -359,7 +393,7 @@ file_roles    { <file_id>: "MEETING_NOTE" }   → 폴더 역할을 덮어쓸 파
 
 여기까지가 **탐색해서 고른 폴더·파일을 저장하는 범위**다. 본문 파싱은 별도로 진행 중이다.
 
-5번은 원래 "(별건) 프로젝트 생성 → proj_source 연결"이었다. 별건이 아니었다 — §4의 수정 참고.
+5·6번의 역할이 2026-08-04에 뒤바뀌었다 — 폴더가 아니라 Jira 선택이 프로젝트를 만든다. §4의 재수정 참고.
 
 ## 6. 파싱 작업과의 경계
 
