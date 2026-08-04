@@ -10,14 +10,24 @@ const BLOCKED_LABEL: Record<string, string> = {
 
 const SEGMENT_CLASS = [styles.segmentPrimary, styles.segmentSecondary];
 
-function rateClass(rate: number | null): string {
+/** 과부하 기준은 팀장이 정한다. 화면이 100을 박아 두면 설정이 거짓말이 된다. */
+function rateClass(rate: number | null, overloadPct: number): string {
   if (rate === null) return styles.rateBlocked;
-  if (rate > 100) return styles.rateOver;
-  if (rate >= 80) return styles.rateHigh;
+  if (rate > overloadPct) return styles.rateOver;
+  // 기준의 80%부터 "곧 찬다"로 본다. 기준이 120이면 96부터다.
+  if (rate >= overloadPct * 0.8) return styles.rateHigh;
   return styles.rateNormal;
 }
 
-function MemberRow({ person, scale }: { person: PersonWorkload; scale: number }) {
+function MemberRow({
+  person,
+  scale,
+  overloadPct,
+}: {
+  person: PersonWorkload;
+  scale: number;
+  overloadPct: number;
+}) {
   const blocked = person.blocked_reason !== null;
 
   return (
@@ -28,7 +38,7 @@ function MemberRow({ person, scale }: { person: PersonWorkload; scale: number })
         <span className={styles.memberHours}>
           {blocked ? `${person.current_allocation}h` : `${person.current_allocation} / ${person.effective_capacity}h`}
         </span>
-        <span className={`${styles.memberRate} ${rateClass(person.load_rate)}`}>
+        <span className={`${styles.memberRate} ${rateClass(person.load_rate, overloadPct)}`}>
           {blocked
             ? BLOCKED_LABEL[person.blocked_reason!] ?? person.blocked_reason
             : `${person.load_rate}%`}
@@ -48,7 +58,7 @@ function MemberRow({ person, scale }: { person: PersonWorkload; scale: number })
               />
             ))}
         </div>
-        <div className={styles.fullMark} style={{ left: `${(100 / scale) * 100}%` }} />
+        <div className={styles.fullMark} style={{ left: `${(overloadPct / scale) * 100}%` }} />
       </div>
 
       {!blocked && person.by_project.length > 0 && (
@@ -70,7 +80,9 @@ function MemberRow({ person, scale }: { person: PersonWorkload; scale: number })
 
 export function TeamWorkloadPanel({ workload }: { workload: WorkloadResult }) {
   // 100%를 넘는 사람도 얼마나 넘었는지 보이도록 축을 최대치까지 늘린다.
-  const maxRate = Math.max(100, ...workload.people.map((p) => p.load_rate ?? 0));
+  // 팀이 정한 기준. 화면이 100을 박아 두면 설정이 거짓말이 된다.
+  const overloadPct = workload.overload_pct ?? 100;
+  const maxRate = Math.max(overloadPct, ...workload.people.map((p) => p.load_rate ?? 0));
   const scale = Math.ceil(maxRate / 10) * 10;
 
   // 키로 묶되 표시는 이름으로 한다. 이름이 없는 예전 소스는 키가 그대로 온다.
@@ -93,7 +105,7 @@ export function TeamWorkloadPanel({ workload }: { workload: WorkloadResult }) {
         </Link>
       </div>
       <p className={styles.cardNote}>
-        {workload.period_start} ~ {workload.period_end} · 근무일 {workload.workdays}일 · 세로선이 100%
+        {workload.period_start} ~ {workload.period_end} · 근무일 {workload.workdays}일 · 세로선이 {overloadPct}%
       </p>
 
       {projectKeys.length > 0 && (
@@ -109,7 +121,12 @@ export function TeamWorkloadPanel({ workload }: { workload: WorkloadResult }) {
 
       <div className={styles.memberList}>
         {sorted.map((person) => (
-          <MemberRow key={person.person_id} person={person} scale={scale} />
+          <MemberRow
+            key={person.person_id}
+            person={person}
+            scale={scale}
+            overloadPct={overloadPct}
+          />
         ))}
         {sorted.length === 0 && <p className={styles.empty}>팀원이 없습니다.</p>}
       </div>

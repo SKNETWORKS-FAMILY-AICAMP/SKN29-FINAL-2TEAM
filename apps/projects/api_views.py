@@ -699,11 +699,6 @@ class TeamTaskSyncAPIView(AuthenticatedAPIView):
             return _repository_error_response(exc)
 
 
-# Sprint 기간을 아직 수집하지 않아 기본 조회 창을 4주로 둔다. 과학적 상수가 아니라
-# 비교 가능한 화면을 위한 정책값이라 `from`·`to`로 바꿀 수 있게 열어 둔다.
-_DEFAULT_WORKLOAD_DAYS = 28
-
-
 def _parse_date(raw: str | None, fallback: date) -> date | None:
     if not raw:
         return fallback
@@ -729,9 +724,17 @@ class TeamWorkloadAPIView(AuthenticatedAPIView):
     def get(self, request):
         account_id = request.user.account_id
 
+        try:
+            settings = TeamRepository.settings(account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        # 조회 기간은 팀장이 정한다. Sprint 기간을 아직 수집하지 않아 기본은 4주지만,
+        # 팀마다 리듬이 달라 고정할 값이 아니다. `from`·`to`가 오면 그것이 이긴다.
+        weeks = settings["workload_weeks"] or settings["default_workload_weeks"]
         today = datetime.now(UTC).date()
         period_start = _parse_date(request.query_params.get("from"), today)
-        default_end = (period_start or today) + timedelta(days=_DEFAULT_WORKLOAD_DAYS)
+        default_end = (period_start or today) + timedelta(weeks=weeks)
         period_end = _parse_date(request.query_params.get("to"), default_end)
 
         if period_start is None or period_end is None or period_end <= period_start:
@@ -757,6 +760,19 @@ class TeamWorkloadAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
+        # 팀 공통 주 근무시간을 정했으면 HR의 사람별 값을 덮어쓴다. HR 쪽을 고치지
+        # 않고 여기서 갈아 끼우는 이유는 HR이 남의 시스템이기 때문이다 — 우리가
+        # 정한 기준을 그쪽에 쓸 수는 없다.
+        #
+        # 사람마다 다른 값을 하나로 뭉개는 것이 맞다. 팀장이 명시적으로 정한
+        # 기준이고, 비우면 다시 HR 값으로 돌아간다.
+        capacity = settings["capacity_wk_hours"]
+        if capacity is not None:
+            profiles = [
+                {**profile, "wk_hours": capacity, "def_wk_hours": capacity, "fte": 1}
+                for profile in profiles
+            ]
+
         return Response(
             calculator.calculate(
                 period_start=period_start,
@@ -765,7 +781,12 @@ class TeamWorkloadAPIView(AuthenticatedAPIView):
                 absences=absences,
                 tasks=tasks,
             )
-            | {"as_of": datetime.now(UTC).isoformat()}
+            | {
+                "as_of": datetime.now(UTC).isoformat(),
+                # 화면이 100%를 하드코딩하지 않도록 기준선을 함께 준다.
+                "overload_pct": settings["overload_pct"] or settings["default_overload_pct"],
+                "workload_weeks": weeks,
+            }
         )
 
 

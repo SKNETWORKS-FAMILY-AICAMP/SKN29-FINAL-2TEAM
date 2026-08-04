@@ -219,3 +219,87 @@ class TeamMemberApiTests(SimpleTestCase):
         response = self.client.delete("/api/teams/members/PX002/", headers=self._headers())
 
         self.assertEqual(response.status_code, 403)
+
+
+class TeamSettingApiTests(SimpleTestCase):
+    """팀 업무량 기준. 비우면 "설정 안 함"이고 HR 값·100%·4주로 돌아간다."""
+
+    def _headers(self):
+        from apps.accounts.tokens import issue_token
+
+        return {"authorization": f"Bearer {issue_token('UA001')}"}
+
+    def _settings(self, **overrides):
+        base = {
+            "capacity_wk_hours": None,
+            "overload_pct": None,
+            "workload_weeks": None,
+            "hr_wk_hours_min": 40.0,
+            "hr_wk_hours_max": 40.0,
+            "default_overload_pct": 100,
+            "default_workload_weeks": 4,
+        }
+        return base | overrides
+
+    def _put(self, body):
+        return self.client.put(
+            "/api/teams/settings/", body, content_type="application/json", headers=self._headers()
+        )
+
+    def test_requires_login(self):
+        self.assertEqual(self.client.get("/api/teams/settings/").status_code, 401)
+
+    @patch("apps.people.api_views.TeamRepository.settings")
+    def test_unset_values_report_what_is_actually_used(self, settings):
+        """비운 칸이 "모른다"로 읽히면 안 된다 — 지금 쓰이는 값을 함께 준다."""
+
+        settings.return_value = self._settings()
+
+        body = self.client.get("/api/teams/settings/", headers=self._headers()).json()
+
+        self.assertIsNone(body["capacity_wk_hours"])
+        self.assertEqual(body["hr_wk_hours_min"], 40.0)
+        self.assertEqual(body["default_overload_pct"], 100)
+        self.assertEqual(body["default_workload_weeks"], 4)
+
+    @patch("apps.people.api_views.TeamRepository.update_settings")
+    def test_saves_all_three(self, update):
+        update.return_value = self._settings(
+            capacity_wk_hours=35.0, overload_pct=120, workload_weeks=2
+        )
+
+        response = self._put(
+            {"capacity_wk_hours": 35, "overload_pct": 120, "workload_weeks": 2}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(update.call_args.kwargs["capacity_wk_hours"], 35.0)
+        self.assertEqual(update.call_args.kwargs["overload_pct"], 120)
+        self.assertEqual(update.call_args.kwargs["workload_weeks"], 2)
+
+    @patch("apps.people.api_views.TeamRepository.update_settings")
+    def test_blank_means_unset_not_zero(self, update):
+        """빈 칸을 0으로 저장하면 용량이 0이 되어 전원 과부하로 잡힌다."""
+
+        update.return_value = self._settings()
+
+        self._put({"capacity_wk_hours": "", "overload_pct": "", "workload_weeks": ""})
+
+        self.assertIsNone(update.call_args.kwargs["capacity_wk_hours"])
+        self.assertIsNone(update.call_args.kwargs["overload_pct"])
+        self.assertIsNone(update.call_args.kwargs["workload_weeks"])
+
+    @patch("apps.people.api_views.TeamRepository.update_settings")
+    def test_out_of_range_values_are_rejected_before_any_write(self, update):
+        cases = [
+            ({"capacity_wk_hours": 0}, "0시간이면 용량이 0이다"),
+            ({"capacity_wk_hours": 200}, "주 168시간이 물리적 상한"),
+            ({"overload_pct": 50}, "100 미만이면 정상 부하가 과부하로 보인다"),
+            ({"workload_weeks": 0}, "0주는 기간이 아니다"),
+            ({"workload_weeks": 52}, "반년을 넘으면 '지금 부하'가 아니다"),
+            ({"capacity_wk_hours": "abc"}, "숫자가 아니다"),
+        ]
+        for body, why in cases:
+            with self.subTest(why=why):
+                self.assertEqual(self._put(body).status_code, 400)
+        update.assert_not_called()

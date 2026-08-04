@@ -160,6 +160,9 @@ ALTER TABLE proj ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 ALTER TABLE proj ALTER COLUMN created_at SET DEFAULT now();
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exist_task_source_issue ON exist_task (proj_source_id, jira_issue_id);
 ALTER TABLE user_account ADD COLUMN IF NOT EXISTS avatar_key VARCHAR(255);
+ALTER TABLE team ADD COLUMN IF NOT EXISTS capacity_wk_hours NUMERIC(5,2);
+ALTER TABLE team ADD COLUMN IF NOT EXISTS overload_pct INT;
+ALTER TABLE team ADD COLUMN IF NOT EXISTS workload_weeks INT;
 ALTER TABLE proj ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 UPDATE proj SET team_id = (SELECT ua.team_id FROM user_account ua WHERE ua.account_id = proj.owner_account_id) WHERE team_id IS NULL;
 CREATE TABLE IF NOT EXISTS team_folder (

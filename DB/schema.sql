@@ -64,6 +64,15 @@ CREATE TABLE team (
     name              VARCHAR(100) NOT NULL,   -- 팀장이 입력한 팀명
     owner_account_id  VARCHAR(5)  NOT NULL,    -- 만든 팀장 = user_account.account_id(FK 없음)
     src_org_id        VARCHAR(5),              -- 만들 당시 팀장의 HR 소속 = org.org_id. 후보 범위의 근거로 남긴다
+    -- 팀 업무량 기준(2026-08-04 추가). 셋 다 NULL 이면 "설정 안 함"이고 각각
+    -- HR 값·100%·4주를 쓴다. 값을 복사해 두지 않는 이유는 HR 이 바뀌면 우리
+    -- 사본이 조용히 낡기 때문이다 — 팀장이 명시적으로 정한 것만 담는다.
+    --
+    -- capacity_wk_hours 는 사람마다 다른 HR 값을 팀 하나로 덮어쓴다. 시간제
+    -- 근무자가 있으면 그 사람 값까지 덮으므로 화면이 그 사실을 밝힌다.
+    capacity_wk_hours NUMERIC(5,2),        -- 팀 공통 주 근무시간. NULL 이면 HR 의 사람별 값
+    overload_pct      INT,                     -- 이 비율을 넘으면 과부하로 본다. NULL 이면 100
+    workload_weeks    INT,                     -- 부하 조회 기본 기간(주). NULL 이면 4
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

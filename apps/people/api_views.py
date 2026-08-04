@@ -14,6 +14,7 @@ from .serializers import (
     person_response,
     team_member_response,
     team_response,
+    team_setting_response,
 )
 
 
@@ -163,3 +164,64 @@ class TeamMemberDetailAPIView(TeamScopedAPIView):
         except psycopg.Error as exc:
             return _unavailable("팀원을 뺄 수 없습니다.", exc)
         return Response([team_member_response(row) for row in rows])
+
+
+def _optional_number(raw: object, *, name: str, low: float, high: float, integer: bool):
+    """비우면 "설정 안 함"(None)이다. 0을 넣으면 용량이 0이 되므로 하한을 둔다."""
+
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw) if integer else float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name}은(는) 숫자여야 합니다.") from exc
+    if not low <= value <= high:
+        raise ValueError(f"{name}은(는) {low:g}~{high:g} 사이여야 합니다.")
+    return value
+
+
+class TeamSettingAPIView(TeamScopedAPIView):
+    """팀 업무량 기준.
+
+    셋 다 비울 수 있고 비우면 "설정 안 함"이다 — HR 값·100%·4주로 돌아간다.
+    HR 값을 우리 테이블에 복사해 두지 않는 이유는, 복사하면 HR이 바뀌었을 때
+    사본이 조용히 낡고 화면이 낡은 값을 "현재 기준"이라고 말하게 되기 때문이다.
+    """
+
+    def get(self, request):
+        try:
+            return Response(team_setting_response(TeamRepository.settings(request.user.account_id)))
+        except RepositoryError as exc:
+            return _repository_error(exc)
+        except psycopg.Error as exc:
+            return _unavailable("팀 설정을 조회할 수 없습니다.", exc)
+
+    def put(self, request):
+        try:
+            # 주 168시간이 물리적 상한이다. 그 위는 입력 실수다.
+            capacity = _optional_number(
+                request.data.get("capacity_wk_hours"), name="주 근무시간", low=1, high=168, integer=False
+            )
+            # 100 미만이면 정상 부하를 과부하로 표시하게 된다.
+            overload = _optional_number(
+                request.data.get("overload_pct"), name="과부하 기준", low=100, high=300, integer=True
+            )
+            # 1주 미만은 기간이 아니고, 반년을 넘으면 "지금 부하"가 아니다.
+            weeks = _optional_number(
+                request.data.get("workload_weeks"), name="조회 기간", low=1, high=26, integer=True
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            settings = TeamRepository.update_settings(
+                account_id=request.user.account_id,
+                capacity_wk_hours=capacity,
+                overload_pct=overload,
+                workload_weeks=weeks,
+            )
+        except RepositoryError as exc:
+            return _repository_error(exc)
+        except psycopg.Error as exc:
+            return _unavailable("팀 설정을 저장할 수 없습니다.", exc)
+        return Response(team_setting_response(settings))

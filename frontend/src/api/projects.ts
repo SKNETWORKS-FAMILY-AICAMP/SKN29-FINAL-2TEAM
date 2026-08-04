@@ -336,6 +336,10 @@ export interface WorkloadResult {
   missing_estimate_count: number;
   unscheduled_backlog_hours: number;
   limitations: string[];
+  /** 이 비율을 넘으면 과부하. 팀 설정이 없으면 100. */
+  overload_pct: number;
+  /** 조회 기간(주). 팀 설정이 없으면 4. */
+  workload_weeks: number;
   as_of: string;
 }
 

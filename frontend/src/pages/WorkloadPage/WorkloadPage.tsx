@@ -29,14 +29,24 @@ function fourWeeksFrom(start: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-function rateClass(rate: number | null): string {
+/** 과부하 기준은 팀장이 정한다. 화면이 100을 박아 두면 설정이 거짓말이 된다. */
+function rateClass(rate: number | null, overloadPct: number): string {
   if (rate === null) return styles.rateBlocked;
-  if (rate > 100) return styles.rateOver;
-  if (rate >= 80) return styles.rateHigh;
+  if (rate > overloadPct) return styles.rateOver;
+  // 기준의 80%부터 "곧 찬다"로 본다. 기준이 120이면 96부터다.
+  if (rate >= overloadPct * 0.8) return styles.rateHigh;
   return styles.rateNormal;
 }
 
-function PersonRow({ person, scale }: { person: PersonWorkload; scale: number }) {
+function PersonRow({
+  person,
+  scale,
+  overloadPct,
+}: {
+  person: PersonWorkload;
+  scale: number;
+  overloadPct: number;
+}) {
   const blocked = person.blocked_reason !== null;
 
   return (
@@ -49,7 +59,7 @@ function PersonRow({ person, scale }: { person: PersonWorkload; scale: number })
             ? `할당 ${person.current_allocation}h`
             : `${person.current_allocation}h / ${person.effective_capacity}h · 잔여 ${person.remaining_capacity}h`}
         </span>
-        <span className={`${styles.personRate} ${rateClass(person.load_rate)}`}>
+        <span className={`${styles.personRate} ${rateClass(person.load_rate, overloadPct)}`}>
           {blocked ? BLOCKED_LABEL[person.blocked_reason!] ?? person.blocked_reason : `${person.load_rate}%`}
         </span>
       </div>
@@ -70,8 +80,8 @@ function PersonRow({ person, scale }: { person: PersonWorkload; scale: number })
               />
             ))}
         </div>
-        {/* 100% 지점을 눈금으로 세운다. 막대를 100%에서 자르면 122%와 300%가 같아 보인다. */}
-        <div className={styles.fullMark} style={{ left: `${(100 / scale) * 100}%` }} />
+        {/* 기준선을 세운다. 막대를 기준에서 자르면 122%와 300%가 같아 보인다. */}
+        <div className={styles.fullMark} style={{ left: `${(overloadPct / scale) * 100}%` }} />
       </div>
 
       {!blocked && person.by_project.length > 0 && (
@@ -142,8 +152,10 @@ export default function WorkloadPage() {
     }
   };
 
-  // 최대 부하율까지 담는 축이라 100%를 넘는 사람도 얼마나 넘었는지 보인다.
-  const maxRate = Math.max(100, ...(result?.people ?? []).map((p) => p.load_rate ?? 0));
+  // 팀이 정한 기준. 응답에 실려 오므로 화면이 따로 조회하지 않는다.
+  const overloadPct = result?.overload_pct ?? 100;
+  // 최대 부하율까지 담는 축이라 기준을 넘는 사람도 얼마나 넘었는지 보인다.
+  const maxRate = Math.max(overloadPct, ...(result?.people ?? []).map((p) => p.load_rate ?? 0));
   const scale = Math.ceil(maxRate / 10) * 10;
 
   return (
@@ -192,13 +204,18 @@ export default function WorkloadPage() {
               <div>
                 <p className={styles.cardTitle}>인원별 부하율</p>
                 <p className={styles.cardNote}>
-                  {result.period_start} ~ {result.period_end} · 근무일 {result.workdays}일 · 세로선이 100%
+                  {result.period_start} ~ {result.period_end} · 근무일 {result.workdays}일 · 세로선이 {overloadPct}%
                 </p>
               </div>
 
               <div className={styles.personList}>
                 {result.people.map((person) => (
-                  <PersonRow key={person.person_id} person={person} scale={scale} />
+                  <PersonRow
+                    key={person.person_id}
+                    person={person}
+                    scale={scale}
+                    overloadPct={overloadPct}
+                  />
                 ))}
                 {result.people.length === 0 && (
                   <p className={styles.cardNote}>팀원이 없습니다. 설정에서 팀을 먼저 만들어 주세요.</p>

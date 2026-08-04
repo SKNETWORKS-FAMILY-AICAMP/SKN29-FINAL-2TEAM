@@ -22,8 +22,13 @@ import { listConnectors } from '../../api/connectors';
 import { CONNECTOR_TYPE_BY_ID } from '../../api/connectors';
 import { createInvite, listInviteCandidates, revokeInvite } from '../../api/invites';
 import type { InviteCandidate, InviteStatus, IssuedInvite } from '../../api/invites';
-import { listTeamMembers, removeTeamMember } from '../../api/teams';
-import type { TeamMember } from '../../api/teams';
+import {
+  fetchTeamSettings,
+  listTeamMembers,
+  removeTeamMember,
+  saveTeamSettings,
+} from '../../api/teams';
+import type { TeamMember, TeamSettings } from '../../api/teams';
 import { CONNECTOR_DEFS } from '../../data/connectorDefs';
 import { loadConnectorStatuses } from '../../utils/connectorStatus';
 import type { ConnectorStatus } from '../../utils/connectorStatus';
@@ -62,9 +67,12 @@ export default function TeamLeaderSettingsPage() {
   const [connectorStatuses, setConnectorStatuses] = useState<Record<string, ConnectorStatus>>(() =>
     loadConnectorStatuses(Object.fromEntries(CONNECTOR_DEFS.map((c) => [c.id, c.initialStatus]))),
   );
-  const [baseHours, setBaseHours] = useState('40');
-  const [overloadThreshold, setOverloadThreshold] = useState('110');
-  const [defaultHours, setDefaultHours] = useState('8');
+  // 빈 문자열이 "설정 안 함"이다. 0과 구분해야 하므로 숫자로 들고 있지 않는다.
+  const [settings, setSettings] = useState<TeamSettings | null>(null);
+  const [baseHours, setBaseHours] = useState('');
+  const [overloadThreshold, setOverloadThreshold] = useState('');
+  const [workloadWeeks, setWorkloadWeeks] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
 
   const [token] = useState(loadSessionToken);
@@ -94,6 +102,56 @@ export default function TeamLeaderSettingsPage() {
   useEffect(() => {
     void refreshMembers();
   }, [refreshMembers]);
+
+  const hrHoursHint = (() => {
+    const min = settings?.hr_wk_hours_min;
+    const max = settings?.hr_wk_hours_max;
+    if (min === null || min === undefined) return '인사 시스템 값';
+    return min === max ? `주 ${min}시간` : `주 ${min}~${max}시간`;
+  })();
+
+  const applySettings = useCallback((row: TeamSettings) => {
+    setSettings(row);
+    setBaseHours(row.capacity_wk_hours === null ? '' : String(row.capacity_wk_hours));
+    setOverloadThreshold(row.overload_pct === null ? '' : String(row.overload_pct));
+    setWorkloadWeeks(row.workload_weeks === null ? '' : String(row.workload_weeks));
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+    fetchTeamSettings(token)
+      .then((row) => {
+        if (!cancelled) applySettings(row);
+      })
+      .catch(() => {
+        // 팀이 아직 없으면 404다. 나머지 구획은 보여준다.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, applySettings]);
+
+  async function handleSaveWorkload() {
+    if (!token || savingSettings) return;
+    setSavingSettings(true);
+    try {
+      applySettings(
+        await saveTeamSettings(token, {
+          capacity_wk_hours: baseHours.trim(),
+          overload_pct: overloadThreshold.trim(),
+          workload_weeks: workloadWeeks.trim(),
+        }),
+      );
+      showToast('팀 업무량 기준을 저장했습니다.', 'success');
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : '기준을 저장하지 못했습니다.', 'error');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
 
   async function handleRemoveMember(member: TeamMember) {
     if (!token) return;
@@ -451,7 +509,7 @@ export default function TeamLeaderSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>팀 업무량 기준</h2>
-            <p>적정 업무량 배정을 유도하는 임계값을 설정합니다.</p>
+            <p>부하율 계산과 과부하 판정에 쓰이는 값입니다. 비우면 기본값으로 돌아갑니다.</p>
           </div>
 
           <div className={styles.workloadRow}>
@@ -459,6 +517,7 @@ export default function TeamLeaderSettingsPage() {
               label="기준 근무시간 (주 단위)"
               type="number"
               value={baseHours}
+              placeholder={hrHoursHint}
               onChange={(e) => setBaseHours(e.target.value)}
               rightElement={<span className={styles.unitLabel}>시간/주</span>}
             />
@@ -466,30 +525,37 @@ export default function TeamLeaderSettingsPage() {
               label="과부하 경고 임계값"
               type="number"
               value={overloadThreshold}
+              placeholder={String(settings?.default_overload_pct ?? 100)}
               onChange={(e) => setOverloadThreshold(e.target.value)}
               rightElement={<span className={styles.unitLabel}>%</span>}
             />
             <Input
-              label="기본 근무시간 (개인 설정 없는 팀원 적용)"
+              label="부하 조회 기간"
               type="number"
-              value={defaultHours}
-              onChange={(e) => setDefaultHours(e.target.value)}
-              rightElement={<span className={styles.unitLabel}>시간/일</span>}
+              value={workloadWeeks}
+              placeholder={String(settings?.default_workload_weeks ?? 4)}
+              onChange={(e) => setWorkloadWeeks(e.target.value)}
+              rightElement={<span className={styles.unitLabel}>주</span>}
             />
           </div>
 
           <p className={styles.helperNote}>
             <Icon name="circle-help" size={14} color="var(--color-placeholder)" />
-            팀원별 기준은 개인 설정 탭에서 별도로 지정하면 검증 단계에서 우선 반영됩니다.
+            {/* 사람마다 다른 HR 값을 하나로 덮어쓴다는 사실을 밝힌다. 지금은 전원
+                같은 값이라 티가 안 나지만, 시간제 근무자가 생기면 그 사람 값까지
+                덮인다. */}
+            기준 근무시간을 비우면 인사 시스템의 팀원별 값을 그대로 씁니다({hrHoursHint}).
+            값을 넣으면 팀원 모두에게 그 값이 적용됩니다.
           </p>
 
           <div className={styles.saveRow}>
-            <Button variant="primary" onClick={handleSaveWorkload}>
-              기준 저장하기
+            <Button variant="primary" onClick={() => void handleSaveWorkload()} disabled={savingSettings}>
+              {savingSettings ? '저장 중…' : '기준 저장하기'}
             </Button>
           </div>
         </Card>
       </section>
+
     </SettingsLayout>
   );
 }

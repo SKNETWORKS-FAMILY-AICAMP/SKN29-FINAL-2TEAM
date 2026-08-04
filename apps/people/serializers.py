@@ -84,3 +84,22 @@ def team_member_response(row: dict[str, Any]) -> dict[str, Any]:
         "invite_status": row.get("invite_status"),
         "invited_at": invited_at.isoformat() if invited_at else None,
     }
+
+
+def team_setting_response(row: dict[str, Any]) -> dict[str, Any]:
+    """팀 업무량 기준.
+
+    정한 값(`*_wk_hours` 등)과 안 정했을 때 쓰이는 값(`hr_*`, `default_*`)을 함께
+    준다. 화면이 빈 칸에 회색 글씨로 "지금 기준"을 보여줄 수 있어야, 비워 둔 것이
+    "모른다"가 아니라 "HR 값을 따른다"로 읽힌다.
+    """
+
+    return {
+        "capacity_wk_hours": row["capacity_wk_hours"],
+        "overload_pct": row["overload_pct"],
+        "workload_weeks": row["workload_weeks"],
+        "hr_wk_hours_min": row["hr_wk_hours_min"],
+        "hr_wk_hours_max": row["hr_wk_hours_max"],
+        "default_overload_pct": row["default_overload_pct"],
+        "default_workload_weeks": row["default_workload_weeks"],
+    }

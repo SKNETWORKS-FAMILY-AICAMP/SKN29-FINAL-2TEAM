@@ -53,6 +53,24 @@ def _require_record(cursor, *, table: str, column: str, value: str, label: str) 
         raise ReferenceNotFound(f"존재하지 않는 {label}입니다: {value}")
 
 
+def _hr_weekly_hours(profile: dict[str, Any]) -> float | None:
+    """HR이 아는 주 근무시간. `services/workload/calculator._weekly_hours`와 같은 규칙.
+
+    두 곳이 다르면 설정 화면이 말하는 기준과 실제 계산이 어긋난다. 계산기는
+    순수 함수라 여기서 부를 수 없어(레이어가 반대다) 규칙만 맞춘다.
+    """
+
+    wk_hours = profile.get("wk_hours")
+    if wk_hours is not None:
+        return float(wk_hours)
+
+    default_hours = profile.get("def_wk_hours")
+    fte = profile.get("fte")
+    if default_hours is None or fte is None:
+        return None
+    return float(default_hours) * float(fte)
+
+
 def _team_of(cursor, account_id: str) -> str | None:
     """이 계정이 속한 팀. 테넌트 경계라 거의 모든 조회가 먼저 이걸 묻는다."""
 
@@ -1647,6 +1665,87 @@ class TeamRepository:
     팀원 명부(`team_member`)는 PERSON 단위로 둔다 — 아직 가입하지 않은 사람도
     팀원이다.
     """
+
+    # 팀장이 정하지 않았을 때 쓰는 값. 화면과 계산이 같은 상수를 봐야 "설정 안 함"
+    # 상태에서 둘이 다른 숫자를 말하지 않는다.
+    DEFAULT_OVERLOAD_PCT = 100
+    DEFAULT_WORKLOAD_WEEKS = 4
+
+    @staticmethod
+    def settings(account_id: str) -> dict[str, Any]:
+        """팀 업무량 기준. 정한 값과 실제로 쓰이는 값을 함께 준다.
+
+        `capacity_wk_hours`가 `None`이면 HR의 사람별 주 근무시간을 그대로 쓴다.
+        그때 화면이 "지금 기준이 몇 시간인지"를 보여줄 수 있도록 팀원들의 HR 값을
+        같이 계산해 준다 — 사람마다 다르면 범위로 알린다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    raise RecordNotFound("아직 팀이 없습니다.")
+                cursor.execute(
+                    """
+                    SELECT capacity_wk_hours, overload_pct, workload_weeks
+                    FROM team WHERE team_id = %s
+                    """,
+                    (team_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("팀을 찾을 수 없습니다.")
+                person_ids = TeamRepository.member_person_ids(team_id)
+
+        # HR이 아는 주 근무시간. wk_hours 가 없으면 계약시간×FTE 로 유도한다 —
+        # 계산기(`_weekly_hours`)와 같은 규칙이라야 화면과 계산이 어긋나지 않는다.
+        hr_hours = sorted(
+            {
+                hours
+                for hours in (_hr_weekly_hours(p) for p in hr.list_persons(person_ids=person_ids))
+                if hours is not None
+            }
+        )
+
+        return {
+            "capacity_wk_hours": float(row["capacity_wk_hours"]) if row["capacity_wk_hours"] is not None else None,
+            "overload_pct": row["overload_pct"],
+            "workload_weeks": row["workload_weeks"],
+            # 설정을 비웠을 때 실제로 쓰이는 값. 화면이 회색 글씨로 보여준다.
+            "hr_wk_hours_min": hr_hours[0] if hr_hours else None,
+            "hr_wk_hours_max": hr_hours[-1] if hr_hours else None,
+            "default_overload_pct": TeamRepository.DEFAULT_OVERLOAD_PCT,
+            "default_workload_weeks": TeamRepository.DEFAULT_WORKLOAD_WEEKS,
+        }
+
+    @staticmethod
+    def update_settings(
+        *,
+        account_id: str,
+        capacity_wk_hours: float | None,
+        overload_pct: int | None,
+        workload_weeks: int | None,
+    ) -> dict[str, Any]:
+        """업무량 기준을 저장한다. `None`은 "설정 안 함"으로 되돌리는 것이다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    UPDATE team
+                       SET capacity_wk_hours = %s,
+                           overload_pct = %s,
+                           workload_weeks = %s
+                     WHERE team_id = %s
+                    RETURNING team_id
+                    """,
+                    (capacity_wk_hours, overload_pct, workload_weeks, team_id),
+                )
+                if cursor.fetchone() is None:
+                    raise RecordNotFound("팀을 찾을 수 없습니다.")
+
+        return TeamRepository.settings(account_id)
 
     @staticmethod
     def add_member(cursor, *, team_id: str, person_id: str) -> None:

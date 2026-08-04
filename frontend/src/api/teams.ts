@@ -68,3 +68,40 @@ export function addTeamMember(token: string, personId: string) {
 export function removeTeamMember(token: string, personId: string) {
   return apiRequest<TeamMember[]>(`/teams/members/${personId}/`, { method: 'DELETE', token });
 }
+
+/**
+ * 팀 업무량 기준.
+ *
+ * 셋 다 비울 수 있고 비우면 "설정 안 함"이다 — HR 값·100%·4주로 돌아간다.
+ * `hr_*`·`default_*`는 비웠을 때 실제로 쓰이는 값이라, 화면이 빈 칸에 회색
+ * 글씨로 보여 준다. 안 보여 주면 비운 것이 "모른다"로 읽힌다.
+ */
+export interface TeamSettings {
+  /** 팀 공통 주 근무시간. null이면 HR의 사람별 값을 그대로 쓴다. */
+  capacity_wk_hours: number | null;
+  /** 이 비율을 넘으면 과부하. null이면 100. */
+  overload_pct: number | null;
+  /** 부하 조회 기본 기간(주). null이면 4. */
+  workload_weeks: number | null;
+  /** HR이 아는 팀원들의 주 근무시간 범위. 사람마다 다르면 min≠max다. */
+  hr_wk_hours_min: number | null;
+  hr_wk_hours_max: number | null;
+  default_overload_pct: number;
+  default_workload_weeks: number;
+}
+
+export function fetchTeamSettings(token: string) {
+  return apiRequest<TeamSettings>('/teams/settings/', { token });
+}
+
+/** 빈 문자열은 "설정 안 함"으로 되돌린다. */
+export function saveTeamSettings(
+  token: string,
+  values: {
+    capacity_wk_hours: string;
+    overload_pct: string;
+    workload_weeks: string;
+  },
+) {
+  return apiRequest<TeamSettings>('/teams/settings/', { method: 'PUT', token, body: values });
+}
