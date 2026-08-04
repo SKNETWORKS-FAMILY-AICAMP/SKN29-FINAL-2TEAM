@@ -225,10 +225,6 @@ export default function TeamLeaderSettingsPage() {
               <span className={styles.identityMeta}>
                 {[account?.person?.org_name, account?.person?.job_role].filter(Boolean).join(' · ') || '-'}
               </span>
-              <span className={styles.identitySource}>
-                <Icon name="lock" size={12} color="var(--color-placeholder)" />
-                인사 시스템 연동 · 읽기 전용
-              </span>
             </div>
           </div>
 
