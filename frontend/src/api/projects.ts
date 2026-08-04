@@ -153,7 +153,8 @@ export interface DocumentHistoryEntry {
   action: 'DOCUMENT_REGISTER' | 'DOCUMENT_DOWNLOAD';
   occurred_at: string | null;
   actor_display_name: string | null;
-  status: '완료' | 'PARTIAL_RESULT';
+  /** 실제로 실패한 건이 있을 때만 PARTIAL. 미지원이라 걸러진 것은 실패가 아니다. */
+  status: 'OK' | 'PARTIAL';
   payload: Record<string, unknown>;
 }
 

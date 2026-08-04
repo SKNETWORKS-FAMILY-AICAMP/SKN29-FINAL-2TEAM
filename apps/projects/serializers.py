@@ -159,12 +159,15 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
 def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
     """`audit_log` 한 줄을 문서 처리 이력으로.
 
-    실패가 섞였으면 `PARTIAL_RESULT`다 — 화면이 "완료"로만 보여주면 몇 건이
-    빠졌는지 알 수 없다.
+    상태는 **실제로 실패한 건이 있을 때만** `PARTIAL`이다. 미지원 형식이라 등록에서
+    빠진 것(`skipped`)은 걸러진 것이지 실패가 아니라서 여기 들어가지 않는다 —
+    건수는 `payload`에 그대로 있으니 화면이 따로 보여준다.
+
+    표시 문구는 화면이 정한다. 여기서 한국어를 만들면 `blocked_reason`처럼 코드로
+    내려보내는 다른 응답과 규칙이 어긋난다.
     """
 
     payload = row.get("payload") or {}
-    failed = payload.get("failed") or payload.get("skipped") or 0
     occurred_at = row["occurred_at"]
 
     return {
@@ -172,7 +175,7 @@ def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
         "action": row["action"],
         "occurred_at": occurred_at.isoformat() if occurred_at else None,
         "actor_display_name": row.get("actor_display_name"),
-        "status": "PARTIAL_RESULT" if failed else "완료",
+        "status": "PARTIAL" if (payload.get("failed") or 0) else "OK",
         "payload": payload,
     }
 

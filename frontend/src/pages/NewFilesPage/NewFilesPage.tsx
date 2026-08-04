@@ -30,6 +30,12 @@ const ACTION_LABEL: Record<string, string> = {
   DOCUMENT_DOWNLOAD: '원문 저장',
 };
 
+/** 서버는 코드로 준다. 화면에 내부 코드를 그대로 내보내지 않는다. */
+const STATUS_LABEL: Record<string, string> = {
+  OK: '완료',
+  PARTIAL: '일부 실패',
+};
+
 function formatDate(iso: string | null): string {
   if (!iso) return '-';
   return iso.slice(0, 10).replace(/-/g, '.');
@@ -37,11 +43,21 @@ function formatDate(iso: string | null): string {
 
 function historyLabel(entry: DocumentHistoryEntry): string {
   const action = ACTION_LABEL[entry.action] ?? entry.action;
-  const payload = entry.payload as { registered?: number; downloaded?: number; failed?: number };
+  const payload = entry.payload as {
+    registered?: number;
+    downloaded?: number;
+    failed?: number;
+    skipped?: number;
+  };
   const count = payload.registered ?? payload.downloaded ?? 0;
-  const failed = payload.failed ?? 0;
-  const suffix = failed > 0 ? ` (실패 ${failed}건)` : '';
-  return `${action} ${count}건${suffix}`;
+
+  // 실패와 제외는 다르다 — 실패는 하려다 안 된 것, 제외는 미지원이라 애초에
+  // 대상이 아니었던 것이다. 같은 말로 뭉치면 원인을 오해한다.
+  const notes: string[] = [];
+  if (payload.failed) notes.push(`실패 ${payload.failed}건`);
+  if (payload.skipped) notes.push(`제외 ${payload.skipped}건`);
+
+  return `${action} ${count}건${notes.length > 0 ? ` (${notes.join(' · ')})` : ''}`;
 }
 
 /**
@@ -226,7 +242,9 @@ function HistoryBlock({ entries }: { entries: DocumentHistoryEntry[] }) {
               <span className={styles.historyDate}>{formatDate(entry.occurred_at)}</span>
               <span className={styles.historyLabel}>{historyLabel(entry)}</span>
             </div>
-            <Badge tone={entry.status === '완료' ? 'success' : 'warning'}>{entry.status}</Badge>
+            <Badge tone={entry.status === 'OK' ? 'success' : 'warning'}>
+              {STATUS_LABEL[entry.status] ?? entry.status}
+            </Badge>
           </div>
         ))}
         {entries.length === 0 && <p className={styles.historyEmpty}>최근 처리 이력이 없습니다.</p>}

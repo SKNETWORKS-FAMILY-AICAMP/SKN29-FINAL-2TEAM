@@ -344,18 +344,20 @@ class ProjectDocumentRegisterAPIView(AuthenticatedAPIView):
             return _repository_error_response(exc)
 
         # 무엇이 언제 들어왔는지 남긴다. 이게 없어서 예전에 `doc` 건수가 바뀐
-        # 경위를 추적하지 못했다.
-        log_audit(
-            actor_account_id=account_id,
-            action=DocumentRepository.ACTION_REGISTER,
-            proj_id=project_id,
-            target_type=DocumentRepository.AUDIT_TARGET,
-            payload={
-                "registered": len(created),
-                "skipped": len(skipped),
-                "file_names": [row["file_name"] for row in created],
-            },
-        )
+        # 경위를 추적하지 못했다. **실제로 들어온 것이 있을 때만** 남긴다 —
+        # 미지원 파일을 골랐다가 전부 걸러진 것은 바뀐 게 없어서 이력이 아니다.
+        if created:
+            log_audit(
+                actor_account_id=account_id,
+                action=DocumentRepository.ACTION_REGISTER,
+                proj_id=project_id,
+                target_type=DocumentRepository.AUDIT_TARGET,
+                payload={
+                    "registered": len(created),
+                    "skipped": len(skipped),
+                    "file_names": [row["file_name"] for row in created],
+                },
+            )
 
         return Response(
             {

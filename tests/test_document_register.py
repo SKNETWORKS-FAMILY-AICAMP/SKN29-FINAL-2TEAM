@@ -246,6 +246,32 @@ class DocumentRegisterTests(SimpleTestCase):
         self.assertEqual(audit.call_args.kwargs["proj_id"], "PJ001")
         self.assertEqual(audit.call_args.kwargs["payload"]["registered"], 1)
 
+    def test_nothing_registered_leaves_no_history(self):
+        """"파일 등록 0건"은 이력이 아니다 — 바뀐 게 없다."""
+
+        with patch(
+            "apps.projects.api_views.ProjectSourceRepository.list_for_project",
+            return_value=[folder_source()],
+        ), patch(
+            "apps.projects.api_views.DocumentRepository.registered_file_ids", return_value=set()
+        ), patch(
+            "apps.projects.api_views.list_drive_files",
+            return_value=[drive_file("F-png", "도식.png", supported=False)],
+        ), patch(
+            "apps.projects.api_views.DocumentRepository.add_drive_documents", return_value=[]
+        ), patch(
+            "apps.projects.api_views.log_audit"
+        ) as audit:
+            response = self.client.post(
+                "/api/projects/PJ001/documents/register/",
+                {"files": [{"file_id": "F-png"}]},
+                content_type="application/json",
+                **auth_header(),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        audit.assert_not_called()
+
     def test_empty_request_is_rejected(self):
         response = self.client.post(
             "/api/projects/PJ001/documents/register/",
@@ -274,15 +300,22 @@ class DocumentHistoryTests(SimpleTestCase):
             "actor_display_name": "임준",
         }
 
-    def test_clean_run_is_complete(self):
+    def test_clean_run_is_ok(self):
         body = self._history([self._row()]).json()
-        self.assertEqual(body[0]["status"], "완료")
+        self.assertEqual(body[0]["status"], "OK")
         self.assertEqual(body[0]["actor_display_name"], "임준")
 
-    def test_partial_failure_is_flagged(self):
+    def test_real_failure_is_flagged(self):
         """실패가 섞였는데 '완료'로만 보이면 몇 건이 빠졌는지 알 수 없다."""
 
         body = self._history(
             [self._row(action="DOCUMENT_DOWNLOAD", payload={"downloaded": 7, "failed": 2})]
         ).json()
-        self.assertEqual(body[0]["status"], "PARTIAL_RESULT")
+        self.assertEqual(body[0]["status"], "PARTIAL")
+
+    def test_skipped_is_not_a_failure(self):
+        """미지원이라 걸러진 것은 하려다 안 된 것이 아니다. 건수는 payload에 남는다."""
+
+        body = self._history([self._row(payload={"registered": 3, "skipped": 2})]).json()
+        self.assertEqual(body[0]["status"], "OK")
+        self.assertEqual(body[0]["payload"]["skipped"], 2)
