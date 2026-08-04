@@ -24,11 +24,6 @@
   background: var(--color-bg);
 }
 
-.row.selected {
-  background: var(--color-primary-soft);
-  border-left-color: var(--color-primary);
-}
-
 .colName {
   flex: 1 0 0;
   min-width: 0;

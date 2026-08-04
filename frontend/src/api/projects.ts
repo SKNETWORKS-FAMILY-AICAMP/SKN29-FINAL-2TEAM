@@ -55,6 +55,41 @@ export function listMyProjects(token: string) {
   return apiRequest<Project[]>('/projects/', { token });
 }
 
+/** Jira 이슈 한 건. 상세 화면의 업무 목록 한 줄이다. */
+export interface ExistTask {
+  exist_task_id: string;
+  jira_issue_id: string;
+  /** summary 컬럼이 생기기 전에 적재된 행은 null. 화면이 이슈 키로 대신한다. */
+  summary: string | null;
+  assignee_person_id: string | null;
+  /** HR 매핑이 안 되면 null. 그래도 목록에서 빼지 않는다. */
+  assignee_name: string | null;
+  /** Jira가 보여주는 말. 프로젝트마다 다르므로 분기에 쓰지 말 것. */
+  status: string | null;
+  status_category: 'TO_DO' | 'IN_PROGRESS' | 'DONE' | null;
+  due_at: string | null;
+  estimate: number | null;
+  remaining: number | null;
+}
+
+export interface ProjectDetail extends Project {
+  tasks: ExistTask[];
+}
+
+export function getProject(token: string, projId: string) {
+  return apiRequest<ProjectDetail>(`/projects/${projId}/`, { token });
+}
+
+/**
+ * 프로젝트 상태를 바꾼다. 지금은 「완료 처리」와 그 되돌리기뿐이다.
+ *
+ * 진행률 100%를 완료로 자동 판정하지 않는다 — 우리가 아는 것은 Jira에 등록된
+ * 업무가 다 끝났다는 사실뿐이고, 프로젝트가 끝났는지는 사람이 정한다.
+ */
+export function setProjectStatus(token: string, projId: string, status: 'ACTIVE' | 'ARCHIVED') {
+  return apiRequest<Project>(`/projects/${projId}/`, { method: 'PATCH', token, body: { status } });
+}
+
 /** 프로젝트를 직접 만든다. 온보딩은 이 경로를 쓰지 않는다 — Jira 등록이 만든다. */
 export function createProject(token: string, name: string) {
   return apiRequest<Project>('/projects/', { method: 'POST', token, body: { name, status: 'DRAFT' } });

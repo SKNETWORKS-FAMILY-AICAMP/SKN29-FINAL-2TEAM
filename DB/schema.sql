@@ -249,14 +249,18 @@ CREATE TABLE exist_task (
     exist_task_id     VARCHAR(5) PRIMARY KEY,
     -- 이 이슈를 어느 소스에서 가져왔는가(2026-08-03 추가). 이 컬럼이 없던 동안은
     -- 재동기화 때 지울 범위를 특정할 수 없어 최초 1회 적재밖에 못 하는 구조였다.
-    -- proj_id가 아니라 proj_source_id인 이유: 프로젝트 하나가 Jira 프로젝트를
-    -- 여러 개 읽을 수 있다(proj_source에 UNIQUE 없음). proj_id는 proj_source를 타고 얻는다.
+    -- proj_id가 아니라 proj_source_id인 이유: 재동기화의 단위가 소스이기 때문이다.
+    -- (2026-08-04부터 proj_source에 UNIQUE (proj_id)가 걸려 Jira는 1:1이지만,
+    --  지울 범위를 특정한다는 이 컬럼의 역할은 그대로다.)
     proj_source_id       VARCHAR(5) NOT NULL,   -- proj_source.proj_source_id(FK 없음)
     assignee_person_id   VARCHAR(5),  -- person_id 참조(FK 없음)
                                       -- NULL = 담당자 이메일이 person_link에 없음.
                                       -- 행을 버리지 않는다 — 버리면 부하 총량이 조용히 줄어든다.
                                       -- Readiness에서 "미매핑 담당자"로 올려 PM이 알게 한다.
     jira_issue_id        VARCHAR(50) NOT NULL,
+    -- 이슈 제목(2026-08-04 추가). 없으면 업무 목록이 'KAN-34'만 늘어놓게 되어
+    -- 무슨 일인지 알 수 없다. Jira에서 바뀌면 재동기화 때 따라 바뀐다.
+    summary               VARCHAR(500),
     status                VARCHAR(20),   -- Jira 표시 문자열(프로젝트마다 다름). 로직에 쓰지 말 것
     -- Jira 표준 상태 카테고리(2026-08-03 추가). 로직은 이 값만 본다.
     -- 같은 카테고리인데 KAN은 '해야 할 일', AIP는 '할 일'로 표시된다(실측).

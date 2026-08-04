@@ -177,6 +177,58 @@ class ProjectRepository:
         return row
 
     @staticmethod
+    def get_for_team(*, proj_id: str, account_id: str) -> dict[str, Any]:
+        """상세 화면이 쓰는 단건 조회. 내 팀 것이 아니면 막는다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT p.proj_id, p.name, p.status, p.tz, p.owner_account_id,
+                           p.team_id, p.created_at, ua.display_name AS owner_name
+                    FROM proj AS p
+                    LEFT JOIN user_account AS ua ON ua.account_id = p.owner_account_id
+                    WHERE p.proj_id = %s
+                    """,
+                    (proj_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_status(*, proj_id: str, account_id: str, status: str) -> dict[str, Any]:
+        """프로젝트 상태를 바꾼다. 「완료 처리」가 쓰는 유일한 경로다.
+
+        진행률 100%를 완료로 자동 판정하지 않는다. 우리가 아는 것은 Jira에 등록된
+        업무가 전부 끝났다는 사실뿐이고, 프로젝트가 끝났는지는 사람이 정한다 —
+        등록되지 않은 마무리 작업이 남아 있을 수 있다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    UPDATE proj SET status = %s WHERE proj_id = %s
+                    RETURNING proj_id, name, status, tz, owner_account_id, team_id, created_at
+                    """,
+                    (status, proj_id),
+                )
+                row = cursor.fetchone()
+                log_with(
+                    cursor,
+                    actor_account_id=account_id,
+                    action="PROJECT_STATUS_CHANGE",
+                    proj_id=proj_id,
+                    target_type="PROJECT",
+                    target_id=proj_id,
+                    payload={"status": status},
+                )
+
+        row["owner_name"] = None
+        return row
+
+    @staticmethod
     def create(*, name: str, status: str, tz: str, owner_account_id: str | None) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -879,7 +931,7 @@ class ExistTaskRepository:
 
     # 부하 계산의 입력. 프로젝트 범위와 팀 범위가 같은 컬럼을 쓴다.
     _TASK_COLUMNS = """
-        et.exist_task_id, et.jira_issue_id, et.assignee_person_id,
+        et.exist_task_id, et.jira_issue_id, et.summary, et.assignee_person_id,
         et.status, et.status_category, et.due_at,
         et.estimate, et.remaining, et.spent,
         ps.proj_id,
@@ -1076,15 +1128,16 @@ class ExistTaskRepository:
                         """
                         INSERT INTO exist_task
                             (exist_task_id, proj_source_id, assignee_person_id, jira_issue_id,
-                             status, status_category, priority, start_at, due_at,
+                             summary, status, status_category, priority, start_at, due_at,
                              estimate, remaining, spent)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             exist_task_id,
                             proj_source_id,
                             row.get("assignee_person_id"),
                             jira_issue_id,
+                            row.get("summary"),
                             row.get("status"),
                             row.get("status_category"),
                             row.get("priority"),

@@ -10,8 +10,7 @@ export interface ProjectRowProps {
   date: string;
   progressText: string;
   done?: boolean;
-  selected: boolean;
-  onSelect: () => void;
+  onOpen: () => void;
 }
 
 export function ProjectRow({
@@ -22,15 +21,10 @@ export function ProjectRow({
   date,
   progressText,
   done = false,
-  selected,
-  onSelect,
+  onOpen,
 }: ProjectRowProps) {
   return (
-    <button
-      type="button"
-      className={[styles.row, selected ? styles.selected : ''].filter(Boolean).join(' ')}
-      onClick={onSelect}
-    >
+    <button type="button" className={styles.row} onClick={onOpen}>
       <div className={styles.colName}>
         <span className={styles.name}>{title}</span>
         {desc && <span className={styles.desc}>{desc}</span>}

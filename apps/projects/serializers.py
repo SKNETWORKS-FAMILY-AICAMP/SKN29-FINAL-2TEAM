@@ -19,6 +19,16 @@ class ProjectCreateSerializer(serializers.Serializer):
     tz = serializers.CharField(max_length=50, default="Asia/Seoul")
 
 
+class ProjectStatusSerializer(serializers.Serializer):
+    """상태 변경. 「완료 처리」와 그 되돌리기가 쓴다.
+
+    `DRAFT`는 받지 않는다 — 온보딩이 만들다 만 프로젝트를 뜻하던 값이고, 이제
+    온보딩은 프로젝트를 만들지 않는다. 되돌릴 곳은 `ACTIVE`다.
+    """
+
+    status = serializers.ChoiceField(choices=("ACTIVE", "ARCHIVED"))
+
+
 class TeamFolderReplaceSerializer(serializers.Serializer):
     """팀이 읽을 Drive 폴더의 전체 선택 상태. 빈 목록은 전부 해제한다는 뜻이다."""
 
@@ -177,6 +187,35 @@ def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
         "external_source_id": row["external_source_id"],
         "display_name": row.get("display_name"),
         "sync_status": row["sync_status"],
+    }
+
+
+def exist_task_response(row: dict[str, Any], persons: dict[str, Any]) -> dict[str, Any]:
+    """Jira 이슈 한 건을 상세 화면의 업무 한 줄로.
+
+    `summary`는 `summary` 컬럼이 생기기 전에 적재된 행에 없다. 지어내지 않고
+    `null`로 두면 화면이 이슈 키로 대신한다.
+
+    담당자 이름은 HR에서 왔다. 매핑이 안 된 이슈도 목록에서 빼지 않는다 —
+    빼면 합계가 조용히 줄어 목록과 진행률이 어긋난다.
+    """
+
+    person_id = row.get("assignee_person_id")
+    due_at = row.get("due_at")
+
+    return {
+        "exist_task_id": row["exist_task_id"],
+        "jira_issue_id": row["jira_issue_id"],
+        "summary": row.get("summary"),
+        "assignee_person_id": person_id,
+        "assignee_name": (persons.get(person_id) or {}).get("name") if person_id else None,
+        # 표시용 상태와 로직용 카테고리를 함께 준다. 화면은 카테고리로 묶고
+        # 사람에게는 Jira가 쓰는 말을 보여준다.
+        "status": row.get("status"),
+        "status_category": row.get("status_category"),
+        "due_at": due_at.isoformat() if due_at else None,
+        "estimate": float(row["estimate"]) if row.get("estimate") is not None else None,
+        "remaining": float(row["remaining"]) if row.get("remaining") is not None else None,
     }
 
 

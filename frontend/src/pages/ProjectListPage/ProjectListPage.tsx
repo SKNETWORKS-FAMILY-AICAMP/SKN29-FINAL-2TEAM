@@ -79,8 +79,6 @@ export default function ProjectListPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortValue>('date');
-  const [selectedActiveId, setSelectedActiveId] = useState<string | null>(null);
-  const [selectedCompletedId, setSelectedCompletedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -146,18 +144,6 @@ export default function ProjectListPage() {
     } finally {
       setSyncing(false);
     }
-  }
-
-  function handleSelectActive(project: Project) {
-    const next = selectedActiveId === project.proj_id ? null : project.proj_id;
-    setSelectedActiveId(next);
-    if (next) showToast(`${project.name} 선택됨`, 'info');
-  }
-
-  function handleSelectCompleted(project: Project) {
-    const next = selectedCompletedId === project.proj_id ? null : project.proj_id;
-    setSelectedCompletedId(next);
-    if (next) showToast(`${project.name} 선택됨`, 'info');
   }
 
   function handleStartWorkflow() {
@@ -257,8 +243,7 @@ export default function ProjectListPage() {
                 desc={summaryOf(project)}
                 date={formatDate(project.created_at)}
                 progressText={project.progress ? `${project.progress.progress}%` : '-'}
-                selected={selectedActiveId === project.proj_id}
-                onSelect={() => handleSelectActive(project)}
+                onOpen={() => navigate(`/projects/${project.proj_id}`)}
               />
             ))}
             {activeProjects.length === 0 && (
@@ -287,8 +272,7 @@ export default function ProjectListPage() {
                 date={formatDate(project.created_at)}
                 progressText="완료"
                 done
-                selected={selectedCompletedId === project.proj_id}
-                onSelect={() => handleSelectCompleted(project)}
+                onOpen={() => navigate(`/projects/${project.proj_id}`)}
               />
             ))}
             {completedProjects.length === 0 && (

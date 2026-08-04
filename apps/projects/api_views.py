@@ -14,6 +14,7 @@ from backend.services.hr import (
     list_absences,
     list_capacity_profiles,
     lookup_person_ids_by_external_email,
+    lookup_persons,
 )
 from backend.services.storage import build_key
 from backend.services.storage import save as save_document
@@ -43,10 +44,12 @@ from .serializers import (
     DocumentRoleSaveSerializer,
     JiraProjectRegisterSerializer,
     ProjectCreateSerializer,
+    ProjectStatusSerializer,
     TeamFolderReplaceSerializer,
     assignment_run_response,
     document_history_response,
     document_response,
+    exist_task_response,
     project_response,
     project_source_response,
     team_folder_response,
@@ -123,9 +126,50 @@ class ProjectListCreateAPIView(AuthenticatedAPIView):
 
 
 class ProjectDetailAPIView(AuthenticatedAPIView):
+    """상세 화면이 한 번에 받아 가는 프로젝트 한 건.
+
+    진행률·업무 목록·담당자별 배분을 같이 준다. 화면이 세 번 부르면 세 번 모두
+    같은 `exist_task`를 훑게 되고, 그 사이 「갱신」이 끼면 서로 다른 시점의 숫자가
+    한 화면에 섞인다.
+    """
+
     def get(self, request, project_id):
+        account_id = request.user.account_id
         try:
-            row = ProjectRepository.get(project_id)
+            row = ProjectRepository.get_for_team(proj_id=project_id, account_id=account_id)
+            progress = ExistTaskRepository.progress_by_project([project_id]).get(project_id)
+            last_sync = ProjectSourceRepository.last_sync_by_project([project_id])
+            tasks = ExistTaskRepository.list_for_project(
+                proj_id=project_id,
+                account_id=account_id,
+            )
+            # 담당자 이름은 HR에 있다. 이슈마다 부르지 않고 한 번에 모아 온다.
+            persons = lookup_persons([t["assignee_person_id"] for t in tasks if t["assignee_person_id"]])
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response(
+            project_response(
+                row,
+                progress,
+                last_sync=last_sync.get(project_id),
+                has_jira_source=project_id in last_sync,
+            )
+            | {"tasks": [exist_task_response(task, persons) for task in tasks]}
+        )
+
+    def patch(self, request, project_id):
+        """상태 변경. 지금은 「완료 처리」와 그 되돌리기뿐이다."""
+
+        serializer = ProjectStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            row = ProjectRepository.set_status(
+                proj_id=project_id,
+                account_id=request.user.account_id,
+                status=serializer.validated_data["status"],
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response(project_response(row))

@@ -544,3 +544,104 @@ class DocumentRoleSaveApiTests(SimpleTestCase):
         # 등록만 된 문서는 아직 프로젝트가 없다.
         self.assertIsNone(response.json()[0]["proj_id"])
         list_for_team.assert_called_once_with("UA001")
+
+
+def task_row(key="KAN-34", summary="[MOCK] Orchestrator", person="PX002", category="TO_DO"):
+    return {
+        "exist_task_id": "ET001",
+        "jira_issue_id": key,
+        "summary": summary,
+        "assignee_person_id": person,
+        "status": "해야 할 일",
+        "status_category": category,
+        "due_at": None,
+        "estimate": 48,
+        "remaining": 48,
+        "proj_id": "PJ001",
+        "project_key": "KAN",
+        "project_name": "SKN29_Final_2Team",
+    }
+
+
+@patch("apps.projects.api_views.lookup_persons", return_value={"PX002": {"name": "임준"}})
+@patch("apps.projects.api_views.ExistTaskRepository.list_for_project")
+@patch("apps.projects.api_views.ProjectSourceRepository.last_sync_by_project", return_value={})
+@patch("apps.projects.api_views.ExistTaskRepository.progress_by_project", return_value={})
+@patch("apps.projects.api_views.ProjectRepository.get_for_team")
+class ProjectDetailApiTests(SimpleTestCase):
+    """상세 화면은 프로젝트·진행률·업무 목록을 한 번에 받는다."""
+
+    def test_requires_login(self, *_mocks):
+        self.assertEqual(self.client.get("/api/projects/PJ001/").status_code, 401)
+
+    def test_returns_tasks_with_assignee_names(self, get_for_team, _p, _l, list_tasks, _n):
+        get_for_team.return_value = project_row()
+        list_tasks.return_value = [task_row()]
+
+        body = self.client.get("/api/projects/PJ001/", headers=auth_header()).json()
+
+        self.assertEqual(body["proj_id"], "PJ001")
+        self.assertEqual(body["tasks"][0]["summary"], "[MOCK] Orchestrator")
+        self.assertEqual(body["tasks"][0]["assignee_name"], "임준")
+
+    def test_unmapped_assignee_is_kept(self, get_for_team, _p, _l, list_tasks, _n):
+        """담당자 매핑이 안 돼도 목록에서 빼지 않는다 — 빼면 합계가 어긋난다."""
+
+        get_for_team.return_value = project_row()
+        list_tasks.return_value = [task_row(person=None)]
+
+        body = self.client.get("/api/projects/PJ001/", headers=auth_header()).json()
+
+        self.assertEqual(len(body["tasks"]), 1)
+        self.assertIsNone(body["tasks"][0]["assignee_name"])
+
+    def test_missing_summary_is_null_not_invented(self, get_for_team, _p, _l, list_tasks, _n):
+        get_for_team.return_value = project_row()
+        list_tasks.return_value = [task_row(summary=None)]
+
+        body = self.client.get("/api/projects/PJ001/", headers=auth_header()).json()
+
+        self.assertIsNone(body["tasks"][0]["summary"])
+
+    def test_other_teams_project_is_forbidden(self, get_for_team, *_mocks):
+        get_for_team.side_effect = PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
+
+        response = self.client.get("/api/projects/PJ001/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 403)
+
+
+class ProjectStatusApiTests(SimpleTestCase):
+    def _patch(self, body):
+        return self.client.patch(
+            "/api/projects/PJ001/", body, content_type="application/json", headers=auth_header()
+        )
+
+    def test_requires_login(self):
+        response = self.client.patch(
+            "/api/projects/PJ001/", {"status": "ARCHIVED"}, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @patch("apps.projects.api_views.ProjectRepository.set_status")
+    def test_archives_the_project(self, set_status):
+        set_status.return_value = project_row(status="ARCHIVED")
+
+        response = self._patch({"status": "ARCHIVED"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ARCHIVED")
+        self.assertEqual(set_status.call_args.kwargs["status"], "ARCHIVED")
+
+    @patch("apps.projects.api_views.ProjectRepository.set_status")
+    def test_can_be_undone(self, set_status):
+        set_status.return_value = project_row(status="ACTIVE")
+
+        self.assertEqual(self._patch({"status": "ACTIVE"}).status_code, 200)
+
+    @patch("apps.projects.api_views.ProjectRepository.set_status")
+    def test_draft_is_rejected(self, set_status):
+        """DRAFT는 온보딩이 만들다 만 프로젝트를 뜻했다. 이제 그런 상태는 없다."""
+
+        self.assertEqual(self._patch({"status": "DRAFT"}).status_code, 400)
+        set_status.assert_not_called()

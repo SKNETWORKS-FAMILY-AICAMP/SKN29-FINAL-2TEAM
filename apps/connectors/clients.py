@@ -406,6 +406,8 @@ def _jira_issue_row(item: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "jira_issue_id": item["key"],
+        # 업무 목록이 키만 늘어놓지 않도록. 없으면 화면이 키로 대신한다.
+        "summary": fields.get("summary"),
         # 사람이 보는 값. 사이트마다 달라서 조건문에 쓰면 안 된다.
         "status": status.get("name"),
         # 모르는 key는 None으로 둔다. 임의로 TO_DO에 밀어넣으면 부하가 조용히 늘어난다.
@@ -425,7 +427,7 @@ def _jira_issue_row(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def search_jira_issues(*, account_id: str, project_key: str) -> list[dict[str, Any]]:
-    """프로젝트의 이슈. 담당자·상태·마감·공수만 추린다.
+    """프로젝트의 이슈. 제목·담당자·상태·마감·공수만 추린다.
 
     **완료된 것도 가져온다.** 부하 계산에는 미완료만 쓰지만(계산기가
     `status_category == 'DONE'`을 건너뛴다), 진행률은 "전체 중 얼마나 끝났나"라
@@ -448,7 +450,7 @@ def search_jira_issues(*, account_id: str, project_key: str) -> list[dict[str, A
     }
     body: dict[str, Any] = {
         "jql": f'project = "{project_key}" ORDER BY key',
-        "fields": ["assignee", "status", "priority", "duedate", "timetracking"],
+        "fields": ["summary", "assignee", "status", "priority", "duedate", "timetracking"],
         "maxResults": _JIRA_SEARCH_PAGE_SIZE,
     }
 
