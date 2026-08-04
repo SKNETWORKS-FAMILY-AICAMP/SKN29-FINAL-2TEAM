@@ -12,6 +12,11 @@ export interface AccountPerson {
   email: string;
   org_id: string | null;
   org_name: string | null;
+  /**
+   * HR의 `person.job_role`. **직급이 아니라 직책에 가깝다** — 목업 57명 중 51명은
+   * 직급 값(대리·사원·주임·과장)이 그대로 들어 있고 6명만 직책(팀장·대표이사)이다.
+   * 진짜 직급은 `level` 테이블(사원~대표이사, rank_ord 1~8)에 따로 있다.
+   */
   job_role: string | null;
 }
 

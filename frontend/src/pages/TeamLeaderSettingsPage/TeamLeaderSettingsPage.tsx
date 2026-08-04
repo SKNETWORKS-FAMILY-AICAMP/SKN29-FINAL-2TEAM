@@ -96,7 +96,7 @@ export default function TeamLeaderSettingsPage() {
     void refreshInvites();
   }, [refreshInvites]);
 
-  // 이름·부서·직급과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
+  // 이름·부서·직책과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
   const reloadAccount = useCallback(async () => {
     if (!token) return;
     try {
