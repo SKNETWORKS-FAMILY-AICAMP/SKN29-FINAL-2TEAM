@@ -104,3 +104,24 @@ JIRA_REDIRECT_URI = env(
 # 파일 저장소는 settings 값만 보고 선택한다. 애플리케이션 코드는 S3 SDK를 직접 호출하지 않는다.
 OBJECT_STORAGE_PROVIDER = env("OBJECT_STORAGE_PROVIDER", default="local")
 ANALYSIS_EXECUTION_MODE = env("ANALYSIS_EXECUTION_MODE", default="stub")
+
+# No operational default is provided for secrets or external addresses. The
+# integration validates these settings at the boundary where they are needed.
+RUNPOD_API_KEY = env("RUNPOD_API_KEY", default="")
+RUNPOD_ENDPOINT_ID = env("RUNPOD_ENDPOINT_ID", default="")
+PUBLIC_BACKEND_BASE_URL = env("PUBLIC_BACKEND_BASE_URL", default="")
+RUNPOD_JOB_TTL_MS = env.int("RUNPOD_JOB_TTL_MS", default=3_600_000)
+RUNPOD_EXECUTION_TIMEOUT_MS = env.int(
+    "RUNPOD_EXECUTION_TIMEOUT_MS", default=1_800_000
+)
+DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS = env.int(
+    "DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS", default=900
+)
+
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+OPENAI_MODEL = env("OPENAI_MODEL", default="")
+OPENAI_REASONING_EFFORT = env("OPENAI_REASONING_EFFORT", default="")
+EMBEDDING_MODEL = env("EMBEDDING_MODEL", default="")
+EMBEDDING_DEVICE = env("EMBEDDING_DEVICE", default="")
+CHUNKING_MAX_TOKENS = env.int("CHUNKING_MAX_TOKENS", default=512)
+CHUNKING_MERGE_PEERS = env.bool("CHUNKING_MERGE_PEERS", default=True)

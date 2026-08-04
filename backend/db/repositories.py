@@ -317,11 +317,17 @@ class DocumentRepository:
                 ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
                 cursor.execute(
                     """
-                    SELECT doc_id, proj_id, src_file_id, source_type, file_name,
-                           mime_type, doc_role, src_modified_at, deleted, storage_key
-                    FROM doc
-                    WHERE proj_id = %s AND deleted = false
-                    ORDER BY doc_id
+                    SELECT d.doc_id, d.proj_id, d.src_file_id, d.source_type, d.file_name,
+                           d.mime_type, d.doc_role, d.src_modified_at, d.deleted, d.storage_key,
+                           EXISTS (
+                               SELECT 1 FROM doc_block b
+                               JOIN chunk c ON c.block_id = b.block_id AND c.is_active = true
+                               JOIN vec_idx v ON v.chunk_id = c.chunk_id AND v.is_active = true
+                               WHERE b.doc_id = d.doc_id AND b.revision = d.cur_revision
+                           ) AS search_ready
+                    FROM doc d
+                    WHERE d.proj_id = %s AND d.deleted = false AND d.access_revoked = false
+                    ORDER BY d.doc_id
                     """,
                     (proj_id,),
                 )

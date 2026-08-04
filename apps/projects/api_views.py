@@ -1,3 +1,8 @@
+from io import BytesIO
+
+from django.conf import settings
+from django.core import signing
+from django.http import FileResponse
 import psycopg
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -9,6 +14,8 @@ from apps.connectors.clients import download_drive_file, list_drive_files
 from apps.connectors.oauth import OAuthError
 from backend.services.storage import build_key
 from backend.services.storage import save as save_document
+from backend.services.storage import exists as document_exists
+from backend.services.storage import load as load_document
 from backend.db import (
     AnalysisRunRepository,
     DocumentRepository,
@@ -22,12 +29,22 @@ from backend.db.errors import (
     ReferenceNotFound,
     RepositoryError,
 )
+from backend.db.document_pipeline import PipelineDocumentRepository
+from services.document_pipeline.errors import (
+    DocumentPipelineError,
+    PipelineConfigurationError,
+    RunPodRequestError,
+)
+from services.document_pipeline.runpod_client import job_status, submit_document_job
+from services.document_pipeline.signing import read_download_token, signed_download_url
+from services.task_extraction import extract_tasks
 
 from .serializers import (
     AssignmentRunCreateSerializer,
     DocumentRoleSaveSerializer,
     ProjectCreateSerializer,
     ProjectSourceReplaceSerializer,
+    TaskExtractionCreateSerializer,
     assignment_run_response,
     document_response,
     project_response,
@@ -53,6 +70,19 @@ def _repository_error_response(exc: Exception) -> Response:
 class AuthenticatedAPIView(APIView):
     authentication_classes = [BearerTokenAuthentication]
     permission_classes = [IsAuthenticated]
+
+
+def _pipeline_error_response(exc: Exception) -> Response:
+    if isinstance(exc, PipelineConfigurationError):
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if isinstance(exc, RunPodRequestError):
+        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+    if isinstance(exc, DocumentPipelineError):
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+    return Response(
+        {"detail": str(exc) or exc.__class__.__name__},
+        status=status.HTTP_409_CONFLICT,
+    )
 
 
 class HealthAPIView(APIView):
@@ -296,3 +326,135 @@ class AnalysisRunDetailAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response(assignment_run_response(row))
+
+
+class DocumentProcessingRunAPIView(AuthenticatedAPIView):
+    """Submit and poll one RunPod Serverless document-processing job."""
+
+    def post(self, request, project_id, doc_id):
+        try:
+            document = PipelineDocumentRepository.get_for_processing(
+                proj_id=project_id,
+                doc_id=doc_id,
+                account_id=request.user.account_id,
+            )
+            if not document_exists(document["storage_key"]):
+                return Response(
+                    {"detail": "로컬 문서 저장소에 원문 파일이 없습니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            source_url = signed_download_url(
+                project_id=project_id,
+                doc_id=doc_id,
+                revision=document["cur_revision"],
+            )
+            result = submit_document_job(
+                {
+                    "doc_id": doc_id,
+                    "revision": document["cur_revision"],
+                    "mime_type": document["mime_type"],
+                    "source_url": source_url,
+                    "max_tokens": settings.CHUNKING_MAX_TOKENS,
+                    "merge_peers": settings.CHUNKING_MERGE_PEERS,
+                }
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except (ValueError, OSError, DocumentPipelineError) as exc:
+            return _pipeline_error_response(exc)
+        return Response(
+            {"job_id": result["id"], "status": result.get("status", "IN_QUEUE")},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    def get(self, request, project_id, doc_id, job_id):
+        try:
+            document = PipelineDocumentRepository.get_for_processing(
+                proj_id=project_id,
+                doc_id=doc_id,
+                account_id=request.user.account_id,
+            )
+            result = job_status(job_id)
+            runpod_status = result.get("status")
+            response_payload = {"job_id": job_id, "status": runpod_status}
+            if runpod_status == "COMPLETED":
+                output = result.get("output")
+                if not isinstance(output, dict):
+                    raise ValueError("완료된 RunPod 작업에 output 객체가 없습니다.")
+                response_payload["ingested"] = PipelineDocumentRepository.ingest(
+                    expected_doc=document,
+                    result=output,
+                )
+            elif runpod_status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
+                response_payload["error"] = result.get("error") or "RunPod 문서 처리 실패"
+            return Response(response_payload)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except (ValueError, OSError, DocumentPipelineError) as exc:
+            return _pipeline_error_response(exc)
+
+
+class RunPodDocumentDownloadAPIView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, doc_id):
+        token = request.query_params.get("token", "")
+        try:
+            payload = read_download_token(token)
+            if payload["doc_id"] != doc_id:
+                raise signing.BadSignature("URL과 서명 문서 ID가 다릅니다.")
+            document = PipelineDocumentRepository.get_signed_download(
+                proj_id=payload["project_id"],
+                doc_id=doc_id,
+                revision=payload["revision"],
+            )
+            if not document_exists(document["storage_key"]):
+                raise RecordNotFound("로컬 저장소에 문서 원문이 없습니다.")
+            stream = BytesIO(load_document(document["storage_key"]))
+        except signing.SignatureExpired:
+            return Response({"detail": "문서 다운로드 서명이 만료되었습니다."}, status=403)
+        except signing.BadSignature:
+            return Response({"detail": "문서 다운로드 서명이 올바르지 않습니다."}, status=403)
+        except (RecordNotFound, PermissionDenied):
+            return Response({"detail": "문서를 찾을 수 없습니다."}, status=404)
+        return FileResponse(
+            stream,
+            content_type=document["mime_type"] or "application/octet-stream",
+            as_attachment=True,
+            filename=document["file_name"] or f"{doc_id}.bin",
+        )
+
+
+class TaskExtractionRunAPIView(AuthenticatedAPIView):
+    def post(self, request, project_id):
+        serializer = TaskExtractionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            documents = PipelineDocumentRepository.list_ready_for_analysis(
+                proj_id=project_id,
+                account_id=request.user.account_id,
+            )
+            selected_id = serializer.validated_data["primary_document_id"]
+            primary = next((d for d in documents if d["doc_id"] == selected_id), None)
+            if primary is None:
+                return Response(
+                    {"detail": "선택한 문서가 이 프로젝트의 분석 대상이 아닙니다."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if not primary["search_ready"]:
+                return Response(
+                    {"detail": "문서가 아직 파싱·청킹·임베딩되지 않았습니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
+            result = extract_tasks(
+                project_id=project_id,
+                primary_document=primary,
+                document_ids=ready_ids,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except Exception as exc:
+            return _pipeline_error_response(exc)
+        return Response(result, status=status.HTTP_201_CREATED)

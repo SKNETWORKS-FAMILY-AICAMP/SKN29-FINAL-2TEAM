@@ -75,10 +75,47 @@ export interface ProjectDocument {
   mime_type: string | null;
   doc_role: DocRole | null;
   src_modified_at: string | null;
+  downloaded: boolean;
+  search_ready: boolean;
 }
 
 export function listProjectDocuments(token: string, projId: string) {
   return apiRequest<ProjectDocument[]>(`/projects/${projId}/documents/`, { token });
+}
+
+export interface DocumentProcessingRun {
+  job_id: string;
+  status: 'IN_QUEUE' | 'IN_PROGRESS' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'TIMED_OUT';
+  ingested?: { blocks: number; chunks: number; vectors: number };
+  error?: string;
+}
+
+export function startDocumentProcessing(token: string, projId: string, docId: string) {
+  return apiRequest<DocumentProcessingRun>(`/projects/${projId}/documents/${docId}/processing-runs/`, {
+    method: 'POST', token,
+  });
+}
+
+export function fetchDocumentProcessing(token: string, projId: string, docId: string, jobId: string) {
+  return apiRequest<DocumentProcessingRun>(
+    `/projects/${projId}/documents/${docId}/processing-runs/${encodeURIComponent(jobId)}/`,
+    { token },
+  );
+}
+
+export interface TaskExtractionResult {
+  tasks: Array<Record<string, unknown>>;
+  warnings: string[];
+  evidence: Array<Record<string, unknown>>;
+  trace: string[];
+  model: string;
+  reasoning_effort: string;
+}
+
+export function startTaskExtraction(token: string, projId: string, primaryDocumentId: string) {
+  return apiRequest<TaskExtractionResult>(`/projects/${projId}/task-extraction-runs/`, {
+    method: 'POST', token, body: { primary_document_id: primaryDocumentId },
+  });
 }
 
 /**

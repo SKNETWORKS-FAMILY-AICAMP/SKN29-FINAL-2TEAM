@@ -2,6 +2,7 @@ from django.urls import path
 
 from .api_views import (
     AnalysisRunDetailAPIView,
+    DocumentProcessingRunAPIView,
     HealthAPIView,
     ProjectAnalysisRunAPIView,
     ProjectDetailAPIView,
@@ -9,6 +10,8 @@ from .api_views import (
     ProjectDocumentDownloadAPIView,
     ProjectListCreateAPIView,
     ProjectSourceAPIView,
+    RunPodDocumentDownloadAPIView,
+    TaskExtractionRunAPIView,
 )
 
 urlpatterns = [
@@ -29,6 +32,26 @@ urlpatterns = [
         "projects/<str:project_id>/documents/download/",
         ProjectDocumentDownloadAPIView.as_view(),
         name="api_project_document_download",
+    ),
+    path(
+        "projects/<str:project_id>/documents/<str:doc_id>/processing-runs/",
+        DocumentProcessingRunAPIView.as_view(),
+        name="api_document_processing_run",
+    ),
+    path(
+        "projects/<str:project_id>/documents/<str:doc_id>/processing-runs/<str:job_id>/",
+        DocumentProcessingRunAPIView.as_view(),
+        name="api_document_processing_run_status",
+    ),
+    path(
+        "projects/<str:project_id>/task-extraction-runs/",
+        TaskExtractionRunAPIView.as_view(),
+        name="api_task_extraction_run",
+    ),
+    path(
+        "internal/runpod/documents/<str:doc_id>/",
+        RunPodDocumentDownloadAPIView.as_view(),
+        name="api_runpod_document_download",
     ),
     path(
         "projects/<str:project_id>/assignment-runs/",

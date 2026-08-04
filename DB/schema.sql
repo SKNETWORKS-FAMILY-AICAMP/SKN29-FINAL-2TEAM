@@ -428,7 +428,7 @@ CREATE TABLE chunk (
 -- FK 제약은 사용하지 않으며 chunk_id 존재 여부는 적재 코드에서 검증한다.
 CREATE TABLE vec_idx (
     chunk_id        UUID PRIMARY KEY,
-    embedding       VECTOR(1536) NOT NULL,
+    embedding       VECTOR(768) NOT NULL,
     metadata        JSONB NOT NULL DEFAULT '{}',
     indexed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     embed_model     VARCHAR(100),

@@ -252,7 +252,7 @@ function AssignmentRunsPanel({
         <tbody>
           {rows.length > 0 ? rows.map((row) => (
             <tr key={row.run_id} aria-selected={selected?.run_id === row.run_id} onClick={() => onSelect(row.run_id)}>
-              <td>{timeAgo(row.started_at ?? row.created_at)}</td>
+              <td>{row.started_at || row.created_at ? timeAgo(row.started_at ?? row.created_at ?? '') : '-'}</td>
               <td>{row.model_version ?? '-'}</td>
               <td>{row.policy_version ?? '-'}</td>
               <td>{row.requester_display_name ?? row.requester_email ?? '-'}</td>

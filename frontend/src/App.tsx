@@ -18,6 +18,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
 const MainDashboardPage = lazy(() => import('./pages/MainDashboardPage/MainDashboardPage'));
 const NewFilesPage = lazy(() => import('./pages/NewFilesPage/NewFilesPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
+const PrimaryDocumentSelectPage = lazy(() => import('./pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage'));
 const WorkspacePage = lazy(() => import('./pages/WorkspacePage/WorkspacePage'));
 const TaskDistributionPage = lazy(() => import('./pages/TaskDistributionPage/TaskDistributionPage'));
 const TaskRecommendationPage = lazy(() => import('./pages/TaskRecommendationPage/TaskRecommendationPage'));
@@ -82,6 +83,7 @@ function App() {
           <Route path="/dashboard" element={<RequireAuth><MainDashboardPage /></RequireAuth>} />
           <Route path="/files/new" element={<RequireAuth><NewFilesPage /></RequireAuth>} />
           <Route path="/projects" element={<RequireAuth><ProjectListPage /></RequireAuth>} />
+          <Route path="/projects/:projectId/select-source-document" element={<RequireAuth><PrimaryDocumentSelectPage /></RequireAuth>} />
           <Route path="/workspace" element={<RequireAuth><WorkspacePage /></RequireAuth>} />
           <Route path="/tasks/distribution" element={<RequireAuth><TaskDistributionPage /></RequireAuth>} />
           <Route path="/tasks/recommendation" element={<RequireAuth><TaskRecommendationPage /></RequireAuth>} />

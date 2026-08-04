@@ -24,6 +24,8 @@ export interface OpsAssignmentRun {
   requested_by: string | null;
   requester_display_name: string | null;
   requester_email: string | null;
+  started_at?: string;
+  created_at?: string;
 }
 
 export interface OpsRecommendation {
@@ -43,6 +45,7 @@ export interface OpsValidation {
   reco_id: string;
   run_id: string | null;
   task_id: string | null;
+  task_name?: string | null;
   status: string;
   confidence: number | null;
   missing_data: unknown;

@@ -87,6 +87,10 @@ class AssignmentRunCreateSerializer(serializers.Serializer):
     )
 
 
+class TaskExtractionCreateSerializer(serializers.Serializer):
+    primary_document_id = serializers.CharField(max_length=5)
+
+
 def project_response(row: dict[str, Any]) -> dict[str, Any]:
     """현재 SQL 필드와 기존 프론트 호환 필드를 함께 반환한다."""
 
@@ -133,6 +137,7 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         "src_modified_at": modified_at.isoformat() if modified_at else None,
         # 원문을 받았는지만 알려준다. 저장소 키 자체는 서버 내부 사정이다.
         "downloaded": bool(row.get("storage_key")),
+        "search_ready": bool(row.get("search_ready")),
     }
 
 
