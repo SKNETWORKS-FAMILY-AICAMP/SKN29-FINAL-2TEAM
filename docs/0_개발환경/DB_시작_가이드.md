@@ -223,12 +223,38 @@ BEGIN
     END IF;
   END LOOP;
 END \$\$;
+UPDATE doc SET doc_role = NULL WHERE doc_role IN ('PLAN','MEETING_NOTE','DAILY_REPORT','OTHER');
+UPDATE team_folder SET default_doc_role = NULL WHERE default_doc_role IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_doc_primary_per_proj ON doc (proj_id) WHERE doc_role = 'PRIMARY' AND deleted = false;
+ALTER TABLE doc_block ALTER COLUMN revision TYPE VARCHAR(100);
+ALTER TABLE vec_idx   ALTER COLUMN revision TYPE VARCHAR(100);
+ALTER TABLE doc_sync  ALTER COLUMN revision TYPE VARCHAR(100);
+DO \$\$
+DECLARE current_dim INT;
+BEGIN
+  SELECT atttypmod INTO current_dim FROM pg_attribute
+   WHERE attrelid = 'vec_idx'::regclass AND attname = 'embedding';
+  IF current_dim = 768 THEN
+    RAISE NOTICE 'vec_idx.embedding 은 이미 768 차원이다. 건너뛴다.';
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM vec_idx) THEN
+    RAISE EXCEPTION 'vec_idx 에 행이 있다. 1536 을 768 로 안전하게 바꿀 수 없으므로 중단한다.';
+  END IF;
+  ALTER TABLE vec_idx ALTER COLUMN embedding TYPE VECTOR(768);
+END \$\$;
 "
 ```
 
 > `exist_task.proj_source_id`가 `NOT NULL`인데 기본값이 없다. **이 테이블이 비어 있어야 통과한다.** 2026-08-03 기준 `exist_task`에 쓰는 코드가 아직 없어서(이슈 수집 미구현) 모든 팀원의 DB가 0행이라 그냥 실행하면 된다. 혹시 행이 있어서 실패하면 `DB/migrations/2026-08-03_exist_task_source.sql`의 주석에 채워 넣고 `SET NOT NULL`하는 대안이 있다.
 
 > 마지막 블록(`mock_hr`)은 **데이터를 옮기지 않는다.** `SET SCHEMA`는 테이블을 통째로 다른 네임스페이스에 재등록만 하므로 행·인덱스·제약이 그대로 따라가고, 되돌리려면 `mock_hr` → `public`으로 같은 명령을 반대로 주면 된다. `to_regclass` 검사 때문에 이미 옮긴 DB에서 다시 실행해도 아무 일도 일어나지 않는다.
+
+> **`doc_role` 블록은 이 컬럼의 뜻을 바꾼다.** 예전에는 문서의 **종류**(`PLAN`/`MEETING_NOTE`/`DAILY_REPORT`/`OTHER`)였는데, 폴더에 준 역할을 안의 파일이 그대로 물려받는 방식이라 「01_기획」에 든 것은 요구사항 정의서든 화면설계서든 전부 기획서가 됐다. 정작 그 값으로 분기하는 코드는 한 줄도 없었다. 이제는 **프로젝트와의 관계**를 담는다 — `NULL`(팀 문서 풀) / `PRIMARY`(기준 문서, 프로젝트당 하나) / `SUB`(근거 검색에 함께 쓰는 문서). 옛 값은 새 의미로 읽으면 거짓말이라 비운다.
+
+> **마지막 두 블록(`revision` 폭·`vec_idx` 768차원)은 문서 파싱·임베딩 파이프라인 몫이다.** 임베딩 모델이 `google/embeddinggemma-300m`(768차원)으로 확정돼서 1536차원이던 컬럼을 바꾼다. `vec_idx`에 행이 있으면 **일부러 중단한다** — 1536차원 벡터를 768로 자르거나 0으로 채우면 값은 남지만 의미가 사라져, 검색이 조용히 엉뚱한 결과를 낸다. 2026-08-04 기준 이 테이블에 쓰는 코드는 아래 7장의 데모 스크립트뿐이라 대부분 0행이고 그냥 지나간다. 행이 있으면 `DELETE FROM vec_idx`로 비우고 다시 실행하면 된다.
+>
+> `revision` 세 개를 같이 넓히는 이유는 Drive의 `headRevisionId`가 실측 51자이기 때문이다. `doc.cur_revision`만 2026-07-31에 100자로 넓혀 둬서, 원문은 받아지는데 파싱 결과를 적재할 때 터지는 상태였다.
 
 > ⚠ **`team_overrides.sql`을 쓰고 있다면 같이 고쳐야 한다.** 이 파일은 실제 이메일이 들어 있어 `.gitignore` 대상이라 **각자 로컬 사본을 직접 수정**해야 한다. 안 고치면 다음에 실행할 때 `relation "person" does not exist`가 난다.
 >
@@ -347,6 +373,8 @@ python backend/services/createDB/grant_admin.py <가입된 이메일> --revoke
 ---
 
 ## 7. VEC_IDX 예시로 벡터 저장·검색해보기 (선택)
+
+> ⚠ **2026-08-04 이후로는 이 스크립트가 실패한다.** OpenAI `text-embedding-3-small`(1536차원)로 만든 데모 코드인데, §4.3에서 `vec_idx`를 768차원으로 바꿨기 때문이다. 새 파이프라인과 호환되지 않으므로 실행하지 않는다. 실제 벡터는 문서 처리 API가 EmbeddingGemma로 적재한다. 이 장은 pgvector가 어떻게 동작하는지 읽어 보는 용도로만 남겨 둔다.
 
 `vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. FK 제약은 사용하지 않으며, 스크립트가 `chunk_id` 존재 여부를 검사한 뒤 벡터를 저장한다. 데모 실행 시 `proj → doc → doc_block → chunk` 체인을 먼저 만든다.
 

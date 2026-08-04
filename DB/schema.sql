@@ -374,12 +374,28 @@ CREATE TABLE doc (
     source_type        VARCHAR(20) NOT NULL,   -- DRIVE / JIRA
     file_name          VARCHAR(255),
     mime_type          VARCHAR(100),
+    -- 이 문서가 `proj_id` 프로젝트에서 맡는 역할(2026-08-04 의미 변경).
+    --   NULL      아직 어느 프로젝트에도 안 묶인 팀 문서 풀
+    --   'PRIMARY' 업무를 뽑아낼 기준 문서. 프로젝트당 하나(아래 유일 인덱스)
+    --   'SUB'     근거 검색에 함께 쓰는 문서
+    --
+    -- 예전에는 문서의 **종류**('PLAN'/'MEETING_NOTE'/'DAILY_REPORT'/'OTHER')였다.
+    -- 폴더에 역할을 주고 안의 파일이 물려받는 방식이라 「01_기획」에 든 것은
+    -- 요구사항 정의서든 화면설계서든 전부 기획서가 됐고(실측 3건 중 2건이 오분류),
+    -- 등록 뒤에 고칠 경로도 없었다. 정작 그 값으로 분기하는 코드는 한 줄도 없었다.
+    -- 어느 문서가 근거인지는 사람이 기준 문서 선택 화면에서 고르는 쪽이 정확해서,
+    -- 종류 대신 프로젝트와의 관계를 담는다.
     doc_role           VARCHAR(30),
     acl_principals     TEXT[] NOT NULL DEFAULT '{}',
     src_modified_at    TIMESTAMPTZ,
     deleted            BOOLEAN NOT NULL DEFAULT false,
     access_revoked     BOOLEAN NOT NULL DEFAULT false
 );
+
+-- 기준 문서는 프로젝트당 하나다. 화면이 라디오라 둘이 될 일이 없어 보여도,
+-- 두 건이 되면 어느 것으로 업무를 뽑았는지 알 수 없어 조용히 틀린다.
+CREATE UNIQUE INDEX ux_doc_primary_per_proj
+    ON doc (proj_id) WHERE doc_role = 'PRIMARY' AND deleted = false;
 
 CREATE TABLE know_item (
     know_item_id    VARCHAR(5) PRIMARY KEY,
@@ -411,7 +427,10 @@ CREATE TABLE doc_block (
     heading_path      TEXT[] NOT NULL DEFAULT '{}',
     content           TEXT NOT NULL,
     sequence          INT NOT NULL,
-    revision          VARCHAR(50) NOT NULL,
+    -- doc.cur_revision과 같은 값을 담는다. Drive의 headRevisionId가 실측 51자라
+    -- VARCHAR(50)으로는 한 글자가 모자랐다(2026-08-04 확대). doc 쪽만 2026-07-31에
+    -- 넓혀 두는 바람에, 원문은 들어가는데 파싱 결과를 적재할 때 터지는 상태였다.
+    revision          VARCHAR(100) NOT NULL,
     src_locator       JSONB,
     struct_content    JSONB
 );
@@ -423,7 +442,10 @@ CREATE TABLE doc_sync (
     sync_status     VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     ckpt_token      TEXT,
     retry_cnt       INT NOT NULL DEFAULT 0,
-    revision        VARCHAR(50),
+    -- 위 doc_block.revision과 같은 이유로 100자다(2026-08-04). 아직 이 테이블에
+    -- 쓰는 코드는 없지만, 담을 값이 같아서 지금 맞춰 두지 않으면 나중에 같은
+    -- 사고를 한 번 더 겪는다.
+    revision        VARCHAR(100),
     parse_status    VARCHAR(20),   -- SUCCESS / PARTIAL_RESULT / BLOCKED
     content_hash    VARCHAR(100),
     parser_ver      VARCHAR(30),
@@ -483,7 +505,11 @@ CREATE TABLE chunk (
 -- FK 제약은 사용하지 않으며 chunk_id 존재 여부는 적재 코드에서 검증한다.
 CREATE TABLE vec_idx (
     chunk_id        UUID PRIMARY KEY,
-    embedding       VECTOR(1536) NOT NULL,
+    -- EmbeddingGemma(google/embeddinggemma-300m)의 출력 차원(2026-08-04 축소).
+    -- 1536이던 시절은 OpenAI text-embedding-3-small을 전제한 것인데, 파이프라인이
+    -- EmbeddingGemma로 확정되면서 맞지 않게 됐다. 적재와 검색이 같은 모델을 써야
+    -- 하므로 차원은 한 곳에서만 정해진다.
+    embedding       VECTOR(768) NOT NULL,
     metadata        JSONB NOT NULL DEFAULT '{}',
     indexed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     embed_model     VARCHAR(100),
@@ -491,7 +517,7 @@ CREATE TABLE vec_idx (
     embed_dim       INT,
     dist_metric     VARCHAR(20) NOT NULL DEFAULT 'COSINE',
     content_hash    VARCHAR(100),
-    revision        VARCHAR(50),
+    revision        VARCHAR(100),
     is_active       BOOLEAN NOT NULL DEFAULT true
 );
 
