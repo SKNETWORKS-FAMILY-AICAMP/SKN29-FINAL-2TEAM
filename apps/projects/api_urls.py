@@ -7,7 +7,10 @@ from .api_views import (
     ProjectDetailAPIView,
     ProjectDocumentAPIView,
     ProjectDocumentDownloadAPIView,
+    ProjectDocumentHistoryAPIView,
+    ProjectDocumentRegisterAPIView,
     ProjectListCreateAPIView,
+    ProjectNewDocumentAPIView,
     ProjectSourceAPIView,
     ProjectTaskSyncAPIView,
     ProjectWorkloadAPIView,
@@ -26,6 +29,21 @@ urlpatterns = [
         "projects/<str:project_id>/documents/",
         ProjectDocumentAPIView.as_view(),
         name="api_project_documents",
+    ),
+    path(
+        "projects/<str:project_id>/documents/new/",
+        ProjectNewDocumentAPIView.as_view(),
+        name="api_project_documents_new",
+    ),
+    path(
+        "projects/<str:project_id>/documents/register/",
+        ProjectDocumentRegisterAPIView.as_view(),
+        name="api_project_document_register",
+    ),
+    path(
+        "projects/<str:project_id>/documents/history/",
+        ProjectDocumentHistoryAPIView.as_view(),
+        name="api_project_document_history",
     ),
     path(
         "projects/<str:project_id>/documents/download/",

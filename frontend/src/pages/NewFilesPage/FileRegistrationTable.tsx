@@ -1,4 +1,5 @@
-import { Badge, Button, Checkbox, Icon } from '../../components';
+import { Badge, Button, Checkbox, Icon, Select } from '../../components';
+import type { SelectOption } from '../../components';
 import styles from './FileRegistrationTable.module.css';
 
 export interface FileRow {
@@ -10,10 +11,6 @@ export interface FileRow {
   supported: boolean;
 }
 
-export const FILE_ROWS: FileRow[] = [];
-
-export const DEFAULT_SELECTED_IDS: string[] = [];
-
 interface FileRegistrationTableProps {
   rows: FileRow[];
   selected: Set<string>;
@@ -22,6 +19,14 @@ interface FileRegistrationTableProps {
   mode: 'submit' | 'readonly';
   onSubmit?: () => void;
   showSupport?: boolean;
+  submitLabel?: string;
+  submitting?: boolean;
+  /**
+   * 주면 「역할」 열이 Select가 된다. 신규 파일은 폴더 역할을 물려받되 행마다
+   * 바꿀 수 있어야 해서, 읽기 전용 목록과 같은 컴포넌트를 쓰되 여기서 갈린다.
+   */
+  roleOptions?: SelectOption[];
+  onRoleChange?: (id: string, role: string) => void;
 }
 
 export function FileRegistrationTable({
@@ -32,6 +37,10 @@ export function FileRegistrationTable({
   mode,
   onSubmit,
   showSupport = true,
+  submitLabel = '선택 파일 등록',
+  submitting = false,
+  roleOptions,
+  onRoleChange,
 }: FileRegistrationTableProps) {
   const supportedRows = rows.filter((row) => row.supported);
   const checkedCount = supportedRows.filter((row) => selected.has(row.id)).length;
@@ -87,7 +96,18 @@ export function FileRegistrationTable({
               </div>
               <div className={styles.rowDate}>{row.date}</div>
               <div className={styles.rowRole}>
-                <Badge tone="neutral">{row.role}</Badge>
+                {roleOptions && onRoleChange ? (
+                  <Select
+                    size="sm"
+                    options={roleOptions}
+                    value={row.role}
+                    // 미지원 파일은 등록 자체가 안 되므로 역할을 고를 이유가 없다.
+                    disabled={!row.supported}
+                    onChange={(event) => onRoleChange(row.id, event.target.value)}
+                  />
+                ) : (
+                  <Badge tone="neutral">{row.role}</Badge>
+                )}
               </div>
               {showSupport && (
                 <div className={styles.rowSupport}>
@@ -109,11 +129,11 @@ export function FileRegistrationTable({
           </div>
           <Button
             variant="primary"
-            disabled={checkedCount === 0}
+            disabled={checkedCount === 0 || submitting}
             iconRight={<Icon name="arrow-right" size={14} color="currentColor" />}
             onClick={onSubmit}
           >
-            선택 파일 등록
+            {submitting ? '등록하는 중…' : submitLabel}
           </Button>
         </div>
       ) : (

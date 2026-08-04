@@ -47,6 +47,18 @@ class ProjectSourceReplaceSerializer(serializers.Serializer):
 DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
 
 
+class DocumentRegisterEntrySerializer(serializers.Serializer):
+    file_id = serializers.CharField(max_length=255)
+    # 안 보내면 폴더에 지정된 역할을 물려받는다.
+    doc_role = serializers.ChoiceField(choices=DOC_ROLES, required=False, allow_null=True)
+
+
+class DocumentRegisterSerializer(serializers.Serializer):
+    """신규 파일 목록에서 고른 것만 등록한다. 이름·형식은 서버가 Drive에서 다시 읽는다."""
+
+    files = serializers.ListField(child=DocumentRegisterEntrySerializer(), allow_empty=False)
+
+
 class DocumentRoleSaveSerializer(serializers.Serializer):
     """역할 지정 화면의 저장 내용.
 
@@ -141,6 +153,27 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         "src_modified_at": modified_at.isoformat() if modified_at else None,
         # 원문을 받았는지만 알려준다. 저장소 키 자체는 서버 내부 사정이다.
         "downloaded": bool(row.get("storage_key")),
+    }
+
+
+def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
+    """`audit_log` 한 줄을 문서 처리 이력으로.
+
+    실패가 섞였으면 `PARTIAL_RESULT`다 — 화면이 "완료"로만 보여주면 몇 건이
+    빠졌는지 알 수 없다.
+    """
+
+    payload = row.get("payload") or {}
+    failed = payload.get("failed") or payload.get("skipped") or 0
+    occurred_at = row["occurred_at"]
+
+    return {
+        "audit_id": row["audit_id"],
+        "action": row["action"],
+        "occurred_at": occurred_at.isoformat() if occurred_at else None,
+        "actor_display_name": row.get("actor_display_name"),
+        "status": "PARTIAL_RESULT" if failed else "완료",
+        "payload": payload,
     }
 
 

@@ -151,6 +151,9 @@ export default function FolderSelectPage() {
         'DRIVE_FOLDER',
         folders.map((folder) => folder.id),
         toMaxDepth(includeSubfolders, depth),
+        // 이름을 지금 같이 넘긴다. 나중에 "소속 폴더"를 보여주려고 Drive에 다시
+        // 물어보면, 토큰이 만료됐을 때 등록된 문서는 멀쩡한데 폴더 이름만 못 읽는다.
+        Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
       );
       navigate('/onboarding/folder-roles');
     } catch (error) {

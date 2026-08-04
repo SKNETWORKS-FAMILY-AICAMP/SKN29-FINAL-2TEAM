@@ -356,6 +356,10 @@ class DocumentRepository:
 
     DRIVE = "DRIVE"
     DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
+    # 문서 처리 이력을 `audit_log`에서 다시 찾을 때 쓰는 표식.
+    AUDIT_TARGET = "DOCUMENT"
+    ACTION_REGISTER = "DOCUMENT_REGISTER"
+    ACTION_DOWNLOAD = "DOCUMENT_DOWNLOAD"
 
     @staticmethod
     def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
@@ -398,6 +402,110 @@ class DocumentRepository:
                     ORDER BY doc_id
                     """,
                     (proj_id, DocumentRepository.DRIVE),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def registered_file_ids(*, proj_id: str, account_id: str) -> set[str]:
+        """이 프로젝트가 이미 아는 Drive 파일 id.
+
+        **`deleted`를 가리지 않는다.** 폴더에서 빠져 `deleted = true`가 된 문서도
+        "이미 본 파일"이다 — 가리면 한 번 내린 문서가 스캔할 때마다 신규로 다시
+        올라온다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT src_file_id FROM doc
+                    WHERE proj_id = %s AND source_type = %s AND src_file_id IS NOT NULL
+                    """,
+                    (proj_id, DocumentRepository.DRIVE),
+                )
+                return {row["src_file_id"] for row in cursor.fetchall()}
+
+    @staticmethod
+    def add_drive_documents(
+        *,
+        proj_id: str,
+        account_id: str,
+        documents: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """고른 파일만 `doc`에 **더한다.**
+
+        `save_drive_documents()`와 다른 점이 하나 있고 그게 이 메서드가 따로
+        있는 이유다 — **아무것도 지우지 않는다.** 저쪽은 폴더 전체를 동기화하며
+        목록에 없는 문서를 `deleted = true`로 내리는데, "새 파일 3개를 추가로
+        등록한다"에 그 동작을 쓰면 나머지 문서가 통째로 내려간다.
+
+        이미 있는 `src_file_id`는 건너뛴다(스캔과 등록 사이에 누가 먼저 넣었을
+        수 있다). 새로 만든 행만 돌려준다.
+        """
+
+        if not documents:
+            return []
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+
+                created = []
+                for document in documents:
+                    cursor.execute(
+                        "SELECT 1 FROM doc WHERE proj_id = %s AND src_file_id = %s",
+                        (proj_id, document["src_file_id"]),
+                    )
+                    if cursor.fetchone() is not None:
+                        continue
+
+                    doc_id = next_short_code(cursor, table="doc", column="doc_id", prefix="DC")
+                    cursor.execute(
+                        """
+                        INSERT INTO doc
+                            (doc_id, proj_id, src_file_id, source_type, file_name,
+                             mime_type, doc_role, src_modified_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING doc_id, proj_id, src_file_id, source_type, file_name,
+                                  mime_type, doc_role, src_modified_at, storage_key
+                        """,
+                        (
+                            doc_id,
+                            proj_id,
+                            document["src_file_id"],
+                            DocumentRepository.DRIVE,
+                            document["file_name"],
+                            document["mime_type"],
+                            document["doc_role"],
+                            document["src_modified_at"],
+                        ),
+                    )
+                    created.append(cursor.fetchone())
+                return created
+
+    @staticmethod
+    def list_history(*, proj_id: str, account_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """이 프로젝트의 문서 처리 이력.
+
+        `audit_log`를 그대로 읽는다 — 등록·다운로드가 언제 몇 건이었는지는
+        따로 테이블을 둘 만큼 다른 정보가 아니다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT al.audit_id, al.action, al.payload, al.occurred_at,
+                           ua.display_name AS actor_display_name
+                    FROM audit_log AS al
+                    LEFT JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    WHERE al.proj_id = %s AND al.target_type = %s
+                    ORDER BY al.occurred_at DESC
+                    LIMIT %s
+                    """,
+                    (proj_id, DocumentRepository.AUDIT_TARGET, limit),
                 )
                 return list(cursor.fetchall())
 

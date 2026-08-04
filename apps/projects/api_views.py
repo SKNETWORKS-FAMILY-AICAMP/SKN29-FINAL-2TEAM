@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import psycopg
 from rest_framework import status
@@ -25,6 +26,7 @@ from backend.db import (
     ProjectSourceRepository,
     TeamRepository,
     database_status,
+    log_audit,
 )
 from services.workload import calculator
 from backend.db.errors import (
@@ -36,10 +38,12 @@ from backend.db.errors import (
 
 from .serializers import (
     AssignmentRunCreateSerializer,
+    DocumentRegisterSerializer,
     DocumentRoleSaveSerializer,
     ProjectCreateSerializer,
     ProjectSourceReplaceSerializer,
     assignment_run_response,
+    document_history_response,
     document_response,
     project_response,
     project_source_response,
@@ -210,6 +214,171 @@ class ProjectDocumentAPIView(AuthenticatedAPIView):
         return Response([document_response(row) for row in rows])
 
 
+def _scan_drive_candidates(*, project_id: str, account_id: str) -> list[dict[str, Any]]:
+    """설정된 폴더 안에서 **아직 `doc`에 없는** 파일.
+
+    파일 목록은 항상 Drive에서 직접 읽는다. 화면이 보내온 이름·형식을 믿고 저장하면
+    사용자가 무엇이든 등록시킬 수 있고, 스캔과 등록 사이에 파일이 바뀌었을 때도
+    옛 값이 들어간다.
+
+    미지원 형식도 목록에는 넣는다 — 빠진 이유를 보여주지 않으면 "내 파일이 왜
+    없지"가 된다. 등록 대상에서 거르는 것은 호출자 몫이다.
+    """
+
+    sources = ProjectSourceRepository.list_for_project(proj_id=project_id, account_id=account_id)
+    known = DocumentRepository.registered_file_ids(proj_id=project_id, account_id=account_id)
+
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in sources:
+        if source["source_type"] != ProjectSourceRepository.DRIVE_FOLDER:
+            continue
+        folder_id = source["external_source_id"]
+        folder_name = source.get("display_name") or folder_id
+        # 폴더를 저장할 때 정한 탐색 깊이를 그대로 쓴다.
+        files = list_drive_files(
+            account_id=account_id,
+            parent_id=folder_id,
+            max_depth=source["max_depth"],
+        )
+        for item in files:
+            file_id = item["file_id"]
+            if file_id in known or file_id in seen:
+                continue
+            seen.add(file_id)
+            candidates.append(
+                {
+                    "file_id": file_id,
+                    "file_name": item["name"],
+                    "mime_type": item["mime_type"],
+                    "modified_at": item["modified_at"],
+                    "supported": item["supported"],
+                    # 하위 폴더에서 왔으면 그 경로를, 아니면 고른 폴더 이름을 쓴다.
+                    "folder_name": item["folder_path"] or folder_name,
+                    "folder_id": folder_id,
+                    # 폴더에 지정된 역할을 물려받는다. 화면에서 행마다 바꿀 수 있다.
+                    "suggested_role": source.get("default_doc_role"),
+                }
+            )
+    return candidates
+
+
+class ProjectNewDocumentAPIView(AuthenticatedAPIView):
+    """설정된 Drive 폴더에 새로 생긴 파일.
+
+    "새 파일"은 **Drive에는 있는데 이 프로젝트의 `doc`에 없는 것**이다. 폴더에서
+    빠져 `deleted = true`가 된 문서도 이미 아는 파일로 친다 — 안 그러면 한 번 내린
+    문서가 스캔할 때마다 다시 올라온다.
+    """
+
+    def get(self, request, project_id):
+        try:
+            candidates = _scan_drive_candidates(
+                project_id=project_id,
+                account_id=request.user.account_id,
+            )
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(candidates)
+
+
+class ProjectDocumentRegisterAPIView(AuthenticatedAPIView):
+    """고른 파일만 `doc`에 추가 등록한다.
+
+    온보딩의 `PUT /documents/`는 폴더 전체를 동기화하며 목록에 없는 문서를 내리는데,
+    "새 파일 몇 개를 더한다"에 그것을 쓰면 나머지가 통째로 사라진다. 그래서 여기서는
+    **더하기만** 한다.
+
+    원문 다운로드는 하지 않는다 — 온보딩 역할 지정과 같은 범위(`doc` 행 생성까지)다.
+    """
+
+    def post(self, request, project_id):
+        serializer = DocumentRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested = serializer.validated_data["files"]
+        account_id = request.user.account_id
+
+        try:
+            candidates = _scan_drive_candidates(project_id=project_id, account_id=account_id)
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        by_file_id = {item["file_id"]: item for item in candidates}
+
+        documents = []
+        skipped: list[dict[str, str]] = []
+        for entry in requested:
+            candidate = by_file_id.get(entry["file_id"])
+            if candidate is None:
+                # 스캔 이후 이미 등록됐거나 폴더에서 사라졌다.
+                skipped.append({"file_id": entry["file_id"], "reason": "NOT_FOUND"})
+                continue
+            if not candidate["supported"]:
+                skipped.append({"file_id": entry["file_id"], "reason": "UNSUPPORTED"})
+                continue
+            doc_role = entry.get("doc_role") or candidate["suggested_role"]
+            if doc_role is None:
+                skipped.append({"file_id": entry["file_id"], "reason": "NO_ROLE"})
+                continue
+            documents.append(
+                {
+                    "src_file_id": candidate["file_id"],
+                    "file_name": candidate["file_name"],
+                    "mime_type": candidate["mime_type"],
+                    "doc_role": doc_role,
+                    "src_modified_at": candidate["modified_at"],
+                }
+            )
+
+        try:
+            created = DocumentRepository.add_drive_documents(
+                proj_id=project_id,
+                account_id=account_id,
+                documents=documents,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        # 무엇이 언제 들어왔는지 남긴다. 이게 없어서 예전에 `doc` 건수가 바뀐
+        # 경위를 추적하지 못했다.
+        log_audit(
+            actor_account_id=account_id,
+            action=DocumentRepository.ACTION_REGISTER,
+            proj_id=project_id,
+            target_type=DocumentRepository.AUDIT_TARGET,
+            payload={
+                "registered": len(created),
+                "skipped": len(skipped),
+                "file_names": [row["file_name"] for row in created],
+            },
+        )
+
+        return Response(
+            {
+                "registered": [document_response(row) for row in created],
+                "skipped": skipped,
+            }
+        )
+
+
+class ProjectDocumentHistoryAPIView(AuthenticatedAPIView):
+    """이 프로젝트의 문서 등록·다운로드 이력."""
+
+    def get(self, request, project_id):
+        try:
+            rows = DocumentRepository.list_history(
+                proj_id=project_id,
+                account_id=request.user.account_id,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([document_history_response(row) for row in rows])
+
+
 class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
     """선택된 문서의 원문을 Drive에서 받아 문서 저장소에 넣는다.
 
@@ -272,6 +441,19 @@ class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
                 return _repository_error_response(exc)
 
             downloaded.append({"file_name": target["file_name"], "bytes": len(fetched["content"])})
+
+        if downloaded or failed:
+            log_audit(
+                actor_account_id=account_id,
+                action=DocumentRepository.ACTION_DOWNLOAD,
+                proj_id=project_id,
+                target_type=DocumentRepository.AUDIT_TARGET,
+                payload={
+                    "downloaded": len(downloaded),
+                    "failed": len(failed),
+                    "file_names": [item["file_name"] for item in downloaded],
+                },
+            )
 
         return Response(
             {

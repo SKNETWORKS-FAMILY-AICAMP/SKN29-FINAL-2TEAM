@@ -106,6 +106,61 @@ export function saveDocumentRoles(
   });
 }
 
+/** 설정된 폴더에 있는데 아직 `doc`에 없는 파일. */
+export interface NewDocumentCandidate {
+  file_id: string;
+  file_name: string;
+  mime_type: string | null;
+  modified_at: string | null;
+  /** 파싱할 수 있는 형식인가. 아니면 등록에서 제외된다. */
+  supported: boolean;
+  /** 하위 폴더에서 왔으면 그 경로, 아니면 고른 폴더 이름. */
+  folder_name: string;
+  folder_id: string;
+  /** 폴더에 지정된 역할. 화면에서 행마다 바꿀 수 있다. */
+  suggested_role: DocRole | null;
+}
+
+export function listNewDocuments(token: string, projId: string) {
+  return apiRequest<NewDocumentCandidate[]>(`/projects/${projId}/documents/new/`, { token });
+}
+
+export interface DocumentRegisterResult {
+  registered: ProjectDocument[];
+  skipped: { file_id: string; reason: 'NOT_FOUND' | 'UNSUPPORTED' | 'NO_ROLE' }[];
+}
+
+/**
+ * 고른 파일만 `doc`에 더한다. 기존 문서는 건드리지 않는다 — 폴더 전체를 동기화하는
+ * `saveDocumentRoles`와 다른 경로인 이유가 그것이다.
+ *
+ * 파일 이름·형식은 보내지 않는다. 서버가 Drive에서 다시 읽는다.
+ */
+export function registerDocuments(
+  token: string,
+  projId: string,
+  files: { file_id: string; doc_role?: DocRole }[],
+) {
+  return apiRequest<DocumentRegisterResult>(`/projects/${projId}/documents/register/`, {
+    method: 'POST',
+    token,
+    body: { files },
+  });
+}
+
+export interface DocumentHistoryEntry {
+  audit_id: string;
+  action: 'DOCUMENT_REGISTER' | 'DOCUMENT_DOWNLOAD';
+  occurred_at: string | null;
+  actor_display_name: string | null;
+  status: '완료' | 'PARTIAL_RESULT';
+  payload: Record<string, unknown>;
+}
+
+export function listDocumentHistory(token: string, projId: string) {
+  return apiRequest<DocumentHistoryEntry[]>(`/projects/${projId}/documents/history/`, { token });
+}
+
 /**
  * 온보딩이 소스를 매달 프로젝트. Drive 폴더든 Jira 프로젝트든 어느 화면을 먼저
  * 끝내도 같은 프로젝트에 붙어야 하므로 진행 중인 DRAFT를 공유한다.

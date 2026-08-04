@@ -1,176 +1,235 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Badge, Button, Icon, TopNav, useToast } from '../../components';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge, Icon, TopNav, useToast } from '../../components';
+import type { SelectOption } from '../../components';
+import { ApiError } from '../../api/client';
+import {
+  findOnboardingProject,
+  listDocumentHistory,
+  listNewDocuments,
+  registerDocuments,
+} from '../../api/projects';
+import type { DocRole, DocumentHistoryEntry, NewDocumentCandidate } from '../../api/projects';
 import { MAIN_NAV_TABS } from '../../routes';
-import { FileRegistrationTable, FILE_ROWS, DEFAULT_SELECTED_IDS } from './FileRegistrationTable';
+import { useSession } from '../../utils/session';
+import { FileRegistrationTable } from './FileRegistrationTable';
+import type { FileRow } from './FileRegistrationTable';
 import styles from './NewFilesPage.module.css';
 
-type DemoState = 'empty' | 'reviewB';
+/** `doc.doc_role` 코드값을 그대로 쓴다. 온보딩 역할 지정 화면과 같은 목록이다. */
+const ROLE_OPTIONS: SelectOption[] = [
+  { label: '기획서', value: 'PLAN' },
+  { label: '회의록', value: 'MEETING_NOTE' },
+  { label: '일일보고서', value: 'DAILY_REPORT' },
+  { label: '기타', value: 'OTHER' },
+];
 
-interface HistoryItem {
-  date: string;
-  label: string;
-  status: '완료' | 'PARTIAL_RESULT';
+const FALLBACK_ROLE: DocRole = 'OTHER';
+
+const ACTION_LABEL: Record<string, string> = {
+  DOCUMENT_REGISTER: '파일 등록',
+  DOCUMENT_DOWNLOAD: '원문 저장',
+};
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '-';
+  return iso.slice(0, 10).replace(/-/g, '.');
 }
 
-const HISTORY: HistoryItem[] = [];
+function historyLabel(entry: DocumentHistoryEntry): string {
+  const action = ACTION_LABEL[entry.action] ?? entry.action;
+  const payload = entry.payload as { registered?: number; downloaded?: number; failed?: number };
+  const count = payload.registered ?? payload.downloaded ?? 0;
+  const failed = payload.failed ?? 0;
+  const suffix = failed > 0 ? ` (실패 ${failed}건)` : '';
+  return `${action} ${count}건${suffix}`;
+}
 
+/**
+ * 신규 파일.
+ *
+ * 설정된 Drive 폴더를 훑어 **아직 `doc`에 없는 파일**을 보여주고, 고른 것만 등록한다.
+ * 등록은 온보딩 역할 지정과 같은 범위다 — `doc` 행을 만드는 데까지고 원문 다운로드는
+ * 따로다.
+ */
 export default function NewFilesPage() {
-  const [searchParams] = useSearchParams();
-  const isDistributionPreview =
-    searchParams.get('preview') === 'distribution' || searchParams.get('view') === 'review';
-  const [demoState, setDemoState] = useState<DemoState>(isDistributionPreview ? 'reviewB' : 'empty');
-  const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTED_IDS));
+  const session = useSession();
+  const token = session?.token;
   const { showToast } = useToast();
-  const navigate = useNavigate();
+
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<NewDocumentCandidate[]>([]);
+  const [history, setHistory] = useState<DocumentHistoryEntry[]>([]);
+  const [roles, setRoles] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [registering, setRegistering] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const project = await findOnboardingProject(token);
+      setProjectId(project?.proj_id ?? null);
+      if (!project) {
+        setCandidates([]);
+        setHistory([]);
+        return;
+      }
+
+      const [rows, historyRows] = await Promise.all([
+        listNewDocuments(token, project.proj_id),
+        listDocumentHistory(token, project.proj_id).catch(() => []),
+      ]);
+      setCandidates(rows);
+      setHistory(historyRows);
+      // 폴더에 지정된 역할을 기본값으로 채운다. 없으면 '기타'로 두고 사용자가 고른다.
+      setRoles(
+        Object.fromEntries(rows.map((row) => [row.file_id, row.suggested_role ?? FALLBACK_ROLE])),
+      );
+      // 등록 가능한 것만 미리 골라 둔다.
+      setSelected(new Set(rows.filter((row) => row.supported).map((row) => row.file_id)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '신규 파일을 확인하지 못했습니다.');
+      setCandidates([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
-    setDemoState(isDistributionPreview ? 'reviewB' : 'empty');
-  }, [isDistributionPreview]);
+    void load();
+  }, [load]);
 
-  function handleGoToWorkspace() {
-    showToast('팀원 선택 화면으로 이동합니다.', 'info');
-    setTimeout(() => {
-      navigate('/workspace');
-    }, 700);
-  }
+  const rows: FileRow[] = useMemo(
+    () =>
+      candidates.map((item) => ({
+        id: item.file_id,
+        name: item.file_name,
+        folder: item.folder_name,
+        date: formatDate(item.modified_at),
+        role: roles[item.file_id] ?? FALLBACK_ROLE,
+        supported: item.supported,
+      })),
+    [candidates, roles],
+  );
 
-  const supportedIds = useMemo(() => FILE_ROWS.filter((row) => row.supported).map((row) => row.id), []);
-  const registeredRows = useMemo(
-    () => FILE_ROWS.filter((row) => DEFAULT_SELECTED_IDS.includes(row.id)),
-    [],
+  const supportedIds = useMemo(
+    () => candidates.filter((item) => item.supported).map((item) => item.file_id),
+    [candidates],
   );
 
   function toggleRow(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
   function toggleAll() {
-    setSelected((prev) => {
-      const allChecked = supportedIds.every((id) => prev.has(id));
-      return allChecked ? new Set() : new Set(supportedIds);
-    });
+    setSelected((prev) =>
+      supportedIds.every((id) => prev.has(id)) ? new Set() : new Set(supportedIds),
+    );
   }
 
-  function handleRegisterClick() {
-    showToast('파일 등록이 완료되었습니다.', 'success');
-    setTimeout(() => {
-      navigate('/projects');
-    }, 900);
+  async function handleRegister() {
+    if (!token || !projectId) return;
+    const files = supportedIds
+      .filter((id) => selected.has(id))
+      .map((id) => ({ file_id: id, doc_role: (roles[id] ?? FALLBACK_ROLE) as DocRole }));
+    if (files.length === 0) return;
+
+    setRegistering(true);
+    setError('');
+    try {
+      const result = await registerDocuments(token, projectId, files);
+      const ok = result.registered.length;
+      const skipped = result.skipped.length;
+      if (skipped > 0) {
+        showToast(`${ok}건 등록, ${skipped}건 제외됨`, 'info');
+      } else {
+        showToast(`${ok}건을 등록했습니다.`, 'success');
+      }
+      // 등록한 파일은 더 이상 신규가 아니다. 목록과 이력을 함께 다시 읽는다.
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '파일을 등록하지 못했습니다.');
+    } finally {
+      setRegistering(false);
+    }
   }
 
   return (
     <div className={styles.page}>
-      <TopNav
-        tabs={MAIN_NAV_TABS}
-        activeTo={demoState === 'reviewB' ? '/projects' : '/files/new'}
-        userLabel="관리자"
-      />
+      <TopNav tabs={MAIN_NAV_TABS} activeTo="/files/new" />
 
       <div className={styles.contentContainer}>
-        {demoState === 'empty' && (
-          <>
-            <div className={styles.pageHeading}>
-              <h1>신규 파일</h1>
-              <p>새로 추가된 문서를 검토하고 등록하세요</p>
-            </div>
+        <div className={styles.pageHeading}>
+          <h1>신규 파일</h1>
+          <p>설정된 폴더에 새로 추가된 문서를 검토하고 등록하세요</p>
+        </div>
 
-            <div className={styles.tableCard}>
-              <div className={styles.tableHeader}>
-                <div className={styles.colSelect}>
-                  <span className={styles.disabledCheckbox} aria-hidden="true" />
-                  <span className={styles.thMuted}>전체선택</span>
-                </div>
-                <span className={styles.thMuted}>파일명</span>
-                <span className={styles.thMuted}>소속 폴더</span>
-                <span className={styles.thMuted}>감지일</span>
-                <span className={styles.thMuted}>역할</span>
-                <span className={styles.thMuted}>지원 여부</span>
-              </div>
+        {error && <p className={styles.stateRow}>{error}</p>}
+        {loading && <p className={styles.stateRow}>폴더를 확인하는 중…</p>}
 
-              <div className={styles.emptyBody}>
-                <div className={styles.iconCircle}>
-                  <Icon name="folder-open" size={24} color="var(--color-placeholder)" />
-                </div>
-                <div className={styles.emptyText}>
-                  <p>새로 추가된 파일이 없어요</p>
-                  <p>다음 동기화까지 기다려주세요</p>
-                </div>
-              </div>
-
-              <div className={styles.actionBar}>
-                <span className={styles.summaryCount}>0개 파일 선택됨</span>
-                <Button
-                  variant="primary"
-                  iconRight={<Icon name="arrow-right" size={14} color="currentColor" />}
-                  onClick={handleRegisterClick}
-                >
-                  선택 파일 등록
-                </Button>
-              </div>
-            </div>
-
-            <HistoryBlock />
-          </>
+        {!loading && !error && !projectId && (
+          <p className={styles.stateRow}>
+            연결된 프로젝트가 없습니다. 온보딩에서 폴더를 먼저 선택해 주세요.
+          </p>
         )}
 
-        {demoState === 'reviewB' && (
-          <>
-            <div className={styles.pageHeading}>
-              <h1>업무 분배</h1>
-              <p>현재 등록된 파일</p>
+        {!loading && !error && projectId && rows.length === 0 && (
+          <div className={styles.tableCard}>
+            <div className={styles.emptyBody}>
+              <div className={styles.iconCircle}>
+                <Icon name="folder-open" size={24} color="var(--color-placeholder)" />
+              </div>
+              <div className={styles.emptyText}>
+                <p>새로 추가된 파일이 없어요</p>
+                <p>설정된 폴더의 파일이 모두 등록되어 있습니다</p>
+              </div>
             </div>
-
-            <FileRegistrationTable
-              rows={registeredRows}
-              selected={selected}
-              onToggleRow={toggleRow}
-              onToggleAll={toggleAll}
-              mode="readonly"
-              showSupport={false}
-            />
-
-            <div className={styles.nextStepRow}>
-              <Button
-                variant="primary"
-                iconRight={<Icon name="arrow-right" size={14} color="currentColor" />}
-                onClick={handleGoToWorkspace}
-              >
-                다음: 팀원 선택
-              </Button>
-            </div>
-          </>
+          </div>
         )}
+
+        {!loading && !error && projectId && rows.length > 0 && (
+          <FileRegistrationTable
+            rows={rows}
+            selected={selected}
+            onToggleRow={toggleRow}
+            onToggleAll={toggleAll}
+            mode="submit"
+            submitting={registering}
+            onSubmit={handleRegister}
+            roleOptions={ROLE_OPTIONS}
+            onRoleChange={(id, role) => setRoles((prev) => ({ ...prev, [id]: role }))}
+          />
+        )}
+
+        {!loading && projectId && <HistoryBlock entries={history} />}
       </div>
-
-      <p className={styles.footnote}>halil · AI 기반 업무 배정 코파일럿 — 데모용 정적 목업 (실제 데이터 아님)</p>
     </div>
   );
 }
 
-function HistoryBlock() {
+function HistoryBlock({ entries }: { entries: DocumentHistoryEntry[] }) {
   return (
     <div className={styles.historyBlock}>
       <h2>최근 처리 이력</h2>
       <div className={styles.historyCard}>
-        {HISTORY.map((item) => (
-          <div key={item.date} className={styles.historyRow}>
+        {entries.map((entry) => (
+          <div key={entry.audit_id} className={styles.historyRow}>
             <div className={styles.historyLeft}>
-              <span className={styles.historyDate}>{item.date}</span>
-              <span className={styles.historyLabel}>{item.label}</span>
+              <span className={styles.historyDate}>{formatDate(entry.occurred_at)}</span>
+              <span className={styles.historyLabel}>{historyLabel(entry)}</span>
             </div>
-            <Badge tone={item.status === '완료' ? 'success' : 'warning'}>{item.status}</Badge>
+            <Badge tone={entry.status === '완료' ? 'success' : 'warning'}>{entry.status}</Badge>
           </div>
         ))}
-        {HISTORY.length === 0 && <p className={styles.historyEmpty}>최근 처리 이력이 없습니다.</p>}
+        {entries.length === 0 && <p className={styles.historyEmpty}>최근 처리 이력이 없습니다.</p>}
       </div>
     </div>
   );
