@@ -29,6 +29,49 @@
   color: var(--color-body);
 }
 
+/* 헤더가 정렬 버튼이 된다. 열 너비는 col* 클래스가 계속 정한다. */
+.sortHeader {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sortHeader:hover {
+  color: var(--color-heading);
+}
+
+.sortIcon {
+  flex-shrink: 0;
+  /* 정렬 기준이 아닌 열도 누를 수 있다는 것은 보이되 눈에 띄지는 않게 둔다. */
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  color: var(--color-placeholder);
+}
+
+.sortHeader:hover .sortIcon {
+  opacity: 0.45;
+}
+
+.sortIconActive {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.sortHeader:hover .sortIconActive {
+  opacity: 1;
+}
+
+.sortIconUp {
+  transform: rotate(180deg);
+}
+
 .colName {
   flex: 1 1 0%;
   min-width: 0;

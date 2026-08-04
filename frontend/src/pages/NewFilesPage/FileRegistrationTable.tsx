@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Icon, Select } from '../../components';
 import type { SelectOption } from '../../components';
 import styles from './FileRegistrationTable.module.css';
@@ -10,6 +11,20 @@ export interface FileRow {
   role: string;
   supported: boolean;
 }
+
+type SortKey = 'name' | 'folder' | 'date' | 'role' | 'supported';
+type SortDirection = 'asc' | 'desc';
+
+/** 한글·영문·숫자가 섞인 파일명을 사람이 기대하는 순서로 비교한다. */
+const collator = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' });
+
+const SORT_HEADERS: { key: SortKey; label: string; colClass: keyof typeof styles }[] = [
+  { key: 'name', label: '파일명', colClass: 'colName' },
+  { key: 'folder', label: '소속 폴더', colClass: 'colFolder' },
+  { key: 'date', label: '감지일', colClass: 'colDate' },
+  { key: 'role', label: '역할', colClass: 'colRole' },
+  { key: 'supported', label: '지원 여부', colClass: 'colSupport' },
+];
 
 interface FileRegistrationTableProps {
   rows: FileRow[];
@@ -47,6 +62,43 @@ export function FileRegistrationTable({
   const excludedCount = rows.length - supportedRows.length;
   const allChecked = supportedRows.length > 0 && checkedCount === supportedRows.length;
 
+  // 기본은 소속 폴더 오름차순이고, 같은 폴더 안에서는 파일명 순이다(아래 2차 기준).
+  const [sortKey, setSortKey] = useState<SortKey>('folder');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  /** 역할은 코드(`PLAN`)로 들고 있어 그대로 비교하면 화면 순서와 다르다. */
+  const roleLabel = (value: string) =>
+    roleOptions?.find((option) => option.value === value)?.label ?? value;
+
+  const sortedRows = useMemo(() => {
+    const compare = (a: FileRow, b: FileRow) => {
+      let result = 0;
+      if (sortKey === 'supported') {
+        // 지원되는 것이 먼저다 — 등록할 수 있는 파일을 위로 올린다.
+        result = Number(b.supported) - Number(a.supported);
+      } else if (sortKey === 'role') {
+        result = collator.compare(roleLabel(a.role), roleLabel(b.role));
+      } else {
+        result = collator.compare(a[sortKey], b[sortKey]);
+      }
+      if (result !== 0) return sortDirection === 'asc' ? result : -result;
+
+      // 1차 기준이 같으면 늘 폴더·파일명 순이다. 방향을 뒤집어도 이 순서는
+      // 그대로 둔다 — 안 그러면 같은 값끼리 자리가 흔들려 읽기 어렵다.
+      return collator.compare(a.folder, b.folder) || collator.compare(a.name, b.name);
+    };
+    return [...rows].sort(compare);
+  }, [rows, sortKey, sortDirection, roleOptions]);
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection('asc');
+  }
+
   return (
     <div className={styles.tableCard}>
       <div className={styles.tableHeader}>
@@ -54,11 +106,31 @@ export function FileRegistrationTable({
           <Checkbox checked={allChecked} onChange={onToggleAll} />
           <span className={styles.thActive}>전체선택</span>
         </div>
-        <span className={[styles.colName, styles.thActive].join(' ')}>파일명</span>
-        <span className={[styles.colFolder, styles.thActive].join(' ')}>소속 폴더</span>
-        <span className={[styles.colDate, styles.thActive].join(' ')}>감지일</span>
-        <span className={[styles.colRole, styles.thActive].join(' ')}>역할</span>
-        {showSupport && <span className={[styles.colSupport, styles.thActive].join(' ')}>지원 여부</span>}
+        {SORT_HEADERS.filter((header) => header.key !== 'supported' || showSupport).map((header) => {
+          const active = sortKey === header.key;
+          return (
+            <button
+              key={header.key}
+              type="button"
+              className={[styles[header.colClass], styles.thActive, styles.sortHeader].join(' ')}
+              onClick={() => toggleSort(header.key)}
+              aria-sort={active ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+            >
+              {header.label}
+              <Icon
+                name="chevron-down"
+                size={13}
+                className={[
+                  styles.sortIcon,
+                  active ? styles.sortIconActive : '',
+                  active && sortDirection === 'asc' ? styles.sortIconUp : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              />
+            </button>
+          );
+        })}
       </div>
 
       {/*
@@ -66,8 +138,8 @@ export function FileRegistrationTable({
         헤더와 액션바는 고정하고 행만 스크롤한다.
       */}
       <div className={styles.rowList}>
-        {rows.length === 0 && <p className={styles.emptyRow}>표시할 파일이 없습니다.</p>}
-        {rows.map((row, idx) => {
+        {sortedRows.length === 0 && <p className={styles.emptyRow}>표시할 파일이 없습니다.</p>}
+        {sortedRows.map((row, idx) => {
           const isChecked = row.supported && selected.has(row.id);
           const rowClasses = [
             styles.fileRow,
