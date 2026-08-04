@@ -307,4 +307,117 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── 인원별 주차별 업무량 ────────────────────────────────
+   이름 · 주차 N칸 · 이후 · 총량. 주차 수는 팀 설정에 따라 달라지므로
+   auto-fit 이 아니라 CSS 변수로 받아 헤더와 행이 같은 격자를 쓴다. */
+.weekHead,
+.weekRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(var(--weeks, 4), 46px) 52px 96px;
+  align-items: center;
+  gap: var(--space-2);
+}
 
+.weekHead {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.weekLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+  text-align: center;
+}
+
+.weekList {
+  display: flex;
+  flex-direction: column;
+}
+
+.weekRow {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.weekRow:last-child {
+  border-bottom: none;
+}
+
+.weekName {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cellEmpty {
+  background: var(--color-bg);
+  color: var(--color-border);
+}
+
+.cellNormal {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+/* 용량의 80%부터. 아직 넘지는 않았지만 곧 찬다. */
+.cellHigh {
+  background: var(--color-warning-bg);
+  color: #92400e;
+}
+
+.cellOver {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* 근무조건을 모르면 칠하지 않는다 — 모르는 것을 여유로 보이게 하지 않는다. */
+.cellUnknown {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-bg),
+    var(--color-bg) 4px,
+    var(--color-border) 4px,
+    var(--color-border) 5px
+  );
+  color: var(--color-placeholder);
+}
+
+.weekLater {
+  font-size: 12px;
+  color: var(--color-placeholder);
+  text-align: right;
+}
+
+.weekTotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.weekRunway {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-placeholder);
+}
+
+.weekBlocked {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-placeholder);
+}

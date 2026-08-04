@@ -299,6 +299,23 @@ export function syncTeamTasks(token: string) {
   return apiRequest<TaskSyncResult>('/team/tasks/sync/', { method: 'POST', token });
 }
 
+/** 한 주의 필요 공수와 그 주의 용량. */
+export interface WeekLoad {
+  week_start: string;
+  hours: number;
+  /** 근무조건을 모르면 null. */
+  capacity: number | null;
+}
+
+/** 마감을 이른 순으로 쌓았을 때 가장 빠듯해지는 시점. */
+export interface TightestDeadline {
+  due_at: string;
+  required_hours: number;
+  available_hours: number;
+  /** 음수면 그 날짜까지 그만큼 모자란다. */
+  slack_hours: number;
+}
+
 /** 어느 Jira 프로젝트에서 온 부하인지. "KAN만 90%" 분해가 이 값으로 나온다. */
 export interface WorkloadByProject {
   project_key: string;
@@ -324,6 +341,14 @@ export interface PersonWorkload {
   by_project: WorkloadByProject[];
   unscheduled_backlog_hours: number;
   unscheduled_backlog_count: number;
+  /** 주차별 필요 공수. 부하율 하나로는 어느 주에 몰렸는지가 안 보인다. */
+  by_week: WeekLoad[];
+  /** 조회 기간 뒤에 마감이 있는 몫. */
+  later_hours: number;
+  /** 남은 일 ÷ 하루 용량. 창과 무관한 절대량이다. */
+  runway_days: number | null;
+  /** 마감을 이른 순으로 쌓았을 때 가장 모자라는 시점. 근무조건을 모르면 null. */
+  tightest: TightestDeadline | null;
   missing_estimate_count: number;
 }
 

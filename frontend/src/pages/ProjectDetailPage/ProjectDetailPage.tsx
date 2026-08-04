@@ -240,8 +240,8 @@ export default function ProjectDetailPage() {
                   ))}
                 </div>
                 <p className={styles.footnote}>
-                  이 프로젝트 안의 잔여 공수입니다. 사람의 실제 부하는 다른 프로젝트까지 합쳐야 하며{' '}
-                  <Link to="/tasks/workload">기간별 업무 부하</Link>에서 볼 수 있습니다.
+                  이 프로젝트 안의 잔여 공수입니다. 사람의 실제 업무량은 다른 프로젝트까지 합쳐야
+                  하며 <Link to="/dashboard">대시보드</Link>에서 주차별로 볼 수 있습니다.
                 </p>
               </section>
             )}

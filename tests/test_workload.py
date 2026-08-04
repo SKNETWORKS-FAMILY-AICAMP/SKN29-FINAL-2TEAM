@@ -283,3 +283,141 @@ class DemoScenarioTests(SimpleTestCase):
         overloaded = [row["person_id"] for row in result["people"] if (row["load_rate"] or 0) > 100]
 
         self.assertEqual(overloaded, ["PX002"])
+
+
+class HorizonLeakTests(SimpleTestCase):
+    """창 밖 업무가 어디로도 안 가고 사라지던 문제."""
+
+    def test_task_due_after_the_window_is_not_lost(self):
+        """마감이 창 뒤면 분자에도 backlog 에도 없이 증발했다.
+
+        2주 창에서 팀 잔여 548h 중 346h가 사라지는 것을 실데이터로 확인했다.
+        """
+
+        result = _run(
+            [_fulltime("P1")],
+            [
+                _task("A-1", "P1", 10, due="2026-08-14"),   # 창 안
+                _task("A-2", "P1", 30, due="2026-12-01"),   # 창 밖
+            ],
+        )
+        person = _person(result, "P1")
+
+        self.assertEqual(person["current_allocation"], 10)
+        self.assertEqual(person["unscheduled_backlog_hours"], 30)
+        # 총량이 보존된다 — 어느 칸에 있든 사라지지 않는다.
+        self.assertEqual(
+            person["current_allocation"] + person["unscheduled_backlog_hours"], 40
+        )
+
+    def test_totals_are_the_same_whatever_the_window(self):
+        tasks = [
+            _task("B-1", "P1", 10, due="2026-08-14"),
+            _task("B-2", "P1", 30, due="2026-12-01"),
+        ]
+        wide = calculator.calculate(
+            period_start=PERIOD_START,
+            period_end=date(2027, 1, 1),
+            profiles=[_fulltime("P1")],
+            absences=[],
+            tasks=tasks,
+        )
+        narrow = _run([_fulltime("P1")], tasks)
+
+        def total(result):
+            row = _person(result, "P1")
+            return row["current_allocation"] + row["unscheduled_backlog_hours"]
+
+        self.assertEqual(total(wide), total(narrow))
+
+
+class WeeklyDistributionTests(SimpleTestCase):
+    """부하율 하나로는 "이 기간 평균"만 알 수 있어 몰림이 안 보인다."""
+
+    def test_hours_land_in_the_week_of_their_deadline(self):
+        result = _run(
+            [_fulltime("P1")],
+            [
+                _task("C-1", "P1", 8, due="2026-08-05"),    # 1주차
+                _task("C-2", "P1", 30, due="2026-08-19"),   # 3주차
+            ],
+        )
+        weeks = _person(result, "P1")["by_week"]
+
+        self.assertEqual([w["week_start"] for w in weeks][:1], ["2026-08-03"])
+        self.assertEqual(weeks[0]["hours"], 8)
+        self.assertEqual(weeks[2]["hours"], 30)
+        self.assertEqual(weeks[1]["hours"], 0)
+
+    def test_week_capacity_drops_with_leave(self):
+        result = _run(
+            [_fulltime("P1")],
+            [_task("D-1", "P1", 8)],
+            absences=[{"person_id": "P1", "start_at": "2026-08-03", "end_at": "2026-08-04"}],
+        )
+        weeks = _person(result, "P1")["by_week"]
+
+        # 첫 주만 이틀 빠진다. 40 - 16 = 24
+        self.assertEqual(weeks[0]["capacity"], 24)
+        self.assertEqual(weeks[1]["capacity"], 40)
+
+    def test_work_due_after_the_window_is_reported_separately(self):
+        result = _run(
+            [_fulltime("P1")],
+            [_task("E-1", "P1", 25, due="2026-12-01")],
+        )
+        person = _person(result, "P1")
+
+        self.assertEqual(person["later_hours"], 25)
+        self.assertEqual(sum(w["hours"] for w in person["by_week"]), 0)
+
+    def test_runway_is_independent_of_the_window(self):
+        """남은 일을 하루 용량으로 나눈 값이라 창을 고를 필요가 없다."""
+
+        person = _person(_run([_fulltime("P1")], [_task("F-1", "P1", 40)]), "P1")
+
+        self.assertEqual(person["runway_days"], 5.0)
+
+
+class TightestDeadlineTests(SimpleTestCase):
+    """부하율은 "몇 %"만 말하고 **언제 터지는지**를 말하지 못한다."""
+
+    def test_reports_the_date_where_slack_goes_negative(self):
+        result = _run(
+            [_fulltime("P1")],
+            [
+                # 08-07(금)까지 근무일 5일 = 40h 인데 60h 를 해야 한다.
+                _task("G-1", "P1", 60, due="2026-08-07"),
+                _task("G-2", "P1", 8, due="2026-08-28"),
+            ],
+        )
+        tightest = _person(result, "P1")["tightest"]
+
+        self.assertEqual(tightest["due_at"], "2026-08-07")
+        self.assertEqual(tightest["required_hours"], 60)
+        self.assertEqual(tightest["available_hours"], 40)
+        self.assertEqual(tightest["slack_hours"], -20)
+
+    def test_slack_is_positive_when_there_is_room(self):
+        result = _run([_fulltime("P1")], [_task("H-1", "P1", 8, due="2026-08-07")])
+
+        self.assertEqual(_person(result, "P1")["tightest"]["slack_hours"], 32)
+
+    def test_deadlines_beyond_the_window_still_count(self):
+        """창을 쓰지 않는다 — 창을 고를 필요가 없다는 것이 이 지표의 요점이다."""
+
+        result = _run(
+            [_fulltime("P1")],
+            [_task("I-1", "P1", 400, due="2026-09-30")],
+        )
+        tightest = _person(result, "P1")["tightest"]
+
+        self.assertEqual(tightest["due_at"], "2026-09-30")
+        self.assertLess(tightest["slack_hours"], 0)
+
+    def test_no_schedule_means_no_verdict(self):
+        """근무조건을 모르면 모자란지 아닌지도 모른다. 지어내지 않는다."""
+
+        profile = _fulltime("P1") | {"wk_hours": None, "def_wk_hours": None, "fte": None}
+
+        self.assertIsNone(_person(_run([profile], [_task("J-1", "P1", 8)]), "P1")["tightest"])

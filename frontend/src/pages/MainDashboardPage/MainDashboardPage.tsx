@@ -6,6 +6,7 @@ import type { ConnectorConnection } from '../../api/connectors';
 import {
   getTeamWorkload,
   listMyProjects,
+  syncTeamTasks,
   listTeamDocuments,
   listTeamFolders,
 } from '../../api/projects';
@@ -15,8 +16,8 @@ import type { Team } from '../../api/teams';
 import { MAIN_NAV_TABS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { TeamDataPanel } from './TeamDataPanel';
+import { TeamWeekPanel } from './TeamWeekPanel';
 import { TeamProjectPanel } from './TeamProjectPanel';
-import { TeamWorkloadPanel } from './TeamWorkloadPanel';
 import styles from './MainDashboardPage.module.css';
 import tiles from './TeamDashboard.module.css';
 
@@ -31,6 +32,7 @@ import tiles from './TeamDashboard.module.css';
  * 둔다 — 목업 숫자가 실제처럼 보이는 것이 이 화면에서 가장 나쁜 실패다.
  */
 export default function MainDashboardPage() {
+  const { showToast } = useToast();
   const session = useSession();
   const token = session?.token;
 
@@ -41,6 +43,7 @@ export default function MainDashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [documents, setDocuments] = useState<TeamDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -76,6 +79,20 @@ export default function MainDashboardPage() {
     void load();
   }, [load]);
 
+  async function handleRefresh() {
+    if (!token || syncing) return;
+    setSyncing(true);
+    try {
+      await syncTeamTasks(token);
+      await load();
+      showToast('Jira 업무를 다시 읽었습니다', 'success');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Jira 갱신에 실패했습니다', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const people = workload?.people ?? [];
   const rated = people.filter((person) => person.load_rate !== null);
   const overloaded = rated.filter((person) => (person.load_rate ?? 0) > 100).length;
@@ -86,10 +103,21 @@ export default function MainDashboardPage() {
   const capacity = rated.reduce((sum, person) => sum + (person.effective_capacity ?? 0), 0);
   const teamRate = capacity > 0 ? Math.round((allocated / capacity) * 100) : null;
 
-  // 부하율 숫자에 안 들어간 것들. 이게 0이어야 퍼센트를 그대로 믿을 수 있다.
+  // 부하율 숫자에 안 들어간 것들. 이게 0이어야 숫자를 그대로 믿을 수 있다.
   const needsReview =
     (workload?.missing_estimate_count ?? 0) + (workload?.unmapped_assignee_count ?? 0);
-  const blocked = people.length - rated.length;
+  const blocked = people.filter((person) => person.blocked_reason !== null).length;
+
+  // 마감별 누적으로 판정한다. 부하율은 조회 기간에 따라 흔들려서 — 2주로 보면
+  // 과부하 0명, 4주면 1명 — 한 화면에 세울 값이 못 된다.
+  const short = people.filter((person) => (person.tightest?.slack_hours ?? 0) < 0);
+  const worst = short.reduce<(typeof short)[number] | null>(
+    (acc, person) =>
+      acc === null || (person.tightest?.slack_hours ?? 0) < (acc.tightest?.slack_hours ?? 0)
+        ? person
+        : acc,
+    null,
+  );
 
   return (
     <div className={styles.page}>
@@ -97,12 +125,24 @@ export default function MainDashboardPage() {
       <TopNav tabs={MAIN_NAV_TABS} activeTo="/dashboard" />
 
       <div className={styles.header}>
-        <p className={styles.teamName}>{team?.name ?? '내 팀'}</p>
-        <p className={styles.teamNote}>
-          {workload
-            ? `팀원 ${people.length}명 · ${workload.period_start} ~ ${workload.period_end} 기준`
-            : '팀 데이터를 불러오는 중입니다.'}
-        </p>
+        <div>
+          <p className={styles.teamName}>{team?.name ?? '내 팀'}</p>
+          <p className={styles.teamNote}>
+            {workload
+              ? `팀원 ${people.length}명 · ${workload.period_start} ~ ${workload.period_end} · ${workload.workload_weeks}주 기준`
+              : '팀 데이터를 불러오는 중입니다.'}
+          </p>
+        </div>
+        {/* 다른 화면에 들어가지 않고 여기서 바로 다시 읽는다. */}
+        <button
+          type="button"
+          className={styles.refreshBtn}
+          onClick={() => void handleRefresh()}
+          disabled={syncing}
+        >
+          <Icon name="refresh" size={15} spin={syncing} />
+          <span>{syncing ? '갱신 중…' : '갱신'}</span>
+        </button>
       </div>
 
       {error && <div className={styles.error}>{error}</div>}
@@ -113,17 +153,21 @@ export default function MainDashboardPage() {
           <div className={styles.summary}>
             <div className={tiles.tiles}>
               <div className={tiles.tile}>
-                <span className={`${tiles.tileValue} ${overloaded > 0 ? tiles.tileValueDanger : ''}`}>
-                  {overloaded}명
+                <span className={`${tiles.tileValue} ${short.length > 0 ? tiles.tileValueDanger : ''}`}>
+                  {short.length}명
                 </span>
-                <span className={tiles.tileLabel}>과부하</span>
-                <span className={tiles.tileSub}>부하율 100% 초과</span>
+                <span className={tiles.tileLabel}>시간 부족</span>
+                <span className={tiles.tileSub}>마감까지 가용 시간이 모자람</span>
               </div>
               <div className={tiles.tile}>
-                <span className={tiles.tileValue}>{teamRate === null ? '—' : `${teamRate}%`}</span>
-                <span className={tiles.tileLabel}>팀 부하율</span>
+                <span className={`${tiles.tileValue} ${worst ? tiles.tileValueDanger : ''}`}>
+                  {worst ? `${Math.round(-(worst.tightest?.slack_hours ?? 0))}h` : '여유'}
+                </span>
+                <span className={tiles.tileLabel}>가장 빠듯한 시점</span>
                 <span className={tiles.tileSub}>
-                  {Math.round(allocated)}h / {Math.round(capacity)}h
+                  {worst
+                    ? `${worst.tightest?.due_at.slice(5).replace('-', '/')} · ${worst.name ?? worst.person_id}`
+                    : '모든 마감에 여유가 있습니다'}
                 </span>
               </div>
               <div className={tiles.tile}>
@@ -140,7 +184,7 @@ export default function MainDashboardPage() {
                 <span className={`${tiles.tileValue} ${blocked > 0 ? tiles.tileValueWarn : ''}`}>
                   {blocked}명
                 </span>
-                <span className={tiles.tileLabel}>부하율 계산 불가</span>
+                <span className={tiles.tileLabel}>계산 불가</span>
                 <span className={tiles.tileSub}>휴직·근무조건 없음</span>
               </div>
             </div>
@@ -163,10 +207,10 @@ export default function MainDashboardPage() {
           <div className={styles.content}>
             <div className={styles.leftPanel}>
               {workload ? (
-                <TeamWorkloadPanel workload={workload} />
+                <TeamWeekPanel workload={workload} />
               ) : (
                 <div className={tiles.card}>
-                  <p className={tiles.cardTitle}>인원별 업무 부하</p>
+                  <p className={tiles.cardTitle}>인원별 주차별 업무량</p>
                   <p className={tiles.empty}>
                     연결된 프로젝트가 없습니다. 온보딩에서 Drive 폴더와 Jira 프로젝트를 먼저
                     선택해 주세요.

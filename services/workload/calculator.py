@@ -129,6 +129,63 @@ def _counts_in_horizon(task: dict[str, Any], *, period_end: date) -> bool:
     return task.get("status_category") == "IN_PROGRESS"
 
 
+def _week_starts(period_start: date, period_end: date) -> list[date]:
+    """조회 기간을 주 단위로 자른 시작일들. 마지막 주는 기간 끝에서 잘린다."""
+
+    weeks: list[date] = []
+    cursor = period_start
+    while cursor < period_end:
+        weeks.append(cursor)
+        cursor += timedelta(weeks=1)
+    return weeks
+
+
+def _tightest_deadline(
+    tasks: list[dict[str, Any]],
+    *,
+    period_start: date,
+    daily_hours: float,
+    absent_days: set[date],
+) -> dict[str, Any] | None:
+    """마감을 이른 순으로 쌓으며 가장 빠듯해지는 시점.
+
+    부하율은 "이 기간 평균 몇 %"라 **언제 터지는지**를 말하지 못한다. 마감이
+    앞선 것부터 누적해 그때까지 쓸 수 있는 시간과 견주면, 모자라기 시작하는
+    날짜와 모자란 양이 나온다.
+
+    창을 쓰지 않는다 — 마감이 조회 기간 뒤인 업무도 그대로 들어간다. 창을 고를
+    필요가 없다는 것이 이 지표의 요점이다.
+    """
+
+    dated = sorted(
+        (task for task in tasks if _as_date(task.get("due_at")) is not None),
+        key=lambda task: _as_date(task["due_at"]),
+    )
+    if not dated or daily_hours <= 0:
+        return None
+
+    cumulative = 0.0
+    worst: dict[str, Any] | None = None
+    for task in dated:
+        remaining = task.get("remaining")
+        if remaining is None:
+            continue
+        cumulative += float(remaining)
+        due = _as_date(task["due_at"])
+        # 마감일 당일까지 일할 수 있다.
+        available_days = _workdays(period_start, due + timedelta(days=1)) - absent_days
+        available = len(available_days) * daily_hours
+        slack = round(available - cumulative, 2)
+        if worst is None or slack < worst["slack_hours"]:
+            worst = {
+                "due_at": due.isoformat(),
+                "required_hours": round(cumulative, 2),
+                "available_hours": round(available, 2),
+                "slack_hours": slack,
+            }
+    return worst
+
+
 def _load_rate(hours: float, capacity: float | None) -> float | None:
     if capacity is None or capacity <= 0:
         return None
@@ -151,6 +208,7 @@ def calculate(
     """
 
     workdays = _workdays(period_start, period_end)
+    week_starts = _week_starts(period_start, period_end)
 
     by_person: dict[str, list[dict[str, Any]]] = {
         profile["person_id"]: [] for profile in profiles
@@ -183,6 +241,9 @@ def calculate(
         backlog_hours = 0.0
         backlog_count = 0
         missing_estimate = 0
+        # 주차별 필요 공수. 마감이 속한 주에 통째로 얹는다 — 업무를 며칠에 걸쳐
+        # 어떻게 쪼갤지는 우리가 알 수 없고, 아는 것은 "그때까지 끝나야 한다"뿐이다.
+        week_hours: dict[int, float] = {}
         by_project: dict[str, float] = {}
         # 키 → 표시 이름. 예전에 저장한 소스는 이름이 없어 키로 대체된다.
         project_names: dict[str, str] = {}
@@ -202,10 +263,22 @@ def calculate(
                 project_key = task.get("project_key") or "UNKNOWN"
                 by_project[project_key] = by_project.get(project_key, 0.0) + remaining
                 project_names.setdefault(project_key, task.get("project_name") or project_key)
-            elif task.get("due_at") is None:
+            else:
+                # 창에 안 들어온 것은 **전부** 여기로 온다. 예전에는 `due_at is None`
+                # 인 것만 담아서, 마감이 창 뒤인 업무는 분자에도 backlog 에도 없이
+                # 사라졌다(2주 창에서 팀 잔여 548h 중 346h가 증발했다).
                 backlog_hours += remaining
                 backlog_count += 1
 
+            due = _as_date(task.get("due_at"))
+            if due is not None:
+                index = (due - period_start).days // 7
+                # 지난 마감은 첫 주에, 기간 뒤 마감은 마지막 주 뒤 칸에 모은다.
+                index = max(0, min(index, len(week_starts)))
+                week_hours[index] = week_hours.get(index, 0.0) + remaining
+
+        daily: float | None = None
+        absent_set: set[date] = set()
         if weekly_hours is None:
             capacity: float | None = None
             gross = None
@@ -214,12 +287,14 @@ def calculate(
             blocked_reason: str | None = BLOCKED_NO_SCHEDULE
         else:
             daily_hours = weekly_hours / _WORKDAYS_PER_WEEK
+            daily = daily_hours
             absent_days = _absent_workdays(
                 absences_by_person.get(person_id, []),
                 workdays=workdays,
                 period_start=period_start,
                 period_end=period_end,
             )
+            absent_set = absent_days
             absent_count = len(absent_days)
             gross = round(len(workdays) * daily_hours, 2)
             absence_hours = round(absent_count * daily_hours, 2)
@@ -228,6 +303,17 @@ def calculate(
             blocked_reason = None
             if capacity <= 0:
                 blocked_reason = BLOCKED_ON_LEAVE if absent_days else BLOCKED_NO_CAPACITY
+
+        tightest = (
+            None
+            if daily is None
+            else _tightest_deadline(
+                [task for task in by_person[person_id] if task.get("status_category") != "DONE"],
+                period_start=period_start,
+                daily_hours=daily,
+                absent_days=absent_set,
+            )
+        )
 
         allocation = round(allocation, 2)
         people.append(
@@ -257,6 +343,33 @@ def calculate(
                 "unscheduled_backlog_hours": round(backlog_hours, 2),
                 "unscheduled_backlog_count": backlog_count,
                 "missing_estimate_count": missing_estimate,
+                # 주차별 필요 공수. 부하율 하나로는 "이 기간 평균"만 알 수 있어
+                # 어느 주에 몰렸는지가 안 보인다 — 122.5%가 사실은 셋째 주에
+                # 100h가 겹친 것이었다.
+                "by_week": [
+                    {
+                        "week_start": start.isoformat(),
+                        "hours": round(week_hours.get(index, 0.0), 2),
+                        # 그 주의 근무일 × 일 시간. 부재를 뺀 값이다.
+                        "capacity": None if daily is None else round(
+                            len(
+                                (_workdays(start, min(start + timedelta(weeks=1), period_end)))
+                                - absent_set
+                            )
+                            * daily,
+                            2,
+                        ),
+                    }
+                    for index, start in enumerate(week_starts)
+                ],
+                # 조회 기간 뒤에 마감이 있는 몫. 화면이 "뒤에 더 있다"를 말한다.
+                "later_hours": round(week_hours.get(len(week_starts), 0.0), 2),
+                # 남은 일을 하루 용량으로 나눈 값. 창과 무관한 절대량이다.
+                "runway_days": None if not daily else round(
+                    (allocation + backlog_hours) / daily, 1
+                ),
+                # 마감을 이른 순으로 쌓았을 때 가장 모자라는 시점.
+                "tightest": tightest,
             }
         )
 
