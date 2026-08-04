@@ -25,7 +25,6 @@ def project_row(proj_id="PJ001", name="SKN29_Final_2Team", status="ACTIVE", owne
 def folder_row(
     team_folder_id="TF001",
     external="folder-SKN29",
-    role=None,
     max_depth=1,
     display_name=None,
 ):
@@ -35,7 +34,6 @@ def folder_row(
         "conn_id": "CN002",
         "external_folder_id": external,
         "display_name": display_name,
-        "default_doc_role": role,
         "max_depth": max_depth,
     }
 
@@ -63,11 +61,12 @@ def drive_file(file_id, name, supported=True, mime="application/pdf"):
     }
 
 
-def doc_row(doc_id="DC001", src_file_id="file-plan", name="기획서.docx", role="PLAN"):
+def doc_row(doc_id="DC001", src_file_id="file-plan", name="기획서.docx", role=None):
     return {
         "doc_id": doc_id,
         "team_id": "TE001",
-        # 등록 시점에는 어느 프로젝트의 문서인지 모른다.
+        # 등록 시점에는 어느 프로젝트의 문서인지도, 그 안에서 무슨 역할인지도
+        # 모른다. `doc_role`은 기준 문서로 선택될 때 PRIMARY/SUB 가 된다.
         "proj_id": None,
         "src_file_id": src_file_id,
         "source_type": "DRIVE",
@@ -470,132 +469,33 @@ class TeamFolderApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 403)
 
+class TeamDocumentListApiTests(SimpleTestCase):
+    """팀 문서 목록(GET).
 
-@patch("apps.projects.api_views.DocumentRepository.save_drive_documents")
-@patch("apps.projects.api_views.list_drive_files")
-@patch("apps.projects.api_views.TeamFolderRepository.list_for_team")
-class DocumentRoleSaveApiTests(SimpleTestCase):
-    """역할 지정 저장. 파일 목록은 서버가 Drive에서 다시 읽는다."""
-
-    PLAN_FILE = "file-plan"
-    WBS_FILE = "file-wbs"
-    ZIP_FILE = "file-zip"
-
-    def save(self, body):
-        return self.client.put(
-            "/api/team/documents/",
-            body,
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-    def test_requires_login(self, *_mocks):
-        self.assertEqual(self.client.get("/api/team/documents/").status_code, 401)
-        self.assertEqual(
-            self.client.put(
-                "/api/team/documents/",
-                {"folder_roles": {}},
-                content_type="application/json",
-            ).status_code,
-            401,
-        )
-
-    def test_folder_role_is_inherited_by_its_files(self, list_folders, list_files, save):
-        list_folders.return_value = [folder_row(external="folder-산출물")]
-        list_files.return_value = [
-            drive_file(self.PLAN_FILE, "기획서.docx"),
-            drive_file(self.WBS_FILE, "WBS.xlsx"),
-        ]
-        save.return_value = [doc_row()]
-
-        response = self.save({"folder_roles": {"folder-산출물": "PLAN"}})
-
-        self.assertEqual(response.status_code, 200)
-        saved = {doc["src_file_id"]: doc["doc_role"] for doc in save.call_args.kwargs["documents"]}
-        self.assertEqual(saved, {self.PLAN_FILE: "PLAN", self.WBS_FILE: "PLAN"})
-
-    def test_file_role_overrides_the_folder_role(self, list_folders, list_files, save):
-        list_folders.return_value = [folder_row(external="folder-산출물")]
-        list_files.return_value = [
-            drive_file(self.PLAN_FILE, "기획서.docx"),
-            drive_file(self.WBS_FILE, "WBS.xlsx"),
-        ]
-        save.return_value = [doc_row()]
-
-        self.save(
-            {
-                "folder_roles": {"folder-산출물": "PLAN"},
-                "file_roles": {self.WBS_FILE: "DAILY_REPORT"},
-            }
-        )
-
-        saved = {doc["src_file_id"]: doc["doc_role"] for doc in save.call_args.kwargs["documents"]}
-        self.assertEqual(saved, {self.PLAN_FILE: "PLAN", self.WBS_FILE: "DAILY_REPORT"})
-
-    def test_unsupported_files_are_not_registered(self, list_folders, list_files, save):
-        list_folders.return_value = [folder_row(external="folder-SKN29")]
-        list_files.return_value = [
-            drive_file(self.PLAN_FILE, "기획서.docx"),
-            drive_file(self.ZIP_FILE, "Apart Deal.zip", supported=False, mime="application/x-zip-compressed"),
-        ]
-        save.return_value = []
-
-        self.save({"folder_roles": {"folder-SKN29": "OTHER"}})
-
-        # 파싱할 수 없는 형식을 doc에 넣으면 이후 파이프라인이 헛돈다.
-        self.assertEqual(
-            [doc["src_file_id"] for doc in save.call_args.kwargs["documents"]],
-            [self.PLAN_FILE],
-        )
-
-    def test_folder_without_a_role_registers_nothing(self, list_folders, list_files, save):
-        list_folders.return_value = [folder_row(external="folder-SKN29")]
-        list_files.return_value = [drive_file(self.PLAN_FILE, "기획서.docx")]
-        save.return_value = []
-
-        self.save({"folder_roles": {}})
-
-        self.assertEqual(save.call_args.kwargs["documents"], [])
-
-    def test_saved_scan_depth_is_used_for_the_file_scan(self, list_folders, list_files, save):
-        list_folders.return_value = [folder_row(external="folder-산출물", max_depth=None)]
-        list_files.return_value = [drive_file(self.PLAN_FILE, "기획서.docx")]
-        save.return_value = []
-
-        self.save({"folder_roles": {"folder-산출물": "PLAN"}})
-
-        # 화면이 다시 보내지 않는다 — 폴더를 저장할 때 정한 값을 쓴다.
-        self.assertIsNone(list_files.call_args.kwargs["max_depth"])
-
-    def test_unknown_role_code_is_rejected(self, list_folders, _list_files, save):
-        response = self.save({"folder_roles": {"folder-산출물": "기획서"}})
-
-        self.assertEqual(response.status_code, 400)
-        list_folders.assert_not_called()
-        save.assert_not_called()
-
-    def test_drive_failure_reports_bad_gateway(self, list_folders, list_files, save):
-        from apps.connectors.oauth import OAuthError
-
-        list_folders.return_value = [folder_row(external="folder-산출물")]
-        list_files.side_effect = OAuthError("Google Drive 연결이 만료됐습니다. 다시 연결해 주세요.")
-
-        response = self.save({"folder_roles": {"folder-산출물": "PLAN"}})
-
-        self.assertEqual(response.status_code, 502)
-        save.assert_not_called()
+    PUT(역할 지정 저장)은 없앴다(2026-08-04). 폴더에 준 역할을 안의 파일이 그대로
+    물려받는 화면이었는데, 그 값으로 분기하는 코드가 한 줄도 없었다.
+    """
 
     @patch("apps.projects.api_views.DocumentRepository.list_for_team")
-    def test_lists_registered_documents(self, list_for_team, *_mocks):
+    def test_lists_registered_documents(self, list_for_team):
         list_for_team.return_value = [doc_row()]
 
         response = self.client.get("/api/team/documents/", headers=auth_header())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()[0]["doc_role"], "PLAN")
-        # 등록만 된 문서는 아직 프로젝트가 없다.
+        # 등록만 된 문서는 아직 어느 프로젝트에도 안 묶였다.
         self.assertIsNone(response.json()[0]["proj_id"])
+        self.assertIsNone(response.json()[0]["doc_role"])
         list_for_team.assert_called_once_with("UA001")
+
+    @patch("apps.projects.api_views.DocumentRepository.list_for_team", return_value=[])
+    def test_role_save_endpoint_is_gone(self, _list_for_team):
+        response = self.client.put(
+            "/api/team/documents/", {}, content_type="application/json", headers=auth_header()
+        )
+
+        self.assertEqual(response.status_code, 405)
+
 
 
 def task_row(key="KAN-34", summary="[MOCK] Orchestrator", person="PX002", category="TO_DO"):

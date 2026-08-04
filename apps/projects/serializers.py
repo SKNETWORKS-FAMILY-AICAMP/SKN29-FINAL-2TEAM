@@ -73,13 +73,36 @@ class JiraProjectRegisterSerializer(serializers.Serializer):
     )
 
 
-DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
-
 
 class DocumentRegisterEntrySerializer(serializers.Serializer):
     file_id = serializers.CharField(max_length=255)
     # 안 보내면 폴더에 지정된 역할을 물려받는다.
-    doc_role = serializers.ChoiceField(choices=DOC_ROLES, required=False, allow_null=True)
+
+
+class DocumentRemoveSerializer(serializers.Serializer):
+    """Drive 에서 사라진 문서를 내린다. 사용자가 확인한 것만 온다."""
+
+    doc_ids = serializers.ListField(
+        child=serializers.CharField(max_length=5), allow_empty=False
+    )
+
+
+def missing_document_response(row: dict[str, Any]) -> dict[str, Any]:
+    """Drive 스캔에 안 잡히는 등록 문서 한 줄.
+
+    프로젝트 정보를 함께 준다. 기준 문서가 사라졌다는 것은 그 프로젝트의 업무
+    추출 근거가 없어졌다는 뜻이라, 내리기 전에 사람이 알아야 한다.
+    """
+
+    return {
+        "doc_id": row["doc_id"],
+        "file_name": row.get("file_name"),
+        "mime_type": row.get("mime_type"),
+        "proj_id": row.get("proj_id"),
+        "project_name": row.get("project_name"),
+        # NULL(팀 문서 풀) / 'PRIMARY'(기준 문서) / 'SUB'(근거 문서)
+        "doc_role": row.get("doc_role"),
+    }
 
 
 class DocumentRegisterSerializer(serializers.Serializer):
@@ -87,24 +110,6 @@ class DocumentRegisterSerializer(serializers.Serializer):
 
     files = serializers.ListField(child=DocumentRegisterEntrySerializer(), allow_empty=False)
 
-
-class DocumentRoleSaveSerializer(serializers.Serializer):
-    """역할 지정 화면의 저장 내용.
-
-    파일 목록과 이름은 받지 않는다 — 서버가 Drive에서 다시 읽는다. 클라이언트가
-    보낸 메타데이터를 그대로 `doc`에 넣으면 실재하지 않는 문서가 생길 수 있다.
-    """
-
-    folder_roles = serializers.DictField(
-        child=serializers.ChoiceField(choices=DOC_ROLES),
-        allow_empty=True,
-    )
-    file_roles = serializers.DictField(
-        child=serializers.ChoiceField(choices=DOC_ROLES),
-        allow_empty=True,
-        required=False,
-        default=dict,
-    )
 
 
 class AssignmentRunCreateSerializer(serializers.Serializer):
@@ -219,6 +224,72 @@ def exist_task_response(row: dict[str, Any], persons: dict[str, Any]) -> dict[st
     }
 
 
+class TaskExtractionCreateSerializer(serializers.Serializer):
+    primary_document_id = serializers.CharField(max_length=5)
+
+
+class ProjectSourceDocumentSerializer(serializers.Serializer):
+    """기준 문서 1건 + 서브 문서 여러 건. 화면은 언제나 전체 선택 상태를 보낸다."""
+
+    primary_document_id = serializers.CharField(max_length=5)
+    sub_document_ids = serializers.ListField(
+        child=serializers.CharField(max_length=5), required=False, allow_empty=True
+    )
+
+
+def pipeline_document_response(row: dict[str, Any]) -> dict[str, Any]:
+    """기준 문서 선택 화면이 쓰는 한 줄.
+
+    `downloaded`와 `search_ready`를 나눠서 준다. 「원문을 아직 안 받았다」와
+    「받았지만 파싱·임베딩이 안 됐다」는 사용자가 할 행동이 다르다 — 앞은 문서
+    등록 화면으로, 뒤는 「문서 처리」 버튼으로 간다.
+    """
+
+    modified_at = row.get("src_modified_at")
+
+    return {
+        "doc_id": row["doc_id"],
+        "file_name": row.get("file_name"),
+        "mime_type": row.get("mime_type"),
+        "proj_id": row.get("proj_id"),
+        # NULL(팀 문서 풀) / 'PRIMARY'(기준 문서) / 'SUB'(근거 문서)
+        "doc_role": row.get("doc_role"),
+        "downloaded": bool(row.get("storage_key")),
+        "search_ready": bool(row.get("search_ready")),
+        "src_modified_at": modified_at.isoformat() if modified_at else None,
+    }
+
+
+def deadline_response(
+    row: dict[str, Any],
+    persons: dict[str, Any],
+    *,
+    days: int,
+) -> dict[str, Any]:
+    """마감이 걸린 업무 한 건.
+
+    `days`를 서버가 계산해서 준다. `due_at`이 TIMESTAMPTZ라 브라우저에서 빼면
+    시간대에 따라 하루가 밀린다 — 「오늘 마감」이 「어제 마감」으로 보이는 것은
+    이 화면에서 바로 오판으로 이어진다. 음수가 지연이다.
+
+    어느 프로젝트 것인지 함께 준다. 「KAN-31 지연」만으로는 어느 쪽을 밀지 판단할
+    수 없다.
+    """
+
+    person_id = row.get("assignee_person_id")
+
+    return {
+        "exist_task_id": row["exist_task_id"],
+        "jira_issue_id": row["jira_issue_id"],
+        "summary": row.get("summary"),
+        "assignee_name": (persons.get(person_id) or {}).get("name") if person_id else None,
+        "due_at": row["due_at"].isoformat(),
+        "days": days,
+        "proj_id": row["proj_id"],
+        "project_name": row.get("project_name") or row.get("project_key"),
+    }
+
+
 def team_folder_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "team_folder_id": row["team_folder_id"],
@@ -226,7 +297,6 @@ def team_folder_response(row: dict[str, Any]) -> dict[str, Any]:
         "conn_id": row["conn_id"],
         "external_folder_id": row["external_folder_id"],
         "display_name": row.get("display_name"),
-        "default_doc_role": row.get("default_doc_role"),
         "max_depth": row.get("max_depth"),
     }
 

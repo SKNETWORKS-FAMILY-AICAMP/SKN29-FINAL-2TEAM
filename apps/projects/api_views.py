@@ -1,7 +1,12 @@
 from datetime import UTC, date, datetime, timedelta
+from io import BytesIO
+import logging
 from typing import Any
 
 import psycopg
+from django.conf import settings
+from django.core import signing
+from django.http import FileResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,7 +22,18 @@ from backend.services.hr import (
     lookup_persons,
 )
 from backend.services.storage import build_key
+from backend.services.storage import exists as document_exists
+from backend.services.storage import load as load_document
 from backend.services.storage import save as save_document
+from backend.db.document_pipeline import PipelineDocumentRepository
+from services.document_pipeline.errors import (
+    DocumentPipelineError,
+    PipelineConfigurationError,
+    RunPodRequestError,
+)
+from services.document_pipeline.runpod_client import job_status, submit_document_job
+from services.document_pipeline.signing import read_download_token, signed_download_url
+from services.task_extraction import extract_tasks
 from backend.db import (
     AccountRepository,
     AnalysisRunRepository,
@@ -41,12 +57,17 @@ from backend.db.errors import (
 from .serializers import (
     AssignmentRunCreateSerializer,
     DocumentRegisterSerializer,
-    DocumentRoleSaveSerializer,
     JiraProjectRegisterSerializer,
     ProjectCreateSerializer,
+    ProjectSourceDocumentSerializer,
+    DocumentRemoveSerializer,
     ProjectStatusSerializer,
+    TaskExtractionCreateSerializer,
     TeamFolderReplaceSerializer,
     assignment_run_response,
+    deadline_response,
+    missing_document_response,
+    pipeline_document_response,
     document_history_response,
     document_response,
     exist_task_response,
@@ -54,6 +75,9 @@ from .serializers import (
     project_source_response,
     team_folder_response,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _repository_error_response(exc: Exception) -> Response:
@@ -280,7 +304,12 @@ class ProjectJiraRegisterAPIView(AuthenticatedAPIView):
 
 
 class TeamDocumentAPIView(AuthenticatedAPIView):
-    """역할 지정 화면의 저장. 폴더 역할과 그것을 물려받은 `doc` 행을 함께 쓴다."""
+    """팀이 등록한 문서 목록.
+
+    PUT(역할 지정 저장)은 없앴다(2026-08-04). 폴더에 준 역할을 안의 파일이 그대로
+    물려받는 화면이었는데, 그 값으로 분기하는 코드가 한 줄도 없었고 정확하지도
+    않았다. 어느 문서가 업무의 근거인지는 기준 문서 선택 화면에서 사람이 고른다.
+    """
 
     def get(self, request):
         try:
@@ -289,64 +318,9 @@ class TeamDocumentAPIView(AuthenticatedAPIView):
             return _repository_error_response(exc)
         return Response([document_response(row) for row in rows])
 
-    def put(self, request):
-        serializer = DocumentRoleSaveSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        folder_roles = serializer.validated_data["folder_roles"]
-        file_roles = serializer.validated_data["file_roles"]
-        account_id = request.user.account_id
 
-        try:
-            folders = TeamFolderRepository.list_for_team(account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        # 파일 목록은 Drive에서 직접 읽는다. 파싱할 수 없는 형식은 등록하지 않는다.
-        documents = []
-        for folder in folders:
-            folder_id = folder["external_folder_id"]
-            try:
-                # 폴더를 저장할 때 정한 탐색 깊이를 그대로 쓴다.
-                files = list_drive_files(
-                    account_id=account_id,
-                    parent_id=folder_id,
-                    max_depth=folder["max_depth"],
-                )
-            except OAuthError as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-            except (RepositoryError, psycopg.Error) as exc:
-                return _repository_error_response(exc)
-
-            inherited = folder_roles.get(folder_id)
-            for item in files:
-                if not item["supported"]:
-                    continue
-                doc_role = file_roles.get(item["file_id"]) or inherited
-                if doc_role is None:
-                    continue
-                documents.append(
-                    {
-                        "src_file_id": item["file_id"],
-                        "file_name": item["name"],
-                        "mime_type": item["mime_type"],
-                        "doc_role": doc_role,
-                        "src_modified_at": item["modified_at"],
-                    }
-                )
-
-        try:
-            rows = DocumentRepository.save_drive_documents(
-                account_id=account_id,
-                folder_roles=folder_roles,
-                documents=documents,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response([document_response(row) for row in rows])
-
-
-def _scan_drive_candidates(account_id: str) -> list[dict[str, Any]]:
-    """설정된 폴더 안에서 **아직 `doc`에 없는** 파일.
+def _scan_drive_candidates(account_id: str) -> tuple[list[dict[str, Any]], set[str]]:
+    """설정된 폴더 안에서 **아직 `doc`에 없는** 파일과, 훑은 파일 id 전부.
 
     파일 목록은 항상 Drive에서 직접 읽는다. 화면이 보내온 이름·형식을 믿고 저장하면
     사용자가 무엇이든 등록시킬 수 있고, 스캔과 등록 사이에 파일이 바뀌었을 때도
@@ -354,6 +328,10 @@ def _scan_drive_candidates(account_id: str) -> list[dict[str, Any]]:
 
     미지원 형식도 목록에는 넣는다 — 빠진 이유를 보여주지 않으면 "내 파일이 왜
     없지"가 된다. 등록 대상에서 거르는 것은 호출자 몫이다.
+
+    두 번째 반환값은 이번 스캔에서 Drive 가 준 파일 id 전부다(이미 등록된 것
+    포함). 「Drive 에서 사라진 문서」를 이 여집합으로 구한다 — 그것 때문에 Drive 를
+    한 번 더 훑을 이유가 없다.
     """
 
     folders = TeamFolderRepository.list_for_team(account_id)
@@ -361,6 +339,7 @@ def _scan_drive_candidates(account_id: str) -> list[dict[str, Any]]:
 
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
+    live: set[str] = set()
     for folder in folders:
         folder_id = folder["external_folder_id"]
         folder_name = folder.get("display_name") or folder_id
@@ -372,6 +351,7 @@ def _scan_drive_candidates(account_id: str) -> list[dict[str, Any]]:
         )
         for item in files:
             file_id = item["file_id"]
+            live.add(file_id)
             if file_id in known or file_id in seen:
                 continue
             seen.add(file_id)
@@ -385,11 +365,9 @@ def _scan_drive_candidates(account_id: str) -> list[dict[str, Any]]:
                     # 하위 폴더에서 왔으면 그 경로를, 아니면 고른 폴더 이름을 쓴다.
                     "folder_name": item["folder_path"] or folder_name,
                     "folder_id": folder_id,
-                    # 폴더에 지정된 역할을 물려받는다. 화면에서 행마다 바꿀 수 있다.
-                    "suggested_role": folder.get("default_doc_role"),
                 }
             )
-    return candidates
+    return candidates, live
 
 
 class TeamNewDocumentAPIView(AuthenticatedAPIView):
@@ -401,13 +379,67 @@ class TeamNewDocumentAPIView(AuthenticatedAPIView):
     """
 
     def get(self, request):
+        account_id = request.user.account_id
         try:
-            candidates = _scan_drive_candidates(request.user.account_id)
+            candidates, live_file_ids = _scan_drive_candidates(account_id)
+            # 폴더 밖으로 뺐다가 되돌린 문서를 되살린다. 이건 사용자 확인이 필요
+            # 없다 — 「Drive 에 있는 것을 있다고 표시」하는 복원이라 잃는 것이 없다.
+            DocumentRepository.restore_reappeared(
+                account_id=account_id, live_file_ids=live_file_ids
+            )
+            missing = DocumentRepository.list_missing_from_drive(
+                account_id=account_id, live_file_ids=live_file_ids
+            )
         except OAuthError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response(candidates)
+        return Response(
+            {
+                "candidates": candidates,
+                # 내리지 않고 보여만 준다. 휴지통·완전삭제·폴더 밖 이동이 전부
+                # 똑같이 「안 잡힘」으로 보여서 사람이 판단해야 한다.
+                "missing": [missing_document_response(row) for row in missing],
+            }
+        )
+
+
+class TeamDocumentRemoveAPIView(AuthenticatedAPIView):
+    """Drive 에서 삭제된 문서를 정리한다.
+
+    `doc` 행은 남기고 `deleted`만 켜지만, 파싱 산출물(`doc_block`·`chunk`·`vec_idx`)은
+    지운다. `chunk.search_text`에 원문이 통째로 들어 있어서, Drive 에서 지운 문서의
+    본문을 우리가 계속 들고 있으면 안 된다.
+    """
+
+    def post(self, request):
+        serializer = DocumentRemoveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        doc_ids = serializer.validated_data["doc_ids"]
+        account_id = request.user.account_id
+
+        try:
+            result = DocumentRepository.mark_removed_from_drive(
+                account_id=account_id, doc_ids=doc_ids
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        # 삭제가 커밋된 **뒤에** 남긴다. 기록이 실패했다고 이미 지운 것을 없던
+        # 일로 만들 수는 없으므로, 여기서 터져도 응답은 성공이어야 한다.
+        # 예전에는 이 호출이 위 try 안에 있어서, 인자명을 틀렸을 때 화면에는
+        # 「실패」가 뜨고 데이터는 지워진 채로 남았다(2026-08-04).
+        try:
+            log_audit(
+                actor_account_id=account_id,
+                action="DOCUMENT_REMOVE",
+                target_type=DocumentRepository.AUDIT_TARGET,
+                payload={"doc_ids": doc_ids, **result},
+            )
+        except Exception:
+            logger.exception("문서 정리 감사 로그를 남기지 못했습니다: %s", doc_ids)
+
+        return Response(result)
 
 
 class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
@@ -427,7 +459,7 @@ class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
         account_id = request.user.account_id
 
         try:
-            candidates = _scan_drive_candidates(account_id)
+            candidates, _live = _scan_drive_candidates(account_id)
         except OAuthError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
         except (RepositoryError, psycopg.Error) as exc:
@@ -446,16 +478,14 @@ class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
             if not candidate["supported"]:
                 skipped.append({"file_id": entry["file_id"], "reason": "UNSUPPORTED"})
                 continue
-            doc_role = entry.get("doc_role") or candidate["suggested_role"]
-            if doc_role is None:
-                skipped.append({"file_id": entry["file_id"], "reason": "NO_ROLE"})
-                continue
             documents.append(
                 {
                     "src_file_id": candidate["file_id"],
                     "file_name": candidate["file_name"],
                     "mime_type": candidate["mime_type"],
-                    "doc_role": doc_role,
+                    # 등록 시점에는 이 문서가 어느 프로젝트의 무엇인지 모른다.
+                    # `doc_role`은 기준 문서로 선택될 때 PRIMARY/SUB 로 채워진다.
+                    "doc_role": None,
                     "src_modified_at": candidate["modified_at"],
                 }
             )
@@ -788,6 +818,260 @@ class TeamWorkloadAPIView(AuthenticatedAPIView):
                 "workload_weeks": weeks,
             }
         )
+
+
+class TeamDeadlineAPIView(AuthenticatedAPIView):
+    """지연된 업무와 곧 마감인 업무.
+
+    부하와 나누어 둔다. 부하는 **사람**이 단위지만 여기는 **업무**가 단위고, 팀장이
+    보고 할 행동도 다르다 — 부하는 배정을 옮기는 판단이고, 지연은 그 이슈를 지금
+    찌르는 판단이다. 한 응답에 섞으면 부하 계약(`업무량_계산_MVP_계약`)에 관계없는
+    필드가 얹힌다.
+
+    `DONE`은 뺀다. 이미 끝난 일은 마감이 지났어도 할 일이 없다.
+    """
+
+    #: 「이번 주」의 길이. 오늘을 포함해 7일이다. 주 경계(월요일)로 자르지 않는
+    #: 이유는 금요일에 열었을 때 남은 이틀만 보이면 쓸모가 없기 때문이다.
+    SOON_DAYS = 7
+
+    def get(self, request):
+        try:
+            tasks = ExistTaskRepository.list_for_team(request.user.account_id)
+            persons = lookup_persons(
+                [t["assignee_person_id"] for t in tasks if t["assignee_person_id"]]
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        today = datetime.now(UTC).date()
+        overdue: list[dict[str, Any]] = []
+        soon: list[dict[str, Any]] = []
+
+        for task in tasks:
+            due = task.get("due_at")
+            if due is None or task.get("status_category") == "DONE":
+                continue
+            days = (due.date() - today).days
+            if days < 0:
+                overdue.append(deadline_response(task, persons, days=days))
+            elif days < self.SOON_DAYS:
+                soon.append(deadline_response(task, persons, days=days))
+
+        # 급한 것부터. 지연은 오래된 것이, 예정은 가까운 것이 위다.
+        overdue.sort(key=lambda row: (row["days"], row["jira_issue_id"]))
+        soon.sort(key=lambda row: (row["days"], row["jira_issue_id"]))
+
+        return Response(
+            {
+                "as_of": today.isoformat(),
+                "soon_days": self.SOON_DAYS,
+                "overdue": overdue,
+                "soon": soon,
+            }
+        )
+
+
+def _pipeline_error_response(exc: Exception) -> Response:
+    if isinstance(exc, PipelineConfigurationError):
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if isinstance(exc, RunPodRequestError):
+        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response(
+        {"detail": str(exc) or exc.__class__.__name__},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+class TeamPipelineDocumentAPIView(AuthenticatedAPIView):
+    """기준 문서 선택 화면이 고를 수 있는 후보 — 팀 문서 전부.
+
+    프로젝트 하위가 아니라 `team/` 아래인 이유는 문서가 팀에 속하기 때문이다.
+    아직 어느 프로젝트에도 안 묶인 문서를 골라 **묶는** 것이 이 화면의 일이라,
+    프로젝트로 걸러 오면 후보가 언제나 0건이 된다.
+    """
+
+    def get(self, request):
+        try:
+            rows = PipelineDocumentRepository.list_team_documents(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([pipeline_document_response(row) for row in rows])
+
+
+class DocumentProcessingRunAPIView(AuthenticatedAPIView):
+    """RunPod 문서 처리 작업 하나를 제출하고(POST) 상태를 확인한다(GET).
+
+    **팀 문서 단위다.** 파싱·임베딩은 기준 문서로 뽑히기 전에 끝나 있어야 한다.
+    """
+
+    def post(self, request, doc_id):
+        try:
+            document = PipelineDocumentRepository.get_for_processing(
+                doc_id=doc_id, account_id=request.user.account_id
+            )
+            if not document_exists(document["storage_key"]):
+                return Response(
+                    {"detail": "로컬 문서 저장소에 원문 파일이 없습니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            source_url = signed_download_url(
+                doc_id=doc_id, revision=document["cur_revision"]
+            )
+            result = submit_document_job(
+                {
+                    "doc_id": doc_id,
+                    "revision": document["cur_revision"],
+                    "mime_type": document["mime_type"],
+                    "source_url": source_url,
+                    "max_tokens": settings.CHUNKING_MAX_TOKENS,
+                    "merge_peers": settings.CHUNKING_MERGE_PEERS,
+                }
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except (ValueError, OSError, DocumentPipelineError) as exc:
+            return _pipeline_error_response(exc)
+        return Response(
+            {"job_id": result["id"], "status": result.get("status", "IN_QUEUE")},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    def get(self, request, doc_id, job_id):
+        try:
+            document = PipelineDocumentRepository.get_for_processing(
+                doc_id=doc_id, account_id=request.user.account_id
+            )
+            result = job_status(job_id)
+            runpod_status = result.get("status")
+            payload = {"job_id": job_id, "status": runpod_status}
+            if runpod_status == "COMPLETED":
+                output = result.get("output")
+                if not isinstance(output, dict):
+                    raise ValueError("완료된 RunPod 작업에 output 객체가 없습니다.")
+                # 완료 시점에 바로 적재한다. RunPod는 완료 결과를 제한된 시간만
+                # 보관해서, 나중에 다시 받아 오면 되겠지 하고 미룰 수 없다.
+                payload["ingested"] = PipelineDocumentRepository.ingest(
+                    expected_doc=document, result=output
+                )
+            elif runpod_status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
+                payload["error"] = result.get("error") or "RunPod 문서 처리 실패"
+            return Response(payload)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except (ValueError, OSError, DocumentPipelineError) as exc:
+            return _pipeline_error_response(exc)
+
+
+class RunPodDocumentDownloadAPIView(APIView):
+    """RunPod Worker가 원문을 받아 가는 유일한 경로.
+
+    로그인 세션이 없다 — 남의 인프라에서 오는 요청이라 Bearer 토큰을 줄 수 없다.
+    대신 만료형 서명이 `doc_id`와 `revision`을 묶어 증명한다.
+
+    없는 문서·삭제된 문서·revision 불일치를 **전부 같은 404로** 답한다. 어느
+    쪽인지 알려 주면 바깥에서 문서 상태를 캐낼 수 있다.
+    """
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, doc_id):
+        try:
+            payload = read_download_token(request.query_params.get("token", ""))
+            if payload["doc_id"] != doc_id:
+                raise signing.BadSignature("URL과 서명 문서 ID가 다릅니다.")
+            document = PipelineDocumentRepository.get_signed_download(
+                doc_id=doc_id, revision=payload["revision"]
+            )
+            if not document_exists(document["storage_key"]):
+                raise RecordNotFound("로컬 저장소에 문서 원문이 없습니다.")
+            stream = BytesIO(load_document(document["storage_key"]))
+        except signing.SignatureExpired:
+            return Response({"detail": "문서 다운로드 서명이 만료되었습니다."}, status=403)
+        except signing.BadSignature:
+            return Response({"detail": "문서 다운로드 서명이 올바르지 않습니다."}, status=403)
+        except (RecordNotFound, PermissionDenied):
+            return Response({"detail": "문서를 찾을 수 없습니다."}, status=404)
+        return FileResponse(
+            stream,
+            content_type=document["mime_type"] or "application/octet-stream",
+            as_attachment=True,
+            filename=document["file_name"] or f"{doc_id}.bin",
+        )
+
+
+class ProjectSourceDocumentAPIView(AuthenticatedAPIView):
+    """이 프로젝트의 기준 문서와 서브 문서.
+
+    **PUT이 프로젝트에 문서를 묶는 행위다.** 폴더를 고르는 것도, 문서를 등록하는
+    것도 아니고, "이 프로젝트의 근거는 이 문서다"라고 정하는 순간이 여기다.
+    """
+
+    def get(self, request, project_id):
+        try:
+            rows = PipelineDocumentRepository.list_ready_for_analysis(
+                proj_id=project_id, account_id=request.user.account_id
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([pipeline_document_response(row) for row in rows])
+
+    def put(self, request, project_id):
+        serializer = ProjectSourceDocumentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            PipelineDocumentRepository.set_project_documents(
+                proj_id=project_id,
+                account_id=request.user.account_id,
+                primary_doc_id=serializer.validated_data["primary_document_id"],
+                sub_doc_ids=serializer.validated_data.get("sub_document_ids") or [],
+            )
+            rows = PipelineDocumentRepository.list_ready_for_analysis(
+                proj_id=project_id, account_id=request.user.account_id
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response([pipeline_document_response(row) for row in rows])
+
+
+class TaskExtractionRunAPIView(AuthenticatedAPIView):
+    """기준 문서에서 업무를 뽑는다.
+
+    검색 범위는 **이 프로젝트에 묶인 문서**다. 팀 문서 전체로 넓히면 다른
+    프로젝트 기획서의 문장이 이 프로젝트 업무의 근거로 딸려 온다.
+    """
+
+    def post(self, request, project_id):
+        serializer = TaskExtractionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            documents = PipelineDocumentRepository.list_ready_for_analysis(
+                proj_id=project_id, account_id=request.user.account_id
+            )
+            selected_id = serializer.validated_data["primary_document_id"]
+            primary = next((d for d in documents if d["doc_id"] == selected_id), None)
+            if primary is None:
+                return Response(
+                    {"detail": "선택한 문서가 이 프로젝트의 기준 문서로 지정되지 않았습니다."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if not primary["search_ready"]:
+                return Response(
+                    {"detail": "문서가 아직 파싱·청킹·임베딩되지 않았습니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
+            result = extract_tasks(
+                project_id=project_id, primary_document=primary, document_ids=ready_ids
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        except (ValueError, OSError, DocumentPipelineError) as exc:
+            return _pipeline_error_response(exc)
+        return Response(result, status=status.HTTP_201_CREATED)
 
 
 class ProjectAnalysisRunAPIView(AuthenticatedAPIView):

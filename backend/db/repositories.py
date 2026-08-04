@@ -685,7 +685,6 @@ class DocumentRepository:
     """
 
     DRIVE = "DRIVE"
-    DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
     # 문서 처리 이력을 `audit_log`에서 다시 찾을 때 쓰는 표식.
     AUDIT_TARGET = "DOCUMENT"
     ACTION_REGISTER = "DOCUMENT_REGISTER"
@@ -763,6 +762,144 @@ class DocumentRepository:
                 return {row["src_file_id"] for row in cursor.fetchall()}
 
     @staticmethod
+    def list_missing_from_drive(*, account_id: str, live_file_ids: set[str]) -> list[dict[str, Any]]:
+        """Drive 스캔에 더 이상 안 잡히는 등록 문서.
+
+        `live_file_ids`는 호출자가 방금 Drive 를 훑어 얻은 파일 id 전부다. 이
+        메서드는 DB만 보고 그 여집합을 돌려줄 뿐, **아무것도 지우지 않는다** —
+        내리는 것은 사람이 확인한 뒤 `mark_removed_from_drive()`가 한다.
+
+        휴지통으로 옮긴 것, 완전히 지운 것, 폴더 밖으로 옮긴 것이 전부 똑같이
+        「안 잡힘」으로 보인다(Drive 질의가 `trashed = false`다). 셋을 구분할 수
+        없으니 자동으로 내리지 않는다.
+
+        어느 프로젝트의 기준 문서였는지 함께 준다. 그게 사라졌다는 것은 그
+        프로젝트의 업무 추출 근거가 없어졌다는 뜻이라 화면이 따로 알려야 한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT d.doc_id, d.src_file_id, d.file_name, d.mime_type,
+                           d.proj_id, d.doc_role, p.name AS project_name
+                    FROM doc AS d
+                    LEFT JOIN proj AS p ON p.proj_id = d.proj_id
+                    WHERE d.team_id = %s AND d.source_type = %s
+                      AND d.deleted = false AND d.src_file_id IS NOT NULL
+                    ORDER BY d.doc_id
+                    """,
+                    (team_id, DocumentRepository.DRIVE),
+                )
+                return [
+                    row for row in cursor.fetchall() if row["src_file_id"] not in live_file_ids
+                ]
+
+    @staticmethod
+    def mark_removed_from_drive(*, account_id: str, doc_ids: list[str]) -> dict[str, int]:
+        """고른 문서를 내리고 **파싱 산출물을 지운다.**
+
+        `doc` 행은 남기고 `deleted`만 켠다. 그 행이 있어야 같은 파일이 신규로 다시
+        올라오지 않고(`registered_file_ids`), 어느 프로젝트가 무엇을 근거로
+        만들어졌는지(`proj_id`·`doc_role`)도 남는다.
+
+        반대로 `doc_block`·`chunk`·`vec_idx`는 지운다. **`chunk.search_text`에 원문이
+        통째로 들어 있기 때문이다** — 요약이나 임베딩만이 아니라 문서 본문 그대로다.
+        사용자가 Drive 에서 파일을 지운 것은 없애려는 의도인데, 우리 DB 에 본문이
+        남아 있으면 그 의도를 우회하는 셈이 된다.
+
+        되살릴 때 다시 파싱해야 한다. 그 비용(RunPod 100초 남짓)보다 남은 본문이
+        계속 남아 있는 쪽이 나쁘다.
+        """
+
+        if not doc_ids:
+            return {"removed": 0, "blocks": 0, "chunks": 0, "vectors": 0}
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                # 남의 팀 문서를 지우지 않도록 대상을 먼저 좁힌다.
+                cursor.execute(
+                    """
+                    SELECT doc_id FROM doc
+                    WHERE doc_id = ANY(%s) AND team_id = %s AND deleted = false
+                    """,
+                    (doc_ids, team_id),
+                )
+                targets = [row["doc_id"] for row in cursor.fetchall()]
+                if not targets:
+                    return {"removed": 0, "blocks": 0, "chunks": 0, "vectors": 0}
+
+                # vec_idx → chunk → doc_block 순. FK 는 없지만 참조하는 쪽부터
+                # 지워야 중간에 실패했을 때 고아가 남지 않는다.
+                cursor.execute(
+                    """
+                    DELETE FROM vec_idx WHERE chunk_id IN (
+                        SELECT c.chunk_id FROM chunk AS c
+                        JOIN doc_block AS b ON b.block_id = c.block_id
+                        WHERE b.doc_id = ANY(%s)
+                    )
+                    """,
+                    (targets,),
+                )
+                vectors = cursor.rowcount
+                cursor.execute(
+                    """
+                    DELETE FROM chunk WHERE block_id IN (
+                        SELECT block_id FROM doc_block WHERE doc_id = ANY(%s)
+                    )
+                    """,
+                    (targets,),
+                )
+                chunks = cursor.rowcount
+                cursor.execute("DELETE FROM doc_block WHERE doc_id = ANY(%s)", (targets,))
+                blocks = cursor.rowcount
+
+                cursor.execute(
+                    "UPDATE doc SET deleted = true WHERE doc_id = ANY(%s)", (targets,)
+                )
+                return {
+                    "removed": cursor.rowcount,
+                    "blocks": blocks,
+                    "chunks": chunks,
+                    "vectors": vectors,
+                }
+
+    @staticmethod
+    def restore_reappeared(*, account_id: str, live_file_ids: set[str]) -> list[str]:
+        """내려 뒀는데 Drive 에 다시 나타난 문서를 되살린다.
+
+        Drive 파일 id 는 옮겨도 유지된다. 폴더 밖으로 뺐다가 되돌리면 같은 id 로
+        다시 잡히는데, `registered_file_ids()`가 삭제된 문서까지 「이미 아는 파일」로
+        치기 때문에 신규 목록에도 안 올라온다. 되살리지 않으면 **영원히 묻힌다.**
+
+        되살아난 문서는 「처리 필요」 상태다 — 내릴 때 파싱 산출물을 지웠으므로
+        기준 문서로 쓰려면 다시 처리해야 한다.
+        """
+
+        if not live_file_ids:
+            return []
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    UPDATE doc SET deleted = false
+                    WHERE team_id = %s AND source_type = %s
+                      AND deleted = true AND src_file_id = ANY(%s)
+                    RETURNING doc_id
+                    """,
+                    (team_id, DocumentRepository.DRIVE, sorted(live_file_ids)),
+                )
+                return [row["doc_id"] for row in cursor.fetchall()]
+
+    @staticmethod
     def add_drive_documents(
         *,
         account_id: str,
@@ -770,7 +907,7 @@ class DocumentRepository:
     ) -> list[dict[str, Any]]:
         """고른 파일만 `doc`에 **더한다.**
 
-        `save_drive_documents()`와 다른 점이 하나 있고 그게 이 메서드가 따로
+        폴더 전체를 훑지 않고 고른 것만 더한다는 점이 이 메서드가 따로
         있는 이유다 — **아무것도 지우지 않는다.** 저쪽은 폴더 전체를 동기화하며
         목록에 없는 문서를 `deleted = true`로 내리는데, "새 파일 3개를 추가로
         등록한다"에 그 동작을 쓰면 나머지 문서가 통째로 내려간다.
@@ -881,104 +1018,6 @@ class DocumentRepository:
                     """,
                     (storage_key, content_hash, revision, doc_id),
                 )
-
-    @staticmethod
-    def save_drive_documents(
-        *,
-        account_id: str,
-        folder_roles: dict[str, str],
-        documents: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """폴더 역할과 문서 목록을 한 트랜잭션으로 기록한다.
-
-        `doc` 행은 지우고 다시 만들지 않고 `src_file_id`로 갱신한다. 파싱이
-        채워 둔 `content_hash`·`cur_revision`을 역할만 바꿨다고 날릴 수 없다.
-        목록에서 빠진 문서는 `deleted`로 표시한다(스키마가 이를 위해 둔 컬럼이다).
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-
-                for external_folder_id, role in folder_roles.items():
-                    cursor.execute(
-                        """
-                        UPDATE team_folder
-                           SET default_doc_role = %s
-                         WHERE team_id = %s AND external_folder_id = %s
-                        """,
-                        (role, team_id, external_folder_id),
-                    )
-
-                seen = []
-                for document in documents:
-                    src_file_id = document["src_file_id"]
-                    seen.append(src_file_id)
-                    cursor.execute(
-                        """
-                        UPDATE doc
-                           SET file_name = %s,
-                               mime_type = %s,
-                               doc_role = %s,
-                               src_modified_at = %s,
-                               deleted = false
-                         WHERE team_id = %s AND src_file_id = %s
-                        """,
-                        (
-                            document["file_name"],
-                            document["mime_type"],
-                            document["doc_role"],
-                            document["src_modified_at"],
-                            team_id,
-                            src_file_id,
-                        ),
-                    )
-                    if cursor.rowcount:
-                        continue
-
-                    doc_id = next_short_code(cursor, table="doc", column="doc_id", prefix="DC")
-                    cursor.execute(
-                        """
-                        INSERT INTO doc
-                            (doc_id, team_id, src_file_id, source_type, file_name,
-                             mime_type, doc_role, src_modified_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (
-                            doc_id,
-                            team_id,
-                            src_file_id,
-                            DocumentRepository.DRIVE,
-                            document["file_name"],
-                            document["mime_type"],
-                            document["doc_role"],
-                            document["src_modified_at"],
-                        ),
-                    )
-
-                # 선택이 해제된 폴더의 문서는 더 이상 읽지 않는다.
-                cursor.execute(
-                    """
-                    UPDATE doc
-                       SET deleted = true
-                     WHERE team_id = %s
-                       AND source_type = %s
-                       AND NOT (src_file_id = ANY(%s))
-                    """,
-                    (team_id, DocumentRepository.DRIVE, seen),
-                )
-
-                cursor.execute(
-                    """
-                    SELECT doc_id, team_id, proj_id, src_file_id, source_type, file_name,
-                           mime_type, doc_role, src_modified_at, deleted
-                    FROM doc
-                    WHERE team_id = %s AND deleted = false
-                    ORDER BY doc_id
-                    """,
-                    (team_id,),
-                )
-                return list(cursor.fetchall())
 
 
 class ExistTaskRepository:
