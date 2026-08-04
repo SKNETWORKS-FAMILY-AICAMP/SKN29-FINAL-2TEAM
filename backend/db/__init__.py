@@ -19,6 +19,7 @@ from .repositories import (
     OpsTeamRepository,
     ProjectRepository,
     ProjectSourceRepository,
+    TeamFolderRepository,
     TeamRepository,
 )
 
@@ -38,6 +39,7 @@ __all__ = [
     "OpsTeamRepository",
     "ProjectRepository",
     "ProjectSourceRepository",
+    "TeamFolderRepository",
     "TeamRepository",
     "database_connection",
     "database_status",

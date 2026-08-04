@@ -4,12 +4,7 @@ import { Button, Checkbox, Icon, StepIndicator } from '../../components';
 import { ApiError } from '../../api/client';
 import { listJiraProjects } from '../../api/connectors';
 import type { JiraProject } from '../../api/connectors';
-import {
-  ensureOnboardingProject,
-  findOnboardingProject,
-  listProjectSources,
-  replaceProjectSources,
-} from '../../api/projects';
+import { listRegisteredJiraProjects, registerJiraProjects } from '../../api/projects';
 import { markConnectorConnected } from '../../utils/connectorStatus';
 import { useSession } from '../../utils/session';
 import styles from './JiraProjectSelectPage.module.css';
@@ -73,16 +68,10 @@ export default function JiraProjectSelectPage() {
         return;
       }
 
-      // 저장된 선택은 프로젝트 키로 남아 있어 목록과 바로 맞춰볼 수 있다.
+      // 이미 등록된 Jira 프로젝트를 체크 상태로 되살린다.
       let savedKeys = new Set<string>();
       try {
-        const project = await findOnboardingProject(token);
-        if (project) {
-          const sources = await listProjectSources(token, project.proj_id);
-          savedKeys = new Set(
-            sources.filter((s) => s.source_type === 'JIRA_PROJECT').map((s) => s.external_source_id),
-          );
-        }
+        savedKeys = new Set((await listRegisteredJiraProjects(token)).map((row) => row.project_key));
       } catch {
         // 저장된 선택을 못 읽어도 목록은 보여준다. 다시 고르면 된다.
       }
@@ -111,17 +100,15 @@ export default function JiraProjectSelectPage() {
     const checked = projects.filter((project) => project.checked);
     setSaving(true);
     try {
-      const project = await ensureOnboardingProject(token, checked[0]?.name ?? 'Jira 프로젝트');
-      await replaceProjectSources(
+      // **고르는 것이 곧 등록이다.** Jira 프로젝트 하나에는 프로젝트 하나의 업무가
+      // 들어 있으므로, 고른 개수만큼 프로젝트가 생긴다.
+      //
+      // 이름을 지금 같이 넘긴다. 나중에 화면이 'KAN' 대신 실제 이름을 쓰려고 Jira에
+      // 다시 물어보면, 토큰이 만료됐을 때 저장된 데이터는 멀쩡한데 이름을 못 읽어
+      // 화면이 깨진다.
+      await registerJiraProjects(
         token,
-        project.proj_id,
-        'JIRA_PROJECT',
-        checked.map((item) => item.key),
-        null,
-        // 이름을 지금 같이 넘긴다. 나중에 화면이 'KAN' 대신 실제 이름을 쓰려고
-        // Jira에 다시 물어보면, 토큰이 만료됐을 때 저장된 데이터는 멀쩡한데
-        // 이름을 못 읽어 화면이 깨진다.
-        Object.fromEntries(checked.map((item) => [item.key, item.name])),
+        checked.map((item) => ({ project_key: item.key, name: item.name })),
       );
       markConnectorConnected('jira');
       navigate('/onboarding/connectors');

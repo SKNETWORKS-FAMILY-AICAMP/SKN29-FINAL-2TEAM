@@ -37,14 +37,17 @@ def storage_root() -> Path:
     return Path(os.environ.get("DOCUMENT_STORAGE_ROOT", _DEFAULT_ROOT))
 
 
-def build_key(*, proj_id: str, doc_id: str, mime_type: str | None) -> str:
+def build_key(*, team_id: str, doc_id: str, mime_type: str | None) -> str:
     """`doc.storage_key`에 넣을 값.
 
-    프로젝트로 한 번 나눠 두면 한 프로젝트를 통째로 지울 때 디렉터리 하나만
-    지우면 된다. 파일명은 `doc_id`라 중복도 덮어쓰기 사고도 없다.
+    팀으로 한 번 나눠 두면 한 팀을 통째로 지울 때 디렉터리 하나만 지우면 된다.
+    파일명은 `doc_id`라 중복도 덮어쓰기 사고도 없다.
+
+    프로젝트가 아니라 팀으로 나눈다(2026-08-04) — 문서는 등록 시점에 어느
+    프로젝트 것인지 모르고, 나중에 지정된다고 파일을 옮길 수는 없다.
     """
 
-    return f"{proj_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
+    return f"{team_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
 
 
 def _resolved(key: str) -> Path:

@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import psycopg
 from rest_framework import status
@@ -23,8 +24,10 @@ from backend.db import (
     ExistTaskRepository,
     ProjectRepository,
     ProjectSourceRepository,
+    TeamFolderRepository,
     TeamRepository,
     database_status,
+    log_audit,
 )
 from services.workload import calculator
 from backend.db.errors import (
@@ -36,13 +39,17 @@ from backend.db.errors import (
 
 from .serializers import (
     AssignmentRunCreateSerializer,
+    DocumentRegisterSerializer,
     DocumentRoleSaveSerializer,
+    JiraProjectRegisterSerializer,
     ProjectCreateSerializer,
-    ProjectSourceReplaceSerializer,
+    TeamFolderReplaceSerializer,
     assignment_run_response,
+    document_history_response,
     document_response,
     project_response,
     project_source_response,
+    team_folder_response,
 )
 
 
@@ -82,10 +89,24 @@ class ProjectListCreateAPIView(AuthenticatedAPIView):
 
     def get(self, request):
         try:
-            rows = ProjectRepository.list_for_owner(request.user.account_id)
+            rows = ProjectRepository.list_for_team(request.user.account_id)
+            # 프로젝트마다 부르면 N+1이라 한 번에 집계해 붙인다.
+            proj_ids = [row["proj_id"] for row in rows]
+            progress = ExistTaskRepository.progress_by_project(proj_ids)
+            last_sync = ProjectSourceRepository.last_sync_by_project(proj_ids)
         except psycopg.Error as exc:
             return _repository_error_response(exc)
-        return Response([project_response(row) for row in rows])
+        return Response(
+            [
+                project_response(
+                    row,
+                    progress.get(row["proj_id"]),
+                    last_sync=last_sync.get(row["proj_id"]),
+                    has_jira_source=row["proj_id"] in last_sync,
+                )
+                for row in rows
+            ]
+        )
 
     def post(self, request):
         serializer = ProjectCreateSerializer(data=request.data)
@@ -111,47 +132,93 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
 
 
 class ProjectSourceAPIView(AuthenticatedAPIView):
-    """이 프로젝트가 읽을 Drive 폴더·Jira 프로젝트(`proj_source`)."""
+    """이 프로젝트가 대응하는 Jira 프로젝트. 1:1이라 0개 아니면 1개다.
+
+    읽기 전용이다 — 쓰기는 `PUT /projects/jira/`가 한다. 그 요청은 프로젝트를
+    **만들기도** 하므로 특정 프로젝트 하위에 둘 수 없다.
+    """
 
     def get(self, request, project_id):
         try:
-            rows = ProjectSourceRepository.list_for_project(
+            row = ProjectSourceRepository.get_for_project(
                 proj_id=project_id,
                 account_id=request.user.account_id,
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response([project_source_response(row) for row in rows])
+        return Response([project_source_response(row)] if row else [])
 
-    def put(self, request, project_id):
-        serializer = ProjectSourceReplaceSerializer(data=request.data)
+
+class TeamFolderAPIView(AuthenticatedAPIView):
+    """팀이 읽을 Drive 폴더(`team_folder`).
+
+    프로젝트 하위가 아닌 이유는 폴더가 프로젝트에 속하지 않기 때문이다 —
+    폴더는 파일이 있는 경로일 뿐이고, 그 안의 파일이 어느 프로젝트 것인지는
+    열어 봐야 안다.
+    """
+
+    def get(self, request):
+        try:
+            rows = TeamFolderRepository.list_for_team(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([team_folder_response(row) for row in rows])
+
+    def put(self, request):
+        serializer = TeamFolderReplaceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
-            rows = ProjectSourceRepository.replace(
-                proj_id=project_id,
+            rows = TeamFolderRepository.replace(
                 account_id=request.user.account_id,
                 **serializer.validated_data,
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+        return Response([team_folder_response(row) for row in rows])
+
+
+class ProjectJiraRegisterAPIView(AuthenticatedAPIView):
+    """고른 Jira 프로젝트를 우리 프로젝트로 등록한다.
+
+    Jira 프로젝트 하나가 프로젝트 하나이므로(1:1), 고르는 행위가 곧 등록이다.
+    프로젝트 하위 경로가 아닌 이유는 **이 요청이 프로젝트를 만들기 때문**이다.
+    """
+
+    def get(self, request):
+        try:
+            rows = ExistTaskRepository.list_jira_sources_for_team(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([{"proj_id": row["proj_id"],
+                          "project_key": row["external_source_id"],
+                          "name": row["display_name"]} for row in rows])
+
+    def put(self, request):
+        serializer = JiraProjectRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            rows = ProjectSourceRepository.register_from_jira(
+                account_id=request.user.account_id,
+                selections=serializer.validated_data["projects"],
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
         return Response([project_source_response(row) for row in rows])
 
 
-class ProjectDocumentAPIView(AuthenticatedAPIView):
+class TeamDocumentAPIView(AuthenticatedAPIView):
     """역할 지정 화면의 저장. 폴더 역할과 그것을 물려받은 `doc` 행을 함께 쓴다."""
 
-    def get(self, request, project_id):
+    def get(self, request):
         try:
-            rows = DocumentRepository.list_for_project(
-                proj_id=project_id,
-                account_id=request.user.account_id,
-            )
+            rows = DocumentRepository.list_for_team(request.user.account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response([document_response(row) for row in rows])
 
-    def put(self, request, project_id):
+    def put(self, request):
         serializer = DocumentRoleSaveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         folder_roles = serializer.validated_data["folder_roles"]
@@ -159,22 +226,20 @@ class ProjectDocumentAPIView(AuthenticatedAPIView):
         account_id = request.user.account_id
 
         try:
-            sources = ProjectSourceRepository.list_for_project(proj_id=project_id, account_id=account_id)
+            folders = TeamFolderRepository.list_for_team(account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
         # 파일 목록은 Drive에서 직접 읽는다. 파싱할 수 없는 형식은 등록하지 않는다.
         documents = []
-        for source in sources:
-            if source["source_type"] != ProjectSourceRepository.DRIVE_FOLDER:
-                continue
-            folder_id = source["external_source_id"]
+        for folder in folders:
+            folder_id = folder["external_folder_id"]
             try:
                 # 폴더를 저장할 때 정한 탐색 깊이를 그대로 쓴다.
                 files = list_drive_files(
                     account_id=account_id,
                     parent_id=folder_id,
-                    max_depth=source["max_depth"],
+                    max_depth=folder["max_depth"],
                 )
             except OAuthError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
@@ -200,7 +265,6 @@ class ProjectDocumentAPIView(AuthenticatedAPIView):
 
         try:
             rows = DocumentRepository.save_drive_documents(
-                proj_id=project_id,
                 account_id=account_id,
                 folder_roles=folder_roles,
                 documents=documents,
@@ -210,7 +274,164 @@ class ProjectDocumentAPIView(AuthenticatedAPIView):
         return Response([document_response(row) for row in rows])
 
 
-class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
+def _scan_drive_candidates(account_id: str) -> list[dict[str, Any]]:
+    """설정된 폴더 안에서 **아직 `doc`에 없는** 파일.
+
+    파일 목록은 항상 Drive에서 직접 읽는다. 화면이 보내온 이름·형식을 믿고 저장하면
+    사용자가 무엇이든 등록시킬 수 있고, 스캔과 등록 사이에 파일이 바뀌었을 때도
+    옛 값이 들어간다.
+
+    미지원 형식도 목록에는 넣는다 — 빠진 이유를 보여주지 않으면 "내 파일이 왜
+    없지"가 된다. 등록 대상에서 거르는 것은 호출자 몫이다.
+    """
+
+    folders = TeamFolderRepository.list_for_team(account_id)
+    known = DocumentRepository.registered_file_ids(account_id)
+
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for folder in folders:
+        folder_id = folder["external_folder_id"]
+        folder_name = folder.get("display_name") or folder_id
+        # 폴더를 저장할 때 정한 탐색 깊이를 그대로 쓴다.
+        files = list_drive_files(
+            account_id=account_id,
+            parent_id=folder_id,
+            max_depth=folder["max_depth"],
+        )
+        for item in files:
+            file_id = item["file_id"]
+            if file_id in known or file_id in seen:
+                continue
+            seen.add(file_id)
+            candidates.append(
+                {
+                    "file_id": file_id,
+                    "file_name": item["name"],
+                    "mime_type": item["mime_type"],
+                    "modified_at": item["modified_at"],
+                    "supported": item["supported"],
+                    # 하위 폴더에서 왔으면 그 경로를, 아니면 고른 폴더 이름을 쓴다.
+                    "folder_name": item["folder_path"] or folder_name,
+                    "folder_id": folder_id,
+                    # 폴더에 지정된 역할을 물려받는다. 화면에서 행마다 바꿀 수 있다.
+                    "suggested_role": folder.get("default_doc_role"),
+                }
+            )
+    return candidates
+
+
+class TeamNewDocumentAPIView(AuthenticatedAPIView):
+    """설정된 Drive 폴더에 새로 생긴 파일.
+
+    "새 파일"은 **Drive에는 있는데 이 팀의 `doc`에 없는 것**이다. 폴더에서
+    빠져 `deleted = true`가 된 문서도 이미 아는 파일로 친다 — 안 그러면 한 번 내린
+    문서가 스캔할 때마다 다시 올라온다.
+    """
+
+    def get(self, request):
+        try:
+            candidates = _scan_drive_candidates(request.user.account_id)
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(candidates)
+
+
+class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
+    """고른 파일만 `doc`에 추가 등록한다.
+
+    온보딩의 `PUT /documents/`는 폴더 전체를 동기화하며 목록에 없는 문서를 내리는데,
+    "새 파일 몇 개를 더한다"에 그것을 쓰면 나머지가 통째로 사라진다. 그래서 여기서는
+    **더하기만** 한다.
+
+    원문 다운로드는 하지 않는다 — 온보딩 역할 지정과 같은 범위(`doc` 행 생성까지)다.
+    """
+
+    def post(self, request):
+        serializer = DocumentRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested = serializer.validated_data["files"]
+        account_id = request.user.account_id
+
+        try:
+            candidates = _scan_drive_candidates(account_id)
+        except OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        by_file_id = {item["file_id"]: item for item in candidates}
+
+        documents = []
+        skipped: list[dict[str, str]] = []
+        for entry in requested:
+            candidate = by_file_id.get(entry["file_id"])
+            if candidate is None:
+                # 스캔 이후 이미 등록됐거나 폴더에서 사라졌다.
+                skipped.append({"file_id": entry["file_id"], "reason": "NOT_FOUND"})
+                continue
+            if not candidate["supported"]:
+                skipped.append({"file_id": entry["file_id"], "reason": "UNSUPPORTED"})
+                continue
+            doc_role = entry.get("doc_role") or candidate["suggested_role"]
+            if doc_role is None:
+                skipped.append({"file_id": entry["file_id"], "reason": "NO_ROLE"})
+                continue
+            documents.append(
+                {
+                    "src_file_id": candidate["file_id"],
+                    "file_name": candidate["file_name"],
+                    "mime_type": candidate["mime_type"],
+                    "doc_role": doc_role,
+                    "src_modified_at": candidate["modified_at"],
+                }
+            )
+
+        try:
+            created = DocumentRepository.add_drive_documents(
+                account_id=account_id,
+                documents=documents,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        # 무엇이 언제 들어왔는지 남긴다. 이게 없어서 예전에 `doc` 건수가 바뀐
+        # 경위를 추적하지 못했다. **실제로 들어온 것이 있을 때만** 남긴다 —
+        # 미지원 파일을 골랐다가 전부 걸러진 것은 바뀐 게 없어서 이력이 아니다.
+        if created:
+            log_audit(
+                actor_account_id=account_id,
+                action=DocumentRepository.ACTION_REGISTER,
+                target_type=DocumentRepository.AUDIT_TARGET,
+                payload={
+                    "registered": len(created),
+                    "skipped": len(skipped),
+                    "file_names": [row["file_name"] for row in created],
+                },
+            )
+
+        return Response(
+            {
+                "registered": [document_response(row) for row in created],
+                "skipped": skipped,
+            }
+        )
+
+
+class TeamDocumentHistoryAPIView(AuthenticatedAPIView):
+    """이 팀의 문서 등록·다운로드 이력."""
+
+    def get(self, request):
+        try:
+            rows = DocumentRepository.list_history(account_id=request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([document_history_response(row) for row in rows])
+
+
+class TeamDocumentDownloadAPIView(AuthenticatedAPIView):
     """선택된 문서의 원문을 Drive에서 받아 문서 저장소에 넣는다.
 
     파싱은 이 저장소를 입력으로 삼는다. 파싱이 Drive를 직접 읽지 않는 이유는,
@@ -222,17 +443,21 @@ class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
     안 받은 상태가 된다.
     """
 
-    def post(self, request, project_id):
+    def post(self, request):
         account_id = request.user.account_id
         force = request.data.get("force") is True
 
         try:
-            targets = DocumentRepository.list_pending_download(
-                proj_id=project_id,
-                account_id=account_id,
-            )
+            team_id = AccountRepository.team_id(account_id)
+            targets = DocumentRepository.list_pending_download(account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+
+        if team_id is None:
+            return Response(
+                {"detail": "팀에 속하지 않은 계정입니다."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         downloaded, skipped, failed = [], [], []
         for target in targets:
@@ -251,7 +476,7 @@ class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
                 continue
 
             key = build_key(
-                proj_id=project_id,
+                team_id=team_id,
                 doc_id=target["doc_id"],
                 mime_type=fetched["mime_type"],
             )
@@ -273,6 +498,18 @@ class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
 
             downloaded.append({"file_name": target["file_name"], "bytes": len(fetched["content"])})
 
+        if downloaded or failed:
+            log_audit(
+                actor_account_id=account_id,
+                action=DocumentRepository.ACTION_DOWNLOAD,
+                target_type=DocumentRepository.AUDIT_TARGET,
+                payload={
+                    "downloaded": len(downloaded),
+                    "failed": len(failed),
+                    "file_names": [item["file_name"] for item in downloaded],
+                },
+            )
+
         return Response(
             {
                 "downloaded": downloaded,
@@ -282,17 +519,70 @@ class ProjectDocumentDownloadAPIView(AuthenticatedAPIView):
         )
 
 
-class ProjectTaskSyncAPIView(AuthenticatedAPIView):
-    """이 프로젝트가 읽기로 한 Jira 프로젝트들의 미완료 이슈를 `exist_task`로 가져온다.
+def _sync_jira_sources(*, account_id: str, sources: list[dict[str, Any]]) -> dict[str, Any]:
+    """넘겨받은 Jira 소스를 다시 읽어 `exist_task`를 교체한다.
 
-    부하 계산의 분자가 되는 데이터다. 소스 하나가 실패해도 나머지는 반영한다 —
-    Jira 프로젝트 두 개 중 하나가 권한 문제로 막혔다고 나머지 하나까지 못 읽으면,
-    보여줄 수 있었던 부하까지 사라진다.
+    소스 하나가 실패해도 나머지는 반영한다 — Jira 프로젝트 두 개 중 하나가 권한
+    문제로 막혔다고 나머지 하나까지 못 읽으면, 보여줄 수 있었던 부하까지 사라진다.
 
     담당자 매핑에 실패한 이슈도 **버리지 않는다.** `assignee_person_id`를 NULL로
     넣고 건수를 응답에 담는다. 버리면 부하 총량이 조용히 줄어들어, 틀린 숫자가
     맞는 숫자처럼 보인다.
     """
+
+    synced, failed = [], []
+    unmapped_assignees = 0
+    missing_estimate = 0
+
+    for source in sources:
+        project_key = source["external_source_id"]
+        try:
+            issues = search_jira_issues(account_id=account_id, project_key=project_key)
+        except OAuthError as exc:
+            failed.append({"project_key": project_key, "detail": str(exc)})
+            continue
+
+        # 이슈마다 조회하지 않고 이메일을 모아 한 번에 매핑한다.
+        person_by_email = lookup_person_ids_by_external_email(
+            sys_type="JIRA",
+            emails=[issue["assignee_email"] for issue in issues if issue["assignee_email"]],
+        )
+
+        rows = []
+        for issue in issues:
+            email = issue["assignee_email"]
+            person_id = person_by_email.get(email.lower()) if email else None
+            if person_id is None:
+                unmapped_assignees += 1
+            # 공수가 없으면 정량 합계에 못 넣는다. 0으로 간주하지 않고 세어서
+            # 노출한다 — Readiness의 PARTIAL_RESULT 입력이 된다.
+            if issue["remaining"] is None:
+                missing_estimate += 1
+            rows.append({**issue, "assignee_person_id": person_id})
+
+        fetched = ExistTaskRepository.replace_for_source(
+            proj_source_id=source["proj_source_id"],
+            rows=rows,
+        )
+        synced.append(
+            {
+                "proj_source_id": source["proj_source_id"],
+                "project_key": project_key,
+                "fetched": fetched,
+            }
+        )
+
+    return {
+        "sources": synced,
+        "failed": failed,
+        "unmapped_assignees": unmapped_assignees,
+        "missing_estimate": missing_estimate,
+        "synced_at": datetime.now(UTC).isoformat(),
+    }
+
+
+class ProjectTaskSyncAPIView(AuthenticatedAPIView):
+    """이 프로젝트의 Jira 이슈를 `exist_task`로 다시 읽는다."""
 
     def post(self, request, project_id):
         account_id = request.user.account_id
@@ -302,64 +592,22 @@ class ProjectTaskSyncAPIView(AuthenticatedAPIView):
                 proj_id=project_id,
                 account_id=account_id,
             )
+            return Response(_sync_jira_sources(account_id=account_id, sources=sources))
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
-        synced, failed = [], []
-        unmapped_assignees = 0
-        missing_estimate = 0
 
-        for source in sources:
-            project_key = source["external_source_id"]
-            try:
-                issues = search_jira_issues(account_id=account_id, project_key=project_key)
-            except OAuthError as exc:
-                failed.append({"project_key": project_key, "detail": str(exc)})
-                continue
+class TeamTaskSyncAPIView(AuthenticatedAPIView):
+    """팀의 모든 프로젝트를 한 번에 다시 읽는다. 목록 화면의 「갱신」이 쓴다."""
 
-            # 이슈마다 조회하지 않고 이메일을 모아 한 번에 매핑한다.
-            person_by_email = lookup_person_ids_by_external_email(
-                sys_type="JIRA",
-                emails=[issue["assignee_email"] for issue in issues if issue["assignee_email"]],
-            )
+    def post(self, request):
+        account_id = request.user.account_id
 
-            rows = []
-            for issue in issues:
-                email = issue["assignee_email"]
-                person_id = person_by_email.get(email.lower()) if email else None
-                if person_id is None:
-                    unmapped_assignees += 1
-                # 공수가 없으면 정량 합계에 못 넣는다. 0으로 간주하지 않고 세어서
-                # 노출한다 — Readiness의 PARTIAL_RESULT 입력이 된다.
-                if issue["remaining"] is None:
-                    missing_estimate += 1
-                rows.append({**issue, "assignee_person_id": person_id})
-
-            try:
-                fetched = ExistTaskRepository.replace_for_source(
-                    proj_source_id=source["proj_source_id"],
-                    rows=rows,
-                )
-            except (RepositoryError, psycopg.Error) as exc:
-                return _repository_error_response(exc)
-
-            synced.append(
-                {
-                    "proj_source_id": source["proj_source_id"],
-                    "project_key": project_key,
-                    "fetched": fetched,
-                }
-            )
-
-        return Response(
-            {
-                "sources": synced,
-                "failed": failed,
-                "unmapped_assignees": unmapped_assignees,
-                "missing_estimate": missing_estimate,
-                "synced_at": datetime.now(UTC).isoformat(),
-            }
-        )
+        try:
+            sources = ExistTaskRepository.list_jira_sources_for_team(account_id)
+            return Response(_sync_jira_sources(account_id=account_id, sources=sources))
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
 
 
 # Sprint 기간을 아직 수집하지 않아 기본 조회 창을 4주로 둔다. 과학적 상수가 아니라
@@ -376,15 +624,20 @@ def _parse_date(raw: str | None, fallback: date) -> date | None:
         return None
 
 
-class ProjectWorkloadAPIView(AuthenticatedAPIView):
+class TeamWorkloadAPIView(AuthenticatedAPIView):
     """기간별 사람 부하. 계산은 `services/workload/calculator.py`가 한다.
+
+    **팀 전체가 범위다**(2026-08-04). 사람의 부하는 그가 맡은 모든 프로젝트의
+    합이다. 프로젝트 하나만 보면 "SKN29만 90%"가 나오는데 실제로는 다른
+    프로젝트까지 합쳐 122.5%다 — 한쪽만 보고 여유가 있다고 판단하면 배정이 틀린다.
+    어느 프로젝트에서 온 부하인지는 `by_project`가 분해해 준다.
 
     **결과를 저장하지 않는다.** `workload_result.run_id`가 `assign_run` →
     `ana_snapshot` 체인을 요구하는데 그쪽(P6 Snapshot)이 아직 없다. 지금 억지로
     저장하면 어느 실행의 값인지 모르는 행이 쌓인다.
     """
 
-    def get(self, request, project_id):
+    def get(self, request):
         account_id = request.user.account_id
 
         today = datetime.now(UTC).date()
@@ -399,10 +652,7 @@ class ProjectWorkloadAPIView(AuthenticatedAPIView):
             )
 
         try:
-            tasks = ExistTaskRepository.list_for_project(
-                proj_id=project_id,
-                account_id=account_id,
-            )
+            tasks = ExistTaskRepository.list_for_team(account_id)
             # 대상자는 요청자의 팀이다. 부하는 남의 팀 사람까지 볼 일이 아니다.
             person_ids = TeamRepository.member_person_ids(AccountRepository.team_id(account_id))
             profiles = list_capacity_profiles(

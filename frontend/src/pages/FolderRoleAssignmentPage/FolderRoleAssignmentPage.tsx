@@ -4,12 +4,7 @@ import { Button, Icon, Select, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { getDriveFolders, listDriveFiles } from '../../api/connectors';
 import type { DriveFile } from '../../api/connectors';
-import {
-  findOnboardingProject,
-  listProjectDocuments,
-  listProjectSources,
-  saveDocumentRoles,
-} from '../../api/projects';
+import { listTeamDocuments, listTeamFolders, saveDocumentRoles } from '../../api/projects';
 import type { DocRole } from '../../api/projects';
 import { markConnectorConnected } from '../../utils/connectorStatus';
 import { useSession } from '../../utils/session';
@@ -46,48 +41,44 @@ export default function FolderRoleAssignmentPage() {
   const [folderRoles, setFolderRoles] = useState<Record<string, DocRole>>({});
   const [fileRoles, setFileRoles] = useState<Record<string, DocRole | typeof INHERIT>>({});
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [projId, setProjId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const token = session?.token;
 
   // 저장된 폴더를 읽어 이름과 그 안의 파일을 채운다. 이전에 지정한 역할이 있으면
-  // 폴더 역할은 proj_source에서, 파일별 덮어쓰기는 doc에서 되살린다.
+  // 폴더 역할은 team_folder에서, 파일별 덮어쓰기는 doc에서 되살린다.
   useEffect(() => {
     if (!token) return;
 
     let cancelled = false;
     void (async () => {
       try {
-        const project = await findOnboardingProject(token);
-        if (!project) {
+        const savedFolders = await listTeamFolders(token);
+        if (savedFolders.length === 0) {
           if (!cancelled) setLoading(false);
           return;
         }
 
-        const sources = await listProjectSources(token, project.proj_id);
-        const driveSources = sources.filter((source) => source.source_type === 'DRIVE_FOLDER');
         const named = await getDriveFolders(
           token,
-          driveSources.map((source) => source.external_source_id),
+          savedFolders.map((folder) => folder.external_folder_id),
         );
         // 폴더를 저장할 때 정한 탐색 깊이로 읽는다. 저장될 문서와 같아야 한다.
         const depthByFolder = new Map(
-          driveSources.map((source) => [source.external_source_id, source.max_depth]),
+          savedFolders.map((folder) => [folder.external_folder_id, folder.max_depth]),
         );
         const fileLists = await Promise.all(
           named.map((folder) =>
             listDriveFiles(token, folder.folder_id, depthByFolder.get(folder.folder_id) ?? 1),
           ),
         );
-        const documents = await listProjectDocuments(token, project.proj_id);
+        const documents = await listTeamDocuments(token);
         if (cancelled) return;
 
         const savedFolderRoles: Record<string, DocRole> = {};
-        for (const source of driveSources) {
-          savedFolderRoles[source.external_source_id] =
-            (source.default_doc_role as DocRole | null) ?? DEFAULT_ROLE;
+        for (const folder of savedFolders) {
+          savedFolderRoles[folder.external_folder_id] = folder.default_doc_role ?? DEFAULT_ROLE;
         }
 
         const rows = named.map((folder, index) => ({
@@ -106,7 +97,6 @@ export default function FolderRoleAssignmentPage() {
           }
         }
 
-        setProjId(project.proj_id);
         setFolders(rows);
         setFolderRoles(savedFolderRoles);
         setFileRoles(savedFileRoles);
@@ -126,7 +116,7 @@ export default function FolderRoleAssignmentPage() {
   }, [token, showToast]);
 
   async function handleSaveAndFinish() {
-    if (!token || !projId) return;
+    if (!token || folders.length === 0) return;
 
     // 상속을 고른 파일은 보내지 않는다. 서버가 폴더 역할을 적용한다.
     const overrides: Record<string, DocRole> = {};
@@ -136,7 +126,7 @@ export default function FolderRoleAssignmentPage() {
 
     setSaving(true);
     try {
-      await saveDocumentRoles(token, projId, folderRoles, overrides);
+      await saveDocumentRoles(token, folderRoles, overrides);
       markConnectorConnected('google-drive');
       navigate('/onboarding/connectors');
     } catch (error) {

@@ -1,7 +1,12 @@
 # 업무량 계산 MVP 계약
 
 > 확정 2026-08-03 · 구현 반영 완료
-> 구현: `services/workload/calculator.py` · `GET /api/projects/<id>/workload/` · `/tasks/workload`
+> 구현: `services/workload/calculator.py` · `GET /api/team/workload/` · `/tasks/workload`
+>
+> **범위는 팀 전체다**(2026-08-04). 사람의 부하는 그가 맡은 모든 프로젝트의 합이다.
+> 프로젝트 하나만 보면 「SKN29만 90%」가 나오지만 실제로는 122.5%다 — 한쪽만 보고
+> 여유가 있다고 판단하면 배정이 틀린다. 어느 프로젝트에서 온 부하인지는 응답의
+> `by_project`가 분해해 준다.
 > 이력: [[업무량계산_조사]](조사) → [[업무량계산_조사_검증]](검증) → 이 문서(확정)
 > 실행 기록: [[2026-08-03_부하계산_작업지시서]] · 단계별 To-Do는 [[Jira_부하계산_ToDo]]
 

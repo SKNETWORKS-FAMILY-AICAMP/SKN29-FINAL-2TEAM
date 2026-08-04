@@ -53,7 +53,23 @@ class JiraIssueSearchTests(SimpleTestCase):
 
         url = post.call_args.args[0]
         self.assertTrue(url.endswith("/rest/api/3/search/jql"))
-        self.assertIn("statusCategory != Done", post.call_args.kwargs["json"]["jql"])
+
+    def test_completed_issues_are_collected_too(self):
+        """부하에는 안 쓰지만 진행률이 완료분을 필요로 한다.
+
+        미완료만 모으면 끝난 일이 분자·분모 양쪽에서 빠져 진행률이 실제보다
+        낮게 나온다. 거르는 것은 계산기 몫이다(`status_category == 'DONE'` 건너뜀).
+        """
+
+        from apps.connectors import clients
+
+        with self._credential(), patch(
+            "apps.connectors.clients.requests.post",
+            return_value=self._response({"issues": []}),
+        ) as post:
+            clients.search_jira_issues(account_id="UA001", project_key="KAN")
+
+        self.assertNotIn("statusCategory", post.call_args.kwargs["json"]["jql"])
 
     def test_display_name_differs_by_project_but_category_is_the_same(self):
         """실측 케이스 — KAN은 '해야 할 일', AIP는 '할 일'로 오지만 둘 다 TO_DO다."""

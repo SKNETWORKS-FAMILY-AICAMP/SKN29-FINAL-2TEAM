@@ -154,7 +154,60 @@ ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS proj_source_id VARCHAR(5) NOT NU
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS estimate NUMERIC(6,2);
 ALTER TABLE exist_task ADD COLUMN IF NOT EXISTS status_category VARCHAR(20);
 ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+ALTER TABLE proj_source ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ;
+ALTER TABLE proj ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+ALTER TABLE proj ALTER COLUMN created_at SET DEFAULT now();
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exist_task_source_issue ON exist_task (proj_source_id, jira_issue_id);
+ALTER TABLE proj ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+UPDATE proj SET team_id = (SELECT ua.team_id FROM user_account ua WHERE ua.account_id = proj.owner_account_id) WHERE team_id IS NULL;
+CREATE TABLE IF NOT EXISTS team_folder (
+    team_folder_id      VARCHAR(5) PRIMARY KEY,
+    team_id             VARCHAR(5)  NOT NULL,
+    conn_id             VARCHAR(5)  NOT NULL,
+    external_folder_id  VARCHAR(255) NOT NULL,
+    display_name        VARCHAR(255),
+    default_doc_role    VARCHAR(30),
+    max_depth           INT,
+    UNIQUE (team_id, external_folder_id)
+);
+INSERT INTO team_folder (team_folder_id, team_id, conn_id, external_folder_id, display_name, default_doc_role, max_depth)
+SELECT 'TF' || lpad(((SELECT COALESCE(max(substring(team_folder_id FROM 3)::int), 0) FROM team_folder)
+                     + row_number() OVER (ORDER BY ps.proj_source_id))::text, 3, '0'),
+       p.team_id, ps.conn_id, ps.external_source_id, ps.display_name, ps.default_doc_role, ps.max_depth
+  FROM proj_source ps JOIN proj p ON p.proj_id = ps.proj_id
+ WHERE ps.source_type = 'DRIVE_FOLDER' AND p.team_id IS NOT NULL
+ON CONFLICT (team_id, external_folder_id) DO NOTHING;
+DELETE FROM proj_source WHERE source_type = 'DRIVE_FOLDER';
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
+UPDATE doc SET team_id = (SELECT p.team_id FROM proj p WHERE p.proj_id = doc.proj_id) WHERE team_id IS NULL;
+ALTER TABLE doc ALTER COLUMN proj_id DROP NOT NULL;
+UPDATE doc SET proj_id = NULL WHERE proj_id IS NOT NULL;
+ALTER TABLE proj_source DROP COLUMN IF EXISTS default_doc_role;
+ALTER TABLE proj_source DROP COLUMN IF EXISTS max_depth;
+DO \$\$
+DECLARE r RECORD; new_proj_id VARCHAR(5);
+BEGIN
+  FOR r IN SELECT ps.proj_source_id, ps.display_name, ps.external_source_id, p.team_id, p.owner_account_id, p.tz
+             FROM (SELECT proj_source_id, proj_id, display_name, external_source_id,
+                          row_number() OVER (PARTITION BY proj_id ORDER BY proj_source_id) AS rn
+                     FROM proj_source) ps
+             JOIN proj p ON p.proj_id = ps.proj_id
+            WHERE ps.rn > 1
+  LOOP
+    SELECT 'PJ' || lpad((COALESCE(max(substring(proj_id FROM 3)::int), 0) + 1)::text, 3, '0') INTO new_proj_id FROM proj;
+    INSERT INTO proj (proj_id, name, status, tz, owner_account_id, team_id)
+    VALUES (new_proj_id, COALESCE(NULLIF(r.display_name, ''), r.external_source_id), 'ACTIVE', r.tz, r.owner_account_id, r.team_id);
+    UPDATE proj_source SET proj_id = new_proj_id WHERE proj_source_id = r.proj_source_id;
+  END LOOP;
+END \$\$;
+UPDATE proj p SET name = ps.display_name FROM proj_source ps WHERE ps.proj_id = p.proj_id AND NULLIF(ps.display_name, '') IS NOT NULL;
+UPDATE proj SET status = 'ACTIVE' WHERE status = 'DRAFT' AND proj_id IN (SELECT proj_id FROM proj_source);
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ux_proj_source_proj') THEN
+    ALTER TABLE proj_source ADD CONSTRAINT ux_proj_source_proj UNIQUE (proj_id);
+  END IF;
+END \$\$;
 CREATE SCHEMA IF NOT EXISTS mock_hr;
 DO \$\$
 DECLARE t text;
@@ -195,6 +248,7 @@ END \$\$;
 | `doc.cur_revision` → `VARCHAR(100)` | Google Drive의 `headRevisionId`가 **실측 51자**라 기존 `VARCHAR(50)`에 한 글자가 모자랐다. 실제로 내려받아 보기 전에는 안 드러났다(목킹 테스트는 짧은 문자열을 썼다). Drive가 길이를 보장한다는 문서가 없어 여유를 뒀다 |
 | `exist_task.proj_source_id` 추가 + `ux_exist_task_source_issue` UNIQUE (2026-08-03) | 이 이슈를 **어느 소스에서 가져왔는지** 나타내는 컬럼이 하나도 없었다. 재동기화 때 지울 범위를 특정할 수 없어 최초 1회 적재밖에 못 하는 구조였고, "임준 196h = KAN 144h + AIP 52h" 분해도 안 나온다. `proj_id`가 아니라 `proj_source_id`인 이유는 프로젝트 하나가 Jira 프로젝트를 여러 개 읽을 수 있어서(N:M) 재동기화의 실제 단위가 `proj_source`이기 때문이다. UNIQUE는 같은 이슈가 두 줄이 되어 부하가 2배로 잡히는 것을 막는 마지막 방어선이다 — [[Jira_부하계산_ToDo]] 단계 1-3 |
 | `exist_task.estimate` 추가 (2026-08-03) | 최초 추정치. `exist_task_snap.estimate`가 복사해 갈 원본이 `exist_task`에 없어서 채울 곳이 없었다. Jira `timetracking.originalEstimateSeconds`를 시간으로 환산해 넣는다 |
+| `proj.created_at` 추가 (2026-08-04) | 프로젝트 목록의 **"최신순" 정렬과 날짜 열**이 근거로 삼을 값이 없었다. `proj`에는 이름·상태·소유자뿐이고 `audit_log`에도 `PROJECT_CREATE`가 없어 되짚을 수도 없었다. 폴더를 고르는 행위가 프로젝트를 만드는 것이라 그 시점이 곧 생성 시각이다. **기본값을 `ADD COLUMN`에 함께 주지 않고 나중에 거는 것이 중요하다** — 같이 주면 Postgres가 기존 행까지 그 값으로 채워, 예전 프로젝트가 "오늘 만들어진 것"이 된다. 기존 행은 NULL로 두고 화면이 `-`로 보여준다 |
 | `proj_source.display_name` 추가 (2026-08-03) | 화면이 Jira 프로젝트를 `KAN`·`AIP` 같은 **키로만** 보여줄 수 있었다. 실제 이름(`SKN29_Final_2Team`·`AI Platform`)이 저장돼 있지 않아서다. 매번 원본에 물어보면 대시보드가 커넥터 생존에 묶인다 — 토큰이 만료되면 저장된 부하 데이터는 멀쩡한데 이름을 못 읽어 화면이 깨진다. 고르는 시점에는 이미 이름을 알고 있으므로 그때 같이 저장한다. 기존 행은 NULL로 남고 화면이 키로 대체하며, 소스를 다시 저장하면 채워진다 |
 | `exist_task.status_category` 추가 (2026-08-03) | Jira 상태 **표시 문자열은 조직·프로젝트마다 다르다.** 실측에서 같은 카테고리(`new`)인데 KAN은 `'해야 할 일'`, AIP는 `'할 일'`로 왔다. `statusCategory.name`마저 한국어로 지역화되므로 안전한 값은 `statusCategory.key`(`new`/`indeterminate`/`done`) 하나뿐이다. 이걸 `TO_DO`/`IN_PROGRESS`/`DONE`으로 바꿔 저장하고 **부하 계산은 이 컬럼만 본다.** `status`에 한글이 들어가는 건 사람이 보기 위한 것이고, 조건문에 쓰면 다른 사이트에서 조용히 매치 0건이 된다 |
 | HR 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 `mock_hr` 스키마로 이동 | 이 8개는 **고객사 HR 시스템의 데이터**지 우리가 소유한 데이터가 아니다. 경계는 코드(`backend/services/hr/`)로 세웠지만 DB에서는 `public`에 우리 테이블과 섞여 있어, 다음 사람이 무심코 조인하면 그만이었다. 스키마를 나누면 `mock_hr.`를 타이핑하지 않고는 건드릴 수 없다 — [[HR_어댑터와_테넌트_경계]] |

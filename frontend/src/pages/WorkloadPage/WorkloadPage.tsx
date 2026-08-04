@@ -2,9 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, TopNav } from '../../components';
 import { ApiError } from '../../api/client';
 import {
-  findOnboardingProject,
-  getProjectWorkload,
-  syncProjectTasks,
+  getTeamWorkload,
+  syncTeamTasks,
 } from '../../api/projects';
 import type { PersonWorkload, WorkloadResult } from '../../api/projects';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -115,13 +114,7 @@ export default function WorkloadPage() {
     setLoading(true);
     setError('');
     try {
-      const project = await findOnboardingProject(token);
-      if (!project) {
-        setError('연결된 프로젝트가 없습니다. 온보딩에서 소스를 먼저 선택해 주세요.');
-        setResult(null);
-        return;
-      }
-      setResult(await getProjectWorkload(token, project.proj_id, from, to));
+      setResult(await getTeamWorkload(token, from, to));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '부하율을 불러오지 못했습니다.');
       setResult(null);
@@ -134,14 +127,13 @@ export default function WorkloadPage() {
     void load();
   }, [load]);
 
-  /** Jira를 다시 읽어 `exist_task`를 교체한 뒤 같은 기간으로 다시 계산한다. */
+  /** 팀의 Jira를 다시 읽어 `exist_task`를 교체한 뒤 같은 기간으로 다시 계산한다. */
   const resync = async () => {
     if (!token) return;
     setSyncing(true);
     setError('');
     try {
-      const project = await findOnboardingProject(token);
-      if (project) await syncProjectTasks(token, project.proj_id);
+      await syncTeamTasks(token);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Jira 동기화에 실패했습니다.');

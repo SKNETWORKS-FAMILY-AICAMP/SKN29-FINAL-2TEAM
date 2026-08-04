@@ -1,5 +1,6 @@
 """현재 프로젝트·배정 실행 SQL 스키마의 입력 검증과 API 표현."""
 
+from datetime import datetime
 from typing import Any
 
 from rest_framework import serializers
@@ -18,16 +19,15 @@ class ProjectCreateSerializer(serializers.Serializer):
     tz = serializers.CharField(max_length=50, default="Asia/Seoul")
 
 
-class ProjectSourceReplaceSerializer(serializers.Serializer):
-    """이 종류의 소스 전체 선택 상태. 빈 목록은 전부 해제한다는 뜻이다."""
+class TeamFolderReplaceSerializer(serializers.Serializer):
+    """팀이 읽을 Drive 폴더의 전체 선택 상태. 빈 목록은 전부 해제한다는 뜻이다."""
 
-    source_type = serializers.ChoiceField(choices=("DRIVE_FOLDER", "JIRA_PROJECT"))
-    external_source_ids = serializers.ListField(
+    external_folder_ids = serializers.ListField(
         child=serializers.CharField(max_length=255),
         allow_empty=True,
     )
-    # {외부 id: 원본이 알려준 이름}. 화면이 'KAN'이 아니라 'SKN29_Final_2Team'을
-    # 보여줄 수 있게 고를 때 함께 저장한다. 안 보내면 이전 값을 지킨다.
+    # {폴더 id: Drive가 알려준 이름}. 화면이 id 대신 '01_기획'을 보여줄 수 있게
+    # 고를 때 함께 저장한다. 안 보내면 이전 값을 지킨다.
     display_names = serializers.DictField(
         child=serializers.CharField(max_length=255, allow_blank=True),
         required=False,
@@ -44,7 +44,38 @@ class ProjectSourceReplaceSerializer(serializers.Serializer):
     )
 
 
+class JiraProjectSelectionSerializer(serializers.Serializer):
+    project_key = serializers.CharField(max_length=255)
+    # Jira가 알려준 이름. 이것이 곧 우리 프로젝트 이름이 된다.
+    name = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+
+
+class JiraProjectRegisterSerializer(serializers.Serializer):
+    """고른 Jira 프로젝트 전체. 하나가 프로젝트 하나로 등록된다(1:1).
+
+    빈 목록은 "이 팀이 읽을 Jira 프로젝트가 없다"는 뜻이라 허용한다 — 잘못
+    고른 것을 되돌릴 방법이 있어야 한다.
+    """
+
+    projects = serializers.ListField(
+        child=JiraProjectSelectionSerializer(),
+        allow_empty=True,
+    )
+
+
 DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
+
+
+class DocumentRegisterEntrySerializer(serializers.Serializer):
+    file_id = serializers.CharField(max_length=255)
+    # 안 보내면 폴더에 지정된 역할을 물려받는다.
+    doc_role = serializers.ChoiceField(choices=DOC_ROLES, required=False, allow_null=True)
+
+
+class DocumentRegisterSerializer(serializers.Serializer):
+    """신규 파일 목록에서 고른 것만 등록한다. 이름·형식은 서버가 Drive에서 다시 읽는다."""
+
+    files = serializers.ListField(child=DocumentRegisterEntrySerializer(), allow_empty=False)
 
 
 class DocumentRoleSaveSerializer(serializers.Serializer):
@@ -94,10 +125,31 @@ class AssignmentRunCreateSerializer(serializers.Serializer):
     )
 
 
-def project_response(row: dict[str, Any]) -> dict[str, Any]:
-    """현재 SQL 필드와 기존 프론트 호환 필드를 함께 반환한다."""
+def project_response(
+    row: dict[str, Any],
+    progress: dict[str, Any] | None = None,
+    *,
+    last_sync: datetime | None = None,
+    has_jira_source: bool = False,
+) -> dict[str, Any]:
+    """현재 SQL 필드와 기존 프론트 호환 필드를 함께 반환한다.
+
+    `progress`는 목록 화면이 쓰는 Jira 집계다. 프로젝트 단건 조회에서는 주지 않고
+    `null`로 둔다 — 화면이 "아직 안 읽었다"와 "집계할 업무가 없다"를 구분해야 한다.
+
+    `last_sync_at`이 `null`인 경우가 두 가지라 `has_jira_source`로 갈라 준다.
+    읽을 Jira 소스가 없는 것(갱신 버튼을 줄 이유가 없다)과, 소스는 있는데 아직
+    안 읽은 것(눌러야 한다)은 화면에서 다르게 보여야 한다.
+
+    `created_at`이 없는 프로젝트가 있다. 컬럼이 생기기 전에 만들어진 행이고,
+    모르는 날짜를 지어내지 않으려고 `null`로 내려보낸다.
+    """
+
+    created_at = row.get("created_at")
 
     return {
+        "last_sync_at": last_sync.isoformat() if last_sync else None,
+        "has_jira_source": has_jira_source,
         "proj_id": row["proj_id"],
         "project_id": row["proj_id"],
         "name": row["name"],
@@ -109,13 +161,15 @@ def project_response(row: dict[str, Any]) -> dict[str, Any]:
         "owner_account_id": row["owner_account_id"],
         "owner": row["owner_account_id"],
         "owner_name": row.get("owner_name"),
-        "created_at": "",
-        "updated_at": "",
+        "created_at": created_at.isoformat() if created_at else None,
+        "progress": progress,
     }
 
 
 def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
+    last_sync_at = row.get("last_sync_at")
     return {
+        "last_sync_at": last_sync_at.isoformat() if last_sync_at else None,
         "proj_source_id": row["proj_source_id"],
         "proj_id": row["proj_id"],
         "conn_id": row["conn_id"],
@@ -123,6 +177,16 @@ def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
         "external_source_id": row["external_source_id"],
         "display_name": row.get("display_name"),
         "sync_status": row["sync_status"],
+    }
+
+
+def team_folder_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "team_folder_id": row["team_folder_id"],
+        "team_id": row["team_id"],
+        "conn_id": row["conn_id"],
+        "external_folder_id": row["external_folder_id"],
+        "display_name": row.get("display_name"),
         "default_doc_role": row.get("default_doc_role"),
         "max_depth": row.get("max_depth"),
     }
@@ -132,7 +196,9 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
     modified_at = row.get("src_modified_at")
     return {
         "doc_id": row["doc_id"],
-        "proj_id": row["proj_id"],
+        "team_id": row.get("team_id"),
+        # 아직 어느 프로젝트의 문서인지 지정되지 않았으면 null이다.
+        "proj_id": row.get("proj_id"),
         "src_file_id": row["src_file_id"],
         "source_type": row["source_type"],
         "file_name": row["file_name"],
@@ -141,6 +207,30 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         "src_modified_at": modified_at.isoformat() if modified_at else None,
         # 원문을 받았는지만 알려준다. 저장소 키 자체는 서버 내부 사정이다.
         "downloaded": bool(row.get("storage_key")),
+    }
+
+
+def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
+    """`audit_log` 한 줄을 문서 처리 이력으로.
+
+    상태는 **실제로 실패한 건이 있을 때만** `PARTIAL`이다. 미지원 형식이라 등록에서
+    빠진 것(`skipped`)은 걸러진 것이지 실패가 아니라서 여기 들어가지 않는다 —
+    건수는 `payload`에 그대로 있으니 화면이 따로 보여준다.
+
+    표시 문구는 화면이 정한다. 여기서 한국어를 만들면 `blocked_reason`처럼 코드로
+    내려보내는 다른 응답과 규칙이 어긋난다.
+    """
+
+    payload = row.get("payload") or {}
+    occurred_at = row["occurred_at"]
+
+    return {
+        "audit_id": row["audit_id"],
+        "action": row["action"],
+        "occurred_at": occurred_at.isoformat() if occurred_at else None,
+        "actor_display_name": row.get("actor_display_name"),
+        "status": "PARTIAL" if (payload.get("failed") or 0) else "OK",
+        "payload": payload,
     }
 
 

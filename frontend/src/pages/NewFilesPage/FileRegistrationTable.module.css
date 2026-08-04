@@ -29,6 +29,49 @@
   color: var(--color-body);
 }
 
+/* 헤더가 정렬 버튼이 된다. 열 너비는 col* 클래스가 계속 정한다. */
+.sortHeader {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sortHeader:hover {
+  color: var(--color-heading);
+}
+
+.sortIcon {
+  flex-shrink: 0;
+  /* 정렬 기준이 아닌 열도 누를 수 있다는 것은 보이되 눈에 띄지는 않게 둔다. */
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  color: var(--color-placeholder);
+}
+
+.sortHeader:hover .sortIcon {
+  opacity: 0.45;
+}
+
+.sortIconActive {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.sortHeader:hover .sortIconActive {
+  opacity: 1;
+}
+
+.sortIconUp {
+  transform: rotate(180deg);
+}
+
 .colName {
   flex: 1 1 0%;
   min-width: 0;
@@ -52,6 +95,15 @@
 .colSupport {
   width: 100px;
   flex-shrink: 0;
+}
+
+/*
+ * 파일이 많아도 헤더와 "선택 파일 등록"이 화면에 남아 있어야 한다. 행만 스크롤한다.
+ * 상한은 한 행 약 57px 기준 8행쯤 — 그보다 적으면 카드가 내용만큼만 차지한다.
+ */
+.rowList {
+  max-height: 460px;
+  overflow-y: auto;
 }
 
 .emptyRow {

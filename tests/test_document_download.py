@@ -27,15 +27,15 @@ class DocumentStorageTests(SimpleTestCase):
     def test_key_uses_doc_id_not_file_name(self):
         """파일명은 키에 안 들어간다 — Drive 파일명은 우리가 통제하지 못한다."""
 
-        key = storage.build_key(proj_id="PR001", doc_id="DC001", mime_type="application/pdf")
-        self.assertEqual(key, "PR001/DC001.pdf")
+        key = storage.build_key(team_id="TE001", doc_id="DC001", mime_type="application/pdf")
+        self.assertEqual(key, "TE001/DC001.pdf")
 
     def test_unknown_mime_falls_back(self):
-        key = storage.build_key(proj_id="PR001", doc_id="DC001", mime_type="image/heic")
-        self.assertEqual(key, "PR001/DC001.bin")
+        key = storage.build_key(team_id="TE001", doc_id="DC001", mime_type="image/heic")
+        self.assertEqual(key, "TE001/DC001.bin")
 
     def test_save_returns_hash_and_roundtrips(self):
-        key = storage.build_key(proj_id="PR001", doc_id="DC001", mime_type="text/markdown")
+        key = storage.build_key(team_id="TE001", doc_id="DC001", mime_type="text/markdown")
         content_hash = storage.save(key, b"hello")
         self.assertTrue(content_hash.startswith("sha256:"))
         self.assertEqual(storage.load(key), b"hello")
@@ -44,17 +44,17 @@ class DocumentStorageTests(SimpleTestCase):
     def test_same_content_same_hash(self):
         """변경 감지가 이 성질에 기댄다 — 안 바뀐 문서는 다시 파싱하지 않는다."""
 
-        first = storage.save("PR001/DC001.md", b"same")
-        second = storage.save("PR001/DC002.md", b"same")
+        first = storage.save("TE001/DC001.md", b"same")
+        second = storage.save("TE001/DC002.md", b"same")
         self.assertEqual(first, second)
 
     def test_overwrite_replaces_content(self):
-        storage.save("PR001/DC001.md", b"old")
-        storage.save("PR001/DC001.md", b"new")
-        self.assertEqual(storage.load("PR001/DC001.md"), b"new")
+        storage.save("TE001/DC001.md", b"old")
+        storage.save("TE001/DC001.md", b"new")
+        self.assertEqual(storage.load("TE001/DC001.md"), b"new")
 
     def test_no_partial_file_left_behind(self):
-        storage.save("PR001/DC001.md", b"done")
+        storage.save("TE001/DC001.md", b"done")
         leftovers = list(Path(self._directory.name).rglob("*.part"))
         self.assertEqual(leftovers, [])
 
@@ -168,7 +168,7 @@ class DownloadEndpointTests(SimpleTestCase):
             "apps.projects.api_views.DocumentRepository.mark_stored"
         ) as mark:
             response = self.client.post(
-                "/api/projects/PR001/documents/download/",
+                "/api/team/documents/download/",
                 HTTP_AUTHORIZATION=f"Bearer {self.token}",
             )
 
@@ -180,7 +180,7 @@ class DownloadEndpointTests(SimpleTestCase):
 
     def test_already_downloaded_is_skipped(self):
         targets = self._targets()
-        targets[0]["storage_key"] = "PR001/DC001.pdf"
+        targets[0]["storage_key"] = "TE001/DC001.pdf"
 
         with patch(
             "apps.projects.api_views.DocumentRepository.list_pending_download", return_value=targets
@@ -189,7 +189,7 @@ class DownloadEndpointTests(SimpleTestCase):
             return_value={"content": b"ok", "mime_type": "text/markdown", "revision": None},
         ), patch("apps.projects.api_views.DocumentRepository.mark_stored"):
             response = self.client.post(
-                "/api/projects/PR001/documents/download/",
+                "/api/team/documents/download/",
                 HTTP_AUTHORIZATION=f"Bearer {self.token}",
             )
 
@@ -197,7 +197,7 @@ class DownloadEndpointTests(SimpleTestCase):
 
     def test_force_redownloads(self):
         targets = self._targets()
-        targets[0]["storage_key"] = "PR001/DC001.pdf"
+        targets[0]["storage_key"] = "TE001/DC001.pdf"
 
         with patch(
             "apps.projects.api_views.DocumentRepository.list_pending_download", return_value=targets
@@ -206,7 +206,7 @@ class DownloadEndpointTests(SimpleTestCase):
             return_value={"content": b"ok", "mime_type": "text/markdown", "revision": None},
         ), patch("apps.projects.api_views.DocumentRepository.mark_stored"):
             response = self.client.post(
-                "/api/projects/PR001/documents/download/",
+                "/api/team/documents/download/",
                 {"force": True},
                 content_type="application/json",
                 HTTP_AUTHORIZATION=f"Bearer {self.token}",
@@ -216,5 +216,5 @@ class DownloadEndpointTests(SimpleTestCase):
         self.assertEqual(len(response.json()["downloaded"]), 2)
 
     def test_requires_authentication(self):
-        response = self.client.post("/api/projects/PR001/documents/download/")
+        response = self.client.post("/api/team/documents/download/")
         self.assertEqual(response.status_code, 401)

@@ -1,5 +1,6 @@
 """현재 `DB/schema.sql`을 기준으로 한 직접 SQL Repository."""
 
+from datetime import datetime
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -52,6 +53,39 @@ def _require_record(cursor, *, table: str, column: str, value: str, label: str) 
         raise ReferenceNotFound(f"존재하지 않는 {label}입니다: {value}")
 
 
+def _team_of(cursor, account_id: str) -> str | None:
+    """이 계정이 속한 팀. 테넌트 경계라 거의 모든 조회가 먼저 이걸 묻는다."""
+
+    cursor.execute("SELECT team_id FROM user_account WHERE account_id = %s", (account_id,))
+    row = cursor.fetchone()
+    return row["team_id"] if row else None
+
+
+def _require_team(cursor, account_id: str) -> str:
+    """쓰기 경로용. 팀이 없으면 저장할 곳이 없다는 뜻이라 거절한다."""
+
+    team_id = _team_of(cursor, account_id)
+    if team_id is None:
+        raise PermissionDenied("팀에 속하지 않은 계정입니다.")
+    return team_id
+
+
+def _require_team_project(cursor, *, proj_id: str, account_id: str) -> str:
+    """이 프로젝트가 내 팀 것인지 확인하고 팀 id를 돌려준다.
+
+    소유자 검사가 아니라 팀 검사다 — 팀원도 팀의 프로젝트를 다룰 수 있어야 한다.
+    """
+
+    team_id = _require_team(cursor, account_id)
+    cursor.execute("SELECT team_id FROM proj WHERE proj_id = %s", (proj_id,))
+    row = cursor.fetchone()
+    if row is None:
+        raise RecordNotFound(f"존재하지 않는 프로젝트입니다: {proj_id}")
+    if row["team_id"] != team_id:
+        raise PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
+    return team_id
+
+
 class ProjectRepository:
     @staticmethod
     def list_all() -> list[dict[str, Any]]:
@@ -65,6 +99,8 @@ class ProjectRepository:
                         p.status,
                         p.tz,
                         p.owner_account_id,
+                        p.team_id,
+                        p.created_at,
                         ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua
@@ -75,11 +111,22 @@ class ProjectRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
-    def list_for_owner(account_id: str) -> list[dict[str, Any]]:
-        """내가 소유한 프로젝트. 온보딩 중인 DRAFT를 찾는 데도 쓴다."""
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        """요청자 팀의 프로젝트.
+
+        소유자 기준이 아니라 **팀 기준**이다(2026-08-04). 테넌트 경계가 팀이므로
+        팀원도 팀의 프로젝트를 봐야 한다. 소유자로 거르면 팀장이 등록한 프로젝트가
+        팀원 화면에서 통째로 사라진다.
+
+        팀이 없는 계정은 빈 목록이다 — 남의 프로젝트를 보여줄 이유가 없다.
+        """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+
                 cursor.execute(
                     """
                     SELECT
@@ -88,14 +135,16 @@ class ProjectRepository:
                         p.status,
                         p.tz,
                         p.owner_account_id,
+                        p.team_id,
+                        p.created_at,
                         ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua
                       ON ua.account_id = p.owner_account_id
-                    WHERE p.owner_account_id = %s
+                    WHERE p.team_id = %s
                     ORDER BY p.proj_id
                     """,
-                    (account_id,),
+                    (team_id,),
                 )
                 return list(cursor.fetchall())
 
@@ -111,6 +160,8 @@ class ProjectRepository:
                         p.status,
                         p.tz,
                         p.owner_account_id,
+                        p.team_id,
+                        p.created_at,
                         ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua
@@ -129,6 +180,7 @@ class ProjectRepository:
     def create(*, name: str, status: str, tz: str, owner_account_id: str | None) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
+                team_id = None
                 if owner_account_id:
                     _require_record(
                         cursor,
@@ -137,6 +189,7 @@ class ProjectRepository:
                         value=owner_account_id,
                         label="사용자 계정",
                     )
+                    team_id = _team_of(cursor, owner_account_id)
 
                 proj_id = next_short_code(
                     cursor,
@@ -146,11 +199,11 @@ class ProjectRepository:
                 )
                 cursor.execute(
                     """
-                    INSERT INTO proj (proj_id, name, status, tz, owner_account_id)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING proj_id, name, status, tz, owner_account_id
+                    INSERT INTO proj (proj_id, name, status, tz, owner_account_id, team_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING proj_id, name, status, tz, owner_account_id, team_id, created_at
                     """,
-                    (proj_id, name, status, tz, owner_account_id),
+                    (proj_id, name, status, tz, owner_account_id, team_id),
                 )
                 project = cursor.fetchone()
 
@@ -174,208 +227,382 @@ class ProjectRepository:
         return project
 
 
-class ProjectSourceRepository:
-    """프로젝트가 어느 폴더·어느 Jira 프로젝트를 읽는지(`proj_source`).
+def _connected_conn_id(cursor, *, account_id: str, connector_type: str) -> str:
+    """이 계정의 살아 있는 커넥터 연결. 요청에서 `conn_id`를 받지 않는 이유는
+    남의 연결에 소스를 매달 수 없어야 하기 때문이다."""
 
-    커넥터 연결은 계정 단위지만 소스는 프로젝트 단위다. `conn_id`는 요청에서
-    받지 않고 소유자의 연결에서 찾는다 — 남의 연결에 소스를 매달 수 없어야 한다.
+    cursor.execute(
+        """
+        SELECT conn_id
+        FROM connector_conn
+        WHERE account_id = %s AND connector_type = %s AND auth_status = 'CONNECTED'
+        ORDER BY connected_at DESC
+        LIMIT 1
+        """,
+        (account_id, connector_type),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise ReferenceNotFound(f"{connector_type} 커넥터가 연결되지 않았습니다.")
+    return row["conn_id"]
+
+
+class ProjectSourceRepository:
+    """프로젝트가 대응하는 Jira 프로젝트(`proj_source`). **1:1이다**(2026-08-04).
+
+    Jira 프로젝트 하나에는 프로젝트 하나의 업무가 들어 있다. 여러 개를 한
+    프로젝트에 매달면 서로 다른 프로젝트의 업무가 한 진행률로 뭉개진다.
+
+    Drive 폴더는 여기 없다 — 폴더는 파일이 있는 경로일 뿐 프로젝트에 속하지
+    않아서 `TeamFolderRepository`로 옮겼다.
     """
 
-    DRIVE_FOLDER = "DRIVE_FOLDER"
     JIRA_PROJECT = "JIRA_PROJECT"
-
-    _CONNECTOR_BY_SOURCE = {
-        DRIVE_FOLDER: "GOOGLE_DRIVE",
-        JIRA_PROJECT: "JIRA",
-    }
+    JIRA_CONNECTOR = "JIRA"
 
     @staticmethod
-    def _require_owner(cursor, *, proj_id: str, account_id: str) -> None:
-        cursor.execute("SELECT owner_account_id FROM proj WHERE proj_id = %s", (proj_id,))
-        row = cursor.fetchone()
-        if row is None:
-            raise RecordNotFound(f"존재하지 않는 프로젝트입니다: {proj_id}")
-        if row["owner_account_id"] != account_id:
-            raise PermissionDenied("본인이 소유한 프로젝트만 수정할 수 있습니다.")
+    def get_for_project(*, proj_id: str, account_id: str) -> dict[str, Any] | None:
+        """이 프로젝트의 Jira 소스. 아직 연결 안 됐으면 `None`."""
 
-    @staticmethod
-    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
                 cursor.execute(
                     """
                     SELECT proj_source_id, proj_id, conn_id, source_type, external_source_id,
-                           display_name, sync_status, default_doc_role, max_depth
+                           display_name, sync_status, last_sync_at
                     FROM proj_source
                     WHERE proj_id = %s
-                    ORDER BY proj_source_id
                     """,
                     (proj_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def last_sync_by_project(proj_ids: list[str]) -> dict[str, datetime | None]:
+        """프로젝트별 Jira 마지막 수집 시각. 목록 화면이 한 번에 받아 간다.
+
+        Jira 소스가 없는 프로젝트는 아예 키가 없다 — 읽을 것이 없는 것과 안 읽은
+        것을 화면이 구분할 수 있어야 한다. 아직 한 번도 안 읽었으면 `None`이다.
+        """
+
+        if not proj_ids:
+            return {}
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT proj_id,
+                           count(*) FILTER (WHERE last_sync_at IS NULL) AS never_synced,
+                           min(last_sync_at) AS last_sync_at
+                    FROM proj_source
+                    WHERE proj_id = ANY(%s) AND source_type = %s
+                    GROUP BY proj_id
+                    """,
+                    (sorted(set(proj_ids)), ProjectSourceRepository.JIRA_PROJECT),
+                )
+                return {
+                    row["proj_id"]: None if row["never_synced"] else row["last_sync_at"]
+                    for row in cursor.fetchall()
+                }
+
+    @staticmethod
+    def register_from_jira(
+        *,
+        account_id: str,
+        selections: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        """고른 Jira 프로젝트를 **우리 프로젝트로 등록한다.**
+
+        Jira 프로젝트 하나가 프로젝트 하나이므로, 고르는 행위가 곧 등록이다.
+        `selections`는 `[{"project_key": "KAN", "name": "SKN29_Final_2Team"}]`.
+
+        이미 등록된 키는 이름만 갱신하고 프로젝트를 새로 만들지 않는다 — 다시
+        저장했다고 같은 Jira 프로젝트가 둘이 되면 업무가 양쪽에 중복된다.
+
+        선택에서 빠진 키는 `proj_source`만 지운다. **프로젝트는 남긴다** —
+        문서가 붙어 있을 수 있고, 체크 한 번 푼 것으로 되돌릴 수 없는 삭제를
+        하지 않는다. 화면에는 "Jira 연결 없음"으로 보인다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                conn_id = _connected_conn_id(
+                    cursor,
+                    account_id=account_id,
+                    connector_type=ProjectSourceRepository.JIRA_CONNECTOR,
+                )
+
+                # 같은 키를 두 번 보내도 한 번만 다룬다.
+                chosen: dict[str, str] = {}
+                for item in selections:
+                    chosen.setdefault(item["project_key"], item.get("name") or "")
+
+                cursor.execute(
+                    """
+                    SELECT ps.proj_source_id, ps.external_source_id, ps.proj_id
+                    FROM proj_source AS ps
+                    JOIN proj AS p ON p.proj_id = ps.proj_id
+                    WHERE p.team_id = %s
+                    """,
+                    (team_id,),
+                )
+                registered = {row["external_source_id"]: row for row in cursor.fetchall()}
+
+                for key, existing in registered.items():
+                    if key in chosen:
+                        continue
+                    cursor.execute(
+                        "DELETE FROM exist_task WHERE proj_source_id = %s",
+                        (existing["proj_source_id"],),
+                    )
+                    cursor.execute(
+                        "DELETE FROM proj_source WHERE proj_source_id = %s",
+                        (existing["proj_source_id"],),
+                    )
+
+                for key, name in chosen.items():
+                    if key in registered:
+                        # 이름이 안 왔으면 저장된 값을 지킨다 — 이름만 빠진 요청
+                        # 때문에 표시가 키로 되돌아가지 않도록.
+                        cursor.execute(
+                            """
+                            UPDATE proj_source
+                               SET display_name = COALESCE(NULLIF(%s, ''), display_name),
+                                   conn_id = %s
+                             WHERE proj_source_id = %s
+                            """,
+                            (name, conn_id, registered[key]["proj_source_id"]),
+                        )
+                        cursor.execute(
+                            """
+                            UPDATE proj SET name = COALESCE(NULLIF(%s, ''), name)
+                             WHERE proj_id = %s
+                            """,
+                            (name, registered[key]["proj_id"]),
+                        )
+                        continue
+
+                    proj_id = next_short_code(cursor, table="proj", column="proj_id", prefix="PJ")
+                    cursor.execute(
+                        """
+                        INSERT INTO proj (proj_id, name, status, tz, owner_account_id, team_id)
+                        VALUES (%s, %s, 'ACTIVE', 'Asia/Seoul', %s, %s)
+                        """,
+                        (proj_id, name or key, account_id, team_id),
+                    )
+                    member_id = next_short_code(
+                        cursor, table="proj_member", column="proj_member_id", prefix="PM"
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO proj_member (proj_member_id, proj_id, account_id, access_role)
+                        VALUES (%s, %s, %s, 'OWNER')
+                        """,
+                        (member_id, proj_id, account_id),
+                    )
+
+                    proj_source_id = next_short_code(
+                        cursor, table="proj_source", column="proj_source_id", prefix="PS"
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO proj_source
+                            (proj_source_id, proj_id, conn_id, source_type, external_source_id,
+                             display_name)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            proj_source_id,
+                            proj_id,
+                            conn_id,
+                            ProjectSourceRepository.JIRA_PROJECT,
+                            key,
+                            name or None,
+                        ),
+                    )
+
+                cursor.execute(
+                    """
+                    SELECT ps.proj_source_id, ps.proj_id, ps.conn_id, ps.source_type,
+                           ps.external_source_id, ps.display_name, ps.sync_status, ps.last_sync_at
+                    FROM proj_source AS ps
+                    JOIN proj AS p ON p.proj_id = ps.proj_id
+                    WHERE p.team_id = %s
+                    ORDER BY ps.proj_source_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+
+class TeamFolderRepository:
+    """팀이 읽어들일 Drive 폴더(`team_folder`).
+
+    **프로젝트가 아니라 팀에 매단다.** 폴더는 파일이 어디 있는지 알려주는 경로일
+    뿐이고, 그 안의 파일이 어느 프로젝트 것인지는 열어 봐야 안다. 프로젝트마다
+    폴더를 고르게 하면 같은 경로를 프로젝트 수만큼 반복해서 등록하게 된다.
+    """
+
+    DRIVE_CONNECTOR = "GOOGLE_DRIVE"
+
+    @staticmethod
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT team_folder_id, team_id, conn_id, external_folder_id,
+                           display_name, default_doc_role, max_depth
+                    FROM team_folder
+                    WHERE team_id = %s
+                    ORDER BY team_folder_id
+                    """,
+                    (team_id,),
                 )
                 return list(cursor.fetchall())
 
     @staticmethod
     def replace(
         *,
-        proj_id: str,
         account_id: str,
-        source_type: str,
-        external_source_ids: list[str],
+        external_folder_ids: list[str],
         max_depth: int | None = None,
         display_names: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        """해당 종류의 소스를 넘겨받은 목록으로 교체한다.
+        """팀이 읽을 폴더를 넘겨받은 목록으로 교체한다.
 
         선택 화면은 항상 전체 선택 상태를 보내므로 교체가 맞다. 덧붙이면 화면에서
         해제한 폴더가 남는다. 계속 선택된 폴더의 `default_doc_role`은 지키고
         넘어간다 — 폴더를 다시 저장했다고 역할 지정을 날릴 이유가 없다.
 
-        `display_names`는 `{외부 id: 원본이 알려준 이름}`이다. 화면이 `KAN`이
-        아니라 `SKN29_Final_2Team`을 보여줄 수 있도록 고르는 시점에 함께 저장한다
-        — 매번 원본에 물어보면 화면이 커넥터 생존에 묶인다.
+        해제된 것만 지운다. 전부 지우고 다시 넣으면 `next_short_code`가 같은 id를
+        새 순서로 재발급해, 이 id를 참조하는 행이 조용히 다른 폴더에 붙는다.
 
         `max_depth`는 이번에 저장하는 모든 폴더에 같은 값으로 들어간다. 화면의
         탐색 깊이 설정이 폴더별이 아니라 하나이기 때문이다.
         """
 
-        connector_type = ProjectSourceRepository._CONNECTOR_BY_SOURCE.get(source_type)
-        if connector_type is None:
-            raise ValueError(f"지원하지 않는 소스 종류입니다: {source_type}")
-
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
-
-                cursor.execute(
-                    """
-                    SELECT conn_id
-                    FROM connector_conn
-                    WHERE account_id = %s AND connector_type = %s AND auth_status = 'CONNECTED'
-                    ORDER BY connected_at DESC
-                    LIMIT 1
-                    """,
-                    (account_id, connector_type),
+                team_id = _require_team(cursor, account_id)
+                conn_id = _connected_conn_id(
+                    cursor,
+                    account_id=account_id,
+                    connector_type=TeamFolderRepository.DRIVE_CONNECTOR,
                 )
-                connection_row = cursor.fetchone()
-                if connection_row is None:
-                    raise ReferenceNotFound(f"{connector_type} 커넥터가 연결되지 않았습니다.")
 
-                # 같은 항목을 두 번 보내도 한 행만 남긴다.
-                selected = list(dict.fromkeys(external_source_ids))
+                selected = list(dict.fromkeys(external_folder_ids))
                 names = display_names or {}
-                folder_depth = (
-                    max_depth if source_type == ProjectSourceRepository.DRIVE_FOLDER else None
-                )
-
-                # 해제된 것만 지운다. 전부 지우고 다시 넣으면 `next_short_code`가
-                # 같은 id를 **새 순서로** 재발급해, `exist_task.proj_source_id` 처럼
-                # 이 id를 참조하는 행이 조용히 다른 소스에 붙는다(실제로 KAN 업무가
-                # AIP 소스에 붙는 것을 확인했다). 계속 선택된 소스는 행을 지킨다.
-                cursor.execute(
-                    """
-                    DELETE FROM proj_source
-                    WHERE proj_id = %s AND source_type = %s
-                      AND NOT (external_source_id = ANY(%s))
-                    """,
-                    (proj_id, source_type, selected),
-                )
 
                 cursor.execute(
                     """
-                    SELECT external_source_id FROM proj_source
-                    WHERE proj_id = %s AND source_type = %s
+                    DELETE FROM team_folder
+                    WHERE team_id = %s AND NOT (external_folder_id = ANY(%s))
                     """,
-                    (proj_id, source_type),
+                    (team_id, selected),
                 )
-                existing = {row["external_source_id"] for row in cursor.fetchall()}
 
-                for external_source_id in selected:
-                    if external_source_id in existing:
-                        # 이름을 안 보냈으면 저장된 값을 지킨다 — 이름만 빠진 요청
-                        # 때문에 표시가 키로 되돌아가지 않도록.
+                cursor.execute(
+                    "SELECT external_folder_id FROM team_folder WHERE team_id = %s",
+                    (team_id,),
+                )
+                existing = {row["external_folder_id"] for row in cursor.fetchall()}
+
+                for external_folder_id in selected:
+                    if external_folder_id in existing:
                         cursor.execute(
                             """
-                            UPDATE proj_source
+                            UPDATE team_folder
                                SET display_name = COALESCE(%s, display_name),
                                    max_depth = %s,
                                    conn_id = %s
-                             WHERE proj_id = %s AND source_type = %s
-                               AND external_source_id = %s
+                             WHERE team_id = %s AND external_folder_id = %s
                             """,
                             (
-                                names.get(external_source_id),
-                                folder_depth,
-                                connection_row["conn_id"],
-                                proj_id,
-                                source_type,
-                                external_source_id,
+                                names.get(external_folder_id),
+                                max_depth,
+                                conn_id,
+                                team_id,
+                                external_folder_id,
                             ),
                         )
                         continue
 
-                    proj_source_id = next_short_code(
-                        cursor,
-                        table="proj_source",
-                        column="proj_source_id",
-                        prefix="PS",
+                    team_folder_id = next_short_code(
+                        cursor, table="team_folder", column="team_folder_id", prefix="TF"
                     )
                     cursor.execute(
                         """
-                        INSERT INTO proj_source
-                            (proj_source_id, proj_id, conn_id, source_type, external_source_id,
+                        INSERT INTO team_folder
+                            (team_folder_id, team_id, conn_id, external_folder_id,
                              display_name, max_depth)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         """,
                         (
-                            proj_source_id,
-                            proj_id,
-                            connection_row["conn_id"],
-                            source_type,
-                            external_source_id,
-                            names.get(external_source_id),
-                            folder_depth,
+                            team_folder_id,
+                            team_id,
+                            conn_id,
+                            external_folder_id,
+                            names.get(external_folder_id),
+                            max_depth,
                         ),
                     )
 
                 cursor.execute(
                     """
-                    SELECT proj_source_id, proj_id, conn_id, source_type, external_source_id,
-                           display_name, sync_status, default_doc_role, max_depth
-                    FROM proj_source
-                    WHERE proj_id = %s AND source_type = %s
-                    ORDER BY proj_source_id
+                    SELECT team_folder_id, team_id, conn_id, external_folder_id,
+                           display_name, default_doc_role, max_depth
+                    FROM team_folder
+                    WHERE team_id = %s
+                    ORDER BY team_folder_id
                     """,
-                    (proj_id, source_type),
+                    (team_id,),
                 )
                 return list(cursor.fetchall())
 
 
 class DocumentRepository:
-    """프로젝트가 읽을 문서(`doc`). 역할 지정 화면이 쓰는 유일한 쓰기 경로다."""
+    """팀이 읽어들인 문서(`doc`). 역할 지정 화면이 쓰는 유일한 쓰기 경로다.
+
+    **문서는 팀에 속한다**(2026-08-04). 등록 시점에는 어느 프로젝트의 문서인지
+    모른다 — 파일을 열어 봐야 알 수 있다. `doc.proj_id`는 그 문서가 프로젝트의
+    메인·서브 문서로 지정될 때 채워지고, 그때까지는 NULL이다.
+    """
 
     DRIVE = "DRIVE"
     DOC_ROLES = ("PLAN", "MEETING_NOTE", "DAILY_REPORT", "OTHER")
+    # 문서 처리 이력을 `audit_log`에서 다시 찾을 때 쓰는 표식.
+    AUDIT_TARGET = "DOCUMENT"
+    ACTION_REGISTER = "DOCUMENT_REGISTER"
+    ACTION_DOWNLOAD = "DOCUMENT_DOWNLOAD"
 
     @staticmethod
-    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
                 cursor.execute(
                     """
-                    SELECT doc_id, proj_id, src_file_id, source_type, file_name,
+                    SELECT doc_id, team_id, proj_id, src_file_id, source_type, file_name,
                            mime_type, doc_role, src_modified_at, deleted, storage_key
                     FROM doc
-                    WHERE proj_id = %s AND deleted = false
+                    WHERE team_id = %s AND deleted = false
                     ORDER BY doc_id
                     """,
-                    (proj_id,),
+                    (team_id,),
                 )
                 return list(cursor.fetchall())
 
     @staticmethod
-    def list_pending_download(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+    def list_pending_download(account_id: str) -> list[dict[str, Any]]:
         """아직 원문을 안 받았거나, 받은 뒤 Drive에서 수정된 문서.
 
         `src_modified_at`이 저장 시각보다 최신인지를 보지 않고 **리비전이 비었거나
@@ -386,18 +613,130 @@ class DocumentRepository:
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
                 cursor.execute(
                     """
                     SELECT doc_id, src_file_id, file_name, mime_type, storage_key, cur_revision
                     FROM doc
-                    WHERE proj_id = %s
+                    WHERE team_id = %s
                       AND deleted = false
                       AND source_type = %s
                       AND src_file_id IS NOT NULL
                     ORDER BY doc_id
                     """,
-                    (proj_id, DocumentRepository.DRIVE),
+                    (team_id, DocumentRepository.DRIVE),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def registered_file_ids(account_id: str) -> set[str]:
+        """이 팀이 이미 아는 Drive 파일 id.
+
+        **`deleted`를 가리지 않는다.** 폴더에서 빠져 `deleted = true`가 된 문서도
+        "이미 본 파일"이다 — 가리면 한 번 내린 문서가 스캔할 때마다 신규로 다시
+        올라온다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return set()
+                cursor.execute(
+                    """
+                    SELECT src_file_id FROM doc
+                    WHERE team_id = %s AND source_type = %s AND src_file_id IS NOT NULL
+                    """,
+                    (team_id, DocumentRepository.DRIVE),
+                )
+                return {row["src_file_id"] for row in cursor.fetchall()}
+
+    @staticmethod
+    def add_drive_documents(
+        *,
+        account_id: str,
+        documents: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """고른 파일만 `doc`에 **더한다.**
+
+        `save_drive_documents()`와 다른 점이 하나 있고 그게 이 메서드가 따로
+        있는 이유다 — **아무것도 지우지 않는다.** 저쪽은 폴더 전체를 동기화하며
+        목록에 없는 문서를 `deleted = true`로 내리는데, "새 파일 3개를 추가로
+        등록한다"에 그 동작을 쓰면 나머지 문서가 통째로 내려간다.
+
+        이미 있는 `src_file_id`는 건너뛴다(스캔과 등록 사이에 누가 먼저 넣었을
+        수 있다). 새로 만든 행만 돌려준다.
+        """
+
+        if not documents:
+            return []
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+
+                created = []
+                for document in documents:
+                    cursor.execute(
+                        "SELECT 1 FROM doc WHERE team_id = %s AND src_file_id = %s",
+                        (team_id, document["src_file_id"]),
+                    )
+                    if cursor.fetchone() is not None:
+                        continue
+
+                    doc_id = next_short_code(cursor, table="doc", column="doc_id", prefix="DC")
+                    cursor.execute(
+                        """
+                        INSERT INTO doc
+                            (doc_id, team_id, src_file_id, source_type, file_name,
+                             mime_type, doc_role, src_modified_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING doc_id, team_id, proj_id, src_file_id, source_type, file_name,
+                                  mime_type, doc_role, src_modified_at, storage_key
+                        """,
+                        (
+                            doc_id,
+                            team_id,
+                            document["src_file_id"],
+                            DocumentRepository.DRIVE,
+                            document["file_name"],
+                            document["mime_type"],
+                            document["doc_role"],
+                            document["src_modified_at"],
+                        ),
+                    )
+                    created.append(cursor.fetchone())
+                return created
+
+    @staticmethod
+    def list_history(*, account_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """이 팀의 문서 처리 이력.
+
+        `audit_log`를 그대로 읽는다 — 등록·다운로드가 언제 몇 건이었는지는
+        따로 테이블을 둘 만큼 다른 정보가 아니다.
+
+        `audit_log`에 팀 컬럼이 없어 **행위자의 팀**으로 거른다. 문서 등록은
+        프로젝트와 무관해져서 `proj_id`로는 더 이상 찾을 수 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT al.audit_id, al.action, al.payload, al.occurred_at,
+                           ua.display_name AS actor_display_name
+                    FROM audit_log AS al
+                    JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    WHERE ua.team_id = %s AND al.target_type = %s
+                    ORDER BY al.occurred_at DESC
+                    LIMIT %s
+                    """,
+                    (team_id, DocumentRepository.AUDIT_TARGET, limit),
                 )
                 return list(cursor.fetchall())
 
@@ -426,7 +765,6 @@ class DocumentRepository:
     @staticmethod
     def save_drive_documents(
         *,
-        proj_id: str,
         account_id: str,
         folder_roles: dict[str, str],
         documents: list[dict[str, Any]],
@@ -440,18 +778,16 @@ class DocumentRepository:
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                team_id = _require_team(cursor, account_id)
 
-                for external_source_id, role in folder_roles.items():
+                for external_folder_id, role in folder_roles.items():
                     cursor.execute(
                         """
-                        UPDATE proj_source
+                        UPDATE team_folder
                            SET default_doc_role = %s
-                         WHERE proj_id = %s
-                           AND source_type = %s
-                           AND external_source_id = %s
+                         WHERE team_id = %s AND external_folder_id = %s
                         """,
-                        (role, proj_id, ProjectSourceRepository.DRIVE_FOLDER, external_source_id),
+                        (role, team_id, external_folder_id),
                     )
 
                 seen = []
@@ -466,14 +802,14 @@ class DocumentRepository:
                                doc_role = %s,
                                src_modified_at = %s,
                                deleted = false
-                         WHERE proj_id = %s AND src_file_id = %s
+                         WHERE team_id = %s AND src_file_id = %s
                         """,
                         (
                             document["file_name"],
                             document["mime_type"],
                             document["doc_role"],
                             document["src_modified_at"],
-                            proj_id,
+                            team_id,
                             src_file_id,
                         ),
                     )
@@ -484,13 +820,13 @@ class DocumentRepository:
                     cursor.execute(
                         """
                         INSERT INTO doc
-                            (doc_id, proj_id, src_file_id, source_type, file_name,
+                            (doc_id, team_id, src_file_id, source_type, file_name,
                              mime_type, doc_role, src_modified_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             doc_id,
-                            proj_id,
+                            team_id,
                             src_file_id,
                             DocumentRepository.DRIVE,
                             document["file_name"],
@@ -505,22 +841,22 @@ class DocumentRepository:
                     """
                     UPDATE doc
                        SET deleted = true
-                     WHERE proj_id = %s
+                     WHERE team_id = %s
                        AND source_type = %s
                        AND NOT (src_file_id = ANY(%s))
                     """,
-                    (proj_id, DocumentRepository.DRIVE, seen),
+                    (team_id, DocumentRepository.DRIVE, seen),
                 )
 
                 cursor.execute(
                     """
-                    SELECT doc_id, proj_id, src_file_id, source_type, file_name,
+                    SELECT doc_id, team_id, proj_id, src_file_id, source_type, file_name,
                            mime_type, doc_role, src_modified_at, deleted
                     FROM doc
-                    WHERE proj_id = %s AND deleted = false
+                    WHERE team_id = %s AND deleted = false
                     ORDER BY doc_id
                     """,
-                    (proj_id,),
+                    (team_id,),
                 )
                 return list(cursor.fetchall())
 
@@ -530,52 +866,165 @@ class ExistTaskRepository:
 
     JIRA_PROJECT = "JIRA_PROJECT"
 
+    # 부하 계산의 입력. 프로젝트 범위와 팀 범위가 같은 컬럼을 쓴다.
+    _TASK_COLUMNS = """
+        et.exist_task_id, et.jira_issue_id, et.assignee_person_id,
+        et.status, et.status_category, et.due_at,
+        et.estimate, et.remaining, et.spent,
+        ps.proj_id,
+        ps.external_source_id AS project_key,
+        -- 화면이 키 대신 쓸 이름. 예전에 저장한 소스는 NULL이라
+        -- 그때는 호출자가 키로 대체한다.
+        COALESCE(NULLIF(ps.display_name, ''), p.name) AS project_name
+    """
+
     @staticmethod
     def list_jira_sources(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
-        """이 프로젝트가 읽기로 한 Jira 프로젝트들."""
+        """이 프로젝트가 대응하는 Jira 프로젝트. 1:1이라 0개 아니면 1개다."""
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
                 cursor.execute(
                     """
                     SELECT proj_source_id, external_source_id, display_name
                     FROM proj_source
                     WHERE proj_id = %s AND source_type = %s
-                    ORDER BY proj_source_id
                     """,
                     (proj_id, ExistTaskRepository.JIRA_PROJECT),
                 )
                 return list(cursor.fetchall())
 
     @staticmethod
-    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
-        """이 프로젝트가 읽어온 업무 전부. 부하 계산의 입력이다.
-
-        `project_key`를 함께 준다 — "KAN만 90%, 합치면 122%"를 보여주려면 어느
-        Jira 프로젝트에서 온 일인지 알아야 한다.
-        """
+    def list_jira_sources_for_team(account_id: str) -> list[dict[str, Any]]:
+        """팀의 모든 Jira 소스. 「갱신」이 한 번에 다시 읽을 때 쓴다."""
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                ProjectSourceRepository._require_owner(cursor, proj_id=proj_id, account_id=account_id)
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
                 cursor.execute(
                     """
-                    SELECT et.exist_task_id, et.jira_issue_id, et.assignee_person_id,
-                           et.status, et.status_category, et.due_at,
-                           et.estimate, et.remaining, et.spent,
-                           ps.external_source_id AS project_key,
-                           -- 화면이 키 대신 쓸 이름. 예전에 저장한 소스는 NULL이라
-                           -- 그때는 호출자가 키로 대체한다.
-                           ps.display_name AS project_name
+                    SELECT ps.proj_source_id, ps.proj_id, ps.external_source_id, ps.display_name
+                    FROM proj_source AS ps
+                    JOIN proj AS p ON p.proj_id = ps.proj_id
+                    WHERE p.team_id = %s AND ps.source_type = %s
+                    ORDER BY ps.proj_source_id
+                    """,
+                    (team_id, ExistTaskRepository.JIRA_PROJECT),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        """이 프로젝트가 읽어온 업무 전부."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute(
+                    f"""
+                    SELECT {ExistTaskRepository._TASK_COLUMNS}
                     FROM exist_task AS et
                     JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                    JOIN proj AS p ON p.proj_id = ps.proj_id
                     WHERE ps.proj_id = %s AND ps.source_type = %s
                     ORDER BY ps.external_source_id, et.jira_issue_id
                     """,
                     (proj_id, ExistTaskRepository.JIRA_PROJECT),
                 )
                 return list(cursor.fetchall())
+
+    @staticmethod
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        """팀의 모든 프로젝트에서 읽어온 업무. **부하 계산의 입력이다.**
+
+        사람의 부하는 그 사람이 맡은 모든 프로젝트의 합이다. 프로젝트 하나만 보면
+        "SKN29만 90%"가 나오는데 실제로는 다른 프로젝트까지 합쳐 122.5%다 —
+        한쪽만 보고 여유가 있다고 판단하면 배정이 틀린다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    f"""
+                    SELECT {ExistTaskRepository._TASK_COLUMNS}
+                    FROM exist_task AS et
+                    JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                    JOIN proj AS p ON p.proj_id = ps.proj_id
+                    WHERE p.team_id = %s AND ps.source_type = %s
+                    ORDER BY ps.external_source_id, et.jira_issue_id
+                    """,
+                    (team_id, ExistTaskRepository.JIRA_PROJECT),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def progress_by_project(proj_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """프로젝트별 공수 기준 진행률. 목록 화면이 한 번에 받아 간다.
+
+        ```
+        진행률 = (완료 공수 + 미완료 소진 공수) ÷ 전체 공수
+        소진   = estimate − remaining
+        ```
+
+        **건수가 아니라 공수 기준이다.** 건수로 세면 20시간짜리와 2시간짜리가
+        같아서, 큰 작업이 끝나도 진행률이 거의 안 움직인다.
+
+        `estimate`가 없는 이슈는 분모에서 빠진다 — 크기를 모르는 일을 0으로 치면
+        진행률이 부풀고, 전체로 치면 줄어든다. 어느 쪽도 사실이 아니라서 세어서
+        따로 알린다(`missing_estimate`).
+
+        프로젝트를 여러 개 받아 한 번에 집계한다. 목록에서 프로젝트마다 부르면
+        N+1이 된다.
+        """
+
+        if not proj_ids:
+            return {}
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        ps.proj_id,
+                        count(*) AS task_count,
+                        count(*) FILTER (WHERE et.status_category = 'DONE') AS done_count,
+                        count(*) FILTER (WHERE et.estimate IS NULL) AS missing_estimate,
+                        COALESCE(sum(et.estimate), 0) AS total_hours,
+                        COALESCE(sum(et.estimate)
+                                 FILTER (WHERE et.status_category = 'DONE'), 0) AS done_hours,
+                        -- 미완료분에서 이미 쓴 만큼. remaining 이 없으면 아직 손대지
+                        -- 않은 것으로 본다(과대평가하지 않는 쪽).
+                        COALESCE(sum(GREATEST(et.estimate - COALESCE(et.remaining, et.estimate), 0))
+                                 FILTER (WHERE et.status_category IS DISTINCT FROM 'DONE'), 0)
+                            AS burned_hours
+                    FROM exist_task AS et
+                    JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                    WHERE ps.proj_id = ANY(%s) AND ps.source_type = %s
+                    GROUP BY ps.proj_id
+                    """,
+                    (sorted(set(proj_ids)), ExistTaskRepository.JIRA_PROJECT),
+                )
+
+                result: dict[str, dict[str, Any]] = {}
+                for row in cursor.fetchall():
+                    total = float(row["total_hours"])
+                    completed = float(row["done_hours"]) + float(row["burned_hours"])
+                    result[row["proj_id"]] = {
+                        "task_count": row["task_count"],
+                        "done_count": row["done_count"],
+                        "missing_estimate": row["missing_estimate"],
+                        "total_hours": round(total, 2),
+                        "completed_hours": round(completed, 2),
+                        # 추정치가 하나도 없으면 진행률을 만들지 않는다.
+                        "progress": round(completed / total * 100, 1) if total > 0 else None,
+                    }
+                return result
 
     @staticmethod
     def replace_for_source(*, proj_source_id: str, rows: list[dict[str, Any]]) -> int:
@@ -585,8 +1034,8 @@ class ExistTaskRepository:
         재동기화의 단위인 이유는 프로젝트가 Jira 프로젝트를 여러 개 읽을 수 있어서다
         — `proj_id`로 지우면 남의 소스까지 날아간다.
 
-        완료된 이슈는 JQL(`statusCategory != Done`)에서 안 잡히므로 delete 단계에서
-        자연히 사라진다. 따로 지울 필요가 없다.
+        완료된 이슈도 함께 들어온다(진행률이 완료분을 필요로 한다). Jira에서 삭제된
+        이슈만 delete 단계에서 사라진다.
         """
 
         with database_connection() as connection:
@@ -636,6 +1085,14 @@ class ExistTaskRepository:
                         ),
                     )
                     inserted += 1
+
+                # 교체와 같은 트랜잭션에서 찍는다. 따로 두면 적재는 됐는데 시각은
+                # 옛날인(또는 그 반대인) 조합이 생기고, 화면이 어느 쪽을 믿어야
+                # 할지 알 수 없게 된다.
+                cursor.execute(
+                    "UPDATE proj_source SET last_sync_at = now() WHERE proj_source_id = %s",
+                    (proj_source_id,),
+                )
                 return inserted
 
 

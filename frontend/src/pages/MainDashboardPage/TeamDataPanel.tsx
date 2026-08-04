@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { ConnectorConnection } from '../../api/connectors';
-import type { DocRole, ProjectDocument, ProjectSource } from '../../api/projects';
+import type { DocRole, Project, TeamDocument, TeamFolder } from '../../api/projects';
 import styles from './TeamDashboard.module.css';
 
 const ROLE_LABEL: Record<DocRole, string> = {
@@ -12,8 +12,9 @@ const ROLE_LABEL: Record<DocRole, string> = {
 
 interface Props {
   connectors: ConnectorConnection[];
-  sources: ProjectSource[];
-  documents: ProjectDocument[];
+  folders: TeamFolder[];
+  projects: Project[];
+  documents: TeamDocument[];
 }
 
 /**
@@ -23,12 +24,12 @@ interface Props {
  * 카드가 아니라 가로 한 줄로 둔다. 커넥터 상태·소스·문서를 각각 줄 세워 쌓으면
  * 부하 분석보다 시선을 더 끌어간다.
  */
-export function TeamDataPanel({ connectors, sources, documents }: Props) {
+export function TeamDataPanel({ connectors, folders, projects, documents }: Props) {
   const connected = connectors.filter((c) => c.auth_status === 'CONNECTED').length;
   const allConnected = connectors.length > 0 && connected === connectors.length;
 
-  const driveFolders = sources.filter((s) => s.source_type === 'DRIVE_FOLDER').length;
-  const jiraProjects = sources.filter((s) => s.source_type === 'JIRA_PROJECT');
+  // Jira 프로젝트 하나가 우리 프로젝트 하나다(1:1). 따로 셀 것이 없다.
+  const jiraProjects = projects.filter((project) => project.has_jira_source);
 
   const byRole = documents.reduce<Record<string, number>>((acc, doc) => {
     const key = doc.doc_role ?? 'OTHER';
@@ -63,7 +64,7 @@ export function TeamDataPanel({ connectors, sources, documents }: Props) {
 
         <div className={styles.stripItem}>
           <span className={styles.stripLabel}>Drive 폴더</span>
-          <span className={styles.stripValue}>{driveFolders}개</span>
+          <span className={styles.stripValue}>{folders.length}개</span>
           <span className={styles.stripSub}>문서를 읽어오는 폴더</span>
         </div>
 
@@ -72,7 +73,7 @@ export function TeamDataPanel({ connectors, sources, documents }: Props) {
           <span className={styles.stripValue}>{jiraProjects.length}개</span>
           <span className={styles.stripSub}>
             {jiraProjects.length > 0
-              ? jiraProjects.map((s) => s.display_name || s.external_source_id).join(' · ')
+              ? jiraProjects.map((project) => project.name).join(' · ')
               : '선택된 프로젝트 없음'}
           </span>
         </div>

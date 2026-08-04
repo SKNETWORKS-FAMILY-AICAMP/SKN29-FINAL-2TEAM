@@ -4,12 +4,12 @@ import { ApiError } from '../../api/client';
 import { listConnectors } from '../../api/connectors';
 import type { ConnectorConnection } from '../../api/connectors';
 import {
-  findOnboardingProject,
-  getProjectWorkload,
-  listProjectDocuments,
-  listProjectSources,
+  getTeamWorkload,
+  listMyProjects,
+  listTeamDocuments,
+  listTeamFolders,
 } from '../../api/projects';
-import type { ProjectDocument, ProjectSource, WorkloadResult } from '../../api/projects';
+import type { Project, TeamDocument, TeamFolder, WorkloadResult } from '../../api/projects';
 import { fetchMyTeam } from '../../api/teams';
 import type { Team } from '../../api/teams';
 import { MAIN_NAV_TABS } from '../../routes';
@@ -37,8 +37,9 @@ export default function MainDashboardPage() {
   const [team, setTeam] = useState<Team | null>(null);
   const [workload, setWorkload] = useState<WorkloadResult | null>(null);
   const [connectors, setConnectors] = useState<ConnectorConnection[]>([]);
-  const [sources, setSources] = useState<ProjectSource[]>([]);
-  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [folders, setFolders] = useState<TeamFolder[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [documents, setDocuments] = useState<TeamDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -47,28 +48,22 @@ export default function MainDashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [myTeam, connectorRows, project] = await Promise.all([
-        fetchMyTeam(token).catch(() => null),
-        listConnectors(token).catch(() => []),
-        findOnboardingProject(token),
-      ]);
+      // 전부 팀 단위다. 프로젝트를 하나 골라서 그것만 보여 주면, 사람의 실제
+      // 부하(모든 프로젝트의 합)보다 낮은 숫자를 보고 여유가 있다고 판단하게 된다.
+      const [myTeam, connectorRows, workloadResult, folderRows, projectRows, documentRows] =
+        await Promise.all([
+          fetchMyTeam(token).catch(() => null),
+          listConnectors(token).catch(() => []),
+          getTeamWorkload(token),
+          listTeamFolders(token).catch(() => []),
+          listMyProjects(token).catch(() => []),
+          listTeamDocuments(token).catch(() => []),
+        ]);
       setTeam(myTeam);
       setConnectors(connectorRows);
-
-      if (!project) {
-        setWorkload(null);
-        setSources([]);
-        setDocuments([]);
-        return;
-      }
-
-      const [workloadResult, sourceRows, documentRows] = await Promise.all([
-        getProjectWorkload(token, project.proj_id),
-        listProjectSources(token, project.proj_id),
-        listProjectDocuments(token, project.proj_id),
-      ]);
       setWorkload(workloadResult);
-      setSources(sourceRows);
+      setFolders(folderRows);
+      setProjects(projectRows);
       setDocuments(documentRows);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '대시보드를 불러오지 못했습니다.');
@@ -157,7 +152,12 @@ export default function MainDashboardPage() {
             깔고, 아래를 분석 두 장에 내준다.
           */}
           <div className={styles.summary}>
-            <TeamDataPanel connectors={connectors} sources={sources} documents={documents} />
+            <TeamDataPanel
+              connectors={connectors}
+              folders={folders}
+              projects={projects}
+              documents={documents}
+            />
           </div>
 
           <div className={styles.content}>
