@@ -1718,8 +1718,22 @@ class TeamRepository:
             row["name"] = person.get("name")
             row["org_name"] = person.get("org_name")
             row["job_role"] = person.get("job_role")
+            row["level_rank"] = person.get("level_rank")
             # 팀을 만든 사람은 뺄 수 없다. 화면이 버튼을 감추는 근거다.
             row["is_owner"] = bool(row["account_id"]) and row["account_id"] == row["owner_account_id"]
+
+        # 팀을 만든 사람이 먼저, 그 다음 직급이 높은 순이다. 명부에 들어온 순서
+        # (team_member_id)로 두면 나중에 추가한 팀장이 맨 아래에 붙는다.
+        #
+        # job_role 은 문자열이라 정렬 기준이 못 된다 — level.rank_ord 를 쓴다.
+        # 직급을 모르는 사람은 맨 뒤로 보낸다(0으로 치면 사원보다 위로 올라간다).
+        rows.sort(
+            key=lambda row: (
+                0 if row["is_owner"] else 1,
+                -(row["level_rank"] or 0),
+                row["name"] or "",
+            )
+        )
         return rows
 
     @staticmethod

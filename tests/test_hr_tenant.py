@@ -134,6 +134,26 @@ class TeamMemberApiTests(SimpleTestCase):
         self.assertIsNone(body[1]["account_id"])
         self.assertEqual(body[1]["invite_status"], "PENDING")
 
+    def test_owner_comes_first_then_higher_grade(self):
+        """명부에 들어온 순서로 두면 나중에 추가한 팀장이 맨 아래에 붙는다."""
+
+        rows = [
+            {"name": "성주연", "level_rank": 1, "is_owner": False},
+            {"name": "임준", "level_rank": 6, "is_owner": True},
+            {"name": "김지훈", "level_rank": 4, "is_owner": False},
+            # 직급을 모르는 사람은 맨 뒤다. 0으로 치면 사원보다 위로 올라간다.
+            {"name": "미상", "level_rank": None, "is_owner": False},
+        ]
+        rows.sort(
+            key=lambda row: (
+                0 if row["is_owner"] else 1,
+                -(row["level_rank"] or 0),
+                row["name"] or "",
+            )
+        )
+
+        self.assertEqual([row["name"] for row in rows], ["임준", "김지훈", "성주연", "미상"])
+
     @patch("apps.people.api_views.TeamRepository.list_members", return_value=[])
     @patch("apps.people.api_views.TeamRepository.add_member_for")
     def test_add_requires_person_id(self, add_member, _list):

@@ -31,6 +31,9 @@ _PERSON_FIELDS = """
     p.job_role,
     p.level_id,
     lv.name AS level_name,
+    -- 직급의 정렬 가능한 형태(사원 1 ~ 대표이사 8). job_role 은 문자열이라
+    -- 순서가 없어서 명부를 직책 순으로 세울 때 이 값을 쓴다.
+    lv.rank_ord AS level_rank,
     p.emp_status
 """
 
