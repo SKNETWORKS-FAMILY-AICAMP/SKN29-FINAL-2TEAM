@@ -1,0 +1,11 @@
+runpod>=1.7,<2.0
+python-dotenv>=1.0,<2.0
+requests>=2.32,<3.0
+docling==2.117.0
+# docling 이 EasyOCR 을 기본으로 딸려 오지 않는다. pipeline.py 의 PDF 경로가
+# EasyOcrOptions(ko/en) 을 쓰므로 없으면 PDF 파싱이 converter().convert() 에서
+# 바로 죽는다(2026-08-04 실측). DOCX 는 OCR 을 타지 않아 이 오류가 안 났었다.
+easyocr>=1.7,<2.0
+transformers>=4.56,<5.0
+sentence-transformers>=5.1,<6.0
+torch>=2.7,<3.0
