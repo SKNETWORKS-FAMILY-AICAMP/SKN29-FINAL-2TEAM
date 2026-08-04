@@ -6,6 +6,7 @@ import {
   findOnboardingProject,
   listDocumentHistory,
   listNewDocuments,
+  listProjectSources,
   registerDocuments,
 } from '../../api/projects';
 import type { DocRole, DocumentHistoryEntry, NewDocumentCandidate } from '../../api/projects';
@@ -73,6 +74,9 @@ export default function NewFilesPage() {
   const { showToast } = useToast();
 
   const [projectId, setProjectId] = useState<string | null>(null);
+  // 어떤 폴더를 훑는 중인지 먼저 보여주려고 따로 읽는다. 이 조회는 DB만 보므로
+  // 즉시 끝나고, 느린 것은 그 다음의 Drive 스캔이다.
+  const [scanFolders, setScanFolders] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<NewDocumentCandidate[]>([]);
   const [history, setHistory] = useState<DocumentHistoryEntry[]>([]);
   const [roles, setRoles] = useState<Record<string, string>>({});
@@ -91,8 +95,18 @@ export default function NewFilesPage() {
       if (!project) {
         setCandidates([]);
         setHistory([]);
+        setScanFolders([]);
         return;
       }
+
+      // 훑을 폴더를 먼저 알아 둔다 — 스캔이 도는 동안 무엇을 기다리는지
+      // 보여줄 수 있어야 한다. Drive를 폴더 수만큼 왕복하므로 몇 초 걸린다.
+      const sources = await listProjectSources(token, project.proj_id).catch(() => []);
+      setScanFolders(
+        sources
+          .filter((source) => source.source_type === 'DRIVE_FOLDER')
+          .map((source) => source.display_name || source.external_source_id),
+      );
 
       const [rows, historyRows] = await Promise.all([
         listNewDocuments(token, project.proj_id),
@@ -189,7 +203,26 @@ export default function NewFilesPage() {
         </div>
 
         {error && <p className={styles.stateRow}>{error}</p>}
-        {loading && <p className={styles.stateRow}>폴더를 확인하는 중…</p>}
+
+        {/*
+          Drive를 폴더 수만큼 왕복하느라 몇 초 걸린다. "확인하는 중"만 띄우면
+          멈춘 것처럼 보이므로, 무엇을 왜 기다리는지 적는다.
+        */}
+        {loading && (
+          <div className={styles.scanCard}>
+            <Icon name="loader" size={18} color="var(--color-primary)" spin />
+            <div className={styles.scanText}>
+              <p className={styles.scanTitle}>Google Drive에서 새 파일을 찾고 있어요</p>
+              {scanFolders.length > 0 ? (
+                <p className={styles.scanDetail}>
+                  폴더 {scanFolders.length}곳 · {scanFolders.join(' · ')}
+                </p>
+              ) : (
+                <p className={styles.scanDetail}>설정된 폴더를 불러오는 중…</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {!loading && !error && !projectId && (
           <p className={styles.stateRow}>

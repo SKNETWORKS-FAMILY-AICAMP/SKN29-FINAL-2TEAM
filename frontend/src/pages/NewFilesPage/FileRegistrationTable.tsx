@@ -130,10 +130,17 @@ export function FileRegistrationTable({
           <Button
             variant="primary"
             disabled={checkedCount === 0 || submitting}
-            iconRight={<Icon name="arrow-right" size={14} color="currentColor" />}
+            // 등록도 Drive를 다시 읽어 확인하므로 즉시 끝나지 않는다.
+            iconRight={
+              submitting ? (
+                <Icon name="loader" size={14} color="currentColor" spin />
+              ) : (
+                <Icon name="arrow-right" size={14} color="currentColor" />
+              )
+            }
             onClick={onSubmit}
           >
-            {submitting ? '등록하는 중…' : submitLabel}
+            {submitting ? 'Drive에서 확인하는 중…' : submitLabel}
           </Button>
         </div>
       ) : (
