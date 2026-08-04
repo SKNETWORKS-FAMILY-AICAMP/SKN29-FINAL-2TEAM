@@ -4,12 +4,39 @@
 }
 
 .header {
-  padding: var(--space-8) var(--space-8) 0;
+  padding: var(--space-8) var(--space-6) 0;
   max-width: 1760px;
   margin: 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.refreshBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-body);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px var(--space-4);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.refreshBtn:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .teamName {
@@ -21,12 +48,6 @@
 .teamNote {
   font-size: 13px;
   color: var(--color-muted);
-}
-
-.summary {
-  padding: var(--space-6) var(--space-8) 0;
-  max-width: 1760px;
-  margin: 0 auto;
 }
 
 .state {
@@ -45,41 +66,61 @@
   font-size: 13px;
 }
 
-.content {
-  display: flex;
-  gap: var(--space-6);
-  align-items: flex-start;
-  padding: var(--space-6) var(--space-8) var(--space-8);
+/* ── 벤토 격자 ──────────────────────────────────────────
+   12칸. 칸 사이 16px, 컨테이너 24px — 8px 아래로 내리면 타일이 서로 뭉치고,
+   32px 위로 올리면 한 화면이 아니라 흩어진 조각들로 보인다.
+
+   좌우 2단 고정을 걷어냈다. 1040/640으로 폭을 먼저 정하면 그릇이 내용을
+   결정한다 — 어느 타일이 중요한지는 데이터가 정할 일이다. */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-8);
   max-width: 1760px;
   margin: 0 auto;
 }
 
-.leftPanel {
-  flex: 1040 1 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
+/* 크기가 곧 위계다. 전부 같은 크기면 무엇부터 볼지를 화면이 말해 주지 못한다.
+   Hero 는 하나만 둔다 — 둘을 넘기면 다시 위계가 사라진다. */
+.spanHero {
+  grid-column: span 6;
 }
 
-.rightPanel {
-  flex: 640 1 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
-  max-width: 640px;
+.spanQuarter {
+  grid-column: span 3;
 }
 
-@media (max-width: 1100px) {
-  .content {
-    flex-direction: column;
+.spanHalf {
+  grid-column: span 6;
+}
+
+.spanFull {
+  grid-column: span 12;
+}
+
+/* 작은 타일 둘이 Hero 와 같은 높이를 채운다. 셋이 나란한 한 줄로 보여야 한다. */
+.spanQuarter > * {
+  height: 100%;
+}
+
+@media (max-width: 1240px) {
+  .spanHero,
+  .spanHalf {
+    grid-column: span 12;
   }
 
-  .leftPanel,
-  .rightPanel {
-    max-width: 100%;
-    flex: 1 1 auto;
-    width: 100%;
+  .spanQuarter {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 720px) {
+  .bento {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+
+  .spanQuarter {
+    grid-column: span 12;
   }
 }

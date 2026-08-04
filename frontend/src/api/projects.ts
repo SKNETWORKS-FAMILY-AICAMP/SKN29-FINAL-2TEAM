@@ -382,3 +382,34 @@ export function getTeamWorkload(token: string, from?: string, to?: string) {
   const suffix = query.toString() ? `?${query}` : '';
   return apiRequest<WorkloadResult>(`/team/workload/${suffix}`, { token });
 }
+
+/** 마감이 걸린 업무 한 건. */
+export interface DeadlineTask {
+  exist_task_id: string;
+  jira_issue_id: string;
+  summary: string | null;
+  assignee_name: string | null;
+  due_at: string;
+  /** 오늘로부터 며칠. 음수가 지연이다. 시간대 때문에 화면에서 계산하지 않는다. */
+  days: number;
+  proj_id: string;
+  project_name: string;
+}
+
+export interface DeadlineResult {
+  as_of: string;
+  /** 「곧」의 길이(일). */
+  soon_days: number;
+  overdue: DeadlineTask[];
+  soon: DeadlineTask[];
+}
+
+/**
+ * 지연된 업무와 곧 마감인 업무.
+ *
+ * 부하와 따로 부른다. 부하는 사람이 단위지만 이쪽은 업무가 단위이고, 보고 할
+ * 행동도 다르다 — 부하는 배정을 옮기는 판단, 지연은 그 이슈를 지금 찌르는 판단이다.
+ */
+export function listTeamDeadlines(token: string) {
+  return apiRequest<DeadlineResult>('/team/deadlines/', { token });
+}
