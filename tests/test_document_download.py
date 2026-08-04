@@ -131,7 +131,21 @@ class DownloadEndpointTests(SimpleTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self._directory.cleanup)
+
+        # DB에 닿는 경로를 전부 막는다. `DATABASES = {}`라 Django가 테스트 DB를
+        # 만들어 주지 않으므로, 안 막으면 **개발 DB에 그대로 쓴다** — 실제로
+        # 실행할 때마다 audit_log 에 3행씩 쌓여 문서 등록 화면의 처리 이력이
+        # 테스트 찌꺼기로 뒤덮였다(51행).
+        self.audit = self._patch("apps.projects.api_views.log_audit")
+        self._patch("apps.projects.api_views.AccountRepository.team_id", return_value="TE001")
+
         self.token = issue_token("UA001")
+
+    def _patch(self, target, **kwargs):
+        patcher = patch(target, **kwargs)
+        mock = patcher.start()
+        self.addCleanup(patcher.stop)
+        return mock
 
     def _targets(self):
         return [
@@ -177,6 +191,23 @@ class DownloadEndpointTests(SimpleTestCase):
         self.assertEqual([d["file_name"] for d in body["downloaded"]], ["회의록.md"])
         self.assertEqual([f["file_name"] for f in body["failed"]], ["기획서.docx"])
         mark.assert_called_once()
+        # 받은 것과 실패한 것이 있으면 이력을 남긴다.
+        self.assertEqual(self.audit.call_args.kwargs["payload"]["downloaded"], 1)
+        self.assertEqual(self.audit.call_args.kwargs["payload"]["failed"], 1)
+
+    def test_nothing_downloaded_leaves_no_history(self):
+        """건드린 것이 없으면 이력이 아니다 — "0건 다운로드"를 남기지 않는다."""
+
+        with patch(
+            "apps.projects.api_views.DocumentRepository.list_pending_download", return_value=[]
+        ):
+            response = self.client.post(
+                "/api/team/documents/download/",
+                HTTP_AUTHORIZATION=f"Bearer {self.token}",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.audit.assert_not_called()
 
     def test_already_downloaded_is_skipped(self):
         targets = self._targets()
