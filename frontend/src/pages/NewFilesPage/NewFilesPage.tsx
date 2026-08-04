@@ -190,11 +190,17 @@ export default function NewFilesPage() {
 
         {error && <p className={styles.stateRow}>{error}</p>}
 
-        {/* Drive를 폴더 수만큼 왕복하느라 2초쯤 걸린다. 멈춘 것처럼 보이지 않게 한다. */}
+        {/*
+          Drive를 폴더 수만큼, 폴더 안 파일 수만큼 왕복한다. 지금 시연 데이터로는
+          2초지만 파일이 수백 개면 그만큼 늘어나므로 미리 알린다.
+        */}
         {loading && (
           <div className={styles.scanCard}>
             <Icon name="loader" size={22} color="var(--color-primary)" spin />
-            <p className={styles.scanTitle}>Google Drive에서 새 파일을 찾고 있어요</p>
+            <div className={styles.scanText}>
+              <p className={styles.scanTitle}>Google Drive에서 새 파일을 찾고 있어요</p>
+              <p className={styles.scanDetail}>파일이 많으면 수 분이 소요될 수 있습니다</p>
+            </div>
           </div>
         )}
 

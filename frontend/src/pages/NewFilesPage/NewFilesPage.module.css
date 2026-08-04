@@ -53,10 +53,22 @@
   border-radius: var(--radius-lg);
 }
 
+.scanText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
 .scanTitle {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-body);
+}
+
+.scanDetail {
+  font-size: 13px;
+  color: var(--color-placeholder);
 }
 
 .stateRow {

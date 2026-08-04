@@ -61,7 +61,11 @@ export function FileRegistrationTable({
         {showSupport && <span className={[styles.colSupport, styles.thActive].join(' ')}>지원 여부</span>}
       </div>
 
-      <div>
+      {/*
+        파일이 많으면 표가 화면을 넘어가 아래의 "선택 파일 등록"이 안 보인다.
+        헤더와 액션바는 고정하고 행만 스크롤한다.
+      */}
+      <div className={styles.rowList}>
         {rows.length === 0 && <p className={styles.emptyRow}>표시할 파일이 없습니다.</p>}
         {rows.map((row, idx) => {
           const isChecked = row.supported && selected.has(row.id);

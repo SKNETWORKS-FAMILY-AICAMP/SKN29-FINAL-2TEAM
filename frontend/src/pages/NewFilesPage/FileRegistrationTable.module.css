@@ -54,6 +54,15 @@
   flex-shrink: 0;
 }
 
+/*
+ * 파일이 많아도 헤더와 "선택 파일 등록"이 화면에 남아 있어야 한다. 행만 스크롤한다.
+ * 상한은 한 행 약 57px 기준 8행쯤 — 그보다 적으면 카드가 내용만큼만 차지한다.
+ */
+.rowList {
+  max-height: 460px;
+  overflow-y: auto;
+}
+
 .emptyRow {
   padding: var(--space-6);
   text-align: center;
