@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Button, Checkbox, Icon, Select } from '../../components';
-import type { SelectOption } from '../../components';
+import { Badge, Button, Checkbox, Icon } from '../../components';
 import styles from './FileRegistrationTable.module.css';
 
 export interface FileRow {
@@ -8,11 +7,20 @@ export interface FileRow {
   name: string;
   folder: string;
   date: string;
-  role: string;
   supported: boolean;
+  /**
+   * `new`  — Drive 에 새로 생긴 파일. 고르면 등록된다.
+   * `missing` — 등록돼 있는데 Drive 스캔에 안 잡히는 문서. 정리하면 목록에서 빠진다.
+   *
+   * 한 표에 같이 둔다. 「이 폴더의 지금 상태」가 한 화면에 있어야 하고, 사라진
+   * 문서만 따로 경고 카드로 세우면 신규 파일 검토보다 시선을 끌어간다.
+   */
+  kind: 'new' | 'missing';
+  /** `missing` 행이 프로젝트에 묶여 있으면 그 표시. 정리하기 전에 알아야 한다. */
+  note?: string;
 }
 
-type SortKey = 'name' | 'folder' | 'date' | 'role' | 'supported';
+type SortKey = 'name' | 'folder' | 'date' | 'supported';
 type SortDirection = 'asc' | 'desc';
 
 /** 한글·영문·숫자가 섞인 파일명을 사람이 기대하는 순서로 비교한다. */
@@ -22,8 +30,7 @@ const SORT_HEADERS: { key: SortKey; label: string; colClass: keyof typeof styles
   { key: 'name', label: '파일명', colClass: 'colName' },
   { key: 'folder', label: '소속 폴더', colClass: 'colFolder' },
   { key: 'date', label: '감지일', colClass: 'colDate' },
-  { key: 'role', label: '역할', colClass: 'colRole' },
-  { key: 'supported', label: '지원 여부', colClass: 'colSupport' },
+  { key: 'supported', label: '상태', colClass: 'colSupport' },
 ];
 
 interface FileRegistrationTableProps {
@@ -36,12 +43,9 @@ interface FileRegistrationTableProps {
   showSupport?: boolean;
   submitLabel?: string;
   submitting?: boolean;
-  /**
-   * 주면 「역할」 열이 Select가 된다. 신규 파일은 폴더 역할을 물려받되 행마다
-   * 바꿀 수 있어야 해서, 읽기 전용 목록과 같은 컴포넌트를 쓰되 여기서 갈린다.
-   */
-  roleOptions?: SelectOption[];
-  onRoleChange?: (id: string, role: string) => void;
+  /** 주면 「삭제 파일 정리 N건」이 액션바에 붙는다. 확인은 호출자가 모달로 받는다. */
+  onRemoveMissing?: () => void;
+  removing?: boolean;
 }
 
 export function FileRegistrationTable({
@@ -54,30 +58,30 @@ export function FileRegistrationTable({
   showSupport = true,
   submitLabel = '선택 파일 등록',
   submitting = false,
-  roleOptions,
-  onRoleChange,
+  onRemoveMissing,
+  removing = false,
 }: FileRegistrationTableProps) {
-  const supportedRows = rows.filter((row) => row.supported);
+  // 등록 대상은 「신규 + 지원됨」뿐이다. 사라진 문서는 고를 수 있지만 하는 일이
+  // 반대라(등록이 아니라 내림) 집계도 버튼도 따로 센다.
+  const newRows = rows.filter((row) => row.kind === 'new');
+  const supportedRows = newRows.filter((row) => row.supported);
   const checkedCount = supportedRows.filter((row) => selected.has(row.id)).length;
-  const excludedCount = rows.length - supportedRows.length;
+  const excludedCount = newRows.length - supportedRows.length;
   const allChecked = supportedRows.length > 0 && checkedCount === supportedRows.length;
+  const missingRows = rows.filter((row) => row.kind === 'missing');
 
   // 기본은 소속 폴더 오름차순이고, 같은 폴더 안에서는 파일명 순이다(아래 2차 기준).
   const [sortKey, setSortKey] = useState<SortKey>('folder');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
-  /** 역할은 코드(`PLAN`)로 들고 있어 그대로 비교하면 화면 순서와 다르다. */
-  const roleLabel = (value: string) =>
-    roleOptions?.find((option) => option.value === value)?.label ?? value;
-
   const sortedRows = useMemo(() => {
     const compare = (a: FileRow, b: FileRow) => {
       let result = 0;
       if (sortKey === 'supported') {
-        // 지원되는 것이 먼저다 — 등록할 수 있는 파일을 위로 올린다.
-        result = Number(b.supported) - Number(a.supported);
-      } else if (sortKey === 'role') {
-        result = collator.compare(roleLabel(a.role), roleLabel(b.role));
+        // 등록할 수 있는 파일을 위로. 사라진 문서는 손댈 일이 적어 아래로 보낸다.
+        result =
+          Number(a.kind === 'missing') - Number(b.kind === 'missing') ||
+          Number(b.supported) - Number(a.supported);
       } else {
         result = collator.compare(a[sortKey], b[sortKey]);
       }
@@ -88,7 +92,7 @@ export function FileRegistrationTable({
       return collator.compare(a.folder, b.folder) || collator.compare(a.name, b.name);
     };
     return [...rows].sort(compare);
-  }, [rows, sortKey, sortDirection, roleOptions]);
+  }, [rows, sortKey, sortDirection]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -160,34 +164,33 @@ export function FileRegistrationTable({
               </div>
               <div className={styles.rowName}>
                 <Icon
-                  name={row.supported ? 'file-text' : 'triangle-alert'}
+                  name={row.kind === 'missing' || !row.supported ? 'triangle-alert' : 'file-text'}
                   size={16}
-                  color={row.supported ? 'var(--color-body)' : 'var(--color-placeholder)'}
+                  color={
+                    row.kind === 'missing'
+                      ? 'var(--color-warning)'
+                      : row.supported
+                        ? 'var(--color-body)'
+                        : 'var(--color-placeholder)'
+                  }
                 />
                 <span>{row.name}</span>
+                {row.note && <span className={styles.rowNote}>{row.note}</span>}
               </div>
               <div className={styles.rowFolder}>
                 <Icon name="folder" size={14} color="var(--color-placeholder)" />
                 <span>{row.folder}</span>
               </div>
               <div className={styles.rowDate}>{row.date}</div>
-              <div className={styles.rowRole}>
-                {roleOptions && onRoleChange ? (
-                  <Select
-                    size="sm"
-                    options={roleOptions}
-                    value={row.role}
-                    // 미지원 파일은 등록 자체가 안 되므로 역할을 고를 이유가 없다.
-                    disabled={!row.supported}
-                    onChange={(event) => onRoleChange(row.id, event.target.value)}
-                  />
-                ) : (
-                  <Badge tone="neutral">{row.role}</Badge>
-                )}
-              </div>
               {showSupport && (
                 <div className={styles.rowSupport}>
-                  <Badge tone={row.supported ? 'success' : 'neutral'}>{row.supported ? '지원됨' : '미지원'}</Badge>
+                  {row.kind === 'missing' ? (
+                    <Badge tone="warning">Drive에서 삭제됨</Badge>
+                  ) : (
+                    <Badge tone={row.supported ? 'success' : 'neutral'}>
+                      {row.supported ? '지원됨' : '미지원'}
+                    </Badge>
+                  )}
                 </div>
               )}
             </div>
@@ -202,6 +205,17 @@ export function FileRegistrationTable({
               {checkedCount}개 파일 선택됨
             </span>
             {excludedCount > 0 && <span className={styles.summaryExcluded}>(미지원 파일 {excludedCount}개 제외됨)</span>}
+            {/* 등록과 내림은 반대 방향이라 한 버튼에 묶지 않는다. */}
+            {missingRows.length > 0 && onRemoveMissing && (
+              <button
+                type="button"
+                className={styles.removeLink}
+                disabled={removing}
+                onClick={onRemoveMissing}
+              >
+                {removing ? '정리하는 중…' : `삭제 파일 정리 ${missingRows.length}건`}
+              </button>
+            )}
           </div>
           <Button
             variant="primary"

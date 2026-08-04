@@ -87,11 +87,6 @@
   flex-shrink: 0;
 }
 
-.colRole {
-  width: 120px;
-  flex-shrink: 0;
-}
-
 .colSupport {
   width: 100px;
   flex-shrink: 0;
@@ -180,11 +175,6 @@
   color: var(--color-muted);
 }
 
-.rowRole {
-  width: 120px;
-  flex-shrink: 0;
-}
-
 .rowSupport {
   width: 100px;
   flex-shrink: 0;
@@ -233,4 +223,30 @@
 .summaryExcluded {
   font-size: 13px;
   color: var(--color-muted);
+}
+
+/* 파일명 옆 보조 표시. 사라진 문서가 어느 프로젝트의 근거였는지 알린다. */
+.rowNote {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+/* 등록과 반대 방향의 동작이라 주 버튼과 나란히 두지 않고 요약 줄에 붙인다. */
+.removeLink {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-warning);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.removeLink:disabled {
+  cursor: default;
+  opacity: 0.6;
 }

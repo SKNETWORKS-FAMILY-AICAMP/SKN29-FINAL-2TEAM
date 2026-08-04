@@ -147,10 +147,10 @@ export default function ProjectListPage() {
   }
 
   function handleStartWorkflow() {
-    showToast('업무 분배 워크플로우로 이동합니다', 'info');
-    setTimeout(() => {
-      navigate('/files/new?view=review');
-    }, 700);
+    // 어느 프로젝트인지는 다음 화면에서 고른다. 여기서 고르게 하려면 목록에
+    // 선택 UI가 하나 더 붙는데, 어차피 그 화면에서 문서를 골라야 해서 한자리에서
+    // 끝내는 편이 낫다.
+    navigate('/tasks/distribution/documents');
   }
 
   return (
@@ -243,6 +243,10 @@ export default function ProjectListPage() {
                 desc={summaryOf(project)}
                 date={formatDate(project.created_at)}
                 progressText={project.progress ? `${project.progress.progress}%` : '-'}
+                // 업무 추출까지만 하고 아직 승인 전인 신규 프로젝트다. 진행 중인
+                // 것과 같아 보이면 무엇이 실제로 돌아가는 일인지 알 수 없다.
+                statusLabel={project.status === 'DRAFT' ? '작성 중' : undefined}
+                statusTone={project.status === 'DRAFT' ? 'neutral' : undefined}
                 onOpen={() => navigate(`/projects/${project.proj_id}`)}
               />
             ))}

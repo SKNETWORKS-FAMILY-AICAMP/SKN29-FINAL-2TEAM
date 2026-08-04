@@ -75,15 +75,6 @@
   flex-shrink: 0;
 }
 
-.stepBadge {
-  background: var(--color-bg);
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-}
-
 .iconButton {
   position: relative;
   width: 40px;

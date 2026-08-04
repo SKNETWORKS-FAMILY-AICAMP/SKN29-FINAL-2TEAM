@@ -109,8 +109,6 @@ export interface TeamFolder {
   external_folder_id: string;
   /** 고를 때 Drive가 알려준 이름. 비면 화면이 id로 대체한다. */
   display_name: string | null;
-  /** 이 폴더의 기본 문서 역할. 안의 파일이 물려받는다. */
-  default_doc_role: DocRole | null;
   /** 탐색 깊이. 1이면 선택한 폴더만, null이면 제한 없음. */
   max_depth: number | null;
 }
@@ -181,9 +179,6 @@ export function registerJiraProjects(
   });
 }
 
-/** `doc.doc_role`. 화면의 기획서·회의록·일일보고서·기타에 대응한다. */
-export type DocRole = 'PLAN' | 'MEETING_NOTE' | 'DAILY_REPORT' | 'OTHER';
-
 export interface TeamDocument {
   doc_id: string;
   team_id: string | null;
@@ -194,28 +189,20 @@ export interface TeamDocument {
   source_type: string;
   file_name: string | null;
   mime_type: string | null;
-  doc_role: DocRole | null;
+  /**
+   * 이 문서가 `proj_id` 프로젝트에서 맡는 역할(2026-08-04 의미 변경).
+   * null(팀 문서 풀) · PRIMARY(기준 문서) · SUB(근거 문서).
+   *
+   * 예전에는 문서의 **종류**였다. 폴더에 준 역할을 안의 파일이 물려받아서
+   * 「01_기획」에 든 것은 무엇이든 기획서가 됐고, 정작 그 값으로 분기하는 코드는
+   * 한 줄도 없었다. 어느 문서가 근거인지는 기준 문서 선택 화면에서 사람이 고른다.
+   */
+  doc_role: 'PRIMARY' | 'SUB' | null;
   src_modified_at: string | null;
 }
 
 export function listTeamDocuments(token: string) {
   return apiRequest<TeamDocument[]>('/team/documents/', { token });
-}
-
-/**
- * 역할 지정 화면의 저장. 파일 목록은 보내지 않는다 — 서버가 저장된 폴더를
- * Drive에서 다시 읽어 `doc` 행을 만든다. `fileRoles`는 폴더 역할을 덮어쓴다.
- */
-export function saveDocumentRoles(
-  token: string,
-  folderRoles: Record<string, DocRole>,
-  fileRoles: Record<string, DocRole>,
-) {
-  return apiRequest<TeamDocument[]>('/team/documents/', {
-    method: 'PUT',
-    token,
-    body: { folder_roles: folderRoles, file_roles: fileRoles },
-  });
 }
 
 /** 설정된 폴더에 있는데 아직 `doc`에 없는 파일. */
@@ -229,29 +216,71 @@ export interface NewDocumentCandidate {
   /** 하위 폴더에서 왔으면 그 경로, 아니면 고른 폴더 이름. */
   folder_name: string;
   folder_id: string;
-  /** 폴더에 지정된 역할. 화면에서 행마다 바꿀 수 있다. */
-  suggested_role: DocRole | null;
 }
 
+/** Drive 스캔에 더 이상 안 잡히는 등록 문서. */
+export interface MissingDocument {
+  doc_id: string;
+  file_name: string | null;
+  mime_type: string | null;
+  /** 프로젝트에 묶여 있으면 그 프로젝트. 사라지면 추출 근거가 없어진다. */
+  proj_id: string | null;
+  project_name: string | null;
+  doc_role: 'PRIMARY' | 'SUB' | null;
+}
+
+export interface DocumentScanResult {
+  candidates: NewDocumentCandidate[];
+  missing: MissingDocument[];
+}
+
+/**
+ * 폴더를 훑어 신규 파일과 사라진 문서를 함께 돌려준다.
+ *
+ * **조회만 한다.** Drive 휴지통·완전삭제·폴더 밖 이동이 전부 똑같이 「안 잡힘」으로
+ * 보여서, 자동으로 내리면 잠깐 옮겨 둔 문서가 조용히 사라진다. 내리는 것은
+ * `removeDocuments()`가 한다.
+ *
+ * 다만 내려 뒀다가 Drive 에 다시 나타난 문서는 서버가 알아서 되살린다 — 있는
+ * 것을 있다고 표시하는 복원이라 잃는 것이 없다.
+ */
 export function listNewDocuments(token: string) {
-  return apiRequest<NewDocumentCandidate[]>('/team/documents/new/', { token });
+  return apiRequest<DocumentScanResult>('/team/documents/new/', { token });
+}
+
+export interface DocumentRemoveResult {
+  removed: number;
+  blocks: number;
+  chunks: number;
+  vectors: number;
+}
+
+/**
+ * 고른 문서를 정리한다.
+ *
+ * `doc` 행은 남고 `deleted`만 켜지지만 **파싱 산출물은 지워진다** — 청크에 원문이
+ * 통째로 들어 있어서, Drive 에서 지운 문서의 본문을 계속 들고 있을 수 없다.
+ * 되돌리면 문서는 살아나지만 「처리 필요」 상태라 다시 파싱해야 한다.
+ */
+export function removeDocuments(token: string, docIds: string[]) {
+  return apiRequest<DocumentRemoveResult>('/team/documents/remove/', {
+    method: 'POST',
+    token,
+    body: { doc_ids: docIds },
+  });
 }
 
 export interface DocumentRegisterResult {
   registered: TeamDocument[];
-  skipped: { file_id: string; reason: 'NOT_FOUND' | 'UNSUPPORTED' | 'NO_ROLE' }[];
+  skipped: { file_id: string; reason: 'NOT_FOUND' | 'UNSUPPORTED' }[];
 }
 
 /**
- * 고른 파일만 `doc`에 더한다. 기존 문서는 건드리지 않는다 — 폴더 전체를 동기화하는
- * `saveDocumentRoles`와 다른 경로인 이유가 그것이다.
+ * 고른 파일만 `doc`에 더한다. 기존 문서는 건드리지 않는다.
  *
  * 파일 이름·형식은 보내지 않는다. 서버가 Drive에서 다시 읽는다.
  */
-export function registerDocuments(
-  token: string,
-  files: { file_id: string; doc_role?: DocRole }[],
-) {
+export function registerDocuments(token: string, files: { file_id: string }[]) {
   return apiRequest<DocumentRegisterResult>('/team/documents/register/', {
     method: 'POST',
     token,
@@ -261,7 +290,7 @@ export function registerDocuments(
 
 export interface DocumentHistoryEntry {
   audit_id: string;
-  action: 'DOCUMENT_REGISTER' | 'DOCUMENT_DOWNLOAD';
+  action: 'DOCUMENT_REGISTER' | 'DOCUMENT_DOWNLOAD' | 'DOCUMENT_REMOVE';
   occurred_at: string | null;
   actor_display_name: string | null;
   /** 실제로 실패한 건이 있을 때만 PARTIAL. 미지원이라 걸러진 것은 실패가 아니다. */
@@ -412,4 +441,131 @@ export interface DeadlineResult {
  */
 export function listTeamDeadlines(token: string) {
   return apiRequest<DeadlineResult>('/team/deadlines/', { token });
+}
+
+/* ── 문서 파싱·임베딩 파이프라인 ──────────────────────────────────── */
+
+export interface PipelineDocument {
+  doc_id: string;
+  file_name: string | null;
+  mime_type: string | null;
+  /** 어느 프로젝트에 묶여 있는가. null이면 아직 팀 문서 풀에만 있다. */
+  proj_id: string | null;
+  /** null(팀 문서 풀) · PRIMARY(기준 문서) · SUB(근거 문서) */
+  doc_role: 'PRIMARY' | 'SUB' | null;
+  /** 원문을 로컬 저장소에 받아 뒀는가. */
+  downloaded: boolean;
+  /** 파싱·청킹·임베딩까지 끝나 검색할 수 있는가. */
+  search_ready: boolean;
+  src_modified_at: string | null;
+}
+
+export interface DocumentProcessingRun {
+  job_id: string;
+  status:
+    | 'IN_QUEUE'
+    | 'IN_PROGRESS'
+    | 'RUNNING'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'CANCELLED'
+    | 'TIMED_OUT';
+  ingested?: { blocks: number; chunks: number; vectors: number };
+  error?: string;
+}
+
+/** 종료 상태. 여기 닿으면 polling 을 멈춰야 한다. */
+export const TERMINAL_PROCESSING_STATUS = ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
+
+/** 기준 문서로 고를 수 있는 후보 — 팀 문서 전부. */
+export function listPipelineDocuments(token: string) {
+  return apiRequest<PipelineDocument[]>('/team/pipeline-documents/', { token });
+}
+
+/**
+ * 문서 하나를 RunPod 에 보내 파싱·청킹·임베딩한다.
+ *
+ * 팀 문서 단위다 — 프로젝트에 묶이는 것은 기준 문서로 선택될 때이고, 그 선택은
+ * 이미 처리된 문서 중에서 한다.
+ */
+export function startDocumentProcessing(token: string, docId: string) {
+  return apiRequest<DocumentProcessingRun>(`/team/documents/${docId}/processing-runs/`, {
+    method: 'POST',
+    token,
+  });
+}
+
+/** 진행 상태. `COMPLETED`를 처음 본 요청이 결과를 DB에 적재한다. */
+export function fetchDocumentProcessing(token: string, docId: string, jobId: string) {
+  return apiRequest<DocumentProcessingRun>(
+    `/team/documents/${docId}/processing-runs/${jobId}/`,
+    { token },
+  );
+}
+
+/** 이 프로젝트에 묶인 문서(메인+서브). */
+export function listProjectSourceDocuments(token: string, projectId: string) {
+  return apiRequest<PipelineDocument[]>(`/projects/${projectId}/source-documents/`, { token });
+}
+
+/**
+ * 기준 문서와 서브 문서를 정한다. **이 호출이 프로젝트에 문서를 묶는 행위다.**
+ *
+ * 전체 선택 상태를 보낸다. 서버가 통째로 교체하므로, 뺀 문서는 팀 문서 풀로
+ * 돌아간다.
+ */
+export function saveProjectSourceDocuments(
+  token: string,
+  projectId: string,
+  primaryDocumentId: string,
+  subDocumentIds: string[],
+) {
+  return apiRequest<PipelineDocument[]>(`/projects/${projectId}/source-documents/`, {
+    method: 'PUT',
+    token,
+    body: { primary_document_id: primaryDocumentId, sub_document_ids: subDocumentIds },
+  });
+}
+
+export interface ExtractedTask {
+  title: string;
+  description: string | null;
+  required_role: string | null;
+  required_skills: string[];
+  estimate_hours: number | null;
+  due_at: string | null;
+  priority: string | null;
+  dependencies: string[];
+  constraints: string[];
+  risks: string[];
+  acceptance_criteria: string[];
+  deliverables: string[];
+  /** 근거가 없어 비워 둔 항목. 지어내지 않았다는 표시다. */
+  missing_fields: string[];
+  evidence_chunk_ids: string[];
+}
+
+export interface TaskExtractionResult {
+  tasks: ExtractedTask[];
+  warnings: string[];
+  evidence: {
+    chunk_id: string;
+    doc_id: string;
+    text: string;
+    retrieval_score: number;
+    intent: string;
+    query: string;
+  }[];
+  trace: { intent: string; queries: string[]; hits: number }[];
+  model: string;
+  reasoning_effort: string;
+}
+
+/** 기준 문서에서 업무를 뽑는다. 동기 호출이라 응답까지 시간이 걸린다. */
+export function startTaskExtraction(token: string, projectId: string, primaryDocumentId: string) {
+  return apiRequest<TaskExtractionResult>(`/projects/${projectId}/task-extraction-runs/`, {
+    method: 'POST',
+    token,
+    body: { primary_document_id: primaryDocumentId },
+  });
 }

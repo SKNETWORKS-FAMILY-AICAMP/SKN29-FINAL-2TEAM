@@ -253,11 +253,6 @@ export default function TeamLeaderSettingsPage() {
     }
   }
 
-
-  function handleSaveWorkload() {
-    showToast('팀 업무량 기준을 저장했습니다.', 'success');
-  }
-
   return (
     <SettingsLayout
       subtitle="팀 관리자 설정"

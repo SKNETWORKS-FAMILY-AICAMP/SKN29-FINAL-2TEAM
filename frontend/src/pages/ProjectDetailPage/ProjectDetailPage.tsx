@@ -178,6 +178,10 @@ export default function ProjectDetailPage() {
               </div>
 
               <div className={styles.headerActions}>
+                {/* 여기에 「업무 분배」를 두지 않는다. 업무 분배는 기획서에서
+                    **신규** 프로젝트를 시작하는 일이고, 이 화면의 프로젝트는 Jira에서
+                    온 이미 진행 중인 것이다. 진행 중 프로젝트는 배분 대상이 아니라
+                    팀원의 현재 부하를 재는 재료다. */}
                 {project.has_jira_source && (
                   <button type="button" className={styles.ghostBtn} onClick={handleSync} disabled={busy}>
                     <Icon name="refresh" size={15} spin={busy} />

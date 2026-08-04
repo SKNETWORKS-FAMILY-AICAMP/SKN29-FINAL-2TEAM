@@ -146,7 +146,15 @@ export default function FolderSelectPage() {
         // 물어보면, 토큰이 만료됐을 때 등록된 문서는 멀쩡한데 폴더 이름만 못 읽는다.
         Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
       );
-      navigate('/onboarding/folder-roles');
+      // 커넥터 화면으로 돌아간다. **Drive와 Jira는 독립이다** — 한쪽을 끝냈다고
+      // 다른 쪽으로 이어질 이유가 없고, Jira를 안 쓰는 팀은 엉뚱한 화면에 떨어진다.
+      // 커넥터 화면이 허브라서 거기서 다음에 무엇을 할지 고른다.
+      //
+      // 역할 지정 단계는 없앴다(2026-08-04). 폴더에 준 역할을 안의 파일이 그대로
+      // 물려받아서 「01_기획」에 든 것은 무엇이든 기획서가 됐고, 정작 그 값으로
+      // 분기하는 코드는 한 줄도 없었다. 어느 문서가 업무의 근거인지는 기준 문서
+      // 선택 화면에서 사람이 고른다.
+      navigate('/onboarding/connectors');
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : '폴더를 저장하지 못했습니다.', 'error');
       setSaving(false);
@@ -171,7 +179,9 @@ export default function FolderSelectPage() {
 
   return (
     <div className={styles.page}>
-      <TopNav tabs={[]} stepBadge="단계 2 / 4" />
+      {/* Drive 설정은 커넥터 화면에서 갈라져 나온 갈래다. Jira 와 순서가 없어
+          「단계 N/M」을 붙일 수 없다 — 붙이면 Jira 를 안 쓰는 팀에게 거짓말이 된다. */}
+      <TopNav tabs={[]} />
 
       <div className={styles.contentContainer}>
         <div className={styles.headerBlock}>
@@ -200,10 +210,10 @@ export default function FolderSelectPage() {
 
             <div className={styles.stepFooter}>
               <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
-                이전 단계
+                커넥터로
               </Button>
               <Button variant="primary" disabled>
-                다음: 폴더 역할 지정
+                폴더 저장
               </Button>
             </div>
           </>
@@ -300,10 +310,10 @@ export default function FolderSelectPage() {
 
             <div className={styles.stepFooter}>
               <Button variant="outline" onClick={() => navigate('/onboarding/connectors')}>
-                이전 단계
+                커넥터로
               </Button>
               <Button variant="primary" disabled={saving} onClick={() => void handleSaveAndContinue()}>
-                {saving ? '저장 중…' : '다음: 폴더 역할 지정'}
+                {saving ? '저장 중…' : '폴더 저장'}
               </Button>
             </div>
           </>

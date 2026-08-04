@@ -116,7 +116,7 @@ export default function ConnectorOnboardingPage() {
 
   return (
     <div className={styles.page}>
-      <TopNav tabs={[]} stepBadge="Step 1 of 2" />
+      <TopNav tabs={[]} />
 
       <div className={styles.wizardArea}>
         <div className={styles.intro}>

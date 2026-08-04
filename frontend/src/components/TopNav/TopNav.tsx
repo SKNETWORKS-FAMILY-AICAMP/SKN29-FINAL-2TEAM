@@ -11,7 +11,6 @@ export interface NavTabItem {
 export interface TopNavProps {
   tabs: NavTabItem[];
   activeTo?: string;
-  stepBadge?: string;
   unreadCount?: number;
   onBellClick?: () => void;
   userLabel?: string;
@@ -20,7 +19,6 @@ export interface TopNavProps {
 export function TopNav({
   tabs,
   activeTo,
-  stepBadge,
   unreadCount = 0,
   onBellClick,
   userLabel,
@@ -44,7 +42,7 @@ export function TopNav({
         <span className={styles.wordmark}>halil</span>
       </Link>
 
-      {tabs.length > 0 && !stepBadge && (
+      {tabs.length > 0 && (
         <nav className={styles.tabs}>
           {tabs.map((tab) => {
             const isActive = tab.to === currentPath;
@@ -62,28 +60,22 @@ export function TopNav({
       )}
 
       <div className={styles.right}>
-        {stepBadge ? (
-          <span className={styles.stepBadge}>{stepBadge}</span>
-        ) : (
-          <>
-            <button
-              type="button"
-              className={styles.iconButton}
-              aria-label="알림"
-              onClick={onBellClick}
-            >
-              <Icon name="bell" size={20} />
-              {unreadCount > 0 && <span className={styles.dot} aria-hidden="true" />}
-            </button>
-            <div className={styles.avatar} title={label}>
-              {label ? label.slice(0, 1) : <Icon name="user" size={16} />}
-            </div>
-            {session && (
-              <button type="button" className={styles.logoutButton} onClick={handleLogout}>
-                로그아웃
-              </button>
-            )}
-          </>
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label="알림"
+          onClick={onBellClick}
+        >
+          <Icon name="bell" size={20} />
+          {unreadCount > 0 && <span className={styles.dot} aria-hidden="true" />}
+        </button>
+        <div className={styles.avatar} title={label}>
+          {label ? label.slice(0, 1) : <Icon name="user" size={16} />}
+        </div>
+        {session && (
+          <button type="button" className={styles.logoutButton} onClick={handleLogout}>
+            로그아웃
+          </button>
         )}
       </div>
     </header>

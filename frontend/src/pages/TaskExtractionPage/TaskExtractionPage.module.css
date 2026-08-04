@@ -1,0 +1,322 @@
+.page {
+  min-height: 100%;
+  background: var(--color-bg);
+}
+
+.main {
+  width: min(920px, calc(100% - var(--space-8)));
+  margin: 0 auto;
+  padding: var(--space-8) 0 var(--space-12);
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--color-primary);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 var(--space-6);
+}
+
+.header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.meta {
+  margin-top: var(--space-1);
+  font-size: 13px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  font-size: 13px;
+  color: #92400e;
+}
+
+/* ── 업무 카드 ─────────────────────────────────────── */
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.task {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: var(--space-5) var(--space-6);
+}
+
+.taskHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.taskNo {
+  flex-shrink: 0;
+  width: 22px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+
+.taskTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-heading);
+  line-height: 1.4;
+}
+
+.taskDesc {
+  margin: var(--space-2) 0 0 34px;
+  font-size: 13px;
+  color: var(--color-body);
+  line-height: 1.65;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-4) 0 0 34px;
+}
+
+.fact {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.factLabel {
+  color: var(--color-placeholder);
+}
+
+.factValue {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0 34px;
+}
+
+.listLabel {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
+.lists ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: 13px;
+  color: var(--color-body);
+  line-height: 1.7;
+}
+
+/* 비운 항목을 숨기지 않는다 — 근거가 없어 안 채운 것과 모델이 놓친 것은 다르다. */
+.missing {
+  margin: var(--space-4) 0 0 34px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/* ── 근거 ──────────────────────────────────────────── */
+
+.evidence {
+  margin: var(--space-4) 0 0 34px;
+}
+
+.evidenceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.rotated {
+  transform: rotate(180deg);
+}
+
+.quotes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.quote {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-border);
+  background: var(--color-bg);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.quote p {
+  font-size: 13px;
+  color: var(--color-body);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.quote footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: 11px;
+  color: var(--color-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+
+.query {
+  color: var(--color-muted);
+}
+
+.noQuote {
+  font-size: 12px;
+  color: var(--color-placeholder);
+}
+
+/* ── 검색 단계 ─────────────────────────────────────── */
+
+.trace {
+  margin-top: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: var(--space-4) var(--space-5);
+}
+
+.trace summary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  cursor: pointer;
+}
+
+.traceBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.traceRow {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 48px;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.traceIntent {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.traceQueries {
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.traceHits {
+  text-align: right;
+  color: var(--color-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+
+.model {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+
+/* ── 하단 ──────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.note {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.doneLink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.doneLink:hover {
+  text-decoration: underline;
+}
+
+.empty {
+  padding: var(--space-8);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+@media (max-width: 640px) {
+  .traceRow {
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+
+  .traceQueries {
+    grid-column: 1 / -1;
+  }
+}
