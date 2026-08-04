@@ -246,10 +246,6 @@ export default function TeamLeaderSettingsPage() {
                 <span className={styles.hrFieldLabel}>직급</span>
                 <span className={styles.hrFieldValue}>{account?.person?.job_role ?? '-'}</span>
               </div>
-              <div className={styles.hrField}>
-                <span className={styles.hrFieldLabel}>사번</span>
-                <span className={styles.hrFieldValue}>{account?.person?.person_id ?? '-'}</span>
-              </div>
             </div>
             {account && !account.person && (
               <p className={styles.hint}>

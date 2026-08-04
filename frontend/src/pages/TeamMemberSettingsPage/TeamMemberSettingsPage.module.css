@@ -49,7 +49,8 @@
 
 .hrFieldGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 이름·부서·직급 세 칸. 화면이 좁아지면 줄을 나눈다. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--space-4);
 }
 
