@@ -34,6 +34,8 @@ export type { ToastContextValue, ToastTone } from './Toast/Toast';
 export { Icon } from './Icon/Icon';
 export type { IconProps, IconName } from './Icon/Icon';
 
+export { SkillList } from './SkillList/SkillList';
+export type { SkillListProps } from './SkillList/SkillList';
 export { SettingsLayout } from './SettingsLayout/SettingsLayout';
 export type { SettingsLayoutProps, SettingsNavItem } from './SettingsLayout/SettingsLayout';
 

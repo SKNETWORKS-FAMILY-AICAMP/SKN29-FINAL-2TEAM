@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, Icon, Input, Modal, Select, SettingsLayout, useToast } from '../../components';
+import {
+  Badge,
+  Button,
+  Card,
+  Icon,
+  Input,
+  Modal,
+  Select,
+  SettingsLayout,
+  SkillList,
+  useToast,
+} from '../../components';
 import type { BadgeTone, SettingsNavItem } from '../../components';
 import { ApiError } from '../../api/client';
+import { fetchCurrentAccount } from '../../api/auth';
+import type { Account } from '../../api/auth';
 import { listConnectors } from '../../api/connectors';
 import { CONNECTOR_TYPE_BY_ID } from '../../api/connectors';
 import {
@@ -20,6 +33,7 @@ import styles from './TeamLeaderSettingsPage.module.css';
 
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'profile', label: '내 프로필', icon: 'user' },
+  { id: 'skills', label: '보유 스킬', icon: 'sparkles' },
   { id: 'connectors', label: '연동 관리', icon: 'link' },
   { id: 'team', label: '팀원 관리', icon: 'users' },
   { id: 'workload', label: '팀 업무량 기준', icon: 'sliders' },
@@ -41,18 +55,6 @@ const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
 
-interface HrField {
-  label: string;
-  value: string;
-}
-
-const HR_FIELDS: HrField[] = [
-  { label: '이름', value: '-' },
-  { label: '부서', value: '-' },
-  { label: '직급', value: '-' },
-  { label: '입사일', value: '-' },
-];
-
 export default function TeamLeaderSettingsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -63,8 +65,7 @@ export default function TeamLeaderSettingsPage() {
   const [baseHours, setBaseHours] = useState('40');
   const [overloadThreshold, setOverloadThreshold] = useState('110');
   const [defaultHours, setDefaultHours] = useState('8');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [account, setAccount] = useState<Account | null>(null);
 
   const [token] = useState(loadSessionToken);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -91,6 +92,24 @@ export default function TeamLeaderSettingsPage() {
   useEffect(() => {
     void refreshInvites();
   }, [refreshInvites]);
+
+  // 이름·부서·직급과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
+  useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+    fetchCurrentAccount(token)
+      .then((row) => {
+        if (!cancelled) setAccount(row);
+      })
+      .catch(() => {
+        // 프로필을 못 읽어도 나머지 구획은 보여준다.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   // 서버에 실제로 기록된 연결(현재는 People DB)을 데모 상태 위에 덮어쓴다.
   useEffect(() => {
@@ -168,9 +187,6 @@ export default function TeamLeaderSettingsPage() {
     }
   }
 
-  function handleSaveProfile() {
-    showToast('계정 정보를 저장했습니다.', 'success');
-  }
 
   function handleSaveWorkload() {
     showToast('팀 업무량 기준을 저장했습니다.', 'success');
@@ -192,7 +208,24 @@ export default function TeamLeaderSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>내 프로필</h2>
-            <p>회사 인사 시스템 연동 정보 및 관리용 계정 정보를 파악합니다.</p>
+            <p>회사 인사 시스템에서 온 내 정보입니다.</p>
+          </div>
+
+          <div className={styles.identityRow}>
+            {/* 사진을 담는 곳이 아직 없어 이름 첫 글자로 대신한다. 상단 내비게이션과 같은 방식이다. */}
+            <span className={styles.avatar} aria-hidden="true">
+              {(account?.person?.name ?? account?.display_name ?? '').slice(0, 1) || (
+                <Icon name="user" size={20} color="var(--color-muted)" />
+              )}
+            </span>
+            <div className={styles.identityText}>
+              <span className={styles.identityName}>
+                {account?.person?.name ?? account?.display_name ?? '-'}
+              </span>
+              <span className={styles.identityMeta}>
+                {[account?.person?.org_name, account?.person?.job_role].filter(Boolean).join(' · ') || '-'}
+              </span>
+            </div>
           </div>
 
           <div className={styles.hrBox}>
@@ -201,26 +234,50 @@ export default function TeamLeaderSettingsPage() {
               <span>HR 연동 정보 (읽기 전용)</span>
             </div>
             <div className={styles.hrFieldGrid}>
-              {HR_FIELDS.map((field) => (
-                <div key={field.label} className={styles.hrField}>
-                  <span className={styles.hrFieldLabel}>{field.label}</span>
-                  <span className={styles.hrFieldValue}>{field.value}</span>
-                </div>
-              ))}
+              <div className={styles.hrField}>
+                <span className={styles.hrFieldLabel}>이름</span>
+                <span className={styles.hrFieldValue}>{account?.person?.name ?? '-'}</span>
+              </div>
+              <div className={styles.hrField}>
+                <span className={styles.hrFieldLabel}>부서</span>
+                <span className={styles.hrFieldValue}>{account?.person?.org_name ?? '-'}</span>
+              </div>
+              <div className={styles.hrField}>
+                <span className={styles.hrFieldLabel}>직급</span>
+                <span className={styles.hrFieldValue}>{account?.person?.job_role ?? '-'}</span>
+              </div>
+              <div className={styles.hrField}>
+                <span className={styles.hrFieldLabel}>사번</span>
+                <span className={styles.hrFieldValue}>{account?.person?.person_id ?? '-'}</span>
+              </div>
             </div>
+            {account && !account.person && (
+              <p className={styles.hint}>
+                HR 시스템에 연결된 직원 정보가 없습니다. 회사 이메일로 가입했는지 확인해 주세요.
+              </p>
+            )}
           </div>
 
-          <p className={styles.subheading}>계정 정보 (수정 가능)</p>
+          <p className={styles.subheading}>계정 정보</p>
           <div className={styles.accountRow}>
-            <Input label="이메일" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Input label="전화번호" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <Input label="이메일" type="email" value={account?.email ?? ''} readOnly disabled />
+            <Input label="표시 이름" value={account?.display_name ?? ''} readOnly disabled />
           </div>
+          {/* 이메일은 로그인 ID이자 HR 직원을 찾는 근거다. 화면에서 고치게 하면
+              로그인 계정이 바뀌고, 아직 HR 연결 전이라면 다른 사람에게 붙을 수 있다. */}
+          <p className={styles.hint}>
+            이메일은 로그인 ID이자 인사 정보를 연결하는 기준이라 여기서 바꿀 수 없습니다.
+          </p>
+        </Card>
+      </section>
 
-          <div className={styles.saveRow}>
-            <Button variant="primary" onClick={handleSaveProfile}>
-              개인 정보 수정
-            </Button>
+      <section id="skills" className={styles.sectionBlock}>
+        <Card padding="lg">
+          <div className={styles.sectionHeading}>
+            <h2>보유 스킬</h2>
+            <p>업무 배정 후보를 고를 때 근거가 되는 값입니다. 인사 시스템에서 옵니다.</p>
           </div>
+          <SkillList skills={account?.skills ?? []} />
         </Card>
       </section>
 

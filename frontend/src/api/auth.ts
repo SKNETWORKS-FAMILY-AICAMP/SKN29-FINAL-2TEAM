@@ -24,6 +24,21 @@ export interface Account {
   /** 본인 조직 + 하위 조직. 팀원 초대 범위와 같은 기준. HR 미연결이면 빈 배열. */
   scope_org_ids: string[];
   person: AccountPerson | null;
+  /** HR이 아는 보유 스킬. 숙련도 높은 순. HR 미연결이거나 등록이 없으면 빈 배열. */
+  skills: PersonSkill[];
+}
+
+/** `mock_hr.person_skill` 한 줄. */
+export interface PersonSkill {
+  skill_id: string;
+  name: string;
+  category: string | null;
+  /** 1~5. */
+  proficiency: number;
+  /** HR / RESUME / USER_ADDED / AI_INFERRED. 화면이 한국어를 정한다. */
+  source: string | null;
+  /** AI가 추정한 것에만 값이 있다. 확인된 스킬은 null. */
+  confidence: number | null;
 }
 
 export interface AuthResult {

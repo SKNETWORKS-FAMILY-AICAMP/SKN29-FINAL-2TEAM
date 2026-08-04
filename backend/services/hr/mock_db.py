@@ -214,6 +214,32 @@ def lookup_persons(person_ids: list[str]) -> dict[str, dict[str, Any]]:
             return {row["person_id"]: row for row in cursor.fetchall()}
 
 
+def list_person_skills(person_id: str | None) -> list[dict[str, Any]]:
+    """이 사람의 보유 스킬. 숙련도가 높은 것부터.
+
+    `source`를 같이 준다 — HR이 등록한 것과 이력서에서 뽑은 것, AI가 추정한 것은
+    신뢰도가 다르고, 배정 근거를 설명할 때 그 차이가 필요하다.
+    """
+
+    if not person_id:
+        return []
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT s.skill_id, s.name, s.category,
+                       ps.proficiency, ps.source, ps.confidence
+                FROM mock_hr.person_skill AS ps
+                JOIN mock_hr.skill AS s ON s.skill_id = ps.skill_id
+                WHERE ps.person_id = %s
+                ORDER BY ps.proficiency DESC, s.name
+                """,
+                (person_id,),
+            )
+            return list(cursor.fetchall())
+
+
 def lookup_orgs(org_ids: list[str]) -> dict[str, dict[str, Any]]:
     """`org_id → ORG` 표시용 조회표. 비활성 조직도 포함한다(위와 같은 이유)."""
 

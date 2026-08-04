@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.db import AccountRepository, MemberInviteRepository, log_audit
+from backend.services.hr import list_person_skills
 from backend.db.errors import (
     DuplicateRecord,
     PermissionDenied,
@@ -31,6 +32,7 @@ from .serializers import (
     invite_candidate_response,
     invite_preview_response,
     invite_response,
+    skill_response,
 )
 from .tokens import (
     InvalidToken,
@@ -211,12 +213,20 @@ class PasswordResetConfirmAPIView(APIView):
 
 
 class CurrentAccountAPIView(AuthenticatedAPIView):
+    """설정의 「내 프로필」이 쓰는 단건 조회.
+
+    스킬을 같이 준다 — 사람의 신원(HR)과 스킬은 같은 화면에서 함께 읽히고,
+    나눠 부르면 왕복만 늘어난다.
+    """
+
     def get(self, request):
         try:
             profile = AccountRepository.get_profile(request.user.account_id)
+            person = profile.get("person")
+            skills = list_person_skills(person["person_id"] if person else None)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response(account_response(profile))
+        return Response(account_response(profile) | {"skills": [skill_response(s) for s in skills]})
 
 
 class InvitePreviewAPIView(APIView):

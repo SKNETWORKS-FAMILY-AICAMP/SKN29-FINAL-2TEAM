@@ -106,6 +106,27 @@ def account_response(profile: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def skill_response(row: dict[str, Any]) -> dict[str, Any]:
+    """보유 스킬 한 줄.
+
+    `source`를 코드 그대로 내려보낸다. 화면이 한국어를 정한다 — 여기서 만들면
+    다른 응답과 규칙이 어긋난다.
+
+    `confidence`는 AI가 추정한 것에만 값이 있다. 없는 것을 1.0으로 채우면
+    HR이 확인한 것과 추정한 것이 같아 보인다.
+    """
+
+    confidence = row.get("confidence")
+    return {
+        "skill_id": row["skill_id"],
+        "name": row["name"],
+        "category": row.get("category"),
+        "proficiency": row["proficiency"],
+        "source": row.get("source"),
+        "confidence": float(confidence) if confidence is not None else None,
+    }
+
+
 def invite_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "invite_id": row["invite_id"],
