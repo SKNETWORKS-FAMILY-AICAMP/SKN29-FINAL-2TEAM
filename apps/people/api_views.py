@@ -9,7 +9,12 @@ from backend.db import AccountRepository, TeamRepository
 from backend.db.errors import RepositoryError
 from backend.services import hr
 
-from .serializers import organization_response, person_response, team_response
+from .serializers import (
+    organization_response,
+    person_response,
+    team_member_response,
+    team_response,
+)
 
 
 class TeamScopedAPIView(APIView):
@@ -109,3 +114,52 @@ class OrganizationListAPIView(TeamScopedAPIView):
         except psycopg.Error as exc:
             return _unavailable("조직 데이터를 조회할 수 없습니다.", exc)
         return Response([organization_response(row) for row in rows])
+
+
+class TeamMemberAPIView(TeamScopedAPIView):
+    """팀 명부. 사람·계정·초대를 한 줄로 본다.
+
+    초대 현황과 다르다 — 초대는 "계정을 만들라고 보낸 것"이고 명부는 "업무 배정
+    대상"이다. 직접 가입한 팀장은 초대 기록이 없어 초대 목록에는 아예 없다.
+    """
+
+    def get(self, request):
+        try:
+            rows = TeamRepository.list_members(request.user.account_id)
+        except psycopg.Error as exc:
+            return _unavailable("팀원 목록을 조회할 수 없습니다.", exc)
+        return Response([team_member_response(row) for row in rows])
+
+    def post(self, request):
+        person_id = str(request.data.get("person_id") or "").strip()
+        if not person_id:
+            return Response(
+                {"detail": "person_id를 보내 주세요."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            TeamRepository.add_member_for(
+                account_id=request.user.account_id,
+                person_id=person_id,
+            )
+            rows = TeamRepository.list_members(request.user.account_id)
+        except RepositoryError as exc:
+            return _repository_error(exc)
+        except psycopg.Error as exc:
+            return _unavailable("팀원을 추가할 수 없습니다.", exc)
+        return Response([team_member_response(row) for row in rows])
+
+
+class TeamMemberDetailAPIView(TeamScopedAPIView):
+    def delete(self, request, person_id):
+        try:
+            TeamRepository.remove_member(
+                account_id=request.user.account_id,
+                person_id=person_id,
+            )
+            rows = TeamRepository.list_members(request.user.account_id)
+        except RepositoryError as exc:
+            return _repository_error(exc)
+        except psycopg.Error as exc:
+            return _unavailable("팀원을 뺄 수 없습니다.", exc)
+        return Response([team_member_response(row) for row in rows])

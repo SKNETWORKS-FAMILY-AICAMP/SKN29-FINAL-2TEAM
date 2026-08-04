@@ -20,13 +20,10 @@ import { fetchCurrentAccount } from '../../api/auth';
 import type { Account } from '../../api/auth';
 import { listConnectors } from '../../api/connectors';
 import { CONNECTOR_TYPE_BY_ID } from '../../api/connectors';
-import {
-  createInvite,
-  listInviteCandidates,
-  listInvites,
-  revokeInvite,
-} from '../../api/invites';
-import type { Invite, InviteCandidate, InviteStatus, IssuedInvite } from '../../api/invites';
+import { createInvite, listInviteCandidates, revokeInvite } from '../../api/invites';
+import type { InviteCandidate, InviteStatus, IssuedInvite } from '../../api/invites';
+import { listTeamMembers, removeTeamMember } from '../../api/teams';
+import type { TeamMember } from '../../api/teams';
 import { CONNECTOR_DEFS } from '../../data/connectorDefs';
 import { loadConnectorStatuses } from '../../utils/connectorStatus';
 import type { ConnectorStatus } from '../../utils/connectorStatus';
@@ -71,30 +68,42 @@ export default function TeamLeaderSettingsPage() {
   const [account, setAccount] = useState<Account | null>(null);
 
   const [token] = useState(loadSessionToken);
-  const [invites, setInvites] = useState<Invite[]>([]);
-  const [inviteError, setInviteError] = useState('');
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [memberError, setMemberError] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [candidates, setCandidates] = useState<InviteCandidate[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState<IssuedInvite | null>(null);
 
-  const refreshInvites = useCallback(async () => {
+  // 명부가 주인공이다. 초대는 각 팀원의 계정 상태로 붙는다 — 초대 목록을 따로
+  // 받지 않는다.
+  const refreshMembers = useCallback(async () => {
     if (!token) {
-      setInviteError('BLOCKED · 로그인해야 팀원 초대 현황을 볼 수 있습니다.');
+      setMemberError('로그인해야 팀원 목록을 볼 수 있습니다.');
       return;
     }
     try {
-      setInvites(await listInvites(token));
-      setInviteError('');
+      setMembers(await listTeamMembers(token));
+      setMemberError('');
     } catch (error) {
-      setInviteError(error instanceof ApiError ? error.message : '초대 현황을 불러오지 못했습니다.');
+      setMemberError(error instanceof ApiError ? error.message : '팀원 목록을 불러오지 못했습니다.');
     }
   }, [token]);
 
   useEffect(() => {
-    void refreshInvites();
-  }, [refreshInvites]);
+    void refreshMembers();
+  }, [refreshMembers]);
+
+  async function handleRemoveMember(member: TeamMember) {
+    if (!token) return;
+    try {
+      setMembers(await removeTeamMember(token, member.person_id));
+      showToast(`${member.name ?? member.person_id} 님을 명부에서 뺐습니다.`, 'success');
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : '팀원을 빼지 못했습니다.', 'error');
+    }
+  }
 
   // 이름·부서·직책과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
   const reloadAccount = useCallback(async () => {
@@ -166,7 +175,7 @@ export default function TeamLeaderSettingsPage() {
     setIssuing(true);
     try {
       setIssued(await createInvite(token, selectedPersonId));
-      await refreshInvites();
+      await refreshMembers();
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : '초대를 발급하지 못했습니다.', 'error');
     } finally {
@@ -180,7 +189,7 @@ export default function TeamLeaderSettingsPage() {
     try {
       await revokeInvite(token, inviteId);
       showToast('초대를 취소했습니다.', 'success');
-      await refreshInvites();
+      await refreshMembers();
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : '초대를 취소하지 못했습니다.', 'error');
     }
@@ -306,7 +315,7 @@ export default function TeamLeaderSettingsPage() {
           <div className={styles.sectionHeadingRow}>
             <div className={styles.sectionHeading}>
               <h2>팀원 관리</h2>
-              <p>팀 내부 멤버를 초대하고 활성화 상태를 모니터링합니다.</p>
+              <p>업무 배정 대상이 되는 팀 명부입니다. 계정과 초대 상태를 함께 봅니다.</p>
             </div>
             <Button
               variant="primary"
@@ -318,38 +327,67 @@ export default function TeamLeaderSettingsPage() {
             </Button>
           </div>
 
-          <p className={styles.tableCaption}>보낸 초대 ({invites.length}건)</p>
+          <p className={styles.tableCaption}>팀원 ({members.length}명)</p>
 
           <div className={styles.teamTable}>
             <div className={styles.teamTableHead}>
               <span>이름</span>
-              <span>이메일</span>
-              <span>상태</span>
-              <span>초대일</span>
-              <span>작업</span>
+              <span>소속 · 직책</span>
+              <span>계정</span>
+              <span>초대</span>
+              <span />
             </div>
-            {inviteError && <p className={styles.emptyNote}>{inviteError}</p>}
-            {!inviteError && invites.length === 0 && (
-              <p className={styles.emptyNote}>아직 초대된 팀원이 없습니다.</p>
+            {memberError && <p className={styles.emptyNote}>{memberError}</p>}
+            {!memberError && members.length === 0 && (
+              <p className={styles.emptyNote}>아직 팀원이 없습니다.</p>
             )}
-            {invites.map((invite) => (
-              <div key={invite.invite_id} className={styles.teamTableRow}>
-                <span className={styles.memberName}>{invite.person_name}</span>
-                <span className={styles.memberEmail}>{invite.person_email}</span>
-                <span>
-                  <Badge tone={INVITE_STATUS_TONE[invite.status]}>
-                    {INVITE_STATUS_LABEL[invite.status]}
-                  </Badge>
+            {members.map((member) => (
+              <div key={member.team_member_id} className={styles.teamTableRow}>
+                <span className={styles.memberName}>
+                  {member.name ?? member.person_id}
+                  {member.is_owner && <span className={styles.ownerTag}>팀 소유자</span>}
                 </span>
-                <span>{DATE_FORMAT.format(new Date(invite.created_at))}</span>
+                <span className={styles.memberEmail}>
+                  {[member.org_name, member.job_role].filter(Boolean).join(' · ') || '-'}
+                </span>
                 <span>
-                  {invite.status === 'PENDING' && (
+                  {member.account_email ? (
+                    <span className={styles.memberEmail}>{member.account_email}</span>
+                  ) : (
+                    <Badge tone="neutral">미가입</Badge>
+                  )}
+                </span>
+                <span className={styles.inviteCell}>
+                  {member.invite_status ? (
+                    <>
+                      <Badge tone={INVITE_STATUS_TONE[member.invite_status]}>
+                        {INVITE_STATUS_LABEL[member.invite_status]}
+                      </Badge>
+                      {member.invite_status === 'PENDING' && member.invite_id && (
+                        <button
+                          type="button"
+                          className={styles.cancelLink}
+                          onClick={() => void handleRevokeInvite(member.invite_id as string)}
+                        >
+                          취소
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    // 직접 가입한 팀장은 초대를 받은 적이 없다. 빈 것이 정상이다.
+                    <span className={styles.dim}>-</span>
+                  )}
+                </span>
+                <span className={styles.rowAction}>
+                  {/* 팀 계정을 쓰는 사람과 팀 소유자는 서버가 막는다. 누를 수 없는
+                      버튼을 보여 주느니 아예 감춘다. */}
+                  {!member.is_owner && !member.account_id && (
                     <button
                       type="button"
-                      className={styles.cancelLink}
-                      onClick={() => void handleRevokeInvite(invite.invite_id)}
+                      className={styles.removeLink}
+                      onClick={() => void handleRemoveMember(member)}
                     >
-                      초대 취소
+                      명부에서 빼기
                     </button>
                   )}
                 </span>

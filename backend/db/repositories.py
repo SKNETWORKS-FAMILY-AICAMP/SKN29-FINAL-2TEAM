@@ -1665,6 +1665,141 @@ class TeamRepository:
         )
 
     @staticmethod
+    def list_members(account_id: str) -> list[dict[str, Any]]:
+        """팀 명부 한 줄에 사람·계정·초대를 함께 담아 준다.
+
+        지금까지 「팀원 관리」가 보낸 초대만 보여 줘서, 직접 가입한 팀장은 목록에
+        아예 없고(초대 기록이 없다) 이미 팀원인 사람이 「초대됨」으로만 읽혔다.
+        업무 배정 대상은 `team_member`지 초대가 아니다.
+
+        `team_member`는 **사람 단위**다 — 계정이 없어도 팀원이다. 그래서 계정과
+        초대는 있으면 붙이고 없으면 비운다.
+
+        초대는 사람마다 **가장 최근 것 하나**만 본다. 취소하고 다시 보낸 이력이
+        쌓이는데, 명부에서 알고 싶은 것은 "지금 어떤 상태인가"뿐이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+
+                cursor.execute(
+                    """
+                    SELECT tm.team_member_id, tm.person_id, tm.added_at,
+                           ua.account_id, ua.email AS account_email, ua.account_status,
+                           t.owner_account_id,
+                           mi.invite_id, mi.status AS invite_status, mi.created_at AS invited_at
+                    FROM team_member AS tm
+                    JOIN team AS t ON t.team_id = tm.team_id
+                    LEFT JOIN user_person_link AS upl
+                           ON upl.person_id = tm.person_id AND upl.mapping_status = 'VERIFIED'
+                    LEFT JOIN user_account AS ua
+                           ON ua.account_id = upl.account_id AND ua.team_id = tm.team_id
+                    LEFT JOIN LATERAL (
+                        SELECT invite_id, status, created_at
+                        FROM member_invite
+                        WHERE person_id = tm.person_id AND team_id = tm.team_id
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    ) AS mi ON true
+                    WHERE tm.team_id = %s
+                    ORDER BY tm.team_member_id
+                    """,
+                    (team_id,),
+                )
+                rows = list(cursor.fetchall())
+
+        # 이름·직책은 HR에 있다. 사람마다 부르지 않고 한 번에 모아 붙인다.
+        persons = hr.lookup_persons([row["person_id"] for row in rows])
+        for row in rows:
+            person = persons.get(row["person_id"]) or {}
+            row["name"] = person.get("name")
+            row["org_name"] = person.get("org_name")
+            row["job_role"] = person.get("job_role")
+            # 팀을 만든 사람은 뺄 수 없다. 화면이 버튼을 감추는 근거다.
+            row["is_owner"] = bool(row["account_id"]) and row["account_id"] == row["owner_account_id"]
+        return rows
+
+    @staticmethod
+    def add_member_for(*, account_id: str, person_id: str) -> None:
+        """팀 명부에 사람을 더한다.
+
+        초대 가능 범위와 같은 기준을 쓴다 — 본인 소속 조직과 그 하위. 팀을 만들 때
+        적용한 규칙이 나중에 더할 때만 느슨해질 이유가 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+
+                owner_person_id = _linked_person_id(cursor, account_id)
+                owner = hr.get_person(owner_person_id) if owner_person_id else None
+                if owner is None:
+                    raise PermissionDenied("HR 시스템에서 본인 확인을 먼저 마쳐야 합니다.")
+
+                person = hr.get_person(person_id)
+                if person is None:
+                    raise RecordNotFound(f"HR에서 찾을 수 없는 직원입니다: {person_id}")
+                if person["org_id"] not in set(hr.subtree_org_ids(owner["org_id"])):
+                    raise PermissionDenied(
+                        "본인이 속한 조직과 그 하위 조직의 직원만 팀에 담을 수 있습니다."
+                    )
+
+                TeamRepository.add_member(cursor, team_id=team_id, person_id=person_id)
+
+    @staticmethod
+    def remove_member(*, account_id: str, person_id: str) -> None:
+        """팀 명부에서 뺀다. 업무 배정 대상에서 빠진다는 뜻이다.
+
+        **계정이 있는 사람은 뺄 수 없다.** 명부에서만 지우면 그 사람의 계정은
+        여전히 이 팀의 데이터를 볼 수 있어, 빠진 것처럼 보이는데 실제로는 접근이
+        남는다. 계정 정리가 먼저다.
+
+        팀을 만든 사람도 뺄 수 없다 — 팀 소유자가 배정 대상에서 사라진다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+
+                cursor.execute(
+                    "SELECT owner_account_id FROM team WHERE team_id = %s",
+                    (team_id,),
+                )
+                team = cursor.fetchone()
+                if team is None:
+                    raise RecordNotFound("팀을 찾을 수 없습니다.")
+
+                cursor.execute(
+                    """
+                    SELECT ua.account_id
+                    FROM user_person_link AS upl
+                    JOIN user_account AS ua ON ua.account_id = upl.account_id
+                    WHERE upl.person_id = %s AND upl.mapping_status = 'VERIFIED'
+                      AND ua.team_id = %s
+                    LIMIT 1
+                    """,
+                    (person_id, team_id),
+                )
+                linked = cursor.fetchone()
+                if linked is not None:
+                    if linked["account_id"] == team["owner_account_id"]:
+                        raise PermissionDenied("팀을 만든 사람은 명부에서 뺄 수 없습니다.")
+                    raise PermissionDenied(
+                        "이 직원은 팀 계정을 쓰고 있어 명부에서 뺄 수 없습니다. "
+                        "계정을 먼저 정리해 주세요."
+                    )
+
+                cursor.execute(
+                    "DELETE FROM team_member WHERE team_id = %s AND person_id = %s RETURNING team_member_id",
+                    (team_id, person_id),
+                )
+                if cursor.fetchone() is None:
+                    raise RecordNotFound("이 팀의 팀원이 아닙니다.")
+
+    @staticmethod
     def create(*, owner_account_id: str, name: str, person_ids: list[str]) -> dict[str, Any]:
         """팀장이 팀명을 붙여 팀을 만들고 팀원을 담는다.
 

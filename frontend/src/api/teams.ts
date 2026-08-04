@@ -24,3 +24,47 @@ export function createTeam(token: string, name: string, personIds: string[]) {
 export function fetchMyTeam(token: string) {
   return apiRequest<Team>('/teams/', { token });
 }
+
+/**
+ * 팀 명부 한 줄. 사람·계정·초대를 함께 담는다.
+ *
+ * 초대 현황과 다르다 — 초대는 "계정을 만들라고 보낸 것"이고 명부는 "업무 배정
+ * 대상"이다. 직접 가입한 팀장은 초대 기록이 없어 초대 목록에는 아예 없다.
+ */
+export interface TeamMember {
+  team_member_id: string;
+  person_id: string;
+  name: string | null;
+  org_name: string | null;
+  /** 직급이 아니라 직책에 가깝다(HR의 person.job_role). */
+  job_role: string | null;
+  added_at: string | null;
+  /** 이 팀의 계정을 쓰고 있으면 채워진다. 없으면 아직 가입 전이다. */
+  account_id: string | null;
+  account_email: string | null;
+  account_status: string | null;
+  /** 팀을 만든 사람은 명부에서 뺄 수 없다. */
+  is_owner: boolean;
+  /** 가장 최근 초대 하나. */
+  invite_id: string | null;
+  invite_status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED' | null;
+  invited_at: string | null;
+}
+
+export function listTeamMembers(token: string) {
+  return apiRequest<TeamMember[]>('/teams/members/', { token });
+}
+
+/** 팀 명부에 더한다. 초대 가능 범위와 같은 기준(본인 소속 조직과 그 하위)이다. */
+export function addTeamMember(token: string, personId: string) {
+  return apiRequest<TeamMember[]>('/teams/members/', {
+    method: 'POST',
+    token,
+    body: { person_id: personId },
+  });
+}
+
+/** 명부에서 뺀다. 팀 계정을 쓰는 사람과 팀 소유자는 서버가 막는다. */
+export function removeTeamMember(token: string, personId: string) {
+  return apiRequest<TeamMember[]>(`/teams/members/${personId}/`, { method: 'DELETE', token });
+}

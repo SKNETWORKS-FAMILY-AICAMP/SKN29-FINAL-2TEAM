@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from backend.db.errors import PermissionDenied
 from backend.db.repositories import TeamRepository
 from backend.services.hr import mock_db
 
@@ -85,3 +86,116 @@ class TeamCreationGuardTests(SimpleTestCase):
             TeamRepository.create(owner_account_id="UA001", name="개발팀", person_ids=["PM001"])
 
         self.assertIn("하위 조직의 직원만", str(ctx.exception))
+
+
+class TeamMemberApiTests(SimpleTestCase):
+    """팀 명부. 초대 현황과 다르다 — 명부는 업무 배정 대상이다."""
+
+    def _headers(self):
+        from apps.accounts.tokens import issue_token
+
+        return {"authorization": f"Bearer {issue_token('UA001')}"}
+
+    def _row(self, person_id="PB002", name="성주연", account=None, invite="PENDING", owner=False):
+        return {
+            "team_member_id": "TM003",
+            "person_id": person_id,
+            "name": name,
+            "org_name": "개발팀",
+            "job_role": "사원",
+            "added_at": None,
+            "account_id": account,
+            "account_email": f"{account}@halil.com" if account else None,
+            "account_status": "ACTIVE" if account else None,
+            "is_owner": owner,
+            "invite_id": "MI002" if invite else None,
+            "invite_status": invite,
+            "invited_at": None,
+        }
+
+    def test_requires_login(self):
+        self.assertEqual(self.client.get("/api/teams/members/").status_code, 401)
+
+    @patch("apps.people.api_views.TeamRepository.list_members")
+    def test_lists_members_with_account_and_invite(self, list_members):
+        """계정이 없어도 팀원이다 — team_member 는 사람 단위다."""
+
+        list_members.return_value = [
+            self._row(person_id="PX002", name="임준", account="UA001", invite=None, owner=True),
+            self._row(),
+        ]
+
+        body = self.client.get("/api/teams/members/", headers=self._headers()).json()
+
+        self.assertEqual(len(body), 2)
+        # 직접 가입한 팀장은 초대 기록이 없다. 초대 목록만 보면 아예 빠진다.
+        self.assertIsNone(body[0]["invite_status"])
+        self.assertTrue(body[0]["is_owner"])
+        self.assertIsNone(body[1]["account_id"])
+        self.assertEqual(body[1]["invite_status"], "PENDING")
+
+    @patch("apps.people.api_views.TeamRepository.list_members", return_value=[])
+    @patch("apps.people.api_views.TeamRepository.add_member_for")
+    def test_add_requires_person_id(self, add_member, _list):
+        response = self.client.post(
+            "/api/teams/members/", {}, content_type="application/json", headers=self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+        add_member.assert_not_called()
+
+    @patch("apps.people.api_views.TeamRepository.list_members", return_value=[])
+    @patch("apps.people.api_views.TeamRepository.add_member_for")
+    def test_add_passes_person_id(self, add_member, _list):
+        response = self.client.post(
+            "/api/teams/members/",
+            {"person_id": "PB003"},
+            content_type="application/json",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(add_member.call_args.kwargs["person_id"], "PB003")
+
+    @patch("apps.people.api_views.TeamRepository.add_member_for")
+    def test_add_outside_org_subtree_is_forbidden(self, add_member):
+        add_member.side_effect = PermissionDenied(
+            "본인이 속한 조직과 그 하위 조직의 직원만 팀에 담을 수 있습니다."
+        )
+
+        response = self.client.post(
+            "/api/teams/members/",
+            {"person_id": "PZ001"},
+            content_type="application/json",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    @patch("apps.people.api_views.TeamRepository.list_members", return_value=[])
+    @patch("apps.people.api_views.TeamRepository.remove_member")
+    def test_remove_passes_person_id(self, remove_member, _list):
+        response = self.client.delete("/api/teams/members/PB003/", headers=self._headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(remove_member.call_args.kwargs["person_id"], "PB003")
+
+    @patch("apps.people.api_views.TeamRepository.remove_member")
+    def test_removing_someone_with_a_team_account_is_forbidden(self, remove_member):
+        """명부에서만 지우면 그 사람의 계정은 여전히 팀 데이터를 본다."""
+
+        remove_member.side_effect = PermissionDenied(
+            "이 직원은 팀 계정을 쓰고 있어 명부에서 뺄 수 없습니다."
+        )
+
+        response = self.client.delete("/api/teams/members/PB001/", headers=self._headers())
+
+        self.assertEqual(response.status_code, 403)
+
+    @patch("apps.people.api_views.TeamRepository.remove_member")
+    def test_removing_the_owner_is_forbidden(self, remove_member):
+        remove_member.side_effect = PermissionDenied("팀을 만든 사람은 명부에서 뺄 수 없습니다.")
+
+        response = self.client.delete("/api/teams/members/PX002/", headers=self._headers())
+
+        self.assertEqual(response.status_code, 403)
