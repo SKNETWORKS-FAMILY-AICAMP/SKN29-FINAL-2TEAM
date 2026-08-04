@@ -131,12 +131,17 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
             401,
         )
 
+    @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team")
+    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
-    def test_each_jira_project_becomes_one_project(self, register):
-        register.return_value = [
+    def test_each_jira_project_becomes_one_project(self, register, _sync, _arch, list_team):
+        rows = [
             jira_source_row("PS009", "PJ001", "KAN", "SKN29_Final_2Team"),
             jira_source_row("PS010", "PJ002", "AIP", "AI Platform"),
         ]
+        register.return_value = rows
+        list_team.return_value = rows
 
         response = self.client.put(
             "/api/projects/jira/",
@@ -152,11 +157,56 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         # 같은 프로젝트에 둘이 붙지 않는다 — 각자 자기 프로젝트를 갖는다.
-        by_key = {row["external_source_id"]: row["proj_id"] for row in response.json()}
+        by_key = {row["project_key"]: row["proj_id"] for row in response.json()["sources"]}
         self.assertEqual(by_key, {"KAN": "PJ001", "AIP": "PJ002"})
 
+    @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=["PJ003"])
+    @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
-    def test_display_name_becomes_the_project_name(self, register):
+    def test_already_finished_project_starts_archived(self, register, sync, archive, _t):
+        """이미 끝난 프로젝트를 가져오면 완료 구획에서 시작해야 한다."""
+
+        register.return_value = [jira_source_row("PS011", "PJ003", "LEG", "문서관리 고도화")]
+
+        body = self.client.put(
+            "/api/projects/jira/",
+            self.body([{"project_key": "LEG", "name": "문서관리 고도화"}]),
+            content_type="application/json",
+            headers=auth_header(),
+        ).json()
+
+        # 등록하자마자 읽는다 — 안 읽으면 완료인지 판단할 근거가 없다.
+        sync.assert_called_once()
+        self.assertEqual(archive.call_args.args[0], ["PJ003"])
+        self.assertEqual(body["archived"], ["PJ003"])
+
+    @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
+    @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
+    def test_already_registered_source_is_not_reread(self, register, sync, archive, _t):
+        """다시 저장했다고 이미 읽은 것을 또 읽지 않는다 — 완료 판정도 다시 하지 않는다."""
+
+        register.return_value = [
+            jira_source_row("PS009", "PJ001", "KAN") | {"last_sync_at": "2026-08-04T00:00:00Z"}
+        ]
+
+        self.client.put(
+            "/api/projects/jira/",
+            self.body([{"project_key": "KAN"}]),
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        sync.assert_not_called()
+        self.assertEqual(archive.call_args.args[0], [])
+
+    @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
+    @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
+    def test_display_name_becomes_the_project_name(self, register, _s, _a, _t):
         """화면이 'KAN'이 아니라 'SKN29_Final_2Team'을 보여줘야 한다.
 
         나중에 원본에 다시 물어보면, 토큰이 만료됐을 때 저장된 데이터는 멀쩡한데
@@ -178,8 +228,10 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
             [{"project_key": "KAN", "name": "SKN29_Final_2Team"}],
         )
 
+    @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
-    def test_empty_list_clears_the_selection(self, register):
+    def test_empty_list_clears_the_selection(self, register, _a, _t):
         register.return_value = []
 
         response = self.client.put(
@@ -190,7 +242,7 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.json()["sources"], [])
 
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
     def test_missing_project_key_is_rejected(self, register):

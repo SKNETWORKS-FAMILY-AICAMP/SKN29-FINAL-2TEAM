@@ -196,6 +196,45 @@ class ProjectRepository:
                 return cursor.fetchone()
 
     @staticmethod
+    def archive_if_all_done(proj_ids: list[str]) -> list[str]:
+        """읽어 보니 이미 끝나 있던 프로젝트를 완료로 내린다. 내린 것을 돌려준다.
+
+        **등록 직후 최초 수집에서만 부른다.** 매번 판정하면 사람이 「진행 중으로」
+        되돌린 것을 다음 수집이 다시 완료로 만들어, 되돌리기가 무의미해진다.
+        가져온 시점의 상태로 시작하고 이후는 사람이 정한다.
+
+        업무가 한 건도 없으면 내리지 않는다 — "미완료가 없다"가 참이 되어 빈
+        프로젝트가 전부 완료로 떨어진다.
+        """
+
+        if not proj_ids:
+            return []
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE proj SET status = 'ARCHIVED'
+                     WHERE proj_id = ANY(%s)
+                       AND status = 'ACTIVE'
+                       AND EXISTS (
+                           SELECT 1 FROM exist_task AS et
+                           JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                           WHERE ps.proj_id = proj.proj_id
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM exist_task AS et
+                           JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                           WHERE ps.proj_id = proj.proj_id
+                             AND et.status_category IS DISTINCT FROM 'DONE'
+                       )
+                    RETURNING proj_id
+                    """,
+                    (sorted(set(proj_ids)),),
+                )
+                return [row["proj_id"] for row in cursor.fetchall()]
+
+    @staticmethod
     def set_status(*, proj_id: str, account_id: str, status: str) -> dict[str, Any]:
         """프로젝트 상태를 바꾼다. 「완료 처리」가 쓰는 유일한 경로다.
 

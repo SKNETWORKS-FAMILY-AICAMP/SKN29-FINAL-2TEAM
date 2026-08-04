@@ -162,11 +162,19 @@ export function listRegisteredJiraProjects(token: string) {
   return apiRequest<RegisteredJiraProject[]>('/projects/jira/', { token });
 }
 
+export interface JiraRegisterResult {
+  sources: RegisteredJiraProject[];
+  /** 읽어 보니 이미 끝나 있어 완료 구획에서 시작한 프로젝트. */
+  archived: string[];
+  /** 등록은 됐지만 이슈를 못 읽은 것. 화면에서 「갱신」으로 다시 시도할 수 있다. */
+  failed: { project_key: string; detail: string }[];
+}
+
 export function registerJiraProjects(
   token: string,
   projects: { project_key: string; name?: string }[],
 ) {
-  return apiRequest<ProjectSource[]>('/projects/jira/', {
+  return apiRequest<JiraRegisterResult>('/projects/jira/', {
     method: 'PUT',
     token,
     body: { projects },

@@ -241,15 +241,42 @@ class ProjectJiraRegisterAPIView(AuthenticatedAPIView):
     def put(self, request):
         serializer = JiraProjectRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        account_id = request.user.account_id
 
         try:
             rows = ProjectSourceRepository.register_from_jira(
-                account_id=request.user.account_id,
+                account_id=account_id,
                 selections=serializer.validated_data["projects"],
             )
+
+            # 방금 등록한 것(한 번도 안 읽은 소스)은 바로 읽는다. 안 읽으면 목록이
+            # "아직 읽지 않았습니다"로 시작하고, 무엇을 가져왔는지 볼 수 없다.
+            fresh = [row for row in rows if row["last_sync_at"] is None]
+            sync = _sync_jira_sources(account_id=account_id, sources=fresh) if fresh else None
+
+            # 읽어 보니 이미 끝나 있던 프로젝트는 완료 구획에서 시작한다. 판정은
+            # 여기 한 번뿐이다 — 매번 하면 사람이 되돌린 것을 다시 완료로 만든다.
+            archived = ProjectRepository.archive_if_all_done([row["proj_id"] for row in fresh])
+
+            rows = ExistTaskRepository.list_jira_sources_for_team(account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response([project_source_response(row) for row in rows])
+
+        return Response(
+            {
+                "sources": [
+                    {
+                        "proj_id": row["proj_id"],
+                        "project_key": row["external_source_id"],
+                        "name": row["display_name"],
+                    }
+                    for row in rows
+                ],
+                "archived": archived,
+                # 수집이 일부 실패해도 등록은 유지한다. 무엇이 안 읽혔는지는 알려준다.
+                "failed": (sync or {}).get("failed", []),
+            }
+        )
 
 
 class TeamDocumentAPIView(AuthenticatedAPIView):
