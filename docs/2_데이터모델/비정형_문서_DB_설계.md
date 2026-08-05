@@ -89,7 +89,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 | `source_type` | 원천 유형 | VARCHAR | 문서가 유입된 외부 소스 | `DRIVE`/`JIRA` — `schema.sql`과 구현이 쓰는 값이다(이 표의 앞선 `GOOGLE_DRIVE` 표기는 오기였다) | Connector·파서 라우팅과 출처 표시 |
 | `file_name` | 파일명 | VARCHAR | 원본 파일명 | 문자열 | 화면 표시, Citation에 "출처: OOO.pdf" 표기 |
 | `mime_type` | 형식 | VARCHAR | 파일 MIME 타입 | 예: `application/pdf`, `application/vnd.google-apps.document` | 어떤 파서를 태울지 라우팅 |
-| `doc_role` | 문서 역할 | VARCHAR | 이 문서가 기획서/회의록/일일보고서 중 무엇인지 | 구현이 쓰는 값은 `PLAN`/`MEETING_NOTE`/`DAILY_REPORT`/`OTHER` 네 개다. 역할 지정 화면(`/onboarding/folder-roles`)의 선택지와 1:1로 맞췄다. `RFP`는 화면에 없어서 넣지 않았다 | Vector 검색 시 문서 유형 필터, 파싱 규칙 분기(기획서 우선순위가 RFP보다 높다는 정책과 연결) |
+| `doc_role` | 프로젝트와의 관계 | VARCHAR | 이 문서가 `proj_id` 프로젝트에서 맡는 자리 | `NULL`(팀 문서 풀) / `PRIMARY`(기준 문서, 프로젝트당 하나) — **2026-08-04 의미 변경**. 예전에는 문서의 종류(`PLAN`/`MEETING_NOTE`/`DAILY_REPORT`/`OTHER`)였는데, 폴더에 준 역할을 안의 파일이 물려받아 「01_기획」에 든 것은 무엇이든 기획서가 됐고 정작 그 값으로 분기하는 코드는 없었다. `SUB`는 스키마에 남아 있지만 쓰지 않는다 — 같은 회의록이 여러 프로젝트의 근거일 수 있는데 `proj_id`는 하나만 가리킨다 | 기준 문서 식별. 프로젝트당 `PRIMARY` 하나를 부분 유니크 인덱스로 강제 |
 | `acl_principals` | 접근 권한 | ARRAY | 이 문서를 볼 수 있는 사용자/그룹 목록 | 문자열 배열(사용자ID 또는 그룹ID 나열) | 검색 결과·Citation 노출 전 접근 권한 필터링 |
 | `src_modified_at` | 원본 수정 시각 | TIMESTAMP | 원본 소스(Drive 등)에서 마지막으로 수정된 시각 | ISO 8601 timestamp | 동기화 주기 판단(원본이 로컬 캐시보다 최신이면 재동기화) |
 | `deleted` | 삭제 여부 | BOOLEAN | 원본이 삭제됐는지 | true/false | 삭제된 문서를 검색·Citation에서 제외 |
@@ -286,7 +286,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 |---|---|---|---|---|---|
 | `chunk_id` (PK, 설계상 참조) | 청크 ID | UUID | 원본 청크이자 벡터 레코드 식별자 | `CHUNK.chunk_id`와 동일, 1:1 | 검색 결과를 원문 청크/블록까지 역추적 |
 | `embedding` | 임베딩 값 | VECTOR | 청크 텍스트를 벡터화한 값 | pgvector `vector(N)` 타입(N은 `embed_dim`과 동일) | 유사도 검색(코사인/유클리드 거리 계산)의 대상 데이터 |
-| `metadata` | 메타데이터 | JSONB | 검색 필터 전용 메타데이터 | 예: `{"proj_id":"...","document_id":"...","doc_role":"PLAN","security":"GENERAL","acl_principals":[...]}` — **업무 의미(담당자·마감일 등)는 넣지 않음** | 검색 시 project/권한 범위로 먼저 필터링하고, 업무 의미는 `CHUNK→KNOW_ITEM_SRC→KNOW_ITEM.semantic_type` JOIN으로 조회 |
+| `metadata` | 메타데이터 | JSONB | 검색 필터 전용 메타데이터 | 예: `{"proj_id":"...","document_id":"...","doc_role":"PRIMARY","security":"GENERAL","acl_principals":[...]}` — **업무 의미(담당자·마감일 등)는 넣지 않음** | 검색 시 project/권한 범위로 먼저 필터링하고, 업무 의미는 `CHUNK→KNOW_ITEM_SRC→KNOW_ITEM.semantic_type` JOIN으로 조회 |
 | `indexed_at` | 인덱싱 시각 | TIMESTAMP | 벡터가 생성/저장된 시각 | ISO 8601 timestamp | 인덱싱 지연 모니터링 |
 | `embed_model` | 임베딩 모델 | VARCHAR | 어떤 임베딩 모델을 썼는지 | 모델명 문자열 | 모델이 다른 벡터끼리는 거리 비교가 무의미하므로, 검색 시 모델 일치 필터 |
 | `embed_ver` | 임베딩 버전 | VARCHAR | 임베딩 파이프라인 버전 | 버전 문자열 | 재임베딩 대상 판별 |

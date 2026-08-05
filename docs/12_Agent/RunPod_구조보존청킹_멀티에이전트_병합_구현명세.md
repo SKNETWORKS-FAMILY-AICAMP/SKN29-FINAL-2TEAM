@@ -49,9 +49,9 @@ pgvector 검색, 업무 근거 멀티에이전트, RunPod Serverless 연동 및 
 | 임베딩 차원 | 768 | DB, Worker, 적재, 검색에서 검증 |
 | Vector 단위 | Chunk 하나당 `vec_idx` 하나 | Chunk UUID와 Vector PK를 1:1로 적재 |
 | 비밀값 | `.env`를 통해 읽고 사용자가 HF token 등을 주입 | key/token 하드코딩 없음 |
-| Agent 모델 | `gpt-5.6-sol`, reasoning `xhigh` | 다른 값이면 명시적 설정 오류 |
+| Agent 모델 | 검색어 생성 `gpt-5.6-luna`(effort `low`), 최종 정리 `gpt-5.6-sol`(effort `xhigh`) | 아는 모델이 아니면 명시적 설정 오류 (2026-08-05 분리) |
 | 미처리 문서 | 아직 준비되지 않았으면 화면에 오류만 표시 | 409 응답 및 선택 화면 오류 표시 |
-| 화면 범위 | 최종 디자인 전 최소 껍데기 | 프로젝트/기준 문서 선택과 실행 버튼만 구현 |
+| 화면 범위 | 기준 문서 선택 → 추출 → 1차 확인까지 연결 | 진행 스트리밍·근거 열람·JSON 복사 포함 (2026-08-05) |
 | 실패 정책 | 하드코딩된 대체값으로 억지 실행 금지 | 누락·불일치·초과 시 명시적 오류 |
 
 ### 2.1 MiniLM 관련 확인 결과
@@ -292,9 +292,11 @@ payload에 기록하지 않는다.
 지원 MIME은 PDF와 DOCX다. 제공된 Docling base notebook 설정을 Worker용으로
 옮겼다.
 
-- PDF: EasyOCR `ko`, `en`
-- OCR mode: `LAYOUT_REGIONS`
-- full-page OCR 강제하지 않음
+- PDF: **텍스트 레이어가 있으면 OCR 을 돌리지 않는다**(2026-08-05). 압축 스트림의
+  `Tj`/`TJ` 연산자를 세어 판정한다 — 스캔본은 0에 가깝고 프로그램으로 만든 문서는
+  수천이다. OCR 이 멀쩡한 본문을 자모 단위로 덮어써 「중도탈락을」이 「중도달락올」로
+  적재되던 것을 고쳤다. `force_backend_text=True` 로는 막히지 않았다
+- 스캔본: EasyOCR `ko`, `en` / OCR mode `LAYOUT_REGIONS` / full-page OCR 강제하지 않음
 - backend text 강제 사용
 - heading hierarchy 활성화
 - picture classification/description 활성화
@@ -478,45 +480,77 @@ Vector를 임의 절단하거나 0으로 채우지 않는다. 개발 데이터�
 pgvector cosine distance `<=>`를 사용하고 점수는 `1 - distance`로 반환한다.
 검색은 아래를 모두 만족하는 행만 대상으로 한다.
 
-- 요청 project 안의 서버 검증 document ID
+- 요청 팀 안의 서버 검증 document ID (2026-08-04 프로젝트 → 팀)
 - 삭제되지 않고 접근 철회되지 않은 문서
 - 활성 Chunk와 활성 Vector
 - `embed_model=google/embeddinggemma-300m`
 - `embed_dim=768`
-- Agent가 정한 `top_k` 범위 1~10
+- Agent가 정한 `top_k` 범위 1~20 (기본 10)
 
 ## 11. 멀티에이전트 업무 추출
 
 ### 11.1 Agent 모델 계약
 
 Query Agent와 최종 Extraction Agent 모두 OpenAI Responses API의 Structured
-Output을 사용한다. 모델은 `gpt-5.6-sol`, reasoning effort는 `xhigh`다. 요청자가
-처음 언급한 Luna가 아니라 후속 대화에서 확정한 Sol 설정을 구현했다.
+Output을 사용한다. **단계마다 모델이 다르다**(2026-08-05).
+
+| 단계 | 모델 | effort | 왜 |
+|---|---|---|---|
+| 검색어 생성 1~4 | `gpt-5.6-luna` (`OPENAI_PLAN_MODEL`) | `low` | 한국어 질의 1~3개를 뽑는 일이다 |
+| 최종 정리 | `gpt-5.6-sol` (`OPENAI_MODEL`) | `xhigh` | 근거를 읽고 업무를 판단한다 |
+
+같은 프롬프트로 잰 결과다 — luna 2.8초/192토큰, terra 2.9초/135토큰,
+sol 53.3초/4,883토큰. Sol 은 느리고 비쌀 뿐 아니라 질의 하나가 여러 문장이
+이어 붙은 덩어리로 나와 임베딩 검색에 더 나빴다. `OPENAI_SERVICE_TIER`로
+처리 대기열을 고를 수 있고 기본은 `auto`다 — `priority`는 요금이 2배다.
 
 ### 11.2 Query Agent 단계
 
 | 순서 | intent | 찾는 정보 | 검색 문서 범위 |
 |---|---|---|---|
-| 1 | `TASK_DISCOVERY` | 명시된 수행 업무 후보와 직접 근거 | 사용자가 선택한 기준 문서만 |
-| 2 | `TASK_CORE` | 요구사항, 산출물, 완료 기준 | 검색 준비된 프로젝트 문서 전체 |
-| 3 | `ASSIGNMENT_REQUIREMENT` | 담당 역할, 필수 기술/경험 | 검색 준비된 프로젝트 문서 전체 |
-| 4 | `EXECUTION_CONDITION` | 공수, 일정, 우선순위, 의존성, 제약, 위험 | 검색 준비된 프로젝트 문서 전체 |
+| 1 | `TASK_DISCOVERY` | 발주자가 만들라고 요구한 결과물과 그 과업 | 사용자가 선택한 기준 문서만 |
+| 2 | `TASK_CORE` | 요구사항, 산출물, 완료 기준 | 검색 준비된 **팀 문서 전체** |
+| 3 | `ASSIGNMENT_REQUIREMENT` | 담당 역할, 필수 기술/경험 | 〃 |
+| 4 | `EXECUTION_CONDITION` | 공수, 일정, 우선순위, 의존성, 제약, 위험 | 〃 |
+
+범위가 프로젝트에서 **팀**으로 바뀌었다(2026-08-04). 사람은 기준 문서 하나만
+고르고 근거는 에이전트가 찾는데, 프로젝트로 좁히면 방금 만든 DRAFT에 묶인
+문서가 기준 문서 하나뿐이라 2~4단계가 1단계와 같아진다. 두 번째 자물쇠도
+`proj_id`가 아니라 `team_id`로 건다.
 
 각 단계는 새 한국어 질의 1~3개와 `top_k`를 Structured Output으로 만든다. 이미
 사용한 질의를 다시 만들 수 없고, 새 질의가 하나도 없으면 오류다. 질의는
 EmbeddingGemma Worker에서 임베딩한 후 pgvector를 검색한다.
 
+질의 생성에는 **기준 문서의 첫머리**(앞 12청크, 1,500자)를 함께 준다. 파일명만
+주면 모델이 주제를 모른 채 「사업 수행 범위에 포함된 업무 영역」 같은 일반
+문장을 만들고, 그런 벡터는 실제 과업이 아니라 사업관리 보일러플레이트와 가장
+가깝다. 실제로 실행 과업이 한 건도 안 잡힌 적이 있다(2026-08-05).
+
+프롬프트는 **문서 제목·파일명·날짜를 질의에 넣는 것을 금지**한다. 검색 대상이
+그 문서인데 제목을 넣으면 변별력이 0이고 목차·표지가 대신 검색된다 — 근거
+1·2위가 목차 줄과 제안서 양식 표였던 적이 있다.
+
 ### 11.3 근거 통합과 추출
 
 - 검색 결과는 Chunk ID로 중복 제거한다.
-- retrieval score 내림차순 상위 20개를 최종 Agent에 전달한다.
+- retrieval score 내림차순으로 20개를 최종 Agent에 전달하되, **기준 문서가 아닌
+  문서는 최대 6자리까지만** 차지한다. 팀 문서 전체를 뒤지므로 관련 없는 문서가
+  근거를 잠식할 수 있다 — 다른 사업의 감리 과업지시서가 20자리 중 8자리를
+  가져가 기준 문서의 과업 Chunk를 밀어낸 적이 있다(2026-08-05).
+- 근거에는 `chunk_id`·`doc_id`·`heading_path`·`text`·`intent`·`query`·유사도만
+  싣는다. `vec_idx.metadata`(bbox 좌표·binary_hash·임시 파일명)는 평균 927자로
+  프롬프트의 대부분을 채우면서 모델도 화면도 쓰지 않았다.
 - 각 evidence에 어느 intent와 질의로 찾았는지 기록한다.
 - 최종 Agent는 업무 title/description, 역할/기술, 공수/일정/우선순위,
   dependencies/constraints/risks, 완료기준/산출물, 누락 필드, 근거 Chunk ID를
   구조화한다.
 - 근거가 없는 역할, 기술, 공수, 날짜는 추정하지 않고 null/빈 배열 및
   `missing_fields`로 남긴다.
-- 최종 Agent가 검색 집합에 없던 Chunk ID를 쓰면 전체 요청을 오류 처리한다.
+- 근거 인용은 UUID가 아니라 `E1`~`E20` 짧은 번호로 받고 서버가 `chunk_id`로
+  되돌린다. 36자 UUID를 옮겨 적게 했더니 하나가 어긋나 추출 전체가 실패했다.
+- 모르는 번호는 **그 업무에서만** 떨어뜨리고 `warnings`에 남긴다. 근거가 하나도
+  확인되지 않은 업무는 제외한다 — 근거 없는 업무를 만들지 않는다는 원칙이다.
 
 응답에는 `tasks`, `warnings`, `evidence`, 단계별 검색 건수 `trace`, `model`,
 `reasoning_effort`가 포함된다.
@@ -528,7 +562,7 @@ EmbeddingGemma Worker에서 임베딩한 후 pgvector를 검색한다.
 
 ### 12.1 문서 목록
 
-`GET /api/projects/{project_id}/documents/`
+`GET /api/team/pipeline-documents/`
 
 기존 응답에 다음을 추가했다.
 
@@ -544,7 +578,7 @@ EmbeddingGemma Worker에서 임베딩한 후 pgvector를 검색한다.
 
 ### 12.2 문서 처리 시작
 
-`POST /api/projects/{project_id}/documents/{doc_id}/processing-runs/`
+`POST /api/team/documents/{doc_id}/processing-runs/`
 
 성공 `202`:
 
@@ -557,7 +591,7 @@ RunPod HTTP 실패는 502다.
 
 ### 12.3 문서 처리 polling
 
-`GET /api/projects/{project_id}/documents/{doc_id}/processing-runs/{job_id}/`
+`GET /api/team/documents/{doc_id}/processing-runs/{job_id}/`
 
 진행 중:
 
@@ -596,11 +630,19 @@ RunPod HTTP 실패는 502다.
 {"primary_document_id": "DC001"}
 ```
 
-- 기준 문서가 프로젝트 분석 대상이 아님: 404
+- 기준 문서를 팀 문서에서 찾을 수 없음: 404
 - 파싱·청킹·임베딩 미완료: 409
+
+성공하면 **`application/x-ndjson` 스트림**으로 응답한다(2026-08-05). 한 줄이 한
+사건이다 — `stage`(단계 시작, 화면용 `label` 포함), `queries`(에이전트가 만든
+검색어), `stage_done`(누적 근거 수), 마지막에 `result`. 몇 분이 걸리는 일이라
+끝나고 한 번에 주면 진행을 보여줄 수 없다.
+
+응답이 시작된 뒤에는 상태 코드를 바꿀 수 없으므로, 도중 실패는 마지막 줄의
+`error`로 알린다. 위의 404·409 검사는 스트림을 열기 전에 끝낸다.
 - 외부 설정 누락: 503
 - RunPod 호출 실패: 502
-- 성공: `201`과 구조화 업무/근거/trace
+- 성공: `200`과 NDJSON 스트림(마지막 줄이 구조화 업무/근거/trace)
 
 현재 이 API는 추출 결과를 응답으로 반환하며 `task`, `task_source`, `assign_run`에
 영구 저장하지 않는다. 영속화는 현재 범위에 포함되지 않았다.
@@ -609,43 +651,56 @@ RunPod HTTP 실패는 502다.
 
 ### 13.1 프로젝트 목록
 
-빈 하드코딩 배열을 제거하고 실제 `listMyProjects` 응답을 사용한다. 사용자가 진행
-중인 프로젝트 행을 선택하고 "업무 분배 시작"을 누르면 해당 프로젝트의 기준
-문서 선택 route로 이동한다. API 실패는 화면 오류로 표시한다.
+빈 하드코딩 배열을 제거하고 실제 `listMyProjects` 응답을 사용한다. 「업무 분배
+시작」은 **신규 프로젝트 업무 추출** 화면으로 간다 — 목록의 프로젝트는 Jira에서
+온 진행 중인 것이고, 그것은 팀원 부하를 재는 재료지 업무를 새로 뽑을 대상이
+아니다(2026-08-04).
 
-### 13.2 기준 문서 선택 화면
+프로젝트 상세에 **삭제**가 있다. 무엇이 사라지고 무엇이 남는지 모달에서 보여준
+뒤 지운다 — Jira 업무는 함께 지우고, 기준 문서는 지우지 않고 팀 문서 풀로
+돌려보낸다.
 
-최종 디자인 확정 전이라는 요청에 맞춰 다음 최소 기능만 구현했다.
+### 13.2 문서 관리
 
-- 프로젝트 이름
-- 문서 파일명
-- 문서 역할 badge
-- radio 단일 선택
-- `검색 준비 완료` 또는 `처리 필요` 상태
-- 이전/업무 추출 시작 버튼
-- API/준비상태 오류 표시
+등록된 문서와 준비 상태를 보여준다. **등록이 검색 가능한 상태까지 간다** —
+`doc` 행을 만들고, 원문을 받고, 파싱·청킹·임베딩까지 끝낸다(2026-08-05).
+여기서 멈추면 「등록은 됐는데 못 쓰는 문서」가 남고 그것을 사용자가 따로
+관리해야 한다. 그래서 처리할 문서를 고르는 칸이 없다.
 
-준비되지 않은 문서를 선택하고 실행하면 임의 처리나 fake 결과를 만들지 않고
-오류를 표시한다. 준비된 문서는 업무 추출 API를 호출하고 기존 업무 분배 route로
-응답을 router state에 담아 이동한다.
+문서마다 순차로 처리하며 진행을 보여준다. 한 건이 실패해도 나머지는 계속하고,
+남은 것은 「N건 다시 처리」로 복구한다.
 
-### 13.3 현재 화면에서 의도적으로 하지 않은 것
+### 13.3 신규 프로젝트 업무 추출
 
-다음은 backend API에는 일부 준비되어 있지만 최소 껍데기 범위에서는 아직 화면에
-연결하지 않았다.
+사람이 고르는 것은 **기준 문서 하나**다. 근거 문서 선택은 없앴다(2026-08-04) —
+무엇이 어디 적혀 있는지 미리 알아야 고를 수 있는데, 그걸 대신 찾아 주는 것이
+이 기능의 목적이라 순서가 거꾸로였다.
 
-- 문서 처리 시작 버튼
-- RunPod job 상태 polling UI와 progress 표시
-- 완료 후 문서 목록 자동 갱신
-- 업무 추출 자체의 비동기 polling
-- 추출 결과를 기존 `TaskDistributionPage`에 실제 렌더링
-- 업무 수정/확정/DB 저장 UX
+- 프로젝트 이름(기준 문서를 고르면 파일명이 들어온다)
+- radio 단일 선택 · `검색 준비 완료` / `준비 안 됨`
+- 진행 모달 — 5단계 진행률, **에이전트가 만든 검색어**, 단계별 경과 시간
 
-특히 `startDocumentProcessing`과 `fetchDocumentProcessing` 함수는 frontend API
-모듈에 있지만 현재 페이지에서 호출하지 않는다. 기존 `TaskDistributionPage`도
-정적 데모 화면 그대로이며 router state의 실제 `result`를 소비하지 않는다.
-따라서 현재 발표 시나리오는 API로 문서를 미리 처리하여 `search_ready=true`로 만든
-뒤 기준 문서 선택과 업무 추출 호출까지 확인하는 단계다.
+준비되지 않은 문서는 고를 수 없다. 임의 처리나 fake 결과를 만들지 않는다.
+실행하면 DRAFT 프로젝트를 만들고 기준 문서를 묶은 뒤 추출 스트림을 받는다.
+
+### 13.4 추출된 업무 확인
+
+중간발표의 완료 지점이다. 업무마다 **근거가 된 원문 Chunk**를 펼쳐 볼 수 있고,
+어느 문서의 어느 질의로 찾았는지가 함께 붙는다. 근거 없이 비운 필드는
+`missing_fields`로 드러낸다.
+
+결과가 아직 저장되지 않아 새로고침하면 사라진다. 그때까지의 임시 통로로
+「JSON 복사」를 뒀다.
+
+### 13.5 현재 화면에서 하지 않는 것
+
+- 추출 결과의 `task`·`task_source` 영속화
+- 업무 수정·확정 UX
+- 업무 분배·추천·배정(`TaskDistributionPage` 이후는 정적 화면 그대로)
+
+공수·담당 역할은 제안요청서에 원래 없어 `missing_fields`로 남는다. 이를 채우는
+방법(팀의 Jira 이력 기반 추정 등)은 업무 분배 단계의 설계 사안이며 중간발표
+범위 밖이다.
 
 ## 14. 보안 및 데이터 경계
 

@@ -28,8 +28,8 @@
 |---|---|
 | P0 시연 기준 확정 | 데이터는 준비됨, 시나리오·스키마 확정은 팀 논의 필요 |
 | P1 People DB | **데이터 입력 완료.** Skill·부재 조회 API만 남음 |
-| P2 Drive 문서 처리 | **연결·목록·메타데이터·원문 다운로드·저장 완료.** 파싱·정규화도 별도 실행으로는 동작. 둘을 잇는 것부터 남음 |
-| P3 PKM·Task 추출 | 미착수 |
+| P2 Drive 문서 처리 | **완료**(2026-08-05). 등록이 원문 수신 → 파싱 → 청킹 → 임베딩까지 이어진다. RunPod Serverless Worker 가 처리하고 Django 가 적재한다 |
+| P3 PKM·Task 추출 | **Task 추출 완료**(2026-08-05). 4단계 검색 + 정리로 업무를 근거와 함께 뽑고 1차 확인 화면까지 연결됐다. **PKM(`know_item`)과 결과 영속화(`task`)는 미착수** — 추출 결과는 응답으로만 존재한다 |
 | P4 Jira | **연결·프로젝트 조회 완료. 업무량 계산식 확정(2026-08-03).** 이슈·공수 수집부터 남음 |
 | P5 Feature Readiness | 미착수 |
 | P6 Snapshot | 미착수 |
@@ -47,14 +47,14 @@ person_link 70 · sched 57 · absence 23
 exist_task 0 · doc 0 · doc_block 0 · chunk 0 · vec_idx 0 · know_item 0 · task 0
 ```
 
-`doc` 이후가 모두 0인 것은 폴더·역할을 저장하면 채워지는 구간이다(경로는 확인됨 — 실계정 기준 17건 등록). 파싱 산출물(`doc_block`·`chunk`·`vec_idx`)이 0인 것은 파싱 작업이 아직 `doc`을 입력으로 받지 않고 별도로 돌고 있기 때문이다.
+**2026-08-05 갱신.** 파싱 산출물이 채워졌다 — 문서 3건에서 `doc_block` 935 · `chunk` 456 · `vec_idx` 456. Jira 동기화도 붙어 `exist_task` 59건이 있다. 여전히 0인 것은 `know_item`(PKM 미착수)과 `task`(추출 결과 영속화 미착수)다.
 
 2026-07-31 재확인. 회원가입으로 만든 테스트 계정을 전부 지우고 온보딩을 처음부터 한 번 태운 결과다.
 
 ```
 team 1 · team_member 5 · user_account 2 · member_invite 4 · connector_conn 3
 doc 17   ← 위 표의 doc 0에서 채워졌다 (Drive 폴더 선택 → 메타데이터 저장 경로)
-doc_block 0 · chunk 0 · vec_idx 0   ← 여전히 0. 파싱이 아직 doc을 입력으로 안 받는다
+doc_block 935 · chunk 456 · vec_idx 456   ← 2026-08-05. 등록이 임베딩까지 간다
 ```
 
 2026-08-03 재확인. 로컬 Docker DB를 직접 조회한 값이다.
@@ -68,7 +68,7 @@ public   team 1 · team_member 5 · user_account 2 · member_invite 4 · connect
 ```
 
 - `doc` 9건이 **시연 대상 문서 세트**다(기획서·요구사항 정의서·화면설계서·WBS·회의록 4건·수집 데이터 보고서). 07-31 블록의 17건은 교체 전 선택분이라 지금과 무관하다
-- `proj_source` 6건 = Drive 폴더 4개(PLAN·MEETING_NOTE·DAILY_REPORT·OTHER) + **Jira 프로젝트 2개(KAN·AIP)**. 부하 분해 시연("KAN만 90% → 합산 122%")의 전제다
+- Drive 폴더는 `team_folder` 4건(01_기획·02_회의록·03_일일보고·04_참고자료)으로 **팀에 매단다**(2026-08-04 이동, 역할 값은 없앴다). `proj_source`는 Jira 전용이다 — 부하 분해 시연("KAN만 90% → 합산 122%")의 전제다
 
 > 이 표는 점검 시점 기록이다. 항목을 완료하면 체크박스와 함께 위 표도 갱신할 것.
 
@@ -99,7 +99,7 @@ public   team 1 · team_member 5 · user_account 2 · member_invite 4 · connect
 - [ ] 중간발표 종단 시나리오 1개 확정 — 확인 필요
 - [ ] 시연용 프로젝트 기획서 1~2개 선정 — 확인 필요. Drive `SKN29/산출물`에 5건 있고 `[기획] 프로젝트 기획서_2Team.docx` 포함. 등록 경로는 검증됨
 - [x] 시연용 직원 8~10명 구성 — `person` 57명(활성 56), 개발팀 5명 + 초대 범위 18명
-- [ ] 시연용 Jira 프로젝트와 이슈 준비 — 부분: 프로젝트 **KAN·AIP 2개**를 골라 `proj_source`에 저장했고, 목업 이슈 37건(KAN 25 + AIP 12, 라벨 `mock-workload`)을 Jira에 만들어 뒀다. **우리 DB로 가져오지는 못한다** — 수집 코드가 없어 `exist_task` 0행(P4). 추정치 재조정도 남았다([[Jira_부하계산_ToDo]] 단계 4)
+- [ ] 시연용 Jira 프로젝트와 이슈 준비 — 부분: 프로젝트 **KAN·AIP 2개**를 골라 `proj_source`에 저장했고, 목업 이슈 37건(KAN 25 + AIP 12, 라벨 `mock-workload`)을 Jira에 만들어 뒀다. **수집도 붙었다**(2026-08-05) — `exist_task` 59건. 프로젝트 상세의 「갱신」과 대시보드가 쓴다. 추정치 재조정은 남았다([[Jira_부하계산_ToDo]] 단계 4)
   > **2026-08-03 정정.** 이 항목은 "프로젝트 `KAN SKN29_Final_2Team` 확인. 이슈는 조회 코드가 없어 확인 못 함"이었다. 프로젝트는 2개가 됐고 이슈도 준비됐다 — 남은 것은 조회 코드뿐이다.
 - [ ] 최종 출력할 Task 수 결정 — 확인 필요
 - [ ] 정상 추천 시나리오 1개 준비
@@ -134,17 +134,17 @@ public   team 1 · team_member 5 · user_account 2 · member_invite 4 · connect
 
 - [x] Google Drive Connector 인증 구성 및 지정 폴더 읽기 연결 — OAuth 인가 흐름 + 토큰 갱신. 읽을 폴더를 골라 `proj_source`에 저장
 - [x] 선택 폴더의 파일 목록 조회 — `max_depth`만큼 하위 폴더까지. 파싱 가능 형식은 `supported`로 구분
-- [x] PDF·DOCX 파일 다운로드 — `POST /api/projects/{projId}/documents/download/`. 실계정 9건(md·docx·xlsx·pdf, 최대 21MB) 성공. Google 문서는 Office 형식으로 내보내 받는다
+- [x] PDF·DOCX 파일 다운로드 — `POST /api/team/documents/download/`. 실계정 9건(md·docx·xlsx·pdf, 최대 21MB) 성공. Google 문서는 Office 형식으로 내보내 받는다
 - [x] 원문 파일 로컬 문서 저장소에 저장 — `backend/services/storage.py`. 컨테이너 볼륨 `document_storage`에 `{proj_id}/{doc_id}.{ext}`로 저장
-- [x] 문서 메타데이터 로컬 PostgreSQL에 저장 — `doc`에 `file_name`·`mime_type`·`doc_role`·`source_type` 저장. 폴더 역할을 파일이 상속
+- [x] 문서 메타데이터 로컬 PostgreSQL에 저장 — `doc`에 `file_name`·`mime_type`·`source_type` 저장. `doc_role`은 기준 문서로 뽑힐 때 `PRIMARY`가 된다(2026-08-04 의미 변경. 폴더 역할 상속은 없앴다)
 - [x] 원문 파일의 `storage_key`·해시·버전·수정 시각 저장 — `storage_key` 컬럼을 추가하고 `content_hash`(sha256)·`cur_revision`(Drive headRevisionId)까지 채운다. 9건 전부 해시가 파일과 일치
-- [ ] PDF·DOCX 텍스트 파싱 — 부분: Docling + EasyOCR 파싱과 **정규화 v1이 구현·실행됐다**(샘플 PDF 1건에서 232개 요소 생성, WBS 2.4.1). **입력도 준비됐다** — 원문이 문서 저장소에 있고 `doc.storage_key`로 찾을 수 있다. 남은 것은 파싱이 이 저장소를 읽어 가는 것(RunPod 전송 방식 확정 후). 진행 상태는 [[PROJECT_PROGRESS]], 정규화 규칙은 [[normalization_strategy]], 파싱 설정 근거는 [[파싱전략]]
-- [ ] ContentBlock 생성 — `doc_block` 0건
-- [ ] Chunk 생성 — `chunk` 0건
-- [ ] 문서·페이지·청크·원문 위치 연결
-- [ ] Embedding 생성
-- [ ] pgvector 저장 — `vec_idx` 0건. `vec_idx_setup.py`에 저장·검색 예시는 있음
-- [ ] Citation 조회 가능 여부 확인
+- [x] PDF·DOCX 텍스트 파싱 — RunPod Worker 가 Docling 으로 처리한다. **텍스트 레이어가 있는 PDF 는 OCR 을 건너뛴다**(2026-08-05) — OCR 이 멀쩡한 본문을 자모 단위로 망가뜨리고 있었다. 스캔본은 EasyOCR 로 읽는다
+- [x] ContentBlock 생성 — `doc_block` 935건
+- [x] Chunk 생성 — `chunk` 456건. 구조 보존 청킹(표는 행/제품 단위로 다시 만든다)
+- [x] 문서·페이지·청크·원문 위치 연결 — `heading_path`·`pages`·`source_refs`
+- [x] Embedding 생성 — `google/embeddinggemma-300m`, 768차원
+- [x] pgvector 저장 — `vec_idx` 456건
+- [x] Citation 조회 가능 여부 확인 — 추출 결과의 업무마다 근거 Chunk 원문·문서·질의가 함께 나온다
 
 완료 기준:
 
@@ -164,23 +164,30 @@ Drive 파일
 
 ## P3. ProjectKnowledgeModel과 Task 추출
 
-- [ ] 프로젝트 목표 추출
-- [ ] 포함·제외 범위 추출
-- [ ] 요구사항 추출
-- [ ] 결정·제약조건 추출
-- [ ] 일정·마일스톤 추출
-- [ ] 리스크 추출
-- [ ] 완료 조건 추출
-- [ ] 역할·담당 영역 추출
+> **2026-08-05 — Task 추출이 동작한다.** 4단계 검색(업무 후보 → 요구사항·산출물 →
+> 역할·기술 → 공수·일정·제약) 뒤 근거를 모아 정리한다. 아래 항목 중 상당수가 이
+> 한 흐름 안에서 함께 나온다. 다만 **`ProjectKnowledgeModel`(`know_item`)로 저장하는
+> 구조는 만들지 않았다** — 추출 결과는 응답으로만 존재하고 `task`·`know_item`은 0행이다.
+
+- [x] 요구사항 추출 — 업무별 `acceptance_criteria`
+- [x] 결정·제약조건 추출 — `constraints`
+- [x] 리스크 추출 — `risks`(근거 있을 때만)
+- [x] 완료 조건 추출 — `acceptance_criteria`
+- [x] 산출물 추출 — `deliverables`
+- [x] 업무 간 의존 관계 — `dependencies`가 다른 업무를 가리킨다
+- [x] 원문 Citation 연결 — 업무마다 근거 Chunk 원문·문서·질의
+- [x] Task명·역할·Skill 생성 — `title`·`required_role`·`required_skills`
+- [ ] 공수·기간·우선순위 생성 — **제안요청서에 없어 `missing_fields`로 남는다.**
+      지어내지 않는다. 채우는 방법은 업무 분배 단계의 설계 사안이다
+- [ ] 프로젝트 목표·포함/제외 범위 추출 — 업무 단위로만 뽑고 프로젝트 수준 요약은 없다
+- [ ] 일정·마일스톤 추출 — 문서의 추진일정 표가 병합 머리글이라 월 대응이 사라진다
 - [ ] 중복 항목 통합
-- [ ] 원문 Citation 연결
-- [ ] ProjectKnowledgeModel 저장
-- [ ] NewTaskDraft 생성
-- [ ] Task명·역할·Skill·공수·기간·우선순위 생성
-- [ ] `EXTRACTED`, `GENERATED`, `AI_SUGGESTED`, `USER_ADDED` 출처 구분
+- [ ] ProjectKnowledgeModel 저장 — `know_item` 0행
+- [ ] NewTaskDraft 생성 · 출처 구분(`EXTRACTED`/`GENERATED`/…) — `task` 0행
 - [ ] PM 승인·수정·반려 API 작성
 
 완료 기준: 기획서에서 추출된 Task가 원문 근거와 함께 화면에 표시되어야 한다.
+→ **충족.** 「추출된 업무 확인」 화면에서 업무마다 근거를 펼쳐 볼 수 있다.
 
 ---
 
@@ -192,7 +199,7 @@ Drive 파일
 - [ ] 사용자 조회 — `read:jira-user` 범위는 받아 뒀고 호출 코드가 없다
 - [ ] Board·Sprint 조회 — **범위가 부족하다.** Agile API는 `read:board-scope:jira-software`가 필요한데 현재 요청 범위에 없어 콘솔 설정부터 고쳐야 한다
   > **2026-08-03 — 중간발표 경로에서는 빠졌다.** 부하 계산에 Board·Sprint가 필요 없다는 것이 확인됐다. 이슈 수집은 `read:jira-work`만으로 되고([[Jira_부하계산_ToDo]] 단계 1-1), 기간 창은 스프린트가 아니라 `[기준일, 기준일+4주)`로 잡는다(D1). 콘솔 권한 추가는 **막고 있는 것이 아니라 중간발표 이후 과제다.**
-- [ ] 이슈·담당자·상태·우선순위 조회 — `read:jira-work` 범위는 있다. `exist_task` 0건
+- [x] 이슈·담당자·상태·우선순위 조회 — `exist_task` 59건. 프로젝트 상세의 「갱신」과 대시보드가 쓴다
 - [ ] 예상·잔여·사용 공수 수집
 - [ ] 시작일·마감일 수집
 - [ ] Story Point 수집

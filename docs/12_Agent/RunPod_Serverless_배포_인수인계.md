@@ -228,6 +228,8 @@ DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS=900
 
 OPENAI_API_KEY=<업무 추출까지 시험할 때 필요>
 OPENAI_MODEL=gpt-5.6-sol
+# 검색어 생성 전용. 같은 일에 Sol 은 Luna 의 수백 배가 든다(실측)
+OPENAI_PLAN_MODEL=gpt-5.6-luna
 OPENAI_REASONING_EFFORT=xhigh
 EMBEDDING_MODEL=google/embeddinggemma-300m
 EMBEDDING_DEVICE=cuda
@@ -248,7 +250,7 @@ ALLOWED_HOSTS=localhost,127.0.0.1,<random>.trycloudflare.com
 ### 7.2 문서 처리 시작
 
 ```http
-POST /api/projects/{project_id}/documents/{doc_id}/processing-runs/
+POST /api/team/documents/{doc_id}/processing-runs/
 Authorization: Bearer <Django session token>
 ```
 
@@ -275,7 +277,7 @@ Django는 다음 조건을 먼저 확인한다.
 ### 7.3 상태 조회와 DB 적재
 
 ```http
-GET /api/projects/{project_id}/documents/{doc_id}/processing-runs/{job_id}/
+GET /api/team/documents/{doc_id}/processing-runs/{job_id}/
 Authorization: Bearer <Django session token>
 ```
 

@@ -99,6 +99,10 @@ Layout Model ─→ OCR 영역 ─→ OCR 결과 ─┘        ↓
 | 입력 | PDF, DOCX |
 | 출력 | Markdown, Docling JSON |
 | OCR | EasyOCR |
+> ⚠ **2026-08-05 — OCR 은 조건부다.** 텍스트 레이어가 있는 PDF 는 OCR 을 건너뛰고
+> 문서 자신의 텍스트를 쓴다. OCR 이 멀쩡한 본문을 자모 단위로 덮어써서 「중도탈락을」
+> 이 「중도달락올」로 적재되던 것을 고친 결과다. 스캔본은 그대로 EasyOCR 로 읽는다.
+
 | OCR 언어 | 한국어 + 영어 |
 | OCR 영역 | Layout model이 검출한 영역 |
 | 헤딩 계층 | 활성화 |
