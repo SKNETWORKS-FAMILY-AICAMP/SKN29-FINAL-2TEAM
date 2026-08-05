@@ -139,20 +139,20 @@ AI 프로젝트 운영 코파일럿은 조직·역량·현재 업무량·휴가�
 
 | 물리 테이블 | 목적 | 주요 필드 |
 |---|---|---|
-| organization | 조직과 상하위 구조 | organization_id, parent_organization_id, name, status |
-| person | 직원 기준정보 | person_id, employee_id, name, email, job_title, employment_status, responsibility_level_id, manager_person_id, location, timezone |
-| person_organization | 직원 소속과 겸직 | person_id, organization_id, relation_type, valid_from, valid_to |
-| skill | Skill 기준정보 | skill_id, skill_name, category |
-| person_skill | 직원별 Skill과 숙련도 | person_id, skill_id, proficiency_level, verified_at |
-| work_schedule | 근무시간과 FTE | person_id, effective_from, effective_to, weekly_hours, fte |
-| person_absence | 휴가·휴직·부재 | person_id, absence_type, start_at, end_at, availability_impact |
-| responsibility_level | 책임수준 기준 | responsibility_level_id, level_code, name, rank_order |
-| identity_link | Jira·Google 사용자 매핑 | person_id, system_type, external_id, mapping_status |
+| `mock_hr.org` | 조직과 상하위 구조 | org_id, up_org_id, mgr_id, name, org_type, status |
+| `mock_hr.person` | 직원 기준정보 | person_id, emp_id, name, email, org_id, job_role, level_id, emp_status |
+| (만들지 않음) | 직원 소속과 겸직 | 주 소속만 `person.org_id`로 갖는다. 겸직·유효기간 테이블은 두지 않았다 |
+| `mock_hr.skill` | Skill 기준정보 | skill_id, name, category, status |
+| `mock_hr.person_skill` | 직원별 Skill과 숙련도 | person_id, skill_id, proficiency, source, confidence |
+| `mock_hr.sched` | 근무시간과 FTE | sched_id, person_id, wk_hours, def_wk_hours, fte, tz, eff_from, eff_to |
+| `mock_hr.absence` | 휴가·휴직·부재 | absence_id, person_id, absence_type, start_at, end_at, status |
+| `mock_hr.level` | 책임수준 기준 | level_id, code, name, rank_ord, status |
+| `mock_hr.person_link` | Jira·Google 사용자 매핑 | person_link_id, person_id, sys_type, ext_email, reg_at |
 
 People DB와 합성 데이터는 다음 원칙으로 관리한다.
 
-- 모든 레코드에 created_at, updated_at, source_system, source_version을 둔다.
-- 합성 여부는 테이블명이 아니라 `data_origin=SYNTHETIC`, `dataset_version`으로 구분한다.
+- 합성 여부는 컬럼이 아니라 **스키마명**으로 구분한다 — `mock_hr` 스키마에 든 8개 테이블이 고객사 HR 자리의 목업이다(2026-07-31, §22-18 보충).
+- `data_origin`·`dataset_version`·`created_at`·`updated_at`·`source_system` 컬럼은 **만들지 않았다.** 변경 추적이 필요해지면 그때 추가한다.
 - 테스트 시나리오별 Seed 데이터를 버전 관리한다.
 - 추천 로직은 People DB 테이블을 직접 조회하지 않고 People Repository와 PersonSnapshot을 통해서만 접근한다.
 - 향후 실제 HR/Workday Connector가 추가되어도 Snapshot 이후의 업무량·추천·검증 로직은 변경하지 않는다.
@@ -322,7 +322,7 @@ flowchart LR
 
 ### 8.1 수집 범위
 
-운영자 또는 PM은 포함할 Drive 폴더·파일, 하위 폴더 포함 여부, 문서 역할, 제외 패턴, 보안 등급, 접근 그룹, 동기화 주기를 설정한다. 모든 Drive 문서를 수집하지 않으며 선택 범위와 원본 ACL을 모두 만족하는 문서만 처리한다.
+운영자 또는 PM은 포함할 Drive 폴더·파일, 하위 폴더 포함 여부, 제외 패턴, 보안 등급, 접근 그룹, 동기화 주기를 설정한다. **문서 역할은 설정하지 않는다** — 폴더·파일 역할 지정은 2026-08-04에 제거됐고(폴더 역할을 안의 파일이 물려받아 오분류됐다), 문서가 프로젝트의 기준 문서로 골라질 때만 `doc_role='PRIMARY'`가 붙는다. 모든 Drive 문서를 수집하지 않으며 선택 범위와 원본 ACL을 모두 만족하는 문서만 처리한다.
 
 ### 8.2 전체 프로젝트 구조화 흐름
 
@@ -354,7 +354,7 @@ flowchart LR
 | 스캔 문서 | OCR | 페이지, 위치, OCR 신뢰도(후속) |
 
 - Parent 단위인 Document Block은 제목·문단·표·목록 경계를 보존한다.
-- 검색용 Child Chunk는 Block을 참조하며 기본 500~800 토큰, 중첩 80~120 토큰을 사용한다.
+- 검색용 Child Chunk는 Block을 참조하며 상한 512토큰(`CHUNKING_MAX_TOKENS`)을 쓴다. **중첩(overlap)은 두지 않는다** — HybridChunker가 구조 경계에서 자르고 짧은 조각을 병합하는 방식이라 겹침 구간이 없다.
 - 표는 헤더와 행 의미가 깨지지 않게 처리하고 요구사항 번호·일정 표 식별자를 보존한다.
 - Project Knowledge Model 생성은 전체 선택 문서의 Block을 빠짐없이 대상으로 한다.
 - 청크 해시가 같으면 임베딩을 다시 만들지 않는다.
@@ -375,7 +375,7 @@ flowchart LR
   "version": "v3",
   "security": "Internal",
   "project": "AI Assistant",
-  "documentRole": "PROJECT_PLAN",
+  "documentRole": "PRIMARY",
   "page": 5,
   "blockId": "BLK-018",
   "chunk": 18,
@@ -421,7 +421,7 @@ LLM은 각 Document Block에서 다음 의미 유형을 구조화한다.
 ~~~mermaid
 flowchart LR
     A["지식 모델 또는 특정 업무의 보완 필요"] --> B["검색 목적·Semantic Type 결정"]
-    B --> C["project·ACL·문서 역할 필터"]
+    B --> C["team·ACL 필터"]
     C --> D["Vector 유사도 검색"]
     D --> E["키워드·요구사항 ID 검색 결합"]
     E --> F["재순위화·중복 제거"]
@@ -453,7 +453,7 @@ flowchart LR
 
 ### 9.2 추출 단계
 
-1. 프로젝트 문서 범위와 문서 역할을 확인한다.
+1. 기준 문서(`doc_role='PRIMARY'`) 1건과 팀 문서 범위를 확인한다. 검색 경계는 프로젝트가 아니라 **팀**이다.
 2. 선택 문서 전체에서 생성된 Project Knowledge Model의 목표·포함/제외 범위·사용자·기능/비기능 요구사항·결정·제약·가정·일정·의존관계·위험·완료 조건·성공지표·담당 영역·미결 질문을 확인한다.
 3. LLM이 지식 항목과 Feature Cluster를 기준으로 Task 후보와 의존관계를 구조화한다.
 4. 필요한 경우에만 RAG로 유사 표현·과거 Jira 업무·추가 원문 근거를 보완한다.
@@ -666,7 +666,7 @@ Push 알림은 변경 사실만 알리므로 실제 변경 내역은 Changes API
 - 동일 revisionId와 처리 버전은 한 번만 인덱싱한다.
 - 파싱과 임베딩은 독립적으로 재시도한다.
 - 일시 오류는 자동 재시도하고 권한·암호화 문서·형식 오류는 사용자 조치 대상으로 보낸다.
-- 삭제 파일은 검색에서 즉시 제외하고 원본·감사 데이터는 보존정책을 따른다.
+- Drive에서 사라진 파일은 **자동으로 내리지 않는다.** 휴지통·완전삭제·폴더 밖 이동이 전부 「안 잡힘」으로 같아 보이기 때문이다. 사람이 확인한 뒤 `doc.deleted`를 켜고 파싱 산출물까지 실제로 지운다 — `chunk.search_text`에 원문이 그대로 남기 때문이다(2026-08-04 결정).
 - ACL 회수 시 해당 사용자의 검색 결과에서 즉시 제외한다.
 
 ### 12.4 다른 소스
@@ -1013,14 +1013,18 @@ AI_SUGGESTED_MISSING_TASK는 일반 추출 Task와 다른 배지로 구분한다
 
 시연은 하나의 종단 시나리오가 중단 없이 동작하는 것을 최우선 목표로 한다.
 
-1. 내부 People DB의 합성 Seed에서 직원·조직·Skill·FTE·휴가를 읽어 PersonSnapshot과 기본 조직도를 생성한다.
-2. Jira 대상 프로젝트의 기존 업무를 읽어 ExistingTaskSnapshot으로 정규화한다.
-3. 선택한 Drive의 텍스트 기반 PDF 1건을 다운로드하고 구조 보존 파싱·Document Block·메타데이터를 생성한다.
-4. 의미 정보를 추출·통합한 Project Knowledge Model에서 신규 Task를 만들고 PM이 업무 분해를 확인한다.
-5. Feature Readiness가 필수 데이터와 제한 사항을 판정한다.
-6. 유효 가용용량 기준으로 부하율을 계산하고 추천자와 최소 1명의 대안을 생성한다.
-7. 검증 Agent가 역할·Skill·조직·휴가·일정·근거를 검사한다.
-8. RecommendationResult와 ValidationResult 화면에서 근거·위험·가정·Snapshot 시각을 확인한다.
+1. 내부 People DB의 합성 Seed에서 직원·조직·Skill·FTE·휴가를 읽는다.
+2. Jira 대상 프로젝트의 기존 업무를 `exist_task`로 정규화하고 사람별 유효 가용용량·부하율을 계산해 대시보드에 보여준다.
+3. 선택한 Drive의 텍스트 기반 PDF·DOCX를 등록하면 구조 보존 파싱·Document Block·Chunk·임베딩까지 한 번에 이어진다.
+4. 기준 문서 1건에서 업무를 추출하고, PM이 「추출된 업무 확인」(`/tasks/extraction`) 화면에서 업무마다 원문 근거를 펼쳐 검토한다.
+
+**8월 6일 도달 지점은 4번까지다**(2026-08-05 확인). 아래는 아직 구현 전이라 이번 시연에 넣지 않는다.
+
+- Feature Readiness 판정 — `services/readiness/`는 스텁이다
+- 추천자·대안 후보 생성 — `services/recommendation/`은 스텁이다
+- 검증 Agent와 ValidationResult 화면
+- RecommendationResult 화면
+- 추출 결과 영속화 — `task`·`know_item` 0행. 결과는 응답으로만 존재한다
 
 다음 기능은 핵심 시연의 선행조건으로 두지 않는다.
 
@@ -1137,7 +1141,7 @@ AI_SUGGESTED_MISSING_TASK는 일반 추출 Task와 다른 배지로 구분한다
 12. 문서 원본은 Object Storage, 문서 구조·지식 모델·관계 데이터는 PostgreSQL, 검색 보조용 임베딩은 Vector DB에 저장한다.
 13. Drive는 선택 폴더만 인덱싱하고 ACL을 검색에 적용한다.
 14. 추천 시점 Snapshot은 불변으로 저장한다.
-15. 8월 6일 핵심 시연은 하나의 종단 시나리오에서 추천 결과와 검증 결과를 출력하는 데 집중한다.
+15. 8월 6일 핵심 시연은 하나의 종단 시나리오에서 **문서에서 업무를 뽑아 근거와 함께 확인하는 데까지**(`/tasks/extraction`) 집중한다. 추천·검증 결과 출력은 그다음 단계다(2026-08-05 조정).
 16. Jira 쓰기는 후속 단계에서 적용한다.
 17. 초기 운영 기준 템플릿과 기준 데이터 워크북은 사용하지 않는다. 고객별 근무·조직·권한 기준은 Policy 설정과 데이터베이스 버전으로 관리해 중복 관리와 버전 불일치를 방지한다.
 18. HR 관련 물리 테이블명에는 mock을 사용하지 않고, 합성 여부는 data_origin과 dataset_version으로 구분한다.
@@ -1155,12 +1159,12 @@ AI_SUGGESTED_MISSING_TASK는 일반 추출 Task와 다른 배지로 구분한다
 
 ### 0단계 — 8월 6일 핵심 시연
 
-- 내부 People DB 합성 Seed와 People Repository를 통한 PersonSnapshot·기본 조직도 생성
-- Jira 대상 프로젝트 읽기와 ExistingTaskSnapshot 생성
-- 텍스트 기반 PDF 1건의 구조 보존 파싱·Project Knowledge Model·Task 추출
-- PM 업무 분해 확인과 Feature Readiness
-- 유효 가용용량 기준 부하율 계산
-- 추천자·대안·근거·검증 결과 화면
+- 내부 People DB 합성 Seed에서 직원·조직·Skill·FTE·휴가 조회
+- Jira 대상 프로젝트 읽기와 `exist_task` 적재
+- 텍스트 기반 PDF·DOCX의 구조 보존 파싱·청킹·임베딩
+- 기준 문서 1건에서 Task 추출과 PM의 근거 확인 화면(`/tasks/extraction`)
+- 유효 가용용량 기준 부하율 계산과 대시보드 표시
+- **미포함** — Feature Readiness·추천자·대안·검증 결과 화면은 1~4단계 과제로 미룬다
 
 ### 1단계 — 계약과 데이터 기반
 

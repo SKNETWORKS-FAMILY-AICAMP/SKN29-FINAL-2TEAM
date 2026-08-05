@@ -30,11 +30,11 @@
 | P1 People DB | **데이터 입력 완료.** Skill·부재 조회 API만 남음 |
 | P2 Drive 문서 처리 | **완료**(2026-08-05). 등록이 원문 수신 → 파싱 → 청킹 → 임베딩까지 이어진다. RunPod Serverless Worker 가 처리하고 Django 가 적재한다 |
 | P3 PKM·Task 추출 | **Task 추출 완료**(2026-08-05). 4단계 검색 + 정리로 업무를 근거와 함께 뽑고 1차 확인 화면까지 연결됐다. **PKM(`know_item`)과 결과 영속화(`task`)는 미착수** — 추출 결과는 응답으로만 존재한다 |
-| P4 Jira | **연결·프로젝트 조회 완료. 업무량 계산식 확정(2026-08-03).** 이슈·공수 수집부터 남음 |
+| P4 Jira | **연결·프로젝트 조회·이슈·공수 수집·부하 계산 완료(2026-08-05).** `exist_task` 59건. 분석 시점 Snapshot 고정만 남음 |
 | P5 Feature Readiness | 미착수 |
 | P6 Snapshot | 미착수 |
 | P7 추천·검증 | 미착수 |
-| P8 프론트 연결 | 커넥터·폴더·문서 선택 화면 + 운영자 콘솔 8화면 완료. 나머지 목업 |
+| P8 프론트 연결 | 커넥터·폴더·문서 선택 + 대시보드·문서 관리·프로젝트·업무 추출 화면 + 운영자 콘솔 8화면 완료. 업무 분배 이후 화면만 목업 |
 | P9 통합 테스트 | 환경 확인 일부 완료 |
 
 **2026-07-31 추가 — 테넌트 경계 확정.** 위 표에 없는 작업이지만 P3 이후 전체에 영향이 있어 적어 둔다. 우리 플랫폼을 쓰는 단위가 **회사가 아니라 회사 안의 팀**으로 확정됐고(팀장이 온보딩에서 팀명을 적어 직접 만든다), HR 목업(`org`/`person`)은 어댑터 한 곳으로만 읽도록 분리했다. 업무 추출·분배가 "누구에게 배정할 수 있는가"를 이 경계로 결정하므로 P3 착수 전에 필요한 작업이었다. 배경과 판단 근거는 [[HR_어댑터와_테넌트_경계]], 경과는 [[2026-07-31_HR_어댑터_테넌트_경계_작업기록]].
@@ -132,7 +132,7 @@ public   team 1 · team_member 5 · user_account 2 · member_invite 4 · connect
 
 ## P2. Google Drive 문서 처리
 
-- [x] Google Drive Connector 인증 구성 및 지정 폴더 읽기 연결 — OAuth 인가 흐름 + 토큰 갱신. 읽을 폴더를 골라 `proj_source`에 저장
+- [x] Google Drive Connector 인증 구성 및 지정 폴더 읽기 연결 — OAuth 인가 흐름 + 토큰 갱신. 읽을 폴더를 골라 `team_folder`에 저장(2026-08-04 이동. `proj_source`는 Jira 전용이다)
 - [x] 선택 폴더의 파일 목록 조회 — `max_depth`만큼 하위 폴더까지. 파싱 가능 형식은 `supported`로 구분
 - [x] PDF·DOCX 파일 다운로드 — `POST /api/team/documents/download/`. 실계정 9건(md·docx·xlsx·pdf, 최대 21MB) 성공. Google 문서는 Office 형식으로 내보내 받는다
 - [x] 원문 파일 로컬 문서 저장소에 저장 — `backend/services/storage.py`. 컨테이너 볼륨 `document_storage`에 `{proj_id}/{doc_id}.{ext}`로 저장
@@ -200,21 +200,22 @@ Drive 파일
 - [ ] Board·Sprint 조회 — **범위가 부족하다.** Agile API는 `read:board-scope:jira-software`가 필요한데 현재 요청 범위에 없어 콘솔 설정부터 고쳐야 한다
   > **2026-08-03 — 중간발표 경로에서는 빠졌다.** 부하 계산에 Board·Sprint가 필요 없다는 것이 확인됐다. 이슈 수집은 `read:jira-work`만으로 되고([[Jira_부하계산_ToDo]] 단계 1-1), 기간 창은 스프린트가 아니라 `[기준일, 기준일+4주)`로 잡는다(D1). 콘솔 권한 추가는 **막고 있는 것이 아니라 중간발표 이후 과제다.**
 - [x] 이슈·담당자·상태·우선순위 조회 — `exist_task` 59건. 프로젝트 상세의 「갱신」과 대시보드가 쓴다
-- [ ] 예상·잔여·사용 공수 수집
-- [ ] 시작일·마감일 수집
+- [x] 예상·잔여·사용 공수 수집 — `exist_task.estimate`·`remaining`·`spent`에 적재(`ExistTaskRepository.replace_for_source`)
+- [x] 시작일·마감일 수집 — `exist_task.start_at`·`due_at`
 - [ ] Story Point 수집
 - [ ] ExistingTaskSnapshot 생성
-- [ ] Jira `accountId`와 Person 매핑
+- [x] Jira `accountId`와 Person 매핑 — 담당자 이메일을 `person_link`로 묶는다(`lookup_person_ids_by_external_email`). 실패분은 버리지 않고 `unmapped_assignees`로 센다
 - [ ] 매핑 실패 시 `PARTIAL_RESULT` 처리
-- [ ] 유효 가용용량 계산
-- [ ] 현재 할당량 계산
-- [ ] 잔여 가용시간 계산
-- [ ] 예상 부하율 계산
+- [x] 유효 가용용량 계산 — `services/workload/calculator.py`의 `effective_capacity`(창으로 자른 부재를 차감)
+- [x] 현재 할당량 계산 — `current_allocation`(창 안에 마감이 있는 일의 `Σ remaining`)
+- [x] 잔여 가용시간 계산 — `remaining_capacity`
+- [x] 예상 부하율 계산 — `load_rate`. `GET /api/team/workload/`가 사람별·프로젝트별로 돌려준다
 - [ ] 일정 중복 계산
 
-> **2026-08-03 추가 — 계산식은 확정됐다.** 유효 가용용량·현재 할당량·잔여 가용시간·예상 부하율의 수식이 조사·확정됐다([[업무량계산_조사]] Q4-2, 출처는 [[업무량계산_출처]]). 우리 스키마(`exist_task`·`mock_hr.sched`·`mock_hr.absence`)의 컬럼에 직접 대입해 검증한 것이고, NULL 대체 정책도 Q3-3에 정해져 있다. 남은 것은 구현이며, 분자인 `Σ remaining`의 입력인 `exist_task`가 0건이라 **이슈 수집이 선행돼야 한다.**
+> **2026-08-03 추가 — 계산식은 확정됐다.** 유효 가용용량·현재 할당량·잔여 가용시간·예상 부하율의 수식이 조사·확정됐다([[업무량계산_조사]] Q4-2, 출처는 [[업무량계산_출처]]). 우리 스키마(`exist_task`·`mock_hr.sched`·`mock_hr.absence`)의 컬럼에 직접 대입해 검증한 것이고, NULL 대체 정책도 Q3-3에 정해져 있다. **2026-08-05 — 구현까지 끝났다.** 이슈 수집이 붙어 `exist_task` 59건이 있고, `services/workload/calculator.py`가 위 수식을 그대로 구현한다.
 
 완료 기준: 직원별 기존 업무량과 신규 업무 배정 가능 시간을 계산할 수 있어야 한다.
+→ **충족.** 대시보드가 사람별 유효 가용용량·현재 할당량·잔여 가용시간·부하율을 보여준다.
 
 ---
 
@@ -296,12 +297,12 @@ Drive 파일
 
 현재 프론트는 정적 목업이므로 중간발표 핵심 화면만 우선 연결한다.
 
-- [ ] 프로젝트 선택·생성 화면 — 부분: **별도 생성 화면을 두지 않기로 했다.** 폴더를 고르는 행위가 `DRAFT` 프로젝트를 만든다([[Jira_Drive_커넥터_연결_설계]] §4). `ProjectListPage`는 아직 목업
+- [x] 프로젝트 선택·생성 화면 — **별도 생성 화면을 두지 않기로 했다.** 폴더를 고르는 행위가 `DRAFT` 프로젝트를 만든다([[Jira_Drive_커넥터_연결_설계]] §4). `ProjectListPage`는 실데이터에 붙었다 — 진행/완료 구분과 「업무 분배 시작」이 추출로 간다
 - [x] Connector 상태 화면 — 서버의 `connector_conn`이 원본. 연결·재연결·다음 단계 이동
-- [x] Drive 폴더·문서 선택 화면 — 트리 탐색·파일 미리보기·역할 지정. 저장 후 새로고침해도 유지됨
+- [x] Drive 폴더·문서 선택 화면 — 트리 탐색·파일 미리보기. 저장 후 새로고침해도 유지됨(폴더·파일 역할 지정은 2026-08-04에 제거됐다)
 - [x] Jira 프로젝트 선택 화면 — 목록에 없던 항목. 저장된 선택이 체크로 되살아난다
 - [ ] Feature Readiness 결과 화면
-- [ ] Task 추출 결과 확인 화면
+- [x] Task 추출 결과 확인 화면 — `/tasks/extraction` 「추출된 업무 확인」. 업무마다 근거를 펼쳐 본다. **중간발표 완료 지점**
 - [ ] PM Task 수정·승인 화면
 - [ ] 추천 실행 화면
 - [ ] 추천·대안 후보 결과 화면
@@ -343,7 +344,7 @@ Drive 파일
 
 ## 중간발표 제외 범위
 
-- OCR
+- 텍스트 레이어가 있는 PDF에 대한 OCR (스캔본은 EasyOCR `ko`·`en` 으로 읽는다)
 - HWP·PPTX 파싱
 - Drive Changes API 기반 증분 동기화
 - Calendar 실제 연동
@@ -381,29 +382,29 @@ AWS 작업은 중간발표 완료 조건에서 제외하지만 이후 이전을 
 
 1. 종단 시나리오와 API 스키마 확정 — 수집·저장 계열은 확정, 추천 계열 미확정
 2. People DB 시연 데이터 완성 — 데이터 완료, Skill 조회 API만 남음
-3. Drive 문서 1개 파싱·저장 — **원문 다운로드·로컬 저장까지 완료(2026-07-31).** 파싱이 이 저장소를 읽어 가는 것부터 남음
+3. Drive 문서 1개 파싱·저장 — **완료(2026-08-05).** 등록이 원문 수신 → 파싱 → 청킹 → 임베딩까지 이어진다
 4. ProjectKnowledgeModel과 Task 추출
-5. Jira 읽기와 업무량 계산 — 연결·프로젝트 조회 완료, 이슈 수집부터 남음
+5. Jira 읽기와 업무량 계산 — **완료(2026-08-05).** 이슈 수집(`exist_task` 59건)과 부하 계산(`services/workload/`)이 대시보드에 붙었다
 6. Feature Readiness와 Snapshot
 7. 추천·검증 로직
-8. 핵심 화면 API 연결 — 커넥터·폴더·문서·Jira 선택 화면 완료
+8. 핵심 화면 API 연결 — 커넥터·폴더·문서·Jira 선택과 대시보드·문서 관리·프로젝트·업무 추출 화면 완료
 9. 통합 테스트와 발표 준비
 
-### 지금 막고 있는 것
+### 지금 남은 것
 
-> **2026-08-03 정정.** 이 절은 "3번의 원문 다운로드가 병목이다"였으나 **틀렸다.** 다운로드는 2026-07-31에 구현됐다. 병목은 한 칸 뒤로 옮겨갔고, 아래는 그 이후 기준으로 다시 쓴 것이다.
+> **2026-08-05 정정.** 이 절이 병목으로 지목하던 둘(문서 파싱 연결·Jira 이슈 수집)은 **둘 다 해결됐다.** 아래는 그 이후 기준으로 다시 쓴 것이다.
 
-**파싱이 `doc`을 입력으로 받는 지점이 병목이다.** 원문은 문서 저장소에 있고 `doc.storage_key`로 찾을 수 있다. 파싱 쪽도 Docling 정규화까지는 돌아간다. 그런데 그 실행은 **로컬 PDF를 직접 읽는 별도 스크립트**라 우리 저장소·`doc`과 연결돼 있지 않고, 코드도 이 저장소에 없다.
+**문서 파이프라인은 뚫렸다.** Django가 `doc.storage_key`의 원문을 만료형 서명 URL로 RunPod Worker에 넘기고, 결과를 `doc_block`·`chunk`·`vec_idx`로 적재한다(`backend/db/document_pipeline.py`, `services/document_pipeline/runpod_client.py`). 문서 3건에서 `doc_block` 935 · `chunk` 456 · `vec_idx` 456.
 
 ```
 완료   Drive 폴더 선택 → doc 등록 → 원문 다운로드 → 로컬 저장 → content_hash
-완료   (별도 실행) 로컬 PDF → Docling 파싱 → 정규화 요소
-없음   위 둘을 잇는 경로 — 파싱이 doc.storage_key로 원문을 읽어 가는 것
-다음   doc_block → chunk → know_item → task
+완료   RunPod Worker 파싱·구조보존 청킹·임베딩 → doc_block 935 · chunk 456 · vec_idx 456
+완료   위 둘을 잇는 경로 — Django가 doc.storage_key로 원문을 넘기고 결과를 적재
+남음   know_item(PKM) · task(추출 결과 영속화) — 둘 다 0행
 ```
 
-양쪽 끝이 각각 되므로 남은 것은 연결 하나다. 파싱 쪽 상세 상태는 [[PROJECT_PROGRESS]] §7·§10.
+남은 것은 추출 결과를 `task`·`know_item`으로 저장하는 것뿐이다. 파싱 쪽 상세 상태는 [[PROJECT_PROGRESS]] §7·§10.
 
-**Jira 쪽 병목은 이슈 수집 코드다.** 연결·프로젝트 선택·스키마(08-03 ALTER)·수식이 다 확정됐는데 `exist_task`에 쓰는 코드가 없어 0행이다. 범위(`read:jira-work`)는 이미 있으니 지금 시작할 수 있고, 단계별로 쪼갠 것이 [[Jira_부하계산_ToDo]]에 있다. **이 경로는 문서 파싱과 완전히 독립이라** 위 병목이 안 풀려도 진행된다.
+**Jira 쪽도 뚫렸다.** 이슈 수집(`ExistTaskRepository.replace_for_source`)이 붙어 `exist_task` 59건이 있고, 부하 계산(`services/workload/calculator.py`)이 팀 부하 API(`GET /api/team/workload/`)와 대시보드에 연결됐다. 남은 것은 추정치 재조정과 분석 시점 Snapshot 고정이다([[Jira_부하계산_ToDo]] 단계 4).
 
 > **2026-08-03 정정.** 이 자리에는 "Board·Sprint 조회가 콘솔 설정부터 막혀 있다"가 병목으로 적혀 있었으나, 부하 계산에 Board·Sprint가 필요 없는 것으로 확인돼 중간발표 경로에서 빠졌다. 콘솔 권한 추가는 중간발표 이후 과제다.
