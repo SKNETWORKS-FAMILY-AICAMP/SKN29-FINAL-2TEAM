@@ -597,3 +597,33 @@ class ProjectStatusApiTests(SimpleTestCase):
 
         self.assertEqual(self._patch({"status": "DRAFT"}).status_code, 400)
         set_status.assert_not_called()
+
+
+class ProjectDeleteApiTests(SimpleTestCase):
+    """삭제는 되돌릴 수 없다. 무엇을 지우고 무엇을 남기는지 고정한다."""
+
+    def test_requires_login(self):
+        response = self.client.delete("/api/projects/PJ001/")
+        self.assertEqual(response.status_code, 401)
+
+    @patch("apps.projects.api_views.ProjectRepository.delete")
+    def test_reports_what_was_removed(self, delete):
+        delete.return_value = {"tasks": 12, "sources": 1, "documents_released": 1}
+
+        # 다른 화면들이 쓰는 PJ001 을 피한다. 같은 id 면 "경로의 것을 지웠는가"를
+        # 확인하지 못한다 — 무엇을 넣어도 통과한다.
+        response = self.client.delete("/api/projects/PJ007/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["tasks"], 12)
+        # 문서는 지운 것이 아니라 풀어 준 것이다. 화면이 그렇게 말해야 한다.
+        self.assertEqual(response.json()["documents_released"], 1)
+        self.assertEqual(delete.call_args.kwargs["proj_id"], "PJ007")
+
+    @patch(
+        "apps.projects.api_views.ProjectRepository.delete",
+        side_effect=PermissionDenied("이 프로젝트에 접근할 수 없습니다."),
+    )
+    def test_other_team_project_is_forbidden(self, _delete):
+        response = self.client.delete("/api/projects/PJ999/", headers=auth_header())
+        self.assertEqual(response.status_code, 403)

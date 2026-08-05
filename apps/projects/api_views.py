@@ -1,12 +1,13 @@
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
+import json
 import logging
 from typing import Any
 
 import psycopg
 from django.conf import settings
 from django.core import signing
-from django.http import FileResponse
+from django.http import FileResponse, StreamingHttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -33,7 +34,7 @@ from services.document_pipeline.errors import (
 )
 from services.document_pipeline.runpod_client import job_status, submit_document_job
 from services.document_pipeline.signing import read_download_token, signed_download_url
-from services.task_extraction import extract_tasks
+from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
     AnalysisRunRepository,
@@ -197,6 +198,22 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response(project_response(row))
+
+    def delete(self, request, project_id):
+        """프로젝트를 지운다. 문서는 팀 문서 풀로 돌려보내고 Jira 업무는 함께 지운다.
+
+        화면이 무엇이 사라지는지 먼저 보여주고 한 번 묻는다. 여기서는 확인된
+        요청만 받으므로 다시 묻지 않는다.
+        """
+
+        try:
+            removed = ProjectRepository.delete(
+                proj_id=project_id,
+                account_id=request.user.account_id,
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(removed)
 
 
 class ProjectSourceAPIView(AuthenticatedAPIView):
@@ -449,7 +466,10 @@ class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
     "새 파일 몇 개를 더한다"에 그것을 쓰면 나머지가 통째로 사라진다. 그래서 여기서는
     **더하기만** 한다.
 
-    원문 다운로드는 하지 않는다 — 온보딩 역할 지정과 같은 범위(`doc` 행 생성까지)다.
+    원문 다운로드와 파싱은 하지 않는다. **등록된 문서는 전부 검색 가능해야 하지만**,
+    그것을 이 요청 하나에 몰면 문서 수만큼 길어지는 동안 사용자에게 아무것도
+    말해 줄 수 없다. 화면이 이 응답을 받아 문서마다 다운로드·처리를 이어 부르며
+    진행을 보여준다.
     """
 
     def post(self, request):
@@ -560,17 +580,26 @@ class TeamDocumentDownloadAPIView(AuthenticatedAPIView):
     한 건이 실패해도 나머지는 계속 받는다. Drive에서 지워졌거나 권한이 빠진
     문서 하나 때문에 전체가 멈추면, 무엇이 문제인지 알 수 없는 채로 아무것도
     안 받은 상태가 된다.
+
+    `doc_ids`를 주면 그것만 받는다. 화면은 등록한 문서를 한 건씩 받아 파싱까지
+    이어 가며 진행을 보여주므로, 한 번에 하나만 지정해서 부른다. 주지 않으면
+    팀의 미수신 문서를 전부 받는다.
     """
 
     def post(self, request):
         account_id = request.user.account_id
         force = request.data.get("force") is True
+        only = request.data.get("doc_ids") or None
 
         try:
             team_id = AccountRepository.team_id(account_id)
             targets = DocumentRepository.list_pending_download(account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+
+        if only is not None:
+            wanted = set(only)
+            targets = [target for target in targets if target["doc_id"] in wanted]
 
         if team_id is None:
             return Response(
@@ -1002,10 +1031,12 @@ class RunPodDocumentDownloadAPIView(APIView):
 
 
 class ProjectSourceDocumentAPIView(AuthenticatedAPIView):
-    """이 프로젝트의 기준 문서와 서브 문서.
+    """이 프로젝트의 기준 문서.
 
     **PUT이 프로젝트에 문서를 묶는 행위다.** 폴더를 고르는 것도, 문서를 등록하는
-    것도 아니고, "이 프로젝트의 근거는 이 문서다"라고 정하는 순간이 여기다.
+    것도 아니고, "이 프로젝트는 이 문서에서 시작한다"라고 정하는 순간이 여기다.
+
+    묶이는 것은 기준 문서 하나뿐이다. 근거 문서는 에이전트가 검색으로 찾는다.
     """
 
     def get(self, request, project_id):
@@ -1021,11 +1052,10 @@ class ProjectSourceDocumentAPIView(AuthenticatedAPIView):
         serializer = ProjectSourceDocumentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            PipelineDocumentRepository.set_project_documents(
+            PipelineDocumentRepository.set_primary_document(
                 proj_id=project_id,
                 account_id=request.user.account_id,
                 primary_doc_id=serializer.validated_data["primary_document_id"],
-                sub_doc_ids=serializer.validated_data.get("sub_document_ids") or [],
             )
             rows = PipelineDocumentRepository.list_ready_for_analysis(
                 proj_id=project_id, account_id=request.user.account_id
@@ -1037,11 +1067,37 @@ class ProjectSourceDocumentAPIView(AuthenticatedAPIView):
         return Response([pipeline_document_response(row) for row in rows])
 
 
+def _extraction_events(*, team_id: str, primary: dict, ready_ids: list[str]):
+    """추출 진행을 NDJSON 한 줄씩 내보낸다.
+
+    응답이 이미 시작됐으므로 예외를 상태 코드로 알릴 수 없다. 마지막 줄에
+    `error` 를 실어 보내고, 서버 로그에는 원래 예외를 남긴다 — 화면에 스택을
+    보내지 않되 우리는 무엇이 터졌는지 알아야 한다.
+    """
+
+    try:
+        for event in extract_tasks_stream(
+            team_id=team_id, primary_document=primary, document_ids=ready_ids
+        ):
+            yield json.dumps(event, ensure_ascii=False, default=str) + "\n"
+    except (ValueError, OSError, DocumentPipelineError) as exc:
+        logger.exception("업무 추출에 실패했습니다: %s", primary.get("doc_id"))
+        detail = _pipeline_error_response(exc).data.get("detail") or str(exc)
+        yield json.dumps({"type": "error", "detail": detail}, ensure_ascii=False) + "\n"
+    except Exception as exc:  # noqa: BLE001 - 스트림 중에는 500을 낼 수 없다
+        logger.exception("업무 추출 중 예상치 못한 오류: %s", primary.get("doc_id"))
+        yield json.dumps(
+            {"type": "error", "detail": f"업무 추출에 실패했습니다: {exc.__class__.__name__}"},
+            ensure_ascii=False,
+        ) + "\n"
+
+
 class TaskExtractionRunAPIView(AuthenticatedAPIView):
     """기준 문서에서 업무를 뽑는다.
 
-    검색 범위는 **이 프로젝트에 묶인 문서**다. 팀 문서 전체로 넓히면 다른
-    프로젝트 기획서의 문장이 이 프로젝트 업무의 근거로 딸려 온다.
+    사람이 고르는 것은 기준 문서 하나다. 근거 문서는 **에이전트가 팀 문서에서
+    검색으로 찾는다**. 검색 경계는 팀이다 — 근거를 프로젝트 안으로 좁히면
+    공수·역할이 적힌 회의록이 그 프로젝트에 묶여 있지 않아 영영 안 잡힌다.
     """
 
     def post(self, request, project_id):
@@ -1055,7 +1111,7 @@ class TaskExtractionRunAPIView(AuthenticatedAPIView):
             primary = next((d for d in documents if d["doc_id"] == selected_id), None)
             if primary is None:
                 return Response(
-                    {"detail": "선택한 문서가 이 프로젝트의 기준 문서로 지정되지 않았습니다."},
+                    {"detail": "선택한 문서를 팀 문서에서 찾을 수 없습니다."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
             if not primary["search_ready"]:
@@ -1064,14 +1120,16 @@ class TaskExtractionRunAPIView(AuthenticatedAPIView):
                     status=status.HTTP_409_CONFLICT,
                 )
             ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
-            result = extract_tasks(
-                project_id=project_id, primary_document=primary, document_ids=ready_ids
-            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        except (ValueError, OSError, DocumentPipelineError) as exc:
-            return _pipeline_error_response(exc)
-        return Response(result, status=status.HTTP_201_CREATED)
+
+        # 여기서부터 스트림이다. 응답이 시작된 뒤에는 상태 코드를 바꿀 수 없으므로
+        # 위의 검사를 전부 끝낸 다음에 연다. 실패는 마지막 줄로 알린다.
+        return StreamingHttpResponse(
+            _extraction_events(team_id=primary["team_id"], primary=primary, ready_ids=ready_ids),
+            # NDJSON. 한 줄이 한 사건이라 프론트가 줄 단위로 읽으면 된다.
+            content_type="application/x-ndjson",
+        )
 
 
 class ProjectAnalysisRunAPIView(AuthenticatedAPIView):

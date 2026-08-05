@@ -286,6 +286,78 @@ class ProjectRepository:
         return row
 
     @staticmethod
+    def delete(*, proj_id: str, account_id: str) -> dict[str, int]:
+        """프로젝트와 그 프로젝트에만 속한 것을 지운다.
+
+        **문서는 지우지 않는다.** 기준 문서는 팀 문서 풀에서 온 것이라 프로젝트에
+        잠깐 묶였을 뿐이고, 프로젝트를 접었다고 원문과 파싱 결과까지 버리면 다시
+        등록·처리해야 한다. `proj_id`와 `doc_role`만 풀어 풀로 돌려보낸다.
+
+        **Jira 업무는 함께 지운다.** `exist_task`는 이 프로젝트의 Jira 소스를 읽어
+        만든 사본이고, 소스가 사라지면 다시 만들 수 있다. 남겨 두면 어느 프로젝트
+        것인지 알 수 없는 고아 행이 되어 팀 부하 계산에 계속 끼어든다.
+
+        감사 로그는 남긴다. 프로젝트가 있었다는 사실과 누가 지웠는지는 프로젝트가
+        사라진 뒤에 더 필요하다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
+                cursor.execute("SELECT name FROM proj WHERE proj_id = %s", (proj_id,))
+                name = (cursor.fetchone() or {}).get("name")
+
+                cursor.execute(
+                    """
+                    DELETE FROM exist_task_snap WHERE exist_task_id IN (
+                        SELECT e.exist_task_id FROM exist_task e
+                        JOIN proj_source s ON s.proj_source_id = e.proj_source_id
+                        WHERE s.proj_id = %s
+                    )
+                    """,
+                    (proj_id,),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM exist_task WHERE proj_source_id IN (
+                        SELECT proj_source_id FROM proj_source WHERE proj_id = %s
+                    )
+                    """,
+                    (proj_id,),
+                )
+                tasks = cursor.rowcount
+
+                cursor.execute("DELETE FROM proj_source WHERE proj_id = %s", (proj_id,))
+                sources = cursor.rowcount
+
+                cursor.execute(
+                    "UPDATE doc SET proj_id = NULL, doc_role = NULL WHERE proj_id = %s",
+                    (proj_id,),
+                )
+                documents = cursor.rowcount
+
+                for table in ("proj_member", "ana_snapshot", "know_item", "proj_know_model"):
+                    cursor.execute(f"DELETE FROM {table} WHERE proj_id = %s", (proj_id,))
+
+                cursor.execute("DELETE FROM proj WHERE proj_id = %s", (proj_id,))
+
+                log_with(
+                    cursor,
+                    actor_account_id=account_id,
+                    action="PROJECT_DELETE",
+                    target_type="PROJECT",
+                    target_id=proj_id,
+                    payload={
+                        "name": name,
+                        "tasks": tasks,
+                        "sources": sources,
+                        "documents_released": documents,
+                    },
+                )
+
+        return {"tasks": tasks, "sources": sources, "documents_released": documents}
+
+    @staticmethod
     def create(*, name: str, status: str, tz: str, owner_account_id: str | None) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:

@@ -229,12 +229,9 @@ class TaskExtractionCreateSerializer(serializers.Serializer):
 
 
 class ProjectSourceDocumentSerializer(serializers.Serializer):
-    """기준 문서 1건 + 서브 문서 여러 건. 화면은 언제나 전체 선택 상태를 보낸다."""
+    """기준 문서 1건. 근거 문서는 사람이 고르지 않으므로 받지 않는다."""
 
     primary_document_id = serializers.CharField(max_length=5)
-    sub_document_ids = serializers.ListField(
-        child=serializers.CharField(max_length=5), required=False, allow_empty=True
-    )
 
 
 def pipeline_document_response(row: dict[str, Any]) -> dict[str, Any]:

@@ -246,6 +246,27 @@ class DownloadEndpointTests(SimpleTestCase):
         self.assertEqual(response.json()["skipped"], [])
         self.assertEqual(len(response.json()["downloaded"]), 2)
 
+    def test_doc_ids_limits_what_is_fetched(self):
+        """고른 문서만 Drive를 때린다. 폴더 전체를 받아 오면 안 된다."""
+
+        with patch(
+            "apps.projects.api_views.DocumentRepository.list_pending_download",
+            return_value=self._targets(),
+        ), patch(
+            "apps.projects.api_views.download_drive_file",
+            return_value={"content": b"ok", "mime_type": "text/markdown", "revision": "REV"},
+        ) as fetch, patch("apps.projects.api_views.DocumentRepository.mark_stored"):
+            response = self.client.post(
+                "/api/team/documents/download/",
+                {"doc_ids": ["DC002"]},
+                content_type="application/json",
+                HTTP_AUTHORIZATION=f"Bearer {self.token}",
+            )
+
+        self.assertEqual([d["file_name"] for d in response.json()["downloaded"]], ["회의록.md"])
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(fetch.call_args.kwargs["file_id"], "F2")
+
     def test_requires_authentication(self):
         response = self.client.post("/api/team/documents/download/")
         self.assertEqual(response.status_code, 401)
