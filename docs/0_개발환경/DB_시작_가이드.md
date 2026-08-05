@@ -12,8 +12,8 @@
 
 | 종류 | 정의 파일 | 저장 내용 |
 |---|---|---|
-| PostgreSQL/pgvector | `DB/schema.sql` | `person`, `org`, `doc`, `chunk`, `vec_idx` 등 전체 물리 스키마. Django ORM 테이블은 생성하지 않음 |
-| PostgreSQL/pgvector (목업) | `DB/peopleDB/peopledb_mock.sql` | `schema.sql`이 만든 People DB 테이블(`org`/`level`/`skill`/`person`/`person_skill`/`sched`/`absence`/`person_link`)에 채우는 목업 INSERT. `schema.sql`처럼 자동 실행되지 않고 수동 실행 필요(5장 참고) |
+| PostgreSQL/pgvector | `DB/schema.sql` | `doc`, `chunk`, `vec_idx` 등 `public` 40개 + HR 8개(`mock_hr` 스키마) = `CREATE TABLE` 48개. Django ORM 테이블은 생성하지 않음 |
+| PostgreSQL/pgvector (목업) | `DB/peopleDB/peopledb_mock.sql` | `schema.sql`이 만든 People DB 테이블(`mock_hr` 스키마의 `org`/`level`/`skill`/`person`/`person_skill`/`sched`/`absence`/`person_link`)에 채우는 목업 INSERT. `schema.sql`처럼 자동 실행되지 않고 수동 실행 필요(5장 참고) |
 | pgvector 예시 스크립트 | `backend/services/createDB/vec_idx_setup.py` | `vec_idx` 테이블에 청크 임베딩을 저장·검색하는 예시(6장 참고) |
 
 `db` 서비스 하나만 `infra/docker/docker-compose.yml`에 정의되어 있고, git clone 후 한 번만 제대로 기동하면 이후로는 그대로 유지된다.
@@ -81,7 +81,7 @@ skn29-final-2team-db-1   Up (healthy)   0.0.0.0:5432->5432/tcp
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `org`, `person`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 등 `schema.sql` 기반 45개 테이블이 보이면 정상이다.
+`user_account`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 등 **40개**가 보이면 정상이다. `schema.sql`의 `CREATE TABLE`은 전부 **48개**지만, HR 8개(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)는 `mock_hr` 스키마에 있어 `\dt`(search_path = `public`)에는 나오지 않는다 — 그 8개는 `\dt mock_hr.*`로 따로 본다(§4.3·5장 참고).
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
@@ -105,7 +105,7 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 `DB/schema.sql`은 **`db` 컨테이너를 처음 만들 때만** 실행된다. 이미 볼륨이 있으면 이후 `schema.sql` 변경은 반영되지 않는다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 수동 `ALTER`로 공유한다.
 
-아래를 실행하면 최신 스키마가 된다. 모두 멱등이라 여러 번 실행해도 안전하다.
+아래를 실행하면 최신 스키마가 된다. 멱등이라 여러 번 실행해도 안전하다 — 예외는 하나, `exist_task.proj_source_id`의 `NOT NULL`뿐이고 그것도 이 테이블이 비어 있을 때만 걸린다(블록 바로 아래 첫 주석).
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml exec db \
@@ -186,7 +186,7 @@ DELETE FROM proj_source WHERE source_type = 'DRIVE_FOLDER';
 ALTER TABLE doc ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 UPDATE doc SET team_id = (SELECT p.team_id FROM proj p WHERE p.proj_id = doc.proj_id) WHERE team_id IS NULL;
 ALTER TABLE doc ALTER COLUMN proj_id DROP NOT NULL;
-UPDATE doc SET proj_id = NULL WHERE proj_id IS NOT NULL;
+UPDATE doc SET proj_id = NULL WHERE proj_id IS NOT NULL AND doc_role IS DISTINCT FROM 'PRIMARY';
 ALTER TABLE proj_source DROP COLUMN IF EXISTS default_doc_role;
 ALTER TABLE proj_source DROP COLUMN IF EXISTS max_depth;
 DO \$\$
@@ -248,6 +248,8 @@ END \$\$;
 
 > `exist_task.proj_source_id`가 `NOT NULL`인데 기본값이 없다. **이 테이블이 비어 있어야 통과한다.** 2026-08-03 시점에는 이슈 수집이 없어 모든 팀원의 DB가 0행이었다. **2026-08-05 현재는 Jira 수집이 붙어 행이 쌓인다** — 이 마이그레이션을 아직 안 돌렸고 이미 이슈를 읽었다면 아래 대안을 쓰거나 `exist_task`를 비우고 다시 읽어야 한다. 혹시 행이 있어서 실패하면 `DB/migrations/2026-08-03_exist_task_source.sql`의 주석에 채워 넣고 `SET NOT NULL`하는 대안이 있다.
 
+> **`UPDATE doc SET proj_id = NULL`에 `doc_role IS DISTINCT FROM 'PRIMARY'` 조건이 붙어 있다. 지우지 마세요.** 원본 마이그레이션(`DB/migrations/2026-08-04_team_scope.sql`)에는 조건이 없다 — 그때 `doc.proj_id`에 들어 있던 값은 「폴더를 고른 그 프로젝트」라는 뜻이라 근거가 없었고, 그 시점에는 `PRIMARY`가 아직 존재하지도 않았기 때문이다. 하지만 이 블록은 **여러 번 실행되는 것을 전제로 한다.** 조건 없이 두면, 이미 한 번 돌린 뒤 기준 문서를 고른 사람이 블록을 다시 실행할 때 모든 프로젝트의 기준 문서 지정이 풀린다. 게다가 아래 `doc_role` 블록은 옛 값(`PLAN` 등)만 비우므로 `doc_role = 'PRIMARY'`인데 `proj_id`는 `NULL`인 행이 남고, 부분 유니크 인덱스는 `NULL`을 서로 다르게 보기 때문에 에러도 나지 않는다 — 조용히 틀린 상태가 된다. 되돌리는 코드 경로도 없다(`set_primary_document`는 `WHERE proj_id = %s`로만 정리한다). `IS NULL`이 아니라 `IS DISTINCT FROM 'PRIMARY'`인 이유는, 옛 볼륨의 문서가 `doc_role = 'PLAN'` 같은 값을 아직 갖고 있어서 `IS NULL`로는 정리 대상에서 빠지기 때문이다.
+
 > 마지막 블록(`mock_hr`)은 **데이터를 옮기지 않는다.** `SET SCHEMA`는 테이블을 통째로 다른 네임스페이스에 재등록만 하므로 행·인덱스·제약이 그대로 따라가고, 되돌리려면 `mock_hr` → `public`으로 같은 명령을 반대로 주면 된다. `to_regclass` 검사 때문에 이미 옮긴 DB에서 다시 실행해도 아무 일도 일어나지 않는다.
 
 > **`doc_role` 블록은 이 컬럼의 뜻을 바꾼다.** 예전에는 문서의 **종류**(`PLAN`/`MEETING_NOTE`/`DAILY_REPORT`/`OTHER`)였는데, 폴더에 준 역할을 안의 파일이 그대로 물려받는 방식이라 「01_기획」에 든 것은 요구사항 정의서든 화면설계서든 전부 기획서가 됐다. 정작 그 값으로 분기하는 코드는 한 줄도 없었다. 이제는 **프로젝트와의 관계**를 담는다 — `NULL`(팀 문서 풀) / `PRIMARY`(기준 문서, 프로젝트당 하나) / `SUB`(근거 검색에 함께 쓰는 문서). 옛 값은 새 의미로 읽으면 거짓말이라 비운다.
@@ -270,8 +272,7 @@ END \$\$;
 | 변경 | 이유 |
 |---|---|
 | `connector_conn.encrypted_credential_ref` → `TEXT` | Fernet 암호문이 Jira 1700자, Drive 632자다. `VARCHAR(255)`로는 토큰 하나도 안 들어간다 |
-| `proj_source.default_doc_role` 추가 | 폴더에 역할을 주고 안의 파일이 물려받는다. `doc.doc_role`은 문서 단위라서 폴더에 파일이 추가될 때 상속 기준이 없다 |
-| `proj_source.max_depth` 추가 | 폴더 탐색 깊이. `1`이면 선택한 폴더만, `NULL`이면 제한 없음. "하위 폴더 포함" 불리언을 따로 두지 않는다 — 끄는 것이 곧 `1`이고, 두 컬럼이면 어느 쪽이 이기는지 모른다 |
+| `proj_source.default_doc_role`·`max_depth` 추가 → **삭제**(2026-08-04) | 폴더에 역할을 주고 안의 파일이 물려받게 하려던 컬럼이다. **지금은 `proj_source`에 없다** — 폴더·파일 역할 지정 기능이 제거되고 폴더 자체가 `team_folder`로 옮겨 가면서 블록 뒤쪽의 `DROP COLUMN IF EXISTS`가 지운다. 블록이 앞에서 `ADD COLUMN IF NOT EXISTS`로 붙였다가 뒤에서 지우는 것은, 옛 볼륨에 남은 폴더 행을 `team_folder`로 옮겨 실을 때 이 두 값을 읽어야 하기 때문이다. 탐색 깊이(`max_depth`)와 표시명은 `team_folder`가 그대로 물려받았다 |
 | `user_account.is_admin` 추가 | 운영자 콘솔 로그인 허용 플래그. 이메일 패턴이 아니라 명시적 플래그로만 운영자를 판별한다 |
 | `sys_setting`, `sys_notice` 테이블 추가 | 운영자 콘솔 전역 정책(초대 만료 기간, 시스템 공지) 저장소. `INVITE_EXPIRE_DAYS`는 기존에 코드에 하드코딩돼 있던 14일 값을 그대로 시딩한다 |
 | `team`, `team_member` 테이블 + `user_account.team_id`, `member_invite.team_id` 추가 | 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 **회사 안의 그룹**이다. 조직도(`org`)에서 유도하면 팀원의 소속을 알 수 없어서, 팀장이 온보딩에서 팀명을 붙여 명시적으로 만든다. 이 `team_id`가 테넌트 경계다 — [[HR_어댑터와_테넌트_경계]] |
@@ -283,6 +284,14 @@ END \$\$;
 | `proj_source.display_name` 추가 (2026-08-03) | 화면이 Jira 프로젝트를 `KAN`·`AIP` 같은 **키로만** 보여줄 수 있었다. 실제 이름(`SKN29_Final_2Team`·`AI Platform`)이 저장돼 있지 않아서다. 매번 원본에 물어보면 대시보드가 커넥터 생존에 묶인다 — 토큰이 만료되면 저장된 부하 데이터는 멀쩡한데 이름을 못 읽어 화면이 깨진다. 고르는 시점에는 이미 이름을 알고 있으므로 그때 같이 저장한다. 기존 행은 NULL로 남고 화면이 키로 대체하며, 소스를 다시 저장하면 채워진다 |
 | `exist_task.status_category` 추가 (2026-08-03) | Jira 상태 **표시 문자열은 조직·프로젝트마다 다르다.** 실측에서 같은 카테고리(`new`)인데 KAN은 `'해야 할 일'`, AIP는 `'할 일'`로 왔다. `statusCategory.name`마저 한국어로 지역화되므로 안전한 값은 `statusCategory.key`(`new`/`indeterminate`/`done`) 하나뿐이다. 이걸 `TO_DO`/`IN_PROGRESS`/`DONE`으로 바꿔 저장하고 **부하 계산은 이 컬럼만 본다.** `status`에 한글이 들어가는 건 사람이 보기 위한 것이고, 조건문에 쓰면 다른 사이트에서 조용히 매치 0건이 된다 |
 | HR 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 `mock_hr` 스키마로 이동 | 이 8개는 **고객사 HR 시스템의 데이터**지 우리가 소유한 데이터가 아니다. 경계는 코드(`backend/services/hr/`)로 세웠지만 DB에서는 `public`에 우리 테이블과 섞여 있어, 다음 사람이 무심코 조인하면 그만이었다. 스키마를 나누면 `mock_hr.`를 타이핑하지 않고는 건드릴 수 없다 — [[HR_어댑터와_테넌트_경계]] |
+| `exist_task.summary` 추가 (2026-08-04) | 이슈 제목이 없으면 업무 목록이 `KAN-34`처럼 키만 늘어놓게 되어 무슨 일인지 알 수 없다. 값은 재동기화가 채우고 기존 행은 `NULL`이며 화면이 이슈 키로 대신 보여준다 — 없는 제목을 지어내지 않는다 |
+| `proj_source.last_sync_at` 추가 (2026-08-04) | 「갱신」 버튼을 누를지 판단하려면 지금 보는 숫자가 언제 것인지 알아야 한다. `sync_status`는 `PENDING`에서 움직이지 않아 시각을 대신하지 못한다. 기본값을 걸지 않는다 — 한 번도 안 읽은 것(`NULL`)과 읽었는데 0건인 것은 다른 상태다 |
+| `user_account.avatar_key` 추가 (2026-08-04) | 프로필 사진을 담을 곳이 우리에게도 HR(`mock_hr.person`)에도 없었다. 파일 경로가 아니라 **문서 저장소 안에서의 키**라, 지금은 로컬 디스크지만 S3로 바뀌어도 값이 그대로 쓰인다. 안 올렸으면 `NULL`이고 화면이 이름 첫 글자로 대신한다 |
+| `team.capacity_wk_hours`·`overload_pct`·`workload_weeks` 추가 (2026-08-04) | 설정의 「팀 업무량 기준」이 화면에만 있고 저장되지 않아 계산이 그 값을 보지도 않았다. 셋 다 `NULL`이 "설정 안 함"이고 각각 HR의 사람별 값·100%·4주를 쓴다. HR 값을 복사해 두지 않는 이유는 HR이 바뀌면 우리 사본이 조용히 낡기 때문이다 |
+| `proj.team_id` + `team_folder` 테이블 + `doc.team_id` + `doc.proj_id` NULL 허용 + `proj_source`에 `UNIQUE (proj_id)` (2026-08-04) | **테넌트 경계가 팀이라는 것을 스키마에 반영한 한 덩어리다.** 폴더를 고르는 행위가 프로젝트를 만드는 행위로 구현돼 있었는데, 폴더는 파일이 어디 있는지 알려주는 경로일 뿐이고 그 안의 파일이 어느 프로젝트 것인지는 열어 봐야 안다 — 그래서 폴더는 `proj_source`에서 `team_folder`(팀 소속)로, 문서는 프로젝트 필수에서 팀 필수로 옮겼다. Jira는 반대다: Jira 프로젝트 하나에 프로젝트 하나의 업무가 들어 있으므로 **1:1**로 못박았다(여러 개를 매달면 서로 다른 프로젝트의 업무가 한 진행률로 뭉개진다) — [[HR_어댑터와_테넌트_경계]] |
+| `doc.doc_role` 재정의 + `ux_doc_primary_per_proj` 부분 유니크 인덱스 (2026-08-04) | 문서의 **종류**에서 **프로젝트와의 관계**로 바뀌었다(아래 `doc_role` 주석 참고). 기준 문서는 프로젝트당 하나이고, 화면이 라디오라 둘이 될 일이 없어 보여도 두 건이 되면 어느 것으로 업무를 뽑았는지 알 수 없어 조용히 틀리므로 인덱스로 강제한다 |
+| `doc_block`·`vec_idx`·`doc_sync`의 `revision` → `VARCHAR(100)` (2026-08-04) | `doc.cur_revision`만 2026-07-31에 넓혀 둬서, 원문은 받아지는데 파싱 결과를 적재할 때 터지는 상태였다. Drive의 `headRevisionId`가 실측 51자다 |
+| `vec_idx.embedding` → `VECTOR(768)` (2026-08-04) | 임베딩 모델이 `google/embeddinggemma-300m`(768차원)으로 확정됐다. 1536은 OpenAI `text-embedding-3-small` 전제라 맞지 않는다. 적재와 검색이 같은 모델을 써야 하므로 차원은 한 곳에서만 정해진다 |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 

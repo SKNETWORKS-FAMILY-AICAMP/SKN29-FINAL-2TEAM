@@ -31,11 +31,12 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 ---
 
-## 1. 전체 연결관계 (14개)
+## 1. 전체 연결관계 (15개)
 
 | SOURCE | 관계 | TARGET | 연결 키 |
 |---|---|---|---|
-| PROJ | 1:N | DOC | `DOC.proj_id` |
+| TEAM | 1:N | DOC | `DOC.team_id` — 문서는 팀에 매달린다(2026-08-04) |
+| PROJ | 1:0..1 | DOC | `DOC.proj_id` + `doc_role='PRIMARY'`. 기준 문서 1건만 프로젝트에 묶인다(부분 유니크 인덱스) |
 | PROJ | 1:N | KNOW_ITEM | `KNOW_ITEM.proj_id` |
 | PROJ | 1:N | PROJ_KNOW_MODEL | `PROJ_KNOW_MODEL.proj_id` |
 | DOC | 1:N | DOC_BLOCK | `DOC_BLOCK.doc_id` |
@@ -56,6 +57,10 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 ## 2. 테이블별 상세
 
+> **타입 표기 주의.** 아래 표의 `UUID`·`BIGINT`는 논리 표기다. `DB/schema.sql`의 실제 PK는 거의 전부
+> `VARCHAR(5)` 짧은 코드(`PJ001`·`DC001`…)이고, UUID를 쓰는 것은 `DOC_BLOCK`·`CHUNK`·`VEC_IDX` 세 개뿐이다.
+> 물리 타입의 정본은 `DB/schema.sql`이다.
+
 ### Depth 1 — 프로젝트
 
 #### `PROJ` (프로젝트)
@@ -63,11 +68,13 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 
 | 필드 | 한글명 | 타입 | 저장 내용 | 저장 방식 | 사용처 |
 |---|---|---|---|---|---|
-| `proj_id` (PK) | 프로젝트 ID | UUID | 프로젝트 고유 식별자 | 내부 생성 UUID (외부 시스템 ID와 분리 — CDM 원칙) | 다른 모든 테이블의 프로젝트 범위 필터 기준 |
+| `proj_id` (PK) | 프로젝트 ID | VARCHAR(5) | 프로젝트 고유 식별자 | 짧은 코드 `PJ001`…(외부 시스템 ID와 분리 — CDM 원칙) | 다른 모든 테이블의 프로젝트 범위 필터 기준 |
 | `name` | 이름 | VARCHAR | 프로젝트명 | 사용자 입력 문자열 | 화면 표시, 검색 |
 | `status` | 상태 | VARCHAR | 진행중/종료 등 프로젝트 상태 | 코드값(예: `ACTIVE`/`ARCHIVED`) | 목록 필터링, 종료 프로젝트 처리 제외 |
 | `tz` | 시간대 | VARCHAR | 프로젝트 기준 시간대 | IANA 타임존 문자열(예: `Asia/Seoul`) | `TASK.start_at/due_at` 등 시각 필드를 사용자 로컬로 환산할 때 기준값 |
-| `owner_account_id` (FK) | 프로젝트 소유자 계정 ID | BIGINT | 프로젝트를 생성·관리하는 PM 계정 | Django `AUTH_USER_MODEL` PK 참조 | 프로젝트 소유권과 기본 관리 권한 |
+| `owner_account_id` (FK) | 프로젝트 소유자 계정 ID | VARCHAR(5) | 프로젝트를 생성·관리하는 PM 계정 | `user_account.account_id` 참조(FK 없음). **Django ORM을 쓰지 않으므로 `AUTH_USER_MODEL`과 무관하다** | 프로젝트 소유권 표시. 접근 판정은 소유자가 아니라 팀 검사가 한다 |
+| `team_id` (FK) | 팀 ID | VARCHAR(5) | 이 프로젝트를 하는 팀(2026-08-04 추가) | `team.team_id` 참조(FK 없음) | 테넌트 경계. 소유 계정만으로는 팀원이 팀의 프로젝트를 볼 수 없다 |
+| `created_at` | 생성 시각 | TIMESTAMPTZ | 프로젝트를 만든 시각(2026-08-04 추가) | `DEFAULT now()` | 목록의 "최신순" 정렬과 날짜 표시. 이 컬럼 이전 행은 NULL이고 화면이 `-`로 보여준다 |
 
 ---
 
@@ -76,15 +83,17 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 #### `DOC` (문서)
 업로드된 원본 문서 1건에 대한 메타데이터. 파일 자체(바이트)는 Object Storage에 있고, 이 테이블은 그 파일을 가리키는 포인터 + 접근·상태 정보만 갖는다.
 
-연결: `PROJ`에 소속(N:1), `DOC_BLOCK` 여러 개를 가짐(1:N), `DOC_SYNC`와 1:1.
+연결: **`TEAM`에 소속(N:1)** — 등록 시점에는 팀 문서 풀에 들어간다(2026-08-04). `PROJ`에는 기준 문서로 지정될 때만 묶이고 그때 프로젝트당 1건이다. `DOC_BLOCK` 여러 개를 가짐(1:N), `DOC_SYNC`와 1:1.
 
 | 필드 | 한글명 | 타입 | 저장 내용 | 저장 방식 | 사용처 |
 |---|---|---|---|---|---|
-| `doc_id` (PK) | 문서 ID | UUID | 문서 고유 식별자(내부 ID) | 내부 생성 UUID | 이하 모든 문서 하위 테이블(BLOCK/SYNC 등)의 FK 기준 |
-| `proj_id` (FK) | 프로젝트 ID | UUID | 소속 프로젝트 | `PROJ.proj_id` 참조 | 프로젝트별 문서 목록 조회 |
+| `doc_id` (PK) | 문서 ID | VARCHAR(5) | 문서 고유 식별자(내부 ID) | 짧은 코드 `DC001`… | 이하 모든 문서 하위 테이블(BLOCK/SYNC 등)의 FK 기준 |
+| `team_id` (FK) | 팀 ID | VARCHAR(5) | **이 문서를 등록한 팀**(2026-08-04 추가). 문서는 팀의 Drive 폴더에서 나오므로 등록 시점에는 팀에만 속한다 | `team.team_id` 참조(FK 없음) | **문서 조회의 실제 범위 기준** — 모든 문서 쿼리가 `WHERE team_id = ?`로 좁힌다 |
+| `proj_id` (FK) | 프로젝트 ID | VARCHAR(5) | 어느 프로젝트의 문서인가. **등록 시점에는 모른다**(2026-08-04 NULL 허용) | `PROJ.proj_id` 참조. 기준 문서로 지정될 때만 채워진다 | 프로젝트 → 기준 문서 역추적 |
 | `src_file_id` | 원본 파일 ID | VARCHAR | Google Drive 등 외부 소스의 파일 ID | 외부 시스템 원본 ID 그대로 저장 | 원본 파일 재조회, 변경 감지(Drive webhook과 매칭) — `doc_id`와 분리해 저장하는 이유는 외부 ID가 바뀌어도 내부 참조가 깨지지 않게 하기 위함(CDM 원칙) |
 | `cur_revision` | 현재 리비전 | VARCHAR | 이 문서의 최신 리비전 값(예: Drive의 revisionId 또는 자체 증가값) | 문자열/버전 토큰 | `DOC_BLOCK.revision`, `DOC_SYNC.revision`과 비교해서 "이 블록이 최신 버전인지" 판단하는 기준점 |
 | `content_hash` | 내용 해시 | VARCHAR | 문서 원본 내용의 해시값 | SHA-256 등 | 재처리 필요 여부 판단(해시가 같으면 재파싱 스킵) |
+| `storage_key` | 저장소 키 | VARCHAR(255) | 내려받은 원문이 문서 저장소 어디에 있는가(2026-07-31 추가) | 파일 경로가 아니라 저장소 안에서의 키 — 지금은 로컬 디스크지만 S3로 바뀌어도 값이 그대로 쓰인다. 아직 안 받았으면 NULL | RunPod에 넘길 만료형 서명 URL 생성, 원문 재조회 |
 | `security` | 보안 등급 | VARCHAR | 문서 보안 등급(대외비/일반 등) | 코드값 | 접근 제어, 화면 표시 시 워터마크/마스킹 여부 결정 |
 | `source_type` | 원천 유형 | VARCHAR | 문서가 유입된 외부 소스 | `DRIVE`/`JIRA` — `schema.sql`과 구현이 쓰는 값이다(이 표의 앞선 `GOOGLE_DRIVE` 표기는 오기였다) | Connector·파서 라우팅과 출처 표시 |
 | `file_name` | 파일명 | VARCHAR | 원본 파일명 | 문자열 | 화면 표시, Citation에 "출처: OOO.pdf" 표기 |
@@ -285,12 +294,12 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 | 필드 | 한글명 | 타입 | 저장 내용 | 저장 방식 | 사용처 |
 |---|---|---|---|---|---|
 | `chunk_id` (PK, 설계상 참조) | 청크 ID | UUID | 원본 청크이자 벡터 레코드 식별자 | `CHUNK.chunk_id`와 동일, 1:1 | 검색 결과를 원문 청크/블록까지 역추적 |
-| `embedding` | 임베딩 값 | VECTOR | 청크 텍스트를 벡터화한 값 | pgvector `vector(N)` 타입(N은 `embed_dim`과 동일) | 유사도 검색(코사인/유클리드 거리 계산)의 대상 데이터 |
+| `embedding` | 임베딩 값 | VECTOR(768) | 청크 텍스트를 벡터화한 값 | pgvector `vector(768)` **고정**(2026-08-04). `google/embeddinggemma-300m`의 출력 차원이고, 적재와 검색이 같은 모델을 써야 하므로 차원은 한 곳에서만 정해진다 | 유사도 검색(코사인/유클리드 거리 계산)의 대상 데이터 |
 | `metadata` | 메타데이터 | JSONB | 검색 필터 전용 메타데이터 | 예: `{"proj_id":"...","document_id":"...","doc_role":"PRIMARY","security":"GENERAL","acl_principals":[...]}` — **업무 의미(담당자·마감일 등)는 넣지 않음** | 검색 시 project/권한 범위로 먼저 필터링하고, 업무 의미는 `CHUNK→KNOW_ITEM_SRC→KNOW_ITEM.semantic_type` JOIN으로 조회 |
 | `indexed_at` | 인덱싱 시각 | TIMESTAMP | 벡터가 생성/저장된 시각 | ISO 8601 timestamp | 인덱싱 지연 모니터링 |
 | `embed_model` | 임베딩 모델 | VARCHAR | 어떤 임베딩 모델을 썼는지 | 모델명 문자열 | 모델이 다른 벡터끼리는 거리 비교가 무의미하므로, 검색 시 모델 일치 필터 |
 | `embed_ver` | 임베딩 버전 | VARCHAR | 임베딩 파이프라인 버전 | 버전 문자열 | 재임베딩 대상 판별 |
-| `embed_dim` | 임베딩 차원 | INT | 벡터의 차원 수 | 정수(예: 1536) | `embedding` 컬럼 타입 검증, 모델 교체 시 차원 불일치 감지 |
+| `embed_dim` | 임베딩 차원 | INT | 벡터의 차원 수 | **768**(2026-08-04 확정). 1536이던 시절은 OpenAI `text-embedding-3-small`을 전제한 것이라 맞지 않는다 | `embedding` 컬럼 타입 검증, 모델 교체 시 차원 불일치 감지 |
 | `dist_metric` | 거리 계산 방식 | VARCHAR | 유사도 계산에 쓸 거리 함수 | 코드값(`COSINE`/`L2`/`INNER_PRODUCT`) | 검색 쿼리의 정렬 기준 |
 | `content_hash` | 내용 해시 | VARCHAR | 임베딩 대상이 된 텍스트의 해시 | SHA-256 등 | 원본 청크와 벡터가 최신 상태로 일치하는지 검증 |
 | `revision` | 리비전 | VARCHAR | 이 벡터가 속한 문서 리비전 | `DOC.cur_revision`과 같은 포맷 | 리비전이 바뀌면 이전 벡터를 검색 대상에서 제외하는 기준 |
@@ -301,7 +310,7 @@ PROJ_KNOW_MODEL(한 프로젝트의 지식 전체를 모아 만든 버전 스냅
 ## 3. 이 스키마가 지키고 있는 설계 원칙 (요약)
 
 1. **저장소 역할 분리** — 3-B RDBMS는 진짜 데이터(14개 테이블), 3-A pgvector는 검색용 보조 인덱스(`VEC_IDX` 1개)다. 검색 인덱스를 재생성해도 원본 데이터와 계보는 손실되지 않는다.
-2. **프로젝트 범위 격리** — 문서·Block·Chunk·지식·Task·Snapshot은 `proj_id`를 기준으로 조회 범위를 제한한다. 플랫폼 접근권한은 3-C의 `PROJ_MEMBER`가 관리한다.
+2. **테넌트 경계는 팀** — 문서·Block·Chunk는 `DOC.team_id`를 기준으로 조회 범위를 제한하고(모든 문서 쿼리가 `WHERE team_id = ?`로 좁힌다), 지식·Task·Snapshot은 `proj_id`로 좁힌다. 접근 판정은 `PROJ_MEMBER`의 역할이 아니라 팀 검사(`_require_team`·`_require_team_project`)가 한다 — 팀장이 등록한 문서를 팀원이 못 여는 것은 경계 정의와 어긋난다.
 3. **리비전은 별도 테이블 없이 스탬프로 추적** — `DOC.cur_revision`이 "지금 최신이 뭔지"를 가리키고, `DOC_BLOCK`/`VEC_IDX`/`DOC_SYNC`는 자기가 만들어진 시점의 `revision` 값을 스탬프처럼 찍어둔다. "이게 최신인가?"는 `내_revision == DOC.cur_revision` 비교로 계산하며, 과거 리비전 데이터를 지우지 않아도 최신 데이터만 조회할 수 있다.
 4. **계산 가능한 값은 저장하지 않는다** — 예: `heading_level`은 `heading_path` 배열 길이로 계산, 블록/청크 개수는 COUNT 쿼리로 계산. 다만 `parse_status`처럼 "처리 결과 자체"인 값은 계산으로 만들 수 없으므로 저장한다.
 5. **Evidence-first(근거 우선) 원칙** — `KNOW_ITEM_SRC`, `TASK_KNOW_SRC`가 "이 지식/업무가 어디서 왜 나왔는지"를 문장(`quote_text`, `rationale`) 단위까지 저장한다. 결과만 보여주지 않고 항상 원문으로 되짚어갈 수 있게 한다.

@@ -2,6 +2,10 @@
 
 > 대상 파일: `peopledb_mock_v13.sql`
 > 범위: 조직·인력·스킬·근무일정·휴가·외부 계정 매핑(People DB)만 다룬다. Jira/Drive 쪽 테이블, 분석·추천·검증 레이어는 별도 문서(`DB설계_검토_및_가이드.md` 9.1절)를 참고.
+>
+> **⚠ 스키마 접두는 `mock_hr.` 이다.** 이 8개 테이블은 2026-07-31에 `public`에서 `mock_hr` 스키마로 옮겨졌다. 아래 본문은 편의상 `org`·`person`처럼 짧게 쓰지만, 실제 조회는 **`mock_hr.person`처럼 항상 스키마명을 붙여야 한다** — 안 붙이면 `relation "person" does not exist`가 난다. 애플리케이션도 `search_path`에 기대지 않고 `mock_hr.`를 명시한다.
+>
+> **⚠ 물리 스키마에 없는 컬럼이 섞여 있다.** 설계 단계에서 논의됐지만 `DB/schema.sql`에 들어가지 않은 컬럼은 각 표의 마지막 열에 **`미반영`** 으로 표시했다. 물리 컬럼의 정본은 `DB/schema.sql`이다.
 
 ## 구조 한눈에 보기 (Layout)
 
@@ -31,7 +35,7 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 
 **Workday API 응답을 그대로 복제한 것이 아니다.** `수집_데이터_보고서_2팀_v2`에 명시된 원칙 그대로 "Workday Worker·Supervisory Organization 구조를 **참고한** 비식별 합성 데이터이며 실제 API **응답 재현이 아니다**"를 따른다. 실제로 다른 점:
 
-- `person_id`는 우리가 발급하는 짧은 코드(예: `PB001`)다. Workday의 원본 `id`는 별도로 `person.wd_worker_id`에 참조용으로만 보관한다. Workday `id`를 PK로 직접 쓰지 않는 이유: (1) 형식 종속 — Workday `id` 형식이 우리가 원하는 형식이라는 보장이 없어, 그대로 PK로 쓰면 이를 참조하는 모든 컬럼의 타입 안정성이 원천 시스템 포맷에 묶인다. (2) 다중 소스 대응 — Workday 없이 수동으로 등록되는 사람(예: 계약직을 Workday 반영 전에 먼저 추가)이 있을 수 있어, PK가 "Workday에서 왔다"는 전제에 의존하면 안 된다. (3) 원천 교체 내성 — 나중에 Workday를 다른 HR 시스템으로 바꾸거나 마이그레이션해도, 내부 PK와 이를 참조하는 수십 개 테이블은 그대로 두고 `wd_worker_id` 컬럼값만 갱신하면 된다. 실제 연동 시점에는 "Workday `id` → `wd_worker_id`로 기존 행 찾기 → 있으면 UPDATE, 없으면 새 코드로 INSERT" 방식의 upsert로 동기화한다. 이는 Jira 연동에 쓰는 `link` 패턴과 동일한 방식이라, 설계상 새로 만드는 개념이 아니다.
+- `person_id`는 우리가 발급하는 짧은 코드(예: `PB001`)다. Workday의 원본 `id`는 별도 컬럼(`wd_worker_id`)에 참조용으로만 보관하기로 했다(**설계안이고 현재 `DB/schema.sql`에는 없다** — 실 연동 시점에 추가한다). Workday `id`를 PK로 직접 쓰지 않는 이유: (1) 형식 종속 — Workday `id` 형식이 우리가 원하는 형식이라는 보장이 없어, 그대로 PK로 쓰면 이를 참조하는 모든 컬럼의 타입 안정성이 원천 시스템 포맷에 묶인다. (2) 다중 소스 대응 — Workday 없이 수동으로 등록되는 사람(예: 계약직을 Workday 반영 전에 먼저 추가)이 있을 수 있어, PK가 "Workday에서 왔다"는 전제에 의존하면 안 된다. (3) 원천 교체 내성 — 나중에 Workday를 다른 HR 시스템으로 바꾸거나 마이그레이션해도, 내부 PK와 이를 참조하는 수십 개 테이블은 그대로 두고 `wd_worker_id` 컬럼값만 갱신하면 된다. 실제 연동 시점에는 "Workday `id` → `wd_worker_id`로 기존 행 찾기 → 있으면 UPDATE, 없으면 새 코드로 INSERT" 방식의 upsert로 동기화한다. 이는 Jira 연동에 쓰는 `link` 패턴과 동일한 방식이라, 설계상 새로 만드는 개념이 아니다.
 - `link`는 Workday에 없는 개념이다. 우리 시스템이 Jira/Google 계정을 사람과 연결하기 위해 만든 테이블이다.
 - Workday의 실제 REST 응답은 중첩된 하나의 JSON 객체지만, 우리는 이를 여러 정규화된 테이블로 분리했다(Canonical Model 원칙).
 
@@ -92,14 +96,14 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 
 | 테이블 | 한 줄 설명 | 필수 여부 |
 |---|---|---|
-| `org` | 조직 계층(회사/부서/파트/비용센터) | 필수 |
-| `level` | 직급 체계 | 필수 |
-| `person` | 직원 1명의 기준정보 | 필수 |
-| `skill` | 스킬 정의(마스터) | 필수 |
-| `person_skill` | 사람-스킬 보유 관계 | 필수 |
-| `sched` | 근무 시간·FTE | 필수 |
-| `absence` | 휴가·휴직 일정 | 필수 |
-| `link` | 외부 계정(Jira/Google) 연결 | 필수 |
+| `mock_hr.org` | 조직 계층(회사/부서/파트/비용센터) | 필수 |
+| `mock_hr.level` | 직급 체계 | 필수 |
+| `mock_hr.person` | 직원 1명의 기준정보 | 필수 |
+| `mock_hr.skill` | 스킬 정의(마스터) | 필수 |
+| `mock_hr.person_skill` | 사람-스킬 보유 관계 | 필수 |
+| `mock_hr.sched` | 근무 시간·FTE | 필수 |
+| `mock_hr.absence` | 휴가·휴직 일정 | 필수 |
+| `mock_hr.person_link` | 외부 계정(Jira/Google) 연결. 본문에서는 `link`로 줄여 부른다 | 필수 |
 
 ---
 
@@ -152,16 +156,18 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 | `emp_id` | 사번 | 필수 | Person |
 | `name` | 표시명(Workday `descriptor` 대응) | 필수 | Person |
 | `email` | HR 이메일(Workday `primaryWorkEmail`) | 필수 | Person |
-| `phone` | 연락처 | 선택 | Person |
+| `phone` | 연락처 | **미반영** | Person |
 | `job_role` | 직함(Workday `businessTitle`) | 필수 | Employment |
 | `org_id` | 소속 조직(FK 아님, 설계상 참조) | 필수 | Employment |
 | `level_id` | 직급(FK 아님, 설계상 참조) | 필수 | Employment |
-| `is_mgr` | 관리자 여부 | 선택(참고 아래 항목) | Employment |
-| `loc` | 근무지 | 선택 | Employment |
-| `wk_type` | 고용 형태 — Employee/Contingent만 사용(실제 Workday는 Employee/Contingent Worker/Pending Worker/Nonworker 4종. 재직 중인 정규·계약직만 모델링 대상이라 2종만 채택) | 선택 | Employment |
+| `is_mgr` | 관리자 여부 | **미반영**(참고 아래 항목) | Employment |
+| `loc` | 근무지 | **미반영** | Employment |
+| `wk_type` | 고용 형태 — Employee/Contingent만 사용(실제 Workday는 Employee/Contingent Worker/Pending Worker/Nonworker 4종. 재직 중인 정규·계약직만 모델링 대상이라 2종만 채택) | **미반영** | Employment |
 | `emp_status` | ACTIVE/TERMINATED만 사용(실제 Workday는 Active/Paid·Unpaid Leave/Suspended/Terminated/Retired/Deceased 등 더 세분화됨. Leave는 `absence`로 대체, Suspended/Retired/Deceased는 이번 스코프에서 미지원 — 알려진 한계로 기록) | 필수 | Employment |
-| `yos` | 근속연수(years of service). Workday가 계산하여 제공하는 값이며, 내부에서 재계산하지 않는다 | 선택 | Employment |
-| `wd_worker_id` | Workday 원본 ID 참조용 | 선택(추적성 목적) | Person |
+| `yos` | 근속연수(years of service). Workday가 계산하여 제공하는 값이며, 내부에서 재계산하지 않는다 | **미반영** | Employment |
+| `wd_worker_id` | Workday 원본 ID 참조용 | **미반영**(추적성 목적) | Person |
+
+**현재 `mock_hr.person`의 실제 컬럼은 8개다** — `person_id`, `emp_id`, `name`, `email`, `org_id`, `job_role`, `level_id`, `emp_status`. 위 표의 `phone`·`is_mgr`·`loc`·`wk_type`·`yos`·`wd_worker_id` 여섯은 설계안이고 `DB/schema.sql`에 들어가지 않았다.
 
 **"성격" 열에 대해**: `job_role`~`yos`는 개념적으로는 Workday의 Worker(불변에 가까운 신원)가 아니라 Employment(조직배치·고용조건, 자주 바뀔 수 있음)에 속하는 값들이다. 지금은 별도 테이블로 물리적으로 분리하지 않고 `person` 한 테이블에 같이 두고 있다 — 어떤 기능(부하 계산/업무 배정/추천)도 과거 조직·직급 이력을 조회하지 않아 "현재 상태"만 저장해도 충분하기 때문이다. 다만 이 컬럼들이 논리적으로는 Employment 그룹이라는 걸 여기 표시해뒀다 — 나중에 조직 이동/승진 이력 추적이 실제로 필요해지면, 이 그룹 전체를 `employment` 테이블(`eff_from`/`eff_to` 포함)로 그대로 떼어내면 된다.
 
@@ -171,7 +177,7 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 
 **`emp_status`를 ACTIVE/TERMINATED로 좁힌 이유**: ON_LEAVE/SABBATICAL 같은 일시적 상태를 여기 정적 값으로 두면 `absence`(날짜 범위 데이터)와 내용이 중복되고, 휴직 종료 후 갱신을 깜빡하면 데이터가 stale해진다. "지금 추천 가능한 사람"은 `emp_status='ACTIVE' AND 오늘 날짜가 absence 범위 밖`으로 계산하는 게 더 정확하다.
 
-**`is_mgr`의 중복성**: `org.mgr_id`로도 같은 정보를 알 수 있어 개념적으로는 중복이다. 조회 편의(서브쿼리 없이 바로 필터링) 때문에 유지를 추천하지만, 스키마를 더 줄이고 싶다면 제거해도 기능상 문제는 없다.
+**`is_mgr`의 중복성**(물리 스키마에는 없는 컬럼이다): `org.mgr_id`로도 같은 정보를 알 수 있어 개념적으로는 중복이다. 조회 편의(서브쿼리 없이 바로 필터링) 때문에 유지를 추천하지만, 스키마를 더 줄이고 싶다면 제거해도 기능상 문제는 없다.
 
 ---
 
@@ -186,7 +192,7 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 | `skill_id` | 내부 PK. `S001`~ 형식 | 필수 |
 | `name` | 스킬명 | 필수 |
 | `category` | Technical/Design/Management/Marketing 등 자유 텍스트(CHECK 미적용) | 필수 |
-| `descr` | 스킬 설명 | 추가 권장 — 근거는 아래 참고 |
+| `descr` | 스킬 설명 | **미반영** — 넣자는 근거는 아래 참고 |
 | `status` | 폐기된 스킬 처리용 | 추가 권장 |
 
 `person_skill` 필드:
@@ -194,11 +200,11 @@ Person이 중심이고, 나머지 5개 테이블(Skill/PersonSkill, Sched, Absen
 | 필드 | 의미 | 필수/선택 |
 |---|---|---|
 | `person_id`, `skill_id` | 복합 PK(둘 다 FK 아님, 설계상 참조) | 필수 |
-| `proficiency` | BEGINNER/INTERMEDIATE/ADVANCED | 필수 |
-| `source` | HR/RESUME/AI_INFERRED/USER_ADDED — 이 정보가 어디서 왔는지 | 필수 |
-| `verify_status` | VERIFIED/SELF_REPORTED/UNKNOWN | 필수 |
+| `proficiency` | **`INT NOT NULL CHECK (proficiency BETWEEN 1 AND 5)`** — 1~5 정수다. `BEGINNER`/`INTERMEDIATE`/`ADVANCED` 같은 문자열이 아니다 | 필수 |
+| `source` | HR/RESUME/AI_INFERRED/USER_ADDED — 이 정보가 어디서 왔는지 | 선택 |
+| `verify_status` | VERIFIED/SELF_REPORTED/UNKNOWN | **미반영** |
 | `confidence` | 신뢰도(0~1) | 선택 |
-| `verified_at` | 최종 확인 시각 | 선택 |
+| `verified_at` | 최종 확인 시각 | **미반영** |
 
 **연결 관계**: `person_skill`이 `person`과 `skill`을 다대다로 연결.
 
@@ -246,13 +252,13 @@ Workday의 실제 WorkerSkill 모델은 proficiency(레벨: Not Applicable/Begin
 
 ---
 
-## 7. `link`
+## 7. `mock_hr.person_link` (본문 약칭 `link`)
 
 **저장하는 정보**: 사람과 외부 시스템(Jira, Google) 계정의 연결.
 
 | 필드 | 의미 | 필수/선택 |
 |---|---|---|
-| `link_id` | 내부 PK. `I001`~ 형식 | 필수 |
+| `person_link_id` | 내부 PK. `I001`~ 형식. **컬럼명은 `link_id`가 아니다** — `link_id`는 전혀 다른 테이블(`public.user_person_link`)의 PK다 | 필수 |
 | `person_id` | FK 아님, 설계상 참조 | 필수 |
 | `sys_type` | JIRA 또는 GOOGLE만 | 필수 |
 | `ext_email` | 마이페이지에서 본인이 등록한 이메일 | 필수 |
@@ -268,7 +274,7 @@ Workday의 실제 WorkerSkill 모델은 proficiency(레벨: Not Applicable/Begin
 
 동일 인물 판별 흐름: Jira 이슈에 담당자 이메일이 `user007@halil.com`으로 찍혀 있으면 → `link WHERE sys_type='JIRA' AND ext_email='user007@halil.com'`로 `person_id` 조회 → 그 `person_id`로 `person` 테이블을 보면 이름·HR 이메일·조직 등 전체 신원이 나온다. Google Drive 문서의 소유자 이메일도 동일하게 `sys_type='GOOGLE'`로 조회하면 같은 `person_id`에 도달한다.
 
-`sys_type CHECK (... IN ('JIRA','GOOGLE'))`은 지금 필요한 두 외부 시스템과 정확히 일치한다. 나중에 Slack 같은 세 번째 외부 계정을 붙이게 되면 `ALTER TABLE ... DROP CONSTRAINT ... ADD CONSTRAINT ... CHECK (... IN ('JIRA','GOOGLE','SLACK'))`로 값 하나 추가하면 되는 구조라, 미리 확장해둘 필요는 없다.
+`sys_type`에 **CHECK 제약은 걸려 있지 않다** — `DB/schema.sql`의 `mock_hr.person_link.sys_type`은 `VARCHAR(30) NOT NULL`이고, 허용값(`JIRA`/`GOOGLE`)은 애플리케이션이 지킨다. 나중에 Slack 같은 세 번째 외부 계정을 붙여도 `ALTER TABLE`이 필요 없이 값 하나만 늘리면 되므로, 미리 확장해둘 필요도 제약을 새로 걸 필요도 없다.
 
 ---
 
@@ -278,7 +284,7 @@ Workday의 실제 WorkerSkill 모델은 proficiency(레벨: Not Applicable/Begin
 
 **약점**:
 1. 실제 사용 계획이 없는 필드는 추가하지 않는 게 원칙인데, 지금까지 여러 차례 외부 피드백을 반영하며 스키마가 계속 늘어나는 경향이 있었다.
-2. `is_mgr`가 `org.mgr_id`와 개념적으로 중복된다.
+2. `is_mgr`가 `org.mgr_id`와 개념적으로 중복된다(그래서 물리 스키마에는 넣지 않았다).
 3. `wk_type`(Employee/Contingent)과 `emp_status`(ACTIVE/TERMINATED)는 영어 Workday enum 값 그대로 저장한다 — 나머지 컬럼명·주석은 한글/영문이 섞여 있어도 되지만, 상태값 자체를 한글로 바꾸면 나중에 실제 Workday API 응답과 문자열 매핑을 새로 짜야 해서 번거롭다. 원본 enum 값 그대로가 실 연동 시 더 안전하다.
 4. `CALENDAR_EVENT`(휴가 외 일정) 포함 여부가 최종 확정이 안 돼 이번 버전에서는 제외했다. 필요해지면 `person_id`로 연결되는 별도 테이블로 쉽게 추가할 수 있는 구조다.
 5. `person`이 식별정보(이름/이메일, "Person" 성격)와 자주 바뀔 수 있는 배치정보(조직/직급/재직상태, "Employment" 성격)를 한 테이블에 같이 갖고 있다(4절 표의 "성격" 열 참고). 어떤 기능도 과거 조직 이력을 조회하지 않아 물리적으로 분리하지 않기로 했다 — 나중에 조직 이동 이력 추적이 실제로 필요해지면 Employment 성격 컬럼들을 effective-dated 테이블로 그대로 떼어내면 된다.
@@ -286,4 +292,4 @@ Workday의 실제 WorkerSkill 모델은 proficiency(레벨: Not Applicable/Begin
 7. FK 제약이 없어서(0.2절) DB가 참조 무결성을 검사하지 않는다. 지금은 생성 스크립트로만 데이터를 만들어서 문제가 없지만, 사람이 수동으로 데이터를 추가/수정하는 단계가 생기면 실수로 존재하지 않는 `person_id`/`org_id` 등을 참조 컬럼에 넣어도 DB가 막아주지 못한다.
 8. ID가 `VARCHAR(5)` 짧은 코드라 테이블당 최대 9,999건까지만 표현 가능하다. 지금 목업(최대 57건)엔 문제없지만, 실제 프로덕션 규모로 확장하면 자릿수를 늘려야 한다.
 
-**주의**: `mock_hr.skill`/`mock_hr.worker_skill` 같은 테이블명은 원본 조사 문서에서 이미 SUPERSEDED(사용 안 함)로 명시된 설계이므로, 개념(검증 상태, 신뢰도 등)만 참고하고 테이블명·물리 스키마 자체는 채택하지 않았다.
+**주의**: 원본 조사 문서의 `worker_skill` 테이블은 SUPERSEDED(사용 안 함)로 명시된 설계라, 개념(검증 상태·신뢰도 등)만 참고하고 그 테이블 구조는 채택하지 않았다. 다만 **`mock_hr` 스키마명은 별개이고 실제로 채택됐다** — 2026-07-31에 이 8개가 전부 `mock_hr`로 옮겨져 지금 물리 테이블명은 `mock_hr.skill`·`mock_hr.person`이다. 고객사 HR 데이터를 우리 테이블과 섞이지 않게 하려는 것이지 위 조사 문서의 명명을 따른 것이 아니다.

@@ -26,18 +26,29 @@ erDiagram
     USER_ACCOUNT ||--o{ PROJECT_MEMBER : receives_access
     PROJECT ||--o{ PROJECT_MEMBER : grants_access
     USER_ACCOUNT ||--o{ CONNECTOR_CONNECTION : connects
-    PROJECT ||--o{ PROJECT_SOURCE : selects
+    PROJECT ||--|| PROJECT_SOURCE : selects
     CONNECTOR_CONNECTION ||--o{ PROJECT_SOURCE : provides
     USER_ACCOUNT ||--o{ AUDIT_LOG : acts
     PROJECT ||--o{ AUDIT_LOG : records
+    TEAM ||--o{ USER_ACCOUNT : scopes
+    TEAM ||--o{ TEAM_MEMBER : contains
+    TEAM ||--o{ TEAM_FOLDER : owns_drive_folders
+    TEAM ||--o{ PROJECT : scopes_projects
 ```
 
 ```text
+TEAM  (= 테넌트 경계)
+ ├─ USER_ACCOUNT.team_id
+ ├─ TEAM_MEMBER
+ ├─ TEAM_FOLDER              ← Drive 폴더는 프로젝트가 아니라 팀에 매단다(2026-08-04)
+ ├─ DOC.team_id              ← 문서도 팀에 매단다. 등록 시점에는 어느 프로젝트인지 모른다
+ └─ PROJECT.team_id
+
 USER_ACCOUNT
  ├─ PROJECT.owner_account_id
  ├─ PROJECT_MEMBER ── PROJECT
- ├─ CONNECTOR_CONNECTION
- │       └─ PROJECT_SOURCE ── PROJECT
+ ├─ CONNECTOR_CONNECTION     ← 커넥터 연결은 계정에 매단다(OAuth는 사람이 승인한다)
+ │       └─ PROJECT_SOURCE ── PROJECT   (1:1)
  └─ AUDIT_LOG ── PROJECT
 ```
 
@@ -45,18 +56,22 @@ USER_ACCOUNT
 
 ### 3.1 USER_ACCOUNT
 
-플랫폼 인증과 화면 표시를 위한 사용자 계정이다. Django의 `AUTH_USER_MODEL`과 대응한다.
+플랫폼 인증과 화면 표시를 위한 사용자 계정이다. **Django ORM을 쓰지 않으므로 `AUTH_USER_MODEL`과 대응하지 않는다**(`DATABASES = {}`) — 물리 테이블은 `DB/schema.sql`의 `user_account`이고 접근은 `backend/db/repositories.py`가 직접 SQL로 한다.
 
 | 필드 | 타입 예시 | 제약 | 의미 |
 |---|---|---|---|
-| `account_id` | BIGINT | PK | Django `accounts.User.id`에 대응하는 플랫폼 계정 ID |
-| `email` | VARCHAR(320) | NOT NULL, UNIQUE | 로그인 이메일 |
-| `password_hash` | VARCHAR | NOT NULL | Django 인증 체계가 생성한 비밀번호 해시 |
+| `account_id` | VARCHAR(5) | PK | 플랫폼 계정 ID(`UA001`…). BIGINT도 UUID도 아니다 |
+| `email` | VARCHAR(255) | NOT NULL, UNIQUE | 로그인 이메일 |
+| `password_hash` | VARCHAR(255) | NOT NULL | 애플리케이션에서 bcrypt/argon2로 해싱 후 저장. 평문 절대 금지 |
 | `display_name` | VARCHAR(100) | NOT NULL | 화면 표시 이름 |
-| `account_status` | VARCHAR(20) | NOT NULL | `ACTIVE/LOCKED/WITHDRAWN` |
+| `account_status` | VARCHAR(20) | NOT NULL DEFAULT `'ACTIVE'` | `ACTIVE/LOCKED/WITHDRAWN` |
+| `is_admin` | BOOLEAN | NOT NULL DEFAULT false | 운영자 콘솔 로그인 허용 플래그(2026-07-30). API 승격 경로가 없고 `grant_admin.py`로만 켠다 |
+| `team_id` | VARCHAR(5) | NULL | 소속 팀 = `team.team_id`(FK 없음). **이 값이 테넌트 경계다**(2026-07-31) |
+| `avatar_key` | VARCHAR(255) | NULL | 프로필 사진의 문서 저장소 키(2026-08-04). 안 올렸으면 `NULL`이고 화면이 이름 첫 글자로 대신한다 |
 | `last_login_at` | TIMESTAMPTZ | NULL | 최근 로그인 시각 |
-| `created_at` | TIMESTAMPTZ | NOT NULL | 가입 시각 |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | 수정 시각 |
+| `created_at` | TIMESTAMPTZ | NOT NULL DEFAULT now() | 가입 시각 |
+
+`updated_at`은 없다 — 설계 초안에는 있었지만 물리 스키마에 넣지 않았다.
 
 논리 모델의 `password_hash`는 Django 물리 모델의 `password` 필드에 대응한다. 평문 비밀번호를 직접 할당하지 않고 Django의 비밀번호 설정·검증 함수를 사용한다.
 
@@ -154,9 +169,9 @@ auth_status, encrypted_credential_ref, connected_at
 
 제약조건:
 
-- `(project_id, source_type, external_source_id)` UNIQUE
-- `source_type=DRIVE_FOLDER`이면 Google Drive 연결만 참조한다.
-- `source_type=JIRA_PROJECT`이면 Jira 연결만 참조한다.
+- **`(project_id)` UNIQUE** — 프로젝트 하나에 Jira 프로젝트 하나다(2026-08-04, `ux_proj_source_proj`). 설계 초안의 `(project_id, source_type, external_source_id)` 복합 UNIQUE는 폐기됐다: 여러 개를 한 프로젝트에 매달면 서로 다른 프로젝트의 업무가 한 진행률로 뭉개진다.
+- `source_type`은 `JIRA_PROJECT` 하나뿐이다. **Drive 폴더는 여기 없다** — 팀에 속하므로 `TEAM_FOLDER`로 옮겼다(2026-08-04).
+- Jira 연결만 참조한다.
 - 연결이 `EXPIRED/REVOKED`이면 신규 동기화를 시작하지 않는다.
 
 `CONNECTOR_SCOPE`는 이 테이블과 역할이 겹치므로 별도로 만들지 않는다.
@@ -167,16 +182,18 @@ auth_status, encrypted_credential_ref, connected_at
 
 ```
 proj_source_id  VARCHAR(5)   PK      (UUID 아님. 짧은 코드 PS001…)
-proj_id         VARCHAR(5)   NOT NULL
+proj_id         VARCHAR(5)   NOT NULL UNIQUE   ← UNIQUE가 곧 1:1 강제다(2026-08-04)
 conn_id         VARCHAR(5)   NOT NULL
-source_type     VARCHAR(30)  NOT NULL   DRIVE_FOLDER / JIRA_PROJECT
-external_source_id VARCHAR(255) NOT NULL
+source_type     VARCHAR(30)  NOT NULL   JIRA_PROJECT
+external_source_id VARCHAR(255) NOT NULL   Jira 프로젝트 키
+display_name    VARCHAR(255)          고를 때 원본이 알려준 표시 이름(2026-08-03 추가)
 sync_status     VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
-default_doc_role VARCHAR(30)          이 폴더의 기본 문서 역할. DOC.doc_role이 상속
-max_depth       INT                   폴더 탐색 깊이. 1=선택한 폴더만, NULL=제한 없음
+last_sync_at    TIMESTAMPTZ           마지막으로 읽어들인 시각(2026-08-04 추가)
 ```
 
-없는 것: `display_name`, `last_synced_at`, `is_active`, `created_at`, `updated_at`. UNIQUE 제약도 없다 — 대신 저장 시 같은 `source_type`의 행을 통째로 교체하고 중복 `external_source_id`를 걸러낸다(`ProjectSourceRepository.replace`). `is_active` 대신 선택이 해제되면 행 자체가 사라지고, 그 폴더의 문서는 `DOC.deleted = true`가 된다.
+`default_doc_role`·`max_depth`는 2026-08-04에 **삭제됐다.** 폴더가 `team_folder`로 옮겨 가면서 두 컬럼도 같이 갔다.
+
+없는 것: `is_active`, `created_at`, `updated_at`. UNIQUE는 **있다** — `(proj_id)` 단독이다(2026-08-04). 저장은 같은 `source_type`의 행을 통째로 교체하고 중복 `external_source_id`를 걸러낸다(`ProjectSourceRepository.replace`). `is_active` 대신 선택이 해제되면 행 자체가 사라진다. Drive 폴더 선택을 해제했을 때 그 폴더의 문서가 `DOC.deleted = true`가 되는 것은 이제 `TEAM_FOLDER` 쪽 이야기다.
 
 추가된 두 컬럼의 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다.
 
@@ -213,8 +230,8 @@ max_depth       INT                   폴더 탐색 깊이. 1=선택한 폴더�
 | `ANALYSIS_SNAPSHOT.created_by` | `USER_ACCOUNT.account_id` |
 | `ASSIGNMENT_RUN.requested_by` | `USER_ACCOUNT.account_id` |
 | `DECISION_RECORD.decided_by` | `USER_ACCOUNT.account_id` |
-| `DOCUMENT.project_id` | `PROJECT_SOURCE.project_id`를 통해 수집 범위 확인 |
-| `EXISTING_TASK.project_key` | `PROJECT_SOURCE.external_source_id`와 Jira 프로젝트 범위 확인 |
+| `DOCUMENT.team_id` | 문서는 **팀**에 매달린다(2026-08-04). 수집 범위는 `TEAM_FOLDER`가 정하고, `DOCUMENT.project_id`는 기준 문서로 지정될 때만 채워진다(프로젝트당 1건) |
+| `EXISTING_TASK.proj_source_id` | `PROJECT_SOURCE.proj_source_id`. 재동기화 때 지울 범위의 단위다(2026-08-03 추가). `project_key` 컬럼은 없다 |
 
 ## 5. 권한 판단
 
