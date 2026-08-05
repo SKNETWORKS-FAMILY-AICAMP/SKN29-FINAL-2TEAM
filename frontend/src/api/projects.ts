@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { API_BASE_URL, ApiError, apiRequest, parseErrorBody } from './client';
 
 /** `proj_source.source_type`. */
 export type ProjectSourceType = 'DRIVE_FOLDER' | 'JIRA_PROJECT';
@@ -93,6 +93,25 @@ export function setProjectStatus(token: string, projId: string, status: 'ACTIVE'
 /** 프로젝트를 직접 만든다. 온보딩은 이 경로를 쓰지 않는다 — Jira 등록이 만든다. */
 export function createProject(token: string, name: string) {
   return apiRequest<Project>('/projects/', { method: 'POST', token, body: { name, status: 'DRAFT' } });
+}
+
+export interface ProjectDeleteResult {
+  /** 함께 지운 Jira 업무 수. */
+  tasks: number;
+  /** 끊은 Jira 프로젝트 연결 수. */
+  sources: number;
+  /** 팀 문서 풀로 돌려보낸 문서 수. 지우지 않는다. */
+  documents_released: number;
+}
+
+/**
+ * 프로젝트를 지운다. **되돌릴 수 없다.**
+ *
+ * 문서는 지우지 않고 팀 문서 풀로 돌려보낸다 — 기준 문서는 잠깐 묶여 있었을 뿐이다.
+ * Jira 업무는 이 프로젝트 소스의 사본이라 함께 지운다.
+ */
+export function deleteProject(token: string, projId: string) {
+  return apiRequest<ProjectDeleteResult>(`/projects/${projId}/`, { method: 'DELETE', token });
 }
 
 /** 이 프로젝트가 대응하는 Jira 프로젝트. 1:1이라 0개 아니면 1개다. */
@@ -199,6 +218,8 @@ export interface TeamDocument {
    */
   doc_role: 'PRIMARY' | 'SUB' | null;
   src_modified_at: string | null;
+  /** 원문을 문서 저장소에 받아 뒀는가. 등록 직후에는 false다. */
+  downloaded: boolean;
 }
 
 export function listTeamDocuments(token: string) {
@@ -477,6 +498,27 @@ export interface DocumentProcessingRun {
 /** 종료 상태. 여기 닿으면 polling 을 멈춰야 한다. */
 export const TERMINAL_PROCESSING_STATUS = ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
 
+export interface DocumentDownloadResult {
+  downloaded: { file_name: string; bytes: number }[];
+  /** 이미 받아 둔 문서. */
+  skipped: string[];
+  failed: { file_name: string; detail: string }[];
+}
+
+/**
+ * Drive 원문을 문서 저장소로 가져온다. 파싱은 Drive 가 아니라 이 저장소를 읽는다.
+ *
+ * `docIds` 를 주면 그것만 받는다. 등록 직후 문서를 한 건씩 처리하며 진행을
+ * 보여주기 위해 하나씩 지정해 부른다.
+ */
+export function downloadDocuments(token: string, docIds?: string[]) {
+  return apiRequest<DocumentDownloadResult>('/team/documents/download/', {
+    method: 'POST',
+    token,
+    body: docIds ? { doc_ids: docIds } : {},
+  });
+}
+
 /** 기준 문서로 고를 수 있는 후보 — 팀 문서 전부. */
 export function listPipelineDocuments(token: string) {
   return apiRequest<PipelineDocument[]>('/team/pipeline-documents/', { token });
@@ -509,21 +551,20 @@ export function listProjectSourceDocuments(token: string, projectId: string) {
 }
 
 /**
- * 기준 문서와 서브 문서를 정한다. **이 호출이 프로젝트에 문서를 묶는 행위다.**
+ * 기준 문서를 정한다. **이 호출이 프로젝트에 문서를 묶는 행위다.**
  *
- * 전체 선택 상태를 보낸다. 서버가 통째로 교체하므로, 뺀 문서는 팀 문서 풀로
- * 돌아간다.
+ * 묶이는 것은 이 한 건뿐이다. 근거 문서는 에이전트가 팀 문서에서 검색으로 찾으며
+ * 프로젝트에 묶이지 않는다 — 같은 회의록이 여러 프로젝트의 근거일 수 있다.
  */
-export function saveProjectSourceDocuments(
+export function saveProjectPrimaryDocument(
   token: string,
   projectId: string,
   primaryDocumentId: string,
-  subDocumentIds: string[],
 ) {
   return apiRequest<PipelineDocument[]>(`/projects/${projectId}/source-documents/`, {
     method: 'PUT',
     token,
-    body: { primary_document_id: primaryDocumentId, sub_document_ids: subDocumentIds },
+    body: { primary_document_id: primaryDocumentId },
   });
 }
 
@@ -532,8 +573,11 @@ export interface ExtractedTask {
   description: string | null;
   required_role: string | null;
   required_skills: string[];
-  estimate_hours: number | null;
-  due_at: string | null;
+  /** 서버 모델(`ExtractedTask`)의 이름을 그대로 쓴다. 여기서 갈리면 값이 조용히
+      비어 보인다 — 실제로 공수·일정이 늘 빈 칸이었다(2026-08-05). */
+  effort_hours: number | null;
+  start_date: string | null;
+  due_date: string | null;
   priority: string | null;
   dependencies: string[];
   constraints: string[];
@@ -556,16 +600,74 @@ export interface TaskExtractionResult {
     intent: string;
     query: string;
   }[];
-  trace: { intent: string; queries: string[]; hits: number }[];
+  /**
+   * 단계별 검색 결과. `"TASK_DISCOVERY:12"` 처럼 `의도:건수` 한 줄이다.
+   *
+   * 어떤 질의로 찾았는지는 여기가 아니라 `evidence[].query` 에 있다 — 근거마다
+   * 무엇으로 찾혔는지가 붙어 있어야 그 문장을 믿을지 판단할 수 있다.
+   */
+  trace: string[];
   model: string;
   reasoning_effort: string;
 }
 
-/** 기준 문서에서 업무를 뽑는다. 동기 호출이라 응답까지 시간이 걸린다. */
-export function startTaskExtraction(token: string, projectId: string, primaryDocumentId: string) {
-  return apiRequest<TaskExtractionResult>(`/projects/${projectId}/task-extraction-runs/`, {
-    method: 'POST',
-    token,
-    body: { primary_document_id: primaryDocumentId },
-  });
+/** 추출 진행. 서버가 단계마다 한 줄씩 보낸다(NDJSON). */
+export type ExtractionEvent =
+  | { type: 'stage'; step: number; total: number; intent: string; label: string }
+  | { type: 'queries'; step: number; queries: string[] }
+  | { type: 'stage_done'; step: number; found: number; evidence: number }
+  | { type: 'result'; result: TaskExtractionResult }
+  | { type: 'error'; detail: string };
+
+/**
+ * 기준 문서에서 업무를 뽑는다. 몇 분이 걸리므로 진행을 받아 가며 기다린다.
+ *
+ * `apiRequest` 를 못 쓴다 — 그쪽은 응답을 통째로 받아 JSON 으로 바꾸는데, 여기서는
+ * 서버가 보내는 대로 읽어야 진행이 보인다. 응답이 시작된 뒤의 실패는 상태 코드가
+ * 아니라 마지막 줄의 `error` 로 온다.
+ */
+export async function streamTaskExtraction(
+  token: string,
+  projectId: string,
+  primaryDocumentId: string,
+  onEvent: (event: ExtractionEvent) => void,
+): Promise<TaskExtractionResult> {
+  const response = await fetch(
+    `${API_BASE_URL}/projects/${projectId}/task-extraction-runs/`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ primary_document_id: primaryDocumentId }),
+    },
+  );
+
+  if (!response.ok || !response.body) {
+    const body = await response.json().catch(() => null);
+    throw parseErrorBody(body, response.status);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: TaskExtractionResult | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // 마지막 조각은 줄이 안 끝났을 수 있어 버퍼에 남긴다.
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line) as ExtractionEvent;
+      if (event.type === 'error') throw new ApiError(event.detail, 500);
+      if (event.type === 'result') result = event.result;
+      onEvent(event);
+    }
+  }
+
+  if (result === null) throw new ApiError('업무 추출이 결과 없이 끝났습니다.', 500);
+  return result;
 }

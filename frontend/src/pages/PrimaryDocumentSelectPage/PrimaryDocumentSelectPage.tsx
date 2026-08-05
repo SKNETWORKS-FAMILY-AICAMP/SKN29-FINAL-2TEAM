@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Icon, TopNav, useToast } from '../../components';
+import { Badge, Button, Icon, Modal, TopNav, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import {
   createProject,
-  fetchDocumentProcessing,
   listPipelineDocuments,
-  saveProjectSourceDocuments,
-  startDocumentProcessing,
-  startTaskExtraction,
-  TERMINAL_PROCESSING_STATUS,
+  saveProjectPrimaryDocument,
+  streamTaskExtraction,
 } from '../../api/projects';
 import type { PipelineDocument } from '../../api/projects';
 import { MAIN_NAV_TABS } from '../../routes';
 import { useSession } from '../../utils/session';
+import { formatElapsed, useElapsed } from '../../utils/useElapsed';
 import styles from './PrimaryDocumentSelectPage.module.css';
 
 const collator = new Intl.Collator('ko', { numeric: true });
@@ -31,10 +29,11 @@ function baseName(fileName: string): string {
  * 대상이 아니다. 설계 문서 3.2 그대로 — "신규 프로젝트는 Jira 에 없으므로
  * 기획서에서 시작한다".
  *
- * 그래서 여기서 고르는 **메인 문서가 곧 프로젝트를 만드는 행위**다. 기준 문서
- * 하나(라디오)에서 업무 후보를 찾고, 근거 문서 여럿(체크박스)까지 함께 검색해
- * 요구사항·역할·공수를 채운다. 기준 문서만 정하면 Query Agent 의 2~4단계 검색
- * 범위가 그 한 건이 되어 1단계와 똑같아진다.
+ * 그래서 여기서 고르는 **기준 문서가 곧 프로젝트를 만드는 행위**다. 고르는 것은
+ * 그 한 건뿐이다 — 요구사항·역할·공수의 근거가 어느 문서에 있는지는 에이전트가
+ * 팀 문서를 검색해서 찾는다(2026-08-04). 근거 문서까지 사람이 체크하게 두면
+ * 무엇이 어디 적혀 있는지 미리 알아야 하는데, 그걸 대신 찾아 주는 것이 이 기능의
+ * 목적이라 순서가 거꾸로였다.
  *
  * 프로젝트는 `DRAFT` 로 만든다. 설계 문서가 말하는 "승인 전에는 내부 Draft 로만
  * 관리한다"이고, 추출 결과를 `doc.proj_id` 로 묶어야 검색 범위가 성립한다.
@@ -50,20 +49,20 @@ export default function PrimaryDocumentSelectPage() {
   const [nameTouched, setNameTouched] = useState(false);
   const [documents, setDocuments] = useState<PipelineDocument[]>([]);
   const [primaryId, setPrimaryId] = useState<string | null>(null);
-  const [subIds, setSubIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [extracting, setExtracting] = useState(false);
-  const [processing, setProcessing] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
-
-  // 화면을 떠난 뒤에도 polling 이 돌면 사라진 컴포넌트에 setState 한다.
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
+  /**
+   * 추출 진행. 검색 4단계 + 정리 1단계라 퍼센트가 진짜다. `queries` 는 에이전트가
+   * 그 단계에서 실제로 만든 검색어다 — 도는 원 대신 이걸 보여준다.
+   */
+  const [progress, setProgress] = useState<{
+    step: number;
+    total: number;
+    label: string;
+    queries: string[];
+    found: number | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -82,52 +81,8 @@ export default function PrimaryDocumentSelectPage() {
     void load();
   }, [load]);
 
-  /** 파싱·청킹·임베딩. 끝나야 그 문서를 근거로 쓸 수 있다. */
-  async function handleProcess(docId: string) {
-    if (!token || processing[docId]) return;
-    setProcessing((prev) => ({ ...prev, [docId]: 'IN_QUEUE' }));
-    try {
-      const run = await startDocumentProcessing(token, docId);
-      let status = run.status;
-      while (!TERMINAL_PROCESSING_STATUS.includes(status)) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        if (!alive.current) return;
-        const next = await fetchDocumentProcessing(token, docId, run.job_id);
-        status = next.status;
-        setProcessing((prev) => ({ ...prev, [docId]: status }));
-        if (status === 'COMPLETED') {
-          // 진행률을 지어내지 않는다. 서버가 준 적재 건수만 말한다.
-          const done = next.ingested;
-          showToast(
-            done ? `문서 처리 완료 — 청크 ${done.chunks}건` : '문서 처리 완료',
-            'success',
-          );
-          await load();
-        } else if (TERMINAL_PROCESSING_STATUS.includes(status)) {
-          showToast(next.error || '문서 처리에 실패했습니다', 'error');
-        }
-      }
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : '문서 처리를 시작하지 못했습니다', 'error');
-    } finally {
-      setProcessing((prev) => {
-        const next = { ...prev };
-        delete next[docId];
-        return next;
-      });
-    }
-  }
-
-  function toggleSub(docId: string) {
-    setSubIds((prev) =>
-      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId],
-    );
-  }
-
   function choosePrimary(docId: string) {
     setPrimaryId(docId);
-    // 기준 문서를 근거 문서로 겹쳐 두면 서버가 거절한다. 화면에서 먼저 푼다.
-    setSubIds((prev) => prev.filter((id) => id !== docId));
     setError('');
 
     // 프로젝트 이름을 아직 안 건드렸으면 메인 문서명을 따라간다. 대부분 그 이름이
@@ -152,26 +107,43 @@ export default function PrimaryDocumentSelectPage() {
     }
     setExtracting(true);
     setError('');
+    setProgress({ step: 0, total: 5, label: '프로젝트를 만드는 중', queries: [], found: null });
     try {
-      // 순서가 중요하다. 프로젝트가 있어야 문서를 묶을 수 있고, 문서가 묶여야
-      // 2~4단계 검색 범위가 생긴다. DRAFT 인 이유는 아직 PM이 승인하기 전이라서다.
+      // 순서가 중요하다. 프로젝트가 있어야 기준 문서를 묶을 수 있다. DRAFT 인
+      // 이유는 아직 PM이 승인하기 전이라서다.
       const project = await createProject(token, name);
-      await saveProjectSourceDocuments(token, project.proj_id, primaryId, subIds);
-      const result = await startTaskExtraction(token, project.proj_id, primaryId);
+      await saveProjectPrimaryDocument(token, project.proj_id, primaryId);
+      const result = await streamTaskExtraction(token, project.proj_id, primaryId, (event) => {
+        if (event.type === 'stage') {
+          setProgress({
+            step: event.step,
+            total: event.total,
+            label: event.label,
+            queries: [],
+            found: null,
+          });
+        } else if (event.type === 'queries') {
+          setProgress((prev) => (prev ? { ...prev, queries: event.queries } : prev));
+        } else if (event.type === 'stage_done') {
+          setProgress((prev) => (prev ? { ...prev, found: event.evidence } : prev));
+        }
+      });
       navigate('/tasks/extraction', { state: { result, project } });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '업무 추출에 실패했습니다.');
     } finally {
+      setProgress(null);
       setExtracting(false);
     }
   }
 
+  // 단계가 바뀔 때마다 다시 센다. 진행률이 안 움직이는 동안에도 이 숫자는 올라가서,
+  // 멈춘 것과 오래 걸리는 것을 구분해 준다.
+  const elapsed = useElapsed(progress ? progress.step : null);
+
   const rows = [...documents].sort((a, b) =>
     collator.compare(a.file_name ?? a.doc_id, b.file_name ?? b.doc_id),
   );
-  const readySubs = subIds.filter(
-    (id) => documents.find((d) => d.doc_id === id)?.search_ready,
-  ).length;
 
   return (
     <div className={styles.page}>
@@ -185,9 +157,9 @@ export default function PrimaryDocumentSelectPage() {
 
         <h1>신규 프로젝트 업무 추출</h1>
         <p className={styles.guide}>
-          기획서·제안요청서 같은 <strong>기준 문서 한 건</strong>에서 업무 후보를 찾고,
-          근거 문서까지 함께 검색해 요구사항·역할·공수를 채웁니다. 여기서 고른
-          문서가 곧 이 프로젝트를 정의합니다.
+          기획서·제안요청서 같은 <strong>기준 문서 한 건</strong>만 고르면 됩니다. 여기서
+          업무 후보를 찾고, 요구사항·역할·공수의 근거는 에이전트가 팀 문서 전체를
+          검색해 찾습니다.
         </p>
 
         <label className={styles.projectPick}>
@@ -218,15 +190,11 @@ export default function PrimaryDocumentSelectPage() {
           <div className={styles.list}>
             <div className={styles.head}>
               <span>기준</span>
-              <span>근거</span>
               <span>문서</span>
               <span>상태</span>
-              <span />
             </div>
 
             {rows.map((document) => {
-              const busy = processing[document.doc_id];
-
               return (
                 <div key={document.doc_id} className={styles.row}>
                   <input
@@ -237,16 +205,6 @@ export default function PrimaryDocumentSelectPage() {
                     onChange={() => choosePrimary(document.doc_id)}
                     aria-label={`${document.file_name ?? document.doc_id} 을 기준 문서로`}
                   />
-                  <input
-                    type="checkbox"
-                    checked={subIds.includes(document.doc_id)}
-                    disabled={
-                      extracting || primaryId === document.doc_id || !document.search_ready
-                    }
-                    onChange={() => toggleSub(document.doc_id)}
-                    aria-label={`${document.file_name ?? document.doc_id} 을 근거 문서로`}
-                  />
-
                   <span className={styles.name}>
                     {document.file_name || document.doc_id}
                     {/* 다른 프로젝트가 이미 쓰고 있다는 사실은 알려야 한다. 고르면
@@ -256,27 +214,11 @@ export default function PrimaryDocumentSelectPage() {
                     )}
                   </span>
 
-                  <span
-                    className={document.search_ready ? styles.ready : styles.notReady}
-                  >
-                    {document.search_ready
-                      ? '검색 준비 완료'
-                      : document.downloaded
-                        ? '처리 필요'
-                        : '원문 미수신'}
-                  </span>
-
-                  <span className={styles.action}>
-                    {!document.search_ready && document.downloaded && (
-                      <button
-                        type="button"
-                        className={styles.processBtn}
-                        disabled={Boolean(busy) || extracting}
-                        onClick={() => void handleProcess(document.doc_id)}
-                      >
-                        {busy ? `처리 중… ${busy}` : '문서 처리'}
-                      </button>
-                    )}
+                  {/* 등록이 임베딩까지 끝내므로 여기 걸리는 문서는 등록 중
+                      실패한 것뿐이다. 이 화면에서 되살리지 않는다 — 문서를
+                      준비시키는 일은 문서 관리의 몫이다. */}
+                  <span className={document.search_ready ? styles.ready : styles.notReady}>
+                    {document.search_ready ? '검색 준비 완료' : '준비 안 됨'}
                   </span>
                 </div>
               );
@@ -284,7 +226,7 @@ export default function PrimaryDocumentSelectPage() {
 
             {rows.length === 0 && (
               <p className={styles.empty}>
-                등록된 팀 문서가 없습니다. 「문서 등록」에서 Drive 문서를 먼저 등록해 주세요.
+                등록된 팀 문서가 없습니다. 「문서 관리」에서 Drive 문서를 먼저 등록해 주세요.
               </p>
             )}
           </div>
@@ -292,7 +234,7 @@ export default function PrimaryDocumentSelectPage() {
 
         <div className={styles.actions}>
           <span className={styles.summary}>
-            {primaryId ? `기준 1건 · 근거 ${readySubs}건` : '기준 문서를 골라 주세요'}
+            {primaryId ? '기준 문서 1건' : '기준 문서를 골라 주세요'}
           </span>
           <Button variant="secondary" onClick={() => navigate('/projects')}>
             이전
@@ -306,6 +248,57 @@ export default function PrimaryDocumentSelectPage() {
           </Button>
         </div>
       </main>
+
+      {/*
+        몇 분이 걸리는 일이다. 도는 원만 띄우면 되고 있는 건지 멈춘 건지 알 수 없어,
+        서버가 단계마다 보내 주는 것을 그대로 보여준다. 특히 검색어는 에이전트가
+        그 단계에서 실제로 내린 판단이라, 「불러오는 중」보다 이쪽이 정직하다.
+      */}
+      <Modal
+        open={progress !== null}
+        onClose={() => {}}
+        dismissible={false}
+        title="업무 추출"
+        width={440}
+      >
+        {progress && (
+          <>
+            <div className={styles.progressHead}>
+              <span className={styles.progressCount}>
+                {progress.step} / {progress.total}
+              </span>
+              <span className={styles.progressStage}>{formatElapsed(elapsed)}</span>
+            </div>
+            <div
+              className={styles.progressTrack}
+              role="progressbar"
+              aria-valuenow={progress.step}
+              aria-valuemin={0}
+              aria-valuemax={progress.total}
+            >
+              <span
+                className={styles.progressFill}
+                style={{ width: `${(progress.step / progress.total) * 100}%` }}
+              />
+            </div>
+
+            <p className={styles.progressNeed}>{progress.label}</p>
+
+            {progress.queries.length > 0 && (
+              <ul className={styles.progressQueries}>
+                {progress.queries.map((query) => (
+                  <li key={query}>{query}</li>
+                ))}
+              </ul>
+            )}
+
+            <p className={styles.progressMeta}>
+              {progress.found !== null && `근거 ${progress.found}건 · `}
+              몇 분 걸립니다 · 창을 닫지 마세요
+            </p>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

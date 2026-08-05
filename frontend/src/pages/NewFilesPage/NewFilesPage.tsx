@@ -4,6 +4,7 @@ import { ApiError } from '../../api/client';
 import {
   listDocumentHistory,
   listNewDocuments,
+  listPipelineDocuments,
   removeDocuments,
   listTeamFolders,
   registerDocuments,
@@ -12,11 +13,15 @@ import type {
   DocumentHistoryEntry,
   MissingDocument,
   NewDocumentCandidate,
+  PipelineDocument,
 } from '../../api/projects';
+import { DocumentProcessingFailure, processDocument, stageLabel } from '../../utils/documentProcessing';
 import { MAIN_NAV_TABS } from '../../routes';
 import { useSession } from '../../utils/session';
+import { formatElapsed, useElapsed } from '../../utils/useElapsed';
 import { FileRegistrationTable } from './FileRegistrationTable';
 import type { FileRow } from './FileRegistrationTable';
+import { RegisteredDocumentTable } from './RegisteredDocumentTable';
 import styles from './NewFilesPage.module.css';
 
 const ACTION_LABEL: Record<string, string> = {
@@ -70,7 +75,9 @@ function historyLabel(entry: DocumentHistoryEntry): string {
  * 「신규 파일」이라는 이름이었는데 사라진 문서까지 다루게 되면서 반쪽만 가리키는
  * 말이 됐다(2026-08-04). 네비게이션의 「문서 등록」과도 어긋나 있었다.
  *
- * 등록은 `doc` 행을 만드는 데까지다 — 원문 다운로드는 따로다.
+ * **등록은 검색 가능한 상태까지 간다** — `doc` 행을 만들고, 원문을 받고, 파싱·
+ * 청킹·임베딩까지 끝낸다. 여기서 멈추면 「등록은 됐는데 못 쓰는 문서」가 남고
+ * 그것을 사용자가 따로 관리해야 한다. 등록된 문서는 전부 쓸 수 있어야 한다.
  */
 export default function NewFilesPage() {
   const session = useSession();
@@ -92,6 +99,21 @@ export default function NewFilesPage() {
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState('');
 
+  // 등록된 문서와 그 준비 상태.
+  const [documents, setDocuments] = useState<PipelineDocument[]>([]);
+  /**
+   * 등록·처리 진행. `REGISTER`는 요청 한 번이라 진행률을 알 수 없고,
+   * `PROCESS`는 문서 단위로 끝나는 것을 세므로 퍼센트가 진짜다.
+   */
+  const [progress, setProgress] = useState<{
+    phase: 'REGISTER' | 'PROCESS';
+    total: number;
+    done: number;
+    failed: number;
+    name: string;
+    stage: string;
+  } | null>(null);
+
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -102,17 +124,20 @@ export default function NewFilesPage() {
       if (folders.length === 0) {
         setCandidates([]);
         setMissing([]);
+        setDocuments([]);
         setHistory([]);
         setHistoryHasMore(false);
         return;
       }
 
-      const [scan, historyPage] = await Promise.all([
+      const [scan, historyPage, registered] = await Promise.all([
         listNewDocuments(token),
         listDocumentHistory(token).catch(() => ({ entries: [], has_more: false })),
+        listPipelineDocuments(token).catch(() => []),
       ]);
       setCandidates(scan.candidates);
       setMissing(scan.missing);
+      setDocuments(registered);
       setConfirming(false);
       setHistory(historyPage.entries);
       setHistoryHasMore(historyPage.has_more);
@@ -124,6 +149,7 @@ export default function NewFilesPage() {
       setError(err instanceof ApiError ? err.message : '폴더를 확인하지 못했습니다.');
       setCandidates([]);
       setMissing([]);
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
@@ -147,6 +173,10 @@ export default function NewFilesPage() {
       setHistoryLoading(false);
     }
   }
+
+  // 문서가 바뀔 때마다 다시 센다. RunPod 워커가 콜드 스타트면 몇 분을 기다리는데,
+  // 「대기 중」만 떠 있으면 멈춘 것으로 읽힌다.
+  const elapsed = useElapsed(progress ? `${progress.phase}:${progress.name}` : null);
 
   // 신규 파일과 사라진 문서를 한 표에 둔다. 「이 폴더의 지금 상태」가 한 화면에
   // 있어야 하고, 사라진 문서만 경고 카드로 세우면 신규 파일 검토보다 시선을
@@ -197,27 +227,99 @@ export default function NewFilesPage() {
     );
   }
 
+  /**
+   * 문서를 차례로 검색 가능한 상태까지 끌고 간다.
+   *
+   * 한꺼번에 던지지 않는다. RunPod worker 가 GPU 하나를 쓰므로 동시에 보내도
+   * 큐에서 기다릴 뿐이고, 그동안 어느 문서가 진행 중인지 말할 수 없게 된다.
+   * 하나가 실패해도 나머지는 계속한다 — 문서 한 건 때문에 열 건짜리 등록을
+   * 처음부터 다시 하게 만들 수 없다.
+   */
+  async function runProcessing(
+    targets: { doc_id: string; file_name: string | null; downloaded: boolean }[],
+  ): Promise<{ done: number; failed: number }> {
+    if (!token) return { done: 0, failed: 0 };
+    let done = 0;
+    let failed = 0;
+
+    for (const target of targets) {
+      const name = target.file_name ?? target.doc_id;
+      setProgress({ phase: 'PROCESS', total: targets.length, done, failed, name, stage: 'IN_QUEUE' });
+      try {
+        await processDocument({
+          token,
+          docId: target.doc_id,
+          downloaded: target.downloaded,
+          onStage: (stage) =>
+            setProgress({ phase: 'PROCESS', total: targets.length, done, failed, name, stage }),
+        });
+        done += 1;
+      } catch (err) {
+        failed += 1;
+        const detail =
+          err instanceof DocumentProcessingFailure || err instanceof ApiError
+            ? err.message
+            : '문서 처리에 실패했습니다';
+        showToast(`${name} — ${detail}`, 'error');
+      }
+    }
+    return { done, failed };
+  }
+
+  /** 등록 중 실패해 준비되지 않은 채 남은 문서를 다시 시도한다. */
+  async function handleProcessPending() {
+    if (!token || progress) return;
+    const targets = documents.filter((row) => !row.search_ready);
+    if (targets.length === 0) return;
+
+    const { done, failed } = await runProcessing(targets);
+    setProgress(null);
+    showToast(
+      failed === 0 ? `${done}건을 처리했습니다.` : `${done}건 처리, ${failed}건 실패`,
+      failed === 0 ? 'success' : 'info',
+    );
+    await load();
+  }
+
+  /**
+   * 고른 파일을 등록하고, 이어서 검색 가능한 상태까지 만든다.
+   *
+   * **등록된 문서는 전부 검색 가능해야 한다.** 그래서 등록과 처리를 나눠 두지
+   * 않는다 — 나누면 「등록은 됐는데 못 쓰는 문서」라는 상태가 생기고, 그것을
+   * 사용자가 따로 관리해야 한다. 대신 시간이 걸리므로 진행을 보여준다.
+   */
   async function handleRegister() {
     if (!token || !configured) return;
     const files = supportedIds.filter((id) => selected.has(id)).map((id) => ({ file_id: id }));
     if (files.length === 0) return;
 
+    setProgress({ phase: 'REGISTER', total: files.length, done: 0, failed: 0, name: '', stage: '' });
     setRegistering(true);
     setError('');
     try {
       const result = await registerDocuments(token, files);
-      const ok = result.registered.length;
       const skipped = result.skipped.length;
-      if (skipped > 0) {
-        showToast(`${ok}건 등록, ${skipped}건 제외됨`, 'info');
-      } else {
-        showToast(`${ok}건을 등록했습니다.`, 'success');
-      }
+
+      // 등록 직후라 원문은 아직 없다. 다운로드부터 시작한다.
+      const { done, failed } = await runProcessing(
+        result.registered.map((row) => ({
+          doc_id: row.doc_id,
+          file_name: row.file_name,
+          downloaded: row.downloaded,
+        })),
+      );
+
+      const notes = [`${done}건 등록`];
+      if (failed > 0) notes.push(`${failed}건 처리 실패`);
+      if (skipped > 0) notes.push(`${skipped}건 제외`);
+      showToast(notes.join(' · '), failed > 0 || skipped > 0 ? 'info' : 'success');
+
       // 등록한 파일은 더 이상 신규가 아니다. 목록과 이력을 함께 다시 읽는다.
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '파일을 등록하지 못했습니다.');
     } finally {
+      setProgress(null);
       setRegistering(false);
     }
   }
@@ -257,7 +359,10 @@ export default function NewFilesPage() {
       <div className={styles.contentContainer}>
         <div className={styles.pageHeading}>
           <h1>문서 관리</h1>
-          <p>설정된 폴더와 비교해 새 파일을 등록하고, 사라진 문서를 정리합니다</p>
+          <p>
+            설정된 폴더와 비교해 새 파일을 검색 가능한 상태로 등록하고, 사라진 문서를
+            정리합니다
+          </p>
         </div>
 
         {error && <p className={styles.stateRow}>{error}</p>}
@@ -310,6 +415,14 @@ export default function NewFilesPage() {
           />
         )}
 
+        {!loading && !error && configured && documents.length > 0 && (
+          <RegisteredDocumentTable
+            documents={documents}
+            onProcessPending={() => void handleProcessPending()}
+            processing={progress !== null}
+          />
+        )}
+
         {!loading && configured && (
           <HistoryBlock
             entries={history}
@@ -319,6 +432,67 @@ export default function NewFilesPage() {
           />
         )}
       </div>
+
+      {/*
+        두 국면을 한 모달에서 보여준다. 등록(`REGISTER`)은 요청 한 번이라 몇 %인지
+        알 수 없어 흐르는 막대를 쓰고, 처리(`PROCESS`)는 문서 단위로 끝나는 것을
+        세므로 퍼센트가 진짜다. 문서 **하나 안에서**의 진행률은 RunPod 이 주지
+        않으므로 지어내지 않고 지금 무엇을 하는 중인지만 말한다.
+      */}
+      <Modal
+        open={progress !== null}
+        onClose={() => {}}
+        dismissible={false}
+        title="문서 등록"
+        width={420}
+      >
+        {progress?.phase === 'REGISTER' && (
+          <>
+            <div className={styles.progressHead}>
+              <span className={styles.progressCount}>Drive 확인</span>
+              <span className={styles.progressStage}>{progress.total}건</span>
+            </div>
+            <div className={styles.progressBar} role="progressbar" aria-label="등록 진행 중">
+              <span />
+            </div>
+          </>
+        )}
+
+        {progress?.phase === 'PROCESS' && (
+          <>
+            <div className={styles.progressHead}>
+              <span className={styles.progressCount}>
+                {progress.done + progress.failed} / {progress.total}
+                {progress.failed > 0 && (
+                  <em className={styles.progressFail}>실패 {progress.failed}</em>
+                )}
+              </span>
+              <span className={styles.progressStage}>{stageLabel(progress.stage)}</span>
+            </div>
+            <div
+              className={styles.progressTrack}
+              role="progressbar"
+              aria-valuenow={progress.done + progress.failed}
+              aria-valuemin={0}
+              aria-valuemax={progress.total}
+            >
+              <span
+                className={styles.progressFill}
+                style={{
+                  width: `${((progress.done + progress.failed) / progress.total) * 100}%`,
+                }}
+              />
+            </div>
+            {/* 파일명은 길다. 두 줄로 흐르면 그 아래 상태가 밀려 내려간다. */}
+            <p className={styles.progressFile} title={progress.name}>
+              {progress.name}
+            </p>
+            <p className={styles.progressMeta}>
+              {formatElapsed(elapsed)} · 문서당 20초~2분 · 창을 닫지 마세요
+            </p>
+          </>
+        )}
+      </Modal>
 
       {/* 되돌릴 수 있는 동작이지만 한 번 묻는다. Drive 휴지통·완전삭제·폴더 밖
           이동이 우리 쪽에서 전부 똑같이 보여서, 잠깐 옮겨 둔 문서를 실수로

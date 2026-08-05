@@ -10,13 +10,26 @@ export interface ModalProps {
   children: ReactNode;
   width?: number;
   footer?: ReactNode;
+  /**
+   * 닫을 수 있는가. 진행 중인 작업을 보여주는 모달은 `false`로 둔다 — 닫아도
+   * 요청은 계속 날아가므로, 닫기를 열어 두면 끝난 줄 알고 다시 누르게 된다.
+   */
+  dismissible?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, width = 480, footer }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  width = 480,
+  footer,
+  dismissible = true,
+}: ModalProps) {
   const titleId = useId();
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !dismissible) return;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
@@ -26,14 +39,14 @@ export function Modal({ open, onClose, title, children, width = 480, footer }: M
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, dismissible]);
 
   if (!open) return null;
 
   const dialogStyle: CSSProperties = { width };
 
   return (
-    <div className={styles.backdrop} onClick={onClose}>
+    <div className={styles.backdrop} onClick={dismissible ? onClose : undefined}>
       <div
         className={styles.dialog}
         style={dialogStyle}
@@ -42,9 +55,11 @@ export function Modal({ open, onClose, title, children, width = 480, footer }: M
         aria-labelledby={title ? titleId : undefined}
         onClick={(event) => event.stopPropagation()}
       >
-        <button type="button" className={styles.close} aria-label="닫기" onClick={onClose}>
-          <Icon name="x" size={18} />
-        </button>
+        {dismissible && (
+          <button type="button" className={styles.close} aria-label="닫기" onClick={onClose}>
+            <Icon name="x" size={18} />
+          </button>
+        )}
         {title && (
           <h2 id={titleId} className={styles.title}>
             {title}

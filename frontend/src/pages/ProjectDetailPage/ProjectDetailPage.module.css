@@ -68,6 +68,7 @@
 }
 
 .ghostBtn,
+.dangerBtn,
 .primaryBtn {
   display: flex;
   align-items: center;
@@ -102,10 +103,41 @@
   filter: brightness(1.05);
 }
 
+/* 되돌릴 수 없는 동작이라 눈에 띄어야 하지만, 「완료 처리」보다 먼저 눌리면
+   안 된다. 색은 경고로 두되 채우지 않는다. */
+.dangerBtn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.dangerBtn:hover:not(:disabled) {
+  color: #b91c1c;
+  border-color: #b91c1c;
+}
+
 .ghostBtn:disabled,
+.dangerBtn:disabled,
 .primaryBtn:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+.confirmText {
+  font-size: 14px;
+  color: var(--color-body);
+  line-height: 1.7;
+}
+
+.confirmList {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  font-size: 13px;
+  color: var(--color-muted);
+  line-height: 1.6;
 }
 
 .card {

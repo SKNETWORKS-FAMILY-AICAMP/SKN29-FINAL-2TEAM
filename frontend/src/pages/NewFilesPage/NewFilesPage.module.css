@@ -262,3 +262,98 @@
   color: var(--color-muted);
   line-height: 1.6;
 }
+
+/* 진행률을 모르는 작업이라 채워지는 막대가 아니라 흐르는 막대다. 퍼센트를
+   지어내면 사용자가 남은 시간을 계산하는데, 그 계산의 근거가 우리에게 없다. */
+.progressBar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-primary-soft);
+  overflow: hidden;
+}
+
+.progressBar span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-primary);
+  animation: progressSlide 1.1s ease-in-out infinite;
+}
+
+@keyframes progressSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressBar span {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+/* 값(왼쪽)과 지금 하는 일(오른쪽)을 한 줄에 나눠 둔다. 문장으로 이으면
+   숫자를 읽으려고 문장을 읽어야 한다. */
+.progressHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.progressCount {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-heading);
+  /* 숫자가 3초마다 바뀐다. 폭이 흔들리면 눈이 따라가느라 피로하다. */
+  font-variant-numeric: tabular-nums;
+}
+
+.progressFail {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b45309;
+}
+
+.progressStage {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/* 문서 단위로 세는 진짜 진행률. 등록 때의 흐르는 막대와 달리 채워진다. */
+.progressTrack {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-primary-soft);
+  overflow: hidden;
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.progressFile {
+  margin-top: var(--space-3);
+  font-size: 13px;
+  color: var(--color-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progressMeta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-placeholder);
+}

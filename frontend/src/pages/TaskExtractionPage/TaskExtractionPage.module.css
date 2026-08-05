@@ -247,7 +247,7 @@
 
 .traceRow {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) 48px;
+  grid-template-columns: minmax(0, 1fr) 48px;
   gap: var(--space-3);
   align-items: baseline;
   font-size: 12px;
@@ -256,11 +256,6 @@
 .traceIntent {
   font-weight: 600;
   color: var(--color-heading);
-}
-
-.traceQueries {
-  color: var(--color-muted);
-  line-height: 1.6;
 }
 
 .traceHits {
@@ -292,6 +287,26 @@
   color: var(--color-muted);
 }
 
+/* 저장 기능이 들어오기 전까지 결과를 밖으로 꺼내는 유일한 통로다. 눈에 띄되
+   「프로젝트 목록으로」보다 앞서지는 않게 둔다. */
+.copyBtn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 5px var(--space-3);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
 .doneLink {
   font-size: 13px;
   font-weight: 600;
@@ -314,9 +329,5 @@
 @media (max-width: 640px) {
   .traceRow {
     grid-template-columns: minmax(0, 1fr) 48px;
-  }
-
-  .traceQueries {
-    grid-column: 1 / -1;
   }
 }

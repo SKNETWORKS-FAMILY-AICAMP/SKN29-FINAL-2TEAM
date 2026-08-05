@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Badge, Icon, TopNav, useToast } from '../../components';
+import { Badge, Button, Icon, Modal, TopNav, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
-import { getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
+import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
 import type { ExistTask, ProjectDetail } from '../../api/projects';
 import { MAIN_NAV_TABS } from '../../routes';
 import { useSession } from '../../utils/session';
@@ -77,6 +77,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
   const [category, setCategory] = useState<string | null>(null);
 
@@ -148,6 +149,28 @@ export default function ProjectDetailPage() {
     }
   }
 
+  /**
+   * 프로젝트를 지운다. 무엇이 사라지는지 모달에서 보여준 뒤에만 온다.
+   *
+   * 목록으로 돌아간다 — 지운 프로젝트의 상세를 다시 읽으면 404 다.
+   */
+  async function handleDelete() {
+    if (!token || !project || busy) return;
+    setBusy(true);
+    try {
+      const removed = await deleteProject(token, projectId);
+      const notes = [`${project.name} 삭제`];
+      if (removed.tasks) notes.push(`업무 ${removed.tasks}건`);
+      if (removed.documents_released) notes.push(`문서 ${removed.documents_released}건 해제`);
+      showToast(notes.join(' · '), 'success');
+      navigate('/projects');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : '프로젝트를 지우지 못했습니다', 'error');
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
   const progress = project?.progress ?? null;
   const archived = project?.status === 'ARCHIVED';
 
@@ -190,6 +213,14 @@ export default function ProjectDetailPage() {
                 )}
                 <button type="button" className={styles.primaryBtn} onClick={handleToggleArchive} disabled={busy}>
                   {archived ? '진행 중으로' : '완료 처리'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.dangerBtn}
+                  onClick={() => setConfirming(true)}
+                  disabled={busy}
+                >
+                  삭제
                 </button>
               </div>
             </div>
@@ -325,6 +356,39 @@ export default function ProjectDetailPage() {
           </p>
         )}
       </main>
+
+      {/* 되돌릴 수 없다. 무엇이 함께 사라지고 무엇이 남는지 먼저 보여준다 —
+          「정말 삭제할까요?」만 묻는 확인창은 아무것도 알려 주지 않는다. */}
+      <Modal
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="프로젝트 삭제"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setConfirming(false)}>
+              취소
+            </Button>
+            <Button variant="primary" disabled={busy} onClick={() => void handleDelete()}>
+              {busy ? '지우는 중…' : '삭제'}
+            </Button>
+          </>
+        }
+      >
+        <p className={styles.confirmText}>
+          <strong>{project?.name}</strong> 을(를) 지웁니다. <strong>되돌릴 수 없습니다.</strong>
+        </p>
+        <ul className={styles.confirmList}>
+          <li>
+            읽어온 Jira 업무 <strong>{tasks.length}건</strong>이 함께 지워집니다. 팀 부하와
+            마감 화면에서도 빠집니다.
+          </li>
+          <li>Jira 프로젝트 연결이 끊깁니다. Jira 쪽 이슈는 그대로입니다.</li>
+          <li>
+            기준 문서는 <strong>지우지 않습니다.</strong> 팀 문서 풀로 돌아가 다른
+            프로젝트에서 다시 쓸 수 있습니다.
+          </li>
+        </ul>
+      </Modal>
     </div>
   );
 }

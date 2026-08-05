@@ -8,8 +8,9 @@ import styles from './TaskExtractionPage.module.css';
 const FIELD_LABEL: Record<string, string> = {
   required_role: '담당 역할',
   required_skills: '필요 기술',
-  estimate_hours: '공수',
-  due_at: '마감',
+  effort_hours: '공수',
+  start_date: '시작',
+  due_date: '마감',
   priority: '우선순위',
   dependencies: '선행 업무',
   constraints: '제약',
@@ -40,8 +41,9 @@ function Facts({ task }: { task: ExtractedTask }) {
   const facts: [string, string][] = [];
   if (task.required_role) facts.push(['담당 역할', task.required_role]);
   if (task.required_skills.length) facts.push(['필요 기술', task.required_skills.join(' · ')]);
-  if (task.estimate_hours !== null) facts.push(['공수', hours(task.estimate_hours)]);
-  if (task.due_at) facts.push(['마감', date(task.due_at)]);
+  if (task.effort_hours !== null) facts.push(['공수', hours(task.effort_hours)]);
+  if (task.start_date) facts.push(['시작', date(task.start_date)]);
+  if (task.due_date) facts.push(['마감', date(task.due_date)]);
   if (task.priority) facts.push(['우선순위', task.priority]);
 
   if (facts.length === 0) return null;
@@ -174,6 +176,15 @@ export default function TaskExtractionPage() {
     [result],
   );
 
+  const [copied, setCopied] = useState(false);
+
+  async function copyJson() {
+    if (!result) return;
+    await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  }
+
   if (!result) {
     return (
       <div className={styles.page}>
@@ -190,8 +201,8 @@ export default function TaskExtractionPage() {
     );
   }
 
-  const totalHours = result.tasks.reduce((sum, task) => sum + (task.estimate_hours ?? 0), 0);
-  const noEstimate = result.tasks.filter((task) => task.estimate_hours === null).length;
+  const totalHours = result.tasks.reduce((sum, task) => sum + (task.effort_hours ?? 0), 0);
+  const noEstimate = result.tasks.filter((task) => task.effort_hours === null).length;
 
   return (
     <div className={styles.page}>
@@ -252,17 +263,15 @@ export default function TaskExtractionPage() {
         <details className={styles.trace}>
           <summary>검색 단계 {result.trace.length}단계</summary>
           <div className={styles.traceBody}>
-            {result.trace.map((step) => (
-              <div key={step.intent} className={styles.traceRow}>
-                <span className={styles.traceIntent}>
-                  {INTENT_LABEL[step.intent] ?? step.intent}
-                </span>
-                <span className={styles.traceQueries}>
-                  {step.queries.map((q) => `「${q}」`).join(' ')}
-                </span>
-                <span className={styles.traceHits}>{step.hits}건</span>
-              </div>
-            ))}
+            {result.trace.map((step) => {
+              const [intent, hits] = step.split(':');
+              return (
+                <div key={step} className={styles.traceRow}>
+                  <span className={styles.traceIntent}>{INTENT_LABEL[intent] ?? intent}</span>
+                  <span className={styles.traceHits}>{hits}건</span>
+                </div>
+              );
+            })}
           </div>
           <p className={styles.model}>
             {result.model} · reasoning {result.reasoning_effort}
@@ -273,6 +282,11 @@ export default function TaskExtractionPage() {
           <span className={styles.note}>
             팀원 배정과 추천은 다음 단계입니다. 이 결과는 아직 저장되지 않습니다.
           </span>
+          {/* 결과가 브라우저 메모리에만 있어 새로고침하면 사라진다. 저장이 들어오기
+              전까지 이것이 결과를 밖으로 꺼내는 유일한 방법이다. */}
+          <button type="button" className={styles.copyBtn} onClick={() => void copyJson()}>
+            {copied ? '복사됨' : 'JSON 복사'}
+          </button>
           <Link to="/projects" className={styles.doneLink}>
             프로젝트 목록으로
           </Link>
