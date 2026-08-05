@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import zlib
 from typing import Any
 
 import requests
@@ -57,8 +58,47 @@ def embedding_model():
     return SentenceTransformer(model_id, device=device, token=os.environ["HF_TOKEN"])
 
 
-@lru_cache(maxsize=1)
-def converter():
+#: 텍스트 레이어가 있다고 볼 최소 텍스트 연산자 수.
+#:
+#: PDF 안의 압축 스트림에서 Tj/TJ(문자 그리기) 연산자를 센다. 스캔본은 페이지가
+#: 통째로 이미지라 이 값이 0에 가깝고, 프로그램으로 만든 문서는 수천이 나온다.
+#: 실측: 제안요청서 5,012 · 용역제안서 35,141 · 발표자료 1,009 · 스캔본 0.
+TEXT_OPERATOR_THRESHOLD = 200
+
+#: PDF 안의 압축 스트림 한 덩어리.
+STREAM_PATTERN = re.compile(rb"stream[\r\n]+(.*?)endstream", re.S)
+
+
+def _has_text_layer(path: Path) -> bool:
+    """PDF 가 자기 텍스트를 들고 있는가.
+
+    들고 있으면 OCR 을 끈다. **OCR 이 멀쩡한 텍스트를 덮어써서 망가뜨렸다**
+    (2026-08-05). 제안요청서 본문이 「중도탈락을」→「중도달락올」,
+    「프로젝트」→「프로적트」, 「솔루션」→「슬루선」처럼 자모 단위로 치환돼
+    적재됐고, 그 글을 업무 추출 에이전트가 읽었다. 같은 PDF 를 pypdf 로 읽으면
+    원문이 깨끗하게 나온다.
+
+    스캔본은 반대로 OCR 없이는 아무것도 못 읽으므로 문서마다 갈라야 한다.
+    외부 의존성 없이 표준 라이브러리만으로 판정한다.
+    """
+
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return False
+    operators = 0
+    for match in STREAM_PATTERN.finditer(raw):
+        try:
+            operators += len(re.findall(rb"(?:Tj|TJ)", zlib.decompress(match.group(1))))
+        except zlib.error:
+            continue
+        if operators >= TEXT_OPERATOR_THRESHOLD:
+            return True
+    return operators >= TEXT_OPERATOR_THRESHOLD
+
+
+@lru_cache(maxsize=2)
+def converter(use_ocr: bool = True):
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.image_classification_engine_options import (
         TransformersImageClassificationEngineOptions,
@@ -89,6 +129,8 @@ def converter():
     classifier = DocumentPictureClassifierOptions(
         engine_options=TransformersImageClassificationEngineOptions(compile_model=False)
     )
+    # `force_backend_text=True` 로도 OCR 결과가 본문을 덮었다. 그래서 텍스트
+    # 레이어가 있는 PDF 는 아예 OCR 을 끈다 — 판정은 `_has_text_layer` 가 한다.
     pdf = PdfPipelineOptions(
         do_picture_classification=True,
         picture_classification_options=classifier,
@@ -96,6 +138,7 @@ def converter():
         do_chart_extraction=True,
         force_backend_text=True,
         images_scale=1.0,
+        do_ocr=use_ocr,
         ocr_options=EasyOcrOptions(
             lang=["ko", "en"], mode=OcrMode.LAYOUT_REGIONS, force_full_page_ocr=False
         ),
@@ -398,16 +441,9 @@ def _chunk_document(document: Any, max_tokens: int, merge_peers: bool) -> tuple[
                     "meta": record["meta"] | {"attributes": record["attributes"]},
                 }
             )
-    # A cell/row is atomic. Oversized records fail rather than being truncated.
-    for chunk in chunks:
-        chunk["text"] = CONTROL_PATTERN.sub("", chunk["text"]).strip()
-        chunk["token_count"] = token_counter.count_tokens(chunk["text"])
-        if not chunk["text"]:
-            raise ChunkValidationError("빈 embedding_text가 생성되었습니다.")
-        if chunk["token_count"] > max_tokens:
-            raise ChunkValidationError(
-                f"원자 Chunk가 token 상한을 초과했습니다: {chunk['token_count']} > {max_tokens}"
-            )
+    chunks, dropped = _screen_oversized(
+        chunks, table_refs, max_tokens, token_counter.count_tokens
+    )
     chunks.sort(
         key=lambda c: (
             c["primary_order"],
@@ -420,7 +456,59 @@ def _chunk_document(document: Any, max_tokens: int, merge_peers: bool) -> tuple[
     for sequence, chunk in enumerate(chunks):
         chunk["sequence"] = sequence
         chunk["local_chunk_key"] = f"stable-chunk-{sequence:06d}"
-    return chunks, diagnostics
+    return chunks, diagnostics, dropped
+
+
+def _screen_oversized(
+    chunks: list[dict],
+    table_refs: set[str],
+    max_tokens: int,
+    count_tokens: Any,
+) -> tuple[list[dict], list[dict]]:
+    """한도를 넘는 청크를 걸러낸다. 표가 걸렸는지에 따라 처리가 갈린다.
+
+    표는 더 쪼갤 수 없다. 행 하나를 반으로 자르면 열과 값이 어긋나 검색에 잡혀도
+    읽을 수 없는 조각이 되고, 뒤를 잘라 버리면 뒷열이 조용히 사라진다. 그렇다고
+    문서 전체를 실패시키면 넘친 표 한 줄 때문에 본문 수백 블록을 함께 잃는다 —
+    실제로 제안요청서 한 건이 749 토큰짜리 청크 하나 때문에 통째로 버려졌다
+    (2026-08-04). 그래서 그 청크만 빼고 무엇을 뺐는지 남긴다.
+
+    표가 안 걸렸는데 넘쳤다면 그대로 실패시킨다. HybridChunker 는 본문을 한도
+    안에서 쪼개도록 되어 있고, 그게 안 지켜지는 것은 조용히 버릴 일이 아니라
+    고칠 일이다.
+    """
+
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    for chunk in chunks:
+        chunk["text"] = CONTROL_PATTERN.sub("", chunk["text"]).strip()
+        chunk["token_count"] = count_tokens(chunk["text"])
+        if not chunk["text"]:
+            raise ChunkValidationError("빈 embedding_text가 생성되었습니다.")
+        if chunk["token_count"] <= max_tokens:
+            kept.append(chunk)
+            continue
+
+        touches_table = chunk["chunk_type"] == "table" or any(
+            ref in table_refs for ref in chunk["source_refs"]
+        )
+        if not touches_table:
+            raise ChunkValidationError(
+                f"원자 Chunk가 token 상한을 초과했습니다: {chunk['token_count']} > {max_tokens}"
+            )
+        dropped.append(
+            {
+                "chunk_type": chunk["chunk_type"],
+                "token_count": chunk["token_count"],
+                "limit": max_tokens,
+                "source_refs": chunk["source_refs"],
+                "preview": chunk["text"][:160],
+            }
+        )
+
+    if not kept:
+        raise ChunkValidationError("한도를 넘지 않는 Chunk가 하나도 없습니다.")
+    return kept, dropped
 
 
 def _blocks_for_chunks(document: Any, chunks: list[dict]) -> list[dict]:
@@ -495,9 +583,11 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
 
     path, content_hash = _download(input_data)
     try:
-        result = converter().convert(path)
+        # 스캔본만 OCR 한다. 텍스트가 있는 문서에 OCR 을 걸면 멀쩡한 본문이 깨진다.
+        use_ocr = not _has_text_layer(path)
+        result = converter(use_ocr).convert(path)
         document = result.document
-        chunks, diagnostics = _chunk_document(document, max_tokens, merge_peers)
+        chunks, diagnostics, dropped = _chunk_document(document, max_tokens, merge_peers)
         blocks = _blocks_for_chunks(document, chunks)
         block_by_ref = {b["source_ref"]: b["local_block_key"] for b in blocks}
         texts = [c["text"] for c in chunks]
@@ -522,7 +612,13 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
             "chunker_version": "stable-structured-1.0",
             "blocks": blocks,
             "chunks": chunks,
-            "validation": {"passed": True, "table_diagnostics": diagnostics},
+            "validation": {
+                "passed": True,
+                "table_diagnostics": diagnostics,
+                # 한도를 넘어 버려진 청크. 비어 있지 않으면 그 문서의 일부가
+                # 검색에 안 잡힌다는 뜻이라 결과에 실어 보낸다.
+                "dropped_chunks": dropped,
+            },
         }
     finally:
         path.unlink(missing_ok=True)
