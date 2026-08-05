@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from django.conf import settings
@@ -70,6 +71,24 @@ def job_status(job_id: str) -> dict[str, Any]:
     return _json_response(response)
 
 
+def _await_job(job_id: str) -> dict[str, Any]:
+    """작업이 끝날 때까지 상태를 묻는다.
+
+    기다리는 대상은 대부분 워커 콜드 스타트다. 이미지 pull 과 모델 다운로드에
+    몇 분이 걸리므로 기본 한도를 넉넉히 둔다. 그래도 안 끝나면 마지막 상태를
+    그대로 돌려주고, 판단은 호출자가 한다.
+    """
+
+    deadline = time.monotonic() + settings.RUNPOD_EMBED_WAIT_SECONDS
+    payload: dict[str, Any] = {"status": "IN_QUEUE", "id": job_id}
+    while time.monotonic() < deadline:
+        time.sleep(3)
+        payload = job_status(job_id)
+        if payload.get("status") in TERMINAL_STATUSES:
+            return payload
+    return payload
+
+
 def embed_queries(texts: list[str]) -> list[list[float]]:
     base, headers = _configuration()
     if not texts or any(not isinstance(text, str) or not text.strip() for text in texts):
@@ -87,6 +106,15 @@ def embed_queries(texts: list[str]) -> list[list[float]]:
     except requests.RequestException as exc:
         raise RunPodRequestError(f"RunPod 검색 임베딩 요청에 실패했습니다: {exc}") from exc
     payload = _json_response(response)
+
+    # `/runsync` 는 자기 대기 창이 끝나면 **아직 큐에 있어도** 그대로 돌려준다.
+    # 워커가 0으로 줄어 있으면 콜드 스타트에 몇 분이 걸리는데, 그것을 실패로
+    # 읽어서 이미 돈을 쓴 검색어 생성까지 버려졌다(2026-08-05). 끝날 때까지
+    # job id 로 이어서 묻는다 — 문서 처리 경로가 하는 것과 같다.
+
+    if payload.get("status") not in TERMINAL_STATUSES and payload.get("id"):
+        payload = _await_job(payload["id"])
+
     if payload.get("status") != "COMPLETED":
         raise RunPodRequestError(f"검색 임베딩 작업이 완료되지 않았습니다: {payload.get('status')}")
     output = payload.get("output")

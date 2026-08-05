@@ -110,37 +110,43 @@ class PipelineDocumentRepository:
 
     @staticmethod
     def list_ready_for_analysis(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
-        """업무 추출이 검색할 범위 — 이 프로젝트에 묶인 문서(메인+서브)."""
+        """업무 추출이 검색할 범위 — **팀 문서 전체**.
+
+        사람은 기준 문서 하나만 고른다. 어느 문서가 근거인지는 에이전트가 검색으로
+        찾는다(2026-08-04). 예전에는 근거 문서도 사람이 체크해서 넘겼는데, 그러려면
+        무엇이 어디 적혀 있는지 미리 알아야 한다 — 그걸 대신 찾아 주는 것이 이
+        기능의 목적이라 순서가 거꾸로였다.
+
+        `proj_id`는 권한 확인에만 쓴다. 범위를 프로젝트로 좁히면 방금 만든 DRAFT에
+        묶인 문서가 기준 문서 하나뿐이라 1단계와 2~4단계 검색이 같아진다.
+        """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
+                team_id = _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
                 cursor.execute(
                     f"""
-                    SELECT d.doc_id, d.proj_id, d.doc_role, d.file_name, d.mime_type,
+                    SELECT d.doc_id, d.team_id, d.proj_id, d.doc_role, d.file_name, d.mime_type,
                            d.storage_key, d.cur_revision, {_SEARCH_READY}
                     FROM doc d
-                    WHERE d.proj_id = %s AND d.deleted = false AND d.access_revoked = false
+                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
                     ORDER BY d.doc_id
                     """,
-                    (proj_id,),
+                    (team_id,),
                 )
                 return list(cursor.fetchall())
 
     @staticmethod
-    def set_project_documents(
-        *, proj_id: str, account_id: str, primary_doc_id: str, sub_doc_ids: list[str]
+    def set_primary_document(
+        *, proj_id: str, account_id: str, primary_doc_id: str
     ) -> dict[str, Any]:
-        """기준 문서 선택을 저장한다. **이 행위가 프로젝트에 문서를 묶는다.**
+        """기준 문서를 정한다. **이 행위가 프로젝트에 문서를 묶는다.**
 
-        전부 교체한다. 화면은 언제나 전체 선택 상태를 보내므로, 덧붙이면 화면에서
-        해제한 문서가 프로젝트에 남는다.
+        묶이는 문서는 기준 문서 하나뿐이다. 근거 문서는 에이전트가 팀 문서에서
+        검색으로 찾으므로 프로젝트에 묶지 않는다 — 같은 회의록이 여러 프로젝트의
+        근거가 될 수 있는데 `doc.proj_id`는 하나만 가리킬 수 있다.
         """
 
-        if primary_doc_id in sub_doc_ids:
-            raise ValueError("기준 문서를 서브 문서로 함께 지정할 수 없습니다.")
-
-        wanted = [primary_doc_id, *sub_doc_ids]
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
@@ -148,17 +154,16 @@ class PipelineDocumentRepository:
                 cursor.execute(
                     """
                     SELECT doc_id FROM doc
-                    WHERE doc_id = ANY(%s) AND team_id = %s
+                    WHERE doc_id = %s AND team_id = %s
                       AND deleted = false AND access_revoked = false
                     """,
-                    (wanted, team_id),
+                    (primary_doc_id, team_id),
                 )
-                found = {row["doc_id"] for row in cursor.fetchall()}
-                missing = [d for d in wanted if d not in found]
-                if missing:
-                    raise RecordNotFound(f"팀 문서에서 찾을 수 없습니다: {', '.join(missing)}")
+                if cursor.fetchone() is None:
+                    raise RecordNotFound(f"팀 문서에서 찾을 수 없습니다: {primary_doc_id}")
 
                 # 이 프로젝트에 물려 있던 것을 먼저 풀어 팀 문서 풀로 돌려보낸다.
+                # 기준 문서를 바꾸면 이전 것은 다시 아무 프로젝트의 것도 아니다.
                 cursor.execute(
                     "UPDATE doc SET proj_id = NULL, doc_role = NULL WHERE proj_id = %s",
                     (proj_id,),
@@ -167,12 +172,7 @@ class PipelineDocumentRepository:
                     "UPDATE doc SET proj_id = %s, doc_role = 'PRIMARY' WHERE doc_id = %s",
                     (proj_id, primary_doc_id),
                 )
-                if sub_doc_ids:
-                    cursor.execute(
-                        "UPDATE doc SET proj_id = %s, doc_role = 'SUB' WHERE doc_id = ANY(%s)",
-                        (proj_id, sub_doc_ids),
-                    )
-        return {"primary_doc_id": primary_doc_id, "sub_doc_ids": sub_doc_ids}
+        return {"primary_doc_id": primary_doc_id}
 
     @staticmethod
     def ingest(*, expected_doc: dict[str, Any], result: dict[str, Any]) -> dict[str, int]:
@@ -320,10 +320,13 @@ def vector_literal(vector: list[float]) -> str:
 
 class VectorSearchRepository:
     @staticmethod
-    def search(*, proj_id: str, document_ids: list[str], query_vector: list[float], top_k: int) -> list[dict]:
+    def search(*, team_id: str, document_ids: list[str], query_vector: list[float], top_k: int) -> list[dict]:
         """`document_ids`는 호출자가 `list_ready_for_analysis`로 서버에서 확인한
-        범위다. `proj_id` 조건을 함께 거는 것은 그 목록이 어떤 경로로든 오염됐을 때
-        다른 프로젝트 문장이 근거로 섞이지 않게 하는 두 번째 자물쇠다."""
+        범위다. `team_id` 조건을 함께 거는 것은 그 목록이 어떤 경로로든 오염됐을 때
+        다른 팀 문장이 근거로 섞이지 않게 하는 두 번째 자물쇠다.
+
+        경계는 프로젝트가 아니라 **팀**이다. 근거는 팀 문서 전체에서 찾으므로
+        프로젝트로 거는 자물쇠는 잠글 것이 없다."""
 
         if not document_ids:
             raise ValueError("검색 문서 범위가 비어 있습니다.")
@@ -331,14 +334,17 @@ class VectorSearchRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
+                    -- `v.metadata` 는 안 읽는다(2026-08-05). bbox 좌표·binary_hash·
+                    -- 임시 파일명이 들어 있어 평균 927자·최대 7,622자인데, 모델도
+                    -- 화면도 쓰지 않으면서 프롬프트와 응답을 그만큼 불린다.
                     SELECT d.doc_id, c.chunk_id::text, c.chunk_idx AS sequence,
-                           c.search_text AS text, c.heading_path, v.metadata,
+                           c.search_text AS text, c.heading_path,
                            1 - (v.embedding <=> %s::vector) AS retrieval_score
                     FROM vec_idx v
                     JOIN chunk c ON c.chunk_id = v.chunk_id
                     JOIN doc_block b ON b.block_id = c.block_id
                     JOIN doc d ON d.doc_id = b.doc_id
-                    WHERE d.proj_id = %s
+                    WHERE d.team_id = %s
                       AND d.doc_id = ANY(%s)
                       AND d.deleted = false AND d.access_revoked = false
                       AND c.is_active = true AND v.is_active = true
@@ -347,8 +353,43 @@ class VectorSearchRepository:
                     LIMIT %s
                     """,
                     (
-                        vector_literal(query_vector), proj_id, document_ids,
+                        vector_literal(query_vector), team_id, document_ids,
                         "google/embeddinggemma-300m", vector_literal(query_vector), top_k,
                     ),
                 )
                 return list(cursor.fetchall())
+
+
+#: 질의 앵커로 넘길 첫머리 길이. 개요·사업범위가 들어갈 만큼이면 된다.
+OUTLINE_MAX_CHARS = 1500
+
+
+def document_outline(doc_id: str, *, limit: int = 12) -> str:
+    """문서 앞부분 청크를 이어 붙인다. 이 문서가 무엇에 관한 것인지 알려 준다.
+
+    질의 생성 에이전트에 파일명만 주면 주제를 모른 채 「사업 수행 범위에 포함된
+    업무 영역」 같은 일반 사업관리 문장을 만든다. 그런 벡터는 실제 과업이 아니라
+    관리 보일러플레이트와 가장 가깝고, 실제로 실행 과업이 한 건도 안 잡힌 적이
+    있다(2026-08-05). 문서가 무엇에 대한 것인지는 대개 첫머리에 적혀 있다.
+
+    검색이 아니라 순서대로 읽는다 — 앵커는 질의보다 먼저 필요하다.
+    """
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT c.search_text
+                FROM chunk c
+                JOIN doc_block b ON b.block_id = c.block_id
+                JOIN doc d ON d.doc_id = b.doc_id AND b.revision = d.cur_revision
+                WHERE b.doc_id = %s AND c.is_active = true
+                ORDER BY b.block_id, c.chunk_idx
+                LIMIT %s
+                """,
+                (doc_id, limit),
+            )
+            rows = cursor.fetchall()
+
+    outline = "\n".join((row["search_text"] or "").strip() for row in rows)
+    return outline[:OUTLINE_MAX_CHARS]

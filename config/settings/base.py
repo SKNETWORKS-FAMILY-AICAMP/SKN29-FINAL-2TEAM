@@ -117,10 +117,19 @@ RUNPOD_EXECUTION_TIMEOUT_MS = env.int(
 DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS = env.int(
     "DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS", default=900
 )
+# 질의 임베딩이 워커를 기다리는 한도. 대부분 콜드 스타트를 기다리는 시간이라
+# 이미지 pull + 모델 다운로드가 끝날 만큼은 줘야 한다.
+RUNPOD_EMBED_WAIT_SECONDS = env.int("RUNPOD_EMBED_WAIT_SECONDS", default=600)
 
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="")
+# 검색어 생성 전용 모델. 최종 정리와 따로 두는 이유는 services/task_extraction
+# 쪽 주석에 실측과 함께 적어 뒀다 — 같은 일에 Sol 은 Luna 의 수백 배가 든다.
+OPENAI_PLAN_MODEL = env("OPENAI_PLAN_MODEL", default="gpt-5.6-luna")
 OPENAI_REASONING_EFFORT = env("OPENAI_REASONING_EFFORT", default="")
+# OpenAI 처리 대기열. priority 는 지연이 짧은 대신 비싸다. 계정이 안 열어 준
+# 티어를 주면 요청이 거절되므로 기본은 auto 로 둔다.
+OPENAI_SERVICE_TIER = env("OPENAI_SERVICE_TIER", default="auto")
 EMBEDDING_MODEL = env("EMBEDDING_MODEL", default="")
 EMBEDDING_DEVICE = env("EMBEDDING_DEVICE", default="")
 CHUNKING_MAX_TOKENS = env.int("CHUNKING_MAX_TOKENS", default=512)
