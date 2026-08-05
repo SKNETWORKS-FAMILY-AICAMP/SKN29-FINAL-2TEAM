@@ -239,7 +239,8 @@ CHUNKING_MERGE_PEERS=true
 
 `RUNPOD_API_KEY`는 프론트로 전달하면 안 된다. 브라우저는 항상 Django API만 호출한다.
 `PUBLIC_BACKEND_BASE_URL`은 반드시 HTTPS여야 하며 Quick Tunnel을 다시 시작해 주소가
-바뀌면 `.env`도 바꾼 후 Django를 재시작한다.
+바뀌면 `.env`를 바꾼 후 **컨테이너를 재생성**한다(`up -d --force-recreate web`).
+`docker compose restart`는 `env_file`을 다시 읽지 않는다(2026-08-05 정정).
 
 Cloudflare 호스트는 Django `ALLOWED_HOSTS`에도 추가한다.
 
@@ -432,7 +433,8 @@ cloudflared tunnel --url http://localhost:8000
 
 출력된 `https://<random>.trycloudflare.com`을 `.env`의
 `PUBLIC_BACKEND_BASE_URL`과 `ALLOWED_HOSTS`에 반영한 뒤 Django 컨테이너를
-재시작한다.
+**재생성**한다 — `docker compose -f infra/docker/docker-compose.yml up -d --force-recreate web`.
+`restart`로는 `env_file`을 다시 읽지 않아 바뀐 주소가 반영되지 않는다(2026-08-05 정정).
 
 Quick Tunnel URL은 프로세스를 다시 시작하면 바뀔 수 있다. 이전 URL을 그대로 쓰면
 RunPod의 원문 다운로드가 실패한다.
@@ -512,7 +514,7 @@ Worker 코드를 수정할 때는 다음 순서를 사용한다.
 | HF 401/403 또는 모델 접근 실패 | RunPod `HF_TOKEN` Secret 참조와 모델 약관 동의 여부 |
 | CUDA 관련 시작 실패 | `EMBEDDING_DEVICE=cuda`, GPU Worker와 CUDA 12.8 image 확인 |
 | Django에서 `PUBLIC_BACKEND_BASE_URL` 오류 | Quick Tunnel 실행 여부와 HTTPS URL 설정 |
-| RunPod 원문 다운로드 403 | 서명 만료, Django 재시작, 서버 시간, token 변조 확인 |
+| RunPod 원문 다운로드 403 | 서명 만료, 컨테이너 재생성 누락(`.env` 미반영), 서버 시간, token 변조 확인 |
 | RunPod 원문 다운로드 404 | storage key, revision, connector 다운로드 상태 확인 |
 | DB 적재 rollback | model/dimension/hash/revision/Chunk sequence 불일치 확인 |
 | 문서가 계속 `처리 필요` | 프론트가 processing API를 호출했는지, 완료 poll에서 ingest가 실행됐는지 확인 |

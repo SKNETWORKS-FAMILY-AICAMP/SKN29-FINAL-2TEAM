@@ -29,7 +29,13 @@ cloudflared tunnel --url http://localhost:8000
 PUBLIC_BACKEND_BASE_URL=https://<random>.trycloudflare.com
 ```
 
-Quick Tunnel 주소는 실행할 때 바뀔 수 있다. 주소를 바꾼 후 Django를 다시 시작한다.
+Quick Tunnel 주소는 실행할 때마다 바뀐다. 바뀌면 `.env`의 `PUBLIC_BACKEND_BASE_URL`과 `ALLOWED_HOSTS`를 고친 뒤 **컨테이너를 재생성**한다.
+
+```bash
+docker compose -f infra/docker/docker-compose.yml up -d --force-recreate web
+```
+
+> ⚠ **2026-08-05 정정 — `restart`로는 반영되지 않는다.** 이 줄은 "주소를 바꾼 후 Django를 다시 시작한다"였다. `docker compose restart`는 컨테이너를 그대로 두고 프로세스만 다시 띄우기 때문에 `env_file`을 다시 읽지 않는다. 바뀐 주소가 반영되지 않은 채 RunPod이 옛 주소로 원문을 받으러 가고, 시연 중에 원인을 찾기 어려운 실패가 된다.
 
 ## 3. RunPod 설정
 

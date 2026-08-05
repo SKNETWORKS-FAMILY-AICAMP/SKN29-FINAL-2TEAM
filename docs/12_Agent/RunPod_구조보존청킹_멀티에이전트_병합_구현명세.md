@@ -397,8 +397,9 @@ validation.table_diagnostics[]
 - 현재 DB revision과 token revision 일치 검증
 - 삭제/접근철회/원문 미존재 검증
 
-Quick Tunnel URL은 실행할 때 바뀔 수 있으므로 바뀐 값을 `.env`에 넣고 Django를
-재시작해야 한다. `localhost`는 RunPod에서 접근할 수 없으므로 전달하지 않는다.
+Quick Tunnel URL은 실행할 때마다 바뀌므로 바뀐 값을 `.env`에 넣고 **컨테이너를
+재생성**해야 한다(`up -d --force-recreate web`) — `restart`는 `env_file`을 다시 읽지
+않는다(2026-08-05 정정). `localhost`는 RunPod에서 접근할 수 없으므로 전달하지 않는다.
 
 ### 9.2 비동기 문서 처리
 
@@ -751,8 +752,8 @@ breaking dependency 변경 가능성이 있는 `npm audit fix --force`를 실행
 2. 로컬 Django `.env`에 DB/기존 connector 설정과 RunPod/OpenAI/Cloudflare 설정을
    넣는다.
 3. `cloudflared tunnel --url http://localhost:8000`을 실행한다.
-4. 출력된 `https://<random>.trycloudflare.com`을
-   `PUBLIC_BACKEND_BASE_URL`에 넣고 Django를 재시작한다.
+4. 출력된 `https://<random>.trycloudflare.com`을 `PUBLIC_BACKEND_BASE_URL`과
+   `ALLOWED_HOSTS`에 넣고 컨테이너를 **재생성**한다(`up -d --force-recreate web`).
 5. RunPod Endpoint는 `runpod_worker`를 빌드 컨텍스트로 배포한다.
 6. Worker 환경에 `HF_TOKEN`, `EMBEDDING_MODEL`, `EMBEDDING_DEVICE`를 넣는다.
 7. Drive connector로 문서를 등록하고 기존 다운로드 API로 로컬 저장소에 받는다.
@@ -779,8 +780,8 @@ breaking dependency 변경 가능성이 있는 `npm audit fix --force`를 실행
    외부 결과 저장소, callback 또는 batch ingest가 필요할 수 있다.
 6. **RunPod 완료 결과 보관시간**: 완료 output은 제한된 시간만 조회 가능하므로
    polling 간격과 즉시 적재가 중요하다.
-7. **Cloudflare Quick Tunnel 주소 변동**: 재실행할 때 URL이 바뀌므로 환경변수와
-   Django 재시작이 필요하다.
+7. **Cloudflare Quick Tunnel 주소 변동**: 재실행할 때 URL이 바뀌므로 환경변수 수정과
+   **컨테이너 재생성**이 필요하다(`restart`는 `env_file`을 다시 읽지 않는다).
 8. **실환경 E2E 미완료**: 비밀값/CUDA Endpoint가 준비되어야 최종 연결 검증 가능하다.
 9. **기존 demo Vector script 주의**:
    `backend/services/createDB/vec_idx_setup.py`에는 병합 전 1536차원
