@@ -195,7 +195,9 @@ BLOCKED: 필수 데이터 누락
 
 ```text
 총 근무용량
-= 기간 내 근무일 × 일 기준 근무시간 × FTE
+= 기간 내 근무일 × (wk_hours ÷ 5)        ← wk_hours 에 FTE 가 이미 반영돼 있다
+  wk_hours 가 없으면 def_wk_hours × fte
+  둘 다 없으면 NO_SCHEDULE (풀타임을 가정하지 않는다)
 
 유효 가용용량
 = 총 근무용량 - 휴가·부재시간 - 고정 비프로젝트 일정시간
@@ -204,22 +206,42 @@ BLOCKED: 필수 데이터 누락
 = 해당 기간에 배분된 기존 업무 잔여 공수
 
 잔여 가용시간
-= max(0, 유효 가용용량 - 현재 할당량)
+= 유효 가용용량 - 현재 할당량            ← 음수를 0 으로 자르지 않는다
 
 현재 부하율
 = 현재 할당량 / 유효 가용용량 × 100
 
-배정 후 부하율
+배정 후 부하율                            ← 계산 경로 없음 (2026-08-05)
 = (현재 할당량 + 신규 Task 공수) / 유효 가용용량 × 100
 ```
 
+> ⚠ **2026-08-05 정정 — 수식 2줄이 코드와 달랐다**(`services/workload/calculator.py`).
+>
+> **① `× FTE`를 다시 곱하면 안 된다.** `wk_hours`는 이미 FTE가 반영된 실제 시간이다
+> (FTE 0.5인 사람은 20h로 들어온다). 문서대로 `× FTE`를 한 번 더 하면 `20 × 0.5 = 10`이
+> 되어 **용량이 반토막 나고 부하율이 2배**가 된다. 해당자가 `20/40/0.5`인 7명이다. 개발팀
+> 5명은 전원 `40/40/1.0`이라 **화면에 드러나지 않는 조용한 버그**가 된다(`:70-86`).
+>
+> **② 잔여 가용시간을 `max(0, …)`으로 자르지 않는다.** `round(capacity - allocation, 2)`
+> 그대로라 **음수가 나온다**(`:329-331`). 이미 초과 배정된 사람을 0으로 보이게 하면
+> 얼마나 초과했는지가 사라진다 — 그것이 배정 판단에 필요한 정보다.
+>
+> 부하율은 소수 둘째 자리까지 반올림하고 상한 999.99로 자른다(`:192`).
+> 사유 코드는 `NO_SCHEDULE` · `ON_LEAVE` · `NO_EFFECTIVE_CAPACITY` **3개**다(`:43-45`).
+> **「배정 후 부하율」은 계산하는 코드가 없다.**
+
 내부 People DB에 개인별 근무시간이 없으면 회사 근무정책을 CapacityPolicy로 적용한다. 유효 가용용량이 0이면 퍼센트 계산을 수행하지 않고 해당 기간 배정을 BLOCKED 처리한다. 배정 후 부하율이 100%를 초과하면 과부하 위험으로 검증한다.
 
-| 모드 | 조건 | 출력 |
-|---|---|---|
-| HOURS | 근무시간·기간·공수 존재 | 현재·배정 후 부하율 |
-| POINTS | Story Point·Sprint Capacity·Velocity 존재 | Capacity 사용률 |
-| PROXY (후속) | 공수 데이터 부족 | 업무량 지수 + 낮은 신뢰도 |
+> ⚠ **CapacityPolicy 우선순위가 반대다(2026-08-05).** 문서는 "개인별 근무시간이 없으면"
+> 회사 정책을 적용한다고 적지만, 코드는 `team.capacity_wk_hours`가 설정돼 있으면 **개인
+> 데이터 유무와 무관하게 전원을 덮어쓴다**(`apps/projects/api_views.py:828-833`).
+> `capacity_policy` 테이블은 존재하지 않는다.
+
+| 모드 | 조건 | 출력 | 2026-08-05 상태 |
+|---|---|---|---|
+| HOURS | 근무시간·기간·공수 존재 | 현재 부하율 | **구현됨** (배정 후 부하율은 없다) |
+| POINTS | Story Point·Sprint Capacity·Velocity 존재 | Capacity 사용률 | **미구현** — story point·sprint·velocity를 읽는 코드가 저장소에 없다 |
+| PROXY (후속) | 공수 데이터 부족 | 업무량 지수 + 낮은 신뢰도 | 미구현 (후속 확장) |
 
 Story Point를 근거 없이 시간으로 바꾸지 않는다. PROXY 결과를 퍼센트 부하율로 표시하지 않는다. **PROXY 모드는 8/6 MVP 범위에서 제외하고 후속 확장으로 둔다. MVP는 HOURS를 기본, POINTS를 보조로 사용하며 공수 데이터가 부족하면 BLOCKED/PARTIAL_RESULT로 처리한다.**
 
@@ -250,15 +272,23 @@ PUT  /rest/api/3/issue/{key}
 
 주요 테이블:
 
-- `organization`: 조직과 상하위 관계
-- `person`: 직원·직무·재직·관리자·위치·시간대
-- `responsibility_level`: 책임수준 기준
-- `skill`, `person_skill`: Skill과 숙련도
-- `work_schedule`: FTE와 근무시간
-- `person_absence`: 휴가·휴직·부재
-- `identity_link`: Jira·Google 외부 계정 매핑
+- `mock_hr.org`: 조직과 상하위 관계
+- `mock_hr.person`: 직원·직무·재직·관리자·위치·시간대
+- `mock_hr.level`: 책임수준 기준
+- `mock_hr.skill`, `mock_hr.person_skill`: Skill과 숙련도
+- `mock_hr.sched`: FTE와 근무시간
+- `mock_hr.absence`: 휴가·휴직·부재
+- `mock_hr.person_link`: Jira·Google 외부 계정 매핑
 
-모든 레코드에 updated_at과 source_version을 두고, 변경 시 새로운 PersonSnapshot을 생성한다. 실제 HR/Workday Connector는 후속 확장으로 분리하며 Snapshot 이후 추천·검증 로직은 동일하게 유지한다.
+> ⚠ **2026-08-05 정정 — 테이블명 6개가 전부 달랐다.** `organization`·
+> `responsibility_level`·`work_schedule`·`person_absence`·`identity_link`는 존재하지
+> 않는다. 실제는 위와 같이 **`mock_hr` 스키마**의 8개다 — 우리가 만드는 데이터가 아니라
+> 고객사 HR에서 읽어오는 데이터라는 경계를 스키마 레벨로 표시한 것이다.
+> `updated_at`·`source_version` 컬럼도 **없다.**
+
+변경 시 새로운 PersonSnapshot을 생성한다.
+> **2026-08-05 — `person_snap`에 INSERT 하는 코드가 없다.** Snapshot 계열
+> (`ana_snapshot`·`person_snap`·`reco_result`·`valid_result`)은 전부 0행이다. 실제 HR/Workday Connector는 후속 확장으로 분리하며 Snapshot 이후 추천·검증 로직은 동일하게 유지한다.
 
 ---
 

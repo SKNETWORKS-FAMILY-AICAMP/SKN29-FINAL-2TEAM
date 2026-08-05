@@ -1,5 +1,12 @@
 # 7장 R&R — v5 정합 초안 (WBS 엑셀 기준)
 
+> ⚠ **2026-08-05 감사 — 3단계 이후의 「구현」 항목 상당수가 아직 스텁이다.**
+> 2.5(Feature Readiness), 3.4(추천), 3.5(검증)는 `services/readiness/checker.py`가 5줄,
+> `services/recommendation/service.py`가 1줄이고, `ana_snapshot`·`person_snap`·
+> `reco_result`·`valid_result` 어디에도 INSERT 하는 코드가 없다. 8/6 시연 범위에서
+> 이 세 항목은 **화면만 정적으로 존재**한다. 완료된 것은 문서 파싱·청킹·임베딩(2.x),
+> 업무 추출(3.x 중 추출), 업무량 계산(`services/workload/`)까지다.
+
 > 목적: 마스터 기획서 7장 R&R(표14~17)이 실제 `WBS_2Team_v5` 엑셀과 다른 계획이라, **작업 구조를 v5 엑셀에 맞춰 재정렬**한 초안. 작업 제목·역할은 엑셀 기준(확정), **담당(사람)은 팀 확인 필요**.
 > 미반영 개념 정리: 캘린더 mock 연동(→Calendar 후속), Scatter/Gather(→Orchestrator+결정론 모듈), 보안 sLLM QLoRA(→v5 아키텍처에 없음)는 제외함.
 > 팀: 임준(PM), 최원빈, 김지훈, 임준억, 성주연

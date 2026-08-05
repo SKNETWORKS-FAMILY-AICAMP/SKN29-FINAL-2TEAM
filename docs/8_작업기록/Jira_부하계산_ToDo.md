@@ -15,10 +15,17 @@
 [완료] Jira 계정 ↔ person_id 매핑 (person_link)
 [완료] 목업 이슈 (미완료 35건: KAN 23 + AIP 12)
 [완료] exist_task 스키마 보강 (proj_source_id · estimate · status_category · UNIQUE)
-[완료] 이슈 수집 코드      POST /api/projects/<id>/tasks/sync/      ← exist_task 35행
-[완료] 부하 계산           services/workload/calculator.py
-[완료] 화면 노출           /tasks/workload
+[완료] 이슈 수집 코드      POST /api/projects/<id>/tasks/sync/      ← exist_task 59행
+[완료] 부하 계산           services/workload/calculator.py         ← 390줄 구현
+[완료] 화면 노출           /dashboard (주차별 업무량)
 ```
+
+> ⚠ **2026-08-05 정정 — `/tasks/workload`는 삭제된 화면이다.** `frontend/src/routes.ts`·
+> `App.tsx` 어디에도 없다. 2026-08-04에 대시보드가 주차별 업무량으로 흡수하면서 별도
+> 부하율 페이지를 없앴다. **부하 API도 `GET /api/projects/<id>/workload/`가 아니라
+> `GET /api/team/workload/` 하나뿐이다**(`apps/projects/api_urls.py:59`) — 사람의 부하는
+> 그가 맡은 모든 프로젝트의 합이라 팀 범위로 바뀌었다. 프로젝트 경로로 부르면 404다.
+> `exist_task`도 35행이 아니라 **59행**이다.
 
 실계정 검증(2026-08-03 ~ 08-31, 근무일 20일, 용량 160h):
 
@@ -52,6 +59,15 @@
 ---
 
 ## 단계 1 — Jira 이슈 수집 (P0, 반나절)
+
+> ✅ **2026-08-05 — 이 단계는 끝났다.** 아래 체크박스가 전부 비어 있지만 구현돼 있다.
+> `search_jira_issues`(`apps/connectors/clients.py:429`),
+> `ExistTaskRepository.replace_for_source`(`backend/db/repositories.py:1261`),
+> `ProjectTaskSyncAPIView`(`apps/projects/api_views.py:732`,
+> `POST /api/projects/<id>/tasks/sync/`)와 팀 범위인 `POST /api/team/tasks/sync/`,
+> 테스트 `tests/test_task_sync.py`까지 있다. `exist_task` 59행이 들어와 있다.
+> 개별 항목의 세부 처리(예: `start_at` 대체 방식)까지는 이 감사에서 확인하지 않아
+> 체크박스는 그대로 뒀다.
 
 **단계 0과 무관하게 지금 시작 가능.**
 
@@ -175,6 +191,12 @@ WITH target AS (
 
 - [x] D1·D3 반영 — ~~창 안에 `due_at`이 있거나 `due_at`이 NULL인 `remaining` 합~~ → **개정됨:**
 
+  > ⚠ **2026-08-05 — 구현은 `OR`가 아니라 `if/else`다.** `due_at`이 있으면
+  > `due_at < 창끝`만 보고 `IN_PROGRESS`는 보지 않는다. 즉 **마감이 창 밖인 진행 중 업무는
+  > 분자에 안 들어가고 Backlog로 빠진다.** 아래 서술과 코드 중 어느 쪽이 맞는지는
+  > `업무량_계산_MVP_계약.md` §2③과 함께 사람이 정할 사안이라 여기서는 현상만 적는다
+  > (같은 날 감사의 D-5 참고).
+
   ```
   포함 = due_at < 창끝  OR  status_category = 'IN_PROGRESS'
   제외 = 마감 없고 미시작  →  미일정 Backlog로 분리해 시간·건수 노출
@@ -187,7 +209,7 @@ WITH target AS (
 
 ### 2-3. calculator.py
 
-- [ ] `services/workload/calculator.py` — 지금 docstring만 있는 스텁
+- [x] `services/workload/calculator.py` — **390줄 구현 완료**(2026-08-05 정정. 「docstring만 있는 스텁」이었다)
   - 순수 함수로: 입력(기간, 대상자 목록) → 출력(person별 capacity/allocation/load_rate)
   - LLM 호출 없음. 결정론적 코드
 - [ ] D6 가드: 가용용량 ≤ 0 → `load_rate = NULL` + 사유(`ON_LEAVE` / `NO_SCHEDULE`)
@@ -200,7 +222,8 @@ WITH target AS (
 
 ### 2-5. 테스트
 
-- [ ] **회귀 테스트 필수**: 육아휴직자(`PB005` 등 17명)가 음수·최상위 추천으로 안 나오는지
+- [ ] **회귀 테스트 필수**: 육아휴직자(`PB005` 등 **12명**)가 음수·최상위 추천으로 안 나오는지
+  > **2026-08-05 정정.** 17명이 아니라 12명이다. 17 = 육아휴직 12 + 안식월 5였다(DB 확인). 같은 문서 172줄이 이미 이 정정을 적어 놓고 여기는 안 고쳐져 있었다.
 - [ ] 하루 연차(`start_at = end_at`)가 0시간이 아니라 8시간 차감되는지 (D2 확인)
 - [ ] 가용용량 0일 때 ZeroDivision 안 나는지
 - [ ] `load_rate` 1000% 이상에서 INSERT 실패 안 하는지
@@ -209,7 +232,7 @@ WITH target AS (
 
 ## 단계 3 — 노출 (P1, 2시간)
 
-- [x] `GET /api/projects/<id>/workload/?from=&to=` — 인원별 부하율 + 진단값
+- [x] `GET /api/team/workload/?from=&to=` — 인원별 부하율 + 진단값 (2026-08-05 정정 — 프로젝트 경로가 아니라 팀 경로다)
 - [ ] 화면: 부하율 막대 + **프로젝트별 분해**(KAN 144h / AIP 52h)
   - 08-03 ALTER의 `proj_source_id`가 이 분해를 가능하게 한다
   - **"한 프로젝트만 보면 90%, 합치면 123%"가 시연의 핵심 장면**
@@ -276,9 +299,9 @@ D1을 4주로 잡으면 가용용량 = `40 × 4 × 0.8 = 128h`. 지금 추정치
 
 이 셋만 되면 파싱이 늦어져도 보여줄 게 있다.
 
-1. [x] `POST /tasks/sync/`로 미완료 **35건**이 `exist_task`에 들어온다 (재동기화해도 안 늘어남)
+1. [x] `POST /tasks/sync/`로 미완료 **59건**이 `exist_task`에 들어온다 (재동기화해도 안 늘어남)
 2. [x] 부하율이 계산되고 육아휴직자가 음수로 안 나온다 (용량 0 → `ON_LEAVE`, 부하율 `NULL`)
-3. [x] 화면에 "KAN만 90.0% → 합산 122.5%"가 보인다 (`/tasks/workload`)
+3. [x] 화면에 프로젝트별 분해가 보인다 (`/dashboard`. `/tasks/workload`는 08-04에 없앴다)
 
 문서 파싱과 **완전히 독립**이라 최원빈 일정에 안 물린다.
 
