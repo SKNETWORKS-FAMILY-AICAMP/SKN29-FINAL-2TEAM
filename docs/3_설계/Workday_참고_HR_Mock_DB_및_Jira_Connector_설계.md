@@ -1,7 +1,9 @@
 # Workday 참고 자료 및 Jira Connector 조사 설계
 
 > **문서 상태: 참고 조사 이력(SUPERSEDED)**  
-> 현재 구현 기준은 `기획서_v5_AI프로젝트운영코파일럿.md`와 `Canonical Data Model` 폴더의 문서다. 1차 구현에서는 PostgreSQL **People DB**의 `person`, `organization`, `responsibility_level`, `skill`, `person_skill`, `work_schedule`, `person_absence`, `external_identity` 테이블을 사용한다. 아래의 `mock_hr.*`, HR Mock DB, OrgGraph 설계는 구현하지 않으며 Workday 관련 내용은 향후 실제 HR Connector 검토용 참고 자료로만 사용한다. Jira Connector 조사 내용은 현재 구현 참고로 유효하다. 1차 플랫폼은 단일 조직 기준이므로 아래 조사안의 `tenant_id`는 구현 필드로 사용하지 않는다.
+> 현재 구현 기준은 [[시스템_전체_설계]]와 `DB/schema.sql`이다. 1차 구현은 PostgreSQL의 **`mock_hr` 스키마** 8개 테이블을 쓴다 — `org` · `level` · `skill` · `person` · `person_skill` · `person_link` · `sched` · `absence`. 읽기는 `backend/services/hr/` 어댑터 한 곳을 거친다. Workday 관련 내용은 향후 실제 HR Connector 검토용 참고 자료다. 1차 플랫폼은 단일 조직 기준이므로 아래 조사안의 `tenant_id`는 구현 필드로 사용하지 않는다.
+>
+> ⚠ **2026-08-05 정정 2건.** ① 이 머리말은 `person`·`organization`·`responsibility_level`·`work_schedule`·`person_absence`·`external_identity`를 쓴다고 적었으나 그중 5개는 **실재하지 않는다.** 그리고 "아래의 `mock_hr.*` 설계는 구현하지 않으며"라고 적었는데 **실제로 채택된 것이 `mock_hr` 쪽이다** — 서술이 정확히 뒤집혀 있었다. ② "Jira Connector 조사 내용은 현재 구현 참고로 유효하다"는 범위를 좁혀야 한다. **Board·Sprint 관련 조사는 유효하지 않다** — Agile API는 `read:board-scope:jira-software`가 필요한데 현재 요청 범위에 없어 호출하면 403이고, 이 문서가 드는 `jira_field_mapping`·`jira_board_config` 테이블도 존재하지 않는다. 부하 계산에는 Board·Sprint가 필요 없는 것으로 확인돼 중간발표 경로에서 빠졌다.
 
 > **위 두 문장은 2026-07-31부터 일부만 맞다.** 조사안의 `tenant_id` 컬럼을 쓰지 않는 것은 그대로지만, **"단일 조직 기준"은 더 이상 아니다.** 테넌트 경계를 `team`으로 세웠다 — HR에서는 한 회사지만 우리 플랫폼을 쓰는 단위는 회사 전체가 아니라 그 안의 **그룹**이라, 팀장이 온보딩에서 팀명을 붙여 만든다. HR 조회는 팀원 명부(`team_member`) 기준으로 좁혀진다. **`mock_hr` 스키마는 같은 날 실제로 도입했다** — 다만 아래 조사안의 테이블 구성(`worker`·`supervisory_organization`·`job_profile` 등)이 아니라, 이미 쓰고 있던 8개 테이블(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)을 그 스키마로 옮긴 것이다. 같은 목적의 경계를 **코드 계층**(`backend/services/hr/`)으로도 세웠다. 자세한 내용은 [[HR_어댑터와_테넌트_경계]] §8.
 
@@ -482,6 +484,11 @@ integration.identity_mapping
 - external_account_id
 - email_snapshot
 - match_method
+
+  ※ 2026-08-05 — `integration` 스키마는 존재하지 않는다. 실제 매핑 테이블은
+    `mock_hr.person_link` 이고 조회 기준은 `(sys_type, ext_email)` 즉 **이메일 단일
+    기준**이다(`apps/projects/api_views.py:693-696`). accountId 를 최종 식별자로
+    쓰지 않는다 — Jira 프로필이 비공개면 이메일이 응답에 없어 매핑이 조용히 깨진다.
 - mapping_status
 - confidence
 - confirmed_by

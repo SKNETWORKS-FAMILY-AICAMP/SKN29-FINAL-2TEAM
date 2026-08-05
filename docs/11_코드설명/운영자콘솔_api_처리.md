@@ -83,6 +83,7 @@
 
 ```json
 {
+  "team_count": 1,
   "org_count": 9,
   "accounts": { "total": 2, "locked": 0, "duplicate_mapping": 0, "needs_review": 0 },
   "connectors": { "total": 0, "connected": 0, "expired": 0, "error": 0 },
