@@ -137,7 +137,16 @@ EmbeddingGemma 모델 페이지의 사용 조건에 동의한 Hugging Face 계�
 | Idle timeout | 300초 |
 | Execution timeout | 1,800초 |
 | FlashBoot | Standard |
-| Cached model | `google/embeddinggemma-300m` |
+| Cached model | **없음** — 아래 주의 참고 |
+
+> ⚠ **2026-08-05 정정 — 모델은 캐시되어 있지 않다.** 이 표는 `google/embeddinggemma-300m`이
+> Cached model이라고 적고 있었다. Dockerfile이 모델을 이미지에 굽지 않고 RunPod의 Cached
+> model에도 없어서, **최소 워커 0이면 워커가 새로 뜰 때마다 수 GB를 다시 받는다**
+> (`runpod_worker/pipeline.py:126-128`의 주석이 같은 내용을 적고 있다. Idle timeout 300초).
+>
+> 이 표를 믿으면 **시연 전 예열을 건너뛰게 된다.** 시연 전에는 문서 하나를 미리 처리해
+> 워커를 깨워 둘 것. 콜드 스타트를 줄이려면 Network Volume에 HF 캐시를 두거나 이미지에
+> 구워야 한다.
 
 Endpoint 환경변수는 다음과 같다.
 
@@ -266,10 +275,16 @@ Authorization: Bearer <Django session token>
 
 Django는 다음 조건을 먼저 확인한다.
 
-- 요청 사용자가 프로젝트 소유자인가
-- 문서가 해당 프로젝트에 속하는가
+- 요청 사용자가 **그 팀 소속인가**(`_require_team`)
+- 문서가 **해당 팀에 속하는가**(`doc.team_id`)
 - 문서가 삭제 또는 접근 철회 상태가 아닌가
 - `storage_key`와 `cur_revision`이 존재하는가
+
+> ⚠ **2026-08-05 정정 — 프로젝트 소유자·프로젝트 소속 검사가 아니라 팀 검사다.**
+> 앞의 두 줄은 "요청 사용자가 프로젝트 소유자인가 / 문서가 해당 프로젝트에 속하는가"였다.
+> 문서는 등록 시점에 `proj_id`가 `NULL`이므로 **적힌 대로 구현하면 처리 가능한 문서가
+> 항상 0건**이 된다. 폴더·문서는 팀에 매달리고, 소유자 검사를 걸면 팀장이 등록한 문서를
+> 팀원이 처리할 수 없다.
 - 로컬 문서 저장소에 실제 원문이 존재하는가
 - Cloudflare 기반 HTTPS 서명 URL을 만들 수 있는가
 
@@ -364,16 +379,19 @@ Content-Type: application/json
 `PrimaryDocumentSelectPage`는 문서 목록과 `search_ready` 상태를 표시하고, 준비된
 문서에 대해 업무 추출 API를 호출한다.
 
-### 8.2 아직 연결되지 않은 부분
+### 8.2 프론트 연결 — 완료됨
 
-문서 처리 시작 함수와 상태 조회 함수는 정의되어 있지만 현재 어떤 화면에서도
-호출하지 않는다. 따라서 화면에는 `처리 필요`가 표시되지만 사용자가 RunPod 처리를
-시작할 버튼과 polling 진행 상태가 없다.
+> ⚠ **2026-08-05 정정.** 이 절은 "아직 연결되지 않은 부분"이었고, 프론트 담당자에게
+> **「문서 처리」 버튼을 추가하라**고 지시하고 있었다. 그 버튼은 만들지 않기로 확정됐다 —
+> **등록 한 번이 원문 수신 → 파싱 → 청킹 → 임베딩까지 간다.** 나누면 「등록은 됐는데 못
+> 쓰는 문서」가 남고 그것을 사용자가 따로 관리해야 하기 때문이다. 그래서 문서 관리
+> 화면에 처리할 문서를 고르는 칸이 **없다.** 아래 2~7번은 그 흐름 안에서 이미 구현됐다.
 
-프론트 담당자가 추가해야 할 최소 동작은 다음과 같다.
+화면이 문서마다 순차로 진행하며 상태를 보여주고, 한 건이 실패해도 나머지는 계속한다.
+구현된 동작은 다음과 같다.
 
-1. `downloaded=true`, `search_ready=false`인 문서에 `문서 처리` 버튼을 표시한다.
-2. 버튼 클릭 시 `startDocumentProcessing`을 한 번만 호출하고 `job_id`를 보관한다.
+1. 등록과 동시에 처리가 시작된다 — 사용자가 누를 별도 버튼은 없다.
+2. `startDocumentProcessing`을 문서당 한 번만 호출하고 `job_id`를 보관한다.
 3. `fetchDocumentProcessing`으로 상태를 polling한다.
 4. `COMPLETED`이면 문서 목록을 다시 조회해 `search_ready=true`를 반영한다.
 5. `FAILED`, `CANCELLED`, `TIMED_OUT`이면 서버의 `error`를 화면에 표시하고 polling을

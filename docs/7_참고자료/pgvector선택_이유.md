@@ -47,10 +47,28 @@ DOC → DOC_BLOCK → CHUNK → VEC_IDX(임베딩)
 ## 4. 왜 우리 프로젝트엔 pgvector가 맞았는가
 
 ### 4.1 검색 후 반드시 관계형 JOIN이 필요한 구조다
-`비정형_문서_DB_설계.md`의 설계 원칙(6번)에 명시된 대로, `VEC_IDX`는 `proj_id`·`security` 같은 최소 필터만 갖고, 실제 "이 청크가 어떤 업무 지식인지"는 `CHUNK → KNOW_ITEM_SRC → KNOW_ITEM.semantic_type` JOIN으로 걸러낸다. ChromaDB나 Pinecone처럼 별도 스토어를 쓰면 이 JOIN을 애플리케이션 코드에서 두 번(벡터 검색 → ID 목록 획득 → RDBMS 재질의)에 걸쳐 해야 한다. pgvector는 이걸 SQL 하나로 끝낸다 — 실제로 `vec_idx_setup.py`의 `search()` 함수가 `vec_idx JOIN chunk JOIN doc_block JOIN doc`을 한 번에 처리하는 게 그 예시다.
+벡터 검색 결과만으로는 "이 청크가 어느 팀의 어떤 문서에서 왔는지"를 알 수 없어서 관계형 JOIN이 반드시 따라온다. ChromaDB나 Pinecone처럼 별도 스토어를 쓰면 이 JOIN을 애플리케이션 코드에서 두 번(벡터 검색 → ID 목록 획득 → RDBMS 재질의)에 걸쳐 해야 한다. pgvector는 이걸 SQL 하나로 끝낸다 — 실제 검색이 `vec_idx JOIN chunk JOIN doc_block JOIN doc`을 한 번에 처리한다(`backend/db/document_pipeline.py:340-353`).
+
+> ⚠ **2026-08-05 정정 2건.** ① `CHUNK → KNOW_ITEM_SRC → KNOW_ITEM.semantic_type` JOIN은
+> 존재하지 않는다 — `know_item`은 0행이고 `KNOW_ITEM_SRC`로 거르는 코드가 없다. 실제
+> 필터는 `d.team_id`이고 경계는 프로젝트가 아니라 **팀**이다. ② 예시로 든
+> `backend/services/createDB/vec_idx_setup.py`는 **1536차원 데모 스크립트라 지금 돌리면
+> 실패한다**(`vec_idx.embedding`은 `VECTOR(768)`). 현행 검색 경로로 예시를 바꿨다.
 
 ### 4.2 참조 무결성이 실제로 문제가 됐었다
-ChromaDB로 처음 구현했을 때는 `chunk_id`가 실제로 존재하는지 DB가 검증해주지 않았다(설계 문서에도 "Chroma는 참조 무결성 검사를 하지 않는다"고 명시돼 있었음). pgvector로 옮기면서 `vec_idx.chunk_id UNIQUE REFERENCES chunk(chunk_id) ON DELETE CASCADE`로 실FK를 걸었고, 그 결과 `chunk`가 삭제되면 관련 벡터도 자동으로 정리되고, 존재하지 않는 청크를 가리키는 벡터가 애초에 만들어지지 않는다.
+ChromaDB로 처음 구현했을 때는 `chunk_id`가 실제로 존재하는지 DB가 검증해주지 않았다(설계 문서에도 "Chroma는 참조 무결성 검사를 하지 않는다"고 명시돼 있었음). pgvector로 옮기면서 **같은 트랜잭션 안에서** 청크와 벡터를 함께 정리할 수 있게 됐다 — 별도 스토어를 쓰면 한쪽만 지워지는 상태가 구조적으로 가능하다.
+
+> ⚠ **2026-08-05 정정 — 실FK를 걸지 않았다.** 이 절은
+> `vec_idx.chunk_id UNIQUE REFERENCES chunk(chunk_id) ON DELETE CASCADE`로 FK를 걸었다고
+> 적고 있었으나, `DB/schema.sql`에 `REFERENCES`·`FOREIGN KEY`가 **0건**이다. `vec_idx`
+> 테이블 주석도 "FK 제약은 사용하지 않으며 chunk_id 존재 여부는 적재 코드에서 검증한다"고
+> 적는다. 삭제 정리는 CASCADE가 아니라 **애플리케이션의 명시적 DELETE 3개**가 한다 —
+> `vec_idx` → `chunk` → `doc_block` 순으로 지운다(`backend/db/repositories.py:912-930`).
+> 참조하는 쪽부터 지워야 중간에 실패해도 고아가 남지 않는다.
+>
+> pgvector를 고른 이유 자체는 유효하다(같은 트랜잭션·단일 인프라·JOIN). 다만 **"DB가
+> 대신 정리해 준다"고 믿으면 안 된다** — 새 삭제 경로를 만들 때 위 세 DELETE를 직접
+> 넣어야 한다.
 
 ### 4.3 인프라를 하나로 유지할 수 있다
 학기 프로젝트 규모의 소규모 팀에서 Docker Compose 서비스를 하나 줄이는 건 실질적인 이득이다. ChromaDB를 쓰던 시절엔 `chroma` 서비스·전용 포트(8001)·전용 볼륨(`chroma_data`)을 팀원 전원이 추가로 관리해야 했다(`docs/0_개발환경/DB_시작_가이드.md` 초기 버전 참고). pgvector는 이미 떠 있는 `db` 컨테이너에 `CREATE EXTENSION IF NOT EXISTS vector;` 한 줄만 추가하면 끝나서, 팀원이 새로 익혀야 할 운영 지식이 늘지 않는다.

@@ -170,7 +170,7 @@ choi_local/
 | `frontend/src/api/projects.ts` | 프로젝트/문서 기본 API만 제공 | `downloaded`, `search_ready`, 문서 처리 시작/상태 type과 함수, 업무 추출 결과 type과 실행 함수 추가 |
 | `frontend/src/pages/ProjectListPage/ProjectListPage.tsx` | `ACTIVE_PROJECTS`/`COMPLETED_PROJECTS`가 빈 하드코딩 배열, CTA가 다른 화면으로 이동 | `listMyProjects` 실제 호출, 검색/분류/선택, 선택 프로젝트의 기준 문서 화면으로 이동하도록 수정 |
 | `frontend/src/App.tsx` | 기준 문서 선택 route 없음 | 새 페이지 lazy import와 인증 route 추가 |
-| `frontend/src/routes.ts` | route 상수 없음 | `/projects/:projectId/select-source-document` 상수 추가 |
+| `frontend/src/routes.ts` | route 상수 없음 | `/tasks/distribution/documents` 상수 추가 (2026-08-05 정정 — `/projects/:projectId/select-source-document`로 적혀 있었으나 실제 경로는 이쪽이다. 기준 문서를 고르는 시점에는 아직 프로젝트가 없다) |
 | `frontend/src/api/opsAudit.ts` | 실제 응답에 선택적으로 존재할 수 있는 시간/업무명 type 누락 | `started_at`, `created_at`, `task_name` optional field 추가 |
 | `frontend/src/pages/OpsAuditPage/OpsAuditPage.tsx` | 두 timestamp가 모두 없으면 `timeAgo(undefined)` 가능 | 둘 다 없을 때 `-`를 표시하도록 guard 추가 |
 
@@ -212,7 +212,9 @@ production build에서 드러난 기존 타입 불일치를 안전하게 보완�
 | `RUNPOD_EXECUTION_TIMEOUT_MS` | Worker 실행 제한 | 기본 1,800,000ms |
 | `DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS` | 원문 URL 서명 유효시간 | 기본 900초 |
 | `OPENAI_API_KEY` | Query/Extraction Agent 호출 | 업무 추출 시 503 설정 오류 |
-| `OPENAI_MODEL` | Agent 모델 | 정확히 `gpt-5.6-sol`이 아니면 오류 |
+| `OPENAI_MODEL` | 최종 정리 Agent 모델 | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` 중 하나가 아니면 오류 (`service.py:90-97, :106`) |
+| `OPENAI_PLAN_MODEL` | 검색어 생성 Agent 모델 | 같은 3개 중 하나. 실제 설정은 `gpt-5.6-luna`(effort `low`) |
+| `OPENAI_SERVICE_TIER` | OpenAI 처리 등급 | 기본 `auto`. `priority`는 **요금이 2배**다 |
 | `OPENAI_REASONING_EFFORT` | Agent reasoning 수준 | 정확히 `xhigh`가 아니면 오류 |
 | `EMBEDDING_MODEL` | Django 결과/검색 계약 | `google/embeddinggemma-300m` 사용 |
 | `EMBEDDING_DEVICE` | 구성 표시 및 Worker 계약 | Worker에서는 정확히 `cuda` 필요 |
@@ -308,14 +310,21 @@ payload에 기록하지 않는다.
 
 1. Docling 문서를 JSON-compatible dict로 변환한다.
 2. 문서 body/group reference를 순회하여 원문 순서를 만든다.
-3. 본문 청킹 전에 표 reference와 `tables`를 복제 문서에서 제거한다.
+3. 원본 그대로 청킹하고, **표만으로 이뤄진 청크를 뒤에서 걸러낸다**(2026-08-05 정정 — 아래 주석 참고).
 4. EmbeddingGemma tokenizer를 `HuggingFaceTokenizer`에 주입한다.
 5. Docling `HybridChunker`로 본문을 청킹한다.
 6. contextualized text, raw text, source refs, page, headings/meta를 보존한다.
 7. 표 Chunk와 합친 뒤 문서 순서로 다시 정렬한다.
 
-표를 먼저 제거하는 이유는 본문 HybridChunker가 표 내용을 다시 포함하여 같은
-정보가 본문 Chunk와 표 Chunk에 중복되는 것을 막기 위해서다.
+> ⚠ **2026-08-05 정정 — 「표를 먼저 제거하고 청킹한다」는 2026-08-04에 뒤집혔다.**
+>
+> 원래 의도는 본문 HybridChunker가 표 내용을 다시 포함해 같은 정보가 중복되는 것을 막는
+> 것이었다. 그런데 표를 먼저 빼면 **표와 본문이 섞인 청크에서 본문까지 사라진다.** 실제
+> 문서에서 그 손실이 표가 한 번 더 들어가는 것보다 컸다.
+>
+> 그래서 지금은 원본 그대로 청킹하고, 만들어진 청크 중 **모든 source ref가 표인 것만**
+> 버린다(`runpod_worker/pipeline.py:398-401`). 표와 본문이 혼합된 청크는 **일부러
+> 남긴다** — 중복을 감수하는 쪽을 택했다.
 
 ### 8.5 표 구조 보존 청킹
 
@@ -340,7 +349,13 @@ payload에 기록하지 않는다.
 - 셀 구조가 없거나 값 행을 만들 수 없으면 오류다.
 
 제품 열/일반 행은 원자 단위다. 512 token을 넘는 원자 Chunk를 일부 잘라 구조를
-훼손하지 않으며, 상한 초과 오류를 반환해 데이터/설정을 명시적으로 수정하도록 했다.
+훼손하지 않는다.
+
+> ⚠ **2026-08-05 정정 — 상한 초과가 항상 오류는 아니다.** 초과한 청크에 **표가 걸렸으면
+> 그 청크만 빼고 문서는 살린다.** 무엇을 뺐는지는 결과의 `validation.dropped_chunks`에
+> 남는다(`runpod_worker/pipeline.py:499-507`). 표 한 줄 때문에 본문 수백 블록을 잃는 쪽이
+> 손실이 크기 때문이다. 표가 안 걸렸는데 넘쳤으면 우리 청킹 문제라 그때는 문서를
+> 실패시킨다. §8.8 출력 계약에도 `dropped_chunks`를 넣어야 한다.
 
 ### 8.6 결과 정렬·Block 연결
 
@@ -386,8 +401,14 @@ validation.table_diagnostics[]
 
 ### 9.1 서명 원문 URL
 
-`signed_download_url`은 `project_id`, `doc_id`, `revision`을 Django signing으로
-서명한다. URL에는 원문 저장 경로나 DB 정보가 없다.
+`signed_download_url`은 `doc_id`와 `revision`을 Django signing으로 서명한다.
+URL에는 원문 저장 경로나 DB 정보가 없다.
+
+> ⚠ **2026-08-05 정정 — 서명에 `project_id`는 들어가지 않는다**(`apps/projects/api_views.py:948-950`).
+> 문서는 등록 시점에 `proj_id`가 `NULL`이라 서명할 값이 없다. 권한 검사도 프로젝트
+> 소유권이 아니라 `_require_team`(팀 검사)이다 — 이 문서 §5.1·§14의 「프로젝트 소유자·
+> 프로젝트 소속 검사」 서술도 같은 이유로 틀렸다. 소유자 기준으로 걸면 팀장이 등록한
+> 문서를 팀원이 처리할 수 없게 된다.
 
 - salt: `halil.runpod.document-download.v1`
 - 공개 base URL: `PUBLIC_BACKEND_BASE_URL`
@@ -463,7 +484,7 @@ Vector를 임의 절단하거나 0으로 채우지 않는다. 개발 데이터�
 | Worker 결과 | DB 위치 |
 |---|---|
 | Block type/page/content/sequence | `doc_block` 기본 열 |
-| heading path | `doc_block.heading_path` |
+| heading path | **`chunk.heading_path`** — `doc_block.heading_path`는 Worker가 `[]`를 하드코딩해 항상 비어 있다(`runpod_worker/pipeline.py:542`, 2026-08-05 정정) |
 | source ref/provenance | `doc_block.src_locator` |
 | 원본 표 구조 | `doc_block.struct_content` |
 | Chunk embedding text | `chunk.search_text` |
@@ -768,8 +789,13 @@ breaking dependency 변경 가능성이 있는 `npm audit fix --force`를 실행
 
 다음은 숨기지 않고 현재 상태로 명시하는 항목이다.
 
-1. **Frontend 문서 처리/polling 미연결**: 함수와 backend API는 있으나 버튼과
-   progress UI가 없다.
+1. ~~**Frontend 문서 처리/polling 미연결**: 함수와 backend API는 있으나 버튼과
+   progress UI가 없다.~~
+   > ⚠ **2026-08-05 — 이 서술은 틀렸다.** 같은 문서 §13.2와 정면으로 충돌하고 있었다.
+   > **등록 한 번이 원문 수신 → 파싱 → 청킹 → 임베딩까지 간다.** 화면이 문서마다 순차로
+   > 진행하며 상태를 보여주고, 한 건이 실패해도 나머지는 계속한다. 그래서 문서 관리
+   > 화면에 "처리할 문서를 고르는 칸"이 **없다** — 나누면 「등록은 됐는데 못 쓰는 문서」를
+   > 사용자가 따로 관리해야 하기 때문에 의도적으로 합쳤다.
 2. **업무 추출 API는 동기**: 내부에서 4단계 Query Agent, RunPod `/runsync`, 최종
    Agent를 한 HTTP 요청에서 수행한다. 시간이 길어지면 별도 job 모델이 필요하다.
 3. **추출 결과 미영속화**: 현재 `task`, `task_source`, `assign_run`에 저장하지 않는다.
@@ -788,9 +814,11 @@ breaking dependency 변경 가능성이 있는 `npm audit fix --force`를 실행
    `text-embedding-3-small` demo 데이터 생성 코드가 남아 있다. 신규
    EmbeddingGemma 파이프라인과 호환되지 않으므로 실행하지 말아야 하며, 운영 DB는
    schema/migration과 문서 처리 API를 사용해야 한다.
-10. **revision 열 길이**: 기존 schema의 `doc.cur_revision`은 `VARCHAR(100)`이지만
-    `doc_block.revision`과 `vec_idx.revision`은 `VARCHAR(50)`이다. 긴 외부 revision이
-    들어오면 적재 실패할 수 있어 운영 전 길이 통일 migration이 필요하다.
+10. ~~**revision 열 길이**: `doc_block.revision`과 `vec_idx.revision`이 `VARCHAR(50)`이라
+    길이 통일 migration이 필요하다.~~ **해결됨(2026-08-05 확인)** — `doc.cur_revision`
+    (`DB/schema.sql:367`) · `doc_block.revision`(`:433`) · `doc_sync.revision`(`:448`) ·
+    `vec_idx.revision`(`:520`) 전부 `VARCHAR(100)`이다. Drive의 `headRevisionId`가 실측
+    51자라 50으로는 한 글자가 모자랐던 것을 2026-08-04에 넓혔다.
 11. **표 인식 규칙**: 제품형 표는 명세대로 정확히 하나의 `Model` header를
     식별조건으로 사용한다. 다른 언어/동의어를 임의 추측하지 않고 generic row로
     처리한다. 새로운 제품표 형식 지원은 명시적 규칙 합의 후 추가해야 한다.
