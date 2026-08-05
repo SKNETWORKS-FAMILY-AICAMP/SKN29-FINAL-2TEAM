@@ -1,5 +1,8 @@
 # DoclingDocument 정규화 전략
 
+> 이 문서는 2026-07-31까지의 프로토타입(`chunking_practice/normalizer/`) 기록이다.
+> 이후 구현은 별도 저장소의 RunPod Worker로 이전됐다. 현행은 [[시스템_전체_설계]]를 본다.
+
 ## 목적과 범위
 
 이 문서는 Google Drive에서 수집한 문서를 Docling + EasyOCR로 파싱한 뒤,

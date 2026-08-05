@@ -128,9 +128,9 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt public.*" -c "\dt mock_hr.*"
 ```
 
-`public` 39개 + `mock_hr` 8개 = **47개**가 보이면 정상이다.
+`public` 40개 + `mock_hr` 8개 = **48개**가 보이면 정상이다(2026-08-05 실측 정정 — 39+8=47로 적혀 있었다).
 
-스키마가 두 개인 이유는, HR 데이터(`org`·`person`·`sched` 등 8개)가 **고객사 HR 시스템의 것**이지 우리가 소유한 데이터가 아니기 때문이다. `mock_hr`로 나눠 두면 실수로 우리 테이블과 조인하는 일이 생기지 않는다([[HR_어댑터와_테넌트_경계]] §8). 그냥 `\dt`만 치면 `public` 39개만 나오니 놀라지 않아도 된다.
+스키마가 두 개인 이유는, HR 데이터(`org`·`person`·`sched` 등 8개)가 **고객사 HR 시스템의 것**이지 우리가 소유한 데이터가 아니기 때문이다. `mock_hr`로 나눠 두면 실수로 우리 테이블과 조인하는 일이 생기지 않는다([[HR_어댑터와_테넌트_경계]] §8). 그냥 `\dt`만 치면 `public` 40개만 나오니 놀라지 않아도 된다.
 
 GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
 
@@ -183,6 +183,18 @@ schema.sql → peopledb_mock.sql → team_overrides.sql
 ## 7. VEC_IDX(pgvector) 설정 (`vec_idx_setup.py`)
 
 벡터 검색은 별도 서비스 없이 `db`의 `vec_idx` 테이블(pgvector)로 처리한다. `pgvector/pgvector:pg17` 이미지가 `vector` 확장을 이미 포함하고 있어서, `schema.sql`의 `CREATE EXTENSION IF NOT EXISTS vector;`만으로 준비가 끝난다.
+
+> ⚠ **2026-08-05 — `vec_idx_setup.py`는 지금 실행하면 실패한다. 돌리지 말 것.**
+> 이 스크립트는 임베딩 차원이 1536이던 시절(OpenAI `text-embedding-3-small` 전제)의 데모다.
+> 2026-08-04에 `vec_idx.embedding`이 `VECTOR(768)`로 바뀌면서
+> (`google/embeddinggemma-300m`) 맞지 않는다.
+>
+> **벡터는 이제 문서 등록 흐름이 알아서 채운다** — 폴더를 고르고 문서를 등록하면 원문
+> 수신 → 파싱 → 청킹 → 임베딩까지 이어진다(`services/document_pipeline/`,
+> `runpod_worker/`). 별도로 실행할 준비 단계가 없다.
+>
+> 아래 절차는 이력으로 남긴다. `pgvector` 확장이 붙어 있는지만 확인하려면
+> `\dx`로 `vector`가 보이는지 보면 된다.
 
 `vec_idx_setup.py`는 컨테이너 안이 아니라 **호스트 Python**에서 실행하도록 작성되어 있다. DB FK 제약은 사용하지 않으며, 스크립트가 `chunk_id` 존재 여부를 확인한다. 데모용 `proj → doc → doc_block → chunk` 체인을 먼저 만든 뒤 벡터를 저장한다.
 
@@ -243,7 +255,7 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 | GET | `/api/invites/candidates/` | 초대 가능 인원 조회 | Bearer |
 | POST | `/api/invites/preview/` | 가입 전 초대 코드 확인 | 불필요 |
 | POST | `/api/invites/{inviteId}/revoke/` | 미수락 초대 취소 | Bearer |
-| — | `/api/ops/*` (20개) | 운영자 콘솔 전용. 로그인·현황·팀·계정·초대·커넥터·감사·정책 | **운영자 Bearer** |
+| — | `/api/ops/*` (**22개**) | 운영자 콘솔 전용. 로그인·현황·팀·계정·초대·커넥터·감사·정책 | **운영자 Bearer** |
 
 운영자 콘솔은 `/ops/login`으로 따로 들어가고 `user_account.is_admin = true`인 계정만 통과한다. 토큰도 일반 로그인과 다른 salt로 서명되며 2시간 유효하다. 엔드포인트별 상세는 [[운영자콘솔_api_처리]]에 있다.
 
