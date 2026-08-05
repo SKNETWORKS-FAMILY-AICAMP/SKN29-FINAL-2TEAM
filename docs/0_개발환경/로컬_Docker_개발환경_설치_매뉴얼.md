@@ -314,10 +314,15 @@ docker compose -f infra/docker/docker-compose.yml down -v
 
 > **2026-08-03 정정.** 이 목록의 맨 앞에 `Google Drive·Jira Connector`가 있었으나 **틀렸다.** 두 커넥터는 인가·토큰 갱신·조회·선택 저장·원문 다운로드까지 동작한다. `.env`에 자격증명이 있어야 하고, 값을 바꾸면 재시작이 아니라 **재생성**해야 반영된다(`up -d --force-recreate web`).
 
-- PDF/DOCX 파싱과 DocumentBlock
-- Project Knowledge Model
+> **2026-08-05 정정.** `PDF/DOCX 파싱과 DocumentBlock`, `업무량 계산`도 목록에서
+> 뺐다. 파싱·청킹·임베딩은 RunPod Worker 에서 동작하고(문서 등록이 여기까지
+> 이어진다), 업무량 계산은 대시보드가 쓴다. 업무 **추출**도 동작한다 —
+> 안 되는 것은 추출 결과의 영속화와 그 이후의 분배·추천이다.
+
+- Project Knowledge Model (`know_item`)
+- 추출 결과 영속화 (`task`)
 - AnalysisSnapshot·Feature Readiness
-- 업무량 계산·추천·검증 Agent
+- 업무 분배·추천·검증 Agent
 - 로그인 상태에서 비밀번호 변경
 - 서버 측 세션 강제 종료
 

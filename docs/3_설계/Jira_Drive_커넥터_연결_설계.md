@@ -285,15 +285,24 @@ Jira의 `description`·`lead`는 기본 응답에 없어 `expand=description,lea
 ### 저장 (구현됨)
 
 ```
-GET  /api/projects/                       내가 소유한 프로젝트
-POST /api/projects/                       DRAFT 생성. 소유자는 토큰에서 정한다
-GET  /api/projects/<proj_id>/sources/     저장된 소스
-PUT  /api/projects/<proj_id>/sources/     { source_type, external_source_ids, max_depth }
-GET  /api/projects/<proj_id>/documents/   등록된 문서
-PUT  /api/projects/<proj_id>/documents/   { folder_roles, file_roles }
+GET  /api/projects/                내가 소유한 프로젝트
+POST /api/projects/                DRAFT 생성. 소유자는 토큰에서 정한다
+GET  /api/team/folders/            팀이 읽을 Drive 폴더
+PUT  /api/team/folders/            { external_folder_ids, display_names, max_depth }
+GET  /api/projects/jira/           등록된 Jira 프로젝트
+PUT  /api/projects/jira/           { projects: [{ project_key, name }] }
+GET  /api/team/documents/          등록된 문서
+GET  /api/team/documents/new/      폴더 스캔 — 신규 파일과 사라진 문서
+POST /api/team/documents/register/ 고른 파일만 등록
+POST /api/team/documents/remove/   사라진 문서 내리기(파싱 산출물까지 삭제)
 ```
 
-`PUT /sources/`는 **그 종류의 소스를 통째로 교체한다.** 선택 화면은 항상 전체 선택 상태를 보내므로, 덧붙이면 화면에서 해제한 폴더가 남는다. 빈 목록은 전부 해제한다는 뜻이다. 계속 선택된 폴더의 `default_doc_role`은 지키고 넘어간다 — 폴더를 다시 저장했다고 역할 지정을 날릴 이유가 없다(탐색 깊이만 바꿔도 마찬가지다).
+> **2026-08-04 경로 이동.** 폴더와 문서는 프로젝트가 아니라 **팀**에 매달리므로
+> `/api/team/...` 아래로 옮겼다. 역할 지정 `PUT /documents/`는 없앴다. Jira 는
+> 프로젝트를 만드는 행위라 프로젝트 하위에 남았다. 자세한 것은
+> [[시스템_전체_설계]] §3.
+
+`PUT /team/folders/`와 `PUT /projects/jira/`는 **그 종류의 소스를 통째로 교체한다.** 선택 화면은 항상 전체 선택 상태를 보내므로, 덧붙이면 화면에서 해제한 폴더가 남는다. 빈 목록은 전부 해제한다는 뜻이다. 계속 선택된 폴더의 `default_doc_role`은 지키고 넘어간다 — 폴더를 다시 저장했다고 역할 지정을 날릴 이유가 없다(탐색 깊이만 바꿔도 마찬가지다).
 
 `max_depth`를 생략하면 1이다. 하위 폴더를 따라 내려가는 것은 명시적으로 요청해야 한다.
 
