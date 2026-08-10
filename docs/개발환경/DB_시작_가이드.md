@@ -81,7 +81,7 @@ skn29-final-2team-db-1   Up (healthy)   0.0.0.0:5432->5432/tcp
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 등 **40개**가 보이면 정상이다. `schema.sql`의 `CREATE TABLE`은 전부 **48개**지만, HR 8개(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)는 `mock_hr` 스키마에 있어 `\dt`(search_path = `public`)에는 나오지 않는다 — 그 8개는 `\dt mock_hr.*`로 따로 본다(§4.3·5장 참고).
+`user_account`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 등 **49개**가 보이면 정상이다(2026-08-11 Agent Platform 9개 추가 전에는 40개였다). `schema.sql`의 `CREATE TABLE`은 전부 **57개**지만, HR 8개(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)는 `mock_hr` 스키마에 있어 `\dt`(search_path = `public`)에는 나오지 않는다 — 그 8개는 `\dt mock_hr.*`로 따로 본다(§4.3·5장 참고).
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
@@ -243,6 +243,99 @@ BEGIN
   END IF;
   ALTER TABLE vec_idx ALTER COLUMN embedding TYPE VECTOR(768);
 END \$\$;
+CREATE TABLE IF NOT EXISTS agent (
+    agent_id          VARCHAR(5) PRIMARY KEY,
+    team_id           VARCHAR(5)   NOT NULL,
+    name              VARCHAR(100) NOT NULL,
+    description       VARCHAR(500),
+    instruction       TEXT         NOT NULL DEFAULT '',
+    model             VARCHAR(100),
+    reasoning_effort  VARCHAR(20),
+    max_iterations    INT          NOT NULL DEFAULT 10,
+    is_prebuilt       BOOLEAN      NOT NULL DEFAULT false,
+    status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    created_by        VARCHAR(5),
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS agent_tool (
+    agent_id  VARCHAR(5)   NOT NULL,
+    tool_ref  VARCHAR(100) NOT NULL,
+    PRIMARY KEY (agent_id, tool_ref)
+);
+CREATE TABLE IF NOT EXISTS mcp_server (
+    mcp_server_id    VARCHAR(5) PRIMARY KEY,
+    team_id          VARCHAR(5)   NOT NULL,
+    name             VARCHAR(100) NOT NULL,
+    endpoint_url     VARCHAR(500) NOT NULL,
+    auth_token_enc   TEXT,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'UNCHECKED',
+    last_checked_at  TIMESTAMPTZ,
+    created_by       VARCHAR(5)
+);
+CREATE TABLE IF NOT EXISTS mcp_tool (
+    mcp_tool_id    VARCHAR(5) PRIMARY KEY,
+    server_id      VARCHAR(5)   NOT NULL,
+    name           VARCHAR(200) NOT NULL,
+    description    TEXT,
+    input_schema   JSONB        NOT NULL DEFAULT '{}',
+    enabled        BOOLEAN      NOT NULL DEFAULT true,
+    discovered_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (server_id, name)
+);
+CREATE TABLE IF NOT EXISTS chat_session (
+    session_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    team_id     VARCHAR(5)   NOT NULL,
+    account_id  VARCHAR(5)   NOT NULL,
+    agent_id    VARCHAR(5)   NOT NULL,
+    proj_id     VARCHAR(5),
+    title       VARCHAR(200),
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_chat_session_account ON chat_session (account_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS chat_message (
+    message_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id  UUID        NOT NULL,
+    role        VARCHAR(20) NOT NULL,
+    content     JSONB       NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_chat_message_session ON chat_message (session_id, created_at);
+CREATE TABLE IF NOT EXISTS agent_run (
+    run_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id     UUID,
+    agent_id       VARCHAR(5)  NOT NULL,
+    parent_run_id  UUID,
+    status         VARCHAR(20) NOT NULL DEFAULT 'RUNNING',
+    iterations     INT         NOT NULL DEFAULT 0,
+    token_in       INT,
+    token_out      INT,
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS ix_agent_run_session ON agent_run (session_id, started_at);
+CREATE TABLE IF NOT EXISTS tool_call (
+    tool_call_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id         UUID         NOT NULL,
+    tool_ref       VARCHAR(100) NOT NULL,
+    input_summary  TEXT,
+    status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    error_code     VARCHAR(50),
+    duration_ms    INT,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_tool_call_run ON tool_call (run_id, created_at);
+CREATE TABLE IF NOT EXISTS doc_meta (
+    doc_id          VARCHAR(5) PRIMARY KEY,
+    summary         TEXT,
+    doc_type        VARCHAR(50),
+    keywords        TEXT[]      NOT NULL DEFAULT '{}',
+    summary_vec     VECTOR(768),
+    extracted_text  TEXT,
+    extract_status  VARCHAR(20) NOT NULL,
+    extracted_at    TIMESTAMPTZ
+);
 "
 ```
 
@@ -292,6 +385,7 @@ END \$\$;
 | `doc.doc_role` 재정의 + `ux_doc_primary_per_proj` 부분 유니크 인덱스 (2026-08-04) | 문서의 **종류**에서 **프로젝트와의 관계**로 바뀌었다(아래 `doc_role` 주석 참고). 기준 문서는 프로젝트당 하나이고, 화면이 라디오라 둘이 될 일이 없어 보여도 두 건이 되면 어느 것으로 업무를 뽑았는지 알 수 없어 조용히 틀리므로 인덱스로 강제한다 |
 | `doc_block`·`vec_idx`·`doc_sync`의 `revision` → `VARCHAR(100)` (2026-08-04) | `doc.cur_revision`만 2026-07-31에 넓혀 둬서, 원문은 받아지는데 파싱 결과를 적재할 때 터지는 상태였다. Drive의 `headRevisionId`가 실측 51자다 |
 | `vec_idx.embedding` → `VECTOR(768)` (2026-08-04) | 임베딩 모델이 `google/embeddinggemma-300m`(768차원)으로 확정됐다. 1536은 OpenAI `text-embedding-3-small` 전제라 맞지 않는다. 적재와 검색이 같은 모델을 써야 하므로 차원은 한 곳에서만 정해진다 |
+| Agent Platform 9개 테이블 추가 — `agent`·`agent_tool`·`mcp_server`·`mcp_tool`·`chat_session`·`chat_message`·`agent_run`·`tool_call`·`doc_meta` (2026-08-11) | 8/11 팀 회의에서 Chat 기반 Agent Platform으로 확정됐다(아키텍처 §3.1). 기존 테이블은 한 줄도 안 건드리는 순수 추가라, **안 돌려도 지금 화면은 멀쩡하고 새 Chat 화면만 안 뜬다.** PK가 두 종류인 것이 눈에 걸릴 텐데 의도한 것이다 — 이 스키마의 `VARCHAR(5)`는 접두사 2자 + 숫자 3자라 **테이블당 999행이 상한**이고(`backend/db/codes.py`), 대화 한 번에 수십 줄씩 쌓이는 `chat_message`·`agent_run`·`tool_call`은 데모 도중에도 그 선을 넘는다. 그래서 로그성 테이블은 `doc_block`·`chunk`·`vec_idx`와 같은 UUID를 쓰고, 사람이 만드는 설정(`agent`·`mcp_server`·`mcp_tool`)만 기존 코드 체계를 따른다. `agent_run.session_id`가 NULL 허용인 것도 의도다 — Harness의 `run_agent`는 대화에 종속되지 않는 순수 함수라 평가 스크립트나 에이전트 간 호출에는 `chat_session`이 아예 없다 — `docs/TO-BE/개발지시_1차_Harness.md` 단계 1 |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 
