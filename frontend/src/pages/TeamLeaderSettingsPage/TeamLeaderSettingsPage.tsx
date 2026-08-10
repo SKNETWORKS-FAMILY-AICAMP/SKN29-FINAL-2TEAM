@@ -266,10 +266,13 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
       onFooterClick={() => navigate('/dashboard')}
       embedded={embedded}
     >
-      <div className={styles.pageHeader}>
-        <h1>팀장 설정</h1>
-        <p>워크스페이스 연동, 팀원 관리 및 협업 추천 자동화 기준을 관리합니다.</p>
-      </div>
+      {/* Settings 허브 안에서는 허브가 이미 「설정」 h1을 갖고 있어 제목이 두 개 겹친다. */}
+      {!embedded && (
+        <div className={styles.pageHeader}>
+          <h1>팀장 설정</h1>
+          <p>워크스페이스 연동, 팀원 관리 및 협업 추천 자동화 기준을 관리합니다.</p>
+        </div>
+      )}
 
       <section id="profile" className={styles.sectionBlock}>
         <Card padding="lg">

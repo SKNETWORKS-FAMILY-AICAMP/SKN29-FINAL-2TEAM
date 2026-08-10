@@ -52,11 +52,12 @@
   min-width: 0;
 }
 
+/*
+  DEV 전용 역할 전환기. 예전에는 position:fixed 오른쪽 위였는데 AppShell
+  상단바의 아바타·로그아웃과 겹친다 — 탭 영역 안에 인라인으로 둔다.
+*/
 .devRoleSwitch {
-  position: fixed;
-  top: var(--space-4);
-  right: var(--space-6);
-  z-index: 50;
+  align-self: flex-end;
   display: flex;
   gap: 4px;
   background: var(--color-surface);

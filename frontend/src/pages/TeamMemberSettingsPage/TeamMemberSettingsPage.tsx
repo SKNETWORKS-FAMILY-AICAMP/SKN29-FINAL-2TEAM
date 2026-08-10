@@ -92,10 +92,13 @@ export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberS
       onFooterClick={() => navigate('/dashboard')}
       embedded={embedded}
     >
-      <div className={styles.pageHeader}>
-        <h1>팀원 설정</h1>
-        <p>내 소속 정보 관리 및 연동 계정 제어와 개별 알림 설정을 지정할 수 있습니다.</p>
-      </div>
+      {/* Settings 허브 안에서는 허브가 이미 「설정」 h1을 갖고 있어 제목이 두 개 겹친다. */}
+      {!embedded && (
+        <div className={styles.pageHeader}>
+          <h1>팀원 설정</h1>
+          <p>내 소속 정보 관리 및 연동 계정 제어와 개별 알림 설정을 지정할 수 있습니다.</p>
+        </div>
+      )}
 
       <section id="profile" className={styles.sectionBlock}>
         <Card padding="lg">
