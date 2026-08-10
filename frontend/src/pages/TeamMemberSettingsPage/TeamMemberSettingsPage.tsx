@@ -46,7 +46,12 @@ const DEFAULT_NOTIFICATION_STATE: Record<string, boolean> = {
   'system-notice': false,
 };
 
-export default function TeamMemberSettingsPage() {
+export interface TeamMemberSettingsPageProps {
+  /** Settings 허브의 「팀」 탭 안에서 렌더될 때는 자체 껍데기를 그리지 않는다. */
+  embedded?: boolean;
+}
+
+export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberSettingsPageProps = {}) {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -85,6 +90,7 @@ export default function TeamMemberSettingsPage() {
       navItems={NAV_ITEMS}
       footerLabel="팀원"
       onFooterClick={() => navigate('/dashboard')}
+      embedded={embedded}
     >
       <div className={styles.pageHeader}>
         <h1>팀원 설정</h1>

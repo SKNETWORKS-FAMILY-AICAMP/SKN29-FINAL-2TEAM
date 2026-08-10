@@ -17,6 +17,11 @@ export interface SettingsLayoutProps {
   footerLabel: string;
   onFooterClick?: () => void;
   children: ReactNode;
+  /**
+   * Settings 허브(탭 컨테이너) 안에 들어갈 때는 자체 TopNav·사이드바를 그리지
+   * 않는다 — 허브가 이미 AppShell과 탭을 갖고 있어서 껍데기가 두 겹이 된다.
+   */
+  embedded?: boolean;
 }
 
 function scrollToSection(id: string) {
@@ -29,7 +34,16 @@ function scrollToSection(id: string) {
  * and a footer identity row, plus a scrollable main content area for the
  * page's own header + section cards.
  */
-export function SettingsLayout({ subtitle, navItems, footerLabel, onFooterClick, children }: SettingsLayoutProps) {
+export function SettingsLayout({
+  subtitle,
+  navItems,
+  footerLabel,
+  onFooterClick,
+  children,
+  embedded = false,
+}: SettingsLayoutProps) {
+  if (embedded) return <>{children}</>;
+
   return (
     <div className={styles.page}>
       <TopNav tabs={MAIN_NAV_TABS} activeTo="/settings/team" />

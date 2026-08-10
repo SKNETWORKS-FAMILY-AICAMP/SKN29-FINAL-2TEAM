@@ -1,5 +1,55 @@
 .wrapper {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--color-heading);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.tabBar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 2px solid transparent;
+  color: var(--color-body);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tab:hover {
+  color: var(--color-heading);
+}
+
+.tabActive,
+.tabActive:hover {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.tabPanel {
+  min-width: 0;
 }
 
 .devRoleSwitch {

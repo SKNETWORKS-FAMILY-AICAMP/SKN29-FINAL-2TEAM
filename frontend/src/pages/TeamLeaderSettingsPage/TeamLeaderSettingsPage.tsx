@@ -60,7 +60,12 @@ const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
 
-export default function TeamLeaderSettingsPage() {
+export interface TeamLeaderSettingsPageProps {
+  /** Settings 허브의 「팀」 탭 안에서 렌더될 때는 자체 껍데기를 그리지 않는다. */
+  embedded?: boolean;
+}
+
+export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderSettingsPageProps = {}) {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -259,6 +264,7 @@ export default function TeamLeaderSettingsPage() {
       navItems={NAV_ITEMS}
       footerLabel="관리자"
       onFooterClick={() => navigate('/dashboard')}
+      embedded={embedded}
     >
       <div className={styles.pageHeader}>
         <h1>팀장 설정</h1>

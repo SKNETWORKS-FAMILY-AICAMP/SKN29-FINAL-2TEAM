@@ -7,16 +7,23 @@ import { PeopleDbConnectModal } from './PeopleDbConnectModal';
 import { CONNECTOR_DEFS as CONNECTORS } from '../../data/connectorDefs';
 import type { ConnectorStatus } from '../../utils/connectorStatus';
 import { loadSession } from '../../utils/session';
+import { PATHS } from '../../routes';
 import styles from './ConnectorOnboardingPage.module.css';
 
 /** 모든 커넥터 연결 상태는 서버가 원본이다. */
 const REAL_CONNECTOR_IDS = new Set(['people-db', 'google-drive', 'jira']);
 type OAuthConnectorId = 'google-drive' | 'jira';
 
-/** 연결이 끝난 커넥터가 이어지는 설정 화면. 연결만으로는 무엇을 읽을지 모른다. */
+/**
+ * 연결이 끝난 커넥터가 이어지는 설정 화면. 연결만으로는 무엇을 읽을지 모른다.
+ *
+ * Jira 프로젝트 선택은 8/11 확정으로 온보딩 필수 스텝에서 빠졌다 — Jira가
+ * 부하를 읽는 Connector이면서 이슈를 만드는 MCP이기도 해서, 읽기 범위는
+ * Settings > Connector에서 정한다(1_서비스구조_IA §2).
+ */
 const SETUP_STEP: Record<OAuthConnectorId, { label: string; path: string }> = {
-  'google-drive': { label: '폴더 선택하기', path: '/onboarding/folders' },
-  jira: { label: '프로젝트 선택하기', path: '/onboarding/jira-project' },
+  'google-drive': { label: '폴더 선택하기', path: PATHS.onboardingFolders },
+  jira: { label: '프로젝트 선택하기', path: PATHS.settingsConnectors },
 };
 
 export default function ConnectorOnboardingPage() {
