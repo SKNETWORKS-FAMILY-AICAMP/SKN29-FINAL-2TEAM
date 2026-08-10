@@ -54,10 +54,8 @@ src/
 | 메인 | `/dashboard` | main-dashboard.html |
 | 메인 | `/files/new` | new-files.html |
 | 메인 | `/projects` | project-list.html |
-| 메인 | `/workspace` | workspace.html |
-| 업무 분배 | `/tasks/distribution` | task-distribution.html |
-| 업무 분배 | `/tasks/recommendation` | task-recommendation.html |
-| 업무 분배 | `/tasks/result` | assignment-result.html |
+| 업무 분배 | `/tasks/distribution/documents` | primary-document-select.html |
+| 업무 분배 | `/tasks/extraction` | task-extraction.html |
 
 프로젝트와 People 화면은 기본 경로에서 `src/api`의 클라이언트를 사용한다. 현재 보호 API에는 React 인증 계약이 없어 인증 실패가 발생할 수 있으며, 이 경우 화면은 차단 사유와 명시적인 데모 진입 경로를 표시한다. 나머지 파일·분석·추천·승인 기능은 담당 API가 준비될 때까지 데모 또는 차단 상태다.
 

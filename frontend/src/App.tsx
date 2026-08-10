@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import { OpsLayout, OpsRouteGuard, RequireAuth, ToastProvider } from './components';
-import { ROUTES } from './routes';
+import { PATHS, ROUTES } from './routes';
 import styles from './App.module.css';
 
 const LandingPage = lazy(() => import('./pages/LandingPage/LandingPage'));
@@ -22,10 +22,6 @@ const PrimaryDocumentSelectPage = lazy(
   () => import('./pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage'),
 );
 const TaskExtractionPage = lazy(() => import('./pages/TaskExtractionPage/TaskExtractionPage'));
-const WorkspacePage = lazy(() => import('./pages/WorkspacePage/WorkspacePage'));
-const TaskDistributionPage = lazy(() => import('./pages/TaskDistributionPage/TaskDistributionPage'));
-const TaskRecommendationPage = lazy(() => import('./pages/TaskRecommendationPage/TaskRecommendationPage'));
-const AssignmentResultPage = lazy(() => import('./pages/AssignmentResultPage/AssignmentResultPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
 const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
 const OpsTeamsPage = lazy(() => import('./pages/OpsTeamsPage/OpsTeamsPage'));
@@ -69,40 +65,36 @@ function App() {
     <ToastProvider>
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/screens" element={<DevIndexPage />} />
-          <Route path="/dev/screens" element={<DevIndexPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/invite-code" element={<InviteCodePage />} />
-          <Route path="/find-password" element={<FindPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path={PATHS.landing} element={<LandingPage />} />
+          <Route path={PATHS.devIndex} element={<DevIndexPage />} />
+          <Route path={PATHS.devIndexAlias} element={<DevIndexPage />} />
+          <Route path={PATHS.login} element={<LoginPage />} />
+          <Route path={PATHS.signup} element={<SignupPage />} />
+          <Route path={PATHS.inviteCode} element={<InviteCodePage />} />
+          <Route path={PATHS.findPassword} element={<FindPasswordPage />} />
+          <Route path={PATHS.resetPassword} element={<ResetPasswordPage />} />
           {/* 아래는 로그인이 필요한 화면. 세션이 없으면 /login으로 보내고 원래 가려던 곳을 기억한다. */}
-          <Route path="/onboarding/connectors" element={<RequireAuth><ConnectorOnboardingPage /></RequireAuth>} />
-          <Route path="/onboarding/folders" element={<RequireAuth><FolderSelectPage /></RequireAuth>} />
-          <Route path="/onboarding/jira-project" element={<RequireAuth><JiraProjectSelectPage /></RequireAuth>} />
-          <Route path="/settings/team" element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          <Route path="/dashboard" element={<RequireAuth><MainDashboardPage /></RequireAuth>} />
-          <Route path="/files/new" element={<RequireAuth><NewFilesPage /></RequireAuth>} />
-          <Route path="/projects" element={<RequireAuth><ProjectListPage /></RequireAuth>} />
-          <Route path="/projects/:projectId" element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
-          <Route path="/tasks/distribution/documents" element={<RequireAuth><PrimaryDocumentSelectPage /></RequireAuth>} />
-          <Route path="/tasks/extraction" element={<RequireAuth><TaskExtractionPage /></RequireAuth>} />
-          <Route path="/workspace" element={<RequireAuth><WorkspacePage /></RequireAuth>} />
-          <Route path="/tasks/distribution" element={<RequireAuth><TaskDistributionPage /></RequireAuth>} />
-          <Route path="/tasks/recommendation" element={<RequireAuth><TaskRecommendationPage /></RequireAuth>} />
-          <Route path="/tasks/result" element={<RequireAuth><AssignmentResultPage /></RequireAuth>} />
-          <Route path="/ops/login" element={<OpsLoginPage />} />
+          <Route path={PATHS.onboardingConnectors} element={<RequireAuth><ConnectorOnboardingPage /></RequireAuth>} />
+          <Route path={PATHS.onboardingFolders} element={<RequireAuth><FolderSelectPage /></RequireAuth>} />
+          <Route path={PATHS.onboardingJiraProject} element={<RequireAuth><JiraProjectSelectPage /></RequireAuth>} />
+          <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.dashboard} element={<RequireAuth><MainDashboardPage /></RequireAuth>} />
+          <Route path={PATHS.filesNew} element={<RequireAuth><NewFilesPage /></RequireAuth>} />
+          <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
+          <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
+          <Route path={PATHS.taskDistributionDocuments} element={<RequireAuth><PrimaryDocumentSelectPage /></RequireAuth>} />
+          <Route path={PATHS.taskExtraction} element={<RequireAuth><TaskExtractionPage /></RequireAuth>} />
+          <Route path={PATHS.opsLogin} element={<OpsLoginPage />} />
           <Route element={<OpsRouteGuard />}>
-            <Route path="/ops" element={<OpsLayout />}>
+            <Route path={PATHS.ops} element={<OpsLayout />}>
               <Route index element={<OpsOverviewPage />} />
-              <Route path="teams" element={<OpsTeamsPage />} />
-              <Route path="accounts" element={<OpsAccountsPage />} />
-              <Route path="mappings" element={<OpsMappingsPage />} />
-              <Route path="connectors" element={<OpsConnectorsPage />} />
-              <Route path="audit" element={<OpsAuditPage />} />
-              <Route path="policies" element={<OpsPoliciesPage />} />
-              <Route path="*" element={<Navigate to="/ops" replace />} />
+              <Route path={PATHS.opsTeams} element={<OpsTeamsPage />} />
+              <Route path={PATHS.opsAccounts} element={<OpsAccountsPage />} />
+              <Route path={PATHS.opsMappings} element={<OpsMappingsPage />} />
+              <Route path={PATHS.opsConnectors} element={<OpsConnectorsPage />} />
+              <Route path={PATHS.opsAudit} element={<OpsAuditPage />} />
+              <Route path={PATHS.opsPolicies} element={<OpsPoliciesPage />} />
+              <Route path="*" element={<Navigate to={PATHS.ops} replace />} />
             </Route>
           </Route>
           <Route path="*" element={<LandingPage />} />
