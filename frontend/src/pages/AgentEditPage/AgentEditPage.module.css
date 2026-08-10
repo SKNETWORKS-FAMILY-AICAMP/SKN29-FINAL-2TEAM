@@ -1,0 +1,197 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 960px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--color-heading);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--color-muted);
+  line-height: 1.55;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.cardHead h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.cardHead p {
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.55;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.help {
+  font-size: 12px;
+  color: var(--color-placeholder);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.selectRow {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.toolList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.toolRowOn {
+  background: var(--color-primary-soft);
+}
+
+.toolText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolText strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.toolText span {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.toolSource {
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: #f1f5f9;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.noticeLink {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.actionsNote {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
