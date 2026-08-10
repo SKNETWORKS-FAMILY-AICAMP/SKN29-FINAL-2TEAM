@@ -22,6 +22,10 @@ const PrimaryDocumentSelectPage = lazy(
   () => import('./pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage'),
 );
 const TaskExtractionPage = lazy(() => import('./pages/TaskExtractionPage/TaskExtractionPage'));
+const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
+const AgentListPage = lazy(() => import('./pages/AgentListPage/AgentListPage'));
+const AgentEditPage = lazy(() => import('./pages/AgentEditPage/AgentEditPage'));
+const DocumentsPage = lazy(() => import('./pages/DocumentsPage/DocumentsPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
 const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
 const OpsTeamsPage = lazy(() => import('./pages/OpsTeamsPage/OpsTeamsPage'));
@@ -78,6 +82,15 @@ function App() {
           <Route path={PATHS.onboardingFolders} element={<RequireAuth><FolderSelectPage /></RequireAuth>} />
           <Route path={PATHS.onboardingJiraProject} element={<RequireAuth><JiraProjectSelectPage /></RequireAuth>} />
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.settingsMcp} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.settingsModel} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.settingsPermissions} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 G3까지 /dashboard 유지. */}
+          <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
+          <Route path={PATHS.agents} element={<RequireAuth><AgentListPage /></RequireAuth>} />
+          <Route path={PATHS.agentEdit} element={<RequireAuth><AgentEditPage /></RequireAuth>} />
+          <Route path={PATHS.documents} element={<RequireAuth><DocumentsPage /></RequireAuth>} />
           <Route path={PATHS.dashboard} element={<RequireAuth><MainDashboardPage /></RequireAuth>} />
           <Route path={PATHS.filesNew} element={<RequireAuth><NewFilesPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />

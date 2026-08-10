@@ -43,6 +43,9 @@ export type { SkillListProps } from './SkillList/SkillList';
 export { SettingsLayout } from './SettingsLayout/SettingsLayout';
 export type { SettingsLayoutProps, SettingsNavItem } from './SettingsLayout/SettingsLayout';
 
+export { AppShell } from './AppShell/AppShell';
+export type { AppShellProps } from './AppShell/AppShell';
+
 export { RequireAuth } from './RequireAuth/RequireAuth';
 export type { RequireAuthProps } from './RequireAuth/RequireAuth';
 

@@ -1,3 +1,5 @@
+import type { IconName } from './components/Icon/Icon';
+
 /**
  * 라우트 경로의 유일한 선언처. App.tsx는 문자열을 직접 쓰지 않고 여기의
  * PATHS를 참조한다 — 경로를 두 곳에 적어서 어긋나는 일을 막기 위함이다.
@@ -29,6 +31,18 @@ export const PATHS = {
   opsConnectors: '/ops/connectors',
   opsAudit: '/ops/audit',
   opsPolicies: '/ops/policies',
+
+  // --- TO-BE (Agent Platform) — 개발지시 2차 단계 A ---
+  chat: '/chat',
+  agents: '/agents',
+  agentEdit: '/agents/:agentId/edit',
+  agentNew: '/agents/new/edit',
+  /** 문서는 팀 소속이라 프로젝트로 좁히지 않는다. 경로는 PM 확정 대기(상수라 바꾸기 쉽다). */
+  documents: '/documents',
+  settingsConnectors: '/settings/connectors',
+  settingsMcp: '/settings/mcp',
+  settingsModel: '/settings/model',
+  settingsPermissions: '/settings/permissions',
 } as const;
 
 export interface RouteEntry {
@@ -51,9 +65,17 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.onboardingConnectors, label: '외부 서비스 연결', group: '온보딩' },
   { path: PATHS.onboardingFolders, label: '데이터 소스 설정', group: '온보딩' },
   { path: PATHS.onboardingJiraProject, label: 'Jira 프로젝트 선택', group: '온보딩' },
-  { path: PATHS.settingsTeam, label: '팀장 설정', group: '설정' },
+  { path: PATHS.chat, label: 'Chat (홈)', group: 'Agent Platform' },
+  { path: PATHS.agents, label: '에이전트 목록', group: 'Agent Platform' },
+  { path: PATHS.agentNew, label: '에이전트 만들기', group: 'Agent Platform' },
+  { path: PATHS.documents, label: '문서', group: 'Agent Platform' },
+  { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
+  { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
+  { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
+  { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
+  { path: PATHS.settingsPermissions, label: '설정 · 권한', group: '설정' },
   { path: PATHS.dashboard, label: '대시보드', group: '메인' },
-  { path: PATHS.filesNew, label: '문서 관리', group: '메인' },
+  { path: PATHS.filesNew, label: '문서 관리 (구)', group: '메인' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.taskDistributionDocuments, label: '신규 프로젝트 업무 추출', group: '업무 분배' },
   { path: PATHS.taskExtraction, label: '추출된 업무 확인', group: '업무 분배' },
@@ -71,10 +93,38 @@ export const ROUTES: RouteEntry[] = [
  * Convenience lookup for the top-nav tab bar shared across the main app
  * screens (dashboard/projects/connectors/settings). Maps the Figma nav
  * labels to the closest real route we have.
+ *
+ * 새 화면은 AppShell(사이드바)을 쓴다. 이 탭바는 아직 남아 있는 기존 화면
+ * (대시보드·문서 관리·프로젝트 상세 등)에서만 쓴다 — G3에서 정리된다.
  */
 export const MAIN_NAV_TABS = [
   { label: '대시보드', to: PATHS.dashboard },
   { label: '문서 관리', to: PATHS.filesNew },
   { label: '프로젝트', to: PATHS.projects },
   { label: '설정', to: PATHS.settingsTeam },
+];
+
+export interface AppNavItem {
+  label: string;
+  to: string;
+  icon: IconName;
+  /** 이 접두사 중 하나로 시작하는 경로면 활성으로 본다. */
+  match: string[];
+}
+
+/** AppShell 사이드바 4항목. Admin(Ops)은 별도 로그인이라 여기 없다. */
+export const APP_NAV_ITEMS: AppNavItem[] = [
+  { label: 'Chat', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
+  { label: '에이전트', to: PATHS.agents, icon: 'sparkles', match: [PATHS.agents] },
+  { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects, PATHS.documents] },
+  { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },
+];
+
+/** Settings 허브 탭. 8_화면개편_명세 §2 — SettingsPage를 탭 컨테이너로 개편. */
+export const SETTINGS_TABS = [
+  { label: '팀', to: PATHS.settingsTeam },
+  { label: 'Connector', to: PATHS.settingsConnectors },
+  { label: 'MCP', to: PATHS.settingsMcp },
+  { label: 'Model', to: PATHS.settingsModel },
+  { label: '권한', to: PATHS.settingsPermissions },
 ];
