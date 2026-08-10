@@ -11,8 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from .connection import database_connection
-from .errors import RecordNotFound
+from .errors import PermissionDenied, RecordNotFound
+from .repositories import _require_team
 
 
 class AgentRepository:
@@ -156,3 +159,173 @@ class ToolCallRepository:
                     """,
                     (status, error_code, duration_ms, tool_call_id),
                 )
+
+
+def _require_session(cursor, *, session_id: str, account_id: str) -> dict[str, Any]:
+    """이 대화가 내 팀 것인지 확인하고 대화 행을 돌려준다.
+
+    **소유자 검사가 아니라 팀 검사다.** 대화는 개인이 시작하지만 근거·결과는
+    팀의 문서와 Jira 에서 나오므로, 같은 팀이면 서로의 대화를 볼 수 있어야
+    한다 — 이 저장소의 다른 테이블과 같은 경계다.
+
+    `session_id` 가 UUID 형식이 아니면 psycopg 가 터진다. 화면이 이상한 값을
+    보냈을 때 500 대신 404 가 되도록 여기서 걸러 준다.
+    """
+
+    team_id = _require_team(cursor, account_id)
+    cursor.execute(
+        """
+        SELECT session_id::text, team_id, account_id, agent_id, proj_id, title,
+               created_at, updated_at
+        FROM chat_session
+        WHERE session_id::text = %s
+        """,
+        (session_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise RecordNotFound(f"존재하지 않는 대화입니다: {session_id}")
+    if row["team_id"] != team_id:
+        raise PermissionDenied("이 대화에 접근할 수 없습니다.")
+    return row
+
+
+class ChatSessionRepository:
+    @staticmethod
+    def create(*, account_id: str, agent_id: str, proj_id: str | None, title: str | None) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+
+                # 남의 팀 에이전트로 대화를 열지 못하게 한다. FK 가 없으니
+                # 이 검사가 유일한 자물쇠다.
+                cursor.execute("SELECT team_id FROM agent WHERE agent_id = %s", (agent_id,))
+                agent = cursor.fetchone()
+                if agent is None:
+                    raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
+                if agent["team_id"] != team_id:
+                    raise PermissionDenied("이 에이전트를 쓸 수 없습니다.")
+
+                cursor.execute(
+                    """
+                    INSERT INTO chat_session (team_id, account_id, agent_id, proj_id, title)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING session_id::text, team_id, account_id, agent_id, proj_id,
+                              title, created_at, updated_at
+                    """,
+                    (team_id, account_id, agent_id, proj_id, title),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT s.session_id::text, s.agent_id, s.proj_id, s.title,
+                           s.created_at, s.updated_at, a.name AS agent_name
+                    FROM chat_session AS s
+                    LEFT JOIN agent AS a ON a.agent_id = s.agent_id
+                    WHERE s.team_id = %s
+                    ORDER BY s.updated_at DESC
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def get(*, session_id: str, account_id: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                return _require_session(cursor, session_id=session_id, account_id=account_id)
+
+    @staticmethod
+    def delete(*, session_id: str, account_id: str) -> None:
+        """대화와 그 메시지를 지운다. agent_run·tool_call 은 남긴다.
+
+        실행 로그를 같이 지우면 평가의 모수가 사용자의 정리 행위에 따라 줄어든다
+        — "어제 100건 돌렸는데 오늘 60건"이 되면 아무것도 비교할 수 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_session(cursor, session_id=session_id, account_id=account_id)
+                cursor.execute(
+                    "DELETE FROM chat_message WHERE session_id::text = %s", (session_id,)
+                )
+                cursor.execute(
+                    "DELETE FROM chat_session WHERE session_id::text = %s", (session_id,)
+                )
+
+
+class ChatMessageRepository:
+    @staticmethod
+    def list_for_session(*, session_id: str, account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_session(cursor, session_id=session_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT message_id::text, role, content, created_at
+                    FROM chat_message
+                    WHERE session_id::text = %s
+                    ORDER BY created_at, message_id
+                    """,
+                    (session_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def append(*, session_id: str, account_id: str, role: str, content: dict[str, Any]) -> dict[str, Any]:
+        """메시지 한 줄. `content` 는 카드 구조 그대로다.
+
+        평문이 아니라 JSONB 인 이유는 답변에 근거·확인 요청·결과 카드가 함께
+        들어가기 때문이다. 화면이 다시 그릴 수 있어야 새로고침에 결과가 사라지지
+        않는다(8/11 확정 ④).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_session(cursor, session_id=session_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    INSERT INTO chat_message (session_id, role, content)
+                    VALUES (%s, %s, %s)
+                    RETURNING message_id::text, role, content, created_at
+                    """,
+                    (session_id, role, Jsonb(content)),
+                )
+                row = cursor.fetchone()
+                # 사이드바가 최신순으로 정렬한다. 갱신하지 않으면 방금 답한 대화가
+                # 목록 아래에 남는다.
+                cursor.execute(
+                    "UPDATE chat_session SET updated_at = now() WHERE session_id::text = %s",
+                    (session_id,),
+                )
+                return row
+
+    @staticmethod
+    def latest_pending_confirmation(*, session_id: str, account_id: str) -> dict[str, Any] | None:
+        """가장 최근 확인 카드. confirm 이 "무엇을 승인하는가"를 여기서 읽는다.
+
+        요청 body 로 받지 않는 이유는, 그러면 화면이 보낸 인자로 외부 시스템이
+        바뀌기 때문이다. 승인 대상은 **서버가 저장해 둔 것**이어야 한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_session(cursor, session_id=session_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT message_id::text, content
+                    FROM chat_message
+                    WHERE session_id::text = %s
+                      AND content->>'type' = 'awaiting_confirmation'
+                    ORDER BY created_at DESC, message_id DESC
+                    LIMIT 1
+                    """,
+                    (session_id,),
+                )
+                return cursor.fetchone()

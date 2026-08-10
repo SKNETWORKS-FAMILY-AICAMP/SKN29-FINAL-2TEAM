@@ -64,7 +64,10 @@ def run_agent(
     `context` 로 받는 것:
       session_id             대화에 속한 실행이면 그 id. 없으면 None
       parent_run_id          에이전트가 에이전트를 부른 경우의 상위 run
-      approved_tool_calls    사용자가 이미 승인한 tool_ref 목록(확인 게이트 재개)
+      account_id             요청자. workload_report 처럼 사람이 기준인 도구가 쓴다
+      approved_tool_calls    사용자가 승인한 tool_ref 목록(확인 게이트 재개)
+      messages               재개할 때 이어 붙일 이전 대화 상태
+      resume_tool_call       승인받은 그 호출. 모델을 다시 묻지 않고 이것부터 실행한다
 
     실패해도 agent_run 은 반드시 닫힌다. 평가가 세는 모수가 그 행이라
     RUNNING 으로 남은 행이 있으면 성공률이 조용히 틀린다.
@@ -72,6 +75,10 @@ def run_agent(
 
     context = context or {}
     approved = set(context.get("approved_tool_calls") or [])
+    # **승인한 호출을 그대로 실행한다.** 원래 입력으로 모델을 다시 물으면 재실행
+    # 때 다른 인자를 고를 수 있고, 그러면 사용자가 승인한 것과 실제로 실행되는
+    # 것이 달라진다 — 외부를 바꾸는 게이트에서 그건 승인이 아니다.
+    pending = context.get("resume_tool_call")
 
     agent = AgentRepository.get(agent_id)
     tools = registry.load_for_agent(agent_id=agent_id, team_id=agent["team_id"])
@@ -80,7 +87,9 @@ def run_agent(
     )
     call_model = model or _default_model(agent)
 
-    messages: list[dict[str, Any]] = [{"role": "user", "content": user_input}]
+    messages: list[dict[str, Any]] = list(context.get("messages") or []) or [
+        {"role": "user", "content": user_input}
+    ]
 
     with trace.run(
         agent_id=agent_id,
@@ -93,15 +102,21 @@ def run_agent(
         for step in range(1, limit + 1):
             yield {"type": EVENT_STAGE, "step": step, "total": limit, "label": "생각하는 중"}
 
-            decision = call_model(system, messages, list(tools.values()))
-            run_trace.count_iteration()
-            run_trace.count_tokens(token_in=decision.token_in, token_out=decision.token_out)
+            if pending is not None:
+                # 재개 턴. 모델을 부르지 않았으므로 assistant 턴도 다시 넣지 않는다 —
+                # `messages` 에 이미 그 턴이 들어 있다(멈출 때 같이 저장했다).
+                decision = ModelDecision(tool_calls=[pending])
+                pending = None
+            else:
+                decision = call_model(system, messages, list(tools.values()))
+                run_trace.count_iteration()
+                run_trace.count_tokens(token_in=decision.token_in, token_out=decision.token_out)
 
-            if not decision.tool_calls:
-                yield {"type": EVENT_RESULT, "text": decision.text or "", "complete": True}
-                return
+                if not decision.tool_calls:
+                    yield {"type": EVENT_RESULT, "text": decision.text or "", "complete": True}
+                    return
 
-            messages.append(_assistant_turn(decision))
+                messages.append(_assistant_turn(decision))
 
             for call in decision.tool_calls:
                 tool_ref = call["tool_ref"]
@@ -129,6 +144,9 @@ def run_agent(
                         "tool_ref": tool_ref,
                         "tool_name": tool.name,
                         "arguments": arguments,
+                        # 재개에 필요한 전부. 호출자가 이대로 저장했다가 승인 뒤
+                        # 그대로 돌려주면 같은 호출이 실행된다.
+                        "resume": {"messages": messages, "tool_call": call},
                     }
                     return
 

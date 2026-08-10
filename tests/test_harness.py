@@ -271,6 +271,58 @@ class RunAgentTests(SimpleTestCase):
         self.assertEqual(executed, [1])
         self.assertEqual(events[-1]["type"], "result")
 
+    def test_멈출_때_재개_정보를_함께_내보낸다(self, _get, load_tools, runs, calls):
+        load_tools.return_value = {"mcp:MT001": echo_tool("mcp:MT001", side_effect=True)}
+        runs.start.return_value = "RUN-1"
+        call = {"id": "c1", "tool_ref": "mcp:MT001", "arguments": {"issues": ["A"]}}
+        model = FakeModel([ModelDecision(tool_calls=[call])])
+
+        events = list(run_agent("AG001", "올려줘", model=model))
+        resume = events[-1]["resume"]
+
+        self.assertEqual(resume["tool_call"], call)
+        # 멈춘 시점의 대화가 그대로 들어 있어야 재개가 이어진다.
+        self.assertEqual(resume["messages"][0], {"role": "user", "content": "올려줘"})
+        self.assertEqual(resume["messages"][-1]["role"], "assistant")
+
+    def test_재개는_모델을_다시_묻지_않는다(self, _get, load_tools, runs, calls):
+        """승인한 것과 실제로 실행되는 것이 달라지지 않게 한다."""
+
+        executed = []
+        load_tools.return_value = {
+            "mcp:MT001": echo_tool(
+                "mcp:MT001",
+                side_effect=True,
+                handler=lambda **kwargs: executed.append(kwargs) or {"created": 3},
+            )
+        }
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        approved = {"id": "c1", "tool_ref": "mcp:MT001", "arguments": {"issues": ["A", "C"]}}
+        # 재개 턴에서는 모델을 부르지 않으므로, 모델은 그 뒤 한 번만 답한다.
+        model = FakeModel([ModelDecision(text="2건 등록했습니다.")])
+
+        events = list(
+            run_agent(
+                "AG001",
+                "",
+                {
+                    "messages": [
+                        {"role": "user", "content": "올려줘"},
+                        {"role": "assistant", "content": "", "tool_calls": [approved]},
+                    ],
+                    "resume_tool_call": approved,
+                    "approved_tool_calls": ["mcp:MT001"],
+                },
+                model=model,
+            )
+        )
+
+        self.assertEqual(executed[0]["issues"], ["A", "C"])
+        self.assertEqual(model.calls, 1, "재개 턴에서 모델을 다시 부르면 안 된다")
+        self.assertEqual(events[-1]["type"], "result")
+        self.assertNotIn("awaiting_confirmation", [e["type"] for e in events])
+
     def test_허용되지_않은_도구를_부르면_모델에게_돌려준다(self, _get, load_tools, runs, calls):
         load_tools.return_value = {"document_search": echo_tool()}
         runs.start.return_value = "RUN-1"
