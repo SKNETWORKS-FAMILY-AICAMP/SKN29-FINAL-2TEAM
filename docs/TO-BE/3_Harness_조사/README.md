@@ -13,7 +13,7 @@ Memory 구조 / Tool 호출 구조 / MCP 연결 / LLM·Model 연결 구조 / 여
 
 | Repo | 담당 | 마감 | 상태 | 정리 문서 |
 |---|---|---|---|---|
-| [Deep Agents From Scratch](https://github.com/braincrew-lab/deep-agents-from-scratch) — Planning·Context Offloading·Sub-Agent 위임의 '왜' | **지훈** | 월(8/10) 분석 → 화 공유 | 진행 중 | `deep-agents_분석.md` |
+| [Deep Agents From Scratch](https://github.com/langchain-ai/deep-agents-from-scratch) — Planning·Context Offloading·Sub-Agent 위임의 '왜' | **지훈** | 월(8/10) 분석 → 화 공유 | 완료 | `deep-agents_분석.md` |
 | [OpenCode](https://github.com/anomalyco/opencode) — 실제 제품의 Loop·Model 연결·Session·MCP | **준억** | 월(8/10) 분석 → 화 공유 | 진행 중 | `opencode_분석.md` |
 | [Claw Code](https://github.com/ultraworkers/claw-code) — 실행 흐름·Context·Tool·Agent Architecture | **주연** | 월(8/10) 분석 → 화 공유 | 진행 중 | `claw-code_분석.md` |
 
