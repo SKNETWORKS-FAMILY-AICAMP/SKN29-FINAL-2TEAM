@@ -137,7 +137,7 @@ choi_local/
 ├─ tests/
 │  └─ test_document_pipeline.py
 └─ docs/
-   └─ 12_Agent/                       # 이 기능 문서는 한자리에 모아 둔다
+   └─ Agent/                       # 이 기능 문서는 한자리에 모아 둔다
       ├─ Cloudflare_Tunnel_RunPod_연결_가이드.md
       ├─ RunPod_Serverless_배포_인수인계.md
       └─ RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md
@@ -195,9 +195,9 @@ production build에서 드러난 기존 타입 불일치를 안전하게 보완�
 | `runpod_worker/README.md` | Worker 입력 경계와 필수 환경변수 |
 | `frontend/src/pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage.tsx` | 프로젝트 문서 조회, 기준 문서 radio 선택, readiness 오류, 업무 추출 호출 |
 | `frontend/src/pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage.module.css` | 최소 화면 스타일과 모바일 배치 |
-| `docs/12_Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md` | AWS 없이 로컬 Django를 RunPod에 연결하는 발표용 실행 절차 |
+| `docs/Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md` | AWS 없이 로컬 Django를 RunPod에 연결하는 발표용 실행 절차 |
 | `tests/test_document_pipeline.py` | 표 청킹, 서명 URL, RunPod payload, 미처리 문서 오류 회귀 테스트 |
-| `docs/12_Agent/RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md` | 현재 병합의 전체 변경 및 신규 기능 명세 |
+| `docs/Agent/RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md` | 현재 병합의 전체 변경 및 신규 기능 명세 |
 
 ## 7. 환경변수와 오류 정책
 
@@ -783,7 +783,7 @@ breaking dependency 변경 가능성이 있는 `npm audit fix --force`를 실행
 10. frontend에서 프로젝트와 기준 문서를 선택하여 업무 추출을 실행한다.
 
 상세 명령과 `.env` 예시는
-`docs/12_Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md`에 분리해 두었다.
+`docs/Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md`에 분리해 두었다.
 
 ## 17. 현재 제약과 후속 구현 필요사항
 
@@ -884,8 +884,8 @@ services/document_pipeline/README.md
 ```text
 DB/migrations/2026-08-04_embeddinggemma_768.sql
 backend/db/document_pipeline.py
-docs/12_Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md
-docs/12_Agent/RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md
+docs/Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md
+docs/Agent/RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md
 frontend/src/pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage.module.css
 frontend/src/pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage.tsx
 runpod_worker/Dockerfile

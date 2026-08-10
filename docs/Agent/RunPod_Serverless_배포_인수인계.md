@@ -585,5 +585,5 @@ Worker 코드를 수정할 때는 다음 순서를 사용한다.
 | DB 적재·검색 | `backend/db/document_pipeline.py` |
 | Frontend API | `frontend/src/api/projects.ts` |
 | 최소 선택 화면 | `frontend/src/pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage.tsx` |
-| 전체 구현 변경 명세 | `docs/12_Agent/RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md` |
-| Cloudflare 실행 안내 | `docs/12_Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md` |
+| 전체 구현 변경 명세 | `docs/Agent/RunPod_구조보존청킹_멀티에이전트_병합_구현명세.md` |
+| Cloudflare 실행 안내 | `docs/Agent/Cloudflare_Tunnel_RunPod_연결_가이드.md` |

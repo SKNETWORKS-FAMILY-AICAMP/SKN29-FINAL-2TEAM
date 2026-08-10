@@ -36,4 +36,4 @@ Get-Content -Raw DB/peopleDB/peopledb_mock.sql |
 - React: `http://127.0.0.1:5173/`
 
 DB 설치·초기화 절차는
-`docs/0_개발환경/로컬_Docker_개발환경_설치_매뉴얼.md`를 따른다.
+`docs/개발환경/로컬_Docker_개발환경_설치_매뉴얼.md`를 따른다.

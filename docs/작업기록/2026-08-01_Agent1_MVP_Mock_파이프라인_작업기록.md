@@ -29,7 +29,7 @@
 - `services/agent1/demo.py`: 실제 GPT API 요청, 사용 모델명과 Tool 호출 이력을 보여주는 CLI
 - `services/agent1/fixtures/*.json`: Drive Chunk·Jira Issue·People Mock 입력
 - `tests/test_agent1_mvp.py`: 선택 Source, 종단 결과, 미지원 Connector 테스트
-- `docs/3_설계/Agent1_MVP_Mock_파이프라인.md`: 구조·사용자 시나리오·설명 스크립트
+- `docs/AS-IS/설계/Agent1_MVP_Mock_파이프라인.md`: 구조·사용자 시나리오·설명 스크립트
 
 ## 변경 이유와 전후
 
@@ -127,7 +127,7 @@
 
 - 작업 시작: 2026-08-03 10:59 KST
 - 작업 완료: 2026-08-03 11:01 KST
-- 변경 파일: `docs/10_발표자료/Agent1_흐름_PPT_요약.md`
+- 변경 파일: `docs/발표자료/Agent1_흐름_PPT_요약.md`
 - 수행 내용: PPT 담당자가 Agent1의 입력, LLM 판단, 선택적 Tool 호출, State 순환, 최종 결과를 한눈에 이해할 수 있도록 Mermaid 흐름도와 Tool 책임 표, 현재/이후 구분, 30초 발표 문장을 작성했다.
 - 변경 이유: 기존 설계 문서는 실행 방법과 코드 설명까지 포함해 발표 자료로 사용하기에는 정보량이 많았으므로, 실제 구현의 핵심과 아직 연결 전인 범위를 과장 없이 압축했다.
 - 검증: 현재 `StateGraph`, `tools_condition`, 세 Tool, Mock/실제 영역 구분을 코드 및 최신 main 설계 문서와 대조했다. Mermaid 문법과 Markdown 구조는 정적 검토했다.
@@ -137,7 +137,7 @@
 
 - 작업 시작: 2026-08-03 11:04 KST
 - 작업 완료: 2026-08-03 11:06 KST
-- 변경 파일: `docs/3_설계/Agent1_문서파싱청킹_연동_협의서.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_문서파싱청킹_연동_협의서.md`
 - 수행 내용: 현재 Fixture와 최신 청킹 설계의 `text/raw_text/contextualized_text` 의미 차이, 제안 Chunk JSON 계약, 전체 저장과 관련 문맥 선별의 역할 경계, Agent 입력 검증 기준, 담당자 확인 질문과 완료 조건을 정리했다.
 - 변경 이유: Agent가 특정 Hanwha 파일과 Docling 내부 구조에 종속되지 않고 검색 가능한 공통 Chunk를 입력받으려면 파싱·청킹 담당자와 필드 의미·식별자·근거 추적 계약을 먼저 확정해야 한다.
 - 변경 전후: 구두로 남아 있던 불확실성을 담당자가 체크하며 합의할 수 있는 문서와 전달 메시지로 전환했다. 필드명은 확정하지 않고 협의용 제안안으로 명시했다.
@@ -155,7 +155,7 @@
 
 - 작업 시작: 2026-08-03 11:20 KST
 - 작업 완료: 2026-08-03 11:26 KST
-- 변경 파일: `docs/3_설계/Agent1_설계흐름_파싱청킹팀_공유.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_설계흐름_파싱청킹팀_공유.md`
 - 수행 내용: 전체 서비스에서 Agent1의 위치, StateGraph 내부 흐름, Chunk 검색·문맥 확장·근거 연결, State와 Prompt의 차이, 현재 구현과 피드백 반영 목표, 표준 출력 및 파싱 팀 접점을 Mermaid와 예시로 정리했다.
 - 변경 이유: 파싱·청킹 담당자가 단순 필드 명세뿐 아니라 자신들의 출력이 Agent 내부에서 왜 필요하고 어떻게 사용되는지 이해할 수 있는 설계 흐름 자료가 필요했다.
 - 변경 전후: 연동 협의서는 필드 계약 중심으로 유지하고, 새 문서는 Agent 설계와 데이터 소비 흐름 중심으로 분리했다.
@@ -219,7 +219,7 @@
 
 - 작업 시작: 2026-08-03 12:13 KST
 - 작업 완료: 2026-08-03 12:15 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_피드백_확인요청.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_피드백_확인요청.md`
 - 수행 내용: 파싱·청킹 담당자의 구두 피드백을 `업무량 필수 Node`와 `Agent 주도 검색 요청`으로 재구성하고, Agent가 필요로 하는 다섯 정보 유형, 최소 요청·응답 예시, 역할 분담, 확인 질문 3개와 메신저용 요약을 작성했다.
 - 작성 기준: 상대가 요구한 “이 단계에서 Agent에 어떤 정보가 필요한지”에 먼저 답하고, 완성 명세를 강요하지 않도록 JSON은 조정 가능한 초안으로 표시했다. Agent 내부 수정과 Retriever 협의 범위를 분리했다.
 - 검증: 현재 Agent1 Graph·Prompt·호환 Chunk Adapter 및 기존 연동 협의서와 대조했다. 아직 합의되지 않은 Retriever 필드나 동작은 구현 완료로 표현하지 않았다.
@@ -229,7 +229,7 @@
 
 - 작업 시작: 2026-08-03 12:28 KST
 - 작업 완료: 2026-08-03 12:31 KST
-- 변경 파일: `docs/3_설계/Agent1_Retrieval_요구사항_2차안.md`, 기존 방향 확인 문서 상단 연결 안내
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retrieval_요구사항_2차안.md`, 기존 방향 확인 문서 상단 연결 안내
 - 수행 내용: 방향성 합의 이후 Agent1이 결정해야 할 검색 Intent를 `TASK_CORE`, `ASSIGNMENT_REQUIREMENT`, `EXECUTION_CONDITION` 세 가지로 정리하고, 요청·응답 초안, 다중 근거, 누락 필드 처리, 역할 분담과 구현 가능 여부 확인 항목을 작성했다.
 - 변경 이유: 기존 다섯 정보 유형은 판단 기준으로 유지하되 검색 요청 중복을 줄이고, 고정 Query·단일 근거·필수 공수로 인해 실제 업무가 누락되는 문제를 구현 전에 방지하기 위해서다.
 - 결정 범위: MVP는 세 Intent를 한 번씩 검색하며 누락 필드 재검색은 후속으로 둔다. 검색 수치값은 초기 설정이며 계약 상수로 확정하지 않았다.
@@ -240,7 +240,7 @@
 
 - 작업 시작: 2026-08-03 12:34 KST
 - 작업 완료: 2026-08-03 12:37 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_플로우차트.md`, Retrieval 2차안 연결 안내
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_플로우차트.md`, Retrieval 2차안 연결 안내
 - 수행 내용: 전체 분석 흐름, Agent-Retriever Sequence, 요청·응답 경계, 검색 결과·누락 데이터 처리, 현재와 목표 비교를 Mermaid로 정리했다.
 - 변경 이유: 방향성과 세부 요구사항에 동의한 파싱·청킹 담당자가 자신의 처리 구간, Agent 요청 시점, 반환 필드와 업무량 필수 Node의 관계를 한눈에 이해할 수 있는 그림을 요청했다.
 - 검증: Retrieval 2차안의 세 Intent, 다중 근거·누락 처리, 문맥 확장 책임과 일치하는지 대조했다. pgvector 연동은 목표 구조로 명시해 현재 구현과 구분했다.
@@ -271,7 +271,7 @@
 
 - 작업 시작: 2026-08-03 15:45 KST
 - 작업 완료: 2026-08-03 15:47 KST
-- 변경 파일: `docs/3_설계/Agent1_노드_엣지_데이터흐름_파싱청킹팀.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_노드_엣지_데이터흐름_파싱청킹팀.md`
 - 수행 내용: 목표 Agent1 Graph의 7개 Node 역할과 State 읽기·쓰기, 10개 Edge별 논리적 전달 정보, 요청·응답 JSON 예시를 정리했다.
 - 변경 이유: 파싱·청킹 팀이 전체 설계 설명이 아니라 각 Node의 책임과 Edge 통과 시 필요한 데이터 계약을 명확하게 요청했다.
 - 표현 기준: LangGraph Edge가 객체를 직접 운반하는 것이 아니라 공유 State를 통해 다음 Node가 필요한 값을 읽는 구조임을 먼저 설명했다. 파싱·청킹 팀 접점인 Edge 2·3·4를 별도로 강조했다.
@@ -291,7 +291,7 @@
 
 - 작업 시작: 2026-08-03 16:27 KST
 - 작업 완료: 2026-08-03 16:31 KST
-- 변경 파일: `docs/3_설계/Agent1_노드_엣지_데이터흐름_플로우차트.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_노드_엣지_데이터흐름_플로우차트.md`
 - 수행 내용: Node·Edge 명세를 기반으로 전체 영역 연결, 파싱·청킹 팀과 맞출 Edge 2·3·4, 실행 Sequence, 공통 State 변화, 확인 항목을 Mermaid 중심으로 시각화했다.
 - 변경 이유: 파싱·청킹 담당자가 각 Node의 역할뿐 아니라 Edge 사이에서 필요한 정보가 실제 실행 순서상 어떻게 이동하는지 플로우차트로 요청했다.
 - 반영 사항: 업무량 계산을 필수 Node로 표시하고, 추출 업무가 없을 때 후보 분석만 생략하며 업무량 결과는 유지하는 최신 방향을 반영했다.
@@ -301,7 +301,7 @@
 ## 2026-08-03 플로우차트 단독 이해 가능하도록 보강
 
 - 작업 시각: 2026-08-03 16:35 KST
-- 변경 파일: `docs/3_설계/Agent1_노드_엣지_데이터흐름_플로우차트.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_노드_엣지_데이터흐름_플로우차트.md`
 - 변경 이유: 기존 플로우차트만으로는 파싱·청킹 팀이 다른 명세서를 함께 읽어야 했고, `ChunkRecord`, `RetrievalRequest`, `RetrievalResult`의 최소 계약이 분산되어 있었다.
 - 반영 내용: 담당 경계, 최소 Chunk 필드와 `text`/`raw_text`/`contextualized_text` 관계, 요청·응답 JSON 예시, 세 Intent 의미를 문서 안에 추가했다.
 - 검증: 문서 단독으로 파싱·청킹 → Retriever → Agent1의 입력·출력과 빈 검색 결과 처리 규칙을 설명할 수 있는지 확인했다.
@@ -318,7 +318,7 @@
 ## 2026-08-03 Retriever·Vector DB 범위 문서 분리
 
 - 작업 시각: 2026-08-03 16:40 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
 - 수행 내용: Jira·People·업무량 계산 내용을 제외하고, 파싱·청킹 → Vector DB → Retriever → Agent1의 검색 요청·Chunk 계약·검색 응답만 별도 요약했다.
 - 변경 이유: 파싱·청킹 팀이 전체 Agent1 구조가 아니라 Vector DB에서 어떤 Chunk를 저장·검색·반환해야 하는지만 확인할 수 있도록 범위를 분리했다.
 - 검증: 문서 전체에 업무량·후보 분석을 제외한다는 범위를 명시하고, 세 Intent·최소 Chunk 필드·빈 결과 규칙을 포함했다.
@@ -326,7 +326,7 @@
 ## 2026-08-03 Retriever 연동 핵심 범위로 재정리
 
 - 작업 시각: 2026-08-03 16:45 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
 - 변경 이유: 파싱·청킹 팀 요청에 따라 Docling·Drive 등 선행 과정과 업무량·후보 분석을 제외하고 LangGraph에서 실제 Retriever가 필요한 단계만 남겼다.
 - 반영 내용: `plan_retrieval → retrieve_context → extract_tasks` 흐름, `RetrievalRequest`, `RetrievalResult`, 최소 Chunk 필드와 팀 확인 항목을 정리했다.
 - 검증: Retriever 호출 시점과 입력·출력 계약이 문서 첫 부분에서 바로 확인되며, 범위 밖 Jira·People 내용이 제거된 것을 확인했다.
@@ -334,7 +334,7 @@
 ## 2026-08-03 Retriever Node명·Chunk 필드 통합 반영
 
 - 작업 시각: 2026-08-03 16:50 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
 - 변경 이유: 파싱·청킹 팀이 실제 LangGraph Node명을 확인할 수 있어야 하고, 기존 `contextualized_text`와 `text` 계약이 현재 합의된 `text`·`raw_text` 기준과 충돌했다.
 - 반영 내용: `plan_retrieval`, `retrieve_context`, `extract_tasks` Node명과 역할을 명시하고, `text`는 검색·문맥용, `raw_text`는 원문 근거용으로 정리했다. `contextualized_text`는 현재 계약에서 제외하고 Adapter 변환 대상으로 표시했다.
 - 검증: 요청·응답 JSON, 최소 필드 표, 확인 항목이 모두 `text` + `raw_text` 기준으로 일치하는지 확인했다.
@@ -343,7 +343,7 @@
 
 - 작업 시작: 2026-08-03 16:51 KST
 - 작업 완료: 2026-08-03 16:57 KST
-- 최신 기준 파일: `docs/3_설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
+- 최신 기준 파일: `docs/AS-IS/설계/Agent1_Retriever_VectorDB_연동_파싱청킹팀_요약.md`
 - 피드백 핵심: Agent1은 사용자의 자유 요청을 분석해 플로우를 정하는 Agent가 아니라 고정된 업무 추출 플로우를 실행한다. 업무 추출 Agent가 현재 문서 정보의 부족을 판단하면 Retriever Tool을 호출하고, 새 Chunk를 받은 뒤 다시 판단하는 루프가 필요하다.
 - 변경 전: `plan_retrieval → retrieve_context → extract_tasks`의 단발 Retrieval 구조와 사용자 요청 기반 동적 Query 생성으로 문서화했다.
 - 변경 후: `extract_tasks_agent ↔ document_search_tools` Tool 루프로 수정했다. Query는 사용자 자유 요청이 아니라 현재 부족한 업무 정보에 맞춰 생성하며, 검색 종료 조건·검색 예산·빈 결과·누락 필드 처리를 포함했다.
@@ -356,7 +356,7 @@
 ## 2026-08-03 파싱·청킹 팀 최종 공유 문서 단일화
 
 - 작업 시각: 2026-08-03 17:05 KST
-- 최신 공유 파일: `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
+- 최신 공유 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
 - 수행 내용: 파싱·청킹 팀이 확인해야 할 `extract_tasks_agent ↔ document_search_tools` 위치, Tool 입력·출력, `text/raw_text` 계약, 반복 종료 기준, 확인 질문만 하나의 문서로 간추렸다.
 - 제거한 중간 문서: Retrieval 2차안, 초기 피드백 확인서, 기존 Retriever 플로우차트, Node·Edge 명세·플로우차트, 초기 파싱팀 설계 공유, 상세 VectorDB 요약본.
 - 제거 이유: `plan_retrieval`, 단발 `retrieve_context`, 사용자 요청 기반 Query 등 폐기된 방향이 여러 문서에 남아 최신 기준과 혼동될 가능성이 컸다.
@@ -367,7 +367,7 @@
 ## 2026-08-03 파싱·청킹 팀 피드백 — Agent1 전체 워크플로우 추가
 
 - 피드백 시각: 2026-08-03 17:07 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
 - 피드백 내용: Retriever 접점뿐 아니라 Agent1 전체 워크플로우와 각 Node명을 함께 보여달라는 요청을 받았다.
 - 반영 내용: `START → extract_tasks_agent ↔ document_search_tools → calculate_workloads → route_after_analysis → analyze_candidates/finalize → END` 전체 Mermaid와 Node 역할 표를 문서 앞부분에 추가했다.
 - 표현 기준: 전체 흐름은 고정이고, Agent 판단은 업무 추출 중 Retriever Tool 호출·반복 여부에만 들어간다는 경계를 명시했다.
@@ -377,7 +377,7 @@
 
 - 작업 시작: 2026-08-03 17:14 KST
 - 작업 완료: 2026-08-03 17:23 KST
-- 변경 파일: `services/agent1/graph.py`, `prompts.py`, `tools.py`, `service.py`, `tests/test_agent1_mvp.py`, `docs/3_설계/Agent1_MVP_Mock_파이프라인.md`, `PROJECT_CONTEXT.md`
+- 변경 파일: `services/agent1/graph.py`, `prompts.py`, `tools.py`, `service.py`, `tests/test_agent1_mvp.py`, `docs/AS-IS/설계/Agent1_MVP_Mock_파이프라인.md`, `PROJECT_CONTEXT.md`
 - 변경 이유: 문서에는 업무량 필수 Node와 고정 업무 추출 흐름을 반영했지만 실제 Graph는 여전히 LLM이 세 분석 Tool의 사용 여부를 선택하는 구조였다.
 - 변경 전: `START → agent ↔ tools → finalize`, LLM이 업무량 Tool을 생략할 수 있었다.
 - 변경 후: `START → extract_tasks_agent ↔ task_tools → calculate_workloads → analyze_candidates/finalize → END`로 변경했다. 업무량은 항상 실행하고 후보 분석은 추출 업무가 있을 때만 실행한다.
@@ -389,7 +389,7 @@
 ## 2026-08-03 현재 Graph 기준 파싱·청킹 팀 문서 재작성
 
 - 작업 시각: 2026-08-03 17:27 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
 - 수행 내용: 방금 실제 반영한 `extract_tasks_agent ↔ task_tools → calculate_workloads → analyze_candidates/finalize` Graph와 앞으로 추가할 `document_search_tools/search_document_chunks` 분기를 한 문서에서 구분했다.
 - 변경 이유: 기존 공유 문서는 Retriever Tool 루프를 목표 구조로만 표시해 현재 구현된 `task_tools`와 업무량 필수 Node 상태를 구분하기 어려웠다.
 - 계약 내용: Retriever Tool 입력, `text/raw_text` 기반 Chunk 출력, 빈 결과와 시스템 오류 구분, 반복 검색 종료 조건을 명시했다.
@@ -398,7 +398,7 @@
 ## 2026-08-03 Retriever 초기 검색 범위 명확화
 
 - 작업 시각: 2026-08-03 17:32 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
 - 확인 내용: Vector DB는 선택 문서 범위의 Chunk를 검색 대상으로 비교할 수 있지만, Agent1에 전체 Chunk를 전달하지 않는다.
 - 반영 내용: 초기에는 `TASK_CORE` Query로 Top-K Seed와 요청한 주변 문맥만 받고, 추가 정보가 부족할 때만 다른 Intent로 반복 검색하도록 명시했다.
 - 현재/목표 구분: 현재 Mock은 전체 Chunk를 State에 적재한 뒤 로컬 Selector로 Prompt 입력을 줄이는 임시 구조이며, 실제 연동에서는 Retriever 반환 Chunk만 `context_chunks`에 누적한다.
@@ -407,7 +407,7 @@
 ## 2026-08-03 Agent1 실제 사용 기준 문서 정보 최소화
 
 - 작업 시각: 2026-08-03 17:38 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
 - 판단 기준: 현재 `ExtractedTask`와 후보 계산 코드가 실제 사용하는 문서 정보만 Retriever 우선 요구사항으로 선정했다.
 - 필수 정보: 명시적인 수행 업무와 원문 근거. 둘 중 하나라도 없으면 업무를 생성하지 않는다.
 - 조건부 정보: 담당 역할, 기술·스킬, 예상 공수. 업무 발견 후 부족할 때만 추가 검색한다.
@@ -418,7 +418,7 @@
 ## 2026-08-03 Retriever 문서 정보 범위 재검토
 
 - 작업 시각: 2026-08-03 17:46 KST
-- 변경 파일: `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
+- 변경 파일: `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`
 - 재검토 이유: 앞선 최소화 판단이 현재 후보 점수 코드만 기준으로 삼아, Agent1 결과를 이어받는 업무 분배·검증 단계의 정보 요구를 충분히 반영하지 못했다.
 - 변경 전: 일정, 우선순위, 의존성, 리스크, 완료 기준을 현재 MVP 필수 검색 범위에서 제외했다.
 - 변경 후: 기간·마감일과 우선순위는 배정용 조건부 정보로, 의존성·제약·리스크·완료 기준·산출물은 관련 Chunk에서 보존할 정보로 복원했다.
@@ -429,7 +429,7 @@
 
 - 작업 시작: 2026-08-03 17:40 KST
 - 작업 완료: 2026-08-03 17:42 KST
-- 변경 파일: `services/agent1/state.py`, `tools.py`, `prompts.py`, `tests/test_agent1_mvp.py`, `docs/3_설계/Agent1_MVP_Mock_파이프라인.md`, `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`, `PROJECT_CONTEXT.md`
+- 변경 파일: `services/agent1/state.py`, `tools.py`, `prompts.py`, `tests/test_agent1_mvp.py`, `docs/AS-IS/설계/Agent1_MVP_Mock_파이프라인.md`, `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`, `PROJECT_CONTEXT.md`
 - 변경 이유: Retriever 계약 문서에 복원한 일정·우선순위·의존성·제약·리스크·완료 기준이 실제 Task Schema와 Prompt에는 없어 결과에서 유실되는 상태였다.
 - 변경 전: 역할·스킬·공수는 필수여서 하나라도 문서에 없으면 명시적인 업무도 저장하기 어려웠고, 일정·우선순위 등의 보존 필드와 누락 상태가 없었다.
 - 변경 후: 명시적인 업무와 원문 근거를 Task 생성 기준으로 두고, 배정 문맥은 선택형으로 보존한다. Tool이 `missing_fields`를 재계산하며 후보 분석은 `READY/LIMITED/BLOCKED` 상태를 반환한다.
@@ -441,7 +441,7 @@
 
 - 작업 시작: 2026-08-03 17:50 KST
 - 작업 완료: 2026-08-03 18:02 KST
-- 변경 파일: `services/agent1/context_selector.py`, `service.py`, `tests/test_agent1_mvp.py`, `docs/3_설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`, `docs/3_설계/Agent1_MVP_Mock_파이프라인.md`, `docs/7_참고자료/Agent1_기초_학습노트.md`, `PROJECT_CONTEXT.md`
+- 변경 파일: `services/agent1/context_selector.py`, `service.py`, `tests/test_agent1_mvp.py`, `docs/AS-IS/설계/Agent1_Retriever_연동_파싱청킹팀_최종공유.md`, `docs/AS-IS/설계/Agent1_MVP_Mock_파이프라인.md`, `docs/참고자료/Agent1_기초_학습노트.md`, `PROJECT_CONTEXT.md`
 - 피드백: 검색을 하려면 Agent가 기준을 구성해야 하고, 검색 단계는 그 기준에 맞는 문서를 얼마나 잘 찾는지 평가해야 한다.
 - 확인 결과: 방향은 타당하다. 기존 문서에는 Intent와 입출력 필드는 있었지만 Query 구체화, 초기 검색 범위의 커버리지, Agent·Retriever 책임 경계, 검색 품질 평가 방법이 부족했다.
 - 코드 변경 전: 임시 Selector가 사용자 자유 요청과 업무 용어를 합쳐 초기 문맥을 선택했다.
@@ -468,13 +468,13 @@
 ## 2026-08-03 멘토 보고용 진행 정리
 
 - 작업 시각: 2026-08-03 18:45 KST
-- 생성 파일: `docs/10_발표자료/Agent1_멘토님_진행보고_2026-08-03.md`
+- 생성 파일: `docs/발표자료/Agent1_멘토님_진행보고_2026-08-03.md`
 - 목적: 멘토·파싱청킹 팀 피드백, 실제 코드 변경, 협업 내역, 완료·미구현 범위, 검증 결과와 확인 질문을 한 문서에서 설명할 수 있도록 정리했다.
 - 표현 원칙: Retriever 연동 기준 설계와 실제 반복 Tool 구현을 구분하고, Agent2·복수 근거·실데이터 업무량 계산은 미구현으로 명시했다.
 
 ## 2026-08-03 멘토 보고 핵심 요약 추가
 
-- 생성 파일: `docs/10_발표자료/Agent1_멘토님_핵심요약_2026-08-03.md`
+- 생성 파일: `docs/발표자료/Agent1_멘토님_핵심요약_2026-08-03.md`
 - 목적: 상세 작업기록과 별도로 멘토님께 현재 역할, 구현 완료 범위, 미구현 범위, 확인 질문을 30초 내 설명할 수 있는 문서 제공
 
 ## 2026-08-04 main 통합 및 Agent1 중간발표 AS-IS 재정의
@@ -484,7 +484,7 @@
 - main 통합: `84c1ed6`에서 `24c31e0`으로 fast-forward. 기존 수정·신규 Agent1 파일은 보존됐다.
 - main 영향: 실제 Jira 미완료 이슈 수집과 기간별 결정론적 업무량 계산 `services/workload/calculator.py`가 추가됐다. 원빈님 노트북의 `calculate_workloads`는 실제 부하 계산이 아닌 Placeholder이므로 교체 대상이다.
 - 멘토 피드백 재확인: `RuleBasedExtractionAgent`, `MockQueryAgent`, 고정 업무 결과, 규칙 기반 Query Fallback은 제거·재검토 대상이다. 샘플 문서와 테스트 Chunk는 실제 판단을 재현하는 Fixture로 유지할 수 있다.
-- 생성 파일: `docs/3_설계/에이전트1관련/Agent1_중간발표_ASIS_정리.md`
+- 생성 파일: `docs/AS-IS/설계/에이전트1관련/Agent1_중간발표_ASIS_정리.md`
 - AS-IS 변경 전: 전달 노트북 전체 Graph에 Mock Agent, InMemory 검색, 가짜 업무량, 후보 Placeholder가 함께 있어 발표에서 구현 범위가 불명확했다.
 - AS-IS 변경 후: 중간발표 Agent1을 `대표 요청 문서 → 추출 Agent ↔ Query 생성 Agent·Retriever → 근거 기반 Task`로 한정하고, Mock·Placeholder와 실연동 확인 항목을 분리했다.
 - 검증 방법: 8월 3일 멘토링 STT의 코드 리뷰 구간과 전달받은 명세·프롬프트·다이어그램·노트북을 대조했다.
@@ -495,7 +495,7 @@
 
 - 작업 시작: 2026-08-04 10:10 KST
 - 작업 완료: 2026-08-04 10:25 KST
-- 생성 파일: `docs/3_설계/에이전트1관련/Agent1_ASIS_점검과_TOBE_개선후보.md`
+- 생성 파일: `docs/AS-IS/설계/에이전트1관련/Agent1_ASIS_점검과_TOBE_개선후보.md`
 - 점검 범위: 원빈님 명세·프롬프트·다이어그램·노트북, 멘토링 STT 코드 리뷰, 최신 main의 업무량 계약과 계산 모듈
 - 핵심 문제 1: 문서 전체 기준 Stage를 한 번씩 진행해 여러 업무 후보의 역할·공수·일정 근거가 서로 섞일 수 있다.
 - 핵심 문제 2: RetrievedChunk가 검색 당시 Intent 하나에 묶여, 한 Chunk가 여러 필드를 지지해도 다른 단계에서 재사용하기 어렵다.
@@ -514,7 +514,7 @@
 - STT 근거: 멘토는 Rule-based·Mock Agent와 하드코딩 결과를 제거하라고 했지만, 실제 샘플 문서를 넣어 판단과 검색을 테스트해야 한다고도 했다.
 - 변경 전: 샘플 요청 문서와 테스트 Chunk를 포괄적으로 유지 대상으로 표현했다.
 - 변경 후: 대표 요청 문서·생성 Chunk·예상 결과는 테스트 Fixture로 조건부 보존하고, 노트북 내장 `SAMPLE_CHUNKS`와 Mock Provider는 실제 연동 경로에서 제거·격리한다. 검색 실패 시 Fixture Fallback은 허용하지 않는다.
-- 변경 파일: `docs/3_설계/에이전트1관련/Agent1_중간발표_ASIS_정리.md`
+- 변경 파일: `docs/AS-IS/설계/에이전트1관련/Agent1_중간발표_ASIS_정리.md`
 - 검증: 원빈님 노트북의 `SAMPLE_CHUNKS`, `InMemoryVectorRetriever`, 기존 `services/agent1`의 Fixture Provider 사용 위치를 확인했다.
 - 바로 다음 작업: 실제 데모가 Fixture 경로인지 Connector·Retriever 경로인지 실행 설정과 진입점에서 구분한다.
 
@@ -531,7 +531,7 @@
 
 - 작업 시각: 2026-08-04 10:50 KST
 - 사용자 결정: 다른 담당자와 소통해야 하는 항목은 우선 제외하고, 현재 로컬 자료만으로 확정 가능한 AS-IS·TO-BE 정리를 먼저 진행한다.
-- 생성 파일: `docs/3_설계/에이전트1관련/Agent1_내부확정안과_외부확인대기.md`
+- 생성 파일: `docs/AS-IS/설계/에이전트1관련/Agent1_내부확정안과_외부확인대기.md`
 - 내부 확정: AS-IS 목적·노드·DTO·분기, Mock 제거 기준, 최종 Stage 종료 보장, 중복 Query 처리, 검증 표현, 필수 근거 보존, Placeholder 제외를 정리했다.
 - 내부 TO-BE: 업무 후보별 근거 상태, 필드별 근거 연결, Evidence Validator 분리, 검색 수렴도 기반 종료로 제한했다.
 - 외부 확인 대기: 실제 Retriever DTO, Chunk 최종 필드명, Retriever 준비 시점, 원빈님 추가 코드, PPT 최종 표현은 현재 결론과 분리했다.
@@ -548,7 +548,7 @@
 - 중복 Query Fallback: 하드코딩은 사실이지만 Fallback 자체를 전면 금지할 근거는 없다. 재생성 횟수와 종료 상태가 없는 것이 핵심 문제로 정정했다.
 - 입력 검증: 색인 완료를 확인한다는 문서와 ID 포함 관계만 확인하는 코드의 불일치는 확정했다.
 - 추가 발견: `QueryPlan.context_expansion`은 정의돼 있지만 `vector_search_node`에서 Retriever에 전달되지 않아 현재 노트북에서는 동작하지 않는다.
-- 변경 파일: `docs/3_설계/에이전트1관련/Agent1_내부확정안과_외부확인대기.md`
+- 변경 파일: `docs/AS-IS/설계/에이전트1관련/Agent1_내부확정안과_외부확인대기.md`
 - 코드 변경: 없음.
 
 ### 2026-08-04 Canva 중간발표 슬라이드 반영
@@ -563,7 +563,7 @@
 
 - 작업 시작: 2026-08-04 10:40 KST
 - 작업 완료: 2026-08-04 10:46 KST
-- 변경 파일: `docs/7_참고자료/Agent1_기초_학습노트.md`
+- 변경 파일: `docs/참고자료/Agent1_기초_학습노트.md`
 - 변경 이유: 기존 학습 노트가 과거 `services/agent1` 구조와 새 두 Agent·Retriever 설계를 함께 설명해 실제 구현, 중간발표 AS-IS, TO-BE가 혼재돼 있었다.
 - 변경 전: 업무 추출 Tool과 업무량 계산 중심의 기존 구조, 앞으로 만들 Retriever를 설명했다.
 - 변경 후: 세 상태를 먼저 분리하고, 최신 AS-IS Graph의 Node·Edge·데이터 흐름, 문서 범위 검증의 실제 범위, QueryPlan 옵션, 미구현 `context_expansion`, Mock과 Fixture 경계, TO-BE 우선순위를 학습 순서로 재구성했다.
@@ -576,7 +576,7 @@
 
 - 작업 시작: 2026-08-04 10:50 KST
 - 작업 완료: 2026-08-04 11:00 KST
-- 변경 파일: `docs/3_설계/에이전트1관련/Agent1_내부확정안과_외부확인대기.md`
+- 변경 파일: `docs/AS-IS/설계/에이전트1관련/Agent1_내부확정안과_외부확인대기.md`
 - 변경 이유: 모든 불확실성을 외부 확인 대기로 미루지 않고, 기존 의도를 보존하는 자체 수정과 작성자·연동 담당자 확인이 필요한 계약을 구분하기 위해서다.
 - 변경 전: 실제 Retriever DTO와 구현 시점 등 외부 확인 항목만 포괄적으로 기록했다.
 - 변경 후: 자체 수정 6개, 원빈님 의도 확인 5개, 파싱·청킹/Retriever 연동 확인 8개로 분류하고 각 질문과 확인 전 기본 처리 방식을 명시했다.
@@ -590,7 +590,7 @@
 
 - 작업 시작: 2026-08-04 11:05 KST
 - 작업 완료: 2026-08-04 11:17 KST
-- 생성 파일: `docs/10_발표자료/Agent1_중간발표_ASIS_TOBE_로직개선안.md`
+- 생성 파일: `docs/발표자료/Agent1_중간발표_ASIS_TOBE_로직개선안.md`
 - 작업 범위: 코드 구현 없이 Agent1 AS-IS 한계와 TO-BE 로직 개선 방향을 중간발표 슬라이드 단위로 구성했다.
 - 변경 이유: 원빈님이 실제 통합을 진행 중이므로 Node·DTO 세부 구현을 선행하지 않고, 통합 결과와 무관하게 유지되는 개선 논리와 평가 기준을 먼저 확정하기 위해서다.
 - 핵심 내용: 업무 후보별 근거 상태, 필드별 근거 매핑, Evidence Validator 분리, 검색 수렴도 기반 종료를 Agent1 TO-BE로 정리했다.
@@ -616,8 +616,8 @@
 
 - 작업 시작: 2026-08-04 11:30 KST
 - 작업 완료: 2026-08-04 11:35 KST
-- 생성 파일: `docs/10_발표자료/assets/agent1/agent1-mvp-flow.svg`, `agent1-asis-tobe.svg`, `agent-roadmap.svg`
-- 변경 파일: `docs/10_발표자료/Agent1_중간발표_ASIS_TOBE_로직개선안.md`
+- 생성 파일: `docs/발표자료/assets/agent1/agent1-mvp-flow.svg`, `agent1-asis-tobe.svg`, `agent-roadmap.svg`
+- 변경 파일: `docs/발표자료/Agent1_중간발표_ASIS_TOBE_로직개선안.md`
 - 변경 이유: PPT에서 Mermaid를 직접 사용하기 어려울 수 있어 동일한 정보 구조를 유지한 편집 가능한 벡터 이미지를 제공하기 위해서다.
 - 디자인 기준: 1600×900, 흰 배경, 포인트 색상 `#508cff`, 한글 UTF-8, Pretendard·Noto Sans KR·맑은 고딕 폰트 fallback을 공통 적용했다.
 - 변경 후: 각 Mermaid 아래에 대응 SVG 미리보기와 원본 링크를 함께 배치해 Mermaid 원본과 발표용 이미지를 동시에 유지했다.
