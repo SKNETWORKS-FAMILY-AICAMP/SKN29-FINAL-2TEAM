@@ -13,9 +13,9 @@ Memory 구조 / Tool 호출 구조 / MCP 연결 / LLM·Model 연결 구조 / 여
 
 | Repo | 담당 | 마감 | 상태 | 정리 문서 |
 |---|---|---|---|---|
-| [Deep Agents From Scratch](https://github.com/braincrew-lab/deep-agents-from-scratch) — Planning·Context Offloading·Sub-Agent 위임의 '왜' | **지훈** | 월(8/10) 분석 → 화 공유 | 진행 중 | `deep-agents_분석.md` |
-| [OpenCode](https://github.com/anomalyco/opencode) — 실제 제품의 Loop·Model 연결·Session·MCP | **준억** | 월(8/10) 분석 → 화 공유 | 진행 중 | `opencode_분석.md` |
-| [Claw Code](https://github.com/ultraworkers/claw-code) — 실행 흐름·Context·Tool·Agent Architecture | **주연** | 월(8/10) 분석 → 화 공유 | 진행 중 | `claw-code_분석.md` |
+| [Deep Agents From Scratch](https://github.com/langchain-ai/deep-agents-from-scratch) — Planning·Context Offloading·Sub-Agent 위임의 '왜' | **지훈** | 월(8/10) 분석 → 화 공유 | 완료 | `deep-agents_분석.md` |
+| [OpenCode](https://github.com/anomalyco/opencode) — 실제 제품의 Loop·Model 연결·Session·MCP | **준억** | 월(8/10) 분석 → 화 공유 | **✅ 완료** (8/10 밤, juneok 브랜치 `e070860` — main 병합 대기) | `opencode_분석.md` (2,082줄) |
+| [Claw Code](https://github.com/ultraworkers/claw-code) — 실행 흐름·Context·Tool·Agent Architecture | **주연** | 월(8/10) 분석 → 화 공유 | **✅ 완료** (8/11, juyeon 브랜치 `a8a611a` — main 병합 대기) | `claw-code_분석.md` (1,025줄) |
 
 각자 맡은 프로젝트를 **팀원에게 설명할 수 있을 정도**까지 파악한다:
 전체 Architecture, Agent 실행 흐름, Context/Memory, Tool Calling, MCP, Model
@@ -29,3 +29,7 @@ Memory 구조 / Tool 호출 구조 / MCP 연결 / LLM·Model 연결 구조 / 여
 세 분석이 모이면(화) 공통점 비교 → 실제로 우리 서비스에 쓸 구조만 선정 →
 `../2_아키텍처_초안.md` §3(Harness 설계 골자)와 §6(직접 구현 vs 프레임워크)에
 반영한다. 반영 담당: 준(PM).
+
+**8/11 수합 완료** — 3/3 도착, 결론 수렴(직접 구현+구조 차용). 비교표와 회의
+결정 안건 5건은 [`공통구조_비교_회의자료.md`](./공통구조_비교_회의자료.md) —
+이 문서로 회의 후 아키텍처 v2 확정.
