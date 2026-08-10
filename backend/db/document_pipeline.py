@@ -109,6 +109,31 @@ class PipelineDocumentRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def searchable_doc_ids(team_id: str) -> list[str]:
+        """`document_search` 도구가 훑을 범위 — 팀 문서 전부.
+
+        `team_id`를 직접 받는다. 다른 메서드들처럼 `account_id`로 팀을 물을 수
+        없어서다 — Harness 의 `run_agent` 는 대화·요청자에 종속되지 않는 순수
+        함수라(A2A 대비) 팀만 알고 계정은 모른다.
+
+        `_SEARCH_READY`로 다시 거르지 않는다. 벡터 검색이 이미 활성 chunk·vec_idx
+        만 보므로 색인 안 된 문서는 결과에 나올 수 없고, 여기서 한 번 더 판정하면
+        같은 규칙이 두 곳에 생긴다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT doc_id FROM doc
+                    WHERE team_id = %s AND deleted = false AND access_revoked = false
+                    ORDER BY doc_id
+                    """,
+                    (team_id,),
+                )
+                return [row["doc_id"] for row in cursor.fetchall()]
+
+    @staticmethod
     def list_ready_for_analysis(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
         """업무 추출이 검색할 범위 — **팀 문서 전체**.
 
