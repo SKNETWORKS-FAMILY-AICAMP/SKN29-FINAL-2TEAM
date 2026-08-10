@@ -1,19 +1,294 @@
-.placeholder {
+.chat {
+  display: flex;
   flex: 1;
+  min-height: 0;
+}
+
+/* ---------- 대화 목록 ---------- */
+
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 260px;
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+
+.sessionsTitle {
+  padding: 0 var(--space-2) var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.sessionsEmpty {
+  padding: 0 var(--space-2);
+  font-size: 13px;
+  color: var(--color-placeholder);
+}
+
+.session {
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-body);
+  cursor: pointer;
+}
+
+.session:hover {
+  background: var(--color-bg);
+}
+
+.sessionActive,
+.sessionActive:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* ---------- 본문 ---------- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.agentBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 56px;
+  flex-shrink: 0;
+  padding: 0 var(--space-8);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.agentPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  cursor: pointer;
+}
+
+.agentDesc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/* 개발 빌드에서만 보이는 mock 상태 전환기. */
+.stateSwitch {
+  padding: 5px var(--space-2);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-6) var(--space-8);
+  overflow-y: auto;
+}
+
+.userMessage {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.userMessage > span {
+  max-width: 620px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.agentMessage {
+  max-width: 620px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  font-size: 14px;
+  color: var(--color-heading);
+  line-height: 1.6;
+}
+
+.keptResult {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  opacity: 0.75;
+}
+
+/* ---------- 빈 상태 ---------- */
+
+.empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-6);
+  padding-top: 72px;
 }
 
-.title {
-  font-size: 20px;
+.emptyIntro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.emptyIntro h2 {
+  font-size: 24px;
   font-weight: 700;
   color: var(--color-heading);
 }
 
-.desc {
+.emptyIntro p {
   font-size: 14px;
   color: var(--color-muted);
+}
+
+.starters {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.starter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 320px;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.starter:hover {
+  border-color: var(--color-primary);
+}
+
+.starter strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.starterIcon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+}
+
+.starterDesc {
+  font-size: 13px;
+  color: var(--color-muted);
+  line-height: 1.55;
+}
+
+.starterExample {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-body);
+  line-height: 1.5;
+}
+
+.onboardingBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.onboardingBanner button {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* ---------- 입력창 ---------- */
+
+.inputBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-8) var(--space-5);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  font-size: 14px;
+  color: var(--color-placeholder);
+}
+
+.inputDisabled {
+  background: #f1f5f9;
 }

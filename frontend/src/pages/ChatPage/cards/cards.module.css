@@ -1,0 +1,444 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 18px var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.cardFlush {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.muted {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.more {
+  padding: var(--space-3) var(--space-5);
+  border: none;
+  border-top: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- 진행 카드 ---------- */
+
+.progressHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.progressTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.progressCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.progressTrack {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-primary-soft);
+  overflow: hidden;
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-primary);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-heading);
+}
+
+.stepLabelTodo {
+  font-size: 13px;
+  color: var(--color-placeholder);
+}
+
+.stepMeta {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.foot {
+  font-size: 12px;
+  color: var(--color-placeholder);
+}
+
+/* ---------- 확인 카드 ---------- */
+
+.confirmHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.confirmLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.warnBanner {
+  padding: 10px var(--space-5);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.taskRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.taskBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.taskTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-heading);
+}
+
+.factLabel {
+  color: var(--color-placeholder);
+}
+
+.missing {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.evidenceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.evidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.evidence {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--color-bg);
+}
+
+.evidence p {
+  font-size: 13px;
+  color: var(--color-body);
+  line-height: 1.7;
+}
+
+.evidence footer {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+
+.evidenceSource {
+  color: var(--color-muted);
+}
+
+.trace {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.confirmActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.confirmActions > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- 결과 카드 ---------- */
+
+.resultHeadOk,
+.resultHeadWarn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+.resultHeadOk {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+.resultHeadWarn {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.resultTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.resultMeta {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.issueHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.issueRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.issueKey {
+  width: 110px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.issueBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.issueEvidence {
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: #f1f5f9;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.failHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.failRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.failRow > strong {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.failReason {
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+/* ---------- 오류 카드 ---------- */
+
+.errorCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-danger-bg);
+  border-left: 4px solid var(--color-danger);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+
+.errorTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+.errorBody {
+  font-size: 13px;
+  color: var(--color-body);
+  line-height: 1.65;
+}
+
+.errorActions {
+  display: flex;
+  gap: 10px;
+}
+
+.errorRaw {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+/* ---------- 문서 선택 카드 ---------- */
+
+.docHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 13px var(--space-5);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.docRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.docRowOn {
+  background: var(--color-primary-soft);
+}
+
+.radio {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
+.docBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--color-heading);
+}
