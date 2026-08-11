@@ -195,3 +195,21 @@
   color: var(--color-muted);
   line-height: 1.5;
 }
+
+/* 목록을 못 불러왔을 때. 빈 화면과 구별돼야 한다 — 에이전트가 없는 것과
+   서버에 못 물어본 것은 사람이 할 행동이 다르다. */
+.error {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg, #fef2f2);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+/* 승인 게이트를 타는 도구 표시. 외부를 바꾸는 도구를 붙였다는 사실은
+   저장 전에 보여야 한다. */
+.gate {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}

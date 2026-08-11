@@ -1,15 +1,12 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AppShell, Badge, Button, Icon } from '../../components';
-import { AVAILABLE_TOOLS, MOCK_AGENTS } from '../../data/mockAgents';
-import type { MockAgent } from '../../data/mockAgents';
+import { AppShell, Badge, Button, Icon, useToast } from '../../components';
+import { deleteAgent, listAgents, listToolChoices } from '../../api/agents';
+import type { Agent, ToolChoice } from '../../api/agents';
+import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
+import { loadSessionToken } from '../../utils/session';
 import styles from './AgentListPage.module.css';
-
-function toolNames(agent: MockAgent): string[] {
-  return agent.toolIds
-    .map((id) => AVAILABLE_TOOLS.find((tool) => tool.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
-}
 
 /**
  * 에이전트 목록. 기본 제공과 우리 팀 것을 나눠 보여준다.
@@ -19,10 +16,48 @@ function toolNames(agent: MockAgent): string[] {
  */
 export default function AgentListPage() {
   const navigate = useNavigate();
-  const prebuilt = MOCK_AGENTS.filter((agent) => agent.isPrebuilt);
-  const team = MOCK_AGENTS.filter((agent) => !agent.isPrebuilt);
+  const { showToast } = useToast();
+  const token = loadSessionToken();
 
-  function renderSection(title: string, sub: string, agents: MockAgent[]) {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [tools, setTools] = useState<ToolChoice[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    Promise.all([listAgents(token), listToolChoices(token)])
+      .then(([rows, choices]) => {
+        setAgents(rows);
+        setTools(choices);
+      })
+      .catch((exc) =>
+        setError(exc instanceof ApiError ? exc.message : '에이전트를 불러오지 못했습니다.'),
+      )
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  /** tool_ref → 사람이 읽는 이름. 서버 카탈로그에 없으면 ref 를 그대로 보여준다
+   *  — 지워진 MCP 도구가 아직 붙어 있다는 사실이 보여야 고칠 수 있다. */
+  function toolNames(agent: Agent): string[] {
+    return agent.tool_refs.map(
+      (ref) => tools.find((tool) => tool.tool_ref === ref)?.name ?? ref,
+    );
+  }
+
+  async function remove(agent: Agent) {
+    if (!token) return;
+    try {
+      await deleteAgent(token, agent.agent_id);
+      setAgents((prev) => prev.filter((item) => item.agent_id !== agent.agent_id));
+      showToast(`「${agent.name}」을 내렸습니다.`, 'success');
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
+    }
+  }
+
+  function renderSection(title: string, sub: string, rows: Agent[]) {
+    if (rows.length === 0) return null;
     return (
       <section className={styles.section}>
         <div className={styles.sectionHead}>
@@ -31,16 +66,16 @@ export default function AgentListPage() {
         </div>
 
         <div className={styles.grid}>
-          {agents.map((agent) => (
-            <article key={agent.id} className={styles.card}>
+          {rows.map((agent) => (
+            <article key={agent.agent_id} className={styles.card}>
               <div className={styles.cardTop}>
                 <span className={styles.cardIcon}>
                   <Icon name="sparkles" size={20} color="var(--color-primary)" />
                 </span>
                 <div className={styles.cardName}>
                   <strong>{agent.name}</strong>
-                  <Badge tone={agent.isPrebuilt ? 'primary' : 'success'}>
-                    {agent.isPrebuilt ? '기본 제공' : '팀 공유'}
+                  <Badge tone={agent.is_prebuilt ? 'primary' : 'success'}>
+                    {agent.is_prebuilt ? '기본 제공' : '팀 공유'}
                   </Badge>
                 </div>
               </div>
@@ -57,19 +92,26 @@ export default function AgentListPage() {
 
               <div className={styles.cardFoot}>
                 <span className={styles.cardMeta}>
-                  {agent.owner} · {agent.updatedAt}
+                  {agent.is_prebuilt ? 'halil 제공' : agent.owner_name ?? '팀'}
                 </span>
                 <Button size="sm" variant="secondary" onClick={() => navigate(PATHS.chat)}>
                   Chat에서 사용
                 </Button>
-                {!agent.isPrebuilt && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate(PATHS.agentEdit.replace(':agentId', agent.id))}
-                  >
-                    편집
-                  </Button>
+                {/* 기본 제공은 편집·삭제가 서버에서 403 이다. 눌리는 버튼을 두면
+                    사용자가 고칠 수 있다고 믿게 된다. */}
+                {!agent.is_prebuilt && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate(PATHS.agentEdit.replace(':agentId', agent.agent_id))}
+                    >
+                      편집
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => remove(agent)}>
+                      내리기
+                    </Button>
+                  </>
                 )}
               </div>
             </article>
@@ -94,8 +136,19 @@ export default function AgentListPage() {
           </Button>
         </header>
 
-        {renderSection('기본 제공', '팀 전체가 바로 쓸 수 있습니다', prebuilt)}
-        {renderSection('우리 팀 에이전트', 'Builder에서 만든 것 · Chat 선택기에 즉시 노출', team)}
+        {error && <p className={styles.error}>{error}</p>}
+        {loading && <p className={styles.sectionSub}>불러오는 중…</p>}
+
+        {renderSection('기본 제공', '팀 전체가 바로 쓸 수 있습니다', agents.filter((a) => a.is_prebuilt))}
+        {renderSection(
+          '우리 팀 에이전트',
+          'Builder에서 만든 것 · Chat 선택기에 즉시 노출',
+          agents.filter((a) => !a.is_prebuilt),
+        )}
+
+        {!loading && !error && agents.filter((a) => !a.is_prebuilt).length === 0 && (
+          <p className={styles.sectionSub}>아직 우리 팀 에이전트가 없습니다.</p>
+        )}
       </div>
     </AppShell>
   );

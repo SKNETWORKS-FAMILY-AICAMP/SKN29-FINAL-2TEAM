@@ -1,15 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppShell, Button, Checkbox, Icon, Input, Select, useToast } from '../../components';
-import { AGENT_MODELS, AVAILABLE_TOOLS, findMockAgent } from '../../data/mockAgents';
-import type { AgentModelId } from '../../data/mockAgents';
+import { createAgent, getAgent, listToolChoices, updateAgent } from '../../api/agents';
+import type { ToolChoice } from '../../api/agents';
+import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
+import { loadSessionToken } from '../../utils/session';
 import styles from './AgentEditPage.module.css';
+
+/** 서버 `AgentWriteSerializer.AGENT_MODELS` 와 같은 목록이어야 한다. */
+const MODEL_OPTIONS = [
+  { value: 'gpt-5.6-luna', label: 'gpt-5.6 luna — 짧은 판단 · 빠름' },
+  { value: 'gpt-5.6-terra', label: 'gpt-5.6 terra — 일반' },
+  { value: 'gpt-5.6-sol', label: 'gpt-5.6 sol — 긴 추론 · 느리고 비쌈' },
+];
 
 const EFFORT_OPTIONS = [
   { value: 'low', label: '낮음 (low)' },
   { value: 'medium', label: '보통 (medium)' },
-  { value: 'xhigh', label: '높음 (xhigh)' },
+  { value: 'high', label: '높음 (high)' },
+  { value: 'xhigh', label: '아주 높음 (xhigh)' },
 ];
 
 /**
@@ -23,22 +33,80 @@ export default function AgentEditPage() {
   const navigate = useNavigate();
   const { agentId } = useParams();
   const { showToast } = useToast();
-  const existing = findMockAgent(agentId);
+  const token = loadSessionToken();
+  // `/agents/new/edit` 이 편집 라우트를 그대로 탄다. 'new' 는 id 가 아니다.
+  const editingId = agentId && agentId !== 'new' ? agentId : null;
 
-  const [name, setName] = useState(existing?.name ?? '');
-  const [description, setDescription] = useState(existing?.description ?? '');
-  const [instruction, setInstruction] = useState(existing?.instruction ?? '');
-  const [model, setModel] = useState<AgentModelId>(existing?.model ?? 'luna');
-  const [effort, setEffort] = useState(existing?.model === 'sol' ? 'xhigh' : 'low');
-  const [toolIds, setToolIds] = useState<string[]>(existing?.toolIds ?? ['document_search']);
+  const [tools, setTools] = useState<ToolChoice[]>([]);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [instruction, setInstruction] = useState('');
+  const [model, setModel] = useState('gpt-5.6-luna');
+  const [effort, setEffort] = useState('low');
+  const [maxIterations, setMaxIterations] = useState(6);
+  const [toolRefs, setToolRefs] = useState<string[]>(['document_search']);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function toggleTool(id: string) {
-    setToolIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+  useEffect(() => {
+    if (!token) return;
+    listToolChoices(token).then(setTools).catch(() => setError('도구 목록을 불러오지 못했습니다.'));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || !editingId) return;
+    getAgent(token, editingId)
+      .then((agent) => {
+        setName(agent.name);
+        setDescription(agent.description);
+        setInstruction(agent.instruction);
+        setModel(agent.model);
+        setEffort(agent.reasoning_effort);
+        setMaxIterations(agent.max_iterations);
+        setToolRefs(agent.tool_refs);
+        if (agent.is_prebuilt) {
+          // 서버가 저장을 403 으로 막는다. 그 사실을 먼저 알린다 — 다 적고 나서
+          // 거절당하는 것보다 낫다.
+          setError('기본 제공 에이전트는 수정할 수 없습니다. 새로 만들어 쓰세요.');
+        }
+      })
+      .catch((exc) =>
+        setError(exc instanceof ApiError ? exc.message : '에이전트를 불러오지 못했습니다.'),
+      );
+  }, [token, editingId]);
+
+  function toggleTool(ref: string) {
+    setToolRefs((prev) => (prev.includes(ref) ? prev.filter((item) => item !== ref) : [...prev, ref]));
   }
 
-  function handleSave() {
-    // 저장 API(백엔드 단계 2)가 붙기 전까지는 계약만 맞춰 두고 알림으로 대신한다.
-    showToast('에이전트 저장은 agent API 연결 후 동작합니다.', 'error');
+  async function handleSave() {
+    if (!token) return;
+    if (!name.trim()) {
+      setError('이름을 적어 주세요.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const body = {
+      name: name.trim(),
+      description,
+      instruction,
+      model,
+      reasoning_effort: effort,
+      max_iterations: maxIterations,
+      tool_refs: toolRefs,
+    };
+    try {
+      const saved = editingId
+        ? await updateAgent(token, editingId, body)
+        : await createAgent(token, body);
+      showToast(`「${saved.name}」을 저장했습니다. Chat 선택기에서 바로 쓸 수 있습니다.`, 'success');
+      navigate(PATHS.chat);
+    } catch (exc) {
+      setError(exc instanceof ApiError ? exc.message : '저장하지 못했습니다.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -50,11 +118,13 @@ export default function AgentEditPage() {
         </button>
 
         <header className={styles.header}>
-          <h1 className={styles.title}>{existing ? existing.name : '새 에이전트'}</h1>
+          <h1 className={styles.title}>{editingId ? name || '에이전트 편집' : '새 에이전트'}</h1>
           <p className={styles.subtitle}>
             비개발자가 정하는 것은 세 가지입니다 — 무슨 일을 하는지 / 어떻게 행동할지 / 어떤 데이터와 도구를 쓸지.
           </p>
         </header>
+
+        {error && <p className={styles.error}>{error}</p>}
 
         <section className={styles.card}>
           <div className={styles.cardHead}>
@@ -109,9 +179,9 @@ export default function AgentEditPage() {
             <label className={styles.field}>
               <span className={styles.fieldLabel}>모델</span>
               <Select
-                options={AGENT_MODELS}
+                options={MODEL_OPTIONS}
                 value={model}
-                onChange={(event) => setModel(event.target.value as AgentModelId)}
+                onChange={(event) => setModel(event.target.value)}
               />
             </label>
             <label className={styles.field}>
@@ -123,22 +193,28 @@ export default function AgentEditPage() {
           <div className={styles.field}>
             <span className={styles.fieldLabel}>사용할 도구</span>
             <div className={styles.toolList}>
-              {AVAILABLE_TOOLS.map((tool) => {
-                const checked = toolIds.includes(tool.id);
+              {tools.map((tool) => {
+                const checked = toolRefs.includes(tool.tool_ref);
                 return (
                   <div
-                    key={tool.id}
+                    key={tool.tool_ref}
                     className={[styles.toolRow, checked ? styles.toolRowOn : ''].filter(Boolean).join(' ')}
                   >
-                    <Checkbox checked={checked} onChange={() => toggleTool(tool.id)} />
+                    <Checkbox checked={checked} onChange={() => toggleTool(tool.tool_ref)} />
                     <div className={styles.toolText}>
-                      <strong>{tool.name}</strong>
-                      <span>{tool.desc}</span>
+                      <strong>
+                        {tool.name}
+                        {/* 승인 게이트를 타는 도구인지 미리 알려준다 — 외부를
+                            바꾸는 도구를 붙였다는 사실은 저장 전에 보여야 한다. */}
+                        {tool.side_effect && <span className={styles.gate}> · 승인 필요</span>}
+                      </strong>
+                      <span>{tool.description}</span>
                     </div>
                     <span className={styles.toolSource}>{tool.source}</span>
                   </div>
                 );
               })}
+              {tools.length === 0 && <p className={styles.help}>쓸 수 있는 도구가 없습니다.</p>}
             </div>
           </div>
 
@@ -158,7 +234,9 @@ export default function AgentEditPage() {
           <Button variant="outline" onClick={() => navigate(PATHS.agents)}>
             취소
           </Button>
-          <Button onClick={handleSave}>저장하고 Chat에서 써보기</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? '저장하는 중…' : '저장하고 Chat에서 써보기'}
+          </Button>
         </div>
       </div>
     </AppShell>
