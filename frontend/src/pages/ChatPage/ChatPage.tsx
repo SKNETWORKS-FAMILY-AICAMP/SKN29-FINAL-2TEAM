@@ -12,7 +12,7 @@ import {
   listSessions,
   streamMessage,
 } from '../../api/chat';
-import type { ChatSession } from '../../api/chat';
+import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
 import { listAgents } from '../../api/agents';
 import type { Agent } from '../../api/agents';
 import { useProjectContext } from '../../utils/projectContext';
@@ -22,10 +22,57 @@ import type { LiveChat } from './liveChat';
 import styles from './ChatPage.module.css';
 
 /**
+ * 대화 한 턴 — 사람의 발화 하나와 그에 딸린 에이전트의 답.
+ *
+ * `live` 가 null 인 것은 **아직 답이 오기 전**이다(방금 보낸 발화).
+ */
+interface Turn {
+  user: string;
+  live: LiveChat | null;
+}
+
+/**
+ * 저장된 메시지를 턴으로 자른다.
+ *
+ * **턴 경계는 `user` 메시지다.** agent 메시지는 실행 1회당 하나씩 쌓이는데
+ * (`_persist`), 승인 흐름은 실행이 두 번이다 — 발화 → `awaiting_confirmation`,
+ * 승인 → `result`. 승인 쪽은 user 메시지를 남기지 않으므로 **한 턴에 agent
+ * 메시지가 둘 이상 붙는다.** 하나만 접으면 등록 결과가 복원에서 사라진다.
+ */
+function toTurns(messages: ChatMessage[]): Turn[] {
+  const turns: Turn[] = [];
+  let events: ChatEvent[] = [];
+
+  const flush = () => {
+    if (turns.length === 0) return;
+    turns[turns.length - 1].live = events.length
+      ? events.reduce(reduce, { ...emptyLive(), running: false })
+      : null;
+  };
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      flush();
+      events = [];
+      turns.push({ user: message.content.text ?? '', live: null });
+    } else if (message.role === 'agent') {
+      // 첫 발화보다 앞선 agent 메시지는 붙일 턴이 없다. 버린다.
+      if (turns.length === 0) continue;
+      events = [...events, ...(message.content.events ?? [])];
+    }
+  }
+  flush();
+  return turns;
+}
+
+/**
  * Chat 홈. **서버와만 말한다** — mock 은 없다(개발지시_3차 단계 1).
  *
  * 이벤트를 카드 상태로 접는 규칙은 `liveChat.ts` 에 있다. 핵심은 `stage` 가 두
  * 층에서 온다는 것 — `tool_ref` 가 있으면 그 도구의 진행, 없으면 Loop 회전이다.
+ *
+ * 화면은 **턴의 배열**을 그린다(6차 단계 1). 발화 하나만 들고 있던 때는 두
+ * 번째 발화가 첫 턴을 덮어써서, 이름만 Chat 이고 실제로는 1회용 실행기였다.
  */
 export default function ChatPage() {
   const navigate = useNavigate();
@@ -37,11 +84,13 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [utterance, setUtterance] = useState('');
-  const [sent, setSent] = useState<string | null>(null);
-  const [live, setLive] = useState<LiveChat | null>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const streamRef = useRef<HTMLDivElement | null>(null);
+  /** 사용자가 위로 올려 읽는 중이면 따라가지 않는다. */
+  const stickToBottom = useRef(true);
 
   useEffect(() => {
     if (!token) return;
@@ -60,6 +109,15 @@ export default function ChatPage() {
   // RUNNING 으로 남지 않는다.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // 턴이 늘거나 답이 자라면 아래로 따라간다. 단 **사용자가 위로 올려 읽는
+  // 중이면 붙잡지 않는다** — 근거를 읽고 있는데 화면이 끌려 내려가면 읽을 수가
+  // 없다. 위로 올린 순간 `onScroll` 이 stick 을 끈다.
+  useEffect(() => {
+    const node = streamRef.current;
+    if (!node || !stickToBottom.current) return;
+    node.scrollTop = node.scrollHeight;
+  }, [turns]);
+
   const openSession = useCallback(
     async (id: string) => {
       if (!token) return;
@@ -69,15 +127,15 @@ export default function ChatPage() {
       try {
         const detail = await getSession(token, id);
         setAgentId(detail.agent_id);
-        // 새로고침 재현 — 저장된 마지막 에이전트 답을 이벤트로 다시 접는다.
-        const last = [...detail.messages].reverse().find((message) => message.role === 'agent');
-        const lastUser = [...detail.messages].reverse().find((message) => message.role === 'user');
-        setSent(lastUser?.content.text ?? null);
-        const restored = last?.content.events
-          ? last.content.events.reduce(reduce, { ...emptyLive(), running: false })
-          : null;
-        setLive(restored);
-        setSelected(restored ? restored.tasks.map((_, index) => index) : []);
+        // 새로고침 재현 — 저장된 대화를 **전부** 다시 접는다. 서버는 처음부터
+        // 모든 턴을 갖고 있었고, 화면이 마지막 답 하나만 쓰고 버리던 것이다.
+        const restored = toTurns(detail.messages);
+        setTurns(restored);
+        stickToBottom.current = true;
+        // 체크 상태는 **마지막 턴에만** 의미가 있다. 과거 턴의 확인 카드는
+        // 읽기 전용이다.
+        const lastLive = restored[restored.length - 1]?.live ?? null;
+        setSelected(lastLive ? lastLive.tasks.map((_, index) => index) : []);
       } catch (error) {
         setFatal(error instanceof ApiError ? error.message : '대화를 불러오지 못했습니다.');
       }
@@ -88,10 +146,10 @@ export default function ChatPage() {
   function startNew() {
     abortRef.current?.abort();
     setSessionId(null);
-    setSent(null);
-    setLive(null);
+    setTurns([]);
     setSelected([]);
     setFatal(null);
+    stickToBottom.current = true;
   }
 
   async function remove(id: string) {
@@ -109,8 +167,12 @@ export default function ChatPage() {
     if (!token || !utterance.trim() || !agentId) return;
     const text = utterance.trim();
     setUtterance('');
-    setSent(text);
+    // 덧붙인다. 덮어쓰면 앞 턴이 화면에서 사라진다 — 서버는 지우지 않는데
+    // 화면만 잊는 상태가 된다.
+    setTurns((prev) => [...prev, { user: text, live: null }]);
+    setSelected([]);
     setFatal(null);
+    stickToBottom.current = true;
 
     let id = sessionId;
     try {
@@ -132,7 +194,10 @@ export default function ChatPage() {
       return;
     }
 
-    await run((onEvent, signal) => streamMessage(token, id as string, text, onEvent, signal));
+    await run(
+      (onEvent, signal) => streamMessage(token, id as string, text, onEvent, signal),
+      emptyLive(),
+    );
   }
 
   async function approve() {
@@ -140,22 +205,38 @@ export default function ChatPage() {
     // **인덱스만 보낸다.** 실행할 인자는 서버가 저장해 둔 것을 쓴다 — 화면이
     // 인자를 보내면 승인 게이트가 아무것도 막지 못한다.
     const indices = selected;
-    await run((onEvent, signal) => confirmMessage(token, sessionId, indices, onEvent, signal));
+    // 빈 상태에서 다시 시작하지 않고 **이 턴을 이어서 접는다.** 재개는 실행이
+    // 두 번째일 뿐 같은 턴이고, 새로고침 복원도 두 실행의 이벤트를 이어 붙인다
+    // (`toTurns`). 리셋하면 방금 승인한 목록이 화면에서 사라지고, 복원한 화면과
+    // 라이브 화면이 서로 달라진다.
+    const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
+    await run(
+      (onEvent, signal) => confirmMessage(token, sessionId, indices, onEvent, signal),
+      carried,
+    );
+  }
+
+  /** 마지막 턴의 `live` 만 갱신한다. 앞 턴들은 그대로 둔다. */
+  function updateLastLive(next: (previous: LiveChat | null) => LiveChat | null) {
+    setTurns((prev) =>
+      prev.map((turn, index) => (index === prev.length - 1 ? { ...turn, live: next(turn.live) } : turn)),
+    );
   }
 
   async function run(
     start: (onEvent: Parameters<typeof streamMessage>[3], signal: AbortSignal) => Promise<void>,
+    initial: LiveChat,
   ) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    let state = emptyLive();
-    setLive(state);
+    let state = initial;
+    updateLastLive(() => state);
     try {
       await start((event) => {
         state = reduce(state, event);
-        setLive({ ...state });
+        updateLastLive(() => ({ ...state }));
         if (event.type === 'task_extraction_result') {
           setSelected(toCards(event.result).map((_, index) => index));
         }
@@ -164,14 +245,15 @@ export default function ChatPage() {
       if (controller.signal.aborted) return;
       setFatal(error instanceof ApiError ? error.message : '요청을 보내지 못했습니다.');
     } finally {
-      setLive((prev) => (prev ? { ...prev, running: false } : prev));
+      updateLastLive((prev) => (prev ? { ...prev, running: false } : prev));
     }
   }
 
   const agent = agents.find((item) => item.agent_id === agentId) ?? null;
-  const isEmpty = !sent && live === null;
-  const streaming = Boolean(live?.running);
-  const waitingConfirm = Boolean(live?.confirm);
+  const isEmpty = turns.length === 0;
+  const lastLive = turns[turns.length - 1]?.live ?? null;
+  const streaming = Boolean(lastLive?.running);
+  const waitingConfirm = Boolean(lastLive?.confirm);
 
   return (
     <AppShell variant="flush">
@@ -229,7 +311,16 @@ export default function ChatPage() {
             </Button>
           </header>
 
-          <div className={styles.stream}>
+          <div
+            className={styles.stream}
+            ref={streamRef}
+            onScroll={(event) => {
+              const node = event.currentTarget;
+              // 바닥에서 40px 안쪽이면 "따라가는 중"으로 본다. 스트리밍이
+              // 만드는 미세한 오차를 감안한 여유다.
+              stickToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+            }}
+          >
             {fatal && <p className={styles.fatal}>{fatal}</p>}
 
             {isEmpty && (
@@ -282,80 +373,111 @@ export default function ChatPage() {
               </div>
             )}
 
-            {sent && <div className={styles.userMessage}><span>{sent}</span></div>}
+            {turns.map((turn, turnIndex) => {
+              const live = turn.live;
+              // 승인·체크는 **마지막 턴에만** 열려 있다. 지나간 턴의 확인 카드를
+              // 다시 누를 수 있으면, 그 사이에 무엇이 바뀌었는지 모르는 채로
+              // 남의 Jira 에 이슈가 만들어진다.
+              const isLast = turnIndex === turns.length - 1;
+              // 접고 나서도 confirm 이 남아 있는데 마지막 턴이 아니면, 승인하지
+              // 않고 다음 발화로 넘어간 것이다(`result` 가 confirm 을 닫는다).
+              const abandoned = Boolean(live?.confirm) && !isLast;
 
-            {live && (
-              <>
-                {(live.running || live.steps.length > 0) && (
-                  <ProgressCard
-                    steps={live.steps}
-                    queries={live.queries}
-                    evidenceCount={live.evidenceCount}
-                    title={live.toolName ? `${live.toolName} 실행 중` : '생각하는 중'}
-                    loop={{ step: live.loopStep, total: live.loopTotal }}
-                  />
-                )}
+              return (
+                <div key={turnIndex} className={styles.turn}>
+                  <div className={styles.userMessage}>
+                    <span>{turn.user}</span>
+                  </div>
 
-                {live.tasks.length > 0 && (
-                  <ConfirmCard
-                    tasks={live.tasks}
-                    warnings={live.extraction?.warnings}
-                    trace={live.extraction ? traceLine(live.extraction) : undefined}
-                    selected={selected}
-                    onSelectedChange={setSelected}
-                    onApprove={live.confirm ? approve : undefined}
-                    busy={live.running}
-                  />
-                )}
+                  {live && (
+                    <>
+                      {(live.running || live.steps.length > 0) && (
+                        <ProgressCard
+                          steps={live.steps}
+                          queries={live.queries}
+                          evidenceCount={live.evidenceCount}
+                          title={live.toolName ? `${live.toolName} 실행 중` : '생각하는 중'}
+                          loop={{ step: live.loopStep, total: live.loopTotal }}
+                        />
+                      )}
 
-                {live.confirm && live.tasks.length === 0 && (
-                  <ConfirmCard
-                    tasks={[]}
-                    warnings={[
-                      `${live.confirm.toolName} 실행을 승인하시겠습니까? ${live.confirm.count}건이 대상입니다.`,
-                    ]}
-                    selected={selected}
-                    onSelectedChange={setSelected}
-                    onApprove={approve}
-                    busy={live.running}
-                  />
-                )}
+                      {live.tasks.length > 0 && (
+                        <ConfirmCard
+                          tasks={live.tasks}
+                          warnings={live.extraction?.warnings}
+                          trace={live.extraction ? traceLine(live.extraction) : undefined}
+                          selected={isLast ? selected : live.tasks.map((_, index) => index)}
+                          onSelectedChange={isLast ? setSelected : () => undefined}
+                          onApprove={isLast && live.confirm ? approve : undefined}
+                          busy={live.running}
+                        />
+                      )}
 
-                {(live.created.length > 0 || live.failures.length > 0) && (
-                  <ResultCard created={live.created} failures={live.failures} />
-                )}
+                      {live.confirm && live.tasks.length === 0 && (
+                        <ConfirmCard
+                          tasks={[]}
+                          warnings={[
+                            `${live.confirm.toolName} 실행을 승인하시겠습니까? ${live.confirm.count}건이 대상입니다.`,
+                          ]}
+                          selected={isLast ? selected : []}
+                          onSelectedChange={isLast ? setSelected : () => undefined}
+                          onApprove={isLast ? approve : undefined}
+                          busy={live.running}
+                        />
+                      )}
 
-                {live.answer && <div className={styles.agentMessage}>{live.answer}</div>}
+                      {abandoned && (
+                        <p className={styles.warnLine}>
+                          <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
+                          승인하지 않고 넘어갔습니다 — 이 요청은 실행되지 않았습니다.
+                        </p>
+                      )}
 
-                {live.stoppedReason && (
-                  <p className={styles.warnLine}>
-                    <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
-                    끝까지 마치지 못했습니다 ({live.stoppedReason}) — 위 결과는 여기까지 확인한 것입니다.
-                  </p>
-                )}
+                      {(live.created.length > 0 || live.failures.length > 0) && (
+                        <ResultCard created={live.created} failures={live.failures} />
+                      )}
 
-                {live.error && (
-                  <ErrorCard
-                    detail={live.error.detail}
-                    errorCode={live.error.errorCode}
-                    onOpenSettings={() => navigate(PATHS.settingsMcp)}
-                  />
-                )}
-              </>
-            )}
+                      {live.answer && <div className={styles.agentMessage}>{live.answer}</div>}
+
+                      {live.stoppedReason && (
+                        <p className={styles.warnLine}>
+                          <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
+                          끝까지 마치지 못했습니다 ({live.stoppedReason}) — 위 결과는 여기까지 확인한 것입니다.
+                        </p>
+                      )}
+
+                      {live.error && (
+                        <ErrorCard
+                          detail={live.error.detail}
+                          errorCode={live.error.errorCode}
+                          onOpenSettings={() => navigate(PATHS.settingsMcp)}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className={styles.inputBar}>
+            {/* 승인 대기 중에도 **말할 수 있다**(6차 단계 1-5 · 확정 ③).
+                체크박스로만 소통하게 두면 "3번은 빼고 다시 뽑아줘"를 할 방법이
+                없어 폼 위저드가 된다. 전용 「다시 정리해줘」 버튼을 만들지 않고
+                대화로 푸는 것이 이 제품의 성격에도 맞다.
+                서버는 pending 을 무시하고 새 턴을 시작한다(실측 — 결과 블록). */}
             <input
-              className={[styles.input, waitingConfirm ? styles.inputDisabled : ''].filter(Boolean).join(' ')}
+              className={styles.input}
               value={utterance}
               onChange={(event) => setUtterance(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.nativeEvent.isComposing) send();
               }}
-              disabled={waitingConfirm || streaming || !agentId}
+              disabled={streaming || !agentId}
               placeholder={
-                waitingConfirm ? '위 목록에서 등록할 업무를 선택해 주세요' : '무엇을 도와드릴까요?'
+                waitingConfirm
+                  ? '위에서 선택해 승인하거나, 고쳐서 다시 요청해 보세요'
+                  : '무엇을 도와드릴까요?'
               }
             />
             {streaming ? (
@@ -367,7 +489,7 @@ export default function ChatPage() {
                 중단
               </Button>
             ) : (
-              <Button aria-label="보내기" onClick={send} disabled={waitingConfirm || !utterance.trim()}>
+              <Button aria-label="보내기" onClick={send} disabled={!utterance.trim()}>
                 <Icon name="arrow-right" size={16} />
               </Button>
             )}

@@ -207,7 +207,9 @@ export function ConfirmCard({
 
       <div className={styles.confirmActions}>
         <span className={styles.muted}>승인하기 전까지 Jira에는 아무것도 만들지 않습니다.</span>
-        <Button size="sm" onClick={onApprove} disabled={busy || chosen.length === 0}>
+        {/* `onApprove` 가 없으면 지나간 턴의 카드다 — 눌리는 모양으로 두면
+            읽기 전용인 줄 모르고 클릭하게 된다(6차 단계 1-3). */}
+        <Button size="sm" onClick={onApprove} disabled={busy || chosen.length === 0 || !onApprove}>
           {busy ? '등록하는 중…' : `선택한 ${chosen.length}건 Jira에 등록`}
         </Button>
       </div>

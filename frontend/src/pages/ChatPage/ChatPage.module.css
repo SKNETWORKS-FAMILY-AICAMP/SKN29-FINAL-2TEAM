@@ -106,6 +106,14 @@
   overflow-y: auto;
 }
 
+/* 턴 하나. 발화와 그 답이 한 덩어리로 붙어 보여야 어느 답이 어느 질문의
+   것인지 읽힌다 — 턴 사이는 `.stream` 의 gap 보다 넓게 벌린다. */
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
 .userMessage {
   display: flex;
   justify-content: flex-end;
@@ -280,9 +288,6 @@
   outline-offset: -1px;
 }
 
-.inputDisabled {
-  background: #f1f5f9;
-}
 
 /* 실연동에서 서버가 못 받은 요청. 스트림 안쪽 오류(오류 카드)와 다른 층이다 —
    이건 요청 자체가 못 간 것이라 카드가 아니라 줄로 알린다. */

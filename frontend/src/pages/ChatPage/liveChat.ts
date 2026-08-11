@@ -128,6 +128,12 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
       return {
         ...state,
         running: false,
+        // 결과가 나왔으면 기다리던 승인은 끝났다. 한 실행 안에서 confirm 과
+        // result 가 같이 오는 일은 없지만(runner 가 confirm 에서 멈춘다),
+        // **한 턴의 이벤트를 이어 붙일 때** 이 줄이 필요하다 — 승인·재개가
+        // 실행 두 번이라 접으면 confirm 이 result 뒤까지 살아남고, 이미 등록이
+        // 끝난 과거 턴에 승인 버튼이 다시 켜진다.
+        confirm: null,
         answer: event.text ?? '',
         stoppedReason: event.complete ? null : event.stopped_reason ?? '알 수 없는 이유',
         created: jira.created,

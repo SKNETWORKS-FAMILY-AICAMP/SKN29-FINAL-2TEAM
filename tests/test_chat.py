@@ -150,6 +150,32 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(first["role"], "user")
         self.assertEqual(first["content"], {"type": "text", "text": "일정 알려줘"})
 
+    def test_승인_대기가_남아_있어도_새_발화를_받는다(self, sessions, messages, run):
+        """승인 대기 중에도 말할 수 있다(6차 단계 1-5 · 확정 ③).
+
+        화면이 승인 대기 중 입력창을 여는 근거다. 발화 경로는 pending 을 아예
+        보지 않고 새 실행을 시작한다 — 승인을 강요하지 않고, 대신 지나간 확인
+        카드가 「승인하지 않고 넘어감」으로 남는다.
+        """
+
+        sessions.get.return_value = SESSION
+        run.return_value = iter([{"type": "result", "text": "다시 뽑았습니다.", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "3번은 빼고 다시 뽑아줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        events = ndjson(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([e["type"] for e in events], ["result"])
+        # 승인 경로가 아니므로 저장된 확인 카드를 들춰 보지 않는다.
+        messages.latest_pending_confirmation.assert_not_called()
+        # 재개가 아니라 **새 실행**이다 — 앞선 대화 상태를 물려받지 않는다.
+        self.assertNotIn("resume_tool_call", run.call_args.args[2])
+
     def test_스트림이_끝나면_카드를_통째로_적재한다(self, sessions, messages, run):
         sessions.get.return_value = SESSION
         run.return_value = iter(
