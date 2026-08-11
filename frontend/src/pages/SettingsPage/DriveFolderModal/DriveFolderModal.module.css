@@ -1,56 +1,14 @@
-.page {
-  min-height: 100%;
+/* 제목·닫기·바닥 버튼은 Modal 이 그린다. 여기는 본문 세로 흐름만 맡는다. */
+.body {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  background: var(--color-bg);
-}
-
-.contentContainer {
-  width: 800px;
-  max-width: 100%;
-  padding: var(--space-8) var(--space-10) var(--space-12);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.headerBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pageTitle {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-heading);
-  margin: 0;
+  gap: var(--space-6);
 }
 
 .pageSubtitle {
   font-size: 14px;
   color: var(--color-body);
   margin: 0;
-}
-
-.devSwitch {
-  font-size: 12px;
-  color: var(--color-placeholder);
-  text-align: right;
-  margin: -16px 0 0;
-}
-
-.devSwitch button {
-  background: none;
-  border: none;
-  color: var(--color-primary);
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  text-decoration: underline;
-  padding: 0;
 }
 
 /* empty state */
@@ -285,13 +243,4 @@
   font-size: 13px;
   color: var(--color-placeholder);
   margin: 0;
-}
-
-.stepFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: var(--space-6);
-  border-top: 1px solid var(--color-border);
-  width: 100%;
 }

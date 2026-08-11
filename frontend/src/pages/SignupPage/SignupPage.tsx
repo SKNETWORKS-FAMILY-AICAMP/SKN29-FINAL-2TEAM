@@ -6,6 +6,7 @@ import { signup } from '../../api/auth';
 import { ApiError } from '../../api/client';
 import { previewInvite } from '../../api/invites';
 import type { InvitePreview } from '../../api/invites';
+import { PATHS } from '../../routes';
 import { saveSession } from '../../utils/session';
 import styles from './SignupPage.module.css';
 
@@ -71,7 +72,9 @@ export default function SignupPage() {
       saveSession(result);
       showToast('회원가입이 완료되었습니다.', 'success');
       // 팀원 대시보드는 아직 없으므로 팀원은 본인 설정 화면으로 보낸다.
-      navigate(result.account.role === 'member' ? '/settings/team' : '/onboarding/connectors');
+      // 가입이 끝나면 바로 Chat 이다(5차 단계 4). 커넥터 연결·팀 만들기는
+      // Settings > Connector 에 있고, Chat 이 그리로 안내한다.
+      navigate(PATHS.chat);
     } catch (error) {
       if (error instanceof ApiError) {
         setFieldErrors(error.fieldErrors);

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Checkbox, Icon, Modal } from '../../components';
-import { ApiError } from '../../api/client';
-import { DRIVE_ROOT_ID, listDriveFolders } from '../../api/connectors';
-import type { DriveFolder } from '../../api/connectors';
+import { Button, Checkbox, Icon, Modal } from '../../../components';
+import { ApiError } from '../../../api/client';
+import { DRIVE_ROOT_ID, listDriveFolders } from '../../../api/connectors';
+import type { DriveFolder } from '../../../api/connectors';
 import styles from './DriveFolderPickerModal.module.css';
 
 const MY_DRIVE_LABEL = '내 드라이브';

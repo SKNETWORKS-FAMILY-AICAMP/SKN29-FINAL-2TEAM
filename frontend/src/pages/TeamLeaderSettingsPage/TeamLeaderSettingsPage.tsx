@@ -363,7 +363,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
                       {connected ? '연결됨' : '미연결'}
                     </Badge>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => navigate('/onboarding/connectors')}>
+                  <Button variant="outline" size="sm" onClick={() => navigate(PATHS.settingsConnectors)}>
                     {connected ? '업데이트' : '재연동'}
                   </Button>
                 </div>

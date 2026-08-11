@@ -289,7 +289,7 @@ class GoogleDriveOAuthApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            "http://localhost:5173/onboarding/connectors?connector=google-drive&status=ok",
+            "http://localhost:5173/settings/connectors?connector=google-drive&status=ok",
         )
         self.assertNotIn("authorization-code", response["Location"])
         self.assertNotIn("access-token", response["Location"])
@@ -312,7 +312,7 @@ class GoogleDriveOAuthApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            "http://localhost:5173/onboarding/connectors?connector=google-drive&status=error",
+            "http://localhost:5173/settings/connectors?connector=google-drive&status=error",
         )
         self.assertNotIn("secret-like-detail", response["Location"])
         connect_oauth.assert_not_called()
@@ -379,7 +379,7 @@ class JiraOAuthApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            "http://localhost:5173/onboarding/connectors?connector=jira&status=ok",
+            "http://localhost:5173/settings/connectors?connector=jira&status=ok",
         )
         stored = decrypt_credential(connect_oauth.call_args.kwargs["encrypted_credential"])
         self.assertEqual(connect_oauth.call_args.kwargs["connector_type"], JIRA)
@@ -397,7 +397,7 @@ class JiraOAuthApiTests(SimpleTestCase):
 
         self.assertEqual(
             response["Location"],
-            "http://localhost:5173/onboarding/connectors?connector=jira&status=error",
+            "http://localhost:5173/settings/connectors?connector=jira&status=error",
         )
         connect_oauth.assert_not_called()
 

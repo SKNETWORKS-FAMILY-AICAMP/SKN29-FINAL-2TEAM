@@ -3,42 +3,19 @@ import type { FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Icon, Input, useToast } from '../../components';
 import { login } from '../../api/auth';
-import type { AuthResult } from '../../api/auth';
 import { ApiError } from '../../api/client';
-import { CONNECTOR_TYPE_BY_ID, listConnectors } from '../../api/connectors';
-import { CONNECTOR_DEFS } from '../../data/connectorDefs';
 import { PATHS } from '../../routes';
 import { saveSession } from '../../utils/session';
 import styles from './LoginPage.module.css';
 
-/** 온보딩 화면이 "커넥터 설정 완료"로 치는 것과 같은 기준. */
-const REQUIRED_CONNECTOR_TYPES = CONNECTOR_DEFS.map((c) => CONNECTOR_TYPE_BY_ID[c.id]);
-
-/**
- * 로그인 직후 보낼 곳.
+/*
+ * 로그인 직후는 역할·연결 상태와 무관하게 Chat 이다.
  *
- * 4차 단계 1에서 목적지가 대시보드에서 Chat으로 바뀌었다. 팀원을 설정 화면으로
- * 보내던 것도 「전용 대시보드가 없어서」가 이유였는데, 이제 역할과 무관하게
- * Chat이 홈이라 같이 Chat으로 보낸다. 팀장은 커넥터 온보딩을 이미 마쳤는지에
- * 따라 갈린다 — 연결이 끝났는데도 매번 온보딩으로 보내면 이미 한 일을 다시
- * 하라는 화면이 뜬다. 연결 상태를 확인하지 못하면 온보딩으로 보낸다. 어차피
- * 연결을 손보는 곳이 거기다.
+ * 4차 단계 1에서 대시보드 대신 Chat 으로 바뀌었고, 5차 단계 4에서 커넥터
+ * 온보딩 분기가 사라졌다 — 온보딩 화면 자체가 없어졌기 때문이다. 연결이
+ * 덜 됐으면 Chat 이 그 사실을 말하고 설정으로 보낸다. 홈이 사람마다 다르면
+ * "그 화면 어디서 봤더라"를 사람이 기억해야 한다.
  */
-async function landingRouteFor(result: AuthResult): Promise<string> {
-  if (result.account.role === 'member') return PATHS.chat;
-
-  try {
-    const connections = await listConnectors(result.token);
-    const connected = new Set(
-      connections.filter((c) => c.auth_status === 'CONNECTED').map((c) => c.connector_type),
-    );
-    const onboarded = REQUIRED_CONNECTOR_TYPES.every((type) => connected.has(type));
-    return onboarded ? PATHS.chat : PATHS.onboardingConnectors;
-  } catch {
-    return PATHS.onboardingConnectors;
-  }
-}
-
 function InviteIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={18} height={18}>
@@ -72,7 +49,7 @@ export default function LoginPage() {
       const result = await login(email.trim(), password);
       saveSession(result);
       showToast('로그인되었습니다.', 'success');
-      navigate(from ?? (await landingRouteFor(result)), { replace: true });
+      navigate(from ?? PATHS.chat, { replace: true });
     } catch (error) {
       const message = error instanceof ApiError ? error.message : '로그인하지 못했습니다.';
       setFormError(message);

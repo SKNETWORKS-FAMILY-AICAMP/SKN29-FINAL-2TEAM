@@ -10,8 +10,6 @@ const SignupPage = lazy(() => import('./pages/SignupPage/SignupPage'));
 const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'));
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage/ResetPasswordPage'));
-const ConnectorOnboardingPage = lazy(() => import('./pages/ConnectorOnboardingPage/ConnectorOnboardingPage'));
-const FolderSelectPage = lazy(() => import('./pages/FolderSelectPage/FolderSelectPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
 const MainDashboardPage = lazy(() => import('./pages/MainDashboardPage/MainDashboardPage'));
 const NewFilesPage = lazy(() => import('./pages/NewFilesPage/NewFilesPage'));
@@ -73,8 +71,6 @@ function App() {
           <Route path={PATHS.findPassword} element={<FindPasswordPage />} />
           <Route path={PATHS.resetPassword} element={<ResetPasswordPage />} />
           {/* 아래는 로그인이 필요한 화면. 세션이 없으면 /login으로 보내고 원래 가려던 곳을 기억한다. */}
-          <Route path={PATHS.onboardingConnectors} element={<RequireAuth><ConnectorOnboardingPage /></RequireAuth>} />
-          <Route path={PATHS.onboardingFolders} element={<RequireAuth><FolderSelectPage /></RequireAuth>} />
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsMcp} element={<RequireAuth><SettingsPage /></RequireAuth>} />

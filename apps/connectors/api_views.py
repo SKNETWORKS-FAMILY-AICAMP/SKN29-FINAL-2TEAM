@@ -213,15 +213,20 @@ class PeopleDbSummaryAPIView(AuthenticatedAPIView):
         return Response(people_db_summary_response(summary))
 
 
+#: 연결이 끝난 사람이 돌아오는 자리. 온보딩 화면을 없애면서 Settings 로 옮겼다
+#: (5차 단계 4) — 연결·폴더 설정·상태가 전부 그 탭에 있다.
+CONNECTOR_RETURN_PATH = "/settings/connectors"
+
+
 def _google_drive_callback_redirect(result: str) -> HttpResponseRedirect:
     """Provider 입력을 URL에 되돌려 보내지 않는 고정 프론트 경로 리다이렉트."""
 
-    path = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/onboarding/connectors"
+    path = f"{settings.FRONTEND_BASE_URL.rstrip('/')}{CONNECTOR_RETURN_PATH}"
     return HttpResponseRedirect(f"{path}?connector=google-drive&status={result}")
 
 
 def _jira_callback_redirect(result: str) -> HttpResponseRedirect:
-    path = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/onboarding/connectors"
+    path = f"{settings.FRONTEND_BASE_URL.rstrip('/')}{CONNECTOR_RETURN_PATH}"
     return HttpResponseRedirect(f"{path}?connector=jira&status={result}")
 
 
