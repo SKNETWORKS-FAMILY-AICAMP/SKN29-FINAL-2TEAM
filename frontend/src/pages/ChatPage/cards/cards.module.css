@@ -442,3 +442,23 @@
   font-size: 14px;
   color: var(--color-heading);
 }
+
+/* 도구가 낸 검색어. 에이전트가 그 단계에서 실제로 한 판단이라 그대로 보여준다. */
+.queries {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  list-style: none;
+}
+
+.query {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-body);
+}
