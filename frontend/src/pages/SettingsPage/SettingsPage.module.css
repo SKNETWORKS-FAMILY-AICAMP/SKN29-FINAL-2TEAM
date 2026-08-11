@@ -52,37 +52,3 @@
   min-width: 0;
 }
 
-/*
-  DEV 전용 역할 전환기. 예전에는 position:fixed 오른쪽 위였는데 AppShell
-  상단바의 아바타·로그아웃과 겹친다 — 탭 영역 안에 인라인으로 둔다.
-*/
-.devRoleSwitch {
-  align-self: flex-end;
-  display: flex;
-  gap: 4px;
-  background: var(--color-surface);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: 3px;
-}
-
-.devRoleBtn {
-  border: none;
-  background: none;
-  border-radius: var(--radius-pill);
-  color: var(--color-placeholder);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px var(--space-3);
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.devRoleBtn:hover {
-  color: var(--color-body);
-}
-
-.devRoleBtnActive {
-  background: var(--color-primary);
-  color: #fff;
-}

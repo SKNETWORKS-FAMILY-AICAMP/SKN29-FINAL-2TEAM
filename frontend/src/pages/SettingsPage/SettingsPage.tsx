@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { AppShell } from '../../components';
 import { PATHS, SETTINGS_TABS } from '../../routes';
-import { loadUserRole, saveUserRole } from '../../utils/userRole';
-import type { UserRole } from '../../utils/userRole';
+import { loadUserRole } from '../../utils/userRole';
 import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettingsPage';
 import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
@@ -22,12 +21,9 @@ import styles from './SettingsPage.module.css';
  */
 export default function SettingsPage() {
   const location = useLocation();
-  const [role, setRole] = useState<UserRole>(loadUserRole);
-
-  function handleRoleChange(next: UserRole) {
-    setRole(next);
-    saveUserRole(next);
-  }
+  // 역할은 로그인 계정에서 온다(`account.role`). DEV 전환기는 걷어냈다 —
+  // 실제 흐름으로 확인한다(개발지시_3차 §완료 기준).
+  const role = loadUserRole();
 
   function renderTab() {
     switch (location.pathname) {
@@ -47,8 +43,6 @@ export default function SettingsPage() {
         );
     }
   }
-
-  const isTeamTab = location.pathname === PATHS.settingsTeam;
 
   return (
     <AppShell>
@@ -70,25 +64,6 @@ export default function SettingsPage() {
             </NavLink>
           ))}
         </nav>
-
-        {isTeamTab && import.meta.env.DEV && (
-          <div className={styles.devRoleSwitch}>
-            <button
-              type="button"
-              className={[styles.devRoleBtn, role === 'leader' ? styles.devRoleBtnActive : ''].join(' ')}
-              onClick={() => handleRoleChange('leader')}
-            >
-              팀장 보기
-            </button>
-            <button
-              type="button"
-              className={[styles.devRoleBtn, role === 'member' ? styles.devRoleBtnActive : ''].join(' ')}
-              onClick={() => handleRoleChange('member')}
-            >
-              팀원 보기
-            </button>
-          </div>
-        )}
 
         <div className={styles.tabPanel}>{renderTab()}</div>
       </div>
