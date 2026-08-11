@@ -1,5 +1,5 @@
 import type { ChatEvent, ExtractedTask as ApiTask, TaskExtractionPayload } from '../../api/chat';
-import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './mockChat';
+import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './cardTypes';
 
 /**
  * 이벤트 스트림 → 카드가 그릴 상태.

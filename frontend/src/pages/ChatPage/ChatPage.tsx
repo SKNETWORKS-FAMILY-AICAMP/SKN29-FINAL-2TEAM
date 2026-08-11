@@ -7,33 +7,31 @@ import {
   ApiError,
   confirmMessage,
   createSession,
+  deleteSession,
   getSession,
   listSessions,
   streamMessage,
 } from '../../api/chat';
 import type { ChatSession } from '../../api/chat';
-import { MOCK_AGENTS } from '../../data/mockAgents';
-import { ConfirmCard, DocPickCard, ErrorCard, ProgressCard, ResultCard } from './cards/ChatCards';
+import { listAgents } from '../../api/agents';
+import type { Agent } from '../../api/agents';
+import { ConfirmCard, ErrorCard, ProgressCard, ResultCard } from './cards/ChatCards';
 import { emptyLive, reduce, toCards } from './liveChat';
 import type { LiveChat } from './liveChat';
-import { CHAT_STATE_LABELS, DEMO_UTTERANCE, STARTER_AGENTS } from './mockChat';
-import type { ChatState } from './mockChat';
 import styles from './ChatPage.module.css';
 
 /**
- * Chat 홈. **서버와 실제로 말한다** — NDJSON 스트림과 확인 게이트.
+ * Chat 홈. **서버와만 말한다** — mock 은 없다(개발지시_3차 단계 1).
  *
  * 이벤트를 카드 상태로 접는 규칙은 `liveChat.ts` 에 있다. 핵심은 `stage` 가 두
  * 층에서 온다는 것 — `tool_ref` 가 있으면 그 도구의 진행, 없으면 Loop 회전이다.
- *
- * DEV 상태 전환기는 그대로 둔다. 카드 8종을 서버 없이 확인할 수 있어야 Figma 와
- * 나란히 놓고 볼 수 있고, 실연동 경로와 **같은 컴포넌트**를 쓰므로 전환기에서
- * 본 모양이 실제와 어긋나지 않는다.
  */
 export default function ChatPage() {
   const navigate = useNavigate();
   const token = loadSessionToken();
 
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [utterance, setUtterance] = useState('');
@@ -43,40 +41,41 @@ export default function ChatPage() {
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  /** mock 전환기. 서버를 안 부르는 경로라 실연동 상태와 완전히 갈라 둔다. */
-  const [mockState, setMockState] = useState<ChatState | 'live'>('live');
-  const mocking = mockState !== 'live';
-
-  // 에이전트는 사람이 고른다(확정 ①). 선택기 UI 는 아직 mock 목록을 쓰고,
-  // 실제 목록은 agent API 가 붙을 때 갈아 끼운다 — 대화를 열 때 이 id 를 보낸다.
-  const agent = MOCK_AGENTS[0];
-  const agentId = agent.id;
-
   useEffect(() => {
     if (!token) return;
+    listAgents(token)
+      .then((rows) => {
+        setAgents(rows);
+        // 에이전트는 사람이 고른다(확정 ①). 기본값은 첫 항목이고, 목록은
+        // is_prebuilt 가 앞에 오도록 서버가 정렬해 준다.
+        setAgentId((prev) => prev ?? rows[0]?.agent_id ?? null);
+      })
+      .catch(() => setFatal('에이전트 목록을 불러오지 못했습니다.'));
     listSessions(token).then(setSessions).catch(() => undefined);
   }, [token]);
 
-  // 브라우저를 닫거나 화면을 떠나면 스트림을 끊는다. 서버는 그 run 을 FAILED 로
-  // 닫으므로 RUNNING 으로 남지 않는다.
+  // 화면을 떠나면 스트림을 끊는다. 서버는 그 run 을 FAILED 로 닫으므로
+  // RUNNING 으로 남지 않는다.
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const openSession = useCallback(
     async (id: string) => {
       if (!token) return;
+      abortRef.current?.abort();
       setSessionId(id);
       setFatal(null);
       try {
         const detail = await getSession(token, id);
+        setAgentId(detail.agent_id);
         // 새로고침 재현 — 저장된 마지막 에이전트 답을 이벤트로 다시 접는다.
         const last = [...detail.messages].reverse().find((message) => message.role === 'agent');
         const lastUser = [...detail.messages].reverse().find((message) => message.role === 'user');
         setSent(lastUser?.content.text ?? null);
-        setLive(
-          last?.content.events
-            ? last.content.events.reduce(reduce, { ...emptyLive(), running: false })
-            : null,
-        );
+        const restored = last?.content.events
+          ? last.content.events.reduce(reduce, { ...emptyLive(), running: false })
+          : null;
+        setLive(restored);
+        setSelected(restored ? restored.tasks.map((_, index) => index) : []);
       } catch (error) {
         setFatal(error instanceof ApiError ? error.message : '대화를 불러오지 못했습니다.');
       }
@@ -84,8 +83,28 @@ export default function ChatPage() {
     [token],
   );
 
+  function startNew() {
+    abortRef.current?.abort();
+    setSessionId(null);
+    setSent(null);
+    setLive(null);
+    setSelected([]);
+    setFatal(null);
+  }
+
+  async function remove(id: string) {
+    if (!token) return;
+    try {
+      await deleteSession(token, id);
+      setSessions((prev) => prev.filter((session) => session.session_id !== id));
+      if (id === sessionId) startNew();
+    } catch (error) {
+      setFatal(error instanceof ApiError ? error.message : '대화를 지우지 못했습니다.');
+    }
+  }
+
   async function send() {
-    if (!token || !utterance.trim()) return;
+    if (!token || !utterance.trim() || !agentId) return;
     const text = utterance.trim();
     setUtterance('');
     setSent(text);
@@ -94,7 +113,6 @@ export default function ChatPage() {
     let id = sessionId;
     try {
       if (!id) {
-        // 첫 발화가 대화를 만든다. 에이전트는 사람이 고른 것을 쓴다(확정 ①).
         const created = await createSession(token, { agent_id: agentId, title: text.slice(0, 60) });
         id = created.session_id;
         setSessionId(id);
@@ -128,7 +146,6 @@ export default function ChatPage() {
     try {
       await start((event) => {
         state = reduce(state, event);
-        // 새 객체로 넣어야 React 가 갱신을 알아챈다.
         setLive({ ...state });
         if (event.type === 'task_extraction_result') {
           setSelected(toCards(event.result).map((_, index) => index));
@@ -142,9 +159,10 @@ export default function ChatPage() {
     }
   }
 
-  const isEmpty = !mocking && !sent && live === null;
-  const streaming = mocking ? mockState === 'streaming' : Boolean(live?.running);
-  const waitingConfirm = mocking ? mockState === 'confirm' : Boolean(live?.confirm);
+  const agent = agents.find((item) => item.agent_id === agentId) ?? null;
+  const isEmpty = !sent && live === null;
+  const streaming = Boolean(live?.running);
+  const waitingConfirm = Boolean(live?.confirm);
 
   return (
     <AppShell variant="flush">
@@ -155,50 +173,57 @@ export default function ChatPage() {
             <p className={styles.sessionsEmpty}>아직 대화가 없습니다</p>
           ) : (
             sessions.map((session) => (
-              <button
-                key={session.session_id}
-                type="button"
-                onClick={() => openSession(session.session_id)}
-                className={[styles.session, session.session_id === sessionId ? styles.sessionActive : '']
-                  .filter(Boolean)
-                  .join(' ')}
-              >
-                {session.title ?? '제목 없는 대화'}
-              </button>
+              <span key={session.session_id} className={styles.sessionRow}>
+                <button
+                  type="button"
+                  onClick={() => openSession(session.session_id)}
+                  className={[styles.session, session.session_id === sessionId ? styles.sessionActive : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {session.title ?? '제목 없는 대화'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.sessionDelete}
+                  aria-label={`${session.title ?? '대화'} 삭제`}
+                  onClick={() => remove(session.session_id)}
+                >
+                  <Icon name="x" size={13} color="var(--color-placeholder)" />
+                </button>
+              </span>
             ))
           )}
         </aside>
 
         <div className={styles.main}>
           <header className={styles.agentBar}>
-            <button type="button" className={styles.agentPicker}>
-              <Icon name="sparkles" size={15} color="var(--color-primary)" />
-              {agent.name}
-              <Icon name="chevron-down" size={14} color="var(--color-placeholder)" />
-            </button>
-            <span className={styles.agentDesc}>{agent.description}</span>
-
-            {import.meta.env.DEV && (
-              <select
-                className={styles.stateSwitch}
-                value={mockState}
-                onChange={(event) => setMockState(event.target.value as ChatState | 'live')}
-                aria-label="mock 상태 전환 (개발용)"
-              >
-                <option value="live">실연동</option>
-                {CHAT_STATE_LABELS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    mock · {option.label}
-                  </option>
-                ))}
-              </select>
-            )}
+            <select
+              className={styles.agentPicker}
+              value={agentId ?? ''}
+              onChange={(event) => setAgentId(event.target.value)}
+              // 대화가 시작된 뒤에는 바꾸지 않는다 — 갈면 앞선 턴이 다른
+              // 스캐폴드로 만들어진 것이 되어 이어지는 답의 근거가 흔들린다.
+              disabled={Boolean(sessionId)}
+              aria-label="에이전트 선택"
+            >
+              {agents.map((item) => (
+                <option key={item.agent_id} value={item.agent_id}>
+                  {item.name}
+                  {item.is_prebuilt ? ' (기본 제공)' : ''}
+                </option>
+              ))}
+            </select>
+            <span className={styles.agentDesc}>{agent?.description ?? ''}</span>
+            <Button size="sm" variant="outline" onClick={startNew}>
+              새 대화
+            </Button>
           </header>
 
           <div className={styles.stream}>
             {fatal && <p className={styles.fatal}>{fatal}</p>}
 
-            {(mocking ? mockState === 'empty' || mockState === 'empty-onboarding' : isEmpty) && (
+            {isEmpty && (
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
@@ -206,39 +231,37 @@ export default function ChatPage() {
                 </div>
 
                 <div className={styles.starters}>
-                  {STARTER_AGENTS.map((starter) => (
+                  {agents.map((item) => (
                     <button
-                      key={starter.name}
+                      key={item.agent_id}
                       type="button"
                       className={styles.starter}
-                      onClick={() => setUtterance(starter.example)}
+                      onClick={() => setAgentId(item.agent_id)}
                     >
                       <span className={styles.starterIcon}>
                         <Icon name="sparkles" size={20} color="var(--color-primary)" />
                       </span>
-                      <strong>{starter.name}</strong>
-                      <span className={styles.starterDesc}>{starter.desc}</span>
-                      <span className={styles.starterExample}>“{starter.example}”</span>
+                      <strong>{item.name}</strong>
+                      <span className={styles.starterDesc}>{item.description}</span>
                     </button>
                   ))}
                 </div>
 
-                {mockState === 'empty-onboarding' && (
+                {agents.length === 0 && (
                   <p className={styles.onboardingBanner}>
                     <Icon name="info" size={15} color="var(--color-info)" />
-                    Drive 연결 후 문서 기반 요청이 가능합니다
-                    <button type="button" onClick={() => navigate(PATHS.settingsConnectors)}>
-                      설정으로 이동 →
+                    쓸 수 있는 에이전트가 없습니다. 에이전트를 먼저 만들어 주세요.
+                    <button type="button" onClick={() => navigate(PATHS.agents)}>
+                      에이전트로 이동 →
                     </button>
                   </p>
                 )}
               </div>
             )}
 
-            {/* ── 실연동 ── */}
-            {!mocking && sent && <div className={styles.userMessage}><span>{sent}</span></div>}
+            {sent && <div className={styles.userMessage}><span>{sent}</span></div>}
 
-            {!mocking && live && (
+            {live && (
               <>
                 {(live.running || live.steps.length > 0) && (
                   <ProgressCard
@@ -266,15 +289,21 @@ export default function ChatPage() {
                   />
                 )}
 
-                {live.confirm && !live.tasks.length && (
+                {live.confirm && live.tasks.length === 0 && (
                   <ConfirmCard
                     tasks={[]}
-                    warnings={[`${live.confirm.toolName} 실행을 승인하시겠습니까? ${live.confirm.count}건이 대상입니다.`]}
+                    warnings={[
+                      `${live.confirm.toolName} 실행을 승인하시겠습니까? ${live.confirm.count}건이 대상입니다.`,
+                    ]}
                     selected={selected}
                     onSelectedChange={setSelected}
                     onApprove={approve}
                     busy={live.running}
                   />
+                )}
+
+                {(live.created.length > 0 || live.failures.length > 0) && (
+                  <ResultCard created={live.created} failures={live.failures} />
                 )}
 
                 {live.answer && <div className={styles.agentMessage}>{live.answer}</div>}
@@ -295,69 +324,6 @@ export default function ChatPage() {
                 )}
               </>
             )}
-
-            {/* ── mock 전환기 ── */}
-            {mocking && mockState !== 'empty' && mockState !== 'empty-onboarding' && (
-              <>
-                <div className={styles.userMessage}>
-                  <span>
-                    {mockState === 'success' || mockState === 'partial'
-                      ? '확인했어. 선택한 20건 등록해줘.'
-                      : DEMO_UTTERANCE}
-                  </span>
-                </div>
-
-                {mockState === 'doc-pick' && (
-                  <>
-                    <div className={styles.agentMessage}>
-                      어떤 문서를 기준으로 삼을까요? 이 프로젝트에서 기준이 될 만한 문서를 찾았습니다. 하나만 골라 주세요.
-                    </div>
-                    <DocPickCard />
-                  </>
-                )}
-
-                {mockState === 'streaming' && (
-                  <>
-                    <div className={styles.agentMessage}>
-                      기준 문서 「2026 상반기 통합포털 개편 기획서」를 기준으로 업무를 정리하겠습니다. 근거를 찾은 뒤
-                      확인을 요청드릴게요.
-                    </div>
-                    <ProgressCard />
-                  </>
-                )}
-
-                {mockState === 'confirm' && (
-                  <>
-                    <div className={styles.agentMessage}>
-                      업무 20건을 찾았습니다. 근거를 함께 확인하시고, Jira에 등록할 업무를 골라 주세요.
-                    </div>
-                    <ConfirmCard />
-                  </>
-                )}
-
-                {(mockState === 'success' || mockState === 'partial') && (
-                  <>
-                    <div className={styles.agentMessage}>
-                      {mockState === 'partial'
-                        ? 'Jira에 등록했습니다. 3건은 실패해서 사유와 함께 남겨 두었습니다.'
-                        : 'Jira에 20건 모두 등록했습니다. 업무별 근거는 위 확인 카드에 그대로 남아 있습니다.'}
-                    </div>
-                    <ResultCard partial={mockState === 'partial'} />
-                  </>
-                )}
-
-                {mockState === 'error' && (
-                  <>
-                    {/* 스트림이 끊겨도 앞 단계 결과물은 남긴다(E2E §2-3). */}
-                    <div className={styles.keptResult}>
-                      <Icon name="check-circle" size={15} color="var(--color-success)" />
-                      정리된 업무 20건 · 근거 24개 문단 — 이 결과는 남아 있습니다
-                    </div>
-                    <ErrorCard errorCode="401" />
-                  </>
-                )}
-              </>
-            )}
           </div>
 
           <div className={styles.inputBar}>
@@ -368,7 +334,7 @@ export default function ChatPage() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.nativeEvent.isComposing) send();
               }}
-              disabled={waitingConfirm || streaming || mocking}
+              disabled={waitingConfirm || streaming || !agentId}
               placeholder={
                 waitingConfirm ? '위 목록에서 등록할 업무를 선택해 주세요' : '무엇을 도와드릴까요?'
               }
@@ -382,11 +348,7 @@ export default function ChatPage() {
                 중단
               </Button>
             ) : (
-              <Button
-                aria-label="보내기"
-                onClick={send}
-                disabled={waitingConfirm || mocking || !utterance.trim()}
-              >
+              <Button aria-label="보내기" onClick={send} disabled={waitingConfirm || !utterance.trim()}>
                 <Icon name="arrow-right" size={16} />
               </Button>
             )}

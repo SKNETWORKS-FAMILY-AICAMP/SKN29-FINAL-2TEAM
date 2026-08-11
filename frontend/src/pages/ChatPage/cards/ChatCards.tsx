@@ -1,28 +1,21 @@
 import { useState } from 'react';
-import { Badge, Button, Checkbox, Icon } from '../../../components';
-import {
-  MOCK_DOC_CANDIDATES,
-  MOCK_FAILURES,
-  MOCK_ISSUES,
-  MOCK_STEPS,
-  MOCK_TASKS,
-} from '../mockChat';
-import type { ExtractedTask, ProgressStep } from '../mockChat';
+import { Button, Checkbox, Icon } from '../../../components';
+import type { CreatedIssue, ExtractedTask, ProgressStep } from '../cardTypes';
 import styles from './cards.module.css';
 
 /**
- * Chat 스트림에 뜨는 카드 6종.
+ * Chat 스트림에 뜨는 카드.
  *
- * 데이터는 props 로 받는다 — 실연동은 서버 이벤트를(`liveChat.ts` 가 접어 만든
- * 상태), DEV 상태 전환기는 mock 을 넣는다. 두 경로가 같은 컴포넌트를 쓰므로
- * 전환기에서 본 모양이 실제 화면과 어긋나지 않는다.
+ * **데이터는 전부 props 다.** mock 은 없앴다(개발지시_3차) — 카드가 자기
+ * 기본값을 들고 있으면 서버가 아무것도 안 줘도 그럴듯한 화면이 나와서, 연동이
+ * 안 된 것과 데이터가 없는 것을 구별할 수 없다.
  *
  * 카피는 Figma 문안 그대로다. 정직 표기 원칙 — 부분 상태를 성공처럼 뭉개지
  * 않는다(「근거 없어 비움」·「17/20 등록 완료」·「판정 보류」).
  */
 
 export interface ProgressCardProps {
-  steps?: ProgressStep[];
+  steps: ProgressStep[];
   /** 도구가 낸 검색어. 에이전트가 실제로 한 판단이라 그대로 보여준다. */
   queries?: string[];
   evidenceCount?: number;
@@ -36,7 +29,7 @@ export interface ProgressCardProps {
 
 /** ① 진행 카드 — 장시간 작업의 단계·검색어·근거 수. 기존 진행 모달의 인라인판. */
 export function ProgressCard({
-  steps = MOCK_STEPS,
+  steps,
   queries = [],
   evidenceCount,
   title = '업무를 정리하는 중',
@@ -87,7 +80,7 @@ export function ProgressCard({
       )}
 
       <p className={styles.foot}>
-        {evidenceCount === undefined ? '근거 24건' : `근거 ${evidenceCount}건`} · 몇 분 걸립니다 · 창을 닫지 않아도 됩니다
+        {evidenceCount ? `근거 ${evidenceCount}건 · ` : ''}몇 분 걸립니다 · 창을 닫지 않아도 됩니다
       </p>
     </section>
   );
@@ -150,19 +143,19 @@ function TaskRow({
 }
 
 export interface ConfirmCardProps {
-  tasks?: ExtractedTask[];
+  tasks: ExtractedTask[];
   warnings?: string[];
   trace?: string;
   /** 체크된 업무의 **인덱스**. 승인 API 에 이 값만 보낸다. */
-  selected?: number[];
-  onSelectedChange?: (next: number[]) => void;
+  selected: number[];
+  onSelectedChange: (next: number[]) => void;
   onApprove?: () => void;
   busy?: boolean;
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
 export function ConfirmCard({
-  tasks = MOCK_TASKS,
+  tasks,
   warnings,
   trace,
   selected,
@@ -170,12 +163,10 @@ export function ConfirmCard({
   onApprove,
   busy = false,
 }: ConfirmCardProps) {
-  // 실연동이면 바깥이 선택을 쥔다. mock 이면 전부 선택된 것으로 보인다.
-  const chosen = selected ?? tasks.map((_, index) => index);
+  const chosen = selected;
   const allOn = chosen.length === tasks.length && tasks.length > 0;
 
   function toggle(index: number, next: boolean) {
-    if (!onSelectedChange) return;
     onSelectedChange(
       next ? [...chosen, index].sort((a, b) => a - b) : chosen.filter((item) => item !== index),
     );
@@ -187,9 +178,7 @@ export function ConfirmCard({
         <span className={styles.confirmLeft}>
           <Checkbox
             checked={allOn}
-            onChange={(next) =>
-              onSelectedChange?.(next ? tasks.map((_, index) => index) : [])
-            }
+            onChange={(next) => onSelectedChange(next ? tasks.map((_, index) => index) : [])}
           />
           <strong>전체 선택</strong>
           <span className={styles.muted}>{chosen.length}건 선택됨</span>
@@ -197,9 +186,9 @@ export function ConfirmCard({
         <span className={styles.muted}>업무 {tasks.length}건</span>
       </div>
 
-      {(warnings ?? [
-        '기준 문서에서 마감일 근거를 찾지 못한 업무가 있습니다. 근거 없는 항목은 채우지 않고 「근거 없어 비움」으로 표시합니다.',
-      ]).map((warning) => (
+      {/* 서버가 준 경고만 보여준다. 없으면 안 띄운다 — 없는 주의를 지어내면
+          다음에 진짜 경고가 왔을 때 사람이 안 읽는다. */}
+      {(warnings ?? []).map((warning) => (
         <p key={warning} className={styles.warnBanner}>
           {warning}
         </p>
@@ -209,14 +198,12 @@ export function ConfirmCard({
         <TaskRow
           key={task.no}
           task={task}
-          checked={selected ? chosen.includes(index) : undefined}
-          onToggle={onSelectedChange ? (next) => toggle(index, next) : undefined}
+          checked={chosen.includes(index)}
+          onToggle={(next) => toggle(index, next)}
         />
       ))}
 
-      <p className={styles.trace}>
-        {trace ?? '검색 단계 4단계 · 검색어 gpt-5.6 luna(low) · 근거 정리 gpt-5.6 sol(xhigh)'}
-      </p>
+      {trace && <p className={styles.trace}>{trace}</p>}
 
       <div className={styles.confirmActions}>
         <span className={styles.muted}>승인하기 전까지 Jira에는 아무것도 만들지 않습니다.</span>
@@ -228,8 +215,17 @@ export function ConfirmCard({
   );
 }
 
+export interface ResultCardProps {
+  created: CreatedIssue[];
+  failures: { title: string; reason: string }[];
+  onRetryFailed?: () => void;
+}
+
 /** ④ 결과 카드 — 전부 성공 / 부분 실패. 성공분은 롤백하지 않는다(E2E §2). */
-export function ResultCard({ partial }: { partial: boolean }) {
+export function ResultCard({ created, failures, onRetryFailed }: ResultCardProps) {
+  const partial = failures.length > 0;
+  const total = created.length + failures.length;
+
   return (
     <section className={styles.cardFlush}>
       <div className={partial ? styles.resultHeadWarn : styles.resultHeadOk}>
@@ -239,41 +235,43 @@ export function ResultCard({ partial }: { partial: boolean }) {
             size={18}
             color={partial ? 'var(--color-warning-text)' : 'var(--color-success-text)'}
           />
-          {partial ? '17/20 등록 완료 — 3건 실패' : '20/20 등록 완료'}
+          {/* 실패를 성공에 섞지 않는다 — 분모를 밝혀 「17/20」로 적는다. */}
+          {created.length}/{total} 등록 완료
+          {partial ? ` — ${failures.length}건 실패` : ''}
         </span>
         <span className={styles.resultMeta}>
-          {partial ? '성공분은 되돌리지 않습니다' : '통합포털 개편 (PORTAL) · 1분 48초 소요'}
+          {partial ? '성공분은 되돌리지 않습니다' : ''}
         </span>
       </div>
 
-      <div className={styles.issueHead}>
-        <strong>등록된 이슈 {partial ? '17건' : ''}</strong>
-        <span className={styles.muted}>이슈를 누르면 Jira에서 열립니다</span>
-      </div>
+      {created.length > 0 && (
+        <>
+          <div className={styles.issueHead}>
+            <strong>등록된 이슈 {created.length}건</strong>
+            <span className={styles.muted}>이슈를 누르면 Jira에서 열립니다</span>
+          </div>
 
-      {MOCK_ISSUES.map((issue) => (
-        <div key={issue.key} className={styles.issueRow}>
-          <span className={styles.issueKey}>{issue.key}</span>
-          <span className={styles.issueBody}>
-            <strong>{issue.title}</strong>
-            <span className={styles.muted}>{issue.meta}</span>
-          </span>
-          <span className={styles.issueEvidence}>근거 {issue.evidence}</span>
-          <Icon name="arrow-right" size={14} color="var(--color-placeholder)" />
-        </div>
-      ))}
-
-      <button type="button" className={styles.more}>
-        외 {partial ? 14 : 17}건 보기
-      </button>
+          {created.map((issue) => (
+            <div key={issue.key} className={styles.issueRow}>
+              <span className={styles.issueKey}>{issue.key}</span>
+              <span className={styles.issueBody}>
+                <strong>{issue.title}</strong>
+                <span className={styles.muted}>{issue.meta}</span>
+              </span>
+              <span className={styles.issueEvidence}>근거 {issue.evidence}</span>
+              <Icon name="arrow-right" size={14} color="var(--color-placeholder)" />
+            </div>
+          ))}
+        </>
+      )}
 
       {partial && (
         <>
           <div className={styles.failHead}>
             <Icon name="circle-x" size={15} color="var(--color-danger)" />
-            <strong>실패 3건 — 사유</strong>
+            <strong>실패 {failures.length}건 — 사유</strong>
           </div>
-          {MOCK_FAILURES.map((failure) => (
+          {failures.map((failure) => (
             <div key={failure.title} className={styles.failRow}>
               <strong>{failure.title}</strong>
               <span className={styles.failReason}>{failure.reason}</span>
@@ -285,16 +283,12 @@ export function ResultCard({ partial }: { partial: boolean }) {
       <div className={styles.confirmActions}>
         <span className={styles.muted}>
           {partial
-            ? '실패한 3건만 다시 시도합니다. 이미 등록된 17건은 그대로 둡니다.'
-            : '업무별 근거(E1~E24)는 이 대화에 그대로 저장됩니다. 새로고침해도 사라지지 않습니다.'}
+            ? `실패한 ${failures.length}건만 다시 시도합니다. 이미 등록된 ${created.length}건은 그대로 둡니다.`
+            : '업무별 근거는 이 대화에 그대로 저장됩니다. 새로고침해도 사라지지 않습니다.'}
         </span>
-        {partial ? (
-          <Button size="sm" iconLeft={<Icon name="refresh" size={14} />}>
-            실패분 3건 재시도
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline">
-            Jira에서 열기
+        {partial && onRetryFailed && (
+          <Button size="sm" iconLeft={<Icon name="refresh" size={14} />} onClick={onRetryFailed}>
+            실패분 {failures.length}건 재시도
           </Button>
         )}
       </div>
@@ -347,41 +341,12 @@ export function ErrorCard({ detail, errorCode, onRetry, onOpenSettings }: ErrorC
   );
 }
 
-/** ⑥ 문서 선택 카드 — E2E STEP 2 되묻기. 기준 문서 1건만 고른다. */
-export function DocPickCard() {
-  const [selected, setSelected] = useState(MOCK_DOC_CANDIDATES.findIndex((doc) => doc.selected));
-
-  return (
-    <section className={styles.cardFlush}>
-      <div className={styles.docHead}>
-        <Icon name="file-text" size={15} color="var(--color-primary)" />
-        <strong>기준 문서 후보 3건</strong>
-        <span className={styles.muted}>
-          기준 문서 1건만 고르면 나머지 근거는 팀 문서 전체에서 찾습니다 · 아직 안 읽은 문서는 고르는 순간 읽습니다
-        </span>
-      </div>
-
-      {MOCK_DOC_CANDIDATES.map((doc, index) => (
-        <label key={doc.name} className={[styles.docRow, selected === index ? styles.docRowOn : ''].join(' ')}>
-          <input
-            type="radio"
-            name="primary-doc"
-            checked={selected === index}
-            onChange={() => setSelected(index)}
-            className={styles.radio}
-          />
-          <span className={styles.docBody}>
-            <strong>{doc.name}</strong>
-            <span className={styles.muted}>{doc.meta}</span>
-          </span>
-          <Badge tone={doc.state === '준비됨' ? 'success' : 'neutral'}>{doc.state}</Badge>
-        </label>
-      ))}
-
-      <div className={styles.confirmActions}>
-        <span className={styles.muted}>다른 문서를 쓰려면 채팅으로 파일명을 알려 주세요.</span>
-        <Button size="sm">이 문서로 진행</Button>
-      </div>
-    </section>
-  );
-}
+/*
+ * 문서 선택 카드(Figma 47:654)는 뺐다.
+ *
+ * **서버가 그 카드를 내보내는 경로가 없다.** 기준 문서는 사람이 별도 화면에서
+ * 미리 고른 것(`doc_role='PRIMARY'`)을 쓰고, `task_extraction` 은 문서 id 를
+ * 받지도 않는다(1차 단계 4). mock 을 걷어내니 데이터 출처가 없는 컴포넌트만
+ * 남아서 지웠다 — 되살리려면 Chat 이 문서 후보를 되묻는 흐름을 백엔드에
+ * 먼저 만들어야 한다. CSS(`.docHead`·`.docRow`…)는 그때 다시 쓰도록 남겨 뒀다.
+ */
