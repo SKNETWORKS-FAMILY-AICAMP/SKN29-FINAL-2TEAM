@@ -242,7 +242,9 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
     테넌트 경계는 언제나 서버가 정한다.
     """
 
-    if tool.ref == "document_search":
+    if tool.ref == "document_search" or tool.ref.startswith("mcp:"):
+        # MCP 도구도 팀이 필요하다 — 실행 직전에 그 팀의 서버·토큰을 찾는다.
+        # 모델이 team_id 를 보내면 남의 팀 MCP 서버를 부를 수 있다.
         return {"team_id": agent["team_id"]}
     if tool.ref == "task_extraction":
         # 어느 프로젝트의 기준 문서로 뽑을지는 대화의 문맥이지 모델의 선택이 아니다.

@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
 from backend.db import AccountRepository, ExistTaskRepository, TeamRepository
-from backend.db.agent_platform import AgentRepository
+from backend.db.agent_platform import AgentRepository, McpServerRepository
 from backend.db.document_pipeline import (
     DocMetaRepository,
     PipelineDocumentRepository,
@@ -20,6 +20,7 @@ from backend.db.document_pipeline import (
 )
 from backend.services.hr import list_absences, list_capacity_profiles
 from services.document_pipeline.runpod_client import embed_queries
+from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
 from services.workload import calculator
 
@@ -269,20 +270,32 @@ def _mcp_tool(row: dict[str, Any]) -> Tool:
     만든다. 단계 6 에서 서버별로 표시할 수 있게 되면 그때 좁힌다.
     """
 
+    tool_ref = row["tool_ref"]
+
+    def handler(*, team_id: str, **arguments: Any) -> dict[str, Any]:
+        """호출 직전에 서버·토큰을 다시 읽는다.
+
+        Registry 를 만들 때 토큰을 들고 있지 않는 이유는, 그 값이 Tool 객체와
+        함께 Loop 안을 돌아다니게 되기 때문이다 — 예외 문자열이나 디버그 출력에
+        섞여 나갈 자리가 그만큼 늘어난다. 쓰기 직전에만 꺼낸다(§4-2).
+        """
+
+        server = McpServerRepository.credentials_for_tool(tool_ref, team_id=team_id)
+        return mcp_client.call_tool(
+            endpoint_url=server["endpoint_url"],
+            auth_token=server["auth_token"],
+            name=server["tool_name"],
+            arguments=arguments,
+        )
+
     return Tool(
-        ref=row["tool_ref"],
+        ref=tool_ref,
         name=row["name"],
         description=row.get("description") or "",
         input_schema=row.get("input_schema") or {"type": "object", "properties": {}},
-        handler=_mcp_not_wired,
+        handler=handler,
         side_effect=True,
     )
-
-
-def _mcp_not_wired(**_kwargs: Any) -> dict[str, Any]:
-    """MCP Client 는 단계 6 이다. 그 전까지 부르면 조용히 성공하지 않고 실패한다."""
-
-    raise NotImplementedError("MCP 도구 호출은 아직 연결되지 않았습니다(단계 6).")
 
 
 def load_for_agent(*, agent_id: str, team_id: str) -> dict[str, Tool]:

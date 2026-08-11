@@ -13,6 +13,9 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from apps.connectors.oauth import decrypt_credential, encrypt_credential
+
+from .codes import next_short_code
 from .connection import database_connection
 from .errors import PermissionDenied, RecordNotFound
 from .repositories import _require_team
@@ -329,3 +332,212 @@ class ChatMessageRepository:
                     (session_id,),
                 )
                 return cursor.fetchone()
+
+
+class McpServerRepository:
+    """MCP 서버 등록. **토큰은 암호화해서만 저장한다**(11_MCP_설계 §4-2).
+
+    `apps/connectors` 의 Fernet 을 그대로 쓴다 — 키 파생을 두 곳에 두면 한쪽만
+    바뀌었을 때 조용히 복호화가 안 된다.
+    """
+
+    @staticmethod
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        """목록. **토큰은 내보내지 않는다** — 있는지 여부만 준다(화면은 마스킹)."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT s.mcp_server_id, s.name, s.endpoint_url, s.status,
+                           s.last_checked_at, s.created_by,
+                           (s.auth_token_enc IS NOT NULL) AS has_token,
+                           COALESCE(
+                               (SELECT json_agg(json_build_object(
+                                    'mcp_tool_id', t.mcp_tool_id, 'name', t.name,
+                                    'description', t.description, 'enabled', t.enabled)
+                                    ORDER BY t.name)
+                                FROM mcp_tool t WHERE t.server_id = s.mcp_server_id),
+                               '[]'::json) AS tools
+                    FROM mcp_server AS s
+                    WHERE s.team_id = %s
+                    ORDER BY s.name
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def create(
+        *, account_id: str, name: str, endpoint_url: str, auth_token: str | None
+    ) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                server_id = next_short_code(
+                    cursor, table="mcp_server", column="mcp_server_id", prefix="MS"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO mcp_server (mcp_server_id, team_id, name, endpoint_url,
+                                            auth_token_enc, status, created_by)
+                    VALUES (%s, %s, %s, %s, %s, 'UNCHECKED', %s)
+                    RETURNING mcp_server_id, name, endpoint_url, status, last_checked_at
+                    """,
+                    (
+                        server_id,
+                        team_id,
+                        name,
+                        endpoint_url,
+                        encrypt_credential({"auth_token": auth_token}) if auth_token else None,
+                        account_id,
+                    ),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def credentials(*, server_id: str, account_id: str) -> dict[str, Any]:
+        """연결 테스트에 필요한 것만. **복호화한 토큰은 여기서만 나온다.**"""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                row = _server_row(cursor, server_id=server_id, team_id=team_id)
+        return {
+            "mcp_server_id": row["mcp_server_id"],
+            "endpoint_url": row["endpoint_url"],
+            "auth_token": _auth_token(row["auth_token_enc"]),
+        }
+
+    @staticmethod
+    def credentials_for_tool(tool_ref: str, *, team_id: str) -> dict[str, Any]:
+        """`mcp:<mcp_tool_id>` 로 서버와 도구 이름을 함께 찾는다.
+
+        Registry 가 실행 직전에 부른다. 팀을 함께 거는 것은, tool_ref 가 어떤
+        경로로든 오염됐을 때 남의 팀 서버를 부르지 않게 하는 두 번째 자물쇠다.
+        """
+
+        mcp_tool_id = tool_ref.removeprefix("mcp:")
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT t.name AS tool_name, s.mcp_server_id, s.endpoint_url,
+                           s.auth_token_enc, t.enabled
+                    FROM mcp_tool AS t
+                    JOIN mcp_server AS s ON s.mcp_server_id = t.server_id
+                    WHERE t.mcp_tool_id = %s AND s.team_id = %s
+                    """,
+                    (mcp_tool_id, team_id),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound(f"등록되지 않은 MCP 도구입니다: {tool_ref}")
+        if not row["enabled"]:
+            raise PermissionDenied(f"꺼져 있는 MCP 도구입니다: {tool_ref}")
+        return {
+            "tool_name": row["tool_name"],
+            "endpoint_url": row["endpoint_url"],
+            "auth_token": _auth_token(row["auth_token_enc"]),
+        }
+
+    @staticmethod
+    def save_tools(*, server_id: str, account_id: str, tools: list[dict[str, Any]]) -> int:
+        """연결 테스트 결과를 반영하고 status 를 CONNECTED 로 올린다.
+
+        서버에서 사라진 도구는 지운다. 남겨 두면 에이전트 허용 목록에 붙어 있는
+        도구가 실제로는 없는 상태가 되고, 부를 때야 실패한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _server_row(cursor, server_id=server_id, team_id=team_id)
+
+                names = [tool["name"] for tool in tools]
+                cursor.execute(
+                    "DELETE FROM mcp_tool WHERE server_id = %s AND name <> ALL(%s)",
+                    (server_id, names),
+                )
+                for tool in tools:
+                    cursor.execute(
+                        """
+                        INSERT INTO mcp_tool (mcp_tool_id, server_id, name, description,
+                                              input_schema, enabled)
+                        VALUES (%s, %s, %s, %s, %s, true)
+                        ON CONFLICT (server_id, name) DO UPDATE SET
+                            description = EXCLUDED.description,
+                            input_schema = EXCLUDED.input_schema,
+                            discovered_at = now()
+                        """,
+                        (
+                            next_short_code(
+                                cursor, table="mcp_tool", column="mcp_tool_id", prefix="MT"
+                            ),
+                            server_id,
+                            tool["name"],
+                            tool["description"],
+                            Jsonb(tool["input_schema"]),
+                        ),
+                    )
+                cursor.execute(
+                    "UPDATE mcp_server SET status = 'CONNECTED', last_checked_at = now() "
+                    "WHERE mcp_server_id = %s",
+                    (server_id,),
+                )
+                return len(tools)
+
+    @staticmethod
+    def mark_error(*, server_id: str, account_id: str) -> None:
+        """연결 테스트 실패. **행은 지우지 않는다** — 사용자가 고쳐 쓸 값이고,
+        ERROR 상태를 보여 줘야 왜 편집 화면에서 이 도구를 못 고르는지 안다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _server_row(cursor, server_id=server_id, team_id=team_id)
+                cursor.execute(
+                    "UPDATE mcp_server SET status = 'ERROR', last_checked_at = now() "
+                    "WHERE mcp_server_id = %s",
+                    (server_id,),
+                )
+
+    @staticmethod
+    def delete(*, server_id: str, account_id: str) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _server_row(cursor, server_id=server_id, team_id=team_id)
+                # 에이전트 허용 목록에서도 뺀다. 안 빼면 없는 서버의 도구가
+                # agent_tool 에 남아 부를 때마다 실패한다.
+                cursor.execute(
+                    """
+                    DELETE FROM agent_tool WHERE tool_ref IN (
+                        SELECT 'mcp:' || mcp_tool_id FROM mcp_tool WHERE server_id = %s
+                    )
+                    """,
+                    (server_id,),
+                )
+                cursor.execute("DELETE FROM mcp_tool WHERE server_id = %s", (server_id,))
+                cursor.execute("DELETE FROM mcp_server WHERE mcp_server_id = %s", (server_id,))
+
+
+def _server_row(cursor, *, server_id: str, team_id: str) -> dict[str, Any]:
+    cursor.execute(
+        "SELECT mcp_server_id, team_id, endpoint_url, auth_token_enc FROM mcp_server "
+        "WHERE mcp_server_id = %s",
+        (server_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise RecordNotFound(f"존재하지 않는 MCP 서버입니다: {server_id}")
+    if row["team_id"] != team_id:
+        raise PermissionDenied("이 MCP 서버에 접근할 수 없습니다.")
+    return row
+
+
+def _auth_token(ciphertext: str | None) -> str | None:
+    if not ciphertext:
+        return None
+    return decrypt_credential(ciphertext).get("auth_token")
