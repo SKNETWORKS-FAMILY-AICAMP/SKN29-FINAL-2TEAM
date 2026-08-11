@@ -208,3 +208,11 @@
   border-radius: 50%;
   background: var(--color-surface);
 }
+
+/* 등록 자체가 거절된 경우(https 아님·사내망 주소 등). 연결 실패(칩)와 다른
+   층이다 — 이건 저장도 안 됐다는 뜻이다. */
+.noticeDanger {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg, #fef2f2);
+  color: var(--color-danger);
+}
