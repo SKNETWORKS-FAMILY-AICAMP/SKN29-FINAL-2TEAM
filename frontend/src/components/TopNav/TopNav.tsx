@@ -1,5 +1,6 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
+import { PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
 import styles from './TopNav.module.css';
 
@@ -37,7 +38,8 @@ export function TopNav({
 
   return (
     <header className={styles.nav}>
-      <Link to="/dashboard" className={styles.logo} aria-label="대시보드로 이동">
+      {/* 4차 단계 1 — 로고의 목적지도 대시보드가 아니라 Chat이다. */}
+      <Link to={PATHS.chat} className={styles.logo} aria-label="Chat으로 이동">
         <span className={styles.mark}>h</span>
         <span className={styles.wordmark}>halil</span>
       </Link>

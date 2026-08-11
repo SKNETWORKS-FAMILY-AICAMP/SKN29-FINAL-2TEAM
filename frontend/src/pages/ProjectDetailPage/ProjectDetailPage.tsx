@@ -5,7 +5,7 @@ import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
 import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
 import type { ExistTask, ProjectDetail } from '../../api/projects';
-import { MAIN_NAV_TABS } from '../../routes';
+import { MAIN_NAV_TABS, PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
 import styles from './ProjectDetailPage.module.css';
 
@@ -276,7 +276,7 @@ export default function ProjectDetailPage() {
                 </div>
                 <p className={styles.footnote}>
                   이 프로젝트 안의 잔여 공수입니다. 사람의 실제 업무량은 다른 프로젝트까지 합쳐야
-                  하며 <Link to="/dashboard">대시보드</Link>에서 주차별로 볼 수 있습니다.
+                  하며 <Link to={PATHS.chat}>Chat의 부하 리포트</Link>로 주차별 확인이 가능합니다.
                 </p>
               </section>
             )}

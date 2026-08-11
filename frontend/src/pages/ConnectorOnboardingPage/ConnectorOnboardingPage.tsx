@@ -216,11 +216,11 @@ export default function ConnectorOnboardingPage() {
             className={styles.nextButton}
             disabled={!allConnected}
             title={allConnected ? undefined : '모든 커넥터를 연결해주세요.'}
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate(PATHS.chat)}
           >
             {allConnected ? '커넥터 설정 완료' : '다음 단계로'}
           </Button>
-          <Button variant="link" onClick={() => navigate('/dashboard')}>
+          <Button variant="link" onClick={() => navigate(PATHS.chat)}>
             나중에 하기
           </Button>
         </div>

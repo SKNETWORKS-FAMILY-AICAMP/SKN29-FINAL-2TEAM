@@ -208,24 +208,6 @@ export default function SignupPage() {
           <Button type="submit" form="signup-form" variant="primary" fullWidth disabled={submitting}>
             {submitting ? '가입 중…' : '가입하기'}
           </Button>
-
-          <div className={styles.divider}>
-            <div className={styles.line} />
-            <span className={styles.dividerLabel}>또는</span>
-            <div className={styles.line} />
-          </div>
-
-          <Button
-            type="button"
-            variant="outline"
-            fullWidth
-            iconLeft={<Icon name="link" size={18} />}
-            onClick={() =>
-              showToast('BLOCKED · Google Connector 가입이 아직 구현되지 않았습니다.', 'error')
-            }
-          >
-            Google Connector로 가입
-          </Button>
         </div>
 
         <div className={styles.footerLinks}>

@@ -7,6 +7,7 @@ import type { AuthResult } from '../../api/auth';
 import { ApiError } from '../../api/client';
 import { CONNECTOR_TYPE_BY_ID, listConnectors } from '../../api/connectors';
 import { CONNECTOR_DEFS } from '../../data/connectorDefs';
+import { PATHS } from '../../routes';
 import { saveSession } from '../../utils/session';
 import styles from './LoginPage.module.css';
 
@@ -16,13 +17,15 @@ const REQUIRED_CONNECTOR_TYPES = CONNECTOR_DEFS.map((c) => CONNECTOR_TYPE_BY_ID[
 /**
  * 로그인 직후 보낼 곳.
  *
- * 팀원은 아직 전용 대시보드가 없어 본인 설정 화면으로 보낸다. 팀장은 커넥터
- * 온보딩을 이미 마쳤는지에 따라 갈린다 — 연결이 끝났는데도 매번 온보딩으로
- * 보내면 이미 한 일을 다시 하라는 화면이 뜬다. 연결 상태를 확인하지 못하면
- * 온보딩으로 보낸다. 어차피 연결을 손보는 곳이 거기다.
+ * 4차 단계 1에서 목적지가 대시보드에서 Chat으로 바뀌었다. 팀원을 설정 화면으로
+ * 보내던 것도 「전용 대시보드가 없어서」가 이유였는데, 이제 역할과 무관하게
+ * Chat이 홈이라 같이 Chat으로 보낸다. 팀장은 커넥터 온보딩을 이미 마쳤는지에
+ * 따라 갈린다 — 연결이 끝났는데도 매번 온보딩으로 보내면 이미 한 일을 다시
+ * 하라는 화면이 뜬다. 연결 상태를 확인하지 못하면 온보딩으로 보낸다. 어차피
+ * 연결을 손보는 곳이 거기다.
  */
 async function landingRouteFor(result: AuthResult): Promise<string> {
-  if (result.account.role === 'member') return '/settings/team';
+  if (result.account.role === 'member') return PATHS.chat;
 
   try {
     const connections = await listConnectors(result.token);
@@ -30,9 +33,9 @@ async function landingRouteFor(result: AuthResult): Promise<string> {
       connections.filter((c) => c.auth_status === 'CONNECTED').map((c) => c.connector_type),
     );
     const onboarded = REQUIRED_CONNECTOR_TYPES.every((type) => connected.has(type));
-    return onboarded ? '/dashboard' : '/onboarding/connectors';
+    return onboarded ? PATHS.chat : PATHS.onboardingConnectors;
   } catch {
-    return '/onboarding/connectors';
+    return PATHS.onboardingConnectors;
   }
 }
 

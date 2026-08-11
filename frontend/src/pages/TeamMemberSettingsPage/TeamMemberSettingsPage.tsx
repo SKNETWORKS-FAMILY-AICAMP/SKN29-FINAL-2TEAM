@@ -15,6 +15,7 @@ import {
 import type { SettingsNavItem } from '../../components';
 import { fetchCurrentAccount } from '../../api/auth';
 import type { Account } from '../../api/auth';
+import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import styles from './TeamMemberSettingsPage.module.css';
 
@@ -89,7 +90,7 @@ export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberS
       subtitle="팀원 전용 설정 페이지"
       navItems={NAV_ITEMS}
       footerLabel="팀원"
-      onFooterClick={() => navigate('/dashboard')}
+      onFooterClick={() => navigate(PATHS.chat)}
       embedded={embedded}
     >
       {/* Settings 허브 안에서는 허브가 이미 「설정」 h1을 갖고 있어 제목이 두 개 겹친다. */}

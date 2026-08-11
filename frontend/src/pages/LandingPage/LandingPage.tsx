@@ -1,70 +1,48 @@
 import { Link } from 'react-router-dom';
+import { PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
-import arrowLeftRight from '../../assets/landing/arrow-left-right.svg';
-import avatar from '../../assets/landing/avatar.png';
-import badgeCheck from '../../assets/landing/badge-check.svg';
-import brainCog from '../../assets/landing/brain-cog.svg';
-import check from '../../assets/landing/check.svg';
-import checkCircle from '../../assets/landing/check-circle.svg';
-import database from '../../assets/landing/database.svg';
-import fileText from '../../assets/landing/file-text.svg';
-import linkIcon from '../../assets/landing/link.svg';
-import messageCircle from '../../assets/landing/message-circle.svg';
-import search from '../../assets/landing/search.svg';
-import sparkles from '../../assets/landing/sparkles.svg';
-import squareStack from '../../assets/landing/square-stack.svg';
-import zap from '../../assets/landing/zap.svg';
 import styles from './LandingPage.module.css';
 
-const features = [
-  {
-    icon: arrowLeftRight,
-    title: '커넥터 연동',
-    description: 'Google Drive, Jira, People DB를 한곳에 연결합니다. 흩어진 프로젝트 근거가 빠르게 모입니다.',
-  },
-  {
-    icon: sparkles,
-    title: 'AI 업무 추천',
-    description: '업무 문서를 분석해 핵심 태스크를 추출하고, 기술 스택과 가용 리소스를 고려해 후보를 추천합니다.',
-  },
-  {
-    icon: badgeCheck,
-    title: 'PM 검토 후 반영',
-    description: 'AI가 제안한 배정안과 근거를 PM이 검토·수정·승인한 뒤 Jira 반영 단계로 전달합니다.',
-  },
-];
+/**
+ * 랜딩 (TO-BE). Figma `랜딩 (TO-BE) · /` (74:1131, 수정 지시 v2) 확정안.
+ *
+ * 구 랜딩과의 차이 — 서사가 통째로 바뀌었다. 「업무 배정 코파일럿」이 아니라
+ * 「프로젝트 운영 Agent Platform」이고, 정체성 자리에 오는 것은 커넥터가 아니라
+ * 에이전트다(v2 서열 교정). Drive·Jira는 사례 자리로 내려간다.
+ *
+ * 지운 것: 요금제 3종, 사회적 증명(「1,200개 이상의 팀」·로고 행), 워크로드
+ * 시각화 섹션, 배정 데모 목업. 전부 구 제품 단위이거나 허구 수치였다.
+ *
+ * 화면 속 목업은 실제 07 TO-BE 화면(Chat 확인 대기·에이전트 편집·결과 카드)을
+ * 축약한 것이다. 수치는 데모 기준선(20건 → 17/20, E1~E24)을 따른다.
+ */
 
-const steps = [
-  { number: '01', icon: linkIcon, title: '연결', description: 'Google Drive, Jira, People DB 연동' },
-  { number: '02', icon: search, title: '분석', description: '문서와 프로젝트 데이터 분석' },
-  { number: '03', icon: brainCog, title: '추천', description: 'AI가 담당자 후보와 근거 제안' },
-  { number: '04', icon: zap, title: '검토', description: 'PM 검토와 승인 후 Jira 반영' },
-];
+const FEATURES = [
+  {
+    id: 'evidence',
+    title: '근거와 함께 일하는 에이전트',
+    body: '모든 결과에 원문 문단이 붙습니다. 근거가 없는 값은 지어내지 않고 「근거 없어 비움」으로 표시합니다.',
+  },
+  {
+    id: 'builder',
+    title: '코딩 없이 만드는 나만의 에이전트',
+    body: '무슨 일을 하는지, 무엇을 참고할지, 어떤 도구를 쓸지. 세 가지만 적으면 팀 전체가 바로 씁니다.',
+  },
+  {
+    id: 'gate',
+    title: '승인 없이는 아무것도 바꾸지 않습니다',
+    body: 'Jira에 등록하기 전, 무엇이 만들어지는지 확인하고 선택합니다. 부분 실패도 숨기지 않고 그대로 보여줍니다.',
+  },
+] as const;
 
-const plans = [
-  {
-    name: 'Free',
-    price: '₩0',
-    description: '개인 기획자 및 소팀을 위한 요금제',
-    items: ['기본 Google Drive 및 Jira 연동', '월 최대 20회 AI 업무 추천', '기본 워크로드 대시보드 제공'],
-    action: '무료로 시작하기',
-  },
-  {
-    name: 'Pro',
-    price: '₩49,000',
-    description: '본격적인 업무 관리가 필요한 성장기 팀',
-    items: ['Google Drive, Jira, People DB 연동', '무제한 AI 업무 배정 추천', '고급 근거 분석 및 추천 요약', '팀 워크로드 시각화'],
-    action: '14일 무료 체험하기',
-    recommended: true,
-  },
-  {
-    name: 'Enterprise',
-    price: '별도 문의',
-    description: '대규모 복합 조직 및 특수 보안 요구 기업',
-    items: ['모든 Pro 기능 포함', '전담 기술 지원 매니저', '커스텀 보안 정책 설정(SSO)', '온프레미스·전용 클라우드 구축'],
-    action: '세일즈 담당자와 상담',
-  },
-];
+const STEPS = [
+  { num: '1', title: '쓰는 도구를 연결한다', caption: '예: Drive·Jira — 몇 분이면 끝납니다' },
+  { num: '2', title: '에이전트를 고르거나 만든다', caption: '기본 제공으로 시작하거나, 세 가지만 적어 새로 만듭니다' },
+  { num: '3', title: '요청하고 근거를 확인한다', caption: '모든 결과에 원문 문단이 붙습니다' },
+  { num: '4', title: '승인하면 실제로 반영된다', caption: '예: Jira 이슈 등록' },
+] as const;
+
+const CONNECTORS = ['Google Drive', 'Jira', 'People DB'] as const;
 
 function Logo() {
   return (
@@ -75,43 +53,149 @@ function Logo() {
   );
 }
 
-function PrimaryLink({ children, to }: { children: string; to: string }) {
+/** 히어로 목업 — Chat 확인 대기(07 · 39:118)의 확인 카드 축약. */
+function ApprovalMock() {
   return (
-    <Link className={styles.primaryButton} to={to}>
-      {children}
-    </Link>
+    <div className={styles.mock}>
+      <div className={styles.mockBar}>
+        <span className={styles.mockDot} />
+        <span className={styles.mockDot} />
+        <span className={styles.mockDot} />
+        <span className={styles.mockBarLabel}>Chat · 확인 대기</span>
+      </div>
+
+      <div className={styles.mockBody}>
+        <div className={styles.mockRowBetween}>
+          <strong className={styles.mockHeading}>확인이 필요합니다</strong>
+          <span className={styles.mockMeta}>업무 20건 · 근거 24개 문단</span>
+        </div>
+
+        <p className={styles.mockWarn}>
+          기준 문서에서 마감일 근거를 찾지 못한 업무가 있습니다. 근거 없는 항목은 채우지 않고 「근거 없어
+          비움」으로 표시합니다.
+        </p>
+
+        <div className={styles.mockTask}>
+          <div className={styles.mockRowBetween}>
+            <strong>통합포털 SSO 로그인 연동 설계</strong>
+            <span className={styles.mockChip}>HIGH</span>
+          </div>
+          <p className={styles.mockTaskMeta}>담당 역할 백엔드 개발자 · 공수 32h · 마감 2026.08.28</p>
+
+          <p className={styles.mockEvidence}>
+            포털 로그인은 사내 계정과 고객 계정을 동일한 화면에서 처리하며, 인증 실패 시 3회까지 재시도를
+            허용한다.
+            <span className={styles.mockEvidenceMeta}>E1 · DOC-2026-0142 · 역할/기술 · 유사도 87%</span>
+          </p>
+          <p className={styles.mockEvidence}>
+            인증 설계는 8월 4주차까지 확정하여 개발 착수 전 검토를 받는다.
+            <span className={styles.mockEvidenceMeta}>E2 · DOC-2026-0139 · 공수/일정·제약 · 유사도 74%</span>
+          </p>
+        </div>
+
+        <div className={styles.mockFoot}>
+          <span className={styles.mockFootNote}>승인하기 전까지 Jira에는 아무것도 만들지 않습니다.</span>
+          <span className={styles.mockFootBtn}>Jira에 등록</span>
+        </div>
+      </div>
+    </div>
   );
+}
+
+/** 카드 ① — 근거 카드 발췌. */
+function EvidenceMini() {
+  return (
+    <div className={styles.mini}>
+      <p className={styles.miniTitle}>결제 API 연동 테스트 시나리오 작성</p>
+      <p className={styles.miniEvidence}>
+        결제 실패 케이스는 타임아웃·한도 초과·카드사 거절 세 가지를 모두 재현한다.
+        <span className={styles.miniMeta}>E7 · DOC-2026-0151 · 유사도 91%</span>
+      </p>
+      <p className={styles.miniEmpty}>마감일 — 근거 없어 비움</p>
+    </div>
+  );
+}
+
+/** 카드 ② — 에이전트 편집의 도구 선택 발췌. */
+function ToolsMini() {
+  return (
+    <div className={styles.mini}>
+      <p className={styles.miniLabel}>사용할 도구</p>
+      {[
+        { name: '문서 검색', desc: '팀에 등록된 문서에서 근거를 찾습니다', tag: '기본 제공', on: true },
+        { name: '부하 리포트 생성', desc: '팀원별 주간 업무 시간을 계산합니다', tag: '기본 제공', on: false },
+        { name: 'Jira 이슈 생성', desc: '확인받은 업무를 Jira에 등록합니다', tag: 'MCP · Jira', on: true },
+      ].map((tool) => (
+        <div className={styles.miniTool} key={tool.name}>
+          <span className={tool.on ? styles.miniCheckOn : styles.miniCheck} aria-hidden="true" />
+          <span className={styles.miniToolText}>
+            <strong>{tool.name}</strong>
+            <small>{tool.desc}</small>
+          </span>
+          <span className={styles.miniTag}>{tool.tag}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 카드 ③ — 부분 실패 결과 카드 발췌. */
+function ResultMini() {
+  return (
+    <div className={styles.mini}>
+      <p className={styles.miniWarnBar}>
+        <span>17/20 등록 완료 — 3건 실패</span>
+        <span className={styles.miniWarnSide}>성공분은 되돌리지 않습니다</span>
+      </p>
+      {[
+        ['PORTAL-141', '통합포털 SSO 로그인 연동 설계'],
+        ['PORTAL-142', '권한 등급별 메뉴 노출 규칙 정의'],
+      ].map(([key, title]) => (
+        <div className={styles.miniIssue} key={key}>
+          <strong>{key}</strong>
+          <span>{title}</span>
+        </div>
+      ))}
+      <p className={styles.miniFail}>실패 3건 — 사유 표시</p>
+    </div>
+  );
+}
+
+function FeatureVisual({ id }: { id: string }) {
+  if (id === 'evidence') return <EvidenceMini />;
+  if (id === 'builder') return <ToolsMini />;
+  return <ResultMini />;
 }
 
 export default function LandingPage() {
   const session = useSession();
-  // 이미 로그인한 사람에게 가입을 다시 시키지 않는다. 헤더가 세션에 따라
-  // 로그인/회원가입과 대시보드를 바꿔 다는 것과 같은 기준이다.
-  const startHref = session ? '/dashboard' : '/signup';
+  // 로그인한 사람은 가입이 아니라 자기 작업으로 보낸다. 4차 단계 1에서 목적지가
+  // 대시보드에서 Chat으로 바뀌었다 — 로그인 직후 랜딩과 같은 기준이다.
+  const startHref = session ? PATHS.chat : PATHS.signup;
 
   return (
     <div className={styles.page}>
-      <header className={styles.navbar}>
-        <div className={styles.navbarInner}>
+      <header className={styles.nav}>
+        <div className={styles.navInner}>
           <Logo />
           <div className={styles.navActions}>
             {session ? (
               <>
-                <span className={styles.loginName}>{session.account.display_name} 님</span>
-                <Link className={styles.loginLink} to="/dashboard">
-                  대시보드
+                <span className={styles.navName}>{session.account.display_name} 님</span>
+                <Link className={styles.navLink} to={PATHS.chat}>
+                  Chat 열기
                 </Link>
-                <button type="button" className={styles.logoutButton} onClick={clearSession}>
+                <button type="button" className={styles.navGhost} onClick={clearSession}>
                   로그아웃
                 </button>
               </>
             ) : (
               <>
-                <Link className={styles.loginLink} to="/login">
+                <Link className={styles.navLink} to={PATHS.login}>
                   로그인
                 </Link>
-                <Link className={styles.loginLink} to="/signup">
-                  회원가입
+                <Link className={styles.navCta} to={PATHS.signup}>
+                  시작하기
                 </Link>
               </>
             )}
@@ -119,229 +203,115 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <section className={styles.hero}>
-        <div className={styles.heroBody}>
-          <p className={styles.releaseBadge}>✨ AI 기반 업무 배정 코파일럿 halil 출시</p>
-          <div className={styles.heroCopy}>
-            <h1>흩어진 업무, AI가 정리하고 배정까지</h1>
-            <p>
-              문서·업무·인력 데이터를 연결하면 halil이 담당자 후보와 근거를 제안합니다.
-              <br />
-              PM의 검토와 승인으로 더 투명하게 업무를 배정하세요.
-            </p>
-          </div>
-          <div className={styles.heroActions}>
-            <PrimaryLink to={startHref}>무료로 시작하기</PrimaryLink>
-          </div>
-
-          <div className={styles.preview}>
-            <div className={styles.previewTop}>
-              <div className={styles.browserMeta}>
-                <span className={`${styles.dot} ${styles.red}`} />
-                <span className={`${styles.dot} ${styles.yellow}`} />
-                <span className={`${styles.dot} ${styles.green}`} />
-                <span>workspace.halil.ai</span>
-              </div>
-              <span className={styles.connectionBadge}>
-                <img src={linkIcon} alt="" />
-                Workspace 연결됨
-              </span>
-            </div>
-            <div className={styles.previewGrid}>
-              <aside className={styles.documentPanel}>
-                <strong>분석된 문서 목록</strong>
-                {['2026_Q3_서비스_기획서.docx', '시스템_성능_개선_요구사항.pdf', '사용자_피드백_정리.xlsx'].map((file) => (
-                  <span className={styles.documentRow} key={file}>
-                    <img src={fileText} alt="" />
-                    {file}
-                  </span>
-                ))}
-              </aside>
-              <article className={styles.recommendationPanel}>
-                <div className={styles.recommendationHeader}>
-                  <span>
-                    <b>AI</b> 추천 배정 제안
-                  </span>
-                  <em>데모 신뢰도 98%</em>
-                </div>
-                <div className={styles.extractedTask}>
-                  <span>추출된 업무</span>
-                  <strong>“성과 대시보드 UI 개발 및 API 연동”</strong>
-                </div>
-                <div className={styles.assigneeRow}>
-                  <span className={styles.person}>
-                    <img src={avatar} alt="" />
-                    <span>
-                      <strong>김민수 (Frontend Lead)</strong>
-                      <small>가용 상태: 확인 필요</small>
-                    </span>
-                  </span>
-                  <button type="button" disabled title="실제 Jira 연동 전 데모 버튼입니다.">
-                    PM 검토 후 Jira 반영
-                  </button>
-                </div>
-                <p className={styles.rationale}>
-                  <strong>🤖 추천 근거</strong>
-                  유사 업무 경험과 스킬을 기준으로 제안된 데모입니다. 실제 업무량·부재 데이터가 부족하면 추천을 확정하지
-                  않습니다.
-                </p>
-              </article>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <main>
-        <section className={styles.trust}>
-          <p>
-            🚀 이미 <strong>1,200개 이상의 팀</strong>이 halil로 업무를 완벽하게 배정하고 있습니다
-          </p>
-          <div className={styles.companyNames}>
-            <span>TOSS</span><span>LINE</span><span>SOPHIST</span><span>MUSINSA</span><span>SENDRE</span>
-          </div>
-        </section>
+        {/* 1 · 히어로 */}
+        <section className={styles.hero}>
+          <div className={styles.heroInner}>
+            <div className={styles.heroCopy}>
+              <p className={styles.badge}>✨ 프로젝트 운영 Agent Platform, halil</p>
+              <h1 className={styles.heroTitle}>
+                팀에 필요한 AI 에이전트를,
+                <br />
+                코딩 없이 만들어 씁니다
+              </h1>
+              <p className={styles.heroSub}>
+                무슨 일을 하는지, 무엇을 참고할지, 어떤 도구를 쓸지 적으면 팀 전체가 쓰는 에이전트가 됩니다.
+                모든 답변에는 원문 근거가 붙고, 실제 등록은 사람의 승인을 거칩니다.
+              </p>
+              <div className={styles.heroActions}>
+                <Link className={styles.btnPrimary} to={startHref}>
+                  팀 만들고 시작하기
+                </Link>
+                <a className={styles.btnGhost} href="#features">
+                  데모 보기
+                </a>
+              </div>
+            </div>
 
-        <section className={`${styles.section} ${styles.whiteSection}`} id="features">
-          <div className={styles.sectionHeading}>
-            <h2>스마트한 협업의 새로운 기준</h2>
-            <p>따로 수집하고 기획할 필요 없이, 기존 도구들과 유기적으로 연결됩니다.</p>
-          </div>
-          <div className={styles.featureGrid}>
-            {features.map((feature) => (
-              <article className={styles.featureCard} key={feature.title}>
-                <span className={styles.iconBox}><img src={feature.icon} alt="" /></span>
-                <div>
-                  <h3>{feature.title}</h3>
-                  <p>{feature.description}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeading}>
-            <h2>단 4단계로 끝나는 인력 배정 혁신</h2>
-            <p>복잡했던 업무 조율과 분석 과정을 하나의 흐름으로 정리합니다.</p>
-          </div>
-          <div className={styles.stepGrid}>
-            {steps.map((step) => (
-              <article className={styles.stepCard} key={step.number}>
-                <div><strong>{step.number}</strong><img src={step.icon} alt="" /></div>
-                <h3>{step.title}</h3>
-                <p>{step.description}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className={`${styles.detailSection} ${styles.whiteSection}`}>
-          <div className={styles.evidenceDemo}>
-            <p className={styles.demoLabel}><span /> AI 추천 사유 심층 분석</p>
-            <div className={styles.evidenceCard}>
-              <div><strong>추천 후보: 이지우 (Backend Engineer)</strong><em>데모 신뢰도 95%</em></div>
-              {[
-                '과거 유사한 결제 API 업무를 3회 완수함',
-                'People DB의 근무 기준과 부재 데이터 확인 필요',
-                '연관 문서의 기술 요구사항과 보유 스킬이 일치함',
-              ].map((reason) => (
-                <p key={reason}><img src={checkCircle} alt="" />{reason}</p>
-              ))}
+            <div className={styles.heroVisual}>
+              <ApprovalMock />
+              <p className={styles.visualNote}>※ 화면 속 수치는 UI 설명용 예시입니다.</p>
             </div>
           </div>
-          <div className={styles.detailCopy}>
-            <span>투명한 의사결정 지원</span>
-            <h2>단순한 추측이 아닌,<br />명확한 근거 데이터 제공</h2>
-            <p>
-              AI가 왜 특정 팀원을 추천했는지 스킬, 현재 업무, 근무 기준과 부재 정보를 함께 보여줍니다. 데이터가 부족한
-              경우에는 조건부 또는 차단 상태와 이유를 명확하게 안내합니다.
+        </section>
+
+        {/* 2 · 문제 → 전환 */}
+        <section className={styles.bandWhite}>
+          <div className={styles.centered}>
+            <h2 className={styles.h2}>업무 분배만의 문제가 아니었습니다</h2>
+            <p className={styles.lead}>
+              문서는 Drive에, 업무는 Jira에, 기준은 사람 머릿속에 흩어져 있습니다. halil은 흩어진 데이터를
+              연결하는 데서 멈추지 않고, 그 위에서 팀이 필요한 AI 에이전트를 직접 만들어 쓰는 환경을 제공합니다.
             </p>
           </div>
         </section>
 
-        <section className={`${styles.section} ${styles.whiteSection}`} id="integrations">
-          <div className={styles.sectionHeading}>
-            <h2>기존에 사용하던 도구 그대로</h2>
-            <p>프로젝트 운영에 필요한 데이터 소스를 한곳에서 연결합니다.</p>
-          </div>
-          <div className={styles.integrationGrid}>
-            {[
-              { icon: database, name: 'Google Drive', status: '연동 준비' },
-              { icon: squareStack, name: 'Jira Software', status: '연동 준비' },
-              { icon: messageCircle, name: 'People DB', status: '목업 제공' },
-            ].map((integration) => (
-              <article key={integration.name}>
-                <span><img src={integration.icon} alt="" /></span>
-                <div><strong>{integration.name}</strong><small>{integration.status}</small></div>
-              </article>
-            ))}
-          </div>
-          <p className={styles.securityNote}>🔒 연결 상태와 데이터 최신성을 검증하고, 필수 데이터가 없으면 분석을 차단합니다.</p>
-        </section>
-
-        <section className={styles.detailSection}>
-          <div className={styles.detailCopy}>
-            <span>과부하 없는 지속 가능한 팀워크</span>
-            <h2>팀원별 업무량과<br />가용 리소스 시각화</h2>
-            <p>
-              People DB의 근무시간·부재와 Jira의 현재 업무량을 함께 확인합니다. 한쪽 데이터만으로 가용성을 추정하지 않고,
-              기준 시각과 제한 사항을 함께 표시합니다.
-            </p>
-          </div>
-          <div className={styles.workloadDemo}>
-            <strong>이번 주 가용성 및 리소스 현황</strong>
-            {[
-              { name: '김민수 (FE)', label: '여유 80%', width: '20%', tone: 'green' },
-              { name: '이지우 (BE)', label: '여유 30%', width: '70%', tone: 'mint' },
-              { name: '박아름 (DE)', label: '여유 15%', width: '85%', tone: 'red' },
-            ].map((member) => (
-              <div className={styles.workloadRow} key={member.name}>
-                <div><span>{member.name}</span><span>{member.label}</span></div>
-                <span className={styles.workloadTrack}><i className={styles[member.tone]} style={{ width: member.width }} /></span>
-              </div>
-            ))}
-            <small>※ 수치는 랜딩페이지 UI 설명용 데모이며 실제 판정이 아닙니다.</small>
-          </div>
-        </section>
-
-        <section className={`${styles.section} ${styles.whiteSection}`} id="pricing">
-          <div className={styles.sectionHeading}>
-            <h2>팀의 규모에 맞는 합리적인 선택</h2>
-            <p>소규모 팀부터 대규모 조직까지 알맞은 요금제를 선택하세요.</p>
-          </div>
-          <div className={styles.pricingGrid}>
-            {plans.map((plan) => (
-              <article className={`${styles.planCard} ${plan.recommended ? styles.recommended : ''}`} key={plan.name}>
-                {plan.recommended && <span className={styles.recommendedBadge}>추천 요금제</span>}
-                <div><h3>{plan.name}</h3><strong>{plan.price}</strong><p>{plan.description}</p></div>
-                <ul>
-                  {plan.items.map((item) => <li key={item}><img src={check} alt="" />{item}</li>)}
-                </ul>
-                <Link className={plan.recommended ? styles.primaryButton : styles.outlineButton} to={startHref}>{plan.action}</Link>
+        {/* 3 · 핵심 기능 3 */}
+        <section className={styles.band} id="features">
+          <div className={styles.featureGrid}>
+            {FEATURES.map((feature, index) => (
+              <article className={styles.featureCard} key={feature.id}>
+                <div className={styles.featureVisual}>
+                  <FeatureVisual id={feature.id} />
+                </div>
+                <h3 className={styles.featureTitle}>
+                  <span className={styles.featureNum}>{index + 1}</span>
+                  {feature.title}
+                </h3>
+                <p className={styles.featureBody}>{feature.body}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className={styles.cta} id="contact">
-          <div><h2>지금 바로 halil과 함께 업무 배정을 혁신하세요</h2><p>중요한 의사결정에 집중하세요. 근거 정리와 후보 제안은 halil이 돕습니다.</p></div>
-          <div><Link to={startHref}>무료로 시작하기</Link><a href="mailto:contact@halil.example">도입 상담 신청</a></div>
+        {/* 4 · 작동 방식 */}
+        <section className={styles.bandWhite} id="how">
+          <h2 className={`${styles.h2} ${styles.h2Center}`}>작동 방식</h2>
+          <div className={styles.stepGrid}>
+            {STEPS.map((step) => (
+              <article className={styles.stepCard} key={step.num}>
+                <span className={styles.stepNum}>{step.num}</span>
+                <strong className={styles.stepTitle}>{step.title}</strong>
+                <small className={styles.stepCaption}>{step.caption}</small>
+              </article>
+            ))}
+          </div>
+          <p className={styles.stepNote}>
+            기본 제공 에이전트(업무 추출·부하 리포트)로 바로 시작할 수 있습니다.
+          </p>
+        </section>
+
+        {/* 5 · 확장성 */}
+        <section className={styles.band}>
+          <div className={styles.centered}>
+            <h2 className={styles.h2}>쓰던 도구 그대로, 필요한 도구는 더</h2>
+            <p className={styles.lead}>
+              에이전트가 쓰는 도구는 전부 커넥터입니다. 지금은 Google Drive·Jira가 준비돼 있고, 회사에 이미
+              있는 시스템은 MCP 서버로 등록하면 똑같은 도구가 됩니다.
+            </p>
+            <div className={styles.pillRow}>
+              {CONNECTORS.map((name) => (
+                <span className={styles.pill} key={name}>
+                  {name}
+                </span>
+              ))}
+              <span className={styles.pillStrong}>+ MCP로 확장</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 7 · 마감 CTA (6 요금제는 제외 — 8/12 결정) */}
+        <section className={styles.cta}>
+          <h2 className={styles.ctaTitle}>첫 에이전트를 5분 안에</h2>
+          <Link className={styles.btnPrimary} to={startHref}>
+            팀 만들고 시작하기
+          </Link>
         </section>
       </main>
 
       <footer className={styles.footer}>
-        <div className={styles.footerTop}>
-          <div className={styles.footerBrand}>
-            <Logo />
-            <p>AI 기반 업무 배정 코파일럿 halil은 연결된 프로젝트 근거를 바탕으로 PM의 판단을 지원합니다.</p>
-          </div>
-          <div className={styles.footerLinks}>
-            <div><strong>제품</strong><a href="#features">주요 기능</a><span>보안 가이드</span><span>업데이트 소식</span></div>
-            <div><strong>회사</strong><span>회사 소개</span><span>채용 정보</span><span>블로그</span></div>
-            <div><strong>지원</strong><span>도움말 센터</span><a href="#contact">문의하기</a><span>이용 약관</span></div>
-          </div>
-        </div>
-        <div className={styles.footerBottom}><span>© 2026 halil Inc. All rights reserved.</span><span>Privacy Policy　 Terms of Service</span></div>
+        <span>halil · 프로젝트 운영 Agent Platform</span>
+        <span>SKN29 Final 2Team</span>
       </footer>
     </div>
   );

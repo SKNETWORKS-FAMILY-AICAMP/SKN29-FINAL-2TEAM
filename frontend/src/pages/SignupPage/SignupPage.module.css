@@ -120,26 +120,6 @@
   color: var(--color-placeholder);
 }
 
-.divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  width: 100%;
-}
-
-.line {
-  flex: 1;
-  height: 1px;
-  background: var(--color-border);
-}
-
-.dividerLabel {
-  font-size: 13px;
-  color: var(--color-placeholder);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 .footerLinks {
   display: flex;
   flex-direction: column;

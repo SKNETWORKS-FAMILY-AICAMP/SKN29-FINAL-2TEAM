@@ -74,7 +74,9 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
   { path: PATHS.settingsPermissions, label: '설정 · 권한', group: '설정' },
-  { path: PATHS.dashboard, label: '대시보드', group: '메인' },
+  // 4차 단계 1 — 메뉴에서는 빠졌고 처분(Q13)까지 라우트만 살려둔다. 개발용
+  // 화면 목록은 직접 URL 접근을 대신하는 데모 안전망이라 남긴다.
+  { path: PATHS.dashboard, label: '대시보드 (구 · 처분 대기)', group: '메인' },
   { path: PATHS.filesNew, label: '문서 관리 (구)', group: '메인' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.taskDistributionDocuments, label: '신규 프로젝트 업무 추출', group: '업무 분배' },
@@ -91,14 +93,16 @@ export const ROUTES: RouteEntry[] = [
 
 /**
  * Convenience lookup for the top-nav tab bar shared across the main app
- * screens (dashboard/projects/connectors/settings). Maps the Figma nav
- * labels to the closest real route we have.
+ * screens (projects/files/settings). Maps the Figma nav labels to the
+ * closest real route we have.
  *
  * 새 화면은 AppShell(사이드바)을 쓴다. 이 탭바는 아직 남아 있는 기존 화면
- * (대시보드·문서 관리·프로젝트 상세 등)에서만 쓴다 — G3에서 정리된다.
+ * (문서 관리·프로젝트 상세 등)에서만 쓴다 — G3에서 정리된다.
+ *
+ * 4차 단계 1 — 「대시보드」 탭을 메뉴에서 뺀다. 라우트는 살아 있어 직접 URL로
+ * 여전히 열린다(데모 백업). 처분은 단계 2(멘토링 Q13) 소관.
  */
 export const MAIN_NAV_TABS = [
-  { label: '대시보드', to: PATHS.dashboard },
   { label: '문서 관리', to: PATHS.filesNew },
   { label: '프로젝트', to: PATHS.projects },
   { label: '설정', to: PATHS.settingsTeam },

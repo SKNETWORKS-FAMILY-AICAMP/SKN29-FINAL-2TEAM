@@ -30,6 +30,7 @@ import {
 } from '../../api/teams';
 import type { TeamMember, TeamSettings } from '../../api/teams';
 import { CONNECTOR_DEFS } from '../../data/connectorDefs';
+import { PATHS } from '../../routes';
 import { loadConnectorStatuses } from '../../utils/connectorStatus';
 import type { ConnectorStatus } from '../../utils/connectorStatus';
 import { loadSessionToken } from '../../utils/session';
@@ -263,7 +264,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
       subtitle="팀 관리자 설정"
       navItems={NAV_ITEMS}
       footerLabel="관리자"
-      onFooterClick={() => navigate('/dashboard')}
+      onFooterClick={() => navigate(PATHS.chat)}
       embedded={embedded}
     >
       {/* Settings 허브 안에서는 허브가 이미 「설정」 h1을 갖고 있어 제목이 두 개 겹친다. */}
