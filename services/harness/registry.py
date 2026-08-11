@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
+from apps.connectors.clients import create_jira_issues, search_jira_issues
 from backend.db import AccountRepository, ExistTaskRepository, TeamRepository
 from backend.db.agent_platform import AgentRepository, McpServerRepository
 from backend.db.document_pipeline import (
@@ -213,6 +214,28 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
     }
 
 
+def _jira_create_issues(*, account_id: str, project_key: str, issues: list[dict[str, Any]]):
+    """확인받은 업무를 Jira 에 등록한다.
+
+    **MCP 가 아니라 내장 도구다.** 자체 Jira MCP 서버를 띄우려면 우리 SSRF
+    차단(§4-1)이 같은 호스트 주소를 막고, 공식 Atlassian MCP 는 OAuth 액세스
+    토큰을 요구해(실측 2026-08-11: 401 `Bearer realm="OAuth"`) 정적 토큰 하나를
+    저장하는 우리 모델로는 한 시간 뒤 끊긴다. 데모의 핵심 흐름을 남의 서비스와
+    남의 토큰 수명에 매달 이유가 없다 — Jira Connector 는 이미 붙어 있다.
+
+    MCP 는 「사용자가 자기 서버를 추가로 붙이는」 확장 경로로 남는다.
+    """
+
+    return create_jira_issues(account_id=account_id, project_key=project_key, issues=issues)
+
+
+def _jira_get_issues(*, account_id: str, project_key: str) -> dict[str, Any]:
+    return {
+        "project_key": project_key,
+        "issues": search_jira_issues(account_id=account_id, project_key=project_key),
+    }
+
+
 #: 내장 도구. `tool_ref` 는 agent_tool 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
     "document_search": Tool(
@@ -252,6 +275,49 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_extract_tasks,
+    ),
+    "jira_create_issues": Tool(
+        ref="jira_create_issues",
+        name="Jira 이슈 생성",
+        description=(
+            "확인받은 업무를 Jira 프로젝트에 이슈로 등록한다. 여러 건을 한 번에 보내고, "
+            "건별 성공·실패를 그대로 돌려준다. 사용자 승인 없이는 실행되지 않는다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "project_key": {"type": "string", "description": "등록할 Jira 프로젝트 키"},
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "issuetype": {"type": "string", "description": "Task · Story 등"},
+                            "assignee_account_id": {"type": "string"},
+                            "duedate": {"type": "string", "description": "YYYY-MM-DD"},
+                        },
+                        "required": ["title", "issuetype"],
+                    },
+                },
+            },
+            "required": ["project_key", "issues"],
+        },
+        handler=_jira_create_issues,
+        # 남의 Jira 에 이슈를 만든다. 승인 게이트를 반드시 탄다(8/11 확정 ③).
+        side_effect=True,
+    ),
+    "jira_get_issues": Tool(
+        ref="jira_get_issues",
+        name="Jira 이슈 조회",
+        description="Jira 프로젝트의 기존 이슈와 진행 상황을 읽는다.",
+        input_schema={
+            "type": "object",
+            "properties": {"project_key": {"type": "string"}},
+            "required": ["project_key"],
+        },
+        handler=_jira_get_issues,
     ),
 }
 

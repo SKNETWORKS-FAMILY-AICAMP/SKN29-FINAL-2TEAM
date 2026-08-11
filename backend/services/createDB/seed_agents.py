@@ -46,16 +46,26 @@ PREBUILT_AGENTS = [
             "기준 문서는 사람이 미리 골라 둔 것을 쓴다 — 어느 문서로 뽑을지 네가 정하지 않는다.\n"
             "추출이 끝나면 몇 건이 나왔는지와 주의할 점(경고)만 짧게 말한다. "
             "업무 목록 자체는 화면이 카드로 보여주므로 다시 나열하지 않는다.\n"
-            "근거가 확인되지 않아 빠진 업무가 있으면 그 사실을 숨기지 않고 함께 말한다."
+            "근거가 확인되지 않아 빠진 업무가 있으면 그 사실을 숨기지 않고 함께 말한다.\n"
+            "사용자가 Jira 등록을 요청하면 jira_create_issues 를 부른다. 등록 결과는 "
+            "성공 건수만 말하지 말고 실패한 건과 그 사유를 함께 말한다 — 부분 실패를 "
+            "성공처럼 뭉개지 않는다."
         ),
         # 최종 정리 단계가 긴 추론을 쓴다. 안쪽 파이프라인은 자기 모델을 따로
         # 쓰므로(services/task_extraction), 여기 값은 바깥 대화용이다.
         "model": "gpt-5.6-luna",
         "reasoning_effort": "low",
-        # 도구 한 번이면 끝나는 일이다. 상한을 크게 잡을 이유가 없고, 크면
-        # 실패할 때 그만큼 오래 헛돈다.
-        "max_iterations": 4,
-        "tool_refs": ["task_extraction", "document_search"],
+        # 가장 긴 정상 흐름이 document_search → task_extraction →
+        # jira_create_issues → 답변이라 4회전이 필요하다. 상한은 폭주를 막는
+        # 값이지 정상 흐름을 자르는 값이 아니라서 한 번의 여유를 더 둔다.
+        # 크게 잡을 이유도 없다 — 실패할 때 그만큼 오래 헛돈다.
+        "max_iterations": 6,
+        "tool_refs": [
+            "task_extraction",
+            "document_search",
+            "jira_create_issues",
+            "jira_get_issues",
+        ],
     },
 ]
 

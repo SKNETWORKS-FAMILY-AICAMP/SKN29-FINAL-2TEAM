@@ -489,3 +489,149 @@ def search_jira_issues(*, account_id: str, project_key: str) -> list[dict[str, A
             break
 
     return issues
+
+
+#: 이슈 하나에 반드시 있어야 하는 값. 없으면 Jira 에 보내기 전에 걸러 사유를
+#: 만든다(11_MCP_설계 §5 — Figma 실패 사유와 일치: issuetype·assignee 누락).
+#: 보내고 나서 받는 오류는 원문이 영어이고 어느 이슈 것인지 짚기도 어렵다.
+_JIRA_REQUIRED = ("title", "issuetype")
+
+#: 한 번에 보낼 상한. Jira 벌크 API 가 50건까지 받는다.
+_JIRA_BULK_LIMIT = 50
+
+
+def _adf(text: str) -> dict[str, Any]:
+    """평문을 Atlassian Document Format 으로.
+
+    REST v3 의 description 은 문자열을 받지 않는다. 문자열을 그대로 보내면
+    400 이 나는데 메시지가 "Operation value must be an Atlassian Document"라
+    무엇이 문제인지 바로 안 보인다.
+    """
+
+    lines = [line for line in (text or "").split("\n")]
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {"type": "paragraph", "content": ([{"type": "text", "text": line}] if line else [])}
+            for line in lines
+        ],
+    }
+
+
+def create_jira_issues(
+    *, account_id: str, project_key: str, issues: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """이슈를 한 번에 만든다. **부분 실패를 그대로 돌려준다**(11_MCP_설계 §5).
+
+    성공분만 돌려주고 나머지를 삼키면 화면이 "20건 등록"이라고 말하는데 실제로는
+    17건인 상태가 된다. 건별로 성공(key)이나 실패 사유를 붙여 돌려주고, 무엇을
+    다시 시도할지는 사람이 정한다.
+
+    입력 검증을 먼저 한다. 필수 값이 빠진 건은 Jira 에 보내지 않고 여기서
+    `validation` 으로 떨어뜨린다 — 보내 봐야 영어 오류가 오고, 그 오류가 어느
+    이슈 것인지 되짚기 어렵다.
+    """
+
+    if not issues:
+        return {"created": [], "failed": [], "project_key": project_key}
+    if len(issues) > _JIRA_BULK_LIMIT:
+        raise OAuthError(f"한 번에 만들 수 있는 이슈는 {_JIRA_BULK_LIMIT}건까지입니다.")
+
+    valid: list[tuple[int, dict[str, Any]]] = []
+    failed: list[dict[str, Any]] = []
+    for index, issue in enumerate(issues):
+        missing = [field for field in _JIRA_REQUIRED if not str(issue.get(field) or "").strip()]
+        if missing:
+            failed.append(
+                {
+                    "index": index,
+                    "title": issue.get("title"),
+                    "error_code": "validation",
+                    "reason": f"필수 값이 없습니다: {', '.join(missing)}",
+                }
+            )
+            continue
+        valid.append((index, issue))
+
+    if not valid:
+        return {"created": [], "failed": failed, "project_key": project_key}
+
+    credential = credential_for(account_id=account_id, connector_type=JIRA)
+    cloud_id = credential.get("cloud_id")
+    if not isinstance(cloud_id, str):
+        raise OAuthError("연결된 Jira 사이트 정보를 찾을 수 없습니다. 다시 연결해 주세요.")
+
+    headers = {
+        "Authorization": f"Bearer {credential['access_token']}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    updates = []
+    for _index, issue in valid:
+        fields: dict[str, Any] = {
+            "project": {"key": project_key},
+            "summary": str(issue["title"])[:255],
+            "issuetype": {"name": issue["issuetype"]},
+        }
+        if issue.get("description"):
+            fields["description"] = _adf(str(issue["description"]))
+        if issue.get("assignee_account_id"):
+            # 이메일이 아니라 Atlassian accountId 다. GDPR 이후 이메일로는
+            # 담당자를 지정할 수 없다.
+            fields["assignee"] = {"accountId": issue["assignee_account_id"]}
+        if issue.get("duedate"):
+            fields["duedate"] = issue["duedate"]
+        updates.append({"fields": fields})
+
+    try:
+        response = requests.post(
+            f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/issue/bulk",
+            headers=headers,
+            json={"issueUpdates": updates},
+            timeout=(10, 60),
+        )
+    except requests.RequestException as exc:
+        raise OAuthError(f"Jira 이슈 생성 요청에 실패했습니다: {exc}") from exc
+
+    if response.status_code in (401, 403):
+        raise OAuthError("Jira 인증이 만료되었습니다. 설정에서 다시 연결해 주세요.")
+    if response.status_code == 429:
+        raise OAuthError("Jira 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+    if response.status_code >= 400 and response.status_code != 400:
+        # 400 은 "일부 실패"일 수 있어 본문을 읽어야 한다. 그 외는 전체 실패다.
+        raise OAuthError(f"Jira 이슈 생성에 실패했습니다: HTTP {response.status_code}")
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise OAuthError("Jira 응답을 읽을 수 없습니다.") from exc
+
+    created = [
+        {"key": item.get("key"), "id": item.get("id")} for item in payload.get("issues") or []
+    ]
+    # `failedElementNumber` 는 우리가 보낸 배열의 인덱스다 — 걸러낸 건이 있으므로
+    # 원래 요청 순번으로 되돌려 준다. 안 그러면 화면이 엉뚱한 업무에 사유를 붙인다.
+    for error in payload.get("errors") or []:
+        position = error.get("failedElementNumber")
+        original_index, issue = (
+            valid[position] if isinstance(position, int) and position < len(valid) else (None, {})
+        )
+        status_payload = error.get("elementErrors") or {}
+        messages = status_payload.get("errorMessages") or []
+        field_errors = status_payload.get("errors") or {}
+        failed.append(
+            {
+                "index": original_index,
+                "title": issue.get("title"),
+                "error_code": "validation",
+                "reason": "; ".join([*messages, *(f"{k}: {v}" for k, v in field_errors.items())])
+                or "Jira 가 이 이슈를 거부했습니다.",
+            }
+        )
+
+    return {
+        "project_key": project_key,
+        "created": created,
+        "failed": sorted(failed, key=lambda row: (row["index"] is None, row["index"])),
+    }

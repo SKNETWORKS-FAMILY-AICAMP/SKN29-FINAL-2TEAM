@@ -37,21 +37,24 @@ export const AGENT_MODELS: { value: AgentModelId; label: string }[] = [
 ];
 
 /**
- * 내장 Tool 2종 + MCP Tool. MCP 쪽은 Settings > MCP의 mock과 짝이 맞다.
+ * 기본 제공 Tool. `id`는 화면 편의값이 아니라 **`agent_tool.tool_ref`에 그대로
+ * 들어가는 값**이다(DB/migrations/2026-08-11_agent_platform.sql 주석).
  *
- * `id`는 화면 편의값이 아니라 **`agent_tool.tool_ref`에 그대로 들어가는 값**이다
- * (DB/migrations/2026-08-11_agent_platform.sql 주석 · 개발지시_1차 단계 2-3).
- * 내장 tool 은 식별자 그대로, MCP tool 은 `mcp:<mcp_tool.mcp_tool_id>` 형식이라
- * mock 도 같은 모양을 쓴다 — API 가 붙을 때 이 파일만 갈아 끼우려면 id 부터
- * 계약이어야 한다. MT001·MT002 는 mcp_tool PK 자리를 채운 가짜 값이다.
+ * **Jira 2종은 MCP가 아니라 내장 Tool이다.** 자체 Jira MCP 서버를 띄우려면
+ * 백엔드의 SSRF 차단이 같은 호스트 주소를 막고, 공식 Atlassian MCP는 OAuth
+ * 액세스 토큰을 요구해서(실측 2026-08-11: 401 `Bearer realm="OAuth"`) 정적
+ * 토큰 하나를 저장하는 지금 모델로는 한 시간 뒤 끊긴다. Jira Connector는 이미
+ * 붙어 있으므로 데모 핵심 흐름을 남의 서비스에 매달지 않는다.
+ *
+ * MCP는 「사용자가 자기 서버를 추가로 붙이는」 확장 경로다. 그 목록은 이 상수가
+ * 아니라 Settings > MCP에 등록된 서버에서 오고, id는 `mcp:<mcp_tool_id>`다.
  */
 export const AVAILABLE_TOOLS: AgentToolRef[] = [
   { id: 'document_search', name: '문서 검색', desc: '팀에 등록된 문서에서 근거를 찾습니다', source: '기본 제공' },
+  { id: 'task_extraction', name: '업무 추출', desc: '기준 문서에서 업무 후보를 근거와 함께 뽑습니다', source: '기본 제공' },
   { id: 'workload_report', name: '부하 리포트 생성', desc: '팀원별 주간 업무 시간을 계산합니다', source: '기본 제공' },
-  // 자체 Jira MCP 서버의 jira_create_issues(벌크) — 개발지시_1차 단계 6-3
-  { id: 'mcp:MT001', name: 'Jira 이슈 생성', desc: '확인받은 업무를 Jira에 등록합니다', source: 'MCP · Jira' },
-  // 같은 서버의 jira_get_issues
-  { id: 'mcp:MT002', name: 'Jira 이슈 조회', desc: '기존 이슈와 진행 상황을 읽습니다', source: 'MCP · Jira' },
+  { id: 'jira_create_issues', name: 'Jira 이슈 생성', desc: '확인받은 업무를 Jira에 등록합니다', source: '기본 제공' },
+  { id: 'jira_get_issues', name: 'Jira 이슈 조회', desc: '기존 이슈와 진행 상황을 읽습니다', source: '기본 제공' },
 ];
 
 export const MOCK_AGENTS: MockAgent[] = [
@@ -63,7 +66,7 @@ export const MOCK_AGENTS: MockAgent[] = [
     model: 'sol',
     isPrebuilt: true,
     shared: true,
-    toolIds: ['document_search', 'mcp:MT001'],
+    toolIds: ['task_extraction', 'document_search', 'jira_create_issues', 'jira_get_issues'],
     owner: 'halil 제공',
     updatedAt: '단계별 luna/sol',
   },

@@ -249,14 +249,19 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
     if tool.ref == "task_extraction":
         # 어느 프로젝트의 기준 문서로 뽑을지는 대화의 문맥이지 모델의 선택이 아니다.
         return {"proj_id": context.get("proj_id"), "account_id": context.get("account_id")}
-    if tool.ref == "workload_report":
+    if tool.ref in _ACCOUNT_SCOPED_TOOLS:
         account_id = context.get("account_id")
         if not account_id:
-            # 대화 없이 도는 경로(평가·A2A)에는 요청자가 없다. 조용히 남의 팀
-            # 값을 쓰지 않고 이 도구만 실패시킨다.
-            raise ValueError("workload_report 는 요청자 계정(account_id)이 필요합니다.")
+            # 대화 없이 도는 경로(평가·A2A)에는 요청자가 없다. 조용히 남의 자격으로
+            # 외부를 부르지 않고 이 도구만 실패시킨다.
+            raise ValueError(f"{tool.ref} 는 요청자 계정(account_id)이 필요합니다.")
         return {"account_id": account_id}
     return {}
+
+
+#: 요청자 계정으로 외부를 부르는 도구. Connector 자격증명이 계정별이라
+#: 서버가 넣어야 한다 — 모델이 정하면 남의 Jira·남의 부하를 건드린다.
+_ACCOUNT_SCOPED_TOOLS = frozenset({"workload_report", "jira_create_issues", "jira_get_issues"})
 
 
 def _assistant_turn(decision: ModelDecision) -> list[dict[str, Any]]:

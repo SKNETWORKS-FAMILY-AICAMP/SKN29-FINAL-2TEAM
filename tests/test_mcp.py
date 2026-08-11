@@ -300,3 +300,117 @@ class McpApiTests(SimpleTestCase):
 
     def test_로그인_없이는_401(self, _repo):
         self.assertEqual(self.client.get("/api/mcp/servers/").status_code, 401)
+
+
+class JiraBuiltinToolTests(SimpleTestCase):
+    """Jira 등록은 내장 도구다 — MCP 가 아니다.
+
+    자체 MCP 서버는 우리 SSRF 차단이 같은 호스트를 막고, 공식 Atlassian MCP 는
+    OAuth 토큰을 요구해 정적 토큰 모델로는 한 시간 뒤 끊긴다. 데모 핵심 흐름을
+    남의 서비스에 매달지 않는다.
+    """
+
+    def test_생성은_승인_게이트를_탄다(self):
+        from services.harness.registry import BUILTIN_TOOLS
+
+        self.assertTrue(BUILTIN_TOOLS["jira_create_issues"].side_effect)
+        # 조회는 읽기라 승인이 필요 없다 — 매번 물으면 대화가 못 굴러간다.
+        self.assertFalse(BUILTIN_TOOLS["jira_get_issues"].side_effect)
+
+    @patch("apps.connectors.clients.requests.post")
+    @patch("apps.connectors.clients.credential_for")
+    def test_필수값이_빠진_건은_보내기_전에_거른다(self, credential, post):
+        """보내 봐야 영어 오류가 오고, 어느 이슈 것인지 되짚기 어렵다."""
+
+        from apps.connectors.clients import create_jira_issues
+
+        credential.return_value = {"access_token": "t", "cloud_id": "c1"}
+        post.return_value = Mock(status_code=201, json=lambda: {"issues": [{"key": "KAN-1"}]})
+
+        result = create_jira_issues(
+            account_id="UA001",
+            project_key="KAN",
+            issues=[
+                {"title": "정상", "issuetype": "Task"},
+                {"title": "타입 없음"},
+                {"issuetype": "Task"},
+            ],
+        )
+
+        self.assertEqual([f["index"] for f in result["failed"]], [1, 2])
+        self.assertEqual({f["error_code"] for f in result["failed"]}, {"validation"})
+        # 걸러진 건은 Jira 로 나가지 않는다.
+        self.assertEqual(len(post.call_args.kwargs["json"]["issueUpdates"]), 1)
+
+    @patch("apps.connectors.clients.requests.post")
+    @patch("apps.connectors.clients.credential_for")
+    def test_부분_실패를_그대로_돌려준다(self, credential, post):
+        """성공분만 주면 화면이 '20건 등록'이라 말하는데 실제로는 17건이 된다."""
+
+        from apps.connectors.clients import create_jira_issues
+
+        credential.return_value = {"access_token": "t", "cloud_id": "c1"}
+        post.return_value = Mock(
+            status_code=201,
+            json=lambda: {
+                "issues": [{"key": "KAN-1", "id": "1"}],
+                "errors": [
+                    {
+                        "failedElementNumber": 1,
+                        "elementErrors": {"errors": {"assignee": "담당자를 찾을 수 없습니다"}},
+                    }
+                ],
+            },
+        )
+
+        result = create_jira_issues(
+            account_id="UA001",
+            project_key="KAN",
+            issues=[
+                {"title": "A", "issuetype": "Task"},
+                {"title": "B", "issuetype": "Task", "assignee_account_id": "없는사람"},
+            ],
+        )
+
+        self.assertEqual([c["key"] for c in result["created"]], ["KAN-1"])
+        self.assertEqual(result["failed"][0]["title"], "B")
+        self.assertIn("담당자", result["failed"][0]["reason"])
+
+    @patch("apps.connectors.clients.requests.post")
+    @patch("apps.connectors.clients.credential_for")
+    def test_실패_번호를_원래_순번으로_되돌린다(self, credential, post):
+        """걸러낸 건이 있으면 Jira 가 준 번호와 원래 순번이 어긋난다 —
+        그대로 쓰면 화면이 엉뚱한 업무에 사유를 붙인다."""
+
+        from apps.connectors.clients import create_jira_issues
+
+        credential.return_value = {"access_token": "t", "cloud_id": "c1"}
+        post.return_value = Mock(
+            status_code=201,
+            json=lambda: {
+                "issues": [],
+                # 우리가 보낸 배열의 0번 = 원래 요청의 1번
+                "errors": [{"failedElementNumber": 0, "elementErrors": {"errorMessages": ["거부"]}}],
+            },
+        )
+
+        result = create_jira_issues(
+            account_id="UA001",
+            project_key="KAN",
+            issues=[
+                {"title": "필수 누락"},
+                {"title": "보낸 것", "issuetype": "Task"},
+            ],
+        )
+
+        by_index = {f["index"]: f["title"] for f in result["failed"]}
+        self.assertEqual(by_index, {0: "필수 누락", 1: "보낸 것"})
+
+    @patch("apps.connectors.clients.credential_for")
+    def test_빈_목록은_호출하지_않는다(self, credential):
+        from apps.connectors.clients import create_jira_issues
+
+        result = create_jira_issues(account_id="UA001", project_key="KAN", issues=[])
+
+        self.assertEqual(result, {"created": [], "failed": [], "project_key": "KAN"})
+        credential.assert_not_called()
