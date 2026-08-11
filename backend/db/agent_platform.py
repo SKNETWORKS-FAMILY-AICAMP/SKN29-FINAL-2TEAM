@@ -17,7 +17,7 @@ from apps.connectors.oauth import decrypt_credential, encrypt_credential
 
 from .codes import next_short_code
 from .connection import database_connection
-from .errors import PermissionDenied, RecordNotFound
+from .errors import PermissionDenied, RecordNotFound, ReferenceNotFound
 from .repositories import _require_team
 
 
@@ -541,3 +541,188 @@ def _auth_token(ciphertext: str | None) -> str | None:
     if not ciphertext:
         return None
     return decrypt_credential(ciphertext).get("auth_token")
+
+
+class AgentCrudRepository:
+    """Builder 가 쓰는 에이전트 CRUD.
+
+    조회 전용인 `AgentRepository` 와 나눠 둔다 — 그쪽은 Harness 가 실행 중에
+    부르는 경로라 팀 검사가 없다(실행 시점에는 이미 대화가 팀을 확인했다).
+    여기는 사람이 요청하는 경로라 매번 팀을 묻는다.
+    """
+
+    @staticmethod
+    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT a.agent_id, a.name, a.description, a.instruction, a.model,
+                           a.reasoning_effort, a.max_iterations, a.is_prebuilt, a.status,
+                           a.created_by, a.created_at, a.updated_at,
+                           ua.display_name AS owner_name,
+                           COALESCE(
+                               (SELECT json_agg(t.tool_ref ORDER BY t.tool_ref)
+                                FROM agent_tool t WHERE t.agent_id = a.agent_id),
+                               '[]'::json) AS tool_refs
+                    FROM agent AS a
+                    LEFT JOIN user_account AS ua ON ua.account_id = a.created_by
+                    WHERE a.team_id = %s AND a.status = 'ACTIVE'
+                    ORDER BY a.is_prebuilt DESC, a.name
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def get(*, agent_id: str, account_id: str) -> dict[str, Any]:
+        rows = AgentCrudRepository.list_for_team(account_id)
+        for row in rows:
+            if row["agent_id"] == agent_id:
+                return row
+        raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
+
+    @staticmethod
+    def create(*, account_id: str, fields: dict[str, Any], tool_refs: list[str]) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _check_tool_refs(cursor, team_id=team_id, tool_refs=tool_refs)
+                agent_id = next_short_code(
+                    cursor, table="agent", column="agent_id", prefix="AG"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO agent (agent_id, team_id, name, description, instruction,
+                                       model, reasoning_effort, max_iterations,
+                                       is_prebuilt, status, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false, 'ACTIVE', %s)
+                    """,
+                    (
+                        agent_id, team_id, fields["name"], fields["description"],
+                        fields["instruction"], fields["model"], fields["reasoning_effort"],
+                        fields["max_iterations"], account_id,
+                    ),
+                )
+                _replace_tools(cursor, agent_id=agent_id, tool_refs=tool_refs)
+        return AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
+
+    @staticmethod
+    def update(
+        *, agent_id: str, account_id: str, fields: dict[str, Any], tool_refs: list[str]
+    ) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _writable_agent(cursor, agent_id=agent_id, team_id=team_id)
+                _check_tool_refs(cursor, team_id=team_id, tool_refs=tool_refs)
+                cursor.execute(
+                    """
+                    UPDATE agent
+                       SET name = %s, description = %s, instruction = %s, model = %s,
+                           reasoning_effort = %s, max_iterations = %s, updated_at = now()
+                     WHERE agent_id = %s
+                    """,
+                    (
+                        fields["name"], fields["description"], fields["instruction"],
+                        fields["model"], fields["reasoning_effort"],
+                        fields["max_iterations"], agent_id,
+                    ),
+                )
+                # 도구는 전체 교체다. 부분 갱신으로 두면 화면에서 체크를 푼 도구가
+                # 남아 에이전트가 계속 쓸 수 있다.
+                _replace_tools(cursor, agent_id=agent_id, tool_refs=tool_refs)
+        return AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
+
+    @staticmethod
+    def delete(*, agent_id: str, account_id: str) -> None:
+        """ARCHIVED 로 내린다. 행을 지우지 않는 이유는 `agent_run` 이 이 id 를
+        가리키고 있어서다 — 지우면 평가가 어느 에이전트의 실행이었는지 잃는다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _writable_agent(cursor, agent_id=agent_id, team_id=team_id)
+                cursor.execute(
+                    "UPDATE agent SET status = 'ARCHIVED', updated_at = now() WHERE agent_id = %s",
+                    (agent_id,),
+                )
+                cursor.execute("DELETE FROM agent_tool WHERE agent_id = %s", (agent_id,))
+
+    @staticmethod
+    def team_tool_refs(account_id: str) -> list[dict[str, Any]]:
+        """편집 화면이 고를 수 있는 MCP 도구. 내장 도구는 코드 상수라 여기 없다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT 'mcp:' || t.mcp_tool_id AS tool_ref, t.name, t.description,
+                           s.name AS server_name, s.status AS server_status
+                    FROM mcp_tool AS t
+                    JOIN mcp_server AS s ON s.mcp_server_id = t.server_id
+                    WHERE s.team_id = %s AND t.enabled = true
+                    ORDER BY s.name, t.name
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+
+def _writable_agent(cursor, *, agent_id: str, team_id: str) -> None:
+    """수정·삭제해도 되는 에이전트인가.
+
+    **기본 제공 에이전트는 거절한다.** 시드 스크립트가 정의를 소유하고 다시
+    돌릴 때 덮어쓰므로, 화면에서 고친 값은 어차피 다음 실행에 사라진다 —
+    고칠 수 있는 것처럼 보이는 편이 더 나쁘다(1차 단계 4 「우리가 제공하는 것」).
+    """
+
+    cursor.execute("SELECT team_id, is_prebuilt FROM agent WHERE agent_id = %s", (agent_id,))
+    row = cursor.fetchone()
+    if row is None:
+        raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
+    if row["team_id"] != team_id:
+        raise PermissionDenied("이 에이전트에 접근할 수 없습니다.")
+    if row["is_prebuilt"]:
+        raise PermissionDenied("기본 제공 에이전트는 수정하거나 지울 수 없습니다.")
+
+
+def _check_tool_refs(cursor, *, team_id: str, tool_refs: list[str]) -> None:
+    """실존하는 도구만 붙인다.
+
+    없는 `tool_ref` 를 저장하면 Registry 가 조용히 걸러서, 사용자는 체크했는데
+    에이전트는 그 도구를 못 쓰는 상태가 된다 — 화면과 실제가 어긋난다.
+    """
+
+    from services.harness.registry import BUILTIN_TOOLS
+
+    unknown: list[str] = []
+    for tool_ref in tool_refs:
+        if tool_ref in BUILTIN_TOOLS:
+            continue
+        if not tool_ref.startswith("mcp:"):
+            unknown.append(tool_ref)
+            continue
+        cursor.execute(
+            """
+            SELECT 1 FROM mcp_tool AS t
+            JOIN mcp_server AS s ON s.mcp_server_id = t.server_id
+            WHERE t.mcp_tool_id = %s AND s.team_id = %s AND t.enabled = true
+            """,
+            (tool_ref.removeprefix("mcp:"), team_id),
+        )
+        if cursor.fetchone() is None:
+            unknown.append(tool_ref)
+
+    if unknown:
+        raise ReferenceNotFound(f"등록되지 않은 도구입니다: {', '.join(unknown)}")
+
+
+def _replace_tools(cursor, *, agent_id: str, tool_refs: list[str]) -> None:
+    cursor.execute("DELETE FROM agent_tool WHERE agent_id = %s", (agent_id,))
+    for tool_ref in dict.fromkeys(tool_refs):
+        cursor.execute(
+            "INSERT INTO agent_tool (agent_id, tool_ref) VALUES (%s, %s)", (agent_id, tool_ref)
+        )
