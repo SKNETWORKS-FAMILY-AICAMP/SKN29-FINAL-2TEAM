@@ -174,9 +174,9 @@ def run_agent(
                         # 행 없이 run 이 끝나 로그에 흔적이 남지 않는다.
                         raw = tool.handler(**{**arguments, **_injected(tool, agent, context)})
                         if isinstance(raw, GeneratorType):
-                            # 오래 걸리는 도구는 진행을 흘린다. 그대로 중계하고,
-                            # 모델에게 줄 값은 `return` 으로 받는다.
-                            output = yield from raw
+                            # 오래 걸리는 도구는 진행을 흘린다. 모델에게 줄 값은
+                            # `return` 으로 받는다.
+                            output = yield from _forward(raw, tool_ref, tool_call_id)
                         else:
                             output = raw
                 except Exception as exc:  # noqa: BLE001 - 도구 실패로 run 을 끝내지 않는다
@@ -210,6 +210,29 @@ def run_agent(
             "stopped_reason": "max_iterations",
             "iterations": limit,
         }
+
+
+def _forward(events: Iterator[dict[str, Any]], tool_ref: str, tool_call_id: str | None):
+    """도구가 흘리는 진행 이벤트에 출처를 붙여 중계한다.
+
+    붙이지 않으면 두 층의 `stage` 가 구별되지 않는다. Loop 의 `stage` 는
+    `1/4`(회전 수)이고 업무 추출의 `stage` 는 `1/5`(파이프라인 단계)인데,
+    화면에서는 같은 타입으로 도착해 진행 카드가 1/4 → 1/5 → 2/5 → 2/4 로
+    튄다(2026-08-11 실호출에서 확인). 서로 다른 축이라 카드도 달라야 한다.
+
+    타입 이름을 바꾸지 않는 이유는 기존 업무 추출 화면이 이미 이 어휘
+    (`stage`·`queries`·`stage_done`)를 읽고 있어서다 — 필드만 더한다.
+    화면 규칙: `tool_ref` 가 있으면 그 도구의 진행, 없으면 Loop 의 회전.
+    """
+
+    while True:
+        try:
+            event = next(events)
+        except StopIteration as stop:
+            # 도구가 `return` 으로 준 값. 제너레이터 표현식에 `yield from` 을
+            # 걸면 이 값이 사라져 모델이 None 을 받는다.
+            return stop.value
+        yield {**event, "tool_ref": tool_ref, "tool_call_id": tool_call_id}
 
 
 def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

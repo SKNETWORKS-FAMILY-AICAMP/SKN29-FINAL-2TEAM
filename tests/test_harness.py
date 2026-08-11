@@ -450,6 +450,33 @@ class StreamingToolTests(SimpleTestCase):
             ],
         )
 
+    def test_도구가_흘린_stage_는_Loop_의_stage_와_구별된다(self, _get, load_tools, runs, calls):
+        """둘 다 `stage` 라 표시가 없으면 진행 카드가 1/4 → 1/5 → 2/4 로 튄다."""
+
+        load_tools.return_value = {
+            "task_extraction": echo_tool("task_extraction", handler=self._streaming_handler)
+        }
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        model = FakeModel(
+            [
+                ModelDecision(tool_calls=[{"id": "c1", "tool_ref": "task_extraction", "arguments": {}}]),
+                ModelDecision(text="3건 뽑았습니다."),
+            ]
+        )
+
+        events = list(run_agent("AG001", "업무 정리해줘", model=model))
+        stages = [e for e in events if e["type"] == "stage"]
+
+        loop_stages = [e for e in stages if "tool_ref" not in e]
+        tool_stages = [e for e in stages if e.get("tool_ref") == "task_extraction"]
+        self.assertEqual(len(loop_stages), 2)
+        self.assertEqual(len(tool_stages), 1)
+        self.assertEqual(tool_stages[0]["tool_call_id"], "TC-1")
+        # 도구가 흘린 결과 이벤트도 같은 표시를 달고 나간다.
+        payload = next(e for e in events if e["type"] == "task_extraction_result")
+        self.assertEqual(payload["tool_ref"], "task_extraction")
+
     def test_결과는_이벤트로_나가고_모델에는_요약만_간다(self, _get, load_tools, runs, calls):
         """업무 20건을 바깥 모델에 다시 넣으면 근거가 흔들리고 토큰도 그만큼 든다."""
 
