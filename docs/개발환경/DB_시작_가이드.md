@@ -473,6 +473,21 @@ DATABASE_URL="postgres://project_copilot:project_copilot@localhost:5432/project_
 python backend/services/createDB/grant_admin.py <가입된 이메일> --revoke
 ```
 
+### 6.2 기본 제공 에이전트 시드 (`seed_agents.py`)
+
+Chat 화면의 에이전트 선택기에 **「업무 추출 에이전트」가 안 보이면 이걸 안 돌린 것이다.** 에이전트는 팀 소유(`agent.team_id`)라 팀마다 한 벌씩 필요하고, 온보딩으로 새 팀을 만들 때마다 다시 돌려야 한다.
+
+`grant_admin.py`와 같은 이유로 API가 아니라 스크립트다 — `is_prebuilt = true`인 행을 API로 만들 수 있으면 「우리가 제공하는 것」과 「팀이 만든 것」의 구분이 무의미해진다.
+
+```bash
+DATABASE_URL="postgres://project_copilot:project_copilot@localhost:5432/project_copilot" \
+  python backend/services/createDB/seed_agents.py --all-teams
+```
+
+특정 팀만 하려면 `--team TM001`. 멱등이라 여러 번 돌려도 팀당 하나이고, 이미 있으면 지시·모델·도구를 최신 정의로 맞춘다. **팀이 직접 만든 에이전트는 건드리지 않는다**(`is_prebuilt = true`인 행만 본다).
+
+> 기본 제공 에이전트의 정의를 고치려면 스크립트 안의 `PREBUILT_AGENTS`를 고치고 다시 돌린다. 화면에서 고친 값은 다음 실행 때 덮어써진다 — 기본 제공 에이전트는 팀이 편집하지 않는다는 전제다.
+
 ---
 
 ## 7. VEC_IDX 예시로 벡터 저장·검색해보기 (선택)

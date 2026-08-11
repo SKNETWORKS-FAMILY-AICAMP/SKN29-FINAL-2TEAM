@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from types import GeneratorType
 from typing import Any, Callable, Iterator
 
 from django.conf import settings
@@ -171,7 +172,13 @@ def run_agent(
                         }
                         # 주입은 `with` 안에서 한다. 밖에서 하다 실패하면 tool_call
                         # 행 없이 run 이 끝나 로그에 흔적이 남지 않는다.
-                        output = tool.handler(**{**arguments, **_injected(tool, agent, context)})
+                        raw = tool.handler(**{**arguments, **_injected(tool, agent, context)})
+                        if isinstance(raw, GeneratorType):
+                            # 오래 걸리는 도구는 진행을 흘린다. 그대로 중계하고,
+                            # 모델에게 줄 값은 `return` 으로 받는다.
+                            output = yield from raw
+                        else:
+                            output = raw
                 except Exception as exc:  # noqa: BLE001 - 도구 실패로 run 을 끝내지 않는다
                     logger.exception("도구 실행 실패: %s (run=%s)", tool_ref, run_trace.run_id)
                     error_code = exc.__class__.__name__
@@ -214,6 +221,9 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
 
     if tool.ref == "document_search":
         return {"team_id": agent["team_id"]}
+    if tool.ref == "task_extraction":
+        # 어느 프로젝트의 기준 문서로 뽑을지는 대화의 문맥이지 모델의 선택이 아니다.
+        return {"proj_id": context.get("proj_id"), "account_id": context.get("account_id")}
     if tool.ref == "workload_report":
         account_id = context.get("account_id")
         if not account_id:

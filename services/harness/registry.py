@@ -16,6 +16,7 @@ from backend.db.agent_platform import AgentRepository
 from backend.db.document_pipeline import PipelineDocumentRepository, VectorSearchRepository
 from backend.services.hr import list_absences, list_capacity_profiles
 from services.document_pipeline.runpod_client import embed_queries
+from services.task_extraction import extract_tasks_stream
 from services.workload import calculator
 
 
@@ -26,6 +27,9 @@ class Tool:
     description: str
     #: JSON Schema. 모델에게 그대로 넘긴다.
     input_schema: dict[str, Any]
+    #: 값을 돌려주거나, **제너레이터면 진행 이벤트를 흘리고 `return` 으로 결과를
+    #: 준다.** 몇 분이 걸리는 도구는 후자여야 한다 — 그동안 화면에 보낼 것이
+    #: 없으면 사용자는 이게 도는 건지 멈춘 건지 알 수 없다.
     handler: Callable[..., Any]
     #: 외부 시스템을 바꾸는가. True 면 Runner 가 승인 전에 실행하지 않는다
     #: (8/11 확정 ③).
@@ -101,6 +105,62 @@ def _workload_report(*, account_id: str, weeks: int = 4) -> dict[str, Any]:
     ) | {"as_of": datetime.now(UTC).isoformat(), "workload_weeks": weeks}
 
 
+def _extract_tasks(*, proj_id: str | None, account_id: str):
+    """기준 문서에서 업무를 뽑는다. 기존 `services/task_extraction` 을 그대로 쓴다.
+
+    **제너레이터다.** 안쪽 파이프라인이 4단계 검색 + 1단계 정리라 몇 분이 걸리고,
+    그동안 무엇을 찾고 있는지 내보내지 않으면 화면이 멈춘 것과 구별되지 않는다.
+    기존 `/tasks/extraction` 화면이 이미 그 진행을 보여 주고 있어서, 여기서 삼키면
+    Chat 쪽이 명백히 못한 물건이 된다.
+
+    모델에게 돌려주는 것은 **건수와 경고뿐**이다. 업무 20건과 근거를 통째로
+    돌려주면 바깥 모델이 그것을 한 번 더 요약하면서 근거가 흔들리고, 토큰도
+    그만큼 든다. 사람이 볼 결과는 이벤트로 나가 chat_message 에 구조화되어
+    남는다(8/11 확정 ④).
+
+    기준 문서는 사람이 이미 골라 둔 것(`doc_role='PRIMARY'`)을 쓴다. 모델에게
+    문서 id 를 고르게 하지 않는다 — 어느 문서로 뽑았는지가 결과 전체의 전제라
+    그건 사람의 결정이어야 한다.
+    """
+
+    if not proj_id:
+        raise ValueError("어느 프로젝트의 업무를 뽑을지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+
+    documents = PipelineDocumentRepository.list_ready_for_analysis(
+        proj_id=proj_id, account_id=account_id
+    )
+    # `list_ready_for_analysis` 는 팀 문서를 전부 준다. 다른 프로젝트의 기준
+    # 문서도 섞여 있으므로 proj_id 까지 봐야 한다.
+    primary = next(
+        (d for d in documents if d["proj_id"] == proj_id and d["doc_role"] == "PRIMARY"), None
+    )
+    if primary is None:
+        raise ValueError("이 프로젝트의 기준 문서가 아직 지정되지 않았습니다.")
+    if not primary["search_ready"]:
+        raise ValueError("기준 문서가 아직 파싱·청킹·임베딩되지 않았습니다.")
+
+    ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
+    result = None
+    for event in extract_tasks_stream(
+        team_id=primary["team_id"], primary_document=primary, document_ids=ready_ids
+    ):
+        if event["type"] == "result":
+            result = event["result"]
+        else:
+            yield event
+
+    if result is None:
+        raise ValueError("업무 추출이 결과 없이 끝났습니다.")
+
+    # 화면이 결과 카드를 그리고, 새로고침 뒤에도 다시 그릴 수 있게 통째로 내보낸다.
+    yield {"type": "task_extraction_result", "proj_id": proj_id, "result": result}
+    return {
+        "task_count": len(result["tasks"]),
+        "warnings": result["warnings"],
+        "primary_document": primary["file_name"],
+    }
+
+
 #: 내장 도구. `tool_ref` 는 agent_tool 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
     "document_search": Tool(
@@ -129,6 +189,17 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": [],
         },
         handler=_workload_report,
+    ),
+    "task_extraction": Tool(
+        ref="task_extraction",
+        name="업무 추출",
+        description=(
+            "이 프로젝트의 기준 문서에서 업무 후보를 뽑고 각 업무에 원문 근거를 붙인다. "
+            "문서 id 는 받지 않는다 — 기준 문서는 사람이 미리 골라 둔 것을 쓴다. "
+            "몇 분이 걸리므로 사용자가 업무 정리를 요청했을 때만 부른다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_extract_tasks,
     ),
 }
 

@@ -408,6 +408,139 @@ class RunAgentTests(SimpleTestCase):
         self.assertEqual(runs.finish.call_args.kwargs["status"], "DONE")
 
 
+@patch("services.harness.trace.ToolCallRepository")
+@patch("services.harness.trace.AgentRunRepository")
+@patch("services.harness.runner.registry.load_for_agent")
+@patch("services.harness.runner.AgentRepository.get", return_value=AGENT)
+class StreamingToolTests(SimpleTestCase):
+    """오래 걸리는 도구는 진행을 흘리고, 모델에게는 요약만 준다(단계 4)."""
+
+    @staticmethod
+    def _streaming_handler(**_kwargs):
+        yield {"type": "stage", "step": 1, "total": 5, "label": "수행할 업무 찾기"}
+        yield {"type": "task_extraction_result", "result": {"tasks": [1, 2, 3], "warnings": []}}
+        return {"task_count": 3, "warnings": []}
+
+    def test_도구의_진행이_그대로_중계된다(self, _get, load_tools, runs, calls):
+        load_tools.return_value = {
+            "task_extraction": echo_tool("task_extraction", handler=self._streaming_handler)
+        }
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        model = FakeModel(
+            [
+                ModelDecision(tool_calls=[{"id": "c1", "tool_ref": "task_extraction", "arguments": {}}]),
+                ModelDecision(text="3건 뽑았습니다."),
+            ]
+        )
+
+        events = list(run_agent("AG001", "업무 정리해줘", model=model))
+        types = [event["type"] for event in events]
+
+        self.assertEqual(
+            types,
+            [
+                "stage",
+                "tool_call_started",
+                "stage",
+                "task_extraction_result",
+                "tool_call_finished",
+                "stage",
+                "result",
+            ],
+        )
+
+    def test_결과는_이벤트로_나가고_모델에는_요약만_간다(self, _get, load_tools, runs, calls):
+        """업무 20건을 바깥 모델에 다시 넣으면 근거가 흔들리고 토큰도 그만큼 든다."""
+
+        seen = {}
+
+        class Recorder(FakeModel):
+            def __call__(self, system, messages, tools):
+                seen["messages"] = list(messages)
+                return super().__call__(system, messages, tools)
+
+        load_tools.return_value = {
+            "task_extraction": echo_tool("task_extraction", handler=self._streaming_handler)
+        }
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        model = Recorder(
+            [
+                ModelDecision(tool_calls=[{"id": "c1", "tool_ref": "task_extraction", "arguments": {}}]),
+                ModelDecision(text="3건 뽑았습니다."),
+            ]
+        )
+
+        events = list(run_agent("AG001", "업무 정리해줘", model=model))
+
+        # 화면이 그릴 결과는 이벤트에 통째로 있다.
+        payload = next(e for e in events if e["type"] == "task_extraction_result")
+        self.assertEqual(payload["result"]["tasks"], [1, 2, 3])
+        # 모델에게 돌아간 것은 건수뿐이다.
+        tool_turn = seen["messages"][-1]
+        self.assertEqual(tool_turn["type"], "function_call_output")
+        self.assertIn('"task_count": 3', tool_turn["output"])
+        self.assertNotIn("tasks", tool_turn["output"])
+
+    def test_도구가_중간에_터져도_FAILED_로_남는다(self, _get, load_tools, runs, calls):
+        def half_way(**_kwargs):
+            yield {"type": "stage", "step": 1, "total": 5, "label": "수행할 업무 찾기"}
+            raise ValueError("기준 문서가 아직 지정되지 않았습니다.")
+
+        load_tools.return_value = {
+            "task_extraction": echo_tool("task_extraction", handler=half_way)
+        }
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        model = FakeModel(
+            [
+                ModelDecision(tool_calls=[{"id": "c1", "tool_ref": "task_extraction", "arguments": {}}]),
+                ModelDecision(text="기준 문서를 먼저 골라 주세요."),
+            ]
+        )
+
+        events = list(run_agent("AG001", "업무 정리해줘", model=model))
+        finished = next(e for e in events if e["type"] == "tool_call_finished")
+
+        self.assertEqual(finished["status"], "FAILED")
+        self.assertEqual(calls.end.call_args.kwargs["error_code"], "ValueError")
+        # 진행 이벤트는 이미 나갔다 — 터지기 전까지 한 일은 화면에 남는다.
+        self.assertIn("stage", [e["type"] for e in events])
+
+    def test_프로젝트_문맥은_모델이_아니라_세션이_정한다(self, _get, load_tools, runs, calls):
+        seen = {}
+        load_tools.return_value = {
+            "task_extraction": echo_tool(
+                "task_extraction", handler=lambda **kwargs: seen.update(kwargs) or {}
+            )
+        }
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        model = FakeModel(
+            [
+                ModelDecision(
+                    tool_calls=[
+                        {
+                            "id": "c1",
+                            "tool_ref": "task_extraction",
+                            "arguments": {"proj_id": "PJ999"},
+                        }
+                    ]
+                ),
+                ModelDecision(text="끝"),
+            ]
+        )
+
+        list(
+            run_agent(
+                "AG001", "업무 정리해줘", {"proj_id": "PJ001", "account_id": "UA001"}, model=model
+            )
+        )
+
+        self.assertEqual(seen["proj_id"], "PJ001")
+
+
 class FakeModel:
     """미리 정해 둔 결정을 순서대로 돌려준다."""
 

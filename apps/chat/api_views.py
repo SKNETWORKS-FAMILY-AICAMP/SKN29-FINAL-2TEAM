@@ -131,7 +131,13 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 run_agent(
                     session["agent_id"],
                     text,
-                    {"session_id": session_id, "account_id": account_id},
+                    {
+                        "session_id": session_id,
+                        "account_id": account_id,
+                        # 업무 추출처럼 프로젝트가 전제인 도구가 쓴다. 대화를 열
+                        # 때 고른 값이고, 없으면(전체(팀) 문맥) 그 도구가 거절한다.
+                        "proj_id": session.get("proj_id"),
+                    },
                 ),
                 session_id=session_id,
                 account_id=account_id,
@@ -189,6 +195,7 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                     {
                         "session_id": session_id,
                         "account_id": account_id,
+                        "proj_id": session.get("proj_id"),
                         "messages": resume.get("messages") or [],
                         "resume_tool_call": tool_call,
                         "approved_tool_calls": [tool_call["tool_ref"]],
