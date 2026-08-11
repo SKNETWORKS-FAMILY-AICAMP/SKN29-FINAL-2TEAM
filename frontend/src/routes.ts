@@ -14,7 +14,6 @@ export const PATHS = {
   findPassword: '/find-password',
   resetPassword: '/reset-password',
   settingsTeam: '/settings/team',
-  dashboard: '/dashboard',
   filesNew: '/files/new',
   projects: '/projects',
   projectDetail: '/projects/:projectId',
@@ -66,9 +65,6 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
   { path: PATHS.settingsPermissions, label: '설정 · 권한', group: '설정' },
-  // 4차 단계 1 — 메뉴에서는 빠졌고 처분(Q13)까지 라우트만 살려둔다. 개발용
-  // 화면 목록은 직접 URL 접근을 대신하는 데모 안전망이라 남긴다.
-  { path: PATHS.dashboard, label: '대시보드 (구 · 처분 대기)', group: '메인' },
   { path: PATHS.filesNew, label: '문서 관리 (구)', group: '메인' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },

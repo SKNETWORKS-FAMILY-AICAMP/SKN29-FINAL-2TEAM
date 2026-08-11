@@ -23,9 +23,9 @@ export interface AppShellProps {
  * 로그인 후 화면의 공통 셸 — 왼쪽 사이드바(Chat/에이전트/프로젝트/설정) +
  * 상단바(프로젝트 컨텍스트 선택기 · 사용자). 7_홈화면_정의 §1.
  *
- * 기존 `TopNav`(상단 탭바)는 인증·Ops 화면과 아직 남아 있는 구 화면에만 쓴다.
- * 대시보드 탭이 G3에서 사라지고 문서 관리가 독립 메뉴에서 빠지므로 탭 구성
- * 자체가 유지되지 않는다 — 그래서 교체가 아니라 새 셸이다.
+ * 기존 `TopNav`(상단 탭바)를 쓰는 화면은 이제 없다 — 마지막 사용처였던 옛
+ * 대시보드를 4차 단계 2에서 지웠다. `SettingsLayout`의 비-embedded 분기에만
+ * 코드가 남아 있는데, 그 분기로 들어오는 라우트도 없다.
  */
 export function AppShell({ children, variant = 'page' }: AppShellProps) {
   const location = useLocation();
