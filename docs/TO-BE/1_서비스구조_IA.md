@@ -51,10 +51,10 @@ P0 = E2E 데모에 필수. P1 = 데모 품질. P2 = 구조만 잡고 최소 구�
 | 기존 경로 | 처리 | 근거 |
 |---|---|---|
 | `/login` `/signup` `/invite-code` `/find-password` `/reset-password` | **유지** | 인증·초대는 방향과 무관 |
-| `/onboarding/connectors` | **유지·확장** | 커넥터 연결은 그대로 필요. MCP 등록 진입점 추가 |
-| `/onboarding/folders` | **유지** | Data Layer 입구. Settings > Connector에서도 접근 |
-| `/onboarding/jira-project` | **재검토** | Jira가 Connector(부하 읽기)와 MCP(이슈 생성) 이중 역할이 됨. 온보딩 필수 단계에서 선택 단계로 |
-| `/dashboard` | **재정의** | 홈 자리를 Chat에 내준다. 부하 계산 로직은 "부하 리포트 생성" Pre-built Tool로 재활용 (멘토링 §14) |
+| ~~`/onboarding/connectors`~~ | **제거 완료 (8/11 · 5차 단계 4)** | ~~유지·확장~~ **이 서술은 틀렸다.** PM이 온보딩 페이지를 없애기로 했다 — 연결·상태·폴더 설정이 전부 Settings > Connector 탭에 있고, 화면 하나를 더 둘 이유가 없다 |
+| ~~`/onboarding/folders`~~ | **제거 완료 (8/11 · 5차 단계 4)** | ~~유지~~ **이 서술은 틀렸다.** 내용은 `DriveFolderModal`로 들어갔다(Settings > Connector의 「폴더 설정」) |
+| ~~`/onboarding/jira-project`~~ | **제거 완료 (8/11 · 5차 단계 4)** | ~~재검토~~ **선택 단계 자체가 없어졌다.** 연결하면 접근 가능한 전체 프로젝트를 수집한다 — 고르게 하면 빠진 프로젝트의 업무가 부하에서 조용히 사라진다 |
+| ~~`/dashboard`~~ | **제거 완료 (8/11 · 4차 단계 2 · Q13)** | ~~재정의~~ **재활용하지 않았다.** 부하 계산 로직은 `workload_report` 내장 도구로 이미 살아 있고, 화면 쪽 시각 요소는 붙일 자리(Chat 카드)가 아직 없어 발췌하지 않고 통째로 지웠다 |
 | `/files/new` (문서 관리) | **유지** | 등록→임베딩 흐름은 Data Layer 운영 화면으로 그대로. Project 영역 하위로 이동 |
 | `/projects` | **유지·축소** | "업무 분배 시작" 버튼 제거. 추출은 Chat에서 Agent 호출로 |
 | `/projects/:projectId` | **유지** | Jira 갱신·완료·삭제 그대로 |
@@ -68,15 +68,29 @@ P0 = E2E 데모에 필수. P1 = 데모 품질. P2 = 구조만 잡고 최소 구�
 | `/ops/login` `/ops` (8종) | **유지** | Admin의 뼈대. Observability 항목은 여력 시 추가 |
 | `/screens` `/dev/screens` | **유지** | 개발용 |
 
-요약: 제거 4(전부 정적) · 흡수 2 · 재정의 1 · 재검토 1 · 나머지 유지/확장.
+요약(8/10 시점): 제거 4(전부 정적) · 흡수 2 · 재정의 1 · 재검토 1 · 나머지 유지/확장.
+
+**8/11 실행 후 실제**: 제거 **9** (정적 4 + 흡수된 추출·문서선택 2 + 온보딩 3)
+· 대시보드 1 제거 · 나머지 유지/확장. 위 표에서 취소선이 그어진 행이 그것이다.
 
 ## 3. 사용자 흐름
 
 ### 흐름 A — 온보딩 (팀장)
 
-가입 → 팀 생성 → Connector 연결(Drive 필수, Jira·HR 선택) → 폴더 선택 →
-**Chat 진입** (기본 제공 Agent가 이미 보인다). 기존과 차이: Jira 프로젝트 선택이
-필수 스텝에서 빠지고, 끝이 대시보드가 아니라 Chat이다.
+> **8/11(5차 단계 4)에 바뀌었다.** 아래 원문은 「연결을 끝내야 Chat에 간다」는
+> 순서였는데, 온보딩 화면 자체를 없애면서 순서가 사라졌다.
+
+**지금**: 가입 → **바로 Chat**. 연결은 Settings > Connector에서 필요할 때 한다
+(People DB 연결 모달이 팀 생성을 겸한다 → Drive 연결 → 「폴더 설정」 모달 →
+Jira 연결하면 전체 프로젝트 자동 수집).
+
+⚠ **그래서 새 계정의 첫 Chat 화면에는 팀도 에이전트도 없다.** Chat은 "쓸 수
+있는 에이전트가 없습니다"까지만 말하고 Settings로 안내하지 않는다 — 첫 사용
+경험의 빈 구멍이고, 6차 이후에 다룰 거리다.
+
+~~가입 → 팀 생성 → Connector 연결(Drive 필수, Jira·HR 선택) → 폴더 선택 →
+Chat 진입. 기존과 차이: Jira 프로젝트 선택이 필수 스텝에서 빠지고, 끝이
+대시보드가 아니라 Chat이다.~~ (8/10 원안)
 
 ### 흐름 B — 대표 E2E (실무자) = `5_E2E_시나리오.md`
 
@@ -95,31 +109,37 @@ Builder → 새 Agent → 이름·설명·지시문 작성 → Model 선택 → 
 1. Chat과 Project의 관계 — 대화가 프로젝트에 귀속되는가(프로젝트별 Chat), 팀
    레벨 Chat에서 프로젝트를 컨텍스트로 선택하는가. 검색 경계=팀 결정(AS-IS §6)과
    맞물린다.
-2. `/onboarding/jira-project`의 최종 위치 — Connector 설정인가 Project 생성
-   플로우인가.
+2. ~~`/onboarding/jira-project`의 최종 위치~~ → **정해졌다 (8/11).** 화면을
+   없앴다. 연결 시 전체 수집이라 고를 것이 없다.
 3. Agent 편집 권한 — 팀 전체 공유인가, 만든 사람만 수정인가 (Permission 설계와
-   함께).
-4. 기존 대시보드 화면을 데모 자산으로 남길 것인가(리포트 생성 결과의 뷰어로
-   재활용) 완전히 내릴 것인가.
+   함께). **아직 미결.**
+4. ~~기존 대시보드 화면을 데모 자산으로 남길 것인가~~ → **정해졌다 (8/11 · Q13).**
+   완전히 내렸다. 시각 요소 발췌도 하지 않았다 — 붙일 자리를 새로 만드는 것이
+   전제라 그 자체가 신규 작업이었다.
 
 ## 5. FE 자산 인벤토리 — 무엇을 다시 쓰는가
 
 > 2026-08-10 실측. 정적 4종 제거 후 `frontend/src/pages/` 24개 디렉터리 기준.
 > 줄 수는 해당 디렉터리 `.tsx` 합계 — "새로 짜지 않아도 되는 양"의 근거다.
+>
+> **8/11 갱신**: 아래 표의 「처리」는 계획이었다. 실행 결과를 각 행에 덧붙였다
+> (4차 단계 3 · 4차 단계 2 · 5차 단계 3·4). 현재 `pages/`는 **25개 디렉터리**
+> — 6개를 지웠지만 그 사이 Chat·Builder·문서 화면이 늘어서 8/10의 24개와
+> 단순 비교되지 않는다(`OpsShared`는 화면이 아니라 공용 조각이다).
 
 ### 5.1 pages/ → IA 5영역 매핑
 
 | 페이지 (줄) | IA 영역 | 처리 | 재사용 포인트 |
 |---|---|---|---|
-| `TaskExtractionPage` (297) | **Chat** | 흡수 | ★ **근거 열람 UI** — §5.2 참조. 최우선 이식 대상 |
-| `PrimaryDocumentSelectPage` (304) | **Chat** | 흡수 | 기준 문서 1건 선택 → Agent 실행 입력 스텝 |
-| `ProjectListPage` (342) | Project | 유지·축소 | 「업무 분배 시작」만 제거 (`ProjectListPage.tsx:149`) |
-| `ProjectDetailPage` (394) | Project | 유지 | Jira 갱신·완료·삭제 |
-| `NewFilesPage` (911) | Project | 유지 | 등록→임베딩 진행 표시. Data Layer 운영 화면 |
-| `MainDashboardPage` (1090, 패널 8종) | — | 재정의 | 패널 단위로 분해해 "리포트 생성" Agent 결과 뷰어로 (미결정 §4-4) |
-| `ConnectorOnboardingPage` (683) | Settings | 재배치 | Connector 연결 UI 그대로 + MCP 등록 진입점 추가 |
-| `FolderSelectPage` (533) | Settings | 유지 | 폴더 트리 선택 |
-| `JiraProjectSelectPage` (256) | Settings | 재검토 | 온보딩 필수 → 선택 단계 (미결정 §4-2) |
+| ~~`TaskExtractionPage`~~ (297) | **Chat** | 흡수 | ✅ **완료 (8/11 · 4차 단계 3, `956a33c`)** 근거 토글·`missing_fields`·검색 trace 전부 Chat 카드에. 라벨 두 표(`FIELD_LABEL`·`INTENT_LABEL`)는 안 옮겨져 있어 삭제 전에 따로 이식했다 |
+| ~~`PrimaryDocumentSelectPage`~~ (304) | **Chat** | 흡수 | ✅ **완료 (8/11 · 4차 단계 3)** |
+| `ProjectListPage` (342) | Project | 유지·축소 | ✅ 「업무 분배 시작」 → Chat 안내 배너. AppShell 이식 완료(5차 단계 3) |
+| `ProjectDetailPage` (394) | Project | 유지 | ✅ AppShell 이식 완료(5차 단계 3). Jira 갱신·완료·삭제 그대로 |
+| `NewFilesPage` (911) | Project | 유지 | ✅ AppShell 이식 완료(5차 단계 3) |
+| ~~`MainDashboardPage`~~ (실측 2,433 · 15파일) | — | **제거 완료 (8/11 · Q13)** | ~~재정의~~ 발췌 없이 통째로 삭제. **8/10의 「1090줄」은 틀렸다** — 패널이 파일로 갈라져 있어 디렉터리 합계는 2,433줄이었다 |
+| ~~`ConnectorOnboardingPage`~~ (683) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재배치~~ Settings > Connector 탭이 실연동되면서 대체됐다 |
+| ~~`FolderSelectPage`~~ (533) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~유지~~ `SettingsPage/DriveFolderModal/`로 이식. 폴더 트리(`DriveFolderPickerModal`)는 그대로 따라갔다 |
+| ~~`JiraProjectSelectPage`~~ (256) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재검토~~ 고르는 단계 자체가 없어졌다 |
 | `SettingsPage` (46) + `TeamLeaderSettingsPage` (556) + `TeamMemberSettingsPage` (204) | Settings | 확장 | `SettingsPage`는 역할 분기 래퍼(sessionStorage, DEV 전용 전환 버튼). Settings 허브 승격 시 탭 컨테이너로 |
 | `Ops*Page` 8종 (2,809) | Admin | 유지 | 실행 현황·사용량 탭만 추가 |
 | `LandingPage` (348) · 인증 5종 (792) | IA 외 | 유지 | 방향과 무관 |
