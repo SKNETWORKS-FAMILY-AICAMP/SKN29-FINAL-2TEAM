@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Icon, TopNav, useToast } from '../../components';
+import { AppShell, Icon, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { listMyProjects, syncTeamTasks } from '../../api/projects';
 import type { Project } from '../../api/projects';
-import { MAIN_NAV_TABS, PATHS } from '../../routes';
+import { PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { ProjectRow } from './ProjectRow';
 import styles from './ProjectListPage.module.css';
@@ -147,10 +147,8 @@ export default function ProjectListPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <TopNav tabs={MAIN_NAV_TABS} activeTo="/projects" userLabel="관리자" />
-
-      <main className={styles.mainContent}>
+    <AppShell>
+      <div className={styles.page}>
         <div className={styles.pageHeader}>
           <div className={styles.titleBlock}>
             <h1>프로젝트</h1>
@@ -289,8 +287,7 @@ export default function ProjectListPage() {
             )}
           </div>
         </section>
-      </main>
-
-    </div>
+      </div>
+    </AppShell>
   );
 }

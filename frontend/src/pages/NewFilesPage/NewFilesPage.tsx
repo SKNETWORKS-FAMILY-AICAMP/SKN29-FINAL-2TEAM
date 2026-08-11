@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Icon, Modal, TopNav, useToast } from '../../components';
+import { AppShell, Badge, Button, Icon, Modal, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import {
   listDocumentHistory,
@@ -16,7 +16,6 @@ import type {
   PipelineDocument,
 } from '../../api/projects';
 import { DocumentProcessingFailure, processDocument, stageLabel } from '../../utils/documentProcessing';
-import { MAIN_NAV_TABS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { formatElapsed, useElapsed } from '../../utils/useElapsed';
 import { FileRegistrationTable } from './FileRegistrationTable';
@@ -353,9 +352,7 @@ export default function NewFilesPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <TopNav tabs={MAIN_NAV_TABS} activeTo="/files/new" />
-
+    <AppShell>
       <div className={styles.contentContainer}>
         <div className={styles.pageHeading}>
           <h1>문서 관리</h1>
@@ -541,7 +538,7 @@ export default function NewFilesPage() {
           </div>
         )}
       </Modal>
-    </div>
+    </AppShell>
   );
 }
 

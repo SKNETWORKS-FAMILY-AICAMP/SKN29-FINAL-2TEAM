@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Badge, Button, Icon, Modal, TopNav, useToast } from '../../components';
+import { AppShell, Badge, Button, Icon, Modal, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
 import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
 import type { ExistTask, ProjectDetail } from '../../api/projects';
-import { MAIN_NAV_TABS, PATHS } from '../../routes';
+import { PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
 import styles from './ProjectDetailPage.module.css';
 
@@ -175,10 +175,8 @@ export default function ProjectDetailPage() {
   const archived = project?.status === 'ARCHIVED';
 
   return (
-    <div className={styles.page}>
-      <TopNav tabs={MAIN_NAV_TABS} activeTo="/projects" userLabel="관리자" />
-
-      <main className={styles.mainContent}>
+    <AppShell>
+      <div className={styles.page}>
         <Link to="/projects" className={styles.back}>
           <Icon name="arrow-left" size={16} />
           <span>프로젝트</span>
@@ -355,7 +353,7 @@ export default function ProjectDetailPage() {
             </button>
           </p>
         )}
-      </main>
+      </div>
 
       {/* 되돌릴 수 없다. 무엇이 함께 사라지고 무엇이 남는지 먼저 보여준다 —
           「정말 삭제할까요?」만 묻는 확인창은 아무것도 알려 주지 않는다. */}
@@ -389,6 +387,6 @@ export default function ProjectDetailPage() {
           </li>
         </ul>
       </Modal>
-    </div>
+    </AppShell>
   );
 }
