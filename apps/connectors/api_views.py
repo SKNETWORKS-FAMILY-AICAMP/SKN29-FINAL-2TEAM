@@ -10,7 +10,12 @@ from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.serializers import account_role
-from backend.db import AccountRepository, ConnectorRepository, log_audit
+from backend.db import (
+    AccountRepository,
+    ConnectorRepository,
+    ProjectSourceRepository,
+    log_audit,
+)
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -52,6 +57,37 @@ def _log_audit_safely(**kwargs) -> None:
         log_audit(**kwargs)
     except psycopg.Error:
         logger.warning("감사 로그 기록 실패: action=%s", kwargs.get("action"))
+
+
+def _collect_jira_projects_safely(account_id: str) -> None:
+    """연결된 Jira 사이트의 프로젝트를 **전부** 우리 프로젝트로 등록한다.
+
+    사람이 고르는 단계를 없앴다(8/12 PM 결정). 무엇을 읽을지 미리 고르게 하면
+    연결 직후 화면이 비어 있고, 고르지 않은 프로젝트의 업무는 부하 계산에서
+    조용히 빠진다 — 빠진 줄 모르는 숫자가 맞는 숫자처럼 보인다.
+
+    `register_from_jira`는 목록에 **없는** 키의 소스를 지운다. 여기서는 접근
+    가능한 전체를 넘기므로 지워지는 것이 없다. 이미 등록된 키는 이름만 갱신되고
+    프로젝트가 새로 생기지 않는다(중복 방지는 그쪽에 있다).
+
+    감사 로그와 같은 이유로 실패해도 삼킨다 — 수집이 안 됐다고 방금 끝난 연결을
+    '실패'로 되돌리면, 자격증명은 저장돼 있는데 화면은 미연결로 보인다. 못 읽은
+    프로젝트는 목록의 「갱신」이 다시 시도한다.
+    """
+
+    try:
+        projects = list_jira_projects(account_id=account_id)
+        if not projects:
+            return
+        ProjectSourceRepository.register_from_jira(
+            account_id=account_id,
+            selections=[
+                {"project_key": project["project_key"], "name": project["name"]}
+                for project in projects
+            ],
+        )
+    except (OAuthError, RepositoryError, psycopg.Error) as exc:
+        logger.warning("Jira 프로젝트 전체 수집 실패: account=%s (%s)", account_id, exc)
 
 
 def _safe_drive_id(value: str) -> bool:
@@ -295,6 +331,9 @@ class JiraCallbackAPIView(APIView):
         except (OAuthError, RepositoryError, psycopg.Error) as exc:
             logger.warning("Jira OAuth callback failed: %s", exc)
             return _jira_callback_redirect("error")
+
+        # 연결이 끝난 뒤다. 여기서 실패해도 연결은 연결이다.
+        _collect_jira_projects_safely(account_id)
 
         return _jira_callback_redirect("ok")
 

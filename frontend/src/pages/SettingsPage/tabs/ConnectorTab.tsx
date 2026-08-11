@@ -37,11 +37,8 @@ const CONNECTORS: ConnectorRow[] = [
     name: 'Jira',
     tone: 'success',
     status: '연결됨',
-    desc: '프로젝트 「할릴 AI 플랫폼 (HALIL)」 · 팀 부하 읽기용',
-    actions: [
-      { label: '프로젝트 선택', to: PATHS.onboardingJiraProject, primary: true },
-      { label: '다시 연결', to: PATHS.onboardingConnectors },
-    ],
+    desc: '접근 가능한 전체 프로젝트 · 팀 부하 읽기용',
+    actions: [{ label: '다시 연결', to: PATHS.onboardingConnectors, primary: true }],
   },
   {
     icon: 'database',
@@ -106,8 +103,8 @@ export function ConnectorTab() {
         <p className={`${styles.notice} ${styles.noticeInfo}`}>
           <Icon name="info" size={15} color="var(--color-info)" />
           <span>
-            Jira 프로젝트 선택은 온보딩 필수 단계에서 빠지고 이 탭으로 옮겨왔습니다. Jira는 부하를 읽는 Connector이면서
-            이슈를 만드는 MCP이기도 해서, 읽기 범위는 여기서 정합니다.
+            Jira는 연결하면 접근 가능한 프로젝트를 전부 가져옵니다 — 고르는 단계를 없앴습니다. 고르지 않은 프로젝트의
+            업무는 부하 계산에서 조용히 빠지는데, 빠진 줄 모르는 숫자가 맞는 숫자처럼 보이기 때문입니다.
           </span>
         </p>
 
