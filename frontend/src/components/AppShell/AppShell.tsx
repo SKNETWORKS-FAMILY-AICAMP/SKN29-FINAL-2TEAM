@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { listMyProjects } from '../../api/projects';
+import type { Project } from '../../api/projects';
 import { APP_NAV_ITEMS, PATHS } from '../../routes';
+import { saveProjectContext, useProjectContext } from '../../utils/projectContext';
 import { clearSession, useSession } from '../../utils/session';
 import { Icon } from '../Icon/Icon';
 import styles from './AppShell.module.css';
@@ -27,6 +31,16 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
   const navigate = useNavigate();
   const session = useSession();
   const displayName = session?.account.display_name ?? '';
+  const context = useProjectContext();
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  useEffect(() => {
+    const token = session?.token;
+    if (!token) return;
+    // 목록을 못 읽어도 화면을 막지 않는다 — 프로젝트 문맥은 「전체(팀)」로
+    // 남고, 그 상태가 무엇을 뜻하는지는 Chat 이 말해 준다.
+    listMyProjects(token).then(setProjects).catch(() => undefined);
+  }, [session?.token]);
 
   function isActive(match: string[]): boolean {
     return match.some((prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`));
@@ -67,14 +81,29 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
       <div className={styles.right}>
         <header className={styles.topbar}>
           {/*
-            프로젝트 컨텍스트 선택기 — 단계 A에서는 UI만이다. 실제 선택은
-            chat_session.proj_id 연동(P1) 때 붙인다.
+            프로젝트 컨텍스트 선택기. 여기서 고른 값이 새 대화의
+            `chat_session.proj_id` 가 된다 — 「전체(팀)」은 그 값이 없다는 뜻이다.
           */}
-          <button type="button" className={styles.contextPicker} aria-haspopup="listbox">
+          <label className={styles.contextPicker}>
             <Icon name="folder" size={15} color="var(--color-body)" />
-            <span className={styles.contextLabel}>전체(팀)</span>
+            <select
+              className={styles.contextSelect}
+              value={context?.proj_id ?? ''}
+              onChange={(event) => {
+                const picked = projects.find((project) => project.proj_id === event.target.value);
+                saveProjectContext(picked ? { proj_id: picked.proj_id, name: picked.name } : null);
+              }}
+              aria-label="프로젝트 컨텍스트 선택"
+            >
+              <option value="">전체(팀)</option>
+              {projects.map((project) => (
+                <option key={project.proj_id} value={project.proj_id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
             <Icon name="chevron-down" size={14} color="var(--color-placeholder)" />
-          </button>
+          </label>
 
           <div className={styles.userArea}>
             <button type="button" className={styles.iconButton} aria-label="알림">

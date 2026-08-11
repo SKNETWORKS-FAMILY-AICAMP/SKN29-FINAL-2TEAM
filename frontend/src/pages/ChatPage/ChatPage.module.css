@@ -161,6 +161,20 @@
   color: var(--color-muted);
 }
 
+.projectContext {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 560px;
+  margin-top: var(--space-1);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.projectContext strong {
+  color: var(--color-heading);
+}
+
 .starters {
   display: flex;
   gap: var(--space-4);

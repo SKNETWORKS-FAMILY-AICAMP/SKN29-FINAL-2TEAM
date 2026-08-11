@@ -15,6 +15,7 @@ import {
 import type { ChatSession } from '../../api/chat';
 import { listAgents } from '../../api/agents';
 import type { Agent } from '../../api/agents';
+import { useProjectContext } from '../../utils/projectContext';
 import { ConfirmCard, ErrorCard, ProgressCard, ResultCard } from './cards/ChatCards';
 import { emptyLive, reduce, toCards } from './liveChat';
 import type { LiveChat } from './liveChat';
@@ -29,6 +30,7 @@ import styles from './ChatPage.module.css';
 export default function ChatPage() {
   const navigate = useNavigate();
   const token = loadSessionToken();
+  const project = useProjectContext();
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -113,7 +115,14 @@ export default function ChatPage() {
     let id = sessionId;
     try {
       if (!id) {
-        const created = await createSession(token, { agent_id: agentId, title: text.slice(0, 60) });
+        // 상단바에서 고른 프로젝트가 이 대화의 문맥이 된다. 「전체(팀)」이면
+        // null 이고, 그때 업무 추출은 "프로젝트를 먼저 고르세요"로 끝난다 —
+        // 기준 문서를 모델이 고르게 하지 않기로 한 결정의 연장이다.
+        const created = await createSession(token, {
+          agent_id: agentId,
+          proj_id: project?.proj_id ?? null,
+          title: text.slice(0, 60),
+        });
         id = created.session_id;
         setSessionId(id);
         setSessions((prev) => [created, ...prev]);
@@ -228,6 +237,20 @@ export default function ChatPage() {
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
                   <p>아래 에이전트를 고르거나, 하고 싶은 일을 그냥 적어 주세요.</p>
+                  {/* 문맥을 먼저 말한다 — 업무 추출은 이 프로젝트의 기준 문서로 돈다. */}
+                  <p className={styles.projectContext}>
+                    <Icon name="folder" size={14} color="var(--color-muted)" />
+                    {project ? (
+                      <span>
+                        <strong>{project.name}</strong> 문맥으로 시작합니다.
+                      </span>
+                    ) : (
+                      <span>
+                        <strong>전체(팀)</strong> 문맥입니다 — 업무 추출처럼 기준 문서가 필요한 일은
+                        상단바에서 프로젝트를 먼저 골라 주세요.
+                      </span>
+                    )}
+                  </p>
                 </div>
 
                 <div className={styles.starters}>

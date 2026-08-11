@@ -132,10 +132,21 @@
   cursor: pointer;
 }
 
-.contextLabel {
+/* 테두리는 바깥 `.contextPicker`가 그린다. 안쪽 select는 글자만 맡는다. */
+.contextSelect {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-heading);
+  cursor: pointer;
+  appearance: none;
+}
+
+.contextSelect:focus {
+  outline: none;
 }
 
 .userArea {
