@@ -85,6 +85,72 @@ description 에만 적는 형태) — 3주차에 알면 늦다. 미지수를 앞
 ② 새로고침 → 3턴이 그대로 복원된다. ③ 확인 카드가 뜬 상태에서 입력창에
 타이핑·전송이 된다. ④ 과거 턴의 「Jira에 등록」 버튼은 눌리지 않는다.
 
+### 실행 결과 — 단계 1 (2026-08-11, Claude Code 세션 · 커밋 `5eea00c`)
+
+#### 1-5 의 ⚠ 선행 확인 → **(a) 서버가 pending 을 무시하고 새 턴을 시작한다**
+
+`ChatMessageAPIView.post`(`apps/chat/api_views.py:107`)가 `latest_pending_confirmation`
+을 **아예 조회하지 않는다.** 사용자 발화를 append 하고 재개 문맥(`messages`) 없이
+새 `run_agent` 를 연다. 그 함수를 읽는 곳은 `ChatConfirmAPIView` 하나뿐이다.
+
+→ 0건 승인(`confirmMessage(token, id, [])`) 우회는 **필요 없었다.** 화면에서 그대로
+보내고, 직전 턴 확인 카드에 「승인하지 않고 넘어갔습니다 — 이 요청은 실행되지
+않았습니다」를 남긴다. 이 판정은 테스트로 못박았다
+(`test_승인_대기가_남아_있어도_새_발화를_받는다` — 409 아님 · `latest_pending_confirmation`
+미호출 · `resume_tool_call` 없음).
+
+#### 지시서 스케치에서 보강한 것 — 한 턴에 agent 메시지가 둘이다
+
+1-2 는 "`role === 'user'` 에서 턴을 열고 **이어지는** `role === 'agent'` 의 events 를
+reduce" 라고 했는데, 저장 구조가 그보다 한 겹 더 있었다. `_persist` 는 **실행 1회당
+agent 메시지 1개**를 남기고 승인 흐름은 실행이 두 번이다:
+
+```
+user   "…뽑아서 Jira 등록해줘"
+agent  events(… awaiting_confirmation)   ← POST /messages/
+agent  events(… result)                  ← POST /confirm/  (user 메시지 없음)
+```
+
+agent 메시지 하나만 접으면 **승인해서 등록한 결과가 복원에서 사라진다.** 그래서
+`toTurns` 는 한 턴의 agent events 를 **이어 붙여 한 번에** 접는다.
+
+여기서 파생된 것이 `liveChat.reduce` 의 한 줄이다 — 이어 붙이면
+`awaiting_confirmation` 이 세운 `confirm` 이 뒤의 `result` 까지 살아남아 **이미 등록이
+끝난 과거 턴에 승인 버튼이 다시 켜진다.** `result` 에서 `confirm: null` 로 닫았다.
+라이브에서는 한 실행 안에 둘이 같이 오지 않아(runner 가 confirm 에서 멈춘다) 부작용이
+없다. 부수 효과로 **「승인 없이 넘어간 턴」 판정이 공짜로 나온다** — 접고도 confirm 이
+남아 있는데 마지막 턴이 아니면 버려진 것이다.
+
+#### 지시서에 없던 변경 — `approve()` 가 턴을 이어서 접는다
+
+기존 `run()` 은 `emptyLive()` 로 시작해서 **승인 직후 방금 승인한 업무 목록이 화면에서
+사라졌다.** 그대로 두면 복원(이어붙임)과 라이브가 서로 다른 화면이 된다. `approve()` 는
+마지막 턴의 live 를 `{...lastLive, running: true, error: null}` 로 물려받아 잇는다.
+이제 둘이 같고, 무엇을 승인했는지가 결과 옆에 남는다.
+
+#### 검증
+
+| 항목 | 결과 |
+| --- | --- |
+| `tsc --noEmit -p tsconfig.app.json` | exit 0 |
+| `npm run build` | 통과 |
+| `manage.py test` | **392 통과** (신규 1건 포함) |
+| dev 서버 모듈 변환 | `ChatPage.tsx` · `liveChat.ts` · `ChatCards.tsx` · `/chat` 전부 200 |
+| `git diff -w` | ChatPage.tsx 실변경 **194줄** (기본 290줄 — 차이는 렌더 블록이 `.map()` 안으로 들어가며 생긴 들여쓰기뿐) |
+| 브라우저 ①~④ | **미실행** — 이 세션에 브라우저가 없다. QA B 에서 확인 |
+
+#### 남은 한계 (알고 두는 것)
+
+1. **과거 턴의 체크 상태는 복원되지 않는다.** 확인 카드에서 푼 체크는 승인 시점에
+   인덱스로만 전송되고 **서버에 저장되는 곳이 없다** — 새로고침 뒤에는 되살릴 근거가
+   없다. 과거 턴 카드는 추출 당시 그대로(전체 선택)로 그린다. 실제로 무엇이 등록됐는지는
+   그 아래 결과 카드가 말한다.
+2. **실데이터 대조는 아직 못 했다.** 복원 로직은 `_persist`·`list_for_session` 코드에서
+   도출한 것이고, 현재 DB의 `chat_message` 는 **0건**이다(실측). 저장된 대화를 처음
+   접어 보는 것은 QA B 가 된다 — 거기서 어긋나면 `toTurns` 를 먼저 본다.
+3. `ChatPage.tsx` 가 379 → 460줄이 됐다. 턴 렌더 블록을 컴포넌트로 빼는 것은
+   단계 5 가 같은 파일(`agentBar`)을 건드리므로 그때 함께 판단한다.
+
 ---
 
 ## 단계 2 — Builder에 반복 루프를 만든다 (프론트 전용)
