@@ -19,7 +19,7 @@ from backend.db.document_pipeline import (
     PipelineDocumentRepository,
     VectorSearchRepository,
 )
-from backend.services.hr import list_absences, list_capacity_profiles
+from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -47,7 +47,7 @@ class ToolNotAllowed(Exception):
 
 
 # ---------------------------------------------------------------------------
-# 내장 도구 2종
+# 내장 도구
 # ---------------------------------------------------------------------------
 
 
@@ -127,6 +127,37 @@ def _document_search(*, team_id: str, query: str, top_k: int = 10) -> dict[str, 
         result["not_indexed"] = not_indexed
         result["note"] = "아래 문서도 관련 있어 보이지만 본문이 아직 색인되지 않았습니다."
     return result
+
+
+def _people_list(*, account_id: str) -> dict[str, Any]:
+    """우리 팀에 누가 있는가. 이름·직책·보유 스킬을 돌려준다.
+
+    `TeamRepository.list_members` 를 그대로 쓴다 — 「팀원 관리」 화면과 **같은
+    명부**여야 한다. 배정 대상은 초대가 아니라 `team_member` 라는 판단이 거기
+    들어 있고, 여기서 다시 질의하면 그 판단이 두 벌이 된다.
+
+    스킬은 사람마다 따로 읽는다. 명부는 팀 하나 크기라 이 비용이 문제가 되는
+    자리가 아니고, 「이 일은 누가 맡는 게 맞나」는 스킬 없이는 답이 안 된다.
+    """
+
+    return {
+        "members": [
+            {
+                "person_id": member["person_id"],
+                "name": member["name"],
+                "job_role": member["job_role"],
+                "org_name": member["org_name"],
+                "skills": [
+                    {"name": skill["name"], "proficiency": skill["proficiency"]}
+                    for skill in list_person_skills(member["person_id"])
+                ],
+                # 계정이 없어도 팀원이고 배정 대상이다. 다만 이 앱에서 결과를
+                # 직접 볼 수는 없다 — 사람에게 알릴 때 그 차이가 필요하다.
+                "has_account": bool(member["account_id"]),
+            }
+            for member in TeamRepository.list_members(account_id)
+        ]
+    }
 
 
 def _workload_report(*, account_id: str, weeks: int = 4) -> dict[str, Any]:
@@ -251,6 +282,16 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": ["query"],
         },
         handler=_document_search,
+    ),
+    "people_list": Tool(
+        ref="people_list",
+        name="팀원 조회",
+        description=(
+            "우리 팀 명부를 읽어 팀원의 이름·직책·보유 스킬을 돌려준다. "
+            "누가 있는지, 누구에게 맡길지 같은 **사람에 대한 질문**은 문서 검색이 아니라 이 도구다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_people_list,
     ),
     "workload_report": Tool(
         ref="workload_report",

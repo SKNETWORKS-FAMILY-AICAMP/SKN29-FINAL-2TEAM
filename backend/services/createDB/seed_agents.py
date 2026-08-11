@@ -54,7 +54,11 @@ PREBUILT_AGENTS = [
             # Jira 에 넘긴다(apps/connectors/clients.py `create_jira_issues`).
             # 영어 관례대로 'Task' 를 보내면 한국어 사이트에서는 전건 실패한다.
             "Jira 이슈 유형은 대상 사이트에 실재하는 이름을 쓴다 — 이 사이트는 한국어다"
-            "(작업 · 스토리 · 버그 · 에픽). 영어 이름을 지어내지 않는다."
+            "(작업 · 스토리 · 버그 · 에픽). 영어 이름을 지어내지 않는다.\n"
+            # 팀 구성 질문에 document_search 를 돌려 "문서에 없다"고 접던 것을
+            # 막는다(5차 단계 1). 명부는 문서가 아니라 DB에 있다.
+            "팀에 누가 있는지 · 누가 무엇을 할 줄 아는지는 people_list 로 답한다 — "
+            "사람에 대한 질문을 문서에서 찾지 않는다."
         ),
         # 최종 정리 단계가 긴 추론을 쓴다. 안쪽 파이프라인은 자기 모델을 따로
         # 쓰므로(services/task_extraction), 여기 값은 바깥 대화용이다.
@@ -68,9 +72,31 @@ PREBUILT_AGENTS = [
         "tool_refs": [
             "task_extraction",
             "document_search",
+            "people_list",
             "jira_create_issues",
             "jira_get_issues",
         ],
+    },
+    {
+        # 랜딩·QA 체크리스트가 「기본 제공 에이전트(업무 추출·부하 리포트)」라고
+        # 말해 온 그 두 번째다. 도구(`workload_report`)는 1차부터 있었는데 그것을
+        # 쓰는 에이전트가 없어 화면에 뜨지 않았다(5차 단계 1에서 확인).
+        "name": "부하 리포트 에이전트",
+        "description": "팀원별 주간 업무 시간과 남은 여유를 계산해 알려줍니다.",
+        "instruction": (
+            "팀이 얼마나 바쁜지 · 누구에게 여유가 있는지 물으면 workload_report 를 부른다.\n"
+            "팀에 누가 있는지 · 누가 무엇을 할 줄 아는지는 people_list 로 답한다.\n"
+            # 계산기가 주 단위로 도는데 기간을 빼고 말하면 「20시간」이 한 주치인지
+            # 넉 달치인지 사람이 알 수 없다.
+            "시간을 말할 때는 몇 주치를 본 숫자인지 함께 말한다.\n"
+            "여유가 있어 보인다고 배정을 단정하지 않는다 — 이 계산에 안 잡힌 일이 "
+            "있을 수 있고, 그건 사람이 판단할 몫이다."
+        ),
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "low",
+        # workload_report → (필요하면) people_list → 답변. 되물음 한 번의 여유까지.
+        "max_iterations": 4,
+        "tool_refs": ["workload_report", "people_list"],
     },
 ]
 

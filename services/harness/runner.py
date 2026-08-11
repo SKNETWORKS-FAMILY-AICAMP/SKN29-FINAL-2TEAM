@@ -259,9 +259,11 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
     return {}
 
 
-#: 요청자 계정으로 외부를 부르는 도구. Connector 자격증명이 계정별이라
-#: 서버가 넣어야 한다 — 모델이 정하면 남의 Jira·남의 부하를 건드린다.
-_ACCOUNT_SCOPED_TOOLS = frozenset({"workload_report", "jira_create_issues", "jira_get_issues"})
+#: 요청자 계정을 서버가 넣어 주는 도구. 모델이 정하면 남의 팀 명부·남의 부하를
+#: 읽고 남의 Jira 를 건드린다. Connector 자격증명이 계정별인 것도 같은 이유다.
+_ACCOUNT_SCOPED_TOOLS = frozenset(
+    {"people_list", "workload_report", "jira_create_issues", "jira_get_issues"}
+)
 
 
 def _assistant_turn(decision: ModelDecision) -> list[dict[str, Any]]:
