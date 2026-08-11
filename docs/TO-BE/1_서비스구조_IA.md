@@ -58,8 +58,8 @@ P0 = E2E 데모에 필수. P1 = 데모 품질. P2 = 구조만 잡고 최소 구�
 | `/files/new` (문서 관리) | **유지** | 등록→임베딩 흐름은 Data Layer 운영 화면으로 그대로. Project 영역 하위로 이동 |
 | `/projects` | **유지·축소** | "업무 분배 시작" 버튼 제거. 추출은 Chat에서 Agent 호출로 |
 | `/projects/:projectId` | **유지** | Jira 갱신·완료·삭제 그대로 |
-| `/tasks/distribution/documents` | **흡수** | 기준 문서 1건 선택 UI는 Chat에서 Task Extraction Agent 실행 시의 입력 스텝으로 |
-| `/tasks/extraction` | **흡수·재활용** | 중간발표 완료 지점. 근거 열람 UI를 Chat의 결과 확인 스텝으로 이식. E2E의 STEP 6(사용자 확인)이 이 화면의 후신 |
+| ~~`/tasks/distribution/documents`~~ | **흡수 후 제거 완료 (8/11 · `956a33c`)** | 기준 문서 1건 선택 UI는 Chat의 입력 스텝으로. ⚠ 되묻기 카드는 서버 경로가 없어 그때 빠졌다 — `작업목록.md` 작업 11에서 복원한다 |
+| ~~`/tasks/extraction`~~ | **흡수 후 제거 완료 (8/11 · `956a33c`)** | 중간발표 완료 지점. 근거 열람 UI를 Chat의 결과 확인 스텝으로 이식. E2E의 STEP 6(사용자 확인)이 이 화면의 후신 |
 | ~~`/workspace`~~ | **제거 완료 (8/10)** | 정적, 로직 없음 |
 | ~~`/tasks/distribution`~~ | **제거 완료 (8/10)** | 정적. 분배는 Pre-built Agent로 |
 | ~~`/tasks/recommendation`~~ | **제거 완료 (8/10)** | 정적 |
@@ -86,7 +86,7 @@ Jira 연결하면 전체 프로젝트 자동 수집).
 
 ⚠ **그래서 새 계정의 첫 Chat 화면에는 팀도 에이전트도 없다.** Chat은 "쓸 수
 있는 에이전트가 없습니다"까지만 말하고 Settings로 안내하지 않는다 — 첫 사용
-경험의 빈 구멍이고, 6차 이후에 다룰 거리다.
+경험의 빈 구멍이다. → `작업목록.md` 작업 6.
 
 ~~가입 → 팀 생성 → Connector 연결(Drive 필수, Jira·HR 선택) → 폴더 선택 →
 Chat 진입. 기존과 차이: Jira 프로젝트 선택이 필수 스텝에서 빠지고, 끝이
@@ -116,7 +116,7 @@ Builder → 새 Agent → 이름·설명·지시문 작성 → Model 선택 → 
    공개 범위 「나만 보기」는 넣지 않는다 — Permission 모델·목록 필터·서버 검증까지
    따라붙는 실제 범위 확대다. Permission 구조는 설계만(Future Work).
    `PermissionsTab`의 "아직 정하지 않았습니다" 표기는 그대로 둔다 — 정직한 표기이고
-   Future Work의 근거다. 근거: `개발지시_6차_UIUX개선.md` §팀 확정.
+   Future Work의 근거다. 근거: `작업목록.md` §확정 사항.
 4. ~~기존 대시보드 화면을 데모 자산으로 남길 것인가~~ → **정해졌다 (8/11 · Q13).**
    완전히 내렸다. 시각 요소 발췌도 하지 않았다 — 붙일 자리를 새로 만드는 것이
    전제라 그 자체가 신규 작업이었다.
@@ -144,7 +144,7 @@ Builder → 새 Agent → 이름·설명·지시문 작성 → Model 선택 → 
 | ~~`ConnectorOnboardingPage`~~ (683) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재배치~~ Settings > Connector 탭이 실연동되면서 대체됐다 |
 | ~~`FolderSelectPage`~~ (533) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~유지~~ `SettingsPage/DriveFolderModal/`로 이식. 폴더 트리(`DriveFolderPickerModal`)는 그대로 따라갔다 |
 | ~~`JiraProjectSelectPage`~~ (256) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재검토~~ 고르는 단계 자체가 없어졌다 |
-| `SettingsPage` (46) + `TeamLeaderSettingsPage` (556) + `TeamMemberSettingsPage` (204) | Settings | 확장 | `SettingsPage`는 역할 분기 래퍼(sessionStorage, DEV 전용 전환 버튼). Settings 허브 승격 시 탭 컨테이너로 |
+| `SettingsPage` (46) + `TeamLeaderSettingsPage` (556) + `TeamMemberSettingsPage` (204) | Settings | 확장 | ✅ **허브 승격 완료** — 탭 컨테이너. ~~sessionStorage DEV 전환 버튼~~은 걷어냈고(`2cc45c1`) 역할은 `account.role`에서 온다 |
 | `Ops*Page` 8종 (2,809) | Admin | 유지 | 실행 현황·사용량 탭만 추가 |
 | `LandingPage` (348) · 인증 5종 (792) | IA 외 | 유지 | 방향과 무관 |
 

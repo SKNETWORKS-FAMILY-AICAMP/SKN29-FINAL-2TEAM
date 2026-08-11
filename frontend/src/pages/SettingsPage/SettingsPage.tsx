@@ -16,13 +16,12 @@ import styles from './SettingsPage.module.css';
  * 8_화면개편_명세 §2에서 역할 분기 래퍼였던 이 화면을 허브로 승격시켰다.
  *
  * 「팀」 탭은 기존 팀장·팀원 설정 화면을 그대로 편입한다(embedded). 역할은
- * 아직 실권한이 없어 sessionStorage 기반 DEV 전환기를 유지한다 — 실권한
- * 연동은 Permission 설계 후.
+ * 로그인 계정(`account.role`)에서 온다 — Permission 설계 전까지는 그 값이 전부다.
  */
 export default function SettingsPage() {
   const location = useLocation();
-  // 역할은 로그인 계정에서 온다(`account.role`). DEV 전환기는 걷어냈다 —
-  // 실제 흐름으로 확인한다(개발지시_3차 §완료 기준).
+  // 역할은 로그인 계정에서 온다(`account.role`). DEV 전환기는 걷어냈다(`2cc45c1`) —
+  // 실제 흐름으로 확인한다.
   const role = loadUserRole();
 
   function renderTab() {
