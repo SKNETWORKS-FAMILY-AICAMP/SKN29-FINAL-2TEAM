@@ -4,7 +4,7 @@ import { Icon, TopNav, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { listMyProjects, syncTeamTasks } from '../../api/projects';
 import type { Project } from '../../api/projects';
-import { MAIN_NAV_TABS } from '../../routes';
+import { MAIN_NAV_TABS, PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { ProjectRow } from './ProjectRow';
 import styles from './ProjectListPage.module.css';
@@ -146,13 +146,6 @@ export default function ProjectListPage() {
     }
   }
 
-  function handleStartWorkflow() {
-    // 어느 프로젝트인지는 다음 화면에서 고른다. 여기서 고르게 하려면 목록에
-    // 선택 UI가 하나 더 붙는데, 어차피 그 화면에서 문서를 골라야 해서 한자리에서
-    // 끝내는 편이 낫다.
-    navigate('/tasks/distribution/documents');
-  }
-
   return (
     <div className={styles.page}>
       <TopNav tabs={MAIN_NAV_TABS} activeTo="/projects" userLabel="관리자" />
@@ -179,6 +172,16 @@ export default function ProjectListPage() {
             </div>
           </div>
         </div>
+
+        {/* 「업무 분배 시작」 버튼이 있던 자리. 업무를 뽑는 입구는 Chat 하나다
+            (4차 단계 3). 버튼을 조용히 없애면 쓰던 사람이 길을 잃는다. */}
+        <p className={styles.chatBanner}>
+          <Icon name="sparkles" size={18} color="var(--color-primary)" />
+          <span>새 업무를 뽑으려면 Chat에서 요청하세요. 문서 근거와 함께 정리해 드립니다.</span>
+          <button type="button" onClick={() => navigate(PATHS.chat)}>
+            Chat 열기 →
+          </button>
+        </p>
 
         <div className={styles.toolbar}>
           <div className={styles.searchBox}>
@@ -288,10 +291,6 @@ export default function ProjectListPage() {
         </section>
       </main>
 
-      <button type="button" className={styles.floatingCta} onClick={handleStartWorkflow}>
-        <Icon name="sparkles" size={20} color="#fff" />
-        <span>업무 분배 시작</span>
-      </button>
     </div>
   );
 }

@@ -327,48 +327,34 @@
   color: var(--color-placeholder);
 }
 
-.floatingCta {
-  position: fixed;
-  bottom: var(--space-6);
-  right: 64px;
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
+.chatBanner {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-6);
-  border-radius: 30px;
-  box-shadow: var(--shadow-lift);
-  cursor: pointer;
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 14px;
+  color: var(--color-body);
+}
+
+.chatBanner button {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
   font-family: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  z-index: 30;
-}
-
-.floatingCta:hover {
-  transform: translateY(-2px);
-}
-
-.floatingCta:disabled {
-  background: var(--color-placeholder);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-.floatingCta:disabled:hover {
-  transform: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
 }
 
 @media (max-width: 900px) {
   .mainContent {
     padding: var(--space-8) 24px 100px;
-  }
-
-  .floatingCta {
-    right: 24px;
   }
 
   .searchBox {

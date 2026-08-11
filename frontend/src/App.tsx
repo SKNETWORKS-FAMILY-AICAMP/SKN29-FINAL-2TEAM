@@ -18,10 +18,6 @@ const MainDashboardPage = lazy(() => import('./pages/MainDashboardPage/MainDashb
 const NewFilesPage = lazy(() => import('./pages/NewFilesPage/NewFilesPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage/ProjectDetailPage'));
-const PrimaryDocumentSelectPage = lazy(
-  () => import('./pages/PrimaryDocumentSelectPage/PrimaryDocumentSelectPage'),
-);
-const TaskExtractionPage = lazy(() => import('./pages/TaskExtractionPage/TaskExtractionPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
 const AgentListPage = lazy(() => import('./pages/AgentListPage/AgentListPage'));
 const AgentEditPage = lazy(() => import('./pages/AgentEditPage/AgentEditPage'));
@@ -86,7 +82,7 @@ function App() {
           <Route path={PATHS.settingsMcp} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsModel} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsPermissions} element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 G3까지 /dashboard 유지. */}
+          {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.agents} element={<RequireAuth><AgentListPage /></RequireAuth>} />
           <Route path={PATHS.agentEdit} element={<RequireAuth><AgentEditPage /></RequireAuth>} />
@@ -95,8 +91,6 @@ function App() {
           <Route path={PATHS.filesNew} element={<RequireAuth><NewFilesPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
           <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
-          <Route path={PATHS.taskDistributionDocuments} element={<RequireAuth><PrimaryDocumentSelectPage /></RequireAuth>} />
-          <Route path={PATHS.taskExtraction} element={<RequireAuth><TaskExtractionPage /></RequireAuth>} />
           <Route path={PATHS.opsLogin} element={<OpsLoginPage />} />
           <Route element={<OpsRouteGuard />}>
             <Route path={PATHS.ops} element={<OpsLayout />}>
