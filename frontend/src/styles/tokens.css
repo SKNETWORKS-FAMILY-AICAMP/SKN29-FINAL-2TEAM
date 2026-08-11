@@ -25,6 +25,10 @@
   --color-success-text: #166534;
   --color-warning: #f59e0b;
   --color-warning-bg: #fef3c7;
+  /* amber-800. --color-success-text(green-800)와 같은 스케일이다. 경고 배경 위
+     글자색으로 7개 파일이 이미 이 이름을 쓰고 있었는데 정의가 없어 상속값으로
+     떨어져 있었다. */
+  --color-warning-text: #92400e;
   --color-info: #3b82f6;
   --color-info-bg: #dbeafe;
 
