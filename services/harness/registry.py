@@ -13,7 +13,11 @@ from typing import Any, Callable
 
 from backend.db import AccountRepository, ExistTaskRepository, TeamRepository
 from backend.db.agent_platform import AgentRepository
-from backend.db.document_pipeline import PipelineDocumentRepository, VectorSearchRepository
+from backend.db.document_pipeline import (
+    DocMetaRepository,
+    PipelineDocumentRepository,
+    VectorSearchRepository,
+)
 from backend.services.hr import list_absences, list_capacity_profiles
 from services.document_pipeline.runpod_client import embed_queries
 from services.task_extraction import extract_tasks_stream
@@ -45,23 +49,66 @@ class ToolNotAllowed(Exception):
 # ---------------------------------------------------------------------------
 
 
-def _document_search(*, team_id: str, query: str, top_k: int = 10) -> dict[str, Any]:
-    """팀 문서에서 근거 문장을 찾는다.
+#: coarse 가 남길 문서 수. 이만큼만 청크 검색을 돈다.
+#:
+#: 팀 문서가 수백 건이 되면 전 문서 청크를 한 벌로 훑는 것이 비싸지고, 관련
+#: 없는 문서의 문장이 근거 자리를 잠식한다(업무 추출에서 실제로 겪은 문제 —
+#: 다른 사업의 감리 과업지시서가 20자리 중 8자리를 가져갔다).
+COARSE_TOP_N = 5
 
-    지금은 기존 청크 임베딩 경로(`vec_idx`)를 그대로 쓴다. 단계 5 에서 앞단에
-    `doc_meta.summary_vec` 로 문서를 먼저 좁히는 coarse 단계가 붙는다 — 이
-    함수의 입출력 모양은 그대로 두고 안쪽만 바뀐다.
+
+def _document_search(*, team_id: str, query: str, top_k: int = 10) -> dict[str, Any]:
+    """팀 문서에서 근거 문장을 찾는다. **두 단계다**(A안 — 8/11 확정 ⑥).
+
+    1) coarse — `doc_meta.summary_vec` 으로 문서를 먼저 좁힌다. 요약 임베딩은
+       문서당 하나뿐이라 팀 문서 전부를 훑어도 싸다.
+    2) fine — 좁혀진 문서 안에서만 청크 임베딩을 검색한다.
+
+    coarse 가 고른 문서 중 아직 청크가 없는 것(`search_ready = false`)은 본문
+    근거를 낼 수 없다. **그 사실을 결과에 담아 돌려준다** — 조용히 빼면
+    에이전트가 "관련 문서가 없다"고 답하는데 실제로는 있는 상태가 된다.
+
+    메타가 아직 없는 팀(파이프라인을 안 돌린 경우)은 예전처럼 팀 문서 전체를
+    훑는다. coarse 를 켰다고 기존 동작이 죽으면 안 된다.
     """
 
-    doc_ids = PipelineDocumentRepository.searchable_doc_ids(team_id)
-    if not doc_ids:
-        return {"query": query, "evidence": [], "note": "팀에 검색할 문서가 없습니다."}
-
     vector = embed_queries([query])[0]
+    candidates = DocMetaRepository.coarse_search(
+        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N
+    )
+
+    if candidates:
+        doc_ids = [row["doc_id"] for row in candidates if row["search_ready"]]
+        not_indexed = [
+            {"doc_id": row["doc_id"], "file_name": row["file_name"], "summary": row["summary"]}
+            for row in candidates
+            if not row["search_ready"]
+        ]
+    else:
+        doc_ids = PipelineDocumentRepository.searchable_doc_ids(team_id)
+        not_indexed = []
+
+    if not doc_ids:
+        return {
+            "query": query,
+            "evidence": [],
+            "candidate_documents": [
+                {"doc_id": row["doc_id"], "file_name": row["file_name"], "summary": row["summary"]}
+                for row in candidates
+            ],
+            "not_indexed": not_indexed,
+            "note": (
+                "요약으로는 관련 있어 보이는 문서를 찾았지만 본문이 아직 색인되지 않아 "
+                "문장 근거를 낼 수 없습니다."
+                if candidates
+                else "팀에 검색할 문서가 없습니다."
+            ),
+        }
+
     rows = VectorSearchRepository.search(
         team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k
     )
-    return {
+    result = {
         "query": query,
         "evidence": [
             {
@@ -74,6 +121,10 @@ def _document_search(*, team_id: str, query: str, top_k: int = 10) -> dict[str, 
             for row in rows
         ],
     }
+    if not_indexed:
+        result["not_indexed"] = not_indexed
+        result["note"] = "아래 문서도 관련 있어 보이지만 본문이 아직 색인되지 않았습니다."
+    return result
 
 
 def _workload_report(*, account_id: str, weeks: int = 4) -> dict[str, Any]:

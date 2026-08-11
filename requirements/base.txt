@@ -8,3 +8,6 @@ cryptography>=45.0,<50.0
 requests>=2.32,<3.0
 openai>=1.100,<3.0
 pydantic>=2.11,<3.0
+# 문서 메타의 CPU 텍스트 추출(PDF 텍스트 레이어). docling 은 RunPod 워커 쪽이라
+# 백엔드에는 없다 — 팀 문서 전부에 돌릴 가벼운 경로가 따로 필요하다.
+pypdf>=5.1,<7.0

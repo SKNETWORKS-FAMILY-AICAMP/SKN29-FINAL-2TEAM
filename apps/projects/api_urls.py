@@ -18,6 +18,7 @@ from .api_views import (
     TeamPipelineDocumentAPIView,
     TeamDocumentDownloadAPIView,
     TeamDocumentHistoryAPIView,
+    TeamDocumentMetaAPIView,
     TeamDocumentRegisterAPIView,
     TeamDocumentRemoveAPIView,
     TeamFolderAPIView,
@@ -34,6 +35,8 @@ urlpatterns = [
     path("team/folders/", TeamFolderAPIView.as_view(), name="api_team_folders"),
     path("team/documents/", TeamDocumentAPIView.as_view(), name="api_team_documents"),
     path("team/documents/new/", TeamNewDocumentAPIView.as_view(), name="api_team_documents_new"),
+    # 요약·유형·키워드·요약 임베딩. 다운로드 다음 단계다(A안 — 8/11 확정 ⑥).
+    path("team/documents/meta/", TeamDocumentMetaAPIView.as_view(), name="api_team_documents_meta"),
     # Drive 에서 사라진 문서를 내린다. 스캔(GET)이 조회만 하도록 쓰기를 갈라 뒀다.
     path(
         "team/documents/remove/",

@@ -418,3 +418,110 @@ def document_outline(doc_id: str, *, limit: int = 12) -> str:
 
     outline = "\n".join((row["search_text"] or "").strip() for row in rows)
     return outline[:OUTLINE_MAX_CHARS]
+
+
+class DocMetaRepository:
+    """`doc_meta` — 문서 하나당 한 줄. A안의 coarse 단계가 읽는다(8/11 확정 ⑥)."""
+
+    @staticmethod
+    def upsert(row: dict[str, Any]) -> None:
+        """다시 만들면 덮어쓴다. 문서가 개정되면 요약도 낡기 때문이다.
+
+        추출에 실패한 문서도 행을 남긴다 — 안 남기면 왜 검색에 안 걸리는지
+        화면이 말할 수 없고, 매번 다시 시도하게 된다.
+        """
+
+        vector = row.get("summary_vec")
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO doc_meta (doc_id, summary, doc_type, keywords, summary_vec,
+                                          extracted_text, extract_status, extracted_at)
+                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, now())
+                    ON CONFLICT (doc_id) DO UPDATE SET
+                        summary = EXCLUDED.summary,
+                        doc_type = EXCLUDED.doc_type,
+                        keywords = EXCLUDED.keywords,
+                        summary_vec = EXCLUDED.summary_vec,
+                        extracted_text = EXCLUDED.extracted_text,
+                        extract_status = EXCLUDED.extract_status,
+                        extracted_at = now()
+                    """,
+                    (
+                        row["doc_id"], row.get("summary"), row.get("doc_type"),
+                        row.get("keywords") or [],
+                        vector_literal(vector) if vector else None,
+                        row.get("extracted_text"), row["extract_status"],
+                    ),
+                )
+
+    @staticmethod
+    def pending_doc_ids(team_id: str) -> list[str]:
+        """아직 메타가 없고 원문은 받아 둔 팀 문서.
+
+        `storage_key` 가 있어야 한다 — 원문이 없으면 CPU 추출을 할 수 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT d.doc_id
+                    FROM doc d
+                    LEFT JOIN doc_meta m ON m.doc_id = d.doc_id
+                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
+                      AND d.storage_key IS NOT NULL AND m.doc_id IS NULL
+                    ORDER BY d.doc_id
+                    """,
+                    (team_id,),
+                )
+                return [row["doc_id"] for row in cursor.fetchall()]
+
+    @staticmethod
+    def coarse_search(*, team_id: str, query_vector: list[float], top_n: int) -> list[dict[str, Any]]:
+        """요약 임베딩으로 **문서**를 좁힌다. 청크 검색의 앞단이다.
+
+        `search_ready` 를 함께 준다 — 후보로 뽑혔지만 아직 청크가 없는 문서를
+        호출자가 알아야 한다. 그 문서는 요약만 있고 본문 근거를 낼 수 없다.
+
+        추출 실패(FAILED·UNSUPPORTED) 문서는 요약 벡터가 없어 자연히 빠진다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, m.summary, m.doc_type, m.keywords,
+                           1 - (m.summary_vec <=> %s::vector) AS summary_score,
+                           {_SEARCH_READY}
+                    FROM doc_meta m
+                    JOIN doc d ON d.doc_id = m.doc_id
+                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
+                      AND m.summary_vec IS NOT NULL
+                    ORDER BY m.summary_vec <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (
+                        vector_literal(query_vector), team_id,
+                        vector_literal(query_vector), top_n,
+                    ),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def status_counts(team_id: str) -> dict[str, int]:
+        """화면이 "몇 건이 왜 검색 대상이 아닌가"를 말할 수 있게."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT m.extract_status, count(*) AS n
+                    FROM doc_meta m JOIN doc d ON d.doc_id = m.doc_id
+                    WHERE d.team_id = %s AND d.deleted = false
+                    GROUP BY m.extract_status
+                    """,
+                    (team_id,),
+                )
+                return {row["extract_status"]: row["n"] for row in cursor.fetchall()}

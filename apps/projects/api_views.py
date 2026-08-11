@@ -26,7 +26,9 @@ from backend.services.storage import build_key
 from backend.services.storage import exists as document_exists
 from backend.services.storage import load as load_document
 from backend.services.storage import save as save_document
-from backend.db.document_pipeline import PipelineDocumentRepository
+from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
+from services.document_meta import as_row as doc_meta_row
+from services.document_meta import build as build_doc_meta
 from services.document_pipeline.errors import (
     DocumentPipelineError,
     PipelineConfigurationError,
@@ -926,6 +928,75 @@ class TeamPipelineDocumentAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response([pipeline_document_response(row) for row in rows])
+
+
+class TeamDocumentMetaAPIView(AuthenticatedAPIView):
+    """문서 메타(요약·유형·키워드·요약 임베딩)를 만든다 — A안, 8/11 확정 ⑥.
+
+    **다운로드 다음 단계다.** 폴더 스캔 시점에는 원문 바이트가 없어 CPU 추출을
+    할 수 없고, 다운로드 응답 안에서 처리하면 요약 임베딩의 RunPod 콜드 스타트
+    (최대 10분)가 다운로드를 통째로 붙잡는다. 등록 → 다운로드 → 처리와 같은
+    모양으로 화면이 문서마다 이어 부르며 진행을 보여준다.
+
+    RunPod 문서 처리(`documents/<id>/processing/`)와 다른 일이다. 그쪽은 청크
+    단위 임베딩까지 하는 무거운 GPU 경로고, 여기는 문서 하나당 LLM 1회 +
+    임베딩 1개다. 싸야 팀 문서 전부에 돌릴 수 있고, 전부에 돌아야 coarse 검색이
+    미처리 문서까지 후보로 볼 수 있다.
+    """
+
+    def post(self, request):
+        account_id = request.user.account_id
+        only = request.data.get("doc_ids") or None
+
+        try:
+            team_id = AccountRepository.team_id(account_id)
+            if team_id is None:
+                return Response(
+                    {"detail": "팀에 속하지 않은 계정입니다."}, status=status.HTTP_403_FORBIDDEN
+                )
+            targets = DocMetaRepository.pending_doc_ids(team_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        if only is not None:
+            wanted = set(only)
+            targets = [doc_id for doc_id in targets if doc_id in wanted]
+
+        built: list[dict[str, Any]] = []
+        failed: list[dict[str, str]] = []
+        for doc_id in targets:
+            try:
+                document = PipelineDocumentRepository.get_for_processing(
+                    doc_id=doc_id, account_id=account_id
+                )
+                content = load_document(document["storage_key"])
+                meta = build_doc_meta(
+                    doc_id=doc_id,
+                    content=content,
+                    mime_type=document["mime_type"],
+                    file_name=document["file_name"],
+                )
+                DocMetaRepository.upsert(doc_meta_row(meta))
+            except (RepositoryError, psycopg.Error) as exc:
+                return _repository_error_response(exc)
+            except (ValueError, OSError, DocumentPipelineError) as exc:
+                # 한 문서가 이상하다고 나머지를 멈추지 않는다. 팀 문서 전부에
+                # 도는 일이라 한 건의 실패는 그 한 건으로 끝나야 한다.
+                logger.exception("문서 메타 생성 실패: %s", doc_id)
+                failed.append({"doc_id": doc_id, "detail": exc.__class__.__name__})
+                continue
+            built.append(
+                {"doc_id": doc_id, "extract_status": meta.extract_status, "detail": meta.detail}
+            )
+
+        return Response(
+            {
+                "built": built,
+                "failed": failed,
+                # 화면이 "몇 건이 왜 검색 대상이 아닌가"를 말할 수 있게.
+                "status_counts": DocMetaRepository.status_counts(team_id),
+            }
+        )
 
 
 class DocumentProcessingRunAPIView(AuthenticatedAPIView):
