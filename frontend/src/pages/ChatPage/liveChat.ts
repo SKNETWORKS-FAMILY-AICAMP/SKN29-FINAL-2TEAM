@@ -163,6 +163,46 @@ function readJiraResult(
   return { created: [], failures: [] };
 }
 
+/**
+ * `missing_fields` 와 `trace` 는 서버가 영문 키로 준다(`effort_hours`,
+ * `TASK_DISCOVERY:12`). 사람에게 보일 이름은 화면이 붙인다 — 이 표는
+ * `TaskExtractionPage`(4차 단계 3에서 삭제)가 쓰던 것을 그대로 옮긴 것이다.
+ * 옮기지 않고 지우면 비개발자가 보는 카드에 영문 식별자가 남는다.
+ */
+const FIELD_LABEL: Record<string, string> = {
+  required_role: '담당 역할',
+  required_skills: '필요 기술',
+  effort_hours: '공수',
+  start_date: '시작',
+  due_date: '마감',
+  priority: '우선순위',
+  dependencies: '선행 업무',
+  constraints: '제약',
+  risks: '위험',
+  acceptance_criteria: '완료 기준',
+  deliverables: '산출물',
+};
+
+const INTENT_LABEL: Record<string, string> = {
+  TASK_DISCOVERY: '업무 후보 찾기',
+  TASK_CORE: '요구사항·산출물',
+  ASSIGNMENT_REQUIREMENT: '역할·기술',
+  EXECUTION_CONDITION: '공수·일정·제약',
+};
+
+/**
+ * 확인 카드 아래 한 줄 — 어느 단계에서 몇 건을 찾았는지와 쓴 모델.
+ *
+ * 결과가 빈약할 때 어느 단계가 비었는지 알아야 문서를 더 넣을지 판단할 수 있다.
+ */
+export function traceLine(payload: TaskExtractionPayload): string {
+  const steps = payload.trace.map((step) => {
+    const [intent, hits] = step.split(':');
+    return `${INTENT_LABEL[intent] ?? intent} ${hits}건`;
+  });
+  return `검색 ${steps.join(' · ')} · ${payload.model}(${payload.reasoning_effort})`;
+}
+
 /** 추출 결과를 근거 카드 모양으로. `ref`(E1…)로 근거를 되짚는다. */
 export function toCards(payload: TaskExtractionPayload): ExtractedTask[] {
   const byChunk = new Map(payload.evidence.map((item) => [item.chunk_id, item]));
@@ -174,7 +214,7 @@ export function toCards(payload: TaskExtractionPayload): ExtractedTask[] {
     // **근거가 없어 비운 필드를 그대로 밝힌다.** 모델이 놓친 것과 문서에 없는
     // 것을 사람이 구분해야 한다(정직 표기 원칙).
     missing: task.missing_fields.length
-      ? `근거 없어 비움 · ${task.missing_fields.join(' · ')}`
+      ? `근거 없어 비움 · ${task.missing_fields.map((field) => FIELD_LABEL[field] ?? field).join(' · ')}`
       : undefined,
     evidenceCount: task.evidence_chunk_ids.length,
     checked: true,

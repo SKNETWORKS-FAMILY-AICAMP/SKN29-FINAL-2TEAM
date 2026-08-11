@@ -17,7 +17,7 @@ import { listAgents } from '../../api/agents';
 import type { Agent } from '../../api/agents';
 import { useProjectContext } from '../../utils/projectContext';
 import { ConfirmCard, ErrorCard, ProgressCard, ResultCard } from './cards/ChatCards';
-import { emptyLive, reduce, toCards } from './liveChat';
+import { emptyLive, reduce, toCards, traceLine } from './liveChat';
 import type { LiveChat } from './liveChat';
 import styles from './ChatPage.module.css';
 
@@ -300,11 +300,7 @@ export default function ChatPage() {
                   <ConfirmCard
                     tasks={live.tasks}
                     warnings={live.extraction?.warnings}
-                    trace={
-                      live.extraction
-                        ? `검색 ${live.extraction.trace.join(' · ')} · ${live.extraction.model}(${live.extraction.reasoning_effort})`
-                        : undefined
-                    }
+                    trace={live.extraction ? traceLine(live.extraction) : undefined}
                     selected={selected}
                     onSelectedChange={setSelected}
                     onApprove={live.confirm ? approve : undefined}
