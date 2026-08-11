@@ -283,7 +283,7 @@ class RunAgentTests(SimpleTestCase):
         self.assertEqual(resume["tool_call"], call)
         # 멈춘 시점의 대화가 그대로 들어 있어야 재개가 이어진다.
         self.assertEqual(resume["messages"][0], {"role": "user", "content": "올려줘"})
-        self.assertEqual(resume["messages"][-1]["role"], "assistant")
+        self.assertEqual(len(resume["messages"]), 2)
 
     def test_재개는_모델을_다시_묻지_않는다(self, _get, load_tools, runs, calls):
         """승인한 것과 실제로 실행되는 것이 달라지지 않게 한다."""
@@ -309,7 +309,15 @@ class RunAgentTests(SimpleTestCase):
                 {
                     "messages": [
                         {"role": "user", "content": "올려줘"},
-                        {"role": "assistant", "content": "", "tool_calls": [approved]},
+                        # 실제로는 모델이 준 reasoning + function_call 원본이 그대로
+                        # 들어 있다. 그 짝이 깨지면 API 가 400 을 낸다.
+                        {"type": "reasoning", "id": "rs_1", "summary": []},
+                        {
+                            "type": "function_call",
+                            "call_id": "c1",
+                            "name": "mcp:MT001",
+                            "arguments": '{"issues": ["A", "C"]}',
+                        },
                     ],
                     "resume_tool_call": approved,
                     "approved_tool_calls": ["mcp:MT001"],

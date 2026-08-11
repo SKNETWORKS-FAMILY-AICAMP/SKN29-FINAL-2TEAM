@@ -45,6 +45,14 @@ class ModelDecision:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     token_in: int = 0
     token_out: int = 0
+    #: 이 턴을 다음 호출의 입력으로 되돌려 보낼 때 쓸 **원본 아이템 그대로**.
+    #:
+    #: 추론 모델은 function_call 을 되돌려 줄 때 짝이 되는 reasoning 아이템을
+    #: 함께 요구한다. 실측(2026-08-11, gpt-5.6-luna):
+    #:   function_call 만 보냄 → 400 "was provided without its required
+    #:   'reasoning' item". 그래서 우리가 모양을 다시 만들지 않고 받은 것을
+    #:   그대로 들고 다닌다.
+    raw_items: list[dict[str, Any]] = field(default_factory=list)
 
 
 #: 모델 호출부. 테스트가 mock 모델을 꽂을 수 있게 함수로 받는다 —
@@ -116,7 +124,7 @@ def run_agent(
                     yield {"type": EVENT_RESULT, "text": decision.text or "", "complete": True}
                     return
 
-                messages.append(_assistant_turn(decision))
+                messages.extend(_assistant_turn(decision))
 
             for call in decision.tool_calls:
                 tool_ref = call["tool_ref"]
@@ -216,25 +224,35 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
     return {}
 
 
-def _assistant_turn(decision: ModelDecision) -> dict[str, Any]:
-    return {
-        "role": "assistant",
-        "content": decision.text or "",
-        "tool_calls": decision.tool_calls,
-    }
+def _assistant_turn(decision: ModelDecision) -> list[dict[str, Any]]:
+    """모델 턴을 다음 입력에 이어 붙일 아이템들.
+
+    받은 원본을 그대로 쓴다 — reasoning 과 function_call 은 짝이라 우리가 다시
+    조립하면 API 가 거절한다. mock 모델(테스트)은 원본이 없으므로 평범한
+    assistant 메시지로 떨어진다.
+    """
+
+    if decision.raw_items:
+        return list(decision.raw_items)
+    return [{"role": "assistant", "content": decision.text or ""}]
 
 
 def _tool_turn(call: dict[str, Any], output: Any) -> dict[str, Any]:
+    """도구 결과. Responses API 의 function_call_output 형식 그대로다."""
+
     return {
-        "role": "tool",
-        "tool_call_id": call.get("id"),
-        "tool_ref": call["tool_ref"],
-        "content": json.dumps(output, ensure_ascii=False, default=str),
+        "type": "function_call_output",
+        "call_id": call.get("id"),
+        "output": json.dumps(output, ensure_ascii=False, default=str),
     }
 
 
 def _default_model(agent: dict[str, Any]) -> ModelClient:
     """실제 모델 호출부.
+
+    **Responses API 를 쓴다.** `services/task_extraction` 이 이미 쓰고 있는
+    경로이고(`client.responses.parse`), 이 계정·모델에서 도구 호출이 실제로
+    도는 것을 확인한 형태다(2026-08-11 실측). `chat.completions` 가 아니다.
 
     에이전트 레코드의 `model`·`reasoning_effort` 를 쓰고, 비어 있으면 설정의
     기본값으로 떨어진다 — 에이전트마다 모델을 고르게 해 놓고 코드가 하나로
@@ -252,79 +270,50 @@ def _default_model(agent: dict[str, Any]) -> ModelClient:
     effort = agent.get("reasoning_effort") or settings.OPENAI_REASONING_EFFORT
 
     def call(system: str, messages: list[dict[str, Any]], tools: list[Tool]) -> ModelDecision:
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=model_name,
-            reasoning_effort=effort,
-            messages=[{"role": "system", "content": system}, *_for_openai(messages)],
+            service_tier=settings.OPENAI_SERVICE_TIER,
+            reasoning={"effort": effort},
             tools=[_tool_spec(tool) for tool in tools] or None,
+            input=[{"role": "system", "content": system}, *messages],
         )
-        choice = response.choices[0].message
         usage = response.usage
         return ModelDecision(
-            text=choice.content,
+            text=response.output_text or None,
             tool_calls=[
                 {
-                    "id": item.id,
-                    "tool_ref": item.function.name,
-                    "arguments": json.loads(item.function.arguments or "{}"),
+                    "id": item.call_id,
+                    "tool_ref": item.name,
+                    "arguments": json.loads(item.arguments or "{}"),
                 }
-                for item in (choice.tool_calls or [])
+                for item in response.output
+                if item.type == "function_call"
             ],
-            token_in=getattr(usage, "prompt_tokens", 0) or 0,
-            token_out=getattr(usage, "completion_tokens", 0) or 0,
+            token_in=getattr(usage, "input_tokens", 0) or 0,
+            token_out=getattr(usage, "output_tokens", 0) or 0,
+            raw_items=[_echoable(item) for item in response.output],
         )
 
     return call
 
 
-def _tool_spec(tool: Tool) -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {
-            "name": tool.ref,
-            "description": tool.description,
-            "parameters": tool.input_schema,
-        },
-    }
+def _echoable(item: Any) -> dict[str, Any]:
+    """응답 아이템을 다음 요청의 입력으로 되돌려 보낼 수 있는 모양으로.
 
-
-def _for_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """내부 메시지 모양을 OpenAI 형식으로 옮긴다.
-
-    내부에서 `tool_ref` 를 들고 다니는 이유는 우리 로그와 이벤트가 그 이름으로
-    말하기 때문이다. OpenAI 쪽에는 그 필드가 없어서 여기서 떨어뜨린다.
+    `status` 는 응답 전용이라 그대로 보내면 400 `unknown_parameter` 다
+    (2026-08-11 실측). 나머지는 손대지 않는다 — reasoning 아이템의 내용물을
+    우리가 해석하거나 줄이면 짝이 깨진다.
     """
 
-    converted: list[dict[str, Any]] = []
-    for message in messages:
-        if message["role"] == "tool":
-            converted.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": message["tool_call_id"],
-                    "content": message["content"],
-                }
-            )
-        elif message["role"] == "assistant" and message.get("tool_calls"):
-            converted.append(
-                {
-                    "role": "assistant",
-                    "content": message.get("content") or None,
-                    "tool_calls": [
-                        {
-                            "id": call["id"],
-                            "type": "function",
-                            "function": {
-                                "name": call["tool_ref"],
-                                "arguments": json.dumps(
-                                    call.get("arguments") or {}, ensure_ascii=False
-                                ),
-                            },
-                        }
-                        for call in message["tool_calls"]
-                    ],
-                }
-            )
-        else:
-            converted.append({"role": message["role"], "content": message.get("content") or ""})
-    return converted
+    return item.model_dump(exclude={"status"}, exclude_none=True)
+
+
+def _tool_spec(tool: Tool) -> dict[str, Any]:
+    """Responses API 의 function tool 은 평평하다 — `function` 안에 넣지 않는다."""
+
+    return {
+        "type": "function",
+        "name": tool.ref,
+        "description": tool.description,
+        "parameters": tool.input_schema,
+    }
