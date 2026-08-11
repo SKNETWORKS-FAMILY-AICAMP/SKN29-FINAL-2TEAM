@@ -1,6 +1,10 @@
-import { useMemo, useState } from 'react';
-import { AppShell, Badge, Button, Icon } from '../../components';
+import { useEffect, useMemo, useState } from 'react';
+import { AppShell, Badge, Button, Icon, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
+import { buildDocumentMeta, listTeamDocuments } from '../../api/documents';
+import type { DocState, TeamDocument } from '../../api/documents';
+import { ApiError } from '../../api/client';
+import { loadSessionToken } from '../../utils/session';
 import styles from './DocumentsPage.module.css';
 
 /**
@@ -11,104 +15,86 @@ import styles from './DocumentsPage.module.css';
  * 문서는 팀 소속이라 프로젝트로 범위를 좁히지 않는다 — 좁히면 기준 문서 외에
  * 보여줄 것이 없고, 같은 회의록이 여러 프로젝트의 근거가 되는 현실과 어긋난다.
  */
-type DocState = '준비됨' | '메타만' | '처리 중' | '실패' | '미지원 형식';
-
-interface DocRow {
-  name: string;
-  folder: string;
-  updated: string;
-  summary: string;
-  state: DocState;
-  note?: string;
-  retry?: boolean;
-}
-
 const STATE_TONE: Record<DocState, BadgeTone> = {
   '준비됨': 'success',
   '메타만': 'neutral',
-  '처리 중': 'info',
+  '대기': 'info',
   '실패': 'danger',
   '미지원 형식': 'neutral',
 };
 
-/** 상태가 뜻하는 것 — 목록 위 범례. 툴팁 문구와 같은 말을 쓴다. */
+/** 상태가 뜻하는 것 — 목록 위 범례. 서버의 `state` 매핑과 같은 말을 쓴다. */
 const STATE_LEGEND: { state: DocState; desc: string }[] = [
-  { state: '준비됨', desc: '근거로 사용할 수 있습니다' },
-  { state: '메타만', desc: '에이전트가 사용할 때 자동으로 읽습니다' },
+  { state: '준비됨', desc: '본문까지 읽어 근거로 쓸 수 있습니다' },
+  { state: '메타만', desc: '요약으로 후보에 잡히고, 쓸 때 본문을 읽습니다' },
+  { state: '대기', desc: '원문은 받았고 아직 요약을 만들지 않았습니다' },
   { state: '실패', desc: '읽지 못했습니다 — 다시 처리할 수 있습니다' },
-  { state: '미지원 형식', desc: '읽을 수 없는 형식입니다' },
+  { state: '미지원 형식', desc: '파서가 없어 다시 시도해도 같습니다' },
 ];
 
-const MOCK_DOCS: DocRow[] = [
-  {
-    name: '2026_상반기_사업계획서.docx',
-    folder: '기획 문서',
-    updated: '2026.08.03',
-    summary: '상반기 통합포털 개편 목표와 단계별 일정, 투입 인력 규모를 정리한 기획서',
-    state: '준비됨',
-  },
-  {
-    name: '물류시스템_요구사항정의서_v2.pdf',
-    folder: '요구사항',
-    updated: '2026.07.30',
-    summary: 'SSO·권한 등급·데이터 이관 요구사항과 완료 기준을 항목별로 기술',
-    state: '준비됨',
-  },
-  {
-    name: '고객사_제안요청서_RFP_v3.pdf',
-    folder: '제안 문서',
-    updated: '2026.07.28',
-    summary: '발주처 요구 범위와 산출물 목록, 평가 배점 기준',
-    state: '처리 중',
-    note: '지금 읽는 중 — 잠시 후 근거로 쓸 수 있습니다',
-  },
-  {
-    name: '킥오프_회의록_2026-08-03.md',
-    folder: '회의록',
-    updated: '2026.08.03',
-    summary: '킥오프에서 정한 역할 분담과 8월 마일스톤, 미결 3건',
-    state: '메타만',
-  },
-  {
-    name: '통합관제_구축_제안서_스캔.pdf',
-    folder: '제안 문서',
-    updated: '2026.06.18',
-    summary: '요약을 만들지 못했습니다',
-    state: '실패',
-    note: '스캔본 — 텍스트 추출 실패',
-    retry: true,
-  },
-  {
-    name: '회의록_20260728.hwp',
-    folder: '회의록',
-    updated: '2026.07.28',
-    summary: '—',
-    state: '미지원 형식',
-  },
-];
+type FilterId = '전체' | '준비됨' | '메타만' | '대기' | '실패';
 
-const MOCK_REMOVED = [
-  { name: '구_통합관제_제안서.pdf', why: '제안 문서 · 통합관제 플랫폼 고도화 기준 문서로 쓰이던 문서', chunks: '청크 148건' },
-  { name: '이전_요구사항_v1.pdf', why: '요구사항 · 2026.07.30 v2로 대체됨', chunks: '청크 96건' },
-];
-
-type FilterId = '전체' | '준비됨' | '메타만' | '실패';
-
-const FILTERS: { id: FilterId; count: number }[] = [
-  { id: '전체', count: 128 },
-  { id: '준비됨', count: 12 },
-  { id: '메타만', count: 114 },
-  { id: '실패', count: 1 },
-];
+const FILTERS: FilterId[] = ['전체', '준비됨', '메타만', '대기', '실패'];
 
 export default function DocumentsPage() {
+  const token = loadSessionToken();
+  const { showToast } = useToast();
   const [filter, setFilter] = useState<FilterId>('전체');
+  const [documents, setDocuments] = useState<TeamDocument[]>([]);
+  const [removed, setRemoved] = useState<{ doc_id: string; file_name: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const rows = useMemo(() => {
-    if (filter === '전체') return MOCK_DOCS;
-    if (filter === '메타만') return MOCK_DOCS.filter((doc) => doc.state === '메타만' || doc.state === '처리 중');
-    return MOCK_DOCS.filter((doc) => doc.state === filter);
-  }, [filter]);
+  async function load() {
+    if (!token) return;
+    try {
+      const data = await listTeamDocuments(token);
+      setDocuments(data.documents);
+      setRemoved(data.removed);
+      setError(null);
+    } catch (exc) {
+      setError(exc instanceof ApiError ? exc.message : '문서를 불러오지 못했습니다.');
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  /** 메타 생성. 대상 없이 부르면 아직 메타가 없는 문서 전부를 만든다. */
+  async function build(docId?: string) {
+    if (!token) return;
+    setBusy(docId ?? 'all');
+    try {
+      const result = await buildDocumentMeta(token, docId ? [docId] : undefined);
+      const ok = result.built.filter((row) => row.extract_status === 'OK').length;
+      // 실패를 성공에 섞지 않는다 — 몇 건이 왜 안 됐는지 함께 말한다.
+      showToast(
+        `${result.built.length}건 처리 · 읽기 성공 ${ok}건` +
+          (result.failed.length ? ` · 오류 ${result.failed.length}건` : ''),
+        result.failed.length ? 'error' : 'success',
+      );
+      await load();
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '처리하지 못했습니다.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const counts = useMemo(() => {
+    const map: Record<string, number> = { 전체: documents.length };
+    for (const doc of documents) map[doc.state] = (map[doc.state] ?? 0) + 1;
+    return map;
+  }, [documents]);
+
+  const rows = useMemo(
+    () => (filter === '전체' ? documents : documents.filter((doc) => doc.state === filter)),
+    [filter, documents],
+  );
+
+  const pending = documents.filter((doc) => doc.state === '대기').length;
 
   return (
     <AppShell>
@@ -128,31 +114,42 @@ export default function DocumentsPage() {
           </p>
         </header>
 
+        {error && <p className={styles.error}>{error}</p>}
+
         <div className={styles.stats}>
           {[
-            { label: '등록', value: '128건', desc: '폴더에서 자동으로 잡힌 전체 문서', tone: styles.statNeutral },
-            { label: '준비됨', value: '12건', desc: '내용까지 읽어 근거로 쓸 수 있는 문서', tone: styles.statSuccess },
-            { label: '처리 중', value: '1건', desc: '지금 읽고 있는 문서', tone: styles.statInfo },
-            { label: '실패', value: '1건', desc: '읽지 못해 근거로 쓸 수 없는 문서', tone: styles.statDanger },
+            { label: '등록', value: counts['전체'] ?? 0, desc: '폴더에서 자동으로 잡힌 전체 문서', tone: styles.statNeutral },
+            { label: '준비됨', value: counts['준비됨'] ?? 0, desc: '본문까지 읽어 근거로 쓸 수 있는 문서', tone: styles.statSuccess },
+            { label: '대기', value: counts['대기'] ?? 0, desc: '아직 요약을 만들지 않은 문서', tone: styles.statInfo },
+            { label: '실패', value: counts['실패'] ?? 0, desc: '읽지 못해 근거로 쓸 수 없는 문서', tone: styles.statDanger },
           ].map((stat) => (
             <div key={stat.label} className={styles.stat}>
               <span className={styles.statLabel}>{stat.label}</span>
-              <strong className={[styles.statValue, stat.tone].join(' ')}>{stat.value}</strong>
+              <strong className={[styles.statValue, stat.tone].join(' ')}>{stat.value}건</strong>
               <span className={styles.statDesc}>{stat.desc}</span>
             </div>
           ))}
         </div>
 
+        {pending > 0 && (
+          <div className={styles.bulk}>
+            <span>아직 요약을 만들지 않은 문서가 {pending}건 있습니다. 만들어 두면 검색 후보에 잡힙니다.</span>
+            <Button size="sm" disabled={busy !== null} onClick={() => build()}>
+              {busy === 'all' ? '처리하는 중…' : `${pending}건 처리`}
+            </Button>
+          </div>
+        )}
+
         <div className={styles.filters}>
-          {FILTERS.map((item) => (
+          {FILTERS.map((id) => (
             <button
-              key={item.id}
+              key={id}
               type="button"
-              className={[styles.filter, filter === item.id ? styles.filterActive : ''].filter(Boolean).join(' ')}
-              onClick={() => setFilter(item.id)}
+              className={[styles.filter, filter === id ? styles.filterActive : ''].filter(Boolean).join(' ')}
+              onClick={() => setFilter(id)}
             >
-              {item.id}
-              <span className={styles.filterCount}>{item.count}</span>
+              {id}
+              <span className={styles.filterCount}>{counts[id] ?? 0}</span>
             </button>
           ))}
         </div>
@@ -180,66 +177,69 @@ export default function DocumentsPage() {
 
           {rows.map((doc) => (
             <div
-              key={doc.name}
+              key={doc.doc_id}
               className={[styles.tableRow, doc.state === '미지원 형식' ? styles.rowDim : ''].filter(Boolean).join(' ')}
             >
               <span className={styles.colName}>
                 <Icon name="file-text" size={16} color="var(--color-body)" />
-                <span className={styles.docName}>{doc.name}</span>
+                <span className={styles.docName}>{doc.file_name}</span>
               </span>
               <span className={styles.colFolder}>
                 <Icon name="folder" size={14} color="var(--color-placeholder)" />
-                {doc.folder}
+                {doc.doc_type ?? '-'}
               </span>
-              <span className={styles.colDate}>{doc.updated}</span>
-              <span className={[styles.colSummary, doc.state === '실패' ? styles.summaryMuted : ''].join(' ')}>
-                {doc.summary}
+              <span className={styles.colDate}>
+                {doc.src_modified_at ? new Date(doc.src_modified_at).toLocaleDateString('ko-KR') : '-'}
+              </span>
+              {/* 요약이 없으면 지어내지 않는다. 왜 없는지는 상태 칩이 말한다. */}
+              <span className={[styles.colSummary, doc.summary ? '' : styles.summaryMuted].join(' ')}>
+                {doc.summary ?? '요약 없음'}
               </span>
               <span className={styles.colState}>
                 <span className={styles.stateChipRow}>
                   <Badge tone={STATE_TONE[doc.state]}>{doc.state}</Badge>
-                  {doc.retry && (
-                    <Button size="sm" variant="outline">
-                      다시 처리
+                  {/* 다시 시도해서 달라질 수 있는 상태에만 버튼을 준다.
+                      미지원 형식은 파서가 없어 몇 번을 눌러도 같다. */}
+                  {doc.state !== '미지원 형식' && doc.state !== '준비됨' && doc.has_source && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => build(doc.doc_id)}
+                    >
+                      {busy === doc.doc_id ? '처리 중…' : '다시 처리'}
                     </Button>
                   )}
                 </span>
-                {doc.note && (
-                  <span className={[styles.stateNote, doc.state === '실패' ? styles.stateNoteDanger : ''].join(' ')}>
-                    {doc.note}
-                  </span>
-                )}
+                {!doc.has_source && <span className={styles.stateNote}>원문을 아직 받지 않았습니다</span>}
               </span>
             </div>
           ))}
 
-          <button type="button" className={styles.more}>
-            외 122건 보기
-          </button>
+          {rows.length === 0 && <p className={styles.stateNote}>이 상태의 문서가 없습니다.</p>}
         </section>
 
-        <section className={styles.removed}>
-          <div className={styles.removedHead}>
-            <Icon name="triangle-alert" size={16} color="var(--color-warning-text)" />
-            <div className={styles.removedText}>
-              <strong>Drive에서 사라진 문서 2건, 확인 후 정리</strong>
-              <span>정리하면 저장된 청크와 요약도 함께 지워집니다. 되돌릴 수 없습니다.</span>
-            </div>
-            <Button size="sm" variant="outline">
-              확인 후 정리
-            </Button>
-          </div>
-
-          {MOCK_REMOVED.map((item) => (
-            <div key={item.name} className={styles.removedRow}>
-              <div className={styles.removedInfo}>
-                <strong>{item.name}</strong>
-                <span>{item.why}</span>
+        {removed.length > 0 && (
+          <section className={styles.removed}>
+            <div className={styles.removedHead}>
+              <Icon name="triangle-alert" size={16} color="var(--color-warning-text)" />
+              <div className={styles.removedText}>
+                <strong>Drive에서 사라진 문서 {removed.length}건</strong>
+                <span>목록에서 내려간 문서입니다. 저장된 청크와 요약은 정리 시 함께 지워집니다.</span>
               </div>
-              <span className={styles.removedChunks}>{item.chunks}</span>
             </div>
-          ))}
-        </section>
+
+            {removed.map((item) => (
+              <div key={item.doc_id} className={styles.removedRow}>
+                <div className={styles.removedInfo}>
+                  <strong>{item.file_name}</strong>
+                  <span>{item.doc_id}</span>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
       </div>
     </AppShell>
   );

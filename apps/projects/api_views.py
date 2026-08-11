@@ -930,6 +930,47 @@ class TeamPipelineDocumentAPIView(AuthenticatedAPIView):
         return Response([pipeline_document_response(row) for row in rows])
 
 
+def _document_meta_response(row: dict[str, Any]) -> dict[str, Any]:
+    """`state` 매핑 — 개발지시_3차 단계 5.
+
+      준비됨      본문까지 색인됨. 근거로 쓸 수 있다
+      메타만      요약은 있지만 본문 색인이 없다. coarse 후보로만 잡힌다
+      대기        원문은 받았는데 메타를 아직 안 만들었다
+      실패        추출이 안 됐다(스캔본·깨진 글자). 다시 시도할 수 있다
+      미지원 형식  파서가 없다(hwp·docx). 다시 시도해도 같다
+
+    「실패」와 「미지원 형식」을 가르는 이유는 사람이 할 행동이 달라서다 —
+    앞은 재시도, 뒤는 포기다.
+    """
+
+    status_value = row.get("extract_status")
+    if status_value == "UNSUPPORTED":
+        state = "미지원 형식"
+    elif status_value == "FAILED":
+        state = "실패"
+    elif status_value == "OK":
+        state = "준비됨" if row.get("search_ready") else "메타만"
+    else:
+        state = "대기"
+
+    return {
+        "doc_id": row["doc_id"],
+        "file_name": row["file_name"],
+        "mime_type": row.get("mime_type"),
+        "proj_id": row.get("proj_id"),
+        "doc_role": row.get("doc_role"),
+        "src_modified_at": row.get("src_modified_at"),
+        "summary": row.get("summary"),
+        "doc_type": row.get("doc_type"),
+        "keywords": row.get("keywords") or [],
+        "state": state,
+        "extract_status": status_value,
+        "search_ready": bool(row.get("search_ready")),
+        # 원문이 없으면 메타를 만들 수 없다. 화면이 「다시 처리」를 못 누르게 한다.
+        "has_source": bool(row.get("storage_key")),
+    }
+
+
 class TeamDocumentMetaAPIView(AuthenticatedAPIView):
     """문서 메타(요약·유형·키워드·요약 임베딩)를 만든다 — A안, 8/11 확정 ⑥.
 
@@ -943,6 +984,28 @@ class TeamDocumentMetaAPIView(AuthenticatedAPIView):
     임베딩 1개다. 싸야 팀 문서 전부에 돌릴 수 있고, 전부에 돌아야 coarse 검색이
     미처리 문서까지 후보로 볼 수 있다.
     """
+
+    def get(self, request):
+        """문서 목록 — 상태 칩이 읽는 값까지 함께 준다.
+
+        `state` 를 서버가 정한다. 화면이 extract_status·search_ready 조합을
+        해석하면 같은 규칙이 두 곳에 생기고, 한쪽만 고쳐졌을 때 목록과 검색이
+        다른 말을 한다.
+        """
+
+        try:
+            rows = DocMetaRepository.list_with_meta(request.user.account_id)
+            removed = DocMetaRepository.list_removed(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(
+            {
+                "documents": [_document_meta_response(row) for row in rows],
+                "removed": [
+                    {"doc_id": row["doc_id"], "file_name": row["file_name"]} for row in removed
+                ],
+            }
+        )
 
     def post(self, request):
         account_id = request.user.account_id

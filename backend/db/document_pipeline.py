@@ -509,6 +509,52 @@ class DocMetaRepository:
                 )
                 return list(cursor.fetchall())
 
+
+    @staticmethod
+    def list_with_meta(account_id: str) -> list[dict[str, Any]]:
+        """문서 화면 목록 — `doc` + `doc_meta` + 색인 여부.
+
+        **상태를 하나로 뭉개지 않는다.** 「메타가 없다」·「추출에 실패했다」·
+        「형식을 지원하지 않는다」·「본문까지 색인됐다」는 사람이 할 행동이 각각
+        다르다 — 순서대로 처리 요청 / 재시도 / 포기 / 없음이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           d.src_modified_at, d.storage_key,
+                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.extracted_at, {_SEARCH_READY}
+                    FROM doc AS d
+                    LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
+                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
+                    ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_removed(account_id: str) -> list[dict[str, Any]]:
+        """Drive 에서 사라져 내려간 문서. 화면이 「정리된 파일」로 보여준다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT doc_id, file_name, src_modified_at
+                    FROM doc
+                    WHERE team_id = %s AND deleted = true
+                    ORDER BY doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
     @staticmethod
     def status_counts(team_id: str) -> dict[str, int]:
         """화면이 "몇 건이 왜 검색 대상이 아닌가"를 말할 수 있게."""
