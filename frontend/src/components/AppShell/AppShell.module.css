@@ -124,29 +124,13 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 7px var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  font-family: inherit;
-  cursor: pointer;
 }
 
-/* 테두리는 바깥 `.contextPicker`가 그린다. 안쪽 select는 글자만 맡는다. */
+/* 테두리·꺾쇠는 공용 `Select`가 그린다. 여기서는 폭만 정한다 —
+   기본값이 `width: 100%`라 그대로 두면 상단바를 가로지른다. */
 .contextSelect {
-  border: none;
-  background: none;
-  padding: 0;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-heading);
-  cursor: pointer;
-  appearance: none;
-}
-
-.contextSelect:focus {
-  outline: none;
+  width: auto;
+  min-width: 180px;
 }
 
 .userArea {

@@ -7,6 +7,7 @@ import { APP_NAV_ITEMS, PATHS } from '../../routes';
 import { saveProjectContext, useProjectContext } from '../../utils/projectContext';
 import { clearSession, useSession } from '../../utils/session';
 import { Icon } from '../Icon/Icon';
+import { Select } from '../Select/Select';
 import styles from './AppShell.module.css';
 
 export interface AppShellProps {
@@ -84,9 +85,10 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
             프로젝트 컨텍스트 선택기. 여기서 고른 값이 새 대화의
             `chat_session.proj_id` 가 된다 — 「전체(팀)」은 그 값이 없다는 뜻이다.
           */}
-          <label className={styles.contextPicker}>
+          <div className={styles.contextPicker}>
             <Icon name="folder" size={15} color="var(--color-body)" />
-            <select
+            <Select
+              size="sm"
               className={styles.contextSelect}
               value={context?.proj_id ?? ''}
               onChange={(event) => {
@@ -94,16 +96,12 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
                 saveProjectContext(picked ? { proj_id: picked.proj_id, name: picked.name } : null);
               }}
               aria-label="프로젝트 컨텍스트 선택"
-            >
-              <option value="">전체(팀)</option>
-              {projects.map((project) => (
-                <option key={project.proj_id} value={project.proj_id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <Icon name="chevron-down" size={14} color="var(--color-placeholder)" />
-          </label>
+              options={[
+                { label: '전체(팀)', value: '' },
+                ...projects.map((project) => ({ label: project.name, value: project.proj_id })),
+              ]}
+            />
+          </div>
 
           <div className={styles.userArea}>
             <button type="button" className={styles.iconButton} aria-label="알림">
