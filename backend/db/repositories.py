@@ -114,6 +114,7 @@ class ProjectRepository:
                     SELECT
                         p.proj_id,
                         p.name,
+                        p.description,
                         p.status,
                         p.tz,
                         p.owner_account_id,
@@ -150,6 +151,7 @@ class ProjectRepository:
                     SELECT
                         p.proj_id,
                         p.name,
+                        p.description,
                         p.status,
                         p.tz,
                         p.owner_account_id,
@@ -175,6 +177,7 @@ class ProjectRepository:
                     SELECT
                         p.proj_id,
                         p.name,
+                        p.description,
                         p.status,
                         p.tz,
                         p.owner_account_id,
@@ -203,8 +206,9 @@ class ProjectRepository:
                 _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
                 cursor.execute(
                     """
-                    SELECT p.proj_id, p.name, p.status, p.tz, p.owner_account_id,
-                           p.team_id, p.created_at, ua.display_name AS owner_name
+                    SELECT p.proj_id, p.name, p.description, p.status, p.tz,
+                           p.owner_account_id, p.team_id, p.created_at,
+                           ua.display_name AS owner_name
                     FROM proj AS p
                     LEFT JOIN user_account AS ua ON ua.account_id = p.owner_account_id
                     WHERE p.proj_id = %s
@@ -358,7 +362,14 @@ class ProjectRepository:
         return {"tasks": tasks, "sources": sources, "documents_released": documents}
 
     @staticmethod
-    def create(*, name: str, status: str, tz: str, owner_account_id: str | None) -> dict[str, Any]:
+    def create(
+        *,
+        name: str,
+        status: str,
+        tz: str,
+        owner_account_id: str | None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = None
@@ -380,11 +391,13 @@ class ProjectRepository:
                 )
                 cursor.execute(
                     """
-                    INSERT INTO proj (proj_id, name, status, tz, owner_account_id, team_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING proj_id, name, status, tz, owner_account_id, team_id, created_at
+                    INSERT INTO proj (proj_id, name, description, status, tz,
+                                      owner_account_id, team_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING proj_id, name, description, status, tz,
+                              owner_account_id, team_id, created_at
                     """,
-                    (proj_id, name, status, tz, owner_account_id, team_id),
+                    (proj_id, name, description, status, tz, owner_account_id, team_id),
                 )
                 project = cursor.fetchone()
 

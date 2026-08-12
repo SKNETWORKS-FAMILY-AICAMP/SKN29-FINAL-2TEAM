@@ -7,6 +7,7 @@ import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '.
 import type { ExistTask, ProjectDetail } from '../../api/projects';
 import { PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
+import { PrimaryDocumentCard } from './PrimaryDocumentCard';
 import styles from './ProjectDetailPage.module.css';
 
 /** `status_category`만 분기에 쓴다. `status`는 프로젝트마다 표시 문자열이 다르다. */
@@ -256,6 +257,17 @@ export default function ProjectDetailPage() {
                     : '연결된 Jira 프로젝트가 없어 진행률을 계산할 수 없습니다.'}
                 </p>
               </section>
+            )}
+
+            {/* 진행률 다음, 업무 목록 앞. 업무가 어디서 나온 것인지가 그 숫자를
+                읽는 전제라 목록보다 위에 있어야 한다. */}
+            {token && (
+              <PrimaryDocumentCard
+                projectId={projectId}
+                token={token}
+                name={project.name}
+                description={project.description ?? null}
+              />
             )}
 
             {assignees.length > 0 && (

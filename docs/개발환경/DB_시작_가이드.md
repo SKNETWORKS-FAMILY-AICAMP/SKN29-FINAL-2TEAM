@@ -165,6 +165,8 @@ ALTER TABLE team ADD COLUMN IF NOT EXISTS overload_pct INT;
 ALTER TABLE team ADD COLUMN IF NOT EXISTS workload_weeks INT;
 ALTER TABLE proj ADD COLUMN IF NOT EXISTS team_id VARCHAR(5);
 UPDATE proj SET team_id = (SELECT ua.team_id FROM user_account ua WHERE ua.account_id = proj.owner_account_id) WHERE team_id IS NULL;
+-- 프로젝트 설명(2026-08-11). 만들 때 이름+설명으로 기준 문서 후보를 찾는다.
+ALTER TABLE proj ADD COLUMN IF NOT EXISTS description VARCHAR(500);
 CREATE TABLE IF NOT EXISTS team_folder (
     team_folder_id      VARCHAR(5) PRIMARY KEY,
     team_id             VARCHAR(5)  NOT NULL,

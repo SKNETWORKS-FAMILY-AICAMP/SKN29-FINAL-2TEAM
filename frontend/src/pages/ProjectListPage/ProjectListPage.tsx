@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AppShell, Icon, useToast } from '../../components';
+import { AppShell, Button, Icon, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { listMyProjects, syncTeamTasks } from '../../api/projects';
 import type { Project } from '../../api/projects';
 import { PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
+import { NewProjectDialog } from './NewProjectDialog';
 import { ProjectRow } from './ProjectRow';
 import styles from './ProjectListPage.module.css';
 
@@ -79,6 +80,7 @@ export default function ProjectListPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortValue>('date');
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -155,6 +157,13 @@ export default function ProjectListPage() {
             <p>AI 분석 기반 프로젝트 업무 할당 현황을 관리하고 새 업무를 생성합니다.</p>
           </div>
           <div className={styles.quickStats}>
+            {/* 프로젝트를 만드는 입구. 여기서 만들면 곧바로 기준 문서 후보를
+                찾아 「프로젝트 → 문서 → 업무」로 이어진다. */}
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Icon name="plus" size={15} />
+              새 프로젝트
+            </Button>
+            <div className={styles.statDivider} />
             <div className={styles.statItem}>
               <span className={styles.statLabel}>진행중인 프로젝트</span>
               <span className={styles.statValue}>
@@ -288,6 +297,10 @@ export default function ProjectListPage() {
           </div>
         </section>
       </div>
+
+      {creating && (
+        <NewProjectDialog onClose={() => setCreating(false)} onCreated={() => void load()} />
+      )}
     </AppShell>
   );
 }

@@ -18,6 +18,11 @@ export interface ProjectProgress {
 export interface Project {
   proj_id: string;
   name: string;
+  /**
+   * 무엇을 하는 프로젝트인가. 기준 문서 후보를 찾는 질의가 이름과 이 문장으로
+   * 만들어진다. 컬럼이 생기기 전(2026-08-11)에 만들어진 프로젝트는 null이다.
+   */
+  description: string | null;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   tz: string;
   owner_account_id: string | null;
@@ -91,8 +96,53 @@ export function setProjectStatus(token: string, projId: string, status: 'ACTIVE'
 }
 
 /** 프로젝트를 직접 만든다. 온보딩은 이 경로를 쓰지 않는다 — Jira 등록이 만든다. */
-export function createProject(token: string, name: string) {
-  return apiRequest<Project>('/projects/', { method: 'POST', token, body: { name, status: 'DRAFT' } });
+export function createProject(token: string, name: string, description?: string) {
+  return apiRequest<Project>('/projects/', {
+    method: 'POST',
+    token,
+    body: { name, description: description ?? null, status: 'DRAFT' },
+  });
+}
+
+/**
+ * 기준 문서 후보 한 건.
+ *
+ * 근거가 둘로 나뉜다. 요약 임베딩은 **파일명을 보지 않으므로**, 이름이 맞아
+ * 올라온 것과 내용이 비슷해 올라온 것을 하나의 숫자로 뭉치면 사람이 그 수를
+ * 읽을 방법이 없다.
+ */
+export interface PrimaryCandidate {
+  doc_id: string;
+  file_name: string;
+  summary: string | null;
+  doc_type: string | null;
+  /** 요약 내용이 얼마나 비슷한가 (0~1). */
+  summary_score: number;
+  /** 프로젝트 이름 낱말이 파일명에 얼마나 들어 있는가 (0~1). */
+  name_score: number;
+  /** 본문이 색인됐는가. false면 기준으로 골라도 업무 추출이 거절한다. */
+  search_ready: boolean;
+}
+
+export interface PrimaryCandidateResult {
+  query: string;
+  candidates: PrimaryCandidate[];
+  /** 검색 자체가 실패한 경우. 「후보가 없다」와 구분해야 한다. */
+  error?: string;
+}
+
+/**
+ * 프로젝트 이름·설명으로 팀 문서 풀에서 기준 문서 후보를 찾는다.
+ *
+ * **프로젝트를 만들기 전에도 부를 수 있다.** 만들고 나서 "아무것도 없습니다"라고
+ * 말하는 것보다, 만들기 전에 무엇이 나오는지 보여 주는 편이 낫다.
+ */
+export function suggestPrimaryCandidates(token: string, name: string, description: string) {
+  return apiRequest<PrimaryCandidateResult>('/projects/primary-candidates/', {
+    method: 'POST',
+    token,
+    body: { name, description },
+  });
 }
 
 export interface ProjectDeleteResult {

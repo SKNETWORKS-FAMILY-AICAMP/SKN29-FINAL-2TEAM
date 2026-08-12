@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 import json
 import logging
+import re
 from typing import Any
 
 import psycopg
@@ -34,7 +35,7 @@ from services.document_pipeline.errors import (
     PipelineConfigurationError,
     RunPodRequestError,
 )
-from services.document_pipeline.runpod_client import job_status, submit_document_job
+from services.document_pipeline.runpod_client import embed_queries, job_status, submit_document_job
 from services.document_pipeline.signing import read_download_token, signed_download_url
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
@@ -61,6 +62,7 @@ from .serializers import (
     AssignmentRunCreateSerializer,
     DocumentRegisterSerializer,
     JiraProjectRegisterSerializer,
+    PrimaryCandidateSerializer,
     ProjectCreateSerializer,
     ProjectSourceDocumentSerializer,
     DocumentRemoveSerializer,
@@ -150,6 +152,147 @@ class ProjectListCreateAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response(project_response(row), status=status.HTTP_201_CREATED)
+
+
+#: 기준 문서 후보로 보여 줄 최대 건수.
+#:
+#: 사람이 한눈에 고를 수 있는 수다. 요약 임베딩은 문서를 **좁히는** 단계라
+#: 여기서 많이 뽑아 봐야 아래쪽은 주제가 다른 문서가 채운다.
+PRIMARY_CANDIDATE_LIMIT = 5
+
+#: 1등 대비 이 비율 아래는 후보로 올리지 않는다.
+#:
+#: **절대 임계값을 쓰지 않는 이유**가 있다. 코사인 유사도의 절대값은 임베딩
+#: 모델마다 분포가 달라서 "0.4 미만은 무관"이 모델을 바꾸면 그대로 틀린다.
+#: 1등 대비 비율은 그 분포에 안 흔들린다.
+#:
+#: 자르는 목적은 목록을 짧게 하는 것이 아니라 **「없다」를 말할 수 있게** 하는
+#: 것이다. 팀 문서가 3건이면 무엇을 물어도 3건이 다 나오고, 그러면 후보 목록이
+#: 아무 정보도 주지 않는다(2026-08-11 실측: 회사소개서가 8% 로 3등에 올라왔다).
+RELATIVE_CUTOFF = 0.55
+
+#: 파일명 토큰. 영문·숫자·한글 덩어리만 본다.
+_TOKEN_RE = re.compile(r"[0-9a-z가-힣]+")
+
+
+def _tokens(text: str) -> set[str]:
+    """비교용 토큰. 한 글자는 버린다 — 조사·연결자가 우연히 겹친다."""
+
+    return {token for token in _TOKEN_RE.findall(text.lower()) if len(token) >= 2}
+
+
+def _name_match(query_name: str, file_name: str) -> float:
+    """프로젝트 이름이 파일명에 얼마나 들어 있는가 (0~1).
+
+    **요약 임베딩은 파일명을 보지 않는다.** `doc_meta.summary_vec` 은 요약문만
+    벡터로 만든 것이라, 프로젝트 이름이 파일명에 통째로 들어 있어도 점수가
+    오르지 않는다(2026-08-11 실측: 이름이 그대로 든 제안요청서가 0.52).
+    사람은 그걸 「이게 왜 이것밖에 안 나오나」로 읽는다.
+
+    파일명은 사람이 붙인 가장 강한 단서다. 따로 센다.
+    """
+
+    wanted = _tokens(query_name)
+    if not wanted:
+        return 0.0
+    return len(wanted & _tokens(file_name)) / len(wanted)
+
+
+def _rank(rows: list[dict[str, Any]], *, name: str) -> list[dict[str, Any]]:
+    """요약 유사도와 파일명 일치를 합쳐 다시 세우고, 무관한 것을 자른다.
+
+    가중치는 요약 6 : 파일명 4 다. 파일명이 더 확실한 단서지만 그것만으로
+    정하면 「2021년_제안요청서.pdf」처럼 이름이 밋밋한 문서가 영영 밀린다.
+
+    합친 점수는 **정렬과 컷에만** 쓴다. 화면에는 두 값을 따로 보여 준다 —
+    합친 수를 「닮은 정도」라고 하나로 보여주면 그 숫자가 무엇인지 아무도 모른다.
+    """
+
+    scored = []
+    for row in rows:
+        summary_score = float(row["summary_score"])
+        name_score = _name_match(name, row["file_name"] or "")
+        scored.append(
+            {**row, "name_score": name_score, "rank_score": summary_score * 0.6 + name_score * 0.4}
+        )
+
+    scored.sort(key=lambda row: row["rank_score"], reverse=True)
+    if not scored:
+        return []
+    floor = scored[0]["rank_score"] * RELATIVE_CUTOFF
+    return [row for row in scored if row["rank_score"] >= floor]
+
+
+class ProjectPrimaryCandidateAPIView(AuthenticatedAPIView):
+    """프로젝트 이름·설명으로 팀 문서 풀에서 **기준 문서 후보**를 찾는다.
+
+    새 도구가 아니라 `document_search` 의 앞단(coarse)을 그대로 쓴다 —
+    `doc_meta.summary_vec` 은 문서당 하나뿐이라 팀 문서 전부를 훑어도 싸다.
+
+    **고르는 것은 사람이다.** 여기서 자동으로 묶지 않는다. 어느 문서로 업무를
+    뽑았는지는 결과 전체의 전제이고, 그 결정은 사람의 것이라는 규칙이 이미 있다
+    (`services/harness/registry.py` `task_extraction`). 이 API 는 후보와 그
+    닮은 정도만 주고, 묶는 것은 `PUT .../source-documents/` 다.
+
+    후보가 없으면 **빈 목록을 준다.** 억지로 가장 비슷한 하나를 올리지 않는다 —
+    문서 풀이 비었거나 주제가 전혀 다르면 「없다」가 정답이고, 그걸 감추면
+    사람이 엉뚱한 문서로 업무를 뽑는다.
+    """
+
+    def post(self, request):
+        serializer = PrimaryCandidateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        name = serializer.validated_data["name"]
+        description = (serializer.validated_data.get("description") or "").strip()
+
+        # 이름만으로는 질의가 너무 짧다. 설명이 있으면 붙여 주제 위에 올린다.
+        query = f"{name}\n{description}".strip()
+
+        try:
+            team_id = AccountRepository.team_id(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        if not team_id:
+            return Response({"query": query, "candidates": []})
+
+        try:
+            vector = embed_queries([query])[0]
+            rows = DocMetaRepository.coarse_search(
+                team_id=team_id, query_vector=vector, top_n=PRIMARY_CANDIDATE_LIMIT
+            )
+        except Exception as exc:  # noqa: BLE001 - 임베딩·검색 실패로 생성을 막지 않는다
+            logger.exception("기준 문서 후보 검색에 실패했습니다: team=%s", team_id)
+            # 프로젝트는 이미 만들어졌거나 만들 수 있다. 후보를 못 찾은 것과
+            # 후보가 없는 것을 화면이 구분해야 해서 사유를 함께 준다.
+            return Response(
+                {
+                    "query": query,
+                    "candidates": [],
+                    "error": f"문서 후보를 찾지 못했습니다: {exc.__class__.__name__}",
+                }
+            )
+
+        return Response(
+            {
+                "query": query,
+                "candidates": [
+                    {
+                        "doc_id": row["doc_id"],
+                        "file_name": row["file_name"],
+                        "summary": row["summary"],
+                        "doc_type": row.get("doc_type"),
+                        # 두 근거를 따로 준다. 화면이 "확실합니다"라고 말하지
+                        # 않도록 숫자를 그대로 보여 주고, 왜 올라왔는지도 말한다.
+                        "summary_score": round(float(row["summary_score"]), 3),
+                        "name_score": round(float(row["name_score"]), 3),
+                        # 본문이 아직 색인되지 않은 문서는 기준으로 골라도 업무
+                        # 추출이 거절한다. 고르기 전에 알아야 한다.
+                        "search_ready": row["search_ready"],
+                    }
+                    for row in _rank(rows, name=name)
+                ],
+            }
+        )
 
 
 class ProjectDetailAPIView(AuthenticatedAPIView):

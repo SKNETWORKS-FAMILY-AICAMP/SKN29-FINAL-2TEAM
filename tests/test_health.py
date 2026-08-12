@@ -67,6 +67,9 @@ class ProjectApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 201)
         create.assert_called_once_with(
             name="AI 코파일럿 시연",
+            # 설명을 안 보내면 None 이다. 빈 문자열로 바꾸지 않는다 —
+            # 「안 적었다」와 「비워 뒀다」를 DB 에서 구분할 수 있어야 한다.
+            description=None,
             status="DRAFT",
             tz="Asia/Seoul",
             owner_account_id="UA001",

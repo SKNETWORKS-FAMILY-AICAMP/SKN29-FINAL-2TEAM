@@ -12,11 +12,30 @@ class ProjectCreateSerializer(serializers.Serializer):
     """소유자는 요청이 아니라 로그인 토큰에서 정한다."""
 
     name = serializers.CharField(max_length=200)
+    # 무엇을 하는 프로젝트인가. 기준 문서 후보를 찾는 질의가 이름과 이 문장으로
+    # 만들어진다 — 비워도 되지만 그러면 후보가 이름 하나로만 뽑힌다.
+    description = serializers.CharField(
+        max_length=500, required=False, allow_blank=True, allow_null=True, default=None
+    )
     status = serializers.ChoiceField(
         choices=("DRAFT", "ACTIVE", "ARCHIVED"),
         default="DRAFT",
     )
     tz = serializers.CharField(max_length=50, default="Asia/Seoul")
+
+
+class PrimaryCandidateSerializer(serializers.Serializer):
+    """기준 문서 후보를 찾을 질의.
+
+    프로젝트를 아직 안 만든 상태에서도 부를 수 있게 `proj_id` 를 받지 않는다 —
+    만들기 전에 "이 이름으로 찾으면 무엇이 나오나"를 보여 주는 편이, 만들고 나서
+    아무것도 없다고 말하는 것보다 낫다.
+    """
+
+    name = serializers.CharField(max_length=200)
+    description = serializers.CharField(
+        max_length=500, required=False, allow_blank=True, allow_null=True, default=""
+    )
 
 
 class ProjectStatusSerializer(serializers.Serializer):
@@ -168,6 +187,7 @@ def project_response(
         "proj_id": row["proj_id"],
         "project_id": row["proj_id"],
         "name": row["name"],
+        "description": row.get("description"),
         "code": row["proj_id"],
         "description": "",
         "status": row["status"],

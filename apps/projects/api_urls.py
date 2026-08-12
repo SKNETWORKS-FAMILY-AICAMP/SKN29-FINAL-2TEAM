@@ -7,6 +7,7 @@ from .api_views import (
     ProjectAnalysisRunAPIView,
     ProjectDetailAPIView,
     ProjectJiraRegisterAPIView,
+    ProjectPrimaryCandidateAPIView,
     ProjectListCreateAPIView,
     ProjectSourceAPIView,
     ProjectSourceDocumentAPIView,
@@ -87,6 +88,12 @@ urlpatterns = [
     path("projects/", ProjectListCreateAPIView.as_view(), name="api_project_list_create"),
     # 프로젝트를 **만드는** 요청이라 프로젝트 하위가 아니다.
     path("projects/jira/", ProjectJiraRegisterAPIView.as_view(), name="api_project_jira_register"),
+    # 아직 프로젝트가 없을 때도 부른다 — `<str:project_id>` 보다 **앞**에 둘 것.
+    path(
+        "projects/primary-candidates/",
+        ProjectPrimaryCandidateAPIView.as_view(),
+        name="api_project_primary_candidates",
+    ),
     path("projects/<str:project_id>/", ProjectDetailAPIView.as_view(), name="api_project_detail"),
     path(
         "projects/<str:project_id>/sources/",

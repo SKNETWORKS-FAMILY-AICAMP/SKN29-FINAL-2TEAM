@@ -1,0 +1,160 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  width: 100%;
+}
+
+.primaryName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-muted);
+}
+
+.footnote {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+
+.warn {
+  width: 100%;
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-warning-text, var(--color-body));
+}
+
+.error {
+  width: 100%;
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg, var(--color-bg));
+  font-size: 12px;
+  color: var(--color-danger-text, var(--color-body));
+}
+
+.candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  list-style: none;
+}
+
+.candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.candidate:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.candidate:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.candidateHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.candidateHead strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 두 근거를 따로 보인다 — 요약 임베딩은 파일명을 보지 않는다. */
+.score {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.summary {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notReady {
+  font-size: 12px;
+  color: var(--color-warning-text, var(--color-muted));
+}
+
+/* 같은 대상(기준 문서)에 대한 행동이라 한 줄에 모은다. */
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+

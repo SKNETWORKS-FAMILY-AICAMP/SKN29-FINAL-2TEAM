@@ -627,3 +627,62 @@ class ProjectDeleteApiTests(SimpleTestCase):
     def test_other_team_project_is_forbidden(self, _delete):
         response = self.client.delete("/api/projects/PJ999/", headers=auth_header())
         self.assertEqual(response.status_code, 403)
+
+
+class PrimaryCandidateRankTests(SimpleTestCase):
+    """기준 문서 후보의 순위와 컷.
+
+    실측(2026-08-11)에서 나온 그대로를 고정한다 — 팀 문서가 3건이라 무엇을
+    물어도 3건이 다 나왔고, 이름이 통째로 든 제안요청서가 0.52 로 회사소개서
+    (0.08)와 같은 목록에 섞였다.
+    """
+
+    NAME = "IRInstitutional-Research-정보시스템-구축"
+
+    ROWS = [
+        {
+            "doc_id": "DC001",
+            "file_name": "2021-07-01-IRInstitutional-Research-정보시스템-구축-3차년도.pdf",
+            "summary": "삼육대학교 IR 정보시스템 3차년도 고도화 제안요청서",
+            "summary_score": 0.52,
+            "search_ready": True,
+        },
+        {
+            "doc_id": "DC002",
+            "file_name": "22-101호 용역제안서_차세대정보시스템 ERP재구축 사업 감리용역.pdf",
+            "summary": "차세대 정보시스템 ERP 재구축 감리 제안요청",
+            "summary_score": 0.35,
+            "search_ready": True,
+        },
+        {
+            "doc_id": "DC003",
+            "file_name": "테스트.pdf",
+            "summary": "한화파워 회사 개요와 산업용 압축기 제품 소개",
+            "summary_score": 0.08,
+            "search_ready": True,
+        },
+    ]
+
+    def _ranked(self):
+        from apps.projects.api_views import _rank
+
+        return _rank([dict(row) for row in self.ROWS], name=self.NAME)
+
+    def test_이름이_일치하는_문서가_1등이다(self):
+        self.assertEqual(self._ranked()[0]["doc_id"], "DC001")
+
+    def test_파일명_일치를_따로_센다(self):
+        """요약 임베딩은 파일명을 안 본다. 그 단서를 여기서 되살린다."""
+
+        ranked = {row["doc_id"]: row for row in self._ranked()}
+        self.assertEqual(ranked["DC001"]["name_score"], 1.0)
+
+    def test_무관한_문서는_잘린다(self):
+        """팀 문서가 3건이면 3건이 다 나오는 목록은 아무 정보도 주지 않는다."""
+
+        self.assertNotIn("DC003", [row["doc_id"] for row in self._ranked()])
+
+    def test_후보가_없으면_빈_목록이다(self):
+        from apps.projects.api_views import _rank
+
+        self.assertEqual(_rank([], name=self.NAME), [])

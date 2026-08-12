@@ -1,0 +1,222 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 82vh;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 22%);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.head h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.close {
+  display: flex;
+  padding: 5px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--color-bg);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  overflow-y: auto;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+/* 보조 설명은 라벨 안에서 톤을 낮춘다 — 별도 줄로 빼면 폼이 길어진다. */
+.field em {
+  margin-left: 6px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.field input,
+.field textarea {
+  padding: 9px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--color-body);
+  resize: vertical;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.lead {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-body);
+}
+
+.lead strong {
+  color: var(--color-heading);
+}
+
+.hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+
+/* 「없다」는 실패가 아니라 결과다. 경고색으로 겁주지 않는다. */
+.warn {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-body);
+}
+
+.error {
+  margin: 0 var(--space-6);
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg, var(--color-bg));
+  font-size: 13px;
+  color: var(--color-danger-text, var(--color-body));
+}
+
+.candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.candidate:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.candidate:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.candidateHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.candidateHead strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 숫자를 그대로 보인다 — 「확실합니다」라고 말하지 않기 위한 것이다. */
+.score {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/* 파일명이 프로젝트 이름과 겹칠 때. 임베딩이 못 보는 단서라 따로 말한다. */
+.badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.summary {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notReady {
+  font-size: 12px;
+  color: var(--color-warning-text, var(--color-muted));
+}
+
+.foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}

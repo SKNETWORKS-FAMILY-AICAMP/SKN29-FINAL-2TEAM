@@ -143,6 +143,10 @@ CREATE TABLE mock_hr.skill (
 CREATE TABLE proj (
     proj_id           VARCHAR(5) PRIMARY KEY,
     name              VARCHAR(200) NOT NULL,
+    -- 무엇을 하는 프로젝트인가(2026-08-11 추가). 만들 때 이름과 이 문장으로
+    -- 팀 문서 풀에서 기준 문서 후보를 찾는다 — 이름만으로는 요약 임베딩
+    -- 질의가 너무 짧아 아무 문서나 걸린다.
+    description       VARCHAR(500),
     status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
     tz                VARCHAR(50)  NOT NULL DEFAULT 'Asia/Seoul',
     owner_account_id  VARCHAR(5),
