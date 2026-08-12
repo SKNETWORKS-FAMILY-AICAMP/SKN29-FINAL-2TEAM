@@ -112,6 +112,12 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
+            # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
+            history = _history(
+                ChatMessageRepository.list_for_session(
+                    session_id=session_id, account_id=account_id
+                )
+            )
             # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
             # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
             # 되지만, 질문이 사라진 대화는 복구할 방법이 없다.
@@ -135,8 +141,11 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                         "session_id": session_id,
                         "account_id": account_id,
                         # 업무 추출처럼 프로젝트가 전제인 도구가 쓴다. 대화를 열
-                        # 때 고른 값이고, 없으면(전체(팀) 문맥) 그 도구가 거절한다.
+                        # 때 고른 값이고, 없으면 그 도구가 거절한다.
                         "proj_id": session.get("proj_id"),
+                        # 앞선 턴 + 이번 발화. 이걸 안 주면 **매 턴이 콜드
+                        # 스타트**라 "그것 말고 또 있나?" 같은 말이 통하지 않는다.
+                        "messages": [*history, {"role": "user", "content": text}],
                     },
                 ),
                 session_id=session_id,
@@ -144,6 +153,50 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             ),
             content_type="application/x-ndjson",
         )
+
+
+#: 모델에게 되돌려 줄 앞선 턴의 최대 수(사람 발화 + 답 합계).
+#:
+#: 전부 보내면 긴 대화에서 토큰이 선형으로 는다. 최근 것만 남기는 이유는 대화가
+#: 대개 바로 앞을 가리키기 때문이다("그것 말고", "다시 해줘").
+HISTORY_LIMIT = 20
+
+
+def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """저장된 대화를 **모델이 읽을 수 있는 평범한 메시지**로 바꾼다.
+
+    **도구 호출 원본(reasoning·function_call)은 복원하지 않는다.** 그 아이템들은
+    짝이 맞아야 하고(runner.py `_assistant_turn` 주석), 우리가 남긴 것은 재개용
+    `resume.messages` 뿐이라 지난 턴 것은 온전하지 않다. 짝이 깨진 채로 보내면
+    API 가 400 을 낸다.
+
+    대신 **사람이 본 것과 같은 것**을 준다 — 질문과 답의 텍스트. 그것만으로
+    "그것 말고 또 있나?" 가 통한다. 도구 결과를 다시 태우지 않으므로 토큰도 싸다.
+
+    승인 대기로 끝난 턴은 그 사실을 한 줄로 적는다. 비워 두면 모델이 그 턴에
+    아무 일도 없었다고 여긴다.
+    """
+
+    history: list[dict[str, Any]] = []
+    for row in rows:
+        content = row.get("content") or {}
+        if row["role"] == "user":
+            text = content.get("text")
+            if text:
+                history.append({"role": "user", "content": text})
+            continue
+
+        if content.get("type") == EVENT_AWAITING_CONFIRMATION:
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": f"[{content.get('tool_name') or '작업'} 승인을 요청하고 기다림]",
+                }
+            )
+        elif content.get("text"):
+            history.append({"role": "assistant", "content": content["text"]})
+
+    return history[-HISTORY_LIMIT:]
 
 
 class ChatConfirmAPIView(AuthenticatedAPIView):
@@ -185,7 +238,10 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
             )
 
         selected = serializer.validated_data.get("selected")
-        tool_call = _apply_selection(tool_call, selected)
+        # 재개 정보는 **스택**이다. 위임(agent:)이 끼어 있으면 바깥 호출은
+        # "그 에이전트를 다시 부른다"이고, 사람이 승인한 실제 호출은 맨 안쪽에
+        # 있다 — 선택 적용도 승인도 거기서 해야 한다.
+        plan, approved_ref = _apply_to_innermost(resume, selected)
 
         return StreamingHttpResponse(
             _relay(
@@ -196,9 +252,10 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                         "session_id": session_id,
                         "account_id": account_id,
                         "proj_id": session.get("proj_id"),
-                        "messages": resume.get("messages") or [],
-                        "resume_tool_call": tool_call,
-                        "approved_tool_calls": [tool_call["tool_ref"]],
+                        "messages": plan.get("messages") or [],
+                        "resume_tool_call": plan.get("tool_call"),
+                        "resume_inner": plan.get("inner"),
+                        "approved_tool_calls": [approved_ref],
                     },
                 ),
                 session_id=session_id,
@@ -206,6 +263,28 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
             ),
             content_type="application/x-ndjson",
         )
+
+
+def _apply_to_innermost(
+    node: dict[str, Any], selected: list[int] | None
+) -> tuple[dict[str, Any], str]:
+    """재개 스택의 가장 안쪽 호출에 선택을 적용하고, 승인할 `tool_ref` 를 돌려준다.
+
+    바깥 층의 호출은 손대지 않는다 — 그것은 「이 에이전트를 다시 부른다」이고,
+    사용자가 확인 카드에서 체크를 푼 것은 맨 안쪽의 인자다. 바깥에 적용하면
+    위임 자체가 잘려 나간다.
+
+    승인도 안쪽 `tool_ref` 하나만 준다. 바깥까지 승인하면 「위임은 늘 승인된
+    것」이 되어 게이트가 한 층 헐거워진다.
+    """
+
+    inner = node.get("inner")
+    if inner:
+        applied, approved_ref = _apply_to_innermost(inner, selected)
+        return {**node, "inner": applied}, approved_ref
+
+    tool_call = _apply_selection(node["tool_call"], selected)
+    return {**node, "tool_call": tool_call}, tool_call["tool_ref"]
 
 
 def _apply_selection(tool_call: dict[str, Any], selected: list[int] | None) -> dict[str, Any]:
@@ -281,6 +360,9 @@ def _persist(
         content["tool_ref"] = final.get("tool_ref")
         content["tool_name"] = final.get("tool_name")
         content["arguments"] = final.get("arguments")
+        # 위임을 거쳐 올라온 승인이면 누가 요구했는지. 없으면 최상위가 직접
+        # 부른 것이다 — 그 차이를 사람이 알아야 무엇을 승인하는지 안다.
+        content["via_agent"] = final.get("via_agent")
     else:
         content["text"] = final.get("text", "")
         content["complete"] = final.get("complete", False)

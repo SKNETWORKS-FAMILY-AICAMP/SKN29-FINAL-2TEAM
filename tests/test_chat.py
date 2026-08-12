@@ -339,3 +339,97 @@ class ConfirmGateTests(SimpleTestCase):
         stored = messages.append.call_args_list[-1].kwargs["content"]
         self.assertEqual(stored["type"], "awaiting_confirmation")
         self.assertEqual(stored["resume"], resume)
+
+
+@patch("apps.chat.api_views.run_agent")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class ChatHistoryTests(SimpleTestCase):
+    """앞선 턴이 모델에게 간다.
+
+    이게 없으면 **매 턴이 콜드 스타트**다 — 「그것 말고 또 있나?」에 대해
+    "무엇을 가리키는지 확인하지 못했습니다"라고 답한다(2026-08-11 실측).
+    """
+
+    def _post(self, run, messages, rows):
+        messages.list_for_session.return_value = rows
+        run.return_value = iter([])
+        self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "그것 말고 또 있나?"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        return run.call_args.args[2]["messages"]
+
+    def test_앞선_질문과_답이_함께_간다(self, sessions, messages, run):
+        sessions.get.return_value = SESSION
+        sent = self._post(
+            run,
+            messages,
+            [
+                {"role": "user", "content": {"type": "text", "text": "뭘 할 수 있지?"}},
+                {"role": "agent", "content": {"type": "result", "text": "문서를 찾고 업무를 뽑습니다."}},
+            ],
+        )
+
+        self.assertEqual(
+            sent,
+            [
+                {"role": "user", "content": "뭘 할 수 있지?"},
+                {"role": "assistant", "content": "문서를 찾고 업무를 뽑습니다."},
+                {"role": "user", "content": "그것 말고 또 있나?"},
+            ],
+        )
+
+    def test_도구_호출_원본은_복원하지_않는다(self, sessions, messages, run):
+        """reasoning·function_call 은 짝이 맞아야 해서 지난 턴 것은 온전하지 않다."""
+
+        sessions.get.return_value = SESSION
+        sent = self._post(
+            run,
+            messages,
+            [
+                {"role": "user", "content": {"type": "text", "text": "업무 뽑아줘"}},
+                {
+                    "role": "agent",
+                    "content": {
+                        "type": "result",
+                        "text": "3건 뽑았습니다.",
+                        "events": [{"type": "tool_call_started", "tool_ref": "task_extraction"}],
+                    },
+                },
+            ],
+        )
+
+        self.assertNotIn("function_call", str(sent))
+        self.assertEqual(sent[1], {"role": "assistant", "content": "3건 뽑았습니다."})
+
+    def test_승인_대기로_끝난_턴도_한_줄로_남는다(self, sessions, messages, run):
+        """비워 두면 모델이 그 턴에 아무 일도 없었다고 여긴다."""
+
+        sessions.get.return_value = SESSION
+        sent = self._post(
+            run,
+            messages,
+            [
+                {"role": "user", "content": {"type": "text", "text": "등록해줘"}},
+                {
+                    "role": "agent",
+                    "content": {"type": "awaiting_confirmation", "tool_name": "업무 등록"},
+                },
+            ],
+        )
+
+        self.assertIn("업무 등록", sent[1]["content"])
+
+    def test_긴_대화는_최근_것만_보낸다(self, sessions, messages, run):
+        sessions.get.return_value = SESSION
+        rows = [
+            {"role": "user", "content": {"type": "text", "text": f"질문{i}"}} for i in range(40)
+        ]
+        sent = self._post(run, messages, rows)
+
+        # 앞선 이력 20건 + 이번 발화 1건.
+        self.assertEqual(len(sent), 21)
+        self.assertEqual(sent[0]["content"], "질문20")
