@@ -67,6 +67,34 @@ def _split(data: dict) -> tuple[dict, list[str]]:
     return fields, fields.pop("tool_refs")
 
 
+def _model_rejection(account_id: str, model: str | None) -> Response | None:
+    """이 팀이 고를 수 있는 모델인가. 괜찮으면 `None`, 아니면 그대로 돌려줄 응답.
+
+    **고를 수 있는 목록은 팀마다 다르다.** 기본 제공 6종에 더해, 그 팀이 Model 탭에서
+    등록한 커스텀 모델 API 가 있다. 그래서 serializer 의 `ChoiceField` 로는 못 막고
+    (팀을 모른다) 여기서 대조한다.
+
+    아무 문자열이나 받으면 저장은 되고 **실행 시점에 404 로 죽는다** — 사람은 화면에
+    저장됐다고 떴으니 맞다고 믿는다. 조용히 실패하는 그 경로를 여기서 끊는다.
+
+    기본 제공이면 **DB 를 아예 보지 않는다.** 커스텀 목록을 못 읽는다고 luna 조차 못
+    고르게 되면 안 되고, 못 읽었을 때 「고를 수 없는 모델」이라고 말하는 것은 거짓말이라
+    그때는 503 으로 그 사실을 그대로 알린다.
+    """
+
+    if not model or model in AGENT_MODELS:
+        return None
+    try:
+        customs = {row["model"] for row in CustomModelRepository.list_for_account(account_id)}
+    except (RepositoryError, psycopg.Error) as exc:
+        return _repository_error_response(exc)
+    if model in customs:
+        return None
+    return Response(
+        {"detail": f"{model} 은 고를 수 없는 모델입니다."}, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
 class AgentListCreateAPIView(AuthenticatedAPIView):
     def get(self, request):
         try:
@@ -79,6 +107,9 @@ class AgentListCreateAPIView(AuthenticatedAPIView):
         serializer = AgentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         fields, tool_refs = _split(serializer.validated_data)
+        rejection = _model_rejection(request.user.account_id, fields.get("model"))
+        if rejection is not None:
+            return rejection
         try:
             row = AgentCrudRepository.create(
                 account_id=request.user.account_id, fields=fields, tool_refs=tool_refs
@@ -100,6 +131,9 @@ class AgentDetailAPIView(AuthenticatedAPIView):
         serializer = AgentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         fields, tool_refs = _split(serializer.validated_data)
+        rejection = _model_rejection(request.user.account_id, fields.get("model"))
+        if rejection is not None:
+            return rejection
         try:
             row = AgentCrudRepository.update(
                 agent_id=agent_id,
@@ -159,16 +193,9 @@ class MainModelAPIView(AuthenticatedAPIView):
         serializer.is_valid(raise_exception=True)
         model = serializer.validated_data["model"]
 
-        # 기본 제공이거나, 이 팀이 등록한 커스텀이어야 한다. 아무 문자열이나
-        # 받으면 실행 시점에 404 로 죽고 사람은 이유를 모른다.
-        try:
-            customs = {row["model"] for row in CustomModelRepository.list_for_account(request.user.account_id)}
-        except (RepositoryError, psycopg.Error):
-            customs = set()
-        if model not in AGENT_MODELS and model not in customs:
-            return Response(
-                {"detail": f"{model} 은 고를 수 없는 모델입니다."}, status=status.HTTP_400_BAD_REQUEST
-            )
+        rejection = _model_rejection(request.user.account_id, model)
+        if rejection is not None:
+            return rejection
 
         try:
             row = AgentRepository.set_main_model(account_id=request.user.account_id, model=model)
@@ -194,6 +221,23 @@ class CustomModelAPIView(AuthenticatedAPIView):
         serializer = CustomModelSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        # **같은 팀에 같은 모델 이름을 두 번 두지 않는다.** serializer 는 기본 제공
+        # 이름만 막는다 — 팀이 이미 뭘 등록했는지는 여기서만 안다.
+        #
+        # 경로가 모델 이름 하나로 정해지므로(`for_model`), 이름이 겹치면 실행은
+        # **먼저 등록한 것으로 고정된다**. 화면에는 출처가 달라 둘로 보이니, 회사
+        # 키를 골랐는데 개인 키로 도는 일이 조용히 난다. 키를 나누려고 만든 기능이
+        # 바로 그 지점에서 깨진다.
+        try:
+            taken = {row["model"] for row in CustomModelRepository.list_for_account(request.user.account_id)}
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        if data["model"] in taken:
+            return Response(
+                {"detail": f"{data['model']} 은 이미 등록돼 있습니다. 지우고 다시 등록하세요."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # **저장 전에 한 번 써 본다.** 안 되는 것을 받아 두면 그 팀의 대화가
         # 조용히 실패하고, 사람은 저장이 됐으니 맞다고 믿는다.
@@ -369,6 +413,10 @@ class AgentBuilderTestRunAPIView(AuthenticatedAPIView):
         data = serializer.validated_data
         account_id = request.user.account_id
 
+        rejection = _model_rejection(account_id, data.get("model"))
+        if rejection is not None:
+            return rejection
+
         try:
             team_id = AccountRepository.team_id(account_id)
         except (RepositoryError, psycopg.Error) as exc:
@@ -448,6 +496,11 @@ class AgentActivateAPIView(AuthenticatedAPIView):
     **DB에 저장된 값으로 다시 검증한다.** 화면이 "나 아까 통과했음"이라고 보내는
     값을 믿지 않는다 — 그 사이 다른 탭에서 지시문을 고쳤을 수 있고, 활성화
     시점의 실제 내용이 기준이어야 한다.
+
+    **모델도 그 「그 사이」에 사라질 수 있다.** 저장할 때는 있던 커스텀 모델을 팀이
+    Model 탭에서 지우면, 그걸 쓰던 초안은 아무 표시 없이 남는다. 화면은 활성화할 때
+    본문을 다시 보내지 않으므로(`activateAgent` 는 빈 POST 다) 여기서 안 보면 아무도
+    안 본다 — 「활성화했습니다」를 띄운 뒤 첫 대화에서 죽는다.
     """
 
     def post(self, request, agent_id):
@@ -456,6 +509,10 @@ class AgentActivateAPIView(AuthenticatedAPIView):
             agent = AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+
+        rejection = _model_rejection(account_id, agent.get("model"))
+        if rejection is not None:
+            return rejection
 
         try:
             result = _run_builder_check(

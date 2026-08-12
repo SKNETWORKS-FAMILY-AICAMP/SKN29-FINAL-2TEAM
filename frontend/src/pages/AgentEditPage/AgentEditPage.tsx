@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppShell, Badge, Button, Icon, Input, Select, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
@@ -8,16 +8,17 @@ import {
   createAgent,
   disableAgent,
   getAgent,
+  listCustomModels,
   listToolChoices,
   updateAgent,
 } from '../../api/agents';
-import type { Agent, ToolChoice } from '../../api/agents';
+import type { Agent, CustomModel, ToolChoice } from '../../api/agents';
 import { listMcpServers } from '../../api/mcp';
 import type { McpServer } from '../../api/mcp';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
-import { MODEL_SELECT_OPTIONS, DEFAULT_MODEL } from '../../data/models';
+import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
 import { TestRunModal } from './TestRunModal';
 import { ToolPickerModal } from './ToolPickerModal';
 import styles from './AgentEditPage.module.css';
@@ -54,6 +55,9 @@ export default function AgentEditPage() {
 
   const [tools, setTools] = useState<ToolChoice[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  // `null` 은 「아직 못 불러왔다」다. 빈 배열(등록한 게 없다)과 구분해야 한다 —
+  // 아래 `modelOptions` 가 그 차이로 말을 바꾼다.
+  const [customModels, setCustomModels] = useState<CustomModel[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -79,6 +83,9 @@ export default function AgentEditPage() {
     // MCP 서버 목록은 팝업의 「MCP 서버 선택」 탭이 쓴다. 못 불러와도 도구
     // 선택 자체는 막지 않는다 — 조용히 빈 목록으로 둔다.
     listMcpServers(token).then(setMcpServers).catch(() => {});
+    // 팀이 Model 탭에서 등록한 커스텀 모델. 못 불러와도 기본 제공 모델은 그대로
+    // 고를 수 있어야 하므로 막지 않고 `null` 로 남긴다.
+    listCustomModels(token).then(setCustomModels).catch(() => {});
   }, [token]);
 
   useEffect(() => {
@@ -103,6 +110,23 @@ export default function AgentEditPage() {
         setError(exc instanceof ApiError ? exc.message : '에이전트를 불러오지 못했습니다.'),
       );
   }, [token, editingId]);
+
+  /**
+   * 고를 수 있는 모델 — 기본 제공 + 이 팀이 등록한 커스텀.
+   *
+   * **지금 값이 목록에 없어도 그 값을 남긴다.** `<select>` 는 없는 값을 받으면
+   * 말없이 첫 항목을 보여주고, 그대로 저장하면 사람이 고르지 않은 모델로 바뀐다.
+   * 커스텀 모델을 Model 탭에서 지운 뒤 그걸 쓰던 에이전트를 열면 실제로 그렇게 된다.
+   *
+   * 다만 목록을 **못 불러왔을 때는 「쓸 수 없다」고 말하지 않는다** — 모르는 것과
+   * 없는 것은 다르고, 멀쩡한 모델을 지워진 것처럼 보이면 그게 더 나쁘다.
+   */
+  const modelOptions = useMemo(() => {
+    const options = modelSelectOptions(customModels ?? []);
+    if (!model || options.some((option) => option.value === model)) return options;
+    const label = customModels === null ? model : `${model} · 지금은 쓸 수 없음`;
+    return [...options, { value: model, label }];
+  }, [customModels, model]);
 
   function toggleTool(ref: string) {
     setToolRefs((prev) => (prev.includes(ref) ? prev.filter((item) => item !== ref) : [...prev, ref]));
@@ -317,7 +341,7 @@ export default function AgentEditPage() {
             <label className={styles.field}>
               <span className={styles.fieldLabel}>모델</span>
               <Select
-                options={MODEL_SELECT_OPTIONS}
+                options={modelOptions}
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
               />

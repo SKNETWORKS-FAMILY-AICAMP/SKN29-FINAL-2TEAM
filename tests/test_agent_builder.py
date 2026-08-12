@@ -326,6 +326,46 @@ class BuilderTestRunApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200, "응답이 이미 시작된 뒤라 500 을 낼 수 없다")
         self.assertEqual(events[-1]["type"], "error")
 
+    @patch("apps.agents.api_views.CustomModelRepository")
+    def test_팀이_등록한_커스텀_모델로도_시험_실행한다(self, customs, run_agent_mock):
+        """저장은 되는데 시험은 안 되면 짝이 어긋난 화면이 된다."""
+
+        customs.list_for_account.return_value = [{"model": "gemini-3.6-flash"}]
+        run_agent_mock.return_value = iter([{"type": "result", "text": "네", "complete": True}])
+
+        with patch("apps.agents.api_views.AccountRepository") as account_repo:
+            account_repo.team_id.return_value = "TM001"
+            response = self.client.post(
+                "/api/agents/build/test/",
+                {
+                    "instruction": "지침",
+                    "tool_refs": [],
+                    "model": "gemini-3.6-flash",
+                    "user_input": "질문",
+                },
+                content_type="application/json",
+                headers=auth_header(),
+            )
+        ndjson(response)
+
+        self.assertEqual(run_agent_mock.call_args.kwargs["draft"]["model"], "gemini-3.6-flash")
+
+    @patch("apps.agents.api_views.CustomModelRepository")
+    def test_모르는_모델은_스트림을_열기_전에_400(self, customs, run_agent_mock):
+        """스트림이 시작되면 상태 코드를 못 바꾼다 — 거절은 그 전에 끝나야 한다."""
+
+        customs.list_for_account.return_value = []
+
+        response = self.client.post(
+            "/api/agents/build/test/",
+            {"instruction": "지침", "tool_refs": [], "model": "gpt-9", "user_input": "질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        run_agent_mock.assert_not_called()
+
 
 class BuilderTestRunEphemeralTests(SimpleTestCase):
     """`run_agent(draft=...)` 자체의 안전 경계 — API 계층을 거치지 않고 직접 돈다."""
@@ -549,6 +589,38 @@ class AgentLifecycleApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ACTIVE")
         self.assertEqual(repo.set_status.call_args.kwargs["status"], "ACTIVE")
+
+    @patch("apps.agents.api_views.CustomModelRepository")
+    def test_사라진_커스텀_모델은_활성화를_막는다(self, customs, repo, review):
+        """**활성화 뒤 첫 대화에서 죽는 것을 여기서 끊는다.**
+
+        저장할 때는 있던 커스텀 모델을 팀이 Model 탭에서 지우면, 그걸 쓰던 초안은
+        아무 표시 없이 남는다. 화면은 활성화할 때 본문을 다시 보내지 않으므로
+        여기서 안 보면 아무도 안 본다.
+
+        에이전트가 기본 6종만 고르던 시절에는 있을 수 없던 경로다 — 저장된 모델이
+        나중에 사라질 수 있게 되면서 생겼다(2026-08-12).
+        """
+
+        repo.get.return_value = {**AGENT, "status": "DRAFT", "model": "models/gemini-3.6-flash"}
+        customs.list_for_account.return_value = []
+
+        response = self.client.post("/api/agents/AG002/activate/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 400)
+        repo.set_status.assert_not_called()
+        review.assert_not_called()
+
+    @patch("apps.agents.api_views.CustomModelRepository")
+    def test_살아있는_커스텀_모델은_활성화된다(self, customs, repo, review):
+        repo.get.return_value = {**AGENT, "status": "DRAFT", "model": "models/gemini-3.6-flash"}
+        customs.list_for_account.return_value = [{"model": "models/gemini-3.6-flash"}]
+        review.return_value = _pass_result()
+        repo.set_status.return_value = {**AGENT, "status": "ACTIVE"}
+
+        response = self.client.post("/api/agents/AG002/activate/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
 
     def test_검증_reject_시_409이며_DRAFT를_유지한다(self, repo, review):
         repo.get.return_value = {**AGENT, "status": "DRAFT"}

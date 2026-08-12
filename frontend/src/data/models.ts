@@ -41,8 +41,23 @@ export const MODEL_OPTIONS: ModelOption[] = [
 
 export const DEFAULT_MODEL = 'gpt-5.6-luna';
 
-/** 셀렉트 박스가 쓰는 모양. 용도를 라벨에 붙여 한 줄로 보여준다. */
-export const MODEL_SELECT_OPTIONS = MODEL_OPTIONS.map((model) => ({
-  value: model.value,
-  label: `${model.label} · ${model.tier}`,
-}));
+/** 팀이 Model 탭에서 등록한 커스텀 모델 API 중, 셀렉트에 필요한 것만. */
+export interface TeamModel {
+  model: string;
+  /** 제공자 이름(「Google Gemini」 등). 모델 이름만으로는 어디 것인지 모른다. */
+  label: string;
+}
+
+/**
+ * 셀렉트 박스가 쓰는 목록 — **기본 제공 + 그 팀이 등록한 것**.
+ *
+ * 커스텀 모델은 등급(빠름/보통/느림)을 우리가 알 수 없다. 지어내지 않고 제공자
+ * 이름을 대신 붙인다 — Model 탭 표에서 속도 칸을 `—` 로 두고 출처에 제공자를
+ * 적는 것과 같은 규칙이다(2026-08-12).
+ */
+export function modelSelectOptions(customs: TeamModel[] = []) {
+  return [
+    ...MODEL_OPTIONS.map((model) => ({ value: model.value, label: `${model.label} · ${model.tier}` })),
+    ...customs.map((custom) => ({ value: custom.model, label: `${custom.model} · ${custom.label}` })),
+  ];
+}

@@ -60,6 +60,9 @@ class CustomModelSerializer(serializers.Serializer):
         같은 이름이 들어오면 메인 모델 표에 같은 줄이 둘 생기고, 어느 경로로
         도는지 사람이 알 수 없다. 경로는 모델 이름 하나로 정해지므로 이름이
         겹치는 순간 그 선택은 뜻을 잃는다(2026-08-12 PM 지적).
+
+        **그 팀이 이미 등록한 이름과 겹치는지는 여기서 못 본다** — serializer 는
+        팀을 모른다. 그쪽은 `CustomModelAPIView.post` 가 본다.
         """
 
         if value in AGENT_MODELS:
@@ -79,7 +82,9 @@ class AgentWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     description = serializers.CharField(max_length=500, allow_blank=True, default="")
     instruction = serializers.CharField(allow_blank=True, default="")
-    model = serializers.ChoiceField(choices=AGENT_MODELS, default="gpt-5.6-luna")
+    # **`ChoiceField` 가 아니다** — `MainModelSerializer` 와 같은 이유다. 무엇이
+    # 유효한지는 팀마다 다르고(등록한 커스텀 모델이 있다), 뷰가 대조한다.
+    model = serializers.CharField(max_length=100, trim_whitespace=True, default="gpt-5.6-luna")
     reasoning_effort = serializers.ChoiceField(choices=REASONING_EFFORTS, default="low")
     # 폭주를 막는 값이다. 1 이면 도구를 한 번도 못 쓰고, 크면 실패할 때 그만큼
     # 오래 헛돈다.
@@ -146,7 +151,11 @@ class BuilderTestRunSerializer(serializers.Serializer):
     tool_refs = serializers.ListField(
         child=serializers.CharField(max_length=100), allow_empty=True, default=list
     )
-    model = serializers.ChoiceField(choices=AGENT_MODELS, required=False, allow_null=True, default=None)
+    # `AgentWriteSerializer.model` 과 같다 — 뷰가 팀 목록과 대조한다. 시험 실행에서
+    # 못 고르는 모델이 있으면, 저장은 되는데 시험은 안 되는 짝이 어긋난 화면이 된다.
+    model = serializers.CharField(
+        max_length=100, trim_whitespace=True, required=False, allow_null=True, default=None
+    )
     reasoning_effort = serializers.ChoiceField(
         choices=REASONING_EFFORTS, required=False, allow_null=True, default=None
     )
