@@ -109,11 +109,15 @@ class ChatSessionApiTests(SimpleTestCase):
         self.assertEqual(self.client.get("/api/chat/sessions/").status_code, 401)
 
 
+#: 제목 짓기는 **모델을 부른다.** 막지 않으면 스트림을 타는 테스트마다 실제
+#: OpenAI 호출이 나가서 느려지고 네트워크에 흔들린다(2026-08-12 실측: 3.4초 →
+#: 12초). 제목이 붙는지는 `ChatSessionTitleTests` 에서 따로 본다.
+@patch("apps.chat.api_views.suggest_title", return_value=None)
 @patch("apps.chat.api_views.run_agent")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatStreamTests(SimpleTestCase):
-    def test_이벤트를_NDJSON_으로_중계한다(self, sessions, messages, run):
+    def test_이벤트를_NDJSON_으로_중계한다(self, sessions, messages, run, _title):
         sessions.get.return_value = SESSION
         run.return_value = iter(
             [
@@ -133,7 +137,7 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(response["Content-Type"], "application/x-ndjson")
         self.assertEqual([e["type"] for e in events], ["stage", "result"])
 
-    def test_사용자_발화는_스트림_전에_확정한다(self, sessions, messages, run):
+    def test_사용자_발화는_스트림_전에_확정한다(self, sessions, messages, run, _title):
         """답이 없는 대화는 다시 물으면 되지만, 질문이 사라지면 복구할 수 없다."""
 
         sessions.get.return_value = SESSION
@@ -150,7 +154,7 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(first["role"], "user")
         self.assertEqual(first["content"], {"type": "text", "text": "일정 알려줘"})
 
-    def test_승인_대기가_남아_있어도_새_발화를_받는다(self, sessions, messages, run):
+    def test_승인_대기가_남아_있어도_새_발화를_받는다(self, sessions, messages, run, _title):
         """승인 대기 중에도 말할 수 있다(6차 단계 1-5 · 확정 ③).
 
         화면이 승인 대기 중 입력창을 여는 근거다. 발화 경로는 pending 을 아예
@@ -176,7 +180,7 @@ class ChatStreamTests(SimpleTestCase):
         # 재개가 아니라 **새 실행**이다 — 앞선 대화 상태를 물려받지 않는다.
         self.assertNotIn("resume_tool_call", run.call_args.args[2])
 
-    def test_스트림이_끝나면_카드를_통째로_적재한다(self, sessions, messages, run):
+    def test_스트림이_끝나면_카드를_통째로_적재한다(self, sessions, messages, run, _title):
         sessions.get.return_value = SESSION
         run.return_value = iter(
             [
@@ -199,7 +203,7 @@ class ChatStreamTests(SimpleTestCase):
         # 새로고침 뒤에 같은 카드를 그리려면 이벤트가 통째로 남아야 한다.
         self.assertEqual(len(agent_write["content"]["events"]), 2)
 
-    def test_실행이_터지면_마지막_줄로_알린다(self, sessions, messages, run):
+    def test_실행이_터지면_마지막_줄로_알린다(self, sessions, messages, run, _title):
         sessions.get.return_value = SESSION
 
         def boom():
@@ -220,6 +224,70 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(events[-1]["type"], "error")
         self.assertIn("TimeoutError", events[-1]["detail"])
+
+
+@patch("apps.chat.api_views.suggest_title")
+@patch("apps.chat.api_views.run_agent")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class ChatSessionTitleTests(SimpleTestCase):
+    """첫 답이 끝나면 이 대화의 이름을 짓는다.
+
+    첫 발화를 그대로 제목으로 쓰면, 프로젝트 상세의 「업무 뽑기」가 늘 같은
+    문장을 보내서 대화 둘이 글자까지 똑같아진다(2026-08-12 QA 시나리오 B).
+    """
+
+    def _post(self, run, content="이 프로젝트의 기준 문서에서 업무를 뽑아줘"):
+        return self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": content},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+    def test_첫_답_뒤에_제목이_한_줄로_온다(self, sessions, _messages, run, title):
+        sessions.get.return_value = SESSION
+        sessions.rename_if_first_answer.return_value = True
+        title.return_value = "감리 업무 20건 추출"
+        run.return_value = iter([{"type": "result", "text": "20건 뽑았습니다.", "complete": True}])
+
+        events = ndjson(self._post(run))
+
+        self.assertEqual(events[-1], {"type": "session_title", "title": "감리 업무 20건 추출"})
+        # 질문만으로는 「업무 뽑아줘」밖에 모른다. 답까지 넘겨야 이름이 정해진다.
+        self.assertEqual(title.call_args.kwargs["answer"], "20건 뽑았습니다.")
+
+    def test_두_번째_답부터는_안_바꾼다(self, sessions, _messages, run, title):
+        """대화가 길어질 때마다 제목이 바뀌면 사이드바에서 찾던 것이 사라진다."""
+
+        sessions.get.return_value = SESSION
+        sessions.rename_if_first_answer.return_value = False
+        title.return_value = "다른 이름"
+        run.return_value = iter([{"type": "result", "text": "네.", "complete": True}])
+
+        self.assertEqual([e["type"] for e in ndjson(self._post(run))], ["result"])
+
+    def test_실패한_실행에는_이름을_안_짓는다(self, sessions, _messages, run, title):
+        """오류로 끝난 대화를 그럴듯한 이름으로 덮으면 무엇이 실패했는지 가려진다."""
+
+        sessions.get.return_value = SESSION
+
+        def boom():
+            raise TimeoutError("느립니다")
+            yield  # pragma: no cover - 제너레이터로 만들기 위한 줄
+
+        run.return_value = boom()
+
+        self.assertEqual([e["type"] for e in ndjson(self._post(run))], ["error"])
+        title.assert_not_called()
+
+    def test_제목을_못_지으면_조용히_넘어간다(self, sessions, _messages, run, title):
+        sessions.get.return_value = SESSION
+        title.return_value = None
+        run.return_value = iter([{"type": "result", "text": "네.", "complete": True}])
+
+        self.assertEqual([e["type"] for e in ndjson(self._post(run))], ["result"])
+        sessions.rename_if_first_answer.assert_not_called()
 
 
 @patch("apps.chat.api_views.run_agent")
@@ -341,6 +409,7 @@ class ConfirmGateTests(SimpleTestCase):
         self.assertEqual(stored["resume"], resume)
 
 
+@patch("apps.chat.api_views.suggest_title", return_value=None)
 @patch("apps.chat.api_views.run_agent")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
@@ -362,7 +431,7 @@ class ChatHistoryTests(SimpleTestCase):
         )
         return run.call_args.args[2]["messages"]
 
-    def test_앞선_질문과_답이_함께_간다(self, sessions, messages, run):
+    def test_앞선_질문과_답이_함께_간다(self, sessions, messages, run, _title):
         sessions.get.return_value = SESSION
         sent = self._post(
             run,
@@ -382,7 +451,7 @@ class ChatHistoryTests(SimpleTestCase):
             ],
         )
 
-    def test_도구_호출_원본은_복원하지_않는다(self, sessions, messages, run):
+    def test_도구_호출_원본은_복원하지_않는다(self, sessions, messages, run, _title):
         """reasoning·function_call 은 짝이 맞아야 해서 지난 턴 것은 온전하지 않다."""
 
         sessions.get.return_value = SESSION
@@ -405,7 +474,7 @@ class ChatHistoryTests(SimpleTestCase):
         self.assertNotIn("function_call", str(sent))
         self.assertEqual(sent[1], {"role": "assistant", "content": "3건 뽑았습니다."})
 
-    def test_승인_대기로_끝난_턴도_한_줄로_남는다(self, sessions, messages, run):
+    def test_승인_대기로_끝난_턴도_한_줄로_남는다(self, sessions, messages, run, _title):
         """비워 두면 모델이 그 턴에 아무 일도 없었다고 여긴다."""
 
         sessions.get.return_value = SESSION
@@ -423,7 +492,7 @@ class ChatHistoryTests(SimpleTestCase):
 
         self.assertIn("업무 등록", sent[1]["content"])
 
-    def test_긴_대화는_최근_것만_보낸다(self, sessions, messages, run):
+    def test_긴_대화는_최근_것만_보낸다(self, sessions, messages, run, _title):
         sessions.get.return_value = SESSION
         rows = [
             {"role": "user", "content": {"type": "text", "text": f"질문{i}"}} for i in range(40)

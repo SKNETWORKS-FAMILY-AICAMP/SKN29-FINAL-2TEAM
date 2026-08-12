@@ -72,6 +72,13 @@ export type ChatEvent =
     }
   | { type: 'awaiting_confirmation'; run_id: string; tool_ref: string; tool_name: string; arguments: Record<string, unknown> }
   | { type: 'result'; text: string; complete: boolean; stopped_reason?: string; iterations?: number }
+  /**
+   * 첫 답이 끝난 뒤 서버가 지은 이 대화의 이름. **한 대화에 한 번만** 온다.
+   *
+   * 만들 때는 첫 발화를 그대로 제목으로 두는데, 「업무 뽑기」는 늘 같은 문장을
+   * 보내서 대화 둘이 글자까지 똑같아졌다(2026-08-12 QA).
+   */
+  | { type: 'session_title'; title: string }
   | { type: 'error'; detail: string };
 
 /** Jira 이슈 한 건. `jira_get_issues` 가 이벤트로 내보내는 모양 그대로. */

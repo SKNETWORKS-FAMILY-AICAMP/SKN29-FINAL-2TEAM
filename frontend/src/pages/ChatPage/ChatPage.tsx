@@ -350,6 +350,10 @@ export default function ChatPage() {
     await run(
       (onEvent, signal) => streamMessage(token, id as string, text, onEvent, signal),
       emptyLive(),
+      // **`sessionId` 상태를 쓰면 안 된다.** 방금 만든 대화는 이 호출 안에서만
+      // `id` 로 존재하고, 상태는 다음 렌더에나 반영된다 — `run` 의 클로저는
+      // 아직 null 을 본다. 제목이 그 대화에 안 붙는 이유가 이것이었다.
+      id as string,
     );
   }
 
@@ -366,6 +370,7 @@ export default function ChatPage() {
     await run(
       (onEvent, signal) => confirmMessage(token, sessionId, indices, onEvent, signal),
       carried,
+      sessionId,
     );
   }
 
@@ -379,6 +384,8 @@ export default function ChatPage() {
   async function run(
     start: (onEvent: Parameters<typeof streamMessage>[3], signal: AbortSignal) => Promise<void>,
     initial: LiveChat,
+    /** 이 스트림이 속한 대화. 방금 만든 대화는 아직 `sessionId` 상태에 없다. */
+    streamingId: string,
   ) {
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -392,6 +399,14 @@ export default function ChatPage() {
         updateLastLive(() => ({ ...state }));
         if (event.type === 'task_extraction_result') {
           setSelected(toCards(event.result).map((_, index) => index));
+        }
+        // 첫 답이 끝나면 서버가 이 대화의 이름을 지어 보낸다. 사이드바만
+        // 바뀌는 일이라 대화 상태(`reduce`)에는 넣지 않는다.
+        if (event.type === 'session_title') {
+          const named = event.title;
+          setSessions((prev) =>
+            prev.map((row) => (row.session_id === streamingId ? { ...row, title: named } : row)),
+          );
         }
       }, controller.signal);
     } catch (error) {
@@ -645,7 +660,16 @@ export default function ChatPage() {
                           steps={live.steps}
                           queries={live.queries}
                           evidenceCount={live.evidenceCount}
-                          title={live.toolName ? `${live.toolName} 실행 중` : '생각하는 중'}
+                          running={live.running}
+                          title={
+                            live.running
+                              ? live.toolName
+                                ? `${live.toolName} 실행 중`
+                                : '생각하는 중'
+                              : live.toolName
+                                ? `${live.toolName} 완료`
+                                : '정리 완료'
+                          }
                         />
                       )}
 

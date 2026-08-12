@@ -21,6 +21,14 @@ export interface ProgressCardProps {
   queries?: string[];
   evidenceCount?: number;
   title?: string;
+  /**
+   * 아직 돌고 있는가.
+   *
+   * **끝난 뒤에도 계속 회전했다**(2026-08-12 QA). 승인 카드가 뜨고 답까지 나왔는데
+   * 머리에서 스피너가 돌면 「아직 뭔가 하는 중」으로 읽혀서, 승인 버튼을 눌러도
+   * 되는지 사람이 판단하지 못한다.
+   */
+  running?: boolean;
 }
 
 /** ① 진행 카드 — 장시간 작업의 단계·검색어·근거 수. 기존 진행 모달의 인라인판. */
@@ -29,6 +37,7 @@ export function ProgressCard({
   queries = [],
   evidenceCount,
   title = '업무를 정리하는 중',
+  running = true,
 }: ProgressCardProps) {
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
@@ -38,7 +47,11 @@ export function ProgressCard({
     <section className={styles.card}>
       <div className={styles.progressHead}>
         <span className={styles.progressTitle}>
-          <Icon name="loader" size={16} color="var(--color-primary)" spin />
+          {running ? (
+            <Icon name="loader" size={16} color="var(--color-primary)" spin />
+          ) : (
+            <Icon name="check-circle" size={16} color="var(--color-success)" />
+          )}
           {title}
         </span>
         {/* **회전 수는 보여주지 않는다.**
@@ -56,7 +69,9 @@ export function ProgressCard({
       </div>
 
       <ul className={styles.steps}>
-        {steps.map((step, index) => (
+        {/* 끝났으면 남아 있는 `doing` 도 더는 돌지 않는다 — 스트림이 닫혔는데
+            마지막 단계만 회전하고 있으면 멈춘 것처럼 보인다. */}
+        {(running ? steps : steps.map((s) => (s.state === 'doing' ? { ...s, state: 'done' as const } : s))).map((step, index) => (
           <li key={`${step.label}-${index}`} className={styles.step}>
             {step.state === 'done' && <Icon name="check-circle" size={15} color="var(--color-success)" />}
             {step.state === 'doing' && <Icon name="loader" size={15} color="var(--color-primary)" spin />}

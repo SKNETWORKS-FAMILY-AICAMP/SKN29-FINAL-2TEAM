@@ -24,6 +24,7 @@ from backend.db.errors import (
     RepositoryError,
 )
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
+from services.harness.naming import suggest_title
 
 from .serializers import (
     ChatConfirmSerializer,
@@ -150,6 +151,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 ),
                 session_id=session_id,
                 account_id=account_id,
+                question=text,
             ),
             content_type="application/x-ndjson",
         )
@@ -309,12 +311,16 @@ def _apply_selection(tool_call: dict[str, Any], selected: list[int] | None) -> d
     return {**tool_call, "arguments": arguments}
 
 
-def _relay(events, *, session_id: str, account_id: str):
+def _relay(events, *, session_id: str, account_id: str, question: str = ""):
     """이벤트를 NDJSON 한 줄씩 내보내고, 끝나면 결과를 chat_message 로 확정한다.
 
     적재를 마지막에 하는 이유는 카드 한 벌이 완성돼야 화면이 새로고침 뒤에 같은
     것을 그릴 수 있기 때문이다(8/11 확정 ④). 스트림이 중간에 끊기면 답은 안
     남지만 질문은 이미 남아 있다.
+
+    적재 뒤에 **제목 한 줄을 더 내보낸다**(`session_title`). 첫 답이 나온 뒤라야
+    이 대화가 무엇이었는지 정해진다 — 그전에는 「업무 뽑기」로 연 대화가 전부
+    같은 이름이었다.
     """
 
     collected: list[dict[str, Any]] = []
@@ -336,6 +342,36 @@ def _relay(events, *, session_id: str, account_id: str):
         yield json.dumps(failure, ensure_ascii=False) + "\n"
 
     _persist(session_id=session_id, account_id=account_id, events=collected, final=final)
+
+    title = _name_session(
+        session_id=session_id, account_id=account_id, question=question, final=final
+    )
+    if title:
+        yield json.dumps({"type": "session_title", "title": title}, ensure_ascii=False) + "\n"
+
+
+def _name_session(
+    *,
+    session_id: str,
+    account_id: str,
+    question: str,
+    final: dict[str, Any] | None,
+) -> str | None:
+    """첫 답 뒤 이 대화의 이름. 실패하면 `None` — 원래 제목이 그대로 남는다."""
+
+    if final is None or final["type"] == EVENT_ERROR:
+        return None
+    title = suggest_title(question=question, answer=final.get("text") or "")
+    if not title:
+        return None
+    try:
+        renamed = ChatSessionRepository.rename_if_first_answer(
+            session_id=session_id, account_id=account_id, title=title
+        )
+    except (RepositoryError, psycopg.Error):
+        logger.exception("대화 제목 저장에 실패했습니다: session=%s", session_id)
+        return None
+    return title if renamed else None
 
 
 def _persist(
