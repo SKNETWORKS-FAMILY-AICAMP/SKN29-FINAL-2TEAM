@@ -1,4 +1,9 @@
 .root {
+  /* `.nativeInput` 이 absolute 라 기준이 필요하다. 없으면 컨테이닝 블록이 문서까지
+     올라가서, 안쪽 스크롤 영역에 체크박스가 여러 개 깔릴 때 그 스크롤 오프셋만큼
+     문서 높이가 늘어난다 — 승인 카드(체크박스 20개)에서 문서가 855→2977px 로
+     밀려 셸까지 통째로 스크롤됐다(2026-08-12 QA 시나리오 B). */
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
