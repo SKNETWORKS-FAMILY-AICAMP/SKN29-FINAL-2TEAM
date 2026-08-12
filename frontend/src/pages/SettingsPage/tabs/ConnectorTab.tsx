@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Badge, Button, Icon, useToast } from '../../../components';
+import { Badge, Button, Icon, InfoNote, useToast } from '../../../components';
 import type { BadgeTone } from '../../../components';
 import { ApiError } from '../../../api/client';
 import {
@@ -14,6 +14,8 @@ import { PATHS } from '../../../routes';
 import { useSession } from '../../../utils/session';
 import { DriveFolderModal } from '../DriveFolderModal/DriveFolderModal';
 import { PeopleDbConnectModal } from '../PeopleDbConnectModal';
+import { ConnectorPicker } from './ConnectorPicker';
+import type { PickerOption } from './ConnectorPicker';
 import styles from './tabs.module.css';
 
 type OAuthConnectorId = 'google-drive' | 'jira';
@@ -42,6 +44,43 @@ const LABEL: Record<string, string> = {
  *
  * OAuth 콜백도 이 탭으로 돌아온다(`?connector=…&status=…`).
  */
+/**
+ * 자리마다 꽂을 수 있는 것.
+ *
+ * **안 되는 것도 적어 둔다.** 카드가 하나뿐이면 왜 고르게 하는지 알 수 없고,
+ * 「자리」라는 개념도 안 드러난다 — 그걸 문장으로 설명하려다 줄마다 안내문이
+ * 길어졌던 것을 걷어낸 자리다(2026-08-12). 다만 **「아직 지원하지 않습니다」를
+ * 반드시 붙인다.** 곧 된다고 읽히면 지키지 못할 약속이 된다.
+ */
+const SLOTS: Record<ConnectorType, { title: string; options: PickerOption[] }> = {
+  PEOPLE_DB: {
+    title: '인사 시스템 — 무엇에서 사람 정보를 가져올까요?',
+    options: [
+      { id: 'mock', label: '예시 데이터', icon: 'database', available: true },
+      { id: 'workday', label: 'Workday', icon: 'users', available: false },
+      { id: 'inhouse', label: '사내 인사 시스템', icon: 'app-window', available: false },
+    ],
+  },
+  GOOGLE_DRIVE: {
+    title: '문서 저장소 — 문서가 어디 있나요?',
+    options: [
+      { id: 'google-drive', label: 'Google Drive', icon: 'folder', available: true },
+      { id: 'notion', label: 'Notion', icon: 'file-text', available: false },
+      { id: 'confluence', label: 'Confluence', icon: 'file-text', available: false },
+      { id: 'sharepoint', label: 'SharePoint', icon: 'folder', available: false },
+    ],
+  },
+  JIRA: {
+    title: '업무 기록소 — 업무를 어디에 쌓고 있나요?',
+    options: [
+      { id: 'jira', label: 'Jira', icon: 'chart-network', available: true },
+      { id: 'asana', label: 'Asana', icon: 'circle-help', available: false },
+      { id: 'linear', label: 'Linear', icon: 'chart-network', available: false },
+      { id: 'trello', label: 'Trello', icon: 'app-window', available: false },
+    ],
+  },
+};
+
 export function ConnectorTab() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -58,6 +97,8 @@ export function ConnectorTab() {
   const [oauthStarting, setOauthStarting] = useState<OAuthConnectorId | null>(null);
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [peopleModalOpen, setPeopleModalOpen] = useState(false);
+  /** 어느 자리의 피커가 열려 있는가. */
+  const [picker, setPicker] = useState<ConnectorType | null>(null);
   const handledCallback = useRef<string | null>(null);
 
   const token = session?.token;
@@ -141,14 +182,6 @@ export function ConnectorTab() {
 
   return (
     <div className={styles.tab}>
-      <p className={`${styles.notice} ${styles.noticeNeutral}`}>
-        <Icon name="info" size={16} color="var(--color-muted)" />
-        <span>
-          데이터가 들어오는 길입니다. 여기서 연결한 것은 에이전트가 “읽는” 대상이 됩니다. 에이전트가 무언가를 만들거나
-          보내는 연결은 MCP 탭에 있습니다.
-        </span>
-      </p>
-
       {session && !isLeader && (
         <p className={`${styles.notice} ${styles.noticeNeutral}`} role="alert">
           <Icon name="info" size={16} color="var(--color-muted)" />
@@ -158,8 +191,28 @@ export function ConnectorTab() {
 
       <section className={styles.card}>
         <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>연결된 서비스</h2>
-          <p className={styles.cardSub}>연결 상태는 서버가 아는 값입니다 — 만료되면 여기서 다시 연결하세요.</p>
+          {/* 설명은 ⓘ 안으로 넣는다. 제목은 탭 이름과 같은 말이면 된다. */}
+          <h2 className={styles.cardTitle}>
+            Connector
+            <InfoNote title="Connector">
+              <p>
+                데이터를 가져오는 <strong>자리</strong>입니다. 자리마다 하나씩 연결하고, 여기서 연결한
+                것은 에이전트가 <strong>읽는</strong> 대상이 됩니다.
+              </p>
+              <p>
+                <strong>인사 시스템</strong>만 필수입니다 — 연결하는 순간 팀이 만들어지고, 근무 기준과
+                부재 데이터가 여기서 옵니다. 나머지 둘은 그 자리의 기능이 필요할 때 붙이면 됩니다.
+              </p>
+              <p>
+                에이전트가 무언가를 <strong>만들거나 보내는</strong> 연결은 MCP 탭에 있습니다.
+              </p>
+              <p>
+                연결 상태는 서버가 아는 값입니다. Jira는 연결하면 접근 가능한 프로젝트를 전부
+                가져옵니다 — 고르지 않은 프로젝트의 업무가 부하 계산에서 조용히 빠지면, 빠진 줄 모르는
+                숫자가 맞는 숫자처럼 보이기 때문입니다.
+              </p>
+            </InfoNote>
+          </h2>
         </div>
 
         <div className={styles.list}>
@@ -168,17 +221,25 @@ export function ConnectorTab() {
               <Icon name="database" size={20} color="var(--color-primary)" />
             </span>
             <div className={styles.rowBody}>
+              {/* 셋의 층위를 맞춘다. 문서 저장소·업무 기록소는 **곳**인데
+                  「사람 정보」만 데이터라 혼자 튀었다(2026-08-12 PM 지적).
+
+                  설명 문구는 걷어냈다. 무엇을 꽂을 수 있는지는 「연결하기」가
+                  여는 피커가 말한다 — 문장보다 짧고 정확하다. */}
               <span className={styles.rowName}>
-                People DB
+                <span>
+                  인사 시스템
+                  <span className={styles.requiredMark} aria-label="필수">
+                    {' *'}
+                  </span>
+                </span>
                 {statusBadge('PEOPLE_DB')}
               </span>
-              <span className={styles.rowDesc}>
-                근무 기준·부재 데이터 — 없으면 부하 판정을 보류합니다. 팀도 여기서 만듭니다.
-              </span>
+              {peopleConnected && <span className={styles.rowVendor}>예시 데이터</span>}
             </div>
             <div className={styles.rowActions}>
-              <Button size="sm" variant="outline" disabled={!isLeader} onClick={() => setPeopleModalOpen(true)}>
-                {peopleConnected ? '다시 연결' : '연결하기'}
+              <Button size="sm" variant="outline" disabled={!isLeader} onClick={() => setPicker('PEOPLE_DB')}>
+                {peopleConnected ? '바꾸기' : '연결하기'}
               </Button>
             </div>
           </div>
@@ -189,18 +250,20 @@ export function ConnectorTab() {
             </span>
             <div className={styles.rowBody}>
               <span className={styles.rowName}>
-                Google Drive
+                문서 저장소
                 {statusBadge('GOOGLE_DRIVE')}
               </span>
-              <span className={styles.rowDesc}>
-                {driveConnected
-                  ? folderCount === null
+              {driveConnected && <span className={styles.rowVendor}>Google Drive</span>}
+              {/* 남는 것은 **설명이 아니라 실제 상태**다 — 지금 몇 개를 읽고 있는가. */}
+              {driveConnected && (
+                <span className={styles.rowDesc}>
+                  {folderCount === null
                     ? '읽는 폴더를 확인하는 중…'
                     : folderCount === 0
                       ? '읽는 폴더가 아직 없습니다 — 폴더를 지정해야 문서가 들어옵니다'
-                      : `문서 폴더 ${folderCount}개를 읽습니다`
-                  : '문서가 있는 폴더를 읽습니다'}
-              </span>
+                      : `문서 폴더 ${folderCount}개를 읽습니다`}
+                </span>
+              )}
             </div>
             <div className={styles.rowActions}>
               {driveConnected && (
@@ -212,9 +275,9 @@ export function ConnectorTab() {
                 size="sm"
                 variant={driveConnected ? 'ghost' : 'outline'}
                 disabled={!isLeader || oauthStarting !== null}
-                onClick={() => void startOAuth('google-drive')}
+                onClick={() => setPicker('GOOGLE_DRIVE')}
               >
-                {oauthStarting === 'google-drive' ? 'Google로 이동 중…' : driveConnected ? '다시 연결' : '연결하기'}
+                {oauthStarting === 'google-drive' ? 'Google로 이동 중…' : driveConnected ? '바꾸기' : '연결하기'}
               </Button>
             </div>
           </div>
@@ -225,38 +288,53 @@ export function ConnectorTab() {
             </span>
             <div className={styles.rowBody}>
               <span className={styles.rowName}>
-                Jira
+                업무 기록소
                 {statusBadge('JIRA')}
               </span>
-              <span className={styles.rowDesc}>
-                {jiraConnected && jiraProjectCount !== null
-                  ? `프로젝트 ${jiraProjectCount}개를 읽습니다 · 팀 부하 계산용`
-                  : '접근 가능한 전체 프로젝트 · 팀 부하 읽기용'}
-              </span>
+              {jiraConnected && <span className={styles.rowVendor}>Jira</span>}
+              {jiraConnected && jiraProjectCount !== null && (
+                <span className={styles.rowDesc}>
+                  프로젝트 {jiraProjectCount}개를 읽습니다 · 팀 부하 계산용
+                </span>
+              )}
             </div>
             <div className={styles.rowActions}>
               <Button
                 size="sm"
                 variant="outline"
                 disabled={!isLeader || oauthStarting !== null}
-                onClick={() => void startOAuth('jira')}
+                onClick={() => setPicker('JIRA')}
               >
-                {oauthStarting === 'jira' ? 'Atlassian으로 이동 중…' : jiraConnected ? '다시 연결' : '연결하기'}
+                {oauthStarting === 'jira' ? 'Atlassian으로 이동 중…' : jiraConnected ? '바꾸기' : '연결하기'}
               </Button>
             </div>
           </div>
         </div>
 
-        <p className={`${styles.notice} ${styles.noticeInfo}`}>
-          <Icon name="info" size={15} color="var(--color-info)" />
-          <span>
-            Jira는 연결하면 접근 가능한 프로젝트를 전부 가져옵니다 — 고르는 단계를 없앴습니다. 고르지 않은 프로젝트의
-            업무는 부하 계산에서 조용히 빠지는데, 빠진 줄 모르는 숫자가 맞는 숫자처럼 보이기 때문입니다.
-          </span>
-        </p>
-
-        <p className={styles.cardSub}>파일 내용은 에이전트가 사용할 때 읽습니다.</p>
       </section>
+
+      {/* 자리를 누르면 무엇을 꽂을지 고른다. 고른 뒤의 흐름(People DB 모달 ·
+          OAuth)은 원래 것을 그대로 탄다 — 피커는 앞에 한 겹 얹은 것뿐이다. */}
+      <ConnectorPicker
+        open={picker !== null}
+        onClose={() => setPicker(null)}
+        title={picker ? SLOTS[picker].title : ''}
+        busy={oauthStarting !== null}
+        options={
+          picker
+            ? SLOTS[picker].options.map((option) => ({
+                ...option,
+                current: option.available && status[picker] !== null,
+              }))
+            : []
+        }
+        onPick={(id) => {
+          setPicker(null);
+          if (id === 'mock') setPeopleModalOpen(true);
+          else if (id === 'google-drive') void startOAuth('google-drive');
+          else if (id === 'jira') void startOAuth('jira');
+        }}
+      />
 
       {token && (
         <>
@@ -271,7 +349,7 @@ export function ConnectorTab() {
             token={token}
             onClose={() => setPeopleModalOpen(false)}
             onConnected={() => {
-              showToast('HR 시스템을 연결했습니다.', 'success');
+              showToast('인사 시스템을 연결했습니다.', 'success');
               void refresh();
             }}
           />

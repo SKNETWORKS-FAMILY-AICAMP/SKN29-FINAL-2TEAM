@@ -172,7 +172,7 @@ export function PeopleDbConnectModal({
       setTeamName(summary.person?.org_name ?? '');
       setStep('team');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'HR 시스템을 연결하지 못했습니다.');
+      setError(err instanceof ApiError ? err.message : '인사 시스템을 연결하지 못했습니다.');
     } finally {
       setBusy(false);
     }
@@ -245,7 +245,7 @@ export function PeopleDbConnectModal({
 
     return (
       <div className={styles.body}>
-        <p>HR 시스템에서 아래 직원을 찾았습니다. 본인이 맞습니까?</p>
+        <p>인사 시스템에서 아래 직원을 찾았습니다. 본인이 맞습니까?</p>
         <div className={styles.identityCard}>
           <p className={styles.identityName}>
             {identity.name}
@@ -434,7 +434,7 @@ export function PeopleDbConnectModal({
   }
 
   const title =
-    step === 'identity' ? 'HR 시스템 연결' : step === 'team' ? '팀원 초대' : '초대 코드';
+    step === 'identity' ? '인사 시스템 연결' : step === 'team' ? '팀원 초대' : '초대 코드';
 
   return (
     <Modal open={open} onClose={onClose} title={title} width={560} footer={renderFooter()}>

@@ -40,7 +40,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'profile', label: '내 프로필', icon: 'user' },
   { id: 'skills', label: '보유 스킬', icon: 'sparkles' },
   { id: 'password', label: '비밀번호 변경', icon: 'lock' },
-  { id: 'connectors', label: '연동 관리', icon: 'link' },
+  // 「연동 관리」를 뺐다 — 섹션을 걷어냈으므로 여기 두면 아무 데도 안 간다.
   { id: 'team', label: '팀원 관리', icon: 'users' },
   { id: 'workload', label: '팀 업무량 기준', icon: 'sliders' },
 ];
@@ -70,6 +70,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
   const navigate = useNavigate();
   const { showToast } = useToast();
 
+  /** 인사 시스템이 붙어 있는가. 「내 정보를 못 찾은 이유」가 이것으로 갈린다. */
   const [connectorStatuses, setConnectorStatuses] = useState<Record<string, ConnectorStatus>>(() =>
     loadConnectorStatuses(Object.fromEntries(CONNECTOR_DEFS.map((c) => [c.id, c.initialStatus]))),
   );
@@ -259,6 +260,8 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
     }
   }
 
+  const peopleConnected = connectorStatuses['people-db'] === 'connected';
+
   return (
     <SettingsLayout
       subtitle="팀 관리자 설정"
@@ -271,7 +274,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
       {!embedded && (
         <div className={styles.pageHeader}>
           <h1>팀장 설정</h1>
-          <p>워크스페이스 연동, 팀원 관리 및 협업 추천 자동화 기준을 관리합니다.</p>
+          <p>팀원과 업무량 기준을 관리합니다.</p>
         </div>
       )}
 
@@ -279,7 +282,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>내 프로필</h2>
-            <p>회사 인사 시스템에서 온 내 정보입니다.</p>
+            <p>인사 시스템에서 가져온 내 정보입니다.</p>
           </div>
 
           <div className={styles.identityRow}>
@@ -294,17 +297,23 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
               <span className={styles.identityName}>
                 {account?.person?.name ?? account?.display_name ?? '-'}
               </span>
+              {/* **빈 값은 빈 값 자리에서 말한다.** 노란 경고 바를 카드 한가운데
+                  끼워 넣었더니 프로필 안에 오류가 난 것처럼 보였다(2026-08-12).
+                  부서·직책이 들어올 자리가 비어 있는 것이므로 그 줄에서 이유를
+                  말하면 된다. 이건 사고가 아니라 아직 안 한 일이다.
+
+                  **원인을 짐작해서 말하지 않는다.** 예전에는 「회사 이메일로
+                  가입했는지 확인해 주세요」라고 이메일을 탓했는데, 연결을 아직
+                  안 했을 때도 똑같이 떴다 — 그때는 이메일 문제가 아니다. */}
               <span className={styles.identityMeta}>
-                {[account?.person?.org_name, account?.person?.job_role].filter(Boolean).join(' · ') || '-'}
+                {account?.person
+                  ? [account.person.org_name, account.person.job_role].filter(Boolean).join(' · ') || '-'
+                  : peopleConnected
+                    ? '인사 시스템에서 찾지 못했습니다 — 가입한 이메일이 회사 이메일과 같은지 확인해 주세요'
+                    : '인사 시스템을 연결하면 부서와 직책이 채워집니다'}
               </span>
             </div>
           </div>
-
-          {account && !account.person && (
-            <p className={styles.warnBox}>
-              인사 시스템에 연결된 직원 정보가 없습니다. 회사 이메일로 가입했는지 확인해 주세요.
-            </p>
-          )}
 
           <p className={styles.subheading}>계정 정보</p>
           <div className={styles.accountRow}>
@@ -323,7 +332,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>보유 스킬</h2>
-            <p>업무 배정 후보를 고를 때 근거가 되는 값입니다. 인사 시스템에서 옵니다.</p>
+            <p>누구에게 어떤 일을 맡길지 고를 때 봅니다. 인사 시스템에서 옵니다.</p>
           </div>
           <SkillList skills={account?.skills ?? []} />
         </Card>
@@ -343,42 +352,16 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
         </Card>
       </section>
 
-      <section id="connectors" className={styles.sectionBlock}>
-        <Card padding="lg">
-          <div className={styles.sectionHeading}>
-            <h2>연동 관리</h2>
-            <p>업무 추적 및 파일 협업 도구를 연결하여 실시간 데이터를 동기화합니다.</p>
-          </div>
-          <div className={styles.connectorGrid}>
-            {CONNECTOR_DEFS.map((connector) => {
-              const connected = connectorStatuses[connector.id] === 'connected';
-              return (
-                <div key={connector.id} className={styles.connectorCard}>
-                  <div className={styles.connectorIconBox} style={{ background: connector.iconBg }}>
-                    {connector.icon}
-                  </div>
-                  <div className={styles.connectorInfo}>
-                    <p className={styles.connectorName}>{connector.name}</p>
-                    <Badge tone={connected ? 'success' : 'neutral'} dot>
-                      {connected ? '연결됨' : '미연결'}
-                    </Badge>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => navigate(PATHS.settingsConnectors)}>
-                    {connected ? '업데이트' : '재연동'}
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      </section>
+      {/* 「연동 관리」 섹션을 걷어냈다 (2026-08-12). 상태만 보여주고 버튼은 전부
+          Connector 탭으로 보내던 자리라, 같은 것을 두 곳에서 관리하는 것처럼
+          보였다. 연결은 Connector 탭 하나에서 한다. */}
 
       <section id="team" className={styles.sectionBlock}>
         <Card padding="lg">
           <div className={styles.sectionHeadingRow}>
             <div className={styles.sectionHeading}>
               <h2>팀원 관리</h2>
-              <p>업무 배정 대상이 되는 팀 명부입니다. 계정과 초대 상태를 함께 봅니다.</p>
+              <p>업무를 맡길 수 있는 사람들입니다. 아직 가입 전인 사람도 함께 보입니다.</p>
             </div>
             <Button
               variant="primary"
@@ -514,7 +497,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>팀 업무량 기준</h2>
-            <p>부하율 계산과 과부하 판정에 쓰이는 값입니다. 비우면 기본값으로 돌아갑니다.</p>
+            <p>누가 얼마나 바쁜지 셀 때 쓰는 값입니다. 비우면 기본값으로 돌아갑니다.</p>
           </div>
 
           <div className={styles.workloadRow}>

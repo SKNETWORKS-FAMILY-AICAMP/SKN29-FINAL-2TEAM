@@ -70,6 +70,10 @@ function App() {
           <Route path={PATHS.findPassword} element={<FindPasswordPage />} />
           <Route path={PATHS.resetPassword} element={<ResetPasswordPage />} />
           {/* 아래는 로그인이 필요한 화면. 세션이 없으면 /login으로 보내고 원래 가려던 곳을 기억한다. */}
+          {/* 탭 없는 `/settings` 는 라우트가 없어 **랜딩으로 떨어졌다**(2026-08-12 QA §C).
+              사이드바는 `/settings/team` 으로 보내지만, 주소를 직접 치거나 북마크한
+              사람은 로그아웃된 것처럼 보인다. 첫 탭으로 넘긴다. */}
+          <Route path="/settings" element={<Navigate to={PATHS.settingsTeam} replace />} />
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsMcp} element={<RequireAuth><SettingsPage /></RequireAuth>} />

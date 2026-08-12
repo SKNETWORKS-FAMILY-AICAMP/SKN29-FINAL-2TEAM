@@ -13,6 +13,12 @@
 
 .sectionBlock {
   scroll-margin-top: var(--space-6);
+  /* 카드끼리 맞붙어 있어 어디까지가 한 섹션인지 안 보였다(2026-08-12). */
+  margin-bottom: var(--space-5);
+}
+
+.sectionBlock:last-child {
+  margin-bottom: 0;
 }
 
 .sectionHeading h2 {

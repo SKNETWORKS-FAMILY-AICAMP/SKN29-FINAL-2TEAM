@@ -169,7 +169,10 @@ export default function DocumentsPage() {
         <section className={styles.table}>
           <div className={styles.tableHead}>
             <span className={styles.colName}>파일명</span>
-            <span className={styles.colFolder}>폴더</span>
+            {/* 값은 `doc_meta.doc_type`(제안요청서·회의록…)이다. 「폴더」라고
+                써 있었는데 `doc` 에는 Drive 폴더가 아예 없어서, 실제 폴더(01_기획)
+                와 다른 값을 폴더라고 부르고 있었다(2026-08-12 QA §C). */}
+            <span className={styles.colFolder}>유형</span>
             <span className={styles.colDate}>수정일</span>
             <span className={styles.colSummary}>요약 (자동 생성)</span>
             <span className={styles.colState}>상태</span>
@@ -184,10 +187,7 @@ export default function DocumentsPage() {
                 <Icon name="file-text" size={16} color="var(--color-body)" />
                 <span className={styles.docName}>{doc.file_name}</span>
               </span>
-              <span className={styles.colFolder}>
-                <Icon name="folder" size={14} color="var(--color-placeholder)" />
-                {doc.doc_type ?? '-'}
-              </span>
+              <span className={styles.colFolder}>{doc.doc_type ?? '-'}</span>
               <span className={styles.colDate}>
                 {doc.src_modified_at ? new Date(doc.src_modified_at).toLocaleDateString('ko-KR') : '-'}
               </span>
