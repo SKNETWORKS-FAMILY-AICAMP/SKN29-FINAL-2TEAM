@@ -9,10 +9,13 @@ import { loadSessionToken } from '../../utils/session';
 import styles from './AgentListPage.module.css';
 
 /**
- * 에이전트 목록. 기본 제공과 우리 팀 것을 나눠 보여준다.
+ * 에이전트 목록 — **예시**와 **우리 팀 것**을 나눠 보여준다.
  *
- * 기본 제공 카드의 「복제」 버튼은 넣지 않는다 — 7_홈화면_정의 §6-3이 v1 고정을
- * 제안했고 8/12 멘토링에서 확정하기로 했다(개발지시 2차 「멘토링 대기」).
+ * 플랫폼의 정문(코파일럿)은 여기 없다. 그건 고르는 물건이 아니라 대화 그
+ * 자체다 — `isPlatformAgent` 로 가른다(`api/agents.ts` 주석 참조).
+ *
+ * ⚠ 「복제 버튼은 넣지 않는다(멘토링 대기)」던 옛 주석은 **8/11 확정 ①로
+ * 대체됐다** — 복제는 허용한다. 버튼은 아직 없다(작업목록 작업 5).
  */
 export default function AgentListPage() {
   const navigate = useNavigate();
@@ -139,12 +142,13 @@ export default function AgentListPage() {
         {error && <p className={styles.error}>{error}</p>}
         {loading && <p className={styles.sectionSub}>불러오는 중…</p>}
 
-        {/* **기본 제공 에이전트는 여기 없다.**
-            그건 우리가 넣어 둔 플랫폼의 일부이지 팀이 관리할 물건이 아니다 —
-            편집도 삭제도 서버가 403 으로 막고, 화면에 두면 「지울 수 없는 카드」가
-            목록 맨 위를 차지한다. 이 화면은 팀이 만든 것만 보여준다.
-            채팅은 기본 에이전트를 알아서 쓰고, 여기 만든 에이전트는 그 아래에서
-            불려 나온다(`agent:*` 위임). */}
+        {/* **정문(코파일럿)은 여기 없다.** 그건 팀이 관리할 물건이 아니라
+            대화 그 자체다 — 채팅이 알아서 쓴다.
+
+            예시 에이전트를 잠깐 넣었다가 되돌렸다(2026-08-12) — Builder 설계가
+            정해지기 전에 견본부터 넣은 것이라 순서가 뒤였다. 다시 넣을 때는
+            `is_prebuilt && !isPlatformAgent(a)` 로 거른다: 예시도 우리가 넣는
+            것이라 `is_prebuilt` 만으로는 정문과 안 갈린다. */}
         {renderSection(
           '우리 팀 에이전트',
           'Builder에서 만든 것 · 채팅에서 그 일에 맞을 때 불려 나옵니다',

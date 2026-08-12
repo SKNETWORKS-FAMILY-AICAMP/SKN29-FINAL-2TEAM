@@ -851,3 +851,65 @@ class ProjectTaskRepository:
                     (proj_id, team_id, proj_id),
                 )
                 return list(cursor.fetchall())
+
+    @staticmethod
+    def update(
+        *,
+        proj_id: str,
+        account_id: str,
+        task_id: str,
+        status: str | None = None,
+        assignee_name: str | None = None,
+        due_at: str | None = None,
+    ) -> dict[str, Any]:
+        """등록된 업무 한 건을 고친다.
+
+        **등록만 되고 아무것도 못 바꾸던 것을 연다(2026-08-12).** `task.status` 는
+        `PROPOSED / CONFIRMED / REJECTED` 인데 저장소 전체에 `UPDATE task` 가 한 건도
+        없어서, 한 번 등록하면 영원히 `PROPOSED` 였다 — 확정도 반려도 못 하면
+        `task` 는 쓰레기통이 된다.
+
+        **담당자는 이름 문자열로 받는다.** `task` 에는 담당자 컬럼이 없어서
+        `task_name` 옆에 두는 대신 `req_role` 을 쓰지 않는다 — 역할과 사람은 다른
+        것이다. 지금은 이름을 받아 두는 자리가 없으므로 **담당자 지정은 받지
+        않는다**(인자만 두면 조용히 버려진다). 필요해지면 컬럼을 먼저 만든다.
+        """
+
+        if status is None and due_at is None:
+            raise RepositoryError("바꿀 값이 없습니다.")
+        if status is not None and status not in ("PROPOSED", "CONFIRMED", "REJECTED"):
+            raise RepositoryError(f"알 수 없는 상태입니다: {status}")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                # **팀 소유를 SQL 에서 직접 확인한다.** FK 가 없는 테이블이라
+                # task_id 만 믿으면 남의 팀 업무를 고칠 수 있다.
+                cursor.execute(
+                    """
+                    SELECT t.task_id
+                    FROM task AS t
+                    JOIN proj_know_model AS m ON m.model_id = t.model_id
+                    JOIN proj AS p ON p.proj_id = m.proj_id
+                    WHERE t.task_id = %s AND m.proj_id = %s AND p.team_id = %s
+                    """,
+                    (task_id, proj_id, team_id),
+                )
+                if cursor.fetchone() is None:
+                    raise RecordNotFound(f"이 프로젝트에 없는 업무입니다: {task_id}")
+
+                sets, values = [], []
+                if status is not None:
+                    sets.append("status = %s")
+                    values.append(status)
+                if due_at is not None:
+                    sets.append("due_at = %s")
+                    values.append(due_at)
+                values.append(task_id)
+
+                cursor.execute(
+                    f"UPDATE task SET {', '.join(sets)} WHERE task_id = %s "
+                    "RETURNING task_id, task_name, status, due_at",
+                    values,
+                )
+                return cursor.fetchone()

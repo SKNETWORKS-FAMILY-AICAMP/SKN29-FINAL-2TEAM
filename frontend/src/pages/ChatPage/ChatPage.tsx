@@ -13,7 +13,7 @@ import {
   streamMessage,
 } from '../../api/chat';
 import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
-import { listAgents } from '../../api/agents';
+import { isPlatformAgent, listAgents } from '../../api/agents';
 import type { Agent } from '../../api/agents';
 import { listMyProjects } from '../../api/projects';
 import type { Project } from '../../api/projects';
@@ -151,15 +151,16 @@ export default function ChatPage() {
     listAgents(token)
       .then((rows) => {
         setAgents(rows);
-        // **기본 제공 에이전트를 표식으로 고른다.**
+        // **정문을 `agent:*` 로 고른다.**
         //
-        // 「목록 첫 항목」이던 것을 고쳤다(2026-08-11). 그 순서는 `is_prebuilt
-        // DESC, name` 이라 이름 정렬 우연에 기대고 있었고, 실제로 「부하 리포트
-        // 에이전트」가 「업무 추출 에이전트」보다 앞서서 문서 도구가 없는
-        // 에이전트가 잡혔다 — 모델이 "문서를 읽을 도구가 없다"고 답했다.
-        // 팀원이 Builder 로 이름이 앞서는 에이전트를 만들면 같은 일이 또 난다.
+        // 두 번 고쳤다. 「목록 첫 항목」은 이름 정렬 우연에 기대고 있었고(문서
+        // 도구가 없는 에이전트가 잡혀 "문서를 읽을 도구가 없다"는 답이 나왔다),
+        // `is_prebuilt` 도 못 가른다 — **예시 에이전트들도 우리가 넣는 것이라
+        // 같은 플래그를 쓴다.**
+        //
+        // 위임할 수 있는 것이 정문이다. 그것만이 도구를 안 좁힌다.
         setAgentId(
-          (prev) => prev ?? rows.find((row) => row.is_prebuilt)?.agent_id ?? rows[0]?.agent_id ?? null,
+          (prev) => prev ?? rows.find(isPlatformAgent)?.agent_id ?? rows[0]?.agent_id ?? null,
         );
       })
       .catch(() => setFatal('에이전트 목록을 불러오지 못했습니다.'));

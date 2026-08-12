@@ -15,10 +15,12 @@ from apps.connectors.clients import create_jira_issues, search_jira_issues
 from backend.db import (
     AccountRepository,
     ExistTaskRepository,
+    ProjectRepository,
     ProjectSourceRepository,
     TeamRepository,
 )
 from backend.db.agent_platform import AgentRepository, McpServerRepository, ProjectTaskRepository
+from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
     DocMetaRepository,
     PipelineDocumentRepository,
@@ -28,6 +30,7 @@ from backend.services.hr import list_absences, list_capacity_profiles, list_pers
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
+from services.websearch import WebSearchUnavailable, search_web
 from services.workload import calculator
 
 
@@ -299,6 +302,191 @@ def _task_register(*, proj_id: str | None, account_id: str, tasks: list[dict[str
     return ProjectTaskRepository.register(proj_id=proj_id, account_id=account_id, tasks=tasks)
 
 
+def _project_list(*, account_id: str) -> dict[str, Any]:
+    """우리 팀의 프로젝트와 진행률.
+
+    「무슨 프로젝트가 있지?」·「어느 게 제일 늦었어?」에 답할 수 있게 한다 —
+    지금까지는 프로젝트를 **고를** 수는 있었지만 **물어볼** 수는 없었다.
+
+    진행률은 목록 화면과 **같은 계산기**를 부른다(`progress_by_project`).
+    여기서 다시 세면 화면이 말하는 숫자와 에이전트가 말하는 숫자가 갈라진다.
+    """
+
+    rows = ProjectRepository.list_for_team(account_id)
+    progress = ExistTaskRepository.progress_by_project([row["proj_id"] for row in rows])
+
+    return {
+        "projects": [
+            {
+                "proj_id": row["proj_id"],
+                "name": row["name"],
+                "description": row.get("description"),
+                "status": row["status"],
+                # 진행률이 없는 것과 0%는 다르다 — Jira 를 아직 안 읽었거나
+                # 연결된 프로젝트가 없다는 뜻이다. null 로 둔다.
+                "progress": progress.get(row["proj_id"]),
+            }
+            for row in rows
+        ]
+    }
+
+
+def _task_list(*, proj_id: str | None, account_id: str) -> dict[str, Any]:
+    """이 프로젝트에 **등록된 우리 업무**. `task_register` 로 넣은 것을 읽는다.
+
+    등록만 하고 읽지 못하면 반쪽이다 — 「아까 등록한 거 뭐였지?」에 답할 방법이
+    없었다(2026-08-12 확인). Jira 이슈가 아니라 우리 `task` 테이블이다.
+    """
+
+    if not proj_id:
+        raise ToolInputError("어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+
+    rows = ProjectTaskRepository.list_for_project(proj_id=proj_id, account_id=account_id)
+    return {
+        "tasks": [
+            {
+                "task_id": row["task_id"],
+                "title": row["task_name"],
+                "required_role": row["req_role"],
+                "effort_hours": float(row["effort"]) if row["effort"] is not None else None,
+                "due_at": row["due_at"],
+                "priority": row["priority"],
+                # PROPOSED / CONFIRMED / REJECTED. 등록됐다고 확정된 것이 아니다.
+                "status": row["status"],
+            }
+            for row in rows
+        ]
+    }
+
+
+def _document_list(*, account_id: str) -> dict[str, Any]:
+    """팀에 어떤 문서가 있는가. **내용 검색이 아니라 목록이다.**
+
+    `document_search` 는 「이 내용이 어디 있나」를 답하고, 이 도구는 「무엇이
+    있나」를 답한다. 둘을 하나로 두면 "우리 팀에 무슨 문서 있어?"에 대해
+    엉뚱한 문장 조각이 근거로 나온다.
+
+    **색인 여부를 숨기지 않는다.** 아직 파싱 전인 문서는 검색에 안 걸리는데,
+    목록에만 보이면 사람이 "있는데 왜 못 찾지?"가 된다.
+    """
+
+    rows = PipelineDocumentRepository.list_with_meta(account_id)
+    return {
+        "documents": [
+            {
+                "doc_id": row["doc_id"],
+                "file_name": row["file_name"],
+                "summary": row.get("summary"),
+                "doc_type": row.get("doc_type"),
+                "proj_id": row.get("proj_id"),
+                # PRIMARY 면 어느 프로젝트의 기준 문서다.
+                "doc_role": row.get("doc_role"),
+                "search_ready": row["search_ready"],
+            }
+            for row in rows
+        ]
+    }
+
+
+def _task_update(
+    *,
+    proj_id: str | None,
+    account_id: str,
+    task_id: str,
+    status: str | None = None,
+    due_at: str | None = None,
+) -> dict[str, Any]:
+    """등록된 업무의 상태·마감을 고친다.
+
+    **등록만 되고 아무것도 못 바꾸던 것을 연다(2026-08-12).** `task.status` 가
+    `PROPOSED / CONFIRMED / REJECTED` 인데 바꿀 경로가 없어서 한 번 등록하면
+    영원히 `PROPOSED` 였다 — 확정도 반려도 못 하면 목록이 쌓이기만 한다.
+
+    **부작용 도구다.** 외부 시스템은 아니지만 사람이 「이 업무는 하기로 했다」를
+    확정하는 지점이고, 그건 승인 카드를 거쳐야 한다.
+    """
+
+    if not proj_id:
+        raise ToolInputError("어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+    try:
+        return ProjectTaskRepository.update(
+            proj_id=proj_id,
+            account_id=account_id,
+            task_id=task_id,
+            status=status,
+            due_at=due_at,
+        )
+    except RecordNotFound as exc:
+        # 이 프로젝트에 없는 업무 id 는 모델이 지어낸 값일 수 있다. 사람이
+        # 고칠 수 있는 사유라 그대로 보인다.
+        raise ToolInputError(str(exc)) from exc
+
+
+def _absence_list(*, account_id: str, weeks: int = 4) -> dict[str, Any]:
+    """앞으로 몇 주간 팀원의 **승인된** 부재(휴가·교육 등).
+
+    `workload_report` 가 이미 이 데이터를 계산에 쓴다. 그런데 조회 도구가 없어서
+    「왜 이 사람 여유가 없어?」에 "다음 주 휴가 3일이라서"라고 답할 수 없었다 —
+    **근거를 계산에만 쓰고 말하지는 못하는 상태**였다.
+
+    `list_absences` 를 그대로 부른다. 승인된 것만 세는 화이트리스트 판단이
+    거기 들어 있고, 여기서 다시 질의하면 그 판단이 두 벌이 된다.
+    """
+
+    period_start = date.today()
+    period_end = period_start + timedelta(weeks=weeks)
+
+    team_id = AccountRepository.team_id(account_id)
+    members = {row["person_id"]: row["name"] for row in TeamRepository.list_members(account_id)}
+    rows = list_absences(
+        person_ids=TeamRepository.member_person_ids(team_id),
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    return {
+        "period": {"start": period_start.isoformat(), "end": period_end.isoformat()},
+        "absences": [
+            {
+                # 이름을 붙여 준다. person_id 만 주면 모델이 사람 이름을 못 말한다.
+                "name": members.get(row["person_id"], row["person_id"]),
+                "absence_type": row["absence_type"],
+                "start_at": row["start_at"],
+                "end_at": row["end_at"],
+            }
+            for row in rows
+        ],
+    }
+
+
+def _web_search(*, query: str) -> dict[str, Any]:
+    """웹에서 찾는다. **팀 문서와 다른 종류의 근거다.**
+
+    문서는 사람이 올려 두고 파싱·색인을 거친 것이고, 웹은 아무도 검증하지
+    않았다. 그 차이가 답에서 지워지면 「우리 기획서에 그렇게 적혀 있다」와
+    「인터넷에 그런 글이 있다」를 구별할 수 없다.
+
+    그래서 결과마다 URL 을 붙이고, 못 쓰는 상태(키 없음·한도 초과)는 빈 결과가
+    아니라 **사유로** 올린다 — 빈 결과를 주면 에이전트가 "웹에서 못 찾았습니다"
+    라고 답하는데 실제로는 찾아보지도 않은 것이다.
+    """
+
+    try:
+        results = search_web(query)
+    except WebSearchUnavailable as exc:
+        raise ToolInputError(str(exc)) from exc
+
+    return {
+        "query": query,
+        "results": results,
+        "note": (
+            "웹에서 찾은 것이다. 팀 문서가 아니므로 답할 때 출처 URL 을 함께 밝힌다."
+            if results
+            else "웹에서 관련 결과를 찾지 못했습니다."
+        ),
+    }
+
+
 def _resolve_project_key(*, proj_id: str | None, account_id: str, project_key: str | None) -> str:
     """어느 Jira 프로젝트인가.
 
@@ -440,6 +628,97 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_extract_tasks,
+    ),
+    "project_list": Tool(
+        ref="project_list",
+        name="프로젝트 조회",
+        description=(
+            "우리 팀의 프로젝트 목록과 진행률을 돌려준다. "
+            "「무슨 프로젝트가 있나」·「어느 게 늦었나」처럼 **프로젝트 전반**에 대한 "
+            "질문은 문서 검색이 아니라 이 도구다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_project_list,
+    ),
+    "task_list": Tool(
+        ref="task_list",
+        name="등록된 업무 조회",
+        description=(
+            "이 프로젝트에 등록된 **우리 업무**를 읽는다(task_register 로 넣은 것). "
+            "Jira 이슈가 아니다 — Jira 쪽은 jira_get_issues 다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_task_list,
+    ),
+    "document_list": Tool(
+        ref="document_list",
+        name="문서 목록",
+        description=(
+            "팀에 어떤 문서가 있는지 목록으로 돌려준다. **내용 검색이 아니다** — "
+            "「무슨 문서 있어?」는 이 도구이고, 「이 내용이 어디 있어?」는 document_search 다. "
+            "아직 색인되지 않은 문서도 그 사실과 함께 준다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_document_list,
+    ),
+    "task_update": Tool(
+        ref="task_update",
+        name="업무 수정",
+        description=(
+            "등록된 업무의 상태나 마감을 바꾼다. 상태는 PROPOSED(제안) · "
+            "CONFIRMED(확정) · REJECTED(반려) 중 하나다. "
+            "task_id 는 task_list 가 준 값을 그대로 쓴다 — 지어내지 않는다. "
+            "사용자 승인 없이는 실행되지 않는다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "task_list 가 준 id"},
+                "status": {
+                    "type": "string",
+                    "enum": ["PROPOSED", "CONFIRMED", "REJECTED"],
+                },
+                "due_at": {"type": "string", "description": "YYYY-MM-DD"},
+            },
+            "required": ["task_id"],
+        },
+        handler=_task_update,
+        side_effect=True,
+    ),
+    "web_search": Tool(
+        ref="web_search",
+        name="웹 검색",
+        description=(
+            "인터넷에서 찾아 출처와 함께 돌려준다. **팀 문서에 있을 만한 것은 "
+            "document_search 로 먼저 찾는다** — 우리 문서가 우선이고, 웹은 문서에 "
+            "없거나 최신 정보가 필요할 때다. "
+            "이 결과로 답할 때는 **출처 URL 을 반드시 함께 밝힌다** — 검증된 우리 "
+            "문서와 같은 무게로 말하지 않는다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "찾고 싶은 것을 한 문장으로"},
+            },
+            "required": ["query"],
+        },
+        handler=_web_search,
+    ),
+    "absence_list": Tool(
+        ref="absence_list",
+        name="부재 조회",
+        description=(
+            "앞으로 몇 주간 팀원의 승인된 부재(휴가·교육 등)를 돌려준다. "
+            "「누가 언제 자리를 비우나」·「왜 이 사람 여유가 없나」의 근거다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "weeks": {"type": "integer", "minimum": 1, "maximum": 12, "default": 4},
+            },
+            "required": [],
+        },
+        handler=_absence_list,
     ),
     "task_register": Tool(
         ref="task_register",

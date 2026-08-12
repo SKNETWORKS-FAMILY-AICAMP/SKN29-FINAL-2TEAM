@@ -387,12 +387,27 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
 #: Jira 도구가 여기 있는 이유는 `proj_source` 가 프로젝트 ↔ Jira 프로젝트를
 #: 1:1 로 들고 있어서다 — 대화가 어느 프로젝트인지 알면 키는 서버가 찾는다.
 _PROJECT_SCOPED_TOOLS = frozenset(
-    {"task_extraction", "task_register", "jira_create_issues", "jira_get_issues"}
+    {
+        "task_extraction",
+        "task_register",
+        "task_list",
+        "task_update",
+        "jira_create_issues",
+        "jira_get_issues",
+    }
 )
 
 #: 요청자 계정만 서버가 넣어 주는 도구. 모델이 정하면 남의 팀 명부·남의 부하를
 #: 읽는다. Connector 자격증명이 계정별인 것도 같은 이유다.
-_ACCOUNT_SCOPED_TOOLS = frozenset({"people_list", "workload_report"})
+_ACCOUNT_SCOPED_TOOLS = frozenset(
+    {
+        "people_list",
+        "workload_report",
+        "project_list",
+        "document_list",
+        "absence_list",
+    }
+)
 
 
 def _assistant_turn(decision: ModelDecision) -> list[dict[str, Any]]:

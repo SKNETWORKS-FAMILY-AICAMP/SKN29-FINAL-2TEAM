@@ -16,6 +16,24 @@ export interface Agent {
   tool_refs: string[];
 }
 
+/** 위임 도구. 이 값을 가진 행이 플랫폼의 정문이다. */
+export const PLATFORM_TOOL = 'agent:*';
+
+/**
+ * **플랫폼의 정문인가.**
+ *
+ * 에이전트의 본질은 좁히는 것인데(회의록 정리는 문서만 본다), 정문은 도구를 다
+ * 들고 다른 에이전트까지 부른다 — 아무것도 안 좁히므로 에이전트가 아니다.
+ * `agent` 행 하나로 표현했을 뿐 개념적으로는 대화 그 자체다.
+ *
+ * **`is_prebuilt` 로는 못 가른다** — 예시 에이전트(복제해서 쓰는 시작점)도
+ * 우리가 넣는 것이라 같은 플래그를 쓴다. 위임할 수 있는 것이 정문이고,
+ * `agent:*` 는 Builder 의 도구 목록에 없어서 팀이 실수로 만들 수도 없다.
+ */
+export function isPlatformAgent(agent: Agent): boolean {
+  return agent.tool_refs.includes(PLATFORM_TOOL);
+}
+
 /**
  * 편집 화면이 고를 수 있는 도구.
  *

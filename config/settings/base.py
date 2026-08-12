@@ -121,6 +121,15 @@ DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS = env.int(
 # 이미지 pull + 모델 다운로드가 끝날 만큼은 줘야 한다.
 RUNPOD_EMBED_WAIT_SECONDS = env.int("RUNPOD_EMBED_WAIT_SECONDS", default=600)
 
+# 웹 검색(Tavily). **없으면 그 도구만 안 도는 것이 정상이다** — 키가 없다고
+# 에이전트 전체가 죽으면 안 되고, "웹을 못 봤다"는 사실이 답에 드러나야 한다.
+#
+# Tavily 를 고른 이유: LLM 에이전트용이라 링크 목록이 아니라 **본문 조각**을
+# 준다. 링크만 오면 우리가 다시 크롤링해야 하고, 그건 SSRF·robots·인코딩까지
+# 딸려오는 별개의 일이다.
+WEB_SEARCH_API_KEY = env("WEB_SEARCH_API_KEY", default="")
+WEB_SEARCH_TIMEOUT_SECONDS = env.int("WEB_SEARCH_TIMEOUT_SECONDS", default=20)
+
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="")
 # 검색어 생성 전용 모델. 최종 정리와 따로 두는 이유는 services/task_extraction
