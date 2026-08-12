@@ -771,3 +771,126 @@ class ToolNameTests(SimpleTestCase):
         for ref in registry.BUILTIN_TOOLS:
             with self.subTest(ref=ref):
                 self.assertRegex(model_name_for(ref), self.PATTERN)
+
+
+class ToolWiringTests(SimpleTestCase):
+    """도구가 부르는 저장소 메서드가 실제로 있는가.
+
+    `document_list` 이 `PipelineDocumentRepository.list_with_meta` 를 불렀는데
+    그 메서드는 `DocMetaRepository` 에 있었다 — **한 번도 동작한 적이 없고**,
+    「무슨 문서 있어?」가 늘 AttributeError 로 끝났다(2026-08-12 QA 시나리오 B).
+
+    도구가 13종이라 사람이 다 눌러 보지 않으면 이런 것이 조용히 남는다. 실행
+    없이 이름만 맞춰 보는 것으로도 이 부류는 잡힌다.
+    """
+
+    def test_모든_저장소_호출이_실재한다(self):
+        import inspect
+        import re as _re
+
+        source = inspect.getsource(registry)
+        missing = []
+        for cls_name, method in sorted(set(_re.findall(r"\b([A-Z]\w*Repository)\.(\w+)\(", source))):
+            repository = getattr(registry, cls_name, None)
+            if repository is None or not hasattr(repository, method):
+                missing.append(f"{cls_name}.{method}")
+
+        self.assertEqual(missing, [])
+
+
+class TaskRegisterDateTests(SimpleTestCase):
+    """등록 직전에 날짜를 거른다.
+
+    문서에는 절대 날짜가 잘 없어서 「조치내역 확인 요청 후 5일 이내」 같은 상대
+    표현이 뽑혀 나온다. 그게 `timestamptz` 컬럼까지 내려가 `InvalidDatetimeFormat`
+    으로 죽었고, 한 트랜잭션이라 **승인한 18건이 전부 롤백됐다**(2026-08-12 QA
+    시나리오 B — 그때 `task` 는 0 건이었다).
+    """
+
+    def test_상대_표현은_비운다(self):
+        from backend.db.agent_platform import _date_or_none
+
+        for text in ("조치내역 확인 요청 후 5일 이내", "종료단계(최종) 감리 종료 후 15일 이내", "미정", ""):
+            with self.subTest(text=text):
+                self.assertIsNone(_date_or_none(text))
+
+    def test_절대_날짜는_그대로_둔다(self):
+        from backend.db.agent_platform import _date_or_none
+
+        self.assertEqual(_date_or_none("2026-08-20"), "2026-08-20")
+        self.assertEqual(_date_or_none("2026-08-20T09:00:00"), "2026-08-20T09:00:00")
+        self.assertIsNone(_date_or_none(None))
+
+    def test_0_공수는_모른다는_뜻이다(self):
+        """스키마가 `number` 면 모델은 모르는 값도 0 으로 채운다.
+
+        실제로 문서에 공수가 없던 업무 7건이 전부 `effort = 0.00` 으로 들어갔다.
+        0 시간짜리 업무는 없고, 그대로 두면 배정이 「공수 0 인 업무」로 계산한다.
+        """
+
+        from backend.db.agent_platform import _positive_or_none
+
+        self.assertIsNone(_positive_or_none(0))
+        self.assertIsNone(_positive_or_none(0.0))
+        self.assertIsNone(_positive_or_none(""))
+        self.assertIsNone(_positive_or_none("  "))
+        self.assertIsNone(_positive_or_none(None))
+        self.assertEqual(_positive_or_none(16), 16)
+        self.assertEqual(_positive_or_none("백엔드"), "백엔드")
+
+    def test_비운_것을_돌려줘야_사람이_안다(self):
+        """조용히 버리면 「마감이 없는 업무」와 「마감을 못 읽은 업무」가 구별되지 않는다."""
+
+        from backend.db import agent_platform
+
+        cursor = _RegisterCursor()
+        with patch.object(agent_platform, "database_connection", _fake_connection(cursor)), \
+                patch.object(agent_platform, "_require_team", return_value="TM001"), \
+                patch.object(agent_platform, "next_short_code", side_effect=["KM001", "TK001", "TK002"]):
+            result = agent_platform.ProjectTaskRepository.register(
+                proj_id="PJ001",
+                account_id="UA001",
+                tasks=[
+                    {"title": "감리보고서 제출", "due_date": "조치내역 확인 요청 후 5일 이내"},
+                    {"title": "착수 회의", "due_date": "2026-08-20"},
+                ],
+            )
+
+        self.assertEqual(len(result["tasks"]), 2)
+        self.assertEqual(result["dropped_dates"], [{"title": "감리보고서 제출", "fields": ["마감"]}])
+        self.assertEqual([row[6] for row in cursor.inserted], [None, "2026-08-20"])
+
+
+class _RegisterCursor:
+    """`register` 가 부르는 SQL 만 흉내낸다."""
+
+    def __init__(self):
+        self.inserted = []
+        self._row = {"team_id": "TM001", "n": 0}
+
+    def execute(self, sql, params=None):
+        if "INSERT INTO task " in sql:
+            self.inserted.append(params)
+
+    def fetchone(self):
+        return self._row
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+def _fake_connection(cursor):
+    class _Connection:
+        def cursor(self):
+            return cursor
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    return lambda: _Connection()

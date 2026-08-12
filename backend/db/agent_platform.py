@@ -9,6 +9,7 @@ Harness 는 `services/` 에 있어서 psycopg 에 직접 붙지 않는다. 이 �
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -287,6 +288,37 @@ class ChatSessionRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 return _require_session(cursor, session_id=session_id, account_id=account_id)
+
+    @staticmethod
+    def rename_if_first_answer(*, session_id: str, account_id: str, title: str) -> bool:
+        """**첫 답이 끝났을 때 한 번만** 제목을 바꾼다. 바꿨으면 True.
+
+        대화를 만들 때는 첫 발화를 그대로 제목으로 두는데, 그러면 「업무 뽑기」로
+        연 대화들이 글자까지 똑같아진다. 답이 나온 뒤라야 무엇에 대한 대화였는지
+        정해지므로 그때 다시 짓는다.
+
+        **두 번째 답부터는 건드리지 않는다.** 대화가 길어질수록 제목이 계속
+        바뀌면 사이드바에서 찾던 것이 사라진다. 사람이 직접 고친 제목을 덮는
+        일도 없다 — 그건 답이 하나뿐인 시점을 이미 지난 뒤다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_session(cursor, session_id=session_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT count(*) AS n FROM chat_message
+                    WHERE session_id::text = %s AND role = 'agent'
+                    """,
+                    (session_id,),
+                )
+                if cursor.fetchone()["n"] != 1:
+                    return False
+                cursor.execute(
+                    "UPDATE chat_session SET title = %s WHERE session_id::text = %s",
+                    (title, session_id),
+                )
+                return True
 
     @staticmethod
     def delete(*, session_id: str, account_id: str) -> None:
@@ -772,6 +804,55 @@ def _replace_tools(cursor, *, agent_id: str, tool_refs: list[str]) -> None:
         )
 
 
+def _date_or_none(value: Any) -> str | None:
+    """`YYYY-MM-DD`(또는 ISO 일시)면 그대로, 아니면 None.
+
+    **문서에는 절대 날짜가 잘 없다.** 실제로 「조치내역 확인 요청 후 5일 이내」,
+    「종료단계(최종) 감리 종료 후 15일 이내」처럼 상대 표현이 뽑혀 나온다. 도구
+    스키마가 `YYYY-MM-DD` 라고 설명은 하지만 강제하지는 않아서, 그 문자열이
+    `timestamptz` 컬럼까지 그대로 내려가 `InvalidDatetimeFormat` 으로 죽었다 —
+    한 트랜잭션이라 **승인한 18건이 통째로 롤백됐다**(2026-08-12 QA 시나리오 B).
+
+    몇 건 때문에 전부를 잃는 것이 잘못이지, 날짜를 모르는 것 자체는 잘못이
+    아니다. 비워 두고 **무엇을 비웠는지 말한다** — 이미 추출 결과가 「근거 없어
+    비움」으로 쓰는 방식과 같다. 여기서 오늘 기준 절대 날짜를 지어내면 문서에
+    없는 마감이 생기고, 그걸 근거로 배정하면 틀린 계획이 된다.
+    """
+
+    if value is None or isinstance(value, (date, datetime)):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return text
+
+
+def _positive_or_none(value: Any) -> Any:
+    """0·빈 문자열은 「모른다」로 본다.
+
+    모델은 스키마에 `number` 라고 적혀 있으면 **모르는 값도 0 으로 채운다**.
+    실제로 문서에 공수가 없던 업무 7건이 전부 `effort = 0.00` 으로 들어갔다 —
+    화면은 「근거에서 확인하지 못해 비워 두었습니다」라고 말하는데 DB 에는 0 이
+    있었다(2026-08-12 QA 시나리오 B).
+
+    **0 시간짜리 업무는 없다.** 그대로 두면 배정과 진행률이 「공수 0 인 업무」로
+    계산되고, 그건 「공수를 모르는 업무」와 정반대의 결론을 낸다.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    try:
+        return value if float(value) > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 class ProjectTaskRepository:
     """추출된 업무를 **우리 플랫폼**에 적재한다.
 
@@ -822,10 +903,23 @@ class ProjectTaskRepository:
                 )
 
                 created = []
+                dropped_dates = []
                 for task in tasks:
                     task_id = next_short_code(
                         cursor, table="task", column="task_id", prefix="TK"
                     )
+                    start_at = _date_or_none(task.get("start_date"))
+                    due_at = _date_or_none(task.get("due_date"))
+                    blank = [
+                        label
+                        for label, given, kept in (
+                            ("시작", task.get("start_date"), start_at),
+                            ("마감", task.get("due_date"), due_at),
+                        )
+                        if given and kept is None
+                    ]
+                    if blank:
+                        dropped_dates.append({"title": task["title"], "fields": blank})
                     cursor.execute(
                         """
                         INSERT INTO task (task_id, model_id, task_name, req_role, effort,
@@ -833,14 +927,21 @@ class ProjectTaskRepository:
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'EXTRACTED', 'PROPOSED')
                         """,
                         (
-                            task_id, model_id, task["title"], task.get("required_role"),
-                            task.get("effort_hours"), task.get("start_date"),
-                            task.get("due_date"), task.get("priority"),
+                            task_id, model_id, task["title"],
+                            _positive_or_none(task.get("required_role")),
+                            _positive_or_none(task.get("effort_hours")), start_at,
+                            due_at, _positive_or_none(task.get("priority")),
                         ),
                     )
                     created.append({"task_id": task_id, "title": task["title"]})
 
-        return {"model_id": model_id, "model_ver": f"v{version}", "tasks": created}
+        return {
+            "model_id": model_id,
+            "model_ver": f"v{version}",
+            "tasks": created,
+            # 비운 것을 조용히 넘기지 않는다. 모델이 이것을 사람에게 옮겨 적는다.
+            "dropped_dates": dropped_dates,
+        }
 
     @staticmethod
     def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:

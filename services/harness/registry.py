@@ -370,7 +370,10 @@ def _document_list(*, account_id: str) -> dict[str, Any]:
     목록에만 보이면 사람이 "있는데 왜 못 찾지?"가 된다.
     """
 
-    rows = PipelineDocumentRepository.list_with_meta(account_id)
+    # `list_with_meta` 는 `DocMetaRepository` 에 있다. 잘못된 클래스로 부르고
+    # 있어서 이 도구는 **한 번도 동작한 적이 없다** — 「무슨 문서 있어?」가
+    # 늘 AttributeError 로 끝났다(2026-08-12 QA 시나리오 B).
+    rows = DocMetaRepository.list_with_meta(account_id)
     return {
         "documents": [
             {
@@ -726,7 +729,9 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         description=(
             "추출한 업무를 이 프로젝트의 업무로 등록한다. **Jira 보다 먼저 이것을 부른다** — "
             "우리 플랫폼에 남아야 나중에 다시 볼 수 있고, Jira 를 쓰지 않는 팀도 결과를 갖는다. "
-            "업무 추출 직후 사용자에게 등록할지 물어보고 부른다. 사용자 승인 없이는 실행되지 않는다."
+            "업무 추출 직후 사용자에게 등록할지 물어보고 부른다. 사용자 승인 없이는 실행되지 않는다. "
+            "날짜는 `YYYY-MM-DD` 만 저장된다 — 「5일 이내」 같은 상대 표현은 비운 채 등록하고 "
+            "`dropped_dates` 로 돌려주니, 그 목록을 사람에게 그대로 알린다."
         ),
         input_schema={
             "type": "object",
