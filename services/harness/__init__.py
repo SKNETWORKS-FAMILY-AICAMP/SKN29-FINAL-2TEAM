@@ -13,6 +13,7 @@ from .runner import (
     EVENT_TOOL_CALL_FINISHED,
     EVENT_TOOL_CALL_STARTED,
     ModelDecision,
+    check_tools,
     run_agent,
 )
 
@@ -24,5 +25,6 @@ __all__ = [
     "EVENT_TOOL_CALL_FINISHED",
     "EVENT_TOOL_CALL_STARTED",
     "ModelDecision",
+    "check_tools",
     "run_agent",
 ]

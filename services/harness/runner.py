@@ -81,11 +81,13 @@ ModelClient = Callable[[str, list[dict[str, Any]], list[Tool]], ModelDecision]
 
 
 def run_agent(
-    agent_id: str,
+    agent_id: str | None,
     user_input: str,
     context: dict[str, Any] | None = None,
     *,
     model: ModelClient | None = None,
+    draft: dict[str, Any] | None = None,
+    dry_run: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """에이전트를 한 번 돌리고 이벤트를 순서대로 내보낸다.
 
@@ -97,8 +99,17 @@ def run_agent(
       messages               재개할 때 이어 붙일 이전 대화 상태
       resume_tool_call       승인받은 그 호출. 모델을 다시 묻지 않고 이것부터 실행한다
 
-    실패해도 agent_run 은 반드시 닫힌다. 평가가 세는 모수가 그 행이라
-    RUNNING 으로 남은 행이 있으면 성공률이 조용히 틀린다.
+    `draft` 가 있으면 `agent_id` 로 DB 를 읽지 않고 이 값으로 에이전트·도구를
+    조립한다 — **아직 저장되지 않은 빌더 초안을 시험 실행**할 때 쓴다. 이때는
+    `agent_id` 가 None 이어도 된다(Agent Builder 가 쓰는 유일한 경로).
+
+    `dry_run=True` 면 승인이 필요한(`side_effect`) 도구를 실제로 부르지 않고
+    "이런 인자로 부르려 했다"만 이벤트로 남긴다 — 사람이 승인할 자리가 없는
+    시험 실행에서 그대로 실행하면 남의 Jira 를 건드릴 수 있다.
+
+    실패해도 agent_run 은 반드시 닫힌다(단, `draft` 시험 실행은 애초에
+    기록하지 않는다 — 아래 `trace.run_ephemeral` 참고). 평가가 세는 모수가
+    그 행이라 RUNNING 으로 남은 행이 있으면 성공률이 조용히 틀린다.
     """
 
     context = context or {}
@@ -112,8 +123,21 @@ def run_agent(
     resume_inner = context.get("resume_inner")
     depth = int(context.get("depth") or 1)
 
-    agent = AgentRepository.get(agent_id)
-    tools = registry.load_for_agent(agent_id=agent_id, team_id=agent["team_id"], depth=depth)
+    if draft is not None:
+        agent: dict[str, Any] = {
+            "team_id": draft.get("team_id"),
+            "instruction": draft.get("instruction") or "",
+            "model": draft.get("model"),
+            "reasoning_effort": draft.get("reasoning_effort"),
+            "max_iterations": draft.get("max_iterations") or 6,
+        }
+        tools: dict[str, Tool] = registry.load_for_refs(
+            tool_refs=draft.get("tool_refs") or [], team_id=agent["team_id"]
+        )
+    else:
+        agent = AgentRepository.get(agent_id)
+        tools = registry.load_for_agent(agent_id=agent_id, team_id=agent["team_id"], depth=depth)
+
     system = scaffold.compose(
         instruction=agent["instruction"] or "", max_iterations=agent["max_iterations"]
     )
@@ -123,11 +147,26 @@ def run_agent(
         {"role": "user", "content": user_input}
     ]
 
-    with trace.run(
-        agent_id=agent_id,
-        session_id=context.get("session_id"),
-        parent_run_id=context.get("parent_run_id"),
-    ) as run_trace:
+    made_tool_call = False
+
+    def _grounded() -> bool:
+        # 계획 도구가 없으므로 "쓸 수 있는 도구가 있었는데 하나도 안 불렀는가"만 본다.
+        return made_tool_call or not tools
+
+    # 초안 시험 실행은 DB 에 기록하지 않는다 — `agent_run.agent_id` 는 NOT NULL 인데
+    # 저장 전 초안엔 넣을 id 가 없고, 시험 실행을 평가 로그에 실제 실행처럼 남기면
+    # 안 된다.
+    run_cm = (
+        trace.run_ephemeral()
+        if draft is not None
+        else trace.run(
+            agent_id=agent_id,
+            session_id=context.get("session_id"),
+            parent_run_id=context.get("parent_run_id"),
+        )
+    )
+
+    with run_cm as run_trace:
         # **하드 상한은 코드가 건다.** 스캐폴드로 권고도 하지만, 권고를 안 지키는
         # 모델이 있으면 비용과 시간이 무한이 된다.
         limit = agent["max_iterations"]
@@ -145,7 +184,12 @@ def run_agent(
                 run_trace.count_tokens(token_in=decision.token_in, token_out=decision.token_out)
 
                 if not decision.tool_calls:
-                    yield {"type": EVENT_RESULT, "text": decision.text or "", "complete": True}
+                    yield {
+                        "type": EVENT_RESULT,
+                        "text": decision.text or "",
+                        "complete": True,
+                        "grounded": _grounded(),
+                    }
                     return
 
                 messages.extend(_assistant_turn(decision))
@@ -166,10 +210,38 @@ def run_agent(
                     messages.append(_tool_turn(call, {"error": str(exc)}, decision.tool_style))
                     continue
 
+                made_tool_call = True
+
                 # 승인 게이트 — 외부를 바꾸는 도구는 승인 전에 실행하지 않는다
                 # (8/11 확정 ③). 여기서 멈추고, 재개는 단계 3의 confirm API 가
                 # `approved_tool_calls` 를 채워 다시 부르는 방식이다.
                 if tool.side_effect and tool_ref not in approved:
+                    if dry_run:
+                        # 시험 실행엔 승인할 사람이 없다. 실제로 부르지 않고
+                        # "이런 인자로 부르려 했다"만 남기고 다음 도구로 넘어간다.
+                        yield {
+                            "type": EVENT_TOOL_CALL_STARTED,
+                            "tool_call_id": None,
+                            "tool_ref": tool_ref,
+                            "tool_name": tool.name,
+                        }
+                        yield {
+                            "type": EVENT_TOOL_CALL_FINISHED,
+                            "tool_call_id": None,
+                            "tool_ref": tool_ref,
+                            "status": "SIMULATED",
+                            "arguments": arguments,
+                        }
+                        messages.append(
+                            _tool_turn(
+                                call,
+                                {
+                                    "simulated": True,
+                                    "note": "테스트 실행이라 실제로 호출하지 않았습니다.",
+                                },
+                            )
+                        )
+                        continue
                     yield {
                         "type": EVENT_AWAITING_CONFIRMATION,
                         "run_id": run_trace.run_id,
@@ -189,10 +261,13 @@ def run_agent(
                 inner_resume, resume_inner = (resume_inner, None) if delegating else (None, resume_inner)
 
                 tool_call_id = None
+                tool_call_cm = (
+                    trace.tool_call_ephemeral()
+                    if draft is not None
+                    else trace.tool_call(run_id=run_trace.run_id, tool_ref=tool_ref, arguments=arguments)
+                )
                 try:
-                    with trace.tool_call(
-                        run_id=run_trace.run_id, tool_ref=tool_ref, arguments=arguments
-                    ) as tool_call_id:
+                    with tool_call_cm as tool_call_id:
                         yield {
                             "type": EVENT_TOOL_CALL_STARTED,
                             "tool_call_id": tool_call_id,
@@ -284,7 +359,102 @@ def run_agent(
             "complete": False,
             "stopped_reason": "max_iterations",
             "iterations": limit,
+            "grounded": _grounded(),
         }
+
+
+#: `check_tools` 가 건너뛰는 도구. 업무 추출은 몇 분 걸리는 파이프라인이라
+#: 여기서 확인하지 않는다 — 프로젝트의 업무 추출 화면을 쓰면 된다.
+_CHECK_EXCLUDED_TOOLS = frozenset({"task_extraction"})
+
+
+def check_tools(
+    *,
+    team_id: str | None,
+    account_id: str,
+    tool_refs: list[str],
+    arguments_by_ref: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """선택한 도구 전부를 모델 판단 없이 순서대로 하나씩 직접 불러 본다.
+
+    실사용 중 "필요할 때만 부른다"는 모델 판단에 맡기면, 데이터가 없거나
+    모델이 안 부른 도구는 영영 확인이 안 된다 — 저장 전에 도구 하나하나가
+    실제로 도는지 사람이 직접 볼 수 있게 하는 경로다.
+
+    `side_effect` 도구는 실시간으로 승인할 사람이 없으므로 항상 시뮬레이션한다.
+    도구 하나가 실패해도 나머지는 계속 확인한다. 저장 전 시험이라 DB 에 기록을
+    남기지 않는다(`agent_run.agent_id` 가 NOT NULL 이라 초안엔 붙일 데가 없다).
+    """
+
+    arguments_by_ref = arguments_by_ref or {}
+    agent: dict[str, Any] = {"team_id": team_id}
+    tools = registry.load_for_refs(tool_refs=tool_refs, team_id=team_id)
+    context = {"account_id": account_id}
+
+    results: list[dict[str, Any]] = []
+    for tool_ref in tool_refs:
+        if tool_ref in _CHECK_EXCLUDED_TOOLS:
+            results.append(
+                {
+                    "tool_ref": tool_ref,
+                    "tool_name": tool_ref,
+                    "status": "SKIPPED",
+                    "detail": "여기서는 확인하지 않습니다 — 프로젝트의 업무 추출 화면을 쓰세요.",
+                }
+            )
+            continue
+        try:
+            tool = registry.resolve(tools, tool_ref)
+        except ToolNotAllowed as exc:
+            results.append(
+                {
+                    "tool_ref": tool_ref,
+                    "tool_name": tool_ref,
+                    "status": "FAILED",
+                    "error_code": "ToolNotAllowed",
+                    "detail": str(exc),
+                }
+            )
+            continue
+
+        arguments = arguments_by_ref.get(tool_ref) or {}
+        if tool.side_effect:
+            results.append(
+                {"tool_ref": tool_ref, "tool_name": tool.name, "status": "SIMULATED", "arguments": arguments}
+            )
+            continue
+
+        try:
+            with trace.tool_call_ephemeral():
+                raw = tool.handler(**{**arguments, **_injected(tool, agent, context)})
+                output = _drain(raw) if isinstance(raw, GeneratorType) else raw
+        except Exception as exc:  # noqa: BLE001 - 하나 실패해도 나머지는 계속 확인한다
+            results.append(
+                {
+                    "tool_ref": tool_ref,
+                    "tool_name": tool.name,
+                    "status": "FAILED",
+                    "error_code": exc.__class__.__name__,
+                    "detail": str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None,
+                }
+            )
+        else:
+            results.append({"tool_ref": tool_ref, "tool_name": tool.name, "status": "OK", "output": output})
+
+    return results
+
+
+def _drain(events: Iterator[dict[str, Any]]) -> Any:
+    """제너레이터 도구의 진행 이벤트는 버리고 `return` 값만 취한다.
+
+    `check_tools` 는 스트리밍 채널이 없는 동기 응답이라 진행을 보여줄 데가 없다.
+    """
+
+    try:
+        while True:
+            next(events)
+    except StopIteration as stop:
+        return stop.value
 
 
 def _forward(events: Iterator[dict[str, Any]], tool_ref: str, tool_call_id: str | None):
@@ -463,13 +633,14 @@ def _tool_turn(call: dict[str, Any], output: Any, style: str = "responses") -> d
 def _default_model(agent: dict[str, Any]) -> ModelClient:
     """실제 모델 호출부.
 
-    **Responses API 를 쓴다.** `services/task_extraction` 이 이미 쓰고 있는
-    경로이고(`client.responses.parse`), 이 계정·모델에서 도구 호출이 실제로
-    도는 것을 확인한 형태다(2026-08-11 실측). `chat.completions` 가 아니다.
+    에이전트 레코드의 `model`·`reasoning_effort` 를 쓰고, 비어 있을 때만 이
+    모듈의 `DEFAULT_MODEL`·`DEFAULT_EFFORT` 로 떨어진다 — 에이전트마다 모델을
+    고르게 해 놓고 코드가 하나로 덮어쓰면 Builder 의 모델 선택이 거짓말이 된다.
 
-    에이전트 레코드의 `model`·`reasoning_effort` 를 쓰고, 비어 있으면 설정의
-    기본값으로 떨어진다 — 에이전트마다 모델을 고르게 해 놓고 코드가 하나로
-    덮어쓰면 Builder 의 모델 선택이 거짓말이 된다.
+    그 이름으로 **어느 경로로 부를지까지 정해진다**: 우리가 제공하는 OpenAI 는
+    Responses API(`client.responses.create` — 도구 호출이 실제로 도는 것을 확인한
+    형태다, 2026-08-11 실측), Claude 와 팀이 등록한 커스텀 주소는 OpenAI 호환
+    `/chat/completions` 다. 아래 두 갈래를 보라.
     """
 
     from openai import OpenAI

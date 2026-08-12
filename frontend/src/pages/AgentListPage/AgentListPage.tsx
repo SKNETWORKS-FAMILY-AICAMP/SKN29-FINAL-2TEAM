@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell, Badge, Button, Icon, useToast } from '../../components';
-import { deleteAgent, listAgents, listToolChoices } from '../../api/agents';
+import type { BadgeTone } from '../../components';
+import { activateAgent, deleteAgent, disableAgent, listAgents, listToolChoices } from '../../api/agents';
 import type { Agent, ToolChoice } from '../../api/agents';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import styles from './AgentListPage.module.css';
+
+const STATUS_LABEL: Record<Agent['status'], { tone: BadgeTone; label: string }> = {
+  DRAFT: { tone: 'neutral', label: '초안' },
+  ACTIVE: { tone: 'success', label: '활성' },
+  DISABLED: { tone: 'warning', label: '비활성' },
+};
 
 /**
  * 에이전트 목록 — **예시**와 **우리 팀 것**을 나눠 보여준다.
@@ -26,6 +33,10 @@ export default function AgentListPage() {
   const [tools, setTools] = useState<ToolChoice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // 활성화는 서버가 LLM으로 다시 검증하느라 몇 초 걸린다 — 그동안 버튼을 잠가
+  // 중복 클릭(중복 요청)을 막는다. 한 번에 하나의 카드만 처리 중이면 충분해
+  // agent_id 하나만 들고 있는다.
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -59,6 +70,39 @@ export default function AgentListPage() {
     }
   }
 
+  function replaceAgent(updated: Agent) {
+    setAgents((prev) => prev.map((item) => (item.agent_id === updated.agent_id ? updated : item)));
+  }
+
+  async function activate(agent: Agent) {
+    if (!token || pendingId) return;
+    setPendingId(agent.agent_id);
+    try {
+      const updated = await activateAgent(token, agent.agent_id);
+      replaceAgent(updated);
+      showToast(`「${updated.name}」을 활성화했습니다.`, 'success');
+    } catch (exc) {
+      // 검증에 걸려 재활성화가 막힌 경우(409) 등 — 사유를 그대로 보여준다.
+      showToast(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.', 'error');
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function disable(agent: Agent) {
+    if (!token || pendingId) return;
+    setPendingId(agent.agent_id);
+    try {
+      const updated = await disableAgent(token, agent.agent_id);
+      replaceAgent(updated);
+      showToast(`「${updated.name}」을 사용 중지했습니다.`, 'success');
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.', 'error');
+    } finally {
+      setPendingId(null);
+    }
+  }
+
   function renderSection(title: string, sub: string, rows: Agent[]) {
     if (rows.length === 0) return null;
     return (
@@ -80,6 +124,11 @@ export default function AgentListPage() {
                   <Badge tone={agent.is_prebuilt ? 'primary' : 'success'}>
                     {agent.is_prebuilt ? '기본 제공' : '팀 공유'}
                   </Badge>
+                  {/* is_prebuilt 는 이 생명주기를 안 타고 항상 ACTIVE 라 배지가
+                      항상 같은 말만 반복한다 — 팀이 만든 것에만 보여준다. */}
+                  {!agent.is_prebuilt && (
+                    <Badge tone={STATUS_LABEL[agent.status].tone}>{STATUS_LABEL[agent.status].label}</Badge>
+                  )}
                 </div>
               </div>
 
@@ -97,9 +146,35 @@ export default function AgentListPage() {
                 <span className={styles.cardMeta}>
                   {agent.is_prebuilt ? 'halil 제공' : agent.owner_name ?? '팀'}
                 </span>
-                <Button size="sm" variant="secondary" onClick={() => navigate(PATHS.chat)}>
-                  Chat에서 사용
-                </Button>
+                {/* DRAFT/DISABLED 는 아직·더 이상 Chat 위임 대상이 아니다 —
+                    누르면 되는 것처럼 보이는 버튼을 두지 않는다. */}
+                {(agent.is_prebuilt || agent.status === 'ACTIVE') && (
+                  <Button size="sm" variant="secondary" onClick={() => navigate(PATHS.chat)}>
+                    Chat에서 사용
+                  </Button>
+                )}
+                {!agent.is_prebuilt && agent.status === 'ACTIVE' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => disable(agent)}
+                    disabled={pendingId === agent.agent_id}
+                  >
+                    {pendingId === agent.agent_id ? '처리하는 중…' : '사용 중지'}
+                  </Button>
+                )}
+                {!agent.is_prebuilt && agent.status === 'DISABLED' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => activate(agent)}
+                    disabled={pendingId === agent.agent_id}
+                  >
+                    {/* 활성화는 서버가 LLM으로 다시 검증하느라 몇 초 걸린다 —
+                        누르는 순간 알 수 있게 라벨을 바꾼다. */}
+                    {pendingId === agent.agent_id ? '검증하는 중…' : '다시 활성화'}
+                  </Button>
+                )}
                 {/* 기본 제공은 편집·삭제가 서버에서 403 이다. 눌리는 버튼을 두면
                     사용자가 고칠 수 있다고 믿게 된다. */}
                 {!agent.is_prebuilt && (
@@ -109,7 +184,7 @@ export default function AgentListPage() {
                       variant="outline"
                       onClick={() => navigate(PATHS.agentEdit.replace(':agentId', agent.agent_id))}
                     >
-                      편집
+                      {agent.status === 'DRAFT' ? '이어서 작성' : '편집'}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => remove(agent)}>
                       내리기

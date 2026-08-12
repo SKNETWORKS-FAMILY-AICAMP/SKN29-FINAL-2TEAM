@@ -775,7 +775,12 @@ CREATE TABLE agent (
     -- 우리가 미리 만들어 넣는 에이전트인가(업무 추출 등). 팀이 지울 수
     -- 없어야 하는 행을 구분한다.
     is_prebuilt       BOOLEAN      NOT NULL DEFAULT false,
-    status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / ARCHIVED
+    -- DRAFT(작성 중, Chat·위임에 안 보임) / ACTIVE(활성) / DISABLED(팀이 내림,
+    -- 나중에 다시 활성화 가능) / ARCHIVED(삭제, 조회 목록에서 완전히 빠짐).
+    -- 팀이 직접 만드는 에이전트는 DRAFT로 시작해 검증을 통과해야 ACTIVE 로
+    -- 넘어간다(2026-08-12, `AgentActivateAPIView`). 시드가 넣는 is_prebuilt
+    -- 에이전트는 이 생명주기를 안 타고 항상 ACTIVE 로 만들어진다.
+    status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
     created_by        VARCHAR(5),               -- user_account.account_id(FK 없음)
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
