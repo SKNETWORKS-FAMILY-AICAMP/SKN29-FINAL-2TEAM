@@ -38,12 +38,15 @@ def echo_tool(ref="document_search", *, side_effect=False, handler=None):
 
 
 class ScaffoldTests(SimpleTestCase):
-    def test_공통_스캐폴드가_세_가지를_말한다(self):
+    def test_공통_스캐폴드가_지켜야_할_것을_말한다(self):
         text = scaffold.compose(instruction="", max_iterations=10)
 
-        self.assertIn("계획", text)
         self.assertIn("10회", text)
         self.assertIn("추측하지 않는다", text)
+        # 매 답변 앞에 "계획:"이 붙던 것을 막는다(2026-08-11).
+        self.assertIn("계획을 먼저 늘어놓지 않는다", text)
+        # 도구가 없는 능력(번역·코딩 등)을 나열하던 것을 막는다.
+        self.assertIn("가진 도구가 네가 할 수 있는 일", text)
 
     def test_에이전트_지시는_스캐폴드_뒤에_붙는다(self):
         """순서가 바뀌면 '추측 금지'가 개별 지시를 덮어쓴다."""
@@ -477,8 +480,8 @@ class StreamingToolTests(SimpleTestCase):
         payload = next(e for e in events if e["type"] == "task_extraction_result")
         self.assertEqual(payload["tool_ref"], "task_extraction")
 
-    def test_결과는_이벤트로_나가고_모델에는_요약만_간다(self, _get, load_tools, runs, calls):
-        """업무 20건을 바깥 모델에 다시 넣으면 근거가 흔들리고 토큰도 그만큼 든다."""
+    def test_결과는_이벤트로_나가고_모델에는_근거_없이_간다(self, _get, load_tools, runs, calls):
+        """근거 문장을 바깥 모델에 다시 넣으면 그것을 한 번 더 요약하며 흔들린다."""
 
         seen = {}
 
@@ -508,7 +511,9 @@ class StreamingToolTests(SimpleTestCase):
         tool_turn = seen["messages"][-1]
         self.assertEqual(tool_turn["type"], "function_call_output")
         self.assertIn('"task_count": 3', tool_turn["output"])
-        self.assertNotIn("tasks", tool_turn["output"])
+        # **근거는 안 간다.** 원래 결정이 막으려던 것은 근거의 재요약이다.
+        # 제목·역할·공수는 간다 — 없으면 모델이 등록할 업무를 모른다.
+        self.assertNotIn("evidence", tool_turn["output"])
 
     def test_도구가_중간에_터져도_FAILED_로_남는다(self, _get, load_tools, runs, calls):
         def half_way(**_kwargs):
@@ -566,6 +571,143 @@ class StreamingToolTests(SimpleTestCase):
         )
 
         self.assertEqual(seen["proj_id"], "PJ001")
+
+
+SUB_AGENT = AGENT | {"agent_id": "AG002", "name": "Jira 등록 에이전트", "max_iterations": 4}
+
+#: `AgentRepository.callable_agents` 가 주는 모양 그대로.
+SUB_ROW = {
+    "tool_ref": "agent:AG002",
+    "agent_id": "AG002",
+    "name": "Jira 등록 에이전트",
+    "description": "확인받은 업무를 Jira 에 올립니다.",
+}
+
+
+@patch("services.harness.trace.ToolCallRepository")
+@patch("services.harness.trace.AgentRunRepository")
+@patch("services.harness.runner.registry.load_for_agent")
+@patch("services.harness.runner.AgentRepository.get")
+class DelegationTests(SimpleTestCase):
+    """에이전트가 에이전트를 부른다(A2A).
+
+    **여기서 지키는 것은 중첩된 승인 게이트다.** 하위가 외부를 바꾸려 멈추면 두
+    층이 함께 멈추고, 사람이 한 번 승인하면 두 층이 같은 순서로 이어 돈다.
+    그리고 그 사이에 **어떤 run 도 FAILED 로 적히지 않는다** — 승인 대기는
+    실패가 아닌데, 예외로 신호하면 안쪽 제너레이터가 닫히면서 GeneratorExit 이
+    들어가 그렇게 기록된다(trace.py:72).
+    """
+
+    def _wire(self, get, load_tools, runs, *, inner_model, executed=None):
+        get.side_effect = lambda agent_id: SUB_AGENT if agent_id == "AG002" else AGENT
+        inner_tool = echo_tool(
+            "jira_create_issues",
+            side_effect=True,
+            handler=lambda **kwargs: (executed if executed is not None else []).append(kwargs)
+            or {"created": 2},
+        )
+        load_tools.side_effect = lambda *, agent_id, team_id, depth=1: (
+            {"jira_create_issues": inner_tool}
+            if agent_id == "AG002"
+            else {"agent:AG002": registry._agent_tool(SUB_ROW)}
+        )
+        runs.start.side_effect = ["RUN-OUT", "RUN-IN"]
+        # 하위 실행은 자기 모델을 쓴다(호출자가 넘긴 모델을 물려받지 않는다).
+        return patch("services.harness.runner._default_model", return_value=inner_model)
+
+    def test_하위가_승인에서_멈추면_스택으로_올라온다(self, get, load_tools, runs, calls):
+        calls.begin.return_value = "TC-1"
+        inner_model = FakeModel(
+            [ModelDecision(tool_calls=[{"id": "c2", "tool_ref": "jira_create_issues", "arguments": {"issues": ["A"]}}])]
+        )
+        outer_model = FakeModel(
+            [ModelDecision(tool_calls=[{"id": "c1", "tool_ref": "agent:AG002", "arguments": {"task": "올려줘"}}])]
+        )
+
+        with self._wire(get, load_tools, runs, inner_model=inner_model):
+            events = list(run_agent("AG001", "Jira 에 올려줘", model=outer_model))
+
+        final = events[-1]
+        self.assertEqual(final["type"], "awaiting_confirmation")
+        # 카드가 말하는 것은 **실제로 외부를 바꾸는 그 호출**이지 위임이 아니다.
+        self.assertEqual(final["tool_ref"], "jira_create_issues")
+        self.assertEqual(final["via_agent"], "Jira 등록 에이전트")
+        # 재개 정보는 두 겹이다 — 바깥은 위임 호출, 안쪽은 Jira 호출.
+        self.assertEqual(final["resume"]["tool_call"]["tool_ref"], "agent:AG002")
+        self.assertEqual(final["resume"]["inner"]["tool_call"]["tool_ref"], "jira_create_issues")
+
+        statuses = [call.kwargs["status"] for call in runs.finish.call_args_list]
+        self.assertNotIn("FAILED", statuses, "승인 대기는 실패가 아니다")
+        self.assertEqual(len(statuses), 2, "두 층 모두 닫혀야 한다")
+        # 어느 실행이 어느 실행을 불렀는지가 남는다.
+        self.assertEqual(runs.start.call_args_list[1].kwargs["parent_run_id"], "RUN-OUT")
+
+    def test_승인하면_두_층이_이어서_재개된다(self, get, load_tools, runs, calls):
+        calls.begin.return_value = "TC-1"
+        executed = []
+        # 재개 턴에서는 어느 층도 모델을 다시 묻지 않는다. 하위는 마지막에 한 번
+        # 답하고, 상위도 그 결과를 받아 한 번 답한다.
+        inner_model = FakeModel([ModelDecision(text="2건 등록했습니다.")])
+        outer_model = FakeModel([ModelDecision(text="등록을 마쳤습니다.")])
+        approved_call = {"id": "c2", "tool_ref": "jira_create_issues", "arguments": {"issues": ["A"]}}
+
+        with self._wire(get, load_tools, runs, inner_model=inner_model, executed=executed):
+            events = list(
+                run_agent(
+                    "AG001",
+                    "",
+                    {
+                        # 요청자는 위임을 타고 그대로 내려간다 — 하위도 같은
+                        # 사람의 자격으로 돈다(위임이 권한을 넓히지 않는다).
+                        "account_id": "AC001",
+                        "messages": [{"role": "user", "content": "올려줘"}],
+                        "resume_tool_call": {
+                            "id": "c1",
+                            "tool_ref": "agent:AG002",
+                            "arguments": {"task": "올려줘"},
+                        },
+                        "resume_inner": {
+                            "messages": [{"role": "user", "content": "올려줘"}],
+                            "tool_call": approved_call,
+                            "inner": None,
+                        },
+                        # 승인은 **가장 안쪽** 호출에만 준다.
+                        "approved_tool_calls": ["jira_create_issues"],
+                    },
+                    model=outer_model,
+                )
+            )
+
+        self.assertEqual(executed[0]["issues"], ["A"], "승인한 그 호출이 그대로 실행돼야 한다")
+        self.assertNotIn("awaiting_confirmation", [e["type"] for e in events])
+        self.assertEqual(events[-1]["type"], "result")
+        self.assertNotIn("FAILED", [call.kwargs["status"] for call in runs.finish.call_args_list])
+
+
+class AgentToolLoadTests(SimpleTestCase):
+    """`agent:*` 가 팀의 다른 에이전트로 펼쳐지는가, 그리고 어디서 멈추는가.
+
+    `load_for_agent` 를 mock 하지 않으므로 `DelegationTests` 와 클래스를 나눈다.
+    """
+
+    def _load(self, *, depth, tool_refs=("agent:*",)):
+        with patch.object(registry.AgentRepository, "tool_refs", return_value=list(tool_refs)), patch.object(
+            registry.AgentRepository, "mcp_tools", return_value=[]
+        ), patch.object(registry.AgentRepository, "callable_agents", return_value=[SUB_ROW]):
+            return registry.load_for_agent(agent_id="AG001", team_id="TM001", depth=depth)
+
+    def test_와일드카드가_팀_에이전트로_펼쳐진다(self):
+        """id 를 시드에 박으면 Builder 로 만든 에이전트를 영영 못 부른다."""
+
+        self.assertIn("agent:AG002", self._load(depth=1))
+
+    def test_깊이_상한에_닿으면_위임_도구를_주지_않는다(self):
+        """줘 놓고 거절하면 모델이 그것을 고치려고 회전을 태운다."""
+
+        self.assertNotIn("agent:AG002", self._load(depth=registry.MAX_AGENT_DEPTH))
+
+    def test_와일드카드가_없으면_위임할_수_없다(self):
+        self.assertNotIn("agent:AG002", self._load(depth=1, tool_refs=("document_search",)))
 
 
 class FakeModel:

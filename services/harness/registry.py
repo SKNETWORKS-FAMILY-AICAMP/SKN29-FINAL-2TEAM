@@ -12,8 +12,13 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
 from apps.connectors.clients import create_jira_issues, search_jira_issues
-from backend.db import AccountRepository, ExistTaskRepository, TeamRepository
-from backend.db.agent_platform import AgentRepository, McpServerRepository
+from backend.db import (
+    AccountRepository,
+    ExistTaskRepository,
+    ProjectSourceRepository,
+    TeamRepository,
+)
+from backend.db.agent_platform import AgentRepository, McpServerRepository, ProjectTaskRepository
 from backend.db.document_pipeline import (
     DocMetaRepository,
     PipelineDocumentRepository,
@@ -44,6 +49,18 @@ class Tool:
 
 class ToolNotAllowed(Exception):
     """에이전트에게 허용되지 않은 도구를 부르려 함."""
+
+
+class ToolInputError(ValueError):
+    """**사람에게 그대로 보여도 되는 실패.**
+
+    "프로젝트를 먼저 고르세요" 처럼 사람이 고칠 수 있는 사유다. 이 예외의
+    메시지만 화면으로 나간다.
+
+    다른 예외(네트워크·DB·라이브러리)는 클래스 이름만 나간다 — 예외 문자열에
+    문서 원문이나 토큰이 섞여 있을 수 있고, 그건 화면에도 모델 컨텍스트에도
+    실리면 안 된다(runner.py 의 같은 규칙).
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +214,17 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
     기존 `/tasks/extraction` 화면이 이미 그 진행을 보여 주고 있어서, 여기서 삼키면
     Chat 쪽이 명백히 못한 물건이 된다.
 
-    모델에게 돌려주는 것은 **건수와 경고뿐**이다. 업무 20건과 근거를 통째로
-    돌려주면 바깥 모델이 그것을 한 번 더 요약하면서 근거가 흔들리고, 토큰도
-    그만큼 든다. 사람이 볼 결과는 이벤트로 나가 chat_message 에 구조화되어
-    남는다(8/11 확정 ④).
+    모델에게는 **제목·역할·공수까지만** 돌려준다. 근거 문장과 chunk id 는 넣지
+    않는다 — 원래 결정(2026-08-11: "업무 20건과 근거를 통째로 돌려주면 바깥
+    모델이 한 번 더 요약하면서 근거가 흔들리고 토큰도 든다")이 막으려던 것은
+    **근거의 재요약**이고, 그건 그대로 지킨다.
+
+    ⚠ **건수만 주던 것을 고쳤다(2026-08-11).** 그러면 모델이 등록할 업무를
+    모른다 — 실제로 "해당 결과를 프로젝트 업무로 등록해 줘"에 대해 「추출
+    결과가 확인되지 않습니다」라고 답했다. `task_register` 도 `jira_create_issues`
+    도 업무 목록을 인자로 받는데 그 목록이 모델 컨텍스트에 없었던 것이다.
+
+    사람이 볼 결과(근거 포함)는 여전히 이벤트로 나가 chat_message 에 남는다.
 
     기준 문서는 사람이 이미 골라 둔 것(`doc_role='PRIMARY'`)을 쓴다. 모델에게
     문서 id 를 고르게 하지 않는다 — 어느 문서로 뽑았는지가 결과 전체의 전제라
@@ -208,7 +232,7 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
     """
 
     if not proj_id:
-        raise ValueError("어느 프로젝트의 업무를 뽑을지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+        raise ToolInputError("어느 프로젝트의 업무를 뽑을지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
 
     documents = PipelineDocumentRepository.list_ready_for_analysis(
         proj_id=proj_id, account_id=account_id
@@ -219,9 +243,9 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
         (d for d in documents if d["proj_id"] == proj_id and d["doc_role"] == "PRIMARY"), None
     )
     if primary is None:
-        raise ValueError("이 프로젝트의 기준 문서가 아직 지정되지 않았습니다.")
+        raise ToolInputError("이 프로젝트의 기준 문서가 아직 지정되지 않았습니다.")
     if not primary["search_ready"]:
-        raise ValueError("기준 문서가 아직 파싱·청킹·임베딩되지 않았습니다.")
+        raise ToolInputError("기준 문서가 아직 파싱·청킹·임베딩되지 않았습니다.")
 
     ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
     result = None
@@ -242,10 +266,71 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
         "task_count": len(result["tasks"]),
         "warnings": result["warnings"],
         "primary_document": primary["file_name"],
+        # 등록 도구(`task_register`·`jira_create_issues`)에 그대로 넘길 수 있는
+        # 최소 형태. **화면 카드의 순서와 같다** — 사람이 확인 카드에서 푼 체크가
+        # 인덱스로 오므로 두 목록의 순서가 어긋나면 다른 업무가 빠진다.
+        "tasks": [
+            {
+                "no": index,
+                "title": task["title"],
+                "required_role": task.get("required_role"),
+                "effort_hours": task.get("effort_hours"),
+                "due_date": task.get("due_date"),
+            }
+            for index, task in enumerate(result["tasks"])
+        ],
     }
 
 
-def _jira_create_issues(*, account_id: str, project_key: str, issues: list[dict[str, Any]]):
+def _task_register(*, proj_id: str | None, account_id: str, tasks: list[dict[str, Any]]):
+    """확인받은 업무를 **우리 플랫폼**에 등록한다. Jira 보다 먼저다.
+
+    지금까지 추출 결과는 어디에도 저장되지 않았다 — 대화의 이벤트 배열에만
+    남아 그 대화를 떠나면 사라졌고, 유일한 출구가 Jira 였다. 그래서 Jira 를
+    안 쓰는 팀은 뽑은 업무를 가질 방법이 없었다.
+
+    **부작용 도구다.** 외부 시스템은 아니지만 우리 데이터를 바꾸고, 사람이
+    「이 업무들이 맞다」고 확정하는 지점이라 승인 게이트를 타야 한다 — 확인
+    카드가 뜨는 자리가 바로 여기다.
+    """
+
+    if not proj_id:
+        raise ToolInputError("어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+    return ProjectTaskRepository.register(proj_id=proj_id, account_id=account_id, tasks=tasks)
+
+
+def _resolve_project_key(*, proj_id: str | None, account_id: str, project_key: str | None) -> str:
+    """어느 Jira 프로젝트인가.
+
+    **모델에게 묻지 않는다.** 프로젝트 하나에 Jira 프로젝트 하나이고
+    (`proj_source` 의 `UNIQUE (proj_id)`, 2026-08-04), 그 대화가 어느 프로젝트의
+    것인지는 이미 정해져 있다. 물어보게 두면 실제로 「확인할 Jira 프로젝트 키를
+    알려주세요」로 대화가 끊긴다 — 연결은 되어 있는데 화면이 그걸 안 넘긴 것이다.
+
+    모델이 키를 직접 준 경우는 그대로 쓴다. 「KAN 프로젝트 이슈 보여줘」처럼
+    다른 프로젝트를 짚는 요청이 있고, 그건 사람의 지시다.
+    """
+
+    if project_key:
+        return project_key
+    if not proj_id:
+        raise ToolInputError(
+            "어느 Jira 프로젝트인지 정해지지 않았습니다. 프로젝트를 고르고 다시 요청하세요."
+        )
+
+    source = ProjectSourceRepository.get_for_project(proj_id=proj_id, account_id=account_id)
+    if not source or not source.get("external_source_id"):
+        raise ToolInputError("이 프로젝트에 연결된 Jira 프로젝트가 없습니다. 설정에서 먼저 연결하세요.")
+    return source["external_source_id"]
+
+
+def _jira_create_issues(
+    *,
+    account_id: str,
+    proj_id: str | None = None,
+    project_key: str | None = None,
+    issues: list[dict[str, Any]],
+):
     """확인받은 업무를 Jira 에 등록한다.
 
     **MCP 가 아니라 내장 도구다.** 자체 Jira MCP 서버를 띄우려면 우리 SSRF
@@ -257,13 +342,52 @@ def _jira_create_issues(*, account_id: str, project_key: str, issues: list[dict[
     MCP 는 「사용자가 자기 서버를 추가로 붙이는」 확장 경로로 남는다.
     """
 
-    return create_jira_issues(account_id=account_id, project_key=project_key, issues=issues)
+    key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
+    return create_jira_issues(account_id=account_id, project_key=key, issues=issues)
 
 
-def _jira_get_issues(*, account_id: str, project_key: str) -> dict[str, Any]:
+def _jira_get_issues(*, account_id: str, proj_id: str | None = None, project_key: str | None = None):
+    """Jira 이슈 현황.
+
+    **제너레이터다** — 결과를 이벤트로 내보내고 모델에게는 요약만 준다
+    (`task_extraction` 과 같은 규칙). 이슈 15건을 모델이 문장으로 풀어 쓰면
+    숫자를 옮겨 적다 틀릴 수 있고, 사람이 읽기에도 표가 낫다. 화면이 카드로
+    그리고, 모델은 그 위에 한두 줄만 얹는다.
+    """
+
+    key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
+    issues = search_jira_issues(account_id=account_id, project_key=key)
+
+    counts = {"TO_DO": 0, "IN_PROGRESS": 0, "DONE": 0, "UNKNOWN": 0}
+    for issue in issues:
+        counts[issue.get("status_category") or "UNKNOWN"] += 1
+
+    # 마감이 있는 미완료 건만, 이른 순으로. 지난 것도 뺀 채로 두지 않는다 —
+    # 늦은 일이야말로 사람이 봐야 하는 것이다.
+    upcoming = sorted(
+        (
+            issue
+            for issue in issues
+            if issue.get("due_at") and issue.get("status_category") != "DONE"
+        ),
+        key=lambda issue: issue["due_at"],
+    )
+
+    yield {
+        "type": "jira_status",
+        "project_key": key,
+        "counts": counts,
+        "issues": issues,
+    }
     return {
-        "project_key": project_key,
-        "issues": search_jira_issues(account_id=account_id, project_key=project_key),
+        "project_key": key,
+        "total": len(issues),
+        "counts": counts,
+        # 모델이 말할 거리. 전체 목록은 화면이 그린다.
+        "upcoming": [
+            {"key": issue["jira_issue_id"], "title": issue.get("summary"), "due": issue["due_at"]}
+            for issue in upcoming[:5]
+        ],
     }
 
 
@@ -317,6 +441,39 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_extract_tasks,
     ),
+    "task_register": Tool(
+        ref="task_register",
+        name="업무 등록",
+        description=(
+            "추출한 업무를 이 프로젝트의 업무로 등록한다. **Jira 보다 먼저 이것을 부른다** — "
+            "우리 플랫폼에 남아야 나중에 다시 볼 수 있고, Jira 를 쓰지 않는 팀도 결과를 갖는다. "
+            "업무 추출 직후 사용자에게 등록할지 물어보고 부른다. 사용자 승인 없이는 실행되지 않는다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "required_role": {"type": "string"},
+                            "effort_hours": {"type": "number"},
+                            "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                            "due_date": {"type": "string", "description": "YYYY-MM-DD"},
+                            "priority": {"type": "string"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+            },
+            "required": ["tasks"],
+        },
+        handler=_task_register,
+        # 우리 데이터를 바꾸고, 사람이 결과를 확정하는 지점이다.
+        side_effect=True,
+    ),
     "jira_create_issues": Tool(
         ref="jira_create_issues",
         name="Jira 이슈 생성",
@@ -327,7 +484,14 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         input_schema={
             "type": "object",
             "properties": {
-                "project_key": {"type": "string", "description": "등록할 Jira 프로젝트 키"},
+                "project_key": {
+                    "type": "string",
+                    "description": (
+                        "등록할 Jira 프로젝트 키. **보통 비워 둔다** — 이 대화가 속한 "
+                        "프로젝트의 Jira 를 서버가 찾아 쓴다. 사용자가 다른 프로젝트를 "
+                        "명시적으로 짚었을 때만 적는다."
+                    ),
+                },
                 "issues": {
                     "type": "array",
                     "items": {
@@ -343,7 +507,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                     },
                 },
             },
-            "required": ["project_key", "issues"],
+            "required": ["issues"],
         },
         handler=_jira_create_issues,
         # 남의 Jira 에 이슈를 만든다. 승인 게이트를 반드시 탄다(8/11 확정 ③).
@@ -352,11 +516,19 @@ BUILTIN_TOOLS: dict[str, Tool] = {
     "jira_get_issues": Tool(
         ref="jira_get_issues",
         name="Jira 이슈 조회",
-        description="Jira 프로젝트의 기존 이슈와 진행 상황을 읽는다.",
+        description=(
+            "Jira 프로젝트의 기존 이슈와 진행 상황을 읽는다. "
+            "프로젝트 키는 **묻지 않는다** — 이 대화가 속한 프로젝트의 Jira 를 서버가 찾아 쓴다."
+        ),
         input_schema={
             "type": "object",
-            "properties": {"project_key": {"type": "string"}},
-            "required": ["project_key"],
+            "properties": {
+                "project_key": {
+                    "type": "string",
+                    "description": "보통 비워 둔다. 사용자가 다른 프로젝트를 짚었을 때만 적는다.",
+                }
+            },
+            "required": [],
         },
         handler=_jira_get_issues,
     ),
@@ -405,12 +577,107 @@ def _mcp_tool(row: dict[str, Any]) -> Tool:
     )
 
 
-def load_for_agent(*, agent_id: str, team_id: str) -> dict[str, Tool]:
+# ---------------------------------------------------------------------------
+# 에이전트를 도구로 (A2A)
+# ---------------------------------------------------------------------------
+
+
+#: 에이전트를 도구로 부를 때의 `tool_ref` 접두사. `mcp:` 와 같은 규칙이다.
+AGENT_TOOL_PREFIX = "agent:"
+
+#: `agent_tool` 에 이 값이 있으면 **팀의 다른 ACTIVE 에이전트 전부**를 도구로 준다.
+#:
+#: 에이전트 id 를 시드에 박지 않기 위한 것이다. 기본 에이전트는 팀마다 다른 id 로
+#: 생기고, 팀원이 Builder 로 만드는 에이전트는 시드가 알 수 없다 — 목록을 고정하면
+#: 「빌더에서 만든 에이전트를 쓸 수 있다」가 성립하지 않는다.
+AGENT_TOOL_WILDCARD = "agent:*"
+
+#: 에이전트가 에이전트를 부르는 깊이 상한.
+#:
+#: 1 = 최상위만, 2 = 최상위가 하나 더 부를 수 있음. 여기서 더 깊어질 이유가 지금
+#: 없고, 깊이는 그대로 지연·토큰·읽기 어려운 실행 기록이 된다. 상한에 닿으면
+#: `agent:` 도구를 **아예 주지 않는다** — 줘 놓고 거절하면 모델이 그것을 고치려고
+#: 회전을 태운다.
+MAX_AGENT_DEPTH = 2
+
+#: 하위 에이전트가 승인 게이트에서 멈췄다는 표식. 도구의 **반환값**에 담는다.
+#:
+#: 예외로 올리지 않는 이유가 핵심이다 — 예외를 던지면 아직 안 끝난 안쪽
+#: 제너레이터가 닫히면서 `GeneratorExit` 가 들어가고, `trace.run` 이 그것을 잡아
+#: 그 run 을 **FAILED 로 적는다**(`trace.py:72`). 승인 대기는 실패가 아니다.
+#: 값으로 올리면 안쪽은 정상 종료(DONE)하고, 바깥 Loop 이 그 값을 보고 멈춘다.
+SUSPENDED_KEY = "__agent_suspended__"
+
+
+def _agent_tool(row: dict[str, Any]) -> Tool:
+    """하위 에이전트 하나를 도구로 감싼다.
+
+    **부작용 여부를 여기서 정하지 않는다.** 하위 에이전트가 무엇을 부를지는 그
+    에이전트의 도구 구성에 달렸고, 실제로 외부를 바꾸는 순간 **하위 Loop 자신의
+    승인 게이트가 뜬다.** 그 게이트가 바깥으로 올라오는 길이 `SUSPENDED_KEY` 다.
+    여기서 `side_effect=True` 로 잡으면 아무것도 안 하는 위임에도 확인 카드가
+    먼저 뜬다.
+    """
+
+    agent_id = row["agent_id"]
+
+    def handler(*, task: str, delegation: dict[str, Any]) -> Any:
+        # 순환 import 를 피한다 — runner 가 registry 를 부르고 있다.
+        from services.harness.runner import EVENT_AWAITING_CONFIRMATION, EVENT_RESULT, run_agent
+
+        suspended: dict[str, Any] | None = None
+        text = ""
+        # **끝까지 돌린다.** 중간에 break 하거나 예외를 던지면 안쪽 제너레이터가
+        # 닫히고 그 run 이 FAILED 로 기록된다(위 SUSPENDED_KEY 주석).
+        for event in run_agent(agent_id, task, dict(delegation)):
+            if event["type"] == EVENT_AWAITING_CONFIRMATION:
+                # 확인 카드를 그리는 데 필요한 것과 재개에 필요한 것을 함께 들고
+                # 올라간다. 바깥 Loop 은 하위 실행을 못 보므로 여기서 담지 않으면
+                # 사람에게 "무엇을 승인하는지" 말할 수 없다.
+                suspended = {
+                    "tool_ref": event["tool_ref"],
+                    "tool_name": event["tool_name"],
+                    "arguments": event.get("arguments") or {},
+                    "resume": event.get("resume"),
+                }
+            elif event["type"] == EVENT_RESULT:
+                text = event.get("text") or ""
+            yield event
+
+        if suspended is not None:
+            return {SUSPENDED_KEY: suspended, "agent_id": agent_id, "name": row["name"]}
+        return {"agent": row["name"], "answer": text}
+
+    return Tool(
+        ref=row["tool_ref"],
+        name=row["name"],
+        description=(
+            f"{row['description'] or row['name']}\n"
+            "이 일을 대신할 에이전트다. 맡길 일을 한국어 문장으로 그대로 적어 넘긴다 — "
+            "그 에이전트는 이 대화를 보지 못하므로 필요한 배경을 문장에 담는다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "맡길 일을 한국어 문장으로"},
+            },
+            "required": ["task"],
+        },
+        handler=handler,
+    )
+
+
+def load_for_agent(
+    *, agent_id: str, team_id: str, depth: int = 1
+) -> dict[str, Tool]:
     """이 에이전트가 부를 수 있는 도구.
 
     `agent_tool` 에 있는 것만 남긴다. 목록에 있는데 실체가 없는 `tool_ref`(예:
     지워진 MCP 도구)는 **조용히 버린다** — 에이전트 하나가 못 쓰는 도구 하나
     때문에 실행 전체가 막힐 이유는 없다. 대신 부르려고 하면 ToolNotAllowed 다.
+
+    `depth` 는 지금 몇 번째 층인가다. 상한(`MAX_AGENT_DEPTH`)에 닿으면 `agent:`
+    도구를 빼고 준다 — 하위 에이전트가 또 위임하지 못하게 하는 것이 목적이다.
     """
 
     allowed = set(AgentRepository.tool_refs(agent_id))
@@ -420,6 +687,12 @@ def load_for_agent(*, agent_id: str, team_id: str) -> dict[str, Tool]:
     for row in AgentRepository.mcp_tools(team_id):
         if row["tool_ref"] in allowed:
             available[row["tool_ref"]] = _mcp_tool(row)
+
+    if depth < MAX_AGENT_DEPTH:
+        wildcard = AGENT_TOOL_WILDCARD in allowed
+        for row in AgentRepository.callable_agents(team_id=team_id, exclude_agent_id=agent_id):
+            if wildcard or row["tool_ref"] in allowed:
+                available[row["tool_ref"]] = _agent_tool(row)
     return available
 
 

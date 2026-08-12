@@ -17,7 +17,7 @@ from apps.connectors.oauth import decrypt_credential, encrypt_credential
 
 from .codes import next_short_code
 from .connection import database_connection
-from .errors import PermissionDenied, RecordNotFound, ReferenceNotFound
+from .errors import PermissionDenied, RecordNotFound, ReferenceNotFound, RepositoryError
 from .repositories import _require_team
 
 
@@ -80,6 +80,35 @@ class AgentRepository:
                     ORDER BY s.name, t.name
                     """,
                     (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def callable_agents(*, team_id: str, exclude_agent_id: str) -> list[dict[str, Any]]:
+        """이 팀에서 **다른 에이전트가 도구로 부를 수 있는** 에이전트.
+
+        `tool_ref` 를 여기서 조립한다 — `agent:` 접두사 규칙을 Registry 와
+        Repository 두 곳에 적으면 한쪽만 고쳐졌을 때 조용히 안 맞는다
+        (`mcp_tools` 와 같은 이유).
+
+        **자기 자신은 뺀다.** 넣으면 모델이 자기를 부르는 고리를 만들 수 있고,
+        깊이 상한이 있어도 그 왕복이 전부 토큰이다.
+
+        `description` 이 위임 판단의 유일한 근거다 — 모델은 그 문장만 보고
+        누구에게 넘길지 정한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT 'agent:' || agent_id AS tool_ref,
+                           agent_id, name, description
+                    FROM agent
+                    WHERE team_id = %s AND agent_id <> %s AND status = 'ACTIVE'
+                    ORDER BY is_prebuilt DESC, name
+                    """,
+                    (team_id, exclude_agent_id),
                 )
                 return list(cursor.fetchall())
 
@@ -726,3 +755,99 @@ def _replace_tools(cursor, *, agent_id: str, tool_refs: list[str]) -> None:
         cursor.execute(
             "INSERT INTO agent_tool (agent_id, tool_ref) VALUES (%s, %s)", (agent_id, tool_ref)
         )
+
+
+class ProjectTaskRepository:
+    """추출된 업무를 **우리 플랫폼**에 적재한다.
+
+    지금까지 추출 결과는 어디에도 저장되지 않았다 — 화면 이벤트로 흐르고
+    `chat_message` 의 이벤트 배열에만 남아, 그 대화를 떠나면 사라졌다. 저장소
+    전체에 `INSERT INTO task` 가 한 건도 없었다(2026-08-11 확인).
+
+    그래서 Jira 등록이 유일한 출구였고, Jira 를 안 쓰는 팀은 뽑은 업무를
+    가질 방법이 없었다. **먼저 우리 것으로 만들고, Jira 는 그 다음이다.**
+
+    `task` 는 `proj_know_model` 을 거쳐 프로젝트에 붙는다(schema.sql:474·409).
+    추출 한 번이 지식 모델 한 판이라 **적재할 때마다 새 모델 행을 만든다** —
+    덮어쓰면 어제 뽑은 것과 오늘 뽑은 것을 가릴 수 없고, 어느 것을 승인했는지도
+    잃는다.
+    """
+
+    @staticmethod
+    def register(*, proj_id: str, account_id: str, tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        if not tasks:
+            raise RepositoryError("등록할 업무가 없습니다.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    "SELECT team_id FROM proj WHERE proj_id = %s", (proj_id,)
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 프로젝트입니다: {proj_id}")
+                if row["team_id"] != team_id:
+                    raise PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
+
+                # 이번 추출분을 담을 판. 버전은 이 프로젝트의 몇 번째인가다.
+                cursor.execute(
+                    "SELECT count(*) AS n FROM proj_know_model WHERE proj_id = %s", (proj_id,)
+                )
+                version = cursor.fetchone()["n"] + 1
+                model_id = next_short_code(
+                    cursor, table="proj_know_model", column="model_id", prefix="KM"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
+                    VALUES (%s, %s, %s, 'READY', now())
+                    """,
+                    (model_id, proj_id, f"v{version}"),
+                )
+
+                created = []
+                for task in tasks:
+                    task_id = next_short_code(
+                        cursor, table="task", column="task_id", prefix="TK"
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO task (task_id, model_id, task_name, req_role, effort,
+                                          start_at, due_at, priority, src_type, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'EXTRACTED', 'PROPOSED')
+                        """,
+                        (
+                            task_id, model_id, task["title"], task.get("required_role"),
+                            task.get("effort_hours"), task.get("start_date"),
+                            task.get("due_date"), task.get("priority"),
+                        ),
+                    )
+                    created.append({"task_id": task_id, "title": task["title"]})
+
+        return {"model_id": model_id, "model_ver": f"v{version}", "tasks": created}
+
+    @staticmethod
+    def list_for_project(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
+        """가장 최근 판의 업무. 옛 판은 남기되 화면에는 지금 것만 보인다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT t.task_id, t.task_name, t.req_role, t.effort, t.start_at,
+                           t.due_at, t.priority, t.status, m.model_ver, m.generated_at
+                    FROM task AS t
+                    JOIN proj_know_model AS m ON m.model_id = t.model_id
+                    JOIN proj AS p ON p.proj_id = m.proj_id
+                    WHERE m.proj_id = %s AND p.team_id = %s
+                      AND m.model_id = (
+                          SELECT model_id FROM proj_know_model
+                          WHERE proj_id = %s ORDER BY generated_at DESC NULLS LAST LIMIT 1
+                      )
+                    ORDER BY t.task_id
+                    """,
+                    (proj_id, team_id, proj_id),
+                )
+                return list(cursor.fetchall())

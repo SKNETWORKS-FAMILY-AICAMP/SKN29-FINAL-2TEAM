@@ -20,7 +20,9 @@ from typing import Any, Callable, Iterator
 
 from django.conf import settings
 
+from apps.connectors.oauth import OAuthError
 from backend.db.agent_platform import AgentRepository
+from backend.db.errors import RepositoryError
 from services.harness import registry, scaffold, trace
 from services.harness.registry import Tool, ToolNotAllowed
 
@@ -88,9 +90,13 @@ def run_agent(
     # 때 다른 인자를 고를 수 있고, 그러면 사용자가 승인한 것과 실제로 실행되는
     # 것이 달라진다 — 외부를 바꾸는 게이트에서 그건 승인이 아니다.
     pending = context.get("resume_tool_call")
+    # 그 호출이 **위임**이면, 하위 에이전트도 자기 지점부터 이어 돌아야 한다.
+    # 재개 정보가 한 겹이 아니라 스택인 이유다.
+    resume_inner = context.get("resume_inner")
+    depth = int(context.get("depth") or 1)
 
     agent = AgentRepository.get(agent_id)
-    tools = registry.load_for_agent(agent_id=agent_id, team_id=agent["team_id"])
+    tools = registry.load_for_agent(agent_id=agent_id, team_id=agent["team_id"], depth=depth)
     system = scaffold.compose(
         instruction=agent["instruction"] or "", max_iterations=agent["max_iterations"]
     )
@@ -154,10 +160,16 @@ def run_agent(
                         "tool_name": tool.name,
                         "arguments": arguments,
                         # 재개에 필요한 전부. 호출자가 이대로 저장했다가 승인 뒤
-                        # 그대로 돌려주면 같은 호출이 실행된다.
-                        "resume": {"messages": messages, "tool_call": call},
+                        # 그대로 돌려주면 같은 호출이 실행된다. `inner` 가 없는
+                        # 것은 "이 층에서 멈췄다"는 뜻이다.
+                        "resume": {"messages": messages, "tool_call": call, "inner": None},
                     }
                     return
+
+                delegating = tool_ref.startswith(registry.AGENT_TOOL_PREFIX)
+                # 재개 스택은 **한 번만 쓴다.** 안 비우면 같은 재개 정보로 다음
+                # 위임까지 이어 돌려 버린다. 실행이 성공하든 실패하든 소비된다.
+                inner_resume, resume_inner = (resume_inner, None) if delegating else (None, resume_inner)
 
                 tool_call_id = None
                 try:
@@ -172,7 +184,20 @@ def run_agent(
                         }
                         # 주입은 `with` 안에서 한다. 밖에서 하다 실패하면 tool_call
                         # 행 없이 run 이 끝나 로그에 흔적이 남지 않는다.
-                        raw = tool.handler(**{**arguments, **_injected(tool, agent, context)})
+                        injected = (
+                            {
+                                "delegation": _delegation(
+                                    context=context,
+                                    parent_run_id=run_trace.run_id,
+                                    depth=depth,
+                                    approved=approved,
+                                    inner=inner_resume,
+                                )
+                            }
+                            if delegating
+                            else _injected(tool, agent, context)
+                        )
+                        raw = tool.handler(**{**arguments, **injected})
                         if isinstance(raw, GeneratorType):
                             # 오래 걸리는 도구는 진행을 흘린다. 모델에게 줄 값은
                             # `return` 으로 받는다.
@@ -182,16 +207,23 @@ def run_agent(
                 except Exception as exc:  # noqa: BLE001 - 도구 실패로 run 을 끝내지 않는다
                     logger.exception("도구 실행 실패: %s (run=%s)", tool_ref, run_trace.run_id)
                     error_code = exc.__class__.__name__
+                    # **사람이 고칠 수 있는 사유만 그대로 내보낸다.** 그 밖의
+                    # 예외는 문자열에 문서 원문이나 토큰이 섞여 있을 수 있어
+                    # 클래스 이름만 남긴다.
+                    detail = str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None
                     yield {
                         "type": EVENT_TOOL_CALL_FINISHED,
                         "tool_call_id": tool_call_id,
                         "tool_ref": tool_ref,
                         "status": "FAILED",
                         "error_code": error_code,
+                        "detail": detail,
                     }
-                    # 메시지에는 클래스 이름만 넣는다. 예외 문자열에 문서 원문이나
-                    # 토큰이 섞여 들어오면 그대로 모델 컨텍스트에 실린다.
-                    messages.append(_tool_turn(call, {"error": f"도구 실행 실패: {error_code}"}))
+                    # 모델에게도 같은 기준으로 준다 — 고칠 수 있는 사유는 알려
+                    # 줘야 다음 턴에 사람에게 제대로 되물을 수 있다.
+                    messages.append(
+                        _tool_turn(call, {"error": detail or f"도구 실행 실패: {error_code}"})
+                    )
                 else:
                     yield {
                         "type": EVENT_TOOL_CALL_FINISHED,
@@ -199,6 +231,32 @@ def run_agent(
                         "tool_ref": tool_ref,
                         "status": "OK",
                     }
+
+                    # 하위 에이전트가 승인 게이트에서 멈췄다. 이 층도 함께 멈추고
+                    # **두 층의 재개 정보를 한 장에 담아** 올린다 — 승인은 사람이
+                    # 한 번 하고, 재개는 위에서 아래로 같은 순서로 되짚는다.
+                    #
+                    # 결과를 `messages` 에 넣지 않는다. 재개할 때 이 호출을 그대로
+                    # 다시 실행하므로, 넣으면 같은 위임이 두 번 들어간다.
+                    inner = _suspended(output)
+                    if inner is not None:
+                        yield {
+                            "type": EVENT_AWAITING_CONFIRMATION,
+                            "run_id": run_trace.run_id,
+                            "tool_ref": inner["tool_ref"],
+                            "tool_name": inner["tool_name"],
+                            "arguments": inner["arguments"],
+                            # 어느 에이전트가 이 승인을 요구했는지. 화면이
+                            # "「부하 리포트」가 Jira 등록을 요청합니다"로 쓴다.
+                            "via_agent": output.get("name"),
+                            "resume": {
+                                "messages": messages,
+                                "tool_call": call,
+                                "inner": inner["resume"],
+                            },
+                        }
+                        return
+
                     messages.append(_tool_turn(call, output))
 
         # 상한에 걸려 나온 길. `error` 가 아니라 `result` 인 이유는 여기까지 한
@@ -235,6 +293,66 @@ def _forward(events: Iterator[dict[str, Any]], tool_ref: str, tool_call_id: str 
         yield {**event, "tool_ref": tool_ref, "tool_call_id": tool_call_id}
 
 
+#: 메시지를 **사람에게 그대로 보여도 되는** 예외.
+#:
+#: 셋 다 이 저장소가 사용자용 한국어 문장으로 쓰고 있는 것들이다 — 실제로
+#: `apps/*/api_views.py` 의 `_repository_error_response` 가 `RepositoryError` 의
+#: 문자열을 그대로 응답에 싣는다. 화면에만 감출 이유가 없다.
+#:
+#: 여기 없는 예외(라이브러리·드라이버)는 클래스 이름만 나간다. 그 문자열에는
+#: 쿼리·문서 원문·토큰이 섞여 있을 수 있다.
+_SPEAKABLE_ERRORS = (registry.ToolInputError, RepositoryError, OAuthError)
+
+
+def _suspended(output: Any) -> dict[str, Any] | None:
+    """위임 결과가 「하위가 승인 대기로 멈췄다」인가.
+
+    표식을 값으로 받는 이유는 `registry.SUSPENDED_KEY` 주석에 있다 — 예외로
+    올리면 안쪽 run 이 GeneratorExit 로 FAILED 가 된다.
+    """
+
+    if isinstance(output, dict):
+        return output.get(registry.SUSPENDED_KEY)
+    return None
+
+
+def _delegation(
+    *,
+    context: dict[str, Any],
+    parent_run_id: str,
+    depth: int,
+    approved: set[str],
+    inner: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """하위 에이전트에게 넘길 실행 문맥.
+
+    **테넌트·요청자는 그대로 물려준다.** 위임이 권한을 넓히는 통로가 되면 안
+    된다 — 하위 에이전트도 같은 사람의 자격으로 같은 팀 것만 본다
+    (`_injected` 가 그 값으로 다시 경계를 긋는다).
+
+    `approved` 도 내려보낸다. 승인 재개는 **가장 안쪽 호출**을 실행하러 가는
+    길이라, 그 층에서 게이트가 다시 뜨면 사람이 두 번 승인하게 된다.
+
+    `inner` 는 하위의 재개 지점이다. 없으면 하위는 처음부터 돈다.
+    """
+
+    child: dict[str, Any] = {
+        "session_id": context.get("session_id"),
+        "account_id": context.get("account_id"),
+        "proj_id": context.get("proj_id"),
+        # 이 값으로 agent_run 이 이어진다. 어느 실행이 어느 실행을 불렀는지가
+        # 스키마에 남는다(schema.sql:857).
+        "parent_run_id": parent_run_id,
+        "depth": depth + 1,
+        "approved_tool_calls": sorted(approved),
+    }
+    if inner:
+        child["messages"] = inner.get("messages") or []
+        child["resume_tool_call"] = inner.get("tool_call")
+        child["resume_inner"] = inner.get("inner")
+    return child
+
+
 def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """모델이 정하면 안 되는 인자.
 
@@ -246,8 +364,13 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
         # MCP 도구도 팀이 필요하다 — 실행 직전에 그 팀의 서버·토큰을 찾는다.
         # 모델이 team_id 를 보내면 남의 팀 MCP 서버를 부를 수 있다.
         return {"team_id": agent["team_id"]}
-    if tool.ref == "task_extraction":
-        # 어느 프로젝트의 기준 문서로 뽑을지는 대화의 문맥이지 모델의 선택이 아니다.
+    if tool.ref in _PROJECT_SCOPED_TOOLS:
+        # 어느 프로젝트의 일인지는 대화의 문맥이지 모델의 선택이 아니다.
+        # 모델이 proj_id 를 정하면 남의 프로젝트에 업무를 등록할 수 있다.
+        #
+        # Jira 도구도 여기 있다. 프로젝트 하나에 Jira 프로젝트 하나라
+        # (`proj_source`) 이 값이면 키가 나온다 — **모델에게 키를 묻지 않는다.**
+        # 물어보게 두면 「확인할 Jira 프로젝트 키를 알려주세요」로 대화가 끊긴다.
         return {"proj_id": context.get("proj_id"), "account_id": context.get("account_id")}
     if tool.ref in _ACCOUNT_SCOPED_TOOLS:
         account_id = context.get("account_id")
@@ -259,11 +382,17 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
     return {}
 
 
-#: 요청자 계정을 서버가 넣어 주는 도구. 모델이 정하면 남의 팀 명부·남의 부하를
-#: 읽고 남의 Jira 를 건드린다. Connector 자격증명이 계정별인 것도 같은 이유다.
-_ACCOUNT_SCOPED_TOOLS = frozenset(
-    {"people_list", "workload_report", "jira_create_issues", "jira_get_issues"}
+#: 대화의 프로젝트를 서버가 넣어 주는 도구. 요청자 계정도 함께 간다.
+#:
+#: Jira 도구가 여기 있는 이유는 `proj_source` 가 프로젝트 ↔ Jira 프로젝트를
+#: 1:1 로 들고 있어서다 — 대화가 어느 프로젝트인지 알면 키는 서버가 찾는다.
+_PROJECT_SCOPED_TOOLS = frozenset(
+    {"task_extraction", "task_register", "jira_create_issues", "jira_get_issues"}
 )
+
+#: 요청자 계정만 서버가 넣어 주는 도구. 모델이 정하면 남의 팀 명부·남의 부하를
+#: 읽는다. Connector 자격증명이 계정별인 것도 같은 이유다.
+_ACCOUNT_SCOPED_TOOLS = frozenset({"people_list", "workload_report"})
 
 
 def _assistant_turn(decision: ModelDecision) -> list[dict[str, Any]]:
