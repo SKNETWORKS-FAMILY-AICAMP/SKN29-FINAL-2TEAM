@@ -6,15 +6,13 @@ import type { ToolChoice } from '../../api/agents';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { MODEL_SELECT_OPTIONS, DEFAULT_MODEL } from '../../data/models';
 import styles from './AgentEditPage.module.css';
 
 /** 서버 `AgentWriteSerializer.AGENT_MODELS` 와 같은 목록이어야 한다. */
-const MODEL_OPTIONS = [
-  { value: 'gpt-5.6-luna', label: 'gpt-5.6 luna — 짧은 판단 · 빠름' },
-  { value: 'gpt-5.6-terra', label: 'gpt-5.6 terra — 일반' },
-  { value: 'gpt-5.6-sol', label: 'gpt-5.6 sol — 긴 추론 · 느리고 비쌈' },
-];
 
+// 모델 목록은 `data/models.ts` 하나에서 온다 — 예전에는 여기와 Model 탭과
+// 백엔드가 각각 달랐다(2026-08-12).
 const EFFORT_OPTIONS = [
   { value: 'low', label: '낮음 (low)' },
   { value: 'medium', label: '보통 (medium)' },
@@ -41,7 +39,7 @@ export default function AgentEditPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instruction, setInstruction] = useState('');
-  const [model, setModel] = useState('gpt-5.6-luna');
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [effort, setEffort] = useState('low');
   const [maxIterations, setMaxIterations] = useState(6);
   const [toolRefs, setToolRefs] = useState<string[]>(['document_search']);
@@ -179,7 +177,7 @@ export default function AgentEditPage() {
             <label className={styles.field}>
               <span className={styles.fieldLabel}>모델</span>
               <Select
-                options={MODEL_OPTIONS}
+                options={MODEL_SELECT_OPTIONS}
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
               />

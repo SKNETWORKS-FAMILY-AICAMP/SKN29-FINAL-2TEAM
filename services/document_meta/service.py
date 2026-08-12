@@ -87,7 +87,7 @@ def _summarize(*, text: str, file_name: str | None) -> DocumentSummary:
 
     client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=120, max_retries=1)
     response = client.responses.parse(
-        model=settings.OPENAI_PLAN_MODEL,
+        model=SUMMARY_MODEL,
         service_tier=settings.OPENAI_SERVICE_TIER,
         reasoning={"effort": "low"},
         input=[

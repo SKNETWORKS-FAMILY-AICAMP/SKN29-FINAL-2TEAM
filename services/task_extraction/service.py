@@ -75,44 +75,42 @@ STAGES: list[tuple[Intent, str, str]] = [
 ]
 
 
-def _client() -> OpenAI:
-    missing = [
-        name
-        for name, value in (
-            ("OPENAI_API_KEY", settings.OPENAI_API_KEY),
-            ("OPENAI_MODEL", settings.OPENAI_MODEL),
-            ("OPENAI_REASONING_EFFORT", settings.OPENAI_REASONING_EFFORT),
-        )
-        if not str(value).strip()
-    ]
-    if missing:
-        raise PipelineConfigurationError(f"필수 OpenAI 설정이 없습니다: {', '.join(missing)}")
-    if settings.OPENAI_MODEL not in SUPPORTED_MODELS:
-        raise PipelineConfigurationError(
-            f"OPENAI_MODEL은 {' · '.join(sorted(SUPPORTED_MODELS))} 중 하나여야 합니다."
-        )
-    if settings.OPENAI_PLAN_MODEL not in SUPPORTED_MODELS:
-        raise PipelineConfigurationError(
-            f"OPENAI_PLAN_MODEL은 {' · '.join(sorted(SUPPORTED_MODELS))} 중 하나여야 합니다."
-        )
-    if settings.OPENAI_REASONING_EFFORT != "xhigh":
-        raise PipelineConfigurationError("OPENAI_REASONING_EFFORT는 xhigh여야 합니다.")
+def _client(api_key: str | None = None) -> OpenAI:
+    # **모델은 더 이상 `.env` 가 정하지 않는다 (2026-08-12).** 부른 에이전트가
+    # 들고 오고, 못 받으면 아래 상수로 떨어진다. 여기서 볼 것은 키뿐이다.
+    if not str(api_key or settings.OPENAI_API_KEY).strip():
+        raise PipelineConfigurationError("필수 OpenAI 설정이 없습니다: OPENAI_API_KEY")
     # 기본 타임아웃은 10분이고 재시도가 2회라, 응답이 안 오면 30분을 매단다.
     # 시연 중에는 그 전에 실패를 알려 주는 편이 낫다.
-    return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=300, max_retries=1)
+    return OpenAI(api_key=api_key or settings.OPENAI_API_KEY, timeout=300, max_retries=1)
 
 
 #: 이 서비스가 아는 모델. 오타로 엉뚱한 모델이 조용히 쓰이지 않게 막는다.
 SUPPORTED_MODELS = {"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+#: **Claude 는 여기 없다.** 이 파이프라인은 `responses.parse`(구조화 출력)로
+#: 근거 참조를 강제하는데(`evidence_refs` 최소 1개), Anthropic 의 OpenAI 호환
+#: 경로에는 Responses API 가 없다. 부른 에이전트가 Claude 면 추출만 설정된
+#: 기본 모델로 떨어지고, 그 사실을 결과에 적어 사람에게 알린다(2026-08-12).
+
+#: 근거를 정리해 업무로 쓰는 단계. **이 파이프라인의 품질이 여기서 갈린다.**
+#: 에이전트가 아는 모델을 주면 그것을 쓰고, 아니면 이 값이다.
+DEFAULT_WRITE_MODEL = "gpt-5.6-sol"
+
+#: 그 단계의 추론 강도. 낮추면 근거 연결이 눈에 띄게 흐트러져 고정한다 —
+#: 예전에는 `.env` 가 xhigh 가 아니면 아예 거절했다.
+WRITE_EFFORT = "xhigh"
+
+#: 검색어를 만드는 단계의 모델. 짧은 판단이라 싼 것으로 충분하다.
+PLAN_MODEL = "gpt-5.6-luna"
 
 #: 검색어를 만드는 단계의 추론 강도.
 #:
-#: 최종 정리는 `settings.OPENAI_REASONING_EFFORT`(xhigh)를 쓰지만, 이 단계는 한국어
+#: 최종 정리는 `WRITE_EFFORT`(xhigh)를 쓰지만, 이 단계는 한국어
 #: 검색 질의 1~3개를 뽑는 일이다. 2026-08-05 실측에서 low 2.9초 / xhigh 5.6초였고
 #: **xhigh 쪽 결과가 오히려 나빴다** — 세 번째 질의가 여러 문장이 이어 붙은 덩어리로
 #: 나와 임베딩 검색에 불리했다. 판단이 필요한 곳에만 추론을 쓴다.
 #:
-#: 모델도 이 단계만 따로 둔다(`OPENAI_PLAN_MODEL`). 같은 프롬프트로 잰 결과다:
+#: 모델도 이 단계만 따로 둔다(`PLAN_MODEL`). 같은 프롬프트로 잰 결과다:
 #:
 #:   luna   2.8초   출력 192 토큰
 #:   terra  2.9초   출력 135 토큰
@@ -159,7 +157,7 @@ def _query_plan(
     client: OpenAI, *, intent: Intent, need: str, title: str, outline: str, used: list[str]
 ) -> QueryPlan:
     response = client.responses.parse(
-        model=settings.OPENAI_PLAN_MODEL,
+        model=PLAN_MODEL,
         service_tier=settings.OPENAI_SERVICE_TIER,
         reasoning={"effort": PLAN_EFFORT},
         input=[
@@ -219,7 +217,14 @@ def extract_tasks(*, team_id: str, primary_document: dict, document_ids: list[st
     return result
 
 
-def extract_tasks_stream(*, team_id: str, primary_document: dict, document_ids: list[str]):
+def extract_tasks_stream(
+    *,
+    team_id: str,
+    primary_document: dict,
+    document_ids: list[str],
+    model: str | None = None,
+    api_key: str | None = None,
+):
     """기준 문서에서 업무를 뽑고, 근거는 팀 문서 전체에서 검색으로 찾는다.
 
     1단계(`TASK_DISCOVERY`)만 기준 문서 안에서 찾는다. 무엇을 하는 프로젝트인지는
@@ -232,7 +237,17 @@ def extract_tasks_stream(*, team_id: str, primary_document: dict, document_ids: 
     검색어를 그대로 내보낸다 — 그게 이 단계에서 실제로 한 판단이다.
     """
 
-    client = _client()
+    # **부른 에이전트의 모델을 쓴다.** 도구 안에 `.env` 모델이 박혀 있으면,
+    # 에이전트에서 고른 모델과 실제로 도는 모델이 달라진다. 다만 이 파이프라인은
+    # `responses.parse` 가 필요해서 아는 모델만 받는다 — Claude 처럼 못 받는
+    # 것이면 조용히 떨어지지 않고 **무엇으로 돌았는지 결과에 적는다.**
+    fallback = None
+    if model and model not in SUPPORTED_MODELS:
+        fallback = model
+        model = None
+    write_model = model or DEFAULT_WRITE_MODEL
+
+    client = _client(api_key)
     # 이 문서가 무엇에 관한 것인지. 질의를 주제 위에 올려 놓는 앵커다.
     outline = document_outline(primary_document["doc_id"])
     evidence: dict[str, dict] = {}
@@ -300,9 +315,9 @@ def extract_tasks_stream(*, team_id: str, primary_document: dict, document_ids: 
     ]
     by_ref = {row["ref"]: row["chunk_id"] for row in evidence_rows}
     response = client.responses.parse(
-        model=settings.OPENAI_MODEL,
+        model=write_model,
         service_tier=settings.OPENAI_SERVICE_TIER,
-        reasoning={"effort": settings.OPENAI_REASONING_EFFORT},
+        reasoning={"effort": WRITE_EFFORT},
         input=[
             {
                 "role": "system",
@@ -348,7 +363,10 @@ def extract_tasks_stream(*, team_id: str, primary_document: dict, document_ids: 
             "warnings": warnings,
             "evidence": evidence_rows,
             "trace": trace,
-            "model": settings.OPENAI_MODEL,
-            "reasoning_effort": settings.OPENAI_REASONING_EFFORT,
+            "model": write_model,
+            "reasoning_effort": WRITE_EFFORT,
+            # 에이전트가 고른 모델로 못 돈 경우. 화면과 모델이 그 사실을 알아야
+            # 「Claude 로 골랐는데 왜 OpenAI 로 돌았나」를 설명할 수 있다.
+            "model_fallback_from": fallback,
         },
     }

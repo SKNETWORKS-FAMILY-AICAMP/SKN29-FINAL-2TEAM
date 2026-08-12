@@ -515,6 +515,13 @@ def task_row(key="KAN-34", summary="[MOCK] Orchestrator", person="PX002", catego
     }
 
 
+#: **저장소를 하나라도 빼먹으면 그 호출은 실제 DB 로 나간다.**
+#:
+#: 이 저장소들은 psycopg 직결이라 Django 테스트 DB 를 타지 않는다. 상세 화면에
+#: `ProjectTaskRepository` 를 붙였을 때 이 줄을 안 늘려서, **개발 DB 에 팀이
+#: 있는 동안만 우연히 통과**하고 있었다 — DB 를 초기화하니 `_require_team` 이
+#: 터지면서 세 건이 한꺼번에 깨졌다(2026-08-12).
+@patch("apps.projects.api_views.ProjectTaskRepository.list_for_project", return_value=[])
 @patch("apps.projects.api_views.lookup_persons", return_value={"PX002": {"name": "임준"}})
 @patch("apps.projects.api_views.ExistTaskRepository.list_for_project")
 @patch("apps.projects.api_views.ProjectSourceRepository.last_sync_by_project", return_value={})
@@ -526,7 +533,7 @@ class ProjectDetailApiTests(SimpleTestCase):
     def test_requires_login(self, *_mocks):
         self.assertEqual(self.client.get("/api/projects/PJ001/").status_code, 401)
 
-    def test_returns_tasks_with_assignee_names(self, get_for_team, _p, _l, list_tasks, _n):
+    def test_returns_tasks_with_assignee_names(self, get_for_team, _p, _l, list_tasks, _n, _extracted):
         get_for_team.return_value = project_row()
         list_tasks.return_value = [task_row()]
 
@@ -536,7 +543,7 @@ class ProjectDetailApiTests(SimpleTestCase):
         self.assertEqual(body["tasks"][0]["summary"], "[MOCK] Orchestrator")
         self.assertEqual(body["tasks"][0]["assignee_name"], "임준")
 
-    def test_unmapped_assignee_is_kept(self, get_for_team, _p, _l, list_tasks, _n):
+    def test_unmapped_assignee_is_kept(self, get_for_team, _p, _l, list_tasks, _n, _extracted):
         """담당자 매핑이 안 돼도 목록에서 빼지 않는다 — 빼면 합계가 어긋난다."""
 
         get_for_team.return_value = project_row()
@@ -547,7 +554,7 @@ class ProjectDetailApiTests(SimpleTestCase):
         self.assertEqual(len(body["tasks"]), 1)
         self.assertIsNone(body["tasks"][0]["assignee_name"])
 
-    def test_missing_summary_is_null_not_invented(self, get_for_team, _p, _l, list_tasks, _n):
+    def test_missing_summary_is_null_not_invented(self, get_for_team, _p, _l, list_tasks, _n, _extracted):
         get_for_team.return_value = project_row()
         list_tasks.return_value = [task_row(summary=None)]
 

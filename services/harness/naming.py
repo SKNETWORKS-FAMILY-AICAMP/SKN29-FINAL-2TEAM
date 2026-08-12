@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 #: 사이드바 한 줄에 들어가는 길이. 넘치면 어차피 잘려서 뒤가 안 보인다.
 MAX_TITLE = 40
 
+#: 제목은 한 줄이라 제일 싼 것으로 충분하다. 대화 모델을 따라가면 비싼 모델을
+#: 고른 팀이 제목에까지 그 값을 낸다.
+TITLE_MODEL = "gpt-5.6-luna"
+
 _SYSTEM = (
     "너는 대화 목록에 붙일 짧은 제목을 짓는다. "
     f"한국어 명사구로 {MAX_TITLE}자 이내. 따옴표·마침표·「제목:」 같은 머리말을 붙이지 않는다. "
@@ -43,7 +47,7 @@ def suggest_title(*, question: str, answer: str) -> str | None:
 
         client = OpenAI(api_key=api_key, timeout=20, max_retries=0)
         response = client.responses.create(
-            model=settings.OPENAI_MODEL,
+            model=TITLE_MODEL,
             service_tier=settings.OPENAI_SERVICE_TIER,
             # 제목 짓기에 추론을 깊게 태울 이유가 없다. 느려지기만 한다.
             # `document_meta` 가 요약에 쓰는 값과 같다(실제로 도는 것을 확인한 값).

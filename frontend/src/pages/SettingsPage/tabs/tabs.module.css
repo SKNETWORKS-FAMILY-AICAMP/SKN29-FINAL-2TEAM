@@ -48,6 +48,9 @@
 }
 
 .cardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: 16px;
   font-weight: 700;
   color: var(--color-heading);
@@ -67,7 +70,9 @@
 
 .row {
   display: flex;
-  align-items: flex-start;
+  /* 설명 문구를 걷어내면서 줄 대부분이 한 줄짜리가 됐다. `flex-start` 로 두면
+     아이콘·버튼만 위에 붙어 어긋나 보인다(2026-08-12). */
+  align-items: center;
   gap: var(--space-4);
   padding: var(--space-4) 18px;
   background: var(--color-bg);
@@ -108,6 +113,32 @@
   font-size: 12px;
   color: var(--color-muted);
   line-height: 1.5;
+}
+
+/**
+ * 필수 표시. **문장으로 쓰지 않는다.**
+ *
+ * 「인사 시스템만 필수입니다」라고 한 줄 적어 두었더니, 화면에 설명이 또 하나
+ * 늘었다(2026-08-12 PM 지적). 폼에서 쓰는 별표(`Input.module.css` `.required`)와
+ * 같은 규약을 쓴다 — 한 글자면 같은 말이 된다. 나머지 줄에 별표가 없다는 사실이
+ * 「선택」을 말하므로 그쪽에는 아무것도 안 붙인다.
+ */
+.requiredMark {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+/**
+ * 자리에 지금 무엇이 꽂혀 있는가.
+ *
+ * 줄 제목은 **자리**(문서 저장소)이고 제품(Google Drive)은 그 아래로 내렸다.
+ * 제품명을 제목으로 쓰면 「이 셋이 우리 제품의 연동 목록」으로 읽히는데,
+ * 실제로는 자리가 셋이고 거기 꽂힌 것이 셋일 뿐이다(2026-08-12 PM 지적).
+ */
+.rowVendor {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-body);
 }
 
 .rowMeta {
@@ -215,4 +246,62 @@
   border-color: var(--color-danger);
   background: var(--color-danger-bg, #fef2f2);
   color: var(--color-danger);
+}
+
+.keyRow {
+  margin-bottom: var(--space-3);
+}
+
+.keyForm {
+  display: flex;
+  /* 라벨 높이가 제각각이라 `flex-end` 로 **아래를 맞춘다** — 버튼만 위로 뜨던
+     것을 고친다(2026-08-12). 버튼에는 라벨이 없으므로 그만큼 아래로 민다. */
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+/* 첫 자식에만 주면 옆의 Input 이 자기 폭을 고집해 셀렉트가 찌그러진다
+   (2026-08-12 — 「제공자」 라벨이 세 줄로 접혔다). 전부 같이 늘린다. */
+.keyForm > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 버튼은 늘리지 않는다 — 글자만큼만 있으면 된다. 입력칸 높이(48px)에 맞춘다. */
+.keyForm > button {
+  flex: 0 0 auto;
+  height: 48px;
+  white-space: nowrap;
+}
+
+.modelSelect {
+  width: 100%;
+  height: 48px;
+  margin-top: 6px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 14px;
+  color: var(--color-body);
+}
+
+/* 셀렉트를 감싸는 라벨. `flex:1` 만 주면 select 의 기본 폭이 이겨서 찌그러진다. */
+.field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* `Input` 의 라벨과 같은 모양이어야 한 줄에서 눈높이가 맞는다. */
+.fieldLabel {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.field .modelSelect {
+  margin-top: 0;
 }

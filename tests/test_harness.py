@@ -894,3 +894,51 @@ def _fake_connection(cursor):
             return False
 
     return lambda: _Connection()
+
+
+class ToolTurnStyleTests(SimpleTestCase):
+    """도구 결과는 **답을 만든 API 의 형식**으로 되돌린다.
+
+    Responses API 는 `function_call_output`, OpenAI 호환(`/chat/completions`)은
+    `role: tool` 이다. 섞으면 그 다음 호출이 400 으로 죽는다 — 우리가 제공하는
+    Claude 가 호환 경로로 가므로 한 실행 안에서 두 형식이 만날 수 있다.
+    """
+
+    CALL = {"id": "call_1", "tool_ref": "people_list", "arguments": {}}
+
+    def test_기본은_responses_형식이다(self):
+        from services.harness.runner import _tool_turn
+
+        turn = _tool_turn(self.CALL, {"ok": True})
+
+        self.assertEqual(turn["type"], "function_call_output")
+        self.assertEqual(turn["call_id"], "call_1")
+
+    def test_호환_엔드포인트는_role_tool_이다(self):
+        from services.harness.runner import _tool_turn
+
+        turn = _tool_turn(self.CALL, {"ok": True}, "chat")
+
+        self.assertEqual(turn["role"], "tool")
+        self.assertEqual(turn["tool_call_id"], "call_1")
+        self.assertNotIn("type", turn)
+
+    def test_claude_는_호환_경로로_간다(self):
+        """모델 이름으로 갈린다 — 팀이 주소를 넣지 않아도 Claude 는 chat 이다."""
+
+        from services.harness import runner
+
+        with patch.object(runner.settings, "ANTHROPIC_API_KEY", "sk-ant-test"):
+            call = runner._default_model({"model": "claude-sonnet-4-5", "team_id": None})
+
+        # 어댑터가 붙었는지만 본다(실제 호출은 하지 않는다).
+        self.assertEqual(call.__qualname__.split(".")[0], "_chat_completions_model")
+
+    def test_anthropic_키가_없으면_분명히_말한다(self):
+        from services.harness import runner
+
+        with patch.object(runner.settings, "ANTHROPIC_API_KEY", ""):
+            with self.assertRaises(RuntimeError) as caught:
+                runner._default_model({"model": "claude-sonnet-4-5", "team_id": None})
+
+        self.assertIn("ANTHROPIC_API_KEY", str(caught.exception))

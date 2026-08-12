@@ -84,3 +84,54 @@ export function deleteAgent(token: string, agentId: string) {
 export function listToolChoices(token: string) {
   return apiRequest<ToolChoice[]>('/agents/tools/', { token });
 }
+
+/** 이 팀의 메인 모델 — 오케스트레이션하는 정문 에이전트가 쓰는 모델. */
+export interface MainModel {
+  /** 팀에 정문이 아직 없으면 null. 그때는 화면이 「없다」고 말한다. */
+  model: string | null;
+  agent_name: string | null;
+}
+
+export function fetchMainModel(token: string) {
+  return apiRequest<MainModel>('/agents/main-model/', { token });
+}
+
+export function saveMainModel(token: string, model: string) {
+  return apiRequest<MainModel>('/agents/main-model/', { method: 'PUT', token, body: { model } });
+}
+
+/** 팀이 등록한 커스텀 모델 API 한 건. **키는 서버가 돌려주지 않는다.** */
+export interface CustomModel {
+  conn_id: string;
+  label: string;
+  base_url: string;
+  model: string;
+  connected_at: string | null;
+}
+
+export function listCustomModels(token: string) {
+  return apiRequest<CustomModel[]>('/agents/custom-models/', { token });
+}
+
+export function addCustomModel(
+  token: string,
+  body: { label: string; base_url: string; api_key: string; model: string },
+) {
+  return apiRequest<CustomModel[]>('/agents/custom-models/', { method: 'POST', token, body });
+}
+
+export function removeCustomModel(token: string, connId: string) {
+  return apiRequest<CustomModel[]>(`/agents/custom-models/?conn_id=${connId}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+/** 주소·키를 주면 그 엔드포인트가 가진 모델 이름을 돌려준다. 못 주면 빈 목록. */
+export function probeCustomModels(token: string, baseUrl: string, apiKey: string) {
+  return apiRequest<{ models: string[]; detail: string | null }>('/agents/custom-models/probe/', {
+    method: 'POST',
+    token,
+    body: { base_url: baseUrl, api_key: apiKey },
+  });
+}

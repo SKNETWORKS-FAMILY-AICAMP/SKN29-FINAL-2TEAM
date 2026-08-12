@@ -144,3 +144,50 @@ class AgentApiTests(SimpleTestCase):
 
     def test_로그인_없이는_401(self, _repo):
         self.assertEqual(self.client.get("/api/agents/").status_code, 401)
+
+
+@patch("apps.agents.api_views.AgentRepository")
+class MainModelApiTests(SimpleTestCase):
+    """메인 모델 — 오케스트레이션하는 정문 에이전트의 모델.
+
+    예전 Model 탭은 라디오가 아무 데도 저장되지 않았다. 저장되는 척하는 컨트롤을
+    없애는 것이 이 API 의 목적이라, **실제로 쓰기가 도는지**를 본다.
+    """
+
+    def test_정문이_없으면_null_을_준다(self, repo):
+        """임의의 기본값을 저장된 것처럼 보이면 안 된다 — 그게 옛 화면의 문제였다."""
+
+        repo.main_model.return_value = None
+
+        body = self.client.get("/api/agents/main-model/", headers=auth_header()).json()
+
+        self.assertIsNone(body["model"])
+
+    def test_모델을_바꾼다(self, repo):
+        repo.set_main_model.return_value = {"agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-sol"}
+
+        response = self.client.put(
+            "/api/agents/main-model/",
+            {"model": "gpt-5.6-sol"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(repo.set_main_model.call_args.kwargs["model"], "gpt-5.6-sol")
+
+    def test_고를_수_없는_모델은_거절한다(self, repo):
+        """`-pro` 계열은 effort: low 를 안 받아 실행 시점에 400 이 난다 — 저장을 막는다."""
+
+        response = self.client.put(
+            "/api/agents/main-model/",
+            {"model": "gpt-5.5-pro"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.set_main_model.assert_not_called()
+
+    def test_로그인_없이는_401(self, _repo):
+        self.assertEqual(self.client.get("/api/agents/main-model/").status_code, 401)

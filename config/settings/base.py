@@ -131,11 +131,16 @@ WEB_SEARCH_API_KEY = env("WEB_SEARCH_API_KEY", default="")
 WEB_SEARCH_TIMEOUT_SECONDS = env.int("WEB_SEARCH_TIMEOUT_SECONDS", default=20)
 
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
-OPENAI_MODEL = env("OPENAI_MODEL", default="")
 # 검색어 생성 전용 모델. 최종 정리와 따로 두는 이유는 services/task_extraction
 # 쪽 주석에 실측과 함께 적어 뒀다 — 같은 일에 Sol 은 Luna 의 수백 배가 든다.
-OPENAI_PLAN_MODEL = env("OPENAI_PLAN_MODEL", default="gpt-5.6-luna")
-OPENAI_REASONING_EFFORT = env("OPENAI_REASONING_EFFORT", default="")
+#: **모델은 여기서 고정하지 않는다 (2026-08-12).**
+#:
+#: 예전에는 `OPENAI_MODEL`·`OPENAI_PLAN_MODEL`·`OPENAI_REASONING_EFFORT` 가
+#: `.env` 에 박혀 있어서, 화면에서 모델을 골라도 실제로는 그 값으로 돌았다.
+#: 이제 모델은 **에이전트가 들고 있고**(설정 > Model, 에이전트 빌더), 코드
+#: 기본값은 각 모듈의 상수다. `.env` 에는 **키만** 둔다.
+#: Claude 계열을 부를 때 쓴다. OpenAI 호환 경로라 별도 SDK 는 없다.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 # OpenAI 처리 대기열. priority 는 지연이 짧은 대신 비싸다. 계정이 안 열어 준
 # 티어를 주면 요청이 거절되므로 기본은 auto 로 둔다.
 OPENAI_SERVICE_TIER = env("OPENAI_SERVICE_TIER", default="auto")

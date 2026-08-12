@@ -113,6 +113,175 @@ class AgentRepository:
                 )
                 return list(cursor.fetchall())
 
+    #: 정문을 가르는 표식. `is_prebuilt` 로는 못 가른다 — 예시 에이전트도 같은
+    #: 플래그를 쓴다. 도구를 안 좁히는 것(= `agent:*` 보유)이 정문이다.
+    PLATFORM_TOOL = "agent:*"
+
+    @staticmethod
+    def main_model(account_id: str) -> dict[str, Any] | None:
+        """이 팀의 **메인 모델** — 오케스트레이션하는 정문 에이전트의 모델.
+
+        팀에 정문이 없으면(시드 전) `None`. 그때는 화면이 「아직 없다」고 말해야
+        하고, 임의의 기본값을 보여주면 안 된다 — 저장한 적 없는 값을 저장된
+        것처럼 보이는 것이 지금 Model 탭의 문제였다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT a.agent_id, a.name, a.model
+                    FROM agent AS a
+                    JOIN agent_tool AS t ON t.agent_id = a.agent_id
+                    WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
+                    LIMIT 1
+                    """,
+                    (team_id, AgentRepository.PLATFORM_TOOL),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_main_model(*, account_id: str, model: str) -> dict[str, Any]:
+        """메인 모델을 바꾼다.
+
+        **`update` 를 쓰지 않고 따로 둔다.** 정문은 `is_prebuilt` 라 그쪽 경로는
+        `_writable_agent` 가 막는다 — 그 가드는 옳다(시드가 정의를 소유하므로
+        화면에서 고친 이름·도구는 다음 시드에 사라진다). 다만 **모델만은 팀이
+        정하는 값**이라, 그 한 칸만 여는 자리를 따로 만든다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    UPDATE agent SET model = %s
+                    WHERE agent_id = (
+                        SELECT a.agent_id FROM agent AS a
+                        JOIN agent_tool AS t ON t.agent_id = a.agent_id
+                        WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
+                        LIMIT 1
+                    )
+                    RETURNING agent_id, name, model
+                    """,
+                    (model, team_id, AgentRepository.PLATFORM_TOOL),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("이 팀에는 아직 기본 에이전트가 없습니다.")
+                return row
+
+
+class CustomModelRepository:
+    """팀이 직접 등록한 **커스텀 모델 API**. 여러 개를 목록으로 관리한다.
+
+    기본은 우리가 제공하는 모델이다 — 타깃이 비개발자라 「키를 발급받아
+    넣으세요」를 첫 화면에 둘 수 없다. 다만 자기 계약으로만 데이터를 흘려야 하는
+    팀, 사용량이 우리 플랜을 넘는 팀, 사내 vLLM 을 쓰는 팀이 있다. 그런 곳을
+    **필요한 만큼 여러 개** 붙일 수 있게 한다(2026-08-12 PM 결정).
+
+    `connector_conn` 을 그대로 쓴다. 스키마를 바꾸면 팀원 전원이 ALTER 를 돌려야
+    하는데, 이 테이블이 이미 「팀의 암호화된 자격증명」이라 새 칸을 만들 이유가
+    없다. **Connector 탭에는 보이지 않는다** — 그 탭은 「데이터를 가져오는 자리」
+    이고 이건 데이터가 아니라 모델을 부르는 열쇠다.
+    """
+
+    TYPE = "MODEL_API"
+
+    @staticmethod
+    def _rows(cursor, team_id: str) -> list[dict[str, Any]]:
+        cursor.execute(
+            """
+            SELECT c.conn_id, c.connected_at, c.encrypted_credential_ref
+            FROM connector_conn AS c
+            -- **팀은 `user_account.team_id` 로 잇는다.** `team_member` 에는
+            -- account_id 가 없다 — 거기는 person_id 로 사람을 묶는 표다
+            -- (2026-08-12: 그 컬럼이 있다고 가정해 조인했다가 503 이 났다).
+            JOIN user_account AS u ON u.account_id = c.account_id
+            WHERE c.connector_type = %s AND u.team_id = %s
+            ORDER BY c.connected_at
+            """,
+            (CustomModelRepository.TYPE, team_id),
+        )
+        rows = []
+        for row in cursor.fetchall():
+            payload = (
+                decrypt_credential(row["encrypted_credential_ref"])
+                if row["encrypted_credential_ref"]
+                else {}
+            )
+            rows.append({**row, "payload": payload})
+        return rows
+
+    @staticmethod
+    def list_for_account(account_id: str) -> list[dict[str, Any]]:
+        """등록한 것들. **키는 절대 나가지 않는다** — 이름·주소·모델만."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                return [
+                    {
+                        "conn_id": row["conn_id"],
+                        "label": row["payload"].get("label") or row["payload"].get("base_url") or "",
+                        "base_url": row["payload"].get("base_url") or "",
+                        "model": row["payload"].get("model") or "",
+                        "connected_at": row["connected_at"],
+                    }
+                    for row in CustomModelRepository._rows(cursor, team_id)
+                ]
+
+    @staticmethod
+    def for_model(team_id: str, model: str) -> dict[str, Any] | None:
+        """이 모델 이름을 감당하는 커스텀 엔드포인트. 없으면 `None`.
+
+        **모델 이름 하나로 경로가 정해진다.** `agent.model` 에 별도 표식을 넣지
+        않으므로 러너·도구가 지금 쓰는 문자열 그대로 돈다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                for row in CustomModelRepository._rows(cursor, team_id):
+                    if row["payload"].get("model") == model:
+                        return row["payload"]
+        return None
+
+    @staticmethod
+    def add(*, account_id: str, label: str, base_url: str, api_key: str, model: str) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team(cursor, account_id)
+                conn_id = next_short_code(
+                    cursor, table="connector_conn", column="conn_id", prefix="CN"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO connector_conn
+                        (conn_id, account_id, connector_type, encrypted_credential_ref)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        conn_id,
+                        account_id,
+                        CustomModelRepository.TYPE,
+                        encrypt_credential(
+                            {"label": label, "base_url": base_url, "api_key": api_key, "model": model}
+                        ),
+                    ),
+                )
+
+    @staticmethod
+    def remove(*, account_id: str, conn_id: str) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                # 같은 팀 것만 지운다. conn_id 만 믿으면 남의 팀 것을 지울 수 있다.
+                allowed = {row["conn_id"] for row in CustomModelRepository._rows(cursor, team_id)}
+                if conn_id not in allowed:
+                    raise RecordNotFound(f"등록되지 않은 모델 API 입니다: {conn_id}")
+                cursor.execute("DELETE FROM connector_conn WHERE conn_id = %s", (conn_id,))
+
 
 class AgentRunRepository:
     """실행 로그. **평가가 읽는 유일한 기록이라 실패해도 남아야 한다.**"""

@@ -21,7 +21,7 @@ from typing import Any, Callable, Iterator
 from django.conf import settings
 
 from apps.connectors.oauth import OAuthError
-from backend.db.agent_platform import AgentRepository
+from backend.db.agent_platform import AgentRepository, CustomModelRepository
 from backend.db.errors import RepositoryError
 from services.harness import registry, scaffold, trace
 from services.harness.registry import Tool, ToolNotAllowed
@@ -35,6 +35,16 @@ EVENT_TOOL_CALL_FINISHED = "tool_call_finished"
 EVENT_AWAITING_CONFIRMATION = "awaiting_confirmation"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+
+#: Anthropic 의 OpenAI 호환 경로. 우리가 제공하는 Claude 가 여기로 간다 —
+#: 별도 SDK 없이 같은 어댑터로 받는다(2026-08-12 실측: 도구 호출까지 정상,
+#: `max_tokens` 도 필수가 아니다).
+ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1/"
+
+#: 에이전트에 값이 없을 때의 기본. **`.env` 가 아니라 코드에 둔다** — 환경마다
+#: 다른 모델로 도는 것을 막고, 화면이 고른 값이 언제나 이긴다(2026-08-12).
+DEFAULT_MODEL = "gpt-5.6-luna"
+DEFAULT_EFFORT = "low"
 
 
 @dataclass
@@ -56,6 +66,13 @@ class ModelDecision:
     #:   'reasoning' item". 그래서 우리가 모양을 다시 만들지 않고 받은 것을
     #:   그대로 들고 다닌다.
     raw_items: list[dict[str, Any]] = field(default_factory=list)
+    #: 이 답을 만든 API 가 도구 결과를 어떤 모양으로 받는가.
+    #:
+    #: `responses` 는 OpenAI Responses API(`function_call_output`), `chat` 은
+    #: OpenAI 호환 엔드포인트가 쓰는 `/chat/completions`(`role: tool`)다. 두
+    #: 형식을 섞으면 그 다음 호출이 400 으로 죽는다 — 그래서 **답을 만든 쪽이
+    #: 자기 형식을 들고 다닌다**(2026-08-12).
+    tool_style: str = "responses"
 
 
 #: 모델 호출부. 테스트가 mock 모델을 꽂을 수 있게 함수로 받는다 —
@@ -146,7 +163,7 @@ def run_agent(
                     # 모델에게 돌려주고 계속 돈다. 허용되지 않은 도구를 부른 것은
                     # 실행 실패가 아니라 모델의 잘못된 선택이고, 다음 턴에 고칠 수
                     # 있다. 상한이 있어 무한히 시도하지는 못한다.
-                    messages.append(_tool_turn(call, {"error": str(exc)}))
+                    messages.append(_tool_turn(call, {"error": str(exc)}, decision.tool_style))
                     continue
 
                 # 승인 게이트 — 외부를 바꾸는 도구는 승인 전에 실행하지 않는다
@@ -222,7 +239,7 @@ def run_agent(
                     # 모델에게도 같은 기준으로 준다 — 고칠 수 있는 사유는 알려
                     # 줘야 다음 턴에 사람에게 제대로 되물을 수 있다.
                     messages.append(
-                        _tool_turn(call, {"error": detail or f"도구 실행 실패: {error_code}"})
+                        _tool_turn(call, {"error": detail or f"도구 실행 실패: {error_code}"}, decision.tool_style)
                     )
                 else:
                     yield {
@@ -257,7 +274,7 @@ def run_agent(
                         }
                         return
 
-                    messages.append(_tool_turn(call, output))
+                    messages.append(_tool_turn(call, output, decision.tool_style))
 
         # 상한에 걸려 나온 길. `error` 가 아니라 `result` 인 이유는 여기까지 한
         # 일이 버려지지 않기 때문이다 — 대신 끝내지 못했다고 분명히 적는다.
@@ -364,6 +381,17 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
         # MCP 도구도 팀이 필요하다 — 실행 직전에 그 팀의 서버·토큰을 찾는다.
         # 모델이 team_id 를 보내면 남의 팀 MCP 서버를 부를 수 있다.
         return {"team_id": agent["team_id"]}
+    if tool.ref == "task_extraction":
+        # **부른 에이전트의 모델로 돈다.** 도구 안에 `.env` 모델이 박혀 있으면,
+        # 에이전트에서 모델을 골라 놓고 정작 제일 무거운 호출은 다른 모델로 도는
+        # 어긋남이 생긴다. 팀이 자기 키를 넣은 경우(BYOK)도 마찬가지로, 추출만
+        # 우리 키로 나가면 그 팀이 키를 넣은 이유를 배신한다(2026-08-12).
+        return {
+            "proj_id": context.get("proj_id"),
+            "account_id": context.get("account_id"),
+            "team_id": agent["team_id"],
+            "model": agent.get("model"),
+        }
     if tool.ref in _PROJECT_SCOPED_TOOLS:
         # 어느 프로젝트의 일인지는 대화의 문맥이지 모델의 선택이 아니다.
         # 모델이 proj_id 를 정하면 남의 프로젝트에 업무를 등록할 수 있다.
@@ -423,14 +451,13 @@ def _assistant_turn(decision: ModelDecision) -> list[dict[str, Any]]:
     return [{"role": "assistant", "content": decision.text or ""}]
 
 
-def _tool_turn(call: dict[str, Any], output: Any) -> dict[str, Any]:
-    """도구 결과. Responses API 의 function_call_output 형식 그대로다."""
+def _tool_turn(call: dict[str, Any], output: Any, style: str = "responses") -> dict[str, Any]:
+    """도구 결과. **답을 만든 API 의 형식으로 되돌린다.**"""
 
-    return {
-        "type": "function_call_output",
-        "call_id": call.get("id"),
-        "output": json.dumps(output, ensure_ascii=False, default=str),
-    }
+    text = json.dumps(output, ensure_ascii=False, default=str)
+    if style == "chat":
+        return {"role": "tool", "tool_call_id": call.get("id"), "content": text}
+    return {"type": "function_call_output", "call_id": call.get("id"), "output": text}
 
 
 def _default_model(agent: dict[str, Any]) -> ModelClient:
@@ -447,13 +474,34 @@ def _default_model(agent: dict[str, Any]) -> ModelClient:
 
     from openai import OpenAI
 
-    api_key = settings.OPENAI_API_KEY
+    # **팀이 넣어 둔 것이 있으면 그것으로 돈다.** 없으면 우리 키다 — 기본은
+    # 우리가 제공하는 것이고(타깃이 비개발자라 키를 요구할 수 없다), 자기 계약을
+    # 써야 하는 팀만 덮어쓴다(2026-08-12 PM 결정).
+    model_name = agent.get("model") or DEFAULT_MODEL
+    endpoint = _team_endpoint(agent.get("team_id"), model_name) or {}
+    api_key = endpoint.get("api_key") or settings.OPENAI_API_KEY
+    base_url = endpoint.get("base_url") or None
     if not str(api_key).strip():
         raise RuntimeError("OPENAI_API_KEY 가 없습니다.")
 
-    client = OpenAI(api_key=api_key, timeout=300, max_retries=1)
-    model_name = agent.get("model") or settings.OPENAI_MODEL
-    effort = agent.get("reasoning_effort") or settings.OPENAI_REASONING_EFFORT
+    effort = agent.get("reasoning_effort") or DEFAULT_EFFORT
+
+    # **우리가 제공하는 Claude 는 Anthropic 키로 부른다.** 팀이 자기 주소를 넣은
+    # 경우가 아니면, 모델 이름이 어느 제공자 것인지로 갈린다.
+    if not base_url and model_name.startswith("claude-"):
+        api_key = settings.ANTHROPIC_API_KEY
+        base_url = ANTHROPIC_BASE_URL
+        if not str(api_key).strip():
+            raise RuntimeError("ANTHROPIC_API_KEY 가 없습니다.")
+
+    client = OpenAI(api_key=api_key, base_url=base_url or None, timeout=300, max_retries=1)
+
+    # **Responses API 는 사실상 OpenAI 전용이다.** 호환 엔드포인트(Anthropic·
+    # OpenRouter·Groq·vLLM…)에 그대로 보내면 404 라, 주소가 있으면 무조건
+    # `/chat/completions` 로 간다. 형식이 다른 만큼 도구 결과를 되돌리는 모양도
+    # 달라진다(`ModelDecision.tool_style`).
+    if base_url:
+        return _chat_completions_model(client, model_name)
 
     def call(system: str, messages: list[dict[str, Any]], tools: list[Tool]) -> ModelDecision:
         response = client.responses.create(
@@ -480,6 +528,102 @@ def _default_model(agent: dict[str, Any]) -> ModelClient:
             token_in=getattr(usage, "input_tokens", 0) or 0,
             token_out=getattr(usage, "output_tokens", 0) or 0,
             raw_items=[_echoable(item) for item in response.output],
+        )
+
+    return call
+
+
+def _team_endpoint(team_id: str | None, model: str | None) -> dict[str, Any] | None:
+    """이 모델 이름을 감당하는 커스텀 엔드포인트. 없으면 `None` — 우리 것으로 돈다.
+
+    **모델 이름 하나로 경로가 정해진다.** 팀이 등록한 API 중 그 모델을 선언한
+    것이 있으면 거기로 가고, 없으면 우리가 제공하는 경로다.
+
+    **여기서 터뜨리지 않는다.** 못 읽었다고 대화 전체를 실패시키면, 등록해 둔
+    값이 깨졌을 때 아무것도 못 하게 된다.
+    """
+
+    if not team_id or not model:
+        return None
+    try:
+        return CustomModelRepository.for_model(team_id, model)
+    except Exception:  # noqa: BLE001 - 조회 실패로 실행을 막지 않는다
+        logger.exception("커스텀 모델 API 를 읽지 못했습니다: team=%s", team_id)
+        return None
+
+
+def _chat_tool_spec(tool: Tool) -> dict[str, Any]:
+    """`/chat/completions` 의 function tool 은 `function` 안에 한 겹 들어간다."""
+
+    return {
+        "type": "function",
+        "function": {
+            "name": model_name_for(tool.ref),
+            "description": tool.description,
+            "parameters": tool.input_schema,
+        },
+    }
+
+
+def _chat_completions_model(client: Any, model_name: str) -> ModelClient:
+    """OpenAI 호환 엔드포인트(`/chat/completions`)용 호출부.
+
+    OpenRouter·Groq·Together·Azure·사내 vLLM, 그리고 **Anthropic 의 OpenAI 호환
+    경로**가 전부 이 모양이다. Responses API 와 다른 점은 셋이다 —
+    도구 스펙이 한 겹 더 싸여 있고, 답이 `choices[0].message` 이며, 도구 결과를
+    `role: tool` 로 되돌린다.
+
+    `reasoning` 은 보내지 않는다. 호환 구현마다 받는 곳도 있고 400 을 내는 곳도
+    있어서, 공통분모만 쓴다.
+    """
+
+    def call(system: str, messages: list[dict[str, Any]], tools: list[Tool]) -> ModelDecision:
+        response = client.chat.completions.create(
+            model=model_name,
+            tools=[_chat_tool_spec(tool) for tool in tools] or None,
+            messages=[{"role": "system", "content": system}, *messages],
+        )
+        message = response.choices[0].message
+        raw_calls = list(message.tool_calls or [])
+        usage = response.usage
+        return ModelDecision(
+            text=message.content or None,
+            tool_calls=[
+                {
+                    "id": item.id,
+                    "tool_ref": tool_ref_for(item.function.name),
+                    "arguments": json.loads(item.function.arguments or "{}"),
+                }
+                for item in raw_calls
+            ],
+            token_in=getattr(usage, "prompt_tokens", 0) or 0,
+            token_out=getattr(usage, "completion_tokens", 0) or 0,
+            # 다음 호출에 그대로 이어 붙일 assistant 턴. Responses 와 달리 우리가
+            # 조립해도 되지만, 도구 호출은 **id 까지 그대로** 돌려줘야 짝이 맞는다.
+            raw_items=[
+                {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    **(
+                        {
+                            "tool_calls": [
+                                {
+                                    "id": item.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": item.function.name,
+                                        "arguments": item.function.arguments or "{}",
+                                    },
+                                }
+                                for item in raw_calls
+                            ]
+                        }
+                        if raw_calls
+                        else {}
+                    ),
+                }
+            ],
+            tool_style="chat",
         )
 
     return call

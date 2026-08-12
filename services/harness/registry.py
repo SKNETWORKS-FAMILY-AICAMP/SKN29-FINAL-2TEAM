@@ -19,7 +19,11 @@ from backend.db import (
     ProjectSourceRepository,
     TeamRepository,
 )
-from backend.db.agent_platform import AgentRepository, McpServerRepository, ProjectTaskRepository
+from backend.db.agent_platform import (
+    AgentRepository,
+    McpServerRepository,
+    ProjectTaskRepository,
+)
 from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
     DocMetaRepository,
@@ -209,7 +213,28 @@ def _workload_report(*, account_id: str, weeks: int = 4) -> dict[str, Any]:
     ) | {"as_of": datetime.now(UTC).isoformat(), "workload_weeks": weeks}
 
 
-def _extract_tasks(*, proj_id: str | None, account_id: str):
+def _team_model_key(team_id: str | None) -> str | None:
+    """팀이 넣어 둔 키. **OpenAI 정품일 때만 쓴다.**
+
+    이 파이프라인은 `responses.parse` 가 필요한데 호환 엔드포인트(OpenRouter·
+    Anthropic…)에는 그 API 가 없다. 주소를 따로 넣은 팀의 키를 여기 쓰면 404 로
+    죽으므로, 그 경우에는 우리 키로 돈다 — 대신 그 사실이 결과에 남아야 한다.
+    """
+
+    if not team_id:
+        return None
+    # 커스텀 엔드포인트는 쓰지 않는다 — 이 파이프라인은 `responses.parse` 가
+    # 필요한데 호환 경로에는 그 API 가 없다. 우리 키로 돈다.
+    return None
+
+
+def _extract_tasks(
+    *,
+    proj_id: str | None,
+    account_id: str,
+    team_id: str | None = None,
+    model: str | None = None,
+):
     """기준 문서에서 업무를 뽑는다. 기존 `services/task_extraction` 을 그대로 쓴다.
 
     **제너레이터다.** 안쪽 파이프라인이 4단계 검색 + 1단계 정리라 몇 분이 걸리고,
@@ -253,7 +278,12 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
     ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
     result = None
     for event in extract_tasks_stream(
-        team_id=primary["team_id"], primary_document=primary, document_ids=ready_ids
+        team_id=primary["team_id"],
+        primary_document=primary,
+        document_ids=ready_ids,
+        # 부른 에이전트의 모델과, 팀이 자기 키를 넣었으면 그 키로 돈다.
+        model=model,
+        api_key=_team_model_key(team_id or primary["team_id"]),
     ):
         if event["type"] == "result":
             result = event["result"]
@@ -268,6 +298,9 @@ def _extract_tasks(*, proj_id: str | None, account_id: str):
     return {
         "task_count": len(result["tasks"]),
         "warnings": result["warnings"],
+        "model": result.get("model"),
+        # 고른 모델로 못 돌았으면 모델이 그 사실을 사람에게 말해야 한다.
+        "model_fallback_from": result.get("model_fallback_from"),
         "primary_document": primary["file_name"],
         # 등록 도구(`task_register`·`jira_create_issues`)에 그대로 넘길 수 있는
         # 최소 형태. **화면 카드의 순서와 같다** — 사람이 확인 카드에서 푼 체크가
