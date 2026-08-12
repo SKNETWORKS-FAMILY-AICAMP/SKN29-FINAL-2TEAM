@@ -45,6 +45,23 @@ TRUNCATE TABLE exist_task, proj_member, proj_source, proj;
 -- 테스트 모드 refresh_token(7일) 도 새로 받는다.
 TRUNCATE TABLE connector_conn;
 
+-- Agent Platform. **여기가 통째로 빠져 있었다 (2026-08-12 확인).**
+--
+-- 짧은 코드는 행이 없으면 001 부터 다시 나가므로 새 팀도 TE001 이 된다.
+-- 그런데 `agent`·`chat_session`·`mcp_server` 가 team_id 로 옛 TE001 을
+-- 가리킨 채 남아 있으면 **새 팀이 그대로 물려받는다** — 위에서 문서 저장소에
+-- 대해 경고한 것과 같은 사고가 DB 안에서 난다. 실제로 초기화 전 상태에서
+-- 에이전트 9건·대화가 남아 있었다.
+--
+-- `agent_run`·`tool_call` 은 실행 로그다. 평가의 모수라 평소에는 지우지
+-- 않지만(ChatSessionRepository.delete 도 남긴다), 여기서는 테넌트를 통째로
+-- 새로 만드는 것이라 같이 비운다 — 옛 팀의 실행이 새 팀 것으로 보인다.
+TRUNCATE TABLE
+    tool_call, agent_run,
+    chat_message, chat_session,
+    agent_tool, agent,
+    mcp_tool, mcp_server;
+
 -- 팀·계정·초대. 캘린더는 아직 연동 전이지만 같이 비운다.
 TRUNCATE TABLE
     cal_event,
@@ -87,6 +104,17 @@ UNION ALL SELECT 'mock_hr.person', count(*) FROM mock_hr.person;
 --
 --      docker compose -f infra/docker/docker-compose.yml exec web \
 --        python backend/services/createDB/grant_admin.py <이메일>
+--
+-- 2-1. **에이전트를 다시 시드한다.** 위에서 `agent` 를 비웠으므로 기본 제공
+--      에이전트(「코파일럿」)가 없다. 없으면 Chat 이 아무것도 못 한다 —
+--      화면에는 「아직 우리 팀 에이전트가 없습니다」만 뜬다.
+--      **팀을 먼저 만든 뒤**(People DB 연결) 돌려야 한다. 팀이 없으면 붙일
+--      곳이 없다.
+--
+--        docker compose -f infra/docker/docker-compose.yml exec web \
+--          python backend/services/createDB/seed_agents.py --all-teams
+--
+--      `--team TE001` 로 하나만 할 수도 있다. 인자를 빼면 실행되지 않는다.
 --
 -- 3. Cloudflare 터널을 새로 띄우고 `.env` 를 고친 뒤 **컨테이너를 재생성**한다.
 --    Quick Tunnel 은 재실행할 때마다 주소가 바뀐다. 이걸 빼먹으면 RunPod 이
