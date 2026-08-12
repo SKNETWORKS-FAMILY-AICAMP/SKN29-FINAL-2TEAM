@@ -12,11 +12,11 @@
 
 | 종류 | 정의 파일 | 저장 내용 |
 |---|---|---|
-| PostgreSQL/pgvector | `DB/schema.sql` | `doc`, `chunk`, `vec_idx` 등 `public` 40개 + HR 8개(`mock_hr` 스키마) = `CREATE TABLE` 48개. Django ORM 테이블은 생성하지 않음 |
+| PostgreSQL/pgvector | `DB/schema.sql` | `doc`, `chunk`, `vec_idx` 등 `public` **49개** + HR 8개(`mock_hr` 스키마) = `CREATE TABLE` **57개**. Django ORM 테이블은 생성하지 않음 (⚠ 40+8=48 은 2026-08-11 Agent Platform 9개 추가 전 값이다 — 2026-08-12 정정) |
 | PostgreSQL/pgvector (목업) | `DB/peopleDB/peopledb_mock.sql` | `schema.sql`이 만든 People DB 테이블(`mock_hr` 스키마의 `org`/`level`/`skill`/`person`/`person_skill`/`sched`/`absence`/`person_link`)에 채우는 목업 INSERT. `schema.sql`처럼 자동 실행되지 않고 수동 실행 필요(5장 참고) |
 | pgvector 예시 스크립트 | `backend/services/createDB/vec_idx_setup.py` | `vec_idx` 테이블에 청크 임베딩을 저장·검색하는 예시(6장 참고) |
 
-`db` 서비스 하나만 `infra/docker/docker-compose.yml`에 정의되어 있고, git clone 후 한 번만 제대로 기동하면 이후로는 그대로 유지된다.
+`infra/docker/docker-compose.yml` 에는 `db`·`web`·`frontend` 세 서비스가 있고 이 문서는 `db` 만 다룬다. git clone 후 한 번만 제대로 기동하면 이후로는 그대로 유지된다.
 
 ---
 
@@ -40,6 +40,21 @@ cp .env.example .env
 ```
 
 `.env`는 Git에 올라가지 않는 로컬 전용 설정이다. DB 관련 기본값은 그대로 두면 된다.
+
+> ⚠ **「그대로 두면 된다」는 틀렸다 (2026-08-12).** AWS 이전(`3ddf9db`) 이후
+> `.env.example` 의 `DATABASE_URL` 은 **빈 값**이고, `docker-compose.yml` 이
+> 그것을 덮어쓰지도 않는다. 빈 문자열은 django-environ 이 기본값으로 대체하지
+> 않으므로 `psycopg.connect('')` 로 죽는다.
+>
+> **반드시 직접 채운다** — 로컬 Postgres 컨테이너를 쓸 때:
+> ```
+> DATABASE_URL=postgres://project_copilot:project_copilot@db:5432/project_copilot
+> ```
+> 팀 공유 AWS RDS 를 쓸 때는 RDS 엔드포인트를 넣는다.
+>
+> 아래 §6·§7 의 **호스트 실행 명령은 인라인으로 `@localhost:5432` 를 넘기므로**
+> `.env` 를 `@db:5432` 로 채워도 충돌하지 않는다 — 컨테이너 안에서는 `db`,
+> 호스트에서는 `localhost` 다.
 
 ---
 
@@ -388,6 +403,7 @@ CREATE TABLE IF NOT EXISTS doc_meta (
 | `doc_block`·`vec_idx`·`doc_sync`의 `revision` → `VARCHAR(100)` (2026-08-04) | `doc.cur_revision`만 2026-07-31에 넓혀 둬서, 원문은 받아지는데 파싱 결과를 적재할 때 터지는 상태였다. Drive의 `headRevisionId`가 실측 51자다 |
 | `vec_idx.embedding` → `VECTOR(768)` (2026-08-04) | 임베딩 모델이 `google/embeddinggemma-300m`(768차원)으로 확정됐다. 1536은 OpenAI `text-embedding-3-small` 전제라 맞지 않는다. 적재와 검색이 같은 모델을 써야 하므로 차원은 한 곳에서만 정해진다 |
 | Agent Platform 9개 테이블 추가 — `agent`·`agent_tool`·`mcp_server`·`mcp_tool`·`chat_session`·`chat_message`·`agent_run`·`tool_call`·`doc_meta` (2026-08-11) | 8/11 팀 회의에서 Chat 기반 Agent Platform으로 확정됐다(아키텍처 §3.1). 기존 테이블은 한 줄도 안 건드리는 순수 추가라, **안 돌려도 지금 화면은 멀쩡하고 새 Chat 화면만 안 뜬다.** PK가 두 종류인 것이 눈에 걸릴 텐데 의도한 것이다 — 이 스키마의 `VARCHAR(5)`는 접두사 2자 + 숫자 3자라 **테이블당 999행이 상한**이고(`backend/db/codes.py`), 대화 한 번에 수십 줄씩 쌓이는 `chat_message`·`agent_run`·`tool_call`은 데모 도중에도 그 선을 넘는다. 그래서 로그성 테이블은 `doc_block`·`chunk`·`vec_idx`와 같은 UUID를 쓰고, 사람이 만드는 설정(`agent`·`mcp_server`·`mcp_tool`)만 기존 코드 체계를 따른다. `agent_run.session_id`가 NULL 허용인 것도 의도다 — Harness의 `run_agent`는 대화에 종속되지 않는 순수 함수라 평가 스크립트나 에이전트 간 호출에는 `chat_session`이 아예 없다 — `DB/migrations/2026-08-11_agent_platform.sql` (`71dd585`) |
+| `proj.description` 추가 (2026-08-11) | 프로젝트를 만들 때 **이름과 설명으로 기준 문서 후보를 찾는다**. 이름만으로는 요약 임베딩 질의가 너무 짧아 아무 문서나 걸린다 — 「AI Platform」 같은 이름은 어떤 문서와도 비슷하고 어떤 문서와도 안 비슷하다. 찾을 때만 쓰고 버리지 않는 이유는 나중에 후보를 다시 뽑을 때 사람이 같은 문장을 또 적어야 하기 때문이다 — `POST /api/projects/primary-candidates/`, `DB/migrations/2026-08-11_proj_description.sql` (`e7369ba`) |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 
@@ -477,7 +493,24 @@ python backend/services/createDB/grant_admin.py <가입된 이메일> --revoke
 
 ### 6.2 기본 제공 에이전트 시드 (`seed_agents.py`)
 
-Chat 화면의 에이전트 선택기에 **「업무 추출 에이전트」가 안 보이면 이걸 안 돌린 것이다.** 에이전트는 팀 소유(`agent.team_id`)라 팀마다 한 벌씩 필요하고, 온보딩으로 새 팀을 만들 때마다 다시 돌려야 한다.
+에이전트는 팀 소유(`agent.team_id`)라 팀마다 한 벌씩 필요하고, 온보딩으로 새 팀을 만들 때마다 다시 돌려야 한다.
+
+> ⚠ **「선택기에 「업무 추출 에이전트」가 안 보이면 안 돌린 것」은 틀렸다
+> (2026-08-12).** 두 가지가 바뀌어서 **판정이 정반대**가 됐다.
+>
+> 1. **Chat 의 에이전트 선택기를 없앴다**(`58ed034`). 무엇으로 답할지는 고르는
+>    것이 아니라 말하면 정해진다.
+> 2. 기본 제공 에이전트가 **1종(정문)**이 됐다. **시드를 제대로 돌리면 옛
+>    「업무 추출 에이전트」는 오히려 `ARCHIVED` 로 내려가 사라진다** —
+>    `seed_agents.py` 의 정리 로직이 정의에 없는 기본 제공 행을 보관 처리한다.
+>
+> **지금의 확인 방법**: Chat 빈 대화에서 「이 팀에 기본 에이전트가 없습니다.
+> 관리자가 시드를 돌려야 합니다.」 배너가 **안 뜨면** 정상이다. DB 로 보려면:
+> ```sql
+> SELECT name, status FROM agent WHERE is_prebuilt;
+> ```
+> ⚠ 「에이전트 목록 화면에 보이는지」로 확인하면 안 된다 — 그 화면은 정문을
+> 의도적으로 숨긴다(팀이 관리할 물건이 아니라 대화 그 자체이므로).
 
 `grant_admin.py`와 같은 이유로 API가 아니라 스크립트다 — `is_prebuilt = true`인 행을 API로 만들 수 있으면 「우리가 제공하는 것」과 「팀이 만든 것」의 구분이 무의미해진다.
 

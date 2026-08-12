@@ -59,7 +59,7 @@ class AuthenticatedAPIView(APIView):
 class ChatSessionListCreateAPIView(AuthenticatedAPIView):
     def get(self, request):
         try:
-            rows = ChatSessionRepository.list_for_team(request.user.account_id)
+            rows = ChatSessionRepository.list_for_account(request.user.account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response([session_response(row) for row in rows])

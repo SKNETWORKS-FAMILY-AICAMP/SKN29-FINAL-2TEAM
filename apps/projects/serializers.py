@@ -189,7 +189,6 @@ def project_response(
         "name": row["name"],
         "description": row.get("description"),
         "code": row["proj_id"],
-        "description": "",
         "status": row["status"],
         "tz": row["tz"],
         "timezone": row["tz"],

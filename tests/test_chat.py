@@ -433,3 +433,25 @@ class ChatHistoryTests(SimpleTestCase):
         # 앞선 이력 20건 + 이번 발화 1건.
         self.assertEqual(len(sent), 21)
         self.assertEqual(sent[0]["content"], "질문20")
+
+
+@patch("apps.chat.api_views.ChatSessionRepository")
+class ChatListScopeTests(SimpleTestCase):
+    """대화 목록은 **내 것만**이다 — 계층 `팀 > 프로젝트 > 채팅(개인)`.
+
+    8/12 까지 `WHERE s.team_id` 라 팀원 전체가 서로의 대화를 보고 있었다.
+    사이드바를 「프로젝트 > 대화」로 바꾸면서 화면만 고치고 쿼리를 안 고쳤다 —
+    조용히 되돌아갈 수 있는 종류라 여기서 못 박는다.
+    """
+
+    def test_팀이_아니라_계정으로_고른다(self, sessions):
+        sessions.list_for_account.return_value = []
+
+        self.client.get("/api/chat/sessions/", headers=auth_header())
+
+        sessions.list_for_account.assert_called_once_with("UA001")
+        self.assertFalse(
+            hasattr(sessions.list_for_team, "assert_not_called")
+            and sessions.list_for_team.called,
+            "팀 전체 목록을 부르면 안 된다",
+        )

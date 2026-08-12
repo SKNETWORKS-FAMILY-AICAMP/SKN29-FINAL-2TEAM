@@ -47,6 +47,7 @@ class ProjectApiTests(SimpleTestCase):
         create.return_value = {
             "proj_id": "PJ001",
             "name": "AI 코파일럿 시연",
+            "description": "문서 후보를 찾는 질의가 되는 문장",
             "status": "DRAFT",
             "tz": "Asia/Seoul",
             "owner_account_id": "UA001",
@@ -65,6 +66,10 @@ class ProjectApiTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        # 같은 dict 리터럴에 `"description": ""` 가 뒤에 또 있어서 늘 빈 문자열로
+        # 나가던 것을 막는다(2026-08-12). 증상이 조용하다 — 상세 화면이 아니라
+        # 「기준 문서 찾기」 재검색이 이름 하나로만 질의하게 된다.
+        self.assertEqual(response.json()["description"], "문서 후보를 찾는 질의가 되는 문장")
         create.assert_called_once_with(
             name="AI 코파일럿 시연",
             # 설명을 안 보내면 None 이다. 빈 문자열로 바꾸지 않는다 —

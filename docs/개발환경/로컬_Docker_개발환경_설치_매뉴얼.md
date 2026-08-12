@@ -63,6 +63,22 @@ Copy-Item .env.example .env
 
 `DATABASE_URL`은 호스트에서 Django를 직접 실행할 때의 주소다. Docker `web` 컨테이너 안에서는 Compose가 서비스명 `db` 주소로 자동 교체하므로 수정하지 않는다.
 
+> ⚠ **이 서술은 틀렸다 (2026-08-12).** AWS 이전(`3ddf9db`)에서 `docker-compose.yml`
+> 의 `web.environment` 에 있던 `DATABASE_URL` 을 걷어냈다. **Compose 는 더 이상
+> 아무것도 교체하지 않는다** — `.env` 값이 컨테이너 안에서도 그대로 쓰인다.
+>
+> 그래서 옛 로컬 값(`@127.0.0.1:5432`)을 그냥 두면 컨테이너가 **자기 자신**에
+> 붙으려다 실패한다. 증상은 `/api/health` 503 이고 **원인 메시지가 안 나온다.**
+>
+> - 로컬 Postgres 컨테이너 → 호스트명은 **`db`** 다:
+>   `postgres://project_copilot:project_copilot@db:5432/project_copilot`
+> - 팀 공유 AWS RDS → RDS 엔드포인트
+> - 호스트에서 Django 를 직접 돌릴 때만 `@127.0.0.1:5432`
+>   (compose 가 5432 를 호스트로 퍼블리시한다)
+>
+> `.env` 를 고쳤으면 **재시작이 아니라 재생성**이라야 반영된다:
+> `docker compose -f infra/docker/docker-compose.yml up -d --force-recreate web`
+
 **주의:** `docker compose` 명령은 항상 아래 두 방식 중 하나로 실행한다. `docker-compose.yml`이 프로젝트 루트가 아니라 `infra/docker/`에 있기 때문에, 그냥 루트에서 `docker compose up`만 치면 `no configuration file provided: not found` 오류가 난다.
 
 ```powershell
@@ -309,9 +325,18 @@ docker compose -f infra/docker/docker-compose.yml down -v
 | `docker compose up` 실행 시 `no configuration file provided: not found` | 프로젝트 루트가 아니라 `infra/docker/`에 compose 파일이 있음. `-f infra/docker/docker-compose.yml`을 붙이거나 `cd infra/docker` 후 실행 |
 | Docker daemon 연결 실패 | Docker Desktop을 실행한 뒤 재시도 |
 | `db`가 `healthy`가 되지 않음 | `docker compose ... logs db`로 오류 확인 후 포트 5432 충돌 여부 확인 |
-| 웹 컨테이너가 DB에 연결하지 못함 | `.env`의 `DATABASE_URL`을 임의로 `db`로 바꾸지 말고 Compose 환경변수 설정 유지 |
+| 웹 컨테이너가 DB에 연결하지 못함 | `.env`의 `DATABASE_URL`을 **직접 `@db:5432`로 지정**한 뒤 `up -d --force-recreate web` (아래 ⚠ 참고) |
 | 8000 포트 충돌 | `"8000:8000"`을 `"8001:8000"`으로 변경하고 React API 주소도 함께 변경 |
 | `schema.sql`을 고쳤는데 반영이 안 됨 | init 스크립트는 볼륨이 빌 때만 실행된다. 5장을 참고해 `postgres_data` 볼륨 삭제 후 재기동 |
+
+> ⚠ **위 「웹 컨테이너가 DB에 연결하지 못함」의 옛 해결책은 정반대였다
+> (2026-08-12).** 「`.env` 를 `db` 로 바꾸지 말고 Compose 환경변수 유지」라고
+> 적혀 있었는데, 유지할 Compose 환경변수 자체가 없어졌다(`3ddf9db`).
+> 그대로 따르면 영원히 못 붙는다.
+>
+> 같은 커밋이 `depends_on: db (service_healthy)` 도 걷었다 — **`up -d` 가 더는
+> db 를 기다리지 않는다.** web 을 재생성하기 전에 `docker compose ... ps` 로
+> db 가 `healthy` 인지 먼저 확인할 것.
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `vector` 확장을 아직 안 탄 볼륨. 7장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
 | SQL 구조 변경이 반영되지 않음 | `schema.sql`은 빈 볼륨 최초 기동 때만 실행됨. 개발 데이터 백업 후 볼륨을 재생성 |
 | 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed·`vec_idx_setup.py` 재실행 |

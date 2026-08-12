@@ -250,20 +250,35 @@ class ChatSessionRepository:
                 return cursor.fetchone()
 
     @staticmethod
-    def list_for_team(account_id: str) -> list[dict[str, Any]]:
+    def list_for_account(account_id: str) -> list[dict[str, Any]]:
+        """**내 대화만.** 계층이 `팀 > 프로젝트 > 채팅(개인)` 이다(2026-08-12 확정).
+
+        ⚠ **8/12 까지 `WHERE s.team_id` 였다** — 팀원 전체가 서로의 대화를 보고
+        있었다. 사이드바를 「프로젝트 > 대화」로 바꾸면서 화면만 고치고 이 쿼리를
+        안 고쳤다. 문서에는 「개인 것만 보인다」로 먼저 적혀 있었는데 코드가
+        따라오지 않은 상태였다.
+
+        **읽기 권한 자체는 여전히 팀이다** — `_require_session` 이 팀 검사로
+        남는다(대화를 열면 근거·결과가 팀의 문서·Jira 에서 나오므로 같은 팀이면
+        열 수 있어야 한다). 바뀌는 것은 **목록에 무엇이 보이는가** 뿐이다.
+        링크를 받으면 팀원의 대화를 열 수 있고, 그건 의도한 경계다.
+        """
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
+                # 팀이 없는 계정은 빈 목록이다. 이 검사는 남긴다 —
+                # 계정만으로 거르면 팀 배정 전 계정도 목록을 받는다.
+                _require_team(cursor, account_id)
                 cursor.execute(
                     """
                     SELECT s.session_id::text, s.agent_id, s.proj_id, s.title,
                            s.created_at, s.updated_at, a.name AS agent_name
                     FROM chat_session AS s
                     LEFT JOIN agent AS a ON a.agent_id = s.agent_id
-                    WHERE s.team_id = %s
+                    WHERE s.account_id = %s
                     ORDER BY s.updated_at DESC
                     """,
-                    (team_id,),
+                    (account_id,),
                 )
                 return list(cursor.fetchall())
 
