@@ -150,7 +150,11 @@ export default function ChatPage() {
     if (!token) return;
     listAgents(token)
       .then((rows) => {
-        setAgents(rows);
+        // 목록 API 는 이제 팀의 DRAFT·DISABLED 도 돌려준다(관리 화면이 그걸
+        // 보여줘야 해서) — Chat 은 ACTIVE 만 후보로 본다. 초안이 기본 에이전트로
+        // 잘못 골리거나 "에이전트 없음" 배너 판단을 흐리면 안 된다.
+        const active = rows.filter((row) => row.status === 'ACTIVE');
+        setAgents(active);
         // **정문을 `agent:*` 로 고른다.**
         //
         // 두 번 고쳤다. 「목록 첫 항목」은 이름 정렬 우연에 기대고 있었고(문서
@@ -160,7 +164,7 @@ export default function ChatPage() {
         //
         // 위임할 수 있는 것이 정문이다. 그것만이 도구를 안 좁힌다.
         setAgentId(
-          (prev) => prev ?? rows.find(isPlatformAgent)?.agent_id ?? rows[0]?.agent_id ?? null,
+          (prev) => prev ?? active.find(isPlatformAgent)?.agent_id ?? active[0]?.agent_id ?? null,
         );
       })
       .catch(() => setFatal('에이전트 목록을 불러오지 못했습니다.'));

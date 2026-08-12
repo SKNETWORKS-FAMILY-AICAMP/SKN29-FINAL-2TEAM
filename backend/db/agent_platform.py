@@ -644,7 +644,10 @@ class AgentCrudRepository:
                                '[]'::json) AS tool_refs
                     FROM agent AS a
                     LEFT JOIN user_account AS ua ON ua.account_id = a.created_by
-                    WHERE a.team_id = %s AND a.status = 'ACTIVE'
+                    -- ARCHIVED(삭제)만 뺀다. DRAFT·DISABLED 도 보여야 소유자가
+                    -- 관리 목록에서 초안을 찾아 이어 쓰거나 비활성 상태를 볼 수 있다.
+                    -- Chat 쪽에서 ACTIVE 만 골라 쓰는 건 프런트(`ChatPage.tsx`) 책임이다.
+                    WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
                     ORDER BY a.is_prebuilt DESC, a.name
                     """,
                     (team_id,),
@@ -660,7 +663,14 @@ class AgentCrudRepository:
         raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
 
     @staticmethod
-    def create(*, account_id: str, fields: dict[str, Any], tool_refs: list[str]) -> dict[str, Any]:
+    def create(
+        *, account_id: str, fields: dict[str, Any], tool_refs: list[str], status: str = "DRAFT"
+    ) -> dict[str, Any]:
+        """생성 = 게시가 아니다. 기본값은 `DRAFT` — Chat 에 노출되거나 위임
+        대상이 되려면 별도로 활성화(`AgentActivateAPIView`)해야 한다. 검증에
+        걸리거나 중간에 나가도 여기까지는 저장돼 있어야 작성한 내용을 잃지
+        않는다."""
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
@@ -673,12 +683,12 @@ class AgentCrudRepository:
                     INSERT INTO agent (agent_id, team_id, name, description, instruction,
                                        model, reasoning_effort, max_iterations,
                                        is_prebuilt, status, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false, 'ACTIVE', %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false, %s, %s)
                     """,
                     (
                         agent_id, team_id, fields["name"], fields["description"],
                         fields["instruction"], fields["model"], fields["reasoning_effort"],
-                        fields["max_iterations"], account_id,
+                        fields["max_iterations"], status, account_id,
                     ),
                 )
                 _replace_tools(cursor, agent_id=agent_id, tool_refs=tool_refs)
@@ -725,6 +735,21 @@ class AgentCrudRepository:
                     (agent_id,),
                 )
                 cursor.execute("DELETE FROM agent_tool WHERE agent_id = %s", (agent_id,))
+
+    @staticmethod
+    def set_status(*, agent_id: str, account_id: str, status: str) -> dict[str, Any]:
+        """DRAFT/ACTIVE/DISABLED 사이 전이. 어떤 전이가 허용되는지는 API 뷰가
+        정한다 — 여기는 `update`/`delete`와 같은 얇은 쓰기 레이어로 남긴다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _writable_agent(cursor, agent_id=agent_id, team_id=team_id)
+                cursor.execute(
+                    "UPDATE agent SET status = %s, updated_at = now() WHERE agent_id = %s",
+                    (status, agent_id),
+                )
+        return AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
 
     @staticmethod
     def team_tool_refs(account_id: str) -> list[dict[str, Any]]:

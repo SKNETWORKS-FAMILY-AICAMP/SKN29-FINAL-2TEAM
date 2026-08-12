@@ -951,6 +951,25 @@ def _agent_tool(row: dict[str, Any]) -> Tool:
     )
 
 
+def load_for_refs(*, tool_refs: list[str], team_id: str | None) -> dict[str, Tool]:
+    """명시적 `tool_ref` 목록으로 도구를 조립한다.
+
+    `load_for_agent` 와 달리 `agent_tool` 테이블을 보지 않는다 — 아직 저장되지
+    않은 빌더 초안은 그 행이 없다. 위임(`agent:`) 도구는 다루지 않는다. 빌더의
+    도구 카탈로그(`AgentToolCatalogAPIView`)가 애초에 그 도구를 안 준다.
+    """
+
+    allowed = set(tool_refs)
+    available: dict[str, Tool] = {
+        ref: tool for ref, tool in BUILTIN_TOOLS.items() if ref in allowed
+    }
+    if team_id is not None:
+        for row in AgentRepository.mcp_tools(team_id):
+            if row["tool_ref"] in allowed:
+                available[row["tool_ref"]] = _mcp_tool(row)
+    return available
+
+
 def load_for_agent(
     *, agent_id: str, team_id: str, depth: int = 1
 ) -> dict[str, Tool]:

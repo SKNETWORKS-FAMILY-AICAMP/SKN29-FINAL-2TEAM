@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiRequest, ApiError, parseErrorBody } from './client';
+import { apiRequest, ApiError, streamNdjson } from './client';
 
 /** 대화 목록 한 줄. */
 export interface ChatSession {
@@ -165,7 +165,7 @@ export function streamMessage(
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
 ) {
-  return streamNdjson(`/chat/sessions/${sessionId}/messages/`, token, { content }, onEvent, signal);
+  return streamNdjson<ChatEvent>(`/chat/sessions/${sessionId}/messages/`, token, { content }, onEvent, signal);
 }
 
 /**
@@ -184,54 +184,13 @@ export function confirmMessage(
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
 ) {
-  return streamNdjson(
+  return streamNdjson<ChatEvent>(
     `/chat/sessions/${sessionId}/confirm/`,
     token,
     selected === undefined ? {} : { selected },
     onEvent,
     signal,
   );
-}
-
-async function streamNdjson(
-  path: string,
-  token: string,
-  body: unknown,
-  onEvent: (event: ChatEvent) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!response.ok || !response.body) {
-    const failure = await response.json().catch(() => null);
-    throw parseErrorBody(failure, response.status);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // 마지막 조각은 줄이 안 끝났을 수 있어 버퍼에 남긴다.
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      onEvent(JSON.parse(line) as ChatEvent);
-    }
-  }
-
-  // `error`는 여기서 던지지 않는다. 스트림 중간에 온 오류도 이벤트로 그려야
-  // 앞 단계 결과물이 화면에 남는다(E2E §2-3) — 던지면 그 카드까지 날아간다.
 }
 
 export { ApiError };

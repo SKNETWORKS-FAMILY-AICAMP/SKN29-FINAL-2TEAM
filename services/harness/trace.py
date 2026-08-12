@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 from typing import Any, Iterator
+from uuid import uuid4
 
 from backend.db.agent_platform import AgentRunRepository, ToolCallRepository
 
@@ -89,6 +90,25 @@ def run(*, agent_id: str, session_id: str | None, parent_run_id: str | None) -> 
             token_in=trace.token_in,
             token_out=trace.token_out,
         )
+
+
+@contextmanager
+def run_ephemeral() -> Iterator[RunTrace]:
+    """빌더 저장 전 시험 실행용. **DB에 남기지 않는다.**
+
+    `agent_run.agent_id` 는 `NOT NULL` 인데 아직 저장되지 않은 초안은 넣을 id 가
+    없다. 그리고 저장 전 시험을 실제 실행과 같은 기록으로 평가 로그에 남기면
+    안 된다 — 평가가 세는 모수가 흔들린다.
+    """
+
+    yield RunTrace(run_id=f"draft-{uuid4()}")
+
+
+@contextmanager
+def tool_call_ephemeral() -> Iterator[None]:
+    """`run_ephemeral` 짝. 도구 호출도 기록하지 않는다."""
+
+    yield None
 
 
 @contextmanager
