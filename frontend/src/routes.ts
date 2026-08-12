@@ -104,7 +104,7 @@ export interface AppNavItem {
 
 /** AppShell 사이드바 4항목. Admin(Ops)은 별도 로그인이라 여기 없다. */
 export const APP_NAV_ITEMS: AppNavItem[] = [
-  { label: 'Chat', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
+  { label: '채팅', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
   { label: '에이전트', to: PATHS.agents, icon: 'sparkles', match: [PATHS.agents] },
   { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects, PATHS.documents] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button, Checkbox, Icon } from '../../../components';
+import type { JiraIssue } from '../../../api/chat';
 import type { CreatedIssue, ExtractedTask, ProgressStep } from '../cardTypes';
 import styles from './cards.module.css';
 
@@ -20,11 +21,6 @@ export interface ProgressCardProps {
   queries?: string[];
   evidenceCount?: number;
   title?: string;
-  /**
-   * Loop 회전(`tool_ref` 없는 stage). 도구 단계와 **다른 축**이라 진행 바에
-   * 섞지 않고 부제로만 쓴다 — 섞으면 카운트가 1/4 → 1/5 → 2/5 로 튄다.
-   */
-  loop?: { step: number; total: number };
 }
 
 /** ① 진행 카드 — 장시간 작업의 단계·검색어·근거 수. 기존 진행 모달의 인라인판. */
@@ -33,7 +29,6 @@ export function ProgressCard({
   queries = [],
   evidenceCount,
   title = '업무를 정리하는 중',
-  loop,
 }: ProgressCardProps) {
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
@@ -46,9 +41,13 @@ export function ProgressCard({
           <Icon name="loader" size={16} color="var(--color-primary)" spin />
           {title}
         </span>
+        {/* **회전 수는 보여주지 않는다.**
+            Loop 이 몇 바퀴 돌았는지는 우리가 디버깅할 때 보는 값이지 사람이 할
+            행동을 바꾸는 정보가 아니다. 「1/8」은 여덟 번 돌 예정인 것처럼 읽히고
+            (실제로는 상한이다), 「2번째 생각」은 그냥 소음이다.
+            실행 회전 수가 필요하면 `agent_run.iterations` 에 남아 있다. */}
         <span className={styles.progressCount}>
           {steps.length > 0 ? `${shown} / ${total} 단계` : '준비 중'}
-          {loop && loop.total > 0 ? ` · 에이전트 ${loop.step}/${loop.total} 회전` : ''}
         </span>
       </div>
 
@@ -97,7 +96,9 @@ function TaskRow({
   onToggle?: (next: boolean) => void;
 }) {
   const [localChecked, setLocalChecked] = useState(task.checked);
-  const [open, setOpen] = useState(task.evidence.length > 0);
+  // **접은 채로 시작한다.** 업무가 10건이면 근거가 수십 개 펼쳐져 목록을 훑는
+  // 것 자체가 안 된다. 근거는 한 건을 의심할 때 여는 것이지 늘 보는 것이 아니다.
+  const [open, setOpen] = useState(false);
   // 선택 상태를 바깥이 쥐면(실연동) 그것을 따르고, 아니면(mock) 자기가 쥔다.
   const isChecked = checked ?? localChecked;
 
@@ -186,13 +187,10 @@ export function ConfirmCard({
         <span className={styles.muted}>업무 {tasks.length}건</span>
       </div>
 
-      {/* 서버가 준 경고만 보여준다. 없으면 안 띄운다 — 없는 주의를 지어내면
-          다음에 진짜 경고가 왔을 때 사람이 안 읽는다. */}
-      {(warnings ?? []).map((warning) => (
-        <p key={warning} className={styles.warnBanner}>
-          {warning}
-        </p>
-      ))}
+      {/* ⚠ 경고 배너를 걷어냈다(PM 요청, 2026-08-11). 서버는 여전히 경고를
+          보내고 있고(`warnings` prop), 거기에는 「근거가 확인되지 않아 제외했다」
+          같은 **빠진 업무의 사유**가 들어 있다. 지금은 화면 어디에도 안 나온다.
+          다시 보여야 하면 배너가 아니라 조용한 한 줄로 되살릴 것. */}
 
       {tasks.map((task, index) => (
         <TaskRow
@@ -205,14 +203,34 @@ export function ConfirmCard({
 
       {trace && <p className={styles.trace}>{trace}</p>}
 
-      <div className={styles.confirmActions}>
-        <span className={styles.muted}>승인하기 전까지 Jira에는 아무것도 만들지 않습니다.</span>
-        {/* `onApprove` 가 없으면 지나간 턴의 카드다 — 눌리는 모양으로 두면
-            읽기 전용인 줄 모르고 클릭하게 된다(6차 단계 1-3). */}
-        <Button size="sm" onClick={onApprove} disabled={busy || chosen.length === 0 || !onApprove}>
-          {busy ? '등록하는 중…' : `선택한 ${chosen.length}건 Jira에 등록`}
-        </Button>
-      </div>
+      {/* **승인할 것이 있을 때만 승인 줄을 그린다.**
+          추출만 끝나고 등록 도구를 아직 안 부른 상태에서도 「승인하기 전까지
+          아무것도 등록되지 않습니다」를 띄우고 죽은 버튼을 놔뒀었다 — 사람은
+          승인을 찾다가 못 찾는다. 승인 대상이 없으면 그 사실을 말한다. */}
+      {onApprove ? (
+        <div className={styles.confirmActions}>
+          <span className={styles.muted}>
+            {/* 무엇을 승인하는지는 도구가 정한다 — 화면이 「Jira」라고 못박아 두면
+                우리 플랫폼에 등록하는 승인에도 Jira 라고 쓰게 된다. */}
+            승인하기 전까지 아무것도 등록되지 않습니다.
+          </span>
+          {/* ⚠ 업무가 없는 승인(추출을 안 거친 도구)은 고를 것이 없으므로
+              `chosen` 으로 막지 않는다 — 막으면 버튼이 영원히 비활성이다. */}
+          <Button
+            size="sm"
+            onClick={onApprove}
+            disabled={busy || (tasks.length > 0 && chosen.length === 0)}
+          >
+            {busy ? '등록하는 중…' : tasks.length > 0 ? `선택한 ${chosen.length}건 등록` : '승인'}
+          </Button>
+        </div>
+      ) : (
+        <div className={styles.confirmActions}>
+          <span className={styles.muted}>
+            아직 등록되지 않았습니다 — 「프로젝트 업무로 등록해줘」라고 말하면 승인 카드가 뜹니다.
+          </span>
+        </div>
+      )}
     </section>
   );
 }
@@ -306,7 +324,13 @@ export interface ErrorCardProps {
   onOpenSettings?: () => void;
 }
 
-/** 오류 코드별 안내. 코드가 화면 문구를 정한다 — 지어내지 않는다. */
+/**
+ * 오류 코드별 안내. **코드가 아는 것만 말한다 — 지어내지 않는다.**
+ *
+ * 여기 없는 코드에는 문구를 붙이지 않는다. 예전에는 기본값으로 「MCP Server
+ * 인증이 만료되었습니다 (401 Unauthorized)」를 깔아 놔서, 프로젝트를 안 골라
+ * 생긴 `ValueError` 에도 인증 이야기를 했다 — 사람이 설정만 계속 확인하게 된다.
+ */
 const ERROR_HINTS: Record<string, string> = {
   '401': '연결 인증이 만료되었습니다. 설정에서 연결을 다시 확인해 주세요.',
   '429': '요청 한도를 초과했습니다. 잠시 후 다시 시도하면 됩니다.',
@@ -315,28 +339,50 @@ const ERROR_HINTS: Record<string, string> = {
   validation: '요청 값이 받아들여지지 않았습니다. 아래 사유를 확인해 주세요.',
 };
 
+/**
+ * 설정으로 보내도 소용 있는 오류인가. 아니면 그 버튼을 주지 않는다.
+ *
+ * `RepositoryError`·`OAuthError` 가 여기 있는 이유는 **커넥터 자격증명이 만료된
+ * 경로가 그 예외로 온다**는 것이다(`ConnectorRepository.get_credential` →
+ * "연결이 만료됐습니다. 다시 연결해 주세요."). 그때는 설정에서 다시 연결하는
+ * 것이 정확히 사람이 할 일이다.
+ */
+const CONNECTION_CODES = new Set([
+  '401',
+  '429',
+  'timeout',
+  'unreachable',
+  'RepositoryError',
+  'OAuthError',
+]);
+
 /** ⑤ 오류 카드 — 스트림이 끊긴 지점에 뜨고, 이전 결과물은 위에 보존된다. */
 export function ErrorCard({ detail, errorCode, onRetry, onOpenSettings }: ErrorCardProps) {
-  const hint = errorCode ? ERROR_HINTS[errorCode] : undefined;
+  // 서버가 준 사유가 가장 정확하다. 그것이 없을 때만 코드로 안내한다.
+  const body = detail ?? (errorCode ? ERROR_HINTS[errorCode] : undefined);
+  const showSettings = Boolean(onOpenSettings) && CONNECTION_CODES.has(errorCode ?? '');
 
   return (
     <section className={styles.errorCard}>
       <span className={styles.errorTitle}>
         <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
-        {detail ?? 'Jira에 연결하지 못했습니다'}
+        요청을 끝내지 못했습니다
       </span>
+      {body && <p className={styles.errorBody}>{body}</p>}
       <p className={styles.errorBody}>
-        {hint ??
-          'MCP Server 인증이 만료되었습니다 (401 Unauthorized). 설정 > MCP에서 Jira 연결을 다시 확인해 주세요.'}{' '}
-        정리된 업무와 근거는 위에 그대로 남아 있으니, 고친 뒤 재시도하면 됩니다.
+        지금까지 정리된 내용은 위에 그대로 남아 있습니다.
       </p>
       <div className={styles.errorActions}>
-        <Button size="sm" variant="outline" onClick={onOpenSettings}>
-          설정에서 연결 확인
-        </Button>
-        <Button size="sm" onClick={onRetry} disabled={!onRetry}>
-          다시 시도
-        </Button>
+        {showSettings && (
+          <Button size="sm" variant="outline" onClick={onOpenSettings}>
+            설정에서 연결 확인
+          </Button>
+        )}
+        {onRetry && (
+          <Button size="sm" onClick={onRetry}>
+            다시 시도
+          </Button>
+        )}
       </div>
       {errorCode && <code className={styles.errorRaw}>error · {errorCode}</code>}
     </section>
@@ -352,3 +398,103 @@ export function ErrorCard({ detail, errorCode, onRetry, onOpenSettings }: ErrorC
  * 남아서 지웠다 — 되살리려면 Chat 이 문서 후보를 되묻는 흐름을 백엔드에
  * 먼저 만들어야 한다. CSS(`.docHead`·`.docRow`…)는 그때 다시 쓰도록 남겨 뒀다.
  */
+
+/** 상태 카테고리별 표시. `status_category` 만 분기에 쓴다 — `status` 는 사이트마다 다르다. */
+const JIRA_CATEGORY = [
+  { key: 'IN_PROGRESS', label: '진행 중', tone: 'progress' },
+  { key: 'TO_DO', label: '할 일', tone: 'todo' },
+  { key: 'DONE', label: '완료', tone: 'done' },
+] as const;
+
+/** 마감이 오늘로부터 며칠 남았는가. 지난 것은 음수다. */
+function daysLeft(due: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(`${due}T00:00:00`).getTime() - today.getTime()) / 86400000);
+}
+
+export interface JiraStatusCardProps {
+  /** 사람이 부르는 이름. 없을 때만 Jira 키로 대신한다. */
+  projectName?: string | null;
+  projectKey: string;
+  counts: Record<string, number>;
+  issues: JiraIssue[];
+}
+
+/**
+ * ⑥ Jira 현황 카드.
+ *
+ * **도구가 준 숫자를 그대로 그린다.** 모델이 문장으로 풀어 쓰면 15건을 옮겨
+ * 적다 틀릴 수 있고, 사람도 문단보다 표를 빨리 읽는다 — `task_extraction` 이
+ * 결과를 이벤트로 내보내고 화면이 카드로 그리는 것과 같은 규칙이다.
+ */
+export function JiraStatusCard({
+  projectName,
+  projectKey,
+  counts,
+  issues,
+}: JiraStatusCardProps) {
+  const total = issues.length;
+  // 마감이 있는 미완료 건만, 이른 순으로. **지난 것을 숨기지 않는다** —
+  // 늦은 일이야말로 사람이 봐야 하는 것이다.
+  const upcoming = issues
+    .filter((issue) => issue.due_at && issue.status_category !== 'DONE')
+    .sort((a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''))
+    .slice(0, 5);
+
+  return (
+    <section className={styles.card}>
+      <div className={styles.jiraHead}>
+        {/* **Jira 키를 제목에 쓰지 않는다.** `AIP` 는 내부 식별자이고, 사람은
+            이미 그 프로젝트의 대화에 있다. 이름을 모를 때만 키로 대신한다 —
+            그때는 그것이 우리가 아는 전부다. */}
+        <span className={styles.jiraTitle}>
+          <Icon name="app-window" size={16} color="var(--color-primary)" />
+          {projectName ? `${projectName} 업무 현황` : `${projectKey} 업무 현황`}
+        </span>
+        <span className={styles.muted}>전체 {total}건</span>
+      </div>
+
+      <div className={styles.jiraCounts}>
+        {JIRA_CATEGORY.map(({ key, label, tone }) => (
+          <div key={key} className={styles.jiraCount}>
+            <span className={[styles.jiraDot, styles[tone]].join(' ')} />
+            <strong>{counts[key] ?? 0}</strong>
+            <span className={styles.muted}>{label}</span>
+          </div>
+        ))}
+        {/* 상태를 모르는 이슈를 조용히 빼지 않는다 — 합계가 안 맞으면 사람이 센다. */}
+        {(counts.UNKNOWN ?? 0) > 0 && (
+          <div className={styles.jiraCount}>
+            <span className={[styles.jiraDot, styles.unknown].join(' ')} />
+            <strong>{counts.UNKNOWN}</strong>
+            <span className={styles.muted}>상태 미상</span>
+          </div>
+        )}
+      </div>
+
+      {upcoming.length > 0 && (
+        <>
+          <span className={styles.jiraSubTitle}>마감 임박</span>
+          <ul className={styles.jiraList}>
+            {upcoming.map((issue) => {
+              const left = daysLeft(issue.due_at as string);
+              return (
+                /* 이슈 키는 Jira 에서 찾을 때만 쓰는 값이라 툴팁으로 내린다. */
+                <li key={issue.jira_issue_id} className={styles.jiraRow} title={issue.jira_issue_id}>
+                  <span className={styles.jiraSummary}>
+                    {issue.summary ?? issue.jira_issue_id}
+                  </span>
+                  <span className={left < 0 ? styles.jiraOverdue : styles.muted}>
+                    {issue.due_at}
+                    {left < 0 ? ` · ${-left}일 지남` : left === 0 ? ' · 오늘' : ` · ${left}일 남음`}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}

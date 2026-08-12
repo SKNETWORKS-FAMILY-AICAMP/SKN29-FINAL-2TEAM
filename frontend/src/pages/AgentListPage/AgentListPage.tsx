@@ -128,7 +128,7 @@ export default function AgentListPage() {
           <div className={styles.headerText}>
             <h1 className={styles.title}>에이전트</h1>
             <p className={styles.subtitle}>
-              기본 제공 에이전트를 그대로 쓰거나, 우리 팀 업무에 맞는 에이전트를 직접 만듭니다.
+              우리 팀 업무에 맞는 에이전트를 만들어 둡니다. 채팅에서 그 일에 맞는 에이전트가 불려 나옵니다.
             </p>
           </div>
           <Button onClick={() => navigate(PATHS.agentNew)} iconLeft={<Icon name="plus" size={16} />}>
@@ -139,15 +139,22 @@ export default function AgentListPage() {
         {error && <p className={styles.error}>{error}</p>}
         {loading && <p className={styles.sectionSub}>불러오는 중…</p>}
 
-        {renderSection('기본 제공', '팀 전체가 바로 쓸 수 있습니다', agents.filter((a) => a.is_prebuilt))}
+        {/* **기본 제공 에이전트는 여기 없다.**
+            그건 우리가 넣어 둔 플랫폼의 일부이지 팀이 관리할 물건이 아니다 —
+            편집도 삭제도 서버가 403 으로 막고, 화면에 두면 「지울 수 없는 카드」가
+            목록 맨 위를 차지한다. 이 화면은 팀이 만든 것만 보여준다.
+            채팅은 기본 에이전트를 알아서 쓰고, 여기 만든 에이전트는 그 아래에서
+            불려 나온다(`agent:*` 위임). */}
         {renderSection(
           '우리 팀 에이전트',
-          'Builder에서 만든 것 · Chat 선택기에 즉시 노출',
+          'Builder에서 만든 것 · 채팅에서 그 일에 맞을 때 불려 나옵니다',
           agents.filter((a) => !a.is_prebuilt),
         )}
 
         {!loading && !error && agents.filter((a) => !a.is_prebuilt).length === 0 && (
-          <p className={styles.sectionSub}>아직 우리 팀 에이전트가 없습니다.</p>
+          <p className={styles.sectionSub}>
+            아직 우리 팀 에이전트가 없습니다. 「새 에이전트」로 만들어 보세요.
+          </p>
         )}
       </div>
     </AppShell>

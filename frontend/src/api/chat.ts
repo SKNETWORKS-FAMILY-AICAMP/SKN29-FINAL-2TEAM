@@ -49,11 +49,43 @@ export type ChatEvent =
   | { type: 'queries'; step: number; queries: string[]; tool_ref?: string; tool_call_id?: string }
   | { type: 'stage_done'; step: number; found: number; evidence: number; tool_ref?: string; tool_call_id?: string }
   | { type: 'tool_call_started'; tool_call_id: string | null; tool_ref: string; tool_name: string }
-  | { type: 'tool_call_finished'; tool_call_id: string | null; tool_ref: string; status: 'OK' | 'FAILED'; error_code?: string }
+  | {
+      type: 'tool_call_finished';
+      tool_call_id: string | null;
+      tool_ref: string;
+      status: 'OK' | 'FAILED';
+      error_code?: string;
+      /**
+       * 사람이 고칠 수 있는 실패 사유. 서버가 `registry.ToolInputError` 일 때만
+       * 채운다 — 그 밖의 예외는 문자열에 문서 원문·토큰이 섞일 수 있어 코드만 온다.
+       */
+      detail?: string | null;
+    }
   | { type: 'task_extraction_result'; proj_id: string; result: TaskExtractionPayload; tool_ref?: string; tool_call_id?: string }
+  | {
+      type: 'jira_status';
+      project_key: string;
+      counts: Record<string, number>;
+      issues: JiraIssue[];
+      tool_ref?: string;
+      tool_call_id?: string;
+    }
   | { type: 'awaiting_confirmation'; run_id: string; tool_ref: string; tool_name: string; arguments: Record<string, unknown> }
   | { type: 'result'; text: string; complete: boolean; stopped_reason?: string; iterations?: number }
   | { type: 'error'; detail: string };
+
+/** Jira 이슈 한 건. `jira_get_issues` 가 이벤트로 내보내는 모양 그대로. */
+export interface JiraIssue {
+  jira_issue_id: string;
+  summary: string | null;
+  /** 사이트마다 다른 표시 문자열. 분기에 쓰지 않는다. */
+  status: string | null;
+  /** 로직은 이 값만 본다. 모르는 값은 null 이다. */
+  status_category: 'TO_DO' | 'IN_PROGRESS' | 'DONE' | null;
+  priority: string | null;
+  assignee_email: string | null;
+  due_at: string | null;
+}
 
 export interface TaskExtractionPayload {
   tasks: ExtractedTask[];

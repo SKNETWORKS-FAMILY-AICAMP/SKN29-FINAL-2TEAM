@@ -462,3 +462,95 @@
   font-size: 12px;
   color: var(--color-body);
 }
+
+/* ---------- Jira 현황 카드 ---------- */
+
+.jiraHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.jiraTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.jiraCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  padding: var(--space-3) 0;
+}
+
+.jiraCount {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.jiraCount strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.jiraDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.progress { background: var(--color-primary); }
+.todo { background: var(--color-border); }
+.done { background: var(--color-success); }
+/* 상태를 모르는 것은 색으로도 구분한다 — 합계가 안 맞는 이유가 보여야 한다. */
+.unknown { background: var(--color-placeholder); }
+
+.jiraSubTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.jiraList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.jiraRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 8px var(--space-3);
+  background: var(--color-bg);
+  font-size: 13px;
+}
+
+.jiraSummary {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 지난 마감은 눈에 띄어야 한다. 숨기지 않는 것이 이 카드의 요점이다. */
+.jiraOverdue {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-danger, #dc2626);
+}

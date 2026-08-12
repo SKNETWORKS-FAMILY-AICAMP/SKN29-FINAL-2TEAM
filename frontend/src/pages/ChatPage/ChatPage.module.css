@@ -2,6 +2,9 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  /* **이 층은 흐르지 않는다.** 여기가 흐르면 안쪽 `.stream` 과 겹쳐 스크롤바가
+     두 개로 보인다 — 흐르는 곳은 목록과 대화 두 군데뿐이어야 한다. */
+  overflow: hidden;
 }
 
 /* ---------- 대화 목록 ---------- */
@@ -10,11 +13,15 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 260px;
+  /* 너비는 화면이 인라인 스타일로 준다(드래그로 조절). 여기서는 한계만 정한다. */
   flex-shrink: 0;
+  min-width: 200px;
+  max-width: 460px;
+  min-height: 0;
+  /* 대화가 쌓여도 목록만 흐른다. 페이지가 흐르면 입력창이 밀려 올라간다. */
+  overflow-y: auto;
   padding: var(--space-4) var(--space-3);
   background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
 }
 
 .sessionsTitle {
@@ -24,10 +31,173 @@
   color: var(--color-muted);
 }
 
-.sessionsEmpty {
-  padding: 0 var(--space-2);
-  font-size: 13px;
+/* ---------- 프로젝트 > 대화 (2계층) ---------- */
+
+.projectGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+}
+
+.projectRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-2);
+}
+
+.projectName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+/* **아이콘은 줄어들지 않는다.** flex 자식은 기본적으로 함께 줄어들어서, 이름이
+   길면 폴더 아이콘이 0px 이 되어 사라졌다. 잘리는 것은 글자여야 한다. */
+.projectName svg {
+  flex-shrink: 0;
+}
+
+.projectNameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectNew {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.projectNew:hover {
+  background: var(--color-bg);
+}
+
+.groupEmpty {
+  padding: 2px var(--space-2) 2px 22px;
+  font-size: 12px;
   color: var(--color-placeholder);
+}
+
+/* ---------- 목록 하단 「새 대화」 ---------- */
+
+/* 위쪽은 「돌아갈 곳」, 여기는 「새로 만드는 곳」. 목록이 길어져도 늘 보이게
+   맨 아래에 붙여 둔다. */
+.listFoot {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding-top: var(--space-3);
+  background: var(--color-surface);
+}
+
+.newChat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+  cursor: pointer;
+}
+
+.newChat:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* 버튼 위로 펼친다 — 아래는 화면 끝이라 잘린다. */
+.newMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: var(--space-2);
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+}
+
+.newMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-body);
+  cursor: pointer;
+}
+
+.newMenuItem:hover {
+  background: var(--color-bg);
+}
+
+.newMenuName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「일반 대화」와 프로젝트는 종류가 다르다 — 붙여 두면 그 이름의 프로젝트로 읽힌다. */
+.newMenuDivider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-border);
+}
+
+/* 삭제 확인. 무엇을 지우는지 제목을 먼저 보인다. */
+.deleteBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-body);
+}
+
+.deleteBody strong {
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteBody span {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* 대화는 프로젝트 아래 한 단 들어간다 — 계층이 눈에 보여야 소속이 읽힌다. */
+.projectGroup .sessionRow {
+  padding-left: var(--space-3);
 }
 
 .session {
@@ -40,6 +210,10 @@
   font-size: 13px;
   color: var(--color-body);
   cursor: pointer;
+  /* 제목은 한 줄이다. 두 줄이 되면 목록의 리듬이 깨져 훑기 어려워진다. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session:hover {
@@ -51,6 +225,19 @@
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-weight: 600;
+}
+
+/* 목록과 대화 사이의 끌기 손잡이. 테두리 역할도 겸한다 —
+   `.sessions` 의 border-right 를 이것으로 대신한다. */
+.resizer {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--color-border);
+  cursor: col-resize;
+}
+
+.resizer:hover {
+  background: var(--color-primary);
 }
 
 /* ---------- 본문 ---------- */
@@ -74,26 +261,19 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.agentPicker {
-  display: inline-flex;
+/* 이 대화가 어디에 속하는지. 고르는 컨트롤이 아니라 표시다. */
+.chatWhere {
+  display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 7px var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  font-family: inherit;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-heading);
-  cursor: pointer;
-}
-
-.agentDesc {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stream {
@@ -181,53 +361,6 @@
 
 .projectContext strong {
   color: var(--color-heading);
-}
-
-.starters {
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.starter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  width: 320px;
-  padding: var(--space-5);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  text-align: left;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.starter:hover {
-  border-color: var(--color-primary);
-}
-
-.starter strong {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-.starterIcon {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--color-primary-soft);
-}
-
-.starterDesc {
-  font-size: 13px;
-  color: var(--color-muted);
-  line-height: 1.55;
 }
 
 .onboardingBanner {

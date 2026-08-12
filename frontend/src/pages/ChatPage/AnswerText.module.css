@@ -1,0 +1,41 @@
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.paragraph {
+  line-height: 1.7;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 2px;
+  list-style: none;
+}
+
+/* 불릿을 직접 그린다. `list-style` 은 들여쓰기가 폰트마다 달라 한 줄짜리
+   항목에서도 첫 글자가 밀린다. */
+.list li {
+  position: relative;
+  padding-left: 14px;
+  line-height: 1.7;
+}
+
+.list li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.72em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-placeholder);
+}
+
+.answer strong {
+  font-weight: 700;
+  color: var(--color-heading);
+}

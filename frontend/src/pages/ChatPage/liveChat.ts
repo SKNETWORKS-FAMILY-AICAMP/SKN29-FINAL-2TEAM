@@ -1,4 +1,9 @@
-import type { ChatEvent, ExtractedTask as ApiTask, TaskExtractionPayload } from '../../api/chat';
+import type {
+  ChatEvent,
+  ExtractedTask as ApiTask,
+  JiraIssue,
+  TaskExtractionPayload,
+} from '../../api/chat';
 import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './cardTypes';
 
 /**
@@ -14,8 +19,6 @@ import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './card
  */
 export interface LiveChat {
   /** Loop 회전. `tool_ref` 없는 stage 에서만 온다. */
-  loopStep: number;
-  loopTotal: number;
   /** 도구 내부 진행. `tool_ref` 있는 stage·queries·stage_done 이 채운다. */
   steps: ProgressStep[];
   toolName: string | null;
@@ -31,13 +34,13 @@ export interface LiveChat {
   answer: string;
   /** 상한에 걸려 멈춘 경우. 성공처럼 뭉개지 않는다. */
   stoppedReason: string | null;
-  error: { detail: string; errorCode?: string } | null;
+  error: { detail?: string; errorCode?: string; toolRef?: string } | null;
+  /** Jira 현황. 도구가 이벤트로 준 것을 화면이 카드로 그린다. */
+  jira: { projectKey: string; counts: Record<string, number>; issues: JiraIssue[] } | null;
 }
 
 export function emptyLive(): LiveChat {
   return {
-    loopStep: 0,
-    loopTotal: 0,
     steps: [],
     toolName: null,
     queries: [],
@@ -51,6 +54,7 @@ export function emptyLive(): LiveChat {
     answer: '',
     stoppedReason: null,
     error: null,
+    jira: null,
   };
 }
 
@@ -61,9 +65,10 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
   switch (event.type) {
     case 'stage': {
       if (!toolRef) {
-        // Loop 회전. 진행 카드의 단계 목록에 넣지 않는다 — 넣으면 도구 단계와
-        // 섞여 카운트가 튄다.
-        return { ...state, loopStep: event.step, loopTotal: event.total };
+        // Loop 회전. **버린다.** 진행 카드의 단계 목록에 넣으면 도구 단계와
+        // 섞여 카운트가 튀고(1/4 → 1/5 → 2/5), 따로 보여 주자니 사람이 할
+        // 행동을 바꾸지 않는 값이다 — 회전 수는 `agent_run.iterations` 에 남는다.
+        return state;
       }
       // 도구 진행. 앞 단계는 끝난 것으로 확정하고 이번 단계를 doing 으로 만든다.
       const steps = state.steps.map((step) =>
@@ -97,13 +102,23 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
           ...state,
           steps,
           error: {
-            detail: `${event.tool_ref} 실행에 실패했습니다.`,
+            // **서버가 준 사유를 그대로 쓴다.** 「프로젝트를 먼저 고르세요」처럼
+            // 사람이 고칠 수 있는 말이다. 없으면 도구 이름만 말하고, 원인을
+            // 지어내지 않는다 — 카드가 나머지를 판단한다.
+            detail: event.detail ?? undefined,
             errorCode: event.error_code,
+            toolRef: event.tool_ref,
           },
         };
       }
       return { ...state, steps };
     }
+
+    case 'jira_status':
+      return {
+        ...state,
+        jira: { projectKey: event.project_key, counts: event.counts, issues: event.issues },
+      };
 
     case 'task_extraction_result':
       return {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AppShell, Button, Icon } from '../../components';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AppShell, Button, Icon, Modal } from '../../components';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import {
@@ -15,8 +15,10 @@ import {
 import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
 import { listAgents } from '../../api/agents';
 import type { Agent } from '../../api/agents';
-import { useProjectContext } from '../../utils/projectContext';
-import { ConfirmCard, ErrorCard, ProgressCard, ResultCard } from './cards/ChatCards';
+import { listMyProjects } from '../../api/projects';
+import type { Project } from '../../api/projects';
+import { AnswerText } from './AnswerText';
+import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ResultCard } from './cards/ChatCards';
 import { emptyLive, reduce, toCards, traceLine } from './liveChat';
 import type { LiveChat } from './liveChat';
 import styles from './ChatPage.module.css';
@@ -74,15 +76,67 @@ function toTurns(messages: ChatMessage[]): Turn[] {
  * 화면은 **턴의 배열**을 그린다(6차 단계 1). 발화 하나만 들고 있던 때는 두
  * 번째 발화가 첫 턴을 덮어써서, 이름만 Chat 이고 실제로는 1회용 실행기였다.
  */
+/**
+ * 대화 목록의 한 줄. 프로젝트에 속한 것과 아닌 것이 **같은 모양**이어야 해서
+ * 컴포넌트로 뺐다 — 두 벌로 두면 한쪽만 고쳐진다.
+ */
+function SessionRow({
+  session,
+  active,
+  onOpen,
+  onRemove,
+}: {
+  session: ChatSession;
+  active: boolean;
+  onOpen: (id: string) => void;
+  /** 바로 지우지 않는다 — 확인 모달을 연다. */
+  onRemove: (session: ChatSession) => void;
+}) {
+  const title = session.title ?? '제목 없는 대화';
+  return (
+    <span className={styles.sessionRow}>
+      <button
+        type="button"
+        onClick={() => onOpen(session.session_id)}
+        className={[styles.session, active ? styles.sessionActive : ''].filter(Boolean).join(' ')}
+        // 한 줄로 자르므로 전체는 툴팁으로 남긴다.
+        title={title}
+      >
+        {title}
+      </button>
+      <button
+        type="button"
+        className={styles.sessionDelete}
+        aria-label={`${title} 삭제`}
+        onClick={() => onRemove(session)}
+      >
+        <Icon name="x" size={13} color="var(--color-placeholder)" />
+      </button>
+    </span>
+  );
+}
+
+/** 대화 목록 너비 — 저장 키와 한계. 너무 좁으면 제목이 통째로 잘린다. */
+const LIST_WIDTH_KEY = 'halil.chatListWidth';
+const LIST_MIN = 200;
+const LIST_MAX = 460;
+
 export default function ChatPage() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const token = loadSessionToken();
-  const project = useProjectContext();
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  /**
+   * 지금 쓰고 있는 대화가 속한 프로젝트. 상단바 선택기를 대신한다 —
+   * 사이드바에서 어느 프로젝트 밑의 「+」를 눌렀는지, 또는 연 대화가 어디
+   * 소속인지가 이 값이다. `null` 은 프로젝트에 속하지 않는 대화다(허용한다).
+   */
+  const [projId, setProjId] = useState<string | null>(null);
   const [utterance, setUtterance] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
@@ -97,13 +151,97 @@ export default function ChatPage() {
     listAgents(token)
       .then((rows) => {
         setAgents(rows);
-        // 에이전트는 사람이 고른다(확정 ①). 기본값은 첫 항목이고, 목록은
-        // is_prebuilt 가 앞에 오도록 서버가 정렬해 준다.
-        setAgentId((prev) => prev ?? rows[0]?.agent_id ?? null);
+        // **기본 제공 에이전트를 표식으로 고른다.**
+        //
+        // 「목록 첫 항목」이던 것을 고쳤다(2026-08-11). 그 순서는 `is_prebuilt
+        // DESC, name` 이라 이름 정렬 우연에 기대고 있었고, 실제로 「부하 리포트
+        // 에이전트」가 「업무 추출 에이전트」보다 앞서서 문서 도구가 없는
+        // 에이전트가 잡혔다 — 모델이 "문서를 읽을 도구가 없다"고 답했다.
+        // 팀원이 Builder 로 이름이 앞서는 에이전트를 만들면 같은 일이 또 난다.
+        setAgentId(
+          (prev) => prev ?? rows.find((row) => row.is_prebuilt)?.agent_id ?? rows[0]?.agent_id ?? null,
+        );
       })
       .catch(() => setFatal('에이전트 목록을 불러오지 못했습니다.'));
     listSessions(token).then(setSessions).catch(() => undefined);
+    // 프로젝트가 하나도 없어도 화면을 막지 않는다 — 「프로젝트 없음」 묶음에서
+    // 그냥 대화할 수 있다.
+    listMyProjects(token).then(setProjects).catch(() => undefined);
   }, [token]);
+
+  /**
+   * 다른 화면에서 넘어온 요청. `?proj=PJ001&ask=...` 로 들어온다.
+   *
+   * 프로젝트에서 기준 문서를 정하고 「업무 뽑기」를 누르면 여기로 온다 —
+   * **프로젝트 → 문서 → 업무**의 마지막 걸음이다.
+   *
+   * **바로 실행한다.** 입력창에 채워만 두면 사람이 한 번 더 눌러야 하는데,
+   * 그건 이미 버튼으로 시킨 일을 두 번 시키는 것이다. 그리고 등록까지 가려면
+   * 확인 카드가 필요하고 그 카드는 이 대화 안에서만 뜬다 — 추출을 다른 데서
+   * 하면 그 결과가 버려지고 여기서 다시 뽑게 된다.
+   *
+   * 쿼리는 읽자마자 지운다. 안 지우면 새로고침할 때마다 다시 실행된다.
+   */
+  const [pendingAsk, setPendingAsk] = useState<string | null>(null);
+  /** 목록 하단 「새 대화」의 프로젝트 고르기가 열려 있는가. */
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  /**
+   * 삭제를 기다리는 대화. **되돌릴 수 없어서 한 번 묻는다** — 서버가
+   * chat_message 까지 함께 지우고(`ChatSessionRepository.delete`), 목록의
+   * X 는 대화 제목 바로 옆이라 잘못 누르기 쉽다.
+   */
+  const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
+
+  /**
+   * 대화 목록 너비. 사람마다 대화 제목 길이가 다르고 프로젝트 이름도 길다 —
+   * 고정 260px 로는 어느 쪽도 안 맞는다. 값은 남겨서 매번 다시 끌지 않게 한다.
+   */
+  const [listWidth, setListWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(LIST_WIDTH_KEY));
+    return saved >= LIST_MIN && saved <= LIST_MAX ? saved : 260;
+  });
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = listWidth;
+
+    function onMove(moveEvent: PointerEvent) {
+      const next = Math.min(LIST_MAX, Math.max(LIST_MIN, startWidth + moveEvent.clientX - startX));
+      setListWidth(next);
+    }
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      // 끌기가 끝날 때만 저장한다 — 매 픽셀 쓰면 드래그가 무거워진다.
+      setListWidth((width) => {
+        localStorage.setItem(LIST_WIDTH_KEY, String(width));
+        return width;
+      });
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  useEffect(() => {
+    const proj = params.get('proj');
+    const ask = params.get('ask');
+    if (!proj && !ask) return;
+    if (proj) setProjId(proj);
+    if (ask) setPendingAsk(ask);
+    setParams({}, { replace: true });
+  }, [params, setParams]);
+
+  // 에이전트 목록이 와야 보낼 수 있다(`agentId` 가 정해진 뒤). 목록 조회가
+  // 끝나기 전에 눌린 요청을 여기서 흘려보낸다.
+  useEffect(() => {
+    if (!pendingAsk || !agentId || !token) return;
+    setPendingAsk(null);
+    void sendText(pendingAsk);
+    // sendText 는 매 렌더 새로 만들어진다. 의존성에 넣으면 매번 다시 돈다 —
+    // 트리거는 pendingAsk 하나다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAsk, agentId, token]);
 
   // 화면을 떠나면 스트림을 끊는다. 서버는 그 run 을 FAILED 로 닫으므로
   // RUNNING 으로 남지 않는다.
@@ -127,6 +265,9 @@ export default function ChatPage() {
       try {
         const detail = await getSession(token, id);
         setAgentId(detail.agent_id);
+        // 대화가 속한 프로젝트를 따라간다 — 사이드바의 어느 묶음에서 열었든
+        // 문맥은 대화 자신이 갖고 있는 값이다.
+        setProjId(detail.proj_id ?? null);
         // 새로고침 재현 — 저장된 대화를 **전부** 다시 접는다. 서버는 처음부터
         // 모든 턴을 갖고 있었고, 화면이 마지막 답 하나만 쓰고 버리던 것이다.
         const restored = toTurns(detail.messages);
@@ -143,9 +284,11 @@ export default function ChatPage() {
     [token],
   );
 
-  function startNew() {
+  /** 새 대화를 연다. 어느 프로젝트 밑에서 시작하는지를 함께 받는다. */
+  function startNew(nextProjId: string | null) {
     abortRef.current?.abort();
     setSessionId(null);
+    setProjId(nextProjId);
     setTurns([]);
     setSelected([]);
     setFatal(null);
@@ -154,18 +297,27 @@ export default function ChatPage() {
 
   async function remove(id: string) {
     if (!token) return;
+    setPendingDelete(null);
     try {
       await deleteSession(token, id);
       setSessions((prev) => prev.filter((session) => session.session_id !== id));
-      if (id === sessionId) startNew();
+      if (id === sessionId) startNew(projId);
     } catch (error) {
       setFatal(error instanceof ApiError ? error.message : '대화를 지우지 못했습니다.');
     }
   }
 
-  async function send() {
-    if (!token || !utterance.trim() || !agentId) return;
-    const text = utterance.trim();
+  function send() {
+    return sendText(utterance);
+  }
+
+  /**
+   * 발화 한 건을 보낸다. 입력창에서 오든 다른 화면이 시킨 것이든 **같은 경로**다
+   * — 자동 실행이 별도 경로를 타면 세션 생성·문맥 주입이 두 벌이 된다.
+   */
+  async function sendText(raw: string) {
+    if (!token || !raw.trim() || !agentId) return;
+    const text = raw.trim();
     setUtterance('');
     // 덧붙인다. 덮어쓰면 앞 턴이 화면에서 사라진다 — 서버는 지우지 않는데
     // 화면만 잊는 상태가 된다.
@@ -177,12 +329,12 @@ export default function ChatPage() {
     let id = sessionId;
     try {
       if (!id) {
-        // 상단바에서 고른 프로젝트가 이 대화의 문맥이 된다. 「전체(팀)」이면
-        // null 이고, 그때 업무 추출은 "프로젝트를 먼저 고르세요"로 끝난다 —
-        // 기준 문서를 모델이 고르게 하지 않기로 한 결정의 연장이다.
+        // 사이드바에서 시작한 프로젝트가 이 대화의 문맥이 된다. 프로젝트 없이
+        // 시작하면 null 이고, 그때 업무 추출은 "프로젝트를 먼저 고르세요"로
+        // 끝난다 — 기준 문서를 모델이 고르게 하지 않기로 한 결정의 연장이다.
         const created = await createSession(token, {
           agent_id: agentId,
-          proj_id: project?.proj_id ?? null,
+          proj_id: projId,
           title: text.slice(0, 60),
         });
         id = created.session_id;
@@ -249,64 +401,172 @@ export default function ChatPage() {
     }
   }
 
-  const agent = agents.find((item) => item.agent_id === agentId) ?? null;
   const isEmpty = turns.length === 0;
   const lastLive = turns[turns.length - 1]?.live ?? null;
   const streaming = Boolean(lastLive?.running);
   const waitingConfirm = Boolean(lastLive?.confirm);
 
+  /**
+   * 사이드바 계층 — 프로젝트 > 대화.
+   *
+   * **대화가 있는 프로젝트만 보여 준다.** 사이드바는 돌아갈 대화를 찾는 곳이고,
+   * 빈 프로젝트는 돌아갈 것이 없다. 프로젝트 목록은 「프로젝트」 화면이 맡는다.
+   *
+   * 프로젝트에 속하지 않는 대화는 **머리말 없이** 맨 위에 둔다. 「프로젝트 없음」
+   * 이라는 머리말을 달면 그런 이름의 프로젝트처럼 읽힌다.
+   *
+   * 목록에 없는 프로젝트를 가리키는 대화(지워졌거나 조회가 실패한 경우)도 그쪽에
+   * 담긴다 — 안 그러면 사이드바에서 조용히 사라진다.
+   */
+  const known = new Set(projects.map((item) => item.proj_id));
+  const loose = sessions.filter((row) => !row.proj_id || !known.has(row.proj_id));
+  const groups = projects
+    .map((item) => ({
+      proj_id: item.proj_id,
+      name: item.name,
+      rows: sessions.filter((row) => row.proj_id === item.proj_id),
+    }))
+    .filter((group) => group.rows.length > 0);
+  const currentProject = projects.find((item) => item.proj_id === projId) ?? null;
+
   return (
     <AppShell variant="flush">
       <div className={styles.chat}>
-        <aside className={styles.sessions}>
+        <aside className={styles.sessions} style={{ width: listWidth }}>
           <span className={styles.sessionsTitle}>대화 목록</span>
-          {sessions.length === 0 ? (
-            <p className={styles.sessionsEmpty}>아직 대화가 없습니다</p>
-          ) : (
-            sessions.map((session) => (
-              <span key={session.session_id} className={styles.sessionRow}>
+
+          {/* 프로젝트에 안 속한 대화. 머리말을 달지 않는다 — 「프로젝트 없음」이라고
+              쓰면 그런 이름의 프로젝트가 있는 것처럼 읽힌다. */}
+          {loose.map((session) => (
+            <SessionRow
+              key={session.session_id}
+              session={session}
+              active={session.session_id === sessionId}
+              onOpen={openSession}
+              onRemove={setPendingDelete}
+            />
+          ))}
+
+          {groups.map((group) => (
+            <div key={group.proj_id} className={styles.projectGroup}>
+              <span className={styles.projectRow}>
+                <span className={styles.projectName} title={group.name}>
+                  <Icon name="folder" size={13} color="var(--color-muted)" />
+                  <span className={styles.projectNameText}>{group.name}</span>
+                </span>
                 <button
                   type="button"
-                  onClick={() => openSession(session.session_id)}
-                  className={[styles.session, session.session_id === sessionId ? styles.sessionActive : '']
-                    .filter(Boolean)
-                    .join(' ')}
+                  className={styles.projectNew}
+                  aria-label={`${group.name}에서 새 대화`}
+                  title="새 대화"
+                  onClick={() => startNew(group.proj_id)}
                 >
-                  {session.title ?? '제목 없는 대화'}
-                </button>
-                <button
-                  type="button"
-                  className={styles.sessionDelete}
-                  aria-label={`${session.title ?? '대화'} 삭제`}
-                  onClick={() => remove(session.session_id)}
-                >
-                  <Icon name="x" size={13} color="var(--color-placeholder)" />
+                  <Icon name="plus" size={13} color="var(--color-muted)" />
                 </button>
               </span>
-            ))
-          )}
+
+              {group.rows.map((session) => (
+                <SessionRow
+                  key={session.session_id}
+                  session={session}
+                  active={session.session_id === sessionId}
+                  onOpen={openSession}
+                  onRemove={setPendingDelete}
+                />
+              ))}
+            </div>
+          ))}
+
+          {sessions.length === 0 && <p className={styles.groupEmpty}>아직 대화가 없습니다</p>}
+
+          {/* **프로젝트를 고르면서 새 대화를 여는 유일한 입구.**
+              빈 프로젝트를 목록에서 걷어내면서 그 프로젝트의 첫 대화를 시작할
+              길이 사라졌다. 목록 맨 아래에 둔 이유는 위쪽은 「돌아갈 곳」이고
+              여기는 「새로 만드는 곳」이라 섞이지 않게 하려는 것이다. */}
+          <div className={styles.listFoot}>
+            {newMenuOpen && (
+              <div className={styles.newMenu}>
+                {/* **범위로 부른다.**
+                    「프로젝트 없이」는 결함처럼 읽히고, 「일반 대화」는 아무거나
+                    물어봐도 되는 대화를 약속하는데 이 제품은 그걸 안 한다 —
+                    실제로 그 대화에서 "일반 대화는 지원하지 않는다"고 답했다.
+                    프로젝트를 안 고르면 문서 검색이 **팀 문서 전체**를 본다.
+                    없어지는 게 아니라 넓어지는 것이라 그렇게 적는다. */}
+                <button
+                  type="button"
+                  className={styles.newMenuItem}
+                  onClick={() => {
+                    startNew(null);
+                    setNewMenuOpen(false);
+                  }}
+                >
+                  <Icon name="users" size={13} color="var(--color-muted)" />
+                  <span className={styles.newMenuName}>팀 전체 문서</span>
+                </button>
+                {projects.length > 0 && <span className={styles.newMenuDivider} />}
+                {projects.map((project) => (
+                  <button
+                    key={project.proj_id}
+                    type="button"
+                    className={styles.newMenuItem}
+                    title={project.name}
+                    onClick={() => {
+                      startNew(project.proj_id);
+                      setNewMenuOpen(false);
+                    }}
+                  >
+                    <Icon name="folder" size={13} color="var(--color-muted)" />
+                    <span className={styles.newMenuName}>{project.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              className={styles.newChat}
+              onClick={() => setNewMenuOpen((prev) => !prev)}
+              aria-expanded={newMenuOpen}
+            >
+              <Icon name="plus" size={15} />
+              새 대화
+            </button>
+          </div>
         </aside>
 
+        {/* 목록과 대화 사이의 끌기 손잡이. 키보드로는 조절할 수 없다 —
+            폭은 보조 설정이고, 목록 자체는 폭과 무관하게 읽고 쓸 수 있다. */}
+        <div
+          className={styles.resizer}
+          onPointerDown={startResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="대화 목록 너비 조절"
+        />
+
         <div className={styles.main}>
+          {/*
+            에이전트 선택기는 없앴다. 무엇으로 답할지는 고르는 것이 아니라
+            말하면 정해지는 것이다 — 에이전트는 대화 위가 아니라 아래에 있다.
+            상단바에는 이 대화가 어디에 속하는지만 남긴다.
+          */}
           <header className={styles.agentBar}>
-            <select
-              className={styles.agentPicker}
-              value={agentId ?? ''}
-              onChange={(event) => setAgentId(event.target.value)}
-              // 대화가 시작된 뒤에는 바꾸지 않는다 — 갈면 앞선 턴이 다른
-              // 스캐폴드로 만들어진 것이 되어 이어지는 답의 근거가 흔들린다.
-              disabled={Boolean(sessionId)}
-              aria-label="에이전트 선택"
-            >
-              {agents.map((item) => (
-                <option key={item.agent_id} value={item.agent_id}>
-                  {item.name}
-                  {item.is_prebuilt ? ' (기본 제공)' : ''}
-                </option>
-              ))}
-            </select>
-            <span className={styles.agentDesc}>{agent?.description ?? ''}</span>
-            <Button size="sm" variant="outline" onClick={startNew}>
+            {/* 이 대화가 무엇을 근거로 답하는가. 「프로젝트 없음」처럼 빠진
+                상태로 쓰지 않고 **범위**로 쓴다 — 프로젝트를 안 고르면 문서
+                검색이 팀 문서 전체를 본다. */}
+            <span className={styles.chatWhere}>
+              {currentProject ? (
+                <>
+                  <Icon name="folder" size={14} color="var(--color-muted)" />
+                  {currentProject.name}
+                </>
+              ) : (
+                <>
+                  <Icon name="users" size={14} color="var(--color-muted)" />
+                  팀 전체 문서
+                </>
+              )}
+            </span>
+            <Button size="sm" variant="outline" onClick={() => startNew(projId)}>
               새 대화
             </Button>
           </header>
@@ -327,44 +587,32 @@ export default function ChatPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
-                  <p>아래 에이전트를 고르거나, 하고 싶은 일을 그냥 적어 주세요.</p>
-                  {/* 문맥을 먼저 말한다 — 업무 추출은 이 프로젝트의 기준 문서로 돈다. */}
+                  <p>하고 싶은 일을 그냥 적어 주세요.</p>
+                  {/* 무엇을 근거로 답하는지가 답의 전제라 먼저 말한다. */}
                   <p className={styles.projectContext}>
-                    <Icon name="folder" size={14} color="var(--color-muted)" />
-                    {project ? (
-                      <span>
-                        <strong>{project.name}</strong> 문맥으로 시작합니다.
-                      </span>
+                    {currentProject ? (
+                      <>
+                        <Icon name="folder" size={14} color="var(--color-muted)" />
+                        <span>
+                          <strong>{currentProject.name}</strong> 프로젝트의 문서를 근거로 답합니다.
+                        </span>
+                      </>
                     ) : (
-                      <span>
-                        <strong>전체(팀)</strong> 문맥입니다 — 업무 추출처럼 기준 문서가 필요한 일은
-                        상단바에서 프로젝트를 먼저 골라 주세요.
-                      </span>
+                      <>
+                        <Icon name="users" size={14} color="var(--color-muted)" />
+                        <span>
+                          <strong>팀 전체 문서</strong>를 근거로 답합니다. 업무 추출처럼 기준 문서가
+                          필요한 일은 프로젝트를 골라 시작해 주세요.
+                        </span>
+                      </>
                     )}
                   </p>
-                </div>
-
-                <div className={styles.starters}>
-                  {agents.map((item) => (
-                    <button
-                      key={item.agent_id}
-                      type="button"
-                      className={styles.starter}
-                      onClick={() => setAgentId(item.agent_id)}
-                    >
-                      <span className={styles.starterIcon}>
-                        <Icon name="sparkles" size={20} color="var(--color-primary)" />
-                      </span>
-                      <strong>{item.name}</strong>
-                      <span className={styles.starterDesc}>{item.description}</span>
-                    </button>
-                  ))}
                 </div>
 
                 {agents.length === 0 && (
                   <p className={styles.onboardingBanner}>
                     <Icon name="info" size={15} color="var(--color-info)" />
-                    쓸 수 있는 에이전트가 없습니다. 에이전트를 먼저 만들어 주세요.
+                    이 팀에 기본 에이전트가 없습니다. 관리자가 시드를 돌려야 합니다.
                     <button type="button" onClick={() => navigate(PATHS.agents)}>
                       에이전트로 이동 →
                     </button>
@@ -397,7 +645,15 @@ export default function ChatPage() {
                           queries={live.queries}
                           evidenceCount={live.evidenceCount}
                           title={live.toolName ? `${live.toolName} 실행 중` : '생각하는 중'}
-                          loop={{ step: live.loopStep, total: live.loopTotal }}
+                        />
+                      )}
+
+                      {live.jira && (
+                        <JiraStatusCard
+                          projectName={currentProject?.name}
+                          projectKey={live.jira.projectKey}
+                          counts={live.jira.counts}
+                          issues={live.jira.issues}
                         />
                       )}
 
@@ -437,7 +693,11 @@ export default function ChatPage() {
                         <ResultCard created={live.created} failures={live.failures} />
                       )}
 
-                      {live.answer && <div className={styles.agentMessage}>{live.answer}</div>}
+                      {live.answer && (
+                        <div className={styles.agentMessage}>
+                          <AnswerText text={live.answer} />
+                        </div>
+                      )}
 
                       {live.stoppedReason && (
                         <p className={styles.warnLine}>
@@ -496,6 +756,34 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* 되돌릴 수 없는 삭제라 한 번 묻는다. 서버가 대화와 함께 메시지도
+          지운다 — 실행 기록(agent_run·tool_call)은 남지만 대화는 복구할 수 없다. */}
+      <Modal
+        open={Boolean(pendingDelete)}
+        onClose={() => setPendingDelete(null)}
+        title="이 대화를 지울까요?"
+        width={420}
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setPendingDelete(null)}>
+              취소
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => pendingDelete && void remove(pendingDelete.session_id)}
+            >
+              지우기
+            </Button>
+          </>
+        }
+      >
+        <p className={styles.deleteBody}>
+          <strong>{pendingDelete?.title ?? '제목 없는 대화'}</strong>
+          <span>주고받은 내용이 함께 지워집니다. 되돌릴 수 없습니다.</span>
+        </p>
+      </Modal>
     </AppShell>
   );
 }
