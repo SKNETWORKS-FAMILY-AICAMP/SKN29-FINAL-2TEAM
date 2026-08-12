@@ -243,14 +243,43 @@ def exist_task_response(row: dict[str, Any], persons: dict[str, Any]) -> dict[st
     }
 
 
+def extracted_task_response(row: dict[str, Any]) -> dict[str, Any]:
+    """기준 문서에서 뽑아 등록한 우리 업무 한 줄(`task`).
+
+    Jira 이슈(`exist_task`)와 컬럼이 다르다. 담당자가 없고, 상태는 우리
+    `PROPOSED / CONFIRMED / REJECTED` 다. **비어 있는 값을 0 이나 「미정」으로
+    채우지 않는다** — 문서에 없어서 비운 것과 0 은 다르다.
+    """
+
+    due_at = row.get("due_at")
+    generated_at = row.get("generated_at")
+
+    return {
+        "task_id": row["task_id"],
+        "title": row["task_name"],
+        "required_role": row.get("req_role"),
+        "effort_hours": float(row["effort"]) if row.get("effort") is not None else None,
+        "due_at": due_at.isoformat() if due_at else None,
+        "priority": row.get("priority"),
+        "status": row["status"],
+        "model_ver": row.get("model_ver"),
+        "generated_at": generated_at.isoformat() if generated_at else None,
+    }
+
+
 class TaskExtractionCreateSerializer(serializers.Serializer):
     primary_document_id = serializers.CharField(max_length=5)
 
 
 class ProjectSourceDocumentSerializer(serializers.Serializer):
-    """기준 문서 1건. 근거 문서는 사람이 고르지 않으므로 받지 않는다."""
+    """기준 문서 1건. 근거 문서는 사람이 고르지 않으므로 받지 않는다.
 
-    primary_document_id = serializers.CharField(max_length=5)
+    **null 은 해제다.** 잘못 고른 문서를 되돌릴 방법이 없어서, 한 번 묶으면
+    다른 문서로 바꾸는 것만 되고 「없음」으로는 못 갔다(2026-08-12 QA). 바꿀
+    문서가 없으면 사람은 갇힌다.
+    """
+
+    primary_document_id = serializers.CharField(max_length=5, allow_null=True)
 
 
 def pipeline_document_response(row: dict[str, Any]) -> dict[str, Any]:

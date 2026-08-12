@@ -686,3 +686,29 @@ class PrimaryCandidateRankTests(SimpleTestCase):
         from apps.projects.api_views import _rank
 
         self.assertEqual(_rank([], name=self.NAME), [])
+
+    def test_혼자_남아도_무관하면_후보가_아니다(self):
+        """상대 컷오프는 1등을 못 자른다 — 자기 자신이 기준이라 늘 통과한다.
+
+        「AI Platform」 프로젝트에 아무 상관 없는 정보시스템 구축 제안요청서가
+        요약 21%·파일명 0% 로 **유일 후보**에 올랐고, 사람이 그걸 골라 감리 업무
+        7건이 등록됐다(2026-08-12 QA 시나리오 B).
+        """
+
+        from apps.projects.api_views import _rank
+
+        rows = [dict(self.ROWS[0], summary_score=0.21)]
+        self.assertEqual(_rank(rows, name="AI Platform"), [])
+
+    def test_한쪽_신호만_넘어도_후보다(self):
+        """둘 다 바닥일 때만 자른다. 어느 한 신호의 절대값에 기대지 않는다."""
+
+        from apps.projects.api_views import _rank
+
+        # 요약은 바닥인데 파일명이 통째로 걸리는 문서.
+        by_name = [dict(self.ROWS[0], summary_score=0.05)]
+        self.assertEqual([row["doc_id"] for row in _rank(by_name, name=self.NAME)], ["DC001"])
+
+        # 파일명은 안 걸리는데 내용이 닮은 문서.
+        by_summary = [dict(self.ROWS[0], file_name="무제.pdf", summary_score=0.61)]
+        self.assertEqual([row["doc_id"] for row in _rank(by_summary, name="AI Platform")], ["DC001"])

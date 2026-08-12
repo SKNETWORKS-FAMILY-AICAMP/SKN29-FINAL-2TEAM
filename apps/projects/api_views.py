@@ -50,6 +50,7 @@ from backend.db import (
     database_status,
     log_audit,
 )
+from backend.db.agent_platform import ProjectTaskRepository
 from services.workload import calculator
 from backend.db.errors import (
     PermissionDenied,
@@ -76,6 +77,7 @@ from .serializers import (
     document_history_response,
     document_response,
     exist_task_response,
+    extracted_task_response,
     project_response,
     project_source_response,
     team_folder_response,
@@ -171,6 +173,19 @@ PRIMARY_CANDIDATE_LIMIT = 5
 #: 아무 정보도 주지 않는다(2026-08-11 실측: 회사소개서가 8% 로 3등에 올라왔다).
 RELATIVE_CUTOFF = 0.55
 
+#: 두 신호가 **모두** 이보다 약하면 후보로 올리지 않는다.
+#:
+#: 상대 컷오프는 「1등 대비」라서 **후보가 하나면 아무 일도 하지 않는다** — 자기
+#: 자신이 기준이라 무조건 통과한다. 실제로 AI Platform 프로젝트에 아무 상관 없는
+#: 정보시스템 구축 제안요청서가 요약 21%·파일명 0% 로 유일 후보에 올랐고, 그걸로
+#: 업무를 뽑아 감리 업무 7건이 등록됐다(2026-08-12 QA 시나리오 B).
+#:
+#: **한쪽만 넘으면 통과시킨다.** 파일명이 밋밋해도 내용이 닮았으면 후보이고,
+#: 요약이 부실해도 이름이 걸리면 후보다 — 어느 한 신호의 절대값에 기대지 않는
+#: 원래 의도는 그대로다. 둘 다 바닥일 때만 「없다」고 말한다.
+SUMMARY_FLOOR = 0.35
+NAME_FLOOR = 0.34
+
 #: 파일명 토큰. 영문·숫자·한글 덩어리만 본다.
 _TOKEN_RE = re.compile(r"[0-9a-z가-힣]+")
 
@@ -212,6 +227,9 @@ def _rank(rows: list[dict[str, Any]], *, name: str) -> list[dict[str, Any]]:
     for row in rows:
         summary_score = float(row["summary_score"])
         name_score = _name_match(name, row["file_name"] or "")
+        # 둘 다 바닥이면 이 문서는 이 프로젝트와 무관하다. 1등이든 아니든 뺀다.
+        if summary_score < SUMMARY_FLOOR and name_score < NAME_FLOOR:
+            continue
         scored.append(
             {**row, "name_score": name_score, "rank_score": summary_score * 0.6 + name_score * 0.4}
         )
@@ -301,6 +319,12 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
     진행률·업무 목록·담당자별 배분을 같이 준다. 화면이 세 번 부르면 세 번 모두
     같은 `exist_task`를 훑게 되고, 그 사이 「갱신」이 끼면 서로 다른 시점의 숫자가
     한 화면에 섞인다.
+
+    **`task`(추출해서 등록한 우리 업무)는 `tasks` 와 따로 준다.** 이것들은
+    `PROPOSED` 이고 담당자도 공수도 없다 — Jira 이슈와 한 목록에 섞으면 진행률과
+    남은 공수가 아무도 합의하지 않은 업무로 부풀려진다. 어제 `task` 를 만들고
+    등록까지 이었는데 **읽는 곳을 화면에 안 붙여서**, 등록했다는 말을 듣고
+    프로젝트에 와도 아무것도 없었다(2026-08-12 QA 시나리오 B).
     """
 
     def get(self, request, project_id):
@@ -310,6 +334,10 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
             progress = ExistTaskRepository.progress_by_project([project_id]).get(project_id)
             last_sync = ProjectSourceRepository.last_sync_by_project([project_id])
             tasks = ExistTaskRepository.list_for_project(
+                proj_id=project_id,
+                account_id=account_id,
+            )
+            extracted = ProjectTaskRepository.list_for_project(
                 proj_id=project_id,
                 account_id=account_id,
             )
@@ -325,7 +353,10 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
                 last_sync=last_sync.get(project_id),
                 has_jira_source=project_id in last_sync,
             )
-            | {"tasks": [exist_task_response(task, persons) for task in tasks]}
+            | {
+                "tasks": [exist_task_response(task, persons) for task in tasks],
+                "extracted_tasks": [extracted_task_response(task) for task in extracted],
+            }
         )
 
     def patch(self, request, project_id):

@@ -163,29 +163,34 @@ class PipelineDocumentRepository:
 
     @staticmethod
     def set_primary_document(
-        *, proj_id: str, account_id: str, primary_doc_id: str
+        *, proj_id: str, account_id: str, primary_doc_id: str | None
     ) -> dict[str, Any]:
         """기준 문서를 정한다. **이 행위가 프로젝트에 문서를 묶는다.**
 
         묶이는 문서는 기준 문서 하나뿐이다. 근거 문서는 에이전트가 팀 문서에서
         검색으로 찾으므로 프로젝트에 묶지 않는다 — 같은 회의록이 여러 프로젝트의
         근거가 될 수 있는데 `doc.proj_id`는 하나만 가리킬 수 있다.
+
+        **`None` 이면 해제다.** 잘못 고른 것을 되돌릴 자리가 없으면, 맞는 문서가
+        아직 없는 프로젝트는 틀린 기준 문서를 달고 있는 수밖에 없다 — 그 상태로
+        업무를 뽑으면 엉뚱한 업무가 등록된다(2026-08-12 실제로 그렇게 됐다).
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team_project(cursor, proj_id=proj_id, account_id=account_id)
 
-                cursor.execute(
-                    """
-                    SELECT doc_id FROM doc
-                    WHERE doc_id = %s AND team_id = %s
-                      AND deleted = false AND access_revoked = false
-                    """,
-                    (primary_doc_id, team_id),
-                )
-                if cursor.fetchone() is None:
-                    raise RecordNotFound(f"팀 문서에서 찾을 수 없습니다: {primary_doc_id}")
+                if primary_doc_id is not None:
+                    cursor.execute(
+                        """
+                        SELECT doc_id FROM doc
+                        WHERE doc_id = %s AND team_id = %s
+                          AND deleted = false AND access_revoked = false
+                        """,
+                        (primary_doc_id, team_id),
+                    )
+                    if cursor.fetchone() is None:
+                        raise RecordNotFound(f"팀 문서에서 찾을 수 없습니다: {primary_doc_id}")
 
                 # 이 프로젝트에 물려 있던 것을 먼저 풀어 팀 문서 풀로 돌려보낸다.
                 # 기준 문서를 바꾸면 이전 것은 다시 아무 프로젝트의 것도 아니다.
@@ -193,10 +198,11 @@ class PipelineDocumentRepository:
                     "UPDATE doc SET proj_id = NULL, doc_role = NULL WHERE proj_id = %s",
                     (proj_id,),
                 )
-                cursor.execute(
-                    "UPDATE doc SET proj_id = %s, doc_role = 'PRIMARY' WHERE doc_id = %s",
-                    (proj_id, primary_doc_id),
-                )
+                if primary_doc_id is not None:
+                    cursor.execute(
+                        "UPDATE doc SET proj_id = %s, doc_role = 'PRIMARY' WHERE doc_id = %s",
+                        (proj_id, primary_doc_id),
+                    )
         return {"primary_doc_id": primary_doc_id}
 
     @staticmethod

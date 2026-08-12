@@ -270,6 +270,36 @@ export default function ProjectDetailPage() {
               />
             )}
 
+            {/* 기준 문서 바로 아래. 이 문서에서 뽑은 것이라 문서 다음에 온다.
+                Jira 업무 목록과 **섞지 않는다** — 아직 PROPOSED 이고 담당자도
+                공수도 없어서, 한 목록에 넣으면 진행률과 남은 공수가 아무도
+                합의하지 않은 업무로 부풀려진다. */}
+            {project.extracted_tasks.length > 0 && (
+              <section className={styles.card}>
+                <span className={styles.cardTitle}>
+                  추출된 업무 {project.extracted_tasks.length}건
+                </span>
+                <div className={styles.assigneeList}>
+                  {project.extracted_tasks.map((task) => (
+                    <div key={task.task_id} className={styles.assigneeRow}>
+                      <span className={styles.assigneeName}>{task.title}</span>
+                      <span className={styles.assigneeCount}>
+                        {task.required_role ?? '담당 역할 비움'}
+                      </span>
+                      <span className={styles.assigneeHours}>
+                        {task.effort_hours != null ? hours(task.effort_hours) : '공수 비움'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className={styles.footnote}>
+                  기준 문서에서 뽑아 등록한 업무입니다. 아직 <strong>승인 전(PROPOSED)</strong>이라
+                  진행률과 담당자별 배분에는 들어가지 않습니다. 문서에 없던 값은 채우지 않고 비워
+                  둡니다.
+                </p>
+              </section>
+            )}
+
             {assignees.length > 0 && (
               <section className={styles.card}>
                 <span className={styles.cardTitle}>담당자별 남은 업무</span>

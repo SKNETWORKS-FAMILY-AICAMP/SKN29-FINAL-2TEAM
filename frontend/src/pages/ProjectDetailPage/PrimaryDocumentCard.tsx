@@ -78,7 +78,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
     }
   }
 
-  async function handleChoose(docId: string) {
+  async function handleChoose(docId: string | null) {
     if (busy) return;
     setBusy(true);
     setError('');
@@ -86,7 +86,13 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       setDocuments(await saveProjectPrimaryDocument(token, projectId, docId));
       setPicking(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '기준 문서를 지정하지 못했습니다.');
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : docId === null
+            ? '기준 문서를 해제하지 못했습니다.'
+            : '기준 문서를 지정하지 못했습니다.',
+      );
     } finally {
       setBusy(false);
     }
@@ -185,6 +191,11 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
             </Button>
             <Button variant="outline" size="sm" onClick={handleFind} disabled={busy}>
               문서 바꾸기
+            </Button>
+            {/* 바꿀 문서가 없을 수도 있다. 「없음」으로 못 가면 잘못 고른 문서를
+                달고 있는 수밖에 없고, 그대로 뽑으면 엉뚱한 업무가 등록된다. */}
+            <Button variant="ghost" size="sm" onClick={() => void handleChoose(null)} disabled={busy}>
+              기준 문서 해제
             </Button>
           </div>
         </>

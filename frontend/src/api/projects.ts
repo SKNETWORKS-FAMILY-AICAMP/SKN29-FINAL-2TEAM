@@ -77,8 +77,27 @@ export interface ExistTask {
   remaining: number | null;
 }
 
+/**
+ * 기준 문서에서 뽑아 **우리 플랫폼에 등록한** 업무 한 건(`task`).
+ *
+ * Jira 이슈(`ExistTask`)와 다르다 — 담당자가 없고, 아직 아무도 합의하지 않은
+ * `PROPOSED` 다. 그래서 진행률에도 담당자별 배분에도 들어가지 않는다.
+ */
+export interface ExtractedTask {
+  task_id: string;
+  title: string;
+  required_role: string | null;
+  effort_hours: number | null;
+  due_at: string | null;
+  priority: string | null;
+  status: string;
+  model_ver: string | null;
+  generated_at: string | null;
+}
+
 export interface ProjectDetail extends Project {
   tasks: ExistTask[];
+  extracted_tasks: ExtractedTask[];
 }
 
 export function getProject(token: string, projId: string) {
@@ -606,10 +625,11 @@ export function listProjectSourceDocuments(token: string, projectId: string) {
  * 묶이는 것은 이 한 건뿐이다. 근거 문서는 에이전트가 팀 문서에서 검색으로 찾으며
  * 프로젝트에 묶이지 않는다 — 같은 회의록이 여러 프로젝트의 근거일 수 있다.
  */
+/** `primaryDocumentId` 가 null 이면 기준 문서를 **해제**한다. */
 export function saveProjectPrimaryDocument(
   token: string,
   projectId: string,
-  primaryDocumentId: string,
+  primaryDocumentId: string | null,
 ) {
   return apiRequest<PipelineDocument[]>(`/projects/${projectId}/source-documents/`, {
     method: 'PUT',
