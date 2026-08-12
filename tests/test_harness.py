@@ -733,3 +733,41 @@ class AlwaysToolModel:
         return ModelDecision(
             tool_calls=[{"id": f"c{self.calls}", "tool_ref": "document_search", "arguments": {}}]
         )
+
+
+class ToolNameTests(SimpleTestCase):
+    """모델에게 보내는 함수 이름은 `^[a-zA-Z0-9_-]+$` 를 지켜야 한다.
+
+    우리 `tool_ref` 는 `agent:AG005`·`mcp:MT001` 처럼 콜론을 쓰는데, 그대로 넘기면
+    OpenAI 가 400 을 낸다(2026-08-12 실측 —
+    `Invalid 'tools[7].name': string does not match pattern`).
+
+    **MCP 도구도 같은 문제였다.** 아무도 MCP 서버를 안 붙여서 안 드러났을 뿐이다.
+    """
+
+    import re as _re
+
+    PATTERN = _re.compile(r"^[a-zA-Z0-9_-]+$")
+
+    def test_콜론이_들어간_ref_도_안전한_이름이_된다(self):
+        from services.harness.runner import model_name_for
+
+        for ref in ("agent:AG005", "mcp:MT001", "document_search"):
+            with self.subTest(ref=ref):
+                self.assertRegex(model_name_for(ref), self.PATTERN)
+
+    def test_되돌리면_원래_ref_다(self):
+        """되돌리지 못하면 Registry 가 그 도구를 못 찾아 ToolNotAllowed 가 된다."""
+
+        from services.harness.runner import model_name_for, tool_ref_for
+
+        for ref in ("agent:AG005", "mcp:MT001", "document_search", "task_update"):
+            with self.subTest(ref=ref):
+                self.assertEqual(tool_ref_for(model_name_for(ref)), ref)
+
+    def test_내장_도구_전부가_패턴을_지킨다(self):
+        from services.harness.runner import model_name_for
+
+        for ref in registry.BUILTIN_TOOLS:
+            with self.subTest(ref=ref):
+                self.assertRegex(model_name_for(ref), self.PATTERN)

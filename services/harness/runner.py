@@ -469,7 +469,9 @@ def _default_model(agent: dict[str, Any]) -> ModelClient:
             tool_calls=[
                 {
                     "id": item.call_id,
-                    "tool_ref": item.name,
+                    # 모델은 `agent__AG005` 로 부른다. 저장소 규칙인
+                    # `agent:AG005` 로 되돌린다(`model_name_for` 주석).
+                    "tool_ref": tool_ref_for(item.name),
                     "arguments": json.loads(item.arguments or "{}"),
                 }
                 for item in response.output
@@ -494,12 +496,36 @@ def _echoable(item: Any) -> dict[str, Any]:
     return item.model_dump(exclude={"status"}, exclude_none=True)
 
 
+def model_name_for(tool_ref: str) -> str:
+    """모델에게 보낼 함수 이름.
+
+    **`tool_ref` 를 그대로 못 쓴다.** OpenAI 함수 이름은 `^[a-zA-Z0-9_-]+$` 라
+    콜론이 들어가면 400 이다(2026-08-12 실측:
+    `Invalid 'tools[7].name': string does not match pattern`).
+
+    우리 `tool_ref` 는 `agent:AG005`·`mcp:MT001` 처럼 접두사에 콜론을 쓴다 —
+    그건 **저장소(`agent_tool.tool_ref`) 규칙**이라 바꾸지 않는다. 모델에게
+    보낼 때만 `__` 로 바꾸고, 응답이 오면 되돌린다.
+
+    ⚠ MCP 도구도 같은 문제였다. 지금까지 아무도 MCP 서버를 안 붙여서 안
+    드러났을 뿐이고, 붙였으면 똑같이 죽었을 자리다.
+    """
+
+    return tool_ref.replace(":", "__")
+
+
+def tool_ref_for(model_name: str) -> str:
+    """모델이 부른 이름을 우리 `tool_ref` 로 되돌린다."""
+
+    return model_name.replace("__", ":")
+
+
 def _tool_spec(tool: Tool) -> dict[str, Any]:
     """Responses API 의 function tool 은 평평하다 — `function` 안에 넣지 않는다."""
 
     return {
         "type": "function",
-        "name": tool.ref,
+        "name": model_name_for(tool.ref),
         "description": tool.description,
         "parameters": tool.input_schema,
     }
