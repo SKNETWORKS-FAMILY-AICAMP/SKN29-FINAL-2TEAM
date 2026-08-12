@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AppShell, Badge, Button, Icon, Modal, useToast } from '../../components';
+import { AppShell, Badge, Button, Icon, InfoNote, Modal, useToast } from '../../components';
 import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
 import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
@@ -278,6 +278,13 @@ export default function ProjectDetailPage() {
               <section className={styles.card}>
                 <span className={styles.cardTitle}>
                   추출된 업무 {project.extracted_tasks.length}건
+                  <InfoNote title="추출된 업무">
+                    <p>
+                      기준 문서에서 뽑아 등록한 업무입니다. 아직 <strong>승인 전(PROPOSED)</strong>이라
+                      진행률과 담당자별 배분에는 들어가지 않습니다.
+                    </p>
+                    <p>문서에 없던 값은 채우지 않고 비워 둡니다.</p>
+                  </InfoNote>
                 </span>
                 <div className={styles.assigneeList}>
                   {project.extracted_tasks.map((task) => (
@@ -292,17 +299,20 @@ export default function ProjectDetailPage() {
                     </div>
                   ))}
                 </div>
-                <p className={styles.footnote}>
-                  기준 문서에서 뽑아 등록한 업무입니다. 아직 <strong>승인 전(PROPOSED)</strong>이라
-                  진행률과 담당자별 배분에는 들어가지 않습니다. 문서에 없던 값은 채우지 않고 비워
-                  둡니다.
-                </p>
               </section>
             )}
 
             {assignees.length > 0 && (
               <section className={styles.card}>
-                <span className={styles.cardTitle}>담당자별 남은 업무</span>
+                <span className={styles.cardTitle}>
+                  담당자별 남은 업무
+                  <InfoNote title="담당자별 남은 업무">
+                    <p>
+                      <strong>이 프로젝트 안의</strong> 잔여 공수입니다. 사람의 실제 업무량은 다른
+                      프로젝트까지 합쳐야 하며, Chat의 부하 리포트로 주차별 확인이 가능합니다.
+                    </p>
+                  </InfoNote>
+                </span>
                 <div className={styles.assigneeList}>
                   {assignees.map((row) => (
                     <div key={row.name} className={styles.assigneeRow}>
@@ -314,10 +324,6 @@ export default function ProjectDetailPage() {
                     </div>
                   ))}
                 </div>
-                <p className={styles.footnote}>
-                  이 프로젝트 안의 잔여 공수입니다. 사람의 실제 업무량은 다른 프로젝트까지 합쳐야
-                  하며 <Link to={PATHS.chat}>Chat의 부하 리포트</Link>로 주차별 확인이 가능합니다.
-                </p>
               </section>
             )}
 

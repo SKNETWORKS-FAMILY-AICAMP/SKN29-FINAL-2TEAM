@@ -1,0 +1,30 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.trigger:hover {
+  background: var(--color-bg);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+
+.body strong {
+  color: var(--color-heading);
+}

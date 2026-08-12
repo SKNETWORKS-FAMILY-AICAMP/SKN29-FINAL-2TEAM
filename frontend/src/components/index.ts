@@ -20,6 +20,7 @@ export { Card } from './Card/Card';
 export type { CardProps } from './Card/Card';
 
 export { Modal } from './Modal/Modal';
+export { InfoNote } from './InfoNote/InfoNote';
 export type { ModalProps } from './Modal/Modal';
 
 export { TopNav } from './TopNav/TopNav';

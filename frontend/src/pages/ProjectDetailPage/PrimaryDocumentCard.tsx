@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Icon } from '../../components';
+import { Button, Icon, InfoNote } from '../../components';
 import { ApiError } from '../../api/client';
 import {
   listProjectSourceDocuments,
@@ -119,7 +119,16 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
   return (
     <section className={styles.card}>
       <div className={styles.head}>
-        <span className={styles.title}>기준 문서</span>
+        <span className={styles.title}>
+          기준 문서
+          <InfoNote title="기준 문서">
+            <p>
+              업무 추출이 <strong>근거로 삼는 문서</strong>입니다. 근거 문서는 따로 묶지 않고 에이전트가
+              팀 문서에서 찾습니다.
+            </p>
+            <p>「업무 뽑기」를 누르면 이 프로젝트의 대화가 열리고 곧바로 실행됩니다.</p>
+          </InfoNote>
+        </span>
       </div>
 
       {error && <p className={styles.error}>{error}</p>}
@@ -178,11 +187,6 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
               본문이 아직 색인되지 않았습니다. 이 상태로는 업무를 뽑을 수 없습니다.
             </p>
           )}
-          <p className={styles.footnote}>
-            업무 추출은 이 문서를 근거로 돕니다. 근거 문서는 따로 묶지 않고 에이전트가 팀 문서에서
-            찾습니다. 「업무 뽑기」를 누르면 이 프로젝트의 대화가 열리고 곧바로 실행됩니다.
-          </p>
-
           {/* 이 문서로 할 수 있는 일과 이 문서를 바꾸는 일. 같은 대상에 대한
               행동이라 한 줄에 둔다. */}
           <div className={styles.actions}>

@@ -1,4 +1,4 @@
-import { Icon } from '../../../components';
+import { Icon, InfoNote } from '../../../components';
 import styles from './tabs.module.css';
 
 /** 역할별 권한. 에이전트 소유·가시성은 멘토링 후 확정이라 아직 행이 없다. */
@@ -24,10 +24,16 @@ export function PermissionsTab() {
     <div className={styles.tab}>
       <section className={styles.card}>
         <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>역할별 권한</h2>
-          <p className={styles.cardSub}>
-            지금은 팀장/팀원 두 역할만 있습니다. 에이전트 소유·가시성은 멘토링에서 범위를 확정한 뒤 채웁니다.
-          </p>
+          <h2 className={styles.cardTitle}>
+            역할별 권한
+            <InfoNote title="역할별 권한">
+              <p>역할은 팀장과 팀원 둘뿐입니다. 지금은 화면에서 바꿀 수 없는 고정 값입니다.</p>
+              <p>
+                에이전트를 만든 사람만 고칠 수 있게 할지, 팀 전체가 고칠 수 있게 할지는{' '}
+                <strong>아직 정하지 않았습니다.</strong> 정해지면 이 표에 줄이 늘어납니다.
+              </p>
+            </InfoNote>
+          </h2>
         </div>
 
         <div className={styles.table}>
@@ -49,13 +55,6 @@ export function PermissionsTab() {
           ))}
         </div>
 
-        <p className={`${styles.notice} ${styles.noticeWarning}`}>
-          <Icon name="triangle-alert" size={15} color="var(--color-warning-text)" />
-          <span>
-            에이전트를 만든 사람만 수정할 수 있게 할지, 팀 전체가 편집할 수 있게 할지는 아직 정하지 않았습니다
-            (1_서비스구조_IA §4-3). 확정 후 이 표에 행이 늘어납니다.
-          </span>
-        </p>
       </section>
     </div>
   );

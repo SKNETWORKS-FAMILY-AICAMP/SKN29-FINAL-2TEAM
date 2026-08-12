@@ -18,6 +18,9 @@
 }
 
 .title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: 13px;
   font-weight: 700;
   color: var(--color-muted);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Icon, Input, useToast } from '../../../components';
+import { Badge, Button, Icon, InfoNote, Input, useToast } from '../../../components';
 import type { BadgeTone } from '../../../components';
 import {
   ApiError,
@@ -107,23 +107,29 @@ export function McpTab() {
 
   return (
     <div className={styles.tab}>
-      <p className={`${styles.notice} ${styles.noticeNeutral}`}>
-        <Icon name="info" size={16} color="var(--color-muted)" />
-        <span>
-          여기서 연결한 서비스가 에이전트의 “할 수 있는 일”이 됩니다. 읽기만 하는 연결(Drive·HR)은 Connector 탭에,
-          실제로 무언가를 만드는 연결은 여기에 둡니다. 주소는 <strong>https</strong>만 받고, 사내망·로컬 주소는
-          거절합니다.
-        </span>
-      </p>
-
       {error && <p className={`${styles.notice} ${styles.noticeDanger}`}>{error}</p>}
 
       <section className={styles.card}>
         <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>연결된 MCP 서버</h2>
-          <p className={styles.cardSub}>
-            에이전트가 행동할 수 있는 경로입니다. 연결 상태가 나쁘면 해당 도구는 에이전트 편집 화면에서 선택할 수 없습니다.
-          </p>
+          <h2 className={styles.cardTitle}>
+            MCP
+            <InfoNote title="MCP">
+              <p>
+                <strong>직접 만들거나 운영하는 서버</strong>를 붙이는 곳입니다. 주소와 인증 정보를 넣으면
+                그 서버가 제공하는 도구를 에이전트가 쓸 수 있습니다.
+              </p>
+              <p>
+                Connector 탭과는 <strong>인증 주체</strong>로 갈립니다 — Connector는 우리가 미리 등록해 둔
+                통로이고, MCP는 사용자 소유 서버입니다. 「읽기는 Connector, 쓰기는 MCP」가 아닙니다(Jira는
+                읽기도 쓰기도 합니다).
+              </p>
+              <p>
+                주소는 <strong>https</strong>만 받고 사내망·로컬 주소는 거절합니다. 토큰은 암호화해 저장하고
+                화면에 다시 보여주지 않습니다.
+              </p>
+              <p>연결 상태가 나쁜 서버의 도구는 에이전트 편집 화면에서 고를 수 없습니다.</p>
+            </InfoNote>
+          </h2>
         </div>
 
         <div className={styles.list}>
@@ -186,10 +192,6 @@ export function McpTab() {
       <section className={styles.card}>
         <div className={styles.cardHead}>
           <h2 className={styles.cardTitle}>MCP 서버 추가</h2>
-          <p className={styles.cardSub}>
-            서버 주소와 인증 정보를 넣으면 제공 도구를 자동으로 읽어옵니다. 토큰은 암호화해서 저장하고 화면에는 다시
-            보여주지 않습니다.
-          </p>
         </div>
 
         <div className={styles.formRow}>
