@@ -1,0 +1,81 @@
+.tour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+}
+
+/**
+ * 그림 자리. 높이를 고정한다 — 장마다 그림 크기가 달라 버튼이 위아래로 튀면
+ * 넘기는 동안 화면이 흔들린다.
+ */
+.art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 150px;
+  padding: var(--space-4);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+
+.art svg {
+  width: 100%;
+  max-width: 300px;
+  height: 100%;
+}
+
+.title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.body {
+  max-width: 380px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+
+.dots {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.dot,
+.dotActive {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s, width 0.15s;
+}
+
+.dot {
+  background: var(--color-border);
+}
+
+.dotActive {
+  width: 18px;
+  border-radius: 4px;
+  background: var(--color-primary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-2);
+}

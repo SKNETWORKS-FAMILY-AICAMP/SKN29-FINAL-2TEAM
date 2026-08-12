@@ -349,6 +349,66 @@
   color: var(--color-muted);
 }
 
+/**
+ * 가입 직후 「시작하기」.
+ *
+ * 필수(사람 정보)와 선택(문서·프로젝트)을 **채도로 가른다.** 셋을 같은 무게로
+ * 세우면 셋 다 해야 하는 것처럼 읽히는데, 실제로 필수는 하나뿐이다.
+ */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 460px;
+}
+
+.setupLabel {
+  margin-top: var(--space-2);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.setupStep,
+.setupStepMuted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.setupStep {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+}
+
+.setupStepMuted {
+  background: transparent;
+}
+
+.setupStep strong,
+.setupStepMuted strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.setupStepMuted strong {
+  color: var(--color-body);
+}
+
+.setupStep p,
+.setupStepMuted p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
 .projectContext {
   display: flex;
   align-items: center;

@@ -17,7 +17,9 @@ import { isPlatformAgent, listAgents } from '../../api/agents';
 import type { Agent } from '../../api/agents';
 import { listMyProjects } from '../../api/projects';
 import type { Project } from '../../api/projects';
+import { listConnectors } from '../../api/connectors';
 import { AnswerText } from './AnswerText';
+import { WelcomeTour } from './WelcomeTour';
 import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ResultCard } from './cards/ChatCards';
 import { emptyLive, reduce, toCards, traceLine } from './liveChat';
 import type { LiveChat } from './liveChat';
@@ -118,6 +120,8 @@ function SessionRow({
 
 /** 대화 목록 너비 — 저장 키와 한계. 너무 좁으면 제목이 통째로 잘린다. */
 const LIST_WIDTH_KEY = 'halil.chatListWidth';
+/** 소개를 봤는가. `sessionStorage` 가 아니라 `localStorage` 다 — 탭을 닫아도 기억한다. */
+const TOUR_SEEN_KEY = 'halil.tourSeen';
 const LIST_MIN = 200;
 const LIST_MAX = 460;
 
@@ -137,6 +141,21 @@ export default function ChatPage() {
    * 소속인지가 이 값이다. `null` 은 프로젝트에 속하지 않는 대화다(허용한다).
    */
   const [projId, setProjId] = useState<string | null>(null);
+  /**
+   * 연결된 자리. 첫 화면이 「시작하기」인지 「무엇을 도와드릴까요?」인지를 가른다.
+   *
+   * **가입 직후에는 팀이 없어서 Chat 이 통째로 죽어 있다** — 에이전트가 0건이라
+   * 무엇을 물어도 답할 주체가 없다. 그 위에 배너 한 줄을 붙이는 것으로는 부족하고
+   * (죽은 화면은 그대로 죽은 화면이다), 빈 상태 자리를 아예 다음 행동으로
+   * 바꾼다(2026-08-12 PM 지적 · 홈화면 정의 §0 원칙 3).
+   *
+   * `null` 은 아직 모르는 상태다. 모르는 동안 「연결하세요」를 띄우면 이미 연결한
+   * 사람에게 한 번 깜빡인다.
+   */
+  const [connected, setConnected] = useState<Set<string> | null>(null);
+  /** 에이전트를 못 읽었다. 팀이 없어서인 경우가 많아 오류로 떠들지 않는다. */
+  const [agentsFailed, setAgentsFailed] = useState(false);
+  const [tourSeen, setTourSeen] = useState(() => localStorage.getItem(TOUR_SEEN_KEY) === '1');
   const [utterance, setUtterance] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
@@ -145,6 +164,15 @@ export default function ChatPage() {
   const streamRef = useRef<HTMLDivElement | null>(null);
   /** 사용자가 위로 올려 읽는 중이면 따라가지 않는다. */
   const stickToBottom = useRef(true);
+
+  useEffect(() => {
+    if (!token) return;
+    listConnectors(token)
+      .then((rows) => setConnected(new Set(rows.map((row) => row.connector_type))))
+      // 못 읽으면 「연결하세요」를 띄우지 않는다. 이미 연결한 사람에게 틀린 안내를
+      // 하느니, 원래 화면을 보여주고 조용히 넘어가는 편이 낫다.
+      .catch(() => setConnected(null));
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -163,7 +191,11 @@ export default function ChatPage() {
           (prev) => prev ?? rows.find(isPlatformAgent)?.agent_id ?? rows[0]?.agent_id ?? null,
         );
       })
-      .catch(() => setFatal('에이전트 목록을 불러오지 못했습니다.'));
+      // **팀이 없으면 이 실패는 당연한 것이라 말하지 않는다.** 가입 직후에는
+      // 팀이 없어서 이 호출이 반드시 실패하는데, 첫 화면 맨 위에 빨간 오류가
+      // 뜨면 뭔가 고장난 것처럼 보인다. 그 상황은 「시작할 준비를 해요」가 이미
+      // 설명하고 있다(2026-08-12).
+      .catch(() => setAgentsFailed(true));
     listSessions(token).then(setSessions).catch(() => undefined);
     // 프로젝트가 하나도 없어도 화면을 막지 않는다 — 「프로젝트 없음」 묶음에서
     // 그냥 대화할 수 있다.
@@ -418,6 +450,20 @@ export default function ChatPage() {
   }
 
   const isEmpty = turns.length === 0;
+  /**
+   * 사람 정보가 없으면 팀이 없고, 팀이 없으면 Chat 이 할 수 있는 일이 하나도
+   * 없다. 상태를 아직 못 읽었으면(`null`) 원래 화면을 보여준다 — 모르는 동안
+   * 「연결하세요」를 띄우면 이미 연결한 사람에게 한 번 깜빡인다.
+   */
+  const needsPeopleDb = connected !== null && !connected.has('PEOPLE_DB');
+  /**
+   * 소개는 **처음 온 사람에게 한 번만** 뜬다.
+   *
+   * 연결이 하나도 없을 때만 자동으로 연다 — 이미 쓰고 있는 사람에게 뜨면
+   * 방해다. 닫으면 기록해서 다시 열지 않는다(계정을 지웠다 다시 만들면 또
+   * 뜨는데, 그건 실제로 처음 오는 것이라 맞다).
+   */
+  const showTour = needsPeopleDb && !tourSeen;
   const lastLive = turns[turns.length - 1]?.live ?? null;
   const streaming = Boolean(lastLive?.running);
   const waitingConfirm = Boolean(lastLive?.confirm);
@@ -599,7 +645,55 @@ export default function ChatPage() {
           >
             {fatal && <p className={styles.fatal}>{fatal}</p>}
 
-            {isEmpty && (
+            <WelcomeTour
+              open={showTour}
+              onClose={() => {
+                localStorage.setItem(TOUR_SEEN_KEY, '1');
+                setTourSeen(true);
+              }}
+              onStart={() => {
+                localStorage.setItem(TOUR_SEEN_KEY, '1');
+                setTourSeen(true);
+                navigate(PATHS.settingsConnectors);
+              }}
+            />
+
+            {isEmpty && needsPeopleDb && (
+              <div className={styles.empty}>
+                <div className={styles.emptyIntro}>
+                  <h2>시작할 준비를 해요</h2>
+                  <p>데이터를 가져올 자리를 연결하면 그때부터 대화로 일할 수 있습니다.</p>
+                </div>
+
+                {/* **①과 ②③을 갈라 놓는다.** 셋을 한 줄로 세우면 「셋 다 해야
+                    한다」로 읽히는데, 필수는 사람 정보 하나뿐이다 — 그것만 있어도
+                    팀원 조회·부하 리포트·부재 조회는 돈다. */}
+                <div className={styles.setup}>
+                  <span className={styles.setupLabel}>먼저 이것부터</span>
+                  <div className={styles.setupStep}>
+                    <div>
+                      <strong>인사 시스템</strong>
+                      <p>연결하면 팀이 만들어집니다. 이게 있어야 나머지가 붙습니다.</p>
+                    </div>
+                    <Button size="sm" onClick={() => navigate(PATHS.settingsConnectors)}>
+                      연결하기
+                    </Button>
+                  </div>
+
+                  <span className={styles.setupLabel}>그다음, 필요한 만큼</span>
+                  <div className={styles.setupStepMuted}>
+                    <strong>문서 저장소</strong>
+                    <p>문서에서 업무를 뽑고 근거를 찾습니다.</p>
+                  </div>
+                  <div className={styles.setupStepMuted}>
+                    <strong>업무 기록소</strong>
+                    <p>진행 상황과 팀 부하를 봅니다.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isEmpty && !needsPeopleDb && (
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
@@ -625,7 +719,9 @@ export default function ChatPage() {
                   </p>
                 </div>
 
-                {agents.length === 0 && (
+                {/* 팀은 있는데 시드가 안 된 경우다. 팀 자체가 없는 경우는 위쪽
+                    「시작할 준비를 해요」가 맡으므로 여기까지 오지 않는다. */}
+                {agents.length === 0 && !agentsFailed && (
                   <p className={styles.onboardingBanner}>
                     <Icon name="info" size={15} color="var(--color-info)" />
                     이 팀에 기본 에이전트가 없습니다. 관리자가 시드를 돌려야 합니다.
