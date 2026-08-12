@@ -27,15 +27,11 @@ services:
     env_file:
       - ../../.env
     environment:
-      DATABASE_URL: postgres://project_copilot:project_copilot@db:5432/project_copilot
       # Drive에서 내려받은 원문을 두는 곳. `/app`은 소스 바인드 마운트라 여기에
       # 쓰면 문서가 git 작업 트리에 섞인다. 별도 볼륨을 쓴다.
       DOCUMENT_STORAGE_ROOT: /var/lib/halil/documents
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
     volumes:
       - ../../:/app
       - document_storage:/var/lib/halil/documents
