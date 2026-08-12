@@ -227,7 +227,7 @@ export default function AgentEditPage() {
       if (check.overall === 'reject') {
         setError(
           check.reject_reason ||
-            '설명 또는 지시문 내용이 너무 부족해 저장할 수 없습니다. 「테스트로 실행해보기」의 1단계에서 내용을 다시 써 주세요.',
+            '설명 또는 지시문 내용이 너무 부족해 저장할 수 없습니다. 「검증」의 1단계에서 내용을 다시 써 주세요.',
         );
         setSaving(false);
         return;
@@ -359,26 +359,13 @@ export default function AgentEditPage() {
           </p>
         </section>
 
-        <ToolPickerModal
-          open={pickerOpen}
-          onClose={() => setPickerOpen(false)}
-          builtinTools={tools.filter((tool) => !tool.tool_ref.startsWith('mcp:'))}
-          mcpServers={mcpServers}
-          toolRefs={toolRefs}
-          onToggle={toggleTool}
-          onGoToMcpSettings={() => {
-            setPickerOpen(false);
-            navigate(PATHS.settingsMcp);
-          }}
-        />
-
         <section className={styles.card}>
           <div className={styles.cardHead}>
-            <h2>테스트로 실행해보기</h2>
+            <h2>검증</h2>
             <p>저장하기 전에 지금 이름·설명·지시문·도구 설정 그대로 검증하고, 대화로 한 번 돌려 봅니다.</p>
           </div>
           <Button type="button" variant="outline" onClick={() => setTestRunOpen(true)}>
-            테스트로 실행해보기
+            검증
           </Button>
         </section>
 
@@ -396,6 +383,24 @@ export default function AgentEditPage() {
           allTools={tools}
           onApplyInstruction={setInstruction}
           onApplyDescription={setDescription}
+          onToggleTool={toggleTool}
+          onOpenToolPicker={() => setPickerOpen(true)}
+        />
+
+        {/* 검증 팝업 안에서도 「도구 추가/제외」로 열 수 있다 — z-index가 같은
+            고정 배경이라 DOM 순서로 위아래가 갈린다. TestRunModal보다 뒤에
+            둬야 겹쳐 열렸을 때 이 모달이 위로 온다. */}
+        <ToolPickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          builtinTools={tools.filter((tool) => !tool.tool_ref.startsWith('mcp:'))}
+          mcpServers={mcpServers}
+          toolRefs={toolRefs}
+          onToggle={toggleTool}
+          onGoToMcpSettings={() => {
+            setPickerOpen(false);
+            navigate(PATHS.settingsMcp);
+          }}
         />
 
         <div className={styles.actions}>

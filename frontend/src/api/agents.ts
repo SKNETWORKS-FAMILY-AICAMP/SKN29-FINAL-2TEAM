@@ -54,7 +54,7 @@ export interface ToolChoice {
   /** 승인 게이트를 타는 도구인가. 화면이 「승인 필요」를 표시한다. */
   side_effect: boolean;
   server_status?: string;
-  /** 기본 제공 도구만 갖는다. 「도구 확인」 패널이 입력 폼을 만드는 데 쓴다. */
+  /** 기본 제공·MCP 도구 모두 갖는다. 「도구 확인」 패널이 입력 폼을 만드는 데 쓴다. */
   input_schema?: {
     properties?: Record<string, { type?: string; description?: string; default?: unknown }>;
     required?: string[];

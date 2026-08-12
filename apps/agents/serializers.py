@@ -156,6 +156,9 @@ def mcp_tool_response(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             # (11_MCP_설계 §4 — 모르는 것은 안전한 쪽으로).
             "side_effect": True,
             "server_status": row.get("server_status"),
+            # 「도구 확인」 패널이 입력 폼을 만드는 데 쓴다. 저장된 스키마가
+            # 비어 있으면 프런트가 빈 객체 스키마로 다룰 수 있게 최소 형태로 채운다.
+            "input_schema": row.get("input_schema") or {"type": "object", "properties": {}},
         }
         for row in rows
     ]

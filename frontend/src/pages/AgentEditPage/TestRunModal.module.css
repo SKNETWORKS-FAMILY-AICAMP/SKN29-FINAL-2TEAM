@@ -1,6 +1,7 @@
 .tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--color-border); margin-bottom: var(--space-4); }
 .tab { border: none; background: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--color-muted); padding: 10px var(--space-3); border-bottom: 2px solid transparent; }
 .tabOn { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.tab:disabled { cursor: not-allowed; opacity: 0.45; }
 .inputRow { display: flex; align-items: flex-end; gap: var(--space-3); margin-bottom: var(--space-4); }
 .inputRow > *:first-child { flex: 1; min-width: 0; }
 .trace { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -14,3 +15,4 @@
 .resultBox p { margin: 0; font-size: 13px; color: var(--color-heading); line-height: 1.55; white-space: pre-wrap; }
 .stepActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
 .stageBack { align-self: flex-start; border: none; background: none; padding: 0; margin-bottom: var(--space-3); cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600; color: var(--color-muted); }
+.fieldFlag { margin-left: var(--space-2); font-weight: 600; }

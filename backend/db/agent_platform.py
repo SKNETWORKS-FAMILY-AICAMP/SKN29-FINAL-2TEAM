@@ -761,7 +761,7 @@ class AgentCrudRepository:
                 cursor.execute(
                     """
                     SELECT 'mcp:' || t.mcp_tool_id AS tool_ref, t.name, t.description,
-                           s.name AS server_name, s.status AS server_status
+                           t.input_schema, s.name AS server_name, s.status AS server_status
                     FROM mcp_tool AS t
                     JOIN mcp_server AS s ON s.mcp_server_id = t.server_id
                     WHERE s.team_id = %s AND t.enabled = true

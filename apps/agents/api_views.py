@@ -159,7 +159,7 @@ def _run_builder_check(*, account_id: str, name: str, description: str, behavior
 class AgentBuilderCheckAPIView(AuthenticatedAPIView):
     """이름·설명·행동 지시·도구 선택이 서로 맞는지 LLM으로 검토한다.
 
-    저장 여부와 무관하다 — 「테스트로 실행해보기」 1단계가 언제든 다시 부른다.
+    저장 여부와 무관하다 — 「검증」 1단계가 언제든 다시 부른다.
     """
 
     def post(self, request):

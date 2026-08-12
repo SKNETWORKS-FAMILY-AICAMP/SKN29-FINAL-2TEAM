@@ -39,6 +39,10 @@ export interface TestRunModalProps {
   allTools: ToolChoice[];
   onApplyInstruction: (text: string) => void;
   onApplyDescription: (text: string) => void;
+  /** 도구 확인 섹션에서 칩의 × 로 도구 하나를 뺀다. */
+  onToggleTool: (ref: string) => void;
+  /** 도구 확인 섹션의 「도구 추가/제외」 — 메인 화면과 같은 선택 팝업을 연다. */
+  onOpenToolPicker: () => void;
 }
 
 const STATUS_LABEL: Record<TestStep['status'], { tone: BadgeTone; label: string }> = {
@@ -70,6 +74,8 @@ export function TestRunModal({
   allTools,
   onApplyInstruction,
   onApplyDescription,
+  onToggleTool,
+  onOpenToolPicker,
 }: TestRunModalProps) {
   const [stage, setStage] = useState<Stage>('check');
   const [userInput, setUserInput] = useState('');
@@ -85,8 +91,6 @@ export function TestRunModal({
   const [checkedDescription, setCheckedDescription] = useState(description);
   const [checkedInstruction, setCheckedInstruction] = useState(instruction);
   const [canProceed, setCanProceed] = useState(false);
-  // 개별 도구 직접 확인은 2단계 안의 선택 사항이라 기본은 접어 둔다.
-  const [toolCheckOpen, setToolCheckOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -101,7 +105,6 @@ export function TestRunModal({
       setCheckedDescription(description);
       setCheckedInstruction(instruction);
       setCanProceed(false);
-      setToolCheckOpen(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -120,7 +123,7 @@ export function TestRunModal({
       await runBuilderTest(
         token,
         {
-          instruction,
+          instruction: checkedInstruction,
           tool_refs: toolRefs,
           model,
           reasoning_effort: reasoningEffort,
@@ -178,11 +181,28 @@ export function TestRunModal({
   const calledRefs = new Set(steps.map((step) => step.toolRef));
   const uncalledRefs = toolRefs.filter((ref) => !calledRefs.has(ref));
 
+  /** 1단계 검증을 통과(`canProceed`)해야만 2단계로 넘어간다. 설명·지시문은
+   * `onStateChange`가 이미 실시간으로 부모 폼에 반영해 둔 상태라 여기서
+   * 따로 넘길 게 없다 — 상단 탭과 하단 버튼이 이 함수 하나를 공유해야
+   * 탭을 눌러 검증을 우회하는 구멍이 없다. */
+  function moveToChatStage() {
+    if (!canProceed) return;
+    setStage('chat');
+  }
+
+  function moveToStage(next: Stage) {
+    if (next === 'check') {
+      setStage('check');
+      return;
+    }
+    moveToChatStage();
+  }
+
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="테스트로 실행해보기"
+      title="검증"
       width={560}
       dismissible={!running}
       footer={
@@ -192,18 +212,23 @@ export function TestRunModal({
       }
     >
       <div className={styles.tabs} role="tablist">
-        {STAGES.map((s, index) => (
-          <button
-            key={s.key}
-            type="button"
-            role="tab"
-            aria-selected={stage === s.key}
-            className={[styles.tab, stage === s.key ? styles.tabOn : ''].filter(Boolean).join(' ')}
-            onClick={() => setStage(s.key)}
-          >
-            {index + 1}. {s.label}
-          </button>
-        ))}
+        {STAGES.map((s, index) => {
+          const disabled = s.key === 'chat' && !canProceed;
+          return (
+            <button
+              key={s.key}
+              type="button"
+              role="tab"
+              aria-selected={stage === s.key}
+              disabled={disabled}
+              aria-disabled={disabled}
+              className={[styles.tab, stage === s.key ? styles.tabOn : ''].filter(Boolean).join(' ')}
+              onClick={() => moveToStage(s.key)}
+            >
+              {index + 1}. {s.label}
+            </button>
+          );
+        })}
       </div>
 
       {stage === 'check' && (
@@ -218,17 +243,17 @@ export function TestRunModal({
               setCheckedDescription(desc);
               setCheckedInstruction(instr);
               setCanProceed(proceedable);
+              // 팝업 안의 편집 내용을 그 자리에서 부모(실제 저장 대상)로 흘려
+              //보낸다. 예전엔 「다음 단계: 대화 테스트」를 눌러야만 반영됐는데,
+              // 그 전에 팝업을 닫으면(제안 적용 후 그냥 닫기 등) 방금 통과시킨
+              // 내용이 저장 대상에는 전혀 안 실린 채로 사라졌다 — 저장하면
+              // 여전히 적용 전(warn이었던) 문장이 나갔다.
+              onApplyDescription(desc);
+              onApplyInstruction(instr);
             }}
           />
           <div className={styles.stepActions}>
-            <Button
-              disabled={!canProceed}
-              onClick={() => {
-                onApplyDescription(checkedDescription);
-                onApplyInstruction(checkedInstruction);
-                setStage('chat');
-              }}
-            >
+            <Button disabled={!canProceed} onClick={moveToChatStage}>
               다음 단계: 대화 테스트
             </Button>
           </div>
@@ -300,8 +325,8 @@ export function TestRunModal({
               {resultComplete && resultGrounded === false && (
                 <p className={pageStyles.error}>
                   이 답변은 쓸 수 있는 도구를 하나도 안 부르고 나왔습니다 — 근거 없이 단정한 내용일
-                  수 있습니다. 아래 「개별 도구 직접 확인」에서 관련 도구를 직접 불러 사실 여부를
-                  확인해 보세요.
+                  수 있습니다. 아래 「도구 확인」에서 관련 도구를 직접 불러 사실 여부를 확인해
+                  보세요.
                 </p>
               )}
               {resultComplete && toolRefs.length > 0 && (
@@ -314,8 +339,8 @@ export function TestRunModal({
                       <span className={pageStyles.help}>
                         이번 대화에서 안 부른 도구:{' '}
                         {uncalledRefs.map((ref) => toolByRef.get(ref)?.name ?? ref).join(', ')} — 이
-                        질문에 필요 없었을 수도 있고, 모델이 놓쳤을 수도 있습니다. 아래 「개별 도구
-                        직접 확인」에서 직접 불러보거나 다른 질문으로 다시 테스트해 보세요.
+                        질문에 필요 없었을 수도 있고, 모델이 놓쳤을 수도 있습니다. 아래 「도구
+                        확인」에서 직접 불러보거나 다른 질문으로 다시 테스트해 보세요.
                       </span>
                     )}
                   </div>
@@ -324,14 +349,16 @@ export function TestRunModal({
             </div>
           )}
 
-          <button
-            type="button"
-            className={styles.stageBack}
-            onClick={() => setToolCheckOpen((prev) => !prev)}
-          >
-            {toolCheckOpen ? '▾' : '▸'} 개별 도구 직접 확인 (선택 — 모델 판단 없이 순서대로 불러본다)
-          </button>
-          {toolCheckOpen && <ToolCheckPanel token={token} allTools={allTools} toolRefs={toolRefs} />}
+          <div className={pageStyles.cardHead} style={{ marginTop: 'var(--space-4)' }}>
+            <h2>도구 확인</h2>
+          </div>
+          <ToolCheckPanel
+            token={token}
+            allTools={allTools}
+            toolRefs={toolRefs}
+            onToggleTool={onToggleTool}
+            onOpenToolPicker={onOpenToolPicker}
+          />
         </>
       )}
     </Modal>

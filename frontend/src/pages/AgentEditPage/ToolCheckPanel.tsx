@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Input } from '../../components';
+import { Badge, Button, Icon, Input } from '../../components';
 import type { BadgeTone } from '../../components';
 import { checkBuilderTools } from '../../api/agents';
 import type { ToolChoice, ToolCheckResult } from '../../api/agents';
@@ -11,16 +11,94 @@ export interface ToolCheckPanelProps {
   token: string | null;
   allTools: ToolChoice[];
   toolRefs: string[];
+  /** 칩의 × — 도구 하나를 뺀다. */
+  onToggleTool: (ref: string) => void;
+  /** 「도구 추가/제외」 — 메인 화면과 같은 선택 팝업을 연다. */
+  onOpenToolPicker: () => void;
   /** 마운트 시 한 번 자동으로 확인을 돌린다 — 검증 단계와 나란히 자동 실행될 때 쓴다. */
   autoRun?: boolean;
 }
 
-type FieldKind = 'string' | 'number' | 'json';
+type FieldKind = 'string' | 'number' | 'array' | 'object' | 'json';
 
 function fieldKind(type: string | undefined): FieldKind {
   if (type === 'string') return 'string';
   if (type === 'integer' || type === 'number') return 'number';
+  if (type === 'array') return 'array';
+  if (type === 'object') return 'object';
   return 'json';
+}
+
+interface BuildArgumentsResult {
+  argumentsByRef: Record<string, Record<string, unknown>>;
+  errors: Record<string, string>;
+}
+
+/**
+ * 원문 입력 문자열을 도구 인자로 조립한다. 잘못된 값을 조용히 버리지 않고
+ * 필드별 오류로 돌려준다 — 오류가 하나라도 있으면 호출측이 API를 부르지 않는다.
+ */
+function buildArguments(
+  toolRefs: string[],
+  toolByRef: Map<string, ToolChoice>,
+  rawArgs: Record<string, string>,
+): BuildArgumentsResult {
+  const argumentsByRef: Record<string, Record<string, unknown>> = {};
+  const errors: Record<string, string> = {};
+
+  for (const ref of toolRefs) {
+    const schema = toolByRef.get(ref)?.input_schema;
+    const properties = schema?.properties ?? {};
+    const required = new Set(schema?.required ?? []);
+    const built: Record<string, unknown> = {};
+
+    for (const prop of Object.keys(properties)) {
+      const key = `${ref}::${prop}`;
+      const raw = rawArgs[key] ?? '';
+      const kind = fieldKind(properties[prop].type);
+
+      if (raw === '') {
+        if (required.has(prop)) errors[key] = '필수 입력입니다.';
+        continue;
+      }
+
+      if (kind === 'number') {
+        const parsed = Number(raw);
+        if (Number.isNaN(parsed)) {
+          errors[key] = '숫자로 입력해 주세요.';
+        } else {
+          built[prop] = parsed;
+        }
+        continue;
+      }
+
+      if (kind === 'string') {
+        built[prop] = raw;
+        continue;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        errors[key] = '올바른 JSON 형식으로 입력해 주세요.';
+        continue;
+      }
+      if (kind === 'array' && !Array.isArray(parsed)) {
+        errors[key] = 'JSON 배열([ ]) 형식으로 입력해 주세요.';
+        continue;
+      }
+      if (kind === 'object' && (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))) {
+        errors[key] = 'JSON 객체({ }) 형식으로 입력해 주세요.';
+        continue;
+      }
+      built[prop] = parsed;
+    }
+
+    argumentsByRef[ref] = built;
+  }
+
+  return { argumentsByRef, errors };
 }
 
 const STATUS_LABEL: Record<ToolCheckResult['status'], { tone: BadgeTone; label: string }> = {
@@ -37,44 +115,42 @@ const STATUS_LABEL: Record<ToolCheckResult['status'], { tone: BadgeTone; label: 
  * 채팅식 테스트는 모델이 어떤 도구를 부를지 스스로 정해서, 데이터가 없거나
  * 모델이 안 부른 도구는 확인이 안 된다. 이 패널은 그 빈틈을 메운다.
  */
-export function ToolCheckPanel({ token, allTools, toolRefs, autoRun = false }: ToolCheckPanelProps) {
+export function ToolCheckPanel({
+  token,
+  allTools,
+  toolRefs,
+  onToggleTool,
+  onOpenToolPicker,
+  autoRun = false,
+}: ToolCheckPanelProps) {
   const [rawArgs, setRawArgs] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(false);
   const [results, setResults] = useState<ToolCheckResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const toolByRef = new Map(allTools.map((tool) => [tool.tool_ref, tool]));
 
+  function setFieldValue(key: string, value: string) {
+    setRawArgs((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
   async function run() {
     if (!token || toolRefs.length === 0 || checking) return;
-    setChecking(true);
-    setResults(null);
     setError(null);
 
-    const argumentsByRef: Record<string, Record<string, unknown>> = {};
-    for (const ref of toolRefs) {
-      const properties = toolByRef.get(ref)?.input_schema?.properties ?? {};
-      const built: Record<string, unknown> = {};
-      for (const prop of Object.keys(properties)) {
-        const raw = rawArgs[`${ref}::${prop}`];
-        if (raw === undefined || raw === '') continue;
-        const kind = fieldKind(properties[prop].type);
-        if (kind === 'number') {
-          const parsed = Number(raw);
-          if (!Number.isNaN(parsed)) built[prop] = parsed;
-        } else if (kind === 'json') {
-          try {
-            built[prop] = JSON.parse(raw);
-          } catch {
-            // 잘못된 JSON은 그냥 뺀다.
-          }
-        } else {
-          built[prop] = raw;
-        }
-      }
-      argumentsByRef[ref] = built;
-    }
+    const { argumentsByRef, errors } = buildArguments(toolRefs, toolByRef, rawArgs);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
+    setChecking(true);
+    setResults(null);
     try {
       const response = await checkBuilderTools(token, { tool_refs: toolRefs, arguments: argumentsByRef });
       setResults(response.results);
@@ -97,7 +173,27 @@ export function ToolCheckPanel({ token, allTools, toolRefs, autoRun = false }: T
         되는 상황을 없애려는 것입니다. 승인이 필요한 도구는 여기서도 실제로 실행하지 않고
         시뮬레이션만 합니다.
       </p>
-      {toolRefs.length === 0 && <p className={pageStyles.help}>먼저 도구를 선택해 주세요.</p>}
+
+      <div className={pageStyles.field}>
+        <span className={pageStyles.fieldLabel}>사용할 도구</span>
+        <div className={pageStyles.toolSummary}>
+          {toolRefs.length === 0 && <p className={pageStyles.help}>아직 고른 도구가 없습니다.</p>}
+          {toolRefs.map((ref) => {
+            const label = toolByRef.get(ref)?.name ?? ref;
+            return (
+              <span key={ref} className={pageStyles.toolChip}>
+                {label}
+                <button type="button" aria-label={`${label} 빼기`} onClick={() => onToggleTool(ref)}>
+                  <Icon name="x" size={11} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onOpenToolPicker}>
+          도구 추가/제외
+        </Button>
+      </div>
 
       {toolRefs.map((ref) => {
         const tool = toolByRef.get(ref);
@@ -118,9 +214,14 @@ export function ToolCheckPanel({ token, allTools, toolRefs, autoRun = false }: T
                     label={`${prop}${required.has(prop) ? ' *' : ''}`}
                     id={`tool-check-${key}`}
                     name={key}
-                    placeholder={kind === 'json' ? '{ } 또는 [ ] 형식의 JSON' : properties[prop].description || ''}
+                    placeholder={
+                      kind === 'array' || kind === 'object' || kind === 'json'
+                        ? '{ } 또는 [ ] 형식의 JSON'
+                        : properties[prop].description || ''
+                    }
                     value={rawArgs[key] ?? ''}
-                    onChange={(event) => setRawArgs((prev) => ({ ...prev, [key]: event.target.value }))}
+                    error={fieldErrors[key]}
+                    onChange={(event) => setFieldValue(key, event.target.value)}
                   />
                 );
               })}
