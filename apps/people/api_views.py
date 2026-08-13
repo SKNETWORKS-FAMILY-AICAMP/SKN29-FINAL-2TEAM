@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
+from apps.accounts.permissions import require_leader
 from backend.db import AccountRepository, TeamRepository
 from backend.db.errors import RepositoryError
 from backend.services import hr
@@ -117,6 +118,10 @@ class OrganizationListAPIView(TeamScopedAPIView):
         return Response([organization_response(row) for row in rows])
 
 
+#: 명부와 팀 기준은 팀장의 것이다. 조회는 팀원도 한다 — 막는 것은 쓰기뿐이다.
+TEAM_LEADER_ONLY = "팀장만 팀 명부와 업무량 기준을 바꿀 수 있습니다."
+
+
 class TeamMemberAPIView(TeamScopedAPIView):
     """팀 명부. 사람·계정·초대를 한 줄로 본다.
 
@@ -132,6 +137,9 @@ class TeamMemberAPIView(TeamScopedAPIView):
         return Response([team_member_response(row) for row in rows])
 
     def post(self, request):
+        if denied := require_leader(request.user.account_id, TEAM_LEADER_ONLY):
+            return denied
+
         person_id = str(request.data.get("person_id") or "").strip()
         if not person_id:
             return Response(
@@ -153,6 +161,9 @@ class TeamMemberAPIView(TeamScopedAPIView):
 
 class TeamMemberDetailAPIView(TeamScopedAPIView):
     def delete(self, request, person_id):
+        if denied := require_leader(request.user.account_id, TEAM_LEADER_ONLY):
+            return denied
+
         try:
             TeamRepository.remove_member(
                 account_id=request.user.account_id,
@@ -197,6 +208,9 @@ class TeamSettingAPIView(TeamScopedAPIView):
             return _unavailable("팀 설정을 조회할 수 없습니다.", exc)
 
     def put(self, request):
+        if denied := require_leader(request.user.account_id, TEAM_LEADER_ONLY):
+            return denied
+
         try:
             # 주 168시간이 물리적 상한이다. 그 위는 입력 실수다.
             capacity = _optional_number(

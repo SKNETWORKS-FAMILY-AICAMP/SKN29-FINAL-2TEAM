@@ -23,6 +23,7 @@ from backend.db.errors import (
 
 from .authentication import BearerTokenAuthentication
 from .emails import send_password_reset_mail
+from .permissions import require_leader
 from .serializers import (
     InviteCodeSerializer,
     InviteCreateSerializer,
@@ -380,6 +381,10 @@ class InviteCandidateListAPIView(AuthenticatedAPIView):
         return Response([invite_candidate_response(row) for row in rows])
 
 
+#: 초대는 팀을 늘리는 일이라 팀장의 것이다. 발급과 폐기가 같은 문구를 쓴다.
+INVITE_LEADER_ONLY = "팀장만 팀원을 초대할 수 있습니다."
+
+
 class InviteListCreateAPIView(AuthenticatedAPIView):
     def get(self, request):
         try:
@@ -389,6 +394,10 @@ class InviteListCreateAPIView(AuthenticatedAPIView):
         return Response([invite_response(row) for row in rows])
 
     def post(self, request):
+        # 화면은 팀원에게 초대 버튼을 안 보여 주지만, 그건 문지기가 아니다.
+        if denied := require_leader(request.user.account_id, INVITE_LEADER_ONLY):
+            return denied
+
         serializer = InviteCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -411,6 +420,9 @@ class InviteListCreateAPIView(AuthenticatedAPIView):
 
 class InviteRevokeAPIView(AuthenticatedAPIView):
     def post(self, request, invite_id):
+        if denied := require_leader(request.user.account_id, INVITE_LEADER_ONLY):
+            return denied
+
         try:
             MemberInviteRepository.revoke(
                 invite_id=invite_id,

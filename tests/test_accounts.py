@@ -665,3 +665,82 @@ class InviteApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 204)
         revoke.assert_called_once_with(invite_id="MI001", account_id="UA001")
+
+
+@patch("apps.accounts.permissions.AccountRepository.get_profile")
+class LeaderOnlyGuardTests(SimpleTestCase):
+    """**화면이 버튼을 감추는 것은 문지기가 아니다.**
+
+    설정의 「권한」 탭이 「팀장만」이라고 선언한 넷 중 실제로 서버가 막던 것은
+    커넥터 연결 하나뿐이었고, 초대·명부·팀 기준·MCP 는 API 를 직접 부르면 그대로
+    통과했다(2026-08-13). 표가 지켜지지 않는 약속을 하고 있었다.
+
+    **거절되는 쪽만 엔드포인트로 잰다.** 통과하는 쪽까지 여기서 재려면 뒤따르는
+    Repository 를 전부 목으로 막아야 하는데, 이 저장소는 psycopg 직결이라
+    `SimpleTestCase` 가 DB 접근을 안 막는다 — 하나라도 빠뜨리면 테스트가 개발
+    DB 에 초대를 만들거나 팀원을 지운다. 통과 쪽은 아래 `RequireLeaderTests` 가
+    함수 단위로 잰다.
+    """
+
+    #: 팀장 전용이라고 화면이 선언한 쓰기 경로 전부.
+    LEADER_ONLY = [
+        ("/api/invites/", "post", {"person_id": "PB002"}),
+        ("/api/invites/MI001/revoke/", "post", {}),
+        ("/api/teams/members/", "post", {"person_id": "PB002"}),
+        ("/api/teams/members/PB002/", "delete", None),
+        ("/api/teams/settings/", "put", {"capacity_wk_hours": 40}),
+        ("/api/mcp/servers/", "post", {"name": "x", "endpoint_url": "https://example.com/mcp"}),
+        ("/api/mcp/servers/MS001/", "delete", None),
+        ("/api/mcp/servers/MS001/test/", "post", {}),
+    ]
+
+    def _call(self, url, method, body):
+        headers = {"authorization": f"Bearer {issue_token('UA002')}"}
+        send = getattr(self.client, method)
+        if body is None:
+            return send(url, headers=headers)
+        return send(url, body, content_type="application/json", headers=headers)
+
+    def test_팀원은_여덟_경로_전부에서_403(self, get_profile):
+        get_profile.return_value = member_profile()
+
+        for url, method, body in self.LEADER_ONLY:
+            with self.subTest(url=url, method=method):
+                response = self._call(url, method, body)
+
+                self.assertEqual(response.status_code, 403, f"{method.upper()} {url}")
+                # 왜 막혔는지 화면이 그대로 보여줄 수 있어야 한다.
+                self.assertIn("팀장만", response.json()["detail"])
+
+    def test_프로필을_못_읽으면_거절이_아니라_장애다(self, get_profile):
+        """「내가 권한이 없나」와 「지금 서버가 이상한가」를 같은 코드로 뭉개지 않는다."""
+
+        import psycopg
+
+        get_profile.side_effect = psycopg.OperationalError("boom")
+
+        response = self._call("/api/invites/", "post", {"person_id": "PB002"})
+
+        self.assertEqual(response.status_code, 503)
+
+
+@patch("apps.accounts.permissions.AccountRepository.get_profile")
+class RequireLeaderTests(SimpleTestCase):
+    """문지기 함수 자체. 통과하는 쪽은 여기서 잰다 — DB 에 닿지 않는다."""
+
+    def test_팀장이면_통과한다(self, get_profile):
+        from apps.accounts.permissions import require_leader
+
+        get_profile.return_value = leader_profile()
+
+        self.assertIsNone(require_leader("UA001", "팀장만 …"))
+
+    def test_팀원이면_403_응답을_돌려준다(self, get_profile):
+        from apps.accounts.permissions import require_leader
+
+        get_profile.return_value = member_profile()
+
+        denied = require_leader("UA002", "팀장만 팀원을 초대할 수 있습니다.")
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.data["detail"], "팀장만 팀원을 초대할 수 있습니다.")
