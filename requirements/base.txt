@@ -11,3 +11,21 @@ pydantic>=2.11,<3.0
 # 문서 메타의 CPU 텍스트 추출(PDF 텍스트 레이어). docling 은 RunPod 워커 쪽이라
 # 백엔드에는 없다 — 팀 문서 전부에 돌릴 가벼운 경로가 따로 필요하다.
 pypdf>=5.1,<7.0
+
+# Deep Agent 런타임(services/agent_runtime/). 2026-08-13 착수 — requires-python
+# >=3.11 (Dockerfile은 3.13-slim이라 문제 없음). 버전은 02_런타임_공통_계약
+# §18.1 "버전 고정" 요구에 따라 고정한다 — 스트리밍 스파이크 테스트 전까지는
+# 이 패키지를 실제로 import하는 코드를 서비스 경로에 넣지 않는다(TYPE_CHECKING만).
+# PyPI 최신 안정판(2026-08-13 확인) 고정. langgraph는 langchain-core를 통해
+# 전이 의존성으로 들어온다 — 별도 pin 불필요(현재 core deps에 명시 안 됨).
+deepagents==0.7.5
+langchain-core>=1.4.0,<2.0.0
+langchain>=1.3.4,<2.0.0
+# deepagents 자체 의존성은 langchain-anthropic/langchain-google-genai만 강제한다.
+# 이 프로젝트는 OpenAI 호환 엔드포인트 하나로 Claude/OpenRouter/Groq/Gemini를
+# 함께 받는 자체 어댑터(runner._default_model)를 이미 갖고 있다 — models/factory.py
+# 구현 시 langchain-anthropic 네이티브 통합을 쓸지, 기존 어댑터처럼 ChatOpenAI
+# 호환 경로로 통일할지를 스파이크 단계에서 정할 것. 미정 상태라 langchain-openai는
+# 아직 추가하지 않는다.
+langchain-anthropic>=1.4.3,<2.0.0
+langchain-google-genai>=4.2.2,<5.0.0
