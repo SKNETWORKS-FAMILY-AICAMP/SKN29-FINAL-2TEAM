@@ -275,13 +275,15 @@ export default function OpsModelsPage() {
         ) : (
           <OpsDataTable minWidth={860}>
             <thead>
+              {/* `table-layout: fixed` 라 폭을 안 주면 6칸이 균등하게 갈린다 —
+                  팀·등록일이 남아돌고 정작 긴 주소만 굶는다. */}
               <tr>
-                <th>팀</th>
-                <th>모델</th>
-                <th>제공자</th>
+                <th style={{ width: 130 }}>팀</th>
+                <th style={{ width: 210 }}>모델</th>
+                <th style={{ width: 130 }}>제공자</th>
                 <th>주소</th>
-                <th>등록일</th>
-                <th />
+                <th style={{ width: 100 }}>등록일</th>
+                <th style={{ width: 80 }} />
               </tr>
             </thead>
             <tbody>
@@ -290,7 +292,9 @@ export default function OpsModelsPage() {
                   <td>{row.team_name ?? row.team_id}</td>
                   <td>{row.model}</td>
                   <td>{row.label}</td>
-                  <td>{row.base_url}</td>
+                  <td className={styles.cellEllipsis} title={row.base_url}>
+                    {row.base_url}
+                  </td>
                   <td>{row.connected_at.slice(0, 10)}</td>
                   <td>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(row)}>
