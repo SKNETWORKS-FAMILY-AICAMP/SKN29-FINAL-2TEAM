@@ -662,9 +662,11 @@ docker run --rm pgvector/pgvector:pg17 \
 
 1. `.env` 작성 (`ALLOWED_HOSTS`·`CORS_ALLOWED_ORIGINS`·`VITE_API_BASE_URL` 에 EC2 IP 반영)
 2. **OAuth redirect URI 결정** — Google/Atlassian 콘솔 등록까지. **여기가 관문이다**
-   > **2026-08-13 결정 — 도메인을 산다.** 공인 IP 에 `http` redirect URI 는 Google 이
-   > 받지 않는다. 도메인 + https 로 가고, 같은 인증서가 MCP 서버 등록(https 필수)과
-   > 혼합 콘텐츠 문제까지 함께 푼다. 방법 비교는 `AWS_이전_매뉴얼.md` §1.
+   > **2026-08-13 결정 — 도메인은 `halil-ai.site`.** 공인 IP 에 `http` redirect URI 는
+   > Google 이 받지 않는다. 도메인 + https 로 가고, 같은 인증서가 MCP 서버 등록
+   > (https 필수)과 혼합 콘텐츠 문제까지 함께 푼다. 등록할 값은
+   > `https://api.halil-ai.site/api/connectors/{google-drive,jira}/callback/` 이고,
+   > 서브도메인 계획과 나머지 환경값은 `AWS_이전_매뉴얼.md` §1 에 있다.
 3. `frontend/Dockerfile` 을 `npm run build` + 정적 서빙으로 바꿀지 결정
    (도메인을 쓰면 `vite.config.ts` 에 `server.allowedHosts` 추가 필요)
 4. EC2 IAM Role 생성 → S3 권한 부여 → 인스턴스에 연결 → **IAM 사용자

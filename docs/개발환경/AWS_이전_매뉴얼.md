@@ -27,7 +27,7 @@ RDS PostgreSQL       S3
 
 이번 범위에서는 ECS, ALB, CloudFront, SQS, 별도 Vector DB, Terraform, CI/CD는 사용하지 않는다.
 
-### 결정 — 도메인을 산다 (2026-08-13) · **어느 도메인일지는 미정**
+### 결정 — 도메인은 `halil-ai.site` (2026-08-13)
 
 **공인 IP + HTTP 로는 막히는 것이 셋이다.** 도메인과 https 를 붙여 한 번에 푼다.
 
@@ -54,9 +54,33 @@ RDS PostgreSQL       S3
 > 이유였다). **탄력적 IP 가 고정돼 있다는 사실이 그보다 크다** — 그 경우 NS 를
 > 옮길 이유가 없다(2026-08-13 정정).
 
-도메인이 붙으면 함께 바뀌는 것: `SECURE_SSL_REDIRECT=True`(§4), `ALLOWED_HOSTS`·
-`CORS_ALLOWED_ORIGINS`·`VITE_API_BASE_URL`, `vite.config.ts` 의 `server.allowedHosts`,
-그리고 **MCP 시연 서버의 빠른 터널을 고정 주소로 바꾼다**(§2 MCP 절).
+`halil.site` 는 레지스트리 유보어라 못 샀고, 하이픈을 넣어 피했다. 하이픈은 DNS·TLS·
+OAuth 어디서도 문제가 없고, 이름에 `ai` 가 들어가 발표에서 무엇을 하는 서비스인지
+바로 읽힌다.
+
+#### 서브도메인 계획
+
+| 이름 | 무엇 |
+|---|---|
+| `app.halil-ai.site` | 프론트(React) |
+| `api.halil-ai.site` | Django API |
+| `mcp.halil-ai.site` | MCP 시연 서버 — **빠른 터널의 바뀌는 주소를 여기로 고정한다** |
+
+#### 도메인이 붙으면 바꿀 것
+
+```
+ALLOWED_HOSTS=api.halil-ai.site,app.halil-ai.site
+CORS_ALLOWED_ORIGINS=https://app.halil-ai.site
+VITE_API_BASE_URL=https://api.halil-ai.site/api
+GOOGLE_DRIVE_REDIRECT_URI=https://api.halil-ai.site/api/connectors/google-drive/callback/
+JIRA_REDIRECT_URI=https://api.halil-ai.site/api/connectors/jira/callback/
+```
+
+그리고 `SECURE_SSL_REDIRECT=True`(§4), `vite.config.ts` 의 `server.allowedHosts`.
+
+**Google·Atlassian 콘솔에 위 두 redirect URI 를 등록하는 것이 1단계 §20 이 말한
+관문이다.** 도메인이 생겼으므로 이제 EC2 를 켜기 전에도 할 수 있다 — 시연 직전에
+몰아서 하지 말 것.
 
 ## 2. 컨테이너 구성 변경
 
