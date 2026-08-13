@@ -930,3 +930,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/**
+ * 값 하나하나를 줄로 세우는 상세 표. 라벨이 왼쪽 열, 값이 오른쪽 열이다.
+ *
+ * `OpsDataTable` 은 목록용이라 머리글이 sticky 이고 가로 스크롤을 맡는다 —
+ * 항목 몇 개짜리 상세에는 과하다. 대신 **색·여백·테두리는 그 표와 같게** 둔다.
+ * 같은 화면군에서 표가 두 가지 모양이면 그게 더 눈에 띈다(2026-08-13).
+ */
+.detailTable {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.detailTable th {
+  /* 라벨 열 폭을 고정한다. 값 길이에 따라 열이 들썩이면 줄마다 라벨 위치가 달라진다. */
+  width: 200px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: #f8fafc;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  vertical-align: top;
+}
+
+.detailTable td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #eef2f7;
+  color: var(--color-heading);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.detailTable tr:last-child th,
+.detailTable tr:last-child td {
+  border-bottom: 0;
+}
