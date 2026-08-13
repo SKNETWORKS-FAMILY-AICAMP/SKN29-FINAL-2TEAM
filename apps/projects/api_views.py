@@ -40,7 +40,6 @@ from services.document_pipeline.signing import read_download_token, signed_downl
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
-    AnalysisRunRepository,
     DocumentRepository,
     ExistTaskRepository,
     ProjectRepository,
@@ -60,7 +59,6 @@ from backend.db.errors import (
 )
 
 from .serializers import (
-    AssignmentRunCreateSerializer,
     DocumentRegisterSerializer,
     JiraProjectRegisterSerializer,
     PrimaryCandidateSerializer,
@@ -70,7 +68,6 @@ from .serializers import (
     ProjectStatusSerializer,
     TaskExtractionCreateSerializer,
     TeamFolderReplaceSerializer,
-    assignment_run_response,
     deadline_response,
     missing_document_response,
     pipeline_document_response,
@@ -1448,30 +1445,3 @@ class TaskExtractionRunAPIView(AuthenticatedAPIView):
             # NDJSON. 한 줄이 한 사건이라 프론트가 줄 단위로 읽으면 된다.
             content_type="application/x-ndjson",
         )
-
-
-class ProjectAnalysisRunAPIView(AuthenticatedAPIView):
-    """현재 `assign_run` 테이블에 배정 실행을 생성한다."""
-
-    def post(self, request, project_id):
-        serializer = AssignmentRunCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            row = AnalysisRunRepository.create(
-                proj_id=project_id,
-                **serializer.validated_data,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        row["proj_id"] = project_id
-        return Response(assignment_run_response(row), status=status.HTTP_201_CREATED)
-
-
-class AnalysisRunDetailAPIView(AuthenticatedAPIView):
-    def get(self, request, run_id):
-        try:
-            row = AnalysisRunRepository.get(run_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(assignment_run_response(row))

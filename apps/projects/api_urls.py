@@ -1,10 +1,8 @@
 from django.urls import path
 
 from .api_views import (
-    AnalysisRunDetailAPIView,
     DocumentProcessingRunAPIView,
     HealthAPIView,
-    ProjectAnalysisRunAPIView,
     ProjectDetailAPIView,
     ProjectJiraRegisterAPIView,
     ProjectPrimaryCandidateAPIView,
@@ -116,16 +114,4 @@ urlpatterns = [
         TaskExtractionRunAPIView.as_view(),
         name="api_task_extraction_run",
     ),
-    path(
-        "projects/<str:project_id>/assignment-runs/",
-        ProjectAnalysisRunAPIView.as_view(),
-        name="api_project_assignment_runs",
-    ),
-    path(
-        "projects/<str:project_id>/analysis-runs/",
-        ProjectAnalysisRunAPIView.as_view(),
-        name="api_project_analysis_runs_compat",
-    ),
-    path("assignment-runs/<str:run_id>/", AnalysisRunDetailAPIView.as_view(), name="api_assignment_run_detail"),
-    path("analysis-runs/<str:run_id>/", AnalysisRunDetailAPIView.as_view(), name="api_analysis_run_detail_compat"),
 ]

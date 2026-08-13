@@ -7,7 +7,6 @@ from rest_framework import serializers
 
 from apps.connectors.clients import MAX_SCAN_DEPTH
 
-
 class ProjectCreateSerializer(serializers.Serializer):
     """소유자는 요청이 아니라 로그인 토큰에서 정한다."""
 
@@ -23,7 +22,6 @@ class ProjectCreateSerializer(serializers.Serializer):
     )
     tz = serializers.CharField(max_length=50, default="Asia/Seoul")
 
-
 class PrimaryCandidateSerializer(serializers.Serializer):
     """기준 문서 후보를 찾을 질의.
 
@@ -37,7 +35,6 @@ class PrimaryCandidateSerializer(serializers.Serializer):
         max_length=500, required=False, allow_blank=True, allow_null=True, default=""
     )
 
-
 class ProjectStatusSerializer(serializers.Serializer):
     """상태 변경. 「완료 처리」와 그 되돌리기가 쓴다.
 
@@ -46,7 +43,6 @@ class ProjectStatusSerializer(serializers.Serializer):
     """
 
     status = serializers.ChoiceField(choices=("ACTIVE", "ARCHIVED"))
-
 
 class TeamFolderReplaceSerializer(serializers.Serializer):
     """팀이 읽을 Drive 폴더의 전체 선택 상태. 빈 목록은 전부 해제한다는 뜻이다."""
@@ -72,12 +68,10 @@ class TeamFolderReplaceSerializer(serializers.Serializer):
         default=1,
     )
 
-
 class JiraProjectSelectionSerializer(serializers.Serializer):
     project_key = serializers.CharField(max_length=255)
     # Jira가 알려준 이름. 이것이 곧 우리 프로젝트 이름이 된다.
     name = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
-
 
 class JiraProjectRegisterSerializer(serializers.Serializer):
     """고른 Jira 프로젝트 전체. 하나가 프로젝트 하나로 등록된다(1:1).
@@ -91,12 +85,9 @@ class JiraProjectRegisterSerializer(serializers.Serializer):
         allow_empty=True,
     )
 
-
-
 class DocumentRegisterEntrySerializer(serializers.Serializer):
     file_id = serializers.CharField(max_length=255)
     # 안 보내면 폴더에 지정된 역할을 물려받는다.
-
 
 class DocumentRemoveSerializer(serializers.Serializer):
     """Drive 에서 사라진 문서를 내린다. 사용자가 확인한 것만 온다."""
@@ -104,7 +95,6 @@ class DocumentRemoveSerializer(serializers.Serializer):
     doc_ids = serializers.ListField(
         child=serializers.CharField(max_length=5), allow_empty=False
     )
-
 
 def missing_document_response(row: dict[str, Any]) -> dict[str, Any]:
     """Drive 스캔에 안 잡히는 등록 문서 한 줄.
@@ -123,41 +113,10 @@ def missing_document_response(row: dict[str, Any]) -> dict[str, Any]:
         "doc_role": row.get("doc_role"),
     }
 
-
 class DocumentRegisterSerializer(serializers.Serializer):
     """신규 파일 목록에서 고른 것만 등록한다. 이름·형식은 서버가 Drive에서 다시 읽는다."""
 
     files = serializers.ListField(child=DocumentRegisterEntrySerializer(), allow_empty=False)
-
-
-
-class AssignmentRunCreateSerializer(serializers.Serializer):
-    snapshot_id = serializers.CharField(max_length=5)
-    readiness_id = serializers.CharField(
-        max_length=5,
-        allow_null=True,
-        required=False,
-        default=None,
-    )
-    requested_by = serializers.CharField(
-        max_length=5,
-        allow_null=True,
-        required=False,
-        default=None,
-    )
-    model_version = serializers.CharField(
-        max_length=30,
-        allow_null=True,
-        required=False,
-        default=None,
-    )
-    policy_version = serializers.CharField(
-        max_length=30,
-        allow_null=True,
-        required=False,
-        default=None,
-    )
-
 
 def project_response(
     row: dict[str, Any],
@@ -199,7 +158,6 @@ def project_response(
         "progress": progress,
     }
 
-
 def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
     last_sync_at = row.get("last_sync_at")
     return {
@@ -212,7 +170,6 @@ def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
         "display_name": row.get("display_name"),
         "sync_status": row["sync_status"],
     }
-
 
 def exist_task_response(row: dict[str, Any], persons: dict[str, Any]) -> dict[str, Any]:
     """Jira 이슈 한 건을 상세 화면의 업무 한 줄로.
@@ -242,7 +199,6 @@ def exist_task_response(row: dict[str, Any], persons: dict[str, Any]) -> dict[st
         "remaining": float(row["remaining"]) if row.get("remaining") is not None else None,
     }
 
-
 def extracted_task_response(row: dict[str, Any]) -> dict[str, Any]:
     """기준 문서에서 뽑아 등록한 우리 업무 한 줄(`task`).
 
@@ -266,10 +222,8 @@ def extracted_task_response(row: dict[str, Any]) -> dict[str, Any]:
         "generated_at": generated_at.isoformat() if generated_at else None,
     }
 
-
 class TaskExtractionCreateSerializer(serializers.Serializer):
     primary_document_id = serializers.CharField(max_length=5)
-
 
 class ProjectSourceDocumentSerializer(serializers.Serializer):
     """기준 문서 1건. 근거 문서는 사람이 고르지 않으므로 받지 않는다.
@@ -280,7 +234,6 @@ class ProjectSourceDocumentSerializer(serializers.Serializer):
     """
 
     primary_document_id = serializers.CharField(max_length=5, allow_null=True)
-
 
 def pipeline_document_response(row: dict[str, Any]) -> dict[str, Any]:
     """기준 문서 선택 화면이 쓰는 한 줄.
@@ -303,7 +256,6 @@ def pipeline_document_response(row: dict[str, Any]) -> dict[str, Any]:
         "search_ready": bool(row.get("search_ready")),
         "src_modified_at": modified_at.isoformat() if modified_at else None,
     }
-
 
 def deadline_response(
     row: dict[str, Any],
@@ -334,7 +286,6 @@ def deadline_response(
         "project_name": row.get("project_name") or row.get("project_key"),
     }
 
-
 def team_folder_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "team_folder_id": row["team_folder_id"],
@@ -344,7 +295,6 @@ def team_folder_response(row: dict[str, Any]) -> dict[str, Any]:
         "display_name": row.get("display_name"),
         "max_depth": row.get("max_depth"),
     }
-
 
 def document_response(row: dict[str, Any]) -> dict[str, Any]:
     modified_at = row.get("src_modified_at")
@@ -362,7 +312,6 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         # 원문을 받았는지만 알려준다. 저장소 키 자체는 서버 내부 사정이다.
         "downloaded": bool(row.get("storage_key")),
     }
-
 
 def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
     """`audit_log` 한 줄을 문서 처리 이력으로.
@@ -385,17 +334,4 @@ def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
         "actor_display_name": row.get("actor_display_name"),
         "status": "PARTIAL" if (payload.get("failed") or 0) else "OK",
         "payload": payload,
-    }
-
-
-def assignment_run_response(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "run_id": row["run_id"],
-        "project_id": row.get("proj_id"),
-        "snapshot_id": row["snapshot_id"],
-        "readiness_id": row["readiness_id"],
-        "model_version": row["model_version"],
-        "policy_version": row["policy_version"],
-        "status": row["status"],
-        "requested_by": row["requested_by"],
     }
