@@ -2,15 +2,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Button,
+  Modal,
   OpsDataTable,
   OpsEmpty,
   OpsPageHeader,
   OpsSectionCard,
   OpsStatusBadge,
+  useToast,
 } from '../../components';
 import type { OpsTone } from '../../components';
-import { fetchOpsTeams, fetchTeamContent } from '../../api/opsTeams';
-import type { OpsTeam, OpsTeamAgent, OpsTeamRun } from '../../api/opsTeams';
+import {
+  fetchOpsTeams,
+  fetchTeamContent,
+  fetchTeamOwnerCandidates,
+  transferTeamOwner,
+} from '../../api/opsTeams';
+import type { OpsTeam, OpsTeamAgent, OpsTeamCandidate, OpsTeamRun } from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
@@ -60,6 +67,13 @@ export default function OpsTeamDetailPage() {
   /** 지시문은 길다. 펼친 것만 보여준다. */
   const [openAgent, setOpenAgent] = useState('');
 
+  const { showToast } = useToast();
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [candidates, setCandidates] = useState<OpsTeamCandidate[] | null>(null);
+  const [nextOwner, setNextOwner] = useState('');
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
   const load = useCallback(async () => {
     const session = loadOpsSession();
     if (!session || !teamId) {
@@ -90,6 +104,49 @@ export default function OpsTeamDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * 후보는 **그 팀의 살아 있는 계정**만이다. 계정 전체에서 고르게 하면 남의 팀
+   * 사람을 고를 수 있고, 서버가 거절하더라도 고를 수 있게 보여 주는 것 자체가
+   * 잘못된 안내다.
+   */
+  async function openTransfer() {
+    const session = loadOpsSession();
+    if (!session || !teamId) return;
+    setTransferOpen(true);
+    setCandidates(null);
+    setNextOwner('');
+    setReason('');
+    try {
+      setCandidates(await fetchTeamOwnerCandidates(session.token, teamId));
+    } catch (thrown) {
+      showToast(thrown instanceof ApiError ? thrown.message : '후보를 불러오지 못했습니다.', 'error');
+      setCandidates([]);
+    }
+  }
+
+  async function confirmTransfer() {
+    const session = loadOpsSession();
+    if (!session || !teamId || !nextOwner || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await transferTeamOwner(session.token, teamId, nextOwner, reason.trim());
+      // 옮겨진 모델 수를 함께 말한다 — 소유자만 바뀐 줄 알았는데 모델이 따라간
+      // 것을 나중에 알면 그게 더 놀랍다.
+      showToast(
+        result.moved_models > 0
+          ? `소유자를 넘겼습니다. 등록된 모델 ${result.moved_models}건도 함께 옮겼습니다.`
+          : '소유자를 넘겼습니다.',
+        'success',
+      );
+      setTransferOpen(false);
+      await load();
+    } catch (thrown) {
+      showToast(thrown instanceof ApiError ? thrown.message : '넘기지 못했습니다.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const header = (
     <OpsPageHeader
@@ -149,6 +206,17 @@ export default function OpsTeamDetailPage() {
           </tr>
         </tbody>
       </table>
+
+      {/* 조치는 목록이 아니라 여기가 자리다. 표의 「작업」 열에 셋을 가운뎃점으로
+          이어 붙였더니 무엇을 눌러야 할지 안 보였다(2026-08-13 PM 지적). */}
+      <OpsSectionCard title="조치">
+        <div className={styles.rowActions}>
+          <Button variant="outline" onClick={() => navigate(`/ops/accounts?team=${teamId}`)}>
+            이 팀 계정 보기
+          </Button>
+          <Button variant="outline" onClick={openTransfer}>소유자 이전</Button>
+        </div>
+      </OpsSectionCard>
 
       <OpsSectionCard title={`에이전트 ${agents.length}개`}>
         {agents.length === 0 ? (
@@ -252,6 +320,52 @@ export default function OpsTeamDetailPage() {
           </OpsDataTable>
         )}
       </OpsSectionCard>
+
+      <Modal
+        open={transferOpen}
+        onClose={() => (submitting ? null : setTransferOpen(false))}
+        title="팀 소유자 이전"
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setTransferOpen(false)} disabled={submitting}>
+              취소
+            </Button>
+            <Button onClick={confirmTransfer} disabled={!nextOwner || submitting}>
+              {submitting ? '넘기는 중…' : '넘기기'}
+            </Button>
+          </>
+        )}
+      >
+        <div className={styles.formGrid}>
+          <div className={styles.fieldGroup}>
+            <label htmlFor="next-owner">새 소유자 · {team.name}</label>
+            {candidates === null ? (
+              <p className={styles.inlineEmpty}>불러오는 중…</p>
+            ) : candidates.length === 0 ? (
+              <p className={styles.inlineEmpty}>넘길 수 있는 계정이 없습니다.</p>
+            ) : (
+              <select id="next-owner" value={nextOwner} onChange={(event) => setNextOwner(event.target.value)}>
+                <option value="">선택하세요</option>
+                {candidates.map((candidate) => (
+                  <option key={candidate.account_id} value={candidate.account_id}>
+                    {candidate.display_name} · {candidate.email}
+                    {candidate.account_id === team.owner_account_id ? ' (현재 소유자)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className={styles.fieldGroup}>
+            <label htmlFor="transfer-reason">사유 (선택)</label>
+            <textarea
+              id="transfer-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="예: 팀장 퇴사"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
