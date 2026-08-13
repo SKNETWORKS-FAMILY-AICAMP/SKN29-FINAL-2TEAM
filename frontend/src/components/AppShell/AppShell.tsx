@@ -60,9 +60,12 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
     <div className={styles.shell}>
       <aside className={[styles.sidebar, collapsed ? styles.sidebarCollapsed : ''].filter(Boolean).join(' ')}>
         <div className={styles.brandRow}>
-          {/* 접히면 글자가 들어갈 자리가 없다 — 그때만 마크로 바꾼다. */}
+          {/* 접히면 글자가 들어갈 자리가 없다 — 그때만 마크로 바꾼다.
+              높이가 두 쪽이 다른 것은 여백 때문이다. 워드마크는 글자가 그림 끝까지 차
+              있어 44 가 곧 글자 높이지만, 마크는 96px 그림 안에 글리프가 53px 뿐이라
+              같은 44 로는 작아 보인다 — 접힘 폭(68px)이 허락하는 만큼 키웠다. */}
           <Link to={PATHS.chat} className={styles.logo} aria-label="채팅으로 이동">
-            <Logo variant={collapsed ? 'mark' : 'full'} height={collapsed ? 30 : 26} />
+            <Logo variant={collapsed ? 'mark' : 'full'} height={collapsed ? 40 : 44} />
           </Link>
           <button
             type="button"
