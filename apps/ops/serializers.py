@@ -64,6 +64,7 @@ def account_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "email": row["email"],
         "display_name": row["display_name"],
         "account_status": row["account_status"],
+        "is_admin": row["is_admin"],
         "team_id": row["team_id"],
         "team_name": row["team_name"],
         "mapping_status": mapping_status,
@@ -140,6 +141,17 @@ def policy_change_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "actor_email": row["actor_email"],
         "occurred_at": row["occurred_at"],
     }
+
+
+class AdminGrantSerializer(serializers.Serializer):
+    """운영자 권한을 켤지 끌지, 그리고 왜.
+
+    사유는 선택이다(전역 정책의 다른 조치와 같다). 다만 **권한을 주고받은 기록은
+    사유가 비어 있어도 남는다** — 누가 누구에게 언제가 먼저다.
+    """
+
+    is_admin = serializers.BooleanField()
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
 
 
 class OpsModelRegisterSerializer(serializers.Serializer):

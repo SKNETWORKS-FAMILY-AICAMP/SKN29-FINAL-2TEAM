@@ -245,3 +245,94 @@ class OpsModelRegisterTests(SimpleTestCase):
         from django.urls import resolve
 
         self.assertEqual(resolve("/api/ops/models/probe/").url_name, "api_ops_model_probe")
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.accounts.OpsAccountRepository")
+class OpsAdminGrantApiTests(SimpleTestCase):
+    """운영자 권한 부여·회수.
+
+    원래 이 경로는 API 에 없었다(`grant_admin.py` 로만 켰다). 콘솔이 자기 자신을
+    관리하지 못하는 문제라 열되, 취지를 지키는 안전장치를 함께 둔다.
+    """
+
+    URL = "/api/ops/accounts/UA002/admin/"
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_권한을_준다(self, repo, _admin):
+        repo.set_admin.return_value = {"account_id": "UA002", "is_admin": True}
+
+        response = self.client.post(
+            self.URL,
+            {"is_admin": True, "reason": "운영 인수인계"},
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        kwargs = repo.set_admin.call_args.kwargs
+        self.assertTrue(kwargs["is_admin"])
+        self.assertEqual(kwargs["reason"], "운영 인수인계")
+        # 누가 줬는지가 감사 기록의 핵심이다.
+        self.assertEqual(kwargs["actor_account_id"], "UA001")
+
+    def test_사유는_없어도_된다(self, repo, _admin):
+        repo.set_admin.return_value = {"account_id": "UA002", "is_admin": False}
+
+        response = self.client.post(
+            self.URL, {"is_admin": False}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(repo.set_admin.call_args.kwargs["reason"], "")
+
+    def test_is_admin_은_필수다(self, repo, _admin):
+        """켜는지 끄는지를 안 주면 무엇을 하려는지 알 수 없다."""
+
+        response = self.client.post(
+            self.URL, {"reason": "x"}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.set_admin.assert_not_called()
+
+    def test_운영자가_아니면_못_부른다(self, repo, _admin):
+        token = account_tokens.issue_token("UA001")
+
+        response = self.client.post(
+            self.URL,
+            {"is_admin": True},
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        repo.set_admin.assert_not_called()
+
+    def test_본인_권한_회수는_403(self, repo, _admin):
+        """실수로 스스로를 잠그면 되돌릴 방법이 없다."""
+
+        from backend.db.errors import PermissionDenied
+
+        repo.set_admin.side_effect = PermissionDenied("본인의 운영자 권한은 내릴 수 없습니다.")
+
+        response = self.client.post(
+            self.URL, {"is_admin": False}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_마지막_운영자_회수는_400(self, repo, _admin):
+        """콘솔에 아무도 못 들어가는 상태를 화면에서 만들 수 있으면 안 된다."""
+
+        from backend.db.errors import RepositoryError as RepoError
+
+        repo.set_admin.side_effect = RepoError("마지막 운영자입니다.")
+
+        response = self.client.post(
+            self.URL, {"is_admin": False}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)

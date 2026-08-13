@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<string, string> = {
   SIGNUP: '회원가입',
   PASSWORD_RESET: '비밀번호 재설정',
   CONNECTOR_CONNECT: '커넥터 연결',
+  OPS_ADMIN_GRANT: '운영자 권한 부여',
+  OPS_ADMIN_REVOKE: '운영자 권한 회수',
   OPS_MODEL_REGISTER: '모델 등록',
   OPS_MODEL_REMOVE: '모델 삭제',
 };

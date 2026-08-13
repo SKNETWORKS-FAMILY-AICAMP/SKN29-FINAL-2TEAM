@@ -2807,6 +2807,7 @@ class OpsAccountRepository:
                         ua.email,
                         ua.display_name,
                         ua.account_status,
+                        ua.is_admin,
                         ua.team_id,
                         t.name AS team_name,
                         COALESCE(lc.link_count, 0) AS link_count,
@@ -2875,6 +2876,73 @@ class OpsAccountRepository:
                 )
 
         return {"account_id": account_id, "account_status": new_status}
+
+    @staticmethod
+    def set_admin(*, account_id: str, actor_account_id: str, is_admin: bool, reason: str = "") -> dict[str, Any]:
+        """운영자 권한을 켜고 끈다.
+
+        **원래는 API 에 이 경로를 두지 않았다.** `grant_admin.py` 가 「승격 경로를
+        API 표면에 아예 두지 않는다」고 적어 두었고, 그 취지는 운영자 계정 하나가
+        털렸을 때 운영자를 더 만들지 못하게 하는 것이었다. 다만 그 대가로 **콘솔이
+        자기 자신을 관리하지 못했다** — 운영자를 늘리려면 서버에 들어가 스크립트를
+        돌려야 했다(2026-08-13 PM 지적).
+
+        열되 취지는 지킨다.
+
+        - **최초 운영자는 여전히 CLI 로만 만든다.** 운영자가 하나도 없는 상태에서
+          이 경로를 부를 수 있는 사람도 없으므로 부트스트랩은 그대로다.
+        - **자기 권한은 못 내린다.** 실수로 스스로를 잠그면 되돌릴 방법이 없다.
+        - **마지막 운영자는 못 내린다.** 콘솔에 아무도 못 들어가는 상태를 화면에서
+          만들 수 있으면 안 된다.
+        - 누가 누구에게 왜 줬는지 감사 로그에 남는다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT account_id, account_status, is_admin FROM user_account WHERE account_id = %s FOR UPDATE",
+                    (account_id,),
+                )
+                account = cursor.fetchone()
+                if account is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+                if account["account_status"] == "WITHDRAWN":
+                    raise RepositoryError("탈퇴한 계정에는 운영자 권한을 줄 수 없습니다.")
+                if account["is_admin"] == is_admin:
+                    raise RepositoryError("이미 처리된 상태입니다.")
+
+                if not is_admin:
+                    if account_id == actor_account_id:
+                        raise PermissionDenied(
+                            "본인의 운영자 권한은 내릴 수 없습니다. 다른 운영자에게 요청하세요."
+                        )
+                    # **마지막 한 명을 세는 것이 아니라 「나 말고 또 있는가」를 본다.**
+                    # 지금 내리려는 대상 말고 남는 운영자가 없으면 콘솔이 잠긴다.
+                    cursor.execute(
+                        """
+                        SELECT count(*) AS n FROM user_account
+                        WHERE is_admin = true AND account_status = 'ACTIVE' AND account_id <> %s
+                        """,
+                        (account_id,),
+                    )
+                    if cursor.fetchone()["n"] == 0:
+                        raise RepositoryError(
+                            "마지막 운영자입니다. 권한을 내리면 콘솔에 아무도 들어갈 수 없습니다."
+                        )
+
+                cursor.execute(
+                    "UPDATE user_account SET is_admin = %s WHERE account_id = %s", (is_admin, account_id)
+                )
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="OPS_ADMIN_GRANT" if is_admin else "OPS_ADMIN_REVOKE",
+                    target_type="ACCOUNT",
+                    target_id=account_id,
+                    payload={"before": account["is_admin"], "after": is_admin, "reason": reason},
+                )
+
+        return {"account_id": account_id, "is_admin": is_admin}
 
     @staticmethod
     def unlink_all(*, account_id: str, actor_account_id: str) -> dict[str, Any]:

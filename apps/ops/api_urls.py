@@ -1,6 +1,12 @@
 from django.urls import path
 
-from .views.accounts import AccountListView, AccountLockView, AccountUnlinkPersonView, AccountUnlockView
+from .views.accounts import (
+    AccountAdminView,
+    AccountListView,
+    AccountLockView,
+    AccountUnlinkPersonView,
+    AccountUnlockView,
+)
 from .views.audit import (
     AssignmentRunLogView,
     DecisionLogView,
@@ -23,6 +29,7 @@ urlpatterns = [
     path("overview/", OverviewView.as_view(), name="api_ops_overview"),
     path("teams/", TeamsView.as_view(), name="api_ops_teams"),
     path("accounts/", AccountListView.as_view(), name="api_ops_account_list"),
+    path("accounts/<str:account_id>/admin/", AccountAdminView.as_view(), name="api_ops_account_admin"),
     path("accounts/<str:account_id>/lock/", AccountLockView.as_view(), name="api_ops_account_lock"),
     path("accounts/<str:account_id>/unlock/", AccountUnlockView.as_view(), name="api_ops_account_unlock"),
     path(

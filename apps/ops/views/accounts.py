@@ -14,7 +14,7 @@ from backend.db import OpsAccountRepository
 from backend.db.errors import RepositoryError
 
 from ..authentication import AdminView
-from ..serializers import account_row_response
+from ..serializers import AdminGrantSerializer, account_row_response
 
 
 class AccountListView(AdminView):
@@ -48,6 +48,29 @@ class AccountUnlinkPersonView(AdminView):
     def post(self, request, account_id):
         try:
             result = OpsAccountRepository.unlink_all(account_id=account_id, actor_account_id=request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+        return Response(result)
+
+
+class AccountAdminView(AdminView):
+    """운영자 권한 부여·회수.
+
+    잠금과 달리 **본문을 받는다** — 켜는지 끄는지와 사유가 필요하기 때문이다.
+    안전장치(자기 권한 불가·마지막 운영자 보호)는 `OpsAccountRepository.set_admin`
+    이 트랜잭션 안에서 본다. 화면에서만 막으면 규칙이 아니다.
+    """
+
+    def post(self, request, account_id):
+        serializer = AdminGrantSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = OpsAccountRepository.set_admin(
+                account_id=account_id,
+                actor_account_id=request.user.account_id,
+                is_admin=serializer.validated_data["is_admin"],
+                reason=serializer.validated_data["reason"],
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(result)

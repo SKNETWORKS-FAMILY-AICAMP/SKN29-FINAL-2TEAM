@@ -16,6 +16,8 @@ export interface OpsAccount {
   email: string;
   display_name: string;
   account_status: string;
+  /** 운영자 콘솔에 들어올 수 있는 계정인가. */
+  is_admin: boolean;
   team_id: string | null;
   team_name: string | null;
   mapping_status: OpsMappingStatus;
@@ -47,4 +49,19 @@ export function unlinkAccountPerson(token: string, accountId: string) {
     `/ops/accounts/${accountId}/unlink-person/`,
     { method: 'POST', token },
   );
+}
+
+/**
+ * 운영자 권한을 켜고 끈다.
+ *
+ * **최초 운영자는 여전히 CLI 로만 만든다**(`grant_admin.py`). 여기는 이미 들어와
+ * 있는 운영자가 다음 사람을 들이는 자리다. 자기 권한 회수와 마지막 운영자 회수는
+ * 서버가 막는다.
+ */
+export function setAccountAdmin(token: string, accountId: string, isAdmin: boolean, reason: string) {
+  return opsRequest<{ account_id: string; is_admin: boolean }>(`/ops/accounts/${accountId}/admin/`, {
+    method: 'POST',
+    token,
+    body: { is_admin: isAdmin, reason },
+  });
 }
