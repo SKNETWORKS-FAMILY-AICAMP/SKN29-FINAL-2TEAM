@@ -3,13 +3,6 @@ import { apiRequest } from './client';
 /** `connector_conn.connector_type`. Google Drive는 OAuth로 실제 연결한다. */
 export type ConnectorType = 'PEOPLE_DB' | 'GOOGLE_DRIVE' | 'JIRA';
 
-/** 화면의 커넥터 카드 id ↔ 서버의 connector_type 대응. */
-export const CONNECTOR_TYPE_BY_ID: Record<string, ConnectorType> = {
-  'people-db': 'PEOPLE_DB',
-  'google-drive': 'GOOGLE_DRIVE',
-  jira: 'JIRA',
-};
-
 export interface ConnectorConnection {
   conn_id: string;
   connector_type: ConnectorType;
