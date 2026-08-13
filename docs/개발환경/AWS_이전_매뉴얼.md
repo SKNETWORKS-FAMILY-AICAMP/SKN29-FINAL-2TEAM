@@ -37,14 +37,22 @@ RDS PostgreSQL       S3
 | **MCP 서버 등록** | `services/mcp/security.py` 가 https 아닌 주소를 거절한다(SSRF 1차 방어선) |
 | **쿠키·혼합 콘텐츠** | 화면이 https 인데 API 가 http 면 브라우저가 막는다 |
 
-붙이는 방법은 셋이고 **아래로 갈수록 손이 많이 간다.**
+붙이는 방법은 셋이다.
 
-1. **Cloudflare 프록시 + 이름 있는 터널** — 도메인을 Cloudflare 에 올리고
-   `cloudflared` 로 EC2·MCP 서버를 각각 서브도메인에 붙인다. 인증서 관리가 없고
-   인바운드 포트를 안 열어도 된다. **이미 이 저장소가 cloudflared 를 쓰고 있어
-   추가로 배울 것이 없다**(`infra/docker/docker-compose.dev-mcp.yml`).
-2. **EC2 안에서 TLS 종료** — Caddy 나 nginx + Let's Encrypt. 컨테이너가 하나 는다.
+1. **가비아(또는 산 곳) DNS + EC2 에서 TLS 종료** ← **기본으로 삼는다**
+   A 레코드 하나를 탄력적 IP 로 찍고, EC2 에 Caddy 컨테이너를 얹어 Let's Encrypt
+   인증서를 자동 발급·갱신한다. **탄력적 IP 가 이미 고정돼 있어서 DNS 는 A 레코드
+   하나면 끝이고**, 프론트·API·MCP 를 서브도메인으로 한 번에 받는다. 요청 경로에
+   남의 서비스가 끼지 않는다. 인바운드 80·443 을 연다.
+2. **Cloudflare 프록시 + 이름 있는 터널** — 인증서 관리가 없고 인바운드 포트를
+   안 열어도 된다. 다만 **네임서버를 Cloudflare 로 옮겨야 한다** — 이름 있는
+   터널이 `<uuid>.cfargotunnel.com` 으로 가는 CNAME 을 요구하는데 그건 Cloudflare
+   DNS 에서만 된다. 공인 IP 가 없거나 포트를 못 여는 환경이면 이쪽이 낫다.
 3. **ACM + ALB** — AWS 답지만 §1 에서 범위 밖으로 정한 구성이다.
+
+> 처음에는 2번을 먼저 적었다(이미 `cloudflared` 를 쓰고 있으니 배울 것이 없다는
+> 이유였다). **탄력적 IP 가 고정돼 있다는 사실이 그보다 크다** — 그 경우 NS 를
+> 옮길 이유가 없다(2026-08-13 정정).
 
 도메인이 붙으면 함께 바뀌는 것: `SECURE_SSL_REDIRECT=True`(§4), `ALLOWED_HOSTS`·
 `CORS_ALLOWED_ORIGINS`·`VITE_API_BASE_URL`, `vite.config.ts` 의 `server.allowedHosts`,
