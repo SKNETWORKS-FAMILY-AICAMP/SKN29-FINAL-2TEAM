@@ -8,6 +8,10 @@ from .api_views import (
     AgentDisableAPIView,
     AgentListCreateAPIView,
     AgentToolCatalogAPIView,
+    AgentVersionActivateAPIView,
+    AgentVersionDetailAPIView,
+    AgentVersionDisableAPIView,
+    AgentVersionListCreateAPIView,
     CustomModelAPIView,
     MainModelAPIView,
 )
@@ -25,6 +29,24 @@ urlpatterns = [
         "build/check-tools/",
         AgentBuilderToolCheckAPIView.as_view(),
         name="api_agent_builder_check_tools",
+    ),
+    # 새 버전 스키마(services/agent_runtime/ 전용) — 옛 `<str:agent_id>/`와
+    # 겹치지 않게 `versions/` 아래 따로 둔다. 02 §17.1 작업자 A 몫.
+    path("versions/", AgentVersionListCreateAPIView.as_view(), name="api_agent_versions"),
+    path(
+        "versions/<str:agent_id>/",
+        AgentVersionDetailAPIView.as_view(),
+        name="api_agent_version_detail",
+    ),
+    path(
+        "versions/<str:agent_id>/activate/",
+        AgentVersionActivateAPIView.as_view(),
+        name="api_agent_version_activate",
+    ),
+    path(
+        "versions/<str:agent_id>/disable/",
+        AgentVersionDisableAPIView.as_view(),
+        name="api_agent_version_disable",
     ),
     path("<str:agent_id>/", AgentDetailAPIView.as_view(), name="api_agent_detail"),
     path("<str:agent_id>/activate/", AgentActivateAPIView.as_view(), name="api_agent_activate"),

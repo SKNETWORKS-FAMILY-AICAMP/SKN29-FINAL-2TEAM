@@ -127,6 +127,64 @@ class BuilderToolCheckSerializer(serializers.Serializer):
     arguments = serializers.DictField(child=serializers.JSONField(), default=dict)
 
 
+class SubagentRefSerializer(serializers.Serializer):
+    """`AgentVersionPublishSerializer.subagents`의 항목 하나.
+
+    필드는 02 §16 요청 계약 그대로다. `alias`/`delegation_description`을 여기서
+    빈 문자열까지만 막고, "이미 쓰는 alias인지"·"활성/권한이 있는지" 같은 구조
+    검증은 `services.agent_runtime.subagents.validation.validate_subagents()`가
+    한다 — 저장·발행 API와 Factory가 같은 함수를 쓴다(02 §7.1).
+    """
+
+    child_agent_id = serializers.CharField(max_length=5)
+    child_version_id = serializers.CharField(max_length=5)
+    alias = serializers.CharField(max_length=100, trim_whitespace=True, allow_blank=False)
+    delegation_description = serializers.CharField(allow_blank=False, trim_whitespace=True)
+
+
+class AgentVersionPublishSerializer(serializers.Serializer):
+    """새 버전 발행 입력(02 §16). "저장"과 "발행"은 한 동작이다 — `agent_versions`가
+    불변이라(02 §5.2) 임시 저장이라는 중간 상태가 없다.
+
+    `AgentWriteSerializer`(옛 비버전 스키마용)와 겹치는 필드가 많지만 따로 둔다
+    — `instruction`이 아니라 `system_prompt`이고, `subagents`가 추가됐고, 두
+    스키마는 서로 다른 테이블로 간다.
+    """
+
+    name = serializers.CharField(max_length=100)
+    description = serializers.CharField(max_length=500, allow_blank=True, default="")
+    system_prompt = serializers.CharField(allow_blank=True, default="")
+    model = serializers.CharField(
+        max_length=100, trim_whitespace=True, required=False, allow_null=True, default=None
+    )
+    reasoning_effort = serializers.ChoiceField(
+        choices=REASONING_EFFORTS, required=False, allow_null=True, default=None
+    )
+    max_iterations = serializers.IntegerField(min_value=2, max_value=20, default=6)
+    tool_refs = serializers.ListField(
+        child=serializers.CharField(max_length=100), allow_empty=True, default=list
+    )
+    subagents = SubagentRefSerializer(many=True, required=False, default=list)
+
+
+def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "agent_id": row["agent_id"],
+        "name": row["name"],
+        "description": row.get("description") or "",
+        "status": row.get("status"),
+        "current_version_id": row.get("current_version_id"),
+        "version": row.get("version"),
+        "system_prompt": row.get("system_prompt") or "",
+        "model": row.get("model"),
+        "reasoning_effort": row.get("reasoning_effort"),
+        "max_iterations": row.get("max_iterations"),
+        "tool_refs": row.get("tool_refs") or [],
+        "subagents": row.get("subagents") or [],
+        "updated_at": row.get("updated_at"),
+    }
+
+
 def mcp_tool_response(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {

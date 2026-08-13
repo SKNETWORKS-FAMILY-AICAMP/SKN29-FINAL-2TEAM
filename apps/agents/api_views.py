@@ -12,7 +12,12 @@ from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
 from backend.db import AccountRepository
-from backend.db.agent_platform import AgentCrudRepository, AgentRepository, CustomModelRepository
+from backend.db.agent_platform import (
+    AgentCrudRepository,
+    AgentRepository,
+    AgentVersionCrudRepository,
+    CustomModelRepository,
+)
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -20,15 +25,18 @@ from backend.db.errors import (
     RepositoryError,
 )
 from services.agent_builder import check_definition
+from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.harness import check_tools, run_agent
 
 from .serializers import (
     AGENT_MODELS,
+    AgentVersionPublishSerializer,
     AgentWriteSerializer,
     BuilderTestRunSerializer,
     BuilderToolCheckSerializer,
     MainModelSerializer,
     agent_response,
+    agent_version_response,
     builtin_tool_response,
     mcp_tool_response,
 )
@@ -48,6 +56,25 @@ def _repository_error_response(exc: Exception) -> Response:
     return Response(
         {"detail": "데이터베이스 요청을 처리할 수 없습니다.", "error": exc.__class__.__name__},
         status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
+
+def _agent_runtime_error_response(exc: AgentRuntimeError) -> Response:
+    """`services.agent_runtime.exceptions`를 HTTP 응답으로 바꾼다(02 §12).
+
+    `type(exc).__mro__`를 위에서부터 훑어 `HTTP_STATUS_BY_EXCEPTION`에 먼저
+    걸리는 클래스를 쓴다 — 예를 들어 `SubagentPermissionError`는
+    `SubagentValidationError`의 하위 클래스라, 매핑을 그냥 `isinstance`로 훑으면
+    등록 순서에 따라 403 대신 409로 잘못 걸릴 수 있다. MRO 순회는 항상 가장
+    구체적인 클래스부터 맞으므로 이 문제가 없다.
+    """
+
+    for cls in type(exc).__mro__:
+        if cls in HTTP_STATUS_BY_EXCEPTION:
+            return Response({"detail": str(exc)}, status=HTTP_STATUS_BY_EXCEPTION[cls])
+    return Response(
+        {"detail": "요청을 처리할 수 없습니다.", "error": exc.__class__.__name__},
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
 
 
@@ -365,3 +392,168 @@ class AgentDisableAPIView(AuthenticatedAPIView):
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response(agent_response(row))
+
+
+# =========================================================================
+# 새 버전 스키마(agents/agent_versions) — services/agent_runtime/ 전용.
+#
+# 위 옛 엔드포인트와 나란히 존재한다. apps/chat·apps/agents의 실행 경로는
+# 아직 이 스키마를 모른다(services/agent_runtime/이 미완성 — loader.py가
+# NotImplementedError). 지금은 저장·조회만 가능하고, 실행에 실제로 쓰이는
+# 것은 harness 경로의 `agent` 테이블뿐이다. 배경:
+# docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md
+# =========================================================================
+
+
+class AgentVersionListCreateAPIView(AuthenticatedAPIView):
+    def get(self, request):
+        try:
+            rows = AgentVersionCrudRepository.list_for_team(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response([agent_version_response(row) for row in rows])
+
+    def post(self, request):
+        """새 논리적 에이전트 + 첫 버전을 함께 발행한다."""
+
+        serializer = AgentVersionPublishSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        fields = {
+            key: data[key]
+            for key in (
+                "name", "description", "system_prompt", "model",
+                "reasoning_effort", "max_iterations",
+            )
+        }
+        account_id = request.user.account_id
+
+        rejection = _model_rejection(account_id, fields.get("model"))
+        if rejection is not None:
+            return rejection
+        try:
+            # `_check_tool_refs`가 팀 소속을 다시 확인하는 과정에서
+            # `PermissionDenied`(팀 없는 계정) 등을 낼 수 있다 — 옛
+            # `AgentListCreateAPIView.post()`는 이 호출을 try/except 밖에 둬서
+            # 그 경우 500으로 새는 잠재 버그가 있었다(2026-08-13 검증 중 발견).
+            # 여기서는 감싼다.
+            blocker = _check_tool_refs(account_id=account_id, tool_refs=data["tool_refs"])
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        if blocker is not None:
+            return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            row = AgentVersionCrudRepository.publish(
+                agent_id=None,
+                account_id=account_id,
+                fields=fields,
+                tool_refs=data["tool_refs"],
+                subagents=data["subagents"],
+            )
+        except AgentRuntimeError as exc:
+            return _agent_runtime_error_response(exc)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(agent_version_response(row), status=status.HTTP_201_CREATED)
+
+
+class AgentVersionDetailAPIView(AuthenticatedAPIView):
+    def get(self, request, agent_id):
+        try:
+            row = AgentVersionCrudRepository.get(
+                agent_id=agent_id, account_id=request.user.account_id
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(agent_version_response(row))
+
+    def put(self, request, agent_id):
+        """기존 논리적 에이전트에 새 버전을 발행한다.
+
+        **일반적인 PUT과 달리 멱등하지 않다.** `agent_versions`가 불변이라
+        "덮어쓰기"가 없다 — 같은 바디로 두 번 호출하면 버전이 두 개 생기고
+        `current_version_id`만 최신 것으로 옮겨간다(02 §5.2). 옛 버전을 이미
+        고정 참조하는 세션·부모 에이전트는 그대로 이전 버전을 계속 쓴다.
+        """
+
+        serializer = AgentVersionPublishSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        fields = {
+            key: data[key]
+            for key in (
+                "name", "description", "system_prompt", "model",
+                "reasoning_effort", "max_iterations",
+            )
+        }
+        account_id = request.user.account_id
+
+        rejection = _model_rejection(account_id, fields.get("model"))
+        if rejection is not None:
+            return rejection
+        try:
+            blocker = _check_tool_refs(account_id=account_id, tool_refs=data["tool_refs"])
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        if blocker is not None:
+            return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            row = AgentVersionCrudRepository.publish(
+                agent_id=agent_id,
+                account_id=account_id,
+                fields=fields,
+                tool_refs=data["tool_refs"],
+                subagents=data["subagents"],
+            )
+        except AgentRuntimeError as exc:
+            return _agent_runtime_error_response(exc)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(agent_version_response(row))
+
+
+class AgentVersionActivateAPIView(AuthenticatedAPIView):
+    """DRAFT/DISABLED → ACTIVE. 옛 `AgentActivateAPIView`와 같은 이유로 재검증한다
+    — 버전 자체(system_prompt 등)는 불변이어도, 그 버전이 참조하는 팀의 커스텀
+    모델·MCP 도구는 불변이 아니다. 발행 시점엔 있던 것이 활성화 시점엔 사라졌을
+    수 있다."""
+
+    def post(self, request, agent_id):
+        account_id = request.user.account_id
+        try:
+            agent = AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        rejection = _model_rejection(account_id, agent.get("model"))
+        if rejection is not None:
+            return rejection
+        try:
+            blocker = _check_tool_refs(account_id=account_id, tool_refs=agent["tool_refs"])
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        if blocker is not None:
+            return Response({"detail": blocker}, status=status.HTTP_409_CONFLICT)
+
+        try:
+            row = AgentVersionCrudRepository.set_status(
+                agent_id=agent_id, account_id=account_id, status="ACTIVE"
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(agent_version_response(row))
+
+
+class AgentVersionDisableAPIView(AuthenticatedAPIView):
+    """ACTIVE → DISABLED. 검증 없이 바로 내린다 — 끄는 쪽은 항상 안전하다."""
+
+    def post(self, request, agent_id):
+        try:
+            row = AgentVersionCrudRepository.set_status(
+                agent_id=agent_id, account_id=request.user.account_id, status="DISABLED"
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(agent_version_response(row))
