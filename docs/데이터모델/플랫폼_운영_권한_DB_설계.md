@@ -113,7 +113,7 @@ USER_ACCOUNT
 |---|---|---|---|
 | `connection_id` | UUID | PK | Connector 연결 ID |
 | `account_id` | BIGINT | FK, NOT NULL | 연결을 생성한 플랫폼 사용자 |
-| `connector_type` | VARCHAR(30) | NOT NULL | `PEOPLE_DB/GOOGLE_DRIVE/JIRA` |
+| `connector_type` | VARCHAR(30) | NOT NULL | `PEOPLE_DB/GOOGLE_DRIVE/JIRA/MODEL_API` |
 | `provider_account_id` | VARCHAR | NULL | 외부 서비스 계정 ID |
 | `provider_email` | VARCHAR(320) | NULL | 사용자 확인용 외부 계정 이메일 |
 | `auth_status` | VARCHAR(20) | NOT NULL | `CONNECTED/EXPIRED/REVOKED/ERROR` |
@@ -123,6 +123,8 @@ USER_ACCOUNT
 | `expires_at` | TIMESTAMPTZ | NULL | 자격증명 만료 예정 시각 |
 | `last_error_code` | VARCHAR | NULL | 최근 연결 오류 코드 |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | 상태 수정 시각 |
+
+`MODEL_API`는 팀이 등록하는 커스텀 모델도 이 테이블을 재사용하면서 추가된 값이다(2026-08-13). 팀이 등록한 모델은 「연결 서비스」가 아니므로 운영자 콘솔의 연결 서비스 화면들은 유형으로 이 값을 걸러 제외한다.
 
 자격증명 원문은 API 응답, 애플리케이션 로그, `AUDIT_LOG.payload`에 포함하지 않는다.
 
@@ -138,7 +140,7 @@ auth_status, encrypted_credential_ref, connected_at
 없는 것: `provider_account_id`, `provider_email`, `expires_at`, `last_error_code`, `updated_at`. PK도 UUID가 아니라 `VARCHAR(5)`(`CN001`…)이고 `account_id`는 `BIGINT`가 아니라 `VARCHAR(5)`다.
 
 - **`expires_at`이 없어도 된다** — 만료 시각은 암호문 payload 안에 함께 들어 있다. 컬럼으로 빼면 암호문과 어긋날 수 있고, 어차피 호출 직전에 복호화하므로 밖에서 읽을 이유가 없다.
-- **`auth_status`는 `CONNECTED`/`EXPIRED`/`ERROR`만 쓴다.** `REVOKED`는 사용하지 않는다 — 사용자가 외부 콘솔에서 권한을 회수하면 갱신이 실패하고 `EXPIRED`가 되며, 화면이 유도하는 행동(재연결)이 같다.
+- **`auth_status`는 `CONNECTED`/`EXPIRED`/`ERROR`/`REVOKED` 네 가지를 쓴다(2026-08-13 정정).** 여기엔 원래 "REVOKED는 쓰지 않는다"고 적었지만, 운영자가 계정 연결을 강제로 끊는 기능이 생기면서 `REVOKED`가 전용 상태로 추가됐다 — `OpsConnectorRepository.revoke()`가 자격증명만 지우고 행은 남긴다(재연결이 같은 `conn_id`를 다시 쓰기 때문이다). 사용자가 외부 콘솔에서 권한을 회수해 갱신이 실패하는 경우는 여전히 `EXPIRED`로 남는다 — 원인(자연 만료 vs 운영자 조치)이 다르므로 화면에서도 두 상태를 구분해서 보여준다.
 - `provider_email`은 넣지 않았다. 어느 외부 계정으로 연결했는지 보여주려면 필요하지만 지금 화면이 요구하지 않는다.
 
 ### 자격증명 저장 결정
@@ -204,7 +206,7 @@ last_sync_at    TIMESTAMPTZ           마지막으로 읽어들인 시각(2026-0
 | 필드 | 타입 예시 | 제약 | 의미 |
 |---|---|---|---|
 | `audit_id` | UUID | PK | 감사 로그 ID |
-| `actor_account_id` | BIGINT | FK, NULL 허용 | 행위 사용자, 시스템 작업이면 NULL 가능 |
+| `actor_account_id` | BIGINT | FK, NOT NULL | 행위 사용자. 시스템 작업도 별도 시스템 계정 ID를 채워야 하며 NULL은 허용하지 않는다(`backend/db/audit.py`의 `log_with()`도 기본값 없는 필수 인자로 받는다) |
 | `project_id` | UUID | FK, NULL 허용 | 관련 프로젝트 |
 | `action` | VARCHAR(50) | NOT NULL | 수행 행위 |
 | `target_type` | VARCHAR(50) | NOT NULL | 대상 엔터티 유형 |
@@ -256,17 +258,19 @@ last_sync_at    TIMESTAMPTZ           마지막으로 읽어들인 시각(2026-0
 7. 기존 Snapshot·실행·결정 테이블의 사용자 FK 연결
 ```
 
-## 7. 현재 Django 베이스 코드와의 매핑
+## 7. 현재 코드와의 매핑
 
-| 논리 모델 | 현재 코드 | 확인·수정 사항 |
+> **2026-08-13 정정.** 이 절은 원래 Django ORM 모델(`apps.accounts.models.User`, `Project.owner`, `AnalysisRun`)에 매핑하는 표였다 — 그런 모델은 없다. §3.1이 이미 밝히듯 이 저장소는 Django ORM을 쓰지 않는다(`DATABASES = {}`). `apps/accounts/models.py`·`apps/projects/models.py`는 "ORM 모델을 사용하지 않는다"는 한 줄 docstring뿐이고, `apps/recommendations/`는 소스 파일 없이 컴파일 캐시(`__pycache__`)만 남아 `AnalysisRun` 클래스 자체가 존재하지 않는다. 실제 접근은 `backend/db/repositories.py`의 리포지토리 클래스가 직접 SQL로 한다.
+
+| 논리 모델 | 실제 코드 | 확인·수정 사항 |
 |---|---|---|
-| `USER_ACCOUNT` | `apps.accounts.models.User` | `account_id`는 현재 `User.id` BigAutoField 사용 |
-| `password_hash` | Django `User.password` | Django 해시 함수만 사용 |
-| `email UNIQUE` | 현재 `AbstractUser.email` | 이메일 로그인 정책을 적용하려면 UNIQUE·로그인 식별자 설정 필요 |
-| `PROJECT.owner_account_id` | `Project.owner` | 현재 nullable이므로 초기 데이터 정리 후 필수 전환 여부 확정 |
-| 추천 실행 요청자 | `AnalysisRun.requested_by` | Canonical `ASSIGNMENT_RUN.requested_by`와 명칭 매핑 필요 |
+| `USER_ACCOUNT` | `backend/db/repositories.py`의 `AccountRepository` — `user_account` 테이블 직접 SQL | `account_id`는 Django BigAutoField가 아니라 `next_short_code`로 발급하는 `VARCHAR(5)` 짧은 코드다 |
+| `password_hash` | 애플리케이션이 직접 bcrypt/argon2로 해싱해 `user_account.password_hash`에 저장 | Django `User.password`가 아니다 — Django 해시 함수 자체를 쓰지 않는다 |
+| `email UNIQUE` | `AccountRepository.create()`가 INSERT 전에 `lower(email)` 비교로 대소문자 무시 중복 검사를 한 번 더 한다 | `AbstractUser.email`이 아니다. DB UNIQUE 제약과 애플리케이션 검사를 함께 쓴다 |
+| `PROJECT.owner_account_id` | `proj.owner_account_id` 컬럼(`ProjectRepository`가 직접 SQL로 다룬다) | `Project.owner` FK가 아니라 물리 컬럼이다 |
+| 추천 실행 요청자 | `assign_run.requested_by`(`DB/schema.sql:687`) | 테이블은 남아 있지만 이 값을 채우던 실행 경로(`AnalysisRunRepository`, `assignment-runs` API)는 2026-08-13에 함께 걷혔다 |
 
-현재 `User.role`은 플랫폼 전역 역할이고, 프로젝트별 권한은 `PROJECT_MEMBER.access_role`로 별도 관리한다. 전역 역할만으로 프로젝트 접근을 판단하지 않는다.
+전역 역할·프로젝트별 권한 판단은 `user_account` 자체 컬럼이 아니라 `PROJECT_MEMBER.access_role`로 별도 관리한다.
 
 ## 8. 1차 구현 최소 범위
 

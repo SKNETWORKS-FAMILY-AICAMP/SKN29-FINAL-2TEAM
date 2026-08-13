@@ -170,11 +170,14 @@ Chat 결과 스텝으로 옮길 때 그대로 가져갈 것:
 ### 5.3 공용 컴포넌트 20종 (`components/`)
 
 `AvatarPicker` `Badge` `Button` `Card` `Checkbox` `Icon` `Input` `Modal` `Select`
-`SkillList` `StepIndicator` `Toast` `ToggleSwitch` `TopNav` `PasswordChangeCard`
-`OpsLayout` `OpsRouteGuard` `OpsUi` `RequireAuth` `SettingsLayout`
+`SkillList` ~~`StepIndicator`~~ `Toast` `ToggleSwitch` ~~`TopNav`~~ `PasswordChangeCard`
+`OpsLayout` `OpsRouteGuard` `OpsUi` `RequireAuth` ~~`SettingsLayout`~~
 
-Chat·Builder 신규 화면은 이 위에 얹는다. 특히 `StepIndicator`(Agent 실행 단계
-표시), `Modal`(Tool 승인), `Badge`(Tool 상태)는 바로 쓸 수 있다.
+취소선 세 개는 이 문서 작성 후 삭제됐다(2026-08-13, `AppShell`로 대체) — 지금
+남은 건 17종이다.
+
+Chat·Builder 신규 화면은 이 위에 얹는다. 특히 `Modal`(Tool 승인), `Badge`(Tool
+상태)는 바로 쓸 수 있다.
 스타일은 Tailwind 없이 CSS Modules + `tokens.css` 변수만 — 신규 화면도 같은 규칙.
 
 ### 5.4 정리하면서 확인된 것 (조치 안 함)
