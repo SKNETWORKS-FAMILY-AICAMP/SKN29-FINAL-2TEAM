@@ -49,12 +49,6 @@
   color: var(--color-muted);
 }
 
-.footnote {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--color-muted);
-}
-
 .warn {
   width: 100%;
   padding: 8px var(--space-3);

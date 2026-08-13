@@ -26,9 +26,6 @@ export type { ModalProps } from './Modal/Modal';
 export { TopNav } from './TopNav/TopNav';
 export type { TopNavProps, NavTabItem } from './TopNav/TopNav';
 
-export { StepIndicator } from './StepIndicator/StepIndicator';
-export type { StepIndicatorProps } from './StepIndicator/StepIndicator';
-
 export { ToastProvider, useToast } from './Toast/Toast';
 export type { ToastContextValue, ToastTone } from './Toast/Toast';
 

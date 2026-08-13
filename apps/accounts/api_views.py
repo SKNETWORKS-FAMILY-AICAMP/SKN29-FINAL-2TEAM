@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 
 from backend.db import AccountRepository, MemberInviteRepository, log_audit
 from backend.services import storage

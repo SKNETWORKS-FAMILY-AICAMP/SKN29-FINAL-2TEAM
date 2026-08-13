@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppShell, Badge, Button, Icon, Input, Select, useToast } from '../../components';
-import type { BadgeTone } from '../../components';
+import { AGENT_STATUS } from '../../data/agentLabels';
 import {
   activateAgent,
   checkBuilderInput,
@@ -31,12 +31,6 @@ const EFFORT_OPTIONS = [
   { value: 'high', label: '높음 (high)' },
   { value: 'xhigh', label: '아주 높음 (xhigh)' },
 ];
-
-const STATUS_LABEL: Record<Agent['status'], { tone: BadgeTone; label: string }> = {
-  DRAFT: { tone: 'neutral', label: '초안' },
-  ACTIVE: { tone: 'success', label: '활성' },
-  DISABLED: { tone: 'warning', label: '비활성' },
-};
 
 /**
  * 에이전트 생성·편집. 비개발자가 정하는 것은 세 가지 — 무슨 일을 하는지 /
@@ -278,7 +272,7 @@ export default function AgentEditPage() {
           <div className={styles.titleRow}>
             <h1 className={styles.title}>{savedId ? name || '에이전트 편집' : '새 에이전트'}</h1>
             {agentStatus && (
-              <Badge tone={STATUS_LABEL[agentStatus].tone}>{STATUS_LABEL[agentStatus].label}</Badge>
+              <Badge tone={AGENT_STATUS[agentStatus].tone}>{AGENT_STATUS[agentStatus].label}</Badge>
             )}
           </div>
           <p className={styles.subtitle}>

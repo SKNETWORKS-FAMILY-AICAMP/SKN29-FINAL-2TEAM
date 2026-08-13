@@ -125,11 +125,6 @@ export interface EvidenceItem {
   retrieval_score?: number;
 }
 
-/** `tool_ref`가 붙어 있으면 도구의 내부 진행이다. 없으면 Loop 회전. */
-export function isToolProgress(event: ChatEvent): boolean {
-  return 'tool_ref' in event && Boolean((event as { tool_ref?: string }).tool_ref);
-}
-
 export function listSessions(token: string) {
   return apiRequest<ChatSession[]>('/chat/sessions/', { token });
 }

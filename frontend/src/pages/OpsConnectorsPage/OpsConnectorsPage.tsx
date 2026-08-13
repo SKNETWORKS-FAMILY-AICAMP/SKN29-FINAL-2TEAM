@@ -102,7 +102,7 @@ export default function OpsConnectorsPage() {
   const countByType = (type: string) => all.filter((c) => c.connector_type === type).length;
   const countByStatus = (list: OpsConnector[], status: string) => list.filter((c) => c.auth_status === status).length;
   const summaryDetail = (list: OpsConnector[]) =>
-    `정상 ${countByStatus(list, 'CONNECTED')} · 확인 필요 ${countByStatus(list, 'EXPIRED')} · 오류 ${countByStatus(list, 'ERROR')}`;
+    `정상 ${countByStatus(list, 'CONNECTED')} · 만료 ${countByStatus(list, 'EXPIRED')} · 오류 ${countByStatus(list, 'ERROR')}`;
 
   if (all.length === 0) {
     return (
@@ -146,7 +146,7 @@ export default function OpsConnectorsPage() {
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="연결 상태">
           <option>전체</option>
           <option>연결됨</option>
-          <option>확인 필요</option>
+          <option>만료됨</option>
           <option>오류</option>
         </select>
       </OpsFilterBar>
