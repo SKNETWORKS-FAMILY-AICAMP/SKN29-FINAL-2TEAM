@@ -1,6 +1,6 @@
 """DB 또는 빌더 초안에서 에이전트 설정을 읽어 정의 객체로 변환한다.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §6
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §6
 
 ⚠ 미구현. 이 프로젝트는 Django ORM을 쓰지 않는다 — 데이터 접근은
 `backend/db/`의 psycopg 직접 SQL Repository 몫이다(docs/TO-BE/작업목록.md 공통

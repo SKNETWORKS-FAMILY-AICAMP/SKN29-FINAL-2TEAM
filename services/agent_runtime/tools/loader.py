@@ -1,6 +1,6 @@
 """tool_ref를 기준으로 내장 도구와 MCP 도구를 선택적으로 로딩한다.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §8, §9
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §8, §9
 
 Tool 데이터 구조와 컨텍스트 주입(inject_runtime_context)은 deepagents에 의존하지
 않는 순수 로직이라 지금 구현한다. 실제 도구 목록을 채우는 ToolLoader.load()는

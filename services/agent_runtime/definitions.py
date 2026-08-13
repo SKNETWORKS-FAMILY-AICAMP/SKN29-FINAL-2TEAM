@@ -1,6 +1,6 @@
 """부모·서브 에이전트의 런타임 데이터 구조 정의.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §3
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §3
 
 02 §20 체크리스트 1번: "AgentDefinition, SubagentDefinition이 한 곳에만 정의되어
 있다" — 이 파일이 그 한 곳이다. 다른 모듈에서 유사 타입을 다시 정의하지 않는다.

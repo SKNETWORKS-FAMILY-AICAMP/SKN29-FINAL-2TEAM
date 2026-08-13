@@ -1,6 +1,6 @@
 """서브 에이전트 스트리밍 선행 검증 (일회성 스파이크 스크립트).
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §15
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §15
 
 목적 — 이것 하나만 확인한다:
     deepagents(고정 버전)에서 부모 Deep Agent + CompiledSubAgent 1개 + 도구
@@ -43,6 +43,35 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
+
+
+def _load_dotenv_once() -> None:
+    """저장소 루트 `.env`를 읽어 아직 없는 환경변수만 채운다.
+
+    셸에서 `$env:OPENAI_API_KEY = ...`를 깜빡하고 다른 터미널에서 스크립트를
+    돌리면(2026-08-13 실제로 겪음 — "Missing credentials") 매번 똑같이
+    실패한다. Django도 `config/settings/base.py`에서 `.env`를 읽어 쓰므로,
+    이 스크립트도 같은 파일을 직접 읽게 해서 이 실패 자체를 없앤다. 이미
+    셸에 설정된 값이 있으면 그 값을 우선한다(명시적 override 허용).
+    """
+    env_path = Path(__file__).resolve().parents[3] / ".env"
+    if not env_path.exists():
+        print(f"경고: {env_path} 를 못 찾았다 — 셸 환경변수만 쓴다.", file=sys.stderr)
+        return
+
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv_once()
 
 if sys.version_info < (3, 11):
     print(

@@ -1,6 +1,6 @@
 """Deep Agent 실행과 스트리밍의 단일 진입점.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §13
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §13
 
 빌더 테스트 실행과 실제 Chat은 반드시 이 모듈(정확히는 AgentExecutor 하나의
 인스턴스)을 거친다 — 두 경로가 서로 다른 조립 코드를 쓰면 테스트에서는 성공하고
@@ -8,25 +8,32 @@
 방지").
 
 validate_execution_target()은 deepagents·DB에 의존하지 않는 순수 검사라 지금
-구현했다. AgentExecutor.run()은 loader/factory/stream_adapter/event_mapper가
-전부 미구현이라 구조만 잡아뒀다 — §13.3의 "실행 전 오류(AgentBuildError로 변환해
-raise)"와 "스트림 중 오류(terminal error 이벤트로 yield, 예외를 밖으로 던지지
-않음)" 구분은 이미 정확히 반영돼 있다. 내부 예외 문자열·스택트레이스를 이벤트에
-포함하지 않는 원칙도 지켰다.
+구현했다. AgentExecutor.run()은 loader/factory/stream_adapter가 전부 미구현이라
+구조만 잡아뒀다 — §13.3의 "실행 전 오류(AgentBuildError로 변환해 raise)"와
+"스트림 중 오류(terminal error 이벤트로 yield, 예외를 밖으로 던지지 않음)" 구분은
+이미 정확히 반영돼 있다. 내부 예외 문자열·스택트레이스를 이벤트에 포함하지
+않는 원칙도 지켰다.
+
+⚠ 스파이크 완료(2026-08-13): `EventMapper`는 이제 실제로 동작한다(events.py).
+단 **실행(run)마다 새 인스턴스가 필요하다** — 위임을 추적하는 상태(`_pending`,
+`_namespace_subagent`)를 갖고 있어서, 여러 run이 인스턴스를 공유하면 상태가
+섞인다. 그래서 생성자 주입이 아니라 `event_mapper_factory`(기본값
+`EventMapper`)를 받아 `run()` 안에서 매번 새로 만든다. `stream_adapter`가
+`runtime.stream(...)`을 호출할 때는 `stream_mode="updates"`만 쓸 것 — 스파이크
+결과 그것만으로 6단계 전부 실시간 분류가 됐다(events.py 모듈 docstring 참고).
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from services.agent_runtime.context import RuntimeContext
-from services.agent_runtime.events import EVENT_ERROR
+from services.agent_runtime.events import EVENT_ERROR, EventMapper
 from services.agent_runtime.exceptions import AgentBuildError, AgentRuntimeError, InvalidExecutionTargetError
 
 if TYPE_CHECKING:
-    from services.agent_runtime.events import EventMapper
     from services.agent_runtime.factory import AgentRuntimeFactory
     from services.agent_runtime.loader import AgentDefinitionLoader
 
@@ -72,12 +79,12 @@ class AgentExecutor:
         *,
         loader: "AgentDefinitionLoader",
         factory: "AgentRuntimeFactory",
-        event_mapper: "EventMapper",
+        event_mapper_factory: Callable[[], EventMapper] = EventMapper,
         stream_adapter: Any = None,
     ) -> None:
         self.loader = loader
         self.factory = factory
-        self.event_mapper = event_mapper
+        self.event_mapper_factory = event_mapper_factory
         self.stream_adapter = stream_adapter
 
     def run(
@@ -121,9 +128,11 @@ class AgentExecutor:
                 "runtime.stream(...)을 감싸는 어댑터를 만든다."
             )
 
+        event_mapper = self.event_mapper_factory()
+
         try:
             for raw_event in self.stream_adapter.stream(runtime=runtime, user_input=user_input):
-                converted = self.event_mapper.convert(
+                converted = event_mapper.convert(
                     raw_event, definition=loaded.definition, context=context
                 )
                 if converted is not None:

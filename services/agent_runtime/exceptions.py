@@ -1,6 +1,6 @@
 """Deep Agent 런타임 공통 예외.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §12
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §12
 
 이 모듈은 순수 예외 정의만 담는다. deepagents/DB/HTTP 어떤 것도 import하지 않는다
 — definitions.py가 __post_init__에서 이 모듈을 참조하므로 순환 의존을 만들면 안 된다.

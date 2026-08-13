@@ -1,6 +1,6 @@
 """실행 컨텍스트 — 누가 어떤 환경에서 요청했는지만 표현한다.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §4
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §4
 
 무엇을 실행하는지는 여기 담지 않는다 — 그건 run_agent()의 인자와
 AgentDefinition(definitions.py)의 몫이다.

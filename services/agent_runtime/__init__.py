@@ -1,8 +1,8 @@
 """Deep Agent의 조립·실행·확장 기능을 모으는 런타임 패키지.
 
 설계 정본:
-- docs/작업기록/jihun_buildingpage/2026-08-13_01_Deep-Agent형_에이전트_빌더_개편_설계.md
-- docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md
+- docs/작업기록/Deep_Agents/2026-08-13_01_Deep-Agent형_에이전트_빌더_개편_설계.md
+- docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md
   (구현 계약 정본 — 두 문서가 충돌하면 이 문서가 우선)
 
 ⚠ 2026-08-13 착수. 이 패키지는 아직 apps/chat·apps/agents 어디에서도 import되지

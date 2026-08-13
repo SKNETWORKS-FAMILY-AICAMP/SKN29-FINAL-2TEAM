@@ -353,6 +353,50 @@ CREATE TABLE IF NOT EXISTS doc_meta (
     extract_status  VARCHAR(20) NOT NULL,
     extracted_at    TIMESTAMPTZ
 );
+ALTER TABLE chat_session ADD COLUMN IF NOT EXISTS agent_version_id VARCHAR(5);
+ALTER TABLE agent_run ADD COLUMN IF NOT EXISTS agent_version_id VARCHAR(5);
+CREATE TABLE IF NOT EXISTS agents (
+    agent_id           VARCHAR(5) PRIMARY KEY,
+    team_id            VARCHAR(5)   NOT NULL,
+    name               VARCHAR(100) NOT NULL,
+    description        VARCHAR(500),
+    owner_account_id   VARCHAR(5),
+    visibility         VARCHAR(20)  NOT NULL DEFAULT 'TEAM',
+    status             VARCHAR(20)  NOT NULL DEFAULT 'DRAFT',
+    current_version_id VARCHAR(5),
+    is_prebuilt        BOOLEAN      NOT NULL DEFAULT false,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS agent_versions (
+    agent_version_id  VARCHAR(5) PRIMARY KEY,
+    agent_id          VARCHAR(5)   NOT NULL,
+    version           INT          NOT NULL,
+    system_prompt     TEXT         NOT NULL DEFAULT '',
+    model             VARCHAR(100),
+    reasoning_effort  VARCHAR(20),
+    max_iterations    INT          NOT NULL DEFAULT 6,
+    created_by        VARCHAR(5),
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (agent_id, version)
+);
+CREATE INDEX IF NOT EXISTS ix_agent_versions_agent ON agent_versions (agent_id, version DESC);
+CREATE TABLE IF NOT EXISTS agent_version_tools (
+    agent_version_id  VARCHAR(5)   NOT NULL,
+    tool_ref          VARCHAR(100) NOT NULL,
+    config            JSONB        NOT NULL DEFAULT '{}',
+    PRIMARY KEY (agent_version_id, tool_ref)
+);
+CREATE TABLE IF NOT EXISTS agent_version_subagents (
+    parent_version_id       VARCHAR(5)   NOT NULL,
+    child_agent_id          VARCHAR(5)   NOT NULL,
+    child_version_id        VARCHAR(5)   NOT NULL,
+    alias                   VARCHAR(100) NOT NULL,
+    delegation_description  TEXT         NOT NULL,
+    created_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (parent_version_id, child_agent_id),
+    UNIQUE (parent_version_id, alias)
+);
 "
 ```
 
@@ -404,6 +448,7 @@ CREATE TABLE IF NOT EXISTS doc_meta (
 | `vec_idx.embedding` → `VECTOR(768)` (2026-08-04) | 임베딩 모델이 `google/embeddinggemma-300m`(768차원)으로 확정됐다. 1536은 OpenAI `text-embedding-3-small` 전제라 맞지 않는다. 적재와 검색이 같은 모델을 써야 하므로 차원은 한 곳에서만 정해진다 |
 | Agent Platform 9개 테이블 추가 — `agent`·`agent_tool`·`mcp_server`·`mcp_tool`·`chat_session`·`chat_message`·`agent_run`·`tool_call`·`doc_meta` (2026-08-11) | 8/11 팀 회의에서 Chat 기반 Agent Platform으로 확정됐다(아키텍처 §3.1). 기존 테이블은 한 줄도 안 건드리는 순수 추가라, **안 돌려도 지금 화면은 멀쩡하고 새 Chat 화면만 안 뜬다.** PK가 두 종류인 것이 눈에 걸릴 텐데 의도한 것이다 — 이 스키마의 `VARCHAR(5)`는 접두사 2자 + 숫자 3자라 **테이블당 999행이 상한**이고(`backend/db/codes.py`), 대화 한 번에 수십 줄씩 쌓이는 `chat_message`·`agent_run`·`tool_call`은 데모 도중에도 그 선을 넘는다. 그래서 로그성 테이블은 `doc_block`·`chunk`·`vec_idx`와 같은 UUID를 쓰고, 사람이 만드는 설정(`agent`·`mcp_server`·`mcp_tool`)만 기존 코드 체계를 따른다. `agent_run.session_id`가 NULL 허용인 것도 의도다 — Harness의 `run_agent`는 대화에 종속되지 않는 순수 함수라 평가 스크립트나 에이전트 간 호출에는 `chat_session`이 아예 없다 — `DB/migrations/2026-08-11_agent_platform.sql` (`71dd585`) |
 | `proj.description` 추가 (2026-08-11) | 프로젝트를 만들 때 **이름과 설명으로 기준 문서 후보를 찾는다**. 이름만으로는 요약 임베딩 질의가 너무 짧아 아무 문서나 걸린다 — 「AI Platform」 같은 이름은 어떤 문서와도 비슷하고 어떤 문서와도 안 비슷하다. 찾을 때만 쓰고 버리지 않는 이유는 나중에 후보를 다시 뽑을 때 사람이 같은 문장을 또 적어야 하기 때문이다 — `POST /api/projects/primary-candidates/`, `DB/migrations/2026-08-11_proj_description.sql` (`e7369ba`) |
+| `agents`·`agent_versions`·`agent_version_tools`·`agent_version_subagents` 4테이블 신설 + `chat_session`·`agent_run`에 `agent_version_id` 추가 (2026-08-13) | Deep Agent형 에이전트 빌더 개편(`docs/작업기록/Deep_Agents/2026-08-13_01_*.md`·`02_*.md`)이 "발행된 버전은 불변, 세션·서브에이전트 관계는 특정 버전에 고정"을 MVP 전제로 확정하면서 비버전 `agent`/`agent_tool`로는 이 모델을 못 담게 됐다. **기존 `agent`/`agent_tool`은 한 글자도 안 건드리는 순수 추가다** — 지금 살아있는 Chat/Agent 실행(`services/harness/`)은 여전히 옛 테이블만 쓰고, 새 4테이블은 아직 미완성인 `services/agent_runtime/`(같은 날 착수) 전용이라 지금은 아무 코드도 안 읽고 안 쓴다. `agents.agent_id`가 `agent.agent_id`와 같은 `AG` 접두사를 쓰는 건 의도된 것이다(전환 완료 시 옛 테이블을 대체할 전제) — 전환 전까지는 로그·디버깅 시 테이블명을 꼭 같이 확인할 것. ⚠ 이 전환 자체는 2026-08-11 "Harness 직접 구현" 팀 확정을 뒤집는 결정이라 별도 팀/멘토 합의가 필요하다(`docs/TO-BE/작업목록.md` "2026-08-13 착수" 절 참고) — `DB/migrations/2026-08-13_agent_versioning.sql` |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 

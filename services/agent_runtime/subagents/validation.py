@@ -1,6 +1,6 @@
 """자기 참조·중복·순환 참조·최대 위임 깊이 검사.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §7
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §7
 
 ⚠ 구현체는 이 파일 하나만 둔다(02 §7.1). 저장·발행 API와 런타임 Factory는 같은
 validate_subagents()를 import해서 쓴다 — API View나 Factory 안에 자기 참조·중복·

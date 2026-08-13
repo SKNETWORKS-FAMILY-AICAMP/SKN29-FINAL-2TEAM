@@ -837,6 +837,10 @@ CREATE TABLE chat_session (
     team_id     VARCHAR(5)   NOT NULL,   -- team.team_id(FK 없음)
     account_id  VARCHAR(5)   NOT NULL,   -- user_account.account_id(FK 없음). 대화 주인
     agent_id    VARCHAR(5)   NOT NULL,   -- agent.agent_id(FK 없음). 수동 선택기로 고른 값
+    -- agent_versions.agent_version_id(FK 없음). 세션 생성 시 고정하고 이후 바꾸지
+    -- 않는다(2026-08-13, 02 §5.5). harness 경로가 이 컬럼을 아직 모르는 동안은
+    -- NULL로 쌓인다 — Deep Agent 런타임 전환 전까지는 정상이다.
+    agent_version_id  VARCHAR(5),
     proj_id     VARCHAR(5),              -- proj.proj_id(FK 없음). 프로젝트 문맥 없이 시작할 수 있어 NULL 허용
     title       VARCHAR(200),
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -868,6 +872,9 @@ CREATE TABLE agent_run (
     -- 호출하거나 평가 스크립트가 돌릴 때는 대화가 아예 없다.
     session_id     UUID,                    -- chat_session.session_id(FK 없음)
     agent_id       VARCHAR(5)  NOT NULL,    -- agent.agent_id(FK 없음)
+    -- agent_versions.agent_version_id(FK 없음). 어느 버전이 이 run을 돌렸는지
+    -- 기록한다(2026-08-13, 02 §5.6). harness 경로에서는 NULL.
+    agent_version_id  VARCHAR(5),
     parent_run_id  UUID,                    -- 에이전트가 에이전트를 부른 경우의 상위 run
     status         VARCHAR(20) NOT NULL DEFAULT 'RUNNING',  -- RUNNING / DONE / FAILED / CANCELLED
     iterations     INT         NOT NULL DEFAULT 0,
@@ -917,4 +924,69 @@ CREATE TABLE doc_meta (
     -- 기본값이 있으면 실패한 문서가 조용히 OK 로 남는다.
     extract_status  VARCHAR(20) NOT NULL,
     extracted_at    TIMESTAMPTZ
+);
+
+-- =====================================================================
+-- Deep Agent 런타임 버전 모델 (2026-08-13)
+--
+-- 지금 살아있는 실행 경로(services/harness/)는 위 agent/agent_tool을 그대로
+-- 쓴다. 아래 4테이블은 services/agent_runtime/(신규, 미완성) 전용이고 아직
+-- 아무 코드도 읽거나 쓰지 않는다 — 상세 배경은
+-- DB/migrations/2026-08-13_agent_versioning.sql 상단 주석과
+-- docs/TO-BE/작업목록.md "2026-08-13 착수" 절.
+--
+-- agent_id 접두사('AG')를 위 agent 테이블과 공유한다 — 의도한 것이다(전환
+-- 완료 시 agent를 대체할 전제). 전환 전까지는 테이블명을 꼭 같이 확인할 것.
+-- =====================================================================
+
+CREATE TABLE agents (
+    agent_id           VARCHAR(5) PRIMARY KEY,   -- 'AG' + 세 자리
+    team_id            VARCHAR(5)   NOT NULL,    -- team.team_id(FK 없음)
+    name               VARCHAR(100) NOT NULL,
+    description        VARCHAR(500),
+    owner_account_id   VARCHAR(5),               -- user_account.account_id(FK 없음)
+    visibility         VARCHAR(20)  NOT NULL DEFAULT 'TEAM',   -- v1은 항상 TEAM(확정②)
+    status             VARCHAR(20)  NOT NULL DEFAULT 'DRAFT',  -- DRAFT/ACTIVE/DISABLED/ARCHIVED
+    current_version_id VARCHAR(5),               -- agent_versions.agent_version_id(FK 없음)
+    is_prebuilt        BOOLEAN      NOT NULL DEFAULT false,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE TABLE agent_versions (
+    agent_version_id  VARCHAR(5) PRIMARY KEY,   -- 'AV' + 세 자리
+    agent_id          VARCHAR(5)   NOT NULL,    -- agents.agent_id(FK 없음)
+    version           INT          NOT NULL,
+    system_prompt     TEXT         NOT NULL DEFAULT '',
+    model             VARCHAR(100),
+    reasoning_effort  VARCHAR(20),
+    -- 기본 6 — apps/agents/serializers.py의 실제 기본값에 맞춤. 10으로
+    -- 되돌릴지는 작업목록.md "함께 정할 것" 확정 후 갱신.
+    max_iterations    INT          NOT NULL DEFAULT 6,
+    created_by        VARCHAR(5),               -- user_account.account_id(FK 없음)
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (agent_id, version)
+);
+
+CREATE INDEX ix_agent_versions_agent
+    ON agent_versions (agent_id, version DESC);
+
+CREATE TABLE agent_version_tools (
+    agent_version_id  VARCHAR(5)   NOT NULL,   -- agent_versions.agent_version_id(FK 없음)
+    tool_ref          VARCHAR(100) NOT NULL,   -- agent_tool.tool_ref 와 같은 형식
+    config            JSONB        NOT NULL DEFAULT '{}',
+    PRIMARY KEY (agent_version_id, tool_ref)
+);
+
+CREATE TABLE agent_version_subagents (
+    parent_version_id       VARCHAR(5)   NOT NULL,  -- agent_versions.agent_version_id(FK 없음)
+    child_agent_id          VARCHAR(5)   NOT NULL,   -- agents.agent_id(FK 없음)
+    -- 발행 시점 자식 버전에 고정. 자식이 새 버전을 내도 이 부모는 그대로 이
+    -- 값을 쓴다(02 §5.4).
+    child_version_id        VARCHAR(5)   NOT NULL,   -- agent_versions.agent_version_id(FK 없음)
+    alias                   VARCHAR(100) NOT NULL,
+    delegation_description  TEXT         NOT NULL,
+    created_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (parent_version_id, child_agent_id),
+    UNIQUE (parent_version_id, alias)
 );

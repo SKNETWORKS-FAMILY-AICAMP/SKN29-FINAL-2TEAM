@@ -1,6 +1,6 @@
 """자식 정의를 실행 가능한 Deep Agent 서브 에이전트(CompiledSubAgent)로 조립한다.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §10
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §10
 
 ⚠ 미구현. deepagents.CompiledSubAgent를 실제로 쓰는 첫 지점이라, §15 스트리밍
 스파이크 테스트 전에는 완성하지 않는다. TYPE_CHECKING으로만 타입을 참조해서

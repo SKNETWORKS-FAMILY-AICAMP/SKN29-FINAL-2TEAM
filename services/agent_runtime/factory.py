@@ -1,6 +1,6 @@
 """모델·도구·서브 에이전트·확장 기능을 조합해 Deep Agent를 생성한다.
 
-정본: docs/작업기록/jihun_buildingpage/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §11
+정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §11
 
 Builder Test API와 Chat API 양쪽 모두 이 Factory(정확히는 executor.py를 거쳐)를
 통해서만 Deep Agent를 조립한다 — apps/agents·apps/chat이 create_deep_agent()를
