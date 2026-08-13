@@ -94,7 +94,6 @@ class OpsModelRegisterTests(SimpleTestCase):
     @patch("apps.ops.views.models._verify", return_value=None)
     def test_그_팀에_등록한다(self, _verify, repo, _audit, _admin):
         repo.models_for_team.return_value = set()
-        repo.list_all.return_value = []
 
         response = self.client.post(
             self.URL, self.BODY, content_type="application/json", **self._headers()
@@ -162,3 +161,47 @@ class OpsModelRegisterTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 401)
         repo.list_all.assert_not_called()
+
+    @patch("apps.ops.views.models._verify", return_value=None)
+    def test_등록_응답은_목록을_다시_만들지_않는다(self, _verify, repo, _audit, _admin):
+        """목록을 만들다 실패하면 **이미 끝난 등록이 실패로 보고된다.**
+
+        운영자는 안 됐다고 믿고 다시 누르고, 그때는 중복이라 거절당한다 — 무슨
+        일이 벌어진 건지 아무도 모른다(2026-08-13 검토).
+        """
+
+        repo.models_for_team.return_value = set()
+
+        self.client.post(self.URL, self.BODY, content_type="application/json", **self._headers())
+
+        repo.list_all.assert_not_called()
+
+    def test_지울_때_무엇을_지웠는지_남긴다(self, repo, audit, _admin):
+        """행을 지우고 나면 conn_id 는 아무것도 안 가리킨다. 그 값만 남기면
+        나중에 「어느 팀의 무슨 모델이 없어졌나」를 복원할 수 없다."""
+
+        repo.remove_by_conn_id.return_value = {
+            "team_id": "TE001", "model": "models/gemini-3.6-flash",
+            "label": "Google Gemini", "base_url": "https://x/v1",
+        }
+
+        response = self.client.delete(f"{self.URL}CN002/", **self._headers())
+
+        self.assertEqual(response.status_code, 204)
+        kwargs = audit.call_args.kwargs
+        self.assertEqual(kwargs["target_type"], "TEAM")
+        self.assertEqual(kwargs["target_id"], "TE001")
+        self.assertEqual(kwargs["payload"]["model"], "models/gemini-3.6-flash")
+
+    def test_쓰는_에이전트가_있으면_못_지운다(self, repo, _audit, _admin):
+        """지우면 그 에이전트는 실행 시점에 없는 모델을 부르다 죽는다."""
+
+        from backend.db.errors import ReferenceNotFound
+
+        repo.remove_by_conn_id.side_effect = ReferenceNotFound(
+            "이 모델을 쓰는 에이전트가 있습니다: 회의록 정리."
+        )
+
+        response = self.client.delete(f"{self.URL}CN002/", **self._headers())
+
+        self.assertEqual(response.status_code, 409)

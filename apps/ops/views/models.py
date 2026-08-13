@@ -76,26 +76,33 @@ class ModelListCreateView(AdminView):
                 target_id=data["team_id"],
                 payload={"model": data["model"], "label": data["label"], "base_url": data["base_url"]},
             )
-            rows = CustomModelRepository.list_all()
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
-        return Response([ops_model_row_response(row) for row in rows], status=status.HTTP_201_CREATED)
+        # **목록을 여기서 다시 만들지 않는다.** 만들다 실패하면 이미 끝난 등록이
+        # 실패로 보고된다 — 운영자는 안 됐다고 믿고 다시 누른다(2026-08-13 검토).
+        # 목록은 화면이 따로 받아 간다.
+        return Response(
+            {"team_id": data["team_id"], "model": data["model"]}, status=status.HTTP_201_CREATED
+        )
 
 
 class ModelDetailView(AdminView):
     def delete(self, request, conn_id):
         try:
-            CustomModelRepository.remove_by_conn_id(conn_id)
+            removed = CustomModelRepository.remove_by_conn_id(conn_id)
+            # **무엇을 지웠는지 남긴다.** 행을 지우고 나면 conn_id 는 아무것도
+            # 가리키지 않아서, 그 값만 남기면 나중에 「어느 팀의 무슨 모델이
+            # 없어졌나」를 복원할 수 없다. 등록 쪽과 같은 모양으로 맞춘다.
             log_audit(
                 actor_account_id=request.user.account_id,
                 action="OPS_MODEL_REMOVE",
-                target_type="CONNECTOR_CONN",
-                target_id=conn_id,
+                target_type="TEAM",
+                target_id=removed["team_id"],
+                payload={"conn_id": conn_id, **{k: removed[k] for k in ("model", "label", "base_url")}},
             )
-            rows = CustomModelRepository.list_all()
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
-        return Response([ops_model_row_response(row) for row in rows])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _verify(api_key: str, base_url: str, model: str) -> str | None:

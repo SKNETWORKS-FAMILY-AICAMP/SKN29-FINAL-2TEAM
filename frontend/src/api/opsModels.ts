@@ -24,11 +24,21 @@ export function fetchOpsModels(token: string) {
   return opsRequest<OpsModel[]>('/ops/models/', { token });
 }
 
-/** 등록 전에 서버가 그 주소·키·모델로 한 번 답을 받아 본다 — 실패하면 400. */
+/**
+ * 등록 전에 서버가 그 주소·키·모델로 한 번 답을 받아 본다 — 실패하면 400.
+ *
+ * **목록을 돌려주지 않는다.** 등록이 끝난 뒤 목록을 다시 만들다 실패하면 이미
+ * 성공한 등록이 실패로 보이기 때문이다(2026-08-13). 목록은 따로 받아 온다.
+ */
 export function registerOpsModel(token: string, body: OpsModelRegisterInput) {
-  return opsRequest<OpsModel[]>('/ops/models/', { method: 'POST', token, body });
+  return opsRequest<{ team_id: string; model: string }>('/ops/models/', {
+    method: 'POST',
+    token,
+    body,
+  });
 }
 
+/** 그 모델을 쓰는 에이전트가 있으면 서버가 409 로 막는다. */
 export function removeOpsModel(token: string, connId: string) {
-  return opsRequest<OpsModel[]>(`/ops/models/${connId}/`, { method: 'DELETE', token });
+  return opsRequest<void>(`/ops/models/${connId}/`, { method: 'DELETE', token });
 }

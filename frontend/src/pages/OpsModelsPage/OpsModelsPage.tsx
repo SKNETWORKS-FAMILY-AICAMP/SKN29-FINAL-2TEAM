@@ -82,18 +82,17 @@ export default function OpsModelsPage() {
     setBusy(true);
     setFormError('');
     try {
-      setModels(
-        await registerOpsModel(session.token, {
-          team_id: teamId,
-          label: preset.label,
-          base_url: baseUrl.trim(),
-          api_key: apiKey.trim(),
-          model: model.trim(),
-        }),
-      );
+      await registerOpsModel(session.token, {
+        team_id: teamId,
+        label: preset.label,
+        base_url: baseUrl.trim(),
+        api_key: apiKey.trim(),
+        model: model.trim(),
+      });
       // 키는 화면에도 남기지 않는다.
       setApiKey('');
       setModel('');
+      await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '등록하지 못했습니다.');
     } finally {
@@ -107,7 +106,8 @@ export default function OpsModelsPage() {
     setBusy(true);
     setFormError('');
     try {
-      setModels(await removeOpsModel(session.token, row.conn_id));
+      await removeOpsModel(session.token, row.conn_id);
+      await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '지우지 못했습니다.');
     } finally {

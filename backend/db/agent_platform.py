@@ -14,7 +14,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from apps.connectors.oauth import decrypt_credential, encrypt_credential
+from apps.connectors.oauth import OAuthError, decrypt_credential, encrypt_credential
 
 from .codes import next_short_code
 from .connection import database_connection
@@ -173,6 +173,23 @@ class AgentRepository:
                 return row
 
 
+def _decrypt_or_none(ciphertext: str | None) -> dict[str, Any] | None:
+    """복호화한 payload. **못 읽으면 예외 대신 `None`.**
+
+    `decrypt_credential` 은 `OAuthError` 를 던지는데 그건 `RepositoryError` 도
+    `psycopg.Error` 도 아니다. 목록을 만드는 도중에 터지면 뷰의 except 를 지나쳐
+    처리되지 않은 500 이 되고, 쓰기 뒤에 목록을 다시 만드는 자리에서 터지면
+    **이미 성공한 쓰기가 실패로 보고된다**(2026-08-13 검토).
+    """
+
+    if not ciphertext:
+        return {}
+    try:
+        return decrypt_credential(ciphertext)
+    except OAuthError:
+        return None
+
+
 class CustomModelRepository:
     """팀이 직접 등록한 **커스텀 모델 API**. 여러 개를 목록으로 관리한다.
 
@@ -206,11 +223,14 @@ class CustomModelRepository:
         )
         rows = []
         for row in cursor.fetchall():
-            payload = (
-                decrypt_credential(row["encrypted_credential_ref"])
-                if row["encrypted_credential_ref"]
-                else {}
-            )
+            payload = _decrypt_or_none(row["encrypted_credential_ref"])
+            # **못 읽는 행 하나가 목록 전체를 죽이지 않는다.** 키가 바뀌었거나
+            # 암호문이 깨지면 `decrypt_credential` 이 `OAuthError` 를 던지는데,
+            # 그건 `RepositoryError` 도 `psycopg.Error` 도 아니라 뷰의 except 를
+            # 그냥 지나쳐 500 이 된다(2026-08-13). 팀 쪽에서는 어차피 못 쓰는
+            # 행이므로 건너뛴다 — 치우는 것은 운영자 콘솔의 일이다.
+            if payload is None:
+                continue
             rows.append({**row, "payload": payload})
         return rows
 
@@ -270,17 +290,17 @@ class CustomModelRepository:
                 )
                 rows = []
                 for row in cursor.fetchall():
-                    payload = (
-                        decrypt_credential(row["encrypted_credential_ref"])
-                        if row["encrypted_credential_ref"]
-                        else {}
-                    )
+                    payload = _decrypt_or_none(row["encrypted_credential_ref"])
+                    # 팀 쪽 목록과 달리 **못 읽는 행도 보여준다.** 치울 사람이
+                    # 운영자라, 숨기면 아무도 모르는 채로 영영 남는다.
+                    broken = payload is None
+                    payload = payload or {}
                     rows.append(
                         {
                             "conn_id": row["conn_id"],
                             "team_id": row["team_id"],
                             "team_name": row["team_name"],
-                            "label": payload.get("label") or payload.get("base_url") or "",
+                            "label": "읽을 수 없음" if broken else (payload.get("label") or payload.get("base_url") or ""),
                             "base_url": payload.get("base_url") or "",
                             "model": payload.get("model") or "",
                             "connected_at": row["connected_at"],
@@ -323,6 +343,17 @@ class CustomModelRepository:
                 row = cursor.fetchone()
                 if row is None:
                     raise RecordNotFound(f"없는 팀입니다: {team_id}")
+
+                # **같은 트랜잭션에서 한 번 더 본다.** 뷰의 중복 검사와 이 INSERT
+                # 사이에는 최대 25초짜리 외부 호출(`_verify`)이 있어서, 그 사이에
+                # 들어온 다른 요청과 겹치면 같은 이름이 두 벌 남는다. 경로가 모델
+                # 이름 하나로 정해지므로 그건 곧 「어느 것으로 도는지 모른다」다.
+                if any(
+                    r["payload"].get("model") == model
+                    for r in CustomModelRepository._rows(cursor, team_id)
+                ):
+                    raise ReferenceNotFound(f"{model} 은 이 팀에 이미 등록돼 있습니다.")
+
                 conn_id = next_short_code(
                     cursor, table="connector_conn", column="conn_id", prefix="CN"
                 )
@@ -349,20 +380,57 @@ class CustomModelRepository:
                 )
 
     @staticmethod
-    def remove_by_conn_id(conn_id: str) -> None:
+    def remove_by_conn_id(conn_id: str) -> dict[str, Any]:
         """운영자용 삭제. **팀 경계를 안 본다** — 콘솔은 모든 팀을 다루는 자리다.
 
         팀 쪽 삭제 경로는 없다(등록이 운영자 몫이라 삭제도 그렇다).
+
+        **지운 내용을 돌려준다.** 행을 지우고 나면 `conn_id` 는 아무것도 가리키지
+        않아서, 감사 로그에 그 값만 남기면 나중에 「어느 팀의 무슨 모델이 없어졌나」
+        를 아무도 복원할 수 없다(2026-08-13 검토).
+
+        **그 모델을 쓰는 에이전트가 있으면 지우지 않는다.** 지우면 그 에이전트는
+        실행 시점에 우리 키로 없는 모델을 부르다 죽는다 — 저장은 멀쩡해 보이는데
+        대화만 실패하는, 이 프로젝트가 계속 겪어 온 모양이다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM connector_conn WHERE conn_id = %s AND connector_type = %s",
+                    """
+                    SELECT c.encrypted_credential_ref, u.team_id
+                    FROM connector_conn AS c
+                    JOIN user_account AS u ON u.account_id = c.account_id
+                    WHERE c.conn_id = %s AND c.connector_type = %s
+                    """,
                     (conn_id, CustomModelRepository.TYPE),
                 )
-                if cursor.rowcount == 0:
+                row = cursor.fetchone()
+                if row is None:
                     raise RecordNotFound(f"등록되지 않은 모델 API 입니다: {conn_id}")
+
+                payload = _decrypt_or_none(row["encrypted_credential_ref"]) or {}
+                model = payload.get("model") or ""
+                # 못 읽는 행은 어차피 아무도 못 쓴다 — 쓰는 곳을 물을 것도 없이 지운다.
+                if model:
+                    cursor.execute(
+                        "SELECT name FROM agent WHERE team_id = %s AND model = %s AND status <> 'ARCHIVED' ORDER BY name",
+                        (row["team_id"], model),
+                    )
+                    users = [r["name"] for r in cursor.fetchall()]
+                    if users:
+                        raise ReferenceNotFound(
+                            f"이 모델을 쓰는 에이전트가 있습니다: {', '.join(users)}. "
+                            "그 에이전트의 모델을 먼저 바꿔 주세요."
+                        )
+
+                cursor.execute("DELETE FROM connector_conn WHERE conn_id = %s", (conn_id,))
+                return {
+                    "team_id": row["team_id"],
+                    "model": model,
+                    "label": payload.get("label") or "",
+                    "base_url": payload.get("base_url") or "",
+                }
 
 
 class AgentRunRepository:
