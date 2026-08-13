@@ -36,6 +36,7 @@ RDS PostgreSQL       S3
 | `frontend` | EC2의 React 컨테이너 | 유지 |
 | `web` | EC2의 Django 컨테이너 | 유지. DB 주소만 RDS endpoint로 변경 |
 | `db` | RDS PostgreSQL + pgvector | EC2에서 실행하지 않음 |
+| (없음) | `dev-mcp` + `mcp-tunnel` | MCP 시연용. 기본 compose 에 없고 파일을 얹어 띄운다 |
 
 ```text
 로컬 개발
@@ -46,6 +47,26 @@ EC2: frontend + web(Docker)
 RDS: PostgreSQL + pgvector
 S3: 원문 문서 + 정적/업로드 파일
 ```
+
+### MCP 시연 서버도 함께 간다 (2026-08-13 추가)
+
+「MCP 서버를 등록해서 실제로 쓰는」 시연을 하려면 붙일 서버가 하나 필요하다.
+`infra/dev-mcp/` 의 시험용 서버와 cloudflared 터널을 EC2 에도 같이 올린다
+(`infra/docker/docker-compose.dev-mcp.yml`).
+
+**터널을 빼면 안 된다.** `services/mcp/security.py` 가 **https 가 아닌 주소를
+거절**하는데, 이 이전 계획은 도메인 없이 EC2 공인 IP + HTTP 다(§4 `SECURE_SSL_REDIRECT`
+설명 참고). 즉 EC2 에 MCP 서버를 띄워도 **그 주소로는 화면에서 등록할 수 없다.**
+검사기를 푸는 것은 답이 아니다 — 그 규칙이 SSRF 1차 방어선이다.
+
+| 방법 | 주소 | 비용 |
+|---|---|---|
+| cloudflared 빠른 터널(지금) | 재시작마다 **바뀐다** | 없음. 시연 직전 재등록 필요 |
+| cloudflared 이름 있는 터널 | 고정 | Cloudflare 계정 + 도메인 |
+| 도메인 + ACM + ALB | 고정 | 이 프로젝트 범위 밖(§1) |
+
+빠른 터널로 시연한다면 **시연 직전에 주소를 확인하고 화면에서 「수정」으로
+갱신**하는 절차를 체크리스트에 넣는다.
 
 ## 3. 보안 그룹 연결 규칙
 
@@ -201,6 +222,8 @@ curl http://localhost:8000/api/health/
 - [ ] EC2 IAM Role이 프로젝트 S3 버킷에 접근할 수 있다.
 - [ ] Drive/Jira/LLM 비밀값은 Git에 포함되지 않았다.
 - [ ] `/api/health/`가 정상 응답한다.
+- [ ] MCP 시연 서버와 터널이 떠 있다(`docker ps | grep mcp`).
+- [ ] **터널 주소가 바뀌지 않았는지 확인했다.** 바뀌었으면 설정 > MCP 에서 「수정」으로 새 주소를 넣고 「연결 확인」까지 눌렀다.
 
 ## 관련 수업·프로젝트 문서
 

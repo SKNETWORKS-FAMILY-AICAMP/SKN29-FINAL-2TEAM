@@ -1,16 +1,33 @@
-# 시험용 MCP 서버. **개발 환경 전용이고 기본 스택에 넣지 않는다.**
+# 시연용 MCP 서버 + 공개 https 터널.
 #
-# 기본 `docker-compose.yml` 에 합치면 팀원 전원의 `up` 에 딸려 올라간다. 시험할
-# 때만 파일을 하나 더 얹어 띄운다:
+# 기본 `docker-compose.yml` 에 넣지 않는다 — 팀원 전원의 `up` 에 딸려 올라갈
+# 이유가 없다. 시연·시험 때만 파일을 하나 더 얹는다:
 #
 #   docker compose -f infra/docker/docker-compose.yml \
-#                  -f infra/docker/docker-compose.dev-mcp.yml up -d dev-mcp
+#                  -f infra/docker/docker-compose.dev-mcp.yml up -d dev-mcp mcp-tunnel
 #
-# ⚠ 이 주소는 **우리 화면에 등록할 수 없다.** `services/mcp/security.py` 가 https
-# 아닌 주소와 사설 IP·내부 이름을 거절하기 때문이다(의도된 설계 — 「로컬 개발용
-# http 서버는 설정으로 여는 순간 운영에서도 열린다」). 화면까지 시험하려면 공인
-# https 주소가 필요하다(터널 등). 이 서버는 클라이언트 계층(JSON-RPC 핸드셰이크·
-# 도구 목록·도구 호출)을 직접 확인하는 용도다.
+# 주소는 터널 로그에서 읽는다:
+#
+#   docker logs skn29-mcp-tunnel 2>&1 | grep -o "https://[a-z0-9-]*\.trycloudflare\.com"
+#
+# ─────────────────────────────────────────────────────────────────────────
+# ⚠ **왜 터널이 필요한가**
+#
+# `services/mcp/security.py` 가 **https 가 아닌 주소와 사설 IP·내부 이름을
+# 거절한다.** 의도된 설계다 — 「로컬 개발용 http 서버는 설정으로 여는 순간
+# 운영에서도 열린다」. 그래서 로컬 컨테이너 주소(`http://dev-mcp:9000`)로는
+# 화면에서 등록할 수 없고, 공인 https 주소가 있어야 한다.
+#
+# **AWS 로 옮겨도 마찬가지다.** 이전 계획이 도메인 없이 EC2 공인 IP + HTTP 이므로
+# (`docs/개발환경/AWS_이전_매뉴얼.md` §4), 거기서도 이 터널이 그대로 필요하다.
+#
+# ⚠ **주소가 재시작마다 바뀐다.** `trycloudflare` 빠른 터널은 임시 호스트명을
+# 준다. 터널을 내렸다 올리면 **등록해 둔 MCP 서버는 죽은 주소를 가리킨다** —
+# 화면에서 「수정」으로 새 주소를 넣거나 다시 등록해야 한다.
+#
+# 시연 전에 주소가 바뀌는 것이 곤란하면 **이름 있는 터널**(Cloudflare 계정 +
+# 도메인)로 바꾼다. 그러면 호스트명이 고정되고 이 파일의 command 만 바뀐다.
+# ─────────────────────────────────────────────────────────────────────────
 
 services:
   dev-mcp:
@@ -21,8 +38,19 @@ services:
       - ../dev-mcp:/srv:ro
     environment:
       MCP_DEV_PORT: "9000"
-      # 인증 경로도 함께 보려면 값을 채운다. 비우면 토큰 검사를 하지 않는다.
+      # 인증 경로까지 시연하려면 값을 채운다. 비우면 토큰 검사를 하지 않는다.
       MCP_DEV_TOKEN: "dev-secret"
     command: ["python", "server.py"]
-    ports:
-      - "9000:9000"
+    # 시연 도중 재부팅돼도 살아 있어야 한다.
+    restart: unless-stopped
+    # 호스트 포트는 열지 않는다 — 터널이 같은 네트워크에서 직접 부른다.
+    expose:
+      - "9000"
+
+  mcp-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: skn29-mcp-tunnel
+    depends_on:
+      - dev-mcp
+    command: ["tunnel", "--no-autoupdate", "--url", "http://dev-mcp:9000"]
+    restart: unless-stopped
