@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Icon, InfoNote, useToast } from '../../../components';
+import { Badge, InfoNote, useToast } from '../../../components';
 import { ApiError } from '../../../api/client';
 import { fetchMainModel, listCustomModels, saveMainModel } from '../../../api/agents';
 import type { CustomModel } from '../../../api/agents';
@@ -64,7 +64,13 @@ export function ModelTab() {
     }
   }
 
-  /** 고를 수 있는 전부 — 우리가 제공하는 것 + 팀이 등록한 것. */
+  /**
+   * 고를 수 있는 전부 — 우리가 제공하는 것 + 이 팀에만 등록된 것.
+   *
+   * **한 표에 같이 둔다.** 팀 전용 모델을 따로 카드로 뺐다가 걷어냈다 — 고르는
+   * 자리가 둘로 보이는데 실제로 고르는 곳은 이 표 하나였다(2026-08-13 PM 지적).
+   * 팀 전용이라는 사실은 「출처」 칸이 제공자 이름을 다는 것으로 이미 말한다.
+   */
   const rows = [
     ...MODEL_OPTIONS.map((model) => ({
       value: model.value,
@@ -148,49 +154,6 @@ export function ModelTab() {
           </div>
         )}
       </section>
-
-      {/* **없으면 아예 안 그린다.** 「없습니다」만 적힌 카드는 자리만 차지하고,
-          위 표의 「출처」 칸이 전부 「기본 제공」인 것으로 같은 말이 이미 된다. */}
-      {customs.length > 0 && <CustomModelCard rows={customs} />}
     </div>
-  );
-}
-
-/**
- * 이 팀에만 등록된 모델 — **읽기만 한다.**
- *
- * 예전에는 여기서 팀이 직접 등록했다. 그런데 등록하려면 OpenAI 호환 주소와 키와
- * 모델 식별자를 알아야 한다 — **「코딩 없이」를 내세운 제품이 비개발자에게 요구할
- * 일이 아니다.** 실제로 Google 호환 주소는 AI Studio 화면에 없어서 문서를 뒤져야
- * 나왔다(2026-08-13 멘토링: 회사가 요청하면 우리가 등록한다).
- *
- * 목록은 남긴다. **어디로 나가는지**는 자기 계약으로 돌리려고 요청한 팀에게 그
- * 자체가 확인해야 할 값이다 — 위 표에는 주소가 없다.
- *
- * **설명을 붙이지 않는다.** 왜 이게 있는지는 위 「모델」의 ⓘ 가 말한다. 카드마다
- * 안내문을 달던 것을 걷어낸 자리다(2026-08-13 PM 지적).
- */
-function CustomModelCard({ rows }: { rows: CustomModel[] }) {
-  return (
-    <section className={styles.card}>
-      <div className={styles.cardHead}>
-        <h2 className={styles.cardTitle}>이 팀에만 등록된 모델</h2>
-      </div>
-
-      <div className={styles.list}>
-        {rows.map((row) => (
-          <div key={row.conn_id} className={styles.row}>
-            <span className={styles.rowIcon}>
-              <Icon name="link" size={20} color="var(--color-primary)" />
-            </span>
-            <div className={styles.rowBody}>
-              <span className={styles.rowName}>{row.model}</span>
-              <span className={styles.rowVendor}>{row.label}</span>
-              <span className={styles.rowDesc}>{row.base_url}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
