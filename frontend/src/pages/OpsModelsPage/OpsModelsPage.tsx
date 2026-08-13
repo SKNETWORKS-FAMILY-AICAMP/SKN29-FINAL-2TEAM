@@ -253,7 +253,7 @@ export default function OpsModelsPage() {
 
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
 
-        <div className={styles.formActions}>
+        <div className={styles.formSubmit}>
           <Button onClick={register} disabled={!canRegister || busy}>
             {busy ? '확인하는 중…' : '등록'}
           </Button>

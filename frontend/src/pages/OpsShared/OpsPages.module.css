@@ -897,3 +897,16 @@
   height: 40px;
   white-space: nowrap;
 }
+
+/**
+ * 카드 하나를 마무리하는 **단일 주 동작**. 오른쪽 끝에 붙인다.
+ *
+ * 옆의 `.formActions` 는 `space-between` 이라 자식이 하나면 왼쪽에 붙는다 —
+ * 그건 좌우로 갈라 놓을 것이 둘일 때의 배치다(7/30 운영자 콘솔 구현분). 폼을
+ * 다 채우고 누르는 버튼은 설정 화면과 같이 오른쪽이 맞는다(`tabs.module.css`
+ * 의 `.formActions`, McpTab 「연결 테스트 후 추가」).
+ */
+.formSubmit {
+  display: flex;
+  justify-content: flex-end;
+}
