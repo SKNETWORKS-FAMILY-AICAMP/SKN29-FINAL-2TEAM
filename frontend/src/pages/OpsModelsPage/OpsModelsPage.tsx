@@ -229,24 +229,33 @@ export default function OpsModelsPage() {
 
           <div className={styles.fieldGroup}>
             <label htmlFor="model-name">모델</label>
-            {/* **거르지 않고 다 준다.** 키가 가진 것을 이름으로 걸러 내면 정작
-                고객이 요청한 모델이 안 보일 수 있다. 대신 `datalist` 로 쳐서
-                좁히게 하고, 목록에 없는 이름도 그대로 적을 수 있게 둔다 —
-                Anthropic 호환 경로처럼 목록을 안 주는 곳이 있다. */}
-            <input
-              id="model-name"
-              list="ops-model-options"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder={
-                available.length > 0 ? `${available.length}개 — 쳐서 좁힐 수 있습니다` : 'gemini-3.6-flash'
-              }
-            />
-            <datalist id="ops-model-options">
-              {available.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
+            {/* **불러온 것이 있으면 고르게 한다.** 셀렉트여야 목록이 있다는 것이
+                보인다 — `datalist` 는 겉이 입력칸이라 뒤에 목록이 있는지 모른다
+                (2026-08-13 PM 지적).
+
+                직접 입력은 **목록을 못 받았을 때만**이다. Anthropic 호환 경로는
+                `/v1/models` 가 401 이라, 그 경우까지 셀렉트로 두면 고를 것이 없어
+                아무것도 등록할 수 없다.
+
+                거르지는 않는다 — 키가 가진 것을 이름으로 걸러 내면 정작 고객이
+                요청한 모델이 안 보일 수 있다. */}
+            {available.length > 0 ? (
+              <select id="model-name" value={model} onChange={(event) => setModel(event.target.value)}>
+                <option value="">모델 {available.length}개 중에서 고르세요</option>
+                {available.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="model-name"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="gemini-3.6-flash"
+              />
+            )}
           </div>
         </div>
 
