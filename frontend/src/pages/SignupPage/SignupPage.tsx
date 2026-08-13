@@ -99,13 +99,13 @@ export default function SignupPage() {
           <div className={styles.logoBadge}>
             <Logo height={34} />
           </div>
-          <p className={styles.tagline}>AI 기반 업무 배정 코파일럿</p>
+          <p className={styles.tagline}>프로젝트 운영 Agent Platform</p>
         </div>
 
         <div className={styles.card}>
           <div>
             <h1 className={styles.cardTitle}>회원가입</h1>
-            <p className={styles.cardSubtitle}>halil과 함께 지능형 업무 배정을 경험해 보세요.</p>
+            <p className={styles.cardSubtitle}>팀에 필요한 AI 에이전트를 코딩 없이 만들어 씁니다.</p>
           </div>
 
           <div className={styles.tabsRow}>{inviteCode ? '초대로 참여하기' : '새 팀 만들기'}</div>
