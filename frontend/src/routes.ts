@@ -41,7 +41,6 @@ export const PATHS = {
   settingsConnectors: '/settings/connectors',
   settingsMcp: '/settings/mcp',
   settingsModel: '/settings/model',
-  settingsPermissions: '/settings/permissions',
 } as const;
 
 export interface RouteEntry {
@@ -69,7 +68,6 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
   { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
-  { path: PATHS.settingsPermissions, label: '설정 · 권한', group: '설정' },
   { path: PATHS.filesNew, label: '문서 관리 (구)', group: '메인' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
@@ -108,5 +106,4 @@ export const SETTINGS_TABS = [
   { label: 'Connector', to: PATHS.settingsConnectors },
   { label: 'MCP', to: PATHS.settingsMcp },
   { label: 'Model', to: PATHS.settingsModel },
-  { label: '권한', to: PATHS.settingsPermissions },
 ];

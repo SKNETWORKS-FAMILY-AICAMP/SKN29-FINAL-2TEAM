@@ -8,7 +8,6 @@ import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettings
 import { ConnectorTab } from './tabs/ConnectorTab';
 import { McpTab } from './tabs/McpTab';
 import { ModelTab } from './tabs/ModelTab';
-import { PermissionsTab } from './tabs/PermissionsTab';
 import styles from './SettingsPage.module.css';
 
 /**
@@ -32,8 +31,6 @@ export default function SettingsPage() {
         return <McpTab />;
       case PATHS.settingsModel:
         return <ModelTab />;
-      case PATHS.settingsPermissions:
-        return <PermissionsTab />;
       default:
         return role === 'leader' ? (
           <TeamLeaderSettingsPage />
