@@ -789,7 +789,10 @@ class McpServerRepository:
                         account_id,
                     ),
                 )
-                return cursor.fetchone()
+                # `has_token` 을 붙여서 돌려준다. RETURNING 에 없다고 빼면
+                # `server_response` 가 기본값 False 로 채워, **토큰을 넣고 등록했는데
+                # 화면은 「토큰 없음」이라고 말한다**(2026-08-13 실제로 그랬다).
+                return {**cursor.fetchone(), "has_token": auth_token is not None, "tools": []}
 
     @staticmethod
     def update(

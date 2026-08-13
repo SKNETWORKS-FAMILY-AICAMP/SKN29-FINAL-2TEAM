@@ -306,6 +306,26 @@ class McpApiTests(SimpleTestCase):
         repo.delete.assert_not_called()
 
     @patch("apps.mcp.api_views.validate", return_value="https://mcp.example.com/rpc")
+    def test_등록_응답도_토큰_보유를_말한다(self, _validate, repo, _profile):
+        """토큰을 넣고 등록했는데 응답이 「토큰 없음」이면 화면이 그 줄을 그대로
+        목록에 얹는다 — 실제로 그랬다(2026-08-13 터널 시험)."""
+
+        repo.create.return_value = {
+            "mcp_server_id": "MS001", "name": "Jira", "endpoint_url": "https://mcp.example.com/rpc",
+            "status": "UNCHECKED", "last_checked_at": None, "has_token": True, "tools": [],
+        }
+
+        response = self.client.post(
+            "/api/mcp/servers/",
+            {"name": "Jira", "endpoint_url": "https://mcp.example.com/rpc", "auth_token": "T"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["has_token"])
+
+    @patch("apps.mcp.api_views.validate", return_value="https://mcp.example.com/rpc")
     def test_토큰을_안_보내면_그대로_둔다(self, _validate, repo, _profile):
         """화면이 저장된 토큰을 다시 보여주지 않는다 — 안 보낸 것을 「지우라」로
         읽으면 이름만 고쳐도 토큰이 날아간다."""
