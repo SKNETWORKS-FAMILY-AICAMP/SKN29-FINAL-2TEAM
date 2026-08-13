@@ -176,8 +176,13 @@ CREATE TABLE connector_conn (
     conn_id             VARCHAR(5) PRIMARY KEY,
     account_id                VARCHAR(5) NOT NULL,
     connector_type            VARCHAR(30) NOT NULL,   -- PEOPLE_DB / GOOGLE_DRIVE / JIRA
+                                              -- MODEL_API 도 이 표를 쓴다(2026-08-13). 팀에 등록한 모델은
+                                              -- 「연결 서비스」가 아니므로 그 화면들은 유형으로 걸러야 한다
     granted_scopes            JSONB NOT NULL DEFAULT '[]',
     auth_status                VARCHAR(20) NOT NULL DEFAULT 'CONNECTED',  -- CONNECTED / EXPIRED / ERROR
+                                              -- REVOKED: 운영자가 강제 해제(2026-08-13). 자격증명만 지우고
+                                              -- 행은 남긴다 — 재연결이 같은 conn_id 를 다시 쓰기 때문이다
+                                              -- (team_folder·proj_source 가 FK 없이 이 값을 가리킨다)
     encrypted_credential_ref  TEXT,           -- 외부 자격증명의 DB 저장용 암호문(기존 ref 명칭 유지). People DB는 자격증명이 없어 NULL
                                               -- VARCHAR(255)로는 부족하다: Fernet 암호문이 Jira 1700자, Drive 632자다(255자는 평문 127바이트까지만 수용)
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()

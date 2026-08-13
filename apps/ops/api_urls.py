@@ -15,7 +15,7 @@ from .views.audit import (
     RecommendationLogView,
     ValidationLogView,
 )
-from .views.connectors import ConnectorListView
+from .views.connectors import ConnectorDetailView, ConnectorListView, ConnectorRevokeView
 from .views.invites import (
     InviteDetailView,
     InviteDiscardView,
@@ -51,6 +51,12 @@ urlpatterns = [
     path("invites/<str:invite_id>/discard/", InviteDiscardView.as_view(), name="api_ops_invite_discard"),
     path("invites/<str:invite_id>/unlink/", InviteUnlinkView.as_view(), name="api_ops_invite_unlink"),
     path("connectors/", ConnectorListView.as_view(), name="api_ops_connector_list"),
+    path("connectors/<str:conn_id>/", ConnectorDetailView.as_view(), name="api_ops_connector_detail"),
+    path(
+        "connectors/<str:conn_id>/revoke/",
+        ConnectorRevokeView.as_view(),
+        name="api_ops_connector_revoke",
+    ),
     path("models/", ModelListCreateView.as_view(), name="api_ops_model_list"),
     path("models/probe/", ModelProbeView.as_view(), name="api_ops_model_probe"),
     path("models/<str:conn_id>/", ModelDetailView.as_view(), name="api_ops_model_detail"),

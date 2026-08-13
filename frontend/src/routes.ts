@@ -26,6 +26,7 @@ export const PATHS = {
   opsMappings: '/ops/mappings',
   opsInviteDetail: '/ops/mappings/:inviteId',
   opsConnectors: '/ops/connectors',
+  opsConnectorDetail: '/ops/connectors/:connId',
   opsModels: '/ops/models',
   opsAudit: '/ops/audit',
   opsPolicies: '/ops/policies',

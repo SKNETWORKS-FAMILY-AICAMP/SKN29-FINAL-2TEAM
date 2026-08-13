@@ -14,7 +14,7 @@ export interface ConnectorConnection {
   conn_id: string;
   connector_type: ConnectorType;
   granted_scopes: string[];
-  auth_status: 'CONNECTED' | 'EXPIRED' | 'ERROR';
+  auth_status: 'CONNECTED' | 'EXPIRED' | 'ERROR' | 'REVOKED';
   connected_at: string;
 }
 

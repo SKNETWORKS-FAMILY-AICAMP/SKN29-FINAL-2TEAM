@@ -511,6 +511,78 @@ class OpsInviteDetailTests(SimpleTestCase):
 
 
 @patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.connectors.OpsConnectorRepository")
+class OpsConnectorRevokeTests(SimpleTestCase):
+    """연결 강제 해제.
+
+    **끊는 쪽이 제품 어디에도 없었다** — 토큰이 샜거나 엉뚱한 계정으로 연결된 것을
+    고객도 운영자도 못 끊었다(2026-08-13 PM 요청).
+    """
+
+    URL = "/api/ops/connectors/CN003/revoke/"
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_끊는다(self, repo, _admin):
+        repo.revoke.return_value = {
+            "conn_id": "CN003", "connector_type": "GOOGLE_DRIVE",
+            "auth_status": "REVOKED", "affected_sources": 2,
+        }
+
+        response = self.client.post(
+            self.URL, {"reason": "토큰 유출"}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 200)
+        kwargs = repo.revoke.call_args.kwargs
+        self.assertEqual(kwargs["conn_id"], "CN003")
+        self.assertEqual(kwargs["actor_account_id"], "UA001")
+        self.assertEqual(kwargs["reason"], "토큰 유출")
+        # 무엇이 멈추는지 화면이 말할 수 있어야 한다.
+        self.assertEqual(response.json()["affected_sources"], 2)
+
+    def test_사유는_없어도_된다(self, repo, _admin):
+        """급할 때 사유 때문에 못 끊는 일이 없어야 한다."""
+
+        repo.revoke.return_value = {
+            "conn_id": "CN003", "connector_type": "JIRA",
+            "auth_status": "REVOKED", "affected_sources": 0,
+        }
+
+        response = self.client.post(self.URL, {}, content_type="application/json", **self._headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(repo.revoke.call_args.kwargs["reason"], "")
+
+    def test_본인_확인용_연결은_못_끊는다(self, repo, _admin):
+        """People DB·등록 모델은 이 화면의 것이 아니다. 거부는 Repository 가 한다."""
+
+        from backend.db.errors import RepositoryError as RepoError
+
+        repo.revoke.side_effect = RepoError("구글 드라이브·Jira 연결만 해제할 수 있습니다.")
+
+        response = self.client.post(self.URL, {}, content_type="application/json", **self._headers())
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_운영자가_아니면_못_끊는다(self, repo, _admin):
+        token = account_tokens.issue_token("UA001")
+
+        response = self.client.post(self.URL, {}, content_type="application/json",
+                                    HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.assertEqual(response.status_code, 401)
+        repo.revoke.assert_not_called()
+
+    def test_상세_경로가_해제_경로를_먹지_않는다(self, repo, _admin):
+        from django.urls import resolve
+
+        self.assertEqual(resolve("/api/ops/connectors/CN003/").url_name, "api_ops_connector_detail")
+        self.assertEqual(resolve("/api/ops/connectors/CN003/revoke/").url_name, "api_ops_connector_revoke")
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
 @patch("apps.ops.views.teams.OpsTeamRepository")
 class OpsTeamContentTests(SimpleTestCase):
     """고객이 「에이전트가 이상해요」라고 할 때 운영자가 볼 것이 아무것도 없었다.

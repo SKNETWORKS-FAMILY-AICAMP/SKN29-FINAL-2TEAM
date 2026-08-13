@@ -21,6 +21,7 @@ const ACTION_LABELS: Record<string, string> = {
   OPS_ADMIN_REVOKE: '운영자 권한 회수',
   OPS_MODEL_REGISTER: '모델 등록',
   OPS_MODEL_REMOVE: '모델 삭제',
+  OPS_CONNECTOR_REVOKE: '연결 강제 해제',
 };
 
 export function actionLabel(action: string): string {

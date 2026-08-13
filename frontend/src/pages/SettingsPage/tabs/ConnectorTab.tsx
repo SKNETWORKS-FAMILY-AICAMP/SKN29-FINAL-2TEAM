@@ -21,18 +21,22 @@ import styles from './tabs.module.css';
 type OAuthConnectorId = 'google-drive' | 'jira';
 
 /** 서버가 아는 연결 상태. 화면이 따로 기억하지 않는다. */
-type Status = 'CONNECTED' | 'EXPIRED' | 'ERROR' | null;
+type Status = 'CONNECTED' | 'EXPIRED' | 'ERROR' | 'REVOKED' | null;
 
 const TONE: Record<string, BadgeTone> = {
   CONNECTED: 'success',
   EXPIRED: 'warning',
   ERROR: 'danger',
+  REVOKED: 'danger',
 };
 
 const LABEL: Record<string, string> = {
   CONNECTED: '연결됨',
   EXPIRED: '만료됨',
   ERROR: '오류',
+  // 만료와 가른다 — 「내 토큰이 낡았나」와 「운영자가 끊었다」는 다음에 할 일이
+  // 같아도(다시 연결) 이유가 다르다.
+  REVOKED: '해제됨',
 };
 
 /**

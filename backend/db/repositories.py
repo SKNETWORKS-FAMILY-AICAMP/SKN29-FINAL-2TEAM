@@ -2575,6 +2575,10 @@ class ConnectorRepository:
                 )
                 row = cursor.fetchone()
 
+        # 운영자가 끊은 것은 「연결한 적 없음」이 아니다. 자격증명을 지우므로 아래
+        # 조건에 먼저 걸리는데, 그 문구로는 무슨 일이 있었는지 알 수가 없다.
+        if row is not None and row["auth_status"] == "REVOKED":
+            raise RepositoryError("운영자가 이 연결을 해제했습니다. 설정에서 다시 연결해 주세요.")
         if row is None or not row["encrypted_credential_ref"]:
             raise RecordNotFound("연결되지 않은 서비스입니다. 먼저 연결해 주세요.")
         if row["auth_status"] != "CONNECTED":
@@ -3348,13 +3352,17 @@ class OpsInviteRepository:
 
 
 class OpsConnectorRepository:
-    """운영자 콘솔 `연결 서비스 현황`(`GET /api/ops/connectors/`) 전용. 읽기 전용이다
-    (실제 재연결은 계정 소유자가 설정 화면에서 하고, 운영자 콘솔에는 쓰기 작업이 없음).
+    """운영자 콘솔 `연결 서비스 현황`(`GET/POST /api/ops/connectors/...`) 전용.
 
     People DB는 제외한다 — Drive/Jira처럼 프로젝트가 의존하는 외부 데이터 소스가
     아니라, 가입 계정을 본인 PERSON에 연결하는 본인 확인 절차의 부산물일 뿐이다
     (`역할별_권한_정책.md` 핵심 원칙 1). "연결 서비스"라는 화면 개념과 섞이면
     운영자가 실제 점검해야 할 외부 연동 상태를 파악하기 어려워진다.
+
+    **등록 모델(`MODEL_API`)도 제외한다.** 팀에 등록한 모델은 스키마를 안 바꾸려고
+    같은 표를 빌려 쓴 것이지 「연결 서비스」가 아니다. 걸러지지 않아 이 화면에
+    `MODEL_API` 행으로 새어 나오고 있었다 — 아래 강제 해제까지 붙으면 운영자가
+    모델 화면이 아닌 곳에서 모델을 지우게 된다(2026-08-13 PM).
 
     대표 직원(`person`)은 `_REPRESENTATIVE_LINK_CTE`를 공유해서 계정 관리와 항상
     같은 규칙(가장 먼저 연결된 것)을 쓴다. `auth_status`에 대응하는 진단·다음 조치
@@ -3362,8 +3370,13 @@ class OpsConnectorRepository:
     상태값으로부터 만든다 — Repository는 원자료만 돌려준다.
     """
 
+    #: 이 화면이 다루는 것. 나머지 `connector_conn` 행은 다른 화면의 것이다.
+    EXTERNAL_TYPES = ("GOOGLE_DRIVE", "JIRA")
+
     @staticmethod
-    def list() -> list[dict[str, Any]]:
+    def list(conn_id: str | None = None) -> list[dict[str, Any]]:
+        """목록과 상세가 **한 SQL을 쓴다.** 따로 쓰면 언젠가 한쪽만 고쳐진다."""
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -3380,13 +3393,109 @@ class OpsConnectorRepository:
                     FROM connector_conn AS cc
                     LEFT JOIN user_account AS ua ON ua.account_id = cc.account_id
                     LEFT JOIN representative_link AS rl ON rl.account_id = cc.account_id
-                    WHERE cc.connector_type <> 'PEOPLE_DB'
+                    WHERE cc.connector_type = ANY(%(types)s)
+                      AND (%(conn_id)s::text IS NULL OR cc.conn_id = %(conn_id)s)
                     ORDER BY cc.connected_at DESC
-                    """
+                    """,
+                    {"types": list(OpsConnectorRepository.EXTERNAL_TYPES), "conn_id": conn_id},
                 )
                 rows = list(cursor.fetchall())
 
         return _attach_person_display(rows)
+
+    @staticmethod
+    def get(conn_id: str) -> dict[str, Any]:
+        rows = OpsConnectorRepository.list(conn_id=conn_id)
+        if not rows:
+            raise RecordNotFound(f"존재하지 않는 연결입니다: {conn_id}")
+        return rows[0]
+
+    @staticmethod
+    def revoke(*, conn_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
+        """연결을 **끊는다 — 행을 지우지 않는다.**
+
+        토큰이 샜거나 엉뚱한 계정으로 연결된 것을 운영자가 즉시 끊어야 할 때가
+        있는데, 여태 그 방법이 제품 어디에도 없었다(고객도 못 끊는다). 그것을
+        여는 것이 이 함수다(2026-08-13 PM 요청).
+
+        **지우지 않는 이유는 재연결이 같은 행을 다시 쓰기 때문이다.**
+        `ConnectorRepository._upsert` 는 (account_id, connector_type) 로 UPDATE 를
+        먼저 시도하므로 `conn_id` 가 유지된다. 반면 행을 지우면 재연결이 새 `conn_id`
+        를 받고, 그 conn_id 를 가리키던 `team_folder`·`proj_source` 는 FK 가 없어
+        조용히 죽은 값을 든 채 남는다 — 고객이 폴더와 Jira 연결을 전부 다시 고르게
+        된다. 목적은 **자격증명을 못 쓰게 하는 것**이지 배선을 끊는 것이 아니다.
+
+        그래서 자격증명만 지우고 상태를 `REVOKED` 로 둔다. 만료(`EXPIRED`)와 굳이
+        가르는 이유는, 고객이 「토큰이 만료됐나 보다」와 「운영자가 끊었다」를
+        구별할 수 있어야 하기 때문이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT cc.conn_id, cc.account_id, cc.connector_type, cc.auth_status,
+                           ua.email AS owner_email
+                    FROM connector_conn AS cc
+                    LEFT JOIN user_account AS ua ON ua.account_id = cc.account_id
+                    WHERE cc.conn_id = %s
+                    FOR UPDATE OF cc
+                    """,
+                    (conn_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 연결입니다: {conn_id}")
+                # 화면이 이미 걸러 주지만 규칙은 여기 있어야 규칙이다. People DB 를
+                # 끊으면 본인 확인이 풀리고, MODEL_API 는 모델 화면의 것이다.
+                if row["connector_type"] not in OpsConnectorRepository.EXTERNAL_TYPES:
+                    raise RepositoryError("구글 드라이브·Jira 연결만 해제할 수 있습니다.")
+                if row["auth_status"] == "REVOKED":
+                    raise RepositoryError("이미 해제된 연결입니다.")
+
+                cursor.execute(
+                    """
+                    UPDATE connector_conn
+                    SET encrypted_credential_ref = NULL, auth_status = 'REVOKED'
+                    WHERE conn_id = %s
+                    """,
+                    (conn_id,),
+                )
+
+                # **무엇이 멈추는지 함께 돌려준다.** 끊는 것은 쉽지만 그 팀의 문서
+                # 수집이나 Jira 동기화가 같이 선다 — 알고 끊는 것과 모르고 끊는
+                # 것은 다르다.
+                if row["connector_type"] == "GOOGLE_DRIVE":
+                    cursor.execute(
+                        "SELECT count(*) AS n FROM team_folder WHERE conn_id = %s", (conn_id,)
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT count(*) AS n FROM proj_source WHERE conn_id = %s", (conn_id,)
+                    )
+                affected = cursor.fetchone()["n"]
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="OPS_CONNECTOR_REVOKE",
+                    target_type="CONNECTOR",
+                    target_id=conn_id,
+                    payload={
+                        "connector_type": row["connector_type"],
+                        "owner_account_id": row["account_id"],
+                        "before": row["auth_status"],
+                        "affected_sources": affected,
+                        "reason": reason,
+                    },
+                )
+
+        return {
+            "conn_id": conn_id,
+            "connector_type": row["connector_type"],
+            "auth_status": "REVOKED",
+            "affected_sources": affected,
+        }
 
 
 class OpsAuditRepository:

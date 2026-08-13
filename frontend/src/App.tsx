@@ -27,6 +27,7 @@ const OpsAccountDetailPage = lazy(() => import('./pages/OpsAccountDetailPage/Ops
 const OpsMappingsPage = lazy(() => import('./pages/OpsMappingsPage/OpsMappingsPage'));
 const OpsInviteDetailPage = lazy(() => import('./pages/OpsInviteDetailPage/OpsInviteDetailPage'));
 const OpsConnectorsPage = lazy(() => import('./pages/OpsConnectorsPage/OpsConnectorsPage'));
+const OpsConnectorDetailPage = lazy(() => import('./pages/OpsConnectorDetailPage/OpsConnectorDetailPage'));
 const OpsModelsPage = lazy(() => import('./pages/OpsModelsPage/OpsModelsPage'));
 const OpsAuditPage = lazy(() => import('./pages/OpsAuditPage/OpsAuditPage'));
 const OpsPoliciesPage = lazy(() => import('./pages/OpsPoliciesPage/OpsPoliciesPage'));
@@ -102,6 +103,7 @@ function App() {
               <Route path={PATHS.opsMappings} element={<OpsMappingsPage />} />
               <Route path={PATHS.opsInviteDetail} element={<OpsInviteDetailPage />} />
               <Route path={PATHS.opsConnectors} element={<OpsConnectorsPage />} />
+              <Route path={PATHS.opsConnectorDetail} element={<OpsConnectorDetailPage />} />
               <Route path={PATHS.opsModels} element={<OpsModelsPage />} />
               <Route path={PATHS.opsAudit} element={<OpsAuditPage />} />
               <Route path={PATHS.opsPolicies} element={<OpsPoliciesPage />} />

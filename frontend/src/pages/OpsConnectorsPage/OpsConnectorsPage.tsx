@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button,
   OpsDataTable,
-  OpsDetailPanel,
   OpsFilterBar,
   OpsPageHeader,
   OpsSearchField,
@@ -11,54 +10,19 @@ import {
   OpsSummaryCard,
   OpsSummaryGrid,
 } from '../../components';
-import type { OpsTone } from '../../components';
 import { fetchConnectors } from '../../api/opsConnectors';
 import type { OpsConnector } from '../../api/opsConnectors';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
+import { formatConnectedAt, statusLabel, statusTone, typeLabel } from '../OpsShared/connectorLabels';
 import styles from '../OpsShared/OpsPages.module.css';
 
-// People DB는 본인 확인용 내부 커넥터라 이 화면(외부 데이터 소스 연결 상태 점검)
-// 대상이 아니다 — API 응답 자체에서 제외된다(OpsConnectorRepository.list()).
-const TYPE_LABELS: Record<string, string> = {
-  GOOGLE_DRIVE: '구글 드라이브',
-  JIRA: 'Jira',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  CONNECTED: '연결됨',
-  EXPIRED: '확인 필요',
-  ERROR: '오류',
-};
-
-const STATUS_TONES: Record<string, OpsTone> = {
-  CONNECTED: 'success',
-  EXPIRED: 'warning',
-  ERROR: 'danger',
-};
-
-function typeLabel(type: string) {
-  return TYPE_LABELS[type] ?? type;
-}
-
-function statusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
-}
-
-function statusTone(status: string): OpsTone {
-  return STATUS_TONES[status] ?? 'neutral';
-}
-
-function formatConnectedAt(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const hh = String(date.getHours()).padStart(2, '0');
-  const min = String(date.getMinutes()).padStart(2, '0');
-  return `${mm}.${dd} ${hh}:${min}`;
-}
-
+/**
+ * 연결 서비스 목록 — **「무엇이 연결돼 있는가」만 맡는다.**
+ *
+ * 조치(강제 해제)가 생기면서 상세를 `/ops/connectors/:connId` 로 갈랐다. 계정·
+ * 초대·팀과 같은 규칙이다(2026-08-13 PM).
+ */
 export default function OpsConnectorsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -68,7 +32,6 @@ export default function OpsConnectorsPage() {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('전체');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '전체');
-  const [selectedId, setSelectedId] = useState('');
 
   async function load() {
     const session = loadOpsSession();
@@ -110,8 +73,6 @@ export default function OpsConnectorsPage() {
       return matchesQuery && matchesType && matchesStatus;
     });
   }, [connectors, query, statusFilter, typeFilter]);
-
-  const selected = filtered.find((connector) => connector.conn_id === selectedId) ?? filtered[0] ?? null;
 
   function applyTypeFilter(type: string) {
     setTypeFilter(type);
@@ -199,45 +160,35 @@ export default function OpsConnectorsPage() {
             <th>상태</th>
             <th>최근 확인</th>
             <th>진단</th>
+            <th>작업</th>
           </tr>
         </thead>
         <tbody>
           {filtered.length > 0 ? filtered.map((connector) => (
-            <tr key={connector.conn_id} aria-selected={selected?.conn_id === connector.conn_id} onClick={() => setSelectedId(connector.conn_id)}>
+            <tr key={connector.conn_id} onClick={() => navigate(`/ops/connectors/${connector.conn_id}`)}>
               <td>{typeLabel(connector.connector_type)}</td>
               <td>{connector.owner_email ?? '알 수 없음'}</td>
               <td>{connector.person?.org_name ?? '-'}</td>
               <td><OpsStatusBadge tone={statusTone(connector.auth_status)}>{statusLabel(connector.auth_status)}</OpsStatusBadge></td>
               <td>{formatConnectedAt(connector.connected_at)}</td>
-              <td>{connector.diagnosis}</td>
+              <td className={styles.cellEllipsis} title={connector.diagnosis}>{connector.diagnosis}</td>
+              <td>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(`/ops/connectors/${connector.conn_id}`);
+                  }}
+                >
+                  상세 보기
+                </button>
+              </td>
             </tr>
           )) : (
             <tr><td className={styles.emptyCell} colSpan={7}>조건에 맞는 연결 서비스가 없습니다.</td></tr>
           )}
         </tbody>
       </OpsDataTable>
-
-      {selected ? <OpsDetailPanel title={`선택 연결 · ${typeLabel(selected.connector_type)} · ${statusLabel(selected.auth_status)}`}>
-        <div className={styles.detailCards}>
-          <div className={styles.detailCard}>
-            <strong>연결 계정</strong>
-            <p>{selected.owner_email ?? '알 수 없음'}<br />{selected.person?.org_name ?? '연결 조직 미지정'}</p>
-          </div>
-          <div className={styles.detailCard}>
-            <strong>오류 진단</strong>
-            <p>{selected.diagnosis}<br />최근 확인 {formatConnectedAt(selected.connected_at)}</p>
-          </div>
-          <div className={styles.detailCard}>
-            <strong>다음 조치</strong>
-            <p>{selected.next_action}<br />운영자는 원인과 영향만 확인</p>
-          </div>
-        </div>
-        <p className={styles.detailText}>
-          구성원 이름과 인증 원문은 표시하지 않습니다. 실제 재연결은 계정 소유자가 설정에서 진행합니다.
-        </p>
-      </OpsDetailPanel> : (
-        <div className={styles.inlineEmpty}>검색 조건을 변경하면 연결 상세를 확인할 수 있습니다.</div>
-      )}
     </div>
   );
 }

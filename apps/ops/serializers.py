@@ -81,11 +81,13 @@ _CONNECTOR_DIAGNOSIS = {
     "CONNECTED": "정상",
     "EXPIRED": "인증이 만료됐습니다.",
     "ERROR": "연결 중 오류가 발생했습니다.",
+    "REVOKED": "운영자가 연결을 해제했습니다.",
 }
 _CONNECTOR_NEXT_ACTION = {
     "CONNECTED": "조치 없음",
     "EXPIRED": "계정 소유자가 설정에서 재연결",
     "ERROR": "계정 소유자가 설정에서 연결 재시도",
+    "REVOKED": "계정 소유자가 설정에서 다시 연결",
 }
 
 
@@ -151,6 +153,16 @@ class TeamOwnerTransferSerializer(serializers.Serializer):
     """
 
     account_id = serializers.CharField(max_length=5)
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
+class ConnectorRevokeSerializer(serializers.Serializer):
+    """왜 끊는지. 대상은 경로에 있으므로 사유만 받는다.
+
+    되돌릴 수 없는 조치는 아니지만(고객이 다시 연결하면 된다) 고객의 문서 수집이
+    그동안 선다 — 나중에 「누가 왜 끊었나」에 답할 것이 필요하다.
+    """
+
     reason = serializers.CharField(allow_blank=True, required=False, default="")
 
 
