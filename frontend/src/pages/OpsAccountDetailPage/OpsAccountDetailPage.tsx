@@ -158,22 +158,17 @@ export default function OpsAccountDetailPage() {
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title="계정 상세" description="이 계정의 상태와 직원 연결을 확인하고 조치합니다." />
+      {/* 뒤로 가기는 **헤더의 자리**다. 표 바로 위에 두었더니 상태 뱃지와 한 줄에
+          섞여, 이동하는 것과 계정의 상태가 같은 무게로 보였다(2026-08-13 PM 지적).
+          `OpsPageHeader` 의 `actions` 는 이 콘솔이 갖고만 있고 안 쓰던 자리다. */}
+      <OpsPageHeader
+        title="계정 상세"
+        description="이 계정의 상태와 직원 연결을 확인하고 조치합니다."
+        actions={back}
+      />
 
-      <div className={styles.rowActions}>
-        {back}
-        <OpsStatusBadge tone={statusTone(account.account_status)}>
-          {statusLabel(account.account_status)}
-        </OpsStatusBadge>
-        <OpsStatusBadge tone={MAPPING_TONES[account.mapping_status]}>
-          {MAPPING_LABELS[account.mapping_status]}
-        </OpsStatusBadge>
-        {account.is_admin && <OpsStatusBadge tone="info">운영자</OpsStatusBadge>}
-      </div>
-
-      {/* **이메일을 제목으로 쓰지 않는다.** 제목은 이 화면이 무엇인지 말하는
-          자리이고, 이메일은 이 계정의 값 중 하나다 — 다른 값과 같은 줄에 둔다
-          (2026-08-13 PM 지적). */}
+      {/* **뱃지도 표 안으로 넣는다.** 표 위에 흩어 두면 어느 것이 무엇의 상태인지
+          라벨이 없어 못 읽는다 — 「정상」이 계정 상태인지 매핑 상태인지 알 수 없었다. */}
       <table className={styles.detailTable}>
         <tbody>
           <tr>
@@ -185,15 +180,33 @@ export default function OpsAccountDetailPage() {
             <td>{account.display_name || '-'}</td>
           </tr>
           <tr>
+            <th scope="row">계정 상태</th>
+            <td>
+              <OpsStatusBadge tone={statusTone(account.account_status)}>
+                {statusLabel(account.account_status)}
+              </OpsStatusBadge>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">운영자 권한</th>
+            <td>
+              {account.is_admin ? <OpsStatusBadge tone="info">운영자</OpsStatusBadge> : '없음'}
+            </td>
+          </tr>
+          <tr>
             <th scope="row">소속 팀</th>
             <td>{account.team_name ?? '미소속'}</td>
           </tr>
           <tr>
             <th scope="row">직원 매핑</th>
             <td>
+              <OpsStatusBadge tone={MAPPING_TONES[account.mapping_status]}>
+                {MAPPING_LABELS[account.mapping_status]}
+              </OpsStatusBadge>
+              {' '}
               {account.person
                 ? `${account.person.name ?? '직원 정보 없음'} · ${account.person.org_name ?? '조직 미지정'}`
-                : '미연결'}
+                : ''}
               {account.mapping_status === 'DUPLICATE' ? ` · 연결 ${account.link_count}건` : ''}
             </td>
           </tr>
