@@ -158,7 +158,7 @@ export default function OpsAccountDetailPage() {
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title={account.email} description={account.display_name} />
+      <OpsPageHeader title="계정 상세" description="이 계정의 상태와 직원 연결을 확인하고 조치합니다." />
 
       <div className={styles.rowActions}>
         {back}
@@ -171,27 +171,39 @@ export default function OpsAccountDetailPage() {
         {account.is_admin && <OpsStatusBadge tone="info">운영자</OpsStatusBadge>}
       </div>
 
-      <OpsSectionCard title="확인">
-        <div className={styles.detailCards}>
-          <div className={styles.detailCard}>
-            <strong>소속 팀</strong>
-            <p>{account.team_name ?? '미소속'}</p>
-          </div>
-          <div className={styles.detailCard}>
-            <strong>직원 매핑</strong>
-            <p>
-              {account.person
-                ? `${account.person.name ?? '직원 정보 없음(연결 대상이 삭제됨)'} · ${account.person.org_name ?? '조직 미지정'}`
-                : '미연결'}
-              {account.mapping_status === 'DUPLICATE' ? ` · 연결 ${account.link_count}건` : ''}
-            </p>
-          </div>
-          <div className={styles.detailCard}>
-            <strong>연결 서비스</strong>
-            <p>{serviceLabels(account.services) || '연결된 서비스 없음'}</p>
-          </div>
+      {/* **이메일을 제목으로 쓰지 않는다.** 제목은 이 화면이 무엇인지 말하는
+          자리이고, 이메일은 이 계정의 값 중 하나다 — 다른 값과 같은 모양으로
+          둔다(2026-08-13 PM 지적).
+
+          `detailGrid`·`infoCard` 는 CSS 에만 있고 쓰는 곳이 없던 관용구다.
+          라벨 위·값 아래의 정의형 배치라 이 화면이 원하던 모양 그대로다. */}
+      <div className={styles.detailGrid}>
+        <div className={styles.infoCard}>
+          <span>이메일</span>
+          <strong>{account.email}</strong>
         </div>
-      </OpsSectionCard>
+        <div className={styles.infoCard}>
+          <span>이름</span>
+          <strong>{account.display_name || '-'}</strong>
+        </div>
+        <div className={styles.infoCard}>
+          <span>소속 팀</span>
+          <strong>{account.team_name ?? '미소속'}</strong>
+        </div>
+        <div className={styles.infoCard}>
+          <span>직원 매핑</span>
+          <strong>
+            {account.person
+              ? `${account.person.name ?? '직원 정보 없음'} · ${account.person.org_name ?? '조직 미지정'}`
+              : '미연결'}
+            {account.mapping_status === 'DUPLICATE' ? ` · 연결 ${account.link_count}건` : ''}
+          </strong>
+        </div>
+        <div className={styles.infoCard}>
+          <span>연결 서비스</span>
+          <strong>{serviceLabels(account.services) || '없음'}</strong>
+        </div>
+      </div>
 
       <OpsSectionCard title="조치">
         {/* 왜 눌릴 수 없는지는 상태가 이미 말한다. 다만 **눌릴 수 없는 이유가
