@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
+from apps.accounts.permissions import require_leader
 from apps.connectors.clients import download_drive_file, list_drive_files, search_jira_issues
 from apps.connectors.oauth import OAuthError
 from backend.services.hr import (
@@ -407,6 +408,10 @@ class ProjectSourceAPIView(AuthenticatedAPIView):
         return Response([project_source_response(row)] if row else [])
 
 
+#: 어느 폴더를 읽을지는 팀 전체의 문서 풀을 정하는 일이라 커넥터 연결과 같은 무게다.
+FOLDER_LEADER_ONLY = "팀장만 읽을 폴더를 정할 수 있습니다."
+
+
 class TeamFolderAPIView(AuthenticatedAPIView):
     """팀이 읽을 Drive 폴더(`team_folder`).
 
@@ -423,6 +428,9 @@ class TeamFolderAPIView(AuthenticatedAPIView):
         return Response([team_folder_response(row) for row in rows])
 
     def put(self, request):
+        if denied := require_leader(request.user.account_id, FOLDER_LEADER_ONLY):
+            return denied
+
         serializer = TeamFolderReplaceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 

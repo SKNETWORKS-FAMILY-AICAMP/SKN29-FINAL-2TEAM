@@ -9,7 +9,7 @@ import {
   testMcpServer,
 } from '../../../api/mcp';
 import type { McpServer } from '../../../api/mcp';
-import { loadSessionToken } from '../../../utils/session';
+import { loadSessionToken, useSession } from '../../../utils/session';
 import styles from './tabs.module.css';
 
 /** 상태 칩. 세 상태를 뭉개지 않는다 — 사람이 할 행동이 각각 다르다. */
@@ -32,6 +32,10 @@ const STATUS: Record<McpServer['status'], { tone: BadgeTone; label: string; hint
 export function McpTab() {
   const { showToast } = useToast();
   const token = loadSessionToken();
+  // 등록·삭제·연결 확인은 서버가 팀장만 받는다(`require_leader`). 화면도 같은 말을
+  // 해야 한다 — 눌러 보고 나서 토스트로 알려 주는 것은 안내가 아니다(2026-08-13).
+  const session = useSession();
+  const isLeader = session?.account.role === 'leader';
 
   const [servers, setServers] = useState<McpServer[]>([]);
   const [name, setName] = useState('');
@@ -107,6 +111,16 @@ export function McpTab() {
 
   return (
     <div className={styles.tab}>
+      {session && !isLeader && (
+        <p className={`${styles.notice} ${styles.noticeNeutral}`} role="alert">
+          <Icon name="info" size={16} color="var(--color-muted)" />
+          <span>
+            팀장만 MCP 서버를 등록할 수 있습니다. 팀원은 팀장이 붙인 서버의 도구를 에이전트에서
+            그대로 고를 수 있습니다.
+          </span>
+        </p>
+      )}
+
       {error && <p className={`${styles.notice} ${styles.noticeDanger}`}>{error}</p>}
 
       <section className={styles.card}>
@@ -169,7 +183,7 @@ export function McpTab() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy === server.mcp_server_id}
+                    disabled={!isLeader || busy === server.mcp_server_id}
                     onClick={() => test(server.mcp_server_id, server.name)}
                   >
                     {busy === server.mcp_server_id ? '확인 중…' : '연결 확인'}
@@ -177,7 +191,7 @@ export function McpTab() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy === server.mcp_server_id}
+                    disabled={!isLeader || busy === server.mcp_server_id}
                     onClick={() => remove(server)}
                   >
                     지우기
@@ -189,6 +203,7 @@ export function McpTab() {
         </div>
       </section>
 
+      {isLeader && (
       <section className={styles.card}>
         <div className={styles.cardHead}>
           <h2 className={styles.cardTitle}>MCP 서버 추가</h2>
@@ -228,6 +243,7 @@ export function McpTab() {
           </Button>
         </div>
       </section>
+      )}
     </div>
   );
 }
