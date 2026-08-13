@@ -1,5 +1,5 @@
-import { Icon, Modal } from '../../../components';
-import type { IconName } from '../../../components';
+import { BrandIcon, Icon, Modal } from '../../../components';
+import type { BrandName, IconName } from '../../../components';
 import styles from './ConnectorPicker.module.css';
 
 /**
@@ -18,6 +18,12 @@ import styles from './ConnectorPicker.module.css';
 export interface PickerOption {
   id: string;
   label: string;
+  /**
+   * 로고가 있으면 로고를 쓴다 — 제품을 고르는 자리라 이름보다 마크가 먼저 읽힌다.
+   * 예전에는 Notion 과 Confluence 가 똑같은 `file-text` 였다(2026-08-13 PM 지적).
+   */
+  brand?: BrandName;
+  /** 로고가 없을 때 쓸 일반 글리프(예시 데이터·사내 시스템·SharePoint·Workday). */
   icon: IconName;
   /** 지금 붙일 수 있는가. `false` 면 흐리게, 누를 수 없다. */
   available: boolean;
@@ -51,11 +57,15 @@ export function ConnectorPicker({
             disabled={!option.available || busy}
             onClick={() => onPick(option.id)}
           >
-            <Icon
-              name={option.icon}
-              size={22}
-              color={option.available ? 'var(--color-primary)' : 'var(--color-placeholder)'}
-            />
+            {option.brand ? (
+              <BrandIcon name={option.brand} size={22} muted={!option.available} />
+            ) : (
+              <Icon
+                name={option.icon}
+                size={22}
+                color={option.available ? 'var(--color-primary)' : 'var(--color-placeholder)'}
+              />
+            )}
             <span className={styles.name}>{option.label}</span>
             {option.current && <span className={styles.tagNow}>지금 연결됨</span>}
             {!option.available && <span className={styles.tagOff}>아직 지원하지 않습니다</span>}

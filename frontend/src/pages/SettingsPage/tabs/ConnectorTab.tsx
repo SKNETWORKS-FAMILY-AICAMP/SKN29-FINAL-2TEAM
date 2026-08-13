@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Badge, Button, Icon, InfoNote, useToast } from '../../../components';
+import { Badge, BrandIcon, Button, Icon, InfoNote, useToast } from '../../../components';
 import type { BadgeTone } from '../../../components';
 import { ApiError } from '../../../api/client';
 import {
@@ -56,6 +56,8 @@ const SLOTS: Record<ConnectorType, { title: string; options: PickerOption[] }> =
   PEOPLE_DB: {
     title: '인사 시스템 — 무엇에서 사람 정보를 가져올까요?',
     options: [
+      // 「예시 데이터」·「사내 인사 시스템」은 제품이 아니라 자리를 채우는 방식이라
+      // 로고가 없다. Workday 는 제품이지만 `simple-icons` 에 없다(BrandIcon 참고).
       { id: 'mock', label: '예시 데이터', icon: 'database', available: true },
       { id: 'workday', label: 'Workday', icon: 'users', available: false },
       { id: 'inhouse', label: '사내 인사 시스템', icon: 'app-window', available: false },
@@ -64,19 +66,19 @@ const SLOTS: Record<ConnectorType, { title: string; options: PickerOption[] }> =
   GOOGLE_DRIVE: {
     title: '문서 저장소 — 문서가 어디 있나요?',
     options: [
-      { id: 'google-drive', label: 'Google Drive', icon: 'folder', available: true },
-      { id: 'notion', label: 'Notion', icon: 'file-text', available: false },
-      { id: 'confluence', label: 'Confluence', icon: 'file-text', available: false },
+      { id: 'google-drive', label: 'Google Drive', brand: 'google-drive', icon: 'folder', available: true },
+      { id: 'notion', label: 'Notion', brand: 'notion', icon: 'file-text', available: false },
+      { id: 'confluence', label: 'Confluence', brand: 'confluence', icon: 'file-text', available: false },
       { id: 'sharepoint', label: 'SharePoint', icon: 'folder', available: false },
     ],
   },
   JIRA: {
     title: '업무 기록소 — 업무를 어디에 쌓고 있나요?',
     options: [
-      { id: 'jira', label: 'Jira', icon: 'chart-network', available: true },
-      { id: 'asana', label: 'Asana', icon: 'circle-help', available: false },
-      { id: 'linear', label: 'Linear', icon: 'chart-network', available: false },
-      { id: 'trello', label: 'Trello', icon: 'app-window', available: false },
+      { id: 'jira', label: 'Jira', brand: 'jira', icon: 'chart-network', available: true },
+      { id: 'asana', label: 'Asana', brand: 'asana', icon: 'circle-help', available: false },
+      { id: 'linear', label: 'Linear', brand: 'linear', icon: 'chart-network', available: false },
+      { id: 'trello', label: 'Trello', brand: 'trello', icon: 'app-window', available: false },
     ],
   },
 };
@@ -245,8 +247,15 @@ export function ConnectorTab() {
           </div>
 
           <div className={styles.row}>
+            {/* 꽂혀 있으면 그 제품의 로고를, 비어 있으면 자리를 뜻하는 글리프를
+                보여준다. 줄 제목이 자리(문서 저장소)이고 그 아래가 제품이라,
+                아이콘도 같은 짝을 따라가야 말이 맞는다. */}
             <span className={styles.rowIcon}>
-              <Icon name="app-window" size={20} color="var(--color-primary)" />
+              {driveConnected ? (
+                <BrandIcon name="google-drive" size={20} />
+              ) : (
+                <Icon name="app-window" size={20} color="var(--color-primary)" />
+              )}
             </span>
             <div className={styles.rowBody}>
               <span className={styles.rowName}>
@@ -284,7 +293,11 @@ export function ConnectorTab() {
 
           <div className={styles.row}>
             <span className={styles.rowIcon}>
-              <Icon name="chart-network" size={20} color="var(--color-primary)" />
+              {jiraConnected ? (
+                <BrandIcon name="jira" size={20} />
+              ) : (
+                <Icon name="chart-network" size={20} color="var(--color-primary)" />
+              )}
             </span>
             <div className={styles.rowBody}>
               <span className={styles.rowName}>

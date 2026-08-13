@@ -34,6 +34,8 @@ export type { ToastContextValue, ToastTone } from './Toast/Toast';
 
 export { Icon } from './Icon/Icon';
 export type { IconProps, IconName } from './Icon/Icon';
+export { BrandIcon } from './BrandIcon/BrandIcon';
+export type { BrandIconProps, BrandName } from './BrandIcon/BrandIcon';
 
 export { AvatarPicker } from './AvatarPicker/AvatarPicker';
 export type { AvatarPickerProps } from './AvatarPicker/AvatarPicker';
