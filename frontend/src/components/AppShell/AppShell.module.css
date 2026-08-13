@@ -121,47 +121,33 @@
   font-weight: 700;
 }
 
-/* ---------------- right column ---------------- */
+/* ---------------- sidebar footer (사용자) ---------------- */
 
-.right {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  height: 64px;
-  flex-shrink: 0;
-  padding: 0 var(--space-6);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-}
-
+/* 메뉴가 짧아도 프로필은 바닥이다 — 남는 높이를 위로 밀어 올린다. */
 .userArea {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
 }
 
-.iconButton {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
+/* 접히면 아바타 하나뿐이므로 왼쪽 정렬이 어색하다. */
+.sidebarCollapsed .userArea {
   justify-content: center;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  cursor: pointer;
 }
 
-.iconButton:hover {
-  background: var(--color-bg);
+/* 이름이 길다고 로그아웃을 밀어내면 안 된다 — 이름이 먼저 줄어든다. */
+.userName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-body);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .avatar {
@@ -179,6 +165,7 @@
 }
 
 .logout {
+  flex-shrink: 0;
   border: none;
   background: none;
   padding: 0;
@@ -189,6 +176,8 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* ---------------- content ---------------- */
 
 /* 보통 화면은 여기서 세로 스크롤을 맡는다 — 셸이 창 높이를 고정했으므로
    이 층이 안 흐르면 아래쪽 내용에 닿을 수 없다. */

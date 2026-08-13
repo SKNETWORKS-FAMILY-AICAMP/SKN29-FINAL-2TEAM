@@ -17,12 +17,13 @@ export interface AppShellProps {
 }
 
 /**
- * 로그인 후 화면의 공통 셸 — 왼쪽 사이드바(Chat/에이전트/프로젝트/설정) +
- * 상단바(사용자). 7_홈화면_정의 §1.
+ * 로그인 후 화면의 공통 셸 — 왼쪽 사이드바(로고 / Chat·에이전트·프로젝트·설정 /
+ * 바닥의 사용자). 7_홈화면_정의 §1.
  *
- * **상단바의 프로젝트 선택기는 없앴다.** 프로젝트는 모든 대화의 전제가 아니라
- * 대화가 속하는 자리다 — 어느 프로젝트의 대화인지는 Chat 사이드바의 계층
- * (프로젝트 > 대화)이 말한다. 상단바에 두면 회의록 정리처럼 프로젝트가 무의미한
+ * **상단바는 없앴다.** 프로젝트 선택기를 걷어낸 뒤로 남은 것이 사용자 영역뿐이었는데,
+ * 그것 하나 때문에 모든 화면이 64px 를 내주고 있었다. 프로젝트는 모든 대화의 전제가
+ * 아니라 대화가 속하는 자리다 — 어느 프로젝트의 대화인지는 Chat 사이드바의 계층
+ * (프로젝트 > 대화)이 말한다. 위에 두면 회의록 정리처럼 프로젝트가 무의미한
  * 요청에도 계속 고르라고 하게 된다.
  *
  * 기존 `TopNav`(상단 탭바)를 쓰는 화면은 이제 없다 — 마지막 사용처였던 옛
@@ -88,27 +89,26 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
             </NavLink>
           ))}
         </nav>
+
+        <div className={styles.userArea}>
+          <span className={styles.avatar} title={displayName || undefined}>
+            {displayName ? displayName.slice(0, 1) : <Icon name="user" size={15} />}
+          </span>
+          {/* 접히면 아바타만 남는다 — 이름도 글자 버튼도 좁아진 폭을 삐져나온다. */}
+          {!collapsed && (
+            <>
+              <span className={styles.userName}>{displayName}</span>
+              {session && (
+                <button type="button" className={styles.logout} onClick={handleLogout}>
+                  로그아웃
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </aside>
 
-      <div className={styles.right}>
-        <header className={styles.topbar}>
-          <div className={styles.userArea}>
-            <button type="button" className={styles.iconButton} aria-label="알림">
-              <Icon name="bell" size={18} color="var(--color-body)" />
-            </button>
-            <span className={styles.avatar} title={displayName || undefined}>
-              {displayName ? displayName.slice(0, 1) : <Icon name="user" size={15} />}
-            </span>
-            {session && (
-              <button type="button" className={styles.logout} onClick={handleLogout}>
-                로그아웃
-              </button>
-            )}
-          </div>
-        </header>
-
-        <main className={variant === 'flush' ? styles.contentFlush : styles.content}>{children}</main>
-      </div>
+      <main className={variant === 'flush' ? styles.contentFlush : styles.content}>{children}</main>
     </div>
   );
 }
