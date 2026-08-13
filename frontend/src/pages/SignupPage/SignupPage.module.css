@@ -51,19 +51,12 @@
   width: 100%;
 }
 
+/* 워드마크가 로고 전체다. 예전에는 아이콘+글자를 옅은 파란 알약으로 감쌌는데,
+   그 위에 워드마크를 넣으면 로고가 자기 배경을 두 겹 갖는 꼴이 된다. 감싸던
+   것을 걷어내고 가운데 정렬만 남긴다(2026-08-13). */
 .logoBadge {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-}
-
-.logoBadge span {
-  font-weight: 800;
-  font-size: 18px;
 }
 
 .tagline {

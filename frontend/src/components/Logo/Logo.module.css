@@ -1,0 +1,9 @@
+/* 높이는 인라인으로 정해지고 폭은 비율대로 따라간다. `width: auto` 가 없으면
+   부모의 flex 가 이미지를 눌러 글자가 찌그러진다. */
+.logo {
+  width: auto;
+  display: block;
+  object-fit: contain;
+  /* 로고를 끌어다 놓는 일은 없다. 드래그 고스트만 거슬린다. */
+  user-select: none;
+}

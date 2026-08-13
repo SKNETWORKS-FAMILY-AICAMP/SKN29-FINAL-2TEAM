@@ -1,4 +1,7 @@
 import { Link } from 'react-router-dom';
+// 이 파일에도 `Logo` 라는 지역 함수가 있다. 이름이 겹치면 어느 쪽이 도는지
+// 읽는 사람이 헷갈리므로 들여올 때 이름을 바꾼다.
+import { Logo as BrandLogo } from '../../components';
 import { PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
 import styles from './LandingPage.module.css';
@@ -47,8 +50,7 @@ const CONNECTORS = ['Google Drive', 'Jira', 'People DB'] as const;
 function Logo() {
   return (
     <span className={styles.logo}>
-      <span className={styles.logoMark}>h</span>
-      <span className={styles.logoText}>halil</span>
+      <BrandLogo height={30} />
     </span>
   );
 }

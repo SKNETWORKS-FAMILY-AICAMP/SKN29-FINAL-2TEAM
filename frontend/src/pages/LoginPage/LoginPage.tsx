@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Button, Icon, Input, useToast } from '../../components';
+import { Button, Icon, Input, Logo, useToast } from '../../components';
 import { login } from '../../api/auth';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
@@ -67,8 +67,7 @@ export default function LoginPage() {
       <div className={styles.authContainer}>
         <div className={styles.header}>
           <div className={styles.logoBadge}>
-            <Icon name="send" size={20} />
-            <span>halil</span>
+            <Logo height={34} />
           </div>
           <p className={styles.tagline}>AI 기반 업무 배정 코파일럿</p>
         </div>

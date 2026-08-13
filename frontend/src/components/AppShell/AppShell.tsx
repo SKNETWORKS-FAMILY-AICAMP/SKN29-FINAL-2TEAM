@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_NAV_ITEMS, PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
 import { Icon } from '../Icon/Icon';
+import { Logo } from '../Logo/Logo';
 import styles from './AppShell.module.css';
 
 export interface AppShellProps {
@@ -58,9 +59,9 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
     <div className={styles.shell}>
       <aside className={[styles.sidebar, collapsed ? styles.sidebarCollapsed : ''].filter(Boolean).join(' ')}>
         <div className={styles.brandRow}>
+          {/* 접히면 글자가 들어갈 자리가 없다 — 그때만 마크로 바꾼다. */}
           <Link to={PATHS.chat} className={styles.logo} aria-label="채팅으로 이동">
-            <span className={styles.logoMark}>h</span>
-            {!collapsed && <span className={styles.logoText}>halil</span>}
+            <Logo variant={collapsed ? 'mark' : 'full'} height={collapsed ? 30 : 26} />
           </Link>
           <button
             type="button"

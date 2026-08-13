@@ -33,8 +33,7 @@
 }
 
 /* 접히는 동안 라벨이 줄바꿈되며 튀지 않게. */
-.sidebar .navItem span,
-.sidebar .logoText {
+.sidebar .navItem span {
   white-space: nowrap;
 }
 
@@ -89,26 +88,6 @@
 
 .sidebarCollapsed .logo {
   padding: 0;
-}
-
-.logoMark {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.logoText {
-  font-size: 19px;
-  font-weight: 800;
-  color: var(--color-primary);
 }
 
 .nav {

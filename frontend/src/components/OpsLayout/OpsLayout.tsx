@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
 import type { IconName } from '../Icon/Icon';
+import { Logo } from '../Logo/Logo';
 import { opsLogout } from '../../api/ops';
 import { clearOpsSession, loadOpsSession } from '../../utils/opsSession';
 import styles from './OpsLayout.module.css';
@@ -38,8 +39,8 @@ export function OpsLayout() {
     <div className={styles.page}>
       <header className={styles.header}>
         <NavLink to="/ops" className={styles.brand} aria-label="운영 현황으로 이동">
-          <span className={styles.brandMark}>h</span>
-          <span>halil 운영자 콘솔</span>
+          <Logo height={22} />
+          <span>운영자 콘솔</span>
         </NavLink>
 
         <div className={styles.operator}>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Button, Input } from '../../components';
+import { Button, Input, Logo } from '../../components';
 import { opsLogin } from '../../api/ops';
 import { ApiError } from '../../api/client';
 import { loadOpsSession, saveOpsSession } from '../../utils/opsSession';
@@ -49,8 +49,7 @@ export default function OpsLoginPage() {
     <main className={styles.page}>
       <form className={styles.loginCard} onSubmit={handleSubmit}>
         <div className={styles.brand}>
-          <span>h</span>
-          <strong>halil</strong>
+          <Logo height={30} />
         </div>
         <h1>운영자 로그인</h1>
 

@@ -17,24 +17,7 @@
   cursor: pointer;
 }
 
-.mark {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: #fff;
-  font-weight: 800;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.wordmark {
-  font-weight: 800;
-  font-size: 19px;
-  color: var(--color-primary);
-}
 
 .tabs {
   display: flex;
