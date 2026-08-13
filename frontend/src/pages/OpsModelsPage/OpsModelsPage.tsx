@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, OpsDataTable, OpsEmpty, OpsPageHeader, OpsSectionCard } from '../../components';
-import { fetchOpsModels, registerOpsModel, removeOpsModel } from '../../api/opsModels';
+import { fetchOpsModels, probeOpsModels, registerOpsModel, removeOpsModel } from '../../api/opsModels';
 import type { OpsModel } from '../../api/opsModels';
 import { fetchOpsTeams } from '../../api/opsTeams';
 import type { OpsTeam } from '../../api/opsTeams';
@@ -33,6 +33,9 @@ export default function OpsModelsPage() {
   const [model, setModel] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
+  /** 「모델 불러오기」로 받아 온 이름들. 비어 있으면 직접 입력으로 둔다. */
+  const [available, setAvailable] = useState<string[]>([]);
+  const [probeNote, setProbeNote] = useState('');
 
   const preset = PROVIDER_PRESETS.find((item) => item.id === provider) ?? PROVIDER_PRESETS[0];
 
@@ -74,6 +77,28 @@ export default function OpsModelsPage() {
     // 직접 입력은 주소를 비워 둔다 — 프리셋 주소가 남아 있으면 사내 서버를
     // 넣으려던 사람이 남의 주소를 그대로 저장한다.
     if (found) setBaseUrl(found.baseUrl);
+    // 주소가 바뀌면 앞서 불러온 목록은 다른 곳의 것이다.
+    setAvailable([]);
+    setProbeNote('');
+    setModel('');
+  }
+
+  /** 그 주소·키가 가진 모델을 받아 온다. 못 받으면 직접 입력으로 남는다. */
+  async function probe() {
+    const session = loadOpsSession();
+    if (!session) return;
+    setBusy(true);
+    setFormError('');
+    try {
+      const result = await probeOpsModels(session.token, baseUrl.trim(), apiKey.trim());
+      setAvailable(result.models);
+      setProbeNote(result.detail ?? '');
+      if (result.models.length === 1) setModel(result.models[0]);
+    } catch (thrown) {
+      setFormError(thrown instanceof ApiError ? thrown.message : '모델을 불러오지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function register() {
@@ -92,6 +117,8 @@ export default function OpsModelsPage() {
       // 키는 화면에도 남기지 않는다.
       setApiKey('');
       setModel('');
+      setAvailable([]);
+      setProbeNote('');
       await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '등록하지 못했습니다.');
@@ -188,15 +215,40 @@ export default function OpsModelsPage() {
           </div>
 
           <div className={styles.fieldGroup}>
-            <label htmlFor="model-name">모델 이름</label>
-            <input
-              id="model-name"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="gemini-3.6-flash"
-            />
+            <label htmlFor="model-name">모델</label>
+            {/* **불러온 것이 있으면 고르게 한다.** 없을 때만 직접 적는다 —
+                Anthropic 호환 경로처럼 목록을 안 주는 곳이 있다. */}
+            {available.length > 0 ? (
+              <select id="model-name" value={model} onChange={(event) => setModel(event.target.value)}>
+                <option value="">선택하세요</option>
+                {available.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="model-name"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="gemini-3.6-flash"
+              />
+            )}
           </div>
         </div>
+
+        <div className={styles.formActions}>
+          <Button
+            variant="outline"
+            onClick={probe}
+            disabled={busy || !baseUrl.trim() || !apiKey.trim()}
+          >
+            {busy ? '불러오는 중…' : '모델 불러오기'}
+          </Button>
+        </div>
+
+        {probeNote && <p className={styles.inlineEmpty}>{probeNote}</p>}
 
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
 

@@ -86,6 +86,39 @@ class ModelListCreateView(AdminView):
         )
 
 
+class ModelProbeView(AdminView):
+    """주소와 키를 주면 **그 엔드포인트가 가진 모델 목록**을 돌려준다.
+
+    **이름을 외워 적게 하지 않는다.** 오타 하나가 실행 시점 404 가 되고, 그때는
+    등록해 준 우리가 아니라 그 팀의 대화가 죽는다. 운영자라고 사정이 낫지 않다 —
+    고객에게 전달받은 이름을 옮겨 적는 자리라 오히려 틀리기 쉽다.
+
+    다만 목록을 안 주는 구현도 흔하다(Anthropic 호환 경로는 401 이다). 그때는 빈
+    목록과 이유를 주고, 화면이 직접 입력으로 넘어간다.
+    """
+
+    def post(self, request):
+        base_url = (request.data.get("base_url") or "").strip()
+        api_key = (request.data.get("api_key") or "").strip()
+        if not base_url or not api_key:
+            return Response(
+                {"detail": "주소와 키가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=api_key, base_url=base_url, timeout=20, max_retries=0)
+            names = sorted(item.id for item in client.models.list().data)
+        except Exception as exc:  # noqa: BLE001 - 어떤 실패든 「여기서는 못 고른다」다
+            logger.info("모델 목록 조회 실패: %s", type(exc).__name__)
+            return Response(
+                {"models": [], "detail": "이 주소에서 모델 목록을 받지 못했습니다. 주소와 키를 확인해 주세요."}
+            )
+        if not names:
+            return Response({"models": [], "detail": "이 주소가 쓸 수 있는 모델을 알려주지 않았습니다."})
+        return Response({"models": names, "detail": None})
+
+
 class ModelDetailView(AdminView):
     def delete(self, request, conn_id):
         try:

@@ -205,3 +205,43 @@ class OpsModelRegisterTests(SimpleTestCase):
         response = self.client.delete(f"{self.URL}CN002/", **self._headers())
 
         self.assertEqual(response.status_code, 409)
+
+    def test_모델_목록을_받아_온다(self, repo, _audit, _admin):
+        """**이름을 외워 적게 하지 않는다** — 오타 하나가 실행 시점 404 가 된다."""
+
+        with patch("openai.OpenAI") as client:
+            client.return_value.models.list.return_value.data = [
+                type("M", (), {"id": "models/gemini-3.6-flash"}),
+                type("M", (), {"id": "models/gemini-3.6-pro"}),
+            ]
+            response = self.client.post(
+                f"{self.URL}probe/",
+                {"base_url": "https://x/v1", "api_key": "k"},
+                content_type="application/json",
+                **self._headers(),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["models"], ["models/gemini-3.6-flash", "models/gemini-3.6-pro"])
+
+    def test_목록을_못_주면_이유를_준다(self, repo, _audit, _admin):
+        """Anthropic 호환 경로는 401 이다. 그때는 화면이 직접 입력으로 넘어간다."""
+
+        with patch("openai.OpenAI", side_effect=RuntimeError("401")):
+            response = self.client.post(
+                f"{self.URL}probe/",
+                {"base_url": "https://x/v1", "api_key": "k"},
+                content_type="application/json",
+                **self._headers(),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["models"], [])
+        self.assertTrue(response.json()["detail"])
+
+    def test_probe_가_conn_id_에_먹히지_않는다(self, repo, _audit, _admin):
+        """`models/probe/` 가 `models/<conn_id>/` 뒤에 있으면 삭제로 잡힌다."""
+
+        from django.urls import resolve
+
+        self.assertEqual(resolve("/api/ops/models/probe/").url_name, "api_ops_model_probe")

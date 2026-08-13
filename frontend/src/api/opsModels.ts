@@ -42,3 +42,17 @@ export function registerOpsModel(token: string, body: OpsModelRegisterInput) {
 export function removeOpsModel(token: string, connId: string) {
   return opsRequest<void>(`/ops/models/${connId}/`, { method: 'DELETE', token });
 }
+
+/**
+ * 그 주소·키가 가진 모델 이름 목록. 못 주면 빈 목록과 이유가 온다.
+ *
+ * **이름을 외워 적게 하지 않는다** — 오타 하나가 실행 시점 404 가 되고, 그때
+ * 죽는 것은 등록해 준 우리가 아니라 그 팀의 대화다.
+ */
+export function probeOpsModels(token: string, baseUrl: string, apiKey: string) {
+  return opsRequest<{ models: string[]; detail: string | null }>('/ops/models/probe/', {
+    method: 'POST',
+    token,
+    body: { base_url: baseUrl, api_key: apiKey },
+  });
+}
