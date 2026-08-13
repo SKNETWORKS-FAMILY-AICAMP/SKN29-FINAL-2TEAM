@@ -14,7 +14,7 @@ from backend.db import OpsConnectorRepository
 from backend.db.errors import RepositoryError
 
 from ..authentication import AdminView
-from ..serializers import ConnectorRevokeSerializer, connector_row_response
+from ..serializers import ReasonSerializer, connector_row_response
 
 
 class ConnectorListView(AdminView):
@@ -40,7 +40,7 @@ class ConnectorRevokeView(AdminView):
     연결인지는 `Repository`가 트랜잭션 안에서 본다 — 화면에서만 막으면 규칙이 아니다."""
 
     def post(self, request, conn_id):
-        serializer = ConnectorRevokeSerializer(data=request.data)
+        serializer = ReasonSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
             result = OpsConnectorRepository.revoke(

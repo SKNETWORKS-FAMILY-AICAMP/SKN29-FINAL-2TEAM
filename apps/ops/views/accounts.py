@@ -1,9 +1,9 @@
 """계정 관리 API.
 
-목록 조회는 입력값이 없고, 잠금·잠금해제·연결해제는 본문 없이 계정 ID만으로
-동작한다(URL 경로에 이미 대상이 있으므로). 도메인 예외(존재하지 않는 계정,
-탈퇴한 계정, 본인 계정 잠금 시도, 이미 처리된 상태, 연결된 직원 없음)는
-`Repository`가 던지고 `to_response()`가 상태 코드로 변환한다.
+목록 조회는 입력값이 없다. 상태를 바꾸는 조치는 **사유만** 본문으로 받는다 —
+대상은 이미 URL 경로에 있다. 도메인 예외(존재하지 않는 계정, 탈퇴한 계정, 본인
+계정 잠금 시도, 이미 처리된 상태, 연결된 직원 없음)는 `Repository`가 던지고
+`to_response()`가 상태 코드로 변환한다.
 """
 
 import psycopg
@@ -14,7 +14,15 @@ from backend.db import OpsAccountRepository
 from backend.db.errors import RepositoryError
 
 from ..authentication import AdminView
-from ..serializers import AdminGrantSerializer, account_row_response
+from ..serializers import AdminGrantSerializer, ReasonSerializer, account_row_response
+
+
+def _reason(request) -> str:
+    """본문에서 사유만 꺼낸다. 본문이 없어도 통과한다(빈 사유)."""
+
+    serializer = ReasonSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    return serializer.validated_data["reason"]
 
 
 class AccountListView(AdminView):
@@ -44,7 +52,11 @@ class AccountDetailView(AdminView):
 class AccountLockView(AdminView):
     def post(self, request, account_id):
         try:
-            result = OpsAccountRepository.lock(account_id=account_id, actor_account_id=request.user.account_id)
+            result = OpsAccountRepository.lock(
+                account_id=account_id,
+                actor_account_id=request.user.account_id,
+                reason=_reason(request),
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(result)
@@ -53,7 +65,11 @@ class AccountLockView(AdminView):
 class AccountUnlockView(AdminView):
     def post(self, request, account_id):
         try:
-            result = OpsAccountRepository.unlock(account_id=account_id, actor_account_id=request.user.account_id)
+            result = OpsAccountRepository.unlock(
+                account_id=account_id,
+                actor_account_id=request.user.account_id,
+                reason=_reason(request),
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(result)
@@ -62,7 +78,11 @@ class AccountUnlockView(AdminView):
 class AccountUnlinkPersonView(AdminView):
     def post(self, request, account_id):
         try:
-            result = OpsAccountRepository.unlink_all(account_id=account_id, actor_account_id=request.user.account_id)
+            result = OpsAccountRepository.unlink_all(
+                account_id=account_id,
+                actor_account_id=request.user.account_id,
+                reason=_reason(request),
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(result)

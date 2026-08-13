@@ -3067,25 +3067,29 @@ class OpsAccountRepository:
         return rows[0]
 
     @staticmethod
-    def lock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+    def lock(*, account_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         return OpsAccountRepository._set_status(
             account_id=account_id,
             actor_account_id=actor_account_id,
             new_status="LOCKED",
             action="ACCOUNT_LOCK",
+            reason=reason,
         )
 
     @staticmethod
-    def unlock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+    def unlock(*, account_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         return OpsAccountRepository._set_status(
             account_id=account_id,
             actor_account_id=actor_account_id,
             new_status="ACTIVE",
             action="ACCOUNT_UNLOCK",
+            reason=reason,
         )
 
     @staticmethod
-    def _set_status(*, account_id: str, actor_account_id: str, new_status: str, action: str) -> dict[str, Any]:
+    def _set_status(
+        *, account_id: str, actor_account_id: str, new_status: str, action: str, reason: str = ""
+    ) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 # 동시에 들어온 잠금/해제 요청이 서로 낡은 상태를 덮어쓰지 않도록 잠근다.
@@ -3113,7 +3117,7 @@ class OpsAccountRepository:
                     action=action,
                     target_type="ACCOUNT",
                     target_id=account_id,
-                    payload={"before": account["account_status"], "after": new_status},
+                    payload={"before": account["account_status"], "after": new_status, "reason": reason},
                 )
 
         return {"account_id": account_id, "account_status": new_status}
@@ -3186,7 +3190,7 @@ class OpsAccountRepository:
         return {"account_id": account_id, "is_admin": is_admin}
 
     @staticmethod
-    def unlink_all(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+    def unlink_all(*, account_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1 FROM user_account WHERE account_id = %s", (account_id,))
@@ -3212,7 +3216,7 @@ class OpsAccountRepository:
                     action="ACCOUNT_UNLINK_PERSON",
                     target_type="ACCOUNT",
                     target_id=account_id,
-                    payload={"revoked_person_ids": revoked_person_ids},
+                    payload={"revoked_person_ids": revoked_person_ids, "reason": reason},
                 )
 
         return {"account_id": account_id, "revoked_person_ids": revoked_person_ids}
@@ -3282,7 +3286,7 @@ class OpsInviteRepository:
         return rows[0]
 
     @staticmethod
-    def discard(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
+    def discard(*, invite_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         """대기 중(`PENDING`)인 초대만 폐기(`REVOKED`)한다.
 
         존재하지 않는 초대와, 존재하지만 이미 수락·만료 처리·취소된 초대를
@@ -3311,13 +3315,13 @@ class OpsInviteRepository:
                     action="INVITE_DISCARD",
                     target_type="MEMBER_INVITE",
                     target_id=invite_id,
-                    payload={"person_id": row["person_id"]},
+                    payload={"person_id": row["person_id"], "reason": reason},
                 )
 
         return {"invite_id": invite_id, "status": "REVOKED"}
 
     @staticmethod
-    def unlink_by_invite(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
+    def unlink_by_invite(*, invite_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         """이 초대로 연결된 계정의 직원 링크를 전부 해제한다.
 
         해제 자체는 `OpsAccountRepository.unlink_all()`을 그대로 재사용한다
@@ -3347,7 +3351,9 @@ class OpsInviteRepository:
                     raise RecordNotFound("이미 연결이 해제됐거나 연결된 적이 없는 초대입니다.")
                 account_id = link["account_id"]
 
-        result = OpsAccountRepository.unlink_all(account_id=account_id, actor_account_id=actor_account_id)
+        result = OpsAccountRepository.unlink_all(
+            account_id=account_id, actor_account_id=actor_account_id, reason=reason
+        )
         return {"invite_id": invite_id, **result}
 
 
