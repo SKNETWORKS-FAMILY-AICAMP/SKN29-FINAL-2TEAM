@@ -563,21 +563,35 @@ CREATE TABLE task_know_src (
 );
 
 -- ---------------------------------------------------------------------
--- ⚠ 아래 15개 테이블은 **어떤 애플리케이션 코드도 읽거나 쓰지 않는다**
+-- ⚠ 아래 18개 테이블은 **어떤 애플리케이션 코드도 읽거나 쓰지 않는다**
 --   (2026-08-13 전수 확인). `DB/reset_demo.sql` 의 TRUNCATE 에만 등장한다 —
 --   초기화는 하지만 아무도 채우지 않는 상태다.
 --
---   cal_event · doc_sync · model_know_item · feat_cluster · know_item_src ·
---   feat_cluster_item · task_know_src · person_snap · workload_result ·
---   reco_result · reco_cand · valid_result · reco_evidence · valid_check ·
---   decision_rec
+--   ① 이름조차 코드에 없는 것 (10)
+--      doc_sync · model_know_item · feat_cluster · know_item_src ·
+--      feat_cluster_item · task_know_src · person_snap · reco_cand ·
+--      reco_evidence · valid_check
+--
+--   ② 「여기에 저장하지 않는다」는 주석으로만 등장하는 것 (8)
+--      cal_event · workload_result · reco_result · valid_result ·
+--      decision_rec · assign_run · ana_snapshot · feat_ready_result
 --
 --   스키마를 먼저 설계하고 구현이 시작되지 않은 자리다. 추천·검증·결정
 --   파이프라인은 제품이 업무 배정 추천에서 물러나며 폐기됐고, 그 읽기 쪽
 --   (운영자 콘솔 「분석·결정 기록」 탭)과 쓰기 쪽(배정 실행 API)은 같은 날
---   걷었다. **지우지 않는 이유는 지우는 비용이 크기 때문이다** — 팀원 전원이
---   로컬 DB 를 다시 만들어야 하고, 산출물 ERD 와도 어긋난다.
---   되살릴 계획이 없다면 다음 스키마 정리 때 함께 판단한다.
+--   걷었다 — 뒤의 셋(assign_run·ana_snapshot·feat_ready_result)이 그때 이쪽으로
+--   넘어왔다.
+--
+--   **지금 지우지 않는다**(2026-08-13 PM 결정). 이유가 셋이다.
+--   1. Agent 런타임 쪽에서 스키마 마이그레이션 작업이 진행 중이라, 같은 파일을
+--      양쪽에서 고치면 충돌이 「한쪽이 지운 것을 다른 쪽이 고친」 모양이 된다.
+--   2. 문서→지식 체인(doc_sync·know_item_src·task_know_src·model_know_item·
+--      feat_cluster*)은 **지금 고도화 중인 파이프라인의 자리**다. 담당자에게
+--      쓸 것인지 먼저 물어야 한다.
+--   3. 팀원 전원이 로컬 DB 를 다시 만들어야 하고 산출물 ERD 와도 어긋난다.
+--
+--   **Agent 파트가 정리된 뒤 다시 확인한다.** 그때는 ②의 추천·검증·결정 계열
+--   부터 보면 된다 — 폐기가 확정된 것들이다.
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
