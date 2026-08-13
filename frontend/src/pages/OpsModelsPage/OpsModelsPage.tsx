@@ -202,53 +202,54 @@ export default function OpsModelsPage() {
             />
           </div>
 
-          <div className={styles.fieldGroup}>
-            {/* 키를 어디서 받는지는 제공자마다 다르다. 라벨 옆에 붙여 두면
-                운영자가 창을 옮겨 다니며 찾지 않아도 된다. */}
-            <label htmlFor="model-key">API 키 · {preset.keyHint}</label>
-            <input
-              id="model-key"
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
+          {/* **키 옆에 둔다.** 불러오기가 쓰는 재료가 주소와 이 키라서, 아래
+              줄에 떼어 놓으면 무엇으로 불러오는지 안 보인다. */}
+          <div className={styles.inlineField}>
+            <div className={styles.fieldGroup}>
+              {/* 키를 어디서 받는지는 제공자마다 다르다. 라벨 옆에 붙여 두면
+                  운영자가 창을 옮겨 다니며 찾지 않아도 된다. */}
+              <label htmlFor="model-key">API 키 · {preset.keyHint}</label>
+              <input
+                id="model-key"
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+              />
+            </div>
+            <Button
+              variant="outline"
+              onClick={probe}
+              disabled={busy || !baseUrl.trim() || !apiKey.trim()}
+            >
+              {busy ? '불러오는 중…' : '모델 불러오기'}
+            </Button>
           </div>
+
+          {probeNote && <p className={styles.inlineEmpty}>{probeNote}</p>}
 
           <div className={styles.fieldGroup}>
             <label htmlFor="model-name">모델</label>
-            {/* **불러온 것이 있으면 고르게 한다.** 없을 때만 직접 적는다 —
+            {/* **거르지 않고 다 준다.** 키가 가진 것을 이름으로 걸러 내면 정작
+                고객이 요청한 모델이 안 보일 수 있다. 대신 `datalist` 로 쳐서
+                좁히게 하고, 목록에 없는 이름도 그대로 적을 수 있게 둔다 —
                 Anthropic 호환 경로처럼 목록을 안 주는 곳이 있다. */}
-            {available.length > 0 ? (
-              <select id="model-name" value={model} onChange={(event) => setModel(event.target.value)}>
-                <option value="">선택하세요</option>
-                {available.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                id="model-name"
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                placeholder="gemini-3.6-flash"
-              />
-            )}
+            <input
+              id="model-name"
+              list="ops-model-options"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder={
+                available.length > 0 ? `${available.length}개 — 쳐서 좁힐 수 있습니다` : 'gemini-3.6-flash'
+              }
+            />
+            <datalist id="ops-model-options">
+              {available.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
         </div>
 
-        <div className={styles.formActions}>
-          <Button
-            variant="outline"
-            onClick={probe}
-            disabled={busy || !baseUrl.trim() || !apiKey.trim()}
-          >
-            {busy ? '불러오는 중…' : '모델 불러오기'}
-          </Button>
-        </div>
-
-        {probeNote && <p className={styles.inlineEmpty}>{probeNote}</p>}
 
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
 

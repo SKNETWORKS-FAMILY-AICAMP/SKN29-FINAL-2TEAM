@@ -871,3 +871,29 @@
     justify-self: start;
   }
 }
+
+/**
+ * 입력 한 칸과 **그 칸을 소비하는 버튼**을 한 줄에 둔다.
+ *
+ * `inlinePolicy` 와 달리 입력이 남는 폭을 다 쓴다 — 주소·API 키처럼 긴 값이
+ * 들어오는 자리라서다. 버튼을 따로 아래 줄에 두면 무엇을 재료로 쓰는 버튼인지
+ * 안 보인다(2026-08-13: 「모델 불러오기」가 모델 칸 아래에 있어 순서가 거꾸로
+ * 읽혔다).
+ */
+.inlineField {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.inlineField .fieldGroup {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 버튼에는 라벨이 없어 그만큼 위로 뜬다. 입력칸 높이(40px)에 맞춘다. */
+.inlineField button {
+  flex: 0 0 auto;
+  height: 40px;
+  white-space: nowrap;
+}
