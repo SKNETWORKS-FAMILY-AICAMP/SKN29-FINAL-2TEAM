@@ -3142,7 +3142,7 @@ class OpsInviteRepository:
     """
 
     @staticmethod
-    def list() -> list[dict[str, Any]]:
+    def list(invite_id: str | None = None) -> list[dict[str, Any]]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -3172,13 +3172,28 @@ class OpsInviteRepository:
                     LEFT JOIN user_person_link AS upl
                         ON upl.person_id = mi.person_id AND upl.mapping_status = 'VERIFIED'
                     LEFT JOIN user_account AS linked ON linked.account_id = upl.account_id
+                    WHERE %(invite_id)s::text IS NULL OR mi.invite_id = %(invite_id)s
                     ORDER BY mi.created_at DESC
-                    """
+                    """,
+                    {"invite_id": invite_id},
                 )
                 rows = list(cursor.fetchall())
 
         # 조직은 초대가 가리키는 팀(`team_org_id`)이지 사람의 현재 소속이 아니다.
         return _attach_person_display(rows, org_key="org_id")
+
+    @staticmethod
+    def get(invite_id: str) -> dict[str, Any]:
+        """초대 한 건. 상세 화면이 쓴다.
+
+        목록과 **같은 SQL 을 쓴다** — 만료 판정(`PENDING` 인데 기한이 지났으면
+        `EXPIRED`)과 중복 연결 판정이 두 벌이 되면 언젠가 한쪽만 고쳐진다.
+        """
+
+        rows = OpsInviteRepository.list(invite_id=invite_id)
+        if not rows:
+            raise RecordNotFound(f"존재하지 않는 초대입니다: {invite_id}")
+        return rows[0]
 
     @staticmethod
     def discard(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:

@@ -24,6 +24,18 @@ class InviteListView(AdminView):
         return Response(rows)
 
 
+class InviteDetailView(AdminView):
+    """초대 한 건. 상세가 별도 페이지가 되면서 생긴 경로다."""
+
+    def get(self, request, invite_id):
+        try:
+            row = OpsInviteRepository.get(invite_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+        # 목록과 같은 모양으로 돌려준다 — 여기만 다른 표현을 쓰면 화면 둘이 어긋난다.
+        return Response(row)
+
+
 class InviteDiscardView(AdminView):
     def post(self, request, invite_id):
         try:

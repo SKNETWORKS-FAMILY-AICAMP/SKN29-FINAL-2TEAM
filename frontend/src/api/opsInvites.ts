@@ -37,3 +37,8 @@ export function unlinkInvite(token: string, inviteId: string) {
     { method: 'POST', token },
   );
 }
+
+/** 초대 한 건. 상세 페이지가 주소로 바로 들어올 수 있어야 해서 필요하다. */
+export function fetchInvite(token: string, inviteId: string) {
+  return opsRequest<OpsInvite>(`/ops/invites/${inviteId}/`, { token });
+}

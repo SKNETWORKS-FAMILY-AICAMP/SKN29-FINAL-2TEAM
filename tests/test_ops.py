@@ -468,3 +468,43 @@ class OpsAccountDetailTests(SimpleTestCase):
         self.assertEqual(resolve("/api/ops/accounts/UA001/").url_name, "api_ops_account_detail")
         self.assertEqual(resolve("/api/ops/accounts/UA001/lock/").url_name, "api_ops_account_lock")
         self.assertEqual(resolve("/api/ops/accounts/UA001/admin/").url_name, "api_ops_account_admin")
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.invites.OpsInviteRepository")
+class OpsInviteDetailTests(SimpleTestCase):
+    """초대 상세도 별도 페이지가 되면서 한 건을 줄 자리가 필요해졌다."""
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_한_건을_준다(self, repo, _admin):
+        repo.get.return_value = {
+            "invite_id": "IV001", "person_id": "PE001", "person_name": "홍길동",
+            "person_email": "a@b.c", "org_id": "A001", "org_name": "개발본부",
+            "invited_by": "UA001", "inviter_email": "x@y.z", "status": "PENDING",
+            "expires_at": None, "accepted_at": None, "created_at": None,
+            "linked_account_id": None, "linked_account_email": None,
+            "linked_account_duplicate": False,
+        }
+
+        response = self.client.get("/api/ops/invites/IV001/", **self._headers())
+
+        self.assertEqual(response.status_code, 200)
+        repo.get.assert_called_once_with("IV001")
+
+    def test_없는_초대는_404(self, repo, _admin):
+        from backend.db.errors import RecordNotFound
+
+        repo.get.side_effect = RecordNotFound("존재하지 않는 초대입니다: IV999")
+
+        response = self.client.get("/api/ops/invites/IV999/", **self._headers())
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_상세_경로가_조치_경로를_먹지_않는다(self, repo, _admin):
+        from django.urls import resolve
+
+        self.assertEqual(resolve("/api/ops/invites/IV001/").url_name, "api_ops_invite_detail")
+        self.assertEqual(resolve("/api/ops/invites/IV001/discard/").url_name, "api_ops_invite_discard")
+        self.assertEqual(resolve("/api/ops/invites/IV001/unlink/").url_name, "api_ops_invite_unlink")
