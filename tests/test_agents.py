@@ -275,56 +275,36 @@ class MainModelApiTests(SimpleTestCase):
         self.assertEqual(self.client.get("/api/agents/main-model/").status_code, 401)
 
 
-@patch("apps.agents.api_views._verify_model_key", return_value=None)
 @patch("apps.agents.api_views.CustomModelRepository")
 class CustomModelApiTests(SimpleTestCase):
-    """팀이 직접 등록하는 모델 API."""
+    """팀에 붙어 있는 모델 API — **읽기 전용이다.**
 
-    BODY = {
-        "label": "Google Gemini",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "api_key": "AIza-x",
-        "model": "models/gemini-3.6-flash",
-    }
+    붙이고 떼는 것은 운영자 콘솔이 한다(2026-08-13 멘토링). 화면에서만 감추면
+    규칙이 아니라서, **쓰기 메서드가 API 에 남아 있지 않은지**를 여기서 지킨다.
+    """
 
-    def test_등록한다(self, customs, _verify):
-        customs.list_for_account.return_value = []
+    def test_목록을_준다(self, customs):
+        customs.list_for_account.return_value = [
+            {"conn_id": "CN002", "label": "Google Gemini", "base_url": "https://x/v1",
+             "model": "models/gemini-3.6-flash", "connected_at": None}
+        ]
 
-        response = self.client.post(
-            "/api/agents/custom-models/", self.BODY, content_type="application/json", headers=auth_header()
+        response = self.client.get("/api/agents/custom-models/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["model"], "models/gemini-3.6-flash")
+
+    def test_팀은_붙이거나_뗄_수_없다(self, customs):
+        """셀프서비스 경로를 없앤 것이 UI 뿐이면 API 를 그대로 부를 수 있다."""
+
+        post = self.client.post(
+            "/api/agents/custom-models/", {}, content_type="application/json", headers=auth_header()
         )
+        delete = self.client.delete("/api/agents/custom-models/", headers=auth_header())
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(customs.add.call_args.kwargs["model"], "models/gemini-3.6-flash")
-
-    def test_같은_모델_이름을_두_번_등록하지_못한다(self, customs, verify):
-        """**경로가 모델 이름 하나로 정해진다**(`for_model`).
-
-        이름이 겹치면 실행은 먼저 등록한 것으로 고정되는데 화면에는 출처가 달라
-        둘로 보인다 — 회사 키를 골랐는데 개인 키로 도는 일이 조용히 난다.
-        키를 나누려고 만든 기능이 바로 그 지점에서 깨진다.
-        """
-
-        customs.list_for_account.return_value = [{"model": "models/gemini-3.6-flash"}]
-
-        response = self.client.post(
-            "/api/agents/custom-models/", self.BODY, content_type="application/json", headers=auth_header()
-        )
-
-        self.assertEqual(response.status_code, 400)
-        customs.add.assert_not_called()
-        verify.assert_not_called()
-
-    def test_기본_제공_이름은_거절한다(self, customs, _verify):
-        response = self.client.post(
-            "/api/agents/custom-models/",
-            {**self.BODY, "model": "gpt-5.6-luna"},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(post.status_code, 405)
+        self.assertEqual(delete.status_code, 405)
         customs.add.assert_not_called()
 
-    def test_로그인_없이는_401(self, _customs, _verify):
+    def test_로그인_없이는_401(self, _customs):
         self.assertEqual(self.client.get("/api/agents/custom-models/").status_code, 401)

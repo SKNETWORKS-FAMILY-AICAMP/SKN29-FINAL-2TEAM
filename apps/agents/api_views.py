@@ -30,7 +30,6 @@ from .serializers import (
     BuilderInstructionRecheckSerializer,
     BuilderTestRunSerializer,
     BuilderToolCheckSerializer,
-    CustomModelSerializer,
     MainModelSerializer,
     agent_response,
     builder_check_response,
@@ -205,10 +204,17 @@ class MainModelAPIView(AuthenticatedAPIView):
 
 
 class CustomModelAPIView(AuthenticatedAPIView):
-    """팀이 직접 등록한 모델 API 목록.
+    """이 팀에 붙어 있는 모델 API. **읽기 전용이다.**
 
-    **키는 절대 돌려주지 않는다.** 이름·주소·모델만 준다 — 화면에 다시 보여줄
-    이유가 없고, 보여주면 그 화면이 유출 경로가 된다(MCP 토큰과 같은 규칙).
+    붙이고 떼는 것은 운영자 콘솔(`/api/ops/models/`)이 한다 — 회사가 요청하면
+    우리가 붙인다(2026-08-13 멘토링). 예전에는 여기에 POST·DELETE 와 모델 목록
+    조회(probe)가 있었는데 함께 걷어냈다. **화면에서만 감추면 규칙이 아니다** —
+    쓰기 경로가 API 에 남아 있으면 그대로 부를 수 있다.
+
+    팀이 목록은 봐야 한다. 지금 우리 팀이 무엇으로 도는지 아는 것과, 그것을 바꿀
+    수 있는 것은 다른 이야기다.
+
+    **키는 절대 돌려주지 않는다.** 이름·주소·모델만 준다.
     """
 
     def get(self, request):
@@ -216,116 +222,6 @@ class CustomModelAPIView(AuthenticatedAPIView):
             return Response(CustomModelRepository.list_for_account(request.user.account_id))
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-
-    def post(self, request):
-        serializer = CustomModelSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        # **같은 팀에 같은 모델 이름을 두 번 두지 않는다.** serializer 는 기본 제공
-        # 이름만 막는다 — 팀이 이미 뭘 등록했는지는 여기서만 안다.
-        #
-        # 경로가 모델 이름 하나로 정해지므로(`for_model`), 이름이 겹치면 실행은
-        # **먼저 등록한 것으로 고정된다**. 화면에는 출처가 달라 둘로 보이니, 회사
-        # 키를 골랐는데 개인 키로 도는 일이 조용히 난다. 키를 나누려고 만든 기능이
-        # 바로 그 지점에서 깨진다.
-        try:
-            taken = {row["model"] for row in CustomModelRepository.list_for_account(request.user.account_id)}
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        if data["model"] in taken:
-            return Response(
-                {"detail": f"{data['model']} 은 이미 등록돼 있습니다. 지우고 다시 등록하세요."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # **저장 전에 한 번 써 본다.** 안 되는 것을 받아 두면 그 팀의 대화가
-        # 조용히 실패하고, 사람은 저장이 됐으니 맞다고 믿는다.
-        error = _verify_model_key(data["api_key"], data["base_url"], data["model"])
-        if error:
-            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            CustomModelRepository.add(
-                account_id=request.user.account_id,
-                label=data["label"],
-                base_url=data["base_url"],
-                api_key=data["api_key"],
-                model=data["model"],
-            )
-            return Response(
-                CustomModelRepository.list_for_account(request.user.account_id),
-                status=status.HTTP_201_CREATED,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-    def delete(self, request):
-        conn_id = request.query_params.get("conn_id") or ""
-        try:
-            CustomModelRepository.remove(account_id=request.user.account_id, conn_id=conn_id)
-            return Response(CustomModelRepository.list_for_account(request.user.account_id))
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-
-class CustomModelProbeAPIView(AuthenticatedAPIView):
-    """주소와 키를 주면 **그 엔드포인트가 가진 모델 목록**을 돌려준다.
-
-    사람이 모델 이름을 외워 적게 하지 않는다. 다만 목록을 안 주는 구현도 흔해서
-    (Anthropic 호환 경로는 401 이다) 실패하면 빈 목록과 이유를 준다 — 그때는
-    화면이 직접 입력을 받는다.
-    """
-
-    def post(self, request):
-        base_url = (request.data.get("base_url") or "").strip()
-        api_key = (request.data.get("api_key") or "").strip()
-        if not base_url or not api_key:
-            return Response({"detail": "주소와 키가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=api_key, base_url=base_url, timeout=20, max_retries=0)
-            names = sorted(item.id for item in client.models.list().data)
-        except Exception as exc:  # noqa: BLE001 - 어떤 실패든 「여기서는 못 고른다」다
-            logger.info("모델 목록 조회 실패: %s", type(exc).__name__)
-            return Response(
-                {
-                    "models": [],
-                    # **이름을 직접 적게 하지 않는다.** 외워 적게 하면 오타 하나가
-                    # 실행 시점 404 가 되고, 그건 「코딩 없이」를 내세운 제품이
-                    # 사용자에게 떠넘기는 일이다(2026-08-12 PM 지적).
-                    "detail": "이 주소에서 모델 목록을 받지 못했습니다. 주소와 키를 확인해 주세요.",
-                }
-            )
-        if not names:
-            return Response({"models": [], "detail": "이 주소가 쓸 수 있는 모델을 알려주지 않았습니다."})
-        return Response({"models": names, "detail": None})
-
-
-def _verify_model_key(api_key: str, base_url: str = "", model: str = "") -> str | None:
-    """실제로 부를 수 있는가. 되면 `None`, 아니면 사람에게 보여줄 이유.
-
-    주소를 직접 넣은 경우에는 **그 모델로 한 번 답을 받아 본다** — 목록 조회만
-    되고 호출은 안 되는 엔드포인트가 흔하다.
-    """
-
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=api_key, base_url=base_url or None, timeout=25, max_retries=0)
-        if base_url:
-            client.chat.completions.create(
-                model=model, messages=[{"role": "user", "content": "hi"}]
-            )
-        else:
-            client.models.list()
-    except Exception as exc:  # noqa: BLE001 - 어떤 실패든 「이걸로는 못 부른다」다
-        logger.warning("모델 키 확인 실패: %s", type(exc).__name__)
-        if base_url:
-            return "이 주소와 모델로 답을 받지 못했습니다. 주소·키·모델 이름을 확인해 주세요."
-        return "이 키로 모델을 부르지 못했습니다. 키가 맞는지, 결제가 설정돼 있는지 확인해 주세요."
-    return None
 
 
 def _tool_catalog(account_id: str) -> dict[str, dict]:

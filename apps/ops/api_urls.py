@@ -11,6 +11,7 @@ from .views.audit import (
 from .views.connectors import ConnectorListView
 from .views.invites import InviteDiscardView, InviteListView, InviteUnlinkView
 from .views.login import LoginView, LogoutView, MeView
+from .views.models import ModelDetailView, ModelListCreateView
 from .views.teams import TeamsView
 from .views.overview import OverviewView
 from .views.policies import InviteTtlView, NoticeDetailView, NoticeListCreateView, PolicyChangeListView
@@ -33,6 +34,8 @@ urlpatterns = [
     path("invites/<str:invite_id>/discard/", InviteDiscardView.as_view(), name="api_ops_invite_discard"),
     path("invites/<str:invite_id>/unlink/", InviteUnlinkView.as_view(), name="api_ops_invite_unlink"),
     path("connectors/", ConnectorListView.as_view(), name="api_ops_connector_list"),
+    path("models/", ModelListCreateView.as_view(), name="api_ops_model_list"),
+    path("models/<str:conn_id>/", ModelDetailView.as_view(), name="api_ops_model_detail"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
     path("audit/assignment-runs/", AssignmentRunLogView.as_view(), name="api_ops_audit_assignment_runs"),
     path("audit/recommendations/", RecommendationLogView.as_view(), name="api_ops_audit_recommendations"),

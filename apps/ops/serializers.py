@@ -140,3 +140,40 @@ def policy_change_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "actor_email": row["actor_email"],
         "occurred_at": row["occurred_at"],
     }
+
+
+class OpsModelAttachSerializer(serializers.Serializer):
+    """운영자가 팀에 모델을 붙일 때 받는 값.
+
+    `AGENT_MODELS` 와 겹치는 이름은 거절한다 — 경로가 모델 이름으로 정해지므로
+    기본 제공과 이름이 같으면 그 선택이 뜻을 잃는다.
+    """
+
+    team_id = serializers.CharField(max_length=5)
+    label = serializers.CharField(max_length=60, trim_whitespace=True)
+    base_url = serializers.URLField(max_length=300)
+    api_key = serializers.CharField(max_length=200, trim_whitespace=True)
+    model = serializers.CharField(max_length=100, trim_whitespace=True)
+
+    def validate_model(self, value):
+        from apps.agents.serializers import AGENT_MODELS
+
+        if value in AGENT_MODELS:
+            raise serializers.ValidationError(
+                f"{value} 는 이미 기본 제공하는 모델입니다. 다른 모델을 고르세요."
+            )
+        return value
+
+
+def ops_model_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    """**키는 절대 안 나간다.** 운영자 콘솔도 예외가 아니다."""
+
+    return {
+        "conn_id": row["conn_id"],
+        "team_id": row["team_id"],
+        "team_name": row["team_name"],
+        "label": row["label"],
+        "base_url": row["base_url"],
+        "model": row["model"],
+        "connected_at": row["connected_at"],
+    }

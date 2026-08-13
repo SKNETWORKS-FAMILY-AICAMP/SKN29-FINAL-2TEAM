@@ -248,10 +248,81 @@ class CustomModelRepository:
         return None
 
     @staticmethod
-    def add(*, account_id: str, label: str, base_url: str, api_key: str, model: str) -> None:
+    def list_all() -> list[dict[str, Any]]:
+        """모든 팀의 등록분. **운영자 콘솔만 쓴다** — 팀은 자기 것만 본다.
+
+        **키는 여기서도 안 나간다.** 붙인 사람이 운영자여도 마찬가지다.
+        """
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT c.conn_id, c.connected_at, c.encrypted_credential_ref,
+                           u.team_id, t.name AS team_name
+                    FROM connector_conn AS c
+                    JOIN user_account AS u ON u.account_id = c.account_id
+                    LEFT JOIN team AS t ON t.team_id = u.team_id
+                    WHERE c.connector_type = %s
+                    ORDER BY u.team_id, c.connected_at
+                    """,
+                    (CustomModelRepository.TYPE,),
+                )
+                rows = []
+                for row in cursor.fetchall():
+                    payload = (
+                        decrypt_credential(row["encrypted_credential_ref"])
+                        if row["encrypted_credential_ref"]
+                        else {}
+                    )
+                    rows.append(
+                        {
+                            "conn_id": row["conn_id"],
+                            "team_id": row["team_id"],
+                            "team_name": row["team_name"],
+                            "label": payload.get("label") or payload.get("base_url") or "",
+                            "base_url": payload.get("base_url") or "",
+                            "model": payload.get("model") or "",
+                            "connected_at": row["connected_at"],
+                        }
+                    )
+                return rows
+
+    @staticmethod
+    def models_for_team(team_id: str) -> set[str]:
+        """이 팀에 이미 붙어 있는 모델 이름. 중복 등록을 막는 쪽이 쓴다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                return {
+                    row["payload"].get("model")
+                    for row in CustomModelRepository._rows(cursor, team_id)
+                }
+
+    @staticmethod
+    def add_for_team(
+        *, team_id: str, label: str, base_url: str, api_key: str, model: str, attached_by: str
+    ) -> None:
+        """운영자가 **그 팀에** 붙인다.
+
+        `connector_conn` 에는 팀 칸이 없고 소속은 `user_account.team_id` 로만
+        나온다. 그래서 **그 팀의 팀장 계정에** 매단다 — 운영자 자기 계정에 매달면
+        운영자의 팀(대개 없다)에 붙어 정작 그 팀에서는 안 보인다.
+
+        스키마에 `team_id` 를 새로 다는 방법도 있지만, 컬럼 하나 때문에 팀원
+        전원이 ALTER 를 돌려야 한다(메인 모델을 정문 에이전트의 칸에 둔 것과 같은
+        판단이다). 대신 **누가 붙였는지는 payload 에 남긴다** — 소유 계정만 보면
+        팀장이 직접 등록한 것처럼 보이기 때문이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT owner_account_id FROM team WHERE team_id = %s", (team_id,)
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"없는 팀입니다: {team_id}")
                 conn_id = next_short_code(
                     cursor, table="connector_conn", column="conn_id", prefix="CN"
                 )
@@ -263,24 +334,35 @@ class CustomModelRepository:
                     """,
                     (
                         conn_id,
-                        account_id,
+                        row["owner_account_id"],
                         CustomModelRepository.TYPE,
                         encrypt_credential(
-                            {"label": label, "base_url": base_url, "api_key": api_key, "model": model}
+                            {
+                                "label": label,
+                                "base_url": base_url,
+                                "api_key": api_key,
+                                "model": model,
+                                "attached_by": attached_by,
+                            }
                         ),
                     ),
                 )
 
     @staticmethod
-    def remove(*, account_id: str, conn_id: str) -> None:
+    def remove_by_conn_id(conn_id: str) -> None:
+        """운영자용 삭제. **팀 경계를 안 본다** — 콘솔은 모든 팀을 다루는 자리다.
+
+        팀 쪽 삭제 경로는 없다(등록이 운영자 몫이라 삭제도 그렇다).
+        """
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                # 같은 팀 것만 지운다. conn_id 만 믿으면 남의 팀 것을 지울 수 있다.
-                allowed = {row["conn_id"] for row in CustomModelRepository._rows(cursor, team_id)}
-                if conn_id not in allowed:
+                cursor.execute(
+                    "DELETE FROM connector_conn WHERE conn_id = %s AND connector_type = %s",
+                    (conn_id, CustomModelRepository.TYPE),
+                )
+                if cursor.rowcount == 0:
                     raise RecordNotFound(f"등록되지 않은 모델 API 입니다: {conn_id}")
-                cursor.execute("DELETE FROM connector_conn WHERE conn_id = %s", (conn_id,))
 
 
 class AgentRunRepository:

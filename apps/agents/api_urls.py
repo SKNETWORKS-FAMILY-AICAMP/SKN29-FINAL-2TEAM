@@ -11,7 +11,6 @@ from .api_views import (
     AgentListCreateAPIView,
     AgentToolCatalogAPIView,
     CustomModelAPIView,
-    CustomModelProbeAPIView,
     MainModelAPIView,
 )
 
@@ -23,7 +22,6 @@ urlpatterns = [
     path("tools/", AgentToolCatalogAPIView.as_view(), name="api_agent_tools"),
     path("main-model/", MainModelAPIView.as_view(), name="api_agent_main_model"),
     path("custom-models/", CustomModelAPIView.as_view(), name="api_custom_models"),
-    path("custom-models/probe/", CustomModelProbeAPIView.as_view(), name="api_custom_models_probe"),
     path("build/check/", AgentBuilderCheckAPIView.as_view(), name="api_agent_builder_check"),
     path(
         "build/recheck-instruction/",

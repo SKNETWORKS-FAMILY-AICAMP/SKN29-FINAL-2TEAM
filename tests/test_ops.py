@@ -68,3 +68,97 @@ class OpsAuthenticationTests(SimpleTestCase):
         response = self.client.get(OVERVIEW_URL)
 
         self.assertEqual(response.status_code, 401)
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.models.log_audit")
+@patch("apps.ops.views.models.CustomModelRepository")
+class OpsModelAttachTests(SimpleTestCase):
+    """팀별 모델 부착 — **팀이 스스로 붙이지 않는다**(2026-08-13 멘토링).
+
+    권한 범위는 여전히 팀이다. 붙이는 사람만 운영자로 바뀐다.
+    """
+
+    URL = "/api/ops/models/"
+    BODY = {
+        "team_id": "TE001",
+        "label": "Google Gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "api_key": "AIza-x",
+        "model": "models/gemini-3.6-flash",
+    }
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    @patch("apps.ops.views.models._verify", return_value=None)
+    def test_그_팀에_붙인다(self, _verify, repo, _audit, _admin):
+        repo.models_for_team.return_value = set()
+        repo.list_all.return_value = []
+
+        response = self.client.post(
+            self.URL, self.BODY, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 201)
+        kwargs = repo.add_for_team.call_args.kwargs
+        self.assertEqual(kwargs["team_id"], "TE001")
+        # 붙인 사람이 남아야 소유 계정만 보고 팀장이 등록한 것으로 오해하지 않는다.
+        self.assertEqual(kwargs["attached_by"], "UA001")
+
+    @patch("apps.ops.views.models._verify", return_value=None)
+    def test_같은_팀에_같은_모델을_두_번_붙이지_않는다(self, _verify, repo, _audit, _admin):
+        repo.models_for_team.return_value = {"models/gemini-3.6-flash"}
+
+        response = self.client.post(
+            self.URL, self.BODY, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.add_for_team.assert_not_called()
+
+    @patch("apps.ops.views.models._verify", return_value="이 주소와 모델로 답을 받지 못했습니다.")
+    def test_안_도는_주소는_붙이지_않는다(self, _verify, repo, _audit, _admin):
+        """붙여 두면 그 팀의 대화가 조용히 실패하고, 팀은 운영자가 붙였으니 되는 줄 안다."""
+
+        repo.models_for_team.return_value = set()
+
+        response = self.client.post(
+            self.URL, self.BODY, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.add_for_team.assert_not_called()
+
+    def test_기본_제공_이름은_거절한다(self, repo, _audit, _admin):
+        response = self.client.post(
+            self.URL,
+            {**self.BODY, "model": "gpt-5.6-luna"},
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.add_for_team.assert_not_called()
+
+    def test_키는_목록에_안_나온다(self, repo, _audit, _admin):
+        repo.list_all.return_value = [
+            {
+                "conn_id": "CN002", "team_id": "TE001", "team_name": "개발팀",
+                "label": "Google Gemini", "base_url": "https://x/v1",
+                "model": "models/gemini-3.6-flash", "connected_at": None,
+            }
+        ]
+
+        body = self.client.get(self.URL, **self._headers()).json()
+
+        self.assertNotIn("api_key", body[0])
+        self.assertEqual(body[0]["team_name"], "개발팀")
+
+    def test_운영자가_아니면_못_본다(self, repo, _audit, _admin):
+        token = account_tokens.issue_token("UA001")
+
+        response = self.client.get(self.URL, HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.assertEqual(response.status_code, 401)
+        repo.list_all.assert_not_called()

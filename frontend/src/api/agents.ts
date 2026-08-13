@@ -136,29 +136,6 @@ export function listCustomModels(token: string) {
   return apiRequest<CustomModel[]>('/agents/custom-models/', { token });
 }
 
-export function addCustomModel(
-  token: string,
-  body: { label: string; base_url: string; api_key: string; model: string },
-) {
-  return apiRequest<CustomModel[]>('/agents/custom-models/', { method: 'POST', token, body });
-}
-
-export function removeCustomModel(token: string, connId: string) {
-  return apiRequest<CustomModel[]>(`/agents/custom-models/?conn_id=${connId}`, {
-    method: 'DELETE',
-    token,
-  });
-}
-
-/** 주소·키를 주면 그 엔드포인트가 가진 모델 이름을 돌려준다. 못 주면 빈 목록. */
-export function probeCustomModels(token: string, baseUrl: string, apiKey: string) {
-  return apiRequest<{ models: string[]; detail: string | null }>('/agents/custom-models/probe/', {
-    method: 'POST',
-    token,
-    body: { base_url: baseUrl, api_key: apiKey },
-  });
-}
-
 /**
  * 저장하지 않은 설정을 그 자리에서 한 번 실행해 본 이벤트.
  *

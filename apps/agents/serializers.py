@@ -41,37 +41,6 @@ class MainModelSerializer(serializers.Serializer):
     model = serializers.CharField(max_length=100, trim_whitespace=True)
 
 
-class CustomModelSerializer(serializers.Serializer):
-    """팀이 직접 등록하는 모델 API.
-
-    `base_url` 은 OpenAI 호환 경로(`/chat/completions`)여야 한다 —
-    OpenRouter·Groq·Together·Azure·사내 vLLM 이 전부 그 모양이다. 모델 이름은
-    우리가 알 수 없으므로 함께 받는다.
-    """
-
-    label = serializers.CharField(max_length=60, trim_whitespace=True)
-    base_url = serializers.URLField(max_length=300)
-    api_key = serializers.CharField(max_length=200, trim_whitespace=True)
-    model = serializers.CharField(max_length=100, trim_whitespace=True)
-
-    def validate_model(self, value):
-        """**이미 제공하는 이름은 못 쓴다.**
-
-        같은 이름이 들어오면 메인 모델 표에 같은 줄이 둘 생기고, 어느 경로로
-        도는지 사람이 알 수 없다. 경로는 모델 이름 하나로 정해지므로 이름이
-        겹치는 순간 그 선택은 뜻을 잃는다(2026-08-12 PM 지적).
-
-        **그 팀이 이미 등록한 이름과 겹치는지는 여기서 못 본다** — serializer 는
-        팀을 모른다. 그쪽은 `CustomModelAPIView.post` 가 본다.
-        """
-
-        if value in AGENT_MODELS:
-            raise serializers.ValidationError(
-                f"{value} 는 이미 기본 제공하는 모델입니다. 다른 모델을 고르세요."
-            )
-        return value
-
-
 class AgentWriteSerializer(serializers.Serializer):
     """생성·수정 공통.
 
