@@ -75,16 +75,6 @@ export interface DriveFolder {
   modified_at: string | null;
 }
 
-export interface JiraProject {
-  project_key: string;
-  project_id: string | null;
-  name: string;
-  description: string | null;
-  project_type: string | null;
-  lead_name: string | null;
-  avatar_url: string | null;
-}
-
 /**
  * `parentId` 바로 아래의 폴더. 한 단계씩 내려가며 탐색한다. Drive 전체를 한 번에
  * 받으면 무관한 폴더에 묻히기 때문이다. 미연결이면 404, 재연결이 필요하면 502.
@@ -131,7 +121,3 @@ export function getDriveFolders(token: string, folderIds: string[]) {
   );
 }
 
-/** 연결된 Jira 사이트의 프로젝트. 미연결이면 404, 재연결이 필요하면 502. */
-export function listJiraProjects(token: string) {
-  return apiRequest<JiraProject[]>('/connectors/jira/projects/', { token });
-}

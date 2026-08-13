@@ -1,7 +1,6 @@
 import { API_BASE_URL, ApiError, apiRequest, parseErrorBody } from './client';
 
 /** `proj_source.source_type`. */
-export type ProjectSourceType = 'DRIVE_FOLDER' | 'JIRA_PROJECT';
 
 /** 공수 기준 진행률. Jira를 한 번도 안 읽었으면 프로젝트에 아예 없다. */
 export interface ProjectProgress {
@@ -35,24 +34,6 @@ export interface Project {
   last_sync_at: string | null;
   /** false면 읽을 Jira 소스가 없다는 뜻이라 갱신 버튼을 줄 이유가 없다. */
   has_jira_source: boolean;
-}
-
-export interface ProjectSource {
-  proj_source_id: string;
-  proj_id: string;
-  conn_id: string;
-  source_type: ProjectSourceType;
-  /** Drive 폴더 id 또는 Jira 프로젝트 키. */
-  external_source_id: string;
-  /** 원본이 알려준 이름(`SKN29_Final_2Team`). 예전에 저장한 소스는 null이고 화면이 키로 대체한다. */
-  display_name: string | null;
-  sync_status: string;
-  /** 이 소스를 마지막으로 읽어들인 시각. 한 번도 안 읽었으면 null. */
-  last_sync_at: string | null;
-  /** 이 폴더의 기본 문서 역할. 안의 파일이 물려받는다. Jira 소스는 null. */
-  default_doc_role: string | null;
-  /** 폴더 탐색 깊이. 1이면 선택한 폴더만, null이면 제한 없음. Jira 소스는 null. */
-  max_depth: number | null;
 }
 
 /** 내가 소유한 프로젝트. */
@@ -183,11 +164,6 @@ export function deleteProject(token: string, projId: string) {
   return apiRequest<ProjectDeleteResult>(`/projects/${projId}/`, { method: 'DELETE', token });
 }
 
-/** 이 프로젝트가 대응하는 Jira 프로젝트. 1:1이라 0개 아니면 1개다. */
-export function listProjectSources(token: string, projId: string) {
-  return apiRequest<ProjectSource[]>(`/projects/${projId}/sources/`, { token });
-}
-
 /** 팀이 읽어들일 Drive 폴더. **프로젝트가 아니라 팀에 매달린다.** */
 export interface TeamFolder {
   team_folder_id: string;
@@ -246,25 +222,6 @@ export interface RegisteredJiraProject {
 
 export function listRegisteredJiraProjects(token: string) {
   return apiRequest<RegisteredJiraProject[]>('/projects/jira/', { token });
-}
-
-export interface JiraRegisterResult {
-  sources: RegisteredJiraProject[];
-  /** 읽어 보니 이미 끝나 있어 완료 구획에서 시작한 프로젝트. */
-  archived: string[];
-  /** 등록은 됐지만 이슈를 못 읽은 것. 화면에서 「갱신」으로 다시 시도할 수 있다. */
-  failed: { project_key: string; detail: string }[];
-}
-
-export function registerJiraProjects(
-  token: string,
-  projects: { project_key: string; name?: string }[],
-) {
-  return apiRequest<JiraRegisterResult>('/projects/jira/', {
-    method: 'PUT',
-    token,
-    body: { projects },
-  });
 }
 
 export interface TeamDocument {
