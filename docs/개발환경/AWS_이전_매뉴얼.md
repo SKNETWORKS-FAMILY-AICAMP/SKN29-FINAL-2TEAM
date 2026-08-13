@@ -27,7 +27,7 @@ RDS PostgreSQL       S3
 
 이번 범위에서는 ECS, ALB, CloudFront, SQS, 별도 Vector DB, Terraform, CI/CD는 사용하지 않는다.
 
-### 결정 — 도메인을 산다 (2026-08-13)
+### 결정 — 도메인을 산다 (2026-08-13) · **어느 도메인일지는 미정**
 
 **공인 IP + HTTP 로는 막히는 것이 셋이다.** 도메인과 https 를 붙여 한 번에 푼다.
 
