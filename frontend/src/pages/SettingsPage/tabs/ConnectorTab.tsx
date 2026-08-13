@@ -169,6 +169,26 @@ export function ConnectorTab() {
     }
   }
 
+  /**
+   * 지금 몇 개를 읽고 있는가. **문장이 아니라 뱃지다.**
+   *
+   * 「문서 폴더 1개를 읽습니다」·「프로젝트 3개를 읽습니다 · 팀 부하 계산용」처럼
+   * 적어 두었더니, 실제로 전하는 것은 숫자 하나인데 줄이 문장으로 길어졌다
+   * (2026-08-13 PM 지적). 상태 뱃지 옆에 같은 모양으로 붙인다.
+   *
+   * 확인 중이면 아무것도 안 그린다 — 「확인하는 중…」은 곧 사라질 상태이고,
+   * 그 한 줄 때문에 줄 높이가 흔들린다. 0 은 숨기지 않는다. **읽을 것이 없다는
+   * 사실이 그 자리에서 제일 중요한 정보**라 오히려 눈에 띄어야 한다.
+   */
+  function countBadge(count: number | null, label: string) {
+    if (count === null) return null;
+    return (
+      <Badge tone={count === 0 ? 'warning' : 'neutral'}>
+        {label} {count}
+      </Badge>
+    );
+  }
+
   function statusBadge(type: ConnectorType) {
     const value = status[type];
     return (
@@ -261,18 +281,9 @@ export function ConnectorTab() {
               <span className={styles.rowName}>
                 문서 저장소
                 {statusBadge('GOOGLE_DRIVE')}
+                {driveConnected && countBadge(folderCount, '폴더')}
               </span>
               {driveConnected && <span className={styles.rowVendor}>Google Drive</span>}
-              {/* 남는 것은 **설명이 아니라 실제 상태**다 — 지금 몇 개를 읽고 있는가. */}
-              {driveConnected && (
-                <span className={styles.rowDesc}>
-                  {folderCount === null
-                    ? '읽는 폴더를 확인하는 중…'
-                    : folderCount === 0
-                      ? '읽는 폴더가 아직 없습니다 — 폴더를 지정해야 문서가 들어옵니다'
-                      : `문서 폴더 ${folderCount}개를 읽습니다`}
-                </span>
-              )}
             </div>
             <div className={styles.rowActions}>
               {driveConnected && (
@@ -303,13 +314,9 @@ export function ConnectorTab() {
               <span className={styles.rowName}>
                 업무 기록소
                 {statusBadge('JIRA')}
+                {jiraConnected && countBadge(jiraProjectCount, '프로젝트')}
               </span>
               {jiraConnected && <span className={styles.rowVendor}>Jira</span>}
-              {jiraConnected && jiraProjectCount !== null && (
-                <span className={styles.rowDesc}>
-                  프로젝트 {jiraProjectCount}개를 읽습니다 · 팀 부하 계산용
-                </span>
-              )}
             </div>
             <div className={styles.rowActions}>
               <Button

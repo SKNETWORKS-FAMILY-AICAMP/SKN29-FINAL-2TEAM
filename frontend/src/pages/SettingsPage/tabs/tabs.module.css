@@ -109,12 +109,6 @@
   color: var(--color-heading);
 }
 
-.rowDesc {
-  font-size: 12px;
-  color: var(--color-muted);
-  line-height: 1.5;
-}
-
 /**
  * 필수 표시. **문장으로 쓰지 않는다.**
  *
