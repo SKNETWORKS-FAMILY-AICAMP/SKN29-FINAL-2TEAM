@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
+from apps.accounts.permissions import require_leader
 from backend.db import AccountRepository
 from backend.db.agent_platform import AgentCrudRepository, AgentRepository, CustomModelRepository
 from backend.db.errors import (
@@ -167,6 +168,11 @@ class AgentToolCatalogAPIView(AuthenticatedAPIView):
         return Response(builtin_tool_response() + mcp_tool_response(mcp))
 
 
+#: 메인 모델은 **팀이 한 번 정하는 값**이라(아래 docstring) 한 사람이 바꾸면 팀
+#: 전체의 대화가 그 모델로 돈다. 커넥터 연결과 같은 무게다.
+MAIN_MODEL_LEADER_ONLY = "팀장만 팀 메인 모델을 바꿀 수 있습니다."
+
+
 class MainModelAPIView(AuthenticatedAPIView):
     """이 팀의 **메인 모델** — 오케스트레이션하는 정문 에이전트가 쓰는 모델.
 
@@ -188,6 +194,10 @@ class MainModelAPIView(AuthenticatedAPIView):
         return Response({"model": row["model"] if row else None, "agent_name": row["name"] if row else None})
 
     def put(self, request):
+        # 조회는 팀원도 한다 — 무엇으로 도는지는 알아야 한다. 막는 것은 바꾸는 쪽이다.
+        if denied := require_leader(request.user.account_id, MAIN_MODEL_LEADER_ONLY):
+            return denied
+
         serializer = MainModelSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         model = serializer.validated_data["model"]

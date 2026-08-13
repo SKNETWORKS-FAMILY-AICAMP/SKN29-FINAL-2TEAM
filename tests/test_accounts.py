@@ -694,6 +694,7 @@ class LeaderOnlyGuardTests(SimpleTestCase):
         ("/api/mcp/servers/MS001/", "patch", {"name": "x", "endpoint_url": "https://example.com/mcp"}),
         ("/api/mcp/servers/MS001/test/", "post", {}),
         ("/api/team/folders/", "put", {"conn_id": "CN003", "folders": []}),
+        ("/api/agents/main-model/", "put", {"model": "gpt-5.6-luna"}),
     ]
 
     def _call(self, url, method, body):
