@@ -1,5 +1,13 @@
 import { opsRequest } from './opsClient';
 
+/**
+ * 감사 로그 — **운영 활동 하나뿐이다.**
+ *
+ * 「분석·결정 기록」 탭 4종(배정 실행·추천 결과·검증 결과·PM 결정)이 있었고
+ * 넷 다 항상 0건이었다. 그 테이블에 쓰는 추천 파이프라인이 이 저장소에 없고,
+ * 제품이 업무 배정 추천에서 물러나면서 앞으로도 생기지 않는다 — 화면·API·SQL을
+ * 함께 걷었다(2026-08-13). 파이프라인이 다시 생기면 git 이력에서 되살리면 된다.
+ */
 export interface OpsOperationLog {
   audit_id: string;
   actor_account_id: string;
@@ -13,73 +21,6 @@ export interface OpsOperationLog {
   occurred_at: string;
 }
 
-export interface OpsAssignmentRun {
-  run_id: string;
-  snapshot_id: string;
-  proj_id: string | null;
-  /** 스냅샷을 뜬 시각. `assign_run`에는 시각 컬럼이 없어 이걸 기준으로 보여준다. */
-  snap_as_of: string | null;
-  readiness_id: string | null;
-  model_version: string | null;
-  policy_version: string | null;
-  status: string;
-  requested_by: string | null;
-  requester_display_name: string | null;
-  requester_email: string | null;
-}
-
-export interface OpsRecommendation {
-  reco_id: string;
-  run_id: string;
-  task_id: string;
-  task_name: string | null;
-  status: string;
-  confidence: number | null;
-  missing_data: unknown;
-  limitations: unknown;
-  assumptions: unknown;
-}
-
-export interface OpsValidation {
-  valid_id: string;
-  reco_id: string;
-  run_id: string | null;
-  task_id: string | null;
-  task_name: string | null;
-  status: string;
-  confidence: number | null;
-  missing_data: unknown;
-}
-
-export interface OpsDecision {
-  decision_id: string;
-  reco_id: string;
-  valid_id: string | null;
-  pm_action: string;
-  reason: string | null;
-  modified_cand_id: string | null;
-  decided_by: string | null;
-  decider_display_name: string | null;
-  decider_email: string | null;
-  decided_at: string;
-}
-
 export function fetchOperationLogs(token: string) {
   return opsRequest<OpsOperationLog[]>('/ops/audit/operations/', { token });
-}
-
-export function fetchAssignmentRuns(token: string) {
-  return opsRequest<OpsAssignmentRun[]>('/ops/audit/assignment-runs/', { token });
-}
-
-export function fetchRecommendations(token: string) {
-  return opsRequest<OpsRecommendation[]>('/ops/audit/recommendations/', { token });
-}
-
-export function fetchValidations(token: string) {
-  return opsRequest<OpsValidation[]>('/ops/audit/validations/', { token });
-}
-
-export function fetchDecisions(token: string) {
-  return opsRequest<OpsDecision[]>('/ops/audit/decisions/', { token });
 }

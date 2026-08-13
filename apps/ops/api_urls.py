@@ -8,13 +8,7 @@ from .views.accounts import (
     AccountUnlinkPersonView,
     AccountUnlockView,
 )
-from .views.audit import (
-    AssignmentRunLogView,
-    DecisionLogView,
-    OperationLogView,
-    RecommendationLogView,
-    ValidationLogView,
-)
+from .views.audit import OperationLogView
 from .views.connectors import ConnectorDetailView, ConnectorListView, ConnectorRevokeView
 from .views.invites import (
     InviteDetailView,
@@ -61,10 +55,6 @@ urlpatterns = [
     path("models/probe/", ModelProbeView.as_view(), name="api_ops_model_probe"),
     path("models/<str:conn_id>/", ModelDetailView.as_view(), name="api_ops_model_detail"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
-    path("audit/assignment-runs/", AssignmentRunLogView.as_view(), name="api_ops_audit_assignment_runs"),
-    path("audit/recommendations/", RecommendationLogView.as_view(), name="api_ops_audit_recommendations"),
-    path("audit/validations/", ValidationLogView.as_view(), name="api_ops_audit_validations"),
-    path("audit/decisions/", DecisionLogView.as_view(), name="api_ops_audit_decisions"),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path("policies/notices/", NoticeListCreateView.as_view(), name="api_ops_policies_notice_list"),
     path("policies/notices/<str:notice_id>/", NoticeDetailView.as_view(), name="api_ops_policies_notice_detail"),

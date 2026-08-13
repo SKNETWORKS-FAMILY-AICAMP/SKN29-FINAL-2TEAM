@@ -3499,16 +3499,17 @@ class OpsConnectorRepository:
 
 
 class OpsAuditRepository:
-    """운영자 콘솔 `감사 로그`(`GET /api/ops/audit/...`) 전용. 전부 읽기 전용이다.
+    """운영자 콘솔 `감사 로그`(`GET /api/ops/audit/operations/`) 전용. 읽기 전용이다.
 
-    "운영 활동" 탭(`list_operations`)은 지금 바로 데이터가 쌓이지만(계정 잠금·
-    초대 폐기 등 이 콘솔 자체의 조치 기록), "분석·결정 기록" 탭 4개
-    (`list_assignment_runs`/`list_recommendations`/`list_validations`/
-    `list_decisions`)가 조회하는 `reco_result`/`valid_result`/`decision_rec`는
-    이 저장소에 아직 그 테이블에 쓰는 추천 파이프라인이 없어 항상 빈 목록을
-    반환한다(`assign_run`만 `AnalysisRunRepository.create()`로 실제로 쓰임).
-    파이프라인이 나중에 이 테이블에 쓰기 시작하면 이 API들은 코드 변경 없이
-    바로 채워진다.
+    **한 번은 다섯이었다.** 「분석·결정 기록」 4종(`assign_run`/`reco_result`/
+    `valid_result`/`decision_rec`)을 함께 읽었는데, 그 테이블에 쓰는 추천
+    파이프라인이 이 저장소에 없어 **넷 다 항상 빈 목록**이었다. "나중에
+    파이프라인이 쓰기 시작하면 코드 변경 없이 채워진다"고 두었지만 제품이 업무
+    배정 추천에서 물러나면서 그 나중이 오지 않는다 — 화면과 함께 걷었다
+    (2026-08-13). 되살릴 일이 생기면 git 이력에 있다.
+
+    남은 `list_operations`는 이 콘솔 자체의 조치(계정 정지·초대 폐기·연결 강제
+    해제 등)와 일반 사용자의 로그인·가입·커넥터 연결이 실제로 쌓이는 유일한 곳이다.
     """
 
     OPERATIONS_LIMIT = 200
@@ -3536,107 +3537,6 @@ class OpsAuditRepository:
                     LIMIT %s
                     """,
                     (OpsAuditRepository.OPERATIONS_LIMIT,),
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def list_assignment_runs() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        ar.run_id,
-                        ar.snapshot_id,
-                        sn.proj_id,
-                        -- assign_run에는 시각 컬럼이 없다. 스냅샷을 뜬 시각이
-                        -- 곧 그 실행이 입력을 얼린 시점이라 감사 화면은 이걸 쓴다.
-                        -- "실행 시각"이 따로 필요해지면 그때 컬럼을 추가한다.
-                        sn.snap_as_of,
-                        ar.readiness_id,
-                        ar.model_version,
-                        ar.policy_version,
-                        ar.status,
-                        ar.requested_by,
-                        ua.display_name AS requester_display_name,
-                        ua.email AS requester_email
-                    FROM assign_run AS ar
-                    LEFT JOIN ana_snapshot AS sn ON sn.snap_id = ar.snapshot_id
-                    LEFT JOIN user_account AS ua ON ua.account_id = ar.requested_by
-                    ORDER BY ar.run_id DESC
-                    """
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def list_recommendations() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        rr.reco_id,
-                        rr.run_id,
-                        rr.task_id,
-                        t.task_name,
-                        rr.status,
-                        rr.confidence,
-                        rr.missing_data,
-                        rr.limitations,
-                        rr.assumptions
-                    FROM reco_result AS rr
-                    LEFT JOIN task AS t ON t.task_id = rr.task_id
-                    ORDER BY rr.reco_id DESC
-                    """
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def list_validations() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        vr.valid_id,
-                        vr.reco_id,
-                        rr.run_id,
-                        rr.task_id,
-                        -- 형제 쿼리(list_recommendations)와 같은 조인이다. 화면이
-                        -- 업무명으로 검색·표시하는데 여기만 빠져 있었다.
-                        t.task_name,
-                        vr.status,
-                        vr.confidence,
-                        vr.missing_data
-                    FROM valid_result AS vr
-                    LEFT JOIN reco_result AS rr ON rr.reco_id = vr.reco_id
-                    LEFT JOIN task AS t ON t.task_id = rr.task_id
-                    ORDER BY vr.valid_id DESC
-                    """
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def list_decisions() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        dr.decision_id,
-                        dr.reco_id,
-                        dr.valid_id,
-                        dr.pm_action,
-                        dr.reason,
-                        dr.modified_cand_id,
-                        dr.decided_by,
-                        ua.display_name AS decider_display_name,
-                        ua.email AS decider_email,
-                        dr.decided_at
-                    FROM decision_rec AS dr
-                    LEFT JOIN user_account AS ua ON ua.account_id = dr.decided_by
-                    ORDER BY dr.decided_at DESC
-                    """
                 )
                 return list(cursor.fetchall())
 
