@@ -24,7 +24,7 @@ from .views.invites import (
 )
 from .views.login import LoginView, LogoutView, MeView
 from .views.models import ModelDetailView, ModelListCreateView, ModelProbeView
-from .views.teams import TeamOwnerView, TeamsView
+from .views.teams import TeamContentView, TeamOwnerView, TeamsView
 from .views.overview import OverviewView
 from .views.policies import InviteTtlView, NoticeDetailView, NoticeListCreateView, PolicyChangeListView
 
@@ -34,6 +34,7 @@ urlpatterns = [
     path("auth/logout/", LogoutView.as_view(), name="api_ops_auth_logout"),
     path("overview/", OverviewView.as_view(), name="api_ops_overview"),
     path("teams/", TeamsView.as_view(), name="api_ops_teams"),
+    path("teams/<str:team_id>/content/", TeamContentView.as_view(), name="api_ops_team_content"),
     path("teams/<str:team_id>/owner/", TeamOwnerView.as_view(), name="api_ops_team_owner"),
     path("accounts/", AccountListView.as_view(), name="api_ops_account_list"),
     path("accounts/<str:account_id>/", AccountDetailView.as_view(), name="api_ops_account_detail"),

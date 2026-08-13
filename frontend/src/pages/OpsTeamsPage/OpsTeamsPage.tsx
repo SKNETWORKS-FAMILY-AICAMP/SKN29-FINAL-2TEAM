@@ -223,6 +223,16 @@ export default function OpsTeamsPage() {
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
+                    navigate(`/ops/teams/${team.team_id}`);
+                  }}
+                >
+                  팀 상세
+                </button>
+                {' · '}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
                     void openTransfer(team);
                   }}
                 >

@@ -45,3 +45,39 @@ export function transferTeamOwner(token: string, teamId: string, accountId: stri
     { method: 'POST', token, body: { account_id: accountId, reason } },
   );
 }
+
+/** 이 팀이 들고 있는 것과 실제로 있었던 일. **대화 내용·문서 원문은 오지 않는다.** */
+export interface OpsTeamAgent {
+  agent_id: string;
+  name: string;
+  description: string | null;
+  instruction: string | null;
+  model: string | null;
+  reasoning_effort: string | null;
+  max_iterations: number | null;
+  is_prebuilt: boolean;
+  status: string;
+  tool_refs: string[];
+}
+
+export interface OpsTeamRun {
+  run_id: string;
+  agent_id: string;
+  agent_name: string;
+  status: string;
+  iterations: number;
+  token_in: number | null;
+  token_out: number | null;
+  started_at: string;
+  ended_at: string | null;
+  tool_calls: number;
+  /** 실패한 도구와 그 이유. 실행이 왜 실패했는지는 여기에 있다. */
+  failed_tools: string[];
+}
+
+export function fetchTeamContent(token: string, teamId: string) {
+  return opsRequest<{ agents: OpsTeamAgent[]; runs: OpsTeamRun[] }>(
+    `/ops/teams/${teamId}/content/`,
+    { token },
+  );
+}

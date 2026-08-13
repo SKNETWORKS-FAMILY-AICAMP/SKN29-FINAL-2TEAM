@@ -2907,6 +2907,77 @@ class OpsTeamRepository:
         }
 
 
+    @staticmethod
+    def agents(team_id: str) -> list[dict[str, Any]]:
+        """이 팀의 에이전트와 그 구성.
+
+        **「에이전트가 이상해요」에 답하려면 무엇을 들고 있는지 봐야 한다.** 어떤
+        도구가 붙어 있고 어떤 모델로 도는지 모르면, 도구를 안 불렀다는 말이 「없어서」
+        인지 「있는데 안 골라서」인지 가릴 수 없다(2026-08-13 PM 요청).
+
+        **지시문도 준다.** 팀이 쓴 글이라 우리가 함부로 볼 것 같지만, 답이 근거
+        없이 나온다는 문의는 대개 지시문에서 갈린다 — 그걸 못 보면 운영자가 할 수
+        있는 말이 없다. 대화 내용과 문서 원문은 여기서도 안 준다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT a.agent_id, a.name, a.description, a.instruction,
+                           a.model, a.reasoning_effort, a.max_iterations,
+                           a.is_prebuilt, a.status,
+                           COALESCE(
+                               (SELECT array_agg(t.tool_ref ORDER BY t.tool_ref)
+                                FROM agent_tool AS t WHERE t.agent_id = a.agent_id),
+                               ARRAY[]::varchar[]
+                           ) AS tool_refs
+                    FROM agent AS a
+                    WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
+                    ORDER BY a.is_prebuilt DESC, a.name
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def runs(team_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """이 팀 에이전트의 최근 실행.
+
+        **여기에는 고객의 내용이 없다.** `agent_run` 은 상태·반복 수·토큰·시간만
+        갖고, `tool_call.input_summary` 는 스키마 주석대로 「원본 인자가 아니라
+        요약」이라 자격증명도 대화도 남지 않는다. 그래서 이 표는 운영자가 봐도
+        되는 것과 보면 안 되는 것의 경계를 이미 지키고 있다.
+
+        실패한 도구를 함께 준다 — 실행이 왜 실패했는지는 그 줄에 있다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT r.run_id::text AS run_id, r.agent_id, a.name AS agent_name,
+                           r.status, r.iterations, r.token_in, r.token_out,
+                           r.started_at, r.ended_at,
+                           (SELECT count(*) FROM tool_call AS tc WHERE tc.run_id = r.run_id)
+                               AS tool_calls,
+                           COALESCE(
+                               (SELECT array_agg(DISTINCT tc.tool_ref || ' (' || COALESCE(tc.error_code, 'FAILED') || ')')
+                                FROM tool_call AS tc
+                                WHERE tc.run_id = r.run_id AND tc.status = 'FAILED'),
+                               ARRAY[]::text[]
+                           ) AS failed_tools
+                    FROM agent_run AS r
+                    JOIN agent AS a ON a.agent_id = r.agent_id
+                    WHERE a.team_id = %s
+                    ORDER BY r.started_at DESC
+                    LIMIT %s
+                    """,
+                    (team_id, limit),
+                )
+                return list(cursor.fetchall())
+
+
 class OpsAccountRepository:
     """운영자 콘솔 `계정 관리`(`GET/POST /api/ops/accounts/...`) 전용.
 

@@ -508,3 +508,52 @@ class OpsInviteDetailTests(SimpleTestCase):
         self.assertEqual(resolve("/api/ops/invites/IV001/").url_name, "api_ops_invite_detail")
         self.assertEqual(resolve("/api/ops/invites/IV001/discard/").url_name, "api_ops_invite_discard")
         self.assertEqual(resolve("/api/ops/invites/IV001/unlink/").url_name, "api_ops_invite_unlink")
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.teams.OpsTeamRepository")
+class OpsTeamContentTests(SimpleTestCase):
+    """고객이 「에이전트가 이상해요」라고 할 때 운영자가 볼 것이 아무것도 없었다.
+
+    **경계는 유지한다** — 무엇을 들고 있고 무슨 일이 있었는지는 보되, 대화 내용과
+    문서 원문은 주지 않는다.
+    """
+
+    URL = "/api/ops/teams/TE001/content/"
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_에이전트와_실행을_준다(self, repo, _admin):
+        repo.agents.return_value = [
+            {"agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-luna", "tool_refs": ["agent:*"]}
+        ]
+        repo.runs.return_value = [
+            {"run_id": "r1", "agent_name": "코파일럿", "status": "FAILED", "failed_tools": ["jira_get_issues (401)"]}
+        ]
+
+        body = self.client.get(self.URL, **self._headers()).json()
+
+        self.assertEqual(body["agents"][0]["name"], "코파일럿")
+        # 왜 실패했는지가 그 줄에 있어야 운영자가 답할 수 있다.
+        self.assertEqual(body["runs"][0]["failed_tools"], ["jira_get_issues (401)"])
+        repo.agents.assert_called_once_with("TE001")
+        repo.runs.assert_called_once_with("TE001")
+
+    def test_대화나_문서는_주지_않는다(self, repo, _admin):
+        """열람 통제 장치가 없는 상태에서 고객의 업무 내용까지 열지 않는다."""
+
+        repo.agents.return_value = []
+        repo.runs.return_value = []
+
+        body = self.client.get(self.URL, **self._headers()).json()
+
+        self.assertEqual(set(body), {"agents", "runs"})
+
+    def test_운영자가_아니면_못_본다(self, repo, _admin):
+        token = account_tokens.issue_token("UA001")
+
+        response = self.client.get(self.URL, HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.assertEqual(response.status_code, 401)
+        repo.agents.assert_not_called()

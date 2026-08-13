@@ -55,3 +55,27 @@ class TeamOwnerView(AdminView):
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(result)
+
+
+class TeamContentView(AdminView):
+    """이 팀의 에이전트와 최근 실행.
+
+    고객이 「에이전트가 이상해요」라고 할 때 운영자가 볼 것이 아무것도 없었다.
+    무엇을 들고 있는지(도구·모델·지시문)와 실제로 무슨 일이 있었는지(실행·실패한
+    도구)를 준다.
+
+    **대화 내용과 문서 원문은 주지 않는다.** 그건 고객의 업무 내용이고, 열람을
+    통제할 장치가 아직 없다. 실행 기록은 애초에 내용을 안 담게 설계돼 있어
+    (`tool_call.input_summary` 는 원본 인자가 아니다) 그 경계를 이미 지킨다.
+    """
+
+    def get(self, request, team_id):
+        try:
+            return Response(
+                {
+                    "agents": OpsTeamRepository.agents(team_id),
+                    "runs": OpsTeamRepository.runs(team_id),
+                }
+            )
+        except psycopg.Error as exc:
+            return to_response(exc)

@@ -21,6 +21,7 @@ const DocumentsPage = lazy(() => import('./pages/DocumentsPage/DocumentsPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
 const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
 const OpsTeamsPage = lazy(() => import('./pages/OpsTeamsPage/OpsTeamsPage'));
+const OpsTeamDetailPage = lazy(() => import('./pages/OpsTeamDetailPage/OpsTeamDetailPage'));
 const OpsAccountsPage = lazy(() => import('./pages/OpsAccountsPage/OpsAccountsPage'));
 const OpsAccountDetailPage = lazy(() => import('./pages/OpsAccountDetailPage/OpsAccountDetailPage'));
 const OpsMappingsPage = lazy(() => import('./pages/OpsMappingsPage/OpsMappingsPage'));
@@ -95,6 +96,7 @@ function App() {
             <Route path={PATHS.ops} element={<OpsLayout />}>
               <Route index element={<OpsOverviewPage />} />
               <Route path={PATHS.opsTeams} element={<OpsTeamsPage />} />
+              <Route path={PATHS.opsTeamDetail} element={<OpsTeamDetailPage />} />
               <Route path={PATHS.opsAccounts} element={<OpsAccountsPage />} />
               <Route path={PATHS.opsAccountDetail} element={<OpsAccountDetailPage />} />
               <Route path={PATHS.opsMappings} element={<OpsMappingsPage />} />
