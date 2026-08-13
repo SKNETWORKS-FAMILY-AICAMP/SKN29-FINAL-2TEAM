@@ -41,8 +41,14 @@ export const MODEL_OPTIONS: ModelOption[] = [
 
 export const DEFAULT_MODEL = 'gpt-5.6-luna';
 
-/** 팀이 Model 탭에서 등록한 커스텀 모델 API 중, 셀렉트에 필요한 것만. */
-export interface TeamModel {
+/**
+ * 팀이 Model 탭에서 등록한 커스텀 모델 API 중, 셀렉트에 필요한 것만.
+ *
+ * **export 하지 않는다.** 밖에서 쓰는 곳이 없고, 편집 화면은 자기 `CustomModel`
+ * 을 쓴다(구조가 호환돼 그대로 넘어간다). export 해 두면 두 타입 중 어느 쪽이
+ * 진짜인지 헷갈린다(2026-08-13).
+ */
+interface TeamModel {
   model: string;
   /** 제공자 이름(「Google Gemini」 등). 모델 이름만으로는 어디 것인지 모른다. */
   label: string;

@@ -10,16 +10,14 @@ import {
   Select,
   AvatarPicker,
   PasswordChangeCard,
-  SettingsLayout,
   SkillList,
   useToast,
 } from '../../components';
-import type { BadgeTone, SettingsNavItem } from '../../components';
+import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
 import { fetchCurrentAccount } from '../../api/auth';
 import type { Account } from '../../api/auth';
 import { listConnectors } from '../../api/connectors';
-import { CONNECTOR_TYPE_BY_ID } from '../../api/connectors';
 import { createInvite, listInviteCandidates, revokeInvite } from '../../api/invites';
 import type { InviteCandidate, InviteStatus, IssuedInvite } from '../../api/invites';
 import {
@@ -29,21 +27,9 @@ import {
   saveTeamSettings,
 } from '../../api/teams';
 import type { TeamMember, TeamSettings } from '../../api/teams';
-import { CONNECTOR_DEFS } from '../../data/connectorDefs';
 import { PATHS } from '../../routes';
-import { loadConnectorStatuses } from '../../utils/connectorStatus';
-import type { ConnectorStatus } from '../../utils/connectorStatus';
 import { loadSessionToken } from '../../utils/session';
 import styles from './TeamLeaderSettingsPage.module.css';
-
-const NAV_ITEMS: SettingsNavItem[] = [
-  { id: 'profile', label: '내 프로필', icon: 'user' },
-  { id: 'skills', label: '보유 스킬', icon: 'sparkles' },
-  { id: 'password', label: '비밀번호 변경', icon: 'lock' },
-  // 「연동 관리」를 뺐다 — 섹션을 걷어냈으므로 여기 두면 아무 데도 안 간다.
-  { id: 'team', label: '팀원 관리', icon: 'users' },
-  { id: 'workload', label: '팀 업무량 기준', icon: 'sliders' },
-];
 
 const INVITE_STATUS_LABEL: Record<InviteStatus, string> = {
   PENDING: '초대됨',
@@ -62,18 +48,20 @@ const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
 
 export interface TeamLeaderSettingsPageProps {
-  /** Settings 허브의 「팀」 탭 안에서 렌더될 때는 자체 껍데기를 그리지 않는다. */
-  embedded?: boolean;
 }
 
-export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderSettingsPageProps = {}) {
+export default function TeamLeaderSettingsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
   /** 인사 시스템이 붙어 있는가. 「내 정보를 못 찾은 이유」가 이것으로 갈린다. */
-  const [connectorStatuses, setConnectorStatuses] = useState<Record<string, ConnectorStatus>>(() =>
-    loadConnectorStatuses(Object.fromEntries(CONNECTOR_DEFS.map((c) => [c.id, c.initialStatus]))),
-  );
+  /**
+   * **서버가 원본이다.** 예전에는 세 커넥터의 상태를 sessionStorage 에 얹어 두고
+   * 서버 값으로 덮어썼는데, 이 화면이 실제로 읽는 것은 People DB 하나뿐이고
+   * 나머지 둘은 계산만 되고 아무 데도 안 나왔다. 「연동 관리」 섹션을 걷어낸
+   * 2026-08-12 의 잔재라 함께 정리했다(2026-08-13).
+   */
+  const [peopleConnected, setPeopleConnected] = useState(false);
   // 빈 문자열이 "설정 안 함"이다. 0과 구분해야 하므로 숫자로 들고 있지 않는다.
   const [settings, setSettings] = useState<TeamSettings | null>(null);
   const [baseHours, setBaseHours] = useState('');
@@ -184,7 +172,7 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
     void reloadAccount();
   }, [reloadAccount]);
 
-  // 서버에 실제로 기록된 연결(현재는 People DB)을 데모 상태 위에 덮어쓴다.
+  // 이 화면에 필요한 것은 People DB 하나다 — 팀원 조회·초대가 그 연결에 달려 있다.
   useEffect(() => {
     if (!token) return;
 
@@ -192,19 +180,12 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
     listConnectors(token)
       .then((connections) => {
         if (cancelled) return;
-        const fromServer: Record<string, ConnectorStatus> = {};
-        for (const def of CONNECTOR_DEFS) {
-          const type = CONNECTOR_TYPE_BY_ID[def.id];
-          if (!type) continue;
-          const match = connections.find((c) => c.connector_type === type);
-          if (match) {
-            fromServer[def.id] = match.auth_status === 'CONNECTED' ? 'connected' : 'disconnected';
-          }
-        }
-        setConnectorStatuses((prev) => ({ ...prev, ...fromServer }));
+        setPeopleConnected(
+          connections.some((c) => c.connector_type === 'PEOPLE_DB' && c.auth_status === 'CONNECTED'),
+        );
       })
       .catch(() => {
-        // 연동 상태 조회 실패는 화면을 막지 않는다. 데모 상태를 그대로 보여준다.
+        // 연동 상태 조회 실패는 화면을 막지 않는다. 미연결로 두고 안내를 띄운다.
       });
 
     return () => {
@@ -260,23 +241,8 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
     }
   }
 
-  const peopleConnected = connectorStatuses['people-db'] === 'connected';
-
   return (
-    <SettingsLayout
-      subtitle="팀 관리자 설정"
-      navItems={NAV_ITEMS}
-      footerLabel="관리자"
-      onFooterClick={() => navigate(PATHS.chat)}
-      embedded={embedded}
-    >
-      {/* Settings 허브 안에서는 허브가 이미 「설정」 h1을 갖고 있어 제목이 두 개 겹친다. */}
-      {!embedded && (
-        <div className={styles.pageHeader}>
-          <h1>팀장 설정</h1>
-          <p>팀원과 업무량 기준을 관리합니다.</p>
-        </div>
-      )}
+    <>
 
       <section id="profile" className={styles.sectionBlock}>
         <Card padding="lg">
@@ -544,6 +510,6 @@ export default function TeamLeaderSettingsPage({ embedded = false }: TeamLeaderS
         </Card>
       </section>
 
-    </SettingsLayout>
+    </>
   );
 }

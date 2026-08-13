@@ -61,11 +61,6 @@ export function beginJiraAuthorization(token: string) {
   return apiRequest<{ authorization_url: string }>('/connectors/jira/authorize/', { token });
 }
 
-/** 이미 연결된 계정의 HR 요약. 미연결이면 404. */
-export function fetchPeopleDbSummary(token: string) {
-  return apiRequest<PeopleDbSummary>('/connectors/people-db/summary/', { token });
-}
-
 /** 내 드라이브 최상단을 가리키는 Drive의 별칭. */
 export const DRIVE_ROOT_ID = 'root';
 

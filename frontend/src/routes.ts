@@ -86,23 +86,6 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.opsPolicies, label: '전역 정책', group: '운영자 콘솔' },
 ];
 
-/**
- * Convenience lookup for the top-nav tab bar shared across the main app
- * screens (projects/files/settings). Maps the Figma nav labels to the
- * closest real route we have.
- *
- * 새 화면은 AppShell(사이드바)을 쓴다. 이 탭바는 아직 남아 있는 기존 화면
- * (문서 관리·프로젝트 상세 등)에서만 쓴다 — G3에서 정리된다.
- *
- * 4차 단계 1 — 「대시보드」 탭을 메뉴에서 뺀다. 라우트는 살아 있어 직접 URL로
- * 여전히 열린다(데모 백업). 처분은 단계 2(멘토링 Q13) 소관.
- */
-export const MAIN_NAV_TABS = [
-  { label: '문서 관리', to: PATHS.filesNew },
-  { label: '프로젝트', to: PATHS.projects },
-  { label: '설정', to: PATHS.settingsTeam },
-];
-
 export interface AppNavItem {
   label: string;
   to: string;

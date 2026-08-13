@@ -27,8 +27,8 @@ export interface AppShellProps {
  * 요청에도 계속 고르라고 하게 된다.
  *
  * 기존 `TopNav`(상단 탭바)를 쓰는 화면은 이제 없다 — 마지막 사용처였던 옛
- * 대시보드를 4차 단계 2에서 지웠다. `SettingsLayout`의 비-embedded 분기에만
- * 코드가 남아 있는데, 그 분기로 들어오는 라우트도 없다.
+ * 대시보드를 4차 단계 2에서 지웠고, `SettingsLayout`의 비-embedded 분기에만
+ * 남아 있던 코드도 2026-08-13에 걷었다.
  */
 /** 접힘 상태를 새로고침 뒤에도 유지한다 — 매번 다시 접게 하지 않는다. */
 const COLLAPSE_KEY = 'halil.sidebarCollapsed';

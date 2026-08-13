@@ -18,7 +18,8 @@ export {
   connectorStatusTone as statusTone,
 } from '../../data/connectorStatus';
 
-const TYPE_LABELS: Record<string, string> = {
+/** 서비스 이름의 **유일한 정의**. 계정 화면(`accountLabels`)도 이걸 쓴다. */
+export const TYPE_LABELS: Record<string, string> = {
   GOOGLE_DRIVE: '구글 드라이브',
   JIRA: 'Jira',
 };

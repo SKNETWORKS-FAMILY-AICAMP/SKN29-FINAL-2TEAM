@@ -21,10 +21,6 @@ export function createTeam(token: string, name: string, personIds: string[]) {
   });
 }
 
-export function fetchMyTeam(token: string) {
-  return apiRequest<Team>('/teams/', { token });
-}
-
 /**
  * 팀 명부 한 줄. 사람·계정·초대를 함께 담는다.
  *
@@ -53,15 +49,6 @@ export interface TeamMember {
 
 export function listTeamMembers(token: string) {
   return apiRequest<TeamMember[]>('/teams/members/', { token });
-}
-
-/** 팀 명부에 더한다. 초대 가능 범위와 같은 기준(본인 소속 조직과 그 하위)이다. */
-export function addTeamMember(token: string, personId: string) {
-  return apiRequest<TeamMember[]>('/teams/members/', {
-    method: 'POST',
-    token,
-    body: { person_id: personId },
-  });
 }
 
 /** 명부에서 뺀다. 팀 계정을 쓰는 사람과 팀 소유자는 서버가 막는다. */

@@ -15,7 +15,7 @@ import styles from './SettingsPage.module.css';
  * Settings 허브 — 팀 / Connector / MCP / Model / 권한 탭 컨테이너.
  * 8_화면개편_명세 §2에서 역할 분기 래퍼였던 이 화면을 허브로 승격시켰다.
  *
- * 「팀」 탭은 기존 팀장·팀원 설정 화면을 그대로 편입한다(embedded). 역할은
+ * 「팀」 탭은 기존 팀장·팀원 설정 화면을 그대로 편입한다. 역할은
  * 로그인 계정(`account.role`)에서 온다 — Permission 설계 전까지는 그 값이 전부다.
  */
 export default function SettingsPage() {
@@ -36,9 +36,9 @@ export default function SettingsPage() {
         return <PermissionsTab />;
       default:
         return role === 'leader' ? (
-          <TeamLeaderSettingsPage embedded />
+          <TeamLeaderSettingsPage />
         ) : (
-          <TeamMemberSettingsPage embedded />
+          <TeamMemberSettingsPage />
         );
     }
   }

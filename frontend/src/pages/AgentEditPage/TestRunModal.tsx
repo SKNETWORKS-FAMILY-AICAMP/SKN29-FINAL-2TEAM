@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Icon, Input, Modal } from '../../components';
+import { CHECK_STATUS } from './checkLabels';
 import type { BadgeTone } from '../../components';
 import { runBuilderTest } from '../../api/agents';
 import type { BuilderTestEvent, ToolChoice } from '../../api/agents';
@@ -46,10 +47,9 @@ export interface TestRunModalProps {
 }
 
 const STATUS_LABEL: Record<TestStep['status'], { tone: BadgeTone; label: string }> = {
+  // 겹치는 셋은 「도구 확인」과 한 표를 쓴다. 여기만 있는 것은 아래에 덧붙인다.
+  ...CHECK_STATUS,
   running: { tone: 'info', label: '실행 중' },
-  OK: { tone: 'success', label: '성공' },
-  FAILED: { tone: 'danger', label: '실패' },
-  SIMULATED: { tone: 'warning', label: '시뮬레이션 (실제로 부르지 않음)' },
 };
 
 /**

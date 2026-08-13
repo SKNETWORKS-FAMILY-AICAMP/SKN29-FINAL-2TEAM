@@ -101,9 +101,10 @@ JIRA_REDIRECT_URI = env(
     default="http://localhost:8000/api/connectors/jira/callback/",
 )
 
-# 파일 저장소는 settings 값만 보고 선택한다. 애플리케이션 코드는 S3 SDK를 직접 호출하지 않는다.
+# 파일 저장소 선택 값. **아직 아무도 안 읽는다** — `backend/services/storage.py` 가
+# 이 값을 보게 하는 것이 남은 일이다(docs/개발환경/AWS_1단계_공유환경_구축.md).
+# 계획된 자리라 남기되, 읽는 코드가 없다는 사실을 여기 적어 둔다(2026-08-13).
 OBJECT_STORAGE_PROVIDER = env("OBJECT_STORAGE_PROVIDER", default="local")
-ANALYSIS_EXECUTION_MODE = env("ANALYSIS_EXECUTION_MODE", default="stub")
 
 # No operational default is provided for secrets or external addresses. The
 # integration validates these settings at the boundary where they are needed.
@@ -144,7 +145,5 @@ ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 # OpenAI 처리 대기열. priority 는 지연이 짧은 대신 비싸다. 계정이 안 열어 준
 # 티어를 주면 요청이 거절되므로 기본은 auto 로 둔다.
 OPENAI_SERVICE_TIER = env("OPENAI_SERVICE_TIER", default="auto")
-EMBEDDING_MODEL = env("EMBEDDING_MODEL", default="")
-EMBEDDING_DEVICE = env("EMBEDDING_DEVICE", default="")
 CHUNKING_MAX_TOKENS = env.int("CHUNKING_MAX_TOKENS", default=512)
 CHUNKING_MERGE_PEERS = env.bool("CHUNKING_MERGE_PEERS", default=True)
