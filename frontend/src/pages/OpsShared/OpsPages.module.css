@@ -909,4 +909,8 @@
 .formSubmit {
   display: flex;
   justify-content: flex-end;
+  /* 필드 사이(`formGrid` 의 14px)보다 넓어야 「입력은 여기까지」로 읽힌다.
+     `sectionCard` 는 자식 간격을 안 주므로 그냥 두면 마지막 칸에 딱 붙는다
+     (2026-08-13 PM 지적). 설정 카드의 자식 간격과 같은 20px 로 맞춘다. */
+  margin-top: 20px;
 }
