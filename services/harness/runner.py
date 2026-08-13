@@ -24,6 +24,7 @@ from apps.connectors.oauth import OAuthError
 from backend.db.agent_platform import AgentRepository, CustomModelRepository
 from backend.db.errors import RepositoryError
 from services.harness import registry, scaffold, trace
+from services.harness.trace import error_code_of
 from services.harness.registry import Tool, ToolNotAllowed
 
 logger = logging.getLogger(__name__)
@@ -298,7 +299,13 @@ def run_agent(
                             output = raw
                 except Exception as exc:  # noqa: BLE001 - 도구 실패로 run 을 끝내지 않는다
                     logger.exception("도구 실행 실패: %s (run=%s)", tool_ref, run_trace.run_id)
-                    error_code = exc.__class__.__name__
+                    # MCP 실패는 **왜 실패했는지가 코드에 담겨 있다**(timeout ·
+                    # unreachable · 401 · 429). 클래스 이름만 남기면 전부
+                    # 「McpError」 하나로 뭉개져, 기록만 보고는 서버가 죽은 것과
+                    # 토큰이 만료된 것을 못 가른다 — 운영자 콘솔의 「실패한 도구」
+                    # 열도 그 코드를 그대로 보여준다(2026-08-13에 실제 서버로
+                    # 돌려 보다 드러났다).
+                    error_code = error_code_of(exc)
                     # **사람이 고칠 수 있는 사유만 그대로 내보낸다.** 그 밖의
                     # 예외는 문자열에 문서 원문이나 토큰이 섞여 있을 수 있어
                     # 클래스 이름만 남긴다.
@@ -434,7 +441,7 @@ def check_tools(
                     "tool_ref": tool_ref,
                     "tool_name": tool.name,
                     "status": "FAILED",
-                    "error_code": exc.__class__.__name__,
+                    "error_code": error_code_of(exc),
                     "detail": str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None,
                 }
             )

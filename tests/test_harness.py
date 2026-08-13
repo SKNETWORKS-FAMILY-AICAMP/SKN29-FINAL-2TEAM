@@ -187,6 +187,32 @@ class RunAgentTests(SimpleTestCase):
 
         self.assertEqual(order, ["begin", "handler", "end"])
 
+    def test_MCP_실패는_왜_실패했는지가_남는다(self, _get, load_tools, runs, calls):
+        """클래스 이름만 남기면 전부 「McpError」 하나로 뭉개진다 — 서버가 죽은
+        것과 토큰이 만료된 것을 기록만 보고는 못 가른다. 운영자 콘솔의 「실패한
+        도구」 열도 이 코드를 그대로 보여준다."""
+
+        from services.mcp import McpError
+
+        def boom(**_kwargs):
+            raise McpError("401", "MCP 서버 인증에 실패했습니다.")
+
+        load_tools.return_value = {"mcp:MT001": echo_tool(handler=boom)}
+        runs.start.return_value = "RUN-1"
+        calls.begin.return_value = "TC-1"
+        model = FakeModel(
+            [
+                ModelDecision(tool_calls=[{"id": "c1", "tool_ref": "mcp:MT001", "arguments": {}}]),
+                ModelDecision(text="도구를 쓰지 못했습니다."),
+            ]
+        )
+
+        events = list(run_agent("AG001", "질문", model=model))
+        finished = next(e for e in events if e["type"] == "tool_call_finished")
+
+        self.assertEqual(finished["error_code"], "401")
+        self.assertEqual(calls.end.call_args.kwargs["error_code"], "401")
+
     def test_도구가_터져도_run_은_계속되고_FAILED_로_남는다(self, _get, load_tools, runs, calls):
         def boom(**_kwargs):
             raise TimeoutError("느립니다")

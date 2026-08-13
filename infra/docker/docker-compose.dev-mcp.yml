@@ -1,0 +1,28 @@
+# 시험용 MCP 서버. **개발 환경 전용이고 기본 스택에 넣지 않는다.**
+#
+# 기본 `docker-compose.yml` 에 합치면 팀원 전원의 `up` 에 딸려 올라간다. 시험할
+# 때만 파일을 하나 더 얹어 띄운다:
+#
+#   docker compose -f infra/docker/docker-compose.yml \
+#                  -f infra/docker/docker-compose.dev-mcp.yml up -d dev-mcp
+#
+# ⚠ 이 주소는 **우리 화면에 등록할 수 없다.** `services/mcp/security.py` 가 https
+# 아닌 주소와 사설 IP·내부 이름을 거절하기 때문이다(의도된 설계 — 「로컬 개발용
+# http 서버는 설정으로 여는 순간 운영에서도 열린다」). 화면까지 시험하려면 공인
+# https 주소가 필요하다(터널 등). 이 서버는 클라이언트 계층(JSON-RPC 핸드셰이크·
+# 도구 목록·도구 호출)을 직접 확인하는 용도다.
+
+services:
+  dev-mcp:
+    image: python:3.13-slim
+    container_name: skn29-dev-mcp
+    working_dir: /srv
+    volumes:
+      - ../dev-mcp:/srv:ro
+    environment:
+      MCP_DEV_PORT: "9000"
+      # 인증 경로도 함께 보려면 값을 채운다. 비우면 토큰 검사를 하지 않는다.
+      MCP_DEV_TOKEN: "dev-secret"
+    command: ["python", "server.py"]
+    ports:
+      - "9000:9000"

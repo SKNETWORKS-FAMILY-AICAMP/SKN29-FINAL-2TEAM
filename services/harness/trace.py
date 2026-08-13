@@ -22,6 +22,22 @@ from backend.db.agent_platform import AgentRunRepository, ToolCallRepository
 INPUT_SUMMARY_MAX = 200
 
 
+
+def error_code_of(exc: BaseException) -> str:
+    """실패를 무엇으로 기록할 것인가.
+
+    **MCP 실패는 왜 실패했는지가 코드에 담겨 있다**(timeout · unreachable · 401 ·
+    429). 클래스 이름만 남기면 전부 「McpError」 하나로 뭉개져, 기록만 보고는
+    서버가 죽은 것과 토큰이 만료된 것을 못 가른다 — 운영자 콘솔의 「실패한 도구」
+    열이 그 코드를 그대로 보여준다(2026-08-13에 실제 서버로 돌려 보다 드러났다).
+
+    같은 판단을 하던 자리가 셋이었다. 여기 하나로 둔다.
+    """
+
+    from services.mcp import McpError
+
+    return exc.code if isinstance(exc, McpError) else exc.__class__.__name__
+
 def summarize_input(arguments: dict[str, Any]) -> str:
     """무엇을 넣었는지 알아볼 정도만 남긴다.
 
@@ -130,7 +146,7 @@ def tool_call(*, run_id: str, tool_ref: str, arguments: dict[str, Any]) -> Itera
             tool_call_id=tool_call_id,
             status="FAILED",
             duration_ms=int((time.monotonic() - started) * 1000),
-            error_code=exc.__class__.__name__[:50],
+            error_code=error_code_of(exc)[:50],
         )
         raise
     else:
