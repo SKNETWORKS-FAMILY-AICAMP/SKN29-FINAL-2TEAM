@@ -336,3 +336,90 @@ class OpsAdminGrantApiTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.teams.OpsTeamRepository")
+class OpsTeamOwnerTransferTests(SimpleTestCase):
+    """팀 소유자 이전.
+
+    **팀장이 나가면 그 팀을 아무도 손댈 수 없었다** — `owner_account_id` 를 바꾸는
+    경로가 어디에도 없었다(2026-08-13 PM 지적).
+    """
+
+    URL = "/api/ops/teams/TE001/owner/"
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_후보는_그_팀_계정만_준다(self, repo, _admin):
+        """계정 전체에서 고르게 하면 남의 팀 사람을 고를 수 있다."""
+
+        repo.candidates.return_value = [
+            {"account_id": "UA002", "email": "a@b.c", "display_name": "홍길동"}
+        ]
+
+        response = self.client.get(self.URL, **self._headers())
+
+        self.assertEqual(response.status_code, 200)
+        repo.candidates.assert_called_once_with("TE001")
+
+    def test_넘긴다(self, repo, _admin):
+        repo.transfer_owner.return_value = {
+            "team_id": "TE001", "owner_account_id": "UA002", "moved_models": 1,
+        }
+
+        response = self.client.post(
+            self.URL,
+            {"account_id": "UA002", "reason": "팀장 퇴사"},
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        kwargs = repo.transfer_owner.call_args.kwargs
+        self.assertEqual(kwargs["new_owner_account_id"], "UA002")
+        self.assertEqual(kwargs["actor_account_id"], "UA001")
+        self.assertEqual(kwargs["reason"], "팀장 퇴사")
+        # 모델이 따라간 사실을 화면이 말할 수 있어야 한다.
+        self.assertEqual(response.json()["moved_models"], 1)
+
+    def test_남의_팀_계정에는_못_넘긴다(self, repo, _admin):
+        """테넌트 경계가 그 자리에서 무너진다."""
+
+        from backend.db.errors import PermissionDenied
+
+        repo.transfer_owner.side_effect = PermissionDenied("이 팀에 속한 계정에게만 넘길 수 있습니다.")
+
+        response = self.client.post(
+            self.URL, {"account_id": "UA999"}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_정지된_계정에는_못_넘긴다(self, repo, _admin):
+        from backend.db.errors import RepositoryError as RepoError
+
+        repo.transfer_owner.side_effect = RepoError("정지된 계정에는 넘길 수 없습니다.")
+
+        response = self.client.post(
+            self.URL, {"account_id": "UA002"}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_account_id_는_필수다(self, repo, _admin):
+        response = self.client.post(
+            self.URL, {"reason": "x"}, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.transfer_owner.assert_not_called()
+
+    def test_운영자가_아니면_못_부른다(self, repo, _admin):
+        token = account_tokens.issue_token("UA001")
+
+        response = self.client.get(self.URL, HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.assertEqual(response.status_code, 401)
+        repo.candidates.assert_not_called()

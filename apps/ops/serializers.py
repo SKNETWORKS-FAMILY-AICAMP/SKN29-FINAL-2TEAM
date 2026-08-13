@@ -143,6 +143,17 @@ def policy_change_row_response(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class TeamOwnerTransferSerializer(serializers.Serializer):
+    """팀 소유자를 누구에게 넘길지, 그리고 왜.
+
+    「그 팀 계정인가·살아 있는가」는 여기서 못 본다(팀을 모른다) — Repository 가
+    트랜잭션 안에서 본다.
+    """
+
+    account_id = serializers.CharField(max_length=5)
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
 class AdminGrantSerializer(serializers.Serializer):
     """운영자 권한을 켤지 끌지, 그리고 왜.
 

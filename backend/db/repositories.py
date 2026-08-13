@@ -2809,6 +2809,104 @@ class OpsTeamRepository:
         return rows
 
 
+    @staticmethod
+    def candidates(team_id: str) -> list[dict[str, Any]]:
+        """이 팀에서 소유자가 될 수 있는 계정. **지금 소유자도 포함해 그대로 준다.**
+
+        화면이 「누구로 넘길까」를 고르는 목록이라, 정지된 계정은 뺀다 — 넘겨 봤자
+        그 사람은 로그인하지 못한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT account_id, email, display_name
+                    FROM user_account
+                    WHERE team_id = %s AND account_status = 'ACTIVE'
+                    ORDER BY email
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def transfer_owner(
+        *, team_id: str, new_owner_account_id: str, actor_account_id: str, reason: str = ""
+    ) -> dict[str, Any]:
+        """팀 소유자를 넘긴다.
+
+        **팀장이 나가면 그 팀을 아무도 손댈 수 없었다.** `owner_account_id` 를 바꾸는
+        경로가 어디에도 없어서, 퇴사·계정 정지가 곧 그 팀의 막다른 길이었다
+        (2026-08-13 PM 지적).
+
+        **그 팀에 등록된 모델도 함께 옮긴다.** `connector_conn` 에는 팀 칸이 없어
+        모델을 팀장 계정에 매달아 두는데(`CustomModelRepository.add_for_team`), 옛
+        팀장이 팀을 떠나면 `user_account.team_id` 조인이 끊겨 **그 팀 화면에서 모델이
+        조용히 사라진다.** 소유자를 넘기는 김에 같은 트랜잭션에서 옮겨 둔다.
+
+        새 소유자는 **그 팀의 살아 있는 계정**이어야 한다. 남의 팀 사람에게 넘기면
+        테넌트 경계가 그 자리에서 무너진다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT team_id, name, owner_account_id FROM team WHERE team_id = %s FOR UPDATE",
+                    (team_id,),
+                )
+                team = cursor.fetchone()
+                if team is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                if team["owner_account_id"] == new_owner_account_id:
+                    raise RepositoryError("이미 이 계정이 소유자입니다.")
+
+                cursor.execute(
+                    "SELECT account_id, team_id, account_status FROM user_account WHERE account_id = %s",
+                    (new_owner_account_id,),
+                )
+                account = cursor.fetchone()
+                if account is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {new_owner_account_id}")
+                if account["team_id"] != team_id:
+                    raise PermissionDenied("이 팀에 속한 계정에게만 넘길 수 있습니다.")
+                if account["account_status"] != "ACTIVE":
+                    raise RepositoryError("정지된 계정에는 넘길 수 없습니다.")
+
+                cursor.execute(
+                    "UPDATE team SET owner_account_id = %s WHERE team_id = %s",
+                    (new_owner_account_id, team_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE connector_conn SET account_id = %s
+                     WHERE account_id = %s AND connector_type = 'MODEL_API'
+                    """,
+                    (new_owner_account_id, team["owner_account_id"]),
+                )
+                moved_models = cursor.rowcount
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="OPS_TEAM_OWNER_TRANSFER",
+                    target_type="TEAM",
+                    target_id=team_id,
+                    payload={
+                        "before": team["owner_account_id"],
+                        "after": new_owner_account_id,
+                        "moved_models": moved_models,
+                        "reason": reason,
+                    },
+                )
+
+        return {
+            "team_id": team_id,
+            "owner_account_id": new_owner_account_id,
+            "moved_models": moved_models,
+        }
+
+
 class OpsAccountRepository:
     """운영자 콘솔 `계정 관리`(`GET/POST /api/ops/accounts/...`) 전용.
 

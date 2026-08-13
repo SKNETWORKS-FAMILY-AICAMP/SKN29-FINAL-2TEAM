@@ -23,3 +23,25 @@ export interface OpsTeam {
 export function fetchOpsTeams(token: string) {
   return opsRequest<OpsTeam[]>('/ops/teams/', { token });
 }
+
+/** 소유자를 넘길 수 있는 후보 — 그 팀의 살아 있는 계정. */
+export interface OpsTeamCandidate {
+  account_id: string;
+  email: string;
+  display_name: string;
+}
+
+export function fetchTeamOwnerCandidates(token: string, teamId: string) {
+  return opsRequest<OpsTeamCandidate[]>(`/ops/teams/${teamId}/owner/`, { token });
+}
+
+/**
+ * 팀 소유자를 넘긴다. **그 팀에 등록된 모델도 함께 옮겨진다** — 모델이 팀장
+ * 계정에 매달려 있어서, 안 옮기면 옛 팀장이 팀을 떠날 때 조용히 사라진다.
+ */
+export function transferTeamOwner(token: string, teamId: string, accountId: string, reason: string) {
+  return opsRequest<{ team_id: string; owner_account_id: string; moved_models: number }>(
+    `/ops/teams/${teamId}/owner/`,
+    { method: 'POST', token, body: { account_id: accountId, reason } },
+  );
+}
