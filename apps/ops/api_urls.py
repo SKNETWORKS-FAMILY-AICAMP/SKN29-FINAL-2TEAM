@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views.accounts import (
     AccountAdminView,
+    AccountDetailView,
     AccountListView,
     AccountLockView,
     AccountUnlinkPersonView,
@@ -30,6 +31,7 @@ urlpatterns = [
     path("teams/", TeamsView.as_view(), name="api_ops_teams"),
     path("teams/<str:team_id>/owner/", TeamOwnerView.as_view(), name="api_ops_team_owner"),
     path("accounts/", AccountListView.as_view(), name="api_ops_account_list"),
+    path("accounts/<str:account_id>/", AccountDetailView.as_view(), name="api_ops_account_detail"),
     path("accounts/<str:account_id>/admin/", AccountAdminView.as_view(), name="api_ops_account_admin"),
     path("accounts/<str:account_id>/lock/", AccountLockView.as_view(), name="api_ops_account_lock"),
     path("accounts/<str:account_id>/unlock/", AccountUnlockView.as_view(), name="api_ops_account_unlock"),

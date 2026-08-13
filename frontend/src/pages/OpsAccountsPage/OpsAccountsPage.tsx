@@ -2,72 +2,35 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button,
-  Modal,
   OpsDataTable,
-  OpsDetailPanel,
   OpsFilterBar,
   OpsPageHeader,
   OpsSearchField,
   OpsStatusBadge,
-  useToast,
 } from '../../components';
-import type { OpsTone } from '../../components';
-import {
-  fetchAccounts,
-  lockAccount,
-  setAccountAdmin,
-  unlinkAccountPerson,
-  unlockAccount,
-} from '../../api/opsAccounts';
-import type { OpsAccount, OpsMappingStatus } from '../../api/opsAccounts';
+import { fetchAccounts } from '../../api/opsAccounts';
+import type { OpsAccount } from '../../api/opsAccounts';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
+import {
+  MAPPING_LABELS,
+  MAPPING_TONES,
+  serviceLabels,
+  statusLabel,
+  statusTone,
+} from '../OpsShared/accountLabels';
 import styles from '../OpsShared/OpsPages.module.css';
 
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: '정상',
-  LOCKED: '잠김',
-  WITHDRAWN: '탈퇴',
-};
 
-const STATUS_TONES: Record<string, OpsTone> = {
-  ACTIVE: 'success',
-  LOCKED: 'danger',
-  WITHDRAWN: 'neutral',
-};
 
-const MAPPING_LABELS: Record<OpsMappingStatus, string> = {
-  UNMAPPED: '미연결',
-  LINKED: '연결됨',
-  DUPLICATE: '중복 연결',
-};
-
-const MAPPING_TONES: Record<OpsMappingStatus, OpsTone> = {
-  UNMAPPED: 'neutral',
-  LINKED: 'success',
-  DUPLICATE: 'danger',
-};
-
-function statusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
-}
-
-function statusTone(status: string): OpsTone {
-  return STATUS_TONES[status] ?? 'neutral';
-}
-
-type PendingAction = 'lock' | 'unlock' | 'unlink' | 'grant-admin' | 'revoke-admin' | null;
-
-const MODAL_TITLES: Record<Exclude<PendingAction, null>, string> = {
-  lock: '계정 정지',
-  unlock: '계정 재활성',
-  unlink: '직원 연결 해제',
-  'grant-admin': '운영자로 지정',
-  'revoke-admin': '운영자 권한 회수',
-};
-
+/**
+ * 계정 목록 — **「누가 있는가」만 맡는다.**
+ *
+ * 예전에는 이 화면 아래에 상세 섹션이 붙어 있었다. 표와 상세가 한 화면을 나눠
+ * 쓰느라 둘 다 좁았고 조치 버튼이 스크롤 아래에 숨었다. 상세와 조치는
+ * `/ops/accounts/:accountId` 로 갈랐다(2026-08-13 PM).
+ */
 export default function OpsAccountsPage() {
-  const { showToast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [accounts, setAccounts] = useState<OpsAccount[] | null>(null);
@@ -77,14 +40,6 @@ export default function OpsAccountsPage() {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '전체');
   // 팀 현황에서 팀을 눌러 넘어온 경우 그 팀으로 좁혀 보여준다.
   const teamFilter = searchParams.get('team');
-  const [selectedId, setSelectedId] = useState('');
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  /** 권한을 주고받은 이유. 비어 있어도 기록은 남지만, 남길 수 있게 둔다. */
-  const [reason, setReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const session = loadOpsSession();
-  const myAccountId = session?.admin.account_id ?? null;
 
   async function load() {
     const currentSession = loadOpsSession();
@@ -134,45 +89,6 @@ export default function OpsAccountsPage() {
     });
   }, [accounts, query, statusFilter, teamFilter]);
 
-  const selected = filtered.find((account) => account.account_id === selectedId) ?? filtered[0] ?? null;
-
-  async function confirmAction() {
-    if (!pendingAction || !selected || submitting) return;
-    const currentSession = loadOpsSession();
-    if (!currentSession) {
-      navigate('/ops/login', { replace: true });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      if (pendingAction === 'lock') {
-        await lockAccount(currentSession.token, selected.account_id);
-        showToast('계정을 정지했습니다.', 'success');
-      } else if (pendingAction === 'unlock') {
-        await unlockAccount(currentSession.token, selected.account_id);
-        showToast('계정을 재활성했습니다.', 'success');
-      } else if (pendingAction === 'grant-admin' || pendingAction === 'revoke-admin') {
-        const grant = pendingAction === 'grant-admin';
-        await setAccountAdmin(currentSession.token, selected.account_id, grant, reason.trim());
-        showToast(grant ? '운영자 권한을 부여했습니다.' : '운영자 권한을 회수했습니다.', 'success');
-      } else {
-        await unlinkAccountPerson(currentSession.token, selected.account_id);
-        showToast('직원 연결을 해제했습니다.', 'success');
-      }
-      setPendingAction(null);
-      setReason('');
-      await load();
-    } catch (thrown) {
-      if (thrown instanceof ApiError && thrown.status === 401) {
-        navigate('/ops/login', { replace: true });
-        return;
-      }
-      showToast(thrown instanceof ApiError ? thrown.message : '요청을 처리하지 못했습니다.', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   if (loading && !accounts) {
     return (
@@ -201,16 +117,6 @@ export default function OpsAccountsPage() {
       </div>
     );
   }
-
-  const canLock = selected?.account_status === 'ACTIVE' && selected.account_id !== myAccountId;
-  const canUnlock = selected?.account_status === 'LOCKED';
-  const canUnlink = selected?.mapping_status === 'DUPLICATE';
-  const isSelf = selected?.account_id === myAccountId;
-  const isWithdrawn = selected?.account_status === 'WITHDRAWN';
-  // 운영자로 올릴 수 있는 것은 살아 있는 계정뿐이다. 내릴 때 자기 자신·마지막
-  // 운영자를 막는 것은 서버가 본다 — 여기서는 버튼을 안 보여줄 뿐이다.
-  const canGrantAdmin = selected !== null && !selected.is_admin && !isWithdrawn;
-  const canRevokeAdmin = selected !== null && selected.is_admin && !isSelf;
 
   return (
     <div className={styles.page}>
@@ -245,11 +151,7 @@ export default function OpsAccountsPage() {
         </thead>
         <tbody>
           {filtered.length > 0 ? filtered.map((account) => (
-            <tr
-              key={account.account_id}
-              aria-selected={account.account_id === selected?.account_id}
-              onClick={() => setSelectedId(account.account_id)}
-            >
+            <tr key={account.account_id} onClick={() => navigate(`/ops/accounts/${account.account_id}`)}>
               <td>
                 {account.email}
                 {account.is_admin && (
@@ -264,108 +166,24 @@ export default function OpsAccountsPage() {
               <td>{account.person?.org_name ?? '-'}</td>
               <td><OpsStatusBadge tone={MAPPING_TONES[account.mapping_status]}>{MAPPING_LABELS[account.mapping_status]}</OpsStatusBadge></td>
               <td><OpsStatusBadge tone={statusTone(account.account_status)}>{statusLabel(account.account_status)}</OpsStatusBadge></td>
-              <td>{account.services.join(' · ') || '없음'}</td>
-              <td><button type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(account.account_id); }}>상세 보기</button></td>
+              <td>{serviceLabels(account.services) || '없음'}</td>
+              <td>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(`/ops/accounts/${account.account_id}`);
+                  }}
+                >
+                  상세 보기
+                </button>
+              </td>
             </tr>
           )) : (
             <tr><td className={styles.emptyCell} colSpan={8}>조건에 맞는 계정이 없습니다.</td></tr>
           )}
         </tbody>
       </OpsDataTable>
-
-      {selected ? <OpsDetailPanel title={`선택 계정 · ${selected.email} · ${MAPPING_LABELS[selected.mapping_status]}`}>
-        <div className={styles.detailCards}>
-          <div className={styles.detailCard}>
-            <strong>직원 매핑</strong>
-            <p>
-              {selected.person
-                ? `${selected.person.name ?? '직원 정보 없음(연결 대상이 삭제됨)'} · ${selected.person.org_name ?? '조직 미지정'}`
-                : '미연결'}
-              {selected.mapping_status === 'DUPLICATE' ? ` · 연결 ${selected.link_count}건` : ''}
-            </p>
-          </div>
-          <div className={styles.detailCard}>
-            <strong>연결 서비스</strong>
-            <p>{selected.services.join(' · ') || '연결된 서비스 없음'}</p>
-          </div>
-        </div>
-        <p className={styles.detailText}>
-          운영자는 오류 조사에 필요한 최소 정보만 확인하고, 잘못된 직원 연결 해제 또는 계정 상태 변경을 수행합니다.
-        </p>
-        {isWithdrawn && (
-          <p className={styles.detailText}>탈퇴한 계정은 상태를 변경할 수 없습니다.</p>
-        )}
-        {isSelf && !isWithdrawn && (
-          <p className={styles.detailText}>본인 계정은 이 화면에서 잠글 수 없습니다.</p>
-        )}
-        <div className={styles.rowActions}>
-          {canLock && (
-            <Button variant="danger" onClick={() => setPendingAction('lock')}>계정 정지</Button>
-          )}
-          {canUnlock && (
-            <Button variant="primary" onClick={() => setPendingAction('unlock')}>계정 재활성</Button>
-          )}
-          {canUnlink && (
-            <Button variant="outline" onClick={() => setPendingAction('unlink')}>직원 연결 해제</Button>
-          )}
-          {canGrantAdmin && (
-            <Button variant="outline" onClick={() => setPendingAction('grant-admin')}>운영자로 지정</Button>
-          )}
-          {canRevokeAdmin && (
-            <Button variant="danger" onClick={() => setPendingAction('revoke-admin')}>운영자 권한 회수</Button>
-          )}
-        </div>
-      </OpsDetailPanel> : (
-        <div className={styles.inlineEmpty}>검색 조건을 변경하면 계정 상세를 확인할 수 있습니다.</div>
-      )}
-
-      <Modal
-        open={pendingAction !== null && selected !== null}
-        onClose={() => {
-          if (submitting) return;
-          setPendingAction(null);
-          setReason('');
-        }}
-        title={MODAL_TITLES[pendingAction ?? 'lock']}
-        footer={(
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setPendingAction(null);
-                setReason('');
-              }}
-              disabled={submitting}
-            >
-              취소
-            </Button>
-            <Button
-              variant={pendingAction === 'unlock' || pendingAction === 'grant-admin' ? 'primary' : 'danger'}
-              onClick={confirmAction}
-              disabled={submitting}
-            >
-              {submitting ? '처리 중…' : '변경 적용'}
-            </Button>
-          </>
-        )}
-      >
-        <p className={styles.modalCopy}>
-          {selected?.email} 계정에 이 작업을 적용합니다. 변경 내역은 운영 감사 대상으로 기록됩니다.
-        </p>
-        {/* 권한을 주고받는 일만 사유를 받는다. 나머지 조치에도 사유를 받는 것은
-            따로 정리할 일이고, 여기서 같이 늘리면 이 변경의 범위가 흐려진다. */}
-        {(pendingAction === 'grant-admin' || pendingAction === 'revoke-admin') && (
-          <div className={styles.fieldGroup}>
-            <label htmlFor="admin-reason">사유 (선택)</label>
-            <textarea
-              id="admin-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="예: 운영 인수인계"
-            />
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }

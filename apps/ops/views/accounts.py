@@ -26,6 +26,21 @@ class AccountListView(AdminView):
         return Response([account_row_response(row) for row in rows])
 
 
+class AccountDetailView(AdminView):
+    """계정 한 건. 상세가 별도 페이지가 되면서 생긴 경로다.
+
+    예전에는 목록 화면 아래 섹션이라 목록이 이미 들고 있는 값을 그대로 썼다.
+    페이지가 갈리면 주소로 바로 들어올 수 있어야 하므로 한 건을 줄 자리가 필요하다.
+    """
+
+    def get(self, request, account_id):
+        try:
+            row = OpsAccountRepository.get(account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+        return Response(account_row_response(row))
+
+
 class AccountLockView(AdminView):
     def post(self, request, account_id):
         try:

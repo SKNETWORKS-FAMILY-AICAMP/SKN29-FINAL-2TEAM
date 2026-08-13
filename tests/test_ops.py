@@ -423,3 +423,48 @@ class OpsTeamOwnerTransferTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 401)
         repo.candidates.assert_not_called()
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.accounts.OpsAccountRepository")
+class OpsAccountDetailTests(SimpleTestCase):
+    """계정 상세가 별도 페이지가 되면서 생긴 경로.
+
+    목록 아래 섹션일 때는 목록이 이미 들고 있는 값을 썼다. 페이지가 갈리면
+    **주소로 바로 들어올 수 있어야** 하므로 한 건을 줄 자리가 필요하다.
+    """
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_한_건을_준다(self, repo, _admin):
+        repo.get.return_value = {
+            "account_id": "UA002", "email": "a@b.c", "display_name": "홍길동",
+            "account_status": "ACTIVE", "is_admin": False, "team_id": "TE001",
+            "team_name": "개발팀", "link_count": 1, "person_id": None,
+            "person_name": None, "org_id": None, "org_name": None, "services": ["JIRA"],
+        }
+
+        response = self.client.get("/api/ops/accounts/UA002/", **self._headers())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["email"], "a@b.c")
+        repo.get.assert_called_once_with("UA002")
+
+    def test_없는_계정은_404(self, repo, _admin):
+        from backend.db.errors import RecordNotFound
+
+        repo.get.side_effect = RecordNotFound("존재하지 않는 계정입니다: UA999")
+
+        response = self.client.get("/api/ops/accounts/UA999/", **self._headers())
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_상세_경로가_조치_경로를_먹지_않는다(self, repo, _admin):
+        """`accounts/<id>/` 를 `accounts/<id>/lock/` 보다 앞에 두면 잠금이 상세로 잡힌다."""
+
+        from django.urls import resolve
+
+        self.assertEqual(resolve("/api/ops/accounts/UA001/").url_name, "api_ops_account_detail")
+        self.assertEqual(resolve("/api/ops/accounts/UA001/lock/").url_name, "api_ops_account_lock")
+        self.assertEqual(resolve("/api/ops/accounts/UA001/admin/").url_name, "api_ops_account_admin")

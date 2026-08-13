@@ -2917,7 +2917,7 @@ class OpsAccountRepository:
     """
 
     @staticmethod
-    def list() -> list[dict[str, Any]]:
+    def list(account_id: str | None = None) -> list[dict[str, Any]]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -2932,9 +2932,14 @@ class OpsAccountRepository:
                     connected_services AS (
                         -- People DB는 본인 확인용 내부 커넥터라 "연결 서비스"가 아니다
                         -- (연결 서비스 현황과 같은 정의 — OpsConnectorRepository.list() 참고).
+                        --
+                        -- MODEL_API 도 뺀다. 같은 표를 쓸 뿐 **데이터를 가져오는
+                        -- 연결이 아니라 모델을 부르는 열쇠**다(2026-08-13). 안 빼면
+                        -- 계정 화면의 「연결 서비스」에 모델이 섞여 나온다.
                         SELECT account_id, array_agg(DISTINCT connector_type ORDER BY connector_type) AS services
                         FROM connector_conn
-                        WHERE auth_status = 'CONNECTED' AND connector_type <> 'PEOPLE_DB'
+                        WHERE auth_status = 'CONNECTED'
+                          AND connector_type NOT IN ('PEOPLE_DB', 'MODEL_API')
                         GROUP BY account_id
                     )
                     SELECT
@@ -2953,12 +2958,27 @@ class OpsAccountRepository:
                     LEFT JOIN link_counts AS lc ON lc.account_id = ua.account_id
                     LEFT JOIN representative_link AS rl ON rl.account_id = ua.account_id
                     LEFT JOIN connected_services AS cs ON cs.account_id = ua.account_id
+                    WHERE %(account_id)s::text IS NULL OR ua.account_id = %(account_id)s
                     ORDER BY ua.account_id
-                    """
+                    """,
+                    {"account_id": account_id},
                 )
                 rows = list(cursor.fetchall())
 
         return _attach_person_display(rows)
+
+    @staticmethod
+    def get(account_id: str) -> dict[str, Any]:
+        """계정 한 건. 상세 화면이 쓴다.
+
+        목록과 **같은 SQL 을 쓴다.** 상세용 쿼리를 따로 쓰면 중복 연결 판정 같은
+        계산이 두 벌이 되고, 언젠가 한쪽만 고쳐져 목록과 상세가 다른 말을 한다.
+        """
+
+        rows = OpsAccountRepository.list(account_id=account_id)
+        if not rows:
+            raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+        return rows[0]
 
     @staticmethod
     def lock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:

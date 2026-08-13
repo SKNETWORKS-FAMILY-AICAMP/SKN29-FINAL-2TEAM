@@ -65,3 +65,11 @@ export function setAccountAdmin(token: string, accountId: string, isAdmin: boole
     body: { is_admin: isAdmin, reason },
   });
 }
+
+/**
+ * 계정 한 건. 상세가 별도 페이지가 되면서 필요해졌다 — 주소로 바로 들어올 수
+ * 있어야 하므로 목록을 통째로 받아 골라내는 것으로는 부족하다.
+ */
+export function fetchAccount(token: string, accountId: string) {
+  return opsRequest<OpsAccount>(`/ops/accounts/${accountId}/`, { token });
+}
