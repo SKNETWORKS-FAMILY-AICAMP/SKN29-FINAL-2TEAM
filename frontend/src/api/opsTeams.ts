@@ -46,7 +46,12 @@ export function transferTeamOwner(token: string, teamId: string, accountId: stri
   );
 }
 
-/** 이 팀이 들고 있는 것과 실제로 있었던 일. **대화 내용·문서 원문은 오지 않는다.** */
+/**
+ * 이 팀이 들고 있는 것과 실제로 있었던 일. **대화 내용·문서 원문은 오지 않는다.**
+ *
+ * **팀이 만든 것만 온다** — 우리가 넣는 코파일럿은 서버가 거른다(`is_prebuilt`).
+ * 그래서 그 필드도 여기 없다.
+ */
 export interface OpsTeamAgent {
   agent_id: string;
   name: string;
@@ -55,7 +60,6 @@ export interface OpsTeamAgent {
   model: string | null;
   reasoning_effort: string | null;
   max_iterations: number | null;
-  is_prebuilt: boolean;
   status: string;
   tool_refs: string[];
 }

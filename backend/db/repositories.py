@@ -2918,6 +2918,12 @@ class OpsTeamRepository:
         **지시문도 준다.** 팀이 쓴 글이라 우리가 함부로 볼 것 같지만, 답이 근거
         없이 나온다는 문의는 대개 지시문에서 갈린다 — 그걸 못 보면 운영자가 할 수
         있는 말이 없다. 대화 내용과 문서 원문은 여기서도 안 준다.
+
+        **우리가 넣은 것(`is_prebuilt`)은 뺀다.** 팀 화면은 `!is_prebuilt` 로
+        걸러서 보여주므로, 그것까지 여기 섞으면 **고객은 존재도 모르는 줄**을
+        운영자만 보고 「이 에이전트가 문제인가요」라고 묻게 된다(2026-08-13 PM 지적).
+        `agent:*`(정문)가 아니라 `is_prebuilt` 로 가르는 것이 맞다 — 예시를 다시
+        넣더라도 그것 역시 팀이 만든 것이 아니다.
         """
 
         with database_connection() as connection:
@@ -2925,8 +2931,7 @@ class OpsTeamRepository:
                 cursor.execute(
                     """
                     SELECT a.agent_id, a.name, a.description, a.instruction,
-                           a.model, a.reasoning_effort, a.max_iterations,
-                           a.is_prebuilt, a.status,
+                           a.model, a.reasoning_effort, a.max_iterations, a.status,
                            COALESCE(
                                (SELECT array_agg(t.tool_ref ORDER BY t.tool_ref)
                                 FROM agent_tool AS t WHERE t.agent_id = a.agent_id),
@@ -2934,7 +2939,8 @@ class OpsTeamRepository:
                            ) AS tool_refs
                     FROM agent AS a
                     WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
-                    ORDER BY a.is_prebuilt DESC, a.name
+                      AND a.is_prebuilt = false
+                    ORDER BY a.name
                     """,
                     (team_id,),
                 )
@@ -2950,6 +2956,11 @@ class OpsTeamRepository:
         되는 것과 보면 안 되는 것의 경계를 이미 지키고 있다.
 
         실패한 도구를 함께 준다 — 실행이 왜 실패했는지는 그 줄에 있다.
+
+        **에이전트 표와 같은 기준으로 거른다.** 위에서 코파일럿을 빼 놓고 실행만
+        남기면, 표에 없는 이름이 실행 줄에 적혀 더 헷갈린다. 대신 채팅에서 난 일은
+        이 표에 안 남는다 — 그건 에이전트가 아니라 대화라서 여기서 답할 물음이
+        아니다(2026-08-13 PM).
         """
 
         with database_connection() as connection:
@@ -2969,7 +2980,7 @@ class OpsTeamRepository:
                            ) AS failed_tools
                     FROM agent_run AS r
                     JOIN agent AS a ON a.agent_id = r.agent_id
-                    WHERE a.team_id = %s
+                    WHERE a.team_id = %s AND a.is_prebuilt = false
                     ORDER BY r.started_at DESC
                     LIMIT %s
                     """,

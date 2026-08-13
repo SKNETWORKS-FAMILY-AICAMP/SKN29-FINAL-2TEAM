@@ -525,16 +525,18 @@ class OpsTeamContentTests(SimpleTestCase):
         return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
 
     def test_에이전트와_실행을_준다(self, repo, _admin):
+        # **팀이 만든 것**을 예로 든다. 우리가 넣는 코파일럿은 여기까지 오지 않는다 —
+        # Repository 가 `is_prebuilt` 로 거른다.
         repo.agents.return_value = [
-            {"agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-luna", "tool_refs": ["agent:*"]}
+            {"agent_id": "AG001", "name": "회의록 정리", "model": "gpt-5.6-luna", "tool_refs": ["document_search"]}
         ]
         repo.runs.return_value = [
-            {"run_id": "r1", "agent_name": "코파일럿", "status": "FAILED", "failed_tools": ["jira_get_issues (401)"]}
+            {"run_id": "r1", "agent_name": "회의록 정리", "status": "FAILED", "failed_tools": ["jira_get_issues (401)"]}
         ]
 
         body = self.client.get(self.URL, **self._headers()).json()
 
-        self.assertEqual(body["agents"][0]["name"], "코파일럿")
+        self.assertEqual(body["agents"][0]["name"], "회의록 정리")
         # 왜 실패했는지가 그 줄에 있어야 운영자가 답할 수 있다.
         self.assertEqual(body["runs"][0]["failed_tools"], ["jira_get_issues (401)"])
         repo.agents.assert_called_once_with("TE001")
