@@ -142,8 +142,8 @@ def policy_change_row_response(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-class OpsModelAttachSerializer(serializers.Serializer):
-    """운영자가 팀에 모델을 붙일 때 받는 값.
+class OpsModelRegisterSerializer(serializers.Serializer):
+    """운영자가 팀에 모델을 등록할 때 받는 값.
 
     `AGENT_MODELS` 와 겹치는 이름은 거절한다 — 경로가 모델 이름으로 정해지므로
     기본 제공과 이름이 같으면 그 선택이 뜻을 잃는다.

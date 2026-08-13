@@ -74,7 +74,7 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.opsAccounts, label: '계정 관리', group: '운영자 콘솔' },
   { path: PATHS.opsMappings, label: '계정 연결·초대 현황', group: '운영자 콘솔' },
   { path: PATHS.opsConnectors, label: '연결 서비스 현황', group: '운영자 콘솔' },
-  { path: PATHS.opsModels, label: '모델 부착', group: '운영자 콘솔' },
+  { path: PATHS.opsModels, label: '모델 등록', group: '운영자 콘솔' },
   { path: PATHS.opsAudit, label: '감사 로그', group: '운영자 콘솔' },
   { path: PATHS.opsPolicies, label: '전역 정책', group: '운영자 콘솔' },
 ];

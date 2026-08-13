@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<string, string> = {
   SIGNUP: '회원가입',
   PASSWORD_RESET: '비밀번호 재설정',
   CONNECTOR_CONNECT: '커넥터 연결',
+  OPS_MODEL_REGISTER: '모델 등록',
+  OPS_MODEL_REMOVE: '모델 삭제',
 };
 
 export function actionLabel(action: string): string {

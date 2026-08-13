@@ -1,6 +1,6 @@
 import { opsRequest } from './opsClient';
 
-/** 어느 팀에 무엇이 붙어 있는가. **키는 서버가 돌려주지 않는다.** */
+/** 어느 팀에 무엇이 등록돼 있는가. **키는 서버가 돌려주지 않는다.** */
 export interface OpsModel {
   conn_id: string;
   team_id: string;
@@ -12,7 +12,7 @@ export interface OpsModel {
   connected_at: string;
 }
 
-export interface OpsModelAttachInput {
+export interface OpsModelRegisterInput {
   team_id: string;
   label: string;
   base_url: string;
@@ -24,11 +24,11 @@ export function fetchOpsModels(token: string) {
   return opsRequest<OpsModel[]>('/ops/models/', { token });
 }
 
-/** 붙이기 전에 서버가 그 주소·키·모델로 한 번 답을 받아 본다 — 실패하면 400. */
-export function attachOpsModel(token: string, body: OpsModelAttachInput) {
+/** 등록 전에 서버가 그 주소·키·모델로 한 번 답을 받아 본다 — 실패하면 400. */
+export function registerOpsModel(token: string, body: OpsModelRegisterInput) {
   return opsRequest<OpsModel[]>('/ops/models/', { method: 'POST', token, body });
 }
 
-export function detachOpsModel(token: string, connId: string) {
+export function removeOpsModel(token: string, connId: string) {
   return opsRequest<OpsModel[]>(`/ops/models/${connId}/`, { method: 'DELETE', token });
 }

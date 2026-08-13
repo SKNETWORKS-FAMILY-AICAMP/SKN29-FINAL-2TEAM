@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, OpsDataTable, OpsEmpty, OpsPageHeader, OpsSectionCard } from '../../components';
-import { attachOpsModel, detachOpsModel, fetchOpsModels } from '../../api/opsModels';
+import { fetchOpsModels, registerOpsModel, removeOpsModel } from '../../api/opsModels';
 import type { OpsModel } from '../../api/opsModels';
 import { fetchOpsTeams } from '../../api/opsTeams';
 import type { OpsTeam } from '../../api/opsTeams';
@@ -11,13 +11,13 @@ import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
- * 팀별 모델 부착.
+ * 팀별 모델 등록.
  *
- * **팀이 스스로 붙이지 않는다.** 회사가 요청하면 운영자가 여기서 붙인다
+ * **팀이 스스로 등록하지 않는다.** 회사가 요청하면 운영자가 여기서 등록한다
  * (2026-08-13 멘토링). 설정의 등록 폼을 없애고 이 화면으로 옮긴 이유는
  * `apps/ops/views/models.py` 에 적어 두었다.
  *
- * 붙이는 사람만 바뀌고 **쓸 수 있는 범위는 여전히 그 팀뿐이다.**
+ * 등록하는 사람만 바뀌고 **쓸 수 있는 범위는 여전히 그 팀뿐이다.**
  */
 export default function OpsModelsPage() {
   const navigate = useNavigate();
@@ -76,14 +76,14 @@ export default function OpsModelsPage() {
     if (found) setBaseUrl(found.baseUrl);
   }
 
-  async function attach() {
+  async function register() {
     const session = loadOpsSession();
     if (!session) return;
     setBusy(true);
     setFormError('');
     try {
       setModels(
-        await attachOpsModel(session.token, {
+        await registerOpsModel(session.token, {
           team_id: teamId,
           label: preset.label,
           base_url: baseUrl.trim(),
@@ -95,21 +95,21 @@ export default function OpsModelsPage() {
       setApiKey('');
       setModel('');
     } catch (thrown) {
-      setFormError(thrown instanceof ApiError ? thrown.message : '붙이지 못했습니다.');
+      setFormError(thrown instanceof ApiError ? thrown.message : '등록하지 못했습니다.');
     } finally {
       setBusy(false);
     }
   }
 
-  async function detach(row: OpsModel) {
+  async function remove(row: OpsModel) {
     const session = loadOpsSession();
     if (!session) return;
     setBusy(true);
     setFormError('');
     try {
-      setModels(await detachOpsModel(session.token, row.conn_id));
+      setModels(await removeOpsModel(session.token, row.conn_id));
     } catch (thrown) {
-      setFormError(thrown instanceof ApiError ? thrown.message : '떼지 못했습니다.');
+      setFormError(thrown instanceof ApiError ? thrown.message : '지우지 못했습니다.');
     } finally {
       setBusy(false);
     }
@@ -118,7 +118,7 @@ export default function OpsModelsPage() {
   if (loading && !models) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="모델 부착" description="요청받은 모델을 팀에 붙입니다. 붙인 팀만 그 모델을 고를 수 있습니다." />
+        <OpsPageHeader title="모델 등록" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -127,7 +127,7 @@ export default function OpsModelsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="모델 부착" description="요청받은 모델을 팀에 붙입니다. 붙인 팀만 그 모델을 고를 수 있습니다." />
+        <OpsPageHeader title="모델 등록" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -135,13 +135,13 @@ export default function OpsModelsPage() {
   }
 
   const rows = models ?? [];
-  const canAttach = Boolean(teamId && baseUrl.trim() && apiKey.trim() && model.trim());
+  const canRegister = Boolean(teamId && baseUrl.trim() && apiKey.trim() && model.trim());
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title="모델 부착" description="요청받은 모델을 팀에 붙입니다. 붙인 팀만 그 모델을 고를 수 있습니다." />
+      <OpsPageHeader title="모델 등록" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
 
-      <OpsSectionCard title="새로 붙이기" subtitle="저장 전에 그 주소와 키로 실제로 한 번 불러 봅니다.">
+      <OpsSectionCard title="새로 등록" subtitle="저장 전에 그 주소와 키로 실제로 한 번 불러 봅니다.">
         <div className={styles.formGrid}>
           <div className={styles.fieldGroup}>
             <label htmlFor="model-team">팀</label>
@@ -201,15 +201,15 @@ export default function OpsModelsPage() {
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
 
         <div className={styles.formActions}>
-          <Button onClick={attach} disabled={!canAttach || busy}>
-            {busy ? '확인하는 중…' : '붙이기'}
+          <Button onClick={register} disabled={!canRegister || busy}>
+            {busy ? '확인하는 중…' : '등록'}
           </Button>
         </div>
       </OpsSectionCard>
 
-      <OpsSectionCard title={`붙어 있는 모델 ${rows.length}건`}>
+      <OpsSectionCard title={`등록된 모델 ${rows.length}건`}>
         {rows.length === 0 ? (
-          <OpsEmpty message="아직 어느 팀에도 붙인 모델이 없습니다." />
+          <OpsEmpty message="아직 어느 팀에도 등록한 모델이 없습니다." />
         ) : (
           <OpsDataTable minWidth={860}>
             <thead>
@@ -218,7 +218,7 @@ export default function OpsModelsPage() {
                 <th>모델</th>
                 <th>제공자</th>
                 <th>주소</th>
-                <th>붙인 날</th>
+                <th>등록일</th>
                 <th />
               </tr>
             </thead>
@@ -231,8 +231,8 @@ export default function OpsModelsPage() {
                   <td>{row.base_url}</td>
                   <td>{row.connected_at.slice(0, 10)}</td>
                   <td>
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => detach(row)}>
-                      떼기
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(row)}>
+                      지우기
                     </Button>
                   </td>
                 </tr>

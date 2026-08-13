@@ -277,9 +277,9 @@ class MainModelApiTests(SimpleTestCase):
 
 @patch("apps.agents.api_views.CustomModelRepository")
 class CustomModelApiTests(SimpleTestCase):
-    """팀에 붙어 있는 모델 API — **읽기 전용이다.**
+    """이 팀에 등록된 모델 API — **읽기 전용이다.**
 
-    붙이고 떼는 것은 운영자 콘솔이 한다(2026-08-13 멘토링). 화면에서만 감추면
+    등록하고 지우는 것은 운영자 콘솔이 한다(2026-08-13 멘토링). 화면에서만 감추면
     규칙이 아니라서, **쓰기 메서드가 API 에 남아 있지 않은지**를 여기서 지킨다.
     """
 
@@ -294,7 +294,7 @@ class CustomModelApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]["model"], "models/gemini-3.6-flash")
 
-    def test_팀은_붙이거나_뗄_수_없다(self, customs):
+    def test_팀은_등록하거나_지울_수_없다(self, customs):
         """셀프서비스 경로를 없앤 것이 UI 뿐이면 API 를 그대로 부를 수 있다."""
 
         post = self.client.post(

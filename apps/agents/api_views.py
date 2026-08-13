@@ -204,10 +204,10 @@ class MainModelAPIView(AuthenticatedAPIView):
 
 
 class CustomModelAPIView(AuthenticatedAPIView):
-    """이 팀에 붙어 있는 모델 API. **읽기 전용이다.**
+    """이 팀에 등록된 모델 API. **읽기 전용이다.**
 
-    붙이고 떼는 것은 운영자 콘솔(`/api/ops/models/`)이 한다 — 회사가 요청하면
-    우리가 붙인다(2026-08-13 멘토링). 예전에는 여기에 POST·DELETE 와 모델 목록
+    등록하고 지우는 것은 운영자 콘솔(`/api/ops/models/`)이 한다 — 회사가 요청하면
+    우리가 등록한다(2026-08-13 멘토링). 예전에는 여기에 POST·DELETE 와 모델 목록
     조회(probe)가 있었는데 함께 걷어냈다. **화면에서만 감추면 규칙이 아니다** —
     쓰기 경로가 API 에 남아 있으면 그대로 부를 수 있다.
 

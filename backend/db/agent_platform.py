@@ -251,7 +251,7 @@ class CustomModelRepository:
     def list_all() -> list[dict[str, Any]]:
         """모든 팀의 등록분. **운영자 콘솔만 쓴다** — 팀은 자기 것만 본다.
 
-        **키는 여기서도 안 나간다.** 붙인 사람이 운영자여도 마찬가지다.
+        **키는 여기서도 안 나간다.** 등록한 사람이 운영자여도 마찬가지다.
         """
 
         with database_connection() as connection:
@@ -290,7 +290,7 @@ class CustomModelRepository:
 
     @staticmethod
     def models_for_team(team_id: str) -> set[str]:
-        """이 팀에 이미 붙어 있는 모델 이름. 중복 등록을 막는 쪽이 쓴다."""
+        """이 팀에 이미 등록된 모델 이름. 중복 등록을 막는 쪽이 쓴다."""
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -301,17 +301,17 @@ class CustomModelRepository:
 
     @staticmethod
     def add_for_team(
-        *, team_id: str, label: str, base_url: str, api_key: str, model: str, attached_by: str
+        *, team_id: str, label: str, base_url: str, api_key: str, model: str, registered_by: str
     ) -> None:
-        """운영자가 **그 팀에** 붙인다.
+        """운영자가 **그 팀에** 등록한다.
 
         `connector_conn` 에는 팀 칸이 없고 소속은 `user_account.team_id` 로만
         나온다. 그래서 **그 팀의 팀장 계정에** 매단다 — 운영자 자기 계정에 매달면
-        운영자의 팀(대개 없다)에 붙어 정작 그 팀에서는 안 보인다.
+        운영자의 팀(대개 없다)에 매달려 정작 그 팀에서는 안 보인다.
 
         스키마에 `team_id` 를 새로 다는 방법도 있지만, 컬럼 하나 때문에 팀원
         전원이 ALTER 를 돌려야 한다(메인 모델을 정문 에이전트의 칸에 둔 것과 같은
-        판단이다). 대신 **누가 붙였는지는 payload 에 남긴다** — 소유 계정만 보면
+        판단이다). 대신 **누가 등록했는지는 payload 에 남긴다** — 소유 계정만 보면
         팀장이 직접 등록한 것처럼 보이기 때문이다.
         """
 
@@ -342,7 +342,7 @@ class CustomModelRepository:
                                 "base_url": base_url,
                                 "api_key": api_key,
                                 "model": model,
-                                "attached_by": attached_by,
+                                "registered_by": registered_by,
                             }
                         ),
                     ),

@@ -18,7 +18,7 @@ import styles from './tabs.module.css';
  * 목록은 **키가 가진 것을 그대로 뿌리지 않는다.** 실제로 불러 보면 OpenAI 키가
  * `whisper-1`·`tts-1`·`sora-2` 까지 100 개 넘게 돌려준다 — 고를 수 없는 목록이
  * 된다. 우리가 제공하는 것은 **호출 방식까지 확인한 것**만 올린다. 그 밖의 모델은
- * 팀이 요청하면 운영자가 붙인다(`/ops/models`) — 여기서는 붙은 것을 보기만 한다.
+ * 팀이 요청하면 운영자가 등록한다(`/ops/models`) — 여기서는 등록된 것을 보기만 한다.
  */
 export function ModelTab() {
   const session = useSession();
@@ -144,46 +144,46 @@ export function ModelTab() {
       </section>
 
       {/* 목록 뒤에 둔다. 위 표가 「고르는 자리」이고 이건 「그 중 우리 팀에만
-          붙어 있는 것이 무엇인가」라, 고른 다음에 읽는 순서가 맞는다. */}
+          등록된 것이 무엇인가」라, 고른 다음에 읽는 순서가 맞는다. */}
       <CustomModelCard rows={customs} />
     </div>
   );
 }
 
 /**
- * 팀에 붙어 있는 모델 API — **읽기만 한다.**
+ * 이 팀에 등록된 모델 API — **읽기만 한다.**
  *
  * 예전에는 여기서 팀이 직접 등록했다. 그런데 등록하려면 OpenAI 호환 주소와 키와
  * 모델 식별자를 알아야 한다 — **「코딩 없이」를 내세운 제품이 비개발자에게 요구할
  * 일이 아니다.** 실제로 Google 호환 주소는 AI Studio 화면에 없어서 문서를 뒤져야
- * 나왔다(2026-08-13 멘토링: 회사가 요청하면 우리가 붙인다).
+ * 나왔다(2026-08-13 멘토링: 회사가 요청하면 우리가 등록한다).
  *
  * 목록은 남긴다. 우리 팀이 지금 무엇으로 도는지는 팀이 알아야 하고, 그건 등록
- * 권한과 다른 이야기다. 붙이고 떼는 것은 운영자 콘솔(`/ops/models`)이 한다.
+ * 권한과 다른 이야기다. 등록하고 지우는 것은 운영자 콘솔(`/ops/models`)이 한다.
  */
 function CustomModelCard({ rows }: { rows: CustomModel[] }) {
   return (
     <section className={styles.card}>
       <div className={styles.cardHead}>
         <h2 className={styles.cardTitle}>
-          우리 팀에 붙은 모델
-          <InfoNote title="우리 팀에 붙은 모델">
+          우리 팀에 등록된 모델
+          <InfoNote title="우리 팀에 등록된 모델">
             <p>
-              <strong>따로 붙인 것이 없으면 저희가 제공하는 모델로 돕니다.</strong> 대부분의 팀은
+              <strong>따로 등록한 것이 없으면 저희가 제공하는 모델로 돕니다.</strong> 대부분의 팀은
               이대로 쓰면 됩니다.
             </p>
             <p>
               회사 규정상 <strong>자기 계약으로만 데이터를 보내야 하거나</strong>, 사내에 모델을 띄운
-              경우에는 그 모델을 이 팀에만 붙일 수 있습니다. 주소·키를 다루는 일이라
-              <strong> 저희에게 요청하시면 저희가 붙입니다.</strong>
+              경우에는 그 모델을 이 팀에만 등록할 수 있습니다. 주소·키를 다루는 일이라
+              <strong> 저희에게 요청하시면 저희가 등록해 드립니다.</strong>
             </p>
-            <p>붙인 모델은 위 목록에 함께 나오고, 에이전트를 만들 때도 고를 수 있습니다.</p>
+            <p>등록된 모델은 위 목록에 함께 나오고, 에이전트를 만들 때도 고를 수 있습니다.</p>
           </InfoNote>
         </h2>
       </div>
 
       {rows.length === 0 ? (
-        <p className={styles.cardSub}>따로 붙인 모델이 없습니다 — 저희가 제공하는 모델로 돕니다.</p>
+        <p className={styles.cardSub}>따로 등록한 모델이 없습니다 — 저희가 제공하는 모델로 돕니다.</p>
       ) : (
         <div className={styles.list}>
           {rows.map((row) => (
