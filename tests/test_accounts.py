@@ -691,6 +691,7 @@ class LeaderOnlyGuardTests(SimpleTestCase):
         ("/api/teams/settings/", "put", {"capacity_wk_hours": 40}),
         ("/api/mcp/servers/", "post", {"name": "x", "endpoint_url": "https://example.com/mcp"}),
         ("/api/mcp/servers/MS001/", "delete", None),
+        ("/api/mcp/servers/MS001/", "patch", {"name": "x", "endpoint_url": "https://example.com/mcp"}),
         ("/api/mcp/servers/MS001/test/", "post", {}),
         ("/api/team/folders/", "put", {"conn_id": "CN003", "folders": []}),
     ]

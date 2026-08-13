@@ -7,6 +7,7 @@ import {
   deleteMcpServer,
   listMcpServers,
   testMcpServer,
+  updateMcpServer,
 } from '../../../api/mcp';
 import type { McpServer } from '../../../api/mcp';
 import { loadSessionToken, useSession } from '../../../utils/session';
@@ -43,6 +44,8 @@ export function McpTab() {
   const [authToken, setAuthToken] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 고치는 중인 서버. 저장된 토큰은 서버가 안 주므로 칸을 비워 두고 시작한다. */
+  const [editing, setEditing] = useState<{ id: string; name: string; url: string; token: string } | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -89,6 +92,33 @@ export function McpTab() {
       setServers(await listMcpServers(token));
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '연결 확인에 실패했습니다.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function save() {
+    if (!token || !editing || !editing.name.trim() || !editing.url.trim()) return;
+    setBusy(editing.id);
+    setError(null);
+    try {
+      const updated = await updateMcpServer(token, editing.id, {
+        name: editing.name.trim(),
+        endpoint_url: editing.url.trim(),
+        // 비워 두면 저장된 토큰을 그대로 둔다. 바꾸려는 의사를 명시할 때만 보낸다.
+        ...(editing.token.trim() ? { auth_token: editing.token.trim(), replace_token: true } : {}),
+      });
+      setServers((prev) => prev.map((s) => (s.mcp_server_id === updated.mcp_server_id ? updated : s)));
+      setEditing(null);
+      // 주소가 바뀌었으면 서버가 도구를 지우고 UNCHECKED 로 되돌렸다 — 그 사실을 말한다.
+      showToast(
+        updated.status === 'UNCHECKED'
+          ? `${updated.name} 을 고쳤습니다. 주소가 바뀌어 도구를 다시 읽어야 합니다.`
+          : `${updated.name} 을 고쳤습니다.`,
+        'success',
+      );
+    } catch (exc) {
+      setError(exc instanceof ApiError ? exc.message : '고치지 못했습니다.');
     } finally {
       setBusy(null);
     }
@@ -151,6 +181,57 @@ export function McpTab() {
 
           {servers.map((server) => {
             const chip = STATUS[server.status];
+
+            if (editing?.id === server.mcp_server_id) {
+              return (
+                <div key={server.mcp_server_id} className={styles.row}>
+                  <div className={styles.rowBody}>
+                    <div className={styles.formRow}>
+                      <Input
+                        label="서버 이름"
+                        id={`mcp-edit-name-${server.mcp_server_id}`}
+                        name="mcpEditName"
+                        value={editing.name}
+                        onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+                      />
+                      <Input
+                        label="서버 주소 (https)"
+                        id={`mcp-edit-url-${server.mcp_server_id}`}
+                        name="mcpEditUrl"
+                        value={editing.url}
+                        onChange={(event) => setEditing({ ...editing, url: event.target.value })}
+                      />
+                      <Input
+                        label={server.has_token ? '인증 토큰 (비워 두면 그대로)' : '인증 토큰 (없으면 비워 두세요)'}
+                        id={`mcp-edit-token-${server.mcp_server_id}`}
+                        name="mcpEditToken"
+                        type="password"
+                        placeholder={server.has_token ? '저장된 토큰 유지' : '••••••••••••'}
+                        value={editing.token}
+                        onChange={(event) => setEditing({ ...editing, token: event.target.value })}
+                      />
+                    </div>
+                    <span className={styles.rowMeta}>
+                      주소를 바꾸면 지금 읽어 둔 도구는 지워집니다 — 다른 서버의 도구이기 때문입니다.
+                      「연결 확인」을 다시 눌러야 에이전트가 고를 수 있습니다.
+                    </span>
+                  </div>
+                  <div className={styles.rowActions}>
+                    <Button
+                      size="sm"
+                      disabled={busy === server.mcp_server_id || !editing.name.trim() || !editing.url.trim()}
+                      onClick={save}
+                    >
+                      {busy === server.mcp_server_id ? '저장 중…' : '저장'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                      취소
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div key={server.mcp_server_id} className={styles.row}>
                 <span className={styles.rowIcon}>
@@ -180,6 +261,22 @@ export function McpTab() {
                   {chip.hint && <span className={styles.rowMeta}>{chip.hint}</span>}
                 </div>
                 <div className={styles.rowActions}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!isLeader || busy !== null}
+                    onClick={() =>
+                      setEditing({
+                        id: server.mcp_server_id,
+                        name: server.name,
+                        url: server.endpoint_url,
+                        // 저장된 토큰은 서버가 안 준다. 비워 두면 그대로 유지된다.
+                        token: '',
+                      })
+                    }
+                  >
+                    고치기
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
