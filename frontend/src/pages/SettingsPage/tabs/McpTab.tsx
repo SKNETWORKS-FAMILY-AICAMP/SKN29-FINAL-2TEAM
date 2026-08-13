@@ -44,7 +44,7 @@ export function McpTab() {
   const [authToken, setAuthToken] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** 고치는 중인 서버. 저장된 토큰은 서버가 안 주므로 칸을 비워 두고 시작한다. */
+  /** 수정 중인 서버. 저장된 토큰은 서버가 안 주므로 칸을 비워 두고 시작한다. */
   const [editing, setEditing] = useState<{ id: string; name: string; url: string; token: string } | null>(null);
 
   useEffect(() => {
@@ -113,12 +113,12 @@ export function McpTab() {
       // 주소가 바뀌었으면 서버가 도구를 지우고 UNCHECKED 로 되돌렸다 — 그 사실을 말한다.
       showToast(
         updated.status === 'UNCHECKED'
-          ? `${updated.name} 을 고쳤습니다. 주소가 바뀌어 도구를 다시 읽어야 합니다.`
-          : `${updated.name} 을 고쳤습니다.`,
+          ? `${updated.name} 을 수정했습니다. 주소가 바뀌어 도구를 다시 읽어야 합니다.`
+          : `${updated.name} 을 수정했습니다.`,
         'success',
       );
     } catch (exc) {
-      setError(exc instanceof ApiError ? exc.message : '고치지 못했습니다.');
+      setError(exc instanceof ApiError ? exc.message : '수정하지 못했습니다.');
     } finally {
       setBusy(null);
     }
@@ -275,7 +275,7 @@ export function McpTab() {
                       })
                     }
                   >
-                    고치기
+                    수정
                   </Button>
                   <Button
                     size="sm"
