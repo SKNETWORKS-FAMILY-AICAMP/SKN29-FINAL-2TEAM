@@ -218,43 +218,80 @@ class ProjectRepository:
                 return cursor.fetchone()
 
     @staticmethod
-    def archive_if_all_done(proj_ids: list[str]) -> list[str]:
-        """읽어 보니 이미 끝나 있던 프로젝트를 완료로 내린다. 내린 것을 돌려준다.
+    def sync_status_from_tasks(proj_ids: list[str]) -> dict[str, list[str]]:
+        """Jira 를 다시 읽은 뒤 완료 여부를 그 결과에 맞춘다.
 
-        **등록 직후 최초 수집에서만 부른다.** 매번 판정하면 사람이 「진행 중으로」
-        되돌린 것을 다음 수집이 다시 완료로 만들어, 되돌리기가 무의미해진다.
-        가져온 시점의 상태로 시작하고 이후는 사람이 정한다.
+        **갱신을 눌렀다는 것은 Jira 상태로 다시 맞춰 달라는 뜻이다**(2026-08-13 PM).
+        예전에는 등록 직후 딱 한 번만 판정했는데, 그 한 번을 놓치면 업무가 전부 끝난
+        프로젝트가 영영 「진행중」에 남았다 — 실제로 12건이 전부 완료인 프로젝트가
+        그렇게 남아 있었다.
+
+        **다만 사람이 정한 것은 안 건드린다.** 한 번만 판정하던 원래 이유가 그거였다
+        — 「진행 중으로」 되돌린 것을 다음 갱신이 도로 완료로 만들면 그 버튼이
+        무의미해진다. 스키마를 늘리는 대신 **감사 로그를 근거로 쓴다**:
+        `set_status` 가 남기는 `PROJECT_STATUS_CHANGE` 행이 하나라도 있으면 그
+        프로젝트의 상태는 사람의 결정이므로 자동 판정에서 제외한다.
+
+        양쪽으로 움직인다. 전부 끝났으면 완료로 내리고, **완료였는데 안 끝난 것이
+        생겼으면 도로 올린다** — Jira 에서 이슈가 다시 열렸는데 우리 목록만 완료로
+        남아 있으면 내려보내지 않은 것과 같은 종류의 거짓말이다.
 
         업무가 한 건도 없으면 내리지 않는다 — "미완료가 없다"가 참이 되어 빈
         프로젝트가 전부 완료로 떨어진다.
         """
 
         if not proj_ids:
-            return []
+            return {"archived": [], "reopened": []}
+
+        ids = sorted(set(proj_ids))
+        # 사람이 상태를 정한 적이 있는 프로젝트. 자동 판정에서 통째로 뺀다.
+        decided = """
+            NOT EXISTS (
+                SELECT 1 FROM audit_log AS al
+                WHERE al.proj_id = proj.proj_id AND al.action = 'PROJECT_STATUS_CHANGE'
+            )
+        """
+        has_tasks = """
+            EXISTS (
+                SELECT 1 FROM exist_task AS et
+                JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                WHERE ps.proj_id = proj.proj_id
+            )
+        """
+        has_open = """
+            EXISTS (
+                SELECT 1 FROM exist_task AS et
+                JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
+                WHERE ps.proj_id = proj.proj_id
+                  AND et.status_category IS DISTINCT FROM 'DONE'
+            )
+        """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     UPDATE proj SET status = 'ARCHIVED'
-                     WHERE proj_id = ANY(%s)
-                       AND status = 'ACTIVE'
-                       AND EXISTS (
-                           SELECT 1 FROM exist_task AS et
-                           JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
-                           WHERE ps.proj_id = proj.proj_id
-                       )
-                       AND NOT EXISTS (
-                           SELECT 1 FROM exist_task AS et
-                           JOIN proj_source AS ps ON ps.proj_source_id = et.proj_source_id
-                           WHERE ps.proj_id = proj.proj_id
-                             AND et.status_category IS DISTINCT FROM 'DONE'
-                       )
+                     WHERE proj_id = ANY(%s) AND status = 'ACTIVE'
+                       AND {decided} AND {has_tasks} AND NOT {has_open}
                     RETURNING proj_id
                     """,
-                    (sorted(set(proj_ids)),),
+                    (ids,),
                 )
-                return [row["proj_id"] for row in cursor.fetchall()]
+                archived = [row["proj_id"] for row in cursor.fetchall()]
+
+                cursor.execute(
+                    f"""
+                    UPDATE proj SET status = 'ACTIVE'
+                     WHERE proj_id = ANY(%s) AND status = 'ARCHIVED'
+                       AND {decided} AND {has_open}
+                    RETURNING proj_id
+                    """,
+                    (ids,),
+                )
+                reopened = [row["proj_id"] for row in cursor.fetchall()]
+
+        return {"archived": archived, "reopened": reopened}
 
     @staticmethod
     def set_status(*, proj_id: str, account_id: str, status: str) -> dict[str, Any]:

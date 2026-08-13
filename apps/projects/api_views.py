@@ -471,9 +471,10 @@ class ProjectJiraRegisterAPIView(AuthenticatedAPIView):
             fresh = [row for row in rows if row["last_sync_at"] is None]
             sync = _sync_jira_sources(account_id=account_id, sources=fresh) if fresh else None
 
-            # 읽어 보니 이미 끝나 있던 프로젝트는 완료 구획에서 시작한다. 판정은
-            # 여기 한 번뿐이다 — 매번 하면 사람이 되돌린 것을 다시 완료로 만든다.
-            archived = ProjectRepository.archive_if_all_done([row["proj_id"] for row in fresh])
+            # 읽어 보니 이미 끝나 있던 프로젝트는 완료 구획에서 시작한다.
+            archived = ProjectRepository.sync_status_from_tasks(
+                [row["proj_id"] for row in fresh]
+            )["archived"]
 
             rows = ExistTaskRepository.list_jira_sources_for_team(account_id)
         except (RepositoryError, psycopg.Error) as exc:
@@ -916,7 +917,12 @@ class ProjectTaskSyncAPIView(AuthenticatedAPIView):
                 proj_id=project_id,
                 account_id=account_id,
             )
-            return Response(_sync_jira_sources(account_id=account_id, sources=sources))
+            result = _sync_jira_sources(account_id=account_id, sources=sources)
+            # **갱신은 Jira 상태로 다시 맞춰 달라는 뜻이다.** 진행률만 바꾸고
+            # 완료 여부를 안 건드리면, 업무가 전부 끝난 프로젝트가 계속
+            # 「진행중」에 남는다. 사람이 정한 상태는 안 건드린다.
+            result["status_changed"] = ProjectRepository.sync_status_from_tasks([project_id])
+            return Response(result)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 
@@ -929,7 +935,11 @@ class TeamTaskSyncAPIView(AuthenticatedAPIView):
 
         try:
             sources = ExistTaskRepository.list_jira_sources_for_team(account_id)
-            return Response(_sync_jira_sources(account_id=account_id, sources=sources))
+            result = _sync_jira_sources(account_id=account_id, sources=sources)
+            result["status_changed"] = ProjectRepository.sync_status_from_tasks(
+                sorted({source["proj_id"] for source in sources})
+            )
+            return Response(result)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
 

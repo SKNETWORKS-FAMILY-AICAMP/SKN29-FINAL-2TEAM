@@ -131,7 +131,7 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         )
 
     @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team")
-    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.sync_status_from_tasks", return_value={"archived": [], "reopened": []})
     @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
     def test_each_jira_project_becomes_one_project(self, register, _sync, _arch, list_team):
@@ -160,7 +160,7 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         self.assertEqual(by_key, {"KAN": "PJ001", "AIP": "PJ002"})
 
     @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
-    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=["PJ003"])
+    @patch("apps.projects.api_views.ProjectRepository.sync_status_from_tasks", return_value={"archived": ["PJ003"], "reopened": []})
     @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
     def test_already_finished_project_starts_archived(self, register, sync, archive, _t):
@@ -181,7 +181,7 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         self.assertEqual(body["archived"], ["PJ003"])
 
     @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
-    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.sync_status_from_tasks", return_value={"archived": [], "reopened": []})
     @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
     def test_already_registered_source_is_not_reread(self, register, sync, archive, _t):
@@ -202,7 +202,7 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         self.assertEqual(archive.call_args.args[0], [])
 
     @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
-    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.sync_status_from_tasks", return_value={"archived": [], "reopened": []})
     @patch("apps.projects.api_views._sync_jira_sources", return_value={"failed": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
     def test_display_name_becomes_the_project_name(self, register, _s, _a, _t):
@@ -228,7 +228,7 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         )
 
     @patch("apps.projects.api_views.ExistTaskRepository.list_jira_sources_for_team", return_value=[])
-    @patch("apps.projects.api_views.ProjectRepository.archive_if_all_done", return_value=[])
+    @patch("apps.projects.api_views.ProjectRepository.sync_status_from_tasks", return_value={"archived": [], "reopened": []})
     @patch("apps.projects.api_views.ProjectSourceRepository.register_from_jira")
     def test_empty_list_clears_the_selection(self, register, _a, _t):
         register.return_value = []
@@ -719,3 +719,38 @@ class PrimaryCandidateRankTests(SimpleTestCase):
         # 파일명은 안 걸리는데 내용이 닮은 문서.
         by_summary = [dict(self.ROWS[0], file_name="무제.pdf", summary_score=0.61)]
         self.assertEqual([row["doc_id"] for row in _rank(by_summary, name="AI Platform")], ["DC001"])
+
+
+@patch("apps.projects.api_views.ExistTaskRepository")
+@patch("apps.projects.api_views._sync_jira_sources", return_value={"synced": [], "failed": []})
+@patch("apps.projects.api_views.ProjectRepository.sync_status_from_tasks")
+class ProjectSyncStatusTests(SimpleTestCase):
+    """**갱신은 Jira 상태로 다시 맞춰 달라는 뜻이다**(2026-08-13 PM).
+
+    예전에는 등록 직후 한 번만 완료 여부를 판정했다. 그 한 번을 놓치면 업무가 전부
+    끝난 프로젝트가 영영 「진행중」에 남았다 — 실제로 12건 전부 완료인 프로젝트가
+    그렇게 있었다.
+    """
+
+    def test_프로젝트_갱신이_완료_여부를_다시_본다(self, sync_status, _sync, tasks):
+        sync_status.return_value = {"archived": ["PJ004"], "reopened": []}
+        tasks.list_jira_sources.return_value = []
+
+        response = self.client.post("/api/projects/PJ004/tasks/sync/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        sync_status.assert_called_once_with(["PJ004"])
+        self.assertEqual(response.json()["status_changed"]["archived"], ["PJ004"])
+
+    def test_팀_갱신은_읽은_프로젝트_전부를_본다(self, sync_status, _sync, tasks):
+        sync_status.return_value = {"archived": [], "reopened": []}
+        tasks.list_jira_sources_for_team.return_value = [
+            {"proj_source_id": "PS002", "proj_id": "PJ003", "external_source_id": "KAN"},
+            {"proj_source_id": "PS003", "proj_id": "PJ004", "external_source_id": "LEG"},
+            # 한 프로젝트에 소스가 여럿이어도 판정은 한 번이면 된다.
+            {"proj_source_id": "PS004", "proj_id": "PJ004", "external_source_id": "OPS"},
+        ]
+
+        self.client.post("/api/team/tasks/sync/", headers=auth_header())
+
+        sync_status.assert_called_once_with(["PJ003", "PJ004"])
