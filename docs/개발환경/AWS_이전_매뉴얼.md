@@ -27,6 +27,29 @@ RDS PostgreSQL       S3
 
 이번 범위에서는 ECS, ALB, CloudFront, SQS, 별도 Vector DB, Terraform, CI/CD는 사용하지 않는다.
 
+### 결정 — 도메인을 산다 (2026-08-13)
+
+**공인 IP + HTTP 로는 막히는 것이 셋이다.** 도메인과 https 를 붙여 한 번에 푼다.
+
+| 막히는 것 | 왜 |
+|---|---|
+| **Google OAuth** | 공인 IP 에 대한 `http` redirect URI 를 Google 이 받지 않는다. 2단계의 관문(1단계 §20-2)이 사실은 이것이다 |
+| **MCP 서버 등록** | `services/mcp/security.py` 가 https 아닌 주소를 거절한다(SSRF 1차 방어선) |
+| **쿠키·혼합 콘텐츠** | 화면이 https 인데 API 가 http 면 브라우저가 막는다 |
+
+붙이는 방법은 셋이고 **아래로 갈수록 손이 많이 간다.**
+
+1. **Cloudflare 프록시 + 이름 있는 터널** — 도메인을 Cloudflare 에 올리고
+   `cloudflared` 로 EC2·MCP 서버를 각각 서브도메인에 붙인다. 인증서 관리가 없고
+   인바운드 포트를 안 열어도 된다. **이미 이 저장소가 cloudflared 를 쓰고 있어
+   추가로 배울 것이 없다**(`infra/docker/docker-compose.dev-mcp.yml`).
+2. **EC2 안에서 TLS 종료** — Caddy 나 nginx + Let's Encrypt. 컨테이너가 하나 는다.
+3. **ACM + ALB** — AWS 답지만 §1 에서 범위 밖으로 정한 구성이다.
+
+도메인이 붙으면 함께 바뀌는 것: `SECURE_SSL_REDIRECT=True`(§4), `ALLOWED_HOSTS`·
+`CORS_ALLOWED_ORIGINS`·`VITE_API_BASE_URL`, `vite.config.ts` 의 `server.allowedHosts`,
+그리고 **MCP 시연 서버의 빠른 터널을 고정 주소로 바꾼다**(§2 MCP 절).
+
 ## 2. 컨테이너 구성 변경
 
 현재 로컬 Compose의 세 서비스 중 AWS에서는 `db` 컨테이너를 제거한다.
@@ -114,7 +137,7 @@ VITE_API_BASE_URL=http://<EC2_PUBLIC_IP>:8000/api
 SECURE_SSL_REDIRECT=False
 ```
 
-현재 시연 구조는 HTTPS 도메인 없이 EC2 공인 IP와 HTTP를 사용하므로 `SECURE_SSL_REDIRECT=False`로 둔다. 도메인과 HTTPS를 적용하는 시점에는 `True`로 바꾼다.
+현재 시연 구조는 HTTPS 도메인 없이 EC2 공인 IP와 HTTP를 사용하므로 `SECURE_SSL_REDIRECT=False`로 둔다. **도메인을 사기로 했으므로(§1 결정) 붙이는 시점에 `True`로 바꾼다.**
 
 RDS 생성 뒤에는 `DB/schema.sql`과 People 목업 SQL을 직접 적용한다. Django
 Migration은 사용하지 않는다.
