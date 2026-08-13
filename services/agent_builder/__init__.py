@@ -1,23 +1,5 @@
-"""빌더 에이전트 — BuilderInput 검토."""
+"""빌더 에이전트 — 구조 검증."""
 
-from .service import (
-    BuilderCheckResult,
-    DescriptionCheck,
-    InstructionCheck,
-    InstructionRecheckResult,
-    ToolMatchCheck,
-    check_builder_input,
-    review_builder_input,
-    review_instruction,
-)
+from .service import check_definition
 
-__all__ = [
-    "BuilderCheckResult",
-    "DescriptionCheck",
-    "InstructionCheck",
-    "InstructionRecheckResult",
-    "ToolMatchCheck",
-    "check_builder_input",
-    "review_builder_input",
-    "review_instruction",
-]
+__all__ = ["check_definition"]

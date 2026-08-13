@@ -19,21 +19,16 @@ from backend.db.errors import (
     ReferenceNotFound,
     RepositoryError,
 )
-from services.agent_builder import review_builder_input, review_instruction
-from services.document_pipeline.errors import PipelineConfigurationError
+from services.agent_builder import check_definition
 from services.harness import check_tools, run_agent
 
 from .serializers import (
     AGENT_MODELS,
     AgentWriteSerializer,
-    BuilderCheckSerializer,
-    BuilderInstructionRecheckSerializer,
     BuilderTestRunSerializer,
     BuilderToolCheckSerializer,
     MainModelSerializer,
     agent_response,
-    builder_check_response,
-    builder_instruction_recheck_response,
     builtin_tool_response,
     mcp_tool_response,
 )
@@ -109,6 +104,9 @@ class AgentListCreateAPIView(AuthenticatedAPIView):
         rejection = _model_rejection(request.user.account_id, fields.get("model"))
         if rejection is not None:
             return rejection
+        blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
+        if blocker is not None:
+            return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
         try:
             row = AgentCrudRepository.create(
                 account_id=request.user.account_id, fields=fields, tool_refs=tool_refs
@@ -133,6 +131,9 @@ class AgentDetailAPIView(AuthenticatedAPIView):
         rejection = _model_rejection(request.user.account_id, fields.get("model"))
         if rejection is not None:
             return rejection
+        blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
+        if blocker is not None:
+            return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
         try:
             row = AgentCrudRepository.update(
                 agent_id=agent_id,
@@ -231,52 +232,11 @@ def _tool_catalog(account_id: str) -> dict[str, dict]:
     return {row["tool_ref"]: row for row in builtin_tool_response() + mcp_tool_response(mcp)}
 
 
-def _run_builder_check(*, account_id: str, name: str, description: str, behavior: str, tool_refs: list[str]):
-    """`AgentBuilderCheckAPIView`와 `AgentActivateAPIView`가 함께 쓰는 1단계 검토 호출.
+def _check_tool_refs(*, account_id: str, tool_refs: list[str]) -> str | None:
+    """`AgentListCreateAPIView`/`AgentDetailAPIView`/`AgentActivateAPIView`가 함께 쓰는
+    구조 검증 — 도구 참조가 실제로 존재하는지, 중복 선택은 없는지만 본다."""
 
-    코드 검증(로컬/DB) → LLM 의미 검증을 `review_builder_input`이 순서대로 묶는다.
-    실패하면 `PipelineConfigurationError`/`ValueError`를 그대로 올린다 — 호출자마다
-    "검증 서비스 자체가 죽었을 때 무엇을 할지"가 다르다(검증 화면은 알려야 하고,
-    활성화는 그것 때문에 막지 않는다).
-    """
-
-    return review_builder_input(
-        name=name,
-        description=description,
-        behavior=behavior,
-        tool_refs=tool_refs,
-        catalog=_tool_catalog(account_id),
-    )
-
-
-class AgentBuilderCheckAPIView(AuthenticatedAPIView):
-    """이름·설명·행동 지시·도구 선택이 서로 맞는지 LLM으로 검토한다.
-
-    저장 여부와 무관하다 — 「검증」 1단계가 언제든 다시 부른다.
-    """
-
-    def post(self, request):
-        serializer = BuilderCheckSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        account_id = request.user.account_id
-
-        try:
-            result = _run_builder_check(
-                account_id=account_id,
-                name=data["name"],
-                description=data["description"],
-                behavior=data["behavior"],
-                tool_refs=data["tool_refs"],
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except PipelineConfigurationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-
-        return Response(builder_check_response(result))
+    return check_definition(tool_refs=tool_refs, catalog=_tool_catalog(account_id))
 
 
 def _builder_test_events(*, draft: dict, user_input: str, account_id: str):
@@ -356,41 +316,12 @@ class AgentBuilderToolCheckAPIView(AuthenticatedAPIView):
         return Response({"results": results})
 
 
-class AgentBuilderInstructionRecheckAPIView(AuthenticatedAPIView):
-    """사용자가 1단계 보정안을 보고 지시문만 고쳤을 때, 지시문만 빠르게 다시 확인한다.
-
-    description은 다시 안 본다 — 안 건드렸다면 다시 볼 이유가 없다. 이름·설명까지
-    포함한 전체 1단계(`build/check/`)보다 가볍고 빠르다.
-    """
-
-    def post(self, request):
-        serializer = BuilderInstructionRecheckSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        account_id = request.user.account_id
-
-        try:
-            result = review_instruction(
-                instruction=data["instruction"],
-                tool_refs=data["tool_refs"],
-                catalog=_tool_catalog(account_id),
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except PipelineConfigurationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-
-        return Response(builder_instruction_recheck_response(result))
-
-
 class AgentActivateAPIView(AuthenticatedAPIView):
     """DRAFT/DISABLED → ACTIVE. Chat 위임과 관리 화면의 "Chat에서 사용"에 노출되려면
     거쳐야 하는 문이다.
 
     **DB에 저장된 값으로 다시 검증한다.** 화면이 "나 아까 통과했음"이라고 보내는
-    값을 믿지 않는다 — 그 사이 다른 탭에서 지시문을 고쳤을 수 있고, 활성화
+    값을 믿지 않는다 — 그 사이 다른 탭에서 도구 구성을 바꿨을 수 있고, 활성화
     시점의 실제 내용이 기준이어야 한다.
 
     **모델도 그 「그 사이」에 사라질 수 있다.** 저장할 때는 있던 커스텀 모델을 팀이
@@ -410,31 +341,9 @@ class AgentActivateAPIView(AuthenticatedAPIView):
         if rejection is not None:
             return rejection
 
-        try:
-            result = _run_builder_check(
-                account_id=account_id,
-                name=agent["name"],
-                description=agent["description"] or "",
-                behavior=agent["instruction"] or "",
-                tool_refs=agent["tool_refs"],
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except (PipelineConfigurationError, ValueError):
-            # 검증 서비스 자체가 죽었다고 활성화를 막지 않는다 — 그건 배포 사고다.
-            # `reject` 게이트는 검증이 실제로 도는 경우에만 의미가 있다.
-            logger.warning("활성화 시점 검증을 건너뜁니다(검증 서비스 실패): %s", agent_id)
-            result = None
-
-        if result is not None and result.overall == "reject":
-            return Response(
-                {
-                    "detail": result.reject_reason
-                    or "설명 또는 지시문 내용이 부족해 활성화할 수 없습니다.",
-                    "overall": result.overall,
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
+        blocker = _check_tool_refs(account_id=account_id, tool_refs=agent["tool_refs"])
+        if blocker is not None:
+            return Response({"detail": blocker}, status=status.HTTP_409_CONFLICT)
 
         try:
             row = AgentCrudRepository.set_status(

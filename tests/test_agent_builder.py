@@ -1,10 +1,10 @@
 """Agent Builder 신규 API·생명주기·안전 경계 단위 테스트.
 
-CRUD 자체(팀 경계, 기본 제공 에이전트 보호, 알 수 없는 도구 거부)는
-`tests/test_agents.py`가 이미 지킨다. 이 파일은 Builder 고유의 것만 본다 —
-1단계 검증(LLM 결과 매핑, 코드 검증으로 LLM 호출을 건너뛰는 경로), 저장 전
-시험 실행(ephemeral 기록, 승인 필요 도구 시뮬레이션), 개별 도구 확인, 검증
-실패 시 활성화 차단.
+CRUD 자체(팀 경계, 기본 제공 에이전트 보호)는 `tests/test_agents.py`가 이미
+지킨다(알 수 없는/중복 도구 거부 포함 — `check_definition` 구조 검증이 create/
+update/activate 세 곳에서 공통으로 돈다). 이 파일은 Builder 고유의 것만 본다 —
+저장 전 시험 실행(ephemeral 기록, 승인 필요 도구 시뮬레이션), 개별 도구 확인,
+구조 검증 실패 시 활성화 차단.
 
 위임(`agent:*`) 관련 Registry 동작은 `tests/test_harness.py`가 이미 지키므로
 여기서 다시 만들지 않는다.
@@ -16,14 +16,6 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from apps.accounts.tokens import issue_token
-from services.agent_builder import (
-    BuilderCheckResult,
-    DescriptionCheck,
-    InstructionCheck,
-    InstructionRecheckResult,
-    ToolMatchCheck,
-)
-from services.document_pipeline.errors import PipelineConfigurationError
 from services.harness.registry import Tool
 from services.harness.runner import ModelDecision, check_tools, run_agent
 
@@ -44,27 +36,6 @@ AGENT = {
 
 def auth_header(account_id="UA001"):
     return {"authorization": f"Bearer {issue_token(account_id)}"}
-
-
-def _pass_result() -> BuilderCheckResult:
-    return BuilderCheckResult(
-        refined_instruction="결정사항만 뽑는다.",
-        description_check=DescriptionCheck(),
-        instruction_check=InstructionCheck(),
-        tool_match_check=ToolMatchCheck(),
-        overall="pass",
-    )
-
-
-def _reject_result(reason: str) -> BuilderCheckResult:
-    return BuilderCheckResult(
-        refined_instruction="",
-        description_check=DescriptionCheck(),
-        instruction_check=InstructionCheck(),
-        tool_match_check=ToolMatchCheck(),
-        overall="reject",
-        reject_reason=reason,
-    )
 
 
 def _tool(ref, *, side_effect=False, handler=None):
@@ -102,161 +73,6 @@ class AlwaysToolModel:
         return ModelDecision(
             tool_calls=[{"id": f"c{self.calls}", "tool_ref": self.tool_ref, "arguments": {}}]
         )
-
-
-# ---------------------------------------------------------------------------
-# 검증 API — POST /api/agents/build/check/
-# ---------------------------------------------------------------------------
-
-
-class BuilderCheckCodeValidationApiTests(SimpleTestCase):
-    """코드로 확정할 수 있는 오류는 LLM을 부르기 전에 reject 한다."""
-
-    def _post(self, tool_refs):
-        return self.client.post(
-            "/api/agents/build/check/",
-            {"name": "x", "description": "d", "behavior": "y", "tool_refs": tool_refs},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-    def test_로그인_없이는_401(self):
-        response = self.client.post(
-            "/api/agents/build/check/",
-            {"name": "x", "behavior": "y", "tool_refs": []},
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 401)
-
-    @patch("services.agent_builder.service.check_builder_input")
-    @patch("apps.agents.api_views.AgentCrudRepository")
-    def test_알수없는_도구는_LLM_안_부르고_reject(self, repo, llm):
-        repo.team_tool_refs.return_value = []
-
-        response = self._post(["mcp:MT999"])
-
-        self.assertEqual(response.json()["overall"], "reject")
-        llm.assert_not_called()
-
-    @patch("services.agent_builder.service.check_builder_input")
-    @patch("apps.agents.api_views.AgentCrudRepository")
-    def test_중복_도구는_LLM_안_부르고_reject(self, repo, llm):
-        repo.team_tool_refs.return_value = []
-
-        response = self._post(["document_search", "document_search"])
-
-        self.assertEqual(response.json()["overall"], "reject")
-        llm.assert_not_called()
-
-
-class BuilderCheckLlmResultApiTests(SimpleTestCase):
-    """LLM 응답을 API 계약(JSON)으로 그대로 옮기는가."""
-
-    def _post(self):
-        return self.client.post(
-            "/api/agents/build/check/",
-            {"name": "x", "description": "d", "behavior": "y", "tool_refs": []},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-    @patch("apps.agents.api_views.review_builder_input")
-    def test_pass_warn_reject_를_그대로_돌려준다(self, review):
-        for overall, result in (
-            ("pass", _pass_result()),
-            ("warn", BuilderCheckResult(
-                refined_instruction="다듬은 지시문",
-                description_check=DescriptionCheck(note="산출물이 애매합니다"),
-                instruction_check=InstructionCheck(),
-                tool_match_check=ToolMatchCheck(),
-                overall="warn",
-            )),
-            ("reject", _reject_result("설명이 비어 있습니다")),
-        ):
-            with self.subTest(overall=overall):
-                review.return_value = result
-
-                response = self._post()
-
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["overall"], overall)
-
-    @patch("apps.agents.api_views.review_builder_input", side_effect=PipelineConfigurationError("키 없음"))
-    def test_검증_설정_누락은_503(self, _review):
-        self.assertEqual(self._post().status_code, 503)
-
-    @patch("apps.agents.api_views.review_builder_input", side_effect=ValueError("구조화 실패"))
-    def test_모델_구조화_실패는_502(self, _review):
-        self.assertEqual(self._post().status_code, 502)
-
-
-# ---------------------------------------------------------------------------
-# 지시문 재검증 — POST /api/agents/build/recheck-instruction/
-# ---------------------------------------------------------------------------
-
-
-class BuilderInstructionRecheckApiTests(SimpleTestCase):
-    def test_빈_지시문은_400(self):
-        response = self.client.post(
-            "/api/agents/build/recheck-instruction/",
-            {"instruction": "", "tool_refs": []},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 400)
-
-    @patch("apps.agents.api_views.review_instruction")
-    def test_description_check_는_다시_보지_않는다(self, review):
-        review.return_value = InstructionRecheckResult(
-            instruction_check=InstructionCheck(),
-            tool_match_check=ToolMatchCheck(),
-            overall="pass",
-        )
-
-        response = self.client.post(
-            "/api/agents/build/recheck-instruction/",
-            {"instruction": "새 지시문", "tool_refs": []},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        body = response.json()
-        self.assertNotIn("description_check", body)
-        self.assertIn("instruction_check", body)
-
-    @patch("apps.agents.api_views.review_instruction")
-    def test_지시문과_도구_정합성은_다시_검사한다(self, review):
-        review.return_value = InstructionRecheckResult(
-            instruction_check=InstructionCheck(),
-            tool_match_check=ToolMatchCheck(missing_tools=["문서 검색"]),
-            overall="warn",
-        )
-
-        response = self.client.post(
-            "/api/agents/build/recheck-instruction/",
-            {"instruction": "새 지시문", "tool_refs": ["document_search"]},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(review.call_args.kwargs["instruction"], "새 지시문")
-        self.assertEqual(review.call_args.kwargs["tool_refs"], ["document_search"])
-        self.assertEqual(response.json()["tool_match_check"]["missing_tools"], ["문서 검색"])
-
-    @patch("apps.agents.api_views.AgentCrudRepository")
-    def test_알수없는_도구는_reject(self, repo):
-        repo.team_tool_refs.return_value = []
-
-        response = self.client.post(
-            "/api/agents/build/recheck-instruction/",
-            {"instruction": "새 지시문", "tool_refs": ["mcp:MT999"]},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.json()["overall"], "reject")
 
 
 # ---------------------------------------------------------------------------
@@ -560,12 +376,11 @@ class BuilderToolCheckApiTests(SimpleTestCase):
 # ---------------------------------------------------------------------------
 
 
-@patch("apps.agents.api_views.review_builder_input")
 @patch("apps.agents.api_views.AgentCrudRepository")
 class AgentLifecycleApiTests(SimpleTestCase):
     """기본 제공 에이전트 보호·팀 경계는 `tests/test_agents.py`가 이미 지킨다."""
 
-    def test_생성_시_status를_직접_주지_않는다(self, repo, _review):
+    def test_생성_시_status를_직접_주지_않는다(self, repo):
         """DRAFT 는 DB 기본값이 정한다 — API 가 status 를 넘기면 안 된다."""
 
         repo.create.return_value = {**AGENT, "status": "DRAFT"}
@@ -579,9 +394,8 @@ class AgentLifecycleApiTests(SimpleTestCase):
 
         self.assertNotIn("status", repo.create.call_args.kwargs["fields"])
 
-    def test_DRAFT_활성화_성공(self, repo, review):
+    def test_DRAFT_활성화_성공(self, repo):
         repo.get.return_value = {**AGENT, "status": "DRAFT"}
-        review.return_value = _pass_result()
         repo.set_status.return_value = {**AGENT, "status": "ACTIVE"}
 
         response = self.client.post("/api/agents/AG002/activate/", headers=auth_header())
@@ -591,7 +405,7 @@ class AgentLifecycleApiTests(SimpleTestCase):
         self.assertEqual(repo.set_status.call_args.kwargs["status"], "ACTIVE")
 
     @patch("apps.agents.api_views.CustomModelRepository")
-    def test_사라진_커스텀_모델은_활성화를_막는다(self, customs, repo, review):
+    def test_사라진_커스텀_모델은_활성화를_막는다(self, customs, repo):
         """**활성화 뒤 첫 대화에서 죽는 것을 여기서 끊는다.**
 
         저장할 때는 있던 커스텀 모델을 팀이 Model 탭에서 지우면, 그걸 쓰던 초안은
@@ -609,31 +423,31 @@ class AgentLifecycleApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 400)
         repo.set_status.assert_not_called()
-        review.assert_not_called()
 
     @patch("apps.agents.api_views.CustomModelRepository")
-    def test_살아있는_커스텀_모델은_활성화된다(self, customs, repo, review):
+    def test_살아있는_커스텀_모델은_활성화된다(self, customs, repo):
         repo.get.return_value = {**AGENT, "status": "DRAFT", "model": "models/gemini-3.6-flash"}
         customs.list_for_account.return_value = [{"model": "models/gemini-3.6-flash"}]
-        review.return_value = _pass_result()
         repo.set_status.return_value = {**AGENT, "status": "ACTIVE"}
 
         response = self.client.post("/api/agents/AG002/activate/", headers=auth_header())
 
         self.assertEqual(response.status_code, 200)
 
-    def test_검증_reject_시_409이며_DRAFT를_유지한다(self, repo, review):
-        repo.get.return_value = {**AGENT, "status": "DRAFT"}
-        review.return_value = _reject_result("설명이 부족합니다")
+    def test_없는_도구가_남아있으면_409이며_DRAFT를_유지한다(self, repo):
+        """저장 뒤 팀이 MCP 서버 연결을 끊는 등, DB에 저장된 도구가 그 사이
+        사라질 수 있다 — 활성화 시점에 DB 값으로 다시 구조 검증한다."""
+
+        repo.get.return_value = {**AGENT, "status": "DRAFT", "tool_refs": ["mcp:MT999"]}
+        repo.team_tool_refs.return_value = []
 
         response = self.client.post("/api/agents/AG002/activate/", headers=auth_header())
 
         self.assertEqual(response.status_code, 409)
         repo.set_status.assert_not_called()
 
-    def test_DISABLED_에서도_다시_활성화된다(self, repo, review):
+    def test_DISABLED_에서도_다시_활성화된다(self, repo):
         repo.get.return_value = {**AGENT, "status": "DISABLED"}
-        review.return_value = _pass_result()
         repo.set_status.return_value = {**AGENT, "status": "ACTIVE"}
 
         response = self.client.post("/api/agents/AG002/activate/", headers=auth_header())
@@ -641,7 +455,7 @@ class AgentLifecycleApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ACTIVE")
 
-    def test_ACTIVE에서_DISABLED로(self, repo, _review):
+    def test_ACTIVE에서_DISABLED로(self, repo):
         repo.set_status.return_value = {**AGENT, "status": "DISABLED"}
 
         response = self.client.post("/api/agents/AG002/disable/", headers=auth_header())

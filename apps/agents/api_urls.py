@@ -2,8 +2,6 @@ from django.urls import path
 
 from .api_views import (
     AgentActivateAPIView,
-    AgentBuilderCheckAPIView,
-    AgentBuilderInstructionRecheckAPIView,
     AgentBuilderTestRunAPIView,
     AgentBuilderToolCheckAPIView,
     AgentDetailAPIView,
@@ -22,12 +20,6 @@ urlpatterns = [
     path("tools/", AgentToolCatalogAPIView.as_view(), name="api_agent_tools"),
     path("main-model/", MainModelAPIView.as_view(), name="api_agent_main_model"),
     path("custom-models/", CustomModelAPIView.as_view(), name="api_custom_models"),
-    path("build/check/", AgentBuilderCheckAPIView.as_view(), name="api_agent_builder_check"),
-    path(
-        "build/recheck-instruction/",
-        AgentBuilderInstructionRecheckAPIView.as_view(),
-        name="api_agent_builder_recheck_instruction",
-    ),
     path("build/test/", AgentBuilderTestRunAPIView.as_view(), name="api_agent_builder_test"),
     path(
         "build/check-tools/",

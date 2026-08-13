@@ -1,11 +1,8 @@
 """에이전트 CRUD 입력 검증과 API 표현."""
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from rest_framework import serializers
-
-if TYPE_CHECKING:
-    from services.agent_builder import BuilderCheckResult, InstructionRecheckResult
 
 #: Builder 가 고를 수 있는 모델. `services/task_extraction.SUPPORTED_MODELS` 와
 #: 같은 목록이어야 한다 — 없는 모델을 저장하면 실행 시점에야 터진다.
@@ -102,17 +99,6 @@ def builtin_tool_response() -> list[dict[str, Any]]:
     ]
 
 
-class BuilderCheckSerializer(serializers.Serializer):
-    """`AgentBuilderCheckAPIView` 입력. 저장 여부와 무관하게 언제든 다시 부를 수 있다."""
-
-    name = serializers.CharField(max_length=100)
-    description = serializers.CharField(max_length=500, allow_blank=True, default="")
-    behavior = serializers.CharField(allow_blank=False)
-    tool_refs = serializers.ListField(
-        child=serializers.CharField(max_length=100), allow_empty=True, default=list
-    )
-
-
 class BuilderTestRunSerializer(serializers.Serializer):
     """`AgentBuilderTestRunAPIView` 입력. 저장하지 않은 설정 그대로 한 번 돌려 본다."""
 
@@ -139,44 +125,6 @@ class BuilderToolCheckSerializer(serializers.Serializer):
         child=serializers.CharField(max_length=100), allow_empty=False
     )
     arguments = serializers.DictField(child=serializers.JSONField(), default=dict)
-
-
-class BuilderInstructionRecheckSerializer(serializers.Serializer):
-    """`AgentBuilderInstructionRecheckAPIView` 입력.
-
-    사용자가 1단계 보정안을 보고 지시문만 고쳤을 때 쓴다 — description은 안 받는다.
-    """
-
-    instruction = serializers.CharField(allow_blank=False)
-    tool_refs = serializers.ListField(
-        child=serializers.CharField(max_length=100), allow_empty=True, default=list
-    )
-
-
-def builder_check_response(result: "BuilderCheckResult") -> dict[str, Any]:
-    return {
-        "refined_instruction": result.refined_instruction,
-        "description_check": {"note": result.description_check.note},
-        "instruction_check": {"note": result.instruction_check.note},
-        "tool_match_check": {
-            "missing_tools": result.tool_match_check.missing_tools,
-            "unused_tools": result.tool_match_check.unused_tools,
-        },
-        "overall": result.overall,
-        "reject_reason": result.reject_reason,
-    }
-
-
-def builder_instruction_recheck_response(result: "InstructionRecheckResult") -> dict[str, Any]:
-    return {
-        "instruction_check": {"note": result.instruction_check.note},
-        "tool_match_check": {
-            "missing_tools": result.tool_match_check.missing_tools,
-            "unused_tools": result.tool_match_check.unused_tools,
-        },
-        "overall": result.overall,
-        "reject_reason": result.reject_reason,
-    }
 
 
 def mcp_tool_response(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

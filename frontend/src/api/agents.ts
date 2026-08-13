@@ -191,55 +191,6 @@ export function runBuilderTest(
   return streamNdjson<BuilderTestEvent>('/agents/build/test/', token, body, onEvent, signal);
 }
 
-/** `overall`이 `warn`이어도 저장을 막지 않는다 — `reject`만 막는다. */
-export interface BuilderCheckResult {
-  /** behavior를 다듬은 지시문. reject일 때는 빈 문자열. */
-  refined_instruction: string;
-  description_check: { note: string | null };
-  /** 트리거 조건·절차·도구 사용 기준·판단 기준 네 요소가 behavior에 있는지. */
-  instruction_check: { note: string | null };
-  tool_match_check: { missing_tools: string[]; unused_tools: string[] };
-  overall: 'pass' | 'warn' | 'reject';
-  reject_reason: string | null;
-}
-
-export interface BuilderCheckInput {
-  name: string;
-  description: string;
-  /** 사용자가 쓴 원문 지시문. 검증 모델이 이걸 다듬어 refined_instruction을 낸다. */
-  behavior: string;
-  tool_refs: string[];
-}
-
-export function checkBuilderInput(token: string, body: BuilderCheckInput) {
-  return apiRequest<BuilderCheckResult>('/agents/build/check/', { method: 'POST', body, token });
-}
-
-/** `checkBuilderInput`의 경량판 — description은 안 보고 지시문·도구 정합성만 다시 본다. */
-export interface InstructionRecheckResult {
-  instruction_check: { note: string | null };
-  tool_match_check: { missing_tools: string[]; unused_tools: string[] };
-  overall: 'pass' | 'warn' | 'reject';
-  reject_reason: string | null;
-}
-
-export interface InstructionRecheckInput {
-  instruction: string;
-  tool_refs: string[];
-}
-
-/**
- * 1단계 보정안을 보고 지시문만 고쳤을 때 쓴다. 이름·설명까지 다시 보는
- * `checkBuilderInput`보다 가볍고 빠르다 — description을 안 건드렸을 때만 쓸 것.
- */
-export function recheckInstruction(token: string, body: InstructionRecheckInput) {
-  return apiRequest<InstructionRecheckResult>('/agents/build/recheck-instruction/', {
-    method: 'POST',
-    body,
-    token,
-  });
-}
-
 /** 채팅식 테스트와 달리 스트림이 아니라 한 번에 배열로 온다. */
 export interface ToolCheckResult {
   tool_ref: string;
