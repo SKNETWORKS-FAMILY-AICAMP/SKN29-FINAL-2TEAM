@@ -62,8 +62,8 @@ OAuth 어디서도 문제가 없고, 이름에 `ai` 가 들어가 발표에서 �
 
 | 이름 | 무엇 |
 |---|---|
-| `halil-ai.site` (apex) · `www` | **앱으로 넘긴다.** 발표에서 「halil-ai.site」라고만 말해도 닿아야 한다 |
-| `app.halil-ai.site` | 프론트(React) |
+| **`halil-ai.site` (apex)** | **프론트(React) — 본 주소다.** 발표 중 주소창에 이대로 보인다 |
+| `www` · `app.halil-ai.site` | apex 로 301. 앱이 두 주소로 열리면 쿠키·CORS 를 두 벌 관리하게 된다 |
 | `api.halil-ai.site` | Django API |
 | `mcp.halil-ai.site` | MCP 시연 서버 — **빠른 터널의 바뀌는 주소를 여기로 고정한다** |
 
@@ -74,15 +74,17 @@ apex 는 CNAME 을 걸 수 없다는 제약이 있는데, **탄력적 IP 가 고
 #### 도메인이 붙으면 바꿀 것
 
 ```
-ALLOWED_HOSTS=api.halil-ai.site,app.halil-ai.site
-CORS_ALLOWED_ORIGINS=https://app.halil-ai.site
+ALLOWED_HOSTS=halil-ai.site,api.halil-ai.site
+CORS_ALLOWED_ORIGINS=https://halil-ai.site
+CSRF_TRUSTED_ORIGINS=https://halil-ai.site,https://api.halil-ai.site
+FRONTEND_BASE_URL=https://halil-ai.site
 VITE_API_BASE_URL=https://api.halil-ai.site/api
 GOOGLE_DRIVE_REDIRECT_URI=https://api.halil-ai.site/api/connectors/google-drive/callback/
 JIRA_REDIRECT_URI=https://api.halil-ai.site/api/connectors/jira/callback/
 PUBLIC_BACKEND_BASE_URL=https://api.halil-ai.site
 ```
 
-그리고 `SECURE_SSL_REDIRECT=True`(§4), `vite.config.ts` 의 `server.allowedHosts`.
+그리고 `SECURE_SSL_REDIRECT=True`(§4).
 
 #### 도메인이 푸는 것이 하나 더 있다 — RunPod 터널
 
@@ -114,8 +116,8 @@ PUBLIC_BACKEND_BASE_URL=https://api.halil-ai.site
 | `api` | A | `43.200.114.119` |
 | `mcp` | A | `43.200.114.119` |
 
-**다섯 줄 다 같은 IP 다.** Caddy 가 Host 헤더로 가르고, apex·`www` 는
-`app.halil-ai.site` 로 넘긴다. 가비아는 apex 를 `@` 로 쓰거나 이름 칸을 비워 둔다.
+**다섯 줄 다 같은 IP 다.** Caddy 가 Host 헤더로 가른다 — apex 가 앱을 서빙하고
+`www`·`app` 은 apex 로 넘긴다. 가비아는 apex 를 `@` 로 쓰거나 이름 칸을 비워 둔다.
 
 **서버가 꺼져 있어도 등록은 된다.** 전파를 미리 돌려 둘 수 있으니 먼저 넣어도 손해가 없다.
 
@@ -188,8 +190,6 @@ EC2 보안 그룹 ── 5432 ──▶ RDS 보안 그룹
 무선이라 IP 가 고정되지 않아 허용목록이 현실적이지 않았다. 근거와 해제 조건은
 `AWS_1단계_공유환경_구축.md` 의 「`0.0.0.0/0` 은 실수가 아니다」에 있다.
 
-RDS는 Public access를 사용하지 않고, RDS 보안 그룹의 인바운드 규칙에서 소스로 EC2 보안 그룹을 지정한다. `5432`를 인터넷에 열지 않는다.
-
 ## 4. RDS 설정
 
 | 항목 | 설정 기준 |
@@ -215,8 +215,10 @@ EC2의 `.env` 예시는 다음과 같다. RDS endpoint와 실제 계정 정보�
 ```text
 DJANGO_SETTINGS_MODULE=config.settings.production
 DATABASE_URL=postgresql://<DB_USER>:<DB_PASSWORD>@<RDS_ENDPOINT>:5432/project_copilot?sslmode=require
-ALLOWED_HOSTS=api.halil-ai.site,app.halil-ai.site
-CORS_ALLOWED_ORIGINS=https://app.halil-ai.site
+ALLOWED_HOSTS=halil-ai.site,api.halil-ai.site
+CORS_ALLOWED_ORIGINS=https://halil-ai.site
+CSRF_TRUSTED_ORIGINS=https://halil-ai.site,https://api.halil-ai.site
+FRONTEND_BASE_URL=https://halil-ai.site
 VITE_API_BASE_URL=https://api.halil-ai.site/api
 PUBLIC_BACKEND_BASE_URL=https://api.halil-ai.site
 SECURE_SSL_REDIRECT=True
@@ -375,9 +377,9 @@ docker compose -f infra/docker/docker-compose.aws.yml -f infra/docker/docker-com
    가른다. 인증서는 `caddy_data` 볼륨에 남는다 — **지우지 말 것**(재발급 한도).
 2. ✅ **원문 저장 볼륨을 넣었다.** 없을 때는 원문이 컨테이너 쓰기 레이어에 쌓여
    `up --build` 를 다시 돌릴 때마다 Drive 원문이 사라졌다.
-3. ⬜ **`frontend` 가 아직 Vite 개발 서버로 돈다.** 정적 빌드로 바꿀지는
-   1단계 §20 의 3번에서 미룬 결정이라 그대로 뒀다. 지금은 `vite.config.ts` 에
-   `allowedHosts: ['app.halil-ai.site']` 를 넣어 Caddy 뒤에서 돌게만 해 두었다.
+3. ✅ **`frontend` 를 정적 빌드로 바꿨다**(2026-08-14). `Dockerfile` 을
+   멀티스테이지로 나눠 마지막 스테이지를 `dev` 로 뒀기 때문에 **로컬 개발의
+   HMR 은 그대로다** — `aws.yml` 만 `target: static` 을 고른다.
 
 8000·5173 은 **`127.0.0.1` 에만** 붙인다. 인터넷에서는 안 보이면서 서버 안에서
 `curl http://localhost:8000/api/health/` 로 진단할 수 있다.

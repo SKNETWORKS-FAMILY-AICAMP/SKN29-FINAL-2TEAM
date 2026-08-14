@@ -13,14 +13,16 @@
 # 컨테이너가 조용히 재시작만 반복하고 web·frontend 는 200 이라 원인이 안 보인다.
 # 주소를 넣고 싶으면 빈 값이 아닌 실제 주소를 여기 직접 적을 것.
 
-# 사람이 외워서 치는 주소. 발표에서 「halil-ai.site」라고만 말해도 앱에 닿아야 한다.
+# **apex 가 본 주소다**(2026-08-14 결정). 발표 중 주소창에 `halil-ai.site` 가
+# 그대로 보여야 해서 리디렉트가 아니라 여기서 직접 서빙한다.
 # apex 는 CNAME 을 못 걸지만 탄력적 IP 가 고정이라 A 레코드로 바로 찍으면 된다.
-halil-ai.site, www.halil-ai.site {
-	redir https://app.halil-ai.site{uri} permanent
+halil-ai.site {
+	reverse_proxy frontend:5173
 }
 
-app.halil-ai.site {
-	reverse_proxy frontend:5173
+# 둘 다 본 주소로 보낸다. 앱이 두 주소로 열리면 쿠키·CORS 를 두 벌 관리하게 된다.
+www.halil-ai.site, app.halil-ai.site {
+	redir https://halil-ai.site{uri} permanent
 }
 
 api.halil-ai.site {
