@@ -1,5 +1,13 @@
 # 로컬 Django와 RunPod Serverless 연결
 
+> **이 문서는 로컬 개발용이다.** 노트북에는 공인 https 주소가 없어서 터널이
+> 필요하다.
+>
+> **AWS 시연 환경은 이 절차를 쓰지 않는다**(2026-08-14~). Django 가
+> `https://api.halil-ai.site` 에 떠 있어 RunPod 이 바로 닿는다 —
+> `PUBLIC_BACKEND_BASE_URL` 이 고정이고 터널도, 주소를 다시 넣는 일도 없다.
+> `docs/개발환경/AWS_이전_매뉴얼.md` §1 참고.
+
 ## 경계
 
 - Django, React, PostgreSQL, 문서 원문 저장소는 로컬에서 실행한다.
@@ -17,7 +25,7 @@ RunPod가 접근할 주소의 Django `ALLOWED_HOSTS`에 Cloudflare hostname을 �
 
 ## 2. Quick Tunnel
 
-별도 도메인이 없는 중간발표 환경에서는 Cloudflare `cloudflared`를 설치한 뒤:
+노트북에서 개발할 때는 Cloudflare `cloudflared`를 설치한 뒤:
 
 ```powershell
 cloudflared tunnel --url http://localhost:8000

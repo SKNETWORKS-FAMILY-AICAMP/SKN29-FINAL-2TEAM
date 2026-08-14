@@ -135,14 +135,15 @@ Let's Encrypt 가 80 번으로 검증을 못 해 인증서 발급이 실패한�
 | `frontend` | EC2의 React 컨테이너 | 유지 |
 | `web` | EC2의 Django 컨테이너 | 유지. DB 주소만 RDS endpoint로 변경 |
 | `db` | RDS PostgreSQL + pgvector | EC2에서 실행하지 않음 |
-| (없음) | `dev-mcp` + `mcp-tunnel` | MCP 시연용. 기본 compose 에 없고 파일을 얹어 띄운다 |
+| (없음) | `caddy` | 80·443 에서 TLS 종료. 세 호스트를 가른다 |
+| (없음) | `dev-mcp` | MCP 시연용. 기본 compose 에 없고 파일을 얹어 띄운다. **`mcp-tunnel` 은 AWS 에서 안 쓴다** |
 
 ```text
 로컬 개발
 frontend + web + db(Docker)
 
 AWS 시연
-EC2: frontend + web(Docker)
+EC2: caddy + frontend + web(Docker)
 RDS: PostgreSQL + pgvector
 S3: 원문 문서 + 정적/업로드 파일
 ```
@@ -150,8 +151,9 @@ S3: 원문 문서 + 정적/업로드 파일
 ### MCP 시연 서버도 함께 간다 (2026-08-13 추가)
 
 「MCP 서버를 등록해서 실제로 쓰는」 시연을 하려면 붙일 서버가 하나 필요하다.
-`infra/dev-mcp/` 의 시험용 서버와 cloudflared 터널을 EC2 에도 같이 올린다
-(`infra/docker/docker-compose.dev-mcp.yml`).
+`infra/dev-mcp/` 의 시험용 서버를 EC2 에도 같이 올린다
+(`infra/docker/docker-compose.dev-mcp.yml`). **터널은 빼고 `dev-mcp` 만** 올린다 —
+Caddy 가 `mcp.halil-ai.site` 를 받아 넘긴다.
 
 `services/mcp/security.py` 가 **https 가 아닌 주소를 거절**한다
 (`security.py` 의 scheme 검사 — SSRF 1차 방어선이라 푸는 것은 답이 아니다).
