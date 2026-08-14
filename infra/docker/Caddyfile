@@ -13,6 +13,12 @@
 	email {$CADDY_EMAIL}
 }
 
+# 사람이 외워서 치는 주소. 발표에서 「halil-ai.site」라고만 말해도 앱에 닿아야 한다.
+# apex 는 CNAME 을 못 걸지만 탄력적 IP 가 고정이라 A 레코드로 바로 찍으면 된다.
+halil-ai.site, www.halil-ai.site {
+	redir https://app.halil-ai.site{uri} permanent
+}
+
 app.halil-ai.site {
 	reverse_proxy frontend:5173
 }
