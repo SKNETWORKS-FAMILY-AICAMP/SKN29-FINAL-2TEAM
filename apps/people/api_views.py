@@ -11,8 +11,6 @@ from backend.db.errors import RepositoryError
 from backend.services import hr
 
 from .serializers import (
-    organization_response,
-    person_response,
     team_member_response,
     team_response,
     team_setting_response,
@@ -29,10 +27,6 @@ class TeamScopedAPIView(APIView):
 
     authentication_classes = [BearerTokenAuthentication]
     permission_classes = [IsAuthenticated]
-
-    def team_person_ids(self) -> list[str]:
-        team_id = AccountRepository.team_id(self.request.user.account_id)
-        return TeamRepository.member_person_ids(team_id)
 
 
 def _unavailable(detail: str, exc: Exception) -> Response:
@@ -90,36 +84,6 @@ def _repository_error(exc: RepositoryError) -> Response:
     else:
         code = status.HTTP_400_BAD_REQUEST
     return Response({"detail": str(exc)}, status=code)
-
-
-class PersonListAPIView(TeamScopedAPIView):
-    def get(self, request):
-        try:
-            rows = hr.list_persons(person_ids=self.team_person_ids())
-        except psycopg.Error as exc:
-            return _unavailable("직원 데이터를 조회할 수 없습니다.", exc)
-        return Response([person_response(row) for row in rows])
-
-
-class OrganizationListAPIView(TeamScopedAPIView):
-    """팀원들이 실제로 속한 조직만 보여준다.
-
-    조직도 전체가 아니다 — 팀이 쓰는 것은 자기 팀원의 소속 정보이지 회사
-    조직도가 아니기 때문이다.
-    """
-
-    def get(self, request):
-        try:
-            persons = hr.list_persons(person_ids=self.team_person_ids())
-            org_ids = sorted({p["org_id"] for p in persons if p["org_id"]})
-            rows = hr.list_orgs(org_ids=org_ids)
-        except psycopg.Error as exc:
-            return _unavailable("조직 데이터를 조회할 수 없습니다.", exc)
-        return Response([organization_response(row) for row in rows])
-
-
-#: 명부와 팀 기준은 팀장의 것이다. 조회는 팀원도 한다 — 막는 것은 쓰기뿐이다.
-TEAM_LEADER_ONLY = "팀장만 팀 명부와 업무량 기준을 바꿀 수 있습니다."
 
 
 class TeamMemberAPIView(TeamScopedAPIView):
