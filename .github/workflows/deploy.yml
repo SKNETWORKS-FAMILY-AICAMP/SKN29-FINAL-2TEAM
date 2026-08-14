@@ -1,0 +1,55 @@
+name: Deploy to EC2
+
+# main 에 들어오면 시연 서버(halil-ai.site)에 반영한다.
+# 실제 배포 로직은 `infra/deploy.sh` 에 있다 — 여기는 SSH 로 그걸 부르기만 한다.
+#
+# 필요한 저장소 시크릿 (Settings > Secrets and variables > Actions):
+#   EC2_HOST      43.200.114.119
+#   EC2_USER      ubuntu
+#   EC2_SSH_KEY   배포 전용 개인키 전문(-----BEGIN ... END----- 포함)
+#
+# ⚠ 팀원 접속용 `.pem` 을 그대로 넣지 말 것. 배포 전용 키를 따로 만들어 두면
+#    나중에 그 키만 서버의 authorized_keys 에서 지워 회수할 수 있다.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 배포가 겹치면 서버에서 docker compose 가 서로를 밟는다. 줄을 세우고,
+# 앞선 배포는 취소하지 않는다 — 중간에 끊긴 빌드가 더 나쁘다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: SSH 키 준비
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # 호스트 키를 미리 받아 둔다. StrictHostKeyChecking 을 끄는 것보다 낫다.
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: 배포
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o ConnectTimeout=20 -o ServerAliveInterval=30 \
+              "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+              'bash ~/SKN29-Final-2Team/infra/deploy.sh'
+
+      - name: 도메인으로 확인
+        run: |
+          # 서버 안에서만 보면 ALLOWED_HOSTS·Caddy 문제가 안 잡힌다.
+          curl -fsS --max-time 20 https://api.halil-ai.site/api/health/
+          echo
+          curl -fsS --max-time 20 -o /dev/null -w 'halil-ai.site %{http_code}\n' https://halil-ai.site
+
+      - name: 키 지우기
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
