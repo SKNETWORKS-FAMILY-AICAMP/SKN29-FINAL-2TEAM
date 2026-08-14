@@ -35,3 +35,6 @@ DB/peopleDB/team_overrides.sql
 
 # Word·Excel이 문서를 열어둔 동안 만드는 임시 잠금 파일. 문서를 닫으면 사라진다.
 ~$*
+
+# sLLM 라벨링 작업 로그
+ml_label.log
