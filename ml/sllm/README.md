@@ -27,12 +27,29 @@ python ml/sllm/build_dataset.py               # 교사 라벨링 (OPENAI_API_KEY
 # 2~3. 학습·평가 — RunPod GPU Pod
 pip install -U "transformers>=4.44" "peft>=0.12" "trl>=0.9" \
                "bitsandbytes>=0.43" "accelerate>=0.33" datasets
-python ml/sllm/train_qlora.py --base Qwen/Qwen3-4B-Instruct
-python ml/sllm/evaluate.py    --base Qwen/Qwen3-4B-Instruct --adapter ml/sllm/adapter
+python ml/sllm/train_qlora.py --base Qwen/Qwen3-4B-Instruct-2507
+python ml/sllm/evaluate.py    --base Qwen/Qwen3-4B-Instruct-2507 --adapter ml/sllm/adapter
 ```
 
 `evaluate.py` 가 `eval_result.json` 을 남기고, **보고서 4장의 표는 그 파일에서
 그대로 옮긴다.** 손으로 채우지 않는다.
+
+## 결과 (2026-08-14, RTX A6000)
+
+| | 베이스 | 튜닝 |
+|---|---|---|
+| schema_ok | 23.5% | **82.4%** |
+| evidence_ok | 0.0% | **82.4%** |
+| title_soft_f1 | 0.000 | 0.028 |
+| latency 중앙값 | 22.1초 | 103.7초 |
+
+학습은 33 step / 308초. loss 0.755 → 0.347.
+
+**형식은 배웠고 내용도 맞는데 제목 일치도만 0에 가깝다. 원인은 언어다.** 정답
+제목 83건은 100% 한국어인데(교사가 영문 원문도 한국어로 정규화했다) 예측 96건
+중 한국어는 35건(36.5%)뿐이다. 업무 개수는 1.16배로 거의 맞으므로 「못 찾는」
+문제가 아니라 「다른 언어로 쓰는」 문제다. 다음에 손볼 곳은 시스템 프롬프트의
+출력 언어 지정이다. 근거는 `eval_samples.json` 에 표본째 남아 있다.
 
 ## 데이터
 
@@ -51,4 +68,7 @@ python ml/sllm/evaluate.py    --base Qwen/Qwen3-4B-Instruct --adapter ml/sllm/ad
   일치도다. 교사가 틀리면 학생도 같이 틀린다. 보고서에 그대로 적는다.
 * **평가 표본이 작다**(문서 2건). 절대값보다 베이스 대비 차이를 본다.
 * **컨테이너 디스크 30GB.** 4B 4bit 기준이다. 8B 를 쓰려면 Pod 을 더 크게 만든다.
-* 어댑터만 저장한다(수십 MB). 베이스 가중치는 제출물에 넣지 않는다.
+  HF 캐시는 `HF_HOME=/workspace/hf` 로 볼륨 쪽에 둔다 — 안 그러면 30GB 를 채운다.
+* 어댑터만 저장한다(66MB). 베이스 가중치는 제출물에 넣지 않는다.
+* **생성 길이 상한을 정답보다 짧게 잡지 말 것.** 1024 로 뒀다가 정답의 65%가
+  잘려 멀쩡한 출력이 전부 「스키마 실패」로 집계됐다. `MAX_NEW_TOKENS` 참고.
