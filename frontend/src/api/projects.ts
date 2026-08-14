@@ -1,7 +1,6 @@
 import { API_BASE_URL, ApiError, apiRequest, parseErrorBody } from './client';
 
 /** `proj_source.source_type`. */
-export type ProjectSourceType = 'DRIVE_FOLDER' | 'JIRA_PROJECT';
 
 /** 공수 기준 진행률. Jira를 한 번도 안 읽었으면 프로젝트에 아예 없다. */
 export interface ProjectProgress {
@@ -35,24 +34,6 @@ export interface Project {
   last_sync_at: string | null;
   /** false면 읽을 Jira 소스가 없다는 뜻이라 갱신 버튼을 줄 이유가 없다. */
   has_jira_source: boolean;
-}
-
-export interface ProjectSource {
-  proj_source_id: string;
-  proj_id: string;
-  conn_id: string;
-  source_type: ProjectSourceType;
-  /** Drive 폴더 id 또는 Jira 프로젝트 키. */
-  external_source_id: string;
-  /** 원본이 알려준 이름(`SKN29_Final_2Team`). 예전에 저장한 소스는 null이고 화면이 키로 대체한다. */
-  display_name: string | null;
-  sync_status: string;
-  /** 이 소스를 마지막으로 읽어들인 시각. 한 번도 안 읽었으면 null. */
-  last_sync_at: string | null;
-  /** 이 폴더의 기본 문서 역할. 안의 파일이 물려받는다. Jira 소스는 null. */
-  default_doc_role: string | null;
-  /** 폴더 탐색 깊이. 1이면 선택한 폴더만, null이면 제한 없음. Jira 소스는 null. */
-  max_depth: number | null;
 }
 
 /** 내가 소유한 프로젝트. */
@@ -183,11 +164,6 @@ export function deleteProject(token: string, projId: string) {
   return apiRequest<ProjectDeleteResult>(`/projects/${projId}/`, { method: 'DELETE', token });
 }
 
-/** 이 프로젝트가 대응하는 Jira 프로젝트. 1:1이라 0개 아니면 1개다. */
-export function listProjectSources(token: string, projId: string) {
-  return apiRequest<ProjectSource[]>(`/projects/${projId}/sources/`, { token });
-}
-
 /** 팀이 읽어들일 Drive 폴더. **프로젝트가 아니라 팀에 매달린다.** */
 export interface TeamFolder {
   team_folder_id: string;
@@ -248,25 +224,6 @@ export function listRegisteredJiraProjects(token: string) {
   return apiRequest<RegisteredJiraProject[]>('/projects/jira/', { token });
 }
 
-export interface JiraRegisterResult {
-  sources: RegisteredJiraProject[];
-  /** 읽어 보니 이미 끝나 있어 완료 구획에서 시작한 프로젝트. */
-  archived: string[];
-  /** 등록은 됐지만 이슈를 못 읽은 것. 화면에서 「갱신」으로 다시 시도할 수 있다. */
-  failed: { project_key: string; detail: string }[];
-}
-
-export function registerJiraProjects(
-  token: string,
-  projects: { project_key: string; name?: string }[],
-) {
-  return apiRequest<JiraRegisterResult>('/projects/jira/', {
-    method: 'PUT',
-    token,
-    body: { projects },
-  });
-}
-
 export interface TeamDocument {
   doc_id: string;
   team_id: string | null;
@@ -289,10 +246,6 @@ export interface TeamDocument {
   src_modified_at: string | null;
   /** 원문을 문서 저장소에 받아 뒀는가. 등록 직후에는 false다. */
   downloaded: boolean;
-}
-
-export function listTeamDocuments(token: string) {
-  return apiRequest<TeamDocument[]>('/team/documents/', { token });
 }
 
 /** 설정된 폴더에 있는데 아직 `doc`에 없는 파일. */
@@ -416,121 +369,6 @@ export function syncProjectTasks(token: string, projId: string) {
 /** 팀의 모든 프로젝트를 한 번에 다시 읽는다. 목록 화면의 「갱신」이 쓴다. */
 export function syncTeamTasks(token: string) {
   return apiRequest<TaskSyncResult>('/team/tasks/sync/', { method: 'POST', token });
-}
-
-/** 한 주의 필요 공수와 그 주의 용량. */
-export interface WeekLoad {
-  week_start: string;
-  hours: number;
-  /** 근무조건을 모르면 null. */
-  capacity: number | null;
-}
-
-/** 마감을 이른 순으로 쌓았을 때 가장 빠듯해지는 시점. */
-export interface TightestDeadline {
-  due_at: string;
-  required_hours: number;
-  available_hours: number;
-  /** 음수면 그 날짜까지 그만큼 모자란다. */
-  slack_hours: number;
-}
-
-/** 어느 Jira 프로젝트에서 온 부하인지. "KAN만 90%" 분해가 이 값으로 나온다. */
-export interface WorkloadByProject {
-  project_key: string;
-  /** 저장된 표시 이름. 없으면 서버가 키를 그대로 채워 준다. */
-  project_name: string;
-  hours: number;
-  load_rate: number | null;
-}
-
-export interface PersonWorkload {
-  person_id: string;
-  name: string | null;
-  job_role: string | null;
-  gross_capacity: number | null;
-  absence_hours: number | null;
-  absent_days: number;
-  effective_capacity: number | null;
-  current_allocation: number;
-  remaining_capacity: number | null;
-  /** %. 용량이 0 이하거나 근무조건이 없으면 null이고 `blocked_reason`이 채워진다. */
-  load_rate: number | null;
-  blocked_reason: 'NO_SCHEDULE' | 'ON_LEAVE' | 'NO_EFFECTIVE_CAPACITY' | null;
-  by_project: WorkloadByProject[];
-  unscheduled_backlog_hours: number;
-  unscheduled_backlog_count: number;
-  /** 주차별 필요 공수. 부하율 하나로는 어느 주에 몰렸는지가 안 보인다. */
-  by_week: WeekLoad[];
-  /** 조회 기간 뒤에 마감이 있는 몫. */
-  later_hours: number;
-  /** 남은 일 ÷ 하루 용량. 창과 무관한 절대량이다. */
-  runway_days: number | null;
-  /** 마감을 이른 순으로 쌓았을 때 가장 모자라는 시점. 근무조건을 모르면 null. */
-  tightest: TightestDeadline | null;
-  missing_estimate_count: number;
-}
-
-export interface WorkloadResult {
-  period_start: string;
-  period_end: string;
-  workdays: number;
-  people: PersonWorkload[];
-  unmapped_assignee_count: number;
-  missing_estimate_count: number;
-  unscheduled_backlog_hours: number;
-  limitations: string[];
-  /** 이 비율을 넘으면 과부하. 팀 설정이 없으면 100. */
-  overload_pct: number;
-  /** 조회 기간(주). 팀 설정이 없으면 4. */
-  workload_weeks: number;
-  as_of: string;
-}
-
-/**
- * 기간별 사람 부하. `from`·`to`를 안 주면 오늘부터 4주다.
- *
- * **팀 전체가 범위다.** 사람의 부하는 그가 맡은 모든 프로젝트의 합이라, 프로젝트
- * 하나만 보면 "SKN29만 90%"가 나오지만 실제로는 122.5%다. 어느 프로젝트에서 온
- * 부하인지는 `by_project`가 분해해 준다.
- */
-export function getTeamWorkload(token: string, from?: string, to?: string) {
-  const query = new URLSearchParams();
-  if (from) query.set('from', from);
-  if (to) query.set('to', to);
-  const suffix = query.toString() ? `?${query}` : '';
-  return apiRequest<WorkloadResult>(`/team/workload/${suffix}`, { token });
-}
-
-/** 마감이 걸린 업무 한 건. */
-export interface DeadlineTask {
-  exist_task_id: string;
-  jira_issue_id: string;
-  summary: string | null;
-  assignee_name: string | null;
-  due_at: string;
-  /** 오늘로부터 며칠. 음수가 지연이다. 시간대 때문에 화면에서 계산하지 않는다. */
-  days: number;
-  proj_id: string;
-  project_name: string;
-}
-
-export interface DeadlineResult {
-  as_of: string;
-  /** 「곧」의 길이(일). */
-  soon_days: number;
-  overdue: DeadlineTask[];
-  soon: DeadlineTask[];
-}
-
-/**
- * 지연된 업무와 곧 마감인 업무.
- *
- * 부하와 따로 부른다. 부하는 사람이 단위지만 이쪽은 업무가 단위이고, 보고 할
- * 행동도 다르다 — 부하는 배정을 옮기는 판단, 지연은 그 이슈를 지금 찌르는 판단이다.
- */
-export function listTeamDeadlines(token: string) {
-  return apiRequest<DeadlineResult>('/team/deadlines/', { token });
 }
 
 /* ── 문서 파싱·임베딩 파이프라인 ──────────────────────────────────── */

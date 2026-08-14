@@ -1,16 +1,3 @@
-.pageHeader h1 {
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--color-heading);
-  margin: 0 0 6px;
-}
-
-.pageHeader p {
-  font-size: 14px;
-  color: var(--color-muted);
-  margin: 0;
-}
-
 .sectionBlock {
   scroll-margin-top: var(--space-6);
   /* 카드끼리 맞붙어 있어 어디까지가 한 섹션인지 안 보였다(2026-08-12). */
@@ -35,15 +22,6 @@
 }
 
 /* ---------- HR read-only box ---------- */
-.warnBox {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-md);
-  background: var(--color-warning-bg);
-  font-size: 13px;
-  color: var(--color-body);
-}
-
 .identityRow {
   display: flex;
   align-items: center;
@@ -101,54 +79,6 @@
 }
 
 /* ---------- connector cards ---------- */
-.connectorGrid {
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.connectorCard {
-  flex: 1;
-  min-width: 220px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-}
-
-.connectorIconBox {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.connectorIconBox svg {
-  width: 20px;
-  height: 20px;
-}
-
-.connectorInfo {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.connectorName {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-heading);
-  margin: 0;
-}
-
 /* ---------- team table ---------- */
 .tableCaption {
   font-size: 13px;

@@ -24,6 +24,7 @@ from apps.connectors.oauth import OAuthError
 from backend.db.agent_platform import AgentRepository, CustomModelRepository
 from backend.db.errors import RepositoryError
 from services.harness import registry, scaffold, trace
+from services.harness.trace import error_code_of
 from services.harness.registry import Tool, ToolNotAllowed
 
 logger = logging.getLogger(__name__)
@@ -298,7 +299,13 @@ def run_agent(
                             output = raw
                 except Exception as exc:  # noqa: BLE001 - 도구 실패로 run 을 끝내지 않는다
                     logger.exception("도구 실행 실패: %s (run=%s)", tool_ref, run_trace.run_id)
-                    error_code = exc.__class__.__name__
+                    # MCP 실패는 **왜 실패했는지가 코드에 담겨 있다**(timeout ·
+                    # unreachable · 401 · 429). 클래스 이름만 남기면 전부
+                    # 「McpError」 하나로 뭉개져, 기록만 보고는 서버가 죽은 것과
+                    # 토큰이 만료된 것을 못 가른다 — 운영자 콘솔의 「실패한 도구」
+                    # 열도 그 코드를 그대로 보여준다(2026-08-13에 실제 서버로
+                    # 돌려 보다 드러났다).
+                    error_code = error_code_of(exc)
                     # **사람이 고칠 수 있는 사유만 그대로 내보낸다.** 그 밖의
                     # 예외는 문자열에 문서 원문이나 토큰이 섞여 있을 수 있어
                     # 클래스 이름만 남긴다.
@@ -434,7 +441,7 @@ def check_tools(
                     "tool_ref": tool_ref,
                     "tool_name": tool.name,
                     "status": "FAILED",
-                    "error_code": exc.__class__.__name__,
+                    "error_code": error_code_of(exc),
                     "detail": str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None,
                 }
             )
@@ -771,6 +778,17 @@ def _chat_completions_model(client: Any, model_name: str) -> ModelClient:
             token_out=getattr(usage, "completion_tokens", 0) or 0,
             # 다음 호출에 그대로 이어 붙일 assistant 턴. Responses 와 달리 우리가
             # 조립해도 되지만, 도구 호출은 **id 까지 그대로** 돌려줘야 짝이 맞는다.
+            #
+            # ⚠ **제공자가 얹어 보낸 필드를 같이 돌려준다**(`model_extra`).
+            # Gemini 3.x 는 함수 호출에 `extra_content.google.thought_signature`
+            # 를 달아 주고, 다음 요청에 그것이 없으면 **400 으로 거절한다**:
+            #   "Function call is missing a thought_signature in functionCall
+            #    parts. This is required for tools to work correctly."
+            # 우리가 아는 칸만 골라 다시 조립하면 그 서명이 조용히 사라진다.
+            # 첫 호출은 멀쩡하고 **도구 결과를 되돌리는 두 번째 호출에서만**
+            # 깨지므로, 화면에는 도구 카드가 뜬 뒤 실패로 보인다(2026-08-14 실측).
+            # Responses API 쪽 `_echoable` 이 「우리가 해석하거나 줄이면 짝이
+            # 깨진다」고 적어 둔 것과 같은 이야기다.
             raw_items=[
                 {
                     "role": "assistant",
@@ -785,6 +803,7 @@ def _chat_completions_model(client: Any, model_name: str) -> ModelClient:
                                         "name": item.function.name,
                                         "arguments": item.function.arguments or "{}",
                                     },
+                                    **(item.model_extra or {}),
                                 }
                                 for item in raw_calls
                             ]

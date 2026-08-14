@@ -1,0 +1,54 @@
+# 업무 추출 sLLM (QLoRA)
+
+산출물 「자체 sLLM 인공지능」의 코드 일체다. 문서는
+`docs/산출물/[모델링 및 평가]자체 sLLM 인공지능_2Team.docx`.
+
+## 무엇을 배우게 하는가
+
+지금 `services/task_extraction` 이 OpenAI 로 하는 일 — **근거 청크를 주면
+`ExtractionResult` 스키마에 맞는 업무 JSON 을 뱉는 것** — 을 작은 모델이 하게
+만든다.
+
+기획서 v2 의 「보안 sLLM(RunPod 온프레미스)」이 노린 지점이 이것이다. 사내
+제안요청서·기획서를 외부 API 로 보내지 않고 업무를 뽑는다.
+
+**이 과제를 고른 이유는 채점이 자동으로 되기 때문이다.** 스키마 준수 여부는
+pydantic 이 판정하고, 근거 인용 범위는 집합 비교로 잰다. 「좋아진 것 같다」가
+아니라 숫자가 나온다. `ExtractedTask` 는 14개 필드에 중첩 리스트까지 있어
+작은 모델이 튜닝 전에는 형식조차 잘 못 맞춘다 — 개선 폭이 드러나는 과제다.
+
+## 순서
+
+```bash
+# 1. 데이터셋 — 로컬. GPU 불필요
+python ml/sllm/build_dataset.py --dry-run     # 창 개수만 확인
+python ml/sllm/build_dataset.py               # 교사 라벨링 (OPENAI_API_KEY 필요)
+
+# 2~3. 학습·평가 — RunPod GPU Pod
+pip install -U "transformers>=4.44" "peft>=0.12" "trl>=0.9" \
+               "bitsandbytes>=0.43" "accelerate>=0.33" datasets
+python ml/sllm/train_qlora.py --base Qwen/Qwen3-4B-Instruct
+python ml/sllm/evaluate.py    --base Qwen/Qwen3-4B-Instruct --adapter ml/sllm/adapter
+```
+
+`evaluate.py` 가 `eval_result.json` 을 남기고, **보고서 4장의 표는 그 파일에서
+그대로 옮긴다.** 손으로 채우지 않는다.
+
+## 데이터
+
+| | |
+|---|---|
+| 원천 | `docs/참고자료/개발_기획서_샘플/` 의 마크다운 5건 (SRS·PRD·명세, 약 15만 자) |
+| 라벨 | 운영에 쓰는 교사 모델의 구조화 출력 (**증류**) |
+| 분할 | **문서 단위.** 평가 문서 2건은 학습에 한 글자도 안 들어간다 |
+
+청크 단위로 섞으면 같은 문서의 다른 문단이 학습·평가에 동시에 들어가 점수가
+부풀려진다. 그래서 문서째로 가른다.
+
+## 알아 둘 제약
+
+* **라벨이 사람이 아니라 교사 모델이다.** `field_f1` 은 정확도가 아니라 교사와의
+  일치도다. 교사가 틀리면 학생도 같이 틀린다. 보고서에 그대로 적는다.
+* **평가 표본이 작다**(문서 2건). 절대값보다 베이스 대비 차이를 본다.
+* **컨테이너 디스크 30GB.** 4B 4bit 기준이다. 8B 를 쓰려면 Pod 을 더 크게 만든다.
+* 어댑터만 저장한다(수십 MB). 베이스 가중치는 제출물에 넣지 않는다.

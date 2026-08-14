@@ -17,10 +17,8 @@
   line-height: 1.6;
 }
 
-.twoColumns,
 .overviewVisuals,
 .overviewBottom,
-.detailGrid,
 .policyGrid {
   display: grid;
   gap: 20px;
@@ -29,11 +27,6 @@
 .policyGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-
-.twoColumns {
-  grid-template-columns: 340px minmax(0, 1fr);
-}
-
 .overviewVisuals {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 20px;
@@ -189,8 +182,6 @@
 
 .actionList,
 .activityList,
-.treeList,
-.teamList,
 .noticeList,
 .policyHistory {
   display: flex;
@@ -209,22 +200,6 @@
   border-left: 4px solid;
   border-radius: var(--radius-md);
 }
-
-.action_warning {
-  border-color: var(--color-warning);
-  background: #fffbeb;
-}
-
-.action_danger {
-  border-color: var(--color-danger);
-  background: #fef2f2;
-}
-
-.action_info {
-  border-color: var(--color-info);
-  background: #eff6ff;
-}
-
 .actionCopy strong,
 .activityItem strong {
   display: block;
@@ -241,7 +216,6 @@
 
 .outlineAction,
 .linkAction,
-.treeButton,
 .historyButton {
   border: 0;
   background: none;
@@ -273,7 +247,6 @@
   background: var(--color-primary);
 }
 
-.treeButton,
 .historyButton {
   width: 100%;
   padding: 11px 12px;
@@ -282,23 +255,19 @@
   text-align: left;
 }
 
-.treeButton:hover,
 .historyButton:hover {
   background: var(--color-primary-soft);
 }
 
-.treeButtonActive,
 .historyButtonActive {
   background: var(--color-primary);
   color: var(--color-surface);
 }
 
-.treeButtonActive:hover,
 .historyButtonActive:hover {
   background: var(--color-primary);
 }
 
-.treeMeta,
 .historyMeta {
   display: block;
   margin-top: 4px;
@@ -307,7 +276,6 @@
   font-weight: 500;
 }
 
-.treeButtonActive .treeMeta,
 .historyButtonActive .historyMeta {
   color: rgba(255, 255, 255, 0.76);
 }
@@ -322,142 +290,13 @@
   flex: 1;
   min-width: 0;
 }
-
-.treeIndent1 {
-  padding-left: 24px;
-}
-
-.treeIndent2 {
-  padding-left: 40px;
-}
-
-.treeRow {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.treeRow .treeButton {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.treeToggle,
-.treeToggleSpacer {
-  flex: 0 0 auto;
-  width: 22px;
-}
-
-.treeToggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: none;
-  color: var(--color-muted);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-
-.treeToggle:hover {
-  background: var(--color-primary-soft);
-}
-
-.detailTitleRow,
-.tableTopline,
 .rowActions,
-.formActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.detailTitleRow {
-  margin-bottom: 18px;
-}
-
-.detailTitleRow h2 {
-  margin: 0;
-  color: var(--color-heading);
-  font-size: 20px;
-}
-
-.detailGrid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 20px;
-}
-
-.infoCard {
-  padding: 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: #f8fafc;
-}
-
-.infoCard span {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--color-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.infoCard strong {
-  color: var(--color-heading);
-  font-size: 13px;
-}
-
-.teamItem {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 14px;
-  align-items: center;
-  padding: 13px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-body);
-  font-size: 12px;
-}
-
-.teamItem strong {
-  color: var(--color-heading);
-}
-
 .detailText {
   margin: 0;
   color: var(--color-body);
   font-size: 12px;
   line-height: 1.7;
 }
-
-.detailCards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 14px 0;
-}
-
-.detailCard {
-  padding: 14px;
-  border-radius: var(--radius-md);
-  background: #f8fafc;
-}
-
-.detailCard strong {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--color-heading);
-  font-size: 12px;
-}
-
-.detailCard p {
-  margin: 0;
-  color: var(--color-body);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 .rowActions {
   justify-content: flex-start;
   flex-wrap: wrap;
@@ -592,14 +431,6 @@
 .compactActions button:last-child {
   color: var(--color-danger);
 }
-
-.compareGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 14px 0;
-}
-
 .compareFlow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
@@ -646,16 +477,6 @@
   color: var(--color-heading);
   font-size: 16px;
 }
-
-.metadataList {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-  color: var(--color-body);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .policyMetadata {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) minmax(140px, 0.8fr);
@@ -738,7 +559,6 @@
 }
 
 @media (max-width: 1100px) {
-  .twoColumns,
   .overviewBottom {
     grid-template-columns: 1fr;
   }
@@ -750,11 +570,6 @@
 }
 
 @media (max-width: 760px) {
-  .detailGrid,
-  .detailCards {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -774,15 +589,6 @@
 }
 
 @media (max-width: 520px) {
-  .detailGrid,
-  .detailCards {
-    grid-template-columns: 1fr;
-  }
-
-  .compareGrid {
-    grid-template-columns: 1fr;
-  }
-
   .auditViewTabs,
   .compareFlow,
   .scheduleGrid {

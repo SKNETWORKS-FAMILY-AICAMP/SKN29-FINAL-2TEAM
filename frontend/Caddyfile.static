@@ -1,0 +1,16 @@
+# 정적 빌드를 서빙한다(`Dockerfile` 의 `static` 스테이지). 앞단 Caddy 가
+# TLS 를 이미 끝냈으므로 여기서는 평문 http 만 받는다.
+:5173 {
+	root * /srv
+
+	# ⚠ 이 줄이 없으면 **새로고침할 때만** 404 가 난다. 라우팅이 브라우저 쪽에
+	# 있어서 `/settings/team` 같은 주소에 해당하는 파일이 서버에 없기 때문이다.
+	# 링크를 눌러 이동할 때는 멀쩡해서 늦게 발견된다.
+	try_files {path} /index.html
+
+	file_server
+
+	# 해시가 붙은 자산은 내용이 바뀌면 이름이 바뀌므로 오래 캐시해도 안전하다.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+}

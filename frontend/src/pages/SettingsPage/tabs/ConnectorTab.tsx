@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Badge, BrandIcon, Button, Icon, InfoNote, useToast } from '../../../components';
-import type { BadgeTone } from '../../../components';
+import { connectorStatusLabel, connectorStatusTone } from '../../../data/connectorStatus';
 import { ApiError } from '../../../api/client';
 import {
   beginGoogleDriveAuthorization,
@@ -23,21 +23,8 @@ type OAuthConnectorId = 'google-drive' | 'jira';
 /** 서버가 아는 연결 상태. 화면이 따로 기억하지 않는다. */
 type Status = 'CONNECTED' | 'EXPIRED' | 'ERROR' | 'REVOKED' | null;
 
-const TONE: Record<string, BadgeTone> = {
-  CONNECTED: 'success',
-  EXPIRED: 'warning',
-  ERROR: 'danger',
-  REVOKED: 'danger',
-};
-
-const LABEL: Record<string, string> = {
-  CONNECTED: '연결됨',
-  EXPIRED: '만료됨',
-  ERROR: '오류',
-  // 만료와 가른다 — 「내 토큰이 낡았나」와 「운영자가 끊었다」는 다음에 할 일이
-  // 같아도(다시 연결) 이유가 다르다.
-  REVOKED: '해제됨',
-};
+// 라벨·톤은 **운영자 콘솔과 한 표를 쓴다.** 각자 들고 있다가 같은 `EXPIRED` 를
+// 여기서는 「만료됨」, 운영자 화면에서는 「확인 필요」로 부르고 있었다(2026-08-13).
 
 /**
  * Connector 탭 — 데이터가 들어오는 길.
@@ -196,8 +183,8 @@ export function ConnectorTab() {
   function statusBadge(type: ConnectorType) {
     const value = status[type];
     return (
-      <Badge tone={value ? TONE[value] : 'neutral'} dot>
-        {value ? LABEL[value] : '미연결'}
+      <Badge tone={value ? connectorStatusTone(value) : 'neutral'} dot>
+        {value ? connectorStatusLabel(value) : '미연결'}
       </Badge>
     );
   }

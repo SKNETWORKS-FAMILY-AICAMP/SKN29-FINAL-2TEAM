@@ -23,12 +23,6 @@ export { Modal } from './Modal/Modal';
 export { InfoNote } from './InfoNote/InfoNote';
 export type { ModalProps } from './Modal/Modal';
 
-export { TopNav } from './TopNav/TopNav';
-export type { TopNavProps, NavTabItem } from './TopNav/TopNav';
-
-export { StepIndicator } from './StepIndicator/StepIndicator';
-export type { StepIndicatorProps } from './StepIndicator/StepIndicator';
-
 export { ToastProvider, useToast } from './Toast/Toast';
 export type { ToastContextValue, ToastTone } from './Toast/Toast';
 
@@ -45,8 +39,6 @@ export { PasswordChangeCard } from './PasswordChangeCard/PasswordChangeCard';
 export type { PasswordChangeCardProps } from './PasswordChangeCard/PasswordChangeCard';
 export { SkillList } from './SkillList/SkillList';
 export type { SkillListProps } from './SkillList/SkillList';
-export { SettingsLayout } from './SettingsLayout/SettingsLayout';
-export type { SettingsLayoutProps, SettingsNavItem } from './SettingsLayout/SettingsLayout';
 
 export { AppShell } from './AppShell/AppShell';
 export type { AppShellProps } from './AppShell/AppShell';

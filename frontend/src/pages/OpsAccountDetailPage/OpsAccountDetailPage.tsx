@@ -41,6 +41,15 @@ const MODAL_TITLES: Record<Exclude<PendingAction, null>, string> = {
   'revoke-admin': '운영자 권한 회수',
 };
 
+/** 사유 칸의 예시. 조치마다 물어보는 「왜」가 다르다. */
+const REASON_HINTS: Record<Exclude<PendingAction, null>, string> = {
+  lock: '예: 퇴사자 계정',
+  unlock: '예: 오인 정지 정정',
+  unlink: '예: 동명이인 오연결',
+  'grant-admin': '예: 운영 인수인계',
+  'revoke-admin': '예: 담당 변경',
+};
+
 export default function OpsAccountDetailPage() {
   const navigate = useNavigate();
   const { accountId } = useParams();
@@ -90,18 +99,19 @@ export default function OpsAccountDetailPage() {
 
     setSubmitting(true);
     try {
+      const why = reason.trim();
       if (pendingAction === 'lock') {
-        await lockAccount(session.token, account.account_id);
+        await lockAccount(session.token, account.account_id, why);
         showToast('계정을 정지했습니다.', 'success');
       } else if (pendingAction === 'unlock') {
-        await unlockAccount(session.token, account.account_id);
+        await unlockAccount(session.token, account.account_id, why);
         showToast('계정을 재활성했습니다.', 'success');
       } else if (pendingAction === 'grant-admin' || pendingAction === 'revoke-admin') {
         const grant = pendingAction === 'grant-admin';
-        await setAccountAdmin(session.token, account.account_id, grant, reason.trim());
+        await setAccountAdmin(session.token, account.account_id, grant, why);
         showToast(grant ? '운영자 권한을 부여했습니다.' : '운영자 권한을 회수했습니다.', 'success');
       } else {
-        await unlinkAccountPerson(session.token, account.account_id);
+        await unlinkAccountPerson(session.token, account.account_id, why);
         showToast('직원 연결을 해제했습니다.', 'success');
       }
       setPendingAction(null);
@@ -154,7 +164,6 @@ export default function OpsAccountDetailPage() {
   const canUnlink = account.mapping_status === 'DUPLICATE';
   const canGrantAdmin = !account.is_admin && !isWithdrawn;
   const canRevokeAdmin = account.is_admin && !isSelf;
-  const asksReason = pendingAction === 'grant-admin' || pendingAction === 'revoke-admin';
 
   return (
     <div className={styles.page}>
@@ -259,17 +268,19 @@ export default function OpsAccountDetailPage() {
         <p className={styles.modalCopy}>
           {account.email} 계정에 이 작업을 적용합니다. 변경 내역은 운영 감사 대상으로 기록됩니다.
         </p>
-        {asksReason && (
-          <div className={styles.fieldGroup}>
-            <label htmlFor="admin-reason">사유 (선택)</label>
-            <textarea
-              id="admin-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="예: 운영 인수인계"
-            />
-          </div>
-        )}
+        {/* **다섯 조치 모두 사유를 묻는다.** 권한 부여·회수에만 있었는데, 남의
+            계정을 세우고 직원 연결을 끊는 것도 나중에 「왜」에 답해야 하는 건
+            같다(2026-08-13). 비워 둘 수 있다 — 급할 때 사유 때문에 조치를 못
+            하면 그게 더 나쁘다. */}
+        <div className={styles.fieldGroup}>
+          <label htmlFor="action-reason">사유 (선택)</label>
+          <textarea
+            id="action-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder={REASON_HINTS[pendingAction ?? 'lock']}
+          />
+        </div>
       </Modal>
     </div>
   );

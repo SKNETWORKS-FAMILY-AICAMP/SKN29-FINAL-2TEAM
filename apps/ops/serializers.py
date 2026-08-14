@@ -156,11 +156,16 @@ class TeamOwnerTransferSerializer(serializers.Serializer):
     reason = serializers.CharField(allow_blank=True, required=False, default="")
 
 
-class ConnectorRevokeSerializer(serializers.Serializer):
-    """왜 끊는지. 대상은 경로에 있으므로 사유만 받는다.
+class ReasonSerializer(serializers.Serializer):
+    """**왜 그렇게 했는지.** 대상은 경로에 있으므로 사유만 받는다.
 
-    되돌릴 수 없는 조치는 아니지만(고객이 다시 연결하면 된다) 고객의 문서 수집이
-    그동안 선다 — 나중에 「누가 왜 끊었나」에 답할 것이 필요하다.
+    운영자 조치는 남의 것을 건드린다 — 계정을 세우고, 연결을 끊고, 초대를
+    폐기한다. 무엇을 했는지는 감사 로그가 이미 남기지만 **왜 했는지는 그때 그
+    사람 머릿속에만 있다.** 나중에 「이거 왜 이렇게 됐죠」에 답할 수 있어야 한다
+    (2026-08-13에 잠금·연결 해제·초대 폐기까지 넓혔다).
+
+    **비워 둘 수 있게 한다.** 급한 상황에서 사유 때문에 조치를 못 하면 그게 더
+    나쁘다 — 사유는 기록을 돕는 것이지 관문이 아니다.
     """
 
     reason = serializers.CharField(allow_blank=True, required=False, default="")

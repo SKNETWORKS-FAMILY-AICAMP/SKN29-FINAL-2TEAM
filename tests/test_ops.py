@@ -511,6 +511,65 @@ class OpsInviteDetailTests(SimpleTestCase):
 
 
 @patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.invites.OpsInviteRepository")
+@patch("apps.ops.views.accounts.OpsAccountRepository")
+class OpsActionReasonTests(SimpleTestCase):
+    """**무엇을 했는지는 감사 로그가 이미 남긴다. 왜 했는지가 없었다.**
+
+    권한 부여·회수와 소유자 이전·연결 해제만 사유를 받고 있었는데, 남의 계정을
+    세우고 직원 연결을 끊고 초대를 폐기하는 것도 나중에 답해야 하는 건 같다
+    (2026-08-13 지적).
+    """
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def _post(self, url, body):
+        return self.client.post(url, body, content_type="application/json", **self._headers())
+
+    def test_계정_조치가_사유를_넘긴다(self, accounts, _invites, _admin):
+        cases = [
+            ("/api/ops/accounts/UA002/lock/", accounts.lock, "퇴사자 계정"),
+            ("/api/ops/accounts/UA002/unlock/", accounts.unlock, "오인 정지 정정"),
+            ("/api/ops/accounts/UA002/unlink-person/", accounts.unlink_all, "동명이인 오연결"),
+        ]
+        for url, method, why in cases:
+            with self.subTest(url=url):
+                method.reset_mock()
+                method.return_value = {"account_id": "UA002"}
+
+                response = self._post(url, {"reason": why})
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(method.call_args.kwargs["reason"], why)
+
+    def test_초대_조치가_사유를_넘긴다(self, _accounts, invites, _admin):
+        cases = [
+            ("/api/ops/invites/IV001/discard/", invites.discard),
+            ("/api/ops/invites/IV001/unlink/", invites.unlink_by_invite),
+        ]
+        for url, method in cases:
+            with self.subTest(url=url):
+                method.reset_mock()
+                method.return_value = {"invite_id": "IV001"}
+
+                response = self._post(url, {"reason": "잘못 보낸 초대"})
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(method.call_args.kwargs["reason"], "잘못 보낸 초대")
+
+    def test_사유가_없어도_막지_않는다(self, accounts, _invites, _admin):
+        """급할 때 사유 때문에 조치를 못 하면 그게 더 나쁘다 — 관문이 아니라 기록이다."""
+
+        accounts.lock.return_value = {"account_id": "UA002"}
+
+        response = self._post("/api/ops/accounts/UA002/lock/", {})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(accounts.lock.call_args.kwargs["reason"], "")
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
 @patch("apps.ops.views.connectors.OpsConnectorRepository")
 class OpsConnectorRevokeTests(SimpleTestCase):
     """연결 강제 해제.

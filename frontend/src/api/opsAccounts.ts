@@ -30,24 +30,29 @@ export function fetchAccounts(token: string) {
   return opsRequest<OpsAccount[]>('/ops/accounts/', { token });
 }
 
-export function lockAccount(token: string, accountId: string) {
+/**
+ * 상태를 바꾸는 조치는 **사유를 함께 보낸다.** 무엇을 했는지는 감사 로그가 이미
+ * 남기지만 왜 했는지는 그때 그 사람 머릿속에만 있다. 빈 문자열도 서버가 받는다 —
+ * 사유는 기록을 돕는 것이지 관문이 아니다(2026-08-13).
+ */
+export function lockAccount(token: string, accountId: string, reason: string) {
   return opsRequest<{ account_id: string; account_status: string }>(
     `/ops/accounts/${accountId}/lock/`,
-    { method: 'POST', token },
+    { method: 'POST', token, body: { reason } },
   );
 }
 
-export function unlockAccount(token: string, accountId: string) {
+export function unlockAccount(token: string, accountId: string, reason: string) {
   return opsRequest<{ account_id: string; account_status: string }>(
     `/ops/accounts/${accountId}/unlock/`,
-    { method: 'POST', token },
+    { method: 'POST', token, body: { reason } },
   );
 }
 
-export function unlinkAccountPerson(token: string, accountId: string) {
+export function unlinkAccountPerson(token: string, accountId: string, reason: string) {
   return opsRequest<{ account_id: string; revoked_person_ids: string[] }>(
     `/ops/accounts/${accountId}/unlink-person/`,
-    { method: 'POST', token },
+    { method: 'POST', token, body: { reason } },
   );
 }
 

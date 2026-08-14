@@ -24,17 +24,18 @@ export function fetchInvites(token: string) {
   return opsRequest<OpsInvite[]>('/ops/invites/', { token });
 }
 
-export function discardInvite(token: string, inviteId: string) {
+/** 되돌릴 수 없는 조치다. 사유를 함께 보낸다(빈 문자열 허용 — 계정 쪽과 같은 규칙). */
+export function discardInvite(token: string, inviteId: string, reason: string) {
   return opsRequest<{ invite_id: string; status: string }>(
     `/ops/invites/${inviteId}/discard/`,
-    { method: 'POST', token },
+    { method: 'POST', token, body: { reason } },
   );
 }
 
-export function unlinkInvite(token: string, inviteId: string) {
+export function unlinkInvite(token: string, inviteId: string, reason: string) {
   return opsRequest<{ invite_id: string; account_id: string; revoked_person_ids: string[] }>(
     `/ops/invites/${inviteId}/unlink/`,
-    { method: 'POST', token },
+    { method: 'POST', token, body: { reason } },
   );
 }
 

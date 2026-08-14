@@ -1,19 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell, Badge, Button, Icon, useToast } from '../../components';
-import type { BadgeTone } from '../../components';
+import { AGENT_STATUS } from '../../data/agentLabels';
 import { activateAgent, deleteAgent, disableAgent, listAgents, listToolChoices } from '../../api/agents';
 import type { Agent, ToolChoice } from '../../api/agents';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import styles from './AgentListPage.module.css';
-
-const STATUS_LABEL: Record<Agent['status'], { tone: BadgeTone; label: string }> = {
-  DRAFT: { tone: 'neutral', label: '초안' },
-  ACTIVE: { tone: 'success', label: '활성' },
-  DISABLED: { tone: 'warning', label: '비활성' },
-};
 
 /**
  * 에이전트 목록 — **예시**와 **우리 팀 것**을 나눠 보여준다.
@@ -127,7 +121,7 @@ export default function AgentListPage() {
                   {/* is_prebuilt 는 이 생명주기를 안 타고 항상 ACTIVE 라 배지가
                       항상 같은 말만 반복한다 — 팀이 만든 것에만 보여준다. */}
                   {!agent.is_prebuilt && (
-                    <Badge tone={STATUS_LABEL[agent.status].tone}>{STATUS_LABEL[agent.status].label}</Badge>
+                    <Badge tone={AGENT_STATUS[agent.status].tone}>{AGENT_STATUS[agent.status].label}</Badge>
                   )}
                 </div>
               </div>

@@ -65,7 +65,7 @@ React -> Django Query Agent
 - RunPod Worker는 PDF/DOCX 파싱, 청킹, 임베딩만 수행한다.
 - Worker에는 로컬 경로, DB 자격증명, OAuth token을 전달하지 않는다.
 - Django가 서명된 원문 URL을 만들고 결과를 검증·적재한다.
-- RunPod는 Cloudflare Tunnel을 통해 공개된 만료형 HTTPS URL로만 원문을 받는다.
+- RunPod는 **공개된 만료형 HTTPS URL**로만 원문을 받는다. 그 https 를 어디서 얻느냐가 환경마다 다르다 — **로컬은 Cloudflare Quick Tunnel**, **AWS 는 `https://api.halil-ai.site` 고정**이라 터널이 필요 없다(2026-08-14~).
 - 문서 임베딩과 검색 질의 임베딩은 같은 모델과 768차원 계약을 사용한다.
 
 ## 4. 배포 저장소 구성
@@ -236,10 +236,10 @@ RUNPOD_EXECUTION_TIMEOUT_MS=1800000
 DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS=900
 
 OPENAI_API_KEY=<업무 추출까지 시험할 때 필요>
-OPENAI_MODEL=gpt-5.6-sol
-# 검색어 생성 전용. 같은 일에 Sol 은 Luna 의 수백 배가 든다(실측)
-OPENAI_PLAN_MODEL=gpt-5.6-luna
-OPENAI_REASONING_EFFORT=xhigh
+# ⚠ OPENAI_MODEL·OPENAI_PLAN_MODEL·OPENAI_REASONING_EFFORT 는 2026-08-12 부터
+#   .env 에서 읽지 않는다. 모델은 호출하는 에이전트가 들고 오고, 지원 밖 모델이면
+#   오류 대신 코드 기본값(gpt-5.6-sol/xhigh, gpt-5.6-luna/low)으로 조용히 대체하고
+#   결과의 model_fallback_from 에 남긴다. .env 에는 키만 둔다.
 EMBEDDING_MODEL=google/embeddinggemma-300m
 EMBEDDING_DEVICE=cuda
 CHUNKING_MAX_TOKENS=512
@@ -376,8 +376,11 @@ Content-Type: application/json
 - `startTaskExtraction(token, projId, primaryDocumentId)`
 - 문서의 `downloaded`, `search_ready` 상태
 
-`PrimaryDocumentSelectPage`는 문서 목록과 `search_ready` 상태를 표시하고, 준비된
-문서에 대해 업무 추출 API를 호출한다.
+> ⚠ **`PrimaryDocumentSelectPage` 는 2026-08-11 에 삭제됐다.** 기능이 셋으로
+> 나뉘었다 — 등록 즉시 자동 처리는 `NewFilesPage`, 기준 문서 선택은
+> `ProjectDetailPage` 의 `PrimaryDocumentCard`, 추출 결과 열람은 Chat 근거 카드.
+> API 함수 이름도 바뀌었다: `startDocumentProcessing(token, docId)` ·
+> `streamTaskExtraction(token, projectId, primaryDocumentId)`.
 
 ### 8.2 프론트 연결 — 완료됨
 
@@ -545,8 +548,9 @@ Worker 코드를 수정할 때는 다음 순서를 사용한다.
 
 - [ ] Docker Desktop 기반 PostgreSQL/pgvector와 Django 실행 확인
 - [ ] `.env`의 RunPod key/Endpoint ID 주입
-- [ ] Cloudflare Quick Tunnel 및 `PUBLIC_BACKEND_BASE_URL` 설정
-- [ ] Cloudflare hostname을 `ALLOWED_HOSTS`에 추가
+- [ ] `PUBLIC_BACKEND_BASE_URL` 설정 — **로컬만** Cloudflare Quick Tunnel 이 필요하고,
+      AWS 는 `https://api.halil-ai.site` 로 이미 고정돼 있다
+- [ ] (로컬만) Cloudflare hostname을 `ALLOWED_HOSTS`에 추가
 - [ ] PDF/DOCX 처리 시작·polling·DB 적재 E2E 확인
 - [ ] `vec_idx.embedding`이 `VECTOR(768)`인지 확인
 - [ ] 업무 추출용 OpenAI key를 별도 주입

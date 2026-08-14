@@ -26,6 +26,12 @@ const MODAL_TITLES: Record<Exclude<PendingAction, null>, string> = {
   unlink: '중복 직원 연결 해제',
 };
 
+/** 사유 칸의 예시. 계정 상세와 같은 규칙이다 — 비워 둘 수 있다. */
+const REASON_HINTS: Record<Exclude<PendingAction, null>, string> = {
+  discard: '예: 잘못 보낸 초대',
+  unlink: '예: 동명이인 오연결',
+};
+
 function formatAt(iso: string | null): string {
   if (!iso) return '-';
   const date = new Date(iso);
@@ -42,6 +48,7 @@ export default function OpsInviteDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -69,20 +76,28 @@ export default function OpsInviteDetailPage() {
     void load();
   }, [load]);
 
+  function closeModal() {
+    if (submitting) return;
+    setPendingAction(null);
+    setReason('');
+  }
+
   async function confirmAction() {
     const session = loadOpsSession();
     if (!session || !invite || !pendingAction || submitting) return;
 
     setSubmitting(true);
     try {
+      const why = reason.trim();
       if (pendingAction === 'discard') {
-        await discardInvite(session.token, invite.invite_id);
+        await discardInvite(session.token, invite.invite_id, why);
         showToast('초대를 폐기했습니다.', 'success');
       } else {
-        await unlinkInvite(session.token, invite.invite_id);
+        await unlinkInvite(session.token, invite.invite_id, why);
         showToast('중복 직원 연결을 해제했습니다.', 'success');
       }
       setPendingAction(null);
+      setReason('');
       await load();
     } catch (thrown) {
       if (thrown instanceof ApiError && thrown.status === 401) {
@@ -203,11 +218,11 @@ export default function OpsInviteDetailPage() {
 
       <Modal
         open={pendingAction !== null}
-        onClose={() => (submitting ? null : setPendingAction(null))}
+        onClose={closeModal}
         title={MODAL_TITLES[pendingAction ?? 'discard']}
         footer={(
           <>
-            <Button variant="secondary" onClick={() => setPendingAction(null)} disabled={submitting}>취소</Button>
+            <Button variant="secondary" onClick={closeModal} disabled={submitting}>취소</Button>
             <Button variant="danger" onClick={confirmAction} disabled={submitting}>
               {submitting ? '처리 중…' : '처리하기'}
             </Button>
@@ -218,6 +233,15 @@ export default function OpsInviteDetailPage() {
           {invite.person_name ?? '선택한'} 님의 초대 기록에 작업을 적용합니다. 초대와 연결 이력은 삭제하지 않고
           상태 변경 내역을 남깁니다.
         </p>
+        <div className={styles.fieldGroup}>
+          <label htmlFor="action-reason">사유 (선택)</label>
+          <textarea
+            id="action-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder={REASON_HINTS[pendingAction ?? 'discard']}
+          />
+        </div>
       </Modal>
     </div>
   );

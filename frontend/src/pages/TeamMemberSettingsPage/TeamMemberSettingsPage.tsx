@@ -7,25 +7,15 @@ import {
   Input,
   AvatarPicker,
   PasswordChangeCard,
-  SettingsLayout,
   SkillList,
   ToggleSwitch,
   useToast,
 } from '../../components';
-import type { SettingsNavItem } from '../../components';
 import { fetchCurrentAccount } from '../../api/auth';
 import type { Account } from '../../api/auth';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import styles from './TeamMemberSettingsPage.module.css';
-
-const NAV_ITEMS: SettingsNavItem[] = [
-  { id: 'profile', label: '내 프로필', icon: 'user' },
-  { id: 'skills', label: '보유 스킬', icon: 'sparkles' },
-  { id: 'password', label: '비밀번호 변경', icon: 'lock' },
-  { id: 'linked-accounts', label: '계정 연동', icon: 'link' },
-  { id: 'notifications', label: '알림 설정', icon: 'bell' },
-];
 
 interface NotificationSetting {
   id: string;
@@ -48,11 +38,9 @@ const DEFAULT_NOTIFICATION_STATE: Record<string, boolean> = {
 };
 
 export interface TeamMemberSettingsPageProps {
-  /** Settings 허브의 「팀」 탭 안에서 렌더될 때는 자체 껍데기를 그리지 않는다. */
-  embedded?: boolean;
 }
 
-export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberSettingsPageProps = {}) {
+export default function TeamMemberSettingsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -75,7 +63,6 @@ export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberS
     void reloadAccount();
   }, [reloadAccount]);
 
-
   function handleToggleJira(checked: boolean) {
     setJiraLinked(checked);
     showToast(checked ? 'Jira 개인 계정을 연동했습니다.' : 'Jira 개인 계정 연동을 해제했습니다.', 'info');
@@ -86,20 +73,7 @@ export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberS
   }
 
   return (
-    <SettingsLayout
-      subtitle="팀원 전용 설정 페이지"
-      navItems={NAV_ITEMS}
-      footerLabel="팀원"
-      onFooterClick={() => navigate(PATHS.chat)}
-      embedded={embedded}
-    >
-      {/* Settings 허브 안에서는 허브가 이미 「설정」 h1을 갖고 있어 제목이 두 개 겹친다. */}
-      {!embedded && (
-        <div className={styles.pageHeader}>
-          <h1>팀원 설정</h1>
-          <p>내 소속 정보 관리 및 연동 계정 제어와 개별 알림 설정을 지정할 수 있습니다.</p>
-        </div>
-      )}
+    <>
 
       <section id="profile" className={styles.sectionBlock}>
         <Card padding="lg">
@@ -125,7 +99,6 @@ export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberS
               </span>
             </div>
           </div>
-
 
           <p className={styles.subheading}>계정 정보</p>
           <div className={styles.accountRow}>
@@ -209,6 +182,6 @@ export default function TeamMemberSettingsPage({ embedded = false }: TeamMemberS
           </div>
         </Card>
       </section>
-    </SettingsLayout>
+    </>
   );
 }

@@ -106,30 +106,6 @@ def _require_team_project(cursor, *, proj_id: str, account_id: str) -> str:
 
 class ProjectRepository:
     @staticmethod
-    def list_all() -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        p.proj_id,
-                        p.name,
-                        p.description,
-                        p.status,
-                        p.tz,
-                        p.owner_account_id,
-                        p.team_id,
-                        p.created_at,
-                        ua.display_name AS owner_name
-                    FROM proj AS p
-                    LEFT JOIN user_account AS ua
-                      ON ua.account_id = p.owner_account_id
-                    ORDER BY p.proj_id
-                    """
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
     def list_for_team(account_id: str) -> list[dict[str, Any]]:
         """요청자 팀의 프로젝트.
 
@@ -167,35 +143,6 @@ class ProjectRepository:
                     (team_id,),
                 )
                 return list(cursor.fetchall())
-
-    @staticmethod
-    def get(proj_id: str) -> dict[str, Any]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        p.proj_id,
-                        p.name,
-                        p.description,
-                        p.status,
-                        p.tz,
-                        p.owner_account_id,
-                        p.team_id,
-                        p.created_at,
-                        ua.display_name AS owner_name
-                    FROM proj AS p
-                    LEFT JOIN user_account AS ua
-                      ON ua.account_id = p.owner_account_id
-                    WHERE p.proj_id = %s
-                    """,
-                    (proj_id,),
-                )
-                row = cursor.fetchone()
-
-        if row is None:
-            raise RecordNotFound(f"존재하지 않는 프로젝트입니다: {proj_id}")
-        return row
 
     @staticmethod
     def get_for_team(*, proj_id: str, account_id: str) -> dict[str, Any]:
@@ -1376,113 +1323,6 @@ class ExistTaskRepository:
                     (proj_source_id,),
                 )
                 return inserted
-
-
-class AnalysisRunRepository:
-    @staticmethod
-    def create(
-        *,
-        proj_id: str,
-        snapshot_id: str,
-        readiness_id: str | None,
-        requested_by: str | None,
-        model_version: str | None,
-        policy_version: str | None,
-    ) -> dict[str, Any]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                _require_record(
-                    cursor,
-                    table="proj",
-                    column="proj_id",
-                    value=proj_id,
-                    label="프로젝트",
-                )
-                _require_record(
-                    cursor,
-                    table="ana_snapshot",
-                    column="snap_id",
-                    value=snapshot_id,
-                    label="분석 Snapshot",
-                )
-                cursor.execute(
-                    "SELECT 1 FROM ana_snapshot WHERE snap_id = %s AND proj_id = %s",
-                    (snapshot_id, proj_id),
-                )
-                if cursor.fetchone() is None:
-                    raise ReferenceNotFound("Snapshot이 요청 프로젝트에 속하지 않습니다.")
-
-                if readiness_id:
-                    _require_record(
-                        cursor,
-                        table="feat_ready_result",
-                        column="readiness_id",
-                        value=readiness_id,
-                        label="Feature Readiness 결과",
-                    )
-                if requested_by:
-                    _require_record(
-                        cursor,
-                        table="user_account",
-                        column="account_id",
-                        value=requested_by,
-                        label="요청자 계정",
-                    )
-
-                run_id = next_short_code(
-                    cursor,
-                    table="assign_run",
-                    column="run_id",
-                    prefix="RN",
-                )
-                cursor.execute(
-                    """
-                    INSERT INTO assign_run (
-                        run_id, snapshot_id, readiness_id, model_version,
-                        policy_version, status, requested_by
-                    )
-                    VALUES (%s, %s, %s, %s, %s, 'RUNNING', %s)
-                    RETURNING run_id, snapshot_id, readiness_id, model_version,
-                              policy_version, status, requested_by
-                    """,
-                    (
-                        run_id,
-                        snapshot_id,
-                        readiness_id,
-                        model_version,
-                        policy_version,
-                        requested_by,
-                    ),
-                )
-                return cursor.fetchone()
-
-    @staticmethod
-    def get(run_id: str) -> dict[str, Any]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        ar.run_id,
-                        ar.snapshot_id,
-                        ar.readiness_id,
-                        ar.model_version,
-                        ar.policy_version,
-                        ar.status,
-                        ar.requested_by,
-                        sn.proj_id
-                    FROM assign_run AS ar
-                    LEFT JOIN ana_snapshot AS sn
-                      ON sn.snap_id = ar.snapshot_id
-                    WHERE ar.run_id = %s
-                    """,
-                    (run_id,),
-                )
-                row = cursor.fetchone()
-
-        if row is None:
-            raise RecordNotFound(f"존재하지 않는 배정 실행입니다: {run_id}")
-        return row
 
 
 def _attach_person_display(
@@ -3067,25 +2907,29 @@ class OpsAccountRepository:
         return rows[0]
 
     @staticmethod
-    def lock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+    def lock(*, account_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         return OpsAccountRepository._set_status(
             account_id=account_id,
             actor_account_id=actor_account_id,
             new_status="LOCKED",
             action="ACCOUNT_LOCK",
+            reason=reason,
         )
 
     @staticmethod
-    def unlock(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+    def unlock(*, account_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         return OpsAccountRepository._set_status(
             account_id=account_id,
             actor_account_id=actor_account_id,
             new_status="ACTIVE",
             action="ACCOUNT_UNLOCK",
+            reason=reason,
         )
 
     @staticmethod
-    def _set_status(*, account_id: str, actor_account_id: str, new_status: str, action: str) -> dict[str, Any]:
+    def _set_status(
+        *, account_id: str, actor_account_id: str, new_status: str, action: str, reason: str = ""
+    ) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 # 동시에 들어온 잠금/해제 요청이 서로 낡은 상태를 덮어쓰지 않도록 잠근다.
@@ -3113,7 +2957,7 @@ class OpsAccountRepository:
                     action=action,
                     target_type="ACCOUNT",
                     target_id=account_id,
-                    payload={"before": account["account_status"], "after": new_status},
+                    payload={"before": account["account_status"], "after": new_status, "reason": reason},
                 )
 
         return {"account_id": account_id, "account_status": new_status}
@@ -3186,7 +3030,7 @@ class OpsAccountRepository:
         return {"account_id": account_id, "is_admin": is_admin}
 
     @staticmethod
-    def unlink_all(*, account_id: str, actor_account_id: str) -> dict[str, Any]:
+    def unlink_all(*, account_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1 FROM user_account WHERE account_id = %s", (account_id,))
@@ -3212,7 +3056,7 @@ class OpsAccountRepository:
                     action="ACCOUNT_UNLINK_PERSON",
                     target_type="ACCOUNT",
                     target_id=account_id,
-                    payload={"revoked_person_ids": revoked_person_ids},
+                    payload={"revoked_person_ids": revoked_person_ids, "reason": reason},
                 )
 
         return {"account_id": account_id, "revoked_person_ids": revoked_person_ids}
@@ -3282,7 +3126,7 @@ class OpsInviteRepository:
         return rows[0]
 
     @staticmethod
-    def discard(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
+    def discard(*, invite_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         """대기 중(`PENDING`)인 초대만 폐기(`REVOKED`)한다.
 
         존재하지 않는 초대와, 존재하지만 이미 수락·만료 처리·취소된 초대를
@@ -3311,13 +3155,13 @@ class OpsInviteRepository:
                     action="INVITE_DISCARD",
                     target_type="MEMBER_INVITE",
                     target_id=invite_id,
-                    payload={"person_id": row["person_id"]},
+                    payload={"person_id": row["person_id"], "reason": reason},
                 )
 
         return {"invite_id": invite_id, "status": "REVOKED"}
 
     @staticmethod
-    def unlink_by_invite(*, invite_id: str, actor_account_id: str) -> dict[str, Any]:
+    def unlink_by_invite(*, invite_id: str, actor_account_id: str, reason: str = "") -> dict[str, Any]:
         """이 초대로 연결된 계정의 직원 링크를 전부 해제한다.
 
         해제 자체는 `OpsAccountRepository.unlink_all()`을 그대로 재사용한다
@@ -3347,7 +3191,9 @@ class OpsInviteRepository:
                     raise RecordNotFound("이미 연결이 해제됐거나 연결된 적이 없는 초대입니다.")
                 account_id = link["account_id"]
 
-        result = OpsAccountRepository.unlink_all(account_id=account_id, actor_account_id=actor_account_id)
+        result = OpsAccountRepository.unlink_all(
+            account_id=account_id, actor_account_id=actor_account_id, reason=reason
+        )
         return {"invite_id": invite_id, **result}
 
 

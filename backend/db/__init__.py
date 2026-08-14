@@ -5,7 +5,6 @@ from .audit import log_with as log_audit_with
 from .connection import database_connection, database_status
 from .repositories import (
     AccountRepository,
-    AnalysisRunRepository,
     ConnectorRepository,
     DocumentRepository,
     ExistTaskRepository,
@@ -25,7 +24,6 @@ from .repositories import (
 
 __all__ = [
     "AccountRepository",
-    "AnalysisRunRepository",
     "ConnectorRepository",
     "DocumentRepository",
     "ExistTaskRepository",

@@ -50,20 +50,6 @@ class LoginView(APIView):
         return Response({"token": issue_token(account["account_id"]), "admin": admin_response(account)})
 
 
-class MeView(AdminView):
-    def get(self, request):
-        admin = request.user
-        return Response(
-            admin_response(
-                {
-                    "account_id": admin.account_id,
-                    "email": admin.email,
-                    "display_name": admin.display_name,
-                }
-            )
-        )
-
-
 class LogoutView(AdminView):
     """서버에 세션을 두지 않으므로(`accounts/tokens.py`와 동일한 설계) 실제 토큰
     무효화는 못 하고, 로그아웃 사실만 감사 로그에 남긴다."""

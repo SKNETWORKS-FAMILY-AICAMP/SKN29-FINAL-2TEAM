@@ -239,15 +239,6 @@
   color: var(--color-heading);
 }
 
-.footnote {
-  font-size: 12px;
-  color: var(--color-placeholder);
-}
-
-.footnote a {
-  color: var(--color-primary);
-}
-
 .tasksHead {
   display: flex;
   align-items: center;

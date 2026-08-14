@@ -1237,7 +1237,74 @@ class McpServerRepository:
                         account_id,
                     ),
                 )
-                return cursor.fetchone()
+                # `has_token` 을 붙여서 돌려준다. RETURNING 에 없다고 빼면
+                # `server_response` 가 기본값 False 로 채워, **토큰을 넣고 등록했는데
+                # 화면은 「토큰 없음」이라고 말한다**(2026-08-13 실제로 그랬다).
+                return {**cursor.fetchone(), "has_token": auth_token is not None, "tools": []}
+
+    @staticmethod
+    def update(
+        *,
+        server_id: str,
+        account_id: str,
+        name: str,
+        endpoint_url: str,
+        auth_token: str | None,
+        replace_token: bool,
+    ) -> dict[str, Any]:
+        """등록한 서버를 고친다.
+
+        **주소가 바뀌면 이전에 읽은 도구는 다른 서버의 것이다.** 이름만 같을 뿐
+        같은 도구라는 보장이 없으므로 도구 목록을 지우고 상태를 `UNCHECKED` 로
+        되돌린다 — 「연결 확인」을 다시 눌러야 에이전트가 고를 수 있다. 지우지
+        않으면 화면은 도구 5종을 보여주는데 실제로는 없는 것을 부르게 된다.
+
+        에이전트에 붙어 있던 `mcp:<tool_id>` 도 함께 뺀다. `delete` 와 같은
+        이유다 — 없는 도구가 허용 목록에 남으면 부를 때마다 실패한다.
+
+        **토큰은 안 보내면 그대로 둔다.** 화면이 저장된 토큰을 다시 보여주지
+        않으므로(`server_response` 가 `has_token` 만 준다), 안 보낸 것을 「지우라」로
+        읽으면 이름만 고쳐도 토큰이 날아간다. 지우려면 `replace_token=True` 와
+        빈 값을 함께 보낸다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                before = _server_row(cursor, server_id=server_id, team_id=team_id)
+
+                moved = before["endpoint_url"] != endpoint_url
+                if moved:
+                    cursor.execute(
+                        """
+                        DELETE FROM agent_tool WHERE tool_ref IN (
+                            SELECT 'mcp:' || mcp_tool_id FROM mcp_tool WHERE server_id = %s
+                        )
+                        """,
+                        (server_id,),
+                    )
+                    cursor.execute("DELETE FROM mcp_tool WHERE server_id = %s", (server_id,))
+
+                if replace_token:
+                    token_enc = encrypt_credential({"auth_token": auth_token}) if auth_token else None
+                else:
+                    token_enc = before["auth_token_enc"]
+
+                cursor.execute(
+                    """
+                    UPDATE mcp_server
+                    SET name = %s,
+                        endpoint_url = %s,
+                        auth_token_enc = %s,
+                        status = CASE WHEN %s THEN 'UNCHECKED' ELSE status END,
+                        last_checked_at = CASE WHEN %s THEN NULL ELSE last_checked_at END
+                    WHERE mcp_server_id = %s
+                    RETURNING mcp_server_id, name, endpoint_url, status, last_checked_at
+                    """,
+                    (name, endpoint_url, token_enc, moved, moved, server_id),
+                )
+                row = cursor.fetchone()
+                return {**row, "has_token": token_enc is not None, "tools": []}
 
     @staticmethod
     def credentials(*, server_id: str, account_id: str) -> dict[str, Any]:

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, InfoNote, useToast } from '../../../components';
+import { Badge, Icon, InfoNote, useToast } from '../../../components';
 import { ApiError } from '../../../api/client';
 import { fetchMainModel, listCustomModels, saveMainModel } from '../../../api/agents';
 import type { CustomModel } from '../../../api/agents';
@@ -23,6 +23,9 @@ import styles from './tabs.module.css';
 export function ModelTab() {
   const session = useSession();
   const token = session?.token;
+  // 메인 모델은 팀이 한 번 정하는 값이라 서버가 팀장만 받는다. 화면도 같은 말을
+  // 해야 한다 — 골라 본 뒤 토스트로 알려 주는 것은 안내가 아니다(2026-08-13).
+  const isLeader = session?.account.role === 'leader';
   const { showToast } = useToast();
 
   const [current, setCurrent] = useState<string | null>(null);
@@ -90,6 +93,15 @@ export function ModelTab() {
 
   return (
     <div className={styles.tab}>
+      {session && !isLeader && (
+        <p className={`${styles.notice} ${styles.noticeNeutral}`} role="alert">
+          <Icon name="info" size={16} color="var(--color-muted)" />
+          <span>
+            팀장만 팀 메인 모델을 바꿀 수 있습니다. 지금 무엇으로 도는지는 아래에서 확인할 수 있습니다.
+          </span>
+        </p>
+      )}
+
       <section className={styles.card}>
         <div className={styles.cardHead}>
           <h2 className={styles.cardTitle}>
@@ -140,7 +152,7 @@ export function ModelTab() {
                     type="radio"
                     name="main-model"
                     checked={current === row.value}
-                    disabled={saving !== null}
+                    disabled={!isLeader || saving !== null}
                     onChange={() => void choose(row.value)}
                   />
                 </span>

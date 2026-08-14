@@ -18,10 +18,6 @@ export function opsLogin(email: string, password: string) {
   });
 }
 
-export function fetchCurrentAdmin(token: string) {
-  return opsRequest<OpsAdmin>('/ops/auth/me/', { token });
-}
-
 export function opsLogout(token: string) {
   return opsRequest<void>('/ops/auth/logout/', { method: 'POST', token });
 }

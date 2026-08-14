@@ -110,7 +110,7 @@ AWS 콘솔 → 리전을 **아시아 태평양(서울) `ap-northeast-2`** 로 �
 |---|---|---|
 | 데이터베이스 생성 방식 | **표준 생성** | 손쉬운 생성은 세부 설정이 잠긴다 |
 | 엔진 유형 | **PostgreSQL** | |
-| 엔진 버전 | **17.x 중 최신** (17.1 이상 필수) | 로컬이 `pgvector/pgvector:pg17`. **pgvector 0.8.0 은 PG 17.1+ / 16.5+ / 15.9+ 에서 지원** |
+| 엔진 버전 | **이미 만든 것은 18.3 이고 그대로 쓴다.** 새로 만들 때만 17.1 이상 | pgvector 0.8.0 은 PG 17.1+ / 16.5+ / 15.9+ 지원. 18 에서도 된다. **로컬 db 컨테이너는 `pgvector:pg17` 이라 메이저가 다르지만, 이 프로젝트가 쓰는 기능 범위에서는 문제되지 않아 맞추지 않기로 했다** |
 | 템플릿 | **프리 티어** (안 보이면 개발/테스트) | |
 | DB 인스턴스 식별자 | `skn29-final-2team` | |
 | 마스터 사용자 이름 | `project_copilot` | **로컬과 같게.** 그래야 `DATABASE_URL` 만 갈아끼우면 된다 |
@@ -122,7 +122,7 @@ AWS 콘솔 → 리전을 **아시아 태평양(서울) `ap-northeast-2`** 로 �
 | **다중 AZ 배포** | **대기 인스턴스를 생성하지 마십시오** | 켜면 **비용 2배**. 시연 환경엔 불필요 |
 | 컴퓨팅 리소스 | EC2 컴퓨팅 리소스에 연결 **안 함** | EC2 가 아직 없다 |
 | **퍼블릭 액세스** | **예** | ⚠ §2.2 를 읽을 것 |
-| VPC 보안 그룹 | **새로 생성** → 이름 `skn29-rds-sg` | |
+| VPC 보안 그룹 | **새로 생성** → 이름 `skn29-rds` | 실제로 만들어진 이름이 이것이다(`sg-024abc1c59bd88b61`) |
 | 데이터베이스 인증 | 암호 인증 | |
 
 **여기서부터가 놓치기 쉬운 부분이다.** 화면 아래 **「추가 구성」을 펼친다.**
@@ -152,7 +152,7 @@ AWS 콘솔 → 리전을 **아시아 태평양(서울) `ap-northeast-2`** 로 �
 ## 3. 보안 그룹 설정
 
 RDS 상태가 「사용 가능」이 되면 → 해당 DB 클릭 → **「연결 및 보안」 탭** →
-VPC 보안 그룹의 `skn29-rds-sg` 링크 클릭 → **인바운드 규칙 편집**.
+VPC 보안 그룹의 `skn29-rds` 링크 클릭 → **인바운드 규칙 편집**.
 
 팀원 수만큼 규칙을 추가한다.
 
@@ -197,7 +197,7 @@ docker run --rm pgvector/pgvector:pg17 \
 docker run --rm pgvector/pgvector:pg17 psql "postgresql://project_copilot:<PW>@<ENDPOINT>:5432/project_copilot?sslmode=require" -c "select version();"
 ```
 
-`PostgreSQL 17.x on aarch64-...` 가 나오면 성공이다.
+`PostgreSQL 18.3 on aarch64-...` 가 나오면 성공이다(로컬 컨테이너는 17.x 다).
 안 되면 **§23 문제 해결로 갈 것.** 여기서 막힌 채로 다음 단계를 진행하지 말 것.
 
 ### 4.2 pgvector 사용 가능 확인
@@ -209,7 +209,7 @@ docker run --rm pgvector/pgvector:pg17 \
 ```
 
 `vector` 와 `pgcrypto` 두 줄이 나와야 한다. `vector` 가 안 보이면 **엔진 버전이
-낮은 것이다** — 인스턴스를 지우고 17.1 이상으로 다시 만든다.
+낮은 것이다** — 인스턴스를 지우고 다시 만든다. **지금 인스턴스는 18.3 이라 해당 없다.**
 
 ## 5. 스키마 적용
 
@@ -222,7 +222,8 @@ docker run --rm pgvector/pgvector:pg17 \
 >
 > 이 저장소는 **Django Migration 을 쓰지 않는다**(`config/settings/base.py` 에
 > `DATABASES = {}`). `manage.py migrate` 를 실행하지 말 것.
-> `AWS_이전_매뉴얼.md` §7-8·§9 에 "migration 적용"이라고 적힌 것은 **오기**다.
+> `AWS_이전_매뉴얼.md` §7·§9 에 "migration 적용"이라고 적혀 있었으나
+> **2026-08-14 에 고쳤다.** 그 문서도 지금은 psql 로 스키마를 넣으라고 한다.
 
 저장소 루트에서 실행한다. 파일을 컨테이너에 넘겨야 하므로 현재 폴더를 마운트한다.
 
@@ -389,32 +390,37 @@ docker compose -f infra/docker/docker-compose.yml exec web \
 
 ## 9. A·B 완료 검증
 
-- [ ] 팀원 전원이 `.env` 를 바꾸고 앱이 뜬다
-- [ ] **A 가 등록한 문서를 B 의 화면에서 볼 수 있다** ← 이게 이번 작업의 목적
-- [ ] Chat 에서 아무 질문이나 보내면 답이 온다
+> **2026-08-11 전부 확인했다.** 아래는 그때 무엇을 봤는지 남긴 기록이다.
+> 남은 것은 김지훈·최원빈·임준억 회원가입뿐이다.
+
+- [x] 팀원 전원이 `.env` 를 바꾸고 앱이 뜬다
+- [x] **A 가 등록한 문서를 B 의 화면에서 볼 수 있다** ← 이게 이번 작업의 목적
+- [x] Chat 에서 아무 질문이나 보내면 답이 온다
       (시드가 없으면 「이 팀에 기본 에이전트가 없습니다」 배너가 뜬다.
        DB 로 보려면 `SELECT name, status FROM agent WHERE is_prebuilt;` → 코파일럿/ACTIVE.
        ⚠ 「에이전트 목록 화면에 보이는지」로 확인하면 안 된다 — 그 화면은 정문을
        의도적으로 숨긴다)
-- [ ] 로컬 `db` 컨테이너가 아무도 안 떠 있다
-- [ ] 원문 다운로드는 **아직 안 된다** — 정상이다(§0.1). C·E 에서 해결한다
+- [x] 로컬 `db` 컨테이너가 아무도 안 떠 있다
+- [x] 원문 다운로드는 **아직 안 된다** — 정상이다(§0.1). C·E 에서 해결한다
 
 ---
 
 # C. S3 + IAM
 
-> D(코드)가 없으면 버킷이 놀고 있게 된다. D 담당자와 시점을 맞추고 시작할 것.
+> E(코드)가 없으면 버킷이 놀고 있게 된다. E 담당자와 시점을 맞추고 시작할 것.
 
 ## 10. S3 버킷 생성
 
-콘솔 → S3 → **버킷 만들기**.
+> ✅ **이미 만들어져 있다 — `skn29-final-2team-files-nm0p`** (2026-08-11).
+> **새로 만들지 말 것.** 두 번째 버킷을 만들면 팀과 다른 곳을 보게 된다.
+> 아래 표는 이제 「지금 이 버킷이 이렇게 돼 있는지 확인하는 용도」다.
 
 | 항목 | 값 |
 |---|---|
-| 버킷 이름 | `skn29-final-2team-files-<임의 4자리>` — **전 세계에서 유일**해야 한다. 이미 있다는 에러가 나면 뒤 숫자를 바꾼다 |
+| 버킷 이름 | **`skn29-final-2team-files-nm0p`** (`.env.example` 의 `AWS_STORAGE_BUCKET_NAME` 과 같은 값) |
 | 리전 | **아시아 태평양(서울) ap-northeast-2** — RDS 와 같아야 한다 |
-| 퍼블릭 액세스 차단 | **모두 차단 (기본값 그대로 둔다)** |
-| 버킷 버저닝 | **활성화** |
+| 퍼블릭 액세스 차단 | **모두 차단** ✅ 확인함 |
+| 버킷 버저닝 | **활성화** ✅ 확인함 |
 | 기본 암호화 | SSE-S3 (기본값) |
 
 **버저닝을 켜는 이유** — Drive 문서가 수정되면 같은 키에 덮어쓰는데, 버전이
@@ -432,12 +438,17 @@ docker compose -f infra/docker/docker-compose.yml exec web \
 > `AWS_이전_매뉴얼.md` §6 은 **EC2 IAM Role** 전제다. 1단계엔 EC2 가 없으므로
 > **로컬에서 쓸 IAM 사용자**를 만든다. 2단계에서 이 사용자를 지우고 Role 로 바꾼다.
 
+> ✅ **사용자 `skn29-2team-dev` 와 정책 `skn29-2team-s3-access` 는 이미 있다**
+> (2026-08-11, 액세스 키까지 발급함). 그대로 따라 하면 이름이 충돌하거나 중복
+> 사용자가 생긴다. **키를 잃어버렸을 때 3~4 단계로 재발급만 하면 된다.**
+> 아래 JSON 은 현재 정책과 대조하는 용도로 남긴다.
+
 콘솔 → IAM → 사용자 → **사용자 생성**.
 
 1. 사용자 이름 `skn29-2team-dev`. **"AWS Management Console 에 대한 사용자 액세스
    권한 제공" 은 체크하지 않는다** (프로그래밍 방식만 필요).
 2. 권한 → **직접 정책 연결** → **정책 생성** → JSON 탭에 아래를 붙여넣는다.
-   `<버킷이름>` 두 군데를 실제 값으로 바꿀 것.
+   `<버킷이름>` 두 군데를 `skn29-final-2team-files-nm0p` 로 바꿀 것.
 
 ```json
 {
@@ -473,13 +484,20 @@ docker compose -f infra/docker/docker-compose.yml exec web \
 
 ### 11.1 팀원에게 전달할 `.env` 추가분
 
+**전달할 것은 비밀 둘뿐이다.** 나머지 셋(`OBJECT_STORAGE_PROVIDER`,
+`AWS_STORAGE_BUCKET_NAME`, `AWS_S3_REGION_NAME`)은 `.env.example` 에 이미
+실제 값으로 들어 있다.
+
 ```text
-OBJECT_STORAGE_PROVIDER=s3
-AWS_STORAGE_BUCKET_NAME=<버킷이름>
-AWS_S3_REGION_NAME=ap-northeast-2
 AWS_ACCESS_KEY_ID=<액세스 키 ID>
 AWS_SECRET_ACCESS_KEY=<비밀 액세스 키>
 ```
+
+> ⚠ **넣어도 지금은 아무것도 안 바뀐다.** `AWS_*` 네 개를 읽는 코드가 저장소에
+> 아직 없다 — `config/settings/` 에 있는 것은 `OBJECT_STORAGE_PROVIDER` 하나뿐이고
+> 그마저 아무도 안 읽는다. `backend/services/storage.py` 는 `DOCUMENT_STORAGE_ROOT`
+> 만 보는 로컬 디스크 전용이다. **§21(E 파트)이 끝나야 동작한다.** 이 말을 같이
+> 전하지 않으면 팀원이 키를 정확히 넣고도 왜 안 되는지 모른다.
 
 > ⚠ **`.env` 는 `.gitignore` 대상이고 `.env.example` 에는 플레이스홀더만 둔다.**
 > 이 저장소는 과거에 실제 키를 커밋할 뻔한 사고가 있었다. 커밋 전
@@ -567,10 +585,15 @@ EC2 → 인스턴스 → 「보안」 탭 → `skn29-ec2-sg` → **인바운드 
 | 유형 | 포트 | 소스 | 설명 |
 |---|---|---|---|
 | SSH | 22 | 팀원 IP `/32` 각각 | §1.1 에서 모은 IP. `0.0.0.0/0` 금지 |
-| 사용자 지정 TCP | 8000 | (지금은 **추가하지 않는다**) | 배포할 때 연다 |
-| 사용자 지정 TCP | 5173 | (지금은 **추가하지 않는다**) | 〃 |
+| HTTP | 80 | (지금은 **추가하지 않는다**) | 배포할 때 연다 |
+| HTTPS | 443 | (지금은 **추가하지 않는다**) | 〃 |
 
 **지금은 22번만 연다.** 앱이 아직 안 도는데 포트를 열어둘 이유가 없다.
+
+> 원래 여기 적혀 있던 포트는 8000·5173 이었다. **도메인을 사기로 하면서 바뀌었다**
+> (`AWS_이전_매뉴얼.md` §1) — Caddy 가 80·443 에서 TLS 를 끝내고 컨테이너로 넘기므로
+> 8000·5173 은 **끝까지 열지 않는다.** 80 을 안 열면 Let's Encrypt 의 HTTP-01 검증이
+> 실패해 **인증서 발급 자체가 안 된다.**
 
 ## 18. SSH 접속 확인
 
@@ -635,7 +658,7 @@ cd SKN29-Final-2Team
 EC2 에서 RDS 가 보이는지 지금 확인해 둔다. 나중에 배포할 때 여기서 막히면
 원인 찾기가 어렵다.
 
-먼저 **RDS 보안 그룹에 EC2 를 추가한다** — 콘솔 → RDS → `skn29-rds-sg` →
+먼저 **RDS 보안 그룹에 EC2 를 추가한다** — 콘솔 → RDS → `skn29-rds` →
 인바운드 규칙 편집 → 규칙 추가:
 
 | 유형 | 포트 | 소스 | 설명 |
@@ -662,27 +685,96 @@ docker run --rm pgvector/pgvector:pg17 \
 
 1. `.env` 작성 (`ALLOWED_HOSTS`·`CORS_ALLOWED_ORIGINS`·`VITE_API_BASE_URL` 에 EC2 IP 반영)
 2. **OAuth redirect URI 결정** — Google/Atlassian 콘솔 등록까지. **여기가 관문이다**
+   > **2026-08-13 결정 — 도메인은 `halil-ai.site`.** 공인 IP 에 `http` redirect URI 는
+   > Google 이 받지 않는다. 도메인 + https 로 가고, 같은 인증서가 MCP 서버 등록
+   > (https 필수)과 혼합 콘텐츠 문제까지 함께 푼다. 등록할 값은
+   > `https://api.halil-ai.site/api/connectors/{google-drive,jira}/callback/` 이고,
+   > 서브도메인 계획과 나머지 환경값은 `AWS_이전_매뉴얼.md` §1 에 있다.
 3. `frontend/Dockerfile` 을 `npm run build` + 정적 서빙으로 바꿀지 결정
    (도메인을 쓰면 `vite.config.ts` 에 `server.allowedHosts` 추가 필요)
 4. EC2 IAM Role 생성 → S3 권한 부여 → 인스턴스에 연결 → **IAM 사용자
    `skn29-2team-dev` 액세스 키 폐기**(§11 은 로컬 개발용 임시 조치였다)
-5. 보안 그룹 8000·5173 개방
+5. 보안 그룹 **80·443** 개방 (§17 — 8000·5173 이 아니다. Caddy 가 앞에 선다)
 6. `docker compose -f infra/docker/docker-compose.aws.yml up --build -d`
 7. `curl http://localhost:8000/api/health/` 확인
-8. RunPod 재점검 — **EC2 에 공인 IP 가 생기므로 `cloudflared` 터널이 필요 없어질
-   수 있다.** 지금은 RunPod 가 로컬 원문을 받으려고 터널을 쓴다
+8. RunPod 재점검 — **도메인이 생기면 `cloudflared` 터널이 없어진다**(아래)
 
 ### D 파트 완료 검증
 
 - [ ] `.pem` 을 안전한 곳에 보관했고 저장소엔 없다
 - [ ] Elastic IP 를 할당하고 인스턴스에 연결했다 (IP 기록: __________)
 - [ ] 팀원 IP 로만 22번이 열려 있다 (`0.0.0.0/0` 아님)
-- [ ] 8000·5173 은 **아직 안 열려 있다**
+- [ ] 8000·5173 은 **열려 있지 않다** (§17 — 끝까지 열지 않는다)
 - [ ] EBS 가 30GiB 다 (8GiB 아님)
 - [ ] SSH 접속되고 `docker --version`·`docker compose version` 이 동작한다
 - [ ] 저장소가 `~/SKN29-Final-2Team` 에 클론돼 있다
 - [ ] EC2 에서 RDS 로 `select count(*) from mock_hr.person;` → `57`
 - [ ] RDS 보안 그룹에 EC2 보안 그룹과 팀원 IP 가 **둘 다** 있다
+
+### 실측 결과 (2026-08-13, 콘솔 조회)
+
+| 항목 | 결과 |
+|---|---|
+| RDS · S3 · EC2 | 셋 다 생성됨. **EC2·RDS 는 지금 중지 상태** |
+| 탄력적 IP | `43.200.114.119` 할당·연결됨 |
+| S3 퍼블릭 액세스 차단 | 활성화 |
+| 8000·5173 | 아직 안 열림(EC2 인바운드 규칙은 22번 하나) |
+| RDS 보안 그룹 | EC2 보안 그룹 규칙 **있음** + `0.0.0.0/0` 규칙 **있음** |
+| 22번 | `0.0.0.0/0` |
+| RDS 스토리지 | 20GiB(암호화·삭제 방지 켜짐). 엔진은 **PostgreSQL 18.3** — 로컬은 pg17 이다 |
+| `vector` 확장·목업 데이터 | **확인 못 함** — RDS 가 꺼져 있다 |
+| IAM 사용자 | `student`, `skn29-2team-dev` 둘. 후자는 §11 의 임시 사용자로 2단계에서 폐기 대상 |
+
+### 재확인 — 도메인을 붙이기 직전 상태 (2026-08-14, 콘솔 조회)
+
+도메인(`halil-ai.site`)을 사고 나서 「무엇이 준비돼 있고 무엇이 남았나」를 다시 봤다.
+위 표는 그대로 유효하고, 아래가 그때 못 적은 값이다.
+
+| 항목 | 값 |
+|---|---|
+| EC2 | `skn29-2team-app` / `i-0ebfec705a8745351` / t3.micro / **중지됨** |
+| OS | Ubuntu 24.04 LTS (`ubuntu-noble-24.04-amd64-server-20260610`) → 접속 계정은 `ubuntu` |
+| 키 페어 | **`skn29-2team-key`** (rsa) — 리전에 이것 하나뿐이다 |
+| EBS | gp3 **30 GiB**, 2026-08-12 09:35 KST 생성 (체크리스트의 「30GiB 다」 ✅) |
+| RDS 엔드포인트 | `skn29-final-2team.c3sseu2wg3ho.ap-northeast-2.rds.amazonaws.com:5432` (db·user 모두 `project_copilot`) |
+| RDS 보안 그룹 | 실제 이름은 **`skn29-rds`** (`sg-024abc1c59bd88b61`) — 이 문서가 적어 둔 `skn29-rds-sg` 가 아니다 |
+| EC2 보안 그룹 | `skn29-ec2-sg` (`sg-008fbec82cd5026e0`) |
+| Route 53 | 호스팅 영역 **0개** — 가비아 DNS 를 쓰기로 했으므로 이대로 두면 된다 |
+| NAT 게이트웨이·로드밸런서 | 없음 (샐 만한 과금 자원이 없다) |
+| 43.200.12.36 | 유령 자원이 아니다. RDS 퍼블릭 액세스 때문에 **AWS 가 붙인 것**(`Service managed: rds`)이라 따로 못 지운다 |
+
+**남은 것은 하나다 — 80·443 이 안 열려 있다.** EC2 인바운드 규칙은 지금도 22번
+하나뿐이다(설명란 `juyeon`, `0.0.0.0/0`). §17 을 볼 것.
+
+⚠ **중지된 RDS 는 7일이 지나면 AWS 가 자동으로 다시 켠다.** 이건 AWS 의 동작 규칙이고,
+**중지 시각은 콘솔에서 확인하지 못했다**(이벤트 목록이 비어 있다). 안 쓸 거라면
+달력에 적어 두고 다시 내리거나, 스냅샷을 남기고 인스턴스를 지우는 편이 확실하다.
+
+### `0.0.0.0/0` 은 실수가 아니다 (2026-08-13 결정)
+
+위 체크리스트는 「팀원 IP 로만」을 요구하지만 **팀원들이 무선 네트워크라 IP 가
+고정되지 않는다.** 허용목록을 쓰면 접속할 때마다 규칙을 고쳐야 해서 현실적이지
+않다. 프로젝트 기간에는 각자 RDS 에 직접 붙을 경로가 필요하므로 **의도적으로
+열어 둔다.**
+
+감당 가능한 이유는 **RDS 마스터 비밀번호가 로컬 개발용 기본값(`project_copilot`)과
+다르기 때문이다**(2026-08-13 확인). 저장소·compose 에 평문으로 도는 그 값이 아니다.
+이 전제가 깨지면 — 즉 누군가 편의로 로컬 값과 맞추면 — 주소·계정·비밀번호가 전부
+공개된 상태가 된다. **맞추지 말 것.**
+
+붙여 두면 좋은 것:
+
+- `rds.force_ssl = 1` (파라미터 그룹) — 지금은 카페 와이파이에서 평문으로 붙어도
+  서버가 받아 준다. 접근을 막지 않으므로 팀원 작업에 지장이 없다.
+- EC2 는 SSH 비밀번호 인증이 꺼져 있는지 확인(Ubuntu 기본은 키 전용).
+
+**2단계에 없앤다.** EC2 가 뜨면 SSH 터널로 붙으면 되고, 그때 `0.0.0.0/0` 규칙을
+지운다 — SSH 키는 IP 와 무관하므로 유동 IP 문제도 함께 풀린다.
+
+```bash
+ssh -i key.pem -L 5432:<RDS 엔드포인트>:5432 ubuntu@43.200.114.119
+# 팀원 .env 는 localhost:5432 를 본다
+```
 
 ---
 
@@ -694,14 +786,20 @@ docker run --rm pgvector/pgvector:pg17 \
 `backend/services/storage.py` 가 그 값을 읽지 않는다.** 현재 로컬 디스크 전용이다.
 
 추상화는 되어 있다 — 호출자는 `build_key()` · `save(key, data)` · `load(key)` ·
-`exists(key)` 만 쓰고 파일이 어디 있는지 모른다. **이 네 함수의 몸통만 분기하면
-된다.**
+`exists(key)` · `build_avatar_key()` 만 쓰고 파일이 어디 있는지 모른다.
+**이 다섯 함수의 몸통만 분기하면 된다.**
 
 - `local` → 지금 코드 그대로. `s3` → boto3 client.
 - 버킷·리전은 settings 에서 읽는다. **함수 시그니처를 바꾸지 말 것** —
-  `apps/projects/api_views.py`·`backend/db/document_pipeline.py`·
-  `backend/db/repositories.py` 가 이미 쓰고 있다.
-- `save()` 는 S3 응답의 `VersionId` 를 돌려받는다 → 문서 메타에 기록한다.
+  `apps/projects/api_views.py` 와 `apps/accounts/api_views.py` 가 쓴다
+  (그리고 `tests/test_document_download.py`).
+- **프로필 사진도 같이 탄다.** `build_avatar_key()` → `avatar/{account_id}.<ext>` 는
+  문서와 다른 접두사라 S3 분기에서 빠뜨리기 쉽다.
+- ⚠ **`save()` 의 반환값을 바꾸지 말 것.** 지금 돌려주는 것은 `VersionId` 가
+  아니라 **내용 해시**(`sha256:<hex>`)이고, 호출부가 그대로 `doc.content_hash` 에
+  넣어 **「안 바뀐 문서를 다시 파싱하지 않는」 변경 감지**에 쓴다. `VersionId` 를
+  남기고 싶으면 반환값을 늘리지 말고 별도 함수로 빼거나, `doc` 에 컬럼을 추가하고
+  `DocumentRepository.mark_stored` 시그니처를 함께 늘리는 별개의 작업으로 다룬다.
 - `requirements/production.txt` 에 `boto3`·`django-storages[s3]` 는 이미 있다.
   **로컬 개발에서도 S3 를 쓰려면 `requirements/local.txt` 에도 boto3 가 필요하다** —
   확인할 것.
@@ -743,7 +841,7 @@ aws s3 ls s3://<버킷이름>/ --recursive --summarize | tail -3
 | `database "project_copilot" does not exist` | **§2.1 「추가 구성 → 초기 데이터베이스 이름」을 비워두고 생성한 것.** 가장 흔한 실수. 인스턴스 안에서 `psql "...:5432/postgres"` 로 붙어 `CREATE DATABASE project_copilot;` 하면 복구된다 |
 | `password authentication failed` | 비밀번호에 `@ : / ?` 가 들어가 URL 이 잘못 파싱된 것일 수 있다. RDS 콘솔에서 「수정 → 새 마스터 암호」로 특수문자 없는 값으로 바꾼다 |
 | `no pg_hba.conf entry ... SSL off` | 접속 문자열 끝에 `?sslmode=require` 를 빼먹었다 |
-| `type "vector" does not exist` | 엔진 버전이 낮다. **17.1 이상**(또는 16.5+ / 15.9+)인지 확인. 낮으면 인스턴스를 지우고 다시 만든다 |
+| `type "vector" does not exist` | `CREATE EXTENSION vector;` 를 안 했을 가능성이 크다. 엔진 버전은 18.3 이라 해당 없다(17.1+ / 16.5+ / 15.9+ 면 지원) |
 | `schema.sql` 중간에 한글이 깨지며 실패 | `-e PGCLIENTENCODING=UTF8` 을 빼먹었다 |
 | `\dt` 에 49개만 보인다 | **정상이다.** HR 8개는 `mock_hr` 스키마에 있다. `\dt mock_hr.*` 로 따로 본다 |
 | `peopledb_mock.sql` 재실행 시 `duplicate key` | 이미 들어간 것이다. 무시해도 된다(§6.1) |
@@ -779,7 +877,7 @@ S3 는 이 규모에서 사실상 무시할 수 있다(월 1달러 미만).
 ## 관련 문서
 
 - [AWS 이전 매뉴얼](AWS_이전_매뉴얼.md) — 2단계(EC2 배포) 최종 그림.
-  단 §7-8·§9 의 "Django migration" 표기는 오기다(§5.1 참고)
+  (§7·§9 의 "Django migration" 표기는 2026-08-14 에 바로잡았다)
 - [DB 시작 가이드](DB_시작_가이드.md) — 로컬 기준. 스키마 수동 `ALTER` 관례,
   시드 스크립트 상세
 - [로컬 Docker 개발환경 설치 매뉴얼](로컬_Docker_개발환경_설치_매뉴얼.md)

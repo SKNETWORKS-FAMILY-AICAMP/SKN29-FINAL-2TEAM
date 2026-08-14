@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Icon, Input } from '../../components';
+import { CHECK_STATUS } from './checkLabels';
 import type { BadgeTone } from '../../components';
 import { checkBuilderTools } from '../../api/agents';
 import type { ToolChoice, ToolCheckResult } from '../../api/agents';
@@ -102,9 +103,7 @@ function buildArguments(
 }
 
 const STATUS_LABEL: Record<ToolCheckResult['status'], { tone: BadgeTone; label: string }> = {
-  OK: { tone: 'success', label: '성공' },
-  FAILED: { tone: 'danger', label: '실패' },
-  SIMULATED: { tone: 'warning', label: '시뮬레이션 (실제로 부르지 않음)' },
+  ...CHECK_STATUS,
   SKIPPED: { tone: 'neutral', label: '건너뜀' },
 };
 

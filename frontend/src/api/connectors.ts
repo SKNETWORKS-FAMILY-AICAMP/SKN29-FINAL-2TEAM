@@ -3,13 +3,6 @@ import { apiRequest } from './client';
 /** `connector_conn.connector_type`. Google Drive는 OAuth로 실제 연결한다. */
 export type ConnectorType = 'PEOPLE_DB' | 'GOOGLE_DRIVE' | 'JIRA';
 
-/** 화면의 커넥터 카드 id ↔ 서버의 connector_type 대응. */
-export const CONNECTOR_TYPE_BY_ID: Record<string, ConnectorType> = {
-  'people-db': 'PEOPLE_DB',
-  'google-drive': 'GOOGLE_DRIVE',
-  jira: 'JIRA',
-};
-
 export interface ConnectorConnection {
   conn_id: string;
   connector_type: ConnectorType;
@@ -61,11 +54,6 @@ export function beginJiraAuthorization(token: string) {
   return apiRequest<{ authorization_url: string }>('/connectors/jira/authorize/', { token });
 }
 
-/** 이미 연결된 계정의 HR 요약. 미연결이면 404. */
-export function fetchPeopleDbSummary(token: string) {
-  return apiRequest<PeopleDbSummary>('/connectors/people-db/summary/', { token });
-}
-
 /** 내 드라이브 최상단을 가리키는 Drive의 별칭. */
 export const DRIVE_ROOT_ID = 'root';
 
@@ -73,16 +61,6 @@ export interface DriveFolder {
   folder_id: string;
   name: string;
   modified_at: string | null;
-}
-
-export interface JiraProject {
-  project_key: string;
-  project_id: string | null;
-  name: string;
-  description: string | null;
-  project_type: string | null;
-  lead_name: string | null;
-  avatar_url: string | null;
 }
 
 /**
@@ -131,7 +109,3 @@ export function getDriveFolders(token: string, folderIds: string[]) {
   );
 }
 
-/** 연결된 Jira 사이트의 프로젝트. 미연결이면 404, 재연결이 필요하면 502. */
-export function listJiraProjects(token: string) {
-  return apiRequest<JiraProject[]>('/connectors/jira/projects/', { token });
-}

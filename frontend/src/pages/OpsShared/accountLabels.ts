@@ -48,12 +48,12 @@ export function statusTone(status: string): OpsTone {
  * 계정 화면이 `GOOGLE_DRIVE · JIRA` 를 그대로 보여주고 있었다 — 운영자도 읽을
  * 수는 있지만 화면에 DB 값이 새는 것이고, 감사 로그 라벨을 만든 것과 같은
  * 이유로 여기도 옮긴다(2026-08-13).
+ *
+ * **표는 `connectorLabels` 것을 빌린다.** 같은 매핑을 여기 한 벌 더 두고 있었다 —
+ * 이 폴더가 「같은 말을 하게 하는 자리」인데 그 안에서 갈라져 있었다.
  */
-const SERVICE_LABELS: Record<string, string> = {
-  GOOGLE_DRIVE: '구글 드라이브',
-  JIRA: 'Jira',
-};
+import { TYPE_LABELS } from './connectorLabels';
 
 export function serviceLabels(services: string[]): string {
-  return services.map((s) => SERVICE_LABELS[s] ?? s).join(' · ');
+  return services.map((s) => TYPE_LABELS[s] ?? s).join(' · ');
 }

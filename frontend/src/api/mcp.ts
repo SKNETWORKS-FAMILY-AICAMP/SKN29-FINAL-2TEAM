@@ -36,6 +36,24 @@ export function createMcpServer(
   return apiRequest<McpServer>('/mcp/servers/', { method: 'POST', body, token });
 }
 
+/**
+ * 등록한 서버를 고친다.
+ *
+ * **토큰은 `replaceToken` 이 참일 때만 바뀐다.** 화면이 저장된 토큰을 다시
+ * 보여주지 않으므로(서버가 `has_token` 만 준다), 안 보낸 것을 「지우라」로 읽으면
+ * 이름만 고쳐도 토큰이 날아간다.
+ *
+ * 주소를 바꾸면 서버가 도구 목록을 지우고 `UNCHECKED` 로 되돌린다 — 이전에 읽은
+ * 도구는 다른 서버의 것이기 때문이다. 「연결 확인」을 다시 눌러야 한다.
+ */
+export function updateMcpServer(
+  token: string,
+  serverId: string,
+  body: { name: string; endpoint_url: string; auth_token?: string; replace_token?: boolean },
+) {
+  return apiRequest<McpServer>(`/mcp/servers/${serverId}/`, { method: 'PATCH', body, token });
+}
+
 export function deleteMcpServer(token: string, serverId: string) {
   return apiRequest<void>(`/mcp/servers/${serverId}/`, { method: 'DELETE', token });
 }

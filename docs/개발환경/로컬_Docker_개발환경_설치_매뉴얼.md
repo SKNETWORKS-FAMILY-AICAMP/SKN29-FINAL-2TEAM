@@ -2,7 +2,7 @@
 
 > 대상: AI 프로젝트 운영 코파일럿 백엔드 작업자  
 > 기준일: 2026-07-30
-> 범위: Django + PostgreSQL/pgvector + React/Vite 로컬 공통 환경. React 화면 구현은 Figma/프론트엔드 팀 작업 범위다.
+> 범위: Django + PostgreSQL/pgvector + React/Vite 로컬 공통 환경.
 
 ---
 
@@ -144,9 +144,9 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt public.*" -c "\dt mock_hr.*"
 ```
 
-`public` 40개 + `mock_hr` 8개 = **48개**가 보이면 정상이다(2026-08-05 실측 정정 — 39+8=47로 적혀 있었다).
+`public` 49개 + `mock_hr` 8개 = **57개**가 보이면 정상이다(2026-08-14 정정 — 40+8=48 로 적혀 있어 Agent Platform 9개 추가분이 빠져 있었다).
 
-스키마가 두 개인 이유는, HR 데이터(`org`·`person`·`sched` 등 8개)가 **고객사 HR 시스템의 것**이지 우리가 소유한 데이터가 아니기 때문이다. `mock_hr`로 나눠 두면 실수로 우리 테이블과 조인하는 일이 생기지 않는다([[HR_어댑터와_테넌트_경계]] §8). 그냥 `\dt`만 치면 `public` 40개만 나오니 놀라지 않아도 된다.
+스키마가 두 개인 이유는, HR 데이터(`org`·`person`·`sched` 등 8개)가 **고객사 HR 시스템의 것**이지 우리가 소유한 데이터가 아니기 때문이다. `mock_hr`로 나눠 두면 실수로 우리 테이블과 조인하는 일이 생기지 않는다([[HR_어댑터와_테넌트_경계]] §8). 그냥 `\dt`만 치면 `public` 49개만 나오니 놀라지 않아도 된다.
 
 GUI(TablePlus, DBeaver 등)로 보고 싶으면 `localhost:5432`, DB `project_copilot`, 계정/비번 `project_copilot`/`project_copilot`으로 접속한다.
 
@@ -189,7 +189,7 @@ Get-Content -Raw DB/peopleDB/team_overrides.sql |
 ```
 
 ```text
-schema.sql → peopledb_mock.sql → team_overrides.sql
+schema.sql → peopledb_mock.sql → team_overrides.sql → demo_skills.sql
 ```
 
 직접 가입한 팀장은 People DB 연결 시 가입 이메일과 `person.email`이 일치해야 `SELF_EMAIL` 매핑을 만들 수 있다. `team_overrides.sql`의 이메일과 가입 이메일을 동일하게 유지한다. 팀원 역할은 `org.mgr_id`가 아니라 초대 코드 가입(`TEAM_INVITATION`)으로 결정된다.
@@ -244,7 +244,7 @@ React + Vite 실행 환경과 로그인·설정·커넥터 화면은 `frontend/`
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
 ```
 
-Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확인한다. 화면 구현 전에는 빈 화면이 표시되는 것이 정상이다.
+Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확인한다. **화면이 비어 있으면 고장이다** — Vite 감시자 종료나 API 오류이며, 8.1 과 10장에 진단이 있다.
 
 현재 주요 API:
 
@@ -253,8 +253,6 @@ Docker 환경에서는 `http://localhost:5173/`에서 React 개발 서버를 확
 | GET | `/api/health/` | 서버 상태 | 불필요 |
 | GET, POST | `/api/projects/` | 프로젝트 목록·생성 | 필요 |
 | GET | `/api/projects/{projectId}/` | 프로젝트 상세 | 필요 |
-| POST | `/api/projects/{projectId}/analysis-runs/` | 분석 실행 생성 | 필요 |
-| GET | `/api/analysis-runs/{runId}/` | 분석 실행 상태 | 필요 |
 | GET | `/api/organizations/` | 내 팀원이 속한 조직 목록 | Bearer |
 | GET | `/api/people/` | 내 팀원 목록 | Bearer |
 | GET, POST | `/api/teams/` | 내 팀 조회 · 온보딩에서 팀 생성 | Bearer |
@@ -314,7 +312,7 @@ docker compose -f infra/docker/docker-compose.yml down
 docker compose -f infra/docker/docker-compose.yml down -v
 ```
 
-`down -v`는 `postgres_data` 볼륨을 삭제한다. 복구 순서는 `up -d db`로 `schema.sql` 자동 실행 → `peopledb_mock.sql` → `team_overrides.sql` → 나머지 서비스 기동이다. 벡터 예시 데이터가 필요할 때만 마지막에 `vec_idx_setup.py`를 실행한다.
+`down -v`는 `postgres_data` 볼륨을 삭제한다. 복구 순서는 `up -d db`로 `schema.sql` 자동 실행 → `peopledb_mock.sql` → `team_overrides.sql` → `demo_skills.sql` → 나머지 서비스 기동이다. 벡터는 문서를 한 건 등록하면 파이프라인이 채운다 — **`vec_idx_setup.py` 는 실행하지 않는다**(7장 참고: 지금 돌리면 실패한다).
 
 ---
 
@@ -339,7 +337,7 @@ docker compose -f infra/docker/docker-compose.yml down -v
 > db 가 `healthy` 인지 먼저 확인할 것.
 | `vec_idx_setup.py` 실행 시 `type "vector" does not exist` | `db`가 `vector` 확장을 아직 안 탄 볼륨. 7장으로 확장 설치 여부 확인, 없으면 `down -v` 후 재기동 |
 | SQL 구조 변경이 반영되지 않음 | `schema.sql`은 빈 볼륨 최초 기동 때만 실행됨. 개발 데이터 백업 후 볼륨을 재생성 |
-| 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed·`vec_idx_setup.py` 재실행 |
+| 데이터가 꼬임 | 필요한 경우 `down -v`로 로컬 DB 초기화 후 Seed 4개 재실행 |
 | `git checkout`·`merge`·`pull` 후 React 화면이 안 바뀜 | Windows 바인드 마운트에서 Vite 감시자가 종료됐을 수 있음. `docker compose -f infra/docker/docker-compose.yml restart frontend` 실행 |
 | 비밀번호 재설정 메일이 도착하지 않음 | 기본값은 console 백엔드이므로 `docker compose ... logs web`에서 링크 확인. 실제 발송은 `.env`에 Gmail SMTP와 앱 비밀번호 설정 |
 
@@ -360,7 +358,6 @@ docker compose -f infra/docker/docker-compose.yml down -v
 - 추출 결과 영속화 (`task`)
 - AnalysisSnapshot·Feature Readiness
 - 업무 분배·추천·검증 Agent
-- 로그인 상태에서 비밀번호 변경
 - 서버 측 세션 강제 종료
 
 구체적인 상태와 다음 수정 위치는 `초기_구성_상태.md`를 함께 확인한다.

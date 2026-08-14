@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
+from apps.accounts.permissions import require_leader
 from apps.connectors.clients import download_drive_file, list_drive_files, search_jira_issues
 from apps.connectors.oauth import OAuthError
 from backend.services.hr import (
@@ -40,7 +41,6 @@ from services.document_pipeline.signing import read_download_token, signed_downl
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
-    AnalysisRunRepository,
     DocumentRepository,
     ExistTaskRepository,
     ProjectRepository,
@@ -60,7 +60,6 @@ from backend.db.errors import (
 )
 
 from .serializers import (
-    AssignmentRunCreateSerializer,
     DocumentRegisterSerializer,
     JiraProjectRegisterSerializer,
     PrimaryCandidateSerializer,
@@ -70,7 +69,6 @@ from .serializers import (
     ProjectStatusSerializer,
     TaskExtractionCreateSerializer,
     TeamFolderReplaceSerializer,
-    assignment_run_response,
     deadline_response,
     missing_document_response,
     pipeline_document_response,
@@ -410,6 +408,10 @@ class ProjectSourceAPIView(AuthenticatedAPIView):
         return Response([project_source_response(row)] if row else [])
 
 
+#: 어느 폴더를 읽을지는 팀 전체의 문서 풀을 정하는 일이라 커넥터 연결과 같은 무게다.
+FOLDER_LEADER_ONLY = "팀장만 읽을 폴더를 정할 수 있습니다."
+
+
 class TeamFolderAPIView(AuthenticatedAPIView):
     """팀이 읽을 Drive 폴더(`team_folder`).
 
@@ -426,6 +428,9 @@ class TeamFolderAPIView(AuthenticatedAPIView):
         return Response([team_folder_response(row) for row in rows])
 
     def put(self, request):
+        if denied := require_leader(request.user.account_id, FOLDER_LEADER_ONLY):
+            return denied
+
         serializer = TeamFolderReplaceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -1448,30 +1453,3 @@ class TaskExtractionRunAPIView(AuthenticatedAPIView):
             # NDJSON. 한 줄이 한 사건이라 프론트가 줄 단위로 읽으면 된다.
             content_type="application/x-ndjson",
         )
-
-
-class ProjectAnalysisRunAPIView(AuthenticatedAPIView):
-    """현재 `assign_run` 테이블에 배정 실행을 생성한다."""
-
-    def post(self, request, project_id):
-        serializer = AssignmentRunCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            row = AnalysisRunRepository.create(
-                proj_id=project_id,
-                **serializer.validated_data,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        row["proj_id"] = project_id
-        return Response(assignment_run_response(row), status=status.HTTP_201_CREATED)
-
-
-class AnalysisRunDetailAPIView(AuthenticatedAPIView):
-    def get(self, request, run_id):
-        try:
-            row = AnalysisRunRepository.get(run_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(assignment_run_response(row))

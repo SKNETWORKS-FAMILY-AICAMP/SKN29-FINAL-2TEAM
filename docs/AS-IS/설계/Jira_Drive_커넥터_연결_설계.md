@@ -21,7 +21,7 @@ People DB 커넥터([[팀원_초대_계정_매핑_정책]] 참조)는 같은 Pos
   → GET  /api/connectors/{type}/callback/?code=...&state=...
        code를 access_token + refresh_token으로 교환
        connector_conn upsert (auth_status='CONNECTED')
-  → 프론트엔드로 리다이렉트 (FRONTEND_BASE_URL/onboarding/connectors)
+  → 프론트엔드로 리다이렉트 (FRONTEND_BASE_URL/settings/connectors)
 ```
 
 `People DB` 커넥터와 달리 콜백이 브라우저 리다이렉트로 들어오므로, **콜백은 Bearer 토큰을 받을 수 없다.** 누가 시작한 연결인지 `state`로 전달해야 한다.
@@ -48,8 +48,8 @@ state = TimestampSigner(salt="halil.connector.state").sign_object({
 콜백은 브라우저가 보는 URL이므로 **토큰이나 상세 오류를 쿼리 파라미터에 싣지 않는다.** 사용자가 승인을 거부한 경우(`error=access_denied`), provider가 오류를 준 경우, `state` 검증에 실패한 경우 모두 같은 방식으로 처리한다.
 
 ```
-성공 → {FRONTEND_BASE_URL}/onboarding/connectors?connector=jira&status=ok
-실패 → {FRONTEND_BASE_URL}/onboarding/connectors?connector=jira&status=error
+성공 → {FRONTEND_BASE_URL}/settings/connectors?connector=jira&status=ok
+실패 → {FRONTEND_BASE_URL}/settings/connectors?connector=jira&status=error
 ```
 
 - 리다이렉트 대상은 **`FRONTEND_BASE_URL` + 고정 경로 허용 목록**으로만 만든다. `state`나 쿼리에서 받은 값으로 경로를 조립하지 않는다(open redirect 방지)

@@ -260,21 +260,6 @@
   line-height: 1.45;
 }
 
-.stateNoteDanger {
-  color: var(--color-danger);
-}
-
-.more {
-  padding: var(--space-3) var(--space-6);
-  border: none;
-  background: none;
-  color: var(--color-primary);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
 /* ---------- removed ---------- */
 
 .removed {
@@ -341,11 +326,6 @@
 .removedInfo span {
   font-size: 12px;
   color: var(--color-muted);
-}
-
-.removedChunks {
-  font-size: 12px;
-  color: var(--color-placeholder);
 }
 
 .error {

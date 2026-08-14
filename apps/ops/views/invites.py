@@ -1,8 +1,8 @@
 """계정 연결·초대 현황 API.
 
-목록 조회는 입력값이 없고, 폐기·연결해제는 본문 없이 초대 ID만으로 동작한다.
-도메인 예외(폐기할 수 없는 상태, 존재하지 않는 초대, 연결된 적 없는 초대)는
-`Repository`가 던지고 `to_response()`가 상태 코드로 변환한다.
+목록 조회는 입력값이 없고, 폐기·연결해제는 **사유만** 본문으로 받는다(대상은
+경로에 있다). 도메인 예외(폐기할 수 없는 상태, 존재하지 않는 초대, 연결된 적
+없는 초대)는 `Repository`가 던지고 `to_response()`가 상태 코드로 변환한다.
 """
 
 import psycopg
@@ -13,6 +13,13 @@ from backend.db import OpsInviteRepository
 from backend.db.errors import RepositoryError
 
 from ..authentication import AdminView
+from ..serializers import ReasonSerializer
+
+
+def _reason(request) -> str:
+    serializer = ReasonSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    return serializer.validated_data["reason"]
 
 
 class InviteListView(AdminView):
@@ -39,7 +46,11 @@ class InviteDetailView(AdminView):
 class InviteDiscardView(AdminView):
     def post(self, request, invite_id):
         try:
-            result = OpsInviteRepository.discard(invite_id=invite_id, actor_account_id=request.user.account_id)
+            result = OpsInviteRepository.discard(
+                invite_id=invite_id,
+                actor_account_id=request.user.account_id,
+                reason=_reason(request),
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(result)
@@ -51,6 +62,7 @@ class InviteUnlinkView(AdminView):
             result = OpsInviteRepository.unlink_by_invite(
                 invite_id=invite_id,
                 actor_account_id=request.user.account_id,
+                reason=_reason(request),
             )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)

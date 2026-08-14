@@ -42,10 +42,6 @@ export function previewInvite(code: string) {
   });
 }
 
-export function listInvites(token: string) {
-  return apiRequest<Invite[]>('/invites/', { token });
-}
-
 export function listInviteCandidates(token: string) {
   return apiRequest<InviteCandidate[]>('/invites/candidates/', { token });
 }
