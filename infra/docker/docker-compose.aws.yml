@@ -2,23 +2,57 @@ name: skn29-final-2team
 
 # AWS EC2 시연 환경용 Compose 파일입니다.
 # PostgreSQL은 컨테이너가 아니라 RDS를 사용하므로 db 서비스가 없습니다.
+#
+# 인터넷에 열리는 것은 `caddy` 의 80·443 뿐입니다. web·frontend 는 루프백에만
+# 붙여서 서버 안에서 `curl localhost:8000` 으로 진단할 수 있게 두었습니다.
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 발급받은 인증서가 여기 있다. 지우면 다시 받아야 한다.
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      CADDY_EMAIL: ${CADDY_EMAIL:-}
+    depends_on:
+      - web
+      - frontend
+
   web:
     build:
       context: ../..
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file:
       - ../../.env
+    environment:
+      # 로컬 compose 와 같은 경로. 이 줄과 아래 볼륨이 없으면 Drive 원문이
+      # 컨테이너 쓰기 레이어에 쌓여 `up --build` 때마다 사라진다.
+      DOCUMENT_STORAGE_ROOT: /var/lib/halil/documents
+    volumes:
+      - document_storage:/var/lib/halil/documents
     ports:
-      - "8000:8000"
+      # 루프백 전용. 인터넷에서는 안 보이고 서버 안에서만 붙는다.
+      - "127.0.0.1:8000:8000"
 
   frontend:
     build:
       context: ../../frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file:
       - ../../.env
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.halil-ai.site/api}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
+
+volumes:
+  document_storage:
+  caddy_data:
+  caddy_config:

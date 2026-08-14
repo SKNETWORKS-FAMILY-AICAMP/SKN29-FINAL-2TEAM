@@ -8,6 +8,9 @@ declare const process: { env: Record<string, string | undefined> }
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Caddy가 app.halil-ai.site로 온 요청을 이 서버로 넘긴다. Vite는 모르는
+    // Host 헤더를 기본으로 거절하므로 여기 적어 두지 않으면 AWS에서만 막힌다.
+    allowedHosts: ['app.halil-ai.site'],
     // Docker 바인드 마운트(특히 Windows 호스트)에서는 파일 변경 이벤트가
     // 컨테이너까지 전달되지 않아 HMR이 동작하지 않는다. 컨테이너로 띄울
     // 때만 폴링으로 감시한다(호스트에서 npm run dev 할 때는 불필요).

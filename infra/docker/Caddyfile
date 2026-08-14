@@ -1,0 +1,28 @@
+# EC2 앞단. 80·443 을 받아 TLS 를 끝내고 컨테이너로 넘긴다.
+#
+# 인증서는 Let's Encrypt 에서 자동 발급·갱신된다. 그래서 두 가지가 전제다:
+#   1. 세 서브도메인의 A 레코드가 이 EC2 의 탄력적 IP 를 가리킬 것
+#   2. 보안 그룹에 **80 과 443 이 둘 다** 열려 있을 것
+#      (80 은 HTTP-01 검증용이다. 닫혀 있으면 발급 자체가 실패한다)
+#
+# ⚠ `caddy_data` 볼륨을 지우지 말 것. 발급받은 인증서가 거기 있다.
+# 지우고 다시 받으면 Let's Encrypt 발급 한도에 걸릴 수 있다.
+
+{
+	# 인증서 만료 경고를 받을 주소. 비워 두면 Caddy 가 익명으로 발급한다.
+	email {$CADDY_EMAIL}
+}
+
+app.halil-ai.site {
+	reverse_proxy frontend:5173
+}
+
+api.halil-ai.site {
+	reverse_proxy web:8000
+}
+
+# MCP 시연 서버. `docker-compose.dev-mcp.yml` 오버레이를 함께 띄웠을 때만 응답한다.
+# 안 띄운 상태로 접속하면 502 가 난다 — 고장이 아니다.
+mcp.halil-ai.site {
+	reverse_proxy dev-mcp:9000
+}

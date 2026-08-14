@@ -338,14 +338,18 @@ MCP 시연까지 하는 날은 오버레이를 하나 더 얹는다. **`dev-mcp.
 `aws.yml` 과 겹쳐야 한다.
 
 ```bash
-docker compose -f infra/docker/docker-compose.aws.yml -f infra/docker/docker-compose.dev-mcp.yml up -d dev-mcp mcp-tunnel
+docker compose -f infra/docker/docker-compose.aws.yml -f infra/docker/docker-compose.dev-mcp.yml up -d dev-mcp
 ```
+
+**`mcp-tunnel` 은 띄우지 않는다.** Caddy 가 `mcp.halil-ai.site` 를 받아
+`dev-mcp:9000` 으로 넘기므로 cloudflared 가 하던 일이 없어졌다. 주소가
+재시작마다 바뀌는 문제도 여기서 끝난다.
 
 ## 8. 구현 전에 수정할 파일
 
 | 파일/영역 | 수정 내용 |
 |---|---|
-| `infra/docker/docker-compose.aws.yml` | ⚠ **셋이 빠져 있다** — 아래 참고 |
+| `infra/docker/docker-compose.aws.yml` | ✅ Caddy·원문 볼륨 추가 완료(2026-08-14). 남은 것은 아래 3번 |
 | `.env.example` | `VITE_API_BASE_URL`, S3 버킷·리전 추가 완료 |
 | `requirements/production.txt` | `boto3`, `django-storages` 추가 완료 |
 | `config/settings/production.py` | S3 `STORAGES`, 실제 `ALLOWED_HOSTS`, CORS/CSRF 설정 추가 |
@@ -353,20 +357,27 @@ docker compose -f infra/docker/docker-compose.aws.yml -f infra/docker/docker-com
 | `DB/schema.sql` | `bucket`·`version_id` 컬럼(§5). 넣으면 `DocumentRepository.mark_stored` 시그니처도 함께 |
 | 배포 스크립트 또는 매뉴얼 | SQL 스키마 적용, `collectstatic`, Health Check 순서 명시 |
 
-### `docker-compose.aws.yml` 에 빠진 것 셋
+### `docker-compose.aws.yml` — 2026-08-14 에 한 것과 남은 것
 
-지금 파일에는 `web`·`frontend` 둘뿐이고 각각 8000·5173 을 호스트로 그대로
-publish 한다. 도메인 계획대로 가려면 다음이 필요하다.
+전에는 `web`·`frontend` 둘뿐이고 각각 8000·5173 을 호스트로 그대로 publish 했다.
 
-1. **Caddy 서비스가 없다.** TLS 를 끝낼 것이 아무것도 없어서 지금 이대로는
-   https 가 안 된다. 80·443 을 받아 `web`·`frontend` 로 넘기는 서비스를 넣고,
-   8000·5173 의 호스트 publish 는 뺀다.
-2. **원문 저장 볼륨이 없다.** 로컬 compose 의 `web` 에는 `DOCUMENT_STORAGE_ROOT`
-   와 명명 볼륨 `document_storage` 가 있는데 `aws.yml` 에는 둘 다 없다. 원문이
-   컨테이너 쓰기 레이어에 쌓여 **`up --build` 를 다시 돌릴 때마다 Drive 원문이
-   사라진다.** S3 배선이 끝나기 전까지는 볼륨을 넣어야 한다.
-3. **`frontend` 가 Vite 개발 서버로 돈다.** 정적 빌드로 바꿀지는 1단계 §20 의
-   3번에서 미룬 결정이다.
+1. ✅ **Caddy 서비스를 넣었다.** 80·443 을 받아 `Caddyfile` 대로 세 서브도메인을
+   가른다. 인증서는 `caddy_data` 볼륨에 남는다 — **지우지 말 것**(재발급 한도).
+2. ✅ **원문 저장 볼륨을 넣었다.** 없을 때는 원문이 컨테이너 쓰기 레이어에 쌓여
+   `up --build` 를 다시 돌릴 때마다 Drive 원문이 사라졌다.
+3. ⬜ **`frontend` 가 아직 Vite 개발 서버로 돈다.** 정적 빌드로 바꿀지는
+   1단계 §20 의 3번에서 미룬 결정이라 그대로 뒀다. 지금은 `vite.config.ts` 에
+   `allowedHosts: ['app.halil-ai.site']` 를 넣어 Caddy 뒤에서 돌게만 해 두었다.
+
+8000·5173 은 **`127.0.0.1` 에만** 붙인다. 인터넷에서는 안 보이면서 서버 안에서
+`curl http://localhost:8000/api/health/` 로 진단할 수 있다.
+
+#### `production.py` 에도 한 줄이 필요했다
+
+`SECURE_PROXY_SSL_HEADER` 가 없었다. Caddy 는 TLS 를 끝내고 **평문 HTTP** 로
+넘기므로 Django 는 요청을 계속 http 로 본다. 그 상태에서 `SECURE_SSL_REDIRECT=True`
+면 Django 가 https 로 되돌리고 → Caddy 가 다시 평문으로 넘기고 → **무한
+리다이렉트**(`ERR_TOO_MANY_REDIRECTS`)가 된다. 추가했다.
 
 ## 9. 발표 체크리스트
 
