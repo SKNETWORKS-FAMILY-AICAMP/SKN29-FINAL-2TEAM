@@ -116,15 +116,18 @@ UNION ALL SELECT 'mock_hr.person', count(*) FROM mock_hr.person;
 --
 --      `--team TE001` 로 하나만 할 수도 있다. 인자를 빼면 실행되지 않는다.
 --
--- 3. Cloudflare 터널을 새로 띄우고 `.env` 를 고친 뒤 **컨테이너를 재생성**한다.
---    Quick Tunnel 은 재실행할 때마다 주소가 바뀐다. 이걸 빼먹으면 RunPod 이
---    원문을 받아 갈 주소가 없어 등록한 문서의 파싱이 전부 실패한다.
+-- 3. **로컬에서만** 해당한다 — Cloudflare 터널을 새로 띄우고 `.env` 를 고친 뒤
+--    **컨테이너를 재생성**한다. Quick Tunnel 은 재실행할 때마다 주소가 바뀐다.
+--    빼먹으면 RunPod 이 원문을 받아 갈 주소가 없어 파싱이 전부 실패한다.
 --
 --      cloudflared tunnel --url http://localhost:8000
 --      → 나온 주소를 .env 의 PUBLIC_BACKEND_BASE_URL 과 ALLOWED_HOSTS 에
 --      docker compose -f infra/docker/docker-compose.yml up -d --force-recreate web
 --
 --    `restart` 로는 안 된다 — env_file 을 다시 읽지 않는다.
+--
+--    **AWS 는 이 단계가 없다**(2026-08-14~). PUBLIC_BACKEND_BASE_URL 이
+--    `https://api.halil-ai.site` 로 고정이라 초기화와 무관하다.
 --
 -- 그리고 촬영 전에 문서 하나를 미리 처리해 RunPod 워커를 깨워 둔다.
 -- 모델이 이미지에 구워져 있지 않아 콜드 스타트에 수 GB 를 다시 받는다.
