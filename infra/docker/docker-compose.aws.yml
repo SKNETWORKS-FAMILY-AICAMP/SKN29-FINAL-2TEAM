@@ -17,8 +17,6 @@ services:
       # 발급받은 인증서가 여기 있다. 지우면 다시 받아야 한다.
       - caddy_data:/data
       - caddy_config:/config
-    environment:
-      CADDY_EMAIL: ${CADDY_EMAIL:-}
     depends_on:
       - web
       - frontend
