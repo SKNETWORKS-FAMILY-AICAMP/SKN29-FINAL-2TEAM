@@ -248,10 +248,6 @@ export interface TeamDocument {
   downloaded: boolean;
 }
 
-export function listTeamDocuments(token: string) {
-  return apiRequest<TeamDocument[]>('/team/documents/', { token });
-}
-
 /** 설정된 폴더에 있는데 아직 `doc`에 없는 파일. */
 export interface NewDocumentCandidate {
   file_id: string;

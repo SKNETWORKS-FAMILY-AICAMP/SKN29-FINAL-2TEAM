@@ -290,14 +290,7 @@
   flex: 1;
   min-width: 0;
 }
-.tableTopline,
 .rowActions,
-.formActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 .detailText {
   margin: 0;
   color: var(--color-body);

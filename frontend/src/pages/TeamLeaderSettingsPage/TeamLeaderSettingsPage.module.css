@@ -1,16 +1,3 @@
-.pageHeader h1 {
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--color-heading);
-  margin: 0 0 6px;
-}
-
-.pageHeader p {
-  font-size: 14px;
-  color: var(--color-muted);
-  margin: 0;
-}
-
 .sectionBlock {
   scroll-margin-top: var(--space-6);
   /* 카드끼리 맞붙어 있어 어디까지가 한 섹션인지 안 보였다(2026-08-12). */

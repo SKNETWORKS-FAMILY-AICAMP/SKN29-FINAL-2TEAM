@@ -145,35 +145,6 @@ class ProjectRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
-    def get(proj_id: str) -> dict[str, Any]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        p.proj_id,
-                        p.name,
-                        p.description,
-                        p.status,
-                        p.tz,
-                        p.owner_account_id,
-                        p.team_id,
-                        p.created_at,
-                        ua.display_name AS owner_name
-                    FROM proj AS p
-                    LEFT JOIN user_account AS ua
-                      ON ua.account_id = p.owner_account_id
-                    WHERE p.proj_id = %s
-                    """,
-                    (proj_id,),
-                )
-                row = cursor.fetchone()
-
-        if row is None:
-            raise RecordNotFound(f"존재하지 않는 프로젝트입니다: {proj_id}")
-        return row
-
-    @staticmethod
     def get_for_team(*, proj_id: str, account_id: str) -> dict[str, Any]:
         """상세 화면이 쓰는 단건 조회. 내 팀 것이 아니면 막는다."""
 

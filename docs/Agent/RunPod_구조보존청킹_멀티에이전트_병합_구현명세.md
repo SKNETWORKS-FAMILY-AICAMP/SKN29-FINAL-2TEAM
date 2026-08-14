@@ -212,10 +212,10 @@ production build에서 드러난 기존 타입 불일치를 안전하게 보완�
 | `RUNPOD_EXECUTION_TIMEOUT_MS` | Worker 실행 제한 | 기본 1,800,000ms |
 | `DOCUMENT_DOWNLOAD_TOKEN_MAX_AGE_SECONDS` | 원문 URL 서명 유효시간 | 기본 900초 |
 | `OPENAI_API_KEY` | Query/Extraction Agent 호출 | 업무 추출 시 503 설정 오류 |
-| `OPENAI_MODEL` | 최종 정리 Agent 모델 | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` 중 하나가 아니면 오류 (`service.py:90-97, :106`) |
-| `OPENAI_PLAN_MODEL` | 검색어 생성 Agent 모델 | 같은 3개 중 하나. 실제 설정은 `gpt-5.6-luna`(effort `low`) |
+| ~~`OPENAI_MODEL`~~ | — | **2026-08-12 부터 안 읽는다.** 모델은 호출 에이전트가 들고 온다 |
+| ~~`OPENAI_PLAN_MODEL`~~ | — | 〃 |
 | `OPENAI_SERVICE_TIER` | OpenAI 처리 등급 | 기본 `auto`. `priority`는 **요금이 2배**다 |
-| `OPENAI_REASONING_EFFORT` | Agent reasoning 수준 | 정확히 `xhigh`가 아니면 오류 |
+| ~~`OPENAI_REASONING_EFFORT`~~ | — | 〃. 지원 밖 모델이면 오류가 아니라 코드 기본값(`gpt-5.6-sol`/`xhigh`, `gpt-5.6-luna`/`low`)으로 조용히 대체하고 `model_fallback_from` 에 남긴다 |
 | `EMBEDDING_MODEL` | Django 결과/검색 계약 | `google/embeddinggemma-300m` 사용 |
 | `EMBEDDING_DEVICE` | 구성 표시 및 Worker 계약 | Worker에서는 정확히 `cuda` 필요 |
 | `CHUNKING_MAX_TOKENS` | Chunk 최대 tokenizer token | 기본 512, Worker 허용 범위 1~2048 |
