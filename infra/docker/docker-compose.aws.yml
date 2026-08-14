@@ -44,11 +44,13 @@ services:
     build:
       context: ../../frontend
       dockerfile: Dockerfile
+      # 개발 서버가 아니라 정적 빌드. 기본 스테이지(`dev`)는 로컬 compose 몫이다.
+      target: static
+      args:
+        # ⚠ 런타임 environment 로 주면 안 된다 — Vite 가 빌드 시점에 굽는다.
+        # 주소를 바꾸려면 `up --build` 로 다시 빌드해야 한다.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.halil-ai.site/api}
     restart: unless-stopped
-    env_file:
-      - ../../.env
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.halil-ai.site/api}
     ports:
       - "127.0.0.1:5173:5173"
 
