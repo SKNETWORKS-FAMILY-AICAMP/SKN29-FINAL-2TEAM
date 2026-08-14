@@ -778,6 +778,17 @@ def _chat_completions_model(client: Any, model_name: str) -> ModelClient:
             token_out=getattr(usage, "completion_tokens", 0) or 0,
             # 다음 호출에 그대로 이어 붙일 assistant 턴. Responses 와 달리 우리가
             # 조립해도 되지만, 도구 호출은 **id 까지 그대로** 돌려줘야 짝이 맞는다.
+            #
+            # ⚠ **제공자가 얹어 보낸 필드를 같이 돌려준다**(`model_extra`).
+            # Gemini 3.x 는 함수 호출에 `extra_content.google.thought_signature`
+            # 를 달아 주고, 다음 요청에 그것이 없으면 **400 으로 거절한다**:
+            #   "Function call is missing a thought_signature in functionCall
+            #    parts. This is required for tools to work correctly."
+            # 우리가 아는 칸만 골라 다시 조립하면 그 서명이 조용히 사라진다.
+            # 첫 호출은 멀쩡하고 **도구 결과를 되돌리는 두 번째 호출에서만**
+            # 깨지므로, 화면에는 도구 카드가 뜬 뒤 실패로 보인다(2026-08-14 실측).
+            # Responses API 쪽 `_echoable` 이 「우리가 해석하거나 줄이면 짝이
+            # 깨진다」고 적어 둔 것과 같은 이야기다.
             raw_items=[
                 {
                     "role": "assistant",
@@ -792,6 +803,7 @@ def _chat_completions_model(client: Any, model_name: str) -> ModelClient:
                                         "name": item.function.name,
                                         "arguments": item.function.arguments or "{}",
                                     },
+                                    **(item.model_extra or {}),
                                 }
                                 for item in raw_calls
                             ]
