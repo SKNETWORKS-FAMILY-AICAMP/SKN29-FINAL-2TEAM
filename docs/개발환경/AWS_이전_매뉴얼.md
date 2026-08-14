@@ -25,7 +25,29 @@ RDS PostgreSQL       S3
 | RDS PostgreSQL | People DB, 프로젝트, Snapshot, 문서 메타데이터, 임베딩 저장 | DB를 EC2와 분리해 데이터가 서버 컨테이너와 함께 사라지지 않도록 관리 |
 | S3 | Drive에서 수집한 원문 문서, Django 정적/업로드 파일 저장 | 문서 원문을 EC2 디스크와 분리하고 파일 URL/저장 키를 일관되게 관리 |
 
-이번 범위에서는 ECS, ALB, CloudFront, SQS, 별도 Vector DB, Terraform, CI/CD는 사용하지 않는다.
+이번 범위에서는 ECS, ALB, CloudFront, SQS, 별도 Vector DB, Terraform은 사용하지 않는다.
+
+### 배포 — `main` 에 들어오면 자동으로 나간다 (2026-08-14 추가)
+
+처음에는 CI/CD 도 범위 밖으로 뒀는데, 서버가 열리고 나니 **손으로 `git pull` 하고
+`up --build` 하는 일이 반복**돼서 붙였다. ECS 는 여전히 범위 밖이다 — 그쪽으로
+가려면 ECR·task definition·클러스터·ALB 를 새로 만들고 Caddy 를 걷어내야 한다.
+
+| 무엇 | 어디 |
+|---|---|
+| 트리거 | `.github/workflows/deploy.yml` — `main` push + 수동 실행 |
+| 실제 로직 | **`infra/deploy.sh`** — 저장소에 둬서 리뷰되고, 서버에서 손으로도 돌아간다 |
+| 접속 | 배포 전용 SSH 키. 팀원 `.pem` 과 별개라 이것만 회수할 수 있다 |
+
+저장소 시크릿 셋이 필요하다: `EC2_HOST` · `EC2_USER` · `EC2_SSH_KEY`.
+
+**배포하면 `web` 컨테이너가 재생성돼 몇 초 끊긴다.** 시연 중에는 `main` 에
+푸시하지 않는다. 급하면 Actions 탭에서 워크플로를 잠시 비활성화한다.
+
+`deploy.sh` 가 겪은 것을 두 개 담고 있다 — 헬스 체크에 `X-Forwarded-Proto` 를
+붙이지 않으면 `SECURE_SSL_REDIRECT` 때문에 301 이 와서 앱이 죽은 것처럼 보이고,
+`dev-mcp` 오버레이를 compose 파일 목록에서 빼면 그 컨테이너가 고아로 잡혀
+`--remove-orphans` 한 번에 시연용 MCP 서버가 사라진다.
 
 ### 결정 — 도메인은 `halil-ai.site` (2026-08-13)
 
