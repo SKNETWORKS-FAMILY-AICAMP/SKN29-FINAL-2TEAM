@@ -2,7 +2,7 @@
 
 > 현재 구성(`Docling >= 2.117`, `OcrMode.LAYOUT_REGIONS`)의 실제 실행 순서는 **Backend/전처리 → Layout → OCR → Layout 후처리 → Table structure → Page assemble → Reading order → Heading hierarchy → 이미지 enrichment**이다.
 
-![Docling PDF 전체 파이프라인](C:\final_project\pesentation\paser.02.pipeline-v3.png)
+![Docling PDF 전체 파이프라인](paser.02.pipeline-v3.png)
 
 ## 1. PDF Backend — 원본에서 읽어낸 영역
 
