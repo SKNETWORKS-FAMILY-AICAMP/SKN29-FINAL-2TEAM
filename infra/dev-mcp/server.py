@@ -75,13 +75,21 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[dev-mcp] {fmt % args}", flush=True)
 
     def do_POST(self):  # noqa: N802 - 부모 시그니처
+        # ⚠ **응답보다 먼저 본문을 다 읽는다.** HTTP/1.1 은 연결을 재사용하는데,
+        # 본문을 남긴 채 응답하면 그 바이트가 소켓에 남아 **다음 요청의 요청 줄로
+        # 읽힌다.** 앞단 Caddy 가 업스트림 연결을 풀에 두고 돌려쓰므로, 토큰 없는
+        # 요청 하나가 뒤따르는 정상 요청을 깨뜨린다(2026-08-14 실측:
+        # `Unsupported method ('{"jsonrpc":...}POST')` 501).
+        # 공개 주소라 스캐너가 인증 없이 두드리고 가는 것만으로도 재현된다.
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+
         if TOKEN and self.headers.get("Authorization") != f"Bearer {TOKEN}":
             self._send(401, json.dumps({"error": "unauthorized"}), "application/json")
             return
 
-        length = int(self.headers.get("Content-Length") or 0)
         try:
-            message = json.loads(self.rfile.read(length) or b"{}")
+            message = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             self._send(400, json.dumps({"error": "bad json"}), "application/json")
             return
