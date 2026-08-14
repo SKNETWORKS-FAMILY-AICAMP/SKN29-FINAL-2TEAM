@@ -29,18 +29,48 @@ jobs:
 
     steps:
       - name: SSH 키 준비
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
+          set -euo pipefail
+          for v in EC2_HOST EC2_USER EC2_SSH_KEY; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::시크릿 $v 가 비어 있다. Settings > Secrets and variables > Actions 를 확인할 것."
+              exit 1
+            fi
+          done
+
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          # ⚠ `tr -d '\r'` 를 빼지 말 것. Windows 에서 클립보드를 거쳐 붙여넣으면
+          # 줄바꿈이 CRLF 가 되는데, OpenSSH 는 CR 이 섞인 키를 «invalid format»
+          # 으로 거절한다. 인증 실패가 10초 만에 나서 원인이 잘 안 보인다.
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+
+          # 형식이 깨졌으면 여기서 분명한 메시지와 함께 멈춘다.
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null 2>&1; then
+            echo "::error::EC2_SSH_KEY 를 개인키로 읽을 수 없다. BEGIN/END 줄까지 전문이 들어갔는지 확인할 것."
+            exit 1
+          fi
+          echo "키 형식 OK ($(wc -l < ~/.ssh/deploy_key)줄)"
+
           # 호스트 키를 미리 받아 둔다. StrictHostKeyChecking 을 끄는 것보다 낫다.
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if ! grep -q . ~/.ssh/known_hosts; then
+            echo "::error::$EC2_HOST 에서 호스트 키를 못 받았다. 주소와 보안 그룹 22번을 확인할 것."
+            exit 1
+          fi
 
       - name: 배포
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key \
               -o ConnectTimeout=20 -o ServerAliveInterval=30 \
-              "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+              "$EC2_USER@$EC2_HOST" \
               'bash ~/SKN29-Final-2Team/infra/deploy.sh'
 
       - name: 도메인으로 확인
