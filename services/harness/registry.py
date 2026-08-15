@@ -11,12 +11,13 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
-from apps.connectors.clients import create_jira_issues, search_jira_issues
+from apps.connectors.clients import create_jira_issues, list_drive_files, search_jira_issues
 from backend.db import (
     AccountRepository,
     ExistTaskRepository,
     ProjectRepository,
     ProjectSourceRepository,
+    TeamFolderRepository,
     TeamRepository,
 )
 from backend.db.agent_platform import (
@@ -420,8 +421,69 @@ def _document_list(*, account_id: str) -> dict[str, Any]:
                 "search_ready": row["search_ready"],
             }
             for row in rows
-        ]
+        ],
+        # 수집 전이라도 **저장소에 무엇이 있는지는 말할 수 있어야 한다**(아래).
+        **_connected_folder_files(account_id, collected={row["file_name"] for row in rows}),
     }
+
+
+#: 저장소를 들여다볼 때 한 번에 가져오는 파일 수의 상한.
+#:
+#: 목록을 말해 주자는 것이지 전부 세자는 것이 아니다. 폴더가 크면 대화 한 번이
+#: Drive 호출로 길어지는데, 그때 필요한 답은 「무엇이 있나」이지 「몇 개인가」가
+#: 아니다. 잘렸다는 사실은 `truncated` 로 함께 알린다.
+_FOLDER_PEEK_LIMIT = 40
+
+
+def _connected_folder_files(account_id: str, *, collected: set[str]) -> dict[str, Any]:
+    """연결된 문서 저장소에 **아직 수집하지 않은** 파일이 무엇이 있는가.
+
+    **연결됐는데 수집이 안 된 상태를 「문서가 없다」로 답하면 안 된다**(PM 지적).
+    폴더가 붙어 있으면 그 안에 무엇이 있는지는 저장소에 물어보면 알 수 있고,
+    사람에게는 그게 「연결된 문서」다 — 우리가 언제 읽었는지는 우리 사정이다.
+
+    다만 **수집한 것과 섞지 않는다.** 아직 안 읽은 파일은 내용을 근거로 쓸 수
+    없으므로 목록을 따로 주고, 도구 설명이 모델에게 그 차이를 말하게 한다.
+
+    저장소를 못 읽어도 이 도구는 실패하지 않는다. 수집된 문서 목록은 이미
+    손에 있고, 저장소가 잠깐 안 되는 것 때문에 그것까지 잃을 이유가 없다.
+    """
+
+    folders = TeamFolderRepository.list_for_team(account_id)
+    if not folders:
+        return {"storage_folders": [], "not_collected": [], "storage_error": None}
+
+    names = [folder["display_name"] for folder in folders]
+    pending: list[dict[str, Any]] = []
+    try:
+        for folder in folders:
+            for item in list_drive_files(
+                account_id=account_id,
+                parent_id=folder["external_folder_id"],
+                max_depth=folder.get("max_depth") or 1,
+            ):
+                if item["name"] in collected:
+                    continue
+                pending.append(
+                    {
+                        "file_name": item["name"],
+                        "folder": folder["display_name"],
+                        # 형식이 안 되는 파일도 숨기지 않는다 — 사람이 「내 파일이
+                        # 왜 없지」를 묻지 않으려면 빠진 이유가 보여야 한다.
+                        "supported": item["supported"],
+                    }
+                )
+                if len(pending) >= _FOLDER_PEEK_LIMIT:
+                    return {
+                        "storage_folders": names,
+                        "not_collected": pending,
+                        "truncated": True,
+                        "storage_error": None,
+                    }
+    except Exception as exc:  # noqa: BLE001 — 저장소 사정으로 목록을 잃지 않는다
+        return {"storage_folders": names, "not_collected": [], "storage_error": str(exc)}
+
+    return {"storage_folders": names, "not_collected": pending, "storage_error": None}
 
 
 def _task_update(
@@ -692,7 +754,12 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         description=(
             "팀에 어떤 문서가 있는지 목록으로 돌려준다. **내용 검색이 아니다** — "
             "「무슨 문서 있어?」는 이 도구이고, 「이 내용이 어디 있어?」는 document_search 다. "
-            "아직 색인되지 않은 문서도 그 사실과 함께 준다."
+            "아직 색인되지 않은 문서도 그 사실과 함께 준다. "
+            "`documents` 는 읽어 들인 문서이고, `not_collected` 는 **연결된 저장소에는 "
+            "있지만 아직 읽지 않은 파일**이다 — 둘 다 사람에게는 「우리 문서」이므로 "
+            "함께 말하되, 안 읽은 파일은 내용을 근거로 쓸 수 없다는 것을 밝힌다. "
+            "`storage_folders` 가 있는데 양쪽이 다 비었으면 「연결은 됐지만 저장소가 "
+            "비어 있다」는 뜻이다 — 「문서가 없다」로 뭉뚱그리지 않는다."
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_document_list,
