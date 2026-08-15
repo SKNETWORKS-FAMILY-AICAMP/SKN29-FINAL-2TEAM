@@ -11,7 +11,6 @@ const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage/ResetPasswordPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
-const NewFilesPage = lazy(() => import('./pages/NewFilesPage/NewFilesPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage/ProjectDetailPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
@@ -96,7 +95,6 @@ function App() {
           <Route path={PATHS.agents} element={<RequireAuth><AgentListPage /></RequireAuth>} />
           <Route path={PATHS.agentEdit} element={<RequireAuth><AgentEditPage /></RequireAuth>} />
           <Route path={PATHS.documents} element={<RequireAuth><DocumentsPage /></RequireAuth>} />
-          <Route path={PATHS.filesNew} element={<RequireAuth><NewFilesPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
           <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
           <Route path={PATHS.opsLogin} element={<OpsLoginPage />} />

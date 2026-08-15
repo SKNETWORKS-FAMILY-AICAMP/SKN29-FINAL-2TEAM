@@ -108,16 +108,17 @@ export default function DocumentsPage() {
 
         <header className={styles.header}>
           <h1 className={styles.title}>문서</h1>
-          {/* **「자동으로 등록됩니다」는 사실이 아니었다.** 자동으로 등록하는 경로가
-              없고, `registerDocuments` 를 부르는 곳은 사람이 파일을 고르는 「문서
-              등록」 화면 하나뿐이다. 기다리면 되는 줄 알고 기다리게 만드는 문장이었다.
+          {/* **읽을지 말지는 사람이 정하지 않는다**(2026-08-15 PM).
+              문서는 프로젝트의 기준 문서로 정해질 때 들어오고, 그 밖의 문서는
+              메타·요약만 두었다가 대화 중에 필요해지면 그때 본문을 읽는다.
 
-              고르게 두는 것이 맞다 — 폴더에 있는 것을 전부 읽어 두면 쓰지도 않을
-              문서까지 파싱·임베딩한다. 그 비용을 쓰는 이유는 내용을 보고 무언가
-              하기 위해서인데, 안 쓸 문서에는 그 이유가 없다. */}
+              전에는 「폴더의 새 파일은 자동으로 등록됩니다」였는데 자동으로 등록하는
+              경로가 없었고, 그 다음엔 「문서 등록에서 골라 추가합니다」로 고쳤다가
+              **그 화면이 이미 갈 길을 잃은 옛 화면**이라 다시 틀렸다(그래서 지웠다).
+              둘 다 없는 것을 가리키던 문장이다. */}
           <p className={styles.subtitle}>
-            쓸 문서를 「문서 등록」에서 골라 추가합니다. 내용은 에이전트가 실제로 사용할 때 읽어 준비하고, 한 번 준비된
-            문서는 다시 읽지 않습니다.
+            프로젝트의 기준 문서로 정해진 문서가 여기 모입니다. 본문은 에이전트가 실제로 필요할 때 읽어 준비하고, 한 번
+            준비된 문서는 다시 읽지 않습니다.
           </p>
         </header>
 
@@ -125,8 +126,8 @@ export default function DocumentsPage() {
 
         <div className={styles.stats}>
           {[
-            // 「자동으로 잡힌」도 같은 거짓말이었다 — 고른 것만 들어온다.
-            { label: '등록', value: counts['전체'] ?? 0, desc: '골라서 추가한 전체 문서', tone: styles.statNeutral },
+            // 「폴더에서 자동으로 잡힌」도 같은 거짓말이었다 — 기준 문서로 정해진 것이 들어온다.
+            { label: '등록', value: counts['전체'] ?? 0, desc: '팀이 근거로 쓰는 전체 문서', tone: styles.statNeutral },
             { label: '준비됨', value: counts['준비됨'] ?? 0, desc: '본문까지 읽어 근거로 쓸 수 있는 문서', tone: styles.statSuccess },
             { label: '대기', value: counts['대기'] ?? 0, desc: '아직 요약을 만들지 않은 문서', tone: styles.statInfo },
             { label: '실패', value: counts['실패'] ?? 0, desc: '읽지 못해 근거로 쓸 수 없는 문서', tone: styles.statDanger },

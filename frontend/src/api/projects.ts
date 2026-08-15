@@ -277,20 +277,6 @@ export interface DocumentScanResult {
   missing: MissingDocument[];
 }
 
-/**
- * 폴더를 훑어 신규 파일과 사라진 문서를 함께 돌려준다.
- *
- * **조회만 한다.** Drive 휴지통·완전삭제·폴더 밖 이동이 전부 똑같이 「안 잡힘」으로
- * 보여서, 자동으로 내리면 잠깐 옮겨 둔 문서가 조용히 사라진다. 내리는 것은
- * `removeDocuments()`가 한다.
- *
- * 다만 내려 뒀다가 Drive 에 다시 나타난 문서는 서버가 알아서 되살린다 — 있는
- * 것을 있다고 표시하는 복원이라 잃는 것이 없다.
- */
-export function listNewDocuments(token: string) {
-  return apiRequest<DocumentScanResult>('/team/documents/new/', { token });
-}
-
 export interface DocumentRemoveResult {
   removed: number;
   blocks: number;
@@ -298,37 +284,9 @@ export interface DocumentRemoveResult {
   vectors: number;
 }
 
-/**
- * 고른 문서를 정리한다.
- *
- * `doc` 행은 남고 `deleted`만 켜지지만 **파싱 산출물은 지워진다** — 청크에 원문이
- * 통째로 들어 있어서, Drive 에서 지운 문서의 본문을 계속 들고 있을 수 없다.
- * 되돌리면 문서는 살아나지만 「처리 필요」 상태라 다시 파싱해야 한다.
- */
-export function removeDocuments(token: string, docIds: string[]) {
-  return apiRequest<DocumentRemoveResult>('/team/documents/remove/', {
-    method: 'POST',
-    token,
-    body: { doc_ids: docIds },
-  });
-}
-
 export interface DocumentRegisterResult {
   registered: TeamDocument[];
   skipped: { file_id: string; reason: 'NOT_FOUND' | 'UNSUPPORTED' }[];
-}
-
-/**
- * 고른 파일만 `doc`에 더한다. 기존 문서는 건드리지 않는다.
- *
- * 파일 이름·형식은 보내지 않는다. 서버가 Drive에서 다시 읽는다.
- */
-export function registerDocuments(token: string, files: { file_id: string }[]) {
-  return apiRequest<DocumentRegisterResult>('/team/documents/register/', {
-    method: 'POST',
-    token,
-    body: { files },
-  });
 }
 
 export interface DocumentHistoryEntry {
@@ -345,12 +303,6 @@ export interface DocumentHistoryPage {
   entries: DocumentHistoryEntry[];
   /** 더 읽을 것이 남았는가. 남은 개수는 화면이 쓰지 않아 주지 않는다. */
   has_more: boolean;
-}
-
-/** 이력 한 페이지(20건). `offset`으로 「더 보기」를 이어 받는다. */
-export function listDocumentHistory(token: string, offset = 0) {
-  const suffix = offset > 0 ? `?offset=${offset}` : '';
-  return apiRequest<DocumentHistoryPage>(`/team/documents/history/${suffix}`, { token });
 }
 
 export interface TaskSyncResult {
@@ -426,17 +378,6 @@ export function downloadDocuments(token: string, docIds?: string[]) {
   });
 }
 
-/** 기준 문서로 고를 수 있는 후보 — 팀 문서 전부. */
-export function listPipelineDocuments(token: string) {
-  return apiRequest<PipelineDocument[]>('/team/pipeline-documents/', { token });
-}
-
-/**
- * 문서 하나를 RunPod 에 보내 파싱·청킹·임베딩한다.
- *
- * 팀 문서 단위다 — 프로젝트에 묶이는 것은 기준 문서로 선택될 때이고, 그 선택은
- * 이미 처리된 문서 중에서 한다.
- */
 export function startDocumentProcessing(token: string, docId: string) {
   return apiRequest<DocumentProcessingRun>(`/team/documents/${docId}/processing-runs/`, {
     method: 'POST',
