@@ -33,6 +33,12 @@ export const PATHS = {
 
   // --- TO-BE (Agent Platform) — 개발지시 2차 단계 A ---
   chat: '/chat',
+  /**
+   * 열려 있는 대화. **새로고침하면 보던 대화를 잃던 것**을 URL 로 고쳤다
+   * (2026-08-12 QA). 대화 내용 복원은 원래 됐고, 잃던 것은 「어디를 보고
+   * 있었는가」였다. 같은 계정 안에서는 링크로 건네줄 수도 있다.
+   */
+  chatSession: '/chat/:sessionId',
   agents: '/agents',
   agentEdit: '/agents/:agentId/edit',
   agentNew: '/agents/new/edit',

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal } from '../../components';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
@@ -128,6 +128,11 @@ const LIST_MAX = 460;
 export default function ChatPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  /**
+   * **주소가 정본이다.** 대화를 여는 곳은 전부 `navigate` 를 하고, 실제로 여는 것은
+   * 아래 동기화 effect 하나다 — 두 경로가 생기면 목록에서 연 대화와 주소가 어긋난다.
+   */
+  const { sessionId: routeSessionId } = useParams();
   const token = loadSessionToken();
 
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -161,6 +166,11 @@ export default function ChatPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /**
+   * 방금 떠난 대화의 id. 주소가 `/chat` 으로 따라오면 즉시 비운다.
+   * 왜 필요한지는 아래 주소 동기화 effect 에 적었다.
+   */
+  const leftRef = useRef<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   /** 사용자가 위로 올려 읽는 중이면 따라가지 않는다. */
   const stickToBottom = useRef(true);
@@ -316,15 +326,50 @@ export default function ChatPage() {
         setSelected(lastLive ? lastLive.tasks.map((_, index) => index) : []);
       } catch (error) {
         setFatal(error instanceof ApiError ? error.message : '대화를 불러오지 못했습니다.');
+        // 없는 대화이거나 남의 것이다(서버의 `_require_session` 이 팀을 확인한다).
+        // 주소에 그대로 두면 새로고침마다 같은 오류를 다시 만난다.
+        setSessionId(null);
+        navigate(PATHS.chat, { replace: true });
       }
     },
-    [token],
+    [token, navigate],
   );
+
+  /**
+   * 주소가 가리키는 대화를 연다. 새로고침·딥링크가 이 경로로 들어온다 —
+   * 예전에는 URL 이 `/chat` 뿐이라 새로고침하면 빈 화면으로 떨어졌다(2026-08-12 QA).
+   */
+  useEffect(() => {
+    if (!token) return;
+    if (!routeSessionId) {
+      // 주소가 따라왔다. 아래 「방금 떠난 대화」 표식을 여기서 푼다 — 그래야
+      // 뒤로 가기로 그 대화에 돌아올 수 있다.
+      leftRef.current = null;
+      return;
+    }
+    // **한 박자 늦은 주소를 무시한다.** react-router v7 은 `navigate` 를
+    // transition 으로 처리해서, 「새 대화」가 상태를 비운 직후의 이 effect 는
+    // **아직 옛 주소**를 본다. 그대로 두면 방금 떠난 대화를 다시 열어서,
+    // 주소는 `/chat` 인데 화면에는 옛 대화가 남는다(2026-08-15 브라우저 확인).
+    if (routeSessionId === leftRef.current) return;
+    if (routeSessionId === sessionId) return;
+    void openSession(routeSessionId);
+  }, [routeSessionId, sessionId, token, openSession]);
+
+  /** 목록에서 대화를 연다. **여는 것은 주소가 하고**, 읽어 오는 것은 위 effect 다. */
+  function openFromList(id: string) {
+    navigate(`${PATHS.chat}/${id}`);
+  }
 
   /** 새 대화를 연다. 어느 프로젝트 밑에서 시작하는지를 함께 받는다. */
   function startNew(nextProjId: string | null) {
     abortRef.current?.abort();
     setSessionId(null);
+    // 주소도 함께 비운다. 떠난 id 를 남겨 두는 이유는 위 effect 의 주석에 있다.
+    if (routeSessionId) {
+      leftRef.current = routeSessionId;
+      navigate(PATHS.chat);
+    }
     setProjId(nextProjId);
     setTurns([]);
     setSelected([]);
@@ -377,6 +422,10 @@ export default function ChatPage() {
         id = created.session_id;
         setSessionId(id);
         setSessions((prev) => [created, ...prev]);
+        // 방금 만든 대화도 주소를 갖는다. `replace` 인 이유는 이것이 이동이 아니라
+        // **같은 자리의 이름이 정해진 것**이기 때문이다 — 뒤로 가기가 빈 대화로
+        // 돌아가면 안 된다.
+        navigate(`${PATHS.chat}/${id}`, { replace: true });
       }
     } catch (error) {
       setFatal(error instanceof ApiError ? error.message : '대화를 열지 못했습니다.');
@@ -508,7 +557,7 @@ export default function ChatPage() {
               key={session.session_id}
               session={session}
               active={session.session_id === sessionId}
-              onOpen={openSession}
+              onOpen={openFromList}
               onRemove={setPendingDelete}
             />
           ))}
@@ -536,7 +585,7 @@ export default function ChatPage() {
                   key={session.session_id}
                   session={session}
                   active={session.session_id === sessionId}
-                  onOpen={openSession}
+                  onOpen={openFromList}
                   onRemove={setPendingDelete}
                 />
               ))}
