@@ -1,0 +1,55 @@
+평가 표본 17건 (학습에 안 들어간 문서)
+
+=== 베이스 모델 ===
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+  [base 1/17] 스키마 실패
+  [base 2/17] 스키마 실패
+  [base 3/17] 스키마 실패
+  [base 4/17] 스키마 실패
+  [base 5/17] 스키마 실패
+  [base 6/17] 스키마 실패
+  [base 7/17] tasks=0 f1=0.00 soft=0.00
+  [base 8/17] 스키마 실패
+  [base 9/17] 스키마 실패
+  [base 10/17] 스키마 실패
+  [base 11/17] 스키마 실패
+  [base 12/17] tasks=0 f1=0.00 soft=0.00
+  [base 13/17] tasks=0 f1=0.00 soft=0.00
+  [base 14/17] 스키마 실패
+  [base 15/17] tasks=0 f1=0.00 soft=0.00
+  [base 16/17] 스키마 실패
+  [base 17/17] 스키마 실패
+
+=== 튜닝 모델 ===
+
+  [tuned 1/17] tasks=6 f1=0.00 soft=0.25
+  [tuned 2/17] tasks=4 f1=0.00 soft=0.00
+  [tuned 3/17] tasks=4 f1=0.00 soft=0.00
+  [tuned 4/17] 스키마 실패
+  [tuned 5/17] 스키마 실패
+  [tuned 6/17] tasks=3 f1=0.00 soft=0.00
+  [tuned 7/17] tasks=6 f1=0.00 soft=0.15
+  [tuned 8/17] tasks=1 f1=0.00 soft=0.00
+  [tuned 9/17] tasks=13 f1=0.00 soft=0.08
+  [tuned 10/17] tasks=17 f1=0.00 soft=0.00
+  [tuned 11/17] 스키마 실패
+  [tuned 12/17] tasks=6 f1=0.00 soft=0.00
+  [tuned 13/17] tasks=4 f1=0.00 soft=0.00
+  [tuned 14/17] tasks=12 f1=0.00 soft=0.00
+  [tuned 15/17] tasks=7 f1=0.00 soft=0.00
+  [tuned 16/17] tasks=8 f1=0.00 soft=0.00
+  [tuned 17/17] tasks=5 f1=0.00 soft=0.00
+
+========================================================
+지표                           베이스          튜닝          변화
+--------------------------------------------------------
+schema_ok                 0.2353      0.8235     +0.5882
+field_f1                     0.0         0.0     +0.0000
+title_soft_f1                0.0      0.0283     +0.0283
+evidence_ok                  0.0      0.8235     +0.8235
+latency_ms_median        22098.1    103747.3    +81649.2
+========================================================
+
+저장: /workspace/eval_result.json
+EVAL_OK

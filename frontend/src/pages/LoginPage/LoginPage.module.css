@@ -93,6 +93,13 @@
   width: 100%;
 }
 
+/* 입력칸과 같은 묶음이지만 한 칸 위로 붙인다 — 비밀번호 칸에 딸린 옵션으로
+   보이지 않게, 그러나 폼 밖으로 떨어져 보이지도 않게. */
+.saveEmail {
+  margin-top: calc(var(--space-2) * -1);
+  font-size: 14px;
+}
+
 .eyeToggle {
   display: flex;
   align-items: center;

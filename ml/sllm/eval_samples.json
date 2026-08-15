@@ -1,0 +1,644 @@
+[
+  {
+    "label": "base",
+    "i": 1,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": " \"evidence\": [\"E4\"]\n  },\n  {\n    \"task\": \"03_Weight_Tracking_PRD.md 파일의 바이트 크기는 31,293바이트이며, SHA-256은 2A9E1A4E212F9595C46F4572F239277A1428195763E3963724DB5321776289DE이다.\",\n    \"evidence\": [\"E4\"]\n  }\n]",
+    "gold_titles": [
+      "실제 팀 프로젝트의 다문서 조합 검증 수행",
+      "수집 파일의 실제 파일 시그니처와 MIME 검사"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 2,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": " E1~E5의 텍스트에서 직접 또는 간접적으로 추출 가능.  \n- \"결정사항\"은 원문에서 확인되지 않음(X)으로 기록.  \n- 근거가 없는 필드는 null 또는 빈 배열로 처리.  \n- 모든 근거는 제공된 ref(E1, E2, ..., E5)를 기반으로 하며, 추가 번호는 생성하지 않음.  \n\n---  \n이제 위의 구조를 기반으로 업무 추출을 완료했습니다.",
+    "gold_titles": [
+      "수집 파일의 고정 정보 및 원천 형식 검증",
+      "문서별 PKM 후보 항목 비교 및 판정"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 3,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": "무\": \"요구사항 추적성\",\n      \"근거\": [\"E4\"]\n    }\n  ],\n  \"missing_fields\": [\n    \"결정사항\",\n    \"가정\",\n    \"리스크\",\n    \"성공지표\",\n    \"담당 역할·책임\",\n    \"Task별 우선순위\",\n    \"Task별 예상 공수\",\n    \"Task별 시작·마감일\",\n    \"예산\"\n  ]\n}",
+    "gold_titles": [
+      "PKM에 요구사항 추적성 관계 구조 반영",
+      "전역 일정과 Task 기간 구분",
+      "요구사항 및 산출물 의미 유형 구조화"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 4,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": "는 제공된 근거(E1~E6)에서 직접 추출되었으며, 근거가 없는 항목은 제외 또는 null 처리됨.  \n> 🔍 \"미분석\"은 파싱 실패를 의미하며, 업무 자체는 아님 → 업무 추출 시 제외됨.  \n> 📌 \"Task별 예상 공수\", \"시작·마감일\" 등은 업무가 명시되지 않음 → 추출하지 않음.  \n\n--- \n\n이제 위 JSON 형식으로 최종 업무를 제공합니다.",
+    "gold_titles": [
+      "원천 존재 여부와 파싱 성공 여부를 분리해 기록하는 구조를 마련한다",
+      "PKM 의미 유형을 다섯 가지 보완한다",
+      "요구사항 분류 체계를 확장 가능한 표준 분류로 정비한다",
+      "원천 요구사항 번호와 분류를 보존하는 필드를 구현한다",
+      "포함·제외 범위를 scope 유형으로 구조화한다",
+      "요구사항 의무 여부와 검증 방식을 선택 필드로 추가한다",
+      "검수·인수 조건과 결과물을 별도 유형으로 분리하고 관계로 연결한다"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 5,
+    "schema_ok": false,
+    "error": "ValidationError: 3 validation errors for ExtractionResult\ntasks.0.title\n  Field required [type=missing, input_value={'task': '락 표시 → ...'",
+    "tail": "{\n  \"tasks\": [\n    {\n      \"task\": \"락 표시 → PM 보완 → NewTaskSnapshot 확정\",\n      \"evidence\": [\"E1\"]\n    }\n  ],\n  \"missing_fields\": [\n    \"role\",\n    \"technology\",\n    \"effort\",\n    \"date\"\n  ]\n}",
+    "gold_titles": [
+      "PM 보완 후 NewTaskSnapshot 확정",
+      "다문서 조합 테스트 세트 추가",
+      "내부 기획서·요구사항 정의서 샘플 추가",
+      "정답 KnowledgeItem 작성",
+      "LLM 추출 결과와 정답 비교",
+      "공수·일정·우선순위 PM 보완 화면 검증",
+      "HWPX·구형 HWP 지원 범위 및 변환 경로 확정"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 6,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": "유된 리스트는 계정 없이도 정확히 로드된다. → E6  \n10. 추가된 링크 중 80% 이상은 OpenGraph 메타데이터를 통해 의미 있는 제목을 자동으로 가져온다. → E6\n\n---\n\n**missing_fields**:  \n- 역할: null  \n- 기술: null  \n- 공수: null  \n- 날짜: null  \n\n(근거가 없는 항목은 위에서 명시함)",
+    "gold_titles": [
+      "링크 컬렉션 생성 및 편집 기능 구현",
+      "리스트 게시 및 공개 URL 기능 구현",
+      "인증 사용자 리스트 관리 대시보드 구현",
+      "OpenGraph 메타데이터 기반 링크 제목 자동 확인 기능 구현"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 7,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [],
+    "gold_titles": [
+      "제로 마찰 리스트 생성·게시 지원",
+      "비회원 대상 게시 리스트 공유 지원",
+      "인증 사용자 리스트 재방문 및 편집 지원",
+      "URL OpenGraph 메타데이터 기반 제목 자동 확인",
+      "리스트 게시 포기율 저감",
+      "재사용·업데이트 가능한 공유 리스트 지원",
+      "링크 컬렉션의 깔끔한 표시 지원"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 8,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Input should be an object [type=model_type, input_value=[{'action': 'Share a c",
+    "tail": "tart adding links immediately without signing in\",\n    \"evidence\": [\"E4\", \"E5\"]\n  },\n  {\n    \"action\": \"Avoid requiring users to sign up before sharing a few links\",\n    \"evidence\": [\"E4\", \"E5\"]\n  }\n]",
+    "gold_titles": [
+      "비로그인 상태에서 링크 추가 시작",
+      "링크 메타데이터 자동 수집",
+      "드래그 앤 드롭으로 링크 순서 변경",
+      "읽기 쉽고 기억하기 쉬운 Vanity URL slug 설정"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 9,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": "이 만든 리스트를 대시보드에서 볼 수 있어야 한다 | E4 |\n| 인증된 사용자가 공유된 리스트의 링크를 수정할 수 있어야 한다 | E5 |\n| 인증된 사용자가 리스트를 삭제할 수 있어야 한다 | E5 |\n| 인증된 사용자가 삭제 전에 경고를 받을 수 있어야 한다 | E5 |\n\n**missing_fields**: [\"역할\", \"기술\", \"공수\", \"날짜\"]",
+    "gold_titles": [
+      "비로그인 상태에서 링크 목록 생성 시작",
+      "링크 메타데이터 자동 수집",
+      "링크 드래그 앤 드롭 재정렬",
+      "목록용 vanity URL slug 설정",
+      "목록 설명 입력",
+      "목록 게시 및 공유 URL 발급",
+      "목록 URL의 QR 코드 공유",
+      "계정 없이 게시 목록 조회",
+      "목록 링크 새 탭 열기",
+      "개인 대시보드에서 생성 목록 조회 및 관리",
+      "게시된 목록 링크 편집",
+      "목록 삭제",
+      "목록 삭제 전 경고 표시"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 10,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": "사항] → null  \n\n---\n\n✅ **최종 확인**: 모든 업무는 제공된 E1~E5의 문장에서 직접 추출되었으며, 근거는 ref 값으로 명시.  \n역할, 기술, 날짜, 공수 등은 근거 없이 추정하지 않음.  \n근거가 없는 항목은 null 또는 빈 배열로 처리하고 missing_fields에 기록.\n\n--- \n\n이제 위의 형식으로 정리된 최종 결과입니다.",
+    "gold_titles": [
+      "게시된 리스트 비로그인 조회",
+      "리스트 링크 새 탭 열기",
+      "개인 대시보드에서 생성 리스트 관리",
+      "게시된 리스트 링크 편집",
+      "리스트 삭제 및 삭제 전 경고",
+      "소셜 계정 로그인",
+      "프로필 정보 표시 및 로그아웃",
+      "테마 전환 및 설정 유지",
+      "비로그인 리스트 생성",
+      "URL 메타데이터 기반 링크 카드 생성",
+      "링크 카드 편집·정렬·삭제"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 11,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_valu",
+    "tail": "됨.  \n> ✅ 근거는 E1~E7 중에서 직접적으로 언급된 항목만 사용.  \n> ✅ E1은 업무에 직접적인 근거가 없음 → 업무 없음 → missing_fields에 기록됨.\n\n---\n\n### missing_fields\n\n- 역할: null\n- 기술: null\n- 공수: null\n- 날짜: null\n\n(이 필드는 업무에 근거가 없기 때문에 null로 처리)",
+    "gold_titles": [
+      "Frictionless list creation",
+      "Vanity URL and list description configuration",
+      "List publishing and public viewing",
+      "QR code sharing for published lists",
+      "My Lists dashboard",
+      "Published list editing and deletion",
+      "Remember theme preference across sessions"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 12,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [],
+    "gold_titles": [
+      "QR 코드 공유 기능 구현",
+      "내 리스트 대시보드 구현",
+      "리스트 편집 및 삭제 기능 구현",
+      "소셜 인증 기능 구현",
+      "테마 전환 기능 구현",
+      "리스트 신고 기능 구현"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 13,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [],
+    "gold_titles": [
+      "URL 입력 및 링크 추가 기능 구현",
+      "추가된 링크의 메타데이터 카드 표시 및 편집 기능 구현",
+      "목록 신고 이메일 연결 기능 구현"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 14,
+    "schema_ok": false,
+    "error": "ValidationError: 45 validation errors for ExtractionResult\ntasks.0.title\n  Field required [type=missing, input_value={'action': \"show use",
+    "tail": "ic list viewer\",\n      \"evidence\": [\"E5\"]\n    },\n    {\n      \"action\": \"display large scannable QR code pointing to list's URL in QR mode\",\n      \"evidence\": [\"E6\"]\n    }\n  ],\n  \"missing_fields\": []\n}",
+    "gold_titles": [
+      "URL 입력 및 인라인 검증 구현",
+      "링크 메타데이터 카드 표시 및 편집 구현",
+      "다중 링크 목록 및 순서 변경 구현",
+      "게시된 목록 편집 기능 구현",
+      "공개 목록 뷰어 구현",
+      "QR 코드 보기 구현"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 15,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [],
+    "gold_titles": [
+      "편집 페이지에서 리스트 상세 정보 및 링크 관리 구현",
+      "게시된 리스트의 공개 뷰어 구현",
+      "리스트 QR 코드 보기 구현",
+      "내 리스트 대시보드 구현",
+      "리스트 삭제 확인 모달 구현",
+      "OAuth 로그인 모달 구현",
+      "인증 사용자 드롭다운 구현"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 16,
+    "schema_ok": false,
+    "error": "ValidationError: 3 validation errors for ExtractionResult\ntasks.0.evidence_refs\n  Field required [type=missing, input_value={'title': 'De",
+    "tail": " }\n  ],\n  \"missing_fields\": [\n    \"vanity URL editability\",\n    \"anonymous list expiry\",\n    \"vanity URL uniqueness conflicts\",\n    \"social share buttons\",\n    \"list discovery\",\n    \"link limit\"\n  ]\n}",
+    "gold_titles": [
+      "리스트 삭제 확인 모달 구현",
+      "OAuth 로그인 모달 제공",
+      "인증 사용자 드롭다운 구현",
+      "Vanity URL 수정 정책 결정",
+      "익명 리스트 만료 정책 결정",
+      "Vanity URL 중복 처리 정책 결정",
+      "소셜 공유 버튼 처리 방향 결정",
+      "공개 리스트 탐색 기능 범위 결정",
+      "링크 및 사용자 리소스 제한 정책 결정"
+    ]
+  },
+  {
+    "label": "base",
+    "i": 17,
+    "schema_ok": false,
+    "error": "ValidationError: 21 validation errors for ExtractionResult\ntasks.0.title\n  Field required [type=missing, input_value={'task': 'Handle van",
+    "tail": "s per user\",\n      \"evidence\": [\"E2\"]\n    },\n    {\n      \"task\": \"Address dark mode modals by making modal backgrounds adapt to dark mode\",\n      \"evidence\": [\"E3\"]\n    }\n  ],\n  \"missing_fields\": []\n}",
+    "gold_titles": [
+      "무소유자 기록 처리 방안 결정",
+      "Vanity URL 중복 처리 방안 결정",
+      "소셜 공유 버튼 처리 방안 결정",
+      "공개 리스트 탐색 기능 결정",
+      "리스트 및 링크 수 제한 결정",
+      "다크 모드 모달 대응 여부 결정"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 1,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.25,
+    "pred_titles": [
+      "Project Knowledge Model 필수 데이터 샘플 검증",
+      "공개 개발 기획·요구사항 문서 비교 및 검증",
+      "S1 필드 후보 확인 및 구조 비교",
+      "S5~S9 텍스트 추출 및 대표 페이지 렌더링 검증",
+      "S10 파일 시그니처 및 MIME 검증",
+      "검증용 파일 SHA-256 기록"
+    ],
+    "gold_titles": [
+      "실제 팀 프로젝트의 다문서 조합 검증 수행",
+      "수집 파일의 실제 파일 시그니처와 MIME 검사"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 2,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "필드 후보 확인 및 구조 비교",
+      "텍스트 추출 및 대표 페이지 렌더링 확인",
+      "파일 시그니처와 MIME 검사 원천 검증 적용",
+      "수집 파일 SHA-256 기록"
+    ],
+    "gold_titles": [
+      "수집 파일의 고정 정보 및 원천 형식 검증",
+      "문서별 PKM 후보 항목 비교 및 판정"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 3,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "국내 RFP 및 RFP 기반 PKM 항목의 원문 계보와 필수 항목 확인",
+      "국내 RFP 기반 PKM 항목의 요구사항 분류코드 및 요구사항 추적성 보존",
+      "국내 RFP 기반 PKM 항목의 제약조건 및 수행 조직·역할·책임 구조화",
+      "국내 RFP 기반 PKM 항목의 성능·연계·데이터·보안·품질 요구사항의 고정 열거형 보존"
+    ],
+    "gold_titles": [
+      "PKM에 요구사항 추적성 관계 구조 반영",
+      "전역 일정과 Task 기간 구분",
+      "요구사항 및 산출물 의미 유형 구조화"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 4,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: EOF while parsing a string at line 1 column 12304 [type=json_inv",
+    "tail": "을 네 종류 고정 열거형으로 보존한다\",\"description\":\"국내 자료의 성능·연계·데이터·보안·품질 요구사항을 네 종류 고정 열거형으로 보존한다.\",\"required_role\":null,\"required_skills\":[],\"effort_hours\":null,\"start_date\":null,\"due_date\":null,\"priority\":null,\"",
+    "gold_titles": [
+      "원천 존재 여부와 파싱 성공 여부를 분리해 기록하는 구조를 마련한다",
+      "PKM 의미 유형을 다섯 가지 보완한다",
+      "요구사항 분류 체계를 확장 가능한 표준 분류로 정비한다",
+      "원천 요구사항 번호와 분류를 보존하는 필드를 구현한다",
+      "포함·제외 범위를 scope 유형으로 구조화한다",
+      "요구사항 의무 여부와 검증 방식을 선택 필드로 추가한다",
+      "검수·인수 조건과 결과물을 별도 유형으로 분리하고 관계로 연결한다"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 5,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: EOF while parsing a string at line 1 column 11306 [type=json_inv",
+    "tail": "검증 대상 항목의 검증 결과 기록 방식의 구체적 검증 방식·검증 대상 항목의 검증 결과 기록 방식의 구체적 검증 방식·검증 대상 항목의 검증 결과 기록 방식의 구체적 검증 방식·검증 대상 항목의 검증 결과 기록 방식의 구체적 검증 방식·검증 대상 항목의 검증 결과 기록 방식의 구체적 검증 방식·검증 대상 항목의 검증 결과 기록 방식의 구체적 검증 방식·검증",
+    "gold_titles": [
+      "PM 보완 후 NewTaskSnapshot 확정",
+      "다문서 조합 테스트 세트 추가",
+      "내부 기획서·요구사항 정의서 샘플 추가",
+      "정답 KnowledgeItem 작성",
+      "LLM 추출 결과와 정답 비교",
+      "공수·일정·우선순위 PM 보완 화면 검증",
+      "HWPX·구형 HWP 지원 범위 및 변환 경로 확정"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 6,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "URL 컬렉션을 공유할 수 있는 가벼운 웹 기반 도구 구축",
+      "게시된 목록의 공유성 확보",
+      "사용자 리턴율 향상"
+    ],
+    "gold_titles": [
+      "링크 컬렉션 생성 및 편집 기능 구현",
+      "리스트 게시 및 공개 URL 기능 구현",
+      "인증 사용자 리스트 관리 대시보드 구현",
+      "OpenGraph 메타데이터 기반 링크 제목 자동 확인 기능 구현"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 7,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.15384615384615383,
+    "pred_titles": [
+      "공유링크 컬렉션 생성 및 공유 속도 개선",
+      "리턴 사용자 유지율 향상",
+      "링크 추가 후 OpenGraph 메타데이터 자동 제목 적용",
+      "게시 후 리스트 추방률 감소",
+      "워크숍 담당자용 컬렉션 공유 솔루션 제공",
+      "개발자용 리소스 공유 솔루션 제공"
+    ],
+    "gold_titles": [
+      "제로 마찰 리스트 생성·게시 지원",
+      "비회원 대상 게시 리스트 공유 지원",
+      "인증 사용자 리스트 재방문 및 편집 지원",
+      "URL OpenGraph 메타데이터 기반 제목 자동 확인",
+      "리스트 게시 포기율 저감",
+      "재사용·업데이트 가능한 공유 리스트 지원",
+      "링크 컬렉션의 깔끔한 표시 지원"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 8,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "Create a reusable, shareable link list for users"
+    ],
+    "gold_titles": [
+      "비로그인 상태에서 링크 추가 시작",
+      "링크 메타데이터 자동 수집",
+      "드래그 앤 드롭으로 링크 순서 변경",
+      "읽기 쉽고 기억하기 쉬운 Vanity URL slug 설정"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 9,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.07692307692307693,
+    "pred_titles": [
+      "Casual visitor can start adding links without signing in",
+      "Automatically fetch link metadata",
+      "Reorder links by drag and drop",
+      "Provide a vanity URL slug for a list",
+      "Provide an optional list description",
+      "Authenticated user can publish a list and receive a shareable URL",
+      "Share a list URL via QR code",
+      "List recipient can view a published list without an account",
+      "Each link opens in a new tab",
+      "Authenticated user can see all created lists in a personal dashboard",
+      "Authenticated user can edit links in a published list",
+      "Authenticated user can delete a list",
+      "Warn before deleting a list"
+    ],
+    "gold_titles": [
+      "비로그인 상태에서 링크 목록 생성 시작",
+      "링크 메타데이터 자동 수집",
+      "링크 드래그 앤 드롭 재정렬",
+      "목록용 vanity URL slug 설정",
+      "목록 설명 입력",
+      "목록 게시 및 공유 URL 발급",
+      "목록 URL의 QR 코드 공유",
+      "계정 없이 게시 목록 조회",
+      "목록 링크 새 탭 열기",
+      "개인 대시보드에서 생성 목록 조회 및 관리",
+      "게시된 목록 링크 편집",
+      "목록 삭제",
+      "목록 삭제 전 경고 표시"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 10,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "Published list access without account",
+      "Open links in new tab",
+      "View created lists in personal dashboard",
+      "Edit links in a published list",
+      "Delete a list",
+      "Warn before deleting a list",
+      "Sign in with existing GitHub, Google, or Twitter/X account",
+      "View profile information in navigation bar",
+      "Sign out",
+      "Switch between light and dark themes",
+      "Remember theme preference across sessions",
+      "Auto-populate link card metadata",
+      "Edit auto-populated title and description",
+      "Reorder link cards by dragging",
+      "Remove link cards individually",
+      "Begin list creation without account",
+      "Provide vanity URLs and descriptions"
+    ],
+    "gold_titles": [
+      "게시된 리스트 비로그인 조회",
+      "리스트 링크 새 탭 열기",
+      "개인 대시보드에서 생성 리스트 관리",
+      "게시된 리스트 링크 편집",
+      "리스트 삭제 및 삭제 전 경고",
+      "소셜 계정 로그인",
+      "프로필 정보 표시 및 로그아웃",
+      "테마 전환 및 설정 유지",
+      "비로그인 리스트 생성",
+      "URL 메타데이터 기반 링크 카드 생성",
+      "링크 카드 편집·정렬·삭제"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 11,
+    "schema_ok": false,
+    "error": "ValidationError: 1 validation error for ExtractionResult\n  Invalid JSON: EOF while parsing a string at line 1 column 12592 [type=json_inv",
+    "tail": "equired_skills\",\"effort_hours\",\"start_date\",\"due_date\",\"priority\",\"dependencies\",\"risks\"],\"evidence_refs\":[\"E6\"]},{\"title\":\"인증된 사용자에게 제공되는 개인 대시보드\",\"description\":\"인증된 사용자는 자신의 게시된 리스트를 대시보드에서 확인할 수 있어",
+    "gold_titles": [
+      "Frictionless list creation",
+      "Vanity URL and list description configuration",
+      "List publishing and public viewing",
+      "QR code sharing for published lists",
+      "My Lists dashboard",
+      "Published list editing and deletion",
+      "Remember theme preference across sessions"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 12,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "QR Code Sharing",
+      "My Lists Dashboard",
+      "List Editing and Deletion",
+      "Social Authentication",
+      "Theme Switching",
+      "Link Flagging"
+    ],
+    "gold_titles": [
+      "QR 코드 공유 기능 구현",
+      "내 리스트 대시보드 구현",
+      "리스트 편집 및 삭제 기능 구현",
+      "소셜 인증 기능 구현",
+      "테마 전환 기능 구현",
+      "리스트 신고 기능 구현"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 13,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "Report this list action",
+      "New list empty state",
+      "Link addition and validation",
+      "Link card with metadata"
+    ],
+    "gold_titles": [
+      "URL 입력 및 링크 추가 기능 구현",
+      "추가된 링크의 메타데이터 카드 표시 및 편집 기능 구현",
+      "목록 신고 이메일 연결 기능 구현"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 14,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "로그인 상태에서 사용자 아바타와 계정 메뉴 표시",
+      "빈 새 리스트 상태에서 입력 필드와 안내 문구 제공",
+      "URL 입력 시 실시간 검증 피드백 제공",
+      "URL 수용 후 자동 검색된 링크 카드 표시",
+      "링크 카드 제목과 설명 편집 기능 제공",
+      "여러 링크 추가 시 드래그 핸들 표시 및 정렬 기능 제공",
+      "여러 링크 추가 시 발렌시 URL과 설명 필드 및 게시 버튼 표시",
+      "게시된 리스트의 편집 뷰 제공",
+      "게시된 리스트의 상세 정보 표시",
+      "게시된 리스트의 공개 뷰 제공",
+      "공개 뷰의 리스트 및 QR 코드 뷰 전환 기능 제공",
+      "QR 코드 뷰로 전환 시 대상 URL을 가리키는 큰 스캔 가능한 QR 코드 표시"
+    ],
+    "gold_titles": [
+      "URL 입력 및 인라인 검증 구현",
+      "링크 메타데이터 카드 표시 및 편집 구현",
+      "다중 링크 목록 및 순서 변경 구현",
+      "게시된 목록 편집 기능 구현",
+      "공개 목록 뷰어 구현",
+      "QR 코드 보기 구현"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 15,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "Edit list details",
+      "View published list in public viewer",
+      "Display empty state on My Lists dashboard",
+      "Display list cards on My Lists dashboard",
+      "Show delete confirmation modal",
+      "Present OAuth login options",
+      "Display user dropdown"
+    ],
+    "gold_titles": [
+      "편집 페이지에서 리스트 상세 정보 및 링크 관리 구현",
+      "게시된 리스트의 공개 뷰어 구현",
+      "리스트 QR 코드 보기 구현",
+      "내 리스트 대시보드 구현",
+      "리스트 삭제 확인 모달 구현",
+      "OAuth 로그인 모달 구현",
+      "인증 사용자 드롭다운 구현"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 16,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "Delete confirmation modal implementation",
+      "Login modal implementation",
+      "User dropdown implementation",
+      "Anonymous list expiry policy definition",
+      "Vanity URL uniqueness conflict resolution",
+      "Social share buttons functionality decision",
+      "Public list discovery mechanism definition",
+      "Link limits definition"
+    ],
+    "gold_titles": [
+      "리스트 삭제 확인 모달 구현",
+      "OAuth 로그인 모달 제공",
+      "인증 사용자 드롭다운 구현",
+      "Vanity URL 수정 정책 결정",
+      "익명 리스트 만료 정책 결정",
+      "Vanity URL 중복 처리 정책 결정",
+      "소셜 공유 버튼 처리 방향 결정",
+      "공개 리스트 탐색 기능 범위 결정",
+      "링크 및 사용자 리소스 제한 정책 결정"
+    ]
+  },
+  {
+    "label": "tuned",
+    "i": 17,
+    "schema_ok": true,
+    "f1": 0.0,
+    "soft_f1": 0.0,
+    "pred_titles": [
+      "Vanity URL uniqueness conflict resolution",
+      "Social share buttons functionality",
+      "Public list discovery improvement",
+      "Link limits definition",
+      "Dark mode modal background adaptation"
+    ],
+    "gold_titles": [
+      "무소유자 기록 처리 방안 결정",
+      "Vanity URL 중복 처리 방안 결정",
+      "소셜 공유 버튼 처리 방안 결정",
+      "공개 리스트 탐색 기능 결정",
+      "리스트 및 링크 수 제한 결정",
+      "다크 모드 모달 대응 여부 결정"
+    ]
+  }
+]

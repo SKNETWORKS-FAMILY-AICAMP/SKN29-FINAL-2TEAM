@@ -6,7 +6,7 @@ Pod 준비(RunPod 콘솔에서 Pod 생성 후 웹 터미널):
 
     pip install -U "transformers>=4.44" "peft>=0.12" "trl>=0.9" \
                    "bitsandbytes>=0.43" "accelerate>=0.33" datasets
-    python ml/sllm/train_qlora.py --base Qwen/Qwen3-4B-Instruct
+    python ml/sllm/train_qlora.py --base Qwen/Qwen3-4B-Instruct-2507
 
 ⚠ **컨테이너 디스크가 30GB 다.** 베이스 가중치(4B fp16 ≈ 8GB)와 어댑터,
 캐시가 모두 여기 들어간다. 8B 를 쓰려면 디스크를 늘려서 Pod 을 만들 것.
@@ -32,7 +32,7 @@ def load_jsonl(path: Path) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="Qwen/Qwen3-4B-Instruct", help="베이스 모델")
+    ap.add_argument("--base", default="Qwen/Qwen3-4B-Instruct-2507", help="베이스 모델")
     ap.add_argument("--out", default=str(HERE / "adapter"), help="어댑터 저장 경로")
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--lr", type=float, default=2e-4)
@@ -97,7 +97,9 @@ def main() -> int:
         logging_steps=5,
         save_strategy="epoch",
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        # transformers 5.x 에서 warmup_ratio 가 빠졌다. 총 스텝이 30 언저리라
+        # (84건 ÷ accum 8 × 3 epoch) 비율로 주면 어차피 1~2 스텝이다.
+        warmup_steps=2,
         report_to=[],
         # **정답(assistant 턴)에만 손실을 건다.** 근거 청크까지 외우게 하면
         # 프롬프트를 따라 쓰는 쪽으로 수렴한다.

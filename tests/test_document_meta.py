@@ -4,6 +4,7 @@
 OK 로 남으면 "내용이 거의 없는 문서"라는 요약이 만들어져 검색을 오염시킨다.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -111,6 +112,33 @@ class ExtractorTests(SimpleTestCase):
         self.assertEqual(
             len(extractor.for_summary("가" * 99999)), extractor.SUMMARY_INPUT_MAX_CHARS
         )
+
+
+class SummarizeCallTests(SimpleTestCase):
+    """`_summarize` 를 mock 하지 않고 **호출부 자체**를 한 번 태운다.
+
+    나머지 테스트가 전부 `_summarize` 를 통째로 mock 하는 바람에, 이 함수가
+    참조하는 `SUMMARY_MODEL` 이 정의되지 않아 실제 호출이 NameError 로 죽는
+    상태가 테스트를 그대로 통과했다(2026-08-14). mock 은 OpenAI 클라이언트에만
+    건다 — 우리 코드가 어떤 인자로 부르는지가 검사 대상이다.
+    """
+
+    @patch("services.document_meta.service.OpenAI")
+    def test_설정된_모델로_구조화_출력을_요청한다(self, openai_cls):
+        parsed = service.DocumentSummary(summary="요약", doc_type="보고서", keywords=["a"])
+        openai_cls.return_value.responses.parse.return_value = SimpleNamespace(
+            output_parsed=parsed
+        )
+
+        with self.settings(OPENAI_API_KEY="sk-test", OPENAI_SERVICE_TIER="auto"):
+            result = service._summarize(text="본문", file_name="a.pdf")
+
+        self.assertEqual(result.doc_type, "보고서")
+        kwargs = openai_cls.return_value.responses.parse.call_args.kwargs
+        self.assertEqual(kwargs["model"], service.SUMMARY_MODEL)
+        # 요약은 팀 문서 전부에 도는 일이라 단가가 그대로 총액이 된다.
+        self.assertEqual(kwargs["reasoning"], {"effort": "low"})
+        self.assertIs(kwargs["text_format"], service.DocumentSummary)
 
 
 class BuildTests(SimpleTestCase):

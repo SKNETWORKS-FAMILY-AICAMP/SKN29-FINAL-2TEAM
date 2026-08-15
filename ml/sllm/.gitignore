@@ -1,3 +1,5 @@
-adapter/
-*.safetensors
-*.bin
+# 어댑터는 산출물이라 커밋한다(66MB). 다만 베이스에서 그대로 복원되는 것과
+# 학습 중간 산출물은 뺀다 — 저장소를 불필요하게 무겁게 만든다.
+adapter/checkpoint-*/
+adapter/tokenizer.json
+adapter/training_args.bin

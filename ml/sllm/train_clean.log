@@ -1,0 +1,84 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+학습 표본 84건
+
+
+
+
+
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+
+  3%|▎         | 1/33 [00:10<05:43, 10.74s/it]
+  6%|▌         | 2/33 [00:18<04:46,  9.24s/it]
+  9%|▉         | 3/33 [00:29<04:52,  9.76s/it]
+ 12%|█▏        | 4/33 [00:37<04:21,  9.03s/it]
+ 15%|█▌        | 5/33 [00:47<04:21,  9.33s/it]
+                                              
+
+ 15%|█▌        | 5/33 [00:47<04:21,  9.33s/it]
+ 18%|█▊        | 6/33 [00:56<04:11,  9.32s/it]
+ 21%|██        | 7/33 [01:04<03:52,  8.95s/it]
+ 24%|██▍       | 8/33 [01:14<03:55,  9.41s/it]
+ 27%|██▋       | 9/33 [01:24<03:43,  9.30s/it]
+ 30%|███       | 10/33 [01:35<03:49,  9.99s/it]
+                                               
+
+ 30%|███       | 10/33 [01:35<03:49,  9.99s/it]
+ 33%|███▎      | 11/33 [01:40<03:05,  8.41s/it]
+ 36%|███▋      | 12/33 [01:52<03:19,  9.49s/it]
+ 39%|███▉      | 13/33 [02:02<03:16,  9.83s/it]
+ 42%|████▏     | 14/33 [02:12<03:07,  9.86s/it]
+ 45%|████▌     | 15/33 [02:23<03:01, 10.07s/it]
+                                               
+
+ 45%|████▌     | 15/33 [02:23<03:01, 10.07s/it]
+ 48%|████▊     | 16/33 [02:33<02:49,  9.94s/it]
+ 52%|█████▏    | 17/33 [02:41<02:31,  9.48s/it]
+ 55%|█████▍    | 18/33 [02:52<02:26,  9.79s/it]
+ 58%|█████▊    | 19/33 [03:01<02:14,  9.64s/it]
+ 61%|██████    | 20/33 [03:10<02:05,  9.65s/it]
+                                               
+
+ 61%|██████    | 20/33 [03:10<02:05,  9.65s/it]
+ 64%|██████▎   | 21/33 [03:19<01:51,  9.27s/it]
+ 67%|██████▋   | 22/33 [03:23<01:25,  7.76s/it]
+ 70%|██████▉   | 23/33 [03:34<01:26,  8.61s/it]
+ 73%|███████▎  | 24/33 [03:42<01:17,  8.59s/it]
+ 76%|███████▌  | 25/33 [03:51<01:08,  8.57s/it]
+                                               
+
+ 76%|███████▌  | 25/33 [03:51<01:08,  8.57s/it]
+ 79%|███████▉  | 26/33 [04:01<01:04,  9.20s/it]
+ 82%|████████▏ | 27/33 [04:12<00:56,  9.47s/it]
+ 85%|████████▍ | 28/33 [04:23<00:49,  9.92s/it]
+ 88%|████████▊ | 29/33 [04:32<00:39,  9.78s/it]
+ 91%|█████████ | 30/33 [04:43<00:30, 10.19s/it]
+                                               
+
+ 91%|█████████ | 30/33 [04:43<00:30, 10.19s/it]
+ 94%|█████████▍| 31/33 [04:53<00:20, 10.06s/it]
+ 97%|█████████▋| 32/33 [05:02<00:09,  9.83s/it]
+100%|██████████| 33/33 [05:06<00:00,  8.07s/it]
+                                               
+
+100%|██████████| 33/33 [05:07<00:00,  8.07s/it]
+100%|██████████| 33/33 [05:07<00:00,  9.33s/it]
+{'loss': '0.7546', 'grad_norm': '0.3438', 'learning_rate': '0.000198', 'entropy': '0.3797', 'num_tokens': '7.91e+04', 'mean_token_accuracy': '0.8157', 'epoch': '0.4762'}
+{'loss': '0.5223', 'grad_norm': '0.2598', 'learning_rate': '0.0001759', 'entropy': '0.6316', 'num_tokens': '1.607e+05', 'mean_token_accuracy': '0.8557', 'epoch': '0.9524'}
+{'loss': '0.445', 'grad_norm': '0.2139', 'learning_rate': '0.0001347', 'entropy': '0.5086', 'num_tokens': '2.376e+05', 'mean_token_accuracy': '0.8749', 'epoch': '1.381'}
+{'loss': '0.397', 'grad_norm': '0.25', 'learning_rate': '8.486e-05', 'entropy': '0.4026', 'num_tokens': '3.164e+05', 'mean_token_accuracy': '0.8814', 'epoch': '1.857'}
+{'loss': '0.3997', 'grad_norm': '0.2852', 'learning_rate': '3.879e-05', 'entropy': '0.4144', 'num_tokens': '3.807e+05', 'mean_token_accuracy': '0.8806', 'epoch': '2.286'}
+{'loss': '0.3465', 'grad_norm': '0.1729', 'learning_rate': '8.104e-06', 'entropy': '0.3589', 'num_tokens': '4.678e+05', 'mean_token_accuracy': '0.8965', 'epoch': '2.762'}
+{'train_runtime': '308', 'train_samples_per_second': '0.818', 'train_steps_per_second': '0.107', 'train_loss': '0.4671', 'entropy': '0.3664', 'num_tokens': '5.06e+05', 'mean_token_accuracy': '0.8949', 'epoch': '3'}
+저장 완료: /workspace/adapter
+{
+  "base": "Qwen/Qwen3-4B-Instruct-2507",
+  "epochs": 3.0,
+  "lr": 0.0002,
+  "batch": 1,
+  "accum": 8,
+  "max_length": 4096,
+  "rank": 16,
+  "alpha": 32,
+  "train_samples": 84
+}
+TRAIN_OK

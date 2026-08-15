@@ -1,9 +1,11 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
 import type { IconName } from '../Icon/Icon';
 import { Logo } from '../Logo/Logo';
 import { opsLogout } from '../../api/ops';
 import { clearOpsSession, loadOpsSession } from '../../utils/opsSession';
+import { useNarrowViewport } from '../../utils/viewport';
 import styles from './OpsLayout.module.css';
 
 interface OpsNavItem {
@@ -24,9 +26,38 @@ const OPS_NAV_ITEMS: OpsNavItem[] = [
   { label: '전역 정책', to: '/ops/policies', icon: 'sliders' },
 ];
 
+/**
+ * 접힘 상태. 앱 셸과 같은 키 규칙을 쓰되 **자리를 따로 둔다** — 운영자 콘솔은
+ * 별도 로그인이고, 한쪽에서 접었다고 다른 쪽이 접힐 이유가 없다.
+ */
+const OPS_COLLAPSE_KEY = 'halil.opsSidebarCollapsed';
+
+/** 사이드바가 드로어로 들어가는 폭. CSS 의 720px 과 같아야 한다. */
+const OPS_NARROW_WIDTH = 720;
+
 export function OpsLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const session = loadOpsSession();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const narrow = useNarrowViewport(OPS_NARROW_WIDTH);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(OPS_COLLAPSE_KEY) === '1');
+
+  // 드로어는 열리거나 닫히는 것이지 좁아지는 것이 아니다. 데스크탑에서 접어 둔
+  // 사람에게 아이콘만 있는 드로어를 주면 무엇을 누르는지 알 수 없다.
+  const iconsOnly = collapsed && !narrow;
+
+  // 메뉴를 눌러 이동했으면 드로어는 할 일을 끝냈다.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      localStorage.setItem(OPS_COLLAPSE_KEY, prev ? '0' : '1');
+      return !prev;
+    });
+  }
 
   function handleLogout() {
     const token = session?.token;
@@ -39,6 +70,17 @@ export function OpsLayout() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
+        {/* 좁은 화면에서 메뉴는 드로어로 들어간다 — 여는 길을 여기 둔다.
+            앱 셸과 같은 자리·같은 모양이라 두 콘솔을 오가도 헷갈리지 않는다. */}
+        <button
+          type="button"
+          className={styles.menuButton}
+          onClick={() => setDrawerOpen(true)}
+          aria-label="메뉴 열기"
+          aria-expanded={drawerOpen}
+        >
+          <Icon name="menu" size={20} color="var(--color-body)" />
+        </button>
         <NavLink to="/ops" className={styles.brand} aria-label="운영 현황으로 이동">
           <Logo height={22} />
           <span>운영자 콘솔</span>
@@ -53,9 +95,39 @@ export function OpsLayout() {
         </div>
       </header>
 
+      {drawerOpen && (
+        <button
+          type="button"
+          className={styles.scrim}
+          onClick={() => setDrawerOpen(false)}
+          aria-label="메뉴 닫기"
+        />
+      )}
+
       <div className={styles.body}>
-        <aside className={styles.sidebar}>
-          <p className={styles.sidebarLabel}>운영자 메뉴</p>
+        <aside
+          className={[
+            styles.sidebar,
+            iconsOnly ? styles.sidebarCollapsed : '',
+            drawerOpen ? styles.sidebarOpen : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          <div className={styles.sidebarHead}>
+            <p className={styles.sidebarLabel}>운영자 메뉴</p>
+            {/* 표가 열 여덟아홉 개라 본문 폭이 곧 읽히는 양이다 — 접으면 172px 이
+                표로 간다. */}
+            <button
+              type="button"
+              className={styles.collapse}
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+              title={collapsed ? '펼치기' : '접기'}
+            >
+              <Icon name={collapsed ? 'arrow-right' : 'arrow-left'} size={15} color="var(--color-muted)" />
+            </button>
+          </div>
           <nav className={styles.navigation} aria-label="운영자 메뉴">
             {OPS_NAV_ITEMS.map((item) => (
               <NavLink
@@ -65,9 +137,11 @@ export function OpsLayout() {
                 className={({ isActive }) =>
                   [styles.navItem, isActive ? styles.navItemActive : ''].filter(Boolean).join(' ')
                 }
+                // 접히면 라벨이 없으므로 아이콘만으로 무엇인지 알아야 한다.
+                title={iconsOnly ? item.label : undefined}
               >
                 <Icon name={item.icon} size={17} />
-                <span>{item.label}</span>
+                {!iconsOnly && <span>{item.label}</span>}
               </NavLink>
             ))}
           </nav>

@@ -86,6 +86,10 @@ def _repository_error(exc: RepositoryError) -> Response:
     return Response({"detail": str(exc)}, status=code)
 
 
+#: 명부와 팀 기준은 팀장의 것이다. 조회는 팀원도 한다 — 막는 것은 쓰기뿐이다.
+TEAM_LEADER_ONLY = "팀장만 팀 명부와 업무량 기준을 바꿀 수 있습니다."
+
+
 class TeamMemberAPIView(TeamScopedAPIView):
     """팀 명부. 사람·계정·초대를 한 줄로 본다.
 

@@ -11,7 +11,6 @@ const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage/ResetPasswordPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
-const NewFilesPage = lazy(() => import('./pages/NewFilesPage/NewFilesPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage/ProjectDetailPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
@@ -19,7 +18,6 @@ const AgentListPage = lazy(() => import('./pages/AgentListPage/AgentListPage'));
 const AgentEditPage = lazy(() => import('./pages/AgentEditPage/AgentEditPage'));
 const AgentVersionListPage = lazy(() => import('./pages/AgentVersionListPage/AgentVersionListPage'));
 const AgentVersionEditPage = lazy(() => import('./pages/AgentVersionEditPage/AgentVersionEditPage'));
-const DocumentsPage = lazy(() => import('./pages/DocumentsPage/DocumentsPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
 const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
 const OpsTeamsPage = lazy(() => import('./pages/OpsTeamsPage/OpsTeamsPage'));
@@ -69,8 +67,15 @@ function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path={PATHS.landing} element={<LandingPage />} />
-          <Route path={PATHS.devIndex} element={<DevIndexPage />} />
-          <Route path={PATHS.devIndexAlias} element={<DevIndexPage />} />
+          {/* 개발용 화면 목록은 개발 서버에서만 연다. 배포본에서는 라우트가 없어
+              랜딩으로 떨어진다 — `ROUTES` 에 운영자 콘솔 경로와 「문서 관리 (구)」가
+              라벨과 함께 들어 있어, 공개 주소에서 열리면 그 목록이 그대로 보인다. */}
+          {import.meta.env.DEV && (
+            <>
+              <Route path={PATHS.devIndex} element={<DevIndexPage />} />
+              <Route path={PATHS.devIndexAlias} element={<DevIndexPage />} />
+            </>
+          )}
           <Route path={PATHS.login} element={<LoginPage />} />
           <Route path={PATHS.signup} element={<SignupPage />} />
           <Route path={PATHS.inviteCode} element={<InviteCodePage />} />
@@ -87,14 +92,13 @@ function App() {
           <Route path={PATHS.settingsModel} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
+          <Route path={PATHS.chatSession} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.agents} element={<RequireAuth><AgentListPage /></RequireAuth>} />
           <Route path={PATHS.agentEdit} element={<RequireAuth><AgentEditPage /></RequireAuth>} />
           {/* 새 버전 스키마(services/agent_runtime/) 전용 — 옛 위 두 라우트와
               나란히 존재한다. Chat은 아직 이 스키마를 모른다. */}
           <Route path={PATHS.agentVersions} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />
           <Route path={PATHS.agentVersionEdit} element={<RequireAuth><AgentVersionEditPage /></RequireAuth>} />
-          <Route path={PATHS.documents} element={<RequireAuth><DocumentsPage /></RequireAuth>} />
-          <Route path={PATHS.filesNew} element={<RequireAuth><NewFilesPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
           <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
           <Route path={PATHS.opsLogin} element={<OpsLoginPage />} />

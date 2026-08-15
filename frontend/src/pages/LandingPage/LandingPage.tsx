@@ -95,9 +95,13 @@ function ApprovalMock() {
           </p>
         </div>
 
+        {/* 실제 확인 카드와 문구를 맞춘다. 랜딩만 「Jira에 등록」인 옛 문구로 남아
+            있었다 — 8/12 에 **등록은 우리 플랫폼(`task`)이 먼저**가 됐고 버튼도
+            「선택한 N건 등록」으로 바뀌었다. 랜딩은 공개 주소의 첫 화면이라
+            여기서 어긋나면 제품이 아직 Jira 부속으로 읽힌다(2026-08-12 QA §C). */}
         <div className={styles.mockFoot}>
-          <span className={styles.mockFootNote}>승인하기 전까지 Jira에는 아무것도 만들지 않습니다.</span>
-          <span className={styles.mockFootBtn}>Jira에 등록</span>
+          <span className={styles.mockFootNote}>승인하기 전까지 아무 데도 등록하지 않습니다.</span>
+          <span className={styles.mockFootBtn}>선택한 20건 등록</span>
         </div>
       </div>
     </div>
@@ -126,7 +130,10 @@ function ToolsMini() {
       {[
         { name: '문서 검색', desc: '팀에 등록된 문서에서 근거를 찾습니다', tag: '기본 제공', on: true },
         { name: '부하 리포트 생성', desc: '팀원별 주간 업무 시간을 계산합니다', tag: '기본 제공', on: false },
-        { name: 'Jira 이슈 생성', desc: '확인받은 업무를 Jira에 등록합니다', tag: 'MCP · Jira', on: true },
+        // Jira 는 **Connector 로 붙고 도구는 기본 제공**이다(`jira_create_issues`).
+        // 「MCP · Jira」는 두 번 틀린 표기였다 — MCP 탭은 사용자가 직접 운영하는
+        // 서버를 붙이는 곳이고, Jira 는 우리가 미리 붙여 둔 통로다(확정 ⑨).
+        { name: 'Jira 이슈 생성', desc: '확인받은 업무를 Jira에 등록합니다', tag: '기본 제공', on: true },
       ].map((tool) => (
         <div className={styles.miniTool} key={tool.name}>
           <span className={tool.on ? styles.miniCheckOn : styles.miniCheck} aria-hidden="true" />

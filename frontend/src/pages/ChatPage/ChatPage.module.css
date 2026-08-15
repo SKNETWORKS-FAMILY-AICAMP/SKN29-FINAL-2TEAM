@@ -649,3 +649,79 @@
   background: var(--color-danger-bg, #fef2f2);
   color: var(--color-danger);
 }
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/* 목록을 여는 버튼과 덮개는 좁을 때만 나온다. */
+.listToggle,
+.listScrim {
+  display: none;
+}
+
+/*
+ * 목록이 자리를 차지할 수 없는 폭.
+ *
+ * 260px 목록 + 대화면 375px 화면에서 대화가 100px 남는다 — 답변이 한 글자씩
+ * 흐른다. 목록을 **덮어서 여는 패널**로 돌린다. 셸의 드로어와 같은 약속이라
+ * 두 층이 같은 방식으로 열리고 닫힌다.
+ */
+@media (max-width: 760px) {
+  .chat {
+    position: relative;
+  }
+
+  .sessions {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    /* 화면을 다 덮지 않는다 — 뒤가 보여야 덮개를 눌러 닫는다는 것이 읽힌다. */
+    width: min(300px, 84vw);
+    max-width: none;
+    padding-right: var(--space-2);
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .sessionsOpen {
+    transform: translateX(0);
+  }
+
+  .listScrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 19;
+    border: 0;
+    padding: 0;
+    background: rgb(15 23 42 / 45%);
+    cursor: pointer;
+  }
+
+  .listToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-body);
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  /* 끌기 손잡이는 덮개에 뜻이 없다. */
+  .resizer {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sessions {
+    transition: none;
+  }
+}

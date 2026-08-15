@@ -273,3 +273,13 @@
     align-items: flex-start;
   }
 }
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/* 숫자 둘이 한 줄에 안 들어가 오른쪽이 잘려 나갔다. 접어서 보인다. */
+@media (max-width: 760px) {
+  .quickStats {
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+}

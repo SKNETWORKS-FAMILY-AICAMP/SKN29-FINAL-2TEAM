@@ -368,8 +368,8 @@ export default function ProjectDetailPage() {
                     <span className={styles.issueKey}>{task.jira_issue_id}</span>
                     {/* 제목이 없는 행은 이슈 키로 대신한다 — 지어내지 않는다. */}
                     <span className={styles.summary}>{task.summary ?? '제목 없음'}</span>
-                    <span className={styles.assignee}>{task.assignee_name ?? '미지정'}</span>
-                    <span>
+                    <span className={styles.assignee} data-label="담당">{task.assignee_name ?? '미지정'}</span>
+                    <span data-label="상태">
                       {task.status_category ? (
                         <Badge tone={CATEGORY_TONE[task.status_category]}>
                           {CATEGORY_LABEL[task.status_category]}
@@ -378,9 +378,9 @@ export default function ProjectDetailPage() {
                         <span className={styles.dim}>{task.status ?? '-'}</span>
                       )}
                     </span>
-                    <span className={styles.right}>{hours(task.estimate)}</span>
-                    <span className={styles.right}>{hours(task.remaining)}</span>
-                    <span className={styles.right}>{formatDate(task.due_at)}</span>
+                    <span className={styles.right} data-label="추정">{hours(task.estimate)}</span>
+                    <span className={styles.right} data-label="잔여">{hours(task.remaining)}</span>
+                    <span className={styles.right} data-label="마감">{formatDate(task.due_at)}</span>
                   </div>
                 ))}
                 {visibleTasks.length === 0 && (
