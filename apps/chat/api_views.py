@@ -6,6 +6,7 @@
 
 import json
 import logging
+import uuid
 from typing import Any
 
 import psycopg
@@ -16,6 +17,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
+from apps.accounts.serializers import account_role
+from backend.db import AccountRepository
 from backend.db.agent_platform import ChatMessageRepository, ChatSessionRepository
 from backend.db.errors import (
     PermissionDenied,
@@ -23,6 +26,9 @@ from backend.db.errors import (
     ReferenceNotFound,
     RepositoryError,
 )
+from services.agent_runtime import RuntimeContext
+from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
+from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -49,6 +55,26 @@ def _repository_error_response(exc: Exception) -> Response:
     return Response(
         {"detail": "데이터베이스 요청을 처리할 수 없습니다.", "error": exc.__class__.__name__},
         status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
+
+def _agent_runtime_error_response(exc: AgentRuntimeError) -> Response:
+    """`services.agent_runtime.exceptions`를 HTTP 응답으로 바꾼다.
+
+    `apps/agents/api_views.py`의 같은 이름 함수와 동일한 규칙(02 §12) — MRO를
+    위에서부터 훑어 가장 구체적인 클래스로 매핑한다. 여기서 쓰는 곳은 실행
+    **준비**(런타임 컨텍스트 구성, 레거시 에이전트면 `draft_from_legacy_agent()`
+    조회) 단계뿐이다 — 2026-08-14부터 발화가 전부 새 엔진을 타면서 모든 세션이
+    이 단계를 거친다. 스트림이 시작된 뒤의 실행 실패는 상태 코드를 더 바꿀 수
+    없어서 `_relay()`가 이벤트로 흘려보낸다(아래).
+    """
+
+    for cls in type(exc).__mro__:
+        if cls in HTTP_STATUS_BY_EXCEPTION:
+            return Response({"detail": str(exc)}, status=HTTP_STATUS_BY_EXCEPTION[cls])
+    return Response(
+        {"detail": "요청을 처리할 수 없습니다.", "error": exc.__class__.__name__},
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
 
 
@@ -128,27 +154,36 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 role="user",
                 content={"type": "text", "text": text},
             )
+            # 발화는 전부 새 엔진(services.agent_runtime)을 탄다(2026-08-14
+            # 전환). 화면(Builder)이 아직 레거시 `agent`/`agent_tool` 스키마만
+            # 쓰므로(agent_version_id 없음), 그 경우 legacy_bridge로 **저장 없이**
+            # draft를 만든다 — 새 `agents`/`agent_versions` 스키마는 건드리지
+            # 않는다. 여기서 미리 구성해 두는 이유는 **스트림이 열리기 전에**
+            # 실패할 수 있는 부분(계정 프로필 조회, 레거시 에이전트 조회)을 먼저
+            # 걷어내기 위해서다 — 스트림 안에서 실패하면 상태 코드를 더 바꿀 수
+            # 없다.
+            runtime_context = _build_runtime_context(session=session, account_id=account_id)
+            draft = (
+                None
+                if session.get("agent_version_id")
+                else draft_from_legacy_agent(
+                    agent_id=session["agent_id"], team_id=session["team_id"]
+                )
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+        except AgentRuntimeError as exc:
+            return _agent_runtime_error_response(exc)
 
         # 여기서부터 스트림이다. 응답이 시작된 뒤에는 상태 코드를 바꿀 수 없어서
         # 위의 검사를 전부 끝낸 다음에 연다.
+        events = _run_deep_agent(
+            session=session, context=runtime_context, user_input=text, history=history, draft=draft
+        )
+
         return StreamingHttpResponse(
             _relay(
-                run_agent(
-                    session["agent_id"],
-                    text,
-                    {
-                        "session_id": session_id,
-                        "account_id": account_id,
-                        # 업무 추출처럼 프로젝트가 전제인 도구가 쓴다. 대화를 열
-                        # 때 고른 값이고, 없으면 그 도구가 거절한다.
-                        "proj_id": session.get("proj_id"),
-                        # 앞선 턴 + 이번 발화. 이걸 안 주면 **매 턴이 콜드
-                        # 스타트**라 "그것 말고 또 있나?" 같은 말이 통하지 않는다.
-                        "messages": [*history, {"role": "user", "content": text}],
-                    },
-                ),
+                events,
                 session_id=session_id,
                 account_id=account_id,
                 question=text,
@@ -199,6 +234,81 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             history.append({"role": "assistant", "content": content["text"]})
 
     return history[-HISTORY_LIMIT:]
+
+
+def _build_runtime_context(*, session: dict[str, Any], account_id: str) -> RuntimeContext:
+    """새 엔진(services/agent_runtime)이 요구하는 `RuntimeContext`를 채운다.
+
+    `role`은 가입 경로로 정해진다(`account_role` — apps/accounts/serializers.py,
+    apps/connectors/api_views.py가 이미 쓰는 것과 같은 헬퍼). 팀장/팀원에 따른
+    도구 사용 가능 여부는 이 값을 `runtime_policy.py`가 읽어서 가른다 — 여기서는
+    조회만 한다.
+    """
+
+    profile = AccountRepository.get_profile(account_id)
+    return RuntimeContext(
+        account_id=account_id,
+        team_id=session["team_id"],
+        role=account_role(profile),
+        session_id=session["session_id"],
+        project_id=session.get("proj_id"),
+        run_id=str(uuid.uuid4()),
+    )
+
+
+def _run_deep_agent(
+    *,
+    session: dict[str, Any],
+    context: RuntimeContext,
+    user_input: str,
+    history: list[dict[str, Any]],
+    draft: dict[str, Any] | None = None,
+):
+    """대화를 `services.agent_runtime` 엔진으로 돌린다(2026-08-14부터 전부 이 경로).
+
+    이벤트 모양이 레거시와 같아서(`EVENT_RESULT`="result", `EVENT_ERROR`="error")
+    아래 `_relay()`/`_persist()`를 그대로 재사용한다 — 차이는 ERROR 이벤트의
+    필드 하나뿐이다. 새 엔진은 사람이 읽을 문구를 `message`에 담는데
+    (services/agent_runtime/executor.py), `_persist()`는 `text`를 읽으므로
+    (레거시 규격) 여기서 하나를 더 채워 맞춘다 — 실행 엔진 쪽 규격을 바꾸지
+    않고 이 어댑터 안에서만 흡수한다.
+
+    `draft`가 있으면(레거시 `agent` 스키마 세션 — `draft_from_legacy_agent()`가
+    만듦) `executor.run()`에 `agent_id=None, agent_version_id=None`으로
+    넘긴다 — `validate_execution_target()`이 draft와 저장된 실행을 동시에
+    받는 걸 막는다. `agent_version_id`가 있는 세션(새 스키마, 아직 화면에
+    실제 사용처 없음 — 전방 호환)은 `draft=None`으로 저장된 버전을 그대로
+    읽는다.
+
+    `build_default_executor`는 **여기서** import한다(모듈 최상단이 아니라).
+    이 패키지의 `__init__.py`가 `deepagents` import를 이 이름을 실제로 쓰는
+    순간까지 늦추는 이유(PEP 562)가 "Deep Agent를 안 쓰는 요청까지
+    `deepagents` 설치 여부에 발목 잡히면 안 된다"였다(2026-08-14 부팅 실패
+    사고) — 모듈 최상단에서 이 이름을 import하면 Django가 URL 설정을 읽을 때
+    (요청 전, 부팅 시점) 바로 그 사고가 재현된다.
+    """
+
+    from services.agent_runtime import build_default_executor
+    from services.agent_runtime.tracing import trace_events
+
+    executor = build_default_executor()
+    run_kwargs = (
+        {"agent_id": None, "agent_version_id": None, "draft": draft}
+        if draft is not None
+        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
+    )
+    raw_events = executor.run(
+        user_input=user_input,
+        context=context,
+        conversation_messages=tuple(history),
+        **run_kwargs,
+    )
+    # agent_run/tool_call 적재(2026-08-14) — 이벤트는 손대지 않고 그대로
+    # 지나간다, 화면에 가는 내용은 감싸기 전과 같다.
+    for event in trace_events(raw_events, context=context):
+        if event.get("type") == EVENT_ERROR and "text" not in event:
+            event = {**event, "text": event.get("message", "")}
+        yield event
 
 
 class ChatConfirmAPIView(AuthenticatedAPIView):
@@ -328,7 +438,13 @@ def _relay(events, *, session_id: str, account_id: str, question: str = ""):
     try:
         for event in events:
             collected.append(event)
-            if event["type"] in (EVENT_AWAITING_CONFIRMATION, "result"):
+            # "result"(EVENT_RESULT)뿐 아니라 EVENT_ERROR("error")도 종결로 본다 —
+            # 레거시 Harness는 내부적으로 이 이벤트를 만들지 않아 지금까지는
+            # 죽은 코드였지만(services/harness/runner.py 확인), 새 엔진
+            # (services/agent_runtime/executor.py)은 스트림 중 실패를 예외로
+            # 던지지 않고 이 모양으로 끝맺는다 — 안 넣으면 새 엔진의 실패가
+            # 대화로 저장되지 않는다.
+            if event["type"] in (EVENT_AWAITING_CONFIRMATION, "result", EVENT_ERROR):
                 final = event
             yield json.dumps(event, ensure_ascii=False, default=str) + "\n"
     except Exception as exc:  # noqa: BLE001 - 스트림 중에는 500 을 낼 수 없다

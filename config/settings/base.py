@@ -106,6 +106,14 @@ JIRA_REDIRECT_URI = env(
 # 계획된 자리라 남기되, 읽는 코드가 없다는 사실을 여기 적어 둔다(2026-08-13).
 OBJECT_STORAGE_PROVIDER = env("OBJECT_STORAGE_PROVIDER", default="local")
 
+# 배포된 런타임 코드 버전(git commit SHA). agent_run.runtime_profile_version에
+# 그대로 실려 나간다(services/agent_runtime/tracing) — 장애·평가 재현 시 "그때
+# 배포된 코드가 정확히 무엇이었는가"를 알려면 필요하다. 배포 파이프라인이
+# `docker build --build-arg GIT_COMMIT_SHA=$(git rev-parse HEAD)`로 안 채우면
+# (Dockerfile 참고) 로컬 등에서는 계속 빈 값이다 — 가짜 값을 만들지 않고 None으로
+# 둔다(2026-08-14).
+RUNTIME_PROFILE_VERSION = env("RUNTIME_PROFILE_VERSION", default="") or None
+
 # No operational default is provided for secrets or external addresses. The
 # integration validates these settings at the boundary where they are needed.
 RUNPOD_API_KEY = env("RUNPOD_API_KEY", default="")

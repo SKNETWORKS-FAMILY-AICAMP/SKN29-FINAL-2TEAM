@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Builder → Deep Agent Runtime 실행 흐름</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9e0ea;
+      --paper: #ffffff;
+      --page: #f4f7fb;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
+      --green: #087a55;
+      --green-soft: #e8f7f0;
+      --amber: #9a5b00;
+      --amber-soft: #fff5da;
+      --red: #b42318;
+      --red-soft: #fff0ee;
+      --purple: #6941c6;
+      --purple-soft: #f2edff;
+      --shadow: 0 10px 30px rgba(28, 39, 60, .07);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.58;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
+    .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
+    nav {
+      position: sticky; top: 0; height: 100vh; overflow: auto;
+      padding: 28px 18px; background: #111827; color: #dbe5f5;
+    }
+    nav .brand { color: white; font-weight: 800; font-size: 17px; margin: 0 8px 22px; }
+    nav a { display: block; color: #b9c5d8; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+    nav a:hover { color: white; background: #253047; text-decoration: none; }
+    main { width: min(1160px, 100%); padding: 44px 42px 80px; }
+    h1 { margin: 0 0 10px; font-size: clamp(28px, 4vw, 42px); line-height: 1.18; letter-spacing: -.035em; }
+    h2 { margin: 58px 0 18px; font-size: 25px; letter-spacing: -.025em; }
+    h3 { margin: 0 0 9px; font-size: 17px; }
+    p { margin: 7px 0; }
+    .lead { color: var(--muted); font-size: 17px; max-width: 850px; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 800; }
+    .notice { margin-top: 24px; padding: 18px 20px; border-left: 5px solid var(--amber); border-radius: 12px; background: var(--amber-soft); }
+    .notice strong { color: #704100; }
+    .card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 20px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .flow { display: grid; gap: 0; }
+    .step { display: grid; grid-template-columns: 48px minmax(0,1fr); gap: 13px; position: relative; padding-bottom: 20px; }
+    .step:not(:last-child)::before { content: ""; position: absolute; left: 23px; top: 43px; bottom: 0; width: 2px; background: var(--line); }
+    .num { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--blue); font-weight: 850; z-index: 1; }
+    .step-body { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+    .source { margin-top: 9px; color: var(--muted); font-size: 12px; }
+    .source a { font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--line); }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
+    th { background: #f8fafc; color: #3b475c; }
+    tr:last-child td { border-bottom: 0; }
+    pre { margin: 10px 0 0; padding: 15px; overflow: auto; border-radius: 11px; background: #111827; color: #e5edf8; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+    .mini-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+    .node { padding: 9px 11px; border: 1px solid #b9c8e4; background: var(--blue-soft); border-radius: 9px; font-size: 12px; font-weight: 750; }
+    .arrow { color: var(--muted); font-weight: 900; }
+    .ok { color: var(--green); }
+    .warn { color: var(--amber); }
+    .bad { color: var(--red); }
+    .muted { color: var(--muted); }
+    .callout { border-radius: 12px; padding: 14px 16px; background: var(--green-soft); color: #075b41; }
+    .callout.red { background: var(--red-soft); color: #8f1f17; }
+    .prompt-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    details { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 12px 15px; }
+    details + details { margin-top: 10px; }
+    summary { cursor: pointer; font-weight: 800; }
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 18px; color: var(--muted); font-size: 12px; }
+    .dot { width: 9px; height: 9px; display: inline-block; border-radius: 50%; margin-right: 5px; }
+    .storage { border-left: 4px solid var(--purple); }
+    .gap { border-left: 4px solid var(--red); }
+    footer { margin-top: 54px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; height: auto; display: flex; flex-wrap: wrap; padding: 12px; }
+      nav .brand { width: 100%; margin: 4px 8px 8px; }
+      nav a { padding: 6px 8px; }
+      main { padding: 28px 18px 60px; }
+      .grid-2, .grid-3, .prompt-tabs { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav aria-label="문서 목차">
+    <div class="brand">Agent Runtime Guide</div>
+    <a href="#truth">0. 현재 연결 상태</a>
+    <a href="#builder">1. Builder에서 조립</a>
+    <a href="#request">2. 사용자 질의 입력</a>
+    <a href="#build">3. Runtime 그래프 조립</a>
+    <a href="#prompt">4. 실제 Prompt</a>
+    <a href="#llm">5. LLM에 들어가는 것</a>
+    <a href="#loop">6. Tool·Sub-agent Loop</a>
+    <a href="#middleware">7. Middleware</a>
+    <a href="#storage">8. 값의 저장 위치</a>
+    <a href="#retry">9. 오류·Retry</a>
+    <a href="#files">10. 코드 찾기</a>
+  </nav>
+
+  <main>
+    <span class="badge">실제 코드 기준 · 2026-08-14</span>
+    <h1>Builder에서 질문·Tool·최종 답변까지</h1>
+    <p class="lead">저장된 Agent 정의와 사용자 질의가 어디서 합쳐지고, LLM이 Tool을 고른 뒤 결과를 받아 다시 판단하는 과정을 한 흐름으로 정리한다.</p>
+
+    <section id="truth">
+      <h2>0. 먼저 알아야 할 현재 상태</h2>
+      <div class="notice">
+        <strong>Builder 화면과 새 Deep Agent Runtime이 아직 한 경로로 완전히 통합되지 않았다.</strong>
+        현재 화면은 예전 <code>agent/instruction</code> API를 사용하고 Builder Test Run도 레거시 <code>services.harness.run_agent()</code>를 탄다.
+        새 실행 코어는 <code>agents/agent_versions/system_prompt</code>를 사용하며, <code>chat_session.agent_version_id</code>가 있는 채팅만 새 Runtime으로 실행된다.
+      </div>
+      <div class="grid-2" style="margin-top:16px">
+        <div class="card">
+          <h3>현재 Builder 화면</h3>
+          <p><code>name, description, instruction, model, reasoning_effort, max_iterations, tool_refs</code></p>
+          <p class="bad">저장된 Child/Sub-agent 선택 UI가 없다.</p>
+          <p class="source"><a href="../../../frontend/src/pages/AgentEditPage/AgentEditPage.tsx">AgentEditPage.tsx:55–61, 151–162</a></p>
+        </div>
+        <div class="card">
+          <h3>새 AgentVersion API / Runtime</h3>
+          <p><code>name, description, system_prompt, model, reasoning_effort, max_iterations, tool_refs, subagents</code></p>
+          <p class="ok">저장된 Child 버전을 CompiledSubAgent로 조립한다.</p>
+          <p class="source"><a href="../../../apps/agents/serializers.py">serializers.py:130–167</a> · <a href="../../../services/agent_runtime/factory.py">factory.py:166–190</a></p>
+        </div>
+      </div>
+      <p class="callout red" style="margin-top:14px"><strong>따라서 Builder Test Run 결과를 현재 Deep Agent Runtime의 검증 결과로 보면 안 된다.</strong> Test Run은 새 Scaffold·Compiled Child·새 Middleware 경로를 검증하지 않는다.</p>
+    </section>
+
+    <section id="builder">
+      <h2>1. Builder에서 무엇을 조립하는가</h2>
+      <table>
+        <thead><tr><th>항목</th><th>의미</th><th>저장 위치</th><th>LLM에 쓰이는 시점</th></tr></thead>
+        <tbody>
+          <tr><td><code>name, description</code></td><td>관리·표시용 정보</td><td><code>agents</code></td><td>일반 Root Prompt에는 직접 삽입하지 않음</td></tr>
+          <tr><td><code>system_prompt</code></td><td>Agent만의 역할·지시</td><td><code>agent_versions</code></td><td>Runtime Scaffold 뒤에 붙어 System Prompt가 됨</td></tr>
+          <tr><td><code>model</code></td><td>실행할 모델 이름</td><td><code>agent_versions</code></td><td>ModelFactory가 OpenAI/Anthropic/팀 엔드포인트로 해석</td></tr>
+          <tr><td><code>reasoning_effort</code></td><td>모델 추론 강도</td><td><code>agent_versions</code></td><td>모델 생성자 인자로 전달</td></tr>
+          <tr><td><code>max_iterations</code></td><td>이름과 달리 현재는 <strong>LLM 호출 상한</strong></td><td><code>agent_versions</code></td><td><code>ModelCallLimitMiddleware.run_limit</code></td></tr>
+          <tr><td><code>tool_refs</code></td><td>이 Agent에게 노출할 Tool 후보</td><td><code>agent_version_tools</code></td><td>권한 필터 후 Tool schema로 LLM에 전달</td></tr>
+          <tr><td><code>subagents</code></td><td>Child 버전, alias, 위임 설명</td><td><code>agent_version_subagents</code></td><td><code>task</code> Tool의 선택 후보가 됨</td></tr>
+        </tbody>
+      </table>
+      <p class="source">입력 계약: <a href="../../../apps/agents/serializers.py">apps/agents/serializers.py:145–167</a> ·
+        발행: <a href="../../../apps/agents/api_views.py">apps/agents/api_views.py:418–468</a> ·
+        DB INSERT: <a href="../../../backend/db/agent_platform.py">backend/db/agent_platform.py:533–603</a>
+      </p>
+    </section>
+
+    <section id="request">
+      <h2>2. 사용자가 전송하면 Runtime에 무엇이 들어가나</h2>
+      <div class="flow">
+        <div class="step"><div class="num">1</div><div class="step-body"><h3>HTTP 요청에는 질문 텍스트만 들어온다</h3><p><code>{ "content": "지금 프로젝트 진행 상황을 정리해줘" }</code></p><p class="source"><a href="../../../apps/chat/serializers.py">apps/chat/serializers.py:28–29</a></p></div></div>
+        <div class="step"><div class="num">2</div><div class="step-body"><h3>서버가 Session과 최근 대화를 DB에서 읽는다</h3><p><code>chat_session</code>에서 <code>agent_id, agent_version_id, team_id, proj_id</code>를 읽고, <code>chat_message</code>의 사람이 본 질문·답변 최근 20개만 복원한다. 지난 Tool Call 원본은 복원하지 않는다.</p><p class="source"><a href="../../../apps/chat/api_views.py">apps/chat/api_views.py:138–154, 202–243</a></p></div></div>
+        <div class="step"><div class="num">3</div><div class="step-body"><h3>이번 질문을 DB에 먼저 저장한다</h3><p>실행이 실패해도 사용자가 무엇을 물었는지는 <code>chat_message</code>에 남는다.</p><p class="source"><a href="../../../apps/chat/api_views.py">apps/chat/api_views.py:146–154</a></p></div></div>
+        <div class="step"><div class="num">4</div><div class="step-body"><h3>RuntimeContext를 서버가 만든다</h3><pre>account_id   로그인 계정
+team_id      Session의 팀
+role         leader | member
+session_id   현재 대화
+project_id   Session에서 선택한 Project
+run_id       이번 실행에서 새로 생성한 UUID</pre><p><strong>이 객체 전체는 LLM에 보내지 않는다.</strong> Tool 권한 검사와 Tool handler의 서버 인자 주입에 쓴다.</p><p class="source"><a href="../../../apps/chat/api_views.py">apps/chat/api_views.py:246–263</a> · <a href="../../../services/agent_runtime/context.py">context.py:11–21</a></p></div></div>
+      </div>
+    </section>
+
+    <section id="build">
+      <h2>3. 질문을 보내기 전, Runtime Graph를 조립한다</h2>
+      <div class="mini-flow" aria-label="Runtime 조립 흐름">
+        <span class="node">Chat API</span><span class="arrow">→</span>
+        <span class="node">AgentExecutor</span><span class="arrow">→</span>
+        <span class="node">DefinitionLoader</span><span class="arrow">→</span>
+        <span class="node">AgentRuntimeFactory</span><span class="arrow">→</span>
+        <span class="node">create_deep_agent()</span>
+      </div>
+      <div class="grid-3">
+        <div class="card"><h3>① DB 로드·검증</h3><p>AgentVersion, Tool refs, Child 버전을 로드하고 팀 권한·활성 상태·중복 alias·순환·재위임을 검사한다.</p><p class="source"><a href="../../../services/agent_runtime/loader.py">loader.py</a> · <a href="../../../services/agent_runtime/subagents/validation.py">validation.py:51–116</a></p></div>
+        <div class="card"><h3>② Model 생성</h3><p>팀 Custom endpoint → <code>claude-*</code> → OpenAI 순서로 provider를 해석한다. API Key는 DB나 Django settings에서 읽고 LLM Prompt에는 넣지 않는다.</p><p class="source"><a href="../../../services/agent_runtime/models/factory.py">models/factory.py:33–131</a></p></div>
+        <div class="card"><h3>③ Tool 조립</h3><p>저장된 <code>tool_refs</code>만 로드 → member에게 외부 write Tool 제거 → LangChain <code>StructuredTool</code>로 변환한다.</p><p class="source"><a href="../../../services/agent_runtime/factory.py">factory.py:141–149</a> · <a href="../../../services/agent_runtime/tools/loader.py">tools/loader.py:58–92</a></p></div>
+        <div class="card"><h3>④ Middleware 조립</h3><p>Root/Child에는 Model 호출 상한과 Tool 호출 상한을 붙인다. GP는 6/12를 쓴다.</p><p class="source"><a href="../../../services/agent_runtime/middleware/factory.py">middleware/factory.py:30–50</a></p></div>
+        <div class="card"><h3>⑤ Child 조립</h3><p>저장된 Child는 각자 Model·Prompt·Tool·Middleware로 그래프를 만들어 <code>CompiledSubAgent</code>로 연결한다. GP는 별도로 명시 삽입한다.</p><p class="source"><a href="../../../services/agent_runtime/subagents/builder.py">subagents/builder.py:16–49</a> · <a href="../../../services/agent_runtime/factory.py">factory.py:166–190</a></p></div>
+        <div class="card"><h3>⑥ Deep Agents 그래프</h3><p><code>create_deep_agent(model, system_prompt, tools, subagents, middleware)</code>를 호출한다. <code>backend</code>를 안 넘겨 현재는 기본 <code>StateBackend</code>를 쓴다.</p><p class="source"><a href="../../../services/agent_runtime/compat/deepagents_v075.py">compat/deepagents_v075.py:83–115</a></p></div>
+      </div>
+    </section>
+
+    <section id="prompt">
+      <h2>4. 실제 System Prompt는 어떻게 만들어지나</h2>
+      <div class="prompt-tabs">
+        <div class="card">
+          <h3>DB에 저장된 것</h3>
+          <p>Builder가 작성한 Agent 전용 지시만 <code>agent_versions.system_prompt</code>에 저장한다.</p>
+          <pre>"너는 Google Drive 문서 수정 전문 에이전트다.
+문서를 수정하기 전에 변경 내용을 먼저 요약한다."</pre>
+        </div>
+        <div class="card">
+          <h3>Runtime에서 추가되는 것</h3>
+          <p><code>RuntimePromptAssembler</code>가 공통 Scaffold를 앞에 붙인다. DB의 Prompt를 덮어쓰지 않는다.</p>
+          <pre>RUNTIME_SCAFFOLD
++ "[\uC774 \uC5D0\uC774\uC804\uD2B8\uC758 \uC9C0\uC2DC]"
++ agent_versions.system_prompt</pre>
+        </div>
+      </div>
+      <details open style="margin-top:14px">
+        <summary>현재 코드의 RUNTIME_SCAFFOLD 전체</summary>
+        <pre>너는 팀의 프로젝트 운영을 돕는 에이전트다.
+
+[실행 원칙]
+- 사용자의 요청을 먼저 이해하고, 필요한 경우에만 제공된 도구나 서브 에이전트를 사용한다.
+- 같은 도구를 같은 목적으로 불필요하게 반복 호출하지 않는다.
+- 도구 결과가 충분하면 추가 호출을 중단하고 답변을 작성한다.
+- 요청을 완료할 수 없으면 확인한 내용과 완료하지 못한 내용을 구분한다.
+
+[근거]
+- 도구나 문서로 확인한 사실만 확정적으로 말한다.
+- 확인하지 못한 내용을 추측해서 채우지 않는다.
+- 사실을 설명할 때는 어떤 문서나 도구 결과를 근거로 했는지 밝힌다.
+
+[답변]
+- 사용자의 질문에 직접 답한다.
+- 불필요한 계획이나 진행 예고를 먼저 나열하지 않는다.
+- 필요한 내용만 간결하고 명확하게 전달한다.</pre>
+      </details>
+      <table style="margin-top:14px">
+        <thead><tr><th>Agent</th><th>최종 System Prompt</th></tr></thead>
+        <tbody>
+          <tr><td>Root</td><td><code>RUNTIME_SCAFFOLD + [이 에이전트의 지시] + DB system_prompt</code></td></tr>
+          <tr><td>Saved Child</td><td><code>RUNTIME_SCAFFOLD + [위임 범위] + Child DB system_prompt</code></td></tr>
+          <tr><td>General-purpose</td><td><code>RUNTIME_SCAFFOLD + Deep Agents 기본 GP prompt</code></td></tr>
+        </tbody>
+      </table>
+      <p class="source"><a href="../../../services/agent_runtime/prompts.py">services/agent_runtime/prompts.py:37–106</a> · 실행 시점 결합: <a href="../../../services/agent_runtime/factory.py">factory.py:151–190</a></p>
+    </section>
+
+    <section id="llm">
+      <h2>5. LLM 호출에 실제로 들어가는 것</h2>
+      <table>
+        <thead><tr><th>입력</th><th>내용</th><th>어디서 옴</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Model 설정</strong></td><td><code>model_id, reasoning_effort</code>, provider별 API 접속 설정</td><td>AgentVersion DB + settings/CustomModel DB</td></tr>
+          <tr><td><strong>System Prompt</strong></td><td>Runtime Scaffold + Agent 전용 지시 + Deep Agents Middleware 안내</td><td><code>prompts.py</code> + DB + Deep Agents</td></tr>
+          <tr><td><strong>Messages</strong></td><td>최근 대화 최대 20개 + 이번 사용자 질문</td><td><code>chat_message</code> DB</td></tr>
+          <tr><td><strong>Tool schemas</strong></td><td>허용된 Tool의 <code>name(ref), description, input_schema</code> 및 Deep Agents 내장 Tool</td><td>AgentVersion Tool refs + Registry + Middleware</td></tr>
+          <tr><td><strong>Graph state</strong></td><td>현재 턴의 Tool Call/Result, StateBackend 파일, 요약 상태</td><td>LangGraph 실행 상태</td></tr>
+        </tbody>
+      </table>
+      <div class="callout" style="margin-top:14px">
+        <strong>LLM에 그대로 보내지 않는 것:</strong>
+        <code>account_id</code>, <code>team_id</code>, API Key, DB 연결, Tool handler 함수 코드. RuntimeContext는 권한 검사와 Tool 인자 주입에만 사용한다.
+      </div>
+      <p class="source">Messages 입력: <a href="../../../services/agent_runtime/stream_adapter.py">stream_adapter.py:12–37</a> · Tool schema: <a href="../../../services/agent_runtime/factory.py">factory.py:43–90</a></p>
+    </section>
+
+    <section id="loop">
+      <h2>6. LLM이 Tool을 고른 뒤의 반복 흐름</h2>
+      <div class="flow">
+        <div class="step"><div class="num">1</div><div class="step-body"><h3>LLM이 다음 행동을 선택한다</h3><p>LLM은 노출된 Tool의 이름·설명·입력 schema를 보고 ① 텍스트 답변, ② 일반 Tool Call, ③ <code>task</code> Sub-agent 위임 중 하나를 고른다. 별도의 규 기반 Tool Router는 아직 없다.</p></div></div>
+        <div class="step"><div class="num">2</div><div class="step-body"><h3>Tool Call을 반환한다</h3><pre>AIMessage.tool_calls = [{
+  "name": "document_search",
+  "args": {"query": "진행 상황"},
+  "id": "call_123"
+}]</pre><p>여러 Tool Call을 한 응답에 넣을 수 있으며 LangGraph ToolNode가 병렬로 실행할 수 있다.</p></div></div>
+        <div class="step"><div class="num">3</div><div class="step-body"><h3>실행 직전 권한과 서버 인자를 적용한다</h3><p>외부 변경 Tool은 <code>leader</code>만 실행할 수 있다. LLM이 <code>team_id</code>를 임의로 보내도 RuntimeContext의 서버 값으로 덮어쓴다.</p><p class="source"><a href="../../../services/agent_runtime/factory.py">factory.py:43–65</a> · <a href="../../../services/agent_runtime/tools/loader.py">tools/loader.py:27–55</a></p></div></div>
+        <div class="step"><div class="num">4</div><div class="step-body"><h3>Tool handler를 실행하고 ToolMessage를 만든다</h3><p>handler의 반환값은 현재 LangGraph State의 <code>messages</code>에 Tool Result로 추가된다. 모델 자체에 저장되는 것이 아니다.</p></div></div>
+        <div class="step"><div class="num">5</div><div class="step-body"><h3>같은 LLM을 다시 호출한다</h3><p>System Prompt + 기존 Messages + Tool Call + Tool Result를 보고 다음을 판단한다.</p><div class="mini-flow"><span class="node">Tool Result 충분</span><span class="arrow">→</span><span class="node">최종 텍스트</span><span class="node">Tool 추가 필요</span><span class="arrow">→</span><span class="node">다음 Tool Call</span><span class="node">전문 작업</span><span class="arrow">→</span><span class="node">task(Sub-agent)</span></div></div></div>
+        <div class="step"><div class="num">6</div><div class="step-body"><h3>Sub-agent를 고르면 Root는 결과를 기다린다</h3><p><code>task(subagent_type=alias, description=위임 내용)</code> → Child Graph 실행 → Child 최종 결과만 Root의 ToolMessage로 반환 → Root LLM 재호출. 현재는 동기 위임이며 Root가 Child 완료까지 기다린다.</p><p class="source"><a href="../../../services/agent_runtime/subagents/builder.py">subagents/builder.py</a> · 이벤트 판별: <a href="../../../services/agent_runtime/events.py">events.py:337–420</a></p></div></div>
+        <div class="step"><div class="num">7</div><div class="step-body"><h3>최종 텍스트를 이벤트와 DB 답변으로 바꾼다</h3><p>Tool Call이 없는 Root AIMessage의 텍스트를 <code>result</code> 이벤트로 매핑하고 NDJSON으로 화면에 보낸 뒤 <code>chat_message</code>에 저장한다.</p><p class="source"><a href="../../../services/agent_runtime/events.py">events.py:232–254</a> · <a href="../../../apps/chat/api_views.py">apps/chat/api_views.py:430–519</a></p></div></div>
+      </div>
+    </section>
+
+    <section id="middleware">
+      <h2>7. Middleware는 어디에 들어가나</h2>
+      <p class="lead">Middleware는 순서대로 한 번씩 실행되는 업무 단계가 아니다. LLM 호출 전후·Tool 호출 전후·Agent 시작 전후의 hook으로 들어간다.</p>
+      <table>
+        <thead><tr><th>구분</th><th>현재 연결</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td>우리가 추가</td><td><span class="ok">활성</span></td><td><code>ModelCallLimitMiddleware</code>: Root/Child는 <code>min(max_iterations, 20)</code>, GP는 6회. <code>ToolCallLimitMiddleware</code>: Root/Child 40회, GP 12회.</td></tr>
+          <tr><td>Filesystem</td><td><span class="ok">활성</span></td><td>기본 StateBackend. 현재 Harness Profile에서 <code>delete</code>만 최종 제외.</td></tr>
+          <tr><td>SubAgent</td><td><span class="ok">Root만 활성</span></td><td>GP + 저장된 Compiled Child를 <code>task</code> Tool로 노출. Child는 <code>subagents=[]</code>로 재위임 안 함.</td></tr>
+          <tr><td>Summarization</td><td><span class="ok">Deep Agents 기본</span></td><td>Context가 커지면 과거를 요약. 우리 코드에서 임계치를 덮어쓰지 않음.</td></tr>
+          <tr><td>PatchToolCalls</td><td><span class="ok">Deep Agents 기본</span></td><td>중단 후 Tool Call/Result 쌍이 깨진 메시지를 복구.</td></tr>
+          <tr><td>Harness Profile</td><td><span class="ok">활성</span></td><td>Deep Agents의 GP 자동 삽입을 끄고, <code>delete</code> Tool을 제외. Factory가 GP를 명시적으로 다시 추가.</td></tr>
+          <tr><td>Skills / Memory / HITL / Async / Todo</td><td><span class="bad">비활성</span></td><td>현재 Factory가 해당 인자나 Middleware를 전달하지 않음.</td></tr>
+          <tr><td>Checkpointer / Store</td><td><span class="bad">미연결</span></td><td>대화 상태 재개·장기 Memory가 없음. 대화 영속성은 현재 <code>chat_message</code> 최근 20개 재주입으로 처리.</td></tr>
+        </tbody>
+      </table>
+      <p class="source">우리 Middleware: <a href="../../../services/agent_runtime/middleware/factory.py">middleware/factory.py</a> · 제외 정책: <a href="../../../services/agent_runtime/runtime_policy.py">runtime_policy.py:14–54</a> · Deep Agents 호출: <a href="../../../services/agent_runtime/compat/deepagents_v075.py">compat/deepagents_v075.py</a></p>
+    </section>
+
+    <section id="storage">
+      <h2>8. 각 값은 어디에 저장되는가</h2>
+      <div class="grid-2">
+        <div class="card storage"><h3>PostgreSQL — 영구 저장</h3><p><strong>Agent 정의:</strong> <code>agents, agent_versions, agent_version_tools, agent_version_subagents</code></p><p><strong>대화:</strong> <code>chat_session, chat_message</code></p><p>Session은 생성 시의 <code>agent_version_id</code>에 고정된다.</p></div>
+        <div class="card storage"><h3>LangGraph State / StateBackend — 이번 실행</h3><p>현재 턴의 Messages, Tool Call, Tool Result, 요약 상태, 가상 파일이 있다.</p><p class="warn">Checkpointer가 없어 그래프 실행 후 이 상태를 다음 HTTP 요청에서 재개하지 못한다.</p></div>
+        <div class="card storage"><h3>Model Provider / SDK</h3><p>LLM은 입력을 받고 AIMessage를 반환할 뿐, Agent 정의나 대화 DB를 소유하지 않는다.</p><p>API Key는 Django settings 또는 팀 Custom Model 설정에서 읽는다.</p></div>
+        <div class="card storage"><h3>Runtime Process Memory</h3><p><code>RuntimeContext</code>, 조립된 Graph, EventMapper의 진행 중 위임 매핑은 이번 Python 실행 메모리에만 있다.</p></div>
+      </div>
+      <table style="margin-top:14px">
+        <thead><tr><th>값</th><th>DB?</th><th>Backend?</th><th>현재 결론</th></tr></thead>
+        <tbody>
+          <tr><td>사용자 질문·최종 답변</td><td>예</td><td>아니오</td><td><code>chat_message.content</code> JSONB</td></tr>
+          <tr><td>지난 턴 Tool Call 원본</td><td>아니오</td><td>아니오</td><td>다음 턴에 복원하지 않음</td></tr>
+          <tr><td>이번 턴 Tool Result</td><td>원문은 아니오</td><td>필요 시 StateBackend</td><td>LLM Loop 중 Graph State에 존재</td></tr>
+          <tr><td>최종 이벤트 목록</td><td>예</td><td>아니오</td><td>Agent 답변의 <code>content.events</code></td></tr>
+          <tr><td>Semantic/Episodic Memory</td><td>아니오</td><td>아니오</td><td>아직 구현·연결되지 않음</td></tr>
+          <tr><td>Checkpoint</td><td>아니오</td><td>아니오</td><td>아직 <code>checkpointer</code> 미전달</td></tr>
+          <tr><td>Todo</td><td>아니오</td><td>아니오</td><td><code>enable_todo</code>는 값만 있고 실제 배선 없음</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="retry">
+      <h2>9. 실패하면 어디로 가고 Retry는 몇 번인가</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>조립 중 실패</h3>
+          <p>AgentVersion/Child 권한, 모델, Tool 로딩, 그래프 조립이 실패하면 <code>AgentBuildError</code> 또는 구체적 Runtime 예외로 종료한다.</p>
+          <p><strong>명시적 자동 Retry: 0회</strong></p>
+        </div>
+        <div class="card">
+          <h3>Stream 실행 중 실패</h3>
+          <p><code>AgentExecutor</code>가 예외를 잡아 <code>AGENT_EXECUTION_FAILED</code> error 이벤트로 종료한다. Chat API는 이 오류도 최종 Agent 메시지로 DB에 저장한다.</p>
+          <p><strong>명시적 자동 Retry: 0회</strong></p>
+        </div>
+      </div>
+      <div class="notice">
+        <strong><code>max_iterations</code>는 Retry 횟수가 아니다.</strong>
+        현재는 Model Call 상한으로 사용한다. 상한을 넘으면 <code>exit_behavior="error"</code>로 종료한다.
+      </div>
+      <div class="callout red" style="margin-top:14px">
+        <strong>Model SDK 내부 Retry 횟수는 우리 코드에서 고정하지 않았다.</strong>
+        <code>ChatOpenAI</code>와 <code>ChatAnthropic</code> 생성 시 <code>max_retries</code>를 넘기지 않으므로, provider SDK 버전의 기본값에 의존한다. 따라서 “우리 서비스의 보장 Retry 횟수”는 현재 0회이며, SDK 내부 횟수는 코드 계약으로 확정되지 않았다.
+      </div>
+      <p class="source"><a href="../../../services/agent_runtime/executor.py">executor.py:52–137</a> · <a href="../../../services/agent_runtime/middleware/factory.py">middleware/factory.py:30–50</a> · <a href="../../../services/agent_runtime/models/factory.py">models/factory.py:90–131</a></p>
+    </section>
+
+    <section id="files">
+      <h2>10. 코드에서 빠르게 찾기</h2>
+      <table>
+        <thead><tr><th>궁금한 것</th><th>시작 파일</th></tr></thead>
+        <tbody>
+          <tr><td>Builder 실제 화면 필드</td><td><a href="../../../frontend/src/pages/AgentEditPage/AgentEditPage.tsx">frontend/src/pages/AgentEditPage/AgentEditPage.tsx</a></td></tr>
+          <tr><td>새 AgentVersion 저장 API 입력</td><td><a href="../../../apps/agents/serializers.py">apps/agents/serializers.py:130–167</a></td></tr>
+          <tr><td>새 AgentVersion DB 저장</td><td><a href="../../../backend/db/agent_platform.py">backend/db/agent_platform.py:399–605</a></td></tr>
+          <tr><td>사용자 질문 진입점</td><td><a href="../../../apps/chat/api_views.py">apps/chat/api_views.py:129–199</a></td></tr>
+          <tr><td>RuntimeContext 항목</td><td><a href="../../../services/agent_runtime/context.py">services/agent_runtime/context.py</a></td></tr>
+          <tr><td>DB 정의 로드·Child 로드</td><td><a href="../../../services/agent_runtime/loader.py">services/agent_runtime/loader.py</a></td></tr>
+          <tr><td>Model·Tool·Child·Middleware 조립</td><td><a href="../../../services/agent_runtime/factory.py">services/agent_runtime/factory.py</a></td></tr>
+          <tr><td>공통 Scaffold와 최종 Prompt</td><td><a href="../../../services/agent_runtime/prompts.py">services/agent_runtime/prompts.py</a></td></tr>
+          <tr><td>Model provider 선택</td><td><a href="../../../services/agent_runtime/models/factory.py">services/agent_runtime/models/factory.py</a></td></tr>
+          <tr><td>Tool 로드·Context 주입</td><td><a href="../../../services/agent_runtime/tools/loader.py">services/agent_runtime/tools/loader.py</a></td></tr>
+          <tr><td>Middleware 상한</td><td><a href="../../../services/agent_runtime/middleware/factory.py">services/agent_runtime/middleware/factory.py</a></td></tr>
+          <tr><td>Deep Agents 0.7.5 호출 경계</td><td><a href="../../../services/agent_runtime/compat/deepagents_v075.py">services/agent_runtime/compat/deepagents_v075.py</a></td></tr>
+          <tr><td>Graph stream 입력</td><td><a href="../../../services/agent_runtime/stream_adapter.py">services/agent_runtime/stream_adapter.py</a></td></tr>
+          <tr><td>Tool/Sub-agent/최종 결과 이벤트</td><td><a href="../../../services/agent_runtime/events.py">services/agent_runtime/events.py</a></td></tr>
+          <tr><td>호출 상한·write 권한·내장 Tool 제외</td><td><a href="../../../services/agent_runtime/runtime_policy.py">services/agent_runtime/runtime_policy.py</a></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>이 문서는 설계 예정이 아니라 위 링크의 현재 코드를 기준으로 작성했다. 특히 Builder 화면/테스트와 새 AgentVersion Runtime의 분리 상태를 구분해서 읽어야 한다.</footer>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,131 @@
+"""모델 이름과 팀 설정을 LangChain 모델 객체로 변환한다."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Literal
+
+from django.conf import settings
+from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+
+from backend.db.agent_platform import CustomModelRepository
+from services.agent_runtime.exceptions import ModelUnavailableError
+
+logger = logging.getLogger(__name__)
+
+Provider = Literal["anthropic", "openai", "openai_compatible"]
+
+
+@dataclass(frozen=True)
+class ResolvedModelConfig:
+    """모델 provider, 접속 정보, 추론 설정을 담는다."""
+
+    provider: Provider
+    model_id: str
+    api_key: str
+    base_url: str | None
+    reasoning_effort: str
+
+
+class ModelConfigResolver:
+    """모델 이름을 provider와 접속 설정으로 변환한다.
+
+    우선순위: 팀 커스텀 엔드포인트 → "claude-" 접두사면 Anthropic → 그 외 OpenAI.
+    """
+
+    def resolve(self, *, model: str, reasoning_effort: str, team_id: str | None) -> ResolvedModelConfig:
+        custom = self._team_endpoint(team_id, model)
+        if custom is not None:
+            api_key = str(custom.get("api_key") or "").strip()
+            if not api_key:
+                raise ModelUnavailableError(
+                    f"팀 커스텀 모델 '{model}'에 등록된 API 키가 없습니다."
+                )
+            return ResolvedModelConfig(
+                provider="openai_compatible",
+                model_id=model,
+                api_key=api_key,
+                base_url=str(custom.get("base_url") or "").strip() or None,
+                reasoning_effort=reasoning_effort,
+            )
+
+        if model.startswith("claude-"):
+            api_key = str(getattr(settings, "ANTHROPIC_API_KEY", "") or "").strip()
+            if not api_key:
+                raise ModelUnavailableError("ANTHROPIC_API_KEY가 설정되어 있지 않습니다.")
+            return ResolvedModelConfig(
+                provider="anthropic",
+                model_id=model,
+                api_key=api_key,
+                base_url=None,
+                reasoning_effort=reasoning_effort,
+            )
+
+        api_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
+        if not api_key:
+            raise ModelUnavailableError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
+        return ResolvedModelConfig(
+            provider="openai",
+            model_id=model,
+            api_key=api_key,
+            base_url=None,
+            reasoning_effort=reasoning_effort,
+        )
+
+    @staticmethod
+    def _team_endpoint(team_id: str | None, model: str | None) -> dict[str, object] | None:
+        """팀에 등록된 커스텀 엔드포인트를 조회한다."""
+        if not team_id or not model:
+            return None
+        try:
+            return CustomModelRepository.for_model(team_id, model)
+        except Exception:  # noqa: BLE001 - 조회 실패로 에이전트 실행 전체를 막지 않는다
+            logger.exception("커스텀 모델 API를 읽지 못했습니다: team=%s", team_id)
+            return None
+
+
+class ModelFactory:
+    """해석된 설정으로 provider별 `BaseChatModel`을 생성한다."""
+
+    def create(self, resolved: ResolvedModelConfig) -> BaseChatModel:
+        if resolved.provider == "anthropic":
+            return self._create_anthropic(resolved)
+        if resolved.provider == "openai":
+            return self._create_openai(resolved)
+        if resolved.provider == "openai_compatible":
+            return self._create_openai_compatible(resolved)
+        raise ModelUnavailableError(f"알 수 없는 provider입니다: {resolved.provider}")
+
+    @staticmethod
+    def _create_anthropic(resolved: ResolvedModelConfig) -> BaseChatModel:
+        kwargs: dict[str, object] = {
+            "model": resolved.model_id,
+            "anthropic_api_key": resolved.api_key,
+        }
+        if resolved.reasoning_effort:
+            kwargs["output_config"] = {"effort": resolved.reasoning_effort}
+        return ChatAnthropic(**kwargs)
+
+    @staticmethod
+    def _create_openai(resolved: ResolvedModelConfig) -> BaseChatModel:
+        kwargs: dict[str, object] = {
+            "model": resolved.model_id,
+            "openai_api_key": resolved.api_key,
+            "use_responses_api": True,
+        }
+        if resolved.reasoning_effort:
+            kwargs["reasoning_effort"] = resolved.reasoning_effort
+        return ChatOpenAI(**kwargs)
+
+    @staticmethod
+    def _create_openai_compatible(resolved: ResolvedModelConfig) -> BaseChatModel:
+        # OpenAI 호환 엔드포인트는 reasoning_effort 지원을 보장하지 않는다.
+        return ChatOpenAI(
+            model=resolved.model_id,
+            openai_api_key=resolved.api_key,
+            openai_api_base=resolved.base_url,
+            use_responses_api=False,
+        )

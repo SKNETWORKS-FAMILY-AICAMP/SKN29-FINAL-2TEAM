@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal } from '../../components';
 import { PATHS } from '../../routes';
@@ -14,16 +14,16 @@ import {
   streamMessage,
 } from '../../api/chat';
 import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
-import { isPlatformAgent, listAgents } from '../../api/agents';
-import type { Agent } from '../../api/agents';
+import { listAgentVersions } from '../../api/agentVersions';
+import type { AgentVersionSummary } from '../../api/agentVersions';
 import { listMyProjects } from '../../api/projects';
 import type { Project } from '../../api/projects';
 import { listConnectors } from '../../api/connectors';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
 import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ResultCard } from './cards/ChatCards';
-import { emptyLive, reduce, toCards, traceLine } from './liveChat';
-import type { LiveChat } from './liveChat';
+import { emptyLive, memoryFilePath, MEMORY_PATH_PREFIX, reduce, toCards, traceLine } from './liveChat';
+import type { LiveChat, ToolCallEntry } from './liveChat';
 import styles from './ChatPage.module.css';
 
 /**
@@ -126,6 +126,24 @@ const TOUR_SEEN_KEY = 'halil.tourSeen';
 const LIST_MIN = 200;
 const LIST_MAX = 460;
 
+/**
+ * deepagents 내장 파일 도구 → 사람이 읽을 동사. 매핑에 없는 값(내장 도구가
+ * 버전업으로 늘거나 이름이 바뀌면)은 `tool_ref` 원문을 그대로 보여준다 —
+ * 지어내지 않는다.
+ */
+const MEMORY_TOOL_LABEL: Record<string, string> = {
+  read_file: '읽기',
+  write_file: '쓰기',
+  edit_file: '수정',
+  ls: '목록 조회',
+};
+
+const MEMORY_STATUS_LABEL: Record<ToolCallEntry['status'], string> = {
+  RUNNING: '진행 중',
+  OK: '완료',
+  FAILED: '실패',
+};
+
 export default function ChatPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -139,7 +157,7 @@ export default function ChatPage() {
   const [listOpen, setListOpen] = useState(false);
   const token = loadSessionToken();
 
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<AgentVersionSummary[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -190,23 +208,20 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!token) return;
-    listAgents(token)
+    listAgentVersions(token)
       .then((rows) => {
         // 목록 API 는 이제 팀의 DRAFT·DISABLED 도 돌려준다(관리 화면이 그걸
         // 보여줘야 해서) — Chat 은 ACTIVE 만 후보로 본다. 초안이 기본 에이전트로
         // 잘못 골리거나 "에이전트 없음" 배너 판단을 흐리면 안 된다.
         const active = rows.filter((row) => row.status === 'ACTIVE');
         setAgents(active);
-        // **정문을 `agent:*` 로 고른다.**
+        // **팀의 기본 챗 에이전트(`is_default_chat`)를 고른다.**
         //
-        // 두 번 고쳤다. 「목록 첫 항목」은 이름 정렬 우연에 기대고 있었고(문서
-        // 도구가 없는 에이전트가 잡혀 "문서를 읽을 도구가 없다"는 답이 나왔다),
-        // `is_prebuilt` 도 못 가른다 — **예시 에이전트들도 우리가 넣는 것이라
-        // 같은 플래그를 쓴다.**
-        //
-        // 위임할 수 있는 것이 정문이다. 그것만이 도구를 안 좁힌다.
+        // 팀 생성 시 자동으로 하나씩 생기는 에이전트다(2026-08-15,
+        // provision_default_chat_agent). 사용자가 드롭다운에서 직접 다른
+        // 에이전트를 고르면 그 값이 우선한다 — `prev`가 있으면 덮지 않는다.
         setAgentId(
-          (prev) => prev ?? active.find(isPlatformAgent)?.agent_id ?? active[0]?.agent_id ?? null,
+          (prev) => prev ?? active.find((row) => row.is_default_chat)?.agent_id ?? active[0]?.agent_id ?? null,
         );
       })
       // **팀이 없으면 이 실패는 당연한 것이라 말하지 않는다.** 가입 직후에는
@@ -539,6 +554,23 @@ export default function ChatPage() {
    * 목록에 없는 프로젝트를 가리키는 대화(지워졌거나 조회가 실패한 경우)도 그쪽에
    * 담긴다 — 안 그러면 사이드바에서 조용히 사라진다.
    */
+  /**
+   * 이 대화 전체(턴을 넘어)에서 `/memories/` 아래를 건드린 도구 호출을 시간
+   * 순서로 편다(2026-08-15). 위임으로 서브 에이전트에 들어간 호출은
+   * `liveChat.ts`의 reduce()가 애초에 `toolCalls`에 안 담는다(Child는
+   * 메모리가 없다 — 장기메모리 설계 문서 §4).
+   */
+  const memoryOps = useMemo(
+    () =>
+      turns.flatMap((turn) =>
+        (turn.live?.toolCalls ?? []).flatMap((call) => {
+          const path = memoryFilePath(call.arguments);
+          return path ? [{ call, path }] : [];
+        }),
+      ),
+    [turns],
+  );
+
   const known = new Set(projects.map((item) => item.proj_id));
   const loose = sessions.filter((row) => !row.proj_id || !known.has(row.proj_id));
   const groups = projects
@@ -679,9 +711,11 @@ export default function ChatPage() {
 
         <div className={styles.main}>
           {/*
-            에이전트 선택기는 없앴다. 무엇으로 답할지는 고르는 것이 아니라
-            말하면 정해지는 것이다 — 에이전트는 대화 위가 아니라 아래에 있다.
-            상단바에는 이 대화가 어디에 속하는지만 남긴다.
+            2026-08-15부터 다시 넣었다. 예전엔 "무엇으로 답할지는 말하면
+            정해지는 것"이라는 이유로 없앴었지만(정문이 agent:* 로 알아서
+            위임), 새 버전 스키마 에이전트는 그 위임 경로를 안 타서 사용자가
+            직접 고르지 않으면 아예 닿을 방법이 없다 — 재설계가 끝나 정문을
+            걷어낼 때까지의 과도기 UI다(지훈 확인, task #16/#19).
           */}
           <header className={styles.agentBar}>
             {/* 좁은 화면에서만 나온다. 목록이 덮개로 들어가면 대화를 오갈
@@ -696,6 +730,26 @@ export default function ChatPage() {
               <Icon name="message-square" size={16} color="var(--color-body)" />
               대화 목록
             </button>
+            {agents.length > 0 && (
+              <select
+                className={styles.agentSelect}
+                value={agentId ?? ''}
+                aria-label="대화 상대 에이전트"
+                onChange={(event) => {
+                  setAgentId(event.target.value);
+                  // 에이전트를 바꾸는 순간 새 대화로 넘어간다 — 대화 하나는
+                  // 만들어질 때 고른 에이전트에 묶여서, 중간에 못 바꾼다.
+                  startNew(projId);
+                }}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agent_id} value={agent.agent_id}>
+                    {agent.name}
+                    {agent.is_default_chat ? ' (기본)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             {/* 이 대화가 무엇을 근거로 답하는가. 「프로젝트 없음」처럼 빠진
                 상태로 쓰지 않고 **범위**로 쓴다 — 프로젝트를 안 고르면 문서
                 검색이 팀 문서 전체를 본다. */}
@@ -808,8 +862,9 @@ export default function ChatPage() {
                 {agents.length === 0 && !agentsFailed && (
                   <p className={styles.onboardingBanner}>
                     <Icon name="info" size={15} color="var(--color-info)" />
-                    이 팀에 기본 에이전트가 없습니다. 관리자가 시드를 돌려야 합니다.
-                    <button type="button" onClick={() => navigate(PATHS.agents)}>
+                    이 팀에 쓸 수 있는 에이전트가 없습니다. 관리자가 백필 스크립트를
+                    돌리거나 에이전트를 활성화해야 합니다.
+                    <button type="button" onClick={() => navigate(PATHS.agentVersions)}>
                       에이전트로 이동 →
                     </button>
                   </p>
@@ -961,6 +1016,55 @@ export default function ChatPage() {
             )}
           </div>
         </div>
+
+        {/*
+          2026-08-15 추가 — 장기 메모리(`/memories/AGENTS.md`)에 실제로 어떤
+          순서로 읽고 쓰는지 보고 싶다는 요청. 에이전트가 있으면(에이전트가
+          없으면 이 대화 자체가 죽어 있어 패널도 의미 없다) 늘 보이는 고정
+          패널이다 — 접었다 펼치는 상태를 따로 안 두는 이유는, 지금은 팀에
+          공유할 데모용으로 "실제로 이렇게 돈다"를 보여주는 게 목적이라
+          숨기면 그 목적에 안 맞는다.
+        */}
+        {agents.length > 0 && (
+          <aside className={styles.memoryPanel}>
+            <span className={styles.memoryPanelTitle}>
+              <Icon name="database" size={13} color="var(--color-muted)" />
+              장기 메모리 기록
+            </span>
+            {memoryOps.length === 0 ? (
+              <p className={styles.memoryEmpty}>
+                아직 이 대화에서 장기 메모리를 읽거나 쓴 적이 없습니다.
+              </p>
+            ) : (
+              <ol className={styles.memoryOpList}>
+                {memoryOps.map(({ call, path }, index) => (
+                  <li key={`${call.toolCallId ?? 'x'}-${index}`} className={styles.memoryOp}>
+                    <span className={styles.memoryOpIndex}>{index + 1}</span>
+                    <span className={styles.memoryOpBody}>
+                      <span className={styles.memoryOpLabel}>
+                        {MEMORY_TOOL_LABEL[call.toolRef] ?? call.toolRef}
+                      </span>
+                      <span className={styles.memoryOpPath} title={path}>
+                        {path.slice(MEMORY_PATH_PREFIX.length) || path}
+                      </span>
+                    </span>
+                    <span
+                      className={[
+                        styles.memoryOpStatus,
+                        call.status === 'FAILED' ? styles.memoryOpStatusFailed : '',
+                        call.status === 'RUNNING' ? styles.memoryOpStatusRunning : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {MEMORY_STATUS_LABEL[call.status]}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </aside>
+        )}
       </div>
 
       {/* 되돌릴 수 없는 삭제라 한 번 묻는다. 서버가 대화와 함께 메시지도

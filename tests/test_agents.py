@@ -10,7 +10,7 @@ from django.test import SimpleTestCase
 
 from apps.accounts.tokens import issue_token
 from apps.agents.serializers import builtin_tool_response
-from backend.db.errors import PermissionDenied, ReferenceNotFound
+from backend.db.errors import PermissionDenied
 
 AGENT = {
     "agent_id": "AG002",
@@ -104,10 +104,14 @@ class AgentApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_없는_도구를_붙이면_409(self, repo):
-        """저장되면 사용자는 체크했는데 에이전트는 못 쓰는 상태가 된다."""
+    def test_없는_도구를_붙이면_400(self, repo):
+        """저장되면 사용자는 체크했는데 에이전트는 못 쓰는 상태가 된다.
 
-        repo.create.side_effect = ReferenceNotFound("등록되지 않은 도구입니다: mcp:MT999")
+        구조 검증(`check_definition`)이 도구 참조를 카탈로그와 대조해 DB에
+        닿기 전에 막는다 — `repo.create`는 아예 불리지 않는다.
+        """
+
+        repo.team_tool_refs.return_value = []
 
         response = self.client.post(
             "/api/agents/",
@@ -116,7 +120,34 @@ class AgentApiTests(SimpleTestCase):
             headers=auth_header(),
         )
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 400)
+        repo.create.assert_not_called()
+
+    def test_중복된_도구를_붙이면_400(self, repo):
+        repo.team_tool_refs.return_value = []
+
+        response = self.client.post(
+            "/api/agents/",
+            {"name": "x", "tool_refs": ["document_search", "document_search"]},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.create.assert_not_called()
+
+    def test_수정할_때도_없는_도구는_400(self, repo):
+        repo.team_tool_refs.return_value = []
+
+        response = self.client.put(
+            "/api/agents/AG002/",
+            {"name": "x", "tool_refs": ["mcp:MT999"]},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.update.assert_not_called()
 
     def test_남의_팀_에이전트는_403(self, repo):
         repo.get.side_effect = PermissionDenied("이 에이전트에 접근할 수 없습니다.")

@@ -4,7 +4,6 @@ import { AppShell, Badge, Button, Icon, Input, Select, useToast } from '../../co
 import { AGENT_STATUS } from '../../data/agentLabels';
 import {
   activateAgent,
-  checkBuilderInput,
   createAgent,
   disableAgent,
   getAgent,
@@ -141,8 +140,9 @@ export default function AgentEditPage() {
   }
 
   /**
-   * 검증 없이 그대로 create/update 한다. 「임시 저장」과 「활성화」가 공유하는
-   * 첫 단계 — 활성화도 결국 지금 화면 내용을 먼저 저장한 뒤에야 검증한다.
+   * create/update 한다. 도구 참조가 실제로 존재하는지 같은 구조 검증은 서버가
+   * 하고, 문제가 있으면 400으로 실패한다. 「임시 저장」과 「활성화」가 공유하는
+   * 첫 단계 — 활성화는 이 저장 뒤에 상태만 ACTIVE로 바꾼다.
    *
    * 처음 만드는 에이전트(`savedId` 없음)는 여기서 생겨나 이후로는 update 로
    * 이어진다. `replace: true` 로 URL 만 바꿔치기해 뒤로가기를 눌러도 빈 폼이
@@ -225,31 +225,12 @@ export default function AgentEditPage() {
     }
   }
 
-  /** ACTIVE 에이전트 편집 저장. 이미 쓰이고 있는 에이전트라 저장 전에 계속
-   * 검증한다 — `reject`면 저장 자체를 막는다(기존 동작 그대로 유지). */
+  /** ACTIVE 에이전트 편집 저장. 도구 참조 등 구조 검증은 서버(update API)가
+   * 한다 — 실패하면 아래 catch가 그 메시지를 그대로 보여준다. */
   async function handleSaveActive() {
     if (!token || !savedId) return;
     setSaving(true);
     setError(null);
-    try {
-      const check = await checkBuilderInput(token, {
-        name: name.trim(),
-        description,
-        behavior: instruction,
-        tool_refs: toolRefs,
-      });
-      if (check.overall === 'reject') {
-        setError(
-          check.reject_reason ||
-            '설명 또는 지시문 내용이 너무 부족해 저장할 수 없습니다. 「검증」의 1단계에서 내용을 다시 써 주세요.',
-        );
-        setSaving(false);
-        return;
-      }
-    } catch {
-      // 검증 서비스 자체가 실패하면 그것 때문에 저장까지 막지 않는다.
-    }
-
     try {
       const saved = await saveDraft();
       showToast(`「${saved.name}」을 저장했습니다.`, 'success');
@@ -375,11 +356,11 @@ export default function AgentEditPage() {
 
         <section className={styles.card}>
           <div className={styles.cardHead}>
-            <h2>검증</h2>
-            <p>저장하기 전에 지금 이름·설명·지시문·도구 설정 그대로 검증하고, 대화로 한 번 돌려 봅니다.</p>
+            <h2>테스트 실행</h2>
+            <p>저장하지 않고 지금 이름·설명·지시문·도구 설정 그대로 대화로 한 번 돌려 봅니다. 선택 사항이며, 하지 않아도 저장·활성화됩니다.</p>
           </div>
           <Button type="button" variant="outline" onClick={() => setTestRunOpen(true)}>
-            검증
+            테스트 실행
           </Button>
         </section>
 
@@ -387,21 +368,17 @@ export default function AgentEditPage() {
           open={testRunOpen}
           onClose={() => setTestRunOpen(false)}
           token={token}
-          name={name}
-          description={description}
           instruction={instruction}
           toolRefs={toolRefs}
           model={model}
           reasoningEffort={effort}
           maxIterations={maxIterations}
           allTools={tools}
-          onApplyInstruction={setInstruction}
-          onApplyDescription={setDescription}
           onToggleTool={toggleTool}
           onOpenToolPicker={() => setPickerOpen(true)}
         />
 
-        {/* 검증 팝업 안에서도 「도구 추가/제외」로 열 수 있다 — z-index가 같은
+        {/* 테스트 실행 팝업 안에서도 「도구 추가/제외」로 열 수 있다 — z-index가 같은
             고정 배경이라 DOM 순서로 위아래가 갈린다. TestRunModal보다 뒤에
             둬야 겹쳐 열렸을 때 이 모달이 위로 온다. */}
         <ToolPickerModal
