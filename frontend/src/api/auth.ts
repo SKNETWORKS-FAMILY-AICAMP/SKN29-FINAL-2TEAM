@@ -111,11 +111,30 @@ export function changePassword(token: string, currentPassword: string, password:
 }
 
 /**
- * 내 프로필 사진 주소. 같은 URL로 새 사진이 올라오므로 바뀐 것을 화면이 알도록
- * 캐시 무력화 값을 붙인다 — 안 붙이면 브라우저가 옛 사진을 계속 보여준다.
+ * 내 프로필 사진을 **토큰을 붙여** 받아 온다.
+ *
+ * `<img src>` 로는 못 받는다. 브라우저가 이미지 요청에 `Authorization` 헤더를
+ * 실어 주지 않는데 이 엔드포인트는 Bearer 토큰을 요구해서(`CurrentAvatarAPIView`),
+ * **올리기는 성공하고 사진은 영원히 안 보이는** 상태였다 — 401 이 나면 화면이
+ * 이름 첫 글자로 되돌아가므로 아무 일도 안 일어난 것처럼 보인다.
+ *
+ * 주소에 토큰을 얹는 방법은 쓰지 않는다. 주소는 로그·기록·공유에 남는다.
+ *
+ * 사진이 없으면 서버가 404 를 준다 — **오류가 아니라 정상 흐름**이라 `null` 로
+ * 돌려주고, 화면은 이름 첫 글자를 그린다.
  */
-export function avatarUrl(version: number | string): string {
-  return `${API_BASE_URL}/auth/me/avatar/?v=${version}`;
+export async function fetchAvatarBlob(token: string): Promise<Blob | null> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/auth/me/avatar/`, {
+      headers: { Authorization: `Bearer ${token}` },
+      // 같은 주소로 새 사진이 올라오므로 캐시를 타면 옛 사진이 남는다.
+      cache: 'no-store',
+    });
+  } catch {
+    return null;
+  }
+  return response.ok ? response.blob() : null;
 }
 
 /** 프로필 사진을 올린다(JPG·PNG·WEBP, 2MB 이하). 같은 키를 덮어쓴다. */
