@@ -32,6 +32,7 @@ from backend.db.document_pipeline import (
     VectorSearchRepository,
 )
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
+from services.document_intake import promote_to_searchable
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -83,8 +84,16 @@ class ToolInputError(ValueError):
 #: 다른 사업의 감리 과업지시서가 20자리 중 8자리를 가져갔다).
 COARSE_TOP_N = 5
 
+#: 한 번의 검색에서 본문까지 읽어 올릴 문서 수.
+#:
+#: 한 건이 몇 분이라 후보를 다 올리면 대화가 그만큼 멈추고, 애초에 요약으로
+#: 좁힌 이유가 사라진다.
+PROMOTE_TOP_N = 2
 
-def _document_search(*, team_id: str, query: str, top_k: int = 10) -> dict[str, Any]:
+
+def _document_search(
+    *, team_id: str, query: str, account_id: str | None = None, top_k: int = 10
+) -> dict[str, Any]:
     """팀 문서에서 근거 문장을 찾는다. **두 단계다**(A안 — 8/11 확정 ⑥).
 
     1) coarse — `doc_meta.summary_vec` 으로 문서를 먼저 좁힌다. 요약 임베딩은
@@ -111,6 +120,21 @@ def _document_search(*, team_id: str, query: str, top_k: int = 10) -> dict[str, 
             for row in candidates
             if not row["search_ready"]
         ]
+
+        # **여기가 온디맨드 파싱이다**(2026-08-15 PM).
+        #
+        # 요약으로 좁힌 후보 중 본문이 아직 없는 것을 **그때 읽는다.** 전에는
+        # 「본문이 아직 색인되지 않아 문장 근거를 낼 수 없습니다」로 끝냈는데,
+        # 그건 사람에게 아무 방법도 주지 않는 답이었다 — 색인할 화면도 없었다.
+        #
+        # 후보 전부가 아니라 **상위 몇 건만** 올린다. 한 건이 몇 분이라 다 돌리면
+        # 대화가 그만큼 멈추고, 애초에 요약으로 좁힌 이유가 사라진다.
+        for row in (not_indexed[:PROMOTE_TOP_N] if account_id else []):
+            outcome = promote_to_searchable(account_id=account_id, doc_id=row["doc_id"])
+            row["promotion"] = outcome
+            if outcome["ok"]:
+                doc_ids.append(row["doc_id"])
+        not_indexed = [row for row in not_indexed if not row.get("promotion", {}).get("ok")]
     else:
         doc_ids = PipelineDocumentRepository.searchable_doc_ids(team_id)
         not_indexed = []

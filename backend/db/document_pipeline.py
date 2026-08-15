@@ -462,6 +462,26 @@ class DocMetaRepository:
                 )
 
     @staticmethod
+    def purge(doc_ids: list[str]) -> int:
+        """이 문서들의 메타를 지운다. **새 문서를 등록할 때 부른다.**
+
+        `doc_meta` 는 `doc` 을 FK 로 걸지 않아서 `doc` 행이 사라져도 살아남는다.
+        그런데 `doc_id` 는 `DC001` 부터 다시 나눠 주므로, 새 문서가 지워진 문서의
+        id 를 물려받으면 **남의 요약을 자기 것으로 쓴다** — 요약 임베딩으로
+        후보를 좁히는 구조라, 엉뚱한 문서가 근거 후보로 올라온다.
+
+        실제로 겪었다: 8/11 문서를 지우고 `doc_meta` 3건이 남아 있었는데,
+        8/15 에 새로 등록한 문서가 그 id 를 받아 「이미 요약된 문서」로 취급됐다.
+        """
+
+        if not doc_ids:
+            return 0
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM doc_meta WHERE doc_id = ANY(%s)", (doc_ids,))
+                return cursor.rowcount
+
+    @staticmethod
     def pending_doc_ids(team_id: str) -> list[str]:
         """아직 메타가 없고 원문은 받아 둔 팀 문서.
 
