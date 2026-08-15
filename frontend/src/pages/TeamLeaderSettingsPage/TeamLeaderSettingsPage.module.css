@@ -188,40 +188,6 @@
   margin: 0;
 }
 
-/* ---------- workload thresholds ---------- */
-.workloadRow {
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.workloadRow > * {
-  flex: 1;
-  min-width: 200px;
-}
-
-.unitLabel {
-  font-size: 13px;
-  color: var(--color-muted);
-  white-space: nowrap;
-}
-
-.helperNote {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--color-muted);
-  margin: var(--space-4) 0 0;
-}
-
-.saveRow {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-5);
-}
-
-
 .inviteResult {
   display: flex;
   flex-direction: column;
