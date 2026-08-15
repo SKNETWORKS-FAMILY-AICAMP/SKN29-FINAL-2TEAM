@@ -41,8 +41,6 @@ export const PATHS = {
   agents: '/agents',
   agentEdit: '/agents/:agentId/edit',
   agentNew: '/agents/new/edit',
-  /** 문서는 팀 소속이라 프로젝트로 좁히지 않는다. 경로는 PM 확정 대기(상수라 바꾸기 쉽다). */
-  documents: '/documents',
   settingsConnectors: '/settings/connectors',
   settingsMcp: '/settings/mcp',
   settingsModel: '/settings/model',
@@ -68,7 +66,6 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.chat, label: 'Chat (홈)', group: 'Agent Platform' },
   { path: PATHS.agents, label: '에이전트 목록', group: 'Agent Platform' },
   { path: PATHS.agentNew, label: '에이전트 만들기', group: 'Agent Platform' },
-  { path: PATHS.documents, label: '문서', group: 'Agent Platform' },
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
   { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
@@ -100,7 +97,7 @@ export interface AppNavItem {
 export const APP_NAV_ITEMS: AppNavItem[] = [
   { label: '채팅', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
   { label: '에이전트', to: PATHS.agents, icon: 'sparkles', match: [PATHS.agents] },
-  { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects, PATHS.documents] },
+  { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },
 ];
 

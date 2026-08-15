@@ -16,7 +16,6 @@ const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage/ProjectDe
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
 const AgentListPage = lazy(() => import('./pages/AgentListPage/AgentListPage'));
 const AgentEditPage = lazy(() => import('./pages/AgentEditPage/AgentEditPage'));
-const DocumentsPage = lazy(() => import('./pages/DocumentsPage/DocumentsPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
 const OpsOverviewPage = lazy(() => import('./pages/OpsOverviewPage/OpsOverviewPage'));
 const OpsTeamsPage = lazy(() => import('./pages/OpsTeamsPage/OpsTeamsPage'));
@@ -94,7 +93,6 @@ function App() {
           <Route path={PATHS.chatSession} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.agents} element={<RequireAuth><AgentListPage /></RequireAuth>} />
           <Route path={PATHS.agentEdit} element={<RequireAuth><AgentEditPage /></RequireAuth>} />
-          <Route path={PATHS.documents} element={<RequireAuth><DocumentsPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
           <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
           <Route path={PATHS.opsLogin} element={<OpsLoginPage />} />
