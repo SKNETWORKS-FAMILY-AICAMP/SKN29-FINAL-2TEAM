@@ -11,7 +11,15 @@ from typing import Any
 
 import requests
 
-from density_heading_correction import promote_headings_by_density
+try:
+    # 프로덕션(Dockerfile): /worker에 이 폴더 내용이 통째로 복사되고 "python3
+    # handler.py"로 실행되므로, 실행 스크립트의 디렉터리가 sys.path[0]이라
+    # 같은 폴더 기준 import가 된다.
+    from density_heading_correction import promote_headings_by_density
+except ModuleNotFoundError:
+    # 저장소 루트 테스트: "from runpod_worker.pipeline import ..."로 이 모듈이
+    # 패키지 하위 모듈로 임포트되면 위 경로는 안 잡힌다.
+    from runpod_worker.density_heading_correction import promote_headings_by_density
 
 
 CONTROL_PATTERN = re.compile(r"<end_of_(?:utterance|turn|text)?[^>\s]*>?", re.I)
