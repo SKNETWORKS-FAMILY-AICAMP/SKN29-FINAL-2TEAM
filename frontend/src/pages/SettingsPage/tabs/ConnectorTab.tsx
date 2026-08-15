@@ -251,7 +251,7 @@ export function ConnectorTab() {
                     {' *'}
                   </span>
                 </span>
-                {statusBadge('PEOPLE_DB')}
+                <span className={styles.rowBadges}>{statusBadge('PEOPLE_DB')}</span>
               </span>
               {peopleConnected && <span className={styles.rowVendor}>예시 데이터</span>}
             </div>
@@ -276,8 +276,10 @@ export function ConnectorTab() {
             <div className={styles.rowBody}>
               <span className={styles.rowName}>
                 문서 저장소
-                {statusBadge('GOOGLE_DRIVE')}
-                {driveConnected && countBadge(folderCount, '폴더')}
+                <span className={styles.rowBadges}>
+                  {statusBadge('GOOGLE_DRIVE')}
+                  {driveConnected && countBadge(folderCount, '폴더')}
+                </span>
               </span>
               {driveConnected && <span className={styles.rowVendor}>Google Drive</span>}
             </div>
@@ -309,8 +311,10 @@ export function ConnectorTab() {
             <div className={styles.rowBody}>
               <span className={styles.rowName}>
                 업무 기록소
-                {statusBadge('JIRA')}
-                {jiraConnected && countBadge(jiraProjectCount, '프로젝트')}
+                <span className={styles.rowBadges}>
+                  {statusBadge('JIRA')}
+                  {jiraConnected && countBadge(jiraProjectCount, '프로젝트')}
+                </span>
               </span>
               {jiraConnected && <span className={styles.rowVendor}>Jira</span>}
             </div>

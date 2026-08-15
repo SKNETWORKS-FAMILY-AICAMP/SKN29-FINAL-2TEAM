@@ -140,14 +140,14 @@ export function ModelTab() {
         ) : (
           <div className={styles.table}>
             <div className={styles.tableHead}>
-              <span style={{ width: 60 }}>사용 중</span>
-              <span style={{ flex: 1 }}>모델</span>
-              <span style={{ width: 120 }}>속도</span>
-              <span style={{ width: 140 }}>출처</span>
+              <span className={styles.colPick}>사용 중</span>
+              <span className={styles.colName}>모델</span>
+              <span className={styles.colTier}>속도</span>
+              <span className={styles.colSource}>출처</span>
             </div>
             {rows.map((row) => (
               <label key={row.value} className={styles.tableRow}>
-                <span style={{ width: 60 }}>
+                <span className={styles.colPick}>
                   <input
                     type="radio"
                     name="main-model"
@@ -156,9 +156,9 @@ export function ModelTab() {
                     onChange={() => void choose(row.value)}
                   />
                 </span>
-                <span style={{ flex: 1 }}>{row.label}</span>
-                <span style={{ width: 120 }}>{row.tier || '—'}</span>
-                <span style={{ width: 140 }}>
+                <span className={styles.colName}>{row.label}</span>
+                <span className={styles.colTier}>{row.tier || '—'}</span>
+                <span className={styles.colSource}>
                   <Badge tone={row.source === '기본 제공' ? 'neutral' : 'info'}>{row.source}</Badge>
                 </span>
               </label>
