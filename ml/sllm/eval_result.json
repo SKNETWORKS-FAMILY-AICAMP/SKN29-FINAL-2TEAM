@@ -1,0 +1,21 @@
+{
+  "base_model": "Qwen/Qwen3-4B-Instruct-2507",
+  "adapter": "/workspace/adapter",
+  "max_new_tokens": 3072,
+  "base": {
+    "samples": 17,
+    "schema_ok": 0.2353,
+    "field_f1": 0.0,
+    "title_soft_f1": 0.0,
+    "evidence_ok": 0.0,
+    "latency_ms_median": 22098.1
+  },
+  "tuned": {
+    "samples": 17,
+    "schema_ok": 0.8235,
+    "field_f1": 0.0,
+    "title_soft_f1": 0.0283,
+    "evidence_ok": 0.8235,
+    "latency_ms_median": 103747.3
+  }
+}

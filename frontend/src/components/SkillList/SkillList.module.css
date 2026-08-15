@@ -59,7 +59,13 @@
   color: var(--color-placeholder);
 }
 
-@media (max-width: 720px) {
+/*
+ * **셸 안에서는 화면 폭이 곧 쓸 수 있는 폭이 아니다.**
+ *
+ * 사이드바가 240px 을 먼저 가져가므로, 720px 로 잡았을 때 768px 화면에서는
+ * 아직 네 칸인 채로 이름이 「A...」가 됐다. 사이드바 몫을 더해 잡는다.
+ */
+@media (max-width: 980px) {
   .row {
     grid-template-columns: minmax(0, 1fr) 96px;
   }

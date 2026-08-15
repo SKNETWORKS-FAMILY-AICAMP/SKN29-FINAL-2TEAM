@@ -399,3 +399,48 @@
     display: none;
   }
 }
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/*
+ * **줄을 세로로 쌓는다. 옆으로 흐르게 하지 않는다.**
+ *
+ * 900px 에서 네 열로 줄여도 375px 에서는 제목이 「N.」이 된다. 그렇다고 표를
+ * 가로로 흐르게 두면 가려진 열이 있다는 것 자체가 안 보이고 세로 스크롤과
+ * 제스처가 싸운다(PM 지적).
+ *
+ * 이슈 키와 제목을 위에 두고 나머지 값에 열 이름을 붙여 쌓는다 — 900px 에서
+ * 감췄던 추정·잔여·마감도 여기서는 **되살린다.** 자리가 없어 감췄던 것이지
+ * 필요 없어서가 아니었다.
+ */
+@media (max-width: 980px) {
+  .tableHead {
+    display: none;
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: var(--space-4) 0;
+  }
+
+  .row > span:nth-child(n + 5) {
+    display: block;
+  }
+
+  .row > span[data-label]::before {
+    content: attr(data-label);
+    margin-right: 6px;
+    color: var(--color-muted);
+    font-size: 12px;
+  }
+
+  /* 쌓으면 오른쪽 정렬은 뜻을 잃는다 — 줄이 왼쪽에서 시작한다. */
+  .row .right {
+    text-align: left;
+  }
+
+  .summary {
+    font-weight: 700;
+  }
+}

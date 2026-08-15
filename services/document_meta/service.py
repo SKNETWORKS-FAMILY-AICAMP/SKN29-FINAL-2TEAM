@@ -27,6 +27,11 @@ from . import extractor
 #: 문서 유형. 화면 필터와 프롬프트가 같은 목록을 봐야 해서 한 곳에만 둔다.
 DOC_TYPES = ("제안요청서", "기획서", "요구사항정의서", "회의록", "보고서", "계약·행정", "기타")
 
+#: 요약 모델. `naming.TITLE_MODEL`·`agent_builder.PLAN_MODEL` 과 같은 규칙으로
+#: 코드에 둔다 — `.env` 로 고정하면 화면에서 고른 값과 어긋난다(2026-08-12).
+#: `_summarize` 의 docstring 이 말하는 "가장 싼 모델"이 이 값이다.
+SUMMARY_MODEL = "gpt-5.6-luna"
+
 
 class DocumentSummary(BaseModel):
     summary: str = Field(max_length=600)

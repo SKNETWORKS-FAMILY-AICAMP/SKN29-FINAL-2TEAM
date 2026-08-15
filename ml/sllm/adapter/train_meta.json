@@ -1,0 +1,11 @@
+{
+  "base": "Qwen/Qwen3-4B-Instruct-2507",
+  "epochs": 3.0,
+  "lr": 0.0002,
+  "batch": 1,
+  "accum": 8,
+  "max_length": 4096,
+  "rank": 16,
+  "alpha": 32,
+  "train_samples": 84
+}

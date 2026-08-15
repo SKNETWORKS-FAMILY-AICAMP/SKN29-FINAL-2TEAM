@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_NAV_ITEMS, PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
+import { useNarrowViewport } from '../../utils/viewport';
 import { Icon } from '../Icon/Icon';
 import { Logo } from '../Logo/Logo';
 import styles from './AppShell.module.css';
@@ -39,6 +40,21 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
   const session = useSession();
   const displayName = session?.account.display_name ?? '';
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
+  const narrow = useNarrowViewport();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // 메뉴를 눌러 이동했으면 드로어는 할 일을 끝냈다. 안 닫으면 도착한 화면을
+  // 자기가 가린 채로 남는다.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  /**
+   * 좁은 화면에서는 접힘을 무시한다. 드로어는 **열리거나 닫히거나**지 좁아지는
+   * 것이 아니고, 데스크탑에서 접어 둔 사람에게 아이콘만 있는 드로어를 주면
+   * 무엇을 누르는지 알 수 없다.
+   */
+  const iconsOnly = collapsed && !narrow;
 
   function isActive(match: string[]): boolean {
     return match.some((prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`));
@@ -58,14 +74,49 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
 
   return (
     <div className={styles.shell}>
-      <aside className={[styles.sidebar, collapsed ? styles.sidebarCollapsed : ''].filter(Boolean).join(' ')}>
+      {/* 좁은 화면에만 나오는 상단 바. 사이드바가 드로어로 들어가면 로고와
+          메뉴로 가는 길이 화면에서 사라지므로, 그 둘만 여기로 꺼내 둔다. */}
+      <header className={styles.mobileBar}>
+        <button
+          type="button"
+          className={styles.mobileMenu}
+          onClick={() => setDrawerOpen(true)}
+          aria-label="메뉴 열기"
+          aria-expanded={drawerOpen}
+        >
+          <Icon name="menu" size={20} color="var(--color-body)" />
+        </button>
+        <Link to={PATHS.chat} className={styles.mobileLogo} aria-label="채팅으로 이동">
+          <Logo variant="full" height={26} />
+        </Link>
+      </header>
+
+      {/* 드로어 뒤를 덮는 면. 바깥을 누르면 닫히는 것이 이 모양의 약속이다. */}
+      {drawerOpen && (
+        <button
+          type="button"
+          className={styles.scrim}
+          onClick={() => setDrawerOpen(false)}
+          aria-label="메뉴 닫기"
+        />
+      )}
+
+      <aside
+        className={[
+          styles.sidebar,
+          iconsOnly ? styles.sidebarCollapsed : '',
+          drawerOpen ? styles.sidebarOpen : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
         <div className={styles.brandRow}>
           {/* 접히면 글자가 들어갈 자리가 없다 — 그때만 마크로 바꾼다.
               높이가 두 쪽이 다른 것은 여백 때문이다. 워드마크는 글자가 그림 끝까지 차
               있어 44 가 곧 글자 높이지만, 마크는 96px 그림 안에 글리프가 53px 뿐이라
               같은 44 로는 작아 보인다 — 접힘 폭(68px)이 허락하는 만큼 키웠다. */}
           <Link to={PATHS.chat} className={styles.logo} aria-label="채팅으로 이동">
-            <Logo variant={collapsed ? 'mark' : 'full'} height={collapsed ? 40 : 44} />
+            <Logo variant={iconsOnly ? 'mark' : 'full'} height={iconsOnly ? 40 : 44} />
           </Link>
           <button
             type="button"
@@ -85,10 +136,10 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
               to={item.to}
               className={[styles.navItem, isActive(item.match) ? styles.navItemActive : ''].filter(Boolean).join(' ')}
               // 접히면 라벨이 없으므로 아이콘만으로 무엇인지 알아야 한다.
-              title={collapsed ? item.label : undefined}
+              title={iconsOnly ? item.label : undefined}
             >
               <Icon name={item.icon} size={18} />
-              {!collapsed && <span>{item.label}</span>}
+              {!iconsOnly && <span>{item.label}</span>}
             </NavLink>
           ))}
         </nav>
@@ -98,7 +149,7 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
             {displayName ? displayName.slice(0, 1) : <Icon name="user" size={15} />}
           </span>
           {/* 접히면 아바타만 남는다 — 이름도 글자 버튼도 좁아진 폭을 삐져나온다. */}
-          {!collapsed && (
+          {!iconsOnly && (
             <>
               <span className={styles.userName}>{displayName}</span>
               {session && (

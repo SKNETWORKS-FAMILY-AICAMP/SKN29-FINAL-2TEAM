@@ -134,6 +134,66 @@
   }
 }
 
+/* ---------- 접기 ---------- */
+
+/* 표가 열 여덟아홉 개라 본문 폭이 곧 읽히는 양이다 — 접으면 172px 이 표로 간다. */
+.sidebarCollapsed {
+  width: 68px;
+  flex-basis: 68px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 접히면 「운영자 메뉴」가 들어갈 자리가 없다. 접기 버튼만 남는다. */
+.sidebarCollapsed .sidebarLabel {
+  display: none;
+}
+
+.sidebarCollapsed .sidebarHead {
+  justify-content: center;
+}
+
+.collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.collapse:hover {
+  background: var(--color-bg);
+}
+
+.sidebarCollapsed .navItem {
+  justify-content: center;
+}
+
+/* 햄버거와 덮개는 좁을 때만 나온다. */
+.menuButton,
+.scrim {
+  display: none;
+}
+
+/*
+ * **메뉴를 가로로 흐르게 두지 않는다.**
+ *
+ * 여덟 개를 한 줄에 늘어놓고 옆으로 밀게 했는데, 그러면 뒤쪽 메뉴가 있다는
+ * 것 자체가 안 보인다 — 표에서 걷어낸 문제가 메뉴에 남아 있었다.
+ *
+ * 앱 셸과 같은 드로어로 맞춘다. 두 콘솔이 같은 방식으로 열리고 닫힌다.
+ */
 @media (max-width: 720px) {
   .header {
     height: 60px;
@@ -143,39 +203,67 @@
     font-size: 15px;
   }
 
+  .menuButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 손가락으로 누르는 버튼이다 — 아이콘이 아니라 손끝 크기로 잡는다. */
+    width: 40px;
+    height: 40px;
+    margin-right: 4px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    cursor: pointer;
+  }
+
   .body {
     min-height: calc(100dvh - 60px);
-    flex-direction: column;
   }
 
   .sidebar {
-    position: sticky;
-    top: 60px;
-    z-index: 15;
-    width: 100%;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: 264px;
     height: auto;
     flex-basis: auto;
-    padding: 10px 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--color-border);
-    overflow-x: auto;
+    padding: 24px 16px;
+    border-right: 1px solid var(--color-border);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
   }
 
-  .sidebarLabel {
+  .sidebarOpen {
+    transform: translateX(0);
+  }
+
+  /* 접기는 드로어에서 뜻이 없다 — 닫는 것은 바깥을 누르는 것이다. */
+  .collapse {
     display: none;
   }
 
-  .navigation {
-    width: max-content;
-    flex-direction: row;
-  }
-
-  .navItem {
-    height: 36px;
-    white-space: nowrap;
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    border: 0;
+    padding: 0;
+    background: rgb(15 23 42 / 45%);
+    cursor: pointer;
   }
 
   .main {
     padding: 24px 16px 40px;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+

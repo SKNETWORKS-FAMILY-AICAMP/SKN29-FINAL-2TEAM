@@ -14,7 +14,6 @@ export const PATHS = {
   findPassword: '/find-password',
   resetPassword: '/reset-password',
   settingsTeam: '/settings/team',
-  filesNew: '/files/new',
   projects: '/projects',
   projectDetail: '/projects/:projectId',
   opsLogin: '/ops/login',
@@ -33,11 +32,15 @@ export const PATHS = {
 
   // --- TO-BE (Agent Platform) — 개발지시 2차 단계 A ---
   chat: '/chat',
+  /**
+   * 열려 있는 대화. **새로고침하면 보던 대화를 잃던 것**을 URL 로 고쳤다
+   * (2026-08-12 QA). 대화 내용 복원은 원래 됐고, 잃던 것은 「어디를 보고
+   * 있었는가」였다. 같은 계정 안에서는 링크로 건네줄 수도 있다.
+   */
+  chatSession: '/chat/:sessionId',
   agents: '/agents',
   agentEdit: '/agents/:agentId/edit',
   agentNew: '/agents/new/edit',
-  /** 문서는 팀 소속이라 프로젝트로 좁히지 않는다. 경로는 PM 확정 대기(상수라 바꾸기 쉽다). */
-  documents: '/documents',
   settingsConnectors: '/settings/connectors',
   settingsMcp: '/settings/mcp',
   settingsModel: '/settings/model',
@@ -63,12 +66,10 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.chat, label: 'Chat (홈)', group: 'Agent Platform' },
   { path: PATHS.agents, label: '에이전트 목록', group: 'Agent Platform' },
   { path: PATHS.agentNew, label: '에이전트 만들기', group: 'Agent Platform' },
-  { path: PATHS.documents, label: '문서', group: 'Agent Platform' },
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
   { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
-  { path: PATHS.filesNew, label: '문서 관리 (구)', group: '메인' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
   { path: PATHS.ops, label: '운영 현황', group: '운영자 콘솔' },
@@ -96,7 +97,7 @@ export interface AppNavItem {
 export const APP_NAV_ITEMS: AppNavItem[] = [
   { label: '채팅', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
   { label: '에이전트', to: PATHS.agents, icon: 'sparkles', match: [PATHS.agents] },
-  { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects, PATHS.documents] },
+  { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },
 ];
 
