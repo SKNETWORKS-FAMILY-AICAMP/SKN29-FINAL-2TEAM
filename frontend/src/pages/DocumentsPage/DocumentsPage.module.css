@@ -358,7 +358,7 @@
  * 접힌다. 두 줄로 나눈다 — 숫자는 서로 비교하는 것이라 세로 한 줄로 늘어놓으면
  * 스크롤 없이는 같이 못 본다.
  */
-@media (max-width: 760px) {
+@media (max-width: 980px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
