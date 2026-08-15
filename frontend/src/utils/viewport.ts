@@ -16,15 +16,19 @@ export const NARROW_VIEWPORT = '(max-width: 760px)';
  * 정한 폭을 무시할지(`ChatPage`)처럼 **판단이 JS 에 있는 것**들이다. 단순히
  * 배치를 바꾸는 것은 CSS 의 일이고 여기로 가져오지 않는다.
  */
-export function useNarrowViewport(): boolean {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_VIEWPORT).matches);
+export function useNarrowViewport(maxWidth?: number): boolean {
+  // 셸 안쪽 화면은 사이드바가 먼저 가져가는 몫만큼 기준을 올려 잡는다 —
+  // 그 자리에서는 화면 폭이 곧 쓸 수 있는 폭이 아니다.
+  const query = maxWidth === undefined ? NARROW_VIEWPORT : `(max-width: ${maxWidth}px)`;
+  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
 
   useEffect(() => {
-    const query = window.matchMedia(NARROW_VIEWPORT);
+    const media = window.matchMedia(query);
+    setNarrow(media.matches);
     const sync = (event: MediaQueryListEvent) => setNarrow(event.matches);
-    query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
-  }, []);
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, [query]);
 
   return narrow;
 }
