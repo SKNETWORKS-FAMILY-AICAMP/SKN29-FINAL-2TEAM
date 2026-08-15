@@ -302,17 +302,17 @@ export default function TeamLeaderSettingsPage() {
                   {member.name ?? member.person_id}
                   {member.is_owner && <span className={styles.ownerTag}>팀 소유자</span>}
                 </span>
-                <span className={styles.memberEmail}>
+                <span className={styles.memberEmail} data-label="소속 · 직책">
                   {[member.org_name, member.job_role].filter(Boolean).join(' · ') || '-'}
                 </span>
-                <span>
+                <span data-label="계정">
                   {member.account_email ? (
                     <span className={styles.memberEmail}>{member.account_email}</span>
                   ) : (
                     <Badge tone="neutral">미가입</Badge>
                   )}
                 </span>
-                <span className={styles.inviteCell}>
+                <span className={styles.inviteCell} data-label="초대">
                   {member.invite_status ? (
                     <>
                       <Badge tone={INVITE_STATUS_TONE[member.invite_status]}>
