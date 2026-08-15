@@ -1,0 +1,182 @@
+"""기존 팀에 "기본 챗 에이전트"(새 버전 스키마, tool·MCP만) 백필.
+
+`seed_agents.py`와 같은 이유로 컨테이너 안이 아니라 호스트 Python에서 직접
+돌린다 — `backend.db.agent_platform`을 그대로 import하면 Django 설정 부트스트랩이
+필요해지므로, 여기서도 `seed_agents.py`처럼 raw SQL만 쓴다(repo 모듈 의존 없음).
+
+**2026-08-15부터 새로 만드는 팀은 이 스크립트가 필요 없다** —
+`backend/db/repositories.py`의 `TeamRepository.create()`가 팀 생성과 같은
+트랜잭션으로 `agent_platform.provision_default_chat_agent()`를 이미 부른다.
+이 스크립트는 그 날짜 **이전에 만들어진 팀**만을 위한 1회성 백필이다.
+
+멱등하다 — 이미 `is_default_chat = true`인 행이 있는 팀은 건너뛴다
+(`agents_one_default_chat_per_team` 부분 유니크 인덱스가 있어서 중복
+INSERT는 어차피 DB가 막지만, 여기서 먼저 걸러 조용히 스킵한다).
+
+사용법:
+    DATABASE_URL="postgres://project_copilot:project_copilot@localhost:5432/project_copilot" \\
+      python backend/services/createDB/backfill_default_chat_agents.py --all-teams
+    python backend/services/createDB/backfill_default_chat_agents.py --team TE001
+"""
+
+import argparse
+import os
+import sys
+
+import psycopg
+from psycopg.rows import dict_row
+
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgres://project_copilot:project_copilot@localhost:5432/project_copilot",
+)
+
+# services/harness/runner.py의 DEFAULT_MODEL/DEFAULT_EFFORT와 반드시 같은 값을
+# 써야 한다 — repo 모듈을 import하지 않는 이 스크립트의 전제상 여기 값을
+# 직접 베꼈다(seed_agents.py의 PLATFORM_TOOL과 같은 이유의 중복). runner.py의
+# 값이 바뀌면 여기도 같이 고칠 것.
+DEFAULT_MODEL = "gpt-5.6-luna"
+DEFAULT_EFFORT = "low"
+
+DEFAULT_CHAT_SYSTEM_PROMPT = (
+    "당신은 팀의 업무를 돕는 기본 어시스턴트입니다. 연결된 도구가 있으면 활용해서 "
+    "정확한 정보를 근거로 답하세요."
+)
+
+
+def get_conn():
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+def _next_code(cur, *, table: str, column: str, prefix: str) -> str:
+    """`backend/db/codes.py`의 `next_short_code`와 같은 규칙 — prefix + 세 자리."""
+
+    cur.execute(
+        f"SELECT COALESCE(MAX(CAST(SUBSTRING({column} FROM 3) AS INTEGER)), 0) AS n "
+        f"FROM {table} WHERE {column} ~ %s",
+        (f"^{prefix}[0-9]{{3}}$",),
+    )
+    number = cur.fetchone()["n"] + 1
+    if number > 999:
+        raise SystemExit(f"{table} 코드 공간({prefix}000~{prefix}999)이 소진됐습니다.")
+    return f"{prefix}{number:03d}"
+
+
+def _next_agents_id(cur) -> str:
+    """`agents.agent_id`를 발급하되, 옛 `agent` 테이블과 번호가 안 겹치게 한다.
+
+    `backend/db/agent_platform.py`의 `_next_agents_id()`와 같은 이유 — 두 테이블이
+    'AG' 접두사를 공유해서, 겹치면 `_resolve_session_agent()`가 옛 테이블을 먼저
+    보는 바람에 새로 만든 에이전트가 조용히 가려진다(2026-08-15 실측). 이 스크립트는
+    repo 모듈을 import하지 않는 전제라 로직을 그대로 복붙했다 — `agent_platform.py`
+    쪽이 바뀌면 여기도 같이 고칠 것.
+    """
+    cur.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
+        "FROM agents WHERE agent_id ~ '^AG[0-9]{3}$'"
+    )
+    new_max = cur.fetchone()["n"]
+    cur.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
+        "FROM agent WHERE agent_id ~ '^AG[0-9]{3}$'"
+    )
+    legacy_max = cur.fetchone()["n"]
+    number = max(new_max, legacy_max) + 1
+    if number > 999:
+        raise SystemExit("agents 코드 공간(AG000~AG999)이 소진됐습니다.")
+    return f"AG{number:03d}"
+
+
+def backfill_team(conn, team_id: str) -> str | None:
+    """이 팀에 기본 챗 에이전트가 없으면 만든다. 만들었으면 agent_id, 이미
+    있었으면 None을 돌려준다."""
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT owner_account_id FROM team WHERE team_id = %s", (team_id,))
+        team = cur.fetchone()
+        if team is None:
+            raise SystemExit(f"존재하지 않는 팀입니다: {team_id}")
+
+        cur.execute(
+            "SELECT agent_id FROM agents WHERE team_id = %s AND is_default_chat = true",
+            (team_id,),
+        )
+        if cur.fetchone() is not None:
+            return None
+
+        agent_id = _next_agents_id(cur)
+        cur.execute(
+            """
+            INSERT INTO agents
+                (agent_id, team_id, name, description, owner_account_id,
+                 status, is_default_chat)
+            VALUES (%s, %s, %s, %s, %s, 'ACTIVE', true)
+            """,
+            (
+                agent_id,
+                team_id,
+                "기본 챗",
+                "Chat 화면의 기본 상대입니다. 도구·MCP만 붙일 수 있고 다른 에이전트로 위임하지 않습니다.",
+                team["owner_account_id"],
+            ),
+        )
+
+        agent_version_id = _next_code(
+            cur, table="agent_versions", column="agent_version_id", prefix="AV"
+        )
+        cur.execute(
+            """
+            INSERT INTO agent_versions
+                (agent_version_id, agent_id, version, system_prompt, model,
+                 reasoning_effort, created_by)
+            VALUES (%s, %s, 1, %s, %s, %s, %s)
+            """,
+            (
+                agent_version_id,
+                agent_id,
+                DEFAULT_CHAT_SYSTEM_PROMPT,
+                DEFAULT_MODEL,
+                DEFAULT_EFFORT,
+                team["owner_account_id"],
+            ),
+        )
+
+        cur.execute(
+            "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
+            (agent_version_id, agent_id),
+        )
+
+    return agent_id
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="기존 팀에 기본 챗 에이전트를 백필한다.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--team", help="대상 팀 id (예: TE001)")
+    group.add_argument("--all-teams", action="store_true", help="모든 팀에 백필")
+    args = parser.parse_args()
+
+    with get_conn() as conn:
+        if args.all_teams:
+            with conn.cursor() as cur:
+                cur.execute("SELECT team_id FROM team ORDER BY team_id")
+                team_ids = [row["team_id"] for row in cur.fetchall()]
+        else:
+            team_ids = [args.team]
+
+        if not team_ids:
+            print("팀이 하나도 없습니다.")
+            return 1
+
+        for team_id in team_ids:
+            agent_id = backfill_team(conn, team_id)
+            if agent_id:
+                print(f"{team_id}  {agent_id} 기본 챗 (신규)")
+            else:
+                print(f"{team_id}  이미 있음, 건너뜀")
+        conn.commit()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

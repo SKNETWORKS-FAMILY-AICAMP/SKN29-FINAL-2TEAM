@@ -61,6 +61,67 @@ export type ChatEvent =
        */
       detail?: string | null;
     }
+  /**
+   * 2026-08-15 추가 — 새 엔진(`services/agent_runtime/events.py`)이 실제로
+   * 내보내는 타입 태그다. **`tool_call_started`/`tool_call_finished`(위 두 개)와
+   * 다른 문자열이다** — 레거시 Harness(`services/harness/runner.py`)의 이름을
+   * 그대로 흉내 낸 게 아니라 새 엔진이 직접 정한 이름이라, 지금까지 이 파일에
+   * 없어서 화면이 조용히 못 알아보고 있었다(`liveChat.ts`의 `default` 분기로
+   * 빠져 `toolName`/진행 카드가 갱신되지 않던 문제 — `_run_deep_agent`가
+   * 2026-08-14부터 유일한 실행 경로라 실제로 매번 이 타입으로 온다).
+   *
+   * `subagent_alias`가 있으면 서브 에이전트(Child) 자신의 직접 호출, 없으면
+   * 루트가 직접 부른 것이다 — Child는 메모리가 없으므로(§4, 장기메모리 설계
+   * 문서) 메모리 패널은 `subagent_alias == null`인 것만 본다.
+   */
+  | {
+      type: 'tool_started';
+      run_id?: string | null;
+      parent_run_id?: string | null;
+      subagent_alias?: string | null;
+      tool_ref: string;
+      tool_call_id?: string | null;
+      /** 부모 자신의 직접 호출일 때만 채워진다(`events.py` `_classify_parent_tool_calls`/자식 분기). */
+      arguments?: Record<string, unknown>;
+    }
+  | {
+      type: 'tool_completed';
+      run_id?: string | null;
+      parent_run_id?: string | null;
+      subagent_alias?: string | null;
+      tool_ref: string;
+      tool_call_id?: string | null;
+      status: 'OK' | 'FAILED';
+    }
+  | {
+      type: 'tool_progress';
+      run_id?: string | null;
+      parent_run_id?: string | null;
+      subagent_alias?: string | null;
+      tool_ref: string;
+      detail?: Record<string, unknown>;
+    }
+  | {
+      type: 'subagent_started';
+      run_id: string;
+      parent_run_id?: string | null;
+      agent_id?: string | null;
+      agent_version_id?: string | null;
+      subagent_alias: string | null;
+      subagent_name?: string | null;
+      task_summary?: string;
+    }
+  | {
+      type: 'subagent_completed';
+      run_id?: string | null;
+      parent_run_id?: string | null;
+      agent_id?: string | null;
+      agent_version_id?: string | null;
+      subagent_alias?: string | null;
+      subagent_name?: string | null;
+      status: 'DONE' | 'FAILED';
+      error_code?: string;
+    }
   | { type: 'task_extraction_result'; proj_id: string; result: TaskExtractionPayload; tool_ref?: string; tool_call_id?: string }
   | {
       type: 'jira_status';

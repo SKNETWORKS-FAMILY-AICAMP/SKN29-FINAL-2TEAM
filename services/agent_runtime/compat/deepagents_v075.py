@@ -87,15 +87,33 @@ def create_root_graph(
     tools: Sequence[Any] = (),
     subagents: Sequence[Any] = (),
     middleware: Sequence[Any] = (),
+    memory: Sequence[str] = (),
+    backend: Any = None,
+    store: Any = None,
 ) -> Any:
-    """Root용 Deep Agent 그래프를 조립한다."""
-    return create_deep_agent(
+    """Root용 Deep Agent 그래프를 조립한다.
+
+    `memory`/`backend`/`store`는 장기 메모리용(2026-08-15,
+    `services/agent_runtime/memory/` 참고) — Child에는 안 넘긴다
+    (`create_child_graph`에는 이 세 파라미터가 없다). 셋 다 안 넘기면
+    (기본값) deepagents 기본 동작 그대로다(하위 호환) — `kwargs`에서 아예
+    뺀다, `None`/빈 값을 그대로 넘기면 deepagents가 "명시적으로 지정한 것"과
+    "안 지정한 것"을 구분 못 할 수 있어서.
+    """
+    kwargs: dict[str, Any] = dict(
         model=model,
         system_prompt=system_prompt,
         tools=list(tools),
         subagents=list(subagents),
         middleware=list(middleware),
     )
+    if memory:
+        kwargs["memory"] = list(memory)
+    if backend is not None:
+        kwargs["backend"] = backend
+    if store is not None:
+        kwargs["store"] = store
+    return create_deep_agent(**kwargs)
 
 
 def create_child_graph(

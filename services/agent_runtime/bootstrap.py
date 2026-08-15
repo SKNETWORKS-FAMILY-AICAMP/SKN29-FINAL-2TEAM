@@ -29,6 +29,7 @@ from services.agent_runtime.compat import assert_supported_version, register_def
 from services.agent_runtime.executor import AgentExecutor
 from services.agent_runtime.factory import AgentRuntimeFactory, DependencyGraphSource
 from services.agent_runtime.loader import AgentDefinitionLoader
+from services.agent_runtime.memory.provider import MemoryProvider
 from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
 from services.agent_runtime.prompts import RuntimePromptAssembler
@@ -83,6 +84,11 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
         middleware_factory=MiddlewareFactory(runtime_policy=policy),
         runtime_policy=policy,
         prompt_assembler=RuntimePromptAssembler(),
+        # 장기 메모리(2026-08-15, services/agent_runtime/memory/). Root graph에만
+        # 붙는다 — factory.py의 build() 참고. MemoryProvider() 생성 자체는 I/O가
+        # 없다(PostgresStore 연결은 실제로 메모리를 쓰는 첫 호출에서 열린다,
+        # memory/store.py 참고) — 이 함수의 "호출마다 새로 조립" 원칙과 안 어긋난다.
+        memory_provider=MemoryProvider(),
     )
     return AgentExecutor(loader=AgentDefinitionLoader(), factory=factory)
 

@@ -1979,6 +1979,17 @@ class TeamRepository:
                     (team_id, owner_account_id),
                 )
 
+                # 지연 import — agent_platform이 이 모듈의 _require_team을
+                # 가져다 써서(순환 참조), 모듈 최상단에서는 못 붙인다.
+                # Chat의 기본 상대가 없으면 랜딩 화면(/chat)이 비어 보이므로,
+                # 팀 생성과 같은 트랜잭션으로 묶어 반쪽 상태를 막는다
+                # (2026-08-15, Chat 재설계).
+                from .agent_platform import provision_default_chat_agent
+
+                provision_default_chat_agent(
+                    cursor, team_id=team_id, owner_account_id=owner_account_id
+                )
+
                 log_with(
                     cursor,
                     actor_account_id=owner_account_id,

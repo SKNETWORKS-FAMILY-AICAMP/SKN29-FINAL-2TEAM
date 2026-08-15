@@ -36,6 +36,13 @@ export const PATHS = {
   agents: '/agents',
   agentEdit: '/agents/:agentId/edit',
   agentNew: '/agents/new/edit',
+  /** 새 버전 스키마(services/agent_runtime/) 전용 — 위 옛 라우트와 나란히
+   * 존재한다. 사이드바 "에이전트"는 이제 이쪽을 가리킨다(2026-08-15) —
+   * Chat 상단 드롭다운이 이 스키마 에이전트를 직접 부를 수 있다. 옛 라우트는
+   * 직접 URL로만 남아 있다(APP_NAV_ITEMS 주석 참고). */
+  agentVersions: '/agents/versions',
+  agentVersionEdit: '/agents/versions/:agentId/edit',
+  agentVersionNew: '/agents/versions/new/edit',
   /** 문서는 팀 소속이라 프로젝트로 좁히지 않는다. 경로는 PM 확정 대기(상수라 바꾸기 쉽다). */
   documents: '/documents',
   settingsConnectors: '/settings/connectors',
@@ -63,6 +70,16 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.chat, label: 'Chat (홈)', group: 'Agent Platform' },
   { path: PATHS.agents, label: '에이전트 목록', group: 'Agent Platform' },
   { path: PATHS.agentNew, label: '에이전트 만들기', group: 'Agent Platform' },
+  {
+    path: PATHS.agentVersions,
+    label: '에이전트 목록 (버전, Deep Agent)',
+    group: 'Agent Platform',
+  },
+  {
+    path: PATHS.agentVersionNew,
+    label: '에이전트 만들기 (버전, Deep Agent)',
+    group: 'Agent Platform',
+  },
   { path: PATHS.documents, label: '문서', group: 'Agent Platform' },
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
@@ -92,10 +109,18 @@ export interface AppNavItem {
   match: string[];
 }
 
-/** AppShell 사이드바 4항목. Admin(Ops)은 별도 로그인이라 여기 없다. */
+/**
+ * AppShell 사이드바 4항목. Admin(Ops)은 별도 로그인이라 여기 없다.
+ *
+ * "에이전트"는 2026-08-15부터 새 버전 스키마 화면(`agentVersions`)을 가리킨다
+ * — Chat이 이제 이 스키마 에이전트를 드롭다운으로 직접 부를 수 있게 되면서
+ * (§ChatPage.tsx 헤더 주석) 옛 화면(`agents`, "테스트 실행" 포함)을 사용자
+ * 동선에서 뺐다. 옛 화면 자체는 지우지 않았다 — `/agents`로 직접 들어가거나
+ * `/screens` 개발 인덱스에서는 여전히 열린다.
+ */
 export const APP_NAV_ITEMS: AppNavItem[] = [
   { label: '채팅', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
-  { label: '에이전트', to: PATHS.agents, icon: 'sparkles', match: [PATHS.agents] },
+  { label: '에이전트', to: PATHS.agentVersions, icon: 'sparkles', match: [PATHS.agentVersions] },
   { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects, PATHS.documents] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },
 ];
