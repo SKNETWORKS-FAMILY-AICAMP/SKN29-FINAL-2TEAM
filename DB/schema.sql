@@ -915,6 +915,10 @@ CREATE TABLE agent_run (
     iterations     INT         NOT NULL DEFAULT 0,
     token_in       INT,
     token_out      INT,
+    -- 배포된 런타임 코드 버전(git commit SHA). 2026-08-14 추가(DB/migrations/
+    -- 2026-08-14_agent_run_runtime_profile_version.sql) — 배포 파이프라인이
+    -- GIT_COMMIT_SHA를 안 넘기면(config/settings/base.py RUNTIME_PROFILE_VERSION) NULL.
+    runtime_profile_version  VARCHAR(64),
     started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at       TIMESTAMPTZ
 );

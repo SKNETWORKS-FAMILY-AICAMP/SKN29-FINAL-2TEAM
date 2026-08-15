@@ -48,6 +48,11 @@ def session_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "session_id": row["session_id"],
         "agent_id": row["agent_id"],
+        # 신규(버전) 스키마 에이전트로 연 대화만 채워진다 — 레거시는 항상
+        # `None`(services/agent_runtime/loader.py가 아직 이 값을 안 쓴다).
+        # 화면이 "이 대화가 어느 실행 경로를 타는지"를 굳이 알 필요는 없지만,
+        # 값이 있다는 사실 자체가 새 엔진으로 도는 대화라는 신호다.
+        "agent_version_id": row.get("agent_version_id"),
         "agent_name": row.get("agent_name"),
         "proj_id": row.get("proj_id"),
         "title": row.get("title"),

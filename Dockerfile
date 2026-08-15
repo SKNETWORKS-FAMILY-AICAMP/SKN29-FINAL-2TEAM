@@ -1,5 +1,13 @@
 FROM python:3.13-slim
 
+# 배포 파이프라인이 `docker build --build-arg GIT_COMMIT_SHA=$(git rev-parse HEAD)`로
+# 채운다 — 안 넘기면 빈 문자열이고, config/settings/base.py가 그걸 None으로
+# 정규화한다(2026-08-14, agent_run.runtime_profile_version). 이 저장소엔 아직
+# 그렇게 자동으로 채워주는 CI가 없다 — 배포 스크립트 쪽에서 이 build-arg를
+# 넘겨야 실제로 값이 들어간다.
+ARG GIT_COMMIT_SHA=""
+ENV RUNTIME_PROFILE_VERSION=${GIT_COMMIT_SHA}
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 

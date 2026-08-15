@@ -22,10 +22,12 @@ deepagents==0.7.5
 langchain-core>=1.4.0,<2.0.0
 langchain>=1.3.4,<2.0.0
 # deepagents 자체 의존성은 langchain-anthropic/langchain-google-genai만 강제한다.
-# 이 프로젝트는 OpenAI 호환 엔드포인트 하나로 Claude/OpenRouter/Groq/Gemini를
-# 함께 받는 자체 어댑터(runner._default_model)를 이미 갖고 있다 — models/factory.py
-# 구현 시 langchain-anthropic 네이티브 통합을 쓸지, 기존 어댑터처럼 ChatOpenAI
-# 호환 경로로 통일할지를 스파이크 단계에서 정할 것. 미정 상태라 langchain-openai는
-# 아직 추가하지 않는다.
+# 2026-08-13 결정(작업자B_실행코어_세부계획.md §6-3): claude-* 모델은
+# langchain-anthropic 네이티브(ChatAnthropic)로, 팀 커스텀 엔드포인트가 없는
+# 기본 OpenAI 모델은 langchain-openai의 Responses API 경로(use_responses_api,
+# 기존 services/harness/runner._default_model과 동일 API — 2026-08-11 도구 호출
+# 실측된 경로)로 부른다. runner._default_model 함수 자체는 재사용하지 않는다 —
+# 라우팅 "정책"만 models/factory.py에서 새로 구현한다.
 langchain-anthropic>=1.4.3,<2.0.0
 langchain-google-genai>=4.2.2,<5.0.0
+langchain-openai>=1.4.3,<2.0.0

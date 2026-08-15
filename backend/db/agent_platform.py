@@ -531,16 +531,15 @@ class AgentVersionCrudRepository:
                     )
 
                 # 구조 검증 — API와 Factory(services/agent_runtime/factory.py)가
-                # 같은 함수를 쓴다(02 §7.1). allow_subagents=False는 항상 고정값이다
-                # — MVP는 1단계 위임만 허용하므로, 고른 자식이 이미 자기 자식을
-                # 갖고 있으면(has_subagents=True) 여기서 막아야 한다.
+                # 같은 함수를 쓴다(02 §7.1). MVP는 1단계 위임만 허용하므로, 고른
+                # 자식이 이미 자기 자식을 갖고 있으면(has_subagents=True) 여기서
+                # 막는다 — `validate_subagents()`가 이 검사를 항상 켜 둔다.
                 child_refs = _build_subagent_refs(cursor, team_id=team_id, subagents=subagents)
                 dependency_graph = _team_dependency_graph(cursor, team_id=team_id)
                 validate_subagents(
                     parent_agent_id=agent_id,
                     child_refs=child_refs,
                     dependency_graph=dependency_graph,
-                    allow_subagents=False,
                 )
 
                 cursor.execute(
@@ -899,6 +898,51 @@ class AgentRunRepository:
                 return cursor.fetchone()["run_id"]
 
     @staticmethod
+    def start_with_id(
+        *,
+        run_id: str,
+        agent_id: str,
+        session_id: str | None,
+        parent_run_id: str | None,
+        agent_version_id: str | None = None,
+        runtime_profile_version: str | None = None,
+    ) -> str:
+        """`start()`의 짝 — 호출자가 `run_id`를 이미 정해서 부를 때 쓴다.
+
+        새 엔진(`services.agent_runtime`)은 이벤트 스트림에 `run_id`를 먼저
+        실어 내보낸다(공통 계약 §14 — `agent_started`/`subagent_started`가
+        `run_id`를 담고, 그 값이 화면·로그 양쪽에서 같은 실행을 가리키는
+        유일한 키다). `start()`처럼 Postgres가 새로 생성하게 두면 스트림에
+        이미 나간 `run_id`와 DB 행의 실제 `run_id`가 어긋난다 — 화면에 보인
+        `run_id`로 이 행을 못 찾게 된다.
+
+        `agent_version_id`/`runtime_profile_version`은 레거시 `start()`엔
+        없는 값이다(레거시 harness 경로는 이 컬럼들을 모른다 — 계속 NULL로
+        쌓인다, `DB/migrations/2026-08-13_agent_versioning.sql` 주석). 새
+        엔진만 채운다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO agent_run
+                        (run_id, session_id, agent_id, parent_run_id,
+                         agent_version_id, runtime_profile_version, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'RUNNING')
+                    RETURNING run_id::text
+                    """,
+                    (
+                        run_id,
+                        session_id,
+                        agent_id,
+                        parent_run_id,
+                        agent_version_id,
+                        runtime_profile_version,
+                    ),
+                )
+                return cursor.fetchone()["run_id"]
+
+    @staticmethod
     def finish(
         *,
         run_id: str,
@@ -961,6 +1005,45 @@ class ToolCallRepository:
                 )
 
 
+def _resolve_session_agent(cursor, *, agent_id: str, team_id: str) -> str | None:
+    """대화를 열 에이전트가 레거시(`agent`)인지 신규 버전(`agents`)인지 가려내고,
+    신규면 **지금 발행 중인** 버전(`agents.current_version_id`)을 돌려준다.
+    레거시는 버전이 없으므로 `None`.
+
+    **레거시 테이블을 먼저 본다.** 두 테이블이 같은 "AG" 접두어를 쓰는 건
+    실수가 아니라 의도된 설계다(DB/migrations/2026-08-13_agent_versioning.sql
+    상단 주석 — 신규 테이블이 결국 `agent`를 대체할 것을 전제로 같은 코드
+    체계를 물려받았다). `next_short_code()`가 테이블마다 따로 유일성을 매기므로
+    같은 값이 두 테이블에 동시에 존재할 수 있지만, 그렇더라도 레거시 우선
+    조회가 "레거시로 만든 에이전트는 레거시 실행 경로를 그대로 쓴다"는 지금의
+    보수적인 기본값과 맞는다 — 전환이 끝나 `agent`가 폐기되면 이 분기 자체가
+    없어진다.
+    """
+
+    cursor.execute("SELECT team_id FROM agent WHERE agent_id = %s", (agent_id,))
+    legacy = cursor.fetchone()
+    if legacy is not None:
+        if legacy["team_id"] != team_id:
+            raise PermissionDenied("이 에이전트를 쓸 수 없습니다.")
+        return None
+
+    cursor.execute(
+        "SELECT team_id, status, current_version_id FROM agents WHERE agent_id = %s",
+        (agent_id,),
+    )
+    agent = cursor.fetchone()
+    if agent is None:
+        raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
+    if agent["team_id"] != team_id:
+        raise PermissionDenied("이 에이전트를 쓸 수 없습니다.")
+    if agent["status"] != "ACTIVE" or agent["current_version_id"] is None:
+        # 아직 한 번도 발행하지 않았거나 비활성화된 에이전트로는 대화를 열 수
+        # 없다 — AgentVersionActivateAPIView의 ACTIVE 게이팅과 같은 경계
+        # ("Chat 위임과 관리 화면의 'Chat에서 사용' 노출").
+        raise ReferenceNotFound(f"대화를 열 수 없는 에이전트입니다: {agent_id}")
+    return agent["current_version_id"]
+
+
 def _require_session(cursor, *, session_id: str, account_id: str) -> dict[str, Any]:
     """이 대화가 내 팀 것인지 확인하고 대화 행을 돌려준다.
 
@@ -975,8 +1058,8 @@ def _require_session(cursor, *, session_id: str, account_id: str) -> dict[str, A
     team_id = _require_team(cursor, account_id)
     cursor.execute(
         """
-        SELECT session_id::text, team_id, account_id, agent_id, proj_id, title,
-               created_at, updated_at
+        SELECT session_id::text, team_id, account_id, agent_id, agent_version_id,
+               proj_id, title, created_at, updated_at
         FROM chat_session
         WHERE session_id::text = %s
         """,
@@ -997,23 +1080,19 @@ class ChatSessionRepository:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
 
-                # 남의 팀 에이전트로 대화를 열지 못하게 한다. FK 가 없으니
-                # 이 검사가 유일한 자물쇠다.
-                cursor.execute("SELECT team_id FROM agent WHERE agent_id = %s", (agent_id,))
-                agent = cursor.fetchone()
-                if agent is None:
-                    raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
-                if agent["team_id"] != team_id:
-                    raise PermissionDenied("이 에이전트를 쓸 수 없습니다.")
+                agent_version_id = _resolve_session_agent(
+                    cursor, agent_id=agent_id, team_id=team_id
+                )
 
                 cursor.execute(
                     """
-                    INSERT INTO chat_session (team_id, account_id, agent_id, proj_id, title)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING session_id::text, team_id, account_id, agent_id, proj_id,
-                              title, created_at, updated_at
+                    INSERT INTO chat_session
+                        (team_id, account_id, agent_id, agent_version_id, proj_id, title)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING session_id::text, team_id, account_id, agent_id,
+                              agent_version_id, proj_id, title, created_at, updated_at
                     """,
-                    (team_id, account_id, agent_id, proj_id, title),
+                    (team_id, account_id, agent_id, agent_version_id, proj_id, title),
                 )
                 return cursor.fetchone()
 
@@ -1039,10 +1118,16 @@ class ChatSessionRepository:
                 _require_team(cursor, account_id)
                 cursor.execute(
                     """
-                    SELECT s.session_id::text, s.agent_id, s.proj_id, s.title,
-                           s.created_at, s.updated_at, a.name AS agent_name
+                    SELECT s.session_id::text, s.agent_id, s.agent_version_id, s.proj_id,
+                           s.title, s.created_at, s.updated_at,
+                           -- 레거시(agent)와 신규(agents) 어느 쪽으로 만든 대화든
+                           -- 이름이 뜨게 둘 다 본다 — 세션은 생성 시 어느 테이블
+                           -- 것인지 이미 agent_version_id 유무로 갈라져 있어서
+                           -- (_resolve_session_agent) 겹칠 일이 없다.
+                           COALESCE(a.name, av.name) AS agent_name
                     FROM chat_session AS s
                     LEFT JOIN agent AS a ON a.agent_id = s.agent_id
+                    LEFT JOIN agents AS av ON av.agent_id = s.agent_id
                     WHERE s.account_id = %s
                     ORDER BY s.updated_at DESC
                     """,

@@ -1,12 +1,4 @@
-"""tool_ref를 기준으로 내장 도구와 MCP 도구를 선택적으로 로딩한다.
-
-정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §8, §9
-
-Tool 데이터 구조와 컨텍스트 주입(inject_runtime_context)은 deepagents에 의존하지
-않는 순수 로직이라 지금 구현한다. 실제 도구 목록을 채우는 ToolLoader.load()는
-기존 services/harness/registry.py(BUILTIN_TOOLS)·MCP 클라이언트 연결이 필요해서
-스텁으로 둔다.
-"""
+"""tool_ref 로딩과 서버 컨텍스트 주입을 담당한다."""
 
 from __future__ import annotations
 
@@ -20,11 +12,7 @@ from services.agent_runtime.exceptions import ToolContextConfigurationError, Too
 
 @dataclass(frozen=True)
 class Tool:
-    """도구 하나의 런타임 표현(§8.1).
-
-    injected_context에 선언된 이름만 서버가 강제로 채운다 — 선언 안 한 인자가
-    전달돼 핸들러에서 TypeError가 나는 경로를 막는다(§8.2).
-    """
+    """Factory가 LangChain Tool로 변환하기 전의 Tool 설정."""
 
     ref: str
     name: str
@@ -36,8 +24,7 @@ class Tool:
     injected_context: tuple[str, ...] = ()
 
 
-# 도구가 선언할 수 있는 주입 가능 컨텍스트 이름 → RuntimeContext에서 값을 뽑는 함수.
-# 새 이름을 추가할 때는 RuntimeContext(context.py)에 해당 필드가 있는지 먼저 확인할 것.
+# Tool에 서버가 주입할 수 있는 컨텍스트 값.
 CONTEXT_VALUES: dict[str, Callable[[RuntimeContext], Any]] = {
     "team_id": lambda context: context.team_id,
     "account_id": lambda context: context.account_id,
@@ -53,10 +40,7 @@ def inject_runtime_context(
     arguments: Mapping[str, Any],
     context: RuntimeContext,
 ) -> dict[str, Any]:
-    """모델/사용자가 보낸 인자에 서버 컨텍스트 값을 덮어써서 반환한다(§8.2).
-
-    서버 값이 항상 우선한다 — 모델이 같은 키로 다른 값을 보내도 무시한다.
-    """
+    """Tool이 선언한 컨텍스트 인자를 서버 값으로 덮어쓴다."""
     resolved = dict(arguments)
 
     for name in tool.injected_context:
@@ -71,23 +55,82 @@ def inject_runtime_context(
     return resolved
 
 
-class ToolLoader:
-    """tool_refs를 실제 Tool 목록으로 변환한다.
+#: MCP 도구 tool_ref 접두사(DB/migrations/2026-08-11_agent_platform.sql,
+#: services/harness/registry.py 모듈 docstring과 동일 규칙 — 이 접두사가
+#: 바뀌면 두 곳 다 같이 고쳐야 한다).
+_MCP_TOOL_PREFIX = "mcp:"
 
-    ⚠ 미구현. 완성하려면:
-    - 내장 도구: services/harness/registry.py의 BUILTIN_TOOLS를 tools/adapters.py로
-      감싸 injected_context를 명시한 Tool로 변환(§8.3 — 레거시 inspect.signature()
-      자동 추론은 마이그레이션 기간에만 허용, deprecation warning 필수).
-    - MCP 도구: services/mcp/client.py 연결. MVP는 팀 공용 자격 증명만(§9) —
-      개인 MCP 자격 증명 요청이 오면 명시적으로 거부할 것(조용히 팀 자격으로
-      fallback하지 않는다. fallback 여부는 별도 제품 정책으로 결정 전까지 보류).
+
+def model_safe_tool_name(tool_ref: str) -> str:
+    """모델(LLM 함수 호출 API)에게 실제로 보낼 함수 이름.
+
+    OpenAI 함수 이름은 `^[a-zA-Z0-9_-]+$`만 허용해 `mcp:<id>` 처럼 콜론이 든
+    tool_ref를 그대로 못 쓴다 — 레거시 `services/harness/runner.py`의
+    `model_name_for()`와 동일 근거(2026-08-12 실측: `Invalid 'tools[N].name':
+    string does not match pattern`). 저장소 규칙(tool_ref엔 콜론)은 바꾸지
+    않고, 모델에게 나가는 이름만 여기서 바꾼다 — 되돌리는 쪽은
+    `tool_ref_from_model_name()`.
     """
-
-    def load(self, *, tool_refs: tuple[str, ...], context: RuntimeContext) -> tuple[Tool, ...]:
-        raise NotImplementedError(
-            "harness.registry.BUILTIN_TOOLS 어댑터(tools/adapters.py)와 MCP 클라이언트 "
-            "연결 후 구현. 없는 tool_ref는 ToolUnavailableError를 낸다."
-        )
+    return tool_ref.replace(":", "__")
 
 
-__all__ = ["Tool", "ToolLoader", "CONTEXT_VALUES", "inject_runtime_context", "ToolUnavailableError"]
+def tool_ref_from_model_name(model_name: str) -> str:
+    """모델이 실제로 부른 함수 이름을 저장소 tool_ref로 되돌린다.
+
+    `model_safe_tool_name()`의 역변환. 콜론이 없던 이름(내장 도구, `task`
+    위임 등)은 그대로 통과한다.
+    """
+    return model_name.replace("__", ":")
+
+
+class ToolLoader:
+    """내장 Tool과 MCP Tool ref를 실제 `Tool` 목록으로 변환한다."""
+
+    def load(
+        self,
+        *,
+        tool_refs: tuple[str, ...],
+        context: RuntimeContext,
+        agent_model: str | None = None,
+    ) -> tuple[Tool, ...]:
+        """`agent_model`은 이 요청을 부른 에이전트가 실제로 고른 모델 문자열이다
+        (`AgentDefinition.model`) — `RuntimeContext`엔 없는 값이라 별도 인자로
+        받는다. 지금은 `tools/adapters.py`의 `task_extraction` 하나만 이 값을
+        쓴다(레거시 `services/harness/runner.py`의 `_injected()`가 같은 이유로
+        `agent.get("model")`을 넘기는 것과 동일한 근거).
+
+        MCP tool_ref(`mcp:<id>` 접두사, 2026-08-14 연결)는 요청된 tool_refs 중
+        하나라도 그 접두사면 팀의 등록된 MCP 도구를 함께 조회한다 — 내장
+        도구만 쓰는 에이전트가 매 실행마다 불필요한 DB 왕복을 하지 않도록,
+        실제로 필요할 때만 조회한다.
+        """
+        # 지연 import — services.harness.registry의 무거운 의존성 사슬
+        # (apps.connectors, backend.services.hr, services.mcp 등)을 이
+        # 모듈이 그냥 import되기만 해도 끌고 들어오지 않게 한다
+        # (factory.py의 DependencyGraphSource.load()와 같은 이유).
+        from services.agent_runtime.tools.adapters import adapt_builtin_tools, adapt_mcp_tools
+
+        available = {tool.ref: tool for tool in adapt_builtin_tools(agent_model=agent_model)}
+
+        if any(ref.startswith(_MCP_TOOL_PREFIX) for ref in tool_refs):
+            for mcp_tool in adapt_mcp_tools(team_id=context.team_id):
+                available[mcp_tool.ref] = mcp_tool
+
+        missing = [ref for ref in tool_refs if ref not in available]
+        if missing:
+            raise ToolUnavailableError(
+                f"다음 도구를 불러올 수 없습니다: {', '.join(missing)}. "
+                "등록되지 않았거나, 비활성화됐거나, 이 팀 소속이 아닙니다."
+            )
+        return tuple(available[ref] for ref in tool_refs)
+
+
+__all__ = [
+    "Tool",
+    "ToolLoader",
+    "CONTEXT_VALUES",
+    "inject_runtime_context",
+    "ToolUnavailableError",
+    "model_safe_tool_name",
+    "tool_ref_from_model_name",
+]

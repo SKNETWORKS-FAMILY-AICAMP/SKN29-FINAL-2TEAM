@@ -1,10 +1,4 @@
-"""Deep Agent 런타임 공통 예외.
-
-정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §12
-
-이 모듈은 순수 예외 정의만 담는다. deepagents/DB/HTTP 어떤 것도 import하지 않는다
-— definitions.py가 __post_init__에서 이 모듈을 참조하므로 순환 의존을 만들면 안 된다.
-"""
+"""Deep Agent 실행 코어의 공통 예외."""
 
 from __future__ import annotations
 
@@ -14,7 +8,7 @@ class AgentRuntimeError(Exception):
 
 
 class InvalidExecutionTargetError(AgentRuntimeError):
-    """draft와 저장된 agent_id/agent_version_id를 동시에 실행하려 했을 때(§13.2)."""
+    """draft와 저장된 Agent version 입력이 올바르지 않을 때."""
 
 
 class AgentDefinitionNotFound(AgentRuntimeError):
@@ -34,11 +28,23 @@ class ToolUnavailableError(AgentRuntimeError):
 
 
 class ToolContextConfigurationError(AgentRuntimeError):
-    """Tool.injected_context에 선언한 이름이 CONTEXT_VALUES에 없을 때(§8.2)."""
+    """Tool이 지원하지 않는 서버 컨텍스트 값을 요구할 때."""
+
+
+class ToolPermissionError(AgentRuntimeError):
+    """현재 요청자의 역할로는 부수효과 있는 Tool을 실행할 수 없을 때.
+
+    `filter_tools_for_role()`(노출 시점)과 별개로 `factory._to_langchain_tool()`의
+    `_run()`이 실행 직전에 다시 확인하다가 걸릴 때 던진다(2026-08-14 추가) — 정상
+    경로에서는 노출 필터가 이미 걸러서 여기까지 오지 않는다. 스트림 도중(도구가
+    실제로 실행되는 시점)에 나므로 `AgentExecutor.run()`의 실행 중 오류 처리로
+    가서 terminal `EVENT_ERROR`가 된다 — 그래서 아래 `HTTP_STATUS_BY_EXCEPTION`
+    (스트림 시작 전 오류 전용)에는 넣지 않는다.
+    """
 
 
 class SubagentValidationError(AgentRuntimeError):
-    """서브 에이전트 구조 검증 실패의 공통 상위 클래스(§7)."""
+    """Child 구성 검증 실패의 공통 상위 예외."""
 
 
 class SelfReferenceError(SubagentValidationError):
@@ -78,16 +84,15 @@ class SubagentPermissionError(SubagentValidationError):
 
 
 class AgentBuildError(AgentRuntimeError):
-    """Loader/Factory 조립 단계에서 예상 못한 오류가 났을 때(§13.3)."""
+    """Loader 또는 Factory에서 예상하지 못한 오류가 발생했을 때."""
 
 
 class AgentExecutionError(AgentRuntimeError):
-    """스트림이 열린 뒤 실행 자체가 실패했을 때(§13.3)."""
+    """stream 시작 후 실행이 실패했을 때."""
 
 
-# HTTP 매핑(§12). API 뷰가 이 딕셔너리로 예외 → status code를 변환한다.
-# AgentExecutionError는 여기 없다 — 스트림이 열린 뒤의 오류는 HTTP 상태를 바꾸지
-# 않고 terminal `error` 이벤트로만 반환한다(§13.3).
+# Stream 시작 전 예외를 HTTP 상태 코드로 변환한다.
+# 실행 중 오류는 terminal error 이벤트로 반환하므로 여기 포함하지 않는다.
 HTTP_STATUS_BY_EXCEPTION: dict[type[AgentRuntimeError], int] = {
     InvalidExecutionTargetError: 400,
     AgentDefinitionNotFound: 404,

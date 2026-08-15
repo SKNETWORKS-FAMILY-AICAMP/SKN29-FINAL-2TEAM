@@ -5,7 +5,7 @@
 """
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
@@ -24,6 +24,15 @@ SESSION = {
     "created_at": "2026-08-11T09:00:00Z",
     "updated_at": "2026-08-11T09:00:00Z",
 }
+
+#: 신규(버전) 스키마 에이전트로 연 대화 — `agent_version_id`가 있다는 사실 자체가
+#: `services.agent_runtime` 엔진을 타야 한다는 신호다(apps/chat/serializers.py
+#: session_response 주석).
+DEEP_SESSION = {**SESSION, "agent_version_id": "AV001"}
+
+#: `AccountRepository.get_profile()`이 돌려주는 모양 중 `account_role()`이 보는
+#: 부분만 — 초대로 들어오지 않았으므로 팀장.
+LEADER_PROFILE = {"account_id": "UA001", "invited": False}
 
 
 def auth_header(account_id="UA001"):
@@ -109,21 +118,59 @@ class ChatSessionApiTests(SimpleTestCase):
         self.assertEqual(self.client.get("/api/chat/sessions/").status_code, 401)
 
 
+#: 레거시 `agent` 스키마 세션(agent_version_id 없음)도 이제 legacy_bridge를
+#: 거쳐 새 엔진으로 실행된다(2026-08-14 전환) — `draft_from_legacy_agent()`가
+#: 읽는 AgentRepository를 여기서 mock한다.
+LEGACY_AGENT_ROW = {
+    "agent_id": "AG001",
+    "team_id": "TM001",
+    "name": "레거시 에이전트",
+    "description": "",
+    "instruction": "너는 팀 업무를 돕는 에이전트다.",
+    "model": "claude-sonnet-5",
+    "reasoning_effort": "low",
+    "max_iterations": 10,
+    "is_prebuilt": False,
+    "status": "ACTIVE",
+}
+
+
+def _mock_legacy_agent_bridge(agent_repo, *, tool_refs=()):
+    agent_repo.get.return_value = LEGACY_AGENT_ROW
+    agent_repo.tool_refs.return_value = list(tool_refs)
+
+
+def _mock_new_engine(build_executor, events):
+    mock_executor = MagicMock()
+    mock_executor.run.return_value = iter(events)
+    build_executor.return_value = mock_executor
+    return mock_executor
+
+
 #: 제목 짓기는 **모델을 부른다.** 막지 않으면 스트림을 타는 테스트마다 실제
 #: OpenAI 호출이 나가서 느려지고 네트워크에 흔들린다(2026-08-12 실측: 3.4초 →
 #: 12초). 제목이 붙는지는 `ChatSessionTitleTests` 에서 따로 본다.
+@patch("services.agent_runtime.build_default_executor")
+@patch("services.agent_runtime.legacy_bridge.AgentRepository")
 @patch("apps.chat.api_views.suggest_title", return_value=None)
-@patch("apps.chat.api_views.run_agent")
+@patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatStreamTests(SimpleTestCase):
-    def test_이벤트를_NDJSON_으로_중계한다(self, sessions, messages, run, _title):
+    """SESSION은 레거시 `agent` 스키마다(agent_version_id 없음) — 2026-08-14
+    전환으로 이 경로도 새 엔진(services.agent_runtime)을 탄다.
+    """
+
+    def test_이벤트를_NDJSON_으로_중계한다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
-        run.return_value = iter(
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(
+            build_executor,
             [
                 {"type": "stage", "step": 1, "total": 10, "label": "생각하는 중"},
                 {"type": "result", "text": "8월 20일입니다.", "complete": True},
-            ]
+            ],
         )
 
         response = self.client.post(
@@ -137,11 +184,13 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(response["Content-Type"], "application/x-ndjson")
         self.assertEqual([e["type"] for e in events], ["stage", "result"])
 
-    def test_사용자_발화는_스트림_전에_확정한다(self, sessions, messages, run, _title):
+    def test_사용자_발화는_스트림_전에_확정한다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         """답이 없는 대화는 다시 물으면 되지만, 질문이 사라지면 복구할 수 없다."""
 
         sessions.get.return_value = SESSION
-        run.return_value = iter([])
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(build_executor, [])
 
         self.client.post(
             f"/api/chat/sessions/{SESSION['session_id']}/messages/",
@@ -154,7 +203,7 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(first["role"], "user")
         self.assertEqual(first["content"], {"type": "text", "text": "일정 알려줘"})
 
-    def test_승인_대기가_남아_있어도_새_발화를_받는다(self, sessions, messages, run, _title):
+    def test_승인_대기가_남아_있어도_새_발화를_받는다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         """승인 대기 중에도 말할 수 있다(6차 단계 1-5 · 확정 ③).
 
         화면이 승인 대기 중 입력창을 여는 근거다. 발화 경로는 pending 을 아예
@@ -163,7 +212,11 @@ class ChatStreamTests(SimpleTestCase):
         """
 
         sessions.get.return_value = SESSION
-        run.return_value = iter([{"type": "result", "text": "다시 뽑았습니다.", "complete": True}])
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(
+            build_executor, [{"type": "result", "text": "다시 뽑았습니다.", "complete": True}]
+        )
 
         response = self.client.post(
             f"/api/chat/sessions/{SESSION['session_id']}/messages/",
@@ -177,16 +230,20 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual([e["type"] for e in events], ["result"])
         # 승인 경로가 아니므로 저장된 확인 카드를 들춰 보지 않는다.
         messages.latest_pending_confirmation.assert_not_called()
-        # 재개가 아니라 **새 실행**이다 — 앞선 대화 상태를 물려받지 않는다.
-        self.assertNotIn("resume_tool_call", run.call_args.args[2])
+        # 재개가 아니라 **새 실행**이다 — 새 엔진 executor.run()에는 애초에
+        # resume 개념 자체가 없다(HITL 미착수, 2026-08-14).
+        self.assertNotIn("resume_tool_call", mock_executor.run.call_args.kwargs)
 
-    def test_스트림이_끝나면_카드를_통째로_적재한다(self, sessions, messages, run, _title):
+    def test_스트림이_끝나면_카드를_통째로_적재한다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
-        run.return_value = iter(
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(
+            build_executor,
             [
                 {"type": "stage", "step": 1, "total": 10, "label": "생각하는 중"},
                 {"type": "result", "text": "끝", "complete": True},
-            ]
+            ],
         )
 
         response = self.client.post(
@@ -203,14 +260,18 @@ class ChatStreamTests(SimpleTestCase):
         # 새로고침 뒤에 같은 카드를 그리려면 이벤트가 통째로 남아야 한다.
         self.assertEqual(len(agent_write["content"]["events"]), 2)
 
-    def test_실행이_터지면_마지막_줄로_알린다(self, sessions, messages, run, _title):
+    def test_실행이_터지면_마지막_줄로_알린다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
 
         def boom():
             yield {"type": "stage", "step": 1, "total": 10, "label": "생각하는 중"}
             raise TimeoutError("느립니다")
 
-        run.return_value = boom()
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = boom()
+        build_executor.return_value = mock_executor
 
         response = self.client.post(
             f"/api/chat/sessions/{SESSION['session_id']}/messages/",
@@ -225,9 +286,211 @@ class ChatStreamTests(SimpleTestCase):
         self.assertEqual(events[-1]["type"], "error")
         self.assertIn("TimeoutError", events[-1]["detail"])
 
+    def test_승인_대기_이벤트가_오면_재개_정보와_함께_적재된다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
+        """새 엔진은 아직 이 이벤트를 만들지 않는다(HITL 미착수, 설계 계획
+        4번) — 하지만 `_relay()`/`_persist()`의 적재 규칙 자체는 이벤트
+        출처(레거시 run_agent든 새 엔진이든)를 가리지 않는다. 나중에 새
+        엔진이 이 이벤트를 내기 시작해도 적재가 깨지지 않는지 여기서 미리
+        고정해 둔다. (원래 ConfirmGateTests에 run_agent mock으로 있었으나
+        2026-08-14 전환으로 /messages/ 가 run_agent를 더 이상 안 불러서
+        이쪽으로 옮김.)
+        """
 
+        sessions.get.return_value = SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        resume = {"messages": [{"role": "user", "content": "올려줘"}], "tool_call": {"id": "c1"}}
+        _mock_new_engine(
+            build_executor,
+            [
+                {
+                    "type": "awaiting_confirmation",
+                    "run_id": "RUN-1",
+                    "tool_ref": "mcp:MT001",
+                    "tool_name": "Jira 이슈 생성",
+                    "arguments": {"issues": ["A"]},
+                    "resume": resume,
+                }
+            ],
+        )
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "Jira에 올려줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        stored = messages.append.call_args_list[-1].kwargs["content"]
+        self.assertEqual(stored["type"], "awaiting_confirmation")
+        self.assertEqual(stored["resume"], resume)
+
+@patch("services.agent_runtime.build_default_executor")
+@patch("apps.chat.api_views.suggest_title", return_value=None)
+@patch("apps.chat.api_views.AccountRepository")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class DeepAgentSessionStreamTests(SimpleTestCase):
+    """`agent_version_id`가 있는 세션(새-스키마 에이전트로 연 대화)은 레거시
+    `run_agent()` 대신 `services.agent_runtime` 엔진을 돈다.
+
+    `build_default_executor`는 여기서 patch한다 — `apps/chat/api_views.py`가
+    이 이름을 함수 안에서 지연 import하기 때문에(2026-08-14 부팅 실패 사고를
+    피하려는 패턴, `_run_deep_agent` docstring 참고)
+    `apps.chat.api_views.build_default_executor`라는 모듈 속성이 없다.
+    """
+
+    def test_new_engine_events_relay_through_ndjson(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter(
+            [
+                {"type": "agent_started", "run_id": "R1", "complete": False},
+                {"type": "result", "text": "새 엔진 답", "complete": True},
+            ]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        events = ndjson(response)
+
+        self.assertEqual(response["Content-Type"], "application/x-ndjson")
+        self.assertEqual([e["type"] for e in events], ["agent_started", "result"])
+
+    def test_run_agent_is_not_used_for_new_schema_sessions(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        with patch("apps.chat.api_views.run_agent") as run_agent_mock:
+            response = self.client.post(
+                f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+                {"content": "질문"},
+                content_type="application/json",
+                headers=auth_header(),
+            )
+            ndjson(response)
+
+        run_agent_mock.assert_not_called()
+        mock_executor.run.assert_called_once()
+
+    def test_agent_id_version_id_and_role_reach_the_executor(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        # 초대로 들어온 계정 — 팀원.
+        accounts.get_profile.return_value = {"account_id": "UA001", "invited": True}
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        # StreamingHttpResponse는 지연 스트림이다 — 실제로 읽어야
+        # `_run_deep_agent`(제너레이터)가 돌기 시작하고 executor.run()이 불린다.
+        ndjson(response)
+
+        call_kwargs = mock_executor.run.call_args.kwargs
+        self.assertEqual(call_kwargs["agent_id"], "AG001")
+        self.assertEqual(call_kwargs["agent_version_id"], "AV001")
+        self.assertEqual(call_kwargs["context"].role, "member")
+        self.assertEqual(call_kwargs["context"].team_id, "TM001")
+        # agent_version_id가 있는 세션은 draft 경로를 타지 않는다 — legacy_bridge를
+        # 거치지 않고 그대로 agent_id/agent_version_id로 실행한다(2026-08-14).
+        self.assertIsNone(call_kwargs["draft"])
+
+    def test_conversation_history_is_threaded_through(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = [
+            {"role": "user", "content": {"text": "이전 질문"}},
+            {"role": "agent", "content": {"text": "이전 답"}},
+        ]
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "새 질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        call_kwargs = mock_executor.run.call_args.kwargs
+        self.assertEqual(
+            call_kwargs["conversation_messages"],
+            ({"role": "user", "content": "이전 질문"}, {"role": "assistant", "content": "이전 답"}),
+        )
+
+    def test_error_event_gets_a_text_field_copied_from_message(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """새 엔진의 ERROR 이벤트는 `message`를 쓰는데 `_persist()`는 `text`를
+        읽는다(레거시 규격) — `_run_deep_agent`가 맞춰 주지 않으면 저장된
+        카드에 빈 텍스트만 남는다."""
+
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter(
+            [
+                {
+                    "type": "error",
+                    "error_code": "AGENT_EXECUTION_FAILED",
+                    "message": "에이전트 실행 중 오류가 발생했습니다.",
+                    "complete": True,
+                }
+            ]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        events = ndjson(response)
+
+        # 에러도 마지막 줄로 온다 — _relay()의 종결 판정에 EVENT_ERROR가
+        # 포함됐다는 뜻(안 들어 있으면 final이 None으로 남아 아래 적재 자체가
+        # 안 된다).
+        self.assertEqual(events[-1]["type"], "error")
+        agent_write = messages.append.call_args_list[-1].kwargs
+        self.assertEqual(agent_write["role"], "agent")
+        self.assertEqual(agent_write["content"]["text"], "에이전트 실행 중 오류가 발생했습니다.")
+        self.assertEqual(agent_write["content"]["complete"], True)
+
+
+@patch("services.agent_runtime.build_default_executor")
+@patch("services.agent_runtime.legacy_bridge.AgentRepository")
 @patch("apps.chat.api_views.suggest_title")
-@patch("apps.chat.api_views.run_agent")
+@patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatSessionTitleTests(SimpleTestCase):
@@ -237,7 +500,9 @@ class ChatSessionTitleTests(SimpleTestCase):
     문장을 보내서 대화 둘이 글자까지 똑같아진다(2026-08-12 QA 시나리오 B).
     """
 
-    def _post(self, run, content="이 프로젝트의 기준 문서에서 업무를 뽑아줘"):
+    def _post(self, accounts, agent_repo, content="이 프로젝트의 기준 문서에서 업무를 뽑아줘"):
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
         return self.client.post(
             f"/api/chat/sessions/{SESSION['session_id']}/messages/",
             {"content": content},
@@ -245,29 +510,29 @@ class ChatSessionTitleTests(SimpleTestCase):
             headers=auth_header(),
         )
 
-    def test_첫_답_뒤에_제목이_한_줄로_온다(self, sessions, _messages, run, title):
+    def test_첫_답_뒤에_제목이_한_줄로_온다(self, sessions, _messages, accounts, title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
         sessions.rename_if_first_answer.return_value = True
         title.return_value = "감리 업무 20건 추출"
-        run.return_value = iter([{"type": "result", "text": "20건 뽑았습니다.", "complete": True}])
+        _mock_new_engine(build_executor, [{"type": "result", "text": "20건 뽑았습니다.", "complete": True}])
 
-        events = ndjson(self._post(run))
+        events = ndjson(self._post(accounts, agent_repo))
 
         self.assertEqual(events[-1], {"type": "session_title", "title": "감리 업무 20건 추출"})
         # 질문만으로는 「업무 뽑아줘」밖에 모른다. 답까지 넘겨야 이름이 정해진다.
         self.assertEqual(title.call_args.kwargs["answer"], "20건 뽑았습니다.")
 
-    def test_두_번째_답부터는_안_바꾼다(self, sessions, _messages, run, title):
+    def test_두_번째_답부터는_안_바꾼다(self, sessions, _messages, accounts, title, agent_repo, build_executor):
         """대화가 길어질 때마다 제목이 바뀌면 사이드바에서 찾던 것이 사라진다."""
 
         sessions.get.return_value = SESSION
         sessions.rename_if_first_answer.return_value = False
         title.return_value = "다른 이름"
-        run.return_value = iter([{"type": "result", "text": "네.", "complete": True}])
+        _mock_new_engine(build_executor, [{"type": "result", "text": "네.", "complete": True}])
 
-        self.assertEqual([e["type"] for e in ndjson(self._post(run))], ["result"])
+        self.assertEqual([e["type"] for e in ndjson(self._post(accounts, agent_repo))], ["result"])
 
-    def test_실패한_실행에는_이름을_안_짓는다(self, sessions, _messages, run, title):
+    def test_실패한_실행에는_이름을_안_짓는다(self, sessions, _messages, accounts, title, agent_repo, build_executor):
         """오류로 끝난 대화를 그럴듯한 이름으로 덮으면 무엇이 실패했는지 가려진다."""
 
         sessions.get.return_value = SESSION
@@ -276,19 +541,20 @@ class ChatSessionTitleTests(SimpleTestCase):
             raise TimeoutError("느립니다")
             yield  # pragma: no cover - 제너레이터로 만들기 위한 줄
 
-        run.return_value = boom()
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = boom()
+        build_executor.return_value = mock_executor
 
-        self.assertEqual([e["type"] for e in ndjson(self._post(run))], ["error"])
+        self.assertEqual([e["type"] for e in ndjson(self._post(accounts, agent_repo))], ["error"])
         title.assert_not_called()
 
-    def test_제목을_못_지으면_조용히_넘어간다(self, sessions, _messages, run, title):
+    def test_제목을_못_지으면_조용히_넘어간다(self, sessions, _messages, accounts, title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
         title.return_value = None
-        run.return_value = iter([{"type": "result", "text": "네.", "complete": True}])
+        _mock_new_engine(build_executor, [{"type": "result", "text": "네.", "complete": True}])
 
-        self.assertEqual([e["type"] for e in ndjson(self._post(run))], ["result"])
+        self.assertEqual([e["type"] for e in ndjson(self._post(accounts, agent_repo))], ["result"])
         sessions.rename_if_first_answer.assert_not_called()
-
 
 @patch("apps.chat.api_views.run_agent")
 @patch("apps.chat.api_views.ChatMessageRepository")
@@ -380,37 +646,11 @@ class ConfirmGateTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 409)
 
-    def test_확인_대기는_재개_정보와_함께_적재된다(self, sessions, messages, run):
-        sessions.get.return_value = SESSION
-        resume = {"messages": [{"role": "user", "content": "올려줘"}], "tool_call": {"id": "c1"}}
-        run.return_value = iter(
-            [
-                {
-                    "type": "awaiting_confirmation",
-                    "run_id": "RUN-1",
-                    "tool_ref": "mcp:MT001",
-                    "tool_name": "Jira 이슈 생성",
-                    "arguments": {"issues": ["A"]},
-                    "resume": resume,
-                }
-            ]
-        )
 
-        response = self.client.post(
-            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
-            {"content": "Jira에 올려줘"},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-        ndjson(response)
-
-        stored = messages.append.call_args_list[-1].kwargs["content"]
-        self.assertEqual(stored["type"], "awaiting_confirmation")
-        self.assertEqual(stored["resume"], resume)
-
-
+@patch("services.agent_runtime.build_default_executor")
+@patch("services.agent_runtime.legacy_bridge.AgentRepository")
 @patch("apps.chat.api_views.suggest_title", return_value=None)
-@patch("apps.chat.api_views.run_agent")
+@patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatHistoryTests(SimpleTestCase):
@@ -418,23 +658,37 @@ class ChatHistoryTests(SimpleTestCase):
 
     이게 없으면 **매 턴이 콜드 스타트**다 — 「그것 말고 또 있나?」에 대해
     "무엇을 가리키는지 확인하지 못했습니다"라고 답한다(2026-08-11 실측).
+
+    새 엔진은 이력(`conversation_messages`)과 이번 발화(`user_input`)를 따로
+    받는다 — 레거시처럼 한 리스트로 합쳐 보내지 않는다. 그래서
+    `conversation_messages`에는 **이번 발화가 안 들어 있다**(레거시 시절
+    `_post()`가 돌려주던 것과 다름, 2026-08-14 전환).
     """
 
-    def _post(self, run, messages, rows):
+    def _post(self, build_executor, agent_repo, accounts, messages, rows):
         messages.list_for_session.return_value = rows
-        run.return_value = iter([])
-        self.client.post(
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [])
+        response = self.client.post(
             f"/api/chat/sessions/{SESSION['session_id']}/messages/",
             {"content": "그것 말고 또 있나?"},
             content_type="application/json",
             headers=auth_header(),
         )
-        return run.call_args.args[2]["messages"]
+        # StreamingHttpResponse는 지연 스트림이다 — 실제로 읽어야
+        # executor.run()이 불린다(DeepAgentSessionStreamTests와 같은 이유,
+        # 2026-08-15 로컬 실행에서 실측: 안 읽으면 call_args가 None으로
+        # 남는다).
+        ndjson(response)
+        return mock_executor.run.call_args.kwargs
 
-    def test_앞선_질문과_답이_함께_간다(self, sessions, messages, run, _title):
+    def test_앞선_질문과_답이_함께_간다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
-        sent = self._post(
-            run,
+        call_kwargs = self._post(
+            build_executor,
+            agent_repo,
+            accounts,
             messages,
             [
                 {"role": "user", "content": {"type": "text", "text": "뭘 할 수 있지?"}},
@@ -443,20 +697,23 @@ class ChatHistoryTests(SimpleTestCase):
         )
 
         self.assertEqual(
-            sent,
-            [
+            call_kwargs["conversation_messages"],
+            (
                 {"role": "user", "content": "뭘 할 수 있지?"},
                 {"role": "assistant", "content": "문서를 찾고 업무를 뽑습니다."},
-                {"role": "user", "content": "그것 말고 또 있나?"},
-            ],
+            ),
         )
+        # 이번 발화는 이력이 아니라 user_input으로 따로 간다.
+        self.assertEqual(call_kwargs["user_input"], "그것 말고 또 있나?")
 
-    def test_도구_호출_원본은_복원하지_않는다(self, sessions, messages, run, _title):
+    def test_도구_호출_원본은_복원하지_않는다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         """reasoning·function_call 은 짝이 맞아야 해서 지난 턴 것은 온전하지 않다."""
 
         sessions.get.return_value = SESSION
         sent = self._post(
-            run,
+            build_executor,
+            agent_repo,
+            accounts,
             messages,
             [
                 {"role": "user", "content": {"type": "text", "text": "업무 뽑아줘"}},
@@ -469,17 +726,19 @@ class ChatHistoryTests(SimpleTestCase):
                     },
                 },
             ],
-        )
+        )["conversation_messages"]
 
         self.assertNotIn("function_call", str(sent))
         self.assertEqual(sent[1], {"role": "assistant", "content": "3건 뽑았습니다."})
 
-    def test_승인_대기로_끝난_턴도_한_줄로_남는다(self, sessions, messages, run, _title):
+    def test_승인_대기로_끝난_턴도_한_줄로_남는다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         """비워 두면 모델이 그 턴에 아무 일도 없었다고 여긴다."""
 
         sessions.get.return_value = SESSION
         sent = self._post(
-            run,
+            build_executor,
+            agent_repo,
+            accounts,
             messages,
             [
                 {"role": "user", "content": {"type": "text", "text": "등록해줘"}},
@@ -488,21 +747,20 @@ class ChatHistoryTests(SimpleTestCase):
                     "content": {"type": "awaiting_confirmation", "tool_name": "업무 등록"},
                 },
             ],
-        )
+        )["conversation_messages"]
 
         self.assertIn("업무 등록", sent[1]["content"])
 
-    def test_긴_대화는_최근_것만_보낸다(self, sessions, messages, run, _title):
+    def test_긴_대화는_최근_것만_보낸다(self, sessions, messages, accounts, _title, agent_repo, build_executor):
         sessions.get.return_value = SESSION
         rows = [
             {"role": "user", "content": {"type": "text", "text": f"질문{i}"}} for i in range(40)
         ]
-        sent = self._post(run, messages, rows)
+        sent = self._post(build_executor, agent_repo, accounts, messages, rows)["conversation_messages"]
 
-        # 앞선 이력 20건 + 이번 발화 1건.
-        self.assertEqual(len(sent), 21)
+        # 이력 최근 20건 — 이번 발화는 user_input으로 따로 가므로 여기 안 섞인다.
+        self.assertEqual(len(sent), 20)
         self.assertEqual(sent[0]["content"], "질문20")
-
 
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatListScopeTests(SimpleTestCase):

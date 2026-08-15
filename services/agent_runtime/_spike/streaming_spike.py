@@ -1,8 +1,6 @@
-"""서브 에이전트 스트리밍 선행 검증 (일회성 스파이크 스크립트).
+"""서브 에이전트 stream event를 관찰하는 일회성 검증 스크립트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §15
-
-목적 — 이것 하나만 확인한다:
+확인할 내용:
     deepagents(고정 버전)에서 부모 Deep Agent + CompiledSubAgent 1개 + 도구
     1회 호출을 스트리밍했을 때, 다음 순서로 이벤트를 실시간으로 구분해서 받을
     수 있는가?
@@ -14,9 +12,7 @@
         subagent_completed(child)
         result(parent)
 
-⚠ 이 파일은 서비스 코드가 아니다. services/agent_runtime/__init__.py의 공개
-인터페이스에도, 다른 어떤 모듈에도 이 파일을 import하지 않는다. 결과만 보고
-지운다.
+서비스 코드에서는 import하지 않는다.
 
 실행 전제 (2026-08-13 작성 시점 확인 사항 — 실행 전 다시 확인할 것):
   1. Python >= 3.11 (Dockerfile 기준 3.13). 개발 샌드박스는 3.10이라 여기서
@@ -159,18 +155,13 @@ def main() -> None:
 
     observed: list[str] = []
 
-    # 02 §15가 검토하라고 지목한 두 방식 중 우선 LangGraph 저수준 스트림으로
-    # 시도한다. stream_events(version="v3")가 있으면 그쪽으로 바꿔서 한 번 더
-    # 비교해볼 것 — 결과를 02 §15에 기록한다.
+    # LangGraph의 저수준 stream event를 그대로 출력한다.
     for event in parent.stream(
         {"messages": [{"role": "user", "content": "지금 몇 시야?"}]},
         stream_mode=["updates", "messages", "custom"],
         subgraphs=True,
     ):
-        # 실제 event 구조는 실행해보기 전에는 모른다 — 여기서는 관측용으로
-        # 통째로 찍고, observed에는 "무엇을 봤는지" 사람이 육안으로 분류해
-        # 채워 넣는다(자동 분류는 이 스파이크의 목적이 아니다. events.py의
-        # EventMapper가 이 관찰 결과를 바탕으로 나중에 자동 분류를 구현한다).
+        # 자동 분류 전에 원본 event 구조를 확인한다.
         print("--- raw event ---")
         print(repr(event)[:2000])
 

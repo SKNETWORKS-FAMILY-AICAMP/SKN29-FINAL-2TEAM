@@ -19,21 +19,103 @@
   [ToolMessage(name='task', content=<자식의 최종 답변>)]}}`이 온다.
 - 부모의 최종 응답은 부모 네임스페이스의 `{'model': {'messages': [AIMessage(
   content=<텍스트>, tool_calls=[])]}}`(tool_calls가 비어 있음)다.
+- 부모가 서브 에이전트 위임 없이 **자기 도구를 직접** 호출하는 경우도 자식
+  네임스페이스와 동일한 model→tools 순서로 온다. langgraph의 `ToolNode`는
+  루트 그래프냐 서브그래프냐를 구분하지 않는다 — 네임스페이스 튜플은 "어느
+  그래프가 이 업데이트를 냈는지"를 나타내는 스트리밍 귀속 태그일 뿐, 도구
+  실행 자체의 의미를 바꾸지 않는다(langgraph.prebuilt.tool_node.ToolNode
+  소스 확인 — namespace 개념 자체가 없음). 그래서 tool_started/
+  tool_completed는 부모/자식에 상관없이 동일하게 낸다. 부모 자신의 직접
+  호출은 `subagent_alias=None`으로 구분한다.
 
-`"messages"`(토큰 단위 델타)·`"custom"` 모드는 이 6단계 분류에는 필요 없다 —
-Chat 화면에 타이핑 효과를 낼 때만 별도로 `EVENT_MESSAGE_DELTA`용으로 추가한다.
+`"messages"`(토큰 단위 델타) 모드는 이 6단계 분류에는 필요 없다 — Chat 화면에
+타이핑 효과를 낼 때만 별도로 `EVENT_MESSAGE_DELTA`용으로 추가한다.
 
-MVP(1단계 위임)에서는 "부모가 한 번에 하나의 서브 에이전트만 부르고 그것이 끝나야
-다음으로 넘어간다"는 전제가 실측과 일치했다 — `_pending_subagents`를 FIFO로 써서
-네임스페이스와 서브 에이전트를 대응시킨다. 여러 서브 에이전트를 **동시에**
-병렬 호출하는 경우(모델이 한 AIMessage에서 tool_calls를 여러 개 내는 경우)는
-아직 관측하지 못했다 — 그 케이스가 실제로 나오면 네임스페이스 접두사와
-tool_call_id를 직접 대응시키는 방식으로 다시 검증해야 한다(아래 TODO).
+`"custom"` 모드는 쓴다 — `task_extraction`/`jira_get_issues`처럼 제너레이터로
+진행 이벤트를 내는 내장 도구(tools/adapters.py)가 `langgraph.config
+.get_stream_writer()`로 직접 흘려보내는 값이 여기로 들어온다(2026-08-13 실제
+`stream_mode=["updates", "custom"]`로 실행해 확인 — payload가 어댑터가 채운
+그대로 나온다). 내용은 도구마다 달라서 여기서 재해석하지 않고 `EVENT_TOOL_PROGRESS`
+로 감싸 `detail`에 그대로 담아 보낸다.
+
+## 병렬 위임/도구 호출 (2026-08-14 재설계)
+
+이전 버전은 "부모가 한 번에 하나의 서브 에이전트만 부르고 그것이 끝나야 다음으로
+넘어간다"는 전제로 `tool_calls[0]`만 보고, 위임 추적을 FIFO(`list.pop(0)`)로
+했다. 그런데 실제로 설치된 langgraph(`langgraph/prebuilt/tool_node.py`
+`ToolNode._func`)를 직접 읽어보면 여러 `tool_calls`는
+`executor.map(self._run_one, tool_calls, ...)`로 **스레드풀에서 동시에** 실행된다
+— 즉 모델이 한 AIMessage에 `task` 위임을 2개 이상 담아 내면 그 완료 순서는
+시작 순서와 다를 수 있다. FIFO로 매칭하면 나중에 시작한 위임의 완료를 먼저 시작한
+위임의 것으로 잘못 붙일 수 있었다(모듈 docstring이 스스로 인정했던 TODO).
+
+이제는:
+- `AIMessage.tool_calls`를 전부 순회한다(더 이상 `[0]`만 안 봄) — 위임 여러 개,
+  또는 위임+직접 호출이 섞여도 전부 이벤트로 낸다.
+- 위임(`task`) 완료 매칭은 FIFO가 아니라 **`ToolMessage.tool_call_id`**로 한다.
+  `task()`/`atask()`가 `Command(update={"messages": [ToolMessage(content,
+  tool_call_id=runtime.tool_call_id)]})`로 항상 원래 호출의 `tool_call_id`를
+  그대로 돌려준다는 걸 deepagents 소스로 확인했다(`_return_command_with_
+  state_update`) — 이건 실행 순서와 무관하게 항상 정확하다.
+- 위임을 시작할 때 이 EventMapper가 직접 자식 `run_id`(uuid4)를 하나 만들어
+  `subagent_started`/`subagent_completed`와 그 자식 네임스페이스에서 나오는
+  `tool_started`/`tool_completed`/`tool_progress`에 일관되게 붙인다.
+  `parent_run_id`는 그 실행의 `context.run_id`다(§14.2~14.4).
+- 다만 **자식 네임스페이스 접두사(`'tools:<uuid>'`)를 "어느 위임에 속하는가"로
+  묶는 것은 여전히 근사치다** — 자식 내부에서 도는 model/tools 이벤트에는 부모의
+  `tool_call_id`가 실려 오지 않는다(오직 위임이 끝나고 부모로 복귀하는
+  `ToolMessage`만 tool_call_id를 갖는다). 그래서 "이 네임스페이스를 처음 보면
+  아직 네임스페이스에 안 묶인 것 중 가장 먼저 시작된 위임에 붙인다"는 순서
+  휴리스틱을 그대로 쓴다 — 위임이 진짜 동시에(스레드에서) 실행되면 이 귀속이
+  틀릴 수 있다는 한계가 남는다. `subagent_started`/`subagent_completed`(부모
+  네임스페이스, tool_call_id로 정확히 매칭됨)는 이 한계의 영향을 받지 않는다.
+
+## `subagent_started`/`subagent_completed`의 agent_id/agent_version_id/subagent_name
+(2026-08-14 추가)
+
+§14.2/§14.3 예시(`AG011`/`AV023`/"Jira 등록 에이전트")는 **Child 자신의** 값이지 루트의
+값이 아니다. `EventMapper.convert()`가 이미 받는 `definition`(루트 `AgentDefinition`)에
+`definition.subagents: tuple[SubagentDefinition, ...]`가 있고, 그 각 항목은 이미
+DB에서 조회한 Child 자신의 `agent_id`/`agent_version_id`/`name`을 담고 있다
+(`loader.py`의 `_subagent_definition_from_row`/`_placeholder_subagent_definition`).
+`alias`로 이 tuple을 찾으면 된다 — `build_subagent()`가 `CompiledSubAgent(
+name=definition.alias, ...)`로 등록한 이름이 정확히 이 `alias`이고, deepagents의
+`task()` 도구가 받는 `subagent_type`이 바로 이 이름이므로, `subagent_type`(=alias)로
+`definition.subagents`를 찾으면 항상 맞는 Child를 가리킨다. **MVP가 위임 1단계로
+제한돼 있어서**(`validate_subagents()`의 무조건 `has_subagents` 검사, `loader.py`의
+`_reject_if_has_subagents()`, `build_subagent()`의 `definition_has_subagents()` —
+3중으로 강제) 이 조회에 재귀가 필요 없다: Child는 항상 leaf이고 `definition.subagents`
+평탄한 한 단계 매핑이면 충분하다.
+
+## tool_started/tool_completed의 tool_call_id·arguments·status(2026-08-14 추가)
+
+`agent_run`/`tool_call` 로깅(`tracing/__init__.py`)이 이 이벤트들을 그대로
+읽어서 DB에 적재한다 — 위임(`subagent_started`/`subagent_completed`)과 같은
+방식으로 `tool_call_id`가 시작-종료를 정확히 묶어야 한다(같은 도구를 병렬로
+호출해도 어긋나지 않게). `arguments`는 `tool_call.input_summary`를 채우는
+원본이고(`services.harness.trace.summarize_input()`이 요약한다 — 자격증명이
+로그에 그대로 안 남는다), `status`는 LangChain `ToolMessage.status`
+("success"/"error", langgraph `ToolNode`가 도구 예외를 잡으면 "error"로
+채우는 필드)를 그대로 옮긴 것이다("OK"/"FAILED"). 이 셋은 §14 계약이 정한
+목록엔 없다 — 이벤트 타입 자체는 그대로 두고 기존 이벤트에 필드만 얹었다
+(`_11_` 문서와 같은 판단).
+
+## MCP 도구 이름 치환(2026-08-14 추가)
+
+모델에게 나가는 함수 이름은 `factory.py`의 `model_safe_tool_name()`이
+`mcp:<id>`의 콜론을 `__`로 바꿔 보낸다(OpenAI 함수 이름 제약 —
+`tools/loader.py` 모듈 docstring 참고). 그래서 여기서 읽는
+`AIMessage.tool_calls[i]['name']`/`ToolMessage.name`은 원래 tool_ref와 다를
+수 있다 — `tool_ref_from_model_name()`으로 되돌린 값만 `"tool_ref"`로
+내보낸다. 위 예시의 `<tool_ref>`는 이 되돌림 이후의 값 기준이다.
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
+
+from services.agent_runtime.tools.loader import tool_ref_from_model_name
 
 # --- 이벤트 타입(§14.1) -----------------------------------------------------
 EVENT_AGENT_STARTED = "agent_started"
@@ -41,6 +123,7 @@ EVENT_SUBAGENT_STARTED = "subagent_started"
 EVENT_SUBAGENT_COMPLETED = "subagent_completed"
 EVENT_TOOL_STARTED = "tool_started"
 EVENT_TOOL_COMPLETED = "tool_completed"
+EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
@@ -49,22 +132,56 @@ EVENT_ERROR = "error"
 # "실제 도구 호출"이 아니라 "위임"으로 분류한다.
 DELEGATION_TOOL_NAME = "task"
 
+# deepagents 0.7.5의 `task` 도구가 존재하지 않는 subagent_type을 받았을 때
+# 예외 대신 돌려주는 문자열의 접두어 그대로다(설치된 패키지
+# `deepagents/middleware/subagents.py`의 `task()`/`atask()`:
+# `f"We cannot invoke subagent {subagent_type} because it does not exist,
+# the only allowed types are {allowed_types}"`). langchain의 ToolMessage는
+# 이 경우도 `status="success"`인 평범한 성공 메시지로 감싸므로(직접 확인함),
+# status 필드로는 이 실패를 구분할 수 없다 — 이 문자열 접두어 매칭이 현재
+# 유일하게 근거 있는 탐지 방법이다. 버전이 고정(requirements/base.txt
+# `deepagents==0.7.5`)이라 이 문구도 고정이다 — 업그레이드 시 이 상수도
+# 같이 확인해야 한다.
+_SUBAGENT_NOT_FOUND_PREFIX = "We cannot invoke subagent "
+
+
+def _looks_like_subagent_not_found(content: str) -> bool:
+    """`task` 완료 메시지가 '존재하지 않는 subagent_type' 실패인지 판별한다."""
+    return isinstance(content, str) and content.startswith(_SUBAGENT_NOT_FOUND_PREFIX)
+
+
+def _tool_status(msg_status: str | None) -> str:
+    """LangChain `ToolMessage.status`("success"/"error"/None) → DB 상태값.
+
+    langgraph `ToolNode`가 도구 핸들러 예외를 잡으면 "error"로 채운다 —
+    그 값만 FAILED고, 나머지는(보통 "success", 드물게 필드 자체가 없는 경우도
+    안전하게) OK로 본다.
+    """
+    return "FAILED" if msg_status == "error" else "OK"
+
 
 class EventMapper:
-    """raw deepagents 'updates' 이벤트 스트림 → 위 EVENT_* 딕셔너리로 변환.
+    """raw deepagents 'updates' 이벤트 스트림 → 위 EVENT_* 딕셔너리 리스트로 변환.
 
     무상태로 쓸 수 없다 — 부모의 위임 결정(subagent_started)과 자식 네임스페이스를
     대응시키려면 "아직 안 끝난 위임"을 기억해야 한다. 실행(run) 하나당
     인스턴스 하나를 새로 만들 것 — executor.py가 run_agent() 호출마다 새
     EventMapper()를 생성해야 한다(재사용하면 이전 실행의 상태가 남는다).
+
+    `convert()`는 항상 리스트를 반환한다(비어 있을 수 있음) — 모델이 한
+    AIMessage에 여러 `tool_calls`를 담아 내면(병렬 위임/도구 호출) 그 전부가
+    각자의 이벤트가 되어야 하므로, 원시 이벤트 1개가 공통 이벤트 0~N개로
+    펼쳐질 수 있다.
     """
 
     def __init__(self) -> None:
-        # 아직 subagent_completed로 안 닫힌 위임들. FIFO — MVP는 순차 위임만
-        # 관측했다(위 모듈 docstring TODO 참고).
-        self._pending: list[dict[str, str]] = []
+        # 아직 subagent_completed로 안 닫힌 위임들. `tool_call_id` -> 위임 정보.
+        # dict 삽입 순서 = 시작 순서이므로, 네임스페이스 귀속 휴리스틱(아직 어느
+        # 네임스페이스에도 안 묶인 것 중 가장 먼저 시작된 것)에도 이 순서를 쓴다.
+        self._pending: dict[str, dict[str, str]] = {}
         # 네임스페이스 접두사(예: 'tools:94cc782c-...') -> 그 안에서 도는 서브
-        # 에이전트 정보. 같은 네임스페이스에서 여러 이벤트가 나오므로 캐시한다.
+        # 에이전트 정보(위 _pending의 값과 같은 dict). 같은 네임스페이스에서
+        # 여러 이벤트가 나오므로 캐시한다.
         self._namespace_subagent: dict[str, dict[str, str]] = {}
 
     def convert(
@@ -73,23 +190,32 @@ class EventMapper:
         *,
         definition: Any,
         context: Any,
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
         """raw_event는 `(namespace_tuple, mode, payload)` 형태를 기대한다.
 
-        `mode != "updates"`인 이벤트(예: "messages" 토큰 델타)는 지금 None을
-        반환한다 — 6단계 분류에 안 쓴다는 뜻이지, 버린다는 뜻이 아니다. 나중에
-        `EVENT_MESSAGE_DELTA`를 추가할 때 이 분기만 넓히면 된다.
+        `mode`가 `"updates"`/`"custom"` 둘 다 아닌 이벤트(예: "messages" 토큰
+        델타)는 지금 빈 리스트를 반환한다 — 6단계 분류에 안 쓴다는 뜻이지,
+        버린다는 뜻이 아니다. 나중에 `EVENT_MESSAGE_DELTA`를 추가할 때 이
+        분기만 넓히면 된다.
         """
         if not isinstance(raw_event, tuple) or len(raw_event) != 3:
-            return None
+            return []
 
         namespace, mode, payload = raw_event
-        if mode != "updates" or not isinstance(payload, dict):
-            return None
+        if not isinstance(payload, dict):
+            return []
 
         ns_prefix = namespace[0] if namespace else None
         run_id = getattr(context, "run_id", None)
 
+        if mode == "custom":
+            event = self._classify_progress(ns_prefix=ns_prefix, payload=payload, run_id=run_id)
+            return [event] if event is not None else []
+
+        if mode != "updates":
+            return []
+
+        events: list[dict[str, Any]] = []
         for node_name, node_output in payload.items():
             if not isinstance(node_output, dict):
                 continue
@@ -98,17 +224,17 @@ class EventMapper:
                 continue
 
             for message in messages:
-                event = self._classify(
-                    node_name=node_name,
-                    ns_prefix=ns_prefix,
-                    message=message,
-                    definition=definition,
-                    run_id=run_id,
+                events.extend(
+                    self._classify(
+                        node_name=node_name,
+                        ns_prefix=ns_prefix,
+                        message=message,
+                        definition=definition,
+                        run_id=run_id,
+                    )
                 )
-                if event is not None:
-                    return event
 
-        return None
+        return events
 
     def _classify(
         self,
@@ -118,10 +244,25 @@ class EventMapper:
         message: Any,
         definition: Any,
         run_id: str | None,
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
         tool_calls = list(getattr(message, "tool_calls", None) or [])
         msg_name = getattr(message, "name", None)
-        content = getattr(message, "content", "") or ""
+        msg_tool_call_id = getattr(message, "tool_call_id", None)
+        # LangChain ToolMessage.status — "success"/"error". langgraph의
+        # ToolNode가 도구 핸들러 예외를 잡아 ToolMessage로 감쌀 때 "error"로
+        # 채운다(직접 실행해 확인함, tracing/__init__.py가 OK/FAILED로 옮긴다).
+        msg_status = getattr(message, "status", None)
+        # `.content`가 아니라 `.text`다(2026-08-14 실측 발견): OpenAI Responses API
+        # 경로(`models/factory.py`의 `ChatOpenAI(..., use_responses_api=True)`,
+        # gpt-5.6-luna 같은 추론 모델)는 `AIMessage.content`를 평문 문자열이 아니라
+        # `[{'type': 'reasoning', 'id': 'rs_...', ...}, {'type': 'text', 'text':
+        # '...'}]` 같은 콘텐츠 블록 리스트로 채운다 — `scripts/team_status_agent.py`로
+        # 라이브 실행해서 `result` 이벤트의 `text`가 그 원시 리스트 그대로 새는 걸
+        # 재현했다. `BaseMessage.text`(langchain-core, 설치된 버전에서 직접 확인)는
+        # 문자열/블록 리스트 둘 다 받아 `type: "text"` 블록만 이어붙인 평문 문자열을
+        # 돌려준다(`str` 서브클래스라 `.startswith()`/JSON 직렬화 그대로 안전) —
+        # 일반 모델(콘텐츠가 이미 문자열)에도 동일하게 안전하다.
+        content = message.text
 
         agent_id = getattr(definition, "agent_id", None)
         agent_version_id = getattr(definition, "agent_version_id", None)
@@ -129,76 +270,263 @@ class EventMapper:
         if ns_prefix is None:
             # --- 부모 네임스페이스 -------------------------------------------
             if node_name == "model":
-                delegations = [tc for tc in tool_calls if tc.get("name") == DELEGATION_TOOL_NAME]
-                if delegations:
-                    call = delegations[0]
-                    args = call.get("args") or {}
-                    alias = args.get("subagent_type")
-                    task_summary = args.get("description", "")
-                    self._pending.append({"alias": alias, "task_summary": task_summary})
-                    return {
-                        "type": EVENT_SUBAGENT_STARTED,
+                if tool_calls:
+                    return self._classify_parent_tool_calls(
+                        tool_calls=tool_calls,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                        agent_version_id=agent_version_id,
+                        definition=definition,
+                    )
+                if content:
+                    # 도구 호출 없이 텍스트만 낸 최종 응답.
+                    return [
+                        {
+                            "type": EVENT_RESULT,
+                            "text": content,
+                            "run_id": run_id,
+                            "agent_id": agent_id,
+                            "agent_version_id": agent_version_id,
+                            "complete": True,
+                        }
+                    ]
+                return []
+
+            if node_name == "tools" and msg_name == DELEGATION_TOOL_NAME:
+                # tool_call_id로 정확히 매칭한다(FIFO 아님) — 병렬 위임이면
+                # 완료 순서가 시작 순서와 다를 수 있어서다(위 모듈 docstring).
+                info = self._pending.pop(msg_tool_call_id, None) if msg_tool_call_id else None
+                if info is None:
+                    info = {}
+                base = {
+                    "type": EVENT_SUBAGENT_COMPLETED,
+                    "run_id": info.get("run_id"),
+                    "parent_run_id": run_id,
+                    # Child 자신의 agent_id/agent_version_id다(§14.3/§14.4) — 아래
+                    # info.get(...)이 없으면(정상 경로에선 안 생김) 루트 값으로
+                    # 폴백한다.
+                    "agent_id": info.get("agent_id", agent_id),
+                    "agent_version_id": info.get("agent_version_id", agent_version_id),
+                    "subagent_alias": info.get("alias"),
+                    "subagent_name": info.get("subagent_name"),
+                    "complete": False,
+                }
+                if _looks_like_subagent_not_found(content):
+                    # deepagents가 예외 대신 평범한 성공 ToolMessage로 감싸
+                    # 돌려주는 "존재하지 않는 subagent_type" 실패 — 계약
+                    # §14.4대로 FAILED로 표시한다. 이걸 걸러내지 않으면
+                    # 위임이 실패했는데도 DONE으로 표시된다(2026-08-14 발견·수정).
+                    base["status"] = "FAILED"
+                    base["error_code"] = "SUBAGENT_EXECUTION_FAILED"
+                else:
+                    base["status"] = "DONE"
+                return [base]
+
+            if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
+                # 부모가 직접 호출한 도구의 완료 — 자식 네임스페이스의
+                # tool_completed와 동일한 모양, subagent_alias만 None.
+                return [
+                    {
+                        "type": EVENT_TOOL_COMPLETED,
                         "run_id": run_id,
-                        "agent_id": agent_id,
-                        "agent_version_id": agent_version_id,
+                        "subagent_alias": None,
+                        "tool_ref": tool_ref_from_model_name(msg_name),
+                        "tool_call_id": msg_tool_call_id,
+                        "status": _tool_status(msg_status),
+                        "complete": False,
+                    }
+                ]
+            return []
+
+        # --- 자식(서브 에이전트) 네임스페이스 -----------------------------------
+        info = self._resolve_subagent_info(ns_prefix)
+        alias = info.get("alias") if info else None
+        child_run_id = info.get("run_id") if info else None
+
+        if node_name == "model" and tool_calls:
+            events: list[dict[str, Any]] = []
+            for call in tool_calls:
+                tool_ref = call.get("name")
+                if tool_ref and tool_ref != DELEGATION_TOOL_NAME:
+                    events.append(
+                        {
+                            "type": EVENT_TOOL_STARTED,
+                            "run_id": child_run_id,
+                            "parent_run_id": run_id,
+                            "subagent_alias": alias,
+                            "tool_ref": tool_ref_from_model_name(tool_ref),
+                            "tool_call_id": call.get("id"),
+                            "arguments": call.get("args") or {},
+                            "complete": False,
+                        }
+                    )
+            return events
+
+        if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
+            return [
+                {
+                    "type": EVENT_TOOL_COMPLETED,
+                    "run_id": child_run_id,
+                    "parent_run_id": run_id,
+                    "subagent_alias": alias,
+                    "tool_ref": tool_ref_from_model_name(msg_name),
+                    "tool_call_id": msg_tool_call_id,
+                    "status": _tool_status(msg_status),
+                    "complete": False,
+                }
+            ]
+
+        return []
+
+    def _classify_parent_tool_calls(
+        self,
+        *,
+        tool_calls: list[dict[str, Any]],
+        run_id: str | None,
+        agent_id: str | None,
+        agent_version_id: str | None,
+        definition: Any,
+    ) -> list[dict[str, Any]]:
+        """부모 AIMessage의 `tool_calls`를 전부 순회해 이벤트로 펼친다.
+
+        위임(`task`)과 직접 도구 호출이 한 AIMessage에 같이 실려 올 수도 있다는
+        전제로, 종류를 가리지 않고 전부 처리한다(예전에는 `tool_calls[0]`만
+        보고 나머지는 조용히 버렸다).
+        """
+        subagent_defs_by_alias = {
+            sub_def.alias: sub_def for sub_def in getattr(definition, "subagents", ()) or ()
+        }
+
+        events: list[dict[str, Any]] = []
+        for call in tool_calls:
+            tool_ref = call.get("name")
+            if not tool_ref:
+                continue
+
+            if tool_ref == DELEGATION_TOOL_NAME:
+                args = call.get("args") or {}
+                alias = args.get("subagent_type")
+                task_summary = args.get("description", "")
+                call_id = call.get("id")
+                child_run_id = str(uuid.uuid4())
+
+                # §14.2/§14.3의 agent_id/agent_version_id/subagent_name은 Child
+                # 자신의 값이다(루트 값이 아님) — `definition.subagents`에 이미
+                # DB에서 조회한 Child 자신의 정의가 들어 있다(loader.py). MVP는
+                # 위임 1단계뿐이라 이 조회에 재귀가 필요 없다: `alias`는
+                # `build_subagent()`가 `CompiledSubAgent(name=definition.alias,
+                # ...)`로 등록한 값과 정확히 같은 값이라(같은 SubagentDefinition.
+                # alias), deepagents의 `subagent_type`과 1:1로 대응한다.
+                sub_def = subagent_defs_by_alias.get(alias)
+                child_agent_id = sub_def.agent_id if sub_def is not None else agent_id
+                child_agent_version_id = sub_def.agent_version_id if sub_def is not None else agent_version_id
+                subagent_name = sub_def.name if sub_def is not None else None
+
+                info = {
+                    "alias": alias,
+                    "task_summary": task_summary,
+                    "run_id": child_run_id,
+                    "agent_id": child_agent_id,
+                    "agent_version_id": child_agent_version_id,
+                    "subagent_name": subagent_name,
+                }
+                if call_id:
+                    # call_id가 없으면(비정상 입력) 나중에 tool_call_id로 못
+                    # 찾는다 — 그래도 subagent_started 자체는 그대로 낸다.
+                    self._pending[call_id] = info
+                events.append(
+                    {
+                        "type": EVENT_SUBAGENT_STARTED,
+                        "run_id": child_run_id,
+                        "parent_run_id": run_id,
+                        "agent_id": child_agent_id,
+                        "agent_version_id": child_agent_version_id,
                         "subagent_alias": alias,
+                        "subagent_name": subagent_name,
                         "task_summary": task_summary,
                         "complete": False,
                     }
-                if not tool_calls and content:
-                    # 도구 호출 없이 텍스트만 낸 최종 응답.
-                    return {
-                        "type": EVENT_RESULT,
-                        "text": content,
+                )
+            else:
+                # 위임이 아닌, 부모가 자기 도구를 직접 호출하는 경우
+                # (langgraph ToolNode는 루트/서브그래프를 구분하지 않는다 —
+                # 위 모듈 docstring 참고). subagent_alias=None으로 "부모
+                # 자신의 호출"임을 구분한다.
+                events.append(
+                    {
+                        "type": EVENT_TOOL_STARTED,
                         "run_id": run_id,
-                        "agent_id": agent_id,
-                        "agent_version_id": agent_version_id,
-                        "complete": True,
+                        "subagent_alias": None,
+                        "tool_ref": tool_ref_from_model_name(tool_ref),
+                        "tool_call_id": call.get("id"),
+                        "arguments": call.get("args") or {},
+                        "complete": False,
                     }
-                return None
+                )
+        return events
 
-            if node_name == "tools" and msg_name == DELEGATION_TOOL_NAME:
-                info = self._pending.pop(0) if self._pending else {}
-                return {
-                    "type": EVENT_SUBAGENT_COMPLETED,
-                    "run_id": run_id,
-                    "agent_id": agent_id,
-                    "agent_version_id": agent_version_id,
-                    "subagent_alias": info.get("alias"),
-                    "status": "DONE",
-                    "complete": False,
-                }
+    def _resolve_subagent_info(self, ns_prefix: str | None) -> dict[str, str] | None:
+        """네임스페이스 접두사를 그 안에서 도는 서브 에이전트 정보(alias/run_id)로 바꾼다.
+
+        `_classify`의 자식 네임스페이스 분기와 `_classify_progress`(도구 진행
+        이벤트)가 똑같이 쓴다 — "이 네임스페이스가 어느 위임에 속하는가"는 한
+        곳에서만 판단해야 두 분기가 다른 답을 내는 일이 없다.
+
+        **한계(2026-08-14 재설계 후에도 남음)**: 자식 내부 이벤트에는 부모의
+        `tool_call_id`가 실려 오지 않으므로, 여러 위임이 동시에 도는 동안
+        "이 네임스페이스를 처음 보면 아직 안 묶인 것 중 가장 먼저 시작된
+        위임에 붙인다"는 순서 휴리스틱을 쓴다. 위 모듈 docstring 참고.
+        """
+        if ns_prefix is None:
             return None
 
-        # --- 자식(서브 에이전트) 네임스페이스 -----------------------------------
         info = self._namespace_subagent.get(ns_prefix)
-        if info is None and self._pending:
-            # 이 네임스페이스에서 처음 보는 이벤트다 — 아직 자식 쪽에 매핑 안 된
-            # 가장 오래된 pending 위임과 연결한다(FIFO, 순차 위임 전제).
-            info = self._pending[0]
-            self._namespace_subagent[ns_prefix] = info
+        if info is None:
+            for candidate in self._pending.values():
+                if candidate not in self._namespace_subagent.values():
+                    info = candidate
+                    self._namespace_subagent[ns_prefix] = info
+                    break
 
-        alias = info.get("alias") if info else None
+        return info
 
-        if node_name == "model" and tool_calls:
-            tool_ref = tool_calls[0].get("name")
-            if tool_ref and tool_ref != DELEGATION_TOOL_NAME:
-                return {
-                    "type": EVENT_TOOL_STARTED,
-                    "run_id": run_id,
-                    "subagent_alias": alias,
-                    "tool_ref": tool_ref,
-                    "complete": False,
-                }
+    def _classify_progress(
+        self, *, ns_prefix: str | None, payload: dict[str, Any], run_id: str | None
+    ) -> dict[str, Any] | None:
+        """`mode="custom"` 이벤트 — 도구 핸들러가 `get_stream_writer()`로 직접
+        흘려보낸 진행 이벤트(tools/adapters.py `_drain_with_progress`).
+
+        어댑터가 항상 `tool_ref`를 채워 보낸다 — 없으면 이 런타임이 낸 게
+        아니라고 보고 무시한다(다른 목적의 custom 이벤트가 섞여 들어올 가능성에
+        대비).
+        """
+        tool_ref = payload.get("tool_ref")
+        if not tool_ref:
             return None
 
-        if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
-            return {
-                "type": EVENT_TOOL_COMPLETED,
-                "run_id": run_id,
-                "subagent_alias": alias,
-                "tool_ref": msg_name,
-                "complete": False,
-            }
+        info = self._resolve_subagent_info(ns_prefix)
+        event: dict[str, Any] = {
+            "type": EVENT_TOOL_PROGRESS,
+            "run_id": info.get("run_id") if info else run_id,
+            "subagent_alias": info.get("alias") if info else None,
+            "tool_ref": tool_ref,
+            "detail": {key: value for key, value in payload.items() if key != "tool_ref"},
+            "complete": False,
+        }
+        if info is not None:
+            event["parent_run_id"] = run_id
+        return event
 
-        return None
+
+__all__ = [
+    "EVENT_AGENT_STARTED",
+    "EVENT_ERROR",
+    "EVENT_MESSAGE_DELTA",
+    "EVENT_RESULT",
+    "EVENT_SUBAGENT_COMPLETED",
+    "EVENT_SUBAGENT_STARTED",
+    "EVENT_TOOL_COMPLETED",
+    "EVENT_TOOL_PROGRESS",
+    "EVENT_TOOL_STARTED",
+    "EventMapper",
+]
