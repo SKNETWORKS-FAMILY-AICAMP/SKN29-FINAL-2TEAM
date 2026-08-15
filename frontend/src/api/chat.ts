@@ -101,6 +101,14 @@ export interface TaskExtractionPayload {
   trace: string[];
   model: string;
   reasoning_effort: string;
+  /**
+   * 에이전트가 고른 모델로 못 돌아 대체한 경우의 **원래 모델**.
+   *
+   * 업무 추출은 `responses.parse` 가 필요해 Claude·커스텀 모델로는 돌지 않는다.
+   * 서버는 조용히 떨어뜨리지 않고 이 값을 실어 보내는데(`service.py:370`),
+   * **화면이 그걸 읽지 않아 사람은 자기가 고른 모델로 돈 줄 알았다.**
+   */
+  model_fallback_from?: string | null;
 }
 
 export interface ExtractedTask {

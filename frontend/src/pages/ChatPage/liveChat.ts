@@ -221,7 +221,13 @@ export function traceLine(payload: TaskExtractionPayload): string {
     const [intent, hits] = step.split(':');
     return `${INTENT_LABEL[intent] ?? intent} ${hits}건`;
   });
-  return `검색 ${steps.join(' · ')} · ${payload.model}(${payload.reasoning_effort})`;
+  const line = `검색 ${steps.join(' · ')} · ${payload.model}(${payload.reasoning_effort})`;
+  // **고른 모델로 못 돌았으면 그 사실을 말한다.** 업무 추출은 `responses.parse`
+  // 가 필요해 Claude·커스텀으로는 안 돈다. 서버는 이 사실을 실어 보내는데
+  // 화면이 안 읽어서, 사람은 자기가 고른 모델로 돈 줄 알았다(정직 표기 원칙).
+  return payload.model_fallback_from
+    ? `${line} · ${payload.model_fallback_from} 로는 돌 수 없어 대체함`
+    : line;
 }
 
 /** 추출 결과를 근거 카드 모양으로. `ref`(E1…)로 근거를 되짚는다. */
