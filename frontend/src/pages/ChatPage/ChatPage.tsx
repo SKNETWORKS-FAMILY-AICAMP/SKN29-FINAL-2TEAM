@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal } from '../../components';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { useNarrowViewport } from '../../utils/viewport';
 import {
   ApiError,
   confirmMessage,
@@ -133,6 +134,9 @@ export default function ChatPage() {
    * 아래 동기화 effect 하나다 — 두 경로가 생기면 목록에서 연 대화와 주소가 어긋난다.
    */
   const { sessionId: routeSessionId } = useParams();
+  /** 좁은 화면에서는 목록이 자리를 차지하지 않고 덮어서 열린다. */
+  const narrow = useNarrowViewport();
+  const [listOpen, setListOpen] = useState(false);
   const token = loadSessionToken();
 
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -358,11 +362,13 @@ export default function ChatPage() {
 
   /** 목록에서 대화를 연다. **여는 것은 주소가 하고**, 읽어 오는 것은 위 effect 다. */
   function openFromList(id: string) {
+    setListOpen(false);
     navigate(`${PATHS.chat}/${id}`);
   }
 
   /** 새 대화를 연다. 어느 프로젝트 밑에서 시작하는지를 함께 받는다. */
   function startNew(nextProjId: string | null) {
+    setListOpen(false);
     abortRef.current?.abort();
     setSessionId(null);
     // 주소도 함께 비운다. 떠난 id 를 남겨 두는 이유는 위 effect 의 주석에 있다.
@@ -547,7 +553,20 @@ export default function ChatPage() {
   return (
     <AppShell variant="flush">
       <div className={styles.chat}>
-        <aside className={styles.sessions} style={{ width: listWidth }}>
+        {listOpen && (
+          <button
+            type="button"
+            className={styles.listScrim}
+            onClick={() => setListOpen(false)}
+            aria-label="대화 목록 닫기"
+          />
+        )}
+        <aside
+          className={[styles.sessions, listOpen ? styles.sessionsOpen : ''].filter(Boolean).join(' ')}
+          /* 끌어서 정한 폭은 넓은 화면의 값이다. 좁은 화면에서 그대로 쓰면
+             덮어 여는 패널이 화면을 넘거나 반만 덮는다 — 그때는 CSS 가 정한다. */
+          style={narrow ? undefined : { width: listWidth }}
+        >
           <span className={styles.sessionsTitle}>대화 목록</span>
 
           {/* 프로젝트에 안 속한 대화. 머리말을 달지 않는다 — 「프로젝트 없음」이라고
@@ -665,6 +684,18 @@ export default function ChatPage() {
             상단바에는 이 대화가 어디에 속하는지만 남긴다.
           */}
           <header className={styles.agentBar}>
+            {/* 좁은 화면에서만 나온다. 목록이 덮개로 들어가면 대화를 오갈
+                길이 화면에서 사라진다. */}
+            <button
+              type="button"
+              className={styles.listToggle}
+              onClick={() => setListOpen(true)}
+              aria-label="대화 목록 열기"
+              aria-expanded={listOpen}
+            >
+              <Icon name="message-square" size={16} color="var(--color-body)" />
+              대화 목록
+            </button>
             {/* 이 대화가 무엇을 근거로 답하는가. 「프로젝트 없음」처럼 빠진
                 상태로 쓰지 않고 **범위**로 쓴다 — 프로젝트를 안 고르면 문서
                 검색이 팀 문서 전체를 본다. */}

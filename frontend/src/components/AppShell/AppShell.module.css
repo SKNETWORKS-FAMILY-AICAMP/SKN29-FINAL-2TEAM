@@ -197,3 +197,99 @@
   display: flex;
   flex-direction: column;
 }
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/* 상단 바는 좁을 때만 나온다. 넓을 때는 사이드바가 로고와 메뉴를 이미 들고 있다. */
+.mobileBar {
+  display: none;
+}
+
+.scrim {
+  display: none;
+}
+
+/*
+ * **사이드바가 자리를 차지할 수 없는 폭.**
+ *
+ * 240px 사이드바는 375px 화면의 2/3 를 먹어서 본문이 한 글자씩 흐른다.
+ * 좁히는 대신 화면 밖으로 빼고, 필요할 때 덮어서 연다 — 좁은 사이드바는
+ * 본문도 사이드바도 둘 다 못 쓰게 만든다.
+ */
+@media (max-width: 760px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .mobileBar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-shrink: 0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .mobileMenu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 손가락으로 누르는 버튼이다 — 아이콘 크기가 아니라 손끝 크기로 잡는다. */
+    width: 40px;
+    height: 40px;
+    margin-left: calc(var(--space-2) * -1);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    cursor: pointer;
+  }
+
+  .mobileLogo {
+    display: flex;
+    align-items: center;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    /* 접힘 상태로 열려도 아이콘만 남지 않게 폭을 되돌린다. */
+    width: 264px;
+    padding: var(--space-5) var(--space-3);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+  }
+
+  /* 접기 버튼은 드로어에서 뜻이 없다 — 닫는 것은 바깥을 누르는 것이다. */
+  .collapse {
+    display: none;
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    border: 0;
+    padding: 0;
+    background: rgb(15 23 42 / 45%);
+    cursor: pointer;
+  }
+
+  .content {
+    padding: var(--space-5) var(--space-4) var(--space-10);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
