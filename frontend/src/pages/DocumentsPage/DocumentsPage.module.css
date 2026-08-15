@@ -350,3 +350,26 @@
   font-size: 13px;
   color: var(--color-body);
 }
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/*
+ * 숫자 카드 4개를 375px 에 한 줄로 두면 한 칸이 80px 남짓이라 라벨이 줄줄이
+ * 접힌다. 두 줄로 나눈다 — 숫자는 서로 비교하는 것이라 세로 한 줄로 늘어놓으면
+ * 스크롤 없이는 같이 못 본다.
+ */
+@media (max-width: 760px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 칩은 줄이지 않고 옆으로 흐르게 둔다. 다섯 개를 375px 에 욱여넣으면
+     「준 비 됨」처럼 글자가 세로로 접혀 무엇을 고르는지 안 읽힌다. */
+  .filters {
+    overflow-x: auto;
+  }
+
+  .filter {
+    flex-shrink: 0;
+  }
+}
