@@ -52,6 +52,16 @@ interface RequestOptions {
   token?: string | null;
 }
 
+/**
+ * 요청 하나를 기다려 주는 한계.
+ *
+ * 서버가 임베딩을 기다리는 상한(`RUNPOD_EMBED_WAIT_SECONDS`, 기본 600초)보다
+ * **짧게** 잡는다 — 서버보다 오래 기다려 봐야 화면만 멈춰 있고, 사람은 그동안
+ * 아무 말도 못 듣는다. 여기서 끊고 「아직 처리 중일 수 있다」고 말해 주는 편이
+ * 낫다.
+ */
+const REQUEST_TIMEOUT_MS = 90_000;
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;
 
@@ -59,15 +69,36 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  /**
+   * **오래 걸리는 것과 죽은 것은 다른 말이다.**
+   *
+   * 임베딩이 걸린 요청은 RunPod 콜드 스타트 때문에 몇 분이 걸린다(서버는
+   * `RUNPOD_EMBED_WAIT_SECONDS` 로 최대 10분을 기다린다). 그때 브라우저가 먼저
+   * 끊으면 예전에는 「서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해
+   * 주세요」가 떴다 — 서버는 멀쩡히 그 요청을 처리하는 중인데 사람에게는 죽었다고
+   * 말한 것이다. 확인할 곳을 틀리게 가리키는 안내는 없는 것만 못하다.
+   */
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError(
+        '시간이 오래 걸려 기다리기를 멈췄습니다. 서버는 아직 처리 중일 수 있으니 잠시 후 다시 확인해 주세요.',
+        0,
+      );
+    }
     throw new ApiError('서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해 주세요.', 0);
+  } finally {
+    window.clearTimeout(timer);
   }
 
   // 토큰이 만료되거나 무효해졌다면 들고 있어도 쓸모가 없다. 세션을 비우면
