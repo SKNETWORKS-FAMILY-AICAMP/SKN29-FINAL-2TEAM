@@ -834,6 +834,7 @@ export default function ChatPage() {
                       {live.error && (
                         <ErrorCard
                           detail={live.error.detail}
+                          answered={Boolean(live.answer)}
                           errorCode={live.error.errorCode}
                           onOpenSettings={() => navigate(PATHS.settingsMcp)}
                         />

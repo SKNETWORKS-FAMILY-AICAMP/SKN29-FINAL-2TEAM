@@ -335,6 +335,18 @@ export interface ErrorCardProps {
   detail?: string;
   /** 백엔드 오류 코드 계약(11_MCP_설계 §6): 401 · 429 · validation · timeout · unreachable. */
   errorCode?: string;
+  /**
+   * 이 턴에 **모델의 답이 있는가.**
+   *
+   * 도구가 실패하면 모델은 그 사유를 자기 말로 다시 쓴다. 그러면 같은 이야기가
+   * 말풍선과 이 카드에 두 번 나온다(2026-08-12 QA §B-0). 두 문장은 **글자로는
+   * 달라서** 문자열 비교로는 못 거른다 — 실제로 그렇게 만들었다가 브라우저에서
+   * 그대로 두 번 나오는 것을 봤다(2026-08-15).
+   *
+   * 그래서 답이 있으면 사유를 **지우지 않고 「기술 정보」 안으로 내린다.** 화면에는
+   * 한 번만 보이고, 서버가 준 정확한 문장은 한 번 펼치면 그대로 있다.
+   */
+  answered?: boolean;
   onRetry?: () => void;
   onOpenSettings?: () => void;
 }
@@ -372,9 +384,11 @@ const CONNECTION_CODES = new Set([
 ]);
 
 /** ⑤ 오류 카드 — 스트림이 끊긴 지점에 뜨고, 이전 결과물은 위에 보존된다. */
-export function ErrorCard({ detail, errorCode, onRetry, onOpenSettings }: ErrorCardProps) {
+export function ErrorCard({ detail, errorCode, answered, onRetry, onOpenSettings }: ErrorCardProps) {
   // 서버가 준 사유가 가장 정확하다. 그것이 없을 때만 코드로 안내한다.
-  const body = detail ?? (errorCode ? ERROR_HINTS[errorCode] : undefined);
+  // 답이 이미 사유를 말했으면 여기서는 접어 둔다(`answered` 주석 참조).
+  const body = answered ? undefined : detail ?? (errorCode ? ERROR_HINTS[errorCode] : undefined);
+  const folded = answered ? detail : undefined;
   const showSettings = Boolean(onOpenSettings) && CONNECTION_CODES.has(errorCode ?? '');
 
   return (
@@ -399,7 +413,17 @@ export function ErrorCard({ detail, errorCode, onRetry, onOpenSettings }: ErrorC
           </Button>
         )}
       </div>
-      {errorCode && <code className={styles.errorRaw}>error · {errorCode}</code>}
+      {/* **코드를 지우지는 않는다 — 버그 보고에 쓰인다.** 다만 `ToolInputError`
+          같은 클래스명이 첫눈에 보이면 사람은 자기가 뭘 잘못했는지 알 수 없고,
+          그건 「MCP·Tool Calling 같은 용어를 그대로 노출하지 않는다」(§0 원칙 2)를
+          우리가 어기는 것이다. 접어 두고 이름을 사람 말로 바꾼다. */}
+      {(errorCode || folded) && (
+        <details className={styles.errorTech}>
+          <summary>기술 정보</summary>
+          {folded && <p className={styles.errorBody}>{folded}</p>}
+          {errorCode && <code className={styles.errorRaw}>{errorCode}</code>}
+        </details>
+      )}
     </section>
   );
 }
