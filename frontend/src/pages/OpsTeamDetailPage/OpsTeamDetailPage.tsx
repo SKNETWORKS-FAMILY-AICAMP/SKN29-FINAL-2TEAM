@@ -152,7 +152,6 @@ export default function OpsTeamDetailPage() {
   const header = (
     <OpsPageHeader
       title="팀 상세"
-      description="이 팀이 무엇을 들고 있고 실제로 무슨 일이 있었는지 확인합니다."
       actions={(
         <Button variant="secondary" onClick={() => navigate('/ops/teams')}>팀 목록으로</Button>
       )}
@@ -290,7 +289,7 @@ export default function OpsTeamDetailPage() {
           ))}
       </OpsSectionCard>
 
-      <OpsSectionCard title={`최근 실행 ${runs.length}건`} subtitle="대화 내용은 담기지 않습니다 — 무엇을 언제 돌렸고 어떤 도구가 실패했는지만 남습니다.">
+      <OpsSectionCard title={`최근 실행 ${runs.length}건`}>
         {runs.length === 0 ? (
           <OpsEmpty message="아직 실행 기록이 없습니다." />
         ) : (

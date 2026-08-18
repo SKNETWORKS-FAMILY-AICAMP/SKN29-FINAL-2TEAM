@@ -137,7 +137,7 @@ export default function OpsAccountDetailPage() {
   if (loading && !account) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 상세" description="이 계정의 상태와 직원 연결을 확인하고 조치합니다." />
+        <OpsPageHeader title="계정 상세" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -146,7 +146,7 @@ export default function OpsAccountDetailPage() {
   if (error || !account) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 상세" description="이 계정의 상태와 직원 연결을 확인하고 조치합니다." />
+        <OpsPageHeader title="계정 상세" />
         <p className={styles.inlineEmpty} role="alert">{error || '계정을 찾을 수 없습니다.'}</p>
         <div className={styles.rowActions}>
           <Button variant="outline" onClick={load}>다시 시도</Button>
@@ -172,7 +172,6 @@ export default function OpsAccountDetailPage() {
           `OpsPageHeader` 의 `actions` 는 이 콘솔이 갖고만 있고 안 쓰던 자리다. */}
       <OpsPageHeader
         title="계정 상세"
-        description="이 계정의 상태와 직원 연결을 확인하고 조치합니다."
         actions={back}
       />
 

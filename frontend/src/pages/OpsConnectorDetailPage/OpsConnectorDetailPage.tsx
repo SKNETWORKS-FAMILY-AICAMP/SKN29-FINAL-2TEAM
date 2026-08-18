@@ -83,7 +83,6 @@ export default function OpsConnectorDetailPage() {
   const header = (
     <OpsPageHeader
       title="연결 상세"
-      description="이 연결의 상태와 오류 원인을 확인하고 필요하면 해제합니다."
       actions={(
         <Button variant="secondary" onClick={() => navigate('/ops/connectors')}>연결 목록으로</Button>
       )}

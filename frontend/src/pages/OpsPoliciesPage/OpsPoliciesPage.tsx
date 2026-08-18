@@ -426,7 +426,7 @@ export default function OpsPoliciesPage() {
   if (loading && notices === null) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="전역 정책" description="플랫폼 전체에 적용되는 최소한의 운영 상수와 시스템 공지를 관리합니다." />
+        <OpsPageHeader title="전역 정책" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -435,7 +435,7 @@ export default function OpsPoliciesPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="전역 정책" description="플랫폼 전체에 적용되는 최소한의 운영 상수와 시스템 공지를 관리합니다." />
+        <OpsPageHeader title="전역 정책" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -458,12 +458,11 @@ export default function OpsPoliciesPage() {
     <div className={styles.page}>
       <OpsPageHeader
         title="전역 정책"
-        description="플랫폼 전체에 적용되는 최소한의 운영 상수와 시스템 공지를 관리합니다."
       />
 
       <OpsSectionCard
         title="초대 정책"
-        subtitle={`신규 발급 초대부터 적용 · 현재 ${savedInviteDays ?? '-'}일 · 변경 시 기존 발급 건에는 영향 없음`}
+        subtitle={`현재 ${savedInviteDays ?? '-'}일 · 바꿔도 이미 발급된 초대에는 영향 없음`}
       >
         <div className={styles.inlinePolicy}>
           <div className={styles.fieldGroup}>
@@ -526,7 +525,6 @@ export default function OpsPoliciesPage() {
 
         <OpsSectionCard
           title="정책 변경 이력"
-          subtitle="항목을 선택하면 변경 전후와 적용 근거를 확인할 수 있습니다."
           actions={changeRows.length > 0 ? (
             <Button variant="outline" size="sm" onClick={openHistoryModal}>전체 보기</Button>
           ) : undefined}
@@ -557,7 +555,6 @@ export default function OpsPoliciesPage() {
       {selectedChange && (
         <OpsSectionCard
           title={`선택 변경 · ${changeTitle(selectedChange)}`}
-          subtitle="변경 영향과 적용 근거를 한눈에 확인합니다. 저장 내용은 감사 대상으로 관리됩니다."
         >
           <div className={styles.compareFlow}>
             <div className={styles.compareCard}><span>변경 전</span><strong>{changeCompareValue(selectedChange, 'before')}</strong></div>

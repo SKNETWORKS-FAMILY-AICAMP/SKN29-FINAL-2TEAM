@@ -82,7 +82,7 @@ export default function OpsConnectorsPage() {
   if (loading && !connectors) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <OpsPageHeader title="연결 서비스 현황" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -91,7 +91,7 @@ export default function OpsConnectorsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <OpsPageHeader title="연결 서비스 현황" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -107,7 +107,7 @@ export default function OpsConnectorsPage() {
   if (all.length === 0) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="연결 서비스 현황" description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다." />
+        <OpsPageHeader title="연결 서비스 현황" />
         <p className={styles.inlineEmpty}>연결된 서비스가 없습니다.</p>
       </div>
     );
@@ -117,7 +117,6 @@ export default function OpsConnectorsPage() {
     <div className={styles.page}>
       <OpsPageHeader
         title="연결 서비스 현황"
-        description="플랫폼에 연결된 구글 드라이브·Jira의 상태와 오류 원인을 확인합니다."
       />
 
       <OpsSummaryGrid>

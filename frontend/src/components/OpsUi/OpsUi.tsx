@@ -6,20 +6,29 @@ import styles from './OpsUi.module.css';
 
 export type OpsTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
 
+/**
+ * 화면 제목.
+ *
+ * **설명은 선택이다**(2026-08-18 PM — 「이런 거 다 빼라」). 운영자 콘솔의 설명
+ * 문구는 제목이 이미 하는 말을 늘려 쓴 것이 대부분이었다(「팀 현황 — 팀 목록과
+ * 상태를 확인합니다」). 매일 보는 화면에서는 그 한 줄이 매번 자리만 차지한다.
+ *
+ * 안 주면 그 줄을 **아예 안 그린다** — 빈 문자열을 넘겨 빈 줄을 남기지 않는다.
+ */
 export function OpsPageHeader({
   title,
   description,
   actions,
 }: {
   title: string;
-  description: string;
+  description?: string;
   actions?: ReactNode;
 }) {
   return (
     <div className={styles.pageHeader}>
       <div>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {actions && <div className={styles.headerActions}>{actions}</div>}
     </div>

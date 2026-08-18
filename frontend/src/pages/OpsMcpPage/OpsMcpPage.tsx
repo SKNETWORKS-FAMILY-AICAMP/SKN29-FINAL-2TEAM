@@ -35,8 +35,6 @@ const STATUS: Record<OpsMcpServer['status'], { tone: BadgeTone; label: string }>
 };
 
 const TITLE = '커스텀 도구';
-const DESCRIPTION =
-  '요청받은 서버를 팀에 등록합니다. 등록한 팀만 그 서버의 도구를 에이전트에 붙일 수 있습니다.';
 
 export default function OpsMcpPage() {
   const navigate = useNavigate();
@@ -179,7 +177,7 @@ export default function OpsMcpPage() {
   if (loading && !servers) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+        <OpsPageHeader title={TITLE} />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -188,7 +186,7 @@ export default function OpsMcpPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+        <OpsPageHeader title={TITLE} />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -200,11 +198,10 @@ export default function OpsMcpPage() {
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+      <OpsPageHeader title={TITLE} />
 
       <OpsSectionCard
         title="새로 등록"
-        subtitle="https 주소만 받고 사내망·로컬 주소는 저장 전에 거절합니다. 토큰은 암호화해 저장하고 다시 보여주지 않습니다."
       >
         <div className={styles.formGrid}>
           <div className={styles.fieldGroup}>

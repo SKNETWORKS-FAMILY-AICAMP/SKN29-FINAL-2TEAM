@@ -149,7 +149,7 @@ export default function OpsModelsPage() {
   if (loading && !models) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="모델" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
+        <OpsPageHeader title="모델" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -158,7 +158,7 @@ export default function OpsModelsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="모델" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
+        <OpsPageHeader title="모델" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -170,9 +170,9 @@ export default function OpsModelsPage() {
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title="모델" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
+      <OpsPageHeader title="모델" />
 
-      <OpsSectionCard title="새로 등록" subtitle="저장 전에 그 주소와 키로 실제로 한 번 불러 봅니다.">
+      <OpsSectionCard title="새로 등록">
         <div className={styles.formGrid}>
           <div className={styles.fieldGroup}>
             <label htmlFor="model-team">팀</label>

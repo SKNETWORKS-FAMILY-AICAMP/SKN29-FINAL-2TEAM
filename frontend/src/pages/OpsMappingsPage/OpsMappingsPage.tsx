@@ -86,7 +86,7 @@ export default function OpsMappingsPage() {
   if (loading && !invites) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 연결·초대 현황" description="연결 조직별 일회성 초대 발급·수락 결과와 계정–직원 매핑 이상을 추적합니다." />
+        <OpsPageHeader title="계정 연결·초대 현황" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -95,7 +95,7 @@ export default function OpsMappingsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 연결·초대 현황" description="연결 조직별 일회성 초대 발급·수락 결과와 계정–직원 매핑 이상을 추적합니다." />
+        <OpsPageHeader title="계정 연결·초대 현황" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -110,7 +110,6 @@ export default function OpsMappingsPage() {
     <div className={styles.page}>
       <OpsPageHeader
         title="계정 연결·초대 현황"
-        description="연결 조직별 일회성 초대 발급·수락 결과와 계정–직원 매핑 이상을 추적합니다."
       />
 
       <OpsSummaryGrid>

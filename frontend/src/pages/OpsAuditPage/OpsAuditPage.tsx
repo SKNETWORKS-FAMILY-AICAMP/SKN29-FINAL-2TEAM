@@ -107,7 +107,6 @@ export default function OpsAuditPage() {
   const header = (
     <OpsPageHeader
       title="감사 로그"
-      description="계정·초대·연결 서비스에 누가 어떤 조치를 했는지 시간순으로 확인합니다. 읽기 전용입니다."
     />
   );
 
