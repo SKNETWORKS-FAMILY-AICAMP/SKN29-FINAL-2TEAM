@@ -34,7 +34,7 @@ const STATUS: Record<OpsMcpServer['status'], { tone: BadgeTone; label: string }>
   ERROR: { tone: 'warning', label: '연결 실패' },
 };
 
-const TITLE = '커스텀 도구 등록';
+const TITLE = '커스텀 도구';
 const DESCRIPTION =
   '요청받은 서버를 팀에 등록합니다. 등록한 팀만 그 서버의 도구를 에이전트에 붙일 수 있습니다.';
 
