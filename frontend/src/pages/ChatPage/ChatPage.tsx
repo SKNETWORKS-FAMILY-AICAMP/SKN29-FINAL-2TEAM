@@ -553,7 +553,12 @@ export default function ChatPage() {
     if (!token || !sessionId) return;
     // **인덱스만 보낸다.** 실행할 인자는 서버가 저장해 둔 것을 쓴다 — 화면이
     // 인자를 보내면 승인 게이트가 아무것도 막지 못한다.
-    const indices = selected;
+    //
+    // 고를 목록이 없는 카드(추출을 안 거친 도구 — 아래 `live.tasks.length === 0`
+    // 분기)의 「승인」은 **전부 승인**이라는 뜻이다. 그때도 `selected`(빈 배열)를
+    // 그대로 보내면 서버는 「0건만 남기고 지워 달라」로 읽어, 승인했는데 아무것도
+    // 등록되지 않는다 — 화면은 성공처럼 보이고 결과는 비는 최악의 조합이다.
+    const indices = lastLive && lastLive.tasks.length > 0 ? selected : undefined;
     // 빈 상태에서 다시 시작하지 않고 **이 턴을 이어서 접는다.** 재개는 실행이
     // 두 번째일 뿐 같은 턴이고, 새로고침 복원도 두 실행의 이벤트를 이어 붙인다
     // (`toTurns`). 리셋하면 방금 승인한 목록이 화면에서 사라지고, 복원한 화면과
