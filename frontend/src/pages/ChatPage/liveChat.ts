@@ -2,9 +2,10 @@ import type {
   ChatEvent,
   ExtractedTask as ApiTask,
   JiraIssue,
+  SourceRef,
   TaskExtractionPayload,
 } from '../../api/chat';
-import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './cardTypes';
+import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep, SubagentRun } from './cardTypes';
 
 /**
  * 이벤트 스트림 → 카드가 그릴 상태.
@@ -24,6 +25,8 @@ export interface LiveChat {
   toolName: string | null;
   /** 도구가 내는 검색어. 에이전트가 실제로 한 판단이라 그대로 보여준다. */
   queries: string[];
+  /** `document_search`가 좁힌 문서들 — "출처"(2026-08-18). */
+  sources: SourceRef[];
   evidenceCount: number;
   running: boolean;
   extraction: TaskExtractionPayload | null;
@@ -42,6 +45,13 @@ export interface LiveChat {
    * 담는다 — `subagent_alias`가 있으면 이 턴의 최상위 표시에는 안 쓴다.
    */
   reasoningSteps: string[];
+  /**
+   * 이 턴에서 다른 에이전트에게 위임한 작업들(2026-08-18). 서브 에이전트
+   * **자신의** reasoning·도구 진행은 여전히 최상위에 안 보여준다(위와 같은
+   * 원칙) — 이건 "지금 위임 중이다/끝났다"는 사실만 보여준다. 병렬 위임도
+   * 있을 수 있어 배열이다.
+   */
+  subagents: SubagentRun[];
 }
 
 export function emptyLive(): LiveChat {
@@ -49,6 +59,7 @@ export function emptyLive(): LiveChat {
     steps: [],
     toolName: null,
     queries: [],
+    sources: [],
     evidenceCount: 0,
     running: true,
     extraction: null,
@@ -61,11 +72,35 @@ export function emptyLive(): LiveChat {
     error: null,
     jira: null,
     reasoningSteps: [],
+    subagents: [],
   };
 }
 
+/**
+ * `tool_progress`의 포장을 풀어 원래 이벤트 모양으로 되돌린다(2026-08-18
+ * 발견·수정). `services/agent_runtime/events.py`의 `_classify_progress`가
+ * `task_extraction`/`jira_get_issues`가 흘리는 모든 진행 이벤트(`stage`/
+ * `queries`/`stage_done`/`task_extraction_result`/`jira_status`)를
+ * `type: "tool_progress"`, 원본은 `detail`에 통째로 옮겨 담아 보낸다
+ * (2026-08-14 엔진 교체 이후 항상 이 모양) — 그런데 이 화면은 저 다섯
+ * 타입이 최상위로 직접 온다고 가정한 채로 안 고쳐져 있어서, 지금까지
+ * `tool_progress`가 `default` 분기로 빠져 **검색어·진행 단계는 물론
+ * 업무 추출 결과(확인 카드)·Jira 현황까지 채팅에서 조용히 사라지고
+ * 있었다.** 포장을 풀어 기존 케이스가 그대로 처리하게 한다 — 로직을
+ * 두 군데 두지 않기 위해서다.
+ *
+ * `subagent_alias`가 있으면(자식 네임스페이스의 진행) 이 턴의 최상위
+ * 표시에는 안 쓴다 — `tool_started`/`reasoning`과 같은 규칙이라 여기서
+ * 걸러서 애초에 풀지 않는다.
+ */
+export function unwrapToolProgress(event: ChatEvent): ChatEvent {
+  if (event.type !== 'tool_progress' || !event.detail || event.subagent_alias) return event;
+  return { ...event.detail, tool_ref: event.tool_ref } as ChatEvent;
+}
+
 /** 이벤트 하나를 접어 넣는다. 불변으로 다뤄 React 가 변화를 알아채게 한다. */
-export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
+export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
+  const event = unwrapToolProgress(rawEvent);
   const toolRef = (event as { tool_ref?: string }).tool_ref;
 
   switch (event.type) {
@@ -87,6 +122,12 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
     case 'queries':
       return toolRef ? { ...state, queries: event.queries } : state;
 
+    // `document_search`가 coarse 단계에서 좁힌 문서들(2026-08-18) — "출처".
+    // `stage`처럼 초기화하지 않는다 — 다음 단계(본문 검색)가 도는 동안에도
+    // "무엇으로 좁혔는지"는 계속 보여야 한다.
+    case 'sources':
+      return toolRef ? { ...state, sources: event.documents } : state;
+
     case 'stage_done': {
       const steps = state.steps.map((step, index) =>
         index === state.steps.length - 1
@@ -96,13 +137,20 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
       return { ...state, steps, evidenceCount: event.evidence };
     }
 
-    // 2026-08-18 추가. 서브 에이전트 자신의 생각은 이 턴의 최상위 표시에 안
-    // 쓴다 — `tool_started`/`tool_completed`가 `subagent_alias`로 거르는 것과
-    // 같은 규칙.
-    case 'reasoning':
-      return event.subagent_alias
-        ? state
-        : { ...state, reasoningSteps: [...state.reasoningSteps, event.text] };
+    // 서브 에이전트 자신의 생각은 이 턴의 최상위 표시에 안 쓴다 —
+    // `tool_started`/`tool_completed`가 `subagent_alias`로 거르는 것과 같은
+    // 규칙. `append`(2026-08-18, 토큰 단위 실시간 스트리밍)가 true면 이어지는
+    // 델타라 마지막 항목에 붙이고, false면 새 문단이라 항목을 새로 만든다 —
+    // 서버가 이미 판정해서 보내므로 여기선 그대로 따른다.
+    case 'reasoning': {
+      if (event.subagent_alias) return state;
+      if (event.append && state.reasoningSteps.length > 0) {
+        const steps = state.reasoningSteps.slice();
+        steps[steps.length - 1] += event.text;
+        return { ...state, reasoningSteps: steps };
+      }
+      return { ...state, reasoningSteps: [...state.reasoningSteps, event.text] };
+    }
 
     case 'tool_call_started':
       return { ...state, toolName: event.tool_name };
@@ -112,6 +160,35 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
     // 서브 에이전트 자신의 호출이라 이 턴의 최상위 진행 표시에는 안 쓴다.
     case 'tool_started':
       return event.subagent_alias ? state : { ...state, toolName: event.tool_ref };
+
+    // 다른 에이전트에게 위임을 시작했다(2026-08-18). 위임 자체는 부모
+    // 네임스페이스에서 나오는 이벤트라 subagent_alias로 거를 대상이 아니다
+    // — "누구에게 위임했나"가 곧 이 이벤트의 내용이다. 서브 에이전트
+    // *자신의* reasoning·도구 진행은 여전히 안 보여준다(위 케이스들 그대로).
+    case 'subagent_started':
+      return {
+        ...state,
+        subagents: [
+          ...state.subagents,
+          {
+            runId: event.run_id,
+            alias: event.subagent_alias,
+            name: event.subagent_name ?? null,
+            taskSummary: event.task_summary ?? '',
+            status: 'RUNNING',
+          },
+        ],
+      };
+
+    // 위임 완료 — run_id로 정확히 짝을 맞춘다(tool_started/tool_completed와
+    // 같은 이유: 병렬 위임이면 완료 순서가 시작 순서와 다를 수 있다).
+    case 'subagent_completed':
+      return {
+        ...state,
+        subagents: state.subagents.map((run) =>
+          run.runId === event.run_id ? { ...run, status: event.status } : run,
+        ),
+      };
 
     case 'tool_call_finished': {
       const steps = state.steps.map((step) =>

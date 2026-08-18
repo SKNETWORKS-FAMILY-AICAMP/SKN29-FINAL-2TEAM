@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Checkbox, Icon } from '../../../components';
-import type { JiraIssue } from '../../../api/chat';
-import type { CreatedIssue, ExtractedTask, ProgressStep } from '../cardTypes';
+import type { JiraIssue, SourceRef } from '../../../api/chat';
+import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun } from '../cardTypes';
 import styles from './cards.module.css';
 
 /**
@@ -19,6 +19,10 @@ export interface ProgressCardProps {
   steps: ProgressStep[];
   /** 도구가 낸 검색어. 에이전트가 실제로 한 판단이라 그대로 보여준다. */
   queries?: string[];
+  /** `document_search`가 좁힌 문서·`web_search`가 찾은 페이지 — "출처"(2026-08-18). */
+  sources?: SourceRef[];
+  /** 이 턴에서 다른 에이전트에게 위임한 작업들(2026-08-18). */
+  subagents?: SubagentRun[];
   evidenceCount?: number;
   title?: string;
   /**
@@ -35,6 +39,8 @@ export interface ProgressCardProps {
 export function ProgressCard({
   steps,
   queries = [],
+  sources = [],
+  subagents = [],
   evidenceCount,
   title = '업무를 정리하는 중',
   running = true,
@@ -93,6 +99,53 @@ export function ProgressCard({
         </ul>
       )}
 
+      {/* "출처"(2026-08-18) — document_search가 실제로 좁혀서 보고 있는
+          문서, web_search가 찾은 페이지. 색인 여부와 무관하게 전부
+          보여준다(정직 표기 원칙 — not_indexed와 같은 이유). `url`이 있으면
+          웹 결과라 새 탭 링크로, 없으면(내부 문서) 그냥 텍스트로 그린다. */}
+      {sources.length > 0 && (
+        <ul className={styles.queries}>
+          {sources.map((source) =>
+            source.url ? (
+              <li key={source.id} className={styles.query}>
+                <Icon name="link" size={13} color="var(--color-placeholder)" />
+                <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                  {source.label}
+                </a>
+              </li>
+            ) : (
+              <li key={source.id} className={styles.query}>
+                <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                {source.label}
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+
+      {/* 다른 에이전트에게 위임한 작업들(2026-08-18) — 위임 자체가 걸린
+          동안 진행 카드가 멈춘 것처럼 보이던 문제(서브 에이전트가 일하는
+          동안 화면에 아무 변화가 없었다)를 고치려고 추가했다. 서브 에이전트
+          *자신의* reasoning·도구 진행은 여전히 안 보여준다 — "지금
+          위임했다/끝났다"는 사실만 보여준다. */}
+      {subagents.length > 0 && (
+        <ul className={styles.steps}>
+          {subagents.map((run) => (
+            <li key={run.runId} className={styles.step}>
+              {run.status === 'RUNNING' && <Icon name="loader" size={15} color="var(--color-primary)" spin />}
+              {run.status === 'DONE' && <Icon name="check-circle" size={15} color="var(--color-success)" />}
+              {run.status === 'FAILED' && <Icon name="circle-x" size={15} color="var(--color-danger)" />}
+              <span className={styles.stepLabel}>
+                {run.name ?? run.alias ?? '다른 에이전트'}에게 위임
+                {run.status === 'DONE' && ' 완료'}
+                {run.status === 'FAILED' && ' 실패'}
+              </span>
+              {run.taskSummary && <span className={styles.stepMeta}>{run.taskSummary}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+
       <p className={styles.foot}>
         {evidenceCount ? `근거 ${evidenceCount}건 · ` : ''}몇 분 걸립니다 · 창을 닫지 않아도 됩니다
       </p>
@@ -103,6 +156,14 @@ export function ProgressCard({
 export interface ReasoningTraceProps {
   /** 이 턴에서 모델이 낸 생각을 순서대로. 비어 있으면 컴포넌트 자체를 안 그린다. */
   steps: string[];
+  /**
+   * 처음 그릴 때부터 펼쳐 둘지(2026-08-18, 토큰 단위 실시간 스트리밍 도입).
+   * **딱 처음 마운트될 때만** 본다(그 뒤 이 값이 바뀌어도 `useState` 초기값이라
+   * 안 따라간다) — 지금 스트리밍 중인 턴(`live.running`)에 `true`를 주면,
+   * 답이 다 나온 뒤가 아니라 **쓰는 동안 실시간으로** 보인다. 새로고침으로
+   * 다시 그리는 지난 턴은 이미 `running=false`라 여전히 접혀서 시작한다.
+   */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -111,12 +172,14 @@ export interface ReasoningTraceProps {
  * 지금까지 버리던 `AIMessage.content`의 `type:"reasoning"` 블록을 따로 뽑아
  * `reasoning` 이벤트로 낸다(`liveChat.ts`의 `reasoningSteps`가 모은다).
  *
- * **접어서 시작한다.** 추론 모델은 답 하나에도 여러 단락을 생각하는데, 다
- * 펼쳐 두면 정작 찾는 답이 아래로 밀린다 — 근거 카드(`TaskRow`)의 「원문 근거」
- * 와 같은 판단이다. 복잡한 대화에서 "왜 이렇게 답했는지"가 궁금할 때만 편다.
+ * **지난 턴은 접어서 시작한다.** 추론 모델은 답 하나에도 여러 단락을
+ * 생각하는데, 다 펼쳐 두면 정작 찾는 답이 아래로 밀린다 — 근거 카드
+ * (`TaskRow`)의 「원문 근거」와 같은 판단이다. **지금 스트리밍 중인 턴은
+ * `defaultOpen`으로 펼쳐서 시작한다** — 실시간으로 쓰는 걸 보여주는 게
+ * 이 기능의 목적이라, 접어 두면 매번 사람이 직접 펴야 그 효과를 본다.
  */
-export function ReasoningTrace({ steps }: ReasoningTraceProps) {
-  const [open, setOpen] = useState(false);
+export function ReasoningTrace({ steps, defaultOpen = false }: ReasoningTraceProps) {
+  const [open, setOpen] = useState(defaultOpen);
   if (steps.length === 0) return null;
 
   return (

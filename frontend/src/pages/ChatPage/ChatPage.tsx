@@ -26,7 +26,7 @@ import { listConnectors } from '../../api/connectors';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
 import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ReasoningTrace, ResultCard } from './cards/ChatCards';
-import { emptyLive, reduce, toCards, traceLine } from './liveChat';
+import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
 import type { LiveChat } from './liveChat';
 import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
 import styles from './ChatPage.module.css';
@@ -582,8 +582,11 @@ export default function ChatPage() {
       await start((event) => {
         state = reduce(state, event);
         updateLastLive(() => ({ ...state }));
-        if (event.type === 'task_extraction_result') {
-          setSelected(toCards(event.result).map((_, index) => index));
+        // tool_progress로 감싸져 올 수 있다(2026-08-18) — reduce()와 같은
+        // 포장을 여기서도 풀어야 한다(liveChat.ts의 unwrapToolProgress 참고).
+        const unwrapped = unwrapToolProgress(event);
+        if (unwrapped.type === 'task_extraction_result') {
+          setSelected(toCards(unwrapped.result).map((_, index) => index));
         }
         // 첫 답이 끝나면 서버가 이 대화의 이름을 지어 보낸다. 사이드바만
         // 바뀌는 일이라 대화 상태(`reduce`)에는 넣지 않는다.
@@ -965,25 +968,28 @@ export default function ChatPage() {
 
                   {live && (
                     <>
-                      {(live.running || live.steps.length > 0) && (
+                      {(live.running || live.steps.length > 0 || live.subagents.length > 0) && (
                         <ProgressCard
                           steps={live.steps}
                           queries={live.queries}
+                          sources={live.sources}
+                          subagents={live.subagents}
                           evidenceCount={live.evidenceCount}
                           running={live.running}
-                          title={
-                            live.running
-                              ? live.toolName
-                                ? `${live.toolName} 실행 중`
-                                : '생각하는 중'
-                              : live.toolName
-                                ? `${live.toolName} 완료`
-                                : '정리 완료'
-                          }
+                          title={(() => {
+                            // 위임이 걸려 있으면(2026-08-18) 그동안 화면이 멈춘 것처럼
+                            // 보이던 문제를 고치려고 이 상태를 최우선으로 보여준다 —
+                            // 루트가 도구를 직접 호출 중이 아니라 다른 에이전트가
+                            // 일하는 중이라는 게 지금 사실과 더 가깝다.
+                            const active = live.subagents.find((run) => run.status === 'RUNNING');
+                            if (active) return `${active.name ?? active.alias ?? '다른 에이전트'}에게 위임 중`;
+                            if (live.running) return live.toolName ? `${live.toolName} 실행 중` : '생각하는 중';
+                            return live.toolName ? `${live.toolName} 완료` : '정리 완료';
+                          })()}
                         />
                       )}
 
-                      <ReasoningTrace steps={live.reasoningSteps} />
+                      <ReasoningTrace steps={live.reasoningSteps} defaultOpen={live.running} />
 
                       {live.jira && (
                         <JiraStatusCard

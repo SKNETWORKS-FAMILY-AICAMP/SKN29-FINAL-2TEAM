@@ -96,7 +96,7 @@ PROMOTE_TOP_N = 2
 
 def _document_search(
     *, team_id: str, query: str, account_id: str | None = None, top_k: int = 10
-) -> dict[str, Any]:
+):
     """팀 문서에서 근거 문장을 찾는다. **두 단계다**(A안 — 8/11 확정 ⑥).
 
     1) coarse — `doc_meta.summary_vec` 으로 문서를 먼저 좁힌다. 요약 임베딩은
@@ -109,7 +109,16 @@ def _document_search(
 
     메타가 아직 없는 팀(파이프라인을 안 돌린 경우)은 예전처럼 팀 문서 전체를
     훑는다. coarse 를 켰다고 기존 동작이 죽으면 안 된다.
+
+    **제너레이터다**(2026-08-18 추가) — coarse로 좁힌 뒤 실제로 어느 문서를
+    보고 있는지("출처") 실시간으로 보여 달라는 요청. `_extract_tasks`와 같은
+    패턴 — `adapters.py`의 `_wrap_handler`가 제너레이터면 자동으로 드레인해
+    진행 이벤트로 흘려보내고, 마지막 `return`(아래)이 모델이 실제로 받는
+    도구 결과다. 직접 호출하는 테스트(`tests/test_document_meta.py`)는
+    `_drain_with_progress`와 같은 방식으로 끝까지 돌려 반환값을 얻는다.
     """
+
+    yield {"type": "stage", "step": 1, "total": 2, "label": "관련 문서 좁히는 중"}
 
     vector = embed_queries([query])[0]
     candidates = DocMetaRepository.coarse_search(
@@ -142,6 +151,21 @@ def _document_search(
         doc_ids = PipelineDocumentRepository.searchable_doc_ids(team_id)
         not_indexed = []
 
+    if candidates:
+        # coarse가 실제로 좁힌 문서 이름들 — 색인 안 된 것도 포함해서 전부
+        # 보여준다("정직 표기": 위 not_indexed와 같은 원칙). meta 없는 팀이라
+        # candidates가 비면(else 분기) 보여줄 "좁힌 목록" 자체가 없으니 안 낸다.
+        # `id`/`label`은 `_web_search`도 같이 쓰는 공통 모양이다(2026-08-18) —
+        # 웹 결과는 `url`도 채운다, 내부 문서는 안 채운다(화면이 그 유무로
+        # 링크를 걸지 그냥 텍스트로 보일지 정한다).
+        yield {
+            "type": "sources",
+            "step": 1,
+            "documents": [
+                {"id": row["doc_id"], "label": row["file_name"]} for row in candidates
+            ],
+        }
+
     if not doc_ids:
         return {
             "query": query,
@@ -158,6 +182,8 @@ def _document_search(
                 else "팀에 검색할 문서가 없습니다."
             ),
         }
+
+    yield {"type": "stage", "step": 2, "total": 2, "label": "본문에서 근거 찾는 중"}
 
     rows = VectorSearchRepository.search(
         team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k
@@ -178,6 +204,7 @@ def _document_search(
     if not_indexed:
         result["not_indexed"] = not_indexed
         result["note"] = "아래 문서도 관련 있어 보이지만 본문이 아직 색인되지 않았습니다."
+    yield {"type": "stage_done", "step": 2, "found": len(doc_ids), "evidence": len(result["evidence"])}
     return result
 
 
@@ -584,7 +611,7 @@ def _absence_list(*, account_id: str, weeks: int = 4) -> dict[str, Any]:
     }
 
 
-def _web_search(*, query: str) -> dict[str, Any]:
+def _web_search(*, query: str):
     """웹에서 찾는다. **팀 문서와 다른 종류의 근거다.**
 
     문서는 사람이 올려 두고 파싱·색인을 거친 것이고, 웹은 아무도 검증하지
@@ -594,12 +621,31 @@ def _web_search(*, query: str) -> dict[str, Any]:
     그래서 결과마다 URL 을 붙이고, 못 쓰는 상태(키 없음·한도 초과)는 빈 결과가
     아니라 **사유로** 올린다 — 빈 결과를 주면 에이전트가 "웹에서 못 찾았습니다"
     라고 답하는데 실제로는 찾아보지도 않은 것이다.
+
+    **제너레이터다**(2026-08-18 추가) — 검색 결과(제목·URL)가 오면 모델의
+    최종 답을 기다리지 않고 "출처" 카드로 바로 보여준다(`_document_search`의
+    `sources`와 같은 모양 — `services/harness/registry.py` 위쪽 참고). Tavily
+    검색은 **단일 API 호출**이라(`services/websearch/client.py`) 그 안에서
+    "지금 이 페이지 보는 중"처럼 더 잘게 쪼개 보여줄 수는 없다 — 응답이
+    오는 순간 한 번에 보여주는 게 이 API로 낼 수 있는 최선이다.
     """
+
+    yield {"type": "stage", "step": 1, "total": 1, "label": "웹 검색하는 중"}
 
     try:
         results = search_web(query)
     except WebSearchUnavailable as exc:
         raise ToolInputError(str(exc)) from exc
+
+    if results:
+        yield {
+            "type": "sources",
+            "step": 1,
+            "documents": [
+                {"id": item["url"], "label": item.get("title") or item["url"], "url": item["url"]}
+                for item in results
+            ],
+        }
 
     return {
         "query": query,

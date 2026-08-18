@@ -23,10 +23,14 @@ class MissingKeyTests(SimpleTestCase):
         self.assertIn("WEB_SEARCH_API_KEY", str(caught.exception))
 
     def test_도구는_그_사유를_사람에게_보여준다(self):
-        """`ToolInputError` 라야 화면에 문장이 뜬다(그 밖의 예외는 클래스명만)."""
+        """`ToolInputError` 라야 화면에 문장이 뜬다(그 밖의 예외는 클래스명만).
+
+        핸들러가 제너레이터라(2026-08-18, 진행 이벤트 스트리밍) 호출 자체는
+        예외를 안 던진다 — 끝까지 돌려야(`list()`) 안에서 난 예외가 밖으로
+        전파된다."""
 
         with self.assertRaises(registry.ToolInputError):
-            registry.BUILTIN_TOOLS["web_search"].handler(query="장고 최신 버전")
+            list(registry.BUILTIN_TOOLS["web_search"].handler(query="장고 최신 버전"))
 
 
 @override_settings(WEB_SEARCH_API_KEY="test-key", WEB_SEARCH_TIMEOUT_SECONDS=5)

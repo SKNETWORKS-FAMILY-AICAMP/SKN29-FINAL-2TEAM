@@ -55,7 +55,8 @@ class StreamCallArgumentsTests(SimpleTestCase):
         call = runtime.stream_calls[0]
         # "custom"도 구독한다 — tools/adapters.py의 제너레이터 도구가
         # get_stream_writer()로 흘려보내는 진행 이벤트를 받으려면 필요하다.
-        self.assertEqual(call["kwargs"]["stream_mode"], ["updates", "custom"])
+        # "messages"도 구독한다(2026-08-18) — reasoning 실시간 스트리밍용.
+        self.assertEqual(call["kwargs"]["stream_mode"], ["updates", "custom", "messages"])
         self.assertTrue(call["kwargs"]["subgraphs"])
         self.assertEqual(
             call["input_state"], {"messages": [{"role": "user", "content": "안녕"}]}
@@ -115,8 +116,14 @@ class RealGraphIntegrationTests(SimpleTestCase):
             self.assertEqual(len(event), 3)
             namespace, mode, payload = event
             self.assertIsInstance(namespace, tuple)
-            self.assertIn(mode, ("updates", "custom"))
-            self.assertIsInstance(payload, dict)
+            self.assertIn(mode, ("updates", "custom", "messages"))
+            # "messages"는 (AIMessageChunk, metadata) 2-tuple로 온다 — 그 외
+            # 모드만 dict("updates"의 노드별 결과, "custom"의 writer 값)다.
+            if mode == "messages":
+                self.assertIsInstance(payload, tuple)
+                self.assertEqual(len(payload), 2)
+            else:
+                self.assertIsInstance(payload, dict)
 
 
 @tool

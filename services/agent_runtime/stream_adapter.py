@@ -29,10 +29,20 @@ class DeepAgentStreamAdapter:
         필요하다. `"custom"`을 구독하지 않아도 `get_stream_writer()` 호출 자체는
         안전한 no-op이라(2026-08-13 실행 확인) 이 도구를 안 쓰는 그래프에는
         영향이 없다.
+
+        `"messages"`도 구독한다(2026-08-18 추가) — reasoning 텍스트를 실시간
+        스트리밍하려면 필요하다. `"updates"`는 모델 노드 하나가 통째로 끝나야만
+        나오는 완성된 `AIMessage`라, reasoning도 다 끝난 뒤에야 한 덩어리로
+        받는다 — `"messages"`는 OpenAI가 보내는 토큰·조각 단위 델타
+        (`AIMessageChunk`)를 그 자리에서 받는다(`events.py`의
+        `_classify_reasoning_delta` 참고). `subgraphs=True`+복수 모드라
+        3-tuple `(namespace, "messages", (chunk, metadata))`로 온다(langgraph
+        1.2.11 `Pregel.stream` docstring: `"messages"`는 항상 `(token, metadata)`
+        2-tuple).
         """
         yield from runtime.stream(
             {"messages": [*conversation_messages, {"role": "user", "content": user_input}]},
-            stream_mode=["updates", "custom"],
+            stream_mode=["updates", "custom", "messages"],
             subgraphs=True,
         )
 

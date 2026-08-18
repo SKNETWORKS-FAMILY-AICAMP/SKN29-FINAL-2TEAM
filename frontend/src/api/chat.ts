@@ -50,9 +50,45 @@ export interface ChatSessionDetail extends ChatSession {
  * 두 층이 같은 `stage` 타입으로 오기 때문에, 구별하지 않고 그리면 진행 카드가
  * 1/4 → 1/5 → 2/5 → 2/4 로 튄다(실호출에서 확인된 문제).
  */
+/**
+ * `tool_progress` 이벤트의 `detail`이 실제로 가질 수 있는 모양들 — 아래
+ * `ChatEvent`의 `stage`/`queries`/`stage_done`/`task_extraction_result`/
+ * `jira_status`와 각각 같다(`tool_ref`/`tool_call_id`는 감싸는 바깥 이벤트
+ * 쪽에 있어 `detail`엔 없다). 알려지지 않은 `type`도 올 수 있어(새 진행
+ * 이벤트를 도구가 더 낼 때) 마지막에 인덱스 시그니처로 열어 둔다 — 화면은
+ * 모르는 타입을 조용히 무시한다.
+ */
+/**
+ * "출처" 표시용 항목 하나(2026-08-18) — `document_search`가 좁힌 문서,
+ * `web_search`가 찾은 페이지가 같은 모양을 쓴다. `url`이 있으면 웹 결과라
+ * 화면이 링크로 그린다(`document_search`의 내부 문서는 `url`이 없다 —
+ * `id`는 그때 `doc_id`).
+ */
+export interface SourceRef {
+  id: string;
+  label: string;
+  url?: string;
+}
+
+export type ToolProgressDetail =
+  | { type: 'stage'; step: number; total: number; label?: string; intent?: string }
+  | { type: 'queries'; step: number; queries: string[] }
+  | { type: 'stage_done'; step: number; found: number; evidence: number }
+  | { type: 'sources'; step: number; documents: SourceRef[] }
+  | { type: 'task_extraction_result'; proj_id: string; result: TaskExtractionPayload }
+  | { type: 'jira_status'; project_key: string; counts: Record<string, number>; issues: JiraIssue[] }
+  | { type: string; [key: string]: unknown };
+
 export type ChatEvent =
   | { type: 'stage'; step: number; total: number; label?: string; intent?: string; tool_ref?: string; tool_call_id?: string }
   | { type: 'queries'; step: number; queries: string[]; tool_ref?: string; tool_call_id?: string }
+  /**
+   * "출처" 목록(2026-08-18) — `document_search`가 coarse 단계에서 좁힌
+   * 문서, `web_search`가 찾은 페이지가 같은 이 모양으로 온다. `tool_progress`로
+   * 감싸져 온다(위 `ToolProgressDetail` 참고) — 최상위로 직접 오는 일은
+   * 없지만 `stage`/`queries`처럼 같은 계약 형태를 유지한다.
+   */
+  | { type: 'sources'; step: number; documents: SourceRef[]; tool_ref?: string; tool_call_id?: string }
   | { type: 'stage_done'; step: number; found: number; evidence: number; tool_ref?: string; tool_call_id?: string }
   | { type: 'tool_call_started'; tool_call_id: string | null; tool_ref: string; tool_name: string }
   | {
@@ -99,13 +135,24 @@ export type ChatEvent =
       tool_call_id?: string | null;
       status: 'OK' | 'FAILED';
     }
+  /**
+   * 도구 핸들러가 제너레이터로 흘리는 진행 이벤트(`task_extraction`,
+   * `jira_get_issues` — `get_stream_writer()` 경로). **`detail`이 실제로는
+   * 아래 `stage`/`queries`/`stage_done`/`task_extraction_result`/
+   * `jira_status` 중 하나와 같은 모양이다** — `services/agent_runtime
+   * /events.py`의 `_classify_progress`가 그 원본 이벤트를 통째로 `detail`에
+   * 옮겨 담고 감싸기 때문이다(2026-08-14 엔진 교체 이후 전부 이 모양으로
+   * 옴 — 옛 엔진 시절처럼 저 다섯 타입이 최상위로 직접 오는 게 아니다).
+   * `liveChat.ts`의 `unwrapToolProgress()`가 이 포장을 풀어서 아래 다섯
+   * 케이스가 그대로 처리하게 한다.
+   */
   | {
       type: 'tool_progress';
       run_id?: string | null;
       parent_run_id?: string | null;
       subagent_alias?: string | null;
       tool_ref: string;
-      detail?: Record<string, unknown>;
+      detail?: ToolProgressDetail;
     }
   | {
       type: 'subagent_started';
@@ -139,19 +186,25 @@ export type ChatEvent =
     }
   | { type: 'awaiting_confirmation'; run_id: string; tool_ref: string; tool_name: string; arguments: Record<string, unknown> }
   /**
-   * 2026-08-18 추가. 추론 모델(gpt-5.6-luna 등, OpenAI Responses API 경로)이
-   * 도구를 부르기 전이나 최종 답 전에 내는 생각. 지금까지는 `events.py`가
-   * `AIMessage.text`만 읽어서 이 블록을 조용히 버리고 있었다 —
-   * `.content`의 `type:"reasoning"` 블록에서 따로 뽑아 새로 낸다.
+   * 추론 모델(gpt-5.6-luna 등, OpenAI Responses API 경로)이 도구를 부르기
+   * 전이나 최종 답 전에 내는 생각 — 토큰·조각 단위로 실시간으로 온다
+   * (2026-08-18, `stream_mode="messages"` 채택). `text`는 이번 조각만이지
+   * 누적된 전체가 아니다.
+   *
+   * `append`가 이 조각을 화면이 어떻게 붙일지 정한다 — `true`면 방금 그
+   * 문단이 이어지는 델타라 마지막 `reasoningSteps` 항목에 이어붙이고,
+   * `false`면 새 문단(OpenAI의 reasoning summary가 여러 문단으로 올 때마다)
+   * 이라 새 항목을 만든다. 서버(`events.py`의 `_classify_reasoning_delta`)가
+   * `(block_index, summary_index)` 커서로 이미 판정해서 보낸다 — 화면은
+   * 이 플래그만 보면 된다.
    */
   | {
       type: 'reasoning';
       text: string;
+      append: boolean;
       run_id?: string | null;
       parent_run_id?: string | null;
       subagent_alias?: string | null;
-      agent_id?: string | null;
-      agent_version_id?: string | null;
     }
   | { type: 'result'; text: string; complete: boolean; stopped_reason?: string; iterations?: number }
   /**

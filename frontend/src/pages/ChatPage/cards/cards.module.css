@@ -463,6 +463,20 @@
   color: var(--color-body);
 }
 
+/* "출처"(2026-08-18) 중 web_search 결과 — 새 탭으로 열리는 링크임을 밑줄로 표시. */
+.sourceLink {
+  color: var(--color-body);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceLink:hover {
+  text-decoration: underline;
+  color: var(--color-primary);
+}
+
 /* ---------- Jira 현황 카드 ---------- */
 
 .jiraHead {

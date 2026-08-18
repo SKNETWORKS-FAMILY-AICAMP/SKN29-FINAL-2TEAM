@@ -12,7 +12,7 @@ Mock 없이 진짜 EventMapper.convert()/_classify()를 돌린다. `convert()`�
 반영한다.
 """
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from django.test import SimpleTestCase
 
 from services.agent_runtime.definitions import SubagentDefinition
@@ -324,76 +324,94 @@ class ParentFinalAnswerTests(SimpleTestCase):
         self.assertIsInstance(event["text"], str)
 
 
+def _delta(namespace, content_blocks, *, node_name="model"):
+    """`stream_mode="messages"`의 raw_event 모양 — (namespace, "messages",
+    (AIMessageChunk, metadata)). 실측(2026-08-18)으로 확인한 그대로다."""
+    return (namespace, "messages", (AIMessageChunk(content=content_blocks), {"langgraph_node": node_name}))
+
+
+def _reasoning_block(*, block_index, summary_index, text):
+    return {
+        "type": "reasoning",
+        "index": block_index,
+        "summary": [{"index": summary_index, "type": "summary_text", "text": text}],
+    }
+
+
 class ReasoningEventTests(SimpleTestCase):
-    """`_extract_reasoning()` — reasoning 블록의 `summary`(리스트, 각 항목의
-    `"text"`)를 읽는 경로(2026-08-18). 위 테스트의 `"summary": []`와 달리
-    여기는 실제로 채워진 경우다 — `models/factory.py`가 `reasoning=
-    {"summary": "auto"}`를 넘겨야 API가 이렇게 채워 보낸다."""
+    """`_classify_reasoning_delta()` — `stream_mode="messages"`의 조각 단위
+    reasoning 델타를 읽는 경로(2026-08-18 재설계). 완성된 `AIMessage`가
+    아니라 `AIMessageChunk` 하나하나가 입력이다 — 실측으로 확인한 실제 raw
+    모양(`services/agent_runtime/events.py` 모듈 docstring "reasoning 실시간
+    스트리밍" 절)을 그대로 재현한다."""
 
-    def test_populated_summary_yields_reasoning_event_before_result(self):
-        message = AIMessage(
-            content=[
-                {
-                    "type": "reasoning",
-                    "id": "rs_1",
-                    "summary": [{"type": "summary_text", "text": "사용자가 요청한 범위부터 좁혀야 한다."}],
-                },
-                {"type": "text", "text": "네, 진행할게요."},
-            ],
-            tool_calls=[],
-        )
-        raw = _raw((), "model", message)
-
-        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
-
-        self.assertEqual(len(events), 2)
-        self.assertEqual(events[0]["type"], EVENT_REASONING)
-        self.assertEqual(events[0]["text"], "사용자가 요청한 범위부터 좁혀야 한다.")
-        self.assertIsNone(events[0]["subagent_alias"])
-        self.assertEqual(events[1]["type"], EVENT_RESULT)
-        self.assertEqual(events[1]["text"], "네, 진행할게요.")
-
-    def test_multiple_summary_parts_are_joined(self):
-        message = AIMessage(
-            content=[
-                {
-                    "type": "reasoning",
-                    "id": "rs_1",
-                    "summary": [
-                        {"type": "summary_text", "text": "첫째,"},
-                        {"type": "summary_text", "text": "둘째."},
-                    ],
-                },
-            ],
-            tool_calls=[],
-        )
-        raw = _raw((), "model", message)
+    def test_delta_yields_reasoning_event_with_append_false_first_time(self):
+        raw = _delta((), [_reasoning_block(block_index=0, summary_index=0, text="사용자가 요청한 범위부터 좁혀야 한다.")])
 
         event = _convert_one(EventMapper(), raw)
 
         self.assertEqual(event["type"], EVENT_REASONING)
-        self.assertEqual(event["text"], "첫째,\n둘째.")
+        self.assertEqual(event["text"], "사용자가 요청한 범위부터 좁혀야 한다.")
+        self.assertFalse(event["append"])
+        self.assertIsNone(event["subagent_alias"])
 
-    def test_reasoning_before_tool_call_yields_reasoning_then_tool_started(self):
-        message = AIMessage(
-            content=[
-                {
-                    "type": "reasoning",
-                    "id": "rs_1",
-                    "summary": [{"type": "summary_text", "text": "문서부터 찾아보자."}],
-                },
-            ],
-            tool_calls=[{"name": "document_search", "args": {"query": "q"}, "id": "1"}],
+    def test_same_paragraph_second_delta_sets_append_true(self):
+        mapper = EventMapper()
+        mapper.convert(
+            _delta((), [_reasoning_block(block_index=0, summary_index=0, text="첫")]),
+            definition=_Definition(),
+            context=_Context(),
         )
-        raw = _raw((), "model", message)
 
-        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+        event = _convert_one(
+            mapper, _delta((), [_reasoning_block(block_index=0, summary_index=0, text="째,")])
+        )
 
-        self.assertEqual(len(events), 2)
-        self.assertEqual(events[0]["type"], EVENT_REASONING)
-        self.assertEqual(events[1]["type"], EVENT_TOOL_STARTED)
+        self.assertTrue(event["append"])
+        self.assertEqual(event["text"], "째,")
 
-    def test_child_namespace_reasoning_carries_subagent_alias(self):
+    def test_new_summary_index_starts_a_new_step(self):
+        """OpenAI가 reasoning을 여러 문단으로 나눠 내면 문단마다 summary_index가
+        다르다 — 이어붙이지 않고 새 단계로 띄운다."""
+        mapper = EventMapper()
+        mapper.convert(
+            _delta((), [_reasoning_block(block_index=0, summary_index=0, text="첫째 문단.")]),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        event = _convert_one(
+            mapper, _delta((), [_reasoning_block(block_index=0, summary_index=1, text="둘째 문단.")])
+        )
+
+        self.assertFalse(event["append"])
+        self.assertEqual(event["text"], "둘째 문단.")
+
+    def test_updates_mode_model_completion_resets_cursor_for_next_call(self):
+        """모델 호출이 끝나면("updates" 모드) reasoning을 더는 안 내고
+        (중복 방지), 커서만 지운다 — 다음 호출의 첫 조각이 우연히 같은
+        (block_index, summary_index)를 받아도 이전 호출 끝에 안 이어붙는다."""
+        mapper = EventMapper()
+        mapper.convert(
+            _delta((), [_reasoning_block(block_index=0, summary_index=0, text="첫 호출 생각.")]),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        # 첫 호출이 도구 호출로 끝난다 — "updates" 모드, reasoning 이벤트 없이
+        # tool_started만 나와야 한다(완성본 중복 방지).
+        finish = AIMessage(
+            content="", tool_calls=[{"name": "document_search", "args": {"query": "q"}, "id": "1"}]
+        )
+        finish_events = mapper.convert(_raw((), "model", finish), definition=_Definition(), context=_Context())
+        self.assertEqual([e["type"] for e in finish_events], [EVENT_TOOL_STARTED])
+
+        # 두 번째 호출의 첫 조각 — 커서가 지워졌으니 (0, 0)이 같아도 새 단계.
+        event = _convert_one(
+            mapper, _delta((), [_reasoning_block(block_index=0, summary_index=0, text="두 번째 호출 생각.")])
+        )
+        self.assertFalse(event["append"])
+
+    def test_child_namespace_delta_carries_subagent_alias(self):
         mapper = EventMapper()
         # 위임을 먼저 시작해서 네임스페이스가 알려진 위임에 묶이게 한다
         # (`_resolve_subagent_info`의 순서 휴리스틱 — 다른 자식 네임스페이스
@@ -403,31 +421,28 @@ class ReasoningEventTests(SimpleTestCase):
         )
         mapper.convert(_raw((), "model", start), definition=_Definition(), context=_Context())
 
-        message = AIMessage(
-            content=[
-                {
-                    "type": "reasoning",
-                    "id": "rs_1",
-                    "summary": [{"type": "summary_text", "text": "자식이 생각하는 중."}],
-                },
-            ],
-            tool_calls=[],
+        raw = _delta(
+            ("tools:child-1",), [_reasoning_block(block_index=0, summary_index=0, text="자식이 생각하는 중.")]
         )
-        raw = _raw(("tools:child-1",), "model", message)
 
         event = _convert_one(mapper, raw)
 
         self.assertEqual(event["type"], EVENT_REASONING)
         self.assertEqual(event["subagent_alias"], "researcher")
 
-    def test_empty_summary_yields_no_reasoning_event(self):
-        """`reasoning={"summary": "auto"}`를 안 넘긴 호출의 기본 응답 모양 —
-        빈 summary는 보여줄 텍스트가 없으므로 이벤트 자체를 안 낸다."""
-        message = AIMessage(
-            content=[{"type": "reasoning", "id": "rs_1", "summary": []}],
-            tool_calls=[],
-        )
-        raw = _raw((), "model", message)
+    def test_empty_text_placeholder_yields_no_event(self):
+        """문단이 막 시작될 때(`response.reasoning_summary_part.added`)의 빈
+        문자열 placeholder — 보여줄 게 없으니 이벤트 자체를 안 낸다."""
+        raw = _delta((), [_reasoning_block(block_index=0, summary_index=0, text="")])
+
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(events, [])
+
+    def test_non_model_node_is_ignored(self):
+        """"messages" 모드는 model 노드 것만 쓴다 — 다른 노드가 낼 일은
+        실제로 없지만(deepagents의 LLM 호출은 model 노드뿐), 방어적으로 확인."""
+        raw = _delta((), [_reasoning_block(block_index=0, summary_index=0, text="딴 노드")], node_name="tools")
 
         events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
