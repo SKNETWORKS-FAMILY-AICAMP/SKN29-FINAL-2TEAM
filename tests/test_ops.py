@@ -263,6 +263,33 @@ class OpsMcpTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         repo.update.assert_not_called()
 
+    @patch("apps.ops.views.mcp.validate", return_value="https://mcp.example.com/new")
+    def test_수정도_기록에_남는다(self, _validate, repo, audit, _admin):
+        """등록·삭제만 남기고 수정을 빠뜨리면, **주소가 언제 어디로 바뀌었는지**
+        아무 데도 안 남는다. 그 팀의 호출이 다른 곳으로 나가게 하는 일이라
+        새로 심는 것과 무게가 같다. 토큰은 남기지 않고 바뀌었는지만 적는다."""
+
+        repo.update.return_value = {
+            "mcp_server_id": "MS001", "name": "Jira",
+            "endpoint_url": "https://mcp.example.com/new",
+            "status": "UNCHECKED", "last_checked_at": None, "has_token": True, "tools": [],
+        }
+
+        response = self.client.patch(
+            f"{self.URL}MS001/",
+            {**self.BODY, "endpoint_url": "https://mcp.example.com/new",
+             "auth_token": "SECRET-TOKEN-VALUE", "replace_token": True},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(audit.call_args.kwargs["action"], "OPS_MCP_UPDATE")
+        payload = audit.call_args.kwargs["payload"]
+        self.assertEqual(payload["mcp_server_id"], "MS001")
+        self.assertEqual(payload["endpoint_url"], "https://mcp.example.com/new")
+        self.assertIs(payload["token_replaced"], True)
+        self.assertNotIn("SECRET-TOKEN-VALUE", json.dumps(payload))
+
     @patch("apps.ops.views.mcp.validate", return_value="https://mcp.example.com/rpc")
     def test_토큰을_안_보내면_그대로_둔다(self, _validate, repo, _audit, _admin):
         """화면이 저장된 토큰을 다시 보여주지 않는다 — 안 보낸 것을 「지우라」로
