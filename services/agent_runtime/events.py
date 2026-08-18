@@ -28,8 +28,14 @@
   tool_completed는 부모/자식에 상관없이 동일하게 낸다. 부모 자신의 직접
   호출은 `subagent_alias=None`으로 구분한다.
 
-`"messages"`(토큰 단위 델타) 모드는 이 6단계 분류에는 필요 없다 — Chat 화면에
-타이핑 효과를 낼 때만 별도로 `EVENT_MESSAGE_DELTA`용으로 추가한다.
+`"messages"`(토큰 단위 델타) 모드는 이 6단계 분류에는 안 쓴다 — tool_started 등
+6단계 분류는 여전히 다 끝난 `AIMessage`가 있어야 정확하다(예: `tool_calls`는
+스트리밍 중간엔 아직 다 안 채워져 있을 수 있다). 대신 reasoning 실시간
+스트리밍에만 쓴다(2026-08-18, `_classify_reasoning_delta` 참고) — "updates"는
+모델 노드 하나가 통째로 끝나야 나오는 완성된 텍스트라, reasoning도 다 끝난
+뒤에야 한 덩어리로 보여줬었다. `"messages"`는 OpenAI가 실제로 보내는 조각
+단위(`response.reasoning_summary_text.delta`)를 그 자리에서 받을 수 있어
+"다 끝난 뒤 한 번에"가 아니라 "쓰는 대로" 보여줄 수 있다.
 
 `"custom"` 모드는 쓴다 — `task_extraction`/`jira_get_issues`처럼 제너레이터로
 진행 이벤트를 내는 내장 도구(tools/adapters.py)가 `langgraph.config
@@ -100,6 +106,46 @@ name=definition.alias, ...)`로 등록한 이름이 정확히 이 `alias`이고,
 목록엔 없다 — 이벤트 타입 자체는 그대로 두고 기존 이벤트에 필드만 얹었다
 (`_11_` 문서와 같은 판단).
 
+## reasoning 실시간 스트리밍(2026-08-18 추가)
+
+`stream_mode="messages"`로 받는 `AIMessageChunk.content`는 OpenAI Responses
+API의 SSE 이벤트 하나하나를 그대로 옮긴 블록 리스트다(`langchain_openai`
+`_convert_responses_chunk_to_generation_chunk` 소스로 확인). reasoning 블록은
+실측으로 이런 순서로 온다(디버그 스크립트로 직접 확인, 2026-08-18):
+
+```
+{'id': 'rs_...', 'summary': [], 'type': 'reasoning', 'content': [], 'index': 0}
+{'summary': [{'index': 0, 'type': 'summary_text', 'text': ''}], 'index': 0, ...}
+{'summary': [{'index': 0, 'type': 'summary_text', 'text': '**Clarifying...'}], 'index': 0, ...}
+{'summary': [{'index': 0, 'type': 'summary_text', 'text': ' primes'}], 'index': 0, ...}
+...
+```
+
+`block['index']`(위 예시의 바깥 `index`)는 이 reasoning 항목 전체를 가리키는
+langchain-core의 청크 병합 키다(`+`로 청크를 더할 때 같은 `index`끼리
+이어붙인다는 게 `langchain_openai` 주석에 그대로 적혀 있다) — 모델 호출
+하나 안에서 새 reasoning 항목마다 증가하고, **다음 모델 호출에서는 다시
+0부터 시작한다.** `block['summary'][i]['index']`(summary_index)는 그 항목
+**안의** 문단 하나를 가리킨다 — OpenAI가 reasoning을 여러 문단으로 나눠
+낼 때 문단마다 다른 summary_index를 쓴다.
+
+그래서 "지금 받은 조각이 방금 그 문단의 이어지는 델타인가, 새 문단인가"는
+`(block['index'], summary_index)` 쌍으로 판단한다(`_classify_reasoning_delta`).
+같은 쌍이면 direct으로 이어붙이고(`"append": true`), 다르면 새 단계로
+띄운다(`"append": false`) — 화면(`liveChat.ts`)은 이 플래그만 보고 마지막
+`reasoningSteps` 항목에 이어붙일지 새 항목을 만들지 정한다.
+
+**모델 호출 사이의 경계도 명시적으로 지운다.** `block['index']`가 모델
+호출마다 다시 0부터 시작하므로, 이전 호출의 마지막 `(index, summary_index)`가
+다음 호출의 첫 조각과 우연히 같은 값일 수 있다 — `_classify()`의 "model"
+노드(`"updates"` 모드, 그 호출이 완전히 끝났을 때만 옴) 분기에서 그 네임스페이스의
+커서를 지워서, 다음 호출의 첫 reasoning 조각은 항상 새 단계로 뜨게 한다.
+
+**"updates" 모드는 더 이상 reasoning을 내지 않는다.** 예전엔 다 끝난
+`AIMessage.content`에서 완성된 텍스트를 한 번에 뽑아 냈지만(구
+`_extract_reasoning()`), 이제 "messages" 모드가 실시간으로 이미 다 보여줬으므로
+그대로 두면 같은 내용이 끝에 한 번 더(완성본으로) 중복된다.
+
 ## MCP 도구 이름 치환(2026-08-14 추가)
 
 모델에게 나가는 함수 이름은 `factory.py`의 `model_safe_tool_name()`이
@@ -127,6 +173,13 @@ EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+# 2026-08-18 추가. §14 계약엔 없던 타입이라(그 문서 갱신 전까지) 여기 새로 둔다
+# — `_11_`류 판례처럼 계약 목록에 없는 필드를 기존 이벤트에 얹는 것과 달리
+# 이건 아예 새 타입이 필요해서(추론 텍스트는 tool_started/result 어디에도
+# 자연스럽게 안 얹힌다). `tracing/__init__.py`의 `_record()`는 모르는
+# 타입을 조용히 지나치므로 DB 적재는 없다 — 지금은 화면에 실시간으로
+# 보여주는 것만이 목적이라 저장할 이유가 없다.
+EVENT_REASONING = "reasoning"
 
 # deepagents가 서브 에이전트 위임에 쓰는 내장 도구 이름. 이 이름의 tool_call은
 # "실제 도구 호출"이 아니라 "위임"으로 분류한다.
@@ -183,6 +236,12 @@ class EventMapper:
         # 에이전트 정보(위 _pending의 값과 같은 dict). 같은 네임스페이스에서
         # 여러 이벤트가 나오므로 캐시한다.
         self._namespace_subagent: dict[str, dict[str, str]] = {}
+        # reasoning 델타 스트리밍용(2026-08-18). ns_prefix -> 그 네임스페이스에서
+        # 마지막으로 본 (block_index, summary_index). 다음 조각이 같은 값이면
+        # "이어지는 문단"(append), 다르면 "새 문단"이다. "updates" 모드의 model
+        # 노드 완료(그 호출이 끝났다는 뜻)에서 None으로 지운다 — 안 지우면 다음
+        # 호출의 첫 조각이 우연히 같은 (0, 0)을 받아 이전 호출 끝에 잘못 이어붙는다.
+        self._reasoning_cursor: dict[str | None, tuple[int | None, int | None] | None] = {}
 
     def convert(
         self,
@@ -193,20 +252,30 @@ class EventMapper:
     ) -> list[dict[str, Any]]:
         """raw_event는 `(namespace_tuple, mode, payload)` 형태를 기대한다.
 
-        `mode`가 `"updates"`/`"custom"` 둘 다 아닌 이벤트(예: "messages" 토큰
-        델타)는 지금 빈 리스트를 반환한다 — 6단계 분류에 안 쓴다는 뜻이지,
-        버린다는 뜻이 아니다. 나중에 `EVENT_MESSAGE_DELTA`를 추가할 때 이
-        분기만 넓히면 된다.
+        `mode`가 `"updates"`/`"custom"`/`"messages"` 셋 다 아닌 이벤트는 빈
+        리스트를 반환한다 — 6단계 분류엔 `"messages"`를 안 쓴다는 뜻이지,
+        버린다는 뜻이 아니다(위 "reasoning 실시간 스트리밍" 절 참고).
         """
         if not isinstance(raw_event, tuple) or len(raw_event) != 3:
             return []
 
         namespace, mode, payload = raw_event
-        if not isinstance(payload, dict):
-            return []
-
         ns_prefix = namespace[0] if namespace else None
         run_id = getattr(context, "run_id", None)
+
+        if mode == "messages":
+            # "messages"는 dict가 아니라 (AIMessageChunk, metadata) 2-tuple로
+            # 온다(langgraph 1.2.11) — 아래 dict 검사와 별도로 먼저 갈라낸다.
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return []
+            chunk, metadata = payload
+            node_name = metadata.get("langgraph_node") if isinstance(metadata, dict) else None
+            if node_name != "model":
+                return []
+            return self._classify_reasoning_delta(ns_prefix=ns_prefix, chunk=chunk, run_id=run_id)
+
+        if not isinstance(payload, dict):
+            return []
 
         if mode == "custom":
             event = self._classify_progress(ns_prefix=ns_prefix, payload=payload, run_id=run_id)
@@ -270,17 +339,27 @@ class EventMapper:
         if ns_prefix is None:
             # --- 부모 네임스페이스 -------------------------------------------
             if node_name == "model":
+                # 이 호출의 reasoning은 이미 "messages" 모드로 실시간으로 다
+                # 내보냈다(_classify_reasoning_delta) — 여기서 완성본을 또
+                # 내면 끝에 중복된다. 커서만 지워서 다음 호출의 첫 조각이
+                # 이 호출 끝에 잘못 이어붙지 않게 한다(위 모듈 docstring
+                # "reasoning 실시간 스트리밍" 절).
+                self._reasoning_cursor[ns_prefix] = None
+                events: list[dict[str, Any]] = []
                 if tool_calls:
-                    return self._classify_parent_tool_calls(
-                        tool_calls=tool_calls,
-                        run_id=run_id,
-                        agent_id=agent_id,
-                        agent_version_id=agent_version_id,
-                        definition=definition,
+                    events.extend(
+                        self._classify_parent_tool_calls(
+                            tool_calls=tool_calls,
+                            run_id=run_id,
+                            agent_id=agent_id,
+                            agent_version_id=agent_version_id,
+                            definition=definition,
+                        )
                     )
+                    return events
                 if content:
                     # 도구 호출 없이 텍스트만 낸 최종 응답.
-                    return [
+                    events.append(
                         {
                             "type": EVENT_RESULT,
                             "text": content,
@@ -289,8 +368,8 @@ class EventMapper:
                             "agent_version_id": agent_version_id,
                             "complete": True,
                         }
-                    ]
-                return []
+                    )
+                return events
 
             if node_name == "tools" and msg_name == DELEGATION_TOOL_NAME:
                 # tool_call_id로 정확히 매칭한다(FIFO 아님) — 병렬 위임이면
@@ -343,7 +422,11 @@ class EventMapper:
         alias = info.get("alias") if info else None
         child_run_id = info.get("run_id") if info else None
 
-        if node_name == "model" and tool_calls:
+        if node_name == "model":
+            # 부모 분기와 같은 이유로 커서만 지운다(위 "reasoning 실시간
+            # 스트리밍" 절) — 이 자식 네임스페이스의 reasoning도 "messages"
+            # 모드로 이미 실시간으로 다 나갔다.
+            self._reasoning_cursor[ns_prefix] = None
             events: list[dict[str, Any]] = []
             for call in tool_calls:
                 tool_ref = call.get("name")
@@ -517,11 +600,60 @@ class EventMapper:
             event["parent_run_id"] = run_id
         return event
 
+    def _classify_reasoning_delta(
+        self, *, ns_prefix: str | None, chunk: Any, run_id: str | None
+    ) -> list[dict[str, Any]]:
+        """`mode="messages"`의 `AIMessageChunk` 하나에서 reasoning 텍스트 조각을
+        뽑는다. 위 "reasoning 실시간 스트리밍" 절의 `(block_index, summary_index)`
+        커서 판정이 여기 있다 — 실측(2026-08-18)으로는 청크 하나에 reasoning
+        블록이 최대 하나, 그 안 `summary`도 항목 하나뿐이지만, 방어적으로
+        전부 순회한다.
+        """
+        content = getattr(chunk, "content", None)
+        if not isinstance(content, list):
+            return []
+
+        info = self._resolve_subagent_info(ns_prefix)
+        events: list[dict[str, Any]] = []
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "reasoning":
+                continue
+            block_index = block.get("index")
+            for summary_item in block.get("summary") or []:
+                if not isinstance(summary_item, dict):
+                    continue
+                text = summary_item.get("text")
+                if not text:
+                    # 문단이 막 시작될 때(`response.reasoning_summary_part.added`)
+                    # 빈 문자열 placeholder로 온다 — 보여줄 게 없다.
+                    continue
+
+                key = (block_index, summary_item.get("index"))
+                append = self._reasoning_cursor.get(ns_prefix) == key
+                self._reasoning_cursor[ns_prefix] = key
+
+                event: dict[str, Any] = {
+                    "type": EVENT_REASONING,
+                    "text": text,
+                    # 이 문단의 이어지는 델타인가(true) 새 문단인가(false) —
+                    # 화면(liveChat.ts)이 이 값만 보고 마지막 reasoningSteps
+                    # 항목에 이어붙일지 새로 만들지 정한다.
+                    "append": append,
+                    "run_id": info.get("run_id") if info else run_id,
+                    "subagent_alias": info.get("alias") if info else None,
+                    "complete": False,
+                }
+                if info is not None:
+                    event["parent_run_id"] = run_id
+                events.append(event)
+        return events
+
 
 __all__ = [
     "EVENT_AGENT_STARTED",
     "EVENT_ERROR",
     "EVENT_MESSAGE_DELTA",
+    "EVENT_REASONING",
     "EVENT_RESULT",
     "EVENT_SUBAGENT_COMPLETED",
     "EVENT_SUBAGENT_STARTED",

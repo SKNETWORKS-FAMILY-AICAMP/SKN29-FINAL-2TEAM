@@ -69,12 +69,13 @@ class _FakeStreamAdapter:
         self._error = error
         self.stream_calls = []
 
-    def stream(self, *, runtime, user_input, conversation_messages=()):
+    def stream(self, *, runtime, user_input, conversation_messages=(), thread_id=None):
         self.stream_calls.append(
             {
                 "runtime": runtime,
                 "user_input": user_input,
                 "conversation_messages": conversation_messages,
+                "thread_id": thread_id,
             }
         )
         yield from self._raw_events
@@ -88,8 +89,10 @@ def _final_answer_raw_event(text: str):
     return ((), "updates", {"model": {"messages": [AIMessage(content=text, tool_calls=[])]}})
 
 
-def _context() -> RuntimeContext:
-    return RuntimeContext(account_id="AC001", team_id="TM001", role="leader", run_id="RUN1")
+def _context(**overrides) -> RuntimeContext:
+    fields = {"account_id": "AC001", "team_id": "TM001", "role": "leader", "run_id": "RUN1"}
+    fields.update(overrides)
+    return RuntimeContext(**fields)
 
 
 class ValidateExecutionTargetTests(SimpleTestCase):
@@ -172,6 +175,73 @@ class RunHappyPathTests(SimpleTestCase):
         self.assertIsNot(created[0], created[1])
 
 
+class ToolRefsOverrideTests(SimpleTestCase):
+    """`tool_refs_override`(2026-08-18, Chat "+" 버튼) — 세션이 도구를
+    커스터마이즈했으면 로드된 정의의 `tool_refs`를 그 자리에서 갈아 끼운다.
+    저장된 정의(`loaded.definition`)는 원본 그대로 두고 `factory.build()`에
+    넘기는 사본만 바꾼다."""
+
+    def test_none_leaves_loaded_definition_untouched(self):
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ("document_search",))
+
+    def test_override_replaces_tool_refs_for_this_run_only(self):
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=_context(),
+                tool_refs_override=["people_list", "web_search"],
+            )
+        )
+
+        self.assertEqual(
+            factory.build_calls[0]["definition"].tool_refs, ("people_list", "web_search")
+        )
+        # 원본 정의 객체는 안 바뀐다 — 불변 dataclass라 dataclasses.replace()가
+        # 사본을 만든다는 것의 확인.
+        self.assertEqual(loaded.definition.tool_refs, ("document_search",))
+
+    def test_empty_override_turns_off_all_tools(self):
+        """빈 리스트는 "이 대화에서 도구를 전부 껐다"는 실제 선택이라 `None`과
+        다르게 다뤄야 한다 — `if tool_refs_override is not None` 분기 확인."""
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=_context(),
+                tool_refs_override=[],
+            )
+        )
+
+        self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ())
+
+
 class ConversationMessagesThreadingTests(SimpleTestCase):
     """apps/chat/api_views.py의 `_history()`가 만든 앞선 턴을 stream_adapter까지
     그대로 전달하는지 — 이게 없으면 새 엔진은 매 턴이 콜드 스타트다."""
@@ -208,6 +278,46 @@ class ConversationMessagesThreadingTests(SimpleTestCase):
         )
 
         self.assertEqual(stream_adapter.stream_calls[0]["conversation_messages"], ())
+
+
+class ThreadIdThreadingTests(SimpleTestCase):
+    """context.session_id가 stream_adapter까지 thread_id로 그대로 전달되는지
+    (2026-08-18, §5 Phase 1: Checkpointer) — Checkpointer가 이 값으로 상태를
+    저장/재개하므로 여기서 빠지면 Phase 1 전체가 동작하지 않는다."""
+
+    def test_context_session_id_reaches_the_stream_adapter_as_thread_id(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=_context(session_id="SESSION001"),
+            )
+        )
+
+        self.assertEqual(stream_adapter.stream_calls[0]["thread_id"], "SESSION001")
+
+    def test_missing_session_id_passes_none_through(self):
+        """session_id 없는 context(예: 세션이 없는 스크립트 실행)는 thread_id로
+        None을 그대로 넘긴다 — stream_adapter가 예전과 동일하게 동작하는
+        분기(콜드 스타트, conversation_messages 그대로 붙임)를 타게 된다."""
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertIsNone(stream_adapter.stream_calls[0]["thread_id"])
 
 
 class RunBuildFailureTests(SimpleTestCase):

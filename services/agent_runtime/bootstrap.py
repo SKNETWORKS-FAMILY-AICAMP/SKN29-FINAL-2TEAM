@@ -25,6 +25,7 @@ deepagents 쪽에서 "추가적(additive) 등록 — 같은 key로 다시 불러
 
 from __future__ import annotations
 
+from services.agent_runtime.checkpoint import CheckpointerProvider
 from services.agent_runtime.compat import assert_supported_version, register_default_harness_profile
 from services.agent_runtime.executor import AgentExecutor
 from services.agent_runtime.factory import AgentRuntimeFactory, DependencyGraphSource
@@ -89,6 +90,11 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
         # 없다(PostgresStore 연결은 실제로 메모리를 쓰는 첫 호출에서 열린다,
         # memory/store.py 참고) — 이 함수의 "호출마다 새로 조립" 원칙과 안 어긋난다.
         memory_provider=MemoryProvider(),
+        # Checkpointer(2026-08-18, services/agent_runtime/checkpoint/). 마찬가지로
+        # Root graph에만 붙는다. CheckpointerProvider() 생성 자체도 I/O가 없다
+        # (PostgresSaver 연결은 실제로 체크포인트를 쓰는 첫 호출에서 열린다,
+        # checkpoint/checkpointer.py 참고).
+        checkpointer_provider=CheckpointerProvider(),
     )
     return AgentExecutor(loader=AgentDefinitionLoader(), factory=factory)
 

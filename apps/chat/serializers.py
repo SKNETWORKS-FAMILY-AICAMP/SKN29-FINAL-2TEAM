@@ -29,6 +29,20 @@ class ChatMessageCreateSerializer(serializers.Serializer):
     content = serializers.CharField(max_length=10000)
 
 
+class ChatSessionToolsSerializer(serializers.Serializer):
+    """이 대화 전용 도구 목록을 저장한다(2026-08-18, Chat "+" 버튼).
+
+    `tool_refs=null`이면 커스터마이즈를 지우고 에이전트 원래 값으로
+    되돌린다 — 빈 리스트(`[]`)는 "이 대화에서 도구를 전부 껐다"는 다른
+    뜻이라 `allow_null`로 따로 받는다(`required=True`로 필드 자체는 항상
+    받되, 값 자체가 null일 수 있게).
+    """
+
+    tool_refs = serializers.ListField(
+        child=serializers.CharField(max_length=100), allow_null=True, allow_empty=True
+    )
+
+
 class ChatConfirmSerializer(serializers.Serializer):
     """확인 카드의 승인.
 
@@ -54,6 +68,10 @@ def session_response(row: dict[str, Any]) -> dict[str, Any]:
         # 값이 있다는 사실 자체가 새 엔진으로 도는 대화라는 신호다.
         "agent_version_id": row.get("agent_version_id"),
         "agent_name": row.get("agent_name"),
+        # None = 이 대화는 도구를 커스터마이즈 안 함(에이전트 원래 값을
+        # 그대로 씀). 빈 리스트는 "이 대화에서 도구를 전부 껐다"는 실제
+        # 선택이라 다른 뜻이다(2026-08-18, Chat "+" 버튼).
+        "tool_refs_override": row.get("tool_refs_override"),
         "proj_id": row.get("proj_id"),
         "title": row.get("title"),
         "created_at": row.get("created_at"),

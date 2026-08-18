@@ -117,7 +117,14 @@ class ModelFactory:
             "use_responses_api": True,
         }
         if resolved.reasoning_effort:
-            kwargs["reasoning_effort"] = resolved.reasoning_effort
+            # `reasoning_effort=` 단독으로 넘기면 langchain-openai가 이걸
+            # `reasoning={"effort": ...}`로만 바꿔 보낸다(`summary` 없음 —
+            # 패키지 소스 `_construct_responses_api_payload` 확인,
+            # 2026-08-18). 그러면 OpenAI가 reasoning 블록을 **빈 summary로만**
+            # 돌려줘서(`services/agent_runtime/events.py`의 `_extract_reasoning`이
+            # 읽을 게 없다), "생각 과정" 카드가 항상 비어 있게 된다. `summary`를
+            # 직접 요청해야 실제 텍스트가 온다(패키지 docstring 예시 그대로).
+            kwargs["reasoning"] = {"effort": resolved.reasoning_effort, "summary": "auto"}
         return ChatOpenAI(**kwargs)
 
     @staticmethod

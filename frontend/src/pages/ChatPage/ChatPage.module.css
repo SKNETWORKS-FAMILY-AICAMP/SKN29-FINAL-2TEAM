@@ -7,22 +7,9 @@
   overflow: hidden;
 }
 
-/* ---------- 대화 목록 ---------- */
-
-.sessions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  /* 너비는 화면이 인라인 스타일로 준다(드래그로 조절). 여기서는 한계만 정한다. */
-  flex-shrink: 0;
-  min-width: 200px;
-  max-width: 460px;
-  min-height: 0;
-  /* 대화가 쌓여도 목록만 흐른다. 페이지가 흐르면 입력창이 밀려 올라간다. */
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-3);
-  background: var(--color-surface);
-}
+/* ---------- 대화 목록 ----------
+   레이아웃(너비·스크롤)은 AppShell의 `.sidebarExtra`가 맡는다(2026-08-18) —
+   이 화면은 그 안에 들어갈 내용(제목·행·하단 버튼)의 생김새만 정한다. */
 
 .sessionsTitle {
   padding: 0 var(--space-2) var(--space-2);
@@ -83,6 +70,62 @@
 
 .projectNew:hover {
   background: var(--color-bg);
+}
+
+/* ---------- 프로젝트(또는 loose) 안, 에이전트별 토글(2026-08-18) ---------- */
+
+.agentGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentGroup + .agentGroup {
+  margin-top: 2px;
+}
+
+.agentToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px var(--space-2) 4px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.agentToggle:hover {
+  background: var(--color-bg);
+}
+
+.agentToggleName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-body);
+  text-align: left;
+}
+
+.agentToggleCount {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+/* 대화 행은 토글 안에서 한 단 더 들여써 위계를 보인다. */
+.agentGroup .sessionRow {
+  padding-left: 22px;
 }
 
 .groupEmpty {
@@ -195,11 +238,6 @@
   color: var(--color-muted);
 }
 
-/* 대화는 프로젝트 아래 한 단 들어간다 — 계층이 눈에 보여야 소속이 읽힌다. */
-.projectGroup .sessionRow {
-  padding-left: var(--space-3);
-}
-
 .session {
   padding: 10px;
   border: none;
@@ -225,19 +263,6 @@
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-weight: 600;
-}
-
-/* 목록과 대화 사이의 끌기 손잡이. 테두리 역할도 겸한다 —
-   `.sessions` 의 border-right 를 이것으로 대신한다. */
-.resizer {
-  width: 4px;
-  flex-shrink: 0;
-  background: var(--color-border);
-  cursor: col-resize;
-}
-
-.resizer:hover {
-  background: var(--color-primary);
 }
 
 /* ---------- 본문 ---------- */
@@ -473,6 +498,25 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* 기본 챗 전용 「도구·MCP 붙이기」. 입력창 왼쪽, 보내기 버튼과 같은 무게로. */
+.attachTools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  cursor: pointer;
+}
+
+.attachTools:hover {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+}
+
 /* 실제 <input> 이다(예전에는 자리만 잡는 div 였다). 글자색을 placeholder 색으로
    두면 사용자가 친 글씨가 흐리게 보인다 — 흐린 것은 placeholder 만이다. */
 .input {
@@ -543,185 +587,7 @@
   background: var(--color-surface);
 }
 
-/* ---------- 장기 메모리 기록 패널(2026-08-15) ---------- */
-
-/* `.sessions` 와 짝을 맞춘 고정 폭 오른쪽 패널 — 대화 목록처럼 접히지 않는다,
-   지금은 팀 데모용으로 "실제로 이렇게 돈다"를 늘 보여 주는 게 목적이다. */
-.memoryPanel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  width: 260px;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-3);
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
-}
-
-.memoryPanelTitle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 var(--space-2) var(--space-2);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-muted);
-}
-
-.memoryEmpty {
-  padding: 2px var(--space-2);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-placeholder);
-}
-
-.memoryOpList {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.memoryOp {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px;
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-}
-
-.memoryOpIndex {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--color-surface);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-muted);
-}
-
-.memoryOpBody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.memoryOpLabel {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-/* 경로는 길 수 있다(파일 도구가 자유 문자열을 받는다) — 잘라내되 title 로 전체를 남긴다. */
-.memoryOpPath {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-family: var(--font-mono, monospace);
-  color: var(--color-muted);
-}
-
-.memoryOpStatus {
-  flex-shrink: 0;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--color-success-bg);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-success-text);
-}
-
-.memoryOpStatusRunning {
-  background: var(--color-info-bg);
-  color: var(--color-info);
-}
-
-.memoryOpStatusFailed {
-  background: var(--color-danger-bg, #fef2f2);
-  color: var(--color-danger);
-}
-
-/* ---------------- 좁은 화면 ---------------- */
-
-/* 목록을 여는 버튼과 덮개는 좁을 때만 나온다. */
-.listToggle,
-.listScrim {
-  display: none;
-}
-
-/*
- * 목록이 자리를 차지할 수 없는 폭.
- *
- * 260px 목록 + 대화면 375px 화면에서 대화가 100px 남는다 — 답변이 한 글자씩
- * 흐른다. 목록을 **덮어서 여는 패널**로 돌린다. 셸의 드로어와 같은 약속이라
- * 두 층이 같은 방식으로 열리고 닫힌다.
- */
-@media (max-width: 760px) {
-  .chat {
-    position: relative;
-  }
-
-  .sessions {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 20;
-    /* 화면을 다 덮지 않는다 — 뒤가 보여야 덮개를 눌러 닫는다는 것이 읽힌다. */
-    width: min(300px, 84vw);
-    max-width: none;
-    padding-right: var(--space-2);
-    background: var(--color-surface);
-    border-right: 1px solid var(--color-border);
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-  }
-
-  .sessionsOpen {
-    transform: translateX(0);
-  }
-
-  .listScrim {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 19;
-    border: 0;
-    padding: 0;
-    background: rgb(15 23 42 / 45%);
-    cursor: pointer;
-  }
-
-  .listToggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-body);
-    font-size: 13px;
-    cursor: pointer;
-  }
-
-  /* 끌기 손잡이는 덮개에 뜻이 없다. */
-  .resizer {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sessions {
-    transition: none;
-  }
-}
+/* ---------------- 좁은 화면 ----------------
+   대화 목록이 AppShell 사이드바 안으로 들어가면서(2026-08-18), 좁은 화면
+   전용 덮개 열기·닫기는 셸의 모바일 드로어가 그대로 떠맡는다 — 이 화면에
+   따로 둘 것이 없어졌다. */

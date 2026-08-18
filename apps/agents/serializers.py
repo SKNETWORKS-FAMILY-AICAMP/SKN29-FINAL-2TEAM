@@ -78,6 +78,8 @@ def builtin_tool_response() -> list[dict[str, Any]]:
             "name": tool.name,
             "description": tool.description,
             "source": "기본 제공",
+            # 선택 화면이 묶어 보여줄 단위(2026-08-18) — 저장·실행에는 안 쓴다.
+            "category": tool.category,
             # 승인 게이트를 타는 도구인지 화면이 알아야 「승인 필요」를 표시한다.
             "side_effect": tool.side_effect,
             # 「도구 확인」 패널이 입력 폼을 자동 생성하는 데 쓴다.
@@ -155,6 +157,13 @@ class AgentVersionPublishSerializer(serializers.Serializer):
     subagents = SubagentRefSerializer(many=True, required=False, default=list)
 
 
+class AgentVersionFavoriteSerializer(serializers.Serializer):
+    """즐겨찾기 별 토글 입력(2026-08-18). 켜고 끄는 값 하나뿐이라 단순하다 —
+    활성화·중지처럼 서버 재검증이 필요한 상태 전이가 아니다."""
+
+    favorite = serializers.BooleanField()
+
+
 def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "agent_id": row["agent_id"],
@@ -162,6 +171,10 @@ def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
         "description": row.get("description") or "",
         "status": row.get("status"),
         "is_default_chat": row.get("is_default_chat", False),
+        # 이 계정 기준 즐겨찾기(2026-08-18) — 팀 전체가 아니라 요청한 계정만의
+        # 값이다(`agent_favorites`, `list_for_team()`/`get()` 참고).
+        "is_favorite": row.get("is_favorite", False),
+        "owner_account_id": row.get("owner_account_id"),
         "current_version_id": row.get("current_version_id"),
         "version": row.get("version"),
         "system_prompt": row.get("system_prompt") or "",
@@ -170,6 +183,10 @@ def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
         "max_iterations": row.get("max_iterations"),
         "tool_refs": row.get("tool_refs") or [],
         "subagents": row.get("subagents") or [],
+        # 목록 카드용 요약 — 지금 버전이 위임하는 자식 에이전트 이름만.
+        # `list_for_team()`만 채운다(json_agg); 상세 조회는 `subagents`에
+        # alias·위임 설명까지 이미 있어 따로 안 채운다.
+        "subagent_names": row.get("subagent_names") or [],
         "updated_at": row.get("updated_at"),
     }
 

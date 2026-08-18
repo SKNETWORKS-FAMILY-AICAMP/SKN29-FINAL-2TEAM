@@ -116,6 +116,11 @@ class ModelFactoryTests(SimpleTestCase):
         self.assertIsNone(model.output_config)
 
     def test_builds_chat_openai_with_responses_api_and_reasoning_effort(self):
+        """`reasoning_effort=`이 아니라 `reasoning={"effort": ..., "summary":
+        "auto"}`로 넘긴다(2026-08-18) — `reasoning_effort=` 단독으로는
+        langchain-openai가 `summary`를 안 실어 보내 API가 reasoning 블록을
+        빈 summary로만 돌려주고, 그러면 「생각 과정」 카드(services/agent_runtime
+        /events.py의 `_extract_reasoning`)가 보여줄 텍스트가 없다."""
         resolved = ResolvedModelConfig(
             provider="openai", model_id="gpt-5.6-luna", api_key="k", base_url=None, reasoning_effort="low"
         )
@@ -124,7 +129,7 @@ class ModelFactoryTests(SimpleTestCase):
 
         self.assertIsInstance(model, ChatOpenAI)
         self.assertTrue(model.use_responses_api)
-        self.assertEqual(model.reasoning_effort, "low")
+        self.assertEqual(model.reasoning, {"effort": "low", "summary": "auto"})
 
     def test_builds_chat_openai_compatible_without_reasoning_effort(self):
         """호환 엔드포인트마다 reasoning 파라미터 지원이 달라 400 위험이 있다(레거시 실측) —

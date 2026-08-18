@@ -15,6 +15,19 @@ export interface ProgressStep {
   meta?: string;
 }
 
+/**
+ * 다른 에이전트에게 위임한 작업 하나(2026-08-18). `subagent_started`가
+ * `RUNNING`으로 만들고, 짝이 되는 `subagent_completed`가 `run_id`로 찾아
+ * 상태만 바꾼다(`tool_started`/`tool_completed`와 같은 짝짓기 방식).
+ */
+export interface SubagentRun {
+  runId: string;
+  alias: string | null;
+  name: string | null;
+  taskSummary: string;
+  status: 'RUNNING' | 'DONE' | 'FAILED';
+}
+
 /** 근거 한 건. `meta`는 「E1 · DC001 · 유사도 87%」처럼 되짚을 정보다. */
 export interface Evidence {
   quote: string;

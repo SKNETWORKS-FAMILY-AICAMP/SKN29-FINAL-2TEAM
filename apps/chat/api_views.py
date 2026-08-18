@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.serializers import account_role
 from backend.db import AccountRepository
-from backend.db.agent_platform import ChatMessageRepository, ChatSessionRepository
+from backend.db.agent_platform import AgentVersionRepository, ChatMessageRepository, ChatSessionRepository
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -36,6 +36,7 @@ from .serializers import (
     ChatConfirmSerializer,
     ChatMessageCreateSerializer,
     ChatSessionCreateSerializer,
+    ChatSessionToolsSerializer,
     message_response,
     session_response,
 )
@@ -128,6 +129,28 @@ class ChatSessionDetailAPIView(AuthenticatedAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ChatSessionToolsAPIView(AuthenticatedAPIView):
+    """이 대화 전용 도구·MCP 목록을 켜고 끈다(2026-08-18, Chat "+" 버튼).
+
+    에이전트 원본은 안 건드린다 — 여기서 저장한 값은 다음 메시지부터
+    `ChatMessageAPIView`가 `executor.run(tool_refs_override=...)`로 그
+    자리에서 정의에 얹는다(§`services/agent_runtime/executor.py`).
+    """
+
+    def put(self, request, session_id):
+        serializer = ChatSessionToolsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            row = ChatSessionRepository.set_tool_refs_override(
+                session_id=session_id,
+                account_id=request.user.account_id,
+                tool_refs=serializer.validated_data["tool_refs"],
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(session_response(row))
+
+
 class ChatMessageAPIView(AuthenticatedAPIView):
     """사용자 발화를 받아 에이전트를 돌리고 이벤트를 NDJSON 으로 흘린다."""
 
@@ -170,6 +193,16 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     agent_id=session["agent_id"], team_id=session["team_id"]
                 )
             )
+            if session.get("agent_version_id"):
+                # 기본 챗만 예외 — 이미 열린 대화도 "+"로 방금 켠 도구를 바로
+                # 쓸 수 있어야 한다(2026-08-18, AgentVersionRepository
+                # .resolve_live_version_id 참고). 다른 에이전트는 세션이 만들
+                # 때 고정한 버전을 그대로 쓴다(버전 불변성 원칙 유지).
+                live_version_id = AgentVersionRepository.resolve_live_version_id(
+                    agent_id=session["agent_id"]
+                )
+                if live_version_id:
+                    session = {**session, "agent_version_id": live_version_id}
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         except AgentRuntimeError as exc:
@@ -301,6 +334,10 @@ def _run_deep_agent(
         user_input=user_input,
         context=context,
         conversation_messages=tuple(history),
+        # 이 대화가 도구를 커스터마이즈했으면(2026-08-18, Chat "+" 버튼)
+        # 에이전트 원본 대신 이 목록으로 돈다 — `None`이면(커스터마이즈 안
+        # 함) 로드된 정의를 그대로 쓴다.
+        tool_refs_override=session.get("tool_refs_override"),
         **run_kwargs,
     )
     # agent_run/tool_call 적재(2026-08-14) — 이벤트는 손대지 않고 그대로

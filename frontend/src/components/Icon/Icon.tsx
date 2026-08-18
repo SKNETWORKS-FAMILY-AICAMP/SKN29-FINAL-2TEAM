@@ -38,7 +38,9 @@ export type IconName =
   | 'lock'
   | 'message-square'
   | 'plus'
-  | 'menu';
+  | 'menu'
+  | 'star'
+  | 'star-filled';
 
 export interface IconProps {
   name: IconName;
@@ -48,7 +50,7 @@ export interface IconProps {
   className?: string;
 }
 
-function renderPaths(name: IconName): ReactElement {
+function renderPaths(name: IconName, color: string): ReactElement {
   switch (name) {
     case 'send':
       return (
@@ -307,6 +309,20 @@ function renderPaths(name: IconName): ReactElement {
           <line x1="4" y1="17" x2="20" y2="17" />
         </>
       );
+    case 'star':
+      return (
+        <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
+      );
+    case 'star-filled':
+      // 다른 아이콘과 달리 안을 채운다 — `fill`은 부모 `<svg>`의 `stroke={color}`를
+      // 안 타므로(별개 속성), 여기서 직접 같은 `color`를 넣는다. `fill="currentColor"`
+      // 로 뒀더니 이 svg엔 CSS `color`를 안 줘서 기본값(검정)으로 채워지던 버그였다.
+      return (
+        <path
+          fill={color}
+          d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"
+        />
+      );
     default:
       return <circle cx="12" cy="12" r="10" />;
   }
@@ -328,7 +344,7 @@ export function Icon({ name, size = 20, color = 'currentColor', spin = false, cl
       className={classes || undefined}
       aria-hidden="true"
     >
-      {renderPaths(name)}
+      {renderPaths(name, color)}
     </svg>
   );
 }

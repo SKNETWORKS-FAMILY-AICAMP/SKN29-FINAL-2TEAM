@@ -2,9 +2,10 @@ import type {
   ChatEvent,
   ExtractedTask as ApiTask,
   JiraIssue,
+  SourceRef,
   TaskExtractionPayload,
 } from '../../api/chat';
-import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './cardTypes';
+import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep, SubagentRun } from './cardTypes';
 
 /**
  * 이벤트 스트림 → 카드가 그릴 상태.
@@ -17,42 +18,6 @@ import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './card
  * 생각 중"이 아니라 "무엇을 찾고 있나"이고, 그 문장은 도구가 낸다. Loop 회전은
  * 부제로만 쓴다.
  */
-/**
- * 부모(루트)가 직접 부른 도구 호출 한 건 — 순서대로 쌓인다(2026-08-15,
- * 오른쪽 메모리 패널용). `EVENT_TOOL_STARTED`가 그 자리에서 `RUNNING`으로
- * 밀어 넣고, 짝이 되는 `EVENT_TOOL_COMPLETED`가 `tool_call_id`로 찾아 상태만
- * 바꾼다 — 새 항목을 만들지 않는다(병렬 호출이어도 자리가 안 밀리게).
- */
-export interface ToolCallEntry {
-  seq: number;
-  toolCallId: string | null;
-  toolRef: string;
-  status: 'RUNNING' | 'OK' | 'FAILED';
-  arguments?: Record<string, unknown>;
-}
-
-/** `services/agent_runtime/memory/backend.py`의 `MEMORY_PATH_PREFIX`와 같은 값. */
-export const MEMORY_PATH_PREFIX = '/memories/';
-
-/**
- * 도구 호출 인자에서 `/memories/` 아래를 가리키는 경로를 찾는다. 없으면 `null`
- * — 이 도구 호출이 장기 메모리가 아니라는 뜻이다(예: 세션 안 스크래치 파일).
- *
- * deepagents 내장 파일 도구는 관례상 `file_path` 인자를 쓰지만(Claude 자신의
- * Read/Write/Edit 도구와 같은 관례 — 실행 검증은 아직 못 함, 작업기록
- * `2026-08-15_02_장기메모리_설계.md` §5), 확정된 계약이 아니라서 `path`도
- * 같이 보고, 그래도 없으면 값 전체를 훑는 방어적 순서로 찾는다.
- */
-export function memoryFilePath(args: Record<string, unknown> | undefined): string | null {
-  if (!args) return null;
-  const direct = args.file_path ?? args.path;
-  if (typeof direct === 'string' && direct.startsWith(MEMORY_PATH_PREFIX)) return direct;
-  for (const value of Object.values(args)) {
-    if (typeof value === 'string' && value.startsWith(MEMORY_PATH_PREFIX)) return value;
-  }
-  return null;
-}
-
 export interface LiveChat {
   /** Loop 회전. `tool_ref` 없는 stage 에서만 온다. */
   /** 도구 내부 진행. `tool_ref` 있는 stage·queries·stage_done 이 채운다. */
@@ -60,6 +25,8 @@ export interface LiveChat {
   toolName: string | null;
   /** 도구가 내는 검색어. 에이전트가 실제로 한 판단이라 그대로 보여준다. */
   queries: string[];
+  /** `document_search`가 좁힌 문서들 — "출처"(2026-08-18). */
+  sources: SourceRef[];
   evidenceCount: number;
   running: boolean;
   extraction: TaskExtractionPayload | null;
@@ -74,11 +41,17 @@ export interface LiveChat {
   /** Jira 현황. 도구가 이벤트로 준 것을 화면이 카드로 그린다. */
   jira: { projectKey: string; counts: Record<string, number>; issues: JiraIssue[] } | null;
   /**
-   * 루트가 직접 호출한 도구들의 순서(위임으로 들어간 서브 에이전트 내부
-   * 호출은 안 담는다 — Child는 메모리가 없다). 오른쪽 메모리 패널이 이 중
-   * `/memories/` 경로를 가리키는 것만 걸러 보여준다(`memoryFilePath`).
+   * 루트가 낸 생각을 순서대로(2026-08-18). 서브 에이전트 자신의 생각은 안
+   * 담는다 — `subagent_alias`가 있으면 이 턴의 최상위 표시에는 안 쓴다.
    */
-  toolCalls: ToolCallEntry[];
+  reasoningSteps: string[];
+  /**
+   * 이 턴에서 다른 에이전트에게 위임한 작업들(2026-08-18). 서브 에이전트
+   * **자신의** reasoning·도구 진행은 여전히 최상위에 안 보여준다(위와 같은
+   * 원칙) — 이건 "지금 위임 중이다/끝났다"는 사실만 보여준다. 병렬 위임도
+   * 있을 수 있어 배열이다.
+   */
+  subagents: SubagentRun[];
 }
 
 export function emptyLive(): LiveChat {
@@ -86,6 +59,7 @@ export function emptyLive(): LiveChat {
     steps: [],
     toolName: null,
     queries: [],
+    sources: [],
     evidenceCount: 0,
     running: true,
     extraction: null,
@@ -97,12 +71,36 @@ export function emptyLive(): LiveChat {
     stoppedReason: null,
     error: null,
     jira: null,
-    toolCalls: [],
+    reasoningSteps: [],
+    subagents: [],
   };
 }
 
+/**
+ * `tool_progress`의 포장을 풀어 원래 이벤트 모양으로 되돌린다(2026-08-18
+ * 발견·수정). `services/agent_runtime/events.py`의 `_classify_progress`가
+ * `task_extraction`/`jira_get_issues`가 흘리는 모든 진행 이벤트(`stage`/
+ * `queries`/`stage_done`/`task_extraction_result`/`jira_status`)를
+ * `type: "tool_progress"`, 원본은 `detail`에 통째로 옮겨 담아 보낸다
+ * (2026-08-14 엔진 교체 이후 항상 이 모양) — 그런데 이 화면은 저 다섯
+ * 타입이 최상위로 직접 온다고 가정한 채로 안 고쳐져 있어서, 지금까지
+ * `tool_progress`가 `default` 분기로 빠져 **검색어·진행 단계는 물론
+ * 업무 추출 결과(확인 카드)·Jira 현황까지 채팅에서 조용히 사라지고
+ * 있었다.** 포장을 풀어 기존 케이스가 그대로 처리하게 한다 — 로직을
+ * 두 군데 두지 않기 위해서다.
+ *
+ * `subagent_alias`가 있으면(자식 네임스페이스의 진행) 이 턴의 최상위
+ * 표시에는 안 쓴다 — `tool_started`/`reasoning`과 같은 규칙이라 여기서
+ * 걸러서 애초에 풀지 않는다.
+ */
+export function unwrapToolProgress(event: ChatEvent): ChatEvent {
+  if (event.type !== 'tool_progress' || !event.detail || event.subagent_alias) return event;
+  return { ...event.detail, tool_ref: event.tool_ref } as ChatEvent;
+}
+
 /** 이벤트 하나를 접어 넣는다. 불변으로 다뤄 React 가 변화를 알아채게 한다. */
-export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
+export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
+  const event = unwrapToolProgress(rawEvent);
   const toolRef = (event as { tool_ref?: string }).tool_ref;
 
   switch (event.type) {
@@ -124,6 +122,12 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
     case 'queries':
       return toolRef ? { ...state, queries: event.queries } : state;
 
+    // `document_search`가 coarse 단계에서 좁힌 문서들(2026-08-18) — "출처".
+    // `stage`처럼 초기화하지 않는다 — 다음 단계(본문 검색)가 도는 동안에도
+    // "무엇으로 좁혔는지"는 계속 보여야 한다.
+    case 'sources':
+      return toolRef ? { ...state, sources: event.documents } : state;
+
     case 'stage_done': {
       const steps = state.steps.map((step, index) =>
         index === state.steps.length - 1
@@ -133,35 +137,58 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
       return { ...state, steps, evidenceCount: event.evidence };
     }
 
+    // 서브 에이전트 자신의 생각은 이 턴의 최상위 표시에 안 쓴다 —
+    // `tool_started`/`tool_completed`가 `subagent_alias`로 거르는 것과 같은
+    // 규칙. `append`(2026-08-18, 토큰 단위 실시간 스트리밍)가 true면 이어지는
+    // 델타라 마지막 항목에 붙이고, false면 새 문단이라 항목을 새로 만든다 —
+    // 서버가 이미 판정해서 보내므로 여기선 그대로 따른다.
+    case 'reasoning': {
+      if (event.subagent_alias) return state;
+      if (event.append && state.reasoningSteps.length > 0) {
+        const steps = state.reasoningSteps.slice();
+        steps[steps.length - 1] += event.text;
+        return { ...state, reasoningSteps: steps };
+      }
+      return { ...state, reasoningSteps: [...state.reasoningSteps, event.text] };
+    }
+
     case 'tool_call_started':
       return { ...state, toolName: event.tool_name };
 
     // 새 엔진이 실제로 내는 타입(위 `tool_call_started`와 다른 문자열 —
     // `api/chat.ts`의 2026-08-15 주석 참고). `subagent_alias`가 있으면
     // 서브 에이전트 자신의 호출이라 이 턴의 최상위 진행 표시에는 안 쓴다.
-    case 'tool_started': {
-      if (event.subagent_alias) return state;
-      const entry: ToolCallEntry = {
-        seq: state.toolCalls.length,
-        toolCallId: event.tool_call_id ?? null,
-        toolRef: event.tool_ref,
-        status: 'RUNNING',
-        arguments: event.arguments,
-      };
-      return { ...state, toolName: event.tool_ref, toolCalls: [...state.toolCalls, entry] };
-    }
+    case 'tool_started':
+      return event.subagent_alias ? state : { ...state, toolName: event.tool_ref };
 
-    case 'tool_completed': {
-      if (event.subagent_alias) return state;
-      // tool_call_id 로 짝을 맞춘다 — 병렬 호출이면 시작 순서와 끝나는 순서가
-      // 다를 수 있어서다(events.py 모듈 docstring과 같은 이유).
-      const toolCalls = state.toolCalls.map((call) =>
-        call.status === 'RUNNING' && call.toolCallId !== null && call.toolCallId === event.tool_call_id
-          ? { ...call, status: event.status }
-          : call,
-      );
-      return { ...state, toolCalls };
-    }
+    // 다른 에이전트에게 위임을 시작했다(2026-08-18). 위임 자체는 부모
+    // 네임스페이스에서 나오는 이벤트라 subagent_alias로 거를 대상이 아니다
+    // — "누구에게 위임했나"가 곧 이 이벤트의 내용이다. 서브 에이전트
+    // *자신의* reasoning·도구 진행은 여전히 안 보여준다(위 케이스들 그대로).
+    case 'subagent_started':
+      return {
+        ...state,
+        subagents: [
+          ...state.subagents,
+          {
+            runId: event.run_id,
+            alias: event.subagent_alias,
+            name: event.subagent_name ?? null,
+            taskSummary: event.task_summary ?? '',
+            status: 'RUNNING',
+          },
+        ],
+      };
+
+    // 위임 완료 — run_id로 정확히 짝을 맞춘다(tool_started/tool_completed와
+    // 같은 이유: 병렬 위임이면 완료 순서가 시작 순서와 다를 수 있다).
+    case 'subagent_completed':
+      return {
+        ...state,
+        subagents: state.subagents.map((run) =>
+          run.runId === event.run_id ? { ...run, status: event.status } : run,
+        ),
+      };
 
     case 'tool_call_finished': {
       const steps = state.steps.map((step) =>

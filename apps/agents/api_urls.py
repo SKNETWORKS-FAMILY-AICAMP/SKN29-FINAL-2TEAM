@@ -9,8 +9,10 @@ from .api_views import (
     AgentListCreateAPIView,
     AgentToolCatalogAPIView,
     AgentVersionActivateAPIView,
+    AgentVersionDependentsAPIView,
     AgentVersionDetailAPIView,
     AgentVersionDisableAPIView,
+    AgentVersionFavoriteAPIView,
     AgentVersionListCreateAPIView,
     CustomModelAPIView,
 )
@@ -45,6 +47,16 @@ urlpatterns = [
         "versions/<str:agent_id>/disable/",
         AgentVersionDisableAPIView.as_view(),
         name="api_agent_version_disable",
+    ),
+    path(
+        "versions/<str:agent_id>/dependents/",
+        AgentVersionDependentsAPIView.as_view(),
+        name="api_agent_version_dependents",
+    ),
+    path(
+        "versions/<str:agent_id>/favorite/",
+        AgentVersionFavoriteAPIView.as_view(),
+        name="api_agent_version_favorite",
     ),
     path("<str:agent_id>/", AgentDetailAPIView.as_view(), name="api_agent_detail"),
     path("<str:agent_id>/activate/", AgentActivateAPIView.as_view(), name="api_agent_activate"),

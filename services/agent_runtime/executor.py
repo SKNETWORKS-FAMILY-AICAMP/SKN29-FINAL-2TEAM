@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
@@ -65,7 +66,18 @@ class AgentExecutor:
         context: RuntimeContext,
         draft: dict | None = None,
         conversation_messages: Sequence[dict[str, Any]] = (),
+        tool_refs_override: Sequence[str] | None = None,
     ) -> Iterator[dict[str, Any]]:
+        """`tool_refs_override`: 이 대화(chat_session)가 저장해 둔 도구
+        커스터마이즈(2026-08-18, Chat "+" 버튼). `None`이면 로드된 정의의
+        `tool_refs`를 그대로 쓴다 — 값이 있으면(빈 시퀀스 포함) 루트
+        에이전트의 `tool_refs`만 통째로 갈아 끼운다. 저장된 `agent_versions`
+        행은 안 건드린다 — DB에 남는 건 여전히 원래 값이고, 이 자리에서
+        메모리 위의 정의만 바꾼다. 서브 에이전트의 도구는 영향 없다(이
+        대화가 직접 부르는 루트만 대상 — 위임 내부까지 커스터마이즈하는 건
+        범위 밖).
+        """
+
         validate_execution_target(
             agent_id=agent_id, agent_version_id=agent_version_id, draft=draft
         )
@@ -80,6 +92,13 @@ class AgentExecutor:
                     context=context,
                 )
             )
+            if tool_refs_override is not None:
+                loaded = dataclasses.replace(
+                    loaded,
+                    definition=dataclasses.replace(
+                        loaded.definition, tool_refs=tuple(tool_refs_override)
+                    ),
+                )
 
             runtime = self.factory.build(
                 definition=loaded.definition,
@@ -107,6 +126,12 @@ class AgentExecutor:
                 runtime=runtime,
                 user_input=user_input,
                 conversation_messages=conversation_messages,
+                # `context.session_id`를 LangGraph의 thread_id로 그대로 쓴다
+                # (2026-08-18, §5 Phase 1: Checkpointer 도입). None이면(session_id
+                # 없는 호출 — 예: 세션이 없는 스크립트 실행) stream_adapter가
+                # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
+                # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
+                thread_id=context.session_id,
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구

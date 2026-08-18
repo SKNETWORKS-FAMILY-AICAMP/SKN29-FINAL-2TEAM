@@ -51,6 +51,11 @@ export interface ToolChoice {
   description: string;
   /** '기본 제공' 또는 'MCP · <서버명>'. */
   source: string;
+  /**
+   * 도구 선택 화면이 묶어 보여줄 단위(예: "Jira", "문서") — 기본 제공
+   * 도구만 갖는다(2026-08-18). MCP 도구는 아직 서버 단위로만 묶는다.
+   */
+  category?: string;
   /** 승인 게이트를 타는 도구인가. 화면이 「승인 필요」를 표시한다. */
   side_effect: boolean;
   server_status?: string;

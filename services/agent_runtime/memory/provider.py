@@ -20,15 +20,23 @@ class MemoryProvider:
 
         return memory_paths()
 
-    def backend(self, *, team_id: str, agent_id: str) -> "CompositeBackend":
+    def backend(self, *, team_id: str, agent_id: str, account_id: str) -> "CompositeBackend":
         from services.agent_runtime.memory.backend import build_memory_backend
 
-        return build_memory_backend(team_id=team_id, agent_id=agent_id)
+        return build_memory_backend(team_id=team_id, agent_id=agent_id, account_id=account_id)
 
     def store(self) -> "PostgresStore":
         from services.agent_runtime.memory.store import get_memory_store
 
         return get_memory_store()
+
+    def system_prompt(self) -> str:
+        """2026-08-18, Phase 3(§4-8) — `MemoryMiddleware.system_prompt`에 이어붙일
+        라우팅 안내가 포함된 값. `factory.py`가 `compat.create_root_graph
+        (memory_system_prompt=...)`로 그대로 넘긴다."""
+        from services.agent_runtime.memory.backend import memory_system_prompt
+
+        return memory_system_prompt()
 
 
 __all__ = ["MemoryProvider"]

@@ -902,6 +902,12 @@ CREATE TABLE chat_session (
     agent_version_id  VARCHAR(5),
     proj_id     VARCHAR(5),              -- proj.proj_id(FK 없음). 프로젝트 문맥 없이 시작할 수 있어 NULL 허용
     title       VARCHAR(200),
+    -- Chat "+"(도구·MCP 붙이기)가 이 대화에서만 쓸 도구를 여기 저장한다 —
+    -- 에이전트 원본 tool_refs는 안 건드린다(2026-08-18,
+    -- DB/migrations/2026-08-18_chat_session_tool_override.sql). NULL =
+    -- 커스터마이즈 안 함(에이전트 원래 값을 그대로 씀), 빈 배열 = 이 대화만
+    -- 도구를 전부 끔 — 그래서 DEFAULT를 안 둔다.
+    tool_refs_override  TEXT[],
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -1061,4 +1067,14 @@ CREATE TABLE agent_version_subagents (
     created_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
     PRIMARY KEY (parent_version_id, child_agent_id),
     UNIQUE (parent_version_id, alias)
+);
+
+-- 에이전트 카드의 별 토글(2026-08-18, DB/migrations/2026-08-18_agent_favorites.sql).
+-- 계정별 개인 즐겨찾기 — 팀 전체에 안 보인다. owner_account_id(만든 사람)와는
+-- 다른 개념이다.
+CREATE TABLE agent_favorites (
+    account_id  VARCHAR(5)  NOT NULL,   -- user_account.account_id(FK 없음)
+    agent_id    VARCHAR(5)  NOT NULL,   -- agents.agent_id(FK 없음)
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (account_id, agent_id)
 );

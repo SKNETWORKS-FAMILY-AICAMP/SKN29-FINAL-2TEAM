@@ -55,7 +55,8 @@ class StreamCallArgumentsTests(SimpleTestCase):
         call = runtime.stream_calls[0]
         # "custom"도 구독한다 — tools/adapters.py의 제너레이터 도구가
         # get_stream_writer()로 흘려보내는 진행 이벤트를 받으려면 필요하다.
-        self.assertEqual(call["kwargs"]["stream_mode"], ["updates", "custom"])
+        # "messages"도 구독한다(2026-08-18) — reasoning 실시간 스트리밍용.
+        self.assertEqual(call["kwargs"]["stream_mode"], ["updates", "custom", "messages"])
         self.assertTrue(call["kwargs"]["subgraphs"])
         self.assertEqual(
             call["input_state"], {"messages": [{"role": "user", "content": "안녕"}]}
@@ -64,7 +65,8 @@ class StreamCallArgumentsTests(SimpleTestCase):
 
 class ConversationMessagesArgumentTests(SimpleTestCase):
     """apps/chat/api_views.py `_history()`가 만든 앞선 턴을 새 발화 앞에 그대로
-    붙이는지 — 안 붙이면 매 턴이 콜드 스타트다."""
+    붙이는지 — 안 붙이면 매 턴이 콜드 스타트다. `thread_id`가 없을 때(기본값)의
+    동작이다 — thread_id가 있을 때는 아래 ThreadIdArgumentTests를 본다."""
 
     def test_history_is_prepended_before_the_new_user_message(self):
         runtime = _FakeRuntime()
@@ -96,6 +98,57 @@ class ConversationMessagesArgumentTests(SimpleTestCase):
         )
 
 
+class ThreadIdArgumentTests(SimpleTestCase):
+    """thread_id(2026-08-18, §5 Phase 1: Checkpointer) — `config`로 넘어가는지,
+    그리고 conversation_messages를 붙이지 않는지(중복 방지, docstring 참고)."""
+
+    def test_thread_id_present_sets_configurable_thread_id(self):
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime, user_input="새 질문", thread_id="SESSION001"
+            )
+        )
+
+        call = runtime.stream_calls[0]
+        self.assertEqual(call["kwargs"]["config"], {"configurable": {"thread_id": "SESSION001"}})
+
+    def test_thread_id_present_ignores_conversation_messages_to_avoid_duplication(self):
+        """Checkpointer가 이전 턴을 이미 갖고 있으므로 여기서 conversation_messages를
+        또 붙이면 매 턴 중복이 누적된다 — 이번 발화만 보내야 한다."""
+        runtime = _FakeRuntime()
+        history = [
+            {"role": "user", "content": "이전 질문"},
+            {"role": "assistant", "content": "이전 답"},
+        ]
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime,
+                user_input="새 질문",
+                conversation_messages=history,
+                thread_id="SESSION001",
+            )
+        )
+
+        call = runtime.stream_calls[0]
+        self.assertEqual(
+            call["input_state"]["messages"], [{"role": "user", "content": "새 질문"}]
+        )
+
+    def test_no_thread_id_omits_config_kwarg_entirely(self):
+        """thread_id가 없으면(기본값) config 키 자체를 안 보낸다 — `config=None`을
+        명시적으로 보내는 것과 구분한다(실제 deepagents/LangGraph 쪽 동작 차이를
+        만들지 않기 위해, 조건부로 아예 빼는 compat/deepagents_v075.py의
+        backend/store/checkpointer 패턴과 동일하게 맞춘다)."""
+        runtime = _FakeRuntime()
+
+        list(DeepAgentStreamAdapter().stream(runtime=runtime, user_input="새 질문"))
+
+        self.assertNotIn("config", runtime.stream_calls[0]["kwargs"])
+
+
 @tool
 def _get_server_time() -> str:
     """서버 시각."""
@@ -115,8 +168,14 @@ class RealGraphIntegrationTests(SimpleTestCase):
             self.assertEqual(len(event), 3)
             namespace, mode, payload = event
             self.assertIsInstance(namespace, tuple)
-            self.assertIn(mode, ("updates", "custom"))
-            self.assertIsInstance(payload, dict)
+            self.assertIn(mode, ("updates", "custom", "messages"))
+            # "messages"는 (AIMessageChunk, metadata) 2-tuple로 온다 — 그 외
+            # 모드만 dict("updates"의 노드별 결과, "custom"의 writer 값)다.
+            if mode == "messages":
+                self.assertIsInstance(payload, tuple)
+                self.assertEqual(len(payload), 2)
+            else:
+                self.assertIsInstance(payload, dict)
 
 
 @tool

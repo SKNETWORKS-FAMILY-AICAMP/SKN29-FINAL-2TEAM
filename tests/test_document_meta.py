@@ -190,6 +190,19 @@ class BuildTests(SimpleTestCase):
         self.assertIn("기타", service.DOC_TYPES)
 
 
+def _run_document_search(**kwargs):
+    """`_document_search`는 제너레이터다(2026-08-18, 진행 이벤트 스트리밍 —
+    `adapters.py`의 `_drain_with_progress`와 같은 방식). 끝까지 돌려서
+    `return`(도구의 실제 결과)만 꺼낸다 — 중간 진행 이벤트는 이 테스트의
+    관심사가 아니다."""
+    gen = registry._document_search(**kwargs)
+    try:
+        while True:
+            next(gen)
+    except StopIteration as stop:
+        return stop.value
+
+
 @patch("services.harness.registry.embed_queries", return_value=[[0.2] * 768])
 @patch("services.harness.registry.VectorSearchRepository.search")
 @patch("services.harness.registry.DocMetaRepository.coarse_search")
@@ -205,7 +218,7 @@ class CoarseSearchTests(SimpleTestCase):
         ]
         search.return_value = []
 
-        registry._document_search(team_id="TE001", query="납기일")
+        _run_document_search(team_id="TE001", query="납기일")
 
         self.assertEqual(search.call_args.kwargs["document_ids"], ["DC001", "DC002"])
 
@@ -220,7 +233,7 @@ class CoarseSearchTests(SimpleTestCase):
         ]
         search.return_value = []
 
-        result = registry._document_search(team_id="TE001", query="납기일")
+        result = _run_document_search(team_id="TE001", query="납기일")
 
         self.assertEqual(search.call_args.kwargs["document_ids"], ["DC001"])
         self.assertEqual(result["not_indexed"][0]["doc_id"], "DC009")
@@ -231,7 +244,7 @@ class CoarseSearchTests(SimpleTestCase):
              "keywords": [], "summary_score": 0.7, "search_ready": False, "index_status": None},
         ]
 
-        result = registry._document_search(team_id="TE001", query="납기일")
+        result = _run_document_search(team_id="TE001", query="납기일")
 
         search.assert_not_called()
         self.assertEqual(result["evidence"], [])
@@ -246,6 +259,6 @@ class CoarseSearchTests(SimpleTestCase):
         all_ids.return_value = ["DC001", "DC002", "DC003"]
         search.return_value = []
 
-        registry._document_search(team_id="TE001", query="납기일")
+        _run_document_search(team_id="TE001", query="납기일")
 
         self.assertEqual(search.call_args.kwargs["document_ids"], ["DC001", "DC002", "DC003"])
