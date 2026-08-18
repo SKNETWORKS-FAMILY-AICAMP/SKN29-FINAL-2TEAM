@@ -4,6 +4,7 @@
 같은 로그가 남는가 — 평가(4_평가_설계.md)가 그 로그를 세기 때문이다.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -822,6 +823,38 @@ class ToolWiringTests(SimpleTestCase):
                 missing.append(f"{cls_name}.{method}")
 
         self.assertEqual(missing, [])
+
+    def test_document_search_에_요청자_계정이_주입된다(self):
+        """빠뜨려도 **오류가 안 난다** — 그래서 조용히 반쪽이 된다.
+
+        `_document_search(account_id=None)` 이면 `coarse_search` 가 팀 문서만 보고
+        **내가 켠 내 파일이 안 잡히며**(M④), `registry` 의
+        `not_indexed[:PROMOTE_TOP_N] if account_id else []` 때문에 **온디맨드
+        승격이 통째로 꺼진다.** 화면에는 「확인할 수 있는 문서가 없습니다」로만
+        보여서 기능이 없는 것처럼 읽힌다.
+
+        실제로 승격은 2026-08-15 에 이 값이 온다는 전제로 만들어졌는데 주입하는
+        자리가 그때 같이 안 고쳐졌고, 2026-08-18 브라우저 QA 전까지 안 드러났다.
+        """
+
+        from services.harness.runner import _injected
+
+        tool = registry.BUILTIN_TOOLS["document_search"]
+        injected = _injected(tool, {"team_id": "TE001"}, {"account_id": "UA002"})
+
+        self.assertEqual(injected["team_id"], "TE001")
+        self.assertEqual(injected["account_id"], "UA002")
+
+    def test_mcp_도구에는_계정을_넘기지_않는다(self):
+        """MCP 핸들러는 `account_id` 를 받지 않는다 — 같이 넘기면 TypeError 다."""
+
+        from services.harness.runner import _injected
+
+        tool = SimpleNamespace(ref="mcp:MS001:search")
+        self.assertEqual(
+            _injected(tool, {"team_id": "TE001"}, {"account_id": "UA002"}),
+            {"team_id": "TE001"},
+        )
 
 
 class TaskRegisterDateTests(SimpleTestCase):

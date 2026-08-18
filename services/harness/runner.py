@@ -554,9 +554,19 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
     테넌트 경계는 언제나 서버가 정한다.
     """
 
-    if tool.ref == "document_search" or tool.ref.startswith("mcp:"):
+    if tool.ref == "document_search":
+        # **`account_id` 를 빠뜨리면 조용히 반쪽이 된다**(2026-08-18 QA 에서 잡았다).
+        # 없으면 `coarse_search` 가 팀 문서만 보고 **내가 켠 내 파일이 안 잡히며**
+        # (M④), 온디맨드 승격도 통째로 꺼진다 — `registry.py` 의
+        # `not_indexed[:PROMOTE_TOP_N] if account_id else []`. 그런데 오류가 아니라
+        # 「문서가 없습니다」로 끝나서 **기능이 없는 것처럼 보인다.**
+        # 승격은 2026-08-15 에 이 값이 온다는 전제로 만들어졌는데 이 자리가 그때
+        # 같이 안 고쳐졌다.
+        return {"team_id": agent["team_id"], "account_id": context.get("account_id")}
+    if tool.ref.startswith("mcp:"):
         # MCP 도구도 팀이 필요하다 — 실행 직전에 그 팀의 서버·토큰을 찾는다.
         # 모델이 team_id 를 보내면 남의 팀 MCP 서버를 부를 수 있다.
+        # **account_id 는 넘기지 않는다** — MCP 핸들러가 받지 않는 인자다.
         return {"team_id": agent["team_id"]}
     if tool.ref == "task_extraction":
         # **부른 에이전트의 모델로 돈다.** 도구 안에 `.env` 모델이 박혀 있으면,
