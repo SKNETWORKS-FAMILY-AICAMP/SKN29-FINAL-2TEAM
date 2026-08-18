@@ -988,9 +988,18 @@ CREATE TABLE agents (
     status             VARCHAR(20)  NOT NULL DEFAULT 'DRAFT',  -- DRAFT/ACTIVE/DISABLED/ARCHIVED
     current_version_id VARCHAR(5),               -- agent_versions.agent_version_id(FK 없음)
     is_prebuilt        BOOLEAN      NOT NULL DEFAULT false,
+    -- 팀의 "기본 챗 에이전트"(2026-08-15, DB/migrations/2026-08-15_agent_default_chat.sql).
+    -- `is_prebuilt`와는 다른 뜻이다 — 예시 에이전트도 is_prebuilt=true라
+    -- 그것만으론 "이게 Chat 기본값이다"를 못 가른다. 팀당 최대 1개 true(아래
+    -- 유니크 인덱스). 삭제·비활성화 금지는 Repository 레이어에서 막는다.
+    is_default_chat    BOOLEAN      NOT NULL DEFAULT false,
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX agents_one_default_chat_per_team
+    ON agents (team_id)
+    WHERE is_default_chat = true;
 
 CREATE TABLE agent_versions (
     agent_version_id  VARCHAR(5) PRIMARY KEY,   -- 'AV' + 세 자리

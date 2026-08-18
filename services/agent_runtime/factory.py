@@ -20,6 +20,7 @@ from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
 
 if TYPE_CHECKING:
+    from services.agent_runtime.memory.provider import MemoryProvider
     from services.agent_runtime.middleware.factory import MiddlewareFactory
     from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
     from services.agent_runtime.prompts import RuntimePromptAssembler
@@ -103,6 +104,7 @@ class AgentRuntimeFactory:
         middleware_factory: "MiddlewareFactory",
         runtime_policy: "RuntimeCapabilityPolicy",
         prompt_assembler: "RuntimePromptAssembler",
+        memory_provider: "MemoryProvider | None" = None,
     ) -> None:
         self.dependency_graph = dependency_graph
         self.model_config_resolver = model_config_resolver
@@ -111,6 +113,10 @@ class AgentRuntimeFactory:
         self.middleware_factory = middleware_factory
         self.runtime_policy = runtime_policy
         self.prompt_assembler = prompt_assembler
+        # 기본값 None 허용 — 장기 메모리 없이 쓰던 기존 호출자(테스트 등)를
+        # 깨지 않으려고(2026-08-15 추가). None이면 build()가 memory/backend/store
+        # 없이 예전과 동일하게 돈다.
+        self.memory_provider = memory_provider
 
     def build(
         self,
@@ -180,6 +186,17 @@ class AgentRuntimeFactory:
             ),
         )
 
+        memory_kwargs: dict[str, Any] = {}
+        if self.memory_provider is not None:
+            # Root에만 붙인다 — Child(위 allow_subagents=False 분기)는 안 받는다.
+            memory_kwargs = {
+                "memory": self.memory_provider.paths(),
+                "backend": self.memory_provider.backend(
+                    team_id=context.team_id, agent_id=definition.agent_id
+                ),
+                "store": self.memory_provider.store(),
+            }
+
         return create_root_graph(
             model=model,
             system_prompt=self.prompt_assembler.assemble_root(
@@ -188,6 +205,7 @@ class AgentRuntimeFactory:
             tools=langchain_tools,
             subagents=[gp_spec, *compiled_children],
             middleware=custom_middleware,
+            **memory_kwargs,
         )
 
 

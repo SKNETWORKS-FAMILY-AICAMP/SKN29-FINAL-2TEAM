@@ -11,6 +11,16 @@ from typing import Any
 
 import requests
 
+try:
+    # 프로덕션(Dockerfile): /worker에 이 폴더 내용이 통째로 복사되고 "python3
+    # handler.py"로 실행되므로, 실행 스크립트의 디렉터리가 sys.path[0]이라
+    # 같은 폴더 기준 import가 된다.
+    from density_heading_correction import promote_headings_by_density
+except ModuleNotFoundError:
+    # 저장소 루트 테스트: "from runpod_worker.pipeline import ..."로 이 모듈이
+    # 패키지 하위 모듈로 임포트되면 위 경로는 안 잡힌다.
+    from runpod_worker.density_heading_correction import promote_headings_by_density
+
 
 CONTROL_PATTERN = re.compile(r"<end_of_(?:utterance|turn|text)?[^>\s]*>?", re.I)
 EXPECTED_DIMENSION = 768
@@ -143,6 +153,11 @@ def converter(use_ocr: bool = True):
             lang=["ko", "en"], mode=OcrMode.LAYOUT_REGIONS, force_full_page_ocr=False
         ),
         heading_hierarchy_options=HeadingHierarchyOptions(enabled=True),
+        # density_heading_correction이 backend/OCR cell(parsed_page.textline_cells)로
+        # 실측 글자 높이를 재려면 필수 — 없으면 item bbox 전체 높이로 대체돼 여러 줄
+        # 문단에서 부풀려진다. heading_hierarchy_options.use_style(글꼴 기반 제목 깊이
+        # 추론)도 이 옵션 없이는 조용히 생략된다.
+        generate_parsed_pages=True,
     )
     docx = ConvertPipelineOptions(
         do_picture_classification=True,
@@ -587,6 +602,11 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
         use_ocr = not _has_text_layer(path)
         result = converter(use_ocr).convert(path)
         document = result.document
+        # 밀도 기반 헤딩 승격(제자리 수정): 레이아웃 모델이 text/list_item으로 잘못
+        # 분류한 실제 헤딩을 section_header로 바꿔치기한다. 청킹은 이 승격이 반영된
+        # document를 그대로 넘겨받으므로, HybridChunker가 만드는 chunk.meta.headings도
+        # 승격 결과를 따라간다.
+        promoted_headings = promote_headings_by_density(result)
         chunks, diagnostics, dropped = _chunk_document(document, max_tokens, merge_peers)
         blocks = _blocks_for_chunks(document, chunks)
         block_by_ref = {b["source_ref"]: b["local_block_key"] for b in blocks}
@@ -618,6 +638,9 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
                 # 한도를 넘어 버려진 청크. 비어 있지 않으면 그 문서의 일부가
                 # 검색에 안 잡힌다는 뜻이라 결과에 실어 보낸다.
                 "dropped_chunks": dropped,
+                # 밀도 기반으로 section_header로 승격된 항목 수. 0이어도 정상(해당
+                # 패턴의 오분류 헤딩이 없었다는 뜻)이라 오류로 취급하지 않는다.
+                "promoted_heading_count": len(promoted_headings),
             },
         }
     finally:

@@ -3,6 +3,7 @@ from io import BytesIO
 import json
 import logging
 import re
+import threading
 from typing import Any
 
 import psycopg
@@ -30,6 +31,7 @@ from backend.services.storage import load as load_document
 from backend.services.storage import save as save_document
 from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
 from services.document_meta import as_row as doc_meta_row
+from services.document_intake import intake_connector_documents
 from services.document_meta import build as build_doc_meta
 from services.document_pipeline.errors import (
     DocumentPipelineError,
@@ -441,7 +443,45 @@ class TeamFolderAPIView(AuthenticatedAPIView):
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+
+        # **폴더를 정하는 것이 곧 「이 문서들을 받아들여라」다.**
+        #
+        # 여기서 하는 것은 목록·원문·요약까지다. 본문 파싱·임베딩은 안 한다 —
+        # 그건 무거워서 미리 돌릴 값이 아니고, 대화 중에 요약으로 후보가 좁혀진
+        # 문서에만 한다(`promote_to_searchable`). 폴더에 있는 것을 전부 읽어 두면
+        # 쓰지도 않을 문서까지 파싱·임베딩한다(2026-08-15 PM).
+        _start_document_intake(request.user.account_id)
+
         return Response([team_folder_response(row) for row in rows])
+
+
+def _start_document_intake(account_id: str) -> None:
+    """폴더가 정해진 뒤 문서를 받아들인다. **응답을 붙잡지 않는다.**
+
+    요약은 문서당 LLM 1회 + 임베딩 1개라 폴더가 크면 몇 분이 된다. 저장 응답이
+    그동안 멈춰 있으면 사람은 폴더 저장이 실패한 줄 안다 — 실제로 그런 화면을
+    오늘 봤다(「서버에 연결할 수 없습니다」).
+
+    ⚠ **작업 큐가 아니다.** 프로세스가 죽으면 그 회차는 사라지고, 실패는 로그에만
+    남는다. 지금 규모(팀당 폴더 몇 개)에서는 이것으로 충분하고, 다시 부르면
+    이어받으므로(이미 있는 것은 건너뛴다) 잃는 것은 시간뿐이다. 큐가 필요해지는
+    시점은 팀이 늘어 폴더 저장이 몰릴 때다.
+    """
+
+    def run() -> None:
+        try:
+            result = intake_connector_documents(account_id=account_id)
+            logger.info(
+                "문서 수집 완료: account=%s 등록=%d 요약=%d 실패=%d",
+                account_id,
+                len(result.registered),
+                len(result.summarized),
+                len(result.failed),
+            )
+        except Exception:  # noqa: BLE001 — 폴더 저장은 이미 끝났다. 여기서 죽어도 그건 지킨다.
+            logger.exception("문서 수집 실패: account=%s", account_id)
+
+    threading.Thread(target=run, daemon=True, name=f"intake-{account_id}").start()
 
 
 class ProjectJiraRegisterAPIView(AuthenticatedAPIView):

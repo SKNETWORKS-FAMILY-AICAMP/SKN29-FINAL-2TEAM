@@ -173,6 +173,7 @@ def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
         "name": row["name"],
         "description": row.get("description") or "",
         "status": row.get("status"),
+        "is_default_chat": row.get("is_default_chat", False),
         "current_version_id": row.get("current_version_id"),
         "version": row.get("version"),
         "system_prompt": row.get("system_prompt") or "",

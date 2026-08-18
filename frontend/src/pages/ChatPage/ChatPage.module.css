@@ -261,6 +261,21 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+/* 대화 상대 에이전트 고르기(2026-08-15 재도입 — 위 header 주석 참고). */
+.agentSelect {
+  flex-shrink: 0;
+  max-width: 220px;
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* 이 대화가 어디에 속하는지. 고르는 컨트롤이 아니라 표시다. */
 .chatWhere {
   display: flex;
@@ -526,6 +541,113 @@
 
 .sessionDelete:hover {
   background: var(--color-surface);
+}
+
+/* ---------- 장기 메모리 기록 패널(2026-08-15) ---------- */
+
+/* `.sessions` 와 짝을 맞춘 고정 폭 오른쪽 패널 — 대화 목록처럼 접히지 않는다,
+   지금은 팀 데모용으로 "실제로 이렇게 돈다"를 늘 보여 주는 게 목적이다. */
+.memoryPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  width: 260px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+.memoryPanelTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--space-2) var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.memoryEmpty {
+  padding: 2px var(--space-2);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-placeholder);
+}
+
+.memoryOpList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.memoryOp {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.memoryOpIndex {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.memoryOpBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.memoryOpLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+/* 경로는 길 수 있다(파일 도구가 자유 문자열을 받는다) — 잘라내되 title 로 전체를 남긴다. */
+.memoryOpPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-muted);
+}
+
+.memoryOpStatus {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-bg);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-success-text);
+}
+
+.memoryOpStatusRunning {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.memoryOpStatusFailed {
+  background: var(--color-danger-bg, #fef2f2);
+  color: var(--color-danger);
 }
 
 /* ---------------- 좁은 화면 ---------------- */

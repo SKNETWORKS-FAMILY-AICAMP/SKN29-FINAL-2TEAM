@@ -21,8 +21,50 @@ from services.agent_runtime.subagents.validation import validate_subagents
 
 from .codes import next_short_code
 from .connection import database_connection
-from .errors import PermissionDenied, RecordNotFound, ReferenceNotFound, RepositoryError
+from .errors import (
+    IdSpaceExhausted,
+    PermissionDenied,
+    RecordNotFound,
+    ReferenceNotFound,
+    RepositoryError,
+)
 from .repositories import _require_team
+
+
+def _next_agents_id(cursor) -> str:
+    """`agents.agent_id`를 발급하되, 옛 `agent` 테이블과 번호가 안 겹치게 한다.
+
+    두 테이블이 'AG' 접두사를 공유하고(DB/migrations/2026-08-13_agent_versioning.sql
+    상단 주석 — 전환 완료 시 `agent`를 대체할 것을 전제로 같은 코드 체계를
+    물려받았다) 각자 따로 번호를 매기다 보니, 우연히 같은 값이 나올 수 있다.
+    `_resolve_session_agent()`가 옛 테이블을 먼저 보기 때문에, 겹치면 새로
+    만든 에이전트가 **조용히**(에러 없이) 옛 에이전트에게 가려진다 — 실제로
+    Chat 재설계 검증 중 겪었다(2026-08-15, 지훈 확인 후 여기서 막기로 함).
+
+    옛 `agent` 테이블 자체는 아직 못 지운다 — 지금 운영 중인 Chat이 여전히
+    그 테이블에 물려 있다(재설계 완료 후 제거 예정, task #19). 그래서 발급
+    시점에 두 테이블의 MAX를 같이 보고 더 큰 쪽 다음 번호를 쓴다.
+    `next_short_code()`(`agents` 테이블만 본다)를 그대로 못 쓰는 이유가 이것이다.
+    """
+    # next_short_code()와 같은 lock 이름 — 재진입 가능한 잠금이라 같은
+    # 트랜잭션 안에서 두 번 걸어도 안전하다(pg_advisory_xact_lock 특성).
+    cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("id-sequence:agents:agent_id:AG",))
+
+    cursor.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
+        "FROM agents WHERE agent_id ~ '^AG[0-9]{3}$'"
+    )
+    new_max = cursor.fetchone()["n"]
+    cursor.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
+        "FROM agent WHERE agent_id ~ '^AG[0-9]{3}$'"
+    )
+    legacy_max = cursor.fetchone()["n"]
+
+    next_number = max(new_max, legacy_max) + 1
+    if next_number > 999:
+        raise IdSpaceExhausted("agents.agent_id의 AG 코드 공간이 소진됐습니다.")
+    return f"AG{next_number:03d}"
 
 
 class AgentRepository:
@@ -396,6 +438,82 @@ def _team_dependency_graph(cursor, *, team_id: str) -> dict[str, set[str]]:
     return graph
 
 
+def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str) -> str:
+    """팀에 "기본 챗 에이전트"(tool·MCP만, 서브에이전트 없음) 하나를 만들고
+    바로 ACTIVE로 발행한다(2026-08-15, Chat 재설계 — 지훈 확인).
+
+    Chat 화면 드롭다운은 이 에이전트를 포함해 팀의 활성 에이전트 목록을
+    보여주고, 사용자가 아무것도 안 고르면 여기로 떨어진다. `is_default_chat`
+    은 팀당 최대 1개만 true(`agents_one_default_chat_per_team` 부분 유니크
+    인덱스, DB/migrations/2026-08-15_agent_default_chat.sql) — 이 함수를
+    같은 팀에 두 번 부르면 그 인덱스가 막는다.
+
+    **호출자가 트랜잭션을 쥔다.** 다른 Repository 메서드와 달리 이 함수는
+    자체 `database_connection()`을 열지 않고 넘겨받은 커서를 그대로 쓴다 —
+    `TeamRepository.create()`가 이미 연 트랜잭션에 얹혀서, 기본 챗 에이전트
+    없이 팀만 만들어지는 반쪽 상태가 생기지 않게 한다(실패하면 팀 생성 전체가
+    롤백된다).
+
+    model을 명시적으로 채워 넣는다 — `agent_versions.model`이 NULL이면
+    `services/agent_runtime/loader.py`가 그대로 `AgentDefinition.model`에
+    실어 보내고, `models/factory.py`의 `resolve(model: str, ...)`가 이를
+    필수 인자로 받아 NULL에서 그대로 깨진다(legacy_bridge.py처럼 새 엔진
+    호출 전에 기본값으로 떨어뜨려 주는 경로가 없다 — 순수 새 스키마 실행엔
+    그런 안전망이 아직 없다는 뜻이라 task #17/#18에 별도로 남겨 둠). 여기서는
+    같은 상황을 만들지 않으려고 `services.harness.runner`의 실제 기본값을
+    그대로 재사용한다.
+    """
+    # 지연 import — services.harness의 무거운 의존성 사슬을 이 모듈이 항상
+    # 끌고 들어오지 않게 한다(legacy_bridge.py의 draft_from_legacy_agent와
+    # 같은 이유).
+    from services.harness.runner import DEFAULT_EFFORT, DEFAULT_MODEL
+
+    agent_id = _next_agents_id(cursor)
+    cursor.execute(
+        """
+        INSERT INTO agents
+            (agent_id, team_id, name, description, owner_account_id,
+             status, is_default_chat)
+        VALUES (%s, %s, %s, %s, %s, 'ACTIVE', true)
+        """,
+        (
+            agent_id,
+            team_id,
+            "기본 챗",
+            "Chat 화면의 기본 상대입니다. 도구·MCP만 붙일 수 있고 다른 에이전트로 위임하지 않습니다.",
+            owner_account_id,
+        ),
+    )
+
+    agent_version_id = next_short_code(
+        cursor, table="agent_versions", column="agent_version_id", prefix="AV"
+    )
+    cursor.execute(
+        """
+        INSERT INTO agent_versions
+            (agent_version_id, agent_id, version, system_prompt, model,
+             reasoning_effort, created_by)
+        VALUES (%s, %s, 1, %s, %s, %s, %s)
+        """,
+        (
+            agent_version_id,
+            agent_id,
+            "당신은 팀의 업무를 돕는 기본 어시스턴트입니다. 연결된 도구가 있으면 활용해서 "
+            "정확한 정보를 근거로 답하세요.",
+            DEFAULT_MODEL,
+            DEFAULT_EFFORT,
+            owner_account_id,
+        ),
+    )
+
+    cursor.execute(
+        "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
+        (agent_version_id, agent_id),
+    )
+
+    return agent_id
+
+
 class AgentVersionCrudRepository:
     """Builder가 쓰는 새 버전 스키마 CRUD — "저장" 은 곧 "발행" 이다.
 
@@ -421,12 +539,12 @@ class AgentVersionCrudRepository:
                 cursor.execute(
                     """
                     SELECT a.agent_id, a.name, a.description, a.status, a.is_prebuilt,
-                           a.current_version_id, a.updated_at,
+                           a.is_default_chat, a.current_version_id, a.updated_at,
                            v.version, v.model, v.reasoning_effort, v.max_iterations
                     FROM agents AS a
                     LEFT JOIN agent_versions AS v ON v.agent_version_id = a.current_version_id
                     WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
-                    ORDER BY a.is_prebuilt DESC, a.name
+                    ORDER BY a.is_default_chat DESC, a.is_prebuilt DESC, a.name
                     """,
                     (team_id,),
                 )
@@ -512,9 +630,7 @@ class AgentVersionCrudRepository:
                 team_id = _require_team(cursor, account_id)
 
                 if agent_id is None:
-                    agent_id = next_short_code(
-                        cursor, table="agents", column="agent_id", prefix="AG"
-                    )
+                    agent_id = _next_agents_id(cursor)
                     cursor.execute(
                         """
                         INSERT INTO agents (agent_id, team_id, name, description, owner_account_id)
@@ -607,12 +723,27 @@ class AgentVersionCrudRepository:
     @staticmethod
     def set_status(*, agent_id: str, account_id: str, status: str) -> dict[str, Any]:
         """DRAFT/ACTIVE/DISABLED 사이 전이. `AgentCrudRepository.set_status`와 같은
-        얇은 쓰기 레이어 — 어떤 전이가 허용되는지는 API 뷰가 정한다."""
+        얇은 쓰기 레이어 — 어떤 전이가 허용되는지는 API 뷰가 정한다.
+
+        **`is_default_chat=true`인 행은 ACTIVE 밖으로 못 뺀다.** `AgentVersionDisableAPIView`
+        docstring은 "끄는 쪽은 항상 안전하다"고 전제하는데, 팀의 기본 챗
+        에이전트에는 그 전제가 깨진다 — 꺼지면 Chat 랜딩(`/chat`)이 대화
+        상대 없이 빈 화면이 된다(2026-08-15, Chat 재설계 — provision_default_chat_agent
+        참고). 삭제 API는 아직 없어 여기서만 막으면 된다.
+        """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
                 _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id)
+
+                if status != "ACTIVE":
+                    cursor.execute(
+                        "SELECT is_default_chat FROM agents WHERE agent_id = %s", (agent_id,)
+                    )
+                    if cursor.fetchone()["is_default_chat"]:
+                        raise RepositoryError("기본 챗 에이전트는 비활성화할 수 없습니다.")
+
                 cursor.execute(
                     "UPDATE agents SET status = %s, updated_at = now() WHERE agent_id = %s",
                     (status, agent_id),
