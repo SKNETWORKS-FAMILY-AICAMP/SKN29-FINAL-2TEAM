@@ -120,7 +120,7 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 `DB/schema.sql`은 **`db` 컨테이너를 처음 만들 때만** 실행된다. 이미 볼륨이 있으면 이후 `schema.sql` 변경은 반영되지 않는다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 수동 `ALTER`로 공유한다.
 
-아래를 실행하면 최신 스키마가 된다. 멱등이라 여러 번 실행해도 안전하다 — 예외는 하나, `exist_task.proj_source_id`의 `NOT NULL`뿐이고 그것도 이 테이블이 비어 있을 때만 걸린다(블록 바로 아래 첫 주석).
+아래를 실행하면 최신 스키마가 된다. 멱등이라 여러 번 실행해도 안전하다 — 예외는 둘이다. `exist_task.proj_source_id`의 `NOT NULL`(이 테이블이 비어 있을 때만 걸린다)과, `doc` 의 CHECK 둘(데이터가 조건을 어기면 걸린다). 둘 다 블록 바로 아래 주석이 다룬다.
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml exec db \
@@ -397,8 +397,47 @@ CREATE TABLE IF NOT EXISTS agent_version_subagents (
     PRIMARY KEY (parent_version_id, child_agent_id),
     UNIQUE (parent_version_id, alias)
 );
+-- 2026-08-14 · 실행 로그에 「그때 배포된 코드」를 남긴다
+ALTER TABLE agent_run ADD COLUMN IF NOT EXISTS runtime_profile_version VARCHAR(64);
+-- 2026-08-15 · 팀마다 기본 챗 에이전트 한 행
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_default_chat BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS agents_one_default_chat_per_team
+    ON agents (team_id) WHERE is_default_chat = true;
+-- 2026-08-18 · 「내 파일」(M④) — 개인 소유 문서. 개인 문서는 team_id 가 NULL 이다
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS owner_account_id VARCHAR(5);
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS search_enabled BOOLEAN NOT NULL DEFAULT true;
+CREATE INDEX IF NOT EXISTS ix_doc_owner
+    ON doc (owner_account_id) WHERE owner_account_id IS NOT NULL;
+ALTER TABLE doc DROP CONSTRAINT IF EXISTS doc_owner_xor_team;
+ALTER TABLE doc ADD CONSTRAINT doc_owner_xor_team CHECK (
+    (team_id IS NOT NULL AND owner_account_id IS NULL)
+ OR (team_id IS NULL AND owner_account_id IS NOT NULL)
+);
+-- 2026-08-18 · 개인 문서를 팀에 공유한다(소유는 그대로 개인)
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS shared_team_id VARCHAR(5);
+CREATE INDEX IF NOT EXISTS ix_doc_shared_team
+    ON doc (shared_team_id) WHERE shared_team_id IS NOT NULL;
+ALTER TABLE doc DROP CONSTRAINT IF EXISTS doc_share_is_personal_only;
+ALTER TABLE doc ADD CONSTRAINT doc_share_is_personal_only CHECK (
+    shared_team_id IS NULL OR owner_account_id IS NOT NULL
+);
+-- 2026-08-18 · 청크·임베딩 단계의 상태(요약 단계인 doc_meta.extract_status 와 다르다)
+ALTER TABLE doc ADD COLUMN IF NOT EXISTS index_status VARCHAR(20);
+-- 2026-08-18 · 즐겨찾기한 에이전트 (사람×에이전트)
+CREATE TABLE IF NOT EXISTS agent_favorites (
+    account_id  VARCHAR(5)  NOT NULL,
+    agent_id    VARCHAR(5)  NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (account_id, agent_id)
+);
+-- 2026-08-18 · 이 대화에서만 도구를 좁혀 쓴다
+ALTER TABLE chat_session ADD COLUMN IF NOT EXISTS tool_refs_override TEXT[];
 "
 ```
+
+> **CHECK 둘(`doc_owner_xor_team`·`doc_share_is_personal_only`)은 `DROP … IF EXISTS` 뒤에 다시 건다.** Postgres 의 `ADD CONSTRAINT` 에는 `IF NOT EXISTS` 가 없어서, 그냥 두면 두 번째 실행에서 「이미 있다」로 죽는다. 지우고 다시 거는 것이라 멱등은 유지되지만 **걸 때마다 `doc` 전체를 다시 검사한다.**
+>
+> ⚠ 여기서 실패한다면 컬럼이 아니라 **데이터가 조건을 어긴 것**이다 — `team_id` 와 `owner_account_id` 가 **둘 다 NULL** 인 `doc` 행이 있으면 `doc_owner_xor_team` 이 안 걸린다. `SELECT doc_id FROM doc WHERE team_id IS NULL AND owner_account_id IS NULL;` 로 찾아 팀을 채우거나 지운 뒤 다시 실행한다.
 
 > `exist_task.proj_source_id`가 `NOT NULL`인데 기본값이 없다. **이 테이블이 비어 있어야 통과한다.** 2026-08-03 시점에는 이슈 수집이 없어 모든 팀원의 DB가 0행이었다. **2026-08-05 현재는 Jira 수집이 붙어 행이 쌓인다** — 이 마이그레이션을 아직 안 돌렸고 이미 이슈를 읽었다면 아래 대안을 쓰거나 `exist_task`를 비우고 다시 읽어야 한다. 혹시 행이 있어서 실패하면 `DB/migrations/2026-08-03_exist_task_source.sql`의 주석에 채워 넣고 `SET NOT NULL`하는 대안이 있다.
 
@@ -449,6 +488,13 @@ CREATE TABLE IF NOT EXISTS agent_version_subagents (
 | Agent Platform 9개 테이블 추가 — `agent`·`agent_tool`·`mcp_server`·`mcp_tool`·`chat_session`·`chat_message`·`agent_run`·`tool_call`·`doc_meta` (2026-08-11) | 8/11 팀 회의에서 Chat 기반 Agent Platform으로 확정됐다(아키텍처 §3.1). 기존 테이블은 한 줄도 안 건드리는 순수 추가라, **안 돌려도 지금 화면은 멀쩡하고 새 Chat 화면만 안 뜬다.** PK가 두 종류인 것이 눈에 걸릴 텐데 의도한 것이다 — 이 스키마의 `VARCHAR(5)`는 접두사 2자 + 숫자 3자라 **테이블당 999행이 상한**이고(`backend/db/codes.py`), 대화 한 번에 수십 줄씩 쌓이는 `chat_message`·`agent_run`·`tool_call`은 데모 도중에도 그 선을 넘는다. 그래서 로그성 테이블은 `doc_block`·`chunk`·`vec_idx`와 같은 UUID를 쓰고, 사람이 만드는 설정(`agent`·`mcp_server`·`mcp_tool`)만 기존 코드 체계를 따른다. `agent_run.session_id`가 NULL 허용인 것도 의도다 — Harness의 `run_agent`는 대화에 종속되지 않는 순수 함수라 평가 스크립트나 에이전트 간 호출에는 `chat_session`이 아예 없다 — `DB/migrations/2026-08-11_agent_platform.sql` (`71dd585`) |
 | `proj.description` 추가 (2026-08-11) | 프로젝트를 만들 때 **이름과 설명으로 기준 문서 후보를 찾는다**. 이름만으로는 요약 임베딩 질의가 너무 짧아 아무 문서나 걸린다 — 「AI Platform」 같은 이름은 어떤 문서와도 비슷하고 어떤 문서와도 안 비슷하다. 찾을 때만 쓰고 버리지 않는 이유는 나중에 후보를 다시 뽑을 때 사람이 같은 문장을 또 적어야 하기 때문이다 — `POST /api/projects/primary-candidates/`, `DB/migrations/2026-08-11_proj_description.sql` (`e7369ba`) |
 | `agents`·`agent_versions`·`agent_version_tools`·`agent_version_subagents` 4테이블 신설 + `chat_session`·`agent_run`에 `agent_version_id` 추가 (2026-08-13) | Deep Agent형 에이전트 빌더 개편(`docs/작업기록/Deep_Agents/2026-08-13_01_*.md`·`02_*.md`)이 "발행된 버전은 불변, 세션·서브에이전트 관계는 특정 버전에 고정"을 MVP 전제로 확정하면서 비버전 `agent`/`agent_tool`로는 이 모델을 못 담게 됐다. **기존 `agent`/`agent_tool`은 한 글자도 안 건드리는 순수 추가다** — 지금 살아있는 Chat/Agent 실행(`services/harness/`)은 여전히 옛 테이블만 쓰고, 새 4테이블은 아직 미완성인 `services/agent_runtime/`(같은 날 착수) 전용이라 지금은 아무 코드도 안 읽고 안 쓴다. `agents.agent_id`가 `agent.agent_id`와 같은 `AG` 접두사를 쓰는 건 의도된 것이다(전환 완료 시 옛 테이블을 대체할 전제) — 전환 전까지는 로그·디버깅 시 테이블명을 꼭 같이 확인할 것. ⚠ 이 전환 자체는 2026-08-11 "Harness 직접 구현" 팀 확정을 뒤집는 결정이라 별도 팀/멘토 합의가 필요하다(`docs/TO-BE/작업목록.md` "2026-08-13 착수" 절 참고) — `DB/migrations/2026-08-13_agent_versioning.sql` |
+| `agent_run.runtime_profile_version` 추가 (2026-08-14) | 같은 `agent_version_id`라도 미들웨어·정책·프롬프트가 바뀌면 동작이 달라진다. 재현하려면 「어느 버전이 돌았나」뿐 아니라 **「그때 배포된 코드가 무엇이었나」**도 있어야 한다. nullable이라 기존 행에 영향이 없고, 배포 파이프라인이 `GIT_COMMIT_SHA`를 넘기기 전까지는 계속 NULL이다 — `DB/migrations/2026-08-14_agent_run_runtime_profile_version.sql` |
+| `agents.is_default_chat` 추가 + `agents_one_default_chat_per_team` 부분 유니크 (2026-08-15) | 아무것도 안 고르고 말을 걸었을 때 도는 **기본 챗 에이전트** 한 행을 가리킨다. `is_prebuilt`를 재사용하지 않는 이유는 그 플래그가 이미 「우리가 시드로 넣은 것」이라는 다른 뜻이기 때문이다 — 복제용 예시 에이전트도 같은 값을 쓴다. 팀당 하나만 true이고, 삭제·비활성 금지는 DB가 아니라 Repository가 막는다 — `DB/migrations/2026-08-15_agent_default_chat.sql` |
+| `doc.owner_account_id`·`search_enabled` 추가 + `doc_owner_xor_team` CHECK + `ix_doc_owner` (2026-08-18) | 「내 파일」(M④). **개인 문서는 `team_id`를 NULL로 둔다** — 팀 문서를 읽는 13곳이 전부 `WHERE d.team_id = %s`라, NULL이면 그 13곳이 한 줄도 안 바뀐 채 개인 문서를 걸러낸다. 틀리는 쪽이 안전한 방향이다(빠뜨리면 새는 게 아니라 안 보인다). `search_enabled`는 라이브러리의 toggle이고 개인 문서에서만 뜻이 있다 — `DB/migrations/2026-08-18_personal_documents.sql` |
+| `doc.shared_team_id` 추가 + `doc_share_is_personal_only` CHECK + `ix_doc_shared_team` (2026-08-18) | 개인 문서를 팀에 공유한다. `team_id`와 다르다 — 이 값이 있어도 **소유는 여전히 `owner_account_id`**다. 공유는 개인 문서에만 뜻이 있어 CHECK로 막는다 — `DB/migrations/2026-08-18_document_sharing.sql` |
+| `doc.index_status` 추가 (2026-08-18) | 청크 파싱·임베딩이 도는 중인지 실패했는지 **아무 데도 안 남기고 있었다** — 실패해도 화면은 「본문 읽는 중」인 채였다(PM 지적). `doc_meta.extract_status`와 다르다: 그쪽은 요약용 텍스트를 뽑는 단계고 이 칸은 그 뒤 단계다. 둘은 따로 실패한다 — `DB/migrations/2026-08-18_doc_index_status.sql` |
+| `agent_favorites` 테이블 신설 (2026-08-18) | 사람이 자주 쓰는 에이전트를 위로 올린다. FK 를 걸지 않는 것은 이 스키마의 관행이다 — 계정이나 에이전트를 지울 때 즐겨찾기 한 줄 때문에 삭제가 막히면 안 된다. 복합 PK 가 같은 사람이 같은 에이전트를 두 번 담는 것을 막는다 — `DB/migrations/2026-08-18_agent_favorites.sql` |
+| `chat_session.tool_refs_override` 추가 (2026-08-18) | **이 대화에서만** 도구를 좁힌다. 에이전트 버전에 박힌 도구 목록을 고치면 그 에이전트를 쓰는 **모든** 대화가 바뀌므로, 한 대화에서만 덜어 쓸 자리가 없었다. `NULL` 은 「덮어쓰지 않음」이고 빈 배열(도구 없음)과 다르다 — `DB/migrations/2026-08-18_chat_session_tool_override.sql` |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 
