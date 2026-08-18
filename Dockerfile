@@ -27,4 +27,15 @@ RUN mkdir -p /var/lib/halil/documents && chown -R appuser:appuser /var/lib/halil
 
 USER appuser
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-"]
+# ⚠ `--timeout` 을 빼면 gunicorn 기본값이 **30초**다. 채팅 한 턴은 문서 승격
+# (RunPod 파싱·임베딩)이 걸리면 몇 분이 걸려서, 스트리밍 중인 워커가 그대로
+# SIGKILL 된다 — 브라우저에는 `ERR_HTTP2_PROTOCOL_ERROR` 와 「요청을 보내지
+# 못했습니다」로만 보이고 원인이 어디에도 안 남는다(2026-08-18 QA 에서 확인).
+#
+# **`gthread` 인 이유** — sync 워커는 한 요청이 워커 하나를 통째로 잡는다.
+# 워커가 2개뿐이라 긴 문서 질문 둘이 겹치면 로그인·화면 로딩까지 전부 멈춘다.
+# 스트리밍은 대부분 응답 대기(I/O)라 스레드가 맞고, DB 연결은 요청마다 새로
+# 열리므로(`backend/db/connection.py` `database_connection()`) 스레드 안전하다.
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", \
+     "--workers", "2", "--worker-class", "gthread", "--threads", "8", \
+     "--timeout", "600", "--access-logfile", "-"]
