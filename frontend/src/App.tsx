@@ -89,7 +89,6 @@ function App() {
           <Route path="/settings" element={<Navigate to={PATHS.settingsTeam} replace />} />
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          <Route path={PATHS.settingsMcp} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsModel} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />

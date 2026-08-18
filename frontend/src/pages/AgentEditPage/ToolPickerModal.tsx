@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge, Button, Checkbox, Icon, Modal } from '../../components';
+import { Badge, Button, Checkbox, Modal } from '../../components';
 import type { BadgeTone } from '../../components';
 import type { ToolChoice } from '../../api/agents';
 import type { McpServer } from '../../api/mcp';
@@ -28,7 +28,6 @@ export interface ToolPickerModalProps {
   mcpServers: McpServer[];
   toolRefs: string[];
   onToggle: (ref: string) => void;
-  onGoToMcpSettings: () => void;
 }
 
 /**
@@ -44,7 +43,6 @@ export function ToolPickerModal({
   mcpServers,
   toolRefs,
   onToggle,
-  onGoToMcpSettings,
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
 
@@ -146,10 +144,12 @@ export function ToolPickerModal({
               </div>
             );
           })}
-          <button type="button" className={styles.settingsLink} onClick={onGoToMcpSettings}>
-            <Icon name="arrow-right" size={14} />
-            붙어 있는 서버 보기
-          </button>
+          {/* 설정으로 보내던 버튼은 걷었다(2026-08-18) — 그 탭이 없어졌고,
+              팀이 스스로 붙일 수도 없다. 대신 **어디로 말하면 되는지**를
+              남긴다. 문구는 Model 탭(8/13)과 같은 말이다. */}
+          <p className={pageStyles.help}>
+            필요한 서버가 있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+          </p>
         </div>
       )}
 

@@ -50,7 +50,6 @@ export const PATHS = {
   agentVersionEdit: '/agents/versions/:agentId/edit',
   agentVersionNew: '/agents/versions/new/edit',
   settingsConnectors: '/settings/connectors',
-  settingsMcp: '/settings/mcp',
   settingsModel: '/settings/model',
 } as const;
 
@@ -86,7 +85,6 @@ export const ROUTES: RouteEntry[] = [
   },
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
-  { path: PATHS.settingsMcp, label: '설정 · 커스텀 도구', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
@@ -132,6 +130,5 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
 export const SETTINGS_TABS = [
   { label: '팀', to: PATHS.settingsTeam },
   { label: 'Connector', to: PATHS.settingsConnectors },
-  { label: '커스텀 도구', to: PATHS.settingsMcp },
   { label: 'Model', to: PATHS.settingsModel },
 ];

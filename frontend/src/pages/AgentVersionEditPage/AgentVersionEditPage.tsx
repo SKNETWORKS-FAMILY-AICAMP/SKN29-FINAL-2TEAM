@@ -439,10 +439,6 @@ export default function AgentVersionEditPage() {
           mcpServers={mcpServers}
           toolRefs={toolRefs}
           onToggle={toggleTool}
-          onGoToMcpSettings={() => {
-            setPickerOpen(false);
-            navigate(PATHS.settingsMcp);
-          }}
         />
 
         <div className={styles.actions}>

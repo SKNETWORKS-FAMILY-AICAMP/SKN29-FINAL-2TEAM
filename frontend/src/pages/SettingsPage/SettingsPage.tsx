@@ -6,12 +6,15 @@ import { loadUserRole } from '../../utils/userRole';
 import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettingsPage';
 import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
-import { McpTab } from './tabs/McpTab';
 import { ModelTab } from './tabs/ModelTab';
 import styles from './SettingsPage.module.css';
 
 /**
- * Settings 허브 — 팀 / Connector / 커스텀 도구 / Model / 권한 탭 컨테이너.
+ * Settings 허브 — 팀 / Connector / Model 탭 컨테이너.
+ *
+ * **커스텀 도구 탭은 걷었다**(2026-08-18 PM). 팀이 붙일 수 없게 된 뒤로는
+ * 「볼 수만 있는 탭」이었고, 정작 그 서버의 도구를 고르는 자리는 에이전트
+ * 편집의 도구 선택이다 — 쓰는 자리에서 보이면 설정에 또 둘 이유가 없다.
  * 8_화면개편_명세 §2에서 역할 분기 래퍼였던 이 화면을 허브로 승격시켰다.
  *
  * 「팀」 탭은 기존 팀장·팀원 설정 화면을 그대로 편입한다. 역할은
@@ -27,8 +30,6 @@ export default function SettingsPage() {
     switch (location.pathname) {
       case PATHS.settingsConnectors:
         return <ConnectorTab />;
-      case PATHS.settingsMcp:
-        return <McpTab />;
       case PATHS.settingsModel:
         return <ModelTab />;
       default:

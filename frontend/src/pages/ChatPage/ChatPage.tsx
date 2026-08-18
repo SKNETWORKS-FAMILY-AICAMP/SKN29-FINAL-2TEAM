@@ -971,7 +971,7 @@ export default function ChatPage() {
                           detail={live.error.detail}
                           answered={Boolean(live.answer)}
                           errorCode={live.error.errorCode}
-                          onOpenSettings={() => navigate(PATHS.settingsMcp)}
+                          onOpenSettings={() => navigate(PATHS.settingsConnectors)}
                         />
                       )}
                     </>

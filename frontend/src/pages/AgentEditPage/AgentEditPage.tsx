@@ -347,10 +347,10 @@ export default function AgentEditPage() {
 
           <p className={styles.notice}>
             <Icon name="info" size={15} color="var(--color-info)" />
-            <span>쓸 수 있는 도구는 설정 &gt; 커스텀 도구에 붙어 있는 서버에 따라 달라집니다.</span>
-            <button type="button" className={styles.noticeLink} onClick={() => navigate(PATHS.settingsMcp)}>
-              설정으로 이동 →
-            </button>
+            <span>
+              쓸 수 있는 도구는 이 팀에 붙어 있는 커스텀 도구에 따라 달라집니다. 필요한 서버가
+              있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+            </span>
           </p>
         </section>
 
@@ -388,10 +388,6 @@ export default function AgentEditPage() {
           mcpServers={mcpServers}
           toolRefs={toolRefs}
           onToggle={toggleTool}
-          onGoToMcpSettings={() => {
-            setPickerOpen(false);
-            navigate(PATHS.settingsMcp);
-          }}
         />
 
         <div className={styles.actions}>
