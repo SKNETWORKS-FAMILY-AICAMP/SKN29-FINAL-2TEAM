@@ -87,6 +87,53 @@ class _FakeToolLoader:
         return _fake_tools()
 
 
+class _FakeCheckpointerProvider:
+    """`CheckpointerProvider`(services/agent_runtime/checkpoint/provider.py)를 대신한다.
+
+    실물은 `.get()`이 실제 `PostgresSaver`(DB 연결)를 반환하므로, 단위 테스트에서는
+    "Factory가 `.get()`을 호출해서 나온 값을 그대로 `create_root_graph(checkpointer=...)`에
+    넘기는가"만 확인하면 된다 — 실제 Postgres/langgraph 객체는 안 쓴다.
+    """
+
+    def __init__(self, checkpointer: str = "FAKE_CHECKPOINTER"):
+        self._checkpointer = checkpointer
+        self.get_calls = 0
+
+    def get(self):
+        self.get_calls += 1
+        return self._checkpointer
+
+
+class _FakeMemoryProvider:
+    """`MemoryProvider`(services/agent_runtime/memory/provider.py)를 대신한다.
+
+    2026-08-18, Phase 3(§4-8) — `backend()`가 이제 `account_id`도 받으므로, Factory가
+    `context.account_id`를 실제로 그대로 넘기는지 `backend_calls`로 확인할 수 있게 한다.
+    """
+
+    def __init__(self):
+        self.paths_calls = 0
+        self.backend_calls: list[dict] = []
+        self.store_calls = 0
+        self.system_prompt_calls = 0
+
+    def paths(self):
+        self.paths_calls += 1
+        return ["/memories/AGENTS.md"]
+
+    def backend(self, *, team_id: str, agent_id: str, account_id: str):
+        self.backend_calls.append({"team_id": team_id, "agent_id": agent_id, "account_id": account_id})
+        return "FAKE_BACKEND"
+
+    def store(self):
+        self.store_calls += 1
+        return "FAKE_STORE"
+
+    def system_prompt(self):
+        self.system_prompt_calls += 1
+        return "FAKE_MEMORY_SYSTEM_PROMPT"
+
+
 def _definition(**overrides) -> AgentDefinition:
     fields = {
         "agent_id": "AG001",
@@ -532,3 +579,218 @@ class BuildChildPathTests(SimpleTestCase):
 
         mock_create_child.assert_called_once()
         self.assertEqual(result, "CHILD_GRAPH")
+
+
+class BuildCheckpointerWiringTests(SimpleTestCase):
+    """checkpointer_provider(2026-08-18, §5 Phase 1) 배선 — memory_provider와
+    같은 "선택적 협력자 → 조건부 kwargs" 패턴을 따르는지 확인한다."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_checkpointer_provider_omits_checkpointer_kwarg_entirely(self, mock_create_root):
+        """기본값(None)이면 예전과 동일하게 checkpointer 없이 돈다 — 기존 호출자
+        (테스트 등)를 깨지 않는다."""
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertNotIn("checkpointer", mock_create_root.call_args.kwargs)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_checkpointer_provider_result_is_passed_to_create_root_graph(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeCheckpointerProvider()
+        factory, _ = _factory(checkpointer_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(mock_create_root.call_args.kwargs["checkpointer"], "FAKE_CHECKPOINTER")
+        self.assertEqual(provider.get_calls, 1)
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_build_never_receives_a_checkpointer(self, mock_create_child):
+        """Child에는 checkpointer 파라미터 자체가 없다(`create_child_graph`) —
+        provider가 설정돼 있어도 `.get()`이 호출조차 안 되는지 확인한다."""
+        mock_create_child.return_value = "CHILD_GRAPH"
+        provider = _FakeCheckpointerProvider()
+        factory, _ = _factory(checkpointer_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        mock_create_child.assert_called_once()
+        self.assertEqual(provider.get_calls, 0)
+
+
+class BuildMemoryWiringTests(SimpleTestCase):
+    """memory_provider 배선 — 2026-08-18, Phase 3(§4-8): `backend()`에 `account_id`가
+    실제로 전달되는지, `memory_system_prompt`가 `create_root_graph`까지 그대로
+    이어지는지 확인한다."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_memory_provider_omits_memory_kwargs_entirely(self, mock_create_root):
+        """기본값(None)이면 예전과 동일하게 memory/backend/store 없이 돈다."""
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        for key in ("memory", "backend", "store", "memory_system_prompt"):
+            self.assertNotIn(key, mock_create_root.call_args.kwargs)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_context_account_id_is_passed_to_backend(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            provider.backend_calls,
+            [{"team_id": "TM001", "agent_id": "AG001", "account_id": "AC001"}],
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_memory_system_prompt_is_passed_to_create_root_graph(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["memory_system_prompt"], "FAKE_MEMORY_SYSTEM_PROMPT"
+        )
+        self.assertEqual(mock_create_root.call_args.kwargs["backend"], "FAKE_BACKEND")
+        self.assertEqual(mock_create_root.call_args.kwargs["store"], "FAKE_STORE")
+        self.assertEqual(provider.system_prompt_calls, 1)
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_build_never_touches_memory_provider(self, mock_create_child):
+        """Child에는 memory 관련 파라미터 자체가 없다(`create_child_graph`) —
+        provider가 설정돼 있어도 어떤 메서드도 호출되지 않는지 확인한다."""
+        mock_create_child.return_value = "CHILD_GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        mock_create_child.assert_called_once()
+        self.assertEqual(provider.backend_calls, [])
+        self.assertEqual(provider.system_prompt_calls, 0)
+
+
+class BuildFilesystemExclusionWiringTests(SimpleTestCase):
+    """`fs_excluded_tools`(2026-08-18, §5 Phase 6) 배선 — memory/checkpointer와
+    달리 선택적 협력자가 아니라 `runtime_policy`에서 항상 읽으므로, Root/Child
+    둘 다 매번 넘기는지 확인한다."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_always_receives_runtime_policy_excluded_builtin_tools(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["fs_excluded_tools"],
+            RuntimeCapabilityPolicy().excluded_builtin_tools,
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_always_receives_runtime_policy_excluded_builtin_tools(self, mock_create_child):
+        mock_create_child.return_value = "CHILD_GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        self.assertEqual(
+            mock_create_child.call_args.kwargs["fs_excluded_tools"],
+            RuntimeCapabilityPolicy().excluded_builtin_tools,
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_custom_runtime_policy_value_is_passed_through(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        custom_policy = RuntimeCapabilityPolicy(excluded_builtin_tools=frozenset({"delete", "execute"}))
+        factory, _ = _factory(
+            runtime_policy=custom_policy,
+            middleware_factory=MiddlewareFactory(runtime_policy=custom_policy),
+        )
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["fs_excluded_tools"], frozenset({"delete", "execute"})
+        )
+
+
+class BuildInterruptOnWiringTests(SimpleTestCase):
+    """`interrupt_on`(2026-08-18, §5 Phase 7) 배선 — `checkpointer_provider`가
+    있을 때만 만든다(`HumanInTheLoopMiddleware.interrupt()`는 Checkpointer 없이
+    재개가 안 되므로). `_fake_tools()`는 `document_search`(side_effect=False)와
+    `task_register`(side_effect=True) 둘을 반환한다 — 후자만 남아야 한다."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_checkpointer_provider_interrupt_on_stays_none(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertIsNone(mock_create_root.call_args.kwargs["interrupt_on"])
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_checkpointer_provider_derives_interrupt_on_from_side_effect_tools_only(
+        self, mock_create_root
+    ):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(checkpointer_provider=_FakeCheckpointerProvider())
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["interrupt_on"], {"task_register": True}
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_also_receives_interrupt_on_when_checkpointer_provider_set(
+        self, mock_create_child
+    ):
+        mock_create_child.return_value = "CHILD_GRAPH"
+        factory, _ = _factory(checkpointer_provider=_FakeCheckpointerProvider())
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        self.assertEqual(
+            mock_create_child.call_args.kwargs["interrupt_on"], {"task_register": True}
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_side_effect_tools_after_role_filter_leaves_interrupt_on_none(
+        self, mock_create_root
+    ):
+        """member는 write_tool_allowed_roles(기본 leader만)에 안 들어 있어서
+        `task_register`가 노출 시점에 이미 걸러진다 — 그 뒤에 남는 도구가 전부
+        side_effect=False면 interrupt_on도 None이어야 한다."""
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(checkpointer_provider=_FakeCheckpointerProvider())
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertIsNone(mock_create_root.call_args.kwargs["interrupt_on"])

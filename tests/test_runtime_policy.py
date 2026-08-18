@@ -56,8 +56,9 @@ class RuntimeCapabilityPolicyDefaultsTests(SimpleTestCase):
         self.policy = RuntimeCapabilityPolicy()
 
     def test_todo_disabled_by_default(self):
-        """계약 §2-8 — Todo는 MVP에서 비활성화. 값은 있지만 어디서도 읽지 않는
-        확장 위치일 뿐이다(2026-08-14, 배선 시도 후 계약 충돌로 되돌림)."""
+        """2026-08-18, §5 Phase 4부터 `middleware/factory.py.build()`가 이 값을
+        실제로 읽는다(`tests/test_middleware_factory.py::BuildTodoWiringTests`) —
+        여기서는 "명시적으로 켜지 않으면 꺼져 있다"는 기본값 계약만 확인한다."""
         self.assertFalse(self.policy.enable_todo)
 
     def test_uses_default_excluded_builtin_tools(self):
@@ -111,6 +112,17 @@ class ResolveModelCallLimitTests(SimpleTestCase):
 
         self.assertEqual(policy.resolve_model_call_limit(requested=500), 20)
 
+    def test_account_role_is_optional_and_does_not_change_result_yet(self):
+        """2026-08-18, Phase 2: `account_role`은 구조만 열어둔 파라미터다 — 아직
+        역할별로 실제 값을 분기하지 않으므로 어떤 역할을 넘겨도(안 넘겨도) 결과가
+        같아야 한다. 역할별 실제 차등 값이 확정되면 이 테스트가 갈라져야 한다."""
+
+        policy = RuntimeCapabilityPolicy(max_model_calls_ceiling=20)
+
+        self.assertEqual(policy.resolve_model_call_limit(requested=6), 6)
+        self.assertEqual(policy.resolve_model_call_limit(requested=6, account_role="leader"), 6)
+        self.assertEqual(policy.resolve_model_call_limit(requested=6, account_role="member"), 6)
+
 
 class ResolveToolCallLimitTests(SimpleTestCase):
     def test_defaults_to_ceiling_when_no_request(self):
@@ -124,6 +136,15 @@ class ResolveToolCallLimitTests(SimpleTestCase):
         policy = RuntimeCapabilityPolicy(max_tool_calls_ceiling=40)
 
         self.assertEqual(policy.resolve_tool_call_limit(requested=999), 40)
+
+    def test_account_role_is_optional_and_does_not_change_result_yet(self):
+        """`resolve_model_call_limit`과 같은 이유 — 구조만 확장, 아직 값 분기 없음."""
+
+        policy = RuntimeCapabilityPolicy(max_tool_calls_ceiling=40)
+
+        self.assertEqual(policy.resolve_tool_call_limit(), 40)
+        self.assertEqual(policy.resolve_tool_call_limit(account_role="leader"), 40)
+        self.assertEqual(policy.resolve_tool_call_limit(account_role="member"), 40)
 
 
 class MiddlewareIntegrationTests(SimpleTestCase):

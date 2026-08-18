@@ -16,7 +16,7 @@ deepagents==0.7.5가 pin돼 있으므로, 이 pin이 실제로 설치된 환경�
 "우리가 이걸 어떻게 호출하는가"만 본다(빠르고 API 키가 필요 없다).
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, NonCallableMock, patch
 
 from django.test import SimpleTestCase
 
@@ -173,6 +173,188 @@ class CreateRootGraphTests(SimpleTestCase):
         self.assertEqual(kwargs["middleware"], fake_middleware)
 
 
+class CreateRootGraphMemorySystemPromptTests(SimpleTestCase):
+    """`memory_system_prompt`(2026-08-18, Phase 3, §4-8) 배선.
+
+    `create_deep_agent()`는 MemoryMiddleware의 system_prompt를 바꿀 공개 파라미터가
+    없어서(실제 소스로 확인, `services/agent_runtime/compat/deepagents_v075.py`의
+    `create_root_graph` docstring 참고) 커스텀 `MemoryMiddleware`를 `middleware=`
+    목록에 끼워 넣는 방식으로 우회한다 — 그 배선이 실제로 일어나는지 확인한다.
+    """
+
+    _FAKE_PROMPT = "안내문 {agent_memory} 나머지"
+
+    def test_no_memory_system_prompt_does_not_add_memory_middleware(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", backend=Mock(name="backend"))
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_memory_system_prompt_without_backend_is_ignored(self):
+        """backend가 없으면(=메모리 자체를 안 쓰면) memory_system_prompt만 있어도 무시한다."""
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", memory_system_prompt=self._FAKE_PROMPT)
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_memory_system_prompt_with_backend_appends_custom_memory_middleware(self):
+        from deepagents import MemoryMiddleware
+
+        fake_backend = Mock(name="backend")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                memory=["/memories/AGENTS.md"],
+                backend=fake_backend,
+                memory_system_prompt=self._FAKE_PROMPT,
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIsInstance(appended, MemoryMiddleware)
+        self.assertEqual(appended.system_prompt, self._FAKE_PROMPT)
+        self.assertEqual(appended.sources, ["/memories/AGENTS.md"])
+
+    def test_custom_memory_middleware_shares_the_same_backend_instance(self):
+        """§4-4 — MemoryMiddleware와 FilesystemMiddleware는 같은 backend 인스턴스를
+        공유해야 한다. `kwargs["backend"]`(FilesystemMiddleware 쪽으로 감)와 커스텀
+        MemoryMiddleware가 든 backend가 identity로 같은 객체인지 확인한다."""
+
+        fake_backend = Mock(name="backend")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                backend=fake_backend,
+                memory_system_prompt=self._FAKE_PROMPT,
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIs(appended._backend, fake_backend)
+        self.assertIs(kwargs["backend"], fake_backend)
+
+    def test_appended_after_existing_custom_middleware(self):
+        fake_existing = Mock(name="model-call-limit")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                middleware=[fake_existing],
+                backend=Mock(name="backend"),
+                memory_system_prompt=self._FAKE_PROMPT,
+            )
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"][0], fake_existing)
+        self.assertEqual(len(kwargs["middleware"]), 2)
+
+
+class CreateRootGraphFilesystemExclusionTests(SimpleTestCase):
+    """`fs_excluded_tools`(2026-08-18, Phase 6) 배선.
+
+    `create_deep_agent()`는 `FilesystemMiddleware`의 `tools=` allowlist를 바꿀
+    공개 파라미터가 없어서(실제 소스로 확인, `create_root_graph` docstring
+    참고) `memory_system_prompt`와 같은 이름-치환 방식으로 우회한다.
+    """
+
+    def test_no_fs_excluded_tools_does_not_add_filesystem_middleware(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_excluded_tools_appends_filesystem_middleware_without_them(self):
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                fs_excluded_tools=frozenset({"delete"}),
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIsInstance(appended, FilesystemMiddleware)
+        tool_names = {t.name for t in appended.tools}
+        self.assertNotIn("delete", tool_names)
+        self.assertIn("read_file", tool_names)
+        self.assertIn("ls", tool_names)
+
+    def test_filesystem_middleware_shares_the_same_backend_instance(self):
+        """§4-4 — 여러 middleware가 backend 인스턴스를 공유해야 하는 제약이
+        `FilesystemMiddleware` 치환에도 그대로 적용되는지 확인한다.
+
+        `FilesystemMiddleware.__init__`은 `callable(backend)`이면서
+        `BackendProtocol` 인스턴스가 아닌 값을 "backend factory(0.7에서
+        제거됨)"로 보고 `TypeError`를 던진다(실제 소스로 확인) — 그래서
+        `Mock()`(callable) 대신 호출 불가능한 `NonCallableMock`을 쓴다.
+        """
+
+        fake_backend = NonCallableMock(name="backend")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                backend=fake_backend,
+                fs_excluded_tools=frozenset({"delete"}),
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIs(appended.backend, fake_backend)
+
+    def test_no_backend_falls_back_to_filesystem_middleware_default(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                fs_excluded_tools=frozenset({"delete"}),
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        from deepagents.backends import StateBackend
+
+        self.assertIsInstance(appended.backend, StateBackend)
+
+
+class CreateRootGraphInterruptOnTests(SimpleTestCase):
+    """`interrupt_on`(2026-08-18, Phase 7) 배선.
+
+    `create_deep_agent()`가 직접 받는 공개 파라미터라(실제 시그니처 확인,
+    `create_root_graph` docstring 참고) 그대로 통과시키기만 하면 된다.
+    """
+
+    def test_no_interrupt_on_is_not_passed_through(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("interrupt_on", kwargs)
+
+    def test_empty_interrupt_on_is_not_passed_through(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", interrupt_on={})
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("interrupt_on", kwargs)
+
+    def test_interrupt_on_passed_through_unchanged(self):
+        wanted = {"task_register": True, "task_update": True}
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", interrupt_on=wanted)
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["interrupt_on"], wanted)
+
+
 class CreateChildGraphTests(SimpleTestCase):
     def test_always_forces_subagents_to_empty_list(self):
         with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
@@ -198,6 +380,66 @@ class CreateChildGraphTests(SimpleTestCase):
                 system_prompt="p",
                 subagents=[{"name": "should-not-be-accepted"}],
             )
+
+
+class CreateChildGraphFilesystemAndInterruptTests(SimpleTestCase):
+    """Child에도 Root와 같은 근거로 `fs_excluded_tools`/`interrupt_on`을 받는다."""
+
+    def test_no_fs_excluded_tools_does_not_add_filesystem_middleware(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_child_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_excluded_tools_appends_filesystem_middleware_without_them(self):
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_child_graph(
+                model=Mock(),
+                system_prompt="p",
+                fs_excluded_tools=frozenset({"delete"}),
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIsInstance(appended, FilesystemMiddleware)
+        tool_names = {t.name for t in appended.tools}
+        self.assertNotIn("delete", tool_names)
+        self.assertIn("read_file", tool_names)
+
+    def test_child_filesystem_middleware_uses_default_backend_not_a_shared_one(self):
+        """Child는 backend를 따로 안 받는다(장기 메모리는 Root 전용) — deepagents
+        기본값(StateBackend)으로 떨어지는지 확인한다."""
+
+        from deepagents.backends import StateBackend
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_child_graph(
+                model=Mock(),
+                system_prompt="p",
+                fs_excluded_tools=frozenset({"delete"}),
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIsInstance(appended.backend, StateBackend)
+
+    def test_no_interrupt_on_is_not_passed_through(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_child_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("interrupt_on", kwargs)
+
+    def test_interrupt_on_passed_through_unchanged(self):
+        wanted = {"task_register": True}
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_child_graph(model=Mock(), system_prompt="p", interrupt_on=wanted)
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["interrupt_on"], wanted)
 
 
 class DelegationToolNameTests(SimpleTestCase):

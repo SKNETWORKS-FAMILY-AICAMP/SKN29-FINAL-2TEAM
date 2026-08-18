@@ -38,8 +38,9 @@ class RuntimeCapabilityPolicy:
     """역할별 미들웨어 조립·RBAC 필터링에 쓰이는 정책 값 묶음."""
 
     excluded_builtin_tools: frozenset[str] = DEFAULT_EXCLUDED_BUILTIN_TOOLS
-    # 2026-08-14: 계약 §2-8("Memory, TODO, Checkpointer는 MVP에서 비활성화한다")과
-    # 충돌해 배선을 되돌렸다 — 값은 남기되(확장 위치) 이 값을 읽는 코드는 없다.
+    # 2026-08-14에는 계약 §2-8과 충돌해 배선을 되돌렸었다(값만 남기고 읽는 코드
+    # 없음). 2026-08-18, §5 Phase 4에서 `middleware/factory.py.build()`가 이제
+    # 실제로 읽는다 — 기본값 False라 명시적으로 켜지 않으면 이전과 동일하게 돈다.
     enable_todo: bool = False
     write_tool_allowed_roles: frozenset[AccountRole] = field(
         default_factory=lambda: DEFAULT_WRITE_TOOL_ALLOWED_ROLES
@@ -60,12 +61,31 @@ class RuntimeCapabilityPolicy:
             max_tool_calls=min(self.general_purpose_max_tool_calls, self.max_tool_calls_ceiling),
         )
 
-    def resolve_model_call_limit(self, *, requested: int) -> int:
-        """Root/Child의 `max_iterations`(사용자 설정값)에 방어선을 적용한다."""
+    def resolve_model_call_limit(
+        self, *, requested: int, account_role: AccountRole | None = None
+    ) -> int:
+        """Root/Child의 `max_iterations`(사용자 설정값)에 방어선을 적용한다.
+
+        `account_role`(2026-08-18, Phase 2): 역할별로 다른 상한을 걸 수 있도록
+        **구조만** 열어둔 파라미터다 — 아직 역할별 실제 값이 정해진 바 없어서(그런
+        값을 요구·승인받은 적이 없음) 지금은 값을 만들어내지 않고 어떤 역할이
+        와도 동일하게 `max_model_calls_ceiling` 방어선만 적용한다. 실제 차등
+        값이 확정되면 이 메서드 안에서만 분기를 추가하면 되고, 호출부
+        (`middleware/factory.py`)는 이미 `account_role`을 넘기고 있으므로 안 바뀐다.
+        "요금제별" 분기는 넣지 않았다 — 이 코드베이스 어디에도 pricing/tier
+        개념이 없어(`DB/schema.sql` 등 전수 확인) 근거 없이 파라미터조차 만들지
+        않았다.
+        """
         return min(requested, self.max_model_calls_ceiling)
 
-    def resolve_tool_call_limit(self, *, requested: int | None = None) -> int:
-        """Root/Child의 tool-call 상한. 사용자 설정 필드가 없으므로 방어선 값 자체를 쓴다."""
+    def resolve_tool_call_limit(
+        self, *, requested: int | None = None, account_role: AccountRole | None = None
+    ) -> int:
+        """Root/Child의 tool-call 상한. 사용자 설정 필드가 없으므로 방어선 값 자체를 쓴다.
+
+        `account_role`은 `resolve_model_call_limit`과 같은 이유로 구조만 열어둔
+        파라미터 — 위 docstring 참고.
+        """
         if requested is None:
             return self.max_tool_calls_ceiling
         return min(requested, self.max_tool_calls_ceiling)

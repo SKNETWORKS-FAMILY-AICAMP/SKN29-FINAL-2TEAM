@@ -69,12 +69,13 @@ class _FakeStreamAdapter:
         self._error = error
         self.stream_calls = []
 
-    def stream(self, *, runtime, user_input, conversation_messages=()):
+    def stream(self, *, runtime, user_input, conversation_messages=(), thread_id=None):
         self.stream_calls.append(
             {
                 "runtime": runtime,
                 "user_input": user_input,
                 "conversation_messages": conversation_messages,
+                "thread_id": thread_id,
             }
         )
         yield from self._raw_events
@@ -88,8 +89,10 @@ def _final_answer_raw_event(text: str):
     return ((), "updates", {"model": {"messages": [AIMessage(content=text, tool_calls=[])]}})
 
 
-def _context() -> RuntimeContext:
-    return RuntimeContext(account_id="AC001", team_id="TM001", role="leader", run_id="RUN1")
+def _context(**overrides) -> RuntimeContext:
+    fields = {"account_id": "AC001", "team_id": "TM001", "role": "leader", "run_id": "RUN1"}
+    fields.update(overrides)
+    return RuntimeContext(**fields)
 
 
 class ValidateExecutionTargetTests(SimpleTestCase):
@@ -275,6 +278,46 @@ class ConversationMessagesThreadingTests(SimpleTestCase):
         )
 
         self.assertEqual(stream_adapter.stream_calls[0]["conversation_messages"], ())
+
+
+class ThreadIdThreadingTests(SimpleTestCase):
+    """context.session_id가 stream_adapter까지 thread_id로 그대로 전달되는지
+    (2026-08-18, §5 Phase 1: Checkpointer) — Checkpointer가 이 값으로 상태를
+    저장/재개하므로 여기서 빠지면 Phase 1 전체가 동작하지 않는다."""
+
+    def test_context_session_id_reaches_the_stream_adapter_as_thread_id(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=_context(session_id="SESSION001"),
+            )
+        )
+
+        self.assertEqual(stream_adapter.stream_calls[0]["thread_id"], "SESSION001")
+
+    def test_missing_session_id_passes_none_through(self):
+        """session_id 없는 context(예: 세션이 없는 스크립트 실행)는 thread_id로
+        None을 그대로 넘긴다 — stream_adapter가 예전과 동일하게 동작하는
+        분기(콜드 스타트, conversation_messages 그대로 붙임)를 타게 된다."""
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertIsNone(stream_adapter.stream_calls[0]["thread_id"])
 
 
 class RunBuildFailureTests(SimpleTestCase):

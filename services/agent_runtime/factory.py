@@ -20,6 +20,7 @@ from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
 
 if TYPE_CHECKING:
+    from services.agent_runtime.checkpoint.provider import CheckpointerProvider
     from services.agent_runtime.memory.provider import MemoryProvider
     from services.agent_runtime.middleware.factory import MiddlewareFactory
     from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
@@ -105,6 +106,7 @@ class AgentRuntimeFactory:
         runtime_policy: "RuntimeCapabilityPolicy",
         prompt_assembler: "RuntimePromptAssembler",
         memory_provider: "MemoryProvider | None" = None,
+        checkpointer_provider: "CheckpointerProvider | None" = None,
     ) -> None:
         self.dependency_graph = dependency_graph
         self.model_config_resolver = model_config_resolver
@@ -117,6 +119,11 @@ class AgentRuntimeFactory:
         # 깨지 않으려고(2026-08-15 추가). None이면 build()가 memory/backend/store
         # 없이 예전과 동일하게 돈다.
         self.memory_provider = memory_provider
+        # memory_provider와 같은 이유로 기본값 None 허용(2026-08-18 추가). None이면
+        # build()가 checkpointer 없이 예전과 동일하게 돈다 — 이 경우
+        # `stream_adapter.py`도 예전처럼 매 턴 conversation_messages를 그대로
+        # 붙이는 경로로 돈다(§5 Phase 1, `stream_adapter.py` docstring 참고).
+        self.checkpointer_provider = checkpointer_provider
 
     def build(
         self,
@@ -152,6 +159,22 @@ class AgentRuntimeFactory:
             _to_langchain_tool(t, context=context, runtime_policy=self.runtime_policy) for t in tools
         ]
 
+        # 2026-08-18, §5 Phase 7 — `interrupt_on`은 `checkpointer_provider`가
+        # 있을 때만 만든다. `HumanInTheLoopMiddleware`의 `interrupt()`는
+        # Checkpointer 없이는 재개가 안 되므로(계획 문서 §5 Phase 7: "Phase
+        # 1(Checkpointer) 완료 전에는 착수 불가"), Checkpointer가 없는 배포·
+        # 테스트에서까지 승인 대기를 걸면 재개할 방법이 없는 상태로 막히기만
+        # 한다. `tools`(역할 필터까지 끝난 이번 요청의 실제 노출 목록)에서
+        # `side_effect=True`인 것만 뽑는다 — Phase 0에서 확인한 값(`task_register`
+        # /`task_update`/`jira_create_issues`, MCP 도구 전부)을 하드코딩하지
+        # 않고 매 요청 시점의 실제 목록을 그대로 쓴다 — 팀마다 달라지는 MCP
+        # 도구나 나중에 추가될 side_effect 도구도 자동으로 포함된다.
+        interrupt_on: dict[str, bool] | None = None
+        if self.checkpointer_provider is not None:
+            side_effect_tools = {model_safe_tool_name(t.ref): True for t in tools if t.side_effect}
+            if side_effect_tools:
+                interrupt_on = side_effect_tools
+
         custom_middleware = self.middleware_factory.build(definition=definition, context=context)
 
         # 공통 Runtime Scaffold + Agent별 system_prompt(DB의 agent_versions.
@@ -167,6 +190,10 @@ class AgentRuntimeFactory:
                 ),
                 tools=langchain_tools,
                 middleware=custom_middleware,
+                # 2026-08-18, §5 Phase 6/7 — Root와 같은 근거로 Child에도
+                # 건다(두 근거 모두 create_child_graph() docstring 참고).
+                fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
+                interrupt_on=interrupt_on,
             )
 
         compiled_children = [
@@ -186,16 +213,26 @@ class AgentRuntimeFactory:
             ),
         )
 
-        memory_kwargs: dict[str, Any] = {}
+        # Root에만 붙는 선택적 협력자들 — Child(위 allow_subagents=False 분기)는
+        # 둘 다 안 받는다. memory_provider가 None이면 memory/backend/store 없이,
+        # checkpointer_provider가 None이면 checkpointer 없이 예전과 동일하게 돈다.
+        root_kwargs: dict[str, Any] = {}
         if self.memory_provider is not None:
-            # Root에만 붙인다 — Child(위 allow_subagents=False 분기)는 안 받는다.
-            memory_kwargs = {
-                "memory": self.memory_provider.paths(),
-                "backend": self.memory_provider.backend(
-                    team_id=context.team_id, agent_id=definition.agent_id
+            root_kwargs.update(
+                memory=self.memory_provider.paths(),
+                backend=self.memory_provider.backend(
+                    team_id=context.team_id,
+                    agent_id=definition.agent_id,
+                    account_id=context.account_id,
                 ),
-                "store": self.memory_provider.store(),
-            }
+                store=self.memory_provider.store(),
+                # 2026-08-18, Phase 3(§4-8) — MemoryMiddleware.system_prompt에
+                # 라우팅 안내를 이어붙인다. create_root_graph()가 이 값으로
+                # 커스텀 MemoryMiddleware를 만들어 자동 생성분을 치환한다.
+                memory_system_prompt=self.memory_provider.system_prompt(),
+            )
+        if self.checkpointer_provider is not None:
+            root_kwargs["checkpointer"] = self.checkpointer_provider.get()
 
         return create_root_graph(
             model=model,
@@ -205,7 +242,13 @@ class AgentRuntimeFactory:
             tools=langchain_tools,
             subagents=[gp_spec, *compiled_children],
             middleware=custom_middleware,
-            **memory_kwargs,
+            # 2026-08-18, §5 Phase 6 — memory_provider 유무와 무관하게 항상
+            # 건다(Filesystem Tool 노출 제한은 메모리 기능과 별개).
+            fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
+            # 2026-08-18, §5 Phase 7 — checkpointer_provider가 없으면 위에서
+            # None으로 남는다.
+            interrupt_on=interrupt_on,
+            **root_kwargs,
         )
 
 

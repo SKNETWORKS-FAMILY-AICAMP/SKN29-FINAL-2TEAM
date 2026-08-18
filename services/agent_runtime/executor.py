@@ -126,6 +126,12 @@ class AgentExecutor:
                 runtime=runtime,
                 user_input=user_input,
                 conversation_messages=conversation_messages,
+                # `context.session_id`를 LangGraph의 thread_id로 그대로 쓴다
+                # (2026-08-18, §5 Phase 1: Checkpointer 도입). None이면(session_id
+                # 없는 호출 — 예: 세션이 없는 스크립트 실행) stream_adapter가
+                # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
+                # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
+                thread_id=context.session_id,
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
