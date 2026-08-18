@@ -19,6 +19,35 @@ SUPPORTED_VERSION = "0.7.5"
 # 서브 에이전트 위임 Tool 이름.
 DELEGATION_TOOL_NAME = "task"
 
+# `FilesystemMiddleware`가 만들 수 있는 가상 파일시스템 Tool 전체(2026-08-18,
+# §5 Phase 6 — `deepagents/middleware/filesystem.py`의 공개 타입
+# `FsToolName = Literal["ls", "read_file", "write_file", "edit_file", "delete",
+# "glob", "grep", "execute"]`로 실측 확인). deepagents 내부의 `_ALL_FS_TOOL_NAMES`는
+# private(밑줄 접두)라 여기서 새로 import하지 않고, 같은 소스로 확인한 값만
+# 이 모듈에 둔다(compat 모듈의 책임 — deepagents 버전별 차이는 여기서만 안다).
+_ALL_FS_TOOL_NAMES: tuple[str, ...] = (
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "delete",
+    "glob",
+    "grep",
+    "execute",
+)
+
+
+def _filesystem_tools_allowlist(excluded: frozenset[str]) -> list[str]:
+    """`excluded`를 뺀 나머지 FS Tool 이름 목록을 만든다.
+
+    `FilesystemMiddleware(tools=[...])`에 그대로 넘긴다 — `read_file`은
+    `FilesystemMiddleware` 자체가 필수로 요구해서(그 생성자가 없으면
+    `ValueError`) `excluded`에 넣을 일이 없다는 전제다(지금 유일한 값인
+    `runtime_policy.DEFAULT_EXCLUDED_BUILTIN_TOOLS = frozenset({"delete"})`가
+    이 전제를 지킨다).
+    """
+    return [name for name in _ALL_FS_TOOL_NAMES if name not in excluded]
+
 
 def assert_supported_version() -> None:
     """설치된 deepagents 버전이 검증된 버전과 다르면 부팅을 막는다."""
@@ -90,29 +119,95 @@ def create_root_graph(
     memory: Sequence[str] = (),
     backend: Any = None,
     store: Any = None,
+    checkpointer: Any = None,
+    memory_system_prompt: str | None = None,
+    fs_excluded_tools: frozenset[str] = frozenset(),
+    interrupt_on: dict[str, bool] | None = None,
 ) -> Any:
     """Root용 Deep Agent 그래프를 조립한다.
 
     `memory`/`backend`/`store`는 장기 메모리용(2026-08-15,
-    `services/agent_runtime/memory/` 참고) — Child에는 안 넘긴다
-    (`create_child_graph`에는 이 세 파라미터가 없다). 셋 다 안 넘기면
-    (기본값) deepagents 기본 동작 그대로다(하위 호환) — `kwargs`에서 아예
-    뺀다, `None`/빈 값을 그대로 넘기면 deepagents가 "명시적으로 지정한 것"과
-    "안 지정한 것"을 구분 못 할 수 있어서.
+    `services/agent_runtime/memory/` 참고), `checkpointer`는 실행 중단·재개 및
+    턴 간 상태 유지용(2026-08-18, `services/agent_runtime/checkpoint/` 참고) —
+    Child에는 안 넘긴다(`create_child_graph`에는 이 네 파라미터가 없다.
+    checkpointer는 LangGraph가 상위 그래프에 붙인 것을 서브그래프 실행에도 그대로
+    적용하므로 Child가 따로 받을 이유도 없다). 넷 다 안 넘기면(기본값) deepagents
+    기본 동작 그대로다(하위 호환) — `kwargs`에서 아예 뺀다, `None`/빈 값을 그대로
+    넘기면 deepagents가 "명시적으로 지정한 것"과 "안 지정한 것"을 구분 못 할 수
+    있어서.
+
+    `memory_system_prompt`(2026-08-18, Phase 3, §4-8): `MemoryMiddleware`의
+    system_prompt를 바꿀 공개 파라미터가 `create_deep_agent()`에 없다(`memory=`
+    경로 목록만 받는다 — deepagents==0.7.5 실제 소스, `deepagents/graph.py`의
+    `create_deep_agent` 시그니처로 확인). 대신 deepagents는 `middleware=`로 받은
+    커스텀 middleware의 `.name`이 자동 생성된 것과 같으면(둘 다 클래스명
+    `"MemoryMiddleware"`) **그 자리에서 치환**한다(`_apply_custom_middleware`,
+    같은 소스 파일). 그래서 여기서 같은 `backend` 인스턴스를 공유하는 커스텀
+    `MemoryMiddleware`를 만들어 `middleware` 목록 끝에 끼워 넣는 방식으로 처리한다
+    — `FilesystemMiddleware`/`SubAgentMiddleware`와 backend 인스턴스를 공유해야
+    한다는 기존 제약(§4-4)을 그대로 지킨다. `backend`가 없으면(메모리 자체를 안
+    쓰면) 무시한다.
+
+    `fs_excluded_tools`(2026-08-18, Phase 6): `create_deep_agent()`는
+    `FilesystemMiddleware`의 `tools=` allowlist를 바꿀 공개 파라미터가 없다
+    (`deepagents/graph.py`가 내부에서 `FilesystemMiddleware(backend=backend,
+    custom_tool_descriptions=..., _permissions=...)`로 고정 생성 — 실측 확인).
+    `memory_system_prompt`와 같은 이유로, 같은 `.name`("FilesystemMiddleware")을
+    갖는 커스텀 인스턴스를 `middleware` 목록에 끼워 넣어 자동 생성분을
+    치환한다 — **같은 `backend` 인스턴스**를 넘겨서 Memory/Filesystem 간 backend
+    공유 제약(§4-4)을 그대로 지킨다. 빈 집합이면(기본값) 손대지 않는다(하위
+    호환) — `runtime_policy.excluded_builtin_tools`(지금 `{"delete"}`)가
+    `bootstrap.py`의 `_ToolExclusionMiddleware`로 이미 한 번 걸러내므로, 이건
+    같은 값을 쓰는 **이중 방어**다(§5 Phase 6 계획 — 한쪽이 빠지거나 프로필
+    설정이 틀려도 다른 쪽이 남는다). `tool_token_limit_before_evict`는 여기서
+    건드리지 않는다 — 계측 없이 하향하면 근거 없는 임의 조정이라 계측이
+    선행조건(같은 계획 문서).
+
+    `interrupt_on`(2026-08-18, Phase 7): `create_deep_agent()`가 공개
+    파라미터로 직접 받는다(`interrupt_on: dict[str, bool | InterruptOnConfig]
+    | None` — `deepagents/graph.py` 시그니처 실측). 넘기면 내부에서
+    `HumanInTheLoopMiddleware(interrupt_on=...)`를 **자동으로** 이어붙이므로
+    (같은 소스, `_merge_fs_interrupt_on`/`general_purpose_spec["interrupt_on"]`
+    처리까지 general-purpose에도 자동 전파됨을 확인) Memory/Filesystem처럼
+    이름 치환 트릭이 필요 없다 — 그대로 통과만 시킨다. `None`이면(기본값)
+    deepagents 기본 동작 그대로다.
     """
     kwargs: dict[str, Any] = dict(
         model=model,
         system_prompt=system_prompt,
         tools=list(tools),
         subagents=list(subagents),
-        middleware=list(middleware),
     )
+    resolved_middleware = list(middleware)
     if memory:
         kwargs["memory"] = list(memory)
     if backend is not None:
         kwargs["backend"] = backend
     if store is not None:
         kwargs["store"] = store
+    if checkpointer is not None:
+        kwargs["checkpointer"] = checkpointer
+    if interrupt_on:
+        kwargs["interrupt_on"] = interrupt_on
+    if memory_system_prompt is not None and backend is not None:
+        from deepagents import MemoryMiddleware
+
+        resolved_middleware.append(
+            MemoryMiddleware(
+                backend=backend,
+                sources=list(memory),
+                add_cache_control=True,
+                system_prompt=memory_system_prompt,
+            )
+        )
+    if fs_excluded_tools:
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        fs_kwargs: dict[str, Any] = {"tools": _filesystem_tools_allowlist(fs_excluded_tools)}
+        if backend is not None:
+            fs_kwargs["backend"] = backend
+        resolved_middleware.append(FilesystemMiddleware(**fs_kwargs))
+    kwargs["middleware"] = resolved_middleware
     return create_deep_agent(**kwargs)
 
 
@@ -122,12 +217,31 @@ def create_child_graph(
     system_prompt: str,
     tools: Sequence[Any] = (),
     middleware: Sequence[Any] = (),
+    fs_excluded_tools: frozenset[str] = frozenset(),
+    interrupt_on: dict[str, bool] | None = None,
 ) -> Any:
-    """재위임 기능이 없는 Child 그래프를 조립한다."""
-    return create_deep_agent(
+    """재위임 기능이 없는 Child 그래프를 조립한다.
+
+    `fs_excluded_tools`/`interrupt_on`은 `create_root_graph`와 같은 근거로
+    받는다(위 docstring 참고) — Child는 `backend`를 따로 안 받으므로(장기
+    메모리는 Root 전용, 파일 docstring 상단 참고) `FilesystemMiddleware`
+    치환 시에도 backend를 안 넘긴다 — deepagents 기본값(`StateBackend()`,
+    스레드 한정)과 동일하게 동작해 공유할 인스턴스 자체가 없다.
+    """
+    resolved_middleware = list(middleware)
+    if fs_excluded_tools:
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        resolved_middleware.append(
+            FilesystemMiddleware(tools=_filesystem_tools_allowlist(fs_excluded_tools))
+        )
+    kwargs: dict[str, Any] = dict(
         model=model,
         system_prompt=system_prompt,
         tools=list(tools),
         subagents=[],
-        middleware=list(middleware),
+        middleware=resolved_middleware,
     )
+    if interrupt_on:
+        kwargs["interrupt_on"] = interrupt_on
+    return create_deep_agent(**kwargs)
