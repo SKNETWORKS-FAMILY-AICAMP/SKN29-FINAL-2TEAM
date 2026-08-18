@@ -199,15 +199,6 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
                           </span>
                         </span>
                         {candidate.summary && <span className={styles.summary}>{candidate.summary}</span>}
-                        {/* **고를 수는 있다**(2026-08-18 PM 결정). 색인은 업무를
-                            뽑을 때 그 자리에서 돈다 — 색인을 시작할 화면이 없어서
-                            「쓸 수 없습니다」는 사람에게 아무 방법도 주지 않았고,
-                            새로 연결한 팀은 기준 문서를 영영 못 골랐다. */}
-                        {!candidate.search_ready && (
-                          <span className={styles.notReady}>
-                            본문 색인 전 — 업무를 뽑을 때 먼저 읽습니다(몇 분 걸립니다)
-                          </span>
-                        )}
                       </button>
                     </li>
                   ))}

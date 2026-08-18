@@ -49,16 +49,6 @@
   color: var(--color-muted);
 }
 
-.warn {
-  width: 100%;
-  padding: 8px var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--color-warning-text, var(--color-body));
-}
-
 .error {
   width: 100%;
   padding: 8px var(--space-3);
@@ -142,11 +132,6 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.notReady {
-  font-size: 12px;
-  color: var(--color-warning-text, var(--color-muted));
 }
 
 /* 같은 대상(기준 문서)에 대한 행동이라 한 줄에 모은다. */
