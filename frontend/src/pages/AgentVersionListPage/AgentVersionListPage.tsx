@@ -11,6 +11,7 @@ import type { AgentVersionSummary } from '../../api/agentVersions';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import styles from './AgentVersionListPage.module.css';
 
 /**
@@ -55,7 +56,7 @@ export default function AgentVersionListPage() {
     try {
       const updated = await activateAgentVersion(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」을 활성화했습니다.`, 'success');
+      showToast(`「${updated.name}」${josa(updated.name, '을/를')} 활성화했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.', 'error');
     } finally {
@@ -69,7 +70,7 @@ export default function AgentVersionListPage() {
     try {
       const updated = await disableAgentVersion(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」을 사용 중지했습니다.`, 'success');
+      showToast(`「${updated.name}」${josa(updated.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.', 'error');
     } finally {

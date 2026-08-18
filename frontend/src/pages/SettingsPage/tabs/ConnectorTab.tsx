@@ -16,6 +16,7 @@ import { DriveFolderModal } from '../DriveFolderModal/DriveFolderModal';
 import { PeopleDbConnectModal } from '../PeopleDbConnectModal';
 import { ConnectorPicker } from './ConnectorPicker';
 import type { PickerOption } from './ConnectorPicker';
+import { josa } from '../../../utils/josa';
 import styles from './tabs.module.css';
 
 type OAuthConnectorId = 'google-drive' | 'jira';
@@ -136,7 +137,7 @@ export function ConnectorTab() {
 
     const name = connector === 'jira' ? 'Jira' : 'Google Drive';
     if (query.get('status') === 'ok') {
-      showToast(`${name}를 연결했습니다.`, 'success');
+      showToast(`${name}${josa(name, '을/를')} 연결했습니다.`, 'success');
       void refresh();
     } else if (query.get('status') === 'error') {
       showToast(`${name} 연결에 실패했습니다. 잠시 후 다시 시도해주세요.`, 'error');

@@ -18,6 +18,7 @@ import type { McpServer } from '../../api/mcp';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
 import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
 import styles from './AgentVersionEditPage.module.css';
@@ -225,7 +226,7 @@ export default function AgentVersionEditPage() {
     try {
       const activated = await activateAgentVersion(token, savedId);
       setStatus(activated.status);
-      showToast(`「${activated.name}」을 활성화했습니다.`, 'success');
+      showToast(`「${activated.name}」${josa(activated.name, '을/를')} 활성화했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.');
     } finally {
@@ -240,7 +241,7 @@ export default function AgentVersionEditPage() {
     try {
       const disabled = await disableAgentVersion(token, savedId);
       setStatus(disabled.status);
-      showToast(`「${disabled.name}」을 사용 중지했습니다.`, 'success');
+      showToast(`「${disabled.name}」${josa(disabled.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.');
     } finally {

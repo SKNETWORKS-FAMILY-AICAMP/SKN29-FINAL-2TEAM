@@ -17,6 +17,7 @@ import type { McpServer } from '../../api/mcp';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
 import { TestRunModal } from './TestRunModal';
 import { ToolPickerModal } from './ToolPickerModal';
@@ -201,7 +202,7 @@ export default function AgentEditPage() {
       const draft = await saveDraft();
       const activated = await activateAgent(token, draft.agent_id);
       setAgentStatus(activated.status);
-      showToast(`「${activated.name}」을 활성화했습니다. Chat에서 바로 쓸 수 있습니다.`, 'success');
+      showToast(`「${activated.name}」${josa(activated.name, '을/를')} 활성화했습니다. Chat에서 바로 쓸 수 있습니다.`, 'success');
       navigate(PATHS.chat);
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.');
@@ -217,7 +218,7 @@ export default function AgentEditPage() {
     try {
       const disabled = await disableAgent(token, savedId);
       setAgentStatus(disabled.status);
-      showToast(`「${disabled.name}」을 비활성화했습니다.`, 'success');
+      showToast(`「${disabled.name}」${josa(disabled.name, '을/를')} 비활성화했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '비활성화하지 못했습니다.');
     } finally {
@@ -233,7 +234,7 @@ export default function AgentEditPage() {
     setError(null);
     try {
       const saved = await saveDraft();
-      showToast(`「${saved.name}」을 저장했습니다.`, 'success');
+      showToast(`「${saved.name}」${josa(saved.name, '을/를')} 저장했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '저장하지 못했습니다.');
     } finally {
