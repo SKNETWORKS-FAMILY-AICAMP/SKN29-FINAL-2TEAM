@@ -380,7 +380,7 @@ export default function AgentVersionListPage() {
       <Modal
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
-        title="이 에이전트를 지울까요?"
+        title="이 에이전트를 삭제할까요?"
         width={420}
         footer={
           <>
@@ -419,7 +419,7 @@ export default function AgentVersionListPage() {
       >
         <p className={styles.deleteBody}>
           <strong>{blockedDelete?.agent.name}</strong>
-          <span>다음 에이전트가 이 에이전트를 서브 에이전트로 쓰고 있어 지울 수 없습니다. 먼저 그 연결을 빼거나 그 에이전트를 지워 주세요.</span>
+          <span>다음 에이전트가 이 에이전트를 서브 에이전트로 쓰고 있어 삭제할 수 없습니다. 먼저 그 연결을 빼거나 그 에이전트를 삭제해 주세요.</span>
         </p>
         <ul className={styles.dependentList}>
           {blockedDelete?.parentNames.map((name) => <li key={name}>{name}</li>)}

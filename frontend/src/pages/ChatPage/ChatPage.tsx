@@ -1129,7 +1129,7 @@ export default function ChatPage() {
       <Modal
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
-        title="이 대화를 지울까요?"
+        title="이 대화를 삭제할까요?"
         width={420}
         footer={
           <>

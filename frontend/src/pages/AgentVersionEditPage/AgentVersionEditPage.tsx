@@ -400,7 +400,7 @@ export default function AgentVersionEditPage() {
           <div className={styles.cardHead}>
             <h2>서브 에이전트</h2>
             <p>
-              이 에이전트가 위임할 다른 에이전트를 고릅니다. 고른 자식은 **지금 발행된 버전**에 고정됩니다.
+              이 에이전트가 위임할 다른 에이전트를 고릅니다. 고른 자식은 <strong>지금 발행된 버전</strong>에 고정됩니다.
               자식이 나중에 새 버전을 내도 이 부모는 계속 지금 고른 버전을 씁니다.
             </p>
           </div>
