@@ -9,8 +9,10 @@
 - **원본이 우리뿐이다.** Drive 에서 받아 온 것이 아니라 되받을 곳이 없다.
   그래서 지우면 되살릴 수 없고, `deleted` 표시만 남기는 커넥터 방식과 다르게
   행·색인·원문을 함께 지운다.
-- **승격 경로를 안 탄다.** `promote_to_searchable` 은 커넥터로 다시 받아 파싱하는
-  길이다. 여기는 받아 올 곳이 없어 **올릴 때 한 번** 파싱한다.
+- **승격 경로를 그대로 탄다.** 8/15 결정대로 파싱·임베딩은 **검색이 그 문서를
+  필요로 할 때** 돈다. 워커는 Drive 가 아니라 **우리 저장소**에서 받아 가므로
+  (`RunPodDocumentDownloadAPIView` 가 `storage_key` 를 읽어 준다) 올린 파일도
+  커넥터 문서와 똑같이 승격된다.
 - **뜻 없는 칸이 있다.** `src_file_id`·`access_revoked` 같은 것은 영영 NULL 이다.
   없는 것이 정상이다.
 """
@@ -39,7 +41,8 @@ logger = logging.getLogger(__name__)
 #: 보수적으로 잡는다(아바타 2MB 와는 다른 값이라 여기서 따로 정한다).
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
-ACCEPTED = "PDF · Word(docx) · PowerPoint(pptx) · Excel(xlsx) · 텍스트(txt·md·csv)"
+#: 파서(RunPod 워커)가 읽는 것과 같아야 한다. 더 받으면 색인에서 반드시 실패한다.
+ACCEPTED = "PDF · Word(docx)"
 
 
 def _error_response(exc: Exception) -> Response:
@@ -201,26 +204,27 @@ class PersonalFileDetailAPIView(AuthenticatedAPIView):
 
 
 def _start_processing(*, account_id: str, doc_id: str) -> None:
-    """요약과 파싱을 뒤에서 돌린다.
+    """요약과 요약 임베딩을 뒤에서 만든다. **여기까지만 한다.**
 
-    **응답을 붙잡아 두지 않는다.** 요약은 몇 초, 청크 파싱·임베딩은 RunPod 라
-    몇 분이다 — 올린 사람이 그동안 화면 앞에 잡혀 있을 이유가 없다. 진행은
-    목록의 상태가 말한다(요약 있음 / 검색 준비됨).
+    **청크 파싱·임베딩은 올릴 때 안 한다**(2026-08-15 결정 · 8/18 PM 확인).
+    쓰지도 않을 문서까지 미리 파싱하지 않는다 — 검색이 요약으로 후보를 좁힌 뒤
+    그 문서에만 돈다(`services/harness/registry`). 커넥터 문서와 같은 길이다.
 
-    폴더 저장이 문서 수집을 뒤에서 돌리는 것과 같은 방식이다
+    한때 올릴 때 파싱까지 했는데, 「올린 파일은 되받을 곳이 없어 승격을 못
+    탄다」고 잘못 봤기 때문이다. 워커는 Drive 가 아니라 **우리 저장소**에서
+    받아 간다 — 올린 파일도 똑같이 승격된다.
+
+    **응답을 붙잡아 두지 않는다.** 요약도 몇 초는 걸린다. 진행은 목록의 상태가
+    말한다. 폴더 저장이 문서 수집을 뒤에서 돌리는 것과 같은 방식이다
     (`apps/projects/api_views.py` 의 `_start_document_intake`).
     """
 
     def run() -> None:
-        from backend.db.document_pipeline import PersonalDocumentRepository
-
         try:
-            from services.document_intake import promote_to_searchable
             from services.document_meta import as_row as doc_meta_row
             from services.document_meta import build as build_doc_meta
             from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
 
-            PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="RUNNING")
             document = PipelineDocumentRepository.get_for_processing(
                 doc_id=doc_id, account_id=account_id
             )
@@ -231,22 +235,7 @@ def _start_processing(*, account_id: str, doc_id: str) -> None:
                 file_name=document["file_name"],
             )
             DocMetaRepository.upsert(doc_meta_row(meta))
-            # **여기서 바로 파싱까지 간다.** 커넥터 문서는 요약만 해 두고 검색이
-            # 필요로 할 때 승격시키는데, 내 파일은 되받을 곳이 없어 그 경로를 탈
-            # 수 없다. 올린 사람이 켜 둔 이상 쓸 문서라고 보는 편이 맞다.
-            outcome = promote_to_searchable(account_id=account_id, doc_id=doc_id)
-            # **결과를 반드시 남긴다.** 안 남기면 실패한 문서가 화면에서 영원히
-            # 「읽는 중」이다 — 느린 것과 죽은 것을 사람이 구분할 방법이 없어진다.
-            if outcome.get("ok"):
-                PersonalDocumentRepository.set_index_status(doc_id=doc_id, status=None)
-            else:
-                logger.warning("내 파일 색인 실패: %s (%s)", doc_id, outcome.get("detail"))
-                PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="FAILED")
         except Exception:  # noqa: BLE001 - 뒤에서 도는 일이라 무엇이든 로그로 남긴다
-            logger.exception("내 파일 처리 실패: %s", doc_id)
-            try:
-                PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="FAILED")
-            except Exception:  # noqa: BLE001 - 여기서 또 죽으면 남길 자리가 없다
-                logger.exception("색인 상태를 남기지 못했다: %s", doc_id)
+            logger.exception("내 파일 요약 실패: %s", doc_id)
 
     threading.Thread(target=run, daemon=True).start()

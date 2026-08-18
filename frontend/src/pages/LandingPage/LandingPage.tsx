@@ -296,7 +296,7 @@ export default function LandingPage() {
             <h2 className={styles.h2}>쓰던 도구 그대로, 필요한 도구는 더</h2>
             <p className={styles.lead}>
               에이전트가 쓰는 도구는 전부 커넥터입니다. 지금은 Google Drive·Jira가 준비돼 있고, 회사에 이미
-              있는 시스템은 말씀해 주시면 붙여 드립니다. 붙고 나면 똑같은 도구가 됩니다.
+              있는 시스템은 말씀해 주시면 연결해 드립니다. 연결하고 나면 똑같은 도구가 됩니다.
             </p>
             <div className={styles.pillRow}>
               {CONNECTORS.map((name) => (

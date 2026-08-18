@@ -171,7 +171,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
             ) : (
               <>
                 <p className={styles.lead}>
-                  가장 가까운 문서입니다. <strong>맞는지 확인해 주세요.</strong> 어느 문서로 업무를 뽑는지가
+                  가장 가까운 문서입니다. <strong>맞는지 확인해 주세요.</strong> 어느 문서에서 업무를 추출하는지가
                   결과 전체의 전제가 됩니다.
                 </p>
                 <ul className={styles.candidates}>
@@ -218,7 +218,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
               <strong>{chosen?.file_name}</strong>을(를) 기준 문서로 씁니다.
             </p>
             <p className={styles.hint}>
-              <Icon name="info" size={14} color="var(--color-muted)" />이 문서에서 업무를 뽑아 정리합니다. 몇
+              <Icon name="info" size={14} color="var(--color-muted)" />이 문서에서 업무를 추출해 정리합니다. 몇
               분 걸리고, 결과는 승인 전까지 Jira에 올라가지 않습니다.
             </p>
           </div>
@@ -257,7 +257,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
                 만들기만 하기
               </Button>
               <Button size="sm" onClick={() => void finish({ extract: true })} disabled={busy}>
-                {busy ? '만드는 중…' : '만들고 업무 뽑기'}
+                {busy ? '만드는 중…' : '만들고 업무 추출'}
               </Button>
             </>
           )}

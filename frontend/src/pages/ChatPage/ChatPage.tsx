@@ -1091,7 +1091,7 @@ export default function ChatPage() {
       >
         <p className={styles.deleteBody}>
           <strong>{pendingDelete?.title ?? '제목 없는 대화'}</strong>
-          <span>주고받은 내용이 함께 지워집니다. 되돌릴 수 없습니다.</span>
+          <span>주고받은 내용이 함께 삭제됩니다. 되돌릴 수 없습니다.</span>
         </p>
       </Modal>
     </AppShell>

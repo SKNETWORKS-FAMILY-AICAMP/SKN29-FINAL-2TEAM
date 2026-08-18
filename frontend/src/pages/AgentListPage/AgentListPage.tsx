@@ -59,7 +59,7 @@ export default function AgentListPage() {
     try {
       await deleteAgent(token, agent.agent_id);
       setAgents((prev) => prev.filter((item) => item.agent_id !== agent.agent_id));
-      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 내렸습니다.`, 'success');
+      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 비활성화했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
     }

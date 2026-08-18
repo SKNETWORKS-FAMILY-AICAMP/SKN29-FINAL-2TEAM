@@ -193,9 +193,19 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
     from services.document_pipeline.runpod_client import job_status, submit_document_job
     from services.document_pipeline.signing import signed_download_url
 
+    from backend.db.document_pipeline import PersonalDocumentRepository
+
     document = PipelineDocumentRepository.get_for_processing(doc_id=doc_id, account_id=account_id)
     if not document["storage_key"]:
         return {"doc_id": doc_id, "ok": False, "detail": "원문을 아직 받지 않았습니다."}
+
+    # **결과를 남긴다.** 안 남기면 실패한 문서와 아직 안 돌린 문서가 화면에서
+    # 같아 보인다 — 사람은 얼마나 더 기다려야 하는지 알 수 없다(2026-08-18).
+    PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="RUNNING")
+
+    def _done(ok: bool, **rest):
+        PersonalDocumentRepository.set_index_status(doc_id=doc_id, status=None if ok else "FAILED")
+        return {"doc_id": doc_id, "ok": ok, **rest}
 
     job = submit_document_job(
         {
@@ -216,13 +226,13 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
         if state == "COMPLETED":
             output = result.get("output")
             if not isinstance(output, dict):
-                return {"doc_id": doc_id, "ok": False, "detail": "처리 결과가 비어 있습니다."}
+                return _done(False, detail="처리 결과가 비어 있습니다.")
             # 완료 시점에 바로 적재한다. RunPod 는 완료 결과를 제한된 시간만
             # 보관해서 나중에 다시 받아 오면 되겠지 하고 미룰 수 없다.
             PipelineDocumentRepository.ingest(expected_doc=document, result=output)
-            return {"doc_id": doc_id, "ok": True}
+            return _done(True)
         if state in {"FAILED", "CANCELLED", "TIMED_OUT"}:
-            return {"doc_id": doc_id, "ok": False, "detail": f"문서 처리 실패({state})"}
+            return _done(False, detail=f"문서 처리 실패({state})")
 
     # **아직 도는 중이다.** 실패로 적지 않는다 — 다음 질문에서는 끝나 있을 수 있다.
     return {"doc_id": doc_id, "ok": False, "detail": "아직 준비 중입니다(처리가 계속되고 있습니다)."}

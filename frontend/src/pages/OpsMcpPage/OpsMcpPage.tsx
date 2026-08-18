@@ -165,7 +165,7 @@ export default function OpsMcpPage() {
     try {
       await removeOpsMcpServer(session.token, row.mcp_server_id, row.team_id);
       // 이 서버의 도구를 쓰던 에이전트에서도 함께 빠진다(서버가 정리한다).
-      setNote(row.name + ' 연결을 지웠습니다. 에이전트에 붙어 있던 도구도 함께 빠집니다.');
+      setNote(row.name + ' 연결을 지웠습니다. 이 서버의 도구를 쓰던 에이전트에서도 제거됩니다.');
       await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '지우지 못했습니다.');

@@ -28,16 +28,16 @@ import styles from './tabs.module.css';
  */
 
 /**
- * 처리 상태 칩. **넷을 뭉개지 않는다** — 사람이 할 행동이 각각 다르다.
+ * 처리 상태 칩.
  *
- * **설명은 안 붙인다**(2026-08-18 PM). 배지가 이미 상태를 말하므로 그것을 풀어
- * 쓰는 줄은 자리만 차지한다. 남는 것은 **다음에 무엇을 할지**뿐이고, 기다리는
- * 것 말고 할 일이 없는 상태에는 그것도 없다.
+ * **요약이 있으면 검색에 쓰인다.** 대화는 먼저 요약으로 문서를 좁히고, 문장
+ * 근거가 필요해지면 그때 본문을 색인한다(2026-08-15 결정). 그래서 올린 직후
+ * 기다려야 하는 것은 **요약까지**고, 본문 색인은 사람이 지켜볼 일이 아니다.
+ *
+ * 설명은 안 붙인다. 배지가 이미 상태를 말하므로 그것을 풀어 쓰는 줄은 자리만
+ * 차지한다. 남는 것은 다음에 무엇을 할지뿐이다.
  */
 function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint: string } {
-  if (file.search_ready) {
-    return { tone: 'success', label: '검색 준비됨', hint: '' };
-  }
   if (file.extract_status === 'UNSUPPORTED') {
     return {
       tone: 'warning',
@@ -52,21 +52,14 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
       hint: '텍스트가 들어 있는 파일로 다시 올려 주세요.',
     };
   }
-  // **색인 실패를 「읽는 중」으로 두지 않는다.** 안 그러면 죽은 문서가 영원히
-  // 도는 것처럼 보이고, 사람은 얼마나 더 기다려야 하는지 알 수 없다.
-  if (file.index_status === 'FAILED') {
-    return {
-      tone: 'warning',
-      label: '색인 실패',
-      hint: '삭제 후 다시 올려 주세요.',
-    };
+  if (file.summary) {
+    return { tone: 'success', label: '검색 준비됨', hint: '' };
   }
-  // 요약은 됐는데 청크가 아직 없는 상태와, 막 올라온 상태를 같이 본다 —
-  // 사람이 할 일이 「기다린다」로 같다.
-  return { tone: 'neutral', label: file.summary ? '본문 읽는 중' : '읽는 중', hint: '' };
+  return { tone: 'neutral', label: '읽는 중', hint: '' };
 }
 
-const ACCEPT = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.csv';
+//: 파서가 읽는 것과 같아야 한다. 더 받으면 색인에서 반드시 실패한다.
+const ACCEPT = '.pdf,.docx';
 
 /**
  * 안쪽 탭 둘.
@@ -91,14 +84,8 @@ export function MyFilesTab() {
   const [confirming, setConfirming] = useState<PersonalFile | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   /** 처리 중인 파일이 있는 동안만 목록을 다시 받는다. */
-  /** 아직 결판이 안 난 파일이 있는 동안만 목록을 다시 받는다. */
-  const pending = files.some(
-    (file) =>
-      !file.search_ready &&
-      file.extract_status !== 'UNSUPPORTED' &&
-      file.extract_status !== 'FAILED' &&
-      file.index_status !== 'FAILED',
-  );
+  /** 요약이 아직 없는 파일이 있는 동안만 목록을 다시 받는다. */
+  const pending = files.some((file) => !file.summary && file.extract_status === null);
 
   async function load() {
     if (!token) return;
@@ -220,7 +207,7 @@ export function MyFilesTab() {
                 에이전트마다 따로 고르지 않아도 됩니다.
               </p>
               <p>
-                끄면 검색에서만 빠집니다. 읽어 둔 내용은 남아 있어 다시 켤 때 기다리지 않습니다.
+                끄면 검색 범위에서만 제외됩니다. 읽어 둔 내용은 남아 있어 다시 켤 때 기다리지 않습니다.
               </p>
               <p>
                 <strong>팀에 공유</strong>를 켜면 팀원이 볼 수 있습니다. 파일은 계속 내 것입니다.
@@ -252,7 +239,7 @@ export function MyFilesTab() {
             {busy ? `${busy} 올리는 중…` : '여기로 끌어다 놓거나 눌러서 고르세요'}
           </span>
           <span className={styles.dropHint}>
-            PDF · Word · PowerPoint · Excel · 텍스트 · 한 개에 20MB까지 · 여러 개 한 번에
+            PDF · Word(docx) · 한 개에 20MB까지 · 여러 개 한 번에
           </span>
           <input
             ref={inputRef}
@@ -381,17 +368,17 @@ export function MyFilesTab() {
               disabled={busy !== null}
               onClick={() => confirming && void remove(confirming)}
             >
-              {busy ? '지우는 중…' : '삭제'}
+              {busy ? '삭제하는 중…' : '삭제'}
             </Button>
           </>
         )}
       >
         <p className={styles.confirmText}>
-          <strong>{confirming?.file_name}</strong> 을(를) 지웁니다.{' '}
+          <strong>{confirming?.file_name}</strong> 을(를) 삭제합니다.{' '}
           <strong>되돌릴 수 없습니다.</strong>
         </p>
         <p className={styles.confirmText}>
-          읽어 둔 내용과 원본 파일이 함께 지워집니다. 팀에 공유한 파일이면 팀원 목록에서도 빠집니다.
+          읽어 둔 내용과 원본 파일이 함께 삭제됩니다. 팀에 공유한 파일이면 팀원 목록에서도 제거됩니다.
         </p>
       </Modal>
     </div>

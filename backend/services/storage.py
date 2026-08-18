@@ -72,24 +72,22 @@ def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -
 #: 사용자가 올릴 수 있는 형식. **확장자에서 형식을 정한다** — 브라우저가 보내는
 #: Content-Type 은 믿을 수 없고(아바타 업로드와 같은 판단), 문서는 바이트만으로
 #: 형식을 못 가린다(아래 참조).
+#:
+#: **파서가 실제로 읽는 것만 받는다**(2026-08-18 확인). 전에는 pptx·xlsx·txt·md·csv
+#: 까지 받았는데, RunPod 워커의 `SUPPORTED_MIME_TYPES` 는 PDF 와 DOCX 둘뿐이다 —
+#: 나머지는 올라가서 요약까지 되고 **색인 단계에서 반드시 실패했다.** 못 쓸 것을
+#: 받아 두고 몇 분 뒤에 실패를 알리는 것은 받지 않는 것만 못하다.
 _UPLOAD_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ".txt": "text/plain",
-    ".md": "text/markdown",
-    ".csv": "text/csv",
 }
 
-#: 앞부분 시그니처가 **있는** 형식만. 나머지는 대조할 것이 없다.
+#: 앞부분 시그니처. 받는 둘 다 시그니처가 있어서 바이트로 한 번 더 본다.
 _UPLOAD_SIGNATURES = {
     "application/pdf": b"%PDF-",
-    # docx·pptx·xlsx 는 셋 다 zip 이다. 「zip 인가」까지만 확인할 수 있고
-    # 셋을 **서로 구분하지는 못한다** — 확장자를 믿는 수밖에 없다.
+    # docx 는 zip 이다. 「zip 인가」까지만 확인할 수 있고 pptx·xlsx 와는 서로
+    # 구분하지 못한다 — 그 둘은 받지 않으므로 지금은 문제가 되지 않는다.
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": b"PK",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": b"PK",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": b"PK",
 }
 
 

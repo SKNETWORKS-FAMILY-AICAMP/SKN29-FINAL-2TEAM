@@ -30,21 +30,25 @@ class UploadTypeTests(SimpleTestCase):
 
         self.assertIsNone(storage.upload_mime_type("a.pdf", b"MZ\x90\x00 exe"))
 
-    def test_office_formats_only_get_a_zip_check(self):
-        """docx·pptx·xlsx 는 셋 다 zip 이라 **서로 구분되지 않는다.**
-        여기서 재는 것은 「zip 인가」까지다."""
+    def test_docx_only_gets_a_zip_check(self):
+        """docx 는 zip 이라 「zip 인가」까지만 확인할 수 있다."""
 
         docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        self.assertEqual(storage.upload_mime_type("a.docx", b"PK\x03\x04rest"), docx)
+        self.assertEqual(storage.upload_mime_type("a.docx", b"PKrest"), docx)
         self.assertIsNone(storage.upload_mime_type("a.docx", b"not a zip"))
 
-    def test_text_has_no_signature_to_check(self):
-        self.assertEqual(storage.upload_mime_type("a.md", "# 아무 내용".encode("utf-8")), "text/markdown")
+    def test_only_what_the_parser_reads_is_accepted(self):
+        """**받는 목록은 파서가 읽는 것과 같아야 한다**(2026-08-18 확인).
 
-    def test_unknown_extension_is_rejected(self):
-        for name in ("a.hwp", "a.exe", "a.zip", "noextension"):
+        RunPod 워커의 `SUPPORTED_MIME_TYPES` 는 PDF 와 DOCX 둘뿐이다. 전에는
+        pptx·xlsx·txt·md·csv 까지 받았는데, 그것들은 올라가서 요약까지 되고
+        **색인에서 반드시 실패했다** — 못 쓸 것을 받아 두고 몇 분 뒤에 실패를
+        알리는 것은 받지 않는 것만 못하다.
+        """
+
+        for name in ("a.pptx", "a.xlsx", "a.txt", "a.md", "a.csv", "a.hwp", "a.zip", "noext"):
             with self.subTest(name=name):
-                self.assertIsNone(storage.upload_mime_type(name, b"%PDF-"))
+                self.assertIsNone(storage.upload_mime_type(name, b"PK"))
 
     def test_extension_case_does_not_matter(self):
         self.assertEqual(storage.upload_mime_type("A.PDF", b"%PDF-"), "application/pdf")
