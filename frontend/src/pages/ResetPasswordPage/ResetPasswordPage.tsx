@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
     setSubmitting(true);
     try {
       await confirmPasswordReset(token, password);
-      showToast('비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요.', 'success');
+      showToast('비밀번호를 변경했습니다. 새 비밀번호로 로그인하세요.', 'success');
       navigate('/login');
     } catch (error) {
       if (error instanceof ApiError) {
@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
         <div className={styles.card}>
           <div>
             <h1 className={styles.cardTitle}>비밀번호 재설정</h1>
-            <p className={styles.cardSubtitle}>새로 사용할 비밀번호를 입력해 주세요.</p>
+            <p className={styles.cardSubtitle}>새 비밀번호를 입력하세요.</p>
           </div>
 
           {token ? (
@@ -103,7 +103,7 @@ export default function ResetPasswordPage() {
                   type={showPassword ? 'text' : 'password'}
                   id="new-password-confirm"
                   name="password_confirm"
-                  placeholder="비밀번호를 한번 더 입력해 주세요"
+                  placeholder="비밀번호를 다시 입력하세요"
                   autoComplete="new-password"
                   value={passwordConfirm}
                   error={fieldErrors.password_confirm}

@@ -66,7 +66,7 @@ export function ProgressCard({
             (실제로는 상한이다), 「2번째 생각」은 그냥 소음이다.
             실행 회전 수가 필요하면 `agent_run.iterations` 에 남아 있다. */}
         <span className={styles.progressCount}>
-          {steps.length > 0 ? `${shown} / ${total} 단계` : '준비 중'}
+          {steps.length > 0 ? `${shown} / ${total} 단계` : '대기 중'}
         </span>
       </div>
 
@@ -153,7 +153,7 @@ export function ProgressCard({
       {(running || Boolean(evidenceCount)) && (
         <p className={styles.foot}>
           {evidenceCount ? `근거 ${evidenceCount}건` : ''}
-          {running && `${evidenceCount ? ' · ' : ''}몇 분 걸립니다 · 창을 닫지 않아도 됩니다`}
+          {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
         </p>
       )}
     </section>
@@ -468,11 +468,11 @@ export interface ErrorCardProps {
  * 생긴 `ValueError` 에도 인증 이야기를 했다 — 사람이 설정만 계속 확인하게 된다.
  */
 const ERROR_HINTS: Record<string, string> = {
-  '401': '연결 인증이 만료되었습니다. 설정에서 연결을 다시 확인해 주세요.',
-  '429': '요청 한도를 초과했습니다. 잠시 후 다시 시도하면 됩니다.',
-  timeout: '외부 서버가 시간 안에 응답하지 않았습니다. 다시 시도해 주세요.',
-  unreachable: '외부 서버에 연결하지 못했습니다. 주소와 상태를 확인해 주세요.',
-  validation: '요청 값이 받아들여지지 않았습니다. 아래 사유를 확인해 주세요.',
+  '401': '연결 인증이 만료되었습니다. 설정에서 연결 상태를 확인하세요.',
+  '429': '요청 한도를 초과했습니다. 잠시 후 다시 시도하세요.',
+  timeout: '외부 서버가 시간 안에 응답하지 않았습니다. 다시 시도하세요.',
+  unreachable: '외부 서버에 연결하지 못했습니다. 주소와 상태를 확인하세요.',
+  validation: '요청 값이 받아들여지지 않았습니다. 아래 사유를 확인하세요.',
 };
 
 /**

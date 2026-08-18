@@ -920,7 +920,7 @@ export default function ChatPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
-                  <p>하고 싶은 일을 그냥 적어 주세요.</p>
+                  <p>필요한 작업을 입력하세요.</p>
                   {/* 무엇을 근거로 답하는지가 답의 전제라 먼저 말한다. */}
                   <p className={styles.projectContext}>
                     {currentProject ? (
@@ -935,7 +935,7 @@ export default function ChatPage() {
                         <Icon name="users" size={14} color="var(--color-muted)" />
                         <span>
                           <strong>팀 전체 문서</strong>를 근거로 답합니다. 업무 추출처럼 기준 문서가
-                          필요한 일은 프로젝트를 골라 시작해 주세요.
+                          기준 문서가 필요한 작업은 프로젝트를 선택한 뒤 시작하세요.
                         </span>
                       </>
                     )}
@@ -1081,8 +1081,8 @@ export default function ChatPage() {
                 type="button"
                 className={styles.attachTools}
                 onClick={openToolPicker}
-                aria-label="이 대화에 도구·MCP 붙이기"
-                title="이 대화에 도구·MCP 붙이기"
+                aria-label="이 대화에 사용할 도구 선택"
+                title="이 대화에 사용할 도구 선택"
               >
                 <Icon name="plus" size={16} color="var(--color-body)" />
               </button>

@@ -217,7 +217,7 @@ export function DriveFolderModal({ open, token, onClose, onSaved }: DriveFolderM
                 <Icon name="folder" size={32} color="var(--color-primary)" />
               </div>
               <div>
-                <p className={styles.emptyTitle}>프로젝트 문서를 가져올 폴더를 선택해주세요</p>
+                <p className={styles.emptyTitle}>문서를 가져올 폴더를 선택하세요</p>
                 <p className={styles.emptyDesc}>
                   Google Drive에서 마크다운, PDF, 오피스 문서 등이 보관된 폴더를 연결할 수 있습니다.
                 </p>

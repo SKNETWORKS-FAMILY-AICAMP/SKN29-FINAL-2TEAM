@@ -43,7 +43,7 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
     return {
       tone: 'warning',
       label: '읽을 수 없는 형식',
-      hint: '다른 형식으로 저장해 다시 올려 주세요.',
+      hint: '다른 형식으로 저장해 다시 업로드하세요.',
     };
   }
   if (file.extract_status === 'FAILED') {
@@ -135,7 +135,7 @@ export function MyFilesTab() {
       setBusy(file.name);
       try {
         await uploadPersonalFile(token, file);
-        showToast(`${file.name} · 올렸습니다. 읽는 중입니다.`, 'success');
+        showToast(`${file.name} · 업로드했습니다. 읽는 중입니다.`, 'success');
       } catch (exc) {
         // 형식·크기 거절은 서버가 이유를 준다. 그 문장이 가장 정확하다.
         setError(exc instanceof ApiError ? exc.message : '올리지 못했습니다.');
@@ -213,7 +213,7 @@ export function MyFilesTab() {
               </p>
               <p>
                 <strong>검색에 사용</strong>을 켜면 대화에서 답을 찾을 때 이 문서도 함께 봅니다.
-                에이전트마다 따로 고르지 않아도 됩니다.
+                선택한 파일은 모든 에이전트가 사용합니다.
               </p>
               <p>
                 끄면 검색 범위에서만 제외됩니다. 읽어 둔 내용은 남아 있어 다시 켤 때 기다리지 않습니다.

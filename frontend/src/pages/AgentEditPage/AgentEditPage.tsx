@@ -181,7 +181,7 @@ export default function AgentEditPage() {
   async function handleTempSave() {
     if (!token) return;
     if (!name.trim()) {
-      setError('이름을 적어 주세요.');
+      setError('이름을 입력하세요.');
       return;
     }
     setSaving(true);
@@ -202,7 +202,7 @@ export default function AgentEditPage() {
   async function handleActivate() {
     if (!token) return;
     if (!name.trim()) {
-      setError('이름을 적어 주세요.');
+      setError('이름을 입력하세요.');
       return;
     }
     setSaving(true);
@@ -298,7 +298,7 @@ export default function AgentEditPage() {
         <section className={styles.card}>
           <div className={styles.cardHead}>
             <h2>행동 지시</h2>
-            <p>어떻게 일해야 하는지 평소 말로 적어 주세요. 형식이나 문법은 신경 쓰지 않아도 됩니다.</p>
+            <p>어떻게 일해야 하는지 평소 말로 적어 주세요.</p>
           </div>
 
           <label className={styles.field}>
@@ -356,7 +356,7 @@ export default function AgentEditPage() {
             <Icon name="info" size={15} color="var(--color-info)" />
             <span>
               쓸 수 있는 도구는 이 팀에 붙어 있는 커스텀 도구에 따라 달라집니다. 필요한 서버가
-              있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+              있으면 운영자에게 요청하세요. 주소·키를 다루는 작업이라 운영자가 대신 등록합니다.
             </span>
           </p>
         </section>

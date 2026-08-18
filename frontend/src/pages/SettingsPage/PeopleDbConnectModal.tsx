@@ -275,7 +275,7 @@ export function PeopleDbConnectModal({
           지어 주세요.
         </p>
 
-        <p>함께할 팀원을 선택하세요. 지금 넘어가고 나중에 설정에서 초대해도 됩니다.</p>
+        <p>함께할 팀원을 선택하세요. 나중에 설정에서 초대할 수 있습니다.</p>
 
         {myOrg.length === 0 ? (
           <p className={styles.hint}>내 조직에 초대할 수 있는 인원이 없습니다.</p>
@@ -330,7 +330,7 @@ export function PeopleDbConnectModal({
           <>
             <p>
               초대 코드를 발급했습니다. <strong>이 화면을 닫으면 다시 볼 수 없습니다.</strong> 지금
-              복사해서 각자에게 전달해 주세요.
+              복사해 각자에게 전달하세요.
             </p>
             <div className={styles.codeList}>
               {issued.map((row) => (
@@ -399,12 +399,12 @@ export function PeopleDbConnectModal({
             variant="primary"
             onClick={handleIssueInvites}
             disabled={busy || !teamName.trim()}
-            title={teamName.trim() ? undefined : '팀 이름을 입력해 주세요.'}
+            title={teamName.trim() ? undefined : '팀 이름을 입력하세요.'}
           >
             {busy
               ? '만드는 중…'
               : selected.size === 0
-                ? '팀 만들기'
+                ? '팀 생성'
                 : `팀 만들고 ${selected.size}명 초대하기`}
           </Button>
         </>

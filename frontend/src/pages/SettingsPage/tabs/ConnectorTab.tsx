@@ -140,7 +140,7 @@ export function ConnectorTab() {
       showToast(`${name}${josa(name, '을/를')} 연결했습니다.`, 'success');
       void refresh();
     } else if (query.get('status') === 'error') {
-      showToast(`${name} 연결에 실패했습니다. 잠시 후 다시 시도해주세요.`, 'error');
+      showToast(`${name} 연결에 실패했습니다. 다시 시도하세요.`, 'error');
     }
     navigate(PATHS.settingsConnectors, { replace: true });
   }, [location.search, navigate, refresh, showToast]);

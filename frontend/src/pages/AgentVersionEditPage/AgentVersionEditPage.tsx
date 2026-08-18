@@ -185,11 +185,11 @@ export default function AgentVersionEditPage() {
     }
     if (!candidate.current_version_id) return;
     if (!candidate.description.trim()) {
-      setError(`"${candidate.name}"에 설명이 없어 서브 에이전트로 추가할 수 없습니다. 그 에이전트의 설명을 먼저 채워 주세요.`);
+      setError(`"${candidate.name}"에 설명이 없어 서브 에이전트로 추가할 수 없습니다. 해당 에이전트의 설명을 먼저 입력하세요.`);
       return;
     }
     if (subagents.some((s) => s.alias === candidate.name.trim())) {
-      setError(`이미 추가한 서브 에이전트와 이름이 같습니다("${candidate.name}"). 한쪽 이름을 바꿔 주세요.`);
+      setError(`이미 추가한 서브 에이전트와 이름이 같습니다("${candidate.name}"). 한쪽 이름을 변경하세요.`);
       return;
     }
     setSubagents((prev) => [
@@ -237,7 +237,7 @@ export default function AgentVersionEditPage() {
   async function handleSave() {
     if (!token) return;
     if (!name.trim()) {
-      setError('이름을 적어 주세요.');
+      setError('이름을 입력하세요.');
       return;
     }
     setSaving(true);
@@ -435,7 +435,7 @@ export default function AgentVersionEditPage() {
             서브 에이전트 추가
           </Button>
           {subagentCandidates.length === 0 && (
-            <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다. 먼저 다른 에이전트를 하나 저장해 주세요.</p>
+            <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다. 먼저 다른 에이전트를 하나 저장하세요.</p>
           )}
         </section>
 

@@ -258,7 +258,7 @@ export default function OpsPoliciesPage() {
 
     const numericDays = Number(inviteDays);
     if (!Number.isInteger(numericDays) || numericDays < 1 || numericDays > 90) {
-      showToast('초대 만료 기간은 1일에서 90일 사이로 입력해 주세요.', 'error');
+      showToast('초대 만료 기간은 1일에서 90일 사이로 입력하세요.', 'error');
       return;
     }
     if (numericDays === savedInviteDays) {
@@ -352,11 +352,11 @@ export default function OpsPoliciesPage() {
     }
 
     if (!form.title.trim() || !form.content.trim()) {
-      showToast('공지 제목과 내용을 입력해 주세요.', 'error');
+      showToast('공지 제목과 내용을 입력하세요.', 'error');
       return;
     }
     if (!form.schedule_date || !form.schedule_time) {
-      showToast('공지 날짜와 시간을 선택해 주세요.', 'error');
+      showToast('공지 날짜와 시간을 선택하세요.', 'error');
       return;
     }
 

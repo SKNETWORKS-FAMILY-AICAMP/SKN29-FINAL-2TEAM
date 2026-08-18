@@ -184,7 +184,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
               업무 추출
             </Button>
             <Button variant="outline" size="sm" onClick={handleFind} disabled={busy}>
-              문서 바꾸기
+              기준 문서 변경
             </Button>
             {/* 바꿀 문서가 없을 수도 있다. 「없음」으로 못 가면 잘못 고른 문서를
                 달고 있는 수밖에 없고, 그대로 뽑으면 엉뚱한 업무가 등록된다. */}
@@ -196,12 +196,12 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       ) : (
         <>
           <p className={styles.muted}>
-            기준 문서가 아직 없습니다. 업무 추출은 기준 문서가 있어야 돌아갑니다. ‘문서 찾기’로
+            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’로
             정해 주세요.
           </p>
           <div className={styles.actions}>
             <Button size="sm" onClick={handleFind} disabled={busy}>
-              {busy ? '찾는 중…' : '문서 찾기'}
+              {busy ? '찾는 중…' : '기준 문서 선택'}
             </Button>
           </div>
         </>

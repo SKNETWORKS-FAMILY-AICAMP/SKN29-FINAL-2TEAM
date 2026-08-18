@@ -247,7 +247,7 @@ export function ToolPickerModal({
                   <p className={pageStyles.help}>
                     {server.status === 'UNCHECKED'
                       ? '설정에서 연결을 확인해야 도구를 고를 수 있습니다.'
-                      : '연결이 실패한 서버입니다. 설정에서 다시 확인해 주세요.'}
+                      : '연결이 실패한 서버입니다. 설정에서 연결 상태를 확인하세요.'}
                   </p>
                 )}
                 {usable && server.tools.length === 0 && (
@@ -283,7 +283,7 @@ export function ToolPickerModal({
               팀이 스스로 붙일 수도 없다. 대신 **어디로 말하면 되는지**를
               남긴다. 문구는 Model 탭(8/13)과 같은 말이다. */}
           <p className={pageStyles.help}>
-            필요한 서버가 있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+            서버 등록은 운영자에게 요청하세요. 주소·키를 다루는 작업이라 운영자가 대신 등록합니다.
           </p>
         </div>
       )}
@@ -295,7 +295,7 @@ export function ToolPickerModal({
             붙어 있는 커스텀 도구만 쓸 수 있습니다.
           </p>
           <Button variant="outline" disabled>
-            새 도구 만들기 (준비 중)
+            새 도구 등록 (준비 중)
           </Button>
         </div>
       )}

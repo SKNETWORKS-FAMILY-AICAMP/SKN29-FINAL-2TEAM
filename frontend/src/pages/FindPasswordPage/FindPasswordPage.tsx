@@ -49,7 +49,7 @@ export default function FindPasswordPage() {
           <div>
             <h1 className={styles.cardTitle}>비밀번호 찾기</h1>
             <p className={styles.cardSubtitle}>
-              가입한 이메일 주소를 입력하시면 비밀번호 재설정 링크를 보내드립니다.
+              가입한 이메일 주소를 입력하시면 비밀번호 재설정 링크를 발송합니다.
             </p>
           </div>
 

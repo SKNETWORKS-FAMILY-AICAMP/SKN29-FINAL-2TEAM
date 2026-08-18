@@ -102,7 +102,7 @@ export function DriveFolderPickerModal({
         <div className={styles.notice}>
           <Icon name="triangle-alert" size={24} color="var(--color-danger)" />
           <p>{error}</p>
-          <p className={styles.hint}>커넥터 화면에서 Google Drive를 먼저 연결해 주세요.</p>
+          <p className={styles.hint}>커넥터 화면에서 Google Drive를 먼저 연결하세요.</p>
         </div>
       );
     }

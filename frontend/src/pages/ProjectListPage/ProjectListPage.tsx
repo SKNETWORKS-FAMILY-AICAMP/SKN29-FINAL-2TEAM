@@ -187,7 +187,7 @@ export default function ProjectListPage() {
         <p className={styles.chatBanner}>
           <Icon name="sparkles" size={18} color="var(--color-primary)" />
           <span>
-            업무를 뽑으려면 프로젝트를 열어 기준 문서를 정하세요. 문서 근거와 함께 정리해 드립니다.
+            업무를 추출하려면 프로젝트에서 기준 문서를 지정하세요. 문서 근거와 함께 정리됩니다.
           </span>
           <button type="button" onClick={() => navigate(PATHS.chat)}>
             채팅 열기 →

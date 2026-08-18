@@ -90,7 +90,7 @@ export default function LoginPage() {
         <div className={styles.card}>
           <div>
             <h1 className={styles.cardTitle}>로그인</h1>
-            <p className={styles.cardSubtitle}>서비스를 이용하려면 로그인을 진행해주세요.</p>
+            <p className={styles.cardSubtitle}>로그인이 필요합니다.</p>
           </div>
 
           <form id="login-form" className={styles.fieldGroup} onSubmit={handleSubmit}>

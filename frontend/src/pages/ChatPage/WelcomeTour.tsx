@@ -79,7 +79,7 @@ const SLIDES: Slide[] = [
   },
   {
     title: '승인하기 전에는 아무것도 만들지 않습니다',
-    body: '뽑은 업무는 목록으로 먼저 보여 드립니다. 체크한 것만 등록되고, 외부에 나가는 일은 한 번 더 확인합니다.',
+    body: '추출한 업무는 목록으로 먼저 표시됩니다. 체크한 것만 등록되고, 외부에 나가는 일은 한 번 더 확인합니다.',
     art: (
       <svg viewBox="0 0 240 120" role="img" aria-label="체크한 항목만 등록되는 확인 카드 그림">
         <rect x="30" y="16" width="180" height="88" rx="10" fill="none" stroke={SOFT} strokeWidth="2" />
