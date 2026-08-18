@@ -865,7 +865,10 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         name="등록된 업무 조회",
         description=(
             "이 프로젝트에 등록된 **우리 업무**를 읽는다(task_register 로 넣은 것). "
-            "Jira 이슈가 아니다 — Jira 쪽은 jira_get_issues 다."
+            "Jira 이슈가 아니다 — Jira 쪽은 jira_get_issues 다. "
+            "**여기가 비어 있다고 해서 일이 없는 것은 아니다** — 「업무 현황」처럼 "
+            "출처를 가리지 않는 물음에 이것만 보고 「없습니다」라고 답하지 않는다. "
+            "Jira 도 붙어 있으면 그쪽을 확인한 뒤에 답한다."
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_task_list,
