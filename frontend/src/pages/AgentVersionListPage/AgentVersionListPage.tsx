@@ -19,11 +19,9 @@ import styles from './AgentVersionListPage.module.css';
  * 새 버전 스키마(`agents`/`agent_versions`) 목록 — `/agents`(옛 비버전 화면)와
  * 나란히 존재한다.
  *
- * ⚠ **여기서 만든 에이전트는 아직 Chat에서 못 부른다.** Chat이 만드는 대화는
- * 여전히 옛 `agent` 테이블을 가리킨다(services/agent_runtime/legacy_bridge.py) —
- * "저장·발행"까지만 이 화면의 책임이고, 나머지 연결은 이후 작업(작업목록.md
- * "Deep Agent 런타임" 절)이다. 이 화면은 그 연결 전에 저장·버전 발행이 실제로
- * 동작하는지 확인하는 용도로 먼저 연다.
+ * DRAFT(개인 탭)는 소유자만 Chat에서 부를 수 있다(2026-08-18,
+ * `_resolve_session_agent`가 `owner_account_id` 일치를 확인) — 팀에
+ * 공유하려면 활성화해서 ACTIVE(팀 공유 탭)로 넘겨야 한다.
  */
 export default function AgentVersionListPage() {
   const navigate = useNavigate();
@@ -162,7 +160,7 @@ export default function AgentVersionListPage() {
       <div className={styles.page}>
         <header className={styles.header}>
           <div className={styles.headerText}>
-            <h1 className={styles.title}>에이전트 (버전)</h1>
+            <h1 className={styles.title}>에이전트</h1>
             <p className={styles.subtitle}>
               저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 고칠 수 없습니다 — 바꾸려면 새 버전을 다시 발행합니다.
             </p>
@@ -175,10 +173,12 @@ export default function AgentVersionListPage() {
           </Button>
         </header>
 
-        <p className={styles.notice}>
-          <Icon name="info" size={15} color="var(--color-info)" />
-          여기서 만든 에이전트는 아직 Chat에서 부를 수 없습니다 — 실행 엔진 연결 전 저장·발행만 검증하는 화면입니다.
-        </p>
+        {!isTeamTab && (
+          <p className={styles.notice}>
+            <Icon name="info" size={15} color="var(--color-info)" />
+            여기서 만든 에이전트는 나만 Chat에서 부를 수 있습니다 — 먼저 검증해 보고, 팀에 공유하려면 활성화하세요.
+          </p>
+        )}
 
         {/* 저장만 하면 "개인"에 머문다 — 활성화해야 "팀 공유"로 넘어간다. */}
         <nav className={styles.tabBar}>

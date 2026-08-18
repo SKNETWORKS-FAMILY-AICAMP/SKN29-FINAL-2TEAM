@@ -261,7 +261,7 @@ export default function AgentVersionEditPage() {
       <div className={styles.page}>
         <button type="button" className={styles.back} onClick={() => navigate(PATHS.agentVersions)}>
           <Icon name="arrow-left" size={15} color="var(--color-muted)" />
-          에이전트 (버전)
+          에이전트
         </button>
 
         <header className={styles.header}>
