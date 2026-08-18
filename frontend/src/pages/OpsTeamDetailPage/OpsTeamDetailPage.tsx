@@ -20,6 +20,7 @@ import {
 import type { OpsTeam, OpsTeamAgent, OpsTeamCandidate, OpsTeamRun } from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
+import { TeamUsageSections } from './TeamUsageSections';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
@@ -217,6 +218,11 @@ export default function OpsTeamDetailPage() {
           <Button variant="outline" onClick={openTransfer}>소유자 이전</Button>
         </div>
       </OpsSectionCard>
+
+      {/* **읽기만 한다.** 등록은 각자의 페이지에 있다(`/ops/models`·`/ops/mcp`) —
+          등록은 「무엇을 새로 붙이나」라 주제로 시작하는 일이고, 여기는 「이 팀이
+          지금 무엇을 들고 있나」다. 아래 에이전트·실행 기록과 같은 성격이다. */}
+      <TeamUsageSections teamId={team.team_id} />
 
       <OpsSectionCard title={`에이전트 ${agents.length}개`}>
         {agents.length === 0 ? (
