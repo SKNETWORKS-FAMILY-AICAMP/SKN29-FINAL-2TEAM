@@ -340,59 +340,6 @@ export interface PipelineDocument {
   src_modified_at: string | null;
 }
 
-export interface DocumentProcessingRun {
-  job_id: string;
-  status:
-    | 'IN_QUEUE'
-    | 'IN_PROGRESS'
-    | 'RUNNING'
-    | 'COMPLETED'
-    | 'FAILED'
-    | 'CANCELLED'
-    | 'TIMED_OUT';
-  ingested?: { blocks: number; chunks: number; vectors: number };
-  error?: string;
-}
-
-/** 종료 상태. 여기 닿으면 polling 을 멈춰야 한다. */
-export const TERMINAL_PROCESSING_STATUS = ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
-
-export interface DocumentDownloadResult {
-  downloaded: { file_name: string; bytes: number }[];
-  /** 이미 받아 둔 문서. */
-  skipped: string[];
-  failed: { file_name: string; detail: string }[];
-}
-
-/**
- * Drive 원문을 문서 저장소로 가져온다. 파싱은 Drive 가 아니라 이 저장소를 읽는다.
- *
- * `docIds` 를 주면 그것만 받는다. 등록 직후 문서를 한 건씩 처리하며 진행을
- * 보여주기 위해 하나씩 지정해 부른다.
- */
-export function downloadDocuments(token: string, docIds?: string[]) {
-  return apiRequest<DocumentDownloadResult>('/team/documents/download/', {
-    method: 'POST',
-    token,
-    body: docIds ? { doc_ids: docIds } : {},
-  });
-}
-
-export function startDocumentProcessing(token: string, docId: string) {
-  return apiRequest<DocumentProcessingRun>(`/team/documents/${docId}/processing-runs/`, {
-    method: 'POST',
-    token,
-  });
-}
-
-/** 진행 상태. `COMPLETED`를 처음 본 요청이 결과를 DB에 적재한다. */
-export function fetchDocumentProcessing(token: string, docId: string, jobId: string) {
-  return apiRequest<DocumentProcessingRun>(
-    `/team/documents/${docId}/processing-runs/${jobId}/`,
-    { token },
-  );
-}
-
 /** 이 프로젝트에 묶인 문서(메인+서브). */
 export function listProjectSourceDocuments(token: string, projectId: string) {
   return apiRequest<PipelineDocument[]>(`/projects/${projectId}/source-documents/`, { token });
