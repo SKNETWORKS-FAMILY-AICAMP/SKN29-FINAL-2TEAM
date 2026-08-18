@@ -253,7 +253,7 @@ export default function ProjectDetailPage() {
               <section className={styles.card}>
                 <p className={styles.notice}>
                   {project.has_jira_source
-                    ? 'Jira 업무를 아직 읽지 않았습니다. 「갱신」을 눌러 주세요.'
+                    ? 'Jira 업무를 아직 읽지 않았습니다. ‘갱신’을 눌러 주세요.'
                     : '연결된 Jira 프로젝트가 없어 진행률을 계산할 수 없습니다.'}
                 </p>
               </section>

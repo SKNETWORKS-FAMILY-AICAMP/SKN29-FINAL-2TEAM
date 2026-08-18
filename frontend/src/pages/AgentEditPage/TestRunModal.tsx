@@ -110,7 +110,7 @@ export function TestRunModal({
                 ...prev,
                 { key: String(stepId), toolRef: event.tool_ref, toolName: event.tool_name, status: 'running' },
               ]);
-              setStatusLine(`「${event.tool_name}」 부르는 중`);
+              setStatusLine(`‘${event.tool_name}’ 부르는 중`);
               break;
             case 'tool_call_finished':
               setSteps((prev) => {
@@ -164,8 +164,8 @@ export function TestRunModal({
       }
     >
       <p className={pageStyles.help}>
-        저장하지 않고 지금 설정 그대로 한 번 돌려봅니다. 어떤 도구를 부를지는 모델이 정합니다
-        — 모델이 안 부른 도구는 여기서 확인되지 않습니다. 승인이 필요한 도구(Jira 등록·수정
+        저장하지 않고 지금 설정 그대로 한 번 돌려봅니다. 어떤 도구를 부를지는 모델이 정합니다.
+        모델이 안 부른 도구는 여기서 확인되지 않습니다. 승인이 필요한 도구(Jira 등록·수정
         등)는 실제로 부르지 않고 어떤 값으로 부르려 했는지만 보여줍니다.
       </p>
       <div className={styles.inputRow}>
@@ -222,8 +222,8 @@ export function TestRunModal({
           )}
           {resultComplete && resultGrounded === false && (
             <p className={pageStyles.error}>
-              이 답변은 쓸 수 있는 도구를 하나도 안 부르고 나왔습니다 — 근거 없이 단정한 내용일
-              수 있습니다. 아래 「도구 확인」에서 관련 도구를 직접 불러 사실 여부를 확인해
+              이 답변은 쓸 수 있는 도구를 하나도 안 부르고 나왔습니다. 근거 없이 단정한 내용일
+              수 있습니다. 아래 ‘도구 확인’에서 관련 도구를 직접 불러 사실 여부를 확인해
               보세요.
             </p>
           )}
@@ -236,9 +236,9 @@ export function TestRunModal({
                 ) : (
                   <span className={pageStyles.help}>
                     이번 대화에서 안 부른 도구:{' '}
-                    {uncalledRefs.map((ref) => toolByRef.get(ref)?.name ?? ref).join(', ')} — 이
-                    질문에 필요 없었을 수도 있고, 모델이 놓쳤을 수도 있습니다. 아래 「도구
-                    확인」에서 직접 불러보거나 다른 질문으로 다시 테스트해 보세요.
+                    {uncalledRefs.map((ref) => toolByRef.get(ref)?.name ?? ref).join(', ')}.
+                    이 질문에 필요 없었을 수도 있고, 모델이 놓쳤을 수도 있습니다. 아래 ‘도구
+                    확인’에서 직접 불러보거나 다른 질문으로 다시 테스트해 보세요.
                   </span>
                 )}
               </div>

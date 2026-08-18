@@ -171,7 +171,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
             ) : (
               <>
                 <p className={styles.lead}>
-                  가장 가까운 문서입니다. <strong>맞는지 확인해 주세요</strong> — 어느 문서로 업무를 뽑는지가
+                  가장 가까운 문서입니다. <strong>맞는지 확인해 주세요.</strong> 어느 문서로 업무를 뽑는지가
                   결과 전체의 전제가 됩니다.
                 </p>
                 <ul className={styles.candidates}>

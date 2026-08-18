@@ -56,7 +56,7 @@ export default function AgentVersionListPage() {
     try {
       const updated = await activateAgentVersion(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」${josa(updated.name, '을/를')} 활성화했습니다.`, 'success');
+      showToast(`‘${updated.name}’${josa(updated.name, '을/를')} 활성화했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.', 'error');
     } finally {
@@ -70,7 +70,7 @@ export default function AgentVersionListPage() {
     try {
       const updated = await disableAgentVersion(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」${josa(updated.name, '을/를')} 사용 중지했습니다.`, 'success');
+      showToast(`‘${updated.name}’${josa(updated.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.', 'error');
     } finally {
@@ -95,14 +95,14 @@ export default function AgentVersionListPage() {
 
         <p className={styles.notice}>
           <Icon name="info" size={15} color="var(--color-info)" />
-          여기서 만든 에이전트는 아직 Chat에서 부를 수 없습니다 — 실행 엔진 연결 전 저장·발행만 검증하는 화면입니다.
+          여기서 만든 에이전트는 아직 Chat에서 부를 수 없습니다. 실행 엔진 연결 전 저장·발행만 검증하는 화면입니다.
         </p>
 
         {error && <p className={styles.error}>{error}</p>}
         {loading && <p className={styles.sectionSub}>불러오는 중…</p>}
 
         {!loading && !error && agents.length === 0 && (
-          <p className={styles.sectionSub}>아직 만든 에이전트가 없습니다. 「새 에이전트」로 만들어 보세요.</p>
+          <p className={styles.sectionSub}>아직 만든 에이전트가 없습니다. ‘새 에이전트’로 만들어 보세요.</p>
         )}
 
         <div className={styles.grid}>

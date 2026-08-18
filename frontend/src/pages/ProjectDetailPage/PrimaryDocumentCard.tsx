@@ -126,7 +126,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
               업무 추출이 <strong>근거로 삼는 문서</strong>입니다. 근거 문서는 따로 묶지 않고 에이전트가
               팀 문서에서 찾습니다.
             </p>
-            <p>「업무 뽑기」를 누르면 이 프로젝트의 대화가 열리고 곧바로 실행됩니다.</p>
+            <p>‘업무 뽑기’를 누르면 이 프로젝트의 대화가 열리고 곧바로 실행됩니다.</p>
           </InfoNote>
         </span>
       </div>
@@ -206,7 +206,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       ) : (
         <>
           <p className={styles.muted}>
-            기준 문서가 아직 없습니다. 업무 추출은 기준 문서가 있어야 돌아갑니다 — 「문서 찾기」로
+            기준 문서가 아직 없습니다. 업무 추출은 기준 문서가 있어야 돌아갑니다. ‘문서 찾기’로
             정해 주세요.
           </p>
           <div className={styles.actions}>

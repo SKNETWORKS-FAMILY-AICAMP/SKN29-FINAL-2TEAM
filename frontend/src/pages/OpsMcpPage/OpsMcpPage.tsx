@@ -106,7 +106,7 @@ export default function OpsMcpPage() {
       // **등록과 연결 확인은 다른 일이다**(2026-08-18 PM). 등록은 행을 만들고,
       // 연결 확인은 그 주소를 실제로 두드린다 — 한 버튼에 묶으면 둘 중 어느
       // 쪽이 실패했는지 화면이 말해 줄 수 없다.
-      setNote(created.name + ' 연결을 등록했습니다. 도구는 목록에서 「연결 확인」을 눌러 읽습니다.');
+      setNote(created.name + ' 연결을 등록했습니다. 도구는 목록에서 ‘연결 확인’을 눌러 읽습니다.');
       await load();
     } catch (thrown) {
       // 주소 검사(SSRF·https 아님)는 저장 전에 400 으로 온다.
@@ -249,7 +249,7 @@ export default function OpsMcpPage() {
         {found && (
           <p className={styles.inlineEmpty}>
             {found.length > 0
-              ? `도구 ${found.length}종을 읽었습니다 — ${found.join(', ')}`
+              ? `도구 ${found.length}종을 읽었습니다: ${found.join(', ')}`
               : '연결은 됐지만 이 서버는 제공하는 도구가 없습니다.'}
           </p>
         )}

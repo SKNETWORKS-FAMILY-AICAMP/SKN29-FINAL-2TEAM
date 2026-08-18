@@ -24,7 +24,7 @@ const FEATURES = [
   {
     id: 'evidence',
     title: '근거와 함께 일하는 에이전트',
-    body: '모든 결과에 원문 문단이 붙습니다. 근거가 없는 값은 지어내지 않고 「근거 없어 비움」으로 표시합니다.',
+    body: '모든 결과에 원문 문단이 붙습니다. 근거가 없는 값은 지어내지 않고 ‘근거 없어 비움’으로 표시합니다.',
   },
   {
     id: 'builder',
@@ -39,7 +39,7 @@ const FEATURES = [
 ] as const;
 
 const STEPS = [
-  { num: '1', title: '쓰는 도구를 연결한다', caption: '예: Drive·Jira — 몇 분이면 끝납니다' },
+  { num: '1', title: '쓰는 도구를 연결한다', caption: '예: Drive·Jira. 몇 분이면 끝납니다' },
   { num: '2', title: '에이전트를 고르거나 만든다', caption: '기본 제공으로 시작하거나, 세 가지만 적어 새로 만듭니다' },
   { num: '3', title: '요청하고 근거를 확인한다', caption: '모든 결과에 원문 문단이 붙습니다' },
   { num: '4', title: '승인하면 실제로 반영된다', caption: '예: Jira 이슈 등록' },
@@ -73,8 +73,8 @@ function ApprovalMock() {
         </div>
 
         <p className={styles.mockWarn}>
-          기준 문서에서 마감일 근거를 찾지 못한 업무가 있습니다. 근거 없는 항목은 채우지 않고 「근거 없어
-          비움」으로 표시합니다.
+          기준 문서에서 마감일 근거를 찾지 못한 업무가 있습니다. 근거 없는 항목은 채우지 않고 ‘근거 없어
+          비움’으로 표시합니다.
         </p>
 
         <div className={styles.mockTask}>
@@ -117,7 +117,7 @@ function EvidenceMini() {
         결제 실패 케이스는 타임아웃·한도 초과·카드사 거절 세 가지를 모두 재현한다.
         <span className={styles.miniMeta}>E7 · DOC-2026-0151 · 유사도 91%</span>
       </p>
-      <p className={styles.miniEmpty}>마감일 — 근거 없어 비움</p>
+      <p className={styles.miniEmpty}>마감일: 근거 없어 비움</p>
     </div>
   );
 }
@@ -153,7 +153,7 @@ function ResultMini() {
   return (
     <div className={styles.mini}>
       <p className={styles.miniWarnBar}>
-        <span>17/20 등록 완료 — 3건 실패</span>
+        <span>17/20 등록 완료 · 3건 실패</span>
         <span className={styles.miniWarnSide}>성공분은 되돌리지 않습니다</span>
       </p>
       {[
@@ -165,7 +165,7 @@ function ResultMini() {
           <span>{title}</span>
         </div>
       ))}
-      <p className={styles.miniFail}>실패 3건 — 사유 표시</p>
+      <p className={styles.miniFail}>실패 3건 · 사유 표시</p>
     </div>
   );
 }
@@ -296,7 +296,7 @@ export default function LandingPage() {
             <h2 className={styles.h2}>쓰던 도구 그대로, 필요한 도구는 더</h2>
             <p className={styles.lead}>
               에이전트가 쓰는 도구는 전부 커넥터입니다. 지금은 Google Drive·Jira가 준비돼 있고, 회사에 이미
-              있는 시스템은 말씀해 주시면 붙여 드립니다 — 붙고 나면 똑같은 도구가 됩니다.
+              있는 시스템은 말씀해 주시면 붙여 드립니다. 붙고 나면 똑같은 도구가 됩니다.
             </p>
             <div className={styles.pillRow}>
               {CONNECTORS.map((name) => (

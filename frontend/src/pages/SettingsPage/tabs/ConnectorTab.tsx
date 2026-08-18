@@ -46,7 +46,7 @@ type Status = 'CONNECTED' | 'EXPIRED' | 'ERROR' | 'REVOKED' | null;
  */
 const SLOTS: Record<ConnectorType, { title: string; options: PickerOption[] }> = {
   PEOPLE_DB: {
-    title: '인사 시스템 — 무엇에서 사람 정보를 가져올까요?',
+    title: '인사 시스템: 무엇에서 사람 정보를 가져올까요?',
     options: [
       // 「예시 데이터」·「사내 인사 시스템」은 제품이 아니라 자리를 채우는 방식이라
       // 로고가 없다. Workday 는 제품이지만 `simple-icons` 에 없다(BrandIcon 참고).
@@ -56,7 +56,7 @@ const SLOTS: Record<ConnectorType, { title: string; options: PickerOption[] }> =
     ],
   },
   GOOGLE_DRIVE: {
-    title: '문서 저장소 — 문서가 어디 있나요?',
+    title: '문서 저장소: 문서가 어디 있나요?',
     options: [
       { id: 'google-drive', label: 'Google Drive', brand: 'google-drive', icon: 'folder', available: true },
       { id: 'notion', label: 'Notion', brand: 'notion', icon: 'file-text', available: false },
@@ -65,7 +65,7 @@ const SLOTS: Record<ConnectorType, { title: string; options: PickerOption[] }> =
     ],
   },
   JIRA: {
-    title: '업무 기록소 — 업무를 어디에 쌓고 있나요?',
+    title: '업무 기록소: 업무를 어디에 쌓고 있나요?',
     options: [
       { id: 'jira', label: 'Jira', brand: 'jira', icon: 'chart-network', available: true },
       { id: 'asana', label: 'Asana', brand: 'asana', icon: 'circle-help', available: false },
@@ -207,14 +207,14 @@ export function ConnectorTab() {
         <div className={styles.cardHead}>
           {/* 설명은 ⓘ 안으로 넣는다. 제목은 탭 이름과 같은 말이면 된다. */}
           <h2 className={styles.cardTitle}>
-            Connector
-            <InfoNote title="Connector">
+            커넥터
+            <InfoNote title="커넥터">
               <p>
                 데이터를 가져오는 <strong>자리</strong>입니다. 자리마다 하나씩 연결하고, 여기서 연결한
                 것은 에이전트가 <strong>읽는</strong> 대상이 됩니다.
               </p>
               <p>
-                <strong>인사 시스템</strong>만 필수입니다 — 연결하는 순간 팀이 만들어지고, 근무 기준과
+                <strong>인사 시스템</strong>만 필수입니다. 연결하는 순간 팀이 만들어지고, 근무 기준과
                 부재 데이터가 여기서 옵니다. 나머지 둘은 그 자리의 기능이 필요할 때 붙이면 됩니다.
               </p>
               {/* 「만들거나 보내는 연결은 MCP」는 **틀린 문장이었다** — 여기 붙은
@@ -222,13 +222,13 @@ export function ConnectorTab() {
                   아니라 인증 주체다(확정 ⑨). 커스텀 도구 탭은 2026-08-18 에 걷었고, 같은
                   말은 이제 이 문단 하나만 한다. */}
               <p>
-                <strong>우리가 미리 붙여 둔 통로</strong>라 자리만 고르면 됩니다. 직접 만들거나
-                운영하는 서버는 <strong>커스텀 도구</strong>로 저희가 붙여 드립니다 — 가르는 것은 읽기·쓰기가
+                <strong>미리 붙여 둔 통로</strong>라 자리만 고르면 됩니다. 직접 만들거나
+                운영하는 서버는 <strong>커스텀 도구</strong>로 등록해 드립니다. 가르는 것은 읽기·쓰기가
                 아니라 <strong>누구의 서버인가</strong>입니다. 여기 붙은 Jira 도 이슈를 만듭니다.
               </p>
               <p>
                 연결 상태는 서버가 아는 값입니다. Jira는 연결하면 접근 가능한 프로젝트를 전부
-                가져옵니다 — 고르지 않은 프로젝트의 업무가 부하 계산에서 조용히 빠지면, 빠진 줄 모르는
+                가져옵니다. 고르지 않은 프로젝트의 업무가 부하 계산에서 조용히 빠지면, 빠진 줄 모르는
                 숫자가 맞는 숫자처럼 보이기 때문입니다.
               </p>
             </InfoNote>

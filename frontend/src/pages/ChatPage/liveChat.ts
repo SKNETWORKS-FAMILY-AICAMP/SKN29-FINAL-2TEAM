@@ -322,7 +322,7 @@ export function toCards(payload: TaskExtractionPayload): ExtractedTask[] {
         (item): Evidence => ({
           quote: item.text,
           meta: [item.ref, item.doc_id, score(item.retrieval_score)].filter(Boolean).join(' · '),
-          source: item.heading_path?.length ? `「${item.heading_path.join(' > ')}」` : '',
+          source: item.heading_path?.length ? `‘${item.heading_path.join(' > ')}’` : '',
         }),
       ),
   }));

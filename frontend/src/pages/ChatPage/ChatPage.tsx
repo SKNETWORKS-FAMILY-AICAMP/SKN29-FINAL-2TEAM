@@ -945,7 +945,7 @@ export default function ChatPage() {
                       {abandoned && (
                         <p className={styles.warnLine}>
                           <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
-                          승인하지 않고 넘어갔습니다 — 이 요청은 실행되지 않았습니다.
+                          승인하지 않고 넘어갔습니다. 이 요청은 실행되지 않았습니다.
                         </p>
                       )}
 
@@ -962,7 +962,7 @@ export default function ChatPage() {
                       {live.stoppedReason && (
                         <p className={styles.warnLine}>
                           <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
-                          끝까지 마치지 못했습니다 ({live.stoppedReason}) — 위 결과는 여기까지 확인한 것입니다.
+                          끝까지 마치지 못했습니다 ({live.stoppedReason}). 위 결과는 여기까지 확인한 것입니다.
                         </p>
                       )}
 

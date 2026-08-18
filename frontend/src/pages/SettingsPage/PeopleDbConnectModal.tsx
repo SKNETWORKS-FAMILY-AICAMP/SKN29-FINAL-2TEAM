@@ -240,7 +240,7 @@ export function PeopleDbConnectModal({
     }
 
     if (!identity) {
-      return <p className={styles.body}>{busy ? 'HR 정보를 확인하는 중…' : (error || '—')}</p>;
+      return <p className={styles.body}>{busy ? 'HR 정보를 확인하는 중…' : (error || '-')}</p>;
     }
 
     return (
@@ -329,7 +329,7 @@ export function PeopleDbConnectModal({
         {issued.length > 0 && (
           <>
             <p>
-              초대 코드를 발급했습니다. <strong>이 화면을 닫으면 다시 볼 수 없습니다</strong> — 지금
+              초대 코드를 발급했습니다. <strong>이 화면을 닫으면 다시 볼 수 없습니다.</strong> 지금
               복사해서 각자에게 전달해 주세요.
             </p>
             <div className={styles.codeList}>

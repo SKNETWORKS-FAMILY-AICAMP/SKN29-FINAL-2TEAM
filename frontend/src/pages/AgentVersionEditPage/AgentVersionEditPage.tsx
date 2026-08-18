@@ -226,7 +226,7 @@ export default function AgentVersionEditPage() {
     try {
       const activated = await activateAgentVersion(token, savedId);
       setStatus(activated.status);
-      showToast(`「${activated.name}」${josa(activated.name, '을/를')} 활성화했습니다.`, 'success');
+      showToast(`‘${activated.name}’${josa(activated.name, '을/를')} 활성화했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.');
     } finally {
@@ -241,7 +241,7 @@ export default function AgentVersionEditPage() {
     try {
       const disabled = await disableAgentVersion(token, savedId);
       setStatus(disabled.status);
-      showToast(`「${disabled.name}」${josa(disabled.name, '을/를')} 사용 중지했습니다.`, 'success');
+      showToast(`‘${disabled.name}’${josa(disabled.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.');
     } finally {
@@ -347,7 +347,7 @@ export default function AgentVersionEditPage() {
           <div className={styles.cardHead}>
             <h2>서브 에이전트</h2>
             <p>
-              이 에이전트가 위임할 다른 에이전트를 고릅니다. 고른 자식은 **지금 발행된 버전**에 고정됩니다 —
+              이 에이전트가 위임할 다른 에이전트를 고릅니다. 고른 자식은 **지금 발행된 버전**에 고정됩니다.
               자식이 나중에 새 버전을 내도 이 부모는 계속 지금 고른 버전을 씁니다.
             </p>
           </div>
@@ -426,7 +426,7 @@ export default function AgentVersionEditPage() {
             </Button>
           )}
           {subagentCandidates.length === 0 && (
-            <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다 — 먼저 다른 에이전트를 하나 저장해 주세요.</p>
+            <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다. 먼저 다른 에이전트를 하나 저장해 주세요.</p>
           )}
         </section>
 

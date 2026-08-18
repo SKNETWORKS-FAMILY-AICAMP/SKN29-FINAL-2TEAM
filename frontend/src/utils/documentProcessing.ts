@@ -55,7 +55,7 @@ export async function processDocument({
     const fetched = await downloadDocuments(token, [docId]);
     const failure = fetched.failed[0];
     if (failure) {
-      throw new DocumentProcessingFailure(`원문을 받지 못했습니다 — ${failure.detail}`);
+      throw new DocumentProcessingFailure(`원문을 받지 못했습니다: ${failure.detail}`);
     }
   }
 

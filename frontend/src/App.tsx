@@ -37,7 +37,7 @@ function DevIndexPage() {
   const groups = Array.from(new Set(ROUTES.map((r) => r.group)));
   return (
     <div className={styles.indexPage}>
-      <h1 className={styles.indexTitle}>halil — 화면 목록</h1>
+      <h1 className={styles.indexTitle}>halil 화면 목록</h1>
       <p className={styles.indexSubtitle}>Figma에서 변환된 모든 화면입니다. 아래 목록에서 확인할 화면을 선택하세요.</p>
       {groups.map((group) => (
         <div key={group} className={styles.indexGroup}>

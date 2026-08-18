@@ -217,7 +217,7 @@ export default function TeamLeaderSettingsPage() {
                 {account?.person
                   ? [account.person.org_name, account.person.job_role].filter(Boolean).join(' · ') || '-'
                   : peopleConnected
-                    ? '인사 시스템에서 찾지 못했습니다 — 가입한 이메일이 회사 이메일과 같은지 확인해 주세요'
+                    ? '인사 시스템에서 찾지 못했습니다. 가입한 이메일이 회사 이메일과 같은지 확인해 주세요'
                     : '인사 시스템을 연결하면 부서와 직책이 채워집니다'}
               </span>
             </div>
