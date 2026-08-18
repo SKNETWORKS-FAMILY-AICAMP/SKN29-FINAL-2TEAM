@@ -118,6 +118,30 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 ### 4.3 스키마 변경 반영 (이미 DB를 만들어 둔 사람)
 
+> **먼저 「무엇이 빠졌나」부터 묻는다 (2026-08-18 추가).**
+>
+> ```bash
+> python DB/migrations/_apply.py --check
+> ```
+>
+> 배포가 전제하는 테이블·컬럼 12개를 대조해 **빠진 것만** 알려 준다(읽기만 한다).
+> `--url` 로 대상을 바꾼다 — 안 주면 `.env` 의 `DATABASE_URL` 이다.
+> 적용도 같은 스크립트가 한다: `python DB/migrations/_apply.py <파일.sql> ...`
+>
+> **공유 RDS 는 서버에서 돌린다** — 로컬 `.env` 는 로컬 컨테이너를 가리킨다.
+>
+> ```bash
+> ssh -i skn29-2team-key.pem ubuntu@43.200.114.119
+> cd ~/SKN29-Final-2Team
+> docker compose -f infra/docker/docker-compose.aws.yml exec -T web >   python DB/migrations/_apply.py --check
+> ```
+>
+> ⚠ **마이그레이션이 있는 병합은 배포 전에 이걸 돌린다.** 2026-08-18 오전에
+> 「코드는 새 스키마, DB 는 옛 스키마」로 배포돼 채팅이 통째로 막혔는데,
+> 테스트 700건이 전부 통과한 상태였다 — 테스트가 실제 RDS 를 안 쓰기 때문이다.
+> **새 마이그레이션을 더하면 `_apply.py` 의 `EXPECTED` 에 한 줄 추가한다.**
+
+
 `DB/schema.sql`은 **`db` 컨테이너를 처음 만들 때만** 실행된다. 이미 볼륨이 있으면 이후 `schema.sql` 변경은 반영되지 않는다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 수동 `ALTER`로 공유한다.
 
 아래를 실행하면 최신 스키마가 된다. 멱등이라 여러 번 실행해도 안전하다 — 예외는 둘이다. `exist_task.proj_source_id`의 `NOT NULL`(이 테이블이 비어 있을 때만 걸린다)과, `doc` 의 CHECK 둘(데이터가 조건을 어기면 걸린다). 둘 다 블록 바로 아래 주석이 다룬다.
