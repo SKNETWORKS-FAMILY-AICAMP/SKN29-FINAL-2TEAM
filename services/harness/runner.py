@@ -309,7 +309,7 @@ def run_agent(
                     # **사람이 고칠 수 있는 사유만 그대로 내보낸다.** 그 밖의
                     # 예외는 문자열에 문서 원문이나 토큰이 섞여 있을 수 있어
                     # 클래스 이름만 남긴다.
-                    detail = str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None
+                    detail = str(exc) if isinstance(exc, SPEAKABLE_ERRORS) else None
                     yield {
                         "type": EVENT_TOOL_CALL_FINISHED,
                         "tool_call_id": tool_call_id,
@@ -442,7 +442,7 @@ def check_tools(
                     "tool_name": tool.name,
                     "status": "FAILED",
                     "error_code": error_code_of(exc),
-                    "detail": str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None,
+                    "detail": str(exc) if isinstance(exc, SPEAKABLE_ERRORS) else None,
                 }
             )
         else:
@@ -495,7 +495,12 @@ def _forward(events: Iterator[dict[str, Any]], tool_ref: str, tool_call_id: str 
 #:
 #: 여기 없는 예외(라이브러리·드라이버)는 클래스 이름만 나간다. 그 문자열에는
 #: 쿼리·문서 원문·토큰이 섞여 있을 수 있다.
-_SPEAKABLE_ERRORS = (registry.ToolInputError, RepositoryError, OAuthError)
+#:
+#: **공개 이름이다** — 새 런타임(`services/agent_runtime/factory.py`)이 같은
+#: 기준을 써야 해서 밑줄을 뗐다. 두 엔진이 서로 다른 목록을 들면, 같은 실패가
+#: 한쪽에서는 사유와 함께 보이고 다른 쪽에서는 「요청을 끝내지 못했습니다」로만
+#: 보인다(2026-08-18 QA 에서 실제로 그랬다).
+SPEAKABLE_ERRORS = (registry.ToolInputError, RepositoryError, OAuthError)
 
 
 def _suspended(output: Any) -> dict[str, Any] | None:

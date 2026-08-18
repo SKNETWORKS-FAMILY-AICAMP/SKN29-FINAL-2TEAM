@@ -64,7 +64,23 @@ def _to_langchain_tool(
                 f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다."
             )
         resolved = inject_runtime_context(tool, kwargs, context)
-        return tool.handler(**resolved)
+        try:
+            return tool.handler(**resolved)
+        except Exception as exc:  # noqa: BLE001 - 말할 수 있는 것만 걸러 되돌린다
+            # 지연 import — `services.harness.runner` 의 무거운 의존성 사슬을 이
+            # 모듈이 항상 끌고 들어오지 않게 한다(`agent_platform.py` 와 같은 이유).
+            from services.harness.runner import SPEAKABLE_ERRORS
+
+            if not isinstance(exc, SPEAKABLE_ERRORS):
+                raise
+            # **사람이 고칠 수 있는 사유는 모델에게 돌려준다.** 그냥 올리면
+            # LangGraph `ToolNode` 가 실행을 통째로 죽이고, 화면에는 사유 없이
+            # 「요청을 끝내지 못했습니다」만 남는다 — 도구는 「프로젝트를 먼저
+            # 고르세요」라고 정확히 말했는데 그 문장이 버려졌다(2026-08-18 QA §B-0 ②).
+            #
+            # 기준은 레거시와 **같은 목록**을 쓴다. 두 엔진이 서로 다른 목록을
+            # 들면 같은 실패가 한쪽에서만 설명된다.
+            return {"error": str(exc)}
 
     return StructuredTool.from_function(
         func=_run,
