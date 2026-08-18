@@ -776,7 +776,11 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_people_list,
-        category="팀원",
+        # HR로 묶는다(2026-08-18) — workload_report/absence_list와 같이 전부
+        # `backend/services/hr`(팀원 명부·역량·부재)가 원본이다. 도구 선택
+        # 화면에서 "사람에 관한 도구"를 하나로 보기 쉽게 하려는 것(지훈 요청,
+        # "비슷한 커넥터별로 묶자"의 첫 걸음).
+        category="HR",
     ),
     "workload_report": Tool(
         ref="workload_report",
@@ -790,7 +794,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": [],
         },
         handler=_workload_report,
-        category="근무",
+        category="HR",
     ),
     "task_extraction": Tool(
         ref="task_extraction",
@@ -904,7 +908,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": [],
         },
         handler=_absence_list,
-        category="근무",
+        category="HR",
     ),
     "task_register": Tool(
         ref="task_register",

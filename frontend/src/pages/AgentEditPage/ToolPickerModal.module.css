@@ -7,3 +7,9 @@
 .serverName { display: flex; align-items: center; gap: var(--space-2); font-size: 14px; font-weight: 700; color: var(--color-heading); }
 .settingsLink { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--color-primary); padding: 0; }
 .createTab { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+
+/* 카테고리 설명(2026-08-18) — 체크박스 라벨(카테고리 이름) 아래 한 줄. */
+.categoryDesc { margin: 0; padding-left: 28px; font-size: 12px; line-height: 1.4; color: var(--color-muted); }
+
+/* "세부 툴 확인" — 기본은 접혀 있다(먼저 카테고리 단위로만 고르게 하려는 것). */
+.expandToggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-left: 28px; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600; color: var(--color-primary); padding: 0; }
