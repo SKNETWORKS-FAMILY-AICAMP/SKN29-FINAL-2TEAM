@@ -51,6 +51,7 @@ export const PATHS = {
   agentVersionNew: '/agents/versions/new/edit',
   settingsConnectors: '/settings/connectors',
   settingsModel: '/settings/model',
+  settingsMyFiles: '/settings/my-files',
 } as const;
 
 export interface RouteEntry {
@@ -86,6 +87,7 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
+  { path: PATHS.settingsMyFiles, label: '설정 · 내 파일', group: '설정' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
   { path: PATHS.ops, label: '운영 현황', group: '운영자 콘솔' },
@@ -131,4 +133,5 @@ export const SETTINGS_TABS = [
   { label: '팀', to: PATHS.settingsTeam },
   { label: 'Connector', to: PATHS.settingsConnectors },
   { label: 'Model', to: PATHS.settingsModel },
+  { label: '내 파일', to: PATHS.settingsMyFiles },
 ];

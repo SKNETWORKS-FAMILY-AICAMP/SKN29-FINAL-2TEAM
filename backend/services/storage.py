@@ -54,6 +54,69 @@ def build_key(*, team_id: str, doc_id: str, mime_type: str | None) -> str:
     return f"{team_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
 
 
+def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -> str:
+    """개인이 올린 파일의 `doc.storage_key`.
+
+    **팀 문서와 자리를 가른다**(2026-08-18 · 「내 파일」). `build_key` 는
+    `{team_id}/` 로 시작하는데 개인 문서는 팀이 없어서 그 키가 `None/...` 이
+    된다. 그리고 팀 아래에 두면 **팀을 통째로 지울 때 개인 파일이 함께
+    지워진다** — 개인 소유로 둔 결정과 어긋난다.
+
+    이름 있는 앞자리를 쓰는 것은 `avatar/` 와 같은 방식이다. 계정마다 디렉터리를
+    하나 주는 것은, 계정을 지울 때 그 하나면 끝나게 하려는 것이다.
+    """
+
+    return f"user/{account_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
+
+
+#: 사용자가 올릴 수 있는 형식. **확장자에서 형식을 정한다** — 브라우저가 보내는
+#: Content-Type 은 믿을 수 없고(아바타 업로드와 같은 판단), 문서는 바이트만으로
+#: 형식을 못 가린다(아래 참조).
+_UPLOAD_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+}
+
+#: 앞부분 시그니처가 **있는** 형식만. 나머지는 대조할 것이 없다.
+_UPLOAD_SIGNATURES = {
+    "application/pdf": b"%PDF-",
+    # docx·pptx·xlsx 는 셋 다 zip 이다. 「zip 인가」까지만 확인할 수 있고
+    # 셋을 **서로 구분하지는 못한다** — 확장자를 믿는 수밖에 없다.
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": b"PK",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": b"PK",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": b"PK",
+}
+
+
+def upload_mime_type(file_name: str, data: bytes) -> str | None:
+    """올린 파일의 형식. 못 받는 것이면 `None`.
+
+    **아바타만큼 강하지 않다.** 이미지는 시그니처로 형식이 갈리지만(`sniff_image_type`)
+    문서는 그렇지 않다 — PDF 는 `%PDF-` 로 잡히는데 docx·pptx·xlsx 는 셋 다 zip 이라
+    서로 구분되지 않고, txt·md·csv 는 시그니처가 아예 없다.
+
+    그래서 **확장자 화이트리스트가 1차 관문**이고, 시그니처는 있는 것만 대조한다.
+    이 차이를 적어 두지 않으면 다음 사람이 아바타를 보고 같은 수준으로 믿는다.
+    확장자를 경로에 쓰지는 않는다 — 키는 `doc_id` 로 만든다.
+    """
+
+    _, dot, extension = file_name.rpartition(".")
+    if not dot:
+        return None
+    mime = _UPLOAD_TYPES.get(f".{extension.lower()}")
+    if mime is None:
+        return None
+    signature = _UPLOAD_SIGNATURES.get(mime)
+    if signature and not data.startswith(signature):
+        return None
+    return mime
+
+
 # 프로필 사진으로 받을 형식. 확장자는 여기서 정한다 — 업로드된 파일명을 경로에
 # 쓰면 `..`이나 `/`로 저장소 밖을 가리킬 수 있다.
 AVATAR_TYPES = {
@@ -172,6 +235,24 @@ def load(key: str) -> bytes:
     if _use_s3():
         return _client().get_object(Bucket=_bucket(), Key=_checked(key))["Body"].read()
     return _resolved(key).read_bytes()
+
+
+def remove(key: str) -> None:
+    """원문을 지운다. **이미 없으면 조용히 넘어간다.**
+
+    부르는 쪽은 이미 DB 행을 지운 뒤다 — 여기서 「없다」로 터지면 화면은 삭제가
+    실패했다고 말하는데 실제로는 끝난 상태가 된다.
+
+    커넥터 문서에는 안 쓴다. 그쪽은 원본이 Drive 에 있어 사본을 남겨 두는 편이
+    맞고(다시 받는 값이다), 이건 **원본이 우리뿐인 내 파일**을 위한 것이다.
+    """
+
+    if _use_s3():
+        # S3 의 `DeleteObject` 는 없는 키에도 성공을 돌려준다 — 그 성질이 여기서
+        # 필요한 동작과 같다.
+        _client().delete_object(Bucket=_bucket(), Key=_checked(key))
+        return
+    _resolved(key).unlink(missing_ok=True)
 
 
 def exists(key: str) -> bool:

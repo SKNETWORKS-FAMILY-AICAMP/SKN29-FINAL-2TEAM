@@ -316,3 +316,68 @@
     align-items: stretch;
   }
 }
+
+/* ── 「내 파일」 업로드 자리 (2026-08-18 · M④) ────────────────────────── */
+
+.dropZone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 20px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  text-align: center;
+  /* 한글은 단어 안에서 끊기면 읽기 어렵다. 어절 단위로 넘긴다. */
+  word-break: keep-all;
+}
+
+.dropZone:hover,
+.dropZone:focus-visible {
+  border-color: var(--color-primary);
+}
+
+/* 끌어다 놓는 동안 받는 자리라는 것이 보여야 한다 — 안 그러면 어디에
+   놓아야 할지 모른 채 화면 위를 헤맨다. */
+.dropZoneOn {
+  border-color: var(--color-primary);
+  border-style: solid;
+  background: var(--color-primary-soft);
+}
+
+.dropTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.dropHint {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/*
+ * 줄이 여러 줄짜리일 때.
+ *
+ * `.row` 는 `align-items: center` 다 — 대부분의 줄이 한 줄이라 아이콘·버튼이
+ * 위에 붙으면 어긋나 보이기 때문이다(2026-08-12 판단, 그대로 둔다). 그런데
+ * 내 파일 줄은 요약·안내·키워드가 붙어 **네다섯 줄**이라, 가운데 정렬하면
+ * 아이콘이 요약 한복판까지 내려온다(375px 에서 이름보다 165px 아래였다).
+ *
+ * 그 줄에만 위 정렬을 준다. 공용 규칙을 바꾸면 짧은 줄들이 다시 어긋난다.
+ */
+.rowTall {
+  align-items: flex-start;
+}
+
+/* 자리 전체가 버튼이라 input 자체는 안 보인다. `display: none` 이 아니라
+   숨기기만 하는 것은, 없애 버리면 일부 브라우저에서 클릭이 안 열리기 때문이다. */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

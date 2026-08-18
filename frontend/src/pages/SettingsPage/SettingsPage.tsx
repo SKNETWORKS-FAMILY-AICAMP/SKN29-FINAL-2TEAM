@@ -7,10 +7,11 @@ import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettings
 import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
 import { ModelTab } from './tabs/ModelTab';
+import { MyFilesTab } from './tabs/MyFilesTab';
 import styles from './SettingsPage.module.css';
 
 /**
- * Settings 허브 — 팀 / Connector / Model 탭 컨테이너.
+ * Settings 허브 — 팀 / Connector / Model / 내 파일 탭 컨테이너.
  *
  * **커스텀 도구 탭은 걷었다**(2026-08-18 PM). 팀이 붙일 수 없게 된 뒤로는
  * 「볼 수만 있는 탭」이었고, 정작 그 서버의 도구를 고르는 자리는 에이전트
@@ -32,6 +33,8 @@ export default function SettingsPage() {
         return <ConnectorTab />;
       case PATHS.settingsModel:
         return <ModelTab />;
+      case PATHS.settingsMyFiles:
+        return <MyFilesTab />;
       default:
         return role === 'leader' ? (
           <TeamLeaderSettingsPage />

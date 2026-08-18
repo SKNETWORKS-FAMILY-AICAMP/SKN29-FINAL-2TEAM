@@ -109,8 +109,11 @@ def _document_search(
     """
 
     vector = embed_queries([query])[0]
+    # `account_id` 를 함께 넘긴다 — 팀 문서에 **내가 켠 내 파일**을 더해 본다
+    # (2026-08-18 · M④). 에이전트에 파일을 붙이는 개념은 안 만들었으므로 켠
+    # 파일은 모든 에이전트가 쓴다.
     candidates = DocMetaRepository.coarse_search(
-        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N
+        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
     )
 
     if candidates:
@@ -152,12 +155,13 @@ def _document_search(
                 "요약으로는 관련 있어 보이는 문서를 찾았지만 본문이 아직 색인되지 않아 "
                 "문장 근거를 낼 수 없습니다."
                 if candidates
-                else "팀에 검색할 문서가 없습니다."
+                else "검색할 문서가 없습니다."
             ),
         }
 
     rows = VectorSearchRepository.search(
-        team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k
+        team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k,
+        account_id=account_id,
     )
     result = {
         "query": query,
