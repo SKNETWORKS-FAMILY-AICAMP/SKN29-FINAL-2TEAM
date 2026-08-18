@@ -1,8 +1,12 @@
-"""문서 저장소 — Drive에서 내려받은 원문을 보관한다.
+"""문서 저장소 — Drive에서 내려받은 원문과 사용자가 올린 파일을 보관한다.
 
-지금은 로컬 디스크다. AWS 계정을 받으면 S3로 바뀌지만, 그때도 `doc.storage_key`
-값은 그대로 쓸 수 있어야 한다. 그래서 키는 **경로가 아니라 저장소 안의 이름**으로
-다룬다 — 호출자는 파일이 어디 있는지 모르고 키만 안다.
+**로컬 디스크와 S3 둘 다 된다**(2026-08-18). `OBJECT_STORAGE_PROVIDER` 가 고르고,
+기본값은 `local` 이다. 키는 **경로가 아니라 저장소 안의 이름**이라 어느 쪽이든
+`doc.storage_key` 값이 그대로 쓰인다 — 호출자는 파일이 어디 있는지 모르고 키만
+안다. 그래서 이 파일 밖은 한 줄도 안 바뀐다.
+
+**Django settings 를 안 읽는다.** 환경 변수를 직접 본다 — 이 모듈은 Django 밖
+(스크립트·워커)에서도 import 되므로, settings 를 걸면 그쪽이 못 쓴다.
 
 원문을 남기는 이유는 세 가지다.
 
@@ -99,12 +103,60 @@ def _resolved(key: str) -> Path:
     return path
 
 
+def _checked(key: str) -> str:
+    """S3 용 키 검사.
+
+    **경로 해석이 없다고 검사를 건너뛰지 않는다.** 로컬에서는 `_resolved` 가
+    `..` 를 풀어 저장소 밖을 막는데, S3 는 키를 문자열로만 다뤄서 `a/../b` 가
+    그대로 객체 이름이 된다 — 막히지는 않지만 **같은 파일이 두 이름으로 생긴다**
+    (로컬에서는 하나였던 것이). 두 백엔드가 다르게 동작하면 갈아탈 때 드러난다.
+    """
+
+    if not key or key.startswith("/") or ".." in key.split("/"):
+        raise ValueError(f"문서 저장소 밖을 가리키는 키입니다: {key}")
+    return key
+
+
+def _use_s3() -> bool:
+    return os.environ.get("OBJECT_STORAGE_PROVIDER", "local").strip().lower() == "s3"
+
+
+def _bucket() -> str:
+    name = os.environ.get("AWS_STORAGE_BUCKET_NAME", "").strip()
+    if not name:
+        # 조용히 로컬로 떨어지지 않는다 — 저장은 됐는데 아무도 못 찾는 상태가
+        # 되고, 그 사실이 파싱 실패로 한참 뒤에 드러난다.
+        raise RuntimeError(
+            "OBJECT_STORAGE_PROVIDER=s3 인데 AWS_STORAGE_BUCKET_NAME 이 비어 있습니다."
+        )
+    return name
+
+
+def _client():
+    """boto3 클라이언트. **키를 안 넘긴다** — 자격 증명은 boto3 가 찾는다.
+
+    EC2 에서는 인스턴스 역할이, 로컬에서는 `AWS_ACCESS_KEY_ID`·
+    `AWS_SECRET_ACCESS_KEY` 환경 변수가 잡힌다. 여기서 키를 읽어 넘기면 역할로
+    도는 서버에서 빈 문자열을 자격 증명으로 넘기게 된다.
+    """
+
+    import boto3
+
+    return boto3.client("s3", region_name=os.environ.get("AWS_S3_REGION_NAME") or None)
+
+
 def save(key: str, data: bytes) -> str:
     """원문을 저장하고 `sha256:<hex>` 형태의 내용 해시를 돌려준다.
 
     같은 키로 다시 저장하면 덮어쓴다 — Drive에서 문서가 수정되면 새 내용이
     맞고, 이전 판은 `cur_revision`으로 구분한다.
     """
+
+    if _use_s3():
+        _client().put_object(Bucket=_bucket(), Key=_checked(key), Body=data)
+        # 반쪽 쓰기를 걱정하지 않는다 — S3 의 `PutObject` 는 원자적이라 성공하기
+        # 전까지 이전 객체가 그대로 보인다(로컬의 `.part` → rename 과 같은 뜻).
+        return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
     path = _resolved(key)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,8 +169,23 @@ def save(key: str, data: bytes) -> str:
 
 
 def load(key: str) -> bytes:
+    if _use_s3():
+        return _client().get_object(Bucket=_bucket(), Key=_checked(key))["Body"].read()
     return _resolved(key).read_bytes()
 
 
 def exists(key: str) -> bool:
+    if _use_s3():
+        from botocore.exceptions import ClientError
+
+        try:
+            _client().head_object(Bucket=_bucket(), Key=_checked(key))
+        except ClientError as exc:
+            # **없는 것과 못 읽는 것을 가른다.** 권한이 빠졌거나 버킷 이름이
+            # 틀렸을 때 `False` 를 돌려주면 화면이 「원문 파일이 없습니다」라고
+            # 말하고, 설정 문제를 아무도 못 본다.
+            if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+        return True
     return _resolved(key).is_file()

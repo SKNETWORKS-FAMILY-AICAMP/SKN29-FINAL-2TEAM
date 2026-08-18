@@ -19,7 +19,12 @@ from backend.services import storage
 class DocumentStorageTests(SimpleTestCase):
     def setUp(self):
         self._directory = tempfile.TemporaryDirectory()
-        patcher = patch.dict("os.environ", {"DOCUMENT_STORAGE_ROOT": self._directory.name})
+        # provider 를 함께 고정한다. 이 값이 s3 인 환경에서 돌면 로컬 백엔드가
+        # 아니라 S3 를 재게 된다(2026-08-18 에 이 값이 처음 의미를 갖게 됐다).
+        patcher = patch.dict(
+            "os.environ",
+            {"DOCUMENT_STORAGE_ROOT": self._directory.name, "OBJECT_STORAGE_PROVIDER": "local"},
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self._directory.cleanup)
@@ -63,6 +68,88 @@ class DocumentStorageTests(SimpleTestCase):
 
         with self.assertRaises(ValueError):
             storage.save("../escaped.md", b"nope")
+
+
+class S3StorageTests(SimpleTestCase):
+    """S3 백엔드 — **네트워크에 안 나간다.** boto3 클라이언트를 목으로 막는다.
+
+    여기서 재는 것은 **두 백엔드가 같은 계약을 지키는가**다. 키 모양·해시·
+    없는 것과 못 읽는 것의 구분이 갈리면, 갈아타는 날 조용히 다르게 돈다.
+    """
+
+    def setUp(self):
+        patcher = patch.dict(
+            "os.environ",
+            {
+                "OBJECT_STORAGE_PROVIDER": "s3",
+                "AWS_STORAGE_BUCKET_NAME": "bucket-x",
+                "AWS_S3_REGION_NAME": "ap-northeast-2",
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _client(self):
+        client = Mock()
+        return patch("backend.services.storage._client", return_value=client), client
+
+    def test_save_puts_the_object_and_returns_same_hash_as_local(self):
+        """해시가 백엔드마다 다르면 변경 감지가 갈아타는 순간 전부 「바뀜」이 된다."""
+
+        patcher, client = self._client()
+        with patcher:
+            digest = storage.save("TE001/DC001.md", b"hello")
+
+        client.put_object.assert_called_once_with(
+            Bucket="bucket-x", Key="TE001/DC001.md", Body=b"hello"
+        )
+        self.assertEqual(
+            digest, "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+
+    def test_load_reads_the_body(self):
+        patcher, client = self._client()
+        client.get_object.return_value = {"Body": Mock(read=Mock(return_value=b"data"))}
+        with patcher:
+            self.assertEqual(storage.load("TE001/DC001.md"), b"data")
+
+    def test_missing_object_is_false(self):
+        from botocore.exceptions import ClientError
+
+        patcher, client = self._client()
+        client.head_object.side_effect = ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        with patcher:
+            self.assertFalse(storage.exists("TE001/DC001.md"))
+
+    def test_permission_error_is_not_reported_as_missing(self):
+        """`False` 로 뭉개면 화면이 「원문 파일이 없습니다」라고 말하고,
+        설정이 틀렸다는 사실을 아무도 못 본다."""
+
+        from botocore.exceptions import ClientError
+
+        patcher, client = self._client()
+        client.head_object.side_effect = ClientError({"Error": {"Code": "403"}}, "HeadObject")
+        with patcher, self.assertRaises(ClientError):
+            storage.exists("TE001/DC001.md")
+
+    def test_key_escaping_storage_is_rejected(self):
+        """경로 해석이 없다고 검사를 건너뛰면 `a/../b` 가 그대로 객체 이름이 되어
+        로컬에서는 하나였던 파일이 두 이름으로 생긴다."""
+
+        patcher, client = self._client()
+        with patcher:
+            for key in ("../escaped.md", "/absolute.md", "TE001/../../out.md"):
+                with self.subTest(key=key):
+                    with self.assertRaises(ValueError):
+                        storage.save(key, b"nope")
+        client.put_object.assert_not_called()
+
+    def test_missing_bucket_name_is_loud(self):
+        """조용히 로컬로 떨어지면 저장은 됐는데 아무도 못 찾는 상태가 된다."""
+
+        with patch.dict("os.environ", {"AWS_STORAGE_BUCKET_NAME": ""}):
+            with self.assertRaises(RuntimeError):
+                storage.save("TE001/DC001.md", b"x")
 
 
 class DriveDownloadTests(SimpleTestCase):
