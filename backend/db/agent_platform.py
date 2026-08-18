@@ -610,6 +610,28 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
         ),
     )
 
+    # **읽기 도구를 기본으로 붙인다**(2026-08-18 PM 결정). 전에는 0개로 만들었는데,
+    # 그러면 기본 상태에서 제품의 대표 발화가 전부 실패한다 — QA §B-0 에서
+    # 「업무 뽑아줘」가 **「문서를 대화에 첨부해 주세요」**(이 제품에 없는 방식)로,
+    # 「팀원 누구야?」가 「조회할 수 없다」로 끝났다. 사람이 Chat 의 「+」로 붙일
+    # 수는 있지만, 처음 쓰는 사람은 그 버튼을 눌러야 한다는 것을 모른다.
+    #
+    # **쓰기 도구는 뺀다.** 기본값이 남의 Jira 에 이슈를 만들거나 업무를 고칠 수
+    # 있으면 안 된다 — 그건 사람이 그 에이전트를 만들면서 고르는 일이다.
+    #
+    # 목록을 여기 박지 않고 `side_effect` 에서 끌어온다. 그 플래그가 「밖을
+    # 바꾸는가」의 정본이라(`tests/test_adapters.py` 의 EXPECTED_SIDE_EFFECT),
+    # 새 도구가 늘어도 읽기면 자동으로 붙고 쓰기면 자동으로 빠진다.
+    from services.harness.registry import BUILTIN_TOOLS
+
+    for tool_ref, tool in BUILTIN_TOOLS.items():
+        if tool.side_effect:
+            continue
+        cursor.execute(
+            "INSERT INTO agent_version_tools (agent_version_id, tool_ref) VALUES (%s, %s)",
+            (agent_version_id, tool_ref),
+        )
+
     cursor.execute(
         "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
         (agent_version_id, agent_id),
