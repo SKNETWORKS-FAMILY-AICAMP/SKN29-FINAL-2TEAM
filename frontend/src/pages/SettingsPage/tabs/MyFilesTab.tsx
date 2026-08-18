@@ -27,7 +27,13 @@ import styles from './tabs.module.css';
  * 「켜져 있는데 안 나오는」 상태가 정상이 되는데, 그건 설명할 수 없는 화면이다.
  */
 
-/** 처리 상태 칩. **넷을 뭉개지 않는다** — 사람이 할 행동이 각각 다르다. */
+/**
+ * 처리 상태 칩. **넷을 뭉개지 않는다** — 사람이 할 행동이 각각 다르다.
+ *
+ * **설명은 안 붙인다**(2026-08-18 PM). 배지가 이미 상태를 말하므로 그것을 풀어
+ * 쓰는 줄은 자리만 차지한다. 남는 것은 **다음에 무엇을 할지**뿐이고, 기다리는
+ * 것 말고 할 일이 없는 상태에는 그것도 없다.
+ */
 function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint: string } {
   if (file.search_ready) {
     return { tone: 'success', label: '검색 준비됨', hint: '' };
@@ -36,23 +42,19 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
     return {
       tone: 'warning',
       label: '읽을 수 없는 형식',
-      hint: '이 형식은 본문을 뽑을 수 없습니다. 다른 형식으로 저장해 다시 올려 주세요.',
+      hint: '다른 형식으로 저장해 다시 올려 주세요.',
     };
   }
   if (file.extract_status === 'FAILED') {
     return {
       tone: 'warning',
       label: '본문 추출 실패',
-      hint: '글자가 없는 스캔 이미지일 수 있습니다. 텍스트가 들어 있는 파일로 다시 올려 주세요.',
+      hint: '텍스트가 들어 있는 파일로 다시 올려 주세요.',
     };
   }
   // 요약은 됐는데 청크가 아직 없는 상태와, 막 올라온 상태를 같이 본다 —
   // 사람이 할 일이 「기다린다」로 같다.
-  return {
-    tone: 'neutral',
-    label: file.summary ? '본문 읽는 중' : '읽는 중',
-    hint: '읽고 색인하는 중입니다. 몇 분 걸릴 수 있고, 끝나면 검색에 쓰입니다.',
-  };
+  return { tone: 'neutral', label: file.summary ? '본문 읽는 중' : '읽는 중', hint: '' };
 }
 
 const ACCEPT = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.csv';
@@ -309,17 +311,11 @@ export function MyFilesTab() {
                   {inner === 'shared' && (
                     <span className={styles.rowMeta}>{file.owner_name ?? '알 수 없음'} 님이 공유</span>
                   )}
-                  {file.summary && <span className={styles.rowMeta}>{file.summary}</span>}
+                  {/* **문서 내용은 목록에 안 찍는다**(2026-08-18 PM). 요약을
+                      그대로 얹었더니 줄마다 기획서 본문이 문단째로 쏟아졌다 —
+                      파일 목록은 **어느 파일인지 고르는 자리**지 읽는 자리가
+                      아니다. 키워드 칩도 같은 이유로 뺐다. */}
                   {chip.hint && <span className={styles.rowMeta}>{chip.hint}</span>}
-                  {file.keywords.length > 0 && (
-                    <span className={styles.chips}>
-                      {file.keywords.map((word) => (
-                        <span key={word} className={styles.chip}>
-                          {word}
-                        </span>
-                      ))}
-                    </span>
-                  )}
                 </div>
                 {/* **받은 파일에는 조작이 없다.** 남의 것이라 지울 수도 공유를
                     거둘 수도 없고, 검색에는 공유한 순간부터 이미 쓰인다 —
