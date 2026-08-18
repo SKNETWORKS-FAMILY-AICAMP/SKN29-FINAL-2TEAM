@@ -54,6 +54,9 @@ class Tool:
     #: 외부 시스템을 바꾸는가. True 면 Runner 가 승인 전에 실행하지 않는다
     #: (8/11 확정 ③).
     side_effect: bool = False
+    #: 도구 선택 화면이 묶어 보여줄 단위(예: "Jira", "문서"). 저장·실행에는
+    #: 안 쓴다 — 화면 표현 전용(2026-08-18, 도구 선택 그룹화).
+    category: str = "기타"
 
 
 class ToolNotAllowed(Exception):
@@ -716,6 +719,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": ["query"],
         },
         handler=_document_search,
+        category="문서",
     ),
     "people_list": Tool(
         ref="people_list",
@@ -726,6 +730,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_people_list,
+        category="팀원",
     ),
     "workload_report": Tool(
         ref="workload_report",
@@ -739,6 +744,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": [],
         },
         handler=_workload_report,
+        category="근무",
     ),
     "task_extraction": Tool(
         ref="task_extraction",
@@ -750,6 +756,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_extract_tasks,
+        category="업무 추출(AI)",
     ),
     "project_list": Tool(
         ref="project_list",
@@ -761,6 +768,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_project_list,
+        category="프로젝트",
     ),
     "task_list": Tool(
         ref="task_list",
@@ -771,6 +779,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_task_list,
+        category="업무 관리",
     ),
     "document_list": Tool(
         ref="document_list",
@@ -787,6 +796,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_document_list,
+        category="문서",
     ),
     "task_update": Tool(
         ref="task_update",
@@ -811,6 +821,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         },
         handler=_task_update,
         side_effect=True,
+        category="업무 관리",
     ),
     "web_search": Tool(
         ref="web_search",
@@ -830,6 +841,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": ["query"],
         },
         handler=_web_search,
+        category="웹 검색",
     ),
     "absence_list": Tool(
         ref="absence_list",
@@ -846,6 +858,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": [],
         },
         handler=_absence_list,
+        category="근무",
     ),
     "task_register": Tool(
         ref="task_register",
@@ -881,6 +894,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_task_register,
         # 우리 데이터를 바꾸고, 사람이 결과를 확정하는 지점이다.
         side_effect=True,
+        category="업무 관리",
     ),
     "jira_create_issues": Tool(
         ref="jira_create_issues",
@@ -920,6 +934,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_jira_create_issues,
         # 남의 Jira 에 이슈를 만든다. 승인 게이트를 반드시 탄다(8/11 확정 ③).
         side_effect=True,
+        category="Jira",
     ),
     "jira_get_issues": Tool(
         ref="jira_get_issues",
@@ -939,6 +954,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "required": [],
         },
         handler=_jira_get_issues,
+        category="Jira",
     ),
 }
 

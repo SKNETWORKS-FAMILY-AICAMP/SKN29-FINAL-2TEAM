@@ -120,6 +120,15 @@ export default function AgentVersionEditPage() {
     setToolRefs((prev) => (prev.includes(ref) ? prev.filter((item) => item !== ref) : [...prev, ref]));
   }
 
+  /** 도구 선택 화면의 그룹(카테고리) 마스터 체크박스용(2026-08-18). */
+  function toggleToolGroup(refs: string[], turnOn: boolean) {
+    setToolRefs((prev) =>
+      turnOn
+        ? [...prev, ...refs.filter((ref) => !prev.includes(ref))]
+        : prev.filter((item) => !refs.includes(item)),
+    );
+  }
+
   function toolLabel(ref: string): string {
     const fromCatalog = tools.find((item) => item.tool_ref === ref);
     if (fromCatalog) return fromCatalog.name;
@@ -427,6 +436,7 @@ export default function AgentVersionEditPage() {
           mcpServers={mcpServers}
           toolRefs={toolRefs}
           onToggle={toggleTool}
+          onToggleGroup={toggleToolGroup}
           onGoToMcpSettings={() => {
             setPickerOpen(false);
             navigate(PATHS.settingsMcp);

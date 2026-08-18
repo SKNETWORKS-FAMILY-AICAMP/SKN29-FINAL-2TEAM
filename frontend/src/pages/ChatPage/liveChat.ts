@@ -17,42 +17,6 @@ import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep } from './card
  * 생각 중"이 아니라 "무엇을 찾고 있나"이고, 그 문장은 도구가 낸다. Loop 회전은
  * 부제로만 쓴다.
  */
-/**
- * 부모(루트)가 직접 부른 도구 호출 한 건 — 순서대로 쌓인다(2026-08-15,
- * 오른쪽 메모리 패널용). `EVENT_TOOL_STARTED`가 그 자리에서 `RUNNING`으로
- * 밀어 넣고, 짝이 되는 `EVENT_TOOL_COMPLETED`가 `tool_call_id`로 찾아 상태만
- * 바꾼다 — 새 항목을 만들지 않는다(병렬 호출이어도 자리가 안 밀리게).
- */
-export interface ToolCallEntry {
-  seq: number;
-  toolCallId: string | null;
-  toolRef: string;
-  status: 'RUNNING' | 'OK' | 'FAILED';
-  arguments?: Record<string, unknown>;
-}
-
-/** `services/agent_runtime/memory/backend.py`의 `MEMORY_PATH_PREFIX`와 같은 값. */
-export const MEMORY_PATH_PREFIX = '/memories/';
-
-/**
- * 도구 호출 인자에서 `/memories/` 아래를 가리키는 경로를 찾는다. 없으면 `null`
- * — 이 도구 호출이 장기 메모리가 아니라는 뜻이다(예: 세션 안 스크래치 파일).
- *
- * deepagents 내장 파일 도구는 관례상 `file_path` 인자를 쓰지만(Claude 자신의
- * Read/Write/Edit 도구와 같은 관례 — 실행 검증은 아직 못 함, 작업기록
- * `2026-08-15_02_장기메모리_설계.md` §5), 확정된 계약이 아니라서 `path`도
- * 같이 보고, 그래도 없으면 값 전체를 훑는 방어적 순서로 찾는다.
- */
-export function memoryFilePath(args: Record<string, unknown> | undefined): string | null {
-  if (!args) return null;
-  const direct = args.file_path ?? args.path;
-  if (typeof direct === 'string' && direct.startsWith(MEMORY_PATH_PREFIX)) return direct;
-  for (const value of Object.values(args)) {
-    if (typeof value === 'string' && value.startsWith(MEMORY_PATH_PREFIX)) return value;
-  }
-  return null;
-}
-
 export interface LiveChat {
   /** Loop 회전. `tool_ref` 없는 stage 에서만 온다. */
   /** 도구 내부 진행. `tool_ref` 있는 stage·queries·stage_done 이 채운다. */
@@ -74,15 +38,8 @@ export interface LiveChat {
   /** Jira 현황. 도구가 이벤트로 준 것을 화면이 카드로 그린다. */
   jira: { projectKey: string; counts: Record<string, number>; issues: JiraIssue[] } | null;
   /**
-   * 루트가 직접 호출한 도구들의 순서(위임으로 들어간 서브 에이전트 내부
-   * 호출은 안 담는다 — Child는 메모리가 없다). 오른쪽 메모리 패널이 이 중
-   * `/memories/` 경로를 가리키는 것만 걸러 보여준다(`memoryFilePath`).
-   */
-  toolCalls: ToolCallEntry[];
-  /**
    * 루트가 낸 생각을 순서대로(2026-08-18). 서브 에이전트 자신의 생각은 안
-   * 담는다 — `toolCalls`가 위임 내부 호출을 안 담는 것과 같은 이유
-   * (`subagent_alias`가 있으면 이 턴의 최상위 표시에는 안 씀).
+   * 담는다 — `subagent_alias`가 있으면 이 턴의 최상위 표시에는 안 쓴다.
    */
   reasoningSteps: string[];
 }
@@ -103,7 +60,6 @@ export function emptyLive(): LiveChat {
     stoppedReason: null,
     error: null,
     jira: null,
-    toolCalls: [],
     reasoningSteps: [],
   };
 }
@@ -154,29 +110,8 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
     // 새 엔진이 실제로 내는 타입(위 `tool_call_started`와 다른 문자열 —
     // `api/chat.ts`의 2026-08-15 주석 참고). `subagent_alias`가 있으면
     // 서브 에이전트 자신의 호출이라 이 턴의 최상위 진행 표시에는 안 쓴다.
-    case 'tool_started': {
-      if (event.subagent_alias) return state;
-      const entry: ToolCallEntry = {
-        seq: state.toolCalls.length,
-        toolCallId: event.tool_call_id ?? null,
-        toolRef: event.tool_ref,
-        status: 'RUNNING',
-        arguments: event.arguments,
-      };
-      return { ...state, toolName: event.tool_ref, toolCalls: [...state.toolCalls, entry] };
-    }
-
-    case 'tool_completed': {
-      if (event.subagent_alias) return state;
-      // tool_call_id 로 짝을 맞춘다 — 병렬 호출이면 시작 순서와 끝나는 순서가
-      // 다를 수 있어서다(events.py 모듈 docstring과 같은 이유).
-      const toolCalls = state.toolCalls.map((call) =>
-        call.status === 'RUNNING' && call.toolCallId !== null && call.toolCallId === event.tool_call_id
-          ? { ...call, status: event.status }
-          : call,
-      );
-      return { ...state, toolCalls };
-    }
+    case 'tool_started':
+      return event.subagent_alias ? state : { ...state, toolName: event.tool_ref };
 
     case 'tool_call_finished': {
       const steps = state.steps.map((step) =>

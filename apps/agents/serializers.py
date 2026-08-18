@@ -90,6 +90,8 @@ def builtin_tool_response() -> list[dict[str, Any]]:
             "name": tool.name,
             "description": tool.description,
             "source": "기본 제공",
+            # 선택 화면이 묶어 보여줄 단위(2026-08-18) — 저장·실행에는 안 쓴다.
+            "category": tool.category,
             # 승인 게이트를 타는 도구인지 화면이 알아야 「승인 필요」를 표시한다.
             "side_effect": tool.side_effect,
             # 「도구 확인」 패널이 입력 폼을 자동 생성하는 데 쓴다.

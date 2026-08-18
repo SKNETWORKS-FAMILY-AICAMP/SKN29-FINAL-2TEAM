@@ -1373,7 +1373,8 @@ class ChatSessionRepository:
                         (team_id, account_id, agent_id, agent_version_id, proj_id, title)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING session_id::text, team_id, account_id, agent_id,
-                              agent_version_id, proj_id, title, created_at, updated_at
+                              agent_version_id, proj_id, title, tool_refs_override,
+                              created_at, updated_at
                     """,
                     (team_id, account_id, agent_id, agent_version_id, proj_id, title),
                 )

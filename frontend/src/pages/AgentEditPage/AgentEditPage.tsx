@@ -125,6 +125,15 @@ export default function AgentEditPage() {
     setToolRefs((prev) => (prev.includes(ref) ? prev.filter((item) => item !== ref) : [...prev, ref]));
   }
 
+  /** 도구 선택 화면의 그룹(카테고리) 마스터 체크박스용(2026-08-18). */
+  function toggleToolGroup(refs: string[], turnOn: boolean) {
+    setToolRefs((prev) =>
+      turnOn
+        ? [...prev, ...refs.filter((ref) => !prev.includes(ref))]
+        : prev.filter((item) => !refs.includes(item)),
+    );
+  }
+
   /** 칩에 표시할 이름. 내장 도구는 카탈로그에서, MCP 도구는 서버 목록에서 찾는다. */
   function toolLabel(ref: string): string {
     const fromCatalog = tools.find((item) => item.tool_ref === ref);
@@ -388,6 +397,7 @@ export default function AgentEditPage() {
           mcpServers={mcpServers}
           toolRefs={toolRefs}
           onToggle={toggleTool}
+          onToggleGroup={toggleToolGroup}
           onGoToMcpSettings={() => {
             setPickerOpen(false);
             navigate(PATHS.settingsMcp);

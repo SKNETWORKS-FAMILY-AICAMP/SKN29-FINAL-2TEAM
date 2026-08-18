@@ -28,7 +28,35 @@ export interface ToolPickerModalProps {
   mcpServers: McpServer[];
   toolRefs: string[];
   onToggle: (ref: string) => void;
+  /**
+   * 카테고리 카드 헤더의 「전체 선택」 마스터 체크박스(2026-08-18, 도구
+   * 선택 그룹화). **`onToggle`을 여러 번 부르지 않는다** — 부모의 토글
+   * 함수가 `toolRefs` 스냅샷을 읽어 하나씩 계산하는 구조라, 같은 렌더
+   * 안에서 연달아 부르면 뒤 호출이 앞 호출을 덮어써 마지막 도구 하나만
+   * 반영된다(ChatPage의 세션 override가 특히 그렇다 — 상태가 아니라 API
+   * 응답을 기다려 갱신한다). 그룹 전체를 한 번에 계산해 한 번만 반영하도록
+   * 별도 콜백으로 받는다.
+   */
+  onToggleGroup: (refs: string[], turnOn: boolean) => void;
   onGoToMcpSettings: () => void;
+}
+
+/** `ToolChoice.category`가 없으면(MCP 등) 이 이름으로 묶는다. */
+const UNCATEGORIZED = '기타';
+
+/** 카테고리 등장 순서를 그대로 유지해 그룹으로 묶는다. */
+function groupByCategory(items: ToolChoice[]): [string, ToolChoice[]][] {
+  const order: string[] = [];
+  const byCategory = new Map<string, ToolChoice[]>();
+  for (const item of items) {
+    const category = item.category ?? UNCATEGORIZED;
+    if (!byCategory.has(category)) {
+      order.push(category);
+      byCategory.set(category, []);
+    }
+    byCategory.get(category)!.push(item);
+  }
+  return order.map((category) => [category, byCategory.get(category)!]);
 }
 
 /**
@@ -44,9 +72,11 @@ export function ToolPickerModal({
   mcpServers,
   toolRefs,
   onToggle,
+  onToggleGroup,
   onGoToMcpSettings,
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
+  const builtinGroups = groupByCategory(builtinTools);
 
   return (
     <Modal
@@ -72,21 +102,44 @@ export function ToolPickerModal({
       </div>
 
       {tab === 'builtin' && (
-        <div className={pageStyles.toolList}>
-          {builtinTools.map((toolItem) => {
-            const checked = toolRefs.includes(toolItem.tool_ref);
+        <div className={styles.serverList}>
+          {builtinGroups.map(([category, items]) => {
+            const allOn = items.every((toolItem) => toolRefs.includes(toolItem.tool_ref));
             return (
-              <div
-                key={toolItem.tool_ref}
-                className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
-              >
-                <Checkbox checked={checked} onChange={() => onToggle(toolItem.tool_ref)} />
-                <div className={pageStyles.toolText}>
-                  <strong>
-                    {toolItem.name}
-                    {toolItem.side_effect && <span className={pageStyles.gate}> · 승인 필요</span>}
-                  </strong>
-                  <span>{toolItem.description}</span>
+              <div key={category} className={styles.serverGroup}>
+                <div className={styles.serverHead}>
+                  <span className={styles.serverName}>
+                    <Checkbox
+                      checked={allOn}
+                      onChange={(next) =>
+                        onToggleGroup(
+                          items.map((toolItem) => toolItem.tool_ref),
+                          next,
+                        )
+                      }
+                      label={category}
+                    />
+                  </span>
+                </div>
+                <div className={pageStyles.toolList}>
+                  {items.map((toolItem) => {
+                    const checked = toolRefs.includes(toolItem.tool_ref);
+                    return (
+                      <div
+                        key={toolItem.tool_ref}
+                        className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
+                      >
+                        <Checkbox checked={checked} onChange={() => onToggle(toolItem.tool_ref)} />
+                        <div className={pageStyles.toolText}>
+                          <strong>
+                            {toolItem.name}
+                            {toolItem.side_effect && <span className={pageStyles.gate}> · 승인 필요</span>}
+                          </strong>
+                          <span>{toolItem.description}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

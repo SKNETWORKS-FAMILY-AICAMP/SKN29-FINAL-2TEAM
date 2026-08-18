@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal, useToast } from '../../components';
 import { PATHS } from '../../routes';
@@ -26,8 +26,8 @@ import { listConnectors } from '../../api/connectors';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
 import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ReasoningTrace, ResultCard } from './cards/ChatCards';
-import { emptyLive, memoryFilePath, MEMORY_PATH_PREFIX, reduce, toCards, traceLine } from './liveChat';
-import type { LiveChat, ToolCallEntry } from './liveChat';
+import { emptyLive, reduce, toCards, traceLine } from './liveChat';
+import type { LiveChat } from './liveChat';
 import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
 import styles from './ChatPage.module.css';
 
@@ -126,24 +126,6 @@ function SessionRow({
 
 /** 소개를 봤는가. `sessionStorage` 가 아니라 `localStorage` 다 — 탭을 닫아도 기억한다. */
 const TOUR_SEEN_KEY = 'halil.tourSeen';
-
-/**
- * deepagents 내장 파일 도구 → 사람이 읽을 동사. 매핑에 없는 값(내장 도구가
- * 버전업으로 늘거나 이름이 바뀌면)은 `tool_ref` 원문을 그대로 보여준다 —
- * 지어내지 않는다.
- */
-const MEMORY_TOOL_LABEL: Record<string, string> = {
-  read_file: '읽기',
-  write_file: '쓰기',
-  edit_file: '수정',
-  ls: '목록 조회',
-};
-
-const MEMORY_STATUS_LABEL: Record<ToolCallEntry['status'], string> = {
-  RUNNING: '진행 중',
-  OK: '완료',
-  FAILED: '실패',
-};
 
 export default function ChatPage() {
   const navigate = useNavigate();
@@ -272,16 +254,25 @@ export default function ChatPage() {
     }
   }
 
-  /** 켜고 끄기 = 이 세션에 override를 저장(`chat_session.tool_refs_override`).
-   * 에이전트 원본은 안 건드린다 — 다른 대화·다른 사람에게 영향 없음. */
-  async function toggleSessionTool(ref: string) {
-    if (!token || !sessionId || togglingTool) return;
-    const current = sessionToolOverride ?? agentOwnToolRefs;
-    const next = current.includes(ref) ? current.filter((item) => item !== ref) : [...current, ref];
+  /**
+   * 실제 저장 — 세션이 있으면 서버에 반영하고, 없으면(아직 대화를 시작 안
+   * 했으면) 로컬에만 담아 둔다. 대화는 원래 첫 메시지를 보낼 때 그 자리에서
+   * 만들어진다(사람이 아무 말도 안 하고 나가면 빈 대화가 안 남게 하려는
+   * 설계, 다른 화면과 같은 원칙) — 여기서 미리 세션을 만들면 도구만 고르고
+   * 말은 안 건 빈 대화가 사이드바에 쌓인다. 골라 둔 값은 `sendText()`가
+   * 세션을 만든 직후 같이 저장한다.
+   */
+  async function applySessionToolRefs(nextList: string[]) {
+    if (!token) return;
+    if (!sessionId) {
+      setSessionToolOverride(nextList);
+      return;
+    }
+
     setTogglingTool(true);
     try {
-      const updated = await setSessionToolRefs(token, sessionId, next);
-      setSessionToolOverride(updated.tool_refs_override ?? next);
+      const updated = await setSessionToolRefs(token, sessionId, nextList);
+      setSessionToolOverride(updated.tool_refs_override ?? nextList);
       setSessions((prev) =>
         prev.map((item) => (item.session_id === sessionId ? { ...item, tool_refs_override: updated.tool_refs_override } : item)),
       );
@@ -290,6 +281,34 @@ export default function ChatPage() {
     } finally {
       setTogglingTool(false);
     }
+  }
+
+  /**
+   * 켜고 끄기 = 이 세션에 override를 저장(`chat_session.tool_refs_override`).
+   * 에이전트 원본은 안 건드린다 — 다른 대화·다른 사람에게 영향 없음.
+   */
+  async function toggleSessionTool(ref: string) {
+    if (!token || togglingTool) return;
+    const current = sessionToolOverride ?? agentOwnToolRefs;
+    const next = current.includes(ref) ? current.filter((item) => item !== ref) : [...current, ref];
+    await applySessionToolRefs(next);
+  }
+
+  /**
+   * 도구 선택 화면의 그룹(카테고리) 마스터 체크박스용(2026-08-18) — 그룹에
+   * 속한 도구 여러 개를 **한 번의 저장으로** 켜거나 끈다. `onToggle`을
+   * 그룹 크기만큼 연달아 부르면 `sessionToolOverride`가 아직 안 바뀐
+   * 상태에서 매번 같은 `current`를 다시 읽어(리렌더가 그 사이에 안 끼기
+   * 때문에) 마지막 호출만 반영되고 나머지는 덮어써진다 — 그래서 배열
+   * 하나를 통째로 계산해 한 번만 저장한다.
+   */
+  async function toggleSessionToolGroup(refs: string[], turnOn: boolean) {
+    if (!token || togglingTool) return;
+    const current = sessionToolOverride ?? agentOwnToolRefs;
+    const next = turnOn
+      ? [...current, ...refs.filter((ref) => !current.includes(ref))]
+      : current.filter((item) => !refs.includes(item));
+    await applySessionToolRefs(next);
   }
 
   /**
@@ -492,6 +511,21 @@ export default function ChatPage() {
         // **같은 자리의 이름이 정해진 것**이기 때문이다 — 뒤로 가기가 빈 대화로
         // 돌아가면 안 된다.
         navigate(`${PATHS.chat}/${id}`, { replace: true });
+
+        // 대화를 시작하기 전에 "+"로 미리 골라 둔 도구가 있으면(세션이 없어
+        // `toggleSessionTool()`이 로컬에만 담아 뒀던 값) 방금 만든 세션에
+        // 지금 저장한다 — 못 저장해도 대화 자체는 이미 열렸으니 조용히
+        // 넘어간다(도구 없이도 말은 할 수 있어야 한다).
+        if (sessionToolOverride !== null) {
+          try {
+            const updated = await setSessionToolRefs(token, id, sessionToolOverride);
+            setSessions((prev) =>
+              prev.map((item) => (item.session_id === id ? { ...item, tool_refs_override: updated.tool_refs_override } : item)),
+            );
+          } catch {
+            showToast('고른 도구를 대화에 저장하지 못했습니다.', 'error');
+          }
+        }
       }
     } catch (error) {
       setFatal(error instanceof ApiError ? error.message : '대화를 열지 못했습니다.');
@@ -599,23 +633,6 @@ export default function ChatPage() {
    * 목록에 없는 프로젝트를 가리키는 대화(지워졌거나 조회가 실패한 경우)도 그쪽에
    * 담긴다 — 안 그러면 사이드바에서 조용히 사라진다.
    */
-  /**
-   * 이 대화 전체(턴을 넘어)에서 `/memories/` 아래를 건드린 도구 호출을 시간
-   * 순서로 편다(2026-08-15). 위임으로 서브 에이전트에 들어간 호출은
-   * `liveChat.ts`의 reduce()가 애초에 `toolCalls`에 안 담는다(Child는
-   * 메모리가 없다 — 장기메모리 설계 문서 §4).
-   */
-  const memoryOps = useMemo(
-    () =>
-      turns.flatMap((turn) =>
-        (turn.live?.toolCalls ?? []).flatMap((call) => {
-          const path = memoryFilePath(call.arguments);
-          return path ? [{ call, path }] : [];
-        }),
-      ),
-    [turns],
-  );
-
   const known = new Set(projects.map((item) => item.proj_id));
   const loose = sessions.filter((row) => !row.proj_id || !known.has(row.proj_id));
   const groups = projects
@@ -1042,10 +1059,11 @@ export default function ChatPage() {
           </div>
 
           <div className={styles.inputBar}>
-            {/* 대화가 열려 있을 때만 뜬다(2026-08-18) — 도구 커스터마이즈는
-                세션 단위라 세션이 있어야 저장할 자리가 있다. 에이전트
-                원본은 안 건드리므로 어떤 에이전트로 대화 중이든 뜬다. */}
-            {sessionId && agentId && (
+            {/* 에이전트만 골라져 있으면 뜬다(2026-08-18) — 대화를 시작하기
+                전에도 도구를 미리 골라 둘 수 있다. 세션이 아직 없으면
+                `toggleSessionTool()`이 로컬에만 담아 두고, 첫 메시지로
+                세션이 만들어질 때 `sendText()`가 같이 저장한다. */}
+            {agentId && (
               <button
                 type="button"
                 className={styles.attachTools}
@@ -1091,54 +1109,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/*
-          2026-08-15 추가 — 장기 메모리(`/memories/AGENTS.md`)에 실제로 어떤
-          순서로 읽고 쓰는지 보고 싶다는 요청. 에이전트가 있으면(에이전트가
-          없으면 이 대화 자체가 죽어 있어 패널도 의미 없다) 늘 보이는 고정
-          패널이다 — 접었다 펼치는 상태를 따로 안 두는 이유는, 지금은 팀에
-          공유할 데모용으로 "실제로 이렇게 돈다"를 보여주는 게 목적이라
-          숨기면 그 목적에 안 맞는다.
-        */}
-        {agents.length > 0 && (
-          <aside className={styles.memoryPanel}>
-            <span className={styles.memoryPanelTitle}>
-              <Icon name="database" size={13} color="var(--color-muted)" />
-              장기 메모리 기록
-            </span>
-            {memoryOps.length === 0 ? (
-              <p className={styles.memoryEmpty}>
-                아직 이 대화에서 장기 메모리를 읽거나 쓴 적이 없습니다.
-              </p>
-            ) : (
-              <ol className={styles.memoryOpList}>
-                {memoryOps.map(({ call, path }, index) => (
-                  <li key={`${call.toolCallId ?? 'x'}-${index}`} className={styles.memoryOp}>
-                    <span className={styles.memoryOpIndex}>{index + 1}</span>
-                    <span className={styles.memoryOpBody}>
-                      <span className={styles.memoryOpLabel}>
-                        {MEMORY_TOOL_LABEL[call.toolRef] ?? call.toolRef}
-                      </span>
-                      <span className={styles.memoryOpPath} title={path}>
-                        {path.slice(MEMORY_PATH_PREFIX.length) || path}
-                      </span>
-                    </span>
-                    <span
-                      className={[
-                        styles.memoryOpStatus,
-                        call.status === 'FAILED' ? styles.memoryOpStatusFailed : '',
-                        call.status === 'RUNNING' ? styles.memoryOpStatusRunning : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                    >
-                      {MEMORY_STATUS_LABEL[call.status]}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </aside>
-        )}
       </div>
 
       {/* 되돌릴 수 없는 삭제라 한 번 묻는다. 서버가 대화와 함께 메시지도
@@ -1176,6 +1146,7 @@ export default function ChatPage() {
         mcpServers={mcpServers}
         toolRefs={sessionToolOverride ?? agentOwnToolRefs}
         onToggle={(ref) => void toggleSessionTool(ref)}
+        onToggleGroup={(refs, turnOn) => void toggleSessionToolGroup(refs, turnOn)}
         onGoToMcpSettings={() => {
           setToolPickerOpen(false);
           navigate(PATHS.settingsMcp);
