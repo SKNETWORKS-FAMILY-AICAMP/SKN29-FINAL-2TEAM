@@ -506,10 +506,10 @@ export function ErrorCard({ detail, errorCode, answered, onRetry, onOpenSettings
         <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
         요청을 끝내지 못했습니다
       </span>
+      {/* **「지금까지 정리된 내용은 위에 그대로 남아 있습니다」를 걷었다**
+          (2026-08-18 PM). 정리된 것이 하나도 없을 때도 그 말이 나왔다 —
+          아무것도 없는 화면을 두고 「위에 남아 있다」고 하면 거짓말이다. */}
       {body && <p className={styles.errorBody}>{body}</p>}
-      <p className={styles.errorBody}>
-        지금까지 정리된 내용은 위에 그대로 남아 있습니다.
-      </p>
       <div className={styles.errorActions}>
         {showSettings && (
           <Button size="sm" variant="outline" onClick={onOpenSettings}>

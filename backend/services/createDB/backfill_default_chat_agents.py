@@ -137,7 +137,7 @@ def backfill_team(conn, team_id: str) -> str | None:
             (
                 agent_id,
                 team_id,
-                "기본 챗",
+                "기본 어시스턴트",
                 "Chat 화면의 기본 상대입니다. 도구·MCP만 붙일 수 있고 다른 에이전트로 위임하지 않습니다.",
                 team["owner_account_id"],
             ),
