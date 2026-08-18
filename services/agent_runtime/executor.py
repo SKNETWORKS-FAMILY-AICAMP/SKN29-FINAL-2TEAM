@@ -67,6 +67,7 @@ class AgentExecutor:
         draft: dict | None = None,
         conversation_messages: Sequence[dict[str, Any]] = (),
         tool_refs_override: Sequence[str] | None = None,
+        resume_decisions: Sequence[dict[str, Any]] | None = None,
     ) -> Iterator[dict[str, Any]]:
         """`tool_refs_override`: 이 대화(chat_session)가 저장해 둔 도구
         커스터마이즈(2026-08-18, Chat "+" 버튼). `None`이면 로드된 정의의
@@ -76,6 +77,14 @@ class AgentExecutor:
         메모리 위의 정의만 바꾼다. 서브 에이전트의 도구는 영향 없다(이
         대화가 직접 부르는 루트만 대상 — 위임 내부까지 커스터마이즈하는 건
         범위 밖).
+
+        `resume_decisions`: 승인 게이트에서 멈춰 있던 실행을 잇는다(2026-08-18).
+        값이 있으면 `user_input`은 쓰지 않는다 — 멈춘 자리의 대화는
+        Checkpointer에 있고, 이 호출이 하는 일은 보류 중인 `interrupt()`에
+        사람의 결정을 돌려주는 것뿐이다. 결정의 **개수는 인터럽트가 요구한
+        호출 수와 같아야 한다**(다르면 `HumanInTheLoopMiddleware`가
+        `ValueError`) — 그 목록은 `awaiting_confirmation` 이벤트의
+        `resume.action_requests`에 담아 두었다.
         """
 
         validate_execution_target(
@@ -132,6 +141,12 @@ class AgentExecutor:
                 # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
                 # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
                 thread_id=context.session_id,
+                # 승인 재개면 새 입력 대신 이 결정을 흘려 넣는다.
+                resume=(
+                    {"decisions": list(resume_decisions)}
+                    if resume_decisions is not None
+                    else None
+                ),
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구

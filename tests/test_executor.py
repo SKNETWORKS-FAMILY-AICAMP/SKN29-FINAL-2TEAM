@@ -69,13 +69,16 @@ class _FakeStreamAdapter:
         self._error = error
         self.stream_calls = []
 
-    def stream(self, *, runtime, user_input, conversation_messages=(), thread_id=None):
+    def stream(
+        self, *, runtime, user_input, conversation_messages=(), thread_id=None, resume=None
+    ):
         self.stream_calls.append(
             {
                 "runtime": runtime,
                 "user_input": user_input,
                 "conversation_messages": conversation_messages,
                 "thread_id": thread_id,
+                "resume": resume,
             }
         )
         yield from self._raw_events
@@ -363,3 +366,49 @@ class RunMidStreamFailureTests(SimpleTestCase):
         self.assertEqual(events[-1]["type"], EVENT_ERROR)
         self.assertTrue(events[-1]["complete"])
         self.assertNotIn("스트림 중 실패", str(events[-1]))
+
+
+class ResumeTests(SimpleTestCase):
+    """승인 게이트에서 멈춘 실행을 잇는 경로(2026-08-18).
+
+    멈춘 자리의 대화는 Checkpointer에 있으므로, 이 호출이 넘겨야 하는 건
+    사람의 결정뿐이다 — 새 발화를 만들어 넣으면 안 된다.
+    """
+
+    def _run_resume(self, decisions):
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("등록했습니다")])
+        executor = AgentExecutor(
+            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
+        )
+        events = list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="",
+                context=_context(session_id="SS001"),
+                resume_decisions=decisions,
+            )
+        )
+        return stream_adapter.stream_calls[0], events
+
+    def test_결정을_그대로_흘려_넣는다(self):
+        call, events = self._run_resume([{"type": "approve"}])
+
+        self.assertEqual(call["resume"], {"decisions": [{"type": "approve"}]})
+        self.assertEqual(call["thread_id"], "SS001")
+        self.assertEqual(events[-1]["type"], EVENT_RESULT)
+
+    def test_평소_실행은_재개가_아니다(self):
+        """`resume_decisions`가 없으면 예전과 똑같이 돈다 — 회귀 방지."""
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(
+            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
+        )
+
+        list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertIsNone(stream_adapter.stream_calls[0]["resume"])
