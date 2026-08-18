@@ -259,7 +259,7 @@ export function MyFilesTab() {
       <section className={styles.card}>
         <div className={styles.cardHead}>
           {/* 안쪽 탭. **내 것과 받은 것을 한 목록에 섞지 않는다** — 할 수 있는
-              일이 달라서(지우기·공유 vs 보기만), 섞으면 줄마다 그 판단을 다시
+              일이 달라서(삭제·공유 vs 보기만), 섞으면 줄마다 그 판단을 다시
               해야 한다. */}
           <div className={styles.innerTabs} role="tablist">
             <button
@@ -342,7 +342,7 @@ export function MyFilesTab() {
                       disabled={busy === file.doc_id}
                       onClick={() => setConfirming(file)}
                     >
-                      지우기
+                      삭제
                     </Button>
                   </div>
                 )}

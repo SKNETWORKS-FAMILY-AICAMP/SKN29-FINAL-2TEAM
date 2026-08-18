@@ -312,7 +312,7 @@ export default function AgentVersionEditPage() {
 
         <header className={styles.header}>
           <div className={styles.titleRow}>
-            <h1 className={styles.title}>{savedId ? name || '에이전트 편집' : '새 에이전트'}</h1>
+            <h1 className={styles.title}>{savedId ? name || '에이전트 수정' : '새 에이전트'}</h1>
             {status && <Badge tone={AGENT_STATUS[status].tone}>{AGENT_STATUS[status].label}</Badge>}
             {currentVersion !== null && <Badge tone="neutral">v{currentVersion}</Badge>}
           </div>

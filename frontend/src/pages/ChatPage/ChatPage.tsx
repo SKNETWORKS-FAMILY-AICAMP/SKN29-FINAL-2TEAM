@@ -477,7 +477,7 @@ export default function ChatPage() {
       setSessions((prev) => prev.filter((session) => session.session_id !== id));
       if (id === sessionId) startNew(projId);
     } catch (error) {
-      setFatal(error instanceof ApiError ? error.message : '대화를 지우지 못했습니다.');
+      setFatal(error instanceof ApiError ? error.message : '대화를 삭제하지 못했습니다.');
     }
   }
 
@@ -1141,7 +1141,7 @@ export default function ChatPage() {
               variant="danger"
               onClick={() => pendingDelete && void remove(pendingDelete.session_id)}
             >
-              지우기
+              삭제
             </Button>
           </>
         }

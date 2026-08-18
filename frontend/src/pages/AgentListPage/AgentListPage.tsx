@@ -59,9 +59,9 @@ export default function AgentListPage() {
     try {
       await deleteAgent(token, agent.agent_id);
       setAgents((prev) => prev.filter((item) => item.agent_id !== agent.agent_id));
-      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 비활성화했습니다.`, 'success');
+      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
-      showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
+      showToast(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.', 'error');
     }
   }
 
@@ -170,7 +170,7 @@ export default function AgentListPage() {
                     {pendingId === agent.agent_id ? '검증하는 중…' : '다시 활성화'}
                   </Button>
                 )}
-                {/* 기본 제공은 편집·삭제가 서버에서 403 이다. 눌리는 버튼을 두면
+                {/* 기본 제공은 수정·삭제가 서버에서 403 이다. 눌리는 버튼을 두면
                     사용자가 고칠 수 있다고 믿게 된다. */}
                 {!agent.is_prebuilt && (
                   <>
@@ -179,10 +179,10 @@ export default function AgentListPage() {
                       variant="outline"
                       onClick={() => navigate(PATHS.agentEdit.replace(':agentId', agent.agent_id))}
                     >
-                      {agent.status === 'DRAFT' ? '이어서 작성' : '편집'}
+                      {agent.status === 'DRAFT' ? '이어서 작성' : '수정'}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => remove(agent)}>
-                      내리기
+                      사용 중지
                     </Button>
                   </>
                 )}

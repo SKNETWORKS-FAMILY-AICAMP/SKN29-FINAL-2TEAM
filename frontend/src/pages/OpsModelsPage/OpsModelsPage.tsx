@@ -140,7 +140,7 @@ export default function OpsModelsPage() {
       await removeOpsModel(session.token, row.conn_id);
       await load();
     } catch (thrown) {
-      setFormError(thrown instanceof ApiError ? thrown.message : '지우지 못했습니다.');
+      setFormError(thrown instanceof ApiError ? thrown.message : '삭제하지 못했습니다.');
     } finally {
       setBusy(false);
     }
@@ -302,7 +302,7 @@ export default function OpsModelsPage() {
                   <td>{row.connected_at.slice(0, 10)}</td>
                   <td>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(row)}>
-                      지우기
+                      삭제
                     </Button>
                   </td>
                 </tr>

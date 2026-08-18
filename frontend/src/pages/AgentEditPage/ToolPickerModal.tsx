@@ -239,7 +239,7 @@ export function ToolPickerModal({
                               {tool.name}
                               <span className={pageStyles.gate}> · 승인 필요</span>
                             </strong>
-                            <span>{tool.description || (tool.enabled ? '' : '비활성화된 도구입니다.')}</span>
+                            <span>{tool.description || (tool.enabled ? '' : '사용 중지된 도구입니다.')}</span>
                           </div>
                         </div>
                       );

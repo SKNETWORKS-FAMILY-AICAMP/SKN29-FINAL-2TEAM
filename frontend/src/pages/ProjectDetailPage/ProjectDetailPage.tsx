@@ -166,7 +166,7 @@ export default function ProjectDetailPage() {
       showToast(notes.join(' · '), 'success');
       navigate('/projects');
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : '프로젝트를 지우지 못했습니다', 'error');
+      showToast(err instanceof ApiError ? err.message : '프로젝트를 삭제하지 못했습니다', 'error');
       setBusy(false);
       setConfirming(false);
     }
@@ -430,7 +430,7 @@ export default function ProjectDetailPage() {
           </li>
           <li>Jira 프로젝트 연결이 끊깁니다. Jira 쪽 이슈는 그대로입니다.</li>
           <li>
-            기준 문서는 <strong>지우지 않습니다.</strong> 팀 문서 풀로 돌아가 다른
+            기준 문서는 <strong>삭제하지 않습니다.</strong> 팀 문서 풀로 돌아가 다른
             프로젝트에서 다시 쓸 수 있습니다.
           </li>
         </ul>

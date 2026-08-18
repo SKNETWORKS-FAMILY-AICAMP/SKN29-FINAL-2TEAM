@@ -53,7 +53,7 @@ export default function OpsMcpPage() {
   const [note, setNote] = useState('');
   /** 「연결 확인」으로 읽어 온 도구 이름들. 등록 전에 무엇이 들어오는지 보여준다. */
   const [found, setFound] = useState<string[] | null>(null);
-  /** 고치는 중인 행. null 이면 새로 등록하는 중이다. */
+  /** 수정 중인 행. null 이면 새로 등록하는 중이다. */
   const [editing, setEditing] = useState<OpsMcpServer | null>(null);
 
   async function load() {
@@ -120,7 +120,7 @@ export default function OpsMcpPage() {
   }
 
   /**
-   * 고칠 행을 폼으로 올린다.
+   * 수정할 행을 폼으로 올린다.
    *
    * **토큰 칸은 비워 둔다** — 서버가 저장된 토큰을 돌려주지 않기 때문이다
    * (`server_response` 는 `has_token` 만 준다). 비운 채로 저장하면 그대로 두고,
@@ -156,8 +156,8 @@ export default function OpsMcpPage() {
     try {
       const replacing = Boolean(authToken.trim());
       const updated = await updateOpsMcpServer(session.token, editing.mcp_server_id, {
-        // **팀은 바꾸지 않는다.** 저장소가 team_id 를 자물쇠로 쓴다(지우기와 같다) —
-        // 옮기는 것은 「고치기」가 아니라 지우고 다시 등록하는 일이다.
+        // **팀은 바꾸지 않는다.** 저장소가 team_id 를 자물쇠로 쓴다(삭제와 같다) —
+        // 옮기는 것은 「수정」이 아니라 지우고 다시 등록하는 일이다.
         team_id: editing.team_id,
         name: name.trim(),
         endpoint_url: url.trim(),
@@ -168,13 +168,13 @@ export default function OpsMcpPage() {
       // 주소를 바꾸면 서버가 읽어 둔 도구를 지우고 UNCHECKED 로 되돌린다 —
       // 이전 도구는 다른 서버의 것이기 때문이다. 그 사실을 화면이 말해 준다.
       setNote(
-        updated.name + ' 연결을 고쳤습니다.'
+        updated.name + ' 연결을 수정했습니다.'
           + (moved ? ' 주소가 바뀌어 도구를 다시 읽어야 합니다 — 목록에서 ‘연결 확인’을 누르세요.' : '')
       );
       cancelEdit();
       await load();
     } catch (thrown) {
-      setFormError(thrown instanceof ApiError ? thrown.message : '고치지 못했습니다.');
+      setFormError(thrown instanceof ApiError ? thrown.message : '수정하지 못했습니다.');
     } finally {
       setBusy(false);
     }
@@ -229,10 +229,10 @@ export default function OpsMcpPage() {
     try {
       await removeOpsMcpServer(session.token, row.mcp_server_id, row.team_id);
       // 이 서버의 도구를 쓰던 에이전트에서도 함께 빠진다(서버가 정리한다).
-      setNote(row.name + ' 연결을 지웠습니다. 이 서버의 도구를 쓰던 에이전트에서도 제거됩니다.');
+      setNote(row.name + ' 연결을 삭제했습니다. 이 서버의 도구를 쓰던 에이전트에서도 제거됩니다.');
       await load();
     } catch (thrown) {
-      setFormError(thrown instanceof ApiError ? thrown.message : '지우지 못했습니다.');
+      setFormError(thrown instanceof ApiError ? thrown.message : '삭제하지 못했습니다.');
     } finally {
       setBusy(false);
     }
@@ -268,12 +268,12 @@ export default function OpsMcpPage() {
       <OpsPageHeader title={TITLE} />
 
       <OpsSectionCard
-        title={editing ? '고치기 — ' + editing.name : '새로 등록'}
+        title={editing ? '커스텀 도구 수정 · ' + editing.name : '새로 등록'}
       >
         <div className={styles.formGrid}>
           <div className={styles.fieldGroup}>
             <label htmlFor="mcp-team">팀</label>
-            {/* 고칠 때는 팀을 잠근다 — 저장소가 team_id 를 자물쇠로 쓴다. */}
+            {/* 수정할 때는 팀을 잠근다 — 저장소가 team_id 를 자물쇠로 쓴다. */}
             <select
               id="mcp-team"
               value={teamId}
@@ -382,9 +382,9 @@ export default function OpsMcpPage() {
                 <th style={{ width: 70 }}>도구</th>
                 <th style={{ width: 110 }}>확인</th>
                 {/* **버튼 셋이 한 줄에 들어갈 폭을 준다.** 150 이었을 때 표
-                    화면에서 「연결 확인」과 「지우기」가 세로로 접혔다
+                    화면에서 「연결 확인」과 「삭제」가 세로로 접혔다
                     (2026-08-18 PM · 좁은 화면의 쌓기와 구분이 안 된다).
-                    「고치기」가 늘면서 다시 넓혔다. */}
+                    「수정」이 늘면서 다시 넓혔다. */}
                 <th style={{ width: 290 }} />
               </tr>
             </thead>
@@ -413,7 +413,7 @@ export default function OpsMcpPage() {
                         disabled={busy}
                         onClick={() => startEdit(row)}
                       >
-                        고치기
+                        수정
                       </Button>
                       <Button
                         size="sm"
@@ -431,7 +431,7 @@ export default function OpsMcpPage() {
                         disabled={busy}
                         onClick={() => remove(row)}
                       >
-                        지우기
+                        삭제
                       </Button>
                     </div>
                   </td>

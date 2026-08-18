@@ -180,8 +180,8 @@ export default function OpsConnectorDetailPage() {
             수집이나 Jira 동기화가 같이 선다. */}
         <p className={styles.modalCopy}>
           {connector.owner_email ?? '이 계정'}의 {typeLabel(connector.connector_type)} 연결을 끊습니다.
-          저장된 인증 정보를 지우므로 이 연결로 읽던 것이 멈추고, 계정 소유자가 설정에서 다시 연결해야
-          복구됩니다. 폴더·프로젝트 선택은 지우지 않습니다.
+          저장된 인증 정보를 삭제하므로 이 연결로 읽던 것이 멈추고, 계정 소유자가 설정에서 다시 연결해야
+          복구됩니다. 폴더·프로젝트 선택은 삭제하지 않습니다.
         </p>
         <div className={styles.fieldGroup}>
           <label htmlFor="revoke-reason">사유 (선택)</label>

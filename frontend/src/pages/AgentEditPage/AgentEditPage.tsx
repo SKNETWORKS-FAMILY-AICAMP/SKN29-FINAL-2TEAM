@@ -227,9 +227,9 @@ export default function AgentEditPage() {
     try {
       const disabled = await disableAgent(token, savedId);
       setAgentStatus(disabled.status);
-      showToast(`‘${disabled.name}’${josa(disabled.name, '을/를')} 비활성화했습니다.`, 'success');
+      showToast(`‘${disabled.name}’${josa(disabled.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
-      setError(exc instanceof ApiError ? exc.message : '비활성화하지 못했습니다.');
+      setError(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.');
     } finally {
       setSaving(false);
     }
@@ -261,7 +261,7 @@ export default function AgentEditPage() {
 
         <header className={styles.header}>
           <div className={styles.titleRow}>
-            <h1 className={styles.title}>{savedId ? name || '에이전트 편집' : '새 에이전트'}</h1>
+            <h1 className={styles.title}>{savedId ? name || '에이전트 수정' : '새 에이전트'}</h1>
             {agentStatus && (
               <Badge tone={AGENT_STATUS[agentStatus].tone}>{AGENT_STATUS[agentStatus].label}</Badge>
             )}
