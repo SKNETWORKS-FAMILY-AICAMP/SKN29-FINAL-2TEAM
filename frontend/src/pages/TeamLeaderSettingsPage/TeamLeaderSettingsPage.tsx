@@ -191,7 +191,6 @@ export default function TeamLeaderSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>내 프로필</h2>
-            <p>인사 시스템에서 가져온 내 정보입니다.</p>
           </div>
 
           <div className={styles.identityRow}>
@@ -229,11 +228,6 @@ export default function TeamLeaderSettingsPage() {
             <Input label="이메일" type="email" value={account?.email ?? ''} readOnly disabled />
             <Input label="표시 이름" value={account?.display_name ?? ''} readOnly disabled />
           </div>
-          {/* 이메일은 로그인 ID이자 HR 직원을 찾는 근거다. 화면에서 고치게 하면
-              로그인 계정이 바뀌고, 아직 HR 연결 전이라면 다른 사람에게 붙을 수 있다. */}
-          <p className={styles.hint}>
-            이메일은 로그인 ID이자 인사 정보를 연결하는 기준이라 여기서 바꿀 수 없습니다.
-          </p>
         </Card>
       </section>
 
@@ -241,7 +235,6 @@ export default function TeamLeaderSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>보유 스킬</h2>
-            <p>누구에게 어떤 일을 맡길지 고를 때 봅니다. 인사 시스템에서 옵니다.</p>
           </div>
           <SkillList skills={account?.skills ?? []} />
         </Card>
@@ -251,7 +244,6 @@ export default function TeamLeaderSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>비밀번호 변경</h2>
-            <p>현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다.</p>
           </div>
           <PasswordChangeCard
             token={token}
@@ -270,7 +262,6 @@ export default function TeamLeaderSettingsPage() {
           <div className={styles.sectionHeadingRow}>
             <div className={styles.sectionHeading}>
               <h2>팀원 관리</h2>
-              <p>업무를 맡길 수 있는 사람들입니다. 아직 가입 전인 사람도 함께 보입니다.</p>
             </div>
             <Button
               variant="primary"
