@@ -7,6 +7,7 @@ import type { Agent, ToolChoice } from '../../api/agents';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import styles from './AgentListPage.module.css';
 
 /**
@@ -58,7 +59,7 @@ export default function AgentListPage() {
     try {
       await deleteAgent(token, agent.agent_id);
       setAgents((prev) => prev.filter((item) => item.agent_id !== agent.agent_id));
-      showToast(`「${agent.name}」을 내렸습니다.`, 'success');
+      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 비활성화했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
     }
@@ -74,7 +75,7 @@ export default function AgentListPage() {
     try {
       const updated = await activateAgent(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」을 활성화했습니다.`, 'success');
+      showToast(`‘${updated.name}’${josa(updated.name, '을/를')} 활성화했습니다.`, 'success');
     } catch (exc) {
       // 검증에 걸려 재활성화가 막힌 경우(409) 등 — 사유를 그대로 보여준다.
       showToast(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.', 'error');
@@ -89,7 +90,7 @@ export default function AgentListPage() {
     try {
       const updated = await disableAgent(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」을 사용 중지했습니다.`, 'success');
+      showToast(`‘${updated.name}’${josa(updated.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.', 'error');
     } finally {
@@ -199,9 +200,6 @@ export default function AgentListPage() {
         <header className={styles.header}>
           <div className={styles.headerText}>
             <h1 className={styles.title}>에이전트</h1>
-            <p className={styles.subtitle}>
-              우리 팀 업무에 맞는 에이전트를 만들어 둡니다. 채팅에서 그 일에 맞는 에이전트가 불려 나옵니다.
-            </p>
           </div>
           <Button onClick={() => navigate(PATHS.agentNew)} iconLeft={<Icon name="plus" size={16} />}>
             새 에이전트
@@ -226,7 +224,7 @@ export default function AgentListPage() {
 
         {!loading && !error && agents.filter((a) => !a.is_prebuilt).length === 0 && (
           <p className={styles.sectionSub}>
-            아직 우리 팀 에이전트가 없습니다. 「새 에이전트」로 만들어 보세요.
+            아직 우리 팀 에이전트가 없습니다. ‘새 에이전트’로 만들어 보세요.
           </p>
         )}
       </div>

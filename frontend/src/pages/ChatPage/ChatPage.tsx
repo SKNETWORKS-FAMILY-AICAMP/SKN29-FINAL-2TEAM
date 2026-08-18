@@ -1035,7 +1035,7 @@ export default function ChatPage() {
                       {abandoned && (
                         <p className={styles.warnLine}>
                           <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
-                          승인하지 않고 넘어갔습니다 — 이 요청은 실행되지 않았습니다.
+                          승인하지 않고 넘어갔습니다. 이 요청은 실행되지 않았습니다.
                         </p>
                       )}
 
@@ -1052,7 +1052,7 @@ export default function ChatPage() {
                       {live.stoppedReason && (
                         <p className={styles.warnLine}>
                           <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
-                          끝까지 마치지 못했습니다 ({live.stoppedReason}) — 위 결과는 여기까지 확인한 것입니다.
+                          끝까지 마치지 못했습니다 ({live.stoppedReason}). 위 결과는 여기까지 확인한 것입니다.
                         </p>
                       )}
 
@@ -1061,7 +1061,7 @@ export default function ChatPage() {
                           detail={live.error.detail}
                           answered={Boolean(live.answer)}
                           errorCode={live.error.errorCode}
-                          onOpenSettings={() => navigate(PATHS.settingsMcp)}
+                          onOpenSettings={() => navigate(PATHS.settingsConnectors)}
                         />
                       )}
                     </>
@@ -1148,7 +1148,7 @@ export default function ChatPage() {
       >
         <p className={styles.deleteBody}>
           <strong>{pendingDelete?.title ?? '제목 없는 대화'}</strong>
-          <span>주고받은 내용이 함께 지워집니다. 되돌릴 수 없습니다.</span>
+          <span>주고받은 내용이 함께 삭제됩니다. 되돌릴 수 없습니다.</span>
         </p>
       </Modal>
 
@@ -1160,10 +1160,6 @@ export default function ChatPage() {
         toolRefs={sessionToolOverride ?? agentOwnToolRefs}
         onToggle={(ref) => void toggleSessionTool(ref)}
         onToggleGroup={(refs, turnOn) => void toggleSessionToolGroup(refs, turnOn)}
-        onGoToMcpSettings={() => {
-          setToolPickerOpen(false);
-          navigate(PATHS.settingsMcp);
-        }}
       />
     </AppShell>
   );

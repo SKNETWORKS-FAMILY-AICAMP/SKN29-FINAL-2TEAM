@@ -17,6 +17,7 @@ import type { McpServer } from '../../api/mcp';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
 import { TestRunModal } from './TestRunModal';
 import { ToolPickerModal } from './ToolPickerModal';
@@ -210,7 +211,7 @@ export default function AgentEditPage() {
       const draft = await saveDraft();
       const activated = await activateAgent(token, draft.agent_id);
       setAgentStatus(activated.status);
-      showToast(`「${activated.name}」을 활성화했습니다. Chat에서 바로 쓸 수 있습니다.`, 'success');
+      showToast(`‘${activated.name}’${josa(activated.name, '을/를')} 활성화했습니다. Chat에서 바로 쓸 수 있습니다.`, 'success');
       navigate(PATHS.chat);
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.');
@@ -226,7 +227,7 @@ export default function AgentEditPage() {
     try {
       const disabled = await disableAgent(token, savedId);
       setAgentStatus(disabled.status);
-      showToast(`「${disabled.name}」을 비활성화했습니다.`, 'success');
+      showToast(`‘${disabled.name}’${josa(disabled.name, '을/를')} 비활성화했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '비활성화하지 못했습니다.');
     } finally {
@@ -242,7 +243,7 @@ export default function AgentEditPage() {
     setError(null);
     try {
       const saved = await saveDraft();
-      showToast(`「${saved.name}」을 저장했습니다.`, 'success');
+      showToast(`‘${saved.name}’${josa(saved.name, '을/를')} 저장했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '저장하지 못했습니다.');
     } finally {
@@ -265,9 +266,6 @@ export default function AgentEditPage() {
               <Badge tone={AGENT_STATUS[agentStatus].tone}>{AGENT_STATUS[agentStatus].label}</Badge>
             )}
           </div>
-          <p className={styles.subtitle}>
-            비개발자가 정하는 것은 세 가지입니다 — 무슨 일을 하는지 / 어떻게 행동할지 / 어떤 데이터와 도구를 쓸지.
-          </p>
         </header>
 
         {error && <p className={styles.error}>{error}</p>}
@@ -294,7 +292,7 @@ export default function AgentEditPage() {
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
-          <p className={styles.help}>호출 판단에 사용됩니다 — 무엇을 하는 에이전트인지 한 줄로 적어 주세요.</p>
+          <p className={styles.help}>호출 판단에 사용됩니다. 무엇을 하는 에이전트인지 한 줄로 적어 주세요.</p>
         </section>
 
         <section className={styles.card}>
@@ -356,10 +354,10 @@ export default function AgentEditPage() {
 
           <p className={styles.notice}>
             <Icon name="info" size={15} color="var(--color-info)" />
-            <span>쓸 수 있는 도구는 설정 &gt; MCP에서 연결한 서비스에 따라 달라집니다.</span>
-            <button type="button" className={styles.noticeLink} onClick={() => navigate(PATHS.settingsMcp)}>
-              설정으로 이동 →
-            </button>
+            <span>
+              쓸 수 있는 도구는 이 팀에 붙어 있는 커스텀 도구에 따라 달라집니다. 필요한 서버가
+              있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+            </span>
           </p>
         </section>
 
@@ -398,10 +396,6 @@ export default function AgentEditPage() {
           toolRefs={toolRefs}
           onToggle={toggleTool}
           onToggleGroup={toggleToolGroup}
-          onGoToMcpSettings={() => {
-            setPickerOpen(false);
-            navigate(PATHS.settingsMcp);
-          }}
         />
 
         <div className={styles.actions}>

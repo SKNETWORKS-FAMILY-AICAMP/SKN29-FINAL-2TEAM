@@ -366,9 +366,17 @@ CREATE UNIQUE INDEX ux_user_person_link_active_person
 
 CREATE TABLE doc (
     doc_id            VARCHAR(5) PRIMARY KEY,
-    -- 이 문서를 등록한 팀(2026-08-04 추가) = team.team_id(FK 없음). 문서는 팀의
-    -- Drive 폴더에서 나오므로 등록 시점에는 팀에만 속한다.
+    -- 이 문서를 등록한 팀(2026-08-04 추가) = team.team_id(FK 없음). 커넥터 문서는
+    -- 팀의 Drive 폴더에서 나오므로 등록 시점에는 팀에만 속한다.
+    --
+    -- **사용자가 올린 개인 문서는 여기가 NULL 이다**(2026-08-18 · 「내 파일」).
+    -- 그게 핵심이다 — 팀 문서를 읽는 자리가 전부 `WHERE d.team_id = %s` 로 거는데,
+    -- NULL 이면 그 자리들이 한 줄도 안 바뀐 채 개인 문서를 걸러낸다. 조건을
+    -- 빠뜨렸을 때 새는 것이 아니라 안 보이는 쪽으로 틀린다.
     team_id            VARCHAR(5),
+    -- 개인 소유 문서를 올린 계정 = user_account.account_id(FK 없음). 팀 문서는 NULL.
+    -- team_id 와 정확히 하나만 채워진다(아래 doc_owner_xor_team).
+    owner_account_id   VARCHAR(5),
     -- 어느 프로젝트의 문서인가. **등록 시점에는 모른다**(2026-08-04 NULL 허용).
     -- 파일을 열어 봐야 알 수 있고, 프로젝트의 메인·서브 문서로 지정될 때 채워진다.
     -- NOT NULL이던 시절에는 폴더를 고르는 것만으로 프로젝트가 만들어져야 했다.
@@ -401,8 +409,24 @@ CREATE TABLE doc (
     acl_principals     TEXT[] NOT NULL DEFAULT '{}',
     src_modified_at    TIMESTAMPTZ,
     deleted            BOOLEAN NOT NULL DEFAULT false,
-    access_revoked     BOOLEAN NOT NULL DEFAULT false
+    access_revoked     BOOLEAN NOT NULL DEFAULT false,
+    -- 「내 파일」 라이브러리의 toggle(2026-08-18). **`search_ready` 와 다르다** —
+    -- 그쪽은 칸이 아니라 계산값이고(청크가 있는지 EXISTS 로 본다) 이 값은 의도다.
+    -- 껐는데 청크는 남아 있는 상태가 정상이다. 뭉개면 끌 때 색인을 지워야 하고
+    -- 다시 켤 때 또 파싱한다.
+    --
+    -- 팀 문서에는 뜻이 없다 — 커넥터 문서는 시스템이 필요할 때 승격시키지 사람이
+    -- 켜지 않는다(8/15). 그래서 기본값 true 이고 개인 문서에서만 읽는다.
+    search_enabled     BOOLEAN NOT NULL DEFAULT true,
+    -- 팀 것도 내 것도 아닌 문서, 그리고 둘 다인 문서를 막는다. 둘 다인 행이
+    -- 생기면 그 순간 팀 검색에 개인 파일이 섞인다.
+    CONSTRAINT doc_owner_xor_team CHECK (
+        (team_id IS NOT NULL AND owner_account_id IS NULL)
+     OR (team_id IS NULL AND owner_account_id IS NOT NULL)
+    )
 );
+
+CREATE INDEX ix_doc_owner ON doc (owner_account_id) WHERE owner_account_id IS NOT NULL;
 
 -- 기준 문서는 프로젝트당 하나다. 화면이 라디오라 둘이 될 일이 없어 보여도,
 -- 두 건이 되면 어느 것으로 업무를 뽑았는지 알 수 없어 조용히 틀린다.

@@ -79,7 +79,6 @@ export default function TeamMemberSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>내 프로필</h2>
-            <p>회사 인사 시스템에서 온 내 정보입니다.</p>
           </div>
 
           <div className={styles.identityRow}>
@@ -105,9 +104,6 @@ export default function TeamMemberSettingsPage() {
             <Input label="이메일" type="email" value={account?.email ?? ''} readOnly disabled />
             <Input label="표시 이름" value={account?.display_name ?? ''} readOnly disabled />
           </div>
-          <p className={styles.hint}>
-            이메일은 로그인 ID이자 인사 정보를 연결하는 기준이라 여기서 바꿀 수 없습니다.
-          </p>
         </Card>
       </section>
 
@@ -115,7 +111,6 @@ export default function TeamMemberSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>보유 스킬</h2>
-            <p>업무 배정 후보를 고를 때 근거가 되는 값입니다. 인사 시스템에서 옵니다.</p>
           </div>
           <SkillList skills={account?.skills ?? []} />
         </Card>
@@ -125,7 +120,6 @@ export default function TeamMemberSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>비밀번호 변경</h2>
-            <p>현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다.</p>
           </div>
           <PasswordChangeCard
             token={token}
@@ -139,7 +133,6 @@ export default function TeamMemberSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>계정 연동</h2>
-            <p>업무 추적 도구와의 싱크 상태를 확인하고 연결을 설정합니다.</p>
           </div>
 
           <div className={styles.linkedAccountRow}>
@@ -163,7 +156,6 @@ export default function TeamMemberSettingsPage() {
         <Card padding="lg">
           <div className={styles.sectionHeading}>
             <h2>알림 설정</h2>
-            <p>워크스페이스 업무 배정 및 공지 알림 수신 채널을 맞춤설정합니다.</p>
           </div>
 
           <div className={styles.notificationList}>

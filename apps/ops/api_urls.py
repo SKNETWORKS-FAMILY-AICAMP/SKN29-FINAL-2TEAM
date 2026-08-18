@@ -17,7 +17,13 @@ from .views.invites import (
     InviteUnlinkView,
 )
 from .views.login import LoginView, LogoutView
-from .views.models import ModelDetailView, ModelListCreateView, ModelProbeView
+from .views.mcp import McpDetailView, McpListCreateView, McpProbeView, McpTestView
+from .views.models import (
+    ModelDetailView,
+    ModelListCreateView,
+    ModelProbeView,
+    TeamDefaultModelView,
+)
 from .views.teams import TeamContentView, TeamOwnerView, TeamsView
 from .views.overview import OverviewView
 from .views.policies import InviteTtlView, NoticeDetailView, NoticeListCreateView, PolicyChangeListView
@@ -52,7 +58,19 @@ urlpatterns = [
     ),
     path("models/", ModelListCreateView.as_view(), name="api_ops_model_list"),
     path("models/probe/", ModelProbeView.as_view(), name="api_ops_model_probe"),
+    # `models/<conn_id>/` 앞에 둔다 — 뒤에 있으면 이 경로가 모델 삭제로 잡힌다.
+    path(
+        "models/teams/<str:team_id>/default/",
+        TeamDefaultModelView.as_view(),
+        name="api_ops_team_default_model",
+    ),
     path("models/<str:conn_id>/", ModelDetailView.as_view(), name="api_ops_model_detail"),
+    path("mcp/", McpListCreateView.as_view(), name="api_ops_mcp_list"),
+    # **`<server_id>` 앞에 둔다.** 뒤에 두면 `mcp/probe/` 가 서버 상세로 잡힌다
+    # (모델 쪽에서 실제로 밟은 자리다 · `models/probe/`).
+    path("mcp/probe/", McpProbeView.as_view(), name="api_ops_mcp_probe"),
+    path("mcp/<str:server_id>/", McpDetailView.as_view(), name="api_ops_mcp_detail"),
+    path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path("policies/notices/", NoticeListCreateView.as_view(), name="api_ops_policies_notice_list"),

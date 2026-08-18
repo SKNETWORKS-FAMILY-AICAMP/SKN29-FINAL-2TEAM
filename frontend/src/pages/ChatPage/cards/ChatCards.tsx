@@ -344,7 +344,7 @@ export function ConfirmCard({
       ) : (
         <div className={styles.confirmActions}>
           <span className={styles.muted}>
-            아직 등록되지 않았습니다 — 「프로젝트 업무로 등록해줘」라고 말하면 승인 카드가 뜹니다.
+            아직 등록되지 않았습니다. ‘프로젝트 업무로 등록해줘’라고 말하면 승인 카드가 뜹니다.
           </span>
         </div>
       )}
@@ -374,7 +374,7 @@ export function ResultCard({ created, failures, onRetryFailed }: ResultCardProps
           />
           {/* 실패를 성공에 섞지 않는다 — 분모를 밝혀 「17/20」로 적는다. */}
           {created.length}/{total} 등록 완료
-          {partial ? ` — ${failures.length}건 실패` : ''}
+          {partial ? ` · ${failures.length}건 실패` : ''}
         </span>
         <span className={styles.resultMeta}>
           {partial ? '성공분은 되돌리지 않습니다' : ''}
@@ -406,7 +406,7 @@ export function ResultCard({ created, failures, onRetryFailed }: ResultCardProps
         <>
           <div className={styles.failHead}>
             <Icon name="circle-x" size={15} color="var(--color-danger)" />
-            <strong>실패 {failures.length}건 — 사유</strong>
+            <strong>실패 {failures.length}건의 사유</strong>
           </div>
           {failures.map((failure) => (
             <div key={failure.title} className={styles.failRow}>

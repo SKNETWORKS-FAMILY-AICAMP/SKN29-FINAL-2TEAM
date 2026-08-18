@@ -121,14 +121,23 @@ def _document_search(
     yield {"type": "stage", "step": 1, "total": 2, "label": "관련 문서 좁히는 중"}
 
     vector = embed_queries([query])[0]
+    # `account_id` 를 함께 넘긴다 — 팀 문서에 **내가 켠 내 파일**을 더해 본다
+    # (2026-08-18 · M④). 에이전트에 파일을 붙이는 개념은 안 만들었으므로 켠
+    # 파일은 모든 에이전트가 쓴다.
     candidates = DocMetaRepository.coarse_search(
-        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N
+        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
     )
 
     if candidates:
         doc_ids = [row["doc_id"] for row in candidates if row["search_ready"]]
         not_indexed = [
-            {"doc_id": row["doc_id"], "file_name": row["file_name"], "summary": row["summary"]}
+            {
+                "doc_id": row["doc_id"],
+                "file_name": row["file_name"],
+                "summary": row["summary"],
+                # 승격을 다시 시도할지 여기서 갈린다(아래).
+                "index_status": row["index_status"],
+            }
             for row in candidates
             if not row["search_ready"]
         ]
@@ -141,7 +150,12 @@ def _document_search(
         #
         # 후보 전부가 아니라 **상위 몇 건만** 올린다. 한 건이 몇 분이라 다 돌리면
         # 대화가 그만큼 멈추고, 애초에 요약으로 좁힌 이유가 사라진다.
+        # **한 번 실패한 문서는 다시 안 올린다**(2026-08-18). txt·md 는 워커가
+        # 본문을 못 읽어서 몇 번을 시도해도 같은 답이 온다 — 질문마다 워커를
+        # 부르면 그 대화가 매번 그만큼 늦어진다. 요약으로는 이미 쓰이고 있다.
         for row in (not_indexed[:PROMOTE_TOP_N] if account_id else []):
+            if row.get("index_status") == "FAILED":
+                continue
             outcome = promote_to_searchable(account_id=account_id, doc_id=row["doc_id"])
             row["promotion"] = outcome
             if outcome["ok"]:
@@ -179,14 +193,15 @@ def _document_search(
                 "요약으로는 관련 있어 보이는 문서를 찾았지만 본문이 아직 색인되지 않아 "
                 "문장 근거를 낼 수 없습니다."
                 if candidates
-                else "팀에 검색할 문서가 없습니다."
+                else "검색할 문서가 없습니다."
             ),
         }
 
     yield {"type": "stage", "step": 2, "total": 2, "label": "본문에서 근거 찾는 중"}
 
     rows = VectorSearchRepository.search(
-        team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k
+        team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k,
+        account_id=account_id,
     )
     result = {
         "query": query,

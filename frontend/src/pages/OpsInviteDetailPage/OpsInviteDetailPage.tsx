@@ -118,7 +118,6 @@ export default function OpsInviteDetailPage() {
   const header = (
     <OpsPageHeader
       title="초대 상세"
-      description="초대 발급·수락 결과와 계정–직원 연결 상태를 확인하고 조치합니다."
       actions={back}
     />
   );

@@ -154,7 +154,6 @@ export default function ProjectListPage() {
         <div className={styles.pageHeader}>
           <div className={styles.titleBlock}>
             <h1>프로젝트</h1>
-            <p>AI 분석 기반 프로젝트 업무 할당 현황을 관리하고 새 업무를 생성합니다.</p>
           </div>
           <div className={styles.quickStats}>
             {/* 프로젝트를 만드는 입구. 여기서 만들면 곧바로 기준 문서 후보를

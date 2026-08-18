@@ -26,18 +26,6 @@ AGENT_MODELS = (
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
 
 
-class MainModelSerializer(serializers.Serializer):
-    """쓸 모델 하나.
-
-    **`ChoiceField` 를 쓰지 않는다.** 기본 제공 6종만 허용하면 팀이 등록한
-    커스텀 모델을 고를 수 없다 — 실제로 제미나이를 고르니 「유효하지 않은
-    선택입니다」로 거절됐다(2026-08-12). 무엇이 유효한지는 팀마다 다르므로
-    뷰가 그 팀의 목록과 대조한다.
-    """
-
-    model = serializers.CharField(max_length=100, trim_whitespace=True)
-
-
 class AgentWriteSerializer(serializers.Serializer):
     """생성·수정 공통.
 
@@ -48,7 +36,7 @@ class AgentWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     description = serializers.CharField(max_length=500, allow_blank=True, default="")
     instruction = serializers.CharField(allow_blank=True, default="")
-    # **`ChoiceField` 가 아니다** — `MainModelSerializer` 와 같은 이유다. 무엇이
+    # **`ChoiceField` 가 아니다** — 무엇이
     # 유효한지는 팀마다 다르고(등록한 커스텀 모델이 있다), 뷰가 대조한다.
     model = serializers.CharField(max_length=100, trim_whitespace=True, default="gpt-5.6-luna")
     reasoning_effort = serializers.ChoiceField(choices=REASONING_EFFORTS, default="low")

@@ -21,6 +21,9 @@ const ACTION_LABELS: Record<string, string> = {
   OPS_ADMIN_REVOKE: '운영자 권한 회수',
   OPS_MODEL_REGISTER: '모델 등록',
   OPS_MODEL_REMOVE: '모델 삭제',
+  OPS_TEAM_MODEL_SET: '팀 기본 모델 변경',
+  OPS_MCP_REGISTER: '커스텀 도구 등록',
+  OPS_MCP_REMOVE: '커스텀 도구 삭제',
   OPS_CONNECTOR_REVOKE: '연결 강제 해제',
 };
 

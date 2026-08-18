@@ -29,6 +29,7 @@ const OpsInviteDetailPage = lazy(() => import('./pages/OpsInviteDetailPage/OpsIn
 const OpsConnectorsPage = lazy(() => import('./pages/OpsConnectorsPage/OpsConnectorsPage'));
 const OpsConnectorDetailPage = lazy(() => import('./pages/OpsConnectorDetailPage/OpsConnectorDetailPage'));
 const OpsModelsPage = lazy(() => import('./pages/OpsModelsPage/OpsModelsPage'));
+const OpsMcpPage = lazy(() => import('./pages/OpsMcpPage/OpsMcpPage'));
 const OpsAuditPage = lazy(() => import('./pages/OpsAuditPage/OpsAuditPage'));
 const OpsPoliciesPage = lazy(() => import('./pages/OpsPoliciesPage/OpsPoliciesPage'));
 
@@ -36,7 +37,7 @@ function DevIndexPage() {
   const groups = Array.from(new Set(ROUTES.map((r) => r.group)));
   return (
     <div className={styles.indexPage}>
-      <h1 className={styles.indexTitle}>halil — 화면 목록</h1>
+      <h1 className={styles.indexTitle}>halil 화면 목록</h1>
       <p className={styles.indexSubtitle}>Figma에서 변환된 모든 화면입니다. 아래 목록에서 확인할 화면을 선택하세요.</p>
       {groups.map((group) => (
         <div key={group} className={styles.indexGroup}>
@@ -88,8 +89,7 @@ function App() {
           <Route path="/settings" element={<Navigate to={PATHS.settingsTeam} replace />} />
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          <Route path={PATHS.settingsMcp} element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          <Route path={PATHS.settingsModel} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.settingsMyFiles} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.chatSession} element={<RequireAuth><ChatPage /></RequireAuth>} />
@@ -116,6 +116,7 @@ function App() {
               <Route path={PATHS.opsConnectors} element={<OpsConnectorsPage />} />
               <Route path={PATHS.opsConnectorDetail} element={<OpsConnectorDetailPage />} />
               <Route path={PATHS.opsModels} element={<OpsModelsPage />} />
+              <Route path={PATHS.opsMcp} element={<OpsMcpPage />} />
               <Route path={PATHS.opsAudit} element={<OpsAuditPage />} />
               <Route path={PATHS.opsPolicies} element={<OpsPoliciesPage />} />
               <Route path="*" element={<Navigate to={PATHS.ops} replace />} />

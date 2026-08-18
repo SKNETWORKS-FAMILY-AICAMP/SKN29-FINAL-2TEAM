@@ -10,7 +10,7 @@ type Tab = 'builtin' | 'mcp' | 'create';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'builtin', label: '툴 선택' },
-  { id: 'mcp', label: 'MCP 서버 선택' },
+  { id: 'mcp', label: '커스텀 도구 선택' },
   { id: 'create', label: '툴 생성' },
 ];
 
@@ -38,7 +38,6 @@ export interface ToolPickerModalProps {
    * 별도 콜백으로 받는다.
    */
   onToggleGroup: (refs: string[], turnOn: boolean) => void;
-  onGoToMcpSettings: () => void;
 }
 
 /** `ToolChoice.category`가 없으면(MCP 등) 이 이름으로 묶는다. */
@@ -94,7 +93,6 @@ export function ToolPickerModal({
   toolRefs,
   onToggle,
   onToggleGroup,
-  onGoToMcpSettings,
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
   const builtinGroups = groupByCategory(builtinTools);
@@ -202,7 +200,7 @@ export function ToolPickerModal({
 
       {tab === 'mcp' && (
         <div className={styles.serverList}>
-          {mcpServers.length === 0 && <p className={pageStyles.help}>아직 연결한 MCP 서버가 없습니다.</p>}
+          {mcpServers.length === 0 && <p className={pageStyles.help}>아직 이 팀에 붙어 있는 서버가 없습니다.</p>}
           {mcpServers.map((server) => {
             const chip = SERVER_STATUS[server.status];
             const usable = server.status === 'CONNECTED';
@@ -251,18 +249,20 @@ export function ToolPickerModal({
               </div>
             );
           })}
-          <button type="button" className={styles.settingsLink} onClick={onGoToMcpSettings}>
-            <Icon name="arrow-right" size={14} />
-            MCP 서버 관리로 이동
-          </button>
+          {/* 설정으로 보내던 버튼은 걷었다(2026-08-18) — 그 탭이 없어졌고,
+              팀이 스스로 붙일 수도 없다. 대신 **어디로 말하면 되는지**를
+              남긴다. 문구는 Model 탭(8/13)과 같은 말이다. */}
+          <p className={pageStyles.help}>
+            필요한 서버가 있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+          </p>
         </div>
       )}
 
       {tab === 'create' && (
         <div className={styles.createTab}>
           <p className={pageStyles.help}>
-            팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 연결한
-            MCP 서버의 도구만 쓸 수 있습니다.
+            팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 이 팀에
+            붙어 있는 커스텀 도구만 쓸 수 있습니다.
           </p>
           <Button variant="outline" disabled>
             새 도구 만들기 (준비 중)

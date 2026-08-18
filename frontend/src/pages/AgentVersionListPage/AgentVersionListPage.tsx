@@ -14,6 +14,7 @@ import type { AgentVersionSummary } from '../../api/agentVersions';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken, useSession } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import styles from './AgentVersionListPage.module.css';
 
 /**
@@ -154,11 +155,11 @@ export default function AgentVersionListPage() {
       // 모르니 알린다.
       if (updated.cascaded_subagent_names?.length) {
         showToast(
-          `「${updated.name}」을 활성화했습니다. 서브 에이전트 「${updated.cascaded_subagent_names.join('」·「')}」도 초안 상태였어서 함께 활성화했습니다.`,
+          `‘${updated.name}’${josa(updated.name, '을/를')} 활성화했습니다. 서브 에이전트 ‘${updated.cascaded_subagent_names.join('’·‘')}’도 초안 상태였어서 함께 활성화했습니다.`,
           'success',
         );
       } else {
-        showToast(`「${updated.name}」을 활성화했습니다.`, 'success');
+        showToast(`‘${updated.name}’${josa(updated.name, '을/를')} 활성화했습니다.`, 'success');
       }
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.', 'error');
@@ -173,7 +174,7 @@ export default function AgentVersionListPage() {
     try {
       const updated = await disableAgentVersion(token, agent.agent_id);
       replaceAgent(updated);
-      showToast(`「${updated.name}」을 사용 중지했습니다.`, 'success');
+      showToast(`‘${updated.name}’${josa(updated.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.', 'error');
     } finally {
@@ -259,7 +260,7 @@ export default function AgentVersionListPage() {
               ? '아직 팀에 공유된 에이전트가 없습니다 — 개인 탭에서 만들고 활성화하면 여기 보입니다.'
               : activeTab === 'favorites'
                 ? '아직 즐겨찾기한 에이전트가 없습니다 — 카드 오른쪽 위 별을 눌러 추가하세요.'
-                : '아직 만든(미공유) 에이전트가 없습니다. 「새 에이전트」로 만들어 보세요.'}
+                : '아직 만든(미공유) 에이전트가 없습니다. ‘새 에이전트’로 만들어 보세요.'}
           </p>
         )}
 

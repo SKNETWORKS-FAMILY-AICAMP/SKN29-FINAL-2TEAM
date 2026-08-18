@@ -205,6 +205,50 @@ class OpsModelRegisterSerializer(serializers.Serializer):
         return value
 
 
+class OpsMcpRegisterSerializer(serializers.Serializer):
+    """운영자가 팀에 커스텀 도구 서버를 등록할 때 받는 값.
+
+    **주소 검사는 여기서 하지 않는다.** 형식이 맞는 것과 연결해도 되는 주소인가는
+    다른 문제이고, 후자는 DNS 를 풀어 봐야 안다(`services/mcp/security.py`).
+    직렬화기에 네트워크 조회를 넣으면 실패가 400 인지 502 인지 구분되지 않는다.
+    """
+
+    team_id = serializers.CharField(max_length=5)
+    name = serializers.CharField(max_length=100)
+    endpoint_url = serializers.CharField(max_length=500)
+    # 토큰이 없는 공개 서버도 있다. 빈 문자열은 없는 것으로 본다.
+    auth_token = serializers.CharField(
+        max_length=4000, required=False, allow_blank=True, allow_null=True, default=None
+    )
+
+
+class OpsMcpUpdateSerializer(OpsMcpRegisterSerializer):
+    """수정 입력. 이름·주소는 등록과 같은 규칙이고 **토큰만 다르다.**
+
+    화면은 저장된 토큰을 다시 보여주지 않는다(`server_response` 가 `has_token` 만
+    준다). 그래서 「안 보냄」을 「지우라」로 읽으면 이름만 고쳐도 토큰이 날아간다 —
+    바꾸려는 의사를 `replace_token` 으로 명시하게 한다.
+    """
+
+    replace_token = serializers.BooleanField(required=False, default=False)
+
+
+def ops_mcp_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    """**토큰은 절대 안 나간다**(§4-2). 운영자 콘솔도 예외가 아니다."""
+
+    return {
+        "mcp_server_id": row["mcp_server_id"],
+        "team_id": row["team_id"],
+        "team_name": row["team_name"],
+        "name": row["name"],
+        "endpoint_url": row["endpoint_url"],
+        "status": row["status"],
+        "last_checked_at": row["last_checked_at"],
+        "has_token": row["has_token"],
+        "tool_count": row["tool_count"],
+    }
+
+
 def ops_model_row_response(row: dict[str, Any]) -> dict[str, Any]:
     """**키는 절대 안 나간다.** 운영자 콘솔도 예외가 아니다."""
 

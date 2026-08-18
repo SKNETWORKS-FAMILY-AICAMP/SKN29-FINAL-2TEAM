@@ -198,17 +198,6 @@
   font-weight: 600;
 }
 
-.noticeLink {
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-primary);
-}
-
 .actions {
   display: flex;
   align-items: center;

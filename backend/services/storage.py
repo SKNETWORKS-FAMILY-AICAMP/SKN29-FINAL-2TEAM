@@ -1,8 +1,12 @@
-"""문서 저장소 — Drive에서 내려받은 원문을 보관한다.
+"""문서 저장소 — Drive에서 내려받은 원문과 사용자가 올린 파일을 보관한다.
 
-지금은 로컬 디스크다. AWS 계정을 받으면 S3로 바뀌지만, 그때도 `doc.storage_key`
-값은 그대로 쓸 수 있어야 한다. 그래서 키는 **경로가 아니라 저장소 안의 이름**으로
-다룬다 — 호출자는 파일이 어디 있는지 모르고 키만 안다.
+**로컬 디스크와 S3 둘 다 된다**(2026-08-18). `OBJECT_STORAGE_PROVIDER` 가 고르고,
+기본값은 `local` 이다. 키는 **경로가 아니라 저장소 안의 이름**이라 어느 쪽이든
+`doc.storage_key` 값이 그대로 쓰인다 — 호출자는 파일이 어디 있는지 모르고 키만
+안다. 그래서 이 파일 밖은 한 줄도 안 바뀐다.
+
+**Django settings 를 안 읽는다.** 환경 변수를 직접 본다 — 이 모듈은 Django 밖
+(스크립트·워커)에서도 import 되므로, settings 를 걸면 그쪽이 못 쓴다.
 
 원문을 남기는 이유는 세 가지다.
 
@@ -48,6 +52,73 @@ def build_key(*, team_id: str, doc_id: str, mime_type: str | None) -> str:
     """
 
     return f"{team_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
+
+
+def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -> str:
+    """개인이 올린 파일의 `doc.storage_key`.
+
+    **팀 문서와 자리를 가른다**(2026-08-18 · 「내 파일」). `build_key` 는
+    `{team_id}/` 로 시작하는데 개인 문서는 팀이 없어서 그 키가 `None/...` 이
+    된다. 그리고 팀 아래에 두면 **팀을 통째로 지울 때 개인 파일이 함께
+    지워진다** — 개인 소유로 둔 결정과 어긋난다.
+
+    이름 있는 앞자리를 쓰는 것은 `avatar/` 와 같은 방식이다. 계정마다 디렉터리를
+    하나 주는 것은, 계정을 지울 때 그 하나면 끝나게 하려는 것이다.
+    """
+
+    return f"user/{account_id}/{doc_id}{_EXTENSIONS.get(mime_type or '', '.bin')}"
+
+
+#: 사용자가 올릴 수 있는 형식. **확장자에서 형식을 정한다** — 브라우저가 보내는
+#: Content-Type 은 믿을 수 없고(아바타 업로드와 같은 판단), 문서는 바이트만으로
+#: 형식을 못 가린다(아래 참조).
+#:
+#: **두 갈래를 함께 받는다**(2026-08-18 PM).
+#:
+#: - PDF·DOCX 는 워커가 본문까지 읽는다. 문장 근거를 낼 수 있다.
+#: - txt·md 는 워커가 못 읽지만(`SUPPORTED_MIME_TYPES` 가 앞의 둘뿐이다) **요약은
+#:   우리 쪽 CPU 가 만든다** — 문서 단위 검색에는 그대로 쓰인다.
+#:
+#: pptx·xlsx 는 안 받는다. 워커도 못 읽고 CPU 추출기도 못 뽑아서, 올려 봐야
+#: 요약조차 안 나온다.
+_UPLOAD_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+}
+
+#: 앞부분 시그니처. 받는 둘 다 시그니처가 있어서 바이트로 한 번 더 본다.
+_UPLOAD_SIGNATURES = {
+    "application/pdf": b"%PDF-",
+    # docx 는 zip 이다. 「zip 인가」까지만 확인할 수 있고 pptx·xlsx 와는 서로
+    # 구분하지 못한다 — 그 둘은 받지 않으므로 지금은 문제가 되지 않는다.
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": b"PK",
+}
+
+
+def upload_mime_type(file_name: str, data: bytes) -> str | None:
+    """올린 파일의 형식. 못 받는 것이면 `None`.
+
+    **아바타만큼 강하지 않다.** 이미지는 시그니처로 형식이 갈리지만(`sniff_image_type`)
+    문서는 그렇지 않다 — PDF 는 `%PDF-` 로 잡히는데 docx·pptx·xlsx 는 셋 다 zip 이라
+    서로 구분되지 않고, txt·md·csv 는 시그니처가 아예 없다.
+
+    그래서 **확장자 화이트리스트가 1차 관문**이고, 시그니처는 있는 것만 대조한다.
+    이 차이를 적어 두지 않으면 다음 사람이 아바타를 보고 같은 수준으로 믿는다.
+    확장자를 경로에 쓰지는 않는다 — 키는 `doc_id` 로 만든다.
+    """
+
+    _, dot, extension = file_name.rpartition(".")
+    if not dot:
+        return None
+    mime = _UPLOAD_TYPES.get(f".{extension.lower()}")
+    if mime is None:
+        return None
+    signature = _UPLOAD_SIGNATURES.get(mime)
+    if signature and not data.startswith(signature):
+        return None
+    return mime
 
 
 # 프로필 사진으로 받을 형식. 확장자는 여기서 정한다 — 업로드된 파일명을 경로에
@@ -99,12 +170,60 @@ def _resolved(key: str) -> Path:
     return path
 
 
+def _checked(key: str) -> str:
+    """S3 용 키 검사.
+
+    **경로 해석이 없다고 검사를 건너뛰지 않는다.** 로컬에서는 `_resolved` 가
+    `..` 를 풀어 저장소 밖을 막는데, S3 는 키를 문자열로만 다뤄서 `a/../b` 가
+    그대로 객체 이름이 된다 — 막히지는 않지만 **같은 파일이 두 이름으로 생긴다**
+    (로컬에서는 하나였던 것이). 두 백엔드가 다르게 동작하면 갈아탈 때 드러난다.
+    """
+
+    if not key or key.startswith("/") or ".." in key.split("/"):
+        raise ValueError(f"문서 저장소 밖을 가리키는 키입니다: {key}")
+    return key
+
+
+def _use_s3() -> bool:
+    return os.environ.get("OBJECT_STORAGE_PROVIDER", "local").strip().lower() == "s3"
+
+
+def _bucket() -> str:
+    name = os.environ.get("AWS_STORAGE_BUCKET_NAME", "").strip()
+    if not name:
+        # 조용히 로컬로 떨어지지 않는다 — 저장은 됐는데 아무도 못 찾는 상태가
+        # 되고, 그 사실이 파싱 실패로 한참 뒤에 드러난다.
+        raise RuntimeError(
+            "OBJECT_STORAGE_PROVIDER=s3 인데 AWS_STORAGE_BUCKET_NAME 이 비어 있습니다."
+        )
+    return name
+
+
+def _client():
+    """boto3 클라이언트. **키를 안 넘긴다** — 자격 증명은 boto3 가 찾는다.
+
+    EC2 에서는 인스턴스 역할이, 로컬에서는 `AWS_ACCESS_KEY_ID`·
+    `AWS_SECRET_ACCESS_KEY` 환경 변수가 잡힌다. 여기서 키를 읽어 넘기면 역할로
+    도는 서버에서 빈 문자열을 자격 증명으로 넘기게 된다.
+    """
+
+    import boto3
+
+    return boto3.client("s3", region_name=os.environ.get("AWS_S3_REGION_NAME") or None)
+
+
 def save(key: str, data: bytes) -> str:
     """원문을 저장하고 `sha256:<hex>` 형태의 내용 해시를 돌려준다.
 
     같은 키로 다시 저장하면 덮어쓴다 — Drive에서 문서가 수정되면 새 내용이
     맞고, 이전 판은 `cur_revision`으로 구분한다.
     """
+
+    if _use_s3():
+        _client().put_object(Bucket=_bucket(), Key=_checked(key), Body=data)
+        # 반쪽 쓰기를 걱정하지 않는다 — S3 의 `PutObject` 는 원자적이라 성공하기
+        # 전까지 이전 객체가 그대로 보인다(로컬의 `.part` → rename 과 같은 뜻).
+        return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
     path = _resolved(key)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,8 +236,41 @@ def save(key: str, data: bytes) -> str:
 
 
 def load(key: str) -> bytes:
+    if _use_s3():
+        return _client().get_object(Bucket=_bucket(), Key=_checked(key))["Body"].read()
     return _resolved(key).read_bytes()
 
 
+def remove(key: str) -> None:
+    """원문을 지운다. **이미 없으면 조용히 넘어간다.**
+
+    부르는 쪽은 이미 DB 행을 지운 뒤다 — 여기서 「없다」로 터지면 화면은 삭제가
+    실패했다고 말하는데 실제로는 끝난 상태가 된다.
+
+    커넥터 문서에는 안 쓴다. 그쪽은 원본이 Drive 에 있어 사본을 남겨 두는 편이
+    맞고(다시 받는 값이다), 이건 **원본이 우리뿐인 내 파일**을 위한 것이다.
+    """
+
+    if _use_s3():
+        # S3 의 `DeleteObject` 는 없는 키에도 성공을 돌려준다 — 그 성질이 여기서
+        # 필요한 동작과 같다.
+        _client().delete_object(Bucket=_bucket(), Key=_checked(key))
+        return
+    _resolved(key).unlink(missing_ok=True)
+
+
 def exists(key: str) -> bool:
+    if _use_s3():
+        from botocore.exceptions import ClientError
+
+        try:
+            _client().head_object(Bucket=_bucket(), Key=_checked(key))
+        except ClientError as exc:
+            # **없는 것과 못 읽는 것을 가른다.** 권한이 빠졌거나 버킷 이름이
+            # 틀렸을 때 `False` 를 돌려주면 화면이 「원문 파일이 없습니다」라고
+            # 말하고, 설정 문제를 아무도 못 본다.
+            if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+        return True
     return _resolved(key).is_file()

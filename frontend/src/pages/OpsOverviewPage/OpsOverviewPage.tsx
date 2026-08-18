@@ -102,7 +102,7 @@ export default function OpsOverviewPage() {
   if (loading && !data) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="운영 현황" description="플랫폼에 연결된 범위와 운영상 확인이 필요한 항목을 한눈에 확인합니다." />
+        <OpsPageHeader title="운영 현황" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -111,7 +111,7 @@ export default function OpsOverviewPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="운영 현황" description="플랫폼에 연결된 범위와 운영상 확인이 필요한 항목을 한눈에 확인합니다." />
+        <OpsPageHeader title="운영 현황" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -128,7 +128,6 @@ export default function OpsOverviewPage() {
     <div className={styles.page}>
       <OpsPageHeader
         title="운영 현황"
-        description="플랫폼에 연결된 범위와 운영상 확인이 필요한 항목을 한눈에 확인합니다."
       />
 
       <OpsSummaryGrid>

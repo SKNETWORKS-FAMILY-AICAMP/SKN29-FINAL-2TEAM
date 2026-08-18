@@ -18,6 +18,7 @@ import type { McpServer } from '../../api/mcp';
 import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
 import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
 import { SubagentPickerModal } from './SubagentPickerModal';
@@ -273,11 +274,11 @@ export default function AgentVersionEditPage() {
       // 모르니 알린다.
       if (activated.cascaded_subagent_names?.length) {
         showToast(
-          `「${activated.name}」을 활성화했습니다. 서브 에이전트 「${activated.cascaded_subagent_names.join('」·「')}」도 초안 상태였어서 함께 활성화했습니다.`,
+          `‘${activated.name}’${josa(activated.name, '을/를')} 활성화했습니다. 서브 에이전트 ‘${activated.cascaded_subagent_names.join('’·‘')}’도 초안 상태였어서 함께 활성화했습니다.`,
           'success',
         );
       } else {
-        showToast(`「${activated.name}」을 활성화했습니다.`, 'success');
+        showToast(`‘${activated.name}’${josa(activated.name, '을/를')} 활성화했습니다.`, 'success');
       }
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.');
@@ -293,7 +294,7 @@ export default function AgentVersionEditPage() {
     try {
       const disabled = await disableAgentVersion(token, savedId);
       setStatus(disabled.status);
-      showToast(`「${disabled.name}」을 사용 중지했습니다.`, 'success');
+      showToast(`‘${disabled.name}’${josa(disabled.name, '을/를')} 사용 중지했습니다.`, 'success');
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '사용 중지하지 못했습니다.');
     } finally {
@@ -315,9 +316,6 @@ export default function AgentVersionEditPage() {
             {status && <Badge tone={AGENT_STATUS[status].tone}>{AGENT_STATUS[status].label}</Badge>}
             {currentVersion !== null && <Badge tone="neutral">v{currentVersion}</Badge>}
           </div>
-          <p className={styles.subtitle}>
-            저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 고칠 수 없습니다.
-          </p>
         </header>
 
         {error && <p className={styles.error}>{error}</p>}
@@ -402,7 +400,7 @@ export default function AgentVersionEditPage() {
           <div className={styles.cardHead}>
             <h2>서브 에이전트</h2>
             <p>
-              이 에이전트가 위임할 다른 에이전트를 고릅니다. 고른 자식은 **지금 발행된 버전**에 고정됩니다 —
+              이 에이전트가 위임할 다른 에이전트를 고릅니다. 고른 자식은 **지금 발행된 버전**에 고정됩니다.
               자식이 나중에 새 버전을 내도 이 부모는 계속 지금 고른 버전을 씁니다.
             </p>
           </div>
@@ -437,7 +435,7 @@ export default function AgentVersionEditPage() {
             서브 에이전트 추가
           </Button>
           {subagentCandidates.length === 0 && (
-            <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다 — 먼저 다른 에이전트를 하나 저장해 주세요.</p>
+            <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다. 먼저 다른 에이전트를 하나 저장해 주세요.</p>
           )}
         </section>
 
@@ -459,10 +457,6 @@ export default function AgentVersionEditPage() {
           toolRefs={toolRefs}
           onToggle={toggleTool}
           onToggleGroup={toggleToolGroup}
-          onGoToMcpSettings={() => {
-            setPickerOpen(false);
-            navigate(PATHS.settingsMcp);
-          }}
         />
 
         <div className={styles.actions}>

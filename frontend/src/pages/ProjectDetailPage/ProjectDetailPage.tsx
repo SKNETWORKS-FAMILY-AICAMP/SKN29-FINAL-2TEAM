@@ -253,7 +253,7 @@ export default function ProjectDetailPage() {
               <section className={styles.card}>
                 <p className={styles.notice}>
                   {project.has_jira_source
-                    ? 'Jira 업무를 아직 읽지 않았습니다. 「갱신」을 눌러 주세요.'
+                    ? 'Jira 업무를 아직 읽지 않았습니다. ‘갱신’을 눌러 주세요.'
                     : '연결된 Jira 프로젝트가 없어 진행률을 계산할 수 없습니다.'}
                 </p>
               </section>
@@ -280,7 +280,7 @@ export default function ProjectDetailPage() {
                   추출된 업무 {project.extracted_tasks.length}건
                   <InfoNote title="추출된 업무">
                     <p>
-                      기준 문서에서 뽑아 등록한 업무입니다. 아직 <strong>승인 전(PROPOSED)</strong>이라
+                      기준 문서에서 추출해 등록한 업무입니다. 아직 <strong>승인 전(PROPOSED)</strong>이라
                       진행률과 담당자별 배분에는 들어가지 않습니다.
                     </p>
                     <p>문서에 없던 값은 채우지 않고 비워 둡니다.</p>
@@ -415,18 +415,18 @@ export default function ProjectDetailPage() {
               취소
             </Button>
             <Button variant="primary" disabled={busy} onClick={() => void handleDelete()}>
-              {busy ? '지우는 중…' : '삭제'}
+              {busy ? '삭제하는 중…' : '삭제'}
             </Button>
           </>
         }
       >
         <p className={styles.confirmText}>
-          <strong>{project?.name}</strong> 을(를) 지웁니다. <strong>되돌릴 수 없습니다.</strong>
+          <strong>{project?.name}</strong> 을(를) 삭제합니다. <strong>되돌릴 수 없습니다.</strong>
         </p>
         <ul className={styles.confirmList}>
           <li>
-            읽어온 Jira 업무 <strong>{tasks.length}건</strong>이 함께 지워집니다. 팀 부하와
-            마감 화면에서도 빠집니다.
+            읽어온 Jira 업무 <strong>{tasks.length}건</strong>이 함께 삭제됩니다. 팀 부하와
+            마감 화면에서도 제거됩니다.
           </li>
           <li>Jira 프로젝트 연결이 끊깁니다. Jira 쪽 이슈는 그대로입니다.</li>
           <li>

@@ -101,9 +101,11 @@ JIRA_REDIRECT_URI = env(
     default="http://localhost:8000/api/connectors/jira/callback/",
 )
 
-# 파일 저장소 선택 값. **아직 아무도 안 읽는다** — `backend/services/storage.py` 가
-# 이 값을 보게 하는 것이 남은 일이다(docs/개발환경/AWS_1단계_공유환경_구축.md).
-# 계획된 자리라 남기되, 읽는 코드가 없다는 사실을 여기 적어 둔다(2026-08-13).
+# 파일 저장소 선택 값. `local` 과 `s3` 둘이다(2026-08-18 배선).
+#
+# **읽는 곳은 여기가 아니라 `backend/services/storage.py` 다.** 그 모듈은 Django
+# 밖(스크립트·워커)에서도 import 되므로 settings 대신 환경 변수를 직접 본다.
+# 이 줄은 값의 존재와 기본값을 한곳에 적어 두는 용도다.
 OBJECT_STORAGE_PROVIDER = env("OBJECT_STORAGE_PROVIDER", default="local")
 
 # 배포된 런타임 코드 버전(git commit SHA). agent_run.runtime_profile_version에

@@ -15,7 +15,6 @@ import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
 
 const TITLE = '팀 현황';
-const DESCRIPTION = '우리 플랫폼을 사용 중인 팀과 그 안의 계정 현황을 확인합니다.';
 
 /**
  * 확인이 필요한 팀인가.
@@ -78,7 +77,7 @@ export default function OpsTeamsPage() {
   if (loading && !teams) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+        <OpsPageHeader title={TITLE} />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -87,7 +86,7 @@ export default function OpsTeamsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+        <OpsPageHeader title={TITLE} />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -97,7 +96,7 @@ export default function OpsTeamsPage() {
   if ((teams ?? []).length === 0) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+        <OpsPageHeader title={TITLE} />
         <div className={styles.notice}>
           팀은 팀장이 온보딩에서 직접 만듭니다. 운영자가 만들지 않습니다.
         </div>
@@ -108,7 +107,7 @@ export default function OpsTeamsPage() {
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title={TITLE} description={DESCRIPTION} />
+      <OpsPageHeader title={TITLE} />
 
       <div className={styles.notice}>
         팀은 HR 조직과 다릅니다. 회사 전체가 아니라 그 안의 그룹이 플랫폼을 쓰므로, 팀장이

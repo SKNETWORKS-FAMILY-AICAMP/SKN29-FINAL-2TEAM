@@ -93,7 +93,7 @@ export default function OpsAccountsPage() {
   if (loading && !accounts) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 관리" description="플랫폼 로그인 계정의 상태와 직원 연결 이상을 확인하고 정지·재활성·연결 해제를 수행합니다." />
+        <OpsPageHeader title="계정 관리" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -102,7 +102,7 @@ export default function OpsAccountsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 관리" description="플랫폼 로그인 계정의 상태와 직원 연결 이상을 확인하고 정지·재활성·연결 해제를 수행합니다." />
+        <OpsPageHeader title="계정 관리" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -112,7 +112,7 @@ export default function OpsAccountsPage() {
   if ((accounts ?? []).length === 0) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="계정 관리" description="플랫폼 로그인 계정의 상태와 직원 연결 이상을 확인하고 정지·재활성·연결 해제를 수행합니다." />
+        <OpsPageHeader title="계정 관리" />
         <p className={styles.inlineEmpty}>등록된 계정이 없습니다.</p>
       </div>
     );
@@ -122,7 +122,6 @@ export default function OpsAccountsPage() {
     <div className={styles.page}>
       <OpsPageHeader
         title="계정 관리"
-        description="플랫폼 로그인 계정의 상태와 직원 연결 이상을 확인하고 정지·재활성·연결 해제를 수행합니다."
       />
 
       <OpsFilterBar>

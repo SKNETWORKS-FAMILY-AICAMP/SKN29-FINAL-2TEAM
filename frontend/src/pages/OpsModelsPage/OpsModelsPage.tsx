@@ -11,11 +11,15 @@ import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
- * 팀별 모델 등록.
+ * 팀별 모델 등록. **등록만 한다**(2026-08-18 PM).
  *
  * **팀이 스스로 등록하지 않는다.** 회사가 요청하면 운영자가 여기서 등록한다
  * (2026-08-13 멘토링). 설정의 등록 폼을 없애고 이 화면으로 옮긴 이유는
  * `apps/ops/views/models.py` 에 적어 두었다.
+ *
+ * **기본 채팅 모델을 고르는 것은 여기가 아니다** — 팀 상세에 있다. 등록은
+ * 「무엇을 새로 붙이나」라 주제로 시작하는 일이고, 고르는 것은 「이 팀이 무엇으로
+ * 도나」다.
  *
  * 등록하는 사람만 바뀌고 **쓸 수 있는 범위는 여전히 그 팀뿐이다.**
  */
@@ -145,7 +149,7 @@ export default function OpsModelsPage() {
   if (loading && !models) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="모델 등록" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
+        <OpsPageHeader title="모델" />
         <p className={styles.inlineEmpty}>불러오는 중…</p>
       </div>
     );
@@ -154,7 +158,7 @@ export default function OpsModelsPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <OpsPageHeader title="모델 등록" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
+        <OpsPageHeader title="모델" />
         <p className={styles.inlineEmpty} role="alert">{error}</p>
         <Button variant="outline" onClick={load}>다시 시도</Button>
       </div>
@@ -166,9 +170,9 @@ export default function OpsModelsPage() {
 
   return (
     <div className={styles.page}>
-      <OpsPageHeader title="모델 등록" description="요청받은 모델을 팀에 등록합니다. 등록한 팀만 그 모델을 고를 수 있습니다." />
+      <OpsPageHeader title="모델" />
 
-      <OpsSectionCard title="새로 등록" subtitle="저장 전에 그 주소와 키로 실제로 한 번 불러 봅니다.">
+      <OpsSectionCard title="새로 등록">
         <div className={styles.formGrid}>
           <div className={styles.fieldGroup}>
             <label htmlFor="model-team">팀</label>
