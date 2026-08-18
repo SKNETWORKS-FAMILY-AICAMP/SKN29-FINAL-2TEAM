@@ -66,8 +66,6 @@ export default function AgentVersionEditPage() {
   const [subagents, setSubagents] = useState<SubagentRef[]>([]);
   const [subagentFormOpen, setSubagentFormOpen] = useState(false);
   const [subagentChildId, setSubagentChildId] = useState('');
-  const [subagentAlias, setSubagentAlias] = useState('');
-  const [subagentDescription, setSubagentDescription] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,19 +137,22 @@ export default function AgentVersionEditPage() {
     return otherAgents.find((a) => a.agent_id === agentId)?.name ?? agentId;
   }
 
+  /** alias·위임 설명은 별도로 안 받는다 — 고르는 에이전트 자신의 이름·설명을
+   * 그대로 스냅샷으로 쓴다(부모가 저장된 뒤 자식 이름이 바뀌어도 이 부모는
+   * 지금 값을 계속 쓴다, 위 subagentCandidates 주석과 같은 이유). */
   function addSubagent() {
     const candidate = subagentCandidates.find((a) => a.agent_id === subagentChildId);
     if (!candidate || !candidate.current_version_id) return;
-    if (!subagentAlias.trim() || !subagentDescription.trim()) {
-      setError('서브 에이전트의 alias와 위임 설명은 필수입니다.');
+    if (!candidate.description.trim()) {
+      setError(`"${candidate.name}"에 설명이 없어 서브 에이전트로 추가할 수 없습니다. 그 에이전트의 설명을 먼저 채워 주세요.`);
       return;
     }
     if (subagents.some((s) => s.child_agent_id === candidate.agent_id)) {
       setError('이미 추가한 서브 에이전트입니다.');
       return;
     }
-    if (subagents.some((s) => s.alias === subagentAlias.trim())) {
-      setError('같은 alias를 중복 사용할 수 없습니다.');
+    if (subagents.some((s) => s.alias === candidate.name.trim())) {
+      setError(`이미 추가한 서브 에이전트와 이름이 같습니다("${candidate.name}"). 한쪽 이름을 바꿔 주세요.`);
       return;
     }
     setSubagents((prev) => [
@@ -159,13 +160,11 @@ export default function AgentVersionEditPage() {
       {
         child_agent_id: candidate.agent_id,
         child_version_id: candidate.current_version_id!,
-        alias: subagentAlias.trim(),
-        delegation_description: subagentDescription.trim(),
+        alias: candidate.name.trim(),
+        delegation_description: candidate.description.trim(),
       },
     ]);
     setSubagentChildId('');
-    setSubagentAlias('');
-    setSubagentDescription('');
     setSubagentFormOpen(false);
     setError(null);
   }
@@ -359,9 +358,7 @@ export default function AgentVersionEditPage() {
             {subagents.map((sub) => (
               <div key={sub.child_agent_id} className={styles.subagentRow}>
                 <div className={styles.subagentText}>
-                  <strong>
-                    {agentName(sub.child_agent_id)} <span className={styles.subagentAlias}>({sub.alias})</span>
-                  </strong>
+                  <strong>{agentName(sub.child_agent_id)}</strong>
                   <span>{sub.delegation_description}</span>
                 </div>
                 <Button
@@ -389,24 +386,15 @@ export default function AgentVersionEditPage() {
                   onChange={(event) => setSubagentChildId(event.target.value)}
                 />
               </label>
-              <Input
-                label="alias (부모가 호출할 때 쓰는 이름)"
-                id="subagent-alias"
-                name="subagentAlias"
-                placeholder="jira_writer"
-                value={subagentAlias}
-                onChange={(event) => setSubagentAlias(event.target.value)}
-              />
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>위임 설명 (모델이 이 문장만 보고 위임 여부를 판단합니다)</span>
-                <textarea
-                  className={styles.textarea}
-                  rows={3}
-                  value={subagentDescription}
-                  placeholder="Jira 검색과 이슈 생성을 담당한다."
-                  onChange={(event) => setSubagentDescription(event.target.value)}
-                />
-              </label>
+              {subagentChildId && (
+                <p className={styles.help}>
+                  이 에이전트의 이름·설명을 그대로 위임 판단 근거로 씁니다:{' '}
+                  <em>
+                    {subagentCandidates.find((a) => a.agent_id === subagentChildId)?.description ||
+                      '(설명 없음 — 위 Profile에서 채워 주세요)'}
+                  </em>
+                </p>
+              )}
               <div className={styles.subagentFormActions}>
                 <Button type="button" variant="outline" onClick={() => setSubagentFormOpen(false)}>
                   취소
