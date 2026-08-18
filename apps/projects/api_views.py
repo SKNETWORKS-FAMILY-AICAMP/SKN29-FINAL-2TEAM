@@ -1012,10 +1012,33 @@ class TaskExtractionRunAPIView(AuthenticatedAPIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
             if not primary["search_ready"]:
-                return Response(
-                    {"detail": "문서가 아직 파싱·청킹·임베딩되지 않았습니다."},
-                    status=status.HTTP_409_CONFLICT,
+                # **막지 않고 그 자리에서 색인한다**(2026-08-18 PM 결정 · 채팅
+                # 도구의 `_extract_tasks` 와 같은 규칙). 전에는 409 로 끊었는데,
+                # 색인을 시작할 화면이 8/15 에 없어져서(`/files/new`) 사람이 할
+                # 수 있는 일이 남지 않았다 — 새로 연결한 팀은 업무를 영영 못
+                # 뽑았다. 실패하면 그때 사유와 함께 끊는다.
+                from services.document_intake import promote_to_searchable
+
+                outcome = promote_to_searchable(
+                    account_id=request.user.account_id, doc_id=selected_id
                 )
+                if not outcome["ok"]:
+                    return Response(
+                        {
+                            "detail": "기준 문서의 본문을 읽지 못해 업무를 뽑을 수 없습니다: "
+                            + (outcome.get("detail") or "알 수 없는 이유")
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                documents = PipelineDocumentRepository.list_ready_for_analysis(
+                    proj_id=project_id, account_id=request.user.account_id
+                )
+                primary = next((d for d in documents if d["doc_id"] == selected_id), None)
+                if primary is None or not primary["search_ready"]:
+                    return Response(
+                        {"detail": "기준 문서를 색인했지만 검색에 쓸 수 있는 본문이 없습니다."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
             ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)

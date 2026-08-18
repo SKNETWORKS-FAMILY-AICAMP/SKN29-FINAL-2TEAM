@@ -152,7 +152,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
                     type="button"
                     className={styles.candidate}
                     onClick={() => void handleChoose(candidate.doc_id)}
-                    disabled={busy || !candidate.search_ready}
+                    disabled={busy}
                   >
                     <span className={styles.candidateHead}>
                       <strong>{candidate.file_name}</strong>
@@ -162,8 +162,14 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
                       </span>
                     </span>
                     {candidate.summary && <span className={styles.summary}>{candidate.summary}</span>}
+                    {/* **고를 수는 있다**(2026-08-18 PM 결정). 색인은 업무를
+                        뽑을 때 그 자리에서 돈다 — 색인을 시작할 화면이 없어서
+                        「고를 수 없습니다」는 사람에게 아무 방법도 주지 않았다.
+                        대신 **시간이 걸린다는 것**을 미리 말해 준다. */}
                     {!candidate.search_ready && (
-                      <span className={styles.notReady}>본문이 아직 색인되지 않아 고를 수 없습니다</span>
+                      <span className={styles.notReady}>
+                        본문 색인 전 — 업무를 뽑을 때 먼저 읽습니다(몇 분 걸립니다)
+                      </span>
                     )}
                   </button>
                 </li>
@@ -180,17 +186,18 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
             <Icon name="file-text" size={16} color="var(--color-primary)" />
             <span className={styles.primaryName}>{primary.file_name ?? primary.doc_id}</span>
           </div>
-          {/* 색인 전 문서가 기준으로 잡혀 있을 수 있다(고른 뒤 파이프라인이 다시
-              돌거나, 예전에 지정해 둔 문서다). 그 상태로는 업무 추출이 거절한다. */}
+          {/* 색인 전 문서가 기준으로 잡혀 있을 수 있다. **막지 않는다** —
+              「업무 추출」이 그 자리에서 색인하고 뽑는다(2026-08-18). 다만 그
+              턴이 몇 분 걸리므로 누르기 전에 알려 준다. */}
           {!primary.search_ready && (
             <p className={styles.warn}>
-              본문이 아직 색인되지 않았습니다. 이 상태로는 업무를 뽑을 수 없습니다.
+              본문 색인 전입니다. 「업무 추출」을 누르면 먼저 본문을 읽습니다 — 몇 분 걸립니다.
             </p>
           )}
           {/* 이 문서로 할 수 있는 일과 이 문서를 바꾸는 일. 같은 대상에 대한
               행동이라 한 줄에 둔다. */}
           <div className={styles.actions}>
-            <Button size="sm" disabled={busy || !primary.search_ready} onClick={handleExtract}>
+            <Button size="sm" disabled={busy} onClick={handleExtract}>
               업무 추출
             </Button>
             <Button variant="outline" size="sm" onClick={handleFind} disabled={busy}>

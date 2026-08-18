@@ -342,8 +342,33 @@ def _extract_tasks(
     )
     if primary is None:
         raise ToolInputError("이 프로젝트의 기준 문서가 아직 지정되지 않았습니다.")
+
     if not primary["search_ready"]:
-        raise ToolInputError("기준 문서가 아직 파싱·청킹·임베딩되지 않았습니다.")
+        # **여기서 승격시킨다**(2026-08-18 PM 결정). 전에는 「아직 파싱·청킹·
+        # 임베딩되지 않았습니다」로 끊었는데, 그러면 사람이 할 수 있는 일이
+        # 없다 — 색인을 시작하는 화면은 8/15 에 지웠고(`/files/new`), 승격은
+        # `document_search` 만 걸 수 있었다. 그래서 **새로 연결한 팀은 업무를
+        # 영영 못 뽑았다.**
+        #
+        # 추출은 `VectorSearchRepository.search()` 로 근거를 찾으므로 벡터가
+        # 없으면 결과가 0건이다. 막는 대신 그 자리에서 만든다 — 검색이 필요할
+        # 때 승격시키는 것과 같은 규칙이고, 진입점만 하나 더 는 것이다.
+        from services.document_intake import promote_to_searchable
+
+        outcome = promote_to_searchable(account_id=account_id, doc_id=primary["doc_id"])
+        if not outcome["ok"]:
+            raise ToolInputError(
+                f"기준 문서의 본문을 읽지 못해 업무를 뽑을 수 없습니다: {outcome.get('detail') or '알 수 없는 이유'}"
+            )
+        # 승격 뒤 상태가 바뀌었다 — 다시 읽어야 `ready_ids` 에 이 문서가 들어간다.
+        documents = PipelineDocumentRepository.list_ready_for_analysis(
+            proj_id=proj_id, account_id=account_id
+        )
+        primary = next(
+            (d for d in documents if d["proj_id"] == proj_id and d["doc_role"] == "PRIMARY"), None
+        )
+        if primary is None or not primary["search_ready"]:
+            raise ToolInputError("기준 문서를 색인했지만 검색에 쓸 수 있는 본문이 없습니다.")
 
     ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
     result = None
