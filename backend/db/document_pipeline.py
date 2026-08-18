@@ -751,7 +751,8 @@ class DocMetaRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
-                    SELECT d.doc_id, d.file_name, m.summary, m.doc_type, m.keywords,
+                    SELECT d.doc_id, d.file_name, d.index_status,
+                           m.summary, m.doc_type, m.keywords,
                            1 - (m.summary_vec <=> %s::vector) AS summary_score,
                            {_SEARCH_READY}
                     FROM doc_meta m

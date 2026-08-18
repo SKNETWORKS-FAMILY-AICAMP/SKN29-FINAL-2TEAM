@@ -199,7 +199,7 @@ class CoarseSearchTests(SimpleTestCase):
     def test_coarse_가_고른_문서_안에서만_청크를_찾는다(self, coarse, search, _embed):
         coarse.return_value = [
             {"doc_id": "DC001", "file_name": "a.pdf", "summary": "s", "doc_type": "제안요청서",
-             "keywords": [], "summary_score": 0.8, "search_ready": True},
+             "keywords": [], "summary_score": 0.8, "search_ready": True, "index_status": None},
             {"doc_id": "DC002", "file_name": "b.pdf", "summary": "s", "doc_type": "회의록",
              "keywords": [], "summary_score": 0.7, "search_ready": True},
         ]
@@ -214,9 +214,9 @@ class CoarseSearchTests(SimpleTestCase):
 
         coarse.return_value = [
             {"doc_id": "DC001", "file_name": "a.pdf", "summary": "s", "doc_type": "제안요청서",
-             "keywords": [], "summary_score": 0.8, "search_ready": True},
+             "keywords": [], "summary_score": 0.8, "search_ready": True, "index_status": None},
             {"doc_id": "DC009", "file_name": "미처리.pdf", "summary": "관련 요약", "doc_type": "회의록",
-             "keywords": [], "summary_score": 0.7, "search_ready": False},
+             "keywords": [], "summary_score": 0.7, "search_ready": False, "index_status": None},
         ]
         search.return_value = []
 
@@ -228,7 +228,7 @@ class CoarseSearchTests(SimpleTestCase):
     def test_후보가_전부_미색인이면_그렇게_말한다(self, coarse, search, _embed):
         coarse.return_value = [
             {"doc_id": "DC009", "file_name": "미처리.pdf", "summary": "관련 요약", "doc_type": "회의록",
-             "keywords": [], "summary_score": 0.7, "search_ready": False},
+             "keywords": [], "summary_score": 0.7, "search_ready": False, "index_status": None},
         ]
 
         result = registry._document_search(team_id="TE001", query="납기일")

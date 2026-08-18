@@ -73,13 +73,19 @@ def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -
 #: Content-Type 은 믿을 수 없고(아바타 업로드와 같은 판단), 문서는 바이트만으로
 #: 형식을 못 가린다(아래 참조).
 #:
-#: **파서가 실제로 읽는 것만 받는다**(2026-08-18 확인). 전에는 pptx·xlsx·txt·md·csv
-#: 까지 받았는데, RunPod 워커의 `SUPPORTED_MIME_TYPES` 는 PDF 와 DOCX 둘뿐이다 —
-#: 나머지는 올라가서 요약까지 되고 **색인 단계에서 반드시 실패했다.** 못 쓸 것을
-#: 받아 두고 몇 분 뒤에 실패를 알리는 것은 받지 않는 것만 못하다.
+#: **두 갈래를 함께 받는다**(2026-08-18 PM).
+#:
+#: - PDF·DOCX 는 워커가 본문까지 읽는다. 문장 근거를 낼 수 있다.
+#: - txt·md 는 워커가 못 읽지만(`SUPPORTED_MIME_TYPES` 가 앞의 둘뿐이다) **요약은
+#:   우리 쪽 CPU 가 만든다** — 문서 단위 검색에는 그대로 쓰인다.
+#:
+#: pptx·xlsx 는 안 받는다. 워커도 못 읽고 CPU 추출기도 못 뽑아서, 올려 봐야
+#: 요약조차 안 나온다.
 _UPLOAD_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
 }
 
 #: 앞부분 시그니처. 받는 둘 다 시그니처가 있어서 바이트로 한 번 더 본다.

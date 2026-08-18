@@ -37,16 +37,21 @@ class UploadTypeTests(SimpleTestCase):
         self.assertEqual(storage.upload_mime_type("a.docx", b"PKrest"), docx)
         self.assertIsNone(storage.upload_mime_type("a.docx", b"not a zip"))
 
-    def test_only_what_the_parser_reads_is_accepted(self):
-        """**받는 목록은 파서가 읽는 것과 같아야 한다**(2026-08-18 확인).
+    def test_text_formats_are_accepted_for_the_summary(self):
+        """**워커가 본문을 못 읽어도 요약은 우리 쪽 CPU 가 만든다**(2026-08-18 PM).
 
-        RunPod 워커의 `SUPPORTED_MIME_TYPES` 는 PDF 와 DOCX 둘뿐이다. 전에는
-        pptx·xlsx·txt·md·csv 까지 받았는데, 그것들은 올라가서 요약까지 되고
-        **색인에서 반드시 실패했다** — 못 쓸 것을 받아 두고 몇 분 뒤에 실패를
-        알리는 것은 받지 않는 것만 못하다.
+        txt·md 는 문장 근거는 못 내지만 문서 단위 검색에는 그대로 쓰인다.
         """
 
-        for name in ("a.pptx", "a.xlsx", "a.txt", "a.md", "a.csv", "a.hwp", "a.zip", "noext"):
+        self.assertEqual(storage.upload_mime_type("a.txt", b"plain"), "text/plain")
+        self.assertEqual(
+            storage.upload_mime_type("a.md", "# 제목".encode("utf-8")), "text/markdown"
+        )
+
+    def test_formats_we_cannot_read_at_all_are_rejected(self):
+        """pptx·xlsx 는 워커도 CPU 추출기도 못 읽는다 — 올려 봐야 요약조차 안 나온다."""
+
+        for name in ("a.pptx", "a.xlsx", "a.csv", "a.hwp", "a.zip", "noext"):
             with self.subTest(name=name):
                 self.assertIsNone(storage.upload_mime_type(name, b"PK"))
 

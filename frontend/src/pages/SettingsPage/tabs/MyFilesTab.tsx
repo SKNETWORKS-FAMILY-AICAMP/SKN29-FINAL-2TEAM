@@ -59,7 +59,7 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
 }
 
 //: 파서가 읽는 것과 같아야 한다. 더 받으면 색인에서 반드시 실패한다.
-const ACCEPT = '.pdf,.docx';
+const ACCEPT = '.pdf,.docx,.txt,.md';
 
 /**
  * 안쪽 탭 둘.
@@ -239,7 +239,7 @@ export function MyFilesTab() {
             {busy ? `${busy} 올리는 중…` : '여기로 끌어다 놓거나 눌러서 고르세요'}
           </span>
           <span className={styles.dropHint}>
-            PDF · Word(docx) · 한 개에 20MB까지 · 여러 개 한 번에
+            PDF · Word(docx) · 텍스트(txt·md) · 한 개에 20MB까지 · 여러 개 한 번에
           </span>
           <input
             ref={inputRef}

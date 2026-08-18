@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 #: 보수적으로 잡는다(아바타 2MB 와는 다른 값이라 여기서 따로 정한다).
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
-#: 파서(RunPod 워커)가 읽는 것과 같아야 한다. 더 받으면 색인에서 반드시 실패한다.
-ACCEPTED = "PDF · Word(docx)"
+#: PDF·DOCX 는 본문까지, txt·md 는 요약까지 쓸 수 있다(`_UPLOAD_TYPES` 주석).
+ACCEPTED = "PDF · Word(docx) · 텍스트(txt·md)"
 
 
 def _error_response(exc: Exception) -> Response:
