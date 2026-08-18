@@ -47,10 +47,18 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
     };
   }
   if (file.extract_status === 'FAILED') {
+    // ⚠ **왜 실패했는지는 화면이 모른다.** 추출기는 사유를 다섯 갈래로 갈라
+    // 만드는데(너무 짧음 · 암호 PDF · 스캔본 · 글자 깨짐 · hwp), `doc_meta` 에
+    // 담을 칸이 없어 `as_row()` 가 버린다 — `extract_status` 만 남는다.
+    //
+    // 그래서 사유를 **찍지 않는다.** 전에는 「텍스트가 들어 있는 파일로 다시
+    // 올려 주세요」였는데, 실제로 제일 흔한 실패는 **본문이 200자보다 짧은
+    // 것**이라 텍스트가 멀쩡히 든 파일을 두고 사용자를 틀린 방향으로 보냈다
+    // (2026-08-18 QA — 185자 파일이 이 문구를 받았다).
     return {
       tone: 'warning',
       label: '본문 추출 실패',
-      hint: '텍스트가 들어 있는 파일로 다시 올려 주세요.',
+      hint: '내용이 200자보다 짧거나, 글자를 읽을 수 없는 파일일 수 있습니다.',
     };
   }
   if (file.summary) {

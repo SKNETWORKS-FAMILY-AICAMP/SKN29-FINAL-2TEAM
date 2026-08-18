@@ -146,9 +146,16 @@ export function ProgressCard({
         </ul>
       )}
 
-      <p className={styles.foot}>
-        {evidenceCount ? `근거 ${evidenceCount}건 · ` : ''}몇 분 걸립니다 · 창을 닫지 않아도 됩니다
-      </p>
+      {/* **끝나면 「몇 분 걸립니다」를 지운다**(2026-08-18 QA). 위 단계 아이콘은
+          `running` 을 보고 회전을 멈추는데 이 줄만 무조건 그려져서, 답변이 다
+          나온 뒤에도 카드가 아직 도는 것처럼 보였다. 끝난 뒤 남길 값은 근거
+          수뿐이고, 그것도 없으면 줄 자체를 안 그린다. */}
+      {(running || Boolean(evidenceCount)) && (
+        <p className={styles.foot}>
+          {evidenceCount ? `근거 ${evidenceCount}건` : ''}
+          {running && `${evidenceCount ? ' · ' : ''}몇 분 걸립니다 · 창을 닫지 않아도 됩니다`}
+        </p>
+      )}
     </section>
   );
 }
