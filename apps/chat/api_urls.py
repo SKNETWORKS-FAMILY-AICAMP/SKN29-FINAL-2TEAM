@@ -5,6 +5,7 @@ from .api_views import (
     ChatMessageAPIView,
     ChatSessionDetailAPIView,
     ChatSessionListCreateAPIView,
+    ChatSessionToolsAPIView,
 )
 
 # 대화는 프로젝트가 아니라 팀에 속한다. `proj_id` 는 문맥일 뿐이고 없을 수도
@@ -15,6 +16,11 @@ urlpatterns = [
         "sessions/<str:session_id>/",
         ChatSessionDetailAPIView.as_view(),
         name="api_chat_session_detail",
+    ),
+    path(
+        "sessions/<str:session_id>/tools/",
+        ChatSessionToolsAPIView.as_view(),
+        name="api_chat_session_tools",
     ),
     path(
         "sessions/<str:session_id>/messages/",

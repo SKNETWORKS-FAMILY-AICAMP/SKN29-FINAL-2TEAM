@@ -295,6 +295,31 @@ class AgentVersionRepository:
             "agent_status": row["agent_status"],
         }
 
+    @staticmethod
+    def resolve_live_version_id(*, agent_id: str) -> str | None:
+        """기본 챗 에이전트면 **지금** 발행된 최신 버전을, 아니면 `None`을 돌려준다.
+
+        "+" 도구 토글(2026-08-18, ChatPage의 도구·MCP 붙이기)이 그 자리에서
+        새 버전을 발행하는데, 이미 열려 있는 대화(`chat_session`)는 만들 때
+        고정한 옛 `agent_version_id`를 계속 쓴다 — 다른 에이전트는 이게
+        맞다(버전 불변성이 실행 재현성을 지킨다, 02 §5.2). 하지만 기본 챗은
+        빌더 화면도 없이 채팅 안에서만 관리되는 팀 공용 도구모음 성격이라
+        "방금 켠 도구가 지금 이 대화에도 바로 먹혀야 한다"가 자연스럽다 —
+        그래서 이 한 에이전트만 실행 시점마다 최신 버전을 다시 찾는 예외를
+        둔다. 호출부(`apps/chat/api_views.py`)는 `None`이면 세션에 이미
+        고정된 버전을 그대로 쓴다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT current_version_id FROM agents "
+                    "WHERE agent_id = %s AND is_default_chat = true",
+                    (agent_id,),
+                )
+                row = cursor.fetchone()
+                return row["current_version_id"] if row else None
+
 
 class AgentSubagentRepository:
     """`agent_version_subagents` 조회 전용. 계약: 02 §6.1."""
@@ -351,19 +376,41 @@ class AgentSubagentRepository:
         ]
 
 
-def _writable_agent_version(cursor, *, agent_id: str, team_id: str) -> None:
-    """수정(=새 버전 발행)해도 되는 논리적 에이전트인가.
+def _writable_agent_version(
+    cursor, *, agent_id: str, team_id: str, account_id: str, enforce_draft_privacy: bool = True
+) -> None:
+    """조회·수정(=새 버전 발행)해도 되는 논리적 에이전트인가.
 
     `_writable_agent`(비버전 `agent` 테이블용)와 같은 목적, 새 `agents` 테이블용.
     지금은 `is_prebuilt` 가드를 안 둔다 — 새 스키마용 시드 데이터가 아직 없어서
     (2026-08-13 시점) 막을 대상이 없다. 시드가 생기면 여기도 같이 막을 것.
+
+    **DRAFT는 만든 사람만 접근한다**(2026-08-18, "개인/팀 공유" 분리 결정).
+    `list_for_team()`이 목록에서 남의 DRAFT를 빼는 것과 같은 규칙을 여기서도
+    지킨다 — 안 그러면 목록엔 안 보여도 URL을 직접 알면(agent_id를 추측하거나
+    옛 링크로) 조회·수정이 그대로 통과해 "개인"이라는 말이 무색해진다.
+    ACTIVE·DISABLED는 한 번이라도 팀에 공유된 것이라 이 제한이 없다.
+
+    `delete()`는 `enforce_draft_privacy=False`로 부른다 — "만든 사람이거나
+    팀장이면 지울 수 있다"(`require_owner_or_leader`, 뷰 레이어)가 이미 그
+    자리에서 더 정확한 권한을 확인했다. 여기서 또 DRAFT를 막으면 팀장이 남의
+    DRAFT를 못 지우게 돼서 그 규칙과 충돌한다 — 삭제는 내용을 보여주지도,
+    바꾸지도 않는 관리 동작이라 조회·수정과 같은 잣대를 안 쓴다.
     """
 
-    cursor.execute("SELECT team_id FROM agents WHERE agent_id = %s", (agent_id,))
+    cursor.execute(
+        "SELECT team_id, status, owner_account_id FROM agents WHERE agent_id = %s", (agent_id,)
+    )
     row = cursor.fetchone()
     if row is None:
         raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
     if row["team_id"] != team_id:
+        raise PermissionDenied("이 에이전트에 접근할 수 없습니다.")
+    if (
+        enforce_draft_privacy
+        and row["status"] == "DRAFT"
+        and row["owner_account_id"] != account_id
+    ):
         raise PermissionDenied("이 에이전트에 접근할 수 없습니다.")
 
 
@@ -533,6 +580,16 @@ class AgentVersionCrudRepository:
 
     @staticmethod
     def list_for_team(account_id: str) -> list[dict[str, Any]]:
+        """팀 안에서 이 계정이 볼 수 있는 에이전트.
+
+        **DRAFT는 만든 사람에게만 보인다.** ACTIVE·DISABLED는 한 번이라도
+        팀에 공유된 적이 있다는 뜻이라 팀 전체가 계속 본다(2026-08-18,
+        "개인/팀 공유" 화면 분리 결정) — 화면(`AgentVersionListPage`)의 "개인"
+        탭은 이 조건 덕분에 실제로 본인 것만 모인다. `owner_account_id`가
+        NULL인 행(시드 등)은 아무도의 소유가 아니므로 이 조건에서 항상
+        제외된다 — 필요해지면 그때 다룬다.
+        """
+
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
@@ -540,13 +597,22 @@ class AgentVersionCrudRepository:
                     """
                     SELECT a.agent_id, a.name, a.description, a.status, a.is_prebuilt,
                            a.is_default_chat, a.current_version_id, a.updated_at,
-                           v.version, v.model, v.reasoning_effort, v.max_iterations
+                           a.owner_account_id,
+                           v.version, v.model, v.reasoning_effort, v.max_iterations,
+                           COALESCE(
+                               (SELECT json_agg(child.name ORDER BY child.name)
+                                FROM agent_version_subagents AS s
+                                JOIN agents AS child ON child.agent_id = s.child_agent_id
+                                WHERE s.parent_version_id = a.current_version_id),
+                               '[]'::json
+                           ) AS subagent_names
                     FROM agents AS a
                     LEFT JOIN agent_versions AS v ON v.agent_version_id = a.current_version_id
                     WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
+                      AND (a.status <> 'DRAFT' OR a.owner_account_id = %s)
                     ORDER BY a.is_default_chat DESC, a.is_prebuilt DESC, a.name
                     """,
-                    (team_id,),
+                    (team_id, account_id),
                 )
                 return list(cursor.fetchall())
 
@@ -558,11 +624,12 @@ class AgentVersionCrudRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
-                _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id)
+                _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id, account_id=account_id)
 
                 cursor.execute(
                     """
-                    SELECT agent_id, name, description, status, current_version_id
+                    SELECT agent_id, name, description, status, current_version_id,
+                           owner_account_id, is_default_chat
                     FROM agents WHERE agent_id = %s
                     """,
                     (agent_id,),
@@ -639,7 +706,7 @@ class AgentVersionCrudRepository:
                         (agent_id, team_id, fields["name"], fields["description"], account_id),
                     )
                 else:
-                    _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id)
+                    _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id, account_id=account_id)
                     cursor.execute(
                         "UPDATE agents SET name = %s, description = %s, updated_at = now() "
                         "WHERE agent_id = %s",
@@ -735,7 +802,7 @@ class AgentVersionCrudRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
-                _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id)
+                _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id, account_id=account_id)
 
                 if status != "ACTIVE":
                     cursor.execute(
@@ -749,6 +816,83 @@ class AgentVersionCrudRepository:
                     (status, agent_id),
                 )
         return AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+
+    @staticmethod
+    def list_dependents(*, agent_id: str, account_id: str) -> list[str]:
+        """이 에이전트를 서브 에이전트로 참조하는, 살아있는(ARCHIVED 아닌)
+        다른 에이전트의 이름 목록. 삭제 버튼을 누른 시점에 화면이 먼저
+        물어봐서, 막힐 걸 미리 알려주는 데 쓴다 — `delete()`도 같은 조회를
+        한 번 더 해서 그 사이 생긴 새 참조까지 막는다(경합 대비, 여기 결과를
+        그대로 믿고 삭제를 진행하지 않는다).
+
+        버전은 몇 개든 지날 수 있으니 parent_version_id가 아니라 그 버전이
+        속한 논리적 에이전트(agents) 단위로 묶는다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id, account_id=account_id)
+                return AgentVersionCrudRepository._dependent_parent_names(cursor, agent_id=agent_id)
+
+    @staticmethod
+    def _dependent_parent_names(cursor, *, agent_id: str) -> list[str]:
+        cursor.execute(
+            """
+            SELECT DISTINCT pa.name
+            FROM agent_version_subagents AS s
+            JOIN agent_versions AS pv ON pv.agent_version_id = s.parent_version_id
+            JOIN agents AS pa ON pa.agent_id = pv.agent_id
+            WHERE s.child_agent_id = %s AND pa.status <> 'ARCHIVED'
+            ORDER BY pa.name
+            """,
+            (agent_id,),
+        )
+        return [row["name"] for row in cursor.fetchall()]
+
+    @staticmethod
+    def delete(*, agent_id: str, account_id: str) -> None:
+        """ARCHIVED로 내린다. `AgentCrudRepository.delete`와 같은 이유로 행은
+        지우지 않는다 — `agent_run`·`chat_session`이 이 버전들을 가리키고
+        있어서, 지우면 그 실행이 어느 에이전트였는지 잃는다.
+
+        소유자·팀장 권한 검사는 뷰(`AgentVersionDetailAPIView.delete`)가
+        한다 — 여기는 `set_status`와 같은 얇은 쓰기 레이어다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _writable_agent_version(
+                    cursor,
+                    agent_id=agent_id,
+                    team_id=team_id,
+                    account_id=account_id,
+                    enforce_draft_privacy=False,
+                )
+
+                cursor.execute(
+                    "SELECT is_default_chat FROM agents WHERE agent_id = %s", (agent_id,)
+                )
+                if cursor.fetchone()["is_default_chat"]:
+                    raise RepositoryError("기본 챗 에이전트는 지울 수 없습니다.")
+
+                # 다른(살아있는) 에이전트가 이 에이전트를 서브 에이전트로 참조하면
+                # 막는다 — 그대로 지우면 그 부모는 다음 실행에서 InactiveSubagentError로
+                # 통째로 실패한다(services/agent_runtime/subagents/validation.py).
+                parent_names = AgentVersionCrudRepository._dependent_parent_names(
+                    cursor, agent_id=agent_id
+                )
+                if parent_names:
+                    raise RepositoryError(
+                        "다른 에이전트가 서브 에이전트로 쓰고 있어 지울 수 없습니다: "
+                        + ", ".join(parent_names)
+                    )
+
+                cursor.execute(
+                    "UPDATE agents SET status = 'ARCHIVED', updated_at = now() WHERE agent_id = %s",
+                    (agent_id,),
+                )
 
 
 def _decrypt_or_none(ciphertext: str | None) -> dict[str, Any] | None:
@@ -1136,7 +1280,7 @@ class ToolCallRepository:
                 )
 
 
-def _resolve_session_agent(cursor, *, agent_id: str, team_id: str) -> str | None:
+def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str | None:
     """대화를 열 에이전트가 레거시(`agent`)인지 신규 버전(`agents`)인지 가려내고,
     신규면 **지금 발행 중인** 버전(`agents.current_version_id`)을 돌려준다.
     레거시는 버전이 없으므로 `None`.
@@ -1149,6 +1293,11 @@ def _resolve_session_agent(cursor, *, agent_id: str, team_id: str) -> str | None
     조회가 "레거시로 만든 에이전트는 레거시 실행 경로를 그대로 쓴다"는 지금의
     보수적인 기본값과 맞는다 — 전환이 끝나 `agent`가 폐기되면 이 분기 자체가
     없어진다.
+
+    **DRAFT는 만든 사람 본인만 대화를 열 수 있다**(2026-08-18 추가 — "개인"
+    탭에 있는 걸 활성화 없이 스스로 테스트할 방법이 없다는 문제를 이걸로
+    닫는다). 남의 DRAFT는 team_id가 같아도 막는다 — `_writable_agent_version`이
+    조회·수정에 거는 것과 같은 프라이버시 경계를 실행에도 건다.
     """
 
     cursor.execute("SELECT team_id FROM agent WHERE agent_id = %s", (agent_id,))
@@ -1159,7 +1308,7 @@ def _resolve_session_agent(cursor, *, agent_id: str, team_id: str) -> str | None
         return None
 
     cursor.execute(
-        "SELECT team_id, status, current_version_id FROM agents WHERE agent_id = %s",
+        "SELECT team_id, status, current_version_id, owner_account_id FROM agents WHERE agent_id = %s",
         (agent_id,),
     )
     agent = cursor.fetchone()
@@ -1167,9 +1316,12 @@ def _resolve_session_agent(cursor, *, agent_id: str, team_id: str) -> str | None
         raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
     if agent["team_id"] != team_id:
         raise PermissionDenied("이 에이전트를 쓸 수 없습니다.")
-    if agent["status"] != "ACTIVE" or agent["current_version_id"] is None:
-        # 아직 한 번도 발행하지 않았거나 비활성화된 에이전트로는 대화를 열 수
-        # 없다 — AgentVersionActivateAPIView의 ACTIVE 게이팅과 같은 경계
+
+    is_own_draft = agent["status"] == "DRAFT" and agent["owner_account_id"] == account_id
+    if agent["current_version_id"] is None or not (agent["status"] == "ACTIVE" or is_own_draft):
+        # ACTIVE도 아니고 본인 DRAFT도 아니면(비활성화됐거나, 아직 한 번도
+        # 발행 안 했거나, 남의 DRAFT면) 대화를 열 수 없다 —
+        # AgentVersionActivateAPIView의 ACTIVE 게이팅과 같은 경계
         # ("Chat 위임과 관리 화면의 'Chat에서 사용' 노출").
         raise ReferenceNotFound(f"대화를 열 수 없는 에이전트입니다: {agent_id}")
     return agent["current_version_id"]
@@ -1190,7 +1342,7 @@ def _require_session(cursor, *, session_id: str, account_id: str) -> dict[str, A
     cursor.execute(
         """
         SELECT session_id::text, team_id, account_id, agent_id, agent_version_id,
-               proj_id, title, created_at, updated_at
+               proj_id, title, tool_refs_override, created_at, updated_at
         FROM chat_session
         WHERE session_id::text = %s
         """,
@@ -1212,7 +1364,7 @@ class ChatSessionRepository:
                 team_id = _require_team(cursor, account_id)
 
                 agent_version_id = _resolve_session_agent(
-                    cursor, agent_id=agent_id, team_id=team_id
+                    cursor, agent_id=agent_id, team_id=team_id, account_id=account_id
                 )
 
                 cursor.execute(
@@ -1225,7 +1377,23 @@ class ChatSessionRepository:
                     """,
                     (team_id, account_id, agent_id, agent_version_id, proj_id, title),
                 )
-                return cursor.fetchone()
+                row = cursor.fetchone()
+
+                # `list_for_account()`와 같은 이유로 이름을 채운다 — RETURNING은
+                # 방금 넣은 chat_session 행만 주고 다른 테이블은 못 붙인다.
+                # 화면(대화 목록의 에이전트별 묶음, 2026-08-18)이 방금 만든
+                # 대화도 바로 이름으로 보여줘야 해서, 여기서 한 번 더 찾는다.
+                cursor.execute(
+                    """
+                    SELECT COALESCE(
+                        (SELECT name FROM agent WHERE agent_id = %s),
+                        (SELECT name FROM agents WHERE agent_id = %s)
+                    ) AS agent_name
+                    """,
+                    (agent_id, agent_id),
+                )
+                row["agent_name"] = cursor.fetchone()["agent_name"]
+                return row
 
     @staticmethod
     def list_for_account(account_id: str) -> list[dict[str, Any]]:
@@ -1271,6 +1439,49 @@ class ChatSessionRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 return _require_session(cursor, session_id=session_id, account_id=account_id)
+
+    @staticmethod
+    def set_tool_refs_override(
+        *, session_id: str, account_id: str, tool_refs: list[str] | None
+    ) -> dict[str, Any]:
+        """이 대화에서만 쓸 도구 목록을 저장한다(2026-08-18, Chat "+" 버튼).
+
+        에이전트 원본 `tool_refs`는 안 건드린다 — 실행 시점에
+        `apps/chat/api_views.py`가 이 값이 있으면 로드된 정의의 tool_refs를
+        통째로 갈아 끼운다(`executor.py`의 `tool_refs_override` 인자).
+        `tool_refs=None`을 주면 커스터마이즈를 지우고 에이전트 원래 값으로
+        되돌린다 — 빈 리스트(`[]`)는 "이 대화에서 도구를 전부 껐다"는 다른
+        뜻이라 구분해서 받는다.
+
+        **소유자만** 바꿀 수 있다 — 대화는 개인 것이고(`_require_session`은
+        팀 검사라 남의 대화도 열리지만), 도구 구성은 그 대화를 실제로 쓰는
+        사람의 선택이어야 한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team(cursor, account_id)
+                cursor.execute(
+                    "SELECT account_id FROM chat_session WHERE session_id::text = %s",
+                    (session_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 대화입니다: {session_id}")
+                if row["account_id"] != account_id:
+                    raise PermissionDenied("이 대화에 접근할 수 없습니다.")
+
+                cursor.execute(
+                    """
+                    UPDATE chat_session SET tool_refs_override = %s, updated_at = now()
+                    WHERE session_id::text = %s
+                    RETURNING session_id::text, team_id, account_id, agent_id,
+                              agent_version_id, proj_id, title, tool_refs_override,
+                              created_at, updated_at
+                    """,
+                    (tool_refs, session_id),
+                )
+                return cursor.fetchone()
 
     @staticmethod
     def rename_if_first_answer(*, session_id: str, account_id: str, title: str) -> bool:

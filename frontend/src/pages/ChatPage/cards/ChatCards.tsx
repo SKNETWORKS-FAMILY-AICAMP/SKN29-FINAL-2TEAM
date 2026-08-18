@@ -100,6 +100,45 @@ export function ProgressCard({
   );
 }
 
+export interface ReasoningTraceProps {
+  /** 이 턴에서 모델이 낸 생각을 순서대로. 비어 있으면 컴포넌트 자체를 안 그린다. */
+  steps: string[];
+}
+
+/**
+ * ⓪ 추론 과정 카드(2026-08-18) — 추론 모델(gpt-5.6-luna 등)이 도구를 부르기
+ * 전이나 최종 답 전에 내는 생각을 보여준다. `services/agent_runtime/events.py`가
+ * 지금까지 버리던 `AIMessage.content`의 `type:"reasoning"` 블록을 따로 뽑아
+ * `reasoning` 이벤트로 낸다(`liveChat.ts`의 `reasoningSteps`가 모은다).
+ *
+ * **접어서 시작한다.** 추론 모델은 답 하나에도 여러 단락을 생각하는데, 다
+ * 펼쳐 두면 정작 찾는 답이 아래로 밀린다 — 근거 카드(`TaskRow`)의 「원문 근거」
+ * 와 같은 판단이다. 복잡한 대화에서 "왜 이렇게 답했는지"가 궁금할 때만 편다.
+ */
+export function ReasoningTrace({ steps }: ReasoningTraceProps) {
+  const [open, setOpen] = useState(false);
+  if (steps.length === 0) return null;
+
+  return (
+    <section className={styles.card}>
+      <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
+        생각 과정 {steps.length}단계
+      </button>
+
+      {open && (
+        <ol className={styles.reasoningList}>
+          {steps.map((step, index) => (
+            <li key={index} className={styles.reasoningStep}>
+              {step}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 /** ② 근거 카드 — 업무별 근거 접기/펼치기. TaskExtractionPage TaskCard(63-152)의 후신. */
 function TaskRow({
   task,

@@ -17,6 +17,7 @@ from django.test import SimpleTestCase
 
 from services.agent_runtime.definitions import SubagentDefinition
 from services.agent_runtime.events import (
+    EVENT_REASONING,
     EVENT_RESULT,
     EVENT_SUBAGENT_COMPLETED,
     EVENT_SUBAGENT_STARTED,
@@ -321,6 +322,116 @@ class ParentFinalAnswerTests(SimpleTestCase):
         self.assertEqual(event["type"], EVENT_RESULT)
         self.assertEqual(event["text"], "이번 달 팀원별 업무 부하는 아래와 같습니다.")
         self.assertIsInstance(event["text"], str)
+
+
+class ReasoningEventTests(SimpleTestCase):
+    """`_extract_reasoning()` — reasoning 블록의 `summary`(리스트, 각 항목의
+    `"text"`)를 읽는 경로(2026-08-18). 위 테스트의 `"summary": []`와 달리
+    여기는 실제로 채워진 경우다 — `models/factory.py`가 `reasoning=
+    {"summary": "auto"}`를 넘겨야 API가 이렇게 채워 보낸다."""
+
+    def test_populated_summary_yields_reasoning_event_before_result(self):
+        message = AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [{"type": "summary_text", "text": "사용자가 요청한 범위부터 좁혀야 한다."}],
+                },
+                {"type": "text", "text": "네, 진행할게요."},
+            ],
+            tool_calls=[],
+        )
+        raw = _raw((), "model", message)
+
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["type"], EVENT_REASONING)
+        self.assertEqual(events[0]["text"], "사용자가 요청한 범위부터 좁혀야 한다.")
+        self.assertIsNone(events[0]["subagent_alias"])
+        self.assertEqual(events[1]["type"], EVENT_RESULT)
+        self.assertEqual(events[1]["text"], "네, 진행할게요.")
+
+    def test_multiple_summary_parts_are_joined(self):
+        message = AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [
+                        {"type": "summary_text", "text": "첫째,"},
+                        {"type": "summary_text", "text": "둘째."},
+                    ],
+                },
+            ],
+            tool_calls=[],
+        )
+        raw = _raw((), "model", message)
+
+        event = _convert_one(EventMapper(), raw)
+
+        self.assertEqual(event["type"], EVENT_REASONING)
+        self.assertEqual(event["text"], "첫째,\n둘째.")
+
+    def test_reasoning_before_tool_call_yields_reasoning_then_tool_started(self):
+        message = AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [{"type": "summary_text", "text": "문서부터 찾아보자."}],
+                },
+            ],
+            tool_calls=[{"name": "document_search", "args": {"query": "q"}, "id": "1"}],
+        )
+        raw = _raw((), "model", message)
+
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["type"], EVENT_REASONING)
+        self.assertEqual(events[1]["type"], EVENT_TOOL_STARTED)
+
+    def test_child_namespace_reasoning_carries_subagent_alias(self):
+        mapper = EventMapper()
+        # 위임을 먼저 시작해서 네임스페이스가 알려진 위임에 묶이게 한다
+        # (`_resolve_subagent_info`의 순서 휴리스틱 — 다른 자식 네임스페이스
+        # 테스트와 같은 준비 절차).
+        start = AIMessage(
+            content="", tool_calls=[{"name": "task", "args": {"subagent_type": "researcher"}, "id": "d1"}]
+        )
+        mapper.convert(_raw((), "model", start), definition=_Definition(), context=_Context())
+
+        message = AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [{"type": "summary_text", "text": "자식이 생각하는 중."}],
+                },
+            ],
+            tool_calls=[],
+        )
+        raw = _raw(("tools:child-1",), "model", message)
+
+        event = _convert_one(mapper, raw)
+
+        self.assertEqual(event["type"], EVENT_REASONING)
+        self.assertEqual(event["subagent_alias"], "researcher")
+
+    def test_empty_summary_yields_no_reasoning_event(self):
+        """`reasoning={"summary": "auto"}`를 안 넘긴 호출의 기본 응답 모양 —
+        빈 summary는 보여줄 텍스트가 없으므로 이벤트 자체를 안 낸다."""
+        message = AIMessage(
+            content=[{"type": "reasoning", "id": "rs_1", "summary": []}],
+            tool_calls=[],
+        )
+        raw = _raw((), "model", message)
+
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(events, [])
 
 
 class ParentDirectToolCallTests(SimpleTestCase):

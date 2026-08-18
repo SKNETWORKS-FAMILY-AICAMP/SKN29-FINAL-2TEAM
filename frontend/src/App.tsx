@@ -98,6 +98,7 @@ function App() {
           {/* 새 버전 스키마(services/agent_runtime/) 전용 — 옛 위 두 라우트와
               나란히 존재한다. Chat은 아직 이 스키마를 모른다. */}
           <Route path={PATHS.agentVersions} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />
+          <Route path={PATHS.agentVersionsTeam} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />
           <Route path={PATHS.agentVersionEdit} element={<RequireAuth><AgentVersionEditPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
           <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />

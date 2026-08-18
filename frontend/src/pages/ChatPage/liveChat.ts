@@ -79,6 +79,12 @@ export interface LiveChat {
    * `/memories/` 경로를 가리키는 것만 걸러 보여준다(`memoryFilePath`).
    */
   toolCalls: ToolCallEntry[];
+  /**
+   * 루트가 낸 생각을 순서대로(2026-08-18). 서브 에이전트 자신의 생각은 안
+   * 담는다 — `toolCalls`가 위임 내부 호출을 안 담는 것과 같은 이유
+   * (`subagent_alias`가 있으면 이 턴의 최상위 표시에는 안 씀).
+   */
+  reasoningSteps: string[];
 }
 
 export function emptyLive(): LiveChat {
@@ -98,6 +104,7 @@ export function emptyLive(): LiveChat {
     error: null,
     jira: null,
     toolCalls: [],
+    reasoningSteps: [],
   };
 }
 
@@ -132,6 +139,14 @@ export function reduce(state: LiveChat, event: ChatEvent): LiveChat {
       );
       return { ...state, steps, evidenceCount: event.evidence };
     }
+
+    // 2026-08-18 추가. 서브 에이전트 자신의 생각은 이 턴의 최상위 표시에 안
+    // 쓴다 — `tool_started`/`tool_completed`가 `subagent_alias`로 거르는 것과
+    // 같은 규칙.
+    case 'reasoning':
+      return event.subagent_alias
+        ? state
+        : { ...state, reasoningSteps: [...state.reasoningSteps, event.text] };
 
     case 'tool_call_started':
       return { ...state, toolName: event.tool_name };

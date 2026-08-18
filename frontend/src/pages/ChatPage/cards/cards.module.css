@@ -158,6 +158,25 @@
   color: var(--color-muted);
 }
 
+/* ---------- 추론 과정 카드 ---------- */
+
+.reasoningList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reasoningStep {
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--color-bg);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-body);
+  white-space: pre-wrap;
+}
+
 .evidenceToggle {
   display: inline-flex;
   align-items: center;

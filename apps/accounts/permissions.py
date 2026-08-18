@@ -48,3 +48,16 @@ def require_leader(account_id: str, detail: str) -> Response | None:
     if account_role(profile) != "leader":
         return Response({"detail": detail}, status=status.HTTP_403_FORBIDDEN)
     return None
+
+
+def require_owner_or_leader(account_id: str, owner_account_id: str | None, detail: str) -> Response | None:
+    """만든 사람이거나 팀장이 아니면 403 응답을, 맞으면 `None`을 돌려준다.
+
+    `require_leader`와 같은 호출 관례: `if (denied := require_owner_or_leader(...)): return denied`.
+    본인 소유면 프로필을 읽을 필요도 없이 바로 통과시킨다 — 그 경우까지
+    `require_leader`를 부르면 팀장이 아닌 소유자가 자기 것을 못 지우게 된다.
+    """
+
+    if account_id == owner_account_id:
+        return None
+    return require_leader(account_id, detail)

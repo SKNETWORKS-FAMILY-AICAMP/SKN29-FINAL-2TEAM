@@ -20,11 +20,15 @@ export interface AgentVersionSummary {
   status: AgentVersionStatus;
   /** Chat이 아무것도 안 고르면 떨어지는 팀의 기본 상대. 팀당 최대 1개. */
   is_default_chat: boolean;
+  /** 만든 사람. 삭제 버튼 노출 판단(본인 또는 팀장)에 쓴다. */
+  owner_account_id: string | null;
   current_version_id: string | null;
   version: number | null;
   model: string | null;
   reasoning_effort: string | null;
   max_iterations: number | null;
+  /** 지금 버전이 위임하는 서브 에이전트 이름. 목록 카드가 버전 번호 대신 보여준다. */
+  subagent_names: string[];
   updated_at: string | null;
 }
 
@@ -93,6 +97,20 @@ export function activateAgentVersion(token: string, agentId: string) {
 export function disableAgentVersion(token: string, agentId: string) {
   return apiRequest<AgentVersionDetail>(`/agents/versions/${agentId}/disable/`, {
     method: 'POST',
+    token,
+  });
+}
+
+/** 논리적 에이전트를 지운다(서버는 ARCHIVED로 내린다). 만든 사람이거나
+ * 팀장만 할 수 있다 — 아니면 403. */
+export function deleteAgentVersion(token: string, agentId: string) {
+  return apiRequest<void>(`/agents/versions/${agentId}/`, { method: 'DELETE', token });
+}
+
+/** 이 에이전트를 서브 에이전트로 쓰는 다른 에이전트 이름 목록. 비어 있어야
+ * 지울 수 있다 — 삭제 버튼을 누른 시점에 확인 모달보다 먼저 물어본다. */
+export function getAgentVersionDependents(token: string, agentId: string) {
+  return apiRequest<{ parent_names: string[] }>(`/agents/versions/${agentId}/dependents/`, {
     token,
   });
 }

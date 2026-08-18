@@ -172,6 +172,73 @@ class RunHappyPathTests(SimpleTestCase):
         self.assertIsNot(created[0], created[1])
 
 
+class ToolRefsOverrideTests(SimpleTestCase):
+    """`tool_refs_override`(2026-08-18, Chat "+" 버튼) — 세션이 도구를
+    커스터마이즈했으면 로드된 정의의 `tool_refs`를 그 자리에서 갈아 끼운다.
+    저장된 정의(`loaded.definition`)는 원본 그대로 두고 `factory.build()`에
+    넘기는 사본만 바꾼다."""
+
+    def test_none_leaves_loaded_definition_untouched(self):
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ("document_search",))
+
+    def test_override_replaces_tool_refs_for_this_run_only(self):
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=_context(),
+                tool_refs_override=["people_list", "web_search"],
+            )
+        )
+
+        self.assertEqual(
+            factory.build_calls[0]["definition"].tool_refs, ("people_list", "web_search")
+        )
+        # 원본 정의 객체는 안 바뀐다 — 불변 dataclass라 dataclasses.replace()가
+        # 사본을 만든다는 것의 확인.
+        self.assertEqual(loaded.definition.tool_refs, ("document_search",))
+
+    def test_empty_override_turns_off_all_tools(self):
+        """빈 리스트는 "이 대화에서 도구를 전부 껐다"는 실제 선택이라 `None`과
+        다르게 다뤄야 한다 — `if tool_refs_override is not None` 분기 확인."""
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=_context(),
+                tool_refs_override=[],
+            )
+        )
+
+        self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ())
+
+
 class ConversationMessagesThreadingTests(SimpleTestCase):
     """apps/chat/api_views.py의 `_history()`가 만든 앞선 턴을 stream_adapter까지
     그대로 전달하는지 — 이게 없으면 새 엔진은 매 턴이 콜드 스타트다."""

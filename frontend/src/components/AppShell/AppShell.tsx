@@ -15,6 +15,13 @@ export interface AppShellProps {
    * 'flush' — 여백 없이 남은 높이를 그대로 넘긴다 (Chat처럼 자체 레이아웃을 쓰는 화면)
    */
   variant?: 'page' | 'flush';
+  /**
+   * nav 메뉴 아래, 사용자 영역 위에 붙는 화면별 목록(지금은 Chat의 대화
+   * 목록 하나뿐, 2026-08-18). nav·사용자 영역은 고정이고 이 영역만 따로
+   * 스크롤된다 — 대화가 늘어도 메뉴가 밀려나지 않게. 사이드바가 아이콘만
+   * 남게 접히면(`iconsOnly`) 제목을 읽을 공간이 없어 아예 안 그린다.
+   */
+  sidebarExtra?: ReactNode;
 }
 
 /**
@@ -34,7 +41,7 @@ export interface AppShellProps {
 /** 접힘 상태를 새로고침 뒤에도 유지한다 — 매번 다시 접게 하지 않는다. */
 const COLLAPSE_KEY = 'halil.sidebarCollapsed';
 
-export function AppShell({ children, variant = 'page' }: AppShellProps) {
+export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const session = useSession();
@@ -143,6 +150,8 @@ export function AppShell({ children, variant = 'page' }: AppShellProps) {
             </NavLink>
           ))}
         </nav>
+
+        {sidebarExtra && !iconsOnly && <div className={styles.sidebarExtra}>{sidebarExtra}</div>}
 
         <div className={styles.userArea}>
           <span className={styles.avatar} title={displayName || undefined}>

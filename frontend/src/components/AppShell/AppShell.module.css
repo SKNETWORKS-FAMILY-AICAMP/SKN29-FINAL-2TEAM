@@ -121,6 +121,20 @@
   font-weight: 700;
 }
 
+/* ---------------- sidebar extra (화면별 목록 — 지금은 Chat 대화 목록) ---------------- */
+
+/* nav·사용자 영역은 고정, 여기만 남는 높이를 먹고 스스로 스크롤된다. */
+.sidebarExtra {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  margin: 0 calc(var(--space-3) * -1);
+  padding: var(--space-3) var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
 /* ---------------- sidebar footer (사용자) ---------------- */
 
 /* 메뉴가 짧아도 프로필은 바닥이다 — 남는 높이를 위로 밀어 올린다. */

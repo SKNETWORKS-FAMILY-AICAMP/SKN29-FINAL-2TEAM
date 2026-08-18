@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AppShell, Button, Icon, Modal } from '../../components';
+import { AppShell, Button, Icon, Modal, useToast } from '../../components';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
-import { useNarrowViewport } from '../../utils/viewport';
 import {
   ApiError,
   confirmMessage,
@@ -11,19 +10,25 @@ import {
   deleteSession,
   getSession,
   listSessions,
+  setSessionToolRefs,
   streamMessage,
 } from '../../api/chat';
 import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
-import { listAgentVersions } from '../../api/agentVersions';
+import { getAgentVersion, listAgentVersions } from '../../api/agentVersions';
 import type { AgentVersionSummary } from '../../api/agentVersions';
+import { listToolChoices } from '../../api/agents';
+import type { ToolChoice } from '../../api/agents';
+import { listMcpServers } from '../../api/mcp';
+import type { McpServer } from '../../api/mcp';
 import { listMyProjects } from '../../api/projects';
 import type { Project } from '../../api/projects';
 import { listConnectors } from '../../api/connectors';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
-import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ResultCard } from './cards/ChatCards';
+import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ReasoningTrace, ResultCard } from './cards/ChatCards';
 import { emptyLive, memoryFilePath, MEMORY_PATH_PREFIX, reduce, toCards, traceLine } from './liveChat';
 import type { LiveChat, ToolCallEntry } from './liveChat';
+import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
 import styles from './ChatPage.module.css';
 
 /**
@@ -119,12 +124,8 @@ function SessionRow({
   );
 }
 
-/** 대화 목록 너비 — 저장 키와 한계. 너무 좁으면 제목이 통째로 잘린다. */
-const LIST_WIDTH_KEY = 'halil.chatListWidth';
 /** 소개를 봤는가. `sessionStorage` 가 아니라 `localStorage` 다 — 탭을 닫아도 기억한다. */
 const TOUR_SEEN_KEY = 'halil.tourSeen';
-const LIST_MIN = 200;
-const LIST_MAX = 460;
 
 /**
  * deepagents 내장 파일 도구 → 사람이 읽을 동사. 매핑에 없는 값(내장 도구가
@@ -152,9 +153,6 @@ export default function ChatPage() {
    * 아래 동기화 effect 하나다 — 두 경로가 생기면 목록에서 연 대화와 주소가 어긋난다.
    */
   const { sessionId: routeSessionId } = useParams();
-  /** 좁은 화면에서는 목록이 자리를 차지하지 않고 덮어서 열린다. */
-  const narrow = useNarrowViewport();
-  const [listOpen, setListOpen] = useState(false);
   const token = loadSessionToken();
 
   const [agents, setAgents] = useState<AgentVersionSummary[]>([]);
@@ -182,6 +180,24 @@ export default function ChatPage() {
   const [connected, setConnected] = useState<Set<string> | null>(null);
   /** 에이전트를 못 읽었다. 팀이 없어서인 경우가 많아 오류로 떠들지 않는다. */
   const [agentsFailed, setAgentsFailed] = useState(false);
+  const { showToast } = useToast();
+  /**
+   * 도구·MCP 켜고 끄기(2026-08-18). **이 대화에서만** 적용되고 에이전트
+   * 원본은 안 건드린다 — 여러 사람이 같은 에이전트로 동시에 대화할 때 한
+   * 사람이 도구를 껐다고 남의 대화까지 바뀌면 안 된다(지훈 확인, 처음엔
+   * 기본 챗만 대상으로 에이전트 자체를 새 버전 발행하는 방식이었는데,
+   * "원본에 영향 없이 세션별로"로 범위를 넓혔다). `chat_session
+   * .tool_refs_override`에 저장되고, 실행 시점에
+   * `executor.run(tool_refs_override=...)`가 그 자리에서 정의에 얹는다.
+   */
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
+  /** 이 세션의 커스터마이즈. `null` = 아직 안 건드림(에이전트 원래 도구를 씀). */
+  const [sessionToolOverride, setSessionToolOverride] = useState<string[] | null>(null);
+  /** 지금 고른 에이전트 자신의 도구 — 커스터마이즈 전 picker 초기값으로 쓴다. */
+  const [agentOwnToolRefs, setAgentOwnToolRefs] = useState<string[]>([]);
+  const [toolChoices, setToolChoices] = useState<ToolChoice[]>([]);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [togglingTool, setTogglingTool] = useState(false);
   const [tourSeen, setTourSeen] = useState(() => localStorage.getItem(TOUR_SEEN_KEY) === '1');
   const [utterance, setUtterance] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -211,17 +227,19 @@ export default function ChatPage() {
     listAgentVersions(token)
       .then((rows) => {
         // 목록 API 는 이제 팀의 DRAFT·DISABLED 도 돌려준다(관리 화면이 그걸
-        // 보여줘야 해서) — Chat 은 ACTIVE 만 후보로 본다. 초안이 기본 에이전트로
-        // 잘못 골리거나 "에이전트 없음" 배너 판단을 흐리면 안 된다.
-        const active = rows.filter((row) => row.status === 'ACTIVE');
-        setAgents(active);
+        // 보여줘야 해서) — Chat 은 ACTIVE 와 **내** DRAFT만 후보로 본다.
+        // DRAFT는 서버(`list_for_team`)가 이미 본인 것만 내려주므로, 여기 있는
+        // DRAFT는 전부 내 것이다(2026-08-18 — 활성화 없이 "개인" 탭 에이전트를
+        // 직접 테스트할 방법이 없어서 열었다). 남의 DISABLED는 여전히 제외.
+        const usable = rows.filter((row) => row.status === 'ACTIVE' || row.status === 'DRAFT');
+        setAgents(usable);
         // **팀의 기본 챗 에이전트(`is_default_chat`)를 고른다.**
         //
         // 팀 생성 시 자동으로 하나씩 생기는 에이전트다(2026-08-15,
         // provision_default_chat_agent). 사용자가 드롭다운에서 직접 다른
         // 에이전트를 고르면 그 값이 우선한다 — `prev`가 있으면 덮지 않는다.
         setAgentId(
-          (prev) => prev ?? active.find((row) => row.is_default_chat)?.agent_id ?? active[0]?.agent_id ?? null,
+          (prev) => prev ?? usable.find((row) => row.is_default_chat)?.agent_id ?? usable[0]?.agent_id ?? null,
         );
       })
       // **팀이 없으면 이 실패는 당연한 것이라 말하지 않는다.** 가입 직후에는
@@ -234,6 +252,45 @@ export default function ChatPage() {
     // 그냥 대화할 수 있다.
     listMyProjects(token).then(setProjects).catch(() => undefined);
   }, [token]);
+
+  /** 「+」를 누르면 이 대화의 지금 도구 상태(커스터마이즈 안 했으면 에이전트
+   * 원래 도구)를 picker 초기값으로 채운다. */
+  async function openToolPicker() {
+    if (!token || !agentId) return;
+    try {
+      const [detail, tools, servers] = await Promise.all([
+        getAgentVersion(token, agentId),
+        toolChoices.length > 0 ? Promise.resolve(toolChoices) : listToolChoices(token),
+        mcpServers.length > 0 ? Promise.resolve(mcpServers) : listMcpServers(token),
+      ]);
+      setAgentOwnToolRefs(detail.tool_refs);
+      setToolChoices(tools);
+      setMcpServers(servers);
+      setToolPickerOpen(true);
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '도구 목록을 불러오지 못했습니다.', 'error');
+    }
+  }
+
+  /** 켜고 끄기 = 이 세션에 override를 저장(`chat_session.tool_refs_override`).
+   * 에이전트 원본은 안 건드린다 — 다른 대화·다른 사람에게 영향 없음. */
+  async function toggleSessionTool(ref: string) {
+    if (!token || !sessionId || togglingTool) return;
+    const current = sessionToolOverride ?? agentOwnToolRefs;
+    const next = current.includes(ref) ? current.filter((item) => item !== ref) : [...current, ref];
+    setTogglingTool(true);
+    try {
+      const updated = await setSessionToolRefs(token, sessionId, next);
+      setSessionToolOverride(updated.tool_refs_override ?? next);
+      setSessions((prev) =>
+        prev.map((item) => (item.session_id === sessionId ? { ...item, tool_refs_override: updated.tool_refs_override } : item)),
+      );
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '도구를 바꾸지 못했습니다.', 'error');
+    } finally {
+      setTogglingTool(false);
+    }
+  }
 
   /**
    * 다른 화면에서 넘어온 요청. `?proj=PJ001&ask=...` 로 들어온다.
@@ -252,42 +309,18 @@ export default function ChatPage() {
   /** 목록 하단 「새 대화」의 프로젝트 고르기가 열려 있는가. */
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   /**
+   * 대화 목록의 에이전트별 묶음 중 펼쳐진 것(2026-08-18 — "같은 에이전트랑
+   * 나눈 대화가 많아지니 토글로 접었다 펴고 싶다"). 키는
+   * `${proj_id ?? 'loose'}:${agent_id}` — 같은 에이전트라도 프로젝트마다
+   * 따로 접고 펼 수 있게 프로젝트 범위를 키에 같이 넣는다.
+   */
+  const [openAgentGroups, setOpenAgentGroups] = useState<Set<string>>(new Set());
+  /**
    * 삭제를 기다리는 대화. **되돌릴 수 없어서 한 번 묻는다** — 서버가
    * chat_message 까지 함께 지우고(`ChatSessionRepository.delete`), 목록의
    * X 는 대화 제목 바로 옆이라 잘못 누르기 쉽다.
    */
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
-
-  /**
-   * 대화 목록 너비. 사람마다 대화 제목 길이가 다르고 프로젝트 이름도 길다 —
-   * 고정 260px 로는 어느 쪽도 안 맞는다. 값은 남겨서 매번 다시 끌지 않게 한다.
-   */
-  const [listWidth, setListWidth] = useState(() => {
-    const saved = Number(localStorage.getItem(LIST_WIDTH_KEY));
-    return saved >= LIST_MIN && saved <= LIST_MAX ? saved : 260;
-  });
-
-  function startResize(event: React.PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = listWidth;
-
-    function onMove(moveEvent: PointerEvent) {
-      const next = Math.min(LIST_MAX, Math.max(LIST_MIN, startWidth + moveEvent.clientX - startX));
-      setListWidth(next);
-    }
-    function onUp() {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      // 끌기가 끝날 때만 저장한다 — 매 픽셀 쓰면 드래그가 무거워진다.
-      setListWidth((width) => {
-        localStorage.setItem(LIST_WIDTH_KEY, String(width));
-        return width;
-      });
-    }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  }
 
   useEffect(() => {
     const proj = params.get('proj');
@@ -334,6 +367,7 @@ export default function ChatPage() {
         // 대화가 속한 프로젝트를 따라간다 — 사이드바의 어느 묶음에서 열었든
         // 문맥은 대화 자신이 갖고 있는 값이다.
         setProjId(detail.proj_id ?? null);
+        setSessionToolOverride(detail.tool_refs_override ?? null);
         // 새로고침 재현 — 저장된 대화를 **전부** 다시 접는다. 서버는 처음부터
         // 모든 턴을 갖고 있었고, 화면이 마지막 답 하나만 쓰고 버리던 것이다.
         const restored = toTurns(detail.messages);
@@ -375,15 +409,23 @@ export default function ChatPage() {
     void openSession(routeSessionId);
   }, [routeSessionId, sessionId, token, openSession]);
 
+  /** 지금 연 대화가 속한 에이전트 토글은 항상 펼쳐 둔다 — 접힌 채로 자기가
+   * 보고 있는 대화가 목록에서 숨어 있으면 안 된다. */
+  useEffect(() => {
+    if (!sessionId) return;
+    const current = sessions.find((row) => row.session_id === sessionId);
+    if (!current) return;
+    const key = `${current.proj_id ?? 'loose'}:${current.agent_id}`;
+    setOpenAgentGroups((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, [sessionId, sessions]);
+
   /** 목록에서 대화를 연다. **여는 것은 주소가 하고**, 읽어 오는 것은 위 effect 다. */
   function openFromList(id: string) {
-    setListOpen(false);
     navigate(`${PATHS.chat}/${id}`);
   }
 
   /** 새 대화를 연다. 어느 프로젝트 밑에서 시작하는지를 함께 받는다. */
   function startNew(nextProjId: string | null) {
-    setListOpen(false);
     abortRef.current?.abort();
     setSessionId(null);
     // 주소도 함께 비운다. 떠난 id 를 남겨 두는 이유는 위 effect 의 주석에 있다.
@@ -395,6 +437,9 @@ export default function ChatPage() {
     setTurns([]);
     setSelected([]);
     setFatal(null);
+    // 새 대화는 아직 만든 적 없는 세션이라 커스터마이즈도 없다 — 옛 대화의
+    // override를 새 대화에 들고 오면 안 된다.
+    setSessionToolOverride(null);
     stickToBottom.current = true;
   }
 
@@ -582,133 +627,157 @@ export default function ChatPage() {
     .filter((group) => group.rows.length > 0);
   const currentProject = projects.find((item) => item.proj_id === projId) ?? null;
 
-  return (
-    <AppShell variant="flush">
-      <div className={styles.chat}>
-        {listOpen && (
+  function toggleAgentGroup(key: string) {
+    setOpenAgentGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /**
+   * 같은 프로젝트(또는 loose) 범위 안에서 대화를 에이전트별로 다시 묶는다.
+   * **프로젝트가 상위, 에이전트가 그 안의 토글**(지훈 확인, 2026-08-18) —
+   * 처음 요청은 반대(에이전트가 상위)였지만 "프로젝트 안에 에이전트"로
+   * 정정됐다. 한 에이전트로 대화를 여러 번 열면 목록이 금방 길어지는데,
+   * 접어 두면 "이 에이전트랑 나눈 대화가 뭐가 있었지"를 필요할 때만 편다.
+   */
+  function renderAgentGroups(rows: ChatSession[], scope: string) {
+    const byAgent = new Map<string, { agent_name: string; rows: ChatSession[] }>();
+    for (const row of rows) {
+      const bucket = byAgent.get(row.agent_id);
+      if (bucket) bucket.rows.push(row);
+      else byAgent.set(row.agent_id, { agent_name: row.agent_name ?? '이름 없는 에이전트', rows: [row] });
+    }
+    return Array.from(byAgent.entries()).map(([agentId, agentGroup]) => {
+      const key = `${scope}:${agentId}`;
+      const open = openAgentGroups.has(key);
+      return (
+        <div key={key} className={styles.agentGroup}>
           <button
             type="button"
-            className={styles.listScrim}
-            onClick={() => setListOpen(false)}
-            aria-label="대화 목록 닫기"
-          />
-        )}
-        <aside
-          className={[styles.sessions, listOpen ? styles.sessionsOpen : ''].filter(Boolean).join(' ')}
-          /* 끌어서 정한 폭은 넓은 화면의 값이다. 좁은 화면에서 그대로 쓰면
-             덮어 여는 패널이 화면을 넘거나 반만 덮는다 — 그때는 CSS 가 정한다. */
-          style={narrow ? undefined : { width: listWidth }}
-        >
-          <span className={styles.sessionsTitle}>대화 목록</span>
+            className={styles.agentToggle}
+            onClick={() => toggleAgentGroup(key)}
+            aria-expanded={open}
+          >
+            <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-muted)" />
+            <span className={styles.agentToggleName} title={agentGroup.agent_name}>
+              {agentGroup.agent_name}
+            </span>
+            <span className={styles.agentToggleCount}>{agentGroup.rows.length}</span>
+          </button>
+          {open &&
+            agentGroup.rows.map((session) => (
+              <SessionRow
+                key={session.session_id}
+                session={session}
+                active={session.session_id === sessionId}
+                onOpen={openFromList}
+                onRemove={setPendingDelete}
+              />
+            ))}
+        </div>
+      );
+    });
+  }
 
-          {/* 프로젝트에 안 속한 대화. 머리말을 달지 않는다 — 「프로젝트 없음」이라고
-              쓰면 그런 이름의 프로젝트가 있는 것처럼 읽힌다. */}
-          {loose.map((session) => (
-            <SessionRow
-              key={session.session_id}
-              session={session}
-              active={session.session_id === sessionId}
-              onOpen={openFromList}
-              onRemove={setPendingDelete}
-            />
-          ))}
+  /** 대화 목록 — AppShell 사이드바의 nav 아래에 붙는다(2026-08-18, "오른쪽에
+   * 따로 있지 않고 사이드바에 붙어야 한다"는 요청). 예전엔 이 화면 안에서
+   * 폭을 끌어 조절하는 독립 패널이었는데, 사이드바에 합치면서 그 폭
+   * 조절(`resizer`)과 좁은 화면 전용 덮개 열기(`listToggle`/`listScrim`)는
+   * 뜻을 잃었다 — 사이드바 자체의 접기·모바일 드로어가 그 역할을 대신한다. */
+  const sessionsPanel = (
+    <>
+      <span className={styles.sessionsTitle}>대화 목록</span>
 
-          {groups.map((group) => (
-            <div key={group.proj_id} className={styles.projectGroup}>
-              <span className={styles.projectRow}>
-                <span className={styles.projectName} title={group.name}>
-                  <Icon name="folder" size={13} color="var(--color-muted)" />
-                  <span className={styles.projectNameText}>{group.name}</span>
-                </span>
-                <button
-                  type="button"
-                  className={styles.projectNew}
-                  aria-label={`${group.name}에서 새 대화`}
-                  title="새 대화"
-                  onClick={() => startNew(group.proj_id)}
-                >
-                  <Icon name="plus" size={13} color="var(--color-muted)" />
-                </button>
-              </span>
+      {/* 프로젝트에 안 속한 대화. 머리말을 달지 않는다 — 「프로젝트 없음」이라고
+          쓰면 그런 이름의 프로젝트가 있는 것처럼 읽힌다. 그 안에서 다시
+          에이전트별 토글로 묶는다. */}
+      {renderAgentGroups(loose, 'loose')}
 
-              {group.rows.map((session) => (
-                <SessionRow
-                  key={session.session_id}
-                  session={session}
-                  active={session.session_id === sessionId}
-                  onOpen={openFromList}
-                  onRemove={setPendingDelete}
-                />
-              ))}
-            </div>
-          ))}
-
-          {sessions.length === 0 && <p className={styles.groupEmpty}>아직 대화가 없습니다</p>}
-
-          {/* **프로젝트를 고르면서 새 대화를 여는 유일한 입구.**
-              빈 프로젝트를 목록에서 걷어내면서 그 프로젝트의 첫 대화를 시작할
-              길이 사라졌다. 목록 맨 아래에 둔 이유는 위쪽은 「돌아갈 곳」이고
-              여기는 「새로 만드는 곳」이라 섞이지 않게 하려는 것이다. */}
-          <div className={styles.listFoot}>
-            {newMenuOpen && (
-              <div className={styles.newMenu}>
-                {/* **범위로 부른다.**
-                    「프로젝트 없이」는 결함처럼 읽히고, 「일반 대화」는 아무거나
-                    물어봐도 되는 대화를 약속하는데 이 제품은 그걸 안 한다 —
-                    실제로 그 대화에서 "일반 대화는 지원하지 않는다"고 답했다.
-                    프로젝트를 안 고르면 문서 검색이 **팀 문서 전체**를 본다.
-                    없어지는 게 아니라 넓어지는 것이라 그렇게 적는다. */}
-                <button
-                  type="button"
-                  className={styles.newMenuItem}
-                  onClick={() => {
-                    startNew(null);
-                    setNewMenuOpen(false);
-                  }}
-                >
-                  <Icon name="users" size={13} color="var(--color-muted)" />
-                  <span className={styles.newMenuName}>팀 전체 문서</span>
-                </button>
-                {projects.length > 0 && <span className={styles.newMenuDivider} />}
-                {projects.map((project) => (
-                  <button
-                    key={project.proj_id}
-                    type="button"
-                    className={styles.newMenuItem}
-                    title={project.name}
-                    onClick={() => {
-                      startNew(project.proj_id);
-                      setNewMenuOpen(false);
-                    }}
-                  >
-                    <Icon name="folder" size={13} color="var(--color-muted)" />
-                    <span className={styles.newMenuName}>{project.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+      {groups.map((group) => (
+        <div key={group.proj_id} className={styles.projectGroup}>
+          <span className={styles.projectRow}>
+            <span className={styles.projectName} title={group.name}>
+              <Icon name="folder" size={13} color="var(--color-muted)" />
+              <span className={styles.projectNameText}>{group.name}</span>
+            </span>
             <button
               type="button"
-              className={styles.newChat}
-              onClick={() => setNewMenuOpen((prev) => !prev)}
-              aria-expanded={newMenuOpen}
+              className={styles.projectNew}
+              aria-label={`${group.name}에서 새 대화`}
+              title="새 대화"
+              onClick={() => startNew(group.proj_id)}
             >
-              <Icon name="plus" size={15} />
-              새 대화
+              <Icon name="plus" size={13} color="var(--color-muted)" />
             </button>
+          </span>
+
+          {renderAgentGroups(group.rows, group.proj_id)}
+        </div>
+      ))}
+
+      {sessions.length === 0 && <p className={styles.groupEmpty}>아직 대화가 없습니다</p>}
+
+      {/* **프로젝트를 고르면서 새 대화를 여는 유일한 입구.**
+          빈 프로젝트를 목록에서 걷어내면서 그 프로젝트의 첫 대화를 시작할
+          길이 사라졌다. 목록 맨 아래에 둔 이유는 위쪽은 「돌아갈 곳」이고
+          여기는 「새로 만드는 곳」이라 섞이지 않게 하려는 것이다. */}
+      <div className={styles.listFoot}>
+        {newMenuOpen && (
+          <div className={styles.newMenu}>
+            {/* **범위로 부른다.**
+                「프로젝트 없이」는 결함처럼 읽히고, 「일반 대화」는 아무거나
+                물어봐도 되는 대화를 약속하는데 이 제품은 그걸 안 한다 —
+                실제로 그 대화에서 "일반 대화는 지원하지 않는다"고 답했다.
+                프로젝트를 안 고르면 문서 검색이 **팀 문서 전체**를 본다.
+                없어지는 게 아니라 넓어지는 것이라 그렇게 적는다. */}
+            <button
+              type="button"
+              className={styles.newMenuItem}
+              onClick={() => {
+                startNew(null);
+                setNewMenuOpen(false);
+              }}
+            >
+              <Icon name="users" size={13} color="var(--color-muted)" />
+              <span className={styles.newMenuName}>팀 전체 문서</span>
+            </button>
+            {projects.length > 0 && <span className={styles.newMenuDivider} />}
+            {projects.map((project) => (
+              <button
+                key={project.proj_id}
+                type="button"
+                className={styles.newMenuItem}
+                title={project.name}
+                onClick={() => {
+                  startNew(project.proj_id);
+                  setNewMenuOpen(false);
+                }}
+              >
+                <Icon name="folder" size={13} color="var(--color-muted)" />
+                <span className={styles.newMenuName}>{project.name}</span>
+              </button>
+            ))}
           </div>
-        </aside>
+        )}
+        <button
+          type="button"
+          className={styles.newChat}
+          onClick={() => setNewMenuOpen((prev) => !prev)}
+          aria-expanded={newMenuOpen}
+        >
+          <Icon name="plus" size={15} />
+          새 대화
+        </button>
+      </div>
+    </>
+  );
 
-        {/* 목록과 대화 사이의 끌기 손잡이. 키보드로는 조절할 수 없다 —
-            폭은 보조 설정이고, 목록 자체는 폭과 무관하게 읽고 쓸 수 있다. */}
-        <div
-          className={styles.resizer}
-          onPointerDown={startResize}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="대화 목록 너비 조절"
-        />
-
+  return (
+    <AppShell variant="flush" sidebarExtra={sessionsPanel}>
+      <div className={styles.chat}>
         <div className={styles.main}>
           {/*
             2026-08-15부터 다시 넣었다. 예전엔 "무엇으로 답할지는 말하면
@@ -718,18 +787,6 @@ export default function ChatPage() {
             걷어낼 때까지의 과도기 UI다(지훈 확인, task #16/#19).
           */}
           <header className={styles.agentBar}>
-            {/* 좁은 화면에서만 나온다. 목록이 덮개로 들어가면 대화를 오갈
-                길이 화면에서 사라진다. */}
-            <button
-              type="button"
-              className={styles.listToggle}
-              onClick={() => setListOpen(true)}
-              aria-label="대화 목록 열기"
-              aria-expanded={listOpen}
-            >
-              <Icon name="message-square" size={16} color="var(--color-body)" />
-              대화 목록
-            </button>
             {agents.length > 0 && (
               <select
                 className={styles.agentSelect}
@@ -746,6 +803,7 @@ export default function ChatPage() {
                   <option key={agent.agent_id} value={agent.agent_id}>
                     {agent.name}
                     {agent.is_default_chat ? ' (기본)' : ''}
+                    {agent.status === 'DRAFT' ? ' (개인·미공유)' : ''}
                   </option>
                 ))}
               </select>
@@ -908,6 +966,8 @@ export default function ChatPage() {
                         />
                       )}
 
+                      <ReasoningTrace steps={live.reasoningSteps} />
+
                       {live.jira && (
                         <JiraStatusCard
                           projectName={currentProject?.name}
@@ -982,6 +1042,20 @@ export default function ChatPage() {
           </div>
 
           <div className={styles.inputBar}>
+            {/* 대화가 열려 있을 때만 뜬다(2026-08-18) — 도구 커스터마이즈는
+                세션 단위라 세션이 있어야 저장할 자리가 있다. 에이전트
+                원본은 안 건드리므로 어떤 에이전트로 대화 중이든 뜬다. */}
+            {sessionId && agentId && (
+              <button
+                type="button"
+                className={styles.attachTools}
+                onClick={openToolPicker}
+                aria-label="이 대화에 도구·MCP 붙이기"
+                title="이 대화에 도구·MCP 붙이기"
+              >
+                <Icon name="plus" size={16} color="var(--color-body)" />
+              </button>
+            )}
             {/* 승인 대기 중에도 **말할 수 있다**(6차 단계 1-5 · 확정 ③).
                 체크박스로만 소통하게 두면 "3번은 빼고 다시 뽑아줘"를 할 방법이
                 없어 폼 위저드가 된다. 전용 「다시 정리해줘」 버튼을 만들지 않고
@@ -1094,6 +1168,19 @@ export default function ChatPage() {
           <span>주고받은 내용이 함께 지워집니다. 되돌릴 수 없습니다.</span>
         </p>
       </Modal>
+
+      <ToolPickerModal
+        open={toolPickerOpen}
+        onClose={() => setToolPickerOpen(false)}
+        builtinTools={toolChoices.filter((tool) => !tool.tool_ref.startsWith('mcp:'))}
+        mcpServers={mcpServers}
+        toolRefs={sessionToolOverride ?? agentOwnToolRefs}
+        onToggle={(ref) => void toggleSessionTool(ref)}
+        onGoToMcpSettings={() => {
+          setToolPickerOpen(false);
+          navigate(PATHS.settingsMcp);
+        }}
+      />
     </AppShell>
   );
 }

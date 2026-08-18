@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
-from apps.accounts.permissions import require_leader
+from apps.accounts.permissions import require_leader, require_owner_or_leader
 from backend.db import AccountRepository
 from backend.db.agent_platform import (
     AgentCrudRepository,
@@ -499,6 +499,23 @@ class AgentVersionDetailAPIView(AuthenticatedAPIView):
         }
         account_id = request.user.account_id
 
+        # 만든 사람이거나 팀장만 새 버전을 발행할 수 있다 — delete()와 같은 규칙
+        # (require_owner_or_leader). DRAFT는 `AgentVersionCrudRepository.get()`이
+        # 이미 소유자 아니면 막아 주므로(`_writable_agent_version`의
+        # `enforce_draft_privacy`), 여기서는 ACTIVE·DISABLED(팀 공유)까지 같이
+        # 막으려고 한 번 더 확인한다.
+        try:
+            current = AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        denied = require_owner_or_leader(
+            account_id,
+            current.get("owner_account_id"),
+            "만든 사람이거나 팀장만 이 에이전트의 새 버전을 발행할 수 있습니다.",
+        )
+        if denied is not None:
+            return denied
+
         rejection = _model_rejection(account_id, fields.get("model"))
         if rejection is not None:
             return rejection
@@ -523,6 +540,48 @@ class AgentVersionDetailAPIView(AuthenticatedAPIView):
             return _repository_error_response(exc)
         return Response(agent_version_response(row))
 
+    def delete(self, request, agent_id):
+        """만든 사람이거나 팀장만 지울 수 있다. 실제로는 ARCHIVED로 내린다 —
+        `AgentVersionCrudRepository.delete` 참고."""
+
+        account_id = request.user.account_id
+        try:
+            agent = AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        denied = require_owner_or_leader(
+            account_id,
+            agent.get("owner_account_id"),
+            "만든 사람이거나 팀장만 이 에이전트를 지울 수 있습니다.",
+        )
+        if denied is not None:
+            return denied
+
+        try:
+            AgentVersionCrudRepository.delete(agent_id=agent_id, account_id=account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AgentVersionDependentsAPIView(AuthenticatedAPIView):
+    """이 에이전트를 서브 에이전트로 쓰는 다른 에이전트 이름 목록.
+
+    삭제 버튼을 누른 시점에 화면이 먼저 물어봐서, 막힐 걸 확인 모달보다
+    먼저 보여준다. 실제 삭제 차단은 `AgentVersionDetailAPIView.delete`가
+    한 번 더 한다 — 여기는 안내용 조회일 뿐이다.
+    """
+
+    def get(self, request, agent_id):
+        try:
+            parents = AgentVersionCrudRepository.list_dependents(
+                agent_id=agent_id, account_id=request.user.account_id
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response({"parent_names": parents})
+
 
 class AgentVersionActivateAPIView(AuthenticatedAPIView):
     """DRAFT/DISABLED → ACTIVE. 옛 `AgentActivateAPIView`와 같은 이유로 재검증한다
@@ -536,6 +595,15 @@ class AgentVersionActivateAPIView(AuthenticatedAPIView):
             agent = AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+
+        # put()과 같은 규칙 — 만든 사람이거나 팀장만 활성화할 수 있다.
+        denied = require_owner_or_leader(
+            account_id,
+            agent.get("owner_account_id"),
+            "만든 사람이거나 팀장만 이 에이전트를 활성화할 수 있습니다.",
+        )
+        if denied is not None:
+            return denied
 
         rejection = _model_rejection(account_id, agent.get("model"))
         if rejection is not None:
@@ -560,9 +628,24 @@ class AgentVersionDisableAPIView(AuthenticatedAPIView):
     """ACTIVE → DISABLED. 검증 없이 바로 내린다 — 끄는 쪽은 항상 안전하다."""
 
     def post(self, request, agent_id):
+        account_id = request.user.account_id
+        try:
+            agent = AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        # put()과 같은 규칙 — 만든 사람이거나 팀장만 사용 중지할 수 있다.
+        denied = require_owner_or_leader(
+            account_id,
+            agent.get("owner_account_id"),
+            "만든 사람이거나 팀장만 이 에이전트를 사용 중지할 수 있습니다.",
+        )
+        if denied is not None:
+            return denied
+
         try:
             row = AgentVersionCrudRepository.set_status(
-                agent_id=agent_id, account_id=request.user.account_id, status="DISABLED"
+                agent_id=agent_id, account_id=account_id, status="DISABLED"
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)

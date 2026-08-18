@@ -5,6 +5,12 @@ export interface ChatSession {
   session_id: string;
   agent_id: string;
   agent_name: string | null;
+  /**
+   * 이 대화 전용 도구·MCP 커스터마이즈(2026-08-18, Chat "+" 버튼). `null` =
+   * 커스터마이즈 안 함(에이전트 원래 도구를 그대로 씀). 빈 배열은 "이
+   * 대화에서 도구를 전부 껐다"는 실제 선택이라 `null`과 다르다.
+   */
+  tool_refs_override: string[] | null;
   proj_id: string | null;
   title: string | null;
   created_at: string | null;
@@ -132,6 +138,21 @@ export type ChatEvent =
       tool_call_id?: string;
     }
   | { type: 'awaiting_confirmation'; run_id: string; tool_ref: string; tool_name: string; arguments: Record<string, unknown> }
+  /**
+   * 2026-08-18 추가. 추론 모델(gpt-5.6-luna 등, OpenAI Responses API 경로)이
+   * 도구를 부르기 전이나 최종 답 전에 내는 생각. 지금까지는 `events.py`가
+   * `AIMessage.text`만 읽어서 이 블록을 조용히 버리고 있었다 —
+   * `.content`의 `type:"reasoning"` 블록에서 따로 뽑아 새로 낸다.
+   */
+  | {
+      type: 'reasoning';
+      text: string;
+      run_id?: string | null;
+      parent_run_id?: string | null;
+      subagent_alias?: string | null;
+      agent_id?: string | null;
+      agent_version_id?: string | null;
+    }
   | { type: 'result'; text: string; complete: boolean; stopped_reason?: string; iterations?: number }
   /**
    * 첫 답이 끝난 뒤 서버가 지은 이 대화의 이름. **한 대화에 한 번만** 온다.
@@ -211,6 +232,19 @@ export function getSession(token: string, sessionId: string) {
 
 export function deleteSession(token: string, sessionId: string) {
   return apiRequest<void>(`/chat/sessions/${sessionId}/`, { method: 'DELETE', token });
+}
+
+/**
+ * 이 대화 전용 도구·MCP 목록을 저장한다(2026-08-18, Chat "+" 버튼). 에이전트
+ * 원본은 안 건드린다 — `toolRefs=null`을 주면 커스터마이즈를 지우고
+ * 에이전트 원래 값으로 되돌린다.
+ */
+export function setSessionToolRefs(token: string, sessionId: string, toolRefs: string[] | null) {
+  return apiRequest<ChatSession>(`/chat/sessions/${sessionId}/tools/`, {
+    method: 'PUT',
+    body: { tool_refs: toolRefs },
+    token,
+  });
 }
 
 /**

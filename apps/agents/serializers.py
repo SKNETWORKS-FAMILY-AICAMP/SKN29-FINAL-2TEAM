@@ -174,6 +174,7 @@ def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
         "description": row.get("description") or "",
         "status": row.get("status"),
         "is_default_chat": row.get("is_default_chat", False),
+        "owner_account_id": row.get("owner_account_id"),
         "current_version_id": row.get("current_version_id"),
         "version": row.get("version"),
         "system_prompt": row.get("system_prompt") or "",
@@ -182,6 +183,10 @@ def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
         "max_iterations": row.get("max_iterations"),
         "tool_refs": row.get("tool_refs") or [],
         "subagents": row.get("subagents") or [],
+        # 목록 카드용 요약 — 지금 버전이 위임하는 자식 에이전트 이름만.
+        # `list_for_team()`만 채운다(json_agg); 상세 조회는 `subagents`에
+        # alias·위임 설명까지 이미 있어 따로 안 채운다.
+        "subagent_names": row.get("subagent_names") or [],
         "updated_at": row.get("updated_at"),
     }
 

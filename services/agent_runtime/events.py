@@ -127,6 +127,13 @@ EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+# 2026-08-18 추가. §14 계약엔 없던 타입이라(그 문서 갱신 전까지) 여기 새로 둔다
+# — `_11_`류 판례처럼 계약 목록에 없는 필드를 기존 이벤트에 얹는 것과 달리
+# 이건 아예 새 타입이 필요해서(추론 텍스트는 tool_started/result 어디에도
+# 자연스럽게 안 얹힌다). `tracing/__init__.py`의 `_record()`는 모르는
+# 타입을 조용히 지나치므로 DB 적재는 없다 — 지금은 화면에 실시간으로
+# 보여주는 것만이 목적이라 저장할 이유가 없다.
+EVENT_REASONING = "reasoning"
 
 # deepagents가 서브 에이전트 위임에 쓰는 내장 도구 이름. 이 이름의 tool_call은
 # "실제 도구 호출"이 아니라 "위임"으로 분류한다.
@@ -148,6 +155,36 @@ _SUBAGENT_NOT_FOUND_PREFIX = "We cannot invoke subagent "
 def _looks_like_subagent_not_found(content: str) -> bool:
     """`task` 완료 메시지가 '존재하지 않는 subagent_type' 실패인지 판별한다."""
     return isinstance(content, str) and content.startswith(_SUBAGENT_NOT_FOUND_PREFIX)
+
+
+def _extract_reasoning(message: Any) -> str | None:
+    """`AIMessage.content`가 블록 리스트일 때 reasoning 블록의 요약 텍스트만 모은다.
+
+    `message.text`(위 `_classify`에서 씀)는 `type:"text"` 블록만 남기고 이
+    블록을 버린다 — 이 함수는 그 반대로, 버려지는 블록만 골라낸다.
+
+    **키가 평평한 `"reasoning"` 문자열이 아니다.** OpenAI Responses API 경로
+    (`langchain_openai`)는 reasoning 블록을 `{"type": "reasoning", "id": ...,
+    "summary": [{"type": "summary_text", "text": "..."}, ...]}` 모양으로
+    채운다 — `summary`가 리스트고, 그 안 각 항목의 `"text"`가 실제 문장이다
+    (설치된 `langchain_openai` 소스·docstring 예시로 확인, 2026-08-18).
+    `summary`가 빈 리스트면(모델 호출 시 `reasoning={"summary": "auto"}`를
+    안 넘겼을 때 기본값) 이 함수는 `None`을 돌려준다 — `models/factory.py`의
+    `ModelFactory._create_openai()`가 그 값을 명시적으로 넘긴다.
+    """
+    content = getattr(message, "content", None)
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "reasoning":
+            continue
+        for summary_item in block.get("summary") or []:
+            text = summary_item.get("text") if isinstance(summary_item, dict) else None
+            if text:
+                parts.append(text)
+    joined = "\n".join(parts).strip()
+    return joined or None
 
 
 def _tool_status(msg_status: str | None) -> str:
@@ -263,6 +300,9 @@ class EventMapper:
         # 돌려준다(`str` 서브클래스라 `.startswith()`/JSON 직렬화 그대로 안전) —
         # 일반 모델(콘텐츠가 이미 문자열)에도 동일하게 안전하다.
         content = message.text
+        # 추론 모델(gpt-5.6-luna 등)이 도구를 부르기 전이나 최종 답 전에
+        # 내는 생각 — `content`(=`.text`)엔 안 남는 블록이라 따로 뽑는다.
+        reasoning = _extract_reasoning(message)
 
         agent_id = getattr(definition, "agent_id", None)
         agent_version_id = getattr(definition, "agent_version_id", None)
@@ -270,17 +310,33 @@ class EventMapper:
         if ns_prefix is None:
             # --- 부모 네임스페이스 -------------------------------------------
             if node_name == "model":
-                if tool_calls:
-                    return self._classify_parent_tool_calls(
-                        tool_calls=tool_calls,
-                        run_id=run_id,
-                        agent_id=agent_id,
-                        agent_version_id=agent_version_id,
-                        definition=definition,
+                events: list[dict[str, Any]] = []
+                if reasoning:
+                    events.append(
+                        {
+                            "type": EVENT_REASONING,
+                            "text": reasoning,
+                            "run_id": run_id,
+                            "subagent_alias": None,
+                            "agent_id": agent_id,
+                            "agent_version_id": agent_version_id,
+                            "complete": False,
+                        }
                     )
+                if tool_calls:
+                    events.extend(
+                        self._classify_parent_tool_calls(
+                            tool_calls=tool_calls,
+                            run_id=run_id,
+                            agent_id=agent_id,
+                            agent_version_id=agent_version_id,
+                            definition=definition,
+                        )
+                    )
+                    return events
                 if content:
                     # 도구 호출 없이 텍스트만 낸 최종 응답.
-                    return [
+                    events.append(
                         {
                             "type": EVENT_RESULT,
                             "text": content,
@@ -289,8 +345,8 @@ class EventMapper:
                             "agent_version_id": agent_version_id,
                             "complete": True,
                         }
-                    ]
-                return []
+                    )
+                return events
 
             if node_name == "tools" and msg_name == DELEGATION_TOOL_NAME:
                 # tool_call_id로 정확히 매칭한다(FIFO 아님) — 병렬 위임이면
@@ -343,8 +399,19 @@ class EventMapper:
         alias = info.get("alias") if info else None
         child_run_id = info.get("run_id") if info else None
 
-        if node_name == "model" and tool_calls:
+        if node_name == "model":
             events: list[dict[str, Any]] = []
+            if reasoning:
+                events.append(
+                    {
+                        "type": EVENT_REASONING,
+                        "text": reasoning,
+                        "run_id": child_run_id,
+                        "parent_run_id": run_id,
+                        "subagent_alias": alias,
+                        "complete": False,
+                    }
+                )
             for call in tool_calls:
                 tool_ref = call.get("name")
                 if tool_ref and tool_ref != DELEGATION_TOOL_NAME:
@@ -522,6 +589,7 @@ __all__ = [
     "EVENT_AGENT_STARTED",
     "EVENT_ERROR",
     "EVENT_MESSAGE_DELTA",
+    "EVENT_REASONING",
     "EVENT_RESULT",
     "EVENT_SUBAGENT_COMPLETED",
     "EVENT_SUBAGENT_STARTED",

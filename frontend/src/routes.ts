@@ -45,7 +45,11 @@ export const PATHS = {
    * 존재한다. 사이드바 "에이전트"는 이제 이쪽을 가리킨다(2026-08-15) —
    * Chat 상단 드롭다운이 이 스키마 에이전트를 직접 부를 수 있다. 옛 라우트는
    * 직접 URL로만 남아 있다(APP_NAV_ITEMS 주석 참고). */
+  /** "개인" 탭 — DRAFT(아직 팀에 공유 안 한) 에이전트. 서버도 같은 기준으로
+   * 본인 것만 돌려준다(2026-08-18, `list_for_team()`). */
   agentVersions: '/agents/versions',
+  /** "팀 공유" 탭 — ACTIVE·DISABLED. 한 번이라도 활성화된 적이 있으면 여기. */
+  agentVersionsTeam: '/agents/versions/team',
   agentVersionEdit: '/agents/versions/:agentId/edit',
   agentVersionNew: '/agents/versions/new/edit',
   settingsConnectors: '/settings/connectors',
@@ -75,7 +79,12 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.agentNew, label: '에이전트 만들기', group: 'Agent Platform' },
   {
     path: PATHS.agentVersions,
-    label: '에이전트 목록 (버전, Deep Agent)',
+    label: '에이전트 목록 · 개인 (버전, Deep Agent)',
+    group: 'Agent Platform',
+  },
+  {
+    path: PATHS.agentVersionsTeam,
+    label: '에이전트 목록 · 팀 공유 (버전, Deep Agent)',
     group: 'Agent Platform',
   },
   {
@@ -121,7 +130,12 @@ export interface AppNavItem {
  */
 export const APP_NAV_ITEMS: AppNavItem[] = [
   { label: '채팅', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },
-  { label: '에이전트', to: PATHS.agentVersions, icon: 'sparkles', match: [PATHS.agentVersions] },
+  {
+    label: '에이전트',
+    to: PATHS.agentVersions,
+    icon: 'sparkles',
+    match: [PATHS.agentVersions, PATHS.agentVersionsTeam],
+  },
   { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },
 ];

@@ -29,6 +29,32 @@
   line-height: 1.55;
 }
 
+.tabBar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 2px solid transparent;
+  color: var(--color-body);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tab:hover {
+  color: var(--color-heading);
+}
+
+.tabActive,
+.tabActive:hover {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
 .notice {
   display: flex;
   align-items: center;
@@ -99,6 +125,15 @@
   line-height: 1.6;
 }
 
+/* 이 에이전트가 위임하는 서브 에이전트 이름 — 버전 번호 대신 여기가 궁금한 정보다. */
+.cardSubagents {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
 .cardFoot {
   display: flex;
   align-items: center;
@@ -121,4 +156,40 @@
   background: var(--color-danger-bg, #fef2f2);
   color: var(--color-danger);
   font-size: 13px;
+}
+
+/* 삭제 확인. 무엇을 지우는지 제목을 먼저 보인다. */
+.deleteBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-body);
+}
+
+.deleteBody strong {
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteBody span {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.dependentList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 13px;
+  color: var(--color-heading);
+  list-style: disc;
+  list-style-position: inside;
 }
