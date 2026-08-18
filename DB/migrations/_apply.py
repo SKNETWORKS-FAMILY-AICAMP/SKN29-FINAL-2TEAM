@@ -10,7 +10,10 @@
     python DB/migrations/_apply.py --check            # 무엇이 빠졌나 (읽기만)
     python DB/migrations/_apply.py <파일.sql> ...      # 적용
 
-`--url` 로 대상을 바꾼다. 안 주면 `.env` 의 `DATABASE_URL` 을 읽는다 —
+대상은 **`--url` → 환경변수 `DATABASE_URL` → `.env`** 순으로 정하고, **어디서
+읽었는지를 함께 찍는다.** 컨테이너 안에는 `.env` 파일이 없고 compose 가 값을
+환경변수로 넣어 주므로, 공유 RDS 에 적용하는 자리에서는 환경변수 갈래가 쓰인다.
+
 **`.env` 를 셸에서 `source` 하지 않는다.** `DEFAULT_FROM_EMAIL` 값에 `<` 가 들어
 있어 bash 가 리다이렉트로 오해한다(2026-08-13 확인). 여기서는 파이썬이 직접 읽어
 그 문제를 피하고, `psql` 클라이언트가 없어도 되도록 psycopg 로 실행한다.
@@ -28,6 +31,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -56,16 +60,33 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "shared_team_id", "2026-08-18 개인 문서 팀 공유"),
     ("doc", "index_status", "2026-08-18 색인 상태"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
-    ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 좁히기"),
+    ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
 ]
 
 
-def _read_database_url() -> str:
-    with ENV_FILE.open(encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("DATABASE_URL="):
-                return line.strip().split("=", 1)[1].strip("\"'")
-    raise SystemExit(f"{ENV_FILE} 에 DATABASE_URL 이 없습니다.")
+def _read_database_url() -> tuple[str, str]:
+    """URL 과 **그것을 어디서 읽었는지**를 함께 준다.
+
+    출처를 함께 찍는 이유 — 호스트에서 테스트를 돌릴 때 `DATABASE_URL` 을
+    `localhost` 로 덮어쓰는 습관이 있어서(`.env` 값이 컨테이너 이름 `db` 다),
+    어느 쪽이 이겼는지 안 보이면 **엉뚱한 DB 에 적용하고도 성공으로 읽는다.**
+    """
+    # 컨테이너 안에는 `.env` 파일이 없다 — compose 가 값을 환경변수로 넣어 준다.
+    # 공유 RDS 에 적용하는 자리가 바로 거기라 이 갈래가 먼저다.
+    from_env = os.environ.get("DATABASE_URL", "").strip()
+    if from_env:
+        return from_env, "환경변수 DATABASE_URL"
+
+    if ENV_FILE.exists():
+        with ENV_FILE.open(encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("DATABASE_URL="):
+                    return line.strip().split("=", 1)[1].strip("\"'"), str(ENV_FILE)
+
+    raise SystemExit(
+        "DATABASE_URL 을 찾지 못했습니다 — 환경변수에도 없고 "
+        f"{ENV_FILE} 도 없습니다. `--url` 로 직접 주세요."
+    )
 
 
 def _target(url: str) -> str:
@@ -137,10 +158,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="마이그레이션 확인·적용")
     parser.add_argument("files", nargs="*", type=Path, help="적용할 .sql (없으면 확인만)")
     parser.add_argument("--check", action="store_true", help="읽기만 한다")
-    parser.add_argument("--url", help="대상 DB. 안 주면 .env 의 DATABASE_URL")
+    parser.add_argument("--url", help="대상 DB. 안 주면 환경변수 → .env 순으로 읽는다")
     args = parser.parse_args()
 
-    url = args.url or _read_database_url()
+    if args.url:
+        url, source = args.url, "--url"
+    else:
+        url, source = _read_database_url()
+    print(f"URL 출처: {source}")
+
     if args.check or not args.files:
         sys.exit(check(url))
     sys.exit(apply(url, args.files))
