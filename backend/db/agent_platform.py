@@ -415,7 +415,7 @@ def _writable_agent_version(
 
 
 def _build_subagent_refs(
-    cursor, *, team_id: str, subagents: list[dict[str, Any]]
+    cursor, *, team_id: str, account_id: str, subagents: list[dict[str, Any]]
 ) -> tuple[SubagentReference, ...]:
     """요청으로 들어온 서브 에이전트 후보를 `validate_subagents()`가 받는
     `SubagentReference`로 바꾼다.
@@ -423,13 +423,21 @@ def _build_subagent_refs(
     `child_version_id`가 실제로 `child_agent_id`의 버전인지부터 여기서 확인한다
     — 없는 조합을 넘기면 그건 구조 검증(alias 중복·순환 등)이 아니라 데이터
     정합성 문제라 `validate_subagents()`가 아니라 여기서 걸러야 한다.
+
+    **`is_active`는 "ACTIVE 상태"가 아니라 "서브 에이전트로 참조해도 되는가"다**
+    (2026-08-18 완화, 지훈 확인) — ACTIVE는 항상 되고, **본인 소유의 DRAFT도**
+    이제 된다. 개인 에이전트를 만들면서 아직 활성화 안 한 다른 개인 에이전트를
+    서브 에이전트로 미리 붙여 두고, 나중에 부모를 활성화하면 그 자리에서 같이
+    활성화되게 하려는 것(`_cascade_activate_draft_subagents`, `api_views.py`)이라
+    "내가 만든 DRAFT"까지만 허용한다 — 남의 DRAFT는 여전히 막는다(그 사람이
+    활성화하기 전까지 내 부모가 그걸 실행에 못 쓰는 게 맞다).
     """
 
     refs: list[SubagentReference] = []
     for item in subagents:
         cursor.execute(
             """
-            SELECT a.status, a.team_id,
+            SELECT a.status, a.team_id, a.owner_account_id,
                    EXISTS (
                        SELECT 1 FROM agent_version_subagents AS g
                        WHERE g.parent_version_id = v.agent_version_id
@@ -446,6 +454,7 @@ def _build_subagent_refs(
                 "존재하지 않는 서브 에이전트 버전입니다: "
                 f"{item['child_agent_id']}/{item['child_version_id']}"
             )
+        is_own_draft = row["status"] == "DRAFT" and row["owner_account_id"] == account_id
         refs.append(
             SubagentReference(
                 child_agent_id=item["child_agent_id"],
@@ -454,7 +463,7 @@ def _build_subagent_refs(
                 delegation_description=item["delegation_description"],
                 # v1: visibility가 항상 'TEAM' 고정(마이그레이션 주석 참고) —
                 # AgentSubagentRepository.list_for_parent_version과 같은 계산.
-                is_active=row["status"] == "ACTIVE",
+                is_active=row["status"] == "ACTIVE" or is_own_draft,
                 can_execute=row["team_id"] == team_id,
                 has_subagents=row["has_subagents"],
             )
@@ -588,6 +597,10 @@ class AgentVersionCrudRepository:
         탭은 이 조건 덕분에 실제로 본인 것만 모인다. `owner_account_id`가
         NULL인 행(시드 등)은 아무도의 소유가 아니므로 이 조건에서 항상
         제외된다 — 필요해지면 그때 다룬다.
+
+        `is_favorite`는 **이 계정 기준**이다(2026-08-18, `agent_favorites`) —
+        같은 에이전트라도 계정마다 다른 값일 수 있다. 팀 전체가 보는 값이
+        아니라서 `agents`에는 안 두고 별도 표에서 EXISTS로 붙인다.
         """
 
         with database_connection() as connection:
@@ -605,14 +618,18 @@ class AgentVersionCrudRepository:
                                 JOIN agents AS child ON child.agent_id = s.child_agent_id
                                 WHERE s.parent_version_id = a.current_version_id),
                                '[]'::json
-                           ) AS subagent_names
+                           ) AS subagent_names,
+                           EXISTS (
+                               SELECT 1 FROM agent_favorites AS f
+                               WHERE f.account_id = %s AND f.agent_id = a.agent_id
+                           ) AS is_favorite
                     FROM agents AS a
                     LEFT JOIN agent_versions AS v ON v.agent_version_id = a.current_version_id
                     WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
                       AND (a.status <> 'DRAFT' OR a.owner_account_id = %s)
                     ORDER BY a.is_default_chat DESC, a.is_prebuilt DESC, a.name
                     """,
-                    (team_id, account_id),
+                    (account_id, team_id, account_id),
                 )
                 return list(cursor.fetchall())
 
@@ -629,10 +646,14 @@ class AgentVersionCrudRepository:
                 cursor.execute(
                     """
                     SELECT agent_id, name, description, status, current_version_id,
-                           owner_account_id, is_default_chat
+                           owner_account_id, is_default_chat,
+                           EXISTS (
+                               SELECT 1 FROM agent_favorites AS f
+                               WHERE f.account_id = %s AND f.agent_id = agents.agent_id
+                           ) AS is_favorite
                     FROM agents WHERE agent_id = %s
                     """,
-                    (agent_id,),
+                    (account_id, agent_id),
                 )
                 agent = cursor.fetchone()
 
@@ -717,7 +738,9 @@ class AgentVersionCrudRepository:
                 # 같은 함수를 쓴다(02 §7.1). MVP는 1단계 위임만 허용하므로, 고른
                 # 자식이 이미 자기 자식을 갖고 있으면(has_subagents=True) 여기서
                 # 막는다 — `validate_subagents()`가 이 검사를 항상 켜 둔다.
-                child_refs = _build_subagent_refs(cursor, team_id=team_id, subagents=subagents)
+                child_refs = _build_subagent_refs(
+                    cursor, team_id=team_id, account_id=account_id, subagents=subagents
+                )
                 dependency_graph = _team_dependency_graph(cursor, team_id=team_id)
                 validate_subagents(
                     parent_agent_id=agent_id,
@@ -816,6 +839,87 @@ class AgentVersionCrudRepository:
                     (status, agent_id),
                 )
         return AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+
+    @staticmethod
+    def set_favorite(*, agent_id: str, account_id: str, favorite: bool) -> dict[str, Any]:
+        """즐겨찾기 별 토글(2026-08-18). **계정별 개인 설정이라 팀 전체에 안
+        보인다** — `agents`가 아니라 `agent_favorites`(계정, 에이전트) 표에
+        따로 둔다. `_writable_agent_version()`을 그대로 쓴다 — 이 계정이
+        `list_for_team()`에서 애초에 못 보는 에이전트(남의 DRAFT)는 즐겨찾기도
+        못 한다. `enforce_draft_privacy` 관리 동작이 아니라(활성화·중지·삭제와
+        달리 소유자·팀장만 하는 게 아니다) 팀 안의 누구든 자기 시야에 있는
+        에이전트는 즐겨찾기할 수 있다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                _writable_agent_version(cursor, agent_id=agent_id, team_id=team_id, account_id=account_id)
+
+                if favorite:
+                    cursor.execute(
+                        """
+                        INSERT INTO agent_favorites (account_id, agent_id) VALUES (%s, %s)
+                        ON CONFLICT (account_id, agent_id) DO NOTHING
+                        """,
+                        (account_id, agent_id),
+                    )
+                else:
+                    cursor.execute(
+                        "DELETE FROM agent_favorites WHERE account_id = %s AND agent_id = %s",
+                        (account_id, agent_id),
+                    )
+        return AgentVersionCrudRepository.get(agent_id=agent_id, account_id=account_id)
+
+    @staticmethod
+    def list_dependent_draft_children(*, agent_id: str) -> list[dict[str, Any]]:
+        """이 에이전트의 **지금 버전**이 서브 에이전트로 참조하는 것 중 아직
+        DRAFT인 것들(2026-08-18, 활성화 연쇄용). 부모를 활성화(또는 이미
+        활성 상태에서 재발행)할 때 `apps/agents/api_views.py`의
+        `_cascade_activate_draft_subagents()`가 이 목록을 모델·도구
+        재검증(활성화와 같은 검증)에 돌려 통과한 것만 활성화한다 —
+        그래서 활성화 재검증에 필요한 `model`·`tool_refs`까지 같이 준다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT DISTINCT child.agent_id, child.name, cv.model,
+                           COALESCE(
+                               (SELECT array_agg(t.tool_ref) FROM agent_version_tools AS t
+                                WHERE t.agent_version_id = child.current_version_id),
+                               ARRAY[]::text[]
+                           ) AS tool_refs
+                    FROM agents AS parent
+                    JOIN agent_version_subagents AS s
+                        ON s.parent_version_id = parent.current_version_id
+                    JOIN agents AS child ON child.agent_id = s.child_agent_id
+                    LEFT JOIN agent_versions AS cv ON cv.agent_version_id = child.current_version_id
+                    WHERE parent.agent_id = %s AND child.status = 'DRAFT'
+                    """,
+                    (agent_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def activate_cascaded_child(*, agent_id: str) -> None:
+        """활성화 연쇄로 서브 에이전트를 켠다(2026-08-18). 부모 소유자와
+        이 자식 소유자가 다를 수 있어(팀장이 남의 부모를 활성화하는 경우)
+        `set_status()`처럼 요청 계정 기준 소유자 확인을 안 한다 — 이미
+        `list_dependent_draft_children()`가 "지금 활성화되는 부모의 버전이
+        실제로 참조하는 자식"만 골라 왔으므로 그 자체가 권한 근거다(그
+        참조 자체는 그 자식의 소유자만 만들 수 있었다, `_build_subagent_refs`
+        참고). `status = 'DRAFT'` 조건으로 그 사이 이미 바뀐 행은 조용히
+        건너뛴다(경합 대비)."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE agents SET status = 'ACTIVE', updated_at = now() "
+                    "WHERE agent_id = %s AND status = 'DRAFT'",
+                    (agent_id,),
+                )
 
     @staticmethod
     def list_dependents(*, agent_id: str, account_id: str) -> list[str]:

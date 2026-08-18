@@ -79,6 +79,7 @@
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -86,6 +87,43 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  text-align: left;
+}
+
+/* 카드 자체가 챗으로 넘어가는 버튼이다(2026-08-18) — DISABLED는 Chat이 못
+   받는 상태라 이 클래스 자체를 안 붙인다(그때는 그냥 안내용 카드). */
+.cardClickable {
+  cursor: pointer;
+}
+
+.cardClickable:hover {
+  border-color: var(--color-primary);
+}
+
+.cardClickable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* 즐겨찾기 별(2026-08-18) — 카드 오른쪽 위 고정. */
+.favoriteButton {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+}
+
+.favoriteButton:hover {
+  background: var(--color-bg);
 }
 
 .cardTop {

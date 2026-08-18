@@ -169,6 +169,13 @@ class AgentVersionPublishSerializer(serializers.Serializer):
     subagents = SubagentRefSerializer(many=True, required=False, default=list)
 
 
+class AgentVersionFavoriteSerializer(serializers.Serializer):
+    """즐겨찾기 별 토글 입력(2026-08-18). 켜고 끄는 값 하나뿐이라 단순하다 —
+    활성화·중지처럼 서버 재검증이 필요한 상태 전이가 아니다."""
+
+    favorite = serializers.BooleanField()
+
+
 def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "agent_id": row["agent_id"],
@@ -176,6 +183,9 @@ def agent_version_response(row: dict[str, Any]) -> dict[str, Any]:
         "description": row.get("description") or "",
         "status": row.get("status"),
         "is_default_chat": row.get("is_default_chat", False),
+        # 이 계정 기준 즐겨찾기(2026-08-18) — 팀 전체가 아니라 요청한 계정만의
+        # 값이다(`agent_favorites`, `list_for_team()`/`get()` 참고).
+        "is_favorite": row.get("is_favorite", False),
         "owner_account_id": row.get("owner_account_id"),
         "current_version_id": row.get("current_version_id"),
         "version": row.get("version"),

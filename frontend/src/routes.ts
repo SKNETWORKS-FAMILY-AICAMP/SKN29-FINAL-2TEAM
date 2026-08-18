@@ -50,6 +50,9 @@ export const PATHS = {
   agentVersions: '/agents/versions',
   /** "팀 공유" 탭 — ACTIVE·DISABLED. 한 번이라도 활성화된 적이 있으면 여기. */
   agentVersionsTeam: '/agents/versions/team',
+  /** "즐겨찾기" 탭(2026-08-18) — 개인/팀 공유와 무관하게, 이 계정이 별을
+   * 누른 에이전트만. 계정별 개인 값이라 나만 본다. */
+  agentVersionsFavorites: '/agents/versions/favorites',
   agentVersionEdit: '/agents/versions/:agentId/edit',
   agentVersionNew: '/agents/versions/new/edit',
   settingsConnectors: '/settings/connectors',
@@ -85,6 +88,11 @@ export const ROUTES: RouteEntry[] = [
   {
     path: PATHS.agentVersionsTeam,
     label: '에이전트 목록 · 팀 공유 (버전, Deep Agent)',
+    group: 'Agent Platform',
+  },
+  {
+    path: PATHS.agentVersionsFavorites,
+    label: '에이전트 목록 · 즐겨찾기 (버전, Deep Agent)',
     group: 'Agent Platform',
   },
   {
@@ -134,7 +142,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     label: '에이전트',
     to: PATHS.agentVersions,
     icon: 'sparkles',
-    match: [PATHS.agentVersions, PATHS.agentVersionsTeam],
+    match: [PATHS.agentVersions, PATHS.agentVersionsTeam, PATHS.agentVersionsFavorites],
   },
   { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },

@@ -99,6 +99,7 @@ function App() {
               나란히 존재한다. Chat은 아직 이 스키마를 모른다. */}
           <Route path={PATHS.agentVersions} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />
           <Route path={PATHS.agentVersionsTeam} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />
+          <Route path={PATHS.agentVersionsFavorites} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />
           <Route path={PATHS.agentVersionEdit} element={<RequireAuth><AgentVersionEditPage /></RequireAuth>} />
           <Route path={PATHS.projects} element={<RequireAuth><ProjectListPage /></RequireAuth>} />
           <Route path={PATHS.projectDetail} element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />

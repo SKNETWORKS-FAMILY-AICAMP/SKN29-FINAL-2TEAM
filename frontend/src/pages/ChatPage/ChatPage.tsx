@@ -344,9 +344,16 @@ export default function ChatPage() {
   useEffect(() => {
     const proj = params.get('proj');
     const ask = params.get('ask');
-    if (!proj && !ask) return;
+    // 에이전트 목록 화면에서 카드를 눌러 들어온 경우(2026-08-18) — 그
+    // 에이전트가 골라진 채로 챗을 연다. 방금 라우트가 바뀌어 이 화면이 막
+    // 마운트된 시점이라 sessionId·turns는 이미 초기값이라 startNew()까지는
+    // 안 불러도 된다 — agentId만 정해 주면 된다(아래 기본 에이전트 선택
+    // effect는 `prev ?? ...`라 이미 값이 있으면 안 덮어쓴다).
+    const agent = params.get('agent');
+    if (!proj && !ask && !agent) return;
     if (proj) setProjId(proj);
     if (ask) setPendingAsk(ask);
+    if (agent) setAgentId(agent);
     setParams({}, { replace: true });
   }, [params, setParams]);
 

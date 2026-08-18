@@ -31,6 +31,7 @@ from services.harness import check_tools, run_agent
 
 from .serializers import (
     AGENT_MODELS,
+    AgentVersionFavoriteSerializer,
     AgentVersionPublishSerializer,
     AgentWriteSerializer,
     BuilderTestRunSerializer,
@@ -274,6 +275,46 @@ def _check_tool_refs(*, account_id: str, tool_refs: list[str]) -> str | None:
     구조 검증 — 도구 참조가 실제로 존재하는지, 중복 선택은 없는지만 본다."""
 
     return check_definition(tool_refs=tool_refs, catalog=_tool_catalog(account_id))
+
+
+def _cascade_activate_draft_subagents(*, agent_id: str, account_id: str) -> list[str]:
+    """부모가 활성화되거나(`AgentVersionActivateAPIView`) 이미 활성 상태에서
+    재발행될 때(`AgentVersionDetailAPIView.put`), 그 버전이 참조하는 개인
+    DRAFT 서브 에이전트를 같이 활성화한다(2026-08-18, 지훈 확인).
+
+    개인 서브 에이전트는 소유자만 손댈 수 있어서(`_writable_agent_version`)
+    부모를 활성화해도 저절로 따라오지 않으면, 부모가 참조하는 위임 대상이
+    영영 DRAFT로 남는다 — 팀에 공개된 부모가 실행 시점에 델리게이션을
+    못 쓰는 채로 뜨는 것보다는, 저장할 수 있게 해 준 대신(`_build_subagent_refs`
+    완화) 활성화 시점에 같이 켜 주는 편이 사용자가 기대하는 그림에 가깝다.
+
+    **활성화와 같은 재검증(모델·도구)을 통과 못 하면 그 자식만 조용히
+    건너뛴다** — 부모 활성화 자체를 막지 않는다. 저장 시점엔 있던 커스텀
+    모델·MCP 도구가 그 사이 사라졌을 수 있어서(`AgentVersionActivateAPIView`
+    docstring과 같은 이유), 통과한 것만 활성화하고 이름만 모아 돌려준다 —
+    호출부가 토스트로 알린다.
+    """
+
+    try:
+        children = AgentVersionCrudRepository.list_dependent_draft_children(agent_id=agent_id)
+    except (RepositoryError, psycopg.Error):
+        return []
+
+    activated: list[str] = []
+    for child in children:
+        if _model_rejection(account_id, child.get("model")) is not None:
+            continue
+        try:
+            if _check_tool_refs(account_id=account_id, tool_refs=list(child.get("tool_refs") or [])) is not None:
+                continue
+        except (RepositoryError, psycopg.Error):
+            continue
+        try:
+            AgentVersionCrudRepository.activate_cascaded_child(agent_id=child["agent_id"])
+        except (RepositoryError, psycopg.Error):
+            continue
+        activated.append(child["name"])
+    return activated
 
 
 def _builder_test_events(*, draft: dict, user_input: str, account_id: str):
@@ -538,7 +579,21 @@ class AgentVersionDetailAPIView(AuthenticatedAPIView):
             return _agent_runtime_error_response(exc)
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response(agent_version_response(row))
+
+        # 이미 팀 공유(ACTIVE) 상태였던 에이전트가 새 버전에서 개인 DRAFT
+        # 서브 에이전트를 새로 참조하면, 이 재발행 자체는 활성화 이벤트를
+        # 안 거치므로(2026-08-18) 여기서 같이 챙긴다 — 안 그러면 이미 팀에
+        # 공개된 에이전트가 활성화 연쇄(AgentVersionActivateAPIView) 없이
+        # DRAFT를 참조하는 채로 남는다. `current`(위에서 이미 조회한, 이번
+        # 발행 **전** 상태)가 ACTIVE였을 때만 돈다 — 지금 막 활성화하는
+        # 경우(DRAFT→ACTIVE)는 활성화 API 쪽이 이미 처리한다.
+        cascaded_names: list[str] = []
+        if current.get("status") == "ACTIVE":
+            cascaded_names = _cascade_activate_draft_subagents(agent_id=agent_id, account_id=account_id)
+        response_body = agent_version_response(row)
+        if cascaded_names:
+            response_body["cascaded_subagent_names"] = cascaded_names
+        return Response(response_body)
 
     def delete(self, request, agent_id):
         """만든 사람이거나 팀장만 지울 수 있다. 실제로는 ARCHIVED로 내린다 —
@@ -621,7 +676,15 @@ class AgentVersionActivateAPIView(AuthenticatedAPIView):
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
-        return Response(agent_version_response(row))
+
+        # 이 버전이 참조하는 개인 DRAFT 서브 에이전트를 같이 활성화한다
+        # (2026-08-18). 화면이 토스트로 알릴 수 있게 이름만 실어 보낸다 —
+        # `agent_version_response()`가 모르는 필드라 응답에 얹어서 보낸다.
+        cascaded_names = _cascade_activate_draft_subagents(agent_id=agent_id, account_id=account_id)
+        response_body = agent_version_response(row)
+        if cascaded_names:
+            response_body["cascaded_subagent_names"] = cascaded_names
+        return Response(response_body)
 
 
 class AgentVersionDisableAPIView(AuthenticatedAPIView):
@@ -646,6 +709,31 @@ class AgentVersionDisableAPIView(AuthenticatedAPIView):
         try:
             row = AgentVersionCrudRepository.set_status(
                 agent_id=agent_id, account_id=account_id, status="DISABLED"
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(agent_version_response(row))
+
+
+class AgentVersionFavoriteAPIView(AuthenticatedAPIView):
+    """즐겨찾기 별 토글(2026-08-18). **소유자·팀장 제한이 없다** — 활성화·
+    중지·삭제와 달리 "이 팀에서 이 에이전트를 관리할 수 있는가"가 아니라
+    "내가 개인적으로 표시해 두고 싶은가"라 팀 안의 누구든, 자기 시야에
+    있는 에이전트(팀 공유 전체 + 본인 DRAFT)라면 즐겨찾기할 수 있다.
+    `set_favorite()`가 그 시야 확인(`_writable_agent_version`)은 그대로 한다
+    — 남의 DRAFT는 애초에 안 보이니 즐겨찾기도 못 한다.
+    """
+
+    def put(self, request, agent_id):
+        serializer = AgentVersionFavoriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        account_id = request.user.account_id
+        try:
+            row = AgentVersionCrudRepository.set_favorite(
+                agent_id=agent_id,
+                account_id=account_id,
+                favorite=serializer.validated_data["favorite"],
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)

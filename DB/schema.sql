@@ -1044,3 +1044,13 @@ CREATE TABLE agent_version_subagents (
     PRIMARY KEY (parent_version_id, child_agent_id),
     UNIQUE (parent_version_id, alias)
 );
+
+-- 에이전트 카드의 별 토글(2026-08-18, DB/migrations/2026-08-18_agent_favorites.sql).
+-- 계정별 개인 즐겨찾기 — 팀 전체에 안 보인다. owner_account_id(만든 사람)와는
+-- 다른 개념이다.
+CREATE TABLE agent_favorites (
+    account_id  VARCHAR(5)  NOT NULL,   -- user_account.account_id(FK 없음)
+    agent_id    VARCHAR(5)  NOT NULL,   -- agents.agent_id(FK 없음)
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (account_id, agent_id)
+);

@@ -20,6 +20,7 @@ import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
 import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
+import { SubagentPickerModal } from './SubagentPickerModal';
 import styles from './AgentVersionEditPage.module.css';
 
 const EFFORT_OPTIONS = [
@@ -64,8 +65,7 @@ export default function AgentVersionEditPage() {
   const [maxIterations, setMaxIterations] = useState(6);
   const [toolRefs, setToolRefs] = useState<string[]>([]);
   const [subagents, setSubagents] = useState<SubagentRef[]>([]);
-  const [subagentFormOpen, setSubagentFormOpen] = useState(false);
-  const [subagentChildId, setSubagentChildId] = useState('');
+  const [subagentPickerOpen, setSubagentPickerOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,10 +110,34 @@ export default function AgentVersionEditPage() {
   }, [customModels, model]);
 
   /** 자기 자신은 뺀다 — 자기 참조는 서버가 어차피 409로 막지만, 화면에서
-   * 애초에 고를 수 없게 하는 편이 낫다. */
+   * 애초에 고를 수 없게 하는 편이 낫다. DISABLED도 뺀다 — 서버가 여전히
+   * 막는다(ACTIVE 아니고 "내 DRAFT"도 아니라서, `_build_subagent_refs`
+   * 2026-08-18 완화가 딱 그 둘까지만 허용한다). */
   const subagentCandidates = useMemo(
-    () => otherAgents.filter((a) => a.agent_id !== savedId && a.current_version_id !== null),
+    () =>
+      otherAgents.filter(
+        (a) =>
+          a.agent_id !== savedId &&
+          a.current_version_id !== null &&
+          (a.status === 'ACTIVE' || a.status === 'DRAFT'),
+      ),
     [otherAgents, savedId],
+  );
+
+  /** 개인/팀 공유/즐겨찾기 세 탭(2026-08-18) — `AgentVersionListPage`와 같은
+   * 구성. DRAFT는 서버가 이미 본인 것만 내려주므로 "개인" 탭은 항상 내
+   * 것이다. */
+  const personalSubagentCandidates = useMemo(
+    () => subagentCandidates.filter((a) => a.status === 'DRAFT'),
+    [subagentCandidates],
+  );
+  const teamSubagentCandidates = useMemo(
+    () => subagentCandidates.filter((a) => a.status === 'ACTIVE'),
+    [subagentCandidates],
+  );
+  const favoriteSubagentCandidates = useMemo(
+    () => subagentCandidates.filter((a) => a.is_favorite),
+    [subagentCandidates],
   );
 
   function toggleTool(ref: string) {
@@ -148,16 +172,19 @@ export default function AgentVersionEditPage() {
 
   /** alias·위임 설명은 별도로 안 받는다 — 고르는 에이전트 자신의 이름·설명을
    * 그대로 스냅샷으로 쓴다(부모가 저장된 뒤 자식 이름이 바뀌어도 이 부모는
-   * 지금 값을 계속 쓴다, 위 subagentCandidates 주석과 같은 이유). */
-  function addSubagent() {
-    const candidate = subagentCandidates.find((a) => a.agent_id === subagentChildId);
-    if (!candidate || !candidate.current_version_id) return;
-    if (!candidate.description.trim()) {
-      setError(`"${candidate.name}"에 설명이 없어 서브 에이전트로 추가할 수 없습니다. 그 에이전트의 설명을 먼저 채워 주세요.`);
+   * 지금 값을 계속 쓴다, 위 subagentCandidates 주석과 같은 이유).
+   *
+   * 카드 클릭 = 토글이다(2026-08-18, 카드 형태로 개편) — 이미 골랐으면
+   * 빼고, 아니면 넣는다. `ToolPickerModal`의 체크박스 토글과 같은 방식.
+   */
+  function toggleSubagent(candidate: AgentVersionSummary) {
+    if (subagents.some((s) => s.child_agent_id === candidate.agent_id)) {
+      removeSubagent(candidate.agent_id);
       return;
     }
-    if (subagents.some((s) => s.child_agent_id === candidate.agent_id)) {
-      setError('이미 추가한 서브 에이전트입니다.');
+    if (!candidate.current_version_id) return;
+    if (!candidate.description.trim()) {
+      setError(`"${candidate.name}"에 설명이 없어 서브 에이전트로 추가할 수 없습니다. 그 에이전트의 설명을 먼저 채워 주세요.`);
       return;
     }
     if (subagents.some((s) => s.alias === candidate.name.trim())) {
@@ -173,8 +200,6 @@ export default function AgentVersionEditPage() {
         delegation_description: candidate.description.trim(),
       },
     ]);
-    setSubagentChildId('');
-    setSubagentFormOpen(false);
     setError(null);
   }
 
@@ -218,7 +243,17 @@ export default function AgentVersionEditPage() {
     setError(null);
     try {
       const saved = await saveVersion();
-      showToast(`v${saved.version}로 저장했습니다. Chat에서 쓰려면 활성화가 필요합니다.`, 'success');
+      // 이미 팀 공유(ACTIVE) 상태였던 에이전트가 이번 저장에서 개인 DRAFT
+      // 서브 에이전트를 새로 참조하면, 서버가 그 자리에서 같이 활성화하고
+      // 이름을 실어 보낸다(2026-08-18) — 조용히 켜지면 사람이 모르니 알린다.
+      if (saved.cascaded_subagent_names?.length) {
+        showToast(
+          `v${saved.version}로 저장했습니다. 서브 에이전트 「${saved.cascaded_subagent_names.join('」·「')}」도 초안 상태였어서 함께 활성화했습니다.`,
+          'success',
+        );
+      } else {
+        showToast(`v${saved.version}로 저장했습니다. Chat에서 쓰려면 활성화가 필요합니다.`, 'success');
+      }
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '저장하지 못했습니다.');
     } finally {
@@ -233,7 +268,17 @@ export default function AgentVersionEditPage() {
     try {
       const activated = await activateAgentVersion(token, savedId);
       setStatus(activated.status);
-      showToast(`「${activated.name}」을 활성화했습니다.`, 'success');
+      // 이 버전이 참조하는 개인 DRAFT 서브 에이전트가 있으면 서버가 같이
+      // 활성화하고 이름을 실어 보낸다(2026-08-18) — 조용히 켜지면 사람이
+      // 모르니 알린다.
+      if (activated.cascaded_subagent_names?.length) {
+        showToast(
+          `「${activated.name}」을 활성화했습니다. 서브 에이전트 「${activated.cascaded_subagent_names.join('」·「')}」도 초안 상태였어서 함께 활성화했습니다.`,
+          'success',
+        );
+      } else {
+        showToast(`「${activated.name}」을 활성화했습니다.`, 'success');
+      }
     } catch (exc) {
       setError(exc instanceof ApiError ? exc.message : '활성화하지 못했습니다.');
     } finally {
@@ -382,52 +427,29 @@ export default function AgentVersionEditPage() {
             ))}
           </div>
 
-          {subagentFormOpen ? (
-            <div className={styles.subagentForm}>
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>대상 에이전트</span>
-                <Select
-                  options={[
-                    { value: '', label: '선택하세요' },
-                    ...subagentCandidates.map((a) => ({ value: a.agent_id, label: `${a.name} (v${a.version})` })),
-                  ]}
-                  value={subagentChildId}
-                  onChange={(event) => setSubagentChildId(event.target.value)}
-                />
-              </label>
-              {subagentChildId && (
-                <p className={styles.help}>
-                  이 에이전트의 이름·설명을 그대로 위임 판단 근거로 씁니다:{' '}
-                  <em>
-                    {subagentCandidates.find((a) => a.agent_id === subagentChildId)?.description ||
-                      '(설명 없음 — 위 Profile에서 채워 주세요)'}
-                  </em>
-                </p>
-              )}
-              <div className={styles.subagentFormActions}>
-                <Button type="button" variant="outline" onClick={() => setSubagentFormOpen(false)}>
-                  취소
-                </Button>
-                <Button type="button" onClick={addSubagent} disabled={!subagentChildId}>
-                  추가
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setSubagentFormOpen(true)}
-              disabled={subagentCandidates.length === 0}
-            >
-              서브 에이전트 추가
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setSubagentPickerOpen(true)}
+            disabled={subagentCandidates.length === 0}
+          >
+            서브 에이전트 추가
+          </Button>
           {subagentCandidates.length === 0 && (
             <p className={styles.help}>고를 수 있는 다른 에이전트가 아직 없습니다 — 먼저 다른 에이전트를 하나 저장해 주세요.</p>
           )}
         </section>
+
+        <SubagentPickerModal
+          open={subagentPickerOpen}
+          onClose={() => setSubagentPickerOpen(false)}
+          personalCandidates={personalSubagentCandidates}
+          teamCandidates={teamSubagentCandidates}
+          favoriteCandidates={favoriteSubagentCandidates}
+          selectedIds={subagents.map((s) => s.child_agent_id)}
+          onToggle={toggleSubagent}
+        />
 
         <ToolPickerModal
           open={pickerOpen}

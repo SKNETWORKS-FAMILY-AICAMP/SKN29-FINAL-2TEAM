@@ -20,6 +20,9 @@ export interface AgentVersionSummary {
   status: AgentVersionStatus;
   /** Chat이 아무것도 안 고르면 떨어지는 팀의 기본 상대. 팀당 최대 1개. */
   is_default_chat: boolean;
+  /** 이 계정이 즐겨찾기했는가(2026-08-18). 팀 전체 값이 아니라 요청한
+   * 계정만의 값이다 — 같은 에이전트라도 계정마다 다를 수 있다. */
+  is_favorite: boolean;
   /** 만든 사람. 삭제 버튼 노출 판단(본인 또는 팀장)에 쓴다. */
   owner_account_id: string | null;
   current_version_id: string | null;
@@ -30,6 +33,13 @@ export interface AgentVersionSummary {
   /** 지금 버전이 위임하는 서브 에이전트 이름. 목록 카드가 버전 번호 대신 보여준다. */
   subagent_names: string[];
   updated_at: string | null;
+  /**
+   * 활성화(또는 이미 활성 상태에서 재발행)로 같이 켜진 개인 서브 에이전트
+   * 이름들(2026-08-18). **활성화·저장 응답에만 있다** — 평소 목록 조회에는
+   * 안 실린다(그때는 켤 게 없어서). 화면이 이 필드로 "서브 에이전트도
+   * 같이 활성화됐다"는 토스트를 띄운다.
+   */
+  cascaded_subagent_names?: string[];
 }
 
 /** 부모 버전이 고정 참조하는 자식 하나. */
@@ -111,6 +121,16 @@ export function deleteAgentVersion(token: string, agentId: string) {
  * 지울 수 있다 — 삭제 버튼을 누른 시점에 확인 모달보다 먼저 물어본다. */
 export function getAgentVersionDependents(token: string, agentId: string) {
   return apiRequest<{ parent_names: string[] }>(`/agents/versions/${agentId}/dependents/`, {
+    token,
+  });
+}
+
+/** 즐겨찾기 별 토글(2026-08-18). 계정별 개인 설정 — 소유자·팀장 제한이
+ * 없다(누구나 자기 시야에 있는 에이전트를 즐겨찾기할 수 있다). */
+export function setAgentVersionFavorite(token: string, agentId: string, favorite: boolean) {
+  return apiRequest<AgentVersionSummary>(`/agents/versions/${agentId}/favorite/`, {
+    method: 'PUT',
+    body: { favorite },
     token,
   });
 }
