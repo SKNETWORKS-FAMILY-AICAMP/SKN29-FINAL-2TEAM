@@ -426,6 +426,7 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
+                           d.index_status,
                            m.summary, m.doc_type, m.keywords, m.extract_status,
                            {_SEARCH_READY}
                     FROM doc AS d
@@ -453,7 +454,7 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.owner_account_id, ua.display_name AS owner_name,
+                           d.index_status, d.owner_account_id, ua.display_name AS owner_name,
                            m.summary, m.doc_type, m.keywords, m.extract_status,
                            {_SEARCH_READY}
                     FROM doc AS d
@@ -489,6 +490,24 @@ class PersonalDocumentRepository:
                 if cursor.rowcount == 0:
                     raise RecordNotFound(f"존재하지 않는 내 파일입니다: {doc_id}")
         return team_id
+
+    @staticmethod
+    def set_index_status(*, doc_id: str, status: str | None) -> None:
+        """색인 단계의 결과를 남긴다 — RUNNING / FAILED / None(끝남).
+
+        **남기지 않으면 느린 것과 죽은 것이 구분되지 않는다.** 화면은 청크가
+        생겼는지(`search_ready`)만 볼 수 있어서, 실패한 문서도 영원히 「읽는
+        중」으로 보인다(2026-08-18 PM 지적).
+
+        소유자 검사를 안 한다 — 사람이 부르는 경로가 아니라 **업로드가 띄운
+        뒷작업이 자기 결과를 적는 자리**다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE doc SET index_status = %s WHERE doc_id = %s", (status, doc_id)
+                )
 
     @staticmethod
     def set_search_enabled(*, doc_id: str, account_id: str, enabled: bool) -> None:

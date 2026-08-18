@@ -19,6 +19,13 @@ export interface PersonalFile {
   keywords: string[];
   /** null(아직 읽는 중) / OK / FAILED / UNSUPPORTED. 넷은 할 행동이 다르다. */
   extract_status: string | null;
+  /**
+   * 청크 파싱·임베딩 단계 — RUNNING / FAILED / null(안 돌렸거나 끝남).
+   *
+   * `extract_status` 와 **다른 단계**다. 그쪽은 요약을 만들려고 텍스트를 뽑는
+   * 일이고 이건 그 뒤의 색인이다 — 요약은 됐는데 색인만 못 하는 경우가 흔하다.
+   */
+  index_status: string | null;
   uploaded_at: string | null;
   /** 팀에 공유했는가. **소유는 안 옮긴다** — 보여 주는 것이지 넘기는 것이 아니다. */
   shared: boolean;

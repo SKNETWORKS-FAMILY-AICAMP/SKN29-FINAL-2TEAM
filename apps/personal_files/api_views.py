@@ -212,12 +212,15 @@ def _start_processing(*, account_id: str, doc_id: str) -> None:
     """
 
     def run() -> None:
+        from backend.db.document_pipeline import PersonalDocumentRepository
+
         try:
             from services.document_intake import promote_to_searchable
             from services.document_meta import as_row as doc_meta_row
             from services.document_meta import build as build_doc_meta
             from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
 
+            PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="RUNNING")
             document = PipelineDocumentRepository.get_for_processing(
                 doc_id=doc_id, account_id=account_id
             )
@@ -231,8 +234,19 @@ def _start_processing(*, account_id: str, doc_id: str) -> None:
             # **여기서 바로 파싱까지 간다.** 커넥터 문서는 요약만 해 두고 검색이
             # 필요로 할 때 승격시키는데, 내 파일은 되받을 곳이 없어 그 경로를 탈
             # 수 없다. 올린 사람이 켜 둔 이상 쓸 문서라고 보는 편이 맞다.
-            promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            outcome = promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            # **결과를 반드시 남긴다.** 안 남기면 실패한 문서가 화면에서 영원히
+            # 「읽는 중」이다 — 느린 것과 죽은 것을 사람이 구분할 방법이 없어진다.
+            if outcome.get("ok"):
+                PersonalDocumentRepository.set_index_status(doc_id=doc_id, status=None)
+            else:
+                logger.warning("내 파일 색인 실패: %s (%s)", doc_id, outcome.get("detail"))
+                PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="FAILED")
         except Exception:  # noqa: BLE001 - 뒤에서 도는 일이라 무엇이든 로그로 남긴다
             logger.exception("내 파일 처리 실패: %s", doc_id)
+            try:
+                PersonalDocumentRepository.set_index_status(doc_id=doc_id, status="FAILED")
+            except Exception:  # noqa: BLE001 - 여기서 또 죽으면 남길 자리가 없다
+                logger.exception("색인 상태를 남기지 못했다: %s", doc_id)
 
     threading.Thread(target=run, daemon=True).start()

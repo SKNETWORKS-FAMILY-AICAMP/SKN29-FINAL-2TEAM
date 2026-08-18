@@ -52,6 +52,15 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
       hint: '텍스트가 들어 있는 파일로 다시 올려 주세요.',
     };
   }
+  // **색인 실패를 「읽는 중」으로 두지 않는다.** 안 그러면 죽은 문서가 영원히
+  // 도는 것처럼 보이고, 사람은 얼마나 더 기다려야 하는지 알 수 없다.
+  if (file.index_status === 'FAILED') {
+    return {
+      tone: 'warning',
+      label: '색인 실패',
+      hint: '지우고 다시 올려 보세요. 그래도 안 되면 저희에게 알려 주세요.',
+    };
+  }
   // 요약은 됐는데 청크가 아직 없는 상태와, 막 올라온 상태를 같이 본다 —
   // 사람이 할 일이 「기다린다」로 같다.
   return { tone: 'neutral', label: file.summary ? '본문 읽는 중' : '읽는 중', hint: '' };
@@ -80,8 +89,14 @@ export function MyFilesTab() {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   /** 처리 중인 파일이 있는 동안만 목록을 다시 받는다. */
-  const pending = files.some((file) => !file.search_ready && file.extract_status !== 'UNSUPPORTED'
-    && file.extract_status !== 'FAILED');
+  /** 아직 결판이 안 난 파일이 있는 동안만 목록을 다시 받는다. */
+  const pending = files.some(
+    (file) =>
+      !file.search_ready &&
+      file.extract_status !== 'UNSUPPORTED' &&
+      file.extract_status !== 'FAILED' &&
+      file.index_status !== 'FAILED',
+  );
 
   async function load() {
     if (!token) return;

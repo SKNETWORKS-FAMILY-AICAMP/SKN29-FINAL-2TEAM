@@ -24,6 +24,9 @@ def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
         "doc_type": row.get("doc_type"),
         "keywords": row.get("keywords") or [],
         "extract_status": row.get("extract_status"),
+        # 청크 파싱·임베딩 단계. RUNNING / FAILED / null(안 돌렸거나 끝남).
+        # `extract_status` 와 다른 단계다 — 둘은 따로 실패한다.
+        "index_status": row.get("index_status"),
         "uploaded_at": row.get("src_modified_at"),
         "shared": row.get("shared_team_id") is not None,
         # 공유 받은 목록에만 있다. 누가 올렸는지 모르면 내용을 믿을 근거가 없다.
