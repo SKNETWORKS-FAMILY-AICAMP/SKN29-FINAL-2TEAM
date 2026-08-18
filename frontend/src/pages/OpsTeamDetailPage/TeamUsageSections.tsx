@@ -68,13 +68,18 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
 
         {/* 기본 모델을 목록보다 먼저 보여준다. 「이 팀이 무엇으로 도나」가
             문의를 받았을 때 가장 먼저 필요한 값이다. */}
-        {defaultModel !== null && (
-          <p className={styles.inlineEmpty}>
-            {defaultModel.agent_name === null
-              ? '기본 에이전트가 아직 없습니다. 팀이 처음 대화를 시작하면 만들어집니다.'
-              : `기본 채팅: ${defaultModel.agent_name} 이 ${defaultModel.model ?? '고르지 않음'} 로 돕니다.`}
-          </p>
-        )}
+        {defaultModel !== null &&
+          (defaultModel.agent_name === null ? (
+            /* 정문이 없는 것은 **빈 상태가 맞다** — 아직 아무것도 없다. */
+            <p className={styles.inlineEmpty}>
+              기본 에이전트가 아직 없습니다. 팀이 처음 대화를 시작하면 만들어집니다.
+            </p>
+          ) : (
+            <p className={styles.usageFact}>
+              기본 채팅은 <strong>{defaultModel.agent_name}</strong> 이{' '}
+              <strong>{defaultModel.model ?? '아직 고르지 않은 모델'}</strong> 로 돕니다.
+            </p>
+          ))}
 
         {models.length === 0 ? (
           <OpsEmpty message="이 팀에 등록한 모델이 없습니다. 기본 제공 모델만 씁니다." />

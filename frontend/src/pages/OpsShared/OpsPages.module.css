@@ -368,6 +368,25 @@
   text-align: center;
 }
 
+/*
+ * 카드 안의 **사실 한 줄** — 「이 팀이 무엇으로 도나」 같은 값.
+ *
+ * `inlineEmpty` 를 쓰면 안 된다. 그쪽은 점선 테두리에 가운데 정렬한 **빈 상태**
+ * 상자라, 정작 이 카드에서 가장 먼저 읽어야 할 값이 「여기 아무것도 없습니다」
+ * 처럼 보인다(2026-08-18 에 실제로 그렇게 만들었다).
+ */
+.usageFact {
+  margin: 0 0 14px;
+  color: var(--color-body);
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.usageFact strong {
+  color: var(--color-heading);
+}
+
 .inlinePolicy {
   display: flex;
   flex-wrap: wrap;
