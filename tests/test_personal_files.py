@@ -158,14 +158,45 @@ class ToggleAndDeleteTests(SimpleTestCase):
         self.assertEqual(kwargs["account_id"], "UA001")
         self.assertIs(kwargs["enabled"], False)
 
-    def test_toggle_rejects_a_non_boolean(self, repo, _store):
+    def test_sharing_is_a_separate_switch(self, repo, _store):
+        """「내 검색에 쓴다」와 「팀이 봐도 된다」는 다른 값이다 — 한쪽만 보내면
+        다른 쪽은 안 건드려야 한다."""
+
         response = self.client.patch(
-            self.URL, {"search_enabled": "true"}, content_type="application/json",
-            headers=auth_header(),
+            self.URL, {"shared": True}, content_type="application/json", headers=auth_header(),
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(repo.set_shared.call_args.kwargs["shared"], True)
         repo.set_search_enabled.assert_not_called()
+
+    def test_both_switches_can_move_together(self, repo, _store):
+        self.client.patch(
+            self.URL, {"search_enabled": False, "shared": True},
+            content_type="application/json", headers=auth_header(),
+        )
+
+        self.assertIs(repo.set_search_enabled.call_args.kwargs["enabled"], False)
+        self.assertIs(repo.set_shared.call_args.kwargs["shared"], True)
+
+    def test_sharing_passes_the_owner(self, repo, _store):
+        """남의 파일을 내 팀에 공유할 수 있으면 안 된다."""
+
+        self.client.patch(
+            self.URL, {"shared": True}, content_type="application/json", headers=auth_header(),
+        )
+
+        self.assertEqual(repo.set_shared.call_args.kwargs["account_id"], "UA001")
+
+    def test_toggle_rejects_a_non_boolean(self, repo, _store):
+        for body in ({"search_enabled": "true"}, {"shared": 1}, {}):
+            with self.subTest(body=body):
+                response = self.client.patch(
+                    self.URL, body, content_type="application/json", headers=auth_header(),
+                )
+                self.assertEqual(response.status_code, 400)
+        repo.set_search_enabled.assert_not_called()
+        repo.set_shared.assert_not_called()
 
     def test_delete_removes_the_original_too(self, repo, store):
         """원본이 우리뿐이라 남겨 둘 이유가 없다 — 커넥터 문서와 다른 점이다."""
@@ -193,6 +224,35 @@ class ToggleAndDeleteTests(SimpleTestCase):
 
 @patch("apps.personal_files.api_views.PersonalDocumentRepository")
 class ListTests(SimpleTestCase):
+    def test_shared_list_is_its_own_endpoint(self, repo):
+        """내가 올린 것은 안 나온다 — 「내 파일」에 이미 있고, 두 목록에 같은
+        줄이 뜨면 어느 쪽에서 지워야 하는지 모른다."""
+
+        repo.list_shared_with_me.return_value = []
+
+        response = self.client.get("/api/me/files/shared/", headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        repo.list_shared_with_me.assert_called_once_with("UA001")
+        repo.list_for_account.assert_not_called()
+
+    def test_shared_rows_say_who_shared_them(self, repo):
+        """누가 올렸는지 모르면 내용을 믿을 근거가 없다."""
+
+        repo.list_shared_with_me.return_value = [
+            {
+                "doc_id": "DC010", "file_name": "표준계약서.pdf", "mime_type": "application/pdf",
+                "search_enabled": True, "search_ready": True, "summary": "요약",
+                "doc_type": None, "keywords": [], "extract_status": "OK",
+                "src_modified_at": None, "shared_team_id": "TE001", "owner_name": "김준억",
+            }
+        ]
+
+        body = self.client.get("/api/me/files/shared/", headers=auth_header()).json()[0]
+
+        self.assertEqual(body["owner_name"], "김준억")
+        self.assertTrue(body["shared"])
+
     def test_list_is_scoped_to_me(self, repo):
         repo.list_for_account.return_value = []
 

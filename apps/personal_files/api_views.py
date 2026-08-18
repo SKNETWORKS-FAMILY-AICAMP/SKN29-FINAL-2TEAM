@@ -129,23 +129,55 @@ class PersonalFileListAPIView(AuthenticatedAPIView):
         )
 
 
-class PersonalFileDetailAPIView(AuthenticatedAPIView):
-    def patch(self, request, doc_id):
-        """toggle. 켜고 끄는 것뿐이라 다른 값은 안 받는다."""
+class SharedFileListAPIView(AuthenticatedAPIView):
+    """팀원이 공유한 파일. **내가 올린 것은 안 나온다** — 「내 파일」에 이미 있고,
+    두 목록에 같은 줄이 뜨면 어느 쪽에서 지워야 하는지 모른다."""
 
-        enabled = request.data.get("search_enabled")
-        if not isinstance(enabled, bool):
-            return Response(
-                {"detail": "search_enabled 는 true 또는 false 여야 합니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+    def get(self, request):
         try:
-            PersonalDocumentRepository.set_search_enabled(
-                doc_id=doc_id, account_id=request.user.account_id, enabled=enabled
-            )
+            rows = PersonalDocumentRepository.list_shared_with_me(request.user.account_id)
         except (RepositoryError, psycopg.Error) as exc:
             return _error_response(exc)
-        return Response({"doc_id": doc_id, "search_enabled": enabled})
+        return Response([personal_file_response(row) for row in rows])
+
+
+class PersonalFileDetailAPIView(AuthenticatedAPIView):
+    def patch(self, request, doc_id):
+        """toggle 둘. 켜고 끄는 것뿐이라 다른 값은 안 받는다.
+
+        **`search_enabled` 와 `shared` 는 다른 값이다.** 앞은 「내 검색에 쓴다」,
+        뒤는 「팀이 봐도 된다」다 — 내 검색에서 빼 두고 팀에는 공유하는 것도,
+        그 반대도 말이 된다.
+        """
+
+        enabled = request.data.get("search_enabled")
+        shared = request.data.get("shared")
+        if enabled is None and shared is None:
+            return Response(
+                {"detail": "search_enabled 또는 shared 가 필요합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if (enabled is not None and not isinstance(enabled, bool)) or (
+            shared is not None and not isinstance(shared, bool)
+        ):
+            return Response(
+                {"detail": "search_enabled·shared 는 true 또는 false 여야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        account_id = request.user.account_id
+        try:
+            if enabled is not None:
+                PersonalDocumentRepository.set_search_enabled(
+                    doc_id=doc_id, account_id=account_id, enabled=enabled
+                )
+            if shared is not None:
+                PersonalDocumentRepository.set_shared(
+                    doc_id=doc_id, account_id=account_id, shared=shared
+                )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _error_response(exc)
+        return Response({"doc_id": doc_id, "search_enabled": enabled, "shared": shared})
 
     def delete(self, request, doc_id):
         """**되살릴 수 없다.** 원본이 우리뿐이라 지우면 그것으로 끝이다 —

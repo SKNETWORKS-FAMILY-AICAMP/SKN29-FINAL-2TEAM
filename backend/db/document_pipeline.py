@@ -13,14 +13,21 @@ from .repositories import _require_team, _require_team_project
 
 #: 현재 revision 의 원문이 Block·Chunk·Vector 까지 적재됐는가. 세 단계 중 하나라도
 #: 비면 검색이 안 되므로 EXISTS 하나로 묶어 묻는다.
-#: 「팀 문서이거나, 내가 켠 내 파일이거나」. 파라미터는 `(team_id, account_id)` 순.
+#: 「팀 문서이거나, 내가 켠 내 파일이거나, 팀원이 공유한 파일이거나」.
+#: 파라미터는 `(team_id, account_id, team_id)` 순.
 #:
-#: **`account_id` 가 NULL 이면 뒷항이 통째로 거짓이 된다** — 그래서 안 넘기면
-#: 옛 동작(팀 문서만)이 그대로다. 개인 문서는 `team_id` 가 NULL 이라 앞항으로는
-#: 절대 안 잡히고, 팀 문서는 `owner_account_id` 가 NULL 이라 뒷항으로 안 잡힌다
-#: (`doc_owner_xor_team` 이 그 배타를 DB 에서 강제한다).
+#: **`account_id` 가 NULL 이면 가운데 항이 통째로 거짓이 된다** — 그래서 안
+#: 넘기면 옛 동작(팀 문서만)에 공유분만 더해진다. 개인 문서는 `team_id` 가
+#: NULL 이라 첫 항으로는 절대 안 잡히고, 팀 문서는 `owner_account_id` 가
+#: NULL 이라 나머지로 안 잡힌다(`doc_owner_xor_team` 이 그 배타를 강제한다).
+#:
+#: 공유분에 `search_enabled` 를 걸지 않는다 — 그 값은 **올린 사람이 자기
+#: 검색에 쓰려고** 켜는 것이라, 남의 스위치로 내 검색 범위가 정해지면 안 된다.
+#: 공유했다는 것 자체가 「팀이 써도 된다」는 뜻이다.
 _TEAM_OR_MINE = """
-    (d.team_id = %s OR (d.owner_account_id = %s AND d.search_enabled = true))
+    (d.team_id = %s
+     OR (d.owner_account_id = %s AND d.search_enabled = true)
+     OR d.shared_team_id = %s)
 """
 
 _SEARCH_READY = """
@@ -418,7 +425,7 @@ class PersonalDocumentRepository:
                 cursor.execute(
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
-                           d.src_modified_at, d.storage_key,
+                           d.src_modified_at, d.storage_key, d.shared_team_id,
                            m.summary, m.doc_type, m.keywords, m.extract_status,
                            {_SEARCH_READY}
                     FROM doc AS d
@@ -429,6 +436,59 @@ class PersonalDocumentRepository:
                     (account_id,),
                 )
                 return list(cursor.fetchall())
+
+    @staticmethod
+    def list_shared_with_me(account_id: str) -> list[dict[str, Any]]:
+        """**팀원이 공유한 파일.** 내가 올린 것은 빼고 준다 — 내 것은 「내 파일」에
+        이미 있고, 두 목록에 같은 줄이 뜨면 어느 쪽에서 지워야 하는지 모른다.
+
+        올린 사람 이름을 함께 준다. 누가 올린 것인지 모르면 내용을 믿을 근거가
+        없다 — 팀 문서는 「우리 폴더에서 왔다」가 그 근거인데 여기는 사람이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
+                           d.src_modified_at, d.storage_key, d.shared_team_id,
+                           d.owner_account_id, ua.display_name AS owner_name,
+                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           {_SEARCH_READY}
+                    FROM doc AS d
+                    LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
+                    LEFT JOIN user_account AS ua ON ua.account_id = d.owner_account_id
+                    WHERE d.shared_team_id = %s
+                      AND d.owner_account_id <> %s
+                      AND d.deleted = false
+                    ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
+                    """,
+                    (team_id, account_id),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def set_shared(*, doc_id: str, account_id: str, shared: bool) -> str | None:
+        """내 파일을 팀에 공유하거나 거둔다. 공유한 팀 id 를 돌려준다(거두면 None).
+
+        **소유는 안 옮긴다.** `team_id` 를 채우면 팀 문서가 되어 소유가 사라지고
+        검사(`doc_owner_xor_team`)에도 걸린다 — 공유는 보여 주는 것이지 넘기는
+        것이 아니다. 거두면 팀원 목록에서 바로 사라지고, **읽어 둔 색인은
+        그대로 남는다**(소유자는 계속 쓴다).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id) if shared else None
+                cursor.execute(
+                    "UPDATE doc SET shared_team_id = %s "
+                    "WHERE doc_id = %s AND owner_account_id = %s AND deleted = false",
+                    (team_id, doc_id, account_id),
+                )
+                if cursor.rowcount == 0:
+                    raise RecordNotFound(f"존재하지 않는 내 파일입니다: {doc_id}")
+        return team_id
 
     @staticmethod
     def set_search_enabled(*, doc_id: str, account_id: str, enabled: bool) -> None:
@@ -532,7 +592,7 @@ class VectorSearchRepository:
                     LIMIT %s
                     """,
                     (
-                        vector_literal(query_vector), team_id, account_id, document_ids,
+                        vector_literal(query_vector), team_id, account_id, team_id, document_ids,
                         "google/embeddinggemma-300m", vector_literal(query_vector), top_k,
                     ),
                 )
@@ -684,7 +744,7 @@ class DocMetaRepository:
                     LIMIT %s
                     """,
                     (
-                        vector_literal(query_vector), team_id, account_id,
+                        vector_literal(query_vector), team_id, account_id, team_id,
                         vector_literal(query_vector), top_n,
                     ),
                 )

@@ -25,4 +25,7 @@ def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
         "keywords": row.get("keywords") or [],
         "extract_status": row.get("extract_status"),
         "uploaded_at": row.get("src_modified_at"),
+        "shared": row.get("shared_team_id") is not None,
+        # 공유 받은 목록에만 있다. 누가 올렸는지 모르면 내용을 믿을 근거가 없다.
+        "owner_name": row.get("owner_name"),
     }

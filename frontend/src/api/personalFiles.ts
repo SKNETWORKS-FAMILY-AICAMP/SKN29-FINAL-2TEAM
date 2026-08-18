@@ -20,10 +20,19 @@ export interface PersonalFile {
   /** null(아직 읽는 중) / OK / FAILED / UNSUPPORTED. 넷은 할 행동이 다르다. */
   extract_status: string | null;
   uploaded_at: string | null;
+  /** 팀에 공유했는가. **소유는 안 옮긴다** — 보여 주는 것이지 넘기는 것이 아니다. */
+  shared: boolean;
+  /** 공유 받은 목록에만 있다. 누가 올렸는지 모르면 내용을 믿을 근거가 없다. */
+  owner_name: string | null;
 }
 
 export function listPersonalFiles(token: string) {
   return apiRequest<PersonalFile[]>('/me/files/', { token });
+}
+
+/** 팀원이 공유한 파일. **내가 올린 것은 안 나온다** — 「내 파일」에 이미 있다. */
+export function listSharedFiles(token: string) {
+  return apiRequest<PersonalFile[]>('/me/files/shared/', { token });
 }
 
 /** 올린다. multipart 처리는 `apiUpload` 가 한다(401 이면 세션도 정리한다). */
@@ -35,13 +44,23 @@ export function uploadPersonalFile(token: string, file: File) {
   );
 }
 
-/** 검색 범위에 넣고 뺀다. **색인은 안 건드린다** — 다시 켤 때 또 파싱하지 않는다. */
-export function setPersonalFileSearch(token: string, docId: string, enabled: boolean) {
-  return apiRequest<{ doc_id: string; search_enabled: boolean }>(`/me/files/${docId}/`, {
-    method: 'PATCH',
-    body: { search_enabled: enabled },
-    token,
-  });
+/**
+ * 켜고 끈다. 두 값은 **다른 것**이다 —
+ *
+ * - `search_enabled` … 내 검색에 쓴다. 끄면 색인은 남고 범위에서만 빠진다.
+ * - `shared` … 팀이 봐도 된다. 거두면 팀원 목록에서 바로 사라진다.
+ *
+ * 내 검색에서 빼 두고 팀에는 공유하는 것도, 그 반대도 말이 된다.
+ */
+export function setPersonalFileFlags(
+  token: string,
+  docId: string,
+  flags: { search_enabled?: boolean; shared?: boolean },
+) {
+  return apiRequest<{ doc_id: string; search_enabled: boolean | null; shared: boolean | null }>(
+    `/me/files/${docId}/`,
+    { method: 'PATCH', body: flags, token },
+  );
 }
 
 /** **되살릴 수 없다.** 원본이 우리뿐이라 행·색인·원문을 함께 지운다. */

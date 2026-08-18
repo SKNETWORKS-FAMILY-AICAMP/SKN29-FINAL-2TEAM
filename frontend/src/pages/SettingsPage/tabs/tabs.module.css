@@ -381,3 +381,34 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* ── 「내 파일」 안쪽 탭 (2026-08-18) ─────────────────────────────────── */
+
+.innerTabs {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.innerTab {
+  border: none;
+  background: none;
+  padding: 6px 2px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-muted);
+  /* 한글은 어절 단위로 끊는다 — 「공유 받 / 은 파일」이 되면 안 된다. */
+  word-break: keep-all;
+}
+
+.innerTab + .innerTab {
+  margin-left: var(--space-3);
+}
+
+.innerTabOn {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
