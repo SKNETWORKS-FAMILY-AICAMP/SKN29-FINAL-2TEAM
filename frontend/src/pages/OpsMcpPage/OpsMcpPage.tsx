@@ -137,13 +137,22 @@ export default function OpsMcpPage() {
     setNote('');
   }
 
-  function cancelEdit() {
+  /**
+   * 폼을 비운다. **`note` 는 건드리지 않는다** — 저장 뒤에도 부르는데, 여기서
+   * 함께 지우면 방금 띄운 「수정했습니다」가 그 자리에서 사라진다(2026-08-18 QA).
+   */
+  function resetForm() {
     setEditing(null);
     setName('');
     setUrl('');
     setAuthToken('');
     setFound(null);
     setFormError('');
+  }
+
+  /** 취소는 「아무 일도 없었다」라 안내도 함께 지운다. */
+  function cancelEdit() {
+    resetForm();
     setNote('');
   }
 
@@ -171,7 +180,7 @@ export default function OpsMcpPage() {
         updated.name + ' 연결을 수정했습니다.'
           + (moved ? ' 주소가 바뀌어 도구를 다시 읽어야 합니다 — 목록에서 ‘연결 확인’을 누르세요.' : '')
       );
-      cancelEdit();
+      resetForm();
       await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '수정하지 못했습니다.');
