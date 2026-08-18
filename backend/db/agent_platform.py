@@ -187,6 +187,54 @@ class AgentRepository:
                 return cursor.fetchone()
 
     @staticmethod
+    def main_model_for_team(team_id: str) -> dict[str, Any] | None:
+        """운영자 콘솔이 쓰는 조회. **`team_id` 를 직접 받는다** — 운영자에게는
+        자기 팀이 없어 `_require_team` 이 통하지 않는다(모델 등록·커스텀 도구와
+        같은 모양이다)."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT a.agent_id, a.name, a.model
+                    FROM agent AS a
+                    JOIN agent_tool AS t ON t.agent_id = a.agent_id
+                    WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
+                    LIMIT 1
+                    """,
+                    (team_id, AgentRepository.PLATFORM_TOOL),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_main_model_for_team(*, team_id: str, model: str) -> dict[str, Any]:
+        """운영자가 그 팀의 기본 채팅 모델을 정한다(2026-08-18 멘토링).
+
+        **전역 하나로 두지 않는다.** 계약·리전 요건이 다른 회사를 못 받기
+        때문이다 — 8/13 에 커스텀 모델을 팀 단위로 붙인 것과 같은 이유다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE agent SET model = %s
+                    WHERE agent_id = (
+                        SELECT a.agent_id FROM agent AS a
+                        JOIN agent_tool AS t ON t.agent_id = a.agent_id
+                        WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
+                        LIMIT 1
+                    )
+                    RETURNING agent_id, name, model
+                    """,
+                    (model, team_id, AgentRepository.PLATFORM_TOOL),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("이 팀에는 아직 기본 에이전트가 없습니다.")
+                return row
+
+    @staticmethod
     def set_main_model(*, account_id: str, model: str) -> dict[str, Any]:
         """메인 모델을 바꾼다.
 

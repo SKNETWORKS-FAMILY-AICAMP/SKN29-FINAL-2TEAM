@@ -11,11 +11,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
-from apps.accounts.permissions import require_leader
 from backend.db import AccountRepository
 from backend.db.agent_platform import (
     AgentCrudRepository,
-    AgentRepository,
     AgentVersionCrudRepository,
     CustomModelRepository,
 )
@@ -35,7 +33,6 @@ from .serializers import (
     AgentWriteSerializer,
     BuilderTestRunSerializer,
     BuilderToolCheckSerializer,
-    MainModelSerializer,
     agent_response,
     agent_version_response,
     builtin_tool_response,
@@ -197,50 +194,6 @@ class AgentToolCatalogAPIView(AuthenticatedAPIView):
 
 
 #: 메인 모델은 **팀이 한 번 정하는 값**이라(아래 docstring) 한 사람이 바꾸면 팀
-#: 전체의 대화가 그 모델로 돈다. 커넥터 연결과 같은 무게다.
-MAIN_MODEL_LEADER_ONLY = "팀장만 팀 메인 모델을 바꿀 수 있습니다."
-
-
-class MainModelAPIView(AuthenticatedAPIView):
-    """이 팀의 **메인 모델** — 오케스트레이션하는 정문 에이전트가 쓰는 모델.
-
-    Chat 은 정문에게 말하고, 정문이 필요하면 팀 에이전트에게 넘긴다. 그래서
-    「대화가 어떤 모델로 도는가」는 정문의 모델이고, 그것은 **팀이 한 번 정하는
-    값**이다 — 개별 에이전트의 모델은 그 에이전트를 만들 때 각자 고른다.
-
-    저장 자리를 `team` 에 새로 만들지 않고 정문 에이전트의 `model` 을 그대로
-    쓴다. 스키마를 바꾸면 팀원 전원이 ALTER 를 돌려야 하는데, 여기서 정하려는
-    값이 실제로 그 에이전트의 모델이라 새 칸을 만들 이유가 없다.
-    """
-
-    def get(self, request):
-        try:
-            row = AgentRepository.main_model(request.user.account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        # 정문이 없으면 「없다」고 말한다. 임의의 기본값을 저장된 것처럼 보이면 안 된다.
-        return Response({"model": row["model"] if row else None, "agent_name": row["name"] if row else None})
-
-    def put(self, request):
-        # 조회는 팀원도 한다 — 무엇으로 도는지는 알아야 한다. 막는 것은 바꾸는 쪽이다.
-        if denied := require_leader(request.user.account_id, MAIN_MODEL_LEADER_ONLY):
-            return denied
-
-        serializer = MainModelSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        model = serializer.validated_data["model"]
-
-        rejection = _model_rejection(request.user.account_id, model)
-        if rejection is not None:
-            return rejection
-
-        try:
-            row = AgentRepository.set_main_model(account_id=request.user.account_id, model=model)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response({"model": row["model"], "agent_name": row["name"]})
-
-
 class CustomModelAPIView(AuthenticatedAPIView):
     """이 팀에 등록된 모델 API. **읽기 전용이다.**
 

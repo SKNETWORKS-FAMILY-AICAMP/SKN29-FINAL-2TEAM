@@ -108,21 +108,6 @@ export function listToolChoices(token: string) {
   return apiRequest<ToolChoice[]>('/agents/tools/', { token });
 }
 
-/** 이 팀의 메인 모델 — 오케스트레이션하는 정문 에이전트가 쓰는 모델. */
-export interface MainModel {
-  /** 팀에 정문이 아직 없으면 null. 그때는 화면이 「없다」고 말한다. */
-  model: string | null;
-  agent_name: string | null;
-}
-
-export function fetchMainModel(token: string) {
-  return apiRequest<MainModel>('/agents/main-model/', { token });
-}
-
-export function saveMainModel(token: string, model: string) {
-  return apiRequest<MainModel>('/agents/main-model/', { method: 'PUT', token, body: { model } });
-}
-
 /** 팀이 등록한 커스텀 모델 API 한 건. **키는 서버가 돌려주지 않는다.** */
 export interface CustomModel {
   conn_id: string;

@@ -6,12 +6,14 @@ import { loadUserRole } from '../../utils/userRole';
 import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettingsPage';
 import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
-import { ModelTab } from './tabs/ModelTab';
 import { MyFilesTab } from './tabs/MyFilesTab';
 import styles from './SettingsPage.module.css';
 
 /**
- * Settings 허브 — 팀 / Connector / Model / 내 파일 탭 컨테이너.
+ * Settings 허브 — 팀 / 커넥터 / 내 파일 탭 컨테이너.
+ *
+ * **Model 탭은 걷었다**(2026-08-18 멘토링). 기본 채팅 모델은 운영자가 팀별로
+ * 정하고(`/ops/models`), 에이전트별 모델은 빌더에 그대로 있다.
  *
  * **커스텀 도구 탭은 걷었다**(2026-08-18 PM). 팀이 붙일 수 없게 된 뒤로는
  * 「볼 수만 있는 탭」이었고, 정작 그 서버의 도구를 고르는 자리는 에이전트
@@ -31,8 +33,6 @@ export default function SettingsPage() {
     switch (location.pathname) {
       case PATHS.settingsConnectors:
         return <ConnectorTab />;
-      case PATHS.settingsModel:
-        return <ModelTab />;
       case PATHS.settingsMyFiles:
         return <MyFilesTab />;
       default:

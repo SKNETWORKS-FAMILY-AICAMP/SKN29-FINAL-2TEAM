@@ -683,8 +683,9 @@ class LeaderOnlyGuardTests(SimpleTestCase):
     """
 
     #: 팀장 전용이라고 화면이 선언한 쓰기 경로 전부.
-    #: MCP 쓰기 넷은 여기 없다 — 팀장 전용이 아니라 **팀에 아예 없어졌다**
-    #: (2026-08-18 · 운영자 콘솔로 갔다). 경로가 사라진 것은 test_mcp.py 가 잰다.
+    #: MCP 쓰기 넷과 팀 메인 모델은 여기 없다 — 팀장 전용이 아니라 **팀에 아예
+    #: 없어졌다**(2026-08-18 · 둘 다 운영자 콘솔로 갔다). 경로가 사라진 것은
+    #: test_mcp.py 와 test_agents.py 가 각각 잰다.
     LEADER_ONLY = [
         ("/api/invites/", "post", {"person_id": "PB002"}),
         ("/api/invites/MI001/revoke/", "post", {}),
@@ -692,7 +693,6 @@ class LeaderOnlyGuardTests(SimpleTestCase):
         ("/api/teams/members/PB002/", "delete", None),
         ("/api/teams/settings/", "put", {"capacity_wk_hours": 40}),
         ("/api/team/folders/", "put", {"conn_id": "CN003", "folders": []}),
-        ("/api/agents/main-model/", "put", {"model": "gpt-5.6-luna"}),
     ]
 
     def _call(self, url, method, body):
@@ -702,7 +702,7 @@ class LeaderOnlyGuardTests(SimpleTestCase):
             return send(url, headers=headers)
         return send(url, body, content_type="application/json", headers=headers)
 
-    def test_팀원은_일곱_경로_전부에서_403(self, get_profile):
+    def test_팀원은_여섯_경로_전부에서_403(self, get_profile):
         get_profile.return_value = member_profile()
 
         for url, method, body in self.LEADER_ONLY:

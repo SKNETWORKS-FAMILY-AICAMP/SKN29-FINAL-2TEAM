@@ -256,25 +256,27 @@ class AgentApiTests(SimpleTestCase):
         self.assertEqual(self.client.get("/api/agents/").status_code, 401)
 
 
-@patch("apps.agents.api_views.AgentRepository")
-class MainModelApiTests(SimpleTestCase):
-    """메인 모델 — 오케스트레이션하는 정문 에이전트의 모델.
+class MainModelGoneTests(SimpleTestCase):
+    """메인 모델 API 는 **팀 쪽에 없다**(2026-08-18 멘토링).
 
-    예전 Model 탭은 라디오가 아무 데도 저장되지 않았다. 저장되는 척하는 컨트롤을
-    없애는 것이 이 API 의 목적이라, **실제로 쓰기가 도는지**를 본다.
+    기본 채팅 모델은 운영자가 팀별로 정한다(`/api/ops/models/teams/<id>/default/` ·
+    `tests/test_ops.py::OpsTeamDefaultModelTests`). 화면에서만 감추면 API 가 그대로
+    열려 있으므로, **경로가 사라졌다는 것 자체를 여기서 지킨다** — 8/13 에 모델
+    등록을 옮길 때와 같은 방식이다.
     """
 
-    def test_정문이_없으면_null_을_준다(self, repo):
-        """임의의 기본값을 저장된 것처럼 보이면 안 된다 — 그게 옛 화면의 문제였다."""
+    def test_경로가_메인_모델_뷰로_안_간다(self):
+        """**`404` 로 재지 않는다.** 이 주소는 이제 `agents/<agent_id>/` 에 잡혀서
+        (`agent_id = "main-model"`) 없는 에이전트를 다루려다 400·404 를 낸다 —
+        상태 코드는 「경로가 없다」의 증거가 못 된다. 무엇에 잡히는지를 직접 본다."""
 
-        repo.main_model.return_value = None
+        from django.urls import resolve
 
-        body = self.client.get("/api/agents/main-model/", headers=auth_header()).json()
+        self.assertNotEqual(resolve("/api/agents/main-model/").url_name, "api_agent_main_model")
 
-        self.assertIsNone(body["model"])
-
-    def test_모델을_바꾼다(self, repo):
-        repo.set_main_model.return_value = {"agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-sol"}
+    @patch("apps.agents.api_views.AgentCrudRepository")
+    def test_모델을_바꿀_수_없다(self, crud):
+        """폼만 없애면 API 를 그대로 부를 수 있다 — 그건 규칙이 아니라 장식이다."""
 
         response = self.client.put(
             "/api/agents/main-model/",
@@ -283,27 +285,8 @@ class MainModelApiTests(SimpleTestCase):
             headers=auth_header(),
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(repo.set_main_model.call_args.kwargs["model"], "gpt-5.6-sol")
-
-    @patch("apps.agents.api_views.CustomModelRepository")
-    def test_고를_수_없는_모델은_거절한다(self, customs, repo):
-        """`-pro` 계열은 effort: low 를 안 받아 실행 시점에 400 이 난다 — 저장을 막는다."""
-
-        customs.list_for_account.return_value = []
-
-        response = self.client.put(
-            "/api/agents/main-model/",
-            {"model": "gpt-5.5-pro"},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 400)
-        repo.set_main_model.assert_not_called()
-
-    def test_로그인_없이는_401(self, _repo):
-        self.assertEqual(self.client.get("/api/agents/main-model/").status_code, 401)
+        self.assertNotEqual(response.status_code, 200)
+        crud.update.assert_not_called()
 
 
 @patch("apps.agents.api_views.CustomModelRepository")

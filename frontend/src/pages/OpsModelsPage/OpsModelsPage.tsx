@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, OpsDataTable, OpsEmpty, OpsPageHeader, OpsSectionCard } from '../../components';
-import { fetchOpsModels, probeOpsModels, registerOpsModel, removeOpsModel } from '../../api/opsModels';
-import type { OpsModel } from '../../api/opsModels';
+import {
+  fetchOpsModels,
+  fetchOpsTeamDefaultModel,
+  probeOpsModels,
+  registerOpsModel,
+  removeOpsModel,
+  saveOpsTeamDefaultModel,
+} from '../../api/opsModels';
+import type { OpsModel, OpsTeamDefaultModel } from '../../api/opsModels';
 import { fetchOpsTeams } from '../../api/opsTeams';
 import type { OpsTeam } from '../../api/opsTeams';
 import { PROVIDER_PRESETS } from '../../data/providers';
@@ -36,6 +43,9 @@ export default function OpsModelsPage() {
   /** 「모델 불러오기」로 받아 온 이름들. 비어 있으면 직접 입력으로 둔다. */
   const [available, setAvailable] = useState<string[]>([]);
   const [probeNote, setProbeNote] = useState('');
+  /** 기본 채팅 모델 — 고른 팀의 것. 팀을 바꾸면 다시 받아 온다. */
+  const [defaultModel, setDefaultModel] = useState<OpsTeamDefaultModel | null>(null);
+  const [defaultNote, setDefaultNote] = useState('');
 
   const preset = PROVIDER_PRESETS.find((item) => item.id === provider) ?? PROVIDER_PRESETS[0];
 
@@ -70,6 +80,32 @@ export default function OpsModelsPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** 고른 팀이 바뀌면 그 팀의 기본 모델을 다시 받는다. **팀마다 다른 값이다.** */
+  useEffect(() => {
+    const session = loadOpsSession();
+    if (!session || !teamId) return;
+    setDefaultNote('');
+    fetchOpsTeamDefaultModel(session.token, teamId)
+      .then(setDefaultModel)
+      .catch(() => setDefaultModel(null));
+  }, [teamId]);
+
+  async function saveDefault(model: string) {
+    const session = loadOpsSession();
+    if (!session || !teamId) return;
+    setBusy(true);
+    setFormError('');
+    try {
+      const saved = await saveOpsTeamDefaultModel(session.token, teamId, model);
+      setDefaultModel((prev) => (prev ? { ...prev, model: saved.model } : prev));
+      setDefaultNote(`${saved.agent_name} 이 ${saved.model} 로 돕니다.`);
+    } catch (thrown) {
+      setFormError(thrown instanceof ApiError ? thrown.message : '바꾸지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function pickProvider(id: string) {
     setProvider(id);
@@ -267,6 +303,46 @@ export default function OpsModelsPage() {
             {busy ? '확인하는 중…' : '등록'}
           </Button>
         </div>
+      </OpsSectionCard>
+
+      {/* **기본 채팅 모델은 팀마다 다르다**(2026-08-18 멘토링). 설정의 Model 탭을
+          걷어내고 여기로 옮겼다 — 8/13 에 모델 등록을 옮긴 것의 연장이다.
+          위 등록 폼과 팀 선택을 함께 쓴다: 같은 팀을 두 번 고를 이유가 없다. */}
+      <OpsSectionCard
+        title="기본 채팅 모델"
+        subtitle="위에서 고른 팀에 적용됩니다. 아무 에이전트도 고르지 않고 말을 걸었을 때 도는 모델입니다."
+      >
+        {defaultModel === null ? (
+          <p className={styles.inlineEmpty}>이 팀의 기본 모델을 불러오지 못했습니다.</p>
+        ) : defaultModel.agent_name === null ? (
+          /* 정문이 없으면 「없다」고 말한다. 임의의 기본값을 저장된 것처럼
+             보여주면 안 된다 — 팀 화면에서 지켜 온 규칙 그대로다. */
+          <p className={styles.inlineEmpty}>
+            이 팀에는 아직 기본 에이전트가 없습니다. 팀이 처음 대화를 시작하면 만들어집니다.
+          </p>
+        ) : (
+          <div className={styles.formGrid}>
+            <div className={styles.fieldGroup}>
+              <label htmlFor="team-default-model">{defaultModel.agent_name} 이 쓰는 모델</label>
+              {/* 이름을 외워 적게 하지 않는다 — 오타는 실행 시점 404 가 되고,
+                  그때 죽는 것은 우리가 아니라 그 팀의 대화다. */}
+              <select
+                id="team-default-model"
+                value={defaultModel.model ?? ''}
+                disabled={busy}
+                onChange={(event) => saveDefault(event.target.value)}
+              >
+                {defaultModel.model === null && <option value="">고르세요</option>}
+                {defaultModel.choices.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {defaultNote && <p className={styles.inlineEmpty}>{defaultNote}</p>}
+          </div>
+        )}
       </OpsSectionCard>
 
       <OpsSectionCard title={`등록된 모델 ${rows.length}건`}>

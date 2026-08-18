@@ -18,7 +18,8 @@ from rest_framework.response import Response
 
 from backend.api_errors import to_response
 from backend.db import log_audit
-from backend.db.agent_platform import CustomModelRepository
+from apps.agents.serializers import AGENT_MODELS
+from backend.db.agent_platform import AgentRepository, CustomModelRepository
 from backend.db.errors import RepositoryError
 
 from ..authentication import AdminView
@@ -84,6 +85,70 @@ class ModelListCreateView(AdminView):
         return Response(
             {"team_id": data["team_id"], "model": data["model"]}, status=status.HTTP_201_CREATED
         )
+
+
+class TeamDefaultModelView(AdminView):
+    """그 팀의 **기본 채팅 모델** — 정문 에이전트가 쓰는 모델.
+
+    **팀이 화면에서 고르지 않는다**(2026-08-18 멘토링). 설정의 Model 탭을
+    걷어내고 여기로 옮겼다. 8/13 에 모델 **등록**을 옮긴 것의 연장이다 — 그때는
+    「어떤 모델을 붙일 수 있나」였고 이번은 「기본으로 무엇을 쓰나」다.
+
+    **전역 하나로 두지 않는다.** 계약·리전 요건이 다른 회사를 못 받는다. 그래서
+    팀을 받아 그 팀의 정문에만 쓴다.
+
+    **에이전트별 모델은 그대로 빌더에 있다**(8/18 PM 결정). 여기서 정하는 것은
+    아무것도 안 고르고 말을 걸었을 때 도는 모델 하나뿐이다.
+    """
+
+    def get(self, request, team_id):
+        try:
+            row = AgentRepository.main_model_for_team(team_id)
+            # 고를 수 있는 것을 함께 준다 — 운영자가 모델 이름을 외워 적을 자리가
+            # 아니다. 오타는 실행 시점 404 가 되고, 그때 죽는 것은 그 팀의 대화다.
+            customs = sorted(CustomModelRepository.models_for_team(team_id))
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+        return Response(
+            {
+                # 정문이 없으면 「없다」고 말한다. 임의의 기본값을 저장된 것처럼
+                # 보이면 안 된다(팀 화면에서 지켜 온 규칙 그대로다).
+                "model": row["model"] if row else None,
+                "agent_name": row["name"] if row else None,
+                "choices": list(AGENT_MODELS) + customs,
+            }
+        )
+
+    def put(self, request, team_id):
+        model = (request.data.get("model") or "").strip()
+        if not model:
+            return Response({"detail": "모델이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            allowed = set(AGENT_MODELS) | CustomModelRepository.models_for_team(team_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+        if model not in allowed:
+            # 아무 문자열이나 받으면 저장은 되고 **실행 시점에 404 로 죽는다.**
+            # 운영자는 저장됐으니 맞다고 믿고, 죽는 것은 그 팀의 대화다.
+            return Response(
+                {"detail": f"{model} 은 이 팀이 쓸 수 없는 모델입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            row = AgentRepository.set_main_model_for_team(team_id=team_id, model=model)
+            # 남의 팀 대화가 도는 모델을 바꾸는 일이라 기록에 남는다.
+            log_audit(
+                actor_account_id=request.user.account_id,
+                action="OPS_TEAM_MODEL_SET",
+                target_type="TEAM",
+                target_id=team_id,
+                payload={"model": model, "agent_name": row["name"]},
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+        return Response({"model": row["model"], "agent_name": row["name"]})
 
 
 class ModelProbeView(AdminView):

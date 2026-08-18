@@ -20,6 +20,27 @@ export interface OpsModelRegisterInput {
   model: string;
 }
 
+/** 그 팀의 **기본 채팅 모델** — 아무 에이전트도 안 고르고 말을 걸었을 때 도는 것. */
+export interface OpsTeamDefaultModel {
+  /** 팀에 정문이 아직 없으면 null. 그때 화면은 「없다」고 말한다. */
+  model: string | null;
+  agent_name: string | null;
+  /** 기본 제공 + 그 팀에 등록된 것. **외워 적게 하지 않는다.** */
+  choices: string[];
+}
+
+export function fetchOpsTeamDefaultModel(token: string, teamId: string) {
+  return opsRequest<OpsTeamDefaultModel>(`/ops/models/teams/${teamId}/default/`, { token });
+}
+
+/** 팀별로 정한다 — 전역 하나로 두면 계약·리전 요건이 다른 회사를 못 받는다. */
+export function saveOpsTeamDefaultModel(token: string, teamId: string, model: string) {
+  return opsRequest<{ model: string; agent_name: string }>(
+    `/ops/models/teams/${teamId}/default/`,
+    { method: 'PUT', token, body: { model } },
+  );
+}
+
 export function fetchOpsModels(token: string) {
   return opsRequest<OpsModel[]>('/ops/models/', { token });
 }
