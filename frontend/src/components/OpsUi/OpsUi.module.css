@@ -240,7 +240,15 @@ button.summaryCard:hover {
   background: #eff6ff;
 }
 
-.tableWrap button {
+/**
+ * 표 안의 조작은 기본적으로 **글씨처럼** 둔다. 칸이 좁아서 버튼을 채우면 표가
+ * 버튼 밭이 되고, 정작 읽어야 할 값이 눌린다.
+ *
+ * 다만 **버튼으로 보여야 하는 자리는 빠져나갈 수 있어야 한다** — `data-button`
+ * 을 단 버튼은 자기 variant 를 그대로 쓴다(2026-08-18: 커스텀 도구의 연결
+ * 확인·지우기 — 누르는 것과 읽는 것이 같아 보이면 안 된다는 PM 지적).
+ */
+.tableWrap button:not([data-button]) {
   border: 0;
   background: none;
   color: var(--color-primary);

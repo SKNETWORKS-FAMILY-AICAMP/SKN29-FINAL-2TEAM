@@ -108,7 +108,7 @@ export default function OpsMcpPage() {
       // **등록과 연결 확인은 다른 일이다**(2026-08-18 PM). 등록은 행을 만들고,
       // 연결 확인은 그 주소를 실제로 두드린다 — 한 버튼에 묶으면 둘 중 어느
       // 쪽이 실패했는지 화면이 말해 줄 수 없다.
-      setNote(created.name + ' 을 등록했습니다. 도구는 목록에서 「연결 확인」을 눌러 읽습니다.');
+      setNote(created.name + ' 연결을 등록했습니다. 도구는 목록에서 「연결 확인」을 눌러 읽습니다.');
       await load();
     } catch (thrown) {
       // 주소 검사(SSRF·https 아님)는 저장 전에 400 으로 온다.
@@ -167,7 +167,7 @@ export default function OpsMcpPage() {
     try {
       await removeOpsMcpServer(session.token, row.mcp_server_id, row.team_id);
       // 이 서버의 도구를 쓰던 에이전트에서도 함께 빠진다(서버가 정리한다).
-      setNote(row.name + ' 을 지웠습니다. 에이전트에 붙어 있던 도구도 함께 빠집니다.');
+      setNote(row.name + ' 연결을 지웠습니다. 에이전트에 붙어 있던 도구도 함께 빠집니다.');
       await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '지우지 못했습니다.');
@@ -276,7 +276,7 @@ export default function OpsMcpPage() {
         {rows.length === 0 ? (
           <OpsEmpty message="아직 어느 팀에도 등록한 서버가 없습니다." />
         ) : (
-          <OpsDataTable minWidth={900}>
+          <OpsDataTable minWidth={960}>
             <thead>
               {/* `table-layout: fixed` 라 폭을 안 주면 7칸이 균등하게 갈린다 —
                   정작 긴 주소만 굶는다. */}
@@ -287,7 +287,10 @@ export default function OpsMcpPage() {
                 <th style={{ width: 90 }}>상태</th>
                 <th style={{ width: 70 }}>도구</th>
                 <th style={{ width: 110 }}>확인</th>
-                <th style={{ width: 150 }} />
+                {/* **버튼 둘이 한 줄에 들어갈 폭을 준다.** 150 이었을 때 표
+                    화면에서 「연결 확인」과 「지우기」가 세로로 접혔다
+                    (2026-08-18 PM · 좁은 화면의 쌓기와 구분이 안 된다). */}
+                <th style={{ width: 210 }} />
               </tr>
             </thead>
             <tbody>
@@ -305,15 +308,25 @@ export default function OpsMcpPage() {
                   <td>{row.last_checked_at ? row.last_checked_at.slice(0, 10) : '없음'}</td>
                   <td>
                     <div className={styles.cellActions}>
+                      {/* `data-button` — 운영자 표는 안에 든 버튼의 테두리를
+                          벗겨 글씨처럼 만든다(`OpsUi.module.css`). 여기는
+                          버튼으로 보여야 해서 빠져나간다. */}
                       <Button
                         size="sm"
                         variant="outline"
+                        data-button
                         disabled={busy}
                         onClick={() => test(row.mcp_server_id, row.team_id, row.name)}
                       >
                         연결 확인
                       </Button>
-                      <Button size="sm" variant="danger" disabled={busy} onClick={() => remove(row)}>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        data-button
+                        disabled={busy}
+                        onClick={() => remove(row)}
+                      >
                         지우기
                       </Button>
                     </div>
