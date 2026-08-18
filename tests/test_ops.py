@@ -75,7 +75,7 @@ class OpsAuthenticationTests(SimpleTestCase):
 @patch("apps.ops.views.mcp.log_audit")
 @patch("apps.ops.views.mcp.McpServerRepository")
 class OpsMcpTests(SimpleTestCase):
-    """팀별 Customizing Tool 등록 — **팀이 스스로 등록하지 않는다**(2026-08-18 멘토링).
+    """팀별 커스텀 도구 등록 — **팀이 스스로 등록하지 않는다**(2026-08-18 멘토링).
 
     모델(§2026-08-13)과 같은 모양이다. 팀 설정에는 목록만 남고 등록·수정·삭제·
     연결 확인이 여기로 왔다. SSRF 차단은 팀 쪽에 있던 그대로 따라와야 한다 —
@@ -215,6 +215,42 @@ class OpsMcpTests(SimpleTestCase):
         self.assertEqual(response.json()["error_code"], "401")
         repo.mark_error.assert_called_once()
         repo.delete.assert_not_called()
+
+    @patch("apps.ops.views.mcp.validate", return_value="https://mcp.example.com/rpc")
+    @patch("apps.ops.views.mcp.initialize_and_list_tools")
+    def test_연결_확인만_하면_아무것도_저장하지_않는다(self, discover, _validate, repo, _audit, _admin):
+        """안 되는 것을 등록해 두면 그 팀의 대화가 조용히 실패한다."""
+
+        discover.return_value = [{"name": "create_issue", "description": "d", "input_schema": {}}]
+
+        response = self.client.post(
+            f"{self.URL}probe/",
+            {"endpoint_url": "https://mcp.example.com/rpc", "auth_token": "t"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["tools"], ["create_issue"])
+        repo.create.assert_not_called()
+
+    def test_연결_확인도_위험한_주소는_두드리지_않는다(self, repo, _audit, _admin):
+        """저장을 안 한다고 안전해지지 않는다 — 우리 서버가 내부망을 대신 두드린다."""
+
+        response = self.client.post(
+            f"{self.URL}probe/",
+            {"endpoint_url": "http://localhost:5432/rpc"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_probe_가_서버_상세로_잡히지_않는다(self, _repo, _audit, _admin):
+        """`mcp/probe/` 가 `mcp/<server_id>/` 뒤에 있으면 상세로 잡힌다."""
+
+        from django.urls import resolve
+
+        self.assertEqual(resolve(f"{self.URL}probe/").url_name, "api_ops_mcp_probe")
+        self.assertEqual(resolve(f"{self.URL}MS001/").url_name, "api_ops_mcp_detail")
 
     def test_팀_없이는_지우지_않는다(self, repo, _audit, _admin):
         """`server_id` 하나로 지우면 어느 팀 것인지 확인하는 자물쇠가 없어진다."""

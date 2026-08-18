@@ -10,7 +10,7 @@ type Tab = 'builtin' | 'mcp' | 'create';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'builtin', label: '툴 선택' },
-  { id: 'mcp', label: 'Customizing Tool 선택' },
+  { id: 'mcp', label: '커스텀 도구 선택' },
   { id: 'create', label: '툴 생성' },
 ];
 
@@ -156,8 +156,8 @@ export function ToolPickerModal({
       {tab === 'create' && (
         <div className={styles.createTab}>
           <p className={pageStyles.help}>
-            팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 연결한
-            Customizing Tool 의 도구만 쓸 수 있습니다.
+            팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 이 팀에
+            붙어 있는 커스텀 도구만 쓸 수 있습니다.
           </p>
           <Button variant="outline" disabled>
             새 도구 만들기 (준비 중)

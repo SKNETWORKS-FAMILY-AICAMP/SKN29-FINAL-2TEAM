@@ -410,6 +410,19 @@
   font-size: 11px;
 }
 
+/**
+ * 표 안의 조작 버튼 짝(연결 확인 · 지우기).
+ *
+ * `compactActions` 와 다르다 — 그쪽은 테두리를 벗겨 글씨처럼 보이게 하는데,
+ * **누르는 것은 버튼으로 보여야 한다**(2026-08-18 PM). 여기서는 버튼 모양을
+ * 그대로 두고 간격만 준다.
+ */
+.cellActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .compactActions {
   display: flex;
   flex-wrap: wrap;
@@ -646,6 +659,9 @@
 .formSubmit {
   display: flex;
   justify-content: flex-end;
+  /* 버튼이 둘 이상인 폼(커스텀 도구: 연결 확인 · 등록)에서 서로 붙지 않게 한다.
+     하나뿐인 화면에는 영향이 없다. */
+  gap: 8px;
   /* 필드 사이(`formGrid` 의 14px)보다 넓어야 「입력은 여기까지」로 읽힌다.
      `sectionCard` 는 자식 간격을 안 주므로 그냥 두면 마지막 칸에 딱 붙는다
      (2026-08-13 PM 지적). 설정 카드의 자식 간격과 같은 20px 로 맞춘다. */

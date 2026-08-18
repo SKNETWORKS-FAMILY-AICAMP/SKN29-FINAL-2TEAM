@@ -2,7 +2,7 @@ import { opsRequest } from './opsClient';
 import type { McpServer } from './mcp';
 
 /**
- * 운영자가 팀에 붙여 주는 Customizing Tool 서버.
+ * 운영자가 팀에 붙여 주는 커스텀 도구 서버.
  *
  * **팀이 스스로 등록하지 않는다**(2026-08-18 멘토링). 설정 탭에는 목록만 남고
  * 등록·수정·삭제·연결 확인이 여기로 왔다 — 모델(`opsModels.ts`)과 같은 모양이다.
@@ -59,6 +59,20 @@ export function removeOpsMcpServer(token: string, serverId: string, teamId: stri
   return opsRequest<void>(`/ops/mcp/${serverId}/?team_id=${encodeURIComponent(teamId)}`, {
     method: 'DELETE',
     token,
+  });
+}
+
+/**
+ * **저장하기 전에** 그 주소·토큰으로 도구를 읽어 본다. 행을 만들지 않는다.
+ *
+ * 안 되는 것을 등록해 두면 그 팀의 대화가 조용히 실패하고, 팀은 운영자가 붙여
+ * 줬으니 되는 줄 안다 — 모델 등록의 「모델 불러오기」와 같은 자리다.
+ */
+export function probeOpsMcpServer(token: string, endpointUrl: string, authToken: string) {
+  return opsRequest<{ tools: string[]; detail: string | null }>('/ops/mcp/probe/', {
+    method: 'POST',
+    token,
+    body: { endpoint_url: endpointUrl, auth_token: authToken },
   });
 }
 

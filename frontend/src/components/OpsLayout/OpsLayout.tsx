@@ -22,7 +22,7 @@ const OPS_NAV_ITEMS: OpsNavItem[] = [
   { label: '계정 연결·초대', to: '/ops/mappings', icon: 'link' },
   { label: '연결 서비스', to: '/ops/connectors', icon: 'database' },
   { label: '모델 등록', to: '/ops/models', icon: 'sparkles' },
-  { label: 'Customizing Tool', to: '/ops/mcp', icon: 'wrench' },
+  { label: '커스텀 도구', to: '/ops/mcp', icon: 'wrench' },
   { label: '감사 로그', to: '/ops/audit', icon: 'shield-check' },
   { label: '전역 정책', to: '/ops/policies', icon: 'sliders' },
 ];

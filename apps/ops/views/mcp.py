@@ -1,4 +1,4 @@
-"""팀별 Customizing Tool(MCP·FastAPI 서버) 등록·연결 확인·삭제.
+"""팀별 커스텀 도구(MCP·FastAPI 서버) 등록·연결 확인·삭제.
 
 **팀이 스스로 등록하지 않는다.** 요청을 받으면 운영자가 등록한다(2026-08-18
 멘토링). 설정 화면의 등록 폼은 없앴다 — 붙이려면 https 주소와 인증 토큰을
@@ -74,6 +74,40 @@ class McpListCreateView(AdminView):
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
         return Response(server_response(row), status=status.HTTP_201_CREATED)
+
+
+class McpProbeView(AdminView):
+    """주소와 토큰을 주면 **저장하지 않고** 도구 목록만 읽어 온다.
+
+    **안 되는 것을 등록해 두지 않는다.** 등록해 두면 그 팀의 대화가 조용히
+    실패하고, 팀은 운영자가 붙여 줬으니 되는 줄 안다 — 모델 등록에서 저장 전에
+    한 번 불러 보는 것(`views/models.py`)과 같은 이유다.
+
+    행을 만들지 않으므로 팀도 필요 없다. 실패는 **여기서 끝난다** — 남는 것이
+    없으니 고칠 값도 없고, 화면이 이유만 보여주면 된다.
+    """
+
+    def post(self, request):
+        endpoint_url = (request.data.get("endpoint_url") or "").strip()
+        if not endpoint_url:
+            return Response({"detail": "주소가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            endpoint_url = validate(endpoint_url)
+        except UnsafeEndpoint as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            tools = initialize_and_list_tools(
+                endpoint_url=endpoint_url,
+                auth_token=(request.data.get("auth_token") or "").strip() or None,
+            )
+        except (McpError, UnsafeEndpoint) as exc:
+            # 토큰이 섞여 들어갈 수 있는 자리라 예외 문자열을 그대로 로그에
+            # 남기지 않는다(§4-2 — 로그에 토큰 금지).
+            logger.info("연결 확인 실패: %s", exc.__class__.__name__)
+            return Response({"tools": [], "detail": str(exc)})
+        return Response({"tools": [tool["name"] for tool in tools], "detail": None})
 
 
 class McpDetailView(AdminView):

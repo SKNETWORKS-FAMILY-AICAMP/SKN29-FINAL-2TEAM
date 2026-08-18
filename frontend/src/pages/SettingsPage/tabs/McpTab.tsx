@@ -23,7 +23,7 @@ const STATUS: Record<McpServer['status'], { tone: BadgeTone; label: string; hint
 };
 
 /**
- * Customizing Tool 탭 — **보기만 한다**(2026-08-18 멘토링).
+ * 커스텀 도구 탭 — **보기만 한다**(2026-08-18 멘토링).
  *
  * 등록·수정·삭제·연결 확인은 운영자 콘솔로 옮겼다. 붙이려면 https 주소와 인증
  * 토큰을 알아야 하는데, 그건 「코딩 없이」를 내세운 제품이 비개발자에게 요구할
@@ -53,8 +53,8 @@ export function McpTab() {
       <section className={styles.card}>
         <div className={styles.cardHead}>
           <h2 className={styles.cardTitle}>
-            Customizing Tool
-            <InfoNote title="Customizing Tool">
+            커스텀 도구
+            <InfoNote title="커스텀 도구">
               <p>
                 <strong>직접 만들거나 운영하는 서버</strong>를 붙이는 곳입니다. 붙여 두면 그 서버가
                 제공하는 도구를 에이전트가 쓸 수 있습니다. MCP·FastAPI 둘 다 됩니다.

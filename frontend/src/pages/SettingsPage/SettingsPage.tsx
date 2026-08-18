@@ -11,7 +11,7 @@ import { ModelTab } from './tabs/ModelTab';
 import styles from './SettingsPage.module.css';
 
 /**
- * Settings 허브 — 팀 / Connector / Customizing Tool / Model / 권한 탭 컨테이너.
+ * Settings 허브 — 팀 / Connector / 커스텀 도구 / Model / 권한 탭 컨테이너.
  * 8_화면개편_명세 §2에서 역할 분기 래퍼였던 이 화면을 허브로 승격시켰다.
  *
  * 「팀」 탭은 기존 팀장·팀원 설정 화면을 그대로 편입한다. 역할은

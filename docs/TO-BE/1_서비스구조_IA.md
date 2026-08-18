@@ -38,8 +38,8 @@
 | Project | 프로젝트 목록 / 상세 | 기존 유지·축소 | P1 |
 | Project | 문서 관리 (등록→임베딩, 삭제 파일 정리) | 기존 유지 | P1 |
 | Settings | Connector (Drive·Jira·HR) | 기존 재배치 | P1 |
-| Settings | Customizing Tool **목록** | **신규** | P0 |
-| 운영자 콘솔 | Customizing Tool **등록** | **신규** | P0 — 팀이 아니라 운영자가 붙인다(2026-08-18) |
+| Settings | 커스텀 도구 **목록** | **신규** | P0 |
+| 운영자 콘솔 | 커스텀 도구 **등록** | **신규** | P0 — 팀이 아니라 운영자가 붙인다(2026-08-18) |
 | Settings | Model 관리 (사용 가능 모델 목록·기본값) | **신규** | P2 |
 | Settings | 팀·권한 | 기존 확장 | P1 |
 | Admin | 운영자 콘솔 8종 | 기존 유지 | P2 |

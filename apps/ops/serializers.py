@@ -206,7 +206,7 @@ class OpsModelRegisterSerializer(serializers.Serializer):
 
 
 class OpsMcpRegisterSerializer(serializers.Serializer):
-    """운영자가 팀에 Customizing Tool 서버를 등록할 때 받는 값.
+    """운영자가 팀에 커스텀 도구 서버를 등록할 때 받는 값.
 
     **주소 검사는 여기서 하지 않는다.** 형식이 맞는 것과 연결해도 되는 주소인가는
     다른 문제이고, 후자는 DNS 를 풀어 봐야 안다(`services/mcp/security.py`).

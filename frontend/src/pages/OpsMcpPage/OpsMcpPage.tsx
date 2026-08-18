@@ -4,6 +4,7 @@ import { Badge, Button, OpsDataTable, OpsEmpty, OpsPageHeader, OpsSectionCard } 
 import type { BadgeTone } from '../../components';
 import {
   fetchOpsMcpServers,
+  probeOpsMcpServer,
   registerOpsMcpServer,
   removeOpsMcpServer,
   testOpsMcpServer,
@@ -16,7 +17,7 @@ import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
- * 팀별 Customizing Tool 등록.
+ * 팀별 커스텀 도구 등록.
  *
  * **팀이 스스로 등록하지 않는다.** 요청을 받으면 운영자가 여기서 등록한다
  * (2026-08-18 멘토링). 설정의 등록 폼을 없애고 이 화면으로 옮긴 이유는
@@ -33,7 +34,7 @@ const STATUS: Record<OpsMcpServer['status'], { tone: BadgeTone; label: string }>
   ERROR: { tone: 'warning', label: '연결 실패' },
 };
 
-const TITLE = 'Customizing Tool 등록';
+const TITLE = '커스텀 도구 등록';
 const DESCRIPTION =
   '요청받은 서버를 팀에 등록합니다. 등록한 팀만 그 서버의 도구를 에이전트에 붙일 수 있습니다.';
 
@@ -51,6 +52,8 @@ export default function OpsMcpPage() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [note, setNote] = useState('');
+  /** 「연결 확인」으로 읽어 온 도구 이름들. 등록 전에 무엇이 들어오는지 보여준다. */
+  const [found, setFound] = useState<string[] | null>(null);
 
   async function load() {
     const session = loadOpsSession();
@@ -101,12 +104,37 @@ export default function OpsMcpPage() {
       setName('');
       setUrl('');
       setAuthToken('');
-      // 등록과 연결 확인은 다른 일이다. 등록되자마자 바로 확인해 준다 —
-      // 안 그러면 「미확인」인 채로 넘겨 놓고 그 팀이 도구를 못 고른다.
-      await test(created.mcp_server_id, teamId, created.name);
+      setFound(null);
+      // **등록과 연결 확인은 다른 일이다**(2026-08-18 PM). 등록은 행을 만들고,
+      // 연결 확인은 그 주소를 실제로 두드린다 — 한 버튼에 묶으면 둘 중 어느
+      // 쪽이 실패했는지 화면이 말해 줄 수 없다.
+      setNote(created.name + ' 을 등록했습니다. 도구는 목록에서 「연결 확인」을 눌러 읽습니다.');
+      await load();
     } catch (thrown) {
       // 주소 검사(SSRF·https 아님)는 저장 전에 400 으로 온다.
       setFormError(thrown instanceof ApiError ? thrown.message : '등록하지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 저장하기 전에 그 주소로 도구를 읽어 본다. 행은 만들지 않는다. */
+  async function probe() {
+    const session = loadOpsSession();
+    if (!session) return;
+    setBusy(true);
+    setFormError('');
+    setNote('');
+    setFound(null);
+    try {
+      const result = await probeOpsMcpServer(session.token, url.trim(), authToken.trim());
+      if (result.detail) {
+        setFormError(result.detail);
+      } else {
+        setFound(result.tools);
+      }
+    } catch (thrown) {
+      setFormError(thrown instanceof ApiError ? thrown.message : '연결 확인에 실패했습니다.');
     } finally {
       setBusy(false);
     }
@@ -221,12 +249,25 @@ export default function OpsMcpPage() {
           </div>
         </div>
 
+        {found && (
+          <p className={styles.inlineEmpty}>
+            {found.length > 0
+              ? `도구 ${found.length}종을 읽었습니다 — ${found.join(', ')}`
+              : '연결은 됐지만 이 서버는 제공하는 도구가 없습니다.'}
+          </p>
+        )}
         {note && <p className={styles.inlineEmpty}>{note}</p>}
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
 
+        {/* **둘을 따로 놓는다**(2026-08-18 PM). 연결 확인은 저장하지 않고 주소만
+            두드려 보고, 등록은 행을 만든다 — 한 버튼에 묶여 있으면 실패했을 때
+            등록이 안 된 것인지 연결이 안 된 것인지 화면이 말해 줄 수 없다. */}
         <div className={styles.formSubmit}>
+          <Button variant="outline" onClick={probe} disabled={!url.trim() || busy}>
+            {busy ? '확인하는 중…' : '연결 확인'}
+          </Button>
           <Button onClick={register} disabled={!canRegister || busy}>
-            {busy ? '확인하는 중…' : '연결 확인 후 등록'}
+            등록
           </Button>
         </div>
       </OpsSectionCard>
@@ -263,17 +304,19 @@ export default function OpsMcpPage() {
                   <td>{row.tool_count}종</td>
                   <td>{row.last_checked_at ? row.last_checked_at.slice(0, 10) : '없음'}</td>
                   <td>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => test(row.mcp_server_id, row.team_id, row.name)}
-                    >
-                      연결 확인
-                    </Button>
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(row)}>
-                      지우기
-                    </Button>
+                    <div className={styles.cellActions}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => test(row.mcp_server_id, row.team_id, row.name)}
+                      >
+                        연결 확인
+                      </Button>
+                      <Button size="sm" variant="danger" disabled={busy} onClick={() => remove(row)}>
+                        지우기
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
