@@ -262,9 +262,6 @@ export default function AgentVersionEditPage() {
             {status && <Badge tone={AGENT_STATUS[status].tone}>{AGENT_STATUS[status].label}</Badge>}
             {currentVersion !== null && <Badge tone="neutral">v{currentVersion}</Badge>}
           </div>
-          <p className={styles.subtitle}>
-            저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 고칠 수 없습니다.
-          </p>
         </header>
 
         {error && <p className={styles.error}>{error}</p>}

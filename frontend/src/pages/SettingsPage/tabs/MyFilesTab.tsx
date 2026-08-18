@@ -211,9 +211,6 @@ export function MyFilesTab() {
               </p>
             </InfoNote>
           </h2>
-          <p className={styles.cardSub}>
-            PDF · Word · PowerPoint · Excel · 텍스트 파일을 올릴 수 있습니다. 한 개에 20MB까지입니다.
-          </p>
         </div>
 
         {/* drag & drop. **누르는 것으로도 된다** — 드래그가 안 되는 환경(모바일)이
@@ -237,7 +234,9 @@ export function MyFilesTab() {
           <span className={styles.dropTitle}>
             {busy ? `${busy} 올리는 중…` : '여기로 끌어다 놓거나 눌러서 고르세요'}
           </span>
-          <span className={styles.dropHint}>여러 개를 한 번에 올릴 수 있습니다.</span>
+          <span className={styles.dropHint}>
+            PDF · Word · PowerPoint · Excel · 텍스트 · 한 개에 20MB까지 · 여러 개 한 번에
+          </span>
           <input
             ref={inputRef}
             type="file"

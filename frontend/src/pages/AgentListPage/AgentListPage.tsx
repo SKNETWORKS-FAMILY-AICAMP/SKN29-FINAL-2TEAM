@@ -199,9 +199,6 @@ export default function AgentListPage() {
         <header className={styles.header}>
           <div className={styles.headerText}>
             <h1 className={styles.title}>에이전트</h1>
-            <p className={styles.subtitle}>
-              우리 팀 업무에 맞는 에이전트를 만들어 둡니다. 채팅에서 그 일에 맞는 에이전트가 불려 나옵니다.
-            </p>
           </div>
           <Button onClick={() => navigate(PATHS.agentNew)} iconLeft={<Icon name="plus" size={16} />}>
             새 에이전트

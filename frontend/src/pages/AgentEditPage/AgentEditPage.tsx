@@ -256,9 +256,6 @@ export default function AgentEditPage() {
               <Badge tone={AGENT_STATUS[agentStatus].tone}>{AGENT_STATUS[agentStatus].label}</Badge>
             )}
           </div>
-          <p className={styles.subtitle}>
-            비개발자가 정하는 것은 세 가지입니다 — 무슨 일을 하는지 / 어떻게 행동할지 / 어떤 데이터와 도구를 쓸지.
-          </p>
         </header>
 
         {error && <p className={styles.error}>{error}</p>}

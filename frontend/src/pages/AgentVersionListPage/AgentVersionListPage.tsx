@@ -83,9 +83,6 @@ export default function AgentVersionListPage() {
         <header className={styles.header}>
           <div className={styles.headerText}>
             <h1 className={styles.title}>에이전트 (버전)</h1>
-            <p className={styles.subtitle}>
-              저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 고칠 수 없습니다 — 바꾸려면 새 버전을 다시 발행합니다.
-            </p>
           </div>
           <Button
             onClick={() => navigate(PATHS.agentVersionNew)}

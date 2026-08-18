@@ -49,7 +49,6 @@ export default function SettingsPage() {
       <div className={styles.wrapper}>
         <header className={styles.header}>
           <h1 className={styles.title}>설정</h1>
-          <p className={styles.subtitle}>팀·연결·에이전트가 쓸 도구와 모델을 한곳에서 관리합니다.</p>
         </header>
 
         <nav className={styles.tabBar}>
