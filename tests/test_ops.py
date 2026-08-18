@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -68,6 +69,169 @@ class OpsAuthenticationTests(SimpleTestCase):
         response = self.client.get(OVERVIEW_URL)
 
         self.assertEqual(response.status_code, 401)
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.mcp.log_audit")
+@patch("apps.ops.views.mcp.McpServerRepository")
+class OpsMcpTests(SimpleTestCase):
+    """팀별 Customizing Tool 등록 — **팀이 스스로 등록하지 않는다**(2026-08-18 멘토링).
+
+    모델(§2026-08-13)과 같은 모양이다. 팀 설정에는 목록만 남고 등록·수정·삭제·
+    연결 확인이 여기로 왔다. SSRF 차단은 팀 쪽에 있던 그대로 따라와야 한다 —
+    운영자가 넣는다고 안전해지지 않는다. 주소는 고객에게 받아 옮겨 적는 값이다.
+    """
+
+    URL = "/api/ops/mcp/"
+    BODY = {
+        "team_id": "TE001",
+        "name": "Jira",
+        "endpoint_url": "https://mcp.example.com/rpc",
+    }
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_위험한_주소는_저장_전에_거절한다(self, repo, _audit, _admin):
+        """저장 뒤 검사면 위험한 주소가 DB 에 남는다(11_MCP_설계 §4-1)."""
+
+        response = self.client.post(
+            self.URL,
+            {**self.BODY, "endpoint_url": "http://localhost:5432/rpc"},
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.create.assert_not_called()
+
+    @patch("apps.ops.views.mcp.validate", return_value="https://mcp.example.com/rpc")
+    def test_그_팀에_등록한다(self, _validate, repo, _audit, _admin):
+        repo.create.return_value = {
+            "mcp_server_id": "MS001", "name": "Jira",
+            "endpoint_url": "https://mcp.example.com/rpc",
+            "status": "UNCHECKED", "last_checked_at": None, "has_token": True, "tools": [],
+        }
+
+        response = self.client.post(
+            self.URL, {**self.BODY, "auth_token": "SECRET-TOKEN-VALUE"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        kwargs = repo.create.call_args.kwargs
+        self.assertEqual(kwargs["team_id"], "TE001")
+        # 등록한 사람이 남아야 나중에 팀장이 붙인 것으로 오해하지 않는다.
+        self.assertEqual(kwargs["registered_by"], "UA001")
+        # 등록 직후는 아직 도구를 못 읽은 상태다 — 실패와 다르다.
+        self.assertEqual(response.json()["status"], "UNCHECKED")
+
+    @patch("apps.ops.views.mcp.validate", return_value="https://mcp.example.com/rpc")
+    def test_토큰은_응답에도_감사로그에도_안_나간다(self, _validate, repo, audit, _admin):
+        """감사 로그는 나중에 사람이 읽는 표다(§4-2)."""
+
+        repo.create.return_value = {
+            "mcp_server_id": "MS001", "name": "Jira",
+            "endpoint_url": "https://mcp.example.com/rpc",
+            "status": "UNCHECKED", "last_checked_at": None, "has_token": True, "tools": [],
+        }
+
+        response = self.client.post(
+            self.URL, {**self.BODY, "auth_token": "SECRET-TOKEN-VALUE"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertNotIn("SECRET-TOKEN-VALUE", response.content.decode())
+        self.assertTrue(response.json()["has_token"])
+        self.assertNotIn("SECRET-TOKEN-VALUE", json.dumps(audit.call_args.kwargs["payload"]))
+
+    def test_수정도_위험한_주소를_저장_전에_거절한다(self, repo, _audit, _admin):
+        """고칠 때만 검사를 건너뛰면 등록에서 막은 주소가 수정으로 들어온다."""
+
+        response = self.client.patch(
+            f"{self.URL}MS001/",
+            {**self.BODY, "endpoint_url": "http://localhost:5432/rpc"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repo.update.assert_not_called()
+
+    @patch("apps.ops.views.mcp.validate", return_value="https://mcp.example.com/rpc")
+    def test_토큰을_안_보내면_그대로_둔다(self, _validate, repo, _audit, _admin):
+        """화면이 저장된 토큰을 다시 보여주지 않는다 — 안 보낸 것을 「지우라」로
+        읽으면 이름만 고쳐도 토큰이 날아간다."""
+
+        repo.update.return_value = {
+            "mcp_server_id": "MS001", "name": "새 이름",
+            "endpoint_url": "https://mcp.example.com/rpc",
+            "status": "CONNECTED", "last_checked_at": None, "has_token": True, "tools": [],
+        }
+
+        response = self.client.patch(
+            f"{self.URL}MS001/", {**self.BODY, "name": "새 이름"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(repo.update.call_args.kwargs["replace_token"], False)
+        self.assertTrue(response.json()["has_token"])
+
+    @patch("apps.ops.views.mcp.initialize_and_list_tools")
+    def test_연결_확인_성공이면_도구를_저장한다(self, discover, repo, _audit, _admin):
+        repo.credentials.return_value = {
+            "mcp_server_id": "MS001", "endpoint_url": "https://mcp.example.com/rpc",
+            "auth_token": "t",
+        }
+        discover.return_value = [{"name": "jira_create_issues", "description": "d", "input_schema": {}}]
+        repo.save_tools.return_value = 1
+
+        response = self.client.post(
+            f"{self.URL}MS001/test/", {"team_id": "TE001"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "CONNECTED", "tool_count": 1})
+
+    @patch("apps.ops.views.mcp.initialize_and_list_tools")
+    def test_연결_실패해도_등록은_남기고_ERROR_로_표시한다(self, discover, repo, _audit, _admin):
+        """지우면 고쳐 쓸 값이 사라지고, 그 팀이 왜 못 고르는지도 알 수 없다."""
+
+        from services.mcp import client
+
+        repo.credentials.return_value = {
+            "mcp_server_id": "MS001", "endpoint_url": "https://mcp.example.com/rpc",
+            "auth_token": None,
+        }
+        discover.side_effect = client.McpError("401", "인증 실패")
+
+        response = self.client.post(
+            f"{self.URL}MS001/test/", {"team_id": "TE001"},
+            content_type="application/json", **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["error_code"], "401")
+        repo.mark_error.assert_called_once()
+        repo.delete.assert_not_called()
+
+    def test_팀_없이는_지우지_않는다(self, repo, _audit, _admin):
+        """`server_id` 하나로 지우면 어느 팀 것인지 확인하는 자물쇠가 없어진다."""
+
+        response = self.client.delete(f"{self.URL}MS001/", **self._headers())
+
+        self.assertEqual(response.status_code, 400)
+        repo.delete.assert_not_called()
+
+    def test_운영자_아니면_막힌다(self, repo, _audit, _admin):
+        response = self.client.post(
+            self.URL, self.BODY, content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {account_tokens.issue_token('UA001')}",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        repo.create.assert_not_called()
 
 
 @patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())

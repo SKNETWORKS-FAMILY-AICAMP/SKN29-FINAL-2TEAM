@@ -1398,7 +1398,32 @@ class McpServerRepository:
 
     `apps/connectors` 의 Fernet 을 그대로 쓴다 — 키 파생을 두 곳에 두면 한쪽만
     바뀌었을 때 조용히 복호화가 안 된다.
+
+    **읽기는 팀이, 쓰기는 운영자가 부른다**(2026-08-18 멘토링). 그래서 읽기만
+    `account_id` 로 팀을 찾고, 쓰기는 `team_id` 를 직접 받는다 — 운영자에게는
+    자기 팀이 없어서 `_require_team` 이 통하지 않는다. 모델 쪽
+    (`CustomModelRepository.add_for_team`)과 같은 모양이다.
     """
+
+    @staticmethod
+    def list_all() -> list[dict[str, Any]]:
+        """모든 팀의 등록분. **운영자 콘솔만 쓴다** — 팀은 자기 것만 본다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT s.mcp_server_id, s.name, s.endpoint_url, s.status,
+                           s.last_checked_at, s.team_id, t.name AS team_name,
+                           (s.auth_token_enc IS NOT NULL) AS has_token,
+                           (SELECT count(*) FROM mcp_tool WHERE server_id = s.mcp_server_id)
+                               AS tool_count
+                    FROM mcp_server AS s
+                    LEFT JOIN team AS t ON t.team_id = s.team_id
+                    ORDER BY s.team_id, s.name
+                    """
+                )
+                return list(cursor.fetchall())
 
     @staticmethod
     def list_for_team(account_id: str) -> list[dict[str, Any]]:
@@ -1429,11 +1454,11 @@ class McpServerRepository:
 
     @staticmethod
     def create(
-        *, account_id: str, name: str, endpoint_url: str, auth_token: str | None
+        *, team_id: str, name: str, endpoint_url: str, auth_token: str | None,
+        registered_by: str,
     ) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
                 server_id = next_short_code(
                     cursor, table="mcp_server", column="mcp_server_id", prefix="MS"
                 )
@@ -1450,7 +1475,7 @@ class McpServerRepository:
                         name,
                         endpoint_url,
                         encrypt_credential({"auth_token": auth_token}) if auth_token else None,
-                        account_id,
+                        registered_by,
                     ),
                 )
                 # `has_token` 을 붙여서 돌려준다. RETURNING 에 없다고 빼면
@@ -1462,7 +1487,7 @@ class McpServerRepository:
     def update(
         *,
         server_id: str,
-        account_id: str,
+        team_id: str,
         name: str,
         endpoint_url: str,
         auth_token: str | None,
@@ -1486,7 +1511,6 @@ class McpServerRepository:
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
                 before = _server_row(cursor, server_id=server_id, team_id=team_id)
 
                 moved = before["endpoint_url"] != endpoint_url
@@ -1523,12 +1547,11 @@ class McpServerRepository:
                 return {**row, "has_token": token_enc is not None, "tools": []}
 
     @staticmethod
-    def credentials(*, server_id: str, account_id: str) -> dict[str, Any]:
+    def credentials(*, server_id: str, team_id: str) -> dict[str, Any]:
         """연결 테스트에 필요한 것만. **복호화한 토큰은 여기서만 나온다.**"""
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
                 row = _server_row(cursor, server_id=server_id, team_id=team_id)
         return {
             "mcp_server_id": row["mcp_server_id"],
@@ -1569,7 +1592,7 @@ class McpServerRepository:
         }
 
     @staticmethod
-    def save_tools(*, server_id: str, account_id: str, tools: list[dict[str, Any]]) -> int:
+    def save_tools(*, server_id: str, team_id: str, tools: list[dict[str, Any]]) -> int:
         """연결 테스트 결과를 반영하고 status 를 CONNECTED 로 올린다.
 
         서버에서 사라진 도구는 지운다. 남겨 두면 에이전트 허용 목록에 붙어 있는
@@ -1578,7 +1601,6 @@ class McpServerRepository:
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
                 _server_row(cursor, server_id=server_id, team_id=team_id)
 
                 names = [tool["name"] for tool in tools]
@@ -1615,13 +1637,12 @@ class McpServerRepository:
                 return len(tools)
 
     @staticmethod
-    def mark_error(*, server_id: str, account_id: str) -> None:
+    def mark_error(*, server_id: str, team_id: str) -> None:
         """연결 테스트 실패. **행은 지우지 않는다** — 사용자가 고쳐 쓸 값이고,
         ERROR 상태를 보여 줘야 왜 편집 화면에서 이 도구를 못 고르는지 안다."""
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
                 _server_row(cursor, server_id=server_id, team_id=team_id)
                 cursor.execute(
                     "UPDATE mcp_server SET status = 'ERROR', last_checked_at = now() "
@@ -1630,10 +1651,9 @@ class McpServerRepository:
                 )
 
     @staticmethod
-    def delete(*, server_id: str, account_id: str) -> None:
+    def delete(*, server_id: str, team_id: str) -> None:
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
                 _server_row(cursor, server_id=server_id, team_id=team_id)
                 # 에이전트 허용 목록에서도 뺀다. 안 빼면 없는 서버의 도구가
                 # agent_tool 에 남아 부를 때마다 실패한다.

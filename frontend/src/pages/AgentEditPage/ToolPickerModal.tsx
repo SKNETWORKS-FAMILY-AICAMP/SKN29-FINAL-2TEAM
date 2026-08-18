@@ -10,7 +10,7 @@ type Tab = 'builtin' | 'mcp' | 'create';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'builtin', label: '툴 선택' },
-  { id: 'mcp', label: 'MCP 서버 선택' },
+  { id: 'mcp', label: 'Customizing Tool 선택' },
   { id: 'create', label: '툴 생성' },
 ];
 
@@ -97,7 +97,7 @@ export function ToolPickerModal({
 
       {tab === 'mcp' && (
         <div className={styles.serverList}>
-          {mcpServers.length === 0 && <p className={pageStyles.help}>아직 연결한 MCP 서버가 없습니다.</p>}
+          {mcpServers.length === 0 && <p className={pageStyles.help}>아직 이 팀에 붙어 있는 서버가 없습니다.</p>}
           {mcpServers.map((server) => {
             const chip = SERVER_STATUS[server.status];
             const usable = server.status === 'CONNECTED';
@@ -148,7 +148,7 @@ export function ToolPickerModal({
           })}
           <button type="button" className={styles.settingsLink} onClick={onGoToMcpSettings}>
             <Icon name="arrow-right" size={14} />
-            MCP 서버 관리로 이동
+            붙어 있는 서버 보기
           </button>
         </div>
       )}
@@ -157,7 +157,7 @@ export function ToolPickerModal({
         <div className={styles.createTab}>
           <p className={pageStyles.help}>
             팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 연결한
-            MCP 서버의 도구만 쓸 수 있습니다.
+            Customizing Tool 의 도구만 쓸 수 있습니다.
           </p>
           <Button variant="outline" disabled>
             새 도구 만들기 (준비 중)

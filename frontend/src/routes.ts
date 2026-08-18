@@ -27,6 +27,7 @@ export const PATHS = {
   opsConnectors: '/ops/connectors',
   opsConnectorDetail: '/ops/connectors/:connId',
   opsModels: '/ops/models',
+  opsMcp: '/ops/mcp',
   opsAudit: '/ops/audit',
   opsPolicies: '/ops/policies',
 
@@ -85,7 +86,7 @@ export const ROUTES: RouteEntry[] = [
   },
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · Connector', group: '설정' },
-  { path: PATHS.settingsMcp, label: '설정 · MCP', group: '설정' },
+  { path: PATHS.settingsMcp, label: '설정 · Customizing Tool', group: '설정' },
   { path: PATHS.settingsModel, label: '설정 · Model', group: '설정' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
@@ -98,6 +99,7 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.opsInviteDetail, label: '초대 상세', group: '운영자 콘솔' },
   { path: PATHS.opsConnectors, label: '연결 서비스 현황', group: '운영자 콘솔' },
   { path: PATHS.opsModels, label: '모델 등록', group: '운영자 콘솔' },
+  { path: PATHS.opsMcp, label: 'Customizing Tool 등록', group: '운영자 콘솔' },
   { path: PATHS.opsAudit, label: '감사 로그', group: '운영자 콘솔' },
   { path: PATHS.opsPolicies, label: '전역 정책', group: '운영자 콘솔' },
 ];
@@ -130,6 +132,6 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
 export const SETTINGS_TABS = [
   { label: '팀', to: PATHS.settingsTeam },
   { label: 'Connector', to: PATHS.settingsConnectors },
-  { label: 'MCP', to: PATHS.settingsMcp },
+  { label: 'Customizing Tool', to: PATHS.settingsMcp },
   { label: 'Model', to: PATHS.settingsModel },
 ];

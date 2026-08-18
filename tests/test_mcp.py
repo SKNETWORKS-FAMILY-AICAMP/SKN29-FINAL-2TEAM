@@ -217,175 +217,50 @@ class ErrorMappingTests(SimpleTestCase):
         self.assertEqual(self._code(post, big), "validation")
 
 
-#: 문지기(`require_leader`)가 프로필을 읽는다. 목으로 막지 않으면 이 저장소는
-#: psycopg 직결이라 테스트가 **개발 DB 를 읽는다** — 그 계정이 팀원으로 바뀌면
-#: 무관한 테스트가 403 으로 깨진다.
-LEADER = {"invited": False}
-
-
-@patch("apps.accounts.permissions.AccountRepository.get_profile", return_value=LEADER)
 @patch("apps.mcp.api_views.McpServerRepository")
 class McpApiTests(SimpleTestCase):
-    def test_위험한_주소는_저장_전에_거절한다(self, repo, _profile):
-        """저장 뒤 검사면 위험한 주소가 DB 에 남는다."""
+    """**팀 쪽에는 읽기만 남아 있다**(2026-08-18 멘토링).
 
-        response = self.client.post(
-            "/api/mcp/servers/",
-            {"name": "내부", "endpoint_url": "http://localhost:5432/rpc"},
-            content_type="application/json",
-            headers=auth_header(),
-        )
+    등록·수정·삭제·연결 확인은 운영자 콘솔로 옮겼고, 그 테스트도 함께 갔다
+    (`tests/test_ops.py::OpsMcpTests`). 화면에서만 감추면 API 가 그대로 열려
+    있으므로, **경로가 사라졌다는 것 자체를 여기서 지킨다.**
+    """
 
-        self.assertEqual(response.status_code, 400)
-        repo.create.assert_not_called()
+    def test_목록은_팀원도_본다(self, repo):
+        """에이전트 편집에서 고를 수 있는 도구가 무엇인지 알아야 하기 때문이다."""
 
-    @patch("apps.mcp.api_views.validate", return_value="https://mcp.example.com/rpc")
-    def test_등록은_UNCHECKED_로_시작한다(self, _validate, repo, _profile):
-        repo.create.return_value = {
-            "mcp_server_id": "MS001", "name": "Jira", "endpoint_url": "https://mcp.example.com/rpc",
-            "status": "UNCHECKED", "last_checked_at": None,
-        }
-
-        response = self.client.post(
-            "/api/mcp/servers/",
-            {
-                "name": "Jira",
-                "endpoint_url": "https://mcp.example.com/rpc",
-                "auth_token": "SECRET-TOKEN-VALUE",
-            },
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["status"], "UNCHECKED")
-        # 토큰은 응답에 없다(§4-2).
-        self.assertNotIn("auth_token", response.json())
-        self.assertNotIn("SECRET-TOKEN-VALUE", json.dumps(response.json()))
-        # 저장은 암호화 계층으로 넘긴다 — 평문이 그대로 컬럼에 들어가지 않는다.
-        self.assertEqual(repo.create.call_args.kwargs["auth_token"], "SECRET-TOKEN-VALUE")
-
-    @patch("apps.mcp.api_views.initialize_and_list_tools")
-    def test_연결_테스트_성공이면_도구를_저장한다(self, discover, repo, _profile):
-        repo.credentials.return_value = {
-            "mcp_server_id": "MS001", "endpoint_url": "https://mcp.example.com/rpc",
-            "auth_token": "t",
-        }
-        discover.return_value = [
-            {"name": "jira_create_issues", "description": "d", "input_schema": {}}
-        ]
-        repo.save_tools.return_value = 1
         repo.list_for_team.return_value = []
 
-        response = self.client.post(
-            "/api/mcp/servers/MS001/test/", {}, content_type="application/json",
-            headers=auth_header(),
-        )
+        response = self.client.get("/api/mcp/servers/", headers=auth_header())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "CONNECTED", "tool_count": 1})
 
-    @patch("apps.mcp.api_views.initialize_and_list_tools")
-    def test_연결_실패해도_등록은_남기고_ERROR_로_표시한다(self, discover, repo, _profile):
-        """지우면 사용자가 고쳐 쓸 값이 사라지고, 왜 못 고르는지도 알 수 없다."""
-
-        repo.credentials.return_value = {
-            "mcp_server_id": "MS001", "endpoint_url": "https://mcp.example.com/rpc",
-            "auth_token": None,
-        }
-        discover.side_effect = client.McpError("401", "인증 실패")
-
-        response = self.client.post(
-            "/api/mcp/servers/MS001/test/", {}, content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json()["error_code"], "401")
-        repo.mark_error.assert_called_once()
-        repo.delete.assert_not_called()
-
-    @patch("apps.mcp.api_views.validate", return_value="https://mcp.example.com/rpc")
-    def test_등록_응답도_토큰_보유를_말한다(self, _validate, repo, _profile):
-        """토큰을 넣고 등록했는데 응답이 「토큰 없음」이면 화면이 그 줄을 그대로
-        목록에 얹는다 — 실제로 그랬다(2026-08-13 터널 시험)."""
-
-        repo.create.return_value = {
-            "mcp_server_id": "MS001", "name": "Jira", "endpoint_url": "https://mcp.example.com/rpc",
-            "status": "UNCHECKED", "last_checked_at": None, "has_token": True, "tools": [],
-        }
+    def test_등록_경로가_없다(self, repo):
+        """폼만 없애면 API 를 그대로 부를 수 있다 — 그건 규칙이 아니라 장식이다."""
 
         response = self.client.post(
             "/api/mcp/servers/",
-            {"name": "Jira", "endpoint_url": "https://mcp.example.com/rpc", "auth_token": "T"},
+            {"name": "Jira", "endpoint_url": "https://mcp.example.com/rpc"},
             content_type="application/json",
             headers=auth_header(),
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(response.json()["has_token"])
+        self.assertEqual(response.status_code, 405)
+        repo.create.assert_not_called()
 
-    @patch("apps.mcp.api_views.validate", return_value="https://mcp.example.com/rpc")
-    def test_토큰을_안_보내면_그대로_둔다(self, _validate, repo, _profile):
-        """화면이 저장된 토큰을 다시 보여주지 않는다 — 안 보낸 것을 「지우라」로
-        읽으면 이름만 고쳐도 토큰이 날아간다."""
-
-        repo.update.return_value = {
-            "mcp_server_id": "MS001", "name": "새 이름", "endpoint_url": "https://mcp.example.com/rpc",
-            "status": "CONNECTED", "last_checked_at": None, "has_token": True, "tools": [],
-        }
-
-        response = self.client.patch(
-            "/api/mcp/servers/MS001/",
-            {"name": "새 이름", "endpoint_url": "https://mcp.example.com/rpc"},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIs(repo.update.call_args.kwargs["replace_token"], False)
-        self.assertTrue(response.json()["has_token"])
-
-    @patch("apps.mcp.api_views.validate", return_value="https://mcp.example.com/rpc")
-    def test_바꾸겠다고_밝히면_토큰을_교체한다(self, _validate, repo, _profile):
-        repo.update.return_value = {
-            "mcp_server_id": "MS001", "name": "Jira", "endpoint_url": "https://mcp.example.com/rpc",
-            "status": "CONNECTED", "last_checked_at": None, "has_token": True, "tools": [],
-        }
-
-        response = self.client.patch(
-            "/api/mcp/servers/MS001/",
-            {
-                "name": "Jira",
-                "endpoint_url": "https://mcp.example.com/rpc",
-                "auth_token": "NEW-TOKEN",
-                "replace_token": True,
-            },
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 200)
-        kwargs = repo.update.call_args.kwargs
-        self.assertIs(kwargs["replace_token"], True)
-        self.assertEqual(kwargs["auth_token"], "NEW-TOKEN")
-        # 토큰은 응답에 실리지 않는다. 있는지 여부만.
-        self.assertNotIn("NEW-TOKEN", response.content.decode())
-
-    def test_수정도_위험한_주소를_저장_전에_거절한다(self, repo, _profile):
-        """고칠 때만 검사를 건너뛰면 등록에서 막은 주소가 수정으로 들어온다."""
-
-        response = self.client.patch(
-            "/api/mcp/servers/MS001/",
-            {"name": "내부", "endpoint_url": "http://localhost:5432/rpc"},
-            content_type="application/json",
-            headers=auth_header(),
-        )
-
-        self.assertEqual(response.status_code, 400)
+    def test_수정_삭제_연결확인_경로도_없다(self, repo):
+        for method, url in (
+            (self.client.patch, "/api/mcp/servers/MS001/"),
+            (self.client.delete, "/api/mcp/servers/MS001/"),
+            (self.client.post, "/api/mcp/servers/MS001/test/"),
+        ):
+            with self.subTest(url=url):
+                response = method(url, {}, content_type="application/json", headers=auth_header())
+                self.assertEqual(response.status_code, 404)
         repo.update.assert_not_called()
+        repo.delete.assert_not_called()
 
-    def test_로그인_없이는_401(self, _repo, _profile):
+    def test_로그인_없이는_401(self, _repo):
         self.assertEqual(self.client.get("/api/mcp/servers/").status_code, 401)
 
 

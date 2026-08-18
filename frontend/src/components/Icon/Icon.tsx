@@ -33,6 +33,7 @@ export type IconName =
   | 'users'
   | 'link'
   | 'sliders'
+  | 'wrench'
   | 'shield-check'
   | 'lock'
   | 'message-square'
@@ -254,6 +255,13 @@ function renderPaths(name: IconName): ReactElement {
           <line x1="8" y1="12" x2="16" y2="12" />
         </>
       );
+    case 'wrench':
+      // 운영자 콘솔의 Customizing Tool 등록. lucide 의 wrench 를 이 파일의
+      // 규칙(stroke 전용 · 24 격자)에 맞춰 옮겼다.
+      return (
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+      );
+
     case 'sliders':
       return (
         <>

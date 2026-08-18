@@ -347,7 +347,7 @@ export default function AgentEditPage() {
 
           <p className={styles.notice}>
             <Icon name="info" size={15} color="var(--color-info)" />
-            <span>쓸 수 있는 도구는 설정 &gt; MCP에서 연결한 서비스에 따라 달라집니다.</span>
+            <span>쓸 수 있는 도구는 설정 &gt; Customizing Tool 에 붙어 있는 서버에 따라 달라집니다.</span>
             <button type="button" className={styles.noticeLink} onClick={() => navigate(PATHS.settingsMcp)}>
               설정으로 이동 →
             </button>

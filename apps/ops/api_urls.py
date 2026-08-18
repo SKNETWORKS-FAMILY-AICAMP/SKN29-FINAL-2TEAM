@@ -17,6 +17,7 @@ from .views.invites import (
     InviteUnlinkView,
 )
 from .views.login import LoginView, LogoutView
+from .views.mcp import McpDetailView, McpListCreateView, McpTestView
 from .views.models import ModelDetailView, ModelListCreateView, ModelProbeView
 from .views.teams import TeamContentView, TeamOwnerView, TeamsView
 from .views.overview import OverviewView
@@ -53,6 +54,9 @@ urlpatterns = [
     path("models/", ModelListCreateView.as_view(), name="api_ops_model_list"),
     path("models/probe/", ModelProbeView.as_view(), name="api_ops_model_probe"),
     path("models/<str:conn_id>/", ModelDetailView.as_view(), name="api_ops_model_detail"),
+    path("mcp/", McpListCreateView.as_view(), name="api_ops_mcp_list"),
+    path("mcp/<str:server_id>/", McpDetailView.as_view(), name="api_ops_mcp_detail"),
+    path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path("policies/notices/", NoticeListCreateView.as_view(), name="api_ops_policies_notice_list"),

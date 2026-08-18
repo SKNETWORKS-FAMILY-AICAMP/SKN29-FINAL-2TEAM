@@ -221,7 +221,7 @@ export function ConnectorTab() {
                   아니라 인증 주체다(확정 ⑨ · MCP 탭도 같은 말로 적혀 있다). */}
               <p>
                 <strong>우리가 미리 붙여 둔 통로</strong>라 자리만 고르면 됩니다. 직접 만들거나
-                운영하는 서버를 붙이는 곳은 <strong>MCP 탭</strong>입니다 — 가르는 것은 읽기·쓰기가
+                운영하는 서버를 붙이는 곳은 <strong>Customizing Tool 탭</strong>입니다 — 가르는 것은 읽기·쓰기가
                 아니라 <strong>누구의 서버인가</strong>입니다. 여기 붙은 Jira 도 이슈를 만듭니다.
               </p>
               <p>
