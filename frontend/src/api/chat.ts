@@ -134,6 +134,8 @@ export type ChatEvent =
       tool_ref: string;
       tool_call_id?: string | null;
       status: 'OK' | 'FAILED';
+      /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). `events.py`의 `_summarize_tool_output()` 참고. */
+      output?: string;
     }
   /**
    * 도구 핸들러가 제너레이터로 흘리는 진행 이벤트(`task_extraction`,

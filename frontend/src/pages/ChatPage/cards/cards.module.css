@@ -160,21 +160,114 @@
 
 /* ---------- 추론 과정 카드 ---------- */
 
+/* 실시간 로그 뷰(2026-08-18) — "어떤 순서로 실행되는지 보고 싶다"는 요청으로
+   문단 카드 목록에서 터미널 로그처럼 한 줄씩 흘러가는 형태로 바꿨다.
+   `ReasoningTrace`가 스트리밍 중(`running`)이면 매 항목이 추가될 때마다
+   맨 아래로 자동 스크롤한다 — 로그 창을 계속 내려 보는 것과 같은 동작. */
 .reasoningList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 1px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 .reasoningStep {
-  padding: var(--space-3) var(--space-4);
-  border-left: 2px solid var(--color-border);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  background: var(--color-bg);
-  font-size: 13px;
-  line-height: 1.7;
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
   color: var(--color-body);
   white-space: pre-wrap;
+}
+
+.reasoningStep::before {
+  content: '\203A';
+  flex-shrink: 0;
+  color: var(--color-placeholder);
+  font-weight: 700;
+}
+
+/* 생각 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
+   같은 로그 줄이지만 문장 대신 상태 아이콘이 그 자리(맨 앞)를 대신한다.
+   도구 항목은 호출 줄(.reasoningTool) 아래에 반환값 줄(.reasoningOutput)이
+   붙을 수 있어서 li 자체는 .reasoningToolGroup으로 세로로 묶는다. */
+.reasoningToolGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reasoningTool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 반환값이 있는 줄만 눌러서 펼 수 있다 — 어느 게 눌러지는지 hover로 보여준다. */
+.reasoningTool:not(:disabled):hover {
+  background: var(--color-bg);
+}
+
+.reasoningTool:disabled {
+  cursor: default;
+}
+
+/* 펼침 화살표(반환값이 있을 때만 렌더된다)를 줄 오른쪽 끝으로 민다. */
+.reasoningTool > svg:last-child {
+  margin-left: auto;
+}
+
+/* 도구가 실제로 반환한 값(2026-08-18) — 호출 여부만 보이고 결과는 안 보이던
+   문제를 고치려고 추가했다. 아이콘 폭만큼 들여써서 그 도구 호출 줄에 딸린
+   것임을 보이고, 길어도 로그 전체를 밀어내지 않게 자체 스크롤을 둔다. */
+.reasoningOutput {
+  margin: 0 0 2px 19px;
+  padding: 6px 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 지금 쓰고 있는 마지막 줄 끝에 붙는 깜빡이는 커서 — 로그가 살아 있다는
+   신호. 스트리밍이 끝나면(`running=false`) 더는 그리지 않는다. */
+.reasoningCursor {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  background: var(--color-primary);
+  animation: reasoningBlink 1s steps(1, jump-none) infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes reasoningBlink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .evidenceToggle {

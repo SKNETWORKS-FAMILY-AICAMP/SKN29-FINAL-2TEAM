@@ -996,7 +996,7 @@ export default function ChatPage() {
                         />
                       )}
 
-                      <ReasoningTrace steps={live.reasoningSteps} defaultOpen={live.running} />
+                      <ReasoningTrace entries={live.timeline} defaultOpen={live.running} running={live.running} />
 
                       {live.jira && (
                         <JiraStatusCard

@@ -106,6 +106,13 @@ name=definition.alias, ...)`로 등록한 이름이 정확히 이 `alias`이고,
 목록엔 없다 — 이벤트 타입 자체는 그대로 두고 기존 이벤트에 필드만 얹었다
 (`_11_` 문서와 같은 판단).
 
+`tool_completed`의 `output`(2026-08-18 추가)은 도구가 실제로 돌려준 값이다
+— "타임라인에 도구 호출은 보이는데 뭘 반환했는지는 왜 안 보이냐"는 요청으로
+붙였다. `ToolMessage.text`를 `_summarize_tool_output()`으로 길이만 잘라
+담는다(`arguments`처럼 사전이 아니라 이미 문자열이라 키=값 요약은 필요 없다).
+DB에는 안 쌓는다 — `_end_tool_call()`(tracing/__init__.py)은 여전히 `status`만
+읽고, 이 필드는 스트림을 타고 화면까지만 간다.
+
 ## reasoning 실시간 스트리밍(2026-08-18 추가)
 
 `stream_mode="messages"`로 받는 `AIMessageChunk.content`는 OpenAI Responses
@@ -211,6 +218,24 @@ def _tool_status(msg_status: str | None) -> str:
     안전하게) OK로 본다.
     """
     return "FAILED" if msg_status == "error" else "OK"
+
+
+TOOL_OUTPUT_SUMMARY_MAX = 500
+
+
+def _summarize_tool_output(content: Any) -> str:
+    """도구가 실제로 돌려준 내용을 화면(생각 과정 타임라인)에 보일 만큼만 남긴다.
+
+    `summarize_input()`(services/harness/trace.py)과 같은 동기다 — 다만 입력은
+    키=값 쌍이라 사전을 받지만, 도구 출력은 이미 `ToolMessage.text`가 만들어 둔
+    평문 문자열이라 길이만 자르면 된다. 자격증명·토큰류를 도구가 반환값에
+    직접 담는 경우는 없다고 가정한다(그런 값을 담는 도구가 있다면 그건 이
+    자르기가 아니라 그 도구 자체를 고쳐야 할 문제다).
+    """
+    text = content if isinstance(content, str) else str(content)
+    if len(text) > TOOL_OUTPUT_SUMMARY_MAX:
+        return f"{text[:TOOL_OUTPUT_SUMMARY_MAX]}..."
+    return text
 
 
 class EventMapper:
@@ -412,6 +437,7 @@ class EventMapper:
                         "tool_ref": tool_ref_from_model_name(msg_name),
                         "tool_call_id": msg_tool_call_id,
                         "status": _tool_status(msg_status),
+                        "output": _summarize_tool_output(content),
                         "complete": False,
                     }
                 ]
@@ -455,6 +481,7 @@ class EventMapper:
                     "tool_ref": tool_ref_from_model_name(msg_name),
                     "tool_call_id": msg_tool_call_id,
                     "status": _tool_status(msg_status),
+                    "output": _summarize_tool_output(content),
                     "complete": False,
                 }
             ]
