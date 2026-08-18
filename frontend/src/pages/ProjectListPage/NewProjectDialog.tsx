@@ -10,6 +10,7 @@ import {
 import type { PrimaryCandidate } from '../../api/projects';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import styles from './NewProjectDialog.module.css';
 
 /**
@@ -215,7 +216,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
         {step === 'extract' && (
           <div className={styles.body}>
             <p className={styles.lead}>
-              <strong>{chosen?.file_name}</strong>을(를) 기준 문서로 씁니다.
+              <strong>{chosen?.file_name}</strong>{josa(chosen?.file_name ?? '', '을/를')} 기준 문서로 씁니다.
             </p>
             <p className={styles.hint}>
               <Icon name="info" size={14} color="var(--color-muted)" />이 문서에서 업무를 추출해 정리합니다. 몇

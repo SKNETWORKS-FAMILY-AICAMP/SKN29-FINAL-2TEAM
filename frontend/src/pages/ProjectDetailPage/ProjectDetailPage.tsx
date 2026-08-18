@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client';
 import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
 import type { ExistTask, ProjectDetail } from '../../api/projects';
 import { PATHS } from '../../routes';
+import { josa } from '../../utils/josa';
 import { useSession } from '../../utils/session';
 import { PrimaryDocumentCard } from './PrimaryDocumentCard';
 import styles from './ProjectDetailPage.module.css';
@@ -421,7 +422,7 @@ export default function ProjectDetailPage() {
         }
       >
         <p className={styles.confirmText}>
-          <strong>{project?.name}</strong> 을(를) 삭제합니다. <strong>되돌릴 수 없습니다.</strong>
+          <strong>{project?.name}</strong>{josa(project?.name ?? '', '을/를')} 삭제합니다. <strong>되돌릴 수 없습니다.</strong>
         </p>
         <ul className={styles.confirmList}>
           <li>

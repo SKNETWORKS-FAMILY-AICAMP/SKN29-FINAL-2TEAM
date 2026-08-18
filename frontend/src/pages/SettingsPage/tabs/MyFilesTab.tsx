@@ -12,6 +12,7 @@ import {
 } from '../../../api/personalFiles';
 import type { PersonalFile } from '../../../api/personalFiles';
 import { loadSessionToken } from '../../../utils/session';
+import { josa } from '../../../utils/josa';
 import styles from './tabs.module.css';
 
 /**
@@ -374,7 +375,7 @@ export function MyFilesTab() {
         )}
       >
         <p className={styles.confirmText}>
-          <strong>{confirming?.file_name}</strong> 을(를) 삭제합니다.{' '}
+          <strong>{confirming?.file_name}</strong>{josa(confirming?.file_name ?? '', '을/를')} 삭제합니다.{' '}
           <strong>되돌릴 수 없습니다.</strong>
         </p>
         <p className={styles.confirmText}>
