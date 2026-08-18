@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from apps.accounts.tokens import issue_token
-from backend.db.errors import PermissionDenied, RecordNotFound, ReferenceNotFound
+from backend.db.errors import PermissionDenied, ReferenceNotFound
 
 
 def auth_header(account_id="UA001"):
@@ -280,46 +280,6 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 403)
-
-
-class ProjectSourceApiTests(SimpleTestCase):
-    def test_requires_login(self):
-        self.assertEqual(self.client.get("/api/projects/PJ001/sources/").status_code, 401)
-
-    @patch("apps.projects.api_views.ProjectSourceRepository.get_for_project")
-    def test_returns_at_most_one_jira_source(self, get_for_project):
-        get_for_project.return_value = jira_source_row()
-
-        response = self.client.get("/api/projects/PJ001/sources/", headers=auth_header())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()), 1)
-        self.assertEqual(response.json()[0]["external_source_id"], "KAN")
-
-    @patch("apps.projects.api_views.ProjectSourceRepository.get_for_project")
-    def test_unconnected_project_returns_empty(self, get_for_project):
-        get_for_project.return_value = None
-
-        response = self.client.get("/api/projects/PJ001/sources/", headers=auth_header())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
-
-    @patch("apps.projects.api_views.ProjectSourceRepository.get_for_project")
-    def test_other_teams_project_is_forbidden(self, get_for_project):
-        get_for_project.side_effect = PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
-
-        response = self.client.get("/api/projects/PJ001/sources/", headers=auth_header())
-
-        self.assertEqual(response.status_code, 403)
-
-    @patch("apps.projects.api_views.ProjectSourceRepository.get_for_project")
-    def test_missing_project_is_404(self, get_for_project):
-        get_for_project.side_effect = RecordNotFound("존재하지 않는 프로젝트입니다: PJ999")
-
-        response = self.client.get("/api/projects/PJ999/sources/", headers=auth_header())
-
-        self.assertEqual(response.status_code, 404)
 
 
 class TeamFolderApiTests(SimpleTestCase):

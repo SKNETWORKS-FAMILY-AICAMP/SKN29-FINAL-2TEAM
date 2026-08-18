@@ -85,38 +85,12 @@ class JiraProjectRegisterSerializer(serializers.Serializer):
         allow_empty=True,
     )
 
-class DocumentRegisterEntrySerializer(serializers.Serializer):
-    file_id = serializers.CharField(max_length=255)
-    # 안 보내면 폴더에 지정된 역할을 물려받는다.
-
 class DocumentRemoveSerializer(serializers.Serializer):
     """Drive 에서 사라진 문서를 내린다. 사용자가 확인한 것만 온다."""
 
     doc_ids = serializers.ListField(
         child=serializers.CharField(max_length=5), allow_empty=False
     )
-
-def missing_document_response(row: dict[str, Any]) -> dict[str, Any]:
-    """Drive 스캔에 안 잡히는 등록 문서 한 줄.
-
-    프로젝트 정보를 함께 준다. 기준 문서가 사라졌다는 것은 그 프로젝트의 업무
-    추출 근거가 없어졌다는 뜻이라, 내리기 전에 사람이 알아야 한다.
-    """
-
-    return {
-        "doc_id": row["doc_id"],
-        "file_name": row.get("file_name"),
-        "mime_type": row.get("mime_type"),
-        "proj_id": row.get("proj_id"),
-        "project_name": row.get("project_name"),
-        # NULL(팀 문서 풀) / 'PRIMARY'(기준 문서) / 'SUB'(근거 문서)
-        "doc_role": row.get("doc_role"),
-    }
-
-class DocumentRegisterSerializer(serializers.Serializer):
-    """신규 파일 목록에서 고른 것만 등록한다. 이름·형식은 서버가 Drive에서 다시 읽는다."""
-
-    files = serializers.ListField(child=DocumentRegisterEntrySerializer(), allow_empty=False)
 
 def project_response(
     row: dict[str, Any],
@@ -156,19 +130,6 @@ def project_response(
         "owner_name": row.get("owner_name"),
         "created_at": created_at.isoformat() if created_at else None,
         "progress": progress,
-    }
-
-def project_source_response(row: dict[str, Any]) -> dict[str, Any]:
-    last_sync_at = row.get("last_sync_at")
-    return {
-        "last_sync_at": last_sync_at.isoformat() if last_sync_at else None,
-        "proj_source_id": row["proj_source_id"],
-        "proj_id": row["proj_id"],
-        "conn_id": row["conn_id"],
-        "source_type": row["source_type"],
-        "external_source_id": row["external_source_id"],
-        "display_name": row.get("display_name"),
-        "sync_status": row["sync_status"],
     }
 
 def exist_task_response(row: dict[str, Any], persons: dict[str, Any]) -> dict[str, Any]:
@@ -257,35 +218,6 @@ def pipeline_document_response(row: dict[str, Any]) -> dict[str, Any]:
         "src_modified_at": modified_at.isoformat() if modified_at else None,
     }
 
-def deadline_response(
-    row: dict[str, Any],
-    persons: dict[str, Any],
-    *,
-    days: int,
-) -> dict[str, Any]:
-    """마감이 걸린 업무 한 건.
-
-    `days`를 서버가 계산해서 준다. `due_at`이 TIMESTAMPTZ라 브라우저에서 빼면
-    시간대에 따라 하루가 밀린다 — 「오늘 마감」이 「어제 마감」으로 보이는 것은
-    이 화면에서 바로 오판으로 이어진다. 음수가 지연이다.
-
-    어느 프로젝트 것인지 함께 준다. 「KAN-31 지연」만으로는 어느 쪽을 밀지 판단할
-    수 없다.
-    """
-
-    person_id = row.get("assignee_person_id")
-
-    return {
-        "exist_task_id": row["exist_task_id"],
-        "jira_issue_id": row["jira_issue_id"],
-        "summary": row.get("summary"),
-        "assignee_name": (persons.get(person_id) or {}).get("name") if person_id else None,
-        "due_at": row["due_at"].isoformat(),
-        "days": days,
-        "proj_id": row["proj_id"],
-        "project_name": row.get("project_name") or row.get("project_key"),
-    }
-
 def team_folder_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "team_folder_id": row["team_folder_id"],
@@ -312,6 +244,24 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         # 원문을 받았는지만 알려준다. 저장소 키 자체는 서버 내부 사정이다.
         "downloaded": bool(row.get("storage_key")),
     }
+
+def missing_document_response(row: dict[str, Any]) -> dict[str, Any]:
+    """Drive 스캔에 안 잡히는 등록 문서 한 줄.
+
+    프로젝트 정보를 함께 준다. 기준 문서가 사라졌다는 것은 그 프로젝트의 업무
+    추출 근거가 없어졌다는 뜻이라, 내리기 전에 사람이 알아야 한다.
+    """
+
+    return {
+        "doc_id": row["doc_id"],
+        "file_name": row.get("file_name"),
+        "mime_type": row.get("mime_type"),
+        "proj_id": row.get("proj_id"),
+        "project_name": row.get("project_name"),
+        # NULL(팀 문서 풀) / 'PRIMARY'(기준 문서) / 'SUB'(근거 문서)
+        "doc_role": row.get("doc_role"),
+    }
+
 
 def document_history_response(row: dict[str, Any]) -> dict[str, Any]:
     """`audit_log` 한 줄을 문서 처리 이력으로.
