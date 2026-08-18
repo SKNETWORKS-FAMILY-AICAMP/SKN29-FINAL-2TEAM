@@ -26,6 +26,8 @@ export const PATHS = {
   opsInviteDetail: '/ops/mappings/:inviteId',
   opsConnectors: '/ops/connectors',
   opsConnectorDetail: '/ops/connectors/:connId',
+  opsModels: '/ops/models',
+  opsMcp: '/ops/mcp',
   opsAudit: '/ops/audit',
   opsPolicies: '/ops/policies',
 
@@ -94,6 +96,8 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.opsMappings, label: '계정 연결·초대 현황', group: '운영자 콘솔' },
   { path: PATHS.opsInviteDetail, label: '초대 상세', group: '운영자 콘솔' },
   { path: PATHS.opsConnectors, label: '연결 서비스 현황', group: '운영자 콘솔' },
+  { path: PATHS.opsModels, label: '모델 등록', group: '운영자 콘솔' },
+  { path: PATHS.opsMcp, label: '커스텀 도구 등록', group: '운영자 콘솔' },
   { path: PATHS.opsAudit, label: '감사 로그', group: '운영자 콘솔' },
   { path: PATHS.opsPolicies, label: '전역 정책', group: '운영자 콘솔' },
 ];

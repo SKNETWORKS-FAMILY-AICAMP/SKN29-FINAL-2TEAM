@@ -20,8 +20,6 @@ import {
 import type { OpsTeam, OpsTeamAgent, OpsTeamCandidate, OpsTeamRun } from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
-import { TeamModelSection } from './TeamModelSection';
-import { TeamToolSection } from './TeamToolSection';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
@@ -219,15 +217,6 @@ export default function OpsTeamDetailPage() {
           <Button variant="outline" onClick={openTransfer}>소유자 이전</Button>
         </div>
       </OpsSectionCard>
-
-      {/* **팀별로 정하는 것은 여기 모은다**(2026-08-18 PM). 전에는 `/ops/models`
-          와 `/ops/mcp` 로 나뉘어 있어서, 한 팀을 세팅하려면 페이지 둘을 돌며
-          같은 팀을 두 번 골라야 했다 — 운영자가 하는 일은 「회사 A 가
-          요청했다」로 시작하는데 화면은 주제로 시작하라고 했다. */}
-      {/* 라우트 파라미터가 아니라 **불러온 팀의 id** 를 넘긴다 — 여기까지 왔다는
-          것은 그 팀을 실제로 찾았다는 뜻이고, 그 값이 확실히 있는 값이다. */}
-      <TeamModelSection teamId={team.team_id} />
-      <TeamToolSection teamId={team.team_id} />
 
       <OpsSectionCard title={`에이전트 ${agents.length}개`}>
         {agents.length === 0 ? (
