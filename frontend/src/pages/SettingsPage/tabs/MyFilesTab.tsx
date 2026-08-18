@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { Badge, Button, Icon, InfoNote, ToggleSwitch, useToast } from '../../../components';
+import { Badge, Button, Icon, InfoNote, Modal, ToggleSwitch, useToast } from '../../../components';
 import type { BadgeTone } from '../../../components';
 import {
   ApiError,
@@ -58,7 +58,7 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
     return {
       tone: 'warning',
       label: '색인 실패',
-      hint: '지우고 다시 올려 보세요. 그래도 안 되면 저희에게 알려 주세요.',
+      hint: '삭제 후 다시 올려 주세요.',
     };
   }
   // 요약은 됐는데 청크가 아직 없는 상태와, 막 올라온 상태를 같이 본다 —
@@ -87,6 +87,8 @@ export function MyFilesTab() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** 지우려는 파일. 되돌릴 수 없어 한 번 묻는다. */
+  const [confirming, setConfirming] = useState<PersonalFile | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   /** 처리 중인 파일이 있는 동안만 목록을 다시 받는다. */
   /** 아직 결판이 안 난 파일이 있는 동안만 목록을 다시 받는다. */
@@ -137,7 +139,7 @@ export function MyFilesTab() {
       setBusy(file.name);
       try {
         await uploadPersonalFile(token, file);
-        showToast(`${file.name} 을 올렸습니다. 읽는 중입니다.`, 'success');
+        showToast(`${file.name} · 올렸습니다. 읽는 중입니다.`, 'success');
       } catch (exc) {
         // 형식·크기 거절은 서버가 이유를 준다. 그 문장이 가장 정확하다.
         setError(exc instanceof ApiError ? exc.message : '올리지 못했습니다.');
@@ -171,22 +173,21 @@ export function MyFilesTab() {
     }
   }
 
+  /**
+   * 지운다. **`window.confirm` 을 안 쓴다** — 브라우저 확인창은 「halil-ai.site
+   * 내용:」 같은 제목이 붙어 이 제품의 화면으로 안 보인다. 프로젝트 삭제가
+   * 쓰는 `Modal` 과 같은 모양으로 묻는다.
+   */
   async function remove(file: PersonalFile) {
     if (!token) return;
-    // **되살릴 수 없다.** 커넥터 문서와 달리 원본이 우리뿐이라, 묻지 않고
-    // 지우면 사람이 되찾을 방법이 없다.
-    const confirmed = window.confirm(
-      `${file.file_name} 을 지웁니다.\n\n올린 파일은 우리 쪽에만 있어 되살릴 수 없습니다.`,
-    );
-    if (!confirmed) return;
-
+    setConfirming(null);
     setBusy(file.doc_id);
     try {
       await deletePersonalFile(token, file.doc_id);
       setFiles((prev) => prev.filter((item) => item.doc_id !== file.doc_id));
-      showToast(`${file.file_name} 을 지웠습니다.`, 'success');
+      showToast('파일을 삭제했습니다.', 'success');
     } catch (exc) {
-      showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
+      showToast(exc instanceof ApiError ? exc.message : '삭제하지 못했습니다.', 'error');
     } finally {
       setBusy(null);
     }
@@ -209,23 +210,22 @@ export function MyFilesTab() {
           <h2 className={styles.cardTitle}>
             내 파일
             <InfoNote title="내 파일">
+              {/* 문장을 짧게 끊고 이어붙임표를 안 쓴다. 도움말은 읽고 넘어가는
+                  글이지 설명하는 글이 아니다(2026-08-18 PM 지적). */}
               <p>
-                <strong>내 컴퓨터에서 올린 문서</strong>입니다. Connector 탭의 팀 문서와는{' '}
-                <strong>누구 것이냐</strong>로 갈립니다 — 팀 문서는 폴더를 정해 두면 시스템이 알아서
-                가져오고, 여기 올린 파일은 <strong>내 것이라 내가 켜고 끕니다.</strong>
+                내 컴퓨터에서 올린 문서입니다. 커넥터로 가져오는 팀 문서와 달리 나만 볼 수 있습니다.
               </p>
               <p>
-                켜 두면 대화에서 답을 찾을 때 이 문서도 함께 봅니다. <strong>에이전트마다 따로
-                고를 필요는 없습니다</strong> — 켠 파일은 내가 쓰는 모든 에이전트가 씁니다.
+                <strong>검색에 사용</strong>을 켜면 대화에서 답을 찾을 때 이 문서도 함께 봅니다.
+                에이전트마다 따로 고르지 않아도 됩니다.
               </p>
               <p>
-                끄면 검색에서만 빠지고 <strong>읽어 둔 내용은 그대로 남습니다.</strong> 다시 켤 때
-                기다리지 않아도 됩니다.
+                끄면 검색에서만 빠집니다. 읽어 둔 내용은 남아 있어 다시 켤 때 기다리지 않습니다.
               </p>
               <p>
-                <strong>지우면 되살릴 수 없습니다.</strong> 팀 문서는 원본이 Drive에 있어 다시
-                가져오지만, 올린 파일은 여기에만 있습니다.
+                <strong>팀에 공유</strong>를 켜면 팀원이 볼 수 있습니다. 파일은 계속 내 것입니다.
               </p>
+              <p>삭제한 파일은 복구할 수 없습니다.</p>
             </InfoNote>
           </h2>
         </div>
@@ -353,7 +353,7 @@ export function MyFilesTab() {
                       size="sm"
                       variant="ghost"
                       disabled={busy === file.doc_id}
-                      onClick={() => remove(file)}
+                      onClick={() => setConfirming(file)}
                     >
                       지우기
                     </Button>
@@ -364,6 +364,36 @@ export function MyFilesTab() {
           })}
         </div>
       </section>
+
+      {/* 되돌릴 수 없다. 무엇이 사라지는지 먼저 말한다 — 문구는 프로젝트 삭제
+          (`ProjectDetailPage`)와 같은 꼴로 맞춘다. */}
+      <Modal
+        open={confirming !== null}
+        onClose={() => setConfirming(null)}
+        title="파일 삭제"
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => setConfirming(null)}>
+              취소
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy !== null}
+              onClick={() => confirming && void remove(confirming)}
+            >
+              {busy ? '지우는 중…' : '삭제'}
+            </Button>
+          </>
+        )}
+      >
+        <p className={styles.confirmText}>
+          <strong>{confirming?.file_name}</strong> 을(를) 지웁니다.{' '}
+          <strong>되돌릴 수 없습니다.</strong>
+        </p>
+        <p className={styles.confirmText}>
+          읽어 둔 내용과 원본 파일이 함께 지워집니다. 팀에 공유한 파일이면 팀원 목록에서도 빠집니다.
+        </p>
+      </Modal>
     </div>
   );
 }

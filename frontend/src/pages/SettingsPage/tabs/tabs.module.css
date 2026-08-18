@@ -412,3 +412,14 @@
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
 }
+
+/* 삭제 확인 모달의 문장. 프로젝트 삭제(`ProjectDetailPage`)와 같은 값이다. */
+.confirmText {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--color-body);
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.confirmText:last-child { margin-bottom: 0; }
