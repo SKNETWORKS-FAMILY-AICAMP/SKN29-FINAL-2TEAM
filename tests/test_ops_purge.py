@@ -193,3 +193,26 @@ class PurgeStepShapeTests(SimpleTestCase):
             sqls = " ".join(sql for _, sql in steps)
             for table in ("checkpoints", "checkpoint_writes", "checkpoint_blobs"):
                 self.assertIn(f"DELETE FROM {table} ", sqls)
+
+    def test_체크포인트_비교는_text_로_캐스트한다(self):
+        """체크포인트 3종은 **langgraph 가 만든 테이블**이라 `thread_id` 가 `text`
+        인데 우리 `chat_session.session_id` 는 `uuid` 다. 캐스트 없이 비교하면
+        `operator does not exist: text = uuid` 로 통째로 실패한다.
+
+        회귀 방지: 실제로 그렇게 나갔고, 화면에는 「데이터베이스 요청을 처리할 수
+        없습니다」로만 보여서 원인이 안 드러났다(2026-08-19).
+
+        ⚠ 이 검사는 **문자열을 본다.** 위 가드 테스트들이 가짜 커서를 쓰기
+        때문에 SQL 이 실제로 도는지는 아무도 확인하지 않는다 — 그래서 이
+        결함이 배포까지 갔다. 표를 고치면 실제 DB 로 한 번 돌려 볼 것.
+        """
+
+        for steps in (repositories._TEAM_PURGE_STEPS, repositories._ACCOUNT_PURGE_STEPS):
+            for label, sql in steps:
+                if "checkpoint" not in sql:
+                    continue
+                self.assertIn(
+                    "session_id::text",
+                    sql,
+                    f"{label}: thread_id(text) 와 session_id(uuid) 를 그냥 비교할 수 없다",
+                )
