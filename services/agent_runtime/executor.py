@@ -170,3 +170,95 @@ class AgentExecutor:
                 "run_id": context.run_id,
                 "complete": True,
             }
+
+    def resume(
+        self,
+        *,
+        agent_id: str | None,
+        agent_version_id: str | None,
+        context: RuntimeContext,
+        decisions: Sequence[dict[str, Any]],
+        draft: dict | None = None,
+        tool_refs_override: Sequence[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """`HumanInTheLoopMiddleware`의 interrupt로 멈춘 실행을 재개한다
+        (2026-08-19, §0순위 — 새 엔진 HITL resume API).
+
+        `context.run_id`는 **멈췄던 그 실행의 run_id를 그대로** 받아야 한다
+        (호출자 — `apps/chat/api_views.py` — 가 확인 카드에 저장해 둔
+        값). 여기서 새로 발급하지 않는다: 새로 발급하면 `agent_run` 행이
+        하나 더 느는 게 아니라, interrupt 시점에 이미 `PENDING`으로 남겨 둔
+        원래 행을 영영 못 닫는다 — `trace_events()`의 열린 run 추적은 스트림
+        하나에 국한된 메모리 상태라(`tracing/__init__.py`), 새 스트림은
+        원래 run_id를 모른 채 시작한다. 호출자가 `trace_events(...,
+        known_run_ids=(run_id,))`로 그 상태를 미리 채워 넣는 것과 짝을
+        이룬다.
+
+        `agent_id`/`agent_version_id`/`draft`/`tool_refs_override`는
+        `run()`과 완전히 같은 규칙이다 — 멈췄던 그 실행과 같은 에이전트
+        정의로 그래프를 다시 조립해야 재개가 그 실행의 연속으로 보인다
+        (checkpointer가 대화 상태를 들고 있지, 그래프 구조 자체를 들고
+        있지는 않다 — `stream_adapter.py`의 `resume` 처리 docstring 참고).
+
+        `EVENT_AGENT_STARTED`는 내지 않는다 — 이건 "새로 시작"이 아니라
+        "이어서 진행"이라 `trace_events()`가 새 `agent_run` 행을 만들 필요가
+        없다(만들면 `run_id` PK 충돌).
+        """
+        validate_execution_target(agent_id=agent_id, agent_version_id=agent_version_id, draft=draft)
+        if context.run_id is None:
+            msg = "resume()에는 context.run_id(멈췄던 실행의 run_id)가 있어야 합니다."
+            raise ValueError(msg)
+
+        try:
+            loaded = (
+                self.loader.from_draft(draft=draft, context=context)
+                if draft is not None
+                else self.loader.load(
+                    agent_id=agent_id, agent_version_id=agent_version_id, context=context
+                )
+            )
+            if tool_refs_override is not None:
+                loaded = dataclasses.replace(
+                    loaded,
+                    definition=dataclasses.replace(
+                        loaded.definition, tool_refs=tuple(tool_refs_override)
+                    ),
+                )
+            runtime = self.factory.build(
+                definition=loaded.definition,
+                subagent_references=loaded.subagent_references,
+                context=context,
+            )
+        except AgentRuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 예상 밖 조립 오류를 공통 예외로 변환
+            logger.exception("Deep Agent 재개 조립 실패")
+            raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
+
+        event_mapper = self.event_mapper_factory()
+
+        try:
+            for raw_event in self.stream_adapter.stream(
+                runtime=runtime,
+                resume={"decisions": list(decisions)},
+                thread_id=context.session_id,
+            ):
+                for converted in event_mapper.convert(
+                    raw_event, definition=loaded.definition, context=context
+                ):
+                    yield converted
+        except Exception:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
+            logger.exception(
+                "Deep Agent 재개 실패: agent=%s version=%s",
+                loaded.definition.agent_id,
+                loaded.definition.agent_version_id,
+            )
+            yield {
+                "type": EVENT_ERROR,
+                "error_code": "AGENT_EXECUTION_FAILED",
+                "message": "에이전트 실행 중 오류가 발생했습니다.",
+                "agent_id": loaded.definition.agent_id,
+                "agent_version_id": loaded.definition.agent_version_id,
+                "run_id": context.run_id,
+                "complete": True,
+            }

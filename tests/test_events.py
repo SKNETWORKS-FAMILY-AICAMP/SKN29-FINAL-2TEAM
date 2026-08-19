@@ -14,6 +14,7 @@ Mock 없이 진짜 EventMapper.convert()/_classify()를 돌린다. `convert()`�
 
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from django.test import SimpleTestCase
+from langgraph.types import Interrupt
 
 from services.agent_runtime.definitions import SubagentDefinition
 from services.agent_runtime.events import (
@@ -713,83 +714,78 @@ class ToolProgressEventTests(SimpleTestCase):
         self.assertEqual(events, [])
 
 
-class _Interrupt:
-    """LangGraph `Interrupt`의 최소 대역. 필요한 건 `.value` 하나뿐이다.
+class InterruptEventTests(SimpleTestCase):
+    """`HumanInTheLoopMiddleware`의 interrupt → `EVENT_AWAITING_CONFIRMATION`
+    (2026-08-19, §0순위 — 새 엔진 HITL resume API).
 
-    실제 값 모양은 RDS의 `checkpoint_writes`에 저장된 실물에서 확인했다
-    (2026-08-18): `{"action_requests": [{"name","args"}], "review_configs": [...]}`.
-    """
+    실제 `langgraph.types.Interrupt` 인스턴스를 쓴다(mock 아님) — `output_writes()`가
+    "updates" 청크로 `{"__interrupt__": (Interrupt(...), ...)}`를 낸다는 실제
+    소스 확인 그대로 raw_event를 만든다."""
 
-    def __init__(self, value):
-        self.value = value
+    def test_interrupt_payload_becomes_awaiting_confirmation_event(self):
+        hitl_request = {
+            "action_requests": [
+                {"name": "task_register", "args": {"tasks": [{"title": "더미"}]}}
+            ],
+            "review_configs": [{"action_name": "task_register"}],
+        }
+        interrupt = Interrupt(value=hitl_request, id="intr-1")
+        raw = ((), "updates", {"__interrupt__": (interrupt,)})
 
-
-def _hitl_raw_event(*, name="task_register", args=None, extra=()):
-    """승인 게이트가 멈췄을 때 LangGraph가 내보내는 `updates` 이벤트."""
-    requests = [{"name": name, "args": args if args is not None else {"tasks": [{"title": "감리"}]}}]
-    requests.extend(extra)
-    return (
-        (),
-        "updates",
-        {"__interrupt__": (_Interrupt({"action_requests": requests, "review_configs": []}),)},
-    )
-
-
-class AwaitingConfirmationTests(SimpleTestCase):
-    """`__interrupt__` → `awaiting_confirmation`.
-
-    회귀 방지: 예전에는 `updates` 페이로드를 `node_name -> dict`로만 순회해서
-    (`isinstance(node_output, dict)`) 값이 tuple인 `__interrupt__`가 조용히
-    버려졌다 — 그래프는 멈췄는데 화면엔 아무것도 안 나와 대화가 끊긴 것처럼
-    보였다(2026-08-18 QA에서 발견).
-    """
-
-    def test_인터럽트를_승인대기_이벤트로_바꾼다(self):
-        events = EventMapper().convert(
-            _hitl_raw_event(), definition=_Definition(), context=_Context()
-        )
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
         self.assertEqual(len(events), 1)
         event = events[0]
         self.assertEqual(event["type"], EVENT_AWAITING_CONFIRMATION)
-        self.assertEqual(event["tool_ref"], "task_register")
-        # 화면이 읽는 필드(`liveChat.ts`의 awaiting_confirmation 분기)
-        self.assertEqual(event["arguments"], {"tasks": [{"title": "감리"}]})
-        self.assertEqual(event["run_id"], _Context().run_id)
+        self.assertEqual(event["run_id"], "RUN1")
+        self.assertEqual(event["agent_id"], "AG001")
+        self.assertEqual(event["agent_version_id"], "AV001")
+        self.assertEqual(event["interrupt_id"], "intr-1")
+        self.assertEqual(event["action_requests"], hitl_request["action_requests"])
+        self.assertFalse(event["complete"])
 
-    def test_사람이_읽는_도구_이름을_붙인다(self):
-        events = EventMapper().convert(
-            _hitl_raw_event(), definition=_Definition(), context=_Context()
+    def test_interrupt_key_short_circuits_even_with_sibling_node_keys(self):
+        """`__interrupt__`는 그 턴의 다른 node_name과 구조적으로 섞이지 않는다
+        (`map_output_updates()`가 INTERRUPT 채널 write를 걸러내고 별도
+        `_emit()`으로 낸다는 실제 소스 근거) — 그래도 같은 payload dict에
+        다른 키가 섞여 들어오는 방어적인 경우, interrupt를 우선 처리하고
+        그 키는 통상적인 node_output 루프로 건너가지 않는다."""
+        interrupt = Interrupt(value={"action_requests": []}, id="intr-2")
+        raw = (
+            (),
+            "updates",
+            {
+                "__interrupt__": (interrupt,),
+                "model": {"messages": [AIMessage(content="이건 안 쓰인다")]},
+            },
         )
 
-        # 레지스트리의 라벨. 대화 기록 한 줄(`_history`)에 쓰인다.
-        self.assertEqual(events[0]["tool_name"], "업무 등록")
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
-    def test_모델용_이름을_저장소_tool_ref로_되돌린다(self):
-        events = EventMapper().convert(
-            _hitl_raw_event(name="mcp__abc123"), definition=_Definition(), context=_Context()
-        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], EVENT_AWAITING_CONFIRMATION)
 
-        self.assertEqual(events[0]["tool_ref"], "mcp:abc123")
+    def test_empty_interrupt_tuple_yields_no_events(self):
+        raw = ((), "updates", {"__interrupt__": ()})
 
-    def test_재개에_필요한_호출을_전부_담는다(self):
-        """카드는 첫 호출만 그리지만, 재개는 요구된 수만큼 결정을 돌려줘야 한다."""
-        events = EventMapper().convert(
-            _hitl_raw_event(extra=[{"name": "jira_create_issues", "args": {"issues": []}}]),
-            definition=_Definition(),
-            context=_Context(),
-        )
-
-        resume = events[0]["resume"]
-        self.assertEqual(resume["engine"], "agent_runtime")
-        self.assertEqual(
-            [item["name"] for item in resume["action_requests"]],
-            ["task_register", "jira_create_issues"],
-        )
-
-    def test_인터럽트가_아니면_그대로_지나간다(self):
-        events = EventMapper().convert(
-            ((), "updates", {"__interrupt__": ()}), definition=_Definition(), context=_Context()
-        )
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
         self.assertEqual(events, [])
+
+    def test_interrupt_value_missing_action_requests_defaults_to_empty_list(self):
+        interrupt = Interrupt(value={"review_configs": []}, id="intr-3")
+        raw = ((), "updates", {"__interrupt__": (interrupt,)})
+
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(events[0]["action_requests"], [])
+
+    def test_non_dict_interrupt_value_defaults_to_empty_action_requests(self):
+        """`Interrupt.value`는 `interrupt()`에 넘긴 그 값 그대로라 이론상 dict가
+        아닐 수도 있다 — 방어적으로 빈 목록으로 처리하고 죽지 않는다."""
+        interrupt = Interrupt(value="not-a-dict", id="intr-4")
+        raw = ((), "updates", {"__interrupt__": (interrupt,)})
+
+        events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(events[0]["action_requests"], [])

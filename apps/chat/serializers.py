@@ -51,10 +51,20 @@ class ChatConfirmSerializer(serializers.Serializer):
     보내면 승인 게이트가 아무것도 막지 못한다.
 
     `selected` 는 확인 카드에서 체크한 항목의 인덱스다. 비우면 전체 승인이다.
+    레거시 확인 카드 전용이다 — 새 엔진(`engine == "deepagents"`) 경로는 이
+    필드를 안 읽는다(`apps/chat/api_views.py` `_resume_deep_agent()`).
+
+    `decision`(2026-08-19 추가, §0순위)은 새 엔진 재개 전용이다 —
+    `"approve"`/`"reject"` 중 하나, 기본은 `"approve"`(레거시와 같은 기본
+    동작 — 지금까지 레거시는 승인 전용 API였다). 레거시 경로는 이 필드를
+    안 읽는다 — 두 필드가 공존해도 서로 안 건드린다.
     """
 
     selected = serializers.ListField(
         child=serializers.IntegerField(min_value=0), required=False, allow_empty=True, default=None
+    )
+    decision = serializers.ChoiceField(
+        choices=["approve", "reject"], required=False, default="approve"
     )
 
 

@@ -69,9 +69,7 @@ class _FakeStreamAdapter:
         self._error = error
         self.stream_calls = []
 
-    def stream(
-        self, *, runtime, user_input, conversation_messages=(), thread_id=None, resume=None
-    ):
+    def stream(self, *, runtime, user_input="", conversation_messages=(), thread_id=None, resume=None):
         self.stream_calls.append(
             {
                 "runtime": runtime,
@@ -369,10 +367,13 @@ class RunMidStreamFailureTests(SimpleTestCase):
 
 
 class ResumeTests(SimpleTestCase):
-    """승인 게이트에서 멈춘 실행을 잇는 경로(2026-08-18).
+    """승인 게이트에서 멈춘 실행을 잇는 경로(2026-08-18) — `run(resume_decisions=...)`.
 
     멈춘 자리의 대화는 Checkpointer에 있으므로, 이 호출이 넘겨야 하는 건
-    사람의 결정뿐이다 — 새 발화를 만들어 넣으면 안 된다.
+    사람의 결정뿐이다 — 새 발화를 만들어 넣으면 안 된다. `AgentExecutor.resume()`
+    (2026-08-19 추가, 아래 `AgentExecutorResumeMethodTests`)이 새 전용 경로지만,
+    이 `run(resume_decisions=...)` 경로도 `executor.py`에 그대로 남아 있어(기존
+    호출부 호환) 같이 검증한다.
     """
 
     def _run_resume(self, decisions):
@@ -412,3 +413,157 @@ class ResumeTests(SimpleTestCase):
         )
 
         self.assertIsNone(stream_adapter.stream_calls[0]["resume"])
+
+
+class AgentExecutorResumeMethodTests(SimpleTestCase):
+    """`AgentExecutor.resume()`(2026-08-19 추가, §0순위 — HITL resume API) —
+    `run()`과 조립 규칙은 같지만 `EVENT_AGENT_STARTED`를 안 내고, 멈췄던
+    실행의 `run_id`를 반드시 이미 갖고 있어야 하며, `stream_adapter.stream()`을
+    `resume=`으로 부른다."""
+
+    def test_requires_context_run_id(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=_FakeStreamAdapter())
+
+        with self.assertRaises(ValueError):
+            list(
+                executor.resume(
+                    agent_id="AG001",
+                    agent_version_id="AV001",
+                    context=_context(run_id=None),
+                    decisions=[{"type": "approve"}],
+                )
+            )
+
+    def test_does_not_emit_agent_started(self):
+        """재개는 '새로 시작'이 아니라 '이어서 진행'이다 — trace_events()가 새
+        agent_run 행을 또 만들면(run_id PK 충돌) 안 된다."""
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("등록했습니다")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+            )
+        )
+
+        self.assertNotIn(EVENT_AGENT_STARTED, [e["type"] for e in events])
+        self.assertEqual(events[-1]["type"], EVENT_RESULT)
+
+    def test_decisions_reach_stream_adapter_as_resume_dict(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "reject", "message": "지금은 안 돼요"}],
+            )
+        )
+
+        self.assertEqual(
+            stream_adapter.stream_calls[0]["resume"],
+            {"decisions": [{"type": "reject", "message": "지금은 안 돼요"}]},
+        )
+
+    def test_context_session_id_reaches_the_stream_adapter_as_thread_id(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1", session_id="SESSION001"),
+                decisions=[{"type": "approve"}],
+            )
+        )
+
+        self.assertEqual(stream_adapter.stream_calls[0]["thread_id"], "SESSION001")
+
+    def test_draft_resume_uses_from_draft(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id=None,
+                agent_version_id=None,
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+                draft={"name": "초안"},
+            )
+        )
+
+        self.assertEqual(loader.from_draft_calls, [{"name": "초안"}])
+        self.assertEqual(loader.load_calls, [])
+
+    def test_tool_refs_override_replaces_definition_for_rebuild(self):
+        """멈췄던 실행과 같은 도구 구성으로 다시 조립해야 재개가 그 실행의
+        연속으로 보인다."""
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+                tool_refs_override=["people_list"],
+            )
+        )
+
+        self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ("people_list",))
+
+    def test_loader_failure_becomes_agent_build_error(self):
+        loader = _FakeLoader(error=RuntimeError("DB 다운"))
+        factory = _FakeFactory()
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=_FakeStreamAdapter())
+
+        with self.assertRaises(AgentBuildError):
+            list(
+                executor.resume(
+                    agent_id="AG001",
+                    agent_version_id="AV001",
+                    context=_context(run_id="RUN1"),
+                    decisions=[{"type": "approve"}],
+                )
+            )
+
+    def test_mid_stream_failure_yields_terminal_error_event_not_raise(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(error=RuntimeError("재개 중 실패"))
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+            )
+        )
+
+        self.assertEqual(events[-1]["type"], EVENT_ERROR)
+        self.assertTrue(events[-1]["complete"])
+        self.assertEqual(events[-1]["run_id"], "RUN1")
+        self.assertNotIn("재개 중 실패", str(events[-1]))

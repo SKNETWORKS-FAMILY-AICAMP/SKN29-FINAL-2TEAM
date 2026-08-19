@@ -269,13 +269,21 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return history[-HISTORY_LIMIT:]
 
 
-def _build_runtime_context(*, session: dict[str, Any], account_id: str) -> RuntimeContext:
+def _build_runtime_context(
+    *, session: dict[str, Any], account_id: str, run_id: str | None = None
+) -> RuntimeContext:
     """새 엔진(services/agent_runtime)이 요구하는 `RuntimeContext`를 채운다.
 
     `role`은 가입 경로로 정해진다(`account_role` — apps/accounts/serializers.py,
     apps/connectors/api_views.py가 이미 쓰는 것과 같은 헬퍼). 팀장/팀원에 따른
     도구 사용 가능 여부는 이 값을 `runtime_policy.py`가 읽어서 가른다 — 여기서는
     조회만 한다.
+
+    `run_id`(2026-08-19 추가, §0순위): 기본은 새 발화라 매번 새로 발급
+    (`uuid4()`)한다. HITL로 멈춘 실행을 재개할 때만(`_resume_deep_agent()`)
+    멈췄던 그 실행의 run_id를 그대로 넘긴다 — 새로 발급하면 그 run_id로
+    이미 열어 둔 `agent_run` 행을 못 찾는다(`AgentExecutor.resume()`
+    docstring 참고).
     """
 
     profile = AccountRepository.get_profile(account_id)
@@ -285,7 +293,7 @@ def _build_runtime_context(*, session: dict[str, Any], account_id: str) -> Runti
         role=account_role(profile),
         session_id=session["session_id"],
         project_id=session.get("proj_id"),
-        run_id=str(uuid.uuid4()),
+        run_id=run_id or str(uuid.uuid4()),
     )
 
 
@@ -353,12 +361,77 @@ def _run_deep_agent(
         yield event
 
 
+def _resume_deep_agent(
+    *,
+    session: dict[str, Any],
+    account_id: str,
+    content: dict[str, Any],
+    decision: str,
+):
+    """새 엔진에서 HITL interrupt로 멈춘 실행을 재개한다(2026-08-19, §0순위).
+
+    `content`는 `latest_pending_confirmation()`이 돌려준, `_persist()`가
+    `EVENT_AWAITING_CONFIRMATION`(새 엔진 모양 — `action_requests` 있음)을
+    저장해 둔 그 딕셔너리다. `run_id`는 **멈췄던 그 실행의 run_id**를 그대로
+    쓴다 — `_build_runtime_context(run_id=...)`로 넘겨 새로 발급되지 않게
+    한다.
+
+    `decision`은 지금은 "approve"/"reject" 중 하나이고, 그 턴에 걸린
+    `action_requests` **전부에 같은 결정을 적용한다** — 레거시 확인 카드의
+    `selected`(항목별 부분 승인)처럼 하나씩 고르는 기능은 아직 없다. 모델이
+    한 턴에 side_effect 도구를 여러 개 동시에 부르는 경우(병렬 호출)에만
+    차이가 나는 한계이고, 대부분은 한 번에 하나라 실제 영향은 작다 —
+    필요해지면 `decision`을 리스트로 받게 넓히면 된다(`HumanInTheLoopMiddleware`
+    는 이미 `decisions`가 리스트라 프레임워크 쪽 제약은 없다).
+
+    `EVENT_AGENT_STARTED`가 없는 스트림이라 `_run_deep_agent()`와 달리
+    `trace_events(..., known_run_ids=(run_id,))`로 그 run_id를 미리 열어
+    둔 것으로 표시한다(`AgentExecutor.resume()`/`tracing/__init__.py`
+    docstring 참고) — 안 하면 재개가 끝나도 그 실행의 `agent_run` 행이
+    `PENDING`에서 영원히 안 닫힌다.
+    """
+
+    from services.agent_runtime import build_default_executor
+    from services.agent_runtime.tracing import trace_events
+
+    run_id = content.get("run_id")
+    action_requests = content.get("action_requests") or []
+    context = _build_runtime_context(session=session, account_id=account_id, run_id=run_id)
+    draft = (
+        None
+        if session.get("agent_version_id")
+        else draft_from_legacy_agent(agent_id=session["agent_id"], team_id=session["team_id"])
+    )
+    run_kwargs = (
+        {"agent_id": None, "agent_version_id": None, "draft": draft}
+        if draft is not None
+        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
+    )
+
+    executor = build_default_executor()
+    raw_events = executor.resume(
+        context=context,
+        decisions=[{"type": decision}] * len(action_requests),
+        tool_refs_override=session.get("tool_refs_override"),
+        **run_kwargs,
+    )
+    for event in trace_events(raw_events, context=context, known_run_ids=(run_id,) if run_id else ()):
+        if event.get("type") == EVENT_ERROR and "text" not in event:
+            event = {**event, "text": event.get("message", "")}
+        yield event
+
+
 class ChatConfirmAPIView(AuthenticatedAPIView):
     """확인 카드 승인 → 멈춰 있던 실행을 이어서 돌린다.
 
     승인 대상은 **저장해 둔 그 호출**이다. 모델에게 다시 묻지 않는다 — 다시
     물으면 재실행 때 다른 인자를 고를 수 있고, 그러면 사용자가 승인한 것과
     실제로 실행되는 것이 달라진다(8/11 확정 ③).
+
+    2026-08-19, §0순위 — `pending["content"]["engine"] == "deepagents"`면
+    새 엔진 재개 경로(`_resume_deep_agent()`)로 분기한다. 그 앞까지(세션
+    조회, pending 조회, 없으면 409)는 두 엔진이 완전히 같다 — "승인 대기
+    카드가 있는가"는 엔진과 무관한 질문이라서다.
     """
 
     def post(self, request, session_id):
@@ -381,6 +454,22 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
             )
 
         content = pending["content"] or {}
+
+        if content.get("engine") == "deepagents":
+            return StreamingHttpResponse(
+                _relay(
+                    _resume_deep_agent(
+                        session=session,
+                        account_id=account_id,
+                        content=content,
+                        decision=serializer.validated_data.get("decision") or "approve",
+                    ),
+                    session_id=session_id,
+                    account_id=account_id,
+                ),
+                content_type="application/x-ndjson",
+            )
+
         resume = content.get("resume") or {}
         selected = serializer.validated_data.get("selected")
 
@@ -654,14 +743,30 @@ def _persist(
         "events": events,
     }
     if final["type"] == EVENT_AWAITING_CONFIRMATION:
-        # 재개 정보. `message_response` 가 화면으로는 내보내지 않는다.
-        content["resume"] = final.get("resume")
-        content["tool_ref"] = final.get("tool_ref")
-        content["tool_name"] = final.get("tool_name")
-        content["arguments"] = final.get("arguments")
-        # 위임을 거쳐 올라온 승인이면 누가 요구했는지. 없으면 최상위가 직접
-        # 부른 것이다 — 그 차이를 사람이 알아야 무엇을 승인하는지 안다.
-        content["via_agent"] = final.get("via_agent")
+        if "action_requests" in final:
+            # 새 엔진(HITL interrupt, 2026-08-19 §0순위) — 레거시와 모양이
+            # 다르다: 재개 스택(resume/tool_ref/via_agent) 대신 그 턴에
+            # interrupt된 action_requests 전부와, 재개에 그대로 써야 하는
+            # run_id를 저장한다. `ChatConfirmAPIView`가 `content.get("engine")`
+            # 로 이 분기를 골라 `_resume_deep_agent()`로 보낸다.
+            content["engine"] = "deepagents"
+            content["run_id"] = final.get("run_id")
+            content["interrupt_id"] = final.get("interrupt_id")
+            content["action_requests"] = final.get("action_requests")
+            names = [
+                a.get("name") for a in (final.get("action_requests") or []) if a.get("name")
+            ]
+            content["tool_name"] = ", ".join(names) if names else None
+        else:
+            # 레거시 확인 카드. `message_response` 가 화면으로는 내보내지 않는다.
+            content["resume"] = final.get("resume")
+            content["tool_ref"] = final.get("tool_ref")
+            content["tool_name"] = final.get("tool_name")
+            content["arguments"] = final.get("arguments")
+            # 위임을 거쳐 올라온 승인이면 누가 요구했는지. 없으면 최상위가
+            # 직접 부른 것이다 — 그 차이를 사람이 알아야 무엇을 승인하는지
+            # 안다.
+            content["via_agent"] = final.get("via_agent")
     else:
         content["text"] = final.get("text", "")
         content["complete"] = final.get("complete", False)
