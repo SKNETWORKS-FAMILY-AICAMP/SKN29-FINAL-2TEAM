@@ -85,3 +85,37 @@ export function fetchTeamContent(token: string, teamId: string) {
     { token },
   );
 }
+
+
+/** 완전 삭제 전에 「무엇이 몇 건 사라지는지」. 0 건인 항목은 서버가 뺀다. */
+export interface OpsPurgePreview {
+  team_id?: string;
+  account_id?: string;
+  name?: string;
+  email?: string;
+  display_name?: string;
+  items: { label: string; count: number }[];
+}
+
+export interface OpsPurgeResult {
+  removed: { label: string; count: number }[];
+  handed_over?: { label: string; count: number }[];
+}
+
+export function fetchTeamPurgePreview(token: string, teamId: string) {
+  return opsRequest<OpsPurgePreview>(`/ops/teams/${teamId}/purge/`, { token });
+}
+
+/**
+ * 팀을 완전히 지운다. **되돌릴 수 없다.**
+ *
+ * `confirmName` 에 팀 이름을 그대로 넣어야 서버가 실행한다 — 화면에서만 막으면
+ * API 를 직접 부르는 경로가 열린 채로 남는다.
+ */
+export function purgeTeam(token: string, teamId: string, confirmName: string) {
+  return opsRequest<OpsPurgeResult>(`/ops/teams/${teamId}/purge/`, {
+    method: 'DELETE',
+    token,
+    body: { confirm_name: confirmName },
+  });
+}

@@ -726,3 +726,40 @@
 .detailTable tr:last-child td {
   border-bottom: 0;
 }
+
+/* ---------- 완전 삭제 확인 (2026-08-19) ---------- */
+
+/* 되돌릴 수 없다는 것을 **색으로** 먼저 말한다. 이 모달은 다른 확인 모달과
+   같은 모양이면 안 된다 — 손에 익은 흐름으로 지나가 버린다. */
+.purgeWarn {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+  color: var(--color-body);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 무엇이 몇 건 사라지는지. 숫자를 오른쪽에 모아 훑어보게 한다. */
+.purgeList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.purgeList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.purgeList li + li {
+  border-top: 1px solid var(--color-border);
+}

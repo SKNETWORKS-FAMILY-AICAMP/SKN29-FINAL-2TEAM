@@ -1,4 +1,5 @@
 import { opsRequest } from './opsClient';
+import type { OpsPurgePreview, OpsPurgeResult } from './opsTeams';
 
 export type OpsMappingStatus = 'UNMAPPED' | 'LINKED' | 'DUPLICATE';
 
@@ -77,4 +78,27 @@ export function setAccountAdmin(token: string, accountId: string, isAdmin: boole
  */
 export function fetchAccount(token: string, accountId: string) {
   return opsRequest<OpsAccount>(`/ops/accounts/${accountId}/`, { token });
+}
+
+
+/** 계정 삭제 미리보기·실행. 자세한 규격은 `opsTeams.ts` 의 같은 이름 참고. */
+export function fetchAccountPurgePreview(token: string, accountId: string) {
+  return opsRequest<OpsPurgePreview>(`/ops/accounts/${accountId}/purge/`, { token });
+}
+
+/**
+ * 계정을 완전히 지운다. **되돌릴 수 없다.**
+ *
+ * 확인값은 이름이 아니라 **이메일**이다 — 이름은 겹칠 수 있어서(실제로 팀
+ * 이름이 둘 다 「개발팀」이었다) 확인이 확인 구실을 못 한다.
+ *
+ * 그 사람이 만든 문서·프로젝트·에이전트는 **안 지운다.** 팀 자산이라 소유자만
+ * 팀 소유자에게 넘어간다 — 사람이 나가도 팀이 일을 잃지 않는다.
+ */
+export function purgeAccount(token: string, accountId: string, confirmEmail: string) {
+  return opsRequest<OpsPurgeResult>(`/ops/accounts/${accountId}/purge/`, {
+    method: 'DELETE',
+    token,
+    body: { confirm_name: confirmEmail },
+  });
 }
