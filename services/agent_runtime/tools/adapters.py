@@ -8,7 +8,7 @@
 주입할지는 `services/harness/runner.py`의 `_injected()`를 실제로 읽어서 그대로
 옮겼다 — 추측이 아니라 실측이다:
 
-  document_search                          -> team_id
+  document_search                          -> team_id, account_id, project_id
   people_list / workload_report /
   project_list / document_list /
   absence_list                             -> account_id
@@ -96,7 +96,11 @@ def _injected_context_names(tool_ref: str) -> tuple[str, ...]:
     if tool_ref == _TASK_EXTRACTION_REF:
         return ("project_id", "account_id", "team_id")
     if tool_ref == _DOCUMENT_SEARCH_REF:
-        return ("team_id", "account_id")
+        # `project_id` 는 2026-08-19 에 더했다(PM 결정 ⓐ). `_call`이 레거시
+        # 이름(`proj_id`)으로 바꿔 넘긴다 — 아래 `_LEGACY_PROJECT_KWARG`.
+        # **레거시 `_injected()`와 함께 고쳐야 한다** — 한쪽만 고치면 엔진에
+        # 따라 검색 범위가 달라진다(2026-08-18 `account_id` 때 그랬다).
+        return ("team_id", "account_id", "project_id")
     if tool_ref in _PROJECT_SCOPED:
         return ("project_id", "account_id")
     if tool_ref in _ACCOUNT_SCOPED:

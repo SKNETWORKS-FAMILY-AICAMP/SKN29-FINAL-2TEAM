@@ -95,7 +95,12 @@ PROMOTE_TOP_N = 2
 
 
 def _document_search(
-    *, team_id: str, query: str, account_id: str | None = None, top_k: int = 10
+    *,
+    team_id: str,
+    query: str,
+    account_id: str | None = None,
+    proj_id: str | None = None,
+    top_k: int = 10,
 ):
     """팀 문서에서 근거 문장을 찾는다. **두 단계다**(A안 — 8/11 확정 ⑥).
 
@@ -124,9 +129,26 @@ def _document_search(
     # `account_id` 를 함께 넘긴다 — 팀 문서에 **내가 켠 내 파일**을 더해 본다
     # (2026-08-18 · M④). 에이전트에 파일을 붙이는 개념은 안 만들었으므로 켠
     # 파일은 모든 에이전트가 쓴다.
-    candidates = DocMetaRepository.coarse_search(
-        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
-    )
+    #
+    # **프로젝트 대화면 그 프로젝트 문서를 먼저 본다**(2026-08-19 PM 결정 ⓐ).
+    # 화면은 「〈프로젝트〉의 문서를 근거로 답합니다」라고 약속하는데
+    # (`ChatPage.tsx`), 검색은 `proj_id` 를 받지도 않아 팀 문서 전체를 훑고
+    # 있었다 — 무관한 「테스트.pdf」가 후보로 올라와 읽히기까지 했다.
+    # 좁혀서 아무것도 없을 때만 팀 전체로 넓힌다: 팀 공용 문서(규정·양식)를
+    # 영영 못 보게 하면 「감리 표준양식 보여줘」 같은 요청이 막힌다.
+    candidates = []
+    if proj_id:
+        candidates = DocMetaRepository.coarse_search(
+            team_id=team_id,
+            query_vector=vector,
+            top_n=COARSE_TOP_N,
+            account_id=account_id,
+            proj_id=proj_id,
+        )
+    if not candidates:
+        candidates = DocMetaRepository.coarse_search(
+            team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
+        )
 
     if candidates:
         doc_ids = [row["doc_id"] for row in candidates if row["search_ready"]]

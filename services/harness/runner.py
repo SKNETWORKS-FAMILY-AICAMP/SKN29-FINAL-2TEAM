@@ -567,7 +567,15 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
         # 「문서가 없습니다」로 끝나서 **기능이 없는 것처럼 보인다.**
         # 승격은 2026-08-15 에 이 값이 온다는 전제로 만들어졌는데 이 자리가 그때
         # 같이 안 고쳐졌다.
-        return {"team_id": agent["team_id"], "account_id": context.get("account_id")}
+        #
+        # `proj_id` 는 2026-08-19 에 더했다(PM 결정 ⓐ) — 프로젝트 대화면 그
+        # 프로젝트 문서를 먼저 본다. 없으면 `_document_search` 가 팀 전체로
+        # 넓힌다. 프로젝트 없는 대화(「팀 전체 문서」)는 None 이라 예전과 같다.
+        return {
+            "team_id": agent["team_id"],
+            "account_id": context.get("account_id"),
+            "proj_id": context.get("proj_id"),
+        }
     if tool.ref.startswith("mcp:"):
         # MCP 도구도 팀이 필요하다 — 실행 직전에 그 팀의 서버·토큰을 찾는다.
         # 모델이 team_id 를 보내면 남의 팀 MCP 서버를 부를 수 있다.
