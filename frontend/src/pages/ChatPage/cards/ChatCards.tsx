@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Icon } from '../../../components';
 import type { JiraIssue, SourceRef } from '../../../api/chat';
-import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun } from '../cardTypes';
+import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
 import styles from './cards.module.css';
 
 /**
@@ -161,8 +161,13 @@ export function ProgressCard({
 }
 
 export interface ReasoningTraceProps {
-  /** 이 턴에서 모델이 낸 생각을 순서대로. 비어 있으면 컴포넌트 자체를 안 그린다. */
-  steps: string[];
+  /**
+   * 이 턴의 생각·도구 호출·위임을 실제 순서대로. 비어 있으면 컴포넌트
+   * 자체를 안 그린다(2026-08-18 — 예전엔 reasoning 조각만 받았는데, "어떤
+   * 도구가 몇 번째 생각 다음에 불렸는지" 순서를 보여 달라는 요청으로
+   * 도구·위임까지 같이 받는 하나의 타임라인으로 바뀌었다).
+   */
+  entries: TimelineEntry[];
   /**
    * 처음 그릴 때부터 펼쳐 둘지(2026-08-18, 토큰 단위 실시간 스트리밍 도입).
    * **딱 처음 마운트될 때만** 본다(그 뒤 이 값이 바뀌어도 `useState` 초기값이라
@@ -171,13 +176,23 @@ export interface ReasoningTraceProps {
    * 다시 그리는 지난 턴은 이미 `running=false`라 여전히 접혀서 시작한다.
    */
   defaultOpen?: boolean;
+  /**
+   * 지금 이 턴이 스트리밍 중인가(2026-08-18, 로그 뷰 도입). `defaultOpen`과
+   * 달리 이 값은 리렌더마다 그대로 따라간다 — 항목이 늘 때마다 로그 맨
+   * 아래로 자동 스크롤하고, 마지막 줄에 커서를 깜빡이는 데 쓴다. 스트림이
+   * 끝나 `false`가 되면 자동 스크롤도 커서도 멈춘다.
+   */
+  running?: boolean;
 }
 
 /**
- * ⓪ 추론 과정 카드(2026-08-18) — 추론 모델(gpt-5.6-luna 등)이 도구를 부르기
- * 전이나 최종 답 전에 내는 생각을 보여준다. `services/agent_runtime/events.py`가
- * 지금까지 버리던 `AIMessage.content`의 `type:"reasoning"` 블록을 따로 뽑아
- * `reasoning` 이벤트로 낸다(`liveChat.ts`의 `reasoningSteps`가 모은다).
+ * ⓪ 생각 과정 카드(2026-08-18) — 추론 모델(gpt-5.6-luna 등)이 도구를 부르기
+ * 전이나 최종 답 전에 내는 생각을, **실제로 부른 도구·위임과 같은 순서로
+ * 섞어서** 보여준다. `services/agent_runtime/events.py`가 내는 `reasoning`
+ * 조각과 `tool_started`/`tool_completed`/`subagent_started`/`subagent_completed`
+ * 를 `liveChat.ts`의 `reduce()`가 하나의 `timeline` 배열로 순서대로 쌓는다 —
+ * 전에는 이 둘이 서로 다른 배열에 각자 쌓여서 "몇 번째 생각 다음에 이
+ * 도구를 불렀는지" 순서 정보가 화면에서 사라졌었다.
  *
  * **지난 턴은 접어서 시작한다.** 추론 모델은 답 하나에도 여러 단락을
  * 생각하는데, 다 펼쳐 두면 정작 찾는 답이 아래로 밀린다 — 근거 카드
@@ -185,24 +200,103 @@ export interface ReasoningTraceProps {
  * `defaultOpen`으로 펼쳐서 시작한다** — 실시간으로 쓰는 걸 보여주는 게
  * 이 기능의 목적이라, 접어 두면 매번 사람이 직접 펴야 그 효과를 본다.
  */
-export function ReasoningTrace({ steps, defaultOpen = false }: ReasoningTraceProps) {
+export function ReasoningTrace({ entries, defaultOpen = false, running = false }: ReasoningTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
-  if (steps.length === 0) return null;
+  const logRef = useRef<HTMLOListElement>(null);
+  // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
+  // "그 스트리밍된 툴을 눌러야만 보이게 해줘" 요청). index로 여닫힘을 추적한다
+  // — entries는 순서만 늘고 위치가 안 바뀌므로 li의 key(index)와 그대로 맞는다.
+  const [expandedOutputs, setExpandedOutputs] = useState<Set<number>>(new Set());
+
+  function toggleOutput(index: number) {
+    setExpandedOutputs((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
+  // 로그 창처럼 새 줄이 생길 때마다 맨 아래로 따라간다. 스트림이 끝나면
+  // (running=false) 사람이 스크롤을 올려 지난 로그를 봐도 다시 끌어내리지 않는다.
+  useEffect(() => {
+    if (!open || !running) return;
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [entries, open, running]);
+
+  if (entries.length === 0) return null;
 
   return (
     <section className={styles.card}>
       <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
-        생각 과정 {steps.length}단계
+        생각 과정 {entries.length}단계
       </button>
 
       {open && (
-        <ol className={styles.reasoningList}>
-          {steps.map((step, index) => (
-            <li key={index} className={styles.reasoningStep}>
-              {step}
-            </li>
-          ))}
+        <ol className={styles.reasoningList} ref={logRef}>
+          {entries.map((entry, index) => {
+            const isLast = index === entries.length - 1;
+            if (entry.kind === 'reasoning') {
+              return (
+                <li key={index} className={styles.reasoningStep}>
+                  <span>
+                    {entry.text}
+                    {running && isLast && <span className={styles.reasoningCursor} />}
+                  </span>
+                </li>
+              );
+            }
+            if (entry.kind === 'tool') {
+              const isExpanded = expandedOutputs.has(index);
+              return (
+                <li key={index} className={styles.reasoningToolGroup}>
+                  {/* 도구가 실제로 뭘 반환했는지는 눌러야만 펼쳐진다(2026-08-18) —
+                      로그 한 줄 한 줄이 다 자동으로 늘어지면 정작 보고 싶은 흐름이
+                      아래로 밀린다. 반환값이 없으면(아직 RUNNING) 누를 게 없다. */}
+                  <button
+                    type="button"
+                    className={styles.reasoningTool}
+                    onClick={() => toggleOutput(index)}
+                    disabled={!entry.output}
+                  >
+                    {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
+                    {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
+                    {entry.status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
+                    <span>
+                      {entry.toolRef} 호출
+                      {entry.status === 'OK' && ' 완료'}
+                      {entry.status === 'FAILED' && ' 실패'}
+                    </span>
+                    {entry.output && (
+                      <Icon
+                        name={isExpanded ? 'chevron-down' : 'chevron-right'}
+                        size={12}
+                        color="var(--color-placeholder)"
+                      />
+                    )}
+                  </button>
+                  {isExpanded && entry.output && <pre className={styles.reasoningOutput}>{entry.output}</pre>}
+                </li>
+              );
+            }
+            return (
+              <li key={index} className={styles.reasoningTool}>
+                {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
+                {entry.status === 'DONE' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
+                {entry.status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
+                <span>
+                  {entry.name ?? entry.alias ?? '다른 에이전트'}에게 위임
+                  {entry.status === 'DONE' && ' 완료'}
+                  {entry.status === 'FAILED' && ' 실패'}
+                </span>
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

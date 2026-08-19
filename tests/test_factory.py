@@ -380,12 +380,17 @@ class SpeakableToolErrorTests(SimpleTestCase):
         return langchain_tool.invoke({})
 
     def test_말할_수_있는_오류는_사유를_담아_돌려준다(self):
+        """`{"error": ...}` 딕셔너리가 아니라 `ToolException`을 거쳐 문자열로 온다
+        (2026-08-19 — main과 합의: 같은 목록을 쓰되, `ToolException` +
+        `handle_tool_error=True`로 바꿔서 `tool_completed.status`가 OK로
+        마스킹되지 않고 FAILED로 정확히 남게 했다. `factory.py`의 `_run()`
+        docstring 주석 참고)."""
         from services.harness.registry import ToolInputError
 
         def boom(**_kwargs):
             raise ToolInputError("프로젝트를 먼저 고르세요.")
 
-        self.assertEqual(self._invoke(boom), {"error": "프로젝트를 먼저 고르세요."})
+        self.assertEqual(self._invoke(boom), "프로젝트를 먼저 고르세요.")
 
     def test_그_밖의_예외는_그대로_올린다(self):
         """라이브러리·드라이버 예외 문자열에는 쿼리·문서 원문·토큰이 섞일 수 있다 —

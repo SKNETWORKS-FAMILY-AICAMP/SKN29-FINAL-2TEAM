@@ -1001,15 +1001,19 @@ export default function ChatPage() {
                         />
                       )}
 
-                      {/* **접은 채로 둔다**(2026-08-18, PM: 「뭘 생각하는지만 알면 된다」).
-                          예전엔 도는 동안 자동으로 펼쳐서, 기다리는 내내 모델의
-                          내부 독백이 화면 한가운데 있었다 — 그리고 그것은 **영어**다.
-                          OpenAI 가 보내는 reasoning 요약은 system_prompt 의 언어
-                          지시를 따르지 않아(2026-08-18 재확인) 우리가 한국어로
-                          만들 수단이 없다. 지금 무엇을 하는지는 위 진행 카드가
-                          한국어로 말한다 — 「업무 등록 실행 중」·「생각하는 중」.
-                          펼치면 그대로 있으니 지우지는 않았다. */}
-                      <ReasoningTrace steps={live.reasoningSteps} />
+                      {/* **접은 채로 시작한다**(2026-08-18, PM: 「뭘 생각하는지만
+                          알면 된다」). OpenAI가 보내는 reasoning 요약은
+                          system_prompt의 언어 지시를 따르지 않아(2026-08-18
+                          재확인) 한국어로 만들 수단이 없다 — 도는 동안 자동으로
+                          펼치면 기다리는 내내 모델의 영어 독백이 화면 한가운데
+                          있게 된다. 지금 무엇을 하는지는 위 진행 카드가 한국어로
+                          말한다 — 「업무 등록 실행 중」·「생각하는 중」.
+                          `defaultOpen`을 `live.running`이 아니라 고정 `false`로
+                          둔 것만 그 커밋과 다르다 — 펼치면(2026-08-18 타임라인
+                          기능) 그 뒤로는 실시간 로그처럼 흐르고 도구 반환값도
+                          클릭해서 볼 수 있으니, 자동으로 펼치지만 않으면 두
+                          요구가 부딪히지 않는다. */}
+                      <ReasoningTrace entries={live.timeline} defaultOpen={false} running={live.running} />
 
                       {live.jira && (
                         <JiraStatusCard

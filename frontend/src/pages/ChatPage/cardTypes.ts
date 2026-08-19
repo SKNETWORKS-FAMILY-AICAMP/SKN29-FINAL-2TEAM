@@ -28,6 +28,37 @@ export interface SubagentRun {
   status: 'RUNNING' | 'DONE' | 'FAILED';
 }
 
+/**
+ * 생각 과정 카드에 순서대로 그릴 항목 하나(2026-08-18). reasoning 조각과
+ * 도구 호출·위임을 **이벤트가 실제로 온 순서 그대로** 하나의 목록에
+ * 담는다 — "몇 번째 생각 다음에 이 도구를 불렀는지"를 보여 달라는 요청.
+ * 그 전에는 reasoning과 도구 진행이 서로 다른 배열(`reasoningSteps`/
+ * `steps`)에 따로 쌓여서, 실제로는 하나의 스트림으로 순서대로 온 이벤트인데
+ * 화면에서는 그 순서 정보가 사라져 있었다.
+ *
+ * 도구·위임 항목은 시작(`RUNNING`)으로 먼저 들어가고, 서버가 보내는
+ * `tool_call_id`/`run_id`로 완료 이벤트와 짝을 맞춰 그 자리에서 상태만
+ * 바꾼다 — 새 항목을 만들지 않는다(`liveChat.ts`의 `reduce()` 참고).
+ */
+export type TimelineEntry =
+  | { kind: 'reasoning'; text: string }
+  | {
+      kind: 'tool';
+      toolCallId: string | null;
+      toolRef: string;
+      status: 'RUNNING' | 'OK' | 'FAILED';
+      /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). 완료 전엔 없다. */
+      output?: string;
+    }
+  | {
+      kind: 'subagent';
+      runId: string;
+      alias: string | null;
+      name: string | null;
+      taskSummary: string;
+      status: 'RUNNING' | 'DONE' | 'FAILED';
+    };
+
 /** 근거 한 건. `meta`는 「E1 · DC001 · 유사도 87%」처럼 되짚을 정보다. */
 export interface Evidence {
   quote: string;

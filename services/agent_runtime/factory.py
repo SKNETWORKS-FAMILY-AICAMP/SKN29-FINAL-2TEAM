@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool, ToolException
 
 from services.agent_runtime.compat import (
     build_general_purpose_spec,
@@ -18,6 +19,8 @@ from services.agent_runtime.exceptions import ToolPermissionError
 from services.agent_runtime.subagents.builder import build_subagent
 from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from services.agent_runtime.checkpoint.provider import CheckpointerProvider
@@ -60,30 +63,50 @@ def _to_langchain_tool(
         if not runtime_policy.is_tool_allowed_for_role(
             side_effect=tool.side_effect, account_role=context.role
         ):
+            # 이건 그대로 둔다 — 노출 필터를 뚫고 여기까지 온 권한 위반은
+            # "모델이 고칠 수 있는 실수"가 아니라 방어선 자체의 이상이라 계속
+            # 감추지 않고 terminal EVENT_ERROR로 크게 드러낸다(ToolPermissionError
+            # 자체 docstring 참고) — 아래 handler 실패와 다른 취급이다.
             raise ToolPermissionError(
                 f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다."
             )
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
             return tool.handler(**resolved)
-        except Exception as exc:  # noqa: BLE001 - 말할 수 있는 것만 걸러 되돌린다
-            # 지연 import — `services.harness.runner` 의 무거운 의존성 사슬을 이
-            # 모듈이 항상 끌고 들어오지 않게 한다(`agent_platform.py` 와 같은 이유).
+        except Exception as exc:
+            # **도구 하나 실패로 대화 전체를 끊지 않는다 — 단, 말할 수 있는
+            # 사유일 때만.**(2026-08-18/19 합의) 실측해 보니(실제 대화에서
+            # `jira_get_issues` 재현) 설치된 langgraph 버전의 기본 핸들러
+            # (`_default_handle_tool_errors`)는 자기 내부 `ToolInvocationError`만
+            # 잡고 나머지는 그대로 다시 던져서, `ToolInputError` 하나가 대화
+            # 전체를 끊고 `ErrorCard`까지 만들었다.
+            #
+            # main(`73bc79c`, `services/harness/runner.SPEAKABLE_ERRORS`)이 같은
+            # 버그를 먼저 고쳤는데, 정책이 두 가지였다: 말할 수 있는 예외는
+            # 봐주고, 그 밖은 **그대로 크래시** — "삼키면 진짜 장애가 「도구가
+            # 뭐라고 했다」로 둔갑한다"는 이유였다. 그 판단은 그대로 가져온다
+            # (아래 `if not isinstance(...): raise`). 다만 "봐주는" 방식은
+            # 다르다 — main은 정상 반환값(`{"error": ...}`)으로 감싸서
+            # `tool_completed.status`가 OK로 마스킹됐다. 여기서는 대신
+            # `ToolException`으로 바꿔 던진다(`handle_tool_error=True`와
+            # 짝 — `StructuredTool.from_function` 참고): `langchain_core`의
+            # `BaseTool.run()`이 `ToolException`만 잡아 `status="error"`를
+            # 그대로 유지해 주므로, `tool_completed`는 여전히 FAILED로 뜨고
+            # 클릭하면 사유도 그대로 보인다 — 대화가 안 끊기는 것과 FAILED
+            # 표시가 정확한 것, 둘 다 챙긴다.
+            logger.exception("도구 실행 실패: %s", tool.ref)
+
+            # 지연 import — `services.harness.runner`의 무거운 의존성 사슬을 이
+            # 모듈이 항상 끌고 들어오지 않게 한다(main의 같은 판단 그대로 유지).
             from services.harness.runner import SPEAKABLE_ERRORS
 
             if not isinstance(exc, SPEAKABLE_ERRORS):
                 raise
-            # **사람이 고칠 수 있는 사유는 모델에게 돌려준다.** 그냥 올리면
-            # LangGraph `ToolNode` 가 실행을 통째로 죽이고, 화면에는 사유 없이
-            # 「요청을 끝내지 못했습니다」만 남는다 — 도구는 「프로젝트를 먼저
-            # 고르세요」라고 정확히 말했는데 그 문장이 버려졌다(2026-08-18 QA §B-0 ②).
-            #
-            # 기준은 레거시와 **같은 목록**을 쓴다. 두 엔진이 서로 다른 목록을
-            # 들면 같은 실패가 한쪽에서만 설명된다.
-            return {"error": str(exc)}
+            raise ToolException(str(exc)) from exc
 
     return StructuredTool.from_function(
         func=_run,
+        handle_tool_error=True,
         # `tool.name`이 아니라 `tool.ref`다 — **실측으로 확인한 버그**(2026-08-14):
         # `tool.name`은 `services/harness/registry.py`의 BUILTIN_TOOLS가 사람이
         # 읽는 한국어 라벨로 채운다(예: "프로젝트 조회"). 이걸 LangChain
