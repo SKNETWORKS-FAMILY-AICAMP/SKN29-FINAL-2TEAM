@@ -1001,7 +1001,15 @@ export default function ChatPage() {
                         />
                       )}
 
-                      <ReasoningTrace steps={live.reasoningSteps} defaultOpen={live.running} />
+                      {/* **접은 채로 둔다**(2026-08-18, PM: 「뭘 생각하는지만 알면 된다」).
+                          예전엔 도는 동안 자동으로 펼쳐서, 기다리는 내내 모델의
+                          내부 독백이 화면 한가운데 있었다 — 그리고 그것은 **영어**다.
+                          OpenAI 가 보내는 reasoning 요약은 system_prompt 의 언어
+                          지시를 따르지 않아(2026-08-18 재확인) 우리가 한국어로
+                          만들 수단이 없다. 지금 무엇을 하는지는 위 진행 카드가
+                          한국어로 말한다 — 「업무 등록 실행 중」·「생각하는 중」.
+                          펼치면 그대로 있으니 지우지는 않았다. */}
+                      <ReasoningTrace steps={live.reasoningSteps} />
 
                       {live.jira && (
                         <JiraStatusCard

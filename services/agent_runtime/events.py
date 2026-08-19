@@ -471,6 +471,9 @@ class EventMapper:
                             "parent_run_id": run_id,
                             "subagent_alias": alias,
                             "tool_ref": tool_ref_from_model_name(tool_ref),
+                            # 화면 상태줄이 그대로 읽는다(2026-08-18) — ref 를 쓰면
+                            # 「task_register 실행 중」처럼 내부 이름이 그대로 보인다(§0 원칙 2).
+                            "tool_name": _tool_label(tool_ref_from_model_name(tool_ref)),
                             "tool_call_id": call.get("id"),
                             "arguments": call.get("args") or {},
                             "complete": False,
@@ -574,6 +577,7 @@ class EventMapper:
                         "run_id": run_id,
                         "subagent_alias": None,
                         "tool_ref": tool_ref_from_model_name(tool_ref),
+                        "tool_name": _tool_label(tool_ref_from_model_name(tool_ref)),
                         "tool_call_id": call.get("id"),
                         "arguments": call.get("args") or {},
                         "complete": False,

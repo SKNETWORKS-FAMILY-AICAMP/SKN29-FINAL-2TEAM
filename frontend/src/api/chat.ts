@@ -122,6 +122,8 @@ export type ChatEvent =
       parent_run_id?: string | null;
       subagent_alias?: string | null;
       tool_ref: string;
+      /** 사람이 읽는 도구 이름(레지스트리 값). 화면 상태줄이 이걸 쓴다. */
+      tool_name?: string | null;
       tool_call_id?: string | null;
       /** 부모 자신의 직접 호출일 때만 채워진다(`events.py` `_classify_parent_tool_calls`/자식 분기). */
       arguments?: Record<string, unknown>;
