@@ -152,7 +152,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
                     type="button"
                     className={styles.candidate}
                     onClick={() => void handleChoose(candidate.doc_id)}
-                    disabled={busy || !candidate.search_ready}
+                    disabled={busy}
                   >
                     <span className={styles.candidateHead}>
                       <strong>{candidate.file_name}</strong>
@@ -162,9 +162,6 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
                       </span>
                     </span>
                     {candidate.summary && <span className={styles.summary}>{candidate.summary}</span>}
-                    {!candidate.search_ready && (
-                      <span className={styles.notReady}>본문이 아직 색인되지 않아 고를 수 없습니다</span>
-                    )}
                   </button>
                 </li>
               ))}
@@ -180,21 +177,14 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
             <Icon name="file-text" size={16} color="var(--color-primary)" />
             <span className={styles.primaryName}>{primary.file_name ?? primary.doc_id}</span>
           </div>
-          {/* 색인 전 문서가 기준으로 잡혀 있을 수 있다(고른 뒤 파이프라인이 다시
-              돌거나, 예전에 지정해 둔 문서다). 그 상태로는 업무 추출이 거절한다. */}
-          {!primary.search_ready && (
-            <p className={styles.warn}>
-              본문이 아직 색인되지 않았습니다. 이 상태로는 업무를 뽑을 수 없습니다.
-            </p>
-          )}
           {/* 이 문서로 할 수 있는 일과 이 문서를 바꾸는 일. 같은 대상에 대한
               행동이라 한 줄에 둔다. */}
           <div className={styles.actions}>
-            <Button size="sm" disabled={busy || !primary.search_ready} onClick={handleExtract}>
+            <Button size="sm" disabled={busy} onClick={handleExtract}>
               업무 추출
             </Button>
             <Button variant="outline" size="sm" onClick={handleFind} disabled={busy}>
-              문서 바꾸기
+              기준 문서 변경
             </Button>
             {/* 바꿀 문서가 없을 수도 있다. 「없음」으로 못 가면 잘못 고른 문서를
                 달고 있는 수밖에 없고, 그대로 뽑으면 엉뚱한 업무가 등록된다. */}
@@ -206,12 +196,12 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       ) : (
         <>
           <p className={styles.muted}>
-            기준 문서가 아직 없습니다. 업무 추출은 기준 문서가 있어야 돌아갑니다. ‘문서 찾기’로
+            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’로
             정해 주세요.
           </p>
           <div className={styles.actions}>
             <Button size="sm" onClick={handleFind} disabled={busy}>
-              {busy ? '찾는 중…' : '문서 찾기'}
+              {busy ? '찾는 중…' : '기준 문서 선택'}
             </Button>
           </div>
         </>

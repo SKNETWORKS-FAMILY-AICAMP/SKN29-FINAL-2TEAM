@@ -38,6 +38,28 @@ DATABASE_URL = os.environ.get(
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_EFFORT = "low"
 
+#: 기본으로 붙이는 **읽기 도구**(2026-08-18 PM 결정). 도구가 0개면 기본 상태에서
+#: 제품의 대표 발화가 전부 실패한다 — 「업무 뽑아줘」가 「문서를 대화에 첨부해
+#: 주세요」로, 「팀원 누구야?」가 「조회할 수 없다」로 끝났다(QA §B-0).
+#:
+#: **쓰기 셋은 뺀다** — `task_register`·`task_update`·`jira_create_issues`.
+#: 정본은 `services/harness/registry.py` 의 `side_effect` 플래그다(그쪽이 참인
+#: 것만 빼면 된다). 이 스크립트는 repo 모듈을 import 하지 않는다는 전제라
+#: 여기 베껴 뒀다 — `DEFAULT_MODEL` 과 같은 이유의 중복이고, **registry 에 도구를
+#: 더하면 여기도 같이 고쳐야 한다.**
+READ_ONLY_TOOL_REFS = [
+    "document_search",
+    "document_list",
+    "people_list",
+    "workload_report",
+    "absence_list",
+    "task_extraction",
+    "project_list",
+    "task_list",
+    "web_search",
+    "jira_get_issues",
+]
+
 DEFAULT_CHAT_SYSTEM_PROMPT = (
     "당신은 팀의 업무를 돕는 기본 어시스턴트입니다. 연결된 도구가 있으면 활용해서 "
     "정확한 정보를 근거로 답하세요."
@@ -115,7 +137,7 @@ def backfill_team(conn, team_id: str) -> str | None:
             (
                 agent_id,
                 team_id,
-                "기본 챗",
+                "기본 어시스턴트",
                 "Chat 화면의 기본 상대입니다. 도구·MCP만 붙일 수 있고 다른 에이전트로 위임하지 않습니다.",
                 team["owner_account_id"],
             ),
@@ -141,12 +163,59 @@ def backfill_team(conn, team_id: str) -> str | None:
             ),
         )
 
+        _attach_read_only_tools(cur, agent_version_id)
+
         cur.execute(
             "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
             (agent_version_id, agent_id),
         )
 
     return agent_id
+
+
+def _attach_read_only_tools(cur, agent_version_id: str) -> int:
+    """이 버전에 읽기 도구를 붙인다. 이미 있는 것은 건너뛴다(멱등)."""
+
+    cur.execute(
+        "SELECT tool_ref FROM agent_version_tools WHERE agent_version_id = %s",
+        (agent_version_id,),
+    )
+    have = {row["tool_ref"] for row in cur.fetchall()}
+    added = 0
+    for tool_ref in READ_ONLY_TOOL_REFS:
+        if tool_ref in have:
+            continue
+        cur.execute(
+            "INSERT INTO agent_version_tools (agent_version_id, tool_ref) VALUES (%s, %s)",
+            (agent_version_id, tool_ref),
+        )
+        added += 1
+    return added
+
+
+def fill_tools_for_existing(conn, team_id: str) -> int:
+    """이미 있는 기본 챗 에이전트의 **현재 버전**에 빠진 읽기 도구를 채운다.
+
+    2026-08-18 오후에 만들어진 것들은 도구가 0개다 — 그때는 `provision_default_
+    chat_agent()` 가 도구를 안 붙였다. 「발행된 버전은 불변」 원칙과 부딪혀
+    보이지만, 이 버전은 **사람이 발행한 것이 아니라 시스템이 만든 것**이고
+    사람이 그 위에 새 버전을 낸 적이 없다. 새로 발행하면 `agent_version_id` 가
+    바뀌어 그 에이전트로 만든 기존 대화의 고정이 끊긴다.
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT a.agent_id, a.current_version_id
+              FROM agents AS a
+             WHERE a.team_id = %s AND a.is_default_chat = true
+            """,
+            (team_id,),
+        )
+        row = cur.fetchone()
+        if row is None or not row["current_version_id"]:
+            return 0
+        return _attach_read_only_tools(cur, row["current_version_id"])
 
 
 def main() -> int:
@@ -171,7 +240,13 @@ def main() -> int:
         for team_id in team_ids:
             agent_id = backfill_team(conn, team_id)
             if agent_id:
-                print(f"{team_id}  {agent_id} 기본 챗 (신규)")
+                print(f"{team_id}  {agent_id} 기본 챗 (신규 · 읽기 도구 {len(READ_ONLY_TOOL_REFS)}종)")
+                continue
+            # 이미 있어도 **도구가 비었을 수 있다** — 2026-08-18 오후에 만들어진
+            # 것들이 그렇다. 그냥 건너뛰면 그 팀은 계속 도구 없이 돈다.
+            added = fill_tools_for_existing(conn, team_id)
+            if added:
+                print(f"{team_id}  이미 있음 · 빠진 읽기 도구 {added}종을 채웠다")
             else:
                 print(f"{team_id}  이미 있음, 건너뜀")
         conn.commit()

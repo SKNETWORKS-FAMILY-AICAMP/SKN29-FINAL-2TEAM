@@ -477,7 +477,7 @@ export default function ChatPage() {
       setSessions((prev) => prev.filter((session) => session.session_id !== id));
       if (id === sessionId) startNew(projId);
     } catch (error) {
-      setFatal(error instanceof ApiError ? error.message : '대화를 지우지 못했습니다.');
+      setFatal(error instanceof ApiError ? error.message : '대화를 삭제하지 못했습니다.');
     }
   }
 
@@ -553,7 +553,12 @@ export default function ChatPage() {
     if (!token || !sessionId) return;
     // **인덱스만 보낸다.** 실행할 인자는 서버가 저장해 둔 것을 쓴다 — 화면이
     // 인자를 보내면 승인 게이트가 아무것도 막지 못한다.
-    const indices = selected;
+    //
+    // 고를 목록이 없는 카드(추출을 안 거친 도구 — 아래 `live.tasks.length === 0`
+    // 분기)의 「승인」은 **전부 승인**이라는 뜻이다. 그때도 `selected`(빈 배열)를
+    // 그대로 보내면 서버는 「0건만 남기고 지워 달라」로 읽어, 승인했는데 아무것도
+    // 등록되지 않는다 — 화면은 성공처럼 보이고 결과는 비는 최악의 조합이다.
+    const indices = lastLive && lastLive.tasks.length > 0 ? selected : undefined;
     // 빈 상태에서 다시 시작하지 않고 **이 턴을 이어서 접는다.** 재개는 실행이
     // 두 번째일 뿐 같은 턴이고, 새로고침 복원도 두 실행의 이벤트를 이어 붙인다
     // (`toTurns`). 리셋하면 방금 승인한 목록이 화면에서 사라지고, 복원한 화면과
@@ -920,7 +925,7 @@ export default function ChatPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
-                  <p>하고 싶은 일을 그냥 적어 주세요.</p>
+                  <p>필요한 작업을 입력하세요.</p>
                   {/* 무엇을 근거로 답하는지가 답의 전제라 먼저 말한다. */}
                   <p className={styles.projectContext}>
                     {currentProject ? (
@@ -935,7 +940,7 @@ export default function ChatPage() {
                         <Icon name="users" size={14} color="var(--color-muted)" />
                         <span>
                           <strong>팀 전체 문서</strong>를 근거로 답합니다. 업무 추출처럼 기준 문서가
-                          필요한 일은 프로젝트를 골라 시작해 주세요.
+                          기준 문서가 필요한 작업은 프로젝트를 선택한 뒤 시작하세요.
                         </span>
                       </>
                     )}
@@ -996,7 +1001,19 @@ export default function ChatPage() {
                         />
                       )}
 
-                      <ReasoningTrace entries={live.timeline} defaultOpen={live.running} running={live.running} />
+                      {/* **접은 채로 시작한다**(2026-08-18, PM: 「뭘 생각하는지만
+                          알면 된다」). OpenAI가 보내는 reasoning 요약은
+                          system_prompt의 언어 지시를 따르지 않아(2026-08-18
+                          재확인) 한국어로 만들 수단이 없다 — 도는 동안 자동으로
+                          펼치면 기다리는 내내 모델의 영어 독백이 화면 한가운데
+                          있게 된다. 지금 무엇을 하는지는 위 진행 카드가 한국어로
+                          말한다 — 「업무 등록 실행 중」·「생각하는 중」.
+                          `defaultOpen`을 `live.running`이 아니라 고정 `false`로
+                          둔 것만 그 커밋과 다르다 — 펼치면(2026-08-18 타임라인
+                          기능) 그 뒤로는 실시간 로그처럼 흐르고 도구 반환값도
+                          클릭해서 볼 수 있으니, 자동으로 펼치지만 않으면 두
+                          요구가 부딪히지 않는다. */}
+                      <ReasoningTrace entries={live.timeline} defaultOpen={false} running={live.running} />
 
                       {live.jira && (
                         <JiraStatusCard
@@ -1022,9 +1039,17 @@ export default function ChatPage() {
                       {live.confirm && live.tasks.length === 0 && (
                         <ConfirmCard
                           tasks={[]}
-                          warnings={[
-                            `${live.confirm.toolName} 실행을 승인하시겠습니까? ${live.confirm.count}건이 대상입니다.`,
-                          ]}
+                          // 「무엇을 · 몇 건」. `warnings` 로 넘기던 것을 옮겼다
+                          // — 그 prop 은 2026-08-11 에 배너를 걷으면서 **그려지지
+                          // 않게 됐는데** 넘기는 쪽만 남아, 이 카드는 무엇을
+                          // 승인하는지 한 마디도 안 하고 있었다(2026-08-18 QA).
+                          // 건수는 있을 때만 붙인다 — 목록형 인자가 아니면
+                          // `count` 가 0 이라 「대상 0건」이 거짓이 된다.
+                          subject={
+                            live.confirm.count > 0
+                              ? `${live.confirm.toolName} · 대상 ${live.confirm.count}건`
+                              : live.confirm.toolName
+                          }
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
@@ -1081,8 +1106,8 @@ export default function ChatPage() {
                 type="button"
                 className={styles.attachTools}
                 onClick={openToolPicker}
-                aria-label="이 대화에 도구·MCP 붙이기"
-                title="이 대화에 도구·MCP 붙이기"
+                aria-label="이 대화에 사용할 도구 선택"
+                title="이 대화에 사용할 도구 선택"
               >
                 <Icon name="plus" size={16} color="var(--color-body)" />
               </button>
@@ -1129,7 +1154,7 @@ export default function ChatPage() {
       <Modal
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
-        title="이 대화를 지울까요?"
+        title="이 대화를 삭제할까요?"
         width={420}
         footer={
           <>
@@ -1141,7 +1166,7 @@ export default function ChatPage() {
               variant="danger"
               onClick={() => pendingDelete && void remove(pendingDelete.session_id)}
             >
-              지우기
+              삭제
             </Button>
           </>
         }

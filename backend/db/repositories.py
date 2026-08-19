@@ -3658,3 +3658,298 @@ class OpsPolicyRepository:
                     (list(OpsPolicyRepository.POLICY_ACTIONS),),
                 )
                 return list(cursor.fetchall())
+
+
+# --- 완전 삭제 (2026-08-19) -------------------------------------------------
+#
+# **이 저장소에는 외래키 제약이 하나도 없다**(2026-08-19 실측: information_schema
+# 기준 0개). 그래서 `DELETE FROM team` 은 막히지도, 딸려 지워지지도 않는다 —
+# 그냥 지워지고 나머지가 전부 고아가 된다. 오류가 안 나서 어디가 깨졌는지도
+# 안 보인다.
+#
+# 그래서 지울 것을 **손으로 전부 적는다.** 아래 두 표가 정본이다. 표에 없는
+# 테이블은 안 지운다는 뜻이고, 새 테이블이 team_id/account_id 를 갖게 되면
+# 여기에 줄을 더해야 한다.
+#
+# 순서가 곧 정확성이다 — 잎에서 뿌리로 간다. 중간에 실패하면 트랜잭션이 통째로
+# 되돌아간다.
+
+#: 팀을 지울 때 함께 지우는 것. (설명, SQL) 순서대로 실행한다.
+#:
+#: **계정(user_account)은 안 지운다**(PM 결정 2026-08-19) — 팀만 없애고 사람은
+#: 무소속으로 남긴다. 그 사람은 다시 로그인해 다른 팀에 들어갈 수 있다.
+#: **감사 기록(audit_log)도 안 지운다** — 대상이 사라져도 「누가 무엇을 했는가」가
+#: 남는 것이 감사의 뜻이다.
+_TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
+    ("문서 벡터", "DELETE FROM vec_idx WHERE chunk_id IN (SELECT c.chunk_id FROM chunk c JOIN doc_block b ON b.block_id = c.block_id JOIN doc d ON d.doc_id = b.doc_id WHERE d.team_id = %(team_id)s)"),
+    ("문서 근거 연결", "DELETE FROM know_item_src WHERE block_id IN (SELECT b.block_id FROM doc_block b JOIN doc d ON d.doc_id = b.doc_id WHERE d.team_id = %(team_id)s)"),
+    ("문서 청크", "DELETE FROM chunk WHERE block_id IN (SELECT b.block_id FROM doc_block b JOIN doc d ON d.doc_id = b.doc_id WHERE d.team_id = %(team_id)s)"),
+    ("문서 블록", "DELETE FROM doc_block WHERE doc_id IN (SELECT doc_id FROM doc WHERE team_id = %(team_id)s)"),
+    ("문서 메타", "DELETE FROM doc_meta WHERE doc_id IN (SELECT doc_id FROM doc WHERE team_id = %(team_id)s)"),
+    ("문서 동기화 기록", "DELETE FROM doc_sync WHERE doc_id IN (SELECT doc_id FROM doc WHERE team_id = %(team_id)s)"),
+    ("문서", "DELETE FROM doc WHERE team_id = %(team_id)s"),
+    ("등록된 업무", "DELETE FROM task WHERE model_id IN (SELECT m.model_id FROM proj_know_model m JOIN proj p ON p.proj_id = m.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("분석 스냅샷", "DELETE FROM ana_snapshot WHERE proj_id IN (SELECT proj_id FROM proj WHERE team_id = %(team_id)s)"),
+    ("지식모델 항목", "DELETE FROM model_know_item WHERE model_id IN (SELECT m.model_id FROM proj_know_model m JOIN proj p ON p.proj_id = m.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("특성 군집 항목", "DELETE FROM feat_cluster_item WHERE cluster_id IN (SELECT f.cluster_id FROM feat_cluster f JOIN proj_know_model m ON m.model_id = f.model_id JOIN proj p ON p.proj_id = m.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("특성 군집", "DELETE FROM feat_cluster WHERE model_id IN (SELECT m.model_id FROM proj_know_model m JOIN proj p ON p.proj_id = m.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("지식모델", "DELETE FROM proj_know_model WHERE proj_id IN (SELECT proj_id FROM proj WHERE team_id = %(team_id)s)"),
+    ("외부 업무 스냅샷", "DELETE FROM exist_task_snap WHERE exist_task_id IN (SELECT e.exist_task_id FROM exist_task e JOIN proj_source s ON s.proj_source_id = e.proj_source_id JOIN proj p ON p.proj_id = s.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("외부 업무", "DELETE FROM exist_task WHERE proj_source_id IN (SELECT s.proj_source_id FROM proj_source s JOIN proj p ON p.proj_id = s.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("프로젝트 연결원", "DELETE FROM proj_source WHERE proj_id IN (SELECT proj_id FROM proj WHERE team_id = %(team_id)s)"),
+    ("프로젝트 참여자", "DELETE FROM proj_member WHERE proj_id IN (SELECT proj_id FROM proj WHERE team_id = %(team_id)s)"),
+    ("프로젝트 지식항목", "DELETE FROM know_item WHERE proj_id IN (SELECT proj_id FROM proj WHERE team_id = %(team_id)s)"),
+    ("프로젝트", "DELETE FROM proj WHERE team_id = %(team_id)s"),
+    # 대화 — LangGraph 체크포인트까지 지운다. thread_id 가 곧 대화 id 라
+    # 안 지우면 승인 대기 상태가 유령으로 남는다(2026-08-18 승인 게이트 참고).
+    ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.team_id = %(team_id)s)"),
+    ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("체크포인트 쓰기", "DELETE FROM checkpoint_writes WHERE thread_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("대화", "DELETE FROM chat_session WHERE team_id = %(team_id)s"),
+    # 에이전트 — 새 스키마(agents/agent_versions)와 레거시(agent/agent_tool) 둘 다.
+    ("에이전트 하위위임", "DELETE FROM agent_version_subagents WHERE parent_version_id IN (SELECT v.agent_version_id FROM agent_versions v JOIN agents a ON a.agent_id = v.agent_id WHERE a.team_id = %(team_id)s)"),
+    ("에이전트 버전 도구", "DELETE FROM agent_version_tools WHERE agent_version_id IN (SELECT v.agent_version_id FROM agent_versions v JOIN agents a ON a.agent_id = v.agent_id WHERE a.team_id = %(team_id)s)"),
+    ("에이전트 버전", "DELETE FROM agent_versions WHERE agent_id IN (SELECT agent_id FROM agents WHERE team_id = %(team_id)s)"),
+    ("에이전트 즐겨찾기", "DELETE FROM agent_favorites WHERE agent_id IN (SELECT agent_id FROM agents WHERE team_id = %(team_id)s)"),
+    ("에이전트", "DELETE FROM agents WHERE team_id = %(team_id)s"),
+    ("레거시 에이전트 도구", "DELETE FROM agent_tool WHERE agent_id IN (SELECT agent_id FROM agent WHERE team_id = %(team_id)s)"),
+    ("레거시 에이전트", "DELETE FROM agent WHERE team_id = %(team_id)s"),
+    ("커스텀 도구", "DELETE FROM mcp_tool WHERE server_id IN (SELECT server_id FROM mcp_server WHERE team_id = %(team_id)s)"),
+    ("커스텀 도구 서버", "DELETE FROM mcp_server WHERE team_id = %(team_id)s"),
+    ("연결 폴더", "DELETE FROM team_folder WHERE team_id = %(team_id)s"),
+    ("팀 구성원(HR)", "DELETE FROM team_member WHERE team_id = %(team_id)s"),
+    ("초대 사용 기록", "DELETE FROM user_person_link WHERE invite_id IN (SELECT invite_id FROM member_invite WHERE team_id = %(team_id)s)"),
+    ("초대", "DELETE FROM member_invite WHERE team_id = %(team_id)s"),
+    ("계정 소속 해제", "UPDATE user_account SET team_id = NULL WHERE team_id = %(team_id)s"),
+    ("팀", "DELETE FROM team WHERE team_id = %(team_id)s"),
+)
+
+#: 계정을 지울 때 함께 지우는 것.
+#:
+#: **팀 자산(문서·프로젝트·에이전트)은 안 지운다**(PM 결정) — 팀 것이라
+#: `owner_account_id` 만 팀 소유자에게 넘긴다. 사람이 나가도 팀이 일을 잃지 않는다.
+#: `connector_conn` 은 **그 사람의 자격증명**이라 반드시 지운다. 그 연결로 지정해
+#: 둔 폴더·연결원도 함께 지운다 — 연결이 없으면 그 지정은 죽은 값이고, 남겨 두면
+#: 동기화가 조용히 실패한다. 이미 수집된 문서 자체는 남는다.
+_ACCOUNT_PURGE_STEPS: tuple[tuple[str, str], ...] = (
+    ("에이전트 즐겨찾기", "DELETE FROM agent_favorites WHERE account_id = %(account_id)s"),
+    ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.account_id = %(account_id)s)"),
+    ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("체크포인트 쓰기", "DELETE FROM checkpoint_writes WHERE thread_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("대화", "DELETE FROM chat_session WHERE account_id = %(account_id)s"),
+    ("연결 폴더", "DELETE FROM team_folder WHERE conn_id IN (SELECT conn_id FROM connector_conn WHERE account_id = %(account_id)s)"),
+    ("프로젝트 연결원", "DELETE FROM proj_source WHERE conn_id IN (SELECT conn_id FROM connector_conn WHERE account_id = %(account_id)s)"),
+    ("연결 서비스", "DELETE FROM connector_conn WHERE account_id = %(account_id)s"),
+    ("프로젝트 참여", "DELETE FROM proj_member WHERE account_id = %(account_id)s"),
+    ("사람 연결", "DELETE FROM user_person_link WHERE account_id = %(account_id)s"),
+    ("계정", "DELETE FROM user_account WHERE account_id = %(account_id)s"),
+)
+
+#: 지우기 전에 「무엇이 몇 건」인지 보여줄 목록. 이름 입력 확인 화면이 이걸 그린다.
+_TEAM_PREVIEW: tuple[tuple[str, str], ...] = (
+    ("구성원", "SELECT count(*) AS n FROM user_account WHERE team_id = %(team_id)s"),
+    ("프로젝트", "SELECT count(*) AS n FROM proj WHERE team_id = %(team_id)s"),
+    ("문서", "SELECT count(*) AS n FROM doc WHERE team_id = %(team_id)s"),
+    ("대화", "SELECT count(*) AS n FROM chat_session WHERE team_id = %(team_id)s"),
+    ("에이전트", "SELECT count(*) AS n FROM agents WHERE team_id = %(team_id)s"),
+    ("등록된 업무", "SELECT count(*) AS n FROM task WHERE model_id IN (SELECT m.model_id FROM proj_know_model m JOIN proj p ON p.proj_id = m.proj_id WHERE p.team_id = %(team_id)s)"),
+    ("커스텀 도구 서버", "SELECT count(*) AS n FROM mcp_server WHERE team_id = %(team_id)s"),
+)
+
+_ACCOUNT_PREVIEW: tuple[tuple[str, str], ...] = (
+    ("대화", "SELECT count(*) AS n FROM chat_session WHERE account_id = %(account_id)s"),
+    ("연결 서비스", "SELECT count(*) AS n FROM connector_conn WHERE account_id = %(account_id)s"),
+    ("프로젝트 참여", "SELECT count(*) AS n FROM proj_member WHERE account_id = %(account_id)s"),
+    ("즐겨찾기", "SELECT count(*) AS n FROM agent_favorites WHERE account_id = %(account_id)s"),
+)
+
+
+def _preview_counts(cursor, steps, params) -> list[dict[str, Any]]:
+    """확인 화면에 그릴 「무엇이 몇 건」. 0 건은 빼고 준다 — 지워질 것만 보인다."""
+
+    rows = []
+    for label, sql in steps:
+        cursor.execute(sql, params)
+        count = cursor.fetchone()["n"]
+        if count:
+            rows.append({"label": label, "count": count})
+    return rows
+
+
+def _run_purge(cursor, steps, params) -> list[dict[str, Any]]:
+    """표대로 지우고 **무엇을 몇 건 지웠는지** 돌려준다.
+
+    지운 뒤에 세지 않고 `rowcount` 를 그대로 쓴다 — 지운 다음에 세면 언제나 0 이다.
+    """
+
+    done = []
+    for label, sql in steps:
+        cursor.execute(sql, params)
+        if cursor.rowcount:
+            done.append({"label": label, "count": cursor.rowcount})
+    return done
+
+
+class OpsPurgeRepository:
+    """운영자 콘솔의 **완전 삭제**. 되돌릴 수 없다.
+
+    이름을 그대로 입력해야만 실행된다(`confirm_name`) — 확인 모달 한 번으로는
+    실수로 누른 것과 정말 지우려는 것이 구분되지 않는다. 서버에서도 검사한다:
+    화면만 막으면 API 를 직접 부르는 경로가 열린 채로 남는다.
+    """
+
+    @staticmethod
+    def team_preview(*, team_id: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT team_id, name FROM team WHERE team_id = %s", (team_id,))
+                team = cursor.fetchone()
+                if team is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                return {
+                    "team_id": team["team_id"],
+                    "name": team["name"],
+                    "items": _preview_counts(cursor, _TEAM_PREVIEW, {"team_id": team_id}),
+                }
+
+    @staticmethod
+    def purge_team(*, team_id: str, actor_account_id: str, confirm_name: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT team_id, name FROM team WHERE team_id = %s FOR UPDATE", (team_id,)
+                )
+                team = cursor.fetchone()
+                if team is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                if (confirm_name or "").strip() != team["name"]:
+                    raise PermissionDenied("팀 이름이 일치하지 않습니다.")
+                # 운영자가 자기가 속한 팀을 지우면 자기 계정이 무소속이 된다.
+                # 콘솔에서 자기 발밑을 파는 셈이라 막는다.
+                cursor.execute(
+                    "SELECT team_id FROM user_account WHERE account_id = %s", (actor_account_id,)
+                )
+                actor = cursor.fetchone()
+                if actor is not None and actor["team_id"] == team_id:
+                    raise PermissionDenied("본인이 속한 팀은 삭제할 수 없습니다.")
+
+                # 감사 기록은 지우기 **전에** 남긴다 — 지운 뒤에는 무엇을 지웠는지
+                # 세어 볼 대상이 없다.
+                removed = _run_purge(cursor, _TEAM_PURGE_STEPS, {"team_id": team_id})
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="TEAM_PURGE",
+                    target_type="TEAM",
+                    target_id=team_id,
+                    payload={"name": team["name"], "removed": removed},
+                )
+
+        return {"team_id": team_id, "name": team["name"], "removed": removed}
+
+    @staticmethod
+    def account_preview(*, account_id: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT account_id, email, display_name FROM user_account WHERE account_id = %s",
+                    (account_id,),
+                )
+                account = cursor.fetchone()
+                if account is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+                return {
+                    "account_id": account["account_id"],
+                    "email": account["email"],
+                    "display_name": account["display_name"],
+                    "items": _preview_counts(cursor, _ACCOUNT_PREVIEW, {"account_id": account_id}),
+                }
+
+    @staticmethod
+    def purge_account(
+        *, account_id: str, actor_account_id: str, confirm_name: str
+    ) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT account_id, email, display_name, team_id, is_admin
+                    FROM user_account WHERE account_id = %s FOR UPDATE
+                    """,
+                    (account_id,),
+                )
+                account = cursor.fetchone()
+                if account is None:
+                    raise RecordNotFound(f"존재하지 않는 계정입니다: {account_id}")
+                # 이메일로 확인받는다 — 이름은 겹칠 수 있고, 겹친 이름으로
+                # 확인시키면 확인이 확인 구실을 못 한다.
+                if (confirm_name or "").strip().lower() != (account["email"] or "").lower():
+                    raise PermissionDenied("이메일이 일치하지 않습니다.")
+                if account_id == actor_account_id:
+                    raise PermissionDenied("본인 계정은 삭제할 수 없습니다.")
+
+                # 팀 소유자는 못 지운다. `team.owner_account_id` 가 NOT NULL 이라
+                # 지우면 그 팀이 **주인 없는 채로** 남는다 — 소유자를 먼저 넘겨야
+                # 한다. 규칙이 아니라 스키마 제약이다.
+                cursor.execute(
+                    "SELECT team_id, name FROM team WHERE owner_account_id = %s", (account_id,)
+                )
+                owned = cursor.fetchall()
+                if owned:
+                    names = " · ".join(row["name"] for row in owned)
+                    raise PermissionDenied(
+                        f"이 계정이 소유한 팀이 있습니다({names}). 소유자를 먼저 변경하세요."
+                    )
+
+                # 마지막 운영자를 지우면 아무도 콘솔에 못 들어온다.
+                if account["is_admin"]:
+                    cursor.execute(
+                        "SELECT count(*) AS n FROM user_account WHERE is_admin = true AND account_id <> %s",
+                        (account_id,),
+                    )
+                    if cursor.fetchone()["n"] == 0:
+                        raise PermissionDenied("마지막 운영자 계정은 삭제할 수 없습니다.")
+
+                # 팀 자산은 지우지 않고 소유자만 팀 소유자에게 넘긴다(PM 결정).
+                # 팀이 없는 계정(무소속)이면 넘길 곳이 없어 비운다.
+                cursor.execute(
+                    "SELECT owner_account_id FROM team WHERE team_id = %s", (account["team_id"],)
+                )
+                team_owner_row = cursor.fetchone()
+                new_owner = team_owner_row["owner_account_id"] if team_owner_row else None
+                handed = []
+                for label, table in (("문서", "doc"), ("프로젝트", "proj"), ("에이전트", "agents")):
+                    cursor.execute(
+                        f"UPDATE {table} SET owner_account_id = %s WHERE owner_account_id = %s",
+                        (new_owner, account_id),
+                    )
+                    if cursor.rowcount:
+                        handed.append({"label": label, "count": cursor.rowcount})
+
+                removed = _run_purge(cursor, _ACCOUNT_PURGE_STEPS, {"account_id": account_id})
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="ACCOUNT_PURGE",
+                    target_type="ACCOUNT",
+                    target_id=account_id,
+                    payload={
+                        "email": account["email"],
+                        "removed": removed,
+                        "handed_over_to": new_owner,
+                        "handed_over": handed,
+                    },
+                )
+
+        return {
+            "account_id": account_id,
+            "email": account["email"],
+            "removed": removed,
+            "handed_over": handed,
+        }

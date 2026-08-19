@@ -164,12 +164,15 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // `api/chat.ts`의 2026-08-15 주석 참고). `subagent_alias`가 있으면
     // 서브 에이전트 자신의 호출이라 이 턴의 최상위 진행 표시에는 안 쓴다.
     // 타임라인에도 같이 넣는다(2026-08-18) — "몇 번째 생각 다음에 이 도구를
-    // 불렀는지" 순서를 보여 달라는 요청.
+    // 불렀는지" 순서를 보여 달라는 요청. 상태줄(toolName)은 **사람이 읽는
+    // 이름**을 쓴다(main, 2026-08-18) — 예전엔 `tool_ref` 라 「task_register
+    // 실행 중」처럼 내부 이름이 보였다. 서버가 아직 안 보내는 경우(레거시
+    // 이벤트)만 ref 로 떨어진다.
     case 'tool_started': {
       if (event.subagent_alias) return state;
       return {
         ...state,
-        toolName: event.tool_ref,
+        toolName: event.tool_name ?? event.tool_ref,
         timeline: [
           ...state.timeline,
           { kind: 'tool', toolCallId: event.tool_call_id ?? null, toolRef: event.tool_ref, status: 'RUNNING' },

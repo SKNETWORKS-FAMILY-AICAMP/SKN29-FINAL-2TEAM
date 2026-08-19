@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client';
 import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
 import type { ExistTask, ProjectDetail } from '../../api/projects';
 import { PATHS } from '../../routes';
+import { josa } from '../../utils/josa';
 import { useSession } from '../../utils/session';
 import { PrimaryDocumentCard } from './PrimaryDocumentCard';
 import styles from './ProjectDetailPage.module.css';
@@ -166,7 +167,7 @@ export default function ProjectDetailPage() {
       showToast(notes.join(' · '), 'success');
       navigate('/projects');
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : '프로젝트를 지우지 못했습니다', 'error');
+      showToast(err instanceof ApiError ? err.message : '프로젝트를 삭제하지 못했습니다', 'error');
       setBusy(false);
       setConfirming(false);
     }
@@ -253,7 +254,7 @@ export default function ProjectDetailPage() {
               <section className={styles.card}>
                 <p className={styles.notice}>
                   {project.has_jira_source
-                    ? 'Jira 업무를 아직 읽지 않았습니다. ‘갱신’을 눌러 주세요.'
+                    ? 'Jira 업무를 아직 읽지 않았습니다. ‘갱신’을 선택하세요.'
                     : '연결된 Jira 프로젝트가 없어 진행률을 계산할 수 없습니다.'}
                 </p>
               </section>
@@ -421,7 +422,7 @@ export default function ProjectDetailPage() {
         }
       >
         <p className={styles.confirmText}>
-          <strong>{project?.name}</strong> 을(를) 삭제합니다. <strong>되돌릴 수 없습니다.</strong>
+          <strong>{project?.name}</strong>{josa(project?.name ?? '', '을/를')} 삭제합니다. <strong>되돌릴 수 없습니다.</strong>
         </p>
         <ul className={styles.confirmList}>
           <li>
@@ -430,7 +431,7 @@ export default function ProjectDetailPage() {
           </li>
           <li>Jira 프로젝트 연결이 끊깁니다. Jira 쪽 이슈는 그대로입니다.</li>
           <li>
-            기준 문서는 <strong>지우지 않습니다.</strong> 팀 문서 풀로 돌아가 다른
+            기준 문서는 <strong>삭제하지 않습니다.</strong> 팀 문서 풀로 돌아가 다른
             프로젝트에서 다시 쓸 수 있습니다.
           </li>
         </ul>

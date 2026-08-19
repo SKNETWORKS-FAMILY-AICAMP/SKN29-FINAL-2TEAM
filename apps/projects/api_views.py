@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.permissions import require_leader
-from apps.connectors.clients import download_drive_file, list_drive_files, search_jira_issues
+from apps.connectors.clients import list_drive_files, search_jira_issues
 from apps.connectors.oauth import OAuthError
 from backend.services.hr import (
     list_absences,
@@ -25,21 +25,17 @@ from backend.services.hr import (
     lookup_person_ids_by_external_email,
     lookup_persons,
 )
-from backend.services.storage import build_key
 from backend.services.storage import exists as document_exists
 from backend.services.storage import load as load_document
-from backend.services.storage import save as save_document
 from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
-from services.document_meta import as_row as doc_meta_row
 from services.document_intake import intake_connector_documents
-from services.document_meta import build as build_doc_meta
 from services.document_pipeline.errors import (
     DocumentPipelineError,
     PipelineConfigurationError,
     RunPodRequestError,
 )
-from services.document_pipeline.runpod_client import embed_queries, job_status, submit_document_job
-from services.document_pipeline.signing import read_download_token, signed_download_url
+from services.document_pipeline.runpod_client import embed_queries
+from services.document_pipeline.signing import read_download_token
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
@@ -62,7 +58,6 @@ from backend.db.errors import (
 )
 
 from .serializers import (
-    DocumentRegisterSerializer,
     JiraProjectRegisterSerializer,
     PrimaryCandidateSerializer,
     ProjectCreateSerializer,
@@ -71,15 +66,13 @@ from .serializers import (
     ProjectStatusSerializer,
     TaskExtractionCreateSerializer,
     TeamFolderReplaceSerializer,
-    deadline_response,
-    missing_document_response,
     pipeline_document_response,
+    missing_document_response,
     document_history_response,
     document_response,
     exist_task_response,
     extracted_task_response,
     project_response,
-    project_source_response,
     team_folder_response,
 )
 
@@ -392,24 +385,6 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
         return Response(removed)
 
 
-class ProjectSourceAPIView(AuthenticatedAPIView):
-    """이 프로젝트가 대응하는 Jira 프로젝트. 1:1이라 0개 아니면 1개다.
-
-    읽기 전용이다 — 쓰기는 `PUT /projects/jira/`가 한다. 그 요청은 프로젝트를
-    **만들기도** 하므로 특정 프로젝트 하위에 둘 수 없다.
-    """
-
-    def get(self, request, project_id):
-        try:
-            row = ProjectSourceRepository.get_for_project(
-                proj_id=project_id,
-                account_id=request.user.account_id,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response([project_source_response(row)] if row else [])
-
-
 #: 어느 폴더를 읽을지는 팀 전체의 문서 풀을 정하는 일이라 커넥터 연결과 같은 무게다.
 FOLDER_LEADER_ONLY = "팀장만 읽을 폴더를 정할 수 있습니다."
 
@@ -558,6 +533,8 @@ class TeamDocumentAPIView(AuthenticatedAPIView):
         return Response([document_response(row) for row in rows])
 
 
+
+
 def _scan_drive_candidates(account_id: str) -> tuple[list[dict[str, Any]], set[str]]:
     """설정된 폴더 안에서 **아직 `doc`에 없는** 파일과, 훑은 파일 id 전부.
 
@@ -681,88 +658,6 @@ class TeamDocumentRemoveAPIView(AuthenticatedAPIView):
         return Response(result)
 
 
-class TeamDocumentRegisterAPIView(AuthenticatedAPIView):
-    """고른 파일만 `doc`에 추가 등록한다.
-
-    온보딩의 `PUT /documents/`는 폴더 전체를 동기화하며 목록에 없는 문서를 내리는데,
-    "새 파일 몇 개를 더한다"에 그것을 쓰면 나머지가 통째로 사라진다. 그래서 여기서는
-    **더하기만** 한다.
-
-    원문 다운로드와 파싱은 하지 않는다. **등록된 문서는 전부 검색 가능해야 하지만**,
-    그것을 이 요청 하나에 몰면 문서 수만큼 길어지는 동안 사용자에게 아무것도
-    말해 줄 수 없다. 화면이 이 응답을 받아 문서마다 다운로드·처리를 이어 부르며
-    진행을 보여준다.
-    """
-
-    def post(self, request):
-        serializer = DocumentRegisterSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        requested = serializer.validated_data["files"]
-        account_id = request.user.account_id
-
-        try:
-            candidates, _live = _scan_drive_candidates(account_id)
-        except OAuthError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        by_file_id = {item["file_id"]: item for item in candidates}
-
-        documents = []
-        skipped: list[dict[str, str]] = []
-        for entry in requested:
-            candidate = by_file_id.get(entry["file_id"])
-            if candidate is None:
-                # 스캔 이후 이미 등록됐거나 폴더에서 사라졌다.
-                skipped.append({"file_id": entry["file_id"], "reason": "NOT_FOUND"})
-                continue
-            if not candidate["supported"]:
-                skipped.append({"file_id": entry["file_id"], "reason": "UNSUPPORTED"})
-                continue
-            documents.append(
-                {
-                    "src_file_id": candidate["file_id"],
-                    "file_name": candidate["file_name"],
-                    "mime_type": candidate["mime_type"],
-                    # 등록 시점에는 이 문서가 어느 프로젝트의 무엇인지 모른다.
-                    # `doc_role`은 기준 문서로 선택될 때 PRIMARY/SUB 로 채워진다.
-                    "doc_role": None,
-                    "src_modified_at": candidate["modified_at"],
-                }
-            )
-
-        try:
-            created = DocumentRepository.add_drive_documents(
-                account_id=account_id,
-                documents=documents,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        # 무엇이 언제 들어왔는지 남긴다. 이게 없어서 예전에 `doc` 건수가 바뀐
-        # 경위를 추적하지 못했다. **실제로 들어온 것이 있을 때만** 남긴다 —
-        # 미지원 파일을 골랐다가 전부 걸러진 것은 바뀐 게 없어서 이력이 아니다.
-        if created:
-            log_audit(
-                actor_account_id=account_id,
-                action=DocumentRepository.ACTION_REGISTER,
-                target_type=DocumentRepository.AUDIT_TARGET,
-                payload={
-                    "registered": len(created),
-                    "skipped": len(skipped),
-                    "file_names": [row["file_name"] for row in created],
-                },
-            )
-
-        return Response(
-            {
-                "registered": [document_response(row) for row in created],
-                "skipped": skipped,
-            }
-        )
-
-
 class TeamDocumentHistoryAPIView(AuthenticatedAPIView):
     """이 팀의 문서 등록·다운로드 이력. `offset`으로 「더 보기」를 이어 받는다."""
 
@@ -788,103 +683,6 @@ class TeamDocumentHistoryAPIView(AuthenticatedAPIView):
                 "entries": [document_history_response(row) for row in rows],
                 # 화면이 「더 보기」를 보일지만 정하면 되므로 남은 개수는 주지 않는다.
                 "has_more": has_more,
-            }
-        )
-
-
-class TeamDocumentDownloadAPIView(AuthenticatedAPIView):
-    """선택된 문서의 원문을 Drive에서 받아 문서 저장소에 넣는다.
-
-    파싱은 이 저장소를 입력으로 삼는다. 파싱이 Drive를 직접 읽지 않는 이유는,
-    사용자 OAuth 토큰이 파싱 쪽으로 넘어가면 안 되기 때문이다 — 토큰 하나로
-    그 사람의 드라이브 전체를 읽을 수 있다.
-
-    한 건이 실패해도 나머지는 계속 받는다. Drive에서 지워졌거나 권한이 빠진
-    문서 하나 때문에 전체가 멈추면, 무엇이 문제인지 알 수 없는 채로 아무것도
-    안 받은 상태가 된다.
-
-    `doc_ids`를 주면 그것만 받는다. 화면은 등록한 문서를 한 건씩 받아 파싱까지
-    이어 가며 진행을 보여주므로, 한 번에 하나만 지정해서 부른다. 주지 않으면
-    팀의 미수신 문서를 전부 받는다.
-    """
-
-    def post(self, request):
-        account_id = request.user.account_id
-        force = request.data.get("force") is True
-        only = request.data.get("doc_ids") or None
-
-        try:
-            team_id = AccountRepository.team_id(account_id)
-            targets = DocumentRepository.list_pending_download(account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        if only is not None:
-            wanted = set(only)
-            targets = [target for target in targets if target["doc_id"] in wanted]
-
-        if team_id is None:
-            return Response(
-                {"detail": "팀에 속하지 않은 계정입니다."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        downloaded, skipped, failed = [], [], []
-        for target in targets:
-            if target["storage_key"] and not force:
-                skipped.append(target["file_name"])
-                continue
-
-            try:
-                fetched = download_drive_file(
-                    account_id=account_id,
-                    file_id=target["src_file_id"],
-                    mime_type=target["mime_type"],
-                )
-            except OAuthError as exc:
-                failed.append({"file_name": target["file_name"], "detail": str(exc)})
-                continue
-
-            key = build_key(
-                team_id=team_id,
-                doc_id=target["doc_id"],
-                mime_type=fetched["mime_type"],
-            )
-            try:
-                # 파일을 먼저 쓰고 DB에 기록한다. 반대 순서면 "DB에는 있는데 파일이
-                # 없는" 상태가 생기고, 파싱이 그걸 읽다가 죽는다.
-                content_hash = save_document(key, fetched["content"])
-                DocumentRepository.mark_stored(
-                    doc_id=target["doc_id"],
-                    storage_key=key,
-                    content_hash=content_hash,
-                    revision=fetched["revision"],
-                )
-            except OSError as exc:
-                failed.append({"file_name": target["file_name"], "detail": f"저장 실패: {exc}"})
-                continue
-            except (RepositoryError, psycopg.Error) as exc:
-                return _repository_error_response(exc)
-
-            downloaded.append({"file_name": target["file_name"], "bytes": len(fetched["content"])})
-
-        if downloaded or failed:
-            log_audit(
-                actor_account_id=account_id,
-                action=DocumentRepository.ACTION_DOWNLOAD,
-                target_type=DocumentRepository.AUDIT_TARGET,
-                payload={
-                    "downloaded": len(downloaded),
-                    "failed": len(failed),
-                    "file_names": [item["file_name"] for item in downloaded],
-                },
-            )
-
-        return Response(
-            {
-                "downloaded": downloaded,
-                "skipped": skipped,
-                "failed": failed,
             }
         )
 
@@ -1080,58 +878,6 @@ class TeamWorkloadAPIView(AuthenticatedAPIView):
         )
 
 
-class TeamDeadlineAPIView(AuthenticatedAPIView):
-    """지연된 업무와 곧 마감인 업무.
-
-    부하와 나누어 둔다. 부하는 **사람**이 단위지만 여기는 **업무**가 단위고, 팀장이
-    보고 할 행동도 다르다 — 부하는 배정을 옮기는 판단이고, 지연은 그 이슈를 지금
-    찌르는 판단이다. 한 응답에 섞으면 부하 계약(`업무량_계산_MVP_계약`)에 관계없는
-    필드가 얹힌다.
-
-    `DONE`은 뺀다. 이미 끝난 일은 마감이 지났어도 할 일이 없다.
-    """
-
-    #: 「이번 주」의 길이. 오늘을 포함해 7일이다. 주 경계(월요일)로 자르지 않는
-    #: 이유는 금요일에 열었을 때 남은 이틀만 보이면 쓸모가 없기 때문이다.
-    SOON_DAYS = 7
-
-    def get(self, request):
-        try:
-            tasks = ExistTaskRepository.list_for_team(request.user.account_id)
-            persons = lookup_persons(
-                [t["assignee_person_id"] for t in tasks if t["assignee_person_id"]]
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        today = datetime.now(UTC).date()
-        overdue: list[dict[str, Any]] = []
-        soon: list[dict[str, Any]] = []
-
-        for task in tasks:
-            due = task.get("due_at")
-            if due is None or task.get("status_category") == "DONE":
-                continue
-            days = (due.date() - today).days
-            if days < 0:
-                overdue.append(deadline_response(task, persons, days=days))
-            elif days < self.SOON_DAYS:
-                soon.append(deadline_response(task, persons, days=days))
-
-        # 급한 것부터. 지연은 오래된 것이, 예정은 가까운 것이 위다.
-        overdue.sort(key=lambda row: (row["days"], row["jira_issue_id"]))
-        soon.sort(key=lambda row: (row["days"], row["jira_issue_id"]))
-
-        return Response(
-            {
-                "as_of": today.isoformat(),
-                "soon_days": self.SOON_DAYS,
-                "overdue": overdue,
-                "soon": soon,
-            }
-        )
-
-
 def _pipeline_error_response(exc: Exception) -> Response:
     if isinstance(exc, PipelineConfigurationError):
         return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -1141,218 +887,6 @@ def _pipeline_error_response(exc: Exception) -> Response:
         {"detail": str(exc) or exc.__class__.__name__},
         status=status.HTTP_409_CONFLICT,
     )
-
-
-class TeamPipelineDocumentAPIView(AuthenticatedAPIView):
-    """기준 문서 선택 화면이 고를 수 있는 후보 — 팀 문서 전부.
-
-    프로젝트 하위가 아니라 `team/` 아래인 이유는 문서가 팀에 속하기 때문이다.
-    아직 어느 프로젝트에도 안 묶인 문서를 골라 **묶는** 것이 이 화면의 일이라,
-    프로젝트로 걸러 오면 후보가 언제나 0건이 된다.
-    """
-
-    def get(self, request):
-        try:
-            rows = PipelineDocumentRepository.list_team_documents(request.user.account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response([pipeline_document_response(row) for row in rows])
-
-
-def _document_meta_response(row: dict[str, Any]) -> dict[str, Any]:
-    """`state` 매핑 — 개발지시_3차 단계 5.
-
-      준비됨      본문까지 색인됨. 근거로 쓸 수 있다
-      메타만      요약은 있지만 본문 색인이 없다. coarse 후보로만 잡힌다
-      대기        원문은 받았는데 메타를 아직 안 만들었다
-      실패        추출이 안 됐다(스캔본·깨진 글자). 다시 시도할 수 있다
-      미지원 형식  파서가 없다(hwp·docx). 다시 시도해도 같다
-
-    「실패」와 「미지원 형식」을 가르는 이유는 사람이 할 행동이 달라서다 —
-    앞은 재시도, 뒤는 포기다.
-    """
-
-    status_value = row.get("extract_status")
-    if status_value == "UNSUPPORTED":
-        state = "미지원 형식"
-    elif status_value == "FAILED":
-        state = "실패"
-    elif status_value == "OK":
-        state = "준비됨" if row.get("search_ready") else "메타만"
-    else:
-        state = "대기"
-
-    return {
-        "doc_id": row["doc_id"],
-        "file_name": row["file_name"],
-        "mime_type": row.get("mime_type"),
-        "proj_id": row.get("proj_id"),
-        "doc_role": row.get("doc_role"),
-        "src_modified_at": row.get("src_modified_at"),
-        "summary": row.get("summary"),
-        "doc_type": row.get("doc_type"),
-        "keywords": row.get("keywords") or [],
-        "state": state,
-        "extract_status": status_value,
-        "search_ready": bool(row.get("search_ready")),
-        # 원문이 없으면 메타를 만들 수 없다. 화면이 「다시 처리」를 못 누르게 한다.
-        "has_source": bool(row.get("storage_key")),
-    }
-
-
-class TeamDocumentMetaAPIView(AuthenticatedAPIView):
-    """문서 메타(요약·유형·키워드·요약 임베딩)를 만든다 — A안, 8/11 확정 ⑥.
-
-    **다운로드 다음 단계다.** 폴더 스캔 시점에는 원문 바이트가 없어 CPU 추출을
-    할 수 없고, 다운로드 응답 안에서 처리하면 요약 임베딩의 RunPod 콜드 스타트
-    (최대 10분)가 다운로드를 통째로 붙잡는다. 등록 → 다운로드 → 처리와 같은
-    모양으로 화면이 문서마다 이어 부르며 진행을 보여준다.
-
-    RunPod 문서 처리(`documents/<id>/processing/`)와 다른 일이다. 그쪽은 청크
-    단위 임베딩까지 하는 무거운 GPU 경로고, 여기는 문서 하나당 LLM 1회 +
-    임베딩 1개다. 싸야 팀 문서 전부에 돌릴 수 있고, 전부에 돌아야 coarse 검색이
-    미처리 문서까지 후보로 볼 수 있다.
-    """
-
-    def get(self, request):
-        """문서 목록 — 상태 칩이 읽는 값까지 함께 준다.
-
-        `state` 를 서버가 정한다. 화면이 extract_status·search_ready 조합을
-        해석하면 같은 규칙이 두 곳에 생기고, 한쪽만 고쳐졌을 때 목록과 검색이
-        다른 말을 한다.
-        """
-
-        try:
-            rows = DocMetaRepository.list_with_meta(request.user.account_id)
-            removed = DocMetaRepository.list_removed(request.user.account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(
-            {
-                "documents": [_document_meta_response(row) for row in rows],
-                "removed": [
-                    {"doc_id": row["doc_id"], "file_name": row["file_name"]} for row in removed
-                ],
-            }
-        )
-
-    def post(self, request):
-        account_id = request.user.account_id
-        only = request.data.get("doc_ids") or None
-
-        try:
-            team_id = AccountRepository.team_id(account_id)
-            if team_id is None:
-                return Response(
-                    {"detail": "팀에 속하지 않은 계정입니다."}, status=status.HTTP_403_FORBIDDEN
-                )
-            targets = DocMetaRepository.pending_doc_ids(team_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        if only is not None:
-            wanted = set(only)
-            targets = [doc_id for doc_id in targets if doc_id in wanted]
-
-        built: list[dict[str, Any]] = []
-        failed: list[dict[str, str]] = []
-        for doc_id in targets:
-            try:
-                document = PipelineDocumentRepository.get_for_processing(
-                    doc_id=doc_id, account_id=account_id
-                )
-                content = load_document(document["storage_key"])
-                meta = build_doc_meta(
-                    doc_id=doc_id,
-                    content=content,
-                    mime_type=document["mime_type"],
-                    file_name=document["file_name"],
-                )
-                DocMetaRepository.upsert(doc_meta_row(meta))
-            except (RepositoryError, psycopg.Error) as exc:
-                return _repository_error_response(exc)
-            except (ValueError, OSError, DocumentPipelineError) as exc:
-                # 한 문서가 이상하다고 나머지를 멈추지 않는다. 팀 문서 전부에
-                # 도는 일이라 한 건의 실패는 그 한 건으로 끝나야 한다.
-                logger.exception("문서 메타 생성 실패: %s", doc_id)
-                failed.append({"doc_id": doc_id, "detail": exc.__class__.__name__})
-                continue
-            built.append(
-                {"doc_id": doc_id, "extract_status": meta.extract_status, "detail": meta.detail}
-            )
-
-        return Response(
-            {
-                "built": built,
-                "failed": failed,
-                # 화면이 "몇 건이 왜 검색 대상이 아닌가"를 말할 수 있게.
-                "status_counts": DocMetaRepository.status_counts(team_id),
-            }
-        )
-
-
-class DocumentProcessingRunAPIView(AuthenticatedAPIView):
-    """RunPod 문서 처리 작업 하나를 제출하고(POST) 상태를 확인한다(GET).
-
-    **팀 문서 단위다.** 파싱·임베딩은 기준 문서로 뽑히기 전에 끝나 있어야 한다.
-    """
-
-    def post(self, request, doc_id):
-        try:
-            document = PipelineDocumentRepository.get_for_processing(
-                doc_id=doc_id, account_id=request.user.account_id
-            )
-            if not document_exists(document["storage_key"]):
-                return Response(
-                    {"detail": "로컬 문서 저장소에 원문 파일이 없습니다."},
-                    status=status.HTTP_409_CONFLICT,
-                )
-            source_url = signed_download_url(
-                doc_id=doc_id, revision=document["cur_revision"]
-            )
-            result = submit_document_job(
-                {
-                    "doc_id": doc_id,
-                    "revision": document["cur_revision"],
-                    "mime_type": document["mime_type"],
-                    "source_url": source_url,
-                    "max_tokens": settings.CHUNKING_MAX_TOKENS,
-                    "merge_peers": settings.CHUNKING_MERGE_PEERS,
-                }
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except (ValueError, OSError, DocumentPipelineError) as exc:
-            return _pipeline_error_response(exc)
-        return Response(
-            {"job_id": result["id"], "status": result.get("status", "IN_QUEUE")},
-            status=status.HTTP_202_ACCEPTED,
-        )
-
-    def get(self, request, doc_id, job_id):
-        try:
-            document = PipelineDocumentRepository.get_for_processing(
-                doc_id=doc_id, account_id=request.user.account_id
-            )
-            result = job_status(job_id)
-            runpod_status = result.get("status")
-            payload = {"job_id": job_id, "status": runpod_status}
-            if runpod_status == "COMPLETED":
-                output = result.get("output")
-                if not isinstance(output, dict):
-                    raise ValueError("완료된 RunPod 작업에 output 객체가 없습니다.")
-                # 완료 시점에 바로 적재한다. RunPod는 완료 결과를 제한된 시간만
-                # 보관해서, 나중에 다시 받아 오면 되겠지 하고 미룰 수 없다.
-                payload["ingested"] = PipelineDocumentRepository.ingest(
-                    expected_doc=document, result=output
-                )
-            elif runpod_status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
-                payload["error"] = result.get("error") or "RunPod 문서 처리 실패"
-            return Response(payload)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except (ValueError, OSError, DocumentPipelineError) as exc:
-            return _pipeline_error_response(exc)
 
 
 class RunPodDocumentDownloadAPIView(APIView):
@@ -1478,10 +1012,33 @@ class TaskExtractionRunAPIView(AuthenticatedAPIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
             if not primary["search_ready"]:
-                return Response(
-                    {"detail": "문서가 아직 파싱·청킹·임베딩되지 않았습니다."},
-                    status=status.HTTP_409_CONFLICT,
+                # **막지 않고 그 자리에서 색인한다**(2026-08-18 PM 결정 · 채팅
+                # 도구의 `_extract_tasks` 와 같은 규칙). 전에는 409 로 끊었는데,
+                # 색인을 시작할 화면이 8/15 에 없어져서(`/files/new`) 사람이 할
+                # 수 있는 일이 남지 않았다 — 새로 연결한 팀은 업무를 영영 못
+                # 뽑았다. 실패하면 그때 사유와 함께 끊는다.
+                from services.document_intake import promote_to_searchable
+
+                outcome = promote_to_searchable(
+                    account_id=request.user.account_id, doc_id=selected_id
                 )
+                if not outcome["ok"]:
+                    return Response(
+                        {
+                            "detail": "기준 문서의 본문을 읽지 못해 업무를 뽑을 수 없습니다: "
+                            + (outcome.get("detail") or "알 수 없는 이유")
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                documents = PipelineDocumentRepository.list_ready_for_analysis(
+                    proj_id=project_id, account_id=request.user.account_id
+                )
+                primary = next((d for d in documents if d["doc_id"] == selected_id), None)
+                if primary is None or not primary["search_ready"]:
+                    return Response(
+                        {"detail": "기준 문서를 색인했지만 검색에 쓸 수 있는 본문이 없습니다."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
             ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)

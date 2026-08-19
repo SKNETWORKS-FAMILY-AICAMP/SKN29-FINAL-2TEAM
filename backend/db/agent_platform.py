@@ -583,7 +583,7 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
         (
             agent_id,
             team_id,
-            "기본 챗",
+            "기본 어시스턴트",
             "Chat 화면의 기본 상대입니다. 도구·MCP만 붙일 수 있고 다른 에이전트로 위임하지 않습니다.",
             owner_account_id,
         ),
@@ -609,6 +609,28 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
             owner_account_id,
         ),
     )
+
+    # **읽기 도구를 기본으로 붙인다**(2026-08-18 PM 결정). 전에는 0개로 만들었는데,
+    # 그러면 기본 상태에서 제품의 대표 발화가 전부 실패한다 — QA §B-0 에서
+    # 「업무 뽑아줘」가 **「문서를 대화에 첨부해 주세요」**(이 제품에 없는 방식)로,
+    # 「팀원 누구야?」가 「조회할 수 없다」로 끝났다. 사람이 Chat 의 「+」로 붙일
+    # 수는 있지만, 처음 쓰는 사람은 그 버튼을 눌러야 한다는 것을 모른다.
+    #
+    # **쓰기 도구는 뺀다.** 기본값이 남의 Jira 에 이슈를 만들거나 업무를 고칠 수
+    # 있으면 안 된다 — 그건 사람이 그 에이전트를 만들면서 고르는 일이다.
+    #
+    # 목록을 여기 박지 않고 `side_effect` 에서 끌어온다. 그 플래그가 「밖을
+    # 바꾸는가」의 정본이라(`tests/test_adapters.py` 의 EXPECTED_SIDE_EFFECT),
+    # 새 도구가 늘어도 읽기면 자동으로 붙고 쓰기면 자동으로 빠진다.
+    from services.harness.registry import BUILTIN_TOOLS
+
+    for tool_ref, tool in BUILTIN_TOOLS.items():
+        if tool.side_effect:
+            continue
+        cursor.execute(
+            "INSERT INTO agent_version_tools (agent_version_id, tool_ref) VALUES (%s, %s)",
+            (agent_version_id, tool_ref),
+        )
 
     cursor.execute(
         "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
@@ -2345,40 +2367,78 @@ class ProjectTaskRepository:
                 if row["team_id"] != team_id:
                     raise PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
 
-                # 이번 추출분을 담을 판. 버전은 이 프로젝트의 몇 번째인가다.
-                cursor.execute(
-                    "SELECT count(*) AS n FROM proj_know_model WHERE proj_id = %s", (proj_id,)
-                )
-                version = cursor.fetchone()["n"] + 1
-                model_id = next_short_code(
-                    cursor, table="proj_know_model", column="model_id", prefix="KM"
-                )
+                # **이 프로젝트의 판에 덧붙인다.** 판을 매번 새로 만들지 않는다
+                # (2026-08-19 PM 결정 ⓐ) — `list_for_project`가 가장 최근 판만
+                # 보여주기 때문에, 「3건만 추가로 등록해줘」에 새 판이 생기면 앞서
+                # 등록한 15건이 통째로 화면에서 사라졌다. 데이터는 남아 있는데
+                # 보이지 않는 것이라 더 나빴다.
                 cursor.execute(
                     """
-                    INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
-                    VALUES (%s, %s, %s, 'READY', now())
+                    SELECT model_id, model_ver FROM proj_know_model
+                    WHERE proj_id = %s ORDER BY generated_at DESC NULLS LAST LIMIT 1
                     """,
-                    (model_id, proj_id, f"v{version}"),
+                    (proj_id,),
                 )
+                current = cursor.fetchone()
+                if current is None:
+                    model_id = next_short_code(
+                        cursor, table="proj_know_model", column="model_id", prefix="KM"
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
+                        VALUES (%s, %s, 'v1', 'READY', now())
+                        """,
+                        (model_id, proj_id),
+                    )
+                else:
+                    model_id = current["model_id"]
+
+                # 덧붙이는 이상 **같은 업무가 두 번 들어올 수 있다** — 다시 뽑아
+                # 다시 등록하면 제목이 겹친다. 제목으로 거르고, 거른 사실을
+                # 돌려준다(`dropped_fields`와 같은 원칙: 조용히 넘기지 않는다).
+                cursor.execute(
+                    "SELECT task_name FROM task WHERE model_id = %s", (model_id,)
+                )
+                existing = {row["task_name"] for row in cursor.fetchall()}
 
                 created = []
-                dropped_dates = []
+                dropped_fields = []
+                already = []
                 for task in tasks:
+                    if task["title"] in existing:
+                        already.append(task["title"])
+                        continue
+                    existing.add(task["title"])
                     task_id = next_short_code(
                         cursor, table="task", column="task_id", prefix="TK"
                     )
+                    # 저장할 값을 먼저 만든 다음, 「모델이 준 것」과 「실제로 남은
+                    # 것」을 나란히 놓고 비운 칸을 센다.
                     start_at = _date_or_none(task.get("start_date"))
                     due_at = _date_or_none(task.get("due_date"))
+                    effort = _positive_or_none(task.get("effort_hours"))
+                    req_role = _positive_or_none(task.get("required_role"))
+                    priority = _positive_or_none(task.get("priority"))
+                    # `given not in (None, "")` 이지 `if given` 이 아니다 —
+                    # **모델이 모르는 공수를 채워 넣는 값이 하필 `0`** 이라
+                    # (`_positive_or_none` docstring), 거짓으로 판정하면 정작
+                    # 알려야 할 그 경우가 통째로 빠진다. 2026-08-18 에 실제로
+                    # 그랬다: 15건 전부 `effort_hours: 0` 으로 왔고 전부 NULL 로
+                    # 저장됐는데, 모델은 「0시간으로 등록했습니다」라고 답했다.
                     blank = [
                         label
                         for label, given, kept in (
-                            ("시작", task.get("start_date"), start_at),
-                            ("마감", task.get("due_date"), due_at),
+                            ("시작일", task.get("start_date"), start_at),
+                            ("마감일", task.get("due_date"), due_at),
+                            ("공수", task.get("effort_hours"), effort),
+                            ("담당 역할", task.get("required_role"), req_role),
+                            ("우선순위", task.get("priority"), priority),
                         )
-                        if given and kept is None
+                        if given not in (None, "") and kept is None
                     ]
                     if blank:
-                        dropped_dates.append({"title": task["title"], "fields": blank})
+                        dropped_fields.append({"title": task["title"], "fields": blank})
                     cursor.execute(
                         """
                         INSERT INTO task (task_id, model_id, task_name, req_role, effort,
@@ -2386,20 +2446,23 @@ class ProjectTaskRepository:
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'EXTRACTED', 'PROPOSED')
                         """,
                         (
-                            task_id, model_id, task["title"],
-                            _positive_or_none(task.get("required_role")),
-                            _positive_or_none(task.get("effort_hours")), start_at,
-                            due_at, _positive_or_none(task.get("priority")),
+                            task_id, model_id, task["title"], req_role,
+                            effort, start_at, due_at, priority,
                         ),
                     )
                     created.append({"task_id": task_id, "title": task["title"]})
 
         return {
             "model_id": model_id,
-            "model_ver": f"v{version}",
             "tasks": created,
             # 비운 것을 조용히 넘기지 않는다. 모델이 이것을 사람에게 옮겨 적는다.
-            "dropped_dates": dropped_dates,
+            #
+            # 예전 이름은 `dropped_dates` 였고 **날짜만** 담았다. 같은 이유로
+            # 비우는 칸이 셋 더 있는데(공수·역할·우선순위 — `_positive_or_none`)
+            # 그쪽은 조용히 넘어갔다. 2026-08-18 에 그 대가를 봤다.
+            "dropped_fields": dropped_fields,
+            # 이미 있어서 건너뛴 것. 사람에게 「등록했다」고만 말하면 안 된다.
+            "already_registered": already,
         }
 
     @staticmethod

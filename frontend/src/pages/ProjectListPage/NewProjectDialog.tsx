@@ -10,6 +10,7 @@ import {
 import type { PrimaryCandidate } from '../../api/projects';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import styles from './NewProjectDialog.module.css';
 
 /**
@@ -91,7 +92,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
           // 프로젝트는 이미 만들어졌다. 업무 추출로 넘기지는 않는다 —
           // 기준 문서 없이 가면 거기서 다시 거절당한다.
           onCreated();
-          setError('프로젝트는 만들었지만 기준 문서를 지정하지 못했습니다. 프로젝트 상세에서 다시 골라 주세요.');
+          setError('프로젝트는 만들었지만 기준 문서를 지정하지 못했습니다. 프로젝트 상세에서 다시 선택하세요.');
           setBusy(false);
           return;
         }
@@ -153,7 +154,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
             </label>
             <p className={styles.hint}>
               <Icon name="info" size={14} color="var(--color-muted)" />팀 문서 저장소에서 이 내용과 가장
-              가까운 문서를 찾아 보여 드립니다. 프로젝트는 마지막에 만들어집니다.
+              관련 문서를 검색해 표시합니다. 프로젝트는 마지막에 만들어집니다.
             </p>
           </div>
         )}
@@ -184,7 +185,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
                           setChosen(candidate);
                           setStep('extract');
                         }}
-                        disabled={!candidate.search_ready}
+
                       >
                         <span className={styles.candidateHead}>
                           <strong>{candidate.file_name}</strong>
@@ -198,11 +199,6 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
                           </span>
                         </span>
                         {candidate.summary && <span className={styles.summary}>{candidate.summary}</span>}
-                        {!candidate.search_ready && (
-                          <span className={styles.notReady}>
-                            본문이 아직 색인되지 않아 기준 문서로 쓸 수 없습니다
-                          </span>
-                        )}
                       </button>
                     </li>
                   ))}
@@ -215,7 +211,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
         {step === 'extract' && (
           <div className={styles.body}>
             <p className={styles.lead}>
-              <strong>{chosen?.file_name}</strong>을(를) 기준 문서로 씁니다.
+              <strong>{chosen?.file_name}</strong>{josa(chosen?.file_name ?? '', '을/를')} 기준 문서로 씁니다.
             </p>
             <p className={styles.hint}>
               <Icon name="info" size={14} color="var(--color-muted)" />이 문서에서 업무를 추출해 정리합니다. 몇
@@ -231,7 +227,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
                 취소
               </Button>
               <Button size="sm" onClick={handleFind} disabled={!name.trim() || busy}>
-                {busy ? '문서를 찾는 중…' : '문서 찾기'}
+                {busy ? '문서를 찾는 중…' : '기준 문서 선택'}
               </Button>
             </>
           )}
@@ -242,7 +238,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
               </Button>
               {/* 문서를 못 찾았거나 나중에 고를 사람도 프로젝트는 원한다. */}
               <Button size="sm" onClick={() => void finish({ extract: false })} disabled={busy}>
-                {busy ? '만드는 중…' : '문서 없이 만들기'}
+                {busy ? '만드는 중…' : '기준 문서 없이 생성'}
               </Button>
             </>
           )}
@@ -254,7 +250,7 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
                 onClick={() => void finish({ extract: false })}
                 disabled={busy}
               >
-                만들기만 하기
+                생성만 하기
               </Button>
               <Button size="sm" onClick={() => void finish({ extract: true })} disabled={busy}>
                 {busy ? '만드는 중…' : '만들고 업무 추출'}

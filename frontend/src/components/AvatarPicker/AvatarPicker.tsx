@@ -90,7 +90,7 @@ export function AvatarPicker({ token, name, hasAvatar, onChanged, onError }: Ava
       setVersion((prev) => prev + 1);
       onChanged();
     } catch (error) {
-      onError(error instanceof ApiError ? error.message : '사진을 지우지 못했습니다.');
+      onError(error instanceof ApiError ? error.message : '사진을 삭제하지 못했습니다.');
     } finally {
       setBusy(false);
     }

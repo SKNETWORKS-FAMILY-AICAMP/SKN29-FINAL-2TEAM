@@ -135,6 +135,18 @@ class McpDetailView(AdminView):
             )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
+
+        # 등록과 같은 이유로 남긴다 — 주소를 바꾸는 것은 그 팀의 호출이 **다른
+        # 곳으로 나가게** 하는 일이라 새로 심는 것과 무게가 같다.
+        # 토큰은 남기지 않고, 바뀌었는지 여부만 적는다.
+        log_audit(
+            actor_account_id=request.user.account_id,
+            action="OPS_MCP_UPDATE",
+            target_type="TEAM",
+            target_id=data["team_id"],
+            payload={"mcp_server_id": server_id, "name": data["name"],
+                     "endpoint_url": endpoint_url, "token_replaced": data["replace_token"]},
+        )
         return Response(server_response(row))
 
     def delete(self, request, server_id):

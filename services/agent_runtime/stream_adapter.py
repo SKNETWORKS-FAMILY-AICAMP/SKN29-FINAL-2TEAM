@@ -16,6 +16,7 @@ class DeepAgentStreamAdapter:
         user_input: str,
         conversation_messages: Sequence[dict[str, Any]] = (),
         thread_id: str | None = None,
+        resume: Any = None,
     ) -> Iterator[Any]:
         """Root와 Child를 포함한 updates event를 3-tuple로 반환한다.
 
@@ -63,12 +64,26 @@ class DeepAgentStreamAdapter:
         3-tuple `(namespace, "messages", (chunk, metadata))`로 온다(langgraph
         1.2.11 `Pregel.stream` docstring: `"messages"`는 항상 `(token, metadata)`
         2-tuple).
+
+        `resume`가 있으면 **새 입력 대신** `Command(resume=...)`로 돈다 —
+        승인 게이트에서 멈춘 실행을 잇는 경로다(2026-08-18 §5 Phase 7 마무리).
+        이때 `user_input`/`conversation_messages`는 쓰지 않는다.
         """
-        new_turn = {"role": "user", "content": user_input}
-        if thread_id:
-            input_state = {"messages": [new_turn]}
+        if resume is not None:
+            # 승인 게이트에서 멈춘 실행을 이어서 돈다(2026-08-18). 새 발화를
+            # **넣지 않는다** — 멈춘 자리의 대화는 Checkpointer에 그대로 있고,
+            # 여기서 user 메시지를 하나 더 붙이면 모델이 같은 요청을 두 번
+            # 받은 것처럼 보인다. `Command(resume=...)`는 보류 중인
+            # `interrupt()` 호출의 반환값이 되어 그 자리에서 실행이 재개된다.
+            from langgraph.types import Command
+
+            input_state: Any = Command(resume=resume)
         else:
-            input_state = {"messages": [*conversation_messages, new_turn]}
+            new_turn = {"role": "user", "content": user_input}
+            if thread_id:
+                input_state = {"messages": [new_turn]}
+            else:
+                input_state = {"messages": [*conversation_messages, new_turn]}
 
         stream_kwargs: dict[str, Any] = {
             "stream_mode": ["updates", "custom", "messages"],

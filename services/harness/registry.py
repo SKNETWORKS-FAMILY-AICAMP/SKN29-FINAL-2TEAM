@@ -95,7 +95,12 @@ PROMOTE_TOP_N = 2
 
 
 def _document_search(
-    *, team_id: str, query: str, account_id: str | None = None, top_k: int = 10
+    *,
+    team_id: str,
+    query: str,
+    account_id: str | None = None,
+    proj_id: str | None = None,
+    top_k: int = 10,
 ):
     """팀 문서에서 근거 문장을 찾는다. **두 단계다**(A안 — 8/11 확정 ⑥).
 
@@ -124,9 +129,26 @@ def _document_search(
     # `account_id` 를 함께 넘긴다 — 팀 문서에 **내가 켠 내 파일**을 더해 본다
     # (2026-08-18 · M④). 에이전트에 파일을 붙이는 개념은 안 만들었으므로 켠
     # 파일은 모든 에이전트가 쓴다.
-    candidates = DocMetaRepository.coarse_search(
-        team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
-    )
+    #
+    # **프로젝트 대화면 그 프로젝트 문서를 먼저 본다**(2026-08-19 PM 결정 ⓐ).
+    # 화면은 「〈프로젝트〉의 문서를 근거로 답합니다」라고 약속하는데
+    # (`ChatPage.tsx`), 검색은 `proj_id` 를 받지도 않아 팀 문서 전체를 훑고
+    # 있었다 — 무관한 「테스트.pdf」가 후보로 올라와 읽히기까지 했다.
+    # 좁혀서 아무것도 없을 때만 팀 전체로 넓힌다: 팀 공용 문서(규정·양식)를
+    # 영영 못 보게 하면 「감리 표준양식 보여줘」 같은 요청이 막힌다.
+    candidates = []
+    if proj_id:
+        candidates = DocMetaRepository.coarse_search(
+            team_id=team_id,
+            query_vector=vector,
+            top_n=COARSE_TOP_N,
+            account_id=account_id,
+            proj_id=proj_id,
+        )
+    if not candidates:
+        candidates = DocMetaRepository.coarse_search(
+            team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
+        )
 
     if candidates:
         doc_ids = [row["doc_id"] for row in candidates if row["search_ready"]]
@@ -342,8 +364,33 @@ def _extract_tasks(
     )
     if primary is None:
         raise ToolInputError("이 프로젝트의 기준 문서가 아직 지정되지 않았습니다.")
+
     if not primary["search_ready"]:
-        raise ToolInputError("기준 문서가 아직 파싱·청킹·임베딩되지 않았습니다.")
+        # **여기서 승격시킨다**(2026-08-18 PM 결정). 전에는 「아직 파싱·청킹·
+        # 임베딩되지 않았습니다」로 끊었는데, 그러면 사람이 할 수 있는 일이
+        # 없다 — 색인을 시작하는 화면은 8/15 에 지웠고(`/files/new`), 승격은
+        # `document_search` 만 걸 수 있었다. 그래서 **새로 연결한 팀은 업무를
+        # 영영 못 뽑았다.**
+        #
+        # 추출은 `VectorSearchRepository.search()` 로 근거를 찾으므로 벡터가
+        # 없으면 결과가 0건이다. 막는 대신 그 자리에서 만든다 — 검색이 필요할
+        # 때 승격시키는 것과 같은 규칙이고, 진입점만 하나 더 는 것이다.
+        from services.document_intake import promote_to_searchable
+
+        outcome = promote_to_searchable(account_id=account_id, doc_id=primary["doc_id"])
+        if not outcome["ok"]:
+            raise ToolInputError(
+                f"기준 문서의 본문을 읽지 못해 업무를 뽑을 수 없습니다: {outcome.get('detail') or '알 수 없는 이유'}"
+            )
+        # 승격 뒤 상태가 바뀌었다 — 다시 읽어야 `ready_ids` 에 이 문서가 들어간다.
+        documents = PipelineDocumentRepository.list_ready_for_analysis(
+            proj_id=proj_id, account_id=account_id
+        )
+        primary = next(
+            (d for d in documents if d["proj_id"] == proj_id and d["doc_role"] == "PRIMARY"), None
+        )
+        if primary is None or not primary["search_ready"]:
+            raise ToolInputError("기준 문서를 색인했지만 검색에 쓸 수 있는 본문이 없습니다.")
 
     ready_ids = [d["doc_id"] for d in documents if d["search_ready"]]
     result = None
@@ -840,7 +887,10 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         name="등록된 업무 조회",
         description=(
             "이 프로젝트에 등록된 **우리 업무**를 읽는다(task_register 로 넣은 것). "
-            "Jira 이슈가 아니다 — Jira 쪽은 jira_get_issues 다."
+            "Jira 이슈가 아니다 — Jira 쪽은 jira_get_issues 다. "
+            "**여기가 비어 있다고 해서 일이 없는 것은 아니다** — 「업무 현황」처럼 "
+            "출처를 가리지 않는 물음에 이것만 보고 「없습니다」라고 답하지 않는다. "
+            "Jira 도 붙어 있으면 그쪽을 확인한 뒤에 답한다."
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_task_list,
@@ -932,8 +982,13 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "추출한 업무를 이 프로젝트의 업무로 등록한다. **Jira 보다 먼저 이것을 부른다** — "
             "우리 플랫폼에 남아야 나중에 다시 볼 수 있고, Jira 를 쓰지 않는 팀도 결과를 갖는다. "
             "업무 추출 직후 사용자에게 등록할지 물어보고 부른다. 사용자 승인 없이는 실행되지 않는다. "
-            "날짜는 `YYYY-MM-DD` 만 저장된다 — 「5일 이내」 같은 상대 표현은 비운 채 등록하고 "
-            "`dropped_dates` 로 돌려주니, 그 목록을 사람에게 그대로 알린다."
+            "날짜는 `YYYY-MM-DD` 만 저장된다 — 「5일 이내」 같은 상대 표현은 비운 채 등록한다. "
+            "**모르는 값을 `0` 이나 빈 문자열로 채우지 마라** — 공수 0 은 「0시간짜리 업무」라는 "
+            "뜻이 되어 배정과 진행률을 망가뜨린다. 모르면 그 칸을 아예 빼고 보낸다. "
+            "그렇게 채워 보낸 값은 저장되지 않고 `dropped_fields` 로 돌아오니, **등록됐다고 "
+            "말하지 말고** 그 목록을 사람에게 그대로 알린다. "
+            "이 프로젝트에 **이미 같은 제목의 업무가 있으면 건너뛴다** — 그 목록은 "
+            "`already_registered` 로 돌아온다. 그것도 사람에게 알린다."
         ),
         input_schema={
             "type": "object",

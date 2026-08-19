@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_NAV_ITEMS, PATHS } from '../../routes';
@@ -41,6 +42,19 @@ export interface AppShellProps {
 /** 접힘 상태를 새로고침 뒤에도 유지한다 — 매번 다시 접게 하지 않는다. */
 const COLLAPSE_KEY = 'halil.sidebarCollapsed';
 
+/**
+ * 사이드바 폭. 접힘과 같은 이유로 새로고침 뒤에도 유지한다.
+ *
+ * 대화 목록이 여기 들어오면서(2026-08-18) 제목이 길면 잘린다 — 예전에는 채팅
+ * 화면 안의 독립 패널이라 자체 리사이저가 있었는데, 사이드바로 합치면서 그것이
+ * 없어졌다. 그래서 **사이드바 자체에 붙인다**(PM 결정) — 대화 목록만의 문제가
+ * 아니라 메뉴 이름도 같이 넓어진다.
+ */
+const WIDTH_KEY = 'halil.sidebarWidth';
+const WIDTH_DEFAULT = 240;
+const WIDTH_MIN = 200;
+const WIDTH_MAX = 420;
+
 export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -49,6 +63,41 @@ export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellP
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
   const narrow = useNarrowViewport();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [width, setWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    return saved >= WIDTH_MIN && saved <= WIDTH_MAX ? saved : WIDTH_DEFAULT;
+  });
+
+  /**
+   * 손잡이를 끌어 폭을 바꾼다.
+   *
+   * `pointer` 이벤트를 쓰고 손잡이에 **포인터를 가둔다**(`setPointerCapture`) —
+   * 마우스가 본문 위로 넘어가도 계속 따라오게 하려는 것이다. 안 그러면 빠르게
+   * 끌 때 커서가 사이드바를 벗어나는 순간 드래그가 끊긴다.
+   */
+  function startResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (narrow || iconsOnly) return;
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = width;
+
+    function onMove(moveEvent: PointerEvent) {
+      const next = Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, startWidth + moveEvent.clientX - startX));
+      setWidth(next);
+    }
+    function onUp() {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      // 놓을 때 한 번만 저장한다. 끄는 동안 매 프레임 쓰면 localStorage 가 병목이 된다.
+      setWidth((current) => {
+        localStorage.setItem(WIDTH_KEY, String(current));
+        return current;
+      });
+    }
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+  }
 
   // 메뉴를 눌러 이동했으면 드로어는 할 일을 끝냈다. 안 닫으면 도착한 화면을
   // 자기가 가린 채로 남는다.
@@ -116,7 +165,19 @@ export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellP
         ]
           .filter(Boolean)
           .join(' ')}
+        // 접혔거나 좁은 화면이면 폭은 CSS 가 정한다 — 드로어는 넓히는 것이
+        // 아니라 열리는 것이다.
+        style={narrow || iconsOnly ? undefined : { width }}
       >
+        {!narrow && !iconsOnly && (
+          <div
+            className={styles.resizer}
+            onPointerDown={startResize}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="사이드바 폭 조절"
+          />
+        )}
         <div className={styles.brandRow}>
           {/* 접히면 글자가 들어갈 자리가 없다 — 그때만 마크로 바꾼다.
               높이가 두 쪽이 다른 것은 여백 때문이다. 워드마크는 글자가 그림 끝까지 차

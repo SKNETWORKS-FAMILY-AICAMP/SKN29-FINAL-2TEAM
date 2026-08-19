@@ -350,6 +350,59 @@ class ToolExecutionTimeRBACTests(SimpleTestCase):
         self.assertEqual(langchain_tool.invoke({}), "listed")
 
 
+class SpeakableToolErrorTests(SimpleTestCase):
+    """도구가 낸 **사람이 고칠 수 있는 사유**는 모델에게 돌려준다(2026-08-18 QA).
+
+    그냥 올리면 LangGraph `ToolNode`가 실행을 통째로 죽이고, 화면에는 사유 없이
+    「요청을 끝내지 못했습니다」만 남는다. 실제로 §B-0 ②에서 `task_extraction`이
+    「어느 프로젝트의 업무를 뽑을지 정해지지 않았습니다. 프로젝트를 먼저
+    고르세요.」라고 정확히 말했는데 **그 문장이 버려졌다.**
+
+    기준은 레거시(`services/harness/runner.SPEAKABLE_ERRORS`)와 같은 목록을 쓴다 —
+    두 엔진이 다른 목록을 들면 같은 실패가 한쪽에서만 설명된다.
+    """
+
+    def _tool(self, handler) -> Tool:
+        return Tool(
+            ref="task_extraction",
+            name="task_extraction",
+            description="업무를 뽑는다.",
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=handler,
+            side_effect=False,
+        )
+
+    def _invoke(self, handler):
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+        langchain_tool = _to_langchain_tool(
+            self._tool(handler), context=context, runtime_policy=RuntimeCapabilityPolicy()
+        )
+        return langchain_tool.invoke({})
+
+    def test_말할_수_있는_오류는_사유를_담아_돌려준다(self):
+        """`{"error": ...}` 딕셔너리가 아니라 `ToolException`을 거쳐 문자열로 온다
+        (2026-08-19 — main과 합의: 같은 목록을 쓰되, `ToolException` +
+        `handle_tool_error=True`로 바꿔서 `tool_completed.status`가 OK로
+        마스킹되지 않고 FAILED로 정확히 남게 했다. `factory.py`의 `_run()`
+        docstring 주석 참고)."""
+        from services.harness.registry import ToolInputError
+
+        def boom(**_kwargs):
+            raise ToolInputError("프로젝트를 먼저 고르세요.")
+
+        self.assertEqual(self._invoke(boom), "프로젝트를 먼저 고르세요.")
+
+    def test_그_밖의_예외는_그대로_올린다(self):
+        """라이브러리·드라이버 예외 문자열에는 쿼리·문서 원문·토큰이 섞일 수 있다 —
+        삼키면 진짜 장애가 「도구가 뭐라고 했다」로 둔갑한다."""
+
+        def boom(**_kwargs):
+            raise RuntimeError("connection reset by peer")
+
+        with self.assertRaises(RuntimeError):
+            self._invoke(boom)
+
+
 class ToLangchainToolNameTests(SimpleTestCase):
     """`_to_langchain_tool()`이 LangChain 함수 이름으로 `tool.ref`를 쓰는지
     확인한다(2026-08-14 추가 — 실제 라이브 실행에서 발견한 버그의 회귀 테스트).

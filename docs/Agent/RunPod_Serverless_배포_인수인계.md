@@ -259,6 +259,17 @@ ALLOWED_HOSTS=localhost,127.0.0.1,<random>.trycloudflare.com
 
 ### 7.2 문서 처리 시작
 
+> ⚠ **아래 HTTP 경로 셋은 2026-08-18 에 걷었다.** `pipeline-documents/` 와
+> `processing-runs/`(POST·GET)는 **사람이 파싱을 시작하던** 시절의 입구다 —
+> 2026-08-15 에 「이 문서를 파싱/임베딩 하겠다를 사람이 정하지 않는다」로
+> 정하면서 그 화면(`/files/new`)이 없어졌고, 부르는 쪽이 사라졌다.
+>
+> **워커와 주고받는 payload·상태값은 그대로 유효하다** — 지금은
+> `services/document_intake.promote_to_searchable()` 이 같은 내용으로
+> `submit_document_job()` 을 부르고 `job_status()` 로 기다린다. 원문을 받아 가는
+> `GET /api/internal/runpod/documents/{doc_id}/` 도 그대로다.
+
+
 ```http
 POST /api/team/documents/{doc_id}/processing-runs/
 Authorization: Bearer <Django session token>

@@ -28,7 +28,7 @@ export default function OpsLoginPage() {
     event.preventDefault();
     if (submitting) return;
     if (!email.trim() || !password) {
-      setError('운영자 이메일과 비밀번호를 모두 입력해 주세요.');
+      setError('이메일과 비밀번호를 모두 입력하세요.');
       return;
     }
 

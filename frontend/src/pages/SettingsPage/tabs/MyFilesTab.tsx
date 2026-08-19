@@ -12,6 +12,7 @@ import {
 } from '../../../api/personalFiles';
 import type { PersonalFile } from '../../../api/personalFiles';
 import { loadSessionToken } from '../../../utils/session';
+import { josa } from '../../../utils/josa';
 import styles from './tabs.module.css';
 
 /**
@@ -42,14 +43,22 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
     return {
       tone: 'warning',
       label: '읽을 수 없는 형식',
-      hint: '다른 형식으로 저장해 다시 올려 주세요.',
+      hint: '다른 형식으로 저장해 다시 업로드하세요.',
     };
   }
   if (file.extract_status === 'FAILED') {
+    // ⚠ **왜 실패했는지는 화면이 모른다.** 추출기는 사유를 다섯 갈래로 갈라
+    // 만드는데(너무 짧음 · 암호 PDF · 스캔본 · 글자 깨짐 · hwp), `doc_meta` 에
+    // 담을 칸이 없어 `as_row()` 가 버린다 — `extract_status` 만 남는다.
+    //
+    // 그래서 사유를 **찍지 않는다.** 전에는 「텍스트가 들어 있는 파일로 다시
+    // 올려 주세요」였는데, 실제로 제일 흔한 실패는 **본문이 200자보다 짧은
+    // 것**이라 텍스트가 멀쩡히 든 파일을 두고 사용자를 틀린 방향으로 보냈다
+    // (2026-08-18 QA — 185자 파일이 이 문구를 받았다).
     return {
       tone: 'warning',
       label: '본문 추출 실패',
-      hint: '텍스트가 들어 있는 파일로 다시 올려 주세요.',
+      hint: '내용이 200자보다 짧거나, 글자를 읽을 수 없는 파일일 수 있습니다.',
     };
   }
   if (file.summary) {
@@ -126,7 +135,7 @@ export function MyFilesTab() {
       setBusy(file.name);
       try {
         await uploadPersonalFile(token, file);
-        showToast(`${file.name} · 올렸습니다. 읽는 중입니다.`, 'success');
+        showToast(`${file.name} · 업로드했습니다. 읽는 중입니다.`, 'success');
       } catch (exc) {
         // 형식·크기 거절은 서버가 이유를 준다. 그 문장이 가장 정확하다.
         setError(exc instanceof ApiError ? exc.message : '올리지 못했습니다.');
@@ -204,7 +213,7 @@ export function MyFilesTab() {
               </p>
               <p>
                 <strong>검색에 사용</strong>을 켜면 대화에서 답을 찾을 때 이 문서도 함께 봅니다.
-                에이전트마다 따로 고르지 않아도 됩니다.
+                선택한 파일은 모든 에이전트가 사용합니다.
               </p>
               <p>
                 끄면 검색 범위에서만 제외됩니다. 읽어 둔 내용은 남아 있어 다시 켤 때 기다리지 않습니다.
@@ -259,7 +268,7 @@ export function MyFilesTab() {
       <section className={styles.card}>
         <div className={styles.cardHead}>
           {/* 안쪽 탭. **내 것과 받은 것을 한 목록에 섞지 않는다** — 할 수 있는
-              일이 달라서(지우기·공유 vs 보기만), 섞으면 줄마다 그 판단을 다시
+              일이 달라서(삭제·공유 vs 보기만), 섞으면 줄마다 그 판단을 다시
               해야 한다. */}
           <div className={styles.innerTabs} role="tablist">
             <button
@@ -342,7 +351,7 @@ export function MyFilesTab() {
                       disabled={busy === file.doc_id}
                       onClick={() => setConfirming(file)}
                     >
-                      지우기
+                      삭제
                     </Button>
                   </div>
                 )}
@@ -374,7 +383,7 @@ export function MyFilesTab() {
         )}
       >
         <p className={styles.confirmText}>
-          <strong>{confirming?.file_name}</strong> 을(를) 삭제합니다.{' '}
+          <strong>{confirming?.file_name}</strong>{josa(confirming?.file_name ?? '', '을/를')} 삭제합니다.{' '}
           <strong>되돌릴 수 없습니다.</strong>
         </p>
         <p className={styles.confirmText}>

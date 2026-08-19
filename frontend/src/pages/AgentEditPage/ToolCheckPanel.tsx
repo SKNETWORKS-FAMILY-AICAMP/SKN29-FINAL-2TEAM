@@ -66,7 +66,7 @@ function buildArguments(
       if (kind === 'number') {
         const parsed = Number(raw);
         if (Number.isNaN(parsed)) {
-          errors[key] = '숫자로 입력해 주세요.';
+          errors[key] = '숫자로 입력하세요.';
         } else {
           built[prop] = parsed;
         }
@@ -82,15 +82,15 @@ function buildArguments(
       try {
         parsed = JSON.parse(raw);
       } catch {
-        errors[key] = '올바른 JSON 형식으로 입력해 주세요.';
+        errors[key] = '올바른 JSON 형식으로 입력하세요.';
         continue;
       }
       if (kind === 'array' && !Array.isArray(parsed)) {
-        errors[key] = 'JSON 배열([ ]) 형식으로 입력해 주세요.';
+        errors[key] = 'JSON 배열([ ]) 형식으로 입력하세요.';
         continue;
       }
       if (kind === 'object' && (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))) {
-        errors[key] = 'JSON 객체({ }) 형식으로 입력해 주세요.';
+        errors[key] = 'JSON 객체({ }) 형식으로 입력하세요.';
         continue;
       }
       built[prop] = parsed;

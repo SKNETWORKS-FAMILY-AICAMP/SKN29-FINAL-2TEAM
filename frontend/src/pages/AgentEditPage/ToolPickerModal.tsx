@@ -64,6 +64,34 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   [UNCATEGORIZED]: '카테고리가 지정되지 않은 도구입니다.',
 };
 
+/**
+ * 개별 도구의 **사람용** 한 줄 설명(2026-08-18 QA).
+ *
+ * **백엔드의 `description` 을 그대로 보여주면 안 된다** — 그건 모델에게 쓴
+ * 지시문이다. 「문서 목록」은 349자짜리로 `document_search`·`not_collected`·
+ * `storage_folders` 같은 내부 이름과 「…로 뭉뚱그리지 않는다」 같은 명령문이
+ * 그대로 화면에 나왔다(§0 원칙 2 — 우리 아키텍처 용어를 사용자에게 노출하지
+ * 않는다).
+ *
+ * 카테고리 설명(`CATEGORY_DESCRIPTIONS`)을 화면에 둔 것과 같은 이유로 여기 둔다.
+ * **없으면 백엔드 설명으로 물러선다** — MCP 도구나 새로 붙는 도구는 여기 없다.
+ */
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+  document_search: '문서에서 질문과 관련된 문장을 찾아 근거로 보여줍니다.',
+  document_list: '팀에 어떤 문서가 있는지 목록으로 보여줍니다. 아직 읽지 않은 파일도 함께 알려줍니다.',
+  people_list: '팀원의 이름·직책·보유 스킬을 조회합니다.',
+  workload_report: '팀원별로 남은 업무 시간을 계산해 보여줍니다.',
+  absence_list: '팀원의 휴가 등 부재 일정을 조회합니다.',
+  task_extraction: '문서에서 해야 할 일을 찾아 근거 문장과 함께 정리합니다.',
+  project_list: '팀의 프로젝트 목록과 진행률을 조회합니다.',
+  task_list: '등록된 업무를 조회합니다.',
+  task_register: '정리된 업무를 시스템에 등록합니다.',
+  task_update: '등록된 업무의 상태·담당자·마감을 고칩니다.',
+  web_search: '인터넷에서 정보를 찾아 출처와 함께 알려줍니다.',
+  jira_get_issues: 'Jira 이슈를 조회합니다.',
+  jira_create_issues: 'Jira 에 새 이슈를 등록합니다.',
+};
+
 /** 카테고리 등장 순서를 그대로 유지해 그룹으로 묶는다. */
 function groupByCategory(items: ToolChoice[]): [string, ToolChoice[]][] {
   const order: string[] = [];
@@ -184,7 +212,9 @@ export function ToolPickerModal({
                               {toolItem.name}
                               {toolItem.side_effect && <span className={pageStyles.gate}> · 승인 필요</span>}
                             </strong>
-                            <span>{toolItem.description}</span>
+                            <span>
+                              {TOOL_DESCRIPTIONS[toolItem.tool_ref] ?? toolItem.description}
+                            </span>
                           </div>
                         </div>
                       );
@@ -217,7 +247,7 @@ export function ToolPickerModal({
                   <p className={pageStyles.help}>
                     {server.status === 'UNCHECKED'
                       ? '설정에서 연결을 확인해야 도구를 고를 수 있습니다.'
-                      : '연결이 실패한 서버입니다. 설정에서 다시 확인해 주세요.'}
+                      : '연결이 실패한 서버입니다. 설정에서 연결 상태를 확인하세요.'}
                   </p>
                 )}
                 {usable && server.tools.length === 0 && (
@@ -239,7 +269,7 @@ export function ToolPickerModal({
                               {tool.name}
                               <span className={pageStyles.gate}> · 승인 필요</span>
                             </strong>
-                            <span>{tool.description || (tool.enabled ? '' : '비활성화된 도구입니다.')}</span>
+                            <span>{tool.description || (tool.enabled ? '' : '사용 중지된 도구입니다.')}</span>
                           </div>
                         </div>
                       );
@@ -253,7 +283,7 @@ export function ToolPickerModal({
               팀이 스스로 붙일 수도 없다. 대신 **어디로 말하면 되는지**를
               남긴다. 문구는 Model 탭(8/13)과 같은 말이다. */}
           <p className={pageStyles.help}>
-            필요한 서버가 있으시면 저희에게 요청하시면 이 팀에만 등록해 드립니다.
+            서버 등록은 운영자에게 요청하세요. 주소·키를 다루는 작업이라 운영자가 대신 등록합니다.
           </p>
         </div>
       )}
@@ -265,7 +295,7 @@ export function ToolPickerModal({
             붙어 있는 커스텀 도구만 쓸 수 있습니다.
           </p>
           <Button variant="outline" disabled>
-            새 도구 만들기 (준비 중)
+            새 도구 등록 (준비 중)
           </Button>
         </div>
       )}

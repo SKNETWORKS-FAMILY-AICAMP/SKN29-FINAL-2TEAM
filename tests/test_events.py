@@ -17,6 +17,7 @@ from django.test import SimpleTestCase
 
 from services.agent_runtime.definitions import SubagentDefinition
 from services.agent_runtime.events import (
+    EVENT_AWAITING_CONFIRMATION,
     EVENT_REASONING,
     EVENT_RESULT,
     EVENT_SUBAGENT_COMPLETED,
@@ -708,5 +709,87 @@ class ToolProgressEventTests(SimpleTestCase):
         raw = ((), "custom", "not-a-dict")
 
         events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
+
+        self.assertEqual(events, [])
+
+
+class _Interrupt:
+    """LangGraph `Interrupt`의 최소 대역. 필요한 건 `.value` 하나뿐이다.
+
+    실제 값 모양은 RDS의 `checkpoint_writes`에 저장된 실물에서 확인했다
+    (2026-08-18): `{"action_requests": [{"name","args"}], "review_configs": [...]}`.
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+
+def _hitl_raw_event(*, name="task_register", args=None, extra=()):
+    """승인 게이트가 멈췄을 때 LangGraph가 내보내는 `updates` 이벤트."""
+    requests = [{"name": name, "args": args if args is not None else {"tasks": [{"title": "감리"}]}}]
+    requests.extend(extra)
+    return (
+        (),
+        "updates",
+        {"__interrupt__": (_Interrupt({"action_requests": requests, "review_configs": []}),)},
+    )
+
+
+class AwaitingConfirmationTests(SimpleTestCase):
+    """`__interrupt__` → `awaiting_confirmation`.
+
+    회귀 방지: 예전에는 `updates` 페이로드를 `node_name -> dict`로만 순회해서
+    (`isinstance(node_output, dict)`) 값이 tuple인 `__interrupt__`가 조용히
+    버려졌다 — 그래프는 멈췄는데 화면엔 아무것도 안 나와 대화가 끊긴 것처럼
+    보였다(2026-08-18 QA에서 발견).
+    """
+
+    def test_인터럽트를_승인대기_이벤트로_바꾼다(self):
+        events = EventMapper().convert(
+            _hitl_raw_event(), definition=_Definition(), context=_Context()
+        )
+
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event["type"], EVENT_AWAITING_CONFIRMATION)
+        self.assertEqual(event["tool_ref"], "task_register")
+        # 화면이 읽는 필드(`liveChat.ts`의 awaiting_confirmation 분기)
+        self.assertEqual(event["arguments"], {"tasks": [{"title": "감리"}]})
+        self.assertEqual(event["run_id"], _Context().run_id)
+
+    def test_사람이_읽는_도구_이름을_붙인다(self):
+        events = EventMapper().convert(
+            _hitl_raw_event(), definition=_Definition(), context=_Context()
+        )
+
+        # 레지스트리의 라벨. 대화 기록 한 줄(`_history`)에 쓰인다.
+        self.assertEqual(events[0]["tool_name"], "업무 등록")
+
+    def test_모델용_이름을_저장소_tool_ref로_되돌린다(self):
+        events = EventMapper().convert(
+            _hitl_raw_event(name="mcp__abc123"), definition=_Definition(), context=_Context()
+        )
+
+        self.assertEqual(events[0]["tool_ref"], "mcp:abc123")
+
+    def test_재개에_필요한_호출을_전부_담는다(self):
+        """카드는 첫 호출만 그리지만, 재개는 요구된 수만큼 결정을 돌려줘야 한다."""
+        events = EventMapper().convert(
+            _hitl_raw_event(extra=[{"name": "jira_create_issues", "args": {"issues": []}}]),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        resume = events[0]["resume"]
+        self.assertEqual(resume["engine"], "agent_runtime")
+        self.assertEqual(
+            [item["name"] for item in resume["action_requests"]],
+            ["task_register", "jira_create_issues"],
+        )
+
+    def test_인터럽트가_아니면_그대로_지나간다(self):
+        events = EventMapper().convert(
+            ((), "updates", {"__interrupt__": ()}), definition=_Definition(), context=_Context()
+        )
 
         self.assertEqual(events, [])

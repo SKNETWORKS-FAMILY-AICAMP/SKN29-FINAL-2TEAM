@@ -59,9 +59,9 @@ export default function AgentListPage() {
     try {
       await deleteAgent(token, agent.agent_id);
       setAgents((prev) => prev.filter((item) => item.agent_id !== agent.agent_id));
-      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 비활성화했습니다.`, 'success');
+      showToast(`‘${agent.name}’${josa(agent.name, '을/를')} 삭제했습니다.`, 'success');
     } catch (exc) {
-      showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
+      showToast(exc instanceof ApiError ? exc.message : '삭제하지 못했습니다.', 'error');
     }
   }
 
@@ -170,7 +170,7 @@ export default function AgentListPage() {
                     {pendingId === agent.agent_id ? '검증하는 중…' : '다시 활성화'}
                   </Button>
                 )}
-                {/* 기본 제공은 편집·삭제가 서버에서 403 이다. 눌리는 버튼을 두면
+                {/* 기본 제공은 수정·삭제가 서버에서 403 이다. 눌리는 버튼을 두면
                     사용자가 고칠 수 있다고 믿게 된다. */}
                 {!agent.is_prebuilt && (
                   <>
@@ -179,10 +179,15 @@ export default function AgentListPage() {
                       variant="outline"
                       onClick={() => navigate(PATHS.agentEdit.replace(':agentId', agent.agent_id))}
                     >
-                      {agent.status === 'DRAFT' ? '이어서 작성' : '편집'}
+                      {agent.status === 'DRAFT' ? '이어서 작성' : '수정'}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => remove(agent)}>
-                      내리기
+                    {/* **위의 「사용 중지」와 다른 동작이다.** 저건 DISABLED 로
+                        내렸다가 「다시 활성화」로 되돌리는 것이고, 이건 DELETE —
+                        서버가 ARCHIVED 로 내려 목록에서 사라진다(되돌리는 화면이
+                        없다). 2026-08-18 에 이 버튼을 「사용 중지」로 바꿨다가
+                        같은 카드에 같은 이름이 둘이 되어 되돌렸다. */}
+                    <Button size="sm" variant="danger" onClick={() => remove(agent)}>
+                      삭제
                     </Button>
                   </>
                 )}

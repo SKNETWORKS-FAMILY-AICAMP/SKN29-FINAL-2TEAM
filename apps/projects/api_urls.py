@@ -1,27 +1,20 @@
 from django.urls import path
 
 from .api_views import (
-    DocumentProcessingRunAPIView,
     HealthAPIView,
     ProjectDetailAPIView,
     ProjectJiraRegisterAPIView,
     ProjectPrimaryCandidateAPIView,
     ProjectListCreateAPIView,
-    ProjectSourceAPIView,
     ProjectSourceDocumentAPIView,
     ProjectTaskSyncAPIView,
     RunPodDocumentDownloadAPIView,
     TaskExtractionRunAPIView,
-    TeamDeadlineAPIView,
     TeamDocumentAPIView,
-    TeamPipelineDocumentAPIView,
-    TeamDocumentDownloadAPIView,
+    TeamNewDocumentAPIView,
     TeamDocumentHistoryAPIView,
-    TeamDocumentMetaAPIView,
-    TeamDocumentRegisterAPIView,
     TeamDocumentRemoveAPIView,
     TeamFolderAPIView,
-    TeamNewDocumentAPIView,
     TeamTaskSyncAPIView,
     TeamWorkloadAPIView,
 )
@@ -33,50 +26,23 @@ urlpatterns = [
     path("health/", HealthAPIView.as_view(), name="api_health"),
     path("team/folders/", TeamFolderAPIView.as_view(), name="api_team_folders"),
     path("team/documents/", TeamDocumentAPIView.as_view(), name="api_team_documents"),
+    # Drive 와 우리 DB 를 맞대 본다 — 새로 생긴 파일과 **사라진 파일**을 함께 준다.
+    # 수집 자체는 자동이라(2026-08-15) 새 파일 쪽은 이제 쓰이지 않지만, 아래
+    # `remove/` 가 내릴 대상을 찾아 주는 곳이 여기뿐이라 남긴다.
     path("team/documents/new/", TeamNewDocumentAPIView.as_view(), name="api_team_documents_new"),
-    # 요약·유형·키워드·요약 임베딩. 다운로드 다음 단계다(A안 — 8/11 확정 ⑥).
-    path("team/documents/meta/", TeamDocumentMetaAPIView.as_view(), name="api_team_documents_meta"),
-    # Drive 에서 사라진 문서를 내린다. 스캔(GET)이 조회만 하도록 쓰기를 갈라 뒀다.
+    # Drive 에서 사라진 문서를 내린다. 대상은 위 `new/` 가 찾아 준다(쓰기를 갈라 뒀다).
     path(
         "team/documents/remove/",
         TeamDocumentRemoveAPIView.as_view(),
         name="api_team_document_remove",
     ),
     path(
-        "team/documents/register/",
-        TeamDocumentRegisterAPIView.as_view(),
-        name="api_team_document_register",
-    ),
-    path(
         "team/documents/history/",
         TeamDocumentHistoryAPIView.as_view(),
         name="api_team_document_history",
     ),
-    path(
-        "team/documents/download/",
-        TeamDocumentDownloadAPIView.as_view(),
-        name="api_team_document_download",
-    ),
     path("team/tasks/sync/", TeamTaskSyncAPIView.as_view(), name="api_team_task_sync"),
     path("team/workload/", TeamWorkloadAPIView.as_view(), name="api_team_workload"),
-    path("team/deadlines/", TeamDeadlineAPIView.as_view(), name="api_team_deadlines"),
-    # 문서 처리(파싱·청킹·임베딩)는 **팀** 단위다. 프로젝트에 묶이는 것은 기준
-    # 문서로 선택될 때이고, 그 선택 화면은 이미 처리된 문서를 골라야 한다.
-    path(
-        "team/pipeline-documents/",
-        TeamPipelineDocumentAPIView.as_view(),
-        name="api_team_pipeline_documents",
-    ),
-    path(
-        "team/documents/<str:doc_id>/processing-runs/",
-        DocumentProcessingRunAPIView.as_view(),
-        name="api_document_processing_run",
-    ),
-    path(
-        "team/documents/<str:doc_id>/processing-runs/<str:job_id>/",
-        DocumentProcessingRunAPIView.as_view(),
-        name="api_document_processing_run_detail",
-    ),
     # RunPod Worker 가 원문을 받아 가는 경로. 로그인 세션 대신 만료형 서명을 쓴다.
     path(
         "internal/runpod/documents/<str:doc_id>/",
@@ -93,11 +59,6 @@ urlpatterns = [
         name="api_project_primary_candidates",
     ),
     path("projects/<str:project_id>/", ProjectDetailAPIView.as_view(), name="api_project_detail"),
-    path(
-        "projects/<str:project_id>/sources/",
-        ProjectSourceAPIView.as_view(),
-        name="api_project_sources",
-    ),
     path(
         "projects/<str:project_id>/tasks/sync/",
         ProjectTaskSyncAPIView.as_view(),

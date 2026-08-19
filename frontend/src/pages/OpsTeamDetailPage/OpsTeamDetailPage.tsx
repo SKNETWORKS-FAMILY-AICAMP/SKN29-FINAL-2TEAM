@@ -15,11 +15,20 @@ import {
   fetchOpsTeams,
   fetchTeamContent,
   fetchTeamOwnerCandidates,
+  fetchTeamPurgePreview,
+  purgeTeam,
   transferTeamOwner,
 } from '../../api/opsTeams';
-import type { OpsTeam, OpsTeamAgent, OpsTeamCandidate, OpsTeamRun } from '../../api/opsTeams';
+import type {
+  OpsPurgePreview,
+  OpsTeam,
+  OpsTeamAgent,
+  OpsTeamCandidate,
+  OpsTeamRun,
+} from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
+import { PurgeDialog } from '../OpsShared/PurgeDialog';
 import { TeamUsageSections } from './TeamUsageSections';
 import styles from '../OpsShared/OpsPages.module.css';
 
@@ -70,6 +79,8 @@ export default function OpsTeamDetailPage() {
 
   const { showToast } = useToast();
   const [transferOpen, setTransferOpen] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgePreview, setPurgePreview] = useState<OpsPurgePreview | null>(null);
   const [candidates, setCandidates] = useState<OpsTeamCandidate[] | null>(null);
   const [nextOwner, setNextOwner] = useState('');
   const [reason, setReason] = useState('');
@@ -123,6 +134,35 @@ export default function OpsTeamDetailPage() {
     } catch (thrown) {
       showToast(thrown instanceof ApiError ? thrown.message : '후보를 불러오지 못했습니다.', 'error');
       setCandidates([]);
+    }
+  }
+
+  /** 무엇이 사라지는지 **먼저 보여준 다음** 이름을 받는다. 순서가 반대면 경고가 늦다. */
+  async function openPurge() {
+    const session = loadOpsSession();
+    if (!session || !teamId) return;
+    setPurgeOpen(true);
+    setPurgePreview(null);
+    try {
+      setPurgePreview(await fetchTeamPurgePreview(session.token, teamId));
+    } catch (thrown) {
+      showToast(thrown instanceof ApiError ? thrown.message : '삭제 대상을 확인하지 못했습니다.', 'error');
+      setPurgeOpen(false);
+    }
+  }
+
+  async function confirmPurge() {
+    const session = loadOpsSession();
+    if (!session || !teamId || !team || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await purgeTeam(session.token, teamId, team.name);
+      const total = result.removed.reduce((sum, item) => sum + item.count, 0);
+      showToast(`${team.name}을(를) 삭제했습니다. 관련 데이터 ${total}건이 함께 사라졌습니다.`);
+      navigate('/ops/teams');
+    } catch (thrown) {
+      showToast(thrown instanceof ApiError ? thrown.message : '삭제하지 못했습니다.', 'error');
+      setSubmitting(false);
     }
   }
 
@@ -215,6 +255,9 @@ export default function OpsTeamDetailPage() {
             이 팀 계정 보기
           </Button>
           <Button variant="outline" onClick={openTransfer}>소유자 이전</Button>
+          {/* 되돌릴 수 없는 것은 **다른 색**으로, 그리고 줄 끝에 둔다 —
+              「이 팀 계정 보기」 옆에 같은 모양으로 있으면 손이 먼저 간다. */}
+          <Button variant="danger" onClick={openPurge}>팀 삭제</Button>
         </div>
       </OpsSectionCard>
 
@@ -371,6 +414,17 @@ export default function OpsTeamDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <PurgeDialog
+        open={purgeOpen}
+        onClose={() => (submitting ? null : setPurgeOpen(false))}
+        kind="팀"
+        label={team.name}
+        confirmValue={team.name}
+        preview={purgePreview}
+        busy={submitting}
+        onConfirm={confirmPurge}
+      />
     </div>
   );
 }

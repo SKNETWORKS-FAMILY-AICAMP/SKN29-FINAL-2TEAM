@@ -3,12 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Modal, OpsPageHeader, OpsSectionCard, OpsStatusBadge, useToast } from '../../components';
 import {
   fetchAccount,
+  fetchAccountPurgePreview,
   lockAccount,
+  purgeAccount,
   setAccountAdmin,
   unlinkAccountPerson,
   unlockAccount,
 } from '../../api/opsAccounts';
 import type { OpsAccount } from '../../api/opsAccounts';
+import type { OpsPurgePreview } from '../../api/opsTeams';
+import { PurgeDialog } from '../OpsShared/PurgeDialog';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
 import {
@@ -61,6 +65,43 @@ export default function OpsAccountDetailPage() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgePreview, setPurgePreview] = useState<OpsPurgePreview | null>(null);
+
+  /** 무엇이 사라지는지 **먼저 보여준 다음** 이메일을 받는다. */
+  async function openPurge() {
+    const session = loadOpsSession();
+    if (!session || !accountId) return;
+    setPurgeOpen(true);
+    setPurgePreview(null);
+    try {
+      setPurgePreview(await fetchAccountPurgePreview(session.token, accountId));
+    } catch (thrown) {
+      showToast(thrown instanceof ApiError ? thrown.message : '삭제 대상을 확인하지 못했습니다.', 'error');
+      setPurgeOpen(false);
+    }
+  }
+
+  async function confirmPurge() {
+    const session = loadOpsSession();
+    if (!session || !accountId || !account || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await purgeAccount(session.token, accountId, account.email);
+      // 넘어간 자산을 함께 말한다 — 「지웠다」만 말하면 그 사람이 만든 문서까지
+      // 사라진 줄 안다. 실제로는 팀에 남고 소유자만 바뀐다.
+      const handed = (result.handed_over ?? []).reduce((sum, item) => sum + item.count, 0);
+      showToast(
+        handed > 0
+          ? `${account.email} 계정을 삭제했습니다. 팀 자산 ${handed}건은 팀 소유자에게 넘겼습니다.`
+          : `${account.email} 계정을 삭제했습니다.`,
+      );
+      navigate('/ops/accounts');
+    } catch (thrown) {
+      showToast(thrown instanceof ApiError ? thrown.message : '삭제하지 못했습니다.', 'error');
+      setSubmitting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     const session = loadOpsSession();
@@ -244,6 +285,10 @@ export default function OpsAccountDetailPage() {
           {canRevokeAdmin && (
             <Button variant="danger" onClick={() => setPendingAction('revoke-admin')}>운영자 권한 회수</Button>
           )}
+          {/* 되돌릴 수 없는 것은 줄 끝에 둔다. 본인 계정은 서버도 막지만
+              **누를 수 있게 두면 안 된다** — 눌러 보고 거절당하는 것은 안내가
+              아니다. */}
+          {!isSelf && <Button variant="danger" onClick={openPurge}>계정 삭제</Button>}
         </div>
       </OpsSectionCard>
 
@@ -281,6 +326,17 @@ export default function OpsAccountDetailPage() {
           />
         </div>
       </Modal>
+
+      <PurgeDialog
+        open={purgeOpen}
+        onClose={() => (submitting ? null : setPurgeOpen(false))}
+        kind="계정"
+        label={`${account.display_name} · ${account.email}`}
+        confirmValue={account.email}
+        preview={purgePreview}
+        busy={submitting}
+        onConfirm={confirmPurge}
+      />
     </div>
   );
 }

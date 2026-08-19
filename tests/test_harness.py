@@ -4,6 +4,7 @@
 같은 로그가 남는가 — 평가(4_평가_설계.md)가 그 로그를 세기 때문이다.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -823,6 +824,38 @@ class ToolWiringTests(SimpleTestCase):
 
         self.assertEqual(missing, [])
 
+    def test_document_search_에_요청자_계정이_주입된다(self):
+        """빠뜨려도 **오류가 안 난다** — 그래서 조용히 반쪽이 된다.
+
+        `_document_search(account_id=None)` 이면 `coarse_search` 가 팀 문서만 보고
+        **내가 켠 내 파일이 안 잡히며**(M④), `registry` 의
+        `not_indexed[:PROMOTE_TOP_N] if account_id else []` 때문에 **온디맨드
+        승격이 통째로 꺼진다.** 화면에는 「확인할 수 있는 문서가 없습니다」로만
+        보여서 기능이 없는 것처럼 읽힌다.
+
+        실제로 승격은 2026-08-15 에 이 값이 온다는 전제로 만들어졌는데 주입하는
+        자리가 그때 같이 안 고쳐졌고, 2026-08-18 브라우저 QA 전까지 안 드러났다.
+        """
+
+        from services.harness.runner import _injected
+
+        tool = registry.BUILTIN_TOOLS["document_search"]
+        injected = _injected(tool, {"team_id": "TE001"}, {"account_id": "UA002"})
+
+        self.assertEqual(injected["team_id"], "TE001")
+        self.assertEqual(injected["account_id"], "UA002")
+
+    def test_mcp_도구에는_계정을_넘기지_않는다(self):
+        """MCP 핸들러는 `account_id` 를 받지 않는다 — 같이 넘기면 TypeError 다."""
+
+        from services.harness.runner import _injected
+
+        tool = SimpleNamespace(ref="mcp:MS001:search")
+        self.assertEqual(
+            _injected(tool, {"team_id": "TE001"}, {"account_id": "UA002"}),
+            {"team_id": "TE001"},
+        )
+
 
 class TaskRegisterDateTests(SimpleTestCase):
     """등록 직전에 날짜를 거른다.
@@ -883,23 +916,68 @@ class TaskRegisterDateTests(SimpleTestCase):
             )
 
         self.assertEqual(len(result["tasks"]), 2)
-        self.assertEqual(result["dropped_dates"], [{"title": "감리보고서 제출", "fields": ["마감"]}])
+        self.assertEqual(result["dropped_fields"], [{"title": "감리보고서 제출", "fields": ["마감일"]}])
         self.assertEqual([row[6] for row in cursor.inserted], [None, "2026-08-20"])
+
+    def test_모르는_값을_0으로_채워_보내면_비웠다고_알린다(self):
+        """**모델이 모르는 공수를 채우는 값이 하필 `0`** 이다(`_positive_or_none`).
+
+        회귀 방지: 예전엔 날짜만 돌려줬고 판정도 `if given` 이라, `0` 은 거짓이라
+        두 번 걸러졌다. 그 결과 15건 전부 `effort_hours: 0` 으로 와서 전부 NULL 로
+        저장됐는데 모델은 「0시간으로 등록했습니다」라고 답했다(2026-08-18 QA).
+        """
+
+        from backend.db import agent_platform
+
+        cursor = _RegisterCursor()
+        with patch.object(agent_platform, "database_connection", _fake_connection(cursor)),                 patch.object(agent_platform, "_require_team", return_value="TM001"),                 patch.object(agent_platform, "next_short_code", side_effect=["KM001", "TK001"]):
+            result = agent_platform.ProjectTaskRepository.register(
+                proj_id="PJ001",
+                account_id="UA001",
+                tasks=[{"title": "감리 착수", "effort_hours": 0, "required_role": "", "priority": "높음"}],
+            )
+
+        self.assertEqual(
+            result["dropped_fields"],
+            [{"title": "감리 착수", "fields": ["공수"]}],
+            "0 으로 채워 보낸 공수를 비웠다고 알려야 한다",
+        )
+        # 빈 문자열은 「준 적 없음」이라 알릴 것이 없고, 준 값은 그대로 남는다.
+        self.assertIsNone(cursor.inserted[0][3], "빈 역할은 NULL")
+        self.assertIsNone(cursor.inserted[0][4], "0 공수는 NULL")
+        self.assertEqual(cursor.inserted[0][7], "높음", "준 우선순위는 그대로")
 
 
 class _RegisterCursor:
-    """`register` 가 부르는 SQL 만 흉내낸다."""
+    """`register` 가 부르는 SQL 만 흉내낸다.
+
+    쿼리를 구분한다 — 2026-08-19 에 `register` 가 「현재 판을 찾고」·「그 판에
+    이미 있는 제목을 읽는」 두 조회를 더 하게 됐다. 전부 같은 행을 돌려주면
+    판을 찾았는지 못 찾았는지가 구분되지 않는다.
+    """
 
     def __init__(self):
         self.inserted = []
-        self._row = {"team_id": "TM001", "n": 0}
+        #: 이 프로젝트에 이미 있는 판. None 이면 첫 등록이라 새로 만든다.
+        self.existing_model = None
+        #: 그 판에 이미 들어 있는 업무 제목.
+        self.existing_titles = []
+        self._last = ""
 
     def execute(self, sql, params=None):
+        self._last = sql
         if "INSERT INTO task " in sql:
             self.inserted.append(params)
 
     def fetchone(self):
-        return self._row
+        if "FROM proj_know_model" in self._last:
+            return self.existing_model
+        return {"team_id": "TM001", "n": 0}
+
+    def fetchall(self):
+        if "SELECT task_name FROM task" in self._last:
+            return [{"task_name": title} for title in self.existing_titles]
+        return []
 
     def __enter__(self):
         return self
@@ -968,3 +1046,30 @@ class ToolTurnStyleTests(SimpleTestCase):
                 runner._default_model({"model": "claude-sonnet-4-5", "team_id": None})
 
         self.assertIn("ANTHROPIC_API_KEY", str(caught.exception))
+
+    def test_추가_등록은_현재_판에_덧붙인다(self):
+        """판을 매번 새로 만들면 앞서 등록한 업무가 화면에서 사라진다.
+
+        `list_for_project` 가 가장 최근 판만 보여주기 때문이다 — 「3건만 추가로
+        등록해줘」에 새 판이 생겨 앞의 15건이 통째로 안 보였다(2026-08-19 QA).
+        """
+
+        from backend.db import agent_platform
+
+        cursor = _RegisterCursor()
+        # 이 프로젝트엔 이미 판이 하나 있고, 그 판에 「감리 착수」가 들어 있다.
+        cursor.existing_model = {"model_id": "KM001", "model_ver": "v1"}
+        cursor.existing_titles = ["감리 착수"]
+
+        with patch.object(agent_platform, "database_connection", _fake_connection(cursor)),                 patch.object(agent_platform, "_require_team", return_value="TM001"),                 patch.object(agent_platform, "next_short_code", side_effect=["TK002"]):
+            result = agent_platform.ProjectTaskRepository.register(
+                proj_id="PJ001",
+                account_id="UA001",
+                tasks=[{"title": "감리 착수"}, {"title": "종료회의"}],
+            )
+
+        self.assertEqual(result["model_id"], "KM001", "새 판을 만들지 않는다")
+        self.assertEqual([t["title"] for t in result["tasks"]], ["종료회의"])
+        self.assertEqual(
+            result["already_registered"], ["감리 착수"], "건너뛴 것을 조용히 넘기지 않는다"
+        )

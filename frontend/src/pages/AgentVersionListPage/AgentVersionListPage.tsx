@@ -50,7 +50,7 @@ export default function AgentVersionListPage() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   /** 삭제는 되돌릴 수 없어 한 번 확인한다 — ChatPage의 대화 삭제 확인과 같은 패턴. */
   const [pendingDelete, setPendingDelete] = useState<AgentVersionSummary | null>(null);
-  /** 다른 에이전트가 서브 에이전트로 쓰고 있어 못 지우는 경우 — 확인 모달 대신
+  /** 다른 에이전트가 서브 에이전트로 쓰고 있어 삭제할 수 없는 경우 — 확인 모달 대신
    * 이걸 먼저 보여준다(삭제 시도 후 오류가 아니라, 누르자마자 바로). */
   const [blockedDelete, setBlockedDelete] = useState<{ agent: AgentVersionSummary; parentNames: string[] } | null>(
     null,
@@ -135,9 +135,9 @@ export default function AgentVersionListPage() {
     try {
       await deleteAgentVersion(token, agent.agent_id);
       setAgents((prev) => prev.filter((item) => item.agent_id !== agent.agent_id));
-      showToast(`「${agent.name}」을 지웠습니다.`, 'success');
+      showToast(`「${agent.name}」을 삭제했습니다.`, 'success');
     } catch (exc) {
-      showToast(exc instanceof ApiError ? exc.message : '지우지 못했습니다.', 'error');
+      showToast(exc instanceof ApiError ? exc.message : '삭제하지 못했습니다.', 'error');
     } finally {
       setPendingId(null);
       setPendingDelete(null);
@@ -206,7 +206,7 @@ export default function AgentVersionListPage() {
           <div className={styles.headerText}>
             <h1 className={styles.title}>에이전트</h1>
             <p className={styles.subtitle}>
-              저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 고칠 수 없습니다 — 바꾸려면 새 버전을 다시 발행합니다.
+              저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 수정할 수 없습니다 — 바꾸려면 새 버전을 다시 발행합니다.
             </p>
           </div>
           <Button
@@ -356,7 +356,7 @@ export default function AgentVersionListPage() {
                     variant="outline"
                     onClick={() => navigate(PATHS.agentVersionEdit.replace(':agentId', agent.agent_id))}
                   >
-                    새 버전 편집
+                    새 버전 수정
                   </Button>
                 )}
                 {canManage(agent) && (
@@ -380,7 +380,7 @@ export default function AgentVersionListPage() {
       <Modal
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
-        title="이 에이전트를 지울까요?"
+        title="이 에이전트를 삭제할까요?"
         width={420}
         footer={
           <>
@@ -393,7 +393,7 @@ export default function AgentVersionListPage() {
               onClick={() => pendingDelete && void remove(pendingDelete)}
               disabled={pendingId === pendingDelete?.agent_id}
             >
-              {pendingId === pendingDelete?.agent_id ? '지우는 중…' : '지우기'}
+              {pendingId === pendingDelete?.agent_id ? '삭제하는 중…' : '삭제'}
             </Button>
           </>
         }
@@ -404,12 +404,12 @@ export default function AgentVersionListPage() {
         </p>
       </Modal>
 
-      {/* 다른 에이전트가 서브 에이전트로 쓰고 있어 못 지우는 경우 — 확인 대신
+      {/* 다른 에이전트가 서브 에이전트로 쓰고 있어 삭제할 수 없는 경우 — 확인 대신
           바로 이걸 보여준다(startDelete 참고). */}
       <Modal
         open={Boolean(blockedDelete)}
         onClose={() => setBlockedDelete(null)}
-        title="지금은 지울 수 없습니다"
+        title="지금은 삭제할 수 없습니다"
         width={420}
         footer={
           <Button size="sm" onClick={() => setBlockedDelete(null)}>
@@ -419,7 +419,7 @@ export default function AgentVersionListPage() {
       >
         <p className={styles.deleteBody}>
           <strong>{blockedDelete?.agent.name}</strong>
-          <span>다음 에이전트가 이 에이전트를 서브 에이전트로 쓰고 있어 지울 수 없습니다. 먼저 그 연결을 빼거나 그 에이전트를 지워 주세요.</span>
+          <span>다음 에이전트가 이 에이전트를 서브 에이전트로 쓰고 있어 삭제할 수 없습니다. 먼저 그 연결을 빼거나 해당 에이전트를 삭제하세요.</span>
         </p>
         <ul className={styles.dependentList}>
           {blockedDelete?.parentNames.map((name) => <li key={name}>{name}</li>)}

@@ -72,7 +72,7 @@ export default function SignupPage() {
       saveSession(result);
       showToast('회원가입이 완료되었습니다.', 'success');
       // 팀원 대시보드는 아직 없으므로 팀원은 본인 설정 화면으로 보낸다.
-      // 가입이 끝나면 바로 Chat 이다(5차 단계 4). 커넥터 연결·팀 만들기는
+      // 가입이 끝나면 바로 Chat 이다(5차 단계 4). 커넥터 연결·팀 생성는
       // Settings > Connector 에 있고, Chat 이 그리로 안내한다.
       navigate(PATHS.chat);
     } catch (error) {
@@ -108,7 +108,7 @@ export default function SignupPage() {
             <p className={styles.cardSubtitle}>팀에 필요한 AI 에이전트를 코딩 없이 만들어 씁니다.</p>
           </div>
 
-          <div className={styles.tabsRow}>{inviteCode ? '초대로 참여하기' : '새 팀 만들기'}</div>
+          <div className={styles.tabsRow}>{inviteCode ? '초대로 참여하기' : '새 팀 생성'}</div>
 
           {invite && (
             <p className={styles.inviteBanner}>
@@ -179,7 +179,7 @@ export default function SignupPage() {
               type={showPasswordConfirm ? 'text' : 'password'}
               id="signup-password-confirm"
               name="password_confirm"
-              placeholder="비밀번호를 한번 더 입력해 주세요"
+              placeholder="비밀번호를 다시 입력하세요"
               autoComplete="new-password"
               value={passwordConfirm}
               error={fieldErrors.password_confirm}

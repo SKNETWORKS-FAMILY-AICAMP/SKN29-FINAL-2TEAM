@@ -733,7 +733,12 @@ class DocMetaRepository:
 
     @staticmethod
     def coarse_search(
-        *, team_id: str, query_vector: list[float], top_n: int, account_id: str | None = None
+        *,
+        team_id: str,
+        query_vector: list[float],
+        top_n: int,
+        account_id: str | None = None,
+        proj_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """요약 임베딩으로 **문서**를 좁힌다. 청크 검색의 앞단이다.
 
@@ -745,6 +750,11 @@ class DocMetaRepository:
         **`account_id` 를 주면 「내가 켠 내 파일」도 함께 본다**(2026-08-18 · M④).
         에이전트에 파일을 붙이는 개념은 만들지 않았다 — toggle 이 곧 그 선택이라,
         켠 파일은 **모든** 에이전트가 쓴다. 안 주면 팀 문서만 본다(옛 동작).
+
+        **`proj_id` 를 주면 그 프로젝트에 달린 문서만 본다**(2026-08-19). 좁히기만
+        하고 넓히지는 않는다 — 「없으면 팀 전체로 넓힌다」는 판단은 호출자
+        (`registry._document_search`)가 한다. 여기서 두 번 훑으면 저장소가
+        정책을 갖게 되고, 그러면 같은 함수가 부르는 곳마다 다르게 동작한다.
         """
 
         with database_connection() as connection:
@@ -760,11 +770,13 @@ class DocMetaRepository:
                     WHERE {_TEAM_OR_MINE}
                       AND d.deleted = false AND d.access_revoked = false
                       AND m.summary_vec IS NOT NULL
+                      AND (%s::text IS NULL OR d.proj_id = %s)
                     ORDER BY m.summary_vec <=> %s::vector
                     LIMIT %s
                     """,
                     (
                         vector_literal(query_vector), team_id, account_id, team_id,
+                        proj_id, proj_id,
                         vector_literal(query_vector), top_n,
                     ),
                 )

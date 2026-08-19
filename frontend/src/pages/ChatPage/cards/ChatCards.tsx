@@ -66,7 +66,7 @@ export function ProgressCard({
             (실제로는 상한이다), 「2번째 생각」은 그냥 소음이다.
             실행 회전 수가 필요하면 `agent_run.iterations` 에 남아 있다. */}
         <span className={styles.progressCount}>
-          {steps.length > 0 ? `${shown} / ${total} 단계` : '준비 중'}
+          {steps.length > 0 ? `${shown} / ${total} 단계` : '대기 중'}
         </span>
       </div>
 
@@ -146,9 +146,16 @@ export function ProgressCard({
         </ul>
       )}
 
-      <p className={styles.foot}>
-        {evidenceCount ? `근거 ${evidenceCount}건 · ` : ''}몇 분 걸립니다 · 창을 닫지 않아도 됩니다
-      </p>
+      {/* **끝나면 「몇 분 걸립니다」를 지운다**(2026-08-18 QA). 위 단계 아이콘은
+          `running` 을 보고 회전을 멈추는데 이 줄만 무조건 그려져서, 답변이 다
+          나온 뒤에도 카드가 아직 도는 것처럼 보였다. 끝난 뒤 남길 값은 근거
+          수뿐이고, 그것도 없으면 줄 자체를 안 그린다. */}
+      {(running || Boolean(evidenceCount)) && (
+        <p className={styles.foot}>
+          {evidenceCount ? `근거 ${evidenceCount}건` : ''}
+          {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
+        </p>
+      )}
     </section>
   );
 }
@@ -357,6 +364,14 @@ function TaskRow({
 export interface ConfirmCardProps {
   tasks: ExtractedTask[];
   warnings?: string[];
+  /**
+   * 고를 목록이 없는 승인에 **무엇을 승인하는지** 한 줄로 적는다(2026-08-18).
+   * 그런 카드는 체크박스가 없어서 머리에 「전체 선택 · 업무 0건」만 남았는데,
+   * 그건 아무것도 설명하지 않는다 — 사람은 무엇을 승인하는지 모르는 채로
+   * 「승인」을 누르게 된다. 목록이 있는 카드에는 넘기지 않는다(그쪽은 업무가
+   * 곧 설명이다).
+   */
+  subject?: string;
   trace?: string;
   /** 체크된 업무의 **인덱스**. 승인 API 에 이 값만 보낸다. */
   selected: number[];
@@ -369,6 +384,7 @@ export interface ConfirmCardProps {
 export function ConfirmCard({
   tasks,
   warnings,
+  subject,
   trace,
   selected,
   onSelectedChange,
@@ -386,17 +402,27 @@ export function ConfirmCard({
 
   return (
     <section className={styles.cardFlush}>
-      <div className={styles.confirmHead}>
-        <span className={styles.confirmLeft}>
-          <Checkbox
-            checked={allOn}
-            onChange={(next) => onSelectedChange(next ? tasks.map((_, index) => index) : [])}
-          />
-          <strong>전체 선택</strong>
-          <span className={styles.muted}>{chosen.length}건 선택됨</span>
-        </span>
-        <span className={styles.muted}>업무 {tasks.length}건</span>
-      </div>
+      {/* 고를 것이 있을 때만 선택 줄을 그린다. 없으면 무엇을 승인하는지 적는다.
+          — 예전엔 목록이 없어도 이 줄을 그려서 「전체 선택 · 0건 선택됨 ·
+          업무 0건」이 남았다(2026-08-18 QA). 체크할 것도 없는데 전체 선택이
+          있고, 대상이 15건인데 「0건」이라고 적혀 서로 어긋났다. */}
+      {tasks.length > 0 ? (
+        <div className={styles.confirmHead}>
+          <span className={styles.confirmLeft}>
+            <Checkbox
+              checked={allOn}
+              onChange={(next) => onSelectedChange(next ? tasks.map((_, index) => index) : [])}
+            />
+            <strong>전체 선택</strong>
+            <span className={styles.muted}>{chosen.length}건 선택됨</span>
+          </span>
+          <span className={styles.muted}>업무 {tasks.length}건</span>
+        </div>
+      ) : subject ? (
+        <div className={styles.confirmHead}>
+          <strong>{subject}</strong>
+        </div>
+      ) : null}
 
       {/* ⚠ 경고 배너를 걷어냈다(PM 요청, 2026-08-11). 서버는 여전히 경고를
           보내고 있고(`warnings` prop), 거기에는 「근거가 확인되지 않아 제외했다」
@@ -555,11 +581,11 @@ export interface ErrorCardProps {
  * 생긴 `ValueError` 에도 인증 이야기를 했다 — 사람이 설정만 계속 확인하게 된다.
  */
 const ERROR_HINTS: Record<string, string> = {
-  '401': '연결 인증이 만료되었습니다. 설정에서 연결을 다시 확인해 주세요.',
-  '429': '요청 한도를 초과했습니다. 잠시 후 다시 시도하면 됩니다.',
-  timeout: '외부 서버가 시간 안에 응답하지 않았습니다. 다시 시도해 주세요.',
-  unreachable: '외부 서버에 연결하지 못했습니다. 주소와 상태를 확인해 주세요.',
-  validation: '요청 값이 받아들여지지 않았습니다. 아래 사유를 확인해 주세요.',
+  '401': '연결 인증이 만료되었습니다. 설정에서 연결 상태를 확인하세요.',
+  '429': '요청 한도를 초과했습니다. 잠시 후 다시 시도하세요.',
+  timeout: '외부 서버가 시간 안에 응답하지 않았습니다. 다시 시도하세요.',
+  unreachable: '외부 서버에 연결하지 못했습니다. 주소와 상태를 확인하세요.',
+  validation: '요청 값이 받아들여지지 않았습니다. 아래 사유를 확인하세요.',
 };
 
 /**
@@ -593,10 +619,10 @@ export function ErrorCard({ detail, errorCode, answered, onRetry, onOpenSettings
         <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
         요청을 끝내지 못했습니다
       </span>
+      {/* **「지금까지 정리된 내용은 위에 그대로 남아 있습니다」를 걷었다**
+          (2026-08-18 PM). 정리된 것이 하나도 없을 때도 그 말이 나왔다 —
+          아무것도 없는 화면을 두고 「위에 남아 있다」고 하면 거짓말이다. */}
       {body && <p className={styles.errorBody}>{body}</p>}
-      <p className={styles.errorBody}>
-        지금까지 정리된 내용은 위에 그대로 남아 있습니다.
-      </p>
       <div className={styles.errorActions}>
         {showSettings && (
           <Button size="sm" variant="outline" onClick={onOpenSettings}>

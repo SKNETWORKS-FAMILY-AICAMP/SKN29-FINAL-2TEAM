@@ -208,11 +208,6 @@
   overflow: hidden;
 }
 
-.notReady {
-  font-size: 12px;
-  color: var(--color-warning-text, var(--color-muted));
-}
-
 .foot {
   display: flex;
   justify-content: flex-end;

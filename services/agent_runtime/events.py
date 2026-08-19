@@ -180,6 +180,14 @@ EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+# 2026-08-18 추가 — 승인 게이트(`interrupt_on`)가 실행을 멈춘 자리.
+# 레거시 Harness의 같은 이름 이벤트와 **모양을 맞춘다**(`tool_ref`/`tool_name`/
+# `arguments`/`resume`) — 화면(`liveChat.ts`의 `awaiting_confirmation` 분기)과
+# 저장(`apps/chat/api_views.py`의 `_persist`)이 이미 그 모양을 읽고 있어서,
+# 맞춰 두면 양쪽 다 안 고쳐도 된다. 다른 점은 `resume`의 내용물뿐이다 —
+# 레거시는 대화 전체를 담아 되돌려 받아야 재개하지만, 이 엔진은 상태가
+# Checkpointer(RDS)에 있어서 "무엇을 승인하는가"만 있으면 된다.
+EVENT_AWAITING_CONFIRMATION = "awaiting_confirmation"
 # 2026-08-18 추가. §14 계약엔 없던 타입이라(그 문서 갱신 전까지) 여기 새로 둔다
 # — `_11_`류 판례처럼 계약 목록에 없는 필드를 기존 이벤트에 얹는 것과 달리
 # 이건 아예 새 타입이 필요해서(추론 텍스트는 tool_started/result 어디에도
@@ -236,6 +244,21 @@ def _summarize_tool_output(content: Any) -> str:
     if len(text) > TOOL_OUTPUT_SUMMARY_MAX:
         return f"{text[:TOOL_OUTPUT_SUMMARY_MAX]}..."
     return text
+
+
+def _tool_label(tool_ref: str) -> str:
+    """승인 카드·대화 기록에 쓸 사람이 읽는 도구 이름. 못 찾으면 ref 그대로.
+
+    레지스트리를 **함수 안에서** 부른다 — `services.harness.registry`는 저장소
+    접근까지 끌고 들어와서, 이 모듈을 읽는 것만으로 그걸 세우게 하지 않는다
+    (`factory.py`가 `SPEAKABLE_ERRORS`를 가져오는 방식과 같은 이유).
+    MCP 도구는 여기 없어서 ref가 그대로 나온다 — 지금 이 값이 보이는 곳은
+    대화 기록 한 줄뿐이라(`_history`) 그 편이 틀린 이름보다 낫다.
+    """
+    from services.harness.registry import BUILTIN_TOOLS
+
+    tool = BUILTIN_TOOLS.get(tool_ref)
+    return getattr(tool, "name", None) or tool_ref
 
 
 class EventMapper:
@@ -308,6 +331,15 @@ class EventMapper:
 
         if mode != "updates":
             return []
+
+        # 승인 게이트가 멈춘 자리를 **노드 순회보다 먼저** 갈라낸다.
+        # LangGraph는 이걸 `{"__interrupt__": (Interrupt(...),)}`로 내보내는데
+        # 값이 dict가 아니라 **tuple**이라, 아래 `isinstance(node_output, dict)`에
+        # 걸려 조용히 버려졌다 — 그래서 그래프는 멈췄는데 화면엔 아무것도 안
+        # 나오고 대화가 끊긴 것처럼 보였다(2026-08-18 QA에서 발견).
+        interrupted = self._classify_interrupt(payload=payload, run_id=run_id)
+        if interrupted:
+            return interrupted
 
         events: list[dict[str, Any]] = []
         for node_name, node_output in payload.items():
@@ -464,6 +496,9 @@ class EventMapper:
                             "parent_run_id": run_id,
                             "subagent_alias": alias,
                             "tool_ref": tool_ref_from_model_name(tool_ref),
+                            # 화면 상태줄이 그대로 읽는다(2026-08-18) — ref 를 쓰면
+                            # 「task_register 실행 중」처럼 내부 이름이 그대로 보인다(§0 원칙 2).
+                            "tool_name": _tool_label(tool_ref_from_model_name(tool_ref)),
                             "tool_call_id": call.get("id"),
                             "arguments": call.get("args") or {},
                             "complete": False,
@@ -568,6 +603,7 @@ class EventMapper:
                         "run_id": run_id,
                         "subagent_alias": None,
                         "tool_ref": tool_ref_from_model_name(tool_ref),
+                        "tool_name": _tool_label(tool_ref_from_model_name(tool_ref)),
                         "tool_call_id": call.get("id"),
                         "arguments": call.get("args") or {},
                         "complete": False,
@@ -599,6 +635,60 @@ class EventMapper:
                     break
 
         return info
+
+    def _classify_interrupt(
+        self, *, payload: dict[str, Any], run_id: str | None
+    ) -> list[dict[str, Any]]:
+        """`__interrupt__` → `awaiting_confirmation` 하나.
+
+        `HumanInTheLoopMiddleware`는 한 모델 턴에서 승인이 필요한 도구 호출을
+        **전부 모아 인터럽트 하나**로 낸다(실측: langchain
+        `human_in_the_loop.py` — `action_requests` 리스트를 담은 `HITLRequest`
+        하나로 `interrupt()` 호출). 그래서 이벤트도 하나만 낸다.
+
+        카드에 그릴 인자는 **첫 호출** 것을 쓴다 — 화면의 확인 카드가 목록
+        하나를 그리는 모양이라(`ConfirmCard`) 여러 호출을 한 카드에 겹쳐 놓을
+        자리가 없다. 대신 `resume`에는 **전부** 담는다: 재개할 때는 인터럽트가
+        요구한 수만큼 결정을 돌려줘야 하고(개수가 다르면 미들웨어가
+        `ValueError`), 사람이 카드에서 승인한 것은 "이 턴의 쓰기 작업"이지
+        "첫 번째 호출"이 아니기 때문이다. 실제로 이 제품에서 한 턴에 쓰기
+        도구가 둘 이상 걸린 적은 아직 없다(`task_register`/`task_update`/
+        `jira_create_issues` 중 하나씩 부른다).
+        """
+        raw = payload.get("__interrupt__")
+        if not raw:
+            return []
+
+        requests: list[dict[str, Any]] = []
+        for item in raw if isinstance(raw, (list, tuple)) else [raw]:
+            value = getattr(item, "value", None)
+            if isinstance(value, dict):
+                requests.extend(value.get("action_requests") or [])
+        if not requests:
+            return []
+
+        # 모델에게 보낸 이름(`task_register`, `mcp__<id>`)을 저장소 tool_ref로
+        # 되돌린다 — 화면·DB가 쓰는 이름은 항상 ref 쪽이다.
+        tool_ref = tool_ref_from_model_name(requests[0].get("name") or "")
+        return [
+            {
+                "type": EVENT_AWAITING_CONFIRMATION,
+                "run_id": run_id,
+                "tool_ref": tool_ref,
+                "tool_name": _tool_label(tool_ref),
+                "arguments": requests[0].get("args") or {},
+                # 재개에 필요한 전부. 레거시와 달리 대화 내용은 안 담는다 —
+                # 이 엔진의 상태는 Checkpointer(RDS)에 있고, `thread_id`는
+                # 대화 id 그대로라 확인 API가 이미 알고 있다.
+                "resume": {
+                    "engine": "agent_runtime",
+                    "action_requests": [
+                        {"name": item.get("name"), "args": item.get("args") or {}}
+                        for item in requests
+                    ],
+                },
+            }
+        ]
 
     def _classify_progress(
         self, *, ns_prefix: str | None, payload: dict[str, Any], run_id: str | None
@@ -678,6 +768,7 @@ class EventMapper:
 
 __all__ = [
     "EVENT_AGENT_STARTED",
+    "EVENT_AWAITING_CONFIRMATION",
     "EVENT_ERROR",
     "EVENT_MESSAGE_DELTA",
     "EVENT_REASONING",
