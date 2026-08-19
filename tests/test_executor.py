@@ -13,6 +13,15 @@ from services.agent_runtime.definitions import AgentDefinition, LoadedAgentDefin
 from services.agent_runtime.events import EVENT_AGENT_STARTED, EVENT_ERROR, EVENT_RESULT
 from services.agent_runtime.exceptions import AgentBuildError, InvalidExecutionTargetError
 from services.agent_runtime.executor import AgentExecutor, validate_execution_target
+from services.agent_runtime.models.factory import ResolvedModelConfig
+
+#: `_FakeFactory.build()`의 기본 `resolved_model`(§4순위, Run Snapshot) —
+#: 대부분의 executor 테스트는 이 값 자체에 관심이 없어서, 실제 provider
+#: 이름을 쓰는 최소 유효값 하나로 통일한다(개별 값을 보는 테스트는
+#: `_FakeFactory(resolved_model=...)`로 직접 넘긴다).
+_DEFAULT_RESOLVED_MODEL = ResolvedModelConfig(
+    provider="anthropic", model_id="claude-sonnet-5", api_key="x", base_url=None, reasoning_effort="low"
+)
 
 
 def _definition(**overrides) -> AgentDefinition:
@@ -51,8 +60,11 @@ class _FakeLoader:
 
 
 class _FakeFactory:
-    def __init__(self, *, runtime="RUNTIME", error=None):
+    def __init__(self, *, runtime="RUNTIME", resolved_model=None, error=None):
         self._runtime = runtime
+        # 2026-08-19, §4순위(Run Snapshot) — 실제 `AgentRuntimeFactory.build()`가
+        # `(graph, resolved_model)` 튜플을 반환하도록 바뀐 것과 계약을 맞춘다.
+        self._resolved_model = resolved_model or _DEFAULT_RESOLVED_MODEL
         self._error = error
         self.build_calls = []
 
@@ -60,7 +72,7 @@ class _FakeFactory:
         self.build_calls.append({"definition": definition, "context": context})
         if self._error:
             raise self._error
-        return self._runtime
+        return self._runtime, self._resolved_model
 
 
 class _FakeStreamAdapter:
@@ -73,7 +85,7 @@ class _FakeStreamAdapter:
         self,
         *,
         runtime,
-        user_input,
+        user_input="",
         conversation_messages=(),
         thread_id=None,
         resume=None,
@@ -82,9 +94,10 @@ class _FakeStreamAdapter:
     ):
         # `callbacks`/`trace_metadata`는 2026-08-19 Langfuse 연동으로 늘었다
         # (`executor.py`가 항상 넘긴다 — 키가 없으면 각각 빈 시퀀스/`None`).
-        # 실제 `DeepAgentStreamAdapter.stream()`과 시그니처를 맞추지 않으면
-        # `TypeError: unexpected keyword argument`로 이 테스트 더블을 쓰는
-        # 테스트 전부가 깨진다.
+        # `user_input`은 재개(`resume()`) 호출에서는 안 넘어온다(§0순위 HITL
+        # resume API). 실제 `DeepAgentStreamAdapter.stream()`과 시그니처를
+        # 맞추지 않으면 `TypeError: unexpected keyword argument`로 이 테스트
+        # 더블을 쓰는 테스트 전부가 깨진다.
         self.stream_calls.append(
             {
                 "runtime": runtime,
@@ -166,6 +179,52 @@ class RunHappyPathTests(SimpleTestCase):
 
         self.assertEqual(loader.from_draft_calls, [{"name": "초안"}])
         self.assertEqual(loader.load_calls, [])
+
+    def test_agent_started_carries_resolved_provider_and_endpoint_hash(self):
+        """2026-08-19, §4순위(Run Snapshot) — `factory.build()`가 반환한
+        `resolved_model`이 `EVENT_AGENT_STARTED`에 실려야 `tracing/__init__.py`가
+        `agent_run.resolved_provider`/`resolved_endpoint_hash`로 적재할 수
+        있다."""
+        loader = _FakeLoader()
+        resolved_model = ResolvedModelConfig(
+            provider="openai_compatible",
+            model_id="claude-x",
+            api_key="k",
+            base_url="https://team-custom.example.com/v1",
+            reasoning_effort="low",
+        )
+        factory = _FakeFactory(resolved_model=resolved_model)
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        started = events[0]
+        self.assertEqual(started["resolved_provider"], "openai_compatible")
+        self.assertIsNotNone(started["resolved_endpoint_hash"])
+        # base_url 원문이 이벤트에 그대로 실리면 안 된다(사내망 주소 노출 방지).
+        self.assertNotIn("team-custom.example.com", started["resolved_endpoint_hash"])
+
+    def test_agent_started_endpoint_hash_is_none_without_a_custom_base_url(self):
+        loader = _FakeLoader()
+        resolved_model = ResolvedModelConfig(
+            provider="anthropic", model_id="claude-sonnet-5", api_key="k", base_url=None, reasoning_effort="low"
+        )
+        factory = _FakeFactory(resolved_model=resolved_model)
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertIsNone(events[0]["resolved_endpoint_hash"])
 
     def test_uses_fresh_event_mapper_per_run(self):
         """EventMapper는 run마다 새로 만든다 — 위임 추적 상태가 실행 간 안 섞이게."""
@@ -384,46 +443,154 @@ class RunMidStreamFailureTests(SimpleTestCase):
 
 
 class ResumeTests(SimpleTestCase):
-    """승인 게이트에서 멈춘 실행을 잇는 경로(2026-08-18).
+    """`AgentExecutor.resume()`(2026-08-19 추가, §0순위 — HITL resume API) —
+    `run()`과 조립 규칙은 같지만 `EVENT_AGENT_STARTED`를 안 내고, 멈췄던
+    실행의 `run_id`를 반드시 이미 갖고 있어야 하며, `stream_adapter.stream()`을
+    `resume=`으로 부른다."""
 
-    멈춘 자리의 대화는 Checkpointer에 있으므로, 이 호출이 넘겨야 하는 건
-    사람의 결정뿐이다 — 새 발화를 만들어 넣으면 안 된다.
-    """
+    def test_requires_context_run_id(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=_FakeStreamAdapter())
 
-    def _run_resume(self, decisions):
+        with self.assertRaises(ValueError):
+            list(
+                executor.resume(
+                    agent_id="AG001",
+                    agent_version_id="AV001",
+                    context=_context(run_id=None),
+                    decisions=[{"type": "approve"}],
+                )
+            )
+
+    def test_does_not_emit_agent_started(self):
+        """재개는 '새로 시작'이 아니라 '이어서 진행'이다 — trace_events()가 새
+        agent_run 행을 또 만들면(run_id PK 충돌) 안 된다."""
+        loader = _FakeLoader()
+        factory = _FakeFactory()
         stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("등록했습니다")])
-        executor = AgentExecutor(
-            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
-        )
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
         events = list(
-            executor.run(
+            executor.resume(
                 agent_id="AG001",
                 agent_version_id="AV001",
-                user_input="",
-                context=_context(session_id="SS001"),
-                resume_decisions=decisions,
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
             )
         )
-        return stream_adapter.stream_calls[0], events
 
-    def test_결정을_그대로_흘려_넣는다(self):
-        call, events = self._run_resume([{"type": "approve"}])
-
-        self.assertEqual(call["resume"], {"decisions": [{"type": "approve"}]})
-        self.assertEqual(call["thread_id"], "SS001")
+        self.assertNotIn(EVENT_AGENT_STARTED, [e["type"] for e in events])
         self.assertEqual(events[-1]["type"], EVENT_RESULT)
 
-    def test_평소_실행은_재개가_아니다(self):
-        """`resume_decisions`가 없으면 예전과 똑같이 돈다 — 회귀 방지."""
+    def test_decisions_reach_stream_adapter_as_resume_dict(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
         stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
-        executor = AgentExecutor(
-            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
-        )
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
 
         list(
-            executor.run(
-                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "reject", "message": "지금은 안 돼요"}],
             )
         )
 
-        self.assertIsNone(stream_adapter.stream_calls[0]["resume"])
+        self.assertEqual(
+            stream_adapter.stream_calls[0]["resume"],
+            {"decisions": [{"type": "reject", "message": "지금은 안 돼요"}]},
+        )
+
+    def test_context_session_id_reaches_the_stream_adapter_as_thread_id(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1", session_id="SESSION001"),
+                decisions=[{"type": "approve"}],
+            )
+        )
+
+        self.assertEqual(stream_adapter.stream_calls[0]["thread_id"], "SESSION001")
+
+    def test_draft_resume_uses_from_draft(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id=None,
+                agent_version_id=None,
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+                draft={"name": "초안"},
+            )
+        )
+
+        self.assertEqual(loader.from_draft_calls, [{"name": "초안"}])
+        self.assertEqual(loader.load_calls, [])
+
+    def test_tool_refs_override_replaces_definition_for_rebuild(self):
+        """멈췄던 실행과 같은 도구 구성으로 다시 조립해야 재개가 그 실행의
+        연속으로 보인다."""
+        loaded = LoadedAgentDefinition(definition=_definition(tool_refs=("document_search",)))
+        loader = _FakeLoader(loaded=loaded)
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+                tool_refs_override=["people_list"],
+            )
+        )
+
+        self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ("people_list",))
+
+    def test_loader_failure_becomes_agent_build_error(self):
+        loader = _FakeLoader(error=RuntimeError("DB 다운"))
+        factory = _FakeFactory()
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=_FakeStreamAdapter())
+
+        with self.assertRaises(AgentBuildError):
+            list(
+                executor.resume(
+                    agent_id="AG001",
+                    agent_version_id="AV001",
+                    context=_context(run_id="RUN1"),
+                    decisions=[{"type": "approve"}],
+                )
+            )
+
+    def test_mid_stream_failure_yields_terminal_error_event_not_raise(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(error=RuntimeError("재개 중 실패"))
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+            )
+        )
+
+        self.assertEqual(events[-1]["type"], EVENT_ERROR)
+        self.assertTrue(events[-1]["complete"])
+        self.assertEqual(events[-1]["run_id"], "RUN1")
+        self.assertNotIn("재개 중 실패", str(events[-1]))

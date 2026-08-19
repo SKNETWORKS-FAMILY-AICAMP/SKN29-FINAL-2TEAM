@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+from langgraph.types import Command
+
 
 class DeepAgentStreamAdapter:
     """graph stream을 EventMapper가 읽을 수 있는 형식으로 반환한다."""
@@ -13,10 +15,10 @@ class DeepAgentStreamAdapter:
         self,
         *,
         runtime: Any,
-        user_input: str,
+        user_input: str = "",
         conversation_messages: Sequence[dict[str, Any]] = (),
         thread_id: str | None = None,
-        resume: Any = None,
+        resume: dict[str, Any] | None = None,
         callbacks: Sequence[Any] = (),
         trace_metadata: dict[str, Any] | None = None,
     ) -> Iterator[Any]:
@@ -67,32 +69,51 @@ class DeepAgentStreamAdapter:
         1.2.11 `Pregel.stream` docstring: `"messages"`는 항상 `(token, metadata)`
         2-tuple).
 
-        `resume`가 있으면 **새 입력 대신** `Command(resume=...)`로 돈다 —
-        승인 게이트에서 멈춘 실행을 잇는 경로다(2026-08-18 §5 Phase 7 마무리).
-        이때 `user_input`/`conversation_messages`는 쓰지 않는다.
+        `resume`(2026-08-19, §0순위 — HITL resume API): `HumanInTheLoopMiddleware`
+        의 interrupt로 멈춘 실행을 재개할 때만 넘긴다. 있으면 `user_input`/
+        `conversation_messages`는 완전히 무시하고 `Command(resume=resume)`을
+        입력으로 보낸다 — 실제 langgraph 문서 예제(`langgraph/types.py`
+        `interrupt()` docstring)가 재개를 이렇게 하는 것과 같다. `resume`은
+        `{"decisions": [...]}` 형태를 기대한다(`HumanInTheLoopMiddleware
+        .after_model`이 `interrupt(hitl_request)["decisions"]`로 그대로
+        읽는 값, 실제 설치된 `langchain` 소스로 확인). `thread_id` 없이
+        재개하는 건 의미가 없다 — 어느 대화를 잇는지 특정할 방법이 없어
+        `ValueError`로 막는다(langgraph 자신도 `Command(resume=...)`을
+        checkpointer 없이 쓰면 같은 이유로 막는다, `pregel/_loop.py`
+        `_first()` 실제 소스 — "Cannot use Command(resume=...) without
+        checkpointer").
 
         `callbacks`/`trace_metadata`는 2026-08-19 추가(Langfuse 연동,
         `tracing/callbacks.py`) — LangChain의 `config["callbacks"]`/
-        `config["metadata"]`에 그대로 얹는다. `thread_id`가 없어서 `config`
-        키 자체가 아직 없을 수 있어 아래에서 항상 있는지부터 확인한다.
-        비어 있으면(키 없어서 Langfuse가 꺼진 기본 상태) 아무 것도 안 붙는다
-        — `runtime.stream()` 호출 모양이 이전과 완전히 같다.
+        `config["metadata"]`에 그대로 얹는다. 재개 경로에도 똑같이 붙인다 —
+        승인을 기다리다 재개된 실행도 실제 모델·도구 호출이라 트레이싱
+        대상에서 뺄 이유가 없다. 비어 있으면(키 없어서 Langfuse가 꺼진
+        기본 상태) 아무 것도 안 붙는다 — `runtime.stream()` 호출 모양이
+        이전과 완전히 같다.
         """
         if resume is not None:
-            # 승인 게이트에서 멈춘 실행을 이어서 돈다(2026-08-18). 새 발화를
-            # **넣지 않는다** — 멈춘 자리의 대화는 Checkpointer에 그대로 있고,
-            # 여기서 user 메시지를 하나 더 붙이면 모델이 같은 요청을 두 번
-            # 받은 것처럼 보인다. `Command(resume=...)`는 보류 중인
-            # `interrupt()` 호출의 반환값이 되어 그 자리에서 실행이 재개된다.
-            from langgraph.types import Command
+            if not thread_id:
+                msg = "resume에는 thread_id가 있어야 합니다 — 재개할 대화를 특정할 수 없습니다."
+                raise ValueError(msg)
+            stream_kwargs = {
+                "stream_mode": ["updates", "custom", "messages"],
+                "subgraphs": True,
+                "config": {"configurable": {"thread_id": thread_id}},
+            }
+            if callbacks or trace_metadata:
+                config = stream_kwargs["config"]
+                if callbacks:
+                    config["callbacks"] = list(callbacks)
+                if trace_metadata:
+                    config["metadata"] = trace_metadata
+            yield from runtime.stream(Command(resume=resume), **stream_kwargs)
+            return
 
-            input_state: Any = Command(resume=resume)
+        new_turn = {"role": "user", "content": user_input}
+        if thread_id:
+            input_state: Any = {"messages": [new_turn]}
         else:
-            new_turn = {"role": "user", "content": user_input}
-            if thread_id:
-                input_state = {"messages": [new_turn]}
-            else:
-                input_state = {"messages": [*conversation_messages, new_turn]}
+            input_state = {"messages": [*conversation_messages, new_turn]}
 
         stream_kwargs: dict[str, Any] = {
             "stream_mode": ["updates", "custom", "messages"],

@@ -29,6 +29,7 @@ from backend.db.errors import (
 from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
+from services.agent_runtime.sensitive_text import mask_sensitive
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -159,10 +160,20 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         serializer.is_valid(raise_exception=True)
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
+        # 2026-08-19, §2순위 — 사용자가 채팅에 직접 입력한 credential·개인정보·
+        # 권한/보안 서술은 모델에게 보내지 않는다(`sensitive_text.py`, write_guard와
+        # 같은 패턴 재사용). **저장은 원문 그대로 한다** — 이건 "모델에게
+        # 전달되면 안 된다"는 요구지 "사용자 자신도 못 보게 하라"는 요구가
+        # 아니다. `model_input`은 모델로 가는 모든 경로(이번 턴 user_input,
+        # 제목 생성용 question)에 쓰고, `text`(원문)는 저장에만 쓴다.
+        model_input = mask_sensitive(text)
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
+            # `_history()`가 저장된 과거 발화(원문)를 모델에게 다시 보낼 때도
+            # 마스킹한다 — 이번 요청에서만 막고 다음 턴의 재전송(replay)에서
+            # 새어나가면 의미가 없다.
             history = _history(
                 ChatMessageRepository.list_for_session(
                     session_id=session_id, account_id=account_id
@@ -170,7 +181,9 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             )
             # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
             # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
-            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다.
+            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 여기 저장하는
+            # `text`는 원문이다 — 화면이 사용자 자신의 발화를 그대로 보여줘야
+            # 하고, 마스킹은 모델에게 나가는 값에만 적용한다.
             ChatMessageRepository.append(
                 session_id=session_id,
                 account_id=account_id,
@@ -211,7 +224,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         # 여기서부터 스트림이다. 응답이 시작된 뒤에는 상태 코드를 바꿀 수 없어서
         # 위의 검사를 전부 끝낸 다음에 연다.
         events = _run_deep_agent(
-            session=session, context=runtime_context, user_input=text, history=history, draft=draft
+            session=session, context=runtime_context, user_input=model_input, history=history, draft=draft
         )
 
         return StreamingHttpResponse(
@@ -219,7 +232,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 events,
                 session_id=session_id,
                 account_id=account_id,
-                question=text,
+                question=model_input,
             ),
             content_type="application/x-ndjson",
         )
@@ -252,8 +265,12 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         content = row.get("content") or {}
         if row["role"] == "user":
             text = content.get("text")
+            # 저장은 원문이다(§2순위 설계 — 화면은 사용자 자신의 발화를 그대로
+            # 보여준다). 그 원문을 모델에게 다시 태우는 건 여기뿐이므로,
+            # 처음 보낼 때만 가리고 재전송(replay) 경로를 빼먹으면 다음 턴부터
+            # 새어나간다 — 여기서도 독립적으로 가린다.
             if text:
-                history.append({"role": "user", "content": text})
+                history.append({"role": "user", "content": mask_sensitive(text)})
             continue
 
         if content.get("type") == EVENT_AWAITING_CONFIRMATION:
@@ -269,13 +286,21 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return history[-HISTORY_LIMIT:]
 
 
-def _build_runtime_context(*, session: dict[str, Any], account_id: str) -> RuntimeContext:
+def _build_runtime_context(
+    *, session: dict[str, Any], account_id: str, run_id: str | None = None
+) -> RuntimeContext:
     """새 엔진(services/agent_runtime)이 요구하는 `RuntimeContext`를 채운다.
 
     `role`은 가입 경로로 정해진다(`account_role` — apps/accounts/serializers.py,
     apps/connectors/api_views.py가 이미 쓰는 것과 같은 헬퍼). 팀장/팀원에 따른
     도구 사용 가능 여부는 이 값을 `runtime_policy.py`가 읽어서 가른다 — 여기서는
     조회만 한다.
+
+    `run_id`(2026-08-19 추가, §0순위): 기본은 새 발화라 매번 새로 발급
+    (`uuid4()`)한다. HITL로 멈춘 실행을 재개할 때만(`_resume_deep_agent()`)
+    멈췄던 그 실행의 run_id를 그대로 넘긴다 — 새로 발급하면 그 run_id로
+    이미 열어 둔 `agent_run` 행을 못 찾는다(`AgentExecutor.resume()`
+    docstring 참고).
     """
 
     profile = AccountRepository.get_profile(account_id)
@@ -285,7 +310,7 @@ def _build_runtime_context(*, session: dict[str, Any], account_id: str) -> Runti
         role=account_role(profile),
         session_id=session["session_id"],
         project_id=session.get("proj_id"),
-        run_id=str(uuid.uuid4()),
+        run_id=run_id or str(uuid.uuid4()),
     )
 
 
@@ -296,7 +321,6 @@ def _run_deep_agent(
     user_input: str,
     history: list[dict[str, Any]],
     draft: dict[str, Any] | None = None,
-    resume_decisions: list[dict[str, Any]] | None = None,
 ):
     """대화를 `services.agent_runtime` 엔진으로 돌린다(2026-08-14부터 전부 이 경로).
 
@@ -339,15 +363,80 @@ def _run_deep_agent(
         # 에이전트 원본 대신 이 목록으로 돈다 — `None`이면(커스터마이즈 안
         # 함) 로드된 정의를 그대로 쓴다.
         tool_refs_override=session.get("tool_refs_override"),
-        # 승인 게이트에서 멈춰 있던 실행을 잇는 호출이면 사람의 결정을 넣는다
-        # (2026-08-18). 이때 `user_input`/`history`는 안 쓰인다 — 멈춘 자리의
-        # 대화는 Checkpointer(RDS)에 그대로 있다.
-        resume_decisions=resume_decisions,
         **run_kwargs,
     )
     # agent_run/tool_call 적재(2026-08-14) — 이벤트는 손대지 않고 그대로
     # 지나간다, 화면에 가는 내용은 감싸기 전과 같다.
     for event in trace_events(raw_events, context=context):
+        if event.get("type") == EVENT_ERROR and "text" not in event:
+            event = {**event, "text": event.get("message", "")}
+        yield event
+
+
+def _resume_deep_agent(
+    *,
+    session: dict[str, Any],
+    account_id: str,
+    content: dict[str, Any],
+    decision: str,
+    selected: list[int] | None = None,
+):
+    """새 엔진에서 HITL interrupt로 멈춘 실행을 재개한다(2026-08-19, §0순위).
+
+    `content`는 `latest_pending_confirmation()`이 돌려준, `_persist()`가
+    `EVENT_AWAITING_CONFIRMATION`(새 엔진 모양 — `action_requests` 있음)을
+    저장해 둔 그 딕셔너리다. `run_id`는 **멈췄던 그 실행의 run_id**를 그대로
+    쓴다 — `_build_runtime_context(run_id=...)`로 넘겨 새로 발급되지 않게
+    한다.
+
+    `decision`은 "approve"/"reject" 중 하나이고, 그 턴에 걸린 `action_requests`
+    전부에 같은 결정을 적용한다. 다만 승인일 때는 `selected`(카드에서 체크를
+    푼 항목)를 `_decisions_for()`가 첫 호출의 인자에 반영한다 — 안 그러면
+    화면은 3건을 빼고 승인했는데 10건이 전부 등록된다. 거르는 규칙은 레거시와
+    **한 벌만 둔다**(`_apply_selection()`) — 두 벌이 되면 같은 카드가 엔진에
+    따라 다른 것을 등록한다.
+
+    호출 **단위**의 부분 승인(모델이 한 턴에 side_effect 도구를 여러 개 부를 때
+    그중 일부만 승인)은 아직 없다 — 필요해지면 `decision`을 리스트로 받게
+    넓히면 된다(`HumanInTheLoopMiddleware`는 이미 `decisions`가 리스트라
+    프레임워크 쪽 제약은 없다).
+
+    `EVENT_AGENT_STARTED`가 없는 스트림이라 `_run_deep_agent()`와 달리
+    `trace_events(..., known_run_ids=(run_id,))`로 그 run_id를 미리 열어
+    둔 것으로 표시한다(`AgentExecutor.resume()`/`tracing/__init__.py`
+    docstring 참고) — 안 하면 재개가 끝나도 그 실행의 `agent_run` 행이
+    `PENDING`에서 영원히 안 닫힌다.
+    """
+
+    from services.agent_runtime import build_default_executor
+    from services.agent_runtime.tracing import trace_events
+
+    run_id = content.get("run_id")
+    action_requests = content.get("action_requests") or []
+    context = _build_runtime_context(session=session, account_id=account_id, run_id=run_id)
+    draft = (
+        None
+        if session.get("agent_version_id")
+        else draft_from_legacy_agent(agent_id=session["agent_id"], team_id=session["team_id"])
+    )
+    run_kwargs = (
+        {"agent_id": None, "agent_version_id": None, "draft": draft}
+        if draft is not None
+        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
+    )
+
+    executor = build_default_executor()
+    raw_events = executor.resume(
+        context=context,
+        decisions=(
+            _decisions_for(action_requests, selected)
+            if decision == "approve"
+            else [{"type": decision}] * len(action_requests)
+        ),
+        tool_refs_override=session.get("tool_refs_override"),
+        **run_kwargs,
+    )
+    for event in trace_events(raw_events, context=context, known_run_ids=(run_id,) if run_id else ()):
         if event.get("type") == EVENT_ERROR and "text" not in event:
             event = {**event, "text": event.get("message", "")}
         yield event
@@ -359,6 +448,11 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
     승인 대상은 **저장해 둔 그 호출**이다. 모델에게 다시 묻지 않는다 — 다시
     물으면 재실행 때 다른 인자를 고를 수 있고, 그러면 사용자가 승인한 것과
     실제로 실행되는 것이 달라진다(8/11 확정 ③).
+
+    2026-08-19, §0순위 — `pending["content"]["engine"] == "deepagents"`면
+    새 엔진 재개 경로(`_resume_deep_agent()`)로 분기한다. 그 앞까지(세션
+    조회, pending 조회, 없으면 409)는 두 엔진이 완전히 같다 — "승인 대기
+    카드가 있는가"는 엔진과 무관한 질문이라서다.
     """
 
     def post(self, request, session_id):
@@ -381,22 +475,24 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
             )
 
         content = pending["content"] or {}
-        resume = content.get("resume") or {}
-        selected = serializer.validated_data.get("selected")
 
-        # 새 엔진(services.agent_runtime)에서 멈춘 승인은 재개 방식이 다르다 —
-        # 레거시는 대화 전체를 되돌려 받아 처음부터 다시 돌지만, 이쪽은 멈춘
-        # 상태가 Checkpointer(RDS)에 통째로 남아 있어서 "사람이 무엇을
-        # 정했는가"만 흘려 넣으면 그 자리에서 이어진다(2026-08-18).
-        if resume.get("engine") == "agent_runtime":
-            return self._resume_deep_agent(
-                session=session,
-                session_id=session_id,
-                account_id=account_id,
-                resume=resume,
-                selected=selected,
+        if content.get("engine") == "deepagents":
+            return StreamingHttpResponse(
+                _relay(
+                    _resume_deep_agent(
+                        session=session,
+                        account_id=account_id,
+                        content=content,
+                        decision=serializer.validated_data.get("decision") or "approve",
+                        selected=serializer.validated_data.get("selected"),
+                    ),
+                    session_id=session_id,
+                    account_id=account_id,
+                ),
+                content_type="application/x-ndjson",
             )
 
+        resume = content.get("resume") or {}
         tool_call = resume.get("tool_call")
         if tool_call is None:
             # 이 카드로는 재개할 수 없다. 승인한 셈 치고 아무것도 안 하는 것보다
@@ -406,6 +502,7 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        selected = serializer.validated_data.get("selected")
         # 재개 정보는 **스택**이다. 위임(agent:)이 끼어 있으면 바깥 호출은
         # "그 에이전트를 다시 부른다"이고, 사람이 승인한 실제 호출은 맨 안쪽에
         # 있다 — 선택 적용도 승인도 거기서 해야 한다.
@@ -425,67 +522,6 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                         "resume_inner": plan.get("inner"),
                         "approved_tool_calls": [approved_ref],
                     },
-                ),
-                session_id=session_id,
-                account_id=account_id,
-            ),
-            content_type="application/x-ndjson",
-        )
-
-
-    def _resume_deep_agent(
-        self,
-        *,
-        session: dict[str, Any],
-        session_id: str,
-        account_id: str,
-        resume: dict[str, Any],
-        selected: list[int] | None,
-    ):
-        """새 엔진에서 멈춘 승인을 이어서 돌린다.
-
-        멈춘 자리의 대화·도구 호출은 Checkpointer(RDS)에 있고 `thread_id`는
-        대화 id 그대로라, 여기서 되돌려 줄 것은 **사람의 결정뿐**이다.
-        """
-        action_requests = resume.get("action_requests") or []
-        if not action_requests:
-            return Response(
-                {"detail": "이 확인 카드는 재개 정보를 갖고 있지 않습니다. 다시 요청해 주세요."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        try:
-            runtime_context = _build_runtime_context(session=session, account_id=account_id)
-            draft = (
-                None
-                if session.get("agent_version_id")
-                else draft_from_legacy_agent(
-                    agent_id=session["agent_id"], team_id=session["team_id"]
-                )
-            )
-            if session.get("agent_version_id"):
-                # 발화 경로와 **같은 버전**으로 다시 세운다. 여기서 세션에
-                # 굳어 있는 옛 버전을 쓰면, 승인하려는 그 도구가 안 붙은
-                # 에이전트로 재개해 버린다(기본 챗은 "+"로 도구를 바꾼다).
-                live_version_id = AgentVersionRepository.resolve_live_version_id(
-                    agent_id=session["agent_id"]
-                )
-                if live_version_id:
-                    session = {**session, "agent_version_id": live_version_id}
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except AgentRuntimeError as exc:
-            return _agent_runtime_error_response(exc)
-
-        return StreamingHttpResponse(
-            _relay(
-                _run_deep_agent(
-                    session=session,
-                    context=runtime_context,
-                    user_input="",
-                    history=[],
-                    draft=draft,
-                    resume_decisions=_decisions_for(action_requests, selected),
                 ),
                 session_id=session_id,
                 account_id=account_id,
@@ -522,7 +558,6 @@ def _decisions_for(
             "edited_action": {"name": first.get("name"), "args": narrowed},
         }
     return decisions
-
 
 def _apply_to_innermost(
     node: dict[str, Any], selected: list[int] | None
@@ -668,14 +703,30 @@ def _persist(
         "events": events,
     }
     if final["type"] == EVENT_AWAITING_CONFIRMATION:
-        # 재개 정보. `message_response` 가 화면으로는 내보내지 않는다.
-        content["resume"] = final.get("resume")
-        content["tool_ref"] = final.get("tool_ref")
-        content["tool_name"] = final.get("tool_name")
-        content["arguments"] = final.get("arguments")
-        # 위임을 거쳐 올라온 승인이면 누가 요구했는지. 없으면 최상위가 직접
-        # 부른 것이다 — 그 차이를 사람이 알아야 무엇을 승인하는지 안다.
-        content["via_agent"] = final.get("via_agent")
+        if "action_requests" in final:
+            # 새 엔진(HITL interrupt, 2026-08-19 §0순위) — 레거시와 모양이
+            # 다르다: 재개 스택(resume/tool_ref/via_agent) 대신 그 턴에
+            # interrupt된 action_requests 전부와, 재개에 그대로 써야 하는
+            # run_id를 저장한다. `ChatConfirmAPIView`가 `content.get("engine")`
+            # 로 이 분기를 골라 `_resume_deep_agent()`로 보낸다.
+            content["engine"] = "deepagents"
+            content["run_id"] = final.get("run_id")
+            content["interrupt_id"] = final.get("interrupt_id")
+            content["action_requests"] = final.get("action_requests")
+            names = [
+                a.get("name") for a in (final.get("action_requests") or []) if a.get("name")
+            ]
+            content["tool_name"] = ", ".join(names) if names else None
+        else:
+            # 레거시 확인 카드. `message_response` 가 화면으로는 내보내지 않는다.
+            content["resume"] = final.get("resume")
+            content["tool_ref"] = final.get("tool_ref")
+            content["tool_name"] = final.get("tool_name")
+            content["arguments"] = final.get("arguments")
+            # 위임을 거쳐 올라온 승인이면 누가 요구했는지. 없으면 최상위가
+            # 직접 부른 것이다 — 그 차이를 사람이 알아야 무엇을 승인하는지
+            # 안다.
+            content["via_agent"] = final.get("via_agent")
     else:
         content["text"] = final.get("text", "")
         content["complete"] = final.get("complete", False)

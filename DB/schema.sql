@@ -949,6 +949,15 @@ CREATE TABLE agent_run (
     -- 2026-08-14_agent_run_runtime_profile_version.sql) — 배포 파이프라인이
     -- GIT_COMMIT_SHA를 안 넘기면(config/settings/base.py RUNTIME_PROFILE_VERSION) NULL.
     runtime_profile_version  VARCHAR(64),
+    -- 이 실행이 실제로 사용한 모델 provider와 커스텀 엔드포인트 식별값.
+    -- 2026-08-19 추가(DB/migrations/2026-08-19_agent_run_resolved_provider.sql,
+    -- 정본: 2026-08-19_01_실행_안정성_설계.md §1) — 같은 agent_version_id/
+    -- runtime_profile_version이라도 팀 커스텀 엔드포인트(base_url/api_key)는
+    -- 언제든 바뀔 수 있어서, 어느 정의로 돌았는지만으로는 실제로 어느
+    -- 서버로 요청이 나갔는지 알 수 없었다. base_url 원문은 저장하지
+    -- 않는다(사내망 주소 노출 방지) — sha256(base_url)만 남긴다.
+    resolved_provider        VARCHAR(32),
+    resolved_endpoint_hash   VARCHAR(64),
     started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at       TIMESTAMPTZ
 );
@@ -992,12 +1001,6 @@ CREATE TABLE doc_meta (
     -- 기본값을 두지 않는다 — 적재하는 쪽이 결과를 알고 넣는 값이라,
     -- 기본값이 있으면 실패한 문서가 조용히 OK 로 남는다.
     extract_status  VARCHAR(20) NOT NULL,
-    -- **왜 실패했는지.** OK 면 비어 있다(2026-08-19 추가).
-    -- 상태만으로는 사람이 할 행동이 안 정해진다 — 「암호가 걸린 PDF」면
-    -- 암호를 풀어 다시 올리면 되고, 「스캔본」이면 아무리 다시 올려도 같다.
-    -- 추출기가 이미 사람이 읽을 문구로 만들어 두고 있었는데(extractor.py)
-    -- 저장하는 자리가 없어 그대로 버려지고 있었다.
-    extract_detail  TEXT,
     extracted_at    TIMESTAMPTZ
 );
 

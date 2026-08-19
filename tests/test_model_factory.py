@@ -19,6 +19,7 @@ from services.agent_runtime.models.factory import (
     ModelConfigResolver,
     ModelFactory,
     ResolvedModelConfig,
+    resolved_endpoint_hash,
 )
 
 FACTORY_MODULE = "services.agent_runtime.models.factory"
@@ -161,3 +162,53 @@ class ModelFactoryTests(SimpleTestCase):
 
         with self.assertRaises(ModelUnavailableError):
             self.factory.create(resolved)
+
+
+class ResolvedEndpointHashTests(SimpleTestCase):
+    """2026-08-19, §4순위(Run Snapshot) — `agent_run.resolved_endpoint_hash`에
+    남길 값. base_url 원문이 로그에 그대로 남지 않는지가 핵심이다."""
+
+    def test_no_base_url_hashes_to_none(self):
+        """anthropic/openai 기본 엔드포인트(팀 커스텀 아님)는 비교할 대상
+        자체가 없다."""
+        resolved = ResolvedModelConfig(
+            provider="anthropic", model_id="claude-sonnet-5", api_key="k", base_url=None, reasoning_effort="low"
+        )
+
+        self.assertIsNone(resolved_endpoint_hash(resolved))
+
+    def test_base_url_is_hashed_not_stored_verbatim(self):
+        resolved = ResolvedModelConfig(
+            provider="openai_compatible",
+            model_id="claude-x",
+            api_key="k",
+            base_url="https://internal.company.example.com/v1",
+            reasoning_effort="low",
+        )
+
+        result = resolved_endpoint_hash(resolved)
+
+        self.assertIsNotNone(result)
+        self.assertNotIn("internal.company.example.com", result)
+
+    def test_same_base_url_hashes_identically(self):
+        """"그때와 지금이 같은 엔드포인트인지" 비교하는 용도라 — 결정적이어야
+        한다."""
+        a = ResolvedModelConfig(
+            provider="openai_compatible", model_id="m", api_key="k", base_url="https://x.example.com/v1", reasoning_effort=""
+        )
+        b = ResolvedModelConfig(
+            provider="openai_compatible", model_id="m", api_key="k2", base_url="https://x.example.com/v1", reasoning_effort="low"
+        )
+
+        self.assertEqual(resolved_endpoint_hash(a), resolved_endpoint_hash(b))
+
+    def test_different_base_url_hashes_differently(self):
+        a = ResolvedModelConfig(
+            provider="openai_compatible", model_id="m", api_key="k", base_url="https://a.example.com/v1", reasoning_effort=""
+        )
+        b = ResolvedModelConfig(
+            provider="openai_compatible", model_id="m", api_key="k", base_url="https://b.example.com/v1", reasoning_effort=""
+        )
+
+        self.assertNotEqual(resolved_endpoint_hash(a), resolved_endpoint_hash(b))

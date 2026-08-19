@@ -67,7 +67,6 @@ class AgentExecutor:
         draft: dict | None = None,
         conversation_messages: Sequence[dict[str, Any]] = (),
         tool_refs_override: Sequence[str] | None = None,
-        resume_decisions: Sequence[dict[str, Any]] | None = None,
     ) -> Iterator[dict[str, Any]]:
         """`tool_refs_override`: 이 대화(chat_session)가 저장해 둔 도구
         커스터마이즈(2026-08-18, Chat "+" 버튼). `None`이면 로드된 정의의
@@ -77,14 +76,6 @@ class AgentExecutor:
         메모리 위의 정의만 바꾼다. 서브 에이전트의 도구는 영향 없다(이
         대화가 직접 부르는 루트만 대상 — 위임 내부까지 커스터마이즈하는 건
         범위 밖).
-
-        `resume_decisions`: 승인 게이트에서 멈춰 있던 실행을 잇는다(2026-08-18).
-        값이 있으면 `user_input`은 쓰지 않는다 — 멈춘 자리의 대화는
-        Checkpointer에 있고, 이 호출이 하는 일은 보류 중인 `interrupt()`에
-        사람의 결정을 돌려주는 것뿐이다. 결정의 **개수는 인터럽트가 요구한
-        호출 수와 같아야 한다**(다르면 `HumanInTheLoopMiddleware`가
-        `ValueError`) — 그 목록은 `awaiting_confirmation` 이벤트의
-        `resume.action_requests`에 담아 두었다.
         """
 
         validate_execution_target(
@@ -109,7 +100,7 @@ class AgentExecutor:
                     ),
                 )
 
-            runtime = self.factory.build(
+            runtime, resolved_model = self.factory.build(
                 definition=loaded.definition,
                 subagent_references=loaded.subagent_references,
                 context=context,
@@ -120,11 +111,31 @@ class AgentExecutor:
             logger.exception("Deep Agent 조립 실패")
             raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
 
+        # `services.agent_runtime.models.factory`는 여기서(함수 본문) import한다
+        # — 모듈 최상단이 아니라. `backend/db/agent_platform.py` →
+        # `services.agent_runtime.definitions`처럼 이 패키지 진입 시점에 이미
+        # `agent_platform.py`를 부르는 호출자가 있어서, 모듈 최상단에서
+        # `models.factory`(그 자신이 `agent_platform.CustomModelRepository`를
+        # 다시 import함)를 부르면 `agent_platform.py`가 아직 초기화되던 중에
+        # 자기 자신으로 되돌아오는 순환 import가 생긴다(2026-08-20 실측 —
+        # `python manage.py runserver`로 실제 부팅했을 때만 드러남, `manage.py
+        # test`는 이 정확한 import 순서를 안 태워서 못 잡았다). `factory.py`가
+        # `ModelConfigResolver`/`ModelFactory`를 `TYPE_CHECKING`에서만 참조하고
+        # 실제 인스턴스는 생성자로 주입받는 것과 같은 이유 — 이 모듈도 같은
+        # 규칙을 따른다.
+        from services.agent_runtime.models.factory import resolved_endpoint_hash
+
         yield {
             "type": EVENT_AGENT_STARTED,
             "run_id": context.run_id,
             "agent_id": loaded.definition.agent_id,
             "agent_version_id": loaded.definition.agent_version_id,
+            # 2026-08-19, §4순위(Run Snapshot) — 이 실행이 실제로 사용한
+            # provider/엔드포인트. `tracing/__init__.py`의 `_start_run()`이
+            # 이 두 값을 읽어 `agent_run.resolved_provider`/
+            # `resolved_endpoint_hash`에 적재한다.
+            "resolved_provider": resolved_model.provider,
+            "resolved_endpoint_hash": resolved_endpoint_hash(resolved_model),
             "complete": False,
         }
 
@@ -157,12 +168,6 @@ class AgentExecutor:
                 # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
                 # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
                 thread_id=context.session_id,
-                # 승인 재개면 새 입력 대신 이 결정을 흘려 넣는다.
-                resume=(
-                    {"decisions": list(resume_decisions)}
-                    if resume_decisions is not None
-                    else None
-                ),
                 callbacks=[langfuse_callback] if langfuse_callback is not None else (),
                 # Langfuse 대시보드에서 세션/계정/팀 단위로 걸러 보기 위한
                 # 메타데이터(2026-08-19). 콜백이 없어도(키 없음) 그냥 안 쓰이는
@@ -188,6 +193,123 @@ class AgentExecutor:
         except Exception:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
             logger.exception(
                 "Deep Agent 실행 실패: agent=%s version=%s",
+                loaded.definition.agent_id,
+                loaded.definition.agent_version_id,
+            )
+            yield {
+                "type": EVENT_ERROR,
+                "error_code": "AGENT_EXECUTION_FAILED",
+                "message": "에이전트 실행 중 오류가 발생했습니다.",
+                "agent_id": loaded.definition.agent_id,
+                "agent_version_id": loaded.definition.agent_version_id,
+                "run_id": context.run_id,
+                "complete": True,
+            }
+
+    def resume(
+        self,
+        *,
+        agent_id: str | None,
+        agent_version_id: str | None,
+        context: RuntimeContext,
+        decisions: Sequence[dict[str, Any]],
+        draft: dict | None = None,
+        tool_refs_override: Sequence[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """`HumanInTheLoopMiddleware`의 interrupt로 멈춘 실행을 재개한다
+        (2026-08-19, §0순위 — 새 엔진 HITL resume API).
+
+        `context.run_id`는 **멈췄던 그 실행의 run_id를 그대로** 받아야 한다
+        (호출자 — `apps/chat/api_views.py` — 가 확인 카드에 저장해 둔
+        값). 여기서 새로 발급하지 않는다: 새로 발급하면 `agent_run` 행이
+        하나 더 느는 게 아니라, interrupt 시점에 이미 `PENDING`으로 남겨 둔
+        원래 행을 영영 못 닫는다 — `trace_events()`의 열린 run 추적은 스트림
+        하나에 국한된 메모리 상태라(`tracing/__init__.py`), 새 스트림은
+        원래 run_id를 모른 채 시작한다. 호출자가 `trace_events(...,
+        known_run_ids=(run_id,))`로 그 상태를 미리 채워 넣는 것과 짝을
+        이룬다.
+
+        `agent_id`/`agent_version_id`/`draft`/`tool_refs_override`는
+        `run()`과 완전히 같은 규칙이다 — 멈췄던 그 실행과 같은 에이전트
+        정의로 그래프를 다시 조립해야 재개가 그 실행의 연속으로 보인다
+        (checkpointer가 대화 상태를 들고 있지, 그래프 구조 자체를 들고
+        있지는 않다 — `stream_adapter.py`의 `resume` 처리 docstring 참고).
+
+        `EVENT_AGENT_STARTED`는 내지 않는다 — 이건 "새로 시작"이 아니라
+        "이어서 진행"이라 `trace_events()`가 새 `agent_run` 행을 만들 필요가
+        없다(만들면 `run_id` PK 충돌).
+        """
+        validate_execution_target(agent_id=agent_id, agent_version_id=agent_version_id, draft=draft)
+        if context.run_id is None:
+            msg = "resume()에는 context.run_id(멈췄던 실행의 run_id)가 있어야 합니다."
+            raise ValueError(msg)
+
+        try:
+            loaded = (
+                self.loader.from_draft(draft=draft, context=context)
+                if draft is not None
+                else self.loader.load(
+                    agent_id=agent_id, agent_version_id=agent_version_id, context=context
+                )
+            )
+            if tool_refs_override is not None:
+                loaded = dataclasses.replace(
+                    loaded,
+                    definition=dataclasses.replace(
+                        loaded.definition, tool_refs=tuple(tool_refs_override)
+                    ),
+                )
+            # 재개는 `EVENT_AGENT_STARTED`를 새로 안 내므로(아래) `resolved_model`을
+            # 다시 기록할 자리가 없다 — 멈추기 전 `_start_run()`이 이미 적어 둔
+            # 값을 그대로 둔다. `[0]`으로 graph만 쓴다(§4순위, factory.build()
+            # docstring 참고).
+            runtime, _resolved_model = self.factory.build(
+                definition=loaded.definition,
+                subagent_references=loaded.subagent_references,
+                context=context,
+            )
+        except AgentRuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 예상 밖 조립 오류를 공통 예외로 변환
+            logger.exception("Deep Agent 재개 조립 실패")
+            raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
+
+        event_mapper = self.event_mapper_factory()
+
+        # Langfuse 콜백(2026-08-19) — `run()`과 같은 이유로 지연 import한다
+        # (모듈 최상단에서 부르면 `tracing/__init__.py`가 끌어오는
+        # `backend.db.agent_platform`과 순환 import가 생긴다, `run()`의 같은
+        # import 주석 참고). 승인을 기다리다 재개된 실행도 실제 모델·도구
+        # 호출이라 트레이싱에서 뺄 이유가 없다 — `stream_adapter.py`의
+        # `resume` 분기도 이 값을 받게 이미 맞춰 뒀다.
+        from services.agent_runtime.tracing.callbacks import get_langfuse_callback
+
+        langfuse_callback = get_langfuse_callback()
+
+        try:
+            for raw_event in self.stream_adapter.stream(
+                runtime=runtime,
+                resume={"decisions": list(decisions)},
+                thread_id=context.session_id,
+                callbacks=[langfuse_callback] if langfuse_callback is not None else (),
+                trace_metadata={
+                    "langfuse_session_id": context.session_id,
+                    "langfuse_user_id": context.account_id,
+                    "langfuse_tags": [
+                        f"team:{context.team_id}",
+                        f"agent:{loaded.definition.agent_id}",
+                    ],
+                }
+                if langfuse_callback is not None
+                else None,
+            ):
+                for converted in event_mapper.convert(
+                    raw_event, definition=loaded.definition, context=context
+                ):
+                    yield converted
+        except Exception:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
+            logger.exception(
+                "Deep Agent 재개 실패: agent=%s version=%s",
                 loaded.definition.agent_id,
                 loaded.definition.agent_version_id,
             )

@@ -11,6 +11,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import tool
+from langgraph.types import Command
 from pydantic import Field
 
 from deepagents import create_deep_agent
@@ -147,6 +148,101 @@ class ThreadIdArgumentTests(SimpleTestCase):
         list(DeepAgentStreamAdapter().stream(runtime=runtime, user_input="새 질문"))
 
         self.assertNotIn("config", runtime.stream_calls[0]["kwargs"])
+
+
+class ResumeArgumentTests(SimpleTestCase):
+    """`resume`(2026-08-19 추가, §0순위 — HITL resume API) — `user_input`/
+    `conversation_messages`를 완전히 무시하고 `Command(resume=resume)`을
+    입력으로 보내는지, `thread_id` 없이는 막는지."""
+
+    def test_resume_sends_command_with_decisions_as_input_state(self):
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime,
+                resume={"decisions": [{"type": "approve"}]},
+                thread_id="SESSION001",
+            )
+        )
+
+        call = runtime.stream_calls[0]
+        self.assertIsInstance(call["input_state"], Command)
+        self.assertEqual(call["input_state"].resume, {"decisions": [{"type": "approve"}]})
+
+    def test_resume_sets_configurable_thread_id(self):
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime,
+                resume={"decisions": [{"type": "approve"}]},
+                thread_id="SESSION001",
+            )
+        )
+
+        call = runtime.stream_calls[0]
+        self.assertEqual(call["kwargs"]["config"], {"configurable": {"thread_id": "SESSION001"}})
+
+    def test_resume_subscribes_to_the_same_stream_modes_as_a_fresh_turn(self):
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime,
+                resume={"decisions": [{"type": "approve"}]},
+                thread_id="SESSION001",
+            )
+        )
+
+        call = runtime.stream_calls[0]
+        self.assertEqual(call["kwargs"]["stream_mode"], ["updates", "custom", "messages"])
+        self.assertTrue(call["kwargs"]["subgraphs"])
+
+    def test_resume_ignores_user_input_and_conversation_messages(self):
+        """resume이 있으면 user_input/conversation_messages는 완전히 무시된다 —
+        재개는 새 발화가 아니라 멈춘 그 실행을 이어가는 것이므로."""
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime,
+                user_input="이건 안 쓰인다",
+                conversation_messages=[{"role": "user", "content": "이것도 안 쓰인다"}],
+                resume={"decisions": [{"type": "approve"}]},
+                thread_id="SESSION001",
+            )
+        )
+
+        call = runtime.stream_calls[0]
+        self.assertIsInstance(call["input_state"], Command)
+        self.assertNotIn("messages", call["input_state"] if isinstance(call["input_state"], dict) else {})
+
+    def test_resume_without_thread_id_raises_value_error(self):
+        """어느 대화를 재개할지 특정할 방법이 없으면 조용히 새로 시작하는 대신
+        막는다 — langgraph 자신도 checkpointer 없는 Command(resume=...)를
+        같은 이유로 막는다(`pregel/_loop.py` `_first()`)."""
+        runtime = _FakeRuntime()
+
+        with self.assertRaises(ValueError):
+            list(
+                DeepAgentStreamAdapter().stream(
+                    runtime=runtime, resume={"decisions": [{"type": "approve"}]}
+                )
+            )
+
+        self.assertEqual(runtime.stream_calls, [])
+
+    def test_resume_with_empty_string_thread_id_also_raises(self):
+        """빈 문자열도 "특정 안 됨"으로 취급한다(`if not thread_id`)."""
+        runtime = _FakeRuntime()
+
+        with self.assertRaises(ValueError):
+            list(
+                DeepAgentStreamAdapter().stream(
+                    runtime=runtime, resume={"decisions": [{"type": "approve"}]}, thread_id=""
+                )
+            )
 
 
 @tool

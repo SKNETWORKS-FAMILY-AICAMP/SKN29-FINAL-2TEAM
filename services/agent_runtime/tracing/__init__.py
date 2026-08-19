@@ -61,6 +61,7 @@ from django.conf import settings
 from backend.db.agent_platform import AgentRunRepository, ToolCallRepository
 from services.agent_runtime.events import (
     EVENT_AGENT_STARTED,
+    EVENT_AWAITING_CONFIRMATION,
     EVENT_ERROR,
     EVENT_RESULT,
     EVENT_SUBAGENT_COMPLETED,
@@ -73,7 +74,12 @@ from services.harness.trace import summarize_input
 logger = logging.getLogger(__name__)
 
 
-def trace_events(events: Iterator[dict[str, Any]], *, context: Any) -> Iterator[dict[str, Any]]:
+def trace_events(
+    events: Iterator[dict[str, Any]],
+    *,
+    context: Any,
+    known_run_ids: tuple[str, ...] = (),
+) -> Iterator[dict[str, Any]]:
     """이벤트 스트림을 그대로 통과시키며 `agent_run`/`tool_call`에 적재한다.
 
     `context`는 `RuntimeContext`다 — `session_id`/`parent_run_id`를 읽는다
@@ -85,9 +91,18 @@ def trace_events(events: Iterator[dict[str, Any]], *, context: Any) -> Iterator[
     `finally`에서 그때까지 열려 있던 `agent_run`/`tool_call`을 전부
     FAILED로 정리한다. `RUNNING`/`PENDING`으로 영원히 남는 행이 있으면
     평가가 세는 모수가 조용히 틀린다(레거시 `trace.py`와 같은 이유).
+
+    `known_run_ids`(2026-08-19 추가, §0순위 — HITL resume API): 이 스트림이
+    **새로 시작하는 게 아니라 이미 시작됐던 실행을 재개하는** 경우에 그
+    `run_id`를 미리 채워 넣는다(`AgentExecutor.resume()` 호출을 감쌀 때 씀).
+    `open_run_ids`는 이 함수 호출 하나에 국한된 메모리 상태라, 재개 스트림은
+    원래 `EVENT_AGENT_STARTED`를 본 적이 없다 — 미리 채워 두지 않으면
+    `_finish_root_run()`이 "이 run은 내가 시작한 게 아니다"로 보고 결과
+    이벤트가 와도 `agent_run` 행을 닫지 못한다(그 행은 interrupt 시점에
+    `_suspend_run()`이 `PENDING`으로 남겨 둔 채 영원히 그 상태로 남는다).
     """
 
-    open_run_ids: set[str] = set()
+    open_run_ids: set[str] = set(known_run_ids)
     # (run_id, tool_call_id) -> (DB tool_call_id, 시작 시각)
     open_tool_calls: dict[tuple[str, str], tuple[str, float]] = {}
 
@@ -120,6 +135,8 @@ def _record(
             _begin_tool_call(event, open_run_ids=open_run_ids, open_tool_calls=open_tool_calls)
         elif event_type == EVENT_TOOL_COMPLETED:
             _end_tool_call(event, open_tool_calls=open_tool_calls)
+        elif event_type == EVENT_AWAITING_CONFIRMATION:
+            _suspend_run(event, open_run_ids=open_run_ids)
     except Exception:  # noqa: BLE001 - 로그 적재 실패가 실제 응답 전달을 막으면 안 된다
         logger.exception("실행 로그 적재 실패: event_type=%s", event_type)
 
@@ -143,6 +160,13 @@ def _start_run(
         parent_run_id=parent_run_id,
         agent_version_id=event.get("agent_version_id"),
         runtime_profile_version=settings.RUNTIME_PROFILE_VERSION,
+        # 2026-08-19, §4순위(Run Snapshot) — `executor.py`의 `EVENT_AGENT_STARTED`가
+        # 이미 실어 보낸 값을 그대로 옮긴다. `EVENT_SUBAGENT_STARTED`에는 이
+        # 필드가 없으므로(Child 자신의 resolved_model은 버린다, `factory.build()`
+        # docstring 참고) `.get()`이 자연히 `None`으로 떨어진다 — Child의
+        # agent_run 행은 이번 범위가 아니다.
+        resolved_provider=event.get("resolved_provider"),
+        resolved_endpoint_hash=event.get("resolved_endpoint_hash"),
     )
     open_run_ids.add(run_id)
 
@@ -162,6 +186,29 @@ def _finish_subagent_run(event: dict[str, Any], *, open_run_ids: set[str]) -> No
         return
     status = "FAILED" if event.get("status") == "FAILED" else "DONE"
     AgentRunRepository.finish(run_id=run_id, status=status, iterations=0, token_in=None, token_out=None)
+    open_run_ids.discard(run_id)
+
+
+def _suspend_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:
+    """HITL interrupt로 멈춘 실행을 `PENDING`으로 표시한다(2026-08-19, §0순위).
+
+    `finish()`와 다르게 `ended_at`을 채우지 않는다 — 실제로 끝난 게 아니라
+    사람의 승인/거부를 기다리는 것뿐이다. 재개(`AgentExecutor.resume()`)
+    뒤 실제로 끝나면(`EVENT_RESULT`/`EVENT_ERROR`) 그 시점의 `_finish_root_run()`
+    이 정상적으로 `ended_at`을 채운다 — 재개 스트림의 `trace_events(...,
+    known_run_ids=(run_id,))`가 이 run_id를 그 스트림의 `open_run_ids`에
+    미리 채워 두므로, 여기서 `open_run_ids`에서 빼도(아래) 나중에 못 닫는
+    게 아니다(빼는 건 "이 스트림 하나" 기준일 뿐이고, 재개는 새 스트림).
+
+    이걸 안 하면(2026-08-19 이전): interrupt로 멈춘 실행은 `EVENT_RESULT`/
+    `EVENT_ERROR` 없이 스트림이 그냥 끝나고, `finally`의 `_close_orphans()`가
+    이 run을 `FAILED`로 정리해 버린다 — 승인 대기 중일 뿐인 실행이 실패로
+    잘못 기록된다.
+    """
+    run_id = event.get("run_id")
+    if not run_id or run_id not in open_run_ids:
+        return
+    AgentRunRepository.suspend(run_id=run_id)
     open_run_ids.discard(run_id)
 
 
