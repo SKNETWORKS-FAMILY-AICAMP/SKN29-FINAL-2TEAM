@@ -427,7 +427,7 @@ class PersonalDocumentRepository:
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
                            d.index_status,
-                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
@@ -455,7 +455,7 @@ class PersonalDocumentRepository:
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
                            d.index_status, d.owner_account_id, ua.display_name AS owner_name,
-                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
@@ -670,8 +670,9 @@ class DocMetaRepository:
                 cursor.execute(
                     """
                     INSERT INTO doc_meta (doc_id, summary, doc_type, keywords, summary_vec,
-                                          extracted_text, extract_status, extracted_at)
-                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, now())
+                                          extracted_text, extract_status, extract_detail,
+                                          extracted_at)
+                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, %s, now())
                     ON CONFLICT (doc_id) DO UPDATE SET
                         summary = EXCLUDED.summary,
                         doc_type = EXCLUDED.doc_type,
@@ -679,6 +680,7 @@ class DocMetaRepository:
                         summary_vec = EXCLUDED.summary_vec,
                         extracted_text = EXCLUDED.extracted_text,
                         extract_status = EXCLUDED.extract_status,
+                        extract_detail = EXCLUDED.extract_detail,
                         extracted_at = now()
                     """,
                     (
@@ -686,6 +688,7 @@ class DocMetaRepository:
                         row.get("keywords") or [],
                         vector_literal(vector) if vector else None,
                         row.get("extracted_text"), row["extract_status"],
+                        row.get("extract_detail"),
                     ),
                 )
 
@@ -799,7 +802,7 @@ class DocMetaRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
                            d.src_modified_at, d.storage_key,
-                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            m.extracted_at, {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id

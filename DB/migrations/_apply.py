@@ -61,6 +61,7 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "index_status", "2026-08-18 색인 상태"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
+    ("doc_meta", "extract_detail", "2026-08-19 추출 실패 사유"),
 ]
 
 

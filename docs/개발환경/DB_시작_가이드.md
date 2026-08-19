@@ -519,6 +519,7 @@ ALTER TABLE chat_session ADD COLUMN IF NOT EXISTS tool_refs_override TEXT[];
 | `doc.index_status` 추가 (2026-08-18) | 청크 파싱·임베딩이 도는 중인지 실패했는지 **아무 데도 안 남기고 있었다** — 실패해도 화면은 「본문 읽는 중」인 채였다(PM 지적). `doc_meta.extract_status`와 다르다: 그쪽은 요약용 텍스트를 뽑는 단계고 이 칸은 그 뒤 단계다. 둘은 따로 실패한다 — `DB/migrations/2026-08-18_doc_index_status.sql` |
 | `agent_favorites` 테이블 신설 (2026-08-18) | 사람이 자주 쓰는 에이전트를 위로 올린다. FK 를 걸지 않는 것은 이 스키마의 관행이다 — 계정이나 에이전트를 지울 때 즐겨찾기 한 줄 때문에 삭제가 막히면 안 된다. 복합 PK 가 같은 사람이 같은 에이전트를 두 번 담는 것을 막는다 — `DB/migrations/2026-08-18_agent_favorites.sql` |
 | `chat_session.tool_refs_override` 추가 (2026-08-18) | **이 대화에서 쓸 도구를 통째로 갈아 끼운다**(Chat 의 「+」). 에이전트 버전에 박힌 목록을 고치면 그 에이전트를 쓰는 **모든** 대화가 바뀌므로 한 대화에서만 정할 자리가 없었다. ⚠ **좁히기가 아니라 교체다** — 에이전트에 없는 도구도 고를 수 있어서, 도구가 0개인 기본 챗 에이전트도 대화에서 도구를 붙여 쓴다(`tests/test_executor.py` `ToolRefsOverrideTests`). `NULL` 은 「덮어쓰지 않음」이고 빈 배열(이 대화는 도구를 전부 끔)과 다르다 — `DB/migrations/2026-08-18_chat_session_tool_override.sql` |
+| `doc_meta.extract_detail` 추가 (2026-08-19) | 문서를 **왜** 못 읽었는지를 담는다. `extract_status` 로는 「실패했다」까지만 알았는데, 「암호가 걸린 PDF」(암호를 풀어 다시 올리면 된다)와 「텍스트 레이어가 없는 PDF」(다시 올려도 같다)는 사람이 할 행동이 정반대다. **추출기는 이 문구를 이미 만들고 있었고**(`extractor.py` 의 `Extraction.detail`) 담을 칸이 없어 버려지고 있었다 — 새로 계산하는 값이 아니다. 옛 행은 비어 있고, 그때는 화면이 예전처럼 뭉뚱그린 문구를 쓴다 — `DB/migrations/2026-08-19_doc_meta_extract_detail.sql` |
 
 자세한 배경은 [[Jira_Drive_커넥터_연결_설계]] §1에 있다. **새로 스키마를 바꾸면 이 표에 한 줄 추가하고 위 블록에도 넣어 주세요.**
 

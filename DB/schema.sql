@@ -992,6 +992,12 @@ CREATE TABLE doc_meta (
     -- 기본값을 두지 않는다 — 적재하는 쪽이 결과를 알고 넣는 값이라,
     -- 기본값이 있으면 실패한 문서가 조용히 OK 로 남는다.
     extract_status  VARCHAR(20) NOT NULL,
+    -- **왜 실패했는지.** OK 면 비어 있다(2026-08-19 추가).
+    -- 상태만으로는 사람이 할 행동이 안 정해진다 — 「암호가 걸린 PDF」면
+    -- 암호를 풀어 다시 올리면 되고, 「스캔본」이면 아무리 다시 올려도 같다.
+    -- 추출기가 이미 사람이 읽을 문구로 만들어 두고 있었는데(extractor.py)
+    -- 저장하는 자리가 없어 그대로 버려지고 있었다.
+    extract_detail  TEXT,
     extracted_at    TIMESTAMPTZ
 );
 

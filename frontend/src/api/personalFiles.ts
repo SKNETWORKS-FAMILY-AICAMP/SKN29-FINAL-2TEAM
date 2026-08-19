@@ -20,6 +20,12 @@ export interface PersonalFile {
   /** null(아직 읽는 중) / OK / FAILED / UNSUPPORTED. 넷은 할 행동이 다르다. */
   extract_status: string | null;
   /**
+   * **왜 실패했는지.** 성공한 문서는 비어 있다(2026-08-19에 생긴 칸).
+   * 「암호가 걸린 PDF 라 열 수 없습니다」처럼 사람이 읽을 문구가 그대로 온다 —
+   * 추출기가 이미 그렇게 만들고 있었는데 저장할 자리가 없어 버려지고 있었다.
+   */
+  extract_detail: string | null;
+  /**
    * 청크 파싱·임베딩 단계 — RUNNING / FAILED / null(안 돌렸거나 끝남).
    *
    * `extract_status` 와 **다른 단계**다. 그쪽은 요약을 만들려고 텍스트를 뽑는
