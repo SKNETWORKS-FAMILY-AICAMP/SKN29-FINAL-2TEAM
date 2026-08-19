@@ -2367,25 +2367,49 @@ class ProjectTaskRepository:
                 if row["team_id"] != team_id:
                     raise PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
 
-                # 이번 추출분을 담을 판. 버전은 이 프로젝트의 몇 번째인가다.
-                cursor.execute(
-                    "SELECT count(*) AS n FROM proj_know_model WHERE proj_id = %s", (proj_id,)
-                )
-                version = cursor.fetchone()["n"] + 1
-                model_id = next_short_code(
-                    cursor, table="proj_know_model", column="model_id", prefix="KM"
-                )
+                # **이 프로젝트의 판에 덧붙인다.** 판을 매번 새로 만들지 않는다
+                # (2026-08-19 PM 결정 ⓐ) — `list_for_project`가 가장 최근 판만
+                # 보여주기 때문에, 「3건만 추가로 등록해줘」에 새 판이 생기면 앞서
+                # 등록한 15건이 통째로 화면에서 사라졌다. 데이터는 남아 있는데
+                # 보이지 않는 것이라 더 나빴다.
                 cursor.execute(
                     """
-                    INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
-                    VALUES (%s, %s, %s, 'READY', now())
+                    SELECT model_id, model_ver FROM proj_know_model
+                    WHERE proj_id = %s ORDER BY generated_at DESC NULLS LAST LIMIT 1
                     """,
-                    (model_id, proj_id, f"v{version}"),
+                    (proj_id,),
                 )
+                current = cursor.fetchone()
+                if current is None:
+                    model_id = next_short_code(
+                        cursor, table="proj_know_model", column="model_id", prefix="KM"
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
+                        VALUES (%s, %s, 'v1', 'READY', now())
+                        """,
+                        (model_id, proj_id),
+                    )
+                else:
+                    model_id = current["model_id"]
+
+                # 덧붙이는 이상 **같은 업무가 두 번 들어올 수 있다** — 다시 뽑아
+                # 다시 등록하면 제목이 겹친다. 제목으로 거르고, 거른 사실을
+                # 돌려준다(`dropped_fields`와 같은 원칙: 조용히 넘기지 않는다).
+                cursor.execute(
+                    "SELECT task_name FROM task WHERE model_id = %s", (model_id,)
+                )
+                existing = {row["task_name"] for row in cursor.fetchall()}
 
                 created = []
                 dropped_fields = []
+                already = []
                 for task in tasks:
+                    if task["title"] in existing:
+                        already.append(task["title"])
+                        continue
+                    existing.add(task["title"])
                     task_id = next_short_code(
                         cursor, table="task", column="task_id", prefix="TK"
                     )
@@ -2430,7 +2454,6 @@ class ProjectTaskRepository:
 
         return {
             "model_id": model_id,
-            "model_ver": f"v{version}",
             "tasks": created,
             # 비운 것을 조용히 넘기지 않는다. 모델이 이것을 사람에게 옮겨 적는다.
             #
@@ -2438,6 +2461,8 @@ class ProjectTaskRepository:
             # 비우는 칸이 셋 더 있는데(공수·역할·우선순위 — `_positive_or_none`)
             # 그쪽은 조용히 넘어갔다. 2026-08-18 에 그 대가를 봤다.
             "dropped_fields": dropped_fields,
+            # 이미 있어서 건너뛴 것. 사람에게 「등록했다」고만 말하면 안 된다.
+            "already_registered": already,
         }
 
     @staticmethod

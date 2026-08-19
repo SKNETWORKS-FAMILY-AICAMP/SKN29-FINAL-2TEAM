@@ -949,18 +949,35 @@ class TaskRegisterDateTests(SimpleTestCase):
 
 
 class _RegisterCursor:
-    """`register` 가 부르는 SQL 만 흉내낸다."""
+    """`register` 가 부르는 SQL 만 흉내낸다.
+
+    쿼리를 구분한다 — 2026-08-19 에 `register` 가 「현재 판을 찾고」·「그 판에
+    이미 있는 제목을 읽는」 두 조회를 더 하게 됐다. 전부 같은 행을 돌려주면
+    판을 찾았는지 못 찾았는지가 구분되지 않는다.
+    """
 
     def __init__(self):
         self.inserted = []
-        self._row = {"team_id": "TM001", "n": 0}
+        #: 이 프로젝트에 이미 있는 판. None 이면 첫 등록이라 새로 만든다.
+        self.existing_model = None
+        #: 그 판에 이미 들어 있는 업무 제목.
+        self.existing_titles = []
+        self._last = ""
 
     def execute(self, sql, params=None):
+        self._last = sql
         if "INSERT INTO task " in sql:
             self.inserted.append(params)
 
     def fetchone(self):
-        return self._row
+        if "FROM proj_know_model" in self._last:
+            return self.existing_model
+        return {"team_id": "TM001", "n": 0}
+
+    def fetchall(self):
+        if "SELECT task_name FROM task" in self._last:
+            return [{"task_name": title} for title in self.existing_titles]
+        return []
 
     def __enter__(self):
         return self
@@ -1029,3 +1046,30 @@ class ToolTurnStyleTests(SimpleTestCase):
                 runner._default_model({"model": "claude-sonnet-4-5", "team_id": None})
 
         self.assertIn("ANTHROPIC_API_KEY", str(caught.exception))
+
+    def test_추가_등록은_현재_판에_덧붙인다(self):
+        """판을 매번 새로 만들면 앞서 등록한 업무가 화면에서 사라진다.
+
+        `list_for_project` 가 가장 최근 판만 보여주기 때문이다 — 「3건만 추가로
+        등록해줘」에 새 판이 생겨 앞의 15건이 통째로 안 보였다(2026-08-19 QA).
+        """
+
+        from backend.db import agent_platform
+
+        cursor = _RegisterCursor()
+        # 이 프로젝트엔 이미 판이 하나 있고, 그 판에 「감리 착수」가 들어 있다.
+        cursor.existing_model = {"model_id": "KM001", "model_ver": "v1"}
+        cursor.existing_titles = ["감리 착수"]
+
+        with patch.object(agent_platform, "database_connection", _fake_connection(cursor)),                 patch.object(agent_platform, "_require_team", return_value="TM001"),                 patch.object(agent_platform, "next_short_code", side_effect=["TK002"]):
+            result = agent_platform.ProjectTaskRepository.register(
+                proj_id="PJ001",
+                account_id="UA001",
+                tasks=[{"title": "감리 착수"}, {"title": "종료회의"}],
+            )
+
+        self.assertEqual(result["model_id"], "KM001", "새 판을 만들지 않는다")
+        self.assertEqual([t["title"] for t in result["tasks"]], ["종료회의"])
+        self.assertEqual(
+            result["already_registered"], ["감리 착수"], "건너뛴 것을 조용히 넘기지 않는다"
+        )
