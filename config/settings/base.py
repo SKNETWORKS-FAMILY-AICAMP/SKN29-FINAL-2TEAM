@@ -162,11 +162,17 @@ CHUNKING_MERGE_PEERS = env.bool("CHUNKING_MERGE_PEERS", default=True)
 # 작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md). 아래 두 블록 모두
 # 키가 없으면 해당 트레이싱만 조용히 꺼진다 — 에이전트 실행 자체는 막지 않는다.
 #
-# LangSmith: 실제 소비자는 여기 `settings.X`가 아니라 `langchain-core`/
-# `langgraph`가 직접 읽는 `os.environ`이다 — 위 `environ.Env.read_env(...)`가
-# `.env`를 이미 `os.environ`에 채워 두므로 이것만으로 동작한다. 아래 정의는
-# 이 파일을 "외부 설정 전체 목록"으로 보는 이 저장소의 관례를 따르기 위한
-# 문서화 목적이며, 우리 코드가 이 이름으로 다시 참조하지는 않는다.
+# LangSmith: `LANGCHAIN_TRACING_V2`는 `langchain-core`/`langgraph`가 직접
+# 읽는 `os.environ`이 실제 소비자다(위 `environ.Env.read_env(...)`가 `.env`를
+# 이미 채워 둠) — 켜 두면 자동으로 트레이싱하되, 마스킹을 못 걸어서 그
+# 자체로는 실사용 데이터를 못 내보낸다(작업계획 §5). 나머지 셋
+# (`LANGCHAIN_API_KEY`/`LANGCHAIN_PROJECT`/`LANGCHAIN_ENDPOINT`)은
+# **우리 코드가 직접 읽는다** — `tracing/callbacks.py`의
+# `get_langsmith_callback()`이 `settings.LANGCHAIN_*`로 마스킹 걸린
+# `Client`/`LangChainTracer`를 명시적으로 만들어 콜백으로 얹는다(Langfuse와
+# 같은 방식). 이 명시적 tracer가 있으면 `LANGCHAIN_TRACING_V2`의 자동
+# 연결은 스스로 양보한다(같은 파일 docstring의 실측 근거 참고) — 그래서
+# 이 값을 켜 둬도 마스킹 안 된 이중 트레이스가 안 생긴다.
 LANGCHAIN_TRACING_V2 = env.bool("LANGCHAIN_TRACING_V2", default=False)
 LANGCHAIN_API_KEY = env("LANGCHAIN_API_KEY", default="")
 LANGCHAIN_PROJECT = env("LANGCHAIN_PROJECT", default="skn-final")
@@ -175,8 +181,10 @@ LANGCHAIN_ENDPOINT = env("LANGCHAIN_ENDPOINT", default="https://api.smith.langch
 # Langfuse: 이건 실제로 `services/agent_runtime/tracing/callbacks.py`가
 # `settings.LANGFUSE_*`로 읽는다(SDK가 알아서 os.environ을 읽게 두지 않고
 # 명시적으로 클라이언트를 구성 — 이 저장소의 "비밀값은 settings를 거친다"
-# 관례를 따름). 클라우드로 가기로 결정(위 작업계획 §2) — 기본 호스트는
-# EU 리전, 필요하면 US(`https://us.cloud.langfuse.com`)/JP/HIPAA로 바꾼다.
+# 관례를 따름). 클라우드로 가기로 결정(위 작업계획 §2). 기본 호스트는
+# JP 리전(2026-08-19 정정 — 팀이 한국에 있어 EU/US보다 지연이 짧다). 다른
+# 리전으로 가입했으면 US(`https://us.cloud.langfuse.com`)/EU(`https://
+# cloud.langfuse.com`)/HIPAA로 `.env`에서 덮어쓴다.
 LANGFUSE_PUBLIC_KEY = env("LANGFUSE_PUBLIC_KEY", default="")
 LANGFUSE_SECRET_KEY = env("LANGFUSE_SECRET_KEY", default="")
-LANGFUSE_HOST = env("LANGFUSE_HOST", default="https://cloud.langfuse.com")
+LANGFUSE_HOST = env("LANGFUSE_HOST", default="https://jp.cloud.langfuse.com")
