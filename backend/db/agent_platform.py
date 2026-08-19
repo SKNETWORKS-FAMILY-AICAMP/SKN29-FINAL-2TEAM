@@ -1748,6 +1748,22 @@ class ChatSessionRepository:
 
         실행 로그를 같이 지우면 평가의 모수가 사용자의 정리 행위에 따라 줄어든다
         — "어제 100건 돌렸는데 오늘 60건"이 되면 아무것도 비교할 수 없다.
+
+        **LangGraph 체크포인트는 반대로 같이 지운다**(2026-08-19). 새 엔진은
+        `thread_id` 를 이 `session_id` 로 쓰고, `checkpoint_blobs` 에는 그 대화의
+        메시지·도구 호출·승인 대기 상태가 그대로 들어 있다 — 안 지우면 사용자가
+        「대화를 지웠다」고 생각하는 동안 본문이 DB 에 남는다. 실행 로그와 성격이
+        다르다: 그쪽은 "무엇을 몇 번 돌렸나"라 남길 이유가 있지만, 이쪽은 대화
+        내용 자체다.
+
+        **`chat_session` 보다 먼저 지운다.** 순서가 이 함수의 정확성이다 — 운영자
+        콘솔의 완전 삭제(`_TEAM_PURGE_STEPS`)도 `chat_session` 을 타고 thread_id 를
+        찾으므로, 여기서 남긴 행은 팀을 통째로 지워도 사라지지 않는다. 실제로
+        그렇게 고아가 된 행이 282개 있었다(2026-08-19 실측, 대화 7개분).
+
+        완전 삭제 쪽과 달리 `::text` 캐스트가 없다 — 거기는 `chat_session` 의
+        `uuid` 컬럼을 골라 `text` 인 `thread_id` 와 맞춰야 하지만, 여기서는
+        `session_id` 가 URL 에서 온 문자열이라 그대로 맞는다.
         """
 
         with database_connection() as connection:
@@ -1756,6 +1772,15 @@ class ChatSessionRepository:
                 cursor.execute(
                     "DELETE FROM chat_message WHERE session_id::text = %s", (session_id,)
                 )
+                # 세 문장을 풀어 쓴다 — `DELETE FROM checkpoint` 로 grep 했을 때
+                # 이 자리가 안 걸려서 결함을 못 봤다.
+                cursor.execute(
+                    "DELETE FROM checkpoint_writes WHERE thread_id = %s", (session_id,)
+                )
+                cursor.execute(
+                    "DELETE FROM checkpoint_blobs WHERE thread_id = %s", (session_id,)
+                )
+                cursor.execute("DELETE FROM checkpoints WHERE thread_id = %s", (session_id,))
                 cursor.execute(
                     "DELETE FROM chat_session WHERE session_id::text = %s", (session_id,)
                 )
