@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from typing import Literal
@@ -28,6 +29,21 @@ class ResolvedModelConfig:
     api_key: str
     base_url: str | None
     reasoning_effort: str
+
+
+def resolved_endpoint_hash(resolved: "ResolvedModelConfig") -> str | None:
+    """`agent_run.resolved_endpoint_hash`(2026-08-19, §4순위 Run Snapshot,
+    정본: `2026-08-19_01_실행_안정성_설계.md` §1)에 남길 값.
+
+    `base_url` 원문을 그대로 실행 로그에 남기면 팀이 등록한 사내망 주소가
+    로그에 그대로 노출된다 — sha256 해시만 남기면 "그때와 지금이 같은
+    엔드포인트로 나갔는지" 비교하는 용도로는 충분하고 원문은 복원할 수
+    없다. `base_url`이 없으면(anthropic/openai 기본 엔드포인트,
+    팀 커스텀 엔드포인트가 아닌 경우) `None` — 비교할 대상 자체가 없다.
+    """
+    if not resolved.base_url:
+        return None
+    return hashlib.sha256(resolved.base_url.encode("utf-8")).hexdigest()
 
 
 class ModelConfigResolver:

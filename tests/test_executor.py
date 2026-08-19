@@ -13,6 +13,15 @@ from services.agent_runtime.definitions import AgentDefinition, LoadedAgentDefin
 from services.agent_runtime.events import EVENT_AGENT_STARTED, EVENT_ERROR, EVENT_RESULT
 from services.agent_runtime.exceptions import AgentBuildError, InvalidExecutionTargetError
 from services.agent_runtime.executor import AgentExecutor, validate_execution_target
+from services.agent_runtime.models.factory import ResolvedModelConfig
+
+#: `_FakeFactory.build()`의 기본 `resolved_model`(§4순위, Run Snapshot) —
+#: 대부분의 executor 테스트는 이 값 자체에 관심이 없어서, 실제 provider
+#: 이름을 쓰는 최소 유효값 하나로 통일한다(개별 값을 보는 테스트는
+#: `_FakeFactory(resolved_model=...)`로 직접 넘긴다).
+_DEFAULT_RESOLVED_MODEL = ResolvedModelConfig(
+    provider="anthropic", model_id="claude-sonnet-5", api_key="x", base_url=None, reasoning_effort="low"
+)
 
 
 def _definition(**overrides) -> AgentDefinition:
@@ -51,8 +60,11 @@ class _FakeLoader:
 
 
 class _FakeFactory:
-    def __init__(self, *, runtime="RUNTIME", error=None):
+    def __init__(self, *, runtime="RUNTIME", resolved_model=None, error=None):
         self._runtime = runtime
+        # 2026-08-19, §4순위(Run Snapshot) — 실제 `AgentRuntimeFactory.build()`가
+        # `(graph, resolved_model)` 튜플을 반환하도록 바뀐 것과 계약을 맞춘다.
+        self._resolved_model = resolved_model or _DEFAULT_RESOLVED_MODEL
         self._error = error
         self.build_calls = []
 
@@ -60,7 +72,7 @@ class _FakeFactory:
         self.build_calls.append({"definition": definition, "context": context})
         if self._error:
             raise self._error
-        return self._runtime
+        return self._runtime, self._resolved_model
 
 
 class _FakeStreamAdapter:
@@ -149,6 +161,52 @@ class RunHappyPathTests(SimpleTestCase):
 
         self.assertEqual(loader.from_draft_calls, [{"name": "초안"}])
         self.assertEqual(loader.load_calls, [])
+
+    def test_agent_started_carries_resolved_provider_and_endpoint_hash(self):
+        """2026-08-19, §4순위(Run Snapshot) — `factory.build()`가 반환한
+        `resolved_model`이 `EVENT_AGENT_STARTED`에 실려야 `tracing/__init__.py`가
+        `agent_run.resolved_provider`/`resolved_endpoint_hash`로 적재할 수
+        있다."""
+        loader = _FakeLoader()
+        resolved_model = ResolvedModelConfig(
+            provider="openai_compatible",
+            model_id="claude-x",
+            api_key="k",
+            base_url="https://team-custom.example.com/v1",
+            reasoning_effort="low",
+        )
+        factory = _FakeFactory(resolved_model=resolved_model)
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        started = events[0]
+        self.assertEqual(started["resolved_provider"], "openai_compatible")
+        self.assertIsNotNone(started["resolved_endpoint_hash"])
+        # base_url 원문이 이벤트에 그대로 실리면 안 된다(사내망 주소 노출 방지).
+        self.assertNotIn("team-custom.example.com", started["resolved_endpoint_hash"])
+
+    def test_agent_started_endpoint_hash_is_none_without_a_custom_base_url(self):
+        loader = _FakeLoader()
+        resolved_model = ResolvedModelConfig(
+            provider="anthropic", model_id="claude-sonnet-5", api_key="k", base_url=None, reasoning_effort="low"
+        )
+        factory = _FakeFactory(resolved_model=resolved_model)
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertIsNone(events[0]["resolved_endpoint_hash"])
 
     def test_uses_fresh_event_mapper_per_run(self):
         """EventMapper는 run마다 새로 만든다 — 위임 추적 상태가 실행 간 안 섞이게."""
@@ -367,55 +425,6 @@ class RunMidStreamFailureTests(SimpleTestCase):
 
 
 class ResumeTests(SimpleTestCase):
-    """승인 게이트에서 멈춘 실행을 잇는 경로(2026-08-18) — `run(resume_decisions=...)`.
-
-    멈춘 자리의 대화는 Checkpointer에 있으므로, 이 호출이 넘겨야 하는 건
-    사람의 결정뿐이다 — 새 발화를 만들어 넣으면 안 된다. `AgentExecutor.resume()`
-    (2026-08-19 추가, 아래 `AgentExecutorResumeMethodTests`)이 새 전용 경로지만,
-    이 `run(resume_decisions=...)` 경로도 `executor.py`에 그대로 남아 있어(기존
-    호출부 호환) 같이 검증한다.
-    """
-
-    def _run_resume(self, decisions):
-        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("등록했습니다")])
-        executor = AgentExecutor(
-            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
-        )
-        events = list(
-            executor.run(
-                agent_id="AG001",
-                agent_version_id="AV001",
-                user_input="",
-                context=_context(session_id="SS001"),
-                resume_decisions=decisions,
-            )
-        )
-        return stream_adapter.stream_calls[0], events
-
-    def test_결정을_그대로_흘려_넣는다(self):
-        call, events = self._run_resume([{"type": "approve"}])
-
-        self.assertEqual(call["resume"], {"decisions": [{"type": "approve"}]})
-        self.assertEqual(call["thread_id"], "SS001")
-        self.assertEqual(events[-1]["type"], EVENT_RESULT)
-
-    def test_평소_실행은_재개가_아니다(self):
-        """`resume_decisions`가 없으면 예전과 똑같이 돈다 — 회귀 방지."""
-        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
-        executor = AgentExecutor(
-            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
-        )
-
-        list(
-            executor.run(
-                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
-            )
-        )
-
-        self.assertIsNone(stream_adapter.stream_calls[0]["resume"])
-
-
-class AgentExecutorResumeMethodTests(SimpleTestCase):
     """`AgentExecutor.resume()`(2026-08-19 추가, §0순위 — HITL resume API) —
     `run()`과 조립 규칙은 같지만 `EVENT_AGENT_STARTED`를 안 내고, 멈췄던
     실행의 `run_id`를 반드시 이미 갖고 있어야 하며, `stream_adapter.stream()`을

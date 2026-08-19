@@ -949,6 +949,15 @@ CREATE TABLE agent_run (
     -- 2026-08-14_agent_run_runtime_profile_version.sql) — 배포 파이프라인이
     -- GIT_COMMIT_SHA를 안 넘기면(config/settings/base.py RUNTIME_PROFILE_VERSION) NULL.
     runtime_profile_version  VARCHAR(64),
+    -- 이 실행이 실제로 사용한 모델 provider와 커스텀 엔드포인트 식별값.
+    -- 2026-08-19 추가(DB/migrations/2026-08-19_agent_run_resolved_provider.sql,
+    -- 정본: 2026-08-19_01_실행_안정성_설계.md §1) — 같은 agent_version_id/
+    -- runtime_profile_version이라도 팀 커스텀 엔드포인트(base_url/api_key)는
+    -- 언제든 바뀔 수 있어서, 어느 정의로 돌았는지만으로는 실제로 어느
+    -- 서버로 요청이 나갔는지 알 수 없었다. base_url 원문은 저장하지
+    -- 않는다(사내망 주소 노출 방지) — sha256(base_url)만 남긴다.
+    resolved_provider        VARCHAR(32),
+    resolved_endpoint_hash   VARCHAR(64),
     started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at       TIMESTAMPTZ
 );
@@ -967,30 +976,11 @@ CREATE TABLE tool_call (
     status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',  -- PENDING / OK / FAILED
     error_code     VARCHAR(50),             -- 401 / 429 / validation / timeout 등
     duration_ms    INT,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    -- 2026-08-19, Phase 8(외부 Write Tool Idempotency). chat_session.session_id
-    -- (FK 없음) — 재개(HITL resume) 후에도 안 바뀌는 값으로 idempotency 조회
-    -- 범위를 잡는다. run_id는 재개 때마다 새로 생겨 못 쓴다.
-    session_id     UUID,
-    -- 모델이 낸 AIMessage.tool_calls[i]["id"]. checkpoint에 그대로 저장돼
-    -- 재개해도 같은 값이다. side_effect=False 도구는 안 채운다.
-    langchain_tool_call_id  VARCHAR(64),
-    -- status=OK일 때 handler가 반환한 결과 텍스트. 같은 (session_id,
-    -- langchain_tool_call_id) 조합으로 다시 오면 handler를 다시 안 부르고
-    -- 이 값을 그대로 돌려준다.
-    result_text    TEXT
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE INDEX ix_tool_call_run
     ON tool_call (run_id, created_at);
-
--- UNIQUE가 아니다 — "선기록 패턴"(begin())이 재시도마다 새 PENDING 행을
--- 그대로 넣어야 해서(재시도 자체가 감사 로그에 남아야 한다), 여기 UNIQUE를
--- 걸면 그 재기록 INSERT 자체가 막힌다. uniqueness는 DB 제약이 아니라 조회
--- 조건(status='OK')으로 보장한다 — 이 인덱스는 그 조회 성능용일 뿐이다.
-CREATE INDEX ix_tool_call_idempotency
-    ON tool_call (session_id, langchain_tool_call_id)
-    WHERE langchain_tool_call_id IS NOT NULL;
 
 -- 문서 하나당 한 줄(doc 과 1:1). chunk 단위 임베딩을 전부 만들지 않고
 -- 요약 임베딩 하나로 후보 문서를 먼저 좁히기 위한 테이블이다(A안, 확정 ⑥).
@@ -1011,12 +1001,6 @@ CREATE TABLE doc_meta (
     -- 기본값을 두지 않는다 — 적재하는 쪽이 결과를 알고 넣는 값이라,
     -- 기본값이 있으면 실패한 문서가 조용히 OK 로 남는다.
     extract_status  VARCHAR(20) NOT NULL,
-    -- **왜 실패했는지.** OK 면 비어 있다(2026-08-19 추가).
-    -- 상태만으로는 사람이 할 행동이 안 정해진다 — 「암호가 걸린 PDF」면
-    -- 암호를 풀어 다시 올리면 되고, 「스캔본」이면 아무리 다시 올려도 같다.
-    -- 추출기가 이미 사람이 읽을 문구로 만들어 두고 있었는데(extractor.py)
-    -- 저장하는 자리가 없어 그대로 버려지고 있었다.
-    extract_detail  TEXT,
     extracted_at    TIMESTAMPTZ
 );
 

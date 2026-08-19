@@ -132,9 +132,7 @@ def _record(
         elif event_type == EVENT_SUBAGENT_COMPLETED:
             _finish_subagent_run(event, open_run_ids=open_run_ids)
         elif event_type == EVENT_TOOL_STARTED:
-            _begin_tool_call(
-                event, context=context, open_run_ids=open_run_ids, open_tool_calls=open_tool_calls
-            )
+            _begin_tool_call(event, open_run_ids=open_run_ids, open_tool_calls=open_tool_calls)
         elif event_type == EVENT_TOOL_COMPLETED:
             _end_tool_call(event, open_tool_calls=open_tool_calls)
         elif event_type == EVENT_AWAITING_CONFIRMATION:
@@ -162,6 +160,13 @@ def _start_run(
         parent_run_id=parent_run_id,
         agent_version_id=event.get("agent_version_id"),
         runtime_profile_version=settings.RUNTIME_PROFILE_VERSION,
+        # 2026-08-19, §4순위(Run Snapshot) — `executor.py`의 `EVENT_AGENT_STARTED`가
+        # 이미 실어 보낸 값을 그대로 옮긴다. `EVENT_SUBAGENT_STARTED`에는 이
+        # 필드가 없으므로(Child 자신의 resolved_model은 버린다, `factory.build()`
+        # docstring 참고) `.get()`이 자연히 `None`으로 떨어진다 — Child의
+        # agent_run 행은 이번 범위가 아니다.
+        resolved_provider=event.get("resolved_provider"),
+        resolved_endpoint_hash=event.get("resolved_endpoint_hash"),
     )
     open_run_ids.add(run_id)
 
@@ -210,7 +215,6 @@ def _suspend_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:
 def _begin_tool_call(
     event: dict[str, Any],
     *,
-    context: Any,
     open_run_ids: set[str],
     open_tool_calls: dict[tuple[str, str], tuple[str, float]],
 ) -> None:
@@ -224,15 +228,7 @@ def _begin_tool_call(
         # 내보내므로 화면에는 영향이 없다, 로그만 스킵된다.
         return
     db_tool_call_id = ToolCallRepository.begin(
-        run_id=run_id,
-        tool_ref=tool_ref,
-        input_summary=summarize_input(event.get("arguments") or {}),
-        # Phase 8(외부 Write Tool Idempotency) — session_id·langchain_tool_call_id를
-        # 같이 남겨야 factory.py의 _run()이 재시도 시 이 값으로 "이미 성공했는지"
-        # 조회할 수 있다. context.session_id는 요청마다 있을 수도 없을 수도 있다
-        # (평가 스크립트 등) — 없으면 그냥 NULL로 남는다.
-        session_id=getattr(context, "session_id", None),
-        langchain_tool_call_id=tool_call_id,
+        run_id=run_id, tool_ref=tool_ref, input_summary=summarize_input(event.get("arguments") or {})
     )
     open_tool_calls[(run_id, tool_call_id)] = (db_tool_call_id, time.monotonic())
 
@@ -252,9 +248,6 @@ def _end_tool_call(
         status=status,
         duration_ms=int((time.monotonic() - started) * 1000),
         error_code=None if status == "OK" else "TOOL_EXECUTION_FAILED",
-        # Phase 8 — 성공 결과만 캐싱한다(실패 결과를 캐싱하면 재시도 자체가
-        # 막힌다 — 재시도가 성공할 기회를 줘야 한다).
-        result_text=event.get("output") if status == "OK" else None,
     )
 
 

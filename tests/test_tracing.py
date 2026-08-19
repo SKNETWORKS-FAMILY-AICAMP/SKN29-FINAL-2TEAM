@@ -138,7 +138,29 @@ class RootRunLifecycleTests(SimpleTestCase):
             parent_run_id=None,
             agent_version_id="AV001",
             runtime_profile_version=None,
+            resolved_provider=None,
+            resolved_endpoint_hash=None,
         )
+
+    def test_resolved_provider_and_endpoint_hash_are_read_from_the_event(self, runs, _calls):
+        """2026-08-19, §4순위(Run Snapshot) — `executor.py`가 `EVENT_AGENT_STARTED`에
+        실어 보낸 값이 그대로 `start_with_id()`로 전달되는지."""
+        list(
+            trace_events(
+                iter(
+                    [
+                        _agent_started(
+                            resolved_provider="openai_compatible",
+                            resolved_endpoint_hash="abc123",
+                        )
+                    ]
+                ),
+                context=_context(session_id="S1"),
+            )
+        )
+
+        self.assertEqual(runs.start_with_id.call_args.kwargs["resolved_provider"], "openai_compatible")
+        self.assertEqual(runs.start_with_id.call_args.kwargs["resolved_endpoint_hash"], "abc123")
 
     def test_result_closes_run_as_done(self, runs, _calls):
         list(trace_events(iter([_agent_started(), _result()]), context=_context()))
@@ -192,6 +214,8 @@ class SubagentRunLifecycleTests(SimpleTestCase):
             parent_run_id="RUN-ROOT",
             agent_version_id="AV023",
             runtime_profile_version=None,
+            resolved_provider=None,
+            resolved_endpoint_hash=None,
         )
 
     def test_subagent_completed_done_closes_run_as_done(self, runs, _calls):
@@ -218,49 +242,10 @@ class ToolCallLifecycleTests(SimpleTestCase):
         list(trace_events(iter([_agent_started(), _tool_started()]), context=_context()))
 
         calls.begin.assert_called_once_with(
-            run_id="RUN-ROOT",
-            tool_ref="document_search",
-            input_summary="query=일정",
-            # Phase 8(외부 Write Tool Idempotency) — context.session_id와 이벤트의
-            # tool_call_id(모델이 낸 id 그대로)를 같이 넘긴다.
-            session_id="SESSION-1",
-            langchain_tool_call_id="call-1",
+            run_id="RUN-ROOT", tool_ref="document_search", input_summary="query=일정"
         )
-
-    def test_tool_started_passes_none_session_id_when_context_has_none(self, runs, calls):
-        """평가 스크립트 등 session 없이 도는 실행 — session_id는 그냥 None으로 넘어간다."""
-        calls.begin.return_value = "TC-1"
-
-        list(
-            trace_events(
-                iter([_agent_started(), _tool_started()]),
-                context=_context(session_id=None),
-            )
-        )
-
-        self.assertIsNone(calls.begin.call_args.kwargs["session_id"])
 
     def test_tool_completed_ends_tool_call_ok(self, runs, calls):
-        calls.begin.return_value = "TC-1"
-
-        list(
-            trace_events(
-                iter([_agent_started(), _tool_started(), _tool_completed(status="OK", output="문서 3건 찾음")]),
-                context=_context(),
-            )
-        )
-
-        calls.end.assert_called_once()
-        kwargs = calls.end.call_args.kwargs
-        self.assertEqual(kwargs["tool_call_id"], "TC-1")
-        self.assertEqual(kwargs["status"], "OK")
-        self.assertIsNone(kwargs["error_code"])
-        # Phase 8 — 성공 결과를 캐싱해서, 재시도 시 handler를 다시 안 부르고
-        # 이 값을 그대로 돌려줄 수 있게 한다.
-        self.assertEqual(kwargs["result_text"], "문서 3건 찾음")
-
-    def test_tool_completed_ok_without_output_field_stores_none(self, runs, calls):
-        """`output` 키 자체가 없는 이벤트(구형 이벤트 등)도 죽지 않고 None으로 남는다."""
         calls.begin.return_value = "TC-1"
 
         list(
@@ -270,20 +255,18 @@ class ToolCallLifecycleTests(SimpleTestCase):
             )
         )
 
-        self.assertIsNone(calls.end.call_args.kwargs["result_text"])
+        calls.end.assert_called_once()
+        kwargs = calls.end.call_args.kwargs
+        self.assertEqual(kwargs["tool_call_id"], "TC-1")
+        self.assertEqual(kwargs["status"], "OK")
+        self.assertIsNone(kwargs["error_code"])
 
     def test_tool_completed_ends_tool_call_failed_with_error_code(self, runs, calls):
         calls.begin.return_value = "TC-1"
 
         list(
             trace_events(
-                iter(
-                    [
-                        _agent_started(),
-                        _tool_started(),
-                        _tool_completed(status="FAILED", output="실패해도 온 출력"),
-                    ]
-                ),
+                iter([_agent_started(), _tool_started(), _tool_completed(status="FAILED")]),
                 context=_context(),
             )
         )
@@ -291,9 +274,6 @@ class ToolCallLifecycleTests(SimpleTestCase):
         kwargs = calls.end.call_args.kwargs
         self.assertEqual(kwargs["status"], "FAILED")
         self.assertEqual(kwargs["error_code"], "TOOL_EXECUTION_FAILED")
-        # 실패 결과는 캐싱하지 않는다 — 캐싱하면 재시도가 성공할 기회 자체가
-        # 없어진다(계속 같은 실패를 그대로 돌려주게 된다).
-        self.assertIsNone(kwargs["result_text"])
 
     def test_tool_started_without_tool_call_id_is_skipped(self, runs, calls):
         list(

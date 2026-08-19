@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from langchain.tools import ToolRuntime
-from langchain_core.tools import StructuredTool, ToolException
+from langchain_core.tools import StructuredTool
 
 from services.agent_runtime.compat import (
     build_general_purpose_spec,
@@ -18,6 +17,7 @@ from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
 from services.agent_runtime.exceptions import ToolPermissionError
 from services.agent_runtime.memory.write_guard import build_memory_write_guard
+from services.agent_runtime.memory.write_lock import build_memory_write_lock
 from services.agent_runtime.subagents.builder import build_subagent
 from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from services.agent_runtime.checkpoint.provider import CheckpointerProvider
     from services.agent_runtime.memory.provider import MemoryProvider
     from services.agent_runtime.middleware.factory import MiddlewareFactory
-    from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
+    from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory, ResolvedModelConfig
     from services.agent_runtime.prompts import RuntimePromptAssembler
     from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
     from services.agent_runtime.tools.loader import ToolLoader
@@ -61,81 +61,53 @@ def _to_langchain_tool(
     시점의 판단이 서로 갈릴 일이 없게 했다(2026-08-14 추가).
     """
 
-    def _run(runtime: ToolRuntime = None, **kwargs: Any) -> Any:
+    def _run(**kwargs: Any) -> Any:
         if not runtime_policy.is_tool_allowed_for_role(
             side_effect=tool.side_effect, account_role=context.role
         ):
-            # 이건 그대로 둔다 — 노출 필터를 뚫고 여기까지 온 권한 위반은
-            # "모델이 고칠 수 있는 실수"가 아니라 방어선 자체의 이상이라 계속
-            # 감추지 않고 terminal EVENT_ERROR로 크게 드러낸다(ToolPermissionError
-            # 자체 docstring 참고) — 아래 handler 실패와 다른 취급이다.
             raise ToolPermissionError(
                 f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다."
             )
-
-        # Phase 8(외부 Write Tool Idempotency, 2026-08-19) — side_effect 도구만,
-        # 그리고 이 호출이 실제로 그래프 안에서(runtime이 채워진 채) session이
-        # 있는 요청으로 왔을 때만 조회한다. `runtime: ToolRuntime`은 langgraph가
-        # 함수 시그니처의 이름·타입만 보고 자동 주입한다(`args_schema`가 dict인
-        # 이 구조에서는 `InjectedToolCallId`가 오히려 전혀 안 먹힌다 — 직접
-        # 재현으로 확인: `langchain_core.tools.base._parse_input()`이 dict
-        # 스키마면 그 즉시 `return tool_input`으로 조기 반환해 그 처리 블록
-        # 자체가 안 돈다). 기본값 `None`을 반드시 둔다 — 그래프 밖에서
-        # `langchain_tool.invoke({...})`로 직접 부르는 기존 테스트·경로가 이
-        # 파라미터 없이 호출하므로, 기본값이 없으면 그 호출들이 전부 깨진다.
-        session_id = context.session_id
-        langchain_tool_call_id = runtime.tool_call_id if runtime is not None else None
-        if tool.side_effect and session_id and langchain_tool_call_id:
-            from backend.db.agent_platform import ToolCallRepository
-
-            cached = ToolCallRepository.find_successful_result(
-                session_id=session_id, langchain_tool_call_id=langchain_tool_call_id
-            )
-            if cached is not None:
-                return cached
-
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
             return tool.handler(**resolved)
-        except Exception as exc:
-            # **도구 하나 실패로 대화 전체를 끊지 않는다 — 단, 말할 수 있는
-            # 사유일 때만.**(2026-08-18/19 합의) 실측해 보니(실제 대화에서
-            # `jira_get_issues` 재현) 설치된 langgraph 버전의 기본 핸들러
-            # (`_default_handle_tool_errors`)는 자기 내부 `ToolInvocationError`만
-            # 잡고 나머지는 그대로 다시 던져서, `ToolInputError` 하나가 대화
-            # 전체를 끊고 `ErrorCard`까지 만들었다.
+        except Exception as exc:  # noqa: BLE001 - 도구 실패로 그래프 실행 전체를 끝내지 않는다
+            # 2026-08-18 추가 — 실측으로 드러난 문제: `langgraph.prebuilt.ToolNode`의
+            # 기본 `handle_tool_errors`(langchain.agents.factory.create_agent()가
+            # 내부적으로 만드는 ToolNode라 우리가 값을 못 넣는다, 실측: langchain/
+            # deepagents 소스 어디에도 `handle_tool_errors` 파라미터 자체가 없음)는
+            # `langchain_core`의 `ToolInvocationError`(인자 스키마 검증 실패)만
+            # 잡고, 그 외 예외는 전부 다시 raise한다 — `ToolInputError`/
+            # `PermissionDenied`처럼 이 저장소가 "모델에게 그대로 보여줘도 되는
+            # 실패"로 설계해 둔 예외까지 그래프 실행 전체를 죽인다(실제 사용자
+            # 질의로 재현: `agent_user_query_tool_check.py` 시나리오 1/4/5가
+            # `project_id`를 아직 못 정한 채 `task_list`/`task_extraction`을
+            # 부르자 `ToolInputError`로 전체 실행이 즉시 크래시했다 — 모델이 이
+            # 오류를 보고 "그럼 project_list부터 부르자"로 스스로 고칠 기회 자체가
+            # 없었다).
             #
-            # main(`73bc79c`, `services/harness/runner.SPEAKABLE_ERRORS`)이 같은
-            # 버그를 먼저 고쳤는데, 정책이 두 가지였다: 말할 수 있는 예외는
-            # 봐주고, 그 밖은 **그대로 크래시** — "삼키면 진짜 장애가 「도구가
-            # 뭐라고 했다」로 둔갑한다"는 이유였다. 그 판단은 그대로 가져온다
-            # (아래 `if not isinstance(...): raise`). 다만 "봐주는" 방식은
-            # 다르다 — main은 정상 반환값(`{"error": ...}`)으로 감싸서
-            # `tool_completed.status`가 OK로 마스킹됐다. 여기서는 대신
-            # `ToolException`으로 바꿔 던진다(`handle_tool_error=True`와
-            # 짝 — `StructuredTool.from_function` 참고): `langchain_core`의
-            # `BaseTool.run()`이 `ToolException`만 잡아 `status="error"`를
-            # 그대로 유지해 주므로, `tool_completed`는 여전히 FAILED로 뜨고
-            # 클릭하면 사유도 그대로 보인다 — 대화가 안 끊기는 것과 FAILED
-            # 표시가 정확한 것, 둘 다 챙긴다.
-            # 지연 import — `services.harness.runner`의 무거운 의존성 사슬을 이
-            # 모듈이 항상 끌고 들어오지 않게 한다(main의 같은 판단 그대로 유지).
-            from services.harness.runner import SPEAKABLE_ERRORS
+            # 레거시 `services/harness/runner.py`가 이미 같은 문제를 겪고 정한
+            # 답을 그대로 재사용한다 — 새로 판단하지 않는다. `_SPEAKABLE_ERRORS`
+            # (`ToolInputError`/`RepositoryError`/`OAuthError`)는 그 모듈이 "이
+            # 예외의 메시지는 사람에게 그대로 보여도 된다"고 이미 결정해 둔
+            # 목록이고(`ToolInputError`의 클래스 docstring도 동일하게 말한다:
+            # "사람에게 그대로 보여도 되는 실패... 이 예외의 메시지만 화면으로
+            # 나간다"), `error_code_of()`도 MCP 에러의 code vs 그 외 클래스 이름을
+            # 가르는 판단이 이미 있던 자리다("같은 판단을 하던 자리가 셋이었다.
+            # 여기 하나로 둔다" — trace.py). `ToolPermissionError`(바로 위 역할
+            # 재검사)는 이 try 블록 밖에 있어 그대로 예외로 전파된다 — 정상
+            # 경로에서는 노출 필터가 이미 걸러 도달하지 않아야 하는 방어선이라
+            # (docstring 참고) 조용히 문자열로 바꿔 넘기지 않고 계속 크래시시킨다.
+            from services.harness.runner import _SPEAKABLE_ERRORS
+            from services.harness.trace import error_code_of
 
-            if not isinstance(exc, SPEAKABLE_ERRORS):
-                # 진짜 장애다 — 트레이스백까지 남긴다.
-                logger.exception("도구 실행 실패: %s", tool.ref)
-                raise
-            # **말할 수 있는 사유에는 트레이스백을 남기지 않는다.** 「프로젝트를
-            # 먼저 고르세요」는 사람이 고칠 수 있는 정상적인 되돌림이지 장애가
-            # 아니다 — `logger.exception`으로 남기면 운영 로그에서 위 진짜
-            # 장애와 구분이 안 된다.
-            logger.info("도구가 사유를 돌려줬다: %s — %s", tool.ref, exc)
-            raise ToolException(str(exc)) from exc
+            logger.exception("도구 실행 실패: %s", tool.ref)
+            error_code = error_code_of(exc)
+            detail = str(exc) if isinstance(exc, _SPEAKABLE_ERRORS) else None
+            return detail or f"도구 실행 실패: {error_code}"
 
     return StructuredTool.from_function(
         func=_run,
-        handle_tool_error=True,
         # `tool.name`이 아니라 `tool.ref`다 — **실측으로 확인한 버그**(2026-08-14):
         # `tool.name`은 `services/harness/registry.py`의 BUILTIN_TOOLS가 사람이
         # 읽는 한국어 라벨로 채운다(예: "프로젝트 조회"). 이걸 LangChain
@@ -200,7 +172,22 @@ class AgentRuntimeFactory:
         subagent_references: tuple[SubagentReference, ...] = (),
         context: RuntimeContext,
         allow_subagents: bool = True,
-    ) -> Any:
+    ) -> tuple[Any, "ResolvedModelConfig"]:
+        """`(컴파일된 graph, 이 실행이 실제로 사용한 모델 설정)`을 반환한다.
+
+        2026-08-19, §4순위(Run Snapshot) 추가 — 이전에는 graph만 반환하고
+        `resolved_model`(아래)은 이 메서드 안에서만 쓰고 버렸다. 호출자
+        (`executor.py`)가 `agent_run.resolved_provider`/`resolved_endpoint_hash`
+        로 남기려면 이 값이 밖으로 나가야 한다(정본:
+        `2026-08-19_01_실행_안정성_설계.md` §1 — "팀 커스텀 엔드포인트는
+        같은 agent_version_id로 실행해도 언제든 바뀔 수 있는데, 실제로
+        어느 서버로 요청이 나갔는지가 지금까지 실행 로그에 안 남았다").
+
+        Child 재귀 호출(`build_child_graph=lambda d, c: self.build(...)`,
+        아래)은 자신의 `resolved_model`을 인덱스 `[0]`으로 버린다 — Child
+        전용 `agent_run` 행에까지 이 값을 채우는 건 이번 범위가 아니다(Root
+        실행 하나에 대한 스냅샷만 다룬다, 아래 한계 참고).
+        """
         # `allow_subagents`는 여기서 Root/Child 그래프 중 무엇을 지을지만
         # 가른다(아래) — "이 Child가 이미 서브 에이전트를 갖고 있는가"
         # 검사와는 무관하다. `validate_subagents()`는 그 검사를 항상 켜 둔다
@@ -251,26 +238,31 @@ class AgentRuntimeFactory:
         # 여기서 결합해야 공통 정책을 바꿀 때 기존 버전을 다시 발행하지 않아도
         # 된다. 2026-08-14 추가).
         if not allow_subagents:
-            return create_child_graph(
-                model=model,
-                system_prompt=self.prompt_assembler.assemble_child(
-                    agent_prompt=definition.system_prompt
+            return (
+                create_child_graph(
+                    model=model,
+                    system_prompt=self.prompt_assembler.assemble_child(
+                        agent_prompt=definition.system_prompt
+                    ),
+                    tools=langchain_tools,
+                    middleware=custom_middleware,
+                    # 2026-08-18, §5 Phase 6/7 — Root와 같은 근거로 Child에도
+                    # 건다(두 근거 모두 create_child_graph() docstring 참고).
+                    fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
+                    interrupt_on=interrupt_on,
                 ),
-                tools=langchain_tools,
-                middleware=custom_middleware,
-                # 2026-08-18, §5 Phase 6/7 — Root와 같은 근거로 Child에도
-                # 건다(두 근거 모두 create_child_graph() docstring 참고).
-                fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
-                interrupt_on=interrupt_on,
+                resolved_model,
             )
 
         compiled_children = [
             build_subagent(
                 sub_def,
                 context,
+                # `[0]` — Child 자신의 resolved_model은 버린다(위 build()
+                # docstring 참고, 이번 범위는 Root 실행 하나의 스냅샷만).
                 build_child_graph=lambda d, c: self.build(
                     definition=d, context=c, allow_subagents=False
-                ),
+                )[0],
             )
             for sub_def in definition.subagents
         ]
@@ -324,25 +316,46 @@ class AgentRuntimeFactory:
                 # `build_filesystem_permissions()` 자체는 코드로 남겨뒀다(다른
                 # 경로별 권한 제어가 필요해지면 재사용).
             )
-            root_middleware = [*custom_middleware, build_memory_write_guard()]
+            # 2026-08-19, §5순위 — write_lock(`memory/write_lock.py`)도 같은
+            # 이유로 Root 전용이다(Child는 StoreBackend가 없어 락을 걸
+            # 대상이 없다). write_guard 다음에 둔다 — write_guard가 credential/
+            # PII/권한 서술을 이유로 이미 거부할 내용이면 Postgres 락을 잡을
+            # 필요조차 없다(거부는 handler 호출 전에 끝나므로, write_guard가
+            # write_lock보다 바깥쪽에 있어야 한다 — langchain의 wrap_tool_call
+            # 체이닝은 middleware 목록 앞쪽이 바깥쪽이다: `_chain_tool_call_wrappers`
+            # 실제 소스, "Request flows: first -> ... -> last -> tool"). namespace는
+            # 위 `self.memory_provider.backend(...)`가 쓰는 것과 같은
+            # `(team_id, agent_id, account_id)` 순서를 그대로 맞춘다 — 같은
+            # 계정이 다른 팀/에이전트로 옮기면 다른 namespace여야 하는 이유도
+            # 위 backend 호출과 동일하다.
+            root_middleware = [
+                *custom_middleware,
+                build_memory_write_guard(),
+                build_memory_write_lock(
+                    namespace=(context.team_id, definition.agent_id, context.account_id)
+                ),
+            ]
         if self.checkpointer_provider is not None:
             root_kwargs["checkpointer"] = self.checkpointer_provider.get()
 
-        return create_root_graph(
-            model=model,
-            system_prompt=self.prompt_assembler.assemble_root(
-                agent_prompt=definition.system_prompt
+        return (
+            create_root_graph(
+                model=model,
+                system_prompt=self.prompt_assembler.assemble_root(
+                    agent_prompt=definition.system_prompt
+                ),
+                tools=langchain_tools,
+                subagents=[gp_spec, *compiled_children],
+                middleware=root_middleware,
+                # 2026-08-18, §5 Phase 6 — memory_provider 유무와 무관하게 항상
+                # 건다(Filesystem Tool 노출 제한은 메모리 기능과 별개).
+                fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
+                # 2026-08-18, §5 Phase 7 — checkpointer_provider가 없으면 위에서
+                # None으로 남는다.
+                interrupt_on=interrupt_on,
+                **root_kwargs,
             ),
-            tools=langchain_tools,
-            subagents=[gp_spec, *compiled_children],
-            middleware=root_middleware,
-            # 2026-08-18, §5 Phase 6 — memory_provider 유무와 무관하게 항상
-            # 건다(Filesystem Tool 노출 제한은 메모리 기능과 별개).
-            fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
-            # 2026-08-18, §5 Phase 7 — checkpointer_provider가 없으면 위에서
-            # None으로 남는다.
-            interrupt_on=interrupt_on,
-            **root_kwargs,
+            resolved_model,
         )
 
 

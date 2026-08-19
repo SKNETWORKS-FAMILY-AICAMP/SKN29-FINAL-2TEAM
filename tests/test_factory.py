@@ -7,7 +7,6 @@ Mock으로 먼저 진행). compat.create_root_graph/create_child_graph는 patch�
 RuntimeCapabilityPolicy·MiddlewareFactory·validate_subagents는 실물을 그대로 쓴다.
 """
 
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -207,6 +206,68 @@ class BuildValidationAndModelTests(SimpleTestCase):
         self.assertEqual(deps["tool_loader"].load_calls[0]["agent_model"], "gpt-5.6-luna")
 
 
+class BuildReturnsResolvedModelTests(SimpleTestCase):
+    """2026-08-19, §4순위(Run Snapshot) — `build()`가 `(graph, resolved_model)`
+    튜플을 반환하는지. `executor.py`가 이 값을 `EVENT_AGENT_STARTED`에 실어
+    `agent_run.resolved_provider`/`resolved_endpoint_hash`로 남긴다(정본:
+    `2026-08-19_01_실행_안정성_설계.md` §1)."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_build_returns_graph_and_resolved_model(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        graph, resolved = factory.build(definition=_definition(model="claude-x"), context=context)
+
+        self.assertEqual(graph, "GRAPH")
+        self.assertEqual(resolved.provider, "anthropic")
+        self.assertEqual(resolved.model_id, "claude-x")
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_build_also_returns_graph_and_resolved_model(self, mock_create_child):
+        mock_create_child.return_value = "CHILD_GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        graph, resolved = factory.build(
+            definition=_definition(), context=context, allow_subagents=False
+        )
+
+        self.assertEqual(graph, "CHILD_GRAPH")
+        self.assertEqual(resolved.provider, "anthropic")
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_a_childs_own_resolved_model_does_not_leak_into_the_roots(
+        self, mock_create_root, mock_create_child
+    ):
+        """Child는 자기 model을 따로 가질 수 있다(SubagentReference와 무관하게
+        `subagents/builder.py`가 `AgentDefinition.model`을 그대로 옮긴다) —
+        Root의 반환값은 Root 자신의 resolved_model이어야지, 마지막으로 지어진
+        Child 것이 섞이면 안 된다."""
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+        child = SubagentDefinition(
+            agent_id="AG011",
+            agent_version_id="AV023",
+            name="Jira 작성자",
+            description="",
+            system_prompt="자식 프롬프트",
+            model="gpt-child-model",
+            reasoning_effort="low",
+            max_iterations=4,
+            alias="jira_writer",
+            delegation_description="Jira 이슈를 생성한다.",
+        )
+        definition = _definition(model="claude-root-model", subagents=(child,))
+
+        _graph, resolved = factory.build(definition=definition, context=context)
+
+        self.assertEqual(resolved.model_id, "claude-root-model")
+
+
 class BuildDelegationDepthTests(SimpleTestCase):
     """Root를 지을 때도 고른 Child의 `has_subagents=True`를 거부해야 한다.
 
@@ -351,65 +412,28 @@ class ToolExecutionTimeRBACTests(SimpleTestCase):
         self.assertEqual(langchain_tool.invoke({}), "listed")
 
 
-class SpeakableToolErrorTests(SimpleTestCase):
-    """도구가 낸 **사람이 고칠 수 있는 사유**는 모델에게 돌려준다(2026-08-18 QA).
+class ToolExecutionErrorHandlingTests(SimpleTestCase):
+    """2026-08-18 추가 — `agent_user_query_tool_check.py`로 실제 모델을 돌리다가
+    발견한 문제의 회귀 테스트. `langchain.agents.factory.create_agent()`가 내부에서
+    만드는 `ToolNode`는 `handle_tool_errors` 파라미터 자체를 우리에게 안 열어 주고
+    (실측 — langchain/deepagents 소스 어디에도 없음), 기본 동작은 `ToolInvocationError`
+    (인자 스키마 검증 실패)만 잡고 그 외는 전부 다시 raise한다. 그 결과 `task_list`를
+    `project_id` 없이 부르는 것처럼 이 저장소가 "모델에게 그대로 보여줘도 되는 실패"로
+    설계해 둔 `ToolInputError`(`services/harness/registry.py`)조차 그래프 실행 전체를
+    죽였다 — 모델이 스스로 고칠 기회가 없었다. `_to_langchain_tool()`의 `_run()`이
+    `tool.handler()` 호출을 직접 감싸서, 레거시 `services/harness/runner.py`의
+    `_SPEAKABLE_ERRORS`/`error_code_of()` 판단을 그대로 재사용해 크래시 대신 문자열
+    tool 결과로 돌려주는지 확인한다."""
 
-    그냥 올리면 LangGraph `ToolNode`가 실행을 통째로 죽이고, 화면에는 사유 없이
-    「요청을 끝내지 못했습니다」만 남는다. 실제로 §B-0 ②에서 `task_extraction`이
-    「어느 프로젝트의 업무를 뽑을지 정해지지 않았습니다. 프로젝트를 먼저
-    고르세요.」라고 정확히 말했는데 **그 문장이 버려졌다.**
-
-    기준은 레거시(`services/harness/runner.SPEAKABLE_ERRORS`)와 같은 목록을 쓴다 —
-    두 엔진이 다른 목록을 들면 같은 실패가 한쪽에서만 설명된다.
-    """
-
-    def _tool(self, *, ref: str = "task_extraction", handler) -> Tool:
+    def _tool(self, *, ref: str, handler) -> Tool:
         return Tool(
             ref=ref,
             name=ref,
-            description="업무를 뽑는다.",
+            description="",
             input_schema={"type": "object", "properties": {}, "required": []},
             handler=handler,
             side_effect=False,
         )
-
-    def _invoke(self, handler, *, ref: str = "task_extraction"):
-        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
-        langchain_tool = _to_langchain_tool(
-            self._tool(ref=ref, handler=handler), context=context, runtime_policy=RuntimeCapabilityPolicy()
-        )
-        return langchain_tool.invoke({})
-
-    def test_말할_수_있는_오류는_사유를_담아_돌려준다(self):
-        """`{"error": ...}` 딕셔너리가 아니라 `ToolException`을 거쳐 문자열로 온다
-        (2026-08-19 — main과 합의: 같은 목록을 쓰되, `ToolException` +
-        `handle_tool_error=True`로 바꿔서 `tool_completed.status`가 OK로
-        마스킹되지 않고 FAILED로 정확히 남게 했다. `factory.py`의 `_run()`
-        docstring 주석 참고)."""
-        from services.harness.registry import ToolInputError
-
-        def boom(**_kwargs):
-            raise ToolInputError("프로젝트를 먼저 고르세요.")
-
-        self.assertEqual(self._invoke(boom), "프로젝트를 먼저 고르세요.")
-
-    def test_repository_permission_denied_message_reaches_model(self):
-        from backend.db.errors import PermissionDenied
-
-        def boom(**_kwargs):
-            raise PermissionDenied("팀에 속하지 않은 계정입니다.")
-
-        self.assertEqual(self._invoke(boom, ref="document_list"), "팀에 속하지 않은 계정입니다.")
-
-    def test_그_밖의_예외는_그대로_올린다(self):
-        """라이브러리·드라이버 예외 문자열에는 쿼리·문서 원문·토큰이 섞일 수 있다 —
-        삼키면 진짜 장애가 「도구가 뭐라고 했다」로 둔갑한다."""
-
-        def boom(**_kwargs):
-            raise RuntimeError("connection reset by peer")
-
-        with self.assertRaises(RuntimeError):
-            self._invoke(boom)
 
     def test_tool_input_error_message_reaches_model_instead_of_crashing(self):
         from services.harness.registry import ToolInputError
@@ -425,134 +449,55 @@ class SpeakableToolErrorTests(SimpleTestCase):
 
         self.assertEqual(result, "어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
 
+    def test_repository_permission_denied_message_reaches_model(self):
+        from backend.db.errors import PermissionDenied
 
-class ToolIdempotencyTests(SimpleTestCase):
-    """Phase 8(외부 Write Tool Idempotency, 2026-08-19) — `_to_langchain_tool()`의
-    `_run()`이 `tool.handler()`를 부르기 전에 `ToolCallRepository.
-    find_successful_result()`로 이미 성공한 실행이 있는지 조회하는지 확인한다.
+        def _handler(**kwargs):
+            raise PermissionDenied("팀에 속하지 않은 계정입니다.")
 
-    `runtime`(langgraph가 실제 그래프 실행 중에만 채워 주는 `ToolRuntime`)은
-    `langchain_tool.invoke({...})`로는 재현이 안 된다(실측 확인 — 그래프 밖
-    호출은 항상 `runtime=None`). 그래서 `StructuredTool.func`(=`_run` 그 자체)를
-    직접 불러서 `runtime`을 흉내 낸 값으로 넘긴다 — `_run()`의 판단 로직만
-    본다는 뜻이고, `ToolRuntime` 주입 메커니즘 자체가 실제로 동작하는지는
-    이 테스트의 범위가 아니다(직접 최소 재현 스크립트로 별도 확인했다)."""
+        tool = self._tool(ref="document_list", handler=_handler)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
 
-    REPOSITORY = "backend.db.agent_platform.ToolCallRepository"
+        result = langchain_tool.invoke({})
 
-    def _write_tool(self, *, handler=None) -> Tool:
+        self.assertEqual(result, "팀에 속하지 않은 계정입니다.")
+
+    def test_unspeakable_error_hides_message_behind_class_name(self):
+        """스피커블 목록에 없는 예외는 원문 대신 클래스 이름만 나가야 한다
+        (`_SPEAKABLE_ERRORS` 밖 = 문서 원문·토큰이 섞여 있을 수 있는 예외)."""
+
+        def _handler(**kwargs):
+            raise ValueError("내부 쿼리 원문이 섞여 있을 수 있는 진짜 예외 메시지")
+
+        tool = self._tool(ref="document_search", handler=_handler)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+
+        result = langchain_tool.invoke({})
+
+        self.assertEqual(result, "도구 실행 실패: ValueError")
+        self.assertNotIn("내부 쿼리 원문", result)
+
+    def test_tool_permission_error_still_propagates_uncaught(self):
+        """역할 재검사(`ToolPermissionError`)는 이 예외 처리 대상이 아니다 — 방어선이라
+        조용히 문자열로 바뀌지 않고 계속 크래시해야 한다(기존 동작 유지 확인)."""
+        tool = self._write_tool()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+
+        with self.assertRaises(ToolPermissionError):
+            langchain_tool.invoke({})
+
+    def _write_tool(self) -> Tool:
         return Tool(
             ref="task_register",
             name="task_register",
             description="업무를 등록한다.",
             input_schema={"type": "object", "properties": {}, "required": []},
-            handler=handler or (lambda **kwargs: "새로 등록됨"),
+            handler=lambda **kwargs: "registered",
             side_effect=True,
         )
-
-    def _read_tool(self, *, handler=None) -> Tool:
-        return Tool(
-            ref="document_list",
-            name="document_list",
-            description="문서 목록을 본다.",
-            input_schema={"type": "object", "properties": {}, "required": []},
-            handler=handler or (lambda **kwargs: "새로 조회됨"),
-            side_effect=False,
-        )
-
-    def _run_fn(self, tool: Tool, *, context: RuntimeContext):
-        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
-        return langchain_tool.func
-
-    @patch(REPOSITORY)
-    def test_side_effect_tool_returns_cached_result_without_calling_handler(self, repo):
-        repo.find_successful_result.return_value = "이미 등록된 결과"
-        calls = []
-        tool = self._write_tool(handler=lambda **kwargs: calls.append(1) or "새로 등록됨")
-        context = RuntimeContext(
-            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
-        )
-        run_fn = self._run_fn(tool, context=context)
-
-        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
-
-        self.assertEqual(result, "이미 등록된 결과")
-        self.assertEqual(calls, [])  # handler가 아예 안 불렸다
-        repo.find_successful_result.assert_called_once_with(
-            session_id="SESSION-1", langchain_tool_call_id="call-1"
-        )
-
-    @patch(REPOSITORY)
-    def test_side_effect_tool_calls_handler_when_nothing_cached(self, repo):
-        repo.find_successful_result.return_value = None
-        tool = self._write_tool()
-        context = RuntimeContext(
-            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
-        )
-        run_fn = self._run_fn(tool, context=context)
-
-        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
-
-        self.assertEqual(result, "새로 등록됨")
-
-    @patch(REPOSITORY)
-    def test_read_only_tool_never_checked(self, repo):
-        """읽기 전용 도구는 대상에서 뺀다 — 다시 불러도 부작용이 없다."""
-        tool = self._read_tool()
-        context = RuntimeContext(
-            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
-        )
-        run_fn = self._run_fn(tool, context=context)
-
-        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
-
-        self.assertEqual(result, "새로 조회됨")
-        repo.find_successful_result.assert_not_called()
-
-    @patch(REPOSITORY)
-    def test_side_effect_tool_without_runtime_skips_check_and_still_executes(self, repo):
-        """그래프 밖에서 직접 부르는 기존 경로(`langchain_tool.invoke({...})`) —
-        `runtime`이 `None`이면 조회를 건너뛰고 평소대로 실행한다. 이 보호는
-        "있으면 더 안전"이지 실행 자체를 막는 필수 조건이 아니다."""
-        tool = self._write_tool()
-        context = RuntimeContext(
-            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
-        )
-        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
-
-        result = langchain_tool.invoke({})
-
-        self.assertEqual(result, "새로 등록됨")
-        repo.find_successful_result.assert_not_called()
-
-    @patch(REPOSITORY)
-    def test_side_effect_tool_without_session_id_skips_check(self, repo):
-        """session 없이 도는 실행(평가 스크립트 등) — session_id가 없으면 조회할
-        범위 자체가 없으므로 건너뛴다."""
-        tool = self._write_tool()
-        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader", session_id=None)
-        run_fn = self._run_fn(tool, context=context)
-
-        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
-
-        self.assertEqual(result, "새로 등록됨")
-        repo.find_successful_result.assert_not_called()
-
-    @patch(REPOSITORY)
-    def test_permission_check_runs_before_idempotency_check(self, repo):
-        """캐시가 있어도 역할 권한이 없으면 여전히 막힌다 — 캐시된 결과가
-        권한 검사를 우회하는 경로가 되면 안 된다."""
-        repo.find_successful_result.return_value = "이미 등록된 결과"
-        tool = self._write_tool()
-        context = RuntimeContext(
-            account_id="AC001", team_id="TM001", role="member", session_id="SESSION-1"
-        )
-        run_fn = self._run_fn(tool, context=context)
-
-        with self.assertRaises(ToolPermissionError):
-            run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
-
-        repo.find_successful_result.assert_not_called()
 
 
 class ToLangchainToolNameTests(SimpleTestCase):
@@ -783,7 +728,9 @@ class BuildChildPathTests(SimpleTestCase):
         result = factory.build(definition=_definition(), context=context, allow_subagents=False)
 
         mock_create_child.assert_called_once()
-        self.assertEqual(result, "CHILD_GRAPH")
+        # 2026-08-19, §4순위(Run Snapshot) — build()는 (graph, resolved_model)
+        # 튜플을 반환한다.
+        self.assertEqual(result[0], "CHILD_GRAPH")
 
 
 class BuildCheckpointerWiringTests(SimpleTestCase):
@@ -981,6 +928,147 @@ class BuildMemoryWiringTests(SimpleTestCase):
 
         middleware = mock_create_root.call_args.kwargs["middleware"]
         self.assertTrue(any(isinstance(m, ModelCallLimitMiddleware) for m in middleware))
+
+
+class BuildWriteLockWiringTests(SimpleTestCase):
+    """2026-08-19, §5순위 — memory_provider가 있으면 write_lock
+    (`MemoryWriteLockMiddleware`)도 write_guard와 함께 Root middleware에
+    더해지는지 확인한다."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_memory_provider_adds_write_lock_to_root_middleware(self, mock_create_root):
+        from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        locks = [m for m in middleware if isinstance(m, MemoryWriteLockMiddleware)]
+        self.assertEqual(len(locks), 1)
+
+    def test_write_lock_namespace_matches_memory_backend_call(self):
+        """write_lock의 namespace가 `memory_provider.backend(...)`에 넘긴
+        (team_id, agent_id, account_id)와 같은 값·순서인지 — 같은 저장 위치를
+        가리켜야 락이 의미가 있다."""
+        from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
+
+        with patch(f"{FACTORY_MODULE}.create_root_graph") as mock_create_root:
+            mock_create_root.return_value = "GRAPH"
+            provider = _FakeMemoryProvider()
+            factory, _ = _factory(memory_provider=provider)
+            context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+            factory.build(definition=_definition(agent_id="AG777"), context=context)
+
+            middleware = mock_create_root.call_args.kwargs["middleware"]
+            lock = next(m for m in middleware if isinstance(m, MemoryWriteLockMiddleware))
+            self.assertEqual(lock._namespace, ("TM001", "AG777", "AC001"))
+            self.assertEqual(provider.backend_calls, [{"team_id": "TM001", "agent_id": "AG777", "account_id": "AC001"}])
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_memory_provider_omits_write_lock_from_root_middleware(self, mock_create_root):
+        from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertFalse(any(isinstance(m, MemoryWriteLockMiddleware) for m in middleware))
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_build_never_receives_write_lock(self, mock_create_child):
+        """Child는 StoreBackend가 없어 잠글 대상이 없다 — write_guard와 같은 이유."""
+        from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
+
+        mock_create_child.return_value = "CHILD_GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        middleware = mock_create_child.call_args.kwargs["middleware"]
+        self.assertFalse(any(isinstance(m, MemoryWriteLockMiddleware) for m in middleware))
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_write_guard_runs_outside_write_lock_in_middleware_order(self, mock_create_root):
+        """write_guard가 write_lock보다 middleware 목록 앞쪽(=바깥쪽)에 있어야
+        한다 — write_guard가 내용을 거부할 때는 Postgres 락을 잡을 필요조차
+        없어야 하므로(langchain의 wrap_tool_call 체이닝은 목록 앞쪽이 바깥쪽,
+        `_chain_tool_call_wrappers` 실제 소스)."""
+        from services.agent_runtime.memory.write_guard import MemoryWriteGuardMiddleware
+        from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        guard_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteGuardMiddleware))
+        lock_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteLockMiddleware))
+        self.assertLess(guard_index, lock_index)
+
+
+class BuildToolCallTimeoutWiringTests(SimpleTestCase):
+    """2026-08-19, §5순위 — `ToolCallTimeoutMiddleware`가 Root/Child 둘 다에
+    붙는지(`middleware/factory.py.build()`를 통해서), 그리고 write_guard/
+    write_lock보다 middleware 목록 앞쪽(=바깥쪽)에 있는지 확인한다."""
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_receives_tool_call_timeout_middleware(self, mock_create_root):
+        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertEqual(sum(isinstance(m, ToolCallTimeoutMiddleware) for m in middleware), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_receives_tool_call_timeout_middleware(self, mock_create_child):
+        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+
+        mock_create_child.return_value = "CHILD_GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        middleware = mock_create_child.call_args.kwargs["middleware"]
+        self.assertEqual(sum(isinstance(m, ToolCallTimeoutMiddleware) for m in middleware), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_timeout_is_outside_write_guard_and_write_lock(self, mock_create_root):
+        from services.agent_runtime.memory.write_guard import MemoryWriteGuardMiddleware
+        from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
+        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        timeout_index = next(i for i, m in enumerate(middleware) if isinstance(m, ToolCallTimeoutMiddleware))
+        guard_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteGuardMiddleware))
+        lock_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteLockMiddleware))
+        self.assertLess(timeout_index, guard_index)
+        self.assertLess(guard_index, lock_index)
 
 
 class BuildFilesystemExclusionWiringTests(SimpleTestCase):

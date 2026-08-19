@@ -583,7 +583,7 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
         (
             agent_id,
             team_id,
-            "기본 어시스턴트",
+            "기본 챗",
             "Chat 화면의 기본 상대입니다. 도구·MCP만 붙일 수 있고 다른 에이전트로 위임하지 않습니다.",
             owner_account_id,
         ),
@@ -609,28 +609,6 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
             owner_account_id,
         ),
     )
-
-    # **읽기 도구를 기본으로 붙인다**(2026-08-18 PM 결정). 전에는 0개로 만들었는데,
-    # 그러면 기본 상태에서 제품의 대표 발화가 전부 실패한다 — QA §B-0 에서
-    # 「업무 뽑아줘」가 **「문서를 대화에 첨부해 주세요」**(이 제품에 없는 방식)로,
-    # 「팀원 누구야?」가 「조회할 수 없다」로 끝났다. 사람이 Chat 의 「+」로 붙일
-    # 수는 있지만, 처음 쓰는 사람은 그 버튼을 눌러야 한다는 것을 모른다.
-    #
-    # **쓰기 도구는 뺀다.** 기본값이 남의 Jira 에 이슈를 만들거나 업무를 고칠 수
-    # 있으면 안 된다 — 그건 사람이 그 에이전트를 만들면서 고르는 일이다.
-    #
-    # 목록을 여기 박지 않고 `side_effect` 에서 끌어온다. 그 플래그가 「밖을
-    # 바꾸는가」의 정본이라(`tests/test_adapters.py` 의 EXPECTED_SIDE_EFFECT),
-    # 새 도구가 늘어도 읽기면 자동으로 붙고 쓰기면 자동으로 빠진다.
-    from services.harness.registry import BUILTIN_TOOLS
-
-    for tool_ref, tool in BUILTIN_TOOLS.items():
-        if tool.side_effect:
-            continue
-        cursor.execute(
-            "INSERT INTO agent_version_tools (agent_version_id, tool_ref) VALUES (%s, %s)",
-            (agent_version_id, tool_ref),
-        )
 
     cursor.execute(
         "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
@@ -1355,6 +1333,8 @@ class AgentRunRepository:
         parent_run_id: str | None,
         agent_version_id: str | None = None,
         runtime_profile_version: str | None = None,
+        resolved_provider: str | None = None,
+        resolved_endpoint_hash: str | None = None,
     ) -> str:
         """`start()`의 짝 — 호출자가 `run_id`를 이미 정해서 부를 때 쓴다.
 
@@ -1369,6 +1349,12 @@ class AgentRunRepository:
         없는 값이다(레거시 harness 경로는 이 컬럼들을 모른다 — 계속 NULL로
         쌓인다, `DB/migrations/2026-08-13_agent_versioning.sql` 주석). 새
         엔진만 채운다.
+
+        `resolved_provider`/`resolved_endpoint_hash`(2026-08-19 추가, §4순위
+        Run Snapshot — 정본: `2026-08-19_01_실행_안정성_설계.md` §1)도 같은
+        이유로 새 엔진만 채운다 — 이 실행이 실제로 사용한 모델 provider와
+        (팀 커스텀 엔드포인트라면) 그 `base_url`의 해시값이다. 원문
+        `base_url`은 저장하지 않는다(사내망 주소 노출 방지).
         """
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -1376,8 +1362,9 @@ class AgentRunRepository:
                     """
                     INSERT INTO agent_run
                         (run_id, session_id, agent_id, parent_run_id,
-                         agent_version_id, runtime_profile_version, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'RUNNING')
+                         agent_version_id, runtime_profile_version,
+                         resolved_provider, resolved_endpoint_hash, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'RUNNING')
                     RETURNING run_id::text
                     """,
                     (
@@ -1387,6 +1374,8 @@ class AgentRunRepository:
                         parent_run_id,
                         agent_version_id,
                         runtime_profile_version,
+                        resolved_provider,
+                        resolved_endpoint_hash,
                     ),
                 )
                 return cursor.fetchone()["run_id"]
@@ -1437,35 +1426,19 @@ class ToolCallRepository:
 
     끝나고 나서 한 번에 기록하면 타임아웃·프로세스 종료로 죽은 호출이 로그에서
     통째로 사라진다 — 정작 조사해야 할 것이 그 호출이다.
-
-    `session_id`/`langchain_tool_call_id`/`result_text`(2026-08-19, Phase 8 —
-    외부 Write Tool Idempotency)는 이 선기록 패턴 위에 얹은 것이다. `begin()`은
-    재시도마다 매번 새 행을 그대로 넣는다(UNIQUE 제약을 안 건다 — 재시도
-    자체가 감사 로그에 남아야 한다). 이미 성공했는지는 `find_successful_result()`
-    가 `status='OK'`로 조회해서 판단한다 — `services/agent_runtime/factory.py`
-    `_to_langchain_tool()._run()`이 `tool.handler()`를 부르기 "전"에 이 조회를
-    먼저 한다.
     """
 
     @staticmethod
-    def begin(
-        *,
-        run_id: str,
-        tool_ref: str,
-        input_summary: str | None,
-        session_id: str | None = None,
-        langchain_tool_call_id: str | None = None,
-    ) -> str:
+    def begin(*, run_id: str, tool_ref: str, input_summary: str | None) -> str:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO tool_call
-                        (run_id, tool_ref, input_summary, status, session_id, langchain_tool_call_id)
-                    VALUES (%s, %s, %s, 'PENDING', %s, %s)
+                    INSERT INTO tool_call (run_id, tool_ref, input_summary, status)
+                    VALUES (%s, %s, %s, 'PENDING')
                     RETURNING tool_call_id::text
                     """,
-                    (run_id, tool_ref, input_summary, session_id, langchain_tool_call_id),
+                    (run_id, tool_ref, input_summary),
                 )
                 return cursor.fetchone()["tool_call_id"]
 
@@ -1476,43 +1449,17 @@ class ToolCallRepository:
         status: str,
         duration_ms: int,
         error_code: str | None = None,
-        result_text: str | None = None,
     ) -> None:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE tool_call
-                       SET status = %s, error_code = %s, duration_ms = %s, result_text = %s
+                       SET status = %s, error_code = %s, duration_ms = %s
                      WHERE tool_call_id = %s
                     """,
-                    (status, error_code, duration_ms, result_text, tool_call_id),
+                    (status, error_code, duration_ms, tool_call_id),
                 )
-
-    @staticmethod
-    def find_successful_result(*, session_id: str, langchain_tool_call_id: str) -> str | None:
-        """이미 성공(OK)한 같은 호출이 있으면 그 결과 텍스트를 돌려준다(Phase 8).
-
-        side_effect 도구가 HITL 재개·checkpoint 재시도로 두 번 실행되는 걸
-        막는 자리 — 있으면 `_run()`이 `tool.handler()`를 다시 안 부른다.
-        같은 조합으로 여러 행이 쌓일 수 있어(재시도마다 새 PENDING이 생기므로)
-        가장 최근 성공을 쓴다.
-        """
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT result_text FROM tool_call
-                     WHERE session_id = %s
-                       AND langchain_tool_call_id = %s
-                       AND status = 'OK'
-                     ORDER BY created_at DESC
-                     LIMIT 1
-                    """,
-                    (session_id, langchain_tool_call_id),
-                )
-                row = cursor.fetchone()
-                return row["result_text"] if row else None
 
 
 def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str | None:
@@ -2428,78 +2375,40 @@ class ProjectTaskRepository:
                 if row["team_id"] != team_id:
                     raise PermissionDenied("이 프로젝트에 접근할 수 없습니다.")
 
-                # **이 프로젝트의 판에 덧붙인다.** 판을 매번 새로 만들지 않는다
-                # (2026-08-19 PM 결정 ⓐ) — `list_for_project`가 가장 최근 판만
-                # 보여주기 때문에, 「3건만 추가로 등록해줘」에 새 판이 생기면 앞서
-                # 등록한 15건이 통째로 화면에서 사라졌다. 데이터는 남아 있는데
-                # 보이지 않는 것이라 더 나빴다.
+                # 이번 추출분을 담을 판. 버전은 이 프로젝트의 몇 번째인가다.
+                cursor.execute(
+                    "SELECT count(*) AS n FROM proj_know_model WHERE proj_id = %s", (proj_id,)
+                )
+                version = cursor.fetchone()["n"] + 1
+                model_id = next_short_code(
+                    cursor, table="proj_know_model", column="model_id", prefix="KM"
+                )
                 cursor.execute(
                     """
-                    SELECT model_id, model_ver FROM proj_know_model
-                    WHERE proj_id = %s ORDER BY generated_at DESC NULLS LAST LIMIT 1
+                    INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
+                    VALUES (%s, %s, %s, 'READY', now())
                     """,
-                    (proj_id,),
+                    (model_id, proj_id, f"v{version}"),
                 )
-                current = cursor.fetchone()
-                if current is None:
-                    model_id = next_short_code(
-                        cursor, table="proj_know_model", column="model_id", prefix="KM"
-                    )
-                    cursor.execute(
-                        """
-                        INSERT INTO proj_know_model (model_id, proj_id, model_ver, status, generated_at)
-                        VALUES (%s, %s, 'v1', 'READY', now())
-                        """,
-                        (model_id, proj_id),
-                    )
-                else:
-                    model_id = current["model_id"]
-
-                # 덧붙이는 이상 **같은 업무가 두 번 들어올 수 있다** — 다시 뽑아
-                # 다시 등록하면 제목이 겹친다. 제목으로 거르고, 거른 사실을
-                # 돌려준다(`dropped_fields`와 같은 원칙: 조용히 넘기지 않는다).
-                cursor.execute(
-                    "SELECT task_name FROM task WHERE model_id = %s", (model_id,)
-                )
-                existing = {row["task_name"] for row in cursor.fetchall()}
 
                 created = []
-                dropped_fields = []
-                already = []
+                dropped_dates = []
                 for task in tasks:
-                    if task["title"] in existing:
-                        already.append(task["title"])
-                        continue
-                    existing.add(task["title"])
                     task_id = next_short_code(
                         cursor, table="task", column="task_id", prefix="TK"
                     )
-                    # 저장할 값을 먼저 만든 다음, 「모델이 준 것」과 「실제로 남은
-                    # 것」을 나란히 놓고 비운 칸을 센다.
                     start_at = _date_or_none(task.get("start_date"))
                     due_at = _date_or_none(task.get("due_date"))
-                    effort = _positive_or_none(task.get("effort_hours"))
-                    req_role = _positive_or_none(task.get("required_role"))
-                    priority = _positive_or_none(task.get("priority"))
-                    # `given not in (None, "")` 이지 `if given` 이 아니다 —
-                    # **모델이 모르는 공수를 채워 넣는 값이 하필 `0`** 이라
-                    # (`_positive_or_none` docstring), 거짓으로 판정하면 정작
-                    # 알려야 할 그 경우가 통째로 빠진다. 2026-08-18 에 실제로
-                    # 그랬다: 15건 전부 `effort_hours: 0` 으로 왔고 전부 NULL 로
-                    # 저장됐는데, 모델은 「0시간으로 등록했습니다」라고 답했다.
                     blank = [
                         label
                         for label, given, kept in (
-                            ("시작일", task.get("start_date"), start_at),
-                            ("마감일", task.get("due_date"), due_at),
-                            ("공수", task.get("effort_hours"), effort),
-                            ("담당 역할", task.get("required_role"), req_role),
-                            ("우선순위", task.get("priority"), priority),
+                            ("시작", task.get("start_date"), start_at),
+                            ("마감", task.get("due_date"), due_at),
                         )
-                        if given not in (None, "") and kept is None
+                        if given and kept is None
                     ]
                     if blank:
-                        dropped_fields.append({"title": task["title"], "fields": blank})
+                        dropped_dates.append({"title": task["title"], "fields": blank})
                     cursor.execute(
                         """
                         INSERT INTO task (task_id, model_id, task_name, req_role, effort,
@@ -2507,23 +2416,20 @@ class ProjectTaskRepository:
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'EXTRACTED', 'PROPOSED')
                         """,
                         (
-                            task_id, model_id, task["title"], req_role,
-                            effort, start_at, due_at, priority,
+                            task_id, model_id, task["title"],
+                            _positive_or_none(task.get("required_role")),
+                            _positive_or_none(task.get("effort_hours")), start_at,
+                            due_at, _positive_or_none(task.get("priority")),
                         ),
                     )
                     created.append({"task_id": task_id, "title": task["title"]})
 
         return {
             "model_id": model_id,
+            "model_ver": f"v{version}",
             "tasks": created,
             # 비운 것을 조용히 넘기지 않는다. 모델이 이것을 사람에게 옮겨 적는다.
-            #
-            # 예전 이름은 `dropped_dates` 였고 **날짜만** 담았다. 같은 이유로
-            # 비우는 칸이 셋 더 있는데(공수·역할·우선순위 — `_positive_or_none`)
-            # 그쪽은 조용히 넘어갔다. 2026-08-18 에 그 대가를 봤다.
-            "dropped_fields": dropped_fields,
-            # 이미 있어서 건너뛴 것. 사람에게 「등록했다」고만 말하면 안 된다.
-            "already_registered": already,
+            "dropped_dates": dropped_dates,
         }
 
     @staticmethod

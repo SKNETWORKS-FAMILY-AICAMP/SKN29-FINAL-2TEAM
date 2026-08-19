@@ -11,35 +11,25 @@ if TYPE_CHECKING:
 Role = Literal["ROOT", "GENERAL_PURPOSE", "CHILD"]
 AccountRole = Literal["leader", "member"]
 
-#: 업무 Agent에 노출하지 않는 Deep Agents 가상 파일 Tool.
-#:
-#: **여기 있는 파일 Tool은 사용자의 디스크를 건드리지 않는다**(2026-08-18 실측).
-#: `factory.build()`가 넘기는 backend는 `CompositeBackend(default=StateBackend(),
-#: routes={"/memories/...": StoreBackend})` 뿐이라(`memory/backend.py`), 쓰는
-#: 곳은 그래프 상태(휘발) 아니면 장기 메모리 Store다 — `FilesystemBackend`도
-#: `LocalShellBackend`도 쓰지 않는다. `execute`는 두 backend 어느 쪽에도
-#: `execute` 속성이 없어 **호출 자체가 성립하지 않는다.**
-#:
-#: 그래서 `delete`만 뺀다. 나머지를 더 막을 이유가 없다 — 프롬프트가
-#: 「네가 일하는 동안 쓰는 임시 작업 공간」이라고 말하는 것이 정확한 설명이고,
-#: 그 말대로 쓰는 데 필요한 도구들이다.
+# 업무 Agent에 노출하지 않는 Deep Agents 가상 파일 Tool.
 DEFAULT_EXCLUDED_BUILTIN_TOOLS = frozenset({"delete"})
 
-#: 외부 시스템을 변경하는 Tool의 운영 정책 메모. 실행을 직접 차단하지는 않는다.
-#:
-#: 2026-08-18에 앞부분을 고쳤다 — 「HITL 구현 전까지」라는 전제가 사라졌다.
-#: 승인 게이트가 실제로 붙었다(`factory.py`의 `interrupt_on` → `events.py`의
-#: `awaiting_confirmation` → `apps/chat/api_views.py`의 재개). 이제 `side_effect`
-#: Tool은 사람이 확인 카드에서 승인하기 전까지 실행되지 않는다.
+# 외부 시스템을 변경하는 Tool의 운영 정책 메모. 실행을 직접 차단하지는 않는다.
 EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (
-    "외부 시스템에 실제로 쓰기/삭제/발송하는 Tool(side_effect=True)은 승인 게이트를 "
-    "지난 뒤에만 실행된다 — 모델이 부르면 그래프가 멈추고 사람에게 확인 카드가 뜬다 "
-    "(2026-08-18). 새 Tool을 더할 때 부수효과가 있으면 side_effect=True로 선언할 것 "
-    "— 게이트가 그 플래그 하나만 보고 판단한다."
+    "외부 시스템에 실제로 쓰기/삭제/발송하는 Tool은 HITL 구현 전까지 읽기 전용으로 "
+    "제한하거나, 사용자 확인 없이는 부수효과가 발생하지 않는 2단계(제안 → 확정) "
+    "설계를 쓸 것 (2026-08-13_01 §11)."
 )
 
 # 부수효과가 있는 Tool을 사용할 수 있는 계정 역할.
 DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader"})
+
+# 2026-08-19, §5순위 — Tool 호출 하나(외부 I/O)에 적용하는 기본 timeout(초).
+# `services/harness/runner.py`가 이미 이 harness 안에서 쓰는 모델 호출
+# timeout(`OpenAI(timeout=300)`)과 같은 값을 재사용한다 — 개별 tool 호출도
+# 같은 실행 경로 안에서 일어나는 같은 성격의 외부 I/O라 새 숫자를 만들 근거가
+# 없다(정본: `2026-08-19_01_실행_안정성_설계.md` §3).
+DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -62,6 +52,13 @@ class RuntimeCapabilityPolicy:
     write_tool_allowed_roles: frozenset[AccountRole] = field(
         default_factory=lambda: DEFAULT_WRITE_TOOL_ALLOWED_ROLES
     )
+
+    # 2026-08-19, §5순위 — 개별 tool 호출 timeout. `tool_call_timeout_overrides`는
+    # 특정 tool_ref만 다른 값을 쓰고 싶을 때 쓰는 탈출구다 — 지금은 근거가 될
+    # 실측값이 없어 빈 dict(전부 기본값)로 시작한다. 필요해지면 여기 값만
+    # 채우면 되고, `timeout_for_tool()` 호출부는 바뀌지 않는다.
+    tool_call_timeout_seconds: int = DEFAULT_TOOL_CALL_TIMEOUT_SECONDS
+    tool_call_timeout_overrides: dict[str, int] = field(default_factory=dict)
 
     # general-purpose 전용 기본값.
     general_purpose_max_model_calls: int = 6
@@ -106,6 +103,12 @@ class RuntimeCapabilityPolicy:
         if requested is None:
             return self.max_tool_calls_ceiling
         return min(requested, self.max_tool_calls_ceiling)
+
+    def timeout_for_tool(self, tool_ref: str) -> int:
+        """이 `tool_ref`에 적용할 timeout(초). `tool_call_timeout_overrides`에
+        등록된 값이 있으면 그 값, 없으면 `tool_call_timeout_seconds`(기본값)를
+        쓴다."""
+        return self.tool_call_timeout_overrides.get(tool_ref, self.tool_call_timeout_seconds)
 
     def is_tool_allowed_for_role(self, *, side_effect: bool, account_role: AccountRole) -> bool:
         """부수효과 없는 도구는 항상 허용. 부수효과 있는 도구는 허용 역할만 통과."""

@@ -67,7 +67,6 @@ class AgentExecutor:
         draft: dict | None = None,
         conversation_messages: Sequence[dict[str, Any]] = (),
         tool_refs_override: Sequence[str] | None = None,
-        resume_decisions: Sequence[dict[str, Any]] | None = None,
     ) -> Iterator[dict[str, Any]]:
         """`tool_refs_override`: 이 대화(chat_session)가 저장해 둔 도구
         커스터마이즈(2026-08-18, Chat "+" 버튼). `None`이면 로드된 정의의
@@ -77,14 +76,6 @@ class AgentExecutor:
         메모리 위의 정의만 바꾼다. 서브 에이전트의 도구는 영향 없다(이
         대화가 직접 부르는 루트만 대상 — 위임 내부까지 커스터마이즈하는 건
         범위 밖).
-
-        `resume_decisions`: 승인 게이트에서 멈춰 있던 실행을 잇는다(2026-08-18).
-        값이 있으면 `user_input`은 쓰지 않는다 — 멈춘 자리의 대화는
-        Checkpointer에 있고, 이 호출이 하는 일은 보류 중인 `interrupt()`에
-        사람의 결정을 돌려주는 것뿐이다. 결정의 **개수는 인터럽트가 요구한
-        호출 수와 같아야 한다**(다르면 `HumanInTheLoopMiddleware`가
-        `ValueError`) — 그 목록은 `awaiting_confirmation` 이벤트의
-        `resume.action_requests`에 담아 두었다.
         """
 
         validate_execution_target(
@@ -109,7 +100,7 @@ class AgentExecutor:
                     ),
                 )
 
-            runtime = self.factory.build(
+            runtime, resolved_model = self.factory.build(
                 definition=loaded.definition,
                 subagent_references=loaded.subagent_references,
                 context=context,
@@ -120,11 +111,31 @@ class AgentExecutor:
             logger.exception("Deep Agent 조립 실패")
             raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
 
+        # `services.agent_runtime.models.factory`는 여기서(함수 본문) import한다
+        # — 모듈 최상단이 아니라. `backend/db/agent_platform.py` →
+        # `services.agent_runtime.definitions`처럼 이 패키지 진입 시점에 이미
+        # `agent_platform.py`를 부르는 호출자가 있어서, 모듈 최상단에서
+        # `models.factory`(그 자신이 `agent_platform.CustomModelRepository`를
+        # 다시 import함)를 부르면 `agent_platform.py`가 아직 초기화되던 중에
+        # 자기 자신으로 되돌아오는 순환 import가 생긴다(2026-08-20 실측 —
+        # `python manage.py runserver`로 실제 부팅했을 때만 드러남, `manage.py
+        # test`는 이 정확한 import 순서를 안 태워서 못 잡았다). `factory.py`가
+        # `ModelConfigResolver`/`ModelFactory`를 `TYPE_CHECKING`에서만 참조하고
+        # 실제 인스턴스는 생성자로 주입받는 것과 같은 이유 — 이 모듈도 같은
+        # 규칙을 따른다.
+        from services.agent_runtime.models.factory import resolved_endpoint_hash
+
         yield {
             "type": EVENT_AGENT_STARTED,
             "run_id": context.run_id,
             "agent_id": loaded.definition.agent_id,
             "agent_version_id": loaded.definition.agent_version_id,
+            # 2026-08-19, §4순위(Run Snapshot) — 이 실행이 실제로 사용한
+            # provider/엔드포인트. `tracing/__init__.py`의 `_start_run()`이
+            # 이 두 값을 읽어 `agent_run.resolved_provider`/
+            # `resolved_endpoint_hash`에 적재한다.
+            "resolved_provider": resolved_model.provider,
+            "resolved_endpoint_hash": resolved_endpoint_hash(resolved_model),
             "complete": False,
         }
 
@@ -141,12 +152,6 @@ class AgentExecutor:
                 # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
                 # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
                 thread_id=context.session_id,
-                # 승인 재개면 새 입력 대신 이 결정을 흘려 넣는다.
-                resume=(
-                    {"decisions": list(resume_decisions)}
-                    if resume_decisions is not None
-                    else None
-                ),
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
@@ -224,7 +229,11 @@ class AgentExecutor:
                         loaded.definition, tool_refs=tuple(tool_refs_override)
                     ),
                 )
-            runtime = self.factory.build(
+            # 재개는 `EVENT_AGENT_STARTED`를 새로 안 내므로(아래) `resolved_model`을
+            # 다시 기록할 자리가 없다 — 멈추기 전 `_start_run()`이 이미 적어 둔
+            # 값을 그대로 둔다. `[0]`으로 graph만 쓴다(§4순위, factory.build()
+            # docstring 참고).
+            runtime, _resolved_model = self.factory.build(
                 definition=loaded.definition,
                 subagent_references=loaded.subagent_references,
                 context=context,

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddleware, ToolCallLimitMiddleware
 from langchain.agents.middleware.todo import WRITE_TODOS_TOOL_DESCRIPTION
 
+from services.agent_runtime.middleware.tool_timeout import build_tool_call_timeout_middleware
+
 if TYPE_CHECKING:
     from services.agent_runtime.context import RuntimeContext
     from services.agent_runtime.definitions import AgentDefinition
@@ -129,6 +131,12 @@ class MiddlewareFactory:
             # 지웠던 것이므로, 인자를 아예 안 넘겨서 LangChain 기본값
             # 그대로 쓰이게 한다.
             middleware.append(TodoListMiddleware(tool_description=_TODO_TOOL_DESCRIPTION))
+        # 2026-08-19, §5순위 — harness 내장 도구·MCP 도구엔 timeout 개념이 아예
+        # 없다(`2026-08-19_01_실행_안정성_설계.md` §3). Root/Child 둘 다 이
+        # `build()`를 거치므로 여기 한 곳에만 추가하면 양쪽에 다 적용된다 —
+        # `factory.py`가 Root 전용으로 덧붙이는 write_guard/write_lock과 다른
+        # 자리(모든 Tool 대상, Root/Child 구분 없음)라 여기서 배선한다.
+        middleware.append(build_tool_call_timeout_middleware(runtime_policy=self.runtime_policy))
         return middleware
 
     def build_for_general_purpose(self) -> list:
@@ -137,4 +145,7 @@ class MiddlewareFactory:
         return [
             ModelCallLimitMiddleware(run_limit=limits.max_model_calls, exit_behavior="error"),
             ToolCallLimitMiddleware(run_limit=limits.max_tool_calls, exit_behavior="error"),
+            # 2026-08-19, §5순위 — general-purpose도 harness/MCP 도구를 그대로
+            # 부르므로 Root/Child와 같은 이유로 timeout을 건다.
+            build_tool_call_timeout_middleware(runtime_policy=self.runtime_policy),
         ]
