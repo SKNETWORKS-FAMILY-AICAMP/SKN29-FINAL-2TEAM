@@ -1,21 +1,20 @@
 """memory/backend.py 단위 테스트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §4-8, §5 Phase 3
+정본: docs/작업기록/Deep_Agents/2026-08-19_03_장기메모리_개인전용_최종구조.md
 
-2026-08-18, Phase 3 이전에는 이 파일이 없었다 — `build_memory_backend()`가
-`account_id`를 받지 않고 팀·에이전트 단위 공유 namespace 하나만 만들었기 때문에
-검증할 "격리"가 없었다. Phase 3에서 계정 전용 namespace(`/memories/users/`)가
-추가되면서, §5 Phase 3의 검증 기준("사용자 A/B가 서로 다른 내용을 쓰고, 서로
-상대방 것을 못 읽는지")을 실제 `CompositeBackend`/`StoreBackend` 객체로 확인한다
-(deepagents를 mock하지 않음 — namespace 튜플이 실제로 갈리는지가 핵심이라
-Fake로는 이 회귀를 못 잡는다).
+2026-08-19 — 팀·에이전트 공유 메모리(`/memories/AGENTS.md`,
+`/memories/projects/{project_id}.md`)를 없애기로 하면서 이 파일도 다시 썼다.
+이제 검증할 격리는 "계정 A/B가 서로 다른 내용을 쓰고, 서로 상대방 것을 못
+읽는지" 하나뿐이다(공유 namespace 자체가 없어졌으니 "다른 팀의 공유 메모리에
+접근되지 않는지" 같은 테스트는 더 이상 성립하지 않는다) — 실제
+`CompositeBackend`/`StoreBackend` 객체로 확인한다(deepagents를 mock하지 않음 —
+namespace 튜플이 실제로 갈리는지가 핵심이라 Fake로는 이 회귀를 못 잡는다).
 """
 
 from django.test import SimpleTestCase
 
 from services.agent_runtime.memory.backend import (
-    MEMORY_FILE,
-    MEMORY_PATH_PREFIX,
+    MEMORY_USERS_FILE,
     MEMORY_USERS_PATH_PREFIX,
     build_memory_backend,
     memory_paths,
@@ -24,53 +23,36 @@ from services.agent_runtime.memory.backend import (
 
 
 class ConstantsTests(SimpleTestCase):
-    def test_users_prefix_is_nested_under_shared_prefix(self):
-        self.assertTrue(MEMORY_USERS_PATH_PREFIX.startswith(MEMORY_PATH_PREFIX))
-
-    def test_memory_file_lives_under_shared_prefix_not_users_prefix(self):
-        """AGENTS.md는 여전히 공유 route(§4-8 "4. memory_paths()는 변경 없음")다."""
-        self.assertTrue(MEMORY_FILE.startswith(MEMORY_PATH_PREFIX))
-        self.assertFalse(MEMORY_FILE.startswith(MEMORY_USERS_PATH_PREFIX))
+    def test_memory_file_lives_under_users_prefix(self):
+        self.assertTrue(MEMORY_USERS_FILE.startswith(MEMORY_USERS_PATH_PREFIX))
 
 
 class MemoryPathsTests(SimpleTestCase):
-    def test_returns_agents_md_only(self):
-        self.assertEqual(memory_paths(), [MEMORY_FILE])
+    def test_returns_personal_preferences_file_only(self):
+        """매 턴 자동 주입 대상이 팀 공유 AGENTS.md에서 개인 preferences.md로
+        바뀌었다 — 배경지식을 매번 안 물어봐도 되게 하는 취지는 그대로 두고,
+        그 배경지식의 자리를 개인 선호가 대신한다."""
+        self.assertEqual(memory_paths(), [MEMORY_USERS_FILE])
 
 
 class BuildMemoryBackendTests(SimpleTestCase):
-    def test_routes_cover_shared_and_personal_prefixes(self):
+    def test_routes_cover_personal_prefix_only(self):
         backend = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
 
-        self.assertEqual(set(backend.routes.keys()), {MEMORY_PATH_PREFIX, MEMORY_USERS_PATH_PREFIX})
+        self.assertEqual(set(backend.routes.keys()), {MEMORY_USERS_PATH_PREFIX})
 
-    def test_personal_route_is_matched_before_shared_route(self):
-        """CompositeBackend는 route를 prefix 길이 기준 내림차순으로 매칭한다
-        (deepagents/backends/composite.py의 `sorted_routes` 실제 소스로 확인) —
-        `/memories/users/...`가 `/memories/...`보다 먼저 매칭돼야 한다."""
-
-        backend = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
-
-        self.assertEqual(backend.sorted_routes[0][0], MEMORY_USERS_PATH_PREFIX)
-
-    def test_shared_namespace_excludes_account_id(self):
-        """팀·에이전트 공유 메모리는 계정과 무관하게 같은 namespace를 써야 한다."""
-
-        backend = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
-
-        shared = backend.routes[MEMORY_PATH_PREFIX]
-        self.assertEqual(shared._namespace(None), ("TM001", "AG001"))
-
-    def test_personal_namespace_includes_account_id(self):
+    def test_personal_namespace_includes_team_agent_account_id(self):
+        """`team_id`/`agent_id`는 라우팅 자체에는 안 쓰이지만, 같은 계정이 팀을
+        옮기거나 다른 에이전트와 대화할 때 개인 메모리가 섞이지 않도록 namespace
+        에는 계속 셋 다 들어간다."""
         backend = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
 
         personal = backend.routes[MEMORY_USERS_PATH_PREFIX]
         self.assertEqual(personal._namespace(None), ("TM001", "AG001", "AC001"))
 
     def test_different_accounts_get_isolated_personal_namespaces(self):
-        """§5 Phase 3 검증 기준 그대로 — 사용자 A/B가 서로 다른 namespace를 받아야
-        서로의 개인 메모리를 못 읽는다(namespace가 다르면 StoreBackend는 아예
-        다른 저장 공간을 본다)."""
+        """사용자 A/B가 서로 다른 namespace를 받아야 서로의 개인 메모리를 못
+        읽는다(namespace가 다르면 StoreBackend는 아예 다른 저장 공간을 본다)."""
 
         backend_a = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
         backend_b = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC002")
@@ -79,8 +61,24 @@ class BuildMemoryBackendTests(SimpleTestCase):
         namespace_b = backend_b.routes[MEMORY_USERS_PATH_PREFIX]._namespace(None)
         self.assertNotEqual(namespace_a, namespace_b)
 
+    def test_same_account_different_teams_get_isolated_personal_namespaces(self):
+        """같은 계정이라도 team_id가 다르면 다른 namespace를 받아야 한다 — 한
+        팀에서 쓴 개인 메모리가 다른 팀 대화에 새어 나가면 안 된다."""
+
+        backend_team_a = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
+        backend_team_b = build_memory_backend(team_id="TM002", agent_id="AG001", account_id="AC001")
+
+        namespace_a = backend_team_a.routes[MEMORY_USERS_PATH_PREFIX]._namespace(None)
+        namespace_b = backend_team_b.routes[MEMORY_USERS_PATH_PREFIX]._namespace(None)
+        self.assertNotEqual(namespace_a, namespace_b)
+
     def test_default_backend_is_state_backend(self):
-        """`/memories/`, `/memories/users/` 외 경로는 여전히 휘발성 StateBackend."""
+        """`/memories/users/` 외 경로(과거의 `/memories/AGENTS.md`·
+        `/memories/projects/*.md` 포함)는 전부 StateBackend로 떨어진다 — 팀
+        공유 route를 뺀 것만으로 별도 코드 없이 이렇게 된다. "휘발성"이라
+        불러도 정확하지 않다 — checkpointer가 있으면 이 데이터도 그 대화
+        스레드의 체크포인트에는 남는다(장기 메모리 Store에만 안 갈 뿐).
+        `memory/backend.py` 모듈 docstring 참고."""
         from deepagents.backends import StateBackend
 
         backend = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
@@ -98,6 +96,14 @@ class MemorySystemPromptTests(SimpleTestCase):
         self.assertIn("Memory routing", memory_system_prompt())
         self.assertIn("/memories/users/", memory_system_prompt())
 
+    def test_no_longer_mentions_shared_team_memory(self):
+        """팀 공유 메모리 개념(AGENTS.md·프로젝트 파일·정책 섹션)이 프롬프트에서
+        완전히 빠졌는지 — 남아 있으면 모델이 존재하지 않는 경로를 안내하게 된다."""
+        prompt = memory_system_prompt()
+
+        for stale in ("AGENTS.md", "/memories/projects/", "SHARED", "## 정책"):
+            self.assertNotIn(stale, prompt)
+
     def test_still_contains_agent_memory_slot(self):
         """`MemoryMiddleware.__init__`이 요구하는 `{agent_memory}` 슬롯이 라우팅
         안내를 덧붙인 뒤에도 남아있어야 한다 — 없으면 ValueError."""
@@ -110,24 +116,47 @@ class MemorySystemPromptTests(SimpleTestCase):
 
         from deepagents import MemoryMiddleware
 
-        MemoryMiddleware(backend=Mock(), sources=[MEMORY_FILE], system_prompt=memory_system_prompt())
+        MemoryMiddleware(
+            backend=Mock(), sources=[MEMORY_USERS_FILE], system_prompt=memory_system_prompt()
+        )
 
     def test_survives_actual_format_agent_memory_call(self):
         """2026-08-18 회귀 테스트 — `MemoryMiddleware.__init__`이 요구하는
         `{agent_memory}` 슬롯 존재 여부만으로는 부족하다. `_format_agent_memory()`는
         전체 문자열을 실제 `str.format(agent_memory=...)`로 처리하므로, 라우팅
-        안내문 안에 이스케이프 안 된 `{project_id}` 같은 다른 중괄호가 섞여
-        있으면 `KeyError`로 죽는다 — 생성자 검사는 이걸 못 잡는다.
-        `agent_tool_selection_live_check.py`로 실제 `AgentRuntimeFactory.build()`
-        파이프라인을 끝까지 돌려 보다가 이 실패를 재현했다."""
+        안내문 안에 이스케이프 안 된 중괄호가 섞여 있으면 `KeyError`로 죽는다 —
+        생성자 검사는 이걸 못 잡는다. 이번 재작성으로 `{project_id}` 슬롯 자체가
+        빠졌지만, 다음에 또 비슷한 실수를 하지 않도록 이 회귀 테스트는 그대로
+        남긴다."""
         from unittest.mock import Mock
 
         from deepagents import MemoryMiddleware
 
         middleware = MemoryMiddleware(
-            backend=Mock(), sources=[MEMORY_FILE], system_prompt=memory_system_prompt()
+            backend=Mock(), sources=[MEMORY_USERS_FILE], system_prompt=memory_system_prompt()
         )
 
         formatted = middleware._format_agent_memory({}, template=middleware.system_prompt)
 
         self.assertIn("(No memory loaded)", formatted)
+
+    def test_conflict_guidance_reaches_final_system_message(self):
+        """저장된 메모리 vs 지금 도구 조회 결과, 저장된 메모리 vs 사용자의 현재
+        요청 — 이 두 충돌 기준이 `MemoryMiddleware._format_agent_memory()`를
+        실제로 통과한 뒤에도 살아남는지 확인한다."""
+        from unittest.mock import Mock
+
+        from deepagents import MemoryMiddleware
+
+        prompt = memory_system_prompt()
+        middleware = MemoryMiddleware(
+            backend=Mock(), sources=[MEMORY_USERS_FILE], system_prompt=prompt
+        )
+        formatted = middleware._format_agent_memory({}, template=middleware.system_prompt)
+
+        for expected in (
+            "지금 조회 결과를 따른다",
+            "사용자의 현재 요청을 따른다",
+            "edit_file을 사용해 부분 수정",
+        ):
+            self.assertIn(expected, formatted)

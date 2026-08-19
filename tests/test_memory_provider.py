@@ -21,9 +21,8 @@ class BackendTests(SimpleTestCase):
     def test_passes_team_agent_account_id_through(self):
         backend = MemoryProvider().backend(team_id="TM001", agent_id="AG001", account_id="AC001")
 
-        from services.agent_runtime.memory.backend import MEMORY_PATH_PREFIX, MEMORY_USERS_PATH_PREFIX
+        from services.agent_runtime.memory.backend import MEMORY_USERS_PATH_PREFIX
 
-        self.assertEqual(backend.routes[MEMORY_PATH_PREFIX]._namespace(None), ("TM001", "AG001"))
         self.assertEqual(
             backend.routes[MEMORY_USERS_PATH_PREFIX]._namespace(None), ("TM001", "AG001", "AC001")
         )
