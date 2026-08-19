@@ -123,6 +123,7 @@ def create_root_graph(
     memory_system_prompt: str | None = None,
     fs_excluded_tools: frozenset[str] = frozenset(),
     interrupt_on: dict[str, bool] | None = None,
+    permissions: Sequence[Any] = (),
 ) -> Any:
     """Root용 Deep Agent 그래프를 조립한다.
 
@@ -171,6 +172,21 @@ def create_root_graph(
     처리까지 general-purpose에도 자동 전파됨을 확인) Memory/Filesystem처럼
     이름 치환 트릭이 필요 없다 — 그대로 통과만 시킨다. `None`이면(기본값)
     deepagents 기본 동작 그대로다.
+
+    `permissions`(2026-08-19, `middleware/permissions.py` — `docs/작업기록/
+    Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md` §5): `create_deep_agent()`가
+    공개 파라미터로 직접 받는 `list[FilesystemPermission] | None`(실제 소스
+    시그니처 확인)이지만, **여기 최상위 `kwargs`에 넣는 것만으로는 부족하다.**
+    `fs_excluded_tools`가 비어있지 않으면(이 프로젝트는 `delete` 제외가 기본값이라
+    항상 그렇다) 아래에서 이름 치환용 커스텀 `FilesystemMiddleware(**fs_kwargs)`를
+    새로 만드는데, 이 커스텀 인스턴스가 자동 생성분(원래 `_permissions=permissions`를
+    받았을 인스턴스)을 치환해 버린다 — `fs_kwargs`에 `_permissions`를 같이 안 넘기면
+    Root 자신에게는 규칙이 에러 없이 조용히 적용 안 된다(§5에서 `deepagents/graph.py`
+    실제 소스로 확인한 내용). 그래서 아래 두 곳에 모두 채운다: 최상위
+    `kwargs["permissions"]`(general-purpose 서브에이전트가 자기 몫
+    `FilesystemMiddleware`를 만들 때 `spec.get("permissions", permissions)`로
+    부모 값을 자동 상속받는 경로에 필요)와 `fs_kwargs["_permissions"]`(Root 자신에게
+    실제로 적용되는 경로). 빈 시퀀스면(기본값) 둘 다 안 건드려 기존 동작과 동일하다.
     """
     kwargs: dict[str, Any] = dict(
         model=model,
@@ -189,6 +205,9 @@ def create_root_graph(
         kwargs["checkpointer"] = checkpointer
     if interrupt_on:
         kwargs["interrupt_on"] = interrupt_on
+    resolved_permissions = list(permissions)
+    if resolved_permissions:
+        kwargs["permissions"] = resolved_permissions
     if memory_system_prompt is not None and backend is not None:
         from deepagents import MemoryMiddleware
 
@@ -206,6 +225,8 @@ def create_root_graph(
         fs_kwargs: dict[str, Any] = {"tools": _filesystem_tools_allowlist(fs_excluded_tools)}
         if backend is not None:
             fs_kwargs["backend"] = backend
+        if resolved_permissions:
+            fs_kwargs["_permissions"] = resolved_permissions
         resolved_middleware.append(FilesystemMiddleware(**fs_kwargs))
     kwargs["middleware"] = resolved_middleware
     return create_deep_agent(**kwargs)
