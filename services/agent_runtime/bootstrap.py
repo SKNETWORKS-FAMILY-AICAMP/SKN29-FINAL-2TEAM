@@ -69,10 +69,11 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
     스크립트)에서만 명시적으로 다른 정책 인스턴스를 넘긴다 — 코드에 숫자를 다시
     박지 않는다.
 
-    ⚠ `tool_loader.load()`는 작업자 A의 `tools/adapters.py`가 아직
-    `NotImplementedError`라 실제로 도구가 있는 Agent를 실행하면 여기서 막힌다
-    (§6-11, 아직 미착수). 이 함수 자체는 실제 프로덕션 배선을 그대로 반영해야
-    하므로 Fake로 감싸지 않는다 — 그 자리를 대신 채우지 않고 그대로 드러낸다.
+    (2026-08-19 정정) 아래 줄은 §6-11 착수 전(2026-08-13) 기준으로 남아 있던
+    경고다 — `tools/adapters.py`는 그 뒤 구현이 끝났고(`services/harness/registry.py`의
+    `BUILTIN_TOOLS`를 감싼다), 지금은 실제로 도구를 쓰는 Agent도 정상 실행된다.
+    이 함수가 Fake로 감싸지 않고 실제 프로덕션 배선을 그대로 반영한다는 설명
+    자체는 여전히 유효해서 문단은 남기고 경고 문구만 정정한다.
     """
     policy = runtime_policy or RuntimeCapabilityPolicy()
     bootstrap_harness_profiles(excluded_tools=policy.excluded_builtin_tools)
