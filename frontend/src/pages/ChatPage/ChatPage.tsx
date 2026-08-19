@@ -30,6 +30,7 @@ import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liv
 import type { LiveChat } from './liveChat';
 import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
 import styles from './ChatPage.module.css';
+import cardStyles from './cards/cards.module.css';
 
 /**
  * 대화 한 턴 — 사람의 발화 하나와 그에 딸린 에이전트의 답.
@@ -980,40 +981,61 @@ export default function ChatPage() {
 
                   {live && (
                     <>
-                      {(live.running || live.steps.length > 0 || live.subagents.length > 0) && (
-                        <ProgressCard
-                          steps={live.steps}
-                          queries={live.queries}
-                          sources={live.sources}
-                          subagents={live.subagents}
-                          evidenceCount={live.evidenceCount}
-                          running={live.running}
-                          title={(() => {
-                            // 위임이 걸려 있으면(2026-08-18) 그동안 화면이 멈춘 것처럼
-                            // 보이던 문제를 고치려고 이 상태를 최우선으로 보여준다 —
-                            // 루트가 도구를 직접 호출 중이 아니라 다른 에이전트가
-                            // 일하는 중이라는 게 지금 사실과 더 가깝다.
-                            const active = live.subagents.find((run) => run.status === 'RUNNING');
-                            if (active) return `${active.name ?? active.alias ?? '다른 에이전트'}에게 위임 중`;
-                            if (live.running) return live.toolName ? `${live.toolName} 실행 중` : '생각하는 중';
-                            return live.toolName ? `${live.toolName} 완료` : '정리 완료';
-                          })()}
-                        />
-                      )}
+                      {(() => {
+                        const showProgress = live.running || live.steps.length > 0 || live.subagents.length > 0;
+                        const showReasoning = live.timeline.length > 0;
+                        if (!showProgress && !showReasoning) return null;
+                        // **진행 카드와 생각 과정을 한 카드로 묶는다**(2026-08-19) —
+                        // 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로
+                        // 합쳤다. 바깥 `<section className={cardStyles.card}>`를
+                        // 여기서 한 번만 두르고, 안쪽 둘은 `bare`로 테두리를 안
+                        // 그린다(같은 `cards.module.css`를 써야 카드 하나로 보인다).
+                        // 어느 한쪽만 있을 수도 있다(예: 도구 없이 생각만 한 턴) —
+                        // 그때만 있는 쪽만 그리고 경계선은 안 넣는다.
+                        return (
+                          <section className={cardStyles.card}>
+                            {showProgress && (
+                              <ProgressCard
+                                bare
+                                steps={live.steps}
+                                queries={live.queries}
+                                sources={live.sources}
+                                subagents={live.subagents}
+                                evidenceCount={live.evidenceCount}
+                                running={live.running}
+                                title={(() => {
+                                  // 위임이 걸려 있으면(2026-08-18) 그동안 화면이 멈춘 것처럼
+                                  // 보이던 문제를 고치려고 이 상태를 최우선으로 보여준다 —
+                                  // 루트가 도구를 직접 호출 중이 아니라 다른 에이전트가
+                                  // 일하는 중이라는 게 지금 사실과 더 가깝다.
+                                  const active = live.subagents.find((run) => run.status === 'RUNNING');
+                                  if (active) return `${active.name ?? active.alias ?? '다른 에이전트'}에게 위임 중`;
+                                  if (live.running) return live.toolName ? `${live.toolName} 실행 중` : '생각하는 중';
+                                  return live.toolName ? `${live.toolName} 완료` : '정리 완료';
+                                })()}
+                              />
+                            )}
 
-                      {/* **접은 채로 시작한다**(2026-08-18, PM: 「뭘 생각하는지만
-                          알면 된다」). OpenAI가 보내는 reasoning 요약은
-                          system_prompt의 언어 지시를 따르지 않아(2026-08-18
-                          재확인) 한국어로 만들 수단이 없다 — 도는 동안 자동으로
-                          펼치면 기다리는 내내 모델의 영어 독백이 화면 한가운데
-                          있게 된다. 지금 무엇을 하는지는 위 진행 카드가 한국어로
-                          말한다 — 「업무 등록 실행 중」·「생각하는 중」.
-                          `defaultOpen`을 `live.running`이 아니라 고정 `false`로
-                          둔 것만 그 커밋과 다르다 — 펼치면(2026-08-18 타임라인
-                          기능) 그 뒤로는 실시간 로그처럼 흐르고 도구 반환값도
-                          클릭해서 볼 수 있으니, 자동으로 펼치지만 않으면 두
-                          요구가 부딪히지 않는다. */}
-                      <ReasoningTrace entries={live.timeline} defaultOpen={false} running={live.running} />
+                            {showProgress && showReasoning && <div className={cardStyles.cardDivider} />}
+
+                            {/* **접은 채로 시작한다**(2026-08-18, PM: 「뭘 생각하는지만
+                                알면 된다」). OpenAI가 보내는 reasoning 요약은
+                                system_prompt의 언어 지시를 따르지 않아(2026-08-18
+                                재확인) 한국어로 만들 수단이 없다 — 도는 동안 자동으로
+                                펼치면 기다리는 내내 모델의 영어 독백이 화면 한가운데
+                                있게 된다. 지금 무엇을 하는지는 위 진행 카드가 한국어로
+                                말한다 — 「업무 등록 실행 중」·「생각하는 중」.
+                                `defaultOpen`을 `live.running`이 아니라 고정 `false`로
+                                둔 것만 그 커밋과 다르다 — 펼치면(2026-08-18 타임라인
+                                기능) 그 뒤로는 실시간 로그처럼 흐르고 도구 반환값도
+                                클릭해서 볼 수 있으니, 자동으로 펼치지만 않으면 두
+                                요구가 부딪히지 않는다. */}
+                            {showReasoning && (
+                              <ReasoningTrace bare entries={live.timeline} defaultOpen={false} running={live.running} />
+                            )}
+                          </section>
+                        );
+                      })()}
 
                       {live.jira && (
                         <JiraStatusCard
