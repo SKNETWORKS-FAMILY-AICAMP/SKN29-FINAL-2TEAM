@@ -1,12 +1,14 @@
-"""역할별 Tool 노출, 호출 상한, write Tool 권한을 정의한다."""
+"""역할별 호출 상한과 write Tool 실행 권한을 정의한다.
+
+**노출은 안 건드린다**(2026-08-19) — 모델에게 어떤 도구를 보여줄지는 역할과
+무관하다(`factory.py`의 `build()`). 여기 있는 `is_tool_allowed_for_role()`은
+그 도구를 **실행**해도 되는지만 판단한다.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from services.agent_runtime.tools.loader import Tool
+from typing import Literal
 
 Role = Literal["ROOT", "GENERAL_PURPOSE", "CHILD"]
 AccountRole = Literal["leader", "member"]
@@ -108,17 +110,18 @@ class RuntimeCapabilityPolicy:
         return min(requested, self.max_tool_calls_ceiling)
 
     def is_tool_allowed_for_role(self, *, side_effect: bool, account_role: AccountRole) -> bool:
-        """부수효과 없는 도구는 항상 허용. 부수효과 있는 도구는 허용 역할만 통과."""
+        """부수효과 없는 도구는 항상 허용. 부수효과 있는 도구는 허용 역할만 통과.
+
+        **노출이 아니라 실행만 막는다**(2026-08-19 정책 변경). 예전엔 이
+        판단으로 `filter_tools_for_role()`이 모델에게 보여줄 도구 목록에서
+        허용 안 된 것을 통째로 지웠다 — 그러면 모델이 그 도구를 아예 모르게
+        되어 "그런 기능이 없다"고 답했는데, 실제로는 권한이 없을 뿐이었다
+        (버그 리포트: 「승인 필요가 붙어있는 툴에 대해서 에이전트가 툴이
+        존재하지 않는다고 판단」). 이제 노출은 역할과 무관하게 항상 하고
+        (`services/agent_runtime/factory.py`의 `build()`), 이 함수는
+        `_to_langchain_tool()`의 `_run()`이 실행 직전에만 써서 "왜 안 되는지"를
+        말로 돌려준다.
+        """
         if not side_effect:
             return True
         return account_role in self.write_tool_allowed_roles
-
-    def filter_tools_for_role(
-        self, tools: tuple["Tool", ...], *, account_role: AccountRole
-    ) -> tuple["Tool", ...]:
-        """허용되지 않은 도구를 조용히 제외한다(예외를 던지지 않음)."""
-        return tuple(
-            tool
-            for tool in tools
-            if self.is_tool_allowed_for_role(side_effect=tool.side_effect, account_role=account_role)
-        )

@@ -16,18 +16,6 @@ from services.agent_runtime.runtime_policy import (
     DEFAULT_WRITE_TOOL_ALLOWED_ROLES,
     RuntimeCapabilityPolicy,
 )
-from services.agent_runtime.tools.loader import Tool
-
-
-def _tool(*, ref: str, side_effect: bool) -> Tool:
-    return Tool(
-        ref=ref,
-        name=ref,
-        description="",
-        input_schema={},
-        handler=lambda **_: None,
-        side_effect=side_effect,
-    )
 
 
 class DefaultExcludedBuiltinToolsTests(SimpleTestCase):
@@ -187,35 +175,9 @@ class IsToolAllowedForRoleTests(SimpleTestCase):
         self.assertTrue(self.policy.is_tool_allowed_for_role(side_effect=True, account_role="leader"))
 
     def test_side_effect_tool_blocked_for_member(self):
-        """팀원에게는 쓰기(side_effect=True) 도구를 주지 않는다 — 사용자 명시 요구사항."""
+        """팀원은 쓰기(side_effect=True) 도구를 **실행**할 수 없다 — 사용자 명시
+        요구사항. 노출(모델에게 보여주는 것)은 더는 이 판단을 안 탄다
+        (2026-08-19 정책 변경 — `factory.py`의 `build()`가 역할과 무관하게
+        전부 보여주고, 이 함수는 `_run()`의 실행 시점 확인에만 쓰인다)."""
 
         self.assertFalse(self.policy.is_tool_allowed_for_role(side_effect=True, account_role="member"))
-
-
-class FilterToolsForRoleTests(SimpleTestCase):
-    def setUp(self):
-        self.policy = RuntimeCapabilityPolicy()
-        self.read_tool = _tool(ref="document_search", side_effect=False)
-        self.write_tool = _tool(ref="task_register", side_effect=True)
-
-    def test_leader_keeps_both_tools(self):
-        result = self.policy.filter_tools_for_role(
-            (self.read_tool, self.write_tool), account_role="leader"
-        )
-
-        self.assertEqual(result, (self.read_tool, self.write_tool))
-
-    def test_member_loses_write_tool_silently(self):
-        """예외를 던지지 않고 조용히 제외한다 — 레거시 registry 관례(허용 목록에 없는
-        내장 도구는 빠진다)와 동일한 형태."""
-
-        result = self.policy.filter_tools_for_role(
-            (self.read_tool, self.write_tool), account_role="member"
-        )
-
-        self.assertEqual(result, (self.read_tool,))
-
-    def test_empty_input_returns_empty(self):
-        result = self.policy.filter_tools_for_role((), account_role="member")
-
-        self.assertEqual(result, ())

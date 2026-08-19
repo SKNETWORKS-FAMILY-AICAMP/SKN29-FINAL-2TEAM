@@ -31,18 +31,6 @@ class ToolContextConfigurationError(AgentRuntimeError):
     """Tool이 지원하지 않는 서버 컨텍스트 값을 요구할 때."""
 
 
-class ToolPermissionError(AgentRuntimeError):
-    """현재 요청자의 역할로는 부수효과 있는 Tool을 실행할 수 없을 때.
-
-    `filter_tools_for_role()`(노출 시점)과 별개로 `factory._to_langchain_tool()`의
-    `_run()`이 실행 직전에 다시 확인하다가 걸릴 때 던진다(2026-08-14 추가) — 정상
-    경로에서는 노출 필터가 이미 걸러서 여기까지 오지 않는다. 스트림 도중(도구가
-    실제로 실행되는 시점)에 나므로 `AgentExecutor.run()`의 실행 중 오류 처리로
-    가서 terminal `EVENT_ERROR`가 된다 — 그래서 아래 `HTTP_STATUS_BY_EXCEPTION`
-    (스트림 시작 전 오류 전용)에는 넣지 않는다.
-    """
-
-
 class SubagentValidationError(AgentRuntimeError):
     """Child 구성 검증 실패의 공통 상위 예외."""
 

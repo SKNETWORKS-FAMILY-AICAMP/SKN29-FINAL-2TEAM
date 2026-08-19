@@ -15,7 +15,6 @@ from services.agent_runtime.compat import (
 )
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
-from services.agent_runtime.exceptions import ToolPermissionError
 from services.agent_runtime.subagents.builder import build_subagent
 from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
@@ -50,25 +49,36 @@ def _to_langchain_tool(
 ) -> StructuredTool:
     """Tool을 LangChain `StructuredTool`로 변환한다.
 
-    `build()`의 `filter_tools_for_role()`(노출 시점, 1회)과 별개로, 이 도구가 실제
-    실행되는 시점(`_run()` 호출마다)에도 같은 정책을 다시 확인한다. 노출 필터
-    하나만 유일한 방어선이면 그 필터의 버그·설정 누락(예: 새 Tool을
-    `side_effect=True`로 표시하는 걸 빠뜨림)이 곧바로 권한 우회가 된다 — 실행
-    직전에도 다시 확인해 두 시점 중 하나만 맞아도 막히게 한다. 노출 필터가 쓰는
-    것과 완전히 같은 판단 함수(`is_tool_allowed_for_role`)를 재사용해서 두
-    시점의 판단이 서로 갈릴 일이 없게 했다(2026-08-14 추가).
+    권한 확인은 **이 도구가 실제로 실행되는 시점**(`_run()` 호출마다)에만
+    한다 — 모델에게 무엇을 보여줄지(`build()`가 만드는 `langchain_tools`)는
+    2026-08-19부터 역할과 무관하다(아래 "왜 노출 시점엔 안 거르는가" 참고).
+    그래서 이 실행 시점 확인이 **유일한 방어선**이다 — `is_tool_allowed_for_role()`
+    가 여기서 `False`를 돌려주면 아래 `_run()`이 `ToolException`으로 사유를
+    말하고 끝낸다(대화는 안 끊긴다 — `_run()`의 그 분기 주석 참고).
+
+    **왜 노출 시점엔 안 거르는가**: 예전에는 `build()`가 `filter_tools_for_role()`
+    로 `side_effect=True` 도구를 `member`에게서 통째로 지워, 모델이 그 도구
+    존재 자체를 몰라 "그런 기능이 없다"고 답했다(버그 리포트, 2026-08-19) —
+    실제로는 권한이 없을 뿐인데 화면엔 "승인 필요"라고만 적혀 있어 팀장은
+    "팀원이 쓰면 승인 카드가 뜨겠지"라고 오해했다. 이제 모델은 도구 존재를
+    항상 알고, 실행하려 하면 이 함수의 `_run()`이 그 자리에서 사유를 말해
+    준다 — 존재를 숨기는 대신 이유를 알려주는 쪽으로 바꿨다.
     """
 
     def _run(**kwargs: Any) -> Any:
         if not runtime_policy.is_tool_allowed_for_role(
             side_effect=tool.side_effect, account_role=context.role
         ):
-            # 이건 그대로 둔다 — 노출 필터를 뚫고 여기까지 온 권한 위반은
-            # "모델이 고칠 수 있는 실수"가 아니라 방어선 자체의 이상이라 계속
-            # 감추지 않고 terminal EVENT_ERROR로 크게 드러낸다(ToolPermissionError
-            # 자체 docstring 참고) — 아래 handler 실패와 다른 취급이다.
-            raise ToolPermissionError(
-                f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다."
+            # **말할 수 있는 실패로 바꿨다**(2026-08-19, 위 함수 docstring
+            # "왜 노출 시점엔 안 거르는가" 참고). 이 도구는 이제 역할과 무관하게
+            # 항상 모델에게 노출되므로, member가 승인 필요 도구를 부르는 건
+            # 방어선이 뚫린 이상 상황이 아니라 흔히 일어나는 정상 경로다.
+            # 예전처럼 대화를 통째로 끊으면(`ToolPermissionError` → 크래시)
+            # "권한이 없다"는 사유가 사라진 채 "요청을 끝내지 못했습니다"만
+            # 남는다 — 아래 handler 실패(`ToolInputError` 등)와 같은 방식으로
+            # `ToolException`을 던져 모델이 사유를 그대로 사람에게 전하게 한다.
+            raise ToolException(
+                f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다. 팀장에게 요청해 주세요."
             )
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
@@ -198,7 +208,17 @@ class AgentRuntimeFactory:
         tools = self.tool_loader.load(
             tool_refs=definition.tool_refs, context=context, agent_model=definition.model
         )
-        tools = self.runtime_policy.filter_tools_for_role(tools, account_role=context.role)
+        # **역할로 도구를 숨기지 않는다**(2026-08-19 정책 변경 — 지훈 확인).
+        # 예전엔 여기서 `filter_tools_for_role()`로 `side_effect=True` 도구를
+        # `member`에게서 통째로 지웠다 — 그러면 모델이 그 도구를 아예 받은 적이
+        # 없어서 "그런 기능이 없다"고 답했는데, 실제로는 권한이 없을 뿐이었다
+        # (버그 리포트: 「승인 필요가 붙어있는 툴에 대해서 에이전트가 툴이
+        # 존재하지 않는다고 판단」). 실행 차단은 그대로 유지한다 —
+        # `_to_langchain_tool()`의 `_run()`이 호출 시점에 `is_tool_allowed_for_role()`
+        # 를 다시 확인해 `member`면 `ToolException`으로 막는다(아래
+        # `interrupt_on`도 같은 기준으로 이 도구는 애초에 승인 대기에 안 넣는다 —
+        # 승인 카드를 띄우면 그 카드를 부른 사람(팀원) 본인이 눌러 승인해 버릴
+        # 수 있어 권한 경계를 오히려 뚫는다).
         langchain_tools = [
             _to_langchain_tool(t, context=context, runtime_policy=self.runtime_policy) for t in tools
         ]
@@ -208,14 +228,22 @@ class AgentRuntimeFactory:
         # Checkpointer 없이는 재개가 안 되므로(계획 문서 §5 Phase 7: "Phase
         # 1(Checkpointer) 완료 전에는 착수 불가"), Checkpointer가 없는 배포·
         # 테스트에서까지 승인 대기를 걸면 재개할 방법이 없는 상태로 막히기만
-        # 한다. `tools`(역할 필터까지 끝난 이번 요청의 실제 노출 목록)에서
-        # `side_effect=True`인 것만 뽑는다 — Phase 0에서 확인한 값(`task_register`
-        # /`task_update`/`jira_create_issues`, MCP 도구 전부)을 하드코딩하지
-        # 않고 매 요청 시점의 실제 목록을 그대로 쓴다 — 팀마다 달라지는 MCP
-        # 도구나 나중에 추가될 side_effect 도구도 자동으로 포함된다.
+        # 한다. `tools`에서 `side_effect=True`고 **이 역할이 실행할 수 있는**
+        # 것만 뽑는다(2026-08-19 — `langchain_tools`는 역할과 무관하게 전부
+        # 보여주지만, 승인 대기는 여전히 역할별이다: `member`가 부르면 위 `_run()`
+        # 에서 바로 거부되므로 승인 카드 자체가 뜰 이유가 없다). Phase 0에서
+        # 확인한 값(`task_register`/`task_update`/`jira_create_issues`, MCP 도구
+        # 전부)을 하드코딩하지 않고 매 요청 시점의 실제 목록을 그대로 쓴다 —
+        # 팀마다 달라지는 MCP 도구나 나중에 추가될 side_effect 도구도 자동으로
+        # 포함된다.
         interrupt_on: dict[str, bool] | None = None
         if self.checkpointer_provider is not None:
-            side_effect_tools = {model_safe_tool_name(t.ref): True for t in tools if t.side_effect}
+            side_effect_tools = {
+                model_safe_tool_name(t.ref): True
+                for t in tools
+                if t.side_effect
+                and self.runtime_policy.is_tool_allowed_for_role(side_effect=True, account_role=context.role)
+            }
             if side_effect_tools:
                 interrupt_on = side_effect_tools
 
