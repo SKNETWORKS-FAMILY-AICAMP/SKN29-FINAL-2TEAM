@@ -70,8 +70,21 @@ class _FakeStreamAdapter:
         self.stream_calls = []
 
     def stream(
-        self, *, runtime, user_input, conversation_messages=(), thread_id=None, resume=None
+        self,
+        *,
+        runtime,
+        user_input,
+        conversation_messages=(),
+        thread_id=None,
+        resume=None,
+        callbacks=(),
+        trace_metadata=None,
     ):
+        # `callbacks`/`trace_metadata`는 2026-08-19 Langfuse 연동으로 늘었다
+        # (`executor.py`가 항상 넘긴다 — 키가 없으면 각각 빈 시퀀스/`None`).
+        # 실제 `DeepAgentStreamAdapter.stream()`과 시그니처를 맞추지 않으면
+        # `TypeError: unexpected keyword argument`로 이 테스트 더블을 쓰는
+        # 테스트 전부가 깨진다.
         self.stream_calls.append(
             {
                 "runtime": runtime,
@@ -79,6 +92,8 @@ class _FakeStreamAdapter:
                 "conversation_messages": conversation_messages,
                 "thread_id": thread_id,
                 "resume": resume,
+                "callbacks": callbacks,
+                "trace_metadata": trace_metadata,
             }
         )
         yield from self._raw_events
