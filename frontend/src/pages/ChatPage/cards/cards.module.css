@@ -17,6 +17,13 @@
   overflow: hidden;
 }
 
+/* 진행 카드와 생각 과정을 한 카드로 합칠 때(2026-08-19) 그 경계선 — 흰 박스
+   두 개로 따로 떠 있던 걸 하나로 묶어 달라는 지적으로 추가했다. `.card`의
+   flex `gap`이 위아래 여백을 이미 주므로 선만 긋는다. */
+.cardDivider {
+  border-top: 1px solid var(--color-border);
+}
+
 .muted {
   font-size: 12px;
   color: var(--color-muted);

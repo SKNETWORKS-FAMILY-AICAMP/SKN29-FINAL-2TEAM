@@ -13,7 +13,7 @@ from django.test import SimpleTestCase
 
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentDefinition, SubagentReference
-from services.agent_runtime.exceptions import DelegationDepthError, ToolPermissionError
+from services.agent_runtime.exceptions import DelegationDepthError
 from services.agent_runtime.factory import AgentRuntimeFactory, DependencyGraphSource, _to_langchain_tool
 from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ResolvedModelConfig
@@ -274,7 +274,11 @@ class BuildToolAssemblyTests(SimpleTestCase):
         self.assertEqual(search_tool.invoke({"query": "q"}), "TM001:q")
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_member_loses_side_effect_tool(self, mock_create_root):
+    def test_member_still_sees_side_effect_tool(self, mock_create_root):
+        """2026-08-19 정책 변경 — 노출은 역할과 무관하다. 예전엔 member가
+        `task_register`를 아예 못 봐서 모델이 "그런 기능이 없다"고 답했는데
+        (버그 리포트), 이제는 보이되 실행하면 막힌다(`ToolExecutionTimeRBACTests`
+        참고)."""
         mock_create_root.return_value = "GRAPH"
         factory, _ = _factory()
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
@@ -283,7 +287,7 @@ class BuildToolAssemblyTests(SimpleTestCase):
 
         tools_arg = mock_create_root.call_args.kwargs["tools"]
         names = {t.name for t in tools_arg}
-        self.assertEqual(names, {"document_search"})
+        self.assertEqual(names, {"document_search", "task_register"})
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_leaders_write_tool_still_executes_normally_through_build(self, mock_create_root):
@@ -300,12 +304,12 @@ class BuildToolAssemblyTests(SimpleTestCase):
 
 
 class ToolExecutionTimeRBACTests(SimpleTestCase):
-    """실행 직전 RBAC 재검사(2026-08-14 추가) — `_to_langchain_tool()`을 직접
-    호출해, `filter_tools_for_role()`(노출 시점)을 거치지 않은 경우에도 실행
-    시점 자체에서 막히는지 확인한다. 이게 진짜 요점이다: 노출 필터가 이미
-    걸러 준 정상 경로만 보면 이 방어선이 실제로 도는지 증명이 안 된다 —
-    필터에 버그가 있었거나 새 Tool에 `side_effect` 표시를 빠뜨린 경우를
-    가정한 시나리오다."""
+    """실행 직전 RBAC 재검사 — `_to_langchain_tool()`을 직접 호출해 확인한다.
+
+    2026-08-19부터 이게 **유일한** 방어선이다(예전엔 노출 시점 필터
+    `filter_tools_for_role()`도 있었는데, 그걸로 member에게서 도구를 통째로
+    지우면 모델이 "그런 기능이 없다"고 답해 버려서(버그 리포트) 없앴다 —
+    이제 모델은 도구를 항상 보고, 실행하려 하면 여기서 막힌다)."""
 
     def _write_tool(self) -> Tool:
         return Tool(
@@ -327,13 +331,18 @@ class ToolExecutionTimeRBACTests(SimpleTestCase):
             side_effect=False,
         )
 
-    def test_member_calling_a_write_tool_directly_is_blocked_even_without_exposure_filter(self):
+    def test_member_calling_a_write_tool_directly_gets_a_speakable_permission_message(self):
+        """2026-08-19 — 크래시(`ToolPermissionError`)가 아니라 `ToolException`
+        으로 바뀌었다. member의 에이전트가 승인 필요 도구를 부르는 건 이제
+        흔한 정상 경로라, 대화를 끊지 않고 모델이 사유를 그대로 전한다."""
         tool = self._write_tool()
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
         langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
 
-        with self.assertRaises(ToolPermissionError):
-            langchain_tool.invoke({})
+        self.assertEqual(
+            langchain_tool.invoke({}),
+            "'member' 역할은 'task_register' 도구를 실행할 권한이 없습니다. 팀장에게 요청해 주세요.",
+        )
 
     def test_leader_calling_a_write_tool_directly_still_succeeds(self):
         tool = self._write_tool()
@@ -833,12 +842,16 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         )
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_no_side_effect_tools_after_role_filter_leaves_interrupt_on_none(
+    def test_member_role_leaves_interrupt_on_none_even_though_tool_is_exposed(
         self, mock_create_root
     ):
-        """member는 write_tool_allowed_roles(기본 leader만)에 안 들어 있어서
-        `task_register`가 노출 시점에 이미 걸러진다 — 그 뒤에 남는 도구가 전부
-        side_effect=False면 interrupt_on도 None이어야 한다."""
+        """member는 write_tool_allowed_roles(기본 leader만)에 안 들어 있다.
+        2026-08-19부터 `task_register`는 `tools`(모델에게 노출되는 목록)엔
+        그대로 남지만(더 안 걸러짐), `interrupt_on`은 여전히 역할을 봐서
+        이 도구를 안 넣는다 — 안 넣으면 member가 이 도구를 부를 때 승인
+        대기 없이 곧바로 `_run()`에서 거부된다(`ToolExecutionTimeRBACTests`).
+        만약 여기 넣었다면 승인 카드가 뜨고, 그걸 부른 본인(member)이 눌러
+        승인해 버릴 수 있어 권한 경계가 뚫린다."""
 
         mock_create_root.return_value = "GRAPH"
         factory, _ = _factory(checkpointer_provider=_FakeCheckpointerProvider())

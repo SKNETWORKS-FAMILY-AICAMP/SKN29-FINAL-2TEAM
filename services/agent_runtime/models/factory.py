@@ -37,6 +37,15 @@ class ModelConfigResolver:
     """
 
     def resolve(self, *, model: str, reasoning_effort: str, team_id: str | None) -> ResolvedModelConfig:
+        # `agent_versions.model`은 DB에 NOT NULL이 아니다(DB/schema.sql) — 저장
+        # API(`AgentVersionPublishSerializer.model`)도 `allow_null=True`로 NULL을
+        # 그대로 받아 준다. 여기서 안 막으면 아래 `model.startswith("claude-")`가
+        # `AttributeError: 'NoneType' object has no attribute 'startswith'`로
+        # 깨져서, 사용자에게는 원인을 알 수 없는 크래시로만 보인다(2026-08-19 —
+        # 코드에 이미 자체 인지되어 있던 문제, `provision_default_chat_agent()`
+        # docstring 참고). 도메인 오류로 먼저 잡아 이유를 말한다.
+        if not model:
+            raise ModelUnavailableError("이 에이전트에는 아직 모델이 설정되지 않았습니다.")
         custom = self._team_endpoint(team_id, model)
         if custom is not None:
             api_key = str(custom.get("api_key") or "").strip()

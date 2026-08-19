@@ -31,20 +31,28 @@ from .errors import (
 from .repositories import _require_team
 
 
-def _next_agents_id(cursor) -> str:
-    """`agents.agent_id`를 발급하되, 옛 `agent` 테이블과 번호가 안 겹치게 한다.
+def _next_shared_agent_id(cursor) -> str:
+    """`agent_id`를 발급한다 — **어느 테이블에 넣든** 옛 `agent`와 새 `agents`
+    둘 다와 번호가 안 겹치게 한다(2026-08-19, 양방향으로 확장).
 
     두 테이블이 'AG' 접두사를 공유하고(DB/migrations/2026-08-13_agent_versioning.sql
     상단 주석 — 전환 완료 시 `agent`를 대체할 것을 전제로 같은 코드 체계를
     물려받았다) 각자 따로 번호를 매기다 보니, 우연히 같은 값이 나올 수 있다.
-    `_resolve_session_agent()`가 옛 테이블을 먼저 보기 때문에, 겹치면 새로
-    만든 에이전트가 **조용히**(에러 없이) 옛 에이전트에게 가려진다 — 실제로
-    Chat 재설계 검증 중 겪었다(2026-08-15, 지훈 확인 후 여기서 막기로 함).
+    `_resolve_session_agent()`가 옛 테이블을 먼저 보기 때문에, `agents`에
+    새로 만든 에이전트가 겹치면 **조용히**(에러 없이) 옛 에이전트에게
+    가려진다 — 실제로 Chat 재설계 검증 중 겪었다(2026-08-15, 지훈 확인 후
+    `agents` 발급 쪽만 우선 막았다).
+
+    **반대 방향은 그때 안 막아 뒀다** — 옛 `agent` 테이블 생성 경로
+    (`AgentCrudRepository.create()`, 구 Builder 화면이 아직 쓴다)가 여전히
+    `agent` 테이블만 보고 번호를 매겨서, 다음 번호가 이미 `agents`에 쓰이고
+    있는 실제 에이전트(예: 팀의 기본 챗)와 겹칠 수 있었다 — 라이브 DB에서
+    실제로 재현되는 걸 확인하고 여기서 같이 막는다(2026-08-19).
 
     옛 `agent` 테이블 자체는 아직 못 지운다 — 지금 운영 중인 Chat이 여전히
     그 테이블에 물려 있다(재설계 완료 후 제거 예정, task #19). 그래서 발급
     시점에 두 테이블의 MAX를 같이 보고 더 큰 쪽 다음 번호를 쓴다.
-    `next_short_code()`(`agents` 테이블만 본다)를 그대로 못 쓰는 이유가 이것이다.
+    `next_short_code()`(테이블 하나만 본다)를 그대로 못 쓰는 이유가 이것이다.
     """
     # next_short_code()와 같은 lock 이름 — 재진입 가능한 잠금이라 같은
     # 트랜잭션 안에서 두 번 걸어도 안전하다(pg_advisory_xact_lock 특성).
@@ -305,7 +313,8 @@ class AgentVersionRepository:
                     """
                     SELECT v.agent_version_id, v.agent_id, v.system_prompt,
                            v.model, v.reasoning_effort, v.max_iterations,
-                           a.team_id, a.name, a.description, a.status AS agent_status
+                           a.team_id, a.name, a.description, a.status AS agent_status,
+                           a.owner_account_id AS agent_owner_account_id
                     FROM agent_versions AS v
                     JOIN agents AS a ON a.agent_id = v.agent_id
                     WHERE v.agent_version_id = %s AND v.agent_id = %s
@@ -386,6 +395,18 @@ class AgentSubagentRepository:
         아래 자식을 두는지)를 본다 — MVP는 1단계 위임까지만 허용하므로
         (`DelegationDepthError`), 이 값이 True인 자식을 선택하면 검증에서
         걸린다.
+
+        **`is_active`는 "ACTIVE 상태"가 아니라 "서브 에이전트로 참조해도
+        되는가"다**(2026-08-19 수정 — `_build_subagent_refs()`가 이미 하던
+        완화를 여기도 맞췄다. ACTIVE는 항상 되고, **본인 소유의 DRAFT도**
+        된다. 저장 API(`_build_subagent_refs`)는 저장 시점에 이 완화를 적용해
+        본인 DRAFT를 서브 에이전트로 저장할 수 있게 해 두고 이 함수도 "같은
+        계산"이라고 주석에 적어 뒀는데, 실제로는 `account_id`를 안 써서 여기만
+        빠져 있었다 — 저장은 되는데 그 저장된 부모를 **실행하면**(Chat) 여기서
+        걸려 `InactiveSubagentError`로 대화 전체가 끊기는 것으로 실측 확인했다
+        (2026-08-19, `services/agent_runtime/subagents/validation.py`
+        `validate_subagents()`가 `factory.build()` 안에서 스트림 시작 뒤에
+        예외를 던져 `ErrorCard`가 뜸).
         """
 
         with database_connection() as connection:
@@ -395,6 +416,7 @@ class AgentSubagentRepository:
                     SELECT s.child_agent_id, s.child_version_id, s.alias,
                            s.delegation_description,
                            a.team_id AS child_team_id, a.status AS child_status,
+                           a.owner_account_id AS child_owner_account_id,
                            EXISTS (
                                SELECT 1 FROM agent_version_subagents AS g
                                WHERE g.parent_version_id = s.child_version_id
@@ -416,7 +438,8 @@ class AgentSubagentRepository:
                 "delegation_description": row["delegation_description"],
                 # v1: visibility가 항상 'TEAM' 고정이라(마이그레이션 주석 참고)
                 # 팀 소속 일치만 본다. PRIVATE가 생기면 여기만 바꾼다.
-                "is_active": row["child_status"] == "ACTIVE",
+                "is_active": row["child_status"] == "ACTIVE"
+                or (row["child_status"] == "DRAFT" and row["child_owner_account_id"] == account_id),
                 "can_execute": row["child_team_id"] == team_id,
                 "has_subagents": row["has_subagents"],
             }
@@ -572,7 +595,7 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
     # 같은 이유).
     from services.harness.runner import DEFAULT_EFFORT, DEFAULT_MODEL
 
-    agent_id = _next_agents_id(cursor)
+    agent_id = _next_shared_agent_id(cursor)
     cursor.execute(
         """
         INSERT INTO agents
@@ -788,7 +811,7 @@ class AgentVersionCrudRepository:
                 team_id = _require_team(cursor, account_id)
 
                 if agent_id is None:
-                    agent_id = _next_agents_id(cursor)
+                    agent_id = _next_shared_agent_id(cursor)
                     cursor.execute(
                         """
                         INSERT INTO agents (agent_id, team_id, name, description, owner_account_id)
@@ -2131,9 +2154,11 @@ class AgentCrudRepository:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
                 _check_tool_refs(cursor, team_id=team_id, tool_refs=tool_refs)
-                agent_id = next_short_code(
-                    cursor, table="agent", column="agent_id", prefix="AG"
-                )
+                # `next_short_code(table="agent", ...)`가 아니라 `_next_shared_agent_id()`다
+                # — 옛 `agent` 테이블만 보면 새 `agents` 테이블에 이미 쓰인 번호(예: 팀의
+                # 기본 챗 에이전트)와 겹칠 수 있다(2026-08-19, 반대 방향 충돌 수정 —
+                # 정방향은 `_next_shared_agent_id()` docstring 참고).
+                agent_id = _next_shared_agent_id(cursor)
                 cursor.execute(
                     """
                     INSERT INTO agent (agent_id, team_id, name, description, instruction,

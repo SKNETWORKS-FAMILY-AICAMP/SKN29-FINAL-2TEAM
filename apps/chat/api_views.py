@@ -596,9 +596,23 @@ def _relay(events, *, session_id: str, account_id: str, question: str = ""):
             yield json.dumps(event, ensure_ascii=False, default=str) + "\n"
     except Exception as exc:  # noqa: BLE001 - 스트림 중에는 500 을 낼 수 없다
         logger.exception("에이전트 실행에 실패했습니다: session=%s", session_id)
+        # `AgentRuntimeError`(와 그 하위 클래스 — `ModelUnavailableError`,
+        # `InactiveSubagentError` 등)는 우리 코드가 **사람에게 보여줄 문장을
+        # 직접 지어 던진 것**이다(2026-08-19 — `ModelUnavailableError`가 여기서
+        # 클래스 이름만 뜨고 실제 메시지("이 에이전트에는 아직 모델이 설정되지
+        # 않았습니다")는 버려지는 걸 발견하고 고쳤다). `factory.build()`가
+        # 스트림 시작 뒤(그래프를 짓는 시점)에 이런 예외를 던지면 여기서 잡히는데,
+        # 그 밖의 예외(라이브러리·드라이버)는 여전히 클래스 이름만 남긴다 —
+        # 문자열에 쿼리·문서 원문·토큰이 섞여 있을 수 있어서다(같은 판단이
+        # `services/agent_runtime/factory.py`의 `_run()`에도 있다).
+        detail = (
+            str(exc)
+            if isinstance(exc, AgentRuntimeError)
+            else f"에이전트 실행에 실패했습니다: {exc.__class__.__name__}"
+        )
         failure = {
             "type": EVENT_ERROR,
-            "detail": f"에이전트 실행에 실패했습니다: {exc.__class__.__name__}",
+            "detail": detail,
         }
         collected.append(failure)
         final = failure

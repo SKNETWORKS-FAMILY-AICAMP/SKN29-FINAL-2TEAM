@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge,
   Button,
   Card,
   Input,
@@ -46,7 +45,6 @@ export default function TeamMemberSettingsPage() {
 
   const [token] = useState(loadSessionToken);
   const [account, setAccount] = useState<Account | null>(null);
-  const [jiraLinked, setJiraLinked] = useState(false);
   const [notifications, setNotifications] = useState<Record<string, boolean>>(DEFAULT_NOTIFICATION_STATE);
 
   // 이름·부서·직책과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
@@ -62,11 +60,6 @@ export default function TeamMemberSettingsPage() {
   useEffect(() => {
     void reloadAccount();
   }, [reloadAccount]);
-
-  function handleToggleJira(checked: boolean) {
-    setJiraLinked(checked);
-    showToast(checked ? 'Jira 개인 계정을 연동했습니다.' : 'Jira 개인 계정 연동을 해제했습니다.', 'info');
-  }
 
   function handleToggleNotification(id: string, checked: boolean) {
     setNotifications((prev) => ({ ...prev, [id]: checked }));
@@ -129,28 +122,12 @@ export default function TeamMemberSettingsPage() {
         </Card>
       </section>
 
-      <section id="linked-accounts" className={styles.sectionBlock}>
-        <Card padding="lg">
-          <div className={styles.sectionHeading}>
-            <h2>계정 연동</h2>
-          </div>
-
-          <div className={styles.linkedAccountRow}>
-            <div className={styles.linkedAccountInfo}>
-              <p className={styles.linkedAccountName}>
-                Jira 개인 계정
-                <Badge tone={jiraLinked ? 'success' : 'neutral'} dot>
-                  {jiraLinked ? '활성화됨' : '미연동'}
-                </Badge>
-              </p>
-              <p className={styles.linkedAccountDesc}>
-                {jiraLinked ? '개인 Jira 계정과 동기화되고 있습니다.' : '아직 연동된 Jira 개인 계정이 없습니다.'}
-              </p>
-            </div>
-            <ToggleSwitch checked={jiraLinked} onChange={handleToggleJira} label="연동 상태" />
-          </div>
-        </Card>
-      </section>
+      {/* "Jira 개인 계정" 연동 섹션은 걷어냈다(2026-08-19) — API 호출이
+          전혀 없는 로컬 상태뿐이라 탭을 나갔다 오면 항상 미연동으로
+          리셋됐다(버그 리포트). 실제 Jira 연동은 팀장 전용으로 이미
+          설정 > 커넥터(`ConnectorTab.tsx`)에 있고, 화면도 "팀원은 팀장이
+          연결한 데이터를 그대로 사용합니다"라고 안내한다 — 팀원이 개인
+          계정을 따로 연동할 이유가 없어 되살리지 않고 지운다. */}
 
       <section id="notifications" className={styles.sectionBlock}>
         <Card padding="lg">

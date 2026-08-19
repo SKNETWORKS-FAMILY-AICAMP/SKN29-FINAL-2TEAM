@@ -33,6 +33,13 @@ export interface ProgressCardProps {
    * 되는지 사람이 판단하지 못한다.
    */
   running?: boolean;
+  /**
+   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 생각 과정이
+   * 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로 추가했다. 하나로
+   * 합칠 때(`ChatPage.tsx`가 바깥 `<section className={styles.card}>`를 직접
+   * 두르는 경우) `true`를 준다 — 단독으로 쓸 땐 그대로 `<section>`을 두른다.
+   */
+  bare?: boolean;
 }
 
 /** ① 진행 카드 — 장시간 작업의 단계·검색어·근거 수. 기존 진행 모달의 인라인판. */
@@ -44,13 +51,15 @@ export function ProgressCard({
   evidenceCount,
   title = '업무를 정리하는 중',
   running = true,
+  bare = false,
 }: ProgressCardProps) {
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
   const shown = Math.min(doneCount + (steps.some((s) => s.state === 'doing') ? 1 : 0), total);
+  const Wrapper = bare ? 'div' : 'section';
 
   return (
-    <section className={styles.card}>
+    <Wrapper className={bare ? undefined : styles.card}>
       <div className={styles.progressHead}>
         <span className={styles.progressTitle}>
           {running ? (
@@ -156,7 +165,7 @@ export function ProgressCard({
           {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
         </p>
       )}
-    </section>
+    </Wrapper>
   );
 }
 
@@ -183,6 +192,12 @@ export interface ReasoningTraceProps {
    * 끝나 `false`가 되면 자동 스크롤도 커서도 멈춘다.
    */
   running?: boolean;
+  /**
+   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — `ProgressCard.bare`와
+   * 같은 이유·같은 짝. 둘을 한 카드로 합칠 때 `ChatPage.tsx`가 바깥
+   * `<section className={styles.card}>`를 한 번만 두른다.
+   */
+  bare?: boolean;
 }
 
 /**
@@ -200,7 +215,7 @@ export interface ReasoningTraceProps {
  * `defaultOpen`으로 펼쳐서 시작한다** — 실시간으로 쓰는 걸 보여주는 게
  * 이 기능의 목적이라, 접어 두면 매번 사람이 직접 펴야 그 효과를 본다.
  */
-export function ReasoningTrace({ entries, defaultOpen = false, running = false }: ReasoningTraceProps) {
+export function ReasoningTrace({ entries, defaultOpen = false, running = false, bare = false }: ReasoningTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
   const logRef = useRef<HTMLOListElement>(null);
   // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
@@ -229,9 +244,10 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false }
   }, [entries, open, running]);
 
   if (entries.length === 0) return null;
+  const Wrapper = bare ? 'div' : 'section';
 
   return (
-    <section className={styles.card}>
+    <Wrapper className={bare ? undefined : styles.card}>
       <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
         생각 과정 {entries.length}단계
@@ -299,7 +315,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false }
           })}
         </ol>
       )}
-    </section>
+    </Wrapper>
   );
 }
 
