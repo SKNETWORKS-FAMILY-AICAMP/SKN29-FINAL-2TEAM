@@ -261,3 +261,13 @@ def ops_model_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "model": row["model"],
         "connected_at": row["connected_at"],
     }
+
+
+class PurgeConfirmSerializer(serializers.Serializer):
+    """완전 삭제 확인. **화면만 막으면 API 직접 호출이 열린 채로 남는다.**
+
+    팀은 팀 이름, 계정은 이메일을 그대로 받는다 — 이름은 겹칠 수 있어서
+    (실제로 「개발팀」이 둘이었다, 2026-08-19) 계정 쪽은 이메일이 맞다.
+    """
+
+    confirm_name = serializers.CharField(max_length=255)

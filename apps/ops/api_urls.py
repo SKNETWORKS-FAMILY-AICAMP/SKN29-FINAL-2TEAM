@@ -26,6 +26,7 @@ from .views.models import (
 )
 from .views.teams import TeamContentView, TeamOwnerView, TeamsView
 from .views.overview import OverviewView
+from .views.purge import AccountPurgeView, TeamPurgeView
 from .views.policies import InviteTtlView, NoticeDetailView, NoticeListCreateView, PolicyChangeListView
 
 urlpatterns = [
@@ -35,9 +36,13 @@ urlpatterns = [
     path("teams/", TeamsView.as_view(), name="api_ops_teams"),
     path("teams/<str:team_id>/content/", TeamContentView.as_view(), name="api_ops_team_content"),
     path("teams/<str:team_id>/owner/", TeamOwnerView.as_view(), name="api_ops_team_owner"),
+    path("teams/<str:team_id>/purge/", TeamPurgeView.as_view(), name="api_ops_team_purge"),
     path("accounts/", AccountListView.as_view(), name="api_ops_account_list"),
     path("accounts/<str:account_id>/", AccountDetailView.as_view(), name="api_ops_account_detail"),
     path("accounts/<str:account_id>/admin/", AccountAdminView.as_view(), name="api_ops_account_admin"),
+    # 완전 삭제. 미리보기(GET)와 실행(DELETE)이 같은 주소다 — 자세한 이유는
+    # `views/purge.py` 모듈 docstring.
+    path("accounts/<str:account_id>/purge/", AccountPurgeView.as_view(), name="api_ops_account_purge"),
     path("accounts/<str:account_id>/lock/", AccountLockView.as_view(), name="api_ops_account_lock"),
     path("accounts/<str:account_id>/unlock/", AccountUnlockView.as_view(), name="api_ops_account_unlock"),
     path(
