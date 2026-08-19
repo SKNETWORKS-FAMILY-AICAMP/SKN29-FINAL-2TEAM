@@ -11,7 +11,7 @@ from unittest.mock import call, patch
 
 from django.test import SimpleTestCase, override_settings
 
-from services.agent_runtime.events import EVENT_ERROR, EVENT_RESULT
+from services.agent_runtime.events import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, EVENT_RESULT
 from services.agent_runtime.tracing import trace_events
 
 MODULE = "services.agent_runtime.tracing"
@@ -111,6 +111,20 @@ def _tool_completed(**overrides):
     return event
 
 
+def _awaiting_confirmation(**overrides):
+    event = {
+        "type": EVENT_AWAITING_CONFIRMATION,
+        "run_id": "RUN-ROOT",
+        "agent_id": "AG001",
+        "agent_version_id": "AV001",
+        "interrupt_id": "intr-1",
+        "action_requests": [{"name": "task_register", "args": {}}],
+        "complete": False,
+    }
+    event.update(overrides)
+    return event
+
+
 @patch(f"{MODULE}.ToolCallRepository")
 @patch(f"{MODULE}.AgentRunRepository")
 class RootRunLifecycleTests(SimpleTestCase):
@@ -204,15 +218,34 @@ class ToolCallLifecycleTests(SimpleTestCase):
         list(trace_events(iter([_agent_started(), _tool_started()]), context=_context()))
 
         calls.begin.assert_called_once_with(
-            run_id="RUN-ROOT", tool_ref="document_search", input_summary="query=일정"
+            run_id="RUN-ROOT",
+            tool_ref="document_search",
+            input_summary="query=일정",
+            # Phase 8(외부 Write Tool Idempotency) — context.session_id와 이벤트의
+            # tool_call_id(모델이 낸 id 그대로)를 같이 넘긴다.
+            session_id="SESSION-1",
+            langchain_tool_call_id="call-1",
         )
+
+    def test_tool_started_passes_none_session_id_when_context_has_none(self, runs, calls):
+        """평가 스크립트 등 session 없이 도는 실행 — session_id는 그냥 None으로 넘어간다."""
+        calls.begin.return_value = "TC-1"
+
+        list(
+            trace_events(
+                iter([_agent_started(), _tool_started()]),
+                context=_context(session_id=None),
+            )
+        )
+
+        self.assertIsNone(calls.begin.call_args.kwargs["session_id"])
 
     def test_tool_completed_ends_tool_call_ok(self, runs, calls):
         calls.begin.return_value = "TC-1"
 
         list(
             trace_events(
-                iter([_agent_started(), _tool_started(), _tool_completed(status="OK")]),
+                iter([_agent_started(), _tool_started(), _tool_completed(status="OK", output="문서 3건 찾음")]),
                 context=_context(),
             )
         )
@@ -222,13 +255,35 @@ class ToolCallLifecycleTests(SimpleTestCase):
         self.assertEqual(kwargs["tool_call_id"], "TC-1")
         self.assertEqual(kwargs["status"], "OK")
         self.assertIsNone(kwargs["error_code"])
+        # Phase 8 — 성공 결과를 캐싱해서, 재시도 시 handler를 다시 안 부르고
+        # 이 값을 그대로 돌려줄 수 있게 한다.
+        self.assertEqual(kwargs["result_text"], "문서 3건 찾음")
+
+    def test_tool_completed_ok_without_output_field_stores_none(self, runs, calls):
+        """`output` 키 자체가 없는 이벤트(구형 이벤트 등)도 죽지 않고 None으로 남는다."""
+        calls.begin.return_value = "TC-1"
+
+        list(
+            trace_events(
+                iter([_agent_started(), _tool_started(), _tool_completed(status="OK")]),
+                context=_context(),
+            )
+        )
+
+        self.assertIsNone(calls.end.call_args.kwargs["result_text"])
 
     def test_tool_completed_ends_tool_call_failed_with_error_code(self, runs, calls):
         calls.begin.return_value = "TC-1"
 
         list(
             trace_events(
-                iter([_agent_started(), _tool_started(), _tool_completed(status="FAILED")]),
+                iter(
+                    [
+                        _agent_started(),
+                        _tool_started(),
+                        _tool_completed(status="FAILED", output="실패해도 온 출력"),
+                    ]
+                ),
                 context=_context(),
             )
         )
@@ -236,6 +291,9 @@ class ToolCallLifecycleTests(SimpleTestCase):
         kwargs = calls.end.call_args.kwargs
         self.assertEqual(kwargs["status"], "FAILED")
         self.assertEqual(kwargs["error_code"], "TOOL_EXECUTION_FAILED")
+        # 실패 결과는 캐싱하지 않는다 — 캐싱하면 재시도가 성공할 기회 자체가
+        # 없어진다(계속 같은 실패를 그대로 돌려주게 된다).
+        self.assertIsNone(kwargs["result_text"])
 
     def test_tool_started_without_tool_call_id_is_skipped(self, runs, calls):
         list(
@@ -301,3 +359,90 @@ class TracingFailureIsolationTests(SimpleTestCase):
         seen = list(trace_events(iter(events), context=_context()))
 
         self.assertEqual(seen, events)
+
+
+@patch(f"{MODULE}.ToolCallRepository")
+@patch(f"{MODULE}.AgentRunRepository")
+class AwaitingConfirmationSuspendTests(SimpleTestCase):
+    """`EVENT_AWAITING_CONFIRMATION` → `AgentRunRepository.suspend()`
+    (2026-08-19 추가, §0순위 — HITL resume API). `finish()`가 아니라 `suspend()`를
+    불러야 한다 — 끝난 게 아니라 사람의 승인/거부를 기다리는 것뿐이므로."""
+
+    def test_awaiting_confirmation_calls_suspend_not_finish(self, runs, _calls):
+        list(trace_events(iter([_agent_started(), _awaiting_confirmation()]), context=_context()))
+
+        runs.suspend.assert_called_once_with(run_id="RUN-ROOT")
+        runs.finish.assert_not_called()
+
+    def test_awaiting_confirmation_removes_run_from_open_run_ids(self, runs, _calls):
+        """이 스트림 기준으로는 더 이상 '열려' 있지 않다 — 스트림이 여기서
+        끝나도(정상 종료) `_close_orphans()`가 이 run을 FAILED로 잘못
+        정리하면 안 된다."""
+        gen = trace_events(iter([_agent_started(), _awaiting_confirmation()]), context=_context())
+        list(gen)  # 정상 소진 — finally의 _close_orphans()까지 실행됨
+
+        runs.suspend.assert_called_once_with(run_id="RUN-ROOT")
+        runs.finish.assert_not_called()  # _close_orphans()가 이걸 FAILED로 안 닫는다
+
+    def test_awaiting_confirmation_for_unstarted_run_is_skipped(self, runs, _calls):
+        """agent_started 없이(또는 agent_id 없어 기록 안 된 run) 바로
+        awaiting_confirmation이 오면 — 그 run_id가 open_run_ids에 없으니
+        조용히 건너뛴다."""
+        list(trace_events(iter([_awaiting_confirmation(run_id="RUN-NEVER-STARTED")]), context=_context()))
+
+        runs.suspend.assert_not_called()
+
+    def test_event_passes_through_unchanged(self, runs, _calls):
+        events = [_agent_started(), _awaiting_confirmation()]
+
+        seen = list(trace_events(iter(events), context=_context()))
+
+        self.assertEqual(seen, events)
+
+
+@patch(f"{MODULE}.ToolCallRepository")
+@patch(f"{MODULE}.AgentRunRepository")
+class KnownRunIdsResumeTests(SimpleTestCase):
+    """`known_run_ids`(2026-08-19 추가, §0순위) — 재개 스트림은
+    `EVENT_AGENT_STARTED`를 다시 안 내므로, 멈췄던 실행의 run_id를 미리
+    채워 둬야 `EVENT_RESULT`/`EVENT_ERROR`가 왔을 때 그 run을 닫을 수 있다."""
+
+    def test_without_known_run_ids_a_resumed_result_cannot_close_the_run(self, runs, _calls):
+        """대조군: known_run_ids 없이 result만 오면(agent_started 없이) —
+        _finish_root_run()이 '내가 시작한 run이 아니다'로 보고 못 닫는다.
+        이게 바로 known_run_ids 없이는 §0순위가 동작하지 않는 이유다."""
+        list(trace_events(iter([_result()]), context=_context()))
+
+        runs.finish.assert_not_called()
+
+    def test_known_run_ids_lets_a_resumed_result_close_the_run(self, runs, _calls):
+        list(
+            trace_events(
+                iter([_result()]), context=_context(), known_run_ids=("RUN-ROOT",)
+            )
+        )
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="DONE", iterations=0, token_in=None, token_out=None
+        )
+
+    def test_known_run_ids_lets_a_resumed_error_close_the_run_as_failed(self, runs, _calls):
+        list(
+            trace_events(
+                iter([_error()]), context=_context(), known_run_ids=("RUN-ROOT",)
+            )
+        )
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="FAILED", iterations=0, token_in=None, token_out=None
+        )
+
+    def test_known_run_ids_default_is_empty(self, runs, _calls):
+        """기본값(재개가 아닌 일반 run())은 이전과 동일하게 동작한다 — 이
+        파라미터를 추가하기 전 회귀가 없어야 한다."""
+        list(trace_events(iter([_agent_started(), _result()]), context=_context()))
+
+        runs.start_with_id.assert_called_once()
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="DONE", iterations=0, token_in=None, token_out=None
+        )

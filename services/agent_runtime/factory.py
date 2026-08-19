@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from langchain.tools import ToolRuntime
 from langchain_core.tools import StructuredTool, ToolException
 
 from services.agent_runtime.compat import (
@@ -16,6 +17,7 @@ from services.agent_runtime.compat import (
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
 from services.agent_runtime.exceptions import ToolPermissionError
+from services.agent_runtime.memory.write_guard import build_memory_write_guard
 from services.agent_runtime.subagents.builder import build_subagent
 from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
@@ -59,7 +61,7 @@ def _to_langchain_tool(
     시점의 판단이 서로 갈릴 일이 없게 했다(2026-08-14 추가).
     """
 
-    def _run(**kwargs: Any) -> Any:
+    def _run(runtime: ToolRuntime = None, **kwargs: Any) -> Any:
         if not runtime_policy.is_tool_allowed_for_role(
             side_effect=tool.side_effect, account_role=context.role
         ):
@@ -70,6 +72,28 @@ def _to_langchain_tool(
             raise ToolPermissionError(
                 f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다."
             )
+
+        # Phase 8(외부 Write Tool Idempotency, 2026-08-19) — side_effect 도구만,
+        # 그리고 이 호출이 실제로 그래프 안에서(runtime이 채워진 채) session이
+        # 있는 요청으로 왔을 때만 조회한다. `runtime: ToolRuntime`은 langgraph가
+        # 함수 시그니처의 이름·타입만 보고 자동 주입한다(`args_schema`가 dict인
+        # 이 구조에서는 `InjectedToolCallId`가 오히려 전혀 안 먹힌다 — 직접
+        # 재현으로 확인: `langchain_core.tools.base._parse_input()`이 dict
+        # 스키마면 그 즉시 `return tool_input`으로 조기 반환해 그 처리 블록
+        # 자체가 안 돈다). 기본값 `None`을 반드시 둔다 — 그래프 밖에서
+        # `langchain_tool.invoke({...})`로 직접 부르는 기존 테스트·경로가 이
+        # 파라미터 없이 호출하므로, 기본값이 없으면 그 호출들이 전부 깨진다.
+        session_id = context.session_id
+        langchain_tool_call_id = runtime.tool_call_id if runtime is not None else None
+        if tool.side_effect and session_id and langchain_tool_call_id:
+            from backend.db.agent_platform import ToolCallRepository
+
+            cached = ToolCallRepository.find_successful_result(
+                session_id=session_id, langchain_tool_call_id=langchain_tool_call_id
+            )
+            if cached is not None:
+                return cached
+
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
             return tool.handler(**resolved)
@@ -261,6 +285,17 @@ class AgentRuntimeFactory:
         # 둘 다 안 받는다. memory_provider가 None이면 memory/backend/store 없이,
         # checkpointer_provider가 None이면 checkpointer 없이 예전과 동일하게 돈다.
         root_kwargs: dict[str, Any] = {}
+        # 2026-08-19, §1순위 — write_guard(`memory/write_guard.py`)는
+        # Root에만 붙는다. Child는 진짜 `StoreBackend`가 없어서(빈
+        # `StateBackend`로 떨어진다, `2026-08-15_02_장기메모리_설계.md` §2)
+        # `/memories/users/`에 뭘 써도 실제 저장이 안 되므로 필요 없다.
+        # `custom_middleware`는 Root/Child가 같은 리스트를 공유하므로(위
+        # `self.middleware_factory.build(...)` 결과) 거기 넣지 않고, 이미
+        # "memory_provider가 있을 때만 Root에 메모리 관련 값을 채우는" 이
+        # 조건 안에서 Root 전용 사본(`root_middleware`)을 따로 만든다 —
+        # memory_provider가 없으면 write_guard도 붙일 이유가 없다(막을
+        # 개인 장기 메모리 자체가 없다).
+        root_middleware = custom_middleware
         if self.memory_provider is not None:
             root_kwargs.update(
                 memory=self.memory_provider.paths(),
@@ -274,7 +309,22 @@ class AgentRuntimeFactory:
                 # 라우팅 안내를 이어붙인다. create_root_graph()가 이 값으로
                 # 커스텀 MemoryMiddleware를 만들어 자동 생성분을 치환한다.
                 memory_system_prompt=self.memory_provider.system_prompt(),
+                # 2026-08-19 — 팀 공유 메모리(`/memories/AGENTS.md`,
+                # `/memories/projects/*.md`)를 없애기로 하면서
+                # `build_filesystem_permissions(project_id=...)` 배선을 여기서
+                # 뺐다(정본: 2026-08-19_03_장기메모리_개인전용_최종구조.md §4).
+                # 그 규칙이 막던 "같은 팀 안에서 프로젝트 간 메모리 파일 접근"은
+                # 그 파일들 자체가 더 이상 팀·에이전트 공유 namespace(장기
+                # Store)에 안 가므로 애초에 발생할 수 없다 — 스레드마다 독립된
+                # State/checkpoint로 떨어져서, 다른 프로젝트 대화(=다른 스레드)
+                # 에서는 구조적으로 안 보인다(그 데이터 자체가 사라진다는
+                # 뜻은 아니다 — `memory/backend.py` 모듈 docstring 참고). 격리할
+                # 대상이 없어졌으니 이 규칙도 필요 없다.
+                # `services/agent_runtime/middleware/permissions.py`의
+                # `build_filesystem_permissions()` 자체는 코드로 남겨뒀다(다른
+                # 경로별 권한 제어가 필요해지면 재사용).
             )
+            root_middleware = [*custom_middleware, build_memory_write_guard()]
         if self.checkpointer_provider is not None:
             root_kwargs["checkpointer"] = self.checkpointer_provider.get()
 
@@ -285,7 +335,7 @@ class AgentRuntimeFactory:
             ),
             tools=langchain_tools,
             subagents=[gp_spec, *compiled_children],
-            middleware=custom_middleware,
+            middleware=root_middleware,
             # 2026-08-18, §5 Phase 6 — memory_provider 유무와 무관하게 항상
             # 건다(Filesystem Tool 노출 제한은 메모리 기능과 별개).
             fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,

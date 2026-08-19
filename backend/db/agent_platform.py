@@ -1412,25 +1412,60 @@ class AgentRunRepository:
                     (status, iterations, token_in, token_out, run_id),
                 )
 
+    @staticmethod
+    def suspend(*, run_id: str) -> None:
+        """HITL 승인 대기로 멈춘 실행을 `PENDING`으로 표시한다(2026-08-19,
+        §0순위 — 새 엔진 HITL resume API).
+
+        `finish()`와 다르게 `ended_at`을 안 채운다 — 실제로 끝난 게 아니라
+        재개를 기다리는 것뿐이다. `status`는 CHECK 제약 없는 `VARCHAR(20)`
+        라(`DB/schema.sql` 실제 스키마 확인) 새 값을 추가하는 데 마이그레이션이
+        필요 없다. `tool_call.status`가 이미 같은 뜻으로 `'PENDING'`을 쓰고
+        있어(선기록 패턴) 그 값을 그대로 재사용했다 — 새 어휘를 안 만든다.
+        재개 뒤 실제로 끝나면 `finish()`가 `ended_at`을 채운다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE agent_run SET status = 'PENDING' WHERE run_id = %s",
+                    (run_id,),
+                )
+
 
 class ToolCallRepository:
     """**선기록 패턴.** 실행 전에 PENDING 으로 넣고 끝난 뒤 갱신한다.
 
     끝나고 나서 한 번에 기록하면 타임아웃·프로세스 종료로 죽은 호출이 로그에서
     통째로 사라진다 — 정작 조사해야 할 것이 그 호출이다.
+
+    `session_id`/`langchain_tool_call_id`/`result_text`(2026-08-19, Phase 8 —
+    외부 Write Tool Idempotency)는 이 선기록 패턴 위에 얹은 것이다. `begin()`은
+    재시도마다 매번 새 행을 그대로 넣는다(UNIQUE 제약을 안 건다 — 재시도
+    자체가 감사 로그에 남아야 한다). 이미 성공했는지는 `find_successful_result()`
+    가 `status='OK'`로 조회해서 판단한다 — `services/agent_runtime/factory.py`
+    `_to_langchain_tool()._run()`이 `tool.handler()`를 부르기 "전"에 이 조회를
+    먼저 한다.
     """
 
     @staticmethod
-    def begin(*, run_id: str, tool_ref: str, input_summary: str | None) -> str:
+    def begin(
+        *,
+        run_id: str,
+        tool_ref: str,
+        input_summary: str | None,
+        session_id: str | None = None,
+        langchain_tool_call_id: str | None = None,
+    ) -> str:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO tool_call (run_id, tool_ref, input_summary, status)
-                    VALUES (%s, %s, %s, 'PENDING')
+                    INSERT INTO tool_call
+                        (run_id, tool_ref, input_summary, status, session_id, langchain_tool_call_id)
+                    VALUES (%s, %s, %s, 'PENDING', %s, %s)
                     RETURNING tool_call_id::text
                     """,
-                    (run_id, tool_ref, input_summary),
+                    (run_id, tool_ref, input_summary, session_id, langchain_tool_call_id),
                 )
                 return cursor.fetchone()["tool_call_id"]
 
@@ -1441,17 +1476,43 @@ class ToolCallRepository:
         status: str,
         duration_ms: int,
         error_code: str | None = None,
+        result_text: str | None = None,
     ) -> None:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE tool_call
-                       SET status = %s, error_code = %s, duration_ms = %s
+                       SET status = %s, error_code = %s, duration_ms = %s, result_text = %s
                      WHERE tool_call_id = %s
                     """,
-                    (status, error_code, duration_ms, tool_call_id),
+                    (status, error_code, duration_ms, result_text, tool_call_id),
                 )
+
+    @staticmethod
+    def find_successful_result(*, session_id: str, langchain_tool_call_id: str) -> str | None:
+        """이미 성공(OK)한 같은 호출이 있으면 그 결과 텍스트를 돌려준다(Phase 8).
+
+        side_effect 도구가 HITL 재개·checkpoint 재시도로 두 번 실행되는 걸
+        막는 자리 — 있으면 `_run()`이 `tool.handler()`를 다시 안 부른다.
+        같은 조합으로 여러 행이 쌓일 수 있어(재시도마다 새 PENDING이 생기므로)
+        가장 최근 성공을 쓴다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT result_text FROM tool_call
+                     WHERE session_id = %s
+                       AND langchain_tool_call_id = %s
+                       AND status = 'OK'
+                     ORDER BY created_at DESC
+                     LIMIT 1
+                    """,
+                    (session_id, langchain_tool_call_id),
+                )
+                row = cursor.fetchone()
+                return row["result_text"] if row else None
 
 
 def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str | None:

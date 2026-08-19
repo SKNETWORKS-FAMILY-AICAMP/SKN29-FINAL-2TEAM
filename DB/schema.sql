@@ -967,11 +967,30 @@ CREATE TABLE tool_call (
     status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',  -- PENDING / OK / FAILED
     error_code     VARCHAR(50),             -- 401 / 429 / validation / timeout 등
     duration_ms    INT,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- 2026-08-19, Phase 8(외부 Write Tool Idempotency). chat_session.session_id
+    -- (FK 없음) — 재개(HITL resume) 후에도 안 바뀌는 값으로 idempotency 조회
+    -- 범위를 잡는다. run_id는 재개 때마다 새로 생겨 못 쓴다.
+    session_id     UUID,
+    -- 모델이 낸 AIMessage.tool_calls[i]["id"]. checkpoint에 그대로 저장돼
+    -- 재개해도 같은 값이다. side_effect=False 도구는 안 채운다.
+    langchain_tool_call_id  VARCHAR(64),
+    -- status=OK일 때 handler가 반환한 결과 텍스트. 같은 (session_id,
+    -- langchain_tool_call_id) 조합으로 다시 오면 handler를 다시 안 부르고
+    -- 이 값을 그대로 돌려준다.
+    result_text    TEXT
 );
 
 CREATE INDEX ix_tool_call_run
     ON tool_call (run_id, created_at);
+
+-- UNIQUE가 아니다 — "선기록 패턴"(begin())이 재시도마다 새 PENDING 행을
+-- 그대로 넣어야 해서(재시도 자체가 감사 로그에 남아야 한다), 여기 UNIQUE를
+-- 걸면 그 재기록 INSERT 자체가 막힌다. uniqueness는 DB 제약이 아니라 조회
+-- 조건(status='OK')으로 보장한다 — 이 인덱스는 그 조회 성능용일 뿐이다.
+CREATE INDEX ix_tool_call_idempotency
+    ON tool_call (session_id, langchain_tool_call_id)
+    WHERE langchain_tool_call_id IS NOT NULL;
 
 -- 문서 하나당 한 줄(doc 과 1:1). chunk 단위 임베딩을 전부 만들지 않고
 -- 요약 임베딩 하나로 후보 문서를 먼저 좁히기 위한 테이블이다(A안, 확정 ⑥).

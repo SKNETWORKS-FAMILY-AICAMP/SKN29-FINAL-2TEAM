@@ -7,6 +7,7 @@ Mock으로 먼저 진행). compat.create_root_graph/create_child_graph는 patch�
 RuntimeCapabilityPolicy·MiddlewareFactory·validate_subagents는 실물을 그대로 쓴다.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -119,7 +120,7 @@ class _FakeMemoryProvider:
 
     def paths(self):
         self.paths_calls += 1
-        return ["/memories/AGENTS.md"]
+        return ["/memories/users/preferences.md"]
 
     def backend(self, *, team_id: str, agent_id: str, account_id: str):
         self.backend_calls.append({"team_id": team_id, "agent_id": agent_id, "account_id": account_id})
@@ -362,20 +363,20 @@ class SpeakableToolErrorTests(SimpleTestCase):
     두 엔진이 다른 목록을 들면 같은 실패가 한쪽에서만 설명된다.
     """
 
-    def _tool(self, handler) -> Tool:
+    def _tool(self, *, ref: str = "task_extraction", handler) -> Tool:
         return Tool(
-            ref="task_extraction",
-            name="task_extraction",
+            ref=ref,
+            name=ref,
             description="업무를 뽑는다.",
             input_schema={"type": "object", "properties": {}, "required": []},
             handler=handler,
             side_effect=False,
         )
 
-    def _invoke(self, handler):
+    def _invoke(self, handler, *, ref: str = "task_extraction"):
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
         langchain_tool = _to_langchain_tool(
-            self._tool(handler), context=context, runtime_policy=RuntimeCapabilityPolicy()
+            self._tool(ref=ref, handler=handler), context=context, runtime_policy=RuntimeCapabilityPolicy()
         )
         return langchain_tool.invoke({})
 
@@ -392,6 +393,14 @@ class SpeakableToolErrorTests(SimpleTestCase):
 
         self.assertEqual(self._invoke(boom), "프로젝트를 먼저 고르세요.")
 
+    def test_repository_permission_denied_message_reaches_model(self):
+        from backend.db.errors import PermissionDenied
+
+        def boom(**_kwargs):
+            raise PermissionDenied("팀에 속하지 않은 계정입니다.")
+
+        self.assertEqual(self._invoke(boom, ref="document_list"), "팀에 속하지 않은 계정입니다.")
+
     def test_그_밖의_예외는_그대로_올린다(self):
         """라이브러리·드라이버 예외 문자열에는 쿼리·문서 원문·토큰이 섞일 수 있다 —
         삼키면 진짜 장애가 「도구가 뭐라고 했다」로 둔갑한다."""
@@ -401,6 +410,149 @@ class SpeakableToolErrorTests(SimpleTestCase):
 
         with self.assertRaises(RuntimeError):
             self._invoke(boom)
+
+    def test_tool_input_error_message_reaches_model_instead_of_crashing(self):
+        from services.harness.registry import ToolInputError
+
+        def _handler(**kwargs):
+            raise ToolInputError("어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+
+        tool = self._tool(ref="task_list", handler=_handler)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+
+        result = langchain_tool.invoke({})
+
+        self.assertEqual(result, "어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
+
+
+class ToolIdempotencyTests(SimpleTestCase):
+    """Phase 8(외부 Write Tool Idempotency, 2026-08-19) — `_to_langchain_tool()`의
+    `_run()`이 `tool.handler()`를 부르기 전에 `ToolCallRepository.
+    find_successful_result()`로 이미 성공한 실행이 있는지 조회하는지 확인한다.
+
+    `runtime`(langgraph가 실제 그래프 실행 중에만 채워 주는 `ToolRuntime`)은
+    `langchain_tool.invoke({...})`로는 재현이 안 된다(실측 확인 — 그래프 밖
+    호출은 항상 `runtime=None`). 그래서 `StructuredTool.func`(=`_run` 그 자체)를
+    직접 불러서 `runtime`을 흉내 낸 값으로 넘긴다 — `_run()`의 판단 로직만
+    본다는 뜻이고, `ToolRuntime` 주입 메커니즘 자체가 실제로 동작하는지는
+    이 테스트의 범위가 아니다(직접 최소 재현 스크립트로 별도 확인했다)."""
+
+    REPOSITORY = "backend.db.agent_platform.ToolCallRepository"
+
+    def _write_tool(self, *, handler=None) -> Tool:
+        return Tool(
+            ref="task_register",
+            name="task_register",
+            description="업무를 등록한다.",
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=handler or (lambda **kwargs: "새로 등록됨"),
+            side_effect=True,
+        )
+
+    def _read_tool(self, *, handler=None) -> Tool:
+        return Tool(
+            ref="document_list",
+            name="document_list",
+            description="문서 목록을 본다.",
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=handler or (lambda **kwargs: "새로 조회됨"),
+            side_effect=False,
+        )
+
+    def _run_fn(self, tool: Tool, *, context: RuntimeContext):
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+        return langchain_tool.func
+
+    @patch(REPOSITORY)
+    def test_side_effect_tool_returns_cached_result_without_calling_handler(self, repo):
+        repo.find_successful_result.return_value = "이미 등록된 결과"
+        calls = []
+        tool = self._write_tool(handler=lambda **kwargs: calls.append(1) or "새로 등록됨")
+        context = RuntimeContext(
+            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
+        )
+        run_fn = self._run_fn(tool, context=context)
+
+        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
+
+        self.assertEqual(result, "이미 등록된 결과")
+        self.assertEqual(calls, [])  # handler가 아예 안 불렸다
+        repo.find_successful_result.assert_called_once_with(
+            session_id="SESSION-1", langchain_tool_call_id="call-1"
+        )
+
+    @patch(REPOSITORY)
+    def test_side_effect_tool_calls_handler_when_nothing_cached(self, repo):
+        repo.find_successful_result.return_value = None
+        tool = self._write_tool()
+        context = RuntimeContext(
+            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
+        )
+        run_fn = self._run_fn(tool, context=context)
+
+        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
+
+        self.assertEqual(result, "새로 등록됨")
+
+    @patch(REPOSITORY)
+    def test_read_only_tool_never_checked(self, repo):
+        """읽기 전용 도구는 대상에서 뺀다 — 다시 불러도 부작용이 없다."""
+        tool = self._read_tool()
+        context = RuntimeContext(
+            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
+        )
+        run_fn = self._run_fn(tool, context=context)
+
+        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
+
+        self.assertEqual(result, "새로 조회됨")
+        repo.find_successful_result.assert_not_called()
+
+    @patch(REPOSITORY)
+    def test_side_effect_tool_without_runtime_skips_check_and_still_executes(self, repo):
+        """그래프 밖에서 직접 부르는 기존 경로(`langchain_tool.invoke({...})`) —
+        `runtime`이 `None`이면 조회를 건너뛰고 평소대로 실행한다. 이 보호는
+        "있으면 더 안전"이지 실행 자체를 막는 필수 조건이 아니다."""
+        tool = self._write_tool()
+        context = RuntimeContext(
+            account_id="AC001", team_id="TM001", role="leader", session_id="SESSION-1"
+        )
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+
+        result = langchain_tool.invoke({})
+
+        self.assertEqual(result, "새로 등록됨")
+        repo.find_successful_result.assert_not_called()
+
+    @patch(REPOSITORY)
+    def test_side_effect_tool_without_session_id_skips_check(self, repo):
+        """session 없이 도는 실행(평가 스크립트 등) — session_id가 없으면 조회할
+        범위 자체가 없으므로 건너뛴다."""
+        tool = self._write_tool()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader", session_id=None)
+        run_fn = self._run_fn(tool, context=context)
+
+        result = run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
+
+        self.assertEqual(result, "새로 등록됨")
+        repo.find_successful_result.assert_not_called()
+
+    @patch(REPOSITORY)
+    def test_permission_check_runs_before_idempotency_check(self, repo):
+        """캐시가 있어도 역할 권한이 없으면 여전히 막힌다 — 캐시된 결과가
+        권한 검사를 우회하는 경로가 되면 안 된다."""
+        repo.find_successful_result.return_value = "이미 등록된 결과"
+        tool = self._write_tool()
+        context = RuntimeContext(
+            account_id="AC001", team_id="TM001", role="member", session_id="SESSION-1"
+        )
+        run_fn = self._run_fn(tool, context=context)
+
+        with self.assertRaises(ToolPermissionError):
+            run_fn(runtime=SimpleNamespace(tool_call_id="call-1"))
+
+        repo.find_successful_result.assert_not_called()
 
 
 class ToLangchainToolNameTests(SimpleTestCase):
@@ -691,7 +843,7 @@ class BuildMemoryWiringTests(SimpleTestCase):
 
         factory.build(definition=_definition(), context=context)
 
-        for key in ("memory", "backend", "store", "memory_system_prompt"):
+        for key in ("memory", "backend", "store", "memory_system_prompt", "permissions"):
             self.assertNotIn(key, mock_create_root.call_args.kwargs)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
@@ -724,6 +876,30 @@ class BuildMemoryWiringTests(SimpleTestCase):
         self.assertEqual(mock_create_root.call_args.kwargs["store"], "FAKE_STORE")
         self.assertEqual(provider.system_prompt_calls, 1)
 
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_permissions_kwarg_is_never_passed_even_with_memory_provider(
+        self, mock_create_root
+    ):
+        """2026-08-19 — 팀 공유 메모리(`/memories/AGENTS.md`,
+        `/memories/projects/*.md`)를 없애면서 `build_filesystem_permissions()`
+        배선을 뺐다(정본: 2026-08-19_03_장기메모리_개인전용_최종구조.md §4). 그
+        함수가 막던 "같은 팀 안에서 프로젝트 간 메모리 파일 접근"은 그 파일들
+        자체가 더는 영구 저장에 안 가서 애초에 발생할 수 없다 — 격리할 대상이
+        없어졌다. `middleware/permissions.py`의 함수 자체는 코드로 남아 있지만
+        (다른 경로별 권한 제어가 필요해지면 재사용 대비), `factory.py`는 더
+        이상 그걸 부르지 않는다 — memory_provider가 있어도 `context.project_id`
+        가 있어도 `permissions`가 `create_root_graph`로 전달되지 않아야 한다."""
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(
+            account_id="AC001", team_id="TM001", role="leader", project_id="PJ001"
+        )
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertNotIn("permissions", mock_create_root.call_args.kwargs)
+
     @patch(f"{FACTORY_MODULE}.create_child_graph")
     def test_child_build_never_touches_memory_provider(self, mock_create_child):
         """Child에는 memory 관련 파라미터 자체가 없다(`create_child_graph`) —
@@ -738,6 +914,73 @@ class BuildMemoryWiringTests(SimpleTestCase):
         mock_create_child.assert_called_once()
         self.assertEqual(provider.backend_calls, [])
         self.assertEqual(provider.system_prompt_calls, 0)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_memory_provider_adds_write_guard_to_root_middleware(self, mock_create_root):
+        """2026-08-19, §1순위 — memory_provider가 있으면 write_guard
+        (`MemoryWriteGuardMiddleware`)가 `custom_middleware`에 더해져
+        `create_root_graph`로 간다."""
+        from services.agent_runtime.memory.write_guard import MemoryWriteGuardMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        guards = [m for m in middleware if isinstance(m, MemoryWriteGuardMiddleware)]
+        self.assertEqual(len(guards), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_memory_provider_omits_write_guard_from_root_middleware(self, mock_create_root):
+        """막을 개인 장기 메모리 자체가 없으면(memory_provider 없음) write_guard도
+        붙일 이유가 없다."""
+        from services.agent_runtime.memory.write_guard import MemoryWriteGuardMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertFalse(any(isinstance(m, MemoryWriteGuardMiddleware) for m in middleware))
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_build_never_receives_write_guard(self, mock_create_child):
+        """Child는 진짜 StoreBackend가 없어(`2026-08-15_02` §2) write_guard가
+        필요 없다 — memory_provider가 설정돼 있어도 Child의 middleware
+        목록에는 안 들어간다."""
+        from services.agent_runtime.memory.write_guard import MemoryWriteGuardMiddleware
+
+        mock_create_child.return_value = "CHILD_GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        middleware = mock_create_child.call_args.kwargs["middleware"]
+        self.assertFalse(any(isinstance(m, MemoryWriteGuardMiddleware) for m in middleware))
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_write_guard_does_not_replace_existing_custom_middleware(self, mock_create_root):
+        """write_guard는 `custom_middleware`에 더해지는 것이지 갈아 끼우는 게
+        아니다 — 기존 미들웨어(예: `ModelCallLimitMiddleware`)가 그대로 남아
+        있어야 한다."""
+        from langchain.agents.middleware import ModelCallLimitMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertTrue(any(isinstance(m, ModelCallLimitMiddleware) for m in middleware))
 
 
 class BuildFilesystemExclusionWiringTests(SimpleTestCase):
