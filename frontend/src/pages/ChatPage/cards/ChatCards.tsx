@@ -270,6 +270,14 @@ function TaskRow({
 export interface ConfirmCardProps {
   tasks: ExtractedTask[];
   warnings?: string[];
+  /**
+   * 고를 목록이 없는 승인에 **무엇을 승인하는지** 한 줄로 적는다(2026-08-18).
+   * 그런 카드는 체크박스가 없어서 머리에 「전체 선택 · 업무 0건」만 남았는데,
+   * 그건 아무것도 설명하지 않는다 — 사람은 무엇을 승인하는지 모르는 채로
+   * 「승인」을 누르게 된다. 목록이 있는 카드에는 넘기지 않는다(그쪽은 업무가
+   * 곧 설명이다).
+   */
+  subject?: string;
   trace?: string;
   /** 체크된 업무의 **인덱스**. 승인 API 에 이 값만 보낸다. */
   selected: number[];
@@ -282,6 +290,7 @@ export interface ConfirmCardProps {
 export function ConfirmCard({
   tasks,
   warnings,
+  subject,
   trace,
   selected,
   onSelectedChange,
@@ -299,17 +308,27 @@ export function ConfirmCard({
 
   return (
     <section className={styles.cardFlush}>
-      <div className={styles.confirmHead}>
-        <span className={styles.confirmLeft}>
-          <Checkbox
-            checked={allOn}
-            onChange={(next) => onSelectedChange(next ? tasks.map((_, index) => index) : [])}
-          />
-          <strong>전체 선택</strong>
-          <span className={styles.muted}>{chosen.length}건 선택됨</span>
-        </span>
-        <span className={styles.muted}>업무 {tasks.length}건</span>
-      </div>
+      {/* 고를 것이 있을 때만 선택 줄을 그린다. 없으면 무엇을 승인하는지 적는다.
+          — 예전엔 목록이 없어도 이 줄을 그려서 「전체 선택 · 0건 선택됨 ·
+          업무 0건」이 남았다(2026-08-18 QA). 체크할 것도 없는데 전체 선택이
+          있고, 대상이 15건인데 「0건」이라고 적혀 서로 어긋났다. */}
+      {tasks.length > 0 ? (
+        <div className={styles.confirmHead}>
+          <span className={styles.confirmLeft}>
+            <Checkbox
+              checked={allOn}
+              onChange={(next) => onSelectedChange(next ? tasks.map((_, index) => index) : [])}
+            />
+            <strong>전체 선택</strong>
+            <span className={styles.muted}>{chosen.length}건 선택됨</span>
+          </span>
+          <span className={styles.muted}>업무 {tasks.length}건</span>
+        </div>
+      ) : subject ? (
+        <div className={styles.confirmHead}>
+          <strong>{subject}</strong>
+        </div>
+      ) : null}
 
       {/* ⚠ 경고 배너를 걷어냈다(PM 요청, 2026-08-11). 서버는 여전히 경고를
           보내고 있고(`warnings` prop), 거기에는 「근거가 확인되지 않아 제외했다」

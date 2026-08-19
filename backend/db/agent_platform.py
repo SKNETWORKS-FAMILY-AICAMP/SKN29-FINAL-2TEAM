@@ -2384,23 +2384,37 @@ class ProjectTaskRepository:
                 )
 
                 created = []
-                dropped_dates = []
+                dropped_fields = []
                 for task in tasks:
                     task_id = next_short_code(
                         cursor, table="task", column="task_id", prefix="TK"
                     )
+                    # 저장할 값을 먼저 만든 다음, 「모델이 준 것」과 「실제로 남은
+                    # 것」을 나란히 놓고 비운 칸을 센다.
                     start_at = _date_or_none(task.get("start_date"))
                     due_at = _date_or_none(task.get("due_date"))
+                    effort = _positive_or_none(task.get("effort_hours"))
+                    req_role = _positive_or_none(task.get("required_role"))
+                    priority = _positive_or_none(task.get("priority"))
+                    # `given not in (None, "")` 이지 `if given` 이 아니다 —
+                    # **모델이 모르는 공수를 채워 넣는 값이 하필 `0`** 이라
+                    # (`_positive_or_none` docstring), 거짓으로 판정하면 정작
+                    # 알려야 할 그 경우가 통째로 빠진다. 2026-08-18 에 실제로
+                    # 그랬다: 15건 전부 `effort_hours: 0` 으로 왔고 전부 NULL 로
+                    # 저장됐는데, 모델은 「0시간으로 등록했습니다」라고 답했다.
                     blank = [
                         label
                         for label, given, kept in (
-                            ("시작", task.get("start_date"), start_at),
-                            ("마감", task.get("due_date"), due_at),
+                            ("시작일", task.get("start_date"), start_at),
+                            ("마감일", task.get("due_date"), due_at),
+                            ("공수", task.get("effort_hours"), effort),
+                            ("담당 역할", task.get("required_role"), req_role),
+                            ("우선순위", task.get("priority"), priority),
                         )
-                        if given and kept is None
+                        if given not in (None, "") and kept is None
                     ]
                     if blank:
-                        dropped_dates.append({"title": task["title"], "fields": blank})
+                        dropped_fields.append({"title": task["title"], "fields": blank})
                     cursor.execute(
                         """
                         INSERT INTO task (task_id, model_id, task_name, req_role, effort,
@@ -2408,10 +2422,8 @@ class ProjectTaskRepository:
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'EXTRACTED', 'PROPOSED')
                         """,
                         (
-                            task_id, model_id, task["title"],
-                            _positive_or_none(task.get("required_role")),
-                            _positive_or_none(task.get("effort_hours")), start_at,
-                            due_at, _positive_or_none(task.get("priority")),
+                            task_id, model_id, task["title"], req_role,
+                            effort, start_at, due_at, priority,
                         ),
                     )
                     created.append({"task_id": task_id, "title": task["title"]})
@@ -2421,7 +2433,11 @@ class ProjectTaskRepository:
             "model_ver": f"v{version}",
             "tasks": created,
             # 비운 것을 조용히 넘기지 않는다. 모델이 이것을 사람에게 옮겨 적는다.
-            "dropped_dates": dropped_dates,
+            #
+            # 예전 이름은 `dropped_dates` 였고 **날짜만** 담았다. 같은 이유로
+            # 비우는 칸이 셋 더 있는데(공수·역할·우선순위 — `_positive_or_none`)
+            # 그쪽은 조용히 넘어갔다. 2026-08-18 에 그 대가를 봤다.
+            "dropped_fields": dropped_fields,
         }
 
     @staticmethod

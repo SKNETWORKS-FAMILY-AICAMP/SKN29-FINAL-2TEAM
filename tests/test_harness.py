@@ -916,8 +916,36 @@ class TaskRegisterDateTests(SimpleTestCase):
             )
 
         self.assertEqual(len(result["tasks"]), 2)
-        self.assertEqual(result["dropped_dates"], [{"title": "감리보고서 제출", "fields": ["마감"]}])
+        self.assertEqual(result["dropped_fields"], [{"title": "감리보고서 제출", "fields": ["마감일"]}])
         self.assertEqual([row[6] for row in cursor.inserted], [None, "2026-08-20"])
+
+    def test_모르는_값을_0으로_채워_보내면_비웠다고_알린다(self):
+        """**모델이 모르는 공수를 채우는 값이 하필 `0`** 이다(`_positive_or_none`).
+
+        회귀 방지: 예전엔 날짜만 돌려줬고 판정도 `if given` 이라, `0` 은 거짓이라
+        두 번 걸러졌다. 그 결과 15건 전부 `effort_hours: 0` 으로 와서 전부 NULL 로
+        저장됐는데 모델은 「0시간으로 등록했습니다」라고 답했다(2026-08-18 QA).
+        """
+
+        from backend.db import agent_platform
+
+        cursor = _RegisterCursor()
+        with patch.object(agent_platform, "database_connection", _fake_connection(cursor)),                 patch.object(agent_platform, "_require_team", return_value="TM001"),                 patch.object(agent_platform, "next_short_code", side_effect=["KM001", "TK001"]):
+            result = agent_platform.ProjectTaskRepository.register(
+                proj_id="PJ001",
+                account_id="UA001",
+                tasks=[{"title": "감리 착수", "effort_hours": 0, "required_role": "", "priority": "높음"}],
+            )
+
+        self.assertEqual(
+            result["dropped_fields"],
+            [{"title": "감리 착수", "fields": ["공수"]}],
+            "0 으로 채워 보낸 공수를 비웠다고 알려야 한다",
+        )
+        # 빈 문자열은 「준 적 없음」이라 알릴 것이 없고, 준 값은 그대로 남는다.
+        self.assertIsNone(cursor.inserted[0][3], "빈 역할은 NULL")
+        self.assertIsNone(cursor.inserted[0][4], "0 공수는 NULL")
+        self.assertEqual(cursor.inserted[0][7], "높음", "준 우선순위는 그대로")
 
 
 class _RegisterCursor:

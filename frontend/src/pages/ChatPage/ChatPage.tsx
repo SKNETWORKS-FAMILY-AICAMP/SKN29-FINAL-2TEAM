@@ -1027,9 +1027,17 @@ export default function ChatPage() {
                       {live.confirm && live.tasks.length === 0 && (
                         <ConfirmCard
                           tasks={[]}
-                          warnings={[
-                            `${live.confirm.toolName} 실행을 승인하시겠습니까? ${live.confirm.count}건이 대상입니다.`,
-                          ]}
+                          // 「무엇을 · 몇 건」. `warnings` 로 넘기던 것을 옮겼다
+                          // — 그 prop 은 2026-08-11 에 배너를 걷으면서 **그려지지
+                          // 않게 됐는데** 넘기는 쪽만 남아, 이 카드는 무엇을
+                          // 승인하는지 한 마디도 안 하고 있었다(2026-08-18 QA).
+                          // 건수는 있을 때만 붙인다 — 목록형 인자가 아니면
+                          // `count` 가 0 이라 「대상 0건」이 거짓이 된다.
+                          subject={
+                            live.confirm.count > 0
+                              ? `${live.confirm.toolName} · 대상 ${live.confirm.count}건`
+                              : live.confirm.toolName
+                          }
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}

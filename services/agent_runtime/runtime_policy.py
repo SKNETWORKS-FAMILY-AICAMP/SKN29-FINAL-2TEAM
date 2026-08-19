@@ -11,14 +11,31 @@ if TYPE_CHECKING:
 Role = Literal["ROOT", "GENERAL_PURPOSE", "CHILD"]
 AccountRole = Literal["leader", "member"]
 
-# 업무 Agent에 노출하지 않는 Deep Agents 가상 파일 Tool.
+#: 업무 Agent에 노출하지 않는 Deep Agents 가상 파일 Tool.
+#:
+#: **여기 있는 파일 Tool은 사용자의 디스크를 건드리지 않는다**(2026-08-18 실측).
+#: `factory.build()`가 넘기는 backend는 `CompositeBackend(default=StateBackend(),
+#: routes={"/memories/...": StoreBackend})` 뿐이라(`memory/backend.py`), 쓰는
+#: 곳은 그래프 상태(휘발) 아니면 장기 메모리 Store다 — `FilesystemBackend`도
+#: `LocalShellBackend`도 쓰지 않는다. `execute`는 두 backend 어느 쪽에도
+#: `execute` 속성이 없어 **호출 자체가 성립하지 않는다.**
+#:
+#: 그래서 `delete`만 뺀다. 나머지를 더 막을 이유가 없다 — 프롬프트가
+#: 「네가 일하는 동안 쓰는 임시 작업 공간」이라고 말하는 것이 정확한 설명이고,
+#: 그 말대로 쓰는 데 필요한 도구들이다.
 DEFAULT_EXCLUDED_BUILTIN_TOOLS = frozenset({"delete"})
 
-# 외부 시스템을 변경하는 Tool의 운영 정책 메모. 실행을 직접 차단하지는 않는다.
+#: 외부 시스템을 변경하는 Tool의 운영 정책 메모. 실행을 직접 차단하지는 않는다.
+#:
+#: 2026-08-18에 앞부분을 고쳤다 — 「HITL 구현 전까지」라는 전제가 사라졌다.
+#: 승인 게이트가 실제로 붙었다(`factory.py`의 `interrupt_on` → `events.py`의
+#: `awaiting_confirmation` → `apps/chat/api_views.py`의 재개). 이제 `side_effect`
+#: Tool은 사람이 확인 카드에서 승인하기 전까지 실행되지 않는다.
 EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (
-    "외부 시스템에 실제로 쓰기/삭제/발송하는 Tool은 HITL 구현 전까지 읽기 전용으로 "
-    "제한하거나, 사용자 확인 없이는 부수효과가 발생하지 않는 2단계(제안 → 확정) "
-    "설계를 쓸 것 (2026-08-13_01 §11)."
+    "외부 시스템에 실제로 쓰기/삭제/발송하는 Tool(side_effect=True)은 승인 게이트를 "
+    "지난 뒤에만 실행된다 — 모델이 부르면 그래프가 멈추고 사람에게 확인 카드가 뜬다 "
+    "(2026-08-18). 새 Tool을 더할 때 부수효과가 있으면 side_effect=True로 선언할 것 "
+    "— 게이트가 그 플래그 하나만 보고 판단한다."
 )
 
 # 부수효과가 있는 Tool을 사용할 수 있는 계정 역할.
