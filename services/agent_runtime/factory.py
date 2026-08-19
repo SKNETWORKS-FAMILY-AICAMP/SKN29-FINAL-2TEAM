@@ -94,14 +94,19 @@ def _to_langchain_tool(
             # 그대로 유지해 주므로, `tool_completed`는 여전히 FAILED로 뜨고
             # 클릭하면 사유도 그대로 보인다 — 대화가 안 끊기는 것과 FAILED
             # 표시가 정확한 것, 둘 다 챙긴다.
-            logger.exception("도구 실행 실패: %s", tool.ref)
-
             # 지연 import — `services.harness.runner`의 무거운 의존성 사슬을 이
             # 모듈이 항상 끌고 들어오지 않게 한다(main의 같은 판단 그대로 유지).
             from services.harness.runner import SPEAKABLE_ERRORS
 
             if not isinstance(exc, SPEAKABLE_ERRORS):
+                # 진짜 장애다 — 트레이스백까지 남긴다.
+                logger.exception("도구 실행 실패: %s", tool.ref)
                 raise
+            # **말할 수 있는 사유에는 트레이스백을 남기지 않는다.** 「프로젝트를
+            # 먼저 고르세요」는 사람이 고칠 수 있는 정상적인 되돌림이지 장애가
+            # 아니다 — `logger.exception`으로 남기면 운영 로그에서 위 진짜
+            # 장애와 구분이 안 된다.
+            logger.info("도구가 사유를 돌려줬다: %s — %s", tool.ref, exc)
             raise ToolException(str(exc)) from exc
 
     return StructuredTool.from_function(
