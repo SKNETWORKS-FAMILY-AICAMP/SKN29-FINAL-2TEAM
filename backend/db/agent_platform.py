@@ -31,20 +31,28 @@ from .errors import (
 from .repositories import _require_team
 
 
-def _next_agents_id(cursor) -> str:
-    """`agents.agent_id`를 발급하되, 옛 `agent` 테이블과 번호가 안 겹치게 한다.
+def _next_shared_agent_id(cursor) -> str:
+    """`agent_id`를 발급한다 — **어느 테이블에 넣든** 옛 `agent`와 새 `agents`
+    둘 다와 번호가 안 겹치게 한다(2026-08-19, 양방향으로 확장).
 
     두 테이블이 'AG' 접두사를 공유하고(DB/migrations/2026-08-13_agent_versioning.sql
     상단 주석 — 전환 완료 시 `agent`를 대체할 것을 전제로 같은 코드 체계를
     물려받았다) 각자 따로 번호를 매기다 보니, 우연히 같은 값이 나올 수 있다.
-    `_resolve_session_agent()`가 옛 테이블을 먼저 보기 때문에, 겹치면 새로
-    만든 에이전트가 **조용히**(에러 없이) 옛 에이전트에게 가려진다 — 실제로
-    Chat 재설계 검증 중 겪었다(2026-08-15, 지훈 확인 후 여기서 막기로 함).
+    `_resolve_session_agent()`가 옛 테이블을 먼저 보기 때문에, `agents`에
+    새로 만든 에이전트가 겹치면 **조용히**(에러 없이) 옛 에이전트에게
+    가려진다 — 실제로 Chat 재설계 검증 중 겪었다(2026-08-15, 지훈 확인 후
+    `agents` 발급 쪽만 우선 막았다).
+
+    **반대 방향은 그때 안 막아 뒀다** — 옛 `agent` 테이블 생성 경로
+    (`AgentCrudRepository.create()`, 구 Builder 화면이 아직 쓴다)가 여전히
+    `agent` 테이블만 보고 번호를 매겨서, 다음 번호가 이미 `agents`에 쓰이고
+    있는 실제 에이전트(예: 팀의 기본 챗)와 겹칠 수 있었다 — 라이브 DB에서
+    실제로 재현되는 걸 확인하고 여기서 같이 막는다(2026-08-19).
 
     옛 `agent` 테이블 자체는 아직 못 지운다 — 지금 운영 중인 Chat이 여전히
     그 테이블에 물려 있다(재설계 완료 후 제거 예정, task #19). 그래서 발급
     시점에 두 테이블의 MAX를 같이 보고 더 큰 쪽 다음 번호를 쓴다.
-    `next_short_code()`(`agents` 테이블만 본다)를 그대로 못 쓰는 이유가 이것이다.
+    `next_short_code()`(테이블 하나만 본다)를 그대로 못 쓰는 이유가 이것이다.
     """
     # next_short_code()와 같은 lock 이름 — 재진입 가능한 잠금이라 같은
     # 트랜잭션 안에서 두 번 걸어도 안전하다(pg_advisory_xact_lock 특성).
@@ -587,7 +595,7 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
     # 같은 이유).
     from services.harness.runner import DEFAULT_EFFORT, DEFAULT_MODEL
 
-    agent_id = _next_agents_id(cursor)
+    agent_id = _next_shared_agent_id(cursor)
     cursor.execute(
         """
         INSERT INTO agents
@@ -803,7 +811,7 @@ class AgentVersionCrudRepository:
                 team_id = _require_team(cursor, account_id)
 
                 if agent_id is None:
-                    agent_id = _next_agents_id(cursor)
+                    agent_id = _next_shared_agent_id(cursor)
                     cursor.execute(
                         """
                         INSERT INTO agents (agent_id, team_id, name, description, owner_account_id)
@@ -2146,9 +2154,11 @@ class AgentCrudRepository:
             with connection.cursor() as cursor:
                 team_id = _require_team(cursor, account_id)
                 _check_tool_refs(cursor, team_id=team_id, tool_refs=tool_refs)
-                agent_id = next_short_code(
-                    cursor, table="agent", column="agent_id", prefix="AG"
-                )
+                # `next_short_code(table="agent", ...)`가 아니라 `_next_shared_agent_id()`다
+                # — 옛 `agent` 테이블만 보면 새 `agents` 테이블에 이미 쓰인 번호(예: 팀의
+                # 기본 챗 에이전트)와 겹칠 수 있다(2026-08-19, 반대 방향 충돌 수정 —
+                # 정방향은 `_next_shared_agent_id()` docstring 참고).
+                agent_id = _next_shared_agent_id(cursor)
                 cursor.execute(
                     """
                     INSERT INTO agent (agent_id, team_id, name, description, instruction,
