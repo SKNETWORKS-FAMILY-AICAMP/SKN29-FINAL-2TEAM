@@ -210,7 +210,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       ) : (
         <>
           <p className={styles.muted}>
-            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’로
+            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’으로
             정해 주세요.
           </p>
           <div className={styles.actions}>

@@ -801,11 +801,16 @@ class DocMetaRepository:
                 cursor.execute(
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           -- 사람에게 보일 이름. id 를 그대로 내보내면 에이전트가
+                           -- 「프로젝트 PJ004 의 기준 문서」라고 옮겨 적는다
+                           -- (2026-08-19 실측 · §0 원칙 2).
+                           p.name AS proj_name,
                            d.src_modified_at, d.storage_key,
                            m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            m.extracted_at, {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
+                    LEFT JOIN proj AS p ON p.proj_id = d.proj_id
                     WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
                     ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
                     """,
