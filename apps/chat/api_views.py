@@ -29,6 +29,7 @@ from backend.db.errors import (
 from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
+from services.agent_runtime.sensitive_text import mask_sensitive
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -159,10 +160,20 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         serializer.is_valid(raise_exception=True)
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
+        # 2026-08-19, §2순위 — 사용자가 채팅에 직접 입력한 credential·개인정보·
+        # 권한/보안 서술은 모델에게 보내지 않는다(`sensitive_text.py`, write_guard와
+        # 같은 패턴 재사용). **저장은 원문 그대로 한다** — 이건 "모델에게
+        # 전달되면 안 된다"는 요구지 "사용자 자신도 못 보게 하라"는 요구가
+        # 아니다. `model_input`은 모델로 가는 모든 경로(이번 턴 user_input,
+        # 제목 생성용 question)에 쓰고, `text`(원문)는 저장에만 쓴다.
+        model_input = mask_sensitive(text)
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
+            # `_history()`가 저장된 과거 발화(원문)를 모델에게 다시 보낼 때도
+            # 마스킹한다 — 이번 요청에서만 막고 다음 턴의 재전송(replay)에서
+            # 새어나가면 의미가 없다.
             history = _history(
                 ChatMessageRepository.list_for_session(
                     session_id=session_id, account_id=account_id
@@ -170,7 +181,9 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             )
             # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
             # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
-            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다.
+            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 여기 저장하는
+            # `text`는 원문이다 — 화면이 사용자 자신의 발화를 그대로 보여줘야
+            # 하고, 마스킹은 모델에게 나가는 값에만 적용한다.
             ChatMessageRepository.append(
                 session_id=session_id,
                 account_id=account_id,
@@ -211,7 +224,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         # 여기서부터 스트림이다. 응답이 시작된 뒤에는 상태 코드를 바꿀 수 없어서
         # 위의 검사를 전부 끝낸 다음에 연다.
         events = _run_deep_agent(
-            session=session, context=runtime_context, user_input=text, history=history, draft=draft
+            session=session, context=runtime_context, user_input=model_input, history=history, draft=draft
         )
 
         return StreamingHttpResponse(
@@ -219,7 +232,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 events,
                 session_id=session_id,
                 account_id=account_id,
-                question=text,
+                question=model_input,
             ),
             content_type="application/x-ndjson",
         )
@@ -252,8 +265,12 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         content = row.get("content") or {}
         if row["role"] == "user":
             text = content.get("text")
+            # 저장은 원문이다(§2순위 설계 — 화면은 사용자 자신의 발화를 그대로
+            # 보여준다). 그 원문을 모델에게 다시 태우는 건 여기뿐이므로,
+            # 처음 보낼 때만 가리고 재전송(replay) 경로를 빼먹으면 다음 턴부터
+            # 새어나간다 — 여기서도 독립적으로 가린다.
             if text:
-                history.append({"role": "user", "content": text})
+                history.append({"role": "user", "content": mask_sensitive(text)})
             continue
 
         if content.get("type") == EVENT_AWAITING_CONFIRMATION:
@@ -304,7 +321,6 @@ def _run_deep_agent(
     user_input: str,
     history: list[dict[str, Any]],
     draft: dict[str, Any] | None = None,
-    resume_decisions: list[dict[str, Any]] | None = None,
 ):
     """대화를 `services.agent_runtime` 엔진으로 돌린다(2026-08-14부터 전부 이 경로).
 
@@ -347,10 +363,6 @@ def _run_deep_agent(
         # 에이전트 원본 대신 이 목록으로 돈다 — `None`이면(커스터마이즈 안
         # 함) 로드된 정의를 그대로 쓴다.
         tool_refs_override=session.get("tool_refs_override"),
-        # 승인 게이트에서 멈춰 있던 실행을 잇는 호출이면 사람의 결정을 넣는다
-        # (2026-08-18). 이때 `user_input`/`history`는 안 쓰인다 — 멈춘 자리의
-        # 대화는 Checkpointer(RDS)에 그대로 있다.
-        resume_decisions=resume_decisions,
         **run_kwargs,
     )
     # agent_run/tool_call 적재(2026-08-14) — 이벤트는 손대지 않고 그대로
@@ -471,21 +483,6 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
             )
 
         resume = content.get("resume") or {}
-        selected = serializer.validated_data.get("selected")
-
-        # 새 엔진(services.agent_runtime)에서 멈춘 승인은 재개 방식이 다르다 —
-        # 레거시는 대화 전체를 되돌려 받아 처음부터 다시 돌지만, 이쪽은 멈춘
-        # 상태가 Checkpointer(RDS)에 통째로 남아 있어서 "사람이 무엇을
-        # 정했는가"만 흘려 넣으면 그 자리에서 이어진다(2026-08-18).
-        if resume.get("engine") == "agent_runtime":
-            return self._resume_deep_agent(
-                session=session,
-                session_id=session_id,
-                account_id=account_id,
-                resume=resume,
-                selected=selected,
-            )
-
         tool_call = resume.get("tool_call")
         if tool_call is None:
             # 이 카드로는 재개할 수 없다. 승인한 셈 치고 아무것도 안 하는 것보다
@@ -495,6 +492,7 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        selected = serializer.validated_data.get("selected")
         # 재개 정보는 **스택**이다. 위임(agent:)이 끼어 있으면 바깥 호출은
         # "그 에이전트를 다시 부른다"이고, 사람이 승인한 실제 호출은 맨 안쪽에
         # 있다 — 선택 적용도 승인도 거기서 해야 한다.
@@ -520,97 +518,6 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
             ),
             content_type="application/x-ndjson",
         )
-
-
-    def _resume_deep_agent(
-        self,
-        *,
-        session: dict[str, Any],
-        session_id: str,
-        account_id: str,
-        resume: dict[str, Any],
-        selected: list[int] | None,
-    ):
-        """새 엔진에서 멈춘 승인을 이어서 돌린다.
-
-        멈춘 자리의 대화·도구 호출은 Checkpointer(RDS)에 있고 `thread_id`는
-        대화 id 그대로라, 여기서 되돌려 줄 것은 **사람의 결정뿐**이다.
-        """
-        action_requests = resume.get("action_requests") or []
-        if not action_requests:
-            return Response(
-                {"detail": "이 확인 카드는 재개 정보를 갖고 있지 않습니다. 다시 요청해 주세요."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        try:
-            runtime_context = _build_runtime_context(session=session, account_id=account_id)
-            draft = (
-                None
-                if session.get("agent_version_id")
-                else draft_from_legacy_agent(
-                    agent_id=session["agent_id"], team_id=session["team_id"]
-                )
-            )
-            if session.get("agent_version_id"):
-                # 발화 경로와 **같은 버전**으로 다시 세운다. 여기서 세션에
-                # 굳어 있는 옛 버전을 쓰면, 승인하려는 그 도구가 안 붙은
-                # 에이전트로 재개해 버린다(기본 챗은 "+"로 도구를 바꾼다).
-                live_version_id = AgentVersionRepository.resolve_live_version_id(
-                    agent_id=session["agent_id"]
-                )
-                if live_version_id:
-                    session = {**session, "agent_version_id": live_version_id}
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        except AgentRuntimeError as exc:
-            return _agent_runtime_error_response(exc)
-
-        return StreamingHttpResponse(
-            _relay(
-                _run_deep_agent(
-                    session=session,
-                    context=runtime_context,
-                    user_input="",
-                    history=[],
-                    draft=draft,
-                    resume_decisions=_decisions_for(action_requests, selected),
-                ),
-                session_id=session_id,
-                account_id=account_id,
-            ),
-            content_type="application/x-ndjson",
-        )
-
-
-def _decisions_for(
-    action_requests: list[dict[str, Any]], selected: list[int] | None
-) -> list[dict[str, Any]]:
-    """승인 카드의 결정 → `HumanInTheLoopMiddleware`가 요구하는 decision 목록.
-
-    **개수가 인터럽트가 요구한 호출 수와 같아야 한다** — 다르면 미들웨어가
-    `ValueError`를 던진다(실측: langchain `human_in_the_loop.py`).
-
-    체크를 푼 항목이 있으면 첫 호출의 인자를 그만큼 줄여 `edit`로 보낸다.
-    줄일 것이 없으면(전체 승인) `approve` 그대로다 — 같은 값을 굳이 `edit`로
-    보내면 미들웨어가 인자를 다시 쓰는 경로를 타서, 승인한 것과 실행되는 것이
-    같다는 보장이 한 겹 얇아진다.
-    """
-    decisions: list[dict[str, Any]] = [{"type": "approve"} for _ in action_requests]
-    if selected is None:
-        return decisions
-
-    first = action_requests[0]
-    original = first.get("args") or {}
-    # 어느 목록을 거를지 정하는 규칙은 레거시와 **하나만 둔다** — 두 벌이 되면
-    # 같은 카드가 엔진에 따라 다른 것을 등록한다.
-    narrowed = _apply_selection({"arguments": original}, selected).get("arguments") or {}
-    if narrowed != original:
-        decisions[0] = {
-            "type": "edit",
-            "edited_action": {"name": first.get("name"), "args": narrowed},
-        }
-    return decisions
 
 
 def _apply_to_innermost(

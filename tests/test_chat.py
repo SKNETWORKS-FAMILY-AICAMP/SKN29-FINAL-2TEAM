@@ -1049,6 +1049,143 @@ class ChatHistoryTests(SimpleTestCase):
         self.assertEqual(len(sent), 20)
         self.assertEqual(sent[0]["content"], "질문20")
 
+
+@patch("services.agent_runtime.build_default_executor")
+@patch("services.agent_runtime.legacy_bridge.AgentRepository")
+@patch("apps.chat.api_views.suggest_title", return_value=None)
+@patch("apps.chat.api_views.AccountRepository")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class PiiMaskingTests(SimpleTestCase):
+    """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술은
+    모델에게 보내기 전에 가린다(2026-08-19, §2순위, 사용자 확정 범위).
+
+    **저장은 원문 그대로** 다 — 화면은 사용자 자신이 뭘 썼는지 그대로 봐야
+    한다. 마스킹은 모델로 가는 값에만 적용한다: 이번 턴 `user_input`,
+    이력 재전송(`conversation_messages`), 제목 생성용 `question`.
+    """
+
+    SENSITIVE = "제 전화번호는 010-1234-5678이에요"
+
+    def test_이번_턴_발화는_모델에게_가려서_간다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.SENSITIVE},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_input = mock_executor.run.call_args.kwargs["user_input"]
+        self.assertNotIn("010-1234-5678", user_input)
+        self.assertIn("제 전화번호는", user_input)
+
+    def test_저장은_원문_그대로_한다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        """화면은 사용자 자신의 발화를 그대로 봐야 한다 — 마스킹은 모델
+        입력에만 적용하고 저장에는 적용하지 않는다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.SENSITIVE},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_write = next(
+            call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
+        )
+        self.assertEqual(user_write["content"]["text"], self.SENSITIVE)
+
+    def test_이력_재전송도_가려서_간다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        """`_history()`가 저장된(원문) 과거 발화를 모델에게 다시 태울 때도
+        가린다 — 이번 요청만 막고 다음 턴 재전송에서 새면 의미가 없다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = [
+            {"role": "user", "content": {"type": "text", "text": self.SENSITIVE}},
+            {"role": "agent", "content": {"type": "result", "text": "알겠습니다."}},
+        ]
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "다음 질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        conversation_messages = mock_executor.run.call_args.kwargs["conversation_messages"]
+        self.assertNotIn("010-1234-5678", str(conversation_messages))
+        self.assertIn("제 전화번호는", conversation_messages[0]["content"])
+
+    def test_제목_생성도_가려진_값을_받는다(
+        self, sessions, messages, accounts, title, agent_repo, build_executor
+    ):
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        sessions.rename_if_first_answer.return_value = True
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        title.return_value = "전화번호 문의"
+        _mock_new_engine(build_executor, [{"type": "result", "text": "확인했습니다.", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.SENSITIVE},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        question = title.call_args.kwargs["question"]
+        self.assertNotIn("010-1234-5678", question)
+
+    def test_민감정보가_없으면_그대로_간다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        """오탐 걱정 — 평범한 문장까지 바뀌면 안 된다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "이 프로젝트 문서에서 업무를 뽑아줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        self.assertEqual(
+            mock_executor.run.call_args.kwargs["user_input"], "이 프로젝트 문서에서 업무를 뽑아줘"
+        )
+
+
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatListScopeTests(SimpleTestCase):
     """대화 목록은 **내 것만**이다 — 계층 `팀 > 프로젝트 > 채팅(개인)`.

@@ -18,11 +18,16 @@
 경우를 잡는 안전망"이다. 전화번호 패턴은 정당한 요청("이 번호로 리마인더
 보내줘")도 걸릴 수 있다. 권한/보안 키워드는 문맥 없이 문자열 포함 여부만
 본다 — 진위와 무관하게 카테고리째 막기로 한 의도된 선택이다.
+
+패턴 정의(credential/개인정보/권한·보안) 자체는 `sensitive_text.py`에
+있다 — `apps/chat/api_views.py`가 사용자 채팅 입력을 모델에게 보내기 전에
+가리는 기능(2026-08-19, §2순위)도 같은 패턴을 쓰기 때문에, 두 기능이
+"무엇을 민감정보로 보는가"에 대해 서로 다른 정의를 갖지 않도록 여기서
+중복 정의하지 않는다.
 """
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any
 
 from deepagents.backends.utils import validate_path
@@ -30,6 +35,7 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import ToolMessage
 
 from services.agent_runtime.memory.backend import MEMORY_USERS_PATH_PREFIX
+from services.agent_runtime.sensitive_text import CATEGORY_LABELS, match_category
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,54 +45,6 @@ if TYPE_CHECKING:
 #: 검사 대상 도구. `read_file`/`ls` 등 조회 도구는 애초에 아무것도 안 쓰므로
 #: 대상이 아니다.
 _GUARDED_TOOLS = {"write_file", "edit_file"}
-
-# credential / secret — 값의 "형태"만으로 판단, 진위 판단 불필요.
-_CREDENTIAL_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),  # OpenAI/Anthropic류 API 키 형식
-    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key 형식
-    re.compile(r"(?i)(api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*\S+"),
-    re.compile(r"(?i)(aws_secret|db_password|secret_key|private_key)\s*[:=]"),
-]
-
-# 개인정보 — 자릿수·형식이 고정된 패턴.
-_PII_PATTERNS = [
-    re.compile(r"\d{6}[-\s]?[1-4]\d{6}"),  # 주민등록번호
-    re.compile(r"\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}"),  # 카드번호
-    re.compile(r"01[016789][-\s]?\d{3,4}[-\s]?\d{4}"),  # 휴대전화번호(모듈 docstring 한계 참고)
-]
-
-# 권한/보안 관련 사실 — 진위와 무관하게 카테고리째 차단.
-_AUTHORITY_KEYWORDS = [
-    "관리자 권한",
-    "관리자 계정",
-    "관리자 비밀번호",
-    "루트 계정",
-    "root 계정",
-    "내부 접속 정보",
-    "administrator privilege",
-    "admin password",
-    "root access",
-    "superuser",
-]
-
-_CATEGORY_LABELS = {
-    "credential": "credential/secret로 보이는 값",
-    "pii": "개인정보로 보이는 값(주민등록번호·카드번호·전화번호 패턴)",
-    "authority": "권한/보안 관련 서술",
-}
-
-
-def _match_category(text: str) -> str | None:
-    for pattern in _CREDENTIAL_PATTERNS:
-        if pattern.search(text):
-            return "credential"
-    for pattern in _PII_PATTERNS:
-        if pattern.search(text):
-            return "pii"
-    lowered = text.lower()
-    if any(keyword.lower() in lowered for keyword in _AUTHORITY_KEYWORDS):
-        return "authority"
-    return None
 
 
 class MemoryWriteGuardMiddleware(AgentMiddleware):
@@ -131,7 +89,7 @@ class MemoryWriteGuardMiddleware(AgentMiddleware):
             return handler(request)
 
         text_to_check = args.get("content", "") if name == "write_file" else args.get("new_string", "")
-        category = _match_category(text_to_check)
+        category = match_category(text_to_check)
         if category is None:
             return handler(request)
 
@@ -141,7 +99,7 @@ class MemoryWriteGuardMiddleware(AgentMiddleware):
         # 이름만 알려준다.
         return ToolMessage(
             content=(
-                f"이 내용은 저장하지 않았습니다 — {_CATEGORY_LABELS[category]}"
+                f"이 내용은 저장하지 않았습니다 — {CATEGORY_LABELS[category]}"
                 "이(가) 포함된 것으로 보입니다. 개인 장기 메모리에는 "
                 "credential·개인정보·권한/보안 관련 서술을 저장하지 않습니다. "
                 "다른 방식으로 표현해서 다시 시도할 수 있습니다."
