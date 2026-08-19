@@ -111,6 +111,11 @@ class HealthAPIView(APIView):
         )
 
 
+#: 프로젝트 생성은 팀 전체의 작업 단위를 새로 여는 일이라 커넥터 연결·폴더
+#: 지정과 같은 무게다(2026-08-19, 지훈 요청).
+PROJECT_LEADER_ONLY = "팀장만 프로젝트를 만들 수 있습니다."
+
+
 class ProjectListCreateAPIView(AuthenticatedAPIView):
     """내가 소유한 프로젝트. 온보딩은 여기서 DRAFT를 찾거나 만든다."""
 
@@ -136,6 +141,9 @@ class ProjectListCreateAPIView(AuthenticatedAPIView):
         )
 
     def post(self, request):
+        if denied := require_leader(request.user.account_id, PROJECT_LEADER_ONLY):
+            return denied
+
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 

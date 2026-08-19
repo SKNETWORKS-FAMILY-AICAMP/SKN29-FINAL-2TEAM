@@ -72,6 +72,7 @@ export default function ProjectListPage() {
   const navigate = useNavigate();
   const session = useSession();
   const token = session?.token;
+  const isLeader = session?.account.role === 'leader';
   const { showToast } = useToast();
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -157,8 +158,15 @@ export default function ProjectListPage() {
           </div>
           <div className={styles.quickStats}>
             {/* 프로젝트를 만드는 입구. 여기서 만들면 곧바로 기준 문서 후보를
-                찾아 「프로젝트 → 문서 → 업무」로 이어진다. */}
-            <Button size="sm" onClick={() => setCreating(true)}>
+                찾아 「프로젝트 → 문서 → 업무」로 이어진다. 팀장만 만들 수
+                있다(2026-08-19, 지훈 요청 — 서버도 `require_leader`로 같이
+                막는다, `ConnectorTab`의 `isLeader` disabled 관례를 따름). */}
+            <Button
+              size="sm"
+              onClick={() => setCreating(true)}
+              disabled={!isLeader}
+              title={isLeader ? undefined : '팀장만 프로젝트를 만들 수 있습니다.'}
+            >
               <Icon name="plus" size={15} />
               새 프로젝트
             </Button>
