@@ -247,7 +247,12 @@ class AgentDefinitionLoader:
             child_version_id=child_version_id,
             alias=alias,
             delegation_description=delegation_description,
-            is_active=row["agent_status"] == "ACTIVE",
+            # 본인 소유 DRAFT도 된다 — `AgentSubagentRepository.
+            # list_for_parent_version()`/`_build_subagent_refs()`와 같은 완화
+            # (2026-08-19, 저장된 부모 실행 경로에서 먼저 발견·수정). Builder Test
+            # Run(이 함수)에서만 다르게 막을 이유가 없다.
+            is_active=row["agent_status"] == "ACTIVE"
+            or (row["agent_status"] == "DRAFT" and row["agent_owner_account_id"] == context.account_id),
             can_execute=True,
             has_subagents=bool(grandchildren),
         )

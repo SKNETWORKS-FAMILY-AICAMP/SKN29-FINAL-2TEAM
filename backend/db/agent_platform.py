@@ -305,7 +305,8 @@ class AgentVersionRepository:
                     """
                     SELECT v.agent_version_id, v.agent_id, v.system_prompt,
                            v.model, v.reasoning_effort, v.max_iterations,
-                           a.team_id, a.name, a.description, a.status AS agent_status
+                           a.team_id, a.name, a.description, a.status AS agent_status,
+                           a.owner_account_id AS agent_owner_account_id
                     FROM agent_versions AS v
                     JOIN agents AS a ON a.agent_id = v.agent_id
                     WHERE v.agent_version_id = %s AND v.agent_id = %s
@@ -386,6 +387,18 @@ class AgentSubagentRepository:
         아래 자식을 두는지)를 본다 — MVP는 1단계 위임까지만 허용하므로
         (`DelegationDepthError`), 이 값이 True인 자식을 선택하면 검증에서
         걸린다.
+
+        **`is_active`는 "ACTIVE 상태"가 아니라 "서브 에이전트로 참조해도
+        되는가"다**(2026-08-19 수정 — `_build_subagent_refs()`가 이미 하던
+        완화를 여기도 맞췄다. ACTIVE는 항상 되고, **본인 소유의 DRAFT도**
+        된다. 저장 API(`_build_subagent_refs`)는 저장 시점에 이 완화를 적용해
+        본인 DRAFT를 서브 에이전트로 저장할 수 있게 해 두고 이 함수도 "같은
+        계산"이라고 주석에 적어 뒀는데, 실제로는 `account_id`를 안 써서 여기만
+        빠져 있었다 — 저장은 되는데 그 저장된 부모를 **실행하면**(Chat) 여기서
+        걸려 `InactiveSubagentError`로 대화 전체가 끊기는 것으로 실측 확인했다
+        (2026-08-19, `services/agent_runtime/subagents/validation.py`
+        `validate_subagents()`가 `factory.build()` 안에서 스트림 시작 뒤에
+        예외를 던져 `ErrorCard`가 뜸).
         """
 
         with database_connection() as connection:
@@ -395,6 +408,7 @@ class AgentSubagentRepository:
                     SELECT s.child_agent_id, s.child_version_id, s.alias,
                            s.delegation_description,
                            a.team_id AS child_team_id, a.status AS child_status,
+                           a.owner_account_id AS child_owner_account_id,
                            EXISTS (
                                SELECT 1 FROM agent_version_subagents AS g
                                WHERE g.parent_version_id = s.child_version_id
@@ -416,7 +430,8 @@ class AgentSubagentRepository:
                 "delegation_description": row["delegation_description"],
                 # v1: visibility가 항상 'TEAM' 고정이라(마이그레이션 주석 참고)
                 # 팀 소속 일치만 본다. PRIVATE가 생기면 여기만 바꾼다.
-                "is_active": row["child_status"] == "ACTIVE",
+                "is_active": row["child_status"] == "ACTIVE"
+                or (row["child_status"] == "DRAFT" and row["child_owner_account_id"] == account_id),
                 "can_execute": row["child_team_id"] == team_id,
                 "has_subagents": row["has_subagents"],
             }
