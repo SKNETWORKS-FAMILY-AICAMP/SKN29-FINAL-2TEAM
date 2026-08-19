@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase
 
 from apps.accounts.tokens import issue_token
-from apps.chat.api_views import _apply_selection
+from apps.chat.api_views import _apply_selection, _decisions_for
 from apps.chat.serializers import message_response
 from backend.db.errors import PermissionDenied
 
@@ -648,6 +648,380 @@ class ConfirmGateTests(SimpleTestCase):
 
 
 @patch("services.agent_runtime.build_default_executor")
+@patch("apps.chat.api_views.suggest_title", return_value=None)
+@patch("apps.chat.api_views.AccountRepository")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class HITLResumeConfirmTests(SimpleTestCase):
+    """`ChatConfirmAPIView` → `_resume_deep_agent()`(2026-08-19, §0순위 — 새 엔진
+    HITL resume API). `content.get("engine") == "deepagents"`인 확인 카드는
+    레거시 `run_agent` 경로 대신 여기로 온다(`ConfirmGateTests`는 그 반대 —
+    `engine` 필드가 없는 레거시 카드를 본다).
+
+    `DEEP_SESSION`(agent_version_id 있음)을 쓴다 — draft 경로를 안 타서
+    `legacy_bridge.AgentRepository`를 안 건드리고 순수하게 재개 경로만 본다.
+    """
+
+    #: `run_id`는 `agent_run.run_id`(UUID 컬럼)에 그대로 들어가므로 실제
+    #: 운영 코드가 늘 그러듯(`uuid.uuid4()`) 유효한 UUID 문자열로 둔다 —
+    #: 임의 문자열이면 `_close_orphans()`의 정리 쿼리가 DB 타입 오류로
+    #: 실패한다(적재 실패는 삼켜지지만 로그가 지저분해지고, "정말 닫혔는가"를
+    #: 확인하는 테스트를 못 쓰게 된다).
+    PENDING_RUN_ID = "22222222-2222-2222-2222-222222222222"
+
+    PENDING = {
+        "message_id": "M1",
+        "content": {
+            "type": "awaiting_confirmation",
+            "engine": "deepagents",
+            "run_id": PENDING_RUN_ID,
+            "interrupt_id": "intr-1",
+            "action_requests": [
+                {
+                    "name": "task_register",
+                    "args": {"tasks": [{"title": "더미"}]},
+                    "description": "업무 등록",
+                }
+            ],
+            "tool_name": "task_register",
+        },
+    }
+
+    def test_engine_deepagents_routes_to_resume_not_run(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "등록했습니다", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        events = ndjson(response)
+
+        mock_executor.resume.assert_called_once()
+        mock_executor.run.assert_not_called()
+        self.assertEqual([e["type"] for e in events], ["result"])
+
+    def test_pending_run_id_reaches_context_run_id(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """새로 발급하지 않는다 — 멈췄던 그 실행의 run_id를 그대로 써야
+        `AgentRunRepository`가 그 행을 찾아 닫을 수 있다."""
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        call_kwargs = mock_executor.resume.call_args.kwargs
+        self.assertEqual(call_kwargs["context"].run_id, self.PENDING_RUN_ID)
+
+    def test_decision_defaults_to_approve(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        call_kwargs = mock_executor.resume.call_args.kwargs
+        self.assertEqual(call_kwargs["decisions"], [{"type": "approve"}])
+
+    def test_체크를_푼_항목은_재개에도_반영된다(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """화면에서 3건 중 2건만 승인하면 **2건만** 실행돼야 한다.
+
+        2026-08-19 병합에서 이 연결이 한 번 끊겼다 — `_decisions_for()`는
+        멀쩡한데 재개 경로가 그걸 안 부르고 전부 승인으로 보냈다. 함수만 덮는
+        테스트로는 못 잡아서, 여기서 **executor 에 실제로 뭐가 넘어가는지**를
+        본다.
+        """
+
+        pending = {
+            "message_id": "M1",
+            "content": {
+                **self.PENDING["content"],
+                "action_requests": [
+                    {
+                        "name": "task_register",
+                        "args": {"tasks": [{"title": "가"}, {"title": "나"}, {"title": "다"}]},
+                        "description": "업무 등록",
+                    }
+                ],
+            },
+        }
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = pending
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {"selected": [0, 2]},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        decisions = mock_executor.resume.call_args.kwargs["decisions"]
+        self.assertEqual(decisions[0]["type"], "edit")
+        self.assertEqual(
+            [t["title"] for t in decisions[0]["edited_action"]["args"]["tasks"]],
+            ["가", "다"],
+        )
+
+    def test_decision_reject_is_forwarded(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "취소했습니다", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {"decision": "reject"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        call_kwargs = mock_executor.resume.call_args.kwargs
+        self.assertEqual(call_kwargs["decisions"], [{"type": "reject"}])
+
+    def test_decisions_length_matches_action_requests_count(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """`HumanInTheLoopMiddleware`는 `decisions`의 길이가 그 턴에 걸린
+        `action_requests` 개수와 정확히 같아야 한다 — 다르면 ValueError."""
+        pending = {
+            "message_id": "M1",
+            "content": {
+                **self.PENDING["content"],
+                "action_requests": [
+                    {"name": "task_register", "args": {}},
+                    {"name": "task_register", "args": {}},
+                ],
+            },
+        }
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = pending
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        call_kwargs = mock_executor.resume.call_args.kwargs
+        self.assertEqual(call_kwargs["decisions"], [{"type": "approve"}, {"type": "approve"}])
+
+    def test_agent_id_version_id_and_draft_match_session(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        call_kwargs = mock_executor.resume.call_args.kwargs
+        self.assertEqual(call_kwargs["agent_id"], "AG001")
+        self.assertEqual(call_kwargs["agent_version_id"], "AV001")
+        self.assertIsNone(call_kwargs["draft"])
+
+    def test_result_from_resume_is_persisted_and_clears_pending_shape(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """재개가 끝까지 성공하면(EVENT_RESULT) 저장되는 내용은 새로운 확인
+        대기 카드가 아니라 보통의 답변이다 — `_persist()`의 `else` 분기."""
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "등록했습니다", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        stored = messages.append.call_args.kwargs["content"]
+        self.assertEqual(stored["type"], "result")
+        self.assertEqual(stored["text"], "등록했습니다")
+
+    def test_resumed_result_closes_the_agent_run_via_known_run_ids(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """`trace_events(..., known_run_ids=(run_id,))` 없이는 이 run의
+        `agent_run` 행이 `PENDING`에서 영원히 못 닫힌다(이 세션의 §0순위
+        핵심 버그) — HTTP 계층까지 통째로 거쳐 실제로 닫히는지 확인한다."""
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "등록했습니다", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        with patch("services.agent_runtime.tracing.AgentRunRepository") as runs:
+            response = self.client.post(
+                f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+                {},
+                content_type="application/json",
+                headers=auth_header(),
+            )
+            ndjson(response)
+
+        runs.finish.assert_called_once_with(
+            run_id=self.PENDING_RUN_ID, status="DONE", iterations=0, token_in=None, token_out=None
+        )
+        # known_run_ids로 미리 채워 둔 덕에 닫혔다 — start_with_id는 이
+        # 스트림에서 한 번도 안 불린다(EVENT_AGENT_STARTED가 없는 재개
+        # 스트림이므로).
+        runs.start_with_id.assert_not_called()
+
+    def test_rejected_run_still_persists_as_result(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """거절도 승인과 마찬가지로 실행이 끝까지 간다(그저 handler가 아예
+        안 불린 채로) — HumanInTheLoopMiddleware가 거절 사유를 ToolMessage로
+        모델에 되돌려주고 모델이 다음 말을 잇는다, 별도의 '거절됨' 이벤트
+        타입이 있는 게 아니다."""
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = self.PENDING
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [
+                {
+                    "type": "result",
+                    "text": "요청하신 대로 취소했습니다.",
+                    "run_id": self.PENDING_RUN_ID,
+                    "complete": True,
+                }
+            ]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {"decision": "reject"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        events = ndjson(response)
+
+        self.assertEqual(events[-1]["type"], "result")
+
+
+class ResumeDecisionTests(SimpleTestCase):
+    """새 엔진 재개에서 **체크를 푼 항목이 실행되지 않는지** 지킨다.
+
+    2026-08-19 병합에서 이 경로가 조용히 사라진 적이 있다 — 결정 목록을
+    `[{"type": "approve"}] * n` 으로만 만들면, 화면에서 3건을 빼고 승인해도
+    10건이 전부 등록된다. 실패가 아니라 **틀린 데이터**로 끝나서 누가 볼
+    때까지 안 드러난다. 그때 이 함수를 덮는 테스트가 하나도 없어서 아무
+    테스트도 안 깨졌다.
+    """
+
+    def _requests(self, count=3):
+        return [{"name": "task_register", "args": {"tasks": [{"title": f"업무{i}"} for i in range(count)]}}]
+
+    def test_전체_승인은_그대로_승인이다(self):
+        """줄일 것이 없으면 `edit` 로 안 바꾼다 — 승인한 것과 실행되는 것이
+        같다는 보장이 인자를 다시 쓰는 경로를 안 타야 한 겹 더 두껍다."""
+
+        self.assertEqual(_decisions_for(self._requests(), None), [{"type": "approve"}])
+
+    def test_체크를_푼_항목은_빠진다(self):
+        decisions = _decisions_for(self._requests(3), [0, 2])
+
+        self.assertEqual(decisions[0]["type"], "edit")
+        self.assertEqual(
+            [t["title"] for t in decisions[0]["edited_action"]["args"]["tasks"]],
+            ["업무0", "업무2"],
+        )
+
+    def test_결정_개수는_요청_개수와_같다(self):
+        """다르면 `HumanInTheLoopMiddleware` 가 `ValueError` 를 던진다(실측)."""
+
+        requests = self._requests() * 2
+
+        self.assertEqual(len(_decisions_for(requests, [0])), len(requests))
+
+    def test_전부_그대로_고르면_승인으로_둔다(self):
+        self.assertEqual(_decisions_for(self._requests(3), [0, 1, 2]), [{"type": "approve"}])
+
+
+@patch("services.agent_runtime.build_default_executor")
 @patch("services.agent_runtime.legacy_bridge.AgentRepository")
 @patch("apps.chat.api_views.suggest_title", return_value=None)
 @patch("apps.chat.api_views.AccountRepository")
@@ -761,6 +1135,143 @@ class ChatHistoryTests(SimpleTestCase):
         # 이력 최근 20건 — 이번 발화는 user_input으로 따로 가므로 여기 안 섞인다.
         self.assertEqual(len(sent), 20)
         self.assertEqual(sent[0]["content"], "질문20")
+
+
+@patch("services.agent_runtime.build_default_executor")
+@patch("services.agent_runtime.legacy_bridge.AgentRepository")
+@patch("apps.chat.api_views.suggest_title", return_value=None)
+@patch("apps.chat.api_views.AccountRepository")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class PiiMaskingTests(SimpleTestCase):
+    """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술은
+    모델에게 보내기 전에 가린다(2026-08-19, §2순위, 사용자 확정 범위).
+
+    **저장은 원문 그대로** 다 — 화면은 사용자 자신이 뭘 썼는지 그대로 봐야
+    한다. 마스킹은 모델로 가는 값에만 적용한다: 이번 턴 `user_input`,
+    이력 재전송(`conversation_messages`), 제목 생성용 `question`.
+    """
+
+    SENSITIVE = "제 전화번호는 010-1234-5678이에요"
+
+    def test_이번_턴_발화는_모델에게_가려서_간다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.SENSITIVE},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_input = mock_executor.run.call_args.kwargs["user_input"]
+        self.assertNotIn("010-1234-5678", user_input)
+        self.assertIn("제 전화번호는", user_input)
+
+    def test_저장은_원문_그대로_한다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        """화면은 사용자 자신의 발화를 그대로 봐야 한다 — 마스킹은 모델
+        입력에만 적용하고 저장에는 적용하지 않는다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.SENSITIVE},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_write = next(
+            call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
+        )
+        self.assertEqual(user_write["content"]["text"], self.SENSITIVE)
+
+    def test_이력_재전송도_가려서_간다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        """`_history()`가 저장된(원문) 과거 발화를 모델에게 다시 태울 때도
+        가린다 — 이번 요청만 막고 다음 턴 재전송에서 새면 의미가 없다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = [
+            {"role": "user", "content": {"type": "text", "text": self.SENSITIVE}},
+            {"role": "agent", "content": {"type": "result", "text": "알겠습니다."}},
+        ]
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "다음 질문"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        conversation_messages = mock_executor.run.call_args.kwargs["conversation_messages"]
+        self.assertNotIn("010-1234-5678", str(conversation_messages))
+        self.assertIn("제 전화번호는", conversation_messages[0]["content"])
+
+    def test_제목_생성도_가려진_값을_받는다(
+        self, sessions, messages, accounts, title, agent_repo, build_executor
+    ):
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        sessions.rename_if_first_answer.return_value = True
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        title.return_value = "전화번호 문의"
+        _mock_new_engine(build_executor, [{"type": "result", "text": "확인했습니다.", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.SENSITIVE},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        question = title.call_args.kwargs["question"]
+        self.assertNotIn("010-1234-5678", question)
+
+    def test_민감정보가_없으면_그대로_간다(
+        self, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        """오탐 걱정 — 평범한 문장까지 바뀌면 안 된다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "이 프로젝트 문서에서 업무를 뽑아줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        self.assertEqual(
+            mock_executor.run.call_args.kwargs["user_input"], "이 프로젝트 문서에서 업무를 뽑아줘"
+        )
+
 
 @patch("apps.chat.api_views.ChatSessionRepository")
 class ChatListScopeTests(SimpleTestCase):

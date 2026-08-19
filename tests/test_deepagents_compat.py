@@ -355,6 +355,71 @@ class CreateRootGraphInterruptOnTests(SimpleTestCase):
         self.assertEqual(kwargs["interrupt_on"], wanted)
 
 
+class CreateRootGraphPermissionsTests(SimpleTestCase):
+    """`permissions`(2026-08-19, `middleware/permissions.py`) 배선.
+
+    `create_deep_agent()`가 직접 받는 `permissions` 최상위 kwarg로 통과시키는
+    것과 별개로, `fs_excluded_tools`가 켜져 있으면(이 프로젝트는 항상 켜짐)
+    이름 치환용 커스텀 `FilesystemMiddleware`에도 `_permissions`로 같이 넘어가야
+    한다 — 안 그러면 Root 자신에게는 조용히 적용 안 된다(§5).
+    """
+
+    def test_no_permissions_is_not_passed_through(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("permissions", kwargs)
+
+    def test_empty_permissions_is_not_passed_through(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", permissions=[])
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("permissions", kwargs)
+
+    def test_permissions_passed_through_top_level_kwarg(self):
+        fake_rule = Mock(name="fake-permission")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", permissions=[fake_rule])
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["permissions"], [fake_rule])
+
+    def test_permissions_without_fs_excluded_tools_do_not_add_filesystem_middleware(self):
+        """fs_excluded_tools가 비어있으면 이름 치환 자체가 안 일어난다 — 이때는
+        deepagents 자동 생성분이 top-level `permissions` kwarg를 그대로 받으므로
+        여기서 별도로 middleware를 추가할 필요가 없다."""
+        fake_rule = Mock(name="fake-permission")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p", permissions=[fake_rule])
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_permissions_with_fs_excluded_tools_reach_the_replacement_filesystem_middleware(self):
+        """이 테스트가 §5에서 확인한 실제 버그(치환 시 `_permissions`가 조용히
+        사라짐)의 회귀를 잡는다."""
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        fake_rule = Mock(name="fake-permission")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                permissions=[fake_rule],
+                fs_excluded_tools=frozenset({"delete"}),
+            )
+
+        _args, kwargs = mock_create.call_args
+        # 최상위 kwarg도 여전히 넘어가야 한다(general-purpose 서브에이전트가
+        # spec.get("permissions", permissions)로 상속받는 경로에 필요).
+        self.assertEqual(kwargs["permissions"], [fake_rule])
+        appended = kwargs["middleware"][-1]
+        self.assertIsInstance(appended, FilesystemMiddleware)
+        self.assertEqual(appended._permissions, [fake_rule])
+
+
 class CreateChildGraphTests(SimpleTestCase):
     def test_always_forces_subagents_to_empty_list(self):
         with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:

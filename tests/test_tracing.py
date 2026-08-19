@@ -11,7 +11,7 @@ from unittest.mock import call, patch
 
 from django.test import SimpleTestCase, override_settings
 
-from services.agent_runtime.events import EVENT_ERROR, EVENT_RESULT
+from services.agent_runtime.events import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, EVENT_RESULT
 from services.agent_runtime.tracing import trace_events
 
 MODULE = "services.agent_runtime.tracing"
@@ -111,6 +111,20 @@ def _tool_completed(**overrides):
     return event
 
 
+def _awaiting_confirmation(**overrides):
+    event = {
+        "type": EVENT_AWAITING_CONFIRMATION,
+        "run_id": "RUN-ROOT",
+        "agent_id": "AG001",
+        "agent_version_id": "AV001",
+        "interrupt_id": "intr-1",
+        "action_requests": [{"name": "task_register", "args": {}}],
+        "complete": False,
+    }
+    event.update(overrides)
+    return event
+
+
 @patch(f"{MODULE}.ToolCallRepository")
 @patch(f"{MODULE}.AgentRunRepository")
 class RootRunLifecycleTests(SimpleTestCase):
@@ -124,7 +138,29 @@ class RootRunLifecycleTests(SimpleTestCase):
             parent_run_id=None,
             agent_version_id="AV001",
             runtime_profile_version=None,
+            resolved_provider=None,
+            resolved_endpoint_hash=None,
         )
+
+    def test_resolved_provider_and_endpoint_hash_are_read_from_the_event(self, runs, _calls):
+        """2026-08-19, §4순위(Run Snapshot) — `executor.py`가 `EVENT_AGENT_STARTED`에
+        실어 보낸 값이 그대로 `start_with_id()`로 전달되는지."""
+        list(
+            trace_events(
+                iter(
+                    [
+                        _agent_started(
+                            resolved_provider="openai_compatible",
+                            resolved_endpoint_hash="abc123",
+                        )
+                    ]
+                ),
+                context=_context(session_id="S1"),
+            )
+        )
+
+        self.assertEqual(runs.start_with_id.call_args.kwargs["resolved_provider"], "openai_compatible")
+        self.assertEqual(runs.start_with_id.call_args.kwargs["resolved_endpoint_hash"], "abc123")
 
     def test_result_closes_run_as_done(self, runs, _calls):
         list(trace_events(iter([_agent_started(), _result()]), context=_context()))
@@ -178,6 +214,8 @@ class SubagentRunLifecycleTests(SimpleTestCase):
             parent_run_id="RUN-ROOT",
             agent_version_id="AV023",
             runtime_profile_version=None,
+            resolved_provider=None,
+            resolved_endpoint_hash=None,
         )
 
     def test_subagent_completed_done_closes_run_as_done(self, runs, _calls):
@@ -301,3 +339,90 @@ class TracingFailureIsolationTests(SimpleTestCase):
         seen = list(trace_events(iter(events), context=_context()))
 
         self.assertEqual(seen, events)
+
+
+@patch(f"{MODULE}.ToolCallRepository")
+@patch(f"{MODULE}.AgentRunRepository")
+class AwaitingConfirmationSuspendTests(SimpleTestCase):
+    """`EVENT_AWAITING_CONFIRMATION` → `AgentRunRepository.suspend()`
+    (2026-08-19 추가, §0순위 — HITL resume API). `finish()`가 아니라 `suspend()`를
+    불러야 한다 — 끝난 게 아니라 사람의 승인/거부를 기다리는 것뿐이므로."""
+
+    def test_awaiting_confirmation_calls_suspend_not_finish(self, runs, _calls):
+        list(trace_events(iter([_agent_started(), _awaiting_confirmation()]), context=_context()))
+
+        runs.suspend.assert_called_once_with(run_id="RUN-ROOT")
+        runs.finish.assert_not_called()
+
+    def test_awaiting_confirmation_removes_run_from_open_run_ids(self, runs, _calls):
+        """이 스트림 기준으로는 더 이상 '열려' 있지 않다 — 스트림이 여기서
+        끝나도(정상 종료) `_close_orphans()`가 이 run을 FAILED로 잘못
+        정리하면 안 된다."""
+        gen = trace_events(iter([_agent_started(), _awaiting_confirmation()]), context=_context())
+        list(gen)  # 정상 소진 — finally의 _close_orphans()까지 실행됨
+
+        runs.suspend.assert_called_once_with(run_id="RUN-ROOT")
+        runs.finish.assert_not_called()  # _close_orphans()가 이걸 FAILED로 안 닫는다
+
+    def test_awaiting_confirmation_for_unstarted_run_is_skipped(self, runs, _calls):
+        """agent_started 없이(또는 agent_id 없어 기록 안 된 run) 바로
+        awaiting_confirmation이 오면 — 그 run_id가 open_run_ids에 없으니
+        조용히 건너뛴다."""
+        list(trace_events(iter([_awaiting_confirmation(run_id="RUN-NEVER-STARTED")]), context=_context()))
+
+        runs.suspend.assert_not_called()
+
+    def test_event_passes_through_unchanged(self, runs, _calls):
+        events = [_agent_started(), _awaiting_confirmation()]
+
+        seen = list(trace_events(iter(events), context=_context()))
+
+        self.assertEqual(seen, events)
+
+
+@patch(f"{MODULE}.ToolCallRepository")
+@patch(f"{MODULE}.AgentRunRepository")
+class KnownRunIdsResumeTests(SimpleTestCase):
+    """`known_run_ids`(2026-08-19 추가, §0순위) — 재개 스트림은
+    `EVENT_AGENT_STARTED`를 다시 안 내므로, 멈췄던 실행의 run_id를 미리
+    채워 둬야 `EVENT_RESULT`/`EVENT_ERROR`가 왔을 때 그 run을 닫을 수 있다."""
+
+    def test_without_known_run_ids_a_resumed_result_cannot_close_the_run(self, runs, _calls):
+        """대조군: known_run_ids 없이 result만 오면(agent_started 없이) —
+        _finish_root_run()이 '내가 시작한 run이 아니다'로 보고 못 닫는다.
+        이게 바로 known_run_ids 없이는 §0순위가 동작하지 않는 이유다."""
+        list(trace_events(iter([_result()]), context=_context()))
+
+        runs.finish.assert_not_called()
+
+    def test_known_run_ids_lets_a_resumed_result_close_the_run(self, runs, _calls):
+        list(
+            trace_events(
+                iter([_result()]), context=_context(), known_run_ids=("RUN-ROOT",)
+            )
+        )
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="DONE", iterations=0, token_in=None, token_out=None
+        )
+
+    def test_known_run_ids_lets_a_resumed_error_close_the_run_as_failed(self, runs, _calls):
+        list(
+            trace_events(
+                iter([_error()]), context=_context(), known_run_ids=("RUN-ROOT",)
+            )
+        )
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="FAILED", iterations=0, token_in=None, token_out=None
+        )
+
+    def test_known_run_ids_default_is_empty(self, runs, _calls):
+        """기본값(재개가 아닌 일반 run())은 이전과 동일하게 동작한다 — 이
+        파라미터를 추가하기 전 회귀가 없어야 한다."""
+        list(trace_events(iter([_agent_started(), _result()]), context=_context()))
+
+        runs.start_with_id.assert_called_once()
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="DONE", iterations=0, token_in=None, token_out=None
+        )

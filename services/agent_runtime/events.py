@@ -187,7 +187,6 @@ EVENT_ERROR = "error"
 # 맞춰 두면 양쪽 다 안 고쳐도 된다. 다른 점은 `resume`의 내용물뿐이다 —
 # 레거시는 대화 전체를 담아 되돌려 받아야 재개하지만, 이 엔진은 상태가
 # Checkpointer(RDS)에 있어서 "무엇을 승인하는가"만 있으면 된다.
-EVENT_AWAITING_CONFIRMATION = "awaiting_confirmation"
 # 2026-08-18 추가. §14 계약엔 없던 타입이라(그 문서 갱신 전까지) 여기 새로 둔다
 # — `_11_`류 판례처럼 계약 목록에 없는 필드를 기존 이벤트에 얹는 것과 달리
 # 이건 아예 새 타입이 필요해서(추론 텍스트는 tool_started/result 어디에도
@@ -195,6 +194,19 @@ EVENT_AWAITING_CONFIRMATION = "awaiting_confirmation"
 # 타입을 조용히 지나치므로 DB 적재는 없다 — 지금은 화면에 실시간으로
 # 보여주는 것만이 목적이라 저장할 이유가 없다.
 EVENT_REASONING = "reasoning"
+
+# 2026-08-19 추가(§0순위 — 새 엔진 HITL resume API). 값은 레거시
+# `services/harness/runner.py`의 동명 상수와 의도적으로 같은 문자열이다 —
+# `backend/db/agent_platform.py`의 `ChatMessageRepository.latest_pending_confirmation()`
+# 이 SQL에서 `content->>'type' = 'awaiting_confirmation'`을 그대로 리터럴로
+# 검사하고, `apps/chat/api_views.py`의 `_history()`/`_relay()`도 이 문자열
+# 기준으로 두 엔진을 가리지 않고 같은 분기를 탄다 — 값이 갈리면 그 공용
+# 코드가 새 엔진의 확인 대기를 못 알아본다. import로 묶지 않고 값만
+# 맞추는 이유는 `EVENT_ERROR`/`EVENT_RESULT`가 이미 이 파일에서 같은
+# 방식으로 하고 있는 것과 같다 — 레거시(`services.harness`)와 새 엔진
+# (`services.agent_runtime`)은 서로의 내부 구현을 몰라도 되게 분리하되,
+# 화면·DB로 나가는 이벤트 "타입 문자열"만 계약처럼 맞춘다.
+EVENT_AWAITING_CONFIRMATION = "awaiting_confirmation"
 
 # deepagents가 서브 에이전트 위임에 쓰는 내장 도구 이름. 이 이름의 tool_call은
 # "실제 도구 호출"이 아니라 "위임"으로 분류한다.
@@ -332,14 +344,29 @@ class EventMapper:
         if mode != "updates":
             return []
 
-        # 승인 게이트가 멈춘 자리를 **노드 순회보다 먼저** 갈라낸다.
-        # LangGraph는 이걸 `{"__interrupt__": (Interrupt(...),)}`로 내보내는데
-        # 값이 dict가 아니라 **tuple**이라, 아래 `isinstance(node_output, dict)`에
-        # 걸려 조용히 버려졌다 — 그래서 그래프는 멈췄는데 화면엔 아무것도 안
-        # 나오고 대화가 끊긴 것처럼 보였다(2026-08-18 QA에서 발견).
-        interrupted = self._classify_interrupt(payload=payload, run_id=run_id)
-        if interrupted:
-            return interrupted
+        # 2026-08-19 추가(§0순위) — `HumanInTheLoopMiddleware.after_model`이
+        # `interrupt()`를 부르면 LangGraph는 이 턴의 다른 노드 출력과 **완전히
+        # 분리된** 자기만의 "updates" 청크로 `{"__interrupt__": (Interrupt(...),)}`
+        # 를 낸다(설치된 `langgraph==...`의 `pregel/_loop.py`
+        # `output_writes()` 실제 소스로 확인 — `map_output_updates()`가
+        # `INTERRUPT` 채널의 write는 애초에 걸러내고, 대신
+        # `self._emit("updates", lambda: iter([{INTERRUPT: interrupts}]))`로
+        # 따로 낸다). 그래서 이 키가 있으면 그 청크는 다른 node_name과
+        # 섞일 수 없다 — 바로 처리하고 반환한다.
+        #
+        # **이걸 처리 안 하면 무슨 일이 있었는지(2026-08-19 이전)**: 아래
+        # 일반 루프는 `node_output`이 dict가 아니면(`__interrupt__`의 값은
+        # `tuple[Interrupt, ...]`) 그냥 건너뛰므로, interrupt가 나면 이
+        # `convert()`는 빈 리스트만 돌려주고 스트림은 그대로 끝났다 —
+        # side_effect 도구를 부르면 화면에는 아무 일도 없었던 것처럼 보이고
+        # (확인 카드도, 오류도 없이 스트림만 조용히 종료), 실제로는
+        # `HumanInTheLoopMiddleware`가 도구 실행을 막아 둔 채 그래프가
+        # 멈춰 있었다 — 재개할 API 자체도 없었으니 그 실행은 영원히 그
+        # 상태였다. `2026-08-19_05_HITL_resume_구현설계.md` §1 참고.
+        if "__interrupt__" in payload:
+            return self._handle_interrupt(
+                payload["__interrupt__"], run_id=run_id, definition=definition
+            )
 
         events: list[dict[str, Any]] = []
         for node_name, node_output in payload.items():
@@ -361,6 +388,53 @@ class EventMapper:
                 )
 
         return events
+
+    def _handle_interrupt(
+        self,
+        interrupts: tuple[Any, ...],
+        *,
+        run_id: str | None,
+        definition: Any,
+    ) -> list[dict[str, Any]]:
+        """`HumanInTheLoopMiddleware`의 interrupt를 `EVENT_AWAITING_CONFIRMATION`
+        으로 바꾼다.
+
+        `interrupts`는 `langgraph.types.Interrupt` 인스턴스들이다. 원소가
+        보통 하나뿐인 이유: `HumanInTheLoopMiddleware.after_model`(설치된
+        `langchain` 실제 소스)이 그 턴의 `AIMessage`에 실린 side_effect
+        tool_call **전부**를 한 번에 모아 `interrupt(hitl_request)`를 딱
+        한 번만 부른다 — tool_call마다 따로 interrupt하지 않는다. 그래서
+        이 턴에 한해 최대 하나의 `Interrupt`만 온다고 보고, 첫 번째만
+        쓴다. `Interrupt.value`는 `interrupt()`에 넘긴 그 값
+        (`HITLRequest` — `{"action_requests": [...], "review_configs":
+        [...]}`) 그대로다.
+        """
+        if not interrupts:
+            return []
+        first = interrupts[0]
+        hitl_request = first.value if isinstance(first.value, dict) else {}
+        action_requests = hitl_request.get("action_requests") or []
+        return [
+            {
+                "type": EVENT_AWAITING_CONFIRMATION,
+                "run_id": run_id,
+                "agent_id": getattr(definition, "agent_id", None),
+                "agent_version_id": getattr(definition, "agent_version_id", None),
+                # 승인/거부를 그대로 이어붙일 수 있는 재개 키. 지금 구조에서는
+                # 한 턴에 interrupt가 하나뿐이라(위 docstring) 재개할 때
+                # `Command(resume={"decisions": [...]})`를 이 id 없이
+                # 그대로 보내도 되지만, 나중에 병렬 interrupt를 지원하게
+                # 되면 이 값으로 특정 interrupt를 골라야 하므로 지금부터
+                # 실어 둔다.
+                "interrupt_id": first.id,
+                # 화면이 확인 카드를 그리는 데 필요한 전부 — 도구 이름·인자·
+                # 설명. 승인 재개 시에도 이 목록의 길이만큼
+                # `decisions`를 만들어야 하므로(순서·개수가 안 맞으면
+                # `HumanInTheLoopMiddleware`가 ValueError) 그대로 저장해 둔다.
+                "action_requests": action_requests,
+                "complete": False,
+            }
+        ]
 
     def _classify(
         self,
@@ -635,60 +709,6 @@ class EventMapper:
                     break
 
         return info
-
-    def _classify_interrupt(
-        self, *, payload: dict[str, Any], run_id: str | None
-    ) -> list[dict[str, Any]]:
-        """`__interrupt__` → `awaiting_confirmation` 하나.
-
-        `HumanInTheLoopMiddleware`는 한 모델 턴에서 승인이 필요한 도구 호출을
-        **전부 모아 인터럽트 하나**로 낸다(실측: langchain
-        `human_in_the_loop.py` — `action_requests` 리스트를 담은 `HITLRequest`
-        하나로 `interrupt()` 호출). 그래서 이벤트도 하나만 낸다.
-
-        카드에 그릴 인자는 **첫 호출** 것을 쓴다 — 화면의 확인 카드가 목록
-        하나를 그리는 모양이라(`ConfirmCard`) 여러 호출을 한 카드에 겹쳐 놓을
-        자리가 없다. 대신 `resume`에는 **전부** 담는다: 재개할 때는 인터럽트가
-        요구한 수만큼 결정을 돌려줘야 하고(개수가 다르면 미들웨어가
-        `ValueError`), 사람이 카드에서 승인한 것은 "이 턴의 쓰기 작업"이지
-        "첫 번째 호출"이 아니기 때문이다. 실제로 이 제품에서 한 턴에 쓰기
-        도구가 둘 이상 걸린 적은 아직 없다(`task_register`/`task_update`/
-        `jira_create_issues` 중 하나씩 부른다).
-        """
-        raw = payload.get("__interrupt__")
-        if not raw:
-            return []
-
-        requests: list[dict[str, Any]] = []
-        for item in raw if isinstance(raw, (list, tuple)) else [raw]:
-            value = getattr(item, "value", None)
-            if isinstance(value, dict):
-                requests.extend(value.get("action_requests") or [])
-        if not requests:
-            return []
-
-        # 모델에게 보낸 이름(`task_register`, `mcp__<id>`)을 저장소 tool_ref로
-        # 되돌린다 — 화면·DB가 쓰는 이름은 항상 ref 쪽이다.
-        tool_ref = tool_ref_from_model_name(requests[0].get("name") or "")
-        return [
-            {
-                "type": EVENT_AWAITING_CONFIRMATION,
-                "run_id": run_id,
-                "tool_ref": tool_ref,
-                "tool_name": _tool_label(tool_ref),
-                "arguments": requests[0].get("args") or {},
-                # 재개에 필요한 전부. 레거시와 달리 대화 내용은 안 담는다 —
-                # 이 엔진의 상태는 Checkpointer(RDS)에 있고, `thread_id`는
-                # 대화 id 그대로라 확인 API가 이미 알고 있다.
-                "resume": {
-                    "engine": "agent_runtime",
-                    "action_requests": [
-                        {"name": item.get("name"), "args": item.get("args") or {}}
-                        for item in requests
-                    ],
-                },
-            }
-        ]
 
     def _classify_progress(
         self, *, ns_prefix: str | None, payload: dict[str, Any], run_id: str | None

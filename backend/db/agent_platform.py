@@ -1378,6 +1378,8 @@ class AgentRunRepository:
         parent_run_id: str | None,
         agent_version_id: str | None = None,
         runtime_profile_version: str | None = None,
+        resolved_provider: str | None = None,
+        resolved_endpoint_hash: str | None = None,
     ) -> str:
         """`start()`의 짝 — 호출자가 `run_id`를 이미 정해서 부를 때 쓴다.
 
@@ -1392,6 +1394,12 @@ class AgentRunRepository:
         없는 값이다(레거시 harness 경로는 이 컬럼들을 모른다 — 계속 NULL로
         쌓인다, `DB/migrations/2026-08-13_agent_versioning.sql` 주석). 새
         엔진만 채운다.
+
+        `resolved_provider`/`resolved_endpoint_hash`(2026-08-19 추가, §4순위
+        Run Snapshot — 정본: `2026-08-19_01_실행_안정성_설계.md` §1)도 같은
+        이유로 새 엔진만 채운다 — 이 실행이 실제로 사용한 모델 provider와
+        (팀 커스텀 엔드포인트라면) 그 `base_url`의 해시값이다. 원문
+        `base_url`은 저장하지 않는다(사내망 주소 노출 방지).
         """
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -1399,8 +1407,9 @@ class AgentRunRepository:
                     """
                     INSERT INTO agent_run
                         (run_id, session_id, agent_id, parent_run_id,
-                         agent_version_id, runtime_profile_version, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'RUNNING')
+                         agent_version_id, runtime_profile_version,
+                         resolved_provider, resolved_endpoint_hash, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'RUNNING')
                     RETURNING run_id::text
                     """,
                     (
@@ -1410,6 +1419,8 @@ class AgentRunRepository:
                         parent_run_id,
                         agent_version_id,
                         runtime_profile_version,
+                        resolved_provider,
+                        resolved_endpoint_hash,
                     ),
                 )
                 return cursor.fetchone()["run_id"]
@@ -1433,6 +1444,25 @@ class AgentRunRepository:
                      WHERE run_id = %s
                     """,
                     (status, iterations, token_in, token_out, run_id),
+                )
+
+    @staticmethod
+    def suspend(*, run_id: str) -> None:
+        """HITL 승인 대기로 멈춘 실행을 `PENDING`으로 표시한다(2026-08-19,
+        §0순위 — 새 엔진 HITL resume API).
+
+        `finish()`와 다르게 `ended_at`을 안 채운다 — 실제로 끝난 게 아니라
+        재개를 기다리는 것뿐이다. `status`는 CHECK 제약 없는 `VARCHAR(20)`
+        라(`DB/schema.sql` 실제 스키마 확인) 새 값을 추가하는 데 마이그레이션이
+        필요 없다. `tool_call.status`가 이미 같은 뜻으로 `'PENDING'`을 쓰고
+        있어(선기록 패턴) 그 값을 그대로 재사용했다 — 새 어휘를 안 만든다.
+        재개 뒤 실제로 끝나면 `finish()`가 `ended_at`을 채운다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE agent_run SET status = 'PENDING' WHERE run_id = %s",
+                    (run_id,),
                 )
 
 

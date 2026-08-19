@@ -13,6 +13,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitM
 
 from services.agent_runtime.runtime_policy import (
     DEFAULT_EXCLUDED_BUILTIN_TOOLS,
+    DEFAULT_TOOL_CALL_TIMEOUT_SECONDS,
     DEFAULT_WRITE_TOOL_ALLOWED_ROLES,
     RuntimeCapabilityPolicy,
 )
@@ -181,3 +182,39 @@ class IsToolAllowedForRoleTests(SimpleTestCase):
         전부 보여주고, 이 함수는 `_run()`의 실행 시점 확인에만 쓰인다)."""
 
         self.assertFalse(self.policy.is_tool_allowed_for_role(side_effect=True, account_role="member"))
+
+
+class TimeoutForToolTests(SimpleTestCase):
+    """2026-08-19, §5순위 — `timeout_for_tool()`. 숫자 자체(300초)를 계약으로
+    검증하지 않는다(정책 값이라 바뀔 수 있다, `RuntimeCapabilityPolicyDefaultsTests`
+    등과 같은 원칙) — 여기서는 "override가 없으면 기본값, 있으면 override"라는
+    규칙만 확인한다."""
+
+    def test_default_tool_call_timeout_seconds_is_300(self):
+        """`services/harness/runner.py`의 기존 모델 호출 timeout(300초)과 같은
+        값을 재사용한다는 근거 자체는 이 상수 하나로 고정돼 있어야 하므로,
+        이 값만은 예외적으로 직접 확인한다(모듈 docstring 참고)."""
+        self.assertEqual(DEFAULT_TOOL_CALL_TIMEOUT_SECONDS, 300)
+
+    def test_uses_default_when_no_override_registered(self):
+        policy = RuntimeCapabilityPolicy()
+
+        self.assertEqual(policy.timeout_for_tool("document_search"), DEFAULT_TOOL_CALL_TIMEOUT_SECONDS)
+
+    def test_uses_configured_default_when_no_override_registered(self):
+        policy = RuntimeCapabilityPolicy(tool_call_timeout_seconds=42)
+
+        self.assertEqual(policy.timeout_for_tool("document_search"), 42)
+
+    def test_override_takes_precedence_over_default(self):
+        policy = RuntimeCapabilityPolicy(
+            tool_call_timeout_seconds=300, tool_call_timeout_overrides={"document_search": 15}
+        )
+
+        self.assertEqual(policy.timeout_for_tool("document_search"), 15)
+        self.assertEqual(policy.timeout_for_tool("task_register"), 300)
+
+    def test_default_overrides_dict_is_empty(self):
+        policy = RuntimeCapabilityPolicy()
+
+        self.assertEqual(policy.tool_call_timeout_overrides, {})

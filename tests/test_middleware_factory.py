@@ -169,3 +169,31 @@ class BuildForGeneralPurposeTests(SimpleTestCase):
         middleware = factory.build_for_general_purpose()
 
         self.assertFalse(any(isinstance(m, TodoListMiddleware) for m in middleware))
+
+
+class ToolCallTimeoutWiringTests(SimpleTestCase):
+    """2026-08-19, §5순위 — `build()`/`build_for_general_purpose()` 둘 다
+    `ToolCallTimeoutMiddleware`를 붙이는지, 그 인스턴스가 같은 `runtime_policy`를
+    참조하는지 확인한다."""
+
+    def test_build_includes_tool_call_timeout_middleware(self):
+        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+
+        policy = RuntimeCapabilityPolicy()
+        factory = MiddlewareFactory(runtime_policy=policy)
+
+        middleware = factory.build(definition=_definition(), context=None)
+
+        timeout_mw = next(m for m in middleware if isinstance(m, ToolCallTimeoutMiddleware))
+        self.assertIs(timeout_mw._runtime_policy, policy)
+
+    def test_build_for_general_purpose_includes_tool_call_timeout_middleware(self):
+        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+
+        policy = RuntimeCapabilityPolicy()
+        factory = MiddlewareFactory(runtime_policy=policy)
+
+        middleware = factory.build_for_general_purpose()
+
+        timeout_mw = next(m for m in middleware if isinstance(m, ToolCallTimeoutMiddleware))
+        self.assertIs(timeout_mw._runtime_policy, policy)
