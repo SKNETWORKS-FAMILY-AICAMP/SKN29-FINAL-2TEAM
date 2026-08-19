@@ -131,10 +131,15 @@ class AgentListCreateAPIView(AuthenticatedAPIView):
         rejection = _model_rejection(request.user.account_id, fields.get("model"))
         if rejection is not None:
             return rejection
-        blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
-        if blocker is not None:
-            return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            # `_check_tool_refs`(그 안의 `_tool_catalog` → `team_tool_refs` →
+            # `_require_team`)는 팀 없는 계정이면 `PermissionDenied`를 던진다
+            # (2026-08-19 — 이 호출이 아래 저장 호출과 다른 try 블록 밖에 있어서
+            # 못 잡혔던 걸 발견하고 고쳤다. `RepositoryError` 하위 클래스라 아래와
+            # 같은 처리로 묶는다).
+            blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
+            if blocker is not None:
+                return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
             row = AgentCrudRepository.create(
                 account_id=request.user.account_id, fields=fields, tool_refs=tool_refs
             )
@@ -158,10 +163,12 @@ class AgentDetailAPIView(AuthenticatedAPIView):
         rejection = _model_rejection(request.user.account_id, fields.get("model"))
         if rejection is not None:
             return rejection
-        blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
-        if blocker is not None:
-            return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            # `_check_tool_refs`가 던질 수 있는 `PermissionDenied`도 여기서
+            # 같이 잡는다(2026-08-19, 위 create()와 같은 이유).
+            blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
+            if blocker is not None:
+                return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
             row = AgentCrudRepository.update(
                 agent_id=agent_id,
                 account_id=request.user.account_id,
@@ -373,7 +380,13 @@ class AgentActivateAPIView(AuthenticatedAPIView):
         if rejection is not None:
             return rejection
 
-        blocker = _check_tool_refs(account_id=account_id, tool_refs=agent["tool_refs"])
+        try:
+            # `_check_tool_refs`가 던질 수 있는 `PermissionDenied`를 여기서
+            # 못 잡고 있었다(2026-08-19 — 위·아래 다른 try 블록 사이에 홀로
+            # 남아 있어서 팀 없는 계정이면 그대로 500이 됐다).
+            blocker = _check_tool_refs(account_id=account_id, tool_refs=agent["tool_refs"])
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
         if blocker is not None:
             return Response({"detail": blocker}, status=status.HTTP_409_CONFLICT)
 
