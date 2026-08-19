@@ -17,6 +17,8 @@ class DeepAgentStreamAdapter:
         conversation_messages: Sequence[dict[str, Any]] = (),
         thread_id: str | None = None,
         resume: Any = None,
+        callbacks: Sequence[Any] = (),
+        trace_metadata: dict[str, Any] | None = None,
     ) -> Iterator[Any]:
         """Root와 Child를 포함한 updates event를 3-tuple로 반환한다.
 
@@ -68,6 +70,13 @@ class DeepAgentStreamAdapter:
         `resume`가 있으면 **새 입력 대신** `Command(resume=...)`로 돈다 —
         승인 게이트에서 멈춘 실행을 잇는 경로다(2026-08-18 §5 Phase 7 마무리).
         이때 `user_input`/`conversation_messages`는 쓰지 않는다.
+
+        `callbacks`/`trace_metadata`는 2026-08-19 추가(Langfuse 연동,
+        `tracing/callbacks.py`) — LangChain의 `config["callbacks"]`/
+        `config["metadata"]`에 그대로 얹는다. `thread_id`가 없어서 `config`
+        키 자체가 아직 없을 수 있어 아래에서 항상 있는지부터 확인한다.
+        비어 있으면(키 없어서 Langfuse가 꺼진 기본 상태) 아무 것도 안 붙는다
+        — `runtime.stream()` 호출 모양이 이전과 완전히 같다.
         """
         if resume is not None:
             # 승인 게이트에서 멈춘 실행을 이어서 돈다(2026-08-18). 새 발화를
@@ -91,6 +100,12 @@ class DeepAgentStreamAdapter:
         }
         if thread_id:
             stream_kwargs["config"] = {"configurable": {"thread_id": thread_id}}
+        if callbacks or trace_metadata:
+            config = stream_kwargs.setdefault("config", {})
+            if callbacks:
+                config["callbacks"] = list(callbacks)
+            if trace_metadata:
+                config["metadata"] = trace_metadata
 
         yield from runtime.stream(input_state, **stream_kwargs)
 

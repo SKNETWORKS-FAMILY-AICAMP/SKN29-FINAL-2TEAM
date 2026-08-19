@@ -130,6 +130,22 @@ class AgentExecutor:
 
         event_mapper = self.event_mapper_factory()
 
+        # Langfuse 콜백(2026-08-19, tracing/callbacks.py) — 키가 없으면 None,
+        # stream_adapter가 빈 리스트로 취급해 config에 아무 것도 안 붙인다.
+        # **지연 import다**(2026-08-19 수정) — 모듈 맨 위에서 이걸 import하면
+        # `services.agent_runtime.tracing` 패키지(`tracing/__init__.py`)가
+        # 먼저 초기화되는데, 그 파일이 `backend.db.agent_platform`을 끌어온다.
+        # `agent_platform.py`는 자기 자신이 `services.agent_runtime.subagents.
+        # validation`을 import하다가(그 결과 이 패키지 `__init__.py` → 이
+        # 파일 → 여기까지 연쇄로 로드된다) 아직 다 안 만들어진 채로 다시
+        # 자기 자신을 요구받아 `ImportError: cannot import name ... from
+        # partially initialized module`로 서버 자체가 못 뜨는 걸 실제로
+        # 재현·확인했다. 함수 호출 시점으로 미루면 그때는 두 모듈 다 이미
+        # 완전히 로드돼 있어 순환이 안 생긴다.
+        from services.agent_runtime.tracing.callbacks import get_langfuse_callback
+
+        langfuse_callback = get_langfuse_callback()
+
         try:
             for raw_event in self.stream_adapter.stream(
                 runtime=runtime,
@@ -147,6 +163,20 @@ class AgentExecutor:
                     if resume_decisions is not None
                     else None
                 ),
+                callbacks=[langfuse_callback] if langfuse_callback is not None else (),
+                # Langfuse 대시보드에서 세션/계정/팀 단위로 걸러 보기 위한
+                # 메타데이터(2026-08-19). 콜백이 없어도(키 없음) 그냥 안 쓰이는
+                # dict일 뿐이라 항상 만들어도 무해하다.
+                trace_metadata={
+                    "langfuse_session_id": context.session_id,
+                    "langfuse_user_id": context.account_id,
+                    "langfuse_tags": [
+                        f"team:{context.team_id}",
+                        f"agent:{loaded.definition.agent_id}",
+                    ],
+                }
+                if langfuse_callback is not None
+                else None,
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구

@@ -157,3 +157,26 @@ ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 OPENAI_SERVICE_TIER = env("OPENAI_SERVICE_TIER", default="auto")
 CHUNKING_MAX_TOKENS = env.int("CHUNKING_MAX_TOKENS", default=512)
 CHUNKING_MERGE_PEERS = env.bool("CHUNKING_MERGE_PEERS", default=True)
+
+# Deep Agents 검증·평가용 트레이싱(2026-08-19 착수,
+# 작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md). 아래 두 블록 모두
+# 키가 없으면 해당 트레이싱만 조용히 꺼진다 — 에이전트 실행 자체는 막지 않는다.
+#
+# LangSmith: 실제 소비자는 여기 `settings.X`가 아니라 `langchain-core`/
+# `langgraph`가 직접 읽는 `os.environ`이다 — 위 `environ.Env.read_env(...)`가
+# `.env`를 이미 `os.environ`에 채워 두므로 이것만으로 동작한다. 아래 정의는
+# 이 파일을 "외부 설정 전체 목록"으로 보는 이 저장소의 관례를 따르기 위한
+# 문서화 목적이며, 우리 코드가 이 이름으로 다시 참조하지는 않는다.
+LANGCHAIN_TRACING_V2 = env.bool("LANGCHAIN_TRACING_V2", default=False)
+LANGCHAIN_API_KEY = env("LANGCHAIN_API_KEY", default="")
+LANGCHAIN_PROJECT = env("LANGCHAIN_PROJECT", default="skn-final")
+LANGCHAIN_ENDPOINT = env("LANGCHAIN_ENDPOINT", default="https://api.smith.langchain.com")
+
+# Langfuse: 이건 실제로 `services/agent_runtime/tracing/callbacks.py`가
+# `settings.LANGFUSE_*`로 읽는다(SDK가 알아서 os.environ을 읽게 두지 않고
+# 명시적으로 클라이언트를 구성 — 이 저장소의 "비밀값은 settings를 거친다"
+# 관례를 따름). 클라우드로 가기로 결정(위 작업계획 §2) — 기본 호스트는
+# EU 리전, 필요하면 US(`https://us.cloud.langfuse.com`)/JP/HIPAA로 바꾼다.
+LANGFUSE_PUBLIC_KEY = env("LANGFUSE_PUBLIC_KEY", default="")
+LANGFUSE_SECRET_KEY = env("LANGFUSE_SECRET_KEY", default="")
+LANGFUSE_HOST = env("LANGFUSE_HOST", default="https://cloud.langfuse.com")
