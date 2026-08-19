@@ -759,6 +759,26 @@ def _resolve_project_key(*, proj_id: str | None, account_id: str, project_key: s
     return source["external_source_id"]
 
 
+def _jira_credential_account_id(account_id: str) -> str:
+    """이 계정이 속한 팀의 팀장 account_id — Jira 자격증명은 거기 있다.
+
+    Jira는 팀장만 연결할 수 있고(설정 화면 "팀장만 외부 서비스를 연결할 수
+    있습니다") `connector_conn`은 연결한 계정(팀장) 기준으로만 저장된다.
+    도구를 **부른 사람**의 `account_id`를 그대로 자격증명 조회에 넘기면,
+    팀원 자신은 연결한 적이 없어 `연결되지 않은 서비스입니다`로 막힌다 —
+    화면은 "팀원은 팀장이 연결한 데이터를 그대로 쓴다"고 약속하는데 실제로는
+    그러지 못했다(2026-08-19 실측·수정, `TeamRepository.leader_account_id()`
+    참고). 프로젝트·권한 확인(`_resolve_project_key`)은 여전히 부른 사람의
+    `account_id`를 쓴다 — 자격증명만 팀장 것으로 바꾼다.
+    """
+
+    team_id = AccountRepository.team_id(account_id)
+    leader_account_id = TeamRepository.leader_account_id(team_id) if team_id else None
+    if not leader_account_id:
+        raise ToolInputError("이 팀에 연결된 팀장 계정을 찾을 수 없습니다.")
+    return leader_account_id
+
+
 def _jira_create_issues(
     *,
     account_id: str,
@@ -778,7 +798,9 @@ def _jira_create_issues(
     """
 
     key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
-    return create_jira_issues(account_id=account_id, project_key=key, issues=issues)
+    return create_jira_issues(
+        account_id=_jira_credential_account_id(account_id), project_key=key, issues=issues
+    )
 
 
 def _jira_get_issues(*, account_id: str, proj_id: str | None = None, project_key: str | None = None):
@@ -791,7 +813,7 @@ def _jira_get_issues(*, account_id: str, proj_id: str | None = None, project_key
     """
 
     key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
-    issues = search_jira_issues(account_id=account_id, project_key=key)
+    issues = search_jira_issues(account_id=_jira_credential_account_id(account_id), project_key=key)
 
     counts = {"TO_DO": 0, "IN_PROGRESS": 0, "DONE": 0, "UNKNOWN": 0}
     for issue in issues:

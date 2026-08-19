@@ -687,6 +687,22 @@ class TeamDocumentHistoryAPIView(AuthenticatedAPIView):
         )
 
 
+def _jira_credential_account_id(account_id: str) -> str | None:
+    """이 계정이 속한 팀의 팀장 account_id — Jira 자격증명은 거기 있다.
+
+    Jira는 팀장만 연결할 수 있고(설정 화면 "팀장만 외부 서비스를 연결할 수
+    있습니다") `connector_conn`은 연결한 계정(팀장) 기준으로만 저장된다.
+    갱신을 **누른 사람**의 `account_id`를 그대로 넘기면, 팀원 자신은 연결한
+    적이 없어 `연결되지 않은 서비스입니다`로 막힌다(2026-08-19 실측·수정 —
+    `services/harness/registry.py`의 같은 이름 함수와 같은 원인·같은 고침,
+    챗의 Jira 도구도 이 버그를 갖고 있었다). `None`이면(팀이 없는 등) 호출부가
+    원래 `account_id`로 되돌린다 — 이전과 같은 동작을 유지한다.
+    """
+
+    team_id = AccountRepository.team_id(account_id)
+    return TeamRepository.leader_account_id(team_id) if team_id else None
+
+
 def _sync_jira_sources(*, account_id: str, sources: list[dict[str, Any]]) -> dict[str, Any]:
     """넘겨받은 Jira 소스를 다시 읽어 `exist_task`를 교체한다.
 
@@ -754,13 +770,14 @@ class ProjectTaskSyncAPIView(AuthenticatedAPIView):
 
     def post(self, request, project_id):
         account_id = request.user.account_id
+        credential_account_id = _jira_credential_account_id(account_id) or account_id
 
         try:
             sources = ExistTaskRepository.list_jira_sources(
                 proj_id=project_id,
                 account_id=account_id,
             )
-            result = _sync_jira_sources(account_id=account_id, sources=sources)
+            result = _sync_jira_sources(account_id=credential_account_id, sources=sources)
             # **갱신은 Jira 상태로 다시 맞춰 달라는 뜻이다.** 진행률만 바꾸고
             # 완료 여부를 안 건드리면, 업무가 전부 끝난 프로젝트가 계속
             # 「진행중」에 남는다. 사람이 정한 상태는 안 건드린다.
@@ -775,10 +792,11 @@ class TeamTaskSyncAPIView(AuthenticatedAPIView):
 
     def post(self, request):
         account_id = request.user.account_id
+        credential_account_id = _jira_credential_account_id(account_id) or account_id
 
         try:
             sources = ExistTaskRepository.list_jira_sources_for_team(account_id)
-            result = _sync_jira_sources(account_id=account_id, sources=sources)
+            result = _sync_jira_sources(account_id=credential_account_id, sources=sources)
             result["status_changed"] = ProjectRepository.sync_status_from_tasks(
                 sorted({source["proj_id"] for source in sources})
             )

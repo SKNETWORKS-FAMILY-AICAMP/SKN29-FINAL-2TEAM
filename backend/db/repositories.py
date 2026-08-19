@@ -1720,6 +1720,29 @@ class TeamRepository:
         }
 
     @staticmethod
+    def leader_account_id(team_id: str) -> str | None:
+        """이 팀을 만든 팀장의 account_id.
+
+        Jira·Drive 자격증명(`connector_conn`)은 **연결한 사람의 계정에만** 있고,
+        연결은 팀장만 할 수 있다(`apps/connectors/api_views.py`의 `leader` 검사,
+        설정 화면 안내 "팀장만 외부 서비스를 연결할 수 있습니다. 팀원은 팀장이
+        연결한 데이터를 그대로 사용합니다") — 그래서 팀원이 실행한 동작(프로젝트
+        갱신, Jira 챗 도구)도 **이 계정의** 자격증명을 써야 한다. 실행한 사람의
+        `account_id`를 그대로 자격증명 조회에 넘기면, 팀원 자신은 연결한 적이
+        없으므로 `연결되지 않은 서비스입니다`로 막힌다(2026-08-19 실측·수정).
+
+        팀장은 `team.owner_account_id`다 — `team`을 만든 계정이 곧 팀장이라는
+        전제(가입 경로로 역할이 갈리는 `account_role()`과 같은 전제, MVP는
+        팀당 팀장 한 명).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT owner_account_id FROM team WHERE team_id = %s", (team_id,))
+                row = cursor.fetchone()
+                return row["owner_account_id"] if row else None
+
+    @staticmethod
     def update_settings(
         *,
         account_id: str,
