@@ -3702,12 +3702,18 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("프로젝트", "DELETE FROM proj WHERE team_id = %(team_id)s"),
     # 대화 — LangGraph 체크포인트까지 지운다. thread_id 가 곧 대화 id 라
     # 안 지우면 승인 대기 상태가 유령으로 남는다(2026-08-18 승인 게이트 참고).
+    #
+    # ⚠ `session_id::text` 로 캐스트한다. 체크포인트 3종은 **langgraph 가 만든
+    # 테이블**이라 `thread_id` 가 `text` 인데 우리 `chat_session.session_id` 는
+    # `uuid` 다 — 캐스트 없이 비교하면 `operator does not exist: text = uuid` 로
+    # 실패한다(2026-08-19 실측). 화면에는 「데이터베이스 요청을 처리할 수
+    # 없습니다」로만 보여서 원인이 안 드러난다.
     ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.team_id = %(team_id)s)"),
     ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
     ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
-    ("체크포인트 쓰기", "DELETE FROM checkpoint_writes WHERE thread_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
-    ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
-    ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("체크포인트 쓰기", "DELETE FROM checkpoint_writes WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE team_id = %(team_id)s)"),
+    ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE team_id = %(team_id)s)"),
     ("대화", "DELETE FROM chat_session WHERE team_id = %(team_id)s"),
     # 에이전트 — 새 스키마(agents/agent_versions)와 레거시(agent/agent_tool) 둘 다.
     ("에이전트 하위위임", "DELETE FROM agent_version_subagents WHERE parent_version_id IN (SELECT v.agent_version_id FROM agent_versions v JOIN agents a ON a.agent_id = v.agent_id WHERE a.team_id = %(team_id)s)"),
@@ -3739,9 +3745,9 @@ _ACCOUNT_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.account_id = %(account_id)s)"),
     ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
     ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
-    ("체크포인트 쓰기", "DELETE FROM checkpoint_writes WHERE thread_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
-    ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
-    ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("체크포인트 쓰기", "DELETE FROM checkpoint_writes WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE account_id = %(account_id)s)"),
+    ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE account_id = %(account_id)s)"),
     ("대화", "DELETE FROM chat_session WHERE account_id = %(account_id)s"),
     ("연결 폴더", "DELETE FROM team_folder WHERE conn_id IN (SELECT conn_id FROM connector_conn WHERE account_id = %(account_id)s)"),
     ("프로젝트 연결원", "DELETE FROM proj_source WHERE conn_id IN (SELECT conn_id FROM connector_conn WHERE account_id = %(account_id)s)"),

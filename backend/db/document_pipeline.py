@@ -427,7 +427,7 @@ class PersonalDocumentRepository:
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
                            d.index_status,
-                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
@@ -455,7 +455,7 @@ class PersonalDocumentRepository:
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
                            d.index_status, d.owner_account_id, ua.display_name AS owner_name,
-                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
@@ -670,8 +670,9 @@ class DocMetaRepository:
                 cursor.execute(
                     """
                     INSERT INTO doc_meta (doc_id, summary, doc_type, keywords, summary_vec,
-                                          extracted_text, extract_status, extracted_at)
-                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, now())
+                                          extracted_text, extract_status, extract_detail,
+                                          extracted_at)
+                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, %s, now())
                     ON CONFLICT (doc_id) DO UPDATE SET
                         summary = EXCLUDED.summary,
                         doc_type = EXCLUDED.doc_type,
@@ -679,6 +680,7 @@ class DocMetaRepository:
                         summary_vec = EXCLUDED.summary_vec,
                         extracted_text = EXCLUDED.extracted_text,
                         extract_status = EXCLUDED.extract_status,
+                        extract_detail = EXCLUDED.extract_detail,
                         extracted_at = now()
                     """,
                     (
@@ -686,6 +688,7 @@ class DocMetaRepository:
                         row.get("keywords") or [],
                         vector_literal(vector) if vector else None,
                         row.get("extracted_text"), row["extract_status"],
+                        row.get("extract_detail"),
                     ),
                 )
 
@@ -798,11 +801,16 @@ class DocMetaRepository:
                 cursor.execute(
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           -- 사람에게 보일 이름. id 를 그대로 내보내면 에이전트가
+                           -- 「프로젝트 PJ004 의 기준 문서」라고 옮겨 적는다
+                           -- (2026-08-19 실측 · §0 원칙 2).
+                           p.name AS proj_name,
                            d.src_modified_at, d.storage_key,
-                           m.summary, m.doc_type, m.keywords, m.extract_status,
+                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
                            m.extracted_at, {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
+                    LEFT JOIN proj AS p ON p.proj_id = d.proj_id
                     WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
                     ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
                     """,

@@ -297,9 +297,16 @@
   font-size: 12px;
   line-height: 1.7;
 }
+/* **`display: flex` 가 없어서** 위의 `justify-content`·`flex-wrap` 이 아무
+   일도 하지 않았고, JSX 는 줄바꿈만 있는 공백을 지우므로 버튼이 서로 딱 붙어
+   나왔다(2026-08-19 PM 지적). 붙어 있으면 어디까지가 한 버튼인지 안 보이고,
+   특히 「계정 삭제」처럼 되돌릴 수 없는 것이 옆 버튼에 붙어 있으면 위험하다. */
 .rowActions {
+  display: flex;
+  align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
+  gap: var(--space-2);
   margin-top: 16px;
 }
 

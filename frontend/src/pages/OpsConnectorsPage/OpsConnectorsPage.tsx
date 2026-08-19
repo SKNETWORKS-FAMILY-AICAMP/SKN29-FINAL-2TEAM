@@ -172,7 +172,11 @@ export default function OpsConnectorsPage() {
               <td>{formatConnectedAt(connector.connected_at)}</td>
               <td className={styles.cellEllipsis} title={connector.diagnosis}>{connector.diagnosis}</td>
               <td>
+                {/* `data-button` — 운영자 표는 안에 든 버튼의 테두리를 벗겨 글씨처럼
+                    만든다(`OpsUi.module.css`). 「상세 보기」는 **눌러서 다른 화면으로
+                    가는 것**이라 눌리는 것처럼 보여야 한다(2026-08-19 PM). */}
                 <button
+                  data-button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();

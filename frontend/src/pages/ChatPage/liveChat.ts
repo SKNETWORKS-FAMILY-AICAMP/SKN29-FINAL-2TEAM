@@ -175,7 +175,15 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         toolName: event.tool_name ?? event.tool_ref,
         timeline: [
           ...state.timeline,
-          { kind: 'tool', toolCallId: event.tool_call_id ?? null, toolRef: event.tool_ref, status: 'RUNNING' },
+          {
+            kind: 'tool',
+            toolCallId: event.tool_call_id ?? null,
+            toolRef: event.tool_ref,
+            // 상태줄과 **같은 값**을 쓴다 — 한 화면에서 같은 도구가 위에서는
+            // 「업무 등록」, 아래 로그에서는 `task_register` 로 갈리면 안 된다.
+            toolName: event.tool_name ?? null,
+            status: 'RUNNING',
+          },
         ],
       };
     }

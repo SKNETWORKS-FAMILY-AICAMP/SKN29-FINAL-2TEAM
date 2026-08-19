@@ -135,4 +135,9 @@ def as_row(meta: DocMeta) -> dict[str, Any]:
         "summary_vec": meta.summary_vec,
         "extracted_text": meta.extracted_text,
         "extract_status": meta.extract_status,
+        # **왜 실패했는지.** 추출기가 이미 사람이 읽을 문구로 만들어 두는데
+        # (extractor.py 의 `detail`) 여기서 안 실으면 그대로 버려진다 —
+        # 화면은 「읽지 못했습니다」까지만 말할 수 있고, 사람은 암호를 풀면
+        # 되는 문서인지 스캔본이라 소용없는지 구분하지 못한다(2026-08-19).
+        "extract_detail": meta.detail or None,
     }

@@ -363,7 +363,14 @@ def _extract_tasks(
         (d for d in documents if d["proj_id"] == proj_id and d["doc_role"] == "PRIMARY"), None
     )
     if primary is None:
-        raise ToolInputError("이 프로젝트의 기준 문서가 아직 지정되지 않았습니다.")
+        # **어디서 정하는지까지 말한다**(2026-08-19). 「없다」로만 끝내면 사람이
+        # 할 수 있는 일이 없다 — 실제로 팀원이 「그럼 어떻게 하냐」로 되물었다.
+        # 화면(`PrimaryDocumentCard`)이 쓰는 말과 똑같이 「기준 문서 선택」이라고
+        # 부른다. 같은 동작에 다른 말을 쓰면 사람이 같은 판단을 두 번 한다.
+        raise ToolInputError(
+            "이 프로젝트의 기준 문서가 아직 지정되지 않았습니다. "
+            "프로젝트 화면의 「기준 문서 선택」에서 정한 뒤 다시 요청하세요."
+        )
 
     if not primary["search_ready"]:
         # **여기서 승격시킨다**(2026-08-18 PM 결정). 전에는 「아직 파싱·청킹·
@@ -531,9 +538,16 @@ def _document_list(*, account_id: str) -> dict[str, Any]:
                 "file_name": row["file_name"],
                 "summary": row.get("summary"),
                 "doc_type": row.get("doc_type"),
-                "proj_id": row.get("proj_id"),
-                # PRIMARY 면 어느 프로젝트의 기준 문서다.
-                "doc_role": row.get("doc_role"),
+                # **id 와 열거값을 내보내지 않는다**(2026-08-19). 모델은 받은 것을
+                # 그대로 옮겨 적어서, 화면에 「프로젝트 PJ004 의 PRIMARY 기준
+                # 문서」가 나왔다 — 사용자는 둘 다 모르는 말이다(§0 원칙 2).
+                # 대신 사람이 읽는 이름과 한국어 한 줄로 준다.
+                "project": row.get("proj_name"),
+                "role": (
+                    "이 프로젝트의 기준 문서"
+                    if (row.get("doc_role") or "").upper() == "PRIMARY"
+                    else "프로젝트에 묶이지 않은 팀 문서"
+                ),
                 "search_ready": row["search_ready"],
             }
             for row in rows

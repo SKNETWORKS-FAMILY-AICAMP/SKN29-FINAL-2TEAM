@@ -60,7 +60,21 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
     void load();
   }, [load]);
 
-  const primary = documents.find((document) => document.doc_role === 'PRIMARY') ?? null;
+  /**
+   * **`proj_id` 까지 봐야 한다.** 이 목록은 「이 프로젝트의 문서」가 아니라
+   * **팀 문서 전체**다 — 서버가 일부러 그렇게 준다(업무 추출이 근거를 찾을
+   * 범위라서. `list_ready_for_analysis` docstring 참고). 그래서 `doc_role`
+   * 하나로 고르면 **남의 프로젝트 기준 문서를 자기 것으로 그린다.**
+   *
+   * 팀에 기준 문서가 하나뿐일 때는 우연히 맞아서 오래 안 드러났다. 기준 문서가
+   * 있는 프로젝트와 없는 프로젝트가 함께 생긴 2026-08-19 에야 나왔다 — 없는
+   * 쪽이 남의 것을 가져다 그렸고, 「업무 추출」 버튼까지 활성이라 **엉뚱한
+   * 문서로 업무를 뽑을 수 있었다.**
+   */
+  const primary =
+    documents.find(
+      (document) => document.doc_role === 'PRIMARY' && document.proj_id === projectId,
+    ) ?? null;
 
   async function handleFind() {
     if (busy) return;
@@ -196,7 +210,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       ) : (
         <>
           <p className={styles.muted}>
-            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’로
+            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’으로
             정해 주세요.
           </p>
           <div className={styles.actions}>
