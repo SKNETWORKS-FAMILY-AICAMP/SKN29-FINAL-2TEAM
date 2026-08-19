@@ -268,7 +268,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false }
                     {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
                     {entry.status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
                     <span>
-                      {entry.toolRef} 호출
+                      {entry.toolName ?? entry.toolRef} 호출
                       {entry.status === 'OK' && ' 완료'}
                       {entry.status === 'FAILED' && ' 실패'}
                     </span>

@@ -46,6 +46,13 @@ export type TimelineEntry =
       kind: 'tool';
       toolCallId: string | null;
       toolRef: string;
+      /**
+       * 사람이 읽는 도구 이름(`tool_started`의 `tool_name` — 레지스트리 값).
+       * 로그 줄에 이걸 쓴다. 레지스트리에 없는 커스텀 도구는 서버가 ref를
+       * 그대로 주므로(`events.py`의 `_tool_label()`) null로 떨어지고, 그때만
+       * `toolRef`로 그린다.
+       */
+      toolName: string | null;
       status: 'RUNNING' | 'OK' | 'FAILED';
       /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). 완료 전엔 없다. */
       output?: string;
