@@ -62,6 +62,11 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
     ("doc_meta", "extract_detail", "2026-08-19 추출 실패 사유"),
+    ("agent_run", "resolved_provider", "2026-08-19 실행 스냅샷 — 어느 provider 로 돌았나"),
+    ("agent_run", "resolved_endpoint_hash", "2026-08-19 실행 스냅샷 — 엔드포인트 해시"),
+    ("tool_call", "session_id", "2026-08-19 외부 쓰기 도구 재실행 방지"),
+    ("tool_call", "langchain_tool_call_id", "2026-08-19 재실행 방지 키"),
+    ("tool_call", "result_text", "2026-08-19 재실행 방지 — 저장해 둔 결과"),
 ]
 
 
