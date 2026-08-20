@@ -660,19 +660,6 @@ CREATE TABLE sys_setting (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14');
--- [운영자 콘솔] 가드레일 정책(2026-08-20 추가, DB/migrations/2026-08-20_guardrail_policy.sql).
--- 항목별로 키를 쪼개지 않는다 — 쪼개면 변경 이력이 audit_log에 흩어져 "그 시점의
--- 정책 한 벌"을 복원할 수 없다. 기본값 근거는 마이그레이션 파일 머리 주석.
-INSERT INTO sys_setting (setting_key, setting_value)
-VALUES (
-    'GUARDRAIL_POLICY',
-    '{"pii": {"enabled": true, "strategy": "redact"},
-      "moderation": {"enabled": false,
-                     "thresholds": {"harassment": 0.7, "hate": 0.7, "sexual": 0.7,
-                                    "self_harm": 0.7, "violence": 0.7, "illicit": 0.7}},
-      "blocked_words": []}'
-);
-
 -- [운영자 콘솔] 플랫폼 시스템 공지(2026-07-30 추가).
 CREATE TABLE sys_notice (
     notice_id      VARCHAR(5) PRIMARY KEY,

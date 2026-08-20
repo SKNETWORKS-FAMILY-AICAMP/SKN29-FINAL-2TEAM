@@ -30,7 +30,6 @@ from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
-from services.guardrails import check_user_input, load_policy
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -167,28 +166,10 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         # 전달되면 안 된다"는 요구지 "사용자 자신도 못 보게 하라"는 요구가
         # 아니다. `model_input`은 모델로 가는 모든 경로(이번 턴 user_input,
         # 제목 생성용 question)에 쓰고, `text`(원문)는 저장에만 쓴다.
-        #
-        # 2026-08-20 — **무엇을 검사할지는 이제 운영자 콘솔 「전역 정책」이 정한다**
-        # (`services/guardrails`). 정책은 이 요청에서 한 번만 읽어 입력 검사와
-        # 이력 재전송에 같이 쓴다 — 두 번 읽으면 요청 도중 정책이 바뀔 때 같은
-        # 턴이 서로 다른 규칙으로 돈다.
-        policy = load_policy()
+        model_input = mask_sensitive(text)
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
-            guard = check_user_input(
-                text,
-                policy=policy,
-                account_id=account_id,
-                team_id=session["team_id"],
-                session_id=str(session_id),
-            )
-            # 막힌 발화는 **저장도 하지 않는다** — 아래 "질문이 사라진 대화는
-            # 복구할 방법이 없다"는 이유는 보낸 발화에 대한 것이고, 여기서는
-            # 애초에 보내지지 않았다.
-            if guard.blocked:
-                return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
-            model_input = guard.model_input
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
             # `_history()`가 저장된 과거 발화(원문)를 모델에게 다시 보낼 때도
             # 마스킹한다 — 이번 요청에서만 막고 다음 턴의 재전송(replay)에서
@@ -196,8 +177,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             history = _history(
                 ChatMessageRepository.list_for_session(
                     session_id=session_id, account_id=account_id
-                ),
-                mask_pii=policy["pii"]["enabled"],
+                )
             )
             # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
             # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
@@ -265,7 +245,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 HISTORY_LIMIT = 20
 
 
-def _history(rows: list[dict[str, Any]], *, mask_pii: bool = True) -> list[dict[str, Any]]:
+def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """저장된 대화를 **모델이 읽을 수 있는 평범한 메시지**로 바꾼다.
 
     **도구 호출 원본(reasoning·function_call)은 복원하지 않는다.** 그 아이템들은
@@ -290,7 +270,7 @@ def _history(rows: list[dict[str, Any]], *, mask_pii: bool = True) -> list[dict[
             # 처음 보낼 때만 가리고 재전송(replay) 경로를 빼먹으면 다음 턴부터
             # 새어나간다 — 여기서도 독립적으로 가린다.
             if text:
-                history.append({"role": "user", "content": mask_sensitive(text) if mask_pii else text})
+                history.append({"role": "user", "content": mask_sensitive(text)})
             continue
 
         if content.get("type") == EVENT_AWAITING_CONFIRMATION:

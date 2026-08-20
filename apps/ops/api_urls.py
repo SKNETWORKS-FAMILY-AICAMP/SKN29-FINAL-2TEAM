@@ -29,7 +29,6 @@ from .views.overview import OverviewView
 from .views.purge import AccountPurgeView, TeamPurgeView
 from .views.policies import (
     GuardrailEventListView,
-    GuardrailPolicyView,
     InviteTtlView,
     NoticeDetailView,
     NoticeListCreateView,
@@ -85,7 +84,6 @@ urlpatterns = [
     path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
-    path("policies/guardrail/", GuardrailPolicyView.as_view(), name="api_ops_policies_guardrail"),
     path(
         "policies/guardrail/events/",
         GuardrailEventListView.as_view(),
