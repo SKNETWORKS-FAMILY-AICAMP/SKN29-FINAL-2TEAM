@@ -43,5 +43,3 @@ ml_label.log
 # 팀이 공유하는 것은 `.claude/settings.json` 하나다.
 .claude/launch.json
 
-# 에이전트 내부 흐름 테스트 파일
-tests/
