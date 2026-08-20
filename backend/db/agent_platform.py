@@ -2702,8 +2702,10 @@ class GuardrailProviderRepository:
     붙이려면 주소와 키를 알아야 하는데 「코딩 없이」를 내세운 제품이 비개발자에게
     요구할 일이 아니다.
 
-    **팀당 하나다**(`ux_guardrail_provider_team`). 여럿을 허용하면 어느 것이 먼저
-    도는지, 하나가 막고 하나가 통과시키면 어떻게 하는지를 정해야 한다.
+    **여러 개 등록하고 그중 하나만 쓴다**(2026-08-20). 합치는 게 아니라 **고르는**
+    것이라 「어느 것이 먼저 도는가」를 정할 필요가 없다. 「팀당 활성 하나」는
+    부분 UNIQUE(`ux_guardrail_provider_active`)가 DB 에서 강제한다 — 코드에서만
+    지키면 동시에 두 번 활성화했을 때 둘 다 활성이 된다.
     """
 
     KINDS = ("OPENAI_GUARDRAILS", "BEDROCK_GUARDRAILS", "AZURE_CONTENT_SAFETY")
@@ -2718,18 +2720,23 @@ class GuardrailProviderRepository:
                 cursor.execute(
                     """
                     SELECT g.provider_id, g.team_id, t.name AS team_name, g.name, g.kind,
-                           g.config, g.status, g.last_checked_at, g.created_by, g.created_at,
+                           g.config, g.status, g.is_active, g.last_checked_at,
+                           g.created_by, g.created_at,
                            (g.credential_enc IS NOT NULL) AS has_credential
                     FROM guardrail_provider AS g
                     LEFT JOIN team AS t ON t.team_id = g.team_id
-                    ORDER BY g.team_id
+                    ORDER BY g.team_id, g.is_active DESC, g.created_at
                     """
                 )
                 return list(cursor.fetchall())
 
     @staticmethod
     def for_team(team_id: str) -> dict[str, Any] | None:
-        """그 팀이 쓸 공급자. 런타임이 부른다 — 없으면 `None`(검사 없이 돈다)."""
+        """그 팀이 쓸 공급자. 런타임이 부른다 — 없으면 `None`(검사 없이 돈다).
+
+        **활성인 것만 돌려준다.** 등록만 해 둔 것(보관·교체 대기)을 부르면 그 팀의
+        대화가 쓰지 않기로 한 가드레일을 거친다.
+        """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -2737,7 +2744,7 @@ class GuardrailProviderRepository:
                     """
                     SELECT provider_id, team_id, name, kind, config, status, last_checked_at
                     FROM guardrail_provider
-                    WHERE team_id = %s
+                    WHERE team_id = %s AND is_active
                     """,
                     (team_id,),
                 )
@@ -2789,12 +2796,14 @@ class GuardrailProviderRepository:
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
+                # 활성인 것이 아직 없고 이번 등록이 붙는 것이면 바로 활성으로 둔다.
+                # 등록했는데 아무 일도 안 일어나면 「등록했으니 도는 것」이라는
+                # 기대와 어긋난다 — 두 번째부터는 사람이 골라야 한다.
                 cursor.execute(
-                    "SELECT provider_id FROM guardrail_provider WHERE team_id = %s",
+                    "SELECT 1 FROM guardrail_provider WHERE team_id = %s AND is_active",
                     (team_id,),
                 )
-                if cursor.fetchone() is not None:
-                    raise DuplicateRecord("이 팀에 등록된 가드레일이 이미 있습니다. 수정해 주세요.")
+                activate = cursor.fetchone() is None and status == "CONNECTED"
 
                 provider_id = next_short_code(
                     cursor, table="guardrail_provider", column="provider_id", prefix="GP"
@@ -2803,10 +2812,10 @@ class GuardrailProviderRepository:
                     """
                     INSERT INTO guardrail_provider
                         (provider_id, team_id, name, kind, config, credential_enc,
-                         status, last_checked_at, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s,
+                         status, is_active, last_checked_at, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
                             CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END, %s)
-                    RETURNING provider_id, team_id, name, kind, config, status,
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
                               last_checked_at, created_by, created_at
                     """,
                     (
@@ -2817,6 +2826,7 @@ class GuardrailProviderRepository:
                         Jsonb(config or {}),
                         encrypt_credential(credential) if credential else None,
                         status,
+                        activate,
                         status,
                         registered_by,
                     ),
@@ -2875,7 +2885,7 @@ class GuardrailProviderRepository:
                             status = %s,
                             last_checked_at = CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END
                         WHERE provider_id = %s
-                        RETURNING provider_id, team_id, name, kind, config, status,
+                        RETURNING provider_id, team_id, name, kind, config, status, is_active,
                                   last_checked_at, created_by, created_at,
                                   (credential_enc IS NOT NULL) AS has_credential
                         """,
@@ -2899,7 +2909,7 @@ class GuardrailProviderRepository:
                                 (CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END)
                                 ELSE last_checked_at END
                         WHERE provider_id = %s
-                        RETURNING provider_id, team_id, name, kind, config, status,
+                        RETURNING provider_id, team_id, name, kind, config, status, is_active,
                                   last_checked_at, created_by, created_at,
                                   (credential_enc IS NOT NULL) AS has_credential
                         """,
@@ -2921,7 +2931,7 @@ class GuardrailProviderRepository:
                     UPDATE guardrail_provider
                     SET status = %s, last_checked_at = now()
                     WHERE provider_id = %s
-                    RETURNING provider_id, team_id, name, kind, config, status,
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
                               last_checked_at, created_by, created_at,
                               (credential_enc IS NOT NULL) AS has_credential
                     """,
@@ -2933,13 +2943,52 @@ class GuardrailProviderRepository:
                 return row
 
     @staticmethod
+    def activate(*, provider_id: str) -> dict[str, Any]:
+        """이 등록을 그 팀의 활성으로 만든다. 같은 팀의 다른 것은 내려간다.
+
+        **붙지 않는 것은 활성으로 못 만든다.** 「연결 확인」을 통과하지 않은 것을
+        활성으로 두면 그 팀의 대화가 매번 실패하는 검사를 거치고, 화면만 「사용
+        중」이라고 말한다.
+
+        한 트랜잭션에서 내리고 올린다 — 부분 UNIQUE 가 「팀당 활성 하나」를
+        강제하므로, 나눠서 하면 중간에 둘 다 활성인 순간이 생겨 실패한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT team_id, status FROM guardrail_provider WHERE provider_id = %s FOR UPDATE",
+                    (provider_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("등록되지 않은 가드레일입니다.")
+                if row["status"] != "CONNECTED":
+                    raise RepositoryError("연결 확인을 통과한 가드레일만 사용할 수 있습니다.")
+
+                cursor.execute(
+                    "UPDATE guardrail_provider SET is_active = FALSE WHERE team_id = %s AND is_active",
+                    (row["team_id"],),
+                )
+                cursor.execute(
+                    """
+                    UPDATE guardrail_provider SET is_active = TRUE WHERE provider_id = %s
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
+                              last_checked_at, created_by, created_at,
+                              (credential_enc IS NOT NULL) AS has_credential
+                    """,
+                    (provider_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
     def delete(*, provider_id: str) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     DELETE FROM guardrail_provider WHERE provider_id = %s
-                    RETURNING provider_id, team_id, name, kind
+                    RETURNING provider_id, team_id, name, kind, is_active
                     """,
                     (provider_id,),
                 )

@@ -17,6 +17,7 @@ from .views.invites import (
     InviteUnlinkView,
 )
 from .views.guardrails import (
+    GuardrailProviderActivateView,
     GuardrailProviderDetailView,
     GuardrailProviderProbeView,
     GuardrailProviderListCreateView,
@@ -104,6 +105,11 @@ urlpatterns = [
         "guardrails/<str:provider_id>/test/",
         GuardrailProviderTestView.as_view(),
         name="api_ops_guardrail_test",
+    ),
+    path(
+        "guardrails/<str:provider_id>/activate/",
+        GuardrailProviderActivateView.as_view(),
+        name="api_ops_guardrail_activate",
     ),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path(

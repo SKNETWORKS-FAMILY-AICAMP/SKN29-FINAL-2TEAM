@@ -20,6 +20,8 @@ export interface OpsGuardrailProvider {
   /** 공급자마다 다른 설정값(주소·리전·가드레일 ID·설정 JSON). **비밀값은 여기 없다.** */
   config: Record<string, unknown>;
   status: GuardrailProviderStatus;
+  /** 그 팀이 **실제로 쓰는** 하나. 나머지는 등록만 돼 있다. */
+  is_active: boolean;
   last_checked_at: string | null;
   /** **키 자체는 오지 않는다.** 있는지 여부만. */
   has_credential: boolean;
@@ -106,5 +108,19 @@ export function probeOpsGuardrail(
     method: 'POST',
     token,
     body,
+  });
+}
+
+/**
+ * 이 등록을 그 팀의 활성으로 만든다. 같은 팀의 다른 것은 내려간다.
+ *
+ * 여러 개 등록해 두고 **그중 하나만** 쓴다 — 합치는 게 아니라 고르는 것이라
+ * 「어느 것이 먼저 도는가」를 정할 필요가 없다. 연결 확인을 통과한 것만 고를 수
+ * 있다(서버가 막는다).
+ */
+export function activateOpsGuardrail(token: string, providerId: string) {
+  return opsRequest<OpsGuardrailProvider>(`/ops/guardrails/${providerId}/activate/`, {
+    method: 'POST',
+    token,
   });
 }

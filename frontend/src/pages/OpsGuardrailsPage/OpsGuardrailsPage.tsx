@@ -11,6 +11,7 @@ import {
 } from '../../components';
 import type { BadgeTone } from '../../components';
 import {
+  activateOpsGuardrail,
   fetchOpsGuardrails,
   probeOpsGuardrail,
   registerOpsGuardrail,
@@ -23,6 +24,7 @@ import { fetchOpsTeams } from '../../api/opsTeams';
 import type { OpsTeam } from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
+import { josa } from '../../utils/josa';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
@@ -341,6 +343,29 @@ export default function OpsGuardrailsPage() {
     }
   }
 
+  async function activate(row: OpsGuardrailProvider) {
+    const session = loadOpsSession();
+    if (!session) {
+      navigate('/ops/login', { replace: true });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await activateOpsGuardrail(session.token, row.provider_id);
+      showToast(`‘${row.name}’${josa(row.name, '을/를')} 활성화했습니다.`, 'success');
+      await load();
+    } catch (thrown) {
+      if (thrown instanceof ApiError && thrown.status === 401) {
+        navigate('/ops/login', { replace: true });
+        return;
+      }
+      showToast(thrown instanceof ApiError ? thrown.message : '활성화하지 못했습니다.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(row: OpsGuardrailProvider) {
     const session = loadOpsSession();
     if (!session) {
@@ -518,7 +543,11 @@ export default function OpsGuardrailsPage() {
 
       <OpsSectionCard
         title={'등록된 가드레일 ' + rows.length + '건'}
-        subtitle={rows.length > 0 ? `연결됨 ${rows.filter((row) => row.status === 'CONNECTED').length} · 팀당 하나` : '팀당 하나'}
+        subtitle={
+          rows.length > 0
+            ? `연결됨 ${rows.filter((row) => row.status === 'CONNECTED').length} · 사용 중 ${rows.filter((row) => row.is_active).length} · 팀당 하나만 사용`
+            : '팀당 하나만 사용'
+        }
       >
         {rows.length === 0 ? (
           <OpsEmpty message="아직 어느 팀에도 등록한 가드레일이 없습니다." />
@@ -530,9 +559,10 @@ export default function OpsGuardrailsPage() {
                 <th style={{ width: 170 }}>이름</th>
                 <th>종류</th>
                 <th style={{ width: 90 }}>상태</th>
+                <th style={{ width: 80 }}>사용</th>
                 <th style={{ width: 90 }}>키</th>
                 <th style={{ width: 110 }}>확인</th>
-                <th style={{ width: 290 }} />
+                <th style={{ width: 330 }} />
               </tr>
             </thead>
             <tbody>
@@ -543,6 +573,11 @@ export default function OpsGuardrailsPage() {
                   <td>{KIND_LABELS[row.kind] ?? row.kind}</td>
                   <td>
                     <Badge tone={STATUS[row.status].tone}>{STATUS[row.status].label}</Badge>
+                  </td>
+                  <td>
+                    {/* 등록만 해 둔 것과 실제로 쓰는 것을 가른다 — 런타임은 활성인
+                        것만 부른다. */}
+                    {row.is_active ? <Badge tone="success">사용 중</Badge> : '—'}
                   </td>
                   <td>{row.has_credential ? '있음' : '없음'}</td>
                   <td>{row.last_checked_at ? row.last_checked_at.slice(0, 10) : '없음'}</td>
@@ -566,6 +601,19 @@ export default function OpsGuardrailsPage() {
                       >
                         연결 확인
                       </Button>
+                      {/* 이미 쓰는 것에는 안 보인다 — 누를 이유가 없다. 연결
+                          확인을 통과하지 않은 것은 서버가 막으므로 여기서도 잠근다. */}
+                      {!row.is_active && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-button
+                          disabled={busy || row.status !== 'CONNECTED'}
+                          onClick={() => activate(row)}
+                        >
+                          활성화
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="danger"

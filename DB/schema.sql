@@ -1022,13 +1022,19 @@ CREATE TABLE guardrail_provider (
     config           JSONB        NOT NULL DEFAULT '{}'::jsonb,
     credential_enc   TEXT,                     -- 비밀값 암호문(mcp_server.auth_token_enc 와 같은 이유로 TEXT)
     status           VARCHAR(20)  NOT NULL DEFAULT 'UNCHECKED',  -- CONNECTED / ERROR / UNCHECKED
+    -- 여러 개 등록해 두고 **그중 하나만** 쓴다(2026-08-20). 합치는 게 아니라
+    -- 고르는 것이라 「어느 것이 먼저 도는가」를 정할 필요가 없다.
+    is_active        BOOLEAN      NOT NULL DEFAULT FALSE,
     last_checked_at  TIMESTAMPTZ,
     created_by       VARCHAR(5),               -- user_account.account_id(FK 없음)
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX ux_guardrail_provider_team
-    ON guardrail_provider (team_id);
+-- 팀당 활성 하나. **부분 UNIQUE 로 DB 가 강제한다** — 코드에서만 지키면 동시에
+-- 두 번 활성화했을 때 둘 다 활성인 상태가 만들어진다.
+CREATE UNIQUE INDEX ux_guardrail_provider_active
+    ON guardrail_provider (team_id)
+    WHERE is_active;
 
 -- 같은 tool_call_id(모델이 낸 AIMessage.tool_calls[i]["id"])가 같은 run 안에서
 -- 재실행되지 않게 막는 표. HITL resume·checkpoint 재시도로 super-step이

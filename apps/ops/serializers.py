@@ -350,6 +350,7 @@ def ops_guardrail_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "kind": row["kind"],
         "config": row.get("config") or {},
         "status": row["status"],
+        "is_active": bool(row.get("is_active")),
         "last_checked_at": row.get("last_checked_at"),
         "has_credential": bool(row.get("has_credential")),
         "created_by": row.get("created_by"),

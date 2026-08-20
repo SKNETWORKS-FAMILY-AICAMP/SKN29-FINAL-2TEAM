@@ -24,6 +24,7 @@ def provider(**overrides):
         "kind": "AZURE_CONTENT_SAFETY",
         "config": {"endpoint": "https://example.cognitiveservices.azure.com"},
         "status": "CONNECTED",
+        "is_active": True,
     }
     row.update(overrides)
     return row
@@ -207,3 +208,35 @@ class OpenAIGuardrailsReasonTests(SimpleTestCase):
         nested = ExceptionGroup("outer", [ExceptionGroup("inner", [Exception("Error code: 401 -")])])
 
         self.assertEqual(_reason(nested), "키가 올바르지 않습니다.")
+
+
+@patch("services.guardrails.input_check.GuardrailEventRepository")
+@patch("services.guardrails.input_check.GuardrailProviderRepository")
+class ActiveOnlyTests(SimpleTestCase):
+    """여러 개 등록해 두고 **활성인 하나만** 쓴다.
+
+    `for_team()` 이 활성만 돌려주므로 런타임은 고를 필요가 없다 — 이 테스트는 그
+    계약을 고정한다. 등록만 해 둔 것(보관·교체 대기)을 부르면 그 팀의 대화가
+    쓰지 않기로 한 가드레일을 거친다.
+    """
+
+    @patch("services.guardrails.input_check.check")
+    def test_활성이_없으면_부르지_않는다(self, called, repo, _events):
+        repo.for_team.return_value = None
+
+        outcome = check_user_input("안녕하세요", team_id="TE001")
+
+        self.assertFalse(outcome.blocked)
+        called.assert_not_called()
+
+    @patch("services.guardrails.input_check.check")
+    def test_활성인_것을_그대로_쓴다(self, called, repo, _events):
+        repo.for_team.return_value = provider(name="지금 쓰는 것")
+        called.return_value = GuardrailVerdict(blocked=False)
+
+        check_user_input("안녕하세요", team_id="TE001")
+
+        # 고르는 일은 저장소가 한다 — 런타임은 팀만 넘긴다.
+        repo.for_team.assert_called_once_with("TE001")
+        _, kwargs = called.call_args
+        self.assertEqual(kwargs["kind"], "AZURE_CONTENT_SAFETY")
