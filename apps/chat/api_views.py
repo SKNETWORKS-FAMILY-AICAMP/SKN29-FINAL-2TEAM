@@ -6,6 +6,7 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from typing import Any
 
@@ -44,6 +45,13 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: 가드레일 검사를 준비 작업과 겹쳐 돌리는 자리. 외부 호출이라 1~3초가 걸리는데
+#: (2026-08-20 실측) 그동안 이력 조회·정의 해석이 놀고 있을 이유가 없다.
+#:
+#: 작게 잡는다 — 이 풀이 하는 일은 요청당 하나뿐이고, 크게 잡으면 외부 검사기가
+#: 느려질 때 우리 워커보다 많은 연결이 열린다.
+_GUARDRAIL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="guardrail")
 
 
 def _repository_error_response(exc: Exception) -> Response:
@@ -173,17 +181,18 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
             # 2026-08-20 — 그 팀이 등록한 외부 가드레일이 있으면 거쳐 간다.
             # 없거나 「연결 확인」 전이면 아무 일도 안 한다(`services/guardrails`).
-            # 막힌 발화는 **저장도 하지 않는다** — 아래 "질문이 사라진 대화는
-            # 복구할 방법이 없다"는 이유는 보낸 발화에 대한 것이고, 여기서는
-            # 애초에 보내지지 않았다.
-            guard = check_user_input(
+            #
+            # **여기서 기다리지 않는다.** 외부 검사는 1~3초가 걸리는데(실측),
+            # 그 아래 준비 작업(이력 조회·컨텍스트 구성·에이전트 정의 해석)도
+            # DB 를 여러 번 탄다. 순서대로 하면 둘이 더해진다 — 검사를 먼저
+            # 띄워 두고 준비가 끝난 자리에서 합류한다.
+            guard_check = _GUARDRAIL_POOL.submit(
+                check_user_input,
                 text,
                 team_id=session["team_id"],
                 account_id=account_id,
                 session_id=str(session_id),
             )
-            if guard.blocked:
-                return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
             # `_history()`가 저장된 과거 발화(원문)를 모델에게 다시 보낼 때도
             # 마스킹한다 — 이번 요청에서만 막고 다음 턴의 재전송(replay)에서
@@ -192,17 +201,6 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 ChatMessageRepository.list_for_session(
                     session_id=session_id, account_id=account_id
                 )
-            )
-            # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
-            # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
-            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 여기 저장하는
-            # `text`는 원문이다 — 화면이 사용자 자신의 발화를 그대로 보여줘야
-            # 하고, 마스킹은 모델에게 나가는 값에만 적용한다.
-            ChatMessageRepository.append(
-                session_id=session_id,
-                account_id=account_id,
-                role="user",
-                content={"type": "text", "text": text},
             )
             # 발화는 전부 새 엔진(services.agent_runtime)을 탄다(2026-08-14
             # 전환). 화면(Builder)이 아직 레거시 `agent`/`agent_tool` 스키마만
@@ -230,6 +228,26 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 )
                 if live_version_id:
                     session = {**session, "agent_version_id": live_version_id}
+
+            # 여기서 검사에 합류한다. 준비가 도는 동안 이미 끝나 있으면 기다림이
+            # 없다. **막힌 발화는 저장하지 않는다** — 아래 "질문이 사라진 대화는
+            # 복구할 방법이 없다"는 이유는 보낸 발화에 대한 것이고, 여기서는
+            # 애초에 보내지지 않았다. 그래서 저장이 이 아래에 있다.
+            guard = guard_check.result()
+            if guard.blocked:
+                return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
+            # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
+            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 여기 저장하는
+            # `text`는 원문이다 — 화면이 사용자 자신의 발화를 그대로 보여줘야
+            # 하고, 마스킹은 모델에게 나가는 값에만 적용한다.
+            ChatMessageRepository.append(
+                session_id=session_id,
+                account_id=account_id,
+                role="user",
+                content={"type": "text", "text": text},
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         except AgentRuntimeError as exc:
