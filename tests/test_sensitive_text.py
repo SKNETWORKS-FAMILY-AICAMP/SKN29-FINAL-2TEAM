@@ -75,10 +75,38 @@ class MaskSensitiveTests(SimpleTestCase):
     def test_empty_string_passes_through(self):
         self.assertEqual(mask_sensitive(""), "")
 
+    def test_current_api_key_formats_are_masked(self):
+        """접두사가 붙은 현행 키 형식. 2026-08-20 실측에서 전부 통과하던 것들이다.
+
+        옛 패턴이 `sk-` 뒤에 영숫자 **연속** 20자를 요구해서, 4자 만에 하이픈이
+        나오는 `sk-proj-` 류를 못 잡았다 — 이 저장소 `.env` 의 키가 그 형식이라
+        사용자가 채팅에 붙여넣으면 모델과 장기 메모리로 그대로 갔다.
+        """
+
+        keys = [
+            "sk-proj-AbCdEf1234567890abcdefGHIJ",
+            "sk-svcacct-AbCdEf1234567890abcdef",
+            "sk-ant-api03-AbCdEf1234567890abcdef",
+            "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q",
+        ]
+        for key in keys:
+            with self.subTest(key=key):
+                result = mask_sensitive(f"키는 {key} 입니다")
+                self.assertNotIn(key, result)
+
+    def test_ordinary_hyphenated_words_are_not_masked(self):
+        """하이픈을 허용하면서 오탐이 늘지 않았는지 본다."""
+
+        for text in ("skn29-final-2team 저장소를 봐줘", "sk-1 이라고 적혀 있어"):
+            with self.subTest(text=text):
+                self.assertEqual(mask_sensitive(text), text)
+
     def test_masked_result_never_contains_the_original_matched_value(self):
         secrets = [
             "sk-abcdefghijklmnopqrstuvwxyz1234",
+            "sk-proj-AbCdEf1234567890abcdefGHIJ",
             "AKIAABCDEFGHIJKLMNOP",
+            "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q",
             "900101-1234567",
             "1234-5678-9012-3456",
         ]

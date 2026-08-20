@@ -29,6 +29,19 @@ class NoticeSerializer(serializers.Serializer):
     reason = serializers.CharField(allow_blank=True, required=False, default="")
 
 
+class GuardrailPolicySerializer(serializers.Serializer):
+    """가드레일 정책 저장 입력.
+
+    항목별 값 종류·범위(가림 방식, 0~1 기준값, 차단 단어 목록)는
+    `OpsPolicyRepository._validated_guardrail_policy()`가 한글 문구로 검증한다 —
+    초대 정책·공지와 같은 이유로 여기서는 형태만 본다(두 계층에서 서로 다른
+    문구가 나오는 것을 피하려고).
+    """
+
+    policy = serializers.DictField()
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
 class NoticeDeleteSerializer(serializers.Serializer):
     reason = serializers.CharField(allow_blank=True, required=False, default="")
 
@@ -128,6 +141,28 @@ def notice_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "created_by_name": row["created_by_name"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+    }
+
+
+def guardrail_event_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    """가드레일 발동 한 건.
+
+    `detail`을 그대로 내보내도 되는 이유는 **원문이 애초에 안 담기기 때문**이다
+    (`GuardrailEventRepository` docstring). 건수·카테고리·점수뿐이라 임계값을
+    조정하려면 이 값이 화면에 보여야 한다.
+    """
+
+    return {
+        "event_id": str(row["event_id"]),
+        "stage": row["stage"],
+        "rule": row["rule"],
+        "action": row["action"],
+        "detail": row["detail"],
+        "occurred_at": row["occurred_at"],
+        "account_id": row["account_id"],
+        "account_display_name": row["account_display_name"],
+        "team_id": row["team_id"],
+        "team_name": row["team_name"],
     }
 
 

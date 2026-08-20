@@ -8,19 +8,32 @@ import {
   OpsSearchField,
   OpsSectionCard,
   OpsStatusBadge,
+  ToggleSwitch,
   useToast,
 } from '../../components';
 import type { OpsTone } from '../../components';
 import {
   createNotice,
   deleteNotice,
+  fetchGuardrailEvents,
+  fetchGuardrailPolicy,
   fetchInviteTtl,
   fetchNotices,
   fetchPolicyChanges,
+  saveGuardrailPolicy,
   saveInviteTtl,
   updateNotice,
 } from '../../api/opsPolicies';
-import type { NoticeStatus, OpsNotice, OpsPolicyChange, ScheduleMode } from '../../api/opsPolicies';
+import type {
+  GuardrailEvent,
+  GuardrailPolicy,
+  GuardrailStrategy,
+  ModerationCategory,
+  NoticeStatus,
+  OpsNotice,
+  OpsPolicyChange,
+  ScheduleMode,
+} from '../../api/opsPolicies';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
 import { actionLabel } from '../../utils/auditActions';
@@ -47,6 +60,38 @@ const NOTICE_STATUS_TONES: Record<NoticeStatus, OpsTone> = {
   PUBLISHED: 'success',
   SCHEDULED: 'info',
   ENDED: 'neutral',
+};
+
+/** 가림 방식. 서버가 이 둘만 받는다(`OpsPolicyRepository.GUARDRAIL_STRATEGIES`). */
+const GUARDRAIL_STRATEGY_LABELS: Record<GuardrailStrategy, string> = {
+  redact: '가림',
+  mask: '부분 가림',
+};
+
+const GUARDRAIL_RULE_LABELS: Record<string, string> = {
+  PII: '민감정보',
+  MODERATION: '유해 표현',
+  BLOCKED_WORD: '차단 단어',
+};
+
+const GUARDRAIL_ACTION_LABELS: Record<string, string> = {
+  MASKED: '가림',
+  BLOCKED: '막음',
+};
+
+const GUARDRAIL_STAGE_LABELS: Record<string, string> = {
+  INPUT: '입력',
+  OUTPUT: '출력',
+  TOOL_RESULT: '도구 결과',
+};
+
+const MODERATION_CATEGORY_LABELS: Record<ModerationCategory, string> = {
+  harassment: '괴롭힘',
+  hate: '혐오',
+  sexual: '성적 표현',
+  self_harm: '자해',
+  violence: '폭력',
+  illicit: '불법 행위',
 };
 
 function pad2(value: number) {
@@ -79,10 +124,26 @@ function noticeSnapshotLabel(snapshot: unknown): string {
   return [statusLabel, snap.title].filter(Boolean).join(' · ') || '공지 없음';
 }
 
+/** 정책 한 벌을 한 줄로 줄인다 — 이력 목록·비교 카드가 같은 문장을 쓴다. */
+function guardrailSummary(snapshot: unknown): string {
+  if (!snapshot || typeof snapshot !== 'object') return '알 수 없음';
+  const snap = snapshot as GuardrailPolicy;
+  const parts = [
+    `민감정보 ${snap.pii?.enabled ? GUARDRAIL_STRATEGY_LABELS[snap.pii.strategy] ?? '가림' : '사용 중지'}`,
+    `유해 표현 ${snap.moderation?.enabled ? '검사' : '사용 중지'}`,
+  ];
+  const words = snap.blocked_words?.length ?? 0;
+  if (words > 0) parts.push(`차단 단어 ${words}개`);
+  return parts.join(' · ');
+}
+
 function changeTitle(change: OpsPolicyChange): string {
   const payload = (change.payload ?? {}) as Record<string, unknown>;
   if (change.action === 'POLICY_INVITE_TTL_CHANGE') {
     return `초대 만료 기간 ${payload.before ?? '-'}일 → ${payload.after ?? '-'}일`;
+  }
+  if (change.action === 'POLICY_GUARDRAIL_CHANGE') {
+    return `가드레일 정책 변경 · ${guardrailSummary(payload.after)}`;
   }
   if (change.action === 'NOTICE_CREATE') {
     return `시스템 공지 생성 · ${(payload.after as { title?: string } | undefined)?.title ?? ''}`;
@@ -101,6 +162,9 @@ function changeCompareValue(change: OpsPolicyChange, key: 'before' | 'after'): s
   if (change.action === 'POLICY_INVITE_TTL_CHANGE') {
     const value = payload[key];
     return value != null ? `${value}일` : '알 수 없음';
+  }
+  if (change.action === 'POLICY_GUARDRAIL_CHANGE') {
+    return guardrailSummary(payload[key]);
   }
   if (change.action === 'NOTICE_DELETE' && key === 'after') return '삭제됨';
   if (change.action === 'NOTICE_CREATE' && key === 'before') return '공지 없음';
@@ -145,6 +209,28 @@ function policyActionTone(action: string): OpsTone {
   return POLICY_ACTION_TONES[action] ?? 'neutral';
 }
 
+/** 막은 것과 가린 것을 색으로 가른다 — 막힌 발화는 사용자가 답을 못 받은 것이다. */
+function guardrailEventTone(action: string): OpsTone {
+  return action === 'BLOCKED' ? 'danger' : 'warning';
+}
+
+/** 발동 한 줄. `detail`에 원문이 없으므로 그대로 붙여 읽는다. */
+function guardrailEventTitle(event: GuardrailEvent): string {
+  const rule = GUARDRAIL_RULE_LABELS[event.rule] ?? event.rule;
+  const stage = GUARDRAIL_STAGE_LABELS[event.stage] ?? event.stage;
+  const detail = event.detail ?? {};
+  const word = typeof detail.word === 'string' ? detail.word : null;
+  const category = typeof detail.category === 'string' ? detail.category : null;
+  const score = typeof detail.score === 'number' ? detail.score : null;
+
+  if (word) return `${stage} · ${rule} 「${word}」`;
+  if (category) {
+    const label = MODERATION_CATEGORY_LABELS[category as ModerationCategory] ?? category;
+    return score != null ? `${stage} · ${rule} ${label} ${score}` : `${stage} · ${rule} ${label}`;
+  }
+  return `${stage} · ${rule}`;
+}
+
 export default function OpsPoliciesPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -156,6 +242,14 @@ export default function OpsPoliciesPage() {
   const [inviteDays, setInviteDays] = useState('');
   const [inviteReason, setInviteReason] = useState('');
   const [savingInvite, setSavingInvite] = useState(false);
+
+  // 저장된 값과 편집 중인 값을 나눠 든다 — 초대 정책과 같은 방식(변경 취소가
+  // 저장본으로 되돌린다).
+  const [savedGuardrail, setSavedGuardrail] = useState<GuardrailPolicy | null>(null);
+  const [guardrail, setGuardrail] = useState<GuardrailPolicy | null>(null);
+  const [guardrailReason, setGuardrailReason] = useState('');
+  const [savingGuardrail, setSavingGuardrail] = useState(false);
+  const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[] | null>(null);
 
   const [notices, setNotices] = useState<OpsNotice[] | null>(null);
   const [changes, setChanges] = useState<OpsPolicyChange[] | null>(null);
@@ -183,13 +277,18 @@ export default function OpsPoliciesPage() {
     setLoading(true);
     setError('');
     try {
-      const [ttl, noticeRows, changeRows] = await Promise.all([
+      const [ttl, guardrailPolicy, eventRows, noticeRows, changeRows] = await Promise.all([
         fetchInviteTtl(currentSession.token),
+        fetchGuardrailPolicy(currentSession.token),
+        fetchGuardrailEvents(currentSession.token),
         fetchNotices(currentSession.token),
         fetchPolicyChanges(currentSession.token),
       ]);
+      setGuardrailEvents(eventRows);
       setSavedInviteDays(ttl.days);
       setInviteDays(String(ttl.days));
+      setSavedGuardrail(guardrailPolicy);
+      setGuardrail(guardrailPolicy);
       setNotices(noticeRows);
       setChanges(changeRows);
       setSelectedChangeId(changeRows[0]?.audit_id ?? '');
@@ -288,6 +387,38 @@ export default function OpsPoliciesPage() {
   function cancelInviteEdit() {
     setInviteDays(savedInviteDays != null ? String(savedInviteDays) : '');
     setInviteReason('');
+  }
+
+  async function saveGuardrail() {
+    if (savingGuardrail || !guardrail) return;
+    const currentSession = loadOpsSession();
+    if (!currentSession) {
+      navigate('/ops/login', { replace: true });
+      return;
+    }
+
+    setSavingGuardrail(true);
+    try {
+      const result = await saveGuardrailPolicy(currentSession.token, guardrail, guardrailReason);
+      setSavedGuardrail(result);
+      setGuardrail(result);
+      setGuardrailReason('');
+      showToast('가드레일 정책을 저장했습니다.', 'success');
+      await reloadChanges();
+    } catch (thrown) {
+      if (thrown instanceof ApiError && thrown.status === 401) {
+        navigate('/ops/login', { replace: true });
+        return;
+      }
+      showToast(thrown instanceof ApiError ? thrown.message : '요청을 처리하지 못했습니다.', 'error');
+    } finally {
+      setSavingGuardrail(false);
+    }
+  }
+
+  function cancelGuardrailEdit() {
+    setGuardrail(savedGuardrail);
+    setGuardrailReason('');
   }
 
   function openCreate() {
@@ -495,6 +626,115 @@ export default function OpsPoliciesPage() {
         </div>
       </OpsSectionCard>
 
+      {guardrail && (
+        <OpsSectionCard
+          title="가드레일 정책"
+          subtitle={savedGuardrail ? `현재 ${guardrailSummary(savedGuardrail)}` : ''}
+        >
+          <div className={styles.inlinePolicy}>
+            <ToggleSwitch
+              checked={guardrail.pii.enabled}
+              onChange={(next) => setGuardrail({ ...guardrail, pii: { ...guardrail.pii, enabled: next } })}
+              disabled={savingGuardrail}
+              label="민감정보 가리기"
+            />
+            <div className={styles.fieldGroup}>
+              <label htmlFor="guardrail-strategy">가림 방식</label>
+              <select
+                id="guardrail-strategy"
+                value={guardrail.pii.strategy}
+                onChange={(event) =>
+                  setGuardrail({
+                    ...guardrail,
+                    pii: { ...guardrail.pii, strategy: event.target.value as GuardrailStrategy },
+                  })
+                }
+                disabled={savingGuardrail || !guardrail.pii.enabled}
+              >
+                {(Object.keys(GUARDRAIL_STRATEGY_LABELS) as GuardrailStrategy[]).map((strategy) => (
+                  <option key={strategy} value={strategy}>
+                    {GUARDRAIL_STRATEGY_LABELS[strategy]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className={styles.inlinePolicy}>
+            <ToggleSwitch
+              checked={guardrail.moderation.enabled}
+              onChange={(next) =>
+                setGuardrail({ ...guardrail, moderation: { ...guardrail.moderation, enabled: next } })
+              }
+              disabled={savingGuardrail}
+              label="유해 표현 검사"
+            />
+            {/* 카테고리 목록은 서버가 정책 안에 담아 준다 — 화면이 따로 들면
+                항목을 늘릴 때 두 곳이 어긋난다. */}
+            {(Object.keys(guardrail.moderation.thresholds) as ModerationCategory[]).map((category) => (
+              <div className={styles.fieldGroup} key={category}>
+                <label htmlFor={`guardrail-threshold-${category}`}>
+                  {MODERATION_CATEGORY_LABELS[category] ?? category}
+                </label>
+                <input
+                  id={`guardrail-threshold-${category}`}
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={guardrail.moderation.thresholds[category]}
+                  onChange={(event) =>
+                    setGuardrail({
+                      ...guardrail,
+                      moderation: {
+                        ...guardrail.moderation,
+                        thresholds: {
+                          ...guardrail.moderation.thresholds,
+                          [category]: Number(event.target.value),
+                        },
+                      },
+                    })
+                  }
+                  disabled={savingGuardrail || !guardrail.moderation.enabled}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className={[styles.fieldGroup, styles.inlinePolicyReason].join(' ')}>
+            <label htmlFor="guardrail-blocked-words">차단 단어(한 줄에 하나)</label>
+            <textarea
+              id="guardrail-blocked-words"
+              rows={3}
+              value={guardrail.blocked_words.join('\n')}
+              onChange={(event) =>
+                setGuardrail({ ...guardrail, blocked_words: event.target.value.split('\n') })
+              }
+              disabled={savingGuardrail}
+            />
+          </div>
+
+          <div className={styles.inlinePolicy}>
+            <Button variant="primary" onClick={saveGuardrail} disabled={savingGuardrail}>
+              {savingGuardrail ? '저장 중…' : '변경사항 저장'}
+            </Button>
+            <Button variant="secondary" onClick={cancelGuardrailEdit} disabled={savingGuardrail}>
+              변경 취소
+            </Button>
+          </div>
+          <div className={[styles.fieldGroup, styles.inlinePolicyReason].join(' ')}>
+            <label htmlFor="guardrail-reason">변경 사유(선택)</label>
+            <input
+              id="guardrail-reason"
+              value={guardrailReason}
+              onChange={(event) => setGuardrailReason(event.target.value)}
+              placeholder="정책을 변경하는 이유를 입력하세요"
+              disabled={savingGuardrail}
+            />
+          </div>
+        </OpsSectionCard>
+      )}
+
       <div className={styles.policyGrid}>
         <OpsSectionCard
           title="시스템 공지"
@@ -548,6 +788,34 @@ export default function OpsPoliciesPage() {
             </div>
           ) : (
             <p className={styles.inlineEmpty}>정책 변경 이력이 없습니다.</p>
+          )}
+        </OpsSectionCard>
+
+        {/* 정한 것(위)과 걸린 것(아래)을 한 화면에서 본다 — 기준값을 어디로
+            옮길지는 실제로 무엇이 걸렸는지를 봐야 정할 수 있다. */}
+        <OpsSectionCard
+          title="가드레일 발동"
+          subtitle={guardrailEvents ? `최근 ${guardrailEvents.length}건` : ''}
+        >
+          {guardrailEvents && guardrailEvents.length > 0 ? (
+            <div className={styles.policyHistory}>
+              {guardrailEvents.slice(0, HISTORY_PREVIEW_COUNT).map((event) => (
+                <div key={event.event_id} className={styles.historyButton}>
+                  <span className={styles.historyRow}>
+                    <OpsStatusBadge tone={guardrailEventTone(event.action)}>
+                      {GUARDRAIL_ACTION_LABELS[event.action] ?? event.action}
+                    </OpsStatusBadge>
+                    <span className={styles.historyTitle}>{guardrailEventTitle(event)}</span>
+                  </span>
+                  <span className={styles.historyMeta}>
+                    {occurredAtLabel(event.occurred_at)} · {event.account_display_name ?? '알 수 없음'}
+                    {event.team_name ? ` · ${event.team_name}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.inlineEmpty}>가드레일이 발동한 기록이 없습니다.</p>
           )}
         </OpsSectionCard>
       </div>

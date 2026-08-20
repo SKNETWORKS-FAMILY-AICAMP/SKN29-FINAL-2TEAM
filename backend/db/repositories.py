@@ -1,5 +1,6 @@
 """현재 `DB/schema.sql`을 기준으로 한 직접 SQL Repository."""
 
+import json
 from datetime import datetime
 from typing import Any
 
@@ -3452,6 +3453,22 @@ def _notice_snapshot(notice: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _loaded_json_object(row: Any) -> dict[str, Any]:
+    """`sys_setting.setting_value`에 담긴 JSON 객체. 없거나 깨졌으면 빈 dict.
+
+    깨진 값에 예외를 내지 않는다 — 설정 한 줄이 손상됐다고 채팅이 막히면 안 되고,
+    부르는 쪽이 기본값으로 채워 쓴다(`_normalized_guardrail_policy`).
+    """
+
+    if row is None:
+        return {}
+    try:
+        loaded = json.loads(row["setting_value"])
+    except (TypeError, ValueError, KeyError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 class OpsPolicyRepository:
     """운영자 콘솔 `전역 정책`(`GET/PUT/POST/DELETE /api/ops/policies/...`) 전용.
 
@@ -3471,10 +3488,177 @@ class OpsPolicyRepository:
 
     POLICY_ACTIONS = (
         "POLICY_INVITE_TTL_CHANGE",
+        "POLICY_GUARDRAIL_CHANGE",
         "NOTICE_CREATE",
         "NOTICE_UPDATE",
         "NOTICE_DELETE",
     )
+
+    # --- 가드레일 정책 (2026-08-20) ---------------------------------------
+    #
+    # 항목별로 키를 쪼개지 않고 JSON 한 벌로 둔다 — 쪼개면 변경 이력이
+    # `audit_log`에 흩어져 "그 시점의 정책 한 벌"을 복원할 수 없다.
+    # 정본: docs/작업기록/2026-08-20_가드레일_조사와_실측.md
+    GUARDRAIL_KEY = "GUARDRAIL_POLICY"
+    #: 가림 방식. `PIIMiddleware`가 지원하는 네 전략 중 둘만 화면에 올린다 —
+    #: `block`은 오탐 하나가 실행 전체를 죽이고(`PIIDetectionError`), `hash`는
+    #: 사람이 읽을 이유가 없다.
+    GUARDRAIL_STRATEGIES = ("redact", "mask")
+    #: 임계값을 화면에서 정하는 유해성 카테고리. `omni-moderation-latest`는 13개를
+    #: 돌려주지만 세부 항목(harassment/threatening 등)까지 늘어놓으면 운영자가
+    #: 고를 수 없어 상위 6개만 둔다.
+    MODERATION_CATEGORIES = ("harassment", "hate", "sexual", "self_harm", "violence", "illicit")
+    #: `sys_setting` 시드 행이 없거나 값이 깨져도 채팅이 막히지 않게 두는 안전망.
+    #: DB/migrations/2026-08-20_guardrail_policy.sql 의 시드값과 같아야 한다.
+    DEFAULT_GUARDRAIL_POLICY: dict[str, Any] = {
+        "pii": {"enabled": True, "strategy": "redact"},
+        "moderation": {
+            "enabled": False,
+            "thresholds": {
+                "harassment": 0.7,
+                "hate": 0.7,
+                "sexual": 0.7,
+                "self_harm": 0.7,
+                "violence": 0.7,
+                "illicit": 0.7,
+            },
+        },
+        "blocked_words": [],
+    }
+
+    @staticmethod
+    def _normalized_guardrail_policy(raw: dict[str, Any]) -> dict[str, Any]:
+        """저장된 값에 빠진 항목을 기본값으로 채워 **항상 같은 모양**으로 돌려준다.
+
+        읽는 쪽(런타임·화면)이 `.get()` 체인을 쓰지 않게 하려는 것이다 — 정책이
+        부분적으로만 저장된 상태(항목을 나중에 추가한 경우)에서도 모양이 같다.
+        """
+
+        default = OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY
+        pii = raw.get("pii") if isinstance(raw.get("pii"), dict) else {}
+        moderation = raw.get("moderation") if isinstance(raw.get("moderation"), dict) else {}
+        thresholds = moderation.get("thresholds") if isinstance(moderation.get("thresholds"), dict) else {}
+        words = raw.get("blocked_words") if isinstance(raw.get("blocked_words"), list) else []
+
+        return {
+            "pii": {
+                "enabled": bool(pii.get("enabled", default["pii"]["enabled"])),
+                "strategy": (
+                    pii["strategy"]
+                    if pii.get("strategy") in OpsPolicyRepository.GUARDRAIL_STRATEGIES
+                    else default["pii"]["strategy"]
+                ),
+            },
+            "moderation": {
+                "enabled": bool(moderation.get("enabled", default["moderation"]["enabled"])),
+                "thresholds": {
+                    category: (
+                        float(thresholds[category])
+                        if isinstance(thresholds.get(category), (int, float))
+                        else default["moderation"]["thresholds"][category]
+                    )
+                    for category in OpsPolicyRepository.MODERATION_CATEGORIES
+                },
+            },
+            "blocked_words": [str(word) for word in words if str(word).strip()],
+        }
+
+    @staticmethod
+    def _validated_guardrail_policy(raw: dict[str, Any]) -> dict[str, Any]:
+        """화면에서 들어온 값을 검사한다. 문구는 여기 한 곳에서만 낸다."""
+
+        if not isinstance(raw, dict):
+            raise RepositoryError("가드레일 정책 형식이 올바르지 않습니다.")
+
+        pii = raw.get("pii") if isinstance(raw.get("pii"), dict) else {}
+        if pii.get("strategy") is not None and pii.get("strategy") not in OpsPolicyRepository.GUARDRAIL_STRATEGIES:
+            raise RepositoryError("가림 방식은 「가림」 또는 「부분 가림」 중에서 골라 주세요.")
+
+        moderation = raw.get("moderation") if isinstance(raw.get("moderation"), dict) else {}
+        thresholds = moderation.get("thresholds") if isinstance(moderation.get("thresholds"), dict) else {}
+        for category, value in thresholds.items():
+            if category not in OpsPolicyRepository.MODERATION_CATEGORIES:
+                raise RepositoryError(f"알 수 없는 유해성 항목입니다: {category}")
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise RepositoryError("유해성 기준값은 숫자로 입력해 주세요.")
+            if not (0 <= float(value) <= 1):
+                raise RepositoryError("유해성 기준값은 0과 1 사이로 입력해 주세요.")
+
+        words = raw.get("blocked_words")
+        if words is not None and not isinstance(words, list):
+            raise RepositoryError("차단 단어는 목록으로 보내 주세요.")
+
+        normalized = OpsPolicyRepository._normalized_guardrail_policy(raw)
+        # 중복과 앞뒤 공백을 여기서 정리한다 — 같은 단어를 두 번 넣어 저장하면
+        # "변경 없음" 판정이 어긋난다.
+        seen: list[str] = []
+        for word in normalized["blocked_words"]:
+            stripped = word.strip()
+            if stripped and stripped not in seen:
+                seen.append(stripped)
+        normalized["blocked_words"] = seen
+        return normalized
+
+    @staticmethod
+    def get_guardrail_policy() -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT setting_value FROM sys_setting WHERE setting_key = %s",
+                    (OpsPolicyRepository.GUARDRAIL_KEY,),
+                )
+                row = cursor.fetchone()
+
+        return OpsPolicyRepository._normalized_guardrail_policy(_loaded_json_object(row))
+
+    @staticmethod
+    def set_guardrail_policy(
+        *, policy: dict[str, Any], actor_account_id: str, reason: str = ""
+    ) -> dict[str, Any]:
+        validated = OpsPolicyRepository._validated_guardrail_policy(policy)
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                # 초대 정책과 같은 이유로 이 행을 잠근다 — 동시에 들어온 저장이
+                # 서로 낡은 "변경 없음" 판정을 내리지 않게.
+                cursor.execute(
+                    "SELECT setting_value FROM sys_setting WHERE setting_key = %s FOR UPDATE",
+                    (OpsPolicyRepository.GUARDRAIL_KEY,),
+                )
+                row = cursor.fetchone()
+                current = OpsPolicyRepository._normalized_guardrail_policy(_loaded_json_object(row))
+
+                if current == validated:
+                    raise RepositoryError("변경된 가드레일 정책이 없습니다.")
+
+                stored_value = json.dumps(validated, ensure_ascii=False)
+                if row is None:
+                    cursor.execute(
+                        "INSERT INTO sys_setting (setting_key, setting_value, updated_by) VALUES (%s, %s, %s)",
+                        (OpsPolicyRepository.GUARDRAIL_KEY, stored_value, actor_account_id),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE sys_setting
+                        SET setting_value = %s, updated_by = %s, updated_at = now()
+                        WHERE setting_key = %s
+                        """,
+                        (stored_value, actor_account_id, OpsPolicyRepository.GUARDRAIL_KEY),
+                    )
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="POLICY_GUARDRAIL_CHANGE",
+                    target_type="SYS_SETTING",
+                    # 초대 정책과 같은 이유로 비운다 — `audit_log.target_id`가
+                    # VARCHAR(5)라 설정 키를 담을 수 없고, action으로 식별된다.
+                    target_id=None,
+                    payload={"before": current, "after": validated, "reason": reason.strip() or None},
+                )
+
+        return validated
 
     @staticmethod
     def get_invite_ttl_days() -> int:
@@ -3702,6 +3886,66 @@ class OpsPolicyRepository:
                 return list(cursor.fetchall())
 
 
+class GuardrailEventRepository:
+    """가드레일이 실제로 발동한 기록(`guardrail_event`).
+
+    쓰는 쪽은 런타임이고 읽는 쪽은 운영자 콘솔이다. `audit_log`(사람의 조치)와
+    나눠 두는 이유는 `DB/schema.sql`의 테이블 주석에 있다.
+
+    **원문은 어디에도 담지 않는다** — `detail`에는 건수·카테고리·점수처럼 임계값을
+    조정할 때 필요한 것만 넣는다. 가려진 값이 로그에 남으면 가드레일을 두는 의미가
+    없다(`services/agent_runtime/sensitive_text.py`의 `MASK_PLACEHOLDER`와 같은 원칙).
+    """
+
+    STAGES = ("INPUT", "OUTPUT", "TOOL_RESULT")
+    RULES = ("PII", "MODERATION", "BLOCKED_WORD")
+    ACTIONS = ("MASKED", "BLOCKED")
+
+    @staticmethod
+    def record(
+        *,
+        stage: str,
+        rule: str,
+        action: str,
+        detail: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        session_id: str | None = None,
+        account_id: str | None = None,
+        team_id: str | None = None,
+    ) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO guardrail_event
+                        (run_id, session_id, account_id, team_id, stage, rule, action, detail)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (run_id, session_id, account_id, team_id, stage, rule, action, Jsonb(detail or {})),
+                )
+
+    @staticmethod
+    def list_recent(*, limit: int = 100) -> list[dict[str, Any]]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        ge.event_id, ge.run_id, ge.session_id, ge.stage, ge.rule,
+                        ge.action, ge.detail, ge.occurred_at,
+                        ge.account_id, ua.display_name AS account_display_name,
+                        ge.team_id, t.name AS team_name
+                    FROM guardrail_event AS ge
+                    LEFT JOIN user_account AS ua ON ua.account_id = ge.account_id
+                    LEFT JOIN team AS t ON t.team_id = ge.team_id
+                    ORDER BY ge.occurred_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                return list(cursor.fetchall())
+
+
 # --- 완전 삭제 (2026-08-19) -------------------------------------------------
 #
 # **이 저장소에는 외래키 제약이 하나도 없다**(2026-08-19 실측: information_schema
@@ -3750,6 +3994,10 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     # `uuid` 다 — 캐스트 없이 비교하면 `operator does not exist: text = uuid` 로
     # 실패한다(2026-08-19 실측). 화면에는 「데이터베이스 요청을 처리할 수
     # 없습니다」로만 보여서 원인이 안 드러난다.
+    # 가드레일 발동 기록은 `audit_log`(안 지움)가 아니라 `tool_call`·`agent_run`과
+    # 같은 편이다 — 그 팀의 대화에서 나온 실행 기록이고, 대화가 사라지면 같이
+    # 사라지는 게 맞다. `team_id`를 직접 들고 있어 조인이 필요 없다.
+    ("가드레일 발동 기록", "DELETE FROM guardrail_event WHERE team_id = %(team_id)s"),
     ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.team_id = %(team_id)s)"),
     ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
     ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
@@ -3784,6 +4032,7 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
 #: 동기화가 조용히 실패한다. 이미 수집된 문서 자체는 남는다.
 _ACCOUNT_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("에이전트 즐겨찾기", "DELETE FROM agent_favorites WHERE account_id = %(account_id)s"),
+    ("가드레일 발동 기록", "DELETE FROM guardrail_event WHERE account_id = %(account_id)s"),
     ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.account_id = %(account_id)s)"),
     ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
     ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),
