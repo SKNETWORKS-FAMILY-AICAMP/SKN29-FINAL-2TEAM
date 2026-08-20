@@ -41,6 +41,25 @@ def validate_execution_target(
         )
 
 
+def _tracing_callbacks() -> list[Any]:
+    """Langfuse·LangSmith 콜백을 모아 돌려준다(2026-08-19). 키가 없는 쪽은
+    각자 `None`을 돌려주므로 걸러진다 — 둘 다 없으면 빈 리스트.
+
+    **지연 import다** — 모듈 맨 위에서 `tracing.callbacks`를 import하면
+    `services.agent_runtime.tracing` 패키지(`tracing/__init__.py`)가 먼저
+    초기화되는데, 그 파일이 `backend.db.agent_platform`을 끌어온다.
+    `agent_platform.py`는 자기 자신이 `services.agent_runtime.subagents.
+    validation`을 import하다가(그 결과 이 패키지 `__init__.py` → 이 모듈 →
+    여기까지 연쇄로 로드된다) 아직 다 안 만들어진 채로 다시 자기 자신을
+    요구받아 `ImportError: cannot import name ... from partially initialized
+    module`로 서버 자체가 못 뜨는 걸 실제로 재현·확인했다. 호출 시점으로
+    미루면 그때는 두 모듈 다 이미 완전히 로드돼 있어 순환이 안 생긴다.
+    """
+    from services.agent_runtime.tracing.callbacks import get_langfuse_callback, get_langsmith_callback
+
+    return [cb for cb in (get_langfuse_callback(), get_langsmith_callback()) if cb is not None]
+
+
 class AgentExecutor:
     """실행 의존성을 조합하고 공통 이벤트를 순서대로 반환한다."""
 
@@ -141,6 +160,11 @@ class AgentExecutor:
 
         event_mapper = self.event_mapper_factory()
 
+        # Langfuse·LangSmith 콜백(2026-08-19, tracing/callbacks.py) — 둘 다
+        # 키가 없으면 빈 리스트, stream_adapter가 그대로 config에 아무 것도
+        # 안 붙인다. 지연 import 이유는 `_tracing_callbacks()` docstring 참고.
+        callbacks = _tracing_callbacks()
+
         try:
             for raw_event in self.stream_adapter.stream(
                 runtime=runtime,
@@ -152,6 +176,24 @@ class AgentExecutor:
                 # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
                 # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
                 thread_id=context.session_id,
+                callbacks=callbacks,
+                # Langfuse 대시보드에서 세션/계정/팀 단위로 걸러 보기 위한
+                # 메타데이터(2026-08-19). LangSmith 쪽은 이 값을 안 쓰고
+                # 무시한다. 콜백이 하나도 없으면(키 둘 다 없음) `None`으로
+                # 둔다 — `config["metadata"]`는 LangSmith 자동 연결(env var)
+                # 도 읽는 범용 필드라, 아무도 안 쓸 값을 굳이 얹어 놓지 않는다.
+                trace_metadata=(
+                    {
+                        "langfuse_session_id": context.session_id,
+                        "langfuse_user_id": context.account_id,
+                        "langfuse_tags": [
+                            f"team:{context.team_id}",
+                            f"agent:{loaded.definition.agent_id}",
+                        ],
+                    }
+                    if callbacks
+                    else None
+                ),
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
@@ -246,11 +288,29 @@ class AgentExecutor:
 
         event_mapper = self.event_mapper_factory()
 
+        # Langfuse·LangSmith 콜백(2026-08-19) — 승인을 기다리다 재개된 실행도
+        # 실제 모델·도구 호출이라 트레이싱에서 뺄 이유가 없다 —
+        # `stream_adapter.py`의 `resume` 분기도 이 값을 받게 이미 맞춰 뒀다.
+        callbacks = _tracing_callbacks()
+
         try:
             for raw_event in self.stream_adapter.stream(
                 runtime=runtime,
                 resume={"decisions": list(decisions)},
                 thread_id=context.session_id,
+                callbacks=callbacks,
+                trace_metadata=(
+                    {
+                        "langfuse_session_id": context.session_id,
+                        "langfuse_user_id": context.account_id,
+                        "langfuse_tags": [
+                            f"team:{context.team_id}",
+                            f"agent:{loaded.definition.agent_id}",
+                        ],
+                    }
+                    if callbacks
+                    else None
+                ),
             ):
                 for converted in event_mapper.convert(
                     raw_event, definition=loaded.definition, context=context

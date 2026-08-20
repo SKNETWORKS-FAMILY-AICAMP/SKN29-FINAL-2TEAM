@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal, useToast } from '../../components';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { loadUserRole } from '../../utils/userRole';
 import {
   ApiError,
   confirmMessage,
@@ -1207,6 +1208,7 @@ export default function ChatPage() {
         toolRefs={sessionToolOverride ?? agentOwnToolRefs}
         onToggle={(ref) => void toggleSessionTool(ref)}
         onToggleGroup={(refs, turnOn) => void toggleSessionToolGroup(refs, turnOn)}
+        disableApprovalTools={loadUserRole() === 'member'}
       />
     </AppShell>
   );

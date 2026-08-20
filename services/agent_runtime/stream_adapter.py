@@ -19,6 +19,8 @@ class DeepAgentStreamAdapter:
         conversation_messages: Sequence[dict[str, Any]] = (),
         thread_id: str | None = None,
         resume: dict[str, Any] | None = None,
+        callbacks: Sequence[Any] = (),
+        trace_metadata: dict[str, Any] | None = None,
     ) -> Iterator[Any]:
         """Root와 Child를 포함한 updates event를 3-tuple로 반환한다.
 
@@ -67,7 +69,7 @@ class DeepAgentStreamAdapter:
         1.2.11 `Pregel.stream` docstring: `"messages"`는 항상 `(token, metadata)`
         2-tuple).
 
-        `resume`(2026-08-19 추가, §0순위 — HITL resume API): `HumanInTheLoopMiddleware`
+        `resume`(2026-08-19, §0순위 — HITL resume API): `HumanInTheLoopMiddleware`
         의 interrupt로 멈춘 실행을 재개할 때만 넘긴다. 있으면 `user_input`/
         `conversation_messages`는 완전히 무시하고 `Command(resume=resume)`을
         입력으로 보낸다 — 실제 langgraph 문서 예제(`langgraph/types.py`
@@ -80,6 +82,14 @@ class DeepAgentStreamAdapter:
         checkpointer 없이 쓰면 같은 이유로 막는다, `pregel/_loop.py`
         `_first()` 실제 소스 — "Cannot use Command(resume=...) without
         checkpointer").
+
+        `callbacks`/`trace_metadata`는 2026-08-19 추가(Langfuse 연동,
+        `tracing/callbacks.py`) — LangChain의 `config["callbacks"]`/
+        `config["metadata"]`에 그대로 얹는다. 재개 경로에도 똑같이 붙인다 —
+        승인을 기다리다 재개된 실행도 실제 모델·도구 호출이라 트레이싱
+        대상에서 뺄 이유가 없다. 비어 있으면(키 없어서 Langfuse가 꺼진
+        기본 상태) 아무 것도 안 붙는다 — `runtime.stream()` 호출 모양이
+        이전과 완전히 같다.
         """
         if resume is not None:
             if not thread_id:
@@ -90,6 +100,12 @@ class DeepAgentStreamAdapter:
                 "subgraphs": True,
                 "config": {"configurable": {"thread_id": thread_id}},
             }
+            if callbacks or trace_metadata:
+                config = stream_kwargs["config"]
+                if callbacks:
+                    config["callbacks"] = list(callbacks)
+                if trace_metadata:
+                    config["metadata"] = trace_metadata
             yield from runtime.stream(Command(resume=resume), **stream_kwargs)
             return
 
@@ -105,6 +121,12 @@ class DeepAgentStreamAdapter:
         }
         if thread_id:
             stream_kwargs["config"] = {"configurable": {"thread_id": thread_id}}
+        if callbacks or trace_metadata:
+            config = stream_kwargs.setdefault("config", {})
+            if callbacks:
+                config["callbacks"] = list(callbacks)
+            if trace_metadata:
+                config["metadata"] = trace_metadata
 
         yield from runtime.stream(input_state, **stream_kwargs)
 

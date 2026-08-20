@@ -40,3 +40,10 @@ langchain-openai>=1.4.3,<2.0.0
 # 패키지에 있다 — 이 저장소가 이미 쓰는 같은 Postgres를 그대로 재사용한다
 # (services/agent_runtime/memory/store.py가 psycopg 커넥션 문자열로 직접 연결).
 langgraph-checkpoint-postgres>=3.0,<4.0
+
+# Deep Agents 평가용 트레이싱(2026-08-19 착수, 작업기록/LangSmith_LangFuse/
+# 2026-08-19_01_작업계획.md). LangSmith는 langchain-core에 이미 내장돼 있어
+# 별도 패키지가 필요 없다 — Langfuse만 SDK가 필요하다(v3, `langfuse.langchain.
+# CallbackHandler`). 키가 없으면 `tracing/callbacks.py`가 콜백을 안 만들 뿐
+# import 자체는 항상 성공해야 하므로 optional 의존성으로 빼지 않고 base에 둔다.
+langfuse>=3.0,<4.0

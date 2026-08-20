@@ -38,6 +38,17 @@ export interface ToolPickerModalProps {
    * 별도 콜백으로 받는다.
    */
   onToggleGroup: (refs: string[], turnOn: boolean) => void;
+  /**
+   * 승인 필요(`side_effect`) 도구·MCP 도구의 체크박스를 잠근다(2026-08-19,
+   * 지훈 요청 — "팀원은 어차피 못 쓰는데 켤 수 있게 놔두면 안 된다").
+   * 팀원 역할로 채팅 세션 도구를 고를 때만 켠다(`ChatPage`) — 실행 시점에
+   * 역할로 막는 건 그대로 두고(모델은 도구가 있다는 걸 계속 안다), 사람이
+   * 고르는 화면에서만 "어차피 항상 실패할 선택"을 미리 잠근다. 에이전트
+   * 빌더(`AgentEditPage`)는 이 prop을 안 넘긴다 — 거기서 고르는 도구
+   * 목록은 그 에이전트를 쓸 모든 역할에 적용되는 공용 설정이라, 지금
+   * 편집하는 사람의 역할로 잠글 대상이 아니다.
+   */
+  disableApprovalTools?: boolean;
 }
 
 /** `ToolChoice.category`가 없으면(MCP 등) 이 이름으로 묶는다. */
@@ -121,6 +132,7 @@ export function ToolPickerModal({
   toolRefs,
   onToggle,
   onToggleGroup,
+  disableApprovalTools = false,
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
   const builtinGroups = groupByCategory(builtinTools);
@@ -165,7 +177,11 @@ export function ToolPickerModal({
       {tab === 'builtin' && (
         <div className={styles.serverList}>
           {builtinGroups.map(([category, items]) => {
-            const allOn = items.every((toolItem) => toolRefs.includes(toolItem.tool_ref));
+            // 승인 필요 도구는 팀원 세션에서 어차피 항상 실행이 막히니
+            // 「전체 선택」도 그 도구는 빼고 계산한다 — 나머지 도구까지
+            // 다 잠기면 안 된다.
+            const assignable = disableApprovalTools ? items.filter((toolItem) => !toolItem.side_effect) : items;
+            const allOn = assignable.length > 0 && assignable.every((toolItem) => toolRefs.includes(toolItem.tool_ref));
             const expanded = expandedCategories.has(category);
             return (
               <div key={category} className={styles.serverGroup}>
@@ -173,9 +189,10 @@ export function ToolPickerModal({
                   <span className={styles.serverName}>
                     <Checkbox
                       checked={allOn}
+                      disabled={assignable.length === 0}
                       onChange={(next) =>
                         onToggleGroup(
-                          items.map((toolItem) => toolItem.tool_ref),
+                          assignable.map((toolItem) => toolItem.tool_ref),
                           next,
                         )
                       }
@@ -201,19 +218,22 @@ export function ToolPickerModal({
                   <div className={pageStyles.toolList}>
                     {items.map((toolItem) => {
                       const checked = toolRefs.includes(toolItem.tool_ref);
+                      const locked = disableApprovalTools && toolItem.side_effect;
                       return (
                         <div
                           key={toolItem.tool_ref}
                           className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
-                          <Checkbox checked={checked} onChange={() => onToggle(toolItem.tool_ref)} />
+                          <Checkbox checked={checked} disabled={locked} onChange={() => onToggle(toolItem.tool_ref)} />
                           <div className={pageStyles.toolText}>
                             <strong>
                               {toolItem.name}
                               {toolItem.side_effect && <span className={pageStyles.gate}> · 승인 필요</span>}
                             </strong>
                             <span>
-                              {TOOL_DESCRIPTIONS[toolItem.tool_ref] ?? toolItem.description}
+                              {locked
+                                ? '팀장만 켤 수 있는 도구입니다.'
+                                : TOOL_DESCRIPTIONS[toolItem.tool_ref] ?? toolItem.description}
                             </span>
                           </div>
                         </div>
@@ -258,18 +278,24 @@ export function ToolPickerModal({
                     {server.tools.map((tool) => {
                       const ref = `mcp:${tool.mcp_tool_id}`;
                       const checked = toolRefs.includes(ref);
+                      // MCP 도구는 전부 승인 필요다(위 배지가 항상 뜨는 이유와 같다).
+                      const locked = disableApprovalTools;
                       return (
                         <div
                           key={tool.mcp_tool_id}
                           className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
-                          <Checkbox checked={checked} disabled={!tool.enabled} onChange={() => onToggle(ref)} />
+                          <Checkbox checked={checked} disabled={!tool.enabled || locked} onChange={() => onToggle(ref)} />
                           <div className={pageStyles.toolText}>
                             <strong>
                               {tool.name}
                               <span className={pageStyles.gate}> · 승인 필요</span>
                             </strong>
-                            <span>{tool.description || (tool.enabled ? '' : '사용 중지된 도구입니다.')}</span>
+                            <span>
+                              {locked
+                                ? '팀장만 켤 수 있는 도구입니다.'
+                                : tool.description || (tool.enabled ? '' : '사용 중지된 도구입니다.')}
+                            </span>
                           </div>
                         </div>
                       );
