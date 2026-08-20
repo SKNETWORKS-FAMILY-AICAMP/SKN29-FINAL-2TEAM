@@ -64,9 +64,18 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc_meta", "extract_detail", "2026-08-19 추출 실패 사유"),
     ("agent_run", "resolved_provider", "2026-08-19 실행 스냅샷 — 어느 provider 로 돌았나"),
     ("agent_run", "resolved_endpoint_hash", "2026-08-19 실행 스냅샷 — 엔드포인트 해시"),
-    ("tool_call", "session_id", "2026-08-19 외부 쓰기 도구 재실행 방지"),
-    ("tool_call", "langchain_tool_call_id", "2026-08-19 재실행 방지 키"),
-    ("tool_call", "result_text", "2026-08-19 재실행 방지 — 저장해 둔 결과"),
+    # 2026-08-20 정정 — 이 세 줄은 「기존 tool_call 표에 컬럼 3개를 더한다」는
+    # 초기 설계를 그대로 옮긴 것이었는데, 실제로 나간 마이그레이션
+    # (2026-08-19_tool_call_idempotency.sql)은 그 설계를 버리고 **전용 표
+    # tool_call_idempotency**를 새로 만드는 쪽으로 바뀌었다(그 파일 자체의
+    # 주석: "기존 tool_call 테이블을 그대로 확장하지 않는다" — 쓰는 시점이
+    # tool_call의 관측용 생명주기와 달라서다). `DB/schema.sql`의 `tool_call`
+    # 정의(실측)엔 애초에 `session_id`/`langchain_tool_call_id`/`result_text`
+    # 컬럼이 없다 — 이 체크는 실제로 배포된 스키마가 아니라 버려진 초기 설계를
+    # 보고 있었다. 실사용 중 `tool_call_idempotency`가 실제로는 없는 DB에서도
+    # `--check`가 "전부 있다"고 답한 사례로 발견됐다(`UndefinedTable`로
+    # 실행이 깨진 뒤에야 드러남) — 코드가 실제로 쓰는 표 이름으로 바꾼다.
+    ("tool_call_idempotency", None, "2026-08-19 외부 쓰기 도구 재실행 방지 — 전용 표"),
 ]
 
 
