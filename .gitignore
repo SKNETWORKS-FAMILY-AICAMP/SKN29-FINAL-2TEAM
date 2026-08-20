@@ -42,3 +42,6 @@ ml_label.log
 # Claude Code 의 미리보기 서버 설정. 사람마다 띄우는 포트·명령이 다르고,
 # 팀이 공유하는 것은 `.claude/settings.json` 하나다.
 .claude/launch.json
+
+# 에이전트 내부 흐름 테스트 파일
+tests/
