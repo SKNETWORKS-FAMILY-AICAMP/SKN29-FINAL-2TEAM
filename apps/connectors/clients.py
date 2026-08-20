@@ -635,3 +635,58 @@ def create_jira_issues(
         "created": created,
         "failed": sorted(failed, key=lambda row: (row["index"] is None, row["index"])),
     }
+
+
+def find_jira_account_id_by_email(*, account_id: str, email: str) -> str | None:
+    """이메일로 Jira accountId 를 찾는다. **못 찾으면 예외 대신 None.**
+
+    담당자를 지정하지 않은 이슈에 요청자 자신을 기본값으로 채우려는 보조
+    조회다(2026-08-20, `_jira_create_issues` 에서 씀) — 이 조회가 실패한다고
+    이슈 생성 자체를 막을 이유는 없다. 우리 팀이 이미 문서로 정해 둔 원칙과
+    같다: "막히면 담당자를 이슈 본문에 적고 assignee는 비운다"
+    (`docs/TO-BE/5_E2E_시나리오.md`). Jira 계정 설정에 따라 이메일이 검색에
+    안 걸릴 수 있고(0건), 동명이인·중복 계정으로 여러 건일 수도 있다(다건) —
+    두 경우 다 **확신 없이 배정하지 않는다**: 정확히 한 건일 때만 accountId 를
+    돌려준다.
+
+    `account_id` 는 **자격증명 조회용**이다 — Jira는 팀장만 연결하므로 호출하는
+    쪽에서 팀장 account_id 를 넘겨야 한다(`_jira_credential_account_id`,
+    `services/harness/registry.py`). 검색 대상은 `email` 이지 `account_id` 가
+    아니다 — 이 함수만으로는 "누구를 찾을지"와 "누구 자격증명으로 찾을지"가
+    다른 사람일 수 있다.
+
+    `read:jira-user` 스코프는 이미 우리 OAuth 연결에 포함돼 있다
+    (`apps/connectors/oauth.py` 의 `JIRA_SCOPES`) — 별도 재동의가 필요 없다.
+    """
+
+    try:
+        credential = credential_for(account_id=account_id, connector_type=JIRA)
+        cloud_id = credential.get("cloud_id")
+        if not isinstance(cloud_id, str):
+            return None
+        response = requests.get(
+            f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/user/search",
+            headers={
+                "Authorization": f"Bearer {credential['access_token']}",
+                "Accept": "application/json",
+            },
+            params={"query": email},
+            timeout=15,
+        )
+        response.raise_for_status()
+        matches = response.json()
+    except (OAuthError, requests.RequestException, ValueError):
+        # 연결이 끊겼든, 네트워크가 죽었든, 응답이 이상하든 — 전부 "못 찾았다"로
+        # 접는다. 이건 이슈 생성의 부수 조회지 필수 조건이 아니다.
+        return None
+
+    if not isinstance(matches, list):
+        return None
+    account_ids = {
+        item["accountId"]
+        for item in matches
+        if isinstance(item, dict) and isinstance(item.get("accountId"), str)
+    }
+    if len(account_ids) != 1:
+        return None
+    return next(iter(account_ids))

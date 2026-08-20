@@ -1617,6 +1617,25 @@ class AccountRepository:
         return row["team_id"] if row else None
 
     @staticmethod
+    def email(account_id: str) -> str | None:
+        """이 계정의 이메일. 계정이 없으면 None.
+
+        Jira 담당자 기본값(요청자 자신) 조회에 쓴다(2026-08-20,
+        `find_jira_account_id_by_email` 호출부) — `get_profile()` 은 HR 연계
+        인물 조회까지 같이 하는 무거운 조회라 이메일 하나 때문에 부르기엔
+        과하다. `team_id()` 와 같은 최소 조회 패턴이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT email FROM user_account WHERE account_id = %s",
+                    (account_id,),
+                )
+                row = cursor.fetchone()
+        return row["email"] if row else None
+
+    @staticmethod
     def get_profile(account_id: str) -> dict[str, Any]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
