@@ -121,7 +121,7 @@ GPU가 필요해 **RunPod 워커**가 별도로 돌고, 진행 상황은 화면�
 업무는 빼고, 뺐다는 사실을 말합니다.** 등록은 확인 카드 승인 후 우리 DB에 먼저 남고,
 Jira 등록은 그다음입니다.
 
-### 4.6 에이전트가 쓰는 도구 13종
+### 4.6 에이전트가 쓰는 도구 14종
 
 | 갈래 | 도구 |
 |---|---|
@@ -130,6 +130,7 @@ Jira 등록은 그다음입니다.
 | 업무 | `task_extraction` · `task_list` · `task_update` · `task_register` |
 | 프로젝트 | `project_list` |
 | 외부 | `jira_get_issues` · `jira_create_issues` · `web_search` |
+| 일반 | `get_current_datetime` — 상대적 날짜(「이번 주 금요일」 등)를 등록 도구에 넘기기 전 오늘 날짜를 확인한다 |
 
 `task_register`와 `jira_create_issues`는 **승인 게이트**를 탑니다. 여기에 팀이 연결한
 MCP 서버의 도구가 더해집니다.
