@@ -552,16 +552,20 @@ export default function OpsGuardrailsPage() {
         {rows.length === 0 ? (
           <OpsEmpty message="아직 어느 팀에도 등록한 가드레일이 없습니다." />
         ) : (
-          <OpsDataTable minWidth={960}>
+          <OpsDataTable minWidth={1150}>
+            {/* **모든 칸에 폭을 준다.** `table-layout: fixed` 에서 폭을 안 준 칸이
+                하나라도 있으면, 나머지 고정 폭 합이 `minWidth` 를 넘는 순간 그 칸만
+                0 으로 눌리고 내용이 옆 칸 위로 흘러넘친다 — 헤더와 행이 어긋나
+                보이는 원인이었다(2026-08-20). `minWidth` 도 폭의 합과 맞춘다. */}
             <thead>
               <tr>
-                <th style={{ width: 130 }}>팀</th>
-                <th style={{ width: 170 }}>이름</th>
-                <th>종류</th>
+                <th style={{ width: 120 }}>팀</th>
+                <th style={{ width: 160 }}>이름</th>
+                <th style={{ width: 200 }}>종류</th>
                 <th style={{ width: 90 }}>상태</th>
                 <th style={{ width: 80 }}>사용</th>
-                <th style={{ width: 90 }}>키</th>
-                <th style={{ width: 110 }}>확인</th>
+                <th style={{ width: 70 }}>키</th>
+                <th style={{ width: 100 }}>확인</th>
                 <th style={{ width: 330 }} />
               </tr>
             </thead>
