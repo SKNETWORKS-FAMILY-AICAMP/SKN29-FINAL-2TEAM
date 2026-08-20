@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, OpsDataTable, OpsEmpty, OpsSectionCard } from '../../components';
+import { Badge, Button, OpsDataTable, OpsEmpty, OpsSectionCard } from '../../components';
 import type { BadgeTone } from '../../components';
 import { fetchOpsTeamDefaultModel, saveOpsTeamDefaultModel } from '../../api/opsModels';
 import type { OpsTeamDefaultModel } from '../../api/opsModels';
@@ -176,43 +176,15 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
         {guardrails.length === 0 ? (
           <OpsEmpty message="이 팀에 등록된 가드레일이 없습니다." />
         ) : (
-          <>
-            <div className={styles.formGrid}>
-              <div className={styles.fieldGroup}>
-                <label htmlFor="team-guardrail">이 팀 대화가 거쳐 갈 가드레일</label>
-                {/* 연결 확인을 통과하지 않은 것은 고를 수 없다 — 고르게 두면 그
-                    팀의 대화가 매번 실패하는 검사를 거치고, 화면만 「사용 중」
-                    이라고 말한다. 서버도 같은 이유로 막는다. */}
-                <select
-                  id="team-guardrail"
-                  value={guardrails.find((row) => row.is_active)?.provider_id ?? ''}
-                  disabled={busy}
-                  onChange={(event) => chooseGuardrail(event.target.value)}
-                >
-                  {/* 등록을 지우지 않고 검사만 끄는 자리 */}
-                  <option value="">사용 안 함</option>
-                  {guardrails.map((row) => (
-                    <option
-                      key={row.provider_id}
-                      value={row.provider_id}
-                      disabled={row.status !== 'CONNECTED'}
-                    >
-                      {row.name} ({GUARDRAIL_KIND_LABELS[row.kind] ?? row.kind})
-                      {row.status !== 'CONNECTED' ? ' — 연결 확인 필요' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
           <OpsDataTable minWidth={760}>
             <thead>
               <tr>
-                <th style={{ width: 180 }}>이름</th>
-                <th style={{ width: 200 }}>종류</th>
+                <th style={{ width: 170 }}>이름</th>
+                <th style={{ width: 190 }}>종류</th>
                 <th style={{ width: 90 }}>상태</th>
                 <th style={{ width: 80 }}>사용</th>
-                <th style={{ width: 110 }}>확인</th>
+                <th style={{ width: 100 }}>확인</th>
+                <th style={{ width: 130 }} />
               </tr>
             </thead>
             <tbody>
@@ -229,11 +201,27 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
                     {row.is_active ? <Badge tone="success">사용 중</Badge> : '—'}
                   </td>
                   <td>{row.last_checked_at ? row.last_checked_at.slice(0, 10) : '없음'}</td>
+                  <td>
+                    {/* **표 안에서 바로 고른다.** select 로 뒀더니 접혀 있어서
+                        어떤 선택지가 있는지, 왜 어떤 것은 못 고르는지 열어 봐야
+                        알았다(2026-08-20 PM 지적). 행마다 버튼은 정확히 하나라
+                        자리도 흔들리지 않는다. */}
+                    <div className={styles.cellActions}>
+                      <Button
+                        size="sm"
+                        variant={row.is_active ? 'outline' : 'primary'}
+                        data-button
+                        disabled={busy || (!row.is_active && row.status !== 'CONNECTED')}
+                        onClick={() => chooseGuardrail(row.is_active ? '' : row.provider_id)}
+                      >
+                        {row.is_active ? '사용 안 함' : '사용'}
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </OpsDataTable>
-          </>
         )}
       </OpsSectionCard>
     </>
