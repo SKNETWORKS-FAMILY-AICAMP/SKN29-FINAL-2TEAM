@@ -15,12 +15,13 @@ from django.utils import timezone
 from rest_framework.response import Response
 
 from backend.api_errors import to_response
-from backend.db import OpsPolicyRepository
+from backend.db import GuardrailEventRepository, OpsPolicyRepository
 from backend.db.errors import RepositoryError
 
 from ..authentication import AdminView
 from ..serializers import (
     GuardrailPolicySerializer,
+    guardrail_event_row_response,
     InviteTtlSerializer,
     NoticeDeleteSerializer,
     NoticeSerializer,
@@ -166,3 +167,22 @@ class PolicyChangeListView(AdminView):
         except psycopg.Error as exc:
             return to_response(exc)
         return Response([policy_change_row_response(row) for row in rows])
+
+
+class GuardrailEventListView(AdminView):
+    """가드레일이 실제로 발동한 기록.
+
+    「정책 변경 이력」(사람이 정책을 바꾼 것)과 나란히 둔다 — 정한 것과 걸린 것을
+    한 화면에서 봐야 기준값을 어디로 옮길지 판단할 수 있다.
+    """
+
+    #: 화면이 한 번에 받는 최대 건수. 「정책 변경 이력」과 달리 발동은 사용자
+    #: 발화마다 날 수 있어 상한을 둔다.
+    LIMIT = 100
+
+    def get(self, request):
+        try:
+            rows = GuardrailEventRepository.list_recent(limit=GuardrailEventListView.LIMIT)
+        except psycopg.Error as exc:
+            return to_response(exc)
+        return Response([guardrail_event_row_response(row) for row in rows])

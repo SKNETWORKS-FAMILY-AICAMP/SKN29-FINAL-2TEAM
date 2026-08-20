@@ -15,6 +15,7 @@ import type { OpsTone } from '../../components';
 import {
   createNotice,
   deleteNotice,
+  fetchGuardrailEvents,
   fetchGuardrailPolicy,
   fetchInviteTtl,
   fetchNotices,
@@ -24,6 +25,7 @@ import {
   updateNotice,
 } from '../../api/opsPolicies';
 import type {
+  GuardrailEvent,
   GuardrailPolicy,
   GuardrailStrategy,
   ModerationCategory,
@@ -64,6 +66,23 @@ const NOTICE_STATUS_TONES: Record<NoticeStatus, OpsTone> = {
 const GUARDRAIL_STRATEGY_LABELS: Record<GuardrailStrategy, string> = {
   redact: '가림',
   mask: '부분 가림',
+};
+
+const GUARDRAIL_RULE_LABELS: Record<string, string> = {
+  PII: '민감정보',
+  MODERATION: '유해 표현',
+  BLOCKED_WORD: '차단 단어',
+};
+
+const GUARDRAIL_ACTION_LABELS: Record<string, string> = {
+  MASKED: '가림',
+  BLOCKED: '막음',
+};
+
+const GUARDRAIL_STAGE_LABELS: Record<string, string> = {
+  INPUT: '입력',
+  OUTPUT: '출력',
+  TOOL_RESULT: '도구 결과',
 };
 
 const MODERATION_CATEGORY_LABELS: Record<ModerationCategory, string> = {
@@ -190,6 +209,28 @@ function policyActionTone(action: string): OpsTone {
   return POLICY_ACTION_TONES[action] ?? 'neutral';
 }
 
+/** 막은 것과 가린 것을 색으로 가른다 — 막힌 발화는 사용자가 답을 못 받은 것이다. */
+function guardrailEventTone(action: string): OpsTone {
+  return action === 'BLOCKED' ? 'danger' : 'warning';
+}
+
+/** 발동 한 줄. `detail`에 원문이 없으므로 그대로 붙여 읽는다. */
+function guardrailEventTitle(event: GuardrailEvent): string {
+  const rule = GUARDRAIL_RULE_LABELS[event.rule] ?? event.rule;
+  const stage = GUARDRAIL_STAGE_LABELS[event.stage] ?? event.stage;
+  const detail = event.detail ?? {};
+  const word = typeof detail.word === 'string' ? detail.word : null;
+  const category = typeof detail.category === 'string' ? detail.category : null;
+  const score = typeof detail.score === 'number' ? detail.score : null;
+
+  if (word) return `${stage} · ${rule} 「${word}」`;
+  if (category) {
+    const label = MODERATION_CATEGORY_LABELS[category as ModerationCategory] ?? category;
+    return score != null ? `${stage} · ${rule} ${label} ${score}` : `${stage} · ${rule} ${label}`;
+  }
+  return `${stage} · ${rule}`;
+}
+
 export default function OpsPoliciesPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -208,6 +249,7 @@ export default function OpsPoliciesPage() {
   const [guardrail, setGuardrail] = useState<GuardrailPolicy | null>(null);
   const [guardrailReason, setGuardrailReason] = useState('');
   const [savingGuardrail, setSavingGuardrail] = useState(false);
+  const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[] | null>(null);
 
   const [notices, setNotices] = useState<OpsNotice[] | null>(null);
   const [changes, setChanges] = useState<OpsPolicyChange[] | null>(null);
@@ -235,12 +277,14 @@ export default function OpsPoliciesPage() {
     setLoading(true);
     setError('');
     try {
-      const [ttl, guardrailPolicy, noticeRows, changeRows] = await Promise.all([
+      const [ttl, guardrailPolicy, eventRows, noticeRows, changeRows] = await Promise.all([
         fetchInviteTtl(currentSession.token),
         fetchGuardrailPolicy(currentSession.token),
+        fetchGuardrailEvents(currentSession.token),
         fetchNotices(currentSession.token),
         fetchPolicyChanges(currentSession.token),
       ]);
+      setGuardrailEvents(eventRows);
       setSavedInviteDays(ttl.days);
       setInviteDays(String(ttl.days));
       setSavedGuardrail(guardrailPolicy);
@@ -744,6 +788,34 @@ export default function OpsPoliciesPage() {
             </div>
           ) : (
             <p className={styles.inlineEmpty}>정책 변경 이력이 없습니다.</p>
+          )}
+        </OpsSectionCard>
+
+        {/* 정한 것(위)과 걸린 것(아래)을 한 화면에서 본다 — 기준값을 어디로
+            옮길지는 실제로 무엇이 걸렸는지를 봐야 정할 수 있다. */}
+        <OpsSectionCard
+          title="가드레일 발동"
+          subtitle={guardrailEvents ? `최근 ${guardrailEvents.length}건` : ''}
+        >
+          {guardrailEvents && guardrailEvents.length > 0 ? (
+            <div className={styles.policyHistory}>
+              {guardrailEvents.slice(0, HISTORY_PREVIEW_COUNT).map((event) => (
+                <div key={event.event_id} className={styles.historyButton}>
+                  <span className={styles.historyRow}>
+                    <OpsStatusBadge tone={guardrailEventTone(event.action)}>
+                      {GUARDRAIL_ACTION_LABELS[event.action] ?? event.action}
+                    </OpsStatusBadge>
+                    <span className={styles.historyTitle}>{guardrailEventTitle(event)}</span>
+                  </span>
+                  <span className={styles.historyMeta}>
+                    {occurredAtLabel(event.occurred_at)} · {event.account_display_name ?? '알 수 없음'}
+                    {event.team_name ? ` · ${event.team_name}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.inlineEmpty}>가드레일이 발동한 기록이 없습니다.</p>
           )}
         </OpsSectionCard>
       </div>

@@ -144,6 +144,28 @@ def notice_row_response(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def guardrail_event_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    """가드레일 발동 한 건.
+
+    `detail`을 그대로 내보내도 되는 이유는 **원문이 애초에 안 담기기 때문**이다
+    (`GuardrailEventRepository` docstring). 건수·카테고리·점수뿐이라 임계값을
+    조정하려면 이 값이 화면에 보여야 한다.
+    """
+
+    return {
+        "event_id": str(row["event_id"]),
+        "stage": row["stage"],
+        "rule": row["rule"],
+        "action": row["action"],
+        "detail": row["detail"],
+        "occurred_at": row["occurred_at"],
+        "account_id": row["account_id"],
+        "account_display_name": row["account_display_name"],
+        "team_id": row["team_id"],
+        "team_name": row["team_name"],
+    }
+
+
 def policy_change_row_response(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "audit_id": row["audit_id"],

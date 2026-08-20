@@ -67,6 +67,28 @@ export function saveGuardrailPolicy(token: string, policy: GuardrailPolicy, reas
   });
 }
 
+export type GuardrailStage = 'INPUT' | 'OUTPUT' | 'TOOL_RESULT';
+export type GuardrailRule = 'PII' | 'MODERATION' | 'BLOCKED_WORD';
+export type GuardrailAction = 'MASKED' | 'BLOCKED';
+
+export interface GuardrailEvent {
+  event_id: string;
+  stage: GuardrailStage;
+  rule: GuardrailRule;
+  action: GuardrailAction;
+  /** 원문은 담기지 않는다 — 건수·카테고리·점수뿐이다(서버 주석 참고). */
+  detail: Record<string, unknown> | null;
+  occurred_at: string;
+  account_id: string | null;
+  account_display_name: string | null;
+  team_id: string | null;
+  team_name: string | null;
+}
+
+export function fetchGuardrailEvents(token: string) {
+  return opsRequest<GuardrailEvent[]>('/ops/policies/guardrail/events/', { token });
+}
+
 export function fetchInviteTtl(token: string) {
   return opsRequest<{ days: number }>('/ops/policies/invite-ttl/', { token });
 }
