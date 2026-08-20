@@ -30,6 +30,7 @@ from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
+from services.guardrails import check_user_input
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -170,6 +171,19 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
+            # 2026-08-20 — 그 팀이 등록한 외부 가드레일이 있으면 거쳐 간다.
+            # 없거나 「연결 확인」 전이면 아무 일도 안 한다(`services/guardrails`).
+            # 막힌 발화는 **저장도 하지 않는다** — 아래 "질문이 사라진 대화는
+            # 복구할 방법이 없다"는 이유는 보낸 발화에 대한 것이고, 여기서는
+            # 애초에 보내지지 않았다.
+            guard = check_user_input(
+                text,
+                team_id=session["team_id"],
+                account_id=account_id,
+                session_id=str(session_id),
+            )
+            if guard.blocked:
+                return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
             # `_history()`가 저장된 과거 발화(원문)를 모델에게 다시 보낼 때도
             # 마스킹한다 — 이번 요청에서만 막고 다음 턴의 재전송(replay)에서
