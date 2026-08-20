@@ -22,7 +22,7 @@ GOOGLE_DRIVE_SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
-JIRA_SCOPES = ["read:jira-work", "read:jira-user", "offline_access"]
+JIRA_SCOPES = ["read:jira-work", "read:jira-user", "write:jira-work", "offline_access"]
 STATE_MAX_AGE_SECONDS = 60 * 10
 _STATE_SALT = "halil.connector.state"
 
