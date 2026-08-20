@@ -1,0 +1,75 @@
+import { opsRequest } from './opsClient';
+
+/**
+ * 운영자가 팀에 붙여 주는 **외부 가드레일**.
+ *
+ * 고객이 이미 가진 것(OpenAI Guardrails·Bedrock·Azure)을 등록해서 그 팀의 대화가
+ * 그걸 거쳐 돌게 한다. **팀이 스스로 등록하지 않는다** — 엔드포인트와 키를 알아야
+ * 하는 일이라 커스텀 도구(`opsMcp.ts`)·모델(`opsModels.ts`)과 같은 자리에 둔다.
+ */
+export type GuardrailKind = 'OPENAI_GUARDRAILS' | 'BEDROCK_GUARDRAILS' | 'AZURE_CONTENT_SAFETY';
+export type GuardrailProviderStatus = 'UNCHECKED' | 'CONNECTED' | 'ERROR';
+
+export interface OpsGuardrailProvider {
+  provider_id: string;
+  team_id: string;
+  /** 팀이 지워졌으면 null. 그때는 화면이 team_id 를 그대로 보여준다. */
+  team_name: string | null;
+  name: string;
+  kind: GuardrailKind;
+  /** 공급자마다 다른 설정값(주소·리전·가드레일 ID·설정 JSON). **비밀값은 여기 없다.** */
+  config: Record<string, unknown>;
+  status: GuardrailProviderStatus;
+  last_checked_at: string | null;
+  /** **키 자체는 오지 않는다.** 있는지 여부만. */
+  has_credential: boolean;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+export function fetchOpsGuardrails(token: string) {
+  return opsRequest<OpsGuardrailProvider[]>('/ops/guardrails/', { token });
+}
+
+export function registerOpsGuardrail(
+  token: string,
+  body: {
+    team_id: string;
+    name: string;
+    kind: GuardrailKind;
+    config?: Record<string, unknown>;
+    credential?: Record<string, unknown> | null;
+  },
+) {
+  return opsRequest<OpsGuardrailProvider>('/ops/guardrails/', { method: 'POST', token, body });
+}
+
+/**
+ * 고친다. **키는 `replace_credential` 이 참일 때만 바뀐다** — 화면이 저장된 키를
+ * 다시 보여주지 않으므로, 안 보낸 것을 「지우라」로 읽으면 이름만 고쳐도 키가
+ * 날아간다.
+ *
+ * 종류나 설정이 바뀌면 서버가 상태를 `UNCHECKED` 로 되돌린다 — 이전 「연결 확인」
+ * 결과는 다른 곳에 대고 잰 것이기 때문이다.
+ */
+export function updateOpsGuardrail(
+  token: string,
+  providerId: string,
+  body: {
+    name: string;
+    kind: GuardrailKind;
+    config?: Record<string, unknown>;
+    credential?: Record<string, unknown> | null;
+    replace_credential?: boolean;
+  },
+) {
+  return opsRequest<OpsGuardrailProvider>(`/ops/guardrails/${providerId}/`, {
+    method: 'PATCH',
+    token,
+    body,
+  });
+}
+
+export function removeOpsGuardrail(token: string, providerId: string) {
+  return opsRequest<void>(`/ops/guardrails/${providerId}/`, { method: 'DELETE', token });
+}
