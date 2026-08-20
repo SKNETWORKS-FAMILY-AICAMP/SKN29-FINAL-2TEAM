@@ -730,6 +730,13 @@ def _persist(
     else:
         content["text"] = final.get("text", "")
         content["complete"] = final.get("complete", False)
+        # 2026-08-19, §12순위(채팅 응답 시간 계측) — `trace_events()`가 실어
+        # 보낸 값을 그대로 옮긴다. 재개(resume) 스트림 등 값이 없는 경우도
+        # 있어(services/agent_runtime/tracing/__init__.py 참고) 있을 때만
+        # 넣는다 — 없는 실행에까지 `0`이나 `None`을 박아 "쟀는데 0초"로
+        # 잘못 보이게 하지 않는다.
+        if "duration_ms" in final:
+            content["duration_ms"] = final["duration_ms"]
 
     try:
         ChatMessageRepository.append(

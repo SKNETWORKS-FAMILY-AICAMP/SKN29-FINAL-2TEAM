@@ -65,6 +65,13 @@ PREBUILT_AGENTS = [
             "추출이 끝나면 몇 건이 나왔는지만 한 줄로 말한다. "
             "업무 목록 자체는 화면이 카드로 보여주므로 다시 나열하지 않는다.\n"
             "근거가 확인되지 않아 빠진 업무가 있으면 그 사실을 숨기지 않고 함께 말한다.\n"
+            # 2026-08-20 추가 — 시스템 프롬프트에 오늘 날짜가 없어서(공통
+            # 스캐폴드 확인) "이번 주 금요일 마감으로 등록해줘" 같은 요청에
+            # 정확한 날짜를 매번 되물었다. 도구 설명만으로는 안 지켜져서
+            # 여기 한 번 더 명시한다.
+            "사용자가 마감·시작일을 「내일」·「이번 주 금요일」·「다음 주 월요일」처럼 "
+            "상대적으로 말하면, get_current_datetime 을 먼저 불러 오늘 날짜를 확인하고 "
+            "YYYY-MM-DD 로 직접 계산해서 넘긴다 — 정확한 날짜를 사용자에게 되묻지 않는다.\n"
             # 추출 직후 바로 등록 게이트를 띄운다. 「등록할까요?」를 말로 묻고
             # 답을 기다리면 회전만 쓰고 끝나 버린다 — 확인 카드가 그 물음이다.
             "추출이 끝나면 **곧바로 task_register 를 부른다.** 말로 다시 묻지 않는다 — "
@@ -122,6 +129,12 @@ PREBUILT_AGENTS = [
         # 실패할 때 그만큼 오래 헛돈다.
         "max_iterations": 8,
         "tool_refs": [
+            # 2026-08-20 추가 — task_register/jira_create_issues 가
+            # start_date/due_date/duedate 를 받는데, 시스템 프롬프트엔 오늘
+            # 날짜가 없어서(services/agent_runtime/prompts.py 확인) 상대적
+            # 날짜 표현("이번 주 금요일" 등)을 정문이 스스로 못 풀고 매번
+            # 사용자에게 되물었다. registry.py의 get_current_datetime 참고.
+            "get_current_datetime",
             "task_extraction",
             "task_register",
             "task_list",

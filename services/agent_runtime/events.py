@@ -230,6 +230,27 @@ def _looks_like_subagent_not_found(content: str) -> bool:
     return isinstance(content, str) and content.startswith(_SUBAGENT_NOT_FOUND_PREFIX)
 
 
+def _resolved_endpoint_hash(resolved: Any) -> str | None:
+    """`resolved`(`ResolvedModelConfig | None`)의 endpoint 해시.
+
+    2026-08-19, §10순위(Child Run Snapshot) — `models/factory.py`의
+    `resolved_endpoint_hash()`를 그대로 재사용한다(§4순위가 Root용으로
+    이미 만들어 둔 값, 새로 판단하지 않는다). **함수 안에서 import한다** —
+    `executor.py`가 같은 이유로 `services.agent_runtime.models.factory`를
+    함수 본문에서 늦게 import하는 것과 동일하다(모듈 최상단에서 부르면
+    `models.factory` → `backend.db.agent_platform` → (이 패키지 진입 시점에
+    이미 그 모듈을 부른 호출자가 있어) 순환 import가 생긴다, `executor.py`
+    주석 참고). `resolved`가 `None`이면(Child/Root 어느 쪽도 못 찾은 경우 —
+    이론상 `root_resolved_model`도 안 넘긴 옛 호출자만 해당) 비교할 대상
+    자체가 없으므로 `None`을 그대로 돌려준다.
+    """
+    if resolved is None:
+        return None
+    from services.agent_runtime.models.factory import resolved_endpoint_hash
+
+    return resolved_endpoint_hash(resolved)
+
+
 def _tool_status(msg_status: str | None) -> str:
     """LangChain `ToolMessage.status`("success"/"error"/None) → DB 상태값.
 
@@ -309,12 +330,27 @@ class EventMapper:
         *,
         definition: Any,
         context: Any,
+        root_resolved_model: Any = None,
+        child_resolved_models: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """raw_event는 `(namespace_tuple, mode, payload)` 형태를 기대한다.
 
         `mode`가 `"updates"`/`"custom"`/`"messages"` 셋 다 아닌 이벤트는 빈
         리스트를 반환한다 — 6단계 분류엔 `"messages"`를 안 쓴다는 뜻이지,
         버린다는 뜻이 아니다(위 "reasoning 실시간 스트리밍" 절 참고).
+
+        `root_resolved_model`/`child_resolved_models`(2026-08-19, §10순위 —
+        Child Run Snapshot): `executor.py`가 `factory.build()`에서 받은 값을
+        그대로 넘긴다. `subagent_started` 이벤트를 만들 때만 쓴다(아래
+        `_classify_parent_tool_calls()`) — Child 자신의 resolved_model을
+        `child_resolved_models`에서 alias로 찾고, 못 찾으면(예: alias가
+        `definition.subagents`에 없는 general-purpose — GP는 Root와 같은
+        `model`로 돈다, `factory.py`가 GP 전용 모델을 따로 resolve하지
+        않는다) Root 자신의 값(`root_resolved_model`)으로 폴백한다. 기본값을
+        `None`으로 둔 이유는 이 값 없이도 기존 호출자(테스트 등)가 그대로
+        동작해야 해서다 — 그러면 `resolved_provider`/`resolved_endpoint_hash`가
+        둘 다 `None`으로 채워진다(`_start_run()`의 `.get()` 처리와 같은
+        "값이 없으면 자연히 None" 원칙).
         """
         if not isinstance(raw_event, tuple) or len(raw_event) != 3:
             return []
@@ -384,6 +420,8 @@ class EventMapper:
                         message=message,
                         definition=definition,
                         run_id=run_id,
+                        root_resolved_model=root_resolved_model,
+                        child_resolved_models=child_resolved_models,
                     )
                 )
 
@@ -444,6 +482,8 @@ class EventMapper:
         message: Any,
         definition: Any,
         run_id: str | None,
+        root_resolved_model: Any = None,
+        child_resolved_models: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         tool_calls = list(getattr(message, "tool_calls", None) or [])
         msg_name = getattr(message, "name", None)
@@ -485,6 +525,8 @@ class EventMapper:
                             agent_id=agent_id,
                             agent_version_id=agent_version_id,
                             definition=definition,
+                            root_resolved_model=root_resolved_model,
+                            child_resolved_models=child_resolved_models,
                         )
                     )
                     return events
@@ -605,6 +647,8 @@ class EventMapper:
         agent_id: str | None,
         agent_version_id: str | None,
         definition: Any,
+        root_resolved_model: Any = None,
+        child_resolved_models: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """부모 AIMessage의 `tool_calls`를 전부 순회해 이벤트로 펼친다.
 
@@ -653,6 +697,15 @@ class EventMapper:
                     # call_id가 없으면(비정상 입력) 나중에 tool_call_id로 못
                     # 찾는다 — 그래도 subagent_started 자체는 그대로 낸다.
                     self._pending[call_id] = info
+                # 2026-08-19, §10순위(Child Run Snapshot) — Child 자신의
+                # resolved_model을 `child_resolved_models`에서 alias로
+                # 찾는다(위 agent_id/agent_version_id/subagent_name과 정확히
+                # 같은 조회 패턴). 못 찾으면(예: general-purpose — GP는 Root와
+                # 같은 model로 돈다, `factory.py`가 GP 전용 모델을 따로
+                # resolve하지 않는다) Root 자신의 값으로 폴백한다.
+                resolved = (child_resolved_models or {}).get(alias)
+                if resolved is None:
+                    resolved = root_resolved_model
                 events.append(
                     {
                         "type": EVENT_SUBAGENT_STARTED,
@@ -663,6 +716,13 @@ class EventMapper:
                         "subagent_alias": alias,
                         "subagent_name": subagent_name,
                         "task_summary": task_summary,
+                        # `tracing/__init__.py`의 `_start_run()`이 `EVENT_AGENT_STARTED`와
+                        # 동일하게 `.get()`으로 읽어 `agent_run.resolved_provider`/
+                        # `resolved_endpoint_hash`에 적재한다 — 그 함수 자체는
+                        # 안 고쳤다(이미 이벤트 타입을 안 가리고 제네릭하게
+                        # 읽는다).
+                        "resolved_provider": getattr(resolved, "provider", None),
+                        "resolved_endpoint_hash": _resolved_endpoint_hash(resolved),
                         "complete": False,
                     }
                 )

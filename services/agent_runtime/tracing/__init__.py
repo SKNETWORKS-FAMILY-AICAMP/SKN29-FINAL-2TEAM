@@ -100,15 +100,37 @@ def trace_events(
     `_finish_root_run()`이 "이 run은 내가 시작한 게 아니다"로 보고 결과
     이벤트가 와도 `agent_run` 행을 닫지 못한다(그 행은 interrupt 시점에
     `_suspend_run()`이 `PENDING`으로 남겨 둔 채 영원히 그 상태로 남는다).
+
+    2026-08-19, §12순위(채팅 응답 시간 계측) — `result`/`error`/
+    `subagent_completed`로 실행이 끝나는 이벤트에 `duration_ms`를 실어
+    보낸다(아래 `_finish_root_run()`/`_finish_subagent_run()`). 새 DB
+    컬럼은 필요 없다 — `agent_run.started_at`/`ended_at`이 이미 있지만,
+    "지금 스트리밍 중인 이 이벤트에 값을 바로 실어 화면에 보여준다"는
+    목적에는 DB 왕복 없이 `_start_run()`이 처리한 시각부터
+    `time.monotonic()`으로 재는 게 더 가깝다(`tool_call.duration_ms`를
+    이미 같은 방식으로 재고 있다, 아래 `open_tool_calls`). **재개
+    (resume) 스트림은 이 값이 안 붙는다** — `known_run_ids`로 미리 열어
+    둔 run은 이 스트림에서 `_start_run()`을 거친 적이 없어 시작 시각을
+    모른다(정직한 한계로 남긴다, 아래 `open_run_started_at` 조회부 참고).
     """
 
     open_run_ids: set[str] = set(known_run_ids)
     # (run_id, tool_call_id) -> (DB tool_call_id, 시작 시각)
     open_tool_calls: dict[tuple[str, str], tuple[str, float]] = {}
+    # run_id -> 시작 시각(§12순위). tool_call과 같은 이유로 실제 벽시계
+    # 경과 시간을 잰다 — `known_run_ids`로 미리 연 run은 여기 없으므로
+    # 재개 스트림에서는 자연히 duration_ms가 안 붙는다(위 docstring).
+    open_run_started_at: dict[str, float] = {}
 
     try:
         for event in events:
-            _record(event, context=context, open_run_ids=open_run_ids, open_tool_calls=open_tool_calls)
+            _record(
+                event,
+                context=context,
+                open_run_ids=open_run_ids,
+                open_tool_calls=open_tool_calls,
+                open_run_started_at=open_run_started_at,
+            )
             yield event
     finally:
         _close_orphans(open_run_ids=open_run_ids, open_tool_calls=open_tool_calls)
@@ -120,17 +142,30 @@ def _record(
     context: Any,
     open_run_ids: set[str],
     open_tool_calls: dict[tuple[str, str], tuple[str, float]],
+    open_run_started_at: dict[str, float],
 ) -> None:
     event_type = event.get("type")
     try:
         if event_type == EVENT_AGENT_STARTED:
-            _start_run(event, context=context, open_run_ids=open_run_ids, parent_run_id=getattr(context, "parent_run_id", None))
+            _start_run(
+                event,
+                context=context,
+                open_run_ids=open_run_ids,
+                open_run_started_at=open_run_started_at,
+                parent_run_id=getattr(context, "parent_run_id", None),
+            )
         elif event_type == EVENT_SUBAGENT_STARTED:
-            _start_run(event, context=context, open_run_ids=open_run_ids, parent_run_id=event.get("parent_run_id"))
+            _start_run(
+                event,
+                context=context,
+                open_run_ids=open_run_ids,
+                open_run_started_at=open_run_started_at,
+                parent_run_id=event.get("parent_run_id"),
+            )
         elif event_type in (EVENT_RESULT, EVENT_ERROR):
-            _finish_root_run(event, open_run_ids=open_run_ids)
+            _finish_root_run(event, open_run_ids=open_run_ids, open_run_started_at=open_run_started_at)
         elif event_type == EVENT_SUBAGENT_COMPLETED:
-            _finish_subagent_run(event, open_run_ids=open_run_ids)
+            _finish_subagent_run(event, open_run_ids=open_run_ids, open_run_started_at=open_run_started_at)
         elif event_type == EVENT_TOOL_STARTED:
             _begin_tool_call(event, open_run_ids=open_run_ids, open_tool_calls=open_tool_calls)
         elif event_type == EVENT_TOOL_COMPLETED:
@@ -142,7 +177,12 @@ def _record(
 
 
 def _start_run(
-    event: dict[str, Any], *, context: Any, open_run_ids: set[str], parent_run_id: str | None
+    event: dict[str, Any],
+    *,
+    context: Any,
+    open_run_ids: set[str],
+    open_run_started_at: dict[str, float],
+    parent_run_id: str | None,
 ) -> None:
     run_id = event.get("run_id")
     agent_id = event.get("agent_id")
@@ -161,32 +201,61 @@ def _start_run(
         agent_version_id=event.get("agent_version_id"),
         runtime_profile_version=settings.RUNTIME_PROFILE_VERSION,
         # 2026-08-19, §4순위(Run Snapshot) — `executor.py`의 `EVENT_AGENT_STARTED`가
-        # 이미 실어 보낸 값을 그대로 옮긴다. `EVENT_SUBAGENT_STARTED`에는 이
-        # 필드가 없으므로(Child 자신의 resolved_model은 버린다, `factory.build()`
-        # docstring 참고) `.get()`이 자연히 `None`으로 떨어진다 — Child의
-        # agent_run 행은 이번 범위가 아니다.
+        # 이미 실어 보낸 값을 그대로 옮긴다. §10순위부터는 `EVENT_SUBAGENT_STARTED`도
+        # `events.py`가 Child(또는 GP는 Root 폴백) 자신의 값을 채워 보내므로,
+        # 여기 `.get()`은 Root/Child 둘 다 실제 값을 받는다 — 이 함수 자체는
+        # 그때도 고칠 것이 없었다(제네릭하게 이벤트에서 읽기만 한다).
         resolved_provider=event.get("resolved_provider"),
         resolved_endpoint_hash=event.get("resolved_endpoint_hash"),
     )
     open_run_ids.add(run_id)
+    # §12순위(채팅 응답 시간 계측) — 이 run의 벽시계 시작 시각을 기억해 둔다.
+    # 재개(resume) 스트림은 `_start_run()`을 거치지 않으므로(§0순위,
+    # `EVENT_AGENT_STARTED`를 새로 안 냄) 여기 값이 없다 — 그 경우
+    # `_finish_root_run()`/`_finish_subagent_run()`이 `duration_ms`를
+    # 자연히 생략한다(트레이드오프는 위 `trace_events()` docstring 참고).
+    open_run_started_at[run_id] = time.monotonic()
 
 
-def _finish_root_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:
+def _finish_root_run(
+    event: dict[str, Any], *, open_run_ids: set[str], open_run_started_at: dict[str, float]
+) -> None:
     run_id = event.get("run_id")
     if not run_id or run_id not in open_run_ids:
         return
     status = "DONE" if event.get("type") == EVENT_RESULT else "FAILED"
     AgentRunRepository.finish(run_id=run_id, status=status, iterations=0, token_in=None, token_out=None)
     open_run_ids.discard(run_id)
+    _attach_duration_ms(event, run_id=run_id, open_run_started_at=open_run_started_at)
 
 
-def _finish_subagent_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:
+def _finish_subagent_run(
+    event: dict[str, Any], *, open_run_ids: set[str], open_run_started_at: dict[str, float]
+) -> None:
     run_id = event.get("run_id")
     if not run_id or run_id not in open_run_ids:
         return
     status = "FAILED" if event.get("status") == "FAILED" else "DONE"
     AgentRunRepository.finish(run_id=run_id, status=status, iterations=0, token_in=None, token_out=None)
     open_run_ids.discard(run_id)
+    _attach_duration_ms(event, run_id=run_id, open_run_started_at=open_run_started_at)
+
+
+def _attach_duration_ms(
+    event: dict[str, Any], *, run_id: str, open_run_started_at: dict[str, float]
+) -> None:
+    """§12순위(채팅 응답 시간 계측) — 실행이 끝나는 이벤트에 경과 시간을 실어 준다.
+
+    `trace_events()`는 `_record()`가 끝난 뒤 **같은 이벤트 객체**를 그대로
+    `yield`하므로(제자리 mutate), 여기서 `event["duration_ms"]`를 채워 두면
+    `apps/chat/api_views.py`의 `_relay()`가 그 값을 그대로 화면까지
+    내보낸다 — 이 함수 밖에서 손댈 곳이 없다. 시작 시각을 못 찾으면(재개
+    스트림 — 위 `trace_events()` docstring 참고) 조용히 아무것도 안 붙인다.
+    """
+    started = open_run_started_at.pop(run_id, None)
+    if started is None:
+        return
+    event["duration_ms"] = int((time.monotonic() - started) * 1000)
 
 
 def _suspend_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:

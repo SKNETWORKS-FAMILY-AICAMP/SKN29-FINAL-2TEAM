@@ -10,8 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
-from apps.connectors.clients import create_jira_issues, list_drive_files, search_jira_issues
+from apps.connectors.clients import (
+    create_jira_issues,
+    find_jira_account_id_by_email,
+    list_drive_files,
+    search_jira_issues,
+)
 from backend.db import (
     AccountRepository,
     ExistTaskRepository,
@@ -798,9 +804,63 @@ def _jira_create_issues(
     """
 
     key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
-    return create_jira_issues(
-        account_id=_jira_credential_account_id(account_id), project_key=key, issues=issues
+    credential_account_id = _jira_credential_account_id(account_id)
+    # 담당자 기본값 채우기는 **여기서** 해야 한다 — 이 아래 `create_jira_issues`
+    # 호출은 `account_id` 를 이미 팀장 것으로 바꿔 넘긴다(`_jira_credential_account_id`
+    # docstring). 그 함수 안에서 기본값을 채우면 담당자 없는 이슈가 전부 팀장
+    # 앞으로 배정된다 — 실제 요청자는 이 시점에서만 알 수 있다.
+    issues = _fill_default_jira_assignee(
+        requester_account_id=account_id,
+        credential_account_id=credential_account_id,
+        issues=issues,
     )
+    return create_jira_issues(account_id=credential_account_id, project_key=key, issues=issues)
+
+
+def _fill_default_jira_assignee(
+    *, requester_account_id: str, credential_account_id: str, issues: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """담당자를 안 정한 이슈는 **요청자 자신**으로 채운다.
+
+    2026-08-20 추가 — 실제로 겪은 문제: 담당자를 정하지 않고 등록을 시켰더니
+    "등록하려면 Jira에서 필요한 다음 정보가 부족합니다 — 담당자: 누구에게
+    배정할까요?"라고 되물었다. `assignee_account_id` 는 `jira_create_issues`
+    의 필수 값이 아니다(`_JIRA_REQUIRED` 에 없음, `apps/connectors/clients.py`)
+    — 되물은 건 서버가 막아서가 아니라 모델이 스스로 판단해 물은 것이었다.
+    되묻지 않고 "특별히 말이 없으면 나"로 채운다 — 실제로 등록을 요청한
+    사람이 가장 자연스러운 기본 담당자다.
+
+    Jira 는 이메일이 아니라 Atlassian accountId 로만 배정을 받는다
+    (`create_jira_issues` 의 GDPR 주석). 우리 계정과 Jira 계정을 잇는 저장된
+    매핑이 없어 매번 이메일로 검색해야 하고, 그 검색은 실패할 수 있다(계정
+    설정에 따라 이메일이 검색에 안 걸림, 동명이인으로 여러 건). **막히면
+    억지로 채우지 않는다** — 빈 채로 넘긴다(팀이 이미 정해 둔 원칙,
+    `docs/TO-BE/5_E2E_시나리오.md`: "막히면 담당자를 이슈 본문에 적고
+    assignee는 비운다"). `find_jira_account_id_by_email` 자체가 이 원칙대로
+    실패 시 예외 없이 None 을 돌려준다.
+
+    조회는 최대 한 번만 한다 — 담당자 없는 이슈가 여럿이어도 채울 사람은
+    하나(요청자 자신)이므로 이슈마다 API 를 부를 이유가 없다.
+    """
+
+    if all(str(issue.get("assignee_account_id") or "").strip() for issue in issues):
+        return issues
+
+    email = AccountRepository.email(requester_account_id)
+    default_assignee = (
+        find_jira_account_id_by_email(account_id=credential_account_id, email=email)
+        if email
+        else None
+    )
+    if not default_assignee:
+        return issues
+
+    return [
+        issue
+        if str(issue.get("assignee_account_id") or "").strip()
+        else {**issue, "assignee_account_id": default_assignee}
+        for issue in issues
+    ]
 
 
 def _jira_get_issues(*, account_id: str, proj_id: str | None = None, project_key: str | None = None):
@@ -848,8 +908,65 @@ def _jira_get_issues(*, account_id: str, proj_id: str | None = None, project_key
     }
 
 
+#: `_get_current_datetime()` 가 요일을 한국어로 바로 주려고 쓰는 표
+#: (`date.weekday()` — 0=월요일 ~ 6=일요일). `locale.setlocale()` 로 `%A` 를
+#: 한국어로 바꾸는 방법도 있지만, 그건 프로세스 전역 상태라 이 요청과 무관한
+#: 다른 코드의 날짜 포맷까지 같이 바뀐다(스레드 세이프하지도 않다) — 그래서
+#: 이 튜플로 국지적으로만 옮긴다.
+_WEEKDAY_KR = ("월", "화", "수", "목", "금", "토", "일")
+
+
+def _get_current_datetime() -> dict[str, Any]:
+    """지금 몇 시인지(Asia/Seoul 기준)를 있는 그대로 돌려준다. **LLM 을 안 쓴다.**
+
+    2026-08-20 추가 — 실제로 겪은 문제: 사용자가 "이번 주 금요일 마감으로
+    업무 등록해줘"라고 했는데, 이 대화가 타는 새 엔진(`services.agent_runtime`)
+    의 시스템 프롬프트(`RUNTIME_SCAFFOLD`) 어디에도 오늘이 며칠인지가 없다
+    (직접 확인 — `services/agent_runtime/prompts.py` 전체에 날짜 관련 문구가
+    전혀 없다). 그래서 모델이 "이번 주 금요일의 정확한 날짜를 알려주세요"라고
+    되물은 건 모델이 잘못한 게 아니라, `RUNTIME_SCAFFOLD`의 "확인하지 못한
+    내용을 추측해서 채우지 않는다"는 지시를 정직하게 따른 것이다 — 채워 줄
+    오늘 날짜 자체가 어디에도 없었다.
+
+    시스템 프롬프트에 오늘 날짜를 미리 박아 넣는 대신 **도구**로 만든 이유:
+    프롬프트에 박으면 그 값이 "언제 만들어진 프롬프트인지"에 고정돼, 오래
+    떠 있는 세션에서 실제 시각과 어긋날 수 있다. 도구로 두면 모델이 필요한
+    바로 그 순간(상대적 날짜 표현을 봤을 때)에 최신 값을 받는다.
+
+    `task_register`/`jira_create_issues`처럼 `start_date`/`due_date`/`duedate`
+    가 필요한 도구를 부르기 전, 사용자가 "내일"·"이번 주 금요일"·"다음 주
+    월요일"처럼 상대적으로 말하면 **먼저 이 도구로 오늘 날짜를 확인하고,
+    그 날짜를 기준으로 `YYYY-MM-DD`를 직접 계산해서 등록 도구에 넘긴다** —
+    사용자에게 정확한 날짜를 되묻지 않는다.
+    """
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    return {
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "timezone": "Asia/Seoul",
+        # 영문 요일(모델이 흔히 아는 이름)과 한국어 요일(이 계산에 바로 쓸 수
+        # 있는 값)을 둘 다 준다 — 어느 쪽이 더 쓰기 편할지는 모델에게 맡긴다.
+        "weekday": now.strftime("%A"),
+        "weekday_kr": _WEEKDAY_KR[now.weekday()],
+    }
+
+
 #: 내장 도구. `tool_ref` 는 agent_tool 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
+    "get_current_datetime": Tool(
+        ref="get_current_datetime",
+        name="현재 날짜/시간 조회",
+        description=(
+            "지금(Asia/Seoul 기준) 날짜·시간·요일을 돌려준다. 사용자가 "
+            "「내일」·「이번 주 금요일」·「다음 주 월요일」처럼 **상대적으로 "
+            "날짜를 말하면**, task_register 나 jira_create_issues 를 부르기 "
+            "전에 이 도구로 오늘 날짜를 먼저 확인하고 YYYY-MM-DD 로 직접 "
+            "계산해서 넘긴다. 정확한 날짜를 사용자에게 되묻지 않는다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_get_current_datetime,
+        category="일반",
+    ),
     "document_search": Tool(
         ref="document_search",
         name="문서 검색",
@@ -1035,7 +1152,17 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                         "type": "object",
                         "properties": {
                             "title": {"type": "string"},
-                            "required_role": {"type": "string"},
+                            "required_role": {
+                                "type": "string",
+                                "description": (
+                                    "이 업무를 하는 데 필요한 **역할/직무** — 예: "
+                                    "'백엔드 개발자', '디자이너'. **사람이 아니다.** "
+                                    "이름, '내 담당', '나', '누구누구 배정' 같은 배정 "
+                                    "표현을 넣지 않는다 — 지금 이 표에는 담당자(누가 할지)를 "
+                                    "적는 칸이 따로 없다. 근거에서 필요한 역할을 확인하지 "
+                                    "못했으면 이 칸을 아예 빼고 보낸다."
+                                ),
+                            },
                             "effort_hours": {"type": "number"},
                             "start_date": {"type": "string", "description": "YYYY-MM-DD"},
                             "due_date": {"type": "string", "description": "YYYY-MM-DD"},
@@ -1057,7 +1184,13 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         name="Jira 이슈 생성",
         description=(
             "확인받은 업무를 Jira 프로젝트에 이슈로 등록한다. 여러 건을 한 번에 보내고, "
-            "건별 성공·실패를 그대로 돌려준다. 사용자 승인 없이는 실행되지 않는다."
+            "건별 성공·실패를 그대로 돌려준다. 사용자 승인 없이는 실행되지 않는다. "
+            "**담당자를 되묻지 마라** — `assignee_account_id` 는 필수가 아니고, 사용자가 "
+            "누구인지 말하지 않으면 서버가 자동으로 요청한 사람 본인으로 채운다. "
+            "사용자가 이름이나 이메일로 다른 사람을 짚었을 때만 그 사람을 뜻하는 값을 "
+            "고민하되, 우리에게는 그 사람의 Jira accountId 를 알아낼 방법이 아직 없으니 "
+            "이 칸은 비워 두고 담당자 이름은 `description` 본문에 적어 사람이 나중에 "
+            "Jira 에서 직접 지정하게 한다."
         ),
         input_schema={
             "type": "object",
@@ -1078,7 +1211,14 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                             "title": {"type": "string"},
                             "description": {"type": "string"},
                             "issuetype": {"type": "string", "description": "Task · Story 등"},
-                            "assignee_account_id": {"type": "string"},
+                            "assignee_account_id": {
+                                "type": "string",
+                                "description": (
+                                    "Jira Atlassian accountId (이메일 아님). **보통 비워 둔다** "
+                                    "— 비우면 서버가 요청한 사람 본인으로 채운다. 사용자가 이 "
+                                    "accountId 값 자체를 알려줬을 때만 적는다."
+                                ),
+                            },
                             "duedate": {"type": "string", "description": "YYYY-MM-DD"},
                         },
                         "required": ["title", "issuetype"],

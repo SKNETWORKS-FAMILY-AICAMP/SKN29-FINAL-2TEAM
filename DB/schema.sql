@@ -982,6 +982,21 @@ CREATE TABLE tool_call (
 CREATE INDEX ix_tool_call_run
     ON tool_call (run_id, created_at);
 
+-- 같은 tool_call_id(모델이 낸 AIMessage.tool_calls[i]["id"])가 같은 run 안에서
+-- 재실행되지 않게 막는 표. HITL resume·checkpoint 재시도로 super-step이
+-- 다시 돌아도 jira_create_issues 같은 외부 side_effect 도구가 두 번
+-- 실행되지 않도록, 실행 직전(factory.py의 _to_langchain_tool()._run())에
+-- 이 표를 먼저 확인한다. tool_call 의 선기록/갱신 흐름과는 쓰는 시점이
+-- 달라 tool_call 을 확장하지 않고 전용 표를 둔다.
+CREATE TABLE tool_call_idempotency (
+    run_id                   UUID         NOT NULL,   -- agent_run.run_id(FK 없음)
+    langchain_tool_call_id   VARCHAR(64)  NOT NULL,    -- AIMessage.tool_calls[i]["id"]
+    tool_ref                 VARCHAR(100) NOT NULL,
+    result_text              TEXT         NOT NULL,    -- 재실행 대신 그대로 돌려줄 결과(원문)
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, langchain_tool_call_id)
+);
+
 -- 문서 하나당 한 줄(doc 과 1:1). chunk 단위 임베딩을 전부 만들지 않고
 -- 요약 임베딩 하나로 후보 문서를 먼저 좁히기 위한 테이블이다(A안, 확정 ⑥).
 CREATE TABLE doc_meta (

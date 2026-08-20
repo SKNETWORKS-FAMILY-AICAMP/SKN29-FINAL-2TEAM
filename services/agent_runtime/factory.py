@@ -46,6 +46,39 @@ class DependencyGraphSource:
                 return _team_dependency_graph(cursor, team_id=team_id)
 
 
+# §6순위(외부 Write Tool Idempotency)가 `_run(**kwargs)`까지 `tool_call_id`를
+# 실어 보내려고 쓰는 예약 키. 이 프로젝트 도구는 전부 `args_schema`가
+# Pydantic 모델이 아니라 `tool.input_schema`(원본 JSON Schema dict)라서
+# LangChain 표준 `InjectedToolCallId`가 못 먹힌다 — 실측(설치된
+# `langchain_core/tools/base.py`의 `_parse_input()`): `args_schema`가 dict면
+# `if isinstance(input_args, dict): return tool_input`으로 `InjectedToolCallId`
+# 스캔 자체를 건너뛰고 입력을 그대로 돌려준다. 아래 `_IdempotencyAwareTool`이
+# `BaseTool.run()`이 받는 `tool_call_id` kwarg를 가로채 `tool_input`(dict)
+# 복사본에 이 키로 얹어 두면, `_to_args_and_kwargs()`가 dict 입력을
+# `tool_input.copy()`로 그대로 kwargs화하기 때문에(같은 소스 실측) 이 키도
+# `_run(**kwargs)`까지 그대로 살아남는다.
+_TOOL_CALL_ID_KWARG = "__langchain_tool_call_id__"
+
+
+class _IdempotencyAwareTool(StructuredTool):
+    """`run()`에서 `tool_call_id`를 가로채 `_run()`까지 전달하는 `StructuredTool`.
+
+    표준 `InjectedToolCallId`가 이 프로젝트 도구(dict `args_schema`)에는
+    안 먹혀서(위 `_TOOL_CALL_ID_KWARG` 주석 참고) 이 subclass로 대신한다.
+    """
+
+    def run(
+        self,
+        tool_input: str | dict[str, Any],
+        *args: Any,
+        tool_call_id: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        if isinstance(tool_input, dict) and tool_call_id is not None:
+            tool_input = {**tool_input, _TOOL_CALL_ID_KWARG: tool_call_id}
+        return super().run(tool_input, *args, tool_call_id=tool_call_id, **kwargs)
+
+
 def _to_langchain_tool(
     tool: Tool, *, context: RuntimeContext, runtime_policy: "RuntimeCapabilityPolicy"
 ) -> StructuredTool:
@@ -68,6 +101,11 @@ def _to_langchain_tool(
     """
 
     def _run(**kwargs: Any) -> Any:
+        # §6순위(외부 Write Tool Idempotency) — `_IdempotencyAwareTool.run()`이
+        # 실어 보낸 값. RBAC 검사보다 먼저 뗀다 — 권한이 없어 막힐 도구라도
+        # `tool.handler(**resolved)`에 이 예약 키가 그대로 흘러들면 안 된다.
+        langchain_tool_call_id = kwargs.pop(_TOOL_CALL_ID_KWARG, None)
+
         if not runtime_policy.is_tool_allowed_for_role(
             side_effect=tool.side_effect, account_role=context.role
         ):
@@ -79,12 +117,47 @@ def _to_langchain_tool(
             # "권한이 없다"는 사유가 사라진 채 "요청을 끝내지 못했습니다"만
             # 남는다 — 아래 handler 실패(`ToolInputError` 등)와 같은 방식으로
             # `ToolException`을 던져 모델이 사유를 그대로 사람에게 전하게 한다.
+            # 2026-08-20 — 기본 정책(`DEFAULT_WRITE_TOOL_ALLOWED_ROLES`)은
+            # `leader`/`member` 둘 다 통과시키므로, 지금 정의된 두 역할로는
+            # 이 분기가 평소엔 안 걸린다. `write_tool_allowed_roles`를 배포
+            # 시점에 좁히거나(예: `frozenset({"leader"})`) 나중에 세 번째
+            # 역할이 추가될 때를 위한 방어선으로 남겨 둔다 — 지운 적 없다.
             raise ToolException(
                 f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다. 팀장에게 요청해 주세요."
             )
+
+        # §6순위(외부 Write Tool Idempotency) — HITL resume(§0순위)이나 checkpoint
+        # 재시도로 같은 super-step이 다시 돌아도, jira_create_issues 같은
+        # side_effect 도구가 진짜로 두 번 실행되지 않게 실행 직전에 이미 성공한
+        # 같은 (run_id, langchain_tool_call_id) 결과가 있는지 먼저 본다.
+        # side_effect가 아닌(읽기) 도구는 두 번 실행돼도 부작용이 없으므로
+        # 대상이 아니다. `context.run_id`/`langchain_tool_call_id` 둘 다 있어야
+        # 확인한다 — 테스트처럼 run_id 없이 도구를 직접 부르는 호출자를 깨지
+        # 않으려고(그런 호출은 애초에 idempotency가 필요한 실행 경로가 아니다).
+        # run_id로 스코프를 잡는 이유, tool_call과 별도 표를 쓰는 이유는
+        # DB/migrations/2026-08-19_tool_call_idempotency.sql 참고.
+        idempotency_scope = (
+            tool.side_effect and langchain_tool_call_id and context.run_id
+        )
+        if idempotency_scope:
+            from backend.db.agent_platform import ToolCallIdempotencyRepository
+
+            cached = ToolCallIdempotencyRepository.find_result(
+                run_id=context.run_id, langchain_tool_call_id=langchain_tool_call_id
+            )
+            if cached is not None:
+                logger.info(
+                    "idempotent 재생: %s (run_id=%s, tool_call_id=%s) — "
+                    "다시 실행하지 않고 이전 결과를 그대로 돌려준다.",
+                    tool.ref,
+                    context.run_id,
+                    langchain_tool_call_id,
+                )
+                return cached
+
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
-            return tool.handler(**resolved)
+            result = tool.handler(**resolved)
         except Exception as exc:  # noqa: BLE001 - 도구 실패로 그래프 실행 전체를 끝내지 않는다
             # 2026-08-18 추가 — 실측으로 드러난 문제: `langgraph.prebuilt.ToolNode`의
             # 기본 `handle_tool_errors`(langchain.agents.factory.create_agent()가
@@ -134,8 +207,26 @@ def _to_langchain_tool(
             # 준다(문서 원문·토큰이 섞여 있을 수 있다).
             logger.exception("도구 실행 실패: %s", tool.ref)
             raise ToolException(f"도구 실행 실패: {error_code_of(exc)}") from exc
+        else:
+            # §6순위 — 방금 실행이 성공했다. 나중에 같은 (run_id,
+            # langchain_tool_call_id)로 재시도가 들어오면 다시 실행하지 않고
+            # 이 결과를 그대로 돌려줄 수 있게 남겨 둔다. 결과가 문자열이
+            # 아닐 수도 있어(dict 등) `str()`로 통일한다 — 어차피
+            # `BaseTool.run()`도 `ToolMessage.content`를 만들 때 결국 문자열로
+            # 바꾸므로, 재생 시점에 원래 타입 그대로 못 돌려줘도 모델이 보는
+            # 최종 내용은 같다.
+            if idempotency_scope:
+                from backend.db.agent_platform import ToolCallIdempotencyRepository
 
-    return StructuredTool.from_function(
+                ToolCallIdempotencyRepository.record_result(
+                    run_id=context.run_id,
+                    langchain_tool_call_id=langchain_tool_call_id,
+                    tool_ref=tool.ref,
+                    result=str(result),
+                )
+            return result
+
+    return _IdempotencyAwareTool.from_function(
         func=_run,
         handle_tool_error=True,
         # `tool.name`이 아니라 `tool.ref`다 — **실측으로 확인한 버그**(2026-08-14):
@@ -202,8 +293,9 @@ class AgentRuntimeFactory:
         subagent_references: tuple[SubagentReference, ...] = (),
         context: RuntimeContext,
         allow_subagents: bool = True,
-    ) -> tuple[Any, "ResolvedModelConfig"]:
-        """`(컴파일된 graph, 이 실행이 실제로 사용한 모델 설정)`을 반환한다.
+    ) -> tuple[Any, "ResolvedModelConfig", dict[str, "ResolvedModelConfig"]]:
+        """`(컴파일된 graph, 이 실행이 실제로 사용한 모델 설정, Child별 resolved_model)`을
+        반환한다.
 
         2026-08-19, §4순위(Run Snapshot) 추가 — 이전에는 graph만 반환하고
         `resolved_model`(아래)은 이 메서드 안에서만 쓰고 버렸다. 호출자
@@ -213,10 +305,22 @@ class AgentRuntimeFactory:
         같은 agent_version_id로 실행해도 언제든 바뀔 수 있는데, 실제로
         어느 서버로 요청이 나갔는지가 지금까지 실행 로그에 안 남았다").
 
-        Child 재귀 호출(`build_child_graph=lambda d, c: self.build(...)`,
-        아래)은 자신의 `resolved_model`을 인덱스 `[0]`으로 버린다 — Child
-        전용 `agent_run` 행에까지 이 값을 채우는 건 이번 범위가 아니다(Root
-        실행 하나에 대한 스냅샷만 다룬다, 아래 한계 참고).
+        2026-08-19, §10순위(Child Run Snapshot) 추가 — 세 번째 반환값
+        `child_resolved_models`(`{alias: ResolvedModelConfig}`)는 §4순위가
+        `[0]`으로 버렸던 Child 자신의 resolved_model을 Root `build()` 호출
+        시점에 alias별로 모아 둔 것이다. Child 그래프는 `subagent_started`
+        런타임 이벤트 시점이 아니라 **이 메서드 호출 시점에 전부 한 번에**
+        컴파일된다(아래 `compiled_children` — Child는 자기 model을 Root와
+        다르게 가질 수 있다, `SubagentDefinition.model`) — 그래서 이벤트가
+        나올 때는 이미 늦고, 이렇게 미리 만들어 둔 lookup 표를
+        `events.py`의 `EventMapper.convert()`에 넘겨 `subagent_type`(=alias)
+        으로 찾아 쓰게 한다(`events.py`가 Child의 agent_id/agent_version_id/
+        subagent_name을 `definition.subagents`에서 alias로 찾는 것과
+        정확히 같은 패턴 — 모듈 docstring 참고). Child 자신을 짓는 재귀
+        호출(`self.build(..., allow_subagents=False)`)은 leaf라 항상 빈
+        딕셔너리를 돌려준다(MVP는 위임 1단계로 제한된다 —
+        `subagents/validation.py`/`loader.py`/`subagents/builder.py`가 3중
+        강제).
         """
         # `allow_subagents`는 여기서 Root/Child 그래프 중 무엇을 지을지만
         # 가른다(아래) — "이 Child가 이미 서브 에이전트를 갖고 있는가"
@@ -244,12 +348,13 @@ class AgentRuntimeFactory:
         # `member`에게서 통째로 지웠다 — 그러면 모델이 그 도구를 아예 받은 적이
         # 없어서 "그런 기능이 없다"고 답했는데, 실제로는 권한이 없을 뿐이었다
         # (버그 리포트: 「승인 필요가 붙어있는 툴에 대해서 에이전트가 툴이
-        # 존재하지 않는다고 판단」). 실행 차단은 그대로 유지한다 —
+        # 존재하지 않는다고 판단」). 실행 허용 여부는 여전히
         # `_to_langchain_tool()`의 `_run()`이 호출 시점에 `is_tool_allowed_for_role()`
-        # 를 다시 확인해 `member`면 `ToolException`으로 막는다(아래
-        # `interrupt_on`도 같은 기준으로 이 도구는 애초에 승인 대기에 안 넣는다 —
-        # 승인 카드를 띄우면 그 카드를 부른 사람(팀원) 본인이 눌러 승인해 버릴
-        # 수 있어 권한 경계를 오히려 뚫는다).
+        # 로 확인한다 — 2026-08-20부터 기본 정책(`DEFAULT_WRITE_TOOL_ALLOWED_
+        # ROLES`)이 `leader`/`member` 둘 다 통과시키므로 지금은 통과하지만,
+        # 그 판단이 사라진 게 아니라 값이 바뀐 것뿐이다. 배포에서
+        # `write_tool_allowed_roles`를 좁히면(예: `frozenset({"leader"})`)
+        # 이 자리는 그대로 다시 막는다.
         langchain_tools = [
             _to_langchain_tool(t, context=context, runtime_policy=self.runtime_policy) for t in tools
         ]
@@ -260,13 +365,26 @@ class AgentRuntimeFactory:
         # 1(Checkpointer) 완료 전에는 착수 불가"), Checkpointer가 없는 배포·
         # 테스트에서까지 승인 대기를 걸면 재개할 방법이 없는 상태로 막히기만
         # 한다. `tools`에서 `side_effect=True`고 **이 역할이 실행할 수 있는**
-        # 것만 뽑는다(2026-08-19 — `langchain_tools`는 역할과 무관하게 전부
-        # 보여주지만, 승인 대기는 여전히 역할별이다: `member`가 부르면 위 `_run()`
-        # 에서 바로 거부되므로 승인 카드 자체가 뜰 이유가 없다). Phase 0에서
-        # 확인한 값(`task_register`/`task_update`/`jira_create_issues`, MCP 도구
-        # 전부)을 하드코딩하지 않고 매 요청 시점의 실제 목록을 그대로 쓴다 —
-        # 팀마다 달라지는 MCP 도구나 나중에 추가될 side_effect 도구도 자동으로
-        # 포함된다.
+        # 것만 뽑는다 — `langchain_tools`는 역할과 무관하게 전부 보여주지만,
+        # 승인 대기는 여전히 `is_tool_allowed_for_role()`을 기준으로 건다.
+        #
+        # 2026-08-20, 사용자 요청("팀원이 자기 업무를 직접 등록할 수 있게") —
+        # 예전엔 이 판단이 `member`에서 항상 `False`라 승인 카드 자체가 안
+        # 떴다(팀원이 부르면 위 `_run()`에서 곧바로 `ToolException`으로 거부되니
+        # 승인 대기를 걸 이유가 없었다 — "승인 카드를 띄우면 부른 사람 본인이
+        # 눌러 승인해 버릴 수 있다"가 그때의 이유였다). 이제 `member`도
+        # `write_tool_allowed_roles`에 들어 있어 실행 자체가 허용되므로, **바로
+        # 그 이유로** 이 자리가 `member`의 호출도 자동으로 승인 대기에 넣는다 —
+        # `leader`가 원래 해 오던 자기 승인(HITL, "등록할까요?" 확인 카드 →
+        # 승인 버튼)과 같은 경로를 `member`도 그대로 탄다. 실행 허용과 승인
+        # 대기가 같은 함수 하나(`is_tool_allowed_for_role()`)를 보므로 둘이
+        # 어긋날 일이 없다 — "실행은 되는데 승인 카드가 안 뜨는" 조합은 이
+        # 구조에서 애초에 안 생긴다.
+        #
+        # Phase 0에서 확인한 값(`task_register`/`task_update`/
+        # `jira_create_issues`, MCP 도구 전부)을 하드코딩하지 않고 매 요청
+        # 시점의 실제 목록을 그대로 쓴다 — 팀마다 달라지는 MCP 도구나 나중에
+        # 추가될 side_effect 도구도 자동으로 포함된다.
         interrupt_on: dict[str, bool] | None = None
         if self.checkpointer_provider is not None:
             side_effect_tools = {
@@ -286,6 +404,8 @@ class AgentRuntimeFactory:
         # 여기서 결합해야 공통 정책을 바꿀 때 기존 버전을 다시 발행하지 않아도
         # 된다. 2026-08-14 추가).
         if not allow_subagents:
+            # Child는 leaf다(1단계 위임 제한) — 자기 Child를 더 지을 수
+            # 없으므로 `child_resolved_models`는 항상 빈 딕셔너리다.
             return (
                 create_child_graph(
                     model=model,
@@ -300,17 +420,30 @@ class AgentRuntimeFactory:
                     interrupt_on=interrupt_on,
                 ),
                 resolved_model,
+                {},
             )
+
+        # 2026-08-19, §10순위 — Child 각각의 resolved_model을 alias로 모아
+        # 둔다(위 build() docstring 참고). `build_subagent()`가 요구하는
+        # `build_child_graph` 콜백은 `(AgentDefinition, RuntimeContext) -> Any`
+        # 두 인자만 받으므로, alias는 람다의 기본 인자로 미리 묶어 둔다 —
+        # 그냥 클로저로 `sub_def.alias`를 참조하면 파이썬의 흔한 반복문
+        # 클로저 지연 바인딩 문제(모든 람다가 마지막 `sub_def`를 보게 됨)에
+        # 걸린다.
+        child_resolved_models: dict[str, "ResolvedModelConfig"] = {}
+
+        def _build_child_graph(d: AgentDefinition, c: RuntimeContext, alias: str) -> Any:
+            child_graph, child_resolved, _grandchild_models = self.build(
+                definition=d, context=c, allow_subagents=False
+            )
+            child_resolved_models[alias] = child_resolved
+            return child_graph
 
         compiled_children = [
             build_subagent(
                 sub_def,
                 context,
-                # `[0]` — Child 자신의 resolved_model은 버린다(위 build()
-                # docstring 참고, 이번 범위는 Root 실행 하나의 스냅샷만).
-                build_child_graph=lambda d, c: self.build(
-                    definition=d, context=c, allow_subagents=False
-                )[0],
+                build_child_graph=lambda d, c, _alias=sub_def.alias: _build_child_graph(d, c, _alias),
             )
             for sub_def in definition.subagents
         ]
@@ -404,6 +537,7 @@ class AgentRuntimeFactory:
                 **root_kwargs,
             ),
             resolved_model,
+            child_resolved_models,
         )
 
 

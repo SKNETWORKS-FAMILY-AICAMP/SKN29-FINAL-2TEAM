@@ -42,7 +42,12 @@ class AgentWriteSerializer(serializers.Serializer):
     reasoning_effort = serializers.ChoiceField(choices=REASONING_EFFORTS, default="low")
     # 폭주를 막는 값이다. 1 이면 도구를 한 번도 못 쓰고, 크면 실패할 때 그만큼
     # 오래 헛돈다.
-    max_iterations = serializers.IntegerField(min_value=2, max_value=20, default=6)
+    # 2026-08-19: 상한을 20 → 50으로 올렸다 — 새 엔진
+    # `runtime_policy.RuntimeCapabilityPolicy.max_model_calls_ceiling`을
+    # 50으로 올린 것과 짝을 맞춘다(사용자 요청). 이 값(레거시 `agent` 테이블,
+    # `AgentWriteSerializer`)은 새 엔진이 읽는 `agent_versions`와는 다른
+    # 테이블이지만, 두 스키마가 같은 필드명·의미를 쓰므로 상한도 같이 맞춘다.
+    max_iterations = serializers.IntegerField(min_value=2, max_value=50, default=6)
     tool_refs = serializers.ListField(
         child=serializers.CharField(max_length=100), allow_empty=True, default=list
     )
@@ -104,7 +109,10 @@ class BuilderTestRunSerializer(serializers.Serializer):
     reasoning_effort = serializers.ChoiceField(
         choices=REASONING_EFFORTS, required=False, allow_null=True, default=None
     )
-    max_iterations = serializers.IntegerField(min_value=2, max_value=20, default=6)
+    # 2026-08-19: 상한을 20 → 50으로 올렸다(아래 `AgentVersionPublishSerializer`와
+    # 같은 근거) — 시험 실행(저장 전)에서 막히면 저장 화면에서만 50까지 되고
+    # 시험 실행은 20에서 막히는 어긋난 화면이 된다.
+    max_iterations = serializers.IntegerField(min_value=2, max_value=50, default=6)
     user_input = serializers.CharField(allow_blank=False)
 
 
@@ -150,7 +158,14 @@ class AgentVersionPublishSerializer(serializers.Serializer):
     reasoning_effort = serializers.ChoiceField(
         choices=REASONING_EFFORTS, required=False, allow_null=True, default=None
     )
-    max_iterations = serializers.IntegerField(min_value=2, max_value=20, default=6)
+    # 2026-08-19: 사용자 요청으로 상한을 20 → 50으로 올렸다 — 새 엔진
+    # `runtime_policy.RuntimeCapabilityPolicy.max_model_calls_ceiling`도 같은
+    # 값(50)으로 올렸다(`services/agent_runtime/runtime_policy.py`). 이 값이
+    # 실제로 `agent_versions.max_iterations`에 저장되는 상한이라 — 여기를 안
+    # 올리면 ceiling을 아무리 올려도 Builder에서 50을 저장할 수 없어 죽은
+    # 변경이 된다. `default=6`은 그대로 둔다 — 새 에이전트의 권장 시작값을
+    # 자동으로 50으로 올리자는 별도 결정은 아직 없다.
+    max_iterations = serializers.IntegerField(min_value=2, max_value=50, default=6)
     tool_refs = serializers.ListField(
         child=serializers.CharField(max_length=100), allow_empty=True, default=list
     )

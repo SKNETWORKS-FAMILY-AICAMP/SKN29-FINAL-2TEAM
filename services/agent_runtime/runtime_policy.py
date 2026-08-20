@@ -24,14 +24,31 @@ EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (
 )
 
 # 부수효과가 있는 Tool을 사용할 수 있는 계정 역할.
-DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader"})
-
-# 2026-08-19, §5순위 — Tool 호출 하나(외부 I/O)에 적용하는 기본 timeout(초).
-# `services/harness/runner.py`가 이미 이 harness 안에서 쓰는 모델 호출
-# timeout(`OpenAI(timeout=300)`)과 같은 값을 재사용한다 — 개별 tool 호출도
-# 같은 실행 경로 안에서 일어나는 같은 성격의 외부 I/O라 새 숫자를 만들 근거가
-# 없다(정본: `2026-08-19_01_실행_안정성_설계.md` §3).
-DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 300
+#
+# 2026-08-19에는 `leader`만이었다 — 그때는 실행 시점 재검사(`_run()`)가
+# **유일한** 방어선이라, member는 도구를 실행하려 하면 곧바로
+# `ToolException`(권한 없음)으로 막혔다(`interrupt_on`도 같이 안 걸었다 —
+# 승인 카드를 띄우면 부른 사람 본인이 눌러 승인해 버릴 수 있어서, 승인 대기
+# 없는 즉시 거부가 그 시점의 유일한 경계였다).
+#
+# 2026-08-20, 사용자 요청으로 `member`를 추가한다: "팀원이 자기 업무를
+# 직접 등록할 수 있게 하고 싶다"는 요구였고, 이 값이 `task_register` 하나만
+# 가리키는 게 아니라 부수효과 있는 도구 **전부**(`task_update`,
+# `jira_create_issues`, 팀이 연결한 MCP 쓰기 도구까지)에 적용된다는 걸 확인한
+# 뒤 "전부 열어도 된다"는 선택을 받았다(도구별 예외를 두려면 `is_tool_allowed_
+# for_role()`에 `side_effect: bool` 대신 도구 참조를 받는 구조 변경이 필요해
+# 범위가 더 컸다).
+#
+# **이 변경만으로 안전한 이유**: `factory.py`의 `build()`가 `interrupt_on`을
+# 만들 때 이 정책과 **같은 함수**(`is_tool_allowed_for_role()`)를 다시 부른다
+# (else 리더/멤버 둘 다 여기 값을 그대로 참조하므로 값이 어긋날 수 없다).
+# 그래서 member가 이제 이 도구들을 실행할 수 있게 되는 것과 동시에, 그 실행이
+# `HumanInTheLoopMiddleware`의 승인 대기에도 자동으로 걸린다 — leader가
+# 예전부터 그래왔던 것과 똑같이, **자기 요청을 자기가 승인**해야 실제로
+# 실행된다("등록할까요?" 확인 카드 → 승인 버튼). 방어선이 "역할이 아니면
+# 거부"에서 "역할과 무관하게 실행 전에 스스로 승인"으로 바뀐 것이지, 방어선이
+# 없어진 게 아니다.
+DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader", "member"})
 
 
 @dataclass(frozen=True)
@@ -48,27 +65,40 @@ class RuntimeCapabilityPolicy:
 
     excluded_builtin_tools: frozenset[str] = DEFAULT_EXCLUDED_BUILTIN_TOOLS
     # 2026-08-14에는 계약 §2-8과 충돌해 배선을 되돌렸었다(값만 남기고 읽는 코드
-    # 없음). 2026-08-18, §5 Phase 4에서 `middleware/factory.py.build()`가 이제
-    # 실제로 읽는다 — 기본값 False라 명시적으로 켜지 않으면 이전과 동일하게 돈다.
-    enable_todo: bool = False
+    # 없음). 2026-08-18, §5 Phase 4에서 `middleware/factory.py.build()`가
+    # 실제로 읽게 배선까지는 끝냈지만, 그때는 "배선만 해두고 기본값은 계속
+    # False로 둔다"는 보수적 선택이었다(실제로 값을 True로 바꾸는 별도 결정은
+    # 없었다 — `_hitl_structural_check.py`가 True로 켠 적은 있지만 이건 구조
+    # 검증용 스크립트지 운영 기본값을 바꾸자는 결정이 아니었다).
+    # 2026-08-19: 사용자 요청으로 기본값을 True로 바꾼다 — Root/Child/GP
+    # 전부에 `write_todos` 도구가 기본으로 붙는다.
+    enable_todo: bool = True
     write_tool_allowed_roles: frozenset[AccountRole] = field(
         default_factory=lambda: DEFAULT_WRITE_TOOL_ALLOWED_ROLES
     )
 
-    # 2026-08-19, §5순위 — 개별 tool 호출 timeout. `tool_call_timeout_overrides`는
-    # 특정 tool_ref만 다른 값을 쓰고 싶을 때 쓰는 탈출구다 — 지금은 근거가 될
-    # 실측값이 없어 빈 dict(전부 기본값)로 시작한다. 필요해지면 여기 값만
-    # 채우면 되고, `timeout_for_tool()` 호출부는 바뀌지 않는다.
-    tool_call_timeout_seconds: int = DEFAULT_TOOL_CALL_TIMEOUT_SECONDS
-    tool_call_timeout_overrides: dict[str, int] = field(default_factory=dict)
-
     # general-purpose 전용 기본값.
-    general_purpose_max_model_calls: int = 6
-    general_purpose_max_tool_calls: int = 12
+    # 2026-08-19: 사용자 요청으로 50/100으로 올렸다(기존 6/12) — GP는
+    # Root/Child와 달리 `agent_versions.max_iterations` 같은 에이전트별 설정
+    # 필드가 없어서, 이 값 자체가 GP의 실제 실행 상한이다(아래
+    # `limits_for_general_purpose()` 참고).
+    general_purpose_max_model_calls: int = 50
+    general_purpose_max_tool_calls: int = 100
 
     # 설정값이 비정상적으로 커져도 넘지 못하는 전체 상한.
-    max_model_calls_ceiling: int = 20
-    max_tool_calls_ceiling: int = 40
+    # 2026-08-19: 사용자 요청으로 50/100으로 올렸다(기존 20/40).
+    # Tool 호출 상한(`resolve_tool_call_limit`)은 Root/Child에 별도 설정 필드가
+    # 없어 이 값을 그대로 쓰므로, 이 변경만으로 Root/Child의 실제 tool 호출
+    # 상한도 즉시 100으로 바뀐다. 반면 모델 호출 상한(`resolve_model_call_limit`)은
+    # `min(agent_versions.max_iterations, max_model_calls_ceiling)`이라 —
+    # 이 ceiling을 올려도 DB의 `agent_versions.max_iterations` 기본값(6,
+    # `DB/schema.sql`)이 그대로면 새로 만드는 에이전트의 실제 모델 호출 상한은
+    # 여전히 6이다. 이 ceiling은 "최대 몇까지 허용할지"만 올린 것이고, 개별
+    # 에이전트가 실제로 50까지 쓰게 하려면 Builder에서 그 에이전트의
+    # max_iterations 값 자체를 올려야 한다(또는 DB 기본값 자체를 바꾸는 건
+    # 별도 결정 — 이번 변경 범위 밖).
+    max_model_calls_ceiling: int = 50
+    max_tool_calls_ceiling: int = 100
 
     def limits_for_general_purpose(self) -> RoleLimits:
         """general-purpose에 적용할 상한. 방어선도 함께 적용된 최종값."""
@@ -106,12 +136,6 @@ class RuntimeCapabilityPolicy:
             return self.max_tool_calls_ceiling
         return min(requested, self.max_tool_calls_ceiling)
 
-    def timeout_for_tool(self, tool_ref: str) -> int:
-        """이 `tool_ref`에 적용할 timeout(초). `tool_call_timeout_overrides`에
-        등록된 값이 있으면 그 값, 없으면 `tool_call_timeout_seconds`(기본값)를
-        쓴다."""
-        return self.tool_call_timeout_overrides.get(tool_ref, self.tool_call_timeout_seconds)
-
     def is_tool_allowed_for_role(self, *, side_effect: bool, account_role: AccountRole) -> bool:
         """부수효과 없는 도구는 항상 허용. 부수효과 있는 도구는 허용 역할만 통과.
 
@@ -124,6 +148,14 @@ class RuntimeCapabilityPolicy:
         (`services/agent_runtime/factory.py`의 `build()`), 이 함수는
         `_to_langchain_tool()`의 `_run()`이 실행 직전에만 써서 "왜 안 되는지"를
         말로 돌려준다.
+
+        기본값(`DEFAULT_WRITE_TOOL_ALLOWED_ROLES`)은 2026-08-20부터
+        `leader`/`member` 둘 다를 통과시킨다 — 위 상수 정의부 주석 참고. 이
+        함수 자체는 여전히 `write_tool_allowed_roles`를 그대로 읽으므로, 특정
+        배포에서 역할을 더 제한하고 싶으면 `RuntimeCapabilityPolicy(
+        write_tool_allowed_roles=frozenset({"leader"}))`처럼 인스턴스 생성
+        시점에 좁힐 수 있다 — 이 메서드는 그 값을 신뢰할 뿐 하드코딩하지
+        않는다.
         """
         if not side_effect:
             return True
