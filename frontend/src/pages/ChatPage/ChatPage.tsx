@@ -612,7 +612,23 @@ export default function ChatPage() {
       }, controller.signal);
     } catch (error) {
       if (controller.signal.aborted) return;
-      setFatal(error instanceof ApiError ? error.message : '요청을 보내지 못했습니다.');
+      // **이 발화에 대한 실패는 이 턴 안에 그린다.** `fatal` 은 대화 목록 맨 위에
+      // 뜨는 자리라, 방금 보낸 발화가 왜 막혔는지가 **화면 최상단**에 나타났다
+      // (2026-08-20 PM 지적 — 가드레일이 막은 문구가 옛 대화 위에 떴다). 스트림
+      // 중에 난 실패는 이미 여기 그려지고 있었다(`live.error` → `ErrorCard`).
+      updateLastLive((prev) =>
+        prev
+          ? {
+              ...prev,
+              error: {
+                // 「끝내지」가 아니라 「보내지」다 — 이 갈래는 스트림이 시작도
+                // 하기 전이다(가드레일이 막았거나, 요청 자체가 못 갔다).
+                title: '보내지 못했습니다',
+                detail: error instanceof ApiError ? error.message : '요청을 보내지 못했습니다.',
+              },
+            }
+          : prev,
+      );
     } finally {
       updateLastLive((prev) => (prev ? { ...prev, running: false } : prev));
     }
@@ -1106,6 +1122,7 @@ export default function ChatPage() {
                       {live.error && (
                         <ErrorCard
                           detail={live.error.detail}
+                          title={live.error.title}
                           answered={Boolean(live.answer)}
                           errorCode={live.error.errorCode}
                           onOpenSettings={() => navigate(PATHS.settingsConnectors)}
