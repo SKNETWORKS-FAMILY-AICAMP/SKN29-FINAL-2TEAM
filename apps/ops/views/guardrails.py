@@ -33,6 +33,25 @@ from ..serializers import (
 logger = logging.getLogger(__name__)
 
 
+
+def _verified_status(*, kind: str, config: dict, credential: dict | None) -> str:
+    """저장 직전에 **서버가 직접** 확인한 결과.
+
+    화면이 「연결 확인을 통과했다」고 보내는 것을 믿지 않는다 — 그러면 확인 없이
+    CONNECTED 인 행이 생기고, 그 팀의 대화는 안 되는 가드레일을 계속 부른다.
+
+    확인은 저장 직전 한 번뿐이라(등록·수정은 드물다) 비용이 문제되지 않는다.
+    대신 **등록 직후 「미확인」으로 남아 다시 눌러야 하던 것**이 없어진다.
+    """
+
+    try:
+        result = verify_provider(kind=kind, config=config, credential=credential)
+    except ProviderError:
+        logger.info("가드레일 저장 시 확인 실패: kind=%s", kind)
+        return "ERROR"
+    return "CONNECTED" if result.ok else "ERROR"
+
+
 class GuardrailProviderListCreateView(AdminView):
     def get(self, request):
         try:
@@ -47,13 +66,16 @@ class GuardrailProviderListCreateView(AdminView):
         data = serializer.validated_data
 
         try:
+            config = data.get("config") or {}
+            credential = data.get("credential") or None
             row = GuardrailProviderRepository.create(
                 team_id=data["team_id"],
                 name=data["name"],
                 kind=data["kind"],
-                config=data.get("config") or {},
-                credential=data.get("credential") or None,
+                config=config,
+                credential=credential,
                 registered_by=request.user.account_id,
+                status=_verified_status(kind=data["kind"], config=config, credential=credential),
             )
             # 남의 팀 대화가 외부 검사기를 거치게 만드는 일이라 반드시 남긴다.
             # **자격증명은 남기지 않는다** — 감사 로그는 사람이 읽는 표다.
@@ -112,13 +134,23 @@ class GuardrailProviderDetailView(AdminView):
         data = serializer.validated_data
 
         try:
+            config = data.get("config") or {}
+            credential = data.get("credential") or None
+            # 자격증명을 안 바꾸면 저장된 것으로 확인해야 한다 — 화면은 저장된
+            # 값을 되돌려 받지 않으므로 여기서 꺼내 온다.
+            probe_credential = credential
+            if not data["replace_credential"]:
+                probe_credential = GuardrailProviderRepository.credential(provider_id)
             row = GuardrailProviderRepository.update(
                 provider_id=provider_id,
                 name=data["name"],
                 kind=data["kind"],
-                config=data.get("config") or {},
-                credential=data.get("credential") or None,
+                config=config,
+                credential=credential,
                 replace_credential=data["replace_credential"],
+                status=_verified_status(
+                    kind=data["kind"], config=config, credential=probe_credential
+                ),
             )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)

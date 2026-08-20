@@ -559,7 +559,10 @@
 
 .scheduleFieldset {
   min-width: 0;
-  margin: 0;
+  /* 위 입력 칸과 붙어 있으면 「종류」와 그 종류의 설정이 한 덩어리로 읽힌다
+     (2026-08-20 PM 지적). 필드 사이 간격(`formGrid` 의 14px)보다 넓게 띄워야
+     상자가 시작된다는 것이 보인다. */
+  margin: 22px 0 0;
   padding: 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

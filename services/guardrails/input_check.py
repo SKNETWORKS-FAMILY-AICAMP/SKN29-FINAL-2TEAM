@@ -24,7 +24,28 @@ from .providers import ProviderError, check
 
 logger = logging.getLogger(__name__)
 
+#: 무엇에 걸렸는지 **종류만** 말한다. 점수·임계값·내부 규칙명까지 알려주면
+#: 우회 힌트가 된다 — 사용자가 다시 쓸 수 있을 만큼만 알린다.
 BLOCKED_MESSAGE = "등록된 가드레일이 이 발화를 막았습니다."
+_REASON_LABELS = {
+    "Moderation": "유해 표현으로 판단됐습니다",
+    "Jailbreak": "지시를 바꾸려는 시도로 판단됐습니다",
+    "Contains PII": "개인정보가 포함된 것으로 판단됐습니다",
+    "Mask PII": "개인정보가 포함된 것으로 판단됐습니다",
+    "NSFW Text": "부적절한 표현으로 판단됐습니다",
+    "Off Topic Prompts": "업무 범위를 벗어난 것으로 판단됐습니다",
+    "blocklist": "차단 목록에 있는 표현이 포함됐습니다",
+}
+
+
+def _blocked_message(detail: dict[str, Any]) -> str:
+    """사용자에게 보여줄 사유. 못 알아보면 뭉뚱그린 문장으로 돌아간다."""
+
+    key = detail.get("guardrail") or detail.get("rule") or detail.get("category")
+    label = _REASON_LABELS.get(str(key)) if key else None
+    if label is None:
+        return BLOCKED_MESSAGE
+    return f"{label}. 표현을 바꿔 다시 보내 주세요."
 
 
 @dataclass(frozen=True)
@@ -77,7 +98,7 @@ def check_user_input(
         team_id=team_id,
         session_id=session_id,
     )
-    return InputGuardOutcome(blocked_reason=BLOCKED_MESSAGE)
+    return InputGuardOutcome(blocked_reason=_blocked_message(verdict.detail or {}))
 
 
 def _connected_provider(team_id: str) -> dict[str, Any] | None:

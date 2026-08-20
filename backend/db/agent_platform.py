@@ -2773,9 +2773,19 @@ class GuardrailProviderRepository:
         config: dict[str, Any],
         credential: dict[str, Any] | None,
         registered_by: str,
+        status: str = "UNCHECKED",
     ) -> dict[str, Any]:
+        """등록한다.
+
+        `status` 는 **부르는 쪽이 실제로 확인한 결과**여야 한다. 화면이 「확인했다」고
+        말한 것을 그대로 믿으면, 확인 없이 CONNECTED 인 행이 생기고 그 팀의 대화는
+        안 되는 가드레일을 계속 부른다 — 뷰가 저장 직전에 다시 확인한다.
+        """
+
         if kind not in GuardrailProviderRepository.KINDS:
             raise RepositoryError(f"알 수 없는 가드레일 종류입니다: {kind}")
+        if status not in GuardrailProviderRepository.STATUSES:
+            raise RepositoryError(f"알 수 없는 상태입니다: {status}")
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -2792,8 +2802,10 @@ class GuardrailProviderRepository:
                 cursor.execute(
                     """
                     INSERT INTO guardrail_provider
-                        (provider_id, team_id, name, kind, config, credential_enc, status, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'UNCHECKED', %s)
+                        (provider_id, team_id, name, kind, config, credential_enc,
+                         status, last_checked_at, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s,
+                            CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END, %s)
                     RETURNING provider_id, team_id, name, kind, config, status,
                               last_checked_at, created_by, created_at
                     """,
@@ -2804,6 +2816,8 @@ class GuardrailProviderRepository:
                         kind,
                         Jsonb(config or {}),
                         encrypt_credential(credential) if credential else None,
+                        status,
+                        status,
                         registered_by,
                     ),
                 )
@@ -2820,6 +2834,7 @@ class GuardrailProviderRepository:
         config: dict[str, Any],
         credential: dict[str, Any] | None,
         replace_credential: bool,
+        status: str = "UNCHECKED",
     ) -> dict[str, Any]:
         """고친다.
 
@@ -2857,7 +2872,8 @@ class GuardrailProviderRepository:
                         """
                         UPDATE guardrail_provider
                         SET name = %s, kind = %s, config = %s, credential_enc = %s,
-                            status = 'UNCHECKED', last_checked_at = NULL
+                            status = %s,
+                            last_checked_at = CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END
                         WHERE provider_id = %s
                         RETURNING provider_id, team_id, name, kind, config, status,
                                   last_checked_at, created_by, created_at,
@@ -2868,6 +2884,8 @@ class GuardrailProviderRepository:
                             kind,
                             Jsonb(config or {}),
                             encrypt_credential(credential) if credential else None,
+                            status,
+                            status,
                             provider_id,
                         ),
                     )
@@ -2876,14 +2894,16 @@ class GuardrailProviderRepository:
                         """
                         UPDATE guardrail_provider
                         SET name = %s, kind = %s, config = %s,
-                            status = CASE WHEN %s THEN 'UNCHECKED' ELSE status END,
-                            last_checked_at = CASE WHEN %s THEN NULL ELSE last_checked_at END
+                            status = CASE WHEN %s THEN %s ELSE status END,
+                            last_checked_at = CASE WHEN %s THEN
+                                (CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END)
+                                ELSE last_checked_at END
                         WHERE provider_id = %s
                         RETURNING provider_id, team_id, name, kind, config, status,
                                   last_checked_at, created_by, created_at,
                                   (credential_enc IS NOT NULL) AS has_credential
                         """,
-                        (name, kind, Jsonb(config or {}), changed, changed, provider_id),
+                        (name, kind, Jsonb(config or {}), changed, status, changed, status, provider_id),
                     )
                 return cursor.fetchone()
 
