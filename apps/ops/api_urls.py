@@ -16,7 +16,11 @@ from .views.invites import (
     InviteListView,
     InviteUnlinkView,
 )
-from .views.guardrails import GuardrailProviderDetailView, GuardrailProviderListCreateView
+from .views.guardrails import (
+    GuardrailProviderDetailView,
+    GuardrailProviderListCreateView,
+    GuardrailProviderTestView,
+)
 from .views.login import LoginView, LogoutView
 from .views.mcp import McpDetailView, McpListCreateView, McpProbeView, McpTestView
 from .views.models import (
@@ -91,6 +95,11 @@ urlpatterns = [
         "guardrails/<str:provider_id>/",
         GuardrailProviderDetailView.as_view(),
         name="api_ops_guardrail_detail",
+    ),
+    path(
+        "guardrails/<str:provider_id>/test/",
+        GuardrailProviderTestView.as_view(),
+        name="api_ops_guardrail_test",
     ),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path(

@@ -6,6 +6,7 @@ import {
   fetchOpsGuardrails,
   registerOpsGuardrail,
   removeOpsGuardrail,
+  testOpsGuardrail,
   updateOpsGuardrail,
 } from '../../api/opsGuardrails';
 import type { GuardrailKind, OpsGuardrailProvider } from '../../api/opsGuardrails';
@@ -274,6 +275,33 @@ export default function OpsGuardrailsPage() {
     }
   }
 
+  async function test(row: OpsGuardrailProvider) {
+    const session = loadOpsSession();
+    if (!session) {
+      navigate('/ops/login', { replace: true });
+      return;
+    }
+
+    setBusy(true);
+    setFormError('');
+    setNote('');
+    try {
+      const result = await testOpsGuardrail(session.token, row.provider_id);
+      // 실패해도 200 으로 오고 `detail` 에 이유가 담긴다 — 등록은 남기고
+      // 상태만 ERROR 로 바뀌기 때문이다.
+      setNote(result.detail ? `‘${row.name}’ 연결 확인 실패 — ${result.detail}` : `‘${row.name}’ 연결됨.`);
+      await load();
+    } catch (thrown) {
+      if (thrown instanceof ApiError && thrown.status === 401) {
+        navigate('/ops/login', { replace: true });
+        return;
+      }
+      setFormError(thrown instanceof ApiError ? thrown.message : '연결 확인을 하지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(row: OpsGuardrailProvider) {
     const session = loadOpsSession();
     if (!session) {
@@ -449,7 +477,7 @@ export default function OpsGuardrailsPage() {
                 <th style={{ width: 90 }}>상태</th>
                 <th style={{ width: 90 }}>키</th>
                 <th style={{ width: 110 }}>확인</th>
-                <th style={{ width: 180 }} />
+                <th style={{ width: 290 }} />
               </tr>
             </thead>
             <tbody>
@@ -473,6 +501,15 @@ export default function OpsGuardrailsPage() {
                         onClick={() => startEdit(row)}
                       >
                         수정
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-button
+                        disabled={busy}
+                        onClick={() => test(row)}
+                      >
+                        연결 확인
                       </Button>
                       <Button
                         size="sm"

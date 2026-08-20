@@ -21,6 +21,7 @@ from backend.api_errors import to_response
 from backend.db import log_audit
 from backend.db.agent_platform import GuardrailProviderRepository
 from backend.db.errors import RepositoryError
+from services.guardrails.providers import ProviderError, verify as verify_provider
 
 from ..authentication import AdminView
 from ..serializers import (
@@ -120,3 +121,56 @@ class GuardrailProviderDetailView(AdminView):
             payload={"provider_id": provider_id, "name": row["name"], "kind": row["kind"]},
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GuardrailProviderTestView(AdminView):
+    """연결 확인 — 무해한 문장 하나를 실제로 보내 본다.
+
+    **자격증명만 형식 검사하지 않는다.** 그러면 「등록은 됐는데 부를 때 401」이
+    되고, 그 팀은 운영자가 붙여 줬으니 되는 줄 안다(MCP 의 「연결 확인」과 같은
+    판단).
+
+    **실패해도 등록은 남기고 `ERROR` 로 표시한다.** 주소나 키를 고쳐 다시 시도할
+    값이고, 상태가 보여야 왜 그 팀의 대화가 검사를 안 거치는지 알 수 있다.
+    """
+
+    def post(self, request, provider_id):
+        try:
+            row = GuardrailProviderRepository.list_all()
+            provider = next((item for item in row if item["provider_id"] == provider_id), None)
+            if provider is None:
+                return Response({"detail": "등록되지 않은 가드레일입니다."}, status=status.HTTP_404_NOT_FOUND)
+            credential = GuardrailProviderRepository.credential(provider_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+
+        try:
+            result = verify_provider(
+                kind=provider["kind"], config=provider["config"] or {}, credential=credential
+            )
+        except ProviderError as exc:
+            result = None
+            detail = str(exc)
+        else:
+            detail = result.detail
+
+        ok = bool(result and result.ok)
+        if not ok:
+            # 키가 섞일 수 있는 자리라 예외 문자열을 로그에 그대로 남기지 않는다.
+            logger.warning("가드레일 연결 확인 실패: provider=%s", provider_id)
+
+        try:
+            updated = GuardrailProviderRepository.set_status(
+                provider_id=provider_id, status="CONNECTED" if ok else "ERROR"
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+
+        log_audit(
+            actor_account_id=request.user.account_id,
+            action="OPS_GUARDRAIL_TEST",
+            target_type="TEAM",
+            target_id=updated["team_id"],
+            payload={"provider_id": provider_id, "status": updated["status"]},
+        )
+        return Response({**ops_guardrail_row_response(updated), "detail": None if ok else detail})

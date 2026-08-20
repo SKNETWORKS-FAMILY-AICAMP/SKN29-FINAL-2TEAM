@@ -73,3 +73,16 @@ export function updateOpsGuardrail(
 export function removeOpsGuardrail(token: string, providerId: string) {
   return opsRequest<void>(`/ops/guardrails/${providerId}/`, { method: 'DELETE', token });
 }
+
+/**
+ * 연결 확인. **무해한 문장 하나를 실제로 보내 본다** — 자격증명 형식만 보면
+ * 「등록은 됐는데 부를 때 401」을 못 잡는다.
+ *
+ * 실패해도 등록은 남고 상태가 `ERROR` 로 바뀐다. 이유는 `detail` 에 온다.
+ */
+export function testOpsGuardrail(token: string, providerId: string) {
+  return opsRequest<OpsGuardrailProvider & { detail: string | null }>(
+    `/ops/guardrails/${providerId}/test/`,
+    { method: 'POST', token },
+  );
+}
