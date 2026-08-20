@@ -605,19 +605,20 @@ export default function OpsGuardrailsPage() {
                       >
                         연결 확인
                       </Button>
-                      {/* 이미 쓰는 것에는 안 보인다 — 누를 이유가 없다. 연결
-                          확인을 통과하지 않은 것은 서버가 막으므로 여기서도 잠근다. */}
-                      {!row.is_active && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          data-button
-                          disabled={busy || row.status !== 'CONNECTED'}
-                          onClick={() => activate(row)}
-                        >
-                          활성화
-                        </Button>
-                      )}
+                      {/* **행마다 버튼 수를 바꾸지 않는다.** 이미 쓰는 행에서만
+                          숨겼더니 그 행의 「삭제」가 다른 행보다 앞으로 당겨져,
+                          같은 열인데 파괴적 버튼의 자리가 행마다 달랐다
+                          (2026-08-20 PM 지적). 숨기는 대신 잠근다 — 이미 쓰는
+                          것과 연결 안 된 것은 누를 이유가 없다. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-button
+                        disabled={busy || row.is_active || row.status !== 'CONNECTED'}
+                        onClick={() => activate(row)}
+                      >
+                        활성화
+                      </Button>
                       <Button
                         size="sm"
                         variant="danger"
