@@ -3477,6 +3477,76 @@ class OpsPolicyRepository:
     )
 
     @staticmethod
+    def get_invite_ttl_days() -> int:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT setting_value FROM sys_setting WHERE setting_key = %s",
+                    (OpsPolicyRepository.INVITE_TTL_KEY,),
+                )
+                row = cursor.fetchone()
+
+        if row is None:
+            return OpsPolicyRepository.DEFAULT_INVITE_TTL_DAYS
+        try:
+            return int(row["setting_value"])
+        except (TypeError, ValueError):
+            return OpsPolicyRepository.DEFAULT_INVITE_TTL_DAYS
+
+    @staticmethod
+    def set_invite_ttl_days(*, days: int, actor_account_id: str, reason: str = "") -> dict[str, Any]:
+        if not (OpsPolicyRepository.INVITE_TTL_MIN_DAYS <= days <= OpsPolicyRepository.INVITE_TTL_MAX_DAYS):
+            raise RepositoryError("초대 만료 기간은 1일에서 90일 사이로 입력해 주세요.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                # 동시에 들어온 저장 요청이 서로 낡은 "변경 없음" 판정을 내리지
+                # 않도록 이 설정 행을 잠근다(계정 잠금/해제와 같은 패턴).
+                cursor.execute(
+                    "SELECT setting_value FROM sys_setting WHERE setting_key = %s FOR UPDATE",
+                    (OpsPolicyRepository.INVITE_TTL_KEY,),
+                )
+                row = cursor.fetchone()
+                current: int | None = None
+                if row is not None:
+                    try:
+                        current = int(row["setting_value"])
+                    except (TypeError, ValueError):
+                        current = None
+
+                if current == days:
+                    raise RepositoryError("변경된 초대 정책이 없습니다.")
+
+                if row is None:
+                    cursor.execute(
+                        "INSERT INTO sys_setting (setting_key, setting_value, updated_by) VALUES (%s, %s, %s)",
+                        (OpsPolicyRepository.INVITE_TTL_KEY, str(days), actor_account_id),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE sys_setting
+                        SET setting_value = %s, updated_by = %s, updated_at = now()
+                        WHERE setting_key = %s
+                        """,
+                        (str(days), actor_account_id, OpsPolicyRepository.INVITE_TTL_KEY),
+                    )
+
+                log_with(
+                    cursor,
+                    actor_account_id=actor_account_id,
+                    action="POLICY_INVITE_TTL_CHANGE",
+                    target_type="SYS_SETTING",
+                    # `audit_log.target_id`는 VARCHAR(5)라 "INVITE_EXPIRE_DAYS" 키를
+                    # 그대로 담을 수 없다 — 어차피 이 action은 이 설정 하나뿐이라
+                    # target_type만으로 식별 가능하므로 비워둔다.
+                    target_id=None,
+                    payload={"before": current, "after": days, "reason": reason.strip() or None},
+                )
+
+        return {"days": days}
+
+    @staticmethod
     def list_notices() -> list[dict[str, Any]]:
         with database_connection() as connection:
             with connection.cursor() as cursor:
