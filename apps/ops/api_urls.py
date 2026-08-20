@@ -16,6 +16,7 @@ from .views.invites import (
     InviteListView,
     InviteUnlinkView,
 )
+from .views.guardrails import GuardrailProviderDetailView, GuardrailProviderListCreateView
 from .views.login import LoginView, LogoutView
 from .views.mcp import McpDetailView, McpListCreateView, McpProbeView, McpTestView
 from .views.models import (
@@ -83,6 +84,14 @@ urlpatterns = [
     path("mcp/<str:server_id>/", McpDetailView.as_view(), name="api_ops_mcp_detail"),
     path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
+    # 가드레일 공급자 등록. 커스텀 도구(`mcp/`)와 같은 층위라 `policies/` 아래가
+    # 아니라 여기 둔다 — 「전역 정책」이 아니라 팀별 등록물이다.
+    path("guardrails/", GuardrailProviderListCreateView.as_view(), name="api_ops_guardrails"),
+    path(
+        "guardrails/<str:provider_id>/",
+        GuardrailProviderDetailView.as_view(),
+        name="api_ops_guardrail_detail",
+    ),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path(
         "policies/guardrail/events/",

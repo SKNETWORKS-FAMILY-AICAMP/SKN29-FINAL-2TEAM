@@ -293,3 +293,65 @@ class PurgeConfirmSerializer(serializers.Serializer):
     """
 
     confirm_name = serializers.CharField(max_length=255)
+
+
+class OpsGuardrailRegisterSerializer(serializers.Serializer):
+    """운영자가 팀에 외부 가드레일을 등록할 때 받는 값.
+
+    **`config` 와 `credential` 의 내용은 여기서 안 본다.** 공급자마다 필요한 키가
+    달라서(Azure 는 엔드포인트, Bedrock 은 guardrail ID·리전, OpenAI Guardrails 는
+    설정 JSON), 종류별 검사는 그 공급자를 아는 자리(`services/guardrails`)가
+    한다 — 직렬화기에 세 벌의 조건문을 두면 종류가 늘 때마다 두 곳을 고쳐야 한다.
+
+    **비밀값은 `credential` 로만 받는다.** `config` 는 목록 응답에 그대로 실리므로
+    거기 키를 넣으면 화면과 감사 로그로 새어 나간다.
+    """
+
+    team_id = serializers.CharField(max_length=5)
+    name = serializers.CharField(max_length=100)
+    kind = serializers.ChoiceField(
+        choices=["OPENAI_GUARDRAILS", "BEDROCK_GUARDRAILS", "AZURE_CONTENT_SAFETY"]
+    )
+    config = serializers.DictField(required=False, default=dict)
+    credential = serializers.DictField(
+        required=False, allow_null=True, default=None, write_only=True
+    )
+
+
+class OpsGuardrailUpdateSerializer(OpsGuardrailRegisterSerializer):
+    """수정 입력. **자격증명만 규칙이 다르다.**
+
+    화면은 저장된 값을 다시 보여주지 않는다(`ops_guardrail_row_response` 가
+    `has_credential` 만 준다). 「안 보냄」을 「지우라」로 읽으면 이름만 고쳐도 키가
+    날아가므로, 바꾸려는 의사를 `replace_credential` 로 명시하게 한다 — MCP 의
+    `replace_token` 과 같은 규칙이다.
+
+    `team_id` 는 안 받는다. 팀을 옮기는 것은 다른 팀 대화의 검사 경로를 바꾸는
+    일이라, 지우고 다시 등록하는 편이 기록에도 정확하다.
+    """
+
+    team_id = None
+    replace_credential = serializers.BooleanField(required=False, default=False)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields.pop("team_id", None)
+        return fields
+
+
+def ops_guardrail_row_response(row: dict[str, Any]) -> dict[str, Any]:
+    """등록 한 건. **자격증명은 있는지 여부만 나간다.**"""
+
+    return {
+        "provider_id": row["provider_id"],
+        "team_id": row.get("team_id"),
+        "team_name": row.get("team_name"),
+        "name": row["name"],
+        "kind": row["kind"],
+        "config": row.get("config") or {},
+        "status": row["status"],
+        "last_checked_at": row.get("last_checked_at"),
+        "has_credential": bool(row.get("has_credential")),
+        "created_by": row.get("created_by"),
+        "created_at": row.get("created_at"),
+    }

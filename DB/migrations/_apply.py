@@ -77,6 +77,7 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     # 실행이 깨진 뒤에야 드러남) — 코드가 실제로 쓰는 표 이름으로 바꾼다.
     ("tool_call_idempotency", None, "2026-08-19 외부 쓰기 도구 재실행 방지 — 전용 표"),
     ("guardrail_event", None, "2026-08-20 가드레일 발동 기록"),
+    ("guardrail_provider", None, "2026-08-20 외부 가드레일 공급자 등록"),
 ]
 
 
