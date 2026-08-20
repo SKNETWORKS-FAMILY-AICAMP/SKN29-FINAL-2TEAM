@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,7 +71,20 @@ def check(
                 # `suppress_tripwire=True` — 걸렸다고 예외로 끊지 않고 결과를 다 받는다.
                 # 막을지 말지는 우리가 정한다(부르는 쪽이 기록도 남겨야 한다).
                 collected.extend(
-                    await run_guardrails(ctx, text, "text/plain", configured, suppress_tripwire=True)
+                    await run_guardrails(
+                        ctx,
+                        text,
+                        "text/plain",
+                        configured,
+                        suppress_tripwire=True,
+                        # **기본값 False 를 그대로 쓰면 안 된다**(2026-08-20 실측).
+                        # 키가 틀려 호출이 실패해도 예외 없이 「걸린 것 없음」으로
+                        # 돌아와서, 「연결 확인」이 가짜 키를 **연결됨으로 판정했다.**
+                        # 우리는 못 부른 것과 통과한 것을 반드시 구분해야 한다 —
+                        # 안 되는 것을 등록해 두면 그 팀의 대화가 조용히 검사를
+                        # 건너뛴다.
+                        raise_guardrail_errors=True,
+                    )
                 )
         finally:
             # **닫지 않으면 `RuntimeError: Event loop is closed` 가 로그에 쌓인다**
@@ -82,7 +96,7 @@ def check(
     try:
         results = asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001 - 네트워크·설정·모델 어느 쪽이든 못 부른 것이다
-        raise ProviderError(f"검사하지 못했습니다: {exc.__class__.__name__}") from exc
+        raise ProviderError(_reason(exc)) from exc
 
     for result in results:
         if getattr(result, "tripwire_triggered", False):
@@ -111,3 +125,39 @@ def _pipeline(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ProviderError("설정 JSON 형식이 올바르지 않습니다.")
     return parsed
+
+
+def _reason(exc: BaseException) -> str:
+    """운영자가 고칠 수 있는 말로 바꾼다.
+
+    `run_guardrails` 는 여러 검사를 동시에 돌려 실패를 `ExceptionGroup` 으로 묶고,
+    그 안은 평범한 `Exception` 이라 클래스 이름만으로는 아무것도 알 수 없다
+    (2026-08-20 실측: 화면에 「ExceptionGroup」만 떴다).
+
+    **예외 문자열을 그대로 쓰지 않는다.** OpenAI 가 가려서 주긴 하지만 그 안에 키
+    조각이 들어 있다(`Incorrect API key provided: sk-not-a*****-key`) — 상태 코드만
+    뽑는다.
+    """
+
+    text = str(_first_cause(exc))
+    match = re.search(r"Error code:\s*(\d{3})", text)
+    if match is None:
+        return f"검사하지 못했습니다: {_first_cause(exc).__class__.__name__}"
+
+    code = match.group(1)
+    if code == "401":
+        return "키가 올바르지 않습니다."
+    if code == "429":
+        return "호출 한도에 걸렸습니다. 잠시 뒤 다시 시도해 주세요."
+    return f"응답이 정상이 아닙니다({code})."
+
+
+def _first_cause(exc: BaseException) -> BaseException:
+    """중첩된 `ExceptionGroup` 을 풀어 처음 만나는 실제 예외를 준다."""
+
+    seen = exc
+    while True:
+        nested = getattr(seen, "exceptions", None)
+        if not nested:
+            return seen
+        seen = nested[0]

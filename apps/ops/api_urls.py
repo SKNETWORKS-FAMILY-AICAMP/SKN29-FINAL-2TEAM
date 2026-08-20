@@ -18,6 +18,7 @@ from .views.invites import (
 )
 from .views.guardrails import (
     GuardrailProviderDetailView,
+    GuardrailProviderProbeView,
     GuardrailProviderListCreateView,
     GuardrailProviderTestView,
 )
@@ -91,6 +92,9 @@ urlpatterns = [
     # 가드레일 공급자 등록. 커스텀 도구(`mcp/`)와 같은 층위라 `policies/` 아래가
     # 아니라 여기 둔다 — 「전역 정책」이 아니라 팀별 등록물이다.
     path("guardrails/", GuardrailProviderListCreateView.as_view(), name="api_ops_guardrails"),
+    # **`<provider_id>` 앞에 둔다.** 뒤에 두면 `guardrails/probe/` 가 상세로
+    # 잡힌다 — 모델(`models/probe/`)·커스텀 도구(`mcp/probe/`)가 실제로 밟은 자리다.
+    path("guardrails/probe/", GuardrailProviderProbeView.as_view(), name="api_ops_guardrail_probe"),
     path(
         "guardrails/<str:provider_id>/",
         GuardrailProviderDetailView.as_view(),

@@ -4,6 +4,7 @@ import { Badge, Button, OpsDataTable, OpsEmpty, OpsPageHeader, OpsSectionCard } 
 import type { BadgeTone } from '../../components';
 import {
   fetchOpsGuardrails,
+  probeOpsGuardrail,
   registerOpsGuardrail,
   removeOpsGuardrail,
   testOpsGuardrail,
@@ -157,6 +158,8 @@ export default function OpsGuardrailsPage() {
   const [formError, setFormError] = useState('');
   const [note, setNote] = useState('');
   const [editing, setEditing] = useState<OpsGuardrailProvider | null>(null);
+  /** 저장 전 「연결 확인」 결과. `null` 이면 아직 안 해 본 것이다. */
+  const [probed, setProbed] = useState<boolean | null>(null);
 
   async function load() {
     const session = loadOpsSession();
@@ -197,6 +200,7 @@ export default function OpsGuardrailsPage() {
     setValues({});
     setFormError('');
     setNote('');
+    setProbed(null);
   }
 
   function startEdit(row: OpsGuardrailProvider) {
@@ -214,6 +218,7 @@ export default function OpsGuardrailsPage() {
     setValues(next);
     setFormError('');
     setNote('');
+    setProbed(null);
   }
 
   /** 화면 값을 `config`(공개)와 `credential`(비밀)로 가른다. */
@@ -227,6 +232,37 @@ export default function OpsGuardrailsPage() {
       else config[field.key] = raw;
     }
     return { config, credential };
+  }
+
+  async function probe() {
+    const session = loadOpsSession();
+    if (!session) {
+      navigate('/ops/login', { replace: true });
+      return;
+    }
+
+    const { config, credential } = split();
+    setBusy(true);
+    setFormError('');
+    setNote('');
+    try {
+      const result = await probeOpsGuardrail(session.token, {
+        kind,
+        config,
+        credential: Object.keys(credential).length > 0 ? credential : null,
+      });
+      setProbed(result.ok);
+      setNote(result.ok ? '연결됐습니다.' : `연결하지 못했습니다 — ${result.detail ?? '이유를 알 수 없습니다.'}`);
+    } catch (thrown) {
+      if (thrown instanceof ApiError && thrown.status === 401) {
+        navigate('/ops/login', { replace: true });
+        return;
+      }
+      setProbed(false);
+      setFormError(thrown instanceof ApiError ? thrown.message : '연결 확인을 하지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submit() {
@@ -393,6 +429,7 @@ export default function OpsGuardrailsPage() {
                 // 안 쓰는 칸의 값이 조용히 함께 저장된다.
                 setKind(event.target.value as GuardrailKind);
                 setValues({});
+                setProbed(null);
               }}
             >
               {(Object.keys(KIND_LABELS) as GuardrailKind[]).map((item) => (
@@ -403,6 +440,13 @@ export default function OpsGuardrailsPage() {
             </select>
           </div>
 
+        </div>
+
+        {/* 종류별 칸은 따로 묶는다 — 셋의 입력이 완전히 달라서, 위의 공통 칸과
+            같은 흐름에 두면 어디까지가 그 종류의 설정인지 안 보인다. */}
+        <fieldset className={styles.scheduleFieldset}>
+          <legend>{KIND_LABELS[kind]} 설정</legend>
+          <div className={styles.formGrid}>
           {FIELDS[kind].map((field) => (
             <div className={styles.fieldGroup} key={field.key}>
               <label htmlFor={`guardrail-${field.key}`}>
@@ -415,9 +459,10 @@ export default function OpsGuardrailsPage() {
                     rows={4}
                     value={values[field.key] ?? ''}
                     placeholder={field.placeholder}
-                    onChange={(event) =>
-                      setValues({ ...values, [field.key]: event.target.value })
-                    }
+                    onChange={(event) => {
+                      setProbed(null);
+                      setValues({ ...values, [field.key]: event.target.value });
+                    }}
                   />
                   {/* 가진 설정이 없는 고객이 여기서 막힌다 — 시작점을 한 번에 넣어 준다.
                       이미 적어 둔 것이 있으면 덮어쓰지 않는다. */}
@@ -440,20 +485,28 @@ export default function OpsGuardrailsPage() {
                   type={field.secret ? 'password' : 'text'}
                   value={values[field.key] ?? ''}
                   placeholder={field.placeholder}
-                  onChange={(event) =>
-                    setValues({ ...values, [field.key]: event.target.value })
-                  }
+                  onChange={(event) => {
+                    setProbed(null);
+                    setValues({ ...values, [field.key]: event.target.value });
+                  }}
                 />
               )}
             </div>
           ))}
-        </div>
+          </div>
+        </fieldset>
 
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
         {note && <p className={styles.inlineEmpty}>{note}</p>}
 
+        {/* **검사가 저장보다 먼저다**(`views/mcp.py` 와 같은 원칙). 안 되는 것을
+            등록해 두면 그 팀의 대화가 조용히 검사를 건너뛴다 — 런타임은 「연결
+            확인」을 통과한 것만 부른다. */}
         <div className={styles.formSubmit}>
-          <Button onClick={submit} disabled={!canSubmit || busy}>
+          <Button variant="outline" onClick={probe} disabled={busy}>
+            {busy ? '확인하는 중…' : '연결 확인'}
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit || busy || probed !== true}>
             {busy ? '처리하는 중…' : editing ? '저장' : '등록'}
           </Button>
           {editing && (
@@ -464,7 +517,10 @@ export default function OpsGuardrailsPage() {
         </div>
       </OpsSectionCard>
 
-      <OpsSectionCard title={'등록된 가드레일 ' + rows.length + '건'}>
+      <OpsSectionCard
+        title={'등록된 가드레일 ' + rows.length + '건'}
+        subtitle={rows.length > 0 ? `연결됨 ${rows.filter((row) => row.status === 'CONNECTED').length} · 팀당 하나` : '팀당 하나'}
+      >
         {rows.length === 0 ? (
           <OpsEmpty message="아직 어느 팀에도 등록한 가드레일이 없습니다." />
         ) : (

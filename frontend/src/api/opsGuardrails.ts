@@ -86,3 +86,25 @@ export function testOpsGuardrail(token: string, providerId: string) {
     { method: 'POST', token },
   );
 }
+
+/**
+ * **저장하기 전에** 그 설정·키로 실제 붙는지 본다. 행을 만들지 않는다.
+ *
+ * 안 되는 것을 등록해 두면 그 팀의 대화가 조용히 검사를 건너뛴다 — 우리 런타임은
+ * 「연결 확인」을 통과한 것만 부르기 때문이다. 커스텀 도구의 「연결 확인」·모델의
+ * 「모델 불러오기」와 같은 자리다.
+ */
+export function probeOpsGuardrail(
+  token: string,
+  body: {
+    kind: GuardrailKind;
+    config?: Record<string, unknown>;
+    credential?: Record<string, unknown> | null;
+  },
+) {
+  return opsRequest<{ ok: boolean; detail: string | null }>('/ops/guardrails/probe/', {
+    method: 'POST',
+    token,
+    body,
+  });
+}

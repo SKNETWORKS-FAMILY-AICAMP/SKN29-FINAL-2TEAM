@@ -167,3 +167,43 @@ class AzureThresholdTests(SimpleTestCase):
 
         with self.assertRaises(ProviderError):
             azure.check(text="x", config={"endpoint": "https://a.b"}, credential={"api_key": "k"})
+
+
+class OpenAIGuardrailsReasonTests(SimpleTestCase):
+    """실패 사유를 운영자가 고칠 수 있는 말로 바꾼다.
+
+    `run_guardrails` 는 실패를 `ExceptionGroup` 으로 묶고 그 안은 평범한
+    `Exception` 이라, 손대지 않으면 화면에 「ExceptionGroup」만 뜬다(2026-08-20 실측).
+    """
+
+    def test_키가_틀리면_그렇게_말한다(self):
+        from services.guardrails.providers.openai_guardrails import _reason
+
+        inner = Exception(
+            "Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-abc*****xyz'}}"
+        )
+
+        self.assertEqual(_reason(ExceptionGroup("g", [inner])), "키가 올바르지 않습니다.")
+
+    def test_예외_문자열을_그대로_내보내지_않는다(self):
+        """OpenAI 가 가려 주긴 해도 그 안에 키 조각이 있다."""
+
+        from services.guardrails.providers.openai_guardrails import _reason
+
+        inner = Exception("Error code: 401 - Incorrect API key provided: sk-abc*****xyz")
+
+        self.assertNotIn("sk-abc", _reason(ExceptionGroup("g", [inner])))
+
+    def test_한도_초과도_구분한다(self):
+        from services.guardrails.providers.openai_guardrails import _reason
+
+        reason = _reason(ExceptionGroup("g", [Exception("Error code: 429 - rate limit")]))
+
+        self.assertIn("한도", reason)
+
+    def test_중첩된_그룹도_푼다(self):
+        from services.guardrails.providers.openai_guardrails import _reason
+
+        nested = ExceptionGroup("outer", [ExceptionGroup("inner", [Exception("Error code: 401 -")])])
+
+        self.assertEqual(_reason(nested), "키가 올바르지 않습니다.")

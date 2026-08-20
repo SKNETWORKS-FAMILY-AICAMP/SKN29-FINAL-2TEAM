@@ -73,6 +73,38 @@ class GuardrailProviderListCreateView(AdminView):
         return Response(ops_guardrail_row_response(row), status=status.HTTP_201_CREATED)
 
 
+class GuardrailProviderProbeView(AdminView):
+    """**저장하지 않고** 붙는지만 본다.
+
+    `views/mcp.py` 의 `McpProbeView` 와 같은 자리다 — **검사가 저장보다 먼저다.**
+    저장한 뒤에 확인하면 안 되는 것이 DB 에 남고, 그 팀의 대화는 조용히 검사를
+    건너뛴다(등록은 됐는데 상태가 ERROR 인 것을 우리 런타임은 부르지 않는다).
+
+    행을 만들지 않으므로 팀도 필요 없다. 실패는 **여기서 끝난다** — 남는 것이
+    없으니 고칠 값도 없고, 화면이 이유만 보여주면 된다.
+    """
+
+    def post(self, request):
+        kind = (request.data.get("kind") or "").strip()
+        if kind not in GuardrailProviderRepository.KINDS:
+            return Response({"detail": "가드레일 종류를 골라 주세요."}, status=status.HTTP_400_BAD_REQUEST)
+
+        config = request.data.get("config") or {}
+        credential = request.data.get("credential") or None
+        if not isinstance(config, dict) or (credential is not None and not isinstance(credential, dict)):
+            return Response({"detail": "설정 형식이 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = verify_provider(kind=kind, config=config, credential=credential)
+        except ProviderError as exc:
+            return Response({"ok": False, "detail": str(exc)})
+
+        if not result.ok:
+            # 키가 섞일 수 있는 자리라 예외 문자열을 로그에 그대로 남기지 않는다.
+            logger.info("가드레일 저장 전 확인 실패: kind=%s", kind)
+        return Response({"ok": result.ok, "detail": result.detail})
+
+
 class GuardrailProviderDetailView(AdminView):
     def patch(self, request, provider_id):
         serializer = OpsGuardrailUpdateSerializer(data=request.data)
