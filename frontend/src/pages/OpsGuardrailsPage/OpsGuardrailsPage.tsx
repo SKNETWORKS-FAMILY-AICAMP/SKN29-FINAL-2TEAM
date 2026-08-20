@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, OpsDataTable, OpsEmpty, OpsPageHeader, OpsSectionCard } from '../../components';
+import {
+  Badge,
+  Button,
+  OpsDataTable,
+  OpsEmpty,
+  OpsPageHeader,
+  OpsSectionCard,
+  useToast,
+} from '../../components';
 import type { BadgeTone } from '../../components';
 import {
   fetchOpsGuardrails,
@@ -144,6 +152,7 @@ function secretHint(editing: OpsGuardrailProvider | null, label: string) {
 }
 
 export default function OpsGuardrailsPage() {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [providers, setProviders] = useState<OpsGuardrailProvider[] | null>(null);
   const [teams, setTeams] = useState<OpsTeam[]>([]);
@@ -155,8 +164,6 @@ export default function OpsGuardrailsPage() {
   const [kind, setKind] = useState<GuardrailKind>('OPENAI_GUARDRAILS');
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [note, setNote] = useState('');
   const [editing, setEditing] = useState<OpsGuardrailProvider | null>(null);
   /** 저장 전 「연결 확인」 결과. `null` 이면 아직 안 해 본 것이다. */
   const [probed, setProbed] = useState<boolean | null>(null);
@@ -198,8 +205,6 @@ export default function OpsGuardrailsPage() {
     setEditing(null);
     setName('');
     setValues({});
-    setFormError('');
-    setNote('');
     setProbed(null);
   }
 
@@ -216,8 +221,6 @@ export default function OpsGuardrailsPage() {
       next[field.key] = value == null ? '' : String(value);
     }
     setValues(next);
-    setFormError('');
-    setNote('');
     setProbed(null);
   }
 
@@ -243,8 +246,6 @@ export default function OpsGuardrailsPage() {
 
     const { config, credential } = split();
     setBusy(true);
-    setFormError('');
-    setNote('');
     try {
       const result = await probeOpsGuardrail(session.token, {
         kind,
@@ -252,14 +253,17 @@ export default function OpsGuardrailsPage() {
         credential: Object.keys(credential).length > 0 ? credential : null,
       });
       setProbed(result.ok);
-      setNote(result.ok ? '연결됐습니다.' : `연결하지 못했습니다 — ${result.detail ?? '이유를 알 수 없습니다.'}`);
+      showToast(
+        result.ok ? '연결됐습니다.' : `연결하지 못했습니다 — ${result.detail ?? '이유를 알 수 없습니다.'}`,
+        result.ok ? 'success' : 'error',
+      );
     } catch (thrown) {
       if (thrown instanceof ApiError && thrown.status === 401) {
         navigate('/ops/login', { replace: true });
         return;
       }
       setProbed(false);
-      setFormError(thrown instanceof ApiError ? thrown.message : '연결 확인을 하지 못했습니다.');
+      showToast(thrown instanceof ApiError ? thrown.message : '연결 확인을 하지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -274,8 +278,6 @@ export default function OpsGuardrailsPage() {
 
     const { config, credential } = split();
     setBusy(true);
-    setFormError('');
-    setNote('');
     try {
       if (editing) {
         // 비밀 칸을 채웠을 때만 교체한다 — 비워 두면 저장된 값이 남는다.
@@ -287,7 +289,7 @@ export default function OpsGuardrailsPage() {
           credential: replace ? credential : null,
           replace_credential: replace,
         });
-        setNote('수정했습니다.');
+        showToast('가드레일을 수정했습니다.', 'success');
       } else {
         await registerOpsGuardrail(session.token, {
           team_id: teamId,
@@ -296,7 +298,7 @@ export default function OpsGuardrailsPage() {
           config,
           credential: Object.keys(credential).length > 0 ? credential : null,
         });
-        setNote('등록했습니다.');
+        showToast('가드레일을 등록했습니다.', 'success');
       }
       resetForm();
       await load();
@@ -305,7 +307,7 @@ export default function OpsGuardrailsPage() {
         navigate('/ops/login', { replace: true });
         return;
       }
-      setFormError(thrown instanceof ApiError ? thrown.message : '요청을 처리하지 못했습니다.');
+      showToast(thrown instanceof ApiError ? thrown.message : '요청을 처리하지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -319,20 +321,21 @@ export default function OpsGuardrailsPage() {
     }
 
     setBusy(true);
-    setFormError('');
-    setNote('');
     try {
       const result = await testOpsGuardrail(session.token, row.provider_id);
       // 실패해도 200 으로 오고 `detail` 에 이유가 담긴다 — 등록은 남기고
       // 상태만 ERROR 로 바뀌기 때문이다.
-      setNote(result.detail ? `‘${row.name}’ 연결 확인 실패 — ${result.detail}` : `‘${row.name}’ 연결됨.`);
+      showToast(
+        result.detail ? `‘${row.name}’ 연결 확인 실패 — ${result.detail}` : `‘${row.name}’ 연결됨.`,
+        result.detail ? 'error' : 'success',
+      );
       await load();
     } catch (thrown) {
       if (thrown instanceof ApiError && thrown.status === 401) {
         navigate('/ops/login', { replace: true });
         return;
       }
-      setFormError(thrown instanceof ApiError ? thrown.message : '연결 확인을 하지 못했습니다.');
+      showToast(thrown instanceof ApiError ? thrown.message : '연결 확인을 하지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -346,18 +349,17 @@ export default function OpsGuardrailsPage() {
     }
 
     setBusy(true);
-    setFormError('');
     try {
       await removeOpsGuardrail(session.token, row.provider_id);
       if (editing?.provider_id === row.provider_id) resetForm();
-      setNote(`‘${row.name}’을 삭제했습니다.`);
+      showToast(`‘${row.name}’을 삭제했습니다.`, 'success');
       await load();
     } catch (thrown) {
       if (thrown instanceof ApiError && thrown.status === 401) {
         navigate('/ops/login', { replace: true });
         return;
       }
-      setFormError(thrown instanceof ApiError ? thrown.message : '삭제하지 못했습니다.');
+      showToast(thrown instanceof ApiError ? thrown.message : '삭제하지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -495,9 +497,6 @@ export default function OpsGuardrailsPage() {
           ))}
           </div>
         </fieldset>
-
-        {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
-        {note && <p className={styles.inlineEmpty}>{note}</p>}
 
         {/* **검사가 저장보다 먼저다**(`views/mcp.py` 와 같은 원칙). 안 되는 것을
             등록해 두면 그 팀의 대화가 조용히 검사를 건너뛴다 — 런타임은 「연결
