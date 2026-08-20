@@ -72,6 +72,69 @@ const FIELDS: Record<GuardrailKind, FieldSpec[]> = {
   ],
 };
 
+/**
+ * 설정을 처음부터 만들지 않아도 되게 두는 기본값.
+ *
+ * **가진 게 없는 고객이 대부분이다.** OpenAI Guardrails 는 아직 Preview 라
+ * 위저드(guardrails.openai.com)에서 미리 만들어 둔 고객이 사실상 없다 —
+ * 등록 화면이 「가진 것을 붙여넣으세요」로만 되어 있으면 그 고객은 가드레일
+ * 없이 돈다. 그래서 위저드가 실제로 뽑아 주는 것과 **같은 형식**의 시작점을
+ * 한 벌 넣어 둔다(2026-08-20 에 위저드에서 직접 뽑아 확인한 값이다).
+ *
+ * 직접 만든 설정이 있으면 그대로 붙여넣으면 된다 — 이건 시작점일 뿐이다.
+ *
+ * 고른 둘의 근거: Moderation 은 **API 호출이 무료**고 300ms 다. Jailbreak 은
+ * 우리가 프롬프트 문구로만 막던 자리이고 1000ms 다. 나머지는 우리 배선이
+ * 없거나(출력 단계), 영어 전용이거나(PII), 벡터스토어가 필요하다(할루시네이션).
+ */
+const OPENAI_GUARDRAILS_PRESET = JSON.stringify(
+  {
+    version: 1,
+    pre_flight: {
+      version: 1,
+      guardrails: [
+        {
+          name: 'Moderation',
+          config: {
+            categories: [
+              'sexual',
+              'sexual/minors',
+              'hate',
+              'hate/threatening',
+              'harassment',
+              'harassment/threatening',
+              'self-harm',
+              'self-harm/intent',
+              'self-harm/instructions',
+              'violence',
+              'violence/graphic',
+              'illicit',
+              'illicit/violent',
+            ],
+          },
+        },
+      ],
+    },
+    input: {
+      version: 1,
+      guardrails: [
+        {
+          name: 'Jailbreak',
+          config: { confidence_threshold: 0.7, model: 'gpt-4.1-mini', include_reasoning: false },
+        },
+      ],
+    },
+    output: { version: 1, guardrails: [] },
+  },
+  null,
+  2,
+);
+
+/** 종류별 시작점. 없는 종류는 버튼도 안 뜬다 — 빈 버튼을 두면 눌러도 아무 일이 없다. */
+const PRESETS: Partial<Record<GuardrailKind, { field: string; value: string }>> = {
+  OPENAI_GUARDRAILS: { field: 'pipeline', value: OPENAI_GUARDRAILS_PRESET },
+};
+
 /** 저장된 비밀값은 돌려받지 못한다 — 화면은 있는지 여부만 안다. */
 function secretHint(editing: OpsGuardrailProvider | null, label: string) {
   if (editing && editing.has_credential) return `${label} (비워 두면 저장된 값을 그대로 둡니다)`;
@@ -318,15 +381,31 @@ export default function OpsGuardrailsPage() {
                 {field.secret ? secretHint(editing, field.label) : field.label}
               </label>
               {field.multiline ? (
-                <textarea
-                  id={`guardrail-${field.key}`}
-                  rows={4}
-                  value={values[field.key] ?? ''}
-                  placeholder={field.placeholder}
-                  onChange={(event) =>
-                    setValues({ ...values, [field.key]: event.target.value })
-                  }
-                />
+                <>
+                  <textarea
+                    id={`guardrail-${field.key}`}
+                    rows={4}
+                    value={values[field.key] ?? ''}
+                    placeholder={field.placeholder}
+                    onChange={(event) =>
+                      setValues({ ...values, [field.key]: event.target.value })
+                    }
+                  />
+                  {/* 가진 설정이 없는 고객이 여기서 막힌다 — 시작점을 한 번에 넣어 준다.
+                      이미 적어 둔 것이 있으면 덮어쓰지 않는다. */}
+                  {PRESETS[kind]?.field === field.key && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy || Boolean((values[field.key] ?? '').trim())}
+                      onClick={() =>
+                        setValues({ ...values, [field.key]: PRESETS[kind]!.value })
+                      }
+                    >
+                      기본 설정 넣기
+                    </Button>
+                  )}
+                </>
               ) : (
                 <input
                   id={`guardrail-${field.key}`}
