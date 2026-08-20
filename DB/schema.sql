@@ -660,6 +660,18 @@ CREATE TABLE sys_setting (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14');
+-- [운영자 콘솔] 가드레일 정책(2026-08-20 추가, DB/migrations/2026-08-20_guardrail_policy.sql).
+-- 항목별로 키를 쪼개지 않는다 — 쪼개면 변경 이력이 audit_log에 흩어져 "그 시점의
+-- 정책 한 벌"을 복원할 수 없다. 기본값 근거는 마이그레이션 파일 머리 주석.
+INSERT INTO sys_setting (setting_key, setting_value)
+VALUES (
+    'GUARDRAIL_POLICY',
+    '{"pii": {"enabled": true, "strategy": "redact"},
+      "moderation": {"enabled": false,
+                     "thresholds": {"harassment": 0.7, "hate": 0.7, "sexual": 0.7,
+                                    "self_harm": 0.7, "violence": 0.7, "illicit": 0.7}},
+      "blocked_words": []}'
+);
 
 -- [운영자 콘솔] 플랫폼 시스템 공지(2026-07-30 추가).
 CREATE TABLE sys_notice (
@@ -981,6 +993,29 @@ CREATE TABLE tool_call (
 
 CREATE INDEX ix_tool_call_run
     ON tool_call (run_id, created_at);
+
+-- 가드레일이 실제로 발동한 기록(2026-08-20 추가). `audit_log`를 쓰지 않는다 —
+-- 그쪽 `actor_account_id`는 NOT NULL인데 가드레일을 발동시키는 것은 사람이
+-- 아니라 런타임이다.
+--
+-- **원문을 저장하지 않는다.** 가려진 값이 로그에 남으면 가드레일을 두는 의미가
+-- 없다(`tool_call.input_summary`와 같은 원칙) — `detail`에는 건수·카테고리·
+-- 점수처럼 임계값 튜닝에 필요한 것만 넣는다.
+CREATE TABLE guardrail_event (
+    event_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id       UUID,                    -- agent_run.run_id(FK 없음). 입력 검사처럼 run 밖에서 나면 NULL
+    session_id   UUID,                    -- chat_session.session_id(FK 없음)
+    account_id   VARCHAR(5),              -- user_account.account_id(FK 없음)
+    team_id      VARCHAR(5),              -- team.team_id(FK 없음)
+    stage        VARCHAR(20)  NOT NULL,   -- INPUT / OUTPUT / TOOL_RESULT
+    rule         VARCHAR(30)  NOT NULL,   -- PII / MODERATION / BLOCKED_WORD
+    action       VARCHAR(20)  NOT NULL,   -- MASKED / BLOCKED
+    detail       JSONB,                   -- 원문 없이 요약만(건수·카테고리·점수)
+    occurred_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_guardrail_event_occurred
+    ON guardrail_event (occurred_at DESC);
 
 -- 같은 tool_call_id(모델이 낸 AIMessage.tool_calls[i]["id"])가 같은 run 안에서
 -- 재실행되지 않게 막는 표. HITL resume·checkpoint 재시도로 super-step이
