@@ -188,7 +188,32 @@ export type ChatEvent =
       tool_ref?: string;
       tool_call_id?: string;
     }
-  | { type: 'awaiting_confirmation'; run_id: string; tool_ref: string; tool_name: string; arguments: Record<string, unknown> }
+  | {
+      // 레거시 Harness(`services.harness.runner`)가 내는 모양. 도구 하나짜리
+      // 확인 카드다.
+      type: 'awaiting_confirmation';
+      run_id: string;
+      tool_ref: string;
+      tool_name: string;
+      arguments: Record<string, unknown>;
+    }
+  | {
+      // 새 엔진(`services.agent_runtime`)이 내는 모양(2026-08-19, HITL resume
+      // §0순위) — `services/agent_runtime/events.py`의 `_handle_interrupt()`
+      // 그대로다. 위 레거시 모양과 필드가 겹치지 않는다 — `tool_name`/
+      // `arguments`가 없다. **이걸 레거시 필드로 읽으면(예: `event.arguments`)
+      // `undefined`가 되어 화면이 카드를 못 그린다** — 실제로 겪은 문제라
+      // 남겨 둔다. `action_requests`가 배열인 이유는 한 턴에 side_effect
+      // tool_call이 여러 개 걸리면(모델이 병렬로 부르면) 전부 한 번에
+      // interrupt되기 때문이다(`HumanInTheLoopMiddleware.after_model`).
+      type: 'awaiting_confirmation';
+      run_id: string;
+      agent_id?: string | null;
+      agent_version_id?: string | null;
+      interrupt_id?: string | null;
+      action_requests: { name: string; args: Record<string, unknown> }[];
+      complete?: boolean;
+    }
   /**
    * 추론 모델(gpt-5.6-luna 등, OpenAI Responses API 경로)이 도구를 부르기
    * 전이나 최종 답 전에 내는 생각 — 토큰·조각 단위로 실시간으로 온다
@@ -210,7 +235,22 @@ export type ChatEvent =
       parent_run_id?: string | null;
       subagent_alias?: string | null;
     }
-  | { type: 'result'; text: string; complete: boolean; stopped_reason?: string; iterations?: number }
+  /**
+   * `duration_ms` — 이 실행이 시작(`agent_started`)부터 끝(`result`/`error`)까지
+   * 걸린 총 시간(ms, 2026-08-19 §12순위). `services/agent_runtime/tracing/
+   * __init__.py::_attach_duration_ms()`가 붙인다. **재개(resume) 스트림에는
+   * 안 붙는다** — `AgentExecutor.resume()`은 `agent_started`를 새로 안 내서
+   * 시작 시각을 모른다. 그래서 이 필드는 항상 optional — 없으면 그냥 표시를
+   * 생략한다(0초로 지어내지 않는다).
+   */
+  | {
+      type: 'result';
+      text: string;
+      complete: boolean;
+      stopped_reason?: string;
+      iterations?: number;
+      duration_ms?: number;
+    }
   /**
    * 첫 답이 끝난 뒤 서버가 지은 이 대화의 이름. **한 대화에 한 번만** 온다.
    *
@@ -218,7 +258,32 @@ export type ChatEvent =
    * 보내서 대화 둘이 글자까지 똑같아졌다(2026-08-12 QA).
    */
   | { type: 'session_title'; title: string }
-  | { type: 'error'; detail: string };
+  /**
+   * **`error`는 두 곳에서 서로 다른 모양으로 온다**(2026-08-20 발견 — 실제
+   * "요청을 끝내지 못했습니다"만 뜨고 사유가 하나도 안 보이는 문제의 원인).
+   *
+   * - `apps/chat/api_views.py`의 `_relay()`가 스트림 밖에서 잡은 크래시 —
+   *   `{"type": "error", "detail": "..."}`. `detail`만 있다.
+   * - `services/agent_runtime/executor.py`의 `run()`/`resume()`이 그래프
+   *   실행 **도중** 잡은 실패 — `{"type": "error", "error_code": "...",
+   *   "message": "...", "agent_id": ..., ...}`. `detail`이 아예 없다.
+   *
+   * 예전엔 이 타입에 `detail`만 있어서, 후자가 오면 `event.detail`이
+   * `undefined`가 되어 화면에 사유가 전혀 안 남았다 — `error_code`도 이
+   * 타입에 없어서 함께 버려졌다. 두 모양을 다 담게 넓히고, `liveChat.ts`의
+   * 리듀서가 `detail ?? message`로 읽는다.
+   */
+  | {
+      type: 'error';
+      detail?: string;
+      error_code?: string;
+      message?: string;
+      agent_id?: string | null;
+      agent_version_id?: string | null;
+      run_id?: string | null;
+      complete?: boolean;
+      duration_ms?: number;
+    };
 
 /** Jira 이슈 한 건. `jira_get_issues` 가 이벤트로 내보내는 모양 그대로. */
 export interface JiraIssue {

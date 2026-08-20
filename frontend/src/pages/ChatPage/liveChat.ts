@@ -35,6 +35,13 @@ export interface LiveChat {
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
   answer: string;
+  /**
+   * 이 실행이 걸린 총 시간(ms, 2026-08-19 §12순위) — `result`/`error`
+   * 이벤트의 `duration_ms`를 그대로 옮긴다. 재개(resume) 스트림에는 서버가
+   * 이 필드를 아예 안 붙이므로 `null`(0초로 지어내지 않는다) — 화면은
+   * `null`이면 표시를 생략한다.
+   */
+  durationMs: number | null;
   /** 상한에 걸려 멈춘 경우. 성공처럼 뭉개지 않는다. */
   stoppedReason: string | null;
   error: { detail?: string; errorCode?: string; toolRef?: string } | null;
@@ -70,6 +77,7 @@ export function emptyLive(): LiveChat {
     created: [],
     failures: [],
     answer: '',
+    durationMs: null,
     stoppedReason: null,
     error: null,
     jira: null,
@@ -273,16 +281,34 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         tasks: toCards(event.result),
       };
 
-    case 'awaiting_confirmation':
+    case 'awaiting_confirmation': {
+      // 두 엔진이 서로 다른 모양으로 보낸다(../../api/chat.ts의 타입 주석
+      // 참고) — `action_requests` 유무로 가른다. **레거시 필드
+      // (`tool_name`/`arguments`)로 새 엔진 이벤트를 읽으면 둘 다
+      // `undefined`가 되어 카드가 안 뜬다**(2026-08-20, 실제로 겪음 — 화면이
+      // 멈춘 것처럼 보이고 오류만 떴다). `if`/`else`로 갈라야 각 분기 안에서
+      // `event`가 해당 모양으로 좁혀진다 — 한 줄 삼항연산자로 값만 꺼내면
+      // 그 좁힘이 다음 줄까지 안 이어져 타입 오류가 난다.
+      let toolName: string | undefined;
+      let args: Record<string, unknown> | undefined;
+      if ('action_requests' in event) {
+        const first = event.action_requests[0];
+        toolName = first?.name;
+        args = first?.args;
+      } else {
+        toolName = event.tool_name;
+        args = event.arguments;
+      }
       return {
         ...state,
         running: false,
         confirm: {
-          toolName: event.tool_name,
+          toolName: toolName ?? '확인 필요',
           runId: event.run_id,
-          count: countIssues(event.arguments),
+          count: countIssues(args ?? {}),
         },
       };
+    }
 
     case 'result': {
       const jira = readJiraResult(state.extraction, event);
@@ -296,6 +322,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         // 끝난 과거 턴에 승인 버튼이 다시 켜진다.
         confirm: null,
         answer: event.text ?? '',
+        durationMs: event.duration_ms ?? null,
         stoppedReason: event.complete ? null : event.stopped_reason ?? '알 수 없는 이유',
         created: jira.created,
         failures: jira.failures,
@@ -303,7 +330,16 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     }
 
     case 'error':
-      return { ...state, running: false, error: { detail: event.detail } };
+      // 두 모양이 온다(../../api/chat.ts의 타입 주석 참고) — `detail`(스트림
+      // 밖 크래시)이 없으면 `message`(그래프 실행 중 실패)를 쓴다. 2026-08-20
+      // 발견: 이걸 안 하면 후자일 때 `ErrorCard`에 사유가 하나도 안 남는다
+      // ("요청을 끝내지 못했습니다"만 뜨고 본문·기술 정보가 전부 빈다).
+      return {
+        ...state,
+        running: false,
+        durationMs: event.duration_ms ?? null,
+        error: { detail: event.detail ?? event.message, errorCode: event.error_code },
+      };
 
     default:
       return state;

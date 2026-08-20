@@ -1111,6 +1111,20 @@ export default function ChatPage() {
                           onOpenSettings={() => navigate(PATHS.settingsConnectors)}
                         />
                       )}
+
+                      {/*
+                        2026-08-19 §12순위. `live.running`이 아직 true면(스트림
+                        도중 새로고침 복원 등) 값이 있어도 안 보여준다 — 실행이
+                        끝나기 전 시간은 "총 걸린 시간"이 아니라 지금까지
+                        흐른 시간이라 오해를 준다. 재개(resume) 스트림은
+                        서버가 `duration_ms`를 아예 안 붙이므로(의도된 한계)
+                        `durationMs`가 `null`이라 자연히 표시가 생략된다.
+                      */}
+                      {!live.running && live.durationMs != null && (
+                        <p className={styles.durationLine}>
+                          {(live.durationMs / 1000).toFixed(1)}초 만에 답변
+                        </p>
+                      )}
                     </>
                   )}
                 </div>
