@@ -25,8 +25,13 @@ MASK_PLACEHOLDER = "[가려짐]"
 
 # credential / secret — 값의 "형태"만으로 판단, 진위 판단 불필요.
 CREDENTIAL_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),  # OpenAI/Anthropic류 API 키 형식
+    # OpenAI/Anthropic류 API 키. **하이픈을 허용해야 한다** — 2026-08-20 실측에서
+    # 현행 형식(`sk-proj-`·`sk-svcacct-`·`sk-ant-api03-`)이 전부 통과했다. 옛
+    # 패턴은 `sk-` 바로 뒤에 영숫자 20자가 **연속**으로 오기를 요구해서, 4자 만에
+    # 하이픈이 나오는 접두사 붙은 키를 못 잡았다(이 저장소 `.env` 의 키가 그 형식).
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key 형식
+    re.compile(r"AIza[0-9A-Za-z_-]{35}"),  # Google API 키 형식(2026-08-20 실측에서 누락 확인)
     re.compile(r"(?i)(api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*\S+"),
     re.compile(r"(?i)(aws_secret|db_password|secret_key|private_key)\s*[:=]"),
 ]
