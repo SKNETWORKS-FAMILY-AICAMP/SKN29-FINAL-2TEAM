@@ -3,7 +3,7 @@
 정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §17.1
 (원래 작업자 A 담당, 착수 전이라 작업자 B가 대신 작성 — 2026-08-13)
 
-`services.harness.registry.BUILTIN_TOOLS`(13개, AST로 직접 확인 — 아래 각 상수의
+`services.harness.registry.BUILTIN_TOOLS`(14개, AST로 직접 확인 — 아래 각 상수의
 근거)를 `services.agent_runtime.tools.loader.Tool`로 바꾼다. 어떤 컨텍스트를
 주입할지는 `services/harness/runner.py`의 `_injected()`를 실제로 읽어서 그대로
 옮겼다 — 추측이 아니라 실측이다:
@@ -17,7 +17,9 @@
                                                아래 별도 설명)
   task_register / task_list / task_update /
   jira_create_issues / jira_get_issues     -> project_id, account_id
-  web_search                                -> (없음)
+  web_search / get_current_datetime         -> (없음, 2026-08-20 후자 추가 —
+                                               요청자·팀과 무관하게 항상 같은
+                                               답이라 주입할 서버 값이 없다)
 
 **proj_id 대 project_id**: 레거시 핸들러의 실제 키워드 인자 이름은 `proj_id`다
 (services/harness/registry.py 함수 시그니처 AST로 확인, 2026-08-13).
@@ -161,7 +163,7 @@ def _wrap_handler(
 
 
 def adapt_builtin_tools(*, agent_model: str | None = None) -> tuple[RuntimeTool, ...]:
-    """`services.harness.registry.BUILTIN_TOOLS`(13개)를 실행 코어 `Tool`로 바꾼다.
+    """`services.harness.registry.BUILTIN_TOOLS`(14개)를 실행 코어 `Tool`로 바꾼다.
 
     `agent_model`은 `task_extraction`에만 쓰인다(위 모듈 docstring 참고) — 다른
     도구는 이 값을 무시한다.
@@ -210,8 +212,15 @@ def adapt_mcp_tools(*, team_id: str) -> tuple[RuntimeTool, ...]:
 
     `services.harness.registry._mcp_tool()`과 같은 근거로 `side_effect=True`를
     고정한다 — MCP `tools/list` 응답에 read/write를 구분하는 필드가 없어서,
-    모르는 것을 안전한 쪽(팀장만 실행 가능·승인 필요, runtime_policy.py의
-    write_tool_allowed_roles)으로 가정한다.
+    모르는 것을 안전한 쪽(승인 필요, `runtime_policy.py`의
+    `is_tool_allowed_for_role()`)으로 가정한다. **"팀장만 실행 가능"은
+    2026-08-20부터 더는 사실이 아니다** — 기본 정책(`DEFAULT_WRITE_TOOL_
+    ALLOWED_ROLES`)이 leader/member 둘 다 실행을 허용하도록 바뀌었다(사용자
+    요청: 팀원도 승인 대기(HITL)를 거쳐 자기 요청을 자기가 승인하면 실행
+    된다). 이 함수가 실제로 고정하는 건 `side_effect=True` 하나뿐이고, 그
+    값이 실행 시점에 어떤 역할까지 통과시키는지는 전적으로
+    `runtime_policy.py`의 정책 값을 따른다 — 이 docstring이 그 값을
+    앞질러 단정하지 않는다.
 
     내장 도구와 달리 팀마다 목록이 달라 매개변수가 필요하다 — 이 함수는
     `ToolLoader.load()`가 요청된 tool_refs 중 `mcp:` 접두사가 있을 때만

@@ -19,6 +19,42 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _agent_execution_failure_event(
+    exc: Exception, *, agent_id: str | None, agent_version_id: str | None, run_id: str | None
+) -> dict[str, Any]:
+    """그래프 실행(`run()`/`resume()`) 중 예외 → `EVENT_ERROR` 이벤트.
+
+    2026-08-20, 실사용 중 발견 — 이 자리는 예전부터 어떤 예외가 왔든
+    `"에이전트 실행 중 오류가 발생했습니다."`라는 고정 문구만 돌려주고 있었다.
+    `logger.exception(...)`으로 서버 로그에는 진짜 원인이 남지만, 화면에는 그
+    문구 하나뿐이라 사람이 뭘 고쳐야 할지 알 방법이 없었다 — `ToolInputError`
+    (프로젝트를 못 골랐다)처럼 **사람이 그 자리에서 고칠 수 있는 사유**까지도
+    똑같이 뭉개졌다.
+
+    `factory.py`의 `_to_langchain_tool()._run()`이 이미 정해 둔 기준
+    (`SPEAKABLE_ERRORS`/`error_code_of()`)을 여기서도 그대로 쓴다 — 같은
+    판단을 두 곳에서 따로 하지 않는다. 말할 수 있는 사유(`ToolInputError`/
+    `RepositoryError`— `PermissionDenied` 포함/`OAuthError`)는 원문 메시지를
+    그대로 주고, 그 밖은 예전과 같은 일반 문구를 쓰되 클래스 이름(또는 MCP
+    에러 코드)만 `error_code`에 남긴다 — 문서 원문·토큰이 섞여 있을 수 있는
+    메시지를 화면에 그대로 내보내지 않기 위해서다.
+    """
+
+    from services.harness.runner import SPEAKABLE_ERRORS
+    from services.harness.trace import error_code_of
+
+    message = str(exc) if isinstance(exc, SPEAKABLE_ERRORS) else "에이전트 실행 중 오류가 발생했습니다."
+    return {
+        "type": EVENT_ERROR,
+        "error_code": error_code_of(exc),
+        "message": message,
+        "agent_id": agent_id,
+        "agent_version_id": agent_version_id,
+        "run_id": run_id,
+        "complete": True,
+    }
+
+
 def validate_execution_target(
     *,
     agent_id: str | None,
@@ -100,7 +136,7 @@ class AgentExecutor:
                     ),
                 )
 
-            runtime, resolved_model = self.factory.build(
+            runtime, resolved_model, child_resolved_models = self.factory.build(
                 definition=loaded.definition,
                 subagent_references=loaded.subagent_references,
                 context=context,
@@ -157,24 +193,38 @@ class AgentExecutor:
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
                 # 호출) 원시 이벤트 1개가 공통 이벤트 여러 개로 펼쳐질 수 있다.
                 for converted in event_mapper.convert(
-                    raw_event, definition=loaded.definition, context=context
+                    raw_event,
+                    definition=loaded.definition,
+                    context=context,
+                    # 2026-08-19, §10순위(Child Run Snapshot) — `factory.build()`가
+                    # 이미 계산해 둔 Root 자신의 resolved_model과 Child별
+                    # resolved_model(alias 기준)을 EventMapper에 넘긴다.
+                    # `subagent_started` 이벤트를 만들 때(events.py
+                    # `_classify_parent_tool_calls()`) 여기서 alias로 찾아
+                    # `resolved_provider`/`resolved_endpoint_hash`를 채운다.
+                    root_resolved_model=resolved_model,
+                    child_resolved_models=child_resolved_models,
                 ):
                     yield converted
-        except Exception:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
+        except Exception as exc:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
+            # **말할 수 있는 사유에는 트레이스백을 남기지 않는다** —
+            # `factory.py`의 `_run()`과 같은 기준(위 `_agent_execution_failure_
+            # event()` docstring 참고). 아래에서 다시 분기하지 않고 그 함수가
+            # 이미 SPEAKABLE_ERRORS로 갈랐으니, 로그 레벨은 여기서는 항상
+            # `exception`으로 남긴다 — 이 자리는 그래프 실행 자체가 멈춘
+            # 드문 경로라, 말할 수 있는 사유였더라도 "왜 여기까지 왔는지"는
+            # 운영 로그에 남아야 다음에 같은 경로를 또 타는지 알 수 있다.
             logger.exception(
                 "Deep Agent 실행 실패: agent=%s version=%s",
                 loaded.definition.agent_id,
                 loaded.definition.agent_version_id,
             )
-            yield {
-                "type": EVENT_ERROR,
-                "error_code": "AGENT_EXECUTION_FAILED",
-                "message": "에이전트 실행 중 오류가 발생했습니다.",
-                "agent_id": loaded.definition.agent_id,
-                "agent_version_id": loaded.definition.agent_version_id,
-                "run_id": context.run_id,
-                "complete": True,
-            }
+            yield _agent_execution_failure_event(
+                exc,
+                agent_id=loaded.definition.agent_id,
+                agent_version_id=loaded.definition.agent_version_id,
+                run_id=context.run_id,
+            )
 
     def resume(
         self,
@@ -229,11 +279,14 @@ class AgentExecutor:
                         loaded.definition, tool_refs=tuple(tool_refs_override)
                     ),
                 )
-            # 재개는 `EVENT_AGENT_STARTED`를 새로 안 내므로(아래) `resolved_model`을
-            # 다시 기록할 자리가 없다 — 멈추기 전 `_start_run()`이 이미 적어 둔
-            # 값을 그대로 둔다. `[0]`으로 graph만 쓴다(§4순위, factory.build()
-            # docstring 참고).
-            runtime, _resolved_model = self.factory.build(
+            # 재개는 `EVENT_AGENT_STARTED`를 새로 안 내므로(아래) Root 자신의
+            # `resolved_model`을 다시 기록할 자리가 없다 — 멈추기 전
+            # `_start_run()`이 이미 적어 둔 값을 그대로 둔다(§4순위).
+            # 다만 `resolved_model`/`child_resolved_models` 자체는 버리지
+            # 않는다 — 재개된 뒤에도 이 실행이 새 위임(`subagent_started`)을
+            # 낼 수 있어서, 그 이벤트의 resolved_provider/endpoint_hash를
+            # 채우려면(§10순위) 여전히 필요하다.
+            runtime, resolved_model, child_resolved_models = self.factory.build(
                 definition=loaded.definition,
                 subagent_references=loaded.subagent_references,
                 context=context,
@@ -253,21 +306,22 @@ class AgentExecutor:
                 thread_id=context.session_id,
             ):
                 for converted in event_mapper.convert(
-                    raw_event, definition=loaded.definition, context=context
+                    raw_event,
+                    definition=loaded.definition,
+                    context=context,
+                    root_resolved_model=resolved_model,
+                    child_resolved_models=child_resolved_models,
                 ):
                     yield converted
-        except Exception:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
+        except Exception as exc:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
             logger.exception(
                 "Deep Agent 재개 실패: agent=%s version=%s",
                 loaded.definition.agent_id,
                 loaded.definition.agent_version_id,
             )
-            yield {
-                "type": EVENT_ERROR,
-                "error_code": "AGENT_EXECUTION_FAILED",
-                "message": "에이전트 실행 중 오류가 발생했습니다.",
-                "agent_id": loaded.definition.agent_id,
-                "agent_version_id": loaded.definition.agent_version_id,
-                "run_id": context.run_id,
-                "complete": True,
-            }
+            yield _agent_execution_failure_event(
+                exc,
+                agent_id=loaded.definition.agent_id,
+                agent_version_id=loaded.definition.agent_version_id,
+                run_id=context.run_id,
+            )

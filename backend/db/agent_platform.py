@@ -1507,6 +1507,63 @@ class ToolCallRepository:
                 )
 
 
+# 재실행 대신 그대로 돌려줄 결과의 폭주 방지용 상한. tool_call_idempotency.result_text
+# 는 화면 요약(events.py의 TOOL_OUTPUT_SUMMARY_MAX=500)과 달리 "모델이 실제로
+# 봤던 값을 그대로 다시 준다"가 목적이라 자르지 않는 게 원칙이지만, 도구가
+# 비정상적으로 큰 결과를 낼 가능성까지 무제한으로 열어 두면 안 되므로
+# 애플리케이션 레벨에서만 넉넉한 상한을 건다(DB 컬럼 자체는 TEXT로 무제한).
+IDEMPOTENCY_RESULT_MAX_CHARS = 50_000
+
+
+class ToolCallIdempotencyRepository:
+    """§6순위(외부 Write Tool Idempotency). HITL resume·checkpoint 재시도로 같은
+    super-step이 다시 실행돼도 같은 (run_id, langchain_tool_call_id) 조합의
+    side_effect 도구는 실제로 한 번만 실행되게 한다.
+
+    tool_call 표와 별도인 이유는 DB/schema.sql의 tool_call_idempotency 주석,
+    쓰는 시점(도구 실행 **직전**)은 services/agent_runtime/factory.py의
+    _to_langchain_tool()._run() 참고.
+    """
+
+    @staticmethod
+    def find_result(*, run_id: str, langchain_tool_call_id: str) -> str | None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT result_text
+                      FROM tool_call_idempotency
+                     WHERE run_id = %s AND langchain_tool_call_id = %s
+                    """,
+                    (run_id, langchain_tool_call_id),
+                )
+                row = cursor.fetchone()
+                return row["result_text"] if row else None
+
+    @staticmethod
+    def record_result(
+        *, run_id: str, langchain_tool_call_id: str, tool_ref: str, result: str
+    ) -> None:
+        """이미 있으면 아무것도 하지 않는다(`DO NOTHING`) — 처음 성공한 실행의
+        결과가 기준이다. 동시에 두 실행이 같은 tool_call_id로 경합해도(이론상
+        같은 run_id 안에서는 재개가 순차적이라 실제로는 거의 일어나지 않는다)
+        나중에 쓰는 쪽이 먼저 쓴 값을 덮어써서 모델이 서로 다른 두 시점에
+        다른 결과를 보는 일은 없다.
+        """
+        text = result[:IDEMPOTENCY_RESULT_MAX_CHARS]
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO tool_call_idempotency
+                        (run_id, langchain_tool_call_id, tool_ref, result_text)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (run_id, langchain_tool_call_id) DO NOTHING
+                    """,
+                    (run_id, langchain_tool_call_id, tool_ref, text),
+                )
+
+
 def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str | None:
     """대화를 열 에이전트가 레거시(`agent`)인지 신규 버전(`agents`)인지 가려내고,
     신규면 **지금 발행 중인** 버전(`agents.current_version_id`)을 돌려준다.
