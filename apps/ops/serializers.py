@@ -29,6 +29,19 @@ class NoticeSerializer(serializers.Serializer):
     reason = serializers.CharField(allow_blank=True, required=False, default="")
 
 
+class GuardrailPolicySerializer(serializers.Serializer):
+    """가드레일 정책 저장 입력.
+
+    항목별 값 종류·범위(가림 방식, 0~1 기준값, 차단 단어 목록)는
+    `OpsPolicyRepository._validated_guardrail_policy()`가 한글 문구로 검증한다 —
+    초대 정책·공지와 같은 이유로 여기서는 형태만 본다(두 계층에서 서로 다른
+    문구가 나오는 것을 피하려고).
+    """
+
+    policy = serializers.DictField()
+    reason = serializers.CharField(allow_blank=True, required=False, default="")
+
+
 class NoticeDeleteSerializer(serializers.Serializer):
     reason = serializers.CharField(allow_blank=True, required=False, default="")
 

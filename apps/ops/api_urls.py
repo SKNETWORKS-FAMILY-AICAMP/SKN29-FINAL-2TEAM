@@ -27,7 +27,13 @@ from .views.models import (
 from .views.teams import TeamContentView, TeamOwnerView, TeamsView
 from .views.overview import OverviewView
 from .views.purge import AccountPurgeView, TeamPurgeView
-from .views.policies import InviteTtlView, NoticeDetailView, NoticeListCreateView, PolicyChangeListView
+from .views.policies import (
+    GuardrailPolicyView,
+    InviteTtlView,
+    NoticeDetailView,
+    NoticeListCreateView,
+    PolicyChangeListView,
+)
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="api_ops_auth_login"),
@@ -78,6 +84,7 @@ urlpatterns = [
     path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
+    path("policies/guardrail/", GuardrailPolicyView.as_view(), name="api_ops_policies_guardrail"),
     path("policies/notices/", NoticeListCreateView.as_view(), name="api_ops_policies_notice_list"),
     path("policies/notices/<str:notice_id>/", NoticeDetailView.as_view(), name="api_ops_policies_notice_detail"),
     path("policies/changes/", PolicyChangeListView.as_view(), name="api_ops_policies_changes"),
