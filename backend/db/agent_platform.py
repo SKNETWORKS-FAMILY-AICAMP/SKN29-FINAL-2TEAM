@@ -2943,33 +2943,45 @@ class GuardrailProviderRepository:
                 return row
 
     @staticmethod
-    def activate(*, provider_id: str) -> dict[str, Any]:
-        """이 등록을 그 팀의 활성으로 만든다. 같은 팀의 다른 것은 내려간다.
+    def set_active_for_team(*, team_id: str, provider_id: str | None) -> dict[str, Any] | None:
+        """그 팀이 **무엇을 쓸지** 정한다. `None` 이면 아무것도 안 쓴다.
 
-        **붙지 않는 것은 활성으로 못 만든다.** 「연결 확인」을 통과하지 않은 것을
-        활성으로 두면 그 팀의 대화가 매번 실패하는 검사를 거치고, 화면만 「사용
-        중」이라고 말한다.
+        **팀 단위로 받는다** — 「이 등록을 켠다」가 아니라 「이 팀은 이것을 쓴다」다.
+        기본 채팅 모델(`AgentRepository.main_model_for_team`)과 같은 모양이고, 그래서
+        고르는 자리도 같다(팀 상세).
 
-        한 트랜잭션에서 내리고 올린다 — 부분 UNIQUE 가 「팀당 활성 하나」를
-        강제하므로, 나눠서 하면 중간에 둘 다 활성인 순간이 생겨 실패한다.
+        **붙지 않는 것은 고를 수 없다.** 「연결 확인」을 통과하지 않은 것을 쓰게 두면
+        그 팀의 대화가 매번 실패하는 검사를 거치고, 화면만 「사용 중」이라고 말한다.
+
+        한 트랜잭션에서 내리고 올린다 — 부분 UNIQUE 가 「팀당 활성 하나」를 강제하므로
+        나눠서 하면 중간에 둘 다 활성인 순간이 생겨 실패한다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT team_id, status FROM guardrail_provider WHERE provider_id = %s FOR UPDATE",
-                    (provider_id,),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise RecordNotFound("등록되지 않은 가드레일입니다.")
-                if row["status"] != "CONNECTED":
-                    raise RepositoryError("연결 확인을 통과한 가드레일만 사용할 수 있습니다.")
+                if provider_id is not None:
+                    cursor.execute(
+                        """
+                        SELECT team_id, status FROM guardrail_provider
+                        WHERE provider_id = %s FOR UPDATE
+                        """,
+                        (provider_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise RecordNotFound("등록되지 않은 가드레일입니다.")
+                    if row["team_id"] != team_id:
+                        raise RecordNotFound("이 팀에 등록된 가드레일이 아닙니다.")
+                    if row["status"] != "CONNECTED":
+                        raise RepositoryError("연결 확인을 통과한 가드레일만 사용할 수 있습니다.")
 
                 cursor.execute(
                     "UPDATE guardrail_provider SET is_active = FALSE WHERE team_id = %s AND is_active",
-                    (row["team_id"],),
+                    (team_id,),
                 )
+                if provider_id is None:
+                    return None
+
                 cursor.execute(
                     """
                     UPDATE guardrail_provider SET is_active = TRUE WHERE provider_id = %s

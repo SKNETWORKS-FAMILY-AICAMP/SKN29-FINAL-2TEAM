@@ -240,16 +240,26 @@ class GuardrailProviderTestView(AdminView):
         return Response({**ops_guardrail_row_response(updated), "detail": None if ok else detail})
 
 
-class GuardrailProviderActivateView(AdminView):
-    """이 등록을 그 팀의 활성으로 만든다.
+class TeamActiveGuardrailView(AdminView):
+    """그 팀이 **무엇을 쓸지** 정한다.
 
-    여러 개 등록해 두고 **그중 하나만** 쓴다. 합치는 게 아니라 고르는 것이라
-    「어느 것이 먼저 도는가」를 정할 필요가 없다.
+    **등록 목록(`/ops/guardrails`)이 아니라 팀 상세에서 고른다.** 목록은 전 팀의
+    등록물이라 거기서 켜면 「어느 팀의 무엇을 켜는가」가 흐려진다. 기본 채팅 모델이
+    이미 같은 길을 갔다(`views/models.py`의 `TeamDefaultModelView`) — 등록은
+    `/ops/models`, 고르는 것은 팀 상세다.
+
+    `provider_id` 를 비우면 **아무것도 안 쓴다** — 등록을 지우지 않고 검사만 끈다.
     """
 
-    def post(self, request, provider_id):
+    def put(self, request, team_id):
+        provider_id = request.data.get("provider_id")
+        if provider_id is not None and not isinstance(provider_id, str):
+            return Response({"detail": "가드레일을 골라 주세요."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            row = GuardrailProviderRepository.activate(provider_id=provider_id)
+            row = GuardrailProviderRepository.set_active_for_team(
+                team_id=team_id, provider_id=(provider_id or None)
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
 
@@ -257,7 +267,7 @@ class GuardrailProviderActivateView(AdminView):
             actor_account_id=request.user.account_id,
             action="OPS_GUARDRAIL_ACTIVATE",
             target_type="TEAM",
-            target_id=row["team_id"],
-            payload={"provider_id": provider_id, "name": row["name"], "kind": row["kind"]},
+            target_id=team_id,
+            payload={"provider_id": provider_id or None, "name": row["name"] if row else None},
         )
-        return Response(ops_guardrail_row_response(row))
+        return Response(ops_guardrail_row_response(row) if row else {"provider_id": None})

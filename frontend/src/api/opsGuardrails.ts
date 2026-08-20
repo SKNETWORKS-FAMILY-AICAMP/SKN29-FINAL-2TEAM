@@ -112,15 +112,15 @@ export function probeOpsGuardrail(
 }
 
 /**
- * 이 등록을 그 팀의 활성으로 만든다. 같은 팀의 다른 것은 내려간다.
+ * 그 팀이 **무엇을 쓸지** 정한다. `null` 이면 아무것도 안 쓴다(등록은 남는다).
  *
- * 여러 개 등록해 두고 **그중 하나만** 쓴다 — 합치는 게 아니라 고르는 것이라
- * 「어느 것이 먼저 도는가」를 정할 필요가 없다. 연결 확인을 통과한 것만 고를 수
- * 있다(서버가 막는다).
+ * **등록 목록이 아니라 팀 상세에서 고른다** — 목록은 전 팀의 등록물이라 거기서
+ * 켜면 「어느 팀의 무엇을 켜는가」가 흐려진다. 기본 채팅 모델이 이미 같은 길을
+ * 갔다(`opsModels.saveOpsTeamDefaultModel`).
  */
-export function activateOpsGuardrail(token: string, providerId: string) {
-  return opsRequest<OpsGuardrailProvider>(`/ops/guardrails/${providerId}/activate/`, {
-    method: 'POST',
-    token,
-  });
+export function setTeamActiveGuardrail(token: string, teamId: string, providerId: string | null) {
+  return opsRequest<OpsGuardrailProvider | { provider_id: null }>(
+    `/ops/guardrails/teams/${teamId}/active/`,
+    { method: 'PUT', token, body: { provider_id: providerId } },
+  );
 }

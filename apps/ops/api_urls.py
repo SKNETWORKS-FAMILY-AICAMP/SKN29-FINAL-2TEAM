@@ -17,11 +17,11 @@ from .views.invites import (
     InviteUnlinkView,
 )
 from .views.guardrails import (
-    GuardrailProviderActivateView,
     GuardrailProviderDetailView,
     GuardrailProviderProbeView,
     GuardrailProviderListCreateView,
     GuardrailProviderTestView,
+    TeamActiveGuardrailView,
 )
 from .views.login import LoginView, LogoutView
 from .views.mcp import McpDetailView, McpListCreateView, McpProbeView, McpTestView
@@ -96,6 +96,12 @@ urlpatterns = [
     # **`<provider_id>` 앞에 둔다.** 뒤에 두면 `guardrails/probe/` 가 상세로
     # 잡힌다 — 모델(`models/probe/`)·커스텀 도구(`mcp/probe/`)가 실제로 밟은 자리다.
     path("guardrails/probe/", GuardrailProviderProbeView.as_view(), name="api_ops_guardrail_probe"),
+    # 이것도 `<provider_id>` 앞이다 — 뒤에 두면 `guardrails/teams/` 가 상세로 잡힌다.
+    path(
+        "guardrails/teams/<str:team_id>/active/",
+        TeamActiveGuardrailView.as_view(),
+        name="api_ops_team_active_guardrail",
+    ),
     path(
         "guardrails/<str:provider_id>/",
         GuardrailProviderDetailView.as_view(),
@@ -105,11 +111,6 @@ urlpatterns = [
         "guardrails/<str:provider_id>/test/",
         GuardrailProviderTestView.as_view(),
         name="api_ops_guardrail_test",
-    ),
-    path(
-        "guardrails/<str:provider_id>/activate/",
-        GuardrailProviderActivateView.as_view(),
-        name="api_ops_guardrail_activate",
     ),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
     path(

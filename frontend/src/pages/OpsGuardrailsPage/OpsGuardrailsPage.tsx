@@ -11,7 +11,6 @@ import {
 } from '../../components';
 import type { BadgeTone } from '../../components';
 import {
-  activateOpsGuardrail,
   fetchOpsGuardrails,
   probeOpsGuardrail,
   registerOpsGuardrail,
@@ -24,7 +23,6 @@ import { fetchOpsTeams } from '../../api/opsTeams';
 import type { OpsTeam } from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
-import { josa } from '../../utils/josa';
 import styles from '../OpsShared/OpsPages.module.css';
 
 /**
@@ -343,29 +341,6 @@ export default function OpsGuardrailsPage() {
     }
   }
 
-  async function activate(row: OpsGuardrailProvider) {
-    const session = loadOpsSession();
-    if (!session) {
-      navigate('/ops/login', { replace: true });
-      return;
-    }
-
-    setBusy(true);
-    try {
-      await activateOpsGuardrail(session.token, row.provider_id);
-      showToast(`‘${row.name}’${josa(row.name, '을/를')} 활성화했습니다.`, 'success');
-      await load();
-    } catch (thrown) {
-      if (thrown instanceof ApiError && thrown.status === 401) {
-        navigate('/ops/login', { replace: true });
-        return;
-      }
-      showToast(thrown instanceof ApiError ? thrown.message : '활성화하지 못했습니다.', 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function remove(row: OpsGuardrailProvider) {
     const session = loadOpsSession();
     if (!session) {
@@ -552,7 +527,7 @@ export default function OpsGuardrailsPage() {
         {rows.length === 0 ? (
           <OpsEmpty message="아직 어느 팀에도 등록한 가드레일이 없습니다." />
         ) : (
-          <OpsDataTable minWidth={1150}>
+          <OpsDataTable minWidth={1080}>
             {/* **모든 칸에 폭을 준다.** `table-layout: fixed` 에서 폭을 안 준 칸이
                 하나라도 있으면, 나머지 고정 폭 합이 `minWidth` 를 넘는 순간 그 칸만
                 0 으로 눌리고 내용이 옆 칸 위로 흘러넘친다 — 헤더와 행이 어긋나
@@ -566,7 +541,7 @@ export default function OpsGuardrailsPage() {
                 <th style={{ width: 80 }}>사용</th>
                 <th style={{ width: 70 }}>키</th>
                 <th style={{ width: 100 }}>확인</th>
-                <th style={{ width: 330 }} />
+                <th style={{ width: 260 }} />
               </tr>
             </thead>
             <tbody>
@@ -604,20 +579,6 @@ export default function OpsGuardrailsPage() {
                         onClick={() => test(row)}
                       >
                         연결 확인
-                      </Button>
-                      {/* **행마다 버튼 수를 바꾸지 않는다.** 이미 쓰는 행에서만
-                          숨겼더니 그 행의 「삭제」가 다른 행보다 앞으로 당겨져,
-                          같은 열인데 파괴적 버튼의 자리가 행마다 달랐다
-                          (2026-08-20 PM 지적). 숨기는 대신 잠근다 — 이미 쓰는
-                          것과 연결 안 된 것은 누를 이유가 없다. */}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        data-button
-                        disabled={busy || row.is_active || row.status !== 'CONNECTED'}
-                        onClick={() => activate(row)}
-                      >
-                        활성화
                       </Button>
                       <Button
                         size="sm"

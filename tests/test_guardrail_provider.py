@@ -16,6 +16,7 @@ import apps.ops.tokens as ops_tokens
 
 LIST_URL = "/api/ops/guardrails/"
 DETAIL_URL = "/api/ops/guardrails/GP001/"
+TEAM_ACTIVE_URL = "/api/ops/guardrails/teams/TE001/active/"
 
 
 def admin_account(account_id="UA001"):
@@ -32,6 +33,7 @@ def admin_account(account_id="UA001"):
 def provider_row(**overrides):
     row = {
         "provider_id": "GP001",
+        "is_active": False,
         "team_id": "TE001",
         "team_name": "개발팀",
         "name": "우리 회사 가드레일",
@@ -154,3 +156,38 @@ class GuardrailProviderApiTests(SimpleTestCase):
         response = self.client.get(LIST_URL, **self._headers())
 
         self.assertEqual(response.status_code, 401)
+
+    def test_그_팀이_쓸_것을_팀_단위로_정한다(self, repo, _audit, _admin):
+        """**등록 목록이 아니라 팀 상세에서 고른다** — 목록은 전 팀의 등록물이라
+        거기서 켜면 「어느 팀의 무엇을 켜는가」가 흐려진다."""
+
+        repo.set_active_for_team.return_value = provider_row(is_active=True)
+
+        response = self.client.put(
+            TEAM_ACTIVE_URL,
+            data=json.dumps({"provider_id": "GP001"}),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        _, kwargs = repo.set_active_for_team.call_args
+        self.assertEqual(kwargs["team_id"], "TE001")
+        self.assertEqual(kwargs["provider_id"], "GP001")
+
+    def test_비우면_아무것도_안_쓴다(self, repo, _audit, _admin):
+        """등록을 지우지 않고 검사만 끄는 자리다."""
+
+        repo.set_active_for_team.return_value = None
+
+        response = self.client.put(
+            TEAM_ACTIVE_URL,
+            data=json.dumps({"provider_id": None}),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["provider_id"])
+        _, kwargs = repo.set_active_for_team.call_args
+        self.assertIsNone(kwargs["provider_id"])

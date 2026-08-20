@@ -5,7 +5,7 @@ import { fetchOpsTeamDefaultModel, saveOpsTeamDefaultModel } from '../../api/ops
 import type { OpsTeamDefaultModel } from '../../api/opsModels';
 import { fetchOpsMcpServers } from '../../api/opsMcp';
 import type { OpsMcpServer } from '../../api/opsMcp';
-import { fetchOpsGuardrails } from '../../api/opsGuardrails';
+import { fetchOpsGuardrails, setTeamActiveGuardrail } from '../../api/opsGuardrails';
 import type { GuardrailKind, OpsGuardrailProvider } from '../../api/opsGuardrails';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
@@ -14,10 +14,14 @@ import styles from '../OpsShared/OpsPages.module.css';
 /**
  * 이 팀이 **사용 중인 것** — 모델, 커스텀 도구, 가드레일.
  *
- * 모델은 **고를 수 있고**(이 팀이 무엇으로 도나), 커스텀 도구와 가드레일은
+ * 모델과 가드레일은 **고를 수 있고**(이 팀이 무엇으로 도나), 커스텀 도구는
  * **보여만 준다**. 등록은 각자의 페이지다(`/ops/models`·`/ops/mcp`·
  * `/ops/guardrails`) — 등록은 「무엇을 새로 붙이나」라 주제로 시작하는 일이고,
  * 여기는 「이 팀이 지금 무엇을 쓰나」다.
+ *
+ * **가드레일을 고르는 자리가 여기인 이유**(2026-08-20 PM 지적): 등록 목록은 전
+ * 팀의 등록물이라 거기서 켜면 「어느 팀의 무엇을 켜는가」가 흐려진다. 모델이 이미
+ * 같은 길을 갔다 — 등록은 `/ops/models`, 고르는 것은 여기다.
  *
  * 팀 상세의 나머지(에이전트·최근 실행)와 성격이 같다 — **「에이전트가 이상해요」에
  * 답하는 자리**라, 문의가 왔을 때 이 팀이 무엇으로 도는지 한 화면에서 보인다.
@@ -67,6 +71,21 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function chooseGuardrail(next: string) {
+    const session = loadOpsSession();
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      await setTeamActiveGuardrail(session.token, teamId, next || null);
+      await load();
+    } catch (thrown) {
+      setError(thrown instanceof ApiError ? thrown.message : '바꾸지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function saveDefault(next: string) {
     const session = loadOpsSession();
@@ -153,17 +172,39 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
         )}
       </OpsSectionCard>
 
-      <OpsSectionCard
-        title="사용 중 가드레일"
-        subtitle={
-          guardrails.length > 1
-            ? `등록 ${guardrails.length}건 중 사용 중 ${guardrails.filter((row) => row.is_active).length}`
-            : ''
-        }
-      >
+      <OpsSectionCard title="사용 중 가드레일">
         {guardrails.length === 0 ? (
           <OpsEmpty message="이 팀에 등록된 가드레일이 없습니다." />
         ) : (
+          <>
+            <div className={styles.formGrid}>
+              <div className={styles.fieldGroup}>
+                <label htmlFor="team-guardrail">이 팀 대화가 거쳐 갈 가드레일</label>
+                {/* 연결 확인을 통과하지 않은 것은 고를 수 없다 — 고르게 두면 그
+                    팀의 대화가 매번 실패하는 검사를 거치고, 화면만 「사용 중」
+                    이라고 말한다. 서버도 같은 이유로 막는다. */}
+                <select
+                  id="team-guardrail"
+                  value={guardrails.find((row) => row.is_active)?.provider_id ?? ''}
+                  disabled={busy}
+                  onChange={(event) => chooseGuardrail(event.target.value)}
+                >
+                  {/* 등록을 지우지 않고 검사만 끄는 자리 */}
+                  <option value="">사용 안 함</option>
+                  {guardrails.map((row) => (
+                    <option
+                      key={row.provider_id}
+                      value={row.provider_id}
+                      disabled={row.status !== 'CONNECTED'}
+                    >
+                      {row.name} ({GUARDRAIL_KIND_LABELS[row.kind] ?? row.kind})
+                      {row.status !== 'CONNECTED' ? ' — 연결 확인 필요' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
           <OpsDataTable minWidth={760}>
             <thead>
               <tr>
@@ -192,6 +233,7 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
               ))}
             </tbody>
           </OpsDataTable>
+          </>
         )}
       </OpsSectionCard>
     </>
