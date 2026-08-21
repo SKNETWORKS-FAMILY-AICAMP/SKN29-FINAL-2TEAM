@@ -274,6 +274,131 @@ class RealGraphIntegrationTests(SimpleTestCase):
                 self.assertIsInstance(payload, dict)
 
 
+class MaxConcurrencyArgumentTests(SimpleTestCase):
+    """2026-08-21, 병렬실행 Phase 1 — `max_concurrency`가 LangGraph config에
+    실리는지(`2026-08-20_02_에이전트_병렬실행_설계.md` §5.1).
+
+    실제로 동시 실행이 상한만큼만 도는지는 아래
+    `MaxConcurrencyRealGraphTests`가 진짜 그래프로 확인한다 — 여기서는 값이
+    config에 전달되는지(배선)만 본다."""
+
+    def test_max_concurrency_is_put_on_the_config(self):
+        runtime = _FakeRuntime()
+
+        list(DeepAgentStreamAdapter().stream(runtime=runtime, user_input="안녕", max_concurrency=3))
+
+        self.assertEqual(runtime.stream_calls[0]["kwargs"]["config"]["max_concurrency"], 3)
+
+    def test_max_concurrency_coexists_with_thread_id(self):
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime, user_input="안녕", thread_id="SESSION001", max_concurrency=3
+            )
+        )
+
+        config = runtime.stream_calls[0]["kwargs"]["config"]
+        self.assertEqual(config["max_concurrency"], 3)
+        self.assertEqual(config["configurable"]["thread_id"], "SESSION001")
+
+    def test_resume_path_also_gets_max_concurrency(self):
+        """승인 후 한꺼번에 풀리는 복수 side-effect 호출이야말로 상한이 필요한
+        자리다(§5.1·§8) — 재개 경로가 빠지면 안 된다."""
+        runtime = _FakeRuntime()
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=runtime,
+                resume={"decisions": [{"type": "approve"}]},
+                thread_id="SESSION001",
+                max_concurrency=2,
+            )
+        )
+
+        config = runtime.stream_calls[0]["kwargs"]["config"]
+        self.assertEqual(config["max_concurrency"], 2)
+        self.assertEqual(config["configurable"]["thread_id"], "SESSION001")
+
+    def test_omitting_it_leaves_the_call_shape_unchanged(self):
+        """안 넘기면 LangGraph 기본 동작(무제한)이 그대로 — 기존 호출자를
+        깨지 않는다."""
+        runtime = _FakeRuntime()
+
+        list(DeepAgentStreamAdapter().stream(runtime=runtime, user_input="안녕"))
+
+        self.assertNotIn("config", runtime.stream_calls[0]["kwargs"])
+
+
+_concurrency_probe: dict[str, Any] = {}
+
+
+@tool
+def _slow_probe_tool(query: str) -> str:
+    """동시에 몇 개가 겹쳐 도는지 실제로 세는 도구.
+
+    들어올 때 카운터를 올리고 최고치를 기록한 뒤 잠깐 자고 나간다 — 상한이
+    걸려 있으면 최고치가 그 값을 못 넘는다.
+    """
+    import threading
+    import time
+
+    lock = _concurrency_probe["lock"]
+    with lock:
+        _concurrency_probe["running"] += 1
+        _concurrency_probe["peak"] = max(_concurrency_probe["peak"], _concurrency_probe["running"])
+    try:
+        time.sleep(0.05)
+    finally:
+        with lock:
+            _concurrency_probe["running"] -= 1
+    return f"done:{query}"
+
+
+class MaxConcurrencyRealGraphTests(SimpleTestCase):
+    """설계 문서 §11 Phase 1의 "복수 task가 상한만큼만 동시에 실행되는 실물
+    테스트" — 배선 확인이 아니라 실제 동시 실행 수를 센다."""
+
+    def setUp(self):
+        import threading
+
+        _concurrency_probe.clear()
+        _concurrency_probe.update({"lock": threading.Lock(), "running": 0, "peak": 0})
+
+    def _run_with(self, max_concurrency: int | None) -> int:
+        calls = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "_slow_probe_tool", "args": {"query": str(i)}, "id": str(i)}
+                for i in range(6)
+            ],
+        )
+        model = _ScriptedModel(responses=[calls, AIMessage(content="done")])
+        graph = create_deep_agent(
+            model=model, system_prompt="test", tools=[_slow_probe_tool], subagents=[]
+        )
+
+        list(
+            DeepAgentStreamAdapter().stream(
+                runtime=graph, user_input="hi", max_concurrency=max_concurrency
+            )
+        )
+        return _concurrency_probe["peak"]
+
+    def test_six_parallel_tool_calls_never_exceed_the_limit(self):
+        peak = self._run_with(2)
+
+        self.assertGreater(peak, 0)  # 실제로 도구가 돌긴 했는지
+        self.assertLessEqual(peak, 2)
+
+    def test_without_a_limit_more_than_the_limit_can_overlap(self):
+        """상한이 실제로 뭔가를 하고 있다는 대조군 — 안 걸면 2를 넘는 동시
+        실행이 실제로 일어난다(그러므로 위 테스트의 `<= 2`가 우연이 아니다)."""
+        peak = self._run_with(None)
+
+        self.assertGreater(peak, 2)
+
+
 @tool
 def _progress_tool(query: str) -> dict:
     """진행 이벤트를 흘리는 도구 — get_stream_writer() 경로가 실제로 살아 있는지 확인용."""

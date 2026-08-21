@@ -230,6 +230,9 @@ class AgentExecutor:
                     if callbacks
                     else None
                 ),
+                # 2026-08-21, 병렬실행 Phase 1 — 한 super-step 동시 실행 상한
+                # (`2026-08-20_02` §5.1). 정책 값 하나를 그대로 넘긴다.
+                max_concurrency=self.factory.runtime_policy.max_concurrency,
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
@@ -364,6 +367,10 @@ class AgentExecutor:
                     if callbacks
                     else None
                 ),
+                # 2026-08-21, 병렬실행 Phase 1 — 재개 경로에도 같은 상한을
+                # 건다. 승인 후 한꺼번에 풀리는 복수 side-effect 호출이야말로
+                # 상한이 필요한 자리다(`2026-08-20_02` §5.1·§8).
+                max_concurrency=self.factory.runtime_policy.max_concurrency,
             ):
                 for converted in event_mapper.convert(
                     raw_event,

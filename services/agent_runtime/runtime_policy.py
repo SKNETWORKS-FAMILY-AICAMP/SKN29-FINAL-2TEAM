@@ -67,6 +67,24 @@ DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader", 
 GUNICORN_WORKER_TIMEOUT_SECONDS = 600
 DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS = 480
 
+# 2026-08-21, 병렬실행 Phase 1 — 한 super-step에서 동시에 실행할 tool call 수.
+# 정본: `docs/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.1
+#
+# LangGraph `RunnableConfig`의 `max_concurrency`로 들어간다(실측: sync 경로는
+# `get_executor_for_config()`가 `ThreadPoolExecutor(max_workers=...)`로, async
+# 경로는 `AsyncBackgroundExecutor`가 `asyncio.Semaphore(...)`로 각각 이 값을
+# 읽는다). 호출을 버리는 게 아니라 상한만큼만 동시에 돌리고 나머지는
+# 대기시킨다.
+#
+# **잠정값이다(정직하게 기록)**: 설계 문서 §5.1이 "정확한 기본값은 실측 전에
+# 확정하지 않는다"고 못박아 뒀고, 부하 테스트는 아직 안 했다(Phase 4). 4를
+# 고른 근거는 "이게 최적"이 아니라 "무제한을 유한하게 만든다"는 것뿐이다 —
+# 이 값은 중첩된 Child 그래프에도 그대로 전파되므로 위임 깊이가 1단계로
+# 제한된 지금(`BuildDelegationDepthTests`) 한 요청의 최악은 4×4=16개다.
+# 설계 문서 §3.1이 "지금은 이 16개가 상한 없이 난다"를 문제로 든 바로 그
+# 숫자이며, 여기서는 그게 **상한**이 된다는 게 차이다.
+DEFAULT_MAX_CONCURRENCY = 4
+
 # override로도 넘을 수 없는 상한. gunicorn 한도(600초)에 최소 60초 여유를
 # 남긴다 — 정확히 600으로 잡으면 이 미들웨어가 끊기 전에 워커가 먼저 죽어서
 # 있으나 마나가 된다(위 주석의 실패 모드 그대로).
@@ -106,6 +124,12 @@ class RuntimeCapabilityPolicy:
     # 작업이 끊긴다는 게 확인된 것만 나중에 여기 넣는다.
     mcp_tool_call_timeout_seconds: float = DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS
     mcp_tool_call_timeout_overrides: dict[str, float] = field(default_factory=dict)
+
+    # 2026-08-21, 병렬실행 Phase 1 — 한 super-step 동시 실행 상한. 값의 근거와
+    # "왜 잠정값인지"는 위 상수 정의부 주석 참고. `executor.py`가 이 값을
+    # `stream_adapter.stream(max_concurrency=...)`로 넘겨 LangGraph config에
+    # 실린다.
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY
 
     # general-purpose 전용 기본값.
     # 2026-08-19: 사용자 요청으로 50/100으로 올렸다(기존 6/12) — GP는
