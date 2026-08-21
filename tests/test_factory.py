@@ -1161,6 +1161,62 @@ class BuildMcpToolCallTimeoutWiringTests(SimpleTestCase):
         self.assertLess(guard_index, lock_index)
 
 
+class BuildBuiltinWriteLockWiringTests(SimpleTestCase):
+    """2026-08-21, 병렬실행 Phase 3 — 내장 쓰기 도구 직렬화가 Root/Child 둘 다에
+    붙는지, 그리고 timeout 미들웨어보다 **안쪽**인지.
+
+    순서가 중요하다: 바깥이 되면 "락을 쥔 채 timeout을 기다리는" 조합이 생겨,
+    이 설계가 MCP에서 피하려던 문제(커넥션을 오래 붙잡기)를 내장 도구 쪽에서
+    다시 만든다.
+    """
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_receives_builtin_write_lock(self, mock_create_root):
+        from services.agent_runtime.middleware.builtin_write_lock import BuiltinWriteLockMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertEqual(sum(isinstance(m, BuiltinWriteLockMiddleware) for m in middleware), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_receives_builtin_write_lock(self, mock_create_child):
+        from services.agent_runtime.middleware.builtin_write_lock import BuiltinWriteLockMiddleware
+
+        mock_create_child.return_value = "CHILD_GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        middleware = mock_create_child.call_args.kwargs["middleware"]
+        self.assertEqual(sum(isinstance(m, BuiltinWriteLockMiddleware) for m in middleware), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_builtin_write_lock_is_inside_the_timeout(self, mock_create_root):
+        from services.agent_runtime.middleware.builtin_write_lock import BuiltinWriteLockMiddleware
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        timeout_index = next(
+            i for i, m in enumerate(middleware) if isinstance(m, McpToolCallTimeoutMiddleware)
+        )
+        lock_index = next(
+            i for i, m in enumerate(middleware) if isinstance(m, BuiltinWriteLockMiddleware)
+        )
+        self.assertLess(timeout_index, lock_index)
+
+
 class BuildFilesystemExclusionWiringTests(SimpleTestCase):
     """`fs_excluded_tools`(2026-08-18, §5 Phase 6) 배선 — memory/checkpointer와
     달리 선택적 협력자가 아니라 `runtime_policy`에서 항상 읽으므로, Root/Child

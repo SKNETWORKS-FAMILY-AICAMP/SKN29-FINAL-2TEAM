@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddleware, ToolCallLimitMiddleware
 from langchain.agents.middleware.todo import WRITE_TODOS_TOOL_DESCRIPTION
 
+from services.agent_runtime.middleware.builtin_write_lock import build_builtin_write_lock
 from services.agent_runtime.middleware.tool_timeout import build_mcp_tool_call_timeout_middleware
 
 if TYPE_CHECKING:
@@ -142,6 +143,17 @@ class MiddlewareFactory:
                 runtime_policy=self.runtime_policy, context=context
             )
         )
+        # 2026-08-21, 병렬실행 Phase 3 — 같은 프로젝트에 대한 내장 쓰기 도구
+        # 호출을 직렬화한다(`builtin_write_lock.py` 모듈 docstring에 실제
+        # 경합 지점을 적어 뒀다 — `ProjectTaskRepository.register()`의
+        # 읽고-고쳐-쓰기). timeout 미들웨어보다 **뒤**(=안쪽)에 둔다:
+        # langchain의 `wrap_tool_call` 체이닝은 목록 앞쪽이 바깥쪽이라,
+        # 이 순서라야 "락을 쥔 채 timeout을 기다리는" 조합이 안 생긴다
+        # (`memory/write_lock.py`가 write_guard와 맺는 관계와 같다).
+        # `context`가 없으면(테스트 등) 잠글 팀·프로젝트를 특정할 수 없어
+        # 건너뛴다.
+        if context is not None:
+            middleware.append(build_builtin_write_lock(context=context))
         return middleware
 
     def build_for_general_purpose(self) -> list:
