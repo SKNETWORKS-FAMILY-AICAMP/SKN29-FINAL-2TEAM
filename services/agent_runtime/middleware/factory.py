@@ -137,7 +137,11 @@ class MiddlewareFactory:
         # `factory.py`가 Root 전용으로 덧붙이는 write_guard/write_lock과 다른
         # 자리(Root/Child 구분 없음)라 여기서 배선한다. 내장 도구는 이
         # 미들웨어가 스스로 건너뛴다(MCP 접두사 검사).
-        middleware.append(build_mcp_tool_call_timeout_middleware(runtime_policy=self.runtime_policy))
+        middleware.append(
+            build_mcp_tool_call_timeout_middleware(
+                runtime_policy=self.runtime_policy, context=context
+            )
+        )
         return middleware
 
     def build_for_general_purpose(self) -> list:

@@ -31,6 +31,7 @@ ThreadPoolExecutor` + `future.result(timeout=...)`는 "기다리기를 포기"�
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import TYPE_CHECKING, Any
@@ -45,7 +46,10 @@ if TYPE_CHECKING:
 
     from langchain.agents.middleware.types import ToolCallRequest
 
+    from services.agent_runtime.context import RuntimeContext
     from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+
+logger = logging.getLogger(__name__)
 
 #: 프로세스 전체에서 공유하는 실행기. 그래프(=요청)마다 새
 #: `ThreadPoolExecutor`를 만들면 Django 워커가 오래 살아있는 동안 스레드가
@@ -94,10 +98,15 @@ class McpToolCallTimeoutMiddleware(AgentMiddleware):
         self,
         *,
         runtime_policy: "RuntimeCapabilityPolicy",
+        context: "RuntimeContext | None" = None,
         executor: ThreadPoolExecutor | None = None,
     ) -> None:
         super().__init__()
         self._runtime_policy = runtime_policy
+        # `context`(2026-08-21, 병렬실행 Phase 3): timeout 사실을 남기려면
+        # run_id/team_id가 필요하다. 없으면(테스트처럼 context 없이 조립한
+        # 경우) 기록만 건너뛰고 timeout 동작 자체는 그대로다.
+        self._context = context
         # 테스트가 자체 executor를 주입할 수 있게 열어 둔다(예: max_workers=1로
         # 좁혀서 pool 자체의 대기까지 재현하는 경우). 안 주면 공유 pool을 쓴다.
         self._executor = executor if executor is not None else _shared_executor()
@@ -119,6 +128,7 @@ class McpToolCallTimeoutMiddleware(AgentMiddleware):
         try:
             return future.result(timeout=timeout)
         except FutureTimeoutError:
+            self._record_timeout(tool_ref=tool_ref, tool_call_id=request.tool_call["id"])
             return ToolMessage(
                 content=_TIMEOUT_MESSAGE.format(timeout=timeout),
                 tool_call_id=request.tool_call["id"],
@@ -126,11 +136,43 @@ class McpToolCallTimeoutMiddleware(AgentMiddleware):
                 status="error",
             )
 
+    def _record_timeout(self, *, tool_ref: str, tool_call_id: str | None) -> None:
+        """"결과를 확인 못 한 호출"로 남긴다(2026-08-21, `2026-08-21_03` §4.2).
+
+        모델이 이 실패를 보고 새 tool_call_id로 같은 작업을 재시도하면
+        idempotency 캐시에 안 걸려(키가 다르다) 진짜로 다시 실행된다 — 그때
+        원래 호출이 뒤늦게 성공했으면 중복이 난다. 그 재시도의 승인 카드에
+        경고를 띄우려고 남기는 기록이다.
+
+        **기록에 실패해도 timeout 처리 자체는 그대로 간다** — 이건 부가
+        정보지 실행의 일부가 아니다.
+        """
+        context = self._context
+        if context is None or not tool_call_id or not getattr(context, "run_id", None):
+            return
+        from backend.db.agent_platform import McpCallNoteRepository
+
+        try:
+            McpCallNoteRepository.record_timeout(
+                run_id=context.run_id,
+                langchain_tool_call_id=tool_call_id,
+                tool_ref=tool_ref,
+                team_id=context.team_id,
+            )
+        except Exception:  # noqa: BLE001 - 경고용 부가 정보다
+            logger.warning(
+                "MCP timeout 기록에 실패했다: %s (run_id=%s, tool_call_id=%s)",
+                tool_ref,
+                context.run_id,
+                tool_call_id,
+                exc_info=True,
+            )
+
 
 def build_mcp_tool_call_timeout_middleware(
-    *, runtime_policy: "RuntimeCapabilityPolicy"
+    *, runtime_policy: "RuntimeCapabilityPolicy", context: "RuntimeContext | None" = None
 ) -> McpToolCallTimeoutMiddleware:
-    return McpToolCallTimeoutMiddleware(runtime_policy=runtime_policy)
+    return McpToolCallTimeoutMiddleware(runtime_policy=runtime_policy, context=context)
 
 
 __all__ = ["McpToolCallTimeoutMiddleware", "build_mcp_tool_call_timeout_middleware"]

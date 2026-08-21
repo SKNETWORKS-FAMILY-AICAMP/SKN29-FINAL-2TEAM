@@ -1051,6 +1051,34 @@ CREATE TABLE tool_call_idempotency (
     PRIMARY KEY (run_id, langchain_tool_call_id)
 );
 
+-- 승인 카드에 "지금 이걸 승인해도 되나"를 판단할 재료를 붙이려고 둔다
+-- (2026-08-21, 병렬실행 Phase 3). 두 가지를 kind 로 나눠 담는다:
+--   ACTIVE    = 지금 실행 중인 MCP 호출. 같은 서버에 다른 실행이 이미 돌고
+--               있으면 카드에 경고를 띄운다. 끝나면 지운다.
+--   TIMED_OUT = timeout 으로 결과를 확인하지 못한 호출. 안 지운다. 같은 run
+--               에서 같은 도구를 또 부르면 "이미 실행됐을 수 있다"고 알린다.
+-- 같은 MCP 서버 호출을 직렬화(lock)하지 않고 경고만 하는 이유는
+-- DB/migrations/2026-08-21_mcp_call_note.sql 주석과
+-- docs/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md §2.
+-- 성공한 결과만 담는 tool_call_idempotency 와는 담는 시점도 지우는 규칙도
+-- 다르므로 전용 표를 둔다.
+CREATE TABLE mcp_call_note (
+    run_id                   UUID         NOT NULL,   -- agent_run.run_id(FK 없음)
+    langchain_tool_call_id   VARCHAR(64)  NOT NULL,   -- AIMessage.tool_calls[i]["id"]
+    kind                     VARCHAR(16)  NOT NULL,   -- ACTIVE / TIMED_OUT
+    tool_ref                 VARCHAR(100) NOT NULL,   -- 'mcp:<mcp_tool_id>'
+    mcp_server_id            VARCHAR(5),              -- mcp_server.mcp_server_id(FK 없음)
+    team_id                  VARCHAR(5)   NOT NULL,   -- team.team_id(FK 없음)
+    started_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, langchain_tool_call_id, kind)
+);
+
+CREATE INDEX idx_mcp_call_note_server
+    ON mcp_call_note (team_id, mcp_server_id, kind, started_at);
+
+CREATE INDEX idx_mcp_call_note_run_tool
+    ON mcp_call_note (run_id, tool_ref, kind);
+
 -- 문서 하나당 한 줄(doc 과 1:1). chunk 단위 임베딩을 전부 만들지 않고
 -- 요약 임베딩 하나로 후보 문서를 먼저 좁히기 위한 테이블이다(A안, 확정 ⑥).
 CREATE TABLE doc_meta (
