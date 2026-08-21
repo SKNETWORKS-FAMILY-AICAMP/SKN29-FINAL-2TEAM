@@ -7,10 +7,11 @@ import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettings
 import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
 import { MyFilesTab } from './tabs/MyFilesTab';
+import { SkillsTab } from './tabs/SkillsTab';
 import styles from './SettingsPage.module.css';
 
 /**
- * Settings 허브 — 팀 / 커넥터 / 내 파일 탭 컨테이너.
+ * Settings 허브 — 팀 / 커넥터 / 내 파일 / 스킬 탭 컨테이너.
  *
  * **Model 탭은 걷었다**(2026-08-18 멘토링). 기본 채팅 모델은 운영자가 팀별로
  * 정하고(`/ops/models`), 에이전트별 모델은 빌더에 그대로 있다.
@@ -35,6 +36,8 @@ export default function SettingsPage() {
         return <ConnectorTab />;
       case PATHS.settingsMyFiles:
         return <MyFilesTab />;
+      case PATHS.settingsSkills:
+        return <SkillsTab />;
       default:
         return role === 'leader' ? (
           <TeamLeaderSettingsPage />
