@@ -613,6 +613,93 @@ class ToolCallIdArgumentsStatusTests(SimpleTestCase):
         self.assertEqual(event["status"], "FAILED")
 
 
+class ParallelSideEffectPartialFailureTests(SimpleTestCase):
+    """병렬 side-effect 호출 중 일부만 실패했을 때 결과가 **뭉개지지 않는지**.
+
+    정본: `docs/작업기록/Deep_Agents/2026-08-21_05_병렬_side-effect_부분실패_보고.md`
+
+    이미 성공한 호출을 자동으로 되돌리지 않는 대신(사용자가 연결하는 임의의
+    MCP 도구는 되돌리는 방법을 우리가 알 수 없고, 이메일 발송처럼 원천적으로
+    못 되돌리는 것도 있다), **무엇이 실제로 일어났는지를 항목별로 정확히
+    전달하는 것**을 보장한다. "일부 실패했습니다" 같은 한 문장으로 대체할 수
+    없다는 게 이 파일이 지키는 규칙이다.
+
+    새 장치가 아니라 이미 있는 `tool_call_id` 기반 추적(§9)을 규칙으로
+    고정하는 테스트다 — 나중에 누가 결과를 하나로 합치면 여기서 깨진다.
+    """
+
+    def test_three_parallel_calls_each_get_their_own_started_event(self):
+        message = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "jira_create_issues", "args": {"n": 1}, "id": "call-a"},
+                {"name": "jira_create_issues", "args": {"n": 2}, "id": "call-b"},
+                {"name": "task_register", "args": {"n": 3}, "id": "call-c"},
+            ],
+        )
+
+        events = EventMapper().convert(
+            _raw((), "model", message), definition=_Definition(), context=_Context()
+        )
+
+        started = [e for e in events if e["type"] == EVENT_TOOL_STARTED]
+        self.assertEqual([e["tool_call_id"] for e in started], ["call-a", "call-b", "call-c"])
+
+    def test_same_tool_called_twice_stays_two_separate_units(self):
+        """같은 도구를 두 번 불러도 tool_call_id가 다르면 다른 실행이다(§9) —
+        이름으로 묶으면 둘 중 하나의 결과가 사라진다."""
+        message = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "jira_create_issues", "args": {"n": 1}, "id": "call-a"},
+                {"name": "jira_create_issues", "args": {"n": 2}, "id": "call-b"},
+            ],
+        )
+
+        events = EventMapper().convert(
+            _raw((), "model", message), definition=_Definition(), context=_Context()
+        )
+
+        started = [e for e in events if e["type"] == EVENT_TOOL_STARTED]
+        self.assertEqual(len({e["tool_call_id"] for e in started}), 2)
+
+    def test_one_failure_does_not_change_the_others_status(self):
+        """성공한 호출은 성공으로 남는다 — 되돌리지도, 실패로 물들이지도
+        않는다. 부분 결과 허용(fail-late)의 실제 모습이다."""
+        mapper = EventMapper()
+        results = [
+            ToolMessage(name="jira_create_issues", content="이슈 생성됨", tool_call_id="call-a"),
+            ToolMessage(
+                name="send_email", content="발송 실패", tool_call_id="call-b", status="error"
+            ),
+            ToolMessage(name="task_register", content="등록됨", tool_call_id="call-c"),
+        ]
+
+        statuses = {}
+        for message in results:
+            event = _convert_one(mapper, _raw((), "tools", message))
+            statuses[event["tool_call_id"]] = event["status"]
+
+        self.assertEqual(statuses, {"call-a": "OK", "call-b": "FAILED", "call-c": "OK"})
+
+    def test_each_result_keeps_its_own_output(self):
+        """항목별 출력이 그대로 남아야 화면이 "무엇이 됐고 무엇이 안 됐는지"를
+        적을 수 있다 — 하나로 합치면 그 정보가 사라진다."""
+        mapper = EventMapper()
+
+        first = _convert_one(
+            mapper,
+            _raw((), "tools", ToolMessage(name="task_register", content="A 등록", tool_call_id="1")),
+        )
+        second = _convert_one(
+            mapper,
+            _raw((), "tools", ToolMessage(name="task_register", content="B 등록", tool_call_id="2")),
+        )
+
+        self.assertIn("A 등록", first["output"])
+        self.assertIn("B 등록", second["output"])
+
+
 class MangledMcpToolNameDemangledTests(SimpleTestCase):
     """factory.py의 model_safe_tool_name()이 mcp: 콜론을 __로 바꿔 모델에
     보내므로, 여기서 되돌리지 않으면 tool_ref가 mcp__MT001처럼 새어 나간다
