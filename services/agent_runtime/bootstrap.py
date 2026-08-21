@@ -35,6 +35,7 @@ from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
 from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+from services.agent_runtime.skills.provider import SkillsProvider
 from services.agent_runtime.tools.loader import ToolLoader
 
 # 02 §9.3(선결 B)에서 실제 소스+실제 객체로 닫은 결론: deepagents는 미리 만들어진
@@ -104,6 +105,11 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
         # (PostgresSaver 연결은 실제로 체크포인트를 쓰는 첫 호출에서 열린다,
         # checkpoint/checkpointer.py 참고).
         checkpointer_provider=CheckpointerProvider(),
+        # Skill(2026-08-21, services/agent_runtime/skills/). Memory와 같은
+        # 공유 backend에 라우트만 얹는다 — memory_provider가 켜져 있을 때만
+        # 실제로 붙는다(factory.py `__init__`/`build()` 주석 참고).
+        # SkillsProvider() 생성 자체도 I/O가 없다(경로·namespace 계산뿐).
+        skills_provider=SkillsProvider(),
     )
     return AgentExecutor(loader=AgentDefinitionLoader(), factory=factory)
 

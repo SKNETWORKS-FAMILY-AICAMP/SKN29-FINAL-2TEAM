@@ -3,10 +3,11 @@
 정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §17.1
 (원래 작업자 A 담당, 착수 전이라 작업자 B가 대신 작성 — 2026-08-13)
 
-`services.harness.registry.BUILTIN_TOOLS`(14개, AST로 직접 확인 — 아래 각 상수의
+`services.harness.registry.BUILTIN_TOOLS`(15개, AST로 직접 확인 — 아래 각 상수의
 근거)를 `services.agent_runtime.tools.loader.Tool`로 바꾼다. 어떤 컨텍스트를
 주입할지는 `services/harness/runner.py`의 `_injected()`를 실제로 읽어서 그대로
-옮겼다 — 추측이 아니라 실측이다:
+옮겼다 — 추측이 아니라 실측이다(단, `skill_register`는 레거시 runner.py에
+없던 새 도구라 이 실측 대상이 아니다 — 아래 별도 근거):
 
   document_search                          -> team_id, account_id, project_id
   people_list / workload_report /
@@ -20,6 +21,11 @@
   web_search / get_current_datetime         -> (없음, 2026-08-20 후자 추가 —
                                                요청자·팀과 무관하게 항상 같은
                                                답이라 주입할 서버 값이 없다)
+  skill_register                            -> account_id, team_id, account_role
+                                               (2026-08-21 추가 — 레거시
+                                               runner.py엔 없던 도구라 실측
+                                               대상이 아니다, 아래
+                                               `_SKILL_REGISTER_REF` 근거 참고)
 
 **proj_id 대 project_id**: 레거시 핸들러의 실제 키워드 인자 이름은 `proj_id`다
 (services/harness/registry.py 함수 시그니처 AST로 확인, 2026-08-13).
@@ -89,6 +95,14 @@ _PROJECT_SCOPED: frozenset[str] = frozenset(
 )
 _TASK_EXTRACTION_REF = "task_extraction"
 
+#: 2026-08-21, Skill 배선 — `skill_register`는 프로젝트 스코프가 아니라
+#: 계정·팀·역할 스코프다(설계 문서 "skill_register가 담당하는 것" 절):
+#: `scope=TEAM`인데 `account_role`이 `leader`가 아니면 거부해야 해서 역할값도
+#: 필요하다 — 다른 write 도구는 이 값을 안 쓴다(RBAC 재검사가
+#: `is_tool_allowed_for_role()`로 이미 따로 걸려 있어서, `factory.py`의
+#: `_to_langchain_tool()` 참고).
+_SKILL_REGISTER_REF = "skill_register"
+
 #: 레거시 핸들러의 실제 키워드 인자 이름 — CONTEXT_VALUES 쪽 이름(project_id)과 다르다.
 _LEGACY_PROJECT_KWARG = "proj_id"
 
@@ -105,6 +119,8 @@ def _injected_context_names(tool_ref: str) -> tuple[str, ...]:
         return ("team_id", "account_id", "project_id")
     if tool_ref in _PROJECT_SCOPED:
         return ("project_id", "account_id")
+    if tool_ref == _SKILL_REGISTER_REF:
+        return ("account_id", "team_id", "account_role")
     if tool_ref in _ACCOUNT_SCOPED:
         return ("account_id",)
     return ()

@@ -72,6 +72,26 @@ class BuildMemoryBackendTests(SimpleTestCase):
         namespace_b = backend_team_b.routes[MEMORY_USERS_PATH_PREFIX]._namespace(None)
         self.assertNotEqual(namespace_a, namespace_b)
 
+    def test_extra_routes_none_by_default(self):
+        """2026-08-21, Skill 배선 — `extra_routes`를 안 넘기면(기본값) 예전과
+        동일하게 Memory 라우트 하나뿐이다(하위 호환)."""
+        backend = build_memory_backend(team_id="TM001", agent_id="AG001", account_id="AC001")
+
+        self.assertEqual(set(backend.routes.keys()), {MEMORY_USERS_PATH_PREFIX})
+
+    def test_extra_routes_are_merged_in(self):
+        from deepagents.backends import StoreBackend
+
+        extra = {"/skills/personal/": StoreBackend(namespace=lambda _rt: ("skill", "personal", "AC001"))}
+        backend = build_memory_backend(
+            team_id="TM001", agent_id="AG001", account_id="AC001", extra_routes=extra
+        )
+
+        self.assertEqual(
+            set(backend.routes.keys()), {MEMORY_USERS_PATH_PREFIX, "/skills/personal/"}
+        )
+        self.assertIs(backend.routes["/skills/personal/"], extra["/skills/personal/"])
+
     def test_default_backend_is_state_backend(self):
         """`/memories/users/` 외 경로(과거의 `/memories/AGENTS.md`·
         `/memories/projects/*.md` 포함)는 전부 StateBackend로 떨어진다 — 팀

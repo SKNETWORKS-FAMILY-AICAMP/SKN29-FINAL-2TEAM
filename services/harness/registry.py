@@ -970,6 +970,117 @@ def _get_current_datetime() -> dict[str, Any]:
     }
 
 
+#: Agent Skills 스펙(https://agentskills.io/specification) 이름 제약.
+#: deepagents 설치본의 `_validate_skill_name()`(`deepagents/middleware/skills.py`,
+#: private라 직접 import는 안 한다 — 이 저장소는 공개 API만 import한다,
+#: `compat/deepagents_v075.py` 등 기존 import 전부가 그렇다)과 같은 규칙을
+#: 그대로 옮겼다: 1~64자, 소문자·숫자·하이픈만, 하이픈으로 시작·끝나거나
+#: 연달아 쓸 수 없음. 여기서는 항상 이름 == 디렉터리명이라(`skill_register`가
+#: 그렇게 저장한다) `deepagents` 쪽의 "디렉터리명과 일치해야 한다" 검사는
+#: 구조적으로 항상 통과라 옮기지 않았다.
+MAX_SKILL_NAME_LENGTH = 64
+MAX_SKILL_DESCRIPTION_LENGTH = 1024
+
+
+def _validate_skill_name(name: str) -> str | None:
+    """스킬 이름이 스펙을 지키는지 확인한다. 문제 없으면 `None`, 있으면 사유 문자열."""
+
+    if not name:
+        return "스킬 이름이 비어 있습니다."
+    if len(name) > MAX_SKILL_NAME_LENGTH:
+        return f"스킬 이름은 {MAX_SKILL_NAME_LENGTH}자를 넘을 수 없습니다."
+    if name.startswith("-") or name.endswith("-") or "--" in name:
+        return "스킬 이름은 하이픈으로 시작하거나 끝날 수 없고, 하이픈을 연달아 쓸 수 없습니다."
+    for char in name:
+        if char == "-":
+            continue
+        if (char.isalpha() and char.islower()) or char.isdigit():
+            continue
+        return "스킬 이름은 소문자·숫자·하이픈만 쓸 수 있습니다."
+    return None
+
+
+def _skill_register(
+    *,
+    account_id: str,
+    team_id: str,
+    account_role: str,
+    scope: str,
+    name: str,
+    description: str,
+    body: str,
+) -> dict[str, Any]:
+    """반복되는 업무 절차를 Skill(`SKILL.md`)로 저장한다.
+
+    정본: docs/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
+
+    **팀 스킬은 팀장만 등록한다** — 팀원이 팀 스킬로 등록해 달라고 요청하는
+    경로 자체가 없다는 게 그 문서의 결정이다. 그래서 여기서 막는 것이지,
+    "팀장이 도메인 전문가라서"가 아니다 — 이 시스템엔 그런 역할이 없다
+    (`runtime_policy.py`의 `AccountRole`은 `leader`/`member` 둘뿐).
+
+    **개인 스킬이든 팀 스킬이든 별도 승인 단계가 없다.** `side_effect=True`
+    도구라 `HumanInTheLoopMiddleware` 확인 카드(내용 미리보기 + 등록/취소)를
+    이미 거친다 — 그게 유일한 확인 지점이다. 팀 스킬을 팀장 혼자 등록하므로,
+    등록 자체가 이미 팀장의 결정이라 또 승인받을 대상이 없다.
+
+    이름·설명이 스펙을 어기면(위 `_validate_skill_name`, `description` 길이)
+    저장하지 않고 사람이 고칠 수 있는 사유로 돌려준다 — Jira/업무 등록과 같은
+    `ToolInputError` 관례.
+    """
+
+    if scope not in ("PERSONAL", "TEAM"):
+        raise ToolInputError("scope는 'PERSONAL' 또는 'TEAM'이어야 합니다.")
+
+    if scope == "TEAM" and account_role != "leader":
+        raise ToolInputError("팀 스킬 등록은 팀장만 할 수 있습니다.")
+
+    name_error = _validate_skill_name(name)
+    if name_error:
+        raise ToolInputError(name_error)
+
+    if not description or not description.strip():
+        raise ToolInputError("스킬 설명이 비어 있습니다.")
+    if len(description) > MAX_SKILL_DESCRIPTION_LENGTH:
+        raise ToolInputError(f"스킬 설명은 {MAX_SKILL_DESCRIPTION_LENGTH}자를 넘을 수 없습니다.")
+
+    if not body or not body.strip():
+        raise ToolInputError("스킬 본문이 비어 있습니다.")
+
+    # 지연 import — services.agent_runtime은 이 파일(harness 레거시 레이어)이
+    # 평소엔 끌고 들어올 이유가 없는 무거운 의존성(langgraph 등)을 진다.
+    # tools/adapters.py가 정반대 방향(agent_runtime -> harness)으로 이미
+    # 지연 import를 쓰는 것과 같은 이유다.
+    import yaml
+
+    from services.agent_runtime.memory.store import get_memory_store
+    from services.agent_runtime.skills.backend import (
+        SKILLS_PERSONAL_PATH_PREFIX,
+        SKILLS_TEAM_PATH_PREFIX,
+        personal_namespace,
+        skill_md_path,
+        team_namespace,
+    )
+
+    if scope == "PERSONAL":
+        prefix = SKILLS_PERSONAL_PATH_PREFIX
+        namespace = personal_namespace(account_id)
+    else:
+        prefix = SKILLS_TEAM_PATH_PREFIX
+        namespace = team_namespace(team_id)
+
+    frontmatter = yaml.safe_dump(
+        {"name": name, "description": description}, allow_unicode=True, default_flow_style=False
+    )
+    content = f"---\n{frontmatter}---\n\n{body}\n"
+
+    path = skill_md_path(prefix, name)
+    store = get_memory_store()
+    store.put(namespace, path, {"content": content, "encoding": "utf-8"})
+
+    return {"scope": scope, "name": name, "path": path}
+
+
 #: 내장 도구. `tool_ref` 는 agent_tool 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
     "get_current_datetime": Tool(
@@ -1270,6 +1381,50 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         },
         handler=_jira_get_issues,
         category="Jira",
+    ),
+    "skill_register": Tool(
+        ref="skill_register",
+        name="스킬 등록",
+        description=(
+            "반복되는 업무 절차를 스킬(SKILL.md)로 저장한다. 사용자가 '이 방식을 스킬로 "
+            "등록해줘'처럼 명시적으로 요청했을 때만 부른다. "
+            "scope='PERSONAL'이면 요청한 계정 본인에게만 보이고 승인 없이 즉시 활성이다. "
+            "scope='TEAM'이면 팀 전체에 보이지만 **팀장만 등록할 수 있다** — 팀원이 "
+            "팀 스킬로 등록해 달라고 하면 이 도구를 부르지 말고, 팀장에게 요청하라고 "
+            "안내한다. 등록 전 사용자에게 스킬 내용을 보여주고 확인을 받는다 — 사용자 "
+            "승인 없이는 실행되지 않는다. name은 소문자·숫자·하이픈만 쓰고(예: "
+            "'jira-이슈-생성-절차'가 아니라 'jira-issue-registration'), 64자를 넘지 않게 "
+            "짓는다. body는 이 대화에서 실제로 처리한 절차를 일반화한 것이어야 한다 — "
+            "한 번의 사례를 그대로 절차라고 우기지 말고, 재사용 가능한 단계로 정리한다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": ["PERSONAL", "TEAM"],
+                    "description": "개인 스킬이면 'PERSONAL', 팀 스킬이면 'TEAM'.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "소문자·숫자·하이픈만, 64자 이내. 하이픈으로 시작·끝나거나 연달아 쓸 수 없다.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "이 스킬이 무엇을 하는지, 언제 쓰는지. 1024자 이내.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "SKILL.md 본문 — 마크다운으로 적은 절차.",
+                },
+            },
+            "required": ["scope", "name", "description", "body"],
+        },
+        handler=_skill_register,
+        # DB나 외부 API는 아니지만 Store에 새 스킬을 만들고, 팀 스킬이면 팀
+        # 전체가 보게 되는 지점이라 승인 게이트를 탄다(task_register와 같은 이유).
+        side_effect=True,
+        category="Skill",
     ),
 }
 

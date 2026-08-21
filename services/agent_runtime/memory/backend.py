@@ -136,7 +136,13 @@ def memory_system_prompt() -> str:
     return MEMORY_SYSTEM_PROMPT + _MEMORY_ROUTING_PROMPT
 
 
-def build_memory_backend(*, team_id: str, agent_id: str, account_id: str) -> "CompositeBackend":
+def build_memory_backend(
+    *,
+    team_id: str,
+    agent_id: str,
+    account_id: str,
+    extra_routes: dict[str, Any] | None = None,
+) -> "CompositeBackend":
     """`/memories/users/`(계정 전용) 하나만 장기 저장(Store)으로 보내고, 나머지
     파일 도구는 전부 `StateBackend`(deepagents 기본값 — 장기 Store에는 안
     가지만, checkpointer가 있으면 그 대화 스레드의 체크포인트에는 남는다.
@@ -146,6 +152,15 @@ def build_memory_backend(*, team_id: str, agent_id: str, account_id: str) -> "Co
     `(team_id, agent_id, account_id)`로 계속 유지하기 위해 그대로 받는다 — 같은
     계정이 팀을 옮기거나 다른 에이전트와 대화할 때 개인 메모리가 서로 섞이면
     안 되기 때문이다(팀·에이전트가 달라지면 같은 계정이라도 다른 namespace).
+
+    `extra_routes`(2026-08-21, Skill 배선): deepagents는 `skills`와 나머지 파일
+    도구(`ls`/`read_file`/Memory 등)가 **같은 `backend` 인스턴스 하나를
+    공유**해야 한다(`deepagents/graph.py`가 둘 다에 같은 `backend` 변수를
+    넘긴다 — 설계 문서 "먼저 확인한 것" 절). 그래서 Skill 전용
+    `CompositeBackend`를 따로 만들지 않고, 이미 이 함수가 만드는 하나뿐인
+    공유 backend에 Skill 라우트(`services.agent_runtime.skills.backend.
+    skill_routes()`)를 여기서 병합한다. `None`이면(기본값) 예전과 동일하게
+    Memory 라우트 하나뿐이다 — 하위 호환.
     """
     # 지연 import — deepagents.backends는 deepagents 전체를 끌고 들어온다.
     from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
@@ -153,11 +168,15 @@ def build_memory_backend(*, team_id: str, agent_id: str, account_id: str) -> "Co
     def _personal_namespace(_runtime: Any) -> tuple[str, str, str]:
         return (team_id, agent_id, account_id)
 
+    routes: dict[str, Any] = {
+        MEMORY_USERS_PATH_PREFIX: StoreBackend(namespace=_personal_namespace),
+    }
+    if extra_routes:
+        routes.update(extra_routes)
+
     return CompositeBackend(
         default=StateBackend(),
-        routes={
-            MEMORY_USERS_PATH_PREFIX: StoreBackend(namespace=_personal_namespace),
-        },
+        routes=routes,
     )
 
 

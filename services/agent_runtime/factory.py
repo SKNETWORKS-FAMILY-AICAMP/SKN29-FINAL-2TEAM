@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory, ResolvedModelConfig
     from services.agent_runtime.prompts import RuntimePromptAssembler
     from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+    from services.agent_runtime.skills.provider import SkillsProvider
     from services.agent_runtime.tools.loader import ToolLoader
 
 
@@ -269,6 +270,7 @@ class AgentRuntimeFactory:
         prompt_assembler: "RuntimePromptAssembler",
         memory_provider: "MemoryProvider | None" = None,
         checkpointer_provider: "CheckpointerProvider | None" = None,
+        skills_provider: "SkillsProvider | None" = None,
     ) -> None:
         self.dependency_graph = dependency_graph
         self.model_config_resolver = model_config_resolver
@@ -286,6 +288,15 @@ class AgentRuntimeFactory:
         # `stream_adapter.py`도 예전처럼 매 턴 conversation_messages를 그대로
         # 붙이는 경로로 돈다(§5 Phase 1, `stream_adapter.py` docstring 참고).
         self.checkpointer_provider = checkpointer_provider
+        # memory_provider와 같은 이유로 기본값 None 허용(2026-08-21 추가,
+        # 설계 문서 "저장 구조" 절). None이면 build()가 Skill 없이 예전과
+        # 동일하게 돈다. **memory_provider가 없으면 skills_provider가 있어도
+        # Skill을 안 붙인다** — Skill은 Memory와 같은 공유 backend 인스턴스에
+        # 얹혀야 해서(`memory/backend.py`의 `build_memory_backend(extra_routes=)`
+        # docstring 참고), backend 자체를 안 만드는 상태에선 Skill 라우트를
+        # 얹을 자리가 없다. 이 프로젝트는 지금 `bootstrap.py`가 memory_provider를
+        # 항상 켜 두므로 실제로는 걸리지 않는 제약이다.
+        self.skills_provider = skills_provider
 
     def build(
         self,
@@ -462,6 +473,18 @@ class AgentRuntimeFactory:
         gp_read_only_tools = [
             lt for t, lt in zip(tools, langchain_tools) if not t.side_effect
         ]
+        # 2026-08-21, Skill 배선 — Skill은 Memory와 같은 공유 backend 인스턴스에
+        # 얹혀야 하므로(__init__의 skills_provider 주석 참고) memory_provider가
+        # 꺼져 있으면 skills_provider가 있어도 소스를 계산하지 않는다. GP에
+        # 여기서 명시적으로 넘기는 이유는 `build_general_purpose_spec()`
+        # docstring 참고 — deepagents 기본 GP만 top-level `skills=`를 자동으로
+        # 물려받고, 이 저장소는 항상 GP를 직접 만들어 넘기므로 자동 상속 경로를
+        # 안 탄다.
+        skill_sources = (
+            self.skills_provider.sources()
+            if self.memory_provider is not None and self.skills_provider is not None
+            else []
+        )
         gp_spec = build_general_purpose_spec(
             middleware=self.middleware_factory.build_for_general_purpose(),
             system_prompt=self.prompt_assembler.assemble_general_purpose(
@@ -469,6 +492,7 @@ class AgentRuntimeFactory:
             ),
             description=GP_DESCRIPTION,
             tools=gp_read_only_tools,
+            skills=skill_sources or None,
         )
 
         # Root에만 붙는 선택적 협력자들 — Child(위 allow_subagents=False 분기)는
@@ -487,12 +511,22 @@ class AgentRuntimeFactory:
         # 개인 장기 메모리 자체가 없다).
         root_middleware = custom_middleware
         if self.memory_provider is not None:
+            # 2026-08-21, Skill 배선 — skill_sources는 위 gp_spec 계산에서 이미
+            # 같은 조건으로 구했다. 라우트는 여기서 한 번만 계산해 Memory
+            # backend에 병합한다(단일 공유 backend 인스턴스 제약,
+            # `build_memory_backend()` docstring 참고).
+            skill_extra_routes = (
+                self.skills_provider.routes(account_id=context.account_id, team_id=context.team_id)
+                if self.skills_provider is not None
+                else None
+            )
             root_kwargs.update(
                 memory=self.memory_provider.paths(),
                 backend=self.memory_provider.backend(
                     team_id=context.team_id,
                     agent_id=definition.agent_id,
                     account_id=context.account_id,
+                    extra_routes=skill_extra_routes,
                 ),
                 store=self.memory_provider.store(),
                 # 2026-08-18, Phase 3(§4-8) — MemoryMiddleware.system_prompt에
@@ -514,6 +548,8 @@ class AgentRuntimeFactory:
                 # `build_filesystem_permissions()` 자체는 코드로 남겨뒀다(다른
                 # 경로별 권한 제어가 필요해지면 재사용).
             )
+            if skill_sources:
+                root_kwargs["skills"] = skill_sources
             # 2026-08-19, §5순위 — write_lock(`memory/write_lock.py`)도 같은
             # 이유로 Root 전용이다(Child는 StoreBackend가 없어 락을 걸
             # 대상이 없다). write_guard 다음에 둔다 — write_guard가 credential/

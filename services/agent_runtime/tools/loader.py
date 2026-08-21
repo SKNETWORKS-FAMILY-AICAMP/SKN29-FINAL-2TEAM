@@ -32,6 +32,12 @@ CONTEXT_VALUES: dict[str, Callable[[RuntimeContext], Any]] = {
     "project_id": lambda context: context.project_id,
     "run_id": lambda context: context.run_id,
     "parent_run_id": lambda context: context.parent_run_id,
+    # 2026-08-21, `skill_register` 전용(설계 문서 "skill_register가 담당하는
+    # 것" 절) — `scope=TEAM`인데 요청자가 `leader`가 아니면 그 자리에서
+    # 거부해야 하는데, 이건 `is_tool_allowed_for_role()`의 side_effect 기준
+    # RBAC(모든 write 도구에 공통)보다 더 좁은, 이 도구만의 규칙이라 handler
+    # 안에서 직접 판단해야 한다 — 그러려면 handler가 역할값을 받아야 한다.
+    "account_role": lambda context: context.role,
 }
 
 

@@ -195,6 +195,24 @@ class BuildGeneralPurposeSpecTests(SimpleTestCase):
 
         self.assertNotIn("tools", GENERAL_PURPOSE_SUBAGENT)
 
+    def test_no_skills_arg_omits_skills_key(self):
+        """2026-08-21, Skill 배선 — 안 넘기면(기본값) `"skills"` 키 자체가 없어야
+        deepagents가 이 GP에 SkillsMiddleware를 안 붙인다(하위 호환)."""
+        spec = build_general_purpose_spec()
+
+        self.assertNotIn("skills", spec)
+
+    def test_skills_arg_sets_skills_key(self):
+        spec = build_general_purpose_spec(skills=["/skills/personal/", "/skills/team/"])
+
+        self.assertEqual(spec["skills"], ["/skills/personal/", "/skills/team/"])
+        self.assertEqual(spec["name"], GENERAL_PURPOSE_SUBAGENT["name"])
+
+    def test_does_not_mutate_original_general_purpose_subagent_with_skills(self):
+        build_general_purpose_spec(skills=["/skills/personal/"])
+
+        self.assertNotIn("skills", GENERAL_PURPOSE_SUBAGENT)
+
 
 class DefaultGeneralPurposePromptTests(SimpleTestCase):
     def test_returns_deepagents_own_default_gp_system_prompt(self):
@@ -237,6 +255,24 @@ class CreateRootGraphTests(SimpleTestCase):
 
         _args, kwargs = mock_create.call_args
         self.assertEqual(kwargs["middleware"], fake_middleware)
+
+    def test_no_skills_arg_omits_skills_kwarg(self):
+        """2026-08-21, Skill 배선 — 빈 시퀀스면(기본값) `create_deep_agent()`에
+        `skills` 자체를 안 넘긴다(하위 호환)."""
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("skills", kwargs)
+
+    def test_skills_arg_passes_through_to_create_deep_agent(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(), system_prompt="p", skills=["/skills/personal/", "/skills/team/"]
+            )
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["skills"], ["/skills/personal/", "/skills/team/"])
 
 
 class CreateRootGraphMemorySystemPromptTests(SimpleTestCase):

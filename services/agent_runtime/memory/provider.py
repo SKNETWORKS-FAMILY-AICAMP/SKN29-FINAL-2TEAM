@@ -20,10 +20,23 @@ class MemoryProvider:
 
         return memory_paths()
 
-    def backend(self, *, team_id: str, agent_id: str, account_id: str) -> "CompositeBackend":
+    def backend(
+        self,
+        *,
+        team_id: str,
+        agent_id: str,
+        account_id: str,
+        extra_routes: dict[str, Any] | None = None,
+    ) -> "CompositeBackend":
+        """`extra_routes`(2026-08-21): Skill 라우트를 병합해 넘길 자리 —
+        `build_memory_backend()` docstring의 "extra_routes" 참고. 이 Provider
+        자신은 Skill을 모른다 — `factory.py`가 `SkillsProvider.routes(...)`로
+        계산한 값을 그대로 전달만 한다(파사드는 조립하지 않는다)."""
         from services.agent_runtime.memory.backend import build_memory_backend
 
-        return build_memory_backend(team_id=team_id, agent_id=agent_id, account_id=account_id)
+        return build_memory_backend(
+            team_id=team_id, agent_id=agent_id, account_id=account_id, extra_routes=extra_routes
+        )
 
     def store(self) -> "PostgresStore":
         from services.agent_runtime.memory.store import get_memory_store

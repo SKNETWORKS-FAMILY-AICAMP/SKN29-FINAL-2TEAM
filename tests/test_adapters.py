@@ -1,9 +1,11 @@
 """tools/adapters.py(adapt_builtin_tools) 테스트.
 
-`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 13개
+`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 15개
 전부가 정확한 injected_context로 옮겨지는지 확인한다. 컨텍스트 주입 규칙은
 `services/harness/runner.py`의 `_injected()`를 AST로 직접 읽어 검증한 실측값과
-대조한다(2026-08-13) — 추측이 아니다.
+대조한다(2026-08-13) — 추측이 아니다. `skill_register`(2026-08-21 추가)는
+레거시 `_injected()`에 대응 분기가 없는 새 도구라 이 대조 대상이 아니다 —
+`LegacyInjectionParityTests`의 `_NO_LEGACY_COUNTERPART`에서 명시적으로 뺀다.
 """
 
 from unittest.mock import patch
@@ -38,6 +40,10 @@ EXPECTED_INJECTED_CONTEXT = {
     "task_register": ("project_id", "account_id"),
     "jira_create_issues": ("project_id", "account_id"),
     "jira_get_issues": ("project_id", "account_id"),
+    # 2026-08-21 추가 — 레거시 `_injected()`엔 없는 새 도구라 AST 실측 대상은
+    # 아니다(아래 `LegacyInjectionParityTests._NO_LEGACY_COUNTERPART` 참고).
+    # 이 표는 손으로 관리하는 기대값이라 그대로 적는다.
+    "skill_register": ("account_id", "team_id", "account_role"),
 }
 
 # BUILTIN_TOOLS에 정의된 실제 side_effect 값(registry.py 직접 확인).
@@ -45,16 +51,20 @@ EXPECTED_SIDE_EFFECT = {
     "task_update": True,
     "task_register": True,
     "jira_create_issues": True,
+    "skill_register": True,
 }
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(13개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(15개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_thirteen_tools(self):
+    def test_real_registry_has_exactly_fifteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
-        self.assertEqual(len(BUILTIN_TOOLS), 13)
+        # (2026-08-21 — 13은 이미 stale이었다: get_current_datetime이 2026-08-20에
+        # 추가되며 14가 됐는데 이 숫자가 같이 안 고쳐져 있었다. skill_register를
+        # 더하며 둘 다 바로잡는다.)
+        self.assertEqual(len(BUILTIN_TOOLS), 15)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}
@@ -100,6 +110,10 @@ class LegacyInjectionParityTests(SimpleTestCase):
     _NOT_CONTEXT = {"model"}
     #: 레거시 핸들러 인자 이름 → CONTEXT_VALUES 이름.
     _RENAME = {"proj_id": "project_id"}
+    #: 레거시 `_injected()`에 대응 분기가 아예 없는 도구 — 비교할 "레거시 쪽"이
+    #: 없으므로 이 parity 루프에서 뺀다(2026-08-21, `skill_register`는 새
+    #: 엔진 전용으로 설계된 도구라 legacy runner.py를 거칠 일이 없다).
+    _NO_LEGACY_COUNTERPART = {"skill_register"}
 
     def test_두_런타임의_주입_경계가_같다(self):
         from services.harness.registry import BUILTIN_TOOLS as REGISTRY
@@ -110,6 +124,8 @@ class LegacyInjectionParityTests(SimpleTestCase):
         context = {"account_id": "AC001", "proj_id": "PJ001", "session_id": "SS001"}
 
         for ref, tool in REGISTRY.items():
+            if ref in self._NO_LEGACY_COUNTERPART:
+                continue
             with self.subTest(ref=ref):
                 legacy = {
                     self._RENAME.get(name, name)
