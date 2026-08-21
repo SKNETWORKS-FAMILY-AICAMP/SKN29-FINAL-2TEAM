@@ -26,6 +26,7 @@ from services.agent_runtime.events import (
     EVENT_TOOL_COMPLETED,
     EVENT_TOOL_PROGRESS,
     EVENT_TOOL_STARTED,
+    RETRIEVED_DOC_IDS_MAX,
     EventMapper,
 )
 
@@ -876,3 +877,176 @@ class InterruptEventTests(SimpleTestCase):
         events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
         self.assertEqual(events[0]["action_requests"], [])
+
+
+class ModelUsageTests(SimpleTestCase):
+    """모델 호출마다 회전 수·토큰을 세어 끝나는 이벤트에 싣는가(2026-08-21).
+
+    `agent_run.iterations`/`token_in`/`token_out`을 채우는 유일한 경로다 —
+    `tracing/`은 변환된 이벤트만 보므로 원시 `AIMessage.usage_metadata`에
+    닿지 못한다.
+    """
+
+    @staticmethod
+    def _ai(text="", *, tool_calls=None, usage=None):
+        return AIMessage(
+            content=text,
+            tool_calls=tool_calls or [],
+            usage_metadata=usage,
+        )
+
+    def test_result_carries_summed_tokens_and_iteration_count(self):
+        mapper = EventMapper()
+        # 1회전: 도구를 부른다. 이 호출의 토큰도 합계에 들어가야 한다.
+        mapper.convert(
+            _raw((), "model", self._ai(tool_calls=[{"name": "people_list", "args": {}, "id": "1"}],
+                                       usage={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120})),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        # 2회전: 최종 답.
+        event = _convert_one(
+            mapper,
+            _raw((), "model", self._ai("답", usage={"input_tokens": 300, "output_tokens": 50, "total_tokens": 350})),
+        )
+
+        self.assertEqual(event["type"], EVENT_RESULT)
+        self.assertEqual(event["iterations"], 2)
+        self.assertEqual(event["token_in"], 400)
+        self.assertEqual(event["token_out"], 70)
+
+    def test_missing_usage_metadata_leaves_tokens_none_not_zero(self):
+        """usage를 안 주는 경로(openai_compatible)에서 0으로 채우면 안 된다.
+
+        0이면 「토큰을 안 쓴 실행」과 구분이 사라진다. 회전 수는 usage와
+        무관하게 세므로 그대로 찬다.
+        """
+        event = _convert_one(EventMapper(), _raw((), "model", self._ai("답")))
+
+        self.assertEqual(event["iterations"], 1)
+        self.assertIsNone(event["token_in"])
+        self.assertIsNone(event["token_out"])
+
+    def test_thinking_tokens_hidden_in_total_are_counted_as_output(self):
+        """Gemini OpenAI 호환 주소 실측(2026-08-21): prompt 6 · completion 1 ·
+        total 149. 있는 그대로 적으면 Usage 합계가 149 대신 7이 된다."""
+        event = _convert_one(
+            EventMapper(),
+            _raw((), "model", self._ai("답", usage={"input_tokens": 6, "output_tokens": 1, "total_tokens": 149})),
+        )
+
+        self.assertEqual(event["token_in"], 6)
+        self.assertEqual(event["token_out"], 143)
+
+    def test_provider_whose_total_already_adds_up_is_left_alone(self):
+        """OpenAI 실측: 11 + 5 = 16. 나머지가 0이라 손대지 않는다."""
+        event = _convert_one(
+            EventMapper(),
+            _raw((), "model", self._ai("답", usage={"input_tokens": 11, "output_tokens": 5, "total_tokens": 16})),
+        )
+
+        self.assertEqual(event["token_in"], 11)
+        self.assertEqual(event["token_out"], 5)
+
+    def test_child_tokens_go_to_the_child_run_not_the_parent(self):
+        mapper = EventMapper()
+        start = self._ai(
+            tool_calls=[{"name": "task", "args": {"subagent_type": "researcher", "description": "조사"}, "id": "1"}],
+            usage={"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+        )
+        started = _convert_one(mapper, _raw((), "model", start))
+        child_ns = ("tools:abc",)
+        # 자식 네임스페이스의 모델 호출 — 자식 run 누계로 가야 한다.
+        mapper.convert(
+            _raw(child_ns, "model", self._ai("자식 생각",
+                                             usage={"input_tokens": 900, "output_tokens": 80, "total_tokens": 980})),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        done = ToolMessage(name="task", content="완료", tool_call_id="1")
+        completed = _convert_one(mapper, _raw((), "tools", done))
+
+        self.assertEqual(completed["type"], EVENT_SUBAGENT_COMPLETED)
+        self.assertEqual(completed["run_id"], started["run_id"])
+        self.assertEqual(completed["token_in"], 900)
+        self.assertEqual(completed["token_out"], 80)
+
+        # 부모 누계에는 자식 몫이 안 섞인다 — 부모는 자기 위임 호출 1회뿐이다.
+        final = _convert_one(mapper, _raw((), "model", self._ai("최종")))
+        self.assertEqual(final["iterations"], 2)
+        self.assertEqual(final["token_in"], 10)
+
+    def test_usage_for_is_empty_after_the_run_is_closed(self):
+        """끝난 실행의 누계는 버린다 — 같은 mapper 를 계속 들고 있어도 안 샌다."""
+        mapper = EventMapper()
+        _convert_one(
+            mapper,
+            _raw((), "model", self._ai("답", usage={"input_tokens": 7, "output_tokens": 1, "total_tokens": 8})),
+        )
+
+        self.assertEqual(
+            mapper.usage_for("RUN1"),
+            {"iterations": 0, "token_in": None, "token_out": None},
+        )
+
+
+class RetrievedDocumentTests(SimpleTestCase):
+    """도구 결과에서 조회한 문서 식별자를 뽑아내는가(2026-08-21).
+
+    멘토링 전달 "Tool 호출 결과 어떤 문서/데이터가 조회되었는지". 지금까지
+    `tool_call` 에는 질의문만 남아 무엇을 봤는지 되물을 수 없었다.
+    """
+
+    @staticmethod
+    def _completed(payload):
+        """도구가 dict 를 돌려주면 langchain-core 가 json.dumps 로 문자열을 만든다."""
+        import json
+
+        message = ToolMessage(
+            name="document_search", content=json.dumps(payload, ensure_ascii=False), tool_call_id="1"
+        )
+        return _convert_one(EventMapper(), _raw((), "tools", message))
+
+    def test_evidence_and_candidates_and_not_indexed_are_all_collected(self):
+        event = self._completed(
+            {
+                "query": "휴가 규정",
+                "evidence": [
+                    {"chunk_id": "c1", "doc_id": "DC001", "text": "..."},
+                    {"chunk_id": "c2", "doc_id": "DC004", "text": "..."},
+                ],
+                "not_indexed": [{"doc_id": "DC009", "file_name": "x.pdf"}],
+            }
+        )
+
+        self.assertEqual(event["type"], EVENT_TOOL_COMPLETED)
+        self.assertEqual(event["retrieved_doc_ids"], ["DC001", "DC004", "DC009"])
+
+    def test_same_document_in_several_chunks_is_recorded_once(self):
+        event = self._completed(
+            {"evidence": [{"doc_id": "DC001"}, {"doc_id": "DC001"}, {"doc_id": "DC002"}]}
+        )
+
+        self.assertEqual(event["retrieved_doc_ids"], ["DC001", "DC002"])
+
+    def test_tool_that_returns_no_documents_gets_an_empty_list(self):
+        """문서와 무관한 도구. 저장소가 이 빈 목록을 NULL 로 낮춘다."""
+        message = ToolMessage(name="people_list", content='[{"name": "임준"}]', tool_call_id="1")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertEqual(event["retrieved_doc_ids"], [])
+
+    def test_plain_text_output_does_not_break_the_event(self):
+        """JSON 이 아닌 결과(MCP 도구 등)는 조용히 빈 목록이다."""
+        message = ToolMessage(name="mcp:something", content="그냥 문장입니다", tool_call_id="1")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertEqual(event["retrieved_doc_ids"], [])
+
+    def test_absurdly_long_result_is_capped(self):
+        payload = {"evidence": [{"doc_id": f"DC{i:03d}"} for i in range(200)]}
+        event = self._completed(payload)
+
+        self.assertEqual(len(event["retrieved_doc_ids"]), RETRIEVED_DOC_IDS_MAX)
+

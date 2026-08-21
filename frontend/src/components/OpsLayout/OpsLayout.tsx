@@ -24,6 +24,9 @@ const OPS_NAV_ITEMS: OpsNavItem[] = [
   { label: '모델', to: '/ops/models', icon: 'sparkles' },
   { label: '커스텀 도구', to: '/ops/mcp', icon: 'wrench' },
   { label: '가드레일', to: '/ops/guardrails', icon: 'lock' },
+  // 사용 현황과 감사 로그는 「기록을 보는 자리」로 나란히 둔다 — 앞은 실행의
+  // 집계, 뒤는 사람의 조치다.
+  { label: '사용 현황', to: '/ops/usage', icon: 'chart-network' },
   { label: '감사 로그', to: '/ops/audit', icon: 'shield-check' },
   { label: '전역 정책', to: '/ops/policies', icon: 'sliders' },
 ];

@@ -29,6 +29,7 @@ export const PATHS = {
   opsModels: '/ops/models',
   opsMcp: '/ops/mcp',
   opsGuardrails: '/ops/guardrails',
+  opsUsage: '/ops/usage',
   opsAudit: '/ops/audit',
   opsPolicies: '/ops/policies',
 
@@ -59,6 +60,7 @@ export const PATHS = {
   agentVersionNew: '/agents/versions/new/edit',
   settingsConnectors: '/settings/connectors',
   settingsMyFiles: '/settings/my-files',
+  settingsSkills: '/settings/skills',
 } as const;
 
 export interface RouteEntry {
@@ -104,6 +106,7 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · 커넥터', group: '설정' },
   { path: PATHS.settingsMyFiles, label: '설정 · 내 파일', group: '설정' },
+  { path: PATHS.settingsSkills, label: '설정 · 스킬', group: '설정' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
   { path: PATHS.ops, label: '운영 현황', group: '운영자 콘솔' },
@@ -117,6 +120,7 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.opsModels, label: '모델', group: '운영자 콘솔' },
   { path: PATHS.opsMcp, label: '커스텀 도구', group: '운영자 콘솔' },
   { path: PATHS.opsGuardrails, label: '가드레일', group: '운영자 콘솔' },
+  { path: PATHS.opsUsage, label: '사용 현황', group: '운영자 콘솔' },
   { path: PATHS.opsAudit, label: '감사 로그', group: '운영자 콘솔' },
   { path: PATHS.opsPolicies, label: '전역 정책', group: '운영자 콘솔' },
 ];
@@ -155,4 +159,5 @@ export const SETTINGS_TABS = [
   { label: '팀', to: PATHS.settingsTeam },
   { label: '커넥터', to: PATHS.settingsConnectors },
   { label: '내 파일', to: PATHS.settingsMyFiles },
+  { label: '스킬', to: PATHS.settingsSkills },
 ];

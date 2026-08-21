@@ -31,6 +31,7 @@ const OpsConnectorDetailPage = lazy(() => import('./pages/OpsConnectorDetailPage
 const OpsModelsPage = lazy(() => import('./pages/OpsModelsPage/OpsModelsPage'));
 const OpsMcpPage = lazy(() => import('./pages/OpsMcpPage/OpsMcpPage'));
 const OpsGuardrailsPage = lazy(() => import('./pages/OpsGuardrailsPage/OpsGuardrailsPage'));
+const OpsUsagePage = lazy(() => import('./pages/OpsUsagePage/OpsUsagePage'));
 const OpsAuditPage = lazy(() => import('./pages/OpsAuditPage/OpsAuditPage'));
 const OpsPoliciesPage = lazy(() => import('./pages/OpsPoliciesPage/OpsPoliciesPage'));
 
@@ -91,6 +92,7 @@ function App() {
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsMyFiles} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path={PATHS.settingsSkills} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.chatSession} element={<RequireAuth><ChatPage /></RequireAuth>} />
@@ -119,6 +121,7 @@ function App() {
               <Route path={PATHS.opsModels} element={<OpsModelsPage />} />
               <Route path={PATHS.opsMcp} element={<OpsMcpPage />} />
               <Route path={PATHS.opsGuardrails} element={<OpsGuardrailsPage />} />
+              <Route path={PATHS.opsUsage} element={<OpsUsagePage />} />
               <Route path={PATHS.opsAudit} element={<OpsAuditPage />} />
               <Route path={PATHS.opsPolicies} element={<OpsPoliciesPage />} />
               <Route path="*" element={<Navigate to={PATHS.ops} replace />} />

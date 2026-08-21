@@ -72,10 +72,15 @@ class _FakeFactory:
         # 세 번째 자리는 Child alias별 resolved_model dict라 `subagent_started`
         # 이벤트에도 provider/endpoint_hash를 채울 수 있다). 이 가짜는 그때 같이
         # 안 고쳐져서 2-tuple을 계속 돌려줬고, `executor.py`가 3개로 언패킹하는
-        # 순간 `ValueError`로 이 파일의 테스트 19개가 통째로 깨져 있었다 —
-        # 2026-08-21에 맞춘다(`2026-08-21_01` §8이 정리한 것과 같은 종류의
-        # 낡은 테스트다). **가짜의 계약이 실물과 어긋나면 테스트는 실물이
-        # 아니라 가짜를 검증하게 된다.**
+        # 순간 `ValueError: not enough values to unpack`으로 이 파일의 테스트가
+        # 통째로 죽어 있었다 — 2026-08-21에 맞춘다. 실제 서명의 정본은
+        # `services/agent_runtime/factory.py`의 `build()`다.
+        #
+        # (jihun·main 두 브랜치가 같은 버그를 각자 찾아 같은 모양으로 고쳤고,
+        #  2026-08-21 병합에서 주석만 하나로 합쳤다.)
+        #
+        # **가짜의 계약이 실물과 어긋나면 테스트는 실물이 아니라 가짜를
+        # 검증하게 된다.**
         self._resolved_model = resolved_model or _DEFAULT_RESOLVED_MODEL
         self._child_resolved_models = child_resolved_models or {}
         self._error = error
@@ -508,6 +513,29 @@ class RunMidStreamFailureTests(SimpleTestCase):
         self.assertEqual(events[-1]["type"], EVENT_ERROR)
         self.assertTrue(events[-1]["complete"])
         self.assertNotIn("스트림 중 실패", str(events[-1]))
+
+    def test_error_event_carries_the_usage_spent_before_the_failure(self):
+        """실패해도 비용은 이미 나갔다(2026-08-21).
+
+        `error` 이벤트가 누계를 안 실으면 `tracing/`이 그 실행의 토큰을
+        `None`으로 닫아, 실패한 실행만 Usage 합계에서 조용히 빠진다.
+        """
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(error=RuntimeError("스트림 중 실패"))
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        # 모델을 한 번도 못 부르고 죽은 실행이라 누계는 비어 있다 — 그래도
+        # 칸 자체는 실려야 `tracing/`이 같은 규칙으로 적는다.
+        self.assertEqual(events[-1]["iterations"], 0)
+        self.assertIsNone(events[-1]["token_in"])
+        self.assertIsNone(events[-1]["token_out"])
 
 
 class ResumeTests(SimpleTestCase):

@@ -20,7 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 def _agent_execution_failure_event(
-    exc: Exception, *, agent_id: str | None, agent_version_id: str | None, run_id: str | None
+    exc: Exception,
+    *,
+    agent_id: str | None,
+    agent_version_id: str | None,
+    run_id: str | None,
+    usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """그래프 실행(`run()`/`resume()`) 중 예외 → `EVENT_ERROR` 이벤트.
 
@@ -51,6 +56,9 @@ def _agent_execution_failure_event(
         "agent_id": agent_id,
         "agent_version_id": agent_version_id,
         "run_id": run_id,
+        # 여기까지 쓴 회전 수·토큰(2026-08-21). **실패해도 비용은 이미 나갔다** —
+        # 실패한 실행만 `token_in`이 비면 Usage 합계가 조용히 실제보다 작아진다.
+        **(usage or {"iterations": 0, "token_in": None, "token_out": None}),
         "complete": True,
     }
 
@@ -269,6 +277,7 @@ class AgentExecutor:
                 agent_id=loaded.definition.agent_id,
                 agent_version_id=loaded.definition.agent_version_id,
                 run_id=context.run_id,
+                usage=event_mapper.usage_for(context.run_id, close=True),
             )
 
     def resume(
@@ -391,4 +400,5 @@ class AgentExecutor:
                 agent_id=loaded.definition.agent_id,
                 agent_version_id=loaded.definition.agent_version_id,
                 run_id=context.run_id,
+                usage=event_mapper.usage_for(context.run_id, close=True),
             )

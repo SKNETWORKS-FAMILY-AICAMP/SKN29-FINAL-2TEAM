@@ -1495,16 +1495,24 @@ class ToolCallRepository:
         status: str,
         duration_ms: int,
         error_code: str | None = None,
+        retrieved_doc_ids: list[str] | None = None,
     ) -> None:
+        """`retrieved_doc_ids`(2026-08-21): 이 호출이 건드린 문서 식별자.
+
+        **빈 목록과 `None` 을 같게 다룬다** — 둘 다 NULL 로 남긴다. 문서와
+        무관한 도구(`people_list` 등)에 빈 배열을 채워 두면 "문서를 찾았는데
+        하나도 없었다"와 "애초에 문서를 안 보는 도구다"가 같은 모양이 된다.
+        """
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE tool_call
-                       SET status = %s, error_code = %s, duration_ms = %s
+                       SET status = %s, error_code = %s, duration_ms = %s,
+                           retrieved_doc_ids = %s
                      WHERE tool_call_id = %s
                     """,
-                    (status, error_code, duration_ms, tool_call_id),
+                    (status, error_code, duration_ms, retrieved_doc_ids or None, tool_call_id),
                 )
 
 
