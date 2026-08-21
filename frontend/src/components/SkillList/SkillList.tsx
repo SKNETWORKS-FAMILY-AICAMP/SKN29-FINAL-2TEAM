@@ -26,12 +26,12 @@ export interface SkillListProps {
   skills: PersonSkill[];
 }
 
-/** 보유 스킬 목록. 팀장·팀원 설정이 같이 쓴다. */
+/** 기술 스택 목록. 팀장·팀원 설정이 같이 쓴다. */
 export function SkillList({ skills }: SkillListProps) {
   if (skills.length === 0) {
     return (
       <p className={styles.empty}>
-        등록된 스킬이 없습니다. 인사 시스템에 등록되거나 이력서를 분석하면 여기에 표시됩니다.
+        등록된 기술 스택이 없습니다. 인사 시스템에 등록되거나 이력서를 분석하면 여기에 표시됩니다.
       </p>
     );
   }

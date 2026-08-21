@@ -423,3 +423,58 @@
 }
 
 .confirmText:last-child { margin-bottom: 0; }
+
+/* 제목 옆에 조작을 두는 머리. 기본 `.cardHead` 는 세로 쌓기라 버튼이 제목
+   아래로 떨어진다 — 「스킬」 탭의 「새 스킬」처럼 그 카드 전체에 거는 조작만
+   여기 온다(줄마다 거는 것은 `.rowActions`). */
+.cardHeadRow {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* 모달 안의 세로 폼. `.formRow`(가로 한 줄)와 쓰는 자리가 다르다. */
+.formStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* `Input` 컴포넌트가 없는 칸(textarea)을 그 옆에 나란히 놓기 위한 것.
+   라벨 크기·색을 `Input.module.css` 와 맞춰야 두 칸이 다른 폼처럼 안 보인다. */
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.formLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.formTextarea {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-heading);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.formTextarea:focus {
+  border-color: var(--color-primary);
+}
+
+.formTextarea::placeholder {
+  color: var(--color-placeholder);
+}

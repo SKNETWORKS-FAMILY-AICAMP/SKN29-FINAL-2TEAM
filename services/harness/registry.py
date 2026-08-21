@@ -986,7 +986,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ref="people_list",
         name="팀원 조회",
         description=(
-            "우리 팀 명부를 읽어 팀원의 이름·직책·보유 스킬을 돌려준다. "
+            "우리 팀 명부를 읽어 팀원의 이름·직책·기술 스택을 돌려준다. "
             "누가 있는지, 누구에게 맡길지 같은 **사람에 대한 질문**은 문서 검색이 아니라 이 도구다."
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
