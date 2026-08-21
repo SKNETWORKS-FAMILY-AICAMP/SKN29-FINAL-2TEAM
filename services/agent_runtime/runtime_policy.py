@@ -50,6 +50,28 @@ EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (
 # 없어진 게 아니다.
 DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader", "member"})
 
+# 2026-08-21, A-1 재설계 — MCP Tool 호출 하나에 적용하는 timeout(초).
+# 정본: `docs/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
+#
+# **2026-08-19의 전역 300초와는 다른 값이고 다른 근거다.** 그때는 모든 도구에
+# 같은 300초를 걸었고(`services/harness/runner.py`의 모델 호출 timeout을
+# 그대로 재사용), "복잡한 검색처럼 정당하게 오래 걸리는 작업까지 다 끊긴다"는
+# 이유로 `17e8c62`에서 되돌려졌다. 이번 값은 "MCP 도구가 보통 이 정도
+# 걸린다"는 추측이 아니다 — 그 질문은 자유 연결 MCP에서는 답할 수 없다
+# (`2026-08-20_01` §3). 대신 우리가 확실히 아는 값에서 역산한다:
+# `Dockerfile`의 gunicorn `--timeout 600`. 이걸 넘기면 우리가 뭘 하든
+# 워커가 SIGKILL되고 브라우저엔 `ERR_HTTP2_PROTOCOL_ERROR`만 남아 원인이
+# 어디에도 안 남는다(같은 파일 주석, 2026-08-18 QA에서 실제로 겪음).
+# 즉 이 값은 "정상 실행시간 추정"이 아니라 "gunicorn이 대신 죽이기 전에
+# 우리가 먼저 곱게 끊어서 최소한 에러 메시지는 남긴다"는 방어선이다.
+GUNICORN_WORKER_TIMEOUT_SECONDS = 600
+DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS = 480
+
+# override로도 넘을 수 없는 상한. gunicorn 한도(600초)에 최소 60초 여유를
+# 남긴다 — 정확히 600으로 잡으면 이 미들웨어가 끊기 전에 워커가 먼저 죽어서
+# 있으나 마나가 된다(위 주석의 실패 모드 그대로).
+MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS = GUNICORN_WORKER_TIMEOUT_SECONDS - 60
+
 
 @dataclass(frozen=True)
 class RoleLimits:
@@ -77,6 +99,14 @@ class RuntimeCapabilityPolicy:
         default_factory=lambda: DEFAULT_WRITE_TOOL_ALLOWED_ROLES
     )
 
+    # 2026-08-21, A-1 — MCP Tool 호출 timeout. 값의 근거는 위 상수 정의부
+    # 주석 참고. `mcp_tool_call_timeout_overrides`는 특정 MCP tool_ref만
+    # 다른 값을 쓰는 탈출구다 — 빈 dict(전부 기본값)로 시작한다. 미리 모든
+    # MCP 도구를 "빠름/느림"으로 분류하지 않고, 실제로 기본값 때문에 정상
+    # 작업이 끊긴다는 게 확인된 것만 나중에 여기 넣는다.
+    mcp_tool_call_timeout_seconds: float = DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS
+    mcp_tool_call_timeout_overrides: dict[str, float] = field(default_factory=dict)
+
     # general-purpose 전용 기본값.
     # 2026-08-19: 사용자 요청으로 50/100으로 올렸다(기존 6/12) — GP는
     # Root/Child와 달리 `agent_versions.max_iterations` 같은 에이전트별 설정
@@ -99,6 +129,27 @@ class RuntimeCapabilityPolicy:
     # 별도 결정 — 이번 변경 범위 밖).
     max_model_calls_ceiling: int = 50
     max_tool_calls_ceiling: int = 100
+
+    def timeout_for_mcp_tool(self, tool_ref: str) -> float:
+        """이 MCP `tool_ref`에 적용할 timeout(초).
+
+        `mcp_tool_call_timeout_overrides`에 등록된 값이 있으면 그 값,
+        없으면 `mcp_tool_call_timeout_seconds`(기본값)를 쓴다. 어느 쪽이든
+        `MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS`를 넘지 못한다 — 그 위로 올리면
+        gunicorn이 먼저 워커를 죽여서 이 timeout이 무의미해지기 때문이다
+        (상수 정의부 주석).
+
+        **MCP 도구 전용이다.** 내장 도구는 이 값을 쓰지 않는다 — 우리가 코드를
+        직접 쓰는 도구라 필요하면 도구 자신이 자기 timeout을 갖는 게 맞고
+        (`FilesystemMiddleware`의 `execute`가 이미 그렇다), 플랫폼이 또 다른
+        값을 얹으면 두 값이 어긋날 뿐이다(`2026-08-21_01` §3). 호출 측
+        (`middleware/tool_timeout.py`)이 MCP 여부를 판단해서 이 메서드를
+        MCP일 때만 부른다.
+        """
+        requested = self.mcp_tool_call_timeout_overrides.get(
+            tool_ref, self.mcp_tool_call_timeout_seconds
+        )
+        return min(requested, MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS)
 
     def limits_for_general_purpose(self) -> RoleLimits:
         """general-purpose에 적용할 상한. 방어선도 함께 적용된 최종값."""

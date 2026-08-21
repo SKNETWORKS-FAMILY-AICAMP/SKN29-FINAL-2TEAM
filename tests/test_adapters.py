@@ -49,12 +49,17 @@ EXPECTED_SIDE_EFFECT = {
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(13개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(14개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_thirteen_tools(self):
+    def test_real_registry_has_exactly_fourteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
-        self.assertEqual(len(BUILTIN_TOOLS), 13)
+        #
+        # 2026-08-20에 `get_current_datetime`이 추가되며 13 → 14가 됐는데
+        # (`tools/adapters.py` 모듈 docstring은 그때 같이 갱신됐다) 이 테스트는
+        # 안 고쳐져 실패한 채로 남아 있었다 — 2026-08-21에 맞춘다. 이 신호가
+        # 의도대로 동작한 사례이므로 숫자 고정 자체는 그대로 둔다.
+        self.assertEqual(len(BUILTIN_TOOLS), 14)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}
