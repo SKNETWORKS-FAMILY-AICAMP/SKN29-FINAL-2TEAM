@@ -599,6 +599,22 @@ class BuildMiddlewareAndGeneralPurposeTests(SimpleTestCase):
         self.assertTrue(gp_spec["middleware"])
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_general_purpose_spec_uses_this_app_s_description_not_the_deepagents_default(self, mock_create_root):
+        from deepagents.middleware.subagents import GENERAL_PURPOSE_SUBAGENT
+
+        from services.agent_runtime.prompts import GP_DESCRIPTION
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        gp_spec = mock_create_root.call_args.kwargs["subagents"][0]
+        self.assertEqual(gp_spec["description"], GP_DESCRIPTION)
+        self.assertNotEqual(gp_spec["description"], GENERAL_PURPOSE_SUBAGENT["description"])
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_root_middleware_reflects_definition_max_iterations(self, mock_create_root):
         from langchain.agents.middleware import ModelCallLimitMiddleware
 
@@ -611,6 +627,38 @@ class BuildMiddlewareAndGeneralPurposeTests(SimpleTestCase):
         middleware_arg = mock_create_root.call_args.kwargs["middleware"]
         model_limit = next(m for m in middleware_arg if isinstance(m, ModelCallLimitMiddleware))
         self.assertEqual(model_limit.run_limit, 6)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_general_purpose_only_receives_non_side_effect_tools(self, mock_create_root):
+        """2026-08-20, GP 피드백 검토 §3 채택 3 — GP는 이제 Root의 전체 도구를
+        상속하지 않는다. `_fake_tools()`는 읽기 도구(`document_search`) 하나와
+        쓰기 도구(`task_register`) 하나를 주므로, GP의 `tools`에는 읽기 도구만
+        남아야 한다."""
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        gp_spec = mock_create_root.call_args.kwargs["subagents"][0]
+        gp_tool_names = {t.name for t in gp_spec["tools"]}
+        self.assertIn("document_search", gp_tool_names)
+        self.assertNotIn("task_register", gp_tool_names)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_general_purpose_is_always_attached(self, mock_create_root):
+        """2026-08-20, GP 피드백 검토 §3 채택 — GP를 켜고 끄는 스위치는 두지
+        않는다. GP는 조회 도구만 쓸 수 있어(위 테스트) 위험하지 않으므로,
+        모든 Root에 항상 붙는다."""
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        subagents_arg = mock_create_root.call_args.kwargs["subagents"]
+        names = [s.get("name") for s in subagents_arg if isinstance(s, dict)]
+        self.assertIn("general-purpose", names)
 
 
 class PromptAssemblyWiringTests(SimpleTestCase):

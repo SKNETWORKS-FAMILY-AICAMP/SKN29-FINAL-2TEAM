@@ -19,7 +19,7 @@ from services.agent_runtime.factory import AgentRuntimeFactory, DependencyGraphS
 from services.agent_runtime.loader import AgentDefinitionLoader
 from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
-from services.agent_runtime.prompts import RuntimePromptAssembler
+from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 from services.agent_runtime.tools.loader import ToolLoader
 
@@ -46,6 +46,17 @@ class BootstrapHarnessProfilesTests(SimpleTestCase):
         registered_keys = {call.kwargs["model_key"] for call in mock_register.call_args_list}
         self.assertEqual(registered_keys, {"anthropic", "openai"})
         self.assertEqual(mock_register.call_count, 2)
+
+    def test_passes_task_delegation_description_to_both_registrations(self):
+        with patch(f"{BOOTSTRAP_MODULE}.assert_supported_version"):
+            with patch(f"{BOOTSTRAP_MODULE}.register_default_harness_profile") as mock_register:
+                bootstrap_harness_profiles(excluded_tools=frozenset())
+
+        for call in mock_register.call_args_list:
+            self.assertEqual(
+                call.kwargs["tool_description_overrides"],
+                {"task": TASK_DELEGATION_DESCRIPTION},
+            )
 
     def test_passes_excluded_tools_through_to_both_registrations(self):
         excluded = frozenset({"write_file", "delete"})

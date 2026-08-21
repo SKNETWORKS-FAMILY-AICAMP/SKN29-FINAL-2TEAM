@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
@@ -68,13 +68,22 @@ def register_default_harness_profile(
     *,
     model_key: str,
     excluded_tools: frozenset[str] = frozenset(),
+    tool_description_overrides: Mapping[str, str] | None = None,
 ) -> None:
-    """자동 general-purpose 삽입을 끄는 프로필을 등록한다."""
+    """자동 general-purpose 삽입을 끄는 프로필을 등록한다.
+
+    `tool_description_overrides`(2026-08-20 추가)는 그대로
+    `HarnessProfile.tool_description_overrides`에 실린다 — `create_deep_agent()`가
+    이 값으로 도구 스키마 설명을 덮어쓰고(`"task"` 키는 `SubAgentMiddleware`의
+    `task_description=`으로도 같이 전달돼 위임 도구 자체의 설명을 바꾼다). 안
+    넘기면(`None`) 빈 dict로 떨어져 deepagents 기본 설명을 그대로 쓴다(하위 호환).
+    """
     register_harness_profile(
         model_key,
         HarnessProfile(
             general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
             excluded_tools=excluded_tools,
+            tool_description_overrides=tool_description_overrides or {},
         ),
     )
 
@@ -94,18 +103,40 @@ def build_general_purpose_spec(
     *,
     middleware: Sequence[Any] = (),
     system_prompt: str | None = None,
+    description: str | None = None,
+    tools: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
     """Root에 명시적으로 연결할 general-purpose 설정을 만든다.
 
     `system_prompt`를 넘기면 deepagents 기본값 대신 그 값을 쓴다 — Factory가
     `RuntimePromptAssembler.assemble_general_purpose()`로 조립한 값을 넘긴다.
     안 넘기면(`None`) deepagents 기본값을 그대로 쓴다(하위 호환).
+
+    `description`(2026-08-20 추가)도 같은 패턴이다 — Root가 `task` 도구의
+    `{available_agents}` 목록에서 실제로 읽는, GP 자신의 설명이다. **주의**:
+    `GeneralPurposeSubagentProfile.description`(deepagents `HarnessProfile` 쪽
+    설정)이 아니라 여기여야 한다 — 그 설정은 "호출자가 GP를 명시적으로 안 넘겼을
+    때 deepagents가 자동으로 끼워 넣는 기본 GP"에만 적용되는데, 이 저장소는
+    `factory.py`가 항상 이 함수로 GP를 직접 만들어 넘기므로 그 경로를 안 탄다.
+    안 넘기면(`None`) deepagents 기본값을 그대로 쓴다(하위 호환).
+
+    `tools`(2026-08-20 추가)를 넘기면 GP가 그 목록만 쓴다. **안 넘기면**
+    (`None`) deepagents `graph.py`의 fallback(`raw_subagent_tools =
+    spec.get("tools") if "tools" in spec else tools` — 즉 `"tools"` 키
+    자체가 없으면 Root의 전체 도구를 그대로 물려받는다)이 그대로 적용된다
+    (하위 호환). `factory.py`는 항상 `side_effect=False`인 도구만 걸러
+    넘긴다 — GP가 쓰기·전송·삭제 도구를 상속하지 않게 하려는 목적이라
+    빈 리스트(`[]`)를 넘기는 것과 아예 안 넘기는 것(`None`)은 의미가 다르다.
     """
     spec: dict[str, Any] = {**GENERAL_PURPOSE_SUBAGENT}
     if middleware:
         spec["middleware"] = list(middleware)
     if system_prompt is not None:
         spec["system_prompt"] = system_prompt
+    if description is not None:
+        spec["description"] = description
+    if tools is not None:
+        spec["tools"] = list(tools)
     return spec
 
 

@@ -33,7 +33,7 @@ from services.agent_runtime.loader import AgentDefinitionLoader
 from services.agent_runtime.memory.provider import MemoryProvider
 from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
-from services.agent_runtime.prompts import RuntimePromptAssembler
+from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 from services.agent_runtime.tools.loader import ToolLoader
 
@@ -55,10 +55,18 @@ def bootstrap_harness_profiles(*, excluded_tools: frozenset[str]) -> None:
     만들지 않음) — 어떤 도구를 숨길지의 단일 진실 공급원은 `runtime_policy.py`
     하나로 유지하고, 이 함수는 "그 값을 실제로 deepagents에 등록한다"는 배선
     역할만 한다.
+
+    `task` 도구 설명(2026-08-20 추가, `prompts.TASK_DELEGATION_DESCRIPTION`)도
+    여기서 같이 등록한다 — Root가 도구를 직접 부를지 서브 에이전트에게 위임할지
+    판단하는 자리라, 이 텍스트의 단일 진실 공급원도 `prompts.py` 하나로 유지한다.
     """
     assert_supported_version()
     for model_key in _HARNESS_PROFILE_MODEL_KEYS:
-        register_default_harness_profile(model_key=model_key, excluded_tools=excluded_tools)
+        register_default_harness_profile(
+            model_key=model_key,
+            excluded_tools=excluded_tools,
+            tool_description_overrides={"task": TASK_DELEGATION_DESCRIPTION},
+        )
 
 
 def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = None) -> AgentExecutor:

@@ -101,6 +101,64 @@ _CHILD_SCOPE_ADDENDUM = """
 - 최종 결과에 확인한 내용과 사용한 근거를 포함해 Root에게 돌려준다.
 """
 
+#: Root가 보는 `task` 도구 자체의 설명(2026-08-20 결정) — deepagents 기본값
+#: (영어, "복잡한 작업"이라고만 말할 뿐 이 앱의 언제/무엇을 기준으로 삼지 않음)
+#: 대신 쓴다. `compat.deepagents_v075.register_default_harness_profile()`가
+#: `tool_description_overrides={"task": ...}`로 이 값을 넘긴다. `{available_agents}`는
+#: deepagents가 실제 서브 에이전트 목록으로 치환하는 자리표시자이므로 반드시
+#: 그대로 남긴다 — 이 자리표시자 말고 다른 중괄호를 넣으면 안 된다(포맷팅 오류).
+TASK_DELEGATION_DESCRIPTION = """\
+여러 단계의 조사·처리·종합이 필요하거나, 독립적인 컨텍스트에서 별도로
+수행하는 것이 적절한 작업을 서브 에이전트에게 위임한다. 서브 에이전트는
+지금까지의 대화를 보지 못하고, description 하나로 전달한 내용만 안다.
+
+사용 가능한 에이전트와 각자 쓸 수 있는 도구:
+{available_agents}
+
+## 언제 위임할지
+- 도구 한두 번으로 바로 끝나는 단순 조회·등록은 위임하지 않고 직접 그
+  도구를 호출한다.
+- 여러 출처나 도구를 사용해 조사·처리·종합해야 하거나, 한 번의 시도로
+  결과를 얻기 어려운 작업은 general-purpose에게 맡긴다.
+- 지금 요청과 설명이 맞는 전용 서브 에이전트가 있으면 general-purpose보다
+  그 서브 에이전트를 우선한다.
+
+## 위임할 때 description에 쓸 내용
+필요한 경우 아래 내용을 포함해 하나의 지시문으로 작성한다.
+1. 목표: 무엇을 만들거나 찾거나 처리해야 하는지
+2. 배경: 이 요청이 왜 필요한지, 지금까지 확인된 사실
+3. 허용 범위: 무엇을 해도 되고 무엇은 하면 안 되는지
+4. 기대 출력: 결과를 어떤 형식과 수준으로 받고 싶은지
+5. 출처 요구: 근거나 출처를 같이 받아야 하는지
+
+## 그 외
+- 서로 독립적으로 수행할 수 있는 작업은 가능한 경우 여러 건을 동시에
+  호출한다.
+- 서브 에이전트의 응답은 사용자에게 그대로 보이지 않는다. 필요한 내용을
+  직접 정리해 전달한다.
+- 이미 처리한 것과 같은 목적으로 다시 위임하거나 같은 도구를 반복
+  호출하지 않는다.
+- 외부를 바꾸거나 데이터를 남기는 작업은 general-purpose에 위임하지
+  않는다. 그 결과가 필요하면 Root가 직접 그 도구를 불러 사용자 승인을
+  받는다."""
+
+#: GP(general-purpose) 자신의 description(2026-08-20 결정) — deepagents
+#: 기본값("키워드나 파일을 찾을 때" 같은 코딩 어시스턴트 문구) 대신 쓴다.
+#: `factory.py`가 `build_general_purpose_spec(description=...)`로 넘긴다.
+#: `TASK_DELEGATION_DESCRIPTION`의 `{available_agents}` 안에 이 문구가 그대로
+#: 나열되므로, 여기서는 "언제 위임할지" 기준을 반복하지 않고 GP 자신의
+#: 역할·능력만 적는다. 특정 도구 이름(Jira 등)은 언급하지 않는다 — 이 앱의
+#: 실제 연결 도구는 바뀔 수 있고, GP는 그중 무엇이 연결되든 범용으로 쓰인다.
+#: 2026-08-20, GP 피드백 검토 §3 채택 3 — GP는 이제 `side_effect=True` 도구를
+#: 상속하지 않는다(`factory.py`가 `build_general_purpose_spec(tools=...)`로
+#: 읽기 전용만 넘긴다). 문구도 그 사실에 맞춰 바꾼다 — "Root와 동일" 대신
+#: "조회만" 이라고 명시해야 모델이 GP에게 쓰기 작업을 잘못 기대하지 않는다.
+GP_DESCRIPTION = """\
+조사·검색이나 여러 단계에 걸친 복합 작업을 맡기는 범용 보조 에이전트다.
+전용 서브 에이전트가 없거나 요청이 여러 영역에 걸칠 때 사용한다. 조회·검색
+도구만 쓸 수 있고, 외부를 바꾸거나 데이터를 남기는 도구는 없다 — 그런
+작업이 필요하면 Root가 결과를 넘겨받아 직접 처리하고 사람 승인을 받는다."""
+
 
 class RuntimePromptAssembler:
     """공통 Runtime Scaffold와 Agent별 system_prompt를 결합해 최종 system_prompt를 만든다.
@@ -144,4 +202,9 @@ class RuntimePromptAssembler:
         return f"{scaffold}\n[이 에이전트의 지시]\n{agent_prompt}\n"
 
 
-__all__ = ["RuntimePromptAssembler", "RUNTIME_SCAFFOLD"]
+__all__ = [
+    "RuntimePromptAssembler",
+    "RUNTIME_SCAFFOLD",
+    "TASK_DELEGATION_DESCRIPTION",
+    "GP_DESCRIPTION",
+]

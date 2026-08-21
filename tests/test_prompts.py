@@ -12,7 +12,12 @@
 
 from django.test import SimpleTestCase
 
-from services.agent_runtime.prompts import RUNTIME_SCAFFOLD, RuntimePromptAssembler
+from services.agent_runtime.prompts import (
+    GP_DESCRIPTION,
+    RUNTIME_SCAFFOLD,
+    TASK_DELEGATION_DESCRIPTION,
+    RuntimePromptAssembler,
+)
 
 
 class RuntimeScaffoldContentTests(SimpleTestCase):
@@ -91,3 +96,58 @@ class AssembleGeneralPurposeTests(SimpleTestCase):
         result = RuntimePromptAssembler().assemble_general_purpose(gp_prompt="GP 기본 지시문")
 
         self.assertNotIn("위임 범위", result)
+
+
+class TaskDelegationDescriptionTests(SimpleTestCase):
+    """`task` 도구 설명 override(2026-08-20) — 언제 위임할지 기준을 담는다."""
+
+    def test_keeps_the_available_agents_placeholder(self):
+        # deepagents가 `.format(available_agents=...)`로 치환하는 자리 —
+        # 지우면 Root가 실제 서브 에이전트 목록을 못 본다.
+        self.assertIn("{available_agents}", TASK_DELEGATION_DESCRIPTION)
+
+    def test_has_no_other_format_placeholders(self):
+        # {available_agents} 말고 다른 중괄호가 있으면 .format() 호출이
+        # KeyError로 깨진다.
+        import string
+
+        fields = [name for _, name, _, _ in string.Formatter().parse(TASK_DELEGATION_DESCRIPTION) if name is not None]
+        self.assertEqual(fields, ["available_agents"])
+
+    def test_covers_when_to_delegate_and_what_to_write(self):
+        self.assertIn("언제 위임할지", TASK_DELEGATION_DESCRIPTION)
+        self.assertIn("description에 쓸 내용", TASK_DELEGATION_DESCRIPTION)
+
+    def test_five_fields_are_optional_not_mandatory(self):
+        # "필요한 경우 포함" — 모든 위임에 5개 필드를 강제하지 않는다.
+        self.assertIn("필요한 경우", TASK_DELEGATION_DESCRIPTION)
+
+    def test_forbids_redundant_redelegation_and_repeated_tool_calls(self):
+        """2026-08-20, GP 피드백 검토 §3 채택 5 — 같은 목적으로 다시
+        위임하거나 같은 도구를 반복 호출하지 않도록 명시한다."""
+        self.assertIn("다시 위임", TASK_DELEGATION_DESCRIPTION)
+        self.assertIn("반복", TASK_DELEGATION_DESCRIPTION)
+
+    def test_forbids_delegating_side_effect_work_to_general_purpose(self):
+        """2026-08-20 — GP가 쓰기 도구를 상속하지 않게 됐으므로(factory.py),
+        모델에게도 그런 작업을 GP에 위임하지 말라고 명시한다."""
+        self.assertIn("외부를 바꾸거나 데이터를 남기는", TASK_DELEGATION_DESCRIPTION)
+
+
+class GpDescriptionTests(SimpleTestCase):
+    """GP 자신의 description override(2026-08-20) — deepagents 기본값
+    (파일/키워드 검색 위주 영어 문구) 대신 쓴다."""
+
+    def test_does_not_mention_specific_tool_names(self):
+        # 이 앱의 실제 연결 도구는 바뀔 수 있다 — 특정 도구 이름을
+        # 하드코딩하지 않는다.
+        for name in ("Jira", "jira", "task_register"):
+            self.assertNotIn(name, GP_DESCRIPTION)
+
+    def test_states_read_only_access_not_hitl_parity(self):
+        """2026-08-20, GP 피드백 검토 §3 채택 3 — GP는 이제 side_effect 도구를
+        상속하지 않는다(factory.py가 읽기 전용만 넘긴다). "Root와 동일한
+        도구"라는 옛 문구(HITL parity) 대신 "조회만 가능"을 명시해야 모델이
+        GP에게 쓰기 작업을 잘못 기대하지 않는다."""
+        self.assertIn("조회", GP_DESCRIPTION)
+        self.assertNotIn("Root와 동일한 도구", GP_DESCRIPTION)
