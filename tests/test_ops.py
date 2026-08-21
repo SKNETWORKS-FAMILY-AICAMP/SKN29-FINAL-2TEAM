@@ -1023,3 +1023,68 @@ class OpsTeamContentTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 401)
         repo.agents.assert_not_called()
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.usage.OpsUsageRepository")
+class OpsUsageTests(SimpleTestCase):
+    """사용 현황 — 관측성의 「요약」 층(2026-08-21).
+
+    실행 이력은 2026-08-13 부터 쌓였는데 집계해 보여주는 자리가 없었다.
+    """
+
+    URL = "/api/ops/usage/"
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    @staticmethod
+    def _summary(**overrides):
+        summary = {
+            "window_days": 30,
+            "runs": {
+                "runs": 23, "runs_done": 20, "runs_failed": 3,
+                "token_in": 158836, "token_out": 2811, "runs_without_tokens": 0,
+            },
+            "tools": {"calls": 20, "calls_ok": 16, "calls_failed": 4},
+            "guardrail": {"events": 13, "blocked": 8},
+            "by_team": [{"team_id": "TE001", "team_name": "개발팀", "runs": 23,
+                         "runs_done": 20, "token_in": 158836, "token_out": 2811}],
+            "by_model": [{"model": "gpt-5.6-luna", "resolved_provider": "openai",
+                          "runs": 2, "token_in": 20395, "token_out": 651}],
+            "by_tool": [{"tool_ref": "document_search", "calls": 1, "calls_ok": 1,
+                         "calls_pending": 0, "avg_ms": 8823}],
+        }
+        summary.update(overrides)
+        return summary
+
+    def test_집계를_그대로_준다(self, repo, _admin):
+        repo.summary.return_value = self._summary()
+
+        body = self.client.get(self.URL, **self._headers()).json()
+
+        self.assertEqual(body["window_days"], 30)
+        self.assertEqual(body["runs"]["token_in"], 158836)
+        self.assertEqual(body["by_tool"][0]["tool_ref"], "document_search")
+        repo.summary.assert_called_once_with()
+
+    def test_운영자가_아니면_막힌다(self, repo, admin):
+        """감사 로그와 같은 경계다 — 이 표는 전 팀의 사용량을 보여준다."""
+        admin.return_value = admin_account(is_admin=False)
+
+        response = self.client.get(self.URL, **self._headers())
+
+        self.assertEqual(response.status_code, 401)
+        repo.summary.assert_not_called()
+
+    def test_못_잰_실행_수를_숨기지_않는다(self, repo, _admin):
+        """합계만 주면 「적게 썼다」와 「못 쟀다」가 같은 모양이 된다."""
+        repo.summary.return_value = self._summary(
+            runs={"runs": 10, "runs_done": 9, "runs_failed": 1,
+                  "token_in": 100, "token_out": 20, "runs_without_tokens": 7}
+        )
+
+        body = self.client.get(self.URL, **self._headers()).json()
+
+        self.assertEqual(body["runs"]["runs_without_tokens"], 7)
+
