@@ -323,6 +323,53 @@ class EventMapper:
         # 노드 완료(그 호출이 끝났다는 뜻)에서 None으로 지운다 — 안 지우면 다음
         # 호출의 첫 조각이 우연히 같은 (0, 0)을 받아 이전 호출 끝에 잘못 이어붙는다.
         self._reasoning_cursor: dict[str | None, tuple[int | None, int | None] | None] = {}
+        # run_id -> {"iterations", "token_in", "token_out"}. 아래
+        # `_count_model_call()`이 채우고 끝나는 이벤트가 실어 나른다.
+        self._usage: dict[str, dict[str, int | None]] = {}
+
+    def _count_model_call(self, run_id: str | None, message: Any) -> None:
+        """모델 호출 하나를 이 run 의 누계에 더한다(2026-08-21).
+
+        `agent_run.iterations`/`token_in`/`token_out` 을 채우려고 둔다. 이 값을
+        볼 수 있는 자리가 여기뿐이다 — 변환된 이벤트만 보는 `tracing/` 은 원시
+        `AIMessage` 에 닿지 못하고, 전용 이벤트를 새로 내면 `apps/chat` 의
+        `_relay()` 가 그대로 브라우저까지 흘려보낸다(그쪽은 종류를 안 가리고
+        전부 내보낸다).
+
+        **`usage_metadata` 가 없으면 토큰은 계속 `None` 이다 — 0 이 아니다.**
+        모르는 값을 0 으로 적으면 「토큰을 안 쓴 실행」과 구분이 사라진다
+        (`registry.py` 의 `_positive_or_none` 이 공수 0 을 비우는 것과 같은
+        판단이다). 실제로 안 오는 경로가 있다: `openai_compatible`(팀 커스텀
+        엔드포인트)은 `base_url` 을 넘기는 순간 `langchain_openai` 의
+        `stream_usage` 자동 활성화 조건에서 빠진다(설치된 1.3.0 소스 확인) —
+        스트리밍 응답에 usage 가 안 실린다. `iterations` 는 usage 와 무관하게
+        항상 센다.
+        """
+        if not run_id:
+            return
+        totals = self._usage.setdefault(
+            run_id, {"iterations": 0, "token_in": None, "token_out": None}
+        )
+        totals["iterations"] = (totals["iterations"] or 0) + 1
+        usage = getattr(message, "usage_metadata", None)
+        if not isinstance(usage, dict):
+            return
+        for key, source in (("token_in", "input_tokens"), ("token_out", "output_tokens")):
+            value = usage.get(source)
+            if isinstance(value, int):
+                totals[key] = (totals[key] or 0) + value
+
+    def usage_for(self, run_id: str | None, *, close: bool = False) -> dict[str, Any]:
+        """이 run 의 누계. 끝나는 이벤트에 실으면 `tracing/` 이 그대로 적재한다.
+
+        `close=True` 면 누계를 버린다 — 끝난 실행을 다시 볼 일이 없다. 모델을
+        한 번도 못 부르고 끝난 실행(시작하자마자 실패)은 `iterations=0` 이다.
+        """
+        empty: dict[str, Any] = {"iterations": 0, "token_in": None, "token_out": None}
+        if not run_id:
+            return empty
+        totals = self._usage.pop(run_id, None) if close else self._usage.get(run_id)
+        return dict(totals) if totals is not None else empty
 
     def convert(
         self,
@@ -516,6 +563,10 @@ class EventMapper:
                 # 이 호출 끝에 잘못 이어붙지 않게 한다(위 모듈 docstring
                 # "reasoning 실시간 스트리밍" 절).
                 self._reasoning_cursor[ns_prefix] = None
+                # 이 호출의 토큰·회전 수를 이 run 누계에 더한다(2026-08-21).
+                # 도구를 부르든 최종 답이든 모델 호출은 모델 호출이라, 분기
+                # 앞에서 한 번만 센다.
+                self._count_model_call(run_id, message)
                 events: list[dict[str, Any]] = []
                 if tool_calls:
                     events.extend(
@@ -539,6 +590,9 @@ class EventMapper:
                             "run_id": run_id,
                             "agent_id": agent_id,
                             "agent_version_id": agent_version_id,
+                            # 이 실행이 쓴 회전 수·토큰. `tracing/` 의
+                            # `_finish_root_run()` 이 그대로 `agent_run` 에 적는다.
+                            **self.usage_for(run_id, close=True),
                             "complete": True,
                         }
                     )
@@ -563,6 +617,9 @@ class EventMapper:
                     "subagent_name": info.get("subagent_name"),
                     "complete": False,
                 }
+                # 자식이 쓴 몫은 자식 run 에 적는다 — 자식의 모델 호출은 이미
+                # 자식 네임스페이스에서 다 지나갔으므로 여기서는 누계가 완성돼 있다.
+                base.update(self.usage_for(info.get("run_id"), close=True))
                 if _looks_like_subagent_not_found(content):
                     # deepagents가 예외 대신 평범한 성공 ToolMessage로 감싸
                     # 돌려주는 "존재하지 않는 subagent_type" 실패 — 계약
@@ -601,6 +658,7 @@ class EventMapper:
             # 스트리밍" 절) — 이 자식 네임스페이스의 reasoning도 "messages"
             # 모드로 이미 실시간으로 다 나갔다.
             self._reasoning_cursor[ns_prefix] = None
+            self._count_model_call(child_run_id, message)
             events: list[dict[str, Any]] = []
             for call in tool_calls:
                 tool_ref = call.get("name")

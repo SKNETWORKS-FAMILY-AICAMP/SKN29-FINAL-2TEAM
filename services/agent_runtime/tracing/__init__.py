@@ -25,12 +25,16 @@ harness 전용 로직이 아니라 순수 로깅 유틸리티라 재사용에 �
 
 ## 알려진 한계 (정직하게 기록)
 
-- **`iterations`/`token_in`/`token_out`은 이번 범위에 없다.** LangGraph raw
-  이벤트에서 이 값을 정확히 뽑으려면(모델 노드 update마다 `usage_metadata`
-  누적) `events.py`를 더 깊이 검증해야 하는데, 이 세션엔 실제로 모델을 불러
-  라이브로 확인할 방법이 없었다 — 값을 지어내는 대신 `iterations=0`,
-  `token_in=None`, `token_out=None`으로 정직하게 "아직 안 잰다"를 남긴다.
-  칼럼 자체는 nullable/기본값이 있어 스키마 변경 없이 나중에 채울 수 있다.
+- **`iterations`/`token_in`/`token_out`은 2026-08-21에 채웠다.** 예전엔
+  `iterations=0`, 토큰은 `None` 고정이었다("아직 안 잰다"를 정직하게 남긴
+  것). 이제 `events.py`의 `EventMapper._count_model_call()`이 모델 노드
+  update마다 `usage_metadata`를 누적해 끝나는 이벤트에 실어 보내고, 여기
+  `_usage_of()`가 옮겨 적는다 — 이 모듈은 변환된 이벤트만 보므로 원시
+  `AIMessage`에 직접 닿을 수 없어서 누계를 세는 자리가 저쪽이다.
+  ⚠ **`usage_metadata`가 안 오는 경로가 있다**: `openai_compatible`(팀 커스텀
+  엔드포인트)은 `base_url`을 넘기는 순간 `langchain_openai`의 `stream_usage`
+  자동 활성화 조건에서 빠진다 — 그 경우 `iterations`만 차고 토큰은 `None`으로
+  남는다(0으로 채우지 않는다).
 - **`tool_call.error_code`가 레거시보다 거칠다.** 레거시(`trace.error_code_of`)는
   실제 예외 객체(클래스 이름, MCP는 `McpError.code`)를 본다. 여기서는
   langgraph `ToolNode`가 예외를 `ToolMessage(status="error")`로 감싸면서
@@ -224,7 +228,7 @@ def _finish_root_run(
     if not run_id or run_id not in open_run_ids:
         return
     status = "DONE" if event.get("type") == EVENT_RESULT else "FAILED"
-    AgentRunRepository.finish(run_id=run_id, status=status, iterations=0, token_in=None, token_out=None)
+    AgentRunRepository.finish(run_id=run_id, status=status, **_usage_of(event))
     open_run_ids.discard(run_id)
     _attach_duration_ms(event, run_id=run_id, open_run_started_at=open_run_started_at)
 
@@ -236,9 +240,28 @@ def _finish_subagent_run(
     if not run_id or run_id not in open_run_ids:
         return
     status = "FAILED" if event.get("status") == "FAILED" else "DONE"
-    AgentRunRepository.finish(run_id=run_id, status=status, iterations=0, token_in=None, token_out=None)
+    AgentRunRepository.finish(run_id=run_id, status=status, **_usage_of(event))
     open_run_ids.discard(run_id)
     _attach_duration_ms(event, run_id=run_id, open_run_started_at=open_run_started_at)
+
+
+def _usage_of(event: dict[str, Any]) -> dict[str, Any]:
+    """끝나는 이벤트가 실어 온 회전 수·토큰(2026-08-21).
+
+    `events.py`의 `EventMapper`가 모델 호출마다 누계를 세어 `result`/
+    `subagent_completed`/`error`에 실어 보낸다 — 여기서는 옮겨 적기만 한다
+    (이 모듈은 변환된 이벤트만 보므로 원시 `AIMessage`의 `usage_metadata`에
+    닿지 못한다). **값이 없으면 `None`을 그대로 넣는다** — 0으로 채우면
+    「안 쟀다」와 「안 썼다」가 같은 모양이 된다.
+
+    필드를 안 실어 보내는 호출자(레거시 테스트, 옛 이벤트)도 그대로 동작한다 —
+    2026-08-21 이전과 똑같이 `iterations=0`, 토큰은 `None`이 된다.
+    """
+    return {
+        "iterations": event.get("iterations") or 0,
+        "token_in": event.get("token_in"),
+        "token_out": event.get("token_out"),
+    }
 
 
 def _attach_duration_ms(

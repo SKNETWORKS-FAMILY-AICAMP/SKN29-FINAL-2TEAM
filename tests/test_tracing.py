@@ -426,3 +426,55 @@ class KnownRunIdsResumeTests(SimpleTestCase):
         runs.finish.assert_called_once_with(
             run_id="RUN-ROOT", status="DONE", iterations=0, token_in=None, token_out=None
         )
+
+
+@patch(f"{MODULE}.ToolCallRepository")
+@patch(f"{MODULE}.AgentRunRepository")
+class RunUsageTests(SimpleTestCase):
+    """끝나는 이벤트가 실어 온 회전 수·토큰을 그대로 적는가(2026-08-21).
+
+    누계를 세는 곳은 `events.py`의 `EventMapper`다 — 이 모듈은 변환된
+    이벤트만 보므로 원시 `AIMessage`의 `usage_metadata`에 닿지 못한다.
+    """
+
+    def test_result_usage_is_written_to_agent_run(self, runs, _calls):
+        events = [_agent_started(), _result(iterations=3, token_in=1200, token_out=340)]
+
+        list(trace_events(iter(events), context=_context()))
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="DONE", iterations=3, token_in=1200, token_out=340
+        )
+
+    def test_failed_run_still_records_the_tokens_it_already_spent(self, runs, _calls):
+        """실패해도 비용은 이미 나갔다 — 실패만 비면 Usage 합계가 실제보다 작아진다."""
+        events = [_agent_started(), _error(iterations=2, token_in=900, token_out=10)]
+
+        list(trace_events(iter(events), context=_context()))
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="FAILED", iterations=2, token_in=900, token_out=10
+        )
+
+    def test_subagent_usage_is_written_to_the_child_run(self, runs, _calls):
+        events = [
+            _subagent_started(),
+            _subagent_completed(status="DONE", iterations=1, token_in=500, token_out=60),
+        ]
+
+        list(trace_events(iter(events), context=_context()))
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-CHILD", status="DONE", iterations=1, token_in=500, token_out=60
+        )
+
+    def test_tokens_stay_none_when_the_event_does_not_carry_them(self, runs, _calls):
+        """usage를 못 받은 실행은 0이 아니라 None이다 — 「안 쟀다」와 「안 썼다」는 다르다."""
+        events = [_agent_started(), _result(iterations=4)]
+
+        list(trace_events(iter(events), context=_context()))
+
+        runs.finish.assert_called_once_with(
+            run_id="RUN-ROOT", status="DONE", iterations=4, token_in=None, token_out=None
+        )
+

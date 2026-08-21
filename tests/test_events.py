@@ -789,3 +789,95 @@ class InterruptEventTests(SimpleTestCase):
         events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
         self.assertEqual(events[0]["action_requests"], [])
+
+
+class ModelUsageTests(SimpleTestCase):
+    """모델 호출마다 회전 수·토큰을 세어 끝나는 이벤트에 싣는가(2026-08-21).
+
+    `agent_run.iterations`/`token_in`/`token_out`을 채우는 유일한 경로다 —
+    `tracing/`은 변환된 이벤트만 보므로 원시 `AIMessage.usage_metadata`에
+    닿지 못한다.
+    """
+
+    @staticmethod
+    def _ai(text="", *, tool_calls=None, usage=None):
+        return AIMessage(
+            content=text,
+            tool_calls=tool_calls or [],
+            usage_metadata=usage,
+        )
+
+    def test_result_carries_summed_tokens_and_iteration_count(self):
+        mapper = EventMapper()
+        # 1회전: 도구를 부른다. 이 호출의 토큰도 합계에 들어가야 한다.
+        mapper.convert(
+            _raw((), "model", self._ai(tool_calls=[{"name": "people_list", "args": {}, "id": "1"}],
+                                       usage={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120})),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        # 2회전: 최종 답.
+        event = _convert_one(
+            mapper,
+            _raw((), "model", self._ai("답", usage={"input_tokens": 300, "output_tokens": 50, "total_tokens": 350})),
+        )
+
+        self.assertEqual(event["type"], EVENT_RESULT)
+        self.assertEqual(event["iterations"], 2)
+        self.assertEqual(event["token_in"], 400)
+        self.assertEqual(event["token_out"], 70)
+
+    def test_missing_usage_metadata_leaves_tokens_none_not_zero(self):
+        """usage를 안 주는 경로(openai_compatible)에서 0으로 채우면 안 된다.
+
+        0이면 「토큰을 안 쓴 실행」과 구분이 사라진다. 회전 수는 usage와
+        무관하게 세므로 그대로 찬다.
+        """
+        event = _convert_one(EventMapper(), _raw((), "model", self._ai("답")))
+
+        self.assertEqual(event["iterations"], 1)
+        self.assertIsNone(event["token_in"])
+        self.assertIsNone(event["token_out"])
+
+    def test_child_tokens_go_to_the_child_run_not_the_parent(self):
+        mapper = EventMapper()
+        start = self._ai(
+            tool_calls=[{"name": "task", "args": {"subagent_type": "researcher", "description": "조사"}, "id": "1"}],
+            usage={"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+        )
+        started = _convert_one(mapper, _raw((), "model", start))
+        child_ns = ("tools:abc",)
+        # 자식 네임스페이스의 모델 호출 — 자식 run 누계로 가야 한다.
+        mapper.convert(
+            _raw(child_ns, "model", self._ai("자식 생각",
+                                             usage={"input_tokens": 900, "output_tokens": 80, "total_tokens": 980})),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        done = ToolMessage(name="task", content="완료", tool_call_id="1")
+        completed = _convert_one(mapper, _raw((), "tools", done))
+
+        self.assertEqual(completed["type"], EVENT_SUBAGENT_COMPLETED)
+        self.assertEqual(completed["run_id"], started["run_id"])
+        self.assertEqual(completed["token_in"], 900)
+        self.assertEqual(completed["token_out"], 80)
+
+        # 부모 누계에는 자식 몫이 안 섞인다 — 부모는 자기 위임 호출 1회뿐이다.
+        final = _convert_one(mapper, _raw((), "model", self._ai("최종")))
+        self.assertEqual(final["iterations"], 2)
+        self.assertEqual(final["token_in"], 10)
+
+    def test_usage_for_is_empty_after_the_run_is_closed(self):
+        """끝난 실행의 누계는 버린다 — 같은 mapper 를 계속 들고 있어도 안 샌다."""
+        mapper = EventMapper()
+        _convert_one(
+            mapper,
+            _raw((), "model", self._ai("답", usage={"input_tokens": 7, "output_tokens": 1, "total_tokens": 8})),
+        )
+
+        self.assertEqual(
+            mapper.usage_for("RUN1"),
+            {"iterations": 0, "token_in": None, "token_out": None},
+        )
+
