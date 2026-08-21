@@ -839,6 +839,27 @@ class ModelUsageTests(SimpleTestCase):
         self.assertIsNone(event["token_in"])
         self.assertIsNone(event["token_out"])
 
+    def test_thinking_tokens_hidden_in_total_are_counted_as_output(self):
+        """Gemini OpenAI 호환 주소 실측(2026-08-21): prompt 6 · completion 1 ·
+        total 149. 있는 그대로 적으면 Usage 합계가 149 대신 7이 된다."""
+        event = _convert_one(
+            EventMapper(),
+            _raw((), "model", self._ai("답", usage={"input_tokens": 6, "output_tokens": 1, "total_tokens": 149})),
+        )
+
+        self.assertEqual(event["token_in"], 6)
+        self.assertEqual(event["token_out"], 143)
+
+    def test_provider_whose_total_already_adds_up_is_left_alone(self):
+        """OpenAI 실측: 11 + 5 = 16. 나머지가 0이라 손대지 않는다."""
+        event = _convert_one(
+            EventMapper(),
+            _raw((), "model", self._ai("답", usage={"input_tokens": 11, "output_tokens": 5, "total_tokens": 16})),
+        )
+
+        self.assertEqual(event["token_in"], 11)
+        self.assertEqual(event["token_out"], 5)
+
     def test_child_tokens_go_to_the_child_run_not_the_parent(self):
         mapper = EventMapper()
         start = self._ai(

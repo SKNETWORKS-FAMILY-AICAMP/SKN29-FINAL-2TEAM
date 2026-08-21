@@ -160,4 +160,18 @@ class ModelFactory:
             openai_api_key=resolved.api_key,
             openai_api_base=resolved.base_url,
             use_responses_api=False,
+            # **켜지 않으면 토큰을 못 잰다**(2026-08-21). `langchain_openai`
+            # (1.3.0 소스 확인)는 `base_url`이 있으면 `stream_usage` 자동
+            # 활성화 조건에서 빼는데, 이 경로는 정의상 항상 `base_url`이
+            # 있다 — 그래서 스트리밍 응답에 usage가 안 실리고
+            # `agent_run.token_in`/`token_out`이 영영 NULL로 남았다.
+            #
+            # 켜면 요청에 `stream_options={"include_usage": true}`가 붙는데,
+            # 이걸 거부하는 호환 서버가 있을 수 있어 **실제로 등록된
+            # 엔드포인트로 직접 확인하고 넣었다**: Gemini의 OpenAI 호환 주소
+            # (`generativelanguage.googleapis.com/v1beta/openai/`)는 정상
+            # 응답하고 usage를 준다. 새 엔드포인트를 등록할 때 이 옵션을
+            # 거부하는 서버를 만나면 `/ops/models`의 「연결 확인」이 아니라
+            # **실제 대화에서** 처음 드러난다(연결 확인은 스트리밍이 아니다).
+            stream_usage=True,
         )

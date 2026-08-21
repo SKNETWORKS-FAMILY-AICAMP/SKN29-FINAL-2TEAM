@@ -354,8 +354,20 @@ class EventMapper:
         usage = getattr(message, "usage_metadata", None)
         if not isinstance(usage, dict):
             return
-        for key, source in (("token_in", "input_tokens"), ("token_out", "output_tokens")):
-            value = usage.get(source)
+        token_in = usage.get("input_tokens")
+        token_out = usage.get("output_tokens")
+        total = usage.get("total_tokens")
+        # **설명되지 않는 나머지는 출력으로 센다**(2026-08-21, 실측으로 발견).
+        # Gemini의 OpenAI 호환 주소는 thinking 토큰을 `total_tokens`에만 넣고
+        # `completion_tokens_details`를 `null`로 준다 — 실제 응답이
+        # `prompt 6 · completion 1 · total 149`였다. 있는 그대로 적으면
+        # Usage 합계가 149 대신 7이 되어 한 자릿수로 틀린다. 나머지는 모델이
+        # 만들어 낸 토큰이므로 출력 쪽에 얹는다 — 별도 칸을 두려면 스키마에
+        # 컬럼을 더해야 하고, 그건 팀원 전원이 ALTER를 돌려야 하는 변경이다.
+        # 총합이 딱 맞는 제공자(OpenAI: 11+5=16)는 나머지가 0이라 그대로다.
+        if isinstance(total, int) and isinstance(token_in, int) and isinstance(token_out, int):
+            token_out = max(token_out, total - token_in)
+        for key, value in (("token_in", token_in), ("token_out", token_out)):
             if isinstance(value, int):
                 totals[key] = (totals[key] or 0) + value
 
