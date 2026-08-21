@@ -36,7 +36,13 @@
    테스트하던 4개 파일을 안 지웠다 — 지금 이 브랜치는 이미 그 지점에서
    테스트가 깨져 있다. 착수 전 선행 조건으로 §8에 남긴다.
 
-이 문서는 설계 판단만 기록한다. 코드에는 아직 반영하지 않았다.
+**2026-08-21 구현 완료** — 아래 설계대로 코드에 반영했다:
+`services/agent_runtime/middleware/tool_timeout.py`(`McpToolCallTimeoutMiddleware`),
+`runtime_policy.py`의 timeout 상수·`timeout_for_mcp_tool()`,
+`middleware/factory.py` 배선, `tests/test_tool_timeout.py`. §8이 지적한
+낡은 테스트 4개도 같이 정리했다(그 과정에서 `17e8c62`가 남긴 다른 낡은
+테스트 — `build()` 3-tuple, member 권한, `enable_todo`, BUILTIN_TOOLS
+13→14 — 도 함께 나왔다).
 
 ## 2. 배경 — 왜 다시 설계가 필요한가
 
@@ -162,14 +168,41 @@ timeout 초과 (MCP 도구, 항상 side_effect=True)
 
 ## 7. 이 재설계가 풀지 않는 것
 
-- MCP 서버별 직렬화(lock)가 이 timeout이 도는 동안 DB 커넥션을 쥐고
-  있는 문제(`2026-08-20_02` §5.2) — 최악의 경우가 "무한"에서 "480~600초"로
-  줄어들 뿐, 커넥션을 오래 쥐는 설계 자체는 별도로 다뤄야 한다.
+- ~~MCP 서버별 직렬화(lock)가 이 timeout이 도는 동안 DB 커넥션을 쥐고
+  있는 문제~~ → `2026-08-21_04`에서 **직렬화 자체를 폐기**해 해결했다.
+  MCP는 이제 줄 세우지 않고 승인 카드에 경고만 띄우므로, 이 timeout이
+  도는 동안 아무도 락을 쥐고 기다리지 않는다.
 - Run 전체 wall-clock timeout과 진짜 취소 전파 — §6에서 밝힌 대로 범위
   밖이다.
 - 팀·계정별 timeout 차등 — 지금은 전 팀 공통 기본값 하나만 둔다.
 
-## 8. 다음 순서
+## 8. 착수 전 선행 조건 — 낡은 테스트 정리(완료)
+
+`17e8c62`가 `tool_timeout.py`를 지우면서 **이걸 테스트하던 파일들을 안
+지웠다.** 그래서 이 브랜치는 착수 시점에 이미 그 지점에서 깨져 있었다:
+
+- `tests/test_tool_timeout.py`, `tests/test_runtime_policy.py` — 파일 맨 위
+  top-level import라 **collection 단계에서 파일 전체가 죽었다**.
+- `tests/test_middleware_factory.py`, `tests/test_factory.py` — import가
+  테스트 메서드 안이라 해당 테스트만 죽었다(게다가 import가 되더라도
+  `build()`가 이제 그 미들웨어를 안 붙여 `StopIteration`으로 한 번 더 깨진다).
+
+새 설계(MCP 전용·480초·분기 없음)로 이 4개를 다시 썼다. 그 과정에서 같은
+커밋이 남긴 다른 낡은 테스트도 함께 드러나 같이 고쳤다 — 전부 그때
+**의도적으로 바꾼 정책**을 옛 값으로 검증하고 있었다:
+
+| 무엇 | 옛 값 | 지금 |
+|---|---|---|
+| `build()` 반환 | 2-tuple | 3-tuple(Child Run Snapshot) |
+| member의 쓰기 실행 | 즉시 거부 | 허용(자기 승인 HITL로 경계 이동) |
+| `enable_todo` 기본값 | False | True |
+| `BUILTIN_TOOLS` 개수 | 13 | 14(`get_current_datetime`) |
+| `_FakeFactory`/`_FakeStreamAdapter` | 옛 시그니처 | 실물과 재정렬 |
+
+착수 전 1056개가 돌고 81개가 실패하던 상태에서, 정리 후 1136개가 돌고
+48개 실패(남은 것은 전부 DB 미연결 통합 테스트)로 바뀌었다.
+
+## 9. 다음 순서
 
 이어서 `2026-08-20_01`/`2026-08-20_02`와 실제 구현의 나머지 충돌 지점을
 정리한다 — A-2(MCP 쓰기 승인 범위 확장, `2026-08-21_02`)와 A-3(외부
