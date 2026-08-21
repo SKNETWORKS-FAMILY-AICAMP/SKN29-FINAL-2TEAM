@@ -2,6 +2,12 @@
 
 한 건이 이상하다고 나머지를 멈추지 않는다. 팀 문서 전부에 도는 일이라 한 건의
 실패는 그 한 건으로 끝나야 한다 — 옛 API 뷰들이 지키던 규칙을 그대로 가져온다.
+
+**단, 커넥터 자격증명 자체가 막힌 경우(`OAuthError`)는 예외다**(2026-08-20).
+파일 한 건의 문제(깨진 파일, 저장소 오류)와 달리, 자격증명 문제는 같은
+계정·같은 커넥터로 도는 남은 모든 건에 반드시 똑같이 재현된다 — "이 건만
+실패로 끝난다"는 원칙이 여기엔 적용되지 않는다. `_fetch_and_summarize()`가
+이 경우 나머지 대기 문서를 더 시도하지 않고 배치를 멈춘다.
 """
 
 from __future__ import annotations
@@ -125,7 +131,10 @@ def _fetch_and_summarize(*, account_id: str, team_id: str, result: IntakeResult)
     없고, 나누면 「받아만 두고 요약이 없는」 상태가 생긴다.
     """
 
-    for target in DocumentRepository.list_pending_download(account_id):
+    # `list()`로 미리 확정해 둔다 — 아래에서 자격증명 실패 시 "남은 항목"을
+    # 한 번에 훑어야 하는데, 제너레이터면 다시 훑을 수 없다.
+    targets = list(DocumentRepository.list_pending_download(account_id))
+    for index, target in enumerate(targets):
         if target["storage_key"]:
             continue
         try:
@@ -144,7 +153,23 @@ def _fetch_and_summarize(*, account_id: str, team_id: str, result: IntakeResult)
                 content_hash=content_hash,
                 revision=fetched["revision"],
             )
-        except (OAuthError, OSError, RepositoryError) as exc:
+        except OAuthError as exc:
+            # 2026-08-20 수정 — 이 계정의 이 커넥터 자격증명이 막혔다는 뜻이다.
+            # `download_drive_file()`은 항목마다 같은 `account_id`로
+            # `credential_for()`를 다시 부르므로, 여기서 막히면 남은 대기
+            # 문서도 전부 같은 이유로 똑같이 실패한다 — 하나씩 돌며 매번 같은
+            # Drive 요청을 다시 보낼 이유가 없다. 남은 항목을 같은 사유로
+            # 한 번에 기록하고 이 배치는 여기서 멈춘다(다음 호출이 이어받는다
+            # — 이 함수의 "여러 번 불러도 안전하다" 원칙 그대로).
+            logger.exception("원문 수신 실패(자격증명): %s", target["doc_id"])
+            for remaining in targets[index:]:
+                if remaining["storage_key"]:
+                    continue
+                result.failed.append(
+                    {"file_name": remaining["file_name"], "detail": exc.__class__.__name__}
+                )
+            break
+        except (OSError, RepositoryError) as exc:
             logger.exception("원문 수신 실패: %s", target["doc_id"])
             result.failed.append({"file_name": target["file_name"], "detail": exc.__class__.__name__})
 

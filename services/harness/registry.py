@@ -801,6 +801,14 @@ def _jira_create_issues(
     남의 토큰 수명에 매달 이유가 없다 — Jira Connector 는 이미 붙어 있다.
 
     MCP 는 「사용자가 자기 서버를 추가로 붙이는」 확장 경로로 남는다.
+
+    2026-08-20 — `_fill_default_jira_assignee()`가 담당자 기본값을 찾으려고
+    쓰는 자격증명과, 아래 `create_jira_issues()`가 실제 등록에 쓰는
+    자격증명은 같다(둘 다 `credential_account_id`). 그래서 자격증명이
+    만료·미연결이면 담당자 조회 단계에서 바로 `OAuthError`가 올라오고, 이
+    함수는 그걸 따로 잡지 않는다 — `create_jira_issues()`까지 가서 같은
+    이유로 또 실패하는 불필요한 호출을 만들지 않기 위함이다(그 함수 docstring
+    참고).
     """
 
     key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
@@ -832,12 +840,23 @@ def _fill_default_jira_assignee(
 
     Jira 는 이메일이 아니라 Atlassian accountId 로만 배정을 받는다
     (`create_jira_issues` 의 GDPR 주석). 우리 계정과 Jira 계정을 잇는 저장된
-    매핑이 없어 매번 이메일로 검색해야 하고, 그 검색은 실패할 수 있다(계정
-    설정에 따라 이메일이 검색에 안 걸림, 동명이인으로 여러 건). **막히면
-    억지로 채우지 않는다** — 빈 채로 넘긴다(팀이 이미 정해 둔 원칙,
-    `docs/TO-BE/5_E2E_시나리오.md`: "막히면 담당자를 이슈 본문에 적고
-    assignee는 비운다"). `find_jira_account_id_by_email` 자체가 이 원칙대로
-    실패 시 예외 없이 None 을 돌려준다.
+    매핑이 없어 매번 이메일로 검색해야 하고, 그 검색은 "못 찾았다"로 끝날 수
+    있다(계정 설정에 따라 이메일이 검색에 안 걸림, 동명이인으로 여러 건).
+    **못 찾았을 뿐이면 억지로 채우지 않는다** — 빈 채로 넘긴다(팀이 이미
+    정해 둔 원칙, `docs/TO-BE/5_E2E_시나리오.md`: "막히면 담당자를 이슈
+    본문에 적고 assignee는 비운다"). `find_jira_account_id_by_email` 이 이
+    원칙대로 "못 찾음"엔 예외 없이 `None`을 돌려준다.
+
+    **단, 자격증명 문제(`OAuthError`)는 여기서 안 삼킨다** — 2026-08-20 수정.
+    `find_jira_account_id_by_email`이 쓰는 자격증명은 바로 아래
+    `create_jira_issues()`가 쓸 것과 같다(둘 다 `credential_account_id`).
+    여기서 만료·재연결 필요로 막혔다면 `create_jira_issues()` 호출도 반드시
+    같은 이유로 막힌다 — 그런데도 여기서 삼키고 넘어가면, 실패할 걸 이미 아는
+    Jira 요청(이슈 생성)을 한 번 더 보내는 것뿐이다. 그래서
+    `find_jira_account_id_by_email`은 `OAuthError`를 그대로 올리도록 고쳤고,
+    이 함수는 그걸 따로 잡지 않는다 — 호출한 `_jira_create_issues()`가 그
+    자리에서 바로 실패해, `create_jira_issues()`까지 가는 불필요한 API 호출과
+    그 결과를 기다리는 모델 턴을 아낀다.
 
     조회는 최대 한 번만 한다 — 담당자 없는 이슈가 여럿이어도 채울 사람은
     하나(요청자 자신)이므로 이슈마다 API 를 부를 이유가 없다.

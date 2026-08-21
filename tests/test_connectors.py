@@ -2,9 +2,11 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
+import requests
 from django.test import SimpleTestCase, override_settings
 
 from apps.accounts.tokens import issue_token
+from apps.connectors.clients import find_jira_account_id_by_email
 from apps.connectors.oauth import (
     GOOGLE_DRIVE,
     JIRA,
@@ -502,6 +504,28 @@ class CredentialRefreshTests(SimpleTestCase):
         self.assertEqual(saved["refresh_token"], "rotated-refresh-token")
         self.assertEqual(saved["cloud_id"], "cloud-123")
 
+    @patch("apps.connectors.clients.requests.get")
+    @patch("apps.connectors.oauth.requests.post")
+    def test_담당자_조회도_갱신_실패시_예외를_올리고_검색을_보내지_않는다(
+        self, token_post, jira_get, get_credential, mark_expired, update
+    ):
+        """2026-08-20 — `find_jira_account_id_by_email`이 이 실패를 삼켜
+        `None`으로 접으면, `_jira_create_issues()`가 몰랐던 척 이슈 생성까지
+        갔다가 거기서 또 실패한다(같은 자격증명이므로 반드시 재현됨). 여기서
+        바로 올라와야 그 불필요한 두 번째 Jira 호출(이슈 생성 API)이 생기지
+        않는다 — 그러니 이 조회 API(`/user/search`) 자체도 아예 불리면 안
+        된다."""
+
+        get_credential.return_value = stored_credential(expired=True, cloud_id="cloud-123")
+        token_post.return_value = Mock(raise_for_status=Mock(side_effect=OAuthError("revoked")))
+
+        with self.assertRaises(OAuthError):
+            find_jira_account_id_by_email(account_id="UA001", email="me@example.com")
+
+        mark_expired.assert_called_once_with(account_id="UA001", connector_type=JIRA)
+        update.assert_not_called()
+        jira_get.assert_not_called()
+
 
 @patch("apps.connectors.clients.ConnectorRepository.get_credential")
 class GoogleDriveFolderListApiTests(SimpleTestCase):
@@ -793,4 +817,63 @@ class JiraProjectListApiTests(SimpleTestCase):
         response = self.client.get("/api/connectors/jira/projects/", headers=auth_header())
 
         self.assertEqual(response.status_code, 502)
+        jira_get.assert_not_called()
+
+
+@patch("apps.connectors.clients.ConnectorRepository.get_credential")
+class JiraAccountLookupByEmailTests(SimpleTestCase):
+    """이메일로 Jira accountId 를 찾는 보조 조회(`_jira_create_issues`의 담당자
+    기본값 채우기가 씀).
+
+    2026-08-20 — "못 찾음"(0건·다건)과 "자격증명 문제"를 구분해서 검증한다.
+    앞쪽만 `None`으로 접고 뒤쪽은 예외로 올려야, 호출한 쪽
+    (`_fill_default_jira_assignee` → `_jira_create_issues`)이 이미 실패가
+    확정된 자격증명으로 이슈 생성 API 까지 또 부르지 않는다.
+    """
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_정확히_한_건이면_accountId를_돌려준다(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential(cloud_id="cloud-123")
+        jira_get.return_value = json_response([{"accountId": "acc-1"}])
+
+        result = find_jira_account_id_by_email(account_id="UA001", email="me@example.com")
+
+        self.assertEqual(result, "acc-1")
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_0건이면_None을_돌려준다(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential(cloud_id="cloud-123")
+        jira_get.return_value = json_response([])
+
+        result = find_jira_account_id_by_email(account_id="UA001", email="nobody@example.com")
+
+        self.assertIsNone(result)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_다건이면_확신없이_None을_돌려준다(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential(cloud_id="cloud-123")
+        jira_get.return_value = json_response([{"accountId": "acc-1"}, {"accountId": "acc-2"}])
+
+        result = find_jira_account_id_by_email(account_id="UA001", email="same-name@example.com")
+
+        self.assertIsNone(result)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_네트워크_오류는_삼켜서_None을_돌려준다(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential(cloud_id="cloud-123")
+        jira_get.side_effect = requests.RequestException("boom")
+
+        result = find_jira_account_id_by_email(account_id="UA001", email="me@example.com")
+
+        self.assertIsNone(result)
+
+    @patch("apps.connectors.clients.requests.get")
+    def test_cloud_id가_없으면_삼키지_않고_예외를_올린다(self, jira_get, get_credential):
+        get_credential.return_value = stored_credential()  # cloud_id 없음
+
+        with self.assertRaises(OAuthError):
+            find_jira_account_id_by_email(account_id="UA001", email="me@example.com")
+
+        # cloud_id 가 없다는 걸 안 순간 바로 멈춰야 한다 — 검색 API 자체를
+        # 부를 이유가 없다.
         jira_get.assert_not_called()
