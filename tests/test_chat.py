@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase
 
 from apps.accounts.tokens import issue_token
-from apps.chat.api_views import _apply_selection, _decisions_for
+from apps.chat.api_views import PerCallDecisionsError, _apply_selection, _decisions_for
 from apps.chat.serializers import message_response
 from backend.db.errors import PermissionDenied
 
@@ -1019,6 +1019,112 @@ class ResumeDecisionTests(SimpleTestCase):
 
     def test_전부_그대로_고르면_승인으로_둔다(self):
         self.assertEqual(_decisions_for(self._requests(3), [0, 1, 2]), [{"type": "approve"}])
+
+
+class PerCallDecisionTests(SimpleTestCase):
+    """호출별 승인·거절(2026-08-21, 병렬실행 Phase 2).
+
+    모델이 한 턴에 side_effect 도구를 여러 개 부르면 확인 카드에 여러 항목이
+    한꺼번에 뜨는데, 지금까지는 전부에 같은 결정만 적용할 수 있었다. 배경은
+    `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+    """
+
+    def _requests(self, count=3):
+        return [
+            {"name": f"tool_{i}", "args": {"n": i}} for i in range(count)
+        ]
+
+    def test_호출마다_다른_결정을_적용한다(self):
+        decisions = _decisions_for(
+            self._requests(3),
+            None,
+            per_call=[
+                {"action_index": 0, "type": "approve"},
+                {"action_index": 1, "type": "reject"},
+                {"action_index": 2, "type": "approve"},
+            ],
+        )
+
+        self.assertEqual(
+            decisions, [{"type": "approve"}, {"type": "reject"}, {"type": "approve"}]
+        )
+
+    def test_입력_순서가_섞여_있어도_action_index_순서로_편다(self):
+        """`HumanInTheLoopMiddleware`는 `action_requests`와 **같은 순서**의
+        목록을 요구한다(실측) — 화면이 어떤 순서로 보내든 인덱스 기준으로
+        정렬해야 결정이 엉뚱한 호출에 붙지 않는다."""
+        decisions = _decisions_for(
+            self._requests(3),
+            None,
+            per_call=[
+                {"action_index": 2, "type": "reject"},
+                {"action_index": 0, "type": "approve"},
+                {"action_index": 1, "type": "approve"},
+            ],
+        )
+
+        self.assertEqual(
+            decisions, [{"type": "approve"}, {"type": "approve"}, {"type": "reject"}]
+        )
+
+    def test_빠진_항목이_있으면_거부한다(self):
+        """빠진 걸 조용히 승인하면 사용자가 안 본 호출이 실행된다."""
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                self._requests(3), None, per_call=[{"action_index": 0, "type": "approve"}]
+            )
+
+    def test_같은_인덱스가_두_번_오면_거부한다(self):
+        """같은 호출에 승인과 거절이 동시에 오면 뭐가 이기는지 애매해진다."""
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                self._requests(2),
+                None,
+                per_call=[
+                    {"action_index": 0, "type": "approve"},
+                    {"action_index": 0, "type": "reject"},
+                    {"action_index": 1, "type": "approve"},
+                ],
+            )
+
+    def test_범위를_벗어난_인덱스는_거부한다(self):
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                self._requests(1),
+                None,
+                per_call=[
+                    {"action_index": 0, "type": "approve"},
+                    {"action_index": 5, "type": "approve"},
+                ],
+            )
+
+    def test_거절된_첫_호출에는_selected를_적용하지_않는다(self):
+        """`reject`를 `edit`로 덮어쓰면 거절이 승인으로 뒤집힌다 — 실행 안 될
+        호출의 인자를 다듬는 건 의미도 없다."""
+        requests = [{"name": "task_register", "args": {"tasks": [{"title": "A"}, {"title": "B"}]}}]
+
+        decisions = _decisions_for(
+            requests, [0], per_call=[{"action_index": 0, "type": "reject"}]
+        )
+
+        self.assertEqual(decisions, [{"type": "reject"}])
+
+    def test_승인된_첫_호출에는_selected가_그대로_적용된다(self):
+        """호출별 결정을 써도 기존 항목 단위 선택(체크 해제)은 그대로 살아
+        있어야 한다 — 두 기능은 다른 층위다."""
+        requests = [{"name": "task_register", "args": {"tasks": [{"title": "A"}, {"title": "B"}]}}]
+
+        decisions = _decisions_for(
+            requests, [0], per_call=[{"action_index": 0, "type": "approve"}]
+        )
+
+        self.assertEqual(decisions[0]["type"], "edit")
+        self.assertEqual(
+            [t["title"] for t in decisions[0]["edited_action"]["args"]["tasks"]], ["A"]
+        )
+
+    def test_per_call이_없으면_예전_동작_그대로다(self):
+        self.assertEqual(_decisions_for(self._requests(2), None), [{"type": "approve"}] * 2)
 
 
 @patch("services.agent_runtime.build_default_executor")

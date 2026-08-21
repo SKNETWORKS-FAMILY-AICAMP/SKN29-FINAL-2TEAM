@@ -412,6 +412,7 @@ def _resume_deep_agent(
     content: dict[str, Any],
     decision: str,
     selected: list[int] | None = None,
+    per_call_decisions: list[dict[str, Any]] | None = None,
 ):
     """새 엔진에서 HITL interrupt로 멈춘 실행을 재개한다(2026-08-19, §0순위).
 
@@ -428,10 +429,13 @@ def _resume_deep_agent(
     **한 벌만 둔다**(`_apply_selection()`) — 두 벌이 되면 같은 카드가 엔진에
     따라 다른 것을 등록한다.
 
-    호출 **단위**의 부분 승인(모델이 한 턴에 side_effect 도구를 여러 개 부를 때
-    그중 일부만 승인)은 아직 없다 — 필요해지면 `decision`을 리스트로 받게
-    넓히면 된다(`HumanInTheLoopMiddleware`는 이미 `decisions`가 리스트라
-    프레임워크 쪽 제약은 없다).
+    `per_call_decisions`(2026-08-21, 병렬실행 Phase 2)가 있으면 **호출 단위의
+    부분 승인**을 한다 — 모델이 한 턴에 side_effect 도구를 여러 개 부를 때
+    "Jira 3건은 승인하되 이메일 발송만 거절"이 가능해진다. 이 값이 있으면
+    `decision`은 무시한다(더 구체적인 쪽이 이긴다, `ChatConfirmSerializer`
+    docstring). 배경: `2026-08-21_02_MCP_승인_범위_변경_반영.md` — 팀원도
+    쓰기 도구를 자기 승인으로 실행할 수 있게 되면서 "한 번에 몰아 승인"
+    위험이 커져 Phase 2로 앞당긴 작업이다.
 
     `EVENT_AGENT_STARTED`가 없는 스트림이라 `_run_deep_agent()`와 달리
     `trace_events(..., known_run_ids=(run_id,))`로 그 run_id를 미리 열어
@@ -461,8 +465,8 @@ def _resume_deep_agent(
     raw_events = executor.resume(
         context=context,
         decisions=(
-            _decisions_for(action_requests, selected)
-            if decision == "approve"
+            _decisions_for(action_requests, selected, per_call=per_call_decisions)
+            if per_call_decisions is not None or decision == "approve"
             else [{"type": decision}] * len(action_requests)
         ),
         tool_refs_override=session.get("tool_refs_override"),
@@ -509,6 +513,18 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
         content = pending["content"] or {}
 
         if content.get("engine") == "deepagents":
+            per_call_decisions = serializer.validated_data.get("decisions")
+            if per_call_decisions is not None:
+                # 스트림을 열기 **전에** 검증한다 — 열고 나면 상태 코드를 못
+                # 바꿔서, 잘못된 요청도 200 + 스트림 안 에러로만 알릴 수 있다
+                # (2026-08-21, 병렬실행 Phase 2).
+                try:
+                    _per_call_decision_types(
+                        content.get("action_requests") or [], per_call_decisions
+                    )
+                except PerCallDecisionsError as exc:
+                    return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
             return StreamingHttpResponse(
                 _relay(
                     _resume_deep_agent(
@@ -517,6 +533,7 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                         content=content,
                         decision=serializer.validated_data.get("decision") or "approve",
                         selected=serializer.validated_data.get("selected"),
+                        per_call_decisions=per_call_decisions,
                     ),
                     session_id=session_id,
                     account_id=account_id,
@@ -562,21 +579,71 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
         )
 
 
+class PerCallDecisionsError(ValueError):
+    """호출별 `decisions`가 그 턴의 `action_requests`와 안 맞을 때."""
+
+
+def _per_call_decision_types(
+    action_requests: list[dict[str, Any]], per_call: list[dict[str, Any]]
+) -> list[str]:
+    """호출별 `decisions` 입력을 `action_requests` 순서의 타입 목록으로 편다.
+
+    2026-08-21, 병렬실행 Phase 2. **빠진 항목을 조용히 승인하지 않는다** —
+    사용자가 안 본 호출이 실행되면 승인 게이트의 의미가 없어지므로, 모든
+    인덱스를 빠짐없이 덮지 않으면 거부한다. 중복 인덱스도 거부한다(같은
+    호출에 승인과 거절이 동시에 오면 뭐가 이기는지 애매해진다).
+    """
+    by_index: dict[int, str] = {}
+    for item in per_call:
+        index = item["action_index"]
+        if index >= len(action_requests):
+            msg = (
+                f"action_index {index}는 이 확인 카드의 범위를 벗어납니다"
+                f"(호출 {len(action_requests)}건)."
+            )
+            raise PerCallDecisionsError(msg)
+        if index in by_index:
+            msg = f"action_index {index}에 대한 결정이 두 번 왔습니다."
+            raise PerCallDecisionsError(msg)
+        by_index[index] = item["type"]
+
+    missing = [i for i in range(len(action_requests)) if i not in by_index]
+    if missing:
+        msg = f"결정이 빠진 호출이 있습니다: action_index {missing}. 모든 항목을 보내야 합니다."
+        raise PerCallDecisionsError(msg)
+
+    return [by_index[i] for i in range(len(action_requests))]
+
+
 def _decisions_for(
-    action_requests: list[dict[str, Any]], selected: list[int] | None
+    action_requests: list[dict[str, Any]],
+    selected: list[int] | None,
+    per_call: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """승인 카드의 결정 → `HumanInTheLoopMiddleware`가 요구하는 decision 목록.
 
     **개수가 인터럽트가 요구한 호출 수와 같아야 한다** — 다르면 미들웨어가
     `ValueError`를 던진다(실측: langchain `human_in_the_loop.py`).
 
+    `per_call`(2026-08-21, 병렬실행 Phase 2)이 있으면 호출별로 다른 결정을
+    적용한다. 없으면 예전처럼 전부 `approve`로 시작한다.
+
     체크를 푼 항목이 있으면 첫 호출의 인자를 그만큼 줄여 `edit`로 보낸다.
     줄일 것이 없으면(전체 승인) `approve` 그대로다 — 같은 값을 굳이 `edit`로
     보내면 미들웨어가 인자를 다시 쓰는 경로를 타서, 승인한 것과 실행되는 것이
-    같다는 보장이 한 겹 얇아진다.
+    같다는 보장이 한 겹 얇아진다. **첫 호출이 거절됐으면 `selected`는 적용하지
+    않는다** — 실행 안 될 호출의 인자를 다듬는 건 의미가 없고, `reject`를
+    `edit`로 덮어쓰면 거절이 승인으로 뒤집힌다.
     """
-    decisions: list[dict[str, Any]] = [{"type": "approve"} for _ in action_requests]
-    if selected is None:
+    if per_call is not None:
+        types = _per_call_decision_types(action_requests, per_call)
+        decisions: list[dict[str, Any]] = [{"type": t} for t in types]
+    else:
+        decisions = [{"type": "approve"} for _ in action_requests]
+
+    if selected is None or not decisions:
+        return decisions
+    if decisions[0]["type"] != "approve":
         return decisions
 
     first = action_requests[0]

@@ -185,6 +185,13 @@ export default function ChatPage() {
   const [utterance, setUtterance] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
+  /**
+   * 승인할 호출의 인덱스(2026-08-21, 병렬실행 Phase 2). 확인 카드에 호출이
+   * 여러 개 걸렸을 때만 쓴다 — 카드가 뜨는 순간 **전부 승인**으로 시작하고
+   * (예전 동작이 곧 전체 승인이었으므로 기본값을 바꾸지 않는다), 사용자가
+   * 개별로 끈다.
+   */
+  const [approvedActions, setApprovedActions] = useState<number[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   /**
@@ -404,6 +411,12 @@ export default function ChatPage() {
         // 읽기 전용이다.
         const lastLive = restored[restored.length - 1]?.live ?? null;
         setSelected(lastLive ? lastLive.tasks.map((_, index) => index) : []);
+        // 새로고침으로 복원된 승인 대기 카드도 전부 승인으로 시작한다
+        // (2026-08-21) — 라이브에서 카드가 처음 뜰 때와 같은 기본값이라야
+        // 복원 화면과 라이브 화면이 어긋나지 않는다.
+        setApprovedActions(
+          lastLive?.confirm ? lastLive.confirm.actions.map((_, index) => index) : [],
+        );
       } catch (error) {
         setFatal(error instanceof ApiError ? error.message : '대화를 불러오지 못했습니다.');
         // 없는 대화이거나 남의 것이다(서버의 `_require_session` 이 팀을 확인한다).
@@ -463,6 +476,9 @@ export default function ChatPage() {
     setProjId(nextProjId);
     setTurns([]);
     setSelected([]);
+    // 호출별 승인 상태도 같이 비운다(2026-08-21) — 안 비우면 앞 카드에서
+    // 끈 항목이 다음 카드의 다른 호출에 그대로 붙는다.
+    setApprovedActions([]);
     setFatal(null);
     // 새 대화는 아직 만든 적 없는 세션이라 커스터마이즈도 없다 — 옛 대화의
     // override를 새 대화에 들고 오면 안 된다.
@@ -498,6 +514,9 @@ export default function ChatPage() {
     // 화면만 잊는 상태가 된다.
     setTurns((prev) => [...prev, { user: text, live: null }]);
     setSelected([]);
+    // 호출별 승인 상태도 같이 비운다(2026-08-21) — 안 비우면 앞 카드에서
+    // 끈 항목이 다음 카드의 다른 호출에 그대로 붙는다.
+    setApprovedActions([]);
     setFatal(null);
     stickToBottom.current = true;
 
@@ -560,13 +579,28 @@ export default function ChatPage() {
     // 그대로 보내면 서버는 「0건만 남기고 지워 달라」로 읽어, 승인했는데 아무것도
     // 등록되지 않는다 — 화면은 성공처럼 보이고 결과는 비는 최악의 조합이다.
     const indices = lastLive && lastLive.tasks.length > 0 ? selected : undefined;
+    // 호출이 2건 이상 걸린 카드에서만 호출별 결정을 보낸다(2026-08-21,
+    // 병렬실행 Phase 2). 1건짜리는 예전 그대로 — 보낼 것이 없다.
+    // 서버는 **모든 호출을 빠짐없이** 덮으라고 요구하므로(빠진 걸 조용히
+    // 승인하면 사용자가 안 본 게 실행된다) 전체 길이만큼 만들어 보낸다.
+    const actionCount = lastLive?.confirm?.actions.length ?? 0;
+    const decisions =
+      actionCount > 1
+        ? Array.from({ length: actionCount }, (_, index) => ({
+            action_index: index,
+            type: (approvedActions.includes(index) ? 'approve' : 'reject') as
+              | 'approve'
+              | 'reject',
+          }))
+        : undefined;
     // 빈 상태에서 다시 시작하지 않고 **이 턴을 이어서 접는다.** 재개는 실행이
     // 두 번째일 뿐 같은 턴이고, 새로고침 복원도 두 실행의 이벤트를 이어 붙인다
     // (`toTurns`). 리셋하면 방금 승인한 목록이 화면에서 사라지고, 복원한 화면과
     // 라이브 화면이 서로 달라진다.
     const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
     await run(
-      (onEvent, signal) => confirmMessage(token, sessionId, indices, onEvent, signal),
+      (onEvent, signal) =>
+        confirmMessage(token, sessionId, indices, onEvent, signal, decisions),
       carried,
       sessionId,
     );
@@ -600,6 +634,14 @@ export default function ChatPage() {
         const unwrapped = unwrapToolProgress(event);
         if (unwrapped.type === 'task_extraction_result') {
           setSelected(toCards(unwrapped.result).map((_, index) => index));
+        }
+        // 확인 카드가 뜨면 호출별 승인 상태를 **전부 승인**으로 시작한다
+        // (2026-08-21, 병렬실행 Phase 2) — 예전 동작이 곧 전체 승인이었으므로
+        // 기본값을 바꾸지 않는다. 사용자가 여기서 하나씩 끈다.
+        if (unwrapped.type === 'awaiting_confirmation') {
+          const count =
+            'action_requests' in unwrapped ? unwrapped.action_requests.length : 1;
+          setApprovedActions(Array.from({ length: count }, (_, index) => index));
         }
         // 첫 답이 끝나면 서버가 이 대화의 이름을 지어 보낸다. 사이드바만
         // 바뀌는 일이라 대화 상태(`reduce`)에는 넣지 않는다.
@@ -1092,6 +1134,15 @@ export default function ChatPage() {
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
                           busy={live.running}
+                          // 2026-08-21, 병렬실행 Phase 2 — 호출이 여러 개면
+                          // 카드가 전부 보여주고 하나씩 켜고 끌 수 있게 한다.
+                          actions={live.confirm.actions}
+                          approvedActions={
+                            isLast
+                              ? approvedActions
+                              : live.confirm.actions.map((_, index) => index)
+                          }
+                          onApprovedActionsChange={isLast ? setApprovedActions : undefined}
                         />
                       )}
 

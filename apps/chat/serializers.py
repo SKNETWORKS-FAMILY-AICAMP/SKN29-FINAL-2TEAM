@@ -43,6 +43,19 @@ class ChatSessionToolsSerializer(serializers.Serializer):
     )
 
 
+class ConfirmDecisionSerializer(serializers.Serializer):
+    """확인 카드의 호출 **하나**에 대한 결정(2026-08-21, 병렬실행 Phase 2).
+
+    `action_index`는 그 턴의 `action_requests` 배열에서의 위치다 — alias나
+    도구 이름이 아니라 인덱스를 쓴다. 같은 도구를 한 턴에 두 번 부를 수 있어
+    이름은 고유하지 않기 때문이다(`2026-08-20_02` §9의 "같은 alias를 두 번
+    호출해도 서로 다른 실행으로 다룬다"와 같은 이유).
+    """
+
+    action_index = serializers.IntegerField(min_value=0)
+    type = serializers.ChoiceField(choices=["approve", "reject"])
+
+
 class ChatConfirmSerializer(serializers.Serializer):
     """확인 카드의 승인.
 
@@ -58,6 +71,21 @@ class ChatConfirmSerializer(serializers.Serializer):
     `"approve"`/`"reject"` 중 하나, 기본은 `"approve"`(레거시와 같은 기본
     동작 — 지금까지 레거시는 승인 전용 API였다). 레거시 경로는 이 필드를
     안 읽는다 — 두 필드가 공존해도 서로 안 건드린다.
+
+    `decisions`(2026-08-21 추가, 병렬실행 Phase 2)는 **호출별** 승인/거절이다.
+    모델이 한 턴에 side_effect 도구를 여러 개 부르면 확인 카드에 여러 항목이
+    한꺼번에 뜨는데, 지금까지는 `decision` 하나로 전부에 같은 결정만 적용할 수
+    있었다("Jira 3건은 승인하되 이메일 발송만 거절"이 불가능했다). 이 필드를
+    주면 항목마다 다르게 결정할 수 있다.
+
+    **`decisions`가 있으면 `decision`은 무시한다** — 둘 다 왔을 때 뭐가 이기는지
+    애매하면 승인 게이트가 흔들리므로, 더 구체적인 쪽(호출별)이 이긴다.
+    `decisions`를 줄 때는 그 턴의 모든 호출을 빠짐없이 덮어야 한다(뷰에서
+    검증) — 빠진 항목을 조용히 승인해 버리면 사용자가 안 본 것이 실행된다.
+
+    이 필드가 필요해진 배경(팀원도 쓰기 도구를 자기 승인으로 실행할 수 있게
+    되면서 "한 번에 몰아 승인" 위험이 커졌다)은
+    `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
     """
 
     selected = serializers.ListField(
@@ -65,6 +93,9 @@ class ChatConfirmSerializer(serializers.Serializer):
     )
     decision = serializers.ChoiceField(
         choices=["approve", "reject"], required=False, default="approve"
+    )
+    decisions = serializers.ListField(
+        child=ConfirmDecisionSerializer(), required=False, allow_empty=False, default=None
     )
 
 
