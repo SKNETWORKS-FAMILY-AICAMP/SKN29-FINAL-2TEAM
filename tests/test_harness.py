@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from apps.connectors.oauth import OAuthError
 from services.harness import registry, scaffold, trace
 from services.harness.registry import Tool, ToolNotAllowed
 from services.harness.runner import ModelDecision, run_agent
@@ -609,6 +610,72 @@ SUB_ROW = {
     "name": "Jira 등록 에이전트",
     "description": "확인받은 업무를 Jira 에 올립니다.",
 }
+
+
+@patch("services.harness.registry.create_jira_issues")
+@patch("services.harness.registry.find_jira_account_id_by_email")
+@patch("services.harness.registry.TeamRepository")
+@patch("services.harness.registry.AccountRepository")
+class JiraIssueRegistrationShortCircuitTests(SimpleTestCase):
+    """`_jira_create_issues()` 내부에서, 담당자 기본값 조회가 자격증명
+    문제(`OAuthError`)로 실패하면 이슈 생성 API(`create_jira_issues`)까지
+    가면 안 된다(2026-08-20) — 둘 다 같은 자격증명을 쓰므로 뒤쪽도 반드시
+    같은 이유로 실패한다. 여기서 미리 멈추지 않으면 실패할 걸 이미 아는
+    Jira 요청을 한 번 더 보내는 것뿐이고, 그 결과를 기다리는 모델 턴도
+    낭비된다.
+    """
+
+    def _wire(self, accounts, teams):
+        accounts.team_id.return_value = "TM001"
+        accounts.email.return_value = "member@example.com"
+        teams.leader_account_id.return_value = "LEADER1"
+
+    def test_담당자_조회가_인증오류면_등록_API를_부르지_않는다(
+        self, accounts, teams, find_email, create_issues
+    ):
+        self._wire(accounts, teams)
+        find_email.side_effect = OAuthError("Jira 인증이 만료되었습니다. 설정에서 다시 연결해 주세요.")
+
+        with self.assertRaises(OAuthError):
+            registry._jira_create_issues(
+                account_id="UA001",
+                project_key="KAN",
+                issues=[{"title": "회의록 정리", "issuetype": "작업"}],
+            )
+
+        create_issues.assert_not_called()
+
+    def test_담당자를_못_찾았을_뿐이면_등록은_그대로_진행한다(
+        self, accounts, teams, find_email, create_issues
+    ):
+        self._wire(accounts, teams)
+        find_email.return_value = None  # 0건/다건 — 자격증명 문제가 아니다
+        create_issues.return_value = {"created": [{"key": "KAN-1"}], "failed": [], "project_key": "KAN"}
+
+        registry._jira_create_issues(
+            account_id="UA001",
+            project_key="KAN",
+            issues=[{"title": "회의록 정리", "issuetype": "작업"}],
+        )
+
+        create_issues.assert_called_once()
+        sent_issues = create_issues.call_args.kwargs["issues"]
+        self.assertNotIn("assignee_account_id", sent_issues[0])
+
+    def test_담당자를_이미_지정했으면_조회_자체를_안_한다(
+        self, accounts, teams, find_email, create_issues
+    ):
+        self._wire(accounts, teams)
+        create_issues.return_value = {"created": [{"key": "KAN-1"}], "failed": [], "project_key": "KAN"}
+
+        registry._jira_create_issues(
+            account_id="UA001",
+            project_key="KAN",
+            issues=[{"title": "회의록 정리", "issuetype": "작업", "assignee_account_id": "acc-9"}],
+        )
+
+        find_email.assert_not_called()
+        create_issues.assert_called_once()
 
 
 @patch("services.harness.trace.ToolCallRepository")

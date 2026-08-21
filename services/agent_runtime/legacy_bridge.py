@@ -44,7 +44,6 @@ def draft_from_legacy_agent(*, agent_id: str, team_id: str) -> dict[str, Any]:
       이 값을 그대로 `AgentDefinition.agent_id`에 쓴다(2026-08-14 수정).
       `agent_run.agent_id`가 `NOT NULL`이라 이게 없으면 실행 로그 적재가
       깨진다.
-
     팀이 다르거나 존재하지 않으면 `AgentDefinitionNotFound`(404) — 다른 팀
     에이전트의 존재 자체를 노출하지 않는다(레거시 `_resolve_session_agent()`의
     `PermissionDenied` 처리와 같은 이유로, 여기서는 404로 통일해 새 엔진의

@@ -70,6 +70,22 @@ class RegisterDefaultHarnessProfileTests(SimpleTestCase):
         self.assertIsInstance(profile.general_purpose_subagent, GeneralPurposeSubagentProfile)
         self.assertIs(profile.general_purpose_subagent.enabled, False)
         self.assertEqual(profile.excluded_tools, frozenset())
+        self.assertEqual(profile.tool_description_overrides, {})
+
+    def test_passes_tool_description_overrides_through(self):
+        overrides = {"task": "{available_agents}에게 위임한다."}
+        with patch(f"{COMPAT_MODULE}.register_harness_profile") as mock_register:
+            register_default_harness_profile(model_key="anthropic", tool_description_overrides=overrides)
+
+        _model_key, profile = mock_register.call_args.args
+        self.assertEqual(profile.tool_description_overrides, overrides)
+
+    def test_no_tool_description_overrides_arg_defaults_to_empty(self):
+        with patch(f"{COMPAT_MODULE}.register_harness_profile") as mock_register:
+            register_default_harness_profile(model_key="anthropic")
+
+        _model_key, profile = mock_register.call_args.args
+        self.assertEqual(profile.tool_description_overrides, {})
 
     def test_passes_excluded_tools_through_unchanged(self):
         wanted = frozenset({"write_file", "delete"})
@@ -128,6 +144,56 @@ class BuildGeneralPurposeSpecTests(SimpleTestCase):
         build_general_purpose_spec(system_prompt="조립된 프롬프트")
 
         self.assertNotEqual(GENERAL_PURPOSE_SUBAGENT["system_prompt"], "조립된 프롬프트")
+
+    def test_no_description_arg_keeps_deepagents_default(self):
+        spec = build_general_purpose_spec()
+
+        self.assertEqual(spec["description"], GENERAL_PURPOSE_SUBAGENT["description"])
+
+    def test_description_arg_overrides_the_default(self):
+        spec = build_general_purpose_spec(description="범용 보조 에이전트")
+
+        self.assertEqual(spec["description"], "범용 보조 에이전트")
+        # 덮어써도 name/system_prompt는 그대로다.
+        self.assertEqual(spec["name"], GENERAL_PURPOSE_SUBAGENT["name"])
+
+    def test_overriding_description_does_not_mutate_the_original(self):
+        build_general_purpose_spec(description="범용 보조 에이전트")
+
+        self.assertNotEqual(GENERAL_PURPOSE_SUBAGENT["description"], "범용 보조 에이전트")
+
+    def test_no_tools_arg_omits_tools_key(self):
+        """2026-08-20 — `tools`를 안 주면 `"tools"` 키 자체가 안 생겨야 한다.
+        deepagents `graph.py`의 `raw_subagent_tools = spec.get("tools") if
+        "tools" in spec else tools` fallback이 이 키의 유무로 갈리므로,
+        빈 리스트(`[]`)를 기본값으로 넣으면 하위 호환이 깨진다(GP가 Root
+        도구를 하나도 못 받게 됨)."""
+        spec = build_general_purpose_spec()
+
+        self.assertNotIn("tools", spec)
+
+    def test_tools_arg_sets_tools_key(self):
+        fake_tool = Mock(name="fake-read-only-tool")
+
+        spec = build_general_purpose_spec(tools=[fake_tool])
+
+        self.assertEqual(spec["tools"], [fake_tool])
+        # 덮어써도 name/description은 그대로다.
+        self.assertEqual(spec["name"], GENERAL_PURPOSE_SUBAGENT["name"])
+
+    def test_empty_tools_list_sets_tools_key_to_empty_list(self):
+        """`tools=[]`는 `tools=None`과 다르다 — GP에게 쓸 수 있는 도구가
+        하나도 없다는 뜻(예: side_effect가 아닌 도구가 하나도 없는 에이전트)
+        을 명시적으로 전달해야 한다."""
+        spec = build_general_purpose_spec(tools=[])
+
+        self.assertIn("tools", spec)
+        self.assertEqual(spec["tools"], [])
+
+    def test_does_not_mutate_original_general_purpose_subagent_with_tools(self):
+        build_general_purpose_spec(tools=[Mock()])
+
+        self.assertNotIn("tools", GENERAL_PURPOSE_SUBAGENT)
 
 
 class DefaultGeneralPurposePromptTests(SimpleTestCase):

@@ -638,16 +638,30 @@ def create_jira_issues(
 
 
 def find_jira_account_id_by_email(*, account_id: str, email: str) -> str | None:
-    """이메일로 Jira accountId 를 찾는다. **못 찾으면 예외 대신 None.**
+    """이메일로 Jira accountId 를 찾는다. **못 찾으면(0건·다건) 예외 대신 None.**
 
     담당자를 지정하지 않은 이슈에 요청자 자신을 기본값으로 채우려는 보조
-    조회다(2026-08-20, `_jira_create_issues` 에서 씀) — 이 조회가 실패한다고
-    이슈 생성 자체를 막을 이유는 없다. 우리 팀이 이미 문서로 정해 둔 원칙과
-    같다: "막히면 담당자를 이슈 본문에 적고 assignee는 비운다"
+    조회다(2026-08-20, `_jira_create_issues` 에서 씀) — 이 조회가 "못 찾았다"로
+    끝난다고 이슈 생성 자체를 막을 이유는 없다. 우리 팀이 이미 문서로 정해 둔
+    원칙과 같다: "막히면 담당자를 이슈 본문에 적고 assignee는 비운다"
     (`docs/TO-BE/5_E2E_시나리오.md`). Jira 계정 설정에 따라 이메일이 검색에
     안 걸릴 수 있고(0건), 동명이인·중복 계정으로 여러 건일 수도 있다(다건) —
     두 경우 다 **확신 없이 배정하지 않는다**: 정확히 한 건일 때만 accountId 를
     돌려준다.
+
+    **자격증명 문제(`OAuthError`)는 예외다 — 여기서 삼키지 않고 그대로
+    올린다**(2026-08-20 수정). 이 조회와 뒤이은 `create_jira_issues()` 호출은
+    **같은 `account_id`, 같은 커넥터**로 자격증명을 다시 조회한다
+    (`credential_for()`). 여기서 만료·재연결 필요로 실패했다면 뒤의 호출도
+    똑같은 이유로 반드시 실패한다 — `credential_for()`가 갱신 실패 시
+    `ConnectorRepository.mark_expired()`까지 이미 남겨 상태가 확정된
+    뒤이기도 하다. 여기서 삼키고 다음 호출까지 마저 보내면, 이미 결과를 아는
+    Jira 요청을 한 번 더 보내는 것뿐이다(불필요한 API 호출 1회 + 그 결과를
+    기다리는 모델 턴 낭비) — `_jira_create_issues()`가 이 예외를 받아 그
+    자리에서 바로 실패하게 둔다(§ `_fill_default_jira_assignee` 참고).
+    네트워크 오류·이상 응답(`requests.RequestException`, `ValueError`)은
+    이 호출 하나만의 문제일 수 있어 계속 "못 찾았다"로 접는다 — 자격증명과
+    달리 다음 호출이 반드시 같은 이유로 실패한다는 보장이 없다.
 
     `account_id` 는 **자격증명 조회용**이다 — Jira는 팀장만 연결하므로 호출하는
     쪽에서 팀장 account_id 를 넘겨야 한다(`_jira_credential_account_id`,
@@ -659,11 +673,14 @@ def find_jira_account_id_by_email(*, account_id: str, email: str) -> str | None:
     (`apps/connectors/oauth.py` 의 `JIRA_SCOPES`) — 별도 재동의가 필요 없다.
     """
 
+    credential = credential_for(account_id=account_id, connector_type=JIRA)
+    cloud_id = credential.get("cloud_id")
+    if not isinstance(cloud_id, str):
+        # `create_jira_issues()`가 같은 조건에서 내는 것과 같은 메시지 —
+        # 여기서 먼저 막히든 거기서 막히든 사용자가 보는 이유는 같아야 한다.
+        raise OAuthError("연결된 Jira 사이트 정보를 찾을 수 없습니다. 다시 연결해 주세요.")
+
     try:
-        credential = credential_for(account_id=account_id, connector_type=JIRA)
-        cloud_id = credential.get("cloud_id")
-        if not isinstance(cloud_id, str):
-            return None
         response = requests.get(
             f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/user/search",
             headers={
@@ -675,9 +692,10 @@ def find_jira_account_id_by_email(*, account_id: str, email: str) -> str | None:
         )
         response.raise_for_status()
         matches = response.json()
-    except (OAuthError, requests.RequestException, ValueError):
-        # 연결이 끊겼든, 네트워크가 죽었든, 응답이 이상하든 — 전부 "못 찾았다"로
-        # 접는다. 이건 이슈 생성의 부수 조회지 필수 조건이 아니다.
+    except (requests.RequestException, ValueError):
+        # 네트워크가 죽었든 응답이 이상하든 — "못 찾았다"로 접는다. 이건 이슈
+        # 생성의 부수 조회지 필수 조건이 아니고, 자격증명과 달리 다음 호출도
+        # 똑같이 실패한다는 보장이 없다(위 docstring).
         return None
 
     if not isinstance(matches, list):

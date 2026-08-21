@@ -17,6 +17,7 @@ from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
 from services.agent_runtime.memory.write_guard import build_memory_write_guard
 from services.agent_runtime.memory.write_lock import build_memory_write_lock
+from services.agent_runtime.prompts import GP_DESCRIPTION
 from services.agent_runtime.subagents.builder import build_subagent
 from services.agent_runtime.subagents.validation import validate_subagents
 from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
@@ -447,11 +448,27 @@ class AgentRuntimeFactory:
             )
             for sub_def in definition.subagents
         ]
+        # 2026-08-20, GP 피드백 검토 §3 채택 3 — GP에게 `side_effect=True`인
+        # 도구(쓰기·전송·삭제)를 그대로 물려주지 않는다 — `tools`/
+        # `langchain_tools`는 같은 순서로 만들었으므로 `zip()`으로 짝지어
+        # `side_effect=False`인 것만 추린다(이미 위 `_to_langchain_tool()`
+        # 호출로 만든 것을 재사용 — 다시 변환할 필요 없다). 안 그러면 GP가
+        # Root와 똑같이 전체 도구를 상속했다(deepagents `graph.py`의
+        # `raw_subagent_tools = spec.get("tools") if "tools" in spec else
+        # tools` fallback — `build_general_purpose_spec()`가 `"tools"` 키를
+        # 안 만들면 Root 전체를 물려받는다). GP 자체는 Root마다 항상 붙는다
+        # — 켜고 끄는 스위치는 별도로 두지 않는다(GP가 조회 도구만 쓸 수
+        # 있어 위험하지 않으므로, 있으나 마나 한 선택지를 만들 이유가 없다).
+        gp_read_only_tools = [
+            lt for t, lt in zip(tools, langchain_tools) if not t.side_effect
+        ]
         gp_spec = build_general_purpose_spec(
             middleware=self.middleware_factory.build_for_general_purpose(),
             system_prompt=self.prompt_assembler.assemble_general_purpose(
                 gp_prompt=default_general_purpose_prompt()
             ),
+            description=GP_DESCRIPTION,
+            tools=gp_read_only_tools,
         )
 
         # Root에만 붙는 선택적 협력자들 — Child(위 allow_subagents=False 분기)는
