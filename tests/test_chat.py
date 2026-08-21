@@ -12,7 +12,6 @@ from django.test import SimpleTestCase
 from apps.accounts.tokens import issue_token
 from apps.chat.api_views import _apply_selection, _decisions_for
 from apps.chat.serializers import message_response
-from backend.db import OpsPolicyRepository
 from backend.db.errors import PermissionDenied
 
 SESSION = {
@@ -82,10 +81,6 @@ class MessageResponseTests(SimpleTestCase):
 
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class ChatSessionApiTests(SimpleTestCase):
     def test_대화를_연다(self, sessions, _messages):
         sessions.create.return_value = SESSION
@@ -161,10 +156,6 @@ def _mock_new_engine(build_executor, events):
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class ChatStreamTests(SimpleTestCase):
     """SESSION은 레거시 `agent` 스키마다(agent_version_id 없음) — 2026-08-14
     전환으로 이 경로도 새 엔진(services.agent_runtime)을 탄다.
@@ -340,10 +331,6 @@ class ChatStreamTests(SimpleTestCase):
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class DeepAgentSessionStreamTests(SimpleTestCase):
     """`agent_version_id`가 있는 세션(새-스키마 에이전트로 연 대화)은 레거시
     `run_agent()` 대신 `services.agent_runtime` 엔진을 돈다.
@@ -506,10 +493,6 @@ class DeepAgentSessionStreamTests(SimpleTestCase):
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class ChatSessionTitleTests(SimpleTestCase):
     """첫 답이 끝나면 이 대화의 이름을 짓는다.
 
@@ -576,10 +559,6 @@ class ChatSessionTitleTests(SimpleTestCase):
 @patch("apps.chat.api_views.run_agent")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class ConfirmGateTests(SimpleTestCase):
     PENDING = {
         "message_id": "M1",
@@ -673,10 +652,6 @@ class ConfirmGateTests(SimpleTestCase):
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class HITLResumeConfirmTests(SimpleTestCase):
     """`ChatConfirmAPIView` → `_resume_deep_agent()`(2026-08-19, §0순위 — 새 엔진
     HITL resume API). `content.get("engine") == "deepagents"`인 확인 카드는
@@ -1052,10 +1027,6 @@ class ResumeDecisionTests(SimpleTestCase):
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class ChatHistoryTests(SimpleTestCase):
     """앞선 턴이 모델에게 간다.
 
@@ -1172,10 +1143,6 @@ class ChatHistoryTests(SimpleTestCase):
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class PiiMaskingTests(SimpleTestCase):
     """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술은
     모델에게 보내기 전에 가린다(2026-08-19, §2순위, 사용자 확정 범위).
@@ -1307,10 +1274,6 @@ class PiiMaskingTests(SimpleTestCase):
 
 
 @patch("apps.chat.api_views.ChatSessionRepository")
-@patch("apps.chat.api_views.load_policy", new=lambda: OpsPolicyRepository.DEFAULT_GUARDRAIL_POLICY)
-# 가드레일 발동 기록은 실제 DB 로 나간다 — mock 하지 않으면 테스트가 로컬
-# DB 에 행을 남기고, DB 가 없는 환경에서는 커넥션 타임아웃으로 느려진다.
-@patch("services.guardrails.input_check.GuardrailEventRepository", new=MagicMock())
 class ChatListScopeTests(SimpleTestCase):
     """대화 목록은 **내 것만**이다 — 계층 `팀 > 프로젝트 > 채팅(개인)`.
 

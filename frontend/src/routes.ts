@@ -28,6 +28,7 @@ export const PATHS = {
   opsConnectorDetail: '/ops/connectors/:connId',
   opsModels: '/ops/models',
   opsMcp: '/ops/mcp',
+  opsGuardrails: '/ops/guardrails',
   opsAudit: '/ops/audit',
   opsPolicies: '/ops/policies',
 
@@ -115,6 +116,7 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.opsConnectors, label: '연결 서비스 현황', group: '운영자 콘솔' },
   { path: PATHS.opsModels, label: '모델', group: '운영자 콘솔' },
   { path: PATHS.opsMcp, label: '커스텀 도구', group: '운영자 콘솔' },
+  { path: PATHS.opsGuardrails, label: '가드레일', group: '운영자 콘솔' },
   { path: PATHS.opsAudit, label: '감사 로그', group: '운영자 콘솔' },
   { path: PATHS.opsPolicies, label: '전역 정책', group: '운영자 콘솔' },
 ];

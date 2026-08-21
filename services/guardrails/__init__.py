@@ -1,9 +1,11 @@
-"""운영자가 정한 가드레일 정책을 실제로 집행하는 자리.
+"""등록된 외부 가드레일을 실제 대화에 적용하는 자리.
 
-정책은 `sys_setting.GUARDRAIL_POLICY`에 있고 화면은 운영자 콘솔 「전역 정책」이다
-(정본: `docs/작업기록/2026-08-20_가드레일_조사와_실측.md`).
+무엇을 막을지는 **고객이 등록한 가드레일**이 정한다 — 우리가 만든 검사는 없다.
+등록·연결 확인은 운영자 콘솔 「가드레일」(`/ops/guardrails`)이다.
+
+정본: `docs/작업기록/2026-08-20_가드레일_조사와_실측.md` §8
 """
 
-from .input_check import InputGuardOutcome, check_user_input, load_policy
+from .input_check import InputGuardOutcome, check_user_input
 
-__all__ = ["InputGuardOutcome", "check_user_input", "load_policy"]
+__all__ = ["InputGuardOutcome", "check_user_input"]

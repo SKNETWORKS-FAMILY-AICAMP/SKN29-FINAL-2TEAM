@@ -571,6 +571,12 @@ export function ResultCard({ created, failures, onRetryFailed }: ResultCardProps
 
 export interface ErrorCardProps {
   detail?: string;
+  /**
+   * 머리말. 기본은 「요청을 끝내지 못했습니다」 — **돌다가** 실패한 경우다.
+   * 보내기 자체가 막힌 경우(가드레일·네트워크)는 아직 시작도 안 했으므로
+   * 부르는 쪽이 바꿔 준다.
+   */
+  title?: string;
   /** 백엔드 오류 코드 계약(11_MCP_설계 §6): 401 · 429 · validation · timeout · unreachable. */
   errorCode?: string;
   /**
@@ -622,7 +628,7 @@ const CONNECTION_CODES = new Set([
 ]);
 
 /** ⑤ 오류 카드 — 스트림이 끊긴 지점에 뜨고, 이전 결과물은 위에 보존된다. */
-export function ErrorCard({ detail, errorCode, answered, onRetry, onOpenSettings }: ErrorCardProps) {
+export function ErrorCard({ detail, title, errorCode, answered, onRetry, onOpenSettings }: ErrorCardProps) {
   // 서버가 준 사유가 가장 정확하다. 그것이 없을 때만 코드로 안내한다.
   // 답이 이미 사유를 말했으면 여기서는 접어 둔다(`answered` 주석 참조).
   const body = answered ? undefined : detail ?? (errorCode ? ERROR_HINTS[errorCode] : undefined);
@@ -633,7 +639,7 @@ export function ErrorCard({ detail, errorCode, answered, onRetry, onOpenSettings
     <section className={styles.errorCard}>
       <span className={styles.errorTitle}>
         <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
-        요청을 끝내지 못했습니다
+        {title ?? '요청을 끝내지 못했습니다'}
       </span>
       {/* **「지금까지 정리된 내용은 위에 그대로 남아 있습니다」를 걷었다**
           (2026-08-18 PM). 정리된 것이 하나도 없을 때도 그 말이 나왔다 —

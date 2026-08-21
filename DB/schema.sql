@@ -660,19 +660,6 @@ CREATE TABLE sys_setting (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 INSERT INTO sys_setting (setting_key, setting_value) VALUES ('INVITE_EXPIRE_DAYS', '14');
--- [운영자 콘솔] 가드레일 정책(2026-08-20 추가, DB/migrations/2026-08-20_guardrail_policy.sql).
--- 항목별로 키를 쪼개지 않는다 — 쪼개면 변경 이력이 audit_log에 흩어져 "그 시점의
--- 정책 한 벌"을 복원할 수 없다. 기본값 근거는 마이그레이션 파일 머리 주석.
-INSERT INTO sys_setting (setting_key, setting_value)
-VALUES (
-    'GUARDRAIL_POLICY',
-    '{"pii": {"enabled": true, "strategy": "redact"},
-      "moderation": {"enabled": false,
-                     "thresholds": {"harassment": 0.7, "hate": 0.7, "sexual": 0.7,
-                                    "self_harm": 0.7, "violence": 0.7, "illicit": 0.7}},
-      "blocked_words": []}'
-);
-
 -- [운영자 콘솔] 플랫폼 시스템 공지(2026-07-30 추가).
 CREATE TABLE sys_notice (
     notice_id      VARCHAR(5) PRIMARY KEY,
@@ -1016,6 +1003,38 @@ CREATE TABLE guardrail_event (
 
 CREATE INDEX ix_guardrail_event_occurred
     ON guardrail_event (occurred_at DESC);
+
+-- 외부 가드레일 공급자 등록(2026-08-20). 고객이 이미 가진 가드레일을 등록해서
+-- 우리 에이전트가 그걸 거쳐 돌게 한다 — `mcp_server` 와 같은 틀이다(팀 소유,
+-- 비밀값 암호화, UNCHECKED 로 시작해 「연결 확인」을 눌러야 CONNECTED).
+--
+-- `config` 가 JSONB 인 이유는 공급자마다 필요한 값이 달라서다(Azure 는 주소,
+-- Bedrock 은 guardrail ID·리전, OpenAI Guardrails 는 설정 JSON). 컬럼으로 다
+-- 펴면 대부분 NULL 인 표가 된다. **비밀값은 config 가 아니라 credential_enc 다.**
+--
+-- 팀당 하나만 둔다(아래 UNIQUE) — 여럿이면 「어느 것이 먼저 도는가」를 정해야
+-- 하는데 지금 그 근거가 없다.
+CREATE TABLE guardrail_provider (
+    provider_id      VARCHAR(5) PRIMARY KEY,   -- 'GP' + 세 자리
+    team_id          VARCHAR(5)   NOT NULL,    -- team.team_id(FK 없음)
+    name             VARCHAR(100) NOT NULL,
+    kind             VARCHAR(40)  NOT NULL,    -- OPENAI_GUARDRAILS / BEDROCK_GUARDRAILS / AZURE_CONTENT_SAFETY
+    config           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    credential_enc   TEXT,                     -- 비밀값 암호문(mcp_server.auth_token_enc 와 같은 이유로 TEXT)
+    status           VARCHAR(20)  NOT NULL DEFAULT 'UNCHECKED',  -- CONNECTED / ERROR / UNCHECKED
+    -- 여러 개 등록해 두고 **그중 하나만** 쓴다(2026-08-20). 합치는 게 아니라
+    -- 고르는 것이라 「어느 것이 먼저 도는가」를 정할 필요가 없다.
+    is_active        BOOLEAN      NOT NULL DEFAULT FALSE,
+    last_checked_at  TIMESTAMPTZ,
+    created_by       VARCHAR(5),               -- user_account.account_id(FK 없음)
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- 팀당 활성 하나. **부분 UNIQUE 로 DB 가 강제한다** — 코드에서만 지키면 동시에
+-- 두 번 활성화했을 때 둘 다 활성인 상태가 만들어진다.
+CREATE UNIQUE INDEX ux_guardrail_provider_active
+    ON guardrail_provider (team_id)
+    WHERE is_active;
 
 -- 같은 tool_call_id(모델이 낸 AIMessage.tool_calls[i]["id"])가 같은 run 안에서
 -- 재실행되지 않게 막는 표. HITL resume·checkpoint 재시도로 super-step이

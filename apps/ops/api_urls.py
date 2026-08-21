@@ -16,6 +16,13 @@ from .views.invites import (
     InviteListView,
     InviteUnlinkView,
 )
+from .views.guardrails import (
+    GuardrailProviderDetailView,
+    GuardrailProviderProbeView,
+    GuardrailProviderListCreateView,
+    GuardrailProviderTestView,
+    TeamActiveGuardrailView,
+)
 from .views.login import LoginView, LogoutView
 from .views.mcp import McpDetailView, McpListCreateView, McpProbeView, McpTestView
 from .views.models import (
@@ -29,7 +36,6 @@ from .views.overview import OverviewView
 from .views.purge import AccountPurgeView, TeamPurgeView
 from .views.policies import (
     GuardrailEventListView,
-    GuardrailPolicyView,
     InviteTtlView,
     NoticeDetailView,
     NoticeListCreateView,
@@ -84,8 +90,29 @@ urlpatterns = [
     path("mcp/<str:server_id>/", McpDetailView.as_view(), name="api_ops_mcp_detail"),
     path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
+    # 가드레일 공급자 등록. 커스텀 도구(`mcp/`)와 같은 층위라 `policies/` 아래가
+    # 아니라 여기 둔다 — 「전역 정책」이 아니라 팀별 등록물이다.
+    path("guardrails/", GuardrailProviderListCreateView.as_view(), name="api_ops_guardrails"),
+    # **`<provider_id>` 앞에 둔다.** 뒤에 두면 `guardrails/probe/` 가 상세로
+    # 잡힌다 — 모델(`models/probe/`)·커스텀 도구(`mcp/probe/`)가 실제로 밟은 자리다.
+    path("guardrails/probe/", GuardrailProviderProbeView.as_view(), name="api_ops_guardrail_probe"),
+    # 이것도 `<provider_id>` 앞이다 — 뒤에 두면 `guardrails/teams/` 가 상세로 잡힌다.
+    path(
+        "guardrails/teams/<str:team_id>/active/",
+        TeamActiveGuardrailView.as_view(),
+        name="api_ops_team_active_guardrail",
+    ),
+    path(
+        "guardrails/<str:provider_id>/",
+        GuardrailProviderDetailView.as_view(),
+        name="api_ops_guardrail_detail",
+    ),
+    path(
+        "guardrails/<str:provider_id>/test/",
+        GuardrailProviderTestView.as_view(),
+        name="api_ops_guardrail_test",
+    ),
     path("policies/invite-ttl/", InviteTtlView.as_view(), name="api_ops_policies_invite_ttl"),
-    path("policies/guardrail/", GuardrailPolicyView.as_view(), name="api_ops_policies_guardrail"),
     path(
         "policies/guardrail/events/",
         GuardrailEventListView.as_view(),

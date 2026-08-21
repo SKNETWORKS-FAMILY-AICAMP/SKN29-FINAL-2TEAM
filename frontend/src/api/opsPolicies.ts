@@ -38,35 +38,6 @@ export interface NoticeInput {
   reason?: string;
 }
 
-/** 유해성 카테고리는 서버가 정책 안에 담아 준다 — 화면이 목록을 따로 들지 않는다. */
-export type ModerationCategory =
-  | 'harassment'
-  | 'hate'
-  | 'sexual'
-  | 'self_harm'
-  | 'violence'
-  | 'illicit';
-
-export type GuardrailStrategy = 'redact' | 'mask';
-
-export interface GuardrailPolicy {
-  pii: { enabled: boolean; strategy: GuardrailStrategy };
-  moderation: { enabled: boolean; thresholds: Record<ModerationCategory, number> };
-  blocked_words: string[];
-}
-
-export function fetchGuardrailPolicy(token: string) {
-  return opsRequest<GuardrailPolicy>('/ops/policies/guardrail/', { token });
-}
-
-export function saveGuardrailPolicy(token: string, policy: GuardrailPolicy, reason?: string) {
-  return opsRequest<GuardrailPolicy>('/ops/policies/guardrail/', {
-    method: 'PUT',
-    token,
-    body: { policy, reason },
-  });
-}
-
 export type GuardrailStage = 'INPUT' | 'OUTPUT' | 'TOOL_RESULT';
 export type GuardrailRule = 'PII' | 'MODERATION' | 'BLOCKED_WORD';
 export type GuardrailAction = 'MASKED' | 'BLOCKED';

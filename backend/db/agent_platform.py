@@ -22,6 +22,7 @@ from services.agent_runtime.subagents.validation import validate_subagents
 from .codes import next_short_code
 from .connection import database_connection
 from .errors import (
+    DuplicateRecord,
     IdSpaceExhausted,
     PermissionDenied,
     RecordNotFound,
@@ -2688,3 +2689,322 @@ class ProjectTaskRepository:
                     values,
                 )
                 return cursor.fetchone()
+
+
+class GuardrailProviderRepository:
+    """외부 가드레일 공급자 등록(`guardrail_provider`).
+
+    **`McpServerRepository` 와 같은 모양이다** — 팀 소유이고, 비밀값은 Fernet 으로
+    암호화해서만 저장하며(`apps/connectors` 의 것을 그대로 쓴다), 등록 직후는
+    `UNCHECKED` 라 「연결 확인」을 눌러야 `CONNECTED` 가 된다.
+
+    **읽기는 팀이, 쓰기는 운영자가 부른다**(2026-08-18 멘토링, MCP 와 같은 판단) —
+    붙이려면 주소와 키를 알아야 하는데 「코딩 없이」를 내세운 제품이 비개발자에게
+    요구할 일이 아니다.
+
+    **여러 개 등록하고 그중 하나만 쓴다**(2026-08-20). 합치는 게 아니라 **고르는**
+    것이라 「어느 것이 먼저 도는가」를 정할 필요가 없다. 「팀당 활성 하나」는
+    부분 UNIQUE(`ux_guardrail_provider_active`)가 DB 에서 강제한다 — 코드에서만
+    지키면 동시에 두 번 활성화했을 때 둘 다 활성이 된다.
+    """
+
+    KINDS = ("OPENAI_GUARDRAILS", "BEDROCK_GUARDRAILS", "AZURE_CONTENT_SAFETY")
+    STATUSES = ("UNCHECKED", "CONNECTED", "ERROR")
+
+    @staticmethod
+    def list_all() -> list[dict[str, Any]]:
+        """모든 팀의 등록분. **운영자 콘솔만 쓴다.**"""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT g.provider_id, g.team_id, t.name AS team_name, g.name, g.kind,
+                           g.config, g.status, g.is_active, g.last_checked_at,
+                           g.created_by, g.created_at,
+                           (g.credential_enc IS NOT NULL) AS has_credential
+                    FROM guardrail_provider AS g
+                    LEFT JOIN team AS t ON t.team_id = g.team_id
+                    ORDER BY g.team_id, g.is_active DESC, g.created_at
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def for_team(team_id: str) -> dict[str, Any] | None:
+        """그 팀이 쓸 공급자. 런타임이 부른다 — 없으면 `None`(검사 없이 돈다).
+
+        **활성인 것만 돌려준다.** 등록만 해 둔 것(보관·교체 대기)을 부르면 그 팀의
+        대화가 쓰지 않기로 한 가드레일을 거친다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT provider_id, team_id, name, kind, config, status, last_checked_at
+                    FROM guardrail_provider
+                    WHERE team_id = %s AND is_active
+                    """,
+                    (team_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def credential(provider_id: str) -> dict[str, Any] | None:
+        """복호화한 비밀값. **호출 직전에만 부른다** — 목록·응답에는 절대 안 실린다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT credential_enc FROM guardrail_provider WHERE provider_id = %s",
+                    (provider_id,),
+                )
+                row = cursor.fetchone()
+
+        if row is None or not row["credential_enc"]:
+            return None
+        try:
+            return decrypt_credential(row["credential_enc"])
+        except OAuthError:
+            # 키가 바뀌어 복호화가 안 되는 경우. 부르는 쪽이 「자격증명 없음」으로
+            # 다루도록 None 을 준다 — 여기서 예외를 내면 대화가 끊긴다.
+            return None
+
+    @staticmethod
+    def create(
+        *,
+        team_id: str,
+        name: str,
+        kind: str,
+        config: dict[str, Any],
+        credential: dict[str, Any] | None,
+        registered_by: str,
+        status: str = "UNCHECKED",
+    ) -> dict[str, Any]:
+        """등록한다.
+
+        `status` 는 **부르는 쪽이 실제로 확인한 결과**여야 한다. 화면이 「확인했다」고
+        말한 것을 그대로 믿으면, 확인 없이 CONNECTED 인 행이 생기고 그 팀의 대화는
+        안 되는 가드레일을 계속 부른다 — 뷰가 저장 직전에 다시 확인한다.
+        """
+
+        if kind not in GuardrailProviderRepository.KINDS:
+            raise RepositoryError(f"알 수 없는 가드레일 종류입니다: {kind}")
+        if status not in GuardrailProviderRepository.STATUSES:
+            raise RepositoryError(f"알 수 없는 상태입니다: {status}")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                # 활성인 것이 아직 없고 이번 등록이 붙는 것이면 바로 활성으로 둔다.
+                # 등록했는데 아무 일도 안 일어나면 「등록했으니 도는 것」이라는
+                # 기대와 어긋난다 — 두 번째부터는 사람이 골라야 한다.
+                cursor.execute(
+                    "SELECT 1 FROM guardrail_provider WHERE team_id = %s AND is_active",
+                    (team_id,),
+                )
+                activate = cursor.fetchone() is None and status == "CONNECTED"
+
+                provider_id = next_short_code(
+                    cursor, table="guardrail_provider", column="provider_id", prefix="GP"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO guardrail_provider
+                        (provider_id, team_id, name, kind, config, credential_enc,
+                         status, is_active, last_checked_at, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                            CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END, %s)
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
+                              last_checked_at, created_by, created_at
+                    """,
+                    (
+                        provider_id,
+                        team_id,
+                        name,
+                        kind,
+                        Jsonb(config or {}),
+                        encrypt_credential(credential) if credential else None,
+                        status,
+                        activate,
+                        status,
+                        registered_by,
+                    ),
+                )
+                # `has_credential` 을 붙여 돌려준다 — RETURNING 에 없다고 빼면 화면이
+                # 「자격증명 없음」으로 그린다(MCP 에서 실제로 그랬다).
+                return {**cursor.fetchone(), "has_credential": credential is not None}
+
+    @staticmethod
+    def update(
+        *,
+        provider_id: str,
+        name: str,
+        kind: str,
+        config: dict[str, Any],
+        credential: dict[str, Any] | None,
+        replace_credential: bool,
+        status: str = "UNCHECKED",
+    ) -> dict[str, Any]:
+        """고친다.
+
+        **자격증명은 안 보내면 그대로 둔다.** 화면이 저장된 값을 다시 보여주지
+        않으므로, 안 보낸 것을 「지우라」로 읽으면 이름만 고쳐도 키가 날아간다
+        (MCP 의 `replace_token` 과 같은 규칙). 지우려면 `replace_credential=True`
+        와 빈 값을 함께 보낸다.
+
+        **내용이 바뀌면 상태를 `UNCHECKED` 로 되돌린다.** 주소·키가 달라졌는데
+        이전 「연결 확인」 결과를 그대로 두면, 화면은 CONNECTED 인데 실제로는 안
+        붙는다(MCP 가 주소를 바꿀 때 도구 목록을 비우는 것과 같은 이유).
+        """
+
+        if kind not in GuardrailProviderRepository.KINDS:
+            raise RepositoryError(f"알 수 없는 가드레일 종류입니다: {kind}")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT kind, config FROM guardrail_provider WHERE provider_id = %s FOR UPDATE",
+                    (provider_id,),
+                )
+                before = cursor.fetchone()
+                if before is None:
+                    raise RecordNotFound("등록되지 않은 가드레일입니다.")
+
+                changed = (
+                    before["kind"] != kind
+                    or before["config"] != (config or {})
+                    or replace_credential
+                )
+
+                if replace_credential:
+                    cursor.execute(
+                        """
+                        UPDATE guardrail_provider
+                        SET name = %s, kind = %s, config = %s, credential_enc = %s,
+                            status = %s,
+                            last_checked_at = CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END
+                        WHERE provider_id = %s
+                        RETURNING provider_id, team_id, name, kind, config, status, is_active,
+                                  last_checked_at, created_by, created_at,
+                                  (credential_enc IS NOT NULL) AS has_credential
+                        """,
+                        (
+                            name,
+                            kind,
+                            Jsonb(config or {}),
+                            encrypt_credential(credential) if credential else None,
+                            status,
+                            status,
+                            provider_id,
+                        ),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE guardrail_provider
+                        SET name = %s, kind = %s, config = %s,
+                            status = CASE WHEN %s THEN %s ELSE status END,
+                            last_checked_at = CASE WHEN %s THEN
+                                (CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END)
+                                ELSE last_checked_at END
+                        WHERE provider_id = %s
+                        RETURNING provider_id, team_id, name, kind, config, status, is_active,
+                                  last_checked_at, created_by, created_at,
+                                  (credential_enc IS NOT NULL) AS has_credential
+                        """,
+                        (name, kind, Jsonb(config or {}), changed, status, changed, status, provider_id),
+                    )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_status(*, provider_id: str, status: str) -> dict[str, Any]:
+        """「연결 확인」 결과를 남긴다."""
+
+        if status not in GuardrailProviderRepository.STATUSES:
+            raise RepositoryError(f"알 수 없는 상태입니다: {status}")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE guardrail_provider
+                    SET status = %s, last_checked_at = now()
+                    WHERE provider_id = %s
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
+                              last_checked_at, created_by, created_at,
+                              (credential_enc IS NOT NULL) AS has_credential
+                    """,
+                    (status, provider_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("등록되지 않은 가드레일입니다.")
+                return row
+
+    @staticmethod
+    def set_active_for_team(*, team_id: str, provider_id: str | None) -> dict[str, Any] | None:
+        """그 팀이 **무엇을 쓸지** 정한다. `None` 이면 아무것도 안 쓴다.
+
+        **팀 단위로 받는다** — 「이 등록을 켠다」가 아니라 「이 팀은 이것을 쓴다」다.
+        기본 채팅 모델(`AgentRepository.main_model_for_team`)과 같은 모양이고, 그래서
+        고르는 자리도 같다(팀 상세).
+
+        **붙지 않는 것은 고를 수 없다.** 「연결 확인」을 통과하지 않은 것을 쓰게 두면
+        그 팀의 대화가 매번 실패하는 검사를 거치고, 화면만 「사용 중」이라고 말한다.
+
+        한 트랜잭션에서 내리고 올린다 — 부분 UNIQUE 가 「팀당 활성 하나」를 강제하므로
+        나눠서 하면 중간에 둘 다 활성인 순간이 생겨 실패한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                if provider_id is not None:
+                    cursor.execute(
+                        """
+                        SELECT team_id, status FROM guardrail_provider
+                        WHERE provider_id = %s FOR UPDATE
+                        """,
+                        (provider_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise RecordNotFound("등록되지 않은 가드레일입니다.")
+                    if row["team_id"] != team_id:
+                        raise RecordNotFound("이 팀에 등록된 가드레일이 아닙니다.")
+                    if row["status"] != "CONNECTED":
+                        raise RepositoryError("연결 확인을 통과한 가드레일만 사용할 수 있습니다.")
+
+                cursor.execute(
+                    "UPDATE guardrail_provider SET is_active = FALSE WHERE team_id = %s AND is_active",
+                    (team_id,),
+                )
+                if provider_id is None:
+                    return None
+
+                cursor.execute(
+                    """
+                    UPDATE guardrail_provider SET is_active = TRUE WHERE provider_id = %s
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
+                              last_checked_at, created_by, created_at,
+                              (credential_enc IS NOT NULL) AS has_credential
+                    """,
+                    (provider_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def delete(*, provider_id: str) -> dict[str, Any]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM guardrail_provider WHERE provider_id = %s
+                    RETURNING provider_id, team_id, name, kind, is_active
+                    """,
+                    (provider_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("등록되지 않은 가드레일입니다.")
+                return row
