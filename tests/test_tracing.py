@@ -478,3 +478,39 @@ class RunUsageTests(SimpleTestCase):
             run_id="RUN-ROOT", status="DONE", iterations=4, token_in=None, token_out=None
         )
 
+
+@patch(f"{MODULE}.ToolCallRepository")
+@patch(f"{MODULE}.AgentRunRepository")
+class RetrievedDocumentTests(SimpleTestCase):
+    """조회한 문서 식별자를 `tool_call` 에 적는가(2026-08-21)."""
+
+    def test_doc_ids_from_the_event_are_written(self, runs, calls):
+        calls.begin.return_value = "TC-1"
+        events = [
+            _agent_started(),
+            _tool_started(),
+            _tool_completed(retrieved_doc_ids=["DC001", "DC004"]),
+        ]
+
+        list(trace_events(iter(events), context=_context()))
+
+        self.assertEqual(calls.end.call_args.kwargs["retrieved_doc_ids"], ["DC001", "DC004"])
+
+    def test_tool_without_documents_passes_the_empty_list_through(self, runs, calls):
+        """저장소가 빈 목록을 NULL 로 낮춘다 — 「문서를 안 보는 도구」와
+        「찾았는데 없었다」를 같은 모양으로 두지 않기 위해서다."""
+        calls.begin.return_value = "TC-1"
+        events = [_agent_started(), _tool_started(), _tool_completed(retrieved_doc_ids=[])]
+
+        list(trace_events(iter(events), context=_context()))
+
+        self.assertEqual(calls.end.call_args.kwargs["retrieved_doc_ids"], [])
+
+    def test_old_event_without_the_field_still_closes_the_tool_call(self, runs, calls):
+        calls.begin.return_value = "TC-1"
+        events = [_agent_started(), _tool_started(), _tool_completed()]
+
+        list(trace_events(iter(events), context=_context()))
+
+        self.assertIsNone(calls.end.call_args.kwargs["retrieved_doc_ids"])
+

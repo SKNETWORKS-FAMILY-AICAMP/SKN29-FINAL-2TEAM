@@ -26,6 +26,7 @@ from services.agent_runtime.events import (
     EVENT_TOOL_COMPLETED,
     EVENT_TOOL_PROGRESS,
     EVENT_TOOL_STARTED,
+    RETRIEVED_DOC_IDS_MAX,
     EventMapper,
 )
 
@@ -901,4 +902,64 @@ class ModelUsageTests(SimpleTestCase):
             mapper.usage_for("RUN1"),
             {"iterations": 0, "token_in": None, "token_out": None},
         )
+
+
+class RetrievedDocumentTests(SimpleTestCase):
+    """도구 결과에서 조회한 문서 식별자를 뽑아내는가(2026-08-21).
+
+    멘토링 전달 "Tool 호출 결과 어떤 문서/데이터가 조회되었는지". 지금까지
+    `tool_call` 에는 질의문만 남아 무엇을 봤는지 되물을 수 없었다.
+    """
+
+    @staticmethod
+    def _completed(payload):
+        """도구가 dict 를 돌려주면 langchain-core 가 json.dumps 로 문자열을 만든다."""
+        import json
+
+        message = ToolMessage(
+            name="document_search", content=json.dumps(payload, ensure_ascii=False), tool_call_id="1"
+        )
+        return _convert_one(EventMapper(), _raw((), "tools", message))
+
+    def test_evidence_and_candidates_and_not_indexed_are_all_collected(self):
+        event = self._completed(
+            {
+                "query": "휴가 규정",
+                "evidence": [
+                    {"chunk_id": "c1", "doc_id": "DC001", "text": "..."},
+                    {"chunk_id": "c2", "doc_id": "DC004", "text": "..."},
+                ],
+                "not_indexed": [{"doc_id": "DC009", "file_name": "x.pdf"}],
+            }
+        )
+
+        self.assertEqual(event["type"], EVENT_TOOL_COMPLETED)
+        self.assertEqual(event["retrieved_doc_ids"], ["DC001", "DC004", "DC009"])
+
+    def test_same_document_in_several_chunks_is_recorded_once(self):
+        event = self._completed(
+            {"evidence": [{"doc_id": "DC001"}, {"doc_id": "DC001"}, {"doc_id": "DC002"}]}
+        )
+
+        self.assertEqual(event["retrieved_doc_ids"], ["DC001", "DC002"])
+
+    def test_tool_that_returns_no_documents_gets_an_empty_list(self):
+        """문서와 무관한 도구. 저장소가 이 빈 목록을 NULL 로 낮춘다."""
+        message = ToolMessage(name="people_list", content='[{"name": "임준"}]', tool_call_id="1")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertEqual(event["retrieved_doc_ids"], [])
+
+    def test_plain_text_output_does_not_break_the_event(self):
+        """JSON 이 아닌 결과(MCP 도구 등)는 조용히 빈 목록이다."""
+        message = ToolMessage(name="mcp:something", content="그냥 문장입니다", tool_call_id="1")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertEqual(event["retrieved_doc_ids"], [])
+
+    def test_absurdly_long_result_is_capped(self):
+        payload = {"evidence": [{"doc_id": f"DC{i:03d}"} for i in range(200)]}
+        event = self._completed(payload)
+
+        self.assertEqual(len(event["retrieved_doc_ids"]), RETRIEVED_DOC_IDS_MAX)
 

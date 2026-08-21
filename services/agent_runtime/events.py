@@ -165,6 +165,8 @@ langchain-core의 청크 병합 키다(`+`로 청크를 더할 때 같은 `index
 
 from __future__ import annotations
 
+import json
+
 import uuid
 from typing import Any
 
@@ -277,6 +279,61 @@ def _summarize_tool_output(content: Any) -> str:
     if len(text) > TOOL_OUTPUT_SUMMARY_MAX:
         return f"{text[:TOOL_OUTPUT_SUMMARY_MAX]}..."
     return text
+
+
+#: 한 호출이 남길 문서 식별자의 상한. `document_search` 는 coarse 후보 + 근거를
+#: 합쳐도 수십 건이지만, 도구가 비정상적으로 큰 결과를 낼 가능성까지 열어 두지
+#: 않는다(`tool_call_idempotency.result_text` 의 상한과 같은 이유).
+RETRIEVED_DOC_IDS_MAX = 50
+
+
+def _retrieved_doc_ids(content: Any) -> list[str]:
+    """도구 결과에서 **문서 식별자만** 골라낸다(2026-08-21).
+
+    멘토링 전달 "Tool 호출 결과 어떤 문서/데이터가 조회되었는지" 를 받는
+    자리다. `document_search` 가 무엇을 골랐는지는 지금까지 `sources` 진행
+    이벤트로 화면에 한 번 흐르고 사라졌다 — `tool_call` 에는 질의문
+    (`input_summary`)만 남아서, 나중에 "그때 무슨 문서를 봤나"를 물을 수 없었다.
+
+    **도구별로 분기하지 않는다.** 결과 JSON 안에 있는 `doc_id` 키를 재귀로
+    전부 모은다 — `document_search` 는 `evidence` · `candidate_documents` ·
+    `not_indexed` 세 곳에 나눠 담고, 다른 도구가 나중에 같은 키를 쓰면 자동으로
+    함께 잡힌다. 어느 목록에 있었는지는 구분하지 않는다: 접근 감사가 묻는 것은
+    "어느 문서를 봤나"이지 "그중 무엇을 인용했나"가 아니고, coarse 후보도
+    요약이 실제로 읽힌 문서다.
+
+    `content` 는 `ToolMessage.text`(문자열)다. 핸들러가 dict 를 돌려주면
+    langchain-core 의 `_stringify()` 가 `json.dumps(..., ensure_ascii=False)`
+    로 만든 값이라(설치된 소스 확인) 되읽을 수 있다. 평문을 돌려주는 도구는
+    파싱이 실패하고 빈 목록이 된다 — 그게 정상이다.
+    """
+    if not isinstance(content, str) or "doc_id" not in content:
+        # 흔한 경우(문서와 무관한 도구)를 JSON 파싱 없이 먼저 걸러낸다.
+        return []
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return []
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if len(found) >= RETRIEVED_DOC_IDS_MAX:
+            return
+        if isinstance(node, dict):
+            doc_id = node.get("doc_id")
+            if isinstance(doc_id, str) and doc_id and doc_id not in seen:
+                seen.add(doc_id)
+                found.append(doc_id)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(parsed)
+    return found
 
 
 def _tool_label(tool_ref: str) -> str:
@@ -655,6 +712,8 @@ class EventMapper:
                         "tool_call_id": msg_tool_call_id,
                         "status": _tool_status(msg_status),
                         "output": _summarize_tool_output(content),
+                        # 이 호출이 건드린 문서. `tracing/` 이 `tool_call`에 적는다.
+                        "retrieved_doc_ids": _retrieved_doc_ids(content),
                         "complete": False,
                     }
                 ]
@@ -703,6 +762,7 @@ class EventMapper:
                     "tool_call_id": msg_tool_call_id,
                     "status": _tool_status(msg_status),
                     "output": _summarize_tool_output(content),
+                    "retrieved_doc_ids": _retrieved_doc_ids(content),
                     "complete": False,
                 }
             ]

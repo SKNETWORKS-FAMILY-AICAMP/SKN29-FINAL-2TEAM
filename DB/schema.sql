@@ -975,11 +975,20 @@ CREATE TABLE tool_call (
     status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',  -- PENDING / OK / FAILED
     error_code     VARCHAR(50),             -- 401 / 429 / validation / timeout 등
     duration_ms    INT,
+    -- 이 호출이 건드린 문서(2026-08-21 추가, DB/migrations/
+    -- 2026-08-21_tool_call_retrieved_docs.sql). **본문이 아니라 식별자만 담는다** —
+    -- input_summary 가 자격증명을 안 남기는 것과 같은 원칙이다. 검색이 무엇을
+    -- 골랐는지는 지금까지 SSE 로 화면에 한 번 흐르고 사라졌다.
+    retrieved_doc_ids TEXT[],
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE INDEX ix_tool_call_run
     ON tool_call (run_id, created_at);
+
+-- 「이 문서가 언제 누구에게 조회됐나」로 역추적하는 것이 주된 사용처다.
+CREATE INDEX ix_tool_call_retrieved_docs
+    ON tool_call USING GIN (retrieved_doc_ids);
 
 -- 가드레일이 실제로 발동한 기록(2026-08-20 추가). `audit_log`를 쓰지 않는다 —
 -- 그쪽 `actor_account_id`는 NOT NULL인데 가드레일을 발동시키는 것은 사람이

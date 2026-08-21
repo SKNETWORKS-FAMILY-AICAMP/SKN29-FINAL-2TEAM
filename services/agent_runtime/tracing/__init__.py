@@ -340,6 +340,10 @@ def _end_tool_call(
         status=status,
         duration_ms=int((time.monotonic() - started) * 1000),
         error_code=None if status == "OK" else "TOOL_EXECUTION_FAILED",
+        # 이 호출이 조회한 문서(2026-08-21). `events.py`의 `_retrieved_doc_ids()`가
+        # 도구 결과 JSON 에서 뽑아 이벤트에 실어 보낸다 — 여기서는 옮겨 적기만
+        # 한다. 문서와 무관한 도구는 빈 목록이고, 저장소가 그걸 NULL 로 낮춘다.
+        retrieved_doc_ids=event.get("retrieved_doc_ids"),
     )
 
 
