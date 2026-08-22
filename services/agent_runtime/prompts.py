@@ -1,40 +1,27 @@
 """Root/Child/general-purpose에 공통으로 적용할 런타임 프롬프트를 조립한다.
 
-정본: 2026-08-14 대화 결정(Builder Test Run은 지금 새 엔진에 연결하지 않고,
-실제 실행 경로 — Chat → AgentExecutor → Factory → create_deep_agent() — 에
-공통 Scaffold를 붙이는 걸 우선한다는 결정).
+`RUNTIME_SCAFFOLD`는 **코드로 강제할 수 없는 것만** 담는다. 코드가 이미 막는 걸
+프롬프트에도 적으면, 코드 정책이 바뀌었을 때 프롬프트만 옛 규칙을 말하는 두 번째
+진실 공급원이 생긴다. 그래서 아래 셋은 여기 없다:
 
-레거시 `services/harness/scaffold.py`의 `COMMON_SCAFFOLD`를 그대로 재사용하지
-않는다 — 아래 `RUNTIME_SCAFFOLD`는 그 문구를 다시 걸러서 **코드로 강제할 수
-없는 것만** 담는다:
+- 호출 횟수 상한 → `middleware/factory.py`의 `ModelCallLimitMiddleware`/
+  `ToolCallLimitMiddleware`
+- role별 부수효과 도구 실행 차단 → `factory._to_langchain_tool()`의 `_run()`
+  (**노출은 안 거른다** — 모델이 도구 존재를 모르면 "그런 기능이 없다"고 답한다)
+- 위임 깊이 1단계 제한 → `subagents/validation.py`의 `validate_subagents()`
 
-- Tool 호출 횟수 상한, 모델 호출 횟수 상한 → `middleware/factory.py`의
-  `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware`가 이미 강제한다.
-- role별 부수효과 도구 실행 차단 → `factory._to_langchain_tool()`의 `_run()`이
-  실행 직전에 `is_tool_allowed_for_role()`로 막는다. **노출은 안 거른다**
-  (2026-08-19) — 모델이 도구 존재를 모르면 "그런 기능이 없다"고 답하기 때문이다.
-- 위임 깊이 제한(1단계만) → `subagents/validation.py`의 `validate_subagents()`가
-  이미 강제한다.
+**승인 카드(HITL)는 예외다.** 게이트가 있다는 **사실**은 모델이 알아야 행동이
+달라진다 — 모르면 카드가 이미 묻는 것을 말로 한 번 더 묻고, 승인 전인데
+"등록했습니다"라고 말한다. 그래서 아래 `[외부 변경]`은 중복이 아니다.
 
-이 세 가지를 프롬프트에 "말로" 다시 적지 않는다 — 코드가 이미 막고 있는 걸
-프롬프트에도 적으면, 나중에 코드 쪽 정책이 바뀌었을 때 프롬프트만 옛 규칙을
-계속 말하는 두 번째 진실 공급원이 생긴다.
+**도구 결과 인젝션 방어는 여기 없다.** 같은 취지의 문구가 `memory/backend.py`의
+`_MEMORY_ROUTING_PROMPT`에 있어 메모리 채널만 덮인다 — harness/MCP 도구 결과는
+지금 프롬프트로 막지 않는다.
 
-**승인 카드(HITL)는 예외다.** 2026-08-18에 이 엔진에도 붙었다(`factory.py`의
-`interrupt_on` → `events.py`의 `awaiting_confirmation` → `api_views.py`의 재개).
-게이트가 있다는 **사실**은 모델이 알아야 행동이 달라진다 — 모르면 카드가 이미
-묻는 것을 말로 한 번 더 묻고, 승인 전인데 "등록했습니다"라고 말한다. 그래서
-아래 `[외부 변경]`은 "코드가 막는 것을 말로 또 적는" 경우가 아니다.
-
-**도구 결과 인젝션 방어는 여기 없다**(2026-08-20 팀 결정). 같은 취지의 문구가
-`memory/backend.py`의 `_MEMORY_ROUTING_PROMPT`에는 있어 메모리 채널만 덮인다 —
-harness/MCP 도구 결과 쪽은 지금 프롬프트로 막지 않는다는 뜻이다.
-
-DB(`agent_versions.system_prompt`)에는 **Agent별 지시만** 저장한다 — 공통
-Scaffold를 매 버전에 복사해 저장하면 공통 정책을 한 글자 바꿀 때마다 이미 발행된
-모든 버전을 다시 발행해야 한다. 결합은 저장 시점이 아니라 **실행 시점**
-(`AgentRuntimeFactory.build()`)에서 한다: `AgentDefinition.system_prompt`(=DB
-값, Builder가 작성한 그대로)는 손대지 않고, 그걸 조립기에 넘겨서 최종
+DB(`agent_versions.system_prompt`)에는 **Agent별 지시만** 저장한다. 공통 Scaffold를
+매 버전에 복사하면 공통 정책을 한 글자 바꿀 때마다 발행된 모든 버전을 다시
+발행해야 한다. 결합은 저장 시점이 아니라 **실행 시점**
+(`AgentRuntimeFactory.build()`)에 한다 — DB 값은 손대지 않고 최종
 `create_deep_agent(system_prompt=...)` 인자만 만든다.
 """
 
@@ -101,12 +88,12 @@ _CHILD_SCOPE_ADDENDUM = """
 - 최종 결과에 확인한 내용과 사용한 근거를 포함해 Root에게 돌려준다.
 """
 
-#: Root가 보는 `task` 도구 자체의 설명(2026-08-20 결정) — deepagents 기본값
-#: (영어, "복잡한 작업"이라고만 말할 뿐 이 앱의 언제/무엇을 기준으로 삼지 않음)
-#: 대신 쓴다. `compat.deepagents_v075.register_default_harness_profile()`가
-#: `tool_description_overrides={"task": ...}`로 이 값을 넘긴다. `{available_agents}`는
-#: deepagents가 실제 서브 에이전트 목록으로 치환하는 자리표시자이므로 반드시
-#: 그대로 남긴다 — 이 자리표시자 말고 다른 중괄호를 넣으면 안 된다(포맷팅 오류).
+#: Root가 보는 `task` 도구 설명. deepagents 기본값은 "복잡한 작업"이라고만 말할
+#: 뿐 이 앱의 기준을 담지 않아 대체한다.
+#: `register_default_harness_profile()`가 `tool_description_overrides`로 넘긴다.
+#:
+#: ⚠ `{available_agents}`는 deepagents가 실제 서브 에이전트 목록으로 치환하는
+#: 자리표시자다. 반드시 그대로 두고, 다른 중괄호를 넣으면 안 된다(포맷팅 오류).
 TASK_DELEGATION_DESCRIPTION = """\
 여러 단계의 조사·처리·종합이 필요하거나, 독립적인 컨텍스트에서 별도로
 수행하는 것이 적절한 작업을 서브 에이전트에게 위임한다. 서브 에이전트는
@@ -142,17 +129,15 @@ TASK_DELEGATION_DESCRIPTION = """\
   않는다. 그 결과가 필요하면 Root가 직접 그 도구를 불러 사용자 승인을
   받는다."""
 
-#: GP(general-purpose) 자신의 description(2026-08-20 결정) — deepagents
-#: 기본값("키워드나 파일을 찾을 때" 같은 코딩 어시스턴트 문구) 대신 쓴다.
-#: `factory.py`가 `build_general_purpose_spec(description=...)`로 넘긴다.
-#: `TASK_DELEGATION_DESCRIPTION`의 `{available_agents}` 안에 이 문구가 그대로
-#: 나열되므로, 여기서는 "언제 위임할지" 기준을 반복하지 않고 GP 자신의
-#: 역할·능력만 적는다. 특정 도구 이름(Jira 등)은 언급하지 않는다 — 이 앱의
-#: 실제 연결 도구는 바뀔 수 있고, GP는 그중 무엇이 연결되든 범용으로 쓰인다.
-#: 2026-08-20, GP 피드백 검토 §3 채택 3 — GP는 이제 `side_effect=True` 도구를
-#: 상속하지 않는다(`factory.py`가 `build_general_purpose_spec(tools=...)`로
-#: 읽기 전용만 넘긴다). 문구도 그 사실에 맞춰 바꾼다 — "Root와 동일" 대신
-#: "조회만" 이라고 명시해야 모델이 GP에게 쓰기 작업을 잘못 기대하지 않는다.
+#: GP(general-purpose) 자신의 description. deepagents 기본값이 코딩 어시스턴트
+#: 문구라 대체한다. `factory.py`가 `build_general_purpose_spec(description=...)`로
+#: 넘기고, 이 문구는 `TASK_DELEGATION_DESCRIPTION`의 `{available_agents}` 안에
+#: 그대로 나열된다 — 그래서 "언제 위임할지"는 반복하지 않고 GP의 역할·능력만
+#: 적는다.
+#:
+#: 특정 도구 이름(Jira 등)은 쓰지 않는다 — 실제 연결 도구는 바뀌고 GP는 무엇이
+#: 연결되든 범용으로 쓰인다. GP는 `side_effect=True` 도구를 상속하지 않으므로
+#: **"조회만"이라고 명시해야** 모델이 GP에게 쓰기 작업을 기대하지 않는다.
 GP_DESCRIPTION = """\
 조사·검색이나 여러 단계에 걸친 복합 작업을 맡기는 범용 보조 에이전트다.
 전용 서브 에이전트가 없거나 요청이 여러 영역에 걸칠 때 사용한다. 조회·검색

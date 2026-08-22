@@ -63,23 +63,18 @@ from typing import Any
 from services.agent_runtime.tools.loader import Tool as RuntimeTool
 from services.harness.registry import BUILTIN_TOOLS
 
-# AgentRepository/McpServerRepository/mcp_client는 이미 위 BUILTIN_TOOLS를 통해
-# 이 프로세스에 로드된다 — services/harness/registry.py가 최상단에서
-# `from backend.db.agent_platform import (AgentRepository, McpServerRepository,
-# ...)`·`from services.mcp import client as mcp_client`를 직접 import한다
-# (2026-08-14 확인, registry.py 1~35줄). 그래서 아래 import는 새 의존성
-# 무게를 더하지 않는다 — 이 모듈 자체가 loader.py의 지연 import 뒤에서만
-# 로드되므로, 정본 위치를 명확히 하는 것 외엔 비용이 없다.
+# 아래 import는 새 의존성 무게를 더하지 않는다 — `harness/registry.py`가 이미
+# 최상단에서 같은 것들을 import하므로 위 BUILTIN_TOOLS를 통해 이 프로세스에
+# 로드돼 있고, 이 모듈 자체도 loader.py의 지연 import 뒤에서만 로드된다.
 from backend.db.agent_platform import AgentRepository, McpServerRepository
 from services.mcp import client as mcp_client
 
 # --- 컨텍스트 라우팅표 (services/harness/runner.py의 _injected() 실측 이관) ---
 
-#: 팀 경계와 **요청자**가 둘 다 필요하다. `account_id` 를 빠뜨리면 조용히
-#: 반쪽이 된다 — 「내가 켠 내 파일」이 후보에 안 들어오고(M④), `registry` 의
-#: `not_indexed[:PROMOTE_TOP_N] if account_id else []` 가 빈 리스트가 되어
+#: 팀 경계와 **요청자**가 둘 다 필요하다. `account_id`를 빠뜨리면 조용히 반쪽이
+#: 된다 — 「내가 켠 내 파일」이 후보에 안 들어오고, `registry`의
+#: `not_indexed[:PROMOTE_TOP_N] if account_id else []`가 빈 리스트가 되어
 #: **온디맨드 승격이 통째로 꺼진다**. 오류가 아니라 「문서가 없습니다」로 끝난다.
-#: 레거시 `runner.py` 의 같은 자리에서 옮겨 올 때 함께 빠져 있었다(2026-08-18 QA).
 _DOCUMENT_SEARCH_REF = "document_search"
 _ACCOUNT_SCOPED: frozenset[str] = frozenset(
     {"people_list", "workload_report", "project_list", "document_list", "absence_list"}
@@ -98,10 +93,10 @@ def _injected_context_names(tool_ref: str) -> tuple[str, ...]:
     if tool_ref == _TASK_EXTRACTION_REF:
         return ("project_id", "account_id", "team_id")
     if tool_ref == _DOCUMENT_SEARCH_REF:
-        # `project_id` 는 2026-08-19 에 더했다(PM 결정 ⓐ). `_call`이 레거시
-        # 이름(`proj_id`)으로 바꿔 넘긴다 — 아래 `_LEGACY_PROJECT_KWARG`.
+        # `project_id`는 `_call`이 레거시 이름(`proj_id`)으로 바꿔 넘긴다
+        # — 아래 `_LEGACY_PROJECT_KWARG`.
         # **레거시 `_injected()`와 함께 고쳐야 한다** — 한쪽만 고치면 엔진에
-        # 따라 검색 범위가 달라진다(2026-08-18 `account_id` 때 그랬다).
+        # 따라 검색 범위가 달라진다.
         return ("team_id", "account_id", "project_id")
     if tool_ref in _PROJECT_SCOPED:
         return ("project_id", "account_id")

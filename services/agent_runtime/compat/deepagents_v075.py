@@ -19,12 +19,10 @@ SUPPORTED_VERSION = "0.7.5"
 # 서브 에이전트 위임 Tool 이름.
 DELEGATION_TOOL_NAME = "task"
 
-# `FilesystemMiddleware`가 만들 수 있는 가상 파일시스템 Tool 전체(2026-08-18,
-# §5 Phase 6 — `deepagents/middleware/filesystem.py`의 공개 타입
-# `FsToolName = Literal["ls", "read_file", "write_file", "edit_file", "delete",
-# "glob", "grep", "execute"]`로 실측 확인). deepagents 내부의 `_ALL_FS_TOOL_NAMES`는
-# private(밑줄 접두)라 여기서 새로 import하지 않고, 같은 소스로 확인한 값만
-# 이 모듈에 둔다(compat 모듈의 책임 — deepagents 버전별 차이는 여기서만 안다).
+# `FilesystemMiddleware`가 만들 수 있는 가상 파일시스템 Tool 전체. 출처는
+# `deepagents/middleware/filesystem.py`의 공개 타입 `FsToolName`이다.
+# deepagents의 `_ALL_FS_TOOL_NAMES`는 private이라 import하지 않고 값만 옮겨 둔다
+# — deepagents 버전별 차이를 아는 건 이 compat 모듈의 책임이다.
 _ALL_FS_TOOL_NAMES: tuple[str, ...] = (
     "ls",
     "read_file",

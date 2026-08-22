@@ -15,24 +15,14 @@ if TYPE_CHECKING:
     from services.agent_runtime.definitions import AgentDefinition
     from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 
-#: 2026-08-18, Phase 4(§2 "TodoListMiddleware 상세") — LangChain 기본
-#: `WRITE_TODOS_TOOL_DESCRIPTION`(3873자, 언제/언제 쓰지 말지는 이미 잘 짜여
-#: 있어 그대로 유지)에 이 프로젝트 전용 구분 문단만 추가한다. 목적은 이 앱의
-#: `task_register`/`task_update`(DB에 실제로 남는 팀 작업)와 `write_todos`가
-#: 이름·개념이 겹쳐 모델이 헷갈리는 걸 막는 것.
+#: LangChain 기본 `WRITE_TODOS_TOOL_DESCRIPTION`(언제 쓸지/말지가 이미 잘 짜여
+#: 있어 그대로 유지)에 이 프로젝트 전용 구분 문단만 덧붙인다. `write_todos`와
+#: `task_register`/`task_update`가 이름·개념이 겹쳐 모델이 헷갈리는 걸 막는다.
 #:
-#: 2026-08-18 정정: 이 문단이 원래 "실행이 끝나면 사라지고"라고 적었는데,
-#: 이건 §5 Phase 1(Checkpointer) 완료 시점의 실제 검증 결과와 안 맞는
-#: 얘기였다 — Phase 1의 완료 조건 자체가 "같은 thread_id로 두 번 연속
-#: 호출했을 때 Todo 상태가 다음 턴에 유지되는지"였고 그게 통과했다(§5 Phase 1).
-#: 즉 `write_todos`의 `todos` 상태(`langchain.agents.middleware.todo.
-#: PlanningState`, `AgentState`를 상속)는 다른 상태 필드와 똑같이
-#: Checkpointer가 통째로 저장하므로, 같은 세션(thread) 안에서는 다음 턴에도
-#: 그대로 남는다 — "실행이 끝나면 사라진다"는 틀린 말이다. 맞는 구분은
-#: "팀에 안 보이는가" 여부다: `write_todos`는 이 세션 상태에만 있고(팀
-#: 전체가 보는 `task_register`/`task_update` 데이터로 옮겨지지 않는다),
-#: `task_register`/`task_update`는 DB에 남아 팀원 전체가 본다. 아래 문단은
-#: 그 근거로 다시 썼다.
+#: 구분 기준은 **"팀에 보이는가"**지 수명이 아니다. `write_todos`의 `todos`
+#: 상태(`PlanningState`)도 다른 상태 필드처럼 Checkpointer가 저장하므로 같은
+#: 세션 안에서는 다음 턴에도 남는다. 차이는 그 내용이 세션 상태에만 있고 팀
+#: 전체가 보는 DB 데이터로는 옮겨지지 않는다는 점이다.
 _TODO_TOOL_DESCRIPTION = (
     WRITE_TODOS_TOOL_DESCRIPTION
     + """
@@ -45,52 +35,23 @@ This tool tracks your own step-by-step execution plan for this conversation — 
 class MiddlewareFactory:
     """Root/Child/GeneralPurpose에 붙일 Middleware 목록을 조립한다.
 
-    2026-08-14: `TodoListMiddleware` 조건부 배선을 시도했다가 계약 문서
-    (`2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md` §2 확정 원칙 8번 — "서비스
-    전용 커스텀 Middleware, Memory, TODO, Checkpointer는 MVP에서 비활성화한다")와
-    충돌한다는 걸 뒤늦게 발견해 되돌렸다. 그때 사용자 확인: Todo/Memory/Checkpointer는
-    지금 전부 뒤로 미룬다 — `runtime_policy.enable_todo`는 계약이 말하는 "확장
-    위치"로만 남고(값은 있지만 여기서 읽지 않음).
+    **여기서 조립하지 않는 것들.** `create_deep_agent()`가 이미 자동으로 붙이므로
+    다시 만들면 중복·오작동한다(`deepagents==0.7.5`의 `graph.py` 기준):
 
-    **2026-08-15: Memory만 이 결정을 뒤집었다** — 지훈 확인 후 장기 메모리 착수
-    (`services/agent_runtime/memory/`, `docs/작업기록/Deep_Agents/2026-08-15_02_장기메모리_설계.md`).
-    Memory는 여기(커스텀 middleware 리스트)가 아니라 `factory.py`의 `build()`가
-    `create_root_graph(memory=..., backend=..., store=...)`로 별도 배선한다 —
-    deepagents의 `MemoryMiddleware`는 `memory=`를 넘기면 자동으로 붙는 내장
-    middleware라 여기서 조립할 필요가 없다.
+    - `PatchToolCallsMiddleware` — Base stack에 무조건 추가된다.
+    - `SummarizationMiddleware` — 무조건 추가된다. deepagents 자체 버전이라
+      langchain의 동명 클래스와 다르다.
+    - `SubAgentMiddleware` — `create_root_graph()`가 항상 비어 있지 않은
+      `subagents`를 넘기므로 이미 켜져 있다. `backend`/`inline_subagents`/
+      `state_schema`/`private_state_keys` 내부 배선은 deepagents만 정확히
+      만들 수 있어 별도 인스턴스를 만드는 게 특히 위험하다.
 
-    **2026-08-18, §5 Phase 1 — Checkpointer도 뒤집었다**(`checkpoint/`, `factory.py`/
-    `bootstrap.py`). **같은 날 §5 Phase 4 — Todo도 뒤집었다**: `runtime_policy.
-    enable_todo`가 여기서 실제로 읽힌다(아래 `build()`). 기본값은 여전히 `False`라
-    아무 것도 안 켜진 배포에서는 이전과 동일하게 동작한다 — `RuntimeCapabilityPolicy
-    (enable_todo=True)`를 명시적으로 넘겨야 켜진다. `TodoListMiddleware`는
-    deepagents가 아니라 langchain 쪽 미들웨어라(`langchain.agents.middleware`)
-    Memory/Checkpointer 같은 "자동 부착" 충돌 위험이 없다 — 여기 커스텀 목록에
-    그냥 추가하면 된다.
+    Memory도 여기가 아니라 `factory.py`의 `build()`가
+    `create_root_graph(memory=..., backend=..., store=...)`로 배선한다 —
+    `MemoryMiddleware`는 `memory=`만 넘기면 자동으로 붙는다.
 
-    **2026-08-18, Phase 2 정찰 — 여기서 새로 안 만드는 것들**: 설치된
-    `deepagents==0.7.5`의 실제 소스(`deepagents/graph.py`)를 직접 읽어 확인한
-    결과, 아래 셋은 `create_deep_agent()`가 이미 자동으로 붙인다 — 여기서
-    다시 만들면 중복/오작동:
-
-    - `PatchToolCallsMiddleware()` — Base stack에 무조건 추가됨.
-    - `SummarizationMiddleware`(deepagents 자체 버전, `create_summarization_middleware`
-      경유) — 마찬가지로 무조건 추가됨. langchain의 동명 미들웨어와는 다른
-      클래스이므로 혼동 주의.
-    - `SubAgentMiddleware` — `create_root_graph()`가 항상 `subagents=[gp_spec,
-      *compiled_children]`(비어있지 않음)을 넘기므로 이미 켜져 있다.
-      `backend`/`inline_subagents`/`state_schema`/`private_state_keys` 내부
-      배선은 deepagents 자신만 정확히 만들 수 있어, 여기서 별도 인스턴스를
-      또 만드는 건 특히 위험하다.
-
-    `_ToolExclusionMiddleware`는 `bootstrap.py`가 `register_default_harness_profile
-    (excluded_tools=policy.excluded_builtin_tools)`로 이미 배선돼 있다 — 값은
-    `runtime_policy.DEFAULT_EXCLUDED_BUILTIN_TOOLS = frozenset({"delete"})`
-    그대로 유지(2026-08-18 확인: `tests/test_runtime_policy.py`의
-    `test_does_not_exclude_execute`가 이미 "execute는 SandboxBackend 없이는
-    존재하지 않는 도구라 제외할 필요 없다"는 근거로, 지훈이 확인해준 현재 값이
-    맞다고 못박아 둔 상태 — 계획서 초안 문구(`{"delete","execute"}`)는 그
-    이후 갱신되지 않은 것으로 보고, 기존 결정을 유지한다).
+    `_ToolExclusionMiddleware`는 `bootstrap.py`가
+    `register_default_harness_profile(excluded_tools=...)`로 배선한다.
     """
 
     def __init__(self, *, runtime_policy: "RuntimeCapabilityPolicy") -> None:
@@ -99,11 +60,9 @@ class MiddlewareFactory:
     def build(self, *, definition: "AgentDefinition", context: "RuntimeContext | None") -> list:
         """Root 또는 Child의 모델·Tool 호출 상한을 만든다.
 
-        `context`가 있으면 그 `account_role`을 정책 조회에 함께 넘긴다(2026-08-18,
-        Phase 2 — 역할별 차등 상한의 구조만 열어두는 작업, `runtime_policy.py`의
-        `resolve_model_call_limit`/`resolve_tool_call_limit` docstring 참고).
-        `context=None`도 계속 지원한다 — 기존 호출부(GP 경로 등)와 테스트가
-        이미 그렇게 부른다.
+        `context`가 있으면 그 `account_role`을 정책 조회에 함께 넘긴다
+        (`runtime_policy.py`의 `resolve_model_call_limit` docstring 참고).
+        `context=None`도 지원한다 — GP 경로와 테스트가 그렇게 부른다.
         """
         account_role = context.role if context is not None else None
         middleware: list = [
@@ -120,38 +79,28 @@ class MiddlewareFactory:
             ),
         ]
         if self.runtime_policy.enable_todo:
-            # 2026-08-18 정정: `system_prompt=""`로 LangChain 기본
-            # `WRITE_TODOS_SYSTEM_PROMPT`(1370자)를 지웠던 걸 되돌린다.
-            # 처음엔 "`RuntimePromptAssembler`가 이미 조립하는 프롬프트와
-            # 중복"이라고 적었는데, 실제로 `RUNTIME_SCAFFOLD`
-            # (services/agent_runtime/prompts.py)를 읽어 확인하니 겹치는
-            # 내용이 하나도 없었다 — "언제 write_todos를 쓸지"(복잡한
-            # 다단계 작업에만, 완료 즉시 표시, 마지막 답은 write_todos
-            # 호출과 같은 턴에 쓰지 않기 등)는 RUNTIME_SCAFFOLD 어디에도
-            # 없는 내용이다. 근거 없이 실제 제품이 검증한 기본 안내문을
-            # 지웠던 것이므로, 인자를 아예 안 넘겨서 LangChain 기본값
-            # 그대로 쓰이게 한다.
+            # `system_prompt`를 넘기지 않아 LangChain 기본
+            # `WRITE_TODOS_SYSTEM_PROMPT`가 그대로 쓰이게 둔다. "언제 write_todos를
+            # 쓸지"(다단계 작업에만, 완료 즉시 표시 등)는 `RUNTIME_SCAFFOLD`에
+            # 없는 내용이라 겹치지 않는다.
             middleware.append(TodoListMiddleware(tool_description=_TODO_TOOL_DESCRIPTION))
-        # 2026-08-21, A-1 — MCP 도구엔 timeout 개념이 아예 없다
-        # (`2026-08-21_01_Tool_timeout_재설계.md`). Root/Child 둘 다 이
-        # `build()`를 거치므로 여기 한 곳에만 추가하면 양쪽에 다 적용된다 —
-        # `factory.py`가 Root 전용으로 덧붙이는 write_guard/write_lock과 다른
-        # 자리(Root/Child 구분 없음)라 여기서 배선한다. 내장 도구는 이
-        # 미들웨어가 스스로 건너뛴다(MCP 접두사 검사).
+        # MCP 도구에는 timeout 개념이 없어서 우리가 건다
+        # (`2026-08-21_01_Tool_timeout_재설계.md`). Root/Child 둘 다 이 `build()`를
+        # 거치므로 여기 한 곳이면 양쪽에 적용된다. 내장 도구는 이 미들웨어가
+        # MCP 접두사 검사로 스스로 건너뛴다.
         middleware.append(
             build_mcp_tool_call_timeout_middleware(
                 runtime_policy=self.runtime_policy, context=context
             )
         )
-        # 2026-08-21, 병렬실행 Phase 3 — 같은 프로젝트에 대한 내장 쓰기 도구
-        # 호출을 직렬화한다(`builtin_write_lock.py` 모듈 docstring에 실제
-        # 경합 지점을 적어 뒀다 — `ProjectTaskRepository.register()`의
-        # 읽고-고쳐-쓰기). timeout 미들웨어보다 **뒤**(=안쪽)에 둔다:
-        # langchain의 `wrap_tool_call` 체이닝은 목록 앞쪽이 바깥쪽이라,
-        # 이 순서라야 "락을 쥔 채 timeout을 기다리는" 조합이 안 생긴다
-        # (`memory/write_lock.py`가 write_guard와 맺는 관계와 같다).
-        # `context`가 없으면(테스트 등) 잠글 팀·프로젝트를 특정할 수 없어
-        # 건너뛴다.
+        # 같은 프로젝트에 대한 내장 쓰기 도구 호출을 직렬화한다(경합 지점은
+        # `builtin_write_lock.py` 모듈 docstring).
+        #
+        # **timeout 미들웨어보다 뒤(=안쪽)에 둔다.** langchain의 `wrap_tool_call`
+        # 체이닝은 목록 앞쪽이 바깥쪽이라, 이 순서라야 "락을 쥔 채 timeout을
+        # 기다리는" 조합이 안 생긴다.
+        #
+        # `context`가 없으면 잠글 팀·프로젝트를 특정할 수 없어 건너뛴다.
         if context is not None:
             middleware.append(build_builtin_write_lock(context=context))
         return middleware
@@ -159,13 +108,11 @@ class MiddlewareFactory:
     def build_for_general_purpose(self) -> list:
         """general-purpose의 모델·Tool 호출 상한을 만든다.
 
-        **MCP timeout 미들웨어를 여기엔 안 붙인다**(2026-08-21, A-1). 2026-08-20
-        (juyeon, GP 피드백 검토 §3 채택 3)부터 GP는 `side_effect=False` 도구만
-        물려받는데(`factory.py`의 `gp_read_only_tools`), MCP 도구는
-        `tools/adapters.py`가 전부 `side_effect=True`로 고정한다 — 즉 GP에는
-        MCP 도구가 애초에 하나도 안 들어간다. 여기 붙이면 영원히 아무것도
-        안 하는 죽은 미들웨어가 된다. GP가 MCP를 쓸 수 있게 바뀌면 그때
-        `build()`와 같은 줄을 여기에도 추가하면 된다.
+        **MCP timeout 미들웨어를 여기엔 안 붙인다.** GP는 `side_effect=False`
+        도구만 물려받는데(`factory.py`의 `gp_read_only_tools`) MCP 도구는
+        `tools/adapters.py`가 전부 `side_effect=True`로 고정하므로, GP에는 MCP
+        도구가 하나도 안 들어간다 — 붙여 봐야 죽은 미들웨어다. GP가 MCP를 쓰게
+        되면 그때 `build()`와 같은 줄을 추가하면 된다.
         """
         limits = self.runtime_policy.limits_for_general_purpose()
         return [

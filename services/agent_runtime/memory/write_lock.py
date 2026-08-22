@@ -1,31 +1,21 @@
 """`/memories/users/`(StoreBackend) 쓰기를 Postgres advisory lock으로 직렬화한다.
 
 정본: `docs/작업기록/Deep_Agents/2026-08-19_01_실행_안정성_설계.md` §4
-("병렬 Tool 호출의 동시 쓰기"). 실제 설치된 `deepagents==0.7.5`의
-`StoreBackend.write()`/`edit()`(`deepagents/backends/store.py` 실제
-소스로 확인)는 `store.get()`으로 읽고 → 파이썬에서 새 내용을 계산하고 →
-`store.put()`으로 쓰는 읽기-수정-쓰기를 그대로 한다 — 락도 버전 체크(CAS)도
-없다. `ToolNode`가 한 super-step 안의 여러 tool_call을 스레드풀로 동시에
-실행하는 것까지 겹치면, 같은 파일을 두 `edit_file`이 동시에 건드릴 때
-나중에 `put()`한 쪽이 먼저 쓴 내용을 조용히 덮어쓴다 — "기다린다"가 아니라
-"진다"에 가깝다. Postgres `store` 테이블 자체에도 버전 컬럼이 없어
-낙관적 동시성 제어를 얹을 자리가 없고, deepagents를 patch하는 건 이
-프로젝트 원칙(근거 없는 vendored 코드 수정 금지)에 어긋나 프레임워크
-밖에서 직렬화한다.
 
-**적용 범위**: `StateBackend`(그 외 모든 파일 경로)는 대상이 아니다 —
-그래프 State는 LangGraph 자신이 super-step 끝에 한 번에 반영해서, 여기서
-겨냥하는 `StoreBackend.put()` 경쟁과는 다른 메커니즘이다. 지금 이
-프로젝트에 남은 StoreBackend 경로는 `/memories/users/` 하나뿐이다
-(`memory/backend.py` 모듈 docstring — 팀 공유 메모리 제거 이후).
-`guarded_prefix`를 넘기면 그 기준으로 바뀐다(`write_guard.py`와 같은
-패턴).
+**막는 경합**: `StoreBackend.write()`/`edit()`는 `store.get()` → 파이썬에서 계산
+→ `store.put()`의 읽기-수정-쓰기를 락도 CAS도 없이 한다. `ToolNode`가 한
+super-step의 여러 tool_call을 스레드풀로 동시에 실행하므로, 같은 파일을 두
+`edit_file`이 건드리면 나중에 `put()`한 쪽이 먼저 쓴 내용을 조용히 덮어쓴다.
 
-`delete`도 대상에 포함한다(설계 문서 §4의 명시적 언급) — 지금은
-`runtime_policy.DEFAULT_EXCLUDED_BUILTIN_TOOLS`가 `delete` 자체를 아예
-노출하지 않아 사실상 호출될 일이 없지만, `_to_langchain_tool`의 역할
-재검사(factory.py)와 같은 이유로 그 정책이 나중에 바뀌어도 안전하도록
-남겨 둔다.
+`store` 테이블에 버전 컬럼이 없어 낙관적 동시성 제어를 얹을 자리가 없고,
+deepagents를 patch하는 건 프로젝트 원칙에 어긋나 프레임워크 밖에서 직렬화한다.
+
+**적용 범위**: `StateBackend`는 대상이 아니다 — 그래프 State는 LangGraph가
+super-step 끝에 한 번에 반영해서 다른 메커니즘이다. 지금 남은 StoreBackend
+경로는 `/memories/users/` 하나뿐이며, `guarded_prefix`로 바꿀 수 있다.
+
+`delete`도 대상에 넣는다. 지금은 `DEFAULT_EXCLUDED_BUILTIN_TOOLS`가 노출 자체를
+막아 호출될 일이 없지만, 그 정책이 바뀌어도 안전하도록 남겨 둔다.
 """
 
 from __future__ import annotations
@@ -51,15 +41,12 @@ class MemoryWriteLockMiddleware(AgentMiddleware):
     """`namespace`+`file_path`로 Postgres advisory transaction lock을 잡고
     실제 handler를 부른다.
 
-    `pg_advisory_xact_lock(hashtext(...))`는 이 저장소가 이미 쓰는 패턴을
-    그대로 재사용한다(`backend/db/codes.py::next_short_code`). 같은
-    트랜잭션 안에서 잡는 락이라 handler가 끝나면(성공이든 예외든) 이 락
-    전용 연결이 commit/rollback되며 트랜잭션이 끝나 락도 함께 풀린다 —
-    별도 해제 로직이 필요 없다.
+    `pg_advisory_xact_lock(hashtext(...))`는 저장소가 이미 쓰는 패턴이다
+    (`backend/db/codes.py::next_short_code`). 트랜잭션 락이라 handler가 끝나면
+    성공이든 예외든 연결이 commit/rollback되며 락도 함께 풀린다 — 별도 해제
+    로직이 필요 없다.
 
-    Root에만 붙인다 — `write_guard.py`와 같은 이유(Child는 진짜
-    `StoreBackend`가 없어 `/memories/users/`에 뭘 써도 실제 저장이 안
-    된다, `memory/backend.py` 모듈 docstring 참고). 배선은 `factory.py`의
+    Root에만 붙인다 — `write_guard.py`와 같은 이유다. 배선은 `factory.py`의
     `memory_provider is not None` 분기.
     """
 
@@ -83,10 +70,9 @@ class MemoryWriteLockMiddleware(AgentMiddleware):
         args = request.tool_call["args"]
         raw_path = args.get("file_path", "")
         try:
-            # `write_guard.py`와 같은 이유로 같은 정규화 함수를 재사용한다 —
-            # 표기만 다르고 실제로는 guarded_prefix로 떨어지는 경로
-            # (`"memories/users/..."`, `"/memories//users/..."` 등)를
-            # 놓치지 않기 위해서다.
+            # `write_guard.py`와 같은 정규화 함수를 재사용한다 — 표기만 다르고
+            # 실제로는 guarded_prefix로 떨어지는 경로(`"memories/users/..."`,
+            # `"/memories//users/..."`)를 놓치지 않기 위해서다.
             normalized_path = validate_path(raw_path)
         except ValueError:
             # 경로 자체가 무효하면 이 미들웨어의 관심사가 아니다 — 도구

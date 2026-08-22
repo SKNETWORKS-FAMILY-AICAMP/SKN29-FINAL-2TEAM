@@ -54,17 +54,14 @@ class DependencyGraphSource:
                 return _team_dependency_graph(cursor, team_id=team_id)
 
 
-# §6순위(외부 Write Tool Idempotency)가 `_run(**kwargs)`까지 `tool_call_id`를
-# 실어 보내려고 쓰는 예약 키. 이 프로젝트 도구는 전부 `args_schema`가
-# Pydantic 모델이 아니라 `tool.input_schema`(원본 JSON Schema dict)라서
-# LangChain 표준 `InjectedToolCallId`가 못 먹힌다 — 실측(설치된
-# `langchain_core/tools/base.py`의 `_parse_input()`): `args_schema`가 dict면
-# `if isinstance(input_args, dict): return tool_input`으로 `InjectedToolCallId`
-# 스캔 자체를 건너뛰고 입력을 그대로 돌려준다. 아래 `_IdempotencyAwareTool`이
-# `BaseTool.run()`이 받는 `tool_call_id` kwarg를 가로채 `tool_input`(dict)
-# 복사본에 이 키로 얹어 두면, `_to_args_and_kwargs()`가 dict 입력을
-# `tool_input.copy()`로 그대로 kwargs화하기 때문에(같은 소스 실측) 이 키도
-# `_run(**kwargs)`까지 그대로 살아남는다.
+# 외부 Write Tool Idempotency가 `_run(**kwargs)`까지 `tool_call_id`를 실어
+# 보내려고 쓰는 예약 키.
+#
+# 이 프로젝트 도구는 `args_schema`가 Pydantic 모델이 아니라 원본 JSON Schema
+# dict라서 LangChain 표준 `InjectedToolCallId`가 안 먹는다 — `_parse_input()`이
+# dict 입력은 스캔 없이 그대로 돌려보낸다. 대신 아래 `_IdempotencyAwareTool`이
+# `tool_input` 복사본에 이 키를 얹으면, `_to_args_and_kwargs()`가 dict를 그대로
+# kwargs화하면서 `_run()`까지 살아남는다.
 _TOOL_CALL_ID_KWARG = "__langchain_tool_call_id__"
 
 
@@ -92,58 +89,42 @@ def _to_langchain_tool(
 ) -> StructuredTool:
     """Tool을 LangChain `StructuredTool`로 변환한다.
 
-    권한 확인은 **이 도구가 실제로 실행되는 시점**(`_run()` 호출마다)에만
-    한다 — 모델에게 무엇을 보여줄지(`build()`가 만드는 `langchain_tools`)는
-    2026-08-19부터 역할과 무관하다(아래 "왜 노출 시점엔 안 거르는가" 참고).
-    그래서 이 실행 시점 확인이 **유일한 방어선**이다 — `is_tool_allowed_for_role()`
-    가 여기서 `False`를 돌려주면 아래 `_run()`이 `ToolException`으로 사유를
-    말하고 끝낸다(대화는 안 끊긴다 — `_run()`의 그 분기 주석 참고).
+    권한 확인은 **이 도구가 실제로 실행되는 시점**(`_run()` 호출마다)에만 한다.
+    모델에게 무엇을 보여줄지는 역할과 무관하므로 이 실행 시점 확인이 **유일한
+    방어선**이다 — `is_tool_allowed_for_role()`이 `False`를 돌려주면 `_run()`이
+    `ToolException`으로 사유를 말하고 끝낸다(대화는 안 끊긴다).
 
-    **왜 노출 시점엔 안 거르는가**: 예전에는 `build()`가 `filter_tools_for_role()`
-    로 `side_effect=True` 도구를 `member`에게서 통째로 지워, 모델이 그 도구
-    존재 자체를 몰라 "그런 기능이 없다"고 답했다(버그 리포트, 2026-08-19) —
-    실제로는 권한이 없을 뿐인데 화면엔 "승인 필요"라고만 적혀 있어 팀장은
-    "팀원이 쓰면 승인 카드가 뜨겠지"라고 오해했다. 이제 모델은 도구 존재를
-    항상 알고, 실행하려 하면 이 함수의 `_run()`이 그 자리에서 사유를 말해
-    준다 — 존재를 숨기는 대신 이유를 알려주는 쪽으로 바꿨다.
+    **노출 시점에는 거르지 않는다.** 목록에서 지우면 모델이 도구 존재 자체를
+    몰라 "그런 기능이 없다"고 답한다 — 실제로는 권한이 없을 뿐인데. 존재를
+    숨기는 대신 실행하려 할 때 이유를 알려준다.
     """
 
     def _run(**kwargs: Any) -> Any:
-        # §6순위(외부 Write Tool Idempotency) — `_IdempotencyAwareTool.run()`이
-        # 실어 보낸 값. RBAC 검사보다 먼저 뗀다 — 권한이 없어 막힐 도구라도
-        # `tool.handler(**resolved)`에 이 예약 키가 그대로 흘러들면 안 된다.
+        # `_IdempotencyAwareTool.run()`이 실어 보낸 값. RBAC 검사보다 먼저 뗀다 —
+        # 권한이 없어 막힐 도구라도 이 예약 키가 `tool.handler()`로 흘러들면 안 된다.
         langchain_tool_call_id = kwargs.pop(_TOOL_CALL_ID_KWARG, None)
 
         if not runtime_policy.is_tool_allowed_for_role(
             side_effect=tool.side_effect, account_role=context.role
         ):
-            # **말할 수 있는 실패로 바꿨다**(2026-08-19, 위 함수 docstring
-            # "왜 노출 시점엔 안 거르는가" 참고). 이 도구는 이제 역할과 무관하게
-            # 항상 모델에게 노출되므로, member가 승인 필요 도구를 부르는 건
-            # 방어선이 뚫린 이상 상황이 아니라 흔히 일어나는 정상 경로다.
-            # 예전처럼 대화를 통째로 끊으면(`ToolPermissionError` → 크래시)
-            # "권한이 없다"는 사유가 사라진 채 "요청을 끝내지 못했습니다"만
-            # 남는다 — 아래 handler 실패(`ToolInputError` 등)와 같은 방식으로
-            # `ToolException`을 던져 모델이 사유를 그대로 사람에게 전하게 한다.
-            # 2026-08-20 — 기본 정책(`DEFAULT_WRITE_TOOL_ALLOWED_ROLES`)은
-            # `leader`/`member` 둘 다 통과시키므로, 지금 정의된 두 역할로는
-            # 이 분기가 평소엔 안 걸린다. `write_tool_allowed_roles`를 배포
-            # 시점에 좁히거나(예: `frozenset({"leader"})`) 나중에 세 번째
-            # 역할이 추가될 때를 위한 방어선으로 남겨 둔다 — 지운 적 없다.
+            # 대화를 끊지 않고 말할 수 있는 실패로 돌려준다. 도구가 역할과 무관하게
+            # 항상 노출되므로 권한 없는 호출은 이상 상황이 아니라 정상 경로다 —
+            # 크래시로 끝내면 "권한이 없다"는 사유가 사라지고 "요청을 끝내지
+            # 못했습니다"만 남는다.
+            #
+            # 기본 정책(`DEFAULT_WRITE_TOOL_ALLOWED_ROLES`)은 leader/member 둘 다
+            # 통과시키므로 지금 정의된 두 역할로는 이 분기가 안 걸린다.
+            # `write_tool_allowed_roles`를 좁히거나 역할이 늘 때를 위한 방어선이다.
             raise ToolException(
                 f"'{context.role}' 역할은 '{tool.ref}' 도구를 실행할 권한이 없습니다. 팀장에게 요청해 주세요."
             )
 
-        # §6순위(외부 Write Tool Idempotency) — HITL resume(§0순위)이나 checkpoint
-        # 재시도로 같은 super-step이 다시 돌아도, jira_create_issues 같은
-        # side_effect 도구가 진짜로 두 번 실행되지 않게 실행 직전에 이미 성공한
-        # 같은 (run_id, langchain_tool_call_id) 결과가 있는지 먼저 본다.
-        # side_effect가 아닌(읽기) 도구는 두 번 실행돼도 부작용이 없으므로
-        # 대상이 아니다. `context.run_id`/`langchain_tool_call_id` 둘 다 있어야
-        # 확인한다 — 테스트처럼 run_id 없이 도구를 직접 부르는 호출자를 깨지
-        # 않으려고(그런 호출은 애초에 idempotency가 필요한 실행 경로가 아니다).
-        # run_id로 스코프를 잡는 이유, tool_call과 별도 표를 쓰는 이유는
-        # DB/migrations/2026-08-19_tool_call_idempotency.sql 참고.
+        # HITL resume이나 checkpoint 재시도로 같은 super-step이 다시 돌아도
+        # `jira_create_issues` 같은 side_effect 도구가 두 번 실행되지 않게, 같은
+        # (run_id, langchain_tool_call_id)로 이미 성공한 결과가 있는지 먼저 본다.
+        # 읽기 도구는 두 번 돌아도 무해하므로 대상이 아니다. 둘 다 있을 때만
+        # 확인한다 — run_id 없이 도구를 직접 부르는 호출자(테스트)를 깨지 않는다.
+        # 표 설계 근거: DB/migrations/2026-08-19_tool_call_idempotency.sql
         idempotency_scope = (
             tool.side_effect and langchain_tool_call_id and context.run_id
         )
@@ -163,18 +144,12 @@ def _to_langchain_tool(
                 )
                 return cached
 
-        # 2026-08-21, 병렬실행 Phase 3 — MCP 호출이 "지금 도는 중"이라고
-        # 표시한다(`2026-08-21_04` §3.1). 승인 카드가 이 표시를 보고 "같은
-        # 서버에 다른 실행이 진행 중"을 알린다. 직렬화가 아니라 경고라서,
-        # 여기서 **기다리는 코드는 하나도 없다** — 넣고 바로 빠져나온다.
+        # MCP 호출이 "지금 도는 중"이라고 표시한다(`2026-08-21_04` §3.1). 승인
+        # 카드가 이 표시를 보고 "같은 서버에 다른 실행이 진행 중"을 알린다.
+        # 직렬화가 아니라 경고라서 여기서 기다리는 코드는 없다.
         #
         # 이 자리인 이유: raw MCP handler(`tools/adapters.py`)에는 run_id도
         # tool_call_id도 안 넘어간다. idempotency 기록과 같은 자리를 쓴다.
-        #
-        # **timeout이 나도 이 `finally`는 그 호출의 진짜 끝에 돈다** — 우리
-        # timeout 미들웨어는 기다리기를 포기할 뿐 이 스레드를 못 죽이므로,
-        # 여기까지 계속 내려와서 자기 표시를 지운다. 그래야 우리가 포기한
-        # 뒤에도 "지금 도는 중" 목록이 정확하다.
         active_scope = (
             tool.ref.startswith(MCP_TOOL_REF_PREFIX)
             and langchain_tool_call_id
@@ -194,37 +169,22 @@ def _to_langchain_tool(
         try:
             result = tool.handler(**resolved)
         except Exception as exc:  # noqa: BLE001 - 도구 실패로 그래프 실행 전체를 끝내지 않는다
-            # 2026-08-18 추가 — 실측으로 드러난 문제: `langgraph.prebuilt.ToolNode`의
-            # 기본 `handle_tool_errors`(langchain.agents.factory.create_agent()가
-            # 내부적으로 만드는 ToolNode라 우리가 값을 못 넣는다, 실측: langchain/
-            # deepagents 소스 어디에도 `handle_tool_errors` 파라미터 자체가 없음)는
-            # `langchain_core`의 `ToolInvocationError`(인자 스키마 검증 실패)만
-            # 잡고, 그 외 예외는 전부 다시 raise한다 — `ToolInputError`/
-            # `PermissionDenied`처럼 이 저장소가 "모델에게 그대로 보여줘도 되는
-            # 실패"로 설계해 둔 예외까지 그래프 실행 전체를 죽인다(실제 사용자
-            # 질의로 재현: `agent_user_query_tool_check.py` 시나리오 1/4/5가
-            # `project_id`를 아직 못 정한 채 `task_list`/`task_extraction`을
-            # 부르자 `ToolInputError`로 전체 실행이 즉시 크래시했다 — 모델이 이
-            # 오류를 보고 "그럼 project_list부터 부르자"로 스스로 고칠 기회 자체가
-            # 없었다).
+            # `ToolNode`의 기본 `handle_tool_errors`는 `ToolInvocationError`(인자
+            # 스키마 검증 실패)만 잡고 나머지는 다시 raise한다. `create_agent()`가
+            # 내부에서 만드는 ToolNode라 우리가 값을 넣을 수도 없다. 그대로 두면
+            # `ToolInputError`처럼 "모델에게 보여줘도 되는 실패"까지 그래프 실행
+            # 전체를 죽여서, 모델이 오류를 보고 스스로 고칠 기회가 사라진다.
             #
-            # 레거시 `services/harness/runner.py`가 이미 같은 문제를 겪고 정한
-            # 답을 그대로 재사용한다 — 새로 판단하지 않는다. `SPEAKABLE_ERRORS`
-            # (`ToolInputError`/`RepositoryError`/`OAuthError`)는 그 모듈이 "이
-            # 예외의 메시지는 사람에게 그대로 보여도 된다"고 이미 결정해 둔
-            # 목록이고(`ToolInputError`의 클래스 docstring도 동일하게 말한다:
-            # "사람에게 그대로 보여도 되는 실패... 이 예외의 메시지만 화면으로
-            # 나간다"), `error_code_of()`도 MCP 에러의 code vs 그 외 클래스 이름을
-            # 가르는 판단이 이미 있던 자리다("같은 판단을 하던 자리가 셋이었다.
-            # 여기 하나로 둔다" — trace.py).
+            # `SPEAKABLE_ERRORS`(`ToolInputError`/`RepositoryError`/`OAuthError`)는
+            # `services/harness/runner.py`가 "이 예외 메시지는 사람에게 그대로 보여도
+            # 된다"고 정해 둔 목록이고, `error_code_of()`는 MCP 에러 code와 그 외
+            # 클래스 이름을 가르는 자리다. 여기서 새로 판단하지 않고 재사용한다.
             #
-            # **어느 쪽이든 정상 반환이 아니라 `ToolException`으로 던진다**
-            # (2026-08-19 병합 정리). 그냥 `return` 하면 `tool_completed.status`가
-            # OK로 남아 진짜 장애가 "도구가 뭐라고 했다"로 둔갑한다. `ToolException`은
-            # `handle_tool_error=True`와 짝이라(아래 `from_function` 참고)
-            # `BaseTool.run()`이 잡아 문자열로 모델에 넘기면서 `status="error"`는
-            # 그대로 지킨다 — 대화가 안 끊기는 것과 FAILED 표시가 정확한 것, 둘 다
-            # 챙긴다.
+            # **어느 쪽이든 정상 반환이 아니라 `ToolException`으로 던진다.** 그냥
+            # `return` 하면 `tool_completed.status`가 OK로 남아 진짜 장애가 "도구가
+            # 뭐라고 했다"로 둔갑한다. `handle_tool_error=True`와 짝이라
+            # `BaseTool.run()`이 문자열로 모델에 넘기면서 `status="error"`는 지킨다.
+            #
             # 지연 import — `services.harness.runner`의 무거운 의존성 사슬을 이
             # 모듈이 항상 끌고 들어오지 않게 한다.
             from services.harness.runner import SPEAKABLE_ERRORS
@@ -243,13 +203,10 @@ def _to_langchain_tool(
             logger.exception("도구 실행 실패: %s", tool.ref)
             raise ToolException(f"도구 실행 실패: {error_code_of(exc)}") from exc
         else:
-            # §6순위 — 방금 실행이 성공했다. 나중에 같은 (run_id,
-            # langchain_tool_call_id)로 재시도가 들어오면 다시 실행하지 않고
-            # 이 결과를 그대로 돌려줄 수 있게 남겨 둔다. 결과가 문자열이
-            # 아닐 수도 있어(dict 등) `str()`로 통일한다 — 어차피
-            # `BaseTool.run()`도 `ToolMessage.content`를 만들 때 결국 문자열로
-            # 바꾸므로, 재생 시점에 원래 타입 그대로 못 돌려줘도 모델이 보는
-            # 최종 내용은 같다.
+            # 같은 (run_id, langchain_tool_call_id)로 재시도가 들어오면 다시
+            # 실행하지 않고 이 결과를 돌려줄 수 있게 남긴다. `BaseTool.run()`도
+            # `ToolMessage.content`를 만들 때 결국 문자열로 바꾸므로, `str()`로
+            # 통일해도 모델이 보는 최종 내용은 같다.
             if idempotency_scope:
                 from backend.db.agent_platform import ToolCallIdempotencyRepository
 
@@ -261,13 +218,14 @@ def _to_langchain_tool(
                 )
             return result
         finally:
-            # 성공이든 실패든 "도는 중" 표시는 지운다(2026-08-21). `finally`인
-            # 이유: 위 `except`가 `ToolException`으로 바꿔 다시 raise하므로
-            # `else`에만 두면 실패한 호출의 표시가 영원히 남는다.
+            # 성공이든 실패든 "도는 중" 표시를 지운다. `else`가 아니라 `finally`인
+            # 이유: 위 `except`가 다시 raise하므로 실패한 호출의 표시가 영원히
+            # 남는다. timeout이 나도 여기까지 온다 — timeout 미들웨어는 기다리기를
+            # 포기할 뿐 이 스레드를 죽이지 못한다.
             #
-            # 지우기가 실패해도 도구 실행 결과를 뒤집지 않는다 — 이건 경고용
-            # 부가 정보지 실행의 일부가 아니다. 남은 행은 조회 시점의
-            # stale 필터(gunicorn timeout 기준)가 결국 걸러 낸다.
+            # 지우기가 실패해도 도구 실행 결과를 뒤집지 않는다 — 경고용 부가
+            # 정보지 실행의 일부가 아니다. 남은 행은 조회 시점의 stale 필터가
+            # 걸러 낸다.
             if active_scope:
                 from backend.db.agent_platform import McpCallNoteRepository
 
@@ -288,23 +246,14 @@ def _to_langchain_tool(
     return _IdempotencyAwareTool.from_function(
         func=_run,
         handle_tool_error=True,
-        # `tool.name`이 아니라 `tool.ref`다 — **실측으로 확인한 버그**(2026-08-14):
-        # `tool.name`은 `services/harness/registry.py`의 BUILTIN_TOOLS가 사람이
-        # 읽는 한국어 라벨로 채운다(예: "프로젝트 조회"). 이걸 LangChain
-        # `StructuredTool.name`(=OpenAI/Anthropic에 실제로 나가는 함수 이름)에
-        # 그대로 쓰면 OpenAI Responses API가 400으로 거절한다 — 함수 이름은
-        # `^[a-zA-Z0-9_-]+$`만 허용하는데 한국어·공백이 그 패턴을 못 넘는다
-        # (실제로 겪음: `Invalid 'tools[1].name': string does not match
-        # pattern`). 레거시 Harness(`services/harness/runner.py`
-        # `model_name_for()`)는 이미 2026-08-12에 같은 문제를 `tool.ref` 사용 +
-        # 콜론 치환(`agent:`/`mcp:` 접두사 대비)으로 고쳐 놓았었다 — 그
-        # 선례에서 "무엇이 API로 나가는 이름이어야 하는가"만 가져왔다(`ref`).
-        # MCP를 실제로 연결하면서(2026-08-14, ⑧) 콜론 치환도 옮겼다 —
-        # `model_safe_tool_name()`(tools/loader.py)이 레거시 `model_name_for()`와
-        # 같은 규칙(`:` -> `__`)으로 바꾼다. 되돌리는 쪽
-        # (`tool_ref_from_model_name()`)은 `events.py`가 모델의 tool_calls에서
-        # tool_ref를 다시 읽어낼 때 쓴다 — 안 옮기면 실행 로그
-        # (`tool_call.tool_ref`)에 `mcp__MT001`처럼 망가진 값이 남는다.
+        # `tool.name`이 아니라 `tool.ref`다. `tool.name`은 `harness/registry.py`의
+        # BUILTIN_TOOLS가 채우는 한국어 라벨(예: "프로젝트 조회")이라, 모델에 나가는
+        # 함수 이름으로 쓰면 OpenAI가 400으로 거절한다 — 함수 이름은
+        # `^[a-zA-Z0-9_-]+$`만 허용한다. `model_safe_tool_name()`(tools/loader.py)이
+        # 콜론까지 치환한다(`:` → `__`, `agent:`/`mcp:` 접두사 대비). 되돌리는
+        # `tool_ref_from_model_name()`은 `events.py`가 모델의 tool_calls에서
+        # tool_ref를 다시 읽을 때 쓴다 — 없으면 실행 로그에 `mcp__MT001`처럼
+        # 망가진 값이 남는다.
         name=model_safe_tool_name(tool.ref),
         description=tool.description,
         args_schema=tool.input_schema,
@@ -335,14 +284,11 @@ class AgentRuntimeFactory:
         self.middleware_factory = middleware_factory
         self.runtime_policy = runtime_policy
         self.prompt_assembler = prompt_assembler
-        # 기본값 None 허용 — 장기 메모리 없이 쓰던 기존 호출자(테스트 등)를
-        # 깨지 않으려고(2026-08-15 추가). None이면 build()가 memory/backend/store
-        # 없이 예전과 동일하게 돈다.
+        # None이면 `build()`가 memory/backend/store 없이 돈다 — 장기 메모리 없이
+        # 쓰는 호출자(테스트 등)를 위한 것이다.
         self.memory_provider = memory_provider
-        # memory_provider와 같은 이유로 기본값 None 허용(2026-08-18 추가). None이면
-        # build()가 checkpointer 없이 예전과 동일하게 돈다 — 이 경우
-        # `stream_adapter.py`도 예전처럼 매 턴 conversation_messages를 그대로
-        # 붙이는 경로로 돈다(§5 Phase 1, `stream_adapter.py` docstring 참고).
+        # None이면 `build()`가 checkpointer 없이 돌고, `stream_adapter.py`도 매 턴
+        # conversation_messages를 그대로 붙이는 경로를 탄다(그쪽 docstring 참고).
         self.checkpointer_provider = checkpointer_provider
 
     def build(
@@ -356,36 +302,23 @@ class AgentRuntimeFactory:
         """`(컴파일된 graph, 이 실행이 실제로 사용한 모델 설정, Child별 resolved_model)`을
         반환한다.
 
-        2026-08-19, §4순위(Run Snapshot) 추가 — 이전에는 graph만 반환하고
-        `resolved_model`(아래)은 이 메서드 안에서만 쓰고 버렸다. 호출자
-        (`executor.py`)가 `agent_run.resolved_provider`/`resolved_endpoint_hash`
-        로 남기려면 이 값이 밖으로 나가야 한다(정본:
-        `2026-08-19_01_실행_안정성_설계.md` §1 — "팀 커스텀 엔드포인트는
-        같은 agent_version_id로 실행해도 언제든 바뀔 수 있는데, 실제로
-        어느 서버로 요청이 나갔는지가 지금까지 실행 로그에 안 남았다").
+        `resolved_model`을 밖으로 내보내는 이유: 팀 커스텀 엔드포인트는 같은
+        agent_version_id로 실행해도 바뀔 수 있어서, 호출자(`executor.py`)가
+        `agent_run.resolved_provider`/`resolved_endpoint_hash`에 실제로 어느
+        서버로 나갔는지를 남긴다. 정본: `2026-08-19_01_실행_안정성_설계.md` §1.
 
-        2026-08-19, §10순위(Child Run Snapshot) 추가 — 세 번째 반환값
-        `child_resolved_models`(`{alias: ResolvedModelConfig}`)는 §4순위가
-        `[0]`으로 버렸던 Child 자신의 resolved_model을 Root `build()` 호출
-        시점에 alias별로 모아 둔 것이다. Child 그래프는 `subagent_started`
-        런타임 이벤트 시점이 아니라 **이 메서드 호출 시점에 전부 한 번에**
-        컴파일된다(아래 `compiled_children` — Child는 자기 model을 Root와
-        다르게 가질 수 있다, `SubagentDefinition.model`) — 그래서 이벤트가
-        나올 때는 이미 늦고, 이렇게 미리 만들어 둔 lookup 표를
-        `events.py`의 `EventMapper.convert()`에 넘겨 `subagent_type`(=alias)
-        으로 찾아 쓰게 한다(`events.py`가 Child의 agent_id/agent_version_id/
-        subagent_name을 `definition.subagents`에서 alias로 찾는 것과
-        정확히 같은 패턴 — 모듈 docstring 참고). Child 자신을 짓는 재귀
-        호출(`self.build(..., allow_subagents=False)`)은 leaf라 항상 빈
-        딕셔너리를 돌려준다(MVP는 위임 1단계로 제한된다 —
-        `subagents/validation.py`/`loader.py`/`subagents/builder.py`가 3중
-        강제).
+        `child_resolved_models`(`{alias: ResolvedModelConfig}`)는 Child별
+        resolved_model의 lookup 표다. Child 그래프는 `subagent_started` 이벤트
+        시점이 아니라 **이 메서드 호출 시점에 전부 한 번에** 컴파일되므로(아래
+        `compiled_children`), 이벤트가 날 때는 이미 늦다. `events.py`의
+        `EventMapper.convert()`가 `subagent_type`(=alias)으로 찾아 쓴다.
+        Child 자신을 짓는 재귀 호출은 leaf라 항상 빈 딕셔너리를 돌려준다
+        (위임 1단계 제한 — `subagents/validation.py`/`loader.py`/
+        `subagents/builder.py`가 3중으로 강제).
         """
-        # `allow_subagents`는 여기서 Root/Child 그래프 중 무엇을 지을지만
-        # 가른다(아래) — "이 Child가 이미 서브 에이전트를 갖고 있는가"
-        # 검사와는 무관하다. `validate_subagents()`는 그 검사를 항상 켜 둔다
-        # (2026-08-14 수정 — 예전에는 이 인자를 그 검사에도 같이 써서, Root를
-        # 지을 때(allow_subagents=True) 검사가 통째로 빠졌었다).
+        # `allow_subagents`는 Root/Child 그래프 중 무엇을 지을지만 가른다 —
+        # "이 Child가 이미 서브 에이전트를 갖고 있는가" 검사와는 무관하다.
+        # `validate_subagents()`는 그 검사를 항상 켜 둔다.
         validate_subagents(
             parent_agent_id=definition.agent_id,
             child_refs=subagent_references,
@@ -402,59 +335,32 @@ class AgentRuntimeFactory:
         tools = self.tool_loader.load(
             tool_refs=definition.tool_refs, context=context, agent_model=definition.model
         )
-        # **역할로 도구를 숨기지 않는다**(2026-08-19 정책 변경 — 지훈 확인).
-        # 예전엔 여기서 `filter_tools_for_role()`로 `side_effect=True` 도구를
-        # `member`에게서 통째로 지웠다 — 그러면 모델이 그 도구를 아예 받은 적이
-        # 없어서 "그런 기능이 없다"고 답했는데, 실제로는 권한이 없을 뿐이었다
-        # (버그 리포트: 「승인 필요가 붙어있는 툴에 대해서 에이전트가 툴이
-        # 존재하지 않는다고 판단」). 실행 허용 여부는 여전히
-        # `_to_langchain_tool()`의 `_run()`이 호출 시점에 `is_tool_allowed_for_role()`
-        # 로 확인한다 — 2026-08-20부터 기본 정책(`DEFAULT_WRITE_TOOL_ALLOWED_
-        # ROLES`)이 `leader`/`member` 둘 다 통과시키므로 지금은 통과하지만,
-        # 그 판단이 사라진 게 아니라 값이 바뀐 것뿐이다. 배포에서
-        # `write_tool_allowed_roles`를 좁히면(예: `frozenset({"leader"})`)
-        # 이 자리는 그대로 다시 막는다.
+        # **역할로 도구를 숨기지 않는다.** 목록에서 지우면 모델이 그 도구를 받은
+        # 적이 없어 "그런 기능이 없다"고 답한다. 실행 허용 여부는
+        # `_to_langchain_tool()`의 `_run()`이 호출 시점에
+        # `is_tool_allowed_for_role()`로 확인한다.
         langchain_tools = [
             _to_langchain_tool(t, context=context, runtime_policy=self.runtime_policy) for t in tools
         ]
 
-        # 2026-08-18, §5 Phase 7 — `interrupt_on`은 `checkpointer_provider`가
-        # 있을 때만 만든다. `HumanInTheLoopMiddleware`의 `interrupt()`는
-        # Checkpointer 없이는 재개가 안 되므로(계획 문서 §5 Phase 7: "Phase
-        # 1(Checkpointer) 완료 전에는 착수 불가"), Checkpointer가 없는 배포·
-        # 테스트에서까지 승인 대기를 걸면 재개할 방법이 없는 상태로 막히기만
-        # 한다. `tools`에서 `side_effect=True`고 **이 역할이 실행할 수 있는**
-        # 것만 뽑는다 — `langchain_tools`는 역할과 무관하게 전부 보여주지만,
-        # 승인 대기는 여전히 `is_tool_allowed_for_role()`을 기준으로 건다.
+        # `interrupt_on`은 `checkpointer_provider`가 있을 때만 만든다.
+        # `HumanInTheLoopMiddleware`의 `interrupt()`는 Checkpointer 없이는 재개가
+        # 안 되므로, 없는 배포·테스트에서 승인 대기를 걸면 풀 방법 없이 막힌다.
         #
-        # 2026-08-20, 사용자 요청("팀원이 자기 업무를 직접 등록할 수 있게") —
-        # 예전엔 이 판단이 `member`에서 항상 `False`라 승인 카드 자체가 안
-        # 떴다(팀원이 부르면 위 `_run()`에서 곧바로 `ToolException`으로 거부되니
-        # 승인 대기를 걸 이유가 없었다 — "승인 카드를 띄우면 부른 사람 본인이
-        # 눌러 승인해 버릴 수 있다"가 그때의 이유였다). 이제 `member`도
-        # `write_tool_allowed_roles`에 들어 있어 실행 자체가 허용되므로, **바로
-        # 그 이유로** 이 자리가 `member`의 호출도 자동으로 승인 대기에 넣는다 —
-        # `leader`가 원래 해 오던 자기 승인(HITL, "등록할까요?" 확인 카드 →
-        # 승인 버튼)과 같은 경로를 `member`도 그대로 탄다. 실행 허용과 승인
-        # 대기가 같은 함수 하나(`is_tool_allowed_for_role()`)를 보므로 둘이
-        # 어긋날 일이 없다 — "실행은 되는데 승인 카드가 안 뜨는" 조합은 이
-        # 구조에서 애초에 안 생긴다.
+        # `langchain_tools`는 역할과 무관하게 전부 노출하지만, 승인 대기는
+        # `is_tool_allowed_for_role()`을 기준으로 건다. 실행 허용과 승인 대기가
+        # 같은 함수를 보므로 "실행은 되는데 승인 카드가 안 뜨는" 조합은 안 생긴다.
         #
-        # Phase 0에서 확인한 값(`task_register`/`task_update`/
-        # `jira_create_issues`, MCP 도구 전부)을 하드코딩하지 않고 매 요청
-        # 시점의 실제 목록을 그대로 쓴다 — 팀마다 달라지는 MCP 도구나 나중에
-        # 추가될 side_effect 도구도 자동으로 포함된다.
+        # 도구 목록을 하드코딩하지 않고 매 요청 시점의 실제 목록을 쓴다 — 팀마다
+        # 다른 MCP 도구나 나중에 추가될 side_effect 도구도 자동으로 포함된다.
         #
-        # 2026-08-21, 병렬실행 Phase 3 — MCP 도구는 `True`(전부 허용) 대신
-        # `InterruptOnConfig`를 준다. `description` 콜백을 달아 승인 카드에
-        # "같은 서버에 다른 작업이 도는 중"·"이 도구가 방금 timeout났다" 같은
-        # 경고를 붙이기 위해서다(`hitl_warnings.py` 모듈 docstring). 내장
-        # 도구는 그대로 `True`다 — 그쪽은 우리가 코드를 아는 로컬 도구라
-        # 동시 실행을 lock으로 직렬화하지, 경고로 넘기지 않는다.
+        # MCP 도구만 `True` 대신 `InterruptOnConfig`를 준다. `description` 콜백으로
+        # 승인 카드에 "같은 서버에 다른 작업이 도는 중"·"이 도구가 방금 timeout났다"
+        # 같은 경고를 붙이기 위해서다(`hitl_warnings.py`). 내장 도구는 우리가 코드를
+        # 아는 로컬 도구라 동시 실행을 lock으로 직렬화하지, 경고로 넘기지 않는다.
         #
-        # `allowed_decisions`는 `True`가 만들어 주던 것과 같은 값을 그대로
-        # 적는다(실측: langchain `HumanInTheLoopMiddleware.__init__`이
-        # `True`를 `["approve", "edit", "reject", "respond"]`로 편다) — 값을
+        # `allowed_decisions`는 `True`가 펼쳐 주는 값과 같게 적는다
+        # (`HumanInTheLoopMiddleware.__init__`이 `True`를 이 네 개로 편다) —
         # 좁히면 지금 되던 승인·편집이 조용히 사라진다.
         interrupt_on: dict[str, Any] | None = None
         if self.checkpointer_provider is not None:
@@ -482,11 +388,10 @@ class AgentRuntimeFactory:
 
         custom_middleware = self.middleware_factory.build(definition=definition, context=context)
 
-        # 공통 Runtime Scaffold + Agent별 system_prompt(DB의 agent_versions.
-        # system_prompt, Builder가 작성한 그대로)를 실행 시점에 결합한다
-        # (services/agent_runtime/prompts.py 모듈 docstring — 저장 시점이 아니라
-        # 여기서 결합해야 공통 정책을 바꿀 때 기존 버전을 다시 발행하지 않아도
-        # 된다. 2026-08-14 추가).
+        # 공통 Runtime Scaffold + Agent별 system_prompt(`agent_versions.
+        # system_prompt`)를 실행 시점에 결합한다. 저장 시점이 아니라 여기서
+        # 결합해야 공통 정책을 바꿀 때 기존 버전을 다시 발행하지 않아도 된다
+        # (`prompts.py` 모듈 docstring).
         if not allow_subagents:
             # Child는 leaf다(1단계 위임 제한) — 자기 Child를 더 지을 수
             # 없으므로 `child_resolved_models`는 항상 빈 딕셔너리다.
@@ -498,8 +403,8 @@ class AgentRuntimeFactory:
                     ),
                     tools=langchain_tools,
                     middleware=custom_middleware,
-                    # 2026-08-18, §5 Phase 6/7 — Root와 같은 근거로 Child에도
-                    # 건다(두 근거 모두 create_child_graph() docstring 참고).
+                    # Root와 같은 근거로 Child에도 건다
+                    # (`create_child_graph()` docstring 참고).
                     fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
                     interrupt_on=interrupt_on,
                 ),
@@ -507,13 +412,10 @@ class AgentRuntimeFactory:
                 {},
             )
 
-        # 2026-08-19, §10순위 — Child 각각의 resolved_model을 alias로 모아
-        # 둔다(위 build() docstring 참고). `build_subagent()`가 요구하는
-        # `build_child_graph` 콜백은 `(AgentDefinition, RuntimeContext) -> Any`
-        # 두 인자만 받으므로, alias는 람다의 기본 인자로 미리 묶어 둔다 —
-        # 그냥 클로저로 `sub_def.alias`를 참조하면 파이썬의 흔한 반복문
-        # 클로저 지연 바인딩 문제(모든 람다가 마지막 `sub_def`를 보게 됨)에
-        # 걸린다.
+        # Child 각각의 resolved_model을 alias로 모아 둔다(위 docstring 참고).
+        # `build_child_graph` 콜백은 `(AgentDefinition, RuntimeContext)` 두 인자만
+        # 받으므로 alias는 람다 기본 인자로 묶는다 — 클로저로 `sub_def.alias`를
+        # 참조하면 지연 바인딩으로 모든 람다가 마지막 `sub_def`를 보게 된다.
         child_resolved_models: dict[str, "ResolvedModelConfig"] = {}
 
         def _build_child_graph(d: AgentDefinition, c: RuntimeContext, alias: str) -> Any:
@@ -531,17 +433,15 @@ class AgentRuntimeFactory:
             )
             for sub_def in definition.subagents
         ]
-        # 2026-08-20, GP 피드백 검토 §3 채택 3 — GP에게 `side_effect=True`인
-        # 도구(쓰기·전송·삭제)를 그대로 물려주지 않는다 — `tools`/
-        # `langchain_tools`는 같은 순서로 만들었으므로 `zip()`으로 짝지어
-        # `side_effect=False`인 것만 추린다(이미 위 `_to_langchain_tool()`
-        # 호출로 만든 것을 재사용 — 다시 변환할 필요 없다). 안 그러면 GP가
-        # Root와 똑같이 전체 도구를 상속했다(deepagents `graph.py`의
-        # `raw_subagent_tools = spec.get("tools") if "tools" in spec else
-        # tools` fallback — `build_general_purpose_spec()`가 `"tools"` 키를
-        # 안 만들면 Root 전체를 물려받는다). GP 자체는 Root마다 항상 붙는다
-        # — 켜고 끄는 스위치는 별도로 두지 않는다(GP가 조회 도구만 쓸 수
-        # 있어 위험하지 않으므로, 있으나 마나 한 선택지를 만들 이유가 없다).
+        # GP에게는 `side_effect=True` 도구(쓰기·전송·삭제)를 물려주지 않는다.
+        # `tools`/`langchain_tools`는 같은 순서라 `zip()`으로 짝지어 거른다.
+        #
+        # `"tools"` 키를 비우면 안 된다 — deepagents `graph.py`가
+        # `spec.get("tools") if "tools" in spec else tools`로 fallback해서 GP가
+        # Root 전체를 그대로 상속한다.
+        #
+        # GP는 Root마다 항상 붙는다. 조회 도구만 쓸 수 있어 위험하지 않으므로
+        # 켜고 끄는 스위치를 두지 않는다.
         gp_read_only_tools = [
             lt for t, lt in zip(tools, langchain_tools) if not t.side_effect
         ]
@@ -555,19 +455,12 @@ class AgentRuntimeFactory:
         )
 
         # Root에만 붙는 선택적 협력자들 — Child(위 allow_subagents=False 분기)는
-        # 둘 다 안 받는다. memory_provider가 None이면 memory/backend/store 없이,
-        # checkpointer_provider가 None이면 checkpointer 없이 예전과 동일하게 돈다.
+        # 둘 다 안 받는다.
         root_kwargs: dict[str, Any] = {}
-        # 2026-08-19, §1순위 — write_guard(`memory/write_guard.py`)는
-        # Root에만 붙는다. Child는 진짜 `StoreBackend`가 없어서(빈
-        # `StateBackend`로 떨어진다, `2026-08-15_02_장기메모리_설계.md` §2)
-        # `/memories/users/`에 뭘 써도 실제 저장이 안 되므로 필요 없다.
-        # `custom_middleware`는 Root/Child가 같은 리스트를 공유하므로(위
-        # `self.middleware_factory.build(...)` 결과) 거기 넣지 않고, 이미
-        # "memory_provider가 있을 때만 Root에 메모리 관련 값을 채우는" 이
-        # 조건 안에서 Root 전용 사본(`root_middleware`)을 따로 만든다 —
-        # memory_provider가 없으면 write_guard도 붙일 이유가 없다(막을
-        # 개인 장기 메모리 자체가 없다).
+        # write_guard(`memory/write_guard.py`)는 Root 전용이다. Child는 진짜
+        # `StoreBackend`가 없어(빈 `StateBackend`로 떨어진다) `/memories/users/`에
+        # 써도 저장이 안 되므로 막을 대상이 없다. `custom_middleware`는 Root/Child가
+        # 공유하는 리스트라 거기 넣지 않고 Root 전용 사본을 따로 만든다.
         root_middleware = custom_middleware
         if self.memory_provider is not None:
             root_kwargs.update(
@@ -578,37 +471,27 @@ class AgentRuntimeFactory:
                     account_id=context.account_id,
                 ),
                 store=self.memory_provider.store(),
-                # 2026-08-18, Phase 3(§4-8) — MemoryMiddleware.system_prompt에
-                # 라우팅 안내를 이어붙인다. create_root_graph()가 이 값으로
-                # 커스텀 MemoryMiddleware를 만들어 자동 생성분을 치환한다.
+                # `MemoryMiddleware.system_prompt`에 라우팅 안내를 이어붙인다.
+                # `create_root_graph()`가 이 값으로 커스텀 MemoryMiddleware를
+                # 만들어 자동 생성분을 치환한다.
                 memory_system_prompt=self.memory_provider.system_prompt(),
-                # 2026-08-19 — 팀 공유 메모리(`/memories/AGENTS.md`,
-                # `/memories/projects/*.md`)를 없애기로 하면서
-                # `build_filesystem_permissions(project_id=...)` 배선을 여기서
-                # 뺐다(정본: 2026-08-19_03_장기메모리_개인전용_최종구조.md §4).
-                # 그 규칙이 막던 "같은 팀 안에서 프로젝트 간 메모리 파일 접근"은
-                # 그 파일들 자체가 더 이상 팀·에이전트 공유 namespace(장기
-                # Store)에 안 가므로 애초에 발생할 수 없다 — 스레드마다 독립된
-                # State/checkpoint로 떨어져서, 다른 프로젝트 대화(=다른 스레드)
-                # 에서는 구조적으로 안 보인다(그 데이터 자체가 사라진다는
-                # 뜻은 아니다 — `memory/backend.py` 모듈 docstring 참고). 격리할
-                # 대상이 없어졌으니 이 규칙도 필요 없다.
-                # `services/agent_runtime/middleware/permissions.py`의
-                # `build_filesystem_permissions()` 자체는 코드로 남겨뒀다(다른
-                # 경로별 권한 제어가 필요해지면 재사용).
+                # 여기에 `build_filesystem_permissions(project_id=...)`는 배선하지
+                # 않는다. 메모리가 개인 전용이 되면서 프로젝트 간 접근 자체가
+                # 구조적으로 불가능해졌다 — 스레드마다 독립된 State/checkpoint로
+                # 떨어져 다른 대화에서는 안 보인다(`memory/backend.py` docstring).
+                # 정본: 2026-08-19_03_장기메모리_개인전용_최종구조.md §4.
+                # 함수 자체는 `middleware/permissions.py`에 남아 있다 — 경로별
+                # 권한 제어가 다시 필요해지면 재사용한다.
             )
-            # 2026-08-19, §5순위 — write_lock(`memory/write_lock.py`)도 같은
-            # 이유로 Root 전용이다(Child는 StoreBackend가 없어 락을 걸
-            # 대상이 없다). write_guard 다음에 둔다 — write_guard가 credential/
-            # PII/권한 서술을 이유로 이미 거부할 내용이면 Postgres 락을 잡을
-            # 필요조차 없다(거부는 handler 호출 전에 끝나므로, write_guard가
-            # write_lock보다 바깥쪽에 있어야 한다 — langchain의 wrap_tool_call
-            # 체이닝은 middleware 목록 앞쪽이 바깥쪽이다: `_chain_tool_call_wrappers`
-            # 실제 소스, "Request flows: first -> ... -> last -> tool"). namespace는
-            # 위 `self.memory_provider.backend(...)`가 쓰는 것과 같은
-            # `(team_id, agent_id, account_id)` 순서를 그대로 맞춘다 — 같은
-            # 계정이 다른 팀/에이전트로 옮기면 다른 namespace여야 하는 이유도
-            # 위 backend 호출과 동일하다.
+            # write_lock(`memory/write_lock.py`)도 같은 이유로 Root 전용이다.
+            #
+            # **순서가 중요하다** — write_guard가 먼저다. guard가 credential/PII/
+            # 권한 서술을 이유로 거부할 내용이면 Postgres 락을 잡을 필요조차 없다.
+            # langchain의 `wrap_tool_call` 체이닝은 목록 앞쪽이 바깥쪽이다
+            # (`_chain_tool_call_wrappers`: "Request flows: first -> ... -> tool").
+            #
+            # namespace는 위 `backend(...)` 호출과 같은
+            # `(team_id, agent_id, account_id)` 순서를 맞춘다.
             root_middleware = [
                 *custom_middleware,
                 build_memory_write_guard(),
@@ -628,11 +511,10 @@ class AgentRuntimeFactory:
                 tools=langchain_tools,
                 subagents=[gp_spec, *compiled_children],
                 middleware=root_middleware,
-                # 2026-08-18, §5 Phase 6 — memory_provider 유무와 무관하게 항상
-                # 건다(Filesystem Tool 노출 제한은 메모리 기능과 별개).
+                # memory_provider 유무와 무관하게 항상 건다 — Filesystem Tool
+                # 노출 제한은 메모리 기능과 별개다.
                 fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
-                # 2026-08-18, §5 Phase 7 — checkpointer_provider가 없으면 위에서
-                # None으로 남는다.
+                # checkpointer_provider가 없으면 위에서 None으로 남는다.
                 interrupt_on=interrupt_on,
                 **root_kwargs,
             ),

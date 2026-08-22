@@ -23,9 +23,9 @@ if TYPE_CHECKING:
     from langgraph.checkpoint.postgres import PostgresSaver
 
 _checkpointer: Any = None
-#: `PostgresSaver.from_conn_string()`가 돌려주는 컨텍스트 매니저 자체.
-#: `memory/store.py`의 `_store_cm`과 같은 이유로 보관한다(`__exit__`를 나중에
-#: 부를 일이 생기면 여기서 꺼내 쓴다 — 지금은 아무도 안 부른다).
+#: `PostgresSaver.from_conn_string()`가 돌려주는 컨텍스트 매니저. `__exit__`를
+#: 부를 일이 생기면 여기서 꺼내 쓴다 — 지금은 아무도 안 부른다
+#: (`memory/store.py`의 `_store_cm`과 같다).
 _checkpointer_cm: Any = None
 
 
@@ -43,10 +43,9 @@ def get_checkpointer() -> "PostgresSaver":
 
     _checkpointer_cm = PostgresSaver.from_conn_string(settings.RAW_DATABASE_URL)
     _checkpointer = _checkpointer_cm.__enter__()
-    # 멱등 — langgraph가 자기 테이블(checkpoints, checkpoint_blobs,
-    # checkpoint_writes 등)을 만든다. 이미 있으면 아무 것도 안 한다.
-    # `DB/schema.sql`이 관리하는 이 저장소의 다른 테이블과 달리, 이 테이블들은
-    # langgraph 라이브러리가 자체 관리한다(memory/store.py의 store 테이블과 동일).
+    # 멱등 — langgraph가 자기 테이블(checkpoints, checkpoint_blobs 등)을 만들고
+    # 이미 있으면 아무것도 안 한다. `DB/schema.sql`이 관리하는 다른 테이블과 달리
+    # 이것들은 langgraph 라이브러리가 자체 관리한다.
     _checkpointer.setup()
     return _checkpointer
 

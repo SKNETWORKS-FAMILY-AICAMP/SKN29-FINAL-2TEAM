@@ -22,9 +22,9 @@ if TYPE_CHECKING:
     from langgraph.store.postgres import PostgresStore
 
 _store: Any = None
-#: `PostgresStore.from_conn_string()`가 돌려주는 컨텍스트 매니저 자체.
-#: `__exit__`를 나중에 부를 일이 생기면(프로세스 종료 훅 등) 여기서 꺼내 쓴다 —
-#: 지금은 아무도 안 부른다(위 docstring의 "치명적이진 않지만" 부분).
+#: `PostgresStore.from_conn_string()`가 돌려주는 컨텍스트 매니저. `__exit__`를
+#: 부를 일이 생기면(프로세스 종료 훅 등) 여기서 꺼내 쓴다 — 지금은 아무도
+#: 안 부른다(위 docstring의 "치명적이진 않지만" 부분).
 _store_cm: Any = None
 
 
@@ -34,17 +34,16 @@ def get_memory_store() -> "PostgresStore":
     if _store is not None:
         return _store
 
-    # 지연 import — langgraph.store.postgres는 psycopg 커넥션 풀·langgraph
-    # 전체를 끌고 들어온다. 이 패키지의 다른 모듈들과 같은 이유로(compat/,
-    # tools/loader.py 등) 실제로 메모리를 쓰는 요청이 올 때만 부른다.
+    # 지연 import — `langgraph.store.postgres`는 psycopg 커넥션 풀과 langgraph
+    # 전체를 끌고 들어온다. 실제로 메모리를 쓰는 요청이 올 때만 부른다.
     from django.conf import settings
     from langgraph.store.postgres import PostgresStore
 
     _store_cm = PostgresStore.from_conn_string(settings.RAW_DATABASE_URL)
     _store = _store_cm.__enter__()
-    # 멱등 — langgraph가 자기 테이블(store, store_migrations 등)을 만든다.
-    # 이미 있으면 아무 것도 안 한다. `DB/schema.sql`이 관리하는 이 저장소의
-    # 다른 테이블과 달리, 이 테이블들은 langgraph 라이브러리가 자체 관리한다.
+    # 멱등 — langgraph가 자기 테이블(store, store_migrations 등)을 만들고 이미
+    # 있으면 아무것도 안 한다. `DB/schema.sql`이 관리하는 다른 테이블과 달리
+    # 이것들은 langgraph 라이브러리가 자체 관리한다.
     _store.setup()
     return _store
 
