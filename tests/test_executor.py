@@ -14,6 +14,7 @@ from services.agent_runtime.events import EVENT_AGENT_STARTED, EVENT_ERROR, EVEN
 from services.agent_runtime.exceptions import AgentBuildError, InvalidExecutionTargetError
 from services.agent_runtime.executor import AgentExecutor, validate_execution_target
 from services.agent_runtime.models.factory import ResolvedModelConfig
+from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 
 #: `_FakeFactory.build()`의 기본 `resolved_model`(§4순위, Run Snapshot) —
 #: 대부분의 executor 테스트는 이 값 자체에 관심이 없어서, 실제 provider
@@ -60,19 +61,41 @@ class _FakeLoader:
 
 
 class _FakeFactory:
-    def __init__(self, *, runtime="RUNTIME", resolved_model=None, error=None):
+    def __init__(
+        self, *, runtime="RUNTIME", resolved_model=None, child_resolved_models=None, error=None
+    ):
         self._runtime = runtime
         # 2026-08-19, §4순위(Run Snapshot) — 실제 `AgentRuntimeFactory.build()`가
-        # `(graph, resolved_model)` 튜플을 반환하도록 바뀐 것과 계약을 맞춘다.
+        # resolved_model을 함께 반환하도록 바뀐 것과 계약을 맞춘다.
+        #
+        # **2026-08-20에 3-tuple이 됐다**(`17e8c62`, §10 Child Run Snapshot —
+        # 세 번째 자리는 Child alias별 resolved_model dict라 `subagent_started`
+        # 이벤트에도 provider/endpoint_hash를 채울 수 있다). 이 가짜는 그때 같이
+        # 안 고쳐져서 2-tuple을 계속 돌려줬고, `executor.py`가 3개로 언패킹하는
+        # 순간 `ValueError: not enough values to unpack`으로 이 파일의 테스트가
+        # 통째로 죽어 있었다 — 2026-08-21에 맞춘다. 실제 서명의 정본은
+        # `services/agent_runtime/factory.py`의 `build()`다.
+        #
+        # (jihun·main 두 브랜치가 같은 버그를 각자 찾아 같은 모양으로 고쳤고,
+        #  2026-08-21 병합에서 주석만 하나로 합쳤다.)
+        #
+        # **가짜의 계약이 실물과 어긋나면 테스트는 실물이 아니라 가짜를
+        # 검증하게 된다.**
         self._resolved_model = resolved_model or _DEFAULT_RESOLVED_MODEL
+        self._child_resolved_models = child_resolved_models or {}
         self._error = error
         self.build_calls = []
+        # 2026-08-21, 병렬실행 Phase 1 — `executor.py`가 실행·재개 두 경로에서
+        # `self.factory.runtime_policy.max_concurrency`를 읽어
+        # `stream_adapter.stream()`에 넘긴다. 실물과 같은 자리에 같은 이름으로
+        # 있어야 이 가짜를 쓰는 테스트가 실물의 계약을 검증한다.
+        self.runtime_policy = RuntimeCapabilityPolicy()
 
     def build(self, *, definition, subagent_references, context):
         self.build_calls.append({"definition": definition, "context": context})
         if self._error:
             raise self._error
-        return self._runtime, self._resolved_model
+        return self._runtime, self._resolved_model, self._child_resolved_models
 
 
 class _FakeStreamAdapter:
@@ -91,9 +114,12 @@ class _FakeStreamAdapter:
         resume=None,
         callbacks=(),
         trace_metadata=None,
+        max_concurrency=None,
     ):
         # `callbacks`/`trace_metadata`는 2026-08-19 Langfuse 연동으로 늘었다
         # (`executor.py`가 항상 넘긴다 — 키가 없으면 각각 빈 시퀀스/`None`).
+        # `max_concurrency`는 2026-08-21 병렬실행 Phase 1로 늘었다(같은 이유로
+        # `executor.py`가 실행·재개 두 경로 모두에서 항상 넘긴다).
         # `user_input`은 재개(`resume()`) 호출에서는 안 넘어온다(§0순위 HITL
         # resume API). 실제 `DeepAgentStreamAdapter.stream()`과 시그니처를
         # 맞추지 않으면 `TypeError: unexpected keyword argument`로 이 테스트
@@ -107,6 +133,7 @@ class _FakeStreamAdapter:
                 "resume": resume,
                 "callbacks": callbacks,
                 "trace_metadata": trace_metadata,
+                "max_concurrency": max_concurrency,
             }
         )
         yield from self._raw_events
@@ -319,6 +346,52 @@ class ToolRefsOverrideTests(SimpleTestCase):
         self.assertEqual(factory.build_calls[0]["definition"].tool_refs, ())
 
 
+class MaxConcurrencyThreadingTests(SimpleTestCase):
+    """2026-08-21, 병렬실행 Phase 1 — 정책의 동시 실행 상한이 stream_adapter까지
+    실제로 도달하는지(`2026-08-20_02` §5.1).
+
+    여기서 끊기면 상한을 정해 놓고도 LangGraph는 무제한으로 돈다 — 값이
+    정책에 있다는 것만으로는 아무것도 보장되지 않는다.
+    """
+
+    def test_run_passes_the_policy_value_to_the_stream_adapter(self):
+        factory = _FakeFactory()
+        factory.runtime_policy = RuntimeCapabilityPolicy(max_concurrency=7)
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(
+            loader=_FakeLoader(), factory=factory, stream_adapter=stream_adapter
+        )
+
+        list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        self.assertEqual(stream_adapter.stream_calls[0]["max_concurrency"], 7)
+
+    def test_resume_also_passes_it(self):
+        """승인 후 한꺼번에 풀리는 복수 side-effect 호출이야말로 상한이 필요한
+        자리다(§5.1·§8) — 재개 경로가 빠지면 안 된다."""
+        factory = _FakeFactory()
+        factory.runtime_policy = RuntimeCapabilityPolicy(max_concurrency=5)
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(
+            loader=_FakeLoader(), factory=factory, stream_adapter=stream_adapter
+        )
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                decisions=[{"type": "approve"}],
+                context=_context(session_id="SESSION001"),
+            )
+        )
+
+        self.assertEqual(stream_adapter.stream_calls[0]["max_concurrency"], 5)
+
+
 class ConversationMessagesThreadingTests(SimpleTestCase):
     """apps/chat/api_views.py의 `_history()`가 만든 앞선 턴을 stream_adapter까지
     그대로 전달하는지 — 이게 없으면 새 엔진은 매 턴이 콜드 스타트다."""
@@ -440,6 +513,29 @@ class RunMidStreamFailureTests(SimpleTestCase):
         self.assertEqual(events[-1]["type"], EVENT_ERROR)
         self.assertTrue(events[-1]["complete"])
         self.assertNotIn("스트림 중 실패", str(events[-1]))
+
+    def test_error_event_carries_the_usage_spent_before_the_failure(self):
+        """실패해도 비용은 이미 나갔다(2026-08-21).
+
+        `error` 이벤트가 누계를 안 실으면 `tracing/`이 그 실행의 토큰을
+        `None`으로 닫아, 실패한 실행만 Usage 합계에서 조용히 빠진다.
+        """
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(error=RuntimeError("스트림 중 실패"))
+        executor = AgentExecutor(loader=loader, factory=factory, stream_adapter=stream_adapter)
+
+        events = list(
+            executor.run(
+                agent_id="AG001", agent_version_id="AV001", user_input="hi", context=_context()
+            )
+        )
+
+        # 모델을 한 번도 못 부르고 죽은 실행이라 누계는 비어 있다 — 그래도
+        # 칸 자체는 실려야 `tracing/`이 같은 규칙으로 적는다.
+        self.assertEqual(events[-1]["iterations"], 0)
+        self.assertIsNone(events[-1]["token_in"])
+        self.assertIsNone(events[-1]["token_out"])
 
 
 class ResumeTests(SimpleTestCase):

@@ -388,6 +388,14 @@ export function streamMessage(
   return streamNdjson<ChatEvent>(`/chat/sessions/${sessionId}/messages/`, token, { content }, onEvent, signal);
 }
 
+/** 호출 하나에 대한 승인·거절(2026-08-21, 병렬실행 Phase 2). */
+export interface ConfirmDecision {
+  /** 그 턴의 `action_requests` 배열에서의 위치. 같은 도구를 두 번 부를 수 있어
+   *  이름이 아니라 인덱스로 가리킨다. */
+  action_index: number;
+  type: 'approve' | 'reject';
+}
+
 /**
  * 확인 카드 승인 → 멈춘 실행을 이어 돌린다.
  *
@@ -396,6 +404,10 @@ export function streamMessage(
  * 그 값으로 외부 시스템이 바뀌므로 승인 게이트가 아무것도 막지 못한다.
  *
  * `selected`를 비우면(undefined) 전체 승인이다.
+ *
+ * `decisions`(2026-08-21, 병렬실행 Phase 2)를 주면 **호출별로** 승인·거절한다.
+ * 그 턴의 모든 호출을 빠짐없이 덮어야 한다 — 빠지면 서버가 400으로 거부한다
+ * (빠진 걸 조용히 승인하면 사용자가 안 본 호출이 실행되므로).
  */
 export function confirmMessage(
   token: string,
@@ -403,11 +415,15 @@ export function confirmMessage(
   selected: number[] | undefined,
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
+  decisions?: ConfirmDecision[],
 ) {
+  const body: Record<string, unknown> = {};
+  if (selected !== undefined) body.selected = selected;
+  if (decisions !== undefined) body.decisions = decisions;
   return streamNdjson<ChatEvent>(
     `/chat/sessions/${sessionId}/confirm/`,
     token,
-    selected === undefined ? {} : { selected },
+    body,
     onEvent,
     signal,
   );

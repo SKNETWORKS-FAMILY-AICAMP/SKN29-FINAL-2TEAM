@@ -21,6 +21,7 @@ class DeepAgentStreamAdapter:
         resume: dict[str, Any] | None = None,
         callbacks: Sequence[Any] = (),
         trace_metadata: dict[str, Any] | None = None,
+        max_concurrency: int | None = None,
     ) -> Iterator[Any]:
         """Root와 Child를 포함한 updates event를 3-tuple로 반환한다.
 
@@ -90,6 +91,17 @@ class DeepAgentStreamAdapter:
         대상에서 뺄 이유가 없다. 비어 있으면(키 없어서 Langfuse가 꺼진
         기본 상태) 아무 것도 안 붙는다 — `runtime.stream()` 호출 모양이
         이전과 완전히 같다.
+
+        `max_concurrency`는 2026-08-21 추가(병렬실행 Phase 1,
+        `2026-08-20_02_에이전트_병렬실행_설계.md` §5.1) — LangGraph config의
+        같은 이름 키로 그대로 실린다. 한 AIMessage에 tool call이 여러 개
+        있어도 executor가 이 수 이상을 동시에 실행하지 않고 나머지를
+        대기시킨다(실측: sync 경로는 `get_executor_for_config()`의
+        `ThreadPoolExecutor(max_workers=...)`, async 경로는
+        `AsyncBackgroundExecutor`의 `asyncio.Semaphore(...)`). 재개 경로에도
+        똑같이 붙인다 — 승인 후 풀리는 복수 side-effect 호출이야말로 상한이
+        필요한 자리다. `None`이면(안 넘긴 호출자) 아무 것도 안 붙어서
+        LangGraph 기본 동작(무제한)이 그대로 유지된다.
         """
         if resume is not None:
             if not thread_id:
@@ -100,8 +112,10 @@ class DeepAgentStreamAdapter:
                 "subgraphs": True,
                 "config": {"configurable": {"thread_id": thread_id}},
             }
+            config = stream_kwargs["config"]
+            if max_concurrency is not None:
+                config["max_concurrency"] = max_concurrency
             if callbacks or trace_metadata:
-                config = stream_kwargs["config"]
                 if callbacks:
                     config["callbacks"] = list(callbacks)
                 if trace_metadata:
@@ -121,6 +135,8 @@ class DeepAgentStreamAdapter:
         }
         if thread_id:
             stream_kwargs["config"] = {"configurable": {"thread_id": thread_id}}
+        if max_concurrency is not None:
+            stream_kwargs.setdefault("config", {})["max_concurrency"] = max_concurrency
         if callbacks or trace_metadata:
             config = stream_kwargs.setdefault("config", {})
             if callbacks:

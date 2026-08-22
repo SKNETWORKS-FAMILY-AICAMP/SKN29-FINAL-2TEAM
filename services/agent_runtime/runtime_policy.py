@@ -50,6 +50,46 @@ EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (
 # 없어진 게 아니다.
 DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader", "member"})
 
+# 2026-08-21, A-1 재설계 — MCP Tool 호출 하나에 적용하는 timeout(초).
+# 정본: `docs/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
+#
+# **2026-08-19의 전역 300초와는 다른 값이고 다른 근거다.** 그때는 모든 도구에
+# 같은 300초를 걸었고(`services/harness/runner.py`의 모델 호출 timeout을
+# 그대로 재사용), "복잡한 검색처럼 정당하게 오래 걸리는 작업까지 다 끊긴다"는
+# 이유로 `17e8c62`에서 되돌려졌다. 이번 값은 "MCP 도구가 보통 이 정도
+# 걸린다"는 추측이 아니다 — 그 질문은 자유 연결 MCP에서는 답할 수 없다
+# (`2026-08-20_01` §3). 대신 우리가 확실히 아는 값에서 역산한다:
+# `Dockerfile`의 gunicorn `--timeout 600`. 이걸 넘기면 우리가 뭘 하든
+# 워커가 SIGKILL되고 브라우저엔 `ERR_HTTP2_PROTOCOL_ERROR`만 남아 원인이
+# 어디에도 안 남는다(같은 파일 주석, 2026-08-18 QA에서 실제로 겪음).
+# 즉 이 값은 "정상 실행시간 추정"이 아니라 "gunicorn이 대신 죽이기 전에
+# 우리가 먼저 곱게 끊어서 최소한 에러 메시지는 남긴다"는 방어선이다.
+GUNICORN_WORKER_TIMEOUT_SECONDS = 600
+DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS = 480
+
+# 2026-08-21, 병렬실행 Phase 1 — 한 super-step에서 동시에 실행할 tool call 수.
+# 정본: `docs/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.1
+#
+# LangGraph `RunnableConfig`의 `max_concurrency`로 들어간다(실측: sync 경로는
+# `get_executor_for_config()`가 `ThreadPoolExecutor(max_workers=...)`로, async
+# 경로는 `AsyncBackgroundExecutor`가 `asyncio.Semaphore(...)`로 각각 이 값을
+# 읽는다). 호출을 버리는 게 아니라 상한만큼만 동시에 돌리고 나머지는
+# 대기시킨다.
+#
+# **잠정값이다(정직하게 기록)**: 설계 문서 §5.1이 "정확한 기본값은 실측 전에
+# 확정하지 않는다"고 못박아 뒀고, 부하 테스트는 아직 안 했다(Phase 4). 4를
+# 고른 근거는 "이게 최적"이 아니라 "무제한을 유한하게 만든다"는 것뿐이다 —
+# 이 값은 중첩된 Child 그래프에도 그대로 전파되므로 위임 깊이가 1단계로
+# 제한된 지금(`BuildDelegationDepthTests`) 한 요청의 최악은 4×4=16개다.
+# 설계 문서 §3.1이 "지금은 이 16개가 상한 없이 난다"를 문제로 든 바로 그
+# 숫자이며, 여기서는 그게 **상한**이 된다는 게 차이다.
+DEFAULT_MAX_CONCURRENCY = 4
+
+# override로도 넘을 수 없는 상한. gunicorn 한도(600초)에 최소 60초 여유를
+# 남긴다 — 정확히 600으로 잡으면 이 미들웨어가 끊기 전에 워커가 먼저 죽어서
+# 있으나 마나가 된다(위 주석의 실패 모드 그대로).
+MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS = GUNICORN_WORKER_TIMEOUT_SECONDS - 60
+
 
 @dataclass(frozen=True)
 class RoleLimits:
@@ -77,6 +117,20 @@ class RuntimeCapabilityPolicy:
         default_factory=lambda: DEFAULT_WRITE_TOOL_ALLOWED_ROLES
     )
 
+    # 2026-08-21, A-1 — MCP Tool 호출 timeout. 값의 근거는 위 상수 정의부
+    # 주석 참고. `mcp_tool_call_timeout_overrides`는 특정 MCP tool_ref만
+    # 다른 값을 쓰는 탈출구다 — 빈 dict(전부 기본값)로 시작한다. 미리 모든
+    # MCP 도구를 "빠름/느림"으로 분류하지 않고, 실제로 기본값 때문에 정상
+    # 작업이 끊긴다는 게 확인된 것만 나중에 여기 넣는다.
+    mcp_tool_call_timeout_seconds: float = DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS
+    mcp_tool_call_timeout_overrides: dict[str, float] = field(default_factory=dict)
+
+    # 2026-08-21, 병렬실행 Phase 1 — 한 super-step 동시 실행 상한. 값의 근거와
+    # "왜 잠정값인지"는 위 상수 정의부 주석 참고. `executor.py`가 이 값을
+    # `stream_adapter.stream(max_concurrency=...)`로 넘겨 LangGraph config에
+    # 실린다.
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY
+
     # general-purpose 전용 기본값.
     # 2026-08-19: 사용자 요청으로 50/100으로 올렸다(기존 6/12) — GP는
     # Root/Child와 달리 `agent_versions.max_iterations` 같은 에이전트별 설정
@@ -99,6 +153,27 @@ class RuntimeCapabilityPolicy:
     # 별도 결정 — 이번 변경 범위 밖).
     max_model_calls_ceiling: int = 50
     max_tool_calls_ceiling: int = 100
+
+    def timeout_for_mcp_tool(self, tool_ref: str) -> float:
+        """이 MCP `tool_ref`에 적용할 timeout(초).
+
+        `mcp_tool_call_timeout_overrides`에 등록된 값이 있으면 그 값,
+        없으면 `mcp_tool_call_timeout_seconds`(기본값)를 쓴다. 어느 쪽이든
+        `MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS`를 넘지 못한다 — 그 위로 올리면
+        gunicorn이 먼저 워커를 죽여서 이 timeout이 무의미해지기 때문이다
+        (상수 정의부 주석).
+
+        **MCP 도구 전용이다.** 내장 도구는 이 값을 쓰지 않는다 — 우리가 코드를
+        직접 쓰는 도구라 필요하면 도구 자신이 자기 timeout을 갖는 게 맞고
+        (`FilesystemMiddleware`의 `execute`가 이미 그렇다), 플랫폼이 또 다른
+        값을 얹으면 두 값이 어긋날 뿐이다(`2026-08-21_01` §3). 호출 측
+        (`middleware/tool_timeout.py`)이 MCP 여부를 판단해서 이 메서드를
+        MCP일 때만 부른다.
+        """
+        requested = self.mcp_tool_call_timeout_overrides.get(
+            tool_ref, self.mcp_tool_call_timeout_seconds
+        )
+        return min(requested, MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS)
 
     def limits_for_general_purpose(self) -> RoleLimits:
         """general-purpose에 적용할 상한. 방어선도 함께 적용된 최종값."""

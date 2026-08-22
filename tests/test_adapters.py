@@ -61,9 +61,13 @@ class RealRegistryShapeTests(SimpleTestCase):
     def test_real_registry_has_exactly_fifteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
-        # (2026-08-21 — 13은 이미 stale이었다: get_current_datetime이 2026-08-20에
-        # 추가되며 14가 됐는데 이 숫자가 같이 안 고쳐져 있었다. skill_register를
-        # 더하며 둘 다 바로잡는다.)
+        #
+        # 2026-08-20에 `get_current_datetime`이 추가되며 13 → 14가 됐는데
+        # (`tools/adapters.py` 모듈 docstring은 그때 같이 갱신됐다) 이 테스트는
+        # 안 고쳐져 실패한 채로 남아 있었다. main 쪽은 2026-08-21에 14로만
+        # 맞췄지만, 그 시점 registry.py에는 skill_register도 이미 추가되어 있어
+        # 실제로는 15개다 — 병합된 registry.py에서 직접 세어 확인했다
+        # (`2026-08-21_관측성_구현과_브랜치_병합.md` §2.2 사전 병합 기록).
         self.assertEqual(len(BUILTIN_TOOLS), 15)
 
     def test_adapts_every_real_builtin_tool(self):

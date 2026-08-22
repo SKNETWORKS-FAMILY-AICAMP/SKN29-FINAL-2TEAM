@@ -64,7 +64,12 @@ def inject_runtime_context(
 #: MCP 도구 tool_ref 접두사(DB/migrations/2026-08-11_agent_platform.sql,
 #: services/harness/registry.py 모듈 docstring과 동일 규칙 — 이 접두사가
 #: 바뀌면 두 곳 다 같이 고쳐야 한다).
-_MCP_TOOL_PREFIX = "mcp:"
+#:
+#: 2026-08-21: `middleware/tool_timeout.py`가 "이 호출이 MCP인가"를 판단하는
+#: 데 같은 값을 써야 해서 공개 이름으로 바꿨다(A-1 재설계 — timeout을 MCP
+#: 도구에만 건다, `2026-08-21_01_Tool_timeout_재설계.md` §3). 문자열을 다시
+#: 적지 않고 이 상수를 import 해서 쓴다.
+MCP_TOOL_REF_PREFIX = "mcp:"
 
 
 def model_safe_tool_name(tool_ref: str) -> str:
@@ -118,7 +123,7 @@ class ToolLoader:
 
         available = {tool.ref: tool for tool in adapt_builtin_tools(agent_model=agent_model)}
 
-        if any(ref.startswith(_MCP_TOOL_PREFIX) for ref in tool_refs):
+        if any(ref.startswith(MCP_TOOL_REF_PREFIX) for ref in tool_refs):
             for mcp_tool in adapt_mcp_tools(team_id=context.team_id):
                 available[mcp_tool.ref] = mcp_tool
 

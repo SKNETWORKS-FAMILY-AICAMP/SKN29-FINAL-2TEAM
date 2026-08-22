@@ -234,10 +234,17 @@ class BuildValidationAndModelTests(SimpleTestCase):
 
 
 class BuildReturnsResolvedModelTests(SimpleTestCase):
-    """2026-08-19, §4순위(Run Snapshot) — `build()`가 `(graph, resolved_model)`
-    튜플을 반환하는지. `executor.py`가 이 값을 `EVENT_AGENT_STARTED`에 실어
+    """2026-08-19, §4순위(Run Snapshot) — `build()`가 resolved_model을 함께
+    반환하는지. `executor.py`가 이 값을 `EVENT_AGENT_STARTED`에 실어
     `agent_run.resolved_provider`/`resolved_endpoint_hash`로 남긴다(정본:
-    `2026-08-19_01_실행_안정성_설계.md` §1)."""
+    `2026-08-19_01_실행_안정성_설계.md` §1).
+
+    **2026-08-20에 반환 타입이 2-tuple → 3-tuple로 바뀌었다**(`17e8c62`,
+    §10 Child Run Snapshot — 세 번째 자리는 Child alias별 resolved_model
+    dict라 `subagent_started` 이벤트에도 provider/endpoint_hash를 채울 수
+    있다). 이 테스트들은 그때 같이 안 고쳐져서 2-tuple로 언패킹한 채
+    `ValueError: too many values to unpack`으로 깨져 있었다 — 2026-08-21에
+    실제 반환 타입에 맞춘다(`2026-08-21_01` §8이 정리한 것과 같은 종류)."""
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_root_build_returns_graph_and_resolved_model(self, mock_create_root):
@@ -245,7 +252,9 @@ class BuildReturnsResolvedModelTests(SimpleTestCase):
         factory, _ = _factory()
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
 
-        graph, resolved = factory.build(definition=_definition(model="claude-x"), context=context)
+        graph, resolved, _child_models = factory.build(
+            definition=_definition(model="claude-x"), context=context
+        )
 
         self.assertEqual(graph, "GRAPH")
         self.assertEqual(resolved.provider, "anthropic")
@@ -257,7 +266,7 @@ class BuildReturnsResolvedModelTests(SimpleTestCase):
         factory, _ = _factory()
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
 
-        graph, resolved = factory.build(
+        graph, resolved, _child_models = factory.build(
             definition=_definition(), context=context, allow_subagents=False
         )
 
@@ -290,7 +299,7 @@ class BuildReturnsResolvedModelTests(SimpleTestCase):
         )
         definition = _definition(model="claude-root-model", subagents=(child,))
 
-        _graph, resolved = factory.build(definition=definition, context=context)
+        _graph, resolved, _child_models = factory.build(definition=definition, context=context)
 
         self.assertEqual(resolved.model_id, "claude-root-model")
 
@@ -420,13 +429,38 @@ class ToolExecutionTimeRBACTests(SimpleTestCase):
             side_effect=False,
         )
 
-    def test_member_calling_a_write_tool_directly_gets_a_speakable_permission_message(self):
-        """2026-08-19 — 크래시(`ToolPermissionError`)가 아니라 `ToolException`
-        으로 바뀌었다. member의 에이전트가 승인 필요 도구를 부르는 건 이제
-        흔한 정상 경로라, 대화를 끊지 않고 모델이 사유를 그대로 전한다."""
+    def test_member_can_now_execute_a_write_tool_under_the_default_policy(self):
+        """**2026-08-20부터 기본 정책이 member의 쓰기 실행을 허용한다**
+        (`17e8c62`). 그래서 기본 정책으로는 여기서 안 막히고 실제로 실행된다 —
+        경계는 `interrupt_on`(자기 승인 HITL)으로 옮겨갔다
+        (`BuildInterruptOnWiringTests`, `2026-08-21_02` 참고).
+
+        예전 이 테스트는 member가 권한 거부 문구를 받는 걸 검증했는데, 그
+        문구 경로 자체는 없어진 게 아니라 "정책이 그 역할을 막을 때"만 도는
+        경로가 됐다 — 아래 `test_..._when_policy_restricts_the_role`이 그
+        경로를 여전히 덮는다."""
         tool = self._write_tool()
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
         langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+
+        self.assertEqual(langchain_tool.invoke({}), "registered")
+
+    def test_write_tool_is_refused_with_a_speakable_message_when_policy_restricts_the_role(self):
+        """2026-08-19 — 크래시(`ToolPermissionError`)가 아니라 `ToolException`
+        으로 바뀌었다. 승인 필요 도구를 못 부르는 건 흔한 정상 경로라, 대화를
+        끊지 않고 모델이 사유를 그대로 전한다.
+
+        기본 정책은 이제 member도 허용하므로(위 테스트), 이 경로를 재현하려면
+        정책 자체를 좁혀야 한다 — `is_tool_allowed_for_role()`이 하드코딩이
+        아니라 `write_tool_allowed_roles` 값을 실제로 읽는다는 것까지 같이
+        확인된다."""
+        tool = self._write_tool()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
+        langchain_tool = _to_langchain_tool(
+            tool,
+            context=context,
+            runtime_policy=RuntimeCapabilityPolicy(write_tool_allowed_roles=frozenset({"leader"})),
+        )
 
         self.assertEqual(
             langchain_tool.invoke({}),
@@ -1193,14 +1227,21 @@ class BuildSkillsWiringTests(SimpleTestCase):
         self.assertEqual(skills_provider.routes_calls, [])
 
 
-class BuildToolCallTimeoutWiringTests(SimpleTestCase):
-    """2026-08-19, §5순위 — `ToolCallTimeoutMiddleware`가 Root/Child 둘 다에
+class BuildMcpToolCallTimeoutWiringTests(SimpleTestCase):
+    """2026-08-21, A-1 — `McpToolCallTimeoutMiddleware`가 Root/Child 둘 다에
     붙는지(`middleware/factory.py.build()`를 통해서), 그리고 write_guard/
-    write_lock보다 middleware 목록 앞쪽(=바깥쪽)에 있는지 확인한다."""
+    write_lock보다 middleware 목록 앞쪽(=바깥쪽)에 있는지 확인한다.
+
+    2026-08-19의 같은 이름 테스트는 전역 timeout(모든 도구 대상)을 검증했는데,
+    그 설계가 `17e8c62`에서 되돌려지면서 import부터 깨져 있었다
+    (`2026-08-21_01` §8). 새 설계에 맞춰 다시 썼다 — 순서 검증(아래 세 번째)은
+    그대로 유효하다: MCP 도구 timeout이 write_guard/lock보다 바깥이어야
+    "락을 잡은 채로 timeout을 기다리는" 상태가 안 생긴다.
+    """
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_root_receives_tool_call_timeout_middleware(self, mock_create_root):
-        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+    def test_root_receives_mcp_tool_call_timeout_middleware(self, mock_create_root):
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
 
         mock_create_root.return_value = "GRAPH"
         factory, _ = _factory()
@@ -1209,11 +1250,11 @@ class BuildToolCallTimeoutWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         middleware = mock_create_root.call_args.kwargs["middleware"]
-        self.assertEqual(sum(isinstance(m, ToolCallTimeoutMiddleware) for m in middleware), 1)
+        self.assertEqual(sum(isinstance(m, McpToolCallTimeoutMiddleware) for m in middleware), 1)
 
     @patch(f"{FACTORY_MODULE}.create_child_graph")
-    def test_child_receives_tool_call_timeout_middleware(self, mock_create_child):
-        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+    def test_child_receives_mcp_tool_call_timeout_middleware(self, mock_create_child):
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
 
         mock_create_child.return_value = "CHILD_GRAPH"
         factory, _ = _factory()
@@ -1222,13 +1263,13 @@ class BuildToolCallTimeoutWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context, allow_subagents=False)
 
         middleware = mock_create_child.call_args.kwargs["middleware"]
-        self.assertEqual(sum(isinstance(m, ToolCallTimeoutMiddleware) for m in middleware), 1)
+        self.assertEqual(sum(isinstance(m, McpToolCallTimeoutMiddleware) for m in middleware), 1)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_timeout_is_outside_write_guard_and_write_lock(self, mock_create_root):
         from services.agent_runtime.memory.write_guard import MemoryWriteGuardMiddleware
         from services.agent_runtime.memory.write_lock import MemoryWriteLockMiddleware
-        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
 
         mock_create_root.return_value = "GRAPH"
         provider = _FakeMemoryProvider()
@@ -1238,11 +1279,69 @@ class BuildToolCallTimeoutWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         middleware = mock_create_root.call_args.kwargs["middleware"]
-        timeout_index = next(i for i, m in enumerate(middleware) if isinstance(m, ToolCallTimeoutMiddleware))
+        timeout_index = next(
+            i for i, m in enumerate(middleware) if isinstance(m, McpToolCallTimeoutMiddleware)
+        )
         guard_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteGuardMiddleware))
         lock_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteLockMiddleware))
         self.assertLess(timeout_index, guard_index)
         self.assertLess(guard_index, lock_index)
+
+
+class BuildBuiltinWriteLockWiringTests(SimpleTestCase):
+    """2026-08-21, 병렬실행 Phase 3 — 내장 쓰기 도구 직렬화가 Root/Child 둘 다에
+    붙는지, 그리고 timeout 미들웨어보다 **안쪽**인지.
+
+    순서가 중요하다: 바깥이 되면 "락을 쥔 채 timeout을 기다리는" 조합이 생겨,
+    이 설계가 MCP에서 피하려던 문제(커넥션을 오래 붙잡기)를 내장 도구 쪽에서
+    다시 만든다.
+    """
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_receives_builtin_write_lock(self, mock_create_root):
+        from services.agent_runtime.middleware.builtin_write_lock import BuiltinWriteLockMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertEqual(sum(isinstance(m, BuiltinWriteLockMiddleware) for m in middleware), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_receives_builtin_write_lock(self, mock_create_child):
+        from services.agent_runtime.middleware.builtin_write_lock import BuiltinWriteLockMiddleware
+
+        mock_create_child.return_value = "CHILD_GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        middleware = mock_create_child.call_args.kwargs["middleware"]
+        self.assertEqual(sum(isinstance(m, BuiltinWriteLockMiddleware) for m in middleware), 1)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_builtin_write_lock_is_inside_the_timeout(self, mock_create_root):
+        from services.agent_runtime.middleware.builtin_write_lock import BuiltinWriteLockMiddleware
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory()
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        timeout_index = next(
+            i for i, m in enumerate(middleware) if isinstance(m, McpToolCallTimeoutMiddleware)
+        )
+        lock_index = next(
+            i for i, m in enumerate(middleware) if isinstance(m, BuiltinWriteLockMiddleware)
+        )
+        self.assertLess(timeout_index, lock_index)
 
 
 class BuildFilesystemExclusionWiringTests(SimpleTestCase):
@@ -1338,16 +1437,21 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         )
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_member_role_leaves_interrupt_on_none_even_though_tool_is_exposed(
+    def test_member_role_now_gets_interrupt_on_just_like_leader(
         self, mock_create_root
     ):
-        """member는 write_tool_allowed_roles(기본 leader만)에 안 들어 있다.
-        2026-08-19부터 `task_register`는 `tools`(모델에게 노출되는 목록)엔
-        그대로 남지만(더 안 걸러짐), `interrupt_on`은 여전히 역할을 봐서
-        이 도구를 안 넣는다 — 안 넣으면 member가 이 도구를 부를 때 승인
-        대기 없이 곧바로 `_run()`에서 거부된다(`ToolExecutionTimeRBACTests`).
-        만약 여기 넣었다면 승인 카드가 뜨고, 그걸 부른 본인(member)이 눌러
-        승인해 버릴 수 있어 권한 경계가 뚫린다."""
+        """**2026-08-20부터 member도 `write_tool_allowed_roles`에 들어간다**
+        (`17e8c62`). 그래서 `interrupt_on`도 leader와 똑같이 채워진다 —
+        member가 `task_register`를 부르면 즉시 거부되는 게 아니라 승인 카드가
+        뜨고, 본인이 승인해야 실행된다(자기 승인).
+
+        예전 이 테스트는 정반대(`interrupt_on is None`)를 검증했고, 그 근거는
+        "승인 카드를 띄우면 부른 본인이 눌러 승인해 버려서 권한 경계가
+        뚫린다"였다. 그 판단이 2026-08-20에 뒤집혔다 — "팀원이 자기 업무를
+        직접 등록할 수 있게 하고 싶다"는 요구를 받아 자기 승인을 허용하기로
+        했다. 배경과 그 대가(호출별 승인 UI를 Phase 2로 앞당김)는
+        `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+        """
 
         mock_create_root.return_value = "GRAPH"
         factory, _ = _factory(checkpointer_provider=_FakeCheckpointerProvider())
@@ -1355,4 +1459,6 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
 
         factory.build(definition=_definition(), context=context)
 
-        self.assertIsNone(mock_create_root.call_args.kwargs["interrupt_on"])
+        interrupt_on = mock_create_root.call_args.kwargs["interrupt_on"]
+        self.assertIsNotNone(interrupt_on)
+        self.assertIn("task_register", interrupt_on)

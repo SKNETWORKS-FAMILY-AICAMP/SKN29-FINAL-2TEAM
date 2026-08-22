@@ -9,6 +9,7 @@ from .views.accounts import (
     AccountUnlockView,
 )
 from .views.audit import OperationLogView
+from .views.usage import UsageView
 from .views.connectors import ConnectorDetailView, ConnectorListView, ConnectorRevokeView
 from .views.invites import (
     InviteDetailView,
@@ -90,6 +91,8 @@ urlpatterns = [
     path("mcp/<str:server_id>/", McpDetailView.as_view(), name="api_ops_mcp_detail"),
     path("mcp/<str:server_id>/test/", McpTestView.as_view(), name="api_ops_mcp_test"),
     path("audit/operations/", OperationLogView.as_view(), name="api_ops_audit_operations"),
+    # 관측성의 「요약」 층 — 실행·토큰·도구·가드레일을 30일 창으로 집계한다.
+    path("usage/", UsageView.as_view(), name="api_ops_usage"),
     # 가드레일 공급자 등록. 커스텀 도구(`mcp/`)와 같은 층위라 `policies/` 아래가
     # 아니라 여기 둔다 — 「전역 정책」이 아니라 팀별 등록물이다.
     path("guardrails/", GuardrailProviderListCreateView.as_view(), name="api_ops_guardrails"),

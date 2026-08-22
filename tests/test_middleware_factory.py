@@ -83,11 +83,21 @@ class BuildTests(SimpleTestCase):
 class BuildTodoWiringTests(SimpleTestCase):
     """2026-08-18, §5 Phase 4 — `runtime_policy.enable_todo`가 실제로 읽히는지.
 
-    기본값(`False`)에서는 이전과 동일하게 `TodoListMiddleware`가 전혀 안 붙어야
-    한다(회귀 방지 — Phase 4 이전 배포와 동작이 같아야 함)."""
+    **2026-08-19에 기본값이 False → True로 바뀌었다**(`17e8c62`, 사용자 요청).
+    그래서 "기본값에서는 안 붙는다"가 아니라 "기본값에서 붙고, 명시적으로 끄면
+    안 붙는다"를 검증한다 — 아래 두 테스트가 양쪽 방향을 다 덮는다."""
 
-    def test_disabled_by_default_no_todo_middleware(self):
+    def test_enabled_by_default_adds_todo_middleware(self):
         policy = RuntimeCapabilityPolicy()
+        factory = MiddlewareFactory(runtime_policy=policy)
+
+        middleware = factory.build(definition=_definition(), context=None)
+
+        self.assertTrue(any(isinstance(m, TodoListMiddleware) for m in middleware))
+
+    def test_explicitly_disabled_omits_todo_middleware(self):
+        """정책 값이 실제로 읽히는지(=하드코딩이 아닌지) 확인하는 반대 방향."""
+        policy = RuntimeCapabilityPolicy(enable_todo=False)
         factory = MiddlewareFactory(runtime_policy=policy)
 
         middleware = factory.build(definition=_definition(), context=None)
@@ -171,29 +181,36 @@ class BuildForGeneralPurposeTests(SimpleTestCase):
         self.assertFalse(any(isinstance(m, TodoListMiddleware) for m in middleware))
 
 
-class ToolCallTimeoutWiringTests(SimpleTestCase):
-    """2026-08-19, §5순위 — `build()`/`build_for_general_purpose()` 둘 다
-    `ToolCallTimeoutMiddleware`를 붙이는지, 그 인스턴스가 같은 `runtime_policy`를
-    참조하는지 확인한다."""
+class McpToolCallTimeoutWiringTests(SimpleTestCase):
+    """2026-08-21, A-1 — `build()`가 `McpToolCallTimeoutMiddleware`를 붙이는지,
+    그 인스턴스가 같은 `runtime_policy`를 참조하는지 확인한다.
 
-    def test_build_includes_tool_call_timeout_middleware(self):
-        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+    2026-08-19의 같은 이름 테스트는 전역 timeout(모든 도구 대상, GP 포함)을
+    검증했는데, 그 설계가 `17e8c62`에서 되돌려지면서 import부터 깨져 있었다
+    (`2026-08-21_01` §8). 새 설계에 맞춰 다시 썼다.
+    """
+
+    def test_build_includes_mcp_tool_call_timeout_middleware(self):
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
 
         policy = RuntimeCapabilityPolicy()
         factory = MiddlewareFactory(runtime_policy=policy)
 
         middleware = factory.build(definition=_definition(), context=None)
 
-        timeout_mw = next(m for m in middleware if isinstance(m, ToolCallTimeoutMiddleware))
+        timeout_mw = next(m for m in middleware if isinstance(m, McpToolCallTimeoutMiddleware))
         self.assertIs(timeout_mw._runtime_policy, policy)
 
-    def test_build_for_general_purpose_includes_tool_call_timeout_middleware(self):
-        from services.agent_runtime.middleware.tool_timeout import ToolCallTimeoutMiddleware
+    def test_build_for_general_purpose_does_not_include_it(self):
+        """GP는 `side_effect=False` 도구만 물려받고(2026-08-20, `factory.py`의
+        `gp_read_only_tools`) MCP 도구는 전부 `side_effect=True`라, GP에는 MCP
+        도구가 아예 안 들어간다 — 여기 붙이면 영원히 아무것도 안 하는 죽은
+        미들웨어가 된다(`middleware/factory.py`의
+        `build_for_general_purpose()` docstring)."""
+        from services.agent_runtime.middleware.tool_timeout import McpToolCallTimeoutMiddleware
 
-        policy = RuntimeCapabilityPolicy()
-        factory = MiddlewareFactory(runtime_policy=policy)
+        factory = MiddlewareFactory(runtime_policy=RuntimeCapabilityPolicy())
 
         middleware = factory.build_for_general_purpose()
 
-        timeout_mw = next(m for m in middleware if isinstance(m, ToolCallTimeoutMiddleware))
-        self.assertIs(timeout_mw._runtime_policy, policy)
+        self.assertFalse(any(isinstance(m, McpToolCallTimeoutMiddleware) for m in middleware))

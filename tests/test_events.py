@@ -26,6 +26,7 @@ from services.agent_runtime.events import (
     EVENT_TOOL_COMPLETED,
     EVENT_TOOL_PROGRESS,
     EVENT_TOOL_STARTED,
+    RETRIEVED_DOC_IDS_MAX,
     EventMapper,
 )
 
@@ -613,6 +614,93 @@ class ToolCallIdArgumentsStatusTests(SimpleTestCase):
         self.assertEqual(event["status"], "FAILED")
 
 
+class ParallelSideEffectPartialFailureTests(SimpleTestCase):
+    """병렬 side-effect 호출 중 일부만 실패했을 때 결과가 **뭉개지지 않는지**.
+
+    정본: `docs/작업기록/Deep_Agents/2026-08-21_05_병렬_side-effect_부분실패_보고.md`
+
+    이미 성공한 호출을 자동으로 되돌리지 않는 대신(사용자가 연결하는 임의의
+    MCP 도구는 되돌리는 방법을 우리가 알 수 없고, 이메일 발송처럼 원천적으로
+    못 되돌리는 것도 있다), **무엇이 실제로 일어났는지를 항목별로 정확히
+    전달하는 것**을 보장한다. "일부 실패했습니다" 같은 한 문장으로 대체할 수
+    없다는 게 이 파일이 지키는 규칙이다.
+
+    새 장치가 아니라 이미 있는 `tool_call_id` 기반 추적(§9)을 규칙으로
+    고정하는 테스트다 — 나중에 누가 결과를 하나로 합치면 여기서 깨진다.
+    """
+
+    def test_three_parallel_calls_each_get_their_own_started_event(self):
+        message = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "jira_create_issues", "args": {"n": 1}, "id": "call-a"},
+                {"name": "jira_create_issues", "args": {"n": 2}, "id": "call-b"},
+                {"name": "task_register", "args": {"n": 3}, "id": "call-c"},
+            ],
+        )
+
+        events = EventMapper().convert(
+            _raw((), "model", message), definition=_Definition(), context=_Context()
+        )
+
+        started = [e for e in events if e["type"] == EVENT_TOOL_STARTED]
+        self.assertEqual([e["tool_call_id"] for e in started], ["call-a", "call-b", "call-c"])
+
+    def test_same_tool_called_twice_stays_two_separate_units(self):
+        """같은 도구를 두 번 불러도 tool_call_id가 다르면 다른 실행이다(§9) —
+        이름으로 묶으면 둘 중 하나의 결과가 사라진다."""
+        message = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "jira_create_issues", "args": {"n": 1}, "id": "call-a"},
+                {"name": "jira_create_issues", "args": {"n": 2}, "id": "call-b"},
+            ],
+        )
+
+        events = EventMapper().convert(
+            _raw((), "model", message), definition=_Definition(), context=_Context()
+        )
+
+        started = [e for e in events if e["type"] == EVENT_TOOL_STARTED]
+        self.assertEqual(len({e["tool_call_id"] for e in started}), 2)
+
+    def test_one_failure_does_not_change_the_others_status(self):
+        """성공한 호출은 성공으로 남는다 — 되돌리지도, 실패로 물들이지도
+        않는다. 부분 결과 허용(fail-late)의 실제 모습이다."""
+        mapper = EventMapper()
+        results = [
+            ToolMessage(name="jira_create_issues", content="이슈 생성됨", tool_call_id="call-a"),
+            ToolMessage(
+                name="send_email", content="발송 실패", tool_call_id="call-b", status="error"
+            ),
+            ToolMessage(name="task_register", content="등록됨", tool_call_id="call-c"),
+        ]
+
+        statuses = {}
+        for message in results:
+            event = _convert_one(mapper, _raw((), "tools", message))
+            statuses[event["tool_call_id"]] = event["status"]
+
+        self.assertEqual(statuses, {"call-a": "OK", "call-b": "FAILED", "call-c": "OK"})
+
+    def test_each_result_keeps_its_own_output(self):
+        """항목별 출력이 그대로 남아야 화면이 "무엇이 됐고 무엇이 안 됐는지"를
+        적을 수 있다 — 하나로 합치면 그 정보가 사라진다."""
+        mapper = EventMapper()
+
+        first = _convert_one(
+            mapper,
+            _raw((), "tools", ToolMessage(name="task_register", content="A 등록", tool_call_id="1")),
+        )
+        second = _convert_one(
+            mapper,
+            _raw((), "tools", ToolMessage(name="task_register", content="B 등록", tool_call_id="2")),
+        )
+
+        self.assertIn("A 등록", first["output"])
+        self.assertIn("B 등록", second["output"])
+
+
 class MangledMcpToolNameDemangledTests(SimpleTestCase):
     """factory.py의 model_safe_tool_name()이 mcp: 콜론을 __로 바꿔 모델에
     보내므로, 여기서 되돌리지 않으면 tool_ref가 mcp__MT001처럼 새어 나간다
@@ -789,3 +877,176 @@ class InterruptEventTests(SimpleTestCase):
         events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
         self.assertEqual(events[0]["action_requests"], [])
+
+
+class ModelUsageTests(SimpleTestCase):
+    """모델 호출마다 회전 수·토큰을 세어 끝나는 이벤트에 싣는가(2026-08-21).
+
+    `agent_run.iterations`/`token_in`/`token_out`을 채우는 유일한 경로다 —
+    `tracing/`은 변환된 이벤트만 보므로 원시 `AIMessage.usage_metadata`에
+    닿지 못한다.
+    """
+
+    @staticmethod
+    def _ai(text="", *, tool_calls=None, usage=None):
+        return AIMessage(
+            content=text,
+            tool_calls=tool_calls or [],
+            usage_metadata=usage,
+        )
+
+    def test_result_carries_summed_tokens_and_iteration_count(self):
+        mapper = EventMapper()
+        # 1회전: 도구를 부른다. 이 호출의 토큰도 합계에 들어가야 한다.
+        mapper.convert(
+            _raw((), "model", self._ai(tool_calls=[{"name": "people_list", "args": {}, "id": "1"}],
+                                       usage={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120})),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        # 2회전: 최종 답.
+        event = _convert_one(
+            mapper,
+            _raw((), "model", self._ai("답", usage={"input_tokens": 300, "output_tokens": 50, "total_tokens": 350})),
+        )
+
+        self.assertEqual(event["type"], EVENT_RESULT)
+        self.assertEqual(event["iterations"], 2)
+        self.assertEqual(event["token_in"], 400)
+        self.assertEqual(event["token_out"], 70)
+
+    def test_missing_usage_metadata_leaves_tokens_none_not_zero(self):
+        """usage를 안 주는 경로(openai_compatible)에서 0으로 채우면 안 된다.
+
+        0이면 「토큰을 안 쓴 실행」과 구분이 사라진다. 회전 수는 usage와
+        무관하게 세므로 그대로 찬다.
+        """
+        event = _convert_one(EventMapper(), _raw((), "model", self._ai("답")))
+
+        self.assertEqual(event["iterations"], 1)
+        self.assertIsNone(event["token_in"])
+        self.assertIsNone(event["token_out"])
+
+    def test_thinking_tokens_hidden_in_total_are_counted_as_output(self):
+        """Gemini OpenAI 호환 주소 실측(2026-08-21): prompt 6 · completion 1 ·
+        total 149. 있는 그대로 적으면 Usage 합계가 149 대신 7이 된다."""
+        event = _convert_one(
+            EventMapper(),
+            _raw((), "model", self._ai("답", usage={"input_tokens": 6, "output_tokens": 1, "total_tokens": 149})),
+        )
+
+        self.assertEqual(event["token_in"], 6)
+        self.assertEqual(event["token_out"], 143)
+
+    def test_provider_whose_total_already_adds_up_is_left_alone(self):
+        """OpenAI 실측: 11 + 5 = 16. 나머지가 0이라 손대지 않는다."""
+        event = _convert_one(
+            EventMapper(),
+            _raw((), "model", self._ai("답", usage={"input_tokens": 11, "output_tokens": 5, "total_tokens": 16})),
+        )
+
+        self.assertEqual(event["token_in"], 11)
+        self.assertEqual(event["token_out"], 5)
+
+    def test_child_tokens_go_to_the_child_run_not_the_parent(self):
+        mapper = EventMapper()
+        start = self._ai(
+            tool_calls=[{"name": "task", "args": {"subagent_type": "researcher", "description": "조사"}, "id": "1"}],
+            usage={"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+        )
+        started = _convert_one(mapper, _raw((), "model", start))
+        child_ns = ("tools:abc",)
+        # 자식 네임스페이스의 모델 호출 — 자식 run 누계로 가야 한다.
+        mapper.convert(
+            _raw(child_ns, "model", self._ai("자식 생각",
+                                             usage={"input_tokens": 900, "output_tokens": 80, "total_tokens": 980})),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        done = ToolMessage(name="task", content="완료", tool_call_id="1")
+        completed = _convert_one(mapper, _raw((), "tools", done))
+
+        self.assertEqual(completed["type"], EVENT_SUBAGENT_COMPLETED)
+        self.assertEqual(completed["run_id"], started["run_id"])
+        self.assertEqual(completed["token_in"], 900)
+        self.assertEqual(completed["token_out"], 80)
+
+        # 부모 누계에는 자식 몫이 안 섞인다 — 부모는 자기 위임 호출 1회뿐이다.
+        final = _convert_one(mapper, _raw((), "model", self._ai("최종")))
+        self.assertEqual(final["iterations"], 2)
+        self.assertEqual(final["token_in"], 10)
+
+    def test_usage_for_is_empty_after_the_run_is_closed(self):
+        """끝난 실행의 누계는 버린다 — 같은 mapper 를 계속 들고 있어도 안 샌다."""
+        mapper = EventMapper()
+        _convert_one(
+            mapper,
+            _raw((), "model", self._ai("답", usage={"input_tokens": 7, "output_tokens": 1, "total_tokens": 8})),
+        )
+
+        self.assertEqual(
+            mapper.usage_for("RUN1"),
+            {"iterations": 0, "token_in": None, "token_out": None},
+        )
+
+
+class RetrievedDocumentTests(SimpleTestCase):
+    """도구 결과에서 조회한 문서 식별자를 뽑아내는가(2026-08-21).
+
+    멘토링 전달 "Tool 호출 결과 어떤 문서/데이터가 조회되었는지". 지금까지
+    `tool_call` 에는 질의문만 남아 무엇을 봤는지 되물을 수 없었다.
+    """
+
+    @staticmethod
+    def _completed(payload):
+        """도구가 dict 를 돌려주면 langchain-core 가 json.dumps 로 문자열을 만든다."""
+        import json
+
+        message = ToolMessage(
+            name="document_search", content=json.dumps(payload, ensure_ascii=False), tool_call_id="1"
+        )
+        return _convert_one(EventMapper(), _raw((), "tools", message))
+
+    def test_evidence_and_candidates_and_not_indexed_are_all_collected(self):
+        event = self._completed(
+            {
+                "query": "휴가 규정",
+                "evidence": [
+                    {"chunk_id": "c1", "doc_id": "DC001", "text": "..."},
+                    {"chunk_id": "c2", "doc_id": "DC004", "text": "..."},
+                ],
+                "not_indexed": [{"doc_id": "DC009", "file_name": "x.pdf"}],
+            }
+        )
+
+        self.assertEqual(event["type"], EVENT_TOOL_COMPLETED)
+        self.assertEqual(event["retrieved_doc_ids"], ["DC001", "DC004", "DC009"])
+
+    def test_same_document_in_several_chunks_is_recorded_once(self):
+        event = self._completed(
+            {"evidence": [{"doc_id": "DC001"}, {"doc_id": "DC001"}, {"doc_id": "DC002"}]}
+        )
+
+        self.assertEqual(event["retrieved_doc_ids"], ["DC001", "DC002"])
+
+    def test_tool_that_returns_no_documents_gets_an_empty_list(self):
+        """문서와 무관한 도구. 저장소가 이 빈 목록을 NULL 로 낮춘다."""
+        message = ToolMessage(name="people_list", content='[{"name": "임준"}]', tool_call_id="1")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertEqual(event["retrieved_doc_ids"], [])
+
+    def test_plain_text_output_does_not_break_the_event(self):
+        """JSON 이 아닌 결과(MCP 도구 등)는 조용히 빈 목록이다."""
+        message = ToolMessage(name="mcp:something", content="그냥 문장입니다", tool_call_id="1")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertEqual(event["retrieved_doc_ids"], [])
+
+    def test_absurdly_long_result_is_capped(self):
+        payload = {"evidence": [{"doc_id": f"DC{i:03d}"} for i in range(200)]}
+        event = self._completed(payload)
+
+        self.assertEqual(len(event["retrieved_doc_ids"]), RETRIEVED_DOC_IDS_MAX)
+

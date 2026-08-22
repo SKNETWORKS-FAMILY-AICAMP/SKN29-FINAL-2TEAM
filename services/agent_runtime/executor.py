@@ -20,7 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 def _agent_execution_failure_event(
-    exc: Exception, *, agent_id: str | None, agent_version_id: str | None, run_id: str | None
+    exc: Exception,
+    *,
+    agent_id: str | None,
+    agent_version_id: str | None,
+    run_id: str | None,
+    usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """그래프 실행(`run()`/`resume()`) 중 예외 → `EVENT_ERROR` 이벤트.
 
@@ -51,6 +56,9 @@ def _agent_execution_failure_event(
         "agent_id": agent_id,
         "agent_version_id": agent_version_id,
         "run_id": run_id,
+        # 여기까지 쓴 회전 수·토큰(2026-08-21). **실패해도 비용은 이미 나갔다** —
+        # 실패한 실행만 `token_in`이 비면 Usage 합계가 조용히 실제보다 작아진다.
+        **(usage or {"iterations": 0, "token_in": None, "token_out": None}),
         "complete": True,
     }
 
@@ -230,6 +238,9 @@ class AgentExecutor:
                     if callbacks
                     else None
                 ),
+                # 2026-08-21, 병렬실행 Phase 1 — 한 super-step 동시 실행 상한
+                # (`2026-08-20_02` §5.1). 정책 값 하나를 그대로 넘긴다.
+                max_concurrency=self.factory.runtime_policy.max_concurrency,
             ):
                 # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
                 # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
@@ -266,6 +277,7 @@ class AgentExecutor:
                 agent_id=loaded.definition.agent_id,
                 agent_version_id=loaded.definition.agent_version_id,
                 run_id=context.run_id,
+                usage=event_mapper.usage_for(context.run_id, close=True),
             )
 
     def resume(
@@ -364,6 +376,10 @@ class AgentExecutor:
                     if callbacks
                     else None
                 ),
+                # 2026-08-21, 병렬실행 Phase 1 — 재개 경로에도 같은 상한을
+                # 건다. 승인 후 한꺼번에 풀리는 복수 side-effect 호출이야말로
+                # 상한이 필요한 자리다(`2026-08-20_02` §5.1·§8).
+                max_concurrency=self.factory.runtime_policy.max_concurrency,
             ):
                 for converted in event_mapper.convert(
                     raw_event,
@@ -384,4 +400,5 @@ class AgentExecutor:
                 agent_id=loaded.definition.agent_id,
                 agent_version_id=loaded.definition.agent_version_id,
                 run_id=context.run_id,
+                usage=event_mapper.usage_for(context.run_id, close=True),
             )

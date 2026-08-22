@@ -3452,6 +3452,161 @@ def _notice_snapshot(notice: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class OpsUsageRepository:
+    """운영자 콘솔 `사용 현황`(`GET /api/ops/usage/`) 전용. 읽기 전용이다.
+
+    **왜 새로 만들었나**(2026-08-21). 실행 이력(`agent_run`·`tool_call`)은
+    2026-08-13 부터 쌓이고 있었는데 그것을 **집계해서 보여주는 자리가 없었다.**
+    팀 상세의 「최근 실행」 표가 유일한 노출인데 그쪽은 한 팀의 최근 몇 건을
+    나열할 뿐이고(게다가 옛 `agent` 표만 조인해서 새 스키마 에이전트의 실행은
+    한 줄도 안 잡힌다 — 아래 `_TEAM_OF_RUN` 주석), 「이번 달에 얼마나 썼나」에는
+    답하지 못했다.
+
+    시중 제품이 관측성을 **요약 → 목록 → 상세** 세 층으로 나눠 보여주는데
+    (Copilot Studio Analytics · watsonx Orchestrate Agent analytics, 2026-08-21
+    조사) 우리에게는 그 첫 층이 통째로 없었다. 세 번째 층(실행 하나를 따라가는
+    트레이스)은 Langfuse 에 맡긴다 — watsonx 도 같은 구성이다. 그래서 이
+    저장소는 **첫 층만** 담당한다.
+
+    ## 기간을 30일로 고정한다
+
+    고르게 하지 않는다. 「지금 얼마나 쓰고 있나」 하나에 답하는 화면이고,
+    기간 선택기를 붙이면 그 답이 「무엇을 골랐느냐에 따라 다르다」가 된다.
+    필요해지면 그때 넓힌다.
+    """
+
+    WINDOW_DAYS = 30
+
+    #: 실행 하나가 **어느 팀 것인가**. 에이전트 명부가 둘이라 양쪽을 다 본다 —
+    #: 새 스키마(`agents`)와 옛 스키마(`agent`)다. 지금 실제로 실행이 쌓이는
+    #: 것은 새 쪽인데, 팀 상세의 「최근 실행」 표는 옛 표만 조인해서 **행이
+    #: 하나도 안 나온다**(2026-08-21 프로덕션에서 확인: 실행 114건, 표 0건).
+    #: 여기서 같은 실수를 반복하지 않으려고 조인 조각을 상수로 뽑아 둔다.
+    _TEAM_OF_RUN = """
+        LEFT JOIN agents AS ag ON ag.agent_id = r.agent_id
+        LEFT JOIN agent  AS al ON al.agent_id = r.agent_id
+    """
+    _TEAM_ID = "COALESCE(ag.team_id, al.team_id)"
+
+    @staticmethod
+    def _since_clause(column: str) -> str:
+        return f"{column} >= now() - interval '{OpsUsageRepository.WINDOW_DAYS} days'"
+
+    @staticmethod
+    def summary() -> dict[str, Any]:
+        """네 장의 카드 + 세 개의 표. 한 번의 왕복으로 받는다."""
+
+        since_run = OpsUsageRepository._since_clause("r.started_at")
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT count(*) AS runs,
+                           count(*) FILTER (WHERE r.status = 'DONE') AS runs_done,
+                           count(*) FILTER (WHERE r.status = 'FAILED') AS runs_failed,
+                           COALESCE(sum(r.token_in), 0) AS token_in,
+                           COALESCE(sum(r.token_out), 0) AS token_out,
+                           -- **토큰을 못 잰 실행이 몇 건인가.** 합계만 보이면
+                           -- 「적게 썼다」와 「못 쟀다」가 같은 모양이 된다
+                           -- (2026-08-21 이전 실행은 전부 NULL 이다).
+                           count(*) FILTER (WHERE r.token_in IS NULL) AS runs_without_tokens
+                    FROM agent_run AS r
+                    WHERE {since_run}
+                    """
+                )
+                runs = dict(cursor.fetchone())
+
+                cursor.execute(
+                    f"""
+                    SELECT count(*) AS calls,
+                           count(*) FILTER (WHERE tc.status = 'OK') AS calls_ok,
+                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed
+                    FROM tool_call AS tc
+                    JOIN agent_run AS r ON r.run_id = tc.run_id
+                    WHERE {since_run}
+                    """
+                )
+                tools = dict(cursor.fetchone())
+
+                cursor.execute(
+                    f"""
+                    SELECT count(*) AS events,
+                           count(*) FILTER (WHERE action = 'BLOCKED') AS blocked
+                    FROM guardrail_event
+                    WHERE {OpsUsageRepository._since_clause("occurred_at")}
+                    """
+                )
+                guardrail = dict(cursor.fetchone())
+
+                cursor.execute(
+                    f"""
+                    SELECT {OpsUsageRepository._TEAM_ID} AS team_id,
+                           t.name AS team_name,
+                           count(*) AS runs,
+                           count(*) FILTER (WHERE r.status = 'DONE') AS runs_done,
+                           COALESCE(sum(r.token_in), 0) AS token_in,
+                           COALESCE(sum(r.token_out), 0) AS token_out
+                    FROM agent_run AS r
+                    {OpsUsageRepository._TEAM_OF_RUN}
+                    LEFT JOIN team AS t ON t.team_id = {OpsUsageRepository._TEAM_ID}
+                    WHERE {since_run}
+                    GROUP BY 1, 2
+                    ORDER BY runs DESC
+                    """
+                )
+                by_team = [dict(row) for row in cursor.fetchall()]
+
+                cursor.execute(
+                    f"""
+                    -- 모델 이름도 두 군데서 온다. 새 엔진은 `agent_versions.model`
+                    -- 이고, 레거시 harness 실행은 `agent_version_id` 가 아예
+                    -- NULL 이라 옛 `agent.model` 을 봐야 한다 — 안 보면 지난
+                    -- 실행 대부분이 「(모름)」으로 뭉쳐 표가 쓸모없어진다
+                    -- (2026-08-21 실측: 23건 중 20건이 그랬다).
+                    SELECT COALESCE(av.model, al.model, '(모름)') AS model,
+                           r.resolved_provider,
+                           count(*) AS runs,
+                           COALESCE(sum(r.token_in), 0) AS token_in,
+                           COALESCE(sum(r.token_out), 0) AS token_out
+                    FROM agent_run AS r
+                    LEFT JOIN agent_versions AS av
+                           ON av.agent_version_id = r.agent_version_id
+                    LEFT JOIN agent AS al ON al.agent_id = r.agent_id
+                    WHERE {since_run}
+                    GROUP BY 1, 2
+                    ORDER BY (COALESCE(sum(r.token_in), 0) + COALESCE(sum(r.token_out), 0)) DESC
+                    """
+                )
+                by_model = [dict(row) for row in cursor.fetchall()]
+
+                cursor.execute(
+                    f"""
+                    SELECT tc.tool_ref,
+                           count(*) AS calls,
+                           count(*) FILTER (WHERE tc.status = 'OK') AS calls_ok,
+                           -- PENDING 은 성공도 실패도 아니다. 스트림이 끊겨
+                           -- 영영 안 닫힌 행이라 따로 센다(있으면 배선 문제다).
+                           count(*) FILTER (WHERE tc.status = 'PENDING') AS calls_pending,
+                           round(avg(tc.duration_ms))::int AS avg_ms
+                    FROM tool_call AS tc
+                    JOIN agent_run AS r ON r.run_id = tc.run_id
+                    WHERE {since_run}
+                    GROUP BY 1
+                    ORDER BY calls DESC
+                    """
+                )
+                by_tool = [dict(row) for row in cursor.fetchall()]
+
+        return {
+            "window_days": OpsUsageRepository.WINDOW_DAYS,
+            "runs": runs,
+            "tools": tools,
+            "guardrail": guardrail,
+            "by_team": by_team,
+            "by_model": by_model,
+            "by_tool": by_tool,
+        }
+
 class OpsPolicyRepository:
     """운영자 콘솔 `전역 정책`(`GET/PUT/POST/DELETE /api/ops/policies/...`) 전용.
 

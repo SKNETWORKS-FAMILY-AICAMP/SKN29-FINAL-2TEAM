@@ -394,6 +394,19 @@ export interface ConfirmCardProps {
   onSelectedChange: (next: number[]) => void;
   onApprove?: () => void;
   busy?: boolean;
+  /**
+   * 이 카드에 걸린 호출 **전부**(2026-08-21, 병렬실행 Phase 2). 모델이 한 턴에
+   * side_effect 도구를 여러 개 부르면 전부 한 번에 승인 대기에 걸리는데,
+   * 예전엔 첫 호출만 보여주고 승인은 전부에 일괄 적용됐다 — 무엇이 같이
+   * 실행되는지 보이지도 않았고 "이건 승인, 저건 거절"도 불가능했다.
+   *
+   * 2건 이상일 때만 호출별 줄을 그린다. 1건이면 예전과 똑같이 그린다 —
+   * 호출이 하나뿐인데 "호출 1건 중 1건 승인" 같은 줄을 더하는 건 잡음이다.
+   */
+  actions?: { name: string; count: number }[];
+  /** 승인할 호출의 인덱스. 여기 없는 호출은 거절로 보낸다. */
+  approvedActions?: number[];
+  onApprovedActionsChange?: (next: number[]) => void;
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
@@ -406,13 +419,28 @@ export function ConfirmCard({
   onSelectedChange,
   onApprove,
   busy = false,
+  actions,
+  approvedActions,
+  onApprovedActionsChange,
 }: ConfirmCardProps) {
   const chosen = selected;
   const allOn = chosen.length === tasks.length && tasks.length > 0;
 
+  // 2026-08-21, 병렬실행 Phase 2 — 호출이 2건 이상일 때만 호출별 줄을 그린다.
+  const multi = (actions?.length ?? 0) > 1;
+  const approved = approvedActions ?? [];
+
   function toggle(index: number, next: boolean) {
     onSelectedChange(
       next ? [...chosen, index].sort((a, b) => a - b) : chosen.filter((item) => item !== index),
+    );
+  }
+
+  function toggleAction(index: number, next: boolean) {
+    onApprovedActionsChange?.(
+      next
+        ? [...approved, index].sort((a, b) => a - b)
+        : approved.filter((item) => item !== index),
     );
   }
 
@@ -434,10 +462,48 @@ export function ConfirmCard({
           </span>
           <span className={styles.muted}>업무 {tasks.length}건</span>
         </div>
-      ) : subject ? (
+      ) : subject && !multi ? (
         <div className={styles.confirmHead}>
           <strong>{subject}</strong>
         </div>
+      ) : null}
+
+      {/* 호출이 여러 개면 무엇이 같이 실행되는지 전부 보여주고, 하나씩 켜고
+          끌 수 있게 한다(2026-08-21, 병렬실행 Phase 2). 예전엔 첫 호출만
+          보이고 승인은 전부에 일괄 적용돼서, 사용자는 자기가 무엇을
+          승인하는지 다 알지 못한 채 눌렀다. */}
+      {multi && actions ? (
+        <>
+          <div className={styles.confirmHead}>
+            <span className={styles.confirmLeft}>
+              <Checkbox
+                checked={approved.length === actions.length}
+                onChange={(next) =>
+                  onApprovedActionsChange?.(next ? actions.map((_, index) => index) : [])
+                }
+              />
+              <strong>전체 승인</strong>
+              <span className={styles.muted}>
+                {approved.length}/{actions.length}건 승인
+              </span>
+            </span>
+            <span className={styles.muted}>실행할 작업 {actions.length}건</span>
+          </div>
+          {actions.map((action, index) => (
+            <div key={`${action.name}-${index}`} className={styles.taskRow}>
+              <Checkbox
+                checked={approved.includes(index)}
+                onChange={(next) => toggleAction(index, next)}
+              />
+              <div className={styles.taskBody}>
+                <span className={styles.taskTitle}>{action.name}</span>
+                {action.count > 0 ? (
+                  <span className={styles.muted}>대상 {action.count}건</span>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </>
       ) : null}
 
       {/* ⚠ 경고 배너를 걷어냈다(PM 요청, 2026-08-11). 서버는 여전히 경고를
@@ -468,13 +534,24 @@ export function ConfirmCard({
             승인하기 전까지 아무것도 등록되지 않습니다.
           </span>
           {/* ⚠ 업무가 없는 승인(추출을 안 거친 도구)은 고를 것이 없으므로
-              `chosen` 으로 막지 않는다 — 막으면 버튼이 영원히 비활성이다. */}
+              `chosen` 으로 막지 않는다 — 막으면 버튼이 영원히 비활성이다.
+              호출별 승인(multi)일 때는 **전부 거절도 정상 동작**이라 막지
+              않는다 — 그건 "아무것도 하지 마"라는 유효한 결정이고, 서버도
+              거절 결정을 그대로 받는다(2026-08-21). */}
           <Button
             size="sm"
             onClick={onApprove}
-            disabled={busy || (tasks.length > 0 && chosen.length === 0)}
+            disabled={busy || (!multi && tasks.length > 0 && chosen.length === 0)}
           >
-            {busy ? '등록하는 중…' : tasks.length > 0 ? `선택한 ${chosen.length}건 등록` : '승인'}
+            {busy
+              ? '등록하는 중…'
+              : multi && actions
+                ? approved.length === 0
+                  ? '전부 거절'
+                  : `${approved.length}건 실행`
+                : tasks.length > 0
+                  ? `선택한 ${chosen.length}건 등록`
+                  : '승인'}
           </Button>
         </div>
       ) : (

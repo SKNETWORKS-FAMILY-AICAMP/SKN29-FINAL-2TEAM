@@ -59,7 +59,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   // 팀원 조회·부하 리포트·부재 조회를 하나로 묶었다(2026-08-18, 지훈 요청
   // "비슷한 커넥터별로 묶자"의 첫 걸음) — 셋 다 같은 HR 데이터(팀원 명부·
   // 역량·부재)가 원본이다.
-  HR: '팀원의 이름·직책·보유 스킬, 업무 부하, 부재(휴가 등) 현황을 조회합니다.',
+  HR: '팀원의 이름·직책·기술 스택, 업무 부하, 부재(휴가 등) 현황을 조회합니다.',
   '웹 검색': '인터넷에서 정보를 찾아 출처 URL과 함께 알려줍니다.',
   [UNCATEGORIZED]: '카테고리가 지정되지 않은 도구입니다.',
 };
@@ -79,7 +79,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
 const TOOL_DESCRIPTIONS: Record<string, string> = {
   document_search: '문서에서 질문과 관련된 문장을 찾아 근거로 보여줍니다.',
   document_list: '팀에 어떤 문서가 있는지 목록으로 보여줍니다. 아직 읽지 않은 파일도 함께 알려줍니다.',
-  people_list: '팀원의 이름·직책·보유 스킬을 조회합니다.',
+  people_list: '팀원의 이름·직책·기술 스택을 조회합니다.',
   workload_report: '팀원별로 남은 업무 시간을 계산해 보여줍니다.',
   absence_list: '팀원의 휴가 등 부재 일정을 조회합니다.',
   task_extraction: '문서에서 해야 할 일을 찾아 근거 문장과 함께 정리합니다.',

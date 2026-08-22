@@ -13,8 +13,10 @@ from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitM
 
 from services.agent_runtime.runtime_policy import (
     DEFAULT_EXCLUDED_BUILTIN_TOOLS,
-    DEFAULT_TOOL_CALL_TIMEOUT_SECONDS,
+    DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS,
     DEFAULT_WRITE_TOOL_ALLOWED_ROLES,
+    GUNICORN_WORKER_TIMEOUT_SECONDS,
+    MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS,
     RuntimeCapabilityPolicy,
 )
 
@@ -44,11 +46,16 @@ class RuntimeCapabilityPolicyDefaultsTests(SimpleTestCase):
     def setUp(self):
         self.policy = RuntimeCapabilityPolicy()
 
-    def test_todo_disabled_by_default(self):
+    def test_todo_enabled_by_default(self):
         """2026-08-18, §5 Phase 4부터 `middleware/factory.py.build()`가 이 값을
-        실제로 읽는다(`tests/test_middleware_factory.py::BuildTodoWiringTests`) —
-        여기서는 "명시적으로 켜지 않으면 꺼져 있다"는 기본값 계약만 확인한다."""
-        self.assertFalse(self.policy.enable_todo)
+        실제로 읽는다(`tests/test_middleware_factory.py::BuildTodoWiringTests`).
+
+        **2026-08-19에 기본값이 False → True로 바뀌었다**(`17e8c62`, 사용자
+        요청 — Root/Child/GP 전부에 `write_todos`가 기본으로 붙는다). 이
+        테스트는 그때 같이 안 고쳐져서 옛 기본값(False)을 검증한 채로 남아
+        있었다 — 2026-08-21에 실제 정책 값에 맞춘다(`2026-08-21_01` §8이
+        정리한 것과 같은 종류의 낡은 테스트)."""
+        self.assertTrue(self.policy.enable_todo)
 
     def test_uses_default_excluded_builtin_tools(self):
         self.assertEqual(self.policy.excluded_builtin_tools, DEFAULT_EXCLUDED_BUILTIN_TOOLS)
@@ -158,8 +165,11 @@ class MiddlewareIntegrationTests(SimpleTestCase):
 
 
 class DefaultWriteToolAllowedRolesTests(SimpleTestCase):
-    def test_only_leader_allowed_by_default(self):
-        self.assertEqual(DEFAULT_WRITE_TOOL_ALLOWED_ROLES, frozenset({"leader"}))
+    def test_leader_and_member_allowed_by_default(self):
+        """2026-08-20부터 팀원도 포함한다(`17e8c62`) — 근거와 그 대가(자기
+        승인 HITL)는 `IsToolAllowedForRoleTests.
+        test_side_effect_tool_allowed_for_member` docstring 참고."""
+        self.assertEqual(DEFAULT_WRITE_TOOL_ALLOWED_ROLES, frozenset({"leader", "member"}))
 
 
 class IsToolAllowedForRoleTests(SimpleTestCase):
@@ -175,46 +185,80 @@ class IsToolAllowedForRoleTests(SimpleTestCase):
     def test_side_effect_tool_allowed_for_leader(self):
         self.assertTrue(self.policy.is_tool_allowed_for_role(side_effect=True, account_role="leader"))
 
-    def test_side_effect_tool_blocked_for_member(self):
-        """팀원은 쓰기(side_effect=True) 도구를 **실행**할 수 없다 — 사용자 명시
-        요구사항. 노출(모델에게 보여주는 것)은 더는 이 판단을 안 탄다
-        (2026-08-19 정책 변경 — `factory.py`의 `build()`가 역할과 무관하게
-        전부 보여주고, 이 함수는 `_run()`의 실행 시점 확인에만 쓰인다)."""
+    def test_side_effect_tool_allowed_for_member(self):
+        """**2026-08-20부터 팀원도 쓰기(side_effect=True) 도구를 실행할 수
+        있다**(`17e8c62`, 사용자 요청 — "팀원이 자기 업무를 직접 등록할 수
+        있게 하고 싶다").
 
-        self.assertFalse(self.policy.is_tool_allowed_for_role(side_effect=True, account_role="member"))
+        방어선이 없어진 게 아니라 옮겨갔다: 예전엔 "역할이 아니면 즉시 거부"가
+        유일한 경계였는데, 이제 `factory.py`의 `build()`가 `interrupt_on`을
+        만들 때 **같은 함수**를 다시 부르므로 팀원의 쓰기 호출도 팀장과 똑같이
+        HITL 확인 카드(자기 승인)를 거친다. 자세한 배경은
+        `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+
+        이 테스트는 그 변경 때 같이 안 고쳐져서 옛 동작(member 차단)을 검증한
+        채로 남아 있었다 — 2026-08-21에 실제 정책에 맞춘다."""
+
+        self.assertTrue(self.policy.is_tool_allowed_for_role(side_effect=True, account_role="member"))
 
 
-class TimeoutForToolTests(SimpleTestCase):
-    """2026-08-19, §5순위 — `timeout_for_tool()`. 숫자 자체(300초)를 계약으로
-    검증하지 않는다(정책 값이라 바뀔 수 있다, `RuntimeCapabilityPolicyDefaultsTests`
-    등과 같은 원칙) — 여기서는 "override가 없으면 기본값, 있으면 override"라는
-    규칙만 확인한다."""
+class TimeoutForMcpToolTests(SimpleTestCase):
+    """2026-08-21, A-1 — `timeout_for_mcp_tool()`.
 
-    def test_default_tool_call_timeout_seconds_is_300(self):
-        """`services/harness/runner.py`의 기존 모델 호출 timeout(300초)과 같은
-        값을 재사용한다는 근거 자체는 이 상수 하나로 고정돼 있어야 하므로,
-        이 값만은 예외적으로 직접 확인한다(모듈 docstring 참고)."""
-        self.assertEqual(DEFAULT_TOOL_CALL_TIMEOUT_SECONDS, 300)
+    2026-08-19의 `timeout_for_tool()`(전역 300초, 모든 도구 대상)을 대체한다.
+    그 설계는 `17e8c62`에서 되돌려졌고, 이 테스트도 그때 같이 지워졌어야 했는데
+    남아 있어서 import부터 깨져 있었다(`2026-08-21_01` §8).
+
+    숫자 자체는 대부분 계약으로 검증하지 않지만(정책 값이라 바뀔 수 있다),
+    **gunicorn 한도와의 관계만은 예외로 고정한다** — 그게 이 값의 유일한
+    근거이기 때문이다(`2026-08-21_01` §4).
+    """
+
+    def test_default_is_below_gunicorn_worker_timeout(self):
+        """이 값의 근거는 "MCP가 보통 이 정도 걸린다"가 아니라 "gunicorn이
+        워커를 죽이기 전에 우리가 먼저 끊는다"다 — 그러므로 gunicorn 한도보다
+        확실히 작아야 한다는 것 자체가 계약이다."""
+        self.assertLess(DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS, GUNICORN_WORKER_TIMEOUT_SECONDS)
+        self.assertLess(MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS, GUNICORN_WORKER_TIMEOUT_SECONDS)
 
     def test_uses_default_when_no_override_registered(self):
         policy = RuntimeCapabilityPolicy()
 
-        self.assertEqual(policy.timeout_for_tool("document_search"), DEFAULT_TOOL_CALL_TIMEOUT_SECONDS)
+        self.assertEqual(
+            policy.timeout_for_mcp_tool("mcp:MT001"), DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS
+        )
 
     def test_uses_configured_default_when_no_override_registered(self):
-        policy = RuntimeCapabilityPolicy(tool_call_timeout_seconds=42)
+        policy = RuntimeCapabilityPolicy(mcp_tool_call_timeout_seconds=42)
 
-        self.assertEqual(policy.timeout_for_tool("document_search"), 42)
+        self.assertEqual(policy.timeout_for_mcp_tool("mcp:MT001"), 42)
 
     def test_override_takes_precedence_over_default(self):
         policy = RuntimeCapabilityPolicy(
-            tool_call_timeout_seconds=300, tool_call_timeout_overrides={"document_search": 15}
+            mcp_tool_call_timeout_seconds=300, mcp_tool_call_timeout_overrides={"mcp:MT001": 15}
         )
 
-        self.assertEqual(policy.timeout_for_tool("document_search"), 15)
-        self.assertEqual(policy.timeout_for_tool("task_register"), 300)
+        self.assertEqual(policy.timeout_for_mcp_tool("mcp:MT001"), 15)
+        self.assertEqual(policy.timeout_for_mcp_tool("mcp:MT999"), 300)
+
+    def test_override_cannot_exceed_the_ceiling(self):
+        """override로 gunicorn 한도를 넘겨 버리면 이 미들웨어가 끊기 전에 워커가
+        먼저 죽어서 있으나 마나가 된다 — 그래서 값 자체를 상한으로 자른다
+        (`2026-08-21_01` §5)."""
+        policy = RuntimeCapabilityPolicy(
+            mcp_tool_call_timeout_overrides={"mcp:MT001": GUNICORN_WORKER_TIMEOUT_SECONDS + 100}
+        )
+
+        self.assertEqual(policy.timeout_for_mcp_tool("mcp:MT001"), MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS)
+
+    def test_configured_default_cannot_exceed_the_ceiling(self):
+        policy = RuntimeCapabilityPolicy(mcp_tool_call_timeout_seconds=99999)
+
+        self.assertEqual(policy.timeout_for_mcp_tool("mcp:MT001"), MAX_MCP_TOOL_CALL_TIMEOUT_SECONDS)
 
     def test_default_overrides_dict_is_empty(self):
+        """미리 모든 MCP 도구를 "빠름/느림"으로 분류하지 않는다 — 실제로 문제가
+        확인된 것만 나중에 넣는다(`2026-08-21_01` §5)."""
         policy = RuntimeCapabilityPolicy()
 
-        self.assertEqual(policy.tool_call_timeout_overrides, {})
+        self.assertEqual(policy.mcp_tool_call_timeout_overrides, {})

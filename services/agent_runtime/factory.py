@@ -17,10 +17,17 @@ from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
 from services.agent_runtime.memory.write_guard import build_memory_write_guard
 from services.agent_runtime.memory.write_lock import build_memory_write_lock
+from services.agent_runtime.hitl_warnings import build_confirmation_description
 from services.agent_runtime.prompts import GP_DESCRIPTION
+from services.agent_runtime.runtime_policy import GUNICORN_WORKER_TIMEOUT_SECONDS
 from services.agent_runtime.subagents.builder import build_subagent
 from services.agent_runtime.subagents.validation import validate_subagents
-from services.agent_runtime.tools.loader import Tool, inject_runtime_context, model_safe_tool_name
+from services.agent_runtime.tools.loader import (
+    MCP_TOOL_REF_PREFIX,
+    Tool,
+    inject_runtime_context,
+    model_safe_tool_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +164,33 @@ def _to_langchain_tool(
                 )
                 return cached
 
+        # 2026-08-21, 병렬실행 Phase 3 — MCP 호출이 "지금 도는 중"이라고
+        # 표시한다(`2026-08-21_04` §3.1). 승인 카드가 이 표시를 보고 "같은
+        # 서버에 다른 실행이 진행 중"을 알린다. 직렬화가 아니라 경고라서,
+        # 여기서 **기다리는 코드는 하나도 없다** — 넣고 바로 빠져나온다.
+        #
+        # 이 자리인 이유: raw MCP handler(`tools/adapters.py`)에는 run_id도
+        # tool_call_id도 안 넘어간다. idempotency 기록과 같은 자리를 쓴다.
+        #
+        # **timeout이 나도 이 `finally`는 그 호출의 진짜 끝에 돈다** — 우리
+        # timeout 미들웨어는 기다리기를 포기할 뿐 이 스레드를 못 죽이므로,
+        # 여기까지 계속 내려와서 자기 표시를 지운다. 그래야 우리가 포기한
+        # 뒤에도 "지금 도는 중" 목록이 정확하다.
+        active_scope = (
+            tool.ref.startswith(MCP_TOOL_REF_PREFIX)
+            and langchain_tool_call_id
+            and context.run_id
+        )
+        if active_scope:
+            from backend.db.agent_platform import McpCallNoteRepository
+
+            McpCallNoteRepository.begin_active(
+                run_id=context.run_id,
+                langchain_tool_call_id=langchain_tool_call_id,
+                tool_ref=tool.ref,
+                team_id=context.team_id,
+            )
+
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
             result = tool.handler(**resolved)
@@ -227,6 +261,30 @@ def _to_langchain_tool(
                     result=str(result),
                 )
             return result
+        finally:
+            # 성공이든 실패든 "도는 중" 표시는 지운다(2026-08-21). `finally`인
+            # 이유: 위 `except`가 `ToolException`으로 바꿔 다시 raise하므로
+            # `else`에만 두면 실패한 호출의 표시가 영원히 남는다.
+            #
+            # 지우기가 실패해도 도구 실행 결과를 뒤집지 않는다 — 이건 경고용
+            # 부가 정보지 실행의 일부가 아니다. 남은 행은 조회 시점의
+            # stale 필터(gunicorn timeout 기준)가 결국 걸러 낸다.
+            if active_scope:
+                from backend.db.agent_platform import McpCallNoteRepository
+
+                try:
+                    McpCallNoteRepository.end_active(
+                        run_id=context.run_id,
+                        langchain_tool_call_id=langchain_tool_call_id,
+                    )
+                except Exception:  # noqa: BLE001 - 경고용 부가 정보다
+                    logger.warning(
+                        "MCP 실행 중 표시를 지우지 못했다: %s (run_id=%s, tool_call_id=%s)",
+                        tool.ref,
+                        context.run_id,
+                        langchain_tool_call_id,
+                        exc_info=True,
+                    )
 
     return _IdempotencyAwareTool.from_function(
         func=_run,
@@ -397,13 +455,38 @@ class AgentRuntimeFactory:
         # `jira_create_issues`, MCP 도구 전부)을 하드코딩하지 않고 매 요청
         # 시점의 실제 목록을 그대로 쓴다 — 팀마다 달라지는 MCP 도구나 나중에
         # 추가될 side_effect 도구도 자동으로 포함된다.
-        interrupt_on: dict[str, bool] | None = None
+        #
+        # 2026-08-21, 병렬실행 Phase 3 — MCP 도구는 `True`(전부 허용) 대신
+        # `InterruptOnConfig`를 준다. `description` 콜백을 달아 승인 카드에
+        # "같은 서버에 다른 작업이 도는 중"·"이 도구가 방금 timeout났다" 같은
+        # 경고를 붙이기 위해서다(`hitl_warnings.py` 모듈 docstring). 내장
+        # 도구는 그대로 `True`다 — 그쪽은 우리가 코드를 아는 로컬 도구라
+        # 동시 실행을 lock으로 직렬화하지, 경고로 넘기지 않는다.
+        #
+        # `allowed_decisions`는 `True`가 만들어 주던 것과 같은 값을 그대로
+        # 적는다(실측: langchain `HumanInTheLoopMiddleware.__init__`이
+        # `True`를 `["approve", "edit", "reject", "respond"]`로 편다) — 값을
+        # 좁히면 지금 되던 승인·편집이 조용히 사라진다.
+        interrupt_on: dict[str, Any] | None = None
         if self.checkpointer_provider is not None:
-            side_effect_tools = {
-                model_safe_tool_name(t.ref): True
+            allowed_side_effect = self.runtime_policy.is_tool_allowed_for_role(
+                side_effect=True, account_role=context.role
+            )
+            describe = build_confirmation_description(
+                context=context,
+                stale_after_seconds=GUNICORN_WORKER_TIMEOUT_SECONDS,
+            )
+            side_effect_tools: dict[str, Any] = {
+                model_safe_tool_name(t.ref): (
+                    {
+                        "allowed_decisions": ["approve", "edit", "reject", "respond"],
+                        "description": describe,
+                    }
+                    if t.ref.startswith(MCP_TOOL_REF_PREFIX)
+                    else True
+                )
                 for t in tools
-                if t.side_effect
-                and self.runtime_policy.is_tool_allowed_for_role(side_effect=True, account_role=context.role)
+                if t.side_effect and allowed_side_effect
             }
             if side_effect_tools:
                 interrupt_on = side_effect_tools

@@ -31,7 +31,22 @@ export interface LiveChat {
   running: boolean;
   extraction: TaskExtractionPayload | null;
   tasks: ExtractedTask[];
-  confirm: { toolName: string; runId: string; count: number } | null;
+  /**
+   * `actions`(2026-08-21, 병렬실행 Phase 2)는 이 카드에 걸린 호출 **전부**다.
+   * 모델이 한 턴에 side_effect 도구를 여러 개 부르면 전부 한 번에
+   * interrupt되는데(`HumanInTheLoopMiddleware.after_model`), 예전엔 첫 호출만
+   * 화면에 보여주고 승인은 전부에 일괄 적용했다 — "Jira 3건은 승인하되
+   * 이메일만 거절"이 불가능했고, 무엇이 같이 실행되는지 보이지도 않았다.
+   * 길이가 1이면 예전과 똑같이 그린다.
+   *
+   * 레거시 엔진 카드는 도구 하나짜리라 항상 길이 1이다.
+   */
+  confirm: {
+    toolName: string;
+    runId: string;
+    count: number;
+    actions: { name: string; count: number }[];
+  } | null;
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
   answer: string;
@@ -295,13 +310,21 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       // 그 좁힘이 다음 줄까지 안 이어져 타입 오류가 난다.
       let toolName: string | undefined;
       let args: Record<string, unknown> | undefined;
+      // 2026-08-21, 병렬실행 Phase 2 — 첫 호출만 보지 않고 전부 담는다.
+      // 화면이 호출별로 승인·거절하려면 목록 전체가 있어야 한다.
+      let actions: { name: string; count: number }[];
       if ('action_requests' in event) {
         const first = event.action_requests[0];
         toolName = first?.name;
         args = first?.args;
+        actions = event.action_requests.map((request) => ({
+          name: request.name,
+          count: countIssues(request.args ?? {}),
+        }));
       } else {
         toolName = event.tool_name;
         args = event.arguments;
+        actions = [{ name: event.tool_name, count: countIssues(event.arguments ?? {}) }];
       }
       return {
         ...state,
@@ -310,6 +333,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           toolName: toolName ?? '확인 필요',
           runId: event.run_id,
           count: countIssues(args ?? {}),
+          actions,
         },
       };
     }

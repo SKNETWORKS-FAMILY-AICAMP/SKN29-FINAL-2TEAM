@@ -359,7 +359,12 @@ class JiraOAuthApiTests(SimpleTestCase):
         self.assertEqual(query["audience"], ["api.atlassian.com"])
         self.assertEqual(query["client_id"], ["jira-client-id"])
         self.assertEqual(query["redirect_uri"], ["http://localhost:8000/api/connectors/jira/callback/"])
-        self.assertEqual(query["scope"], ["read:jira-work read:jira-user offline_access"])
+        # `write:jira-work`는 2026-08-20에 추가됐다(`4608dd9` — 이슈 쓰기).
+        # 읽기 스코프만으로는 `jira_create_issues`가 실패하므로 필수다. 이
+        # 테스트는 그때 같이 안 고쳐져 옛 목록을 검증한 채로 남아 있었다.
+        self.assertEqual(
+            query["scope"], ["read:jira-work read:jira-user write:jira-work offline_access"]
+        )
         self.assertIn("state", query)
 
     @patch("apps.connectors.api_views.ConnectorRepository.connect_oauth")

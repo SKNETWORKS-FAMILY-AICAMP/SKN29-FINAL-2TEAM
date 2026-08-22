@@ -101,7 +101,7 @@ export default function TeamLeaderSettingsPage() {
     }
   }
 
-  // 이름·부서·직책과 보유 스킬은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
+  // 이름·부서·직책과 기술 스택은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
   const reloadAccount = useCallback(async () => {
     if (!token) return;
     try {
@@ -234,7 +234,7 @@ export default function TeamLeaderSettingsPage() {
       <section id="skills" className={styles.sectionBlock}>
         <Card padding="lg">
           <div className={styles.sectionHeading}>
-            <h2>보유 스킬</h2>
+            <h2>기술 스택</h2>
           </div>
           <SkillList skills={account?.skills ?? []} />
         </Card>

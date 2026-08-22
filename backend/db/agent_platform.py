@@ -1495,16 +1495,24 @@ class ToolCallRepository:
         status: str,
         duration_ms: int,
         error_code: str | None = None,
+        retrieved_doc_ids: list[str] | None = None,
     ) -> None:
+        """`retrieved_doc_ids`(2026-08-21): 이 호출이 건드린 문서 식별자.
+
+        **빈 목록과 `None` 을 같게 다룬다** — 둘 다 NULL 로 남긴다. 문서와
+        무관한 도구(`people_list` 등)에 빈 배열을 채워 두면 "문서를 찾았는데
+        하나도 없었다"와 "애초에 문서를 안 보는 도구다"가 같은 모양이 된다.
+        """
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE tool_call
-                       SET status = %s, error_code = %s, duration_ms = %s
+                       SET status = %s, error_code = %s, duration_ms = %s,
+                           retrieved_doc_ids = %s
                      WHERE tool_call_id = %s
                     """,
-                    (status, error_code, duration_ms, tool_call_id),
+                    (status, error_code, duration_ms, retrieved_doc_ids or None, tool_call_id),
                 )
 
 
@@ -1563,6 +1571,208 @@ class ToolCallIdempotencyRepository:
                     """,
                     (run_id, langchain_tool_call_id, tool_ref, text),
                 )
+
+
+#: `mcp_call_note.kind` 값. 표 주석(DB/schema.sql)과 같은 뜻이다.
+MCP_CALL_ACTIVE = "ACTIVE"
+MCP_CALL_TIMED_OUT = "TIMED_OUT"
+
+
+class McpCallNoteRepository:
+    """승인 카드 경고의 재료(2026-08-21, 병렬실행 Phase 3).
+
+    정본: `docs/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md`,
+    `..._03_외부_Write_Tool_재시도_안전성.md` §4.2.
+
+    **여기서 하는 일은 전부 "짧게 쓰고 바로 끝"이다.** 락을 쥔 채 기다리는
+    코드가 하나도 없다 — 그게 이 설계가 advisory lock 직렬화를 대체한
+    이유다(표 주석 참고). 오래 도는 MCP 호출이 DB 커넥션을 붙잡지 않는다.
+    """
+
+    @staticmethod
+    def begin_active(
+        *, run_id: str, langchain_tool_call_id: str, tool_ref: str, team_id: str
+    ) -> None:
+        """MCP 호출이 시작됐다고 표시한다.
+
+        `mcp_server_id`는 별도 왕복 없이 같은 INSERT 안에서 찾는다. 못 찾으면
+        (등록이 지워진 도구 등) `mcp_server_id`가 NULL인 행이 들어간다 —
+        경고 조회는 서버가 같을 때만 걸리므로 NULL 행은 아무에게도 경고를
+        띄우지 않고, 실행 자체를 막지도 않는다.
+
+        같은 (run_id, tool_call_id)가 다시 오면(HITL resume 등) 아무것도 하지
+        않는다 — 이미 표시된 것이다.
+        """
+        mcp_tool_id = tool_ref.removeprefix("mcp:")
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO mcp_call_note
+                        (run_id, langchain_tool_call_id, kind, tool_ref, mcp_server_id, team_id)
+                    SELECT %s, %s, %s, %s,
+                           (SELECT t.server_id FROM mcp_tool AS t WHERE t.mcp_tool_id = %s),
+                           %s
+                    ON CONFLICT (run_id, langchain_tool_call_id, kind) DO NOTHING
+                    """,
+                    (
+                        run_id,
+                        langchain_tool_call_id,
+                        MCP_CALL_ACTIVE,
+                        tool_ref,
+                        mcp_tool_id,
+                        team_id,
+                    ),
+                )
+
+    @staticmethod
+    def end_active(*, run_id: str, langchain_tool_call_id: str) -> None:
+        """MCP 호출이 끝났다고 표시한다(성공·실패 무관).
+
+        **timeout이 나도 이 함수는 그 호출의 진짜 끝에 불린다** — 우리
+        timeout 미들웨어는 기다리기를 포기할 뿐 스레드를 못 죽이므로, 백그라운드
+        에서 계속 돌던 handler가 실제로 끝날 때 자기 ACTIVE 행을 지운다. 그래야
+        우리가 포기한 뒤에도 "지금 도는 중" 표시가 정확하게 유지된다.
+        `TIMED_OUT` 행은 건드리지 않는다(kind로 갈라져 있다).
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM mcp_call_note
+                     WHERE run_id = %s AND langchain_tool_call_id = %s AND kind = %s
+                    """,
+                    (run_id, langchain_tool_call_id, MCP_CALL_ACTIVE),
+                )
+
+    @staticmethod
+    def record_timeout(
+        *, run_id: str, langchain_tool_call_id: str, tool_ref: str, team_id: str
+    ) -> None:
+        """timeout으로 **결과를 확인하지 못한** 호출을 남긴다. 안 지운다.
+
+        timeout은 "실패했다"가 아니라 "결과를 모른다"는 뜻이라(스레드가 계속
+        돌고 있어 뒤늦게 성공할 수 있다), 모델이 같은 작업을 새 tool_call_id로
+        재시도하면 중복 실행이 날 수 있다. 그 재시도의 승인 카드에 경고를
+        띄우는 게 이 행의 용도다(`2026-08-21_03` §4.2).
+        """
+        mcp_tool_id = tool_ref.removeprefix("mcp:")
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO mcp_call_note
+                        (run_id, langchain_tool_call_id, kind, tool_ref, mcp_server_id, team_id)
+                    SELECT %s, %s, %s, %s,
+                           (SELECT t.server_id FROM mcp_tool AS t WHERE t.mcp_tool_id = %s),
+                           %s
+                    ON CONFLICT (run_id, langchain_tool_call_id, kind) DO NOTHING
+                    """,
+                    (
+                        run_id,
+                        langchain_tool_call_id,
+                        MCP_CALL_TIMED_OUT,
+                        tool_ref,
+                        mcp_tool_id,
+                        team_id,
+                    ),
+                )
+
+    @staticmethod
+    def has_other_active_on_same_server(
+        *,
+        tool_ref: str,
+        team_id: str,
+        exclude_tool_call_ids: tuple[str, ...] = (),
+        stale_after_seconds: int,
+    ) -> bool:
+        """이 도구가 쓸 MCP 서버에 **지금 도는 다른 호출**이 있는지.
+
+        `stale_after_seconds`보다 오래된 행은 무시한다 — 프로세스가 죽는 등으로
+        `end_active()`가 못 돌면 ACTIVE 행이 영원히 남는데, 별도 정리 작업을
+        두지 않고 조회 시점에 거른다. 기준값은 호출부가 gunicorn worker
+        timeout을 그대로 넘긴다(그보다 오래 "실행 중"인 건 실제로는 이미 죽은
+        실행이 남긴 찌꺼기다).
+
+        `exclude_tool_call_ids`로 자기 자신(과 같은 배치의 형제)을 뺀다.
+
+        같은 팀 안에서만 본다 — 남의 팀 실행을 보고 경고하지 않는다.
+        """
+        mcp_tool_id = tool_ref.removeprefix("mcp:")
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT 1
+                      FROM mcp_call_note AS n
+                     WHERE n.kind = %s
+                       AND n.team_id = %s
+                       AND n.mcp_server_id IS NOT NULL
+                       AND n.mcp_server_id = (
+                             SELECT t.server_id FROM mcp_tool AS t WHERE t.mcp_tool_id = %s
+                           )
+                       AND n.started_at > now() - make_interval(secs => %s)
+                       AND NOT (n.langchain_tool_call_id = ANY(%s))
+                     LIMIT 1
+                    """,
+                    (
+                        MCP_CALL_ACTIVE,
+                        team_id,
+                        mcp_tool_id,
+                        stale_after_seconds,
+                        list(exclude_tool_call_ids),
+                    ),
+                )
+                return cursor.fetchone() is not None
+
+    @staticmethod
+    def server_ids_for_tool_refs(tool_refs: tuple[str, ...]) -> dict[str, str]:
+        """`mcp:<tool_id>` 목록 → `{tool_ref: mcp_server_id}`.
+
+        **한 번의 왕복으로 여러 개를 푼다** — 같은 배치(한 AIMessage)에 걸린
+        MCP 호출들이 서로 같은 서버를 쓰는지 보려면 전부의 서버를 알아야
+        하는데, 하나씩 조회하면 승인 카드를 그릴 때마다 왕복이 호출 수만큼
+        늘어난다(`2026-08-21_04` §3.2).
+
+        못 찾은 tool_ref는 결과에 아예 안 들어간다(KeyError로 터뜨리지 않고
+        호출부가 "서버를 모른다"로 다루게 한다).
+        """
+        if not tool_refs:
+            return {}
+        by_tool_id = {ref.removeprefix("mcp:"): ref for ref in tool_refs}
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT mcp_tool_id, server_id
+                      FROM mcp_tool
+                     WHERE mcp_tool_id = ANY(%s)
+                    """,
+                    (list(by_tool_id),),
+                )
+                rows = cursor.fetchall()
+        return {by_tool_id[row["mcp_tool_id"]]: row["server_id"] for row in rows}
+
+    @staticmethod
+    def has_timeout_in_run(*, run_id: str, tool_ref: str) -> bool:
+        """이 run에서 같은 `tool_ref`가 timeout으로 끝난 적 있는지.
+
+        판단 기준을 `tool_ref` 하나로 좁힌 이유(입력값 유사도까지 비교하지
+        않는 이유)는 `2026-08-21_03` §4.2 — args 비교는 "제목이 한 글자만
+        달라도 다른 요청인가" 같은 모호한 판단이 필요해 오탐·누락이 쉽다.
+        거칠지만 확실한 사실만 보여주고 판단은 사람이 한다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT 1 FROM mcp_call_note
+                     WHERE run_id = %s AND tool_ref = %s AND kind = %s
+                     LIMIT 1
+                    """,
+                    (run_id, tool_ref, MCP_CALL_TIMED_OUT),
+                )
+                return cursor.fetchone() is not None
 
 
 def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str | None:
