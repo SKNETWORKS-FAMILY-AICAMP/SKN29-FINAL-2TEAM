@@ -229,7 +229,7 @@ class FromDraftTests(SimpleTestCase):
         self.assertEqual(loaded.definition.tool_refs, ("document_search",))
 
     def test_agent_id_passes_through_when_draft_supplies_it(self):
-        """레거시 에이전트를 옮긴 draft(legacy_bridge.draft_from_legacy_agent())는
+        """이미 저장된 에이전트를 draft 모양으로 옮겨 돌리는 경우
         agent_id를 실어 보낸다 — agent_run.agent_id(NOT NULL)를 채우려면
         여기서 그대로 통과시켜야 한다(2026-08-14 추가). agent_version_id는
         draft 개념 자체에 없어서 항상 None이다."""

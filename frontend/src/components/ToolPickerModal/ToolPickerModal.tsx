@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { Badge, Button, Checkbox, Icon, Modal } from '../../components';
-import type { BadgeTone } from '../../components';
+import { Badge } from '../Badge/Badge';
+import { Button } from '../Button/Button';
+import { Checkbox } from '../Checkbox/Checkbox';
+import { Icon } from '../Icon/Icon';
+import { Modal } from '../Modal/Modal';
+import type { BadgeTone } from '../Badge/Badge';
 import type { ToolChoice } from '../../api/agents';
 import type { McpServer } from '../../api/mcp';
-import pageStyles from './AgentEditPage.module.css';
 import styles from './ToolPickerModal.module.css';
 
 type Tab = 'builtin' | 'mcp' | 'create';
@@ -198,19 +201,19 @@ export function ToolPickerModal({
                 </button>
 
                 {expanded && (
-                  <div className={pageStyles.toolList}>
+                  <div className={styles.toolList}>
                     {items.map((toolItem) => {
                       const checked = toolRefs.includes(toolItem.tool_ref);
                       return (
                         <div
                           key={toolItem.tool_ref}
-                          className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
+                          className={[styles.toolRow, checked ? styles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
                           <Checkbox checked={checked} onChange={() => onToggle(toolItem.tool_ref)} />
-                          <div className={pageStyles.toolText}>
+                          <div className={styles.toolText}>
                             <strong>
                               {toolItem.name}
-                              {toolItem.side_effect && <span className={pageStyles.gate}> · 승인 필요</span>}
+                              {toolItem.side_effect && <span className={styles.gate}> · 승인 필요</span>}
                             </strong>
                             <span>
                               {TOOL_DESCRIPTIONS[toolItem.tool_ref] ?? toolItem.description}
@@ -224,13 +227,13 @@ export function ToolPickerModal({
               </div>
             );
           })}
-          {builtinTools.length === 0 && <p className={pageStyles.help}>기본 제공 도구가 없습니다.</p>}
+          {builtinTools.length === 0 && <p className={styles.help}>기본 제공 도구가 없습니다.</p>}
         </div>
       )}
 
       {tab === 'mcp' && (
         <div className={styles.serverList}>
-          {mcpServers.length === 0 && <p className={pageStyles.help}>아직 이 팀에 붙어 있는 서버가 없습니다.</p>}
+          {mcpServers.length === 0 && <p className={styles.help}>아직 이 팀에 붙어 있는 서버가 없습니다.</p>}
           {mcpServers.map((server) => {
             const chip = SERVER_STATUS[server.status];
             const usable = server.status === 'CONNECTED';
@@ -241,33 +244,33 @@ export function ToolPickerModal({
                     {server.name}
                     <Badge tone={chip.tone}>{chip.label}</Badge>
                   </span>
-                  <span className={pageStyles.help}>{server.endpoint_url}</span>
+                  <span className={styles.help}>{server.endpoint_url}</span>
                 </div>
                 {!usable && (
-                  <p className={pageStyles.help}>
+                  <p className={styles.help}>
                     {server.status === 'UNCHECKED'
                       ? '설정에서 연결을 확인해야 도구를 고를 수 있습니다.'
                       : '연결이 실패한 서버입니다. 설정에서 연결 상태를 확인하세요.'}
                   </p>
                 )}
                 {usable && server.tools.length === 0 && (
-                  <p className={pageStyles.help}>이 서버는 제공하는 도구가 없습니다.</p>
+                  <p className={styles.help}>이 서버는 제공하는 도구가 없습니다.</p>
                 )}
                 {usable && server.tools.length > 0 && (
-                  <div className={pageStyles.toolList}>
+                  <div className={styles.toolList}>
                     {server.tools.map((tool) => {
                       const ref = `mcp:${tool.mcp_tool_id}`;
                       const checked = toolRefs.includes(ref);
                       return (
                         <div
                           key={tool.mcp_tool_id}
-                          className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
+                          className={[styles.toolRow, checked ? styles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
                           <Checkbox checked={checked} disabled={!tool.enabled} onChange={() => onToggle(ref)} />
-                          <div className={pageStyles.toolText}>
+                          <div className={styles.toolText}>
                             <strong>
                               {tool.name}
-                              <span className={pageStyles.gate}> · 승인 필요</span>
+                              <span className={styles.gate}> · 승인 필요</span>
                             </strong>
                             <span>{tool.description || (tool.enabled ? '' : '사용 중지된 도구입니다.')}</span>
                           </div>
@@ -282,7 +285,7 @@ export function ToolPickerModal({
           {/* 설정으로 보내던 버튼은 걷었다(2026-08-18) — 그 탭이 없어졌고,
               팀이 스스로 붙일 수도 없다. 대신 **어디로 말하면 되는지**를
               남긴다. 문구는 Model 탭(8/13)과 같은 말이다. */}
-          <p className={pageStyles.help}>
+          <p className={styles.help}>
             서버 등록은 운영자에게 요청하세요. 주소·키를 다루는 작업이라 운영자가 대신 등록합니다.
           </p>
         </div>
@@ -290,7 +293,7 @@ export function ToolPickerModal({
 
       {tab === 'create' && (
         <div className={styles.createTab}>
-          <p className={pageStyles.help}>
+          <p className={styles.help}>
             팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 이 팀에
             붙어 있는 커스텀 도구만 쓸 수 있습니다.
           </p>

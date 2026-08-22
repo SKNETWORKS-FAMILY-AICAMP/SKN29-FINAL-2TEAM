@@ -20,7 +20,7 @@ import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import { josa } from '../../utils/josa';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
-import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
+import { ToolPickerModal } from '../../components';
 import { SubagentPickerModal } from './SubagentPickerModal';
 import styles from './AgentVersionEditPage.module.css';
 
@@ -32,7 +32,8 @@ const EFFORT_OPTIONS = [
 ];
 
 /**
- * 새 버전 스키마 생성·편집. `AgentEditPage`(옛 비버전 화면)와 나란히 존재한다.
+ * 에이전트 생성·편집. 2026-08-22에 레거시 비버전 화면(`AgentEditPage`)을
+ * 지우면서 이 화면 하나만 남았다.
  *
  * **저장이 곧 발행이다.** `agent_versions`는 불변이라(02 §5.2) 임시 저장이라는
  * 중간 상태가 없다 — 저장 버튼을 누르는 순간 새 버전이 생긴다. 그래서 옛

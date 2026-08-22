@@ -1,10 +1,14 @@
-"""Agent CRUD API — Builder 가 쓴다 (개발지시_3차 단계 2)."""
+"""에이전트 정의 API — Builder 가 쓴다.
 
-import json
+2026-08-22에 레거시 비버전 스키마(`agent`/`agent_tool`)의 CRUD·활성화·빌더
+테스트 실행을 전부 지웠다. 남은 것은 두 갈래다 — 어느 스키마든 공유하던
+카탈로그 조회(도구·커스텀 모델)와, 새 버전 스키마(`agents`/`agent_versions`)의
+정의 API.
+"""
+
 import logging
 
 import psycopg
-from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -12,7 +16,6 @@ from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.permissions import require_owner_or_leader
-from backend.db import AccountRepository
 from backend.db.agent_platform import (
     AgentCrudRepository,
     AgentVersionCrudRepository,
@@ -26,16 +29,11 @@ from backend.db.errors import (
 )
 from services.agent_builder import check_definition
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
-from services.harness import check_tools, run_agent
 
 from .serializers import (
     AGENT_MODELS,
     AgentVersionFavoriteSerializer,
     AgentVersionPublishSerializer,
-    AgentWriteSerializer,
-    BuilderTestRunSerializer,
-    BuilderToolCheckSerializer,
-    agent_response,
     agent_version_response,
     builtin_tool_response,
     mcp_tool_response,
@@ -114,77 +112,6 @@ def _model_rejection(account_id: str, model: str | None) -> Response | None:
     return Response(
         {"detail": f"{model} 은 고를 수 없는 모델입니다."}, status=status.HTTP_400_BAD_REQUEST
     )
-
-
-class AgentListCreateAPIView(AuthenticatedAPIView):
-    def get(self, request):
-        try:
-            rows = AgentCrudRepository.list_for_team(request.user.account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response([agent_response(row) for row in rows])
-
-    def post(self, request):
-        serializer = AgentWriteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        fields, tool_refs = _split(serializer.validated_data)
-        rejection = _model_rejection(request.user.account_id, fields.get("model"))
-        if rejection is not None:
-            return rejection
-        try:
-            # `_check_tool_refs`(그 안의 `_tool_catalog` → `team_tool_refs` →
-            # `_require_team`)는 팀 없는 계정이면 `PermissionDenied`를 던진다
-            # (2026-08-19 — 이 호출이 아래 저장 호출과 다른 try 블록 밖에 있어서
-            # 못 잡혔던 걸 발견하고 고쳤다. `RepositoryError` 하위 클래스라 아래와
-            # 같은 처리로 묶는다).
-            blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
-            if blocker is not None:
-                return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
-            row = AgentCrudRepository.create(
-                account_id=request.user.account_id, fields=fields, tool_refs=tool_refs
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(agent_response(row), status=status.HTTP_201_CREATED)
-
-
-class AgentDetailAPIView(AuthenticatedAPIView):
-    def get(self, request, agent_id):
-        try:
-            row = AgentCrudRepository.get(agent_id=agent_id, account_id=request.user.account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(agent_response(row))
-
-    def put(self, request, agent_id):
-        serializer = AgentWriteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        fields, tool_refs = _split(serializer.validated_data)
-        rejection = _model_rejection(request.user.account_id, fields.get("model"))
-        if rejection is not None:
-            return rejection
-        try:
-            # `_check_tool_refs`가 던질 수 있는 `PermissionDenied`도 여기서
-            # 같이 잡는다(2026-08-19, 위 create()와 같은 이유).
-            blocker = _check_tool_refs(account_id=request.user.account_id, tool_refs=tool_refs)
-            if blocker is not None:
-                return Response({"detail": blocker}, status=status.HTTP_400_BAD_REQUEST)
-            row = AgentCrudRepository.update(
-                agent_id=agent_id,
-                account_id=request.user.account_id,
-                fields=fields,
-                tool_refs=tool_refs,
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(agent_response(row))
-
-    def delete(self, request, agent_id):
-        try:
-            AgentCrudRepository.delete(agent_id=agent_id, account_id=request.user.account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AgentToolCatalogAPIView(AuthenticatedAPIView):
@@ -276,140 +203,6 @@ def _cascade_activate_draft_subagents(*, agent_id: str, account_id: str) -> list
             continue
         activated.append(child["name"])
     return activated
-
-
-def _builder_test_events(*, draft: dict, user_input: str, account_id: str):
-    """빌더 테스트 실행 이벤트를 NDJSON 한 줄씩 내보낸다.
-
-    응답이 이미 시작된 뒤라 예외를 상태 코드로 알릴 수 없다 — 마지막 줄에
-    `error` 이벤트로 실어 보낸다.
-    """
-
-    try:
-        for event in run_agent(None, user_input, {"account_id": account_id}, draft=draft, dry_run=True):
-            yield json.dumps(event, ensure_ascii=False, default=str) + "\n"
-    except Exception as exc:  # noqa: BLE001 - 스트림 중에는 500을 낼 수 없다
-        logger.exception("빌더 테스트 실행 중 오류")
-        yield (
-            json.dumps(
-                {"type": "error", "detail": f"테스트 실행에 실패했습니다: {exc.__class__.__name__}"},
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-
-
-class AgentBuilderTestRunAPIView(AuthenticatedAPIView):
-    """저장하지 않은 설정 그대로 대화 한 번을 돌려 본다. 승인 필요 도구는 시뮬레이션만 한다."""
-
-    def post(self, request):
-        serializer = BuilderTestRunSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        account_id = request.user.account_id
-
-        rejection = _model_rejection(account_id, data.get("model"))
-        if rejection is not None:
-            return rejection
-
-        try:
-            team_id = AccountRepository.team_id(account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        draft = {
-            "team_id": team_id,
-            "instruction": data["instruction"],
-            "model": data.get("model"),
-            "reasoning_effort": data.get("reasoning_effort"),
-            "max_iterations": data.get("max_iterations"),
-            "tool_refs": data["tool_refs"],
-        }
-
-        return StreamingHttpResponse(
-            _builder_test_events(draft=draft, user_input=data["user_input"], account_id=account_id),
-            content_type="application/x-ndjson",
-        )
-
-
-class AgentBuilderToolCheckAPIView(AuthenticatedAPIView):
-    """선택한 도구 전부를 모델 판단 없이 순서대로 직접 불러 본다."""
-
-    def post(self, request):
-        serializer = BuilderToolCheckSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        account_id = request.user.account_id
-
-        try:
-            team_id = AccountRepository.team_id(account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        results = check_tools(
-            team_id=team_id,
-            account_id=account_id,
-            tool_refs=data["tool_refs"],
-            arguments_by_ref=data["arguments"],
-        )
-        return Response({"results": results})
-
-
-class AgentActivateAPIView(AuthenticatedAPIView):
-    """DRAFT/DISABLED → ACTIVE. Chat 위임과 관리 화면의 "Chat에서 사용"에 노출되려면
-    거쳐야 하는 문이다.
-
-    **DB에 저장된 값으로 다시 검증한다.** 화면이 "나 아까 통과했음"이라고 보내는
-    값을 믿지 않는다 — 그 사이 다른 탭에서 도구 구성을 바꿨을 수 있고, 활성화
-    시점의 실제 내용이 기준이어야 한다.
-
-    **모델도 그 「그 사이」에 사라질 수 있다.** 저장할 때는 있던 커스텀 모델을 팀이
-    Model 탭에서 지우면, 그걸 쓰던 초안은 아무 표시 없이 남는다. 화면은 활성화할 때
-    본문을 다시 보내지 않으므로(`activateAgent` 는 빈 POST 다) 여기서 안 보면 아무도
-    안 본다 — 「활성화했습니다」를 띄운 뒤 첫 대화에서 죽는다.
-    """
-
-    def post(self, request, agent_id):
-        account_id = request.user.account_id
-        try:
-            agent = AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-
-        rejection = _model_rejection(account_id, agent.get("model"))
-        if rejection is not None:
-            return rejection
-
-        try:
-            # `_check_tool_refs`가 던질 수 있는 `PermissionDenied`를 여기서
-            # 못 잡고 있었다(2026-08-19 — 위·아래 다른 try 블록 사이에 홀로
-            # 남아 있어서 팀 없는 계정이면 그대로 500이 됐다).
-            blocker = _check_tool_refs(account_id=account_id, tool_refs=agent["tool_refs"])
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        if blocker is not None:
-            return Response({"detail": blocker}, status=status.HTTP_409_CONFLICT)
-
-        try:
-            row = AgentCrudRepository.set_status(
-                agent_id=agent_id, account_id=account_id, status="ACTIVE"
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(agent_response(row))
-
-
-class AgentDisableAPIView(AuthenticatedAPIView):
-    """ACTIVE → DISABLED. 검증 없이 바로 내린다 — 끄는 쪽은 항상 안전하다."""
-
-    def post(self, request, agent_id):
-        try:
-            row = AgentCrudRepository.set_status(
-                agent_id=agent_id, account_id=request.user.account_id, status="DISABLED"
-            )
-        except (RepositoryError, psycopg.Error) as exc:
-            return _repository_error_response(exc)
-        return Response(agent_response(row))
 
 
 # =========================================================================

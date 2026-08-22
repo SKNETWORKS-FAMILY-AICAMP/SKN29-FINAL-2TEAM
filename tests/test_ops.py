@@ -74,7 +74,7 @@ class OpsAuthenticationTests(SimpleTestCase):
 @patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
 @patch("apps.ops.views.models.log_audit")
 @patch("apps.ops.views.models.CustomModelRepository")
-@patch("apps.ops.views.models.AgentRepository")
+@patch("apps.ops.views.models.TeamRepository")
 class OpsTeamDefaultModelTests(SimpleTestCase):
     """기본 채팅 모델 — **팀이 화면에서 고르지 않는다**(2026-08-18 멘토링).
 
@@ -88,13 +88,11 @@ class OpsTeamDefaultModelTests(SimpleTestCase):
     def _headers(self):
         return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
 
-    def test_고를_수_있는_것을_함께_준다(self, agents, customs, _audit, _admin):
+    def test_고를_수_있는_것을_함께_준다(self, teams, customs, _audit, _admin):
         """이름을 외워 적게 하지 않는다 — 오타는 실행 시점 404 이고,
         그때 죽는 것은 우리가 아니라 그 팀의 대화다."""
 
-        agents.main_model_for_team.return_value = {
-            "agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-luna",
-        }
+        teams.default_model.return_value = "gpt-5.6-luna"
         customs.models_for_team.return_value = {"models/gemini-3.6-flash"}
 
         body = self.client.get(self.URL, **self._headers()).json()
@@ -102,31 +100,32 @@ class OpsTeamDefaultModelTests(SimpleTestCase):
         self.assertEqual(body["model"], "gpt-5.6-luna")
         self.assertIn("models/gemini-3.6-flash", body["choices"])
 
-    def test_정문이_없으면_null_을_준다(self, agents, customs, _audit, _admin):
-        """임의의 기본값을 저장된 것처럼 보이면 안 된다 — 팀 화면에서 지켜 온 규칙이다."""
+    def test_정한_적이_없으면_null_을_준다(self, teams, customs, _audit, _admin):
+        """임의의 기본값을 저장된 것처럼 보이면 안 된다 — 팀 화면에서 지켜 온 규칙이다.
 
-        agents.main_model_for_team.return_value = None
+        2026-08-22 전에는 이게 「그 팀에 정문 에이전트가 없다」는 뜻이었다. 값이
+        `team.default_model`로 옮겨오면서 그 상태는 없어지고, 이제는 순수하게
+        「아직 안 정했다」만 남는다."""
+
+        teams.default_model.return_value = None
         customs.models_for_team.return_value = set()
 
         body = self.client.get(self.URL, **self._headers()).json()
 
         self.assertIsNone(body["model"])
-        self.assertIsNone(body["agent_name"])
 
-    def test_그_팀에만_쓴다(self, agents, customs, _audit, _admin):
+    def test_그_팀에만_쓴다(self, teams, customs, _audit, _admin):
         customs.models_for_team.return_value = set()
-        agents.set_main_model_for_team.return_value = {
-            "agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-sol",
-        }
+        teams.set_default_model.return_value = "gpt-5.6-sol"
 
         response = self.client.put(
             self.URL, {"model": "gpt-5.6-sol"}, content_type="application/json", **self._headers()
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(agents.set_main_model_for_team.call_args.kwargs["team_id"], "TE001")
+        self.assertEqual(teams.set_default_model.call_args.kwargs["team_id"], "TE001")
 
-    def test_그_팀이_못_쓰는_모델은_거절한다(self, agents, customs, _audit, _admin):
+    def test_그_팀이_못_쓰는_모델은_거절한다(self, teams, customs, _audit, _admin):
         """아무 문자열이나 받으면 저장은 되고 실행 시점에 404 로 죽는다 —
         운영자는 저장됐으니 맞다고 믿는다."""
 
@@ -137,9 +136,9 @@ class OpsTeamDefaultModelTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        agents.set_main_model_for_team.assert_not_called()
+        teams.set_default_model.assert_not_called()
 
-    def test_다른_팀에_등록된_모델도_거절한다(self, agents, customs, _audit, _admin):
+    def test_다른_팀에_등록된_모델도_거절한다(self, teams, customs, _audit, _admin):
         """권한 범위는 여전히 팀이다 — 남의 팀에 붙은 모델을 이 팀에 걸면 실행이 죽는다."""
 
         customs.models_for_team.return_value = {"models/gemini-3.6-flash"}
@@ -150,15 +149,13 @@ class OpsTeamDefaultModelTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        agents.set_main_model_for_team.assert_not_called()
+        teams.set_default_model.assert_not_called()
 
-    def test_바꾼_것을_기록에_남긴다(self, agents, customs, audit, _admin):
+    def test_바꾼_것을_기록에_남긴다(self, teams, customs, audit, _admin):
         """남의 팀 대화가 도는 모델을 바꾸는 일이다."""
 
         customs.models_for_team.return_value = set()
-        agents.set_main_model_for_team.return_value = {
-            "agent_id": "AG001", "name": "코파일럿", "model": "gpt-5.6-sol",
-        }
+        teams.set_default_model.return_value = "gpt-5.6-sol"
 
         self.client.put(
             self.URL, {"model": "gpt-5.6-sol"}, content_type="application/json", **self._headers()
@@ -167,14 +164,14 @@ class OpsTeamDefaultModelTests(SimpleTestCase):
         self.assertEqual(audit.call_args.kwargs["action"], "OPS_TEAM_MODEL_SET")
         self.assertEqual(audit.call_args.kwargs["target_id"], "TE001")
 
-    def test_운영자_아니면_막힌다(self, agents, _customs, _audit, _admin):
+    def test_운영자_아니면_막힌다(self, teams, _customs, _audit, _admin):
         response = self.client.put(
             self.URL, {"model": "gpt-5.6-sol"}, content_type="application/json",
             HTTP_AUTHORIZATION=f"Bearer {account_tokens.issue_token('UA001')}",
         )
 
         self.assertEqual(response.status_code, 401)
-        agents.set_main_model_for_team.assert_not_called()
+        teams.set_default_model.assert_not_called()
 
 
 @patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())

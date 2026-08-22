@@ -81,6 +81,12 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("guardrail_provider", "is_active", "2026-08-20 여러 개 중 하나만 사용"),
     ("mcp_call_note", None, "2026-08-21 MCP 동시 실행·timeout 경고 재료"),
     ("tool_call", "retrieved_doc_ids", "2026-08-21 도구가 조회한 문서 식별자"),
+    ("team", "default_model", "2026-08-22 팀 기본 채팅 모델 — 레거시 정문 에이전트에서 옮김"),
+    # 2026-08-22_drop_legacy_agent.sql 은 여기 못 적는다 — 이 표는 "있어야 할
+    # 것이 있는가"만 보는데, 그 마이그레이션이 하는 일은 `agent`/`agent_tool`을
+    # **없애는** 것이다. 적용 여부는 아래 쿼리로 직접 확인한다(0이어야 한다):
+    #   SELECT count(*) FROM information_schema.tables
+    #    WHERE table_schema='public' AND table_name IN ('agent','agent_tool');
 ]
 
 

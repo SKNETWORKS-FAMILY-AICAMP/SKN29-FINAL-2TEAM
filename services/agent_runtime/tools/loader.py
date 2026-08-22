@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.exceptions import ToolContextConfigurationError, ToolUnavailableError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -55,14 +58,11 @@ def inject_runtime_context(
     return resolved
 
 
-#: MCP 도구 tool_ref 접두사(DB/migrations/2026-08-11_agent_platform.sql,
-#: services/harness/registry.py 모듈 docstring과 동일 규칙 — 이 접두사가
-#: 바뀌면 두 곳 다 같이 고쳐야 한다).
+#: MCP 도구 tool_ref 접두사. `DB/migrations/2026-08-11_agent_platform.sql`,
+#: `services/harness/registry.py`와 같은 규칙이라 바뀌면 세 곳을 같이 고쳐야 한다.
 #:
-#: 2026-08-21: `middleware/tool_timeout.py`가 "이 호출이 MCP인가"를 판단하는
-#: 데 같은 값을 써야 해서 공개 이름으로 바꿨다(A-1 재설계 — timeout을 MCP
-#: 도구에만 건다, `2026-08-21_01_Tool_timeout_재설계.md` §3). 문자열을 다시
-#: 적지 않고 이 상수를 import 해서 쓴다.
+#: "이 호출이 MCP인가"를 판단하는 곳(`middleware/tool_timeout.py` 등)은 문자열을
+#: 다시 적지 않고 이 상수를 import해서 쓴다.
 MCP_TOOL_REF_PREFIX = "mcp:"
 
 
@@ -109,10 +109,9 @@ class ToolLoader:
         도구만 쓰는 에이전트가 매 실행마다 불필요한 DB 왕복을 하지 않도록,
         실제로 필요할 때만 조회한다.
         """
-        # 지연 import — services.harness.registry의 무거운 의존성 사슬
-        # (apps.connectors, backend.services.hr, services.mcp 등)을 이
-        # 모듈이 그냥 import되기만 해도 끌고 들어오지 않게 한다
-        # (factory.py의 DependencyGraphSource.load()와 같은 이유).
+        # 지연 import — `services.harness.registry`의 무거운 의존성 사슬
+        # (apps.connectors, backend.services.hr, services.mcp 등)을 이 모듈이
+        # import되기만 해도 끌고 들어오지 않게 한다.
         from services.agent_runtime.tools.adapters import adapt_builtin_tools, adapt_mcp_tools
 
         available = {tool.ref: tool for tool in adapt_builtin_tools(agent_model=agent_model)}
@@ -122,12 +121,35 @@ class ToolLoader:
                 available[mcp_tool.ref] = mcp_tool
 
         missing = [ref for ref in tool_refs if ref not in available]
-        if missing:
+
+        # **없는 MCP 도구는 건너뛴다**(2026-08-22). 운영자가 MCP 서버를 지우거나
+        # 옮기면 그 서버의 `mcp:<id>` 참조가 이미 발행된 `agent_versions`에 남는데,
+        # `agent_versions`는 불변이라 그 자리에서 지울 수가 없다(02 §5.2). 예전에는
+        # 레거시 `agent_tool`에서 참조를 같이 지워 줘서 이 상황이 안 생겼지만,
+        # 2026-08-22에 레거시 스키마를 폐기하면서 그 청소부가 없어졌다.
+        #
+        # 그래서 정리를 저장 시점이 아니라 **실행 시점**에 한다. 없는 서버의 도구
+        # 하나 때문에 에이전트 전체가 못 도는 것보다, 그 도구만 빼고 도는 편이 낫다
+        # — 사라진 것은 관리자가 내린 서버지 에이전트 정의의 잘못이 아니다.
+        #
+        # **내장 도구는 그대로 막는다.** 그건 운영 변경이 아니라 정의가 틀린
+        # 것이고(오타·삭제된 tool id), 조용히 빼면 에이전트가 이유 없이 다르게
+        # 행동한다.
+        missing_mcp = [ref for ref in missing if ref.startswith(MCP_TOOL_REF_PREFIX)]
+        missing_builtin = [ref for ref in missing if not ref.startswith(MCP_TOOL_REF_PREFIX)]
+
+        if missing_builtin:
             raise ToolUnavailableError(
-                f"다음 도구를 불러올 수 없습니다: {', '.join(missing)}. "
+                f"다음 도구를 불러올 수 없습니다: {', '.join(missing_builtin)}. "
                 "등록되지 않았거나, 비활성화됐거나, 이 팀 소속이 아닙니다."
             )
-        return tuple(available[ref] for ref in tool_refs)
+        if missing_mcp:
+            # 조용히 넘기지 않는다 — 왜 그 도구를 안 쓰는지 물었을 때 답할
+            # 근거가 로그에는 남아야 한다.
+            logger.warning(
+                "없는 MCP 도구를 건너뛴다(team_id=%s): %s", context.team_id, ", ".join(missing_mcp)
+            )
+        return tuple(available[ref] for ref in tool_refs if ref in available)
 
 
 __all__ = [

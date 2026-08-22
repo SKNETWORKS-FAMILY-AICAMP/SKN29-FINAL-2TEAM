@@ -23,7 +23,6 @@ from .codes import next_short_code
 from .connection import database_connection
 from .errors import (
     DuplicateRecord,
-    IdSpaceExhausted,
     PermissionDenied,
     RecordNotFound,
     ReferenceNotFound,
@@ -33,87 +32,22 @@ from .repositories import _require_team
 
 
 def _next_shared_agent_id(cursor) -> str:
-    """`agent_id`를 발급한다 — **어느 테이블에 넣든** 옛 `agent`와 새 `agents`
-    둘 다와 번호가 안 겹치게 한다(2026-08-19, 양방향으로 확장).
+    """`agent_id`를 발급한다.
 
-    두 테이블이 'AG' 접두사를 공유하고(DB/migrations/2026-08-13_agent_versioning.sql
-    상단 주석 — 전환 완료 시 `agent`를 대체할 것을 전제로 같은 코드 체계를
-    물려받았다) 각자 따로 번호를 매기다 보니, 우연히 같은 값이 나올 수 있다.
-    `_resolve_session_agent()`가 옛 테이블을 먼저 보기 때문에, `agents`에
-    새로 만든 에이전트가 겹치면 **조용히**(에러 없이) 옛 에이전트에게
-    가려진다 — 실제로 Chat 재설계 검증 중 겪었다(2026-08-15, 지훈 확인 후
-    `agents` 발급 쪽만 우선 막았다).
+    2026-08-19까지는 옛 `agent`와 새 `agents` 두 테이블의 MAX를 같이 보고 더 큰
+    쪽 다음 번호를 썼다. 두 테이블이 'AG' 접두사를 공유하면서 각자 번호를 매겨
+    우연히 같은 값이 나올 수 있었고, `_resolve_session_agent()`가 옛 테이블을
+    먼저 봐서 새로 만든 에이전트가 **조용히** 가려지는 사고가 실제로 있었다
+    (2026-08-15·08-19 두 방향 모두 확인).
 
-    **반대 방향은 그때 안 막아 뒀다** — 옛 `agent` 테이블 생성 경로
-    (`AgentCrudRepository.create()`, 구 Builder 화면이 아직 쓴다)가 여전히
-    `agent` 테이블만 보고 번호를 매겨서, 다음 번호가 이미 `agents`에 쓰이고
-    있는 실제 에이전트(예: 팀의 기본 챗)와 겹칠 수 있었다 — 라이브 DB에서
-    실제로 재현되는 걸 확인하고 여기서 같이 막는다(2026-08-19).
-
-    옛 `agent` 테이블 자체는 아직 못 지운다 — 지금 운영 중인 Chat이 여전히
-    그 테이블에 물려 있다(재설계 완료 후 제거 예정, task #19). 그래서 발급
-    시점에 두 테이블의 MAX를 같이 보고 더 큰 쪽 다음 번호를 쓴다.
-    `next_short_code()`(테이블 하나만 본다)를 그대로 못 쓰는 이유가 이것이다.
+    2026-08-22에 레거시 `agent`/`agent_tool`을 폐기하면서 겹칠 상대가 없어졌다 —
+    이제 `agents` 하나만 보면 되고, 그건 `next_short_code()`가 하는 일이다.
+    이 함수는 호출부를 안 건드리려고 얇은 껍데기로 남긴다.
     """
-    # next_short_code()와 같은 lock 이름 — 재진입 가능한 잠금이라 같은
-    # 트랜잭션 안에서 두 번 걸어도 안전하다(pg_advisory_xact_lock 특성).
-    cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("id-sequence:agents:agent_id:AG",))
-
-    cursor.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
-        "FROM agents WHERE agent_id ~ '^AG[0-9]{3}$'"
-    )
-    new_max = cursor.fetchone()["n"]
-    cursor.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
-        "FROM agent WHERE agent_id ~ '^AG[0-9]{3}$'"
-    )
-    legacy_max = cursor.fetchone()["n"]
-
-    next_number = max(new_max, legacy_max) + 1
-    if next_number > 999:
-        raise IdSpaceExhausted("agents.agent_id의 AG 코드 공간이 소진됐습니다.")
-    return f"AG{next_number:03d}"
+    return next_short_code(cursor, table="agents", column="agent_id", prefix="AG")
 
 
 class AgentRepository:
-    @staticmethod
-    def get(agent_id: str) -> dict[str, Any]:
-        """에이전트 정의 한 건. 없으면 실행할 것이 없으므로 예외다."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT agent_id, team_id, name, description, instruction,
-                           model, reasoning_effort, max_iterations,
-                           is_prebuilt, status
-                    FROM agent
-                    WHERE agent_id = %s
-                    """,
-                    (agent_id,),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
-                return row
-
-    @staticmethod
-    def tool_refs(agent_id: str) -> list[str]:
-        """이 에이전트에게 허용된 tool_ref 목록.
-
-        빈 목록은 "도구 없이 대화만"이라는 유효한 설정이다 — 없는 에이전트와
-        구분되지 않으니 호출 전에 `get()` 으로 존재를 확인하는 쪽이 낫다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT tool_ref FROM agent_tool WHERE agent_id = %s ORDER BY tool_ref",
-                    (agent_id,),
-                )
-                return [row["tool_ref"] for row in cursor.fetchall()]
-
     @staticmethod
     def mcp_tools(team_id: str) -> list[dict[str, Any]]:
         """팀이 등록한 MCP tool 중 켜져 있는 것.
@@ -137,143 +71,6 @@ class AgentRepository:
                     (team_id,),
                 )
                 return list(cursor.fetchall())
-
-    @staticmethod
-    def callable_agents(*, team_id: str, exclude_agent_id: str) -> list[dict[str, Any]]:
-        """이 팀에서 **다른 에이전트가 도구로 부를 수 있는** 에이전트.
-
-        `tool_ref` 를 여기서 조립한다 — `agent:` 접두사 규칙을 Registry 와
-        Repository 두 곳에 적으면 한쪽만 고쳐졌을 때 조용히 안 맞는다
-        (`mcp_tools` 와 같은 이유).
-
-        **자기 자신은 뺀다.** 넣으면 모델이 자기를 부르는 고리를 만들 수 있고,
-        깊이 상한이 있어도 그 왕복이 전부 토큰이다.
-
-        `description` 이 위임 판단의 유일한 근거다 — 모델은 그 문장만 보고
-        누구에게 넘길지 정한다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT 'agent:' || agent_id AS tool_ref,
-                           agent_id, name, description
-                    FROM agent
-                    WHERE team_id = %s AND agent_id <> %s AND status = 'ACTIVE'
-                    ORDER BY is_prebuilt DESC, name
-                    """,
-                    (team_id, exclude_agent_id),
-                )
-                return list(cursor.fetchall())
-
-    #: 정문을 가르는 표식. `is_prebuilt` 로는 못 가른다 — 예시 에이전트도 같은
-    #: 플래그를 쓴다. 도구를 안 좁히는 것(= `agent:*` 보유)이 정문이다.
-    PLATFORM_TOOL = "agent:*"
-
-    @staticmethod
-    def main_model(account_id: str) -> dict[str, Any] | None:
-        """이 팀의 **메인 모델** — 오케스트레이션하는 정문 에이전트의 모델.
-
-        팀에 정문이 없으면(시드 전) `None`. 그때는 화면이 「아직 없다」고 말해야
-        하고, 임의의 기본값을 보여주면 안 된다 — 저장한 적 없는 값을 저장된
-        것처럼 보이는 것이 지금 Model 탭의 문제였다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                cursor.execute(
-                    """
-                    SELECT a.agent_id, a.name, a.model
-                    FROM agent AS a
-                    JOIN agent_tool AS t ON t.agent_id = a.agent_id
-                    WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
-                    LIMIT 1
-                    """,
-                    (team_id, AgentRepository.PLATFORM_TOOL),
-                )
-                return cursor.fetchone()
-
-    @staticmethod
-    def main_model_for_team(team_id: str) -> dict[str, Any] | None:
-        """운영자 콘솔이 쓰는 조회. **`team_id` 를 직접 받는다** — 운영자에게는
-        자기 팀이 없어 `_require_team` 이 통하지 않는다(모델 등록·커스텀 도구와
-        같은 모양이다)."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT a.agent_id, a.name, a.model
-                    FROM agent AS a
-                    JOIN agent_tool AS t ON t.agent_id = a.agent_id
-                    WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
-                    LIMIT 1
-                    """,
-                    (team_id, AgentRepository.PLATFORM_TOOL),
-                )
-                return cursor.fetchone()
-
-    @staticmethod
-    def set_main_model_for_team(*, team_id: str, model: str) -> dict[str, Any]:
-        """운영자가 그 팀의 기본 채팅 모델을 정한다(2026-08-18 멘토링).
-
-        **전역 하나로 두지 않는다.** 계약·리전 요건이 다른 회사를 못 받기
-        때문이다 — 8/13 에 커스텀 모델을 팀 단위로 붙인 것과 같은 이유다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE agent SET model = %s
-                    WHERE agent_id = (
-                        SELECT a.agent_id FROM agent AS a
-                        JOIN agent_tool AS t ON t.agent_id = a.agent_id
-                        WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
-                        LIMIT 1
-                    )
-                    RETURNING agent_id, name, model
-                    """,
-                    (model, team_id, AgentRepository.PLATFORM_TOOL),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise RecordNotFound("이 팀에는 아직 기본 에이전트가 없습니다.")
-                return row
-
-    @staticmethod
-    def set_main_model(*, account_id: str, model: str) -> dict[str, Any]:
-        """메인 모델을 바꾼다.
-
-        **`update` 를 쓰지 않고 따로 둔다.** 정문은 `is_prebuilt` 라 그쪽 경로는
-        `_writable_agent` 가 막는다 — 그 가드는 옳다(시드가 정의를 소유하므로
-        화면에서 고친 이름·도구는 다음 시드에 사라진다). 다만 **모델만은 팀이
-        정하는 값**이라, 그 한 칸만 여는 자리를 따로 만든다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                cursor.execute(
-                    """
-                    UPDATE agent SET model = %s
-                    WHERE agent_id = (
-                        SELECT a.agent_id FROM agent AS a
-                        JOIN agent_tool AS t ON t.agent_id = a.agent_id
-                        WHERE a.team_id = %s AND t.tool_ref = %s AND a.status = 'ACTIVE'
-                        LIMIT 1
-                    )
-                    RETURNING agent_id, name, model
-                    """,
-                    (model, team_id, AgentRepository.PLATFORM_TOOL),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise RecordNotFound("이 팀에는 아직 기본 에이전트가 없습니다.")
-                return row
-
 
 class AgentVersionRepository:
     """`agents`·`agent_versions`·`agent_version_tools` 조회 전용.
@@ -585,15 +382,15 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
     model을 명시적으로 채워 넣는다 — `agent_versions.model`이 NULL이면
     `services/agent_runtime/loader.py`가 그대로 `AgentDefinition.model`에
     실어 보내고, `models/factory.py`의 `resolve(model: str, ...)`가 이를
-    필수 인자로 받아 NULL에서 그대로 깨진다(legacy_bridge.py처럼 새 엔진
-    호출 전에 기본값으로 떨어뜨려 주는 경로가 없다 — 순수 새 스키마 실행엔
-    그런 안전망이 아직 없다는 뜻이라 task #17/#18에 별도로 남겨 둠). 여기서는
+    필수 인자로 받아 NULL에서 그대로 깨진다(새 엔진 호출 전에 기본값으로
+    떨어뜨려 주는 경로가 없다 — 2026-08-22까지는 legacy_bridge.py가 레거시
+    경로에서만 그 일을 했고, 그마저 레거시 폐기와 함께 없어졌다. 순수 새
+    스키마 실행엔 그런 안전망이 없다는 뜻이라 task #17/#18에 남겨 둠). 여기서는
     같은 상황을 만들지 않으려고 `services.harness.runner`의 실제 기본값을
     그대로 재사용한다.
     """
     # 지연 import — services.harness의 무거운 의존성 사슬을 이 모듈이 항상
-    # 끌고 들어오지 않게 한다(legacy_bridge.py의 draft_from_legacy_agent와
-    # 같은 이유).
+    # 끌고 들어오지 않게 한다.
     from services.harness.runner import DEFAULT_EFFORT, DEFAULT_MODEL
 
     agent_id = _next_shared_agent_id(cursor)
@@ -1333,8 +1130,18 @@ class CustomModelRepository:
                 model = payload.get("model") or ""
                 # 못 읽는 행은 어차피 아무도 못 쓴다 — 쓰는 곳을 물을 것도 없이 지운다.
                 if model:
+                    # 지금 발행 중인 버전(`current_version_id`)만 본다. 옛 버전은
+                    # 불변이라 어차피 고칠 수 없고, 실제로 실행에 쓰이는 것은
+                    # 발행 중인 버전이다(2026-08-22 — 레거시 `agent.model`을 보던
+                    # 검사를 신규 스키마로 옮겼다).
                     cursor.execute(
-                        "SELECT name FROM agent WHERE team_id = %s AND model = %s AND status <> 'ARCHIVED' ORDER BY name",
+                        """
+                        SELECT a.name
+                        FROM agents AS a
+                        JOIN agent_versions AS v ON v.agent_version_id = a.current_version_id
+                        WHERE a.team_id = %s AND v.model = %s AND a.status <> 'ARCHIVED'
+                        ORDER BY a.name
+                        """,
                         (row["team_id"], model),
                     )
                     users = [r["name"] for r in cursor.fetchall()]
@@ -1775,32 +1582,21 @@ class McpCallNoteRepository:
                 return cursor.fetchone() is not None
 
 
-def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str | None:
-    """대화를 열 에이전트가 레거시(`agent`)인지 신규 버전(`agents`)인지 가려내고,
-    신규면 **지금 발행 중인** 버전(`agents.current_version_id`)을 돌려준다.
-    레거시는 버전이 없으므로 `None`.
+def _resolve_session_agent(cursor, *, agent_id: str, team_id: str, account_id: str) -> str:
+    """대화를 열 에이전트의 **지금 발행 중인** 버전(`agents.current_version_id`)을
+    돌려준다.
 
-    **레거시 테이블을 먼저 본다.** 두 테이블이 같은 "AG" 접두어를 쓰는 건
-    실수가 아니라 의도된 설계다(DB/migrations/2026-08-13_agent_versioning.sql
-    상단 주석 — 신규 테이블이 결국 `agent`를 대체할 것을 전제로 같은 코드
-    체계를 물려받았다). `next_short_code()`가 테이블마다 따로 유일성을 매기므로
-    같은 값이 두 테이블에 동시에 존재할 수 있지만, 그렇더라도 레거시 우선
-    조회가 "레거시로 만든 에이전트는 레거시 실행 경로를 그대로 쓴다"는 지금의
-    보수적인 기본값과 맞는다 — 전환이 끝나 `agent`가 폐기되면 이 분기 자체가
-    없어진다.
+    2026-08-22까지는 레거시 `agent` 테이블을 먼저 보고, 거기 있으면 `None`을
+    돌려줘서 호출부가 레거시 실행 경로로 가게 했다. 레거시 스키마를 폐기하면서
+    그 분기가 없어졌고 — 반환값도 이제 `None`이 될 수 없다. 두 테이블이 'AG'
+    접두어를 공유해 생기던 가림 사고(`_next_shared_agent_id` docstring)도 같이
+    사라졌다.
 
     **DRAFT는 만든 사람 본인만 대화를 열 수 있다**(2026-08-18 추가 — "개인"
     탭에 있는 걸 활성화 없이 스스로 테스트할 방법이 없다는 문제를 이걸로
     닫는다). 남의 DRAFT는 team_id가 같아도 막는다 — `_writable_agent_version`이
     조회·수정에 거는 것과 같은 프라이버시 경계를 실행에도 건다.
     """
-
-    cursor.execute("SELECT team_id FROM agent WHERE agent_id = %s", (agent_id,))
-    legacy = cursor.fetchone()
-    if legacy is not None:
-        if legacy["team_id"] != team_id:
-            raise PermissionDenied("이 에이전트를 쓸 수 없습니다.")
-        return None
 
     cursor.execute(
         "SELECT team_id, status, current_version_id, owner_account_id FROM agents WHERE agent_id = %s",
@@ -1880,13 +1676,7 @@ class ChatSessionRepository:
                 # 화면(대화 목록의 에이전트별 묶음, 2026-08-18)이 방금 만든
                 # 대화도 바로 이름으로 보여줘야 해서, 여기서 한 번 더 찾는다.
                 cursor.execute(
-                    """
-                    SELECT COALESCE(
-                        (SELECT name FROM agent WHERE agent_id = %s),
-                        (SELECT name FROM agents WHERE agent_id = %s)
-                    ) AS agent_name
-                    """,
-                    (agent_id, agent_id),
+                    "SELECT name AS agent_name FROM agents WHERE agent_id = %s", (agent_id,)
                 )
                 row["agent_name"] = cursor.fetchone()["agent_name"]
                 return row
@@ -1915,13 +1705,10 @@ class ChatSessionRepository:
                     """
                     SELECT s.session_id::text, s.agent_id, s.agent_version_id, s.proj_id,
                            s.title, s.created_at, s.updated_at,
-                           -- 레거시(agent)와 신규(agents) 어느 쪽으로 만든 대화든
-                           -- 이름이 뜨게 둘 다 본다 — 세션은 생성 시 어느 테이블
-                           -- 것인지 이미 agent_version_id 유무로 갈라져 있어서
-                           -- (_resolve_session_agent) 겹칠 일이 없다.
-                           COALESCE(a.name, av.name) AS agent_name
+                           -- LEFT JOIN 이다 — 에이전트가 지워져도 대화 목록은
+                           -- 떠야 한다(그때 이름은 NULL, 화면이 agent_id를 보여준다).
+                           av.name AS agent_name
                     FROM chat_session AS s
-                    LEFT JOIN agent AS a ON a.agent_id = s.agent_id
                     LEFT JOIN agents AS av ON av.agent_id = s.agent_id
                     WHERE s.account_id = %s
                     ORDER BY s.updated_at DESC
@@ -2247,14 +2034,12 @@ class McpServerRepository:
 
                 moved = before["endpoint_url"] != endpoint_url
                 if moved:
-                    cursor.execute(
-                        """
-                        DELETE FROM agent_tool WHERE tool_ref IN (
-                            SELECT 'mcp:' || mcp_tool_id FROM mcp_tool WHERE server_id = %s
-                        )
-                        """,
-                        (server_id,),
-                    )
+                    # 에이전트 허용 목록에서 빼 주던 DELETE가 여기 있었다(레거시
+                    # `agent_tool`). 2026-08-22에 레거시 스키마를 폐기하면서
+                    # 지웠다 — 신규 `agent_version_tools`는 발행된 버전의 일부라
+                    # 불변이고(02 §5.2), 그 자리에서 지울 수 없다. 대신 실행
+                    # 시점에 없는 MCP 도구를 건너뛴다
+                    # (`services/agent_runtime/tools/loader.py`).
                     cursor.execute("DELETE FROM mcp_tool WHERE server_id = %s", (server_id,))
 
                 if replace_token:
@@ -2387,16 +2172,9 @@ class McpServerRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 _server_row(cursor, server_id=server_id, team_id=team_id)
-                # 에이전트 허용 목록에서도 뺀다. 안 빼면 없는 서버의 도구가
-                # agent_tool 에 남아 부를 때마다 실패한다.
-                cursor.execute(
-                    """
-                    DELETE FROM agent_tool WHERE tool_ref IN (
-                        SELECT 'mcp:' || mcp_tool_id FROM mcp_tool WHERE server_id = %s
-                    )
-                    """,
-                    (server_id,),
-                )
+                # 에이전트 허용 목록에서 빼 주던 DELETE가 여기 있었다(레거시
+                # `agent_tool`). `update()`와 같은 이유로 2026-08-22에 지웠다 —
+                # 없는 도구는 실행 시점에 걸러진다.
                 cursor.execute("DELETE FROM mcp_tool WHERE server_id = %s", (server_id,))
                 cursor.execute("DELETE FROM mcp_server WHERE mcp_server_id = %s", (server_id,))
 
@@ -2430,132 +2208,6 @@ class AgentCrudRepository:
     """
 
     @staticmethod
-    def list_for_team(account_id: str) -> list[dict[str, Any]]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                cursor.execute(
-                    """
-                    SELECT a.agent_id, a.name, a.description, a.instruction, a.model,
-                           a.reasoning_effort, a.max_iterations, a.is_prebuilt, a.status,
-                           a.created_by, a.created_at, a.updated_at,
-                           ua.display_name AS owner_name,
-                           COALESCE(
-                               (SELECT json_agg(t.tool_ref ORDER BY t.tool_ref)
-                                FROM agent_tool t WHERE t.agent_id = a.agent_id),
-                               '[]'::json) AS tool_refs
-                    FROM agent AS a
-                    LEFT JOIN user_account AS ua ON ua.account_id = a.created_by
-                    -- ARCHIVED(삭제)만 뺀다. DRAFT·DISABLED 도 보여야 소유자가
-                    -- 관리 목록에서 초안을 찾아 이어 쓰거나 비활성 상태를 볼 수 있다.
-                    -- Chat 쪽에서 ACTIVE 만 골라 쓰는 건 프런트(`ChatPage.tsx`) 책임이다.
-                    WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
-                    ORDER BY a.is_prebuilt DESC, a.name
-                    """,
-                    (team_id,),
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def get(*, agent_id: str, account_id: str) -> dict[str, Any]:
-        rows = AgentCrudRepository.list_for_team(account_id)
-        for row in rows:
-            if row["agent_id"] == agent_id:
-                return row
-        raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
-
-    @staticmethod
-    def create(
-        *, account_id: str, fields: dict[str, Any], tool_refs: list[str], status: str = "DRAFT"
-    ) -> dict[str, Any]:
-        """생성 = 게시가 아니다. 기본값은 `DRAFT` — Chat 에 노출되거나 위임
-        대상이 되려면 별도로 활성화(`AgentActivateAPIView`)해야 한다. 검증에
-        걸리거나 중간에 나가도 여기까지는 저장돼 있어야 작성한 내용을 잃지
-        않는다."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                _check_tool_refs(cursor, team_id=team_id, tool_refs=tool_refs)
-                # `next_short_code(table="agent", ...)`가 아니라 `_next_shared_agent_id()`다
-                # — 옛 `agent` 테이블만 보면 새 `agents` 테이블에 이미 쓰인 번호(예: 팀의
-                # 기본 챗 에이전트)와 겹칠 수 있다(2026-08-19, 반대 방향 충돌 수정 —
-                # 정방향은 `_next_shared_agent_id()` docstring 참고).
-                agent_id = _next_shared_agent_id(cursor)
-                cursor.execute(
-                    """
-                    INSERT INTO agent (agent_id, team_id, name, description, instruction,
-                                       model, reasoning_effort, max_iterations,
-                                       is_prebuilt, status, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false, %s, %s)
-                    """,
-                    (
-                        agent_id, team_id, fields["name"], fields["description"],
-                        fields["instruction"], fields["model"], fields["reasoning_effort"],
-                        fields["max_iterations"], status, account_id,
-                    ),
-                )
-                _replace_tools(cursor, agent_id=agent_id, tool_refs=tool_refs)
-        return AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
-
-    @staticmethod
-    def update(
-        *, agent_id: str, account_id: str, fields: dict[str, Any], tool_refs: list[str]
-    ) -> dict[str, Any]:
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                _writable_agent(cursor, agent_id=agent_id, team_id=team_id)
-                _check_tool_refs(cursor, team_id=team_id, tool_refs=tool_refs)
-                cursor.execute(
-                    """
-                    UPDATE agent
-                       SET name = %s, description = %s, instruction = %s, model = %s,
-                           reasoning_effort = %s, max_iterations = %s, updated_at = now()
-                     WHERE agent_id = %s
-                    """,
-                    (
-                        fields["name"], fields["description"], fields["instruction"],
-                        fields["model"], fields["reasoning_effort"],
-                        fields["max_iterations"], agent_id,
-                    ),
-                )
-                # 도구는 전체 교체다. 부분 갱신으로 두면 화면에서 체크를 푼 도구가
-                # 남아 에이전트가 계속 쓸 수 있다.
-                _replace_tools(cursor, agent_id=agent_id, tool_refs=tool_refs)
-        return AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
-
-    @staticmethod
-    def delete(*, agent_id: str, account_id: str) -> None:
-        """ARCHIVED 로 내린다. 행을 지우지 않는 이유는 `agent_run` 이 이 id 를
-        가리키고 있어서다 — 지우면 평가가 어느 에이전트의 실행이었는지 잃는다."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                _writable_agent(cursor, agent_id=agent_id, team_id=team_id)
-                cursor.execute(
-                    "UPDATE agent SET status = 'ARCHIVED', updated_at = now() WHERE agent_id = %s",
-                    (agent_id,),
-                )
-                cursor.execute("DELETE FROM agent_tool WHERE agent_id = %s", (agent_id,))
-
-    @staticmethod
-    def set_status(*, agent_id: str, account_id: str, status: str) -> dict[str, Any]:
-        """DRAFT/ACTIVE/DISABLED 사이 전이. 어떤 전이가 허용되는지는 API 뷰가
-        정한다 — 여기는 `update`/`delete`와 같은 얇은 쓰기 레이어로 남긴다."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                _writable_agent(cursor, agent_id=agent_id, team_id=team_id)
-                cursor.execute(
-                    "UPDATE agent SET status = %s, updated_at = now() WHERE agent_id = %s",
-                    (status, agent_id),
-                )
-        return AgentCrudRepository.get(agent_id=agent_id, account_id=account_id)
-
-    @staticmethod
     def team_tool_refs(account_id: str) -> list[dict[str, Any]]:
         """편집 화면이 고를 수 있는 MCP 도구. 내장 도구는 코드 상수라 여기 없다."""
 
@@ -2575,23 +2227,6 @@ class AgentCrudRepository:
                 )
                 return list(cursor.fetchall())
 
-
-def _writable_agent(cursor, *, agent_id: str, team_id: str) -> None:
-    """수정·삭제해도 되는 에이전트인가.
-
-    **기본 제공 에이전트는 거절한다.** 시드 스크립트가 정의를 소유하고 다시
-    돌릴 때 덮어쓰므로, 화면에서 고친 값은 어차피 다음 실행에 사라진다 —
-    고칠 수 있는 것처럼 보이는 편이 더 나쁘다(1차 단계 4 「우리가 제공하는 것」).
-    """
-
-    cursor.execute("SELECT team_id, is_prebuilt FROM agent WHERE agent_id = %s", (agent_id,))
-    row = cursor.fetchone()
-    if row is None:
-        raise RecordNotFound(f"존재하지 않는 에이전트입니다: {agent_id}")
-    if row["team_id"] != team_id:
-        raise PermissionDenied("이 에이전트에 접근할 수 없습니다.")
-    if row["is_prebuilt"]:
-        raise PermissionDenied("기본 제공 에이전트는 수정하거나 지울 수 없습니다.")
 
 
 def _check_tool_refs(cursor, *, team_id: str, tool_refs: list[str]) -> None:
@@ -2624,13 +2259,6 @@ def _check_tool_refs(cursor, *, team_id: str, tool_refs: list[str]) -> None:
     if unknown:
         raise ReferenceNotFound(f"등록되지 않은 도구입니다: {', '.join(unknown)}")
 
-
-def _replace_tools(cursor, *, agent_id: str, tool_refs: list[str]) -> None:
-    cursor.execute("DELETE FROM agent_tool WHERE agent_id = %s", (agent_id,))
-    for tool_ref in dict.fromkeys(tool_refs):
-        cursor.execute(
-            "INSERT INTO agent_tool (agent_id, tool_ref) VALUES (%s, %s)", (agent_id, tool_ref)
-        )
 
 
 def _date_or_none(value: Any) -> str | None:

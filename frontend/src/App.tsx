@@ -14,8 +14,6 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage/ProjectDetailPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
-const AgentListPage = lazy(() => import('./pages/AgentListPage/AgentListPage'));
-const AgentEditPage = lazy(() => import('./pages/AgentEditPage/AgentEditPage'));
 const AgentVersionListPage = lazy(() => import('./pages/AgentVersionListPage/AgentVersionListPage'));
 const AgentVersionEditPage = lazy(() => import('./pages/AgentVersionEditPage/AgentVersionEditPage'));
 const OpsLoginPage = lazy(() => import('./pages/OpsLoginPage/OpsLoginPage'));
@@ -96,8 +94,6 @@ function App() {
           {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.chatSession} element={<RequireAuth><ChatPage /></RequireAuth>} />
-          <Route path={PATHS.agents} element={<RequireAuth><AgentListPage /></RequireAuth>} />
-          <Route path={PATHS.agentEdit} element={<RequireAuth><AgentEditPage /></RequireAuth>} />
           {/* 새 버전 스키마(services/agent_runtime/) 전용 — 옛 위 두 라우트와
               나란히 존재한다. Chat은 아직 이 스키마를 모른다. */}
           <Route path={PATHS.agentVersions} element={<RequireAuth><AgentVersionListPage /></RequireAuth>} />

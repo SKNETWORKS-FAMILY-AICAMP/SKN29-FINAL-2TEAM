@@ -41,9 +41,6 @@ export const PATHS = {
    * 있었는가」였다. 같은 계정 안에서는 링크로 건네줄 수도 있다.
    */
   chatSession: '/chat/:sessionId',
-  agents: '/agents',
-  agentEdit: '/agents/:agentId/edit',
-  agentNew: '/agents/new/edit',
   /** 새 버전 스키마(services/agent_runtime/) 전용 — 위 옛 라우트와 나란히
    * 존재한다. 사이드바 "에이전트"는 이제 이쪽을 가리킨다(2026-08-15) —
    * Chat 상단 드롭다운이 이 스키마 에이전트를 직접 부를 수 있다. 옛 라우트는
@@ -81,8 +78,6 @@ export const ROUTES: RouteEntry[] = [
   { path: PATHS.findPassword, label: '비밀번호 찾기', group: '인증' },
   { path: PATHS.resetPassword, label: '비밀번호 재설정', group: '인증' },
   { path: PATHS.chat, label: 'Chat (홈)', group: 'Agent Platform' },
-  { path: PATHS.agents, label: '에이전트 목록', group: 'Agent Platform' },
-  { path: PATHS.agentNew, label: '에이전트 만들기', group: 'Agent Platform' },
   {
     path: PATHS.agentVersions,
     label: '에이전트 목록 · 개인 (버전, Deep Agent)',
@@ -136,11 +131,11 @@ export interface AppNavItem {
 /**
  * AppShell 사이드바 4항목. Admin(Ops)은 별도 로그인이라 여기 없다.
  *
- * "에이전트"는 2026-08-15부터 새 버전 스키마 화면(`agentVersions`)을 가리킨다
- * — Chat이 이제 이 스키마 에이전트를 드롭다운으로 직접 부를 수 있게 되면서
- * (§ChatPage.tsx 헤더 주석) 옛 화면(`agents`, "테스트 실행" 포함)을 사용자
- * 동선에서 뺐다. 옛 화면 자체는 지우지 않았다 — `/agents`로 직접 들어가거나
- * `/screens` 개발 인덱스에서는 여전히 열린다.
+ * "에이전트"는 새 버전 스키마 화면(`agentVersions`)을 가리킨다. 2026-08-15에
+ * Chat이 이 스키마 에이전트를 드롭다운으로 직접 부를 수 있게 되면서
+ * (§ChatPage.tsx 헤더 주석) 옛 화면(`/agents`, "테스트 실행" 포함)을 사용자
+ * 동선에서 뺐고, 2026-08-22에 레거시 `agent`/`agent_tool` 스키마를 폐기하면서
+ * 그 화면과 라우트를 아예 지웠다.
  */
 export const APP_NAV_ITEMS: AppNavItem[] = [
   { label: '채팅', to: PATHS.chat, icon: 'message-square', match: [PATHS.chat] },

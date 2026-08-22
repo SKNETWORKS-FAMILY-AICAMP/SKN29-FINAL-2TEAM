@@ -28,7 +28,7 @@ import { WelcomeTour } from './WelcomeTour';
 import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ReasoningTrace, ResultCard } from './cards/ChatCards';
 import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
 import type { LiveChat } from './liveChat';
-import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
+import { ToolPickerModal } from '../../components';
 import styles from './ChatPage.module.css';
 import cardStyles from './cards/cards.module.css';
 

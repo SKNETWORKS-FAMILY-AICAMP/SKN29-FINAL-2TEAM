@@ -1348,63 +1348,6 @@ MAX_AGENT_DEPTH = 2
 SUSPENDED_KEY = "__agent_suspended__"
 
 
-def _agent_tool(row: dict[str, Any]) -> Tool:
-    """하위 에이전트 하나를 도구로 감싼다.
-
-    **부작용 여부를 여기서 정하지 않는다.** 하위 에이전트가 무엇을 부를지는 그
-    에이전트의 도구 구성에 달렸고, 실제로 외부를 바꾸는 순간 **하위 Loop 자신의
-    승인 게이트가 뜬다.** 그 게이트가 바깥으로 올라오는 길이 `SUSPENDED_KEY` 다.
-    여기서 `side_effect=True` 로 잡으면 아무것도 안 하는 위임에도 확인 카드가
-    먼저 뜬다.
-    """
-
-    agent_id = row["agent_id"]
-
-    def handler(*, task: str, delegation: dict[str, Any]) -> Any:
-        # 순환 import 를 피한다 — runner 가 registry 를 부르고 있다.
-        from services.harness.runner import EVENT_AWAITING_CONFIRMATION, EVENT_RESULT, run_agent
-
-        suspended: dict[str, Any] | None = None
-        text = ""
-        # **끝까지 돌린다.** 중간에 break 하거나 예외를 던지면 안쪽 제너레이터가
-        # 닫히고 그 run 이 FAILED 로 기록된다(위 SUSPENDED_KEY 주석).
-        for event in run_agent(agent_id, task, dict(delegation)):
-            if event["type"] == EVENT_AWAITING_CONFIRMATION:
-                # 확인 카드를 그리는 데 필요한 것과 재개에 필요한 것을 함께 들고
-                # 올라간다. 바깥 Loop 은 하위 실행을 못 보므로 여기서 담지 않으면
-                # 사람에게 "무엇을 승인하는지" 말할 수 없다.
-                suspended = {
-                    "tool_ref": event["tool_ref"],
-                    "tool_name": event["tool_name"],
-                    "arguments": event.get("arguments") or {},
-                    "resume": event.get("resume"),
-                }
-            elif event["type"] == EVENT_RESULT:
-                text = event.get("text") or ""
-            yield event
-
-        if suspended is not None:
-            return {SUSPENDED_KEY: suspended, "agent_id": agent_id, "name": row["name"]}
-        return {"agent": row["name"], "answer": text}
-
-    return Tool(
-        ref=row["tool_ref"],
-        name=row["name"],
-        description=(
-            f"{row['description'] or row['name']}\n"
-            "이 일을 대신할 에이전트다. 맡길 일을 한국어 문장으로 그대로 적어 넘긴다 — "
-            "그 에이전트는 이 대화를 보지 못하므로 필요한 배경을 문장에 담는다."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "task": {"type": "string", "description": "맡길 일을 한국어 문장으로"},
-            },
-            "required": ["task"],
-        },
-        handler=handler,
-    )
-
 
 def load_for_refs(*, tool_refs: list[str], team_id: str | None) -> dict[str, Tool]:
     """명시적 `tool_ref` 목록으로 도구를 조립한다.
@@ -1425,37 +1368,3 @@ def load_for_refs(*, tool_refs: list[str], team_id: str | None) -> dict[str, Too
     return available
 
 
-def load_for_agent(
-    *, agent_id: str, team_id: str, depth: int = 1
-) -> dict[str, Tool]:
-    """이 에이전트가 부를 수 있는 도구.
-
-    `agent_tool` 에 있는 것만 남긴다. 목록에 있는데 실체가 없는 `tool_ref`(예:
-    지워진 MCP 도구)는 **조용히 버린다** — 에이전트 하나가 못 쓰는 도구 하나
-    때문에 실행 전체가 막힐 이유는 없다. 대신 부르려고 하면 ToolNotAllowed 다.
-
-    `depth` 는 지금 몇 번째 층인가다. 상한(`MAX_AGENT_DEPTH`)에 닿으면 `agent:`
-    도구를 빼고 준다 — 하위 에이전트가 또 위임하지 못하게 하는 것이 목적이다.
-    """
-
-    allowed = set(AgentRepository.tool_refs(agent_id))
-    available: dict[str, Tool] = {
-        ref: tool for ref, tool in BUILTIN_TOOLS.items() if ref in allowed
-    }
-    for row in AgentRepository.mcp_tools(team_id):
-        if row["tool_ref"] in allowed:
-            available[row["tool_ref"]] = _mcp_tool(row)
-
-    if depth < MAX_AGENT_DEPTH:
-        wildcard = AGENT_TOOL_WILDCARD in allowed
-        for row in AgentRepository.callable_agents(team_id=team_id, exclude_agent_id=agent_id):
-            if wildcard or row["tool_ref"] in allowed:
-                available[row["tool_ref"]] = _agent_tool(row)
-    return available
-
-
-def resolve(tools: dict[str, Tool], tool_ref: str) -> Tool:
-    tool = tools.get(tool_ref)
-    if tool is None:
-        raise ToolNotAllowed(f"이 에이전트에게 허용되지 않은 도구입니다: {tool_ref}")
-    return tool

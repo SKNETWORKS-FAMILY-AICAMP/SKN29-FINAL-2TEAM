@@ -84,15 +84,33 @@ class LoadTests(SimpleTestCase):
 
         mock_mcp.assert_not_called()
 
-    def test_unregistered_mcp_ref_still_raises_tool_unavailable_error(self):
-        """MCP는 연결됐지만, 이 팀에 등록되지 않았거나 꺼진 mcp: 도구는 여전히
-        명시적으로 실패해야 한다 — 조용히 빠지면 안 된다."""
-        with patch(f"{ADAPTERS_MODULE}.adapt_builtin_tools", return_value=()):
-            with patch(f"{ADAPTERS_MODULE}.adapt_mcp_tools", return_value=()):
-                with self.assertRaises(ToolUnavailableError) as ctx:
-                    ToolLoader().load(tool_refs=("mcp:unknown",), context=_context())
+    def test_unregistered_mcp_ref_is_skipped_not_fatal(self):
+        """없는 `mcp:` 도구는 **건너뛰고 나머지로 돈다**(2026-08-22 변경).
 
-        self.assertIn("mcp:unknown", str(ctx.exception))
+        전에는 `ToolUnavailableError`로 막았다. 그때는 운영자가 MCP 서버를
+        지우면 레거시 `agent_tool`에서 그 참조도 같이 지워 줘서 이 상황 자체가
+        잘 안 생겼는데, 레거시 스키마를 폐기하면서 그 청소부가 없어졌다 —
+        신규 `agent_version_tools`는 발행된 버전의 일부라 불변이라(02 §5.2)
+        참조를 그 자리에서 지울 수 없다. 없는 서버의 도구 하나 때문에 에이전트
+        전체가 못 도는 것보다, 그 도구만 빼고 도는 편이 낫다.
+        """
+        with patch(f"{ADAPTERS_MODULE}.adapt_builtin_tools", return_value=(_fake_tool("document_search"),)):
+            with patch(f"{ADAPTERS_MODULE}.adapt_mcp_tools", return_value=()):
+                result = ToolLoader().load(
+                    tool_refs=("document_search", "mcp:unknown"), context=_context()
+                )
+
+        self.assertEqual([t.ref for t in result], ["document_search"])
+
+    def test_unregistered_builtin_ref_still_raises_tool_unavailable_error(self):
+        """내장 도구는 그대로 막는다 — 그건 운영 변경이 아니라 **정의가 틀린**
+        것이고(오타·없어진 tool id), 조용히 빼면 에이전트가 이유 없이 다르게
+        행동한다."""
+        with patch(f"{ADAPTERS_MODULE}.adapt_builtin_tools", return_value=()):
+            with self.assertRaises(ToolUnavailableError) as ctx:
+                ToolLoader().load(tool_refs=("없는_내장도구",), context=_context())
+
+        self.assertIn("없는_내장도구", str(ctx.exception))
 
     def test_empty_tool_refs_returns_empty_tuple(self):
         with patch(f"{ADAPTERS_MODULE}.adapt_builtin_tools", return_value=(_fake_tool("a"),)):

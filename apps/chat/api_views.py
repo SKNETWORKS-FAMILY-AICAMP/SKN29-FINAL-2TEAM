@@ -29,10 +29,9 @@ from backend.db.errors import (
 )
 from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
-from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
 from services.guardrails import check_user_input
-from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
+from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR
 from services.harness.naming import suggest_title
 
 from .serializers import (
@@ -74,9 +73,8 @@ def _agent_runtime_error_response(exc: AgentRuntimeError) -> Response:
 
     `apps/agents/api_views.py`의 같은 이름 함수와 동일한 규칙(02 §12) — MRO를
     위에서부터 훑어 가장 구체적인 클래스로 매핑한다. 여기서 쓰는 곳은 실행
-    **준비**(런타임 컨텍스트 구성, 레거시 에이전트면 `draft_from_legacy_agent()`
-    조회) 단계뿐이다 — 2026-08-14부터 발화가 전부 새 엔진을 타면서 모든 세션이
-    이 단계를 거친다. 스트림이 시작된 뒤의 실행 실패는 상태 코드를 더 바꿀 수
+    **준비**(런타임 컨텍스트 구성) 단계뿐이다 — 2026-08-14부터 발화가 전부
+    새 엔진을 타면서 모든 세션이 이 단계를 거친다. 스트림이 시작된 뒤의 실행 실패는 상태 코드를 더 바꿀 수
     없어서 `_relay()`가 이벤트로 흘려보낸다(아래).
     """
 
@@ -202,22 +200,15 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     session_id=session_id, account_id=account_id
                 )
             )
-            # 발화는 전부 새 엔진(services.agent_runtime)을 탄다(2026-08-14
-            # 전환). 화면(Builder)이 아직 레거시 `agent`/`agent_tool` 스키마만
-            # 쓰므로(agent_version_id 없음), 그 경우 legacy_bridge로 **저장 없이**
-            # draft를 만든다 — 새 `agents`/`agent_versions` 스키마는 건드리지
-            # 않는다. 여기서 미리 구성해 두는 이유는 **스트림이 열리기 전에**
-            # 실패할 수 있는 부분(계정 프로필 조회, 레거시 에이전트 조회)을 먼저
-            # 걷어내기 위해서다 — 스트림 안에서 실패하면 상태 코드를 더 바꿀 수
-            # 없다.
+            # 발화는 전부 새 엔진(services.agent_runtime)을 탄다. 여기서 런타임
+            # 컨텍스트를 미리 구성해 두는 이유는 **스트림이 열리기 전에** 실패할
+            # 수 있는 부분(계정 프로필 조회)을 먼저 걷어내기 위해서다 — 스트림
+            # 안에서 실패하면 상태 코드를 더 바꿀 수 없다.
+            #
+            # 2026-08-22까지는 여기서 `legacy_bridge`로 draft도 만들었다. 레거시
+            # `agent` 스키마를 폐기하면서 모든 세션이 `agent_version_id`를 갖게
+            # 돼(`_resolve_session_agent`) 그 갈래가 없어졌다.
             runtime_context = _build_runtime_context(session=session, account_id=account_id)
-            draft = (
-                None
-                if session.get("agent_version_id")
-                else draft_from_legacy_agent(
-                    agent_id=session["agent_id"], team_id=session["team_id"]
-                )
-            )
             if session.get("agent_version_id"):
                 # 기본 챗만 예외 — 이미 열린 대화도 "+"로 방금 켠 도구를 바로
                 # 쓸 수 있어야 한다(2026-08-18, AgentVersionRepository
@@ -256,7 +247,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         # 여기서부터 스트림이다. 응답이 시작된 뒤에는 상태 코드를 바꿀 수 없어서
         # 위의 검사를 전부 끝낸 다음에 연다.
         events = _run_deep_agent(
-            session=session, context=runtime_context, user_input=model_input, history=history, draft=draft
+            session=session, context=runtime_context, user_input=model_input, history=history
         )
 
         return StreamingHttpResponse(
@@ -352,7 +343,6 @@ def _run_deep_agent(
     context: RuntimeContext,
     user_input: str,
     history: list[dict[str, Any]],
-    draft: dict[str, Any] | None = None,
 ):
     """대화를 `services.agent_runtime` 엔진으로 돌린다(2026-08-14부터 전부 이 경로).
 
@@ -363,12 +353,8 @@ def _run_deep_agent(
     (레거시 규격) 여기서 하나를 더 채워 맞춘다 — 실행 엔진 쪽 규격을 바꾸지
     않고 이 어댑터 안에서만 흡수한다.
 
-    `draft`가 있으면(레거시 `agent` 스키마 세션 — `draft_from_legacy_agent()`가
-    만듦) `executor.run()`에 `agent_id=None, agent_version_id=None`으로
-    넘긴다 — `validate_execution_target()`이 draft와 저장된 실행을 동시에
-    받는 걸 막는다. `agent_version_id`가 있는 세션(새 스키마, 아직 화면에
-    실제 사용처 없음 — 전방 호환)은 `draft=None`으로 저장된 버전을 그대로
-    읽는다.
+    세션은 언제나 `agent_id`+`agent_version_id` 쌍으로 실행된다 — 2026-08-22에
+    레거시 `agent` 스키마를 폐기하면서 draft로 도는 갈래가 없어졌다.
 
     `build_default_executor`는 **여기서** import한다(모듈 최상단이 아니라).
     이 패키지의 `__init__.py`가 `deepagents` import를 이 이름을 실제로 쓰는
@@ -382,12 +368,9 @@ def _run_deep_agent(
     from services.agent_runtime.tracing import trace_events
 
     executor = build_default_executor()
-    run_kwargs = (
-        {"agent_id": None, "agent_version_id": None, "draft": draft}
-        if draft is not None
-        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
-    )
     raw_events = executor.run(
+        agent_id=session["agent_id"],
+        agent_version_id=session["agent_version_id"],
         user_input=user_input,
         context=context,
         conversation_messages=tuple(history),
@@ -395,7 +378,6 @@ def _run_deep_agent(
         # 에이전트 원본 대신 이 목록으로 돈다 — `None`이면(커스터마이즈 안
         # 함) 로드된 정의를 그대로 쓴다.
         tool_refs_override=session.get("tool_refs_override"),
-        **run_kwargs,
     )
     # agent_run/tool_call 적재(2026-08-14) — 이벤트는 손대지 않고 그대로
     # 지나간다, 화면에 가는 내용은 감싸기 전과 같다.
@@ -450,19 +432,11 @@ def _resume_deep_agent(
     run_id = content.get("run_id")
     action_requests = content.get("action_requests") or []
     context = _build_runtime_context(session=session, account_id=account_id, run_id=run_id)
-    draft = (
-        None
-        if session.get("agent_version_id")
-        else draft_from_legacy_agent(agent_id=session["agent_id"], team_id=session["team_id"])
-    )
-    run_kwargs = (
-        {"agent_id": None, "agent_version_id": None, "draft": draft}
-        if draft is not None
-        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
-    )
 
     executor = build_default_executor()
     raw_events = executor.resume(
+        agent_id=session["agent_id"],
+        agent_version_id=session["agent_version_id"],
         context=context,
         decisions=(
             _decisions_for(action_requests, selected, per_call=per_call_decisions)
@@ -470,7 +444,6 @@ def _resume_deep_agent(
             else [{"type": decision}] * len(action_requests)
         ),
         tool_refs_override=session.get("tool_refs_override"),
-        **run_kwargs,
     )
     for event in trace_events(raw_events, context=context, known_run_ids=(run_id,) if run_id else ()):
         if event.get("type") == EVENT_ERROR and "text" not in event:
@@ -541,41 +514,20 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                 content_type="application/x-ndjson",
             )
 
-        resume = content.get("resume") or {}
-        tool_call = resume.get("tool_call")
-        if tool_call is None:
-            # 이 카드로는 재개할 수 없다. 승인한 셈 치고 아무것도 안 하는 것보다
-            # 못 한다고 말하는 편이 낫다.
-            return Response(
-                {"detail": "이 확인 카드는 재개 정보를 갖고 있지 않습니다. 다시 요청해 주세요."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        selected = serializer.validated_data.get("selected")
-        # 재개 정보는 **스택**이다. 위임(agent:)이 끼어 있으면 바깥 호출은
-        # "그 에이전트를 다시 부른다"이고, 사람이 승인한 실제 호출은 맨 안쪽에
-        # 있다 — 선택 적용도 승인도 거기서 해야 한다.
-        plan, approved_ref = _apply_to_innermost(resume, selected)
-
-        return StreamingHttpResponse(
-            _relay(
-                run_agent(
-                    session["agent_id"],
-                    "",
-                    {
-                        "session_id": session_id,
-                        "account_id": account_id,
-                        "proj_id": session.get("proj_id"),
-                        "messages": plan.get("messages") or [],
-                        "resume_tool_call": plan.get("tool_call"),
-                        "resume_inner": plan.get("inner"),
-                        "approved_tool_calls": [approved_ref],
-                    },
-                ),
-                session_id=session_id,
-                account_id=account_id,
-            ),
-            content_type="application/x-ndjson",
+        # 레거시 harness(`services.harness.run_agent`)로 재개하던 갈래가 여기
+        # 있었다. 2026-08-22에 레거시 `agent` 스키마를 폐기하면서 지웠다 —
+        # 이제 승인 카드는 전부 `engine="deepagents"`로 저장되므로 위에서
+        # 처리되고, 여기 오는 것은 **폐기 전에 저장돼 아직 안 닫힌 카드**뿐이다.
+        #
+        # 승인한 셈 치고 조용히 넘기지 않는다 — 그 카드가 승인을 기다리던 것은
+        # 외부 시스템을 바꾸는 호출이고, 무엇을 승인하는지 다시 보여주지 못하는
+        # 채로 실행하는 것이 가장 나쁘다.
+        return Response(
+            {
+                "detail": "이 확인 카드는 더 이상 재개할 수 없습니다. "
+                "질문을 다시 보내 주세요."
+            },
+            status=status.HTTP_409_CONFLICT,
         )
 
 
@@ -657,27 +609,6 @@ def _decisions_for(
             "edited_action": {"name": first.get("name"), "args": narrowed},
         }
     return decisions
-
-def _apply_to_innermost(
-    node: dict[str, Any], selected: list[int] | None
-) -> tuple[dict[str, Any], str]:
-    """재개 스택의 가장 안쪽 호출에 선택을 적용하고, 승인할 `tool_ref` 를 돌려준다.
-
-    바깥 층의 호출은 손대지 않는다 — 그것은 「이 에이전트를 다시 부른다」이고,
-    사용자가 확인 카드에서 체크를 푼 것은 맨 안쪽의 인자다. 바깥에 적용하면
-    위임 자체가 잘려 나간다.
-
-    승인도 안쪽 `tool_ref` 하나만 준다. 바깥까지 승인하면 「위임은 늘 승인된
-    것」이 되어 게이트가 한 층 헐거워진다.
-    """
-
-    inner = node.get("inner")
-    if inner:
-        applied, approved_ref = _apply_to_innermost(inner, selected)
-        return {**node, "inner": applied}, approved_ref
-
-    tool_call = _apply_selection(node["tool_call"], selected)
-    return {**node, "tool_call": tool_call}, tool_call["tool_ref"]
 
 
 def _apply_selection(tool_call: dict[str, Any], selected: list[int] | None) -> dict[str, Any]:

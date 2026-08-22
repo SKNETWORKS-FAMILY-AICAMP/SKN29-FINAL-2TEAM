@@ -1790,6 +1790,65 @@ class TeamRepository:
 
         return TeamRepository.settings(account_id)
 
+    # ------------------------------------------------------------------
+    # 팀 기본 채팅 모델(2026-08-22)
+    #
+    # 원래 레거시 정문 에이전트(`agent_tool.tool_ref='agent:*'`)의 `agent.model`
+    # 에 얹혀 있던 값이다. 레거시 `agent`/`agent_tool` 폐기와 함께 팀 설정
+    # 본래 자리로 옮겼다 — 근거는 DB/migrations/2026-08-22_team_default_model.sql
+    # 헤더. 두 메서드 다 **`team_id`를 직접 받는다**: 운영자 콘솔이 쓰는데
+    # 운영자에게는 자기 팀이 없어 `_require_team()`이 통하지 않는다(커스텀 모델
+    # 등록과 같은 모양이다).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def default_model(team_id: str) -> str | None:
+        """그 팀의 기본 채팅 모델. `None`이면 **설정 안 함**이다.
+
+        `None`을 코드 기본값으로 바꿔 돌려주지 않는다 — 화면이 「아직 없다」와
+        「이 값으로 저장돼 있다」를 구분해 말해야 하기 때문이다. 저장한 적 없는
+        값을 저장된 것처럼 보이는 것이 원래 Model 탭의 문제였다.
+
+        팀 자체가 없으면 `RecordNotFound` — "값이 없다"와 "팀이 없다"는 화면이
+        다르게 말해야 한다(전자는 안내, 후자는 404).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT default_model FROM team WHERE team_id = %s", (team_id,)
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                return row["default_model"]
+
+    @staticmethod
+    def set_default_model(*, team_id: str, model: str) -> str | None:
+        """운영자가 그 팀의 기본 채팅 모델을 정한다(2026-08-18 멘토링).
+
+        **전역 하나로 두지 않는다.** 계약·리전 요건이 다른 회사를 못 받기
+        때문이다 — 커스텀 모델을 팀 단위로 붙인 것과 같은 이유다.
+
+        빈 문자열은 `None`으로 저장한다 — 화면의 「고르세요」로 되돌리는 길이
+        있어야 잘못 고른 팀을 원래대로 돌려놓을 수 있다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE team SET default_model = %s
+                     WHERE team_id = %s
+                    RETURNING default_model
+                    """,
+                    (model or None, team_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                return row["default_model"]
+
     @staticmethod
     def add_member(cursor, *, team_id: str, person_id: str) -> None:
         """팀원 명부에 추가한다. 이미 있으면 아무 일도 하지 않는다."""

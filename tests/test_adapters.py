@@ -89,43 +89,14 @@ class RealRegistryShapeTests(SimpleTestCase):
                 self.assertEqual(adapted[ref].injected_context, expected)
 
 
-class LegacyInjectionParityTests(SimpleTestCase):
-    """레거시 `_injected()`를 **실제로 불러서** 새 런타임과 같은지 본다.
-
-    위 `EXPECTED_INJECTED_CONTEXT`는 손으로 관리하는 표다. 표만 보면 레거시가
-    틀렸을 때 표도 같이 틀린다 — 실제로 그랬다(2026-08-18: `document_search`에
-    `account_id`가 빠져 있었는데 표가 `("team_id",)`로 그 빠뜨림을 정답으로
-    고정하고 있었다). 그래서 여기서는 두 구현을 **서로** 비교한다.
-
-    한쪽만 고치면 엔진에 따라 도구가 다른 경계로 도는데, 오류가 아니라 결과가
-    조용히 달라져서 화면으로는 안 보인다.
-    """
-
-    #: 컨텍스트가 아니라 에이전트 설정값이라 이 비교에서 뺀다(adapters 모듈 docstring).
-    _NOT_CONTEXT = {"model"}
-    #: 레거시 핸들러 인자 이름 → CONTEXT_VALUES 이름.
-    _RENAME = {"proj_id": "project_id"}
-
-    def test_두_런타임의_주입_경계가_같다(self):
-        from services.harness.registry import BUILTIN_TOOLS as REGISTRY
-        from services.harness.runner import _injected
-
-        adapted = {tool.ref: tool for tool in adapt_builtin_tools()}
-        agent = {"team_id": "TM001", "model": "gpt-x"}
-        context = {"account_id": "AC001", "proj_id": "PJ001", "session_id": "SS001"}
-
-        for ref, tool in REGISTRY.items():
-            with self.subTest(ref=ref):
-                legacy = {
-                    self._RENAME.get(name, name)
-                    for name in _injected(tool, agent, context)
-                    if name not in self._NOT_CONTEXT
-                }
-                self.assertEqual(
-                    set(adapted[ref].injected_context),
-                    legacy,
-                    f"{ref}: 새 런타임과 레거시의 주입 인자가 다르다",
-                )
+# `LegacyInjectionParityTests`가 여기 있었다 — 레거시 `runner._injected()`를
+# 실제로 불러 새 런타임의 `injected_context`와 서로 비교하던 테스트다. 손으로
+# 관리하는 위 `EXPECTED_INJECTED_CONTEXT` 표가 틀렸을 때 표만으로는 못 잡는다는
+# 이유였고, 실제로 한 번 잡았다(2026-08-18 `document_search`의 `account_id`).
+#
+# 2026-08-22에 레거시 실행기를 걷어내면서 비교 상대가 없어져 지웠다. 표가
+# **유일한 정본**이 됐으므로, 내장 도구의 주입 인자를 바꿀 때는 위 표도 같이
+# 고쳐야 한다 — 서로 검증해 주던 짝이 이제 없다.
 
 
 class ContextRenamingTests(SimpleTestCase):

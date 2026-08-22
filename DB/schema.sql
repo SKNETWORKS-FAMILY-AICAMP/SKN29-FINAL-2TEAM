@@ -76,6 +76,14 @@ CREATE TABLE team (
     capacity_wk_hours NUMERIC(5,2),        -- 팀 공통 주 근무시간. NULL 이면 HR 의 사람별 값
     overload_pct      INT,                     -- 이 비율을 넘으면 과부하로 본다. NULL 이면 100
     workload_weeks    INT,                     -- 부하 조회 기본 기간(주). NULL 이면 4
+    -- 팀 기본 채팅 모델(2026-08-22, DB/migrations/2026-08-22_team_default_model.sql).
+    -- NULL 이면 "설정 안 함"이고 코드 기본값(services/harness/runner.py 의
+    -- DEFAULT_MODEL)을 쓴다. 원래는 레거시 정문 에이전트(agent_tool.tool_ref
+    -- ='agent:*')의 agent.model 에 얹혀 있었는데, 레거시 폐기와 함께 팀 설정
+    -- 본래 자리로 옮겼다 — 신규 기본 챗(agents.is_default_chat)은 위임하지
+    -- 않아 정문과 의미가 다르고, agent_versions 는 불변이라 값을 고칠 자리가
+    -- 아니다.
+    default_model     VARCHAR(100),
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -821,47 +829,6 @@ CREATE TABLE decision_rec (
 -- 같은 UUID 를 쓴다.
 -- =====================================================================
 
--- 팀이 소유하는 에이전트 하나. 공통 스캐폴드는 코드 상수라 여기 없고
--- (services/harness/scaffold.py), 이 테이블에는 그 뒤에 붙는 개별
--- instruction 만 담는다.
-CREATE TABLE agent (
-    agent_id          VARCHAR(5) PRIMARY KEY,   -- 'AG' + 세 자리
-    team_id           VARCHAR(5)   NOT NULL,    -- team.team_id(FK 없음). 테넌트 경계
-    name              VARCHAR(100) NOT NULL,
-    description       VARCHAR(500),
-    instruction       TEXT         NOT NULL DEFAULT '',
-    model             VARCHAR(100),             -- NULL 이면 코드 기본값
-    reasoning_effort  VARCHAR(20),
-    -- Loop 하드 상한. 코드가 이 값으로 강제한다 — 모델에게 권고만 하면
-    -- 무한 루프를 막을 수단이 없다.
-    max_iterations    INT          NOT NULL DEFAULT 10,
-    -- 우리가 미리 만들어 넣는 에이전트인가(업무 추출 등). 팀이 지울 수
-    -- 없어야 하는 행을 구분한다.
-    is_prebuilt       BOOLEAN      NOT NULL DEFAULT false,
-    -- DRAFT(작성 중, Chat·위임에 안 보임) / ACTIVE(활성) / DISABLED(팀이 내림,
-    -- 나중에 다시 활성화 가능) / ARCHIVED(삭제, 조회 목록에서 완전히 빠짐).
-    -- 팀이 직접 만드는 에이전트는 DRAFT로 시작해 검증을 통과해야 ACTIVE 로
-    -- 넘어간다(2026-08-12, `AgentActivateAPIView`). 시드가 넣는 is_prebuilt
-    -- 에이전트는 이 생명주기를 안 타고 항상 ACTIVE 로 만들어진다.
-    status            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
-    created_by        VARCHAR(5),               -- user_account.account_id(FK 없음)
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
-);
-
--- 이 에이전트가 쓸 수 있는 tool 목록(허용 목록). 여기 없는 tool 은
--- Registry 가 거른다.
---
--- 대리키를 두지 않는다 — 순수 조인 테이블이고(model_know_item·task_know_src
--- 와 같은 모양), 복합 PK 가 같은 tool 을 두 번 붙이는 것까지 막아 준다.
-CREATE TABLE agent_tool (
-    agent_id  VARCHAR(5)   NOT NULL,   -- agent.agent_id(FK 없음)
-    -- 내장 tool 식별자('document_search'·'workload_report') 또는
-    -- MCP tool 을 가리키는 'mcp:<mcp_tool.mcp_tool_id>'
-    tool_ref  VARCHAR(100) NOT NULL,
-    PRIMARY KEY (agent_id, tool_ref)
-);
-
 CREATE TABLE mcp_server (
     mcp_server_id    VARCHAR(5) PRIMARY KEY,   -- 'MS' + 세 자리
     team_id          VARCHAR(5)   NOT NULL,    -- team.team_id(FK 없음)
@@ -1122,6 +1089,11 @@ CREATE TABLE doc_meta (
 -- agent_id 접두사('AG')를 위 agent 테이블과 공유한다 — 의도한 것이다(전환
 -- 완료 시 agent를 대체할 전제). 전환 전까지는 테이블명을 꼭 같이 확인할 것.
 -- =====================================================================
+
+-- 레거시 `agent`/`agent_tool`은 2026-08-22에 폐기했다
+-- (DB/migrations/2026-08-22_drop_legacy_agent.sql). 에이전트 정의는 전부
+-- 아래 `agents`/`agent_versions`/`agent_version_tools`/`agent_version_subagents`
+-- 네 테이블에 있다.
 
 CREATE TABLE agents (
     agent_id           VARCHAR(5) PRIMARY KEY,   -- 'AG' + 세 자리

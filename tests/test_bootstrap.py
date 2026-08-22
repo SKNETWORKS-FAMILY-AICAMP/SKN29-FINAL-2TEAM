@@ -170,12 +170,22 @@ class ToolLoaderRealWiringTests(SimpleTestCase):
 
         self.assertEqual([tool.ref for tool in tools], ["document_search"])
 
-    def test_unresolvable_ref_still_fails_explicitly_not_silently(self):
+    def test_unresolvable_builtin_ref_still_fails_explicitly_not_silently(self):
+        """내장 도구 참조가 안 풀리면 그대로 막는다.
+
+        `mcp:` 참조로 확인하던 테스트였다. 2026-08-22부터 없는 MCP 도구는
+        **건너뛴다**(운영자가 서버를 내렸을 뿐 정의의 잘못이 아니고,
+        `agent_versions`가 불변이라 참조를 지울 자리도 없다 —
+        `services/agent_runtime/tools/loader.py`). 조용히 빠지면 안 되는 쪽,
+        곧 **정의가 틀린** 내장 도구로 대상을 바꾼다. MCP 쪽 동작은
+        `tests/test_tool_loader.py`가 DB 없이 본다.
+        """
+
         with patch(f"{BOOTSTRAP_MODULE}.bootstrap_harness_profiles"):
             executor = build_default_executor()
 
         with self.assertRaises(ToolUnavailableError):
             executor.factory.tool_loader.load(
-                tool_refs=("mcp:server1:tool1",),
+                tool_refs=("없는_내장도구",),
                 context=RuntimeContext(account_id="AC1", team_id="TM1", role="leader"),
             )
