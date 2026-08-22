@@ -28,5 +28,13 @@ class SkillsProvider:
 
         return skill_routes(account_id=account_id, team_id=team_id)
 
+    def system_prompt(self) -> str:
+        """2026-08-22 추가 — `MemoryProvider.system_prompt()`와 같은 자리.
+        `factory.py`가 이 값으로 커스텀 `SkillsMiddleware`를 만들어
+        `compat.create_root_graph(skills_system_prompt=...)`에 넘긴다."""
+        from services.agent_runtime.skills.backend import skills_system_prompt
+
+        return skills_system_prompt()
+
 
 __all__ = ["SkillsProvider"]

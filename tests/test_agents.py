@@ -33,13 +33,21 @@ def auth_header(account_id="UA001"):
 
 class ToolCatalogTests(SimpleTestCase):
     def test_내장_도구는_Registry_가_정본이다(self):
-        """화면이 목록을 따로 적어 두면 Registry 가 바뀔 때 어긋난다."""
+        """화면이 목록을 따로 적어 두면 Registry 가 바뀔 때 어긋난다.
 
-        from services.harness.registry import BUILTIN_TOOLS
+        `ALWAYS_ON_TOOL_REFS`(예: `skill_register`, 2026-08-22)만 예외다 —
+        고르고 말고가 없는 도구라 화면 목록에서 뺀다(`builtin_tool_response()`
+        docstring 참고)."""
+
+        from services.harness.registry import ALWAYS_ON_TOOL_REFS, BUILTIN_TOOLS
 
         rows = builtin_tool_response()
 
-        self.assertEqual({row["tool_ref"] for row in rows}, set(BUILTIN_TOOLS))
+        self.assertEqual({row["tool_ref"] for row in rows}, set(BUILTIN_TOOLS) - ALWAYS_ON_TOOL_REFS)
+
+    def test_고르고_말고가_없는_도구는_목록에서_빠진다(self):
+        rows = builtin_tool_response()
+        self.assertNotIn("skill_register", {row["tool_ref"] for row in rows})
 
     def test_승인_필요_여부를_화면에_알려준다(self):
         by_ref = {row["tool_ref"]: row for row in builtin_tool_response()}

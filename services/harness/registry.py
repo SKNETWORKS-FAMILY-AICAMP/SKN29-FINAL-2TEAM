@@ -970,36 +970,6 @@ def _get_current_datetime() -> dict[str, Any]:
     }
 
 
-#: Agent Skills 스펙(https://agentskills.io/specification) 이름 제약.
-#: deepagents 설치본의 `_validate_skill_name()`(`deepagents/middleware/skills.py`,
-#: private라 직접 import는 안 한다 — 이 저장소는 공개 API만 import한다,
-#: `compat/deepagents_v075.py` 등 기존 import 전부가 그렇다)과 같은 규칙을
-#: 그대로 옮겼다: 1~64자, 소문자·숫자·하이픈만, 하이픈으로 시작·끝나거나
-#: 연달아 쓸 수 없음. 여기서는 항상 이름 == 디렉터리명이라(`skill_register`가
-#: 그렇게 저장한다) `deepagents` 쪽의 "디렉터리명과 일치해야 한다" 검사는
-#: 구조적으로 항상 통과라 옮기지 않았다.
-MAX_SKILL_NAME_LENGTH = 64
-MAX_SKILL_DESCRIPTION_LENGTH = 1024
-
-
-def _validate_skill_name(name: str) -> str | None:
-    """스킬 이름이 스펙을 지키는지 확인한다. 문제 없으면 `None`, 있으면 사유 문자열."""
-
-    if not name:
-        return "스킬 이름이 비어 있습니다."
-    if len(name) > MAX_SKILL_NAME_LENGTH:
-        return f"스킬 이름은 {MAX_SKILL_NAME_LENGTH}자를 넘을 수 없습니다."
-    if name.startswith("-") or name.endswith("-") or "--" in name:
-        return "스킬 이름은 하이픈으로 시작하거나 끝날 수 없고, 하이픈을 연달아 쓸 수 없습니다."
-    for char in name:
-        if char == "-":
-            continue
-        if (char.isalpha() and char.islower()) or char.isdigit():
-            continue
-        return "스킬 이름은 소문자·숫자·하이픈만 쓸 수 있습니다."
-    return None
-
-
 def _skill_register(
     *,
     account_id: str,
@@ -1014,69 +984,56 @@ def _skill_register(
 
     정본: docs/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
 
+    **실제 저장·검증 로직은 `services.agent_runtime.skills.service`에 있다**
+    (2026-08-22 리팩터) — 설정 > 스킬 화면의 REST API도 같은 함수를 부른다.
+    채팅 쪽(여기)만 가진 것은 `scope` 문자열(`PERSONAL`/`TEAM`) 해석과, 그
+    문자열이 둘 중 하나가 아닐 때의 거부뿐이다. 이름 검증·설명/본문 빈 값
+    검사·팀 스킬 leader 검사·이름 충돌 거부는 전부 그 모듈이 한다.
+
     **팀 스킬은 팀장만 등록한다** — 팀원이 팀 스킬로 등록해 달라고 요청하는
-    경로 자체가 없다는 게 그 문서의 결정이다. 그래서 여기서 막는 것이지,
-    "팀장이 도메인 전문가라서"가 아니다 — 이 시스템엔 그런 역할이 없다
+    경로 자체가 없다는 게 정본 문서의 결정이다. 그래서 막는 것이지, "팀장이
+    도메인 전문가라서"가 아니다 — 이 시스템엔 그런 역할이 없다
     (`runtime_policy.py`의 `AccountRole`은 `leader`/`member` 둘뿐).
 
     **개인 스킬이든 팀 스킬이든 별도 승인 단계가 없다.** `side_effect=True`
     도구라 `HumanInTheLoopMiddleware` 확인 카드(내용 미리보기 + 등록/취소)를
-    이미 거친다 — 그게 유일한 확인 지점이다. 팀 스킬을 팀장 혼자 등록하므로,
-    등록 자체가 이미 팀장의 결정이라 또 승인받을 대상이 없다.
-
-    이름·설명이 스펙을 어기면(위 `_validate_skill_name`, `description` 길이)
-    저장하지 않고 사람이 고칠 수 있는 사유로 돌려준다 — Jira/업무 등록과 같은
-    `ToolInputError` 관례.
+    이미 거친다 — 그게 유일한 확인 지점이다.
     """
 
     if scope not in ("PERSONAL", "TEAM"):
         raise ToolInputError("scope는 'PERSONAL' 또는 'TEAM'이어야 합니다.")
 
-    if scope == "TEAM" and account_role != "leader":
-        raise ToolInputError("팀 스킬 등록은 팀장만 할 수 있습니다.")
-
-    name_error = _validate_skill_name(name)
-    if name_error:
-        raise ToolInputError(name_error)
-
-    if not description or not description.strip():
-        raise ToolInputError("스킬 설명이 비어 있습니다.")
-    if len(description) > MAX_SKILL_DESCRIPTION_LENGTH:
-        raise ToolInputError(f"스킬 설명은 {MAX_SKILL_DESCRIPTION_LENGTH}자를 넘을 수 없습니다.")
-
-    if not body or not body.strip():
-        raise ToolInputError("스킬 본문이 비어 있습니다.")
-
     # 지연 import — services.agent_runtime은 이 파일(harness 레거시 레이어)이
     # 평소엔 끌고 들어올 이유가 없는 무거운 의존성(langgraph 등)을 진다.
     # tools/adapters.py가 정반대 방향(agent_runtime -> harness)으로 이미
     # 지연 import를 쓰는 것과 같은 이유다.
-    import yaml
-
-    from services.agent_runtime.memory.store import get_memory_store
     from services.agent_runtime.skills.backend import (
         SKILLS_PERSONAL_PATH_PREFIX,
         SKILLS_TEAM_PATH_PREFIX,
-        personal_namespace,
         skill_md_path,
-        team_namespace,
+    )
+    from services.agent_runtime.skills.service import (
+        SkillError,
+        create_personal_skill,
+        create_team_skill,
     )
 
-    if scope == "PERSONAL":
-        prefix = SKILLS_PERSONAL_PATH_PREFIX
-        namespace = personal_namespace(account_id)
-    else:
-        prefix = SKILLS_TEAM_PATH_PREFIX
-        namespace = team_namespace(team_id)
-
-    frontmatter = yaml.safe_dump(
-        {"name": name, "description": description}, allow_unicode=True, default_flow_style=False
-    )
-    content = f"---\n{frontmatter}---\n\n{body}\n"
-
-    path = skill_md_path(prefix, name)
-    store = get_memory_store()
-    store.put(namespace, path, {"content": content, "encoding": "utf-8"})
+    try:
+        if scope == "PERSONAL":
+            create_personal_skill(
+                account_id, team_id=team_id, name=name, description=description, body=body
+            )
+            path = skill_md_path(SKILLS_PERSONAL_PATH_PREFIX, name)
+        else:
+            create_team_skill(
+                team_id, actor_role=account_role, name=name, description=description, body=body
+            )
+            path = skill_md_path(SKILLS_TEAM_PATH_PREFIX, name)
+    except SkillError as exc:
+        # `SkillError`(및 그 하위 `SkillNameConflict`/`SkillPermissionDenied`)는
+        # 이미 사람에게 그대로 보여도 되는 한국어 문구다 — `ToolInputError`
+        # 관례(Jira/업무 등록과 같은 자리)로 그대로 옮긴다.
+        raise ToolInputError(str(exc)) from exc
 
     return {"scope": scope, "name": name, "path": path}
 
@@ -1429,6 +1386,30 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 }
 
 
+#: 고르고 말고가 없는 내장 도구 — 모든 에이전트에 무조건 붙는다(2026-08-22).
+#:
+#: `skill_register`는 원래 다른 내장 도구(HR·Jira 등)와 같은 자리에서 팀장이
+#: 에이전트마다 켜고 끄는 것이었다. 그런데 스킬을 **읽는** 쪽(SkillsMiddleware
+#: 배선, `factory.py` `build()` — `skill_sources`)은 애초부터 도구 선택과
+#: 무관하게 모든 에이전트에 항상 붙어 있었다 — memory_provider/skills_provider가
+#: 있으면 무조건이다. **등록(쓰기)만 골라야 하는 도구로 남아 있는 게 이 둘을
+#: 어긋나게 했다** — 에이전트가 이미 등록된 스킬은 항상 읽을 수 있는데,
+#: 새 스킬을 등록해 달라는 요청은 이 도구가 꺼져 있으면 못 들어주는 비대칭이
+#: 생긴다. GP(General Purpose 서브에이전트)가 같은 이유로 켜고 끄는 스위치
+#: 없이 항상 붙는 것(`factory.py`의 "위험하지 않으므로, 있으나 마나 한
+#: 선택지를 만들 이유가 없다" 판단)과 같은 논리를 여기도 적용한다 —
+#: `skill_register`는 `side_effect=True`라 어차피 사람 승인 없이는 실행되지
+#: 않으니, 켜고 끄는 선택 자체가 의미가 없다.
+#:
+#: `load_for_agent()`가 `agent_tool` 저장 여부와 무관하게 넣고, 선택 화면
+#: (`apps/agents/serializers.py`의 `builtin_tool_response()`)에서도 뺀다 —
+#: 고를 필요 없는 항목이 선택 목록에 남아 있으면 "이건 꺼도 되나?"라는
+#: 오해를 만든다. `apps/agents/api_views.py`의 `_split()`도 이 집합을 써서,
+#: 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도(2026-08-22 이전)
+#: 다음 저장에서 조용히 걸러낸다.
+ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register"})
+
+
 # ---------------------------------------------------------------------------
 # 에이전트별 조립
 # ---------------------------------------------------------------------------
@@ -1567,11 +1548,17 @@ def load_for_refs(*, tool_refs: list[str], team_id: str | None) -> dict[str, Too
     `load_for_agent` 와 달리 `agent_tool` 테이블을 보지 않는다 — 아직 저장되지
     않은 빌더 초안은 그 행이 없다. 위임(`agent:`) 도구는 다루지 않는다. 빌더의
     도구 카탈로그(`AgentToolCatalogAPIView`)가 애초에 그 도구를 안 준다.
+
+    `load_for_agent`와 같은 이유로 `ALWAYS_ON_TOOL_REFS`는 `tool_refs`에 없어도
+    넣는다 — 안 그러면 빌더에서 시험 실행할 때와 저장한 뒤 실제로 쓸 때가
+    달라진다.
     """
 
     allowed = set(tool_refs)
     available: dict[str, Tool] = {
-        ref: tool for ref, tool in BUILTIN_TOOLS.items() if ref in allowed
+        ref: tool
+        for ref, tool in BUILTIN_TOOLS.items()
+        if ref in allowed or ref in ALWAYS_ON_TOOL_REFS
     }
     if team_id is not None:
         for row in AgentRepository.mcp_tools(team_id):
@@ -1589,13 +1576,18 @@ def load_for_agent(
     지워진 MCP 도구)는 **조용히 버린다** — 에이전트 하나가 못 쓰는 도구 하나
     때문에 실행 전체가 막힐 이유는 없다. 대신 부르려고 하면 ToolNotAllowed 다.
 
+    **`ALWAYS_ON_TOOL_REFS`(예: `skill_register`)는 `agent_tool` 과 무관하게
+    항상 들어간다** — 골라야 하는 도구가 아니다(그 상수 docstring 참고).
+
     `depth` 는 지금 몇 번째 층인가다. 상한(`MAX_AGENT_DEPTH`)에 닿으면 `agent:`
     도구를 빼고 준다 — 하위 에이전트가 또 위임하지 못하게 하는 것이 목적이다.
     """
 
     allowed = set(AgentRepository.tool_refs(agent_id))
     available: dict[str, Tool] = {
-        ref: tool for ref, tool in BUILTIN_TOOLS.items() if ref in allowed
+        ref: tool
+        for ref, tool in BUILTIN_TOOLS.items()
+        if ref in allowed or ref in ALWAYS_ON_TOOL_REFS
     }
     for row in AgentRepository.mcp_tools(team_id):
         if row["tool_ref"] in allowed:

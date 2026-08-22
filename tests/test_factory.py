@@ -151,6 +151,7 @@ class _FakeSkillsProvider:
         self._sources = list(sources)
         self.sources_calls = 0
         self.routes_calls: list[dict] = []
+        self.system_prompt_calls = 0
 
     def sources(self):
         self.sources_calls += 1
@@ -159,6 +160,10 @@ class _FakeSkillsProvider:
     def routes(self, *, account_id: str, team_id: str):
         self.routes_calls.append({"account_id": account_id, "team_id": team_id})
         return {"/skills/personal/": "FAKE_PERSONAL_ROUTE", "/skills/team/": "FAKE_TEAM_ROUTE"}
+
+    def system_prompt(self):
+        self.system_prompt_calls += 1
+        return "FAKE_SKILLS_SYSTEM_PROMPT"
 
 
 def _definition(**overrides) -> AgentDefinition:
@@ -1148,6 +1153,10 @@ class BuildSkillsWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         self.assertNotIn("skills", mock_create_root.call_args.kwargs)
+        # `skills_system_prompt`는 memory_provider만 있어도 키 자체는 항상 채워지지만
+        # (아래 __init__ 참고), skills_provider가 없으면 값이 None이다 —
+        # `create_root_graph`의 기본값과 같아 무해하다(하위 호환).
+        self.assertIsNone(mock_create_root.call_args.kwargs["skills_system_prompt"])
         gp_spec = mock_create_root.call_args.kwargs["subagents"][0]
         self.assertNotIn("skills", gp_spec)
 
@@ -1165,6 +1174,7 @@ class BuildSkillsWiringTests(SimpleTestCase):
         self.assertNotIn("skills", mock_create_root.call_args.kwargs)
         self.assertEqual(skills_provider.sources_calls, 0)
         self.assertEqual(skills_provider.routes_calls, [])
+        self.assertEqual(skills_provider.system_prompt_calls, 0)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_root_receives_skill_sources_when_both_providers_present(self, mock_create_root):
@@ -1179,6 +1189,24 @@ class BuildSkillsWiringTests(SimpleTestCase):
         self.assertEqual(
             mock_create_root.call_args.kwargs["skills"], ["/skills/personal/", "/skills/team/"]
         )
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_receives_skills_system_prompt_when_both_providers_present(self, mock_create_root):
+        """2026-08-22, Skill 우선순위 규칙 배선 — `memory_system_prompt`와 같은
+        조건(둘 다 있을 때만)에서 `skills_system_prompt`도 `create_root_graph`
+        까지 그대로 전달되는지 확인한다."""
+        mock_create_root.return_value = "GRAPH"
+        memory_provider = _FakeMemoryProvider()
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(memory_provider=memory_provider, skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["skills_system_prompt"], "FAKE_SKILLS_SYSTEM_PROMPT"
+        )
+        self.assertEqual(skills_provider.system_prompt_calls, 1)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_general_purpose_receives_the_same_skill_sources_as_root(self, mock_create_root):

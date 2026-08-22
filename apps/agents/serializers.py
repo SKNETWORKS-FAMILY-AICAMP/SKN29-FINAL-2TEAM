@@ -73,9 +73,15 @@ def agent_response(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def builtin_tool_response() -> list[dict[str, Any]]:
-    """내장 도구 목록. **Registry 가 정본이다** — 화면이 따로 적어 두면 어긋난다."""
+    """내장 도구 목록. **Registry 가 정본이다** — 화면이 따로 적어 두면 어긋난다.
 
-    from services.harness.registry import BUILTIN_TOOLS
+    `ALWAYS_ON_TOOL_REFS`(예: `skill_register`)는 안 낸다 — 모든 에이전트에
+    무조건 붙는 도구라(`load_for_agent()`, 2026-08-22) 고르고 말고가 없다.
+    골라야 하는 목록에 고를 필요 없는 항목이 섞이면 "이건 꺼도 되나?"라는
+    오해를 만든다.
+    """
+
+    from services.harness.registry import ALWAYS_ON_TOOL_REFS, BUILTIN_TOOLS
 
     return [
         {
@@ -91,6 +97,7 @@ def builtin_tool_response() -> list[dict[str, Any]]:
             "input_schema": tool.input_schema,
         }
         for tool in BUILTIN_TOOLS.values()
+        if tool.ref not in ALWAYS_ON_TOOL_REFS
     ]
 
 

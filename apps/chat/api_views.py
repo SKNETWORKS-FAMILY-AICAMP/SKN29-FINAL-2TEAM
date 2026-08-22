@@ -31,6 +31,11 @@ from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
+from services.agent_runtime.skills.invocation import (
+    build_invocation_input,
+    parse_invocation,
+    resolve_invocable_skill,
+)
 from services.guardrails import check_user_input
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
@@ -169,6 +174,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         serializer.is_valid(raise_exception=True)
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
+        applied_skill: dict[str, str] | None = None
         # 2026-08-19, §2순위 — 사용자가 채팅에 직접 입력한 credential·개인정보·
         # 권한/보안 서술은 모델에게 보내지 않는다(`sensitive_text.py`, write_guard와
         # 같은 패턴 재사용). **저장은 원문 그대로 한다** — 이건 "모델에게
@@ -179,6 +185,30 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
+            # 2026-08-22, 명시적 스킬 호출("/스킬이름 ...") — 클로드의 슬래시
+            # 커맨드와 같은 방식(사용자 요청). "/"로 시작하는 문장은 이미
+            # 어느 스킬을 쓸지 사용자가 확정한 것이라, 모델이 스스로 스킬
+            # 설명과 매칭하는 절차(자동 호출, `SkillsMiddleware`)를 기다리지
+            # 않고 여기서 직접 본문을 찾아 모델 입력에 박아 넣는다
+            # (`services/agent_runtime/skills/invocation.py` 모듈 docstring
+            # 참고 — Memory 미들웨어와의 판단 경쟁에 밀려 자동 호출이 안 되는
+            # 문제를 실측한 것과 같은 날 나온 요청). 이름이 안 맞으면(스킬이
+            # 없거나 "/"로 시작하는 평범한 메모면) 조용히 원래 채팅으로
+            # 흘려보낸다 — 오류로 막지 않는다.
+            invocation = parse_invocation(text)
+            if invocation is not None:
+                skill_name, skill_request = invocation
+                skill = resolve_invocable_skill(
+                    account_id=account_id, team_id=session["team_id"], name=skill_name
+                )
+                if skill is not None:
+                    model_input = build_invocation_input(
+                        name=skill_name, body=skill["body"], request=mask_sensitive(skill_request)
+                    )
+                    applied_skill = {
+                        "name": skill_name,
+                        "scope": skill.get("scope") or "personal",
+                    }
             # 2026-08-20 — 그 팀이 등록한 외부 가드레일이 있으면 거쳐 간다.
             # 없거나 「연결 확인」 전이면 아무 일도 안 한다(`services/guardrails`).
             #
@@ -258,6 +288,8 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         events = _run_deep_agent(
             session=session, context=runtime_context, user_input=model_input, history=history, draft=draft
         )
+        if applied_skill is not None:
+            events = _with_skill_applied_event(events, skill=applied_skill)
 
         return StreamingHttpResponse(
             _relay(
@@ -268,6 +300,22 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             ),
             content_type="application/x-ndjson",
         )
+
+
+def _with_skill_applied_event(events, *, skill: dict[str, str]):
+    """명시 호출로 조회·주입한 스킬을 실제 실행 이벤트 앞에 한 번 알린다.
+
+    명시 호출은 `read_file`을 거치지 않아 기존 도구 타임라인에는 아무 흔적이
+    없었다. 이 이벤트도 `_relay()`가 다른 이벤트와 함께 저장하므로 라이브
+    스트림뿐 아니라 새로고침으로 복원한 생각 과정에도 그대로 남는다.
+    """
+
+    yield {
+        "type": "skill_applied",
+        "skill_name": skill["name"],
+        "scope": skill["scope"],
+    }
+    yield from events
 
 
 #: 모델에게 되돌려 줄 앞선 턴의 최대 수(사람 발화 + 답 합계).

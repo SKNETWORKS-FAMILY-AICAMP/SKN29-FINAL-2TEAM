@@ -478,3 +478,54 @@
 .formTextarea::placeholder {
   color: var(--color-placeholder);
 }
+
+/* ── 검색 상자. `ProjectListPage`의 `.searchBox`/`.searchInput`과 같은 값이다
+   (2026-08-22) — 같은 자리(목록 위 필터)라 새로 만들지 않고 그대로 옮겼다. ── */
+
+/* 검색창 + 「새 스킬」을 한 줄에 묶는다 — `.cardHeadRow`가 이미
+   `justify-content: space-between`이라, 제목 옆 두 번째 자식이 통째로
+   오른쪽에 붙는다. */
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 9px var(--space-3);
+  width: 280px;
+  max-width: 100%;
+}
+
+.searchInput {
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--color-heading);
+  width: 100%;
+  background: transparent;
+}
+
+.searchInput::placeholder {
+  color: var(--color-placeholder);
+}
+
+/* 본문 용량 표시. 초과하면 색만 바뀐다 — 새 클래스를 더 만들지 않는다. */
+.byteCount {
+  font-size: 11px;
+  color: var(--color-placeholder);
+  text-align: right;
+}
+
+.byteCountOver {
+  color: var(--color-danger);
+  font-weight: 600;
+}

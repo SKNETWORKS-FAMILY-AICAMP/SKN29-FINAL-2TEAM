@@ -16,6 +16,7 @@ from services.agent_runtime.skills.backend import (
     skill_md_path,
     skill_routes,
     skill_sources,
+    skills_system_prompt,
 )
 
 
@@ -66,3 +67,47 @@ class SkillRoutesTests(SimpleTestCase):
         routes = skill_routes(account_id="AC001", team_id="TM001")
 
         self.assertEqual(routes[SKILLS_PERSONAL_PATH_PREFIX]._namespace(None), personal_namespace("AC001"))
+
+
+class SkillsSystemPromptTests(SimpleTestCase):
+    """2026-08-22 추가 — Skill 사용 우선순위 규칙 배선. `memory_system_prompt()`
+    (`memory/backend.py`)와 같은 패턴 — deepagents 기본 프롬프트에 텍스트를
+    이어붙인다."""
+
+    def test_starts_with_the_real_deepagents_default_prompt(self):
+        """deepagents가 실제로 쓰는 기본값 위에 이어붙이는지 확인한다 — 새
+        프롬프트를 통째로 만드는 게 아니라, 이미 검증된 progressive
+        disclosure 안내(이름·설명 목록, `read_file` 안내 등)를 그대로 살린다."""
+        from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT
+
+        self.assertTrue(skills_system_prompt().startswith(SKILLS_SYSTEM_PROMPT))
+
+    def test_appended_text_keeps_required_format_slots_intact(self):
+        """`SkillsMiddleware.__init__`이 요구하는 세 포맷 슬롯이 그대로 남아
+        있어야 한다 — 안 그러면 `ValueError`로 Root 조립 자체가 실패한다
+        (`deepagents/middleware/skills.py` 실측)."""
+        prompt = skills_system_prompt()
+
+        for slot in ("{skills_locations}", "{skills_load_warnings}", "{skills_list}"):
+            self.assertIn(slot, prompt)
+
+    def test_can_actually_construct_skillsmiddleware_with_it(self):
+        """가장 확실한 검증 — 실제 `SkillsMiddleware(system_prompt=...)`
+        생성자에 그대로 넘겨서 예외 없이 만들어지는지 본다."""
+        from unittest.mock import Mock
+
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        SkillsMiddleware(
+            backend=Mock(name="backend"), sources=["/skills/personal/"], system_prompt=skills_system_prompt()
+        )
+
+    def test_mentions_memory_vs_skill_priority(self):
+        """사용자가 요청한 네 규칙의 핵심 취지 — "지금 답변에 대한 스타일
+        피드백은 스킬을 먼저 확인" — 이 실제로 문구에 들어 있는지 확인한다.
+        문구를 통째로 비교하지 않는다 — 다듬을 때마다 이 테스트가 깨지면
+        본말이 전도된다. 핵심 신호어만 담겼는지만 본다."""
+        prompt = skills_system_prompt()
+
+        self.assertIn("Skill usage rules", prompt)
+        self.assertIn("memory", prompt.lower())

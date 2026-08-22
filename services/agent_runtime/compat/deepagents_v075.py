@@ -165,6 +165,7 @@ def create_root_graph(
     store: Any = None,
     checkpointer: Any = None,
     memory_system_prompt: str | None = None,
+    skills_system_prompt: str | None = None,
     fs_excluded_tools: frozenset[str] = frozenset(),
     interrupt_on: dict[str, bool] | None = None,
     permissions: Sequence[Any] = (),
@@ -237,6 +238,16 @@ def create_root_graph(
     시그니처 실측) — `memory_system_prompt`/`fs_excluded_tools`와 달리 이름
     치환 트릭이 필요 없다, 그대로 통과만 시킨다. 빈 시퀀스면(기본값) 안
     건드려 하위 호환.
+
+    `skills_system_prompt`(2026-08-22 추가, Skill 우선순위 규칙 — `2026-08-22_05`
+    문서 참고): `SkillsMiddleware`의 system_prompt를 바꿀 공개 파라미터가
+    `create_deep_agent()`에 없다(`skills=` 경로 목록만 받는다 — `memory_system_prompt`
+    와 같은 제약). `memory_system_prompt`와 똑같은 이름 치환 트릭을 쓴다 —
+    `SkillsMiddleware(system_prompt=...)`가 그 인자를 공개로 받으므로
+    (`deepagents/middleware/skills.py` 실측), 같은 `backend` 인스턴스를 공유하는
+    커스텀 인스턴스를 만들어 `middleware` 목록 끝에 끼워 넣으면 이름
+    ("SkillsMiddleware")이 같은 자동 생성분을 그 자리에서 치환한다. `skills`가
+    비어 있거나 `backend`가 없으면(스킬 자체를 안 쓰면) 무시한다 — 하위 호환.
     """
     kwargs: dict[str, Any] = dict(
         model=model,
@@ -269,6 +280,16 @@ def create_root_graph(
                 sources=list(memory),
                 add_cache_control=True,
                 system_prompt=memory_system_prompt,
+            )
+        )
+    if skills_system_prompt is not None and skills and backend is not None:
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        resolved_middleware.append(
+            SkillsMiddleware(
+                backend=backend,
+                sources=list(skills),
+                system_prompt=skills_system_prompt,
             )
         )
     if fs_excluded_tools:

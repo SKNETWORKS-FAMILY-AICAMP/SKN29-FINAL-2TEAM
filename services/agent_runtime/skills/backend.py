@@ -74,6 +74,65 @@ def skill_routes(*, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
     }
 
 
+#: 2026-08-22, 사용자 실측 피드백 — "번역체 같다"는 답변 스타일 피드백을 줬는데
+#: 등록해 둔 스킬이 안 불려지고, 대신 `MemoryMiddleware`가 "장기 기억에 저장할
+#: 선호"로 판단해 버렸다. `deepagents/middleware/memory.py`의
+#: `MEMORY_SYSTEM_PROMPT`를 실측하면 "사용자가 답변의 좋고 나쁨을 말하면
+#: 패턴으로 기억해라"는 지침과 정확히 이 모양의 worked example(Example 2 —
+#: 스타일 피드백 → `edit_file`로 저장)이 있는 반면, deepagents 기본
+#: `SKILLS_SYSTEM_PROMPT`(`deepagents/middleware/skills.py`)의 worked example은
+#: "최신 연구 조사해줘" 같은 명시적 작업 요청 하나뿐이고, "지금 답변에 대한
+#: 스타일 피드백도 스킬을 켜는 신호"라는 언급이 없다. 즉 서로 다른 미들웨어가
+#: 독립적으로 시스템 프롬프트를 얹는 지금 구조에서는, 어느 쪽 지침이 더
+#: 구체적인지에 따라 모델의 판단이 갈린다 — Skill을 쓸지 말지가 전부 모델의
+#: 자율 판단에 맡겨져 있다는 뜻이다.
+#:
+#: 최소한의 우선순위 규칙을 여기서 덧붙인다. Memory의 `_MEMORY_ROUTING_PROMPT`
+#: (`memory/backend.py`)와 같은 방식 — 새 지침 체계를 만들지 않고, deepagents
+#: 기본 프롬프트 뒤에 그대로 이어붙인다.
+_SKILLS_ROUTING_PROMPT = """
+
+## Skill usage rules — decide before you act
+
+1. If the user's current request clearly matches a registered skill's
+   description or usage condition, search for and read that skill FIRST —
+   before responding, and before considering anything else (including
+   whether to save something to memory).
+2. A skill defines HOW to perform a task. Do not use a skill as a place to
+   store the user's long-term preferences or facts about them — writing
+   standing preferences to memory is a different system's job, not this one.
+3. If the user asks you to revise the current answer, or comments on the
+   style or manner of the current answer or task (e.g. "this sounds too
+   translated", "make this shorter", "that's not quite right"), check for a
+   matching skill FIRST. This is a live task to act on in this turn, not
+   merely something to remember for later.
+4. Only when the user explicitly signals a standing, future preference —
+   words like "from now on", "always", "remember this" — consider that a
+   candidate for memory instead. A one-time stylistic correction on the
+   current answer is rule 3, not this one.
+"""
+
+
+def skills_system_prompt() -> str:
+    """deepagents 기본 `SKILLS_SYSTEM_PROMPT`에 위 우선순위 규칙을 이어붙인다.
+
+    `MemoryMiddleware.system_prompt`를 바꾸는 것과 같은 트릭이다 — compat
+    레이어의 `create_root_graph(memory_system_prompt=...)`처럼,
+    `SkillsMiddleware`도 `system_prompt=` 생성자 인자를 공개로 받으므로
+    (`deepagents/middleware/skills.py` 실측), 같은 `.name`("SkillsMiddleware")을
+    가진 커스텀 인스턴스를 `middleware=` 목록에 끼워 넣으면 deepagents가 자동
+    생성한 것을 그 자리에서 치환한다(`_apply_custom_middleware`, 같은 소스).
+
+    필수 포맷 슬롯(`{skills_locations}`/`{skills_load_warnings}`/`{skills_list}`)
+    은 원본 `SKILLS_SYSTEM_PROMPT` 안에 그대로 있고, 여기서 이어붙이는 텍스트에는
+    중괄호가 없어 `.format()` 호출에 영향을 주지 않는다.
+    """
+
+    from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT
+
+    return SKILLS_SYSTEM_PROMPT + _SKILLS_ROUTING_PROMPT
+
+
 __all__ = [
     "SKILLS_PERSONAL_PATH_PREFIX",
     "SKILLS_TEAM_PATH_PREFIX",
@@ -82,4 +141,5 @@ __all__ = [
     "team_namespace",
     "skill_md_path",
     "skill_routes",
+    "skills_system_prompt",
 ]

@@ -616,6 +616,13 @@ class AgentRuntimeFactory:
                 # 라우팅 안내를 이어붙인다. create_root_graph()가 이 값으로
                 # 커스텀 MemoryMiddleware를 만들어 자동 생성분을 치환한다.
                 memory_system_prompt=self.memory_provider.system_prompt(),
+                # 2026-08-22, Skill 우선순위 규칙 — skill_sources와 같은 조건
+                # (memory_provider·skills_provider 둘 다 있을 때만)에서만 의미가
+                # 있다: skills_system_prompt만 있고 skills 소스가 없으면
+                # `create_root_graph`가 무시한다(위 kwargs 조립과 같은 이유).
+                skills_system_prompt=(
+                    self.skills_provider.system_prompt() if self.skills_provider is not None else None
+                ),
                 # 2026-08-19 — 팀 공유 메모리(`/memories/AGENTS.md`,
                 # `/memories/projects/*.md`)를 없애기로 하면서
                 # `build_filesystem_permissions(project_id=...)` 배선을 여기서

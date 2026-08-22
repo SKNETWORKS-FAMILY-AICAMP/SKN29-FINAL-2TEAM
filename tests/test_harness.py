@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
+from langgraph.store.memory import InMemoryStore
 
 from apps.connectors.oauth import OAuthError
 from services.harness import registry, scaffold, trace
@@ -73,13 +74,25 @@ class InputSummaryTests(SimpleTestCase):
 
 
 class RegistryTests(SimpleTestCase):
+    @patch("services.harness.registry.AgentRepository.callable_agents", return_value=[])
     @patch("services.harness.registry.AgentRepository.mcp_tools", return_value=[])
     @patch("services.harness.registry.AgentRepository.tool_refs", return_value=["document_search"])
-    def test_허용_목록에_없는_내장_도구는_빠진다(self, _refs, _mcp):
+    def test_허용_목록에_없는_내장_도구는_빠진다(self, _refs, _mcp, _callable):
         tools = registry.load_for_agent(agent_id="AG001", team_id="TM001")
 
-        self.assertEqual(set(tools), {"document_search"})
+        # `skill_register`는 `ALWAYS_ON_TOOL_REFS`라 `tool_refs`에 없어도
+        # 항상 들어간다(2026-08-22) — 골라야 하는 도구가 아니다.
+        self.assertEqual(set(tools), {"document_search", "skill_register"})
         self.assertNotIn("workload_report", tools)
+
+    @patch("services.harness.registry.AgentRepository.callable_agents", return_value=[])
+    @patch("services.harness.registry.AgentRepository.mcp_tools", return_value=[])
+    @patch("services.harness.registry.AgentRepository.tool_refs", return_value=[])
+    def test_skill_register는_아무것도_안_골라도_들어간다(self, _refs, _mcp, _callable):
+        """스킬 등록은 고르고 말고가 없다 — `tool_refs`가 빈 목록이어도 붙는다."""
+        tools = registry.load_for_agent(agent_id="AG001", team_id="TM001")
+
+        self.assertIn("skill_register", tools)
 
     @patch("services.harness.registry.AgentRepository.tool_refs", return_value=["mcp:MT001"])
     @patch("services.harness.registry.AgentRepository.mcp_tools")
@@ -678,22 +691,16 @@ class JiraIssueRegistrationShortCircuitTests(SimpleTestCase):
         create_issues.assert_called_once()
 
 
-class _FakeStore:
-    """`get_memory_store()`(services/agent_runtime/memory/store.py)를 대신한다.
-
-    `_skill_register`가 실제로 필요한 건 `store.put(namespace, key, value)`
-    하나뿐이다 — 실제 `PostgresStore`를 안 띄우고 호출 인자만 기록한다.
-    """
-
-    def __init__(self):
-        self.put_calls: list[dict] = []
-
-    def put(self, namespace, key, value):
-        self.put_calls.append({"namespace": namespace, "key": key, "value": value})
-
-
 class SkillRegisterTests(SimpleTestCase):
-    """`_skill_register()` — 정본: 2026-08-20_16_Skill_Middleware_설계.md."""
+    """`_skill_register()` — 정본: 2026-08-20_16_Skill_Middleware_설계.md.
+
+    2026-08-22 리팩터로 실제 저장·검증은 `services.agent_runtime.skills.service`가
+    맡는다 — 그 모듈이 부르는 `StoreBackend`가 그래프 실행 컨텍스트 밖에서
+    쓰려면 진짜 `BaseStore` 구현이 필요하다(`.get`/`.put`/`.search`/`.batch`
+    전부). 손으로 만든 put-only 가짜 대신 langgraph가 제공하는 실제 인메모리
+    구현(`InMemoryStore`)을 쓴다 — 프로토콜을 다시 흉내 내지 않아도 되고,
+    실제 저장소와 동작이 어긋날 걱정이 없다.
+    """
 
     def _fake_store(self):
         return patch("services.agent_runtime.memory.store.get_memory_store")
@@ -725,8 +732,7 @@ class SkillRegisterTests(SimpleTestCase):
 
     def test_팀장은_팀_스킬을_등록할_수_있다(self):
         with self._fake_store() as mock_get_store:
-            store = _FakeStore()
-            mock_get_store.return_value = store
+            mock_get_store.return_value = InMemoryStore()
 
             result = registry._skill_register(
                 account_id="AC001",
@@ -740,13 +746,10 @@ class SkillRegisterTests(SimpleTestCase):
 
         self.assertEqual(result["scope"], "TEAM")
         self.assertEqual(result["path"], "/skills/team/jira-issue-registration/SKILL.md")
-        self.assertEqual(len(store.put_calls), 1)
-        self.assertEqual(store.put_calls[0]["namespace"], ("skill", "team", "TM001"))
-        self.assertEqual(store.put_calls[0]["key"], "/skills/team/jira-issue-registration/SKILL.md")
 
     def test_개인_스킬은_역할과_무관하게_등록된다(self):
         with self._fake_store() as mock_get_store:
-            store = _FakeStore()
+            store = InMemoryStore()
             mock_get_store.return_value = store
 
             result = registry._skill_register(
@@ -760,37 +763,60 @@ class SkillRegisterTests(SimpleTestCase):
             )
 
         self.assertEqual(result["scope"], "PERSONAL")
-        self.assertEqual(store.put_calls[0]["namespace"], ("skill", "personal", "AC001"))
+        self.assertIsNotNone(store.get(("skill", "personal", "AC001"), result["path"]))
 
     def test_잘못된_이름은_거부한다(self):
         for bad_name in ("Foo-Bar", "-foo", "foo-", "foo--bar", "a" * 65, ""):
             with self.subTest(bad_name=bad_name):
-                with self.assertRaises(ToolInputError):
-                    registry._skill_register(
-                        account_id="AC001",
-                        team_id="TM001",
-                        account_role="leader",
-                        scope="PERSONAL",
-                        name=bad_name,
-                        description="d",
-                        body="b",
-                    )
+                with self._fake_store() as mock_get_store:
+                    mock_get_store.return_value = InMemoryStore()
+                    with self.assertRaises(ToolInputError):
+                        registry._skill_register(
+                            account_id="AC001",
+                            team_id="TM001",
+                            account_role="leader",
+                            scope="PERSONAL",
+                            name=bad_name,
+                            description="d",
+                            body="b",
+                        )
 
     def test_빈_설명이나_본문은_거부한다(self):
-        with self.assertRaises(ToolInputError):
+        with self._fake_store() as mock_get_store:
+            mock_get_store.return_value = InMemoryStore()
+            with self.assertRaises(ToolInputError):
+                registry._skill_register(
+                    account_id="AC001", team_id="TM001", account_role="leader",
+                    scope="PERSONAL", name="foo", description="  ", body="b",
+                )
+        with self._fake_store() as mock_get_store:
+            mock_get_store.return_value = InMemoryStore()
+            with self.assertRaises(ToolInputError):
+                registry._skill_register(
+                    account_id="AC001", team_id="TM001", account_role="leader",
+                    scope="PERSONAL", name="foo", description="d", body="   ",
+                )
+
+    def test_이름이_겹치면_거부한다(self):
+        """2026-08-22 추가 — 이전에는 같은 이름으로 다시 등록하면 조용히
+        덮어썼다. 설정 화면과 로직을 합치면서 "거부하고 알려준다"로
+        정했다(업로드/직접 작성 둘 다 같은 규칙)."""
+        with self._fake_store() as mock_get_store:
+            mock_get_store.return_value = InMemoryStore()
             registry._skill_register(
                 account_id="AC001", team_id="TM001", account_role="leader",
-                scope="PERSONAL", name="foo", description="  ", body="b",
+                scope="PERSONAL", name="dup-skill", description="d", body="b",
             )
-        with self.assertRaises(ToolInputError):
-            registry._skill_register(
-                account_id="AC001", team_id="TM001", account_role="leader",
-                scope="PERSONAL", name="foo", description="d", body="   ",
-            )
+            with self.assertRaises(ToolInputError) as ctx:
+                registry._skill_register(
+                    account_id="AC001", team_id="TM001", account_role="leader",
+                    scope="PERSONAL", name="dup-skill", description="d2", body="b2",
+                )
+        self.assertIn("이미", str(ctx.exception))
 
     def test_저장한_내용은_이름_설명이_있는_frontmatter다(self):
         with self._fake_store() as mock_get_store:
-            store = _FakeStore()
+            store = InMemoryStore()
             mock_get_store.return_value = store
 
             registry._skill_register(
@@ -803,7 +829,8 @@ class SkillRegisterTests(SimpleTestCase):
                 body="본문 절차",
             )
 
-        content = store.put_calls[0]["value"]["content"]
+        item = store.get(("skill", "personal", "AC001"), "/skills/personal/my-skill/SKILL.md")
+        content = item.value["content"]
         self.assertTrue(content.startswith("---\n"))
         self.assertIn("name: my-skill", content)
         self.assertIn("description:", content)

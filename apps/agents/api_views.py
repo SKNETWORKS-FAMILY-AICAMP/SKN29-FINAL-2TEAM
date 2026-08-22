@@ -84,8 +84,21 @@ class AuthenticatedAPIView(APIView):
 
 
 def _split(data: dict) -> tuple[dict, list[str]]:
+    """`tool_refs` 를 나머지 필드에서 떼어낸다.
+
+    `ALWAYS_ON_TOOL_REFS`(예: `skill_register`, 2026-08-22)는 여기서 걸러낸다
+    — 이제 그 도구들은 고르는 목록에도 없으니(`builtin_tool_response()`)
+    저장할 이유가 없고, 2026-08-22 이전에 이미 선택해 저장해 둔 에이전트가
+    있으면 그 값이 그대로 다시 제출될 때 `check_definition`이 "카탈로그에
+    없는 도구"라며 저장을 막는다 — 여기서 조용히 빼서 다음 저장부터
+    스스로 정리되게 한다.
+    """
+
+    from services.harness.registry import ALWAYS_ON_TOOL_REFS
+
     fields = dict(data)
-    return fields, fields.pop("tool_refs")
+    tool_refs = [ref for ref in fields.pop("tool_refs") if ref not in ALWAYS_ON_TOOL_REFS]
+    return fields, tool_refs
 
 
 def _model_rejection(account_id: str, model: str | None) -> Response | None:
@@ -225,10 +238,34 @@ class CustomModelAPIView(AuthenticatedAPIView):
 
 
 def _tool_catalog(account_id: str) -> dict[str, dict]:
-    """빌더가 선택할 수 있는 도구 전체(내장 + 팀 MCP) — `tool_ref`로 찾아본다."""
+    """**검증용** 도구 전체(내장 + 팀 MCP) — `tool_ref`로 찾아본다.
+
+    `builtin_tool_response()`(고르는 화면이 쓰는 목록)와는 다르다 —
+    `ALWAYS_ON_TOOL_REFS`(예: `skill_register`)는 화면에서 고를 수 없지만
+    "알려진 도구"이긴 하다. 여기서 안 넣으면 `check_definition`이 "카탈로그에
+    없는 도구"로 본다 — 2026-08-22 이전에 이 도구를 선택해 저장해 둔
+    에이전트가 있으면, `activate`(`AgentDetailAPIView`가 DB에 저장된
+    `tool_refs`를 그대로 다시 검증하는 경로, `_split()`을 안 거친다)에서
+    막힌다. 검증 카탈로그는 넉넉하게, 고르는 화면은 좁게 — 둘의 목적이 다르다.
+    """
+
+    from services.harness.registry import ALWAYS_ON_TOOL_REFS, BUILTIN_TOOLS
 
     mcp = AgentCrudRepository.team_tool_refs(account_id)
-    return {row["tool_ref"]: row for row in builtin_tool_response() + mcp_tool_response(mcp)}
+    catalog = {row["tool_ref"]: row for row in builtin_tool_response() + mcp_tool_response(mcp)}
+    for ref in ALWAYS_ON_TOOL_REFS:
+        tool = BUILTIN_TOOLS.get(ref)
+        if tool is not None and ref not in catalog:
+            catalog[ref] = {
+                "tool_ref": tool.ref,
+                "name": tool.name,
+                "description": tool.description,
+                "source": "기본 제공",
+                "category": tool.category,
+                "side_effect": tool.side_effect,
+                "input_schema": tool.input_schema,
+            }
+    return catalog
 
 
 def _check_tool_refs(*, account_id: str, tool_refs: list[str]) -> str | None:
