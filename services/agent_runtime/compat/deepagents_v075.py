@@ -103,6 +103,7 @@ def build_general_purpose_spec(
     system_prompt: str | None = None,
     description: str | None = None,
     tools: Sequence[Any] | None = None,
+    skills: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Root에 명시적으로 연결할 general-purpose 설정을 만든다.
 
@@ -125,6 +126,15 @@ def build_general_purpose_spec(
     (하위 호환). `factory.py`는 항상 `side_effect=False`인 도구만 걸러
     넘긴다 — GP가 쓰기·전송·삭제 도구를 상속하지 않게 하려는 목적이라
     빈 리스트(`[]`)를 넘기는 것과 아예 안 넘기는 것(`None`)은 의미가 다르다.
+
+    `skills`(2026-08-21 추가, Skill 배선): 서브에이전트 spec dict의 `skills` 키에
+    그대로 채운다. **deepagents는 이 GP에 자동으로 상속시켜 주지 않는다** —
+    deepagents 자체 기본 general-purpose만 top-level `skills=`를 자동으로
+    물려받고(`create_deep_agent()`가 caller가 GP를 안 넘겼을 때만 타는 경로,
+    `deepagents/graph.py` 실측), 이 저장소는 `factory.py`가 항상 이 함수로 GP를
+    직접 만들어 넘기므로 그 자동 상속 경로를 안 탄다 — 그래서 여기서 명시적으로
+    같은 목록을 채워 그 기본 동작을 재현한다(설계 문서 "Root/GP/Child" 절).
+    안 넘기면(`None`) Skill을 안 붙인다(하위 호환).
     """
     spec: dict[str, Any] = {**GENERAL_PURPOSE_SUBAGENT}
     if middleware:
@@ -135,6 +145,8 @@ def build_general_purpose_spec(
         spec["description"] = description
     if tools is not None:
         spec["tools"] = list(tools)
+    if skills:
+        spec["skills"] = list(skills)
     return spec
 
 
@@ -146,10 +158,12 @@ def create_root_graph(
     subagents: Sequence[Any] = (),
     middleware: Sequence[Any] = (),
     memory: Sequence[str] = (),
+    skills: Sequence[str] = (),
     backend: Any = None,
     store: Any = None,
     checkpointer: Any = None,
     memory_system_prompt: str | None = None,
+    skills_system_prompt: str | None = None,
     fs_excluded_tools: frozenset[str] = frozenset(),
     interrupt_on: dict[str, bool] | None = None,
     permissions: Sequence[Any] = (),
@@ -216,6 +230,22 @@ def create_root_graph(
     `FilesystemMiddleware`를 만들 때 `spec.get("permissions", permissions)`로
     부모 값을 자동 상속받는 경로에 필요)와 `fs_kwargs["_permissions"]`(Root 자신에게
     실제로 적용되는 경로). 빈 시퀀스면(기본값) 둘 다 안 건드려 기존 동작과 동일하다.
+
+    `skills`(2026-08-21 추가, Skill 배선): `create_deep_agent()`가 공개
+    파라미터로 직접 받는 `skills: list[str] | None`(`deepagents/graph.py`
+    시그니처 실측) — `memory_system_prompt`/`fs_excluded_tools`와 달리 이름
+    치환 트릭이 필요 없다, 그대로 통과만 시킨다. 빈 시퀀스면(기본값) 안
+    건드려 하위 호환.
+
+    `skills_system_prompt`(2026-08-22 추가, Skill 우선순위 규칙 — `2026-08-22_05`
+    문서 참고): `SkillsMiddleware`의 system_prompt를 바꿀 공개 파라미터가
+    `create_deep_agent()`에 없다(`skills=` 경로 목록만 받는다 — `memory_system_prompt`
+    와 같은 제약). `memory_system_prompt`와 똑같은 이름 치환 트릭을 쓴다 —
+    `SkillsMiddleware(system_prompt=...)`가 그 인자를 공개로 받으므로
+    (`deepagents/middleware/skills.py` 실측), 같은 `backend` 인스턴스를 공유하는
+    커스텀 인스턴스를 만들어 `middleware` 목록 끝에 끼워 넣으면 이름
+    ("SkillsMiddleware")이 같은 자동 생성분을 그 자리에서 치환한다. `skills`가
+    비어 있거나 `backend`가 없으면(스킬 자체를 안 쓰면) 무시한다 — 하위 호환.
     """
     kwargs: dict[str, Any] = dict(
         model=model,
@@ -226,6 +256,8 @@ def create_root_graph(
     resolved_middleware = list(middleware)
     if memory:
         kwargs["memory"] = list(memory)
+    if skills:
+        kwargs["skills"] = list(skills)
     if backend is not None:
         kwargs["backend"] = backend
     if store is not None:
@@ -246,6 +278,16 @@ def create_root_graph(
                 sources=list(memory),
                 add_cache_control=True,
                 system_prompt=memory_system_prompt,
+            )
+        )
+    if skills_system_prompt is not None and skills and backend is not None:
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        resolved_middleware.append(
+            SkillsMiddleware(
+                backend=backend,
+                sources=list(skills),
+                system_prompt=skills_system_prompt,
             )
         )
     if fs_excluded_tools:

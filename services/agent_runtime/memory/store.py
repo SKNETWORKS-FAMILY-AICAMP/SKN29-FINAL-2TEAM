@@ -12,10 +12,20 @@
 멀티 프로세스 배포에서 프로세스 종료 시 이 연결이 깔끔히 안 닫힐 수 있다(atexit
 훅 없음) — Postgres 쪽에서 유휴 커넥션은 정리되므로 치명적이진 않지만, 운영
 전환 전에 정식으로 점검할 것.
+
+**락으로 감싼 이유 (2026-08-22)** — 설정 > 스킬 화면이 개인/팀 스킬 목록을
+`Promise.all`로 **동시에** 두 번 요청한다(`SkillsTab.tsx`의 `load()`). 두
+요청이 이 프로세스에서 처음으로 `get_memory_store()`를 부르는 순간이 겹치면,
+`if _store is not None` 검사를 둘 다 통과한 뒤 `PostgresStore.from_conn_string()`
+과 `.setup()`을 동시에 실행하게 된다 — Postgres 커넥션을 두 번 열고
+`.setup()`(멱등이지만 DDL을 두 번 겹쳐 실행)까지 경합하면서 500으로 죽는
+사례를 봤다. 잠금을 아주 짧게만 쥔다 — 최초 연결 뒤로는 `_store is not None`
+검사에서 즉시 반환되어 락을 아예 안 거친다.
 """
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -26,6 +36,8 @@ _store: Any = None
 #: 부를 일이 생기면(프로세스 종료 훅 등) 여기서 꺼내 쓴다 — 지금은 아무도
 #: 안 부른다(위 docstring의 "치명적이진 않지만" 부분).
 _store_cm: Any = None
+#: 최초 연결 경합을 막는 락. 연결된 뒤에는 안 거친다(아래 이중 검사).
+_store_lock = threading.Lock()
 
 
 def get_memory_store() -> "PostgresStore":
@@ -34,18 +46,24 @@ def get_memory_store() -> "PostgresStore":
     if _store is not None:
         return _store
 
-    # 지연 import — `langgraph.store.postgres`는 psycopg 커넥션 풀과 langgraph
-    # 전체를 끌고 들어온다. 실제로 메모리를 쓰는 요청이 올 때만 부른다.
-    from django.conf import settings
-    from langgraph.store.postgres import PostgresStore
+    with _store_lock:
+        # 락을 기다리는 동안 다른 스레드가 이미 만들었을 수 있다 — 이중 검사.
+        if _store is not None:
+            return _store
 
-    _store_cm = PostgresStore.from_conn_string(settings.RAW_DATABASE_URL)
-    _store = _store_cm.__enter__()
-    # 멱등 — langgraph가 자기 테이블(store, store_migrations 등)을 만들고 이미
-    # 있으면 아무것도 안 한다. `DB/schema.sql`이 관리하는 다른 테이블과 달리
-    # 이것들은 langgraph 라이브러리가 자체 관리한다.
-    _store.setup()
-    return _store
+        # 지연 import — langgraph.store.postgres는 psycopg 커넥션 풀·langgraph
+        # 전체를 끌고 들어온다. 이 패키지의 다른 모듈들과 같은 이유로(compat/,
+        # tools/loader.py 등) 실제로 메모리를 쓰는 요청이 올 때만 부른다.
+        from django.conf import settings
+        from langgraph.store.postgres import PostgresStore
+
+        _store_cm = PostgresStore.from_conn_string(settings.RAW_DATABASE_URL)
+        _store = _store_cm.__enter__()
+        # 멱등 — langgraph가 자기 테이블(store, store_migrations 등)을 만든다.
+        # 이미 있으면 아무 것도 안 한다. `DB/schema.sql`이 관리하는 이 저장소의
+        # 다른 테이블과 달리, 이 테이블들은 langgraph 라이브러리가 자체 관리한다.
+        _store.setup()
+        return _store
 
 
 __all__ = ["get_memory_store"]

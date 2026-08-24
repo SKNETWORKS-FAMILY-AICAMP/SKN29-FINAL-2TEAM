@@ -1,9 +1,10 @@
 """tools/adapters.py(adapt_builtin_tools) 테스트.
 
-`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 13개
-전부가 정확한 injected_context로 옮겨지는지 확인한다. 컨텍스트 주입 규칙은
-`services/harness/runner.py`의 `_injected()`를 AST로 직접 읽어 검증한 실측값과
-대조한다(2026-08-13) — 추측이 아니다.
+`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 15개
+전부가 정확한 injected_context로 옮겨지는지 확인한다. `EXPECTED_INJECTED_CONTEXT`
+표가 유일한 정본이다 — 비교할 레거시 구현(`services/harness/runner.py`의
+`_injected()`)이 2026-08-22 레거시 실행기 폐기로 없어졌다(아래 클래스 앞
+주석 참고).
 """
 
 from unittest.mock import patch
@@ -38,6 +39,7 @@ EXPECTED_INJECTED_CONTEXT = {
     "task_register": ("project_id", "account_id"),
     "jira_create_issues": ("project_id", "account_id"),
     "jira_get_issues": ("project_id", "account_id"),
+    "skill_register": ("account_id", "team_id", "account_role"),
 }
 
 # BUILTIN_TOOLS에 정의된 실제 side_effect 값(registry.py 직접 확인).
@@ -45,21 +47,24 @@ EXPECTED_SIDE_EFFECT = {
     "task_update": True,
     "task_register": True,
     "jira_create_issues": True,
+    "skill_register": True,
 }
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(14개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(15개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_fourteen_tools(self):
+    def test_real_registry_has_exactly_fifteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
         #
         # 2026-08-20에 `get_current_datetime`이 추가되며 13 → 14가 됐는데
         # (`tools/adapters.py` 모듈 docstring은 그때 같이 갱신됐다) 이 테스트는
-        # 안 고쳐져 실패한 채로 남아 있었다 — 2026-08-21에 맞춘다. 이 신호가
-        # 의도대로 동작한 사례이므로 숫자 고정 자체는 그대로 둔다.
-        self.assertEqual(len(BUILTIN_TOOLS), 14)
+        # 안 고쳐져 실패한 채로 남아 있었다. main 쪽은 2026-08-21에 14로만
+        # 맞췄지만, 그 시점 registry.py에는 skill_register도 이미 추가되어 있어
+        # 실제로는 15개다 — 병합된 registry.py에서 직접 세어 확인했다
+        # (`2026-08-21_관측성_구현과_브랜치_병합.md` §2.2 사전 병합 기록).
+        self.assertEqual(len(BUILTIN_TOOLS), 15)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}

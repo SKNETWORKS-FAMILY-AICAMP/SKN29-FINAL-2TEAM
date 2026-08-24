@@ -267,6 +267,16 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                 </li>
               );
             }
+            if (entry.kind === 'skill') {
+              return (
+                <li key={index} className={styles.reasoningTool}>
+                  <Icon name="check-circle" size={13} color="var(--color-success)" />
+                  <span>
+                    {entry.skillName} {entry.scope === 'team' ? '팀' : '개인'} 스킬 적용 완료
+                  </span>
+                </li>
+              );
+            }
             if (entry.kind === 'tool') {
               const isExpanded = expandedOutputs.has(index);
               return (

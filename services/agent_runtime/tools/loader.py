@@ -35,6 +35,12 @@ CONTEXT_VALUES: dict[str, Callable[[RuntimeContext], Any]] = {
     "project_id": lambda context: context.project_id,
     "run_id": lambda context: context.run_id,
     "parent_run_id": lambda context: context.parent_run_id,
+    # 2026-08-21, `skill_register` 전용(설계 문서 "skill_register가 담당하는
+    # 것" 절) — `scope=TEAM`인데 요청자가 `leader`가 아니면 그 자리에서
+    # 거부해야 하는데, 이건 `is_tool_allowed_for_role()`의 side_effect 기준
+    # RBAC(모든 write 도구에 공통)보다 더 좁은, 이 도구만의 규칙이라 handler
+    # 안에서 직접 판단해야 한다 — 그러려면 handler가 역할값을 받아야 한다.
+    "account_role": lambda context: context.role,
 }
 
 
@@ -98,11 +104,20 @@ class ToolLoader:
         (`AgentDefinition.model`) — `tools/adapters.py`의 `task_extraction`만
         이 값을 쓴다. `mcp:` 접두사가 하나라도 있을 때만 팀의 MCP 도구를
         조회한다(불필요한 DB 왕복을 피한다).
+
+        `services.harness.registry.ALWAYS_ON_TOOL_REFS`(예: `skill_register`)는
+        `tool_refs`에 없어도 `available`에 있으면 항상 포함한다 — 골라야 하는
+        도구가 아니다. 옛 레거시 엔진의 `load_for_agent()`/`load_for_refs()`가
+        하던 일을 여기로 옮겼다(2026-08-22, 레거시 엔진 폐기와 함께) — 지금은
+        도구 로딩 경로가 여기 하나뿐이다. **`missing`(아래) 판정에는 안 넣는다**
+        — always-on은 요청이 아니라 "있으면 딸려온다"이지 "반드시 있어야 한다"가
+        아니다. 없으면 조용히 빠질 뿐, `ToolUnavailableError`감이 아니다.
         """
         # 지연 import — `services.harness.registry`의 무거운 의존성 사슬
         # (apps.connectors, backend.services.hr, services.mcp 등)을 이 모듈이
         # import되기만 해도 끌고 들어오지 않게 한다.
         from services.agent_runtime.tools.adapters import adapt_builtin_tools, adapt_mcp_tools
+        from services.harness.registry import ALWAYS_ON_TOOL_REFS
 
         available = {tool.ref: tool for tool in adapt_builtin_tools(agent_model=agent_model)}
 
@@ -129,7 +144,11 @@ class ToolLoader:
             logger.warning(
                 "없는 MCP 도구를 건너뛴다(team_id=%s): %s", context.team_id, ", ".join(missing_mcp)
             )
-        return tuple(available[ref] for ref in tool_refs if ref in available)
+
+        # 순서 보존 dedup — tool_refs가 먼저, 아직 없는 always-on 도구는 뒤에.
+        # always-on은 `available`에 있을 때만 딸려온다(위 docstring 참고).
+        resolved_refs = tuple(dict.fromkeys((*tool_refs, *ALWAYS_ON_TOOL_REFS)))
+        return tuple(available[ref] for ref in resolved_refs if ref in available)
 
 
 __all__ = [

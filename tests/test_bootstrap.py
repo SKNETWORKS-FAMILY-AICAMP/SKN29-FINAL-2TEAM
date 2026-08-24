@@ -21,6 +21,7 @@ from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
 from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+from services.agent_runtime.skills.provider import SkillsProvider
 from services.agent_runtime.tools.loader import ToolLoader
 
 BOOTSTRAP_MODULE = "services.agent_runtime.bootstrap"
@@ -106,6 +107,7 @@ class BuildDefaultExecutorWiringTests(SimpleTestCase):
         self.assertIsInstance(factory.middleware_factory, MiddlewareFactory)
         self.assertIsInstance(factory.runtime_policy, RuntimeCapabilityPolicy)
         self.assertIsInstance(factory.prompt_assembler, RuntimePromptAssembler)
+        self.assertIsInstance(factory.skills_provider, SkillsProvider)
 
     def test_default_runtime_policy_is_shared_between_factory_and_middleware_factory(self):
         """factory.runtime_policy와 middleware_factory.runtime_policy가 같은 인스턴스여야
@@ -168,7 +170,9 @@ class ToolLoaderRealWiringTests(SimpleTestCase):
             context=RuntimeContext(account_id="AC1", team_id="TM1", role="leader"),
         )
 
-        self.assertEqual([tool.ref for tool in tools], ["document_search"])
+        # `skill_register`는 ALWAYS_ON_TOOL_REFS라 요청 안 해도 항상 딸려온다
+        # (services/agent_runtime/tools/loader.py `ToolLoader.load()` 참고).
+        self.assertEqual([tool.ref for tool in tools], ["document_search", "skill_register"])
 
     def test_unresolvable_builtin_ref_still_fails_explicitly_not_silently(self):
         """내장 도구 참조가 안 풀리면 그대로 막는다.

@@ -111,7 +111,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: unknown = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // 서버가 JSON이 아닌 응답을 준 경우 — 등록되지 않은 경로로 요청하면
+      // Django가 기본 404 HTML 페이지를 돌려주는 게 대표적이다(2026-08-22,
+      // 스킬 화면에서 실제로 겪었다: 이걸 안 잡으면 SyntaxError가 그대로
+      // 새어 나가 아래 `instanceof ApiError` 판별을 건너뛰고, 화면마다 다른
+      // 하드코딩된 대체 문구로 떨어진다 — 상태 코드 정보도 사라진다).
+      throw new ApiError(`요청을 처리하지 못했습니다. (상태 코드 ${response.status})`, response.status);
+    }
+  }
 
   if (!response.ok) throw parseErrorBody(payload, response.status);
   return payload as T;

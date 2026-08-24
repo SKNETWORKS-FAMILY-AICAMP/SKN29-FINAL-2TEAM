@@ -10,6 +10,8 @@
   task_register / task_list / task_update /
   jira_create_issues / jira_get_issues     -> project_id, account_id
   web_search / get_current_datetime         -> (없음 — 요청자·팀과 무관하게 같은 답)
+  skill_register                            -> account_id, team_id, account_role
+                                               (`_SKILL_REGISTER_REF` 근거 참고)
 
 `proj_id`(레거시 핸들러 키워드) vs `project_id`(CONTEXT_VALUES) — 이름 차이는
 이 파일 안(`_wrap_handler`)에서만 흡수한다.
@@ -52,6 +54,14 @@ _PROJECT_SCOPED: frozenset[str] = frozenset(
 )
 _TASK_EXTRACTION_REF = "task_extraction"
 
+#: 2026-08-21, Skill 배선 — `skill_register`는 프로젝트 스코프가 아니라
+#: 계정·팀·역할 스코프다(설계 문서 "skill_register가 담당하는 것" 절):
+#: `scope=TEAM`인데 `account_role`이 `leader`가 아니면 거부해야 해서 역할값도
+#: 필요하다 — 다른 write 도구는 이 값을 안 쓴다(RBAC 재검사가
+#: `is_tool_allowed_for_role()`로 이미 따로 걸려 있어서, `factory.py`의
+#: `_to_langchain_tool()` 참고).
+_SKILL_REGISTER_REF = "skill_register"
+
 #: 레거시 핸들러의 실제 키워드 인자 이름 — CONTEXT_VALUES 쪽 이름(project_id)과 다르다.
 _LEGACY_PROJECT_KWARG = "proj_id"
 
@@ -65,6 +75,8 @@ def _injected_context_names(tool_ref: str) -> tuple[str, ...]:
         return ("team_id", "account_id", "project_id")
     if tool_ref in _PROJECT_SCOPED:
         return ("project_id", "account_id")
+    if tool_ref == _SKILL_REGISTER_REF:
+        return ("account_id", "team_id", "account_role")
     if tool_ref in _ACCOUNT_SCOPED:
         return ("account_id",)
     return ()

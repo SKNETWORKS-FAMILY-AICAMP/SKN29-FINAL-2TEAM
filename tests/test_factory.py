@@ -109,6 +109,9 @@ class _FakeMemoryProvider:
 
     2026-08-18, Phase 3(§4-8) — `backend()`가 이제 `account_id`도 받으므로, Factory가
     `context.account_id`를 실제로 그대로 넘기는지 `backend_calls`로 확인할 수 있게 한다.
+    2026-08-21 — `extra_routes`도 받는다(Skill 배선, `MemoryProvider.backend()`
+    docstring 참고). `backend_calls`에 같이 기록해 Factory가 `skills_provider`가
+    계산한 라우트를 그대로 전달하는지 확인할 수 있게 한다.
     """
 
     def __init__(self):
@@ -121,8 +124,15 @@ class _FakeMemoryProvider:
         self.paths_calls += 1
         return ["/memories/users/preferences.md"]
 
-    def backend(self, *, team_id: str, agent_id: str, account_id: str):
-        self.backend_calls.append({"team_id": team_id, "agent_id": agent_id, "account_id": account_id})
+    def backend(self, *, team_id: str, agent_id: str, account_id: str, extra_routes=None):
+        self.backend_calls.append(
+            {
+                "team_id": team_id,
+                "agent_id": agent_id,
+                "account_id": account_id,
+                "extra_routes": extra_routes,
+            }
+        )
         return "FAKE_BACKEND"
 
     def store(self):
@@ -132,6 +142,28 @@ class _FakeMemoryProvider:
     def system_prompt(self):
         self.system_prompt_calls += 1
         return "FAKE_MEMORY_SYSTEM_PROMPT"
+
+
+class _FakeSkillsProvider:
+    """`SkillsProvider`(services/agent_runtime/skills/provider.py)를 대신한다."""
+
+    def __init__(self, sources=("/skills/personal/", "/skills/team/")):
+        self._sources = list(sources)
+        self.sources_calls = 0
+        self.routes_calls: list[dict] = []
+        self.system_prompt_calls = 0
+
+    def sources(self):
+        self.sources_calls += 1
+        return list(self._sources)
+
+    def routes(self, *, account_id: str, team_id: str):
+        self.routes_calls.append({"account_id": account_id, "team_id": team_id})
+        return {"/skills/personal/": "FAKE_PERSONAL_ROUTE", "/skills/team/": "FAKE_TEAM_ROUTE"}
+
+    def system_prompt(self):
+        self.system_prompt_calls += 1
+        return "FAKE_SKILLS_SYSTEM_PROMPT"
 
 
 def _definition(**overrides) -> AgentDefinition:
@@ -885,7 +917,7 @@ class BuildMemoryWiringTests(SimpleTestCase):
 
         self.assertEqual(
             provider.backend_calls,
-            [{"team_id": "TM001", "agent_id": "AG001", "account_id": "AC001"}],
+            [{"team_id": "TM001", "agent_id": "AG001", "account_id": "AC001", "extra_routes": None}],
         )
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
@@ -1048,7 +1080,10 @@ class BuildWriteLockWiringTests(SimpleTestCase):
             middleware = mock_create_root.call_args.kwargs["middleware"]
             lock = next(m for m in middleware if isinstance(m, MemoryWriteLockMiddleware))
             self.assertEqual(lock._namespace, ("TM001", "AG777", "AC001"))
-            self.assertEqual(provider.backend_calls, [{"team_id": "TM001", "agent_id": "AG777", "account_id": "AC001"}])
+            self.assertEqual(
+                provider.backend_calls,
+                [{"team_id": "TM001", "agent_id": "AG777", "account_id": "AC001", "extra_routes": None}],
+            )
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_no_memory_provider_omits_write_lock_from_root_middleware(self, mock_create_root):
@@ -1098,6 +1133,126 @@ class BuildWriteLockWiringTests(SimpleTestCase):
         guard_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteGuardMiddleware))
         lock_index = next(i for i, m in enumerate(middleware) if isinstance(m, MemoryWriteLockMiddleware))
         self.assertLess(guard_index, lock_index)
+
+
+class BuildSkillsWiringTests(SimpleTestCase):
+    """skills_provider 배선(2026-08-21) — 정본: 2026-08-20_16_Skill_Middleware_설계.md.
+
+    Skill은 Memory와 같은 공유 backend에 얹혀야 하므로, memory_provider가
+    없으면 skills_provider가 있어도 아무것도 안 붙는다는 게 핵심 불변식이다
+    — 아래 테스트 대부분이 이 가정을 확인한다.
+    """
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_no_skills_provider_omits_skills_kwarg(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        provider = _FakeMemoryProvider()
+        factory, _ = _factory(memory_provider=provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertNotIn("skills", mock_create_root.call_args.kwargs)
+        # `skills_system_prompt`는 memory_provider만 있어도 키 자체는 항상 채워지지만
+        # (아래 __init__ 참고), skills_provider가 없으면 값이 None이다 —
+        # `create_root_graph`의 기본값과 같아 무해하다(하위 호환).
+        self.assertIsNone(mock_create_root.call_args.kwargs["skills_system_prompt"])
+        gp_spec = mock_create_root.call_args.kwargs["subagents"][0]
+        self.assertNotIn("skills", gp_spec)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_skills_provider_without_memory_provider_is_ignored(self, mock_create_root):
+        """Skill은 Memory의 공유 backend에 얹인다 — memory_provider가 꺼져
+        있으면(=backend 자체가 없으면) skills_provider가 있어도 소용없다."""
+        mock_create_root.return_value = "GRAPH"
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertNotIn("skills", mock_create_root.call_args.kwargs)
+        self.assertEqual(skills_provider.sources_calls, 0)
+        self.assertEqual(skills_provider.routes_calls, [])
+        self.assertEqual(skills_provider.system_prompt_calls, 0)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_receives_skill_sources_when_both_providers_present(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        memory_provider = _FakeMemoryProvider()
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(memory_provider=memory_provider, skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["skills"], ["/skills/personal/", "/skills/team/"]
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_root_receives_skills_system_prompt_when_both_providers_present(self, mock_create_root):
+        """2026-08-22, Skill 우선순위 규칙 배선 — `memory_system_prompt`와 같은
+        조건(둘 다 있을 때만)에서 `skills_system_prompt`도 `create_root_graph`
+        까지 그대로 전달되는지 확인한다."""
+        mock_create_root.return_value = "GRAPH"
+        memory_provider = _FakeMemoryProvider()
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(memory_provider=memory_provider, skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["skills_system_prompt"], "FAKE_SKILLS_SYSTEM_PROMPT"
+        )
+        self.assertEqual(skills_provider.system_prompt_calls, 1)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_general_purpose_receives_the_same_skill_sources_as_root(self, mock_create_root):
+        """설계 문서 "Root/GP/Child" 절 — GP는 자동 상속이 없으므로 Root와 같은
+        목록을 gp_spec에 명시적으로 채워야 한다."""
+        mock_create_root.return_value = "GRAPH"
+        memory_provider = _FakeMemoryProvider()
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(memory_provider=memory_provider, skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        gp_spec = mock_create_root.call_args.kwargs["subagents"][0]
+        self.assertEqual(gp_spec["skills"], mock_create_root.call_args.kwargs["skills"])
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_skill_routes_are_merged_into_memory_backend_call(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        memory_provider = _FakeMemoryProvider()
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(memory_provider=memory_provider, skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        self.assertEqual(
+            memory_provider.backend_calls[0]["extra_routes"],
+            {"/skills/personal/": "FAKE_PERSONAL_ROUTE", "/skills/team/": "FAKE_TEAM_ROUTE"},
+        )
+        self.assertEqual(skills_provider.routes_calls, [{"account_id": "AC001", "team_id": "TM001"}])
+
+    @patch(f"{FACTORY_MODULE}.create_child_graph")
+    def test_child_build_never_touches_skills_provider(self, mock_create_child):
+        """Child는 skills 배선을 전혀 안 탄다 — 설계 문서대로 옵트인 없인 기본으로
+        Skill이 안 붙는다."""
+        mock_create_child.return_value = "CHILD_GRAPH"
+        memory_provider = _FakeMemoryProvider()
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(memory_provider=memory_provider, skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context, allow_subagents=False)
+
+        self.assertNotIn("skills", mock_create_child.call_args.kwargs)
+        self.assertEqual(skills_provider.routes_calls, [])
 
 
 class BuildMcpToolCallTimeoutWiringTests(SimpleTestCase):

@@ -470,6 +470,137 @@ class DeepAgentSessionStreamTests(SimpleTestCase):
         self.assertEqual(agent_write["content"]["complete"], True)
 
 
+@patch("apps.chat.api_views.resolve_invocable_skill")
+@patch("apps.chat.api_views.AgentVersionRepository.resolve_live_version_id", return_value=None)
+@patch("services.agent_runtime.build_default_executor")
+@patch("apps.chat.api_views.suggest_title", return_value=None)
+@patch("apps.chat.api_views.AccountRepository")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class SlashSkillInvocationTests(SimpleTestCase):
+    """2026-08-22, 명시적 스킬 호출("/스킬이름 ...") — 사용자 요청: "클로드의
+    스킬 기능 그대로 가져오고 싶어... '이 스킬 써'라고 지정한 거니까 확실해".
+
+    `apps.chat.api_views.resolve_invocable_skill`이 호출부에서 바로 import된
+    이름이라(모듈 최상단에서 `from services.agent_runtime.skills.invocation
+    import ... resolve_invocable_skill`) 여기서 patch한다 — `build_default_executor`
+    처럼 함수 안에서 지연 import하는 이름이 아니다.
+    """
+
+    def test_matching_skill_wraps_user_input_and_strips_the_slash_prefix(
+        self, sessions, messages, accounts, _title, build_executor, _live_version, resolve_skill
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        resolve_skill.return_value = {
+            "skill_id": "humanizer",
+            "name": "humanizer",
+            "description": "번역체같지 않게 답변",
+            "body": "이 지침을 따라 자연스러운 한국어로 다듬어라.",
+        }
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "/humanizer 이 문장을 자연스럽게 바꿔줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        events = ndjson(response)
+
+        resolve_skill.assert_called_once_with(account_id="UA001", team_id="TM001", name="humanizer")
+        model_input = mock_executor.run.call_args.kwargs["user_input"]
+        self.assertIn("이 지침을 따라 자연스러운 한국어로 다듬어라.", model_input)
+        self.assertIn("이 문장을 자연스럽게 바꿔줘", model_input)
+        self.assertIn("explicit_skill_invocation", model_input)
+        self.assertEqual(
+            events[0],
+            {"type": "skill_applied", "skill_name": "humanizer", "scope": "personal"},
+        )
+        stored_events = messages.append.call_args_list[-1].kwargs["content"]["events"]
+        self.assertEqual(stored_events[0], events[0])
+
+    def test_original_raw_text_with_slash_prefix_is_still_what_gets_saved(
+        self, sessions, messages, accounts, _title, build_executor, _live_version, resolve_skill
+    ):
+        """화면에는 사용자가 실제로 친 "/humanizer ..."가 그대로 보여야 한다 —
+        모델에게 가는 값만 바꾼다(§2순위 설계와 같은 「원문은 저장, 마스킹은
+        모델 입력에만」 원칙 재사용)."""
+
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        resolve_skill.return_value = {
+            "skill_id": "humanizer",
+            "name": "humanizer",
+            "description": "번역체같지 않게 답변",
+            "body": "본문",
+        }
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "/humanizer 이 문장을 자연스럽게 바꿔줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_write = messages.append.call_args_list[0].kwargs
+        self.assertEqual(user_write["content"]["text"], "/humanizer 이 문장을 자연스럽게 바꿔줘")
+
+    def test_unknown_skill_name_falls_through_to_plain_chat(
+        self, sessions, messages, accounts, _title, build_executor, _live_version, resolve_skill
+    ):
+        """등록 안 된 이름이면(오타거나, "/"로 시작하는 평범한 메모거나) 조용히
+        원래 발화 그대로 흘려보낸다 — 오류로 막지 않는다."""
+
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        resolve_skill.return_value = None
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "/no-such-skill 아무 말"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        model_input = mock_executor.run.call_args.kwargs["user_input"]
+        self.assertEqual(model_input, "/no-such-skill 아무 말")
+
+    def test_message_without_leading_slash_never_calls_resolve(
+        self, sessions, messages, accounts, _title, build_executor, _live_version, resolve_skill
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "ok", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "평범한 질문이야"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        resolve_skill.assert_not_called()
+        self.assertEqual(mock_executor.run.call_args.kwargs["user_input"], "평범한 질문이야")
+
+
 @patch("services.agent_runtime.build_default_executor")
 @patch("apps.chat.api_views.AgentVersionRepository.resolve_live_version_id", new=lambda **_: None)
 @patch("apps.chat.api_views.suggest_title")

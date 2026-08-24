@@ -109,13 +109,24 @@ def memory_system_prompt() -> str:
     return MEMORY_SYSTEM_PROMPT + _MEMORY_ROUTING_PROMPT
 
 
-def build_memory_backend(*, team_id: str, agent_id: str, account_id: str) -> "CompositeBackend":
+def build_memory_backend(
+    *,
+    team_id: str,
+    agent_id: str,
+    account_id: str,
+    extra_routes: dict[str, Any] | None = None,
+) -> "CompositeBackend":
     """`/memories/users/`(계정 전용)만 장기 저장(Store)으로, 나머지는 전부
     `StateBackend`로 보낸다(모듈 docstring 참고).
 
     `team_id`/`agent_id`는 라우팅에는 안 쓰이지만 namespace를
     `(team_id, agent_id, account_id)`로 유지하려고 받는다 — 같은 계정이 팀을
     옮기거나 다른 에이전트와 대화할 때 개인 메모리가 섞이면 안 된다.
+
+    `extra_routes`(Skill 배선): deepagents는 `skills`와 나머지 파일 도구가
+    같은 `backend` 인스턴스 하나를 공유해야 해서, Skill 전용 backend를 따로
+    안 만들고 이 함수가 만드는 하나뿐인 공유 backend에 Skill 라우트를 여기서
+    병합한다. `None`이면(기본값) 예전과 동일하게 Memory 라우트 하나뿐이다.
     """
     # 지연 import — deepagents.backends는 deepagents 전체를 끌고 들어온다.
     from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
@@ -123,11 +134,15 @@ def build_memory_backend(*, team_id: str, agent_id: str, account_id: str) -> "Co
     def _personal_namespace(_runtime: Any) -> tuple[str, str, str]:
         return (team_id, agent_id, account_id)
 
+    routes: dict[str, Any] = {
+        MEMORY_USERS_PATH_PREFIX: StoreBackend(namespace=_personal_namespace),
+    }
+    if extra_routes:
+        routes.update(extra_routes)
+
     return CompositeBackend(
         default=StateBackend(),
-        routes={
-            MEMORY_USERS_PATH_PREFIX: StoreBackend(namespace=_personal_namespace),
-        },
+        routes=routes,
     )
 
 

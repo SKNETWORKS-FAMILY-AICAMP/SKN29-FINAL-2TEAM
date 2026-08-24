@@ -35,6 +35,7 @@ from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
 from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+from services.agent_runtime.skills.provider import SkillsProvider
 from services.agent_runtime.tools.loader import ToolLoader
 
 # deepagents는 `get_model_provider(model)`이 돌려주는 provider 문자열로만 harness
@@ -96,6 +97,11 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
         # 실제로 메모리·체크포인트를 쓰는 첫 호출에서 열린다.
         memory_provider=MemoryProvider(),
         checkpointer_provider=CheckpointerProvider(),
+        # Skill(2026-08-21, services/agent_runtime/skills/). Memory와 같은
+        # 공유 backend에 라우트만 얹는다 — memory_provider가 켜져 있을 때만
+        # 실제로 붙는다(factory.py `__init__`/`build()` 주석 참고).
+        # SkillsProvider() 생성 자체도 I/O가 없다(경로·namespace 계산뿐).
+        skills_provider=SkillsProvider(),
     )
     return AgentExecutor(loader=AgentDefinitionLoader(), factory=factory)
 

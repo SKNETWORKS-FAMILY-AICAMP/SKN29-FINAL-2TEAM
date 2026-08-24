@@ -65,10 +65,6 @@ class Tool:
     category: str = "기타"
 
 
-class ToolNotAllowed(Exception):
-    """에이전트에게 허용되지 않은 도구를 부르려 함."""
-
-
 class ToolInputError(ValueError):
     """**사람에게 그대로 보여도 되는 실패.**
 
@@ -970,6 +966,74 @@ def _get_current_datetime() -> dict[str, Any]:
     }
 
 
+def _skill_register(
+    *,
+    account_id: str,
+    team_id: str,
+    account_role: str,
+    scope: str,
+    name: str,
+    description: str,
+    body: str,
+) -> dict[str, Any]:
+    """반복되는 업무 절차를 Skill(`SKILL.md`)로 저장한다.
+
+    정본: docs/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
+
+    **실제 저장·검증 로직은 `services.agent_runtime.skills.service`에 있다**
+    (2026-08-22 리팩터) — 설정 > 스킬 화면의 REST API도 같은 함수를 부른다.
+    채팅 쪽(여기)만 가진 것은 `scope` 문자열(`PERSONAL`/`TEAM`) 해석과, 그
+    문자열이 둘 중 하나가 아닐 때의 거부뿐이다. 이름 검증·설명/본문 빈 값
+    검사·팀 스킬 leader 검사·이름 충돌 거부는 전부 그 모듈이 한다.
+
+    **팀 스킬은 팀장만 등록한다** — 팀원이 팀 스킬로 등록해 달라고 요청하는
+    경로 자체가 없다는 게 정본 문서의 결정이다. 그래서 막는 것이지, "팀장이
+    도메인 전문가라서"가 아니다 — 이 시스템엔 그런 역할이 없다
+    (`runtime_policy.py`의 `AccountRole`은 `leader`/`member` 둘뿐).
+
+    **개인 스킬이든 팀 스킬이든 별도 승인 단계가 없다.** `side_effect=True`
+    도구라 `HumanInTheLoopMiddleware` 확인 카드(내용 미리보기 + 등록/취소)를
+    이미 거친다 — 그게 유일한 확인 지점이다.
+    """
+
+    if scope not in ("PERSONAL", "TEAM"):
+        raise ToolInputError("scope는 'PERSONAL' 또는 'TEAM'이어야 합니다.")
+
+    # 지연 import — services.agent_runtime은 이 파일(harness 레거시 레이어)이
+    # 평소엔 끌고 들어올 이유가 없는 무거운 의존성(langgraph 등)을 진다.
+    # tools/adapters.py가 정반대 방향(agent_runtime -> harness)으로 이미
+    # 지연 import를 쓰는 것과 같은 이유다.
+    from services.agent_runtime.skills.backend import (
+        SKILLS_PERSONAL_PATH_PREFIX,
+        SKILLS_TEAM_PATH_PREFIX,
+        skill_md_path,
+    )
+    from services.agent_runtime.skills.service import (
+        SkillError,
+        create_personal_skill,
+        create_team_skill,
+    )
+
+    try:
+        if scope == "PERSONAL":
+            create_personal_skill(
+                account_id, team_id=team_id, name=name, description=description, body=body
+            )
+            path = skill_md_path(SKILLS_PERSONAL_PATH_PREFIX, name)
+        else:
+            create_team_skill(
+                team_id, actor_role=account_role, name=name, description=description, body=body
+            )
+            path = skill_md_path(SKILLS_TEAM_PATH_PREFIX, name)
+    except SkillError as exc:
+        # `SkillError`(및 그 하위 `SkillNameConflict`/`SkillPermissionDenied`)는
+        # 이미 사람에게 그대로 보여도 되는 한국어 문구다 — `ToolInputError`
+        # 관례(Jira/업무 등록과 같은 자리)로 그대로 옮긴다.
+        raise ToolInputError(str(exc)) from exc
+
+    return {"scope": scope, "name": name, "path": path}
+
+
 #: 내장 도구. `tool_ref` 는 agent_tool 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
     "get_current_datetime": Tool(
@@ -1271,7 +1335,75 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_jira_get_issues,
         category="Jira",
     ),
+    "skill_register": Tool(
+        ref="skill_register",
+        name="스킬 등록",
+        description=(
+            "반복되는 업무 절차를 스킬(SKILL.md)로 저장한다. 사용자가 '이 방식을 스킬로 "
+            "등록해줘'처럼 명시적으로 요청했을 때만 부른다. "
+            "scope='PERSONAL'이면 요청한 계정 본인에게만 보이고 승인 없이 즉시 활성이다. "
+            "scope='TEAM'이면 팀 전체에 보이지만 **팀장만 등록할 수 있다** — 팀원이 "
+            "팀 스킬로 등록해 달라고 하면 이 도구를 부르지 말고, 팀장에게 요청하라고 "
+            "안내한다. 등록 전 사용자에게 스킬 내용을 보여주고 확인을 받는다 — 사용자 "
+            "승인 없이는 실행되지 않는다. name은 소문자·숫자·하이픈만 쓰고(예: "
+            "'jira-이슈-생성-절차'가 아니라 'jira-issue-registration'), 64자를 넘지 않게 "
+            "짓는다. body는 이 대화에서 실제로 처리한 절차를 일반화한 것이어야 한다 — "
+            "한 번의 사례를 그대로 절차라고 우기지 말고, 재사용 가능한 단계로 정리한다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": ["PERSONAL", "TEAM"],
+                    "description": "개인 스킬이면 'PERSONAL', 팀 스킬이면 'TEAM'.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "소문자·숫자·하이픈만, 64자 이내. 하이픈으로 시작·끝나거나 연달아 쓸 수 없다.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "이 스킬이 무엇을 하는지, 언제 쓰는지. 1024자 이내.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "SKILL.md 본문 — 마크다운으로 적은 절차.",
+                },
+            },
+            "required": ["scope", "name", "description", "body"],
+        },
+        handler=_skill_register,
+        # DB나 외부 API는 아니지만 Store에 새 스킬을 만들고, 팀 스킬이면 팀
+        # 전체가 보게 되는 지점이라 승인 게이트를 탄다(task_register와 같은 이유).
+        side_effect=True,
+        category="Skill",
+    ),
 }
+
+
+#: 고르고 말고가 없는 내장 도구 — 모든 에이전트에 무조건 붙는다(2026-08-22).
+#:
+#: `skill_register`는 원래 다른 내장 도구(HR·Jira 등)와 같은 자리에서 팀장이
+#: 에이전트마다 켜고 끄는 것이었다. 그런데 스킬을 **읽는** 쪽(SkillsMiddleware
+#: 배선, `factory.py` `build()` — `skill_sources`)은 애초부터 도구 선택과
+#: 무관하게 모든 에이전트에 항상 붙어 있었다 — memory_provider/skills_provider가
+#: 있으면 무조건이다. **등록(쓰기)만 골라야 하는 도구로 남아 있는 게 이 둘을
+#: 어긋나게 했다** — 에이전트가 이미 등록된 스킬은 항상 읽을 수 있는데,
+#: 새 스킬을 등록해 달라는 요청은 이 도구가 꺼져 있으면 못 들어주는 비대칭이
+#: 생긴다. GP(General Purpose 서브에이전트)가 같은 이유로 켜고 끄는 스위치
+#: 없이 항상 붙는 것(`factory.py`의 "위험하지 않으므로, 있으나 마나 한
+#: 선택지를 만들 이유가 없다" 판단)과 같은 논리를 여기도 적용한다 —
+#: `skill_register`는 `side_effect=True`라 어차피 사람 승인 없이는 실행되지
+#: 않으니, 켜고 끄는 선택 자체가 의미가 없다.
+#:
+#: `load_for_agent()`가 `agent_tool` 저장 여부와 무관하게 넣고, 선택 화면
+#: (`apps/agents/serializers.py`의 `builtin_tool_response()`)에서도 뺀다 —
+#: 고를 필요 없는 항목이 선택 목록에 남아 있으면 "이건 꺼도 되나?"라는
+#: 오해를 만든다. `apps/agents/api_views.py`의 `_split()`도 이 집합을 써서,
+#: 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도(2026-08-22 이전)
+#: 다음 저장에서 조용히 걸러낸다.
+ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register"})
 
 
 # ---------------------------------------------------------------------------
@@ -1316,55 +1448,10 @@ def _mcp_tool(row: dict[str, Any]) -> Tool:
     )
 
 
-# ---------------------------------------------------------------------------
-# 에이전트를 도구로 (A2A)
-# ---------------------------------------------------------------------------
-
-
-#: 에이전트를 도구로 부를 때의 `tool_ref` 접두사. `mcp:` 와 같은 규칙이다.
-AGENT_TOOL_PREFIX = "agent:"
-
-#: `agent_tool` 에 이 값이 있으면 **팀의 다른 ACTIVE 에이전트 전부**를 도구로 준다.
-#:
-#: 에이전트 id 를 시드에 박지 않기 위한 것이다. 기본 에이전트는 팀마다 다른 id 로
-#: 생기고, 팀원이 Builder 로 만드는 에이전트는 시드가 알 수 없다 — 목록을 고정하면
-#: 「빌더에서 만든 에이전트를 쓸 수 있다」가 성립하지 않는다.
-AGENT_TOOL_WILDCARD = "agent:*"
-
-#: 에이전트가 에이전트를 부르는 깊이 상한.
-#:
-#: 1 = 최상위만, 2 = 최상위가 하나 더 부를 수 있음. 여기서 더 깊어질 이유가 지금
-#: 없고, 깊이는 그대로 지연·토큰·읽기 어려운 실행 기록이 된다. 상한에 닿으면
-#: `agent:` 도구를 **아예 주지 않는다** — 줘 놓고 거절하면 모델이 그것을 고치려고
-#: 회전을 태운다.
-MAX_AGENT_DEPTH = 2
-
-#: 하위 에이전트가 승인 게이트에서 멈췄다는 표식. 도구의 **반환값**에 담는다.
-#:
-#: 예외로 올리지 않는 이유가 핵심이다 — 예외를 던지면 아직 안 끝난 안쪽
-#: 제너레이터가 닫히면서 `GeneratorExit` 가 들어가고, `trace.run` 이 그것을 잡아
-#: 그 run 을 **FAILED 로 적는다**(`trace.py:72`). 승인 대기는 실패가 아니다.
-#: 값으로 올리면 안쪽은 정상 종료(DONE)하고, 바깥 Loop 이 그 값을 보고 멈춘다.
-SUSPENDED_KEY = "__agent_suspended__"
-
-
-
-def load_for_refs(*, tool_refs: list[str], team_id: str | None) -> dict[str, Tool]:
-    """명시적 `tool_ref` 목록으로 도구를 조립한다.
-
-    `load_for_agent` 와 달리 `agent_tool` 테이블을 보지 않는다 — 아직 저장되지
-    않은 빌더 초안은 그 행이 없다. 위임(`agent:`) 도구는 다루지 않는다. 빌더의
-    도구 카탈로그(`AgentToolCatalogAPIView`)가 애초에 그 도구를 안 준다.
-    """
-
-    allowed = set(tool_refs)
-    available: dict[str, Tool] = {
-        ref: tool for ref, tool in BUILTIN_TOOLS.items() if ref in allowed
-    }
-    if team_id is not None:
-        for row in AgentRepository.mcp_tools(team_id):
-            if row["tool_ref"] in allowed:
-                available[row["tool_ref"]] = _mcp_tool(row)
-    return available
-
-
+# 레거시 A2A 섹션(`agent:` 위임 도구, `load_for_agent`/`load_for_refs`/`resolve`)이
+# 여기 있었다. 2026-08-22에 레거시 harness 실행기(`runner.run_agent()`)를
+# 지우면서 마지막 호출자가 없어졌다 — 위임은 이제 새 엔진의
+# `agent_version_subagents`/`SubagentReference`가 완전히 다른 메커니즘으로
+# 대체한다(services/agent_runtime/subagents/). `ALWAYS_ON_TOOL_REFS`가 하던
+# "항상 켜진 도구" 역할은 `services/agent_runtime/tools/loader.py`의
+# `ToolLoader.load()`로 옮겼다.
