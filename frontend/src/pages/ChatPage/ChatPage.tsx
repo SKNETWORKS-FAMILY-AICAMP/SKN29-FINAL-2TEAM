@@ -697,6 +697,17 @@ export default function ChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // 2026-08-24 버그 수정. 서버의 `duration_ms`는 백엔드가 `agent_started`
+    // 이벤트를 낸 시점부터 잰다 — 요청 전송·네트워크 왕복·에이전트 시작 전
+    // 백엔드 처리(메모리 조회 등)는 빠진다. 그런데 화면의 "생각하는 중"
+    // 스피너는 이 함수가 불리는 순간(=`live.running`이 true가 되는 순간)
+    // 바로 뜬다 — 사용자가 실제로 체감하는 대기 시간은 여기서부터다. 그래서
+    // 서버 값 대신 **클라이언트에서 잰 왕복 시간**을 최종 값으로 쓴다(아래
+    // `finally`). `reduce()`가 스트림 도중 담는 서버 값은 그대로 두되(복원된
+    // 과거 턴에는 여전히 서버 값이 쓰인다 — 그쪽은 이 함수를 거치지 않는다),
+    // 이 실행이 끝나는 순간 클라이언트 값으로 덮어써 화면에 보이는 숫자와
+    // 실제 체감 대기 시간이 어긋나지 않게 한다.
+    const startedAt = Date.now();
     let state = initial;
     updateLastLive(() => state);
     try {
@@ -747,7 +758,19 @@ export default function ChatPage() {
           : prev,
       );
     } finally {
-      updateLastLive((prev) => (prev ? { ...prev, running: false } : prev));
+      // 취소(사용자가 다른 발화를 보내 이전 스트림을 abort한 경우)는 실제로
+      // 끝까지 안 갔으므로 시간을 재지 않는다 — 재지 않은 실행에 값을 지어
+      // 붙이면 "쟀는데 0초"류 문제가 그대로 재현된다.
+      const elapsedMs = controller.signal.aborted ? null : Date.now() - startedAt;
+      updateLastLive((prev) =>
+        prev
+          ? {
+              ...prev,
+              running: false,
+              durationMs: elapsedMs ?? prev.durationMs,
+            }
+          : prev,
+      );
     }
   }
 
