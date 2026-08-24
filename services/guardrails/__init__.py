@@ -6,6 +6,6 @@
 정본: `docs/작업기록/2026-08-20_가드레일_조사와_실측.md` §8
 """
 
-from .input_check import InputGuardOutcome, check_user_input
+from .input_check import InputGuardOutcome, check_user_input, on_check_timeout
 
-__all__ = ["InputGuardOutcome", "check_user_input"]
+__all__ = ["InputGuardOutcome", "check_user_input", "on_check_timeout"]

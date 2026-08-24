@@ -59,6 +59,7 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "search_enabled", "2026-08-18 내 파일 toggle"),
     ("doc", "shared_team_id", "2026-08-18 개인 문서 팀 공유"),
     ("doc", "index_status", "2026-08-18 색인 상태"),
+    ("doc", "index_detail", "2026-08-24 색인 실패 사유"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
     ("doc_meta", "extract_detail", "2026-08-19 추출 실패 사유"),
@@ -79,6 +80,7 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("guardrail_event", None, "2026-08-20 가드레일 발동 기록"),
     ("guardrail_provider", None, "2026-08-20 외부 가드레일 공급자 등록"),
     ("guardrail_provider", "is_active", "2026-08-20 여러 개 중 하나만 사용"),
+    ("guardrail_provider", "on_failure", "2026-08-20 검사기 미응답 시 동작(팀이 정함)"),
     ("mcp_call_note", None, "2026-08-21 MCP 동시 실행·timeout 경고 재료"),
     ("tool_call", "retrieved_doc_ids", "2026-08-21 도구가 조회한 문서 식별자"),
 ]

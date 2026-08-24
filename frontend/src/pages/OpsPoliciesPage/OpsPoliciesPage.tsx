@@ -60,11 +60,17 @@ const GUARDRAIL_RULE_LABELS: Record<string, string> = {
   PII: '민감정보',
   MODERATION: '유해 표현',
   BLOCKED_WORD: '차단 단어',
+  // 등록된 외부 가드레일이 판단한 건. 무엇에 걸렸는지는 공급자마다 다르므로
+  // `detail.guardrail` 로 따로 붙인다.
+  PROVIDER: '외부 가드레일',
 };
 
 const GUARDRAIL_ACTION_LABELS: Record<string, string> = {
   MASKED: '가림',
   BLOCKED: '막음',
+  // **검사를 못 한 건.** 지금까지는 로그 한 줄이 전부라, 검사가 통째로 빠져도
+  // 이 목록에는 아무것도 안 뜨고 등록 화면은 「연결됨」을 계속 보여줬다.
+  SKIPPED: '건너뜀',
 };
 
 const GUARDRAIL_STAGE_LABELS: Record<string, string> = {
@@ -174,11 +180,24 @@ function guardrailEventTone(action: string): OpsTone {
   return action === 'BLOCKED' ? 'danger' : 'warning';
 }
 
+/** 못 부른 사유. 공급자가 아니라 **우리가 쓴 문구**라 그대로 보여줘도 된다. */
+function guardrailSkipReason(event: GuardrailEvent): string | null {
+  if (event.action !== 'SKIPPED') return null;
+  const detail = event.detail ?? {};
+  const reason = typeof detail.reason === 'string' ? detail.reason : null;
+  const blocked = detail.blocked === true;
+  // 「막았는지」를 함께 말한다 — 같은 SKIPPED 라도 그 팀 설정에 따라 결과가 정반대다.
+  return `${reason ?? '이유를 알 수 없습니다.'} ${blocked ? '· 보내지 않음' : '· 그대로 보냄'}`;
+}
+
 /** 발동 한 줄. `detail`에 원문이 없으므로 그대로 붙여 읽는다. */
 function guardrailEventTitle(event: GuardrailEvent): string {
   const rule = GUARDRAIL_RULE_LABELS[event.rule] ?? event.rule;
   const stage = GUARDRAIL_STAGE_LABELS[event.stage] ?? event.stage;
   const detail = event.detail ?? {};
+  const skip = guardrailSkipReason(event);
+  if (skip) return `${stage} · ${rule} — ${skip}`;
+
   const word = typeof detail.word === 'string' ? detail.word : null;
   const category = typeof detail.category === 'string' ? detail.category : null;
   const score = typeof detail.score === 'number' ? detail.score : null;

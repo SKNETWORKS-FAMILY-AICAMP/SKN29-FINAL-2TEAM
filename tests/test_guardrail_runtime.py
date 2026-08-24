@@ -7,11 +7,12 @@ OpenAI/Azure 를 부르면 안 된다(2026-08-12 에 실제로 부르고 있던 
 안 거친 것을 부르면 매 발화가 실패로 끝난다.
 """
 
+import json
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
-from services.guardrails import check_user_input
+from services.guardrails import check_user_input, on_check_timeout
 from services.guardrails.providers import GuardrailVerdict, ProviderError
 from services.guardrails.providers import azure
 
@@ -25,6 +26,7 @@ def provider(**overrides):
         "config": {"endpoint": "https://example.cognitiveservices.azure.com"},
         "status": "CONNECTED",
         "is_active": True,
+        "on_failure": "OPEN",
     }
     row.update(overrides)
     return row
@@ -288,3 +290,74 @@ class ProviderTimeoutTests(SimpleTestCase):
         _, kwargs = made.call_args
         self.assertEqual(kwargs["timeout"], mod.TIMEOUT_SECONDS)
         self.assertEqual(kwargs["max_retries"], 0)
+
+
+@patch("services.guardrails.input_check.GuardrailEventRepository")
+@patch("services.guardrails.input_check.GuardrailProviderRepository")
+class WhenTheCheckerIsDownTests(SimpleTestCase):
+    """검사기를 못 불렀을 때. **무엇을 할지는 그 팀이 정한다**(`on_failure`).
+
+    우리가 임시 검사를 대신 돌리지는 않는다 — 고객이 동의한 적 없는 기준으로
+    막는 것이고, 문의가 오면 「왜 막혔나」에 답할 수 없다(2026-08-20 PM 논의).
+    """
+
+    @patch("services.guardrails.input_check.check")
+    def test_통과를_고른_팀은_그대로_보낸다(self, called, repo, _events):
+        repo.for_team.return_value = provider(on_failure="OPEN")
+        called.side_effect = ProviderError("연결하지 못했습니다: ConnectError")
+
+        self.assertFalse(check_user_input("안녕하세요", team_id="TE001").blocked)
+
+    @patch("services.guardrails.input_check.check")
+    def test_막음을_고른_팀은_보내지_않는다(self, called, repo, _events):
+        repo.for_team.return_value = provider(on_failure="CLOSED")
+        called.side_effect = ProviderError("연결하지 못했습니다: ConnectError")
+
+        outcome = check_user_input("안녕하세요", team_id="TE001")
+
+        self.assertTrue(outcome.blocked)
+        # **표현을 바꾸라고 하면 안 된다** — 발화 탓이 아니다.
+        self.assertNotIn("표현을 바꿔", outcome.blocked_reason)
+
+    @patch("services.guardrails.input_check.check")
+    def test_어느_쪽이든_기록에_남는다(self, called, repo, events):
+        """지금까지는 로그 한 줄이 전부라, 검사가 통째로 빠져도 콘솔은
+        마지막 「연결 확인」 결과인 「연결됨」을 계속 보여줬다."""
+
+        repo.for_team.return_value = provider(on_failure="OPEN")
+        called.side_effect = ProviderError("연결하지 못했습니다: ConnectError")
+
+        check_user_input("안녕하세요", team_id="TE001", account_id="UA001")
+
+        _, kwargs = events.record.call_args
+        self.assertEqual(kwargs["action"], "SKIPPED")
+        self.assertEqual(kwargs["rule"], "PROVIDER")
+        self.assertEqual(kwargs["detail"]["kind"], "AZURE_CONTENT_SAFETY")
+        self.assertFalse(kwargs["detail"]["blocked"])
+
+    @patch("services.guardrails.input_check.check")
+    def test_기록에_원문은_안_담는다(self, called, repo, events):
+        repo.for_team.return_value = provider(on_failure="CLOSED")
+        called.side_effect = ProviderError("연결하지 못했습니다: ConnectError")
+
+        check_user_input("주민번호는 900101-1234567 입니다", team_id="TE001")
+
+        _, kwargs = events.record.call_args
+        self.assertNotIn("900101", json.dumps(kwargs["detail"], ensure_ascii=False))
+
+    def test_기다리다_포기해도_같은_판단을_한다(self, repo, events):
+        """검사기가 죽는 대신 **응답을 안 하는** 갈래. 여기서 통과로 고정하면
+        「막음」을 켠 팀에 구멍이 생긴다."""
+
+        repo.for_team.return_value = provider(on_failure="CLOSED")
+
+        outcome = on_check_timeout(team_id="TE001")
+
+        self.assertTrue(outcome.blocked)
+        self.assertEqual(events.record.call_args[1]["action"], "SKIPPED")
+
+    def test_등록이_없으면_기다림_포기도_그냥_보낸다(self, repo, events):
+        repo.for_team.return_value = None
+
+        self.assertFalse(on_check_timeout(team_id="TE001").blocked)
+        events.record.assert_not_called()

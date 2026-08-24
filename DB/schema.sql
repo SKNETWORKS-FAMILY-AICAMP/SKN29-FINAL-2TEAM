@@ -1034,6 +1034,10 @@ CREATE TABLE guardrail_provider (
     -- 여러 개 등록해 두고 **그중 하나만** 쓴다(2026-08-20). 합치는 게 아니라
     -- 고르는 것이라 「어느 것이 먼저 도는가」를 정할 필요가 없다.
     is_active        BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- 검사기가 응답하지 않을 때 **그 팀이** 무엇을 할지(2026-08-20). 우리가
+    -- 일괄로 정하지 않는다 — 사내 도구면 통과가 맞고, 규제 고객에게는 「검사
+    -- 못 했는데 그냥 보냈다」가 계약 위반이 된다.
+    on_failure       VARCHAR(10)  NOT NULL DEFAULT 'OPEN',  -- OPEN / CLOSED
     last_checked_at  TIMESTAMPTZ,
     created_by       VARCHAR(5),               -- user_account.account_id(FK 없음)
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()

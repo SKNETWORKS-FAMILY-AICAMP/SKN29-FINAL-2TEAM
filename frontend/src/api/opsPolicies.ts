@@ -40,7 +40,8 @@ export interface NoticeInput {
 
 export type GuardrailStage = 'INPUT' | 'OUTPUT' | 'TOOL_RESULT';
 export type GuardrailRule = 'PII' | 'MODERATION' | 'BLOCKED_WORD';
-export type GuardrailAction = 'MASKED' | 'BLOCKED';
+/** `SKIPPED` 는 **검사를 못 한 것**이다 — 통과시킨 것과 다르다. */
+export type GuardrailAction = 'MASKED' | 'BLOCKED' | 'SKIPPED';
 
 export interface GuardrailEvent {
   event_id: string;

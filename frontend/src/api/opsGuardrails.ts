@@ -9,6 +9,16 @@ import { opsRequest } from './opsClient';
  */
 export type GuardrailKind = 'OPENAI_GUARDRAILS' | 'BEDROCK_GUARDRAILS' | 'AZURE_CONTENT_SAFETY';
 export type GuardrailProviderStatus = 'UNCHECKED' | 'CONNECTED' | 'ERROR';
+/**
+ * 검사기가 응답하지 않을 때 **그 팀이** 무엇을 할지.
+ *
+ * `OPEN` 그대로 보낸다 — 검사기 장애가 채팅 장애가 되지 않는다.
+ * `CLOSED` 보내지 않는다 — 「검사 못 했는데 그냥 보냈다」가 계약 위반이 되는 곳.
+ *
+ * 우리가 임시 검사를 대신 돌리지는 않는다 — 고객이 동의한 적 없는 기준으로
+ * 막는 것이고, 「왜 막혔나」에 답할 수 없다.
+ */
+export type GuardrailOnFailure = 'OPEN' | 'CLOSED';
 
 export interface OpsGuardrailProvider {
   provider_id: string;
@@ -22,6 +32,7 @@ export interface OpsGuardrailProvider {
   status: GuardrailProviderStatus;
   /** 그 팀이 **실제로 쓰는** 하나. 나머지는 등록만 돼 있다. */
   is_active: boolean;
+  on_failure: GuardrailOnFailure;
   last_checked_at: string | null;
   /** **키 자체는 오지 않는다.** 있는지 여부만. */
   has_credential: boolean;
@@ -41,6 +52,7 @@ export function registerOpsGuardrail(
     kind: GuardrailKind;
     config?: Record<string, unknown>;
     credential?: Record<string, unknown> | null;
+    on_failure?: GuardrailOnFailure;
   },
 ) {
   return opsRequest<OpsGuardrailProvider>('/ops/guardrails/', { method: 'POST', token, body });
@@ -63,6 +75,7 @@ export function updateOpsGuardrail(
     config?: Record<string, unknown>;
     credential?: Record<string, unknown> | null;
     replace_credential?: boolean;
+    on_failure?: GuardrailOnFailure;
   },
 ) {
   return opsRequest<OpsGuardrailProvider>(`/ops/guardrails/${providerId}/`, {

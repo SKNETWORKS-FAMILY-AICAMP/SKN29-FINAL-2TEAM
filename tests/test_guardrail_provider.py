@@ -191,3 +191,71 @@ class GuardrailProviderApiTests(SimpleTestCase):
         self.assertIsNone(response.json()["provider_id"])
         _, kwargs = repo.set_active_for_team.call_args
         self.assertIsNone(kwargs["provider_id"])
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.guardrails.log_audit")
+@patch("apps.ops.views.guardrails.GuardrailProviderRepository")
+class OnFailureTests(SimpleTestCase):
+    """검사기가 응답하지 않을 때의 동작은 **그 팀이** 정한다."""
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_안_보내면_통과가_기본이다(self, repo, _audit, _admin):
+        """마이그레이션도 화면도 조용히 정책을 바꾸지 않는다."""
+
+        repo.create.return_value = provider_row()
+
+        self.client.post(
+            LIST_URL,
+            data=json.dumps({"team_id": "TE001", "name": "x", "kind": "AZURE_CONTENT_SAFETY"}),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(repo.create.call_args[1]["on_failure"], "OPEN")
+
+    def test_막음을_고르면_그대로_넘어간다(self, repo, _audit, _admin):
+        repo.create.return_value = provider_row(on_failure="CLOSED")
+
+        response = self.client.post(
+            LIST_URL,
+            data=json.dumps({
+                "team_id": "TE001", "name": "x",
+                "kind": "AZURE_CONTENT_SAFETY", "on_failure": "CLOSED",
+            }),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(repo.create.call_args[1]["on_failure"], "CLOSED")
+        self.assertEqual(response.json()["on_failure"], "CLOSED")
+
+    def test_모르는_값은_거절한다(self, _repo, _audit, _admin):
+        response = self.client.post(
+            LIST_URL,
+            data=json.dumps({
+                "team_id": "TE001", "name": "x",
+                "kind": "AZURE_CONTENT_SAFETY", "on_failure": "MAYBE",
+            }),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_수정에서도_고칠_수_있다(self, repo, _audit, _admin):
+        repo.update.return_value = provider_row(on_failure="CLOSED")
+
+        self.client.patch(
+            DETAIL_URL,
+            data=json.dumps({
+                "name": "x", "kind": "AZURE_CONTENT_SAFETY",
+                "config": {}, "on_failure": "CLOSED",
+            }),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+        self.assertEqual(repo.update.call_args[1]["on_failure"], "CLOSED")

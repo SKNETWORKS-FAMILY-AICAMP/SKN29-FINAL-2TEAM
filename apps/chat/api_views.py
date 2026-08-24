@@ -31,7 +31,7 @@ from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
-from services.guardrails import InputGuardOutcome, check_user_input
+from services.guardrails import check_user_input, on_check_timeout
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -241,11 +241,15 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             try:
                 guard = guard_check.result(timeout=GUARDRAIL_WAIT_SECONDS)
             except TimeoutError:
-                # **못 기다리면 통과시킨다.** 못 부른 경우와 같은 판단이다
-                # (`services/guardrails/input_check.py` 참고) — 외부 검사기가
-                # 느릴 때마다 채팅이 막히면 가드레일이 장애 원인이 된다.
-                logger.warning("가드레일 검사가 %s초 안에 안 끝나 통과시킵니다", GUARDRAIL_WAIT_SECONDS)
-                guard = InputGuardOutcome()
+                # 못 부른 경우와 **같은 판단**을 한다 — 그 팀이 정한 대로다
+                # (`on_check_timeout`). 여기서 통과로 고정하면 「막음」을 켠 팀에
+                # 구멍이 생긴다: 검사기가 죽는 대신 응답을 안 하면 그냥 통과한다.
+                logger.warning("가드레일 검사가 %s초 안에 안 끝났습니다", GUARDRAIL_WAIT_SECONDS)
+                guard = on_check_timeout(
+                    team_id=session["team_id"],
+                    account_id=account_id,
+                    session_id=str(session_id),
+                )
             if guard.blocked:
                 return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
 

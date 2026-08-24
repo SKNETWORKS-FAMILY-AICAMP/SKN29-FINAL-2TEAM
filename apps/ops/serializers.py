@@ -316,6 +316,9 @@ class OpsGuardrailRegisterSerializer(serializers.Serializer):
     credential = serializers.DictField(
         required=False, allow_null=True, default=None, write_only=True
     )
+    #: 검사기가 응답하지 않을 때 그 팀이 무엇을 할지. 기본은 통과(`OPEN`) —
+    #: 안 보내면 지금까지의 동작 그대로다.
+    on_failure = serializers.ChoiceField(choices=["OPEN", "CLOSED"], required=False, default="OPEN")
 
 
 class OpsGuardrailUpdateSerializer(OpsGuardrailRegisterSerializer):
@@ -351,6 +354,7 @@ def ops_guardrail_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "config": row.get("config") or {},
         "status": row["status"],
         "is_active": bool(row.get("is_active")),
+        "on_failure": row.get("on_failure") or "OPEN",
         "last_checked_at": row.get("last_checked_at"),
         "has_credential": bool(row.get("has_credential")),
         "created_by": row.get("created_by"),

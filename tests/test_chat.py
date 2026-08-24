@@ -13,6 +13,7 @@ from apps.accounts.tokens import issue_token
 from apps.chat.api_views import PerCallDecisionsError, _apply_selection, _decisions_for
 from apps.chat.serializers import message_response
 from backend.db.errors import PermissionDenied
+from services.guardrails import InputGuardOutcome
 
 SESSION = {
     "session_id": "11111111-1111-1111-1111-111111111111",
@@ -1417,9 +1418,10 @@ class GuardrailSlowTests(SimpleTestCase):
     공급자마다 자기 timeout 이 있지만 새 공급자에서 빠뜨릴 수 있어 여기서도 끊는다.
     """
 
+    @patch("apps.chat.api_views.on_check_timeout", return_value=InputGuardOutcome())
     @patch("apps.chat.api_views.check_user_input")
-    def test_상한을_넘기면_막지_않고_보낸다(
-        self, guard, sessions, messages, accounts, _title, agent_repo, build_executor
+    def test_상한을_넘기면_그_팀이_정한_대로_한다(
+        self, guard, timed_out, sessions, messages, accounts, _title, agent_repo, build_executor
     ):
         import time
 
@@ -1440,6 +1442,39 @@ class GuardrailSlowTests(SimpleTestCase):
             headers=auth_header(),
         )
 
-        # 400(막힘)이 아니라 스트림이 열려야 한다.
+        # 통과를 고른 팀이므로 400 이 아니라 스트림이 열려야 한다.
         self.assertEqual(response["Content-Type"], "application/x-ndjson")
         self.assertEqual([e["type"] for e in ndjson(response)], ["result"])
+        # **판단을 여기서 고정하지 않는다** — 팀 설정을 보는 자리로 넘긴다.
+        _, kwargs = timed_out.call_args
+        self.assertEqual(kwargs["team_id"], SESSION["team_id"])
+
+    @patch("apps.chat.api_views.on_check_timeout")
+    @patch("apps.chat.api_views.check_user_input")
+    def test_상한을_넘겼는데_막음을_고른_팀이면_막는다(
+        self, guard, timed_out, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        import time
+
+        def 늦게_온다(*_args, **_kwargs):
+            time.sleep(5)
+            raise AssertionError("여기까지 기다리면 안 된다")
+
+        guard.side_effect = 늦게_온다
+        timed_out.return_value = InputGuardOutcome(blocked_reason="가드레일 검사를 할 수 없습니다.")
+        sessions.get.return_value = SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(build_executor, [])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "일정 알려줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("가드레일", response.json()["detail"])
+        # 막힌 발화는 저장하지 않는다.
+        messages.append.assert_not_called()

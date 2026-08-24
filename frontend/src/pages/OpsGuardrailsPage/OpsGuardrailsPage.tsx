@@ -18,7 +18,7 @@ import {
   testOpsGuardrail,
   updateOpsGuardrail,
 } from '../../api/opsGuardrails';
-import type { GuardrailKind, OpsGuardrailProvider } from '../../api/opsGuardrails';
+import type { GuardrailKind, GuardrailOnFailure, OpsGuardrailProvider } from '../../api/opsGuardrails';
 import { fetchOpsTeams } from '../../api/opsTeams';
 import type { OpsTeam } from '../../api/opsTeams';
 import { ApiError } from '../../api/client';
@@ -162,6 +162,7 @@ export default function OpsGuardrailsPage() {
   const [teamId, setTeamId] = useState('');
   const [name, setName] = useState('');
   const [kind, setKind] = useState<GuardrailKind>('OPENAI_GUARDRAILS');
+  const [onFailure, setOnFailure] = useState<GuardrailOnFailure>('OPEN');
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<OpsGuardrailProvider | null>(null);
@@ -205,6 +206,7 @@ export default function OpsGuardrailsPage() {
     setEditing(null);
     setName('');
     setValues({});
+    setOnFailure('OPEN');
     setProbed(null);
   }
 
@@ -221,6 +223,7 @@ export default function OpsGuardrailsPage() {
       next[field.key] = value == null ? '' : String(value);
     }
     setValues(next);
+    setOnFailure(row.on_failure);
     setProbed(null);
   }
 
@@ -288,6 +291,7 @@ export default function OpsGuardrailsPage() {
           config,
           credential: replace ? credential : null,
           replace_credential: replace,
+          on_failure: onFailure,
         });
         showToast('가드레일을 수정했습니다.', 'success');
       } else {
@@ -297,6 +301,7 @@ export default function OpsGuardrailsPage() {
           kind,
           config,
           credential: Object.keys(credential).length > 0 ? credential : null,
+          on_failure: onFailure,
         });
         showToast('가드레일을 등록했습니다.', 'success');
       }
@@ -439,6 +444,26 @@ export default function OpsGuardrailsPage() {
                   {KIND_LABELS[item]}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className={styles.fieldGroup}>
+            <label htmlFor="guardrail-on-failure">검사기가 응답하지 않을 때</label>
+            {/* **우리가 일괄로 정하지 않는다.** 사내 도구면 통과가 맞지만, 규제
+                고객에게는 「검사 못 했는데 그냥 보냈다」가 계약 위반이 된다.
+                우리가 임시 검사를 대신 돌리지는 않는다 — 고객이 동의한 적 없는
+                기준으로 막는 것이라 「왜 막혔나」에 답할 수 없다.
+
+                「막음」은 발동 기록의 라벨과 같은 말이다. 「그대로 보냄」은
+                기존 문구가 없어 새로 지었다 — 「통과」는 검사를 거쳐 통과한
+                것과 구분이 안 된다. */}
+            <select
+              id="guardrail-on-failure"
+              value={onFailure}
+              onChange={(event) => setOnFailure(event.target.value as GuardrailOnFailure)}
+            >
+              <option value="OPEN">그대로 보냄</option>
+              <option value="CLOSED">막음</option>
             </select>
           </div>
 

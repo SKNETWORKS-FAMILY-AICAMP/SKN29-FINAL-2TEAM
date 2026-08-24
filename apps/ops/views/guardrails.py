@@ -76,6 +76,7 @@ class GuardrailProviderListCreateView(AdminView):
                 credential=credential,
                 registered_by=request.user.account_id,
                 status=_verified_status(kind=data["kind"], config=config, credential=credential),
+                on_failure=data["on_failure"],
             )
             # 남의 팀 대화가 외부 검사기를 거치게 만드는 일이라 반드시 남긴다.
             # **자격증명은 남기지 않는다** — 감사 로그는 사람이 읽는 표다.
@@ -151,6 +152,7 @@ class GuardrailProviderDetailView(AdminView):
                 status=_verified_status(
                     kind=data["kind"], config=config, credential=probe_credential
                 ),
+                on_failure=data["on_failure"],
             )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)

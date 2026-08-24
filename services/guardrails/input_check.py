@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 #: 무엇에 걸렸는지 **종류만** 말한다. 점수·임계값·내부 규칙명까지 알려주면
 #: 우회 힌트가 된다 — 사용자가 다시 쓸 수 있을 만큼만 알린다.
 BLOCKED_MESSAGE = "등록된 가드레일이 이 발화를 막았습니다."
+#: 검사기를 못 불렀는데 그 팀이 「막음」을 골랐을 때. **왜 막혔는지 사람 말로
+#: 말한다** — 사용자가 자기 발화를 고쳐도 소용없는 상황이라, 표현을 바꾸라고
+#: 하면 안 된다.
+UNAVAILABLE_MESSAGE = "가드레일 검사를 할 수 없습니다. 잠시 뒤 다시 보내 주세요."
 _REASON_LABELS = {
     "Moderation": "유해 표현으로 판단됐습니다",
     "Jailbreak": "지시를 바꾸려는 시도로 판단됐습니다",
@@ -79,12 +83,17 @@ def check_user_input(
             config=provider.get("config") or {},
             credential=credential,
         )
-    except ProviderError:
-        # **부르지 못하면 통과시킨다.** 외부 검사기가 흔들릴 때마다 채팅이 막히면
-        # 가드레일이 장애 원인이 된다 — 못 잡는 것보다 나쁘다. 사유는 로그로 남기고
-        # 키가 섞일 수 있어 예외 문자열은 그대로 찍지 않는다.
+    except ProviderError as exc:
+        # **못 불렀을 때 무엇을 할지는 그 팀이 정한다**(`on_failure`). 사내 도구면
+        # 통과가 맞지만, 규제 고객에게는 「검사 못 했는데 그냥 보냈다」가 계약
+        # 위반이 된다. 우리가 임시 검사를 대신 돌리지는 않는다 — 고객이 동의한
+        # 적 없는 기준으로 막는 것이고, 「왜 막혔나」에 답할 수 없다.
+        #
+        # **어느 쪽이든 기록은 남긴다.** 지금까지는 로그 한 줄이 전부라, 검사가
+        # 통째로 빠져도 운영자 콘솔은 마지막 「연결 확인」 결과인 「연결됨」을
+        # 계속 보여줬다(2026-08-20 PM 지적).
         logger.warning("가드레일 호출 실패: provider=%s", provider["provider_id"])
-        return InputGuardOutcome()
+        return _unavailable(provider, exc, account_id=account_id, team_id=team_id, session_id=session_id)
 
     if not verdict.blocked:
         return InputGuardOutcome()
@@ -99,6 +108,58 @@ def check_user_input(
         session_id=session_id,
     )
     return InputGuardOutcome(blocked_reason=_blocked_message(verdict.detail or {}))
+
+
+def on_check_timeout(
+    *,
+    team_id: str,
+    account_id: str | None = None,
+    session_id: str | None = None,
+) -> InputGuardOutcome:
+    """검사를 **기다리다 포기했다.** 부르는 쪽(`apps/chat`)이 상한을 넘겼을 때.
+
+    못 부른 것과 같은 판단을 한다 — 그 팀이 「막음」을 골랐으면 막는다. 여기서
+    통과로 고정해 버리면 「막음」을 켠 팀에 구멍이 생긴다: 검사기가 죽는 대신
+    **응답을 안 하면** 그냥 통과한다.
+    """
+
+    provider = _connected_provider(team_id)
+    if provider is None:
+        return InputGuardOutcome()
+    return _unavailable(
+        provider,
+        ProviderError("검사가 상한 안에 끝나지 않았습니다."),
+        account_id=account_id,
+        team_id=team_id,
+        session_id=session_id,
+    )
+
+
+def _unavailable(
+    provider: dict[str, Any],
+    exc: ProviderError,
+    *,
+    account_id: str | None,
+    team_id: str,
+    session_id: str | None,
+) -> InputGuardOutcome:
+    """검사기를 못 불렀다. 기록을 남기고, 그 팀이 정한 대로 한다."""
+
+    closed = provider.get("on_failure") == "CLOSED"
+    _record(
+        stage="INPUT",
+        rule="PROVIDER",
+        action="SKIPPED",
+        # 사유는 우리가 쓴 문구뿐이다(`providers/*.py` 의 `raise ProviderError`) —
+        # 예외 문자열을 그대로 담지 않으므로 키 조각이 섞이지 않는다.
+        detail={"kind": provider["kind"], "reason": str(exc), "blocked": closed},
+        account_id=account_id,
+        team_id=team_id,
+        session_id=session_id,
+    )
+    if closed:
+        return InputGuardOutcome(blocked_reason=UNAVAILABLE_MESSAGE)
+    return InputGuardOutcome()
 
 
 def _connected_provider(team_id: str) -> dict[str, Any] | None:
