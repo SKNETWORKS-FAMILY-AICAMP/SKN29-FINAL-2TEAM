@@ -81,12 +81,25 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("guardrail_provider", "is_active", "2026-08-20 여러 개 중 하나만 사용"),
     ("mcp_call_note", None, "2026-08-21 MCP 동시 실행·timeout 경고 재료"),
     ("tool_call", "retrieved_doc_ids", "2026-08-21 도구가 조회한 문서 식별자"),
+    (
+        "tool_call",
+        "langchain_tool_call_id",
+        "2026-08-24 HITL 도구 호출 상관관계",
+    ),
     ("team", "default_model", "2026-08-22 팀 기본 채팅 모델 — 레거시 정문 에이전트에서 옮김"),
     # 2026-08-22_drop_legacy_agent.sql 은 여기 못 적는다 — 이 표는 "있어야 할
     # 것이 있는가"만 보는데, 그 마이그레이션이 하는 일은 `agent`/`agent_tool`을
     # **없애는** 것이다. 적용 여부는 아래 쿼리로 직접 확인한다(0이어야 한다):
     #   SELECT count(*) FROM information_schema.tables
     #    WHERE table_schema='public' AND table_name IN ('agent','agent_tool');
+]
+
+EXPECTED_INDEXES: list[tuple[str, str, str]] = [
+    (
+        "tool_call",
+        "ux_tool_call_run_langchain_id",
+        "2026-08-24 HITL 도구 호출 중복 방지",
+    ),
 ]
 
 
@@ -150,9 +163,33 @@ def check(url: str) -> int:
             if not cursor.fetchone()[0]:
                 missing.append((table, column, why))
 
+        for table, index, why in EXPECTED_INDEXES:
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM pg_index AS index_meta
+                      JOIN pg_class AS index_class
+                        ON index_class.oid = index_meta.indexrelid
+                      JOIN pg_class AS table_class
+                        ON table_class.oid = index_meta.indrelid
+                      JOIN pg_namespace AS namespace
+                        ON namespace.oid = table_class.relnamespace
+                     WHERE namespace.nspname = 'public'
+                       AND table_class.relname = %s
+                       AND index_class.relname = %s
+                       AND index_meta.indisunique
+                )
+                """,
+                (table, index),
+            )
+            if not cursor.fetchone()[0]:
+                missing.append((table, index, why))
+
     name_of = lambda t, c: t if c is None else f"{t}.{c}"  # noqa: E731
     print(f"대상 DB: {_target(url)}")
-    print(f"확인 항목 {len(EXPECTED)}개 · 빠진 것 {len(missing)}개")
+    checked = len(EXPECTED) + len(EXPECTED_INDEXES)
+    print(f"확인 항목 {checked}개 · 빠진 것 {len(missing)}개")
     for table, column, why in missing:
         print(f"  [없음] {name_of(table, column):<38} {why}")
     if not missing:
