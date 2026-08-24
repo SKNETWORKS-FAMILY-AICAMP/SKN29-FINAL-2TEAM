@@ -73,15 +73,15 @@ def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -
 #: Content-Type 은 믿을 수 없고(아바타 업로드와 같은 판단), 문서는 바이트만으로
 #: 형식을 못 가린다(아래 참조).
 #:
-#: **워커가 본문을 읽을 수 있는 것만 받는다.** `SUPPORTED_MIME_TYPES` 가
-#: PDF·DOCX 둘뿐이다.
+#: **워커가 본문을 읽을 수 있는 것만 받는다** — `runpod_worker/pipeline.py` 의
+#: `SUPPORTED_MIME_TYPES` 와 짝이다. 어긋나면 사용자는 올릴 수 있는데 색인만
+#: 실패하는 파일을 갖게 된다(`tests/test_document_pipeline.py` 가 대조한다).
 #:
-#: ⚠ txt·md 는 여기 남아 있지만 **워커가 못 읽는다.** 2026-08-24 에 요약 단계를
-#: 없애면서 「워커는 못 읽어도 요약은 우리 CPU 가 만든다」는 근거가 사라졌다 —
-#: 지금 이 둘을 올리면 색인이 `FAILED` 로 끝나고 그 사유가 화면에 뜬다.
-#: 목록에서 뺄지는 따로 정할 일이라 동작만 적어 둔다.
+#: txt·md 는 2026-08-24 에 워커가 읽게 됐다. 요약 단계를 없애면서 「워커는 못
+#: 읽어도 요약은 우리 CPU 가 만든다」는 근거가 사라졌고, 그러면 이 둘이 올릴
+#: 수만 있고 검색은 안 되는 형식이 되기 때문이다.
 #:
-#: pptx·xlsx 는 안 받는다. 워커가 못 읽는 것은 같다.
+#: pptx·xlsx 는 안 받는다. 워커가 못 읽는 것은 그대로다.
 _UPLOAD_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

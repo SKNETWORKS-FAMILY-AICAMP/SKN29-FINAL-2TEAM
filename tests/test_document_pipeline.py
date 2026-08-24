@@ -495,3 +495,40 @@ class ChunkRevisionScopeTests(SimpleTestCase):
             f"현재 revision 으로 거르지 않는 자리가 있다: {missing}. "
             "재색인 중인 문서의 옛 본문이 근거로 나간다.",
         )
+
+
+class UploadWorkerFormatParityTests(SimpleTestCase):
+    """올릴 수 있는 형식은 **워커가 읽을 수 있어야 한다.**
+
+    두 목록이 따로 자라면 사용자는 올릴 수는 있는데 색인만 실패하는 파일을 갖게
+    된다. 화면은 「본문 색인 실패」와 사유를 보여 주지만, 애초에 받지 말았어야
+    할 파일이라 사람이 할 수 있는 일이 없다.
+
+    2026-08-24 에 실제로 그 상태였다 — 요약 단계를 없애면서 txt·md 의 근거
+    (「워커는 못 읽어도 요약은 우리 CPU 가 만든다」)가 사라졌는데 업로드 목록에는
+    그대로 남아 있었다. 워커에 MD 백엔드를 붙여 맞췄다.
+    """
+
+    def test_올릴_수_있는_형식은_워커가_전부_읽는다(self):
+        from backend.services import storage
+        from runpod_worker.pipeline import SUPPORTED_MIME_TYPES
+
+        uploadable = set(storage._UPLOAD_TYPES.values())
+        readable = set(SUPPORTED_MIME_TYPES)
+
+        self.assertEqual(
+            sorted(uploadable - readable),
+            [],
+            "올릴 수는 있는데 워커가 못 읽는 형식이 있다. "
+            "업로드에서 빼거나 워커에 백엔드를 붙여야 한다.",
+        )
+
+    def test_평문은_마크다운_백엔드로_보낸다(self):
+        """docling 2.117 의 `InputFormat` 에는 평문 형식이 아예 없다(휠 실측).
+        평문은 유효한 마크다운이라 그쪽으로 보낸다 — 별도 경로를 만들면 청킹과
+        블록 생성이 두 벌이 된다."""
+
+        from runpod_worker.pipeline import SUPPORTED_MIME_TYPES
+
+        self.assertEqual(SUPPORTED_MIME_TYPES["text/plain"], ".md")
+        self.assertEqual(SUPPORTED_MIME_TYPES["text/markdown"], ".md")

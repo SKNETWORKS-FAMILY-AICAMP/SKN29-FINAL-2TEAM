@@ -24,9 +24,22 @@ except ModuleNotFoundError:
 
 CONTROL_PATTERN = re.compile(r"<end_of_(?:utterance|turn|text)?[^>\s]*>?", re.I)
 EXPECTED_DIMENSION = 768
+#: 워커가 본문까지 읽을 수 있는 형식과, 그 형식으로 임시 파일에 붙일 확장자.
+#: docling 은 **확장자로 형식을 정하므로** 이 값이 곧 파서 선택이다.
+#:
+#: `text/plain` 이 `.md` 인 것은 오타가 아니다(2026-08-24). docling 2.117 의
+#: `InputFormat` 에는 평문 형식이 아예 없다 — 있는 것은 `MD` 다(휠을 받아 확인).
+#: 평문은 유효한 마크다운이라 MD 백엔드가 그대로 문단으로 읽는다. 굳이 별도
+#: 경로를 만들면 청킹·블록 생성이 두 벌이 된다.
+#:
+#: **올릴 수 있는 형식과 어긋나면 안 된다.** `backend/services/storage.py` 의
+#: `_UPLOAD_TYPES` 가 받아 주는데 여기 없으면, 사용자는 올릴 수 있는데 색인만
+#: 실패하는 파일을 갖게 된다(`tests/test_document_pipeline.py` 가 대조한다).
 SUPPORTED_MIME_TYPES = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "text/markdown": ".md",
+    "text/plain": ".md",
 }
 
 
@@ -165,8 +178,10 @@ def converter(use_ocr: bool = True):
         do_picture_description=True,
         do_chart_extraction=True,
     )
+    # MD 에는 `format_options` 를 안 준다 — 기본 백엔드가 마크다운을 그대로 읽고,
+    # 위 옵션들은 전부 PDF·DOCX 의 이미지·차트·OCR 설정이라 줄 것이 없다.
     return DocumentConverter(
-        allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
+        allowed_formats=[InputFormat.PDF, InputFormat.DOCX, InputFormat.MD],
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pdf),
             InputFormat.DOCX: WordFormatOption(pipeline_options=docx),
@@ -599,7 +614,12 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
     path, content_hash = _download(input_data)
     try:
         # 스캔본만 OCR 한다. 텍스트가 있는 문서에 OCR 을 걸면 멀쩡한 본문이 깨진다.
-        use_ocr = not _has_text_layer(path)
+        #
+        # **PDF 일 때만 묻는다**(2026-08-24). `_has_text_layer` 는 PDF 의 stream
+        # 안에서 텍스트 연산자를 세는 함수라 마크다운·평문에는 0 이 나오고, 그
+        # 결과 「스캔본이다」로 읽혀 OCR 켜진 변환기를 쓰게 된다 — 그쪽은
+        # EasyOCR 모델을 딸고 오므로 텍스트 파일 하나 때문에 워커가 무거워진다.
+        use_ocr = path.suffix == ".pdf" and not _has_text_layer(path)
         result = converter(use_ocr).convert(path)
         document = result.document
         # 밀도 기반 헤딩 승격(제자리 수정): 레이아웃 모델이 text/list_item으로 잘못
