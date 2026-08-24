@@ -84,6 +84,14 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
     policy = runtime_policy or RuntimeCapabilityPolicy()
     bootstrap_harness_profiles(excluded_tools=policy.excluded_builtin_tools)
 
+    # 2026-08-24 — skill-creator 내장 스킬을 최초 1회 씌운다. 이 함수 자체가
+    # "매 호출마다 다시 조립해도 안전"이 전제라(모듈 docstring), 존재 확인도
+    # 매번 해도 되지만 `ensure_builtin_skill_creator()`가 프로세스당 1회로
+    # 이미 스스로 줄인다(그 함수 docstring 참고) — 여기서 또 감쌀 필요 없다.
+    from services.agent_runtime.skills.service import ensure_builtin_skill_creator
+
+    ensure_builtin_skill_creator()
+
     factory = AgentRuntimeFactory(
         dependency_graph=DependencyGraphSource(),
         model_config_resolver=ModelConfigResolver(),

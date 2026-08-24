@@ -84,7 +84,7 @@ export type ChatEvent =
       /** `/스킬이름` 명시 호출을 서버가 조회해 모델 입력에 주입한 직후 온다. */
       type: 'skill_applied';
       skill_name: string;
-      scope: 'personal' | 'team';
+      scope: 'personal' | 'team' | 'builtin';
     }
   | { type: 'stage'; step: number; total: number; label?: string; intent?: string; tool_ref?: string; tool_call_id?: string }
   | { type: 'queries'; step: number; queries: string[]; tool_ref?: string; tool_call_id?: string }
@@ -394,12 +394,19 @@ export function streamMessage(
   return streamNdjson<ChatEvent>(`/chat/sessions/${sessionId}/messages/`, token, { content }, onEvent, signal);
 }
 
-/** 호출 하나에 대한 승인·거절(2026-08-21, 병렬실행 Phase 2). */
+/** 호출 하나에 대한 승인·거절·응답(2026-08-21, 병렬실행 Phase 2 / 2026-08-24, 되묻기). */
 export interface ConfirmDecision {
   /** 그 턴의 `action_requests` 배열에서의 위치. 같은 도구를 두 번 부를 수 있어
    *  이름이 아니라 인덱스로 가리킨다. */
   action_index: number;
-  type: 'approve' | 'reject';
+  type: 'approve' | 'reject' | 'respond';
+  /**
+   * `type: 'respond'`일 때만 쓴다 — 도구를 실행하지 않고, 사용자가 입력창에
+   * 쓴 이 텍스트를 그 도구 호출의 결과인 것처럼 모델에게 돌려준다
+   * (`skill_creator_ask_followup` 질문 카드 전용, 2026-08-24). 서버가
+   * `type: 'respond'`인데 이 값이 없으면 400으로 거부한다.
+   */
+  message?: string;
 }
 
 /**

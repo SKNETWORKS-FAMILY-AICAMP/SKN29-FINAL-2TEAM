@@ -26,7 +26,15 @@ import { listConnectors } from '../../api/connectors';
 import { listMySkills, listTeamSkills } from '../../api/skills';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
-import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ReasoningTrace, ResultCard } from './cards/ChatCards';
+import {
+  AskFollowupCard,
+  ConfirmCard,
+  ErrorCard,
+  JiraStatusCard,
+  ProgressCard,
+  ReasoningTrace,
+  ResultCard,
+} from './cards/ChatCards';
 import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
 import type { LiveChat } from './liveChat';
 import { ToolPickerModal } from '../../components';
@@ -212,6 +220,16 @@ export default function ChatPage() {
    * 개별로 끈다.
    */
   const [approvedActions, setApprovedActions] = useState<number[]>([]);
+  /**
+   * 확인 카드가 지금 승인 처리 중인지 거절 처리 중인지(2026-08-24 UX
+   * 점검). `approve()`/`reject()`가 시작할 때 세팅하고 끝나면 지운다 —
+   * `ConfirmCard`가 이 값으로 "등록하는 중…"과 "거절하는 중…"을 가른다
+   * (전에는 거절을 눌러도 승인 버튼 쪽에 "등록하는 중…"이 떠서 마치 승인이
+   * 진행 중인 것처럼 보였다).
+   */
+  const [pendingAction, setPendingAction] = useState<'approve' | 'reject' | null>(null);
+  /** 스킬 등록 카드에서 「다시 설명하기」를 누른 뒤 표시할 입력 단계. */
+  const [skillReexplain, setSkillReexplain] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   /** React가 busy 상태를 다시 그리기 전의 연속 클릭도 즉시 막는다. */
@@ -440,6 +458,7 @@ export default function ChatPage() {
       abortRef.current?.abort();
       setSessionId(id);
       setFatal(null);
+      setSkillReexplain(false);
       try {
         const detail = await getSession(token, id);
         setAgentId(detail.agent_id);
@@ -520,6 +539,7 @@ export default function ChatPage() {
     }
     setProjId(nextProjId);
     setTurns([]);
+    setSkillReexplain(false);
     setSelected([]);
     // 호출별 승인 상태도 같이 비운다(2026-08-21) — 안 비우면 앞 카드에서
     // 끈 항목이 다음 카드의 다른 호출에 그대로 붙는다.
@@ -554,6 +574,7 @@ export default function ChatPage() {
   async function sendText(raw: string) {
     if (!token || !raw.trim() || !agentId) return;
     const text = raw.trim();
+    setSkillReexplain(false);
     setUtterance('');
     // 덧붙인다. 덮어쓰면 앞 턴이 화면에서 사라진다 — 서버는 지우지 않는데
     // 화면만 잊는 상태가 된다.
@@ -617,6 +638,7 @@ export default function ChatPage() {
   async function approve() {
     if (!token || !sessionId || confirmRequestRef.current) return;
     confirmRequestRef.current = true;
+    setPendingAction('approve');
     // **인덱스만 보낸다.** 실행할 인자는 서버가 저장해 둔 것을 쓴다 — 화면이
     // 인자를 보내면 승인 게이트가 아무것도 막지 못한다.
     //
@@ -653,6 +675,7 @@ export default function ChatPage() {
       );
     } finally {
       confirmRequestRef.current = false;
+      setPendingAction(null);
     }
   }
 
@@ -665,12 +688,77 @@ export default function ChatPage() {
     )
       return;
     confirmRequestRef.current = true;
+    setPendingAction('reject');
+    const reexplainSkill = Boolean(lastLive?.confirm?.skillPreview);
     const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
     try {
       await run(
         (onEvent, signal) =>
           confirmMessage(token, sessionId, undefined, onEvent, signal, [
             { action_index: 0, type: 'reject' },
+          ]),
+        carried,
+        sessionId,
+      );
+      if (reexplainSkill) {
+        // 설정 > 스킬의 cancelled 단계와 같은 동작이다. 거절 뒤 모델이 만든
+        // "등록되지 않았습니다" 문구를 최종 답으로 보여주지 않고, 곧바로
+        // 수정 설명을 받는다. interrupt에서 멈춘 도구 로그도 취소 상태로
+        // 닫아 스피너가 계속 돌지 않게 한다.
+        updateLastLive((prev) =>
+          prev
+            ? {
+                ...prev,
+                running: false,
+                confirm: null,
+                answer: '',
+                toolName: null,
+                timeline: prev.timeline.map((entry) =>
+                  entry.kind === 'tool' && entry.status === 'RUNNING'
+                    ? { ...entry, status: 'REJECTED' as const }
+                    : entry,
+                ),
+              }
+            : prev,
+        );
+        setSkillReexplain(true);
+        stickToBottom.current = true;
+      }
+    } finally {
+      confirmRequestRef.current = false;
+      setPendingAction(null);
+    }
+  }
+
+  /** 거절한 스킬 초안에 대한 새 설명을 같은 대화의 다음 턴으로 보낸다. */
+  async function continueSkillCreation(answer: string) {
+    setSkillReexplain(false);
+    await sendText(answer);
+  }
+
+  /**
+   * 스킬 생성 되묻기 카드(2026-08-24)의 답변 제출. `approve()`/`reject()`와
+   * 같은 자리(단일 호출 확인 카드)를 쓰지만 결정 타입이 다르다 —
+   * `type: 'respond'`는 도구를 실행하지 않고 `answer`를 그 도구 호출의
+   * 결과인 것처럼 모델에게 돌려준다(`ConfirmDecision.message` 참고).
+   * 이 카드는 항상 호출 1건짜리다(`liveChat.ts`의 `askQuestion` 계산 —
+   * 2건 이상이면 애초에 이 카드가 아니라 평소 승인 카드로 떨어진다).
+   */
+  async function respondToQuestion(answer: string) {
+    if (!token || !sessionId || confirmRequestRef.current) return;
+    confirmRequestRef.current = true;
+    // `confirm: null`을 여기서 명시적으로 지운다 — `approve()`/`reject()`는
+    // 승인 카드를 "등록하는 중…"으로 살려 두는 게 맞지만(뭘 승인했는지
+    // 보여주는 의미가 있다), 되묻기 카드는 답을 보낸 순간 그 질문은
+    // 끝난 것이라 계속 보일 이유가 없다(2026-08-24 QA — 로딩 중에도 이전
+    // 질문이 그대로 떠 있었다). 새 질문이 오면 `awaiting_confirmation`
+    // 리듀서가 새 `confirm`을 다시 채워 새 카드를 띄운다.
+    const carried = lastLive ? { ...lastLive, running: true, error: null, confirm: null } : emptyLive();
+    try {
+      await run(
+        (onEvent, signal) =>
+          confirmMessage(token, sessionId, undefined, onEvent, signal, [
+            { action_index: 0, type: 'respond', message: answer },
           ]),
         carried,
         sessionId,
@@ -1232,10 +1320,33 @@ export default function ChatPage() {
                           onApprove={isLast && live.confirm ? approve : undefined}
                           onReject={isLast && live.confirm ? reject : undefined}
                           busy={live.running}
+                          pendingAction={isLast ? pendingAction : null}
+                          onAbort={isLast && live.running ? () => abortRef.current?.abort() : undefined}
                         />
                       )}
 
-                      {live.confirm && live.tasks.length === 0 && (
+                      {/* 2026-08-24, skill-creator 되묻기 — `askQuestion`이 있으면
+                          이 카드가 승인/거절 카드를 대신한다. 아래 일반
+                          확인 카드 조건에 `askQuestion == null`을 더해
+                          두 카드가 동시에 뜨는 일이 없게 한다. */}
+                      {live.confirm && live.confirm.askQuestion != null && (
+                        <AskFollowupCard
+                          question={live.confirm.askQuestion}
+                          onSubmit={isLast ? respondToQuestion : undefined}
+                          busy={live.running}
+                        />
+                      )}
+
+                      {isLast && skillReexplain && (
+                        <AskFollowupCard
+                          title="스킬을 다시 설명해 주세요"
+                          question="어떤 내용을 바꾸고 싶은지 알려주세요."
+                          onSubmit={continueSkillCreation}
+                          busy={live.running}
+                        />
+                      )}
+
+                      {live.confirm && live.confirm.askQuestion == null && live.tasks.length === 0 && (
                         <ConfirmCard
                           tasks={[]}
                           // 「무엇을 · 몇 건」. `warnings` 로 넘기던 것을 옮겼다
@@ -1249,6 +1360,10 @@ export default function ChatPage() {
                               ? `${live.confirm.toolName} · 대상 ${live.confirm.count}건`
                               : live.confirm.toolName
                           }
+                          // 2026-08-24 — `skill_register` 확인 카드는 도구
+                          // 이름 대신 등록할 스킬의 실제 이름·설명을 보여준다
+                          // (`ConfirmCard`가 있으면 `subject` 줄 대신 이걸 그린다).
+                          skillPreview={live.confirm.skillPreview}
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
@@ -1263,6 +1378,8 @@ export default function ChatPage() {
                               : live.confirm.actions.map((_, index) => index)
                           }
                           onApprovedActionsChange={isLast ? setApprovedActions : undefined}
+                          pendingAction={isLast ? pendingAction : null}
+                          onAbort={isLast && live.running ? () => abortRef.current?.abort() : undefined}
                         />
                       )}
 

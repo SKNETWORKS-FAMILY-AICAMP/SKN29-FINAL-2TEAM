@@ -1059,6 +1059,32 @@ def _skill_register(
     return {"scope": scope, "name": name, "path": path}
 
 
+def _skill_creator_ask_followup(*, question: str) -> dict[str, Any]:
+    """`skill-creator` 스킬이 스킬 초안을 짓는 데 필요한 정보가 부족할 때,
+    사용자에게 한 번에 하나씩 되묻는다(2026-08-24).
+
+    **이 핸들러는 정상 경로에서 실제로 실행되지 않는다.** `side_effect=True`
+    라 `HumanInTheLoopMiddleware` 확인이 걸리는데, 화면(ChatCards.tsx)은 이
+    도구 이름을 보면 승인/거절 버튼 대신 질문+입력창 카드를 그리고,
+    사용자가 입력한 답을 `"respond"` 결정(`{"type": "respond", "message":
+    <입력한 답>}`)으로 돌려보낸다 — langchain
+    `HumanInTheLoopMiddleware._process_decision()`이 `respond`일 때는 이
+    핸들러를 아예 안 부르고, 그 `message`를 이 도구가 반환한 것처럼
+    모델에게 그대로 돌려준다(실측: `langchain/agents/middleware/
+    human_in_the_loop.py`). 즉 이 함수 본문은 "화면이 다른 이유로 승인
+    버튼을 눌러 approve가 들어온" 방어적인 경우에만 돈다 — 그때도 대화가
+    깨지지 않게 질문을 그대로 돌려준다.
+    """
+
+    return {
+        "question": question,
+        "note": (
+            "이 값은 핸들러의 기본 반환값입니다. 사용자의 실제 답변이 아니라 "
+            "이 문장이 보인다면 승인 카드가 예상과 다르게 처리된 것입니다."
+        ),
+    }
+
+
 #: 내장 도구. `tool_ref` 는 agent_version_tools 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
     "get_current_datetime": Tool(
@@ -1421,6 +1447,45 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         side_effect=True,
         category="Skill",
     ),
+    "skill_creator_ask_followup": Tool(
+        ref="skill_creator_ask_followup",
+        name="스킬 생성 — 되묻기",
+        description=(
+            "새 스킬(SKILL.md)을 만드는 데 필요한 정보가 부족할 때, 사용자에게 "
+            "질문 하나를 되묻는다. **한 번 호출에 질문 하나만** 담는다 — 여러 "
+            "질문이 있으면 답을 받은 뒤 다시 부른다. '이대로 등록할까요?' 같은 "
+            "승인 확인에는 쓰지 않는다 — 그건 skill_register의 확인 카드가 "
+            "이미 한다. 이 도구는 등록 여부가 아니라 등록에 쓸 **내용 자체가 "
+            "부족할 때만** 부른다. 사용자에게는 짧고 쉬운 질문 한 가지만 "
+            "보여준다. `트리거`, `입력 항목`, `출력 형식`, `절차`, `제약`, "
+            "`SKILL.md` 같은 내부 용어와 왜 묻는지에 대한 설명은 쓰지 않는다. "
+            "예시가 필요하면 짧은 표현 하나만 덧붙인다. 실제 메일 수신자, "
+            "번역할 문장, 요약할 문서처럼 지금 처리할 데이터는 요구하지 않는다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "maxLength": 160,
+                    "description": (
+                        "사용자에게 그대로 보여줄 짧고 쉬운 질문 한 문장. 내부 "
+                        "용어나 질문 이유는 쓰지 않는다. 예시는 필요할 때만 "
+                        "줄을 바꿔 짧게 하나 붙인다. 실행할 실제 데이터는 요구하지 "
+                        "않는다."
+                    ),
+                }
+            },
+            "required": ["question"],
+        },
+        handler=_skill_creator_ask_followup,
+        # side_effect=True인 이유는 다른 write 도구와 다르다 — 외부 상태를
+        # 바꿔서가 아니라, 이 값이 있어야 factory.py의 interrupt_on 계산에
+        # 자동으로 포함되어(그 파일 build() 주석 참고) 사람이 답할 때까지
+        # 실행이 멈추기 때문이다. `_skill_creator_ask_followup` docstring 참고.
+        side_effect=True,
+        category="Skill",
+    ),
 }
 
 
@@ -1446,7 +1511,12 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 #: 오해를 만든다. `apps/agents/api_views.py`의 `_split()`도 이 집합을 써서,
 #: 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도 다음 저장에서
 #: 조용히 걸러낸다.
-ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register"})
+#: 2026-08-24 — `skill_creator_ask_followup`도 같은 이유로 항상 켠다. 이
+#: 도구 혼자서는 아무 것도 못 하고(스킬을 실제로 저장하는 건 여전히
+#: `skill_register`), 새 스킬을 만드는 대화 흐름 전체가 이 도구를 쓸 수
+#: 있어야만 성립한다 — 하나만 켜고 다른 하나는 꺼져 있으면 스킬 생성
+#: 중간에 되물을 방법이 없어 그 자리에서 막힌다.
+ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register", "skill_creator_ask_followup"})
 
 
 # ---------------------------------------------------------------------------

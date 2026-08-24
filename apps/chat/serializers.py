@@ -50,10 +50,28 @@ class ConfirmDecisionSerializer(serializers.Serializer):
     도구 이름이 아니라 인덱스를 쓴다. 같은 도구를 한 턴에 두 번 부를 수 있어
     이름은 고유하지 않기 때문이다(`2026-08-20_02` §9의 "같은 alias를 두 번
     호출해도 서로 다른 실행으로 다룬다"와 같은 이유).
+
+    `"respond"`(2026-08-24, skill-creator 되묻기)는 도구를 실행하지 않고
+    사람이 대신 답한 `message`를 그 도구 호출의 결과인 것처럼 모델에게
+    돌려준다(실측: langchain `HumanInTheLoopMiddleware._process_decision()`
+    — `RespondDecision`). `type="respond"`일 때만 `message`가 필요하다 —
+    `validate()`가 확인한다. 지금은 `skill_creator_ask_followup` 카드만 이
+    타입을 쓰지만, 검증 자체는 도구 이름과 무관하게 일반적으로 둔다(다른
+    "되묻는" 도구가 나중에 생겨도 여기를 다시 안 고치게).
     """
 
     action_index = serializers.IntegerField(min_value=0)
-    type = serializers.ChoiceField(choices=["approve", "reject"])
+    type = serializers.ChoiceField(choices=["approve", "reject", "respond"])
+    message = serializers.CharField(
+        max_length=4000, required=False, allow_blank=False, allow_null=True, default=None
+    )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if attrs.get("type") == "respond" and not attrs.get("message"):
+            raise serializers.ValidationError(
+                {"message": "respond 결정에는 message(사용자가 입력한 답)가 필요합니다."}
+            )
+        return attrs
 
 
 class ChatConfirmSerializer(serializers.Serializer):

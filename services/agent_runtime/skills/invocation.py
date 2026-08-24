@@ -32,13 +32,33 @@ def parse_invocation(text: str) -> tuple[str, str] | None:
 
 
 def resolve_invocable_skill(*, account_id: str, team_id: str, name: str) -> dict[str, Any] | None:
-    """호출 대상 스킬을 찾는다. 팀 스킬을 먼저 보고(이름이 겹치면 팀이 이긴다 —
-    모듈 docstring 참고), 없으면 개인 스킬을 본다. 둘 다 없으면 `None` —
-    호출부는 이 경우 평범한 채팅으로 그냥 흘려보내면 된다(오류로 막지 않는다,
-    "/"로 시작하는 평범한 메모일 수도 있어서).
+    """호출 대상 스킬을 찾는다. 예약된 내장 스킬을 먼저 보고, 그 밖의 이름은
+    팀 스킬(이름이 겹치면 팀이 이긴다)과 개인 스킬 순으로 찾는다. 모두 없으면
+    `None` — 호출부는 이 경우 평범한 채팅으로 그냥 흘려보낸다.
+
+    내장 스킬 조회가 필요한 이유는 설정 > 스킬 > 새 스킬이
+    `/skill-creator ...`로 생성 모드를 명시하기 때문이다. 자동 description
+    매칭에 다시 맡기면 이 명시 호출의 의미가 사라진다.
     """
 
-    from .service import SkillNotFound, get_personal_skill, get_team_skill
+    from .backend import RESERVED_SKILL_NAMES
+    from .service import (
+        SkillNotFound,
+        ensure_builtin_skill_creator,
+        get_builtin_skill,
+        get_personal_skill,
+        get_team_skill,
+    )
+
+    if name in RESERVED_SKILL_NAMES:
+        # 명시 호출 해석은 executor 조립보다 먼저 일어난다(ChatMessageAPIView).
+        # bootstrap 쪽 씨딩만 믿으면 프로세스의 첫 `/skill-creator`는 아직 없는
+        # 것으로 오인되므로, 같은 멱등 보장 함수를 여기서도 먼저 부른다.
+        ensure_builtin_skill_creator()
+        try:
+            return {**get_builtin_skill(name), "scope": "builtin"}
+        except SkillNotFound:
+            return None
 
     try:
         return {**get_team_skill(team_id, name), "scope": "team"}

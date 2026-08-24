@@ -8,6 +8,21 @@ import type {
 import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from './cardTypes';
 
 /**
+ * `services/harness/registry.py`의 `skill_creator_ask_followup` 도구 이름과
+ * 정확히 같아야 한다(2026-08-24). 콜론이 없는 내장 도구라
+ * `model_safe_tool_name()`이 이름을 바꾸지 않으므로 그대로 쓴다 —
+ * `tool_ref_from_model_name()`처럼 되돌리는 변환이 따로 필요 없다.
+ */
+export const ASK_FOLLOWUP_TOOL_NAME = 'skill_creator_ask_followup';
+
+/**
+ * `services/harness/registry.py`의 `skill_register` 도구 이름과 정확히
+ * 같아야 한다(2026-08-24) — 확인 카드가 이 도구일 때만 등록할 스킬의
+ * 이름·설명을 미리 보여준다(`ASK_FOLLOWUP_TOOL_NAME`과 같은 이유).
+ */
+export const SKILL_REGISTER_TOOL_NAME = 'skill_register';
+
+/**
  * 이벤트 스트림 → 카드가 그릴 상태.
  *
  * **`tool_ref` 유무로 층을 가른다** — 백엔드 계약이다. Loop 의 `stage` 는 회전
@@ -46,6 +61,22 @@ export interface LiveChat {
     runId: string;
     count: number;
     actions: { name: string; count: number }[];
+    /**
+     * 2026-08-24, skill-creator 되묻기. 이 턴의 확인 카드가 승인/거절
+     * 카드가 아니라 `skill_creator_ask_followup` 질문 카드일 때만 채운다 —
+     * 그 도구의 유일한 인자(`question`)를 그대로 옮긴 것이다. `null`이면
+     * 평소처럼 승인/거절 카드를 그린다.
+     */
+    askQuestion: string | null;
+    /**
+     * 2026-08-24 — 확인 카드가 `skill_register` 딱 하나뿐일 때, 등록할
+     * 스킬의 실제 `name`/`description`을 그대로 옮긴다. 「거절/승인」
+     * 버튼만 있고 무엇을 등록하는지 안 보이던 문제(사용자 실측) — 도구
+     * 이름(`skill_register`)만 보여주던 것을 스킬 자신의 이름·설명으로
+     * 바꾼다. `askQuestion`과 같은 패턴: 조건에 안 맞으면 `null`이고, 그때
+     * 카드는 평소 승인 카드(subject에 도구 이름)로 떨어진다.
+     */
+    skillPreview: { name: string; description: string } | null;
   } | null;
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
@@ -343,6 +374,27 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         args = event.arguments;
         actions = [{ name: event.tool_name, count: countIssues(event.arguments ?? {}) }];
       }
+      // 2026-08-24, skill-creator 되묻기 — 이 턴에 걸린 확인 대상이
+      // `skill_creator_ask_followup` 딱 하나뿐일 때만 질문 카드로 그린다.
+      // 다른 도구와 같은 턴에 섞여 왔으면(스킬이 이 규칙을 어기고 여러
+      // 도구를 한 턴에 부른 경우) 안전하게 평소 승인 카드로 떨어진다 —
+      // `askQuestion`이 `null`이면 카드 컴포넌트가 그 경로를 탄다.
+      const askQuestion =
+        actions.length === 1 && actions[0].name === ASK_FOLLOWUP_TOOL_NAME
+          ? typeof args?.question === 'string'
+            ? args.question
+            : ''
+          : null;
+      // 2026-08-24 — 확인 카드가 `skill_register` 딱 하나뿐이면 그 호출의
+      // `name`/`description` 인자를 그대로 미리보기로 옮긴다. `askQuestion`과
+      // 같은 조건 모양(단일 호출 + 특정 도구 이름)이다.
+      const skillPreview =
+        actions.length === 1 && actions[0].name === SKILL_REGISTER_TOOL_NAME
+          ? {
+              name: typeof args?.name === 'string' ? args.name : '',
+              description: typeof args?.description === 'string' ? args.description : '',
+            }
+          : null;
       return {
         ...state,
         running: false,
@@ -351,6 +403,8 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           runId: event.run_id,
           count: countIssues(args ?? {}),
           actions,
+          askQuestion,
+          skillPreview,
         },
       };
     }

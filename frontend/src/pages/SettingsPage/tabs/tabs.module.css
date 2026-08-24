@@ -420,9 +420,31 @@
   color: var(--color-body);
   line-height: 1.7;
   word-break: keep-all;
+  /* 모델이 생성한 텍스트(스킬 만들기 되묻기 질문·최종 답)는 줄바꿈으로
+     목록을 나눠서 온다 — 기본값(`normal`)은 그 줄바꿈을 공백으로 뭉개
+     한 문단처럼 보이게 만든다(2026-08-24 실제로 겪음). `cards.module.css`의
+     `.askQuestion`과 같은 값이다. */
+  white-space: pre-wrap;
 }
 
 .confirmText:last-child { margin-bottom: 0; }
+
+/* 로더 아이콘 + 상태 문구를 한 줄에 놓는다(2026-08-24). 전역 리셋
+   (`global.css`의 `svg { display: block; }`)이 아이콘을 블록 요소로 만들어
+   그냥 `<p><Icon/> 텍스트</p>`로 쓰면 아이콘 밑으로 줄바꿈된다 — `ChatCards.tsx`의
+   `.askHead`와 같은 처방. */
+.statusRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+/* 아이콘이 첫 줄 텍스트와 나란히 오도록 살짝 내린다 — 텍스트가 여러 줄이면
+   `flex-start`만으로는 아이콘이 줄 높이 맨 위에 붙어 첫 글자와 어긋난다. */
+.statusRow > svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
 
 /* 제목 옆에 조작을 두는 머리. 기본 `.cardHead` 는 세로 쌓기라 버튼이 제목
    아래로 떨어진다 — 「스킬」 탭의 「새 스킬」처럼 그 카드 전체에 거는 조작만

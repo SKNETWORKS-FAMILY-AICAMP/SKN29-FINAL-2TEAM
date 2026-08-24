@@ -19,11 +19,25 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from deepagents.backends import StoreBackend
 
+#: 내장 스킬 소스 — 계정·팀과 무관하게 전원에게 항상 보인다(2026-08-24,
+#: skill-creator 기본 등록). 이 안에 실제로 쓰는 namespace는 하나뿐이지만,
+#: 개인/팀과 같은 `prefix -> StoreBackend` 구조를 그대로 따라야
+#: `SkillsMiddleware`가 개인/팀과 똑같이 취급한다 — 새 배선 방식을 만들지 않는다.
+SKILLS_BUILTIN_PATH_PREFIX = "/skills/builtin/"
+
 #: 개인 스킬 소스 — 요청한 계정 자신의 스킬만, namespace가 격리한다.
 SKILLS_PERSONAL_PATH_PREFIX = "/skills/personal/"
 
 #: 팀 스킬 소스 — 같은 team_id 소속 전원에게 보인다.
 SKILLS_TEAM_PATH_PREFIX = "/skills/team/"
+
+#: 사람이 개인/팀 스킬로 새로 만들 수 없는 이름(2026-08-24). skill-creator는
+#: 항상 내장 소스에만 있어야 한다 — 같은 이름의 개인/팀 스킬을 허용하면
+#: `SkillsMiddleware`의 "나중 소스가 이긴다" 규칙에 따라 내장 스킬이 조용히
+#: 가려질 수 있다(위 `2026-08-22_02` 문서의 개인/팀 이름 겹침 문제와 같은
+#: 위험 — 내장 스킬은 아예 이름 자체를 못 쓰게 막아 그 문제가 생길 여지를
+#: 없앤다).
+RESERVED_SKILL_NAMES = frozenset({"skill-creator"})
 
 
 def skill_sources() -> list[str]:
@@ -31,10 +45,18 @@ def skill_sources() -> list[str]:
 
     **순서가 의미를 가진다** — deepagents `SkillsMiddleware`는 "나중 소스가 같은
     이름의 스킬을 덮어쓴다"(레이어링 규칙, `deepagents/middleware/skills.py`
-    모듈 docstring). 팀 스킬을 뒤에 둬서, 같은 이름의 개인/팀 스킬이 있으면 더
-    넓은 합의를 거친 팀 스킬이 이긴다(설계 문서 "저장 구조" 절).
+    모듈 docstring). 내장 → 개인 → 팀 순서로 둬서, 더 넓은 합의를 거친 쪽이
+    이긴다(설계 문서 "저장 구조" 절 — 팀이 개인을 이기는 규칙은 그대로 유지).
+    실제로는 `RESERVED_SKILL_NAMES`가 이름 충돌 자체를 막으므로 내장 스킬이
+    가려질 일은 없다 — 그래도 순서 규칙은 일관되게 지킨다.
     """
-    return [SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX]
+    return [SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX]
+
+
+def builtin_namespace() -> tuple[str, str]:
+    """내장 스킬 namespace — 계정·팀 구분이 없다(전원이 같은 공간을 본다).
+    `personal_namespace`/`team_namespace`와 같은 이유로 단일 진실 공급원이다."""
+    return ("skill", "builtin")
 
 
 def personal_namespace(account_id: str) -> tuple[str, str, str]:
@@ -60,15 +82,18 @@ def skill_md_path(prefix: str, name: str) -> str:
 
 
 def skill_routes(*, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
-    """`CompositeBackend(routes={...})`에 그대로 병합할 개인/팀 스킬 라우트 두 개.
+    """`CompositeBackend(routes={...})`에 그대로 병합할 내장/개인/팀 스킬 라우트 세 개.
 
     `StoreBackend`는 deepagents가 제공하는, `BackendProtocol`을 완전히 구현한
     LangGraph `Store` 기반 백엔드다(Memory가 이미 쓰는 것과 같은 클래스,
-    `memory/backend.py` 참고) — 새 백엔드를 만들지 않는다.
+    `memory/backend.py` 참고) — 새 백엔드를 만들지 않는다. 내장 라우트도
+    같은 클래스를 재사용한다 — namespace가 계정·팀과 무관한 고정값이라는
+    점만 다르다.
     """
     from deepagents.backends import StoreBackend
 
     return {
+        SKILLS_BUILTIN_PATH_PREFIX: StoreBackend(namespace=lambda _rt: builtin_namespace()),
         SKILLS_PERSONAL_PATH_PREFIX: StoreBackend(namespace=lambda _rt: personal_namespace(account_id)),
         SKILLS_TEAM_PATH_PREFIX: StoreBackend(namespace=lambda _rt: team_namespace(team_id)),
     }
@@ -134,9 +159,12 @@ def skills_system_prompt() -> str:
 
 
 __all__ = [
+    "SKILLS_BUILTIN_PATH_PREFIX",
     "SKILLS_PERSONAL_PATH_PREFIX",
     "SKILLS_TEAM_PATH_PREFIX",
+    "RESERVED_SKILL_NAMES",
     "skill_sources",
+    "builtin_namespace",
     "personal_namespace",
     "team_namespace",
     "skill_md_path",

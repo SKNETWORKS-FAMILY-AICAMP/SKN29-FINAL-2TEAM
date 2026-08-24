@@ -272,7 +272,8 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                 <li key={index} className={styles.reasoningTool}>
                   <Icon name="check-circle" size={13} color="var(--color-success)" />
                   <span>
-                    {entry.skillName} {entry.scope === 'team' ? '팀' : '개인'} 스킬 적용 완료
+                    {entry.skillName}{' '}
+                    {entry.scope === 'team' ? '팀' : entry.scope === 'builtin' ? '내장' : '개인'} 스킬 적용 완료
                   </span>
                 </li>
               );
@@ -293,10 +294,12 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                     {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
                     {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
                     {entry.status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
+                    {entry.status === 'REJECTED' && <Icon name="x" size={13} color="var(--color-muted)" />}
                     <span>
                       {entry.toolName ?? entry.toolRef} 호출
                       {entry.status === 'OK' && ' 완료'}
                       {entry.status === 'FAILED' && ' 실패'}
+                      {entry.status === 'REJECTED' && ' 취소'}
                     </span>
                     {entry.output && (
                       <Icon
@@ -406,6 +409,22 @@ export interface ConfirmCardProps {
   onReject?: () => void;
   busy?: boolean;
   /**
+   * 지금 `busy`인 이유가 승인인지 거절인지(2026-08-24 UX 점검 — 거절을
+   * 눌렀는데도 「승인」 버튼 쪽에 "등록하는 중…"이 떠서 마치 승인이 진행
+   * 중인 것처럼 보이는 문제가 있었다). `undefined`면 예전처럼 승인으로
+   * 본다(하위 호환).
+   */
+  pendingAction?: 'approve' | 'reject' | null;
+  /**
+   * 지금 걸린 요청을 즉시 중단한다(2026-08-24 — "거절이 너무 오래
+   * 걸리는데 뒤로 가기는 없냐"는 지적). 거절도 내부적으로는 모델을 한 번
+   * 더 불러 응답을 만들기 때문에 몇 초가 걸릴 수 있는데, 그 사이 카드가
+   * 계속 비활성 상태로 멈춰 있으면 멈춘 것처럼 보인다. 이미 있는
+   * "중단"(`ChatPage.tsx`의 `abortRef`)을 카드 옆에서도 바로 쓸 수 있게
+   * 연결한다 — 새 취소 경로를 만들지 않는다.
+   */
+  onAbort?: () => void;
+  /**
    * 이 카드에 걸린 호출 **전부**(2026-08-21, 병렬실행 Phase 2). 모델이 한 턴에
    * side_effect 도구를 여러 개 부르면 전부 한 번에 승인 대기에 걸리는데,
    * 예전엔 첫 호출만 보여주고 승인은 전부에 일괄 적용됐다 — 무엇이 같이
@@ -418,6 +437,14 @@ export interface ConfirmCardProps {
   /** 승인할 호출의 인덱스. 여기 없는 호출은 거절로 보낸다. */
   approvedActions?: number[];
   onApprovedActionsChange?: (next: number[]) => void;
+  /**
+   * 확인 대상이 `skill_register` 하나뿐일 때, 등록할 스킬의 실제
+   * 이름·설명(2026-08-24 — 「거절/승인 버튼만 있고 등록할 스킬의 이름과
+   * 설명이 안 보인다」는 지적으로 추가). 있으면 `subject` 대신 이 블록을
+   * 그린다 — 도구 이름(`skill_register`)이 아니라 사람이 실제로 알아야
+   * 하는 스킬 자신의 이름·설명을 보여준다.
+   */
+  skillPreview?: { name: string; description: string } | null;
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
@@ -434,9 +461,19 @@ export function ConfirmCard({
   actions,
   approvedActions,
   onApprovedActionsChange,
+  skillPreview,
+  pendingAction,
+  onAbort,
 }: ConfirmCardProps) {
   const chosen = selected;
   const allOn = chosen.length === tasks.length && tasks.length > 0;
+  // 스킬 등록 확인인가 — 이 경우 「거절」은 아예 그만두는 게 아니라 "이
+  // 초안이 아니라 다시 설명하고 싶다"는 뜻에 더 가깝다(builtin_content.py
+  // 절차 자체가 "등록 전까지는 몇 번이든 고쳐 말해도 된다"는 전제라, 버튼
+  // 문구도 그 의도를 그대로 따라간다).
+  const isSkillRegister = Boolean(skillPreview);
+  const rejecting = busy && pendingAction === 'reject';
+  const approving = busy && pendingAction !== 'reject';
 
   // 2026-08-21, 병렬실행 Phase 2 — 호출이 2건 이상일 때만 호출별 줄을 그린다.
   const multi = (actions?.length ?? 0) > 1;
@@ -473,6 +510,17 @@ export function ConfirmCard({
             <span className={styles.muted}>{chosen.length}건 선택됨</span>
           </span>
           <span className={styles.muted}>업무 {tasks.length}건</span>
+        </div>
+      ) : skillPreview ? (
+        // **도구 이름(`skill_register`) 대신 스킬 자신의 이름·설명을
+        // 보여준다**(2026-08-24) — 「거절/승인 버튼만 있고 등록할 스킬의
+        // 이름과 설명이 안 보인다」는 지적으로 추가. `subject` 줄과 자리를
+        // 나누지 않는다 — 사람이 승인 여부를 판단하는 데 필요한 것은
+        // 이 정보뿐이다.
+        <div className={styles.skillPreview}>
+          <span className={styles.skillPreviewLabel}>새 스킬 등록</span>
+          <strong className={styles.skillPreviewName}>{skillPreview.name || '(이름 없음)'}</strong>
+          <p className={styles.skillPreviewDescription}>{skillPreview.description || '(설명 없음)'}</p>
         </div>
       ) : subject && !multi ? (
         <div className={styles.confirmHead}>
@@ -542,9 +590,30 @@ export function ConfirmCard({
         <div className={styles.confirmActions}>
           <span className={styles.muted}>
             {/* 무엇을 승인하는지는 도구가 정한다 — 화면이 「Jira」라고 못박아 두면
-                우리 플랫폼에 등록하는 승인에도 Jira 라고 쓰게 된다. */}
-            승인하기 전까지 아무것도 등록되지 않습니다.
+                우리 플랫폼에 등록하는 승인에도 Jira 라고 쓰게 된다.
+                **거절 중일 때는 다른 문구를 보여준다**(2026-08-24) — "승인하기
+                전까지 등록 안 됨"은 지금 상황(거절 처리 중)과 안 맞는 말이라,
+                버튼과 마찬가지로 실제로 지금 벌어지는 일을 말한다. */}
+            {rejecting
+              ? isSkillRegister
+                ? '다시 설명할 수 있도록 정리하는 중입니다.'
+                : '거절을 반영하는 중입니다.'
+              : isSkillRegister
+                ? '등록하기 전까지 저장되지 않습니다. 마음에 들지 않으면 다시 설명해 주세요.'
+                : '승인하기 전까지 아무것도 등록되지 않습니다.'}
           </span>
+          {/* **응답이 늦어질 때 즉시 되돌아갈 방법**(2026-08-24 — "거절해도
+              1초 만에 안 끝나는데 뒤로 가기는 없냐"는 지적). 거절도 내부적으로
+              모델을 한 번 더 불러 응답을 짓기 때문에 몇 초가 걸릴 수 있다 —
+              그 사이 이미 있는 "중단"(입력창 옆 버튼, `ChatPage.tsx`)을 카드
+              자리에서 바로 쓸 수 있게 연결한다. 새 취소 경로를 만들지 않고
+              같은 abort를 부른다. */}
+          {busy && onAbort && (
+            <button type="button" className={styles.abortHint} onClick={onAbort}>
+              <Icon name="loader" size={13} color="var(--color-placeholder)" spin />
+              {rejecting ? '다시 설명 준비 중…' : '등록하는 중…'} · 눌러서 바로 되돌아가기
+            </button>
+          )}
           {/* ⚠ 업무가 없는 승인(추출을 안 거친 도구)은 고를 것이 없으므로
               `chosen` 으로 막지 않는다 — 막으면 버튼이 영원히 비활성이다.
               호출별 승인(multi)일 때는 **전부 거절도 정상 동작**이라 막지
@@ -552,7 +621,15 @@ export function ConfirmCard({
               거절 결정을 그대로 받는다(2026-08-21). */}
           {!multi && onReject ? (
             <Button variant="outline" size="sm" onClick={onReject} disabled={busy}>
-              거절
+              {rejecting ? (
+                <>
+                  <Icon name="loader" size={13} spin /> {isSkillRegister ? '다시 설명 준비 중…' : '거절하는 중…'}
+                </>
+              ) : isSkillRegister ? (
+                '다시 설명하기'
+              ) : (
+                '거절'
+              )}
             </Button>
           ) : null}
           <Button
@@ -560,7 +637,11 @@ export function ConfirmCard({
             onClick={onApprove}
             disabled={busy || (!multi && tasks.length > 0 && chosen.length === 0)}
           >
-            {busy
+            {/* **거절 중에는 이 버튼이 "등록하는 중…"이라고 말하지 않는다**
+                (2026-08-24 실측 버그 — 거절을 눌렀는데 승인 버튼 쪽에 등록
+                중이라고 떠서 마치 승인이 진행되는 것처럼 보였다). 거절 중엔
+                평소 라벨을 그대로 두고 비활성만 건다. */}
+            {approving
               ? '등록하는 중…'
               : multi && actions
                 ? approved.length === 0
@@ -578,6 +659,78 @@ export function ConfirmCard({
           </span>
         </div>
       )}
+    </section>
+  );
+}
+
+export interface AskFollowupCardProps {
+  /** `skill_creator_ask_followup` 호출의 유일한 인자를 그대로 받는다. */
+  question: string;
+  /** 다시 설명 단계처럼 같은 입력 카드를 다른 제목으로 쓸 때 지정한다. */
+  title?: string;
+  /** 사용자가 입력한 답을 그대로 넘긴다 — 다듬거나 자르지 않는다. */
+  onSubmit?: (answer: string) => void;
+  busy?: boolean;
+}
+
+/**
+ * 스킬 생성 되묻기 카드(2026-08-24). 승인/거절이 아니라 **질문 하나 + 답변
+ * 입력창**을 보여준다 — `ConfirmCard`와 다른 카드로 둔 이유는, 이 카드가
+ * 확인하는 것이 "이 실행을 해도 되는가"가 아니라 "다음 단계에 필요한 정보"라
+ * 승인/거절이라는 틀 자체가 안 맞기 때문이다. 답을 보내면 `type: 'respond'`
+ * 결정으로 이어져 도구를 실행하지 않고 이 텍스트가 곧바로 모델에게 돌아간다
+ * (`ChatPage.tsx`의 `respondToQuestion()`, 백엔드는
+ * `services/harness/registry.py`의 `_skill_creator_ask_followup` docstring
+ * 참고).
+ */
+export function AskFollowupCard({
+  question,
+  title = '스킬을 만들려면 하나만 확인할게요',
+  onSubmit,
+  busy = false,
+}: AskFollowupCardProps) {
+  const [answer, setAnswer] = useState('');
+  const trimmed = answer.trim();
+
+  function submit() {
+    if (!trimmed || !onSubmit) return;
+    onSubmit(trimmed);
+    setAnswer('');
+  }
+
+  return (
+    <section className={styles.cardFlush}>
+      <div className={styles.askHead}>
+        <Icon name="circle-help" size={16} color="var(--color-primary)" />
+        <strong className={styles.askLabel}>{title}</strong>
+      </div>
+      <div className={styles.askBody}>
+        <p className={styles.askQuestion}>{question}</p>
+        <textarea
+          className={styles.askTextarea}
+          value={answer}
+          onChange={(event) => setAnswer(event.target.value)}
+          placeholder="이곳에 답변을 해주세요"
+          rows={3}
+          disabled={busy}
+          // Cmd/Ctrl+Enter로도 보낼 수 있게 — 답이 길어지면 줄바꿈이 필요해서
+          // Enter 단독으로는 안 보낸다(일반 채팅 입력창과 다른 규칙이지만,
+          // 여기 텍스트는 애초에 여러 줄일 수 있는 답변이라 줄바꿈을 막지
+          // 않는 쪽을 우선한다).
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+        />
+      </div>
+      <div className={styles.confirmActions}>
+        <span className={styles.muted}>답을 보내면 이어서 스킬 초안을 만듭니다.</span>
+        <Button size="sm" onClick={submit} disabled={busy || !trimmed}>
+          {busy ? '보내는 중…' : '답변 보내기'}
+        </Button>
+      </div>
     </section>
   );
 }
