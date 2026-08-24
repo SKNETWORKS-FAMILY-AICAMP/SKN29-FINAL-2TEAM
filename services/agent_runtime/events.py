@@ -336,6 +336,9 @@ class EventMapper:
         # run_id -> {"iterations", "token_in", "token_out"}. 아래
         # `_count_model_call()`이 채우고 끝나는 이벤트가 실어 나른다.
         self._usage: dict[str, dict[str, int | None]] = {}
+        # 같은 interrupt가 서브그래프와 루트 namespace에서 반복 전달될 수
+        # 있다. 승인 카드와 재개 상태는 interrupt ID당 한 번만 낸다.
+        self._seen_interrupt_ids: set[str] = set()
 
     def restore_hitl_state(self, state: dict[str, Any] | None) -> None:
         """승인 대기 전에 저장한 EventMapper의 최소 상관관계 상태를 복원한다."""
@@ -598,6 +601,11 @@ class EventMapper:
         if not interrupts:
             return []
         first = interrupts[0]
+        interrupt_id = getattr(first, "id", None)
+        if interrupt_id and interrupt_id in self._seen_interrupt_ids:
+            return []
+        if interrupt_id:
+            self._seen_interrupt_ids.add(interrupt_id)
         hitl_request = first.value if isinstance(first.value, dict) else {}
         action_requests = hitl_request.get("action_requests") or []
         interrupted_tool_calls = self._interrupted_tool_calls(action_requests)
@@ -609,7 +617,7 @@ class EventMapper:
                 "agent_version_id": getattr(definition, "agent_version_id", None),
                 # 재개 키. 한 턴에 interrupt가 하나뿐이라 지금은 없어도 재개되지만,
                 # 병렬 interrupt를 지원하게 되면 이 값으로 특정 interrupt를 고른다.
-                "interrupt_id": first.id,
+                "interrupt_id": interrupt_id,
                 # 화면이 확인 카드를 그리는 데 필요한 전부(도구 이름·인자·설명).
                 # 재개 시 이 목록 길이만큼 `decisions`를 만들어야 하므로
                 # (순서·개수가 어긋나면 `HumanInTheLoopMiddleware`가 ValueError)

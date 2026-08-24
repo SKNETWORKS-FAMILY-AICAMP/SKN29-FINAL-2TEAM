@@ -10,12 +10,14 @@
 |---|---|
 | 중앙 관측 플랫폼 결정 | Langfuse 사용 |
 | LangSmith 결정 | 신규 평가 체계에서는 미사용 |
-| 현재 코드 | Langfuse와 LangSmith callback이 모두 남아 있음 |
-| 즉시 필요한 작업 | P0 HITL tool-call 기록 정합성 수정·회귀 테스트 |
-| P0 완료 후 작업 | Langfuse Python SDK v4 마이그레이션 검증, LangSmith 비활성화·제거 |
+| 현재 코드 | Langfuse Python SDK v4 단일 callback 사용 |
+| P0 HITL 정합성 | 수정·수동 QA·회귀 테스트 완료 |
+| Langfuse/LangSmith | Langfuse v4 전환 완료, LangSmith 연결·자동 tracing 제거 완료 |
+| 다음 작업 | 평가 PoC dataset과 기준선 수집 |
 | 평가 도구 | DeepEval·Ragas는 도입 설계 단계이며 아직 평가 pipeline이 완성되지 않음 |
 
-이 문서의 “결정”과 “현재 구현”을 구분한다. 특히 LangSmith 미사용은 의사결정이 완료되었다는 의미이며, callback과 환경변수 제거까지 끝났다는 의미가 아니다.
+이 문서의 “결정”과 “현재 구현”을 구분한다. 2026-08-24 후속 구현으로
+LangSmith callback과 환경변수 제거까지 완료했다.
 
 평가 착수의 최우선 선행조건은 HITL 승인 도구의 DB 기록 정합성 수정이다. 현재 승인 대기 interrupt를 일반적인 스트림 조기 종료로 처리하여 실제 성공한 도구가 `FAILED / STREAM_CLOSED`로 남을 수 있으므로, 이 결함을 고치기 전의 Tool 성공률·HITL 승인 후 성공률은 평가 기준선으로 사용하지 않는다.
 
@@ -31,9 +33,11 @@
 - 병렬 실행, timeout, 실패 복구
 - 사용자·팀·테넌트별 권한과 데이터 격리
 
-Langfuse와 LangSmith에는 실행 추적 연동만 완료된 상태다. 비교 검토 결과 신규 평가 체계에서는 LangSmith를 사용하지 않고 Langfuse를 초기 중앙 관측·평가 플랫폼으로 사용하기로 결정했다. 앞으로는 단순히 실행 내역을 보는 것을 넘어, Agent가 목표를 달성했는지, 올바른 도구를 안전하고 효율적으로 사용했는지, 모델이나 프롬프트 변경으로 성능이 저하되지 않았는지를 검증해야 한다.
+Langfuse v4 단일 실행 추적 연동까지 완료된 상태다. 비교 검토 결과 신규 평가 체계에서는 LangSmith를 사용하지 않고 Langfuse를 초기 중앙 관측·평가 플랫폼으로 사용하기로 결정했다. 앞으로는 단순히 실행 내역을 보는 것을 넘어, Agent가 목표를 달성했는지, 올바른 도구를 안전하고 효율적으로 사용했는지, 모델이나 프롬프트 변경으로 성능이 저하되지 않았는지를 검증해야 한다.
 
-현재 프로젝트의 `requirements/base.txt`는 `langfuse>=3.0,<4.0`이고 연동 코드도 Python SDK v3 API를 기준으로 작성되어 있다. 그러나 2026-08-24 현재 Langfuse Python SDK의 GA 버전은 v4이며 Cloud v3 호환 계층은 2026-11-16 종료 예정이다. 따라서 P0 HITL 기록 정합성을 먼저 수정한 뒤, 신규 평가 기능을 v3 위에 더 쌓기 전에 v4 마이그레이션을 검증한다.
+현재 프로젝트의 `requirements/base.txt`는 `langfuse>=4.7,<5.0`이며 실제 web
+컨테이너는 `4.14.4`를 사용한다. P0 HITL 기록 정합성을 먼저 수정한 뒤 v4
+callback 생성, 마스킹, Cloud observation 쓰기·조회까지 검증했다.
 
 이 과정에서 중요한 점은 다섯 대상이 모두 같은 종류의 제품이 아니라는 것이다.
 
@@ -108,9 +112,12 @@ Langfuse를 운영 trace와 평가 결과의 중앙 플랫폼으로 사용한다
 - 실패 trace를 평가 dataset으로 승격
 - 릴리스 전후 experiment 비교
 
-### 3.5 현재 버전 리스크와 마이그레이션 원칙
+### 3.5 v4 마이그레이션 결과와 후속 검증 원칙
 
-현재 연동은 Python SDK v3의 `Langfuse(..., mask=...)`와 LangChain callback 동작을 전제로 한다. v4에서는 observations-first 데이터 모델, 속성 전파 방식, 기본 span filtering 및 조회 API가 달라질 수 있으므로 다음을 별도 마이그레이션 검증 항목으로 둔다.
+현재 연동은 Python SDK v4의 `Langfuse(..., mask=...)`와 LangChain callback을
+사용한다. SDK 전환 시 callback 생성, v4 Cloud observation 쓰기·조회와
+마스킹은 확인했다. 다음 항목은 실제 평가 pipeline과 공통 OpenTelemetry
+계측을 추가하면서 계속 검증한다.
 
 - 기존 마스킹 함수가 observation input/output과 tool payload에 동일하게 적용되는가
 - session, user, team, agent metadata가 모든 필요한 observation에 전파되는가
@@ -119,7 +126,9 @@ Langfuse를 운영 trace와 평가 결과의 중앙 플랫폼으로 사용한다
 - Collector에서 Langfuse v4 OTLP endpoint로 보낼 때 `x-langfuse-ingestion-version: 4` 헤더가 적용되는가
 - 비동기 export 종료 시 flush와 유실 처리 정책이 동작하는가
 
-마이그레이션 전후에 동일한 고정 시나리오를 실행하여 parent-child 구조, span 수, token·비용, 마스킹 결과와 score 연결을 비교한다. v4 전환이 완료될 때까지 v3 전용 API 위에 신규 평가 기능을 깊게 결합하지 않는다.
+v3 trace를 별도 파일로 보관한 뒤 동일 시나리오를 재생하는 절차는 전환 전에
+완료하지 못했다. 기존 Cloud trace를 참고 자료로 남기되, 이후 비교의 정식
+기준선은 v4 고정 시나리오에서 새로 수집한다.
 
 ## 4. LangSmith
 
@@ -167,16 +176,18 @@ LangSmith는 비교 검토 결과 Langfuse와 역할 중복이 크고, trace·da
 이미 완료한 LangSmith 구현과 실 키 검증 비용은 매몰비용으로 보고, 프레임워크 중립적인 OpenTelemetry 계측, 데이터 소유권과 장기적인 자체 분석 가능성을 더 높은 우선순위로 둔다. LangSmith 제거로 줄어드는 LangGraph 디버깅 편의는 프로젝트 event 모델, DB trace와 OpenTelemetry parent-child span을 보강하여 대체한다.
 
 - Langfuse를 초기 중앙 관측·평가 플랫폼으로 사용한다.
-- 기존 LangSmith 설정과 callback은 별도 구현 작업에서 비활성화하거나 제거한다.
+- 기존 LangSmith 설정과 callback은 제거했다.
 - LangGraph 고유 구조의 디버깅이 필요해지더라도 우선 OpenTelemetry span과 프로젝트 이벤트 모델을 보강한다.
 - 향후 요구사항이 바뀌면 특정 플랫폼 종속 연동보다 OpenTelemetry 호환 백엔드를 우선 검토한다.
 
-현재 코드에는 `get_langsmith_callback()`과 `LANGSMITH_*`/`LANGCHAIN_*` 설정이 남아 있다. 구현 작업에서는 단순히 UI에서 사용하지 않는 수준이 아니라 callback 생성, 자동 tracing 환경변수, secret과 outbound 전송 경로를 함께 제거 또는 비활성화한다. 완료 조건은 다음과 같다.
+현재 코드에서 `get_langsmith_callback()`과 `LANGSMITH_*`/`LANGCHAIN_*` 설정,
+로컬 자동 tracing 환경변수를 제거했다. 전이 의존성인 `langsmith` 패키지는
+남아 있지만 자동 tracing 판정은 `False`다. 완료 확인 결과는 다음과 같다.
 
-- LangSmith key가 없는 기본 설정에서 callback이 생성되지 않는다.
-- 배포 환경에 과거 `LANGSMITH_*` 또는 `LANGCHAIN_*` 값이 남아 있어도 자동 전송되지 않는다.
-- Langfuse trace에는 회귀가 없다.
-- 테스트 실행에서 LangSmith endpoint로 outbound 요청이 0건임을 확인한다.
+- 실행기가 Langfuse callback만 구성하는 회귀 테스트가 통과한다.
+- 실행 컨테이너의 LangSmith 관련 환경 변수는 0개다.
+- Django `LANGCHAIN_*` 설정이 없고 `tracing_is_enabled()`는 `False`다.
+- Langfuse v4 Cloud observation 쓰기·조회와 마스킹이 정상 동작한다.
 
 ## 5. OpenTelemetry
 

@@ -158,52 +158,8 @@ OPENAI_SERVICE_TIER = env("OPENAI_SERVICE_TIER", default="auto")
 CHUNKING_MAX_TOKENS = env.int("CHUNKING_MAX_TOKENS", default=512)
 CHUNKING_MERGE_PEERS = env.bool("CHUNKING_MERGE_PEERS", default=True)
 
-# Deep Agents 검증·평가용 트레이싱(2026-08-19 착수,
-# 작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md). 아래 두 블록 모두
-# 키가 없으면 해당 트레이싱만 조용히 꺼진다 — 에이전트 실행 자체는 막지 않는다.
-#
-# LangSmith: `LANGCHAIN_TRACING_V2`는 `langchain-core`/`langgraph`가 직접
-# 읽는 `os.environ`이 실제 소비자다(위 `environ.Env.read_env(...)`가 `.env`를
-# 이미 채워 둠) — 켜 두면 자동으로 트레이싱하되, 마스킹을 못 걸어서 그
-# 자체로는 실사용 데이터를 못 내보낸다(작업계획 §5). 나머지 셋
-# (`LANGCHAIN_API_KEY`/`LANGCHAIN_PROJECT`/`LANGCHAIN_ENDPOINT`)은
-# **우리 코드가 직접 읽는다** — `tracing/callbacks.py`의
-# `get_langsmith_callback()`이 `settings.LANGCHAIN_*`로 마스킹 걸린
-# `Client`/`LangChainTracer`를 명시적으로 만들어 콜백으로 얹는다(Langfuse와
-# 같은 방식). 이 명시적 tracer가 있으면 `LANGCHAIN_TRACING_V2`의 자동
-# 연결은 스스로 양보한다(같은 파일 docstring의 실측 근거 참고) — 그래서
-# 이 값을 켜 둬도 마스킹 안 된 이중 트레이스가 안 생긴다.
-#
-# **env var 이름이 두 벌이라 반드시 둘 다 읽어야 한다(2026-08-21).** 설치된
-# `langsmith.utils.get_env_var()`는 `namespaces=("LANGSMITH", "LANGCHAIN")`
-# 순서로 찾는다 — `LANGSMITH_API_KEY`가 있으면 그쪽이 이기고, 지금 LangSmith
-# 온보딩이 주는 스니펫도 `LANGSMITH_*` 이름이다. 우리가 `LANGCHAIN_*`만
-# 읽으면 `.env`에 `LANGSMITH_API_KEY`를 붙여 넣은 환경에서
-# `settings.LANGCHAIN_API_KEY`가 비어 `get_langsmith_callback()`이 `None`을
-# 돌려주는데, **정작 `langchain-core`의 자동 연결은 `LANGSMITH_API_KEY`를
-# 읽어 마스킹 없는 기본 `Client`로 멀쩡히 붙는다** — 마스킹이 통째로
-# 우회되는 경로다. 그래서 아래 `_langsmith_env()`가 SDK와 같은 우선순위로
-# 두 이름을 모두 읽는다(`_` 로 시작해서 Django 설정값으로는 안 잡힌다).
-def _langsmith_env(name: str, *, default: str = "") -> str:
-    """`LANGSMITH_<name>` → `LANGCHAIN_<name>` 순으로 찾는다."""
-    for prefix in ("LANGSMITH", "LANGCHAIN"):
-        value = env(f"{prefix}_{name}", default="").strip()
-        if value:
-            return value
-    return default
-
-
-# 켜짐 판정도 SDK(`langsmith.utils.tracing_is_enabled()`)와 같은 순서로 본다 —
-# `TRACING_V2`(두 접두사) → `TRACING`(두 접두사).
-LANGCHAIN_TRACING_V2 = (
-    _langsmith_env("TRACING_V2", default=_langsmith_env("TRACING", default="false")).lower()
-    in {"true", "1", "yes", "on", "y"}
-)
-LANGCHAIN_API_KEY = _langsmith_env("API_KEY")
-LANGCHAIN_PROJECT = _langsmith_env("PROJECT", default="skn-final")
-LANGCHAIN_ENDPOINT = _langsmith_env("ENDPOINT", default="https://api.smith.langchain.com")
-
-# Langfuse: 이건 실제로 `services/agent_runtime/tracing/callbacks.py`가
+# Deep Agents 검증·평가용 트레이싱은 Langfuse 하나만 사용한다.
+# `services/agent_runtime/tracing/callbacks.py`가
 # `settings.LANGFUSE_*`로 읽는다(SDK가 알아서 os.environ을 읽게 두지 않고
 # 명시적으로 클라이언트를 구성 — 이 저장소의 "비밀값은 settings를 거친다"
 # 관례를 따름). 클라우드로 가기로 결정(위 작업계획 §2). 기본 호스트는

@@ -82,8 +82,7 @@ def validate_execution_target(
 
 
 def _tracing_callbacks() -> list[Any]:
-    """Langfuse·LangSmith 콜백을 모아 돌려준다(2026-08-19). 키가 없는 쪽은
-    각자 `None`을 돌려주므로 걸러진다 — 둘 다 없으면 빈 리스트.
+    """Langfuse 콜백을 돌려준다. 키가 없으면 빈 리스트다.
 
     **지연 import다** — 모듈 맨 위에서 `tracing.callbacks`를 import하면
     `services.agent_runtime.tracing` 패키지(`tracing/__init__.py`)가 먼저
@@ -95,9 +94,10 @@ def _tracing_callbacks() -> list[Any]:
     module`로 서버 자체가 못 뜨는 걸 실제로 재현·확인했다. 호출 시점으로
     미루면 그때는 두 모듈 다 이미 완전히 로드돼 있어 순환이 안 생긴다.
     """
-    from services.agent_runtime.tracing.callbacks import get_langfuse_callback, get_langsmith_callback
+    from services.agent_runtime.tracing.callbacks import get_langfuse_callback
 
-    return [cb for cb in (get_langfuse_callback(), get_langsmith_callback()) if cb is not None]
+    callback = get_langfuse_callback()
+    return [callback] if callback is not None else []
 
 
 class AgentExecutor:
@@ -192,7 +192,7 @@ class AgentExecutor:
 
         event_mapper = self.event_mapper_factory()
 
-        # Langfuse·LangSmith 콜백(`tracing/callbacks.py`) — 키가 둘 다 없으면 빈
+        # Langfuse 콜백(`tracing/callbacks.py`) — 키가 없으면 빈
         # 리스트라 stream_adapter가 config에 아무것도 안 붙인다.
         # 지연 import 이유는 `_tracing_callbacks()` docstring 참고.
         callbacks = _tracing_callbacks()
@@ -208,9 +208,7 @@ class AgentExecutor:
                 thread_id=context.session_id,
                 callbacks=callbacks,
                 # Langfuse 대시보드에서 세션/계정/팀 단위로 걸러 보기 위한
-                # 메타데이터. LangSmith는 이 값을 무시한다. 콜백이 하나도 없으면
-                # `None`으로 둔다 — `config["metadata"]`는 LangSmith 자동 연결도
-                # 읽는 범용 필드라 아무도 안 쓸 값을 얹지 않는다.
+                # 메타데이터. 콜백이 없으면 아무도 쓰지 않으므로 `None`으로 둔다.
                 trace_metadata=(
                     {
                         "langfuse_session_id": context.session_id,
@@ -336,7 +334,7 @@ class AgentExecutor:
         if callable(restore_hitl_state):
             restore_hitl_state(trace_resume_state)
 
-        # Langfuse·LangSmith 콜백(2026-08-19) — 승인을 기다리다 재개된 실행도
+        # Langfuse 콜백 — 승인을 기다리다 재개된 실행도
         # 실제 모델·도구 호출이라 트레이싱에서 뺄 이유가 없다 —
         # `stream_adapter.py`의 `resume` 분기도 이 값을 받게 이미 맞춰 뒀다.
         callbacks = _tracing_callbacks()

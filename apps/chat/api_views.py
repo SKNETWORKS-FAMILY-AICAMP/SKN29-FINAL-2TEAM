@@ -889,6 +889,8 @@ def _persist(
             content["run_id"] = final.get("run_id")
             content["interrupt_id"] = final.get("interrupt_id")
             content["action_requests"] = final.get("action_requests")
+            content["trace_resume_state"] = final.get("trace_resume_state") or {}
+            content["suspended_run_ids"] = final.get("suspended_run_ids") or []
             names = [
                 a.get("name") for a in (final.get("action_requests") or []) if a.get("name")
             ]

@@ -1,4 +1,4 @@
-"""Langfuse·LangSmith LangChain 콜백 핸들러를 만든다.
+"""Langfuse LangChain 콜백 핸들러를 만든다.
 
 2026-08-19 착수(작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md) —
 이 파일은 원래 의도적으로 비어 있었다(`agent_run`/`tool_call` 적재는
@@ -9,8 +9,8 @@
 졌다 — 이 파일이 그 콜백을 만드는 자리다.
 
 **키가 없으면 조용히 꺼진다.** `WEB_SEARCH_API_KEY`와 같은 원칙 — 키가
-없다고 에이전트 실행 자체가 막히면 안 된다. `get_langfuse_callback()`/
-`get_langsmith_callback()`이 `None`을 돌려주면 호출 쪽(`executor.py`)이
+없다고 에이전트 실행 자체가 막히면 안 된다. `get_langfuse_callback()`이
+`None`을 돌려주면 호출 쪽(`executor.py`)이
 그냥 콜백 목록에서 뺀다.
 
 **마스킹(2026-08-19, 지훈 리뷰로 추가 — 2026-08-19 API 수정).** 트레이스에는
@@ -34,8 +34,7 @@ docstring이 "정의는 여기 하나만 둔다"고 명시), ② RAG 청크·Jir
 서드파티 서버로 원문이 나가는 경로다) 이메일만 가리는 구현은 기준에 못 미쳤다.
 
 처음엔 `mask_otel_spans=_mask_otel_spans`(span 속성을 순회하며 패치하는
-모양)로 짰는데, **실제 설치된 SDK(`langfuse==3.15.0`, `requirements/base.txt`의
-`langfuse>=3.0,<4.0` 범위)를 직접 설치해 확인해 보니 그런 파라미터가 없었다**
+모양)로 짰는데, 당시 설치된 v3 SDK에는 그런 파라미터가 없었다
 — `Langfuse.__init__()`가 그 키워드를 그대로 거부해 `TypeError`를 던진다.
 `get_langfuse_callback()`의 넓은 `except Exception`이 이를 삼켜서, 실 키를
 넣는 순간(작업계획 §3-5) Langfuse 연동 전체가 **아무 로그도 없이 조용히
@@ -43,35 +42,6 @@ docstring이 "정의는 여기 하나만 둔다"고 명시), ② RAG 청크·Jir
 `langfuse.types.MaskFunction`(`data` 키워드 하나를 받아 마스킹한 값을
 돌려주는 함수)로 완전히 다르다 — 아래 `_mask_data()`가 그 모양에 맞춘다.
 
-**LangSmith 마스킹(2026-08-19, 작업계획 §5의 "미해결 항목" 해소).** 원래
-계획은 "`LANGCHAIN_TRACING_V2` env var만 켜면 코드 없이 붙는다"였는데,
-그 자동 연결 경로는 `langchain-core`가 자기 기본 `Client`(마스킹 없음)로
-붙기 때문에 마스킹을 걸 수가 없다 — 그래서 이 자동 경로는 계속 쓰되(끄지
-않는다), **우리가 마스킹된 `Client`로 직접 만든 `LangChainTracer`를
-`callbacks`에 명시적으로 얹는다.** 실제 설치된 SDK(`langsmith==0.11.0`)로
-직접 확인한 근거:
-
-- `langsmith.Client(hide_inputs=..., hide_outputs=...)`— 각각 `Callable[[dict],
-  dict]`를 받는다(공식 시그니처, `Client.__init__` docstring 실측). Langfuse의
-  `mask`와 같은 모양이라 `_mask_data`를 그대로 재사용한다(아래 `_mask_dict`는
-  키워드만 맞춘 얇은 래퍼).
-- `langchain_core.tracers.context._get_trace_callbacks()`(실제 설치된
-  `langchain-core` 소스 확인) — `callback_manager.handlers`에 **이미
-  `LangChainTracer`가 있으면 자기 기본 tracer를 또 안 붙인다**("If it already
-  has a LangChainTracer, we don't need to add another one"). 그래서 우리가
-  마스킹된 tracer를 명시적으로 넣어 두면, `LANGCHAIN_TRACING_V2=true`가
-  켜져 있어도 마스킹 안 된 이중 트레이스가 새로 생기지 않는다 — env var는
-  그대로 두고 이 콜백만 추가하면 된다.
-
-**단, 그 안전장치는 "우리 tracer가 만들어졌을 때"만 성립한다(2026-08-21).**
-`get_langsmith_callback()`이 `None`을 돌려주는 순간 자동 연결은 양보할 상대가
-없어져 자기 기본(마스킹 없는) `Client`로 붙는다. 실제로 그 상태가 되는 현실적인
-경로가 있었다 — `langsmith.utils.get_env_var()`는 `LANGSMITH_*`를 `LANGCHAIN_*`
-보다 먼저 읽는데 우리 settings는 `LANGCHAIN_*`만 읽고 있어서, `.env`에
-`LANGSMITH_API_KEY`(지금 LangSmith 온보딩이 주는 이름)를 넣으면 우리 쪽은
-키가 없다고 판단하고 자동 연결만 살아난다. `config/settings/base.py`가 두 이름을
-모두 읽도록 고쳤고, 그래도 이 조합이 생기면 아래 `get_langsmith_callback()`이
-경고 로그를 남긴다.
 """
 
 from __future__ import annotations
@@ -86,8 +56,6 @@ logger = logging.getLogger(__name__)
 
 _configured = False
 _client_lock = threading.Lock()
-_langsmith_client: Any | None = None
-_langsmith_client_failed = False
 
 
 def _mask_data(*, data: Any, **_kwargs: Any) -> Any:
@@ -135,8 +103,8 @@ def _mask_data(*, data: Any, **_kwargs: Any) -> Any:
         # `type(data)(masked)`가 아니라 `tuple(...)`이다 — namedtuple 생성자는
         # 이터러블 하나가 아니라 필드별 위치 인자를 받아 `TypeError`가 난다.
         # 마스킹 함수가 던지면 Langfuse는 관측치를 통째로
-        # `"<fully masked due to failed mask function>"`으로 바꾸고 LangSmith엔
-        # 그런 폴백도 없다 — 안 던지는 게 우선이라 모양 보존을 포기한다.
+        # `"<fully masked due to failed mask function>"`으로 바꾸므로, 안 던지는
+        # 게 우선이라 모양 보존을 포기한다.
         return tuple(masked) if isinstance(data, tuple) else masked
     if not isinstance(data, type):
         model_dump = getattr(data, "model_dump", None)
@@ -161,7 +129,7 @@ def _mask_data(*, data: Any, **_kwargs: Any) -> Any:
 def _ensure_client_configured() -> None:
     """프로세스당 한 번만 Langfuse 클라이언트를 구성한다.
 
-    v3 SDK는 클라이언트가 싱글턴이라(`get_client()`), `CallbackHandler()`를
+    SDK 클라이언트가 싱글턴이라(`get_client()`), `CallbackHandler()`를
     만들기 전에 `Langfuse(...)`를 한 번은 호출해 둬야 한다 — env var
     (`LANGFUSE_HOST` 등 SDK가 기대하는 이름)에 기대지 않고 이 저장소의
     `settings.LANGFUSE_*`를 명시적으로 넘긴다(이 저장소의 "비밀값은 settings를
@@ -194,7 +162,7 @@ def _ensure_client_configured() -> None:
 def get_langfuse_callback() -> Any | None:
     """키가 있으면 `CallbackHandler` 인스턴스를, 없으면 `None`을 돌려준다.
 
-    호출 하나마다 새로 만든다 — v3 `CallbackHandler`는 생성자 인자를 안 받는
+    호출 하나마다 새로 만든다 — v4 `CallbackHandler`는 생성자 인자를 안 받는
     가벼운 객체라(실제 상태는 싱글턴 클라이언트에 있다), 매번 새로 만들어도
     비용이 없고 여러 요청이 같은 인스턴스를 공유하다 상태가 섞일 걱정도 없다.
     """
@@ -213,102 +181,4 @@ def get_langfuse_callback() -> Any | None:
         return None
 
 
-def _mask_dict(data: dict) -> dict:
-    """`langsmith.Client(hide_inputs=..., hide_outputs=...)`가 부르는 모양
-    (`Callable[[dict], dict]`, 위치 인자 하나)에 `_mask_data`를 맞춘 얇은
-    래퍼다 — 마스킹 로직 자체(패턴, 재귀 순회)는 Langfuse와 똑같으니 새로
-    안 짠다.
-
-    주의: LangSmith의 `hide_inputs`/`hide_outputs`는 run의 `inputs`/`outputs`
-    /`error`에만 걸리고 **`metadata`/`extra`에는 안 걸린다**(설치된
-    `langsmith/client.py`의 `_hide_run_inputs`/`_hide_run_outputs` 실측).
-    그래서 `executor.py`가 `trace_metadata`에 싣는 값은 지금처럼 `account_id`
-    (`UA001` 같은 코드)·팀 id·에이전트 id처럼 그 자체로 안전한 식별자만
-    유지해야 한다 — 이메일이나 사람 이름을 metadata에 넣으면 마스킹을 안 거친다.
-    """
-    return _mask_data(data=data)
-
-
-def _get_langsmith_client() -> Any | None:
-    """마스킹이 걸린 `langsmith.Client`를 **프로세스당 하나만** 만들어 재사용한다.
-
-    Langfuse(`_ensure_client_configured()`)와 같은 이유로 싱글턴이다. 처음엔
-    실행마다 새로 만들었는데, 설치된 `langsmith/client.py`를 읽어 보니
-    생성자가 매번 ① `atexit.register()`로 세션 close 핸들러를 등록하고
-    ② `auto_batch_tracing` 기본값 때문에 배치 전송 스레드를 하나 띄운다.
-    장수명 web 워커에서 메시지마다 새로 만들면 atexit 핸들러가 무한히
-    쌓이고(프로세스가 죽을 때까지 안 풀린다) 스레드·커넥션 풀이 계속
-    생겼다 사라진다. `LangChainTracer`는 실행마다 새로 만들어도 되는
-    가벼운 객체라 그것만 매번 만든다.
-
-    한 번 실패하면 `_langsmith_client_failed`로 기억해 다시 시도하지 않는다 —
-    설정이 잘못된 상태에서 매 실행마다 같은 예외 로그를 남기지 않기 위해서다.
-    """
-    global _langsmith_client, _langsmith_client_failed
-
-    if _langsmith_client is not None or _langsmith_client_failed:
-        return _langsmith_client
-
-    from django.conf import settings
-
-    with _client_lock:
-        if _langsmith_client is not None or _langsmith_client_failed:
-            return _langsmith_client
-        try:
-            from langsmith import Client
-
-            _langsmith_client = Client(
-                api_key=settings.LANGCHAIN_API_KEY,
-                api_url=settings.LANGCHAIN_ENDPOINT,
-                hide_inputs=_mask_dict,
-                hide_outputs=_mask_dict,
-            )
-        except Exception:  # noqa: BLE001 - 트레이싱 연동 실패가 실제 응답을 막으면 안 된다
-            _langsmith_client_failed = True
-            logger.exception("LangSmith 클라이언트를 만들지 못했습니다 — 이 프로세스는 LangSmith 없이 진행합니다.")
-    return _langsmith_client
-
-
-def get_langsmith_callback() -> Any | None:
-    """키가 있으면 마스킹이 걸린 `LangChainTracer`를, 없으면 `None`을 돌려준다.
-
-    `langsmith.Client`를 직접 만들어 `hide_inputs`/`hide_outputs`로 민감정보를
-    가리고, 그 클라이언트를 쓰는 `LangChainTracer`를 콜백으로 반환한다 —
-    `LANGCHAIN_TRACING_V2` env var의 자동 연결(마스킹 없음)과는 별개
-    경로이지만, 이 콜백이 있으면 자동 연결 쪽이 스스로 양보한다(위 모듈
-    docstring의 `_get_trace_callbacks()` 근거 참고) — 그래서 env var는 그대로
-    둬도 된다.
-
-    **키가 없는데 트레이싱이 켜져 있으면 경고한다(2026-08-21).** 그 조합이
-    바로 마스킹이 우회되는 조합이다 — 우리는 콜백을 못 만들고, `langchain-core`
-    자동 연결은 자기 기본(마스킹 없는) `Client`로 붙는다. `settings`가
-    `LANGSMITH_*`/`LANGCHAIN_*` 두 이름을 모두 읽게 고쳐서(config/settings/
-    base.py) 이름 불일치로 이 상태가 되는 경로는 막았지만, 그 밖의 방식으로
-    (예: 프로세스 환경에 직접 주입) 이 조합이 생길 수 있어 로그로 남긴다.
-    """
-    from django.conf import settings
-
-    if not settings.LANGCHAIN_API_KEY:
-        if settings.LANGCHAIN_TRACING_V2:
-            logger.warning(
-                "LangSmith 트레이싱이 켜져 있는데 API 키가 settings에 없습니다 — "
-                "마스킹된 tracer를 못 만듭니다. langchain-core 자동 연결이 다른 경로로 "
-                "키를 찾으면 마스킹 없는 trace가 나갈 수 있습니다. "
-                "`.env`의 LANGSMITH_API_KEY 또는 LANGCHAIN_API_KEY를 확인하세요."
-            )
-        return None
-
-    client = _get_langsmith_client()
-    if client is None:
-        return None
-
-    try:
-        from langchain_core.tracers import LangChainTracer
-
-        return LangChainTracer(client=client, project_name=settings.LANGCHAIN_PROJECT)
-    except Exception:  # noqa: BLE001 - 트레이싱 연동 실패가 실제 응답을 막으면 안 된다
-        logger.exception("LangSmith 콜백 핸들러를 만들지 못했습니다 — 이번 실행은 LangSmith 없이 진행합니다.")
-        return None
-
-
-__all__ = ["get_langfuse_callback", "get_langsmith_callback"]
+__all__ = ["get_langfuse_callback"]

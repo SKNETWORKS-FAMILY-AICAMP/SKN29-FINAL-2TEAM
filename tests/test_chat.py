@@ -388,6 +388,44 @@ class DeepAgentSessionStreamTests(SimpleTestCase):
         self.assertEqual(response["Content-Type"], "application/x-ndjson")
         self.assertEqual([e["type"] for e in events], ["agent_started", "result"])
 
+    def test_hitl_resume_trace_state_is_persisted_at_card_top_level(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        trace_resume_state = {
+            "pending_subagents": {"task-call": {"run_id": "CHILD-RUN"}},
+            "interrupted_tool_calls": [
+                {"action_index": 0, "run_id": "CHILD-RUN", "tool_call_id": "tool-call"}
+            ],
+        }
+        build_executor.return_value.run.return_value = iter(
+            [
+                {
+                    "type": "awaiting_confirmation",
+                    "run_id": "ROOT-RUN",
+                    "interrupt_id": "interrupt-1",
+                    "action_requests": [{"name": "skill_register", "args": {}}],
+                    "trace_resume_state": trace_resume_state,
+                    "suspended_run_ids": ["ROOT-RUN", "CHILD-RUN"],
+                    "complete": False,
+                }
+            ]
+        )
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "서브에이전트가 등록해줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        stored = messages.append.call_args_list[-1].kwargs["content"]
+        self.assertEqual(stored["trace_resume_state"], trace_resume_state)
+        self.assertEqual(stored["suspended_run_ids"], ["ROOT-RUN", "CHILD-RUN"])
+
     def test_레거시_harness_는_더_이상_import_되지_않는다(
         self, sessions, messages, accounts, _title, build_executor
     ):

@@ -5,7 +5,7 @@
 
 - `memory/write_guard.py` — 개인 장기 메모리 저장 차단
 - `apps/chat/api_views.py` — 채팅 입력을 모델에게 보내기 전 마스킹
-- `tracing/callbacks.py` — LangSmith·Langfuse로 나가는 trace 사본 마스킹
+- `tracing/callbacks.py` — Langfuse로 나가는 trace 사본 마스킹
 
 **어디까지 가릴지는 사용처마다 다르다.** 같은 패턴 목록을 쓰되 조합만 달리한다:
 채팅 입력·메모리는 `mask_sensitive()`(credential+PII+권한 서술), 외부 반출
@@ -50,7 +50,7 @@ PII_PATTERNS = [
 #:
 #: `PII_PATTERNS`에 넣지 않는 건 의도적이다. 채팅 입력 마스킹과 메모리 write
 #: guard가 그 목록을 공유하는데, 거기서 이메일을 가리면 "박서준한테 메일로
-#: 공유해줘" 같은 정상 업무 요청이 망가진다. 반대로 LangSmith/Langfuse는
+#: 공유해줘" 같은 정상 업무 요청이 망가진다. 반대로 Langfuse는
 #: **서드파티 서버로 원문이 나가는** 경로라 이메일까지 가려야 한다
 #: (`2026-08-19_01_작업계획.md` §4 — `jira_get_issues`의 `assignee_email`).
 EMAIL_PATTERN = re.compile(r"\b[\w.-]+?@[\w.-]+?\.\w+?\b")
@@ -127,7 +127,7 @@ EXPORT_PLACEHOLDERS = {
 
 
 def mask_for_export(text: str) -> str:
-    """외부 관측 백엔드(LangSmith·Langfuse)로 **나가는 사본**에서 이메일·
+    """외부 관측 백엔드(Langfuse)로 **나가는 사본**에서 이메일·
     credential·개인정보 패턴을 가린다.
 
     `mask_sensitive()`와 두 가지가 다르다.

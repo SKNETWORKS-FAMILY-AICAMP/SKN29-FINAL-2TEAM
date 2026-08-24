@@ -119,7 +119,7 @@ class MaskSensitiveTests(SimpleTestCase):
 
 
 class MaskForExportTests(SimpleTestCase):
-    """`mask_for_export()` — LangSmith·Langfuse로 나가는 사본 전용 조합.
+    """`mask_for_export()` — Langfuse로 나가는 사본 전용 조합.
 
     `mask_sensitive()`와 두 가지가 다르다: 이메일을 **포함**하고, 권한 서술
     (`AUTHORITY_KEYWORDS`)은 **제외**한다. 둘 다 의도된 차이라 회귀로 잡는다.

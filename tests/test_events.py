@@ -832,6 +832,27 @@ class InterruptEventTests(SimpleTestCase):
         self.assertEqual(event["action_requests"], hitl_request["action_requests"])
         self.assertFalse(event["complete"])
 
+    def test_same_interrupt_id_from_root_and_subgraph_is_emitted_once(self):
+        mapper = EventMapper()
+        interrupt = Interrupt(
+            value={"action_requests": [{"name": "skill_register", "args": {}}]},
+            id="intr-duplicate",
+        )
+
+        first = mapper.convert(
+            (("tools:child",), "updates", {"__interrupt__": (interrupt,)}),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        duplicate = mapper.convert(
+            ((), "updates", {"__interrupt__": (interrupt,)}),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(duplicate, [])
+
     def test_interrupt_key_short_circuits_even_with_sibling_node_keys(self):
         """`__interrupt__`는 그 턴의 다른 node_name과 구조적으로 섞이지 않는다
         (`map_output_updates()`가 INTERRUPT 채널 write를 걸러내고 별도
