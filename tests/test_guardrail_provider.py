@@ -269,3 +269,85 @@ class OnFailureTests(SimpleTestCase):
         )
 
         self.assertNotIn("on_failure", repo.create.call_args[1])
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.guardrails.verify_provider")
+@patch("apps.ops.views.guardrails.GuardrailProviderRepository")
+class ProbeWhileEditingTests(SimpleTestCase):
+    """**수정 중 「연결 확인」은 저장된 키로 한다.**
+
+    화면은 저장된 키를 다시 보여주지 않으므로 수정 폼의 키 칸은 비어 있다.
+    그대로 확인하면 「키가 없습니다」로 떨어지고, 저장은 확인을 통과해야 열리니
+    **이름 한 글자만 고쳐도 키를 다시 넣어야 했다** — 정작 저장은 이미 저장된
+    키를 꺼내 쓰고 있었다.
+    """
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def _probe(self, body):
+        return self.client.post(
+            "/api/ops/guardrails/probe/",
+            data=json.dumps(body),
+            content_type="application/json",
+            **self._headers(),
+        )
+
+    def test_키를_안_보내면_저장된_것으로_확인한다(self, repo, verify, _admin):
+        repo.KINDS = ("AZURE_CONTENT_SAFETY",)
+        repo.credential.return_value = {"api_key": "저장된키"}
+        verify.return_value = type("R", (), {"ok": True, "detail": None})()
+
+        response = self._probe({
+            "kind": "AZURE_CONTENT_SAFETY",
+            "config": {"endpoint": "https://a.b"},
+            "provider_id": "GP001",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        repo.credential.assert_called_once_with("GP001")
+        self.assertEqual(verify.call_args[1]["credential"], {"api_key": "저장된키"})
+
+    def test_설정은_화면_값을_쓴다(self, repo, verify, _admin):
+        """저장된 설정으로 확인하면 방금 바꾼 주소를 확인하지 않는 셈이 된다."""
+
+        repo.KINDS = ("AZURE_CONTENT_SAFETY",)
+        repo.credential.return_value = {"api_key": "저장된키"}
+        verify.return_value = type("R", (), {"ok": True, "detail": None})()
+
+        self._probe({
+            "kind": "AZURE_CONTENT_SAFETY",
+            "config": {"endpoint": "https://바꾼주소"},
+            "provider_id": "GP001",
+        })
+
+        self.assertEqual(verify.call_args[1]["config"], {"endpoint": "https://바꾼주소"})
+
+    def test_키를_보내면_그걸_쓴다(self, repo, verify, _admin):
+        """키를 바꾸려는 중이면 저장된 것으로 확인하면 안 된다."""
+
+        repo.KINDS = ("AZURE_CONTENT_SAFETY",)
+        verify.return_value = type("R", (), {"ok": True, "detail": None})()
+
+        self._probe({
+            "kind": "AZURE_CONTENT_SAFETY",
+            "config": {},
+            "credential": {"api_key": "새키"},
+            "provider_id": "GP001",
+        })
+
+        repo.credential.assert_not_called()
+        self.assertEqual(verify.call_args[1]["credential"], {"api_key": "새키"})
+
+    def test_등록_중에는_저장된_키가_없다(self, repo, verify, _admin):
+        """새로 등록할 때는 `provider_id` 가 없다 — 그대로 확인해서 실패해야 한다."""
+
+        repo.KINDS = ("AZURE_CONTENT_SAFETY",)
+        verify.return_value = type("R", (), {"ok": False, "detail": "키가 없습니다."})()
+
+        response = self._probe({"kind": "AZURE_CONTENT_SAFETY", "config": {}})
+
+        repo.credential.assert_not_called()
+        self.assertFalse(response.json()["ok"])

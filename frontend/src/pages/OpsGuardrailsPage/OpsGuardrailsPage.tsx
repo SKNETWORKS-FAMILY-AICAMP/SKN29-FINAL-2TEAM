@@ -281,6 +281,9 @@ export default function OpsGuardrailsPage() {
         kind,
         config,
         credential: Object.keys(credential).length > 0 ? credential : null,
+        // 수정 중에 키 칸을 비워 뒀으면 서버가 저장된 키로 확인한다 — 이름 한
+        // 글자를 고치려고 키를 다시 넣게 하지 않는다(2026-08-24).
+        provider_id: editing?.provider_id,
       });
       setProbed(result.ok);
       showToast(

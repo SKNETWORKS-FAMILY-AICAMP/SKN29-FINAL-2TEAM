@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from backend.api_errors import to_response
 from backend.db import log_audit
 from backend.db.agent_platform import GuardrailProviderRepository
-from backend.db.errors import RepositoryError
+from backend.db.errors import RecordNotFound, RepositoryError
 from services.guardrails.providers import ProviderError, verify as verify_provider
 
 from ..authentication import AdminView
@@ -104,6 +104,15 @@ class GuardrailProviderProbeView(AdminView):
 
     행을 만들지 않으므로 팀도 필요 없다. 실패는 **여기서 끝난다** — 남는 것이
     없으니 고칠 값도 없고, 화면이 이유만 보여주면 된다.
+
+    **수정 중이면 `provider_id` 를 함께 받는다**(2026-08-24). 화면은 저장된 키를
+    다시 보여주지 않으므로 수정 폼의 키 칸은 비어 있는데, 그 상태로 확인하면
+    「키가 없습니다」로 떨어진다. 그러면 이름 한 글자만 고쳐도 키를 다시 넣어야
+    했다 — **저장은 이미 저장된 키를 꺼내 쓰고 있었다.** 같은 일을 두 자리가
+    다르게 하던 것을 맞춘다.
+
+    확인하는 **설정은 화면 값**이다. 저장된 설정으로 확인하면 방금 바꾼 주소를
+    확인하지 않는 것이 된다(그건 목록의 「연결 확인」이 하는 일이다).
     """
 
     def post(self, request):
@@ -115,6 +124,15 @@ class GuardrailProviderProbeView(AdminView):
         credential = request.data.get("credential") or None
         if not isinstance(config, dict) or (credential is not None and not isinstance(credential, dict)):
             return Response({"detail": "설정 형식이 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        provider_id = request.data.get("provider_id")
+        if credential is None and provider_id:
+            # **없는 등록이면 조용히 넘어간다.** 여기서 404 를 내면 화면은 키가
+            # 없어서 실패한 것과 구분할 수 없고, 어차피 아래에서 확인이 실패한다.
+            try:
+                credential = GuardrailProviderRepository.credential(str(provider_id))
+            except (RecordNotFound, psycopg.Error):
+                credential = None
 
         try:
             result = verify_provider(kind=kind, config=config, credential=credential)

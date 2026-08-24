@@ -128,6 +128,12 @@ export function probeOpsGuardrail(
     kind: GuardrailKind;
     config?: Record<string, unknown>;
     credential?: Record<string, unknown> | null;
+    /**
+     * **수정 중일 때만 보낸다.** 화면은 저장된 키를 다시 보여주지 않으므로 키
+     * 칸이 비어 있는데, 그대로 확인하면 「키가 없습니다」로 떨어진다. 서버가
+     * 이 id 로 저장된 키를 꺼내 쓴다 — 저장은 이미 그렇게 하고 있었다.
+     */
+    provider_id?: string;
   },
 ) {
   return opsRequest<{ ok: boolean; detail: string | null }>('/ops/guardrails/probe/', {
