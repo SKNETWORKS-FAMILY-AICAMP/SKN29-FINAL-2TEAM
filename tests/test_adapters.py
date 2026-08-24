@@ -31,6 +31,7 @@ EXPECTED_INJECTED_CONTEXT = {
     "project_list": ("account_id",),
     "task_list": ("project_id", "account_id"),
     "document_list": ("account_id",),
+    "document_sync": ("account_id",),
     "task_update": ("project_id", "account_id"),
     "web_search": (),
     "absence_list": ("account_id",),
@@ -48,9 +49,9 @@ EXPECTED_SIDE_EFFECT = {
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(14개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(15개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_fourteen_tools(self):
+    def test_real_registry_has_exactly_fifteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
         #
@@ -58,7 +59,11 @@ class RealRegistryShapeTests(SimpleTestCase):
         # (`tools/adapters.py` 모듈 docstring은 그때 같이 갱신됐다) 이 테스트는
         # 안 고쳐져 실패한 채로 남아 있었다 — 2026-08-21에 맞춘다. 이 신호가
         # 의도대로 동작한 사례이므로 숫자 고정 자체는 그대로 둔다.
-        self.assertEqual(len(BUILTIN_TOOLS), 14)
+        #
+        # 2026-08-24에 `document_sync`가 추가되며 14 → 15. 이번에는 이 테스트가
+        # 바로 걸려서 `_ACCOUNT_SCOPED`와 위 EXPECTED 표를 같이 고쳤다 — 신호가
+        # 의도대로 동작했다.
+        self.assertEqual(len(BUILTIN_TOOLS), 15)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}

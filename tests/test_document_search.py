@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from services.document_intake import IntakeResult
 from services.harness import registry
 
 
@@ -113,3 +114,73 @@ class DocumentSearchScopeTests(SimpleTestCase):
         _run_document_search(team_id="TE001", query="납기일", account_id="UA001")
 
         self.assertEqual(scope.call_args.kwargs["account_id"], "UA001")
+
+
+def _run_document_sync(**kwargs):
+    """`_document_sync` 도 제너레이터다(진행 이벤트). 끝까지 돌려 반환값만 꺼낸다."""
+    gen = registry._document_sync(**kwargs)
+    try:
+        while True:
+            next(gen)
+    except StopIteration as stop:
+        return stop.value
+
+
+@patch("services.harness.registry.sync_drive_changes")
+@patch("services.harness.registry.ConnectorRepository")
+class DocumentSyncToolTests(SimpleTestCase):
+    """사용자가 「방금 문서 고쳤어」라고 할 때 부르는 도구(2026-08-24).
+
+    대화를 열 때 이미 한 번 확인하지만, 대화 **중간에** 바뀐 것은 그때 못 잡는다.
+    버튼을 만드는 대신 도구로 둔 것은 이 제품이 「말하면 불려 나온다」로 동작하기
+    때문이다.
+    """
+
+    def test_연결이_없으면_변경_없음이라고_하지_않는다(self, connectors, sync):
+        """사람에게 「연결이 없다」와 「바뀐 게 없다」는 전혀 다른 말이다.
+        `sync_drive_changes` 는 둘을 똑같이 빈 결과로 돌려주므로 여기서 가른다."""
+
+        connectors.drive_sync_target.return_value = None
+
+        result = _run_document_sync(account_id="UA001")
+
+        sync.assert_not_called()
+        self.assertFalse(result["checked"])
+        self.assertIn("연결", result["note"])
+
+    def test_바뀐_것이_없으면_그렇게_말한다(self, connectors, sync):
+        connectors.drive_sync_target.return_value = {"conn_id": "CN001"}
+        sync.return_value = IntakeResult()
+
+        result = _run_document_sync(account_id="UA001")
+
+        self.assertTrue(result["checked"])
+        self.assertIn("바뀐 문서가 없습니다", result["note"])
+
+    def test_바뀐_것을_갈래별로_돌려준다(self, connectors, sync):
+        """다시 받은 것·내려간 것·색인된 것은 사람이 확인할 내용이 각각 다르다."""
+
+        connectors.drive_sync_target.return_value = {"conn_id": "CN001"}
+        sync.return_value = IntakeResult(
+            refreshed=["기획서.pdf"], removed=["DC009"], indexed=["DC001"]
+        )
+
+        result = _run_document_sync(account_id="UA001")
+
+        self.assertTrue(result["checked"])
+        self.assertEqual(result["refreshed"], ["기획서.pdf"])
+        self.assertEqual(result["removed"], ["DC009"])
+        self.assertEqual(result["indexed"], ["DC001"])
+        self.assertIn("반영했습니다", result["note"])
+
+    def test_저장소를_못_읽으면_확인_실패로_돌려준다(self, connectors, sync):
+        """자격증명이 만료된 경우다. 「바뀐 게 없다」로 답하면 사용자는 최신
+        내용으로 답받았다고 믿는다."""
+
+        connectors.drive_sync_target.return_value = {"conn_id": "CN001"}
+        sync.return_value = IntakeResult(storage_error="OAuthError")
+
+        result = _run_document_sync(account_id="UA001")
+
+        self.assertFalse(result["checked"])
+        self.assertIn("OAuthError", result["note"])

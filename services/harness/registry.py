@@ -31,12 +31,14 @@ from backend.db.agent_platform import (
     McpServerRepository,
     ProjectTaskRepository,
 )
+from backend.db import ConnectorRepository
 from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
     PipelineDocumentRepository,
     VectorSearchRepository,
 )
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
+from services.document_intake import sync_drive_changes
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -491,6 +493,58 @@ def _task_list(*, proj_id: str | None, account_id: str) -> dict[str, Any]:
             }
             for row in rows
         ]
+    }
+
+
+def _document_sync(*, account_id: str):
+    """저장소에서 바뀐 것을 **지금** 확인해 반영한다.
+
+    대화를 열 때 이미 한 번 돈다(`apps/chat/api_views.py` `_start_drive_change_sync`).
+    이 도구는 그 뒤에 사용자가 「방금 문서 고쳤어, 다시 봐」라고 할 때 쓴다 —
+    **버튼을 만들지 않는 이유**가 이것이다. 사람이 화면을 찾아 누르는 대신
+    말하면 되고, 그게 이 제품이 에이전트를 다루는 방식이다.
+
+    검색 직전마다 자동으로 돌리지는 않는다(2026-08-24 판단). 변화가 없어도
+    DB 연결 4회 + Drive 호출 1회가 붙고(실측: 연결 하나가 24ms), 변화가 있으면
+    재색인이 문서당 최대 240초라 매 검색에 얹을 수 없다. 사용자가 「바뀌었다」를
+    아는 순간에만 부르는 것이 값이 가장 크다.
+
+    **오래 걸릴 수 있다.** 실제로 바뀐 문서가 있으면 내려받아 다시 색인하고,
+    그 대기가 문서당 몇 분이다(`_extract_tasks` 가 기준 문서를 승격시킬 때와 같은
+    성격). 그래서 진행 이벤트를 먼저 흘려보낸다 — 화면이 멈춘 것처럼 보이면 안 된다.
+    """
+
+    yield {"type": "stage", "step": 1, "total": 1, "label": "저장소 변경 확인 중"}
+
+    # 연결 여부를 여기서 한 번 더 본다. `sync_drive_changes` 는 「연결이 없다」와
+    # 「바뀐 것이 없다」를 똑같이 빈 결과로 돌려주는데, 사람에게는 전혀 다른
+    # 말이다 — 연결이 없는데 「변경 없음」이라고 답하면 안 된다.
+    if ConnectorRepository.drive_sync_target(account_id) is None:
+        return {
+            "checked": False,
+            "note": "문서 저장소가 연결되어 있지 않거나, 읽을 폴더가 지정되지 않았습니다.",
+        }
+
+    result = sync_drive_changes(account_id=account_id)
+    if result.storage_error:
+        return {
+            "checked": False,
+            "note": f"저장소를 확인하지 못했습니다({result.storage_error}). 연결이 만료됐을 수 있습니다.",
+        }
+
+    changed = bool(result.refreshed or result.removed or result.indexed)
+    return {
+        "checked": True,
+        # 셋을 나눠 준다 — 사람이 확인할 것이 각각 다르다.
+        "refreshed": result.refreshed,
+        "removed": result.removed,
+        "indexed": result.indexed,
+        "failed": result.failed,
+        "note": (
+            "저장소에서 바뀐 내용을 반영했습니다."
+            if changed
+            else "마지막 확인 이후 바뀐 문서가 없습니다."
+        ),
     }
 
 
@@ -1054,6 +1108,21 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_document_list,
+        category="문서",
+    ),
+    "document_sync": Tool(
+        ref="document_sync",
+        name="문서 변경 확인",
+        description=(
+            "연결된 문서 저장소에서 **방금 바뀐 것**을 지금 확인해 반영한다. "
+            "사용자가 「문서를 수정했다」·「새로 올렸다」·「최신 내용으로 다시 봐 달라」고 "
+            "할 때 부른다. 대화를 열 때 이미 한 번 확인하므로, **그냥 문서를 찾는 "
+            "질문에는 부르지 않는다** — 그때는 document_search 다. "
+            "바뀐 문서가 있으면 다시 읽어 들이느라 **몇 분 걸릴 수 있다.** "
+            "`checked` 가 false 면 확인 자체를 못 한 것이니 `note` 를 그대로 전한다."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=_document_sync,
         category="문서",
     ),
     "task_update": Tool(

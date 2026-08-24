@@ -3,7 +3,7 @@
 정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §17.1
 (원래 작업자 A 담당, 착수 전이라 작업자 B가 대신 작성 — 2026-08-13)
 
-`services.harness.registry.BUILTIN_TOOLS`(14개, AST로 직접 확인 — 아래 각 상수의
+`services.harness.registry.BUILTIN_TOOLS`(15개, AST로 직접 확인 — 아래 각 상수의
 근거)를 `services.agent_runtime.tools.loader.Tool`로 바꾼다. 어떤 컨텍스트를
 주입할지는 `services/harness/runner.py`의 `_injected()`를 실제로 읽어서 그대로
 옮겼다 — 추측이 아니라 실측이다:
@@ -11,7 +11,7 @@
   document_search                          -> team_id, account_id, project_id
   people_list / workload_report /
   project_list / document_list /
-  absence_list                             -> account_id
+  document_sync / absence_list             -> account_id
   task_extraction                          -> project_id, account_id, team_id
                                                (+ model — CONTEXT_VALUES가 아니라
                                                아래 별도 설명)
@@ -82,7 +82,14 @@ from services.mcp import client as mcp_client
 #: 레거시 `runner.py` 의 같은 자리에서 옮겨 올 때 함께 빠져 있었다(2026-08-18 QA).
 _DOCUMENT_SEARCH_REF = "document_search"
 _ACCOUNT_SCOPED: frozenset[str] = frozenset(
-    {"people_list", "workload_report", "project_list", "document_list", "absence_list"}
+    {
+        "people_list",
+        "workload_report",
+        "project_list",
+        "document_list",
+        "document_sync",
+        "absence_list",
+    }
 )
 _PROJECT_SCOPED: frozenset[str] = frozenset(
     {"task_register", "task_list", "task_update", "jira_create_issues", "jira_get_issues"}
@@ -163,7 +170,7 @@ def _wrap_handler(
 
 
 def adapt_builtin_tools(*, agent_model: str | None = None) -> tuple[RuntimeTool, ...]:
-    """`services.harness.registry.BUILTIN_TOOLS`(14개)를 실행 코어 `Tool`로 바꾼다.
+    """`services.harness.registry.BUILTIN_TOOLS`(15개)를 실행 코어 `Tool`로 바꾼다.
 
     `agent_model`은 `task_extraction`에만 쓰인다(위 모듈 docstring 참고) — 다른
     도구는 이 값을 무시한다.

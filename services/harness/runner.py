@@ -630,6 +630,7 @@ _ACCOUNT_SCOPED_TOOLS = frozenset(
         "workload_report",
         "project_list",
         "document_list",
+        "document_sync",
         "absence_list",
     }
 )
