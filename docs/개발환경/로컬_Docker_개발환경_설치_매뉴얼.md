@@ -54,8 +54,7 @@ Copy-Item .env.example .env
 | 항목 | 기본값 | 변경 시점 |
 |---|---|---|
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | React 개발 서버 포트·주소 변경 시 |
-| `ANALYSIS_EXECUTION_MODE` | `stub` | 실제 분석 Worker 연결 시 |
-| `OBJECT_STORAGE_PROVIDER` | `local` | S3 또는 MinIO 연결 시 |
+| `OBJECT_STORAGE_PROVIDER` | `s3` | 원문을 로컬 디스크에 두려면 `local` |
 | `SECRET_KEY` | 개발용 값 | 공유·배포 환경 구성 시 |
 | `FRONTEND_BASE_URL` | `http://localhost:5173` | 비밀번호 재설정 링크의 프론트 주소 변경 시 |
 | `EMAIL_BACKEND` | console 백엔드 | Gmail SMTP 실제 발송이 필요할 때 |
