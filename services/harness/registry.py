@@ -1,7 +1,7 @@
 """Tool Registry — 에이전트가 부를 수 있는 도구를 모으고 거른다.
 
-`tool_ref` 는 `agent_tool.tool_ref` 에 저장되는 값 그대로다. 내장 도구는
-식별자 자체(`document_search`), MCP 도구는 `mcp:<mcp_tool_id>` 다
+`tool_ref` 는 `agent_version_tools.tool_ref` 에 저장되는 값 그대로다. 내장
+도구는 식별자 자체(`document_search`), MCP 도구는 `mcp:<mcp_tool_id>` 다
 (DB/migrations/2026-08-11_agent_platform.sql 주석).
 """
 
@@ -1034,7 +1034,7 @@ def _skill_register(
     return {"scope": scope, "name": name, "path": path}
 
 
-#: 내장 도구. `tool_ref` 는 agent_tool 에 저장되는 값과 같아야 한다.
+#: 내장 도구. `tool_ref` 는 agent_version_tools 에 저장되는 값과 같아야 한다.
 BUILTIN_TOOLS: dict[str, Tool] = {
     "get_current_datetime": Tool(
         ref="get_current_datetime",
@@ -1397,12 +1397,13 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 #: `skill_register`는 `side_effect=True`라 어차피 사람 승인 없이는 실행되지
 #: 않으니, 켜고 끄는 선택 자체가 의미가 없다.
 #:
-#: `load_for_agent()`가 `agent_tool` 저장 여부와 무관하게 넣고, 선택 화면
+#: 실행 시점엔 `services/agent_runtime/tools/loader.py`의 `ToolLoader.load()`가
+#: `agent_version_tools` 저장 여부와 무관하게 넣고, 선택 화면
 #: (`apps/agents/serializers.py`의 `builtin_tool_response()`)에서도 뺀다 —
 #: 고를 필요 없는 항목이 선택 목록에 남아 있으면 "이건 꺼도 되나?"라는
 #: 오해를 만든다. `apps/agents/api_views.py`의 `_split()`도 이 집합을 써서,
-#: 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도(2026-08-22 이전)
-#: 다음 저장에서 조용히 걸러낸다.
+#: 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도 다음 저장에서
+#: 조용히 걸러낸다.
 ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register"})
 
 

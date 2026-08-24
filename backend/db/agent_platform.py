@@ -1,4 +1,4 @@
-"""Agent Platform 테이블(`agent`·`agent_tool`·`mcp_tool`·`agent_run`·`tool_call`)의 직접 SQL.
+"""Agent Platform 테이블(`agents`·`agent_versions`·`mcp_tool`·`agent_run`·`tool_call`)의 직접 SQL.
 
 `repositories.py`가 아니라 여기에 두는 이유는 `document_pipeline.py`와 같다 —
 한 도메인의 테이블만 다루고, 그 도메인 코드(`services/harness/`)만 부른다.
