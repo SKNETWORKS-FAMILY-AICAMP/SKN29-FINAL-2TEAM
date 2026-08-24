@@ -193,6 +193,13 @@ CREATE TABLE connector_conn (
                                               -- (team_folder·proj_source 가 FK 없이 이 값을 가리킨다)
     encrypted_credential_ref  TEXT,           -- 외부 자격증명의 DB 저장용 암호문(기존 ref 명칭 유지). People DB는 자격증명이 없어 NULL
                                               -- VARCHAR(255)로는 부족하다: Fernet 암호문이 Jira 1700자, Drive 632자다(255자는 평문 127바이트까지만 수용)
+    -- 증분 동기화의 재개 지점(2026-08-24). Drive 는 changes API 의 pageToken 이
+    -- 들어간다. NULL 이면 아직 기준점을 안 잡은 상태다.
+    --
+    -- `drive_page_token` 이 아니라 중립적인 이름인 이유 — 계획된 저장소 넷 중
+    -- 델타 API 가 있는 것은 Drive·SharePoint 뿐이고(Notion·Confluence 는 수정
+    -- 시각 폴링밖에 없다), 값의 모양도 저장소마다 다르다.
+    sync_cursor               TEXT,
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

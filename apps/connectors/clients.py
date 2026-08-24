@@ -31,6 +31,7 @@ _REFRESH_MARGIN_SECONDS = 60
 _PROVIDERS = {GOOGLE_DRIVE: GoogleDriveOAuth, JIRA: JiraOAuth}
 
 DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
+DRIVE_CHANGES_ENDPOINT = "https://www.googleapis.com/drive/v3/changes"
 DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 # Drive가 내 드라이브 최상단에 부여하는 별칭. 실제 폴더 id 대신 쓸 수 있다.
 DRIVE_ROOT_ID = "root"
@@ -270,6 +271,114 @@ def get_drive_folders(*, account_id: str, folder_ids: list[str]) -> list[dict[st
                 }
             )
     return folders
+
+
+#: 변경 한 번에 따라갈 페이지 수. 넘치면 남은 지점을 커서로 저장하고 멈춘다 —
+#: 다음 회차가 거기서 이어받으므로 놓치는 변경은 없다.
+_DRIVE_CHANGE_MAX_PAGES = 10
+
+
+def drive_start_page_token(*, account_id: str) -> str:
+    """**지금 이 시점**을 가리키는 커서.
+
+    커서가 없을 때 한 번 부른다. 연결 이전의 변경까지 거슬러 올라갈 이유가 없다 —
+    처음 등록은 폴더 스캔이 이미 하고, 여기서 필요한 것은 「이제부터」다.
+    """
+
+    credential = credential_for(account_id=account_id, connector_type=GOOGLE_DRIVE)
+    try:
+        response = requests.get(
+            f"{DRIVE_CHANGES_ENDPOINT}/startPageToken",
+            headers={"Authorization": f"Bearer {credential['access_token']}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        token = response.json().get("startPageToken")
+    except (requests.RequestException, ValueError) as exc:
+        raise OAuthError("Google Drive 변경 시작 지점을 받지 못했습니다.") from exc
+    if not isinstance(token, str) or not token:
+        raise OAuthError("Google Drive가 예상한 형식으로 응답하지 않았습니다.")
+    return token
+
+
+def list_drive_changes(*, account_id: str, page_token: str) -> tuple[list[dict[str, Any]], str]:
+    """`page_token` **이후의 변경**과, 다음에 쓸 커서.
+
+    폴더를 훑는 것과 근본이 다르다 — 폴더 스캔은 매번 전체 목록을 받아 우리 DB 와
+    대조해야 하고 폴더마다 API 를 2번 부른다(상한 200폴더). 이쪽은 **바뀐 것만**
+    오고, 아무것도 안 바뀌었으면 호출 1번이다. 그래서 자주 물어도 된다.
+
+    **범위가 폴더가 아니라 계정 전체다.** 이 계정이 볼 수 있는 Drive 의 모든
+    변경이 온다 — 우리 폴더 것만 고르는 것은 부르는 쪽 몫이다.
+
+    돌려주는 커서는 두 갈래다. 끝까지 따라갔으면 `newStartPageToken`(다음번엔
+    여기부터), 페이지 상한에 걸려 멈췄으면 `nextPageToken`(남은 지점). 어느
+    쪽이든 그대로 저장하면 다음 회차가 이어받는다.
+
+    `includeRemoved=true` 로 **지워진 것도 받는다.** 그게 이 API 를 쓰는 이유의
+    절반이다 — 폴더 스캔은 「목록에 없다」만 알 수 있어서 휴지통·완전삭제·폴더
+    밖 이동을 구별하지 못했다.
+    """
+
+    credential = credential_for(account_id=account_id, connector_type=GOOGLE_DRIVE)
+    headers = {"Authorization": f"Bearer {credential['access_token']}"}
+    changes: list[dict[str, Any]] = []
+    cursor = page_token
+
+    for _ in range(_DRIVE_CHANGE_MAX_PAGES):
+        try:
+            response = requests.get(
+                DRIVE_CHANGES_ENDPOINT,
+                headers=headers,
+                params={
+                    "pageToken": cursor,
+                    "pageSize": _DRIVE_PAGE_SIZE,
+                    "includeRemoved": "true",
+                    "fields": (
+                        "nextPageToken,newStartPageToken,"
+                        "changes(fileId,removed,file(id,name,mimeType,modifiedTime,trashed))"
+                    ),
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OAuthError("Google Drive 변경 목록을 받지 못했습니다.") from exc
+
+        page = payload.get("changes")
+        if not isinstance(page, list):
+            raise OAuthError("Google Drive가 예상한 형식으로 응답하지 않았습니다.")
+        for change in page:
+            if not isinstance(change, dict) or not isinstance(change.get("fileId"), str):
+                continue
+            file = change.get("file") or {}
+            changes.append(
+                {
+                    "file_id": change["fileId"],
+                    # 완전히 지워졌거나 접근 권한이 사라진 경우.
+                    "removed": bool(change.get("removed")),
+                    # 휴지통은 되돌릴 수 있어 완전삭제와 뜻이 다르다. 다만 우리
+                    # 쪽 처리는 같다 — 둘 다 「이 문서를 쓰지 않겠다」는 의도다.
+                    "trashed": bool(file.get("trashed")),
+                    "name": file.get("name"),
+                    "mime_type": file.get("mimeType"),
+                    "modified_at": file.get("modifiedTime"),
+                }
+            )
+
+        next_token = payload.get("nextPageToken")
+        if isinstance(next_token, str) and next_token:
+            cursor = next_token
+            continue
+
+        new_start = payload.get("newStartPageToken")
+        if not isinstance(new_start, str) or not new_start:
+            raise OAuthError("Google Drive가 다음 변경 지점을 주지 않았습니다.")
+        return changes, new_start
+
+    # 상한에 걸렸다. 남은 지점을 커서로 돌려주면 다음 회차가 이어받는다.
+    return changes, cursor
 
 
 def download_drive_file(*, account_id: str, file_id: str, mime_type: str | None) -> dict[str, Any]:

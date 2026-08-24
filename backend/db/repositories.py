@@ -922,6 +922,35 @@ class DocumentRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def doc_ids_for_source(*, account_id: str, file_ids: list[str]) -> list[str]:
+        """이 팀이 아는 Drive 파일 id 중 **아직 살아 있는** 문서의 `doc_id`.
+
+        Changes API 는 계정 전체의 변경을 주므로, 그중 우리가 등록해 둔 것만
+        골라야 한다. 이미 내려간 문서(`deleted = true`)는 뺀다 — 다시 지울 것이
+        없고, 되살리는 것은 `restore_reappeared` 가 따로 한다.
+        """
+
+        if not file_ids:
+            return []
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT doc_id FROM doc
+                    WHERE team_id = %s AND source_type = %s
+                      AND src_file_id = ANY(%s)
+                      AND deleted = false
+                    ORDER BY doc_id
+                    """,
+                    (team_id, DocumentRepository.DRIVE, file_ids),
+                )
+                return [row["doc_id"] for row in cursor.fetchall()]
+
+    @staticmethod
     def mark_removed_from_drive(*, account_id: str, doc_ids: list[str]) -> dict[str, int]:
         """고른 문서를 내리고 **파싱 산출물을 지운다.**
 
@@ -2608,6 +2637,58 @@ class ConnectorRepository:
                     WHERE account_id = %s AND connector_type = %s
                     """,
                     (account_id, connector_type),
+                )
+
+    @staticmethod
+    def drive_sync_target(account_id: str) -> dict[str, Any] | None:
+        """이 계정이 속한 팀의 Drive 연결과 그 커서. 없으면 `None`.
+
+        **연결은 계정 것이고 폴더는 팀 것이다.** 커넥터를 연결한 사람은 팀장
+        하나인데(`LEADER_ONLY`), 대화는 팀원 누구나 시작한다 — 팀원의 계정으로는
+        Drive 자격증명을 찾을 수 없다.
+
+        그래서 `team_folder.conn_id` 를 거쳐 간다. 폴더를 저장할 때 그 시점의
+        연결을 박아 두므로(`TeamFolderRepository.replace`), 그 값이 곧 「이 팀의
+        문서가 어느 연결에서 왔는가」다. 자격증명을 쓸 계정도 거기서 나온다.
+
+        폴더가 하나도 없으면 `None` 이다 — 읽을 폴더가 없으면 변경을 따라갈
+        이유도 없다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return None
+                cursor.execute(
+                    """
+                    SELECT DISTINCT cc.conn_id, cc.account_id, cc.sync_cursor
+                    FROM team_folder AS tf
+                    JOIN connector_conn AS cc ON cc.conn_id = tf.conn_id
+                    WHERE tf.team_id = %s
+                      AND cc.connector_type = %s
+                      AND cc.auth_status = 'CONNECTED'
+                    ORDER BY cc.conn_id
+                    LIMIT 1
+                    """,
+                    (team_id, ConnectorRepository.GOOGLE_DRIVE),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_sync_cursor(*, conn_id: str, cursor_value: str) -> None:
+        """다음 회차가 이어받을 지점을 저장한다.
+
+        **변경을 처리한 뒤에 저장한다.** 먼저 저장하면 처리 중에 죽었을 때 그
+        구간의 변경을 영영 다시 못 본다 — 같은 변경을 두 번 보는 쪽이 낫다
+        (재수신은 `content_hash` 가 같으면 아무것도 안 한다).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as connection_cursor:
+                connection_cursor.execute(
+                    "UPDATE connector_conn SET sync_cursor = %s WHERE conn_id = %s",
+                    (cursor_value, conn_id),
                 )
 
     @staticmethod

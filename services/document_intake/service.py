@@ -18,9 +18,19 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from apps.connectors.clients import download_drive_file, list_drive_files
+from apps.connectors.clients import (
+    download_drive_file,
+    drive_start_page_token,
+    list_drive_changes,
+    list_drive_files,
+)
 from apps.connectors.oauth import OAuthError
-from backend.db import AccountRepository, DocumentRepository, TeamFolderRepository
+from backend.db import (
+    AccountRepository,
+    ConnectorRepository,
+    DocumentRepository,
+    TeamFolderRepository,
+)
 from backend.db.document_pipeline import PipelineDocumentRepository
 from backend.db.errors import RepositoryError
 from backend.services.storage import build_key, content_hash
@@ -46,7 +56,11 @@ class IntakeResult:
     #: 등록만 된 문서는 목록에 보이지만 **문장 근거를 내지 못한다.**
     indexed: list[str] = field(default_factory=list)
     failed: list[dict[str, str]] = field(default_factory=list)
-    #: 저장소를 아예 못 읽은 경우. 이때는 위 셋이 모두 비어 있어도 「문서가
+    #: Drive 에서 지워져 우리도 내린 문서(2026-08-24). 폴더 스캔으로는 「목록에
+    #: 없다」까지만 알 수 있어 사람 확인이 필요했는데, Changes API 가 휴지통·
+    #: 완전삭제를 명시해 주면서 자동으로 처리할 수 있게 됐다.
+    removed: list[str] = field(default_factory=list)
+    #: 저장소를 아예 못 읽은 경우. 이때는 위 넷이 모두 비어 있어도 「문서가
     #: 없다」는 뜻이 아니다.
     storage_error: str | None = None
 
@@ -133,6 +147,97 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
     # 재수신이 `cur_revision` 을 바꾸면 옛 청크가 `b.revision = d.cur_revision` 에
     # 걸려 빠지고, 그 문서가 다시 색인 대기로 잡힌다 — 그래서 이 순서다.
     _index_all(account_id=account_id, team_id=team_id, result=result)
+    return result
+
+
+def sync_drive_changes(*, account_id: str) -> IntakeResult:
+    """Drive 의 **변경분만** 따라가 반영한다. 대화를 시작할 때 돈다.
+
+    폴더 스캔과 근본이 다르다. 스캔은 매번 전체 목록을 받아 우리 DB 와 대조해야
+    하고 폴더마다 API 를 2번 부른다(상한 200폴더) — 비싸서 자주 못 돌리고, 그래서
+    「폴더 설정을 저장할 때」만 돌고 있었다. Changes API 는 지난 지점 이후의 것만
+    주고 변화가 없으면 호출 1번이라, **대화마다 물어도 부담이 없다.**
+
+    `account_id` 는 **대화를 시작한 사람**이다. 자격증명 주인은 다를 수 있다 —
+    커넥터를 연결하는 것은 팀장뿐인데 대화는 팀원 누구나 시작한다. 그래서
+    `drive_sync_target` 이 `team_folder` 를 거쳐 이 팀의 연결과 그 소유 계정을
+    찾아 주고, 아래 호출은 전부 **그 계정**으로 한다.
+
+    **커서가 없으면 기준점만 잡고 끝낸다.** 연결 이전의 변경까지 거슬러 올라갈
+    이유가 없다 — 처음 등록은 폴더 스캔이 이미 했다.
+
+    삭제는 **사람에게 묻지 않고 바로 내린다**(2026-08-24). 폴더 스캔 시절에는
+    휴지통·완전삭제·폴더 밖 이동이 전부 「목록에 없다」로 보여 구별이 안 됐고,
+    그래서 사람 확인을 뒀다(`list_missing_from_drive`). Changes API 는 `removed`
+    와 `trashed` 를 명시하므로 그 모호함이 사라진다. 잘못 내려도 원본은 Drive 에
+    있고 `restore_reappeared` 가 되살린다 — 반대로 안 내리면 사용자가 지운 문서의
+    **본문 전체**가 우리 검색에 계속 남는다.
+
+    **이 함수는 실패해도 조용히 끝난다.** 대화를 시작하려는 사람이 문서 동기화
+    때문에 막히면 안 된다.
+    """
+
+    result = IntakeResult()
+
+    target = ConnectorRepository.drive_sync_target(account_id)
+    if target is None:
+        # 연결이 없거나 읽을 폴더가 없다. 따라갈 변경도 없다.
+        return result
+
+    owner = target["account_id"]
+    conn_id = target["conn_id"]
+
+    try:
+        if not target["sync_cursor"]:
+            ConnectorRepository.set_sync_cursor(
+                conn_id=conn_id, cursor_value=drive_start_page_token(account_id=owner)
+            )
+            return result
+
+        changes, next_cursor = list_drive_changes(
+            account_id=owner, page_token=target["sync_cursor"]
+        )
+    except (OAuthError, RepositoryError) as exc:
+        logger.warning("Drive 변경 동기화 실패: account=%s (%s)", account_id, exc)
+        result.storage_error = exc.__class__.__name__
+        return result
+
+    team_id = AccountRepository.team_id(owner)
+    if team_id is None:
+        return result
+
+    gone = [row["file_id"] for row in changes if row["removed"] or row["trashed"]]
+    touched = {
+        row["file_id"]: row["modified_at"]
+        for row in changes
+        if not (row["removed"] or row["trashed"]) and row["modified_at"]
+    }
+
+    try:
+        doc_ids = DocumentRepository.doc_ids_for_source(account_id=owner, file_ids=gone)
+        if doc_ids:
+            DocumentRepository.mark_removed_from_drive(account_id=owner, doc_ids=doc_ids)
+            result.removed = doc_ids
+    except (RepositoryError, Exception) as exc:  # noqa: BLE001
+        logger.exception("사라진 문서 정리 실패: account=%s", account_id)
+        result.failed.append({"file_name": "(삭제 반영)", "detail": exc.__class__.__name__})
+
+    if touched:
+        _refetch_changed(
+            account_id=owner, team_id=team_id, live_modified=touched, result=result
+        )
+        # 재수신이 `cur_revision` 을 바꾼 문서는 색인 대기로 돌아온다.
+        _index_all(account_id=owner, team_id=team_id, result=result)
+
+    # **커서는 마지막에 옮긴다.** 먼저 저장하면 처리 중에 죽었을 때 그 구간을
+    # 영영 다시 못 본다. 같은 변경을 두 번 보는 쪽이 낫다 — 재수신은
+    # `content_hash` 가 같으면 아무것도 하지 않는다.
+    try:
+        ConnectorRepository.set_sync_cursor(conn_id=conn_id, cursor_value=next_cursor)
+    except (RepositoryError, Exception) as exc:  # noqa: BLE001
+        logger.exception("동기화 커서 저장 실패: account=%s", account_id)
+        result.failed.append({"file_name": "(커서 저장)", "detail": exc.__class__.__name__})
+
     return result
 
 

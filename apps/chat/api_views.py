@@ -7,6 +7,7 @@
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+import threading
 import uuid
 from typing import Any
 
@@ -99,6 +100,42 @@ class AuthenticatedAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
 
+def _start_drive_change_sync(account_id: str) -> None:
+    """대화를 시작할 때 Drive 변경분을 따라간다. **응답을 붙잡지 않는다.**
+
+    **여기가 동기화의 시점이다**(2026-08-24). 그전에는 팀장이 「읽을 폴더」를
+    저장할 때만 돌아서, 문서를 고쳐도 설정에 다시 들어가지 않으면 반영되지
+    않았다. 폴더를 통째로 훑는 방식이라 비싸서 자주 돌릴 수 없었던 것이다.
+
+    Changes API 는 지난 지점 이후의 것만 주고 변화가 없으면 호출 1번이라, 대화를
+    열 때마다 물어도 부담이 없다.
+
+    ⚠ **대화 「중간에」 바뀐 것은 다음 대화에서 잡힌다.** 시점을 대화 시작으로
+    정한 결과다(PM 결정). 더 촘촘히 하려면 매 발화 앞이나 문서 검색 직전으로
+    옮기면 되는데, 그만큼 턴마다 지연이 붙는다.
+
+    실패해도 삼킨다 — 문서 동기화 때문에 대화를 못 열면 안 된다.
+    """
+
+    def run() -> None:
+        try:
+            from services.document_intake import sync_drive_changes
+
+            result = sync_drive_changes(account_id=account_id)
+            if result.refreshed or result.removed or result.failed:
+                logger.info(
+                    "Drive 변경 반영: account=%s 갱신=%d 내림=%d 실패=%d",
+                    account_id,
+                    len(result.refreshed),
+                    len(result.removed),
+                    len(result.failed),
+                )
+        except Exception:  # noqa: BLE001 — 대화 생성은 이미 끝났다.
+            logger.exception("Drive 변경 동기화 실패: account=%s", account_id)
+
+    threading.Thread(target=run, daemon=True, name=f"drive-sync-{account_id}").start()
+
+
 class ChatSessionListCreateAPIView(AuthenticatedAPIView):
     def get(self, request):
         try:
@@ -116,6 +153,7 @@ class ChatSessionListCreateAPIView(AuthenticatedAPIView):
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
+        _start_drive_change_sync(request.user.account_id)
         return Response(session_response(row), status=status.HTTP_201_CREATED)
 
 

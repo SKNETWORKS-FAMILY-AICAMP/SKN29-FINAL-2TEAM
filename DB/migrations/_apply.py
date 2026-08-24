@@ -60,6 +60,7 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "shared_team_id", "2026-08-18 개인 문서 팀 공유"),
     ("doc", "index_status", "2026-08-18 색인 상태"),
     ("doc", "index_detail", "2026-08-24 색인 실패 사유"),
+    ("connector_conn", "sync_cursor", "2026-08-24 증분 동기화 커서"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
     # `doc_meta` 는 2026-08-24 에 폐기했다(`2026-08-24_drop_doc_meta.sql`).

@@ -16,11 +16,25 @@
 근거를 낼 수 없는 문서가 계속 남는다. 「연결된 폴더를 검색한다」고 말하는
 이상 권한 범위 안의 문서는 결국 전부 색인되어 있어야 한다.
 
-요약 단계는 없애지 않았다. 검색은 여전히 요약으로 후보를 좁힌 뒤 청크로
-내려가고(`services/harness/registry`), 그 좁히기는 **전량 색인을 대신하는
-경로가 아니라** 그 앞단의 보조 수단이다.
+요약 단계는 같은 날 통째로 없앴다 — 전량 색인이 있으면 요약으로 좁힐 이유가
+없고, 색인된 본문에서 직접 찾는 쪽이 정확하다.
+
+동기화 시점은 둘이다. **폴더를 저장할 때**는 전체를 훑어 새 문서를 등록하고
+(`intake_connector_documents`), **대화를 시작할 때**는 Drive Changes API 로
+변경분만 따라간다(`sync_drive_changes`). 뒤엣것은 변화가 없으면 호출 1번이라
+자주 돌아도 부담이 없다.
 """
 
-from .service import IntakeResult, intake_connector_documents, promote_to_searchable
+from .service import (
+    IntakeResult,
+    intake_connector_documents,
+    promote_to_searchable,
+    sync_drive_changes,
+)
 
-__all__ = ["IntakeResult", "intake_connector_documents", "promote_to_searchable"]
+__all__ = [
+    "IntakeResult",
+    "intake_connector_documents",
+    "promote_to_searchable",
+    "sync_drive_changes",
+]

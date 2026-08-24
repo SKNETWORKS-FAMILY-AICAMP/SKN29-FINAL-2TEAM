@@ -16,6 +16,7 @@ from services.document_intake.service import (
     _fetch_originals,
     _index_all,
     _refetch_changed,
+    sync_drive_changes,
 )
 from services.document_pipeline.errors import PipelineConfigurationError, RunPodRequestError
 
@@ -225,3 +226,121 @@ class RefetchChangedTests(SimpleTestCase):
 
         download.assert_not_called()
         self.assertEqual(result.refreshed, [])
+
+
+def _change(file_id, *, removed=False, trashed=False, modified="2026-08-24T10:00:00Z"):
+    return {
+        "file_id": file_id,
+        "removed": removed,
+        "trashed": trashed,
+        "name": f"{file_id}.pdf",
+        "mime_type": "application/pdf",
+        "modified_at": modified,
+    }
+
+
+@patch("services.document_intake.service._index_all")
+@patch("services.document_intake.service._refetch_changed")
+@patch("services.document_intake.service.AccountRepository")
+@patch("services.document_intake.service.DocumentRepository")
+@patch("services.document_intake.service.list_drive_changes")
+@patch("services.document_intake.service.drive_start_page_token")
+@patch("services.document_intake.service.ConnectorRepository")
+class SyncDriveChangesTests(SimpleTestCase):
+    """대화를 시작할 때 Drive 변경분만 따라간다(2026-08-24).
+
+    폴더 스캔은 폴더마다 API 를 2번 부르므로 비싸서 「폴더 저장 시」만 돌았다.
+    Changes API 는 변화가 없으면 호출 1번이라 대화마다 물어도 된다.
+    """
+
+    TARGET = {"conn_id": "CN001", "account_id": "UA-LEADER", "sync_cursor": "TOKEN-1"}
+
+    def test_커서가_없으면_기준점만_잡고_끝낸다(
+        self, connectors, start_token, changes, documents, accounts, refetch, index
+    ):
+        """연결 이전의 변경까지 거슬러 올라갈 이유가 없다 — 처음 등록은 폴더
+        스캔이 이미 했다."""
+
+        connectors.drive_sync_target.return_value = dict(self.TARGET, sync_cursor=None)
+        start_token.return_value = "TOKEN-START"
+
+        sync_drive_changes(account_id="UA002")
+
+        changes.assert_not_called()
+        connectors.set_sync_cursor.assert_called_once_with(
+            conn_id="CN001", cursor_value="TOKEN-START"
+        )
+
+    def test_지워진_문서를_사람에게_묻지_않고_내린다(
+        self, connectors, start_token, changes, documents, accounts, refetch, index
+    ):
+        """Changes API 가 `removed`·`trashed` 를 명시하므로 폴더 스캔 시절의
+        모호함(휴지통·완전삭제·폴더 밖 이동 구별 불가)이 사라진다."""
+
+        connectors.drive_sync_target.return_value = dict(self.TARGET)
+        changes.return_value = ([_change("F1", removed=True), _change("F2", trashed=True)], "TOKEN-2")
+        accounts.team_id.return_value = "TM001"
+        documents.doc_ids_for_source.return_value = ["DC001", "DC002"]
+
+        result = sync_drive_changes(account_id="UA002")
+
+        documents.mark_removed_from_drive.assert_called_once_with(
+            account_id="UA-LEADER", doc_ids=["DC001", "DC002"]
+        )
+        self.assertEqual(result.removed, ["DC001", "DC002"])
+        refetch.assert_not_called()
+
+    def test_고쳐진_문서는_재수신_경로로_넘긴다(
+        self, connectors, start_token, changes, documents, accounts, refetch, index
+    ):
+        connectors.drive_sync_target.return_value = dict(self.TARGET)
+        changes.return_value = ([_change("F1")], "TOKEN-2")
+        accounts.team_id.return_value = "TM001"
+        documents.doc_ids_for_source.return_value = []
+
+        sync_drive_changes(account_id="UA002")
+
+        self.assertEqual(refetch.call_args.kwargs["live_modified"], {"F1": "2026-08-24T10:00:00Z"})
+        # 재수신이 revision 을 바꾸면 색인 대기로 돌아온다 — 그래서 이어서 돈다.
+        index.assert_called_once()
+
+    def test_커서는_처리가_끝난_뒤에_옮긴다(
+        self, connectors, start_token, changes, documents, accounts, refetch, index
+    ):
+        """먼저 저장하면 처리 중에 죽었을 때 그 구간을 영영 다시 못 본다.
+        같은 변경을 두 번 보는 쪽이 낫다 — 해시가 같으면 아무것도 안 한다."""
+
+        order = []
+        connectors.drive_sync_target.return_value = dict(self.TARGET)
+        changes.return_value = ([_change("F1")], "TOKEN-2")
+        accounts.team_id.return_value = "TM001"
+        documents.doc_ids_for_source.return_value = []
+        refetch.side_effect = lambda **kw: order.append("refetch")
+        connectors.set_sync_cursor.side_effect = lambda **kw: order.append("cursor")
+
+        sync_drive_changes(account_id="UA002")
+
+        self.assertEqual(order, ["refetch", "cursor"])
+
+    def test_연결이나_폴더가_없으면_아무것도_안_한다(
+        self, connectors, start_token, changes, documents, accounts, refetch, index
+    ):
+        connectors.drive_sync_target.return_value = None
+
+        result = sync_drive_changes(account_id="UA002")
+
+        changes.assert_not_called()
+        start_token.assert_not_called()
+        self.assertEqual(result.removed, [])
+
+    def test_자격증명이_막히면_대화를_막지_않고_끝낸다(
+        self, connectors, start_token, changes, documents, accounts, refetch, index
+    ):
+        connectors.drive_sync_target.return_value = dict(self.TARGET)
+        changes.side_effect = OAuthError("Google Drive 인증이 만료되었습니다.")
+
+        result = sync_drive_changes(account_id="UA002")
+
+        self.assertEqual(result.storage_error, "OAuthError")
+        documents.mark_removed_from_drive.assert_not_called()
+        connectors.set_sync_cursor.assert_not_called()
