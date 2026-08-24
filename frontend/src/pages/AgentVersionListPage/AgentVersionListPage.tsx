@@ -18,11 +18,7 @@ import { josa } from '../../utils/josa';
 import styles from './AgentVersionListPage.module.css';
 
 /**
- * 새 버전 스키마(`agents`/`agent_versions`) 목록 — `/agents`(옛 비버전 화면)와
- * 나란히 존재한다.
- *
- * DRAFT(개인 탭)는 소유자만 Chat에서 부를 수 있다(2026-08-18,
- * `_resolve_session_agent`가 `owner_account_id` 일치를 확인) — 팀에
+ * 에이전트 목록. DRAFT(개인 탭)는 소유자만 Chat에서 부를 수 있다 — 팀에
  * 공유하려면 활성화해서 ACTIVE(팀 공유 탭)로 넘겨야 한다.
  */
 export default function AgentVersionListPage() {
@@ -31,8 +27,7 @@ export default function AgentVersionListPage() {
   const { showToast } = useToast();
   const token = loadSessionToken();
   const session = useSession();
-  /** 세 탭 — 개인/팀 공유는 기존 그대로, 즐겨찾기는 2026-08-18 추가.
-   * 즐겨찾기는 개인·팀 공유와 무관하게 이 계정이 별을 누른 것만 모은
+  /** 즐겨찾기는 개인·팀 공유와 무관하게 이 계정이 별을 누른 것만 모은
    * 가로 축이라 status 기반 필터와 나란히 두지 않고 별도 갈래로 뺐다. */
   const activeTab: 'personal' | 'team' | 'favorites' =
     location.pathname === PATHS.agentVersionsTeam
@@ -76,17 +71,12 @@ export default function AgentVersionListPage() {
    * 편집·삭제 대상처럼 보이게 하지 않는다. */
   const visibleAgents = useMemo(() => agents.filter((agent) => !agent.is_default_chat), [agents]);
 
-  /** "개인" = DRAFT(서버가 이미 본인 것만 돌려준다, `list_for_team()` 참고).
-   * "팀 공유" = ACTIVE·DISABLED(한 번이라도 활성화된 적이 있으면 팀 전체가 본다,
-   * 2026-08-18 결정 — 사용 중지해도 팀 공유 쪽에 남는다). "즐겨찾기"(2026-08-18)
-   * 는 상태와 무관하게 `is_favorite`(이 계정 기준)만 본다 — 개인 DRAFT든
-   * 팀 공유 ACTIVE/DISABLED든 별을 눌렀으면 여기 모인다.
+  /** "개인" = DRAFT(서버가 본인 것만 돌려준다). "팀 공유" = ACTIVE·DISABLED
+   * (한 번이라도 활성화된 적이 있으면 팀 전체가 본다 — 중지해도 남는다).
+   * "즐겨찾기"는 상태와 무관하게 `is_favorite`만 본다.
    *
-   * 팀 공유 탭에서는 내가 만든 것을 맨 위로 올린다 — 관리 버튼이 뜨는(=내가
-   * 손댈 수 있는) 것부터 보이는 게 자연스럽다. 개인·즐겨찾기 탭은 정렬할
-   * 이유가 없다(개인은 어차피 전부 내 것, 즐겨찾기는 상태가 안 섞여도
-   * 이미 소수다). `Array.sort`는 안정 정렬이라 같은 그룹 안에서는 서버가
-   * 정한 순서(이름순)가 그대로 유지된다. */
+   * 팀 공유 탭은 내가 만든 것을 맨 위로 올린다(관리 버튼이 뜨는 것부터).
+   * `Array.sort`는 안정 정렬이라 같은 그룹 안 순서(이름순)는 유지된다. */
   const tabAgents = useMemo(() => {
     if (activeTab === 'favorites') {
       return visibleAgents.filter((agent) => agent.is_favorite);
@@ -151,8 +141,7 @@ export default function AgentVersionListPage() {
       const updated = await activateAgentVersion(token, agent.agent_id);
       replaceAgent(updated);
       // 이 버전이 참조하는 개인 DRAFT 서브 에이전트가 있으면 서버가 같이
-      // 활성화하고 이름을 실어 보낸다(2026-08-18) — 조용히 켜지면 사람이
-      // 모르니 알린다.
+      // 활성화하고 이름을 실어 보낸다 — 조용히 켜지면 사람이 모르니 알린다.
       if (updated.cascaded_subagent_names?.length) {
         showToast(
           `‘${updated.name}’${josa(updated.name, '을/를')} 활성화했습니다. 서브 에이전트 ‘${updated.cascaded_subagent_names.join('’·‘')}’도 초안 상태였어서 함께 활성화했습니다.`,
@@ -182,9 +171,8 @@ export default function AgentVersionListPage() {
     }
   }
 
-  /** 별 토글 — 활성화·중지처럼 재검증이 필요한 상태 전이가 아니라 눈에
-   * 바로 반영하고(낙관적 갱신), 실패하면 되돌린다. `pendingId`를 안 쓴다 —
-   * 그건 다른 버튼들이 쓰는 잠금이라 즐겨찾기까지 물고 늘어지면 오히려
+  /** 별 토글 — 재검증이 필요 없어 눈에 바로 반영하고(낙관적 갱신), 실패하면
+   * 되돌린다. `pendingId`(다른 버튼들의 잠금)는 안 쓴다 — 물고 늘어지면
    * 굼떠 보인다. */
   async function toggleFavorite(agent: AgentVersionSummary) {
     if (!token) return;
@@ -225,8 +213,7 @@ export default function AgentVersionListPage() {
         )}
 
         {/* 저장만 하면 "개인"에 머문다 — 활성화해야 "팀 공유"로 넘어간다.
-            "즐겨찾기"(2026-08-18)는 개인·팀 공유와 별개 갈래 — 상태와 무관하게
-            이 계정이 별을 누른 것만 모은다. */}
+            "즐겨찾기"는 개인·팀 공유와 별개 갈래다. */}
         <nav className={styles.tabBar}>
           <NavLink
             to={PATHS.agentVersions}
@@ -266,9 +253,8 @@ export default function AgentVersionListPage() {
 
         <div className={styles.grid}>
           {tabAgents.map((agent) => {
-            // DISABLED는 Chat이 못 받는다(usable = ACTIVE | DRAFT, ChatPage.tsx) —
-            // 눌러서 넘어가 봐야 그 화면 드롭다운에 없는 에이전트라 아무것도
-            // 못 한다. 카드 자체를 안 눌리게 막는다(2026-08-18).
+            // DISABLED는 Chat이 못 받는다(usable = ACTIVE | DRAFT) — 카드
+            // 자체를 안 눌리게 막는다.
             const chattable = agent.status !== 'DISABLED';
             return (
             <article
@@ -287,9 +273,8 @@ export default function AgentVersionListPage() {
                   : undefined
               }
             >
-              {/* 카드 자체가 챗으로 넘어가는 버튼이라(2026-08-18), 안에 있는
-                  버튼들은 클릭이 카드까지 올라가지 않게 막는다 — 안 막으면
-                  "사용 중지"를 누르는 동시에 챗으로 튕겨 나간다. */}
+              {/* 카드 자체가 챗으로 넘어가는 버튼이라, 안에 있는 버튼들은 클릭이
+                  카드까지 올라가지 않게 막는다. */}
               <button
                 type="button"
                 className={styles.favoriteButton}

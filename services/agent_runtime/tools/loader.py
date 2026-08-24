@@ -58,23 +58,17 @@ def inject_runtime_context(
     return resolved
 
 
-#: MCP 도구 tool_ref 접두사. `DB/migrations/2026-08-11_agent_platform.sql`,
-#: `services/harness/registry.py`와 같은 규칙이라 바뀌면 세 곳을 같이 고쳐야 한다.
-#:
-#: "이 호출이 MCP인가"를 판단하는 곳(`middleware/tool_timeout.py` 등)은 문자열을
-#: 다시 적지 않고 이 상수를 import해서 쓴다.
+#: MCP 도구 tool_ref 접두사. 세 곳(여기, DB 마이그레이션, harness registry)이
+#: 같은 규칙을 공유하니 바뀌면 같이 고친다.
 MCP_TOOL_REF_PREFIX = "mcp:"
 
 
 def model_safe_tool_name(tool_ref: str) -> str:
     """모델(LLM 함수 호출 API)에게 실제로 보낼 함수 이름.
 
-    OpenAI 함수 이름은 `^[a-zA-Z0-9_-]+$`만 허용해 `mcp:<id>` 처럼 콜론이 든
-    tool_ref를 그대로 못 쓴다 — 레거시 `services/harness/runner.py`의
-    `model_name_for()`와 동일 근거(2026-08-12 실측: `Invalid 'tools[N].name':
-    string does not match pattern`). 저장소 규칙(tool_ref엔 콜론)은 바꾸지
-    않고, 모델에게 나가는 이름만 여기서 바꾼다 — 되돌리는 쪽은
-    `tool_ref_from_model_name()`.
+    OpenAI 함수 이름은 `^[a-zA-Z0-9_-]+$`만 허용해 `mcp:<id>`의 콜론을 못 쓴다.
+    저장소 규칙(tool_ref엔 콜론)은 그대로 두고 모델에게 나가는 이름만 바꾼다
+    — 되돌리는 쪽은 `tool_ref_from_model_name()`.
     """
     return tool_ref.replace(":", "__")
 
@@ -98,16 +92,12 @@ class ToolLoader:
         context: RuntimeContext,
         agent_model: str | None = None,
     ) -> tuple[Tool, ...]:
-        """`agent_model`은 이 요청을 부른 에이전트가 실제로 고른 모델 문자열이다
-        (`AgentDefinition.model`) — `RuntimeContext`엔 없는 값이라 별도 인자로
-        받는다. 지금은 `tools/adapters.py`의 `task_extraction` 하나만 이 값을
-        쓴다(레거시 `services/harness/runner.py`의 `_injected()`가 같은 이유로
-        `agent.get("model")`을 넘기는 것과 동일한 근거).
+        """요청된 tool_refs를 실제 `Tool` 목록으로 바꾼다.
 
-        MCP tool_ref(`mcp:<id>` 접두사, 2026-08-14 연결)는 요청된 tool_refs 중
-        하나라도 그 접두사면 팀의 등록된 MCP 도구를 함께 조회한다 — 내장
-        도구만 쓰는 에이전트가 매 실행마다 불필요한 DB 왕복을 하지 않도록,
-        실제로 필요할 때만 조회한다.
+        `agent_model`은 그 에이전트가 실제로 고른 모델 문자열이다
+        (`AgentDefinition.model`) — `tools/adapters.py`의 `task_extraction`만
+        이 값을 쓴다. `mcp:` 접두사가 하나라도 있을 때만 팀의 MCP 도구를
+        조회한다(불필요한 DB 왕복을 피한다).
         """
         # 지연 import — `services.harness.registry`의 무거운 의존성 사슬
         # (apps.connectors, backend.services.hr, services.mcp 등)을 이 모듈이
@@ -122,19 +112,9 @@ class ToolLoader:
 
         missing = [ref for ref in tool_refs if ref not in available]
 
-        # **없는 MCP 도구는 건너뛴다**(2026-08-22). 운영자가 MCP 서버를 지우거나
-        # 옮기면 그 서버의 `mcp:<id>` 참조가 이미 발행된 `agent_versions`에 남는데,
-        # `agent_versions`는 불변이라 그 자리에서 지울 수가 없다(02 §5.2). 예전에는
-        # 레거시 `agent_tool`에서 참조를 같이 지워 줘서 이 상황이 안 생겼지만,
-        # 2026-08-22에 레거시 스키마를 폐기하면서 그 청소부가 없어졌다.
-        #
-        # 그래서 정리를 저장 시점이 아니라 **실행 시점**에 한다. 없는 서버의 도구
-        # 하나 때문에 에이전트 전체가 못 도는 것보다, 그 도구만 빼고 도는 편이 낫다
-        # — 사라진 것은 관리자가 내린 서버지 에이전트 정의의 잘못이 아니다.
-        #
-        # **내장 도구는 그대로 막는다.** 그건 운영 변경이 아니라 정의가 틀린
-        # 것이고(오타·삭제된 tool id), 조용히 빼면 에이전트가 이유 없이 다르게
-        # 행동한다.
+        # 없는 MCP 도구는 건너뛴다 — `agent_versions`가 불변이라 발행된 참조를
+        # 지울 자리가 없다(운영자가 서버를 지운 것뿐, 정의 잘못이 아니다).
+        # 내장 도구는 정의가 틀린 것(오타·삭제된 id)이라 그대로 막는다.
         missing_mcp = [ref for ref in missing if ref.startswith(MCP_TOOL_REF_PREFIX)]
         missing_builtin = [ref for ref in missing if not ref.startswith(MCP_TOOL_REF_PREFIX)]
 

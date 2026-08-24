@@ -29,10 +29,8 @@ export interface SubagentPickerModalProps {
 }
 
 /**
- * 서브 에이전트 선택 팝업(2026-08-18) — 예전엔 `<Select>`로 하나씩 고르는
- * 토글식이었는데, 카드 형태로 바꾸고 에이전트 목록 화면과 같은 개인/팀
- * 공유/즐겨찾기 세 탭으로 나눴다(지훈 요청). `ToolPickerModal`과 같은
- * 자리 — 카드 클릭이 곧 토글이라 별도 "추가" 버튼이 없다.
+ * 서브 에이전트 선택 팝업 — 에이전트 목록 화면과 같은 개인/팀 공유/즐겨찾기
+ * 세 탭. 카드 클릭이 곧 토글이라 별도 "추가" 버튼이 없다.
  */
 export function SubagentPickerModal({
   open,
