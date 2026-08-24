@@ -60,10 +60,10 @@ export interface LiveChat {
   /** 상한에 걸려 멈춘 경우. 성공처럼 뭉개지 않는다. */
   stoppedReason: string | null;
   /**
-   * `title` 은 **보내기 자체가 실패한 경우**에만 채운다 — 기본 머리말이
-   * 「요청을 끝내지 못했습니다」인데, 가드레일이 막았을 때는 시작조차 안 했다.
+   * `title` 은 **보내기 자체가 실패한 경우**에만 채운다. `null` 이면 머리말을
+   * 아예 안 그린다 — 사유 한 줄이 이미 다 말하기 때문이다.
    */
-  error: { detail?: string; errorCode?: string; toolRef?: string; title?: string } | null;
+  error: { detail?: string; errorCode?: string; toolRef?: string; title?: string | null } | null;
   /** Jira 현황. 도구가 이벤트로 준 것을 화면이 카드로 그린다. */
   jira: { projectKey: string; counts: Record<string, number>; issues: JiraIssue[] } | null;
   /**

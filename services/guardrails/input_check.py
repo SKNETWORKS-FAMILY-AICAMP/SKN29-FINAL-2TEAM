@@ -26,7 +26,10 @@ logger = logging.getLogger(__name__)
 
 #: 무엇에 걸렸는지 **종류만** 말한다. 점수·임계값·내부 규칙명까지 알려주면
 #: 우회 힌트가 된다 — 사용자가 다시 쓸 수 있을 만큼만 알린다.
-BLOCKED_MESSAGE = "등록된 가드레일이 이 발화를 막았습니다."
+#: 사유를 못 알아봤을 때. **「가드레일」·「발화」는 쓰지 않는다** — 화면 어디에도
+#: 없는 개발자 말이다(2026-08-24 PM 지적). 아래 사유들과 같은 형식으로 둬서,
+#: 뭉뚱그릴 때도 문체가 튀지 않게 한다.
+BLOCKED_MESSAGE = "보낼 수 없는 표현으로 판단됐습니다"
 #: 가드레일에 닿지 못했는데 그 팀이 「대화 차단」을 골랐을 때. **왜 막혔는지
 #: 사람 말로 말한다** — 사용자가 자기 발화를 고쳐도 소용없는 상황이라, 표현을
 #: 바꾸라고 하면 안 된다. 화면이 쓰는 말(「연결 실패」)에 맞춘다.
@@ -39,6 +42,12 @@ _REASON_LABELS = {
     "NSFW Text": "부적절한 표현으로 판단됐습니다",
     "Off Topic Prompts": "업무 범위를 벗어난 것으로 판단됐습니다",
     "blocklist": "차단 목록에 있는 표현이 포함됐습니다",
+    # Azure Content Safety 의 카테고리. 이게 없어서 Azure 가 막으면 사유가
+    # 뭉뚱그려 나왔다(2026-08-24 운영에서 확인).
+    "Hate": "혐오 표현으로 판단됐습니다",
+    "Violence": "폭력적인 표현으로 판단됐습니다",
+    "SelfHarm": "자해와 관련된 표현으로 판단됐습니다",
+    "Sexual": "성적인 표현으로 판단됐습니다",
 }
 
 
@@ -46,9 +55,8 @@ def _blocked_message(detail: dict[str, Any]) -> str:
     """사용자에게 보여줄 사유. 못 알아보면 뭉뚱그린 문장으로 돌아간다."""
 
     key = detail.get("guardrail") or detail.get("rule") or detail.get("category")
-    label = _REASON_LABELS.get(str(key)) if key else None
-    if label is None:
-        return BLOCKED_MESSAGE
+    label = (_REASON_LABELS.get(str(key)) if key else None) or BLOCKED_MESSAGE
+    # 뭉뚱그릴 때도 **무엇을 하면 되는지**는 말한다.
     return f"{label}. 표현을 바꿔 다시 보내 주세요."
 
 

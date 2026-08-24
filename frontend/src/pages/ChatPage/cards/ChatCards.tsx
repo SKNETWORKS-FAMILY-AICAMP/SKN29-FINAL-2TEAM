@@ -650,10 +650,12 @@ export interface ErrorCardProps {
   detail?: string;
   /**
    * 머리말. 기본은 「요청을 끝내지 못했습니다」 — **돌다가** 실패한 경우다.
-   * 보내기 자체가 막힌 경우(가드레일·네트워크)는 아직 시작도 안 했으므로
-   * 부르는 쪽이 바꿔 준다.
+   *
+   * **`null` 이면 머리말을 안 그린다**(2026-08-24 PM 지적). 보내기가 막힌
+   * 경우는 사유 한 줄이면 충분한데, 머리말을 얹으면 같은 말을 두 번 하는
+   * 꼴이 된다. 그때는 경고 아이콘이 사유 줄로 내려간다.
    */
-  title?: string;
+  title?: string | null;
   /** 백엔드 오류 코드 계약(11_MCP_설계 §6): 401 · 429 · validation · timeout · unreachable. */
   errorCode?: string;
   /**
@@ -714,14 +716,26 @@ export function ErrorCard({ detail, title, errorCode, answered, onRetry, onOpenS
 
   return (
     <section className={styles.errorCard}>
-      <span className={styles.errorTitle}>
-        <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
-        {title ?? '요청을 끝내지 못했습니다'}
-      </span>
+      {title !== null && (
+        <span className={styles.errorTitle}>
+          <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
+          {title ?? '요청을 끝내지 못했습니다'}
+        </span>
+      )}
       {/* **「지금까지 정리된 내용은 위에 그대로 남아 있습니다」를 걷었다**
           (2026-08-18 PM). 정리된 것이 하나도 없을 때도 그 말이 나왔다 —
           아무것도 없는 화면을 두고 「위에 남아 있다」고 하면 거짓말이다. */}
-      {body && <p className={styles.errorBody}>{body}</p>}
+      {body &&
+        (title === null ? (
+          // 머리말이 없으면 이 줄이 카드의 첫 줄이다 — 경고 표시를 잃지 않게
+          // 아이콘을 여기로 옮긴다.
+          <span className={styles.errorTitle}>
+            <Icon name="triangle-alert" size={18} color="var(--color-danger)" />
+            {body}
+          </span>
+        ) : (
+          <p className={styles.errorBody}>{body}</p>
+        ))}
       <div className={styles.errorActions}>
         {showSettings && (
           <Button size="sm" variant="outline" onClick={onOpenSettings}>

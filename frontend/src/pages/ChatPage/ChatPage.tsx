@@ -663,9 +663,10 @@ export default function ChatPage() {
           ? {
               ...prev,
               error: {
-                // 「끝내지」가 아니라 「보내지」다 — 이 갈래는 스트림이 시작도
-                // 하기 전이다(가드레일이 막았거나, 요청 자체가 못 갔다).
-                title: '보내지 못했습니다',
+                // **머리말을 안 그린다**(2026-08-24 PM 지적). 이 갈래는 사유
+                // 한 줄이 이미 무슨 일이 있었는지 다 말한다 — 그 위에 「보내지
+                // 못했습니다」를 얹으면 같은 말을 두 번 한다.
+                title: null,
                 detail: error instanceof ApiError ? error.message : '요청을 보내지 못했습니다.',
               },
             }

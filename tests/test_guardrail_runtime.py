@@ -431,3 +431,40 @@ class AzureCustomerSettingsTests(SimpleTestCase):
         azure.check(text="x", config={"endpoint": "https://a.b"}, credential={"api_key": "k"})
 
         self.assertNotIn("blocklistNames", post.call_args[1]["json"])
+
+
+@patch("services.guardrails.input_check.GuardrailEventRepository")
+@patch("services.guardrails.input_check.GuardrailProviderRepository")
+class BlockedMessageTests(SimpleTestCase):
+    """사용자에게 나가는 차단 문구.
+
+    **「가드레일」·「발화」는 쓰지 않는다** — 화면 어디에도 없는 개발자 말이다
+    (2026-08-24 PM 지적). 그리고 어느 갈래로 가든 **무엇을 하면 되는지**는
+    말한다.
+    """
+
+    @patch("services.guardrails.input_check.check")
+    def _blocked(self, detail, called, repo, _events):
+        repo.for_team.return_value = provider()
+        called.return_value = GuardrailVerdict(blocked=True, detail=detail)
+        return check_user_input("x", team_id="TE001").blocked_reason
+
+    def test_azure_카테고리도_사람_말로_바꾼다(self, repo, events):
+        """이게 없어서 Azure 가 막으면 사유가 뭉뚱그려 나왔다(운영에서 확인)."""
+
+        reason = self._blocked({"category": "Violence"}, repo=repo, _events=events)
+
+        self.assertIn("폭력적인 표현", reason)
+        self.assertIn("표현을 바꿔 다시 보내 주세요", reason)
+
+    def test_모르는_사유도_같은_형식으로_말한다(self, repo, events):
+        reason = self._blocked({"category": "처음 보는 것"}, repo=repo, _events=events)
+
+        self.assertIn("보낼 수 없는 표현으로 판단됐습니다", reason)
+        self.assertIn("표현을 바꿔 다시 보내 주세요", reason)
+
+    def test_개발자_말은_안_쓴다(self, repo, events):
+        for detail in ({"category": "Violence"}, {"category": "모르는 것"}, {"guardrail": "Jailbreak"}):
+            reason = self._blocked(detail, repo=repo, _events=events)
+            self.assertNotIn("가드레일", reason)
+            self.assertNotIn("발화", reason)
