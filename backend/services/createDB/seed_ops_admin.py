@@ -1,6 +1,6 @@
 """운영자 계정 시드.
 
-`grant_admin.py`·`seed_agents.py`와 같이 API가 아니라 스크립트로만 실행한다.
+`grant_admin.py`와 같이 API가 아니라 스크립트로만 실행한다.
 이유도 같다 — **운영자 승격 경로를 API 표면에 두지 않는다**(`grant_admin.py`
 주석 참고). 이 스크립트는 그 결정을 지키면서 `reset_demo.sql` 직후의 불편만
 없앤다.

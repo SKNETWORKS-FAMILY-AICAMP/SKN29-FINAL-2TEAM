@@ -102,7 +102,8 @@ export default function OpsUsagePage() {
 
   const { runs, tools, guardrail } = data;
   const runRate = pct(runs.runs_done, runs.runs);
-  const toolRate = pct(tools.calls_ok, tools.calls);
+  const completedToolCalls = tools.calls_ok + tools.calls_failed;
+  const toolRate = pct(tools.calls_ok, completedToolCalls);
 
   return (
     <div className={styles.page}>
@@ -125,8 +126,8 @@ export default function OpsUsagePage() {
         />
         <OpsSummaryCard
           label="도구 호출 성공률"
-          value={rate(tools.calls_ok, tools.calls)}
-          detail={`${num(tools.calls_ok)} / ${num(tools.calls)}회`}
+          value={rate(tools.calls_ok, completedToolCalls)}
+          detail={`${num(tools.calls_ok)} / ${num(completedToolCalls)}회 (실행 완료 기준)`}
           tone={rateTone(toolRate)}
         />
         <OpsSummaryCard
@@ -151,7 +152,7 @@ export default function OpsUsagePage() {
         {data.by_team.length === 0 ? (
           <OpsEmpty message="이 기간에 실행이 없습니다." />
         ) : (
-          <OpsDataTable minWidth={760}>
+          <OpsDataTable minWidth={920}>
             <thead>
               <tr>
                 <th>팀</th>
@@ -219,7 +220,8 @@ export default function OpsUsagePage() {
                 <th style={{ width: 90 }}>호출</th>
                 <th style={{ width: 110 }}>성공률</th>
                 <th style={{ width: 110 }}>평균 소요</th>
-                <th style={{ width: 120 }}>안 닫힌 호출</th>
+                <th style={{ width: 100 }}>승인 대기</th>
+                <th style={{ width: 100 }}>사용자 거부</th>
               </tr>
             </thead>
             <tbody>
@@ -227,11 +229,12 @@ export default function OpsUsagePage() {
                 <tr key={row.tool_ref}>
                   <td>{row.tool_ref}</td>
                   <td>{num(row.calls)}</td>
-                  <td>{rate(row.calls_ok, row.calls)}</td>
+                  <td>{rate(row.calls_ok, row.calls_ok + row.calls_failed)}</td>
                   <td>{row.avg_ms === null ? '-' : `${num(row.avg_ms)}ms`}</td>
-                  {/* PENDING 은 성공도 실패도 아니다. 0 이 아니면 스트림이 중간에
-                      끊긴 것이라 배선을 봐야 한다 — 성공률에 섞으면 안 보인다. */}
+                  {/* PENDING은 승인 대기/실행 중, REJECTED는 사용자 결정으로
+                      실행되지 않은 호출이다. 둘 다 성공률 분모에서 제외한다. */}
                   <td>{row.calls_pending > 0 ? num(row.calls_pending) : '-'}</td>
+                  <td>{row.calls_rejected > 0 ? num(row.calls_rejected) : '-'}</td>
                 </tr>
               ))}
             </tbody>

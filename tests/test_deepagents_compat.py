@@ -195,6 +195,24 @@ class BuildGeneralPurposeSpecTests(SimpleTestCase):
 
         self.assertNotIn("tools", GENERAL_PURPOSE_SUBAGENT)
 
+    def test_no_skills_arg_omits_skills_key(self):
+        """2026-08-21, Skill 배선 — 안 넘기면(기본값) `"skills"` 키 자체가 없어야
+        deepagents가 이 GP에 SkillsMiddleware를 안 붙인다(하위 호환)."""
+        spec = build_general_purpose_spec()
+
+        self.assertNotIn("skills", spec)
+
+    def test_skills_arg_sets_skills_key(self):
+        spec = build_general_purpose_spec(skills=["/skills/personal/", "/skills/team/"])
+
+        self.assertEqual(spec["skills"], ["/skills/personal/", "/skills/team/"])
+        self.assertEqual(spec["name"], GENERAL_PURPOSE_SUBAGENT["name"])
+
+    def test_does_not_mutate_original_general_purpose_subagent_with_skills(self):
+        build_general_purpose_spec(skills=["/skills/personal/"])
+
+        self.assertNotIn("skills", GENERAL_PURPOSE_SUBAGENT)
+
 
 class DefaultGeneralPurposePromptTests(SimpleTestCase):
     def test_returns_deepagents_own_default_gp_system_prompt(self):
@@ -237,6 +255,24 @@ class CreateRootGraphTests(SimpleTestCase):
 
         _args, kwargs = mock_create.call_args
         self.assertEqual(kwargs["middleware"], fake_middleware)
+
+    def test_no_skills_arg_omits_skills_kwarg(self):
+        """2026-08-21, Skill 배선 — 빈 시퀀스면(기본값) `create_deep_agent()`에
+        `skills` 자체를 안 넘긴다(하위 호환)."""
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(model=Mock(), system_prompt="p")
+
+        _args, kwargs = mock_create.call_args
+        self.assertNotIn("skills", kwargs)
+
+    def test_skills_arg_passes_through_to_create_deep_agent(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(), system_prompt="p", skills=["/skills/personal/", "/skills/team/"]
+            )
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["skills"], ["/skills/personal/", "/skills/team/"])
 
 
 class CreateRootGraphMemorySystemPromptTests(SimpleTestCase):
@@ -318,6 +354,119 @@ class CreateRootGraphMemorySystemPromptTests(SimpleTestCase):
         _args, kwargs = mock_create.call_args
         self.assertEqual(kwargs["middleware"][0], fake_existing)
         self.assertEqual(len(kwargs["middleware"]), 2)
+
+
+class CreateRootGraphSkillsSystemPromptTests(SimpleTestCase):
+    """`skills_system_prompt`(2026-08-22) 배선 — `memory_system_prompt`와 같은
+    이름-치환 방식. `create_deep_agent()`는 SkillsMiddleware의 system_prompt를
+    바꿀 공개 파라미터가 없어서(`skills=` 경로 목록만 받는다) 커스텀
+    `SkillsMiddleware`를 `middleware=` 목록에 끼워 넣는 방식으로 우회한다.
+    """
+
+    #: `SkillsMiddleware.__init__`이 요구하는 세 포맷 슬롯을 전부 담아야
+    #: `ValueError`(필수 슬롯 누락)가 안 난다(`deepagents/middleware/skills.py`
+    #: 실측).
+    _FAKE_PROMPT = "안내 {skills_locations}{skills_load_warnings}{skills_list} 나머지"
+
+    def test_no_skills_system_prompt_does_not_add_skills_middleware(self):
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(), system_prompt="p", skills=["/skills/personal/"], backend=Mock(name="backend")
+            )
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_skills_system_prompt_without_backend_is_ignored(self):
+        """backend가 없으면(=스킬 자체를 안 쓰면) skills_system_prompt만 있어도 무시한다."""
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(), system_prompt="p", skills=["/skills/personal/"], skills_system_prompt=self._FAKE_PROMPT
+            )
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_skills_system_prompt_without_skills_sources_is_ignored(self):
+        """skills 소스가 없으면(스킬 자체가 없으면) backend가 있어도 무시한다."""
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(), system_prompt="p", backend=Mock(name="backend"), skills_system_prompt=self._FAKE_PROMPT
+            )
+
+        _args, kwargs = mock_create.call_args
+        self.assertEqual(kwargs["middleware"], [])
+
+    def test_skills_system_prompt_with_backend_and_sources_appends_custom_skills_middleware(self):
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        fake_backend = Mock(name="backend")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                skills=["/skills/personal/", "/skills/team/"],
+                backend=fake_backend,
+                skills_system_prompt=self._FAKE_PROMPT,
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIsInstance(appended, SkillsMiddleware)
+        # 생성자 인자 이름은 `system_prompt`지만, deepagents가 인스턴스 속성으로
+        # 저장하는 이름은 `system_prompt_template`이다(실측 확인) — Memory와
+        # 이름이 다르니 헷갈리지 않게 여기서도 그대로 맞춘다.
+        self.assertEqual(appended.system_prompt_template, self._FAKE_PROMPT)
+        self.assertEqual(appended.sources, ["/skills/personal/", "/skills/team/"])
+
+    def test_custom_skills_middleware_shares_the_same_backend_instance(self):
+        fake_backend = Mock(name="backend")
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                skills=["/skills/personal/"],
+                backend=fake_backend,
+                skills_system_prompt=self._FAKE_PROMPT,
+            )
+
+        _args, kwargs = mock_create.call_args
+        appended = kwargs["middleware"][-1]
+        self.assertIs(appended._backend, fake_backend)
+        self.assertIs(kwargs["backend"], fake_backend)
+
+    def test_both_memory_and_skills_prompts_together_append_both_middleware(self):
+        """Memory와 Skill을 함께 켜도 둘 다 `middleware=`에 실린다.
+
+        **여기서 확인하지 않는 것**: 둘의 최종 순서. `create_deep_agent()`를
+        mock으로 바꿨으므로, 진짜 최종 순서(`SkillsMiddleware`가
+        `MemoryMiddleware`보다 먼저 오는 것 — `deepagents/graph.py` 실측,
+        819번째 줄 vs 864번째 줄)를 정하는 `_apply_custom_middleware`의
+        "이름이 같으면 원래 자리를 그대로 두고 치환한다" 규칙은 mock 뒤에
+        가려 여기서 볼 수 없다. 그 규칙 자체가 **이름 기반 치환**이라 우리가
+        여기서 어떤 순서로 append하든 실제 순서는 원래 base 목록의 자리를
+        따른다 — 그래서 이 테스트는 순서가 아니라 "둘 다 빠짐없이 실린다"만
+        확인한다."""
+
+        from deepagents import MemoryMiddleware
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        with patch(f"{COMPAT_MODULE}.create_deep_agent") as mock_create:
+            create_root_graph(
+                model=Mock(),
+                system_prompt="p",
+                memory=["/memories/AGENTS.md"],
+                skills=["/skills/personal/"],
+                backend=Mock(name="backend"),
+                memory_system_prompt="안내문 {agent_memory} 나머지",
+                skills_system_prompt=self._FAKE_PROMPT,
+            )
+
+        _args, kwargs = mock_create.call_args
+        types = {type(m) for m in kwargs["middleware"]}
+        self.assertEqual(types, {MemoryMiddleware, SkillsMiddleware})
 
 
 class CreateRootGraphFilesystemExclusionTests(SimpleTestCase):

@@ -1921,6 +1921,65 @@ class TeamRepository:
 
         return TeamRepository.settings(account_id)
 
+    # ------------------------------------------------------------------
+    # 팀 기본 채팅 모델(2026-08-22)
+    #
+    # 원래 레거시 정문 에이전트(`agent_tool.tool_ref='agent:*'`)의 `agent.model`
+    # 에 얹혀 있던 값이다. 레거시 `agent`/`agent_tool` 폐기와 함께 팀 설정
+    # 본래 자리로 옮겼다 — 근거는 DB/migrations/2026-08-22_team_default_model.sql
+    # 헤더. 두 메서드 다 **`team_id`를 직접 받는다**: 운영자 콘솔이 쓰는데
+    # 운영자에게는 자기 팀이 없어 `_require_team()`이 통하지 않는다(커스텀 모델
+    # 등록과 같은 모양이다).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def default_model(team_id: str) -> str | None:
+        """그 팀의 기본 채팅 모델. `None`이면 **설정 안 함**이다.
+
+        `None`을 코드 기본값으로 바꿔 돌려주지 않는다 — 화면이 「아직 없다」와
+        「이 값으로 저장돼 있다」를 구분해 말해야 하기 때문이다. 저장한 적 없는
+        값을 저장된 것처럼 보이는 것이 원래 Model 탭의 문제였다.
+
+        팀 자체가 없으면 `RecordNotFound` — "값이 없다"와 "팀이 없다"는 화면이
+        다르게 말해야 한다(전자는 안내, 후자는 404).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT default_model FROM team WHERE team_id = %s", (team_id,)
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                return row["default_model"]
+
+    @staticmethod
+    def set_default_model(*, team_id: str, model: str) -> str | None:
+        """운영자가 그 팀의 기본 채팅 모델을 정한다(2026-08-18 멘토링).
+
+        **전역 하나로 두지 않는다.** 계약·리전 요건이 다른 회사를 못 받기
+        때문이다 — 커스텀 모델을 팀 단위로 붙인 것과 같은 이유다.
+
+        빈 문자열은 `None`으로 저장한다 — 화면의 「고르세요」로 되돌리는 길이
+        있어야 잘못 고른 팀을 원래대로 돌려놓을 수 있다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE team SET default_model = %s
+                     WHERE team_id = %s
+                    RETURNING default_model
+                    """,
+                    (model or None, team_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound(f"존재하지 않는 팀입니다: {team_id}")
+                return row["default_model"]
+
     @staticmethod
     def add_member(cursor, *, team_id: str, person_id: str) -> None:
         """팀원 명부에 추가한다. 이미 있으면 아무 일도 하지 않는다."""
@@ -2992,7 +3051,8 @@ class OpsTeamRepository:
 
     @staticmethod
     def agents(team_id: str) -> list[dict[str, Any]]:
-        """이 팀의 에이전트와 그 구성.
+        """이 팀의 에이전트와 그 구성(`agents`/`agent_versions`/`agent_version_tools`,
+        2026-08-22부터 — 레거시 `agent`/`agent_tool` 폐기로 옮겨 왔다).
 
         **「에이전트가 이상해요」에 답하려면 무엇을 들고 있는지 봐야 한다.** 어떤
         도구가 붙어 있고 어떤 모델로 도는지 모르면, 도구를 안 불렀다는 말이 「없어서」
@@ -3002,27 +3062,31 @@ class OpsTeamRepository:
         없이 나온다는 문의는 대개 지시문에서 갈린다 — 그걸 못 보면 운영자가 할 수
         있는 말이 없다. 대화 내용과 문서 원문은 여기서도 안 준다.
 
-        **우리가 넣은 것(`is_prebuilt`)은 뺀다.** 팀 화면은 `!is_prebuilt` 로
-        걸러서 보여주므로, 그것까지 여기 섞으면 **고객은 존재도 모르는 줄**을
-        운영자만 보고 「이 에이전트가 문제인가요」라고 묻게 된다(2026-08-13 PM 지적).
-        `agent:*`(정문)가 아니라 `is_prebuilt` 로 가르는 것이 맞다 — 예시를 다시
-        넣더라도 그것 역시 팀이 만든 것이 아니다.
+        **우리가 자동으로 넣은 것(`is_default_chat`)은 뺀다.** 팀 화면
+        (`AgentVersionListPage`)이 `!is_default_chat`으로 걸러서 보여주므로,
+        그것까지 여기 섞으면 **고객은 존재도 모르는 줄**을 운영자만 보고
+        「이 에이전트가 문제인가요」라고 묻게 된다. 레거시 시절엔 이 경계가
+        `is_prebuilt`(전체 도구 + 위임하는 정문 「코파일럿」)였는데, 새 스키마의
+        기본 챗은 그 자리를 대신하는 다른 메커니즘(`is_default_chat`)이라 걸러야
+        할 조건도 옮겨 왔다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT a.agent_id, a.name, a.description, a.instruction,
-                           a.model, a.reasoning_effort, a.max_iterations, a.status,
+                    SELECT a.agent_id, a.name, a.description, v.system_prompt AS instruction,
+                           v.model, v.reasoning_effort, v.max_iterations, a.status,
                            COALESCE(
                                (SELECT array_agg(t.tool_ref ORDER BY t.tool_ref)
-                                FROM agent_tool AS t WHERE t.agent_id = a.agent_id),
+                                FROM agent_version_tools AS t
+                                WHERE t.agent_version_id = a.current_version_id),
                                ARRAY[]::varchar[]
                            ) AS tool_refs
-                    FROM agent AS a
+                    FROM agents AS a
+                    LEFT JOIN agent_versions AS v ON v.agent_version_id = a.current_version_id
                     WHERE a.team_id = %s AND a.status <> 'ARCHIVED'
-                      AND a.is_prebuilt = false
+                      AND a.is_default_chat = false
                     ORDER BY a.name
                     """,
                     (team_id,),
@@ -3040,10 +3104,12 @@ class OpsTeamRepository:
 
         실패한 도구를 함께 준다 — 실행이 왜 실패했는지는 그 줄에 있다.
 
-        **에이전트 표와 같은 기준으로 거른다.** 위에서 코파일럿을 빼 놓고 실행만
-        남기면, 표에 없는 이름이 실행 줄에 적혀 더 헷갈린다. 대신 채팅에서 난 일은
-        이 표에 안 남는다 — 그건 에이전트가 아니라 대화라서 여기서 답할 물음이
-        아니다(2026-08-13 PM).
+        **에이전트 표와 같은 기준으로 거른다(`agents`/`agent_versions`,
+        2026-08-22부터).** 위에서 기본 챗을 빼 놓고 실행만 남기면, 표에 없는
+        이름이 실행 줄에 적혀 더 헷갈린다. 새 엔진은 채팅이든 아니든 실행마다
+        `agent_run`을 남기므로(레거시는 채팅을 아예 안 남겼다), 기본 챗을 통해
+        오간 채팅은 이 필터로 제외되고, 팀이 직접 골라 쓴 에이전트의 채팅
+        실행은 정상적으로 잡힌다.
         """
 
         with database_connection() as connection:
@@ -3062,8 +3128,8 @@ class OpsTeamRepository:
                                ARRAY[]::text[]
                            ) AS failed_tools
                     FROM agent_run AS r
-                    JOIN agent AS a ON a.agent_id = r.agent_id
-                    WHERE a.team_id = %s AND a.is_prebuilt = false
+                    JOIN agents AS a ON a.agent_id = r.agent_id
+                    WHERE a.team_id = %s AND a.is_default_chat = false
                     ORDER BY r.started_at DESC
                     LIMIT %s
                     """,
@@ -3644,9 +3710,7 @@ class OpsUsageRepository:
     **왜 새로 만들었나**(2026-08-21). 실행 이력(`agent_run`·`tool_call`)은
     2026-08-13 부터 쌓이고 있었는데 그것을 **집계해서 보여주는 자리가 없었다.**
     팀 상세의 「최근 실행」 표가 유일한 노출인데 그쪽은 한 팀의 최근 몇 건을
-    나열할 뿐이고(게다가 옛 `agent` 표만 조인해서 새 스키마 에이전트의 실행은
-    한 줄도 안 잡힌다 — 아래 `_TEAM_OF_RUN` 주석), 「이번 달에 얼마나 썼나」에는
-    답하지 못했다.
+    나열할 뿐이고, 「이번 달에 얼마나 썼나」에는 답하지 못했다.
 
     시중 제품이 관측성을 **요약 → 목록 → 상세** 세 층으로 나눠 보여주는데
     (Copilot Studio Analytics · watsonx Orchestrate Agent analytics, 2026-08-21
@@ -3663,16 +3727,14 @@ class OpsUsageRepository:
 
     WINDOW_DAYS = 30
 
-    #: 실행 하나가 **어느 팀 것인가**. 에이전트 명부가 둘이라 양쪽을 다 본다 —
-    #: 새 스키마(`agents`)와 옛 스키마(`agent`)다. 지금 실제로 실행이 쌓이는
-    #: 것은 새 쪽인데, 팀 상세의 「최근 실행」 표는 옛 표만 조인해서 **행이
-    #: 하나도 안 나온다**(2026-08-21 프로덕션에서 확인: 실행 114건, 표 0건).
-    #: 여기서 같은 실수를 반복하지 않으려고 조인 조각을 상수로 뽑아 둔다.
-    _TEAM_OF_RUN = """
-        LEFT JOIN agents AS ag ON ag.agent_id = r.agent_id
-        LEFT JOIN agent  AS al ON al.agent_id = r.agent_id
-    """
-    _TEAM_ID = "COALESCE(ag.team_id, al.team_id)"
+    #: 실행 하나가 **어느 팀 것인가**. 2026-08-22까지는 에이전트 명부가 둘이라
+    #: (새 `agents`, 옛 `agent`) 양쪽을 다 봐야 했다 — 안 그러면 팀 상세의
+    #: 「최근 실행」 표처럼 한쪽만 조인해서 행이 안 잡히는 사고가 났다
+    #: (2026-08-21 프로덕션에서 실측: 실행 114건, 표 0건). 레거시 `agent` 폐기로
+    #: 이제 `agents` 하나만 보면 된다 — 조인 조각을 상수로 남겨 두는 이유는
+    #: 그대로다(쓰는 곳마다 따로 적으면 한쪽만 고쳐질 수 있다).
+    _TEAM_OF_RUN = "LEFT JOIN agents AS ag ON ag.agent_id = r.agent_id"
+    _TEAM_ID = "ag.team_id"
 
     @staticmethod
     def _since_clause(column: str) -> str:
@@ -3706,7 +3768,9 @@ class OpsUsageRepository:
                     f"""
                     SELECT count(*) AS calls,
                            count(*) FILTER (WHERE tc.status = 'OK') AS calls_ok,
-                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed
+                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed,
+                           count(*) FILTER (WHERE tc.status = 'REJECTED') AS calls_rejected,
+                           count(*) FILTER (WHERE tc.status = 'PENDING') AS calls_pending
                     FROM tool_call AS tc
                     JOIN agent_run AS r ON r.run_id = tc.run_id
                     WHERE {since_run}
@@ -3744,12 +3808,7 @@ class OpsUsageRepository:
 
                 cursor.execute(
                     f"""
-                    -- 모델 이름도 두 군데서 온다. 새 엔진은 `agent_versions.model`
-                    -- 이고, 레거시 harness 실행은 `agent_version_id` 가 아예
-                    -- NULL 이라 옛 `agent.model` 을 봐야 한다 — 안 보면 지난
-                    -- 실행 대부분이 「(모름)」으로 뭉쳐 표가 쓸모없어진다
-                    -- (2026-08-21 실측: 23건 중 20건이 그랬다).
-                    SELECT COALESCE(av.model, al.model, '(모름)') AS model,
+                    SELECT COALESCE(av.model, '(모름)') AS model,
                            r.resolved_provider,
                            count(*) AS runs,
                            COALESCE(sum(r.token_in), 0) AS token_in,
@@ -3757,7 +3816,6 @@ class OpsUsageRepository:
                     FROM agent_run AS r
                     LEFT JOIN agent_versions AS av
                            ON av.agent_version_id = r.agent_version_id
-                    LEFT JOIN agent AS al ON al.agent_id = r.agent_id
                     WHERE {since_run}
                     GROUP BY 1, 2
                     ORDER BY (COALESCE(sum(r.token_in), 0) + COALESCE(sum(r.token_out), 0)) DESC
@@ -3770,9 +3828,11 @@ class OpsUsageRepository:
                     SELECT tc.tool_ref,
                            count(*) AS calls,
                            count(*) FILTER (WHERE tc.status = 'OK') AS calls_ok,
-                           -- PENDING 은 성공도 실패도 아니다. 스트림이 끊겨
-                           -- 영영 안 닫힌 행이라 따로 센다(있으면 배선 문제다).
+                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed,
+                           -- PENDING은 승인 대기/실행 중, REJECTED는 사용자 결정으로
+                           -- 미실행이다. 둘 다 실제 Tool 실행 성공률 분모에서 뺀다.
                            count(*) FILTER (WHERE tc.status = 'PENDING') AS calls_pending,
+                           count(*) FILTER (WHERE tc.status = 'REJECTED') AS calls_rejected,
                            round(avg(tc.duration_ms))::int AS avg_ms
                     FROM tool_call AS tc
                     JOIN agent_run AS r ON r.run_id = tc.run_id
@@ -4161,14 +4221,13 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("체크포인트 값", "DELETE FROM checkpoint_blobs WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE team_id = %(team_id)s)"),
     ("체크포인트", "DELETE FROM checkpoints WHERE thread_id IN (SELECT session_id::text FROM chat_session WHERE team_id = %(team_id)s)"),
     ("대화", "DELETE FROM chat_session WHERE team_id = %(team_id)s"),
-    # 에이전트 — 새 스키마(agents/agent_versions)와 레거시(agent/agent_tool) 둘 다.
+    # 에이전트(agents/agent_versions, 2026-08-22부터 이 스키마 하나뿐 —
+    # 레거시 agent/agent_tool은 폐기됐다).
     ("에이전트 하위위임", "DELETE FROM agent_version_subagents WHERE parent_version_id IN (SELECT v.agent_version_id FROM agent_versions v JOIN agents a ON a.agent_id = v.agent_id WHERE a.team_id = %(team_id)s)"),
     ("에이전트 버전 도구", "DELETE FROM agent_version_tools WHERE agent_version_id IN (SELECT v.agent_version_id FROM agent_versions v JOIN agents a ON a.agent_id = v.agent_id WHERE a.team_id = %(team_id)s)"),
     ("에이전트 버전", "DELETE FROM agent_versions WHERE agent_id IN (SELECT agent_id FROM agents WHERE team_id = %(team_id)s)"),
     ("에이전트 즐겨찾기", "DELETE FROM agent_favorites WHERE agent_id IN (SELECT agent_id FROM agents WHERE team_id = %(team_id)s)"),
     ("에이전트", "DELETE FROM agents WHERE team_id = %(team_id)s"),
-    ("레거시 에이전트 도구", "DELETE FROM agent_tool WHERE agent_id IN (SELECT agent_id FROM agent WHERE team_id = %(team_id)s)"),
-    ("레거시 에이전트", "DELETE FROM agent WHERE team_id = %(team_id)s"),
     ("커스텀 도구", "DELETE FROM mcp_tool WHERE server_id IN (SELECT server_id FROM mcp_server WHERE team_id = %(team_id)s)"),
     ("커스텀 도구 서버", "DELETE FROM mcp_server WHERE team_id = %(team_id)s"),
     ("연결 폴더", "DELETE FROM team_folder WHERE team_id = %(team_id)s"),

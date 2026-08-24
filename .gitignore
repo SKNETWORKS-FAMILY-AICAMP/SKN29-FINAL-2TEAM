@@ -3,6 +3,7 @@ outputs/
 .codex_tmp/
 .codex_work/
 .codex-review/
+.codex_doc_review/
 
 # 정리 대기 (직접 삭제)
 _to_delete/
@@ -43,3 +44,8 @@ ml_label.log
 # 팀이 공유하는 것은 `.claude/settings.json` 하나다.
 .claude/launch.json
 
+
+# understand-anything 플러그인이 만드는 지식 그래프 캐시. 분석 결과라 코드에서
+# 언제든 다시 만들 수 있고, 설치한 사람만 생기며 크기도 계속 불어난다.
+.ua/
+.understand-anything/

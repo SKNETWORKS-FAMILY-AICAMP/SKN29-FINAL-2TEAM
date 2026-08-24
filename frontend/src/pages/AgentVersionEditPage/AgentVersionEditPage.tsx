@@ -20,7 +20,7 @@ import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import { josa } from '../../utils/josa';
 import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
-import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
+import { ToolPickerModal } from '../../components';
 import { SubagentPickerModal } from './SubagentPickerModal';
 import styles from './AgentVersionEditPage.module.css';
 
@@ -32,18 +32,13 @@ const EFFORT_OPTIONS = [
 ];
 
 /**
- * 새 버전 스키마 생성·편집. `AgentEditPage`(옛 비버전 화면)와 나란히 존재한다.
+ * 에이전트 생성·편집.
  *
- * **저장이 곧 발행이다.** `agent_versions`는 불변이라(02 §5.2) 임시 저장이라는
- * 중간 상태가 없다 — 저장 버튼을 누르는 순간 새 버전이 생긴다. 그래서 옛
- * 화면에 있던 "임시 저장 / 활성화" 두 단계 구분이 여기서는 "저장(=새 버전
- * 발행) / 활성화" 두 단계로 바뀐다: 저장은 몇 번이든 다시 할 수 있지만(그때마다
- * 버전이 늘어난다), 활성화는 그 중 최신 버전을 Chat/위임 대상으로 여는 별도
- * 스텝이다.
+ * 저장이 곧 발행이다 — `agent_versions`는 불변이라(02 §5.2) 임시 저장이라는
+ * 중간 상태가 없다. 저장은 몇 번이든 다시 할 수 있고(그때마다 버전이 늘어난다),
+ * 활성화는 그 중 최신 버전을 Chat/위임 대상으로 여는 별도 스텝이다.
  *
- * **저장 전 테스트 실행은 없다** — 새 실행 엔진용 테스트 엔드포인트가 아직
- * 없어서(2026-08-15 확인) 이번 v1 화면에서는 뺐다. 필요해지면 옛
- * `TestRunModal`과 같은 자리에 추가한다.
+ * 저장 전 테스트 실행은 없다 — 새 엔진용 테스트 엔드포인트가 아직 없다.
  */
 export default function AgentVersionEditPage() {
   const navigate = useNavigate();
@@ -111,9 +106,8 @@ export default function AgentVersionEditPage() {
   }, [customModels, model]);
 
   /** 자기 자신은 뺀다 — 자기 참조는 서버가 어차피 409로 막지만, 화면에서
-   * 애초에 고를 수 없게 하는 편이 낫다. DISABLED도 뺀다 — 서버가 여전히
-   * 막는다(ACTIVE 아니고 "내 DRAFT"도 아니라서, `_build_subagent_refs`
-   * 2026-08-18 완화가 딱 그 둘까지만 허용한다). */
+   * 애초에 고를 수 없게 하는 편이 낫다. DISABLED도 뺀다 — 서버가 ACTIVE와
+   * "내 DRAFT"까지만 서브 에이전트로 허용한다. */
   const subagentCandidates = useMemo(
     () =>
       otherAgents.filter(
@@ -125,9 +119,8 @@ export default function AgentVersionEditPage() {
     [otherAgents, savedId],
   );
 
-  /** 개인/팀 공유/즐겨찾기 세 탭(2026-08-18) — `AgentVersionListPage`와 같은
-   * 구성. DRAFT는 서버가 이미 본인 것만 내려주므로 "개인" 탭은 항상 내
-   * 것이다. */
+  /** 개인/팀 공유/즐겨찾기 세 탭 — `AgentVersionListPage`와 같은 구성.
+   * DRAFT는 서버가 이미 본인 것만 내려주므로 "개인" 탭은 항상 내 것이다. */
   const personalSubagentCandidates = useMemo(
     () => subagentCandidates.filter((a) => a.status === 'DRAFT'),
     [subagentCandidates],
@@ -145,7 +138,7 @@ export default function AgentVersionEditPage() {
     setToolRefs((prev) => (prev.includes(ref) ? prev.filter((item) => item !== ref) : [...prev, ref]));
   }
 
-  /** 도구 선택 화면의 그룹(카테고리) 마스터 체크박스용(2026-08-18). */
+  /** 도구 선택 화면의 그룹(카테고리) 마스터 체크박스용. */
   function toggleToolGroup(refs: string[], turnOn: boolean) {
     setToolRefs((prev) =>
       turnOn
@@ -173,10 +166,7 @@ export default function AgentVersionEditPage() {
 
   /** alias·위임 설명은 별도로 안 받는다 — 고르는 에이전트 자신의 이름·설명을
    * 그대로 스냅샷으로 쓴다(부모가 저장된 뒤 자식 이름이 바뀌어도 이 부모는
-   * 지금 값을 계속 쓴다, 위 subagentCandidates 주석과 같은 이유).
-   *
-   * 카드 클릭 = 토글이다(2026-08-18, 카드 형태로 개편) — 이미 골랐으면
-   * 빼고, 아니면 넣는다. `ToolPickerModal`의 체크박스 토글과 같은 방식.
+   * 지금 값을 계속 쓴다). 카드 클릭 = 토글이다.
    */
   function toggleSubagent(candidate: AgentVersionSummary) {
     if (subagents.some((s) => s.child_agent_id === candidate.agent_id)) {
@@ -244,9 +234,8 @@ export default function AgentVersionEditPage() {
     setError(null);
     try {
       const saved = await saveVersion();
-      // 이미 팀 공유(ACTIVE) 상태였던 에이전트가 이번 저장에서 개인 DRAFT
-      // 서브 에이전트를 새로 참조하면, 서버가 그 자리에서 같이 활성화하고
-      // 이름을 실어 보낸다(2026-08-18) — 조용히 켜지면 사람이 모르니 알린다.
+      // 이미 ACTIVE였던 에이전트가 이번 저장에서 개인 DRAFT 서브 에이전트를
+      // 새로 참조하면 서버가 같이 활성화하고 이름을 실어 보낸다.
       if (saved.cascaded_subagent_names?.length) {
         showToast(
           `v${saved.version}로 저장했습니다. 서브 에이전트 「${saved.cascaded_subagent_names.join('」·「')}」도 초안 상태였어서 함께 활성화했습니다.`,
@@ -270,8 +259,7 @@ export default function AgentVersionEditPage() {
       const activated = await activateAgentVersion(token, savedId);
       setStatus(activated.status);
       // 이 버전이 참조하는 개인 DRAFT 서브 에이전트가 있으면 서버가 같이
-      // 활성화하고 이름을 실어 보낸다(2026-08-18) — 조용히 켜지면 사람이
-      // 모르니 알린다.
+      // 활성화하고 이름을 실어 보낸다.
       if (activated.cascaded_subagent_names?.length) {
         showToast(
           `‘${activated.name}’${josa(activated.name, '을/를')} 활성화했습니다. 서브 에이전트 ‘${activated.cascaded_subagent_names.join('’·‘')}’도 초안 상태였어서 함께 활성화했습니다.`,

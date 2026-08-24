@@ -133,6 +133,15 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
   const toolRef = (event as { tool_ref?: string }).tool_ref;
 
   switch (event.type) {
+    case 'skill_applied':
+      return {
+        ...state,
+        timeline: [
+          ...state.timeline,
+          { kind: 'skill', skillName: event.skill_name, scope: event.scope },
+        ],
+      };
+
     case 'stage': {
       if (!toolRef) {
         // Loop 회전. **버린다.** 진행 카드의 단계 목록에 넣으면 도구 단계와

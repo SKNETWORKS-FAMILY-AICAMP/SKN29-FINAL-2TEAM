@@ -44,11 +44,12 @@ langchain-openai>=1.4.3,<2.0.0
 langgraph-checkpoint-postgres>=3.0,<4.0
 
 # Deep Agents 평가용 트레이싱(2026-08-19 착수, 작업기록/LangSmith_LangFuse/
-# 2026-08-19_01_작업계획.md). LangSmith는 langchain-core에 이미 내장돼 있어
-# 별도 패키지가 필요 없다 — Langfuse만 SDK가 필요하다(v3, `langfuse.langchain.
-# CallbackHandler`). 키가 없으면 `tracing/callbacks.py`가 콜백을 안 만들 뿐
+# 2026-08-19_01_작업계획.md). 관측 백엔드는 Langfuse 하나만 사용한다
+# (v4 `langfuse.langchain.CallbackHandler`). 키가 없으면
+# `tracing/callbacks.py`가 콜백을 안 만들 뿐
 # import 자체는 항상 성공해야 하므로 optional 의존성으로 빼지 않고 base에 둔다.
-langfuse>=3.0,<4.0
+# 4.7부터 Langfuse v4 데이터 모델에서 trace가 실시간으로 표시된다.
+langfuse>=4.7,<5.0
 
 # 외부 가드레일 공급자 호출(2026-08-20). 고객이 등록한 가드레일을 우리가 부른다 —
 # 정본: docs/작업기록/2026-08-20_가드레일_조사와_실측.md §8

@@ -6,13 +6,15 @@ EventMapper로 변환한다(mock 아님) — "무엇을 조립해 넘기는가"�
 그 이벤트가 나오는가"까지 확인한다.
 """
 
+from unittest.mock import MagicMock, patch
+
 from django.test import SimpleTestCase
 
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, LoadedAgentDefinition
 from services.agent_runtime.events import EVENT_AGENT_STARTED, EVENT_ERROR, EVENT_RESULT
 from services.agent_runtime.exceptions import AgentBuildError, InvalidExecutionTargetError
-from services.agent_runtime.executor import AgentExecutor, validate_execution_target
+from services.agent_runtime.executor import AgentExecutor, _tracing_callbacks, validate_execution_target
 from services.agent_runtime.models.factory import ResolvedModelConfig
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 
@@ -168,6 +170,17 @@ class ValidateExecutionTargetTests(SimpleTestCase):
     def test_accepts_saved_version(self):
         validate_execution_target(agent_id="AG001", agent_version_id="AV001", draft=None)
 
+
+class TracingCallbackTests(SimpleTestCase):
+    @patch("services.agent_runtime.tracing.callbacks.get_langfuse_callback")
+    def test_only_langfuse_callback_is_loaded(self, get_langfuse):
+        from services.agent_runtime.tracing import callbacks as tracing_callbacks
+
+        langfuse_callback = object()
+        get_langfuse.return_value = langfuse_callback
+
+        self.assertEqual(_tracing_callbacks(), [langfuse_callback])
+        self.assertFalse(hasattr(tracing_callbacks, "get_langsmith_callback"))
 
 class RunHappyPathTests(SimpleTestCase):
     def test_first_event_is_agent_started_then_result(self):
@@ -598,6 +611,36 @@ class ResumeTests(SimpleTestCase):
             stream_adapter.stream_calls[0]["resume"],
             {"decisions": [{"type": "reject", "message": "지금은 안 돼요"}]},
         )
+
+    def test_trace_resume_state_is_restored_before_stream_conversion(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        mapper = MagicMock()
+        mapper.convert.return_value = []
+        executor = AgentExecutor(
+            loader=loader,
+            factory=factory,
+            stream_adapter=stream_adapter,
+            event_mapper_factory=lambda: mapper,
+        )
+        state = {
+            "pending_subagents": {"delegate-1": {"run_id": "RUN-CHILD"}},
+            "pending_tool_calls": [{"tool_call_id": "call-1", "run_id": "RUN1"}],
+        }
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+                trace_resume_state=state,
+            )
+        )
+
+        mapper.restore_hitl_state.assert_called_once_with(state)
+        mapper.convert.assert_called_once()
 
     def test_context_session_id_reaches_the_stream_adapter_as_thread_id(self):
         loader = _FakeLoader()

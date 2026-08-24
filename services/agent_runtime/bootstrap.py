@@ -35,16 +35,14 @@ from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
 from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+from services.agent_runtime.skills.provider import SkillsProvider
 from services.agent_runtime.tools.loader import ToolLoader
 
-# 02 §9.3(선결 B)에서 실제 소스+실제 객체로 닫은 결론: deepagents는 미리 만들어진
-# BaseChatModel 인스턴스를 받으면 `get_model_provider(model)`이 돌려주는 provider
-# 문자열로만 harness profile을 찾는다. `models/factory.py`의 Provider는 세 값
-# ("anthropic"/"openai"/"openai_compatible")이지만 `openai_compatible`도 결국
-# ChatOpenAI 클래스를 쓰므로 get_model_provider()는 항상 "openai"를 반환한다 —
-# 즉 "openai_compatible"이라는 key로 등록해도 deepagents가 절대 그 key로 조회하지
-# 않는 죽은 코드가 된다(`tests/test_harness_profile_model_key.py`로 회귀 고정됨).
-# 그래서 여기서 등록할 key는 정확히 이 두 개뿐이다 — 추측이 아니라 닫힌 결정.
+# deepagents는 `get_model_provider(model)`이 돌려주는 provider 문자열로만 harness
+# profile을 찾는다. `models/factory.py`의 Provider는 셋이지만 `openai_compatible`도
+# ChatOpenAI를 쓰므로 `get_model_provider()`는 항상 "openai"를 반환한다 — 그 key로
+# 등록해 봐야 조회되지 않는 죽은 코드다. 그래서 등록할 key는 이 둘뿐이다
+# (회귀 고정: `tests/test_harness_profile_model_key.py`).
 _HARNESS_PROFILE_MODEL_KEYS: tuple[str, ...] = ("anthropic", "openai")
 
 
@@ -94,16 +92,16 @@ def build_default_executor(*, runtime_policy: RuntimeCapabilityPolicy | None = N
         middleware_factory=MiddlewareFactory(runtime_policy=policy),
         runtime_policy=policy,
         prompt_assembler=RuntimePromptAssembler(),
-        # 장기 메모리(2026-08-15, services/agent_runtime/memory/). Root graph에만
-        # 붙는다 — factory.py의 build() 참고. MemoryProvider() 생성 자체는 I/O가
-        # 없다(PostgresStore 연결은 실제로 메모리를 쓰는 첫 호출에서 열린다,
-        # memory/store.py 참고) — 이 함수의 "호출마다 새로 조립" 원칙과 안 어긋난다.
+        # 둘 다 Root graph에만 붙는다(`factory.py`의 `build()`). 생성 자체는 I/O가
+        # 없어서 "호출마다 새로 조립" 원칙과 어긋나지 않는다 — Postgres 연결은
+        # 실제로 메모리·체크포인트를 쓰는 첫 호출에서 열린다.
         memory_provider=MemoryProvider(),
-        # Checkpointer(2026-08-18, services/agent_runtime/checkpoint/). 마찬가지로
-        # Root graph에만 붙는다. CheckpointerProvider() 생성 자체도 I/O가 없다
-        # (PostgresSaver 연결은 실제로 체크포인트를 쓰는 첫 호출에서 열린다,
-        # checkpoint/checkpointer.py 참고).
         checkpointer_provider=CheckpointerProvider(),
+        # Skill(2026-08-21, services/agent_runtime/skills/). Memory와 같은
+        # 공유 backend에 라우트만 얹는다 — memory_provider가 켜져 있을 때만
+        # 실제로 붙는다(factory.py `__init__`/`build()` 주석 참고).
+        # SkillsProvider() 생성 자체도 I/O가 없다(경로·namespace 계산뿐).
+        skills_provider=SkillsProvider(),
     )
     return AgentExecutor(loader=AgentDefinitionLoader(), factory=factory)
 

@@ -53,10 +53,12 @@ class AgentDefinitionLoader:
         """Builder draft와 저장된 Child version을 테스트용 정의로 변환한다.
 
         `agent_id`는 기본 `None`(저장 전 순수 초안)이지만, `draft["agent_id"]`가
-        있으면 그 값을 쓴다(2026-08-14 추가) — `services.agent_runtime
-        .legacy_bridge`가 **이미 저장된** 레거시 `agent` 행을 draft 모양으로
-        옮길 때 실제 agent_id를 실어 보낸다. 이게 없으면
+        있으면 그 값을 쓴다 — 이미 저장된 에이전트를 draft 모양으로 옮겨 돌리는
+        쪽이 실제 agent_id를 실어 보낼 수 있게 열어 둔 자리다. 이게 없으면
         `agent_run.agent_id`(NOT NULL)를 못 채워 실행 로그 적재가 깨진다.
+        (2026-08-22까지는 `legacy_bridge`가 그 경로였다. 레거시 `agent` 스키마를
+        폐기하면서 없어졌고, 지금 draft로 도는 것은 저장하지 않은 정의를 그
+        자리에서 실행하는 쪽뿐이다 — `scripts/team_status_agent.py`.)
         `agent_version_id`는 항상 `None`이다 — draft에는 애초에 그 개념이 없다
         (저장된 버전이 아니므로).
         """
@@ -247,10 +249,9 @@ class AgentDefinitionLoader:
             child_version_id=child_version_id,
             alias=alias,
             delegation_description=delegation_description,
-            # 본인 소유 DRAFT도 된다 — `AgentSubagentRepository.
-            # list_for_parent_version()`/`_build_subagent_refs()`와 같은 완화
-            # (2026-08-19, 저장된 부모 실행 경로에서 먼저 발견·수정). Builder Test
-            # Run(이 함수)에서만 다르게 막을 이유가 없다.
+            # 본인 소유 DRAFT도 된다 — 저장된 부모 실행 경로
+            # (`AgentSubagentRepository.list_for_parent_version()`)와 같은
+            # 완화다. Builder Test Run에서만 다르게 막을 이유가 없다.
             is_active=row["agent_status"] == "ACTIVE"
             or (row["agent_status"] == "DRAFT" and row["agent_owner_account_id"] == context.account_id),
             can_execute=True,

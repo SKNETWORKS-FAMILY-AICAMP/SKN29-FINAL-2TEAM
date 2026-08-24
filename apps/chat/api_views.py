@@ -21,7 +21,12 @@ from rest_framework.views import APIView
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.serializers import account_role
 from backend.db import AccountRepository
-from backend.db.agent_platform import AgentVersionRepository, ChatMessageRepository, ChatSessionRepository
+from backend.db.agent_platform import (
+    AgentVersionRepository,
+    ChatMessageRepository,
+    ChatSessionRepository,
+    ToolCallRepository,
+)
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -30,10 +35,14 @@ from backend.db.errors import (
 )
 from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
-from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
+from services.agent_runtime.skills.invocation import (
+    build_invocation_input,
+    parse_invocation,
+    resolve_invocable_skill,
+)
 from services.guardrails import check_user_input, on_check_timeout
-from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
+from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR
 from services.harness.naming import suggest_title
 
 from .serializers import (
@@ -80,9 +89,8 @@ def _agent_runtime_error_response(exc: AgentRuntimeError) -> Response:
 
     `apps/agents/api_views.py`의 같은 이름 함수와 동일한 규칙(02 §12) — MRO를
     위에서부터 훑어 가장 구체적인 클래스로 매핑한다. 여기서 쓰는 곳은 실행
-    **준비**(런타임 컨텍스트 구성, 레거시 에이전트면 `draft_from_legacy_agent()`
-    조회) 단계뿐이다 — 2026-08-14부터 발화가 전부 새 엔진을 타면서 모든 세션이
-    이 단계를 거친다. 스트림이 시작된 뒤의 실행 실패는 상태 코드를 더 바꿀 수
+    **준비**(런타임 컨텍스트 구성) 단계뿐이다 — 2026-08-14부터 발화가 전부
+    새 엔진을 타면서 모든 세션이 이 단계를 거친다. 스트림이 시작된 뒤의 실행 실패는 상태 코드를 더 바꿀 수
     없어서 `_relay()`가 이벤트로 흘려보낸다(아래).
     """
 
@@ -212,6 +220,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         serializer.is_valid(raise_exception=True)
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
+        applied_skill: dict[str, str] | None = None
         # 2026-08-19, §2순위 — 사용자가 채팅에 직접 입력한 credential·개인정보·
         # 권한/보안 서술은 모델에게 보내지 않는다(`sensitive_text.py`, write_guard와
         # 같은 패턴 재사용). **저장은 원문 그대로 한다** — 이건 "모델에게
@@ -222,6 +231,30 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
+            # 2026-08-22, 명시적 스킬 호출("/스킬이름 ...") — 클로드의 슬래시
+            # 커맨드와 같은 방식(사용자 요청). "/"로 시작하는 문장은 이미
+            # 어느 스킬을 쓸지 사용자가 확정한 것이라, 모델이 스스로 스킬
+            # 설명과 매칭하는 절차(자동 호출, `SkillsMiddleware`)를 기다리지
+            # 않고 여기서 직접 본문을 찾아 모델 입력에 박아 넣는다
+            # (`services/agent_runtime/skills/invocation.py` 모듈 docstring
+            # 참고 — Memory 미들웨어와의 판단 경쟁에 밀려 자동 호출이 안 되는
+            # 문제를 실측한 것과 같은 날 나온 요청). 이름이 안 맞으면(스킬이
+            # 없거나 "/"로 시작하는 평범한 메모면) 조용히 원래 채팅으로
+            # 흘려보낸다 — 오류로 막지 않는다.
+            invocation = parse_invocation(text)
+            if invocation is not None:
+                skill_name, skill_request = invocation
+                skill = resolve_invocable_skill(
+                    account_id=account_id, team_id=session["team_id"], name=skill_name
+                )
+                if skill is not None:
+                    model_input = build_invocation_input(
+                        name=skill_name, body=skill["body"], request=mask_sensitive(skill_request)
+                    )
+                    applied_skill = {
+                        "name": skill_name,
+                        "scope": skill.get("scope") or "personal",
+                    }
             # 2026-08-20 — 그 팀이 등록한 외부 가드레일이 있으면 거쳐 간다.
             # 없거나 「연결 확인」 전이면 아무 일도 안 한다(`services/guardrails`).
             #
@@ -245,22 +278,15 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     session_id=session_id, account_id=account_id
                 )
             )
-            # 발화는 전부 새 엔진(services.agent_runtime)을 탄다(2026-08-14
-            # 전환). 화면(Builder)이 아직 레거시 `agent`/`agent_tool` 스키마만
-            # 쓰므로(agent_version_id 없음), 그 경우 legacy_bridge로 **저장 없이**
-            # draft를 만든다 — 새 `agents`/`agent_versions` 스키마는 건드리지
-            # 않는다. 여기서 미리 구성해 두는 이유는 **스트림이 열리기 전에**
-            # 실패할 수 있는 부분(계정 프로필 조회, 레거시 에이전트 조회)을 먼저
-            # 걷어내기 위해서다 — 스트림 안에서 실패하면 상태 코드를 더 바꿀 수
-            # 없다.
+            # 발화는 전부 새 엔진(services.agent_runtime)을 탄다. 여기서 런타임
+            # 컨텍스트를 미리 구성해 두는 이유는 **스트림이 열리기 전에** 실패할
+            # 수 있는 부분(계정 프로필 조회)을 먼저 걷어내기 위해서다 — 스트림
+            # 안에서 실패하면 상태 코드를 더 바꿀 수 없다.
+            #
+            # 2026-08-22까지는 여기서 `legacy_bridge`로 draft도 만들었다. 레거시
+            # `agent` 스키마를 폐기하면서 모든 세션이 `agent_version_id`를 갖게
+            # 돼(`_resolve_session_agent`) 그 갈래가 없어졌다.
             runtime_context = _build_runtime_context(session=session, account_id=account_id)
-            draft = (
-                None
-                if session.get("agent_version_id")
-                else draft_from_legacy_agent(
-                    agent_id=session["agent_id"], team_id=session["team_id"]
-                )
-            )
             if session.get("agent_version_id"):
                 # 기본 챗만 예외 — 이미 열린 대화도 "+"로 방금 켠 도구를 바로
                 # 쓸 수 있어야 한다(2026-08-18, AgentVersionRepository
@@ -310,8 +336,10 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         # 여기서부터 스트림이다. 응답이 시작된 뒤에는 상태 코드를 바꿀 수 없어서
         # 위의 검사를 전부 끝낸 다음에 연다.
         events = _run_deep_agent(
-            session=session, context=runtime_context, user_input=model_input, history=history, draft=draft
+            session=session, context=runtime_context, user_input=model_input, history=history
         )
+        if applied_skill is not None:
+            events = _with_skill_applied_event(events, skill=applied_skill)
 
         return StreamingHttpResponse(
             _relay(
@@ -322,6 +350,22 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             ),
             content_type="application/x-ndjson",
         )
+
+
+def _with_skill_applied_event(events, *, skill: dict[str, str]):
+    """명시 호출로 조회·주입한 스킬을 실제 실행 이벤트 앞에 한 번 알린다.
+
+    명시 호출은 `read_file`을 거치지 않아 기존 도구 타임라인에는 아무 흔적이
+    없었다. 이 이벤트도 `_relay()`가 다른 이벤트와 함께 저장하므로 라이브
+    스트림뿐 아니라 새로고침으로 복원한 생각 과정에도 그대로 남는다.
+    """
+
+    yield {
+        "type": "skill_applied",
+        "skill_name": skill["name"],
+        "scope": skill["scope"],
+    }
+    yield from events
 
 
 #: 모델에게 되돌려 줄 앞선 턴의 최대 수(사람 발화 + 답 합계).
@@ -406,7 +450,6 @@ def _run_deep_agent(
     context: RuntimeContext,
     user_input: str,
     history: list[dict[str, Any]],
-    draft: dict[str, Any] | None = None,
 ):
     """대화를 `services.agent_runtime` 엔진으로 돌린다(2026-08-14부터 전부 이 경로).
 
@@ -417,12 +460,8 @@ def _run_deep_agent(
     (레거시 규격) 여기서 하나를 더 채워 맞춘다 — 실행 엔진 쪽 규격을 바꾸지
     않고 이 어댑터 안에서만 흡수한다.
 
-    `draft`가 있으면(레거시 `agent` 스키마 세션 — `draft_from_legacy_agent()`가
-    만듦) `executor.run()`에 `agent_id=None, agent_version_id=None`으로
-    넘긴다 — `validate_execution_target()`이 draft와 저장된 실행을 동시에
-    받는 걸 막는다. `agent_version_id`가 있는 세션(새 스키마, 아직 화면에
-    실제 사용처 없음 — 전방 호환)은 `draft=None`으로 저장된 버전을 그대로
-    읽는다.
+    세션은 언제나 `agent_id`+`agent_version_id` 쌍으로 실행된다 — 2026-08-22에
+    레거시 `agent` 스키마를 폐기하면서 draft로 도는 갈래가 없어졌다.
 
     `build_default_executor`는 **여기서** import한다(모듈 최상단이 아니라).
     이 패키지의 `__init__.py`가 `deepagents` import를 이 이름을 실제로 쓰는
@@ -436,12 +475,9 @@ def _run_deep_agent(
     from services.agent_runtime.tracing import trace_events
 
     executor = build_default_executor()
-    run_kwargs = (
-        {"agent_id": None, "agent_version_id": None, "draft": draft}
-        if draft is not None
-        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
-    )
     raw_events = executor.run(
+        agent_id=session["agent_id"],
+        agent_version_id=session["agent_version_id"],
         user_input=user_input,
         context=context,
         conversation_messages=tuple(history),
@@ -449,7 +485,6 @@ def _run_deep_agent(
         # 에이전트 원본 대신 이 목록으로 돈다 — `None`이면(커스터마이즈 안
         # 함) 로드된 정의를 그대로 쓴다.
         tool_refs_override=session.get("tool_refs_override"),
-        **run_kwargs,
     )
     # agent_run/tool_call 적재(2026-08-14) — 이벤트는 손대지 않고 그대로
     # 지나간다, 화면에 가는 내용은 감싸기 전과 같다.
@@ -467,6 +502,7 @@ def _resume_deep_agent(
     decision: str,
     selected: list[int] | None = None,
     per_call_decisions: list[dict[str, Any]] | None = None,
+    resolved_decisions: list[dict[str, Any]] | None = None,
 ):
     """새 엔진에서 HITL interrupt로 멈춘 실행을 재개한다(2026-08-19, §0순위).
 
@@ -503,30 +539,28 @@ def _resume_deep_agent(
 
     run_id = content.get("run_id")
     action_requests = content.get("action_requests") or []
+    trace_resume_state = content.get("trace_resume_state") or {}
     context = _build_runtime_context(session=session, account_id=account_id, run_id=run_id)
-    draft = (
-        None
-        if session.get("agent_version_id")
-        else draft_from_legacy_agent(agent_id=session["agent_id"], team_id=session["team_id"])
-    )
-    run_kwargs = (
-        {"agent_id": None, "agent_version_id": None, "draft": draft}
-        if draft is not None
-        else {"agent_id": session["agent_id"], "agent_version_id": session["agent_version_id"], "draft": None}
-    )
 
-    executor = build_default_executor()
-    raw_events = executor.resume(
-        context=context,
-        decisions=(
+    if resolved_decisions is None:
+        resolved_decisions = (
             _decisions_for(action_requests, selected, per_call=per_call_decisions)
             if per_call_decisions is not None or decision == "approve"
             else [{"type": decision}] * len(action_requests)
-        ),
+        )
+
+    executor = build_default_executor()
+    raw_events = executor.resume(
+        agent_id=session["agent_id"],
+        agent_version_id=session["agent_version_id"],
+        context=context,
+        decisions=resolved_decisions,
+        trace_resume_state=trace_resume_state,
         tool_refs_override=session.get("tool_refs_override"),
-        **run_kwargs,
     )
-    for event in trace_events(raw_events, context=context, known_run_ids=(run_id,) if run_id else ()):
+    suspended_run_ids = tuple(content.get("suspended_run_ids") or ())
+    known_run_ids = suspended_run_ids or ((run_id,) if run_id else ())
+    for event in trace_events(raw_events, context=context, known_run_ids=known_run_ids):
         if event.get("type") == EVENT_ERROR and "text" not in event:
             event = {**event, "text": event.get("message", "")}
         yield event
@@ -579,62 +613,87 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                 except PerCallDecisionsError as exc:
                     return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+            decision = serializer.validated_data.get("decision") or "approve"
+            action_requests = content.get("action_requests") or []
+            resolved_decisions = (
+                _decisions_for(
+                    action_requests,
+                    serializer.validated_data.get("selected"),
+                    per_call=per_call_decisions,
+                )
+                if per_call_decisions is not None or decision == "approve"
+                else [{"type": decision}] * len(action_requests)
+            )
+            _close_rejected_tool_calls(
+                trace_resume_state=content.get("trace_resume_state") or {},
+                resolved_decisions=resolved_decisions,
+            )
+
             return StreamingHttpResponse(
                 _relay(
                     _resume_deep_agent(
                         session=session,
                         account_id=account_id,
                         content=content,
-                        decision=serializer.validated_data.get("decision") or "approve",
+                        decision=decision,
                         selected=serializer.validated_data.get("selected"),
                         per_call_decisions=per_call_decisions,
+                        resolved_decisions=resolved_decisions,
                     ),
                     session_id=session_id,
                     account_id=account_id,
+                    approved_resume=True,
                 ),
                 content_type="application/x-ndjson",
             )
 
-        resume = content.get("resume") or {}
-        tool_call = resume.get("tool_call")
-        if tool_call is None:
-            # 이 카드로는 재개할 수 없다. 승인한 셈 치고 아무것도 안 하는 것보다
-            # 못 한다고 말하는 편이 낫다.
-            return Response(
-                {"detail": "이 확인 카드는 재개 정보를 갖고 있지 않습니다. 다시 요청해 주세요."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        selected = serializer.validated_data.get("selected")
-        # 재개 정보는 **스택**이다. 위임(agent:)이 끼어 있으면 바깥 호출은
-        # "그 에이전트를 다시 부른다"이고, 사람이 승인한 실제 호출은 맨 안쪽에
-        # 있다 — 선택 적용도 승인도 거기서 해야 한다.
-        plan, approved_ref = _apply_to_innermost(resume, selected)
-
-        return StreamingHttpResponse(
-            _relay(
-                run_agent(
-                    session["agent_id"],
-                    "",
-                    {
-                        "session_id": session_id,
-                        "account_id": account_id,
-                        "proj_id": session.get("proj_id"),
-                        "messages": plan.get("messages") or [],
-                        "resume_tool_call": plan.get("tool_call"),
-                        "resume_inner": plan.get("inner"),
-                        "approved_tool_calls": [approved_ref],
-                    },
-                ),
-                session_id=session_id,
-                account_id=account_id,
-            ),
-            content_type="application/x-ndjson",
+        # 레거시 harness(`services.harness.run_agent`)로 재개하던 갈래가 여기
+        # 있었다. 2026-08-22에 레거시 `agent` 스키마를 폐기하면서 지웠다 —
+        # 이제 승인 카드는 전부 `engine="deepagents"`로 저장되므로 위에서
+        # 처리되고, 여기 오는 것은 **폐기 전에 저장돼 아직 안 닫힌 카드**뿐이다.
+        #
+        # 승인한 셈 치고 조용히 넘기지 않는다 — 그 카드가 승인을 기다리던 것은
+        # 외부 시스템을 바꾸는 호출이고, 무엇을 승인하는지 다시 보여주지 못하는
+        # 채로 실행하는 것이 가장 나쁘다.
+        return Response(
+            {
+                "detail": "이 확인 카드는 더 이상 재개할 수 없습니다. "
+                "질문을 다시 보내 주세요."
+            },
+            status=status.HTTP_409_CONFLICT,
         )
 
 
 class PerCallDecisionsError(ValueError):
     """호출별 `decisions`가 그 턴의 `action_requests`와 안 맞을 때."""
+
+
+def _close_rejected_tool_calls(
+    *,
+    trace_resume_state: dict[str, Any],
+    resolved_decisions: list[dict[str, Any]],
+) -> None:
+    """거절된 호출을 스트림을 열기 전에 REJECTED로 확정한다."""
+
+    rejected_by_run: dict[str, list[str]] = {}
+    for pending in trace_resume_state.get("interrupted_tool_calls") or []:
+        if not isinstance(pending, dict):
+            continue
+        action_index = pending.get("action_index")
+        if not isinstance(action_index, int) or not 0 <= action_index < len(resolved_decisions):
+            continue
+        if resolved_decisions[action_index].get("type") != "reject":
+            continue
+        pending_run_id = pending.get("run_id")
+        tool_call_id = pending.get("tool_call_id")
+        if pending_run_id and tool_call_id:
+            rejected_by_run.setdefault(pending_run_id, []).append(tool_call_id)
+
+    for pending_run_id, tool_call_ids in rejected_by_run.items():
+        ToolCallRepository.reject(
+            run_id=pending_run_id,
+            langchain_tool_call_ids=tool_call_ids,
+        )
 
 
 def _per_call_decision_types(
@@ -712,27 +771,6 @@ def _decisions_for(
         }
     return decisions
 
-def _apply_to_innermost(
-    node: dict[str, Any], selected: list[int] | None
-) -> tuple[dict[str, Any], str]:
-    """재개 스택의 가장 안쪽 호출에 선택을 적용하고, 승인할 `tool_ref` 를 돌려준다.
-
-    바깥 층의 호출은 손대지 않는다 — 그것은 「이 에이전트를 다시 부른다」이고,
-    사용자가 확인 카드에서 체크를 푼 것은 맨 안쪽의 인자다. 바깥에 적용하면
-    위임 자체가 잘려 나간다.
-
-    승인도 안쪽 `tool_ref` 하나만 준다. 바깥까지 승인하면 「위임은 늘 승인된
-    것」이 되어 게이트가 한 층 헐거워진다.
-    """
-
-    inner = node.get("inner")
-    if inner:
-        applied, approved_ref = _apply_to_innermost(inner, selected)
-        return {**node, "inner": applied}, approved_ref
-
-    tool_call = _apply_selection(node["tool_call"], selected)
-    return {**node, "tool_call": tool_call}, tool_call["tool_ref"]
-
 
 def _apply_selection(tool_call: dict[str, Any], selected: list[int] | None) -> dict[str, Any]:
     """확인 카드에서 체크를 푼 항목을 인자에서 뺀다.
@@ -756,7 +794,34 @@ def _apply_selection(tool_call: dict[str, Any], selected: list[int] | None) -> d
     return {**tool_call, "arguments": arguments}
 
 
-def _relay(events, *, session_id: str, account_id: str, question: str = ""):
+def _approved_completion_result(
+    event: dict[str, Any], *, successful_tool_refs: list[str]
+) -> dict[str, Any]:
+    """승인 재개 결과를 모델 문장이 아니라 실제 성공한 도구 상태로 확정한다."""
+
+    if event.get("type") != "result" or not successful_tool_refs:
+        return event
+
+    unique_refs = list(dict.fromkeys(successful_tool_refs))
+    if len(unique_refs) == 1:
+        from services.harness.registry import BUILTIN_TOOLS
+
+        tool = BUILTIN_TOOLS.get(unique_refs[0])
+        label = getattr(tool, "name", None) or unique_refs[0]
+        message = f"{label} 작업을 완료했습니다."
+    else:
+        message = f"승인한 작업 {len(unique_refs)}건을 완료했습니다."
+    return {**event, "text": message}
+
+
+def _relay(
+    events,
+    *,
+    session_id: str,
+    account_id: str,
+    question: str = "",
+    approved_resume: bool = False,
+):
     """이벤트를 NDJSON 한 줄씩 내보내고, 끝나면 결과를 chat_message 로 확정한다.
 
     적재를 마지막에 하는 이유는 카드 한 벌이 완성돼야 화면이 새로고침 뒤에 같은
@@ -770,8 +835,20 @@ def _relay(events, *, session_id: str, account_id: str, question: str = ""):
 
     collected: list[dict[str, Any]] = []
     final: dict[str, Any] | None = None
+    successful_tool_refs: list[str] = []
     try:
         for event in events:
+            if (
+                approved_resume
+                and event.get("type") == "tool_completed"
+                and event.get("status") == "OK"
+                and event.get("tool_ref")
+            ):
+                successful_tool_refs.append(str(event["tool_ref"]))
+            if approved_resume:
+                event = _approved_completion_result(
+                    event, successful_tool_refs=successful_tool_refs
+                )
             collected.append(event)
             # "result"(EVENT_RESULT)뿐 아니라 EVENT_ERROR("error")도 종결로 본다 —
             # 레거시 Harness는 내부적으로 이 이벤트를 만들지 않아 지금까지는
@@ -866,6 +943,8 @@ def _persist(
             content["run_id"] = final.get("run_id")
             content["interrupt_id"] = final.get("interrupt_id")
             content["action_requests"] = final.get("action_requests")
+            content["trace_resume_state"] = final.get("trace_resume_state") or {}
+            content["suspended_run_ids"] = final.get("suspended_run_ids") or []
             names = [
                 a.get("name") for a in (final.get("action_requests") or []) if a.get("name")
             ]

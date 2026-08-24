@@ -86,6 +86,25 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("team", "guardrail_on_failure", "2026-08-24 가드레일 연결 실패 시 동작(팀 속성)"),
     ("mcp_call_note", None, "2026-08-21 MCP 동시 실행·timeout 경고 재료"),
     ("tool_call", "retrieved_doc_ids", "2026-08-21 도구가 조회한 문서 식별자"),
+    (
+        "tool_call",
+        "langchain_tool_call_id",
+        "2026-08-24 HITL 도구 호출 상관관계",
+    ),
+    ("team", "default_model", "2026-08-22 팀 기본 채팅 모델 — 레거시 정문 에이전트에서 옮김"),
+    # 2026-08-22_drop_legacy_agent.sql 은 여기 못 적는다 — 이 표는 "있어야 할
+    # 것이 있는가"만 보는데, 그 마이그레이션이 하는 일은 `agent`/`agent_tool`을
+    # **없애는** 것이다. 적용 여부는 아래 쿼리로 직접 확인한다(0이어야 한다):
+    #   SELECT count(*) FROM information_schema.tables
+    #    WHERE table_schema='public' AND table_name IN ('agent','agent_tool');
+]
+
+EXPECTED_INDEXES: list[tuple[str, str, str]] = [
+    (
+        "tool_call",
+        "ux_tool_call_run_langchain_id",
+        "2026-08-24 HITL 도구 호출 중복 방지",
+    ),
 ]
 
 
@@ -121,9 +140,33 @@ def _target(url: str) -> str:
 
 def _split_statements(sql: str) -> list[str]:
     # 줄 전체가 주석(--)인 줄만 지운다. 세미콜론은 마이그레이션 파일 안에서
-    # 문자열 리터럴로 나오지 않으므로 단순 split 으로 충분하다.
+    # 문자열 리터럴에도 나올 수 있으므로 따옴표 밖의 것만 문장 끝으로 본다.
     without_comments = re.sub(r"^--.*$", "", sql, flags=re.MULTILINE)
-    statements = [s.strip() for s in without_comments.split(";")]
+    statements: list[str] = []
+    current: list[str] = []
+    in_string = False
+    index = 0
+    while index < len(without_comments):
+        char = without_comments[index]
+        if char == "'":
+            current.append(char)
+            if in_string and index + 1 < len(without_comments) and without_comments[index + 1] == "'":
+                current.append("'")
+                index += 2
+                continue
+            in_string = not in_string
+        elif char == ";" and not in_string:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+        else:
+            current.append(char)
+        index += 1
+
+    final_statement = "".join(current).strip()
+    if final_statement:
+        statements.append(final_statement)
     # BEGIN/COMMIT 은 뺀다 — psycopg 연결은 기본이 autocommit=False 라
     # `with conn:` 블록 자체가 이미 트랜잭션이다.
     return [s for s in statements if s and s.upper() not in ("BEGIN", "COMMIT")]
@@ -149,9 +192,33 @@ def check(url: str) -> int:
             if not cursor.fetchone()[0]:
                 missing.append((table, column, why))
 
+        for table, index, why in EXPECTED_INDEXES:
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM pg_index AS index_meta
+                      JOIN pg_class AS index_class
+                        ON index_class.oid = index_meta.indexrelid
+                      JOIN pg_class AS table_class
+                        ON table_class.oid = index_meta.indrelid
+                      JOIN pg_namespace AS namespace
+                        ON namespace.oid = table_class.relnamespace
+                     WHERE namespace.nspname = 'public'
+                       AND table_class.relname = %s
+                       AND index_class.relname = %s
+                       AND index_meta.indisunique
+                )
+                """,
+                (table, index),
+            )
+            if not cursor.fetchone()[0]:
+                missing.append((table, index, why))
+
     name_of = lambda t, c: t if c is None else f"{t}.{c}"  # noqa: E731
     print(f"대상 DB: {_target(url)}")
-    print(f"확인 항목 {len(EXPECTED)}개 · 빠진 것 {len(missing)}개")
+    checked = len(EXPECTED) + len(EXPECTED_INDEXES)
+    print(f"확인 항목 {checked}개 · 빠진 것 {len(missing)}개")
     for table, column, why in missing:
         print(f"  [없음] {name_of(table, column):<38} {why}")
     if not missing:

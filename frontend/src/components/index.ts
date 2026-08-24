@@ -62,3 +62,8 @@ export {
   OpsSummaryGrid,
 } from './OpsUi/OpsUi';
 export type { OpsTone } from './OpsUi/OpsUi';
+
+/* 도구·MCP 고르기 모달. 2026-08-22까지 레거시 빌더 화면(AgentEditPage) 안에
+   있었는데 Chat과 새 빌더가 같이 쓰고 있어서, 그 화면을 지우면서 공용으로
+   옮겼다. */
+export { ToolPickerModal } from './ToolPickerModal/ToolPickerModal';

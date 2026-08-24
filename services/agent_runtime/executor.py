@@ -29,20 +29,16 @@ def _agent_execution_failure_event(
 ) -> dict[str, Any]:
     """그래프 실행(`run()`/`resume()`) 중 예외 → `EVENT_ERROR` 이벤트.
 
-    2026-08-20, 실사용 중 발견 — 이 자리는 예전부터 어떤 예외가 왔든
-    `"에이전트 실행 중 오류가 발생했습니다."`라는 고정 문구만 돌려주고 있었다.
-    `logger.exception(...)`으로 서버 로그에는 진짜 원인이 남지만, 화면에는 그
-    문구 하나뿐이라 사람이 뭘 고쳐야 할지 알 방법이 없었다 — `ToolInputError`
-    (프로젝트를 못 골랐다)처럼 **사람이 그 자리에서 고칠 수 있는 사유**까지도
-    똑같이 뭉개졌다.
+    `factory.py`의 `_to_langchain_tool()._run()`과 같은 기준
+    (`SPEAKABLE_ERRORS`/`error_code_of()`)을 쓴다 — 같은 판단을 두 곳에서 따로
+    하지 않는다.
 
-    `factory.py`의 `_to_langchain_tool()._run()`이 이미 정해 둔 기준
-    (`SPEAKABLE_ERRORS`/`error_code_of()`)을 여기서도 그대로 쓴다 — 같은
-    판단을 두 곳에서 따로 하지 않는다. 말할 수 있는 사유(`ToolInputError`/
-    `RepositoryError`— `PermissionDenied` 포함/`OAuthError`)는 원문 메시지를
-    그대로 주고, 그 밖은 예전과 같은 일반 문구를 쓰되 클래스 이름(또는 MCP
-    에러 코드)만 `error_code`에 남긴다 — 문서 원문·토큰이 섞여 있을 수 있는
-    메시지를 화면에 그대로 내보내지 않기 위해서다.
+    말할 수 있는 사유(`ToolInputError`/`RepositoryError`/`OAuthError`)는 원문
+    메시지를 그대로 준다. 이걸 일반 문구로 뭉개면 "프로젝트를 못 골랐다"처럼
+    사람이 그 자리에서 고칠 수 있는 사유까지 화면에서 사라진다.
+
+    그 밖은 일반 문구를 쓰고 클래스 이름(또는 MCP 에러 코드)만 `error_code`에
+    남긴다 — 문서 원문·토큰이 섞여 있을 수 있는 메시지를 화면에 내보내지 않는다.
     """
 
     from services.harness.runner import SPEAKABLE_ERRORS
@@ -56,8 +52,8 @@ def _agent_execution_failure_event(
         "agent_id": agent_id,
         "agent_version_id": agent_version_id,
         "run_id": run_id,
-        # 여기까지 쓴 회전 수·토큰(2026-08-21). **실패해도 비용은 이미 나갔다** —
-        # 실패한 실행만 `token_in`이 비면 Usage 합계가 조용히 실제보다 작아진다.
+        # 여기까지 쓴 회전 수·토큰. **실패해도 비용은 이미 나갔다** — 실패한
+        # 실행만 비워 두면 Usage 합계가 조용히 실제보다 작아진다.
         **(usage or {"iterations": 0, "token_in": None, "token_out": None}),
         "complete": True,
     }
@@ -86,8 +82,7 @@ def validate_execution_target(
 
 
 def _tracing_callbacks() -> list[Any]:
-    """Langfuse·LangSmith 콜백을 모아 돌려준다(2026-08-19). 키가 없는 쪽은
-    각자 `None`을 돌려주므로 걸러진다 — 둘 다 없으면 빈 리스트.
+    """Langfuse 콜백을 돌려준다. 키가 없으면 빈 리스트다.
 
     **지연 import다** — 모듈 맨 위에서 `tracing.callbacks`를 import하면
     `services.agent_runtime.tracing` 패키지(`tracing/__init__.py`)가 먼저
@@ -99,9 +94,10 @@ def _tracing_callbacks() -> list[Any]:
     module`로 서버 자체가 못 뜨는 걸 실제로 재현·확인했다. 호출 시점으로
     미루면 그때는 두 모듈 다 이미 완전히 로드돼 있어 순환이 안 생긴다.
     """
-    from services.agent_runtime.tracing.callbacks import get_langfuse_callback, get_langsmith_callback
+    from services.agent_runtime.tracing.callbacks import get_langfuse_callback
 
-    return [cb for cb in (get_langfuse_callback(), get_langsmith_callback()) if cb is not None]
+    callback = get_langfuse_callback()
+    return [callback] if callback is not None else []
 
 
 class AgentExecutor:
@@ -174,18 +170,12 @@ class AgentExecutor:
             logger.exception("Deep Agent 조립 실패")
             raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
 
-        # `services.agent_runtime.models.factory`는 여기서(함수 본문) import한다
-        # — 모듈 최상단이 아니라. `backend/db/agent_platform.py` →
-        # `services.agent_runtime.definitions`처럼 이 패키지 진입 시점에 이미
-        # `agent_platform.py`를 부르는 호출자가 있어서, 모듈 최상단에서
-        # `models.factory`(그 자신이 `agent_platform.CustomModelRepository`를
-        # 다시 import함)를 부르면 `agent_platform.py`가 아직 초기화되던 중에
-        # 자기 자신으로 되돌아오는 순환 import가 생긴다(2026-08-20 실측 —
-        # `python manage.py runserver`로 실제 부팅했을 때만 드러남, `manage.py
-        # test`는 이 정확한 import 순서를 안 태워서 못 잡았다). `factory.py`가
-        # `ModelConfigResolver`/`ModelFactory`를 `TYPE_CHECKING`에서만 참조하고
-        # 실제 인스턴스는 생성자로 주입받는 것과 같은 이유 — 이 모듈도 같은
-        # 규칙을 따른다.
+        # **모듈 최상단이 아니라 함수 본문에서 import한다.** `agent_platform.py`가
+        # 이 패키지를 부르는데, `models.factory`가 다시
+        # `agent_platform.CustomModelRepository`를 import해서 순환이 생긴다 —
+        # `agent_platform.py`가 초기화되던 중에 자기 자신으로 되돌아온다.
+        # 실제 부팅에서만 드러나고 테스트는 이 import 순서를 안 태워 못 잡는다.
+        # `factory.py`가 같은 이유로 `TYPE_CHECKING` + 생성자 주입을 쓴다.
         from services.agent_runtime.models.factory import resolved_endpoint_hash
 
         yield {
@@ -193,10 +183,8 @@ class AgentExecutor:
             "run_id": context.run_id,
             "agent_id": loaded.definition.agent_id,
             "agent_version_id": loaded.definition.agent_version_id,
-            # 2026-08-19, §4순위(Run Snapshot) — 이 실행이 실제로 사용한
-            # provider/엔드포인트. `tracing/__init__.py`의 `_start_run()`이
-            # 이 두 값을 읽어 `agent_run.resolved_provider`/
-            # `resolved_endpoint_hash`에 적재한다.
+            # 이 실행이 실제로 사용한 provider/엔드포인트.
+            # `tracing/__init__.py`의 `_start_run()`이 읽어 `agent_run`에 적재한다.
             "resolved_provider": resolved_model.provider,
             "resolved_endpoint_hash": resolved_endpoint_hash(resolved_model),
             "complete": False,
@@ -204,9 +192,9 @@ class AgentExecutor:
 
         event_mapper = self.event_mapper_factory()
 
-        # Langfuse·LangSmith 콜백(2026-08-19, tracing/callbacks.py) — 둘 다
-        # 키가 없으면 빈 리스트, stream_adapter가 그대로 config에 아무 것도
-        # 안 붙인다. 지연 import 이유는 `_tracing_callbacks()` docstring 참고.
+        # Langfuse 콜백(`tracing/callbacks.py`) — 키가 없으면 빈
+        # 리스트라 stream_adapter가 config에 아무것도 안 붙인다.
+        # 지연 import 이유는 `_tracing_callbacks()` docstring 참고.
         callbacks = _tracing_callbacks()
 
         try:
@@ -214,18 +202,13 @@ class AgentExecutor:
                 runtime=runtime,
                 user_input=user_input,
                 conversation_messages=conversation_messages,
-                # `context.session_id`를 LangGraph의 thread_id로 그대로 쓴다
-                # (2026-08-18, §5 Phase 1: Checkpointer 도입). None이면(session_id
-                # 없는 호출 — 예: 세션이 없는 스크립트 실행) stream_adapter가
-                # 예전과 동일하게 conversation_messages를 그대로 붙이는 경로로
-                # 돈다 — `stream_adapter.py` docstring의 결합 전제 참고.
+                # `context.session_id`를 LangGraph thread_id로 그대로 쓴다. None이면
+                # (세션 없는 스크립트 실행 등) stream_adapter가 conversation_messages를
+                # 그대로 붙이는 경로로 돈다 — 그쪽 docstring의 결합 전제 참고.
                 thread_id=context.session_id,
                 callbacks=callbacks,
                 # Langfuse 대시보드에서 세션/계정/팀 단위로 걸러 보기 위한
-                # 메타데이터(2026-08-19). LangSmith 쪽은 이 값을 안 쓰고
-                # 무시한다. 콜백이 하나도 없으면(키 둘 다 없음) `None`으로
-                # 둔다 — `config["metadata"]`는 LangSmith 자동 연결(env var)
-                # 도 읽는 범용 필드라, 아무도 안 쓸 값을 굳이 얹어 놓지 않는다.
+                # 메타데이터. 콜백이 없으면 아무도 쓰지 않으므로 `None`으로 둔다.
                 trace_metadata=(
                     {
                         "langfuse_session_id": context.session_id,
@@ -238,35 +221,28 @@ class AgentExecutor:
                     if callbacks
                     else None
                 ),
-                # 2026-08-21, 병렬실행 Phase 1 — 한 super-step 동시 실행 상한
-                # (`2026-08-20_02` §5.1). 정책 값 하나를 그대로 넘긴다.
+                # 한 super-step 동시 실행 상한. 정책 값을 그대로 넘긴다.
                 max_concurrency=self.factory.runtime_policy.max_concurrency,
             ):
-                # convert()는 항상 리스트를 반환한다(2026-08-14 재설계) — 모델이
-                # 한 AIMessage에 tool_calls를 여러 개 담아 내면(병렬 위임/도구
-                # 호출) 원시 이벤트 1개가 공통 이벤트 여러 개로 펼쳐질 수 있다.
+                # `convert()`는 항상 리스트를 반환한다 — 모델이 한 AIMessage에
+                # tool_calls를 여러 개 담으면 원시 이벤트 1개가 공통 이벤트
+                # 여러 개로 펼쳐진다.
                 for converted in event_mapper.convert(
                     raw_event,
                     definition=loaded.definition,
                     context=context,
-                    # 2026-08-19, §10순위(Child Run Snapshot) — `factory.build()`가
-                    # 이미 계산해 둔 Root 자신의 resolved_model과 Child별
-                    # resolved_model(alias 기준)을 EventMapper에 넘긴다.
-                    # `subagent_started` 이벤트를 만들 때(events.py
-                    # `_classify_parent_tool_calls()`) 여기서 alias로 찾아
+                    # `factory.build()`가 계산해 둔 Root와 Child별 resolved_model.
+                    # `events.py`가 `subagent_started`를 만들 때 alias로 찾아
                     # `resolved_provider`/`resolved_endpoint_hash`를 채운다.
                     root_resolved_model=resolved_model,
                     child_resolved_models=child_resolved_models,
                 ):
                     yield converted
         except Exception as exc:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
-            # **말할 수 있는 사유에는 트레이스백을 남기지 않는다** —
-            # `factory.py`의 `_run()`과 같은 기준(위 `_agent_execution_failure_
-            # event()` docstring 참고). 아래에서 다시 분기하지 않고 그 함수가
-            # 이미 SPEAKABLE_ERRORS로 갈랐으니, 로그 레벨은 여기서는 항상
-            # `exception`으로 남긴다 — 이 자리는 그래프 실행 자체가 멈춘
-            # 드문 경로라, 말할 수 있는 사유였더라도 "왜 여기까지 왔는지"는
-            # 운영 로그에 남아야 다음에 같은 경로를 또 타는지 알 수 있다.
+            # 여기서는 사유를 가리지 않고 항상 `exception`으로 남긴다. 그래프 실행
+            # 자체가 멈춘 드문 경로라, 말할 수 있는 사유였더라도 "왜 여기까지
+            # 왔는지"가 운영 로그에 있어야 한다. 화면에 보낼 메시지 분기는
+            # `_agent_execution_failure_event()`가 이미 한다.
             logger.exception(
                 "Deep Agent 실행 실패: agent=%s version=%s",
                 loaded.definition.agent_id,
@@ -287,6 +263,7 @@ class AgentExecutor:
         agent_version_id: str | None,
         context: RuntimeContext,
         decisions: Sequence[dict[str, Any]],
+        trace_resume_state: dict[str, Any] | None = None,
         draft: dict | None = None,
         tool_refs_override: Sequence[str] | None = None,
     ) -> Iterator[dict[str, Any]]:
@@ -333,13 +310,11 @@ class AgentExecutor:
                         loaded.definition, tool_refs=tuple(tool_refs_override)
                     ),
                 )
-            # 재개는 `EVENT_AGENT_STARTED`를 새로 안 내므로(아래) Root 자신의
+            # 재개는 `EVENT_AGENT_STARTED`를 새로 내지 않으므로 Root의
             # `resolved_model`을 다시 기록할 자리가 없다 — 멈추기 전
-            # `_start_run()`이 이미 적어 둔 값을 그대로 둔다(§4순위).
-            # 다만 `resolved_model`/`child_resolved_models` 자체는 버리지
-            # 않는다 — 재개된 뒤에도 이 실행이 새 위임(`subagent_started`)을
-            # 낼 수 있어서, 그 이벤트의 resolved_provider/endpoint_hash를
-            # 채우려면(§10순위) 여전히 필요하다.
+            # `_start_run()`이 적어 둔 값을 그대로 둔다. 그래도 두 값을 버리지는
+            # 않는다: 재개 뒤에 새 위임이 날 수 있고, 그 `subagent_started`의
+            # resolved_provider/endpoint_hash를 채우려면 필요하다.
             runtime, resolved_model, child_resolved_models = self.factory.build(
                 definition=loaded.definition,
                 subagent_references=loaded.subagent_references,
@@ -352,8 +327,14 @@ class AgentExecutor:
             raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
 
         event_mapper = self.event_mapper_factory()
+        # interrupt 전 EventMapper가 기억하던 child run/tool_call 상관관계는
+        # Python 스트림과 함께 사라진다. 승인 카드에 저장한 최소 상태를 복원해야
+        # 서브에이전트 안에서 재개된 ToolMessage도 원래 run/tool 행으로 돌아간다.
+        restore_hitl_state = getattr(event_mapper, "restore_hitl_state", None)
+        if callable(restore_hitl_state):
+            restore_hitl_state(trace_resume_state)
 
-        # Langfuse·LangSmith 콜백(2026-08-19) — 승인을 기다리다 재개된 실행도
+        # Langfuse 콜백 — 승인을 기다리다 재개된 실행도
         # 실제 모델·도구 호출이라 트레이싱에서 뺄 이유가 없다 —
         # `stream_adapter.py`의 `resume` 분기도 이 값을 받게 이미 맞춰 뒀다.
         callbacks = _tracing_callbacks()

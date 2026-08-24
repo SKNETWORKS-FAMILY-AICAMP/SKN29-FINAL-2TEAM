@@ -607,37 +607,36 @@ DATABASE_URL="postgres://project_copilot:project_copilot@localhost:5432/project_
 python backend/services/createDB/grant_admin.py <가입된 이메일> --revoke
 ```
 
-### 6.2 기본 제공 에이전트 시드 (`seed_agents.py`)
+### 6.2 기본 챗 에이전트 — 시드할 것이 없다 (2026-08-22부터)
 
-에이전트는 팀 소유(`agent.team_id`)라 팀마다 한 벌씩 필요하고, 온보딩으로 새 팀을 만들 때마다 다시 돌려야 한다.
+레거시 `agent`/`agent_tool` 스키마와 그 시드 스크립트(`seed_agents.py`,
+「코파일럿」)를 폐기했다. 지금은 팀을 만드는 순간
+`TeamRepository.create()`가 같은 트랜잭션에서 "기본 어시스턴트"
+(`agents.is_default_chat = true`)를 자동으로 만든다 — 온보딩 화면에서
+팀을 만들면 그 자리에서 Chat 이 된다. 관리자가 따로 돌릴 것이 없다.
 
-> ⚠ **「선택기에 「업무 추출 에이전트」가 안 보이면 안 돌린 것」은 틀렸다
-> (2026-08-12).** 두 가지가 바뀌어서 **판정이 정반대**가 됐다.
->
-> 1. **Chat 의 에이전트 선택기를 없앴다**(`58ed034`). 무엇으로 답할지는 고르는
->    것이 아니라 말하면 정해진다.
-> 2. 기본 제공 에이전트가 **1종(정문)**이 됐다. **시드를 제대로 돌리면 옛
->    「업무 추출 에이전트」는 오히려 `ARCHIVED` 로 내려가 사라진다** —
->    `seed_agents.py` 의 정리 로직이 정의에 없는 기본 제공 행을 보관 처리한다.
->
-> **지금의 확인 방법**: Chat 빈 대화에서 「이 팀에 기본 에이전트가 없습니다.
-> 관리자가 시드를 돌려야 합니다.」 배너가 **안 뜨면** 정상이다. DB 로 보려면:
-> ```sql
-> SELECT name, status FROM agent WHERE is_prebuilt;
-> ```
-> ⚠ 「에이전트 목록 화면에 보이는지」로 확인하면 안 된다 — 그 화면은 정문을
-> 의도적으로 숨긴다(팀이 관리할 물건이 아니라 대화 그 자체이므로).
+**확인 방법**: Chat 빈 대화에서 배너 없이 바로 답이 오면 정상이다. DB 로
+보려면:
+```sql
+SELECT agent_id, name, status FROM agents WHERE is_default_chat = true;
+```
 
-`grant_admin.py`와 같은 이유로 API가 아니라 스크립트다 — `is_prebuilt = true`인 행을 API로 만들 수 있으면 「우리가 제공하는 것」과 「팀이 만든 것」의 구분이 무의미해진다.
+**2026-08-15 이전에 만들어진 팀**(자동 생성 로직이 없던 시점)만 예외다 —
+그 팀들은 `backend/services/createDB/backfill_default_chat_agents.py`로
+1회성 백필한다.
 
 ```bash
 DATABASE_URL="postgres://project_copilot:project_copilot@localhost:5432/project_copilot" \
-  python backend/services/createDB/seed_agents.py --all-teams
+  python backend/services/createDB/backfill_default_chat_agents.py --all-teams
 ```
 
-특정 팀만 하려면 `--team TM001`. 멱등이라 여러 번 돌려도 팀당 하나이고, 이미 있으면 지시·모델·도구를 최신 정의로 맞춘다. **팀이 직접 만든 에이전트는 건드리지 않는다**(`is_prebuilt = true`인 행만 본다).
+멱등이다 — 이미 있는 팀은 건너뛰고(도구가 빠져 있으면 채우기만 한다), 팀이
+직접 만든 에이전트는 건드리지 않는다.
 
-> 기본 제공 에이전트의 정의를 고치려면 스크립트 안의 `PREBUILT_AGENTS`를 고치고 다시 돌린다. 화면에서 고친 값은 다음 실행 때 덮어써진다 — 기본 제공 에이전트는 팀이 편집하지 않는다는 전제다.
+옛 「코파일럿」(전체 도구 + 팀의 아무 에이전트나 위임)은 레거시 스키마
+전용 개념이었다. 기본 어시스턴트는 읽기 도구만 쓰고 다른 에이전트로
+위임하지 않는다 — 쓰기 도구나 위임이 필요하면 Builder에서 직접 에이전트를
+만든다.
 
 ---
 

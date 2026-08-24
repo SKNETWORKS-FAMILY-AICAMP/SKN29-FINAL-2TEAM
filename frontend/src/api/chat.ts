@@ -80,6 +80,12 @@ export type ToolProgressDetail =
   | { type: string; [key: string]: unknown };
 
 export type ChatEvent =
+  | {
+      /** `/스킬이름` 명시 호출을 서버가 조회해 모델 입력에 주입한 직후 온다. */
+      type: 'skill_applied';
+      skill_name: string;
+      scope: 'personal' | 'team';
+    }
   | { type: 'stage'; step: number; total: number; label?: string; intent?: string; tool_ref?: string; tool_call_id?: string }
   | { type: 'queries'; step: number; queries: string[]; tool_ref?: string; tool_call_id?: string }
   /**

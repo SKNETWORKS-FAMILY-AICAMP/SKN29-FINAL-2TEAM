@@ -21,6 +21,7 @@ from services.agent_runtime.middleware.factory import MiddlewareFactory
 from services.agent_runtime.models.factory import ModelConfigResolver, ModelFactory
 from services.agent_runtime.prompts import RuntimePromptAssembler, TASK_DELEGATION_DESCRIPTION
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+from services.agent_runtime.skills.provider import SkillsProvider
 from services.agent_runtime.tools.loader import ToolLoader
 
 BOOTSTRAP_MODULE = "services.agent_runtime.bootstrap"
@@ -106,6 +107,7 @@ class BuildDefaultExecutorWiringTests(SimpleTestCase):
         self.assertIsInstance(factory.middleware_factory, MiddlewareFactory)
         self.assertIsInstance(factory.runtime_policy, RuntimeCapabilityPolicy)
         self.assertIsInstance(factory.prompt_assembler, RuntimePromptAssembler)
+        self.assertIsInstance(factory.skills_provider, SkillsProvider)
 
     def test_default_runtime_policy_is_shared_between_factory_and_middleware_factory(self):
         """factory.runtime_policy와 middleware_factory.runtime_policy가 같은 인스턴스여야
@@ -168,14 +170,26 @@ class ToolLoaderRealWiringTests(SimpleTestCase):
             context=RuntimeContext(account_id="AC1", team_id="TM1", role="leader"),
         )
 
-        self.assertEqual([tool.ref for tool in tools], ["document_search"])
+        # `skill_register`는 ALWAYS_ON_TOOL_REFS라 요청 안 해도 항상 딸려온다
+        # (services/agent_runtime/tools/loader.py `ToolLoader.load()` 참고).
+        self.assertEqual([tool.ref for tool in tools], ["document_search", "skill_register"])
 
-    def test_unresolvable_ref_still_fails_explicitly_not_silently(self):
+    def test_unresolvable_builtin_ref_still_fails_explicitly_not_silently(self):
+        """내장 도구 참조가 안 풀리면 그대로 막는다.
+
+        `mcp:` 참조로 확인하던 테스트였다. 2026-08-22부터 없는 MCP 도구는
+        **건너뛴다**(운영자가 서버를 내렸을 뿐 정의의 잘못이 아니고,
+        `agent_versions`가 불변이라 참조를 지울 자리도 없다 —
+        `services/agent_runtime/tools/loader.py`). 조용히 빠지면 안 되는 쪽,
+        곧 **정의가 틀린** 내장 도구로 대상을 바꾼다. MCP 쪽 동작은
+        `tests/test_tool_loader.py`가 DB 없이 본다.
+        """
+
         with patch(f"{BOOTSTRAP_MODULE}.bootstrap_harness_profiles"):
             executor = build_default_executor()
 
         with self.assertRaises(ToolUnavailableError):
             executor.factory.tool_loader.load(
-                tool_refs=("mcp:server1:tool1",),
+                tool_refs=("없는_내장도구",),
                 context=RuntimeContext(account_id="AC1", team_id="TM1", role="leader"),
             )

@@ -832,6 +832,27 @@ class InterruptEventTests(SimpleTestCase):
         self.assertEqual(event["action_requests"], hitl_request["action_requests"])
         self.assertFalse(event["complete"])
 
+    def test_same_interrupt_id_from_root_and_subgraph_is_emitted_once(self):
+        mapper = EventMapper()
+        interrupt = Interrupt(
+            value={"action_requests": [{"name": "skill_register", "args": {}}]},
+            id="intr-duplicate",
+        )
+
+        first = mapper.convert(
+            (("tools:child",), "updates", {"__interrupt__": (interrupt,)}),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        duplicate = mapper.convert(
+            ((), "updates", {"__interrupt__": (interrupt,)}),
+            definition=_Definition(),
+            context=_Context(),
+        )
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(duplicate, [])
+
     def test_interrupt_key_short_circuits_even_with_sibling_node_keys(self):
         """`__interrupt__`는 그 턴의 다른 node_name과 구조적으로 섞이지 않는다
         (`map_output_updates()`가 INTERRUPT 채널 write를 걸러내고 별도
@@ -877,6 +898,114 @@ class InterruptEventTests(SimpleTestCase):
         events = EventMapper().convert(raw, definition=_Definition(), context=_Context())
 
         self.assertEqual(events[0]["action_requests"], [])
+
+    def test_interrupt_persists_tool_call_correlation_for_resume(self):
+        mapper = EventMapper()
+        tool_call = {
+            "name": "task_register",
+            "args": {"tasks": [{"title": "더미"}]},
+            "id": "call-1",
+        }
+        mapper.convert(
+            _raw((), "model", AIMessage(content="", tool_calls=[tool_call])),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        interrupt = Interrupt(
+            value={"action_requests": [{"name": tool_call["name"], "args": tool_call["args"]}]},
+            id="intr-correlated",
+        )
+
+        event = mapper.convert(
+            ((), "updates", {"__interrupt__": (interrupt,)}),
+            definition=_Definition(),
+            context=_Context(),
+        )[0]
+
+        state = event["trace_resume_state"]
+        self.assertEqual(
+            state["interrupted_tool_calls"],
+            [{"action_index": 0, "run_id": "RUN1", "tool_call_id": "call-1"}],
+        )
+        self.assertEqual(state["pending_tool_calls"][0]["tool_call_id"], "call-1")
+
+    def test_identical_parallel_calls_are_correlated_in_original_order(self):
+        mapper = EventMapper()
+        calls = [
+            {"name": "task_register", "args": {"tasks": []}, "id": "call-1"},
+            {"name": "task_register", "args": {"tasks": []}, "id": "call-2"},
+        ]
+        mapper.convert(
+            _raw((), "model", AIMessage(content="", tool_calls=calls)),
+            definition=_Definition(),
+            context=_Context(),
+        )
+        action_requests = [{"name": call["name"], "args": call["args"]} for call in calls]
+        interrupt = Interrupt(value={"action_requests": action_requests}, id="intr-parallel")
+
+        event = mapper.convert(
+            ((), "updates", {"__interrupt__": (interrupt,)}),
+            definition=_Definition(),
+            context=_Context(),
+        )[0]
+
+        self.assertEqual(
+            event["trace_resume_state"]["interrupted_tool_calls"],
+            [
+                {"action_index": 0, "run_id": "RUN1", "tool_call_id": "call-1"},
+                {"action_index": 1, "run_id": "RUN1", "tool_call_id": "call-2"},
+            ],
+        )
+
+    def test_restore_hitl_state_keeps_child_tool_run_mapping(self):
+        mapper = EventMapper()
+        mapper.restore_hitl_state(
+            {
+                "pending_subagents": {
+                    "delegate-1": {
+                        "alias": "jira_writer",
+                        "run_id": "RUN-CHILD",
+                        "agent_id": "AG011",
+                        "agent_version_id": "AV023",
+                    }
+                },
+                "namespace_subagents": {
+                    "tools:child-1": {
+                        "alias": "jira_writer",
+                        "run_id": "RUN-CHILD",
+                        "agent_id": "AG011",
+                        "agent_version_id": "AV023",
+                    }
+                },
+                "pending_tool_calls": [
+                    {
+                        "run_id": "RUN-CHILD",
+                        "tool_call_id": "call-child",
+                        "name": "task_register",
+                        "args": {},
+                    }
+                ],
+            }
+        )
+
+        event = mapper.convert(
+            _raw(
+                ("tools:child-1",),
+                "tools",
+                ToolMessage(
+                    content="완료",
+                    name="task_register",
+                    tool_call_id="call-child",
+                    status="success",
+                ),
+            ),
+            definition=_Definition(),
+            context=_Context(),
+        )[0]
+
+        self.assertEqual(event["type"], EVENT_TOOL_COMPLETED)
+        self.assertEqual(event["run_id"], "RUN-CHILD")
+        self.assertEqual(event["tool_call_id"], "call-child")
 
 
 class ModelUsageTests(SimpleTestCase):

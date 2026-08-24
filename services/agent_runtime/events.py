@@ -2,165 +2,122 @@
 
 정본: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §14
 
-⚠ 스파이크 결론(2026-08-13, §15 실행 완료): fallback 불필요. `stream_mode="updates"`
-하나만으로 부모/자식/도구 실행을 실시간·정확하게 구분할 수 있다. 관찰한 신호:
+## 스트림 모드
+
+- `"updates"` — 6단계 분류(위임·도구 시작/종료)의 유일한 근거. 모델 노드가
+  통째로 끝난 뒤 오는 완성된 `AIMessage`라 `tool_calls`가 다 채워져 있다.
+- `"messages"` — reasoning 델타 전용(`_classify_reasoning_delta`). 토큰 단위라
+  6단계 분류에는 못 쓴다.
+- `"custom"` — `task_extraction`/`jira_get_issues`처럼 제너레이터로 진행 상황을
+  내는 도구(`tools/adapters.py`)가 `get_stream_writer()`로 흘려보내는 값.
+  내용이 도구마다 달라 재해석하지 않고 `EVENT_TOOL_PROGRESS`의 `detail`에
+  그대로 담는다.
+
+## `"updates"`에서 관찰되는 신호
 
 - 네임스페이스 튜플이 부모/자식을 가른다 — 부모는 `()`, 자식은
   `('tools:<run-uuid>', ...)`로 시작한다.
-- 부모가 서브 에이전트를 부르는 순간은 `{'model': {'messages': [AIMessage(
-  tool_calls=[{'name': 'task', 'args': {'subagent_type': <alias>,
-  'description': <task_summary>}}])]}}`로 나온다 — `subagent_type`이 alias,
-  `description`이 task_summary와 정확히 대응한다(deepagents 내장 `task` 도구
-  계약).
-- 자식 네임스페이스 안에서 도구 호출은 `{'model': {'messages': [AIMessage(
-  tool_calls=[{'name': <tool_ref>, ...}])]}}` → `{'tools': {'messages':
-  [ToolMessage(name=<tool_ref>, ...)]}}` 순서로 온다.
-- 자식이 끝나면 **부모 네임스페이스**로 돌아와 `{'tools': {'messages':
-  [ToolMessage(name='task', content=<자식의 최종 답변>)]}}`이 온다.
-- 부모의 최종 응답은 부모 네임스페이스의 `{'model': {'messages': [AIMessage(
-  content=<텍스트>, tool_calls=[])]}}`(tool_calls가 비어 있음)다.
-- 부모가 서브 에이전트 위임 없이 **자기 도구를 직접** 호출하는 경우도 자식
-  네임스페이스와 동일한 model→tools 순서로 온다. langgraph의 `ToolNode`는
-  루트 그래프냐 서브그래프냐를 구분하지 않는다 — 네임스페이스 튜플은 "어느
-  그래프가 이 업데이트를 냈는지"를 나타내는 스트리밍 귀속 태그일 뿐, 도구
-  실행 자체의 의미를 바꾸지 않는다(langgraph.prebuilt.tool_node.ToolNode
-  소스 확인 — namespace 개념 자체가 없음). 그래서 tool_started/
-  tool_completed는 부모/자식에 상관없이 동일하게 낸다. 부모 자신의 직접
-  호출은 `subagent_alias=None`으로 구분한다.
+- 위임 시작: `{'model': {'messages': [AIMessage(tool_calls=[{'name': 'task',
+  'args': {'subagent_type': <alias>, 'description': <task_summary>}}])]}}`
+  (deepagents 내장 `task` 도구 계약).
+- 도구 호출: `{'model': ...AIMessage(tool_calls=[...])}` →
+  `{'tools': ...ToolMessage(name=<tool_ref>, ...)}` 순서.
+- 위임 종료: **부모 네임스페이스**로 돌아와
+  `{'tools': ...ToolMessage(name='task', content=<자식의 최종 답변>)}`.
+- 부모의 최종 응답: 부모 네임스페이스의 `AIMessage(content=..., tool_calls=[])`.
 
-`"messages"`(토큰 단위 델타) 모드는 이 6단계 분류에는 안 쓴다 — tool_started 등
-6단계 분류는 여전히 다 끝난 `AIMessage`가 있어야 정확하다(예: `tool_calls`는
-스트리밍 중간엔 아직 다 안 채워져 있을 수 있다). 대신 reasoning 실시간
-스트리밍에만 쓴다(2026-08-18, `_classify_reasoning_delta` 참고) — "updates"는
-모델 노드 하나가 통째로 끝나야 나오는 완성된 텍스트라, reasoning도 다 끝난
-뒤에야 한 덩어리로 보여줬었다. `"messages"`는 OpenAI가 실제로 보내는 조각
-단위(`response.reasoning_summary_text.delta`)를 그 자리에서 받을 수 있어
-"다 끝난 뒤 한 번에"가 아니라 "쓰는 대로" 보여줄 수 있다.
+부모가 자기 도구를 직접 부르는 경우도 자식과 같은 model→tools 순서로 온다 —
+`ToolNode`에는 namespace 개념 자체가 없고, 네임스페이스 튜플은 "어느 그래프가
+이 업데이트를 냈는지"를 나타내는 귀속 태그일 뿐이다. 그래서 tool_started/
+tool_completed는 부모/자식 구분 없이 동일하게 내고, 부모의 직접 호출만
+`subagent_alias=None`으로 구분한다.
 
-`"custom"` 모드는 쓴다 — `task_extraction`/`jira_get_issues`처럼 제너레이터로
-진행 이벤트를 내는 내장 도구(tools/adapters.py)가 `langgraph.config
-.get_stream_writer()`로 직접 흘려보내는 값이 여기로 들어온다(2026-08-13 실제
-`stream_mode=["updates", "custom"]`로 실행해 확인 — payload가 어댑터가 채운
-그대로 나온다). 내용은 도구마다 달라서 여기서 재해석하지 않고 `EVENT_TOOL_PROGRESS`
-로 감싸 `detail`에 그대로 담아 보낸다.
+## 병렬 위임/도구 호출
 
-## 병렬 위임/도구 호출 (2026-08-14 재설계)
+`ToolNode._func`가 여러 `tool_calls`를 `executor.map(...)`으로 스레드풀에서
+동시에 실행하므로 완료 순서가 시작 순서와 다를 수 있다. 따라서:
 
-이전 버전은 "부모가 한 번에 하나의 서브 에이전트만 부르고 그것이 끝나야 다음으로
-넘어간다"는 전제로 `tool_calls[0]`만 보고, 위임 추적을 FIFO(`list.pop(0)`)로
-했다. 그런데 실제로 설치된 langgraph(`langgraph/prebuilt/tool_node.py`
-`ToolNode._func`)를 직접 읽어보면 여러 `tool_calls`는
-`executor.map(self._run_one, tool_calls, ...)`로 **스레드풀에서 동시에** 실행된다
-— 즉 모델이 한 AIMessage에 `task` 위임을 2개 이상 담아 내면 그 완료 순서는
-시작 순서와 다를 수 있다. FIFO로 매칭하면 나중에 시작한 위임의 완료를 먼저 시작한
-위임의 것으로 잘못 붙일 수 있었다(모듈 docstring이 스스로 인정했던 TODO).
-
-이제는:
-- `AIMessage.tool_calls`를 전부 순회한다(더 이상 `[0]`만 안 봄) — 위임 여러 개,
-  또는 위임+직접 호출이 섞여도 전부 이벤트로 낸다.
-- 위임(`task`) 완료 매칭은 FIFO가 아니라 **`ToolMessage.tool_call_id`**로 한다.
-  `task()`/`atask()`가 `Command(update={"messages": [ToolMessage(content,
-  tool_call_id=runtime.tool_call_id)]})`로 항상 원래 호출의 `tool_call_id`를
-  그대로 돌려준다는 걸 deepagents 소스로 확인했다(`_return_command_with_
-  state_update`) — 이건 실행 순서와 무관하게 항상 정확하다.
-- 위임을 시작할 때 이 EventMapper가 직접 자식 `run_id`(uuid4)를 하나 만들어
-  `subagent_started`/`subagent_completed`와 그 자식 네임스페이스에서 나오는
+- `AIMessage.tool_calls`를 전부 순회한다. 위임 여러 개, 위임+직접 호출이
+  섞여도 전부 이벤트로 낸다.
+- 위임 완료 매칭은 FIFO가 아니라 **`ToolMessage.tool_call_id`**로 한다.
+  `task()`/`atask()`가 원래 호출의 `tool_call_id`를 그대로 돌려주므로
+  (`_return_command_with_state_update`) 실행 순서와 무관하게 정확하다.
+- 위임 시작 시 EventMapper가 자식 `run_id`(uuid4)를 만들어
+  `subagent_started`/`subagent_completed`와 그 자식 네임스페이스의
   `tool_started`/`tool_completed`/`tool_progress`에 일관되게 붙인다.
   `parent_run_id`는 그 실행의 `context.run_id`다(§14.2~14.4).
-- 다만 **자식 네임스페이스 접두사(`'tools:<uuid>'`)를 "어느 위임에 속하는가"로
-  묶는 것은 여전히 근사치다** — 자식 내부에서 도는 model/tools 이벤트에는 부모의
-  `tool_call_id`가 실려 오지 않는다(오직 위임이 끝나고 부모로 복귀하는
-  `ToolMessage`만 tool_call_id를 갖는다). 그래서 "이 네임스페이스를 처음 보면
-  아직 네임스페이스에 안 묶인 것 중 가장 먼저 시작된 위임에 붙인다"는 순서
-  휴리스틱을 그대로 쓴다 — 위임이 진짜 동시에(스레드에서) 실행되면 이 귀속이
-  틀릴 수 있다는 한계가 남는다. `subagent_started`/`subagent_completed`(부모
-  네임스페이스, tool_call_id로 정확히 매칭됨)는 이 한계의 영향을 받지 않는다.
 
-## `subagent_started`/`subagent_completed`의 agent_id/agent_version_id/subagent_name
-(2026-08-14 추가)
+**알려진 한계**: 자식 네임스페이스 접두사(`'tools:<uuid>'`)를 어느 위임에
+묶을지는 근사치다. 자식 내부 이벤트에는 부모의 `tool_call_id`가 실려 오지
+않아(복귀하는 `ToolMessage`만 갖는다) "처음 보는 네임스페이스는 아직 안 묶인
+것 중 가장 먼저 시작된 위임에 붙인다"는 순서 휴리스틱을 쓴다 — 위임이 진짜
+동시에 돌면 틀릴 수 있다. `subagent_started`/`subagent_completed`는 부모
+네임스페이스에서 tool_call_id로 정확히 매칭되므로 영향을 받지 않는다.
 
-§14.2/§14.3 예시(`AG011`/`AV023`/"Jira 등록 에이전트")는 **Child 자신의** 값이지 루트의
-값이 아니다. `EventMapper.convert()`가 이미 받는 `definition`(루트 `AgentDefinition`)에
-`definition.subagents: tuple[SubagentDefinition, ...]`가 있고, 그 각 항목은 이미
-DB에서 조회한 Child 자신의 `agent_id`/`agent_version_id`/`name`을 담고 있다
-(`loader.py`의 `_subagent_definition_from_row`/`_placeholder_subagent_definition`).
-`alias`로 이 tuple을 찾으면 된다 — `build_subagent()`가 `CompiledSubAgent(
-name=definition.alias, ...)`로 등록한 이름이 정확히 이 `alias`이고, deepagents의
-`task()` 도구가 받는 `subagent_type`이 바로 이 이름이므로, `subagent_type`(=alias)로
-`definition.subagents`를 찾으면 항상 맞는 Child를 가리킨다. **MVP가 위임 1단계로
-제한돼 있어서**(`validate_subagents()`의 무조건 `has_subagents` 검사, `loader.py`의
-`_reject_if_has_subagents()`, `build_subagent()`의 `definition_has_subagents()` —
-3중으로 강제) 이 조회에 재귀가 필요 없다: Child는 항상 leaf이고 `definition.subagents`
-평탄한 한 단계 매핑이면 충분하다.
+## Child의 agent_id/agent_version_id/subagent_name
 
-## tool_started/tool_completed의 tool_call_id·arguments·status(2026-08-14 추가)
+§14.2/§14.3의 값은 루트가 아니라 **Child 자신의** 것이다. `convert()`가 받는
+`definition.subagents`의 각 항목이 DB에서 조회한 Child의
+`agent_id`/`agent_version_id`/`name`을 담고 있으므로(`loader.py`), `subagent_type`
+(=alias)으로 찾으면 된다 — `build_subagent()`가 등록한 `CompiledSubAgent.name`과
+`task()`가 받는 `subagent_type`이 같은 alias다.
 
-`agent_run`/`tool_call` 로깅(`tracing/__init__.py`)이 이 이벤트들을 그대로
-읽어서 DB에 적재한다 — 위임(`subagent_started`/`subagent_completed`)과 같은
-방식으로 `tool_call_id`가 시작-종료를 정확히 묶어야 한다(같은 도구를 병렬로
-호출해도 어긋나지 않게). `arguments`는 `tool_call.input_summary`를 채우는
-원본이고(`services.harness.trace.summarize_input()`이 요약한다 — 자격증명이
-로그에 그대로 안 남는다), `status`는 LangChain `ToolMessage.status`
-("success"/"error", langgraph `ToolNode`가 도구 예외를 잡으면 "error"로
-채우는 필드)를 그대로 옮긴 것이다("OK"/"FAILED"). 이 셋은 §14 계약이 정한
-목록엔 없다 — 이벤트 타입 자체는 그대로 두고 기존 이벤트에 필드만 얹었다
-(`_11_` 문서와 같은 판단).
+위임이 1단계로 제한돼 있어(`validate_subagents()` / `loader.py`의
+`_reject_if_has_subagents()` / `build_subagent()`의 `definition_has_subagents()`가
+3중 강제) Child는 항상 leaf고, 평탄한 한 단계 매핑이면 충분하다.
 
-`tool_completed`의 `output`(2026-08-18 추가)은 도구가 실제로 돌려준 값이다
-— "타임라인에 도구 호출은 보이는데 뭘 반환했는지는 왜 안 보이냐"는 요청으로
-붙였다. `ToolMessage.text`를 `_summarize_tool_output()`으로 길이만 잘라
-담는다(`arguments`처럼 사전이 아니라 이미 문자열이라 키=값 요약은 필요 없다).
-DB에는 안 쌓는다 — `_end_tool_call()`(tracing/__init__.py)은 여전히 `status`만
-읽고, 이 필드는 스트림을 타고 화면까지만 간다.
+## tool_started/tool_completed의 부가 필드
 
-## reasoning 실시간 스트리밍(2026-08-18 추가)
+`tracing/__init__.py`가 이 이벤트를 그대로 읽어 DB에 적재하므로, `tool_call_id`가
+시작-종료를 정확히 묶어야 한다(같은 도구를 병렬 호출해도 어긋나지 않게).
 
-`stream_mode="messages"`로 받는 `AIMessageChunk.content`는 OpenAI Responses
-API의 SSE 이벤트 하나하나를 그대로 옮긴 블록 리스트다(`langchain_openai`
-`_convert_responses_chunk_to_generation_chunk` 소스로 확인). reasoning 블록은
-실측으로 이런 순서로 온다(디버그 스크립트로 직접 확인, 2026-08-18):
+- `arguments` — `tool_call.input_summary`의 원본. `summarize_input()`이 요약해
+  자격증명이 로그에 남지 않게 한다.
+- `status` — LangChain `ToolMessage.status`("success"/"error")를 "OK"/"FAILED"로
+  옮긴 값.
+- `output` — 도구가 돌려준 값. `ToolMessage.text`를 `_summarize_tool_output()`으로
+  길이만 잘라 담는다. **DB에는 안 쌓는다** — `_end_tool_call()`은 `status`만 읽고,
+  이 필드는 스트림을 타고 화면까지만 간다.
+
+이 필드들은 §14 계약 목록에 없다 — 이벤트 타입은 그대로 두고 필드만 얹었다.
+
+## reasoning 실시간 스트리밍
+
+`stream_mode="messages"`의 `AIMessageChunk.content`는 OpenAI Responses API SSE를
+그대로 옮긴 블록 리스트다. reasoning 블록은 이 순서로 온다:
 
 ```
 {'id': 'rs_...', 'summary': [], 'type': 'reasoning', 'content': [], 'index': 0}
 {'summary': [{'index': 0, 'type': 'summary_text', 'text': ''}], 'index': 0, ...}
 {'summary': [{'index': 0, 'type': 'summary_text', 'text': '**Clarifying...'}], 'index': 0, ...}
 {'summary': [{'index': 0, 'type': 'summary_text', 'text': ' primes'}], 'index': 0, ...}
-...
 ```
 
-`block['index']`(위 예시의 바깥 `index`)는 이 reasoning 항목 전체를 가리키는
-langchain-core의 청크 병합 키다(`+`로 청크를 더할 때 같은 `index`끼리
-이어붙인다는 게 `langchain_openai` 주석에 그대로 적혀 있다) — 모델 호출
-하나 안에서 새 reasoning 항목마다 증가하고, **다음 모델 호출에서는 다시
-0부터 시작한다.** `block['summary'][i]['index']`(summary_index)는 그 항목
-**안의** 문단 하나를 가리킨다 — OpenAI가 reasoning을 여러 문단으로 나눠
-낼 때 문단마다 다른 summary_index를 쓴다.
+- `block['index']` — reasoning 항목 전체를 가리키는 langchain-core의 청크 병합
+  키. 모델 호출 하나 안에서 항목마다 증가하고, **다음 호출에서 0부터 다시
+  시작한다.**
+- `block['summary'][i]['index']`(summary_index) — 그 항목 **안의** 문단 하나.
 
-그래서 "지금 받은 조각이 방금 그 문단의 이어지는 델타인가, 새 문단인가"는
-`(block['index'], summary_index)` 쌍으로 판단한다(`_classify_reasoning_delta`).
-같은 쌍이면 direct으로 이어붙이고(`"append": true`), 다르면 새 단계로
-띄운다(`"append": false`) — 화면(`liveChat.ts`)은 이 플래그만 보고 마지막
-`reasoningSteps` 항목에 이어붙일지 새 항목을 만들지 정한다.
+"이어지는 델타인가 새 문단인가"는 `(index, summary_index)` 쌍으로 판단한다
+(`_classify_reasoning_delta`). 같으면 `"append": true`, 다르면 `false` — 화면
+(`liveChat.ts`)은 이 플래그만 보고 마지막 `reasoningSteps`에 이어붙일지
+새 항목을 만들지 정한다.
 
-**모델 호출 사이의 경계도 명시적으로 지운다.** `block['index']`가 모델
-호출마다 다시 0부터 시작하므로, 이전 호출의 마지막 `(index, summary_index)`가
-다음 호출의 첫 조각과 우연히 같은 값일 수 있다 — `_classify()`의 "model"
-노드(`"updates"` 모드, 그 호출이 완전히 끝났을 때만 옴) 분기에서 그 네임스페이스의
-커서를 지워서, 다음 호출의 첫 reasoning 조각은 항상 새 단계로 뜨게 한다.
+**모델 호출 경계에서 커서를 지운다.** `block['index']`가 호출마다 0으로
+돌아가므로 이전 호출의 마지막 쌍과 다음 호출의 첫 쌍이 우연히 같을 수 있다.
+`_classify()`의 "model" 노드 분기에서 그 네임스페이스 커서를 지워, 다음 호출의
+첫 조각은 항상 새 단계로 뜬다.
 
-**"updates" 모드는 더 이상 reasoning을 내지 않는다.** 예전엔 다 끝난
-`AIMessage.content`에서 완성된 텍스트를 한 번에 뽑아 냈지만(구
-`_extract_reasoning()`), 이제 "messages" 모드가 실시간으로 이미 다 보여줬으므로
-그대로 두면 같은 내용이 끝에 한 번 더(완성본으로) 중복된다.
+**`"updates"` 모드는 reasoning을 내지 않는다** — "messages"가 실시간으로 이미
+다 보여줬으므로 완성본을 한 번 더 내면 중복된다.
 
-## MCP 도구 이름 치환(2026-08-14 추가)
+## MCP 도구 이름 치환
 
-모델에게 나가는 함수 이름은 `factory.py`의 `model_safe_tool_name()`이
-`mcp:<id>`의 콜론을 `__`로 바꿔 보낸다(OpenAI 함수 이름 제약 —
-`tools/loader.py` 모듈 docstring 참고). 그래서 여기서 읽는
-`AIMessage.tool_calls[i]['name']`/`ToolMessage.name`은 원래 tool_ref와 다를
-수 있다 — `tool_ref_from_model_name()`으로 되돌린 값만 `"tool_ref"`로
-내보낸다. 위 예시의 `<tool_ref>`는 이 되돌림 이후의 값 기준이다.
+모델에게 나가는 함수 이름은 `model_safe_tool_name()`이 `mcp:<id>`의 콜론을
+`__`로 바꾼 값이다(OpenAI 함수 이름 제약). 그래서 여기서 읽는
+`AIMessage.tool_calls[i]['name']`/`ToolMessage.name`은 원래 tool_ref와 다를 수
+있다 — `tool_ref_from_model_name()`으로 되돌린 값만 `"tool_ref"`로 내보낸다.
+위 예시의 `<tool_ref>`도 되돌림 이후 기준이다.
 """
 
 from __future__ import annotations
@@ -182,48 +139,38 @@ EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
-# 2026-08-18 추가 — 승인 게이트(`interrupt_on`)가 실행을 멈춘 자리.
-# 레거시 Harness의 같은 이름 이벤트와 **모양을 맞춘다**(`tool_ref`/`tool_name`/
-# `arguments`/`resume`) — 화면(`liveChat.ts`의 `awaiting_confirmation` 분기)과
-# 저장(`apps/chat/api_views.py`의 `_persist`)이 이미 그 모양을 읽고 있어서,
-# 맞춰 두면 양쪽 다 안 고쳐도 된다. 다른 점은 `resume`의 내용물뿐이다 —
-# 레거시는 대화 전체를 담아 되돌려 받아야 재개하지만, 이 엔진은 상태가
-# Checkpointer(RDS)에 있어서 "무엇을 승인하는가"만 있으면 된다.
-# 2026-08-18 추가. §14 계약엔 없던 타입이라(그 문서 갱신 전까지) 여기 새로 둔다
-# — `_11_`류 판례처럼 계약 목록에 없는 필드를 기존 이벤트에 얹는 것과 달리
-# 이건 아예 새 타입이 필요해서(추론 텍스트는 tool_started/result 어디에도
-# 자연스럽게 안 얹힌다). `tracing/__init__.py`의 `_record()`는 모르는
-# 타입을 조용히 지나치므로 DB 적재는 없다 — 지금은 화면에 실시간으로
-# 보여주는 것만이 목적이라 저장할 이유가 없다.
+# §14 계약에 없는 타입이다. 추론 텍스트는 tool_started/result 어디에도 자연스럽게
+# 안 얹혀서 새 타입이 필요했다. `tracing/__init__.py`의 `_record()`는 모르는 타입을
+# 조용히 지나치므로 DB 적재는 없다 — 화면에 실시간으로 보여주는 것이 목적이다.
 EVENT_REASONING = "reasoning"
 
-# 2026-08-19 추가(§0순위 — 새 엔진 HITL resume API). 값은 레거시
-# `services/harness/runner.py`의 동명 상수와 의도적으로 같은 문자열이다 —
-# `backend/db/agent_platform.py`의 `ChatMessageRepository.latest_pending_confirmation()`
-# 이 SQL에서 `content->>'type' = 'awaiting_confirmation'`을 그대로 리터럴로
-# 검사하고, `apps/chat/api_views.py`의 `_history()`/`_relay()`도 이 문자열
-# 기준으로 두 엔진을 가리지 않고 같은 분기를 탄다 — 값이 갈리면 그 공용
-# 코드가 새 엔진의 확인 대기를 못 알아본다. import로 묶지 않고 값만
-# 맞추는 이유는 `EVENT_ERROR`/`EVENT_RESULT`가 이미 이 파일에서 같은
-# 방식으로 하고 있는 것과 같다 — 레거시(`services.harness`)와 새 엔진
-# (`services.agent_runtime`)은 서로의 내부 구현을 몰라도 되게 분리하되,
-# 화면·DB로 나가는 이벤트 "타입 문자열"만 계약처럼 맞춘다.
+# 승인 게이트(`interrupt_on`)가 실행을 멈춘 자리. 값은 레거시
+# `services/harness/runner.py`의 동명 상수와 **같은 문자열이어야 한다** —
+# `ChatMessageRepository.latest_pending_confirmation()`이 SQL에서
+# `content->>'type' = 'awaiting_confirmation'`을 리터럴로 검사하고,
+# `apps/chat/api_views.py`의 `_history()`/`_relay()`도 이 문자열로 두 엔진을
+# 가리지 않고 같은 분기를 탄다. 값이 갈리면 그 공용 코드가 새 엔진의 확인
+# 대기를 못 알아본다.
+#
+# import로 묶지 않고 값만 맞추는 건 `EVENT_ERROR`/`EVENT_RESULT`와 같은 방식이다
+# — 두 엔진은 서로의 내부를 몰라도 되게 분리하되, 화면·DB로 나가는 타입 문자열만
+# 계약처럼 맞춘다.
+#
+# 이벤트 모양(`tool_ref`/`tool_name`/`arguments`/`resume`)도 레거시와 맞춰
+# 화면·저장 코드를 그대로 재사용한다. `resume`의 내용물만 다르다 — 이 엔진은
+# 상태가 Checkpointer(RDS)에 있어 "무엇을 승인하는가"만 있으면 된다.
 EVENT_AWAITING_CONFIRMATION = "awaiting_confirmation"
 
 # deepagents가 서브 에이전트 위임에 쓰는 내장 도구 이름. 이 이름의 tool_call은
 # "실제 도구 호출"이 아니라 "위임"으로 분류한다.
 DELEGATION_TOOL_NAME = "task"
 
-# deepagents 0.7.5의 `task` 도구가 존재하지 않는 subagent_type을 받았을 때
-# 예외 대신 돌려주는 문자열의 접두어 그대로다(설치된 패키지
-# `deepagents/middleware/subagents.py`의 `task()`/`atask()`:
-# `f"We cannot invoke subagent {subagent_type} because it does not exist,
-# the only allowed types are {allowed_types}"`). langchain의 ToolMessage는
-# 이 경우도 `status="success"`인 평범한 성공 메시지로 감싸므로(직접 확인함),
-# status 필드로는 이 실패를 구분할 수 없다 — 이 문자열 접두어 매칭이 현재
-# 유일하게 근거 있는 탐지 방법이다. 버전이 고정(requirements/base.txt
-# `deepagents==0.7.5`)이라 이 문구도 고정이다 — 업그레이드 시 이 상수도
-# 같이 확인해야 한다.
+# deepagents 0.7.5의 `task`가 존재하지 않는 subagent_type을 받으면 예외 대신
+# 돌려주는 문자열의 접두어다(`deepagents/middleware/subagents.py`).
+#
+# ToolMessage가 이 경우도 `status="success"`로 감싸기 때문에 status로는 구분할 수
+# 없어, 문자열 접두어 매칭이 유일하게 근거 있는 탐지 방법이다. 버전이 고정
+# (`deepagents==0.7.5`)이라 문구도 고정 — **업그레이드 시 이 상수를 같이 확인할 것.**
 _SUBAGENT_NOT_FOUND_PREFIX = "We cannot invoke subagent "
 
 
@@ -369,6 +316,12 @@ class EventMapper:
         # dict 삽입 순서 = 시작 순서이므로, 네임스페이스 귀속 휴리스틱(아직 어느
         # 네임스페이스에도 안 묶인 것 중 가장 먼저 시작된 것)에도 이 순서를 쓴다.
         self._pending: dict[str, dict[str, str]] = {}
+        # 아직 ToolMessage 완료를 못 본 직접 도구 호출. HITL interrupt payload의
+        # action_requests에는 LangChain tool_call_id가 빠져 있으므로, 직전에 본
+        # AIMessage 호출과 이름·인자로 대응시켜 승인 카드의 trace_resume_state에
+        # 영속화한다. middleware에 되돌려줄 action_requests 자체에는 내부 필드를
+        # 섞지 않는다.
+        self._pending_direct_tool_calls: list[dict[str, Any]] = []
         # 네임스페이스 접두사(예: 'tools:94cc782c-...') -> 그 안에서 도는 서브
         # 에이전트 정보(위 _pending의 값과 같은 dict). 같은 네임스페이스에서
         # 여러 이벤트가 나오므로 캐시한다.
@@ -382,6 +335,96 @@ class EventMapper:
         # run_id -> {"iterations", "token_in", "token_out"}. 아래
         # `_count_model_call()`이 채우고 끝나는 이벤트가 실어 나른다.
         self._usage: dict[str, dict[str, int | None]] = {}
+        # 같은 interrupt가 서브그래프와 루트 namespace에서 반복 전달될 수
+        # 있다. 승인 카드와 재개 상태는 interrupt ID당 한 번만 낸다.
+        self._seen_interrupt_ids: set[str] = set()
+
+    def restore_hitl_state(self, state: dict[str, Any] | None) -> None:
+        """승인 대기 전에 저장한 EventMapper의 최소 상관관계 상태를 복원한다."""
+        if not isinstance(state, dict):
+            return
+        pending_subagents = state.get("pending_subagents")
+        if isinstance(pending_subagents, dict):
+            self._pending = {
+                str(call_id): dict(info)
+                for call_id, info in pending_subagents.items()
+                if call_id and isinstance(info, dict)
+            }
+        pending_tools = state.get("pending_tool_calls")
+        if isinstance(pending_tools, list):
+            self._pending_direct_tool_calls = [
+                dict(item) for item in pending_tools if isinstance(item, dict)
+            ]
+        namespace_subagents = state.get("namespace_subagents")
+        if isinstance(namespace_subagents, dict):
+            self._namespace_subagent = {
+                str(namespace): dict(info)
+                for namespace, info in namespace_subagents.items()
+                if namespace and isinstance(info, dict)
+            }
+
+    def _remember_direct_tool_call(
+        self, *, run_id: str | None, call: dict[str, Any]
+    ) -> None:
+        call_id = call.get("id")
+        name = call.get("name")
+        if not run_id or not call_id or not name:
+            return
+        self._pending_direct_tool_calls.append(
+            {
+                "run_id": run_id,
+                "tool_call_id": call_id,
+                "name": name,
+                "args": call.get("args") or {},
+            }
+        )
+
+    def _forget_direct_tool_call(self, tool_call_id: str | None) -> None:
+        if not tool_call_id:
+            return
+        self._pending_direct_tool_calls = [
+            item
+            for item in self._pending_direct_tool_calls
+            if item.get("tool_call_id") != tool_call_id
+        ]
+
+    def _interrupted_tool_calls(
+        self, action_requests: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """HITL action 순서에 맞는 영속 `(run_id, tool_call_id)` 목록을 만든다."""
+        available = list(self._pending_direct_tool_calls)
+        matched: list[dict[str, Any]] = []
+        for action_index, request in enumerate(action_requests):
+            if not isinstance(request, dict):
+                continue
+            name = request.get("name")
+            args = request.get("args") or {}
+            index = next(
+                (
+                    i
+                    for i, item in enumerate(available)
+                    if item.get("name") == name and item.get("args") == args
+                ),
+                None,
+            )
+            if index is None:
+                # 일부 middleware 버전은 description/정규화 과정에서 args 모양을
+                # 바꿀 수 있다. 같은 이름 중 먼저 시작된 호출로 제한해 매칭하고,
+                # 이름조차 없으면 잘못된 행을 고르지 않고 누락시킨다.
+                index = next(
+                    (i for i, item in enumerate(available) if item.get("name") == name),
+                    None,
+                )
+            if index is not None:
+                item = available.pop(index)
+                matched.append(
+                    {
+                        "action_index": action_index,
+                        "run_id": item["run_id"],
+                        "tool_call_id": item["tool_call_id"],
+                    }
+                )
+        return matched
 
     def _count_model_call(self, run_id: str | None, message: Any) -> None:
         """모델 호출 하나를 이 run 의 누계에 더한다(2026-08-21).
@@ -413,14 +456,12 @@ class EventMapper:
         token_in = usage.get("input_tokens")
         token_out = usage.get("output_tokens")
         total = usage.get("total_tokens")
-        # **설명되지 않는 나머지는 출력으로 센다**(2026-08-21, 실측으로 발견).
-        # Gemini의 OpenAI 호환 주소는 thinking 토큰을 `total_tokens`에만 넣고
-        # `completion_tokens_details`를 `null`로 준다 — 실제 응답이
-        # `prompt 6 · completion 1 · total 149`였다. 있는 그대로 적으면
-        # Usage 합계가 149 대신 7이 되어 한 자릿수로 틀린다. 나머지는 모델이
-        # 만들어 낸 토큰이므로 출력 쪽에 얹는다 — 별도 칸을 두려면 스키마에
-        # 컬럼을 더해야 하고, 그건 팀원 전원이 ALTER를 돌려야 하는 변경이다.
-        # 총합이 딱 맞는 제공자(OpenAI: 11+5=16)는 나머지가 0이라 그대로다.
+        # **설명되지 않는 나머지는 출력으로 센다.** Gemini의 OpenAI 호환 주소는
+        # thinking 토큰을 `total_tokens`에만 넣고 `completion_tokens_details`를
+        # `null`로 준다(실측: `prompt 6 · completion 1 · total 149`). 그대로 적으면
+        # 합계가 149 대신 7이 된다. 별도 칸을 두려면 스키마 컬럼 추가 = 팀원 전원
+        # ALTER라, 모델이 만든 토큰이니 출력 쪽에 얹는다. 총합이 맞는 제공자는
+        # 나머지가 0이라 영향이 없다.
         if isinstance(total, int) and isinstance(token_in, int) and isinstance(token_out, int):
             token_out = max(token_out, total - token_in)
         for key, value in (("token_in", token_in), ("token_out", token_out)):
@@ -495,25 +536,19 @@ class EventMapper:
         if mode != "updates":
             return []
 
-        # 2026-08-19 추가(§0순위) — `HumanInTheLoopMiddleware.after_model`이
-        # `interrupt()`를 부르면 LangGraph는 이 턴의 다른 노드 출력과 **완전히
-        # 분리된** 자기만의 "updates" 청크로 `{"__interrupt__": (Interrupt(...),)}`
-        # 를 낸다(설치된 `langgraph==...`의 `pregel/_loop.py`
-        # `output_writes()` 실제 소스로 확인 — `map_output_updates()`가
-        # `INTERRUPT` 채널의 write는 애초에 걸러내고, 대신
-        # `self._emit("updates", lambda: iter([{INTERRUPT: interrupts}]))`로
-        # 따로 낸다). 그래서 이 키가 있으면 그 청크는 다른 node_name과
-        # 섞일 수 없다 — 바로 처리하고 반환한다.
+        # `HumanInTheLoopMiddleware.after_model`이 `interrupt()`를 부르면 LangGraph는
+        # 다른 노드 출력과 **완전히 분리된** 자기만의 "updates" 청크로
+        # `{"__interrupt__": (Interrupt(...),)}`를 낸다(`pregel/_loop.py`의
+        # `output_writes()`: `map_output_updates()`가 `INTERRUPT` 채널 write를 걸러낸
+        # 뒤 `_emit("updates", ...)`으로 따로 낸다). 이 키가 있으면 다른 node_name과
+        # 섞일 수 없으므로 바로 처리하고 반환한다.
         #
-        # **이걸 처리 안 하면 무슨 일이 있었는지(2026-08-19 이전)**: 아래
-        # 일반 루프는 `node_output`이 dict가 아니면(`__interrupt__`의 값은
-        # `tuple[Interrupt, ...]`) 그냥 건너뛰므로, interrupt가 나면 이
-        # `convert()`는 빈 리스트만 돌려주고 스트림은 그대로 끝났다 —
-        # side_effect 도구를 부르면 화면에는 아무 일도 없었던 것처럼 보이고
-        # (확인 카드도, 오류도 없이 스트림만 조용히 종료), 실제로는
-        # `HumanInTheLoopMiddleware`가 도구 실행을 막아 둔 채 그래프가
-        # 멈춰 있었다 — 재개할 API 자체도 없었으니 그 실행은 영원히 그
-        # 상태였다. `2026-08-19_05_HITL_resume_구현설계.md` §1 참고.
+        # **여기서 안 잡으면 조용히 사라진다.** 아래 일반 루프는 `node_output`이
+        # dict가 아니면 건너뛰는데 `__interrupt__`의 값은 `tuple[Interrupt, ...]`다.
+        # 그러면 `convert()`가 빈 리스트를 돌려주고 스트림이 그대로 끝나서, 화면에는
+        # 확인 카드도 오류도 없이 아무 일 없었던 것처럼 보이지만 실제로는 그래프가
+        # 도구 실행 직전에 멈춰 있게 된다.
+        # 정본: `2026-08-19_05_HITL_resume_구현설계.md` §1
         if "__interrupt__" in payload:
             return self._handle_interrupt(
                 payload["__interrupt__"], run_id=run_id, definition=definition
@@ -565,26 +600,40 @@ class EventMapper:
         if not interrupts:
             return []
         first = interrupts[0]
+        interrupt_id = getattr(first, "id", None)
+        if interrupt_id and interrupt_id in self._seen_interrupt_ids:
+            return []
+        if interrupt_id:
+            self._seen_interrupt_ids.add(interrupt_id)
         hitl_request = first.value if isinstance(first.value, dict) else {}
         action_requests = hitl_request.get("action_requests") or []
+        interrupted_tool_calls = self._interrupted_tool_calls(action_requests)
         return [
             {
                 "type": EVENT_AWAITING_CONFIRMATION,
                 "run_id": run_id,
                 "agent_id": getattr(definition, "agent_id", None),
                 "agent_version_id": getattr(definition, "agent_version_id", None),
-                # 승인/거부를 그대로 이어붙일 수 있는 재개 키. 지금 구조에서는
-                # 한 턴에 interrupt가 하나뿐이라(위 docstring) 재개할 때
-                # `Command(resume={"decisions": [...]})`를 이 id 없이
-                # 그대로 보내도 되지만, 나중에 병렬 interrupt를 지원하게
-                # 되면 이 값으로 특정 interrupt를 골라야 하므로 지금부터
-                # 실어 둔다.
-                "interrupt_id": first.id,
-                # 화면이 확인 카드를 그리는 데 필요한 전부 — 도구 이름·인자·
-                # 설명. 승인 재개 시에도 이 목록의 길이만큼
-                # `decisions`를 만들어야 하므로(순서·개수가 안 맞으면
-                # `HumanInTheLoopMiddleware`가 ValueError) 그대로 저장해 둔다.
+                # 재개 키. 한 턴에 interrupt가 하나뿐이라 지금은 없어도 재개되지만,
+                # 병렬 interrupt를 지원하게 되면 이 값으로 특정 interrupt를 고른다.
+                "interrupt_id": interrupt_id,
+                # 화면이 확인 카드를 그리는 데 필요한 전부(도구 이름·인자·설명).
+                # 재개 시 이 목록 길이만큼 `decisions`를 만들어야 하므로
+                # (순서·개수가 어긋나면 `HumanInTheLoopMiddleware`가 ValueError)
+                # 그대로 저장해 둔다.
                 "action_requests": action_requests,
+                # 화면/미들웨어 입력과 분리된 내부 추적 상태. 채팅 메시지에 이
+                # 이벤트가 저장됐다가 resume 때 EventMapper와 DB 상관관계를
+                # 복원한다. 원문 Tool 결과나 credential은 포함하지 않는다.
+                "trace_resume_state": {
+                    "pending_subagents": dict(self._pending),
+                    # 병렬 Child가 둘 이상이면 새 mapper가 도착 순서만 보고 다시
+                    # 붙일 경우 run_id가 서로 바뀔 수 있다. interrupt 전 이미
+                    # 확정한 namespace → Child 대응도 함께 보존한다.
+                    "namespace_subagents": dict(self._namespace_subagent),
+                    "pending_tool_calls": list(self._pending_direct_tool_calls),
+                    "interrupted_tool_calls": interrupted_tool_calls,
+                },
                 "complete": False,
             }
         ]
@@ -612,11 +661,10 @@ class EventMapper:
         # gpt-5.6-luna 같은 추론 모델)는 `AIMessage.content`를 평문 문자열이 아니라
         # `[{'type': 'reasoning', 'id': 'rs_...', ...}, {'type': 'text', 'text':
         # '...'}]` 같은 콘텐츠 블록 리스트로 채운다 — `scripts/team_status_agent.py`로
-        # 라이브 실행해서 `result` 이벤트의 `text`가 그 원시 리스트 그대로 새는 걸
-        # 재현했다. `BaseMessage.text`(langchain-core, 설치된 버전에서 직접 확인)는
-        # 문자열/블록 리스트 둘 다 받아 `type: "text"` 블록만 이어붙인 평문 문자열을
-        # 돌려준다(`str` 서브클래스라 `.startswith()`/JSON 직렬화 그대로 안전) —
-        # 일반 모델(콘텐츠가 이미 문자열)에도 동일하게 안전하다.
+        # `.content`를 직접 쓰면 블록 리스트가 원시 그대로 `result` 이벤트의 `text`로
+        # 샌다. `BaseMessage.text`는 문자열/블록 리스트 둘 다 받아 `type: "text"`
+        # 블록만 이어붙인 평문을 돌려주고(`str` 서브클래스라 JSON 직렬화도 안전),
+        # 콘텐츠가 이미 문자열인 일반 모델에도 동일하게 안전하다.
         content = message.text
 
         agent_id = getattr(definition, "agent_id", None)
@@ -625,15 +673,12 @@ class EventMapper:
         if ns_prefix is None:
             # --- 부모 네임스페이스 -------------------------------------------
             if node_name == "model":
-                # 이 호출의 reasoning은 이미 "messages" 모드로 실시간으로 다
-                # 내보냈다(_classify_reasoning_delta) — 여기서 완성본을 또
-                # 내면 끝에 중복된다. 커서만 지워서 다음 호출의 첫 조각이
-                # 이 호출 끝에 잘못 이어붙지 않게 한다(위 모듈 docstring
-                # "reasoning 실시간 스트리밍" 절).
+                # reasoning은 "messages" 모드가 이미 실시간으로 다 냈다. 여기서
+                # 완성본을 또 내면 중복되므로, 커서만 지워 다음 호출의 첫 조각이
+                # 이 호출 끝에 잘못 이어붙지 않게 한다(모듈 docstring 참고).
                 self._reasoning_cursor[ns_prefix] = None
-                # 이 호출의 토큰·회전 수를 이 run 누계에 더한다(2026-08-21).
-                # 도구를 부르든 최종 답이든 모델 호출은 모델 호출이라, 분기
-                # 앞에서 한 번만 센다.
+                # 도구를 부르든 최종 답이든 모델 호출은 모델 호출이라 분기 앞에서
+                # 한 번만 센다.
                 self._count_model_call(run_id, message)
                 events: list[dict[str, Any]] = []
                 if tool_calls:
@@ -702,6 +747,7 @@ class EventMapper:
             if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
                 # 부모가 직접 호출한 도구의 완료 — 자식 네임스페이스의
                 # tool_completed와 동일한 모양, subagent_alias만 None.
+                self._forget_direct_tool_call(msg_tool_call_id)
                 return [
                     {
                         "type": EVENT_TOOL_COMPLETED,
@@ -733,6 +779,7 @@ class EventMapper:
             for call in tool_calls:
                 tool_ref = call.get("name")
                 if tool_ref and tool_ref != DELEGATION_TOOL_NAME:
+                    self._remember_direct_tool_call(run_id=child_run_id, call=call)
                     events.append(
                         {
                             "type": EVENT_TOOL_STARTED,
@@ -751,6 +798,7 @@ class EventMapper:
             return events
 
         if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
+            self._forget_direct_tool_call(msg_tool_call_id)
             return [
                 {
                     "type": EVENT_TOOL_COMPLETED,
@@ -802,13 +850,8 @@ class EventMapper:
                 call_id = call.get("id")
                 child_run_id = str(uuid.uuid4())
 
-                # §14.2/§14.3의 agent_id/agent_version_id/subagent_name은 Child
-                # 자신의 값이다(루트 값이 아님) — `definition.subagents`에 이미
-                # DB에서 조회한 Child 자신의 정의가 들어 있다(loader.py). MVP는
-                # 위임 1단계뿐이라 이 조회에 재귀가 필요 없다: `alias`는
-                # `build_subagent()`가 `CompiledSubAgent(name=definition.alias,
-                # ...)`로 등록한 값과 정확히 같은 값이라(같은 SubagentDefinition.
-                # alias), deepagents의 `subagent_type`과 1:1로 대응한다.
+                # 여기 값들은 루트가 아니라 Child 자신의 것이다 — 자세한 근거는
+                # 모듈 docstring "Child의 agent_id/..." 절.
                 sub_def = subagent_defs_by_alias.get(alias)
                 child_agent_id = sub_def.agent_id if sub_def is not None else agent_id
                 child_agent_version_id = sub_def.agent_version_id if sub_def is not None else agent_version_id
@@ -826,12 +869,9 @@ class EventMapper:
                     # call_id가 없으면(비정상 입력) 나중에 tool_call_id로 못
                     # 찾는다 — 그래도 subagent_started 자체는 그대로 낸다.
                     self._pending[call_id] = info
-                # 2026-08-19, §10순위(Child Run Snapshot) — Child 자신의
-                # resolved_model을 `child_resolved_models`에서 alias로
-                # 찾는다(위 agent_id/agent_version_id/subagent_name과 정확히
-                # 같은 조회 패턴). 못 찾으면(예: general-purpose — GP는 Root와
-                # 같은 model로 돈다, `factory.py`가 GP 전용 모델을 따로
-                # resolve하지 않는다) Root 자신의 값으로 폴백한다.
+                # Child의 resolved_model을 alias로 찾는다(위와 같은 조회 패턴).
+                # 못 찾으면 Root 값으로 폴백한다 — GP가 그 경우다. `factory.py`가
+                # GP 전용 모델을 따로 resolve하지 않아 Root와 같은 model로 돈다.
                 resolved = (child_resolved_models or {}).get(alias)
                 if resolved is None:
                     resolved = root_resolved_model
@@ -845,11 +885,8 @@ class EventMapper:
                         "subagent_alias": alias,
                         "subagent_name": subagent_name,
                         "task_summary": task_summary,
-                        # `tracing/__init__.py`의 `_start_run()`이 `EVENT_AGENT_STARTED`와
-                        # 동일하게 `.get()`으로 읽어 `agent_run.resolved_provider`/
-                        # `resolved_endpoint_hash`에 적재한다 — 그 함수 자체는
-                        # 안 고쳤다(이미 이벤트 타입을 안 가리고 제네릭하게
-                        # 읽는다).
+                        # `tracing/__init__.py`의 `_start_run()`이 이벤트 타입을
+                        # 가리지 않고 `.get()`으로 읽어 적재한다.
                         "resolved_provider": getattr(resolved, "provider", None),
                         "resolved_endpoint_hash": _resolved_endpoint_hash(resolved),
                         "complete": False,
@@ -860,6 +897,7 @@ class EventMapper:
                 # (langgraph ToolNode는 루트/서브그래프를 구분하지 않는다 —
                 # 위 모듈 docstring 참고). subagent_alias=None으로 "부모
                 # 자신의 호출"임을 구분한다.
+                self._remember_direct_tool_call(run_id=run_id, call=call)
                 events.append(
                     {
                         "type": EVENT_TOOL_STARTED,

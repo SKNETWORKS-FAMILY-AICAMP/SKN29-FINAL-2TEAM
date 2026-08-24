@@ -146,16 +146,14 @@ export function TeamUsageSections({
 
         {defaultModel === null ? (
           <p className={styles.inlineEmpty}>불러오는 중…</p>
-        ) : defaultModel.agent_name === null ? (
-          /* 정문이 없으면 「없다」고 말한다. 임의의 기본값을 저장된 것처럼
-             보여주면 안 된다 — 팀 화면에서 지켜 온 규칙 그대로다. */
-          <p className={styles.inlineEmpty}>
-            이 팀에는 아직 기본 에이전트가 없습니다. 팀이 처음 대화를 시작하면 만들어집니다.
-          </p>
         ) : (
+          /* 「정문이 없다」 상태는 2026-08-22 에 없어졌다 — 값이 레거시 정문
+             에이전트가 아니라 team.default_model 에 있어서, 어느 팀이든 정할
+             수 있다. 정한 적이 없는 것은 아래 「고르세요」로 말한다: 저장한 적
+             없는 값을 저장된 것처럼 보여주지 않는다는 규칙은 그대로다. */
           <div className={styles.formGrid}>
             <div className={styles.fieldGroup}>
-              <label htmlFor="team-default-model">{defaultModel.agent_name}</label>
+              <label htmlFor="team-default-model">기본 채팅 모델</label>
               {/* 이름을 외워 적게 하지 않는다 — 오타는 실행 시점 404 가 되고,
                   그때 죽는 것은 우리가 아니라 이 팀의 대화다. */}
               <select

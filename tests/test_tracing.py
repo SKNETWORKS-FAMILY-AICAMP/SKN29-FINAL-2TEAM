@@ -242,7 +242,10 @@ class ToolCallLifecycleTests(SimpleTestCase):
         list(trace_events(iter([_agent_started(), _tool_started()]), context=_context()))
 
         calls.begin.assert_called_once_with(
-            run_id="RUN-ROOT", tool_ref="document_search", input_summary="query=일정"
+            run_id="RUN-ROOT",
+            langchain_tool_call_id="call-1",
+            tool_ref="document_search",
+            input_summary="query=일정",
         )
 
     def test_tool_completed_ends_tool_call_ok(self, runs, calls):
@@ -364,6 +367,48 @@ class AwaitingConfirmationSuspendTests(SimpleTestCase):
         runs.suspend.assert_called_once_with(run_id="RUN-ROOT")
         runs.finish.assert_not_called()  # _close_orphans()가 이걸 FAILED로 안 닫는다
 
+    def test_awaiting_confirmation_keeps_open_tool_call_pending(self, runs, calls):
+        """승인 대기는 스트림 종료가 아니라 도구 실행 직전의 일시 정지다."""
+        calls.begin.return_value = "TC-1"
+        event = _awaiting_confirmation()
+
+        list(
+            trace_events(
+                iter([_agent_started(), _tool_started(), event]),
+                context=_context(),
+            )
+        )
+
+        calls.end.assert_not_called()
+        self.assertEqual(event["suspended_run_ids"], ["RUN-ROOT"])
+
+    def test_child_run_and_its_tool_are_suspended_together(self, runs, calls):
+        """Child 내부 HITL도 그래프 전체 정지이므로 열린 Child를 실패 처리하지 않는다."""
+        calls.begin.return_value = "TC-CHILD"
+        event = _awaiting_confirmation()
+
+        list(
+            trace_events(
+                iter(
+                    [
+                        _agent_started(),
+                        _subagent_started(),
+                        _tool_started(run_id="RUN-CHILD", tool_call_id="call-child"),
+                        event,
+                    ]
+                ),
+                context=_context(),
+            )
+        )
+
+        self.assertEqual(
+            runs.suspend.call_args_list,
+            [call(run_id="RUN-CHILD"), call(run_id="RUN-ROOT")],
+        )
+        runs.finish.assert_not_called()
+        calls.end.assert_not_called()
+        self.assertEqual(event["suspended_run_ids"], ["RUN-CHILD", "RUN-ROOT"])
+
     def test_awaiting_confirmation_for_unstarted_run_is_skipped(self, runs, _calls):
         """agent_started 없이(또는 agent_id 없어 기록 안 된 run) 바로
         awaiting_confirmation이 오면 — 그 run_id가 open_run_ids에 없으니
@@ -425,6 +470,44 @@ class KnownRunIdsResumeTests(SimpleTestCase):
         runs.start_with_id.assert_called_once()
         runs.finish.assert_called_once_with(
             run_id="RUN-ROOT", status="DONE", iterations=0, token_in=None, token_out=None
+        )
+
+    def test_resumed_tool_completion_closes_original_pending_row(self, runs, calls):
+        """새 스트림에 DB UUID 메모리가 없어도 LangChain 호출 ID로 원행을 닫는다."""
+        list(
+            trace_events(
+                iter([_tool_completed(), _result()]),
+                context=_context(),
+                known_run_ids=("RUN-ROOT",),
+            )
+        )
+
+        calls.end.assert_not_called()
+        calls.end_by_langchain_id.assert_called_once_with(
+            run_id="RUN-ROOT",
+            langchain_tool_call_id="call-1",
+            status="OK",
+            duration_ms=None,
+            error_code=None,
+            retrieved_doc_ids=None,
+        )
+
+    def test_resumed_failed_tool_closes_original_row_as_failed(self, runs, calls):
+        list(
+            trace_events(
+                iter([_tool_completed(status="FAILED"), _result()]),
+                context=_context(),
+                known_run_ids=("RUN-ROOT",),
+            )
+        )
+
+        calls.end_by_langchain_id.assert_called_once_with(
+            run_id="RUN-ROOT",
+            langchain_tool_call_id="call-1",
+            status="FAILED",
+            duration_ms=None,
+            error_code="TOOL_EXECUTION_FAILED",
+            retrieved_doc_ids=None,
         )
 
 

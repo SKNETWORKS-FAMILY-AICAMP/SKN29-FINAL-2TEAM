@@ -267,6 +267,16 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                 </li>
               );
             }
+            if (entry.kind === 'skill') {
+              return (
+                <li key={index} className={styles.reasoningTool}>
+                  <Icon name="check-circle" size={13} color="var(--color-success)" />
+                  <span>
+                    {entry.skillName} {entry.scope === 'team' ? '팀' : '개인'} 스킬 적용 완료
+                  </span>
+                </li>
+              );
+            }
             if (entry.kind === 'tool') {
               const isExpanded = expandedOutputs.has(index);
               return (
@@ -393,6 +403,7 @@ export interface ConfirmCardProps {
   selected: number[];
   onSelectedChange: (next: number[]) => void;
   onApprove?: () => void;
+  onReject?: () => void;
   busy?: boolean;
   /**
    * 이 카드에 걸린 호출 **전부**(2026-08-21, 병렬실행 Phase 2). 모델이 한 턴에
@@ -418,6 +429,7 @@ export function ConfirmCard({
   selected,
   onSelectedChange,
   onApprove,
+  onReject,
   busy = false,
   actions,
   approvedActions,
@@ -538,6 +550,11 @@ export function ConfirmCard({
               호출별 승인(multi)일 때는 **전부 거절도 정상 동작**이라 막지
               않는다 — 그건 "아무것도 하지 마"라는 유효한 결정이고, 서버도
               거절 결정을 그대로 받는다(2026-08-21). */}
+          {!multi && onReject ? (
+            <Button variant="outline" size="sm" onClick={onReject} disabled={busy}>
+              거절
+            </Button>
+          ) : null}
           <Button
             size="sm"
             onClick={onApprove}

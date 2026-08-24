@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { Badge, Button, Checkbox, Icon, Modal } from '../../components';
-import type { BadgeTone } from '../../components';
+import { Badge } from '../Badge/Badge';
+import { Button } from '../Button/Button';
+import { Checkbox } from '../Checkbox/Checkbox';
+import { Icon } from '../Icon/Icon';
+import { Modal } from '../Modal/Modal';
+import type { BadgeTone } from '../Badge/Badge';
 import type { ToolChoice } from '../../api/agents';
 import type { McpServer } from '../../api/mcp';
-import pageStyles from './AgentEditPage.module.css';
 import styles from './ToolPickerModal.module.css';
 
 type Tab = 'builtin' | 'mcp' | 'create';
@@ -29,13 +32,10 @@ export interface ToolPickerModalProps {
   toolRefs: string[];
   onToggle: (ref: string) => void;
   /**
-   * 카테고리 카드 헤더의 「전체 선택」 마스터 체크박스(2026-08-18, 도구
-   * 선택 그룹화). **`onToggle`을 여러 번 부르지 않는다** — 부모의 토글
-   * 함수가 `toolRefs` 스냅샷을 읽어 하나씩 계산하는 구조라, 같은 렌더
-   * 안에서 연달아 부르면 뒤 호출이 앞 호출을 덮어써 마지막 도구 하나만
-   * 반영된다(ChatPage의 세션 override가 특히 그렇다 — 상태가 아니라 API
-   * 응답을 기다려 갱신한다). 그룹 전체를 한 번에 계산해 한 번만 반영하도록
-   * 별도 콜백으로 받는다.
+   * 카테고리 카드 헤더의 「전체 선택」 마스터 체크박스. `onToggle`을 여러 번
+   * 부르지 않는다 — 부모의 토글 함수가 `toolRefs` 스냅샷을 읽어 하나씩
+   * 계산하는 구조라, 연달아 부르면 뒤 호출이 앞 호출을 덮어써 마지막 도구만
+   * 반영된다. 그룹 전체를 한 번에 계산하는 별도 콜백으로 받는다.
    */
   onToggleGroup: (refs: string[], turnOn: boolean) => void;
 }
@@ -44,11 +44,9 @@ export interface ToolPickerModalProps {
 const UNCATEGORIZED = '기타';
 
 /**
- * 카테고리 카드에 보여줄 한 줄 설명(2026-08-18) — 개별 도구 설명과 달리
- * 백엔드에 안 둔다. 그룹 자체는 새 도구가 늘 때마다 바뀔 일이 거의 없는
- * 화면 전용 문구라, 도구 13개마다 같은 문장을 중복해서 들고 있게 만들
- * 이유가 없다. 새 카테고리가 생기면 여기 한 줄만 추가하면 된다 — 없으면
- * 그냥 설명 없이 이름만 보인다(카드 자체는 여전히 뜬다).
+ * 카테고리 카드에 보여줄 한 줄 설명 — 개별 도구 설명과 달리 백엔드에 안
+ * 둔다(화면 전용 문구라 도구마다 중복시킬 이유가 없다). 없으면 이름만
+ * 보인다(카드 자체는 뜬다).
  */
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   Jira: 'Jira 이슈를 조회하고, 확인을 거쳐 새 이슈로 등록합니다.',
@@ -56,25 +54,17 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   '업무 추출(AI)': '문서에서 업무 후보를 찾아 근거 문장과 함께 정리합니다.',
   '업무 관리': '등록된 업무를 조회·수정하고, 새 업무를 등록합니다.',
   프로젝트: '팀의 프로젝트 목록과 진행률을 확인합니다.',
-  // 팀원 조회·부하 리포트·부재 조회를 하나로 묶었다(2026-08-18, 지훈 요청
-  // "비슷한 커넥터별로 묶자"의 첫 걸음) — 셋 다 같은 HR 데이터(팀원 명부·
-  // 역량·부재)가 원본이다.
+  // 팀원 조회·부하 리포트·부재 조회를 하나로 묶었다 — 셋 다 같은 HR 데이터
+  // (팀원 명부·역량·부재)가 원본이다.
   HR: '팀원의 이름·직책·기술 스택, 업무 부하, 부재(휴가 등) 현황을 조회합니다.',
   '웹 검색': '인터넷에서 정보를 찾아 출처 URL과 함께 알려줍니다.',
   [UNCATEGORIZED]: '카테고리가 지정되지 않은 도구입니다.',
 };
 
 /**
- * 개별 도구의 **사람용** 한 줄 설명(2026-08-18 QA).
- *
- * **백엔드의 `description` 을 그대로 보여주면 안 된다** — 그건 모델에게 쓴
- * 지시문이다. 「문서 목록」은 349자짜리로 `document_search`·`not_collected`·
- * `storage_folders` 같은 내부 이름과 「…로 뭉뚱그리지 않는다」 같은 명령문이
- * 그대로 화면에 나왔다(§0 원칙 2 — 우리 아키텍처 용어를 사용자에게 노출하지
- * 않는다).
- *
- * 카테고리 설명(`CATEGORY_DESCRIPTIONS`)을 화면에 둔 것과 같은 이유로 여기 둔다.
- * **없으면 백엔드 설명으로 물러선다** — MCP 도구나 새로 붙는 도구는 여기 없다.
+ * 개별 도구의 사람용 한 줄 설명. 백엔드의 `description`을 그대로 보여주면
+ * 안 된다 — 그건 모델에게 쓴 지시문이라 내부 이름과 명령문이 그대로
+ * 노출된다. 없으면 백엔드 설명으로 물러선다(MCP 도구 등).
  */
 const TOOL_DESCRIPTIONS: Record<string, string> = {
   document_search: '문서에서 질문과 관련된 문장을 찾아 근거로 보여줍니다.',
@@ -124,10 +114,8 @@ export function ToolPickerModal({
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
   const builtinGroups = groupByCategory(builtinTools);
-  /** "세부 툴 확인"으로 펼친 카테고리(2026-08-18) — 기본은 다 접혀 있다.
-   * 먼저 카테고리 단위로만 고르게 하고, 안에 뭐가 있는지는 필요할 때만
-   * 보게 하려는 것(지훈 요청) — 처음부터 13개 도구가 다 펼쳐져 있으면
-   * "카테고리를 고른다"는 감각이 안 산다. */
+  /** "세부 툴 확인"으로 펼친 카테고리 — 기본은 다 접혀 있다. 먼저 카테고리
+   * 단위로만 고르게 하고, 안에 뭐가 있는지는 필요할 때만 보게 한다. */
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   function toggleExpanded(category: string) {
@@ -198,19 +186,19 @@ export function ToolPickerModal({
                 </button>
 
                 {expanded && (
-                  <div className={pageStyles.toolList}>
+                  <div className={styles.toolList}>
                     {items.map((toolItem) => {
                       const checked = toolRefs.includes(toolItem.tool_ref);
                       return (
                         <div
                           key={toolItem.tool_ref}
-                          className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
+                          className={[styles.toolRow, checked ? styles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
                           <Checkbox checked={checked} onChange={() => onToggle(toolItem.tool_ref)} />
-                          <div className={pageStyles.toolText}>
+                          <div className={styles.toolText}>
                             <strong>
                               {toolItem.name}
-                              {toolItem.side_effect && <span className={pageStyles.gate}> · 승인 필요</span>}
+                              {toolItem.side_effect && <span className={styles.gate}> · 승인 필요</span>}
                             </strong>
                             <span>
                               {TOOL_DESCRIPTIONS[toolItem.tool_ref] ?? toolItem.description}
@@ -224,13 +212,13 @@ export function ToolPickerModal({
               </div>
             );
           })}
-          {builtinTools.length === 0 && <p className={pageStyles.help}>기본 제공 도구가 없습니다.</p>}
+          {builtinTools.length === 0 && <p className={styles.help}>기본 제공 도구가 없습니다.</p>}
         </div>
       )}
 
       {tab === 'mcp' && (
         <div className={styles.serverList}>
-          {mcpServers.length === 0 && <p className={pageStyles.help}>아직 이 팀에 붙어 있는 서버가 없습니다.</p>}
+          {mcpServers.length === 0 && <p className={styles.help}>아직 이 팀에 붙어 있는 서버가 없습니다.</p>}
           {mcpServers.map((server) => {
             const chip = SERVER_STATUS[server.status];
             const usable = server.status === 'CONNECTED';
@@ -241,33 +229,33 @@ export function ToolPickerModal({
                     {server.name}
                     <Badge tone={chip.tone}>{chip.label}</Badge>
                   </span>
-                  <span className={pageStyles.help}>{server.endpoint_url}</span>
+                  <span className={styles.help}>{server.endpoint_url}</span>
                 </div>
                 {!usable && (
-                  <p className={pageStyles.help}>
+                  <p className={styles.help}>
                     {server.status === 'UNCHECKED'
                       ? '설정에서 연결을 확인해야 도구를 고를 수 있습니다.'
                       : '연결이 실패한 서버입니다. 설정에서 연결 상태를 확인하세요.'}
                   </p>
                 )}
                 {usable && server.tools.length === 0 && (
-                  <p className={pageStyles.help}>이 서버는 제공하는 도구가 없습니다.</p>
+                  <p className={styles.help}>이 서버는 제공하는 도구가 없습니다.</p>
                 )}
                 {usable && server.tools.length > 0 && (
-                  <div className={pageStyles.toolList}>
+                  <div className={styles.toolList}>
                     {server.tools.map((tool) => {
                       const ref = `mcp:${tool.mcp_tool_id}`;
                       const checked = toolRefs.includes(ref);
                       return (
                         <div
                           key={tool.mcp_tool_id}
-                          className={[pageStyles.toolRow, checked ? pageStyles.toolRowOn : ''].filter(Boolean).join(' ')}
+                          className={[styles.toolRow, checked ? styles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
                           <Checkbox checked={checked} disabled={!tool.enabled} onChange={() => onToggle(ref)} />
-                          <div className={pageStyles.toolText}>
+                          <div className={styles.toolText}>
                             <strong>
                               {tool.name}
-                              <span className={pageStyles.gate}> · 승인 필요</span>
+                              <span className={styles.gate}> · 승인 필요</span>
                             </strong>
                             <span>{tool.description || (tool.enabled ? '' : '사용 중지된 도구입니다.')}</span>
                           </div>
@@ -279,10 +267,8 @@ export function ToolPickerModal({
               </div>
             );
           })}
-          {/* 설정으로 보내던 버튼은 걷었다(2026-08-18) — 그 탭이 없어졌고,
-              팀이 스스로 붙일 수도 없다. 대신 **어디로 말하면 되는지**를
-              남긴다. 문구는 Model 탭(8/13)과 같은 말이다. */}
-          <p className={pageStyles.help}>
+          {/* 팀이 스스로 서버를 못 붙이므로, 어디로 말하면 되는지 남긴다. */}
+          <p className={styles.help}>
             서버 등록은 운영자에게 요청하세요. 주소·키를 다루는 작업이라 운영자가 대신 등록합니다.
           </p>
         </div>
@@ -290,7 +276,7 @@ export function ToolPickerModal({
 
       {tab === 'create' && (
         <div className={styles.createTab}>
-          <p className={pageStyles.help}>
+          <p className={styles.help}>
             팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 이 팀에
             붙어 있는 커스텀 도구만 쓸 수 있습니다.
           </p>

@@ -1,9 +1,10 @@
 """tools/adapters.py(adapt_builtin_tools) 테스트.
 
-`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 13개
-전부가 정확한 injected_context로 옮겨지는지 확인한다. 컨텍스트 주입 규칙은
-`services/harness/runner.py`의 `_injected()`를 AST로 직접 읽어 검증한 실측값과
-대조한다(2026-08-13) — 추측이 아니다.
+`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 15개
+전부가 정확한 injected_context로 옮겨지는지 확인한다. `EXPECTED_INJECTED_CONTEXT`
+표가 유일한 정본이다 — 비교할 레거시 구현(`services/harness/runner.py`의
+`_injected()`)이 2026-08-22 레거시 실행기 폐기로 없어졌다(아래 클래스 앞
+주석 참고).
 """
 
 from unittest.mock import patch
@@ -38,6 +39,7 @@ EXPECTED_INJECTED_CONTEXT = {
     "task_register": ("project_id", "account_id"),
     "jira_create_issues": ("project_id", "account_id"),
     "jira_get_issues": ("project_id", "account_id"),
+    "skill_register": ("account_id", "team_id", "account_role"),
 }
 
 # BUILTIN_TOOLS에 정의된 실제 side_effect 값(registry.py 직접 확인).
@@ -45,6 +47,7 @@ EXPECTED_SIDE_EFFECT = {
     "task_update": True,
     "task_register": True,
     "jira_create_issues": True,
+    "skill_register": True,
 }
 
 
@@ -60,10 +63,11 @@ class RealRegistryShapeTests(SimpleTestCase):
         # 안 고쳐져 실패한 채로 남아 있었다 — 2026-08-21에 맞춘다. 이 신호가
         # 의도대로 동작한 사례이므로 숫자 고정 자체는 그대로 둔다.
         #
-        # 2026-08-24에 `document_sync`가 추가되며 14 → 15. 이번에는 이 테스트가
-        # 바로 걸려서 `_ACCOUNT_SCOPED`와 위 EXPECTED 표를 같이 고쳤다 — 신호가
-        # 의도대로 동작했다.
-        self.assertEqual(len(BUILTIN_TOOLS), 15)
+        # 2026-08-24 병합 시점에 16이 됐다. 두 브랜치가 각자 하나씩 더했는데
+        # 양쪽 다 자기 것만 세어 15로 적었다 — main 은 `document_sync`를,
+        # jihun 은 `skill_register`를 더했다. 병합해야만 드러나는 값이라
+        # 여기서 실제 registry.py를 세어 16으로 고정한다.
+        self.assertEqual(len(BUILTIN_TOOLS), 16)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}
@@ -93,43 +97,14 @@ class RealRegistryShapeTests(SimpleTestCase):
                 self.assertEqual(adapted[ref].injected_context, expected)
 
 
-class LegacyInjectionParityTests(SimpleTestCase):
-    """레거시 `_injected()`를 **실제로 불러서** 새 런타임과 같은지 본다.
-
-    위 `EXPECTED_INJECTED_CONTEXT`는 손으로 관리하는 표다. 표만 보면 레거시가
-    틀렸을 때 표도 같이 틀린다 — 실제로 그랬다(2026-08-18: `document_search`에
-    `account_id`가 빠져 있었는데 표가 `("team_id",)`로 그 빠뜨림을 정답으로
-    고정하고 있었다). 그래서 여기서는 두 구현을 **서로** 비교한다.
-
-    한쪽만 고치면 엔진에 따라 도구가 다른 경계로 도는데, 오류가 아니라 결과가
-    조용히 달라져서 화면으로는 안 보인다.
-    """
-
-    #: 컨텍스트가 아니라 에이전트 설정값이라 이 비교에서 뺀다(adapters 모듈 docstring).
-    _NOT_CONTEXT = {"model"}
-    #: 레거시 핸들러 인자 이름 → CONTEXT_VALUES 이름.
-    _RENAME = {"proj_id": "project_id"}
-
-    def test_두_런타임의_주입_경계가_같다(self):
-        from services.harness.registry import BUILTIN_TOOLS as REGISTRY
-        from services.harness.runner import _injected
-
-        adapted = {tool.ref: tool for tool in adapt_builtin_tools()}
-        agent = {"team_id": "TM001", "model": "gpt-x"}
-        context = {"account_id": "AC001", "proj_id": "PJ001", "session_id": "SS001"}
-
-        for ref, tool in REGISTRY.items():
-            with self.subTest(ref=ref):
-                legacy = {
-                    self._RENAME.get(name, name)
-                    for name in _injected(tool, agent, context)
-                    if name not in self._NOT_CONTEXT
-                }
-                self.assertEqual(
-                    set(adapted[ref].injected_context),
-                    legacy,
-                    f"{ref}: 새 런타임과 레거시의 주입 인자가 다르다",
-                )
+# `LegacyInjectionParityTests`가 여기 있었다 — 레거시 `runner._injected()`를
+# 실제로 불러 새 런타임의 `injected_context`와 서로 비교하던 테스트다. 손으로
+# 관리하는 위 `EXPECTED_INJECTED_CONTEXT` 표가 틀렸을 때 표만으로는 못 잡는다는
+# 이유였고, 실제로 한 번 잡았다(2026-08-18 `document_search`의 `account_id`).
+#
+# 2026-08-22에 레거시 실행기를 걷어내면서 비교 상대가 없어져 지웠다. 표가
+# **유일한 정본**이 됐으므로, 내장 도구의 주입 인자를 바꿀 때는 위 표도 같이
+# 고쳐야 한다 — 서로 검증해 주던 짝이 이제 없다.
 
 
 class ContextRenamingTests(SimpleTestCase):

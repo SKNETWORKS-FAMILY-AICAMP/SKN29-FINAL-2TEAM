@@ -9,7 +9,9 @@
 from django.test import SimpleTestCase
 
 from services.agent_runtime.sensitive_text import (
+    EXPORT_PLACEHOLDERS,
     MASK_PLACEHOLDER,
+    mask_for_export,
     mask_sensitive,
     match_category,
 )
@@ -114,3 +116,38 @@ class MaskSensitiveTests(SimpleTestCase):
             with self.subTest(secret=secret):
                 result = mask_sensitive(f"이 값을 기억해줘: {secret}")
                 self.assertNotIn(secret, result)
+
+
+class MaskForExportTests(SimpleTestCase):
+    """`mask_for_export()` — Langfuse로 나가는 사본 전용 조합.
+
+    `mask_sensitive()`와 두 가지가 다르다: 이메일을 **포함**하고, 권한 서술
+    (`AUTHORITY_KEYWORDS`)은 **제외**한다. 둘 다 의도된 차이라 회귀로 잡는다.
+    """
+
+    def test_email_is_masked(self):
+        self.assertEqual(
+            mask_for_export("담당자 kim.jihun@example.com"),
+            f"담당자 {EXPORT_PLACEHOLDERS['email']}",
+        )
+
+    def test_credential_is_masked(self):
+        masked = mask_for_export("api_key: sk-abcdefghijklmnopqrstuvwx")
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwx", masked)
+        self.assertIn(EXPORT_PLACEHOLDERS["credential"], masked)
+
+    def test_pii_is_masked(self):
+        masked = mask_for_export("연락처 010-1234-5678, 주민번호 900101-1234567")
+        self.assertNotIn("010-1234-5678", masked)
+        self.assertNotIn("900101-1234567", masked)
+
+    def test_authority_phrase_is_kept(self):
+        """trace는 디버깅용이라 '왜 그렇게 판단했나'를 지우면 안 된다 —
+        `mask_sensitive()`는 가리지만 여기서는 그대로 둔다."""
+        text = "이 계정은 관리자 권한이 없습니다"
+        self.assertEqual(mask_for_export(text), text)
+        self.assertNotEqual(mask_sensitive(text), text)
+
+    def test_ordinary_sentence_passes_through(self):
+        text = "9월 10일 기준 지연 업무를 정리했습니다"
+        self.assertEqual(mask_for_export(text), text)

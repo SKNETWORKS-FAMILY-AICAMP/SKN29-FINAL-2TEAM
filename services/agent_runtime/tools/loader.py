@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.exceptions import ToolContextConfigurationError, ToolUnavailableError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,12 @@ CONTEXT_VALUES: dict[str, Callable[[RuntimeContext], Any]] = {
     "project_id": lambda context: context.project_id,
     "run_id": lambda context: context.run_id,
     "parent_run_id": lambda context: context.parent_run_id,
+    # 2026-08-21, `skill_register` 전용(설계 문서 "skill_register가 담당하는
+    # 것" 절) — `scope=TEAM`인데 요청자가 `leader`가 아니면 그 자리에서
+    # 거부해야 하는데, 이건 `is_tool_allowed_for_role()`의 side_effect 기준
+    # RBAC(모든 write 도구에 공통)보다 더 좁은, 이 도구만의 규칙이라 handler
+    # 안에서 직접 판단해야 한다 — 그러려면 handler가 역할값을 받아야 한다.
+    "account_role": lambda context: context.role,
 }
 
 
@@ -55,26 +64,17 @@ def inject_runtime_context(
     return resolved
 
 
-#: MCP 도구 tool_ref 접두사(DB/migrations/2026-08-11_agent_platform.sql,
-#: services/harness/registry.py 모듈 docstring과 동일 규칙 — 이 접두사가
-#: 바뀌면 두 곳 다 같이 고쳐야 한다).
-#:
-#: 2026-08-21: `middleware/tool_timeout.py`가 "이 호출이 MCP인가"를 판단하는
-#: 데 같은 값을 써야 해서 공개 이름으로 바꿨다(A-1 재설계 — timeout을 MCP
-#: 도구에만 건다, `2026-08-21_01_Tool_timeout_재설계.md` §3). 문자열을 다시
-#: 적지 않고 이 상수를 import 해서 쓴다.
+#: MCP 도구 tool_ref 접두사. 세 곳(여기, DB 마이그레이션, harness registry)이
+#: 같은 규칙을 공유하니 바뀌면 같이 고친다.
 MCP_TOOL_REF_PREFIX = "mcp:"
 
 
 def model_safe_tool_name(tool_ref: str) -> str:
     """모델(LLM 함수 호출 API)에게 실제로 보낼 함수 이름.
 
-    OpenAI 함수 이름은 `^[a-zA-Z0-9_-]+$`만 허용해 `mcp:<id>` 처럼 콜론이 든
-    tool_ref를 그대로 못 쓴다 — 레거시 `services/harness/runner.py`의
-    `model_name_for()`와 동일 근거(2026-08-12 실측: `Invalid 'tools[N].name':
-    string does not match pattern`). 저장소 규칙(tool_ref엔 콜론)은 바꾸지
-    않고, 모델에게 나가는 이름만 여기서 바꾼다 — 되돌리는 쪽은
-    `tool_ref_from_model_name()`.
+    OpenAI 함수 이름은 `^[a-zA-Z0-9_-]+$`만 허용해 `mcp:<id>`의 콜론을 못 쓴다.
+    저장소 규칙(tool_ref엔 콜론)은 그대로 두고 모델에게 나가는 이름만 바꾼다
+    — 되돌리는 쪽은 `tool_ref_from_model_name()`.
     """
     return tool_ref.replace(":", "__")
 
@@ -98,22 +98,26 @@ class ToolLoader:
         context: RuntimeContext,
         agent_model: str | None = None,
     ) -> tuple[Tool, ...]:
-        """`agent_model`은 이 요청을 부른 에이전트가 실제로 고른 모델 문자열이다
-        (`AgentDefinition.model`) — `RuntimeContext`엔 없는 값이라 별도 인자로
-        받는다. 지금은 `tools/adapters.py`의 `task_extraction` 하나만 이 값을
-        쓴다(레거시 `services/harness/runner.py`의 `_injected()`가 같은 이유로
-        `agent.get("model")`을 넘기는 것과 동일한 근거).
+        """요청된 tool_refs를 실제 `Tool` 목록으로 바꾼다.
 
-        MCP tool_ref(`mcp:<id>` 접두사, 2026-08-14 연결)는 요청된 tool_refs 중
-        하나라도 그 접두사면 팀의 등록된 MCP 도구를 함께 조회한다 — 내장
-        도구만 쓰는 에이전트가 매 실행마다 불필요한 DB 왕복을 하지 않도록,
-        실제로 필요할 때만 조회한다.
+        `agent_model`은 그 에이전트가 실제로 고른 모델 문자열이다
+        (`AgentDefinition.model`) — `tools/adapters.py`의 `task_extraction`만
+        이 값을 쓴다. `mcp:` 접두사가 하나라도 있을 때만 팀의 MCP 도구를
+        조회한다(불필요한 DB 왕복을 피한다).
+
+        `services.harness.registry.ALWAYS_ON_TOOL_REFS`(예: `skill_register`)는
+        `tool_refs`에 없어도 `available`에 있으면 항상 포함한다 — 골라야 하는
+        도구가 아니다. 옛 레거시 엔진의 `load_for_agent()`/`load_for_refs()`가
+        하던 일을 여기로 옮겼다(2026-08-22, 레거시 엔진 폐기와 함께) — 지금은
+        도구 로딩 경로가 여기 하나뿐이다. **`missing`(아래) 판정에는 안 넣는다**
+        — always-on은 요청이 아니라 "있으면 딸려온다"이지 "반드시 있어야 한다"가
+        아니다. 없으면 조용히 빠질 뿐, `ToolUnavailableError`감이 아니다.
         """
-        # 지연 import — services.harness.registry의 무거운 의존성 사슬
-        # (apps.connectors, backend.services.hr, services.mcp 등)을 이
-        # 모듈이 그냥 import되기만 해도 끌고 들어오지 않게 한다
-        # (factory.py의 DependencyGraphSource.load()와 같은 이유).
+        # 지연 import — `services.harness.registry`의 무거운 의존성 사슬
+        # (apps.connectors, backend.services.hr, services.mcp 등)을 이 모듈이
+        # import되기만 해도 끌고 들어오지 않게 한다.
         from services.agent_runtime.tools.adapters import adapt_builtin_tools, adapt_mcp_tools
+        from services.harness.registry import ALWAYS_ON_TOOL_REFS
 
         available = {tool.ref: tool for tool in adapt_builtin_tools(agent_model=agent_model)}
 
@@ -122,12 +126,29 @@ class ToolLoader:
                 available[mcp_tool.ref] = mcp_tool
 
         missing = [ref for ref in tool_refs if ref not in available]
-        if missing:
+
+        # 없는 MCP 도구는 건너뛴다 — `agent_versions`가 불변이라 발행된 참조를
+        # 지울 자리가 없다(운영자가 서버를 지운 것뿐, 정의 잘못이 아니다).
+        # 내장 도구는 정의가 틀린 것(오타·삭제된 id)이라 그대로 막는다.
+        missing_mcp = [ref for ref in missing if ref.startswith(MCP_TOOL_REF_PREFIX)]
+        missing_builtin = [ref for ref in missing if not ref.startswith(MCP_TOOL_REF_PREFIX)]
+
+        if missing_builtin:
             raise ToolUnavailableError(
-                f"다음 도구를 불러올 수 없습니다: {', '.join(missing)}. "
+                f"다음 도구를 불러올 수 없습니다: {', '.join(missing_builtin)}. "
                 "등록되지 않았거나, 비활성화됐거나, 이 팀 소속이 아닙니다."
             )
-        return tuple(available[ref] for ref in tool_refs)
+        if missing_mcp:
+            # 조용히 넘기지 않는다 — 왜 그 도구를 안 쓰는지 물었을 때 답할
+            # 근거가 로그에는 남아야 한다.
+            logger.warning(
+                "없는 MCP 도구를 건너뛴다(team_id=%s): %s", context.team_id, ", ".join(missing_mcp)
+            )
+
+        # 순서 보존 dedup — tool_refs가 먼저, 아직 없는 always-on 도구는 뒤에.
+        # always-on은 `available`에 있을 때만 딸려온다(위 docstring 참고).
+        resolved_refs = tuple(dict.fromkeys((*tool_refs, *ALWAYS_ON_TOOL_REFS)))
+        return tuple(available[ref] for ref in resolved_refs if ref in available)
 
 
 __all__ = [

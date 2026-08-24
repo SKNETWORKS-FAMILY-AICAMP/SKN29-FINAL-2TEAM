@@ -1,12 +1,10 @@
 import { apiRequest } from './client';
 
 /**
- * 새 버전 스키마(`agents`/`agent_versions`) API 클라이언트.
+ * `agents`/`agent_versions` 스키마 API 클라이언트.
  *
- * `api/agents.ts`(옛 비버전 스키마)와 나란히 존재한다. 2026-08-15부터 Chat이
- * 이 스키마의 에이전트도 직접 선택해서 대화할 수 있다(`ChatPage.tsx` 상단
- * 드롭다운) — 팀마다 자동으로 있는 `is_default_chat` 에이전트가 기본
- * 선택값이다. 옛 "정문"(`agent:*` A2A) 경로와는 별개로 나란히 존재한다.
+ * Chat 상단 드롭다운이 이 스키마의 에이전트를 직접 선택한다 — 팀마다 자동으로
+ * 있는 `is_default_chat` 에이전트가 기본 선택값이다.
  */
 
 /** DRAFT(작성 중) / ACTIVE(활성) / DISABLED(팀이 내림). 옛 스키마와 값은 같다. */

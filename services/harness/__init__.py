@@ -1,8 +1,9 @@
-"""Agent Harness — 에이전트 하나를 돌리는 실행기.
+"""레거시 Agent Harness가 남긴 공유 조각들.
 
-Chat API(단계 3)와 평가 스크립트가 함께 쓴다. 바깥으로 내보내는 것은
-`run_agent` 하나와 이벤트 타입 상수뿐이다 — Registry·Trace 는 안쪽 구조라
-호출자가 알 필요가 없다.
+실행기(`run_agent`)는 2026-08-22에 없어졌다 — 챗은 전부
+`services/agent_runtime/`(Deep Agent 엔진)로 돈다. 여기 남은 것은 두 엔진이
+같이 보는 이벤트 타입 상수와, 안쪽 모듈(`registry`의 내장 도구 정본,
+`trace`의 실행 적재, `naming`의 대화 제목)이다.
 """
 
 from .runner import (
@@ -12,9 +13,6 @@ from .runner import (
     EVENT_STAGE,
     EVENT_TOOL_CALL_FINISHED,
     EVENT_TOOL_CALL_STARTED,
-    ModelDecision,
-    check_tools,
-    run_agent,
 )
 
 __all__ = [
@@ -24,7 +22,4 @@ __all__ = [
     "EVENT_STAGE",
     "EVENT_TOOL_CALL_FINISHED",
     "EVENT_TOOL_CALL_STARTED",
-    "ModelDecision",
-    "check_tools",
-    "run_agent",
 ]

@@ -303,13 +303,7 @@ docker compose -f infra/docker/docker-compose.yml up --build
 Get-Content -Raw DB/peopleDB/peopledb_mock.sql | docker compose -f infra/docker/docker-compose.yml exec -T db psql -U project_copilot -d project_copilot
 ```
 
-### 4) 기본 제공 에이전트 시드
-
-```powershell
-python backend/services/createDB/seed_agents.py --all-teams
-```
-
-### 5) 확인
+### 4) 확인
 
 - API 상태 — `http://127.0.0.1:8000/api/health/`
 - 화면 — `http://127.0.0.1:5173/`

@@ -20,11 +20,15 @@ export interface OpsModelRegisterInput {
   model: string;
 }
 
-/** 그 팀의 **기본 채팅 모델** — 아무 에이전트도 안 고르고 말을 걸었을 때 도는 것. */
+/** 그 팀의 **기본 채팅 모델** — 아무 에이전트도 안 고르고 말을 걸었을 때 도는 것.
+ *
+ * 저장 위치는 `team.default_model`이다(2026-08-22). 그 전에는 레거시 정문
+ * 에이전트의 모델에 얹혀 있어서 「정문이 아직 없다」는 상태가 따로 있었는데,
+ * 팀 설정으로 옮기면서 그 상태가 없어졌다 — 이제 어느 팀이든 정할 수 있다. */
 export interface OpsTeamDefaultModel {
-  /** 팀에 정문이 아직 없으면 null. 그때 화면은 「없다」고 말한다. */
+  /** 아직 정한 적이 없으면 null. 그때 화면은 「고르세요」를 띄운다 — 임의의
+   *  기본값을 저장된 것처럼 보이면 안 된다. */
   model: string | null;
-  agent_name: string | null;
   /** 기본 제공 + 그 팀에 등록된 것. **외워 적게 하지 않는다.** */
   choices: string[];
 }
@@ -35,7 +39,7 @@ export function fetchOpsTeamDefaultModel(token: string, teamId: string) {
 
 /** 팀별로 정한다 — 전역 하나로 두면 계약·리전 요건이 다른 회사를 못 받는다. */
 export function saveOpsTeamDefaultModel(token: string, teamId: string, model: string) {
-  return opsRequest<{ model: string; agent_name: string }>(
+  return opsRequest<{ model: string | null }>(
     `/ops/models/teams/${teamId}/default/`,
     { method: 'PUT', token, body: { model } },
   );

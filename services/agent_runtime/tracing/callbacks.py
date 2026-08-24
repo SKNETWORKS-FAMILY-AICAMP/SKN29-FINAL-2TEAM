@@ -1,4 +1,4 @@
-"""Langfuse·LangSmith LangChain 콜백 핸들러를 만든다.
+"""Langfuse LangChain 콜백 핸들러를 만든다.
 
 2026-08-19 착수(작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md) —
 이 파일은 원래 의도적으로 비어 있었다(`agent_run`/`tool_call` 적재는
@@ -9,8 +9,8 @@
 졌다 — 이 파일이 그 콜백을 만드는 자리다.
 
 **키가 없으면 조용히 꺼진다.** `WEB_SEARCH_API_KEY`와 같은 원칙 — 키가
-없다고 에이전트 실행 자체가 막히면 안 된다. `get_langfuse_callback()`/
-`get_langsmith_callback()`이 `None`을 돌려주면 호출 쪽(`executor.py`)이
+없다고 에이전트 실행 자체가 막히면 안 된다. `get_langfuse_callback()`이
+`None`을 돌려주면 호출 쪽(`executor.py`)이
 그냥 콜백 목록에서 뺀다.
 
 **마스킹(2026-08-19, 지훈 리뷰로 추가 — 2026-08-19 API 수정).** 트레이스에는
@@ -19,13 +19,22 @@
 `_jira_issue_row()`)가 담당자 `assignee_email`을 실제 값 그대로 돌려주는 게
 실사용 데이터 기준 유일하게 확인된 이메일 유출 경로다. `_ensure_client_configured()`
 가 `Langfuse(...)`에 `mask=_mask_data`를 넘겨서, export 직전에 관측값
-(observation의 input/output)에서 이메일 패턴을 정규식으로 치환한다 — 원본
+(observation의 input/output)에서 민감정보 패턴을 치환한다 — 원본
 응답(사용자에게 가는 답, DB `tool_call.input_summary`)은 그대로 두고
 **Langfuse로 나가는 사본만** 가린다.
 
+**무엇을 가리는지는 이 파일이 정하지 않는다(2026-08-21).** 패턴은
+`services/agent_runtime/sensitive_text.py`의 `mask_for_export()` 한 곳에서
+정의한다 — 이메일뿐 아니라 credential(API 키·`password: ...` 꼴)과 주민번호·
+카드번호·전화번호까지 포함한다. 처음엔 이 파일이 이메일 정규식 하나만 갖고
+있었는데, ① 저장소에 이미 같은 목적의 단일 출처 모듈이 있었고(그 모듈
+docstring이 "정의는 여기 하나만 둔다"고 명시), ② RAG 청크·Jira 설명·MCP
+도구 결과에 섞인 전화번호나 키 문자열은 그대로 서드파티로 나갔으며,
+③ 외부 반출 기준을 "비밀값이나 개인정보 원문 노출"로 잡으면(트레이스는
+서드파티 서버로 원문이 나가는 경로다) 이메일만 가리는 구현은 기준에 못 미쳤다.
+
 처음엔 `mask_otel_spans=_mask_otel_spans`(span 속성을 순회하며 패치하는
-모양)로 짰는데, **실제 설치된 SDK(`langfuse==3.15.0`, `requirements/base.txt`의
-`langfuse>=3.0,<4.0` 범위)를 직접 설치해 확인해 보니 그런 파라미터가 없었다**
+모양)로 짰는데, 당시 설치된 v3 SDK에는 그런 파라미터가 없었다
 — `Langfuse.__init__()`가 그 키워드를 그대로 거부해 `TypeError`를 던진다.
 `get_langfuse_callback()`의 넓은 `except Exception`이 이를 삼켜서, 실 키를
 넣는 순간(작업계획 §3-5) Langfuse 연동 전체가 **아무 로그도 없이 조용히
@@ -33,42 +42,24 @@
 `langfuse.types.MaskFunction`(`data` 키워드 하나를 받아 마스킹한 값을
 돌려주는 함수)로 완전히 다르다 — 아래 `_mask_data()`가 그 모양에 맞춘다.
 
-**LangSmith 마스킹(2026-08-19, 작업계획 §5의 "미해결 항목" 해소).** 원래
-계획은 "`LANGCHAIN_TRACING_V2` env var만 켜면 코드 없이 붙는다"였는데,
-그 자동 연결 경로는 `langchain-core`가 자기 기본 `Client`(마스킹 없음)로
-붙기 때문에 마스킹을 걸 수가 없다 — 그래서 이 자동 경로는 계속 쓰되(끄지
-않는다), **우리가 마스킹된 `Client`로 직접 만든 `LangChainTracer`를
-`callbacks`에 명시적으로 얹는다.** 실제 설치된 SDK(`langsmith==0.11.0`)로
-직접 확인한 근거:
-
-- `langsmith.Client(hide_inputs=..., hide_outputs=...)`— 각각 `Callable[[dict],
-  dict]`를 받는다(공식 시그니처, `Client.__init__` docstring 실측). Langfuse의
-  `mask`와 같은 모양이라 `_mask_data`를 그대로 재사용한다(아래 `_mask_dict`는
-  키워드만 맞춘 얇은 래퍼).
-- `langchain_core.tracers.context._get_trace_callbacks()`(실제 설치된
-  `langchain-core` 소스 확인) — `callback_manager.handlers`에 **이미
-  `LangChainTracer`가 있으면 자기 기본 tracer를 또 안 붙인다**("If it already
-  has a LangChainTracer, we don't need to add another one"). 그래서 우리가
-  마스킹된 tracer를 명시적으로 넣어 두면, `LANGCHAIN_TRACING_V2=true`가
-  켜져 있어도 마스킹 안 된 이중 트레이스가 새로 생기지 않는다 — env var는
-  그대로 두고 이 콜백만 추가하면 된다.
 """
 
 from __future__ import annotations
 
 import logging
-import re
+import threading
 from typing import Any
+
+from services.agent_runtime.sensitive_text import mask_for_export
 
 logger = logging.getLogger(__name__)
 
 _configured = False
-
-_EMAIL_PATTERN = re.compile(r"\b[\w.-]+?@[\w.-]+?\.\w+?\b")
+_client_lock = threading.Lock()
 
 
 def _mask_data(*, data: Any, **_kwargs: Any) -> Any:
-    """export 직전 관측값 하나에서 이메일을 지운다.
+    """export 직전 관측값 하나에서 민감정보를 지운다.
 
     `langfuse.types.MaskFunction`(실제 설치된 SDK로 확인한 진짜 모양)이
     부르는 형태다 — span을 순회하는 게 아니라, Langfuse가 기록하려는 값
@@ -92,34 +83,53 @@ def _mask_data(*, data: Any, **_kwargs: Any) -> Any:
     한 번 dict화한 뒤 재귀적으로 마스킹한다 — 이 dict는 로그 전송용 사본일
     뿐 실제 그래프 실행에는 다시 안 쓰인다(mask()의 반환값은 Langfuse가
     span attribute를 만드는 데만 쓴다).
+
+    **가리는 범위(2026-08-21 확대).** 처음엔 이 파일이 자체 이메일 정규식
+    하나만 갖고 있었는데, 저장소에는 이미 "무엇이 민감정보인가"를 한 곳에서
+    정의하는 `services/agent_runtime/sensitive_text.py`가 있고 그 모듈
+    docstring이 "패턴 정의는 여기 하나만 둔다"고 못박아 뒀다 — 정의가 두
+    벌이 되면 한쪽만 고쳐진다. 그래서 이 파일의 정규식을 지우고 그 모듈의
+    `mask_for_export()`(이메일 + credential + 주민번호·카드·전화 패턴)를
+    부른다. 이메일만 가리던 이전 구현은 RAG 청크나 Jira 설명에 섞인 전화번호·
+    API 키가 그대로 서드파티로 나갔고, 외부 반출 기준("비밀값이나 개인정보
+    원문 노출")보다 좁았다.
     """
     if isinstance(data, str):
-        return _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", data)
+        return mask_for_export(data)
     if isinstance(data, dict):
         return {key: _mask_data(data=value) for key, value in data.items()}
     if isinstance(data, (list, tuple)):
         masked = [_mask_data(data=item) for item in data]
-        return type(data)(masked)
+        # `type(data)(masked)`가 아니라 `tuple(...)`이다 — namedtuple 생성자는
+        # 이터러블 하나가 아니라 필드별 위치 인자를 받아 `TypeError`가 난다.
+        # 마스킹 함수가 던지면 Langfuse는 관측치를 통째로
+        # `"<fully masked due to failed mask function>"`으로 바꾸므로, 안 던지는
+        # 게 우선이라 모양 보존을 포기한다.
+        return tuple(masked) if isinstance(data, tuple) else masked
     if not isinstance(data, type):
         model_dump = getattr(data, "model_dump", None)
         if callable(model_dump):
             try:
                 return _mask_data(data=model_dump())
-            except TypeError:
-                # `model_dump`가 인스턴스가 아니라 클래스에 매인 미바인드
-                # 메서드일 때(도구 스키마의 `args_schema`처럼 pydantic 모델
-                # "클래스" 자체가 값으로 들어오는 경우) `self` 인자가 없어
-                # 여기서 걸린다 — 위 `isinstance(data, type)` 체크가 그
-                # 흔한 경우를 먼저 걸러내지만, 모든 변형을 다 예상할 수는
-                # 없어 방어적으로 한 번 더 잡는다.
-                return data
+            except Exception:  # noqa: BLE001 - 마스킹 함수는 무슨 값이 와도 던지면 안 된다
+                # `model_dump`가 미바인드 메서드일 때(도구 스키마의 `args_schema`
+                # 처럼 pydantic 모델 "클래스" 자체가 값으로 오는 경우) `self`가
+                # 없어 `TypeError`가 난다. 위 `isinstance(data, type)` 체크가 그
+                # 흔한 경우는 거르지만, 직렬화 못 하는 필드가 섞인 모델 등 다른
+                # 예외도 가능하다. 여기서 던지면 관측치가 통째로 날아가거나
+                # 트레이스 전송이 깨지므로, **원본을 그대로 내보내지 않도록**
+                # 문자열로 눌러서 다시 마스킹한다.
+                try:
+                    return mask_for_export(repr(data))
+                except Exception:  # noqa: BLE001 - 여기서도 던지면 안 된다
+                    return "<unmaskable>"
     return data
 
 
 def _ensure_client_configured() -> None:
     """프로세스당 한 번만 Langfuse 클라이언트를 구성한다.
 
-    v3 SDK는 클라이언트가 싱글턴이라(`get_client()`), `CallbackHandler()`를
+    SDK 클라이언트가 싱글턴이라(`get_client()`), `CallbackHandler()`를
     만들기 전에 `Langfuse(...)`를 한 번은 호출해 둬야 한다 — env var
     (`LANGFUSE_HOST` 등 SDK가 기대하는 이름)에 기대지 않고 이 저장소의
     `settings.LANGFUSE_*`를 명시적으로 넘긴다(이 저장소의 "비밀값은 settings를
@@ -134,19 +144,25 @@ def _ensure_client_configured() -> None:
     from django.conf import settings
     from langfuse import Langfuse
 
-    Langfuse(
-        public_key=settings.LANGFUSE_PUBLIC_KEY,
-        secret_key=settings.LANGFUSE_SECRET_KEY,
-        host=settings.LANGFUSE_HOST,
-        mask=_mask_data,
-    )
-    _configured = True
+    # 락으로 감싼다 — 서버는 요청을 스레드로 처리하고, 첫 두 요청이 동시에
+    # 들어오면 `Langfuse(...)`(내부에서 OTel provider와 전송 스레드를 세운다)가
+    # 두 번 실행될 수 있다.
+    with _client_lock:
+        if _configured:
+            return
+        Langfuse(
+            public_key=settings.LANGFUSE_PUBLIC_KEY,
+            secret_key=settings.LANGFUSE_SECRET_KEY,
+            host=settings.LANGFUSE_HOST,
+            mask=_mask_data,
+        )
+        _configured = True
 
 
 def get_langfuse_callback() -> Any | None:
     """키가 있으면 `CallbackHandler` 인스턴스를, 없으면 `None`을 돌려준다.
 
-    호출 하나마다 새로 만든다 — v3 `CallbackHandler`는 생성자 인자를 안 받는
+    호출 하나마다 새로 만든다 — v4 `CallbackHandler`는 생성자 인자를 안 받는
     가벼운 객체라(실제 상태는 싱글턴 클라이언트에 있다), 매번 새로 만들어도
     비용이 없고 여러 요청이 같은 인스턴스를 공유하다 상태가 섞일 걱정도 없다.
     """
@@ -165,43 +181,4 @@ def get_langfuse_callback() -> Any | None:
         return None
 
 
-def _mask_dict(data: dict) -> dict:
-    """`langsmith.Client(hide_inputs=..., hide_outputs=...)`가 부르는 모양
-    (`Callable[[dict], dict]`, 위치 인자 하나)에 `_mask_data`를 맞춘 얇은
-    래퍼다 — 마스킹 로직 자체(이메일 정규식, 재귀 순회)는 Langfuse와
-    똑같으니 새로 안 짠다."""
-    return _mask_data(data=data)
-
-
-def get_langsmith_callback() -> Any | None:
-    """키가 있으면 마스킹이 걸린 `LangChainTracer`를, 없으면 `None`을 돌려준다.
-
-    `langsmith.Client`를 직접 만들어 `hide_inputs`/`hide_outputs`로 이메일을
-    가리고, 그 클라이언트를 쓰는 `LangChainTracer`를 콜백으로 반환한다 —
-    `LANGCHAIN_TRACING_V2` env var의 자동 연결(마스킹 없음)과는 별개
-    경로이지만, 이 콜백이 있으면 자동 연결 쪽이 스스로 양보한다(위 모듈
-    docstring의 `_get_trace_callbacks()` 근거 참고) — 그래서 env var는 그대로
-    둬도 된다.
-    """
-    from django.conf import settings
-
-    if not settings.LANGCHAIN_API_KEY:
-        return None
-
-    try:
-        from langchain_core.tracers import LangChainTracer
-        from langsmith import Client
-
-        client = Client(
-            api_key=settings.LANGCHAIN_API_KEY,
-            api_url=settings.LANGCHAIN_ENDPOINT,
-            hide_inputs=_mask_dict,
-            hide_outputs=_mask_dict,
-        )
-        return LangChainTracer(client=client, project_name=settings.LANGCHAIN_PROJECT)
-    except Exception:  # noqa: BLE001 - 트레이싱 연동 실패가 실제 응답을 막으면 안 된다
-        logger.exception("LangSmith 콜백 핸들러를 만들지 못했습니다 — 이번 실행은 LangSmith 없이 진행합니다.")
-        return None
-
-
-__all__ = ["get_langfuse_callback", "get_langsmith_callback"]
+__all__ = ["get_langfuse_callback"]

@@ -307,20 +307,20 @@ docker run --rm -v "$PWD:/w" -w /w -e PGCLIENTENCODING=UTF8 pgvector/pgvector:pg
 부트캠프 제공 계정이면 계정 소유자도 볼 수 있다. 데모만 목적이면
 `peopledb_mock.sql` 의 가명으로 충분하다. **팀에 물어보고 진행한다.**
 
-### 6.4 ⚠ 에이전트 시드·운영자 지정은 「나중」이다
+### 6.4 ⚠ 운영자 지정은 「나중」이다
 
-`seed_agents.py` 와 `grant_admin.py` 는 **지금 돌리면 아무 일도 안 일어난다.**
+`grant_admin.py` 는 **지금 돌리면 아무 일도 안 일어난다** — 그 이메일이
+`user_account` 에 **이미 가입돼 있어야** 한다.
 
-- `seed_agents.py --all-teams` → 새 DB 에는 **팀이 하나도 없다.** 팀은 회원가입
-  (온보딩)으로 생긴다. 팀이 생긴 **뒤에** 돌려야 한다.
-- `grant_admin.py <이메일>` → 그 이메일이 `user_account` 에 **이미 가입돼
-  있어야** 한다.
+**팀이 쓸 기본 에이전트는 따로 시드할 것이 없다(2026-08-22부터).** 팀을
+만드는 순간(`TeamRepository.create()`) 같은 트랜잭션에서 "기본 어시스턴트"가
+자동으로 생긴다 — Chat 이 바로 된다.
 
 그래서 순서가 이렇게 된다.
 
 ```
 스키마 → People 목업 → 팀에 .env 배포(§7) → 누군가 회원가입해서 팀 생성
-   → seed_agents.py → grant_admin.py
+   → grant_admin.py
 ```
 
 §7 이 끝난 뒤 §8 에서 실행한다.
@@ -360,33 +360,20 @@ docker run --rm -v "$PWD:/w" -w /w -e PGCLIENTENCODING=UTF8 pgvector/pgvector:pg
 > **5. 로컬 `postgres_data` 볼륨은 아직 지우지 마세요.**
 > 옮기지 못한 데이터가 있을 수 있으니 1~2주 두고 확인한 뒤 정리합니다.
 
-## 8. 팀 생성 후 마무리 시드
+## 8. 운영자 지정
 
-누군가 회원가입해서 팀이 만들어진 뒤에 실행한다. **이건 psql 이 아니라 Python
+운영자 콘솔(`/ops`)을 쓸 계정을 지정한다. **그 이메일로 먼저 가입돼 있어야
+한다** — 팀 생성까지 기다릴 필요는 없다. **이건 psql 이 아니라 Python
 스크립트**라 웹 컨테이너 안에서 돌리는 게 편하다.
-
-```bash
-docker compose -f infra/docker/docker-compose.yml exec web \
-  python backend/services/createDB/seed_agents.py --all-teams
-```
-
-멱등이라 여러 번 돌려도 팀당 하나이고, 이미 있으면 최신 정의로 맞춘다.
-팀이 직접 만든 에이전트는 건드리지 않는다.
-
-> **Chat 에서 질문을 보냈는데 전송이 안 되면 이걸 안 돌린 것이다.**
-> 새 팀이 생길 때마다 다시 돌려야 한다.
->
-> ⚠ **옛 서술(「에이전트 선택기에 「업무 추출 에이전트」가 안 보이면」)은 틀렸다
-> (2026-08-12).** 선택기를 없앴고(`58ed034`), 기본 제공 에이전트가 「코파일럿」
-> 1종이 됐다 — **시드를 제대로 돌리면 옛 「업무 추출 에이전트」는 오히려
-> `ARCHIVED` 로 내려가 사라진다.** 판정이 정반대가 됐다.
-
-운영자 콘솔(`/ops`) 을 쓸 계정을 지정한다. **그 이메일로 먼저 가입돼 있어야 한다.**
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml exec web \
   python backend/services/createDB/grant_admin.py <가입된 이메일>
 ```
+
+기본 에이전트는 팀을 만드는 순간 자동으로 생기므로(§6.4) 여기서 따로 할
+일이 없다 — Chat 에서 전송이 안 되면 시드 문제가 아니라 다른 원인이다
+(아래 §9 문제 해결 표 참고).
 
 ## 9. A·B 완료 검증
 
@@ -846,7 +833,7 @@ aws s3 ls s3://<버킷이름>/ --recursive --summarize | tail -3
 | `\dt` 에 49개만 보인다 | **정상이다.** HR 8개는 `mock_hr` 스키마에 있다. `\dt mock_hr.*` 로 따로 본다 |
 | `peopledb_mock.sql` 재실행 시 `duplicate key` | 이미 들어간 것이다. 무시해도 된다(§6.1) |
 | 팀원이 갑자기 접속 안 됨 | 공인 IP 가 바뀐 것이 대부분이다. 새 IP 를 받아 §3 에 추가 |
-| Chat 에서 전송이 안 되고 「기본 에이전트가 없습니다」 배너가 뜸 | `seed_agents.py` 미실행(§8). 새 팀이 생길 때마다 필요하다 |
+| Chat 에서 전송이 안 되고 「기본 에이전트가 없습니다」 배너가 뜸 | 팀 생성이 실패했거나 그 사이 예외가 났을 가능성 — `SELECT * FROM agents WHERE team_id = '<TE...>' AND is_default_chat;` 로 확인. 2026-08-22부터는 팀 생성 시 자동 생성이라 정상 케이스에서는 안 뜬다 |
 | `/ops` 로그인 시 「운영자 권한이 없는 계정입니다」 | `grant_admin.py` 미실행(§8) |
 | 문서 다운로드가 404/500 | **E(코드) 가 끝나기 전에는 정상이다**(§0.1). 남이 등록한 문서의 원본이 내 디스크에 없다 |
 | `docker run ... psql` 이 `-v "$PWD:/w"` 에서 실패 (Windows) | PowerShell 은 `"${PWD}:/w"`, CMD 는 `"%cd%:/w"` |

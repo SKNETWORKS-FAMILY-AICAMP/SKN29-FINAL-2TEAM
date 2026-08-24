@@ -30,6 +30,10 @@ class RuntimeScaffoldContentTests(SimpleTestCase):
         self.assertIn("확인 카드", RUNTIME_SCAFFOLD)
         self.assertIn("승인", RUNTIME_SCAFFOLD)
 
+    def test_finishes_successful_approved_tools_instead_of_requesting_approval_again(self):
+        self.assertIn("도구 성공 결과를 받은 시점", RUNTIME_SCAFFOLD)
+        self.assertIn("다시 승인을 요구하지", RUNTIME_SCAFFOLD)
+
     def test_does_not_restate_limits_already_enforced_by_middleware(self):
         # 호출 횟수 상한은 ModelCallLimitMiddleware/ToolCallLimitMiddleware가
         # 이미 코드로 강제한다 — 프롬프트에 숫자를 다시 적으면 코드 쪽 정책이

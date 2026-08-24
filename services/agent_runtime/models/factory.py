@@ -32,14 +32,13 @@ class ResolvedModelConfig:
 
 
 def resolved_endpoint_hash(resolved: "ResolvedModelConfig") -> str | None:
-    """`agent_run.resolved_endpoint_hash`(2026-08-19, §4순위 Run Snapshot,
-    정본: `2026-08-19_01_실행_안정성_설계.md` §1)에 남길 값.
+    """`agent_run.resolved_endpoint_hash`에 남길 값.
 
-    `base_url` 원문을 그대로 실행 로그에 남기면 팀이 등록한 사내망 주소가
-    로그에 그대로 노출된다 — sha256 해시만 남기면 "그때와 지금이 같은
-    엔드포인트로 나갔는지" 비교하는 용도로는 충분하고 원문은 복원할 수
-    없다. `base_url`이 없으면(anthropic/openai 기본 엔드포인트,
-    팀 커스텀 엔드포인트가 아닌 경우) `None` — 비교할 대상 자체가 없다.
+    원문을 남기면 팀이 등록한 사내망 주소가 실행 로그에 그대로 노출된다.
+    sha256 해시면 "그때와 지금이 같은 엔드포인트인지" 비교하기엔 충분하고
+    원문은 복원할 수 없다. `base_url`이 없으면(기본 엔드포인트) 비교할 대상이
+    없으므로 `None`.
+    정본: `2026-08-19_01_실행_안정성_설계.md` §1
     """
     if not resolved.base_url:
         return None
@@ -53,13 +52,9 @@ class ModelConfigResolver:
     """
 
     def resolve(self, *, model: str, reasoning_effort: str, team_id: str | None) -> ResolvedModelConfig:
-        # `agent_versions.model`은 DB에 NOT NULL이 아니다(DB/schema.sql) — 저장
-        # API(`AgentVersionPublishSerializer.model`)도 `allow_null=True`로 NULL을
-        # 그대로 받아 준다. 여기서 안 막으면 아래 `model.startswith("claude-")`가
-        # `AttributeError: 'NoneType' object has no attribute 'startswith'`로
-        # 깨져서, 사용자에게는 원인을 알 수 없는 크래시로만 보인다(2026-08-19 —
-        # 코드에 이미 자체 인지되어 있던 문제, `provision_default_chat_agent()`
-        # docstring 참고). 도메인 오류로 먼저 잡아 이유를 말한다.
+        # `agent_versions.model`은 NOT NULL이 아니고 저장 API도 `allow_null=True`라
+        # None이 올 수 있다. 여기서 안 막으면 아래 `startswith`가 `AttributeError`로
+        # 깨져 사용자에게는 원인을 알 수 없는 크래시로만 보인다.
         if not model:
             raise ModelUnavailableError("이 에이전트에는 아직 모델이 설정되지 않았습니다.")
         custom = self._team_endpoint(team_id, model)
@@ -142,13 +137,10 @@ class ModelFactory:
             "use_responses_api": True,
         }
         if resolved.reasoning_effort:
-            # `reasoning_effort=` 단독으로 넘기면 langchain-openai가 이걸
-            # `reasoning={"effort": ...}`로만 바꿔 보낸다(`summary` 없음 —
-            # 패키지 소스 `_construct_responses_api_payload` 확인,
-            # 2026-08-18). 그러면 OpenAI가 reasoning 블록을 **빈 summary로만**
-            # 돌려줘서(`services/agent_runtime/events.py`의 `_extract_reasoning`이
-            # 읽을 게 없다), "생각 과정" 카드가 항상 비어 있게 된다. `summary`를
-            # 직접 요청해야 실제 텍스트가 온다(패키지 docstring 예시 그대로).
+            # `summary`를 직접 넣어야 한다. `reasoning_effort=`만 넘기면
+            # langchain-openai가 `reasoning={"effort": ...}`로만 바꿔 보내고
+            # (`_construct_responses_api_payload`), OpenAI가 빈 summary를 돌려줘
+            # "생각 과정" 카드가 항상 비게 된다.
             kwargs["reasoning"] = {"effort": resolved.reasoning_effort, "summary": "auto"}
         return ChatOpenAI(**kwargs)
 
@@ -160,18 +152,14 @@ class ModelFactory:
             openai_api_key=resolved.api_key,
             openai_api_base=resolved.base_url,
             use_responses_api=False,
-            # **켜지 않으면 토큰을 못 잰다**(2026-08-21). `langchain_openai`
-            # (1.3.0 소스 확인)는 `base_url`이 있으면 `stream_usage` 자동
-            # 활성화 조건에서 빼는데, 이 경로는 정의상 항상 `base_url`이
-            # 있다 — 그래서 스트리밍 응답에 usage가 안 실리고
-            # `agent_run.token_in`/`token_out`이 영영 NULL로 남았다.
+            # **켜지 않으면 토큰을 못 잰다.** `langchain_openai`는 `base_url`이
+            # 있으면 `stream_usage` 자동 활성화 대상에서 빼는데 이 경로는 정의상
+            # 항상 `base_url`이 있다 — 그러면 `agent_run.token_in`/`token_out`이
+            # 영영 NULL이다.
             #
-            # 켜면 요청에 `stream_options={"include_usage": true}`가 붙는데,
-            # 이걸 거부하는 호환 서버가 있을 수 있어 **실제로 등록된
-            # 엔드포인트로 직접 확인하고 넣었다**: Gemini의 OpenAI 호환 주소
-            # (`generativelanguage.googleapis.com/v1beta/openai/`)는 정상
-            # 응답하고 usage를 준다. 새 엔드포인트를 등록할 때 이 옵션을
-            # 거부하는 서버를 만나면 `/ops/models`의 「연결 확인」이 아니라
+            # 켜면 요청에 `stream_options={"include_usage": true}`가 붙는다.
+            # Gemini의 OpenAI 호환 주소는 정상 응답하지만, 이 옵션을 거부하는
+            # 서버를 새로 등록하면 `/ops/models`의 「연결 확인」이 아니라
             # **실제 대화에서** 처음 드러난다(연결 확인은 스트리밍이 아니다).
             stream_usage=True,
         )

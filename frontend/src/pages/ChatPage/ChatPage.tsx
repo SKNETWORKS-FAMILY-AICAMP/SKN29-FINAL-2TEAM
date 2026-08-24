@@ -23,12 +23,13 @@ import type { McpServer } from '../../api/mcp';
 import { listMyProjects } from '../../api/projects';
 import type { Project } from '../../api/projects';
 import { listConnectors } from '../../api/connectors';
+import { listMySkills, listTeamSkills } from '../../api/skills';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
 import { ConfirmCard, ErrorCard, JiraStatusCard, ProgressCard, ReasoningTrace, ResultCard } from './cards/ChatCards';
 import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
 import type { LiveChat } from './liveChat';
-import { ToolPickerModal } from '../AgentEditPage/ToolPickerModal';
+import { ToolPickerModal } from '../../components';
 import styles from './ChatPage.module.css';
 import cardStyles from './cards/cards.module.css';
 
@@ -40,6 +41,21 @@ import cardStyles from './cards/cards.module.css';
 interface Turn {
   user: string;
   live: LiveChat | null;
+}
+
+/**
+ * "/스킬이름"으로 채팅 입력창에서 바로 부를 수 있는 스킬 하나.
+ *
+ * **팀 스킬이 이긴다** — 서버(`services/agent_runtime/skills/invocation.py`)가
+ * 이름이 겹치면 팀 스킬을 먼저 찾으므로("/이름"이 실제로 부르는 것과 같은
+ * 우선순위, 자동 호출에서 팀이 개인을 가리는 것과 같은 근거), 자동완성
+ * 목록도 같은 우선순위로 합친다 — 안 그러면 자동완성에 뜨는 스킬과 실제로
+ * 불려지는 스킬이 다른 모순이 생긴다.
+ */
+interface SlashSkillOption {
+  name: string;
+  description: string;
+  scope: 'personal' | 'team';
 }
 
 /**
@@ -183,6 +199,10 @@ export default function ChatPage() {
   const [togglingTool, setTogglingTool] = useState(false);
   const [tourSeen, setTourSeen] = useState(() => localStorage.getItem(TOUR_SEEN_KEY) === '1');
   const [utterance, setUtterance] = useState('');
+  /** "/스킬이름" 자동완성 목록 — 개인+팀을 합쳐 한 번만 불러온다(2026-08-22). */
+  const [skillOptions, setSkillOptions] = useState<SlashSkillOption[]>([]);
+  /** 자동완성에서 키보드로 고른 항목의 인덱스. */
+  const [slashIndex, setSlashIndex] = useState(0);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   /**
@@ -194,6 +214,8 @@ export default function ChatPage() {
   const [approvedActions, setApprovedActions] = useState<number[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** React가 busy 상태를 다시 그리기 전의 연속 클릭도 즉시 막는다. */
+  const confirmRequestRef = useRef(false);
   /**
    * 방금 떠난 대화의 id. 주소가 `/chat` 으로 따라오면 즉시 비운다.
    * 왜 필요한지는 아래 주소 동기화 effect 에 적었다.
@@ -202,6 +224,29 @@ export default function ChatPage() {
   const streamRef = useRef<HTMLDivElement | null>(null);
   /** 사용자가 위로 올려 읽는 중이면 따라가지 않는다. */
   const stickToBottom = useRef(true);
+  /** "/스킬이름" 자동완성에서 고른 뒤 입력창에 포커스를 되돌리는 데 쓴다. */
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  /** "/" 자동완성 목록 — 한 번만 불러와 둔다. 팀이 아직 없으면(가입 직후)
+      `listTeamSkills`가 실패할 수 있어 조용히 빈 목록으로 넘어간다(다른
+      목록 로더들과 같은 관례, 위 `listConnectors`/`listAgentVersions` 참고). */
+  useEffect(() => {
+    if (!token) return;
+    Promise.all([listMySkills(token).catch(() => []), listTeamSkills(token).catch(() => [])]).then(
+      ([mine, team]) => {
+        // 이름이 겹치면 팀이 이긴다 — 실제 호출(서버)과 같은 우선순위를
+        // 자동완성에도 맞춘다(위 `SlashSkillOption` docstring 참고).
+        const merged = new Map<string, SlashSkillOption>();
+        mine.forEach((skill) =>
+          merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'personal' }),
+        );
+        team.forEach((skill) =>
+          merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'team' }),
+        );
+        setSkillOptions(Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
+      },
+    );
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -570,7 +615,8 @@ export default function ChatPage() {
   }
 
   async function approve() {
-    if (!token || !sessionId) return;
+    if (!token || !sessionId || confirmRequestRef.current) return;
+    confirmRequestRef.current = true;
     // **인덱스만 보낸다.** 실행할 인자는 서버가 저장해 둔 것을 쓴다 — 화면이
     // 인자를 보내면 승인 게이트가 아무것도 막지 못한다.
     //
@@ -598,12 +644,40 @@ export default function ChatPage() {
     // (`toTurns`). 리셋하면 방금 승인한 목록이 화면에서 사라지고, 복원한 화면과
     // 라이브 화면이 서로 달라진다.
     const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
-    await run(
-      (onEvent, signal) =>
-        confirmMessage(token, sessionId, indices, onEvent, signal, decisions),
-      carried,
-      sessionId,
-    );
+    try {
+      await run(
+        (onEvent, signal) =>
+          confirmMessage(token, sessionId, indices, onEvent, signal, decisions),
+        carried,
+        sessionId,
+      );
+    } finally {
+      confirmRequestRef.current = false;
+    }
+  }
+
+  async function reject() {
+    if (
+      !token ||
+      !sessionId ||
+      confirmRequestRef.current ||
+      (lastLive?.confirm?.actions.length ?? 0) !== 1
+    )
+      return;
+    confirmRequestRef.current = true;
+    const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
+    try {
+      await run(
+        (onEvent, signal) =>
+          confirmMessage(token, sessionId, undefined, onEvent, signal, [
+            { action_index: 0, type: 'reject' },
+          ]),
+        carried,
+        sessionId,
+      );
+    } finally {
+      confirmRequestRef.current = false;
+    }
   }
 
   /** 마지막 턴의 `live` 만 갱신한다. 앞 턴들은 그대로 둔다. */
@@ -867,16 +941,36 @@ export default function ChatPage() {
     </>
   );
 
+  /**
+   * "/스킬이름"을 치는 동안만 연다 — 공백이 들어가면(사용자가 이제 요청
+   * 본문을 적는 단계로 넘어간 것) 자동완성을 닫는다. 클로드의 슬래시
+   * 커맨드와 같은 UX(2026-08-22, 사용자 요청).
+   */
+  const slashQuery = /^\/([a-z0-9-]*)$/.exec(utterance)?.[1] ?? null;
+  const slashOpen = slashQuery !== null;
+  const slashMatches =
+    slashQuery !== null
+      ? skillOptions.filter((skill) => skill.name.startsWith(slashQuery.toLowerCase()))
+      : [];
+
+  function selectSlashSkill(name: string) {
+    setUtterance(`/${name} `);
+    setSlashIndex(0);
+    inputRef.current?.focus();
+  }
+
   return (
     <AppShell variant="flush" sidebarExtra={sessionsPanel}>
       <div className={styles.chat}>
         <div className={styles.main}>
           {/*
             2026-08-15부터 다시 넣었다. 예전엔 "무엇으로 답할지는 말하면
-            정해지는 것"이라는 이유로 없앴었지만(정문이 agent:* 로 알아서
-            위임), 새 버전 스키마 에이전트는 그 위임 경로를 안 타서 사용자가
-            직접 고르지 않으면 아예 닿을 방법이 없다 — 재설계가 끝나 정문을
-            걷어낼 때까지의 과도기 UI다(지훈 확인, task #16/#19).
+            정해지는 것"이라는 이유로 없앴었지만, 레거시 정문(agent:* 와일드카드
+            위임)과 달리 새 버전 스키마 에이전트는 팀이 만든 다른 에이전트로
+            자동 위임하지 않는다 — 사용자가 이 선택기에서 직접 고르지 않으면
+            기본 챗 말고는 아예 닿을 방법이 없다. 2026-08-22에 레거시 정문을
+            완전히 걷어내면서 이 선택기가 "과도기용"이 아니라 유일한 경로가
+            됐다 — 없앨 계획이 없다.
           */}
           <header className={styles.agentBar}>
             {agents.length > 0 && (
@@ -1113,6 +1207,7 @@ export default function ChatPage() {
                           selected={isLast ? selected : live.tasks.map((_, index) => index)}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast && live.confirm ? approve : undefined}
+                          onReject={isLast && live.confirm ? reject : undefined}
                           busy={live.running}
                         />
                       )}
@@ -1134,6 +1229,7 @@ export default function ChatPage() {
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
+                          onReject={isLast ? reject : undefined}
                           busy={live.running}
                           // 2026-08-21, 병렬실행 Phase 2 — 호출이 여러 개면
                           // 카드가 전부 보여주고 하나씩 켜고 끌 수 있게 한다.
@@ -1202,6 +1298,39 @@ export default function ChatPage() {
           </div>
 
           <div className={styles.inputBar}>
+            {/* "/스킬이름"을 치는 동안 뜬다(2026-08-22) — 클로드의 슬래시
+                커맨드와 같은 방식. 화살표로 고르고 Enter/Tab으로 넣는다,
+                Esc로 지운다. 채팅을 보낼 Enter와 겹치지 않게 이 메뉴가 열려
+                있을 때는 아래 입력창의 onKeyDown이 먼저 가로챈다. */}
+            {slashOpen && (
+              <div className={styles.slashMenu} role="listbox">
+                {skillOptions.length === 0 ? (
+                  <p className={styles.slashEmpty}>등록된 스킬이 없습니다</p>
+                ) : slashMatches.length === 0 ? (
+                  <p className={styles.slashEmpty}>일치하는 스킬이 없습니다</p>
+                ) : (
+                  slashMatches.map((skill, index) => (
+                    <button
+                      key={`${skill.scope}-${skill.name}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === slashIndex}
+                      className={
+                        index === slashIndex
+                          ? `${styles.slashItem} ${styles.slashItemActive}`
+                          : styles.slashItem
+                      }
+                      onMouseEnter={() => setSlashIndex(index)}
+                      onClick={() => selectSlashSkill(skill.name)}
+                    >
+                      <span className={styles.slashName}>/{skill.name}</span>
+                      <span className={styles.slashScope}>{skill.scope === 'team' ? '팀' : '개인'}</span>
+                      <span className={styles.slashDesc}>{skill.description}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
             {/* 에이전트만 골라져 있으면 뜬다(2026-08-18) — 대화를 시작하기
                 전에도 도구를 미리 골라 둘 수 있다. 세션이 아직 없으면
                 `toggleSessionTool()`이 로컬에만 담아 두고, 첫 메시지로
@@ -1223,17 +1352,43 @@ export default function ChatPage() {
                 대화로 푸는 것이 이 제품의 성격에도 맞다.
                 서버는 pending 을 무시하고 새 턴을 시작한다(실측 — 결과 블록). */}
             <input
+              ref={inputRef}
               className={styles.input}
               value={utterance}
-              onChange={(event) => setUtterance(event.target.value)}
+              onChange={(event) => {
+                setUtterance(event.target.value);
+                setSlashIndex(0);
+              }}
               onKeyDown={(event) => {
+                if (slashOpen && slashMatches.length > 0) {
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    setSlashIndex((prev) => (prev + 1) % slashMatches.length);
+                    return;
+                  }
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setSlashIndex((prev) => (prev - 1 + slashMatches.length) % slashMatches.length);
+                    return;
+                  }
+                  if ((event.key === 'Enter' || event.key === 'Tab') && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    selectSlashSkill(slashMatches[slashIndex]?.name ?? slashMatches[0].name);
+                    return;
+                  }
+                }
+                if (slashOpen && event.key === 'Escape') {
+                  event.preventDefault();
+                  setUtterance('');
+                  return;
+                }
                 if (event.key === 'Enter' && !event.nativeEvent.isComposing) send();
               }}
               disabled={streaming || !agentId}
               placeholder={
                 waitingConfirm
                   ? '위에서 선택해 승인하거나, 고쳐서 다시 요청해 보세요'
-                  : '무엇을 도와드릴까요?'
+                  : '무엇을 도와드릴까요? ("/"로 등록된 스킬을 바로 불러올 수 있어요)'
               }
             />
             {streaming ? (

@@ -1,8 +1,8 @@
 """기존 팀에 "기본 챗 에이전트"(새 버전 스키마, tool·MCP만) 백필.
 
-`seed_agents.py`와 같은 이유로 컨테이너 안이 아니라 호스트 Python에서 직접
-돌린다 — `backend.db.agent_platform`을 그대로 import하면 Django 설정 부트스트랩이
-필요해지므로, 여기서도 `seed_agents.py`처럼 raw SQL만 쓴다(repo 모듈 의존 없음).
+컨테이너 안이 아니라 호스트 Python에서 직접 돌린다 — `backend.db.agent_platform`을
+그대로 import하면 Django 설정 부트스트랩이 필요해지므로, raw SQL만 쓴다(repo
+모듈 의존 없음).
 
 **2026-08-15부터 새로 만드는 팀은 이 스크립트가 필요 없다** —
 `backend/db/repositories.py`의 `TeamRepository.create()`가 팀 생성과 같은
@@ -33,8 +33,7 @@ DATABASE_URL = os.environ.get(
 
 # services/harness/runner.py의 DEFAULT_MODEL/DEFAULT_EFFORT와 반드시 같은 값을
 # 써야 한다 — repo 모듈을 import하지 않는 이 스크립트의 전제상 여기 값을
-# 직접 베꼈다(seed_agents.py의 PLATFORM_TOOL과 같은 이유의 중복). runner.py의
-# 값이 바뀌면 여기도 같이 고칠 것.
+# 직접 베꼈다. runner.py의 값이 바뀌면 여기도 같이 고칠 것.
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_EFFORT = "low"
 
@@ -45,8 +44,7 @@ DEFAULT_EFFORT = "low"
 #: **쓰기 셋은 뺀다** — `task_register`·`task_update`·`jira_create_issues`.
 #: 정본은 `services/harness/registry.py` 의 `side_effect` 플래그다(그쪽이 참인
 #: 것만 빼면 된다). 이 스크립트는 repo 모듈을 import 하지 않는다는 전제라
-#: 여기 베껴 뒀다 — `DEFAULT_MODEL` 과 같은 이유의 중복이고, **registry 에 도구를
-#: 더하면 여기도 같이 고쳐야 한다.**
+#: 여기 베껴 뒀다 — **registry 에 도구를 더하면 여기도 같이 고쳐야 한다.**
 READ_ONLY_TOOL_REFS = [
     "document_search",
     "document_list",
@@ -85,28 +83,9 @@ def _next_code(cur, *, table: str, column: str, prefix: str) -> str:
 
 
 def _next_agents_id(cur) -> str:
-    """`agents.agent_id`를 발급하되, 옛 `agent` 테이블과 번호가 안 겹치게 한다.
-
-    `backend/db/agent_platform.py`의 `_next_agents_id()`와 같은 이유 — 두 테이블이
-    'AG' 접두사를 공유해서, 겹치면 `_resolve_session_agent()`가 옛 테이블을 먼저
-    보는 바람에 새로 만든 에이전트가 조용히 가려진다(2026-08-15 실측). 이 스크립트는
-    repo 모듈을 import하지 않는 전제라 로직을 그대로 복붙했다 — `agent_platform.py`
-    쪽이 바뀌면 여기도 같이 고칠 것.
-    """
-    cur.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
-        "FROM agents WHERE agent_id ~ '^AG[0-9]{3}$'"
-    )
-    new_max = cur.fetchone()["n"]
-    cur.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(agent_id FROM 3) AS INTEGER)), 0) AS n "
-        "FROM agent WHERE agent_id ~ '^AG[0-9]{3}$'"
-    )
-    legacy_max = cur.fetchone()["n"]
-    number = max(new_max, legacy_max) + 1
-    if number > 999:
-        raise SystemExit("agents 코드 공간(AG000~AG999)이 소진됐습니다.")
-    return f"AG{number:03d}"
+    """`agents.agent_id`를 발급한다. `_next_code()`와 같은 규칙이지만 이 테이블
+    전용으로 남겨 둔다 — 호출부가 `table="agents"`를 매번 안 적어도 되게."""
+    return _next_code(cur, table="agents", column="agent_id", prefix="AG")
 
 
 def backfill_team(conn, team_id: str) -> str | None:

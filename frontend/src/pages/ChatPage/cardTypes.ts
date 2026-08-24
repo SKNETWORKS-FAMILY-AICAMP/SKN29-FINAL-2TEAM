@@ -43,6 +43,11 @@ export interface SubagentRun {
 export type TimelineEntry =
   | { kind: 'reasoning'; text: string }
   | {
+      kind: 'skill';
+      skillName: string;
+      scope: 'personal' | 'team';
+    }
+  | {
       kind: 'tool';
       toolCallId: string | null;
       toolRef: string;
