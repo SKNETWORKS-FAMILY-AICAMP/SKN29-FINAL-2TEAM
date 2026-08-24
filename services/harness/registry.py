@@ -33,12 +33,10 @@ from backend.db.agent_platform import (
 )
 from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
-    DocMetaRepository,
     PipelineDocumentRepository,
     VectorSearchRepository,
 )
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
-from services.document_intake import promote_to_searchable
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -86,20 +84,6 @@ class ToolInputError(ValueError):
 # ---------------------------------------------------------------------------
 
 
-#: coarse 가 남길 문서 수. 이만큼만 청크 검색을 돈다.
-#:
-#: 팀 문서가 수백 건이 되면 전 문서 청크를 한 벌로 훑는 것이 비싸지고, 관련
-#: 없는 문서의 문장이 근거 자리를 잠식한다(업무 추출에서 실제로 겪은 문제 —
-#: 다른 사업의 감리 과업지시서가 20자리 중 8자리를 가져갔다).
-COARSE_TOP_N = 5
-
-#: 한 번의 검색에서 본문까지 읽어 올릴 문서 수.
-#:
-#: 한 건이 몇 분이라 후보를 다 올리면 대화가 그만큼 멈추고, 애초에 요약으로
-#: 좁힌 이유가 사라진다.
-PROMOTE_TOP_N = 2
-
-
 def _document_search(
     *,
     team_id: str,
@@ -108,18 +92,22 @@ def _document_search(
     proj_id: str | None = None,
     top_k: int = 10,
 ):
-    """팀 문서에서 근거 문장을 찾는다. **두 단계다**(A안 — 8/11 확정 ⑥).
+    """팀 문서에서 근거 문장을 찾는다.
 
-    1) coarse — `doc_meta.summary_vec` 으로 문서를 먼저 좁힌다. 요약 임베딩은
-       문서당 하나뿐이라 팀 문서 전부를 훑어도 싸다.
-    2) fine — 좁혀진 문서 안에서만 청크 임베딩을 검색한다.
+    1) 범위 — 이 요청이 볼 수 있는 문서를 정한다(팀 + 내가 켠 내 파일 + 공유분,
+       프로젝트 대화면 그 프로젝트로 좁혀서). **순위는 매기지 않는다.**
+    2) 근거 — 그 범위 안의 청크 임베딩을 검색한다.
 
-    coarse 가 고른 문서 중 아직 청크가 없는 것(`search_ready = false`)은 본문
-    근거를 낼 수 없다. **그 사실을 결과에 담아 돌려준다** — 조용히 빼면
-    에이전트가 "관련 문서가 없다"고 답하는데 실제로는 있는 상태가 된다.
+    **요약으로 문서를 먼저 좁히던 단계(coarse)를 걷어냈다**(2026-08-24). 폴더를
+    저장하면 그 문서 전부가 본문까지 색인되므로(`services/document_intake`)
+    요약으로 좁힐 이유가 없다 — 요약 기반 후보 검색은 전량 색인을 **대신하는
+    경로가 아니라** 그 앞단의 보조 수단이고, 순위는 청크 벡터가 문서 요약보다
+    정확하게 매긴다. 요약 테이블(`doc_meta`)은 같은 날 통째로 걷어냈다 —
+    기준 문서 후보 추천도 본문 청크로 옮겼다.
 
-    메타가 아직 없는 팀(파이프라인을 안 돌린 경우)은 예전처럼 팀 문서 전체를
-    훑는다. coarse 를 켰다고 기존 동작이 죽으면 안 된다.
+    범위 안에 있지만 아직 청크가 없는 문서(`search_ready = false`)는 본문 근거를
+    낼 수 없다. **그 사실을 결과에 담아 돌려준다** — 조용히 빼면 에이전트가
+    "관련 문서가 없다"고 답하는데 실제로는 색인이 아직 안 닿았을 뿐이다.
 
     **제너레이터다**(2026-08-18 추가) — coarse로 좁힌 뒤 실제로 어느 문서를
     보고 있는지("출처") 실시간으로 보여 달라는 요청. `_extract_tasks`와 같은
@@ -129,7 +117,7 @@ def _document_search(
     `_drain_with_progress`와 같은 방식으로 끝까지 돌려 반환값을 얻는다.
     """
 
-    yield {"type": "stage", "step": 1, "total": 2, "label": "관련 문서 좁히는 중"}
+    yield {"type": "stage", "step": 1, "total": 2, "label": "관련 문서 찾는 중"}
 
     vector = embed_queries([query])[0]
     # `account_id` 를 함께 넘긴다 — 팀 문서에 **내가 켠 내 파일**을 더해 본다
@@ -142,85 +130,49 @@ def _document_search(
     # 있었다 — 무관한 「테스트.pdf」가 후보로 올라와 읽히기까지 했다.
     # 좁혀서 아무것도 없을 때만 팀 전체로 넓힌다: 팀 공용 문서(규정·양식)를
     # 영영 못 보게 하면 「감리 표준양식 보여줘」 같은 요청이 막힌다.
-    candidates = []
+    documents = []
     if proj_id:
-        candidates = DocMetaRepository.coarse_search(
-            team_id=team_id,
-            query_vector=vector,
-            top_n=COARSE_TOP_N,
-            account_id=account_id,
-            proj_id=proj_id,
+        documents = PipelineDocumentRepository.searchable_documents(
+            team_id=team_id, account_id=account_id, proj_id=proj_id
         )
-    if not candidates:
-        candidates = DocMetaRepository.coarse_search(
-            team_id=team_id, query_vector=vector, top_n=COARSE_TOP_N, account_id=account_id
+    if not documents:
+        documents = PipelineDocumentRepository.searchable_documents(
+            team_id=team_id, account_id=account_id
         )
 
-    if candidates:
-        doc_ids = [row["doc_id"] for row in candidates if row["search_ready"]]
-        not_indexed = [
-            {
-                "doc_id": row["doc_id"],
-                "file_name": row["file_name"],
-                "summary": row["summary"],
-                # 승격을 다시 시도할지 여기서 갈린다(아래).
-                "index_status": row["index_status"],
-            }
-            for row in candidates
-            if not row["search_ready"]
-        ]
-
-        # **여기가 온디맨드 파싱이다**(2026-08-15 PM).
-        #
-        # 요약으로 좁힌 후보 중 본문이 아직 없는 것을 **그때 읽는다.** 전에는
-        # 「본문이 아직 색인되지 않아 문장 근거를 낼 수 없습니다」로 끝냈는데,
-        # 그건 사람에게 아무 방법도 주지 않는 답이었다 — 색인할 화면도 없었다.
-        #
-        # 후보 전부가 아니라 **상위 몇 건만** 올린다. 한 건이 몇 분이라 다 돌리면
-        # 대화가 그만큼 멈추고, 애초에 요약으로 좁힌 이유가 사라진다.
-        # **한 번 실패한 문서는 다시 안 올린다**(2026-08-18). txt·md 는 워커가
-        # 본문을 못 읽어서 몇 번을 시도해도 같은 답이 온다 — 질문마다 워커를
-        # 부르면 그 대화가 매번 그만큼 늦어진다. 요약으로는 이미 쓰이고 있다.
-        for row in (not_indexed[:PROMOTE_TOP_N] if account_id else []):
-            if row.get("index_status") == "FAILED":
-                continue
-            outcome = promote_to_searchable(account_id=account_id, doc_id=row["doc_id"])
-            row["promotion"] = outcome
-            if outcome["ok"]:
-                doc_ids.append(row["doc_id"])
-        not_indexed = [row for row in not_indexed if not row.get("promotion", {}).get("ok")]
-    else:
-        doc_ids = PipelineDocumentRepository.searchable_doc_ids(team_id)
-        not_indexed = []
-
-    if candidates:
-        # coarse가 실제로 좁힌 문서 이름들 — 색인 안 된 것도 포함해서 전부
-        # 보여준다("정직 표기": 위 not_indexed와 같은 원칙). meta 없는 팀이라
-        # candidates가 비면(else 분기) 보여줄 "좁힌 목록" 자체가 없으니 안 낸다.
-        # `id`/`label`은 `_web_search`도 같이 쓰는 공통 모양이다(2026-08-18) —
-        # 웹 결과는 `url`도 채운다, 내부 문서는 안 채운다(화면이 그 유무로
-        # 링크를 걸지 그냥 텍스트로 보일지 정한다).
-        yield {
-            "type": "sources",
-            "step": 1,
-            "documents": [
-                {"id": row["doc_id"], "label": row["file_name"]} for row in candidates
-            ],
+    doc_ids = [row["doc_id"] for row in documents if row["search_ready"]]
+    # 아직 색인이 안 닿은 문서. **숨기지 않고 답에 담는다** — 조용히 빼면 문서가
+    # 있는데도 「관련 문서가 없다」로 읽힌다.
+    #
+    # 여기서 승격시키지 않는다(2026-08-24). 전에는 요약으로 좁힌 상위 몇 건을
+    # 그 자리에서 읽어 올렸는데, 그 「상위」는 요약 유사도 순위였다. 요약으로
+    # 좁히는 단계를 걷어낸 지금은 미색인 문서를 **순위 매길 방법이 없어** 앞의
+    # 몇 건을 고르는 것이 `doc_id` 순으로 아무거나 집는 것과 같다. 관련도 없는
+    # 문서 때문에 대화가 몇 분 멈춘다.
+    #
+    # 대신 폴더 저장 뒤 도는 전량 색인이 결국 전부 채운다
+    # (`services/document_intake` `_index_all`). 그때까지는 「아직 색인 중」이라고
+    # 말하는 것이 맞다. 기준 문서처럼 **어느 문서인지 이미 정해진** 경로는
+    # 지금도 그 자리에서 승격시킨다(`_extract_tasks`).
+    not_indexed = [
+        {
+            "doc_id": row["doc_id"],
+            "file_name": row["file_name"],
+            "index_status": row["index_status"],
         }
+        for row in documents
+        if not row["search_ready"]
+    ]
 
     if not doc_ids:
         return {
             "query": query,
             "evidence": [],
-            "candidate_documents": [
-                {"doc_id": row["doc_id"], "file_name": row["file_name"], "summary": row["summary"]}
-                for row in candidates
-            ],
             "not_indexed": not_indexed,
             "note": (
-                "요약으로는 관련 있어 보이는 문서를 찾았지만 본문이 아직 색인되지 않아 "
-                "문장 근거를 낼 수 없습니다."
-                if candidates
+                "문서는 있지만 본문이 아직 색인되지 않아 문장 근거를 낼 수 없습니다. "
+                "색인이 끝나면 답할 수 있습니다."
+                if not_indexed
                 else "검색할 문서가 없습니다."
             ),
         }
@@ -246,7 +198,27 @@ def _document_search(
     }
     if not_indexed:
         result["not_indexed"] = not_indexed
-        result["note"] = "아래 문서도 관련 있어 보이지만 본문이 아직 색인되지 않았습니다."
+        result["note"] = "아래 문서는 본문이 아직 색인되지 않아 근거에서 빠졌습니다."
+
+    # **출처는 근거가 실제로 나온 문서다**(2026-08-24). 전에는 coarse 가 좁힌
+    # 후보 목록을 그대로 냈는데, 좁히는 단계를 걷어낸 지금 그 자리에 넣을 것은
+    # 「범위 안의 문서 전부」뿐이라 출처라고 부를 수 없다. 청크가 실제로 걸린
+    # 문서만 낸다 — 화면이 말하는 「근거」와 뜻이 같아진다.
+    #
+    # `id`/`label` 은 `_web_search` 도 같이 쓰는 공통 모양이다(2026-08-18) —
+    # 웹 결과는 `url` 도 채운다, 내부 문서는 안 채운다(화면이 그 유무로 링크를
+    # 걸지 그냥 텍스트로 보일지 정한다).
+    if rows:
+        names = {row["doc_id"]: row["file_name"] for row in documents}
+        cited: dict[str, str] = {}
+        for row in rows:
+            cited.setdefault(row["doc_id"], names.get(row["doc_id"]) or row["doc_id"])
+        yield {
+            "type": "sources",
+            "step": 2,
+            "documents": [{"id": doc_id, "label": label} for doc_id, label in cited.items()],
+        }
+
     yield {"type": "stage_done", "step": 2, "found": len(doc_ids), "evidence": len(result["evidence"])}
     return result
 
@@ -533,17 +505,16 @@ def _document_list(*, account_id: str) -> dict[str, Any]:
     목록에만 보이면 사람이 "있는데 왜 못 찾지?"가 된다.
     """
 
-    # `list_with_meta` 는 `DocMetaRepository` 에 있다. 잘못된 클래스로 부르고
-    # 있어서 이 도구는 **한 번도 동작한 적이 없다** — 「무슨 문서 있어?」가
-    # 늘 AttributeError 로 끝났다(2026-08-12 QA 시나리오 B).
-    rows = DocMetaRepository.list_with_meta(account_id)
+    # 한때 `PipelineDocumentRepository` 에 없는 메서드를 부르고 있어서 이 도구는
+    # **한 번도 동작한 적이 없었다** — 「무슨 문서 있어?」가 늘 AttributeError 로
+    # 끝났다(2026-08-12 QA 시나리오 B). 2026-08-24 에 `DocMetaRepository` 를
+    # 걷어내면서 이 메서드가 실제로 여기로 왔다.
+    rows = PipelineDocumentRepository.list_documents(account_id)
     return {
         "documents": [
             {
                 "doc_id": row["doc_id"],
                 "file_name": row["file_name"],
-                "summary": row.get("summary"),
-                "doc_type": row.get("doc_type"),
                 # **id 와 열거값을 내보내지 않는다**(2026-08-19). 모델은 받은 것을
                 # 그대로 옮겨 적어서, 화면에 「프로젝트 PJ004 의 PRIMARY 기준
                 # 문서」가 나왔다 — 사용자는 둘 다 모르는 말이다(§0 원칙 2).

@@ -3942,7 +3942,6 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("문서 근거 연결", "DELETE FROM know_item_src WHERE block_id IN (SELECT b.block_id FROM doc_block b JOIN doc d ON d.doc_id = b.doc_id WHERE d.team_id = %(team_id)s)"),
     ("문서 청크", "DELETE FROM chunk WHERE block_id IN (SELECT b.block_id FROM doc_block b JOIN doc d ON d.doc_id = b.doc_id WHERE d.team_id = %(team_id)s)"),
     ("문서 블록", "DELETE FROM doc_block WHERE doc_id IN (SELECT doc_id FROM doc WHERE team_id = %(team_id)s)"),
-    ("문서 메타", "DELETE FROM doc_meta WHERE doc_id IN (SELECT doc_id FROM doc WHERE team_id = %(team_id)s)"),
     ("문서 동기화 기록", "DELETE FROM doc_sync WHERE doc_id IN (SELECT doc_id FROM doc WHERE team_id = %(team_id)s)"),
     ("문서", "DELETE FROM doc WHERE team_id = %(team_id)s"),
     ("등록된 업무", "DELETE FROM task WHERE model_id IN (SELECT m.model_id FROM proj_know_model m JOIN proj p ON p.proj_id = m.proj_id WHERE p.team_id = %(team_id)s)"),

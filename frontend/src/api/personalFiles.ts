@@ -14,24 +14,19 @@ export interface PersonalFile {
   search_enabled: boolean;
   /** 본문까지 색인됐는가. 이건 상태이지 의도가 아니다 — 끈 파일도 색인은 남는다. */
   search_ready: boolean;
-  summary: string | null;
-  doc_type: string | null;
-  keywords: string[];
-  /** null(아직 읽는 중) / OK / FAILED / UNSUPPORTED. 넷은 할 행동이 다르다. */
-  extract_status: string | null;
   /**
-   * **왜 실패했는지.** 성공한 문서는 비어 있다(2026-08-19에 생긴 칸).
-   * 「암호가 걸린 PDF 라 열 수 없습니다」처럼 사람이 읽을 문구가 그대로 온다 —
-   * 추출기가 이미 그렇게 만들고 있었는데 저장할 자리가 없어 버려지고 있었다.
-   */
-  extract_detail: string | null;
-  /**
-   * 청크 파싱·임베딩 단계 — RUNNING / FAILED / null(안 돌렸거나 끝남).
+   * 청크 파싱·임베딩 단계 — RUNNING / FAILED / null(아직 차례가 안 왔거나 끝남).
    *
-   * `extract_status` 와 **다른 단계**다. 그쪽은 요약을 만들려고 텍스트를 뽑는
-   * 일이고 이건 그 뒤의 색인이다 — 요약은 됐는데 색인만 못 하는 경우가 흔하다.
+   * 끝났는지는 `search_ready` 가 말한다. 2026-08-24 에 요약 단계를 없애면서
+   * `extract_status`·`extract_detail` 이 사라지고 이 둘이 그 역할을 이어받았다.
    */
   index_status: string | null;
+  /**
+   * **왜 실패했는지.** 성공한 문서는 비어 있다. 「암호가 걸린 PDF 라 열 수
+   * 없습니다」처럼 사람이 읽을 문구가 그대로 온다 — 상태만으로는 사용자가 할
+   * 행동이 안 정해진다.
+   */
+  index_detail: string | null;
   uploaded_at: string | null;
   /** 팀에 공유했는가. **소유는 안 옮긴다** — 보여 주는 것이지 넘기는 것이 아니다. */
   shared: boolean;

@@ -602,6 +602,10 @@ class PrimaryCandidateRankTests(SimpleTestCase):
     실측(2026-08-11)에서 나온 그대로를 고정한다 — 팀 문서가 3건이라 무엇을
     물어도 3건이 다 나왔고, 이름이 통째로 든 제안요청서가 0.52 로 회사소개서
     (0.08)와 같은 목록에 섞였다.
+
+    2026-08-24 에 앞 단계가 요약 임베딩에서 **본문 청크**로 바뀌었다(`score` ·
+    `text`). 눈금이 같은 코사인 유사도라 실측값과 기대 순위는 그대로 둔다 —
+    이 테스트가 보는 것은 앞 단계가 아니라 `_rank` 의 합산·컷이다.
     """
 
     NAME = "IRInstitutional-Research-정보시스템-구축"
@@ -610,23 +614,20 @@ class PrimaryCandidateRankTests(SimpleTestCase):
         {
             "doc_id": "DC001",
             "file_name": "2021-07-01-IRInstitutional-Research-정보시스템-구축-3차년도.pdf",
-            "summary": "삼육대학교 IR 정보시스템 3차년도 고도화 제안요청서",
-            "summary_score": 0.52,
-            "search_ready": True,
+            "text": "삼육대학교 IR 정보시스템 3차년도 고도화 제안요청서",
+            "score": 0.52,
         },
         {
             "doc_id": "DC002",
             "file_name": "22-101호 용역제안서_차세대정보시스템 ERP재구축 사업 감리용역.pdf",
-            "summary": "차세대 정보시스템 ERP 재구축 감리 제안요청",
-            "summary_score": 0.35,
-            "search_ready": True,
+            "text": "차세대 정보시스템 ERP 재구축 감리 제안요청",
+            "score": 0.35,
         },
         {
             "doc_id": "DC003",
             "file_name": "테스트.pdf",
-            "summary": "한화파워 회사 개요와 산업용 압축기 제품 소개",
-            "summary_score": 0.08,
-            "search_ready": True,
+            "text": "한화파워 회사 개요와 산업용 압축기 제품 소개",
+            "score": 0.08,
         },
     ]
 
@@ -639,7 +640,7 @@ class PrimaryCandidateRankTests(SimpleTestCase):
         self.assertEqual(self._ranked()[0]["doc_id"], "DC001")
 
     def test_파일명_일치를_따로_센다(self):
-        """요약 임베딩은 파일명을 안 본다. 그 단서를 여기서 되살린다."""
+        """본문 임베딩은 파일명을 안 본다. 그 단서를 여기서 되살린다."""
 
         ranked = {row["doc_id"]: row for row in self._ranked()}
         self.assertEqual(ranked["DC001"]["name_score"], 1.0)
@@ -658,13 +659,13 @@ class PrimaryCandidateRankTests(SimpleTestCase):
         """상대 컷오프는 1등을 못 자른다 — 자기 자신이 기준이라 늘 통과한다.
 
         「AI Platform」 프로젝트에 아무 상관 없는 정보시스템 구축 제안요청서가
-        요약 21%·파일명 0% 로 **유일 후보**에 올랐고, 사람이 그걸 골라 감리 업무
+        내용 21%·파일명 0% 로 **유일 후보**에 올랐고, 사람이 그걸 골라 감리 업무
         7건이 등록됐다(2026-08-12 QA 시나리오 B).
         """
 
         from apps.projects.api_views import _rank
 
-        rows = [dict(self.ROWS[0], summary_score=0.21)]
+        rows = [dict(self.ROWS[0], score=0.21)]
         self.assertEqual(_rank(rows, name="AI Platform"), [])
 
     def test_한쪽_신호만_넘어도_후보다(self):
@@ -672,13 +673,13 @@ class PrimaryCandidateRankTests(SimpleTestCase):
 
         from apps.projects.api_views import _rank
 
-        # 요약은 바닥인데 파일명이 통째로 걸리는 문서.
-        by_name = [dict(self.ROWS[0], summary_score=0.05)]
+        # 내용은 바닥인데 파일명이 통째로 걸리는 문서.
+        by_name = [dict(self.ROWS[0], score=0.05)]
         self.assertEqual([row["doc_id"] for row in _rank(by_name, name=self.NAME)], ["DC001"])
 
         # 파일명은 안 걸리는데 내용이 닮은 문서.
-        by_summary = [dict(self.ROWS[0], file_name="무제.pdf", summary_score=0.61)]
-        self.assertEqual([row["doc_id"] for row in _rank(by_summary, name="AI Platform")], ["DC001"])
+        by_content = [dict(self.ROWS[0], file_name="무제.pdf", score=0.61)]
+        self.assertEqual([row["doc_id"] for row in _rank(by_content, name="AI Platform")], ["DC001"])
 
 
 @patch("apps.projects.api_views.ExistTaskRepository")

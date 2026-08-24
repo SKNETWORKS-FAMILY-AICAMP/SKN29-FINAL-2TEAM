@@ -204,38 +204,28 @@ class PersonalFileDetailAPIView(AuthenticatedAPIView):
 
 
 def _start_processing(*, account_id: str, doc_id: str) -> None:
-    """요약과 요약 임베딩을 뒤에서 만든다. **여기까지만 한다.**
+    """올린 파일을 **본문 색인까지** 뒤에서 올린다.
 
-    **청크 파싱·임베딩은 올릴 때 안 한다**(2026-08-15 결정 · 8/18 PM 확인).
-    쓰지도 않을 문서까지 미리 파싱하지 않는다 — 검색이 요약으로 후보를 좁힌 뒤
-    그 문서에만 돈다(`services/harness/registry`). 커넥터 문서와 같은 길이다.
+    한동안 여기서 요약만 만들고 청크 파싱·임베딩은 미뤘다(2026-08-15 결정 ·
+    8/18 PM 확인). 검색이 요약으로 후보를 좁힌 뒤 그 문서에만 돌린다는 전제였는데,
+    **그 좁히기 자체를 없앴다**(2026-08-24) — 커넥터 문서가 전부 색인되는 것과
+    같은 이유다. 올린 파일도 같은 길을 간다.
 
-    한때 올릴 때 파싱까지 했는데, 「올린 파일은 되받을 곳이 없어 승격을 못
-    탄다」고 잘못 봤기 때문이다. 워커는 Drive 가 아니라 **우리 저장소**에서
-    받아 간다 — 올린 파일도 똑같이 승격된다.
+    워커는 Drive 가 아니라 **우리 저장소**에서 받아 가므로 올린 파일도 똑같이
+    승격된다.
 
-    **응답을 붙잡아 두지 않는다.** 요약도 몇 초는 걸린다. 진행은 목록의 상태가
-    말한다. 폴더 저장이 문서 수집을 뒤에서 돌리는 것과 같은 방식이다
+    **응답을 붙잡아 두지 않는다.** 색인은 문서당 100초 남짓이다. 진행은 목록의
+    상태(`index_status`)가 말하고, 실패하면 그 사유(`index_detail`)까지 남는다.
+    폴더 저장이 문서 수집을 뒤에서 돌리는 것과 같은 방식이다
     (`apps/projects/api_views.py` 의 `_start_document_intake`).
     """
 
     def run() -> None:
         try:
-            from services.document_meta import as_row as doc_meta_row
-            from services.document_meta import build as build_doc_meta
-            from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
+            from services.document_intake import promote_to_searchable
 
-            document = PipelineDocumentRepository.get_for_processing(
-                doc_id=doc_id, account_id=account_id
-            )
-            meta = build_doc_meta(
-                doc_id=doc_id,
-                content=storage.load(document["storage_key"]),
-                mime_type=document["mime_type"],
-                file_name=document["file_name"],
-            )
-            DocMetaRepository.upsert(doc_meta_row(meta))
+            promote_to_searchable(account_id=account_id, doc_id=doc_id)
         except Exception:  # noqa: BLE001 - 뒤에서 도는 일이라 무엇이든 로그로 남긴다
-            logger.exception("내 파일 요약 실패: %s", doc_id)
+            logger.exception("내 파일 색인 실패: %s", doc_id)
 
     threading.Thread(target=run, daemon=True).start()

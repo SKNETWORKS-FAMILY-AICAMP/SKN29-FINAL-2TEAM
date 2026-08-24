@@ -76,9 +76,9 @@ from services.mcp import client as mcp_client
 # --- 컨텍스트 라우팅표 (services/harness/runner.py의 _injected() 실측 이관) ---
 
 #: 팀 경계와 **요청자**가 둘 다 필요하다. `account_id` 를 빠뜨리면 조용히
-#: 반쪽이 된다 — 「내가 켠 내 파일」이 후보에 안 들어오고(M④), `registry` 의
-#: `not_indexed[:PROMOTE_TOP_N] if account_id else []` 가 빈 리스트가 되어
-#: **온디맨드 승격이 통째로 꺼진다**. 오류가 아니라 「문서가 없습니다」로 끝난다.
+#: 반쪽이 된다 — 검색 범위가 팀 문서만이 되어 **「내가 켠 내 파일」과 공유분이
+#: 통째로 빠진다**(M④). 오류가 아니라 「문서가 없습니다」로 끝나서 기능이 없는
+#: 것처럼 보인다.
 #: 레거시 `runner.py` 의 같은 자리에서 옮겨 올 때 함께 빠져 있었다(2026-08-18 QA).
 _DOCUMENT_SEARCH_REF = "document_search"
 _ACCOUNT_SCOPED: frozenset[str] = frozenset(

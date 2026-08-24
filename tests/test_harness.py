@@ -870,9 +870,9 @@ class ToolNameTests(SimpleTestCase):
 class ToolWiringTests(SimpleTestCase):
     """도구가 부르는 저장소 메서드가 실제로 있는가.
 
-    `document_list` 이 `PipelineDocumentRepository.list_with_meta` 를 불렀는데
-    그 메서드는 `DocMetaRepository` 에 있었다 — **한 번도 동작한 적이 없고**,
-    「무슨 문서 있어?」가 늘 AttributeError 로 끝났다(2026-08-12 QA 시나리오 B).
+    `document_list` 이 부르던 목록 메서드가 실제로는 다른 클래스에 있어서
+    **한 번도 동작한 적이 없었다** — 「무슨 문서 있어?」가 늘 AttributeError 로
+    끝났다(2026-08-12 QA 시나리오 B).
 
     도구가 13종이라 사람이 다 눌러 보지 않으면 이런 것이 조용히 남는다. 실행
     없이 이름만 맞춰 보는 것으로도 이 부류는 잡힌다.
@@ -894,14 +894,12 @@ class ToolWiringTests(SimpleTestCase):
     def test_document_search_에_요청자_계정이_주입된다(self):
         """빠뜨려도 **오류가 안 난다** — 그래서 조용히 반쪽이 된다.
 
-        `_document_search(account_id=None)` 이면 `coarse_search` 가 팀 문서만 보고
-        **내가 켠 내 파일이 안 잡히며**(M④), `registry` 의
-        `not_indexed[:PROMOTE_TOP_N] if account_id else []` 때문에 **온디맨드
-        승격이 통째로 꺼진다.** 화면에는 「확인할 수 있는 문서가 없습니다」로만
-        보여서 기능이 없는 것처럼 읽힌다.
+        `_document_search(account_id=None)` 이면 검색 범위가 팀 문서만이 되어
+        **내가 켠 내 파일과 공유분이 안 잡힌다**(M④). 화면에는 「확인할 수 있는
+        문서가 없습니다」로만 보여서 기능이 없는 것처럼 읽힌다.
 
-        실제로 승격은 2026-08-15 에 이 값이 온다는 전제로 만들어졌는데 주입하는
-        자리가 그때 같이 안 고쳐졌고, 2026-08-18 브라우저 QA 전까지 안 드러났다.
+        2026-08-18 브라우저 QA 전까지 안 드러났다 — 주입하는 자리가 레거시의
+        빠뜨림을 그대로 물려받고 있었다.
         """
 
         from services.harness.runner import _injected

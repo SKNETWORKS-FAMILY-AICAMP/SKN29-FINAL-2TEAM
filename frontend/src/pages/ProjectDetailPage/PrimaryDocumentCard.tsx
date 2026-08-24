@@ -172,10 +172,12 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
                       <strong>{candidate.file_name}</strong>
                       <span className={styles.score}>
                         {candidate.name_score >= 0.6 && <span className={styles.badge}>이름 일치</span>}
-                        내용 {Math.round(candidate.summary_score * 100)}%
+                        내용 {Math.round(candidate.content_score * 100)}%
                       </span>
                     </span>
-                    {candidate.summary && <span className={styles.summary}>{candidate.summary}</span>}
+                    {candidate.matched_text && (
+                      <span className={styles.summary}>{candidate.matched_text}</span>
+                    )}
                   </button>
                 </li>
               ))}

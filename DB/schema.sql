@@ -418,6 +418,20 @@ CREATE TABLE doc (
     -- 팀 문서에는 뜻이 없다 — 커넥터 문서는 시스템이 필요할 때 승격시키지 사람이
     -- 켜지 않는다(8/15). 그래서 기본값 true 이고 개인 문서에서만 읽는다.
     search_enabled     BOOLEAN NOT NULL DEFAULT true,
+    -- 청크 파싱·임베딩 단계의 상태(2026-08-18). RUNNING / FAILED / NULL.
+    -- NULL 은 「아직 안 돌렸거나 끝났거나」 둘 다다 — 끝난 것은 청크가 있는지
+    -- (`search_ready`)가 말해 주므로 값을 따로 두지 않는다.
+    --
+    -- ⚠ 이 줄은 **2026-08-24 에 뒤늦게 옮겨 적었다.** 마이그레이션
+    -- (`2026-08-18_doc_index_status.sql`)에만 있고 여기엔 없어서, 이 파일로
+    -- DB 를 새로 만들면 컬럼이 빠졌다. 같은 날 추가된 `search_enabled` 는
+    -- 반영됐는데 이것만 누락된 것이다 — 8/18 배포가 깨진 것과 같은 종류다.
+    index_status       VARCHAR(20),
+    -- 색인이 **왜** 실패했는지, 사람이 읽을 문구(2026-08-24). FAILED 일 때만
+    -- 채우고 성공하면 상태와 함께 NULL 로 되돌린다. 없앤 `doc_meta.extract_detail`
+    -- 이 하던 역할을 색인 단계로 옮긴 것이다 — 「실패했다」만 알고 이유를 모르는
+    -- 상태를 만들지 않으려는 것이 요점이다.
+    index_detail       TEXT,
     -- 팀 것도 내 것도 아닌 문서, 그리고 둘 다인 문서를 막는다. 둘 다인 행이
     -- 생기면 그 순간 팀 검색에 개인 파일이 섞인다.
     CONSTRAINT doc_owner_xor_team CHECK (
@@ -1094,25 +1108,12 @@ CREATE INDEX idx_mcp_call_note_run_tool
 
 -- 문서 하나당 한 줄(doc 과 1:1). chunk 단위 임베딩을 전부 만들지 않고
 -- 요약 임베딩 하나로 후보 문서를 먼저 좁히기 위한 테이블이다(A안, 확정 ⑥).
-CREATE TABLE doc_meta (
-    doc_id          VARCHAR(5) PRIMARY KEY,   -- doc.doc_id(FK 없음)
-    summary         TEXT,
-    doc_type        VARCHAR(50),
-    keywords        TEXT[]      NOT NULL DEFAULT '{}',
-    -- vec_idx.embedding 과 같은 768 차원(google/embeddinggemma-300m).
-    -- 적재와 검색이 같은 모델을 써야 하므로 차원은 한 곳에서만 정해진다.
-    summary_vec     VECTOR(768),
-    -- CPU 로 뽑아낸 원문 텍스트. **요약을 만든 뒤에도 버리지 않는다.**
-    -- 멘토링에서 "요약만으로 coarse 가 부족하다"는 결론이 나오면 A′ 로
-    -- 가야 하는데(12_문서처리_방식_비교.md §5), 이 값을 갖고 있으면
-    -- tsvector 인덱스만 얹으면 끝나고 없으면 전 문서를 다시 추출해야 한다.
-    extracted_text  TEXT,
-    -- OK / FAILED(PDF 텍스트 레이어 없음 등) / UNSUPPORTED(hwp).
-    -- 기본값을 두지 않는다 — 적재하는 쪽이 결과를 알고 넣는 값이라,
-    -- 기본값이 있으면 실패한 문서가 조용히 OK 로 남는다.
-    extract_status  VARCHAR(20) NOT NULL,
-    extracted_at    TIMESTAMPTZ
-);
+-- `doc_meta`(문서 요약·요약 임베딩·추출 텍스트)는 2026-08-24 에 폐기했다.
+-- 폴더의 문서가 전부 본문까지 색인되면서 「어느 문서를 볼지」 요약으로
+-- 좁힐 이유가 사라졌고, 요약은 앞 12,000자로만 만들어져 뒤쪽 내용을 못 봤다.
+-- 실패 사유는 `doc.index_detail` 이, 후보 추천은 본문 청크 검색이 이어받았다.
+-- 폐기 마이그레이션: `DB/migrations/2026-08-24_drop_doc_meta.sql`
+
 
 -- =====================================================================
 -- Deep Agent 런타임 버전 모델 (2026-08-13)

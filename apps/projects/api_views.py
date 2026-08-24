@@ -27,7 +27,7 @@ from backend.services.hr import (
 )
 from backend.services.storage import exists as document_exists
 from backend.services.storage import load as load_document
-from backend.db.document_pipeline import DocMetaRepository, PipelineDocumentRepository
+from backend.db.document_pipeline import PipelineDocumentRepository, VectorSearchRepository
 from services.document_intake import intake_connector_documents
 from services.document_pipeline.errors import (
     DocumentPipelineError,
@@ -159,9 +159,16 @@ class ProjectListCreateAPIView(AuthenticatedAPIView):
 
 #: 기준 문서 후보로 보여 줄 최대 건수.
 #:
-#: 사람이 한눈에 고를 수 있는 수다. 요약 임베딩은 문서를 **좁히는** 단계라
+#: 사람이 한눈에 고를 수 있는 수다. 후보 찾기는 문서를 **좁히는** 단계라
 #: 여기서 많이 뽑아 봐야 아래쪽은 주제가 다른 문서가 채운다.
 PRIMARY_CANDIDATE_LIMIT = 5
+
+#: 후보 카드에 보여 줄 「걸린 문장」 길이.
+#:
+#: 요약을 없애면서 그 자리에 실제로 걸린 청크를 넣는다(2026-08-24). 청크는
+#: 통째로는 길어서 카드가 무너지고, 사람이 「이 문서가 맞나」를 판단하는 데는
+#: 앞부분이면 충분하다.
+MATCHED_TEXT_MAX_CHARS = 300
 
 #: 1등 대비 이 비율 아래는 후보로 올리지 않는다.
 #:
@@ -178,13 +185,13 @@ RELATIVE_CUTOFF = 0.55
 #:
 #: 상대 컷오프는 「1등 대비」라서 **후보가 하나면 아무 일도 하지 않는다** — 자기
 #: 자신이 기준이라 무조건 통과한다. 실제로 AI Platform 프로젝트에 아무 상관 없는
-#: 정보시스템 구축 제안요청서가 요약 21%·파일명 0% 로 유일 후보에 올랐고, 그걸로
+#: 정보시스템 구축 제안요청서가 내용 21%·파일명 0% 로 유일 후보에 올랐고, 그걸로
 #: 업무를 뽑아 감리 업무 7건이 등록됐다(2026-08-12 QA 시나리오 B).
 #:
 #: **한쪽만 넘으면 통과시킨다.** 파일명이 밋밋해도 내용이 닮았으면 후보이고,
-#: 요약이 부실해도 이름이 걸리면 후보다 — 어느 한 신호의 절대값에 기대지 않는
+#: 내용이 안 걸려도 이름이 걸리면 후보다 — 어느 한 신호의 절대값에 기대지 않는
 #: 원래 의도는 그대로다. 둘 다 바닥일 때만 「없다」고 말한다.
-SUMMARY_FLOOR = 0.35
+CONTENT_FLOOR = 0.35
 NAME_FLOOR = 0.34
 
 #: 파일명 토큰. 영문·숫자·한글 덩어리만 본다.
@@ -200,9 +207,10 @@ def _tokens(text: str) -> set[str]:
 def _name_match(query_name: str, file_name: str) -> float:
     """프로젝트 이름이 파일명에 얼마나 들어 있는가 (0~1).
 
-    **요약 임베딩은 파일명을 보지 않는다.** `doc_meta.summary_vec` 은 요약문만
-    벡터로 만든 것이라, 프로젝트 이름이 파일명에 통째로 들어 있어도 점수가
-    오르지 않는다(2026-08-11 실측: 이름이 그대로 든 제안요청서가 0.52).
+    **본문 임베딩은 파일명을 보지 않는다.** 청크 벡터는 문서 안의 문장으로만
+    만든 것이라, 프로젝트 이름이 파일명에 통째로 들어 있어도 점수가 오르지
+    않는다(2026-08-11 실측: 이름이 그대로 든 제안요청서가 0.52 — 그때는 요약
+    벡터였고 본문으로 바꾼 지금도 파일명을 안 보는 것은 같다).
     사람은 그걸 「이게 왜 이것밖에 안 나오나」로 읽는다.
 
     파일명은 사람이 붙인 가장 강한 단서다. 따로 센다.
@@ -215,24 +223,27 @@ def _name_match(query_name: str, file_name: str) -> float:
 
 
 def _rank(rows: list[dict[str, Any]], *, name: str) -> list[dict[str, Any]]:
-    """요약 유사도와 파일명 일치를 합쳐 다시 세우고, 무관한 것을 자른다.
+    """본문 유사도와 파일명 일치를 합쳐 다시 세우고, 무관한 것을 자른다.
 
-    가중치는 요약 6 : 파일명 4 다. 파일명이 더 확실한 단서지만 그것만으로
+    가중치는 본문 6 : 파일명 4 다. 파일명이 더 확실한 단서지만 그것만으로
     정하면 「2021년_제안요청서.pdf」처럼 이름이 밋밋한 문서가 영영 밀린다.
 
     합친 점수는 **정렬과 컷에만** 쓴다. 화면에는 두 값을 따로 보여 준다 —
     합친 수를 「닮은 정도」라고 하나로 보여주면 그 숫자가 무엇인지 아무도 모른다.
+
+    2026-08-24 에 앞 단계가 요약 임베딩에서 본문 청크로 바뀌었다. 가중치와
+    바닥값은 그대로 뒀다 — 둘 다 같은 모델의 코사인 유사도라 눈금이 같다.
     """
 
     scored = []
     for row in rows:
-        summary_score = float(row["summary_score"])
+        content_score = float(row["score"])
         name_score = _name_match(name, row["file_name"] or "")
         # 둘 다 바닥이면 이 문서는 이 프로젝트와 무관하다. 1등이든 아니든 뺀다.
-        if summary_score < SUMMARY_FLOOR and name_score < NAME_FLOOR:
+        if content_score < CONTENT_FLOOR and name_score < NAME_FLOOR:
             continue
         scored.append(
-            {**row, "name_score": name_score, "rank_score": summary_score * 0.6 + name_score * 0.4}
+            {**row, "name_score": name_score, "rank_score": content_score * 0.6 + name_score * 0.4}
         )
 
     scored.sort(key=lambda row: row["rank_score"], reverse=True)
@@ -245,8 +256,10 @@ def _rank(rows: list[dict[str, Any]], *, name: str) -> list[dict[str, Any]]:
 class ProjectPrimaryCandidateAPIView(AuthenticatedAPIView):
     """프로젝트 이름·설명으로 팀 문서 풀에서 **기준 문서 후보**를 찾는다.
 
-    새 도구가 아니라 `document_search` 의 앞단(coarse)을 그대로 쓴다 —
-    `doc_meta.summary_vec` 은 문서당 하나뿐이라 팀 문서 전부를 훑어도 싸다.
+    프로젝트 이름·설명을 질의로 삼아 **본문 청크**를 검색하고, 문서마다 가장 잘
+    맞는 조각 하나를 대표로 세운다(`rank_by_content`). 요약 임베딩으로 고르던
+    것을 2026-08-24 에 바꿨다 — 요약은 앞 12,000자로만 만들어져 뒤쪽 내용을 못
+    봤고, 전량 색인이 붙은 지금은 본문을 직접 보는 쪽이 정확하다.
 
     **고르는 것은 사람이다.** 여기서 자동으로 묶지 않는다. 어느 문서로 업무를
     뽑았는지는 결과 전체의 전제이고, 그 결정은 사람의 것이라는 규칙이 이미 있다
@@ -276,8 +289,11 @@ class ProjectPrimaryCandidateAPIView(AuthenticatedAPIView):
 
         try:
             vector = embed_queries([query])[0]
-            rows = DocMetaRepository.coarse_search(
-                team_id=team_id, query_vector=vector, top_n=PRIMARY_CANDIDATE_LIMIT
+            rows = VectorSearchRepository.rank_by_content(
+                team_id=team_id,
+                query_vector=vector,
+                top_n=PRIMARY_CANDIDATE_LIMIT,
+                account_id=request.user.account_id,
             )
         except Exception as exc:  # noqa: BLE001 - 임베딩·검색 실패로 생성을 막지 않는다
             logger.exception("기준 문서 후보 검색에 실패했습니다: team=%s", team_id)
@@ -298,15 +314,18 @@ class ProjectPrimaryCandidateAPIView(AuthenticatedAPIView):
                     {
                         "doc_id": row["doc_id"],
                         "file_name": row["file_name"],
-                        "summary": row["summary"],
-                        "doc_type": row.get("doc_type"),
+                        # 요약 대신 **실제로 걸린 문장**을 보여 준다(2026-08-24).
+                        # 요약보다 나은 이유는 「왜 이 문서가 올라왔는지」를 사람이
+                        # 직접 확인할 수 있어서다 — 요약은 문서 전체를 뭉뚱그린
+                        # 값이라 그 판단의 근거가 되지 못했다.
+                        "matched_text": (row["text"] or "").strip()[:MATCHED_TEXT_MAX_CHARS],
                         # 두 근거를 따로 준다. 화면이 "확실합니다"라고 말하지
                         # 않도록 숫자를 그대로 보여 주고, 왜 올라왔는지도 말한다.
-                        "summary_score": round(float(row["summary_score"]), 3),
+                        "content_score": round(float(row["score"]), 3),
                         "name_score": round(float(row["name_score"]), 3),
-                        # 본문이 아직 색인되지 않은 문서는 기준으로 골라도 업무
-                        # 추출이 거절한다. 고르기 전에 알아야 한다.
-                        "search_ready": row["search_ready"],
+                        # 후보는 청크에서 나오므로 색인된 문서만 올라온다.
+                        # 화면이 이 값으로 분기하던 자리를 지키려고 남긴다.
+                        "search_ready": True,
                     }
                     for row in _rank(rows, name=name)
                 ],
@@ -429,10 +448,13 @@ class TeamFolderAPIView(AuthenticatedAPIView):
 
         # **폴더를 정하는 것이 곧 「이 문서들을 받아들여라」다.**
         #
-        # 여기서 하는 것은 목록·원문·요약까지다. 본문 파싱·임베딩은 안 한다 —
-        # 그건 무거워서 미리 돌릴 값이 아니고, 대화 중에 요약으로 후보가 좁혀진
-        # 문서에만 한다(`promote_to_searchable`). 폴더에 있는 것을 전부 읽어 두면
-        # 쓰지도 않을 문서까지 파싱·임베딩한다(2026-08-15 PM).
+        # 목록·원문·요약에 더해 **본문 파싱·임베딩까지** 간다. 한동안 요약에서
+        # 끊고 대화 중 좁혀진 문서만 승격시켰는데(2026-08-15 PM), 그러면 폴더에
+        # 있는데도 문장 근거를 못 내는 문서가 계속 남는다 — 「연결된 폴더를
+        # 검색한다」는 약속과 어긋난다.
+        #
+        # 워커 슬롯이 하나라 순차로 돌고 폴더가 크면 오래 걸린다. 그래서 응답을
+        # 붙잡지 않고(아래), 못 끝낸 것은 다음 호출이 이어받는다.
         _start_document_intake(request.user.account_id)
 
         return Response([team_folder_response(row) for row in rows])
@@ -441,9 +463,10 @@ class TeamFolderAPIView(AuthenticatedAPIView):
 def _start_document_intake(account_id: str) -> None:
     """폴더가 정해진 뒤 문서를 받아들인다. **응답을 붙잡지 않는다.**
 
-    요약은 문서당 LLM 1회 + 임베딩 1개라 폴더가 크면 몇 분이 된다. 저장 응답이
-    그동안 멈춰 있으면 사람은 폴더 저장이 실패한 줄 안다 — 실제로 그런 화면을
-    오늘 봤다(「서버에 연결할 수 없습니다」).
+    요약만으로도 문서당 LLM 1회 + 임베딩 1개라 폴더가 크면 몇 분이고, 본문
+    색인까지 하면 **문서당 100초 남짓 × 문서 수**가 된다(워커 슬롯이 하나라
+    순차다). 저장 응답이 그동안 멈춰 있으면 사람은 폴더 저장이 실패한 줄 안다 —
+    실제로 그런 화면을 봤다(「서버에 연결할 수 없습니다」).
 
     ⚠ **작업 큐가 아니다.** 프로세스가 죽으면 그 회차는 사라지고, 실패는 로그에만
     남는다. 지금 규모(팀당 폴더 몇 개)에서는 이것으로 충분하고, 다시 부르면
@@ -455,10 +478,10 @@ def _start_document_intake(account_id: str) -> None:
         try:
             result = intake_connector_documents(account_id=account_id)
             logger.info(
-                "문서 수집 완료: account=%s 등록=%d 요약=%d 실패=%d",
+                "문서 수집 완료: account=%s 등록=%d 색인=%d 실패=%d",
                 account_id,
                 len(result.registered),
-                len(result.summarized),
+                len(result.indexed),
                 len(result.failed),
             )
         except Exception:  # noqa: BLE001 — 폴더 저장은 이미 끝났다. 여기서 죽어도 그건 지킨다.

@@ -30,14 +30,19 @@ _TEAM_OR_MINE = """
      OR d.shared_team_id = %s)
 """
 
-_SEARCH_READY = """
+#: 술어만 따로 둔다 — `_SEARCH_READY`(「됐는가」)와 `list_pending_index`
+#: (「해야 하는가」)가 **같은 판정**을 써야 하기 때문이다. 두 곳에 복사해 두면
+#: 갈라지는 순간 색인이 끝났다고 표시되면서 대기 목록에도 남는 문서가 생긴다.
+_HAS_ACTIVE_CHUNKS = """
     EXISTS (
         SELECT 1 FROM doc_block b
         JOIN chunk c ON c.block_id = b.block_id AND c.is_active = true
         JOIN vec_idx v ON v.chunk_id = c.chunk_id AND v.is_active = true
         WHERE b.doc_id = d.doc_id AND b.revision = d.cur_revision
-    ) AS search_ready
+    )
 """
+
+_SEARCH_READY = f"{_HAS_ACTIVE_CHUNKS} AS search_ready"
 
 
 class PipelineDocumentRepository:
@@ -143,29 +148,143 @@ class PipelineDocumentRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
-    def searchable_doc_ids(team_id: str) -> list[str]:
-        """`document_search` 도구가 훑을 범위 — 팀 문서 전부.
+    def searchable_documents(
+        *,
+        team_id: str,
+        account_id: str | None = None,
+        proj_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """`document_search` 가 훑을 문서 — **범위만 정하고 순위는 안 매긴다.**
+
+        예전에는 요약 임베딩으로 문서 5건을 먼저 고르고 그 안에서만 청크를
+        찾았다(coarse). 전량 색인이 붙으면서 그 단계를 걷어냈다(2026-08-24) —
+        **요약으로 좁히는 것은 전량 색인을 대신하는 경로가 아니다.** 순위는
+        청크 벡터가 매기고, 그쪽이 문서 요약보다 정확하다.
 
         `team_id`를 직접 받는다. 다른 메서드들처럼 `account_id`로 팀을 물을 수
         없어서다 — Harness 의 `run_agent` 는 대화·요청자에 종속되지 않는 순수
         함수라(A2A 대비) 팀만 알고 계정은 모른다.
 
-        `_SEARCH_READY`로 다시 거르지 않는다. 벡터 검색이 이미 활성 chunk·vec_idx
-        만 보므로 색인 안 된 문서는 결과에 나올 수 없고, 여기서 한 번 더 판정하면
-        같은 규칙이 두 곳에 생긴다.
+        **`account_id` 를 주면 「내가 켠 내 파일」과 공유분도 함께 본다**
+        (`_TEAM_OR_MINE`). 안 주면 팀 문서만이다 — 빠뜨리면 오류가 아니라 조용히
+        반쪽이 된다.
+
+        **`proj_id` 를 주면 그 프로젝트 문서만 본다**(2026-08-19). 좁히기만 하고
+        넓히지는 않는다 — 「없으면 팀 전체로」라는 판단은 호출자가 한다.
+
+        `search_ready` 를 함께 준다. 아직 색인이 안 닿은 문서를 호출자가 알아야
+        「본문 근거를 낼 수 없다」고 말할 수 있다 — 조용히 빼면 문서가 있는데도
+        「관련 문서가 없다」로 읽힌다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
-                    SELECT doc_id FROM doc
-                    WHERE team_id = %s AND deleted = false AND access_revoked = false
-                    ORDER BY doc_id
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.index_status, {_SEARCH_READY}
+                    FROM doc d
+                    WHERE {_TEAM_OR_MINE}
+                      AND d.deleted = false AND d.access_revoked = false
+                      AND (%s::text IS NULL OR d.proj_id = %s)
+                    ORDER BY d.doc_id
+                    """,
+                    (team_id, account_id, team_id, proj_id, proj_id),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_pending_index(team_id: str) -> list[str]:
+        """본문 색인이 아직 없는 팀 문서.
+
+        `storage_key`·`cur_revision` 이 있어야 한다. 원문을 아직 안 받았으면
+        워커에 넘길 것이 없고, revision 이 없으면 서명 URL 을 만들 수 없다.
+
+        **`index_status = 'FAILED'` 는 뺀다.** 워커가 못 읽는 형식(지금은 pdf·
+        docx 만 읽는다)은 몇 번을 돌려도 같은 답이 온다 — 폴더를 저장할 때마다
+        그 문서로 워커를 헛돌리게 된다. `document_search` 가 재승격을 막는 것과
+        같은 규칙이다.
+
+        `RUNNING` 은 **뺀 것이 아니라 남긴다.** 승격은 240초에서 기다리기를
+        포기하면서 상태를 `RUNNING` 으로 둔 채 돌아온다(실패로 적지 않는다는
+        판단). 그걸 여기서 제외하면 그때 못 끝낸 문서가 **영영 다시 시도되지
+        않는다.** 중복 제출이 생길 수는 있지만 `ingest` 가 멱등이라 결과는
+        같고, 잃는 것은 워커 시간뿐이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id
+                    FROM doc d
+                    WHERE d.team_id = %s
+                      AND d.deleted = false AND d.access_revoked = false
+                      AND d.storage_key IS NOT NULL
+                      AND d.cur_revision IS NOT NULL
+                      AND (d.index_status IS NULL OR d.index_status <> 'FAILED')
+                      AND NOT {_HAS_ACTIVE_CHUNKS}
+                    ORDER BY d.doc_id
                     """,
                     (team_id,),
                 )
                 return [row["doc_id"] for row in cursor.fetchall()]
+
+    @staticmethod
+    def list_documents(account_id: str) -> list[dict[str, Any]]:
+        """문서 화면·`document_list` 도구가 쓰는 팀 문서 목록.
+
+        **상태를 하나로 뭉개지 않는다.** 「아직 색인 전」·「색인 중」·「색인에
+        실패했다」·「본문까지 됐다」는 사람이 할 행동이 각각 다르다 — 순서대로
+        기다리기 / 기다리기 / 사유 확인 / 없음이다.
+
+        전에는 `doc_meta` 를 조인해 요약·추출상태를 함께 줬다. 요약을 없애면서
+        (2026-08-24) 그 자리를 `index_status`·`index_detail` 이 대신한다 —
+        묻는 것이 「요약이 됐나」에서 「본문이 색인됐나」로 바뀌었기 때문이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           -- 사람에게 보일 이름. id 를 그대로 내보내면 에이전트가
+                           -- 「프로젝트 PJ004 의 기준 문서」라고 옮겨 적는다
+                           -- (2026-08-19 실측 · §0 원칙 2).
+                           p.name AS proj_name,
+                           d.src_modified_at, d.storage_key,
+                           d.index_status, d.index_detail, {_SEARCH_READY}
+                    FROM doc AS d
+                    LEFT JOIN proj AS p ON p.proj_id = d.proj_id
+                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
+                    ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def list_removed(account_id: str) -> list[dict[str, Any]]:
+        """Drive 에서 사라져 내려간 문서. 화면이 「정리된 파일」로 보여준다.
+
+        ⚠ **부르는 곳이 아직 없다.** 2026-08-24 에 `DocMetaRepository` 를 걷어내며
+        여기로 옮겨만 왔다 — `doc` 만 보는 메서드라 요약 제거와 무관해서 지우지
+        않았다. 화면이 붙지 않은 채로 계속 남아 있다면 그때 판단할 일이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    """
+                    SELECT doc_id, file_name, src_modified_at
+                    FROM doc
+                    WHERE team_id = %s AND deleted = true
+                    ORDER BY doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
 
     @staticmethod
     def list_ready_for_analysis(*, proj_id: str, account_id: str) -> list[dict[str, Any]]:
@@ -426,11 +545,9 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.index_status,
-                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
+                           d.index_status, d.index_detail,
                            {_SEARCH_READY}
                     FROM doc AS d
-                    LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
                     WHERE d.owner_account_id = %s AND d.deleted = false
                     ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
                     """,
@@ -454,11 +571,10 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.index_status, d.owner_account_id, ua.display_name AS owner_name,
-                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
+                           d.index_status, d.index_detail,
+                           d.owner_account_id, ua.display_name AS owner_name,
                            {_SEARCH_READY}
                     FROM doc AS d
-                    LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
                     LEFT JOIN user_account AS ua ON ua.account_id = d.owner_account_id
                     WHERE d.shared_team_id = %s
                       AND d.owner_account_id <> %s
@@ -492,12 +608,19 @@ class PersonalDocumentRepository:
         return team_id
 
     @staticmethod
-    def set_index_status(*, doc_id: str, status: str | None) -> None:
+    def set_index_status(*, doc_id: str, status: str | None, detail: str | None = None) -> None:
         """색인 단계의 결과를 남긴다 — RUNNING / FAILED / None(끝남).
 
         **남기지 않으면 느린 것과 죽은 것이 구분되지 않는다.** 화면은 청크가
         생겼는지(`search_ready`)만 볼 수 있어서, 실패한 문서도 영원히 「읽는
         중」으로 보인다(2026-08-18 PM 지적).
+
+        `detail` 은 **왜** 실패했는지다(2026-08-24). 없애기 전의
+        `doc_meta.extract_detail` 이 하던 역할을 여기로 옮겼다 — 상태만 남기면
+        사용자는 「실패했다」만 알고 이유를 모른다.
+
+        성공·진행 중이면 사유를 **NULL 로 되돌린다.** 지난 실패의 문구가 남아
+        있으면 화면이 이번 실패인지 옛 실패인지 구분할 수 없다.
 
         소유자 검사를 안 한다 — 사람이 부르는 경로가 아니라 **업로드가 띄운
         뒷작업이 자기 결과를 적는 자리**다.
@@ -506,7 +629,8 @@ class PersonalDocumentRepository:
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "UPDATE doc SET index_status = %s WHERE doc_id = %s", (status, doc_id)
+                    "UPDATE doc SET index_status = %s, index_detail = %s WHERE doc_id = %s",
+                    (status, detail if status == "FAILED" else None, doc_id),
                 )
 
     @staticmethod
@@ -565,12 +689,81 @@ class PersonalDocumentRepository:
                     (doc_id,),
                 )
                 cursor.execute("DELETE FROM doc_block WHERE doc_id = %s", (doc_id,))
-                cursor.execute("DELETE FROM doc_meta WHERE doc_id = %s", (doc_id,))
                 cursor.execute("DELETE FROM doc WHERE doc_id = %s", (doc_id,))
         return row["storage_key"]
 
 
+#: `rank_by_content` 가 훑을 청크 수. 문서 순위를 매기려면 문서 하나가 상위를
+#: 독식해도 다른 문서가 남을 만큼은 봐야 한다. 팀 문서 수십 건 규모에서 이
+#: 정도면 후보 5건을 뽑기에 충분하고, 벡터 인덱스로 잘리므로 전량 스캔이 아니다.
+_CONTENT_RANK_CHUNKS = 200
+
+
 class VectorSearchRepository:
+    @staticmethod
+    def rank_by_content(
+        *,
+        team_id: str,
+        query_vector: list[float],
+        top_n: int,
+        account_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """질의와 가장 가까운 **본문 조각**을 가진 문서 순으로 돌려준다.
+
+        기준 문서 후보 추천이 쓴다. 전에는 `doc_meta.summary_vec` 으로 문서를
+        골랐는데, 요약을 없애면서(2026-08-24) 같은 일을 본문으로 한다 — 요약은
+        앞 12,000자로만 만들어져 뒤쪽에 있는 내용을 못 봤다. 본문 조각은 그
+        제한이 없다.
+
+        문서당 **가장 잘 맞는 조각 하나**를 대표로 삼는다(`DISTINCT ON`). 조각
+        여럿을 합산하면 긴 문서가 항상 이긴다 — 길이가 아니라 관련도를 물어야
+        한다.
+
+        `text` 를 함께 준다. 화면이 요약 대신 **실제로 걸린 문장**을 보여 주면
+        「왜 이 문서가 올라왔는지」를 사람이 직접 확인할 수 있다.
+
+        `b.revision = d.cur_revision` 을 건다 — 문서가 개정되면 옛 판의 조각은
+        근거가 될 수 없다.
+        """
+
+        vector = vector_literal(query_vector)
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    WITH hit AS (
+                        SELECT b.doc_id,
+                               1 - (v.embedding <=> %s::vector) AS score,
+                               c.search_text AS text
+                        FROM vec_idx v
+                        JOIN chunk c ON c.chunk_id = v.chunk_id AND c.is_active = true
+                        JOIN doc_block b ON b.block_id = c.block_id
+                        JOIN doc d ON d.doc_id = b.doc_id
+                        WHERE {_TEAM_OR_MINE}
+                          AND d.deleted = false AND d.access_revoked = false
+                          AND b.revision = d.cur_revision
+                          AND v.is_active = true
+                          AND v.embed_model = %s AND v.embed_dim = 768
+                        ORDER BY v.embedding <=> %s::vector
+                        LIMIT %s
+                    )
+                    SELECT DISTINCT ON (hit.doc_id)
+                           hit.doc_id, hit.score, hit.text,
+                           d.file_name, d.proj_id, d.doc_role
+                    FROM hit JOIN doc d ON d.doc_id = hit.doc_id
+                    ORDER BY hit.doc_id, hit.score DESC
+                    """,
+                    (
+                        vector, team_id, account_id, team_id,
+                        "google/embeddinggemma-300m", vector, _CONTENT_RANK_CHUNKS,
+                    ),
+                )
+                rows = list(cursor.fetchall())
+
+        # `DISTINCT ON` 이 doc_id 순서를 강제하므로 점수 정렬은 여기서 한다.
+        rows.sort(key=lambda row: float(row["score"]), reverse=True)
+        return rows[:top_n]
+
     @staticmethod
     def search(
         *, team_id: str, document_ids: list[str], query_vector: list[float], top_k: int,
@@ -651,204 +844,3 @@ def document_outline(doc_id: str, *, limit: int = 12) -> str:
 
     outline = "\n".join((row["search_text"] or "").strip() for row in rows)
     return outline[:OUTLINE_MAX_CHARS]
-
-
-class DocMetaRepository:
-    """`doc_meta` — 문서 하나당 한 줄. A안의 coarse 단계가 읽는다(8/11 확정 ⑥)."""
-
-    @staticmethod
-    def upsert(row: dict[str, Any]) -> None:
-        """다시 만들면 덮어쓴다. 문서가 개정되면 요약도 낡기 때문이다.
-
-        추출에 실패한 문서도 행을 남긴다 — 안 남기면 왜 검색에 안 걸리는지
-        화면이 말할 수 없고, 매번 다시 시도하게 된다.
-        """
-
-        vector = row.get("summary_vec")
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO doc_meta (doc_id, summary, doc_type, keywords, summary_vec,
-                                          extracted_text, extract_status, extract_detail,
-                                          extracted_at)
-                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, %s, now())
-                    ON CONFLICT (doc_id) DO UPDATE SET
-                        summary = EXCLUDED.summary,
-                        doc_type = EXCLUDED.doc_type,
-                        keywords = EXCLUDED.keywords,
-                        summary_vec = EXCLUDED.summary_vec,
-                        extracted_text = EXCLUDED.extracted_text,
-                        extract_status = EXCLUDED.extract_status,
-                        extract_detail = EXCLUDED.extract_detail,
-                        extracted_at = now()
-                    """,
-                    (
-                        row["doc_id"], row.get("summary"), row.get("doc_type"),
-                        row.get("keywords") or [],
-                        vector_literal(vector) if vector else None,
-                        row.get("extracted_text"), row["extract_status"],
-                        row.get("extract_detail"),
-                    ),
-                )
-
-    @staticmethod
-    def purge(doc_ids: list[str]) -> int:
-        """이 문서들의 메타를 지운다. **새 문서를 등록할 때 부른다.**
-
-        `doc_meta` 는 `doc` 을 FK 로 걸지 않아서 `doc` 행이 사라져도 살아남는다.
-        그런데 `doc_id` 는 `DC001` 부터 다시 나눠 주므로, 새 문서가 지워진 문서의
-        id 를 물려받으면 **남의 요약을 자기 것으로 쓴다** — 요약 임베딩으로
-        후보를 좁히는 구조라, 엉뚱한 문서가 근거 후보로 올라온다.
-
-        실제로 겪었다: 8/11 문서를 지우고 `doc_meta` 3건이 남아 있었는데,
-        8/15 에 새로 등록한 문서가 그 id 를 받아 「이미 요약된 문서」로 취급됐다.
-        """
-
-        if not doc_ids:
-            return 0
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("DELETE FROM doc_meta WHERE doc_id = ANY(%s)", (doc_ids,))
-                return cursor.rowcount
-
-    @staticmethod
-    def pending_doc_ids(team_id: str) -> list[str]:
-        """아직 메타가 없고 원문은 받아 둔 팀 문서.
-
-        `storage_key` 가 있어야 한다 — 원문이 없으면 CPU 추출을 할 수 없다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT d.doc_id
-                    FROM doc d
-                    LEFT JOIN doc_meta m ON m.doc_id = d.doc_id
-                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
-                      AND d.storage_key IS NOT NULL AND m.doc_id IS NULL
-                    ORDER BY d.doc_id
-                    """,
-                    (team_id,),
-                )
-                return [row["doc_id"] for row in cursor.fetchall()]
-
-    @staticmethod
-    def coarse_search(
-        *,
-        team_id: str,
-        query_vector: list[float],
-        top_n: int,
-        account_id: str | None = None,
-        proj_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """요약 임베딩으로 **문서**를 좁힌다. 청크 검색의 앞단이다.
-
-        `search_ready` 를 함께 준다 — 후보로 뽑혔지만 아직 청크가 없는 문서를
-        호출자가 알아야 한다. 그 문서는 요약만 있고 본문 근거를 낼 수 없다.
-
-        추출 실패(FAILED·UNSUPPORTED) 문서는 요약 벡터가 없어 자연히 빠진다.
-
-        **`account_id` 를 주면 「내가 켠 내 파일」도 함께 본다**(2026-08-18 · M④).
-        에이전트에 파일을 붙이는 개념은 만들지 않았다 — toggle 이 곧 그 선택이라,
-        켠 파일은 **모든** 에이전트가 쓴다. 안 주면 팀 문서만 본다(옛 동작).
-
-        **`proj_id` 를 주면 그 프로젝트에 달린 문서만 본다**(2026-08-19). 좁히기만
-        하고 넓히지는 않는다 — 「없으면 팀 전체로 넓힌다」는 판단은 호출자
-        (`registry._document_search`)가 한다. 여기서 두 번 훑으면 저장소가
-        정책을 갖게 되고, 그러면 같은 함수가 부르는 곳마다 다르게 동작한다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f"""
-                    SELECT d.doc_id, d.file_name, d.index_status,
-                           m.summary, m.doc_type, m.keywords,
-                           1 - (m.summary_vec <=> %s::vector) AS summary_score,
-                           {_SEARCH_READY}
-                    FROM doc_meta m
-                    JOIN doc d ON d.doc_id = m.doc_id
-                    WHERE {_TEAM_OR_MINE}
-                      AND d.deleted = false AND d.access_revoked = false
-                      AND m.summary_vec IS NOT NULL
-                      AND (%s::text IS NULL OR d.proj_id = %s)
-                    ORDER BY m.summary_vec <=> %s::vector
-                    LIMIT %s
-                    """,
-                    (
-                        vector_literal(query_vector), team_id, account_id, team_id,
-                        proj_id, proj_id,
-                        vector_literal(query_vector), top_n,
-                    ),
-                )
-                return list(cursor.fetchall())
-
-
-    @staticmethod
-    def list_with_meta(account_id: str) -> list[dict[str, Any]]:
-        """문서 화면 목록 — `doc` + `doc_meta` + 색인 여부.
-
-        **상태를 하나로 뭉개지 않는다.** 「메타가 없다」·「추출에 실패했다」·
-        「형식을 지원하지 않는다」·「본문까지 색인됐다」는 사람이 할 행동이 각각
-        다르다 — 순서대로 처리 요청 / 재시도 / 포기 / 없음이다.
-        """
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                cursor.execute(
-                    f"""
-                    SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
-                           -- 사람에게 보일 이름. id 를 그대로 내보내면 에이전트가
-                           -- 「프로젝트 PJ004 의 기준 문서」라고 옮겨 적는다
-                           -- (2026-08-19 실측 · §0 원칙 2).
-                           p.name AS proj_name,
-                           d.src_modified_at, d.storage_key,
-                           m.summary, m.doc_type, m.keywords, m.extract_status, m.extract_detail,
-                           m.extracted_at, {_SEARCH_READY}
-                    FROM doc AS d
-                    LEFT JOIN doc_meta AS m ON m.doc_id = d.doc_id
-                    LEFT JOIN proj AS p ON p.proj_id = d.proj_id
-                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
-                    ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
-                    """,
-                    (team_id,),
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def list_removed(account_id: str) -> list[dict[str, Any]]:
-        """Drive 에서 사라져 내려간 문서. 화면이 「정리된 파일」로 보여준다."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                team_id = _require_team(cursor, account_id)
-                cursor.execute(
-                    """
-                    SELECT doc_id, file_name, src_modified_at
-                    FROM doc
-                    WHERE team_id = %s AND deleted = true
-                    ORDER BY doc_id
-                    """,
-                    (team_id,),
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def status_counts(team_id: str) -> dict[str, int]:
-        """화면이 "몇 건이 왜 검색 대상이 아닌가"를 말할 수 있게."""
-
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT m.extract_status, count(*) AS n
-                    FROM doc_meta m JOIN doc d ON d.doc_id = m.doc_id
-                    WHERE d.team_id = %s AND d.deleted = false
-                    GROUP BY m.extract_status
-                    """,
-                    (team_id,),
-                )
-                return {row["extract_status"]: row["n"] for row in cursor.fetchall()}

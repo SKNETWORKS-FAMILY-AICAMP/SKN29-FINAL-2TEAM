@@ -62,7 +62,9 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "index_detail", "2026-08-24 색인 실패 사유"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
-    ("doc_meta", "extract_detail", "2026-08-19 추출 실패 사유"),
+    # `doc_meta` 는 2026-08-24 에 폐기했다(`2026-08-24_drop_doc_meta.sql`).
+    # 있으면 있는 대로 두고 없으면 없는 대로 맞는 상태라 여기서 묻지 않는다 —
+    # 물으면 이미 지운 DB 가 「빠졌다」로 보고된다.
     ("agent_run", "resolved_provider", "2026-08-19 실행 스냅샷 — 어느 provider 로 돌았나"),
     ("agent_run", "resolved_endpoint_hash", "2026-08-19 실행 스냅샷 — 엔드포인트 해시"),
     # 2026-08-20 정정 — 이 세 줄은 「기존 tool_call 표에 컬럼 3개를 더한다」는

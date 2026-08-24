@@ -251,10 +251,9 @@ class ListTests(SimpleTestCase):
         repo.list_shared_with_me.return_value = [
             {
                 "doc_id": "DC010", "file_name": "표준계약서.pdf", "mime_type": "application/pdf",
-                "search_enabled": True, "search_ready": True, "summary": "요약",
-                "doc_type": None, "keywords": [], "extract_status": "OK",
+                "search_enabled": True, "search_ready": True,
+                "index_status": None, "index_detail": None,
                 "src_modified_at": None, "shared_team_id": "TE001", "owner_name": "김준억",
-                "index_status": None,
             }
         ]
 
@@ -271,40 +270,38 @@ class ListTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         repo.list_for_account.assert_called_once_with("UA001")
 
-    def test_index_failure_is_its_own_state(self, repo):
-        """요약은 됐는데 색인만 실패한 경우다. 이걸 「읽는 중」으로 두면 죽은
-        문서가 영원히 도는 것처럼 보인다."""
+    def test_index_failure_says_why(self, repo):
+        """실패를 「읽는 중」으로 두면 죽은 문서가 영원히 도는 것처럼 보이고,
+        사유를 안 주면 사용자가 할 수 있는 일이 없다(2026-08-24)."""
 
         repo.list_for_account.return_value = [
             {
                 "doc_id": "DC010", "file_name": "계약서.pdf", "mime_type": "application/pdf",
-                "search_enabled": True, "search_ready": False, "summary": "요약은 됐다",
-                "doc_type": None, "keywords": [], "extract_status": "OK",
-                "index_status": "FAILED", "src_modified_at": None,
-                "shared_team_id": None, "owner_name": None,
+                "search_enabled": True, "search_ready": False,
+                "index_status": "FAILED", "index_detail": "암호가 걸린 PDF 라 열 수 없습니다.",
+                "src_modified_at": None, "shared_team_id": None, "owner_name": None,
             }
         ]
 
         body = self.client.get("/api/me/files/", headers=auth_header()).json()[0]
 
-        # 두 단계는 따로 실패한다 — 추출은 됐고 색인이 실패했다.
-        self.assertEqual(body["extract_status"], "OK")
         self.assertEqual(body["index_status"], "FAILED")
+        self.assertEqual(body["index_detail"], "암호가 걸린 PDF 라 열 수 없습니다.")
 
     def test_states_are_not_collapsed(self, repo):
-        """「요약 없음」·「추출 실패」·「색인됨」은 사람이 할 행동이 각각 다르다."""
+        """「아직 차례가 안 왔다」·「읽는 중」·「실패」·「색인됨」은 사람이 할
+        행동이 각각 다르다."""
 
         repo.list_for_account.return_value = [
             {
                 "doc_id": "DC009", "file_name": "계약서.pdf", "mime_type": "application/pdf",
-                "search_enabled": True, "search_ready": False, "summary": None,
-                "doc_type": None, "keywords": None, "extract_status": "FAILED",
-                "index_status": None, "src_modified_at": None,
+                "search_enabled": True, "search_ready": False,
+                "index_status": None, "index_detail": None, "src_modified_at": None,
             }
         ]
 
         body = self.client.get("/api/me/files/", headers=auth_header()).json()[0]
 
         self.assertFalse(body["search_ready"])
-        self.assertEqual(body["extract_status"], "FAILED")
+        self.assertIsNone(body["index_status"])
         self.assertTrue(body["search_enabled"])

@@ -107,20 +107,23 @@ export function createProject(token: string, name: string, description?: string)
 /**
  * 기준 문서 후보 한 건.
  *
- * 근거가 둘로 나뉜다. 요약 임베딩은 **파일명을 보지 않으므로**, 이름이 맞아
+ * 근거가 둘로 나뉜다. 본문 임베딩은 **파일명을 보지 않으므로**, 이름이 맞아
  * 올라온 것과 내용이 비슷해 올라온 것을 하나의 숫자로 뭉치면 사람이 그 수를
  * 읽을 방법이 없다.
  */
 export interface PrimaryCandidate {
   doc_id: string;
   file_name: string;
-  summary: string | null;
-  doc_type: string | null;
-  /** 요약 내용이 얼마나 비슷한가 (0~1). */
-  summary_score: number;
+  /**
+   * 질의에 **실제로 걸린 문장**(2026-08-24). 전에는 문서 요약이었는데, 요약은
+   * 문서 전체를 뭉뚱그린 값이라 「왜 이게 올라왔지」의 답이 되지 못했다.
+   */
+  matched_text: string;
+  /** 본문 내용이 얼마나 비슷한가 (0~1). */
+  content_score: number;
   /** 프로젝트 이름 낱말이 파일명에 얼마나 들어 있는가 (0~1). */
   name_score: number;
-  /** 본문이 색인됐는가. false면 기준으로 골라도 업무 추출이 거절한다. */
+  /** 후보는 색인된 청크에서 나오므로 늘 true 다. 화면 분기를 위해 남긴다. */
   search_ready: boolean;
 }
 

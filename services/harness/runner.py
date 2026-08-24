@@ -561,12 +561,9 @@ def _injected(tool: Tool, agent: dict[str, Any], context: dict[str, Any]) -> dic
 
     if tool.ref == "document_search":
         # **`account_id` 를 빠뜨리면 조용히 반쪽이 된다**(2026-08-18 QA 에서 잡았다).
-        # 없으면 `coarse_search` 가 팀 문서만 보고 **내가 켠 내 파일이 안 잡히며**
-        # (M④), 온디맨드 승격도 통째로 꺼진다 — `registry.py` 의
-        # `not_indexed[:PROMOTE_TOP_N] if account_id else []`. 그런데 오류가 아니라
-        # 「문서가 없습니다」로 끝나서 **기능이 없는 것처럼 보인다.**
-        # 승격은 2026-08-15 에 이 값이 온다는 전제로 만들어졌는데 이 자리가 그때
-        # 같이 안 고쳐졌다.
+        # 없으면 검색 범위가 팀 문서만이 되어 **내가 켠 내 파일과 공유분이 안
+        # 잡힌다**(M④). 그런데 오류가 아니라 「문서가 없습니다」로 끝나서
+        # **기능이 없는 것처럼 보인다.**
         #
         # `proj_id` 는 2026-08-19 에 더했다(PM 결정 ⓐ) — 프로젝트 대화면 그
         # 프로젝트 문서를 먼저 본다. 없으면 `_document_search` 가 팀 전체로

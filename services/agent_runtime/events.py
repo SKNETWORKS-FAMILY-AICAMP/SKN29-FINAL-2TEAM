@@ -296,11 +296,10 @@ def _retrieved_doc_ids(content: Any) -> list[str]:
     (`input_summary`)만 남아서, 나중에 "그때 무슨 문서를 봤나"를 물을 수 없었다.
 
     **도구별로 분기하지 않는다.** 결과 JSON 안에 있는 `doc_id` 키를 재귀로
-    전부 모은다 — `document_search` 는 `evidence` · `candidate_documents` ·
-    `not_indexed` 세 곳에 나눠 담고, 다른 도구가 나중에 같은 키를 쓰면 자동으로
-    함께 잡힌다. 어느 목록에 있었는지는 구분하지 않는다: 접근 감사가 묻는 것은
-    "어느 문서를 봤나"이지 "그중 무엇을 인용했나"가 아니고, coarse 후보도
-    요약이 실제로 읽힌 문서다.
+    전부 모은다 — `document_search` 는 `evidence` 와 `not_indexed` 두 곳에 나눠
+    담고, 다른 도구가 나중에 같은 키를 쓰면 자동으로 함께 잡힌다. 어느 목록에
+    있었는지는 구분하지 않는다: 접근 감사가 묻는 것은 "어느 문서를 봤나"이지
+    "그중 무엇을 인용했나"가 아니다.
 
     `content` 는 `ToolMessage.text`(문자열)다. 핸들러가 dict 를 돌려주면
     langchain-core 의 `_stringify()` 가 `json.dumps(..., ensure_ascii=False)`

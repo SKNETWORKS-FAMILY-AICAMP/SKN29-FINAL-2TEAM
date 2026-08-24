@@ -31,40 +31,25 @@ import styles from './tabs.module.css';
 /**
  * 처리 상태 칩.
  *
- * **요약이 있으면 검색에 쓰인다.** 대화는 먼저 요약으로 문서를 좁히고, 문장
- * 근거가 필요해지면 그때 본문을 색인한다(2026-08-15 결정). 그래서 올린 직후
- * 기다려야 하는 것은 **요약까지**고, 본문 색인은 사람이 지켜볼 일이 아니다.
+ * **본문이 색인되면 검색에 쓰인다.** 2026-08-24 에 요약 단계를 없앴다 — 올린
+ * 파일은 곧바로 본문 색인까지 가고, 그래서 기다려야 하는 것도 색인까지다.
  *
  * 설명은 안 붙인다. 배지가 이미 상태를 말하므로 그것을 풀어 쓰는 줄은 자리만
  * 차지한다. 남는 것은 다음에 무엇을 할지뿐이다.
  */
 function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint: string } {
-  // **서버가 사유를 주면 그것을 쓴다**(2026-08-19). 추출기는 실패를 다섯
-  // 갈래로 갈라 사람이 읽을 문구까지 만들어 두는데(너무 짧음 · 암호 PDF ·
-  // 스캔본 · 글자 깨짐 · hwp), `doc_meta` 에 담을 칸이 없어 버려지고 있었다.
-  // 이제 `extract_detail` 로 온다 — 화면이 짐작해 쓰던 뭉뚱그린 문구보다
-  // 언제나 정확하다. 옛 문서는 이 값이 없어서 아래 기본 문구로 떨어진다.
-  if (file.extract_status === 'UNSUPPORTED') {
+  // **서버가 사유를 주면 그것을 쓴다.** 화면이 짐작해 쓰던 뭉뚱그린 문구보다
+  // 언제나 정확하다. 사유가 없는 옛 행은 아래 기본 문구로 떨어진다.
+  if (file.index_status === 'FAILED') {
     return {
       tone: 'warning',
-      label: '읽을 수 없는 형식',
-      hint: file.extract_detail ?? '다른 형식으로 저장해 다시 업로드하세요.',
-    };
-  }
-  if (file.extract_status === 'FAILED') {
-    // 기본 문구를 뭉뚱그려 두는 이유 — 제일 흔한 실패는 **본문이 200자보다
-    // 짧은 것**이라, 예전 문구(「텍스트가 들어 있는 파일로 다시 올려 주세요」)는
-    // 텍스트가 멀쩡히 든 파일을 두고 사용자를 틀린 방향으로 보냈다
-    // (2026-08-18 QA — 185자 파일이 그 문구를 받았다).
-    return {
-      tone: 'warning',
-      label: '본문 추출 실패',
+      label: '본문 색인 실패',
       hint:
-        file.extract_detail ??
-        '내용이 200자보다 짧거나, 글자를 읽을 수 없는 파일일 수 있습니다.',
+        file.index_detail ??
+        '읽을 수 없는 형식이거나, 글자를 뽑을 수 없는 파일일 수 있습니다.',
     };
   }
-  if (file.summary) {
+  if (file.search_ready) {
     return { tone: 'success', label: '검색 준비됨', hint: '' };
   }
   return { tone: 'neutral', label: '읽는 중', hint: '' };
@@ -95,9 +80,8 @@ export function MyFilesTab() {
   /** 지우려는 파일. 되돌릴 수 없어 한 번 묻는다. */
   const [confirming, setConfirming] = useState<PersonalFile | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  /** 처리 중인 파일이 있는 동안만 목록을 다시 받는다. */
-  /** 요약이 아직 없는 파일이 있는 동안만 목록을 다시 받는다. */
-  const pending = files.some((file) => !file.summary && file.extract_status === null);
+  /** 아직 색인되지 않은 파일이 있는 동안만 목록을 다시 받는다. */
+  const pending = files.some((file) => !file.search_ready && file.index_status !== 'FAILED');
 
   async function load() {
     if (!token) return;

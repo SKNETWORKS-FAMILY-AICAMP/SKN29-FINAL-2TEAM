@@ -16,10 +16,9 @@ from services.harness.registry import BUILTIN_TOOLS
 # services/harness/runner.py의 _injected()를 AST로 직접 파싱해서 얻은 실측값
 # (2026-08-13). CONTEXT_VALUES 쪽 이름 기준(project_id, proj_id 아님).
 EXPECTED_INJECTED_CONTEXT = {
-    # **`account_id` 가 함께 가야 한다**(2026-08-18 QA). 없으면 「내가 켠 내 파일」이
-    # 후보에 안 들어오고(M④), `registry` 의
-    # `not_indexed[:PROMOTE_TOP_N] if account_id else []` 때문에 온디맨드 승격도
-    # 통째로 꺼진다 — 그런데 오류가 아니라 「문서가 없습니다」로 끝난다.
+    # **`account_id` 가 함께 가야 한다**(2026-08-18 QA). 없으면 검색 범위가 팀
+    # 문서만이 되어 「내가 켠 내 파일」과 공유분이 빠진다(M④) — 그런데 오류가
+    # 아니라 「문서가 없습니다」로 끝난다.
     # 이 표가 `("team_id",)` 로 레거시의 빠뜨림을 그대로 고정하고 있었다.
     #
     # `project_id` 는 2026-08-19(PM 결정 ⓐ). 화면은 「〈프로젝트〉의 문서를
