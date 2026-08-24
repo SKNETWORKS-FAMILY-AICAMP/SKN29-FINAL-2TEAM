@@ -31,7 +31,7 @@ from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
 from services.agent_runtime.legacy_bridge import draft_from_legacy_agent
 from services.agent_runtime.sensitive_text import mask_sensitive
-from services.guardrails import check_user_input
+from services.guardrails import InputGuardOutcome, check_user_input
 from services.harness import EVENT_AWAITING_CONFIRMATION, EVENT_ERROR, run_agent
 from services.harness.naming import suggest_title
 
@@ -52,6 +52,11 @@ logger = logging.getLogger(__name__)
 #: 작게 잡는다 — 이 풀이 하는 일은 요청당 하나뿐이고, 크게 잡으면 외부 검사기가
 #: 느려질 때 우리 워커보다 많은 연결이 열린다.
 _GUARDRAIL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="guardrail")
+#: 검사를 기다리는 **상한**(초). 공급자마다 자기 timeout 이 있지만, 여기서도
+#: 한 번 더 끊는다 — 새 공급자를 붙일 때 timeout 을 빠뜨리면 그 팀의 채팅이
+#: 통째로 붙들린다. 가드레일이 장애 원인이 되는 것만은 막는다.
+#: 공급자 timeout(10초)보다 조금 길게 둬서, 정상적인 지연을 성급히 포기하지 않는다.
+GUARDRAIL_WAIT_SECONDS = 12
 
 
 def _repository_error_response(exc: Exception) -> Response:
@@ -233,7 +238,14 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             # 없다. **막힌 발화는 저장하지 않는다** — 아래 "질문이 사라진 대화는
             # 복구할 방법이 없다"는 이유는 보낸 발화에 대한 것이고, 여기서는
             # 애초에 보내지지 않았다. 그래서 저장이 이 아래에 있다.
-            guard = guard_check.result()
+            try:
+                guard = guard_check.result(timeout=GUARDRAIL_WAIT_SECONDS)
+            except TimeoutError:
+                # **못 기다리면 통과시킨다.** 못 부른 경우와 같은 판단이다
+                # (`services/guardrails/input_check.py` 참고) — 외부 검사기가
+                # 느릴 때마다 채팅이 막히면 가드레일이 장애 원인이 된다.
+                logger.warning("가드레일 검사가 %s초 안에 안 끝나 통과시킵니다", GUARDRAIL_WAIT_SECONDS)
+                guard = InputGuardOutcome()
             if guard.blocked:
                 return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
 

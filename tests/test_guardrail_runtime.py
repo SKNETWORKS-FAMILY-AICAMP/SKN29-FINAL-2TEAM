@@ -240,3 +240,51 @@ class ActiveOnlyTests(SimpleTestCase):
         repo.for_team.assert_called_once_with("TE001")
         _, kwargs = called.call_args
         self.assertEqual(kwargs["kind"], "AZURE_CONTENT_SAFETY")
+
+
+class ProviderTimeoutTests(SimpleTestCase):
+    """**세 공급자 모두 호출에 상한이 있어야 한다.**
+
+    「호출이 안 되는」 경우는 이미 통과로 처리한다(`test_부르지_못하면_통과시킨다`).
+    더 위험한 것은 **「느리게 되는」** 경우다 — openai SDK 기본값은 600초에 재시도
+    2회라, 상한을 안 주면 사용자 발화가 최악 30분 붙들린다. 그건 실패가 아니라
+    응답 없음이라 fail-open 도 안 걸린다.
+    """
+
+    def test_세_공급자가_같은_상한을_쓴다(self):
+        from services.guardrails.providers import azure, bedrock, openai_guardrails
+
+        self.assertEqual(
+            {azure.TIMEOUT_SECONDS, bedrock.TIMEOUT_SECONDS, openai_guardrails.TIMEOUT_SECONDS},
+            {10},
+        )
+
+    def test_openai_클라이언트에_상한과_재시도_없음을_준다(self):
+        """기본값을 그대로 쓰면 상한이 사실상 없는 것과 같다."""
+
+        import sys
+        from unittest.mock import MagicMock
+
+        from services.guardrails.providers import openai_guardrails as mod
+
+        made = MagicMock()
+        fake_openai = MagicMock(AsyncOpenAI=made)
+        fake_guardrails = MagicMock(load_pipeline_bundles=MagicMock(side_effect=RuntimeError("여기까지만")))
+
+        with patch.dict(sys.modules, {"openai": fake_openai, "guardrails": fake_guardrails}):
+            with self.assertRaises(ProviderError):
+                # 설정을 못 읽는 데서 멈춘다 — 클라이언트를 만들기 전이라
+                # 이 경로로는 확인이 안 된다. 그래서 정상 설정으로 다시 부른다.
+                mod.check(text="x", config={"pipeline": "{}"}, credential={"api_key": "k"})
+
+        fake_guardrails.load_pipeline_bundles.side_effect = None
+        fake_guardrails.instantiate_guardrails.return_value = []
+        with patch.dict(sys.modules, {"openai": fake_openai, "guardrails": fake_guardrails}):
+            try:
+                mod.check(text="x", config={"pipeline": "{}"}, credential={"api_key": "k"})
+            except ProviderError:
+                pass
+
+        _, kwargs = made.call_args
+        self.assertEqual(kwargs["timeout"], mod.TIMEOUT_SECONDS)
+        self.assertEqual(kwargs["max_retries"], 0)

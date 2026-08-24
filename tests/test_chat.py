@@ -1399,3 +1399,47 @@ class ChatListScopeTests(SimpleTestCase):
             and sessions.list_for_team.called,
             "팀 전체 목록을 부르면 안 된다",
         )
+
+
+@patch("apps.chat.api_views.GUARDRAIL_WAIT_SECONDS", 0.05)
+@patch("services.agent_runtime.build_default_executor")
+@patch("services.agent_runtime.legacy_bridge.AgentRepository")
+@patch("apps.chat.api_views.suggest_title", return_value=None)
+@patch("apps.chat.api_views.AccountRepository")
+@patch("apps.chat.api_views.ChatMessageRepository")
+@patch("apps.chat.api_views.ChatSessionRepository")
+class GuardrailSlowTests(SimpleTestCase):
+    """**검사가 늦으면 통과시킨다.**
+
+    「부르지 못한 경우」는 `check_user_input` 이 이미 통과로 처리한다. 여기서
+    보는 것은 **응답이 아예 안 오는 경우**다 — 그건 예외가 아니라 침묵이라
+    fail-open 이 안 걸리고, 상한이 없으면 사용자 발화가 그대로 붙들린다.
+    공급자마다 자기 timeout 이 있지만 새 공급자에서 빠뜨릴 수 있어 여기서도 끊는다.
+    """
+
+    @patch("apps.chat.api_views.check_user_input")
+    def test_상한을_넘기면_막지_않고_보낸다(
+        self, guard, sessions, messages, accounts, _title, agent_repo, build_executor
+    ):
+        import time
+
+        def 늦게_온다(*_args, **_kwargs):
+            time.sleep(5)
+            raise AssertionError("여기까지 기다리면 안 된다")
+
+        guard.side_effect = 늦게_온다
+        sessions.get.return_value = SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_legacy_agent_bridge(agent_repo)
+        _mock_new_engine(build_executor, [{"type": "result", "text": "네", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": "일정 알려줘"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        # 400(막힘)이 아니라 스트림이 열려야 한다.
+        self.assertEqual(response["Content-Type"], "application/x-ndjson")
+        self.assertEqual([e["type"] for e in ndjson(response)], ["result"])

@@ -32,6 +32,10 @@ from .base import GuardrailVerdict, ProviderError
 
 #: 입력 한 건에 적용할 단계. 위저드는 Moderation 을 `pre_flight`, Jailbreak 을
 #: `input` 에 넣으므로 둘 다 돌려야 고른 대로 동작한다.
+#: 호출 timeout(초). 사용자 발화를 붙들고 있는 자리라 짧게 잡는다
+#: (azure·bedrock 과 같은 값).
+TIMEOUT_SECONDS = 10
+
 INPUT_STAGES = ("pre_flight", "input")
 
 
@@ -58,7 +62,11 @@ def check(
     class _Ctx:
         guardrail_llm: Any
 
-    ctx = _Ctx(guardrail_llm=AsyncOpenAI(api_key=api_key))
+    # **timeout 을 반드시 준다.** openai SDK 기본값은 600초에 재시도 2회라,
+    # 그대로 두면 OpenAI 가 흔들릴 때 사용자 발화가 최악 30분까지 붙들린다 —
+    # 「호출이 안 되는」 경우보다 「느리게 되는」 경우가 더 위험하다.
+    # Azure·Bedrock 과 같은 값으로 맞춘다.
+    ctx = _Ctx(guardrail_llm=AsyncOpenAI(api_key=api_key, timeout=TIMEOUT_SECONDS, max_retries=0))
 
     async def _run() -> list[Any]:
         collected: list[Any] = []
