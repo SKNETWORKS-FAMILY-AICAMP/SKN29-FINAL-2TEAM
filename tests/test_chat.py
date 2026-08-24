@@ -1667,7 +1667,7 @@ class ChatListScopeTests(SimpleTestCase):
 
 @patch("apps.chat.api_views.GUARDRAIL_WAIT_SECONDS", 0.05)
 @patch("services.agent_runtime.build_default_executor")
-@patch("services.agent_runtime.legacy_bridge.AgentRepository")
+@patch("apps.chat.api_views.AgentVersionRepository.resolve_live_version_id", new=lambda **_: None)
 @patch("apps.chat.api_views.suggest_title", return_value=None)
 @patch("apps.chat.api_views.AccountRepository")
 @patch("apps.chat.api_views.ChatMessageRepository")
@@ -1684,7 +1684,7 @@ class GuardrailSlowTests(SimpleTestCase):
     @patch("apps.chat.api_views.on_check_timeout", return_value=InputGuardOutcome())
     @patch("apps.chat.api_views.check_user_input")
     def test_상한을_넘기면_그_팀이_정한_대로_한다(
-        self, guard, timed_out, sessions, messages, accounts, _title, agent_repo, build_executor
+        self, guard, timed_out, sessions, messages, accounts, _title, build_executor
     ):
         import time
 
@@ -1695,7 +1695,6 @@ class GuardrailSlowTests(SimpleTestCase):
         guard.side_effect = 늦게_온다
         sessions.get.return_value = SESSION
         accounts.get_profile.return_value = LEADER_PROFILE
-        _mock_legacy_agent_bridge(agent_repo)
         _mock_new_engine(build_executor, [{"type": "result", "text": "네", "complete": True}])
 
         response = self.client.post(
@@ -1715,7 +1714,7 @@ class GuardrailSlowTests(SimpleTestCase):
     @patch("apps.chat.api_views.on_check_timeout")
     @patch("apps.chat.api_views.check_user_input")
     def test_상한을_넘겼는데_막음을_고른_팀이면_막는다(
-        self, guard, timed_out, sessions, messages, accounts, _title, agent_repo, build_executor
+        self, guard, timed_out, sessions, messages, accounts, _title, build_executor
     ):
         import time
 
@@ -1727,7 +1726,6 @@ class GuardrailSlowTests(SimpleTestCase):
         timed_out.return_value = InputGuardOutcome(blocked_reason="가드레일 검사를 할 수 없습니다.")
         sessions.get.return_value = SESSION
         accounts.get_profile.return_value = LEADER_PROFILE
-        _mock_legacy_agent_bridge(agent_repo)
         _mock_new_engine(build_executor, [])
 
         response = self.client.post(
