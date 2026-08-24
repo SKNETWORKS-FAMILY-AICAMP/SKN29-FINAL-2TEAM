@@ -23,7 +23,7 @@ from apps.connectors.oauth import OAuthError
 from backend.db import AccountRepository, DocumentRepository, TeamFolderRepository
 from backend.db.document_pipeline import PipelineDocumentRepository
 from backend.db.errors import RepositoryError
-from backend.services.storage import build_key
+from backend.services.storage import build_key, content_hash
 from backend.services.storage import save as save_document
 from services.document_pipeline.errors import DocumentPipelineError, PipelineConfigurationError
 
@@ -39,6 +39,9 @@ class IntakeResult:
     """
 
     registered: list[str] = field(default_factory=list)
+    #: Drive 에서 고쳐져 다시 받은 문서(2026-08-24). 등록과 나눠 센다 —
+    #: 「새로 들어온 것」과 「내용이 바뀐 것」은 사람이 확인할 것이 다르다.
+    refreshed: list[str] = field(default_factory=list)
     #: 본문 청크·임베딩까지 올라간 문서. 등록(`registered`)과 나눠 센다 —
     #: 등록만 된 문서는 목록에 보이지만 **문장 근거를 내지 못한다.**
     indexed: list[str] = field(default_factory=list)
@@ -76,21 +79,25 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
     try:
         known = DocumentRepository.registered_file_ids(account_id)
         candidates: list[dict[str, Any]] = []
+        # 훑으면서 본 **모든** 파일의 수정 시각. 변경 감지가 이 값을 쓴다
+        # (2026-08-24) — 스캔은 어차피 도니 Drive 호출이 늘지 않는다.
+        live_modified: dict[str, str | None] = {}
         for folder in folders:
             for item in list_drive_files(
                 account_id=account_id,
                 parent_id=folder["external_folder_id"],
                 max_depth=folder.get("max_depth") or 1,
             ):
+                live_modified[item["file_id"]] = item["modified_at"]
                 # 파싱할 수 없는 형식은 받아들이지 않는다. 목록에는 보여 주되
                 # (`document_list`) 저장소에 넣어 봐야 읽을 수 없다.
                 if not item["supported"] or item["file_id"] in known:
                     continue
-                candidates.append(item)
-                if len(candidates) >= limit:
-                    break
-            if len(candidates) >= limit:
-                break
+                # `limit` 은 **새로 등록하는 수**만 묶는다. 폴더 순회를 여기서
+                # 끊으면 뒤쪽 폴더의 수정 시각을 못 보고, 첫 폴더가 매번 한도를
+                # 채우면 그 뒤 폴더의 변경은 영영 감지되지 않는다(2026-08-24).
+                if len(candidates) < limit:
+                    candidates.append(item)
     except Exception as exc:  # noqa: BLE001 — 저장소 사정이 이 함수를 죽이지 않는다
         logger.exception("연결된 저장소 목록을 읽지 못했다")
         result.storage_error = exc.__class__.__name__
@@ -120,8 +127,109 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
         result.registered = [row["file_name"] for row in created]
 
     _fetch_originals(account_id=account_id, team_id=team_id, result=result)
+    _refetch_changed(
+        account_id=account_id, team_id=team_id, live_modified=live_modified, result=result
+    )
+    # 재수신이 `cur_revision` 을 바꾸면 옛 청크가 `b.revision = d.cur_revision` 에
+    # 걸려 빠지고, 그 문서가 다시 색인 대기로 잡힌다 — 그래서 이 순서다.
     _index_all(account_id=account_id, team_id=team_id, result=result)
     return result
+
+
+def _refetch_changed(
+    *,
+    account_id: str,
+    team_id: str,
+    live_modified: dict[str, str | None],
+    result: IntakeResult,
+) -> None:
+    """Drive 에서 고쳐진 문서를 다시 받는다.
+
+    **없으면 우리는 영원히 옛 판으로 답한다.** 기획서를 개정해도 요약·본문·업무
+    추출 근거가 전부 등록 시점 그대로였다 — 화면 어디에도 낡았다는 표시가 없어
+    틀린 답이 맞는 답처럼 나갔다(2026-08-24 이전).
+
+    **두 단으로 거른다.**
+
+    1. `modifiedTime` 이 우리 기록보다 최신인 것만 후보로(`list_changed_on_drive`)
+    2. 그 후보만 내려받아 `content_hash` 를 대조 — 같으면 시각만 갱신하고 끝
+
+    `modifiedTime` 은 이름 변경·공유 설정 변경·이동에도 오른다. 1단만 믿고
+    재파싱하면 내용이 그대로인 문서로 GPU 를 태운다. 2단의 다운로드는 파싱보다
+    훨씬 싸다 — `content_hash` 를 저장해 둔 이유가 이것이다.
+
+    내용이 정말 바뀌었으면 **같은 `storage_key` 에 덮어쓴다.** 옛 판을 남길
+    이유가 없다(원본은 Drive 에 있고, 우리는 사본이다). `mark_stored` 가
+    `cur_revision` 을 바꾸는 순간 옛 청크는 검색에서 빠지고 재색인 대기로
+    잡힌다 — 재색인을 여기서 시키지 않는 이유다.
+
+    사라진 문서와 다르게 **사람에게 묻지 않는다.** 없어진 것은 휴지통·완전삭제·
+    폴더 밖 이동이 구별되지 않아 확인이 필요하지만, 바뀐 것은 의도가 분명하고
+    되돌릴 것도 없다 — 「지울까요」가 아니라 「새 판을 읽는다」다.
+    """
+
+    try:
+        targets = DocumentRepository.list_changed_on_drive(
+            account_id=account_id, live_modified=live_modified
+        )
+    except (RepositoryError, Exception) as exc:  # noqa: BLE001
+        logger.exception("변경 감지 실패: account=%s", account_id)
+        result.failed.append({"file_name": "(변경 감지)", "detail": exc.__class__.__name__})
+        return
+
+    for index, target in enumerate(targets):
+        try:
+            fetched = download_drive_file(
+                account_id=account_id,
+                file_id=target["src_file_id"],
+                mime_type=target["mime_type"],
+            )
+        except OAuthError as exc:
+            # 자격증명이 막혔다는 뜻이라 남은 문서도 전부 같은 이유로 실패한다
+            # (`_fetch_originals` 와 같은 규칙).
+            logger.exception("변경분 수신 실패(자격증명): %s", target["doc_id"])
+            for remaining in targets[index:]:
+                result.failed.append(
+                    {"file_name": remaining["file_name"], "detail": exc.__class__.__name__}
+                )
+            break
+        except (OSError, RepositoryError) as exc:
+            logger.exception("변경분 수신 실패: %s", target["doc_id"])
+            result.failed.append(
+                {"file_name": target["file_name"], "detail": exc.__class__.__name__}
+            )
+            continue
+
+        try:
+            key = build_key(
+                team_id=team_id, doc_id=target["doc_id"], mime_type=fetched["mime_type"]
+            )
+            fetched_hash = content_hash(fetched["content"])
+            if fetched_hash == target["content_hash"]:
+                # 내용은 그대로다. 시각만 맞춰 두지 않으면 다음 스캔이 같은
+                # 문서를 또 후보로 올려 매번 내려받게 된다.
+                DocumentRepository.mark_unchanged(
+                    doc_id=target["doc_id"],
+                    src_modified_at=target["drive_modified_at"],
+                )
+                continue
+
+            save_document(key, fetched["content"])
+            DocumentRepository.mark_stored(
+                doc_id=target["doc_id"],
+                storage_key=key,
+                content_hash=fetched_hash,
+                revision=fetched["revision"],
+                src_modified_at=target["drive_modified_at"],
+            )
+        except (OSError, RepositoryError) as exc:
+            logger.exception("변경분 저장 실패: %s", target["doc_id"])
+            result.failed.append(
+                {"file_name": target["file_name"], "detail": exc.__class__.__name__}
+            )
+            continue
+
+        result.refreshed.append(target["file_name"])
 
 
 def _index_all(*, account_id: str, team_id: str, result: IntakeResult) -> None:

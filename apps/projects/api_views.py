@@ -478,9 +478,10 @@ def _start_document_intake(account_id: str) -> None:
         try:
             result = intake_connector_documents(account_id=account_id)
             logger.info(
-                "문서 수집 완료: account=%s 등록=%d 색인=%d 실패=%d",
+                "문서 수집 완료: account=%s 등록=%d 갱신=%d 색인=%d 실패=%d",
                 account_id,
                 len(result.registered),
+                len(result.refreshed),
                 len(result.indexed),
                 len(result.failed),
             )

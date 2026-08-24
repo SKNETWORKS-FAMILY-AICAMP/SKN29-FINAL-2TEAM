@@ -73,14 +73,15 @@ def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -
 #: Content-Type 은 믿을 수 없고(아바타 업로드와 같은 판단), 문서는 바이트만으로
 #: 형식을 못 가린다(아래 참조).
 #:
-#: **두 갈래를 함께 받는다**(2026-08-18 PM).
+#: **워커가 본문을 읽을 수 있는 것만 받는다.** `SUPPORTED_MIME_TYPES` 가
+#: PDF·DOCX 둘뿐이다.
 #:
-#: - PDF·DOCX 는 워커가 본문까지 읽는다. 문장 근거를 낼 수 있다.
-#: - txt·md 는 워커가 못 읽지만(`SUPPORTED_MIME_TYPES` 가 앞의 둘뿐이다) **요약은
-#:   우리 쪽 CPU 가 만든다** — 문서 단위 검색에는 그대로 쓰인다.
+#: ⚠ txt·md 는 여기 남아 있지만 **워커가 못 읽는다.** 2026-08-24 에 요약 단계를
+#: 없애면서 「워커는 못 읽어도 요약은 우리 CPU 가 만든다」는 근거가 사라졌다 —
+#: 지금 이 둘을 올리면 색인이 `FAILED` 로 끝나고 그 사유가 화면에 뜬다.
+#: 목록에서 뺄지는 따로 정할 일이라 동작만 적어 둔다.
 #:
-#: pptx·xlsx 는 안 받는다. 워커도 못 읽고 CPU 추출기도 못 뽑아서, 올려 봐야
-#: 요약조차 안 나온다.
+#: pptx·xlsx 는 안 받는다. 워커가 못 읽는 것은 같다.
 _UPLOAD_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -212,6 +213,20 @@ def _client():
     return boto3.client("s3", region_name=os.environ.get("AWS_S3_REGION_NAME") or None)
 
 
+def content_hash(data: bytes) -> str:
+    """`doc.content_hash` 에 넣는 값. `sha256:<hex>`.
+
+    **저장하기 전에도 물을 수 있어야 한다**(2026-08-24). 변경 감지가 Drive 에서
+    받은 바이트의 해시를 우리 기록과 대조한 뒤에야 저장할지 정하기 때문이다 —
+    같으면 저장도 재색인도 하지 않는다.
+
+    `save()` 도 이 함수를 쓴다. 계산식이 두 곳에 있으면 갈라지는 순간 **모든
+    문서가 「바뀌었다」로 보여** 폴더를 저장할 때마다 전량 재파싱한다.
+    """
+
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
 def save(key: str, data: bytes) -> str:
     """원문을 저장하고 `sha256:<hex>` 형태의 내용 해시를 돌려준다.
 
@@ -223,7 +238,7 @@ def save(key: str, data: bytes) -> str:
         _client().put_object(Bucket=_bucket(), Key=_checked(key), Body=data)
         # 반쪽 쓰기를 걱정하지 않는다 — S3 의 `PutObject` 는 원자적이라 성공하기
         # 전까지 이전 객체가 그대로 보인다(로컬의 `.part` → rename 과 같은 뜻).
-        return f"sha256:{hashlib.sha256(data).hexdigest()}"
+        return content_hash(data)
 
     path = _resolved(key)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,7 +247,7 @@ def save(key: str, data: bytes) -> str:
     temporary = path.with_suffix(path.suffix + ".part")
     temporary.write_bytes(data)
     temporary.replace(path)
-    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+    return content_hash(data)
 
 
 def load(key: str) -> bytes:

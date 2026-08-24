@@ -10,7 +10,13 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from apps.connectors.oauth import OAuthError
-from services.document_intake.service import IntakeResult, _fetch_originals, _index_all
+from backend.services.storage import content_hash
+from services.document_intake.service import (
+    IntakeResult,
+    _fetch_originals,
+    _index_all,
+    _refetch_changed,
+)
 from services.document_pipeline.errors import PipelineConfigurationError, RunPodRequestError
 
 
@@ -126,3 +132,96 @@ class IndexAllTests(SimpleTestCase):
 
         self.assertEqual(result.indexed, [])
         self.assertEqual(result.failed[0]["detail"], "아직 준비 중입니다")
+
+
+def _changed(doc_id, file_name, *, content_hash, drive_modified="2026-08-24T09:00:00Z"):
+    return {
+        "doc_id": doc_id,
+        "src_file_id": f"SRC-{doc_id}",
+        "file_name": file_name,
+        "mime_type": "application/pdf",
+        "src_modified_at": None,
+        "content_hash": content_hash,
+        "drive_modified_at": drive_modified,
+    }
+
+
+@patch("services.document_intake.service.save_document")
+@patch("services.document_intake.service.download_drive_file")
+@patch("services.document_intake.service.DocumentRepository")
+class RefetchChangedTests(SimpleTestCase):
+    """Drive 에서 고쳐진 문서를 다시 받는다(2026-08-24).
+
+    없으면 기획서를 개정해도 우리는 영원히 등록 시점의 판으로 답한다.
+
+    **`modifiedTime` 만으로 판단하지 않는다.** 이름 변경·공유 설정 변경·이동에도
+    그 값은 오른다 — 그대로 믿고 재파싱하면 내용이 그대로인 문서로 GPU 를 태운다.
+    """
+
+    def test_내용이_바뀌었으면_다시_받아_저장한다(self, documents, download, save):
+        documents.list_changed_on_drive.return_value = [
+            _changed("DC001", "기획서.pdf", content_hash="sha256:old")
+        ]
+        download.return_value = {"content": b"new bytes", "mime_type": "application/pdf",
+                                 "revision": "REV-2"}
+
+        result = IntakeResult()
+        _refetch_changed(
+            account_id="UA001", team_id="TM001",
+            live_modified={"SRC-DC001": "2026-08-24T09:00:00Z"}, result=result,
+        )
+
+        save.assert_called_once()
+        self.assertEqual(result.refreshed, ["기획서.pdf"])
+        stored = documents.mark_stored.call_args.kwargs
+        self.assertEqual(stored["revision"], "REV-2", "새 revision 이 들어가야 옛 청크가 빠진다")
+        self.assertEqual(stored["src_modified_at"], "2026-08-24T09:00:00Z")
+
+    def test_내용이_같으면_저장도_재색인도_안_한다(self, documents, download, save):
+        """`modifiedTime` 만 오른 경우다. 시각만 맞춰 두지 않으면 다음 스캔이
+        같은 문서를 또 내려받는다."""
+
+        same = content_hash(b"same bytes")
+        documents.list_changed_on_drive.return_value = [
+            _changed("DC001", "기획서.pdf", content_hash=same)
+        ]
+        download.return_value = {"content": b"same bytes", "mime_type": "application/pdf",
+                                 "revision": "REV-1"}
+
+        result = IntakeResult()
+        _refetch_changed(
+            account_id="UA001", team_id="TM001",
+            live_modified={"SRC-DC001": "2026-08-24T09:00:00Z"}, result=result,
+        )
+
+        save.assert_not_called()
+        documents.mark_stored.assert_not_called()
+        documents.mark_unchanged.assert_called_once()
+        self.assertEqual(result.refreshed, [], "내용이 그대로면 갱신으로 세지 않는다")
+
+    def test_자격증명_오류면_남은_문서를_더_받으려_하지_않는다(self, documents, download, save):
+        documents.list_changed_on_drive.return_value = [
+            _changed("DC001", "a.pdf", content_hash="sha256:old"),
+            _changed("DC002", "b.pdf", content_hash="sha256:old"),
+        ]
+        download.side_effect = OAuthError("Google Drive 인증이 만료되었습니다.")
+
+        result = IntakeResult()
+        _refetch_changed(
+            account_id="UA001", team_id="TM001",
+            live_modified={"SRC-DC001": "x", "SRC-DC002": "x"}, result=result,
+        )
+
+        self.assertEqual(download.call_count, 1)
+        self.assertEqual(len(result.failed), 2)
+
+    def test_바뀐_문서가_없으면_아무것도_안_받는다(self, documents, download, save):
+        documents.list_changed_on_drive.return_value = []
+
+        result = IntakeResult()
+        _refetch_changed(
+            account_id="UA001", team_id="TM001", live_modified={"SRC-DC001": "x"}, result=result,
+        )
+
+        download.assert_not_called()
+        self.assertEqual(result.refreshed, [])

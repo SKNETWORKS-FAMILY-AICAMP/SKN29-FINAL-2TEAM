@@ -868,6 +868,60 @@ class DocumentRepository:
                 ]
 
     @staticmethod
+    def list_changed_on_drive(
+        *, account_id: str, live_modified: dict[str, str | None]
+    ) -> list[dict[str, Any]]:
+        """Drive 의 수정 시각이 우리 기록보다 최신인 등록 문서.
+
+        `live_modified` 는 호출자가 방금 훑어 얻은 `{파일 id: modifiedTime}` 이다.
+        스캔은 어차피 돌고 이 값도 이미 딸려 오므로 **Drive 호출이 늘지 않는다.**
+
+        **이것만으로 「바뀌었다」고 단정하지 않는다.** `modifiedTime` 은 내용이
+        그대로여도 갱신된다 — 이름을 바꾸거나, 공유 설정을 건드리거나, 폴더를
+        옮겨도 오른다. 그대로 믿고 재파싱하면 GPU 를 헛쓴다. 호출자가 여기서
+        받은 후보만 내려받아 `content_hash` 를 대조하고, 같으면 시각만 갱신한다.
+
+        비교를 SQL 에서 한다. `modifiedTime` 은 ISO 문자열이고 `src_modified_at`
+        은 `timestamptz` 라, 파이썬에서 맞추면 시간대·정밀도에서 어긋나기 쉽다.
+        `unnest` 로 넘겨 Postgres 가 같은 타입으로 비교하게 둔다.
+
+        `src_modified_at` 이 비어 있으면 **바뀐 것으로 친다.** 모르는 것을
+        「안 바뀌었다」로 두면 영영 안 본다 — 내려받아 해시를 보면 결론이 난다.
+
+        `storage_key` 가 있는 것만 본다. 아직 안 받은 문서는 `_fetch_originals`
+        가 어차피 처음부터 받는다.
+        """
+
+        if not live_modified:
+            return []
+
+        file_ids = list(live_modified)
+        modified = [live_modified[file_id] for file_id in file_ids]
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT d.doc_id, d.src_file_id, d.file_name, d.mime_type,
+                           d.src_modified_at, d.content_hash,
+                           live.modified_at AS drive_modified_at
+                    FROM doc AS d
+                    JOIN unnest(%s::text[], %s::timestamptz[]) AS live(file_id, modified_at)
+                      ON live.file_id = d.src_file_id
+                    WHERE d.team_id = %s AND d.source_type = %s
+                      AND d.deleted = false AND d.access_revoked = false
+                      AND d.storage_key IS NOT NULL
+                      AND (d.src_modified_at IS NULL OR live.modified_at > d.src_modified_at)
+                    ORDER BY d.doc_id
+                    """,
+                    (file_ids, modified, team_id, DocumentRepository.DRIVE),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def mark_removed_from_drive(*, account_id: str, doc_ids: list[str]) -> dict[str, int]:
         """고른 문서를 내리고 **파싱 산출물을 지운다.**
 
@@ -1067,12 +1121,31 @@ class DocumentRepository:
         return rows[:limit], len(rows) > limit
 
     @staticmethod
-    def mark_stored(*, doc_id: str, storage_key: str, content_hash: str, revision: str | None) -> None:
+    def mark_stored(
+        *,
+        doc_id: str,
+        storage_key: str,
+        content_hash: str,
+        revision: str | None,
+        src_modified_at: str | None = None,
+    ) -> None:
         """원문을 저장소에 넣은 결과를 기록한다.
 
         파일을 먼저 쓰고 이 기록을 나중에 한다. 순서가 반대면 "DB에는 있다는데
         파일이 없는" 상태가 생기고, 그건 파싱이 읽다가 죽는다. 반대로 파일만
         남는 것은 다음 다운로드가 덮어쓰므로 해가 없다.
+
+        **색인 상태를 지운다**(2026-08-24). 원문이 새로 들어왔다는 것은 지난
+        색인의 판정이 그 원문에 대한 것이 아니라는 뜻이다. 특히 `FAILED` 를
+        남겨 두면 `list_pending_index` 가 그 문서를 영영 건너뛴다 — 고쳐서 다시
+        올린 파일이 그대로 묻힌다.
+
+        `revision` 이 바뀌면 옛 청크는 `b.revision = d.cur_revision` 에 걸려
+        자동으로 검색에서 빠지고, 같은 이유로 `list_pending_index` 에 다시
+        잡힌다. **재색인을 따로 시킬 필요가 없다** — 이 한 줄이 그 신호다.
+
+        `src_modified_at` 은 Drive 에서 다시 받았을 때만 준다. 등록 시점에
+        박아 둔 값이 그대로면 다음 스캔이 같은 문서를 또 「바뀌었다」로 본다.
         """
 
         with database_connection() as connection:
@@ -1082,10 +1155,39 @@ class DocumentRepository:
                     UPDATE doc
                        SET storage_key = %s,
                            content_hash = %s,
-                           cur_revision = %s
+                           cur_revision = %s,
+                           src_modified_at = COALESCE(%s::timestamptz, src_modified_at),
+                           index_status = NULL,
+                           index_detail = NULL
                      WHERE doc_id = %s
                     """,
-                    (storage_key, content_hash, revision, doc_id),
+                    (storage_key, content_hash, revision, src_modified_at, doc_id),
+                )
+
+    @staticmethod
+    def mark_unchanged(*, doc_id: str, src_modified_at: str | None) -> None:
+        """내용은 그대로인데 Drive 의 수정 시각만 오른 문서.
+
+        이름을 바꾸거나 공유 설정을 건드려도 `modifiedTime` 은 오른다. 내려받아
+        `content_hash` 를 대조해 같았다는 뜻이므로 **아무것도 다시 하지 않는다.**
+
+        그래도 시각은 맞춰 둔다. 안 그러면 다음 스캔이 같은 문서를 또 후보로
+        올리고, 매번 내려받아 해시를 대조하게 된다.
+
+        `mark_stored` 와 달리 **색인 상태를 건드리지 않는다.** 원문이 그대로면
+        지난 판정도 그대로 유효하다 — 여기서 지우면 못 읽는 형식을 스캔마다
+        다시 시도하게 된다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE doc
+                       SET src_modified_at = COALESCE(%s::timestamptz, src_modified_at)
+                     WHERE doc_id = %s
+                    """,
+                    (src_modified_at, doc_id),
                 )
 
 
