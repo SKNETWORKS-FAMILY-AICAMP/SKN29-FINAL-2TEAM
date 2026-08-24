@@ -10,10 +10,10 @@ import { opsRequest } from './opsClient';
 export type GuardrailKind = 'OPENAI_GUARDRAILS' | 'BEDROCK_GUARDRAILS' | 'AZURE_CONTENT_SAFETY';
 export type GuardrailProviderStatus = 'UNCHECKED' | 'CONNECTED' | 'ERROR';
 /**
- * 검사기가 응답하지 않을 때 **그 팀이** 무엇을 할지.
+ * 가드레일에 **닿지 못했을 때** 그 팀이 무엇을 할지(화면: 「연결 실패 시」).
  *
- * `OPEN` 그대로 보낸다 — 검사기 장애가 채팅 장애가 되지 않는다.
- * `CLOSED` 보내지 않는다 — 「검사 못 했는데 그냥 보냈다」가 계약 위반이 되는 곳.
+ * `OPEN` 대화 계속 — 가드레일 장애가 채팅 장애가 되지 않는다.
+ * `CLOSED` 대화 차단 — 「검사 못 했는데 그냥 보냈다」가 계약 위반이 되는 곳.
  *
  * 우리가 임시 검사를 대신 돌리지는 않는다 — 고객이 동의한 적 없는 기준으로
  * 막는 것이고, 「왜 막혔나」에 답할 수 없다.

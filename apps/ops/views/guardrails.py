@@ -77,7 +77,7 @@ class GuardrailProviderListCreateView(AdminView):
                 registered_by=request.user.account_id,
                 status=_verified_status(kind=data["kind"], config=config, credential=credential),
             )
-            # 남의 팀 대화가 외부 검사기를 거치게 만드는 일이라 반드시 남긴다.
+            # 남의 팀 대화가 외부 가드레일을 거치게 만드는 일이라 반드시 남긴다.
             # **자격증명은 남기지 않는다** — 감사 로그는 사람이 읽는 표다.
             log_audit(
                 actor_account_id=request.user.account_id,
@@ -241,10 +241,12 @@ class GuardrailProviderTestView(AdminView):
 
 
 class TeamGuardrailOnFailureView(AdminView):
-    """검사기를 **못 불렀을 때** 이 팀의 대화를 어떻게 할지 정한다.
+    """가드레일에 **닿지 못했을 때** 이 팀의 대화를 어떻게 할지 정한다.
 
-    `OPEN` 그대로 보낸다 — 검사기 장애가 채팅 장애가 되지 않는다.
-    `CLOSED` 보내지 않는다 — 「검사 못 했는데 그냥 보냈다」가 계약 위반이 되는 곳.
+    화면(팀 상세)에서는 「연결 실패 시」다.
+
+    `OPEN` 대화 계속 — 가드레일 장애가 채팅 장애가 되지 않는다.
+    `CLOSED` 대화 차단 — 「검사 못 했는데 그냥 보냈다」가 계약 위반이 되는 곳.
 
     **등록물이 아니라 팀에 붙는다**(2026-08-24 PM 결정). 처음엔 등록 한 건에
     뒀는데, 공급자를 갈아탈 때(키 교체·비교·시연) 정책이 조용히 함께 바뀌었다.

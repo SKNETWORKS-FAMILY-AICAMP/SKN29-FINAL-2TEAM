@@ -2920,7 +2920,8 @@ class GuardrailProviderRepository:
 
     KINDS = ("OPENAI_GUARDRAILS", "BEDROCK_GUARDRAILS", "AZURE_CONTENT_SAFETY")
     STATUSES = ("UNCHECKED", "CONNECTED", "ERROR")
-    #: 검사기가 응답하지 않을 때 **그 팀이** 무엇을 할지. 우리가 일괄로 정하지
+    #: 가드레일에 닿지 못했을 때 **그 팀이** 무엇을 할지(화면: 「연결 실패 시」 →
+    #: 「대화 계속」·「대화 차단」). 우리가 일괄로 정하지
     #: 않는다 — 사내 도구면 통과가 맞고, 규제 고객에게는 「검사 못 했는데 그냥
     #: 보냈다」가 계약 위반이 된다.
     ON_FAILURE = ("OPEN", "CLOSED")
@@ -3161,7 +3162,7 @@ class GuardrailProviderRepository:
 
     @staticmethod
     def on_failure_for_team(team_id: str) -> str:
-        """검사기를 못 불렀을 때 이 팀이 무엇을 할지. 등록이 없어도 답이 있다."""
+        """가드레일에 닿지 못했을 때 이 팀이 무엇을 할지. 등록이 없어도 답이 있다."""
 
         with database_connection() as connection:
             with connection.cursor() as cursor:

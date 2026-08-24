@@ -207,18 +207,22 @@ export function TeamUsageSections({
         {/* **팀의 정책이지 등록물의 속성이 아니다**(2026-08-24 PM 결정). 등록
             화면에 뒀더니 공급자를 갈아탈 때(키 교체·비교·시연) 조용히 함께
             바뀌었다. 표 위에 두는 이유는 아래 표의 어느 줄을 쓰든 같은 값이기
-            때문이다. */}
+            때문이다.
+
+            문구는 **PM 이 고른 것**이다(2026-08-24). 처음에 「검사기가 응답하지
+            않을 때 / 그대로 보냄 / 막음」으로 지어 냈다가 물렸다 — 「검사기」는
+            제품에 없는 말이고, 화면에 이미 있는 상태 문구는 「연결 실패」다. */}
         <div className={styles.formGrid}>
           <div className={styles.fieldGroup}>
-            <label htmlFor="team-guardrail-on-failure">검사기가 응답하지 않을 때</label>
+            <label htmlFor="team-guardrail-on-failure">연결 실패 시</label>
             <select
               id="team-guardrail-on-failure"
               value={onFailure}
               disabled={busy}
               onChange={(event) => chooseOnFailure(event.target.value as GuardrailOnFailure)}
             >
-              <option value="OPEN">그대로 보냄</option>
-              <option value="CLOSED">막음</option>
+              <option value="OPEN">대화 계속</option>
+              <option value="CLOSED">대화 차단</option>
             </select>
           </div>
         </div>

@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 #: 가드레일 검사를 준비 작업과 겹쳐 돌리는 자리. 외부 호출이라 1~3초가 걸리는데
 #: (2026-08-20 실측) 그동안 이력 조회·정의 해석이 놀고 있을 이유가 없다.
 #:
-#: 작게 잡는다 — 이 풀이 하는 일은 요청당 하나뿐이고, 크게 잡으면 외부 검사기가
+#: 작게 잡는다 — 이 풀이 하는 일은 요청당 하나뿐이고, 크게 잡으면 외부 가드레일이
 #: 느려질 때 우리 워커보다 많은 연결이 열린다.
 _GUARDRAIL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="guardrail")
 #: 검사를 기다리는 **상한**(초). 공급자마다 자기 timeout 이 있지만, 여기서도
@@ -281,7 +281,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             except TimeoutError:
                 # 못 부른 경우와 **같은 판단**을 한다 — 그 팀이 정한 대로다
                 # (`on_check_timeout`). 여기서 통과로 고정하면 「막음」을 켠 팀에
-                # 구멍이 생긴다: 검사기가 죽는 대신 응답을 안 하면 그냥 통과한다.
+                # 구멍이 생긴다: 가드레일이 죽는 대신 응답을 안 하면 그냥 통과한다.
                 logger.warning("가드레일 검사가 %s초 안에 안 끝났습니다", GUARDRAIL_WAIT_SECONDS)
                 guard = on_check_timeout(
                     team_id=session["team_id"],

@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 #: 무엇에 걸렸는지 **종류만** 말한다. 점수·임계값·내부 규칙명까지 알려주면
 #: 우회 힌트가 된다 — 사용자가 다시 쓸 수 있을 만큼만 알린다.
 BLOCKED_MESSAGE = "등록된 가드레일이 이 발화를 막았습니다."
-#: 검사기를 못 불렀는데 그 팀이 「막음」을 골랐을 때. **왜 막혔는지 사람 말로
-#: 말한다** — 사용자가 자기 발화를 고쳐도 소용없는 상황이라, 표현을 바꾸라고
-#: 하면 안 된다.
-UNAVAILABLE_MESSAGE = "가드레일 검사를 할 수 없습니다. 잠시 뒤 다시 보내 주세요."
+#: 가드레일에 닿지 못했는데 그 팀이 「대화 차단」을 골랐을 때. **왜 막혔는지
+#: 사람 말로 말한다** — 사용자가 자기 발화를 고쳐도 소용없는 상황이라, 표현을
+#: 바꾸라고 하면 안 된다. 화면이 쓰는 말(「연결 실패」)에 맞춘다.
+UNAVAILABLE_MESSAGE = "가드레일에 연결하지 못했습니다. 잠시 뒤 다시 보내 주세요."
 _REASON_LABELS = {
     "Moderation": "유해 표현으로 판단됐습니다",
     "Jailbreak": "지시를 바꾸려는 시도로 판단됐습니다",
@@ -119,7 +119,7 @@ def on_check_timeout(
     """검사를 **기다리다 포기했다.** 부르는 쪽(`apps/chat`)이 상한을 넘겼을 때.
 
     못 부른 것과 같은 판단을 한다 — 그 팀이 「막음」을 골랐으면 막는다. 여기서
-    통과로 고정해 버리면 「막음」을 켠 팀에 구멍이 생긴다: 검사기가 죽는 대신
+    통과로 고정해 버리면 「대화 차단」을 켠 팀에 구멍이 생긴다: 가드레일이 죽는 대신
     **응답을 안 하면** 그냥 통과한다.
     """
 
@@ -128,7 +128,7 @@ def on_check_timeout(
         return InputGuardOutcome()
     return _unavailable(
         provider,
-        ProviderError("검사가 상한 안에 끝나지 않았습니다."),
+        ProviderError("제한 시간 안에 응답이 없었습니다."),
         account_id=account_id,
         team_id=team_id,
         session_id=session_id,
@@ -143,7 +143,7 @@ def _unavailable(
     team_id: str,
     session_id: str | None,
 ) -> InputGuardOutcome:
-    """검사기를 못 불렀다. 기록을 남기고, 그 팀이 정한 대로 한다."""
+    """가드레일에 닿지 못했다. 기록을 남기고, 그 팀이 정한 대로 한다."""
 
     closed = provider.get("on_failure") == "CLOSED"
     _record(

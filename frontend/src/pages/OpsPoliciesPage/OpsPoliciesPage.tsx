@@ -186,8 +186,9 @@ function guardrailSkipReason(event: GuardrailEvent): string | null {
   const detail = event.detail ?? {};
   const reason = typeof detail.reason === 'string' ? detail.reason : null;
   const blocked = detail.blocked === true;
-  // 「막았는지」를 함께 말한다 — 같은 SKIPPED 라도 그 팀 설정에 따라 결과가 정반대다.
-  return `${reason ?? '이유를 알 수 없습니다.'} ${blocked ? '· 보내지 않음' : '· 그대로 보냄'}`;
+  // 어느 쪽이었는지 함께 말한다 — 같은 SKIPPED 라도 그 팀 설정에 따라 결과가
+  // 정반대다. 팀 상세의 선택지와 **같은 말**을 쓴다(「연결 실패 시」).
+  return `${reason ?? '이유를 알 수 없습니다.'} ${blocked ? '· 대화 차단' : '· 대화 계속'}`;
 }
 
 /** 발동 한 줄. `detail`에 원문이 없으므로 그대로 붙여 읽는다. */
