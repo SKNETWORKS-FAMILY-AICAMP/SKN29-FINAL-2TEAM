@@ -361,3 +361,73 @@ class WhenTheCheckerIsDownTests(SimpleTestCase):
 
         self.assertFalse(on_check_timeout(team_id="TE001").blocked)
         events.record.assert_not_called()
+
+
+class AzureCustomerSettingsTests(SimpleTestCase):
+    """**Azure 만 판정을 안 준다.** `text:analyze` 는 카테고리별 심각도만
+    돌려주고 「막을지」는 부르는 쪽이 정한다(OpenAI Guardrails·Bedrock 은 저쪽이
+    판정한다). 그러니 기준값은 어딘가에 있어야 하는데, 우리 코드에 박아 두면
+    **우리가** 그 고객의 차단 기준을 정하는 셈이다 — 화면에서 받아 쓴다.
+    """
+
+    def _payload(self, severity):
+        return {
+            "blocklistsMatch": [],
+            "categoriesAnalysis": [{"category": "Violence", "severity": severity}],
+        }
+
+    @patch("httpx.post")
+    def test_화면에서_받은_기준값을_쓴다(self, post):
+        """기본값(4)이면 통과할 심각도 2 를, 고객이 2 로 낮추면 막아야 한다."""
+
+        post.return_value.status_code = 200
+        post.return_value.json.return_value = self._payload(2)
+
+        verdict = azure.check(
+            text="x",
+            # 화면은 select 값이라 문자열로 온다.
+            config={"endpoint": "https://a.b", "severity_threshold": "2"},
+            credential={"api_key": "k"},
+        )
+
+        self.assertTrue(verdict.blocked)
+        self.assertEqual(verdict.detail["threshold"], 2)
+
+    @patch("httpx.post")
+    def test_안_고르면_기본값을_쓴다(self, post):
+        """화면의 「고르지 않음」은 빈 문자열로 온다 — 0 으로 읽으면 다 막힌다."""
+
+        post.return_value.status_code = 200
+        post.return_value.json.return_value = self._payload(2)
+
+        verdict = azure.check(
+            text="x",
+            config={"endpoint": "https://a.b", "severity_threshold": ""},
+            credential={"api_key": "k"},
+        )
+
+        self.assertFalse(verdict.blocked)
+
+    @patch("httpx.post")
+    def test_차단_목록_이름을_그대로_넘긴다(self, post):
+        """**목록 자체는 Azure 에 있다** — 우리는 이름만 들고 간다."""
+
+        post.return_value.status_code = 200
+        post.return_value.json.return_value = self._payload(0)
+
+        azure.check(
+            text="x",
+            config={"endpoint": "https://a.b", "blocklists": ["ours", "theirs"]},
+            credential={"api_key": "k"},
+        )
+
+        self.assertEqual(post.call_args[1]["json"]["blocklistNames"], ["ours", "theirs"])
+
+    @patch("httpx.post")
+    def test_목록이_없으면_아예_안_보낸다(self, post):
+        post.return_value.status_code = 200
+        post.return_value.json.return_value = self._payload(0)
+
+        azure.check(text="x", config={"endpoint": "https://a.b"}, credential={"api_key": "k"})
+
+        self.assertNotIn("blocklistNames", post.call_args[1]["json"])

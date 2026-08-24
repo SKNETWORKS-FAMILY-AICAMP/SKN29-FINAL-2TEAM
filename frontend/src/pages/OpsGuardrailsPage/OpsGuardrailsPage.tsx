@@ -57,12 +57,38 @@ interface FieldSpec {
   multiline?: boolean;
   /** 비밀값은 `config` 가 아니라 `credential` 로 간다. */
   secret?: boolean;
+  /** 고를 값이 정해져 있으면 직접 적게 하지 않는다. */
+  choices?: { value: string; label: string }[];
+  /** 쉼표로 여러 개 받아 배열로 보낸다. */
+  list?: boolean;
 }
 
 const FIELDS: Record<GuardrailKind, FieldSpec[]> = {
   AZURE_CONTENT_SAFETY: [
     { key: 'endpoint', label: '엔드포인트 (https)', placeholder: 'https://example.cognitiveservices.azure.com' },
     { key: 'api_key', label: '키', secret: true },
+    // **Azure 는 판정을 안 준다.** `text:analyze` 는 카테고리별 심각도(0·2·4·6)만
+    // 돌려주고 「막을지」는 부르는 쪽이 정한다 — Azure 문서도 포털에서 필터를
+    // 맞춰 본 뒤 코드로 뽑아 각자 배포하라고 안내한다. 그러니 이 값은 어딘가에
+    // 있어야 하는데, 우리 코드에 박아 두면 **우리가** 그 고객의 차단 기준을
+    // 정하는 셈이 된다(2026-08-24 PM 지적). 고객이 여기서 고르게 한다.
+    {
+      key: 'severity_threshold',
+      label: '이 심각도부터 차단',
+      choices: [
+        { value: '2', label: '낮음 (2)' },
+        { value: '4', label: '보통 (4)' },
+        { value: '6', label: '높음 (6)' },
+      ],
+    },
+    // 반대로 **차단 목록은 Azure 쪽에 만든다** — 우리는 이름만 받아 넘기고
+    // 목록 자체는 들지 않는다.
+    {
+      key: 'blocklists',
+      label: '차단 목록 이름 (Azure 에 만든 것, 쉼표로 구분)',
+      placeholder: 'my-blocklist, another-list',
+      list: true,
+    },
   ],
   BEDROCK_GUARDRAILS: [
     { key: 'guardrail_id', label: 'Guardrail ID', placeholder: 'abcd1234efgh' },
@@ -218,7 +244,9 @@ export default function OpsGuardrailsPage() {
     for (const field of FIELDS[row.kind]) {
       if (field.secret) continue;
       const value = row.config?.[field.key];
-      next[field.key] = value == null ? '' : String(value);
+      if (value == null) next[field.key] = '';
+      else if (Array.isArray(value)) next[field.key] = value.join(', ');
+      else next[field.key] = String(value);
     }
     setValues(next);
     setProbed(null);
@@ -232,7 +260,9 @@ export default function OpsGuardrailsPage() {
       const raw = (values[field.key] ?? '').trim();
       if (!raw) continue;
       if (field.secret) credential[field.key] = raw;
-      else config[field.key] = raw;
+      else if (field.list) {
+        config[field.key] = raw.split(',').map((item) => item.trim()).filter(Boolean);
+      } else config[field.key] = raw;
     }
     return { config, credential };
   }
@@ -482,6 +512,24 @@ export default function OpsGuardrailsPage() {
                     </Button>
                   )}
                 </>
+              ) : field.choices ? (
+                <select
+                  id={`guardrail-${field.key}`}
+                  value={values[field.key] ?? ''}
+                  onChange={(event) => {
+                    setProbed(null);
+                    setValues({ ...values, [field.key]: event.target.value });
+                  }}
+                >
+                  {/* 안 고르면 서버 기본값(보통)을 쓴다 — 빈 값을 숨기면 무엇이
+                      적용되는지 모른 채 저장하게 된다. */}
+                  <option value="">고르지 않음 (보통)</option>
+                  {field.choices.map((choice) => (
+                    <option key={choice.value} value={choice.value}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
               ) : (
                 <input
                   id={`guardrail-${field.key}`}
