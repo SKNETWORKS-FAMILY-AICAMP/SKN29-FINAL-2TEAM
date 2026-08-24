@@ -20,6 +20,22 @@ export type GuardrailProviderStatus = 'UNCHECKED' | 'CONNECTED' | 'ERROR';
  */
 export type GuardrailOnFailure = 'OPEN' | 'CLOSED';
 
+/**
+ * **팀에 붙는다, 등록물이 아니라.** 처음엔 등록 한 건에 뒀는데 공급자를
+ * 갈아탈 때(키 교체·비교·시연) 정책이 조용히 함께 바뀌었다 — 갈아타는 것은
+ * 우리가 의도한 사용법이라 더 나쁘다(2026-08-24 PM 결정).
+ */
+export function setTeamGuardrailOnFailure(
+  token: string,
+  teamId: string,
+  onFailure: GuardrailOnFailure,
+) {
+  return opsRequest<{ team_id: string; on_failure: GuardrailOnFailure }>(
+    `/ops/guardrails/teams/${teamId}/on-failure/`,
+    { method: 'PUT', token, body: { on_failure: onFailure } },
+  );
+}
+
 export interface OpsGuardrailProvider {
   provider_id: string;
   team_id: string;
@@ -32,7 +48,6 @@ export interface OpsGuardrailProvider {
   status: GuardrailProviderStatus;
   /** 그 팀이 **실제로 쓰는** 하나. 나머지는 등록만 돼 있다. */
   is_active: boolean;
-  on_failure: GuardrailOnFailure;
   last_checked_at: string | null;
   /** **키 자체는 오지 않는다.** 있는지 여부만. */
   has_credential: boolean;
@@ -52,7 +67,6 @@ export function registerOpsGuardrail(
     kind: GuardrailKind;
     config?: Record<string, unknown>;
     credential?: Record<string, unknown> | null;
-    on_failure?: GuardrailOnFailure;
   },
 ) {
   return opsRequest<OpsGuardrailProvider>('/ops/guardrails/', { method: 'POST', token, body });
@@ -75,7 +89,6 @@ export function updateOpsGuardrail(
     config?: Record<string, unknown>;
     credential?: Record<string, unknown> | null;
     replace_credential?: boolean;
-    on_failure?: GuardrailOnFailure;
   },
 ) {
   return opsRequest<OpsGuardrailProvider>(`/ops/guardrails/${providerId}/`, {

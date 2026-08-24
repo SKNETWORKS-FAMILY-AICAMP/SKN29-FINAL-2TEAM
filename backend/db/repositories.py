@@ -2676,6 +2676,9 @@ class OpsTeamRepository:
                         t.owner_account_id,
                         t.src_org_id,
                         t.created_at,
+                        -- 가드레일을 못 불렀을 때 이 팀의 대화를 어떻게 하나.
+                        -- 팀 상세가 이 값을 보여주고 고치게 한다.
+                        t.guardrail_on_failure,
                         owner.email AS owner_email,
                         owner.display_name AS owner_display_name,
                         (SELECT count(*) FROM team_member tm WHERE tm.team_id = t.team_id)

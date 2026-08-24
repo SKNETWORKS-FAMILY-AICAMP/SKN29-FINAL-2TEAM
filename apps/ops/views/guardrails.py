@@ -76,7 +76,6 @@ class GuardrailProviderListCreateView(AdminView):
                 credential=credential,
                 registered_by=request.user.account_id,
                 status=_verified_status(kind=data["kind"], config=config, credential=credential),
-                on_failure=data["on_failure"],
             )
             # 남의 팀 대화가 외부 검사기를 거치게 만드는 일이라 반드시 남긴다.
             # **자격증명은 남기지 않는다** — 감사 로그는 사람이 읽는 표다.
@@ -152,7 +151,6 @@ class GuardrailProviderDetailView(AdminView):
                 status=_verified_status(
                     kind=data["kind"], config=config, credential=probe_credential
                 ),
-                on_failure=data["on_failure"],
             )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)
@@ -240,6 +238,44 @@ class GuardrailProviderTestView(AdminView):
             payload={"provider_id": provider_id, "status": updated["status"]},
         )
         return Response({**ops_guardrail_row_response(updated), "detail": None if ok else detail})
+
+
+class TeamGuardrailOnFailureView(AdminView):
+    """검사기를 **못 불렀을 때** 이 팀의 대화를 어떻게 할지 정한다.
+
+    `OPEN` 그대로 보낸다 — 검사기 장애가 채팅 장애가 되지 않는다.
+    `CLOSED` 보내지 않는다 — 「검사 못 했는데 그냥 보냈다」가 계약 위반이 되는 곳.
+
+    **등록물이 아니라 팀에 붙는다**(2026-08-24 PM 결정). 처음엔 등록 한 건에
+    뒀는데, 공급자를 갈아탈 때(키 교체·비교·시연) 정책이 조용히 함께 바뀌었다.
+
+    우리가 임시 검사를 대신 돌리지는 않는다 — 고객이 동의한 적 없는 기준으로
+    막는 것이고, 문의가 오면 「왜 막혔나」에 답할 수 없다.
+    """
+
+    def put(self, request, team_id):
+        on_failure = request.data.get("on_failure")
+        if on_failure not in GuardrailProviderRepository.ON_FAILURE:
+            return Response(
+                {"detail": "고를 수 없는 값입니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            row = GuardrailProviderRepository.set_on_failure(
+                team_id=team_id, on_failure=on_failure
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return to_response(exc)
+
+        # 그 팀 대화가 막히기 시작하거나 막히지 않게 되는 일이라 남긴다.
+        log_audit(
+            actor_account_id=request.user.account_id,
+            action="OPS_GUARDRAIL_ON_FAILURE",
+            target_type="TEAM",
+            target_id=team_id,
+            payload={"on_failure": on_failure},
+        )
+        return Response(row)
 
 
 class TeamActiveGuardrailView(AdminView):

@@ -76,6 +76,11 @@ CREATE TABLE team (
     capacity_wk_hours NUMERIC(5,2),        -- 팀 공통 주 근무시간. NULL 이면 HR 의 사람별 값
     overload_pct      INT,                     -- 이 비율을 넘으면 과부하로 본다. NULL 이면 100
     workload_weeks    INT,                     -- 부하 조회 기본 기간(주). NULL 이면 4
+    -- 등록된 외부 가드레일을 **못 불렀을 때** 이 팀의 대화를 어떻게 하나
+    -- (2026-08-24). 사내 도구면 그대로 보내는 게 맞지만, 규제 고객에게는
+    -- 「검사 못 했는데 그냥 보냈다」가 계약 위반이 된다. 등록물이 아니라 팀에
+    -- 붙인다 — 등록에 붙이면 공급자를 갈아탈 때 정책이 조용히 바뀐다.
+    guardrail_on_failure VARCHAR(10) NOT NULL DEFAULT 'OPEN',  -- OPEN / CLOSED
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -1048,10 +1053,6 @@ CREATE TABLE guardrail_provider (
     -- 여러 개 등록해 두고 **그중 하나만** 쓴다(2026-08-20). 합치는 게 아니라
     -- 고르는 것이라 「어느 것이 먼저 도는가」를 정할 필요가 없다.
     is_active        BOOLEAN      NOT NULL DEFAULT FALSE,
-    -- 검사기가 응답하지 않을 때 **그 팀이** 무엇을 할지(2026-08-20). 우리가
-    -- 일괄로 정하지 않는다 — 사내 도구면 통과가 맞고, 규제 고객에게는 「검사
-    -- 못 했는데 그냥 보냈다」가 계약 위반이 된다.
-    on_failure       VARCHAR(10)  NOT NULL DEFAULT 'OPEN',  -- OPEN / CLOSED
     last_checked_at  TIMESTAMPTZ,
     created_by       VARCHAR(5),               -- user_account.account_id(FK 없음)
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()

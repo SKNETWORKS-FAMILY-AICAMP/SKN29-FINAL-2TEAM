@@ -13,6 +13,8 @@ export interface OpsTeam {
   unregistered_count: number;
   locked_count: number;
   pending_invite_count: number;
+  /** 가드레일을 **못 불렀을 때** 이 팀의 대화를 어떻게 하나. */
+  guardrail_on_failure: 'OPEN' | 'CLOSED';
   created_at: string;
 }
 

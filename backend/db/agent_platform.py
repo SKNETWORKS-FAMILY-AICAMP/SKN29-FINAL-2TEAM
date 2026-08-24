@@ -2934,7 +2934,7 @@ class GuardrailProviderRepository:
                 cursor.execute(
                     """
                     SELECT g.provider_id, g.team_id, t.name AS team_name, g.name, g.kind,
-                           g.config, g.status, g.is_active, g.on_failure, g.last_checked_at,
+                           g.config, g.status, g.is_active, g.last_checked_at,
                            g.created_by, g.created_at,
                            (g.credential_enc IS NOT NULL) AS has_credential
                     FROM guardrail_provider AS g
@@ -2956,10 +2956,14 @@ class GuardrailProviderRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT provider_id, team_id, name, kind, config, status, on_failure,
-                           last_checked_at
-                    FROM guardrail_provider
-                    WHERE team_id = %s AND is_active
+                    SELECT g.provider_id, g.team_id, g.name, g.kind, g.config, g.status,
+                           g.last_checked_at,
+                           -- **팀의 정책이지 등록물의 속성이 아니다**(2026-08-24).
+                           -- 등록에 붙여 뒀더니 공급자를 갈아탈 때 조용히 바뀌었다.
+                           COALESCE(t.guardrail_on_failure, 'OPEN') AS on_failure
+                    FROM guardrail_provider AS g
+                    LEFT JOIN team AS t ON t.team_id = g.team_id
+                    WHERE g.team_id = %s AND g.is_active
                     """,
                     (team_id,),
                 )
@@ -2996,7 +3000,6 @@ class GuardrailProviderRepository:
         credential: dict[str, Any] | None,
         registered_by: str,
         status: str = "UNCHECKED",
-        on_failure: str = "OPEN",
     ) -> dict[str, Any]:
         """등록한다.
 
@@ -3009,9 +3012,6 @@ class GuardrailProviderRepository:
             raise RepositoryError(f"알 수 없는 가드레일 종류입니다: {kind}")
         if status not in GuardrailProviderRepository.STATUSES:
             raise RepositoryError(f"알 수 없는 상태입니다: {status}")
-        if on_failure not in GuardrailProviderRepository.ON_FAILURE:
-            raise RepositoryError(f"알 수 없는 미응답 처리 방식입니다: {on_failure}")
-
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 # 활성인 것이 아직 없고 이번 등록이 붙는 것이면 바로 활성으로 둔다.
@@ -3030,10 +3030,10 @@ class GuardrailProviderRepository:
                     """
                     INSERT INTO guardrail_provider
                         (provider_id, team_id, name, kind, config, credential_enc,
-                         status, is_active, on_failure, last_checked_at, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                         status, is_active, last_checked_at, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
                             CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END, %s)
-                    RETURNING provider_id, team_id, name, kind, config, status, is_active, on_failure,
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
                               last_checked_at, created_by, created_at
                     """,
                     (
@@ -3045,7 +3045,6 @@ class GuardrailProviderRepository:
                         encrypt_credential(credential) if credential else None,
                         status,
                         activate,
-                        on_failure,
                         status,
                         registered_by,
                     ),
@@ -3064,7 +3063,6 @@ class GuardrailProviderRepository:
         credential: dict[str, Any] | None,
         replace_credential: bool,
         status: str = "UNCHECKED",
-        on_failure: str = "OPEN",
     ) -> dict[str, Any]:
         """고친다.
 
@@ -3080,9 +3078,6 @@ class GuardrailProviderRepository:
 
         if kind not in GuardrailProviderRepository.KINDS:
             raise RepositoryError(f"알 수 없는 가드레일 종류입니다: {kind}")
-        if on_failure not in GuardrailProviderRepository.ON_FAILURE:
-            raise RepositoryError(f"알 수 없는 미응답 처리 방식입니다: {on_failure}")
-
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -3104,10 +3099,10 @@ class GuardrailProviderRepository:
                         """
                         UPDATE guardrail_provider
                         SET name = %s, kind = %s, config = %s, credential_enc = %s,
-                            status = %s, on_failure = %s,
+                            status = %s,
                             last_checked_at = CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END
                         WHERE provider_id = %s
-                        RETURNING provider_id, team_id, name, kind, config, status, is_active, on_failure,
+                        RETURNING provider_id, team_id, name, kind, config, status, is_active,
                                   last_checked_at, created_by, created_at,
                                   (credential_enc IS NOT NULL) AS has_credential
                         """,
@@ -3117,7 +3112,6 @@ class GuardrailProviderRepository:
                             Jsonb(config or {}),
                             encrypt_credential(credential) if credential else None,
                             status,
-                            on_failure,
                             status,
                             provider_id,
                         ),
@@ -3126,17 +3120,17 @@ class GuardrailProviderRepository:
                     cursor.execute(
                         """
                         UPDATE guardrail_provider
-                        SET name = %s, kind = %s, config = %s, on_failure = %s,
+                        SET name = %s, kind = %s, config = %s,
                             status = CASE WHEN %s THEN %s ELSE status END,
                             last_checked_at = CASE WHEN %s THEN
                                 (CASE WHEN %s = 'UNCHECKED' THEN NULL ELSE now() END)
                                 ELSE last_checked_at END
                         WHERE provider_id = %s
-                        RETURNING provider_id, team_id, name, kind, config, status, is_active, on_failure,
+                        RETURNING provider_id, team_id, name, kind, config, status, is_active,
                                   last_checked_at, created_by, created_at,
                                   (credential_enc IS NOT NULL) AS has_credential
                         """,
-                        (name, kind, Jsonb(config or {}), on_failure, changed, status, changed, status, provider_id),
+                        (name, kind, Jsonb(config or {}), changed, status, changed, status, provider_id),
                     )
                 return cursor.fetchone()
 
@@ -3154,7 +3148,7 @@ class GuardrailProviderRepository:
                     UPDATE guardrail_provider
                     SET status = %s, last_checked_at = now()
                     WHERE provider_id = %s
-                    RETURNING provider_id, team_id, name, kind, config, status, is_active, on_failure,
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
                               last_checked_at, created_by, created_at,
                               (credential_enc IS NOT NULL) AS has_credential
                     """,
@@ -3163,6 +3157,44 @@ class GuardrailProviderRepository:
                 row = cursor.fetchone()
                 if row is None:
                     raise RecordNotFound("등록되지 않은 가드레일입니다.")
+                return row
+
+    @staticmethod
+    def on_failure_for_team(team_id: str) -> str:
+        """검사기를 못 불렀을 때 이 팀이 무엇을 할지. 등록이 없어도 답이 있다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT guardrail_on_failure FROM team WHERE team_id = %s",
+                    (team_id,),
+                )
+                row = cursor.fetchone()
+        return (row or {}).get("guardrail_on_failure") or "OPEN"
+
+    @staticmethod
+    def set_on_failure(*, team_id: str, on_failure: str) -> dict[str, Any]:
+        """그 팀의 정책을 바꾼다.
+
+        **등록물이 아니라 팀에 붙인다**(2026-08-24). 등록에 붙여 뒀더니 공급자를
+        갈아탈 때(키 교체·비교·시연) 정책이 조용히 함께 바뀌었다.
+        """
+
+        if on_failure not in GuardrailProviderRepository.ON_FAILURE:
+            raise RepositoryError(f"알 수 없는 미응답 처리 방식입니다: {on_failure}")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE team SET guardrail_on_failure = %s WHERE team_id = %s
+                    RETURNING team_id, guardrail_on_failure AS on_failure
+                    """,
+                    (on_failure, team_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RecordNotFound("없는 팀입니다.")
                 return row
 
     @staticmethod
@@ -3208,7 +3240,7 @@ class GuardrailProviderRepository:
                 cursor.execute(
                     """
                     UPDATE guardrail_provider SET is_active = TRUE WHERE provider_id = %s
-                    RETURNING provider_id, team_id, name, kind, config, status, is_active, on_failure,
+                    RETURNING provider_id, team_id, name, kind, config, status, is_active,
                               last_checked_at, created_by, created_at,
                               (credential_enc IS NOT NULL) AS has_credential
                     """,

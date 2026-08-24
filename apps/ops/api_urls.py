@@ -23,6 +23,7 @@ from .views.guardrails import (
     GuardrailProviderListCreateView,
     GuardrailProviderTestView,
     TeamActiveGuardrailView,
+    TeamGuardrailOnFailureView,
 )
 from .views.login import LoginView, LogoutView
 from .views.mcp import McpDetailView, McpListCreateView, McpProbeView, McpTestView
@@ -104,6 +105,11 @@ urlpatterns = [
         "guardrails/teams/<str:team_id>/active/",
         TeamActiveGuardrailView.as_view(),
         name="api_ops_team_active_guardrail",
+    ),
+    path(
+        "guardrails/teams/<str:team_id>/on-failure/",
+        TeamGuardrailOnFailureView.as_view(),
+        name="api_ops_guardrail_team_on_failure",
     ),
     path(
         "guardrails/<str:provider_id>/",

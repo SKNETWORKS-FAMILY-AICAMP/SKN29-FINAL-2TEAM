@@ -5,8 +5,16 @@ import { fetchOpsTeamDefaultModel, saveOpsTeamDefaultModel } from '../../api/ops
 import type { OpsTeamDefaultModel } from '../../api/opsModels';
 import { fetchOpsMcpServers } from '../../api/opsMcp';
 import type { OpsMcpServer } from '../../api/opsMcp';
-import { fetchOpsGuardrails, setTeamActiveGuardrail } from '../../api/opsGuardrails';
-import type { GuardrailKind, OpsGuardrailProvider } from '../../api/opsGuardrails';
+import {
+  fetchOpsGuardrails,
+  setTeamActiveGuardrail,
+  setTeamGuardrailOnFailure,
+} from '../../api/opsGuardrails';
+import type {
+  GuardrailKind,
+  GuardrailOnFailure,
+  OpsGuardrailProvider,
+} from '../../api/opsGuardrails';
 import { ApiError } from '../../api/client';
 import { loadOpsSession } from '../../utils/opsSession';
 import styles from '../OpsShared/OpsPages.module.css';
@@ -41,10 +49,18 @@ const GUARDRAIL_KIND_LABELS: Record<GuardrailKind, string> = {
   AZURE_CONTENT_SAFETY: 'Azure Content Safety',
 };
 
-export function TeamUsageSections({ teamId }: { teamId: string }) {
+export function TeamUsageSections({
+  teamId,
+  onFailure: initialOnFailure,
+}: {
+  teamId: string;
+  onFailure: GuardrailOnFailure;
+}) {
   const [servers, setServers] = useState<OpsMcpServer[]>([]);
   const [guardrails, setGuardrails] = useState<OpsGuardrailProvider[]>([]);
   const [defaultModel, setDefaultModel] = useState<OpsTeamDefaultModel | null>(null);
+  // 부모가 이미 팀을 들고 있다 — 같은 값을 다시 부르지 않는다.
+  const [onFailure, setOnFailure] = useState<GuardrailOnFailure>(initialOnFailure);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -80,6 +96,21 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
     try {
       await setTeamActiveGuardrail(session.token, teamId, next || null);
       await load();
+    } catch (thrown) {
+      setError(thrown instanceof ApiError ? thrown.message : '바꾸지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function chooseOnFailure(next: GuardrailOnFailure) {
+    const session = loadOpsSession();
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      const saved = await setTeamGuardrailOnFailure(session.token, teamId, next);
+      setOnFailure(saved.on_failure);
     } catch (thrown) {
       setError(thrown instanceof ApiError ? thrown.message : '바꾸지 못했습니다.');
     } finally {
@@ -173,6 +204,25 @@ export function TeamUsageSections({ teamId }: { teamId: string }) {
       </OpsSectionCard>
 
       <OpsSectionCard title="사용 중 가드레일">
+        {/* **팀의 정책이지 등록물의 속성이 아니다**(2026-08-24 PM 결정). 등록
+            화면에 뒀더니 공급자를 갈아탈 때(키 교체·비교·시연) 조용히 함께
+            바뀌었다. 표 위에 두는 이유는 아래 표의 어느 줄을 쓰든 같은 값이기
+            때문이다. */}
+        <div className={styles.formGrid}>
+          <div className={styles.fieldGroup}>
+            <label htmlFor="team-guardrail-on-failure">검사기가 응답하지 않을 때</label>
+            <select
+              id="team-guardrail-on-failure"
+              value={onFailure}
+              disabled={busy}
+              onChange={(event) => chooseOnFailure(event.target.value as GuardrailOnFailure)}
+            >
+              <option value="OPEN">그대로 보냄</option>
+              <option value="CLOSED">막음</option>
+            </select>
+          </div>
+        </div>
+
         {guardrails.length === 0 ? (
           <OpsEmpty message="이 팀에 등록된 가드레일이 없습니다." />
         ) : (

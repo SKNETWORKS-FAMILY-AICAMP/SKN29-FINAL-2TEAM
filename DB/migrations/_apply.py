@@ -82,7 +82,7 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("guardrail_event", None, "2026-08-20 가드레일 발동 기록"),
     ("guardrail_provider", None, "2026-08-20 외부 가드레일 공급자 등록"),
     ("guardrail_provider", "is_active", "2026-08-20 여러 개 중 하나만 사용"),
-    ("guardrail_provider", "on_failure", "2026-08-20 검사기 미응답 시 동작(팀이 정함)"),
+    ("team", "guardrail_on_failure", "2026-08-24 검사기 미응답 시 동작(팀 속성)"),
     ("mcp_call_note", None, "2026-08-21 MCP 동시 실행·timeout 경고 재료"),
     ("tool_call", "retrieved_doc_ids", "2026-08-21 도구가 조회한 문서 식별자"),
 ]
