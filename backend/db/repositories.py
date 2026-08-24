@@ -3582,7 +3582,9 @@ class OpsUsageRepository:
                     f"""
                     SELECT count(*) AS calls,
                            count(*) FILTER (WHERE tc.status = 'OK') AS calls_ok,
-                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed
+                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed,
+                           count(*) FILTER (WHERE tc.status = 'REJECTED') AS calls_rejected,
+                           count(*) FILTER (WHERE tc.status = 'PENDING') AS calls_pending
                     FROM tool_call AS tc
                     JOIN agent_run AS r ON r.run_id = tc.run_id
                     WHERE {since_run}
@@ -3640,9 +3642,11 @@ class OpsUsageRepository:
                     SELECT tc.tool_ref,
                            count(*) AS calls,
                            count(*) FILTER (WHERE tc.status = 'OK') AS calls_ok,
-                           -- PENDING 은 성공도 실패도 아니다. 스트림이 끊겨
-                           -- 영영 안 닫힌 행이라 따로 센다(있으면 배선 문제다).
+                           count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed,
+                           -- PENDING은 승인 대기/실행 중, REJECTED는 사용자 결정으로
+                           -- 미실행이다. 둘 다 실제 Tool 실행 성공률 분모에서 뺀다.
                            count(*) FILTER (WHERE tc.status = 'PENDING') AS calls_pending,
+                           count(*) FILTER (WHERE tc.status = 'REJECTED') AS calls_rejected,
                            round(avg(tc.duration_ms))::int AS avg_ms
                     FROM tool_call AS tc
                     JOIN agent_run AS r ON r.run_id = tc.run_id

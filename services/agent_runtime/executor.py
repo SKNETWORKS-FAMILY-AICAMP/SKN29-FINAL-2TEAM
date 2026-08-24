@@ -265,6 +265,7 @@ class AgentExecutor:
         agent_version_id: str | None,
         context: RuntimeContext,
         decisions: Sequence[dict[str, Any]],
+        trace_resume_state: dict[str, Any] | None = None,
         draft: dict | None = None,
         tool_refs_override: Sequence[str] | None = None,
     ) -> Iterator[dict[str, Any]]:
@@ -328,6 +329,12 @@ class AgentExecutor:
             raise AgentBuildError("에이전트를 준비하지 못했습니다.") from exc
 
         event_mapper = self.event_mapper_factory()
+        # interrupt 전 EventMapper가 기억하던 child run/tool_call 상관관계는
+        # Python 스트림과 함께 사라진다. 승인 카드에 저장한 최소 상태를 복원해야
+        # 서브에이전트 안에서 재개된 ToolMessage도 원래 run/tool 행으로 돌아간다.
+        restore_hitl_state = getattr(event_mapper, "restore_hitl_state", None)
+        if callable(restore_hitl_state):
+            restore_hitl_state(trace_resume_state)
 
         # Langfuse·LangSmith 콜백(2026-08-19) — 승인을 기다리다 재개된 실행도
         # 실제 모델·도구 호출이라 트레이싱에서 뺄 이유가 없다 —

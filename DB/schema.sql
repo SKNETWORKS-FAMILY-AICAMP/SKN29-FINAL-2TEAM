@@ -937,9 +937,13 @@ CREATE INDEX ix_agent_run_session
 CREATE TABLE tool_call (
     tool_call_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id         UUID         NOT NULL,   -- agent_run.run_id(FK 없음)
+    -- AIMessage.tool_calls[i]["id"]. HITL interrupt 전후의 서로 다른 스트림이
+    -- 같은 호출 행을 다시 찾는 영속 correlation key다. 이 컬럼이 없던 기존
+    -- 행을 보존해야 하므로 nullable이며, 신규 런타임 기록에는 항상 채운다.
+    langchain_tool_call_id VARCHAR(64),
     tool_ref       VARCHAR(100) NOT NULL,   -- agent_tool.tool_ref 와 같은 형식
     input_summary  TEXT,                    -- 원본 인자가 아니라 요약. 자격증명이 로그에 남지 않게 한다
-    status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',  -- PENDING / OK / FAILED
+    status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',  -- PENDING / OK / FAILED / REJECTED
     error_code     VARCHAR(50),             -- 401 / 429 / validation / timeout 등
     duration_ms    INT,
     -- 이 호출이 건드린 문서(2026-08-21 추가, DB/migrations/
@@ -952,6 +956,12 @@ CREATE TABLE tool_call (
 
 CREATE INDEX ix_tool_call_run
     ON tool_call (run_id, created_at);
+
+-- 같은 실행의 같은 LangChain 호출이 HITL resume나 checkpoint 재처리로 다시
+-- 관측돼도 tool_call 행은 하나만 유지한다. 옛 NULL 행끼리는 중복을 허용한다.
+CREATE UNIQUE INDEX ux_tool_call_run_langchain_id
+    ON tool_call (run_id, langchain_tool_call_id)
+    WHERE langchain_tool_call_id IS NOT NULL;
 
 -- 「이 문서가 언제 누구에게 조회됐나」로 역추적하는 것이 주된 사용처다.
 CREATE INDEX ix_tool_call_retrieved_docs

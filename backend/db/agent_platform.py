@@ -1162,16 +1162,34 @@ class ToolCallRepository:
     """
 
     @staticmethod
-    def begin(*, run_id: str, tool_ref: str, input_summary: str | None) -> str:
+    def begin(
+        *,
+        run_id: str,
+        tool_ref: str,
+        input_summary: str | None,
+        langchain_tool_call_id: str | None = None,
+    ) -> str:
+        """호출을 PENDING으로 선기록하고 같은 LangChain 호출이면 기존 행을 돌려준다.
+
+        HITL resume는 새 Python 스트림이라 메모리의 DB UUID 매핑을 잃는다.
+        `(run_id, langchain_tool_call_id)`를 DB의 영속 correlation key로 사용하면
+        checkpoint 재처리나 중복 resume에서도 행을 하나만 유지할 수 있다.
+        레거시 harness는 LangChain 호출 ID가 없으므로 `None`을 허용하고 예전처럼
+        매 실행마다 새 행을 만든다(부분 UNIQUE 인덱스는 NULL을 제외한다).
+        """
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO tool_call (run_id, tool_ref, input_summary, status)
-                    VALUES (%s, %s, %s, 'PENDING')
+                    INSERT INTO tool_call
+                        (run_id, langchain_tool_call_id, tool_ref, input_summary, status)
+                    VALUES (%s, %s, %s, %s, 'PENDING')
+                    ON CONFLICT (run_id, langchain_tool_call_id)
+                        WHERE langchain_tool_call_id IS NOT NULL
+                    DO UPDATE SET tool_ref = EXCLUDED.tool_ref
                     RETURNING tool_call_id::text
                     """,
-                    (run_id, tool_ref, input_summary),
+                    (run_id, langchain_tool_call_id, tool_ref, input_summary),
                 )
                 return cursor.fetchone()["tool_call_id"]
 
@@ -1197,9 +1215,66 @@ class ToolCallRepository:
                     UPDATE tool_call
                        SET status = %s, error_code = %s, duration_ms = %s,
                            retrieved_doc_ids = %s
-                     WHERE tool_call_id = %s
+                     WHERE tool_call_id = %s AND status = 'PENDING'
                     """,
                     (status, error_code, duration_ms, retrieved_doc_ids or None, tool_call_id),
+                )
+
+    @staticmethod
+    def end_by_langchain_id(
+        *,
+        run_id: str,
+        langchain_tool_call_id: str,
+        status: str,
+        duration_ms: int | None,
+        error_code: str | None = None,
+        retrieved_doc_ids: list[str] | None = None,
+    ) -> None:
+        """resume 스트림의 완료를 원래 PENDING 행에 반영한다.
+
+        `status = 'PENDING'` 조건은 중복 resume가 OK/FAILED/REJECTED 최종 상태를
+        다시 덮지 못하게 하는 마지막 방어선이다. resume에서 실제 실행 시작
+        시각을 모르면 승인 대기 시간을 latency로 오인하지 않도록 duration_ms는
+        NULL로 둘 수 있다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE tool_call
+                       SET status = %s, error_code = %s, duration_ms = %s,
+                           retrieved_doc_ids = %s
+                     WHERE run_id = %s
+                       AND langchain_tool_call_id = %s
+                       AND status = 'PENDING'
+                    """,
+                    (
+                        status,
+                        error_code,
+                        duration_ms,
+                        retrieved_doc_ids or None,
+                        run_id,
+                        langchain_tool_call_id,
+                    ),
+                )
+
+    @staticmethod
+    def reject(*, run_id: str, langchain_tool_call_ids: list[str]) -> None:
+        """사용자가 거부한 호출을 실행 실패와 구분해 REJECTED로 닫는다."""
+        if not langchain_tool_call_ids:
+            return
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE tool_call
+                       SET status = 'REJECTED', error_code = 'HITL_REJECTED',
+                           duration_ms = NULL
+                     WHERE run_id = %s
+                       AND langchain_tool_call_id = ANY(%s)
+                       AND status = 'PENDING'
+                    """,
+                    (run_id, langchain_tool_call_ids),
                 )
 
 
@@ -1773,6 +1848,12 @@ class ChatMessageRepository:
                     FROM chat_message
                     WHERE session_id::text = %s
                       AND content->>'type' = 'awaiting_confirmation'
+                      AND EXISTS (
+                          SELECT 1
+                            FROM agent_run
+                           WHERE run_id::text = content->>'run_id'
+                             AND status = 'PENDING'
+                      )
                     ORDER BY created_at DESC, message_id DESC
                     LIMIT 1
                     """,

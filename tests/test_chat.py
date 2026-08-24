@@ -10,7 +10,13 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase
 
 from apps.accounts.tokens import issue_token
-from apps.chat.api_views import PerCallDecisionsError, _apply_selection, _decisions_for
+from apps.chat.api_views import (
+    PerCallDecisionsError,
+    _apply_selection,
+    _approved_completion_result,
+    _decisions_for,
+    _relay,
+)
 from apps.chat.serializers import message_response
 from backend.db.errors import PermissionDenied
 
@@ -67,6 +73,46 @@ class SelectionTests(SimpleTestCase):
         call = {"tool_ref": "mcp:MT001", "arguments": {"issues": ["A", "B"], "labels": ["x"]}}
 
         self.assertEqual(_apply_selection(call, [0]), call)
+
+
+class ApprovedCompletionResultTests(SimpleTestCase):
+    def test_uses_successful_tool_state_instead_of_model_text(self):
+        event = {"type": "result", "text": "모델이 어떤 문장을 생성해도 무관하다."}
+
+        result = _approved_completion_result(event, successful_tool_refs=["skill_register"])
+
+        self.assertEqual(result["text"], "스킬 등록 작업을 완료했습니다.")
+
+    def test_keeps_model_result_when_no_tool_completed(self):
+        event = {"type": "result", "text": "도구 실행이 없었습니다."}
+
+        result = _approved_completion_result(event, successful_tool_refs=[])
+
+        self.assertIs(result, event)
+
+    @patch("apps.chat.api_views._name_session", return_value=None)
+    @patch("apps.chat.api_views._persist")
+    def test_approved_resume_relay_emits_and_persists_corrected_result(self, persist, _title):
+        events = [
+            {"type": "tool_completed", "tool_ref": "skill_register", "status": "OK"},
+            {
+                "type": "result",
+                "text": "표현이 바뀌어도 실행 결과가 정본이다.",
+            },
+        ]
+
+        streamed = [
+            json.loads(line)
+            for line in _relay(
+                events,
+                session_id=SESSION["session_id"],
+                account_id=SESSION["account_id"],
+                approved_resume=True,
+            )
+        ]
+
+        self.assertEqual(streamed[-1]["text"], "스킬 등록 작업을 완료했습니다.")
+        self.assertEqual(persist.call_args.kwargs["final"]["text"], "스킬 등록 작업을 완료했습니다.")
 
 
 class MessageResponseTests(SimpleTestCase):
@@ -924,6 +970,99 @@ class HITLResumeConfirmTests(SimpleTestCase):
 
         call_kwargs = mock_executor.resume.call_args.kwargs
         self.assertEqual(call_kwargs["decisions"], [{"type": "reject"}])
+
+    def test_rejected_call_is_closed_as_rejected_before_resume(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        pending = {
+            "message_id": "M1",
+            "content": {
+                **self.PENDING["content"],
+                "suspended_run_ids": [self.PENDING_RUN_ID],
+                "trace_resume_state": {
+                    "pending_subagents": {},
+                    "pending_tool_calls": [
+                        {
+                            "run_id": self.PENDING_RUN_ID,
+                            "tool_call_id": "call-1",
+                            "name": "task_register",
+                            "args": self.PENDING["content"]["action_requests"][0]["args"],
+                        }
+                    ],
+                    "interrupted_tool_calls": [
+                        {
+                            "action_index": 0,
+                            "run_id": self.PENDING_RUN_ID,
+                            "tool_call_id": "call-1",
+                        }
+                    ],
+                },
+            },
+        }
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = pending
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "취소했습니다", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        with patch("apps.chat.api_views.ToolCallRepository") as tool_calls:
+            response = self.client.post(
+                f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+                {"decision": "reject"},
+                content_type="application/json",
+                headers=auth_header(),
+            )
+            ndjson(response)
+
+        tool_calls.reject.assert_called_once_with(
+            run_id=self.PENDING_RUN_ID,
+            langchain_tool_call_ids=["call-1"],
+        )
+        self.assertEqual(
+            mock_executor.resume.call_args.kwargs["trace_resume_state"],
+            pending["content"]["trace_resume_state"],
+        )
+
+    def test_single_card_frontend_reject_payload_closes_call_before_streaming(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        pending = {
+            "message_id": "M1",
+            "content": {
+                **self.PENDING["content"],
+                "trace_resume_state": {
+                    "interrupted_tool_calls": [
+                        {
+                            "action_index": 0,
+                            "run_id": self.PENDING_RUN_ID,
+                            "tool_call_id": "call-frontend",
+                        }
+                    ]
+                },
+            },
+        }
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = pending
+        build_executor.return_value.resume.return_value = iter(
+            [{"type": "result", "text": "거절했습니다", "complete": True}]
+        )
+
+        with patch("apps.chat.api_views.ToolCallRepository") as tool_calls:
+            response = self.client.post(
+                f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+                {"decisions": [{"action_index": 0, "type": "reject"}]},
+                content_type="application/json",
+                headers=auth_header(),
+            )
+            tool_calls.reject.assert_called_once_with(
+                run_id=self.PENDING_RUN_ID,
+                langchain_tool_call_ids=["call-frontend"],
+            )
+            ndjson(response)
 
     def test_decisions_length_matches_action_requests_count(
         self, sessions, messages, accounts, _title, build_executor

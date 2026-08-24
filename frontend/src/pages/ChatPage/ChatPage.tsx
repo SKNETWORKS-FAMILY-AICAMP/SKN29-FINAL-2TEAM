@@ -214,6 +214,8 @@ export default function ChatPage() {
   const [approvedActions, setApprovedActions] = useState<number[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** React가 busy 상태를 다시 그리기 전의 연속 클릭도 즉시 막는다. */
+  const confirmRequestRef = useRef(false);
   /**
    * 방금 떠난 대화의 id. 주소가 `/chat` 으로 따라오면 즉시 비운다.
    * 왜 필요한지는 아래 주소 동기화 effect 에 적었다.
@@ -613,7 +615,8 @@ export default function ChatPage() {
   }
 
   async function approve() {
-    if (!token || !sessionId) return;
+    if (!token || !sessionId || confirmRequestRef.current) return;
+    confirmRequestRef.current = true;
     // **인덱스만 보낸다.** 실행할 인자는 서버가 저장해 둔 것을 쓴다 — 화면이
     // 인자를 보내면 승인 게이트가 아무것도 막지 못한다.
     //
@@ -641,12 +644,40 @@ export default function ChatPage() {
     // (`toTurns`). 리셋하면 방금 승인한 목록이 화면에서 사라지고, 복원한 화면과
     // 라이브 화면이 서로 달라진다.
     const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
-    await run(
-      (onEvent, signal) =>
-        confirmMessage(token, sessionId, indices, onEvent, signal, decisions),
-      carried,
-      sessionId,
-    );
+    try {
+      await run(
+        (onEvent, signal) =>
+          confirmMessage(token, sessionId, indices, onEvent, signal, decisions),
+        carried,
+        sessionId,
+      );
+    } finally {
+      confirmRequestRef.current = false;
+    }
+  }
+
+  async function reject() {
+    if (
+      !token ||
+      !sessionId ||
+      confirmRequestRef.current ||
+      (lastLive?.confirm?.actions.length ?? 0) !== 1
+    )
+      return;
+    confirmRequestRef.current = true;
+    const carried = lastLive ? { ...lastLive, running: true, error: null } : emptyLive();
+    try {
+      await run(
+        (onEvent, signal) =>
+          confirmMessage(token, sessionId, undefined, onEvent, signal, [
+            { action_index: 0, type: 'reject' },
+          ]),
+        carried,
+        sessionId,
+      );
+    } finally {
+      confirmRequestRef.current = false;
+    }
   }
 
   /** 마지막 턴의 `live` 만 갱신한다. 앞 턴들은 그대로 둔다. */
@@ -1175,6 +1206,7 @@ export default function ChatPage() {
                           selected={isLast ? selected : live.tasks.map((_, index) => index)}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast && live.confirm ? approve : undefined}
+                          onReject={isLast && live.confirm ? reject : undefined}
                           busy={live.running}
                         />
                       )}
@@ -1196,6 +1228,7 @@ export default function ChatPage() {
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
+                          onReject={isLast ? reject : undefined}
                           busy={live.running}
                           // 2026-08-21, 병렬실행 Phase 2 — 호출이 여러 개면
                           // 카드가 전부 보여주고 하나씩 켜고 끌 수 있게 한다.

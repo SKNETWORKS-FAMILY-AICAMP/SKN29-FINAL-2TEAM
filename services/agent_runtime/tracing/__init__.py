@@ -163,7 +163,11 @@ def _record(
         elif event_type == EVENT_TOOL_COMPLETED:
             _end_tool_call(event, open_tool_calls=open_tool_calls)
         elif event_type == EVENT_AWAITING_CONFIRMATION:
-            _suspend_run(event, open_run_ids=open_run_ids)
+            _suspend_run(
+                event,
+                open_run_ids=open_run_ids,
+                open_tool_calls=open_tool_calls,
+            )
     except Exception:  # noqa: BLE001 - 로그 적재 실패가 실제 응답 전달을 막으면 안 된다
         logger.exception("실행 로그 적재 실패: event_type=%s", event_type)
 
@@ -264,8 +268,13 @@ def _attach_duration_ms(
     event["duration_ms"] = int((time.monotonic() - started) * 1000)
 
 
-def _suspend_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:
-    """HITL interrupt로 멈춘 실행을 `PENDING`으로 표시한다(2026-08-19, §0순위).
+def _suspend_run(
+    event: dict[str, Any],
+    *,
+    open_run_ids: set[str],
+    open_tool_calls: dict[tuple[str, str], tuple[str, float]],
+) -> None:
+    """HITL interrupt로 멈춘 run과 tool call을 `PENDING`으로 유지한다.
 
     `finish()`와 다르게 `ended_at`을 채우지 않는다 — 실제로 끝난 게 아니라
     사람의 승인/거부를 기다리는 것뿐이다. 재개(`AgentExecutor.resume()`)
@@ -280,11 +289,23 @@ def _suspend_run(event: dict[str, Any], *, open_run_ids: set[str]) -> None:
     이 run을 `FAILED`로 정리해 버린다 — 승인 대기 중일 뿐인 실행이 실패로
     잘못 기록된다.
     """
-    run_id = event.get("run_id")
-    if not run_id or run_id not in open_run_ids:
+    root_run_id = event.get("run_id")
+    if not root_run_id or root_run_id not in open_run_ids:
         return
-    AgentRunRepository.suspend(run_id=run_id)
-    open_run_ids.discard(run_id)
+
+    # HITL은 루트 그래프 전체를 멈춘다. 이때 서브에이전트 안의 side-effect
+    # Tool에서 interrupt가 났다면 root만 빼서는 child run/tool이 finally에서
+    # FAILED / STREAM_CLOSED가 된다. 현재 스트림에서 열린 run 전부를 함께
+    # suspend하고, 승인 카드에 ID를 실어 다음 스트림이 다시 열게 한다.
+    suspended_run_ids = sorted(open_run_ids)
+    for run_id in suspended_run_ids:
+        AgentRunRepository.suspend(run_id=run_id)
+    open_run_ids.clear()
+
+    # DB 행은 PENDING 그대로 둔다. 메모리 orphan 목록에서만 제거해야 finally가
+    # 승인 대기를 비정상 종료로 오인해 FAILED로 덮지 않는다.
+    open_tool_calls.clear()
+    event["suspended_run_ids"] = suspended_run_ids
 
 
 def _begin_tool_call(
@@ -302,7 +323,10 @@ def _begin_tool_call(
         # `trace_events()`가 그대로 내보내므로 화면에는 영향이 없다.
         return
     db_tool_call_id = ToolCallRepository.begin(
-        run_id=run_id, tool_ref=tool_ref, input_summary=summarize_input(event.get("arguments") or {})
+        run_id=run_id,
+        langchain_tool_call_id=tool_call_id,
+        tool_ref=tool_ref,
+        input_summary=summarize_input(event.get("arguments") or {}),
     )
     open_tool_calls[(run_id, tool_call_id)] = (db_tool_call_id, time.monotonic())
 
@@ -314,6 +338,20 @@ def _end_tool_call(
     tool_call_id = event.get("tool_call_id")
     entry = open_tool_calls.pop((run_id, tool_call_id), None)
     if entry is None:
+        # HITL resume는 새 trace_events() 스트림이라 첫 스트림의 in-memory
+        # `(run_id, tool_call_id) -> DB UUID` 맵이 없다. 영속 correlation key로
+        # 원래 PENDING 행을 직접 닫는다. 실행 시작 시각을 모르므로 사람의 승인
+        # 대기 시간을 latency로 잘못 넣지 않고 duration_ms는 NULL로 둔다.
+        if run_id and tool_call_id:
+            status = event.get("status") or "OK"
+            ToolCallRepository.end_by_langchain_id(
+                run_id=run_id,
+                langchain_tool_call_id=tool_call_id,
+                status=status,
+                duration_ms=None,
+                error_code=None if status == "OK" else "TOOL_EXECUTION_FAILED",
+                retrieved_doc_ids=event.get("retrieved_doc_ids"),
+            )
         return
     db_tool_call_id, started = entry
     status = event.get("status") or "OK"

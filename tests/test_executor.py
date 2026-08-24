@@ -6,6 +6,8 @@ EventMapper로 변환한다(mock 아님) — "무엇을 조립해 넘기는가"�
 그 이벤트가 나오는가"까지 확인한다.
 """
 
+from unittest.mock import MagicMock
+
 from django.test import SimpleTestCase
 
 from services.agent_runtime.context import RuntimeContext
@@ -598,6 +600,36 @@ class ResumeTests(SimpleTestCase):
             stream_adapter.stream_calls[0]["resume"],
             {"decisions": [{"type": "reject", "message": "지금은 안 돼요"}]},
         )
+
+    def test_trace_resume_state_is_restored_before_stream_conversion(self):
+        loader = _FakeLoader()
+        factory = _FakeFactory()
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        mapper = MagicMock()
+        mapper.convert.return_value = []
+        executor = AgentExecutor(
+            loader=loader,
+            factory=factory,
+            stream_adapter=stream_adapter,
+            event_mapper_factory=lambda: mapper,
+        )
+        state = {
+            "pending_subagents": {"delegate-1": {"run_id": "RUN-CHILD"}},
+            "pending_tool_calls": [{"tool_call_id": "call-1", "run_id": "RUN1"}],
+        }
+
+        list(
+            executor.resume(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                context=_context(run_id="RUN1"),
+                decisions=[{"type": "approve"}],
+                trace_resume_state=state,
+            )
+        )
+
+        mapper.restore_hitl_state.assert_called_once_with(state)
+        mapper.convert.assert_called_once()
 
     def test_context_session_id_reaches_the_stream_adapter_as_thread_id(self):
         loader = _FakeLoader()

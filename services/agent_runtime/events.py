@@ -317,6 +317,12 @@ class EventMapper:
         # dict 삽입 순서 = 시작 순서이므로, 네임스페이스 귀속 휴리스틱(아직 어느
         # 네임스페이스에도 안 묶인 것 중 가장 먼저 시작된 것)에도 이 순서를 쓴다.
         self._pending: dict[str, dict[str, str]] = {}
+        # 아직 ToolMessage 완료를 못 본 직접 도구 호출. HITL interrupt payload의
+        # action_requests에는 LangChain tool_call_id가 빠져 있으므로, 직전에 본
+        # AIMessage 호출과 이름·인자로 대응시켜 승인 카드의 trace_resume_state에
+        # 영속화한다. middleware에 되돌려줄 action_requests 자체에는 내부 필드를
+        # 섞지 않는다.
+        self._pending_direct_tool_calls: list[dict[str, Any]] = []
         # 네임스페이스 접두사(예: 'tools:94cc782c-...') -> 그 안에서 도는 서브
         # 에이전트 정보(위 _pending의 값과 같은 dict). 같은 네임스페이스에서
         # 여러 이벤트가 나오므로 캐시한다.
@@ -330,6 +336,93 @@ class EventMapper:
         # run_id -> {"iterations", "token_in", "token_out"}. 아래
         # `_count_model_call()`이 채우고 끝나는 이벤트가 실어 나른다.
         self._usage: dict[str, dict[str, int | None]] = {}
+
+    def restore_hitl_state(self, state: dict[str, Any] | None) -> None:
+        """승인 대기 전에 저장한 EventMapper의 최소 상관관계 상태를 복원한다."""
+        if not isinstance(state, dict):
+            return
+        pending_subagents = state.get("pending_subagents")
+        if isinstance(pending_subagents, dict):
+            self._pending = {
+                str(call_id): dict(info)
+                for call_id, info in pending_subagents.items()
+                if call_id and isinstance(info, dict)
+            }
+        pending_tools = state.get("pending_tool_calls")
+        if isinstance(pending_tools, list):
+            self._pending_direct_tool_calls = [
+                dict(item) for item in pending_tools if isinstance(item, dict)
+            ]
+        namespace_subagents = state.get("namespace_subagents")
+        if isinstance(namespace_subagents, dict):
+            self._namespace_subagent = {
+                str(namespace): dict(info)
+                for namespace, info in namespace_subagents.items()
+                if namespace and isinstance(info, dict)
+            }
+
+    def _remember_direct_tool_call(
+        self, *, run_id: str | None, call: dict[str, Any]
+    ) -> None:
+        call_id = call.get("id")
+        name = call.get("name")
+        if not run_id or not call_id or not name:
+            return
+        self._pending_direct_tool_calls.append(
+            {
+                "run_id": run_id,
+                "tool_call_id": call_id,
+                "name": name,
+                "args": call.get("args") or {},
+            }
+        )
+
+    def _forget_direct_tool_call(self, tool_call_id: str | None) -> None:
+        if not tool_call_id:
+            return
+        self._pending_direct_tool_calls = [
+            item
+            for item in self._pending_direct_tool_calls
+            if item.get("tool_call_id") != tool_call_id
+        ]
+
+    def _interrupted_tool_calls(
+        self, action_requests: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """HITL action 순서에 맞는 영속 `(run_id, tool_call_id)` 목록을 만든다."""
+        available = list(self._pending_direct_tool_calls)
+        matched: list[dict[str, Any]] = []
+        for action_index, request in enumerate(action_requests):
+            if not isinstance(request, dict):
+                continue
+            name = request.get("name")
+            args = request.get("args") or {}
+            index = next(
+                (
+                    i
+                    for i, item in enumerate(available)
+                    if item.get("name") == name and item.get("args") == args
+                ),
+                None,
+            )
+            if index is None:
+                # 일부 middleware 버전은 description/정규화 과정에서 args 모양을
+                # 바꿀 수 있다. 같은 이름 중 먼저 시작된 호출로 제한해 매칭하고,
+                # 이름조차 없으면 잘못된 행을 고르지 않고 누락시킨다.
+                index = next(
+                    (i for i, item in enumerate(available) if item.get("name") == name),
+                    None,
+                )
+            if index is not None:
+                item = available.pop(index)
+                matched.append(
+                    {
+                        "action_index": action_index,
+                        "run_id": item["run_id"],
+                        "tool_call_id": item["tool_call_id"],
+                    }
+                )
+        return matched
 
     def _count_model_call(self, run_id: str | None, message: Any) -> None:
         """모델 호출 하나를 이 run 의 누계에 더한다(2026-08-21).
@@ -507,6 +600,7 @@ class EventMapper:
         first = interrupts[0]
         hitl_request = first.value if isinstance(first.value, dict) else {}
         action_requests = hitl_request.get("action_requests") or []
+        interrupted_tool_calls = self._interrupted_tool_calls(action_requests)
         return [
             {
                 "type": EVENT_AWAITING_CONFIRMATION,
@@ -521,6 +615,18 @@ class EventMapper:
                 # (순서·개수가 어긋나면 `HumanInTheLoopMiddleware`가 ValueError)
                 # 그대로 저장해 둔다.
                 "action_requests": action_requests,
+                # 화면/미들웨어 입력과 분리된 내부 추적 상태. 채팅 메시지에 이
+                # 이벤트가 저장됐다가 resume 때 EventMapper와 DB 상관관계를
+                # 복원한다. 원문 Tool 결과나 credential은 포함하지 않는다.
+                "trace_resume_state": {
+                    "pending_subagents": dict(self._pending),
+                    # 병렬 Child가 둘 이상이면 새 mapper가 도착 순서만 보고 다시
+                    # 붙일 경우 run_id가 서로 바뀔 수 있다. interrupt 전 이미
+                    # 확정한 namespace → Child 대응도 함께 보존한다.
+                    "namespace_subagents": dict(self._namespace_subagent),
+                    "pending_tool_calls": list(self._pending_direct_tool_calls),
+                    "interrupted_tool_calls": interrupted_tool_calls,
+                },
                 "complete": False,
             }
         ]
@@ -634,6 +740,7 @@ class EventMapper:
             if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
                 # 부모가 직접 호출한 도구의 완료 — 자식 네임스페이스의
                 # tool_completed와 동일한 모양, subagent_alias만 None.
+                self._forget_direct_tool_call(msg_tool_call_id)
                 return [
                     {
                         "type": EVENT_TOOL_COMPLETED,
@@ -665,6 +772,7 @@ class EventMapper:
             for call in tool_calls:
                 tool_ref = call.get("name")
                 if tool_ref and tool_ref != DELEGATION_TOOL_NAME:
+                    self._remember_direct_tool_call(run_id=child_run_id, call=call)
                     events.append(
                         {
                             "type": EVENT_TOOL_STARTED,
@@ -683,6 +791,7 @@ class EventMapper:
             return events
 
         if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
+            self._forget_direct_tool_call(msg_tool_call_id)
             return [
                 {
                     "type": EVENT_TOOL_COMPLETED,
@@ -781,6 +890,7 @@ class EventMapper:
                 # (langgraph ToolNode는 루트/서브그래프를 구분하지 않는다 —
                 # 위 모듈 docstring 참고). subagent_alias=None으로 "부모
                 # 자신의 호출"임을 구분한다.
+                self._remember_direct_tool_call(run_id=run_id, call=call)
                 events.append(
                     {
                         "type": EVENT_TOOL_STARTED,

@@ -20,7 +20,12 @@ from rest_framework.views import APIView
 from apps.accounts.authentication import BearerTokenAuthentication
 from apps.accounts.serializers import account_role
 from backend.db import AccountRepository
-from backend.db.agent_platform import AgentVersionRepository, ChatMessageRepository, ChatSessionRepository
+from backend.db.agent_platform import (
+    AgentVersionRepository,
+    ChatMessageRepository,
+    ChatSessionRepository,
+    ToolCallRepository,
+)
 from backend.db.errors import (
     PermissionDenied,
     RecordNotFound,
@@ -443,6 +448,7 @@ def _resume_deep_agent(
     decision: str,
     selected: list[int] | None = None,
     per_call_decisions: list[dict[str, Any]] | None = None,
+    resolved_decisions: list[dict[str, Any]] | None = None,
 ):
     """새 엔진에서 HITL interrupt로 멈춘 실행을 재개한다(2026-08-19, §0순위).
 
@@ -479,21 +485,28 @@ def _resume_deep_agent(
 
     run_id = content.get("run_id")
     action_requests = content.get("action_requests") or []
+    trace_resume_state = content.get("trace_resume_state") or {}
     context = _build_runtime_context(session=session, account_id=account_id, run_id=run_id)
+
+    if resolved_decisions is None:
+        resolved_decisions = (
+            _decisions_for(action_requests, selected, per_call=per_call_decisions)
+            if per_call_decisions is not None or decision == "approve"
+            else [{"type": decision}] * len(action_requests)
+        )
 
     executor = build_default_executor()
     raw_events = executor.resume(
         agent_id=session["agent_id"],
         agent_version_id=session["agent_version_id"],
         context=context,
-        decisions=(
-            _decisions_for(action_requests, selected, per_call=per_call_decisions)
-            if per_call_decisions is not None or decision == "approve"
-            else [{"type": decision}] * len(action_requests)
-        ),
+        decisions=resolved_decisions,
+        trace_resume_state=trace_resume_state,
         tool_refs_override=session.get("tool_refs_override"),
     )
-    for event in trace_events(raw_events, context=context, known_run_ids=(run_id,) if run_id else ()):
+    suspended_run_ids = tuple(content.get("suspended_run_ids") or ())
+    known_run_ids = suspended_run_ids or ((run_id,) if run_id else ())
+    for event in trace_events(raw_events, context=context, known_run_ids=known_run_ids):
         if event.get("type") == EVENT_ERROR and "text" not in event:
             event = {**event, "text": event.get("message", "")}
         yield event
@@ -546,18 +559,36 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
                 except PerCallDecisionsError as exc:
                     return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+            decision = serializer.validated_data.get("decision") or "approve"
+            action_requests = content.get("action_requests") or []
+            resolved_decisions = (
+                _decisions_for(
+                    action_requests,
+                    serializer.validated_data.get("selected"),
+                    per_call=per_call_decisions,
+                )
+                if per_call_decisions is not None or decision == "approve"
+                else [{"type": decision}] * len(action_requests)
+            )
+            _close_rejected_tool_calls(
+                trace_resume_state=content.get("trace_resume_state") or {},
+                resolved_decisions=resolved_decisions,
+            )
+
             return StreamingHttpResponse(
                 _relay(
                     _resume_deep_agent(
                         session=session,
                         account_id=account_id,
                         content=content,
-                        decision=serializer.validated_data.get("decision") or "approve",
+                        decision=decision,
                         selected=serializer.validated_data.get("selected"),
                         per_call_decisions=per_call_decisions,
+                        resolved_decisions=resolved_decisions,
                     ),
                     session_id=session_id,
                     account_id=account_id,
+                    approved_resume=True,
                 ),
                 content_type="application/x-ndjson",
             )
@@ -581,6 +612,34 @@ class ChatConfirmAPIView(AuthenticatedAPIView):
 
 class PerCallDecisionsError(ValueError):
     """호출별 `decisions`가 그 턴의 `action_requests`와 안 맞을 때."""
+
+
+def _close_rejected_tool_calls(
+    *,
+    trace_resume_state: dict[str, Any],
+    resolved_decisions: list[dict[str, Any]],
+) -> None:
+    """거절된 호출을 스트림을 열기 전에 REJECTED로 확정한다."""
+
+    rejected_by_run: dict[str, list[str]] = {}
+    for pending in trace_resume_state.get("interrupted_tool_calls") or []:
+        if not isinstance(pending, dict):
+            continue
+        action_index = pending.get("action_index")
+        if not isinstance(action_index, int) or not 0 <= action_index < len(resolved_decisions):
+            continue
+        if resolved_decisions[action_index].get("type") != "reject":
+            continue
+        pending_run_id = pending.get("run_id")
+        tool_call_id = pending.get("tool_call_id")
+        if pending_run_id and tool_call_id:
+            rejected_by_run.setdefault(pending_run_id, []).append(tool_call_id)
+
+    for pending_run_id, tool_call_ids in rejected_by_run.items():
+        ToolCallRepository.reject(
+            run_id=pending_run_id,
+            langchain_tool_call_ids=tool_call_ids,
+        )
 
 
 def _per_call_decision_types(
@@ -681,7 +740,34 @@ def _apply_selection(tool_call: dict[str, Any], selected: list[int] | None) -> d
     return {**tool_call, "arguments": arguments}
 
 
-def _relay(events, *, session_id: str, account_id: str, question: str = ""):
+def _approved_completion_result(
+    event: dict[str, Any], *, successful_tool_refs: list[str]
+) -> dict[str, Any]:
+    """승인 재개 결과를 모델 문장이 아니라 실제 성공한 도구 상태로 확정한다."""
+
+    if event.get("type") != "result" or not successful_tool_refs:
+        return event
+
+    unique_refs = list(dict.fromkeys(successful_tool_refs))
+    if len(unique_refs) == 1:
+        from services.harness.registry import BUILTIN_TOOLS
+
+        tool = BUILTIN_TOOLS.get(unique_refs[0])
+        label = getattr(tool, "name", None) or unique_refs[0]
+        message = f"{label} 작업을 완료했습니다."
+    else:
+        message = f"승인한 작업 {len(unique_refs)}건을 완료했습니다."
+    return {**event, "text": message}
+
+
+def _relay(
+    events,
+    *,
+    session_id: str,
+    account_id: str,
+    question: str = "",
+    approved_resume: bool = False,
+):
     """이벤트를 NDJSON 한 줄씩 내보내고, 끝나면 결과를 chat_message 로 확정한다.
 
     적재를 마지막에 하는 이유는 카드 한 벌이 완성돼야 화면이 새로고침 뒤에 같은
@@ -695,8 +781,20 @@ def _relay(events, *, session_id: str, account_id: str, question: str = ""):
 
     collected: list[dict[str, Any]] = []
     final: dict[str, Any] | None = None
+    successful_tool_refs: list[str] = []
     try:
         for event in events:
+            if (
+                approved_resume
+                and event.get("type") == "tool_completed"
+                and event.get("status") == "OK"
+                and event.get("tool_ref")
+            ):
+                successful_tool_refs.append(str(event["tool_ref"]))
+            if approved_resume:
+                event = _approved_completion_result(
+                    event, successful_tool_refs=successful_tool_refs
+                )
             collected.append(event)
             # "result"(EVENT_RESULT)뿐 아니라 EVENT_ERROR("error")도 종결로 본다 —
             # 레거시 Harness는 내부적으로 이 이벤트를 만들지 않아 지금까지는

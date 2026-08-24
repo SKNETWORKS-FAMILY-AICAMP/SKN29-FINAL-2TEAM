@@ -1043,14 +1043,21 @@ class OpsUsageTests(SimpleTestCase):
                 "runs": 23, "runs_done": 20, "runs_failed": 3,
                 "token_in": 158836, "token_out": 2811, "runs_without_tokens": 0,
             },
-            "tools": {"calls": 20, "calls_ok": 16, "calls_failed": 4},
+            "tools": {
+                "calls": 22,
+                "calls_ok": 16,
+                "calls_failed": 4,
+                "calls_rejected": 1,
+                "calls_pending": 1,
+            },
             "guardrail": {"events": 13, "blocked": 8},
             "by_team": [{"team_id": "TE001", "team_name": "개발팀", "runs": 23,
                          "runs_done": 20, "token_in": 158836, "token_out": 2811}],
             "by_model": [{"model": "gpt-5.6-luna", "resolved_provider": "openai",
                           "runs": 2, "token_in": 20395, "token_out": 651}],
             "by_tool": [{"tool_ref": "document_search", "calls": 1, "calls_ok": 1,
-                         "calls_pending": 0, "avg_ms": 8823}],
+                         "calls_failed": 0, "calls_pending": 0, "calls_rejected": 0,
+                         "avg_ms": 8823}],
         }
         summary.update(overrides)
         return summary

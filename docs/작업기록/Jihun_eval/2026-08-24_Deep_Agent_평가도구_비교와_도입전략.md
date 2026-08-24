@@ -4,6 +4,21 @@
 - 작성 목적: Deep Agent의 성능 평가·검증을 위한 도구별 역할을 구분하고, 현재 프로젝트에 적용할 평가 및 관측성 구성을 결정한다.
 - 비교 대상: Langfuse, LangSmith, OpenTelemetry, Ragas, DeepEval
 
+### 문서 적용 상태
+
+| 항목 | 상태 |
+|---|---|
+| 중앙 관측 플랫폼 결정 | Langfuse 사용 |
+| LangSmith 결정 | 신규 평가 체계에서는 미사용 |
+| 현재 코드 | Langfuse와 LangSmith callback이 모두 남아 있음 |
+| 즉시 필요한 작업 | P0 HITL tool-call 기록 정합성 수정·회귀 테스트 |
+| P0 완료 후 작업 | Langfuse Python SDK v4 마이그레이션 검증, LangSmith 비활성화·제거 |
+| 평가 도구 | DeepEval·Ragas는 도입 설계 단계이며 아직 평가 pipeline이 완성되지 않음 |
+
+이 문서의 “결정”과 “현재 구현”을 구분한다. 특히 LangSmith 미사용은 의사결정이 완료되었다는 의미이며, callback과 환경변수 제거까지 끝났다는 의미가 아니다.
+
+평가 착수의 최우선 선행조건은 HITL 승인 도구의 DB 기록 정합성 수정이다. 현재 승인 대기 interrupt를 일반적인 스트림 조기 종료로 처리하여 실제 성공한 도구가 `FAILED / STREAM_CLOSED`로 남을 수 있으므로, 이 결함을 고치기 전의 Tool 성공률·HITL 승인 후 성공률은 평가 기준선으로 사용하지 않는다.
+
 ## 1. 배경
 
 현재 프로젝트는 LangGraph/Deep Agents 기반으로 동작하며 다음과 같은 복합 실행 구조를 가진다.
@@ -17,6 +32,8 @@
 - 사용자·팀·테넌트별 권한과 데이터 격리
 
 Langfuse와 LangSmith에는 실행 추적 연동만 완료된 상태다. 비교 검토 결과 신규 평가 체계에서는 LangSmith를 사용하지 않고 Langfuse를 초기 중앙 관측·평가 플랫폼으로 사용하기로 결정했다. 앞으로는 단순히 실행 내역을 보는 것을 넘어, Agent가 목표를 달성했는지, 올바른 도구를 안전하고 효율적으로 사용했는지, 모델이나 프롬프트 변경으로 성능이 저하되지 않았는지를 검증해야 한다.
+
+현재 프로젝트의 `requirements/base.txt`는 `langfuse>=3.0,<4.0`이고 연동 코드도 Python SDK v3 API를 기준으로 작성되어 있다. 그러나 2026-08-24 현재 Langfuse Python SDK의 GA 버전은 v4이며 Cloud v3 호환 계층은 2026-11-16 종료 예정이다. 따라서 P0 HITL 기록 정합성을 먼저 수정한 뒤, 신규 평가 기능을 v3 위에 더 쌓기 전에 v4 마이그레이션을 검증한다.
 
 이 과정에서 중요한 점은 다섯 대상이 모두 같은 종류의 제품이 아니라는 것이다.
 
@@ -53,7 +70,7 @@ Langfuse는 Deep Agent의 실행 trace를 저장하고 개발자와 운영자가
 
 - 사용자 요청이 어떤 에이전트와 서브에이전트를 거쳤는지
 - LLM 호출 횟수, 모델, token 및 비용
-- 호출된 도구와 인자, 결과, 오류
+- 호출된 도구와 수집이 허용된 인자·결과 요약, 오류
 - RAG 검색 문서와 최종 답변의 관계
 - 각 단계와 전체 실행의 지연시간
 - 프롬프트·모델·Agent 버전별 결과 비교
@@ -91,6 +108,19 @@ Langfuse를 운영 trace와 평가 결과의 중앙 플랫폼으로 사용한다
 - 실패 trace를 평가 dataset으로 승격
 - 릴리스 전후 experiment 비교
 
+### 3.5 현재 버전 리스크와 마이그레이션 원칙
+
+현재 연동은 Python SDK v3의 `Langfuse(..., mask=...)`와 LangChain callback 동작을 전제로 한다. v4에서는 observations-first 데이터 모델, 속성 전파 방식, 기본 span filtering 및 조회 API가 달라질 수 있으므로 다음을 별도 마이그레이션 검증 항목으로 둔다.
+
+- 기존 마스킹 함수가 observation input/output과 tool payload에 동일하게 적용되는가
+- session, user, team, agent metadata가 모든 필요한 observation에 전파되는가
+- LangChain/LangGraph, DB, HTTP, 프로젝트 custom span 중 필요한 span이 기본 filter에서 누락되지 않는가
+- trace, observation, score 조회 및 평가 결과 연결 코드가 v4 API에서 동작하는가
+- Collector에서 Langfuse v4 OTLP endpoint로 보낼 때 `x-langfuse-ingestion-version: 4` 헤더가 적용되는가
+- 비동기 export 종료 시 flush와 유실 처리 정책이 동작하는가
+
+마이그레이션 전후에 동일한 고정 시나리오를 실행하여 parent-child 구조, span 수, token·비용, 마스킹 결과와 score 연결을 비교한다. v4 전환이 완료될 때까지 v3 전용 API 위에 신규 평가 기능을 깊게 결합하지 않는다.
+
 ## 4. LangSmith
 
 ### 4.1 역할
@@ -125,10 +155,28 @@ LangSmith는 LangChain/LangGraph 생태계에 특화된 관측·평가 플랫폼
 
 LangSmith는 비교 검토 결과 Langfuse와 역할 중복이 크고, trace·dataset·평가 점수의 이중 관리 및 민감정보 마스킹 검증 부담이 증가하므로 신규 평가 체계에서는 사용하지 않는다.
 
+이 결정은 `docs/작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md`의 기존 병행 운영 결정을 변경한다. 기존 계획은 LangSmith를 LangGraph run·node·tool 흐름 재현과 디버깅에, Langfuse를 장기 trace·Dataset·Experiment·비용·데이터 소유권 관리에 사용하여 관심사를 나누려는 선택이었다. 또한 양쪽 실 키와 공통 마스킹 함수의 동작까지 검증했다.
+
+새 결정은 LangSmith의 LangGraph 전용 디버깅 이점을 부정하지 않는다. 다만 장기 운영 기준에서는 다음 비용이 그 편익보다 크다고 판단한다.
+
+- 동일 실행의 이중 전송과 두 외부 플랫폼의 마스킹 회귀 검증
+- trace·dataset·평가 점수와 팀의 기준 대시보드 분산
+- LangChain/LangGraph 전용 데이터 모델에 대한 추가 종속
+- OpenTelemetry와 프로젝트 내부 event·trace 모델을 별도로 구축하면서 생기는 중복 계측
+
+이미 완료한 LangSmith 구현과 실 키 검증 비용은 매몰비용으로 보고, 프레임워크 중립적인 OpenTelemetry 계측, 데이터 소유권과 장기적인 자체 분석 가능성을 더 높은 우선순위로 둔다. LangSmith 제거로 줄어드는 LangGraph 디버깅 편의는 프로젝트 event 모델, DB trace와 OpenTelemetry parent-child span을 보강하여 대체한다.
+
 - Langfuse를 초기 중앙 관측·평가 플랫폼으로 사용한다.
 - 기존 LangSmith 설정과 callback은 별도 구현 작업에서 비활성화하거나 제거한다.
 - LangGraph 고유 구조의 디버깅이 필요해지더라도 우선 OpenTelemetry span과 프로젝트 이벤트 모델을 보강한다.
 - 향후 요구사항이 바뀌면 특정 플랫폼 종속 연동보다 OpenTelemetry 호환 백엔드를 우선 검토한다.
+
+현재 코드에는 `get_langsmith_callback()`과 `LANGSMITH_*`/`LANGCHAIN_*` 설정이 남아 있다. 구현 작업에서는 단순히 UI에서 사용하지 않는 수준이 아니라 callback 생성, 자동 tracing 환경변수, secret과 outbound 전송 경로를 함께 제거 또는 비활성화한다. 완료 조건은 다음과 같다.
+
+- LangSmith key가 없는 기본 설정에서 callback이 생성되지 않는다.
+- 배포 환경에 과거 `LANGSMITH_*` 또는 `LANGCHAIN_*` 값이 남아 있어도 자동 전송되지 않는다.
+- Langfuse trace에는 회귀가 없다.
+- 테스트 실행에서 LangSmith endpoint로 outbound 요청이 0건임을 확인한다.
 
 ## 5. OpenTelemetry
 
@@ -178,13 +226,15 @@ OpenTelemetry Collector
 - 품질 점수를 직접 계산하지 않는다.
 - UI와 저장소가 없다.
 - 평가 dataset과 experiment 기능이 없다.
-- LLM/Agent용 span attribute 규격을 팀에서 설계해야 한다.
+- OpenTelemetry GenAI semantic convention을 기준으로 삼되 아직 표준이 포괄하지 않는 프로젝트 고유 attribute는 팀에서 설계해야 한다.
 - Collector와 저장 백엔드 운영이 필요할 수 있다.
 - 민감정보 필터링을 잘못 구성하면 prompt나 도구 인자가 외부로 전송될 수 있다.
 
 ## 6. OpenTelemetry UI와 저장소를 직접 만들 경우
 
 OpenTelemetry용 저장소와 UI를 자체 개발하면 기술적으로 Langfuse를 사용하지 않아도 된다. 그러나 이 경우 단순 로그 화면이 아니라 사실상 작은 LLM 관측 플랫폼을 직접 만드는 셈이다.
+
+> **적용 상태: 장기 참고용·조건부 설계.** 현재 실행 범위는 Langfuse Cloud를 사용하면서 평가 체계와 공통 OpenTelemetry 계측을 구축하는 데까지다. 이 절은 자체 플랫폼 착수를 승인한 계획이 아니며, §10.5의 Go/No-Go 조건을 충족해 별도 결정을 내린 경우에만 실행한다.
 
 ```text
 Deep Agent
@@ -222,7 +272,7 @@ OpenTelemetry Collector
 
 ### 6.2 LLM/Agent 전용 데이터 모델
 
-범용 APM은 HTTP와 DB 호출을 잘 보여주지만 다음 정보는 프로젝트에서 별도로 정의해야 한다.
+범용 APM은 HTTP와 DB 호출을 잘 보여주지만 LLM/Agent 관측에는 다음 정보가 추가로 필요하다. OpenTelemetry GenAI semantic convention에 있는 항목은 표준을 사용하고, 없는 항목만 프로젝트에서 별도로 정의한다.
 
 - prompt와 completion
 - model과 inference parameter
@@ -235,23 +285,43 @@ OpenTelemetry Collector
 - session/user/tenant
 - 평가 점수와 사용자 피드백
 
+속성은 OpenTelemetry GenAI semantic convention을 우선하고, 프로젝트 전용 값에만 `skn.*` namespace를 사용한다. 표준 규격이 Development 상태일 수 있으므로 적용한 semantic convention 버전을 코드와 문서에 고정하고 업그레이드 시 호환성을 검증한다.
+
 예시 attribute는 다음과 같다.
 
 ```text
-agent.name
-agent.version
-agent.parent_id
-llm.model
-llm.input_tokens
-llm.output_tokens
-tool.name
-tool.arguments
-retrieval.document_ids
-evaluation.task_success
-evaluation.faithfulness
+gen_ai.operation.name
+gen_ai.agent.name
+gen_ai.request.model
+gen_ai.usage.input_tokens
+gen_ai.usage.output_tokens
+gen_ai.tool.name
+gen_ai.tool.call.arguments       # 민감 원문이므로 기본 비수집
+gen_ai.tool.call.result          # 민감 원문이므로 기본 비수집
+skn.agent.version
+skn.agent.runtime_profile.version
+skn.retrieval.document_ids
+skn.hitl.state
+skn.evaluation.task_success
+skn.evaluation.faithfulness
 ```
 
-### 6.3 평가 및 운영 기능
+루트·서브에이전트와 tool의 관계는 `agent.parent_id` 같은 별도 문자열 속성보다 OpenTelemetry trace context와 span parent-child 관계를 정본으로 사용한다. 업무상의 내부 run ID가 필요하면 별도 correlation attribute를 추가하되 trace 관계를 중복 구현하지 않는다.
+
+### 6.3 원문 payload 수집 정책
+
+prompt, completion, tool arguments, tool result와 retrieval chunk는 유용하지만 크고 민감하다. 정규식 마스킹만으로 모든 개인정보와 업무상 기밀을 식별할 수 없으므로 기본 수집은 allowlist와 요약값 중심으로 구성한다.
+
+- 기본 기록: `tool.name`, 성공 여부, latency, result count·size, error type, schema validation 결과
+- 조건부 기록: 허용된 argument 필드, document/chunk ID, payload hash, truncation 여부
+- 기본 비수집: Jira 본문, 파일 원문, RAG chunk 원문, credential, 개인 식별 정보가 포함될 수 있는 전체 tool result
+- 원문 capture: 개발 환경 또는 승인된 디버깅 세션에서만 opt-in하고 짧은 보존 기간 적용
+- 크기 제한: span attribute와 event에 최대 길이·배열 개수 제한을 적용
+- 실패 정책: 직렬화나 마스킹이 실패하면 원문을 보내지 않는 fail-closed 방식 사용
+
+`user_id_hash`는 salt와 회전 정책을 포함해 정의하고, tenant와 account 식별자도 외부 백엔드에 꼭 필요한 수준만 전송한다. Collector 필터는 추가 방어선이며 애플리케이션의 allowlist·마스킹을 대체하지 않는다.
+
+### 6.4 평가 및 운영 기능
 
 - 평가 dataset 관리
 - 동일 dataset 반복 실행
@@ -371,13 +441,16 @@ DeepEval의 semantic metric이 적합한 항목:
 
 ```text
 관측·평가 결과 중앙 플랫폼
-└─ Langfuse
+└─ Langfuse v4
 
 전체 Agent 회귀 평가
 └─ DeepEval + pytest
 
 RAG 전용 평가
 └─ Ragas
+
+문서 처리·검색기 기준선
+└─ pytest/custom evaluation
 
 공통 계측·전송
 └─ OpenTelemetry를 단계적으로 도입
@@ -392,25 +465,60 @@ LangSmith
 - DeepEval: Agent 목표 달성 및 semantic 품질의 자동 회귀 테스트
 - pytest/custom assertion: 권한, 승인, timeout, 중복 실행 등 결정적 규칙 검증
 - Ragas: 검색 문서와 생성 답변 사이의 품질 평가
+- pytest/custom evaluation: 파싱·구조 보존, document/chunk Recall@k, 업무 추출 Precision/Recall 측정
 - OpenTelemetry: Django부터 Agent, tool, DB까지 공통 계측 및 백엔드 중립성 확보
 - LangSmith: Langfuse와의 역할 중복을 피하기 위해 사용하지 않음
 
 ## 10. 단계적 도입 전략
 
-### 10.1 1단계: OpenTelemetry와 Langfuse 병행
+### 10.0 0단계: P0 HITL tool-call 기록 정합성 수정
 
-현재 구현과 목표 구조를 구분한다. 현재 코드는 Langfuse의 LangChain callback을 사용하며, Langfuse SDK가 내부적으로 OpenTelemetry provider와 전송을 구성한다. 아직 프로젝트가 직접 관리하는 공통 OpenTelemetry 계측 계층과 Collector를 구축한 상태는 아니다.
+현재 `trace_events()`는 스트림마다 `open_tool_calls`를 빈 상태로 만들고, HITL interrupt 때 `_suspend_run()`은 `agent_run`만 PENDING으로 남긴다. 승인 대기 tool call은 `finally`의 `_close_orphans()`가 `FAILED / STREAM_CLOSED`로 종료하며, 재개 스트림은 기존 DB 행과 짝을 찾지 못해 실제 성공 결과를 반영하지 못한다.
+
+이 상태에서 Tool 성공률, HITL 승인 후 성공률, 실패 단계 분포를 측정하면 거짓 숫자가 기준선에 들어간다. 따라서 Langfuse v3 기준선 저장과 v4 마이그레이션보다 먼저 다음을 완료한다.
+
+1. HITL interrupt 시 해당 run의 승인 대기 tool call을 orphan 실패 처리 대상에서 제외하고 `PENDING`으로 유지한다.
+2. `tool_call` 행을 LangChain의 `tool_call_id`와 안정적으로 연결할 수단을 마련한다. `(run_id, langchain_tool_call_id)`를 직접 저장하거나 기존 idempotency 기록을 이용하는 방식 중 하나를 선택한다.
+3. resume 시 동일 식별자로 기존 PENDING 행을 다시 열어 승인 후 실제 성공·실패 결과로 종료한다.
+4. 거부는 실행 실패와 구분되는 상태·오류 코드 정책을 정하고, 실행되지 않은 도구를 성공이나 일반 실행 실패로 집계하지 않는다.
+5. 동일 도구의 병렬 승인, 승인·거부, resume 성공·실패, 중복 resume를 포함한 deterministic 회귀 테스트를 추가한다.
+
+완료 조건은 다음과 같다.
+
+- interrupt 직후 승인 대기 tool call이 `FAILED / STREAM_CLOSED`로 기록되지 않는다.
+- 승인 후 실제 성공한 tool call이 기존 DB 행에서 `OK`로 종료된다.
+- 거부·실행 실패·실제 스트림 비정상 종료가 서로 구분된다.
+- 병렬로 같은 tool을 호출해도 각 `tool_call_id`가 정확한 행과 연결된다.
+- HITL 관련 운영 집계와 Langfuse trace가 같은 실행 결과를 나타낸다.
+
+### 10.1 1단계: Langfuse v4 전환과 현행 기준선 고정
+
+신규 Collector나 evaluator를 추가하기 전에 현재 v3 trace의 기준선을 저장하고 Python SDK v4 마이그레이션을 진행한다.
+
+1. 대표 시나리오 5~10개의 v3 trace와 마스킹 결과를 기준선으로 보관한다.
+2. v4 호환 branch에서 callback, metadata 전파, span filtering, score API를 수정한다.
+3. 동일 시나리오로 trace 구조·token·비용·마스킹·유실 여부를 비교한다.
+4. v4 전환 후 LangSmith callback과 자동 tracing 경로를 비활성화하거나 제거한다.
+5. Langfuse만 활성화된 상태를 회귀 테스트로 고정한다.
+
+이 단계가 끝나야 이후 문서의 “현재”는 Langfuse v4 단일 중앙 플랫폼을 의미한다.
+
+### 10.2 2단계: 프로젝트 공통 OpenTelemetry 계측 도입
+
+현재 구현과 목표 구조를 구분한다. 현재 코드는 Langfuse의 LangChain callback을 사용하며, Langfuse SDK가 내부적으로 OpenTelemetry provider와 전송을 구성한다. 아직 프로젝트가 직접 관리하는 공통 OpenTelemetry 계측 계층과 Collector를 구축한 상태는 아니다. 즉 현재는 “Langfuse SDK가 OTel을 내부 기반으로 사용”하는 상태이지, “프로젝트 공통 OTel + Collector” 구축이 완료된 상태가 아니다.
 
 ```text
 현재
 Deep Agent → Langfuse LangChain callback
-                 └─ Langfuse SDK 내부 OpenTelemetry 처리
+                 └─ Langfuse SDK 내부 OpenTelemetry 처리 및 Langfuse 전송
 
 목표
 Deep Agent → 프로젝트 공통 OpenTelemetry 계측 → OpenTelemetry Collector
                                             ├─ Langfuse
                                             └─ 자체 관측·평가 플랫폼
 ```
+
+Collector가 Langfuse v4로 export할 때 인증 헤더와 함께 `x-langfuse-ingestion-version: 4`를 설정하여 지연된 호환 수집 경로를 피한다. 하나의 전역 TracerProvider와 여러 span processor를 사용할지 Collector 중심으로 통합할지는 PoC에서 중복 span, orphan span, sampling 일관성을 비교해 결정한다.
 
 이 단계에서는 Langfuse를 완성된 UI이자 요구사항 발견 도구로 사용한다. 실제 운영 과정에서 팀이 자주 확인하는 화면과 필터, 필요한 지표, 부족한 기능을 기록한다.
 
@@ -419,7 +527,7 @@ Deep Agent → 프로젝트 공통 OpenTelemetry 계측 → OpenTelemetry Collec
 - trace_id, session_id, user_id_hash, tenant_id
 - agent_name, agent_version, subagent_name
 - model, input/output token, cost
-- tool_name, tool_result, success, latency
+- tool_name, success, latency, result_count, result_size, error_type
 - 검색 문서 ID와 retrieval score
 - HITL 승인·거부·재개 상태
 - 평가 점수와 오류 유형
@@ -427,7 +535,9 @@ Deep Agent → 프로젝트 공통 OpenTelemetry 계측 → OpenTelemetry Collec
 
 민감한 원문과 tool arguments는 저장 전에 애플리케이션 계층에서 우선 마스킹한다. Collector의 필터링은 추가 방어선으로 사용하며, Collector 설정 하나에 개인정보 보호를 전적으로 의존하지 않는다.
 
-### 10.2 2단계: 실제 UI 요구사항 수집
+원문 tool result는 공통 metadata에 넣지 않는다. §6.3의 allowlist, opt-in capture, 크기 제한과 fail-closed 정책을 적용한다.
+
+### 10.3 3단계: 실제 UI 요구사항 수집
 
 Langfuse를 사용하면서 다음을 확인한다.
 
@@ -439,9 +549,9 @@ Langfuse를 사용하면서 다음을 확인한다.
 - 개발자와 운영자의 화면 요구 차이
 - Langfuse에서 부족하거나 불편한 기능
 
-### 10.3 3단계: 프로젝트 전용 요약 UI 추가
+### 10.4 선택적 고도화: 프로젝트 전용 요약 UI 추가
 
-처음부터 Langfuse 전체를 복제하지 않는다. 먼저 OTLP 수신, trace·평가 결과 저장, 검색·집계 API, 보존·삭제 정책을 갖춘 뒤 운영 의사결정에 필요한 요약 화면부터 만든다.
+이 단계는 현재 필수 실행 범위가 아니다. Langfuse를 실제로 사용한 결과 프로젝트 고유의 운영 요약 요구가 명확하고 기존 `/ops/usage` 확장만으로 해결되지 않을 때 별도 승인을 받아 착수한다. 처음부터 Langfuse 전체를 복제하지 않고 운영 의사결정에 필요한 요약 화면부터 만든다. Langfuse 외부 trace를 직접 조회해야 할 필요가 확인된 경우에만 OTLP 수신, trace·평가 결과 저장, 검색·집계 API, 보존·삭제 정책을 추가한다.
 
 - Agent 버전별 작업 성공률
 - 업무 유형별 평균 비용 및 지연
@@ -459,9 +569,16 @@ Langfuse를 사용하면서 다음을 확인한다.
 Langfuse: 특정 실행이 내부적으로 왜 실패했는가?
 ```
 
-### 10.4 4단계: Langfuse 유지·축소·제거 판단
+### 10.5 장기 조건부 선택지: Langfuse 유지·축소·제거 판단
 
-자체 UI가 안정된 뒤 다음 조건을 기준으로 Langfuse 유지 여부를 결정한다.
+Langfuse 대체 플랫폼은 현재 로드맵의 확정 작업이 아니다. 기존에 Langfuse 셀프호스팅도 현재 팀 규모·트래픽에서는 Cloud보다 운영비가 크다고 판단했으므로, 그보다 범위가 큰 자체 플랫폼은 다음 Go 조건 중 하나 이상이 명확하고 전담 역량이 확보됐을 때만 별도 의사결정으로 착수한다.
+
+- Langfuse 비용이 자체 구축·운영의 총비용보다 지속적으로 커짐
+- 외부 반출·데이터 주권 정책 때문에 Langfuse Cloud 사용이 불가능해짐
+- Langfuse와 기존 `/ops/usage`로 해결할 수 없는 핵심 도메인 요구가 반복적으로 확인됨
+- 플랫폼을 개발·운영할 담당 인력과 장기 제품 운영 계획이 확보됨
+
+Go 결정 후 자체 UI가 안정된 경우 다음 조건을 기준으로 Langfuse 유지 여부를 판단한다.
 
 - 상세 trace 디버깅을 자체 UI가 충분히 대체하는가
 - dataset/experiment/annotation 기능이 계속 필요한가
@@ -511,21 +628,29 @@ Langfuse                      = 초기 trace·평가 조회 및 실험 UI
 
 ## 12. 평가 지표 설계
 
-Deep Agent는 최종 답변만 평가해서는 안 된다. 목표 달성, 과정, 효율, 안전성을 분리해 본다.
+Deep Agent는 최종 답변만 평가해서는 안 된다. 문서 처리, 검색, 목표 달성, 과정, 효율, 안전성을 분리해 본다. 특히 Ragas의 LLM 기반 Context Precision/Recall만으로 검색기 자체의 결정적 성능을 대체하지 않는다. 문서 후보 선정과 chunk 검색은 정답 document/chunk ID를 기준으로 별도 측정한다.
 
 | 평가 영역 | 추천 지표 | 평가 방법 |
 |---|---|---|
+| 문서 처리 | 파싱 성공률 | 등록 시도 대비 검색 가능한 문서 생성 비율 |
+| 구조 보존 | Heading·표 구조 보존율 | golden document의 기대 구조와 파싱 결과 대조 |
+| 문서 후보 검색 | Coarse Document Recall@k | 기대 document ID의 후보 포함 여부 |
+| Chunk 검색 | Recall@k, Top-1 Accuracy | 기대 chunk ID와 retriever 결과 직접 대조 |
+| 업무 추출 | Precision, Recall, missing-fields 정직성 | golden task와 추출 결과 대조 |
 | 최종 성공 | Task Success Rate | DeepEval/custom rubric |
 | 도구 선택 | Tool Selection Accuracy | deterministic + DeepEval |
 | 인자 정확성 | Argument Accuracy | schema/business rule 검사 |
 | 실행 효율 | 평균 step/tool/LLM 호출 수 | trace 집계 |
 | 지연 | p50/p95 end-to-end latency | Langfuse/OpenTelemetry |
 | 비용 | 성공 작업당 token 및 비용 | Langfuse 집계 |
-| RAG 검색 | Context Precision/Recall | Ragas |
+| RAG 응답 문맥 | Context Precision/Recall | Ragas |
 | 근거성 | Faithfulness | Ragas 또는 DeepEval |
 | 안전성 | 승인·권한 위반율 | pytest deterministic test |
 | 안정성 | timeout·실패·복구 성공률 | trace + 장애 주입 테스트 |
 | 위임 품질 | subagent 선택 및 결과 활용 | custom evaluator |
+| 실행 궤적 | Trajectory Correctness | 필수·금지·허용 Tool path, 순서 제약과 postcondition 검사 |
+| 과정 품질 | Plan·Delegation·Recovery Quality | DeepEval custom metric 또는 Agent-as-a-Judge |
+| 실패 위치 | Failure Stage Distribution | root/subagent/retriever/tool/HITL 단계별 trace 집계 |
 | 메모리 | 저장·검색 정확성 및 격리 | deterministic test |
 | 사용자 품질 | 만족도 및 수정 요청률 | Langfuse feedback |
 
@@ -553,76 +678,157 @@ Recovery Success Rate
 
 성공했더라도 도구를 과도하게 호출할 수 있으므로 성공률, 비용, 지연을 함께 비교해야 한다.
 
-## 13. 초기 평가 dataset 제안
+Trajectory 평가는 하나의 고정 경로와 문자열이 일치하는지를 검사하지 않는다. 업무 규칙상 필요한 승인 순서, 필수·금지 Tool, 재시도 상한과 postcondition은 deterministic assertion으로 평가하고, 여러 안전한 경로 중 계획·위임·근거 활용·실패 복구가 의미적으로 적절했는지는 Agent-as-a-Judge로 평가한다. 최종 결과가 성공하더라도 중간 단계의 잘못된 위임이나 불필요한 side effect가 있으면 과정 품질 실패로 별도 기록한다.
 
-초기부터 50~100개를 구축하면 평가 비용과 실행시간뿐 아니라 실패 원인 분석 부담이 커진다. PoC는 대표 사례 10개로 시작하고, 초기 기준선은 약 20개로 구성한다.
+소규모 dataset의 평균만 보고 성능을 일반화하지 않는다. 모든 보고서에는 사례 수, 성공/실패 절대 건수, 실행 반복 수를 함께 표시한다. 가능한 비율 지표에는 신뢰구간을 병기하고, 3회 반복 사례는 평균뿐 아니라 최솟값과 실행 간 변동도 기록한다.
 
-| 유형 | 초기 기준선 | 주요 검증 |
-|---|---:|---|
-| 기본 Agent 업무 | 4개 | 요청 이해, 목표 달성, 최종 응답 |
-| RAG 문서 질의 | 4개 | 검색 정확성, faithfulness, relevancy |
-| Tool 호출 | 3개 | 도구 선택, 인자 정확성 |
-| 서브에이전트 위임 | 2개 | 위임 대상과 결과 활용 |
-| HITL 승인·거부 | 2개 | 승인 전 실행 방지와 거부 처리 |
-| 실패·timeout·재시도 | 2개 | 오류 처리와 복구 |
-| 권한·데이터 격리 | 2개 | 금지 도구와 tenant/user 격리 |
-| 모호하거나 실행 불가능한 요청 | 1개 | 무리한 실행과 환각 방지 |
-| 합계 | **20개** | |
+### 12.1 평가 실행 등급과 배포 gate
+
+평가 비용과 외부 side effect를 통제하기 위해 실행 시점을 네 등급으로 분리한다.
+
+| 등급 | 실행 시점 | 포함 항목 | 외부 서비스 | 기본 판정 |
+|---|---|---|---|---|
+| PR-fast | 모든 pull request | schema, 권한, HITL, timeout, 중복 실행, retriever deterministic test | mock/fake만 사용 | 하나라도 실패하면 차단 |
+| Nightly-semantic | 매일 또는 주요 변경 후 | 핵심 개발 사례 10개, Ragas·DeepEval, 3회 반복 대상 | 읽기 전용 또는 sandbox | 기준선 대비 허용 하락폭 초과 시 경고·조사 |
+| Release-candidate | 배포 후보 확정 시 | 개발 dataset 20개 전체, 비용·지연 포함 | sandbox tenant | 필수 안전 규칙 100%, semantic threshold 충족 |
+| Final-holdout | 최종 승인 시 | 비공개 holdout 10개 포함 첫 전체 평가 | 통제된 sandbox | 개발셋과 holdout 모두 보고 후 승인 |
+
+초기 threshold는 PoC 기준선을 얻은 후 metric별로 확정한다. 안전·권한·승인·tenant 격리처럼 위반을 허용할 수 없는 규칙은 평균 점수와 무관하게 100% 통과해야 한다. LLM Judge 기반 metric은 단일 실행의 작은 하락만으로 배포를 막지 않고, 반복 실행 결과·사례별 실패·사람 검토를 함께 본다.
+
+### 12.2 Side-effect 평가 격리
+
+Jira 등록, 파일 쓰기, MCP 호출과 같은 평가가 실제 운영 데이터에 영향을 주지 않도록 다음을 강제한다.
+
+- PR에서는 fake adapter 또는 in-memory stub을 사용한다.
+- Nightly와 release 평가는 전용 sandbox tenant·프로젝트·디렉터리만 사용한다.
+- 생성 요청에는 idempotency key를 부여하고 성공한 항목을 재시도하지 않는다.
+- 허용된 경로와 tenant를 코드 assertion으로 검사한다.
+- 평가 실행 종료 후 생성 데이터를 식별할 run ID와 정리 정책을 둔다.
+- 실제 운영 connector를 사용해야 하는 검증은 별도 승인과 dry-run을 거친다.
+
+## 13. 평가 dataset 제안
+
+초기부터 50~100개를 구축하면 평가 비용과 실행시간뿐 아니라 실패 원인 분석 부담이 커진다. 평가 pipeline과 rubric을 만드는 PoC는 대표 사례 10개로 시작하고, 개발·기준선 dataset 20개와 별도의 비공개 holdout 10개를 합친 총 30개를 첫 평가 기준으로 사용한다.
+
+### 13.1 개발 dataset과 holdout 분리
+
+| 유형 | 개발·기준선 | Holdout | 합계 | 주요 검증 |
+|---|---:|---:|---:|---|
+| 기본 Agent·no-tool | 4개 | 1개 | 5개 | 요청 이해, 목표 달성, 불필요한 Tool 호출 방지 |
+| RAG 문서 질의 | 4개 | 3개 | 7개 | 검색 정확성, faithfulness, relevancy |
+| Tool 선택·인자 | 3개 | 1개 | 4개 | 도구 선택, 인자 정확성 |
+| 서브에이전트·trajectory | 2개 | 1개 | 3개 | 위임 대상, 결과 활용, 전체 실행 경로 |
+| HITL 승인·거부 | 2개 | 1개 | 3개 | 승인 전 실행 방지, 승인·거부 후 상태 |
+| 실패·부분 성공·복구 | 2개 | 1개 | 3개 | timeout, 재시도, PARTIAL_RESULT |
+| 권한·데이터 격리 | 2개 | 1개 | 3개 | 금지 도구와 tenant/user 격리 |
+| 모호하거나 실행 불가능한 요청 | 1개 | 1개 | 2개 | 무리한 실행과 환각 방지 |
+| 합계 | **20개** | **10개** | **30개** | |
+
+개발 dataset은 평가 코드와 rubric 개발, 모델·프롬프트 개선, 실패 원인 분석에 반복 사용한다. Holdout은 개발 중 결과를 보며 튜닝하지 않고 최종 후보가 정해진 후 실행하여 dataset 과적합 여부를 확인한다. Holdout 결과를 분석하여 수정에 사용한 사례는 다음 평가 주기부터 개발 dataset으로 승격하고 새로운 holdout으로 교체한다.
+
+20개는 평가 체계를 시작하기에는 충분하지만 최종 성능을 일반화하기에는 부족하다. 특히 RAG 4개는 한 건이 평균의 25%, HITL 2개는 한 건이 50%를 바꾸므로 개발 dataset 점수만으로 제품 전체 성능을 단정하지 않는다. 첫 보고 수치는 holdout을 포함한 30개 결과와 사례 수를 함께 표시한다.
+
+### 13.2 기존 평가 설계에서 가져오는 구성 원칙
+
+본 문서의 20개 개발 dataset과 10개 holdout 구성을 현재 실행 기준으로 사용한다. `docs/TO-BE/4_평가_설계.md`의 기존 G-DOC/G-QUERY/G-TASK/G-PROMPT 규모와 담당 계획은 본 작업의 정본으로 사용하지 않되, 다음 평가 원칙은 흡수한다.
+
+- **어려운 RAG corpus:** 주제가 완전히 다른 문서 대신 서로 혼동하기 쉬운 정보시스템 구축·RFP 계열 문서 4~5건을 fixture로 사용한다. 문서 fixture 수는 위 30개 평가 사례 수에 포함하지 않는다.
+- **두 단계 정답 라벨:** 기대 문서 ID와 기대 chunk ID를 함께 기록하여 문서 후보 선정 실패, chunk 검색 실패, 생성 실패를 구분한다.
+- **질문 스타일 혼합:** 문서 어휘 기반 질문과 실제 사용자의 자연어 질문을 섞는다.
+- **정보 부재 정직성:** 문서에 없는 담당자·일정·공수를 추측하지 않고 정보가 없다고 답하는 RAG 사례를 포함한다.
+- **No-tool negative:** 정상 질문이지만 Tool이 필요 없는 사례를 넣어 불필요 호출률을 측정한다. 전체 dataset의 1/3이 아니라 Tool 선택을 검증하는 하위 사례 중 약 1/3을 no-tool로 구성한다.
+- **부분 실패:** 여러 작업 중 일부만 성공했을 때 성공분과 실패분, 실패 원인을 구분하고 성공한 side effect를 중복 실행하지 않는지 확인한다.
+- **Warm/cold 구분:** 지연시간 비교는 warm 실행을 기준으로 하고 cold start는 별도 관측값으로 기록한다.
+- **사람 교차검증:** LLM Judge 결과 중 약 20%를 사람이 다시 판정하여 Pass/Fail 일치율과 점수 차이를 함께 기록한다. 무작위 표본만 고르지 않고 threshold 경계, Judge 불일치, 안전 관련 실패를 우선 포함한다. 개발 dataset 기준 최소 4개, 첫 전체 평가 30개 기준 최소 6개가 대상이다.
 
 모든 사례에 Ragas와 DeepEval을 동시에 실행하지 않는다.
 
 ```text
-RAG 사례 4개
+RAG 사례
 └─ Ragas + 필요한 일부 DeepEval metric
 
-Agent 행동 사례 14개
+Agent 행동·trajectory 사례
 └─ DeepEval + deterministic assertion
 
-권한·격리 사례 2개
+권한·격리 사례
 └─ pytest deterministic assertion 중심
+```
+
+### 13.3 반복 실행과 확장
+
+LLM 결과의 비결정성을 확인하기 위해 모든 사례를 무조건 여러 번 실행하지 않고 HITL, 병렬 Tool, side effect, 서브에이전트, RAG 경계 사례, timeout·부분 실패 등 핵심 개발 사례 10개만 3회 반복한다.
+
+```text
+일반 개발 사례 10개 × 1회 = 10회
+핵심 개발 사례 10개 × 3회 = 30회
+Holdout 사례       10개 × 1회 = 10회
+────────────────────────────────
+첫 전체 평가 실행 수             = 약 50회
 ```
 
 dataset은 다음처럼 단계적으로 확장한다.
 
 ```text
-PoC             10개
-초기 기준선      20개
-첫 배포          30~40개
-운영 안정화      50개 이상
+PoC                         10개
+개발·기준선                 20개
+첫 전체 평가(holdout 포함)  30개
+운영 안정화                 40~50개 이상
 ```
 
 사례 수를 임의로 채우지 않고 운영 실패 발견, 버그 수정, 신규 tool/subagent 추가, 새로운 문서·업무 유형 추가, 모델·프롬프트 변경으로 인한 취약점 발견 시 회귀 사례를 추가한다.
 
-각 사례에 다음 정보를 포함한다.
+### 13.4 평가 사례 schema
+
+각 사례는 공통 필드와 평가 유형별 선택 필드를 포함한다.
 
 ```json
 {
+  "id": "EVAL-HITL-001",
+  "split": "development",
   "input": "사용자 요청",
   "expected_outcome": "완료되어야 하는 목표",
   "required_tools": ["필수 도구"],
   "forbidden_tools": ["호출하면 안 되는 도구"],
+  "acceptable_tool_paths": [["search", "create"]],
+  "required_tool_order": [["search", "create"]],
   "expected_arguments": {},
+  "argument_predicates": {},
+  "max_calls_per_tool": {"create": 1},
+  "allowed_retries": {"search": 1, "create": 0},
   "reference_answer": "필요한 경우만",
-  "expected_sources": [],
+  "expected_document_ids": [],
+  "expected_chunk_ids": [],
+  "required_facts": [],
+  "forbidden_claims": [],
+  "must_acknowledge_missing_information": false,
+  "expected_status": "SUCCESS",
+  "must_report_failure_reason": false,
+  "must_not_retry_successful_items": false,
   "max_tool_calls": 5,
   "requires_approval": true,
+  "postconditions": ["sandbox Jira issue가 정확히 1건 생성됨"],
   "tags": ["hitl", "jira", "side_effect"]
 }
 ```
+
+모든 Agent가 하나의 고정된 trajectory만 따라야 한다고 가정하지 않는다. 여러 경로가 같은 목표를 안전하게 달성할 수 있으면 `acceptable_tool_paths`, argument predicate와 최종 `postconditions`로 허용 범위를 표현한다. 정확한 실행 순서는 업무 규칙상 필요한 구간에만 강제한다.
 
 ## 14. 최종 결론
 
 현재 프로젝트에는 다음 전략이 가장 적합하다.
 
-1. 초반에는 OpenTelemetry와 Langfuse를 함께 사용한다.
-2. 현재 Langfuse callback 중심 구조에서 프로젝트가 직접 관리하는 OpenTelemetry 계측과 Collector 구조로 단계적으로 전환한다.
-3. Langfuse를 통해 필요한 trace 구조, 필터, 평가 화면과 운영 지표를 학습한다.
-4. DeepEval과 pytest로 Agent의 end-to-end, component, 안전 규칙 회귀 테스트를 구축한다.
-5. Ragas는 RAG 구간의 검색 품질과 답변 근거성 평가에 한정한다.
-6. 평가 dataset과 Ragas·DeepEval·자체 evaluator의 원시 결과는 프로젝트 내부를 정본으로 관리하고 Langfuse에도 전송한다.
-7. LangSmith는 Langfuse와 역할이 중복되므로 사용하지 않으며 기존 연동은 비활성화하거나 제거한다.
-8. 필요한 UI가 구체화되면 수집·저장·조회 계층을 먼저 마련하고 프로젝트 전용 요약 화면부터 만든다.
-9. 자체 플랫폼이 정량적인 기능·성능·보안 기준을 충족하고 병행 운영 검증을 통과한 뒤에만 Langfuse를 제거한다.
+1. 가장 먼저 HITL 승인 tool-call의 `FAILED / STREAM_CLOSED` 오기록과 resume 매칭 문제를 수정하고 회귀 테스트로 고정한다.
+2. 수정된 기록을 기준으로 Langfuse Python SDK v3 기준선을 저장하고 v4로 마이그레이션한다.
+3. LangSmith callback, 자동 tracing 환경변수와 outbound 경로를 비활성화하거나 제거한다.
+4. 프로젝트 공통 OpenTelemetry 계측과 Collector 구조를 단계적으로 도입한다.
+5. OTel GenAI semantic convention을 우선하고 프로젝트 고유 값만 `skn.*`로 정의한다.
+6. Langfuse를 통해 필요한 trace 구조, 필터, 평가 화면과 운영 지표를 학습한다.
+7. DeepEval과 pytest로 Agent의 end-to-end, component, trajectory, 안전 규칙 회귀 테스트를 구축한다.
+8. 문서 파싱·retriever는 deterministic 지표로 측정하고 Ragas는 RAG 응답의 문맥·근거성 평가에 사용한다.
+9. 평가 dataset과 Ragas·DeepEval·자체 evaluator의 원시 결과는 프로젝트 내부를 정본으로 관리하고 Langfuse에도 전송한다.
+10. 원문 tool payload는 기본 비수집하며 allowlist, opt-in, 크기 제한과 fail-closed 정책을 적용한다.
+11. 프로젝트 전용 요약 UI는 실제 요구가 확인된 경우에만 선택적으로 고도화한다.
+12. Langfuse 대체 플랫폼은 현재 확정 로드맵이 아닌 장기 조건부 선택지이며, 별도 Go 결정과 병행 운영 검증을 통과한 경우에만 Langfuse 제거를 검토한다.
 
 핵심은 OpenTelemetry와 Langfuse를 경쟁 제품으로 보지 않는 것이다.
 
@@ -638,7 +844,11 @@ Ragas/DeepEval = 품질 점수를 계산하는 평가 계층
 
 - OpenTelemetry 공식 문서: <https://opentelemetry.io/docs/>
 - OpenTelemetry 개요: <https://opentelemetry.io/docs/what-is-opentelemetry/>
+- OpenTelemetry GenAI semantic convention: <https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/>
 - Langfuse 문서: <https://langfuse.com/docs>
+- Langfuse Versions & Compatibility: <https://langfuse.com/docs/compatibility>
+- Langfuse Python SDK v3 → v4: <https://langfuse.com/docs/observability/sdk/upgrade-path/python-v3-to-v4>
+- Langfuse Existing OpenTelemetry Setup: <https://langfuse.com/faq/all/existing-otel-setup>
 - Langfuse Experiments: <https://langfuse.com/docs/evaluation/experiments/experiments-via-sdk>
 - Langfuse Scores API/SDK: <https://langfuse.com/docs/evaluation/evaluation-methods/scores-via-sdk>
 - LangSmith Evaluation Concepts: <https://docs.langchain.com/langsmith/evaluation-concepts>

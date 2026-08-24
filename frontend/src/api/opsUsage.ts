@@ -27,6 +27,8 @@ export interface UsageTools {
   calls: number;
   calls_ok: number;
   calls_failed: number;
+  calls_rejected: number;
+  calls_pending: number;
 }
 
 export interface UsageGuardrail {
@@ -56,8 +58,11 @@ export interface UsageToolRow {
   tool_ref: string;
   calls: number;
   calls_ok: number;
-  /** 성공도 실패도 아니다 — 스트림이 끊겨 안 닫힌 행이다. 있으면 배선 문제다. */
+  calls_failed: number;
+  /** 승인 대기 또는 현재 실행 중인 호출. 성공률 분모에서 제외한다. */
   calls_pending: number;
+  /** 사용자가 거부해 실제 handler가 실행되지 않은 호출. 실패가 아니다. */
+  calls_rejected: number;
   avg_ms: number | null;
 }
 

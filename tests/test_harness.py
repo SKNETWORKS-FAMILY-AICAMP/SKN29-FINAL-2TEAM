@@ -52,6 +52,15 @@ class InputSummaryTests(SimpleTestCase):
         self.assertIn("query=", summary)
 
 
+class SkillRegisterDescriptionTests(SimpleTestCase):
+    def test_uses_the_system_confirmation_card_instead_of_chat_confirmation(self):
+        description = registry.BUILTIN_TOOLS["skill_register"].description
+
+        self.assertIn("시스템 확인 카드", description)
+        self.assertIn("채팅 답변", description)
+        self.assertNotIn("승인 없이 즉시 활성", description)
+
+
 class SkillRegisterTests(SimpleTestCase):
     """`_skill_register()` — 정본: 2026-08-20_16_Skill_Middleware_설계.md.
 
@@ -338,4 +347,3 @@ def _fake_connection(cursor):
             return False
 
     return lambda: _Connection()
-
