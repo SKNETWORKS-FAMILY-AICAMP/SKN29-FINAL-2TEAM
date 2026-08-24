@@ -5,6 +5,7 @@
 (2026-08-20 자격증명, 2026-08-24 전량 색인).
 """
 
+import json
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -16,6 +17,8 @@ from services.document_intake.service import (
     _fetch_originals,
     _index_all,
     _refetch_changed,
+    _worker_failure_detail,
+    promote_to_searchable,
     sync_drive_changes,
 )
 from services.document_pipeline.errors import PipelineConfigurationError, RunPodRequestError
@@ -344,3 +347,89 @@ class SyncDriveChangesTests(SimpleTestCase):
         self.assertEqual(result.storage_error, "OAuthError")
         documents.mark_removed_from_drive.assert_not_called()
         connectors.set_sync_cursor.assert_not_called()
+
+
+class WorkerFailureDetailTests(SimpleTestCase):
+    """실패 사유가 화면까지 가는지 본다.
+
+    `doc.index_detail` 은 2026-08-24에 「왜 안 되는지」를 화면이 말하게 하려고
+    만든 칸이다. 그런데 실패 경로가 RunPod 이 준 워커 오류를 버리고 상태값만
+    적고 있어서, 실제로 뜬 문구가 「문서 처리 실패(FAILED)」였다 — 칸만 있고
+    말은 없는 상태였다.
+    """
+
+    #: RunPod 이 실제로 돌려준 모양. `error` 는 **JSON 문자열**이다.
+    WORKER_ERROR = json.dumps(
+        {
+            "error_type": "<class 'pipeline.InvalidDocumentError'>",
+            "error_message": "표 #/tables/14의 셀 구조가 비어 있습니다.",
+            "error_traceback": "Traceback (most recent call last):\n  ...\n",
+        }
+    )
+
+    def test_워커가_말한_이유를_그대로_쓴다(self):
+        detail = _worker_failure_detail({"error": self.WORKER_ERROR}, "FAILED")
+
+        self.assertEqual(detail, "표 #/tables/14의 셀 구조가 비어 있습니다.")
+
+    def test_트레이스백은_넣지_않는다(self):
+        """사람이 읽는 칸이다. 스택은 워커 로그에 있다."""
+
+        detail = _worker_failure_detail({"error": self.WORKER_ERROR}, "FAILED")
+
+        self.assertNotIn("Traceback", detail)
+
+    def test_JSON_이_아니어도_상태값보다는_낫게_쓴다(self):
+        detail = _worker_failure_detail({"error": "worker exited unexpectedly"}, "FAILED")
+
+        self.assertEqual(detail, "worker exited unexpectedly")
+
+    def test_사유가_없으면_상태값으로_돌아간다(self):
+        """오류 칸이 비어 오는 경우가 있다(CANCELLED·TIMED_OUT). 그때는 상태라도 남긴다."""
+
+        for payload in ({}, {"error": ""}, {"error": None}):
+            with self.subTest(payload=payload):
+                self.assertEqual(
+                    _worker_failure_detail(payload, "TIMED_OUT"), "문서 처리 실패(TIMED_OUT)"
+                )
+
+    def test_아주_긴_사유는_잘라_넣는다(self):
+        """화면에 뜨는 칸이라 통째로 넣으면 읽을 수 없다."""
+
+        long = json.dumps({"error_message": "가" * 900})
+
+        self.assertEqual(len(_worker_failure_detail({"error": long}, "FAILED")), 500)
+
+
+@patch("services.document_intake.service.time.sleep", lambda _: None)
+@patch("backend.db.document_pipeline.PersonalDocumentRepository")
+@patch("services.document_pipeline.signing.signed_download_url", return_value="https://x/y")
+@patch("services.document_pipeline.runpod_client.job_status")
+@patch("services.document_pipeline.runpod_client.submit_document_job", return_value={"id": "J1"})
+@patch("services.document_intake.service.PipelineDocumentRepository")
+class PromoteWritesWorkerReasonTests(SimpleTestCase):
+    """`promote_to_searchable` 이 **실제로** 그 사유를 칸에 넣는지 본다.
+
+    앞의 `WorkerFailureDetailTests` 는 함수만 본다 — 호출부가 예전처럼
+    `f"문서 처리 실패({state})"` 로 되돌아가도 그 테스트는 통과한다. 오늘 고친
+    것은 「화면에 진짜 이유가 뜬다」이므로, 저장되는 값까지 봐야 지켜진다.
+    """
+
+    def test_저장되는_사유가_워커가_말한_것이다(
+        self, pipeline_repo, submit, status, url, personal_repo
+    ):
+        pipeline_repo.get_for_processing.return_value = {
+            "storage_key": "k", "cur_revision": "r", "mime_type": "text/markdown",
+        }
+        status.return_value = {
+            "status": "FAILED",
+            "error": json.dumps({"error_message": "표 #/tables/14의 셀 구조가 비어 있습니다."}),
+        }
+
+        outcome = promote_to_searchable(account_id="UA002", doc_id="DC005")
+
+        self.assertFalse(outcome["ok"])
+        self.assertEqual(outcome["detail"], "표 #/tables/14의 셀 구조가 비어 있습니다.")
+        saved = personal_repo.set_index_status.call_args.kwargs
+        self.assertEqual(saved["status"], "FAILED")
+        self.assertEqual(saved["detail"], "표 #/tables/14의 셀 구조가 비어 있습니다.")

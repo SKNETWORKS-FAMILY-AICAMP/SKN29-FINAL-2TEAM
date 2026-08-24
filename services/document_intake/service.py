@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -445,6 +446,30 @@ def _fetch_originals(*, account_id: str, team_id: str, result: IntakeResult) -> 
 PROMOTE_WAIT_SECONDS = 240
 
 
+def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
+    """워커가 왜 실패했는지를 화면에 쓸 한 줄로 만든다.
+
+    RunPod 의 `error` 는 워커가 만든 **JSON 문자열**이다 — `error_type`,
+    `error_message`, `error_traceback` 이 들어 있다. 상태값만 적으면 화면에
+    「문서 처리 실패(FAILED)」가 뜨는데, 그건 `index_detail` 을 만든 이유를
+    지우는 것이다(2026-08-24). 실제로 그 자리에 들어가야 할 말은 예를 들어
+    「표 #/tables/14의 셀 구조가 비어 있습니다」다.
+
+    트레이스백은 넣지 않는다. 사람이 읽는 칸이고, 스택은 워커 로그에 있다.
+    """
+
+    raw = result.get("error")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            message = json.loads(raw).get("error_message")
+        except (ValueError, AttributeError):
+            # 워커가 JSON 이 아닌 문자열을 준 경우다. 그래도 상태값보다는 낫다.
+            message = raw
+        if message:
+            return str(message).strip()[:500]
+    return f"문서 처리 실패({state})"
+
+
 def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
     """문서 하나를 **본문 검색 가능**한 상태로 올린다.
 
@@ -509,7 +534,7 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
             PipelineDocumentRepository.ingest(expected_doc=document, result=output)
             return _done(True)
         if state in {"FAILED", "CANCELLED", "TIMED_OUT"}:
-            return _done(False, detail=f"문서 처리 실패({state})")
+            return _done(False, detail=_worker_failure_detail(result, state))
 
     # **아직 도는 중이다.** 실패로 적지 않는다 — 다음 질문에서는 끝나 있을 수 있다.
     return {"doc_id": doc_id, "ok": False, "detail": "아직 준비 중입니다(처리가 계속되고 있습니다)."}
