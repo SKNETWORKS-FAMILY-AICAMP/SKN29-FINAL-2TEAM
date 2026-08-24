@@ -43,6 +43,12 @@ const STATUS: Record<OpsMcpServer['status'], { tone: BadgeTone; label: string }>
   ERROR: { tone: 'warning', label: '연결 실패' },
 };
 
+/** 선택지가 둘뿐이라 접어 두지 않는다 — 라디오로 둘 다 보인다(2026-08-24 PM 지적). */
+const ON_FAILURE_CHOICES: { value: GuardrailOnFailure; label: string }[] = [
+  { value: 'OPEN', label: '대화 계속' },
+  { value: 'CLOSED', label: '대화 차단' },
+];
+
 const GUARDRAIL_KIND_LABELS: Record<GuardrailKind, string> = {
   OPENAI_GUARDRAILS: 'OpenAI Guardrails',
   BEDROCK_GUARDRAILS: 'AWS Bedrock Guardrails',
@@ -212,18 +218,25 @@ export function TeamUsageSections({
             문구는 **PM 이 고른 것**이다(2026-08-24). 처음에 「검사기가 응답하지
             않을 때 / 그대로 보냄 / 막음」으로 지어 냈다가 물렸다 — 「검사기」는
             제품에 없는 말이고, 화면에 이미 있는 상태 문구는 「연결 실패」다. */}
-        <div className={styles.formGrid}>
+        <div className={`${styles.formGrid} ${styles.cardControl}`}>
           <div className={styles.fieldGroup}>
-            <label htmlFor="team-guardrail-on-failure">연결 실패 시</label>
-            <select
-              id="team-guardrail-on-failure"
-              value={onFailure}
-              disabled={busy}
-              onChange={(event) => chooseOnFailure(event.target.value as GuardrailOnFailure)}
-            >
-              <option value="OPEN">대화 계속</option>
-              <option value="CLOSED">대화 차단</option>
-            </select>
+            {/* 라디오라 `htmlFor` 로 묶을 하나가 없다 — 묶음 자체에 이름을 준다. */}
+            <span id="team-guardrail-on-failure-label">연결 실패 시</span>
+            <div className={styles.radioRow} role="radiogroup" aria-labelledby="team-guardrail-on-failure-label">
+              {ON_FAILURE_CHOICES.map((choice) => (
+                <label key={choice.value}>
+                  <input
+                    type="radio"
+                    name="team-guardrail-on-failure"
+                    value={choice.value}
+                    checked={onFailure === choice.value}
+                    disabled={busy}
+                    onChange={() => chooseOnFailure(choice.value)}
+                  />
+                  {choice.label}
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -773,3 +773,44 @@
 .purgeList li + li {
   border-top: 1px solid var(--color-border);
 }
+
+/* 선택지가 둘뿐일 때. **select 로 두면 접혀 있어서 무엇이 있는지 열어 봐야
+   안다**(2026-08-24 PM 지적) — 같은 이유로 이 카드의 「사용」도 표 안 버튼이다.
+   저장소에 라디오 스타일이 없어 네이티브를 쓰고 `accent-color` 만 맞춘다;
+   전용 컴포넌트를 만들 만큼 쓰이는 자리가 많지 않다. */
+.radioRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  min-height: 40px;      /* select 가 있던 자리와 높이를 맞춘다 */
+  align-items: center;
+}
+
+/* `.fieldGroup label`(12px 굵게)은 바깥 제목용이다. 안쪽 선택지는 값이라 그
+   차림을 그대로 쓰면 둘 다 제목처럼 보인다. */
+.fieldGroup .radioRow label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* `.fieldGroup input`(너비 100%·높이 40px·테두리)은 텍스트 칸용이다. */
+.fieldGroup .radioRow input {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* 카드 안에서 표 위에 오는 조작부. 붙어 있으면 표의 머리글로 읽힌다
+   (2026-08-24 PM 지적). */
+.cardControl {
+  margin-bottom: var(--space-6);
+}
