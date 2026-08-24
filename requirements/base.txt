@@ -4,6 +4,8 @@ django-environ>=0.11,<1.0
 django-cors-headers>=4.6,<5.0
 # `pool` extra는 memory/store.py의 PostgresStore.from_conn_string()가 내부적으로
 # 커넥션 풀(psycopg_pool)을 쓰기 때문에 필요하다(2026-08-15, 장기 메모리 착수와 함께 추가).
+# 2026-08-24부터 `backend/db/connection.py`가 **직접** 쓴다 — 저장소 209곳이
+# 호출마다 새 연결을 열고 있었고, 그 핸드셰이크가 작업 시간의 8할이었다.
 psycopg[binary,pool]>=3.2,<4.0
 gunicorn>=23.0,<24.0
 cryptography>=45.0,<50.0
