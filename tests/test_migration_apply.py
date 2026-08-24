@@ -103,5 +103,12 @@ class MigrationCheckTests(unittest.TestCase):
         self.assertIn("[OK]", output)
 
 
+class SplitStatementsTests(unittest.TestCase):
+    def test_semicolon_inside_string_literal_does_not_split_statement(self):
+        sql = "COMMENT ON COLUMN tool_call.status IS 'before; after';"
+
+        self.assertEqual(migration_apply._split_statements(sql), [sql.rstrip(";")])
+
+
 if __name__ == "__main__":
     unittest.main()

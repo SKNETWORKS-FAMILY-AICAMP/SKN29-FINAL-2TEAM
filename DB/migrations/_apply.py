@@ -135,9 +135,33 @@ def _target(url: str) -> str:
 
 def _split_statements(sql: str) -> list[str]:
     # 줄 전체가 주석(--)인 줄만 지운다. 세미콜론은 마이그레이션 파일 안에서
-    # 문자열 리터럴로 나오지 않으므로 단순 split 으로 충분하다.
+    # 문자열 리터럴에도 나올 수 있으므로 따옴표 밖의 것만 문장 끝으로 본다.
     without_comments = re.sub(r"^--.*$", "", sql, flags=re.MULTILINE)
-    statements = [s.strip() for s in without_comments.split(";")]
+    statements: list[str] = []
+    current: list[str] = []
+    in_string = False
+    index = 0
+    while index < len(without_comments):
+        char = without_comments[index]
+        if char == "'":
+            current.append(char)
+            if in_string and index + 1 < len(without_comments) and without_comments[index + 1] == "'":
+                current.append("'")
+                index += 2
+                continue
+            in_string = not in_string
+        elif char == ";" and not in_string:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+        else:
+            current.append(char)
+        index += 1
+
+    final_statement = "".join(current).strip()
+    if final_statement:
+        statements.append(final_statement)
     # BEGIN/COMMIT 은 뺀다 — psycopg 연결은 기본이 autocommit=False 라
     # `with conn:` 블록 자체가 이미 트랜잭션이다.
     return [s for s in statements if s and s.upper() not in ("BEGIN", "COMMIT")]
