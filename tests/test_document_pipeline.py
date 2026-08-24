@@ -425,3 +425,73 @@ class EvidenceBudgetTests(SimpleTestCase):
         scores = [row["retrieval_score"] for row in selected]
 
         self.assertEqual(scores, sorted(scores, reverse=True))
+
+
+class ChunkRevisionScopeTests(SimpleTestCase):
+    """청크를 읽는 자리는 **전부** 현재 revision 만 봐야 한다.
+
+    문서가 개정되면 `doc.cur_revision` 이 먼저 바뀌고 새 청크는 워커가 돌아온
+    뒤에야 들어온다. 그 사이 `doc_block` 에는 **옛 revision 의 조각이 그대로
+    살아 있다** — 재색인이 끝나야 `ingest` 가 지운다.
+
+    2026-08-24 이전에는 `VectorSearchRepository.search` 에만 이 조건이 빠져
+    있었다. 그러면 그 구간에서 화면은 `search_ready = false` 를 보고 「본문
+    근거를 낼 수 없다」고 말하는데 검색은 **옛 본문을 근거로 돌려준다.**
+
+    아직 실제로 재현되지 않는다 — 수정된 Drive 문서를 다시 받는 경로가 없어
+    `cur_revision` 이 바뀔 일이 없다. 변경 감지를 붙이는 순간 드러나므로,
+    그 전에 네 자리가 같은 규칙을 쓰는지 여기서 못 박는다.
+
+    SQL 을 문자열로 확인한다. 실제 DB 를 띄우지 않는 테스트라 실행으로는 못
+    잡지만, **한 자리만 빠지는** 이 부류는 이름 대조만으로도 잡힌다
+    (`test_harness.py` `ToolWiringTests` 와 같은 판단).
+    """
+
+    PREDICATE = "b.revision = d.cur_revision"
+
+    @staticmethod
+    def _sql_only(func) -> str:
+        """docstring 을 걷어낸 본문.
+
+        **이 단계가 없으면 검사가 통과만 한다.** 위 세 함수는 docstring 에서
+        이 조건을 설명하고 있어서, SQL 에서 빠져도 `getsource` 는 그 설명을
+        보고 「있다」고 답한다(실제로 그렇게 만들었다가 잡았다).
+        """
+
+        import inspect
+
+        source = inspect.getsource(func)
+        doc = inspect.getdoc(func)
+        if doc:
+            # `getdoc` 은 들여쓰기를 지운 판이라 원문과 다르다. 첫 줄로 원문
+            # 블록의 시작을 찾아 닫는 따옴표까지 잘라낸다.
+            head = doc.splitlines()[0]
+            start = source.find(head)
+            if start >= 0:
+                end = source.find('"""', start)
+                if end >= 0:
+                    source = source[:start] + source[end:]
+        return source
+
+    def test_청크를_읽는_모든_질의가_현재_revision_만_본다(self):
+        from backend.db import document_pipeline as pipeline
+
+        readers = {
+            "_HAS_ACTIVE_CHUNKS": pipeline._HAS_ACTIVE_CHUNKS,
+            "VectorSearchRepository.search": self._sql_only(
+                pipeline.VectorSearchRepository.search
+            ),
+            "VectorSearchRepository.rank_by_content": self._sql_only(
+                pipeline.VectorSearchRepository.rank_by_content
+            ),
+            "document_outline": self._sql_only(pipeline.document_outline),
+        }
+
+        missing = sorted(name for name, sql in readers.items() if self.PREDICATE not in sql)
+
+        self.assertEqual(
+            missing,
+            [],
+            f"현재 revision 으로 거르지 않는 자리가 있다: {missing}. "
+            "재색인 중인 문서의 옛 본문이 근거로 나간다.",
+        )

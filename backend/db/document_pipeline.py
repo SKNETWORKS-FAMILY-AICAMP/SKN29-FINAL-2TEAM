@@ -777,7 +777,17 @@ class VectorSearchRepository:
         프로젝트로 거는 자물쇠는 잠글 것이 없다.
 
         **`account_id` 를 주면 내가 켠 내 파일도 범위에 든다**(M④). 두 번째
-        자물쇠는 그대로다 — 넓어진 것은 「내 것」까지이지 「아무나」가 아니다."""
+        자물쇠는 그대로다 — 넓어진 것은 「내 것」까지이지 「아무나」가 아니다.
+
+        **`b.revision = d.cur_revision` 을 건다**(2026-08-24). 문서가 개정되면
+        옛 판의 조각은 근거가 될 수 없는데, 이 자리에만 그 조건이 빠져 있었다 —
+        `_HAS_ACTIVE_CHUNKS`(「색인됐는가」)와 `document_outline` 은 이미 걸고
+        있었다. 그대로 두면 재색인 중인 문서에 대해 **화면은 「본문 근거를 낼 수
+        없다」고 말하면서 동시에 옛 본문을 근거로 답한다.**
+
+        지금은 드러나지 않는다. 수정된 Drive 문서를 다시 받는 경로가 아직 없어
+        `cur_revision` 이 바뀔 일이 없기 때문이다 — **변경 감지를 붙이는 순간
+        드러난다.** 조용히 틀리는 종류라 그 전에 맞춰 둔다."""
 
         if not document_ids:
             raise ValueError("검색 문서 범위가 비어 있습니다.")
@@ -798,6 +808,7 @@ class VectorSearchRepository:
                     WHERE {_TEAM_OR_MINE}
                       AND d.doc_id = ANY(%s)
                       AND d.deleted = false AND d.access_revoked = false
+                      AND b.revision = d.cur_revision
                       AND c.is_active = true AND v.is_active = true
                       AND v.embed_model = %s AND v.embed_dim = 768
                     ORDER BY v.embedding <=> %s::vector
