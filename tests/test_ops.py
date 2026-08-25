@@ -421,8 +421,9 @@ class OpsModelRegisterTests(SimpleTestCase):
     def _headers(self):
         return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
 
+    @patch("apps.ops.views.models._check_usage_support", return_value=True)
     @patch("apps.ops.views.models._verify", return_value=None)
-    def test_그_팀에_등록한다(self, _verify, repo, _audit, _admin):
+    def test_그_팀에_등록한다(self, _verify, _check_usage_support, repo, _audit, _admin):
         repo.models_for_team.return_value = set()
 
         response = self.client.post(
@@ -435,8 +436,11 @@ class OpsModelRegisterTests(SimpleTestCase):
         # 등록한 사람이 남아야 소유 계정만 보고 팀장이 등록한 것으로 오해하지 않는다.
         self.assertEqual(kwargs["registered_by"], "UA001")
 
+    @patch("apps.ops.views.models._check_usage_support", return_value=True)
     @patch("apps.ops.views.models._verify", return_value=None)
-    def test_같은_팀에_같은_모델을_두_번_등록하지_않는다(self, _verify, repo, _audit, _admin):
+    def test_같은_팀에_같은_모델을_두_번_등록하지_않는다(
+        self, _verify, _check_usage_support, repo, _audit, _admin
+    ):
         repo.models_for_team.return_value = {"models/gemini-3.6-flash"}
 
         response = self.client.post(
@@ -446,8 +450,9 @@ class OpsModelRegisterTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         repo.add_for_team.assert_not_called()
 
+    @patch("apps.ops.views.models._check_usage_support", return_value=True)
     @patch("apps.ops.views.models._verify", return_value="이 주소와 모델로 답을 받지 못했습니다.")
-    def test_안_도는_주소는_등록하지_않는다(self, _verify, repo, _audit, _admin):
+    def test_안_도는_주소는_등록하지_않는다(self, _verify, _check_usage_support, repo, _audit, _admin):
         """등록해 두면 그 팀의 대화가 조용히 실패하고, 팀은 운영자가 등록했으니 되는 줄 안다."""
 
         repo.models_for_team.return_value = set()
@@ -458,6 +463,37 @@ class OpsModelRegisterTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 400)
         repo.add_for_team.assert_not_called()
+
+    @patch("apps.ops.views.models._check_usage_support", return_value=False)
+    @patch("apps.ops.views.models._verify", return_value=None)
+    def test_토큰_사용량을_못_재는_서버는_경고를_붙여_등록한다(
+        self, _verify, _check_usage_support, repo, _audit, _admin
+    ):
+        """답은 오는데 스트리밍 usage는 안 주는 서버 — 등록은 막지 않고 경고만 준다."""
+
+        repo.models_for_team.return_value = set()
+
+        response = self.client.post(
+            self.URL, self.BODY, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 201)
+        repo.add_for_team.assert_called_once()
+        self.assertIn("토큰 사용량", response.json()["warning"])
+
+    @patch("apps.ops.views.models._check_usage_support", return_value=True)
+    @patch("apps.ops.views.models._verify", return_value=None)
+    def test_토큰_사용량을_재는_서버는_경고가_없다(
+        self, _verify, _check_usage_support, repo, _audit, _admin
+    ):
+        repo.models_for_team.return_value = set()
+
+        response = self.client.post(
+            self.URL, self.BODY, content_type="application/json", **self._headers()
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn("warning", response.json())
 
     def test_기본_제공_이름은_거절한다(self, repo, _audit, _admin):
         response = self.client.post(
@@ -492,8 +528,11 @@ class OpsModelRegisterTests(SimpleTestCase):
         self.assertEqual(response.status_code, 401)
         repo.list_all.assert_not_called()
 
+    @patch("apps.ops.views.models._check_usage_support", return_value=True)
     @patch("apps.ops.views.models._verify", return_value=None)
-    def test_등록_응답은_목록을_다시_만들지_않는다(self, _verify, repo, _audit, _admin):
+    def test_등록_응답은_목록을_다시_만들지_않는다(
+        self, _verify, _check_usage_support, repo, _audit, _admin
+    ):
         """목록을 만들다 실패하면 **이미 끝난 등록이 실패로 보고된다.**
 
         운영자는 안 됐다고 믿고 다시 누르고, 그때는 중복이라 거절당한다 — 무슨
