@@ -1,6 +1,6 @@
 """Langfuse LangChain 콜백 핸들러를 만든다.
 
-2026-08-19 착수(설계 및 구현/중간발표 이후/작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md) —
+2026-08-19 착수(설계 및 구현/3_중간발표 이후/작업기록/LangSmith_LangFuse/2026-08-19_01_작업계획.md) —
 이 파일은 원래 의도적으로 비어 있었다(`agent_run`/`tool_call` 적재는
 `tracing/__init__.py`의 `trace_events()`가 이벤트 스트림을 감싸는 방식으로
 전부 처리하고 있었어서). Langfuse는 이벤트 스트림 밖 정보(모델 원시 호출

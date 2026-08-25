@@ -3,7 +3,7 @@
 개인 route(`/memories/users/`) 하나만 장기 저장(Store)으로 보낸다. 그 외 경로는
 전부 `CompositeBackend`의 기본값인 `StateBackend`(LangGraph 그래프 상태)로
 떨어지므로 경로별 분기가 필요 없다.
-정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-19_03_장기메모리_개인전용_최종구조.md
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-19_03_장기메모리_개인전용_최종구조.md
 
 **`StateBackend`를 "휘발성"이라고 부르면 안 된다.** checkpointer(`PostgresSaver`)가
 항상 붙어 있어 `files` 채널도 매 스텝 뒤 Postgres에 저장된다. 같은 스레드

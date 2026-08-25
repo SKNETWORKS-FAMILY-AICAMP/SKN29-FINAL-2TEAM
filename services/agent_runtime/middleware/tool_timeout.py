@@ -1,6 +1,6 @@
 """MCP Tool 호출에 hard timeout을 건다.
 
-정본: `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
+정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
 
 **MCP 도구에만 건다.** 모든 도구에 일괄로 거는 전역 timeout은 쓰지 않는다 —
 복잡한 검색처럼 정당하게 오래 걸리는 작업까지 끊긴다.

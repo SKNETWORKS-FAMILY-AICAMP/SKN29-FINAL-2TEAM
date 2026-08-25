@@ -1,6 +1,6 @@
 """skills/backend.py 단위 테스트 — memory/backend.py의 격리 검증과 같은 방식.
 
-정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
 
 실제 `StoreBackend`/`CompositeBackend` 객체로 확인한다(deepagents를 mock하지
 않음) — namespace 튜플이 실제로 갈리는지가 핵심이라 Fake로는 이 회귀를 못

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- agent_run.resolved_provider / resolved_endpoint_hash 추가 (2026-08-19)
 --
--- 정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-19_01_실행_안정성_설계.md §1
+-- 정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-19_01_실행_안정성_설계.md §1
 -- (Run Snapshot).
 --
 -- `agent_version_id`/`runtime_profile_version`은 이미 "이 실행이 어느

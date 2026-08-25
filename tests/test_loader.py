@@ -1,6 +1,6 @@
 """loader.py(AgentDefinitionLoader) 단위 테스트.
 
-정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §6
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §6
 
 DB는 안 띄운다 — `AgentVersionRepository`/`AgentSubagentRepository`를 mock한다
 (tests/test_model_factory.py와 같은 패턴). 이 파일이 보는 것은 "Repository가 준 dict를

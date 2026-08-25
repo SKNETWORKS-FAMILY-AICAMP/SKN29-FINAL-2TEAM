@@ -864,7 +864,7 @@ def _fill_default_jira_assignee(
     매핑이 없어 매번 이메일로 검색해야 하고, 그 검색은 "못 찾았다"로 끝날 수
     있다(계정 설정에 따라 이메일이 검색에 안 걸림, 동명이인으로 여러 건).
     **못 찾았을 뿐이면 억지로 채우지 않는다** — 빈 채로 넘긴다(팀이 이미
-    정해 둔 원칙, `docs/설계 및 구현/중간발표 이후/설계/5_E2E_시나리오.md`: "막히면 담당자를 이슈
+    정해 둔 원칙, `docs/설계 및 구현/3_중간발표 이후/설계/5_E2E_시나리오.md`: "막히면 담당자를 이슈
     본문에 적고 assignee는 비운다"). `find_jira_account_id_by_email` 이 이
     원칙대로 "못 찾음"엔 예외 없이 `None`을 돌려준다.
 
@@ -1003,7 +1003,7 @@ def _skill_register(
 ) -> dict[str, Any]:
     """반복되는 업무 절차를 Skill(`SKILL.md`)로 저장한다.
 
-    정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
+    정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
 
     **실제 저장·검증 로직은 `services.agent_runtime.skills.service`에 있다**
     (2026-08-22 리팩터) — 설정 > 스킬 화면의 REST API도 같은 함수를 부른다.

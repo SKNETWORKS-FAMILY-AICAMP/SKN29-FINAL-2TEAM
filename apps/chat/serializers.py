@@ -85,7 +85,7 @@ class ChatConfirmSerializer(serializers.Serializer):
 
     이 필드가 필요해진 배경(팀원도 쓰기 도구를 자기 승인으로 실행할 수 있게
     되면서 "한 번에 몰아 승인" 위험이 커졌다)은
-    `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+    `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
     """
 
     selected = serializers.ListField(

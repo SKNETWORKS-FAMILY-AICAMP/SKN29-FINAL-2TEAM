@@ -33,7 +33,7 @@ EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (
 DEFAULT_WRITE_TOOL_ALLOWED_ROLES: frozenset[AccountRole] = frozenset({"leader", "member"})
 
 # MCP Tool 호출 하나에 적용하는 timeout(초).
-# 정본: `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
+# 정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
 #
 # 자유 연결 MCP는 정상 실행시간을 추정할 수 없으므로(`2026-08-20_01` §3) 확실히
 # 아는 값에서 역산한다 — `Dockerfile`의 gunicorn `--timeout 600`을 넘기면 워커가
@@ -46,7 +46,7 @@ DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECONDS = 480
 
 # 한 super-step에서 동시에 실행할 tool call 수. LangGraph `RunnableConfig`의
 # `max_concurrency`로 전달되며, 초과분은 버리지 않고 대기시킨다.
-# 정본: `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.1
+# 정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.1
 #
 # 부하 테스트 전 잠정값 — "최적"이 아니라 "무제한을 유한하게"가 근거다. 중첩
 # Child에도 전파되므로 위임 깊이가 1단계인 지금(`BuildDelegationDepthTests`)

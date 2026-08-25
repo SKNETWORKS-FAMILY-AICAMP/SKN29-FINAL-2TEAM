@@ -1,6 +1,6 @@
 """실제 의존성으로 `AgentExecutor`를 조립하는 합성 루트(composition root).
 
-정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §6(task #10),
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md §6(task #10),
       2026-08-13_04_작업자B_실행코어_세부계획.md §9.3(선결 B), §9.5
 
 이 모듈이 하는 일은 "무엇을 실제로 연결하는가" 하나뿐이다 — 각 부품(`ModelFactory`,

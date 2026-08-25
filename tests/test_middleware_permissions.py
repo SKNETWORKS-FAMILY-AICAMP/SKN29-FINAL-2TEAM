@@ -1,6 +1,6 @@
 """middleware/permissions.py 단위 테스트.
 
-정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md §3~7
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md §3~7
 
 `build_filesystem_permissions()`가 만든 규칙이 실제 `deepagents`의
 `_check_fs_permission()`(순서대로 첫 매치 반환 — 스코프가 아니라 리스트 순서가

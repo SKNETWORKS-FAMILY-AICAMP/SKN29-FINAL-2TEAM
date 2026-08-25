@@ -1,6 +1,6 @@
 """`services.agent_runtime.skills.service` 단위 테스트.
 
-정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md.
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md.
 `get_memory_store()`만 실제 `PostgresStore` 대신 langgraph의 `InMemoryStore`로
 바꾼다 — 그 외에는 `StoreBackend`를 실제로 통과시킨다(namespace 격리 같은
 회귀는 진짜 protocol을 태워야 잡힌다, `tests/test_memory_backend.py`와 같은
