@@ -433,3 +433,30 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         saved = personal_repo.set_index_status.call_args.kwargs
         self.assertEqual(saved["status"], "FAILED")
         self.assertEqual(saved["detail"], "표 #/tables/14의 셀 구조가 비어 있습니다.")
+
+    def test_적재가_거절돼도_읽는_중에_갇히지_않는다(
+        self, pipeline_repo, submit, status, url, personal_repo
+    ):
+        """워커는 성공했는데 `ingest` 가 결과를 거절한 경우.
+
+        `ingest` 는 결과가 우리 기록과 안 맞으면 일부러 `ValueError` 를 낸다.
+        그것이 그냥 올라가 버리면 `_done` 이 안 불려 문서가 `RUNNING` 에 갇히고
+        화면은 영원히 「읽는 중」이다 — 2026-08-25 에 DC001 로 실제로 밟았다.
+        """
+
+        pipeline_repo.get_for_processing.return_value = {
+            "storage_key": "k", "cur_revision": "r", "mime_type": "application/pdf",
+        }
+        status.return_value = {"status": "COMPLETED", "output": {"chunks": [1]}}
+        pipeline_repo.ingest.side_effect = ValueError(
+            "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
+        )
+
+        outcome = promote_to_searchable(account_id="UA002", doc_id="DC001")
+
+        self.assertFalse(outcome["ok"])
+        saved = personal_repo.set_index_status.call_args.kwargs
+        self.assertEqual(saved["status"], "FAILED")
+        self.assertEqual(
+            saved["detail"], "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
+        )

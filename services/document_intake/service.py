@@ -531,7 +531,19 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
                 return _done(False, detail="처리 결과가 비어 있습니다.")
             # 완료 시점에 바로 적재한다. RunPod 는 완료 결과를 제한된 시간만
             # 보관해서 나중에 다시 받아 오면 되겠지 하고 미룰 수 없다.
-            PipelineDocumentRepository.ingest(expected_doc=document, result=output)
+            try:
+                PipelineDocumentRepository.ingest(expected_doc=document, result=output)
+            except ValueError as exc:
+                # **워커는 성공했는데 적재가 거절된 경우다.** `ingest` 는 결과가
+                # 우리 기록과 안 맞으면 일부러 `ValueError` 를 낸다(revision 이
+                # 도중에 바뀌었다, content hash 가 다르다 …). 그것이 여기를 그냥
+                # 뚫고 나가면 `_done` 이 안 불려 **문서가 `RUNNING` 에 갇힌다** —
+                # 화면은 영원히 「읽는 중」이고, 그건 `index_status` 를 만든 이유
+                # 자체를 지우는 것이다(2026-08-18).
+                #
+                # 2026-08-25 에 실제로 밟았다. DC001 의 `content_hash` 가 저장된
+                # 원문과 어긋나 있었고, 워커가 정상 완료한 뒤 여기서 터졌다.
+                return _done(False, detail=str(exc))
             return _done(True)
         if state in {"FAILED", "CANCELLED", "TIMED_OUT"}:
             return _done(False, detail=_worker_failure_detail(result, state))
