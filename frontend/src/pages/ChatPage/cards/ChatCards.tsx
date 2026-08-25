@@ -112,13 +112,13 @@ export function ProgressCard({
             떴는데, 단계를 안 쌓는 도구는 실행 내내 이 자리가 「대기 중」이라 왼쪽의
             「생각하는 중」·「프로젝트 조회 완료」와 정면으로 어긋났다. 지금 무슨
             일이 벌어지는지는 왼쪽 제목과 아이콘(도는 중/체크)이 이미 말한다. */}
-        {steps.length > 0 && (
+        {running && steps.length > 0 && (
           <span className={styles.progressCount}>{`${shown} / ${total} 단계`}</span>
         )}
       </div>
 
       {/* 막대도 단계가 있을 때만 그린다 — 단계가 없으면 늘 0%라 빈 띠만 남는다. */}
-      {steps.length > 0 && (
+      {running && steps.length > 0 && (
         <div className={styles.progressTrack}>
           <span
             className={
@@ -129,7 +129,7 @@ export function ProgressCard({
         </div>
       )}
 
-      <ul className={styles.steps}>
+      {running && <ul className={styles.steps}>
         {/* 끝났으면 남아 있는 `doing` 도 더는 돌지 않는다 — 스트림이 닫혔는데
             마지막 단계만 회전하고 있으면 멈춘 것처럼 보인다. */}
         {(running ? steps : steps.map((s) => (s.state === 'doing' ? { ...s, state: 'done' as const } : s))).map((step, index) => (
@@ -141,9 +141,9 @@ export function ProgressCard({
             {step.meta && <span className={styles.stepMeta}>{step.meta}</span>}
           </li>
         ))}
-      </ul>
+      </ul>}
 
-      {queries.length > 0 && (
+      {running && queries.length > 0 && (
         <ul className={styles.queries}>
           {queries.map((query) => (
             <li key={query} className={styles.query}>
@@ -156,7 +156,7 @@ export function ProgressCard({
 
       {/* 웹 검색 링크와 팀 문서는 성격이 다르므로 각각 접는다. 결과가 많아도
           진행 단계와 최종 답변을 밀어내지 않고, 개수는 접힌 상태에서도 보인다. */}
-      {webSources.length > 0 && (
+      {running && webSources.length > 0 && (
         <div className={styles.sourceGroup}>
           <button
             type="button"
@@ -182,7 +182,7 @@ export function ProgressCard({
         </div>
       )}
 
-      {documentSources.length > 0 && (
+      {running && documentSources.length > 0 && (
         <div className={styles.sourceGroup}>
           <button
             type="button"
@@ -211,7 +211,7 @@ export function ProgressCard({
           동안 화면에 아무 변화가 없었다)를 고치려고 추가했다. 서브 에이전트
           *자신의* reasoning·도구 진행은 여전히 안 보여준다 — "지금
           위임했다/끝났다"는 사실만 보여준다. */}
-      {subagents.length > 0 && (
+      {running && subagents.length > 0 && (
         <ul className={styles.steps}>
           {subagents.map((run) => (
             <li key={run.runId} className={styles.step}>
@@ -233,7 +233,7 @@ export function ProgressCard({
           `running` 을 보고 회전을 멈추는데 이 줄만 무조건 그려져서, 답변이 다
           나온 뒤에도 카드가 아직 도는 것처럼 보였다. 끝난 뒤 남길 값은 근거
           수뿐이고, 그것도 없으면 줄 자체를 안 그린다. */}
-      {(running || Boolean(evidenceCount)) && (
+      {running && (
         <p className={styles.foot}>
           {evidenceCount ? `근거 ${evidenceCount}건` : ''}
           {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
@@ -272,6 +272,10 @@ export interface ReasoningTraceProps {
    * `<section className={styles.card}>`를 한 번만 두른다.
    */
   bare?: boolean;
+  /** 실제 도구가 사용한 검색어. 완료 화면에서는 작업 과정 상세 안에서만 보인다. */
+  queries?: string[];
+  /** 검색 결과·내부 문서 후보. 최종 답변의 인용 링크와 구분해 상세에만 둔다. */
+  sources?: SourceRef[];
 }
 
 /**
@@ -289,13 +293,38 @@ export interface ReasoningTraceProps {
  * `defaultOpen`으로 펼쳐서 시작한다** — 실시간으로 쓰는 걸 보여주는 게
  * 이 기능의 목적이라, 접어 두면 매번 사람이 직접 펴야 그 효과를 본다.
  */
-export function ReasoningTrace({ entries, defaultOpen = false, running = false, bare = false }: ReasoningTraceProps) {
+export function ReasoningTrace({
+  entries,
+  defaultOpen = false,
+  running = false,
+  bare = false,
+  queries = [],
+  sources = [],
+}: ReasoningTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
   const logRef = useRef<HTMLOListElement>(null);
+  const [searchDetailsOpen, setSearchDetailsOpen] = useState(false);
   // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
   // "그 스트리밍된 툴을 눌러야만 보이게 해줘" 요청). index로 여닫힘을 추적한다
   // — entries는 순서만 늘고 위치가 안 바뀌므로 li의 key(index)와 그대로 맞는다.
   const [expandedOutputs, setExpandedOutputs] = useState<Set<number>>(new Set());
+  const [expandedToolGroups, setExpandedToolGroups] = useState<Set<number>>(new Set());
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
+  const timelineGroups = entries.reduce<Array<Array<{ entry: TimelineEntry; index: number }>>>((groups, entry, index) => {
+    const previous = groups[groups.length - 1];
+    const previousEntry = previous?.[0]?.entry;
+    if (
+      entry.kind === 'tool' &&
+      previousEntry?.kind === 'tool' &&
+      previousEntry.toolRef === entry.toolRef
+    ) {
+      previous.push({ entry, index });
+    } else {
+      groups.push([{ entry, index }]);
+    }
+    return groups;
+  }, []);
 
   function toggleOutput(index: number) {
     setExpandedOutputs((prev) => {
@@ -305,6 +334,15 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
       } else {
         next.add(index);
       }
+      return next;
+    });
+  }
+
+  function toggleToolGroup(index: number) {
+    setExpandedToolGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
       return next;
     });
   }
@@ -328,9 +366,91 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
       </button>
 
       {open && (
+        <div className={styles.reasoningPanel}>
         <ol className={styles.reasoningList} ref={logRef}>
-          {entries.map((entry, index) => {
-            const isLast = index === entries.length - 1;
+          {timelineGroups.map((group, groupIndex) => {
+            const { entry, index } = group[0];
+            const isLast = groupIndex === timelineGroups.length - 1;
+            if (group.length > 1 && group.every((item) => item.entry.kind === 'tool')) {
+              const tools = group.map((item) => item.entry as Extract<TimelineEntry, { kind: 'tool' }>);
+              const groupOpen = expandedToolGroups.has(index);
+              const status = tools.some((tool) => tool.status === 'RUNNING')
+                ? 'RUNNING'
+                : tools.some((tool) => tool.status === 'FAILED')
+                  ? 'FAILED'
+                  : tools.every((tool) => tool.status === 'REJECTED')
+                    ? 'REJECTED'
+                    : 'OK';
+              return (
+                <li key={`tool-group-${index}`} className={styles.reasoningToolGroup}>
+                  <button type="button" className={styles.reasoningTool} onClick={() => toggleToolGroup(index)}>
+                    {status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
+                    {status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
+                    {status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
+                    {status === 'REJECTED' && <Icon name="x" size={13} color="var(--color-muted)" />}
+                    <span>
+                      {tools[0].toolName ?? tools[0].toolRef} · {tools.length}회
+                      {status === 'OK' && ' 완료'}
+                      {status === 'FAILED' && ' · 일부 실패'}
+                      {status === 'REJECTED' && ' 취소'}
+                    </span>
+                    <Icon
+                      name={groupOpen ? 'chevron-down' : 'chevron-right'}
+                      size={12}
+                      color="var(--color-placeholder)"
+                    />
+                  </button>
+                  {groupOpen && (
+                    <ol className={styles.toolRuns}>
+                      {group.map((item, runIndex) => {
+                        const tool = item.entry as Extract<TimelineEntry, { kind: 'tool' }>;
+                        const formattedArguments = formatToolArguments(tool.arguments);
+                        const hasDetails = Boolean(formattedArguments || tool.output);
+                        const runOpen = expandedOutputs.has(item.index);
+                        return (
+                          <li key={item.index} className={styles.toolRun}>
+                            <button
+                              type="button"
+                              className={styles.toolRunToggle}
+                              onClick={() => toggleOutput(item.index)}
+                              disabled={!hasDetails}
+                            >
+                              <span>{runIndex + 1}차 실행</span>
+                              <span className={styles.toolRunStatus}>
+                                {tool.status === 'RUNNING' ? '진행 중' : tool.status === 'OK' ? '완료' : tool.status === 'FAILED' ? '실패' : '취소'}
+                              </span>
+                              {hasDetails && (
+                                <Icon
+                                  name={runOpen ? 'chevron-down' : 'chevron-right'}
+                                  size={11}
+                                  color="var(--color-placeholder)"
+                                />
+                              )}
+                            </button>
+                            {runOpen && hasDetails && (
+                              <div className={styles.reasoningDetails}>
+                                {formattedArguments && (
+                                  <div>
+                                    <span className={styles.reasoningDetailLabel}>입력</span>
+                                    <pre className={styles.reasoningOutput}>{formattedArguments}</pre>
+                                  </div>
+                                )}
+                                {tool.output && (
+                                  <div>
+                                    <span className={styles.reasoningDetailLabel}>결과</span>
+                                    <pre className={styles.reasoningOutput}>{tool.output}</pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </li>
+              );
+            }
             if (entry.kind === 'update') {
               return (
                 <li key={index} className={styles.reasoningStep}>
@@ -428,6 +548,71 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
             );
           })}
         </ol>
+
+        {(queries.length > 0 || sources.length > 0) && (
+          <div className={styles.searchDetails}>
+            <button
+              type="button"
+              className={styles.evidenceToggle}
+              aria-expanded={searchDetailsOpen}
+              onClick={() => setSearchDetailsOpen((previous) => !previous)}
+            >
+              <Icon
+                name={searchDetailsOpen ? 'chevron-down' : 'chevron-right'}
+                size={13}
+                color="var(--color-primary)"
+              />
+              검색 상세 {webSources.length > 0 ? `· 결과 ${webSources.length}개` : ''}
+            </button>
+
+            {searchDetailsOpen && (
+              <div className={styles.searchDetailsBody}>
+                {queries.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>검색어</span>
+                    <ul className={styles.queries}>
+                      {queries.map((query) => (
+                        <li key={query} className={styles.query}>
+                          <Icon name="search" size={13} color="var(--color-placeholder)" />
+                          {query}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {webSources.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>검색 결과</span>
+                    <ul className={styles.queries}>
+                      {webSources.map((source) => (
+                        <li key={source.url ?? source.id} className={styles.query}>
+                          <Icon name="link" size={13} color="var(--color-placeholder)" />
+                          <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                            {source.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {documentSources.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>참고 문서 후보</span>
+                    <ul className={styles.queries}>
+                      {documentSources.map((source) => (
+                        <li key={source.id} className={styles.query}>
+                          <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                          {source.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        </div>
       )}
     </Wrapper>
   );

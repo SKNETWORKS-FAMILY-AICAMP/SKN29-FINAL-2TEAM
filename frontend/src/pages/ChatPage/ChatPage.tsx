@@ -240,8 +240,12 @@ export default function ChatPage() {
    */
   const leftRef = useRef<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
-  /** 사용자가 위로 올려 읽는 중이면 따라가지 않는다. */
+  const lastTurnRef = useRef<HTMLDivElement | null>(null);
+  /** 새 질문이나 저장된 대화를 열었을 때 마지막 턴의 시작점을 한 번 맞춘다. */
+  const anchorLastTurn = useRef(false);
+  /** 사용자가 맨 아래를 선택한 동안에만 새 내용을 따라간다. */
   const stickToBottom = useRef(true);
+  const [showLatestButton, setShowLatestButton] = useState(false);
   /** "/스킬이름" 자동완성에서 고른 뒤 입력창에 포커스를 되돌리는 데 쓴다. */
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -443,14 +447,40 @@ export default function ChatPage() {
   // RUNNING 으로 남지 않는다.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // 턴이 늘거나 답이 자라면 아래로 따라간다. 단 **사용자가 위로 올려 읽는
-  // 중이면 붙잡지 않는다** — 근거를 읽고 있는데 화면이 끌려 내려가면 읽을 수가
-  // 없다. 위로 올린 순간 `onScroll` 이 stick 을 끈다.
+  // 새 질문을 보내거나 저장된 대화를 열면 **마지막 턴의 시작점**을 한 번 보여준다.
+  // 답변 맨 아래로 보내면 긴 답을 처음부터 읽기 위해 다시 올려야 한다.
   useEffect(() => {
     const node = streamRef.current;
-    if (!node || !stickToBottom.current) return;
-    node.scrollTop = node.scrollHeight;
+    const turn = lastTurnRef.current;
+    if (!node || !turn || !anchorLastTurn.current) return;
+    anchorLastTurn.current = false;
+    const nodeTop = node.getBoundingClientRect().top;
+    const turnTop = turn.getBoundingClientRect().top;
+    node.scrollTop = Math.max(0, node.scrollTop + turnTop - nodeTop - 16);
+    stickToBottom.current = false;
+    setShowLatestButton(node.scrollHeight - node.scrollTop - node.clientHeight > 80);
+  }, [turns.length, sessionId]);
+
+  // 사용자가 직접 맨 아래로 내려간 뒤에만 실시간 출력을 따라간다. 읽기 시작한
+  // 답변은 고정하고, 아래에 새 내용이 생기면 버튼으로 선택권을 돌려준다.
+  useEffect(() => {
+    const node = streamRef.current;
+    if (!node) return;
+    if (stickToBottom.current) {
+      node.scrollTop = node.scrollHeight;
+      setShowLatestButton(false);
+      return;
+    }
+    setShowLatestButton(node.scrollHeight - node.scrollTop - node.clientHeight > 80);
   }, [turns]);
+
+  function jumpToLatest() {
+    const node = streamRef.current;
+    if (!node) return;
+    stickToBottom.current = true;
+    node.scrollTop = node.scrollHeight;
+    setShowLatestButton(false);
+  }
 
   const openSession = useCallback(
     async (id: string) => {
@@ -470,7 +500,8 @@ export default function ChatPage() {
         // 모든 턴을 갖고 있었고, 화면이 마지막 답 하나만 쓰고 버리던 것이다.
         const restored = toTurns(detail.messages);
         setTurns(restored);
-        stickToBottom.current = true;
+        anchorLastTurn.current = true;
+        stickToBottom.current = false;
         // 체크 상태는 **마지막 턴에만** 의미가 있다. 과거 턴의 확인 카드는
         // 읽기 전용이다.
         const lastLive = restored[restored.length - 1]?.live ?? null;
@@ -584,7 +615,9 @@ export default function ChatPage() {
     // 끈 항목이 다음 카드의 다른 호출에 그대로 붙는다.
     setApprovedActions([]);
     setFatal(null);
-    stickToBottom.current = true;
+    anchorLastTurn.current = true;
+    stickToBottom.current = false;
+    setShowLatestButton(false);
 
     let id = sessionId;
     try {
@@ -1149,7 +1182,9 @@ export default function ChatPage() {
               const node = event.currentTarget;
               // 바닥에서 40px 안쪽이면 "따라가는 중"으로 본다. 스트리밍이
               // 만드는 미세한 오차를 감안한 여유다.
-              stickToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+              const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+              stickToBottom.current = nearBottom;
+              setShowLatestButton(!nearBottom && node.scrollHeight - node.scrollTop - node.clientHeight > 80);
             }}
           >
             {fatal && <p className={styles.fatal}>{fatal}</p>}
@@ -1254,7 +1289,7 @@ export default function ChatPage() {
               const abandoned = Boolean(live?.confirm) && !isLast;
 
               return (
-                <div key={turnIndex} className={styles.turn}>
+                <div key={turnIndex} className={styles.turn} ref={isLast ? lastTurnRef : undefined}>
                   <div className={styles.userMessage}>
                     <span>{turn.user}</span>
                   </div>
@@ -1276,6 +1311,12 @@ export default function ChatPage() {
                           live.toolName !== null;
                         const showReasoning = live.timeline.length > 0;
                         if (!showProgress && !showReasoning) return null;
+                        const toolCount = live.timeline.filter((entry) => entry.kind === 'tool').length;
+                        const durationLabel =
+                          !live.running && live.durationMs != null
+                            ? ` · ${(live.durationMs / 1000).toFixed(1)}초`
+                            : '';
+                        const countLabel = !live.running && toolCount > 0 ? ` · 도구 ${toolCount}회` : '';
                         // **진행 카드와 생각 과정을 한 카드로 묶는다**(2026-08-19) —
                         // 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로
                         // 합쳤다. 바깥 `<section className={cardStyles.card}>`를
@@ -1305,8 +1346,12 @@ export default function ChatPage() {
                                   // 실패한 호출에 「완료」라고 쓰지 않는다
                                   // (2026-08-25). 사유는 답변 본문이 말하고,
                                   // 여기서는 성공이 아니었다는 사실만 밝힌다.
-                                  if (live.toolFailed && live.toolName) return `${live.toolName} 실패`;
-                                  return live.toolName ? `${live.toolName} 완료` : '정리 완료';
+                                  if (live.toolFailed && live.toolName) {
+                                    return `${live.toolName} 실패${countLabel}${durationLabel}`;
+                                  }
+                                  return live.toolName
+                                    ? `${live.toolName} 완료${countLabel}${durationLabel}`
+                                    : `정리 완료${countLabel}${durationLabel}`;
                                 })()}
                                 failed={live.toolFailed}
                               />
@@ -1327,7 +1372,14 @@ export default function ChatPage() {
                                 클릭해서 볼 수 있으니, 자동으로 펼치지만 않으면 두
                                 요구가 부딪히지 않는다. */}
                             {showReasoning && (
-                              <ReasoningTrace bare entries={live.timeline} defaultOpen={false} running={live.running} />
+                              <ReasoningTrace
+                                bare
+                                entries={live.timeline}
+                                defaultOpen={false}
+                                running={live.running}
+                                queries={live.queries}
+                                sources={live.sources}
+                              />
                             )}
                           </section>
                         );
@@ -1471,7 +1523,11 @@ export default function ChatPage() {
                         서버가 `duration_ms`를 아예 안 붙이므로(의도된 한계)
                         `durationMs`가 `null`이라 자연히 표시가 생략된다.
                       */}
-                      {!live.running && live.durationMs != null && (
+                      {!live.running &&
+                        live.durationMs != null &&
+                        live.steps.length === 0 &&
+                        live.subagents.length === 0 &&
+                        live.toolName === null && (
                         <p className={styles.durationLine}>
                           {(live.durationMs / 1000).toFixed(1)}초 만에 답변
                         </p>
@@ -1484,6 +1540,12 @@ export default function ChatPage() {
           </div>
 
           <div className={styles.inputBar}>
+            {showLatestButton && (
+              <button type="button" className={styles.latestButton} onClick={jumpToLatest}>
+                <Icon name="chevron-down" size={15} color="var(--color-primary)" />
+                최신 내용 보기
+              </button>
+            )}
             {/* "/스킬이름"을 치는 동안 뜬다(2026-08-22) — 클로드의 슬래시
                 커맨드와 같은 방식. 화살표로 고르고 Enter/Tab으로 넣는다,
                 Esc로 지운다. 채팅을 보낼 Enter와 겹치지 않게 이 메뉴가 열려
