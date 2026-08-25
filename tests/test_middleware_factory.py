@@ -5,7 +5,13 @@ runtime_policy.py 값이 그대로 반영되는지 확인한다(mock 아님).
 """
 
 from django.test import SimpleTestCase
-from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    PIIMiddleware,
+    TodoListMiddleware,
+    ToolCallLimitMiddleware,
+)
+from langchain_core.messages import AIMessage, HumanMessage
 
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition
@@ -214,3 +220,133 @@ class McpToolCallTimeoutWiringTests(SimpleTestCase):
         middleware = factory.build_for_general_purpose()
 
         self.assertFalse(any(isinstance(m, McpToolCallTimeoutMiddleware) for m in middleware))
+
+
+class PiiMiddlewareWiringTests(SimpleTestCase):
+    """2026-08-24, PIIMiddleware 도입 — `_build_pii_middleware()`/`build()`가
+    실제로 credit_card/ip/mac_address 3종을 redact 전략·apply_to_input=True로
+    붙이는지, GP에는 안 붙는지 확인한다(`middleware/factory.py` 23-43번째 줄
+    주석, `_build_pii_middleware` 참고). 지금까지 이 부분에 대한 단위 테스트가
+    없었다."""
+
+    def setUp(self):
+        self.factory = MiddlewareFactory(runtime_policy=RuntimeCapabilityPolicy())
+
+    def test_build_adds_exactly_three_pii_middlewares(self):
+        middleware = self.factory.build(definition=_definition(), context=None)
+
+        pii_middlewares = [m for m in middleware if isinstance(m, PIIMiddleware)]
+        self.assertEqual(len(pii_middlewares), 3)
+
+    def test_build_covers_credit_card_ip_mac_address_only(self):
+        middleware = self.factory.build(definition=_definition(), context=None)
+
+        pii_types = {m.pii_type for m in middleware if isinstance(m, PIIMiddleware)}
+        self.assertEqual(pii_types, {"credit_card", "ip", "mac_address"})
+
+    def test_build_does_not_cover_email_or_url(self):
+        """이메일·URL은 업무 대화에 정상적으로 섞여 있어 오탐이 잦다는 이유로
+        의도적으로 뺐다(`middleware/factory.py` 23-30번째 줄 주석) — 그 결정이
+        실제로 지켜지는지 반대 방향에서 확인한다."""
+        middleware = self.factory.build(definition=_definition(), context=None)
+
+        pii_types = {m.pii_type for m in middleware if isinstance(m, PIIMiddleware)}
+        self.assertNotIn("email", pii_types)
+        self.assertNotIn("url", pii_types)
+
+    def test_build_uses_redact_strategy_and_covers_input_output_tool_results(self):
+        """2026-08-25 — 사용자 입력뿐 아니라 모델 답변(`apply_to_output`)·도구
+        실행 결과(`apply_to_tool_results`)도 검사 범위에 들어간다."""
+        middleware = self.factory.build(definition=_definition(), context=None)
+
+        pii_middlewares = [m for m in middleware if isinstance(m, PIIMiddleware)]
+        for pii_middleware in pii_middlewares:
+            self.assertEqual(pii_middleware.strategy, "redact")
+            self.assertTrue(pii_middleware.apply_to_input)
+            self.assertTrue(pii_middleware.apply_to_output)
+            self.assertTrue(pii_middleware.apply_to_tool_results)
+
+    def test_build_for_general_purpose_does_not_include_pii_middleware(self):
+        """GP는 별도 `build_for_general_purpose()`를 쓰므로 PII 미들웨어가 아직
+        안 붙는다(`build()` 107-111번째 줄 주석: "GP가 사용자 원문을 직접 보는
+        경로가 생기면 그때 같은 줄을 추가한다") — 상위 에이전트가 이미 걸러줘서
+        생략한 게 아니라, 아직 GP 경로가 그 위험에 노출되지 않았다는 판단이다."""
+        middleware = self.factory.build_for_general_purpose()
+
+        self.assertFalse(any(isinstance(m, PIIMiddleware) for m in middleware))
+
+    def test_credit_card_in_user_message_is_redacted_before_model(self):
+        """실제 `before_model` 훅을 돌려서 카드번호가 진짜로 가려지는지 확인한다
+        (와이어링만 보고 "붙어 있으니 될 것"이라 가정하지 않는다)."""
+        middleware = self.factory.build(definition=_definition(), context=None)
+        credit_card_middleware = next(
+            m for m in middleware if isinstance(m, PIIMiddleware) and m.pii_type == "credit_card"
+        )
+
+        state = {"messages": [HumanMessage(content="내 카드번호는 4111111111111111 이야")]}
+        result = credit_card_middleware.before_model(state, runtime=None)
+
+        self.assertIsNotNone(result)
+        redacted_content = result["messages"][0].content
+        self.assertNotIn("4111111111111111", redacted_content)
+        self.assertIn("REDACTED", redacted_content)
+
+    def test_ip_and_mac_address_in_user_message_are_each_redacted(self):
+        ip_middleware = next(
+            m
+            for m in self.factory.build(definition=_definition(), context=None)
+            if isinstance(m, PIIMiddleware) and m.pii_type == "ip"
+        )
+        mac_middleware = next(
+            m
+            for m in self.factory.build(definition=_definition(), context=None)
+            if isinstance(m, PIIMiddleware) and m.pii_type == "mac_address"
+        )
+
+        ip_state = {"messages": [HumanMessage(content="서버 주소는 192.168.1.1 이야")]}
+        ip_result = ip_middleware.before_model(ip_state, runtime=None)
+        self.assertNotIn("192.168.1.1", ip_result["messages"][0].content)
+
+        mac_state = {"messages": [HumanMessage(content="맥주소는 00:1A:2B:3C:4D:5E 야")]}
+        mac_result = mac_middleware.before_model(mac_state, runtime=None)
+        self.assertNotIn("00:1A:2B:3C:4D:5E", mac_result["messages"][0].content)
+
+    def test_before_model_only_ever_inspects_the_last_human_message(self):
+        """`before_model`은 항상 "가장 마지막 HumanMessage"만 본다 — 그 뒤에
+        온 AIMessage의 카드번호는 이 훅의 검사 대상이 아니다(그건
+        `after_model`의 몫, 아래 별도 테스트)."""
+        middleware = self.factory.build(definition=_definition(), context=None)
+        credit_card_middleware = next(
+            m for m in middleware if isinstance(m, PIIMiddleware) and m.pii_type == "credit_card"
+        )
+
+        state = {
+            "messages": [
+                HumanMessage(content="안녕"),
+                AIMessage(content="카드번호 4111111111111111 확인했습니다"),
+            ]
+        }
+        result = credit_card_middleware.before_model(state, runtime=None)
+
+        self.assertIsNone(result)
+
+    def test_credit_card_in_ai_answer_is_redacted_after_model(self):
+        """2026-08-25 — `apply_to_output=True`이므로 모델이 되풀이한 카드번호도
+        `after_model` 훅에서 가려지는지 확인한다."""
+        middleware = self.factory.build(definition=_definition(), context=None)
+        credit_card_middleware = next(
+            m for m in middleware if isinstance(m, PIIMiddleware) and m.pii_type == "credit_card"
+        )
+
+        state = {
+            "messages": [
+                HumanMessage(content="내 카드번호가 뭐였지?"),
+                AIMessage(content="카드번호 4111111111111111 확인했습니다"),
+            ]
+        }
+        result = credit_card_middleware.after_model(state, runtime=None)
+
+        self.assertIsNotNone(result)
+        redacted_content = result["messages"][-1].content
+        self.assertNotIn("4111111111111111", redacted_content)
+        self.assertIn("REDACTED", redacted_content)
