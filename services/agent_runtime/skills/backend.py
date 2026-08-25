@@ -1,6 +1,6 @@
 """Skill 저장 경로·namespace — `services.agent_runtime.memory.backend`와 같은 패턴.
 
-정본: docs/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
 ("저장 구조 — Store만 사용" 절)
 
 **경로는 계정·팀 ID를 안 담는다.** Memory의 `/memories/users/preferences.md`가

@@ -121,19 +121,21 @@ GPU가 필요해 **RunPod 워커**가 별도로 돌고, 진행 상황은 화면�
 업무는 빼고, 뺐다는 사실을 말합니다.** 등록은 확인 카드 승인 후 우리 DB에 먼저 남고,
 Jira 등록은 그다음입니다.
 
-### 4.6 에이전트가 쓰는 도구 14종
+### 4.6 에이전트가 쓰는 도구 16종
 
 | 갈래 | 도구 |
 |---|---|
-| 문서 | `document_search` · `document_list` |
+| 문서 | `document_search` · `document_list` · `document_sync` |
 | 사람 | `people_list` · `absence_list` · `workload_report` |
 | 업무 | `task_extraction` · `task_list` · `task_update` · `task_register` |
 | 프로젝트 | `project_list` |
 | 외부 | `jira_get_issues` · `jira_create_issues` · `web_search` |
 | 일반 | `get_current_datetime` — 상대적 날짜(「이번 주 금요일」 등)를 등록 도구에 넘기기 전 오늘 날짜를 확인한다 |
+| 스킬 | `skill_register` — 반복하는 일을 스킬로 저장한다 |
 
-`task_register`와 `jira_create_issues`는 **승인 게이트**를 탑니다. 여기에 팀이 연결한
-MCP 서버의 도구가 더해집니다.
+이 중 **`task_update` · `task_register` · `jira_create_issues` · `skill_register`
+넷이 승인 게이트**를 탑니다. 여기에 팀이 요청해 운영자가 등록한 **커스텀 도구**가
+더해지고, 그쪽은 우리가 내용을 모르므로 **전부** 승인 게이트를 탑니다.
 
 ### 4.7 운영자 콘솔 (`/ops`)
 
@@ -147,7 +149,10 @@ DB에서 `is_admin`과 계정 상태를 다시 확인합니다.
 | 계정 관리 | 정지·재활성·직원 연결 해제·운영자 권한 부여 |
 | 계정 연결·초대 | 모든 팀의 초대 조회와 정리 |
 | 연결 서비스 | Drive·Jira 연결 상태와 **강제 해제** |
-| 모델 등록 | 팀이 요청한 커스텀 모델을 우리가 등록 |
+| 모델 등록 | 팀이 요청한 커스텀 모델을 우리가 등록. 팀별 기본 채팅 모델도 여기서 |
+| 커스텀 도구 | 팀이 요청한 MCP·FastAPI 도구를 우리가 등록·연결 확인 |
+| 가드레일 | 입력 검사 정책 |
+| 사용량 | 팀별 실행·토큰 사용량 |
 | 감사 로그 | 누가 무엇을 왜 했는가 |
 | 전역 정책 | 초대 만료 기간, 시스템 공지 |
 
@@ -192,7 +197,8 @@ flowchart TB
     end
 
     subgraph SV["services · 도메인 로직"]
-        S1["harness<br/>도구 레지스트리 · 실행 루프"]
+        S1["agent_runtime<br/>실행 루프 · 미들웨어 · 메모리 · 위임"]
+        S6["harness<br/>도구 레지스트리 16종"]
         S2["agent_builder<br/>검증 · 시험 실행"]
         S3["document_pipeline"]
         S4["task_extraction"]
@@ -225,7 +231,7 @@ flowchart TB
 sequenceDiagram
     participant U as 사용자
     participant C as Chat
-    participant H as Harness
+    participant H as agent_runtime
     participant M as LLM
     participant T as 도구
 
@@ -253,7 +259,7 @@ sequenceDiagram
 
 ## 8. 데이터 구조
 
-전체 57개 테이블입니다. 핵심만 추리면:
+전체 63개 테이블입니다. 핵심만 추리면:
 
 ```mermaid
 erDiagram
@@ -321,7 +327,7 @@ $env:DATABASE_URL="postgresql://project_copilot:project_copilot@localhost:5432/p
 cd frontend; npm run build
 ```
 
-자세한 설치 절차는 `docs/개발환경/로컬_Docker_개발환경_설치_매뉴얼.md`에 있습니다.
+자세한 설치 절차는 `docs/설계 및 구현/3_중간발표 이후/개발환경/로컬_Docker_개발환경_설치_매뉴얼.md`에 있습니다.
 
 ---
 
@@ -358,7 +364,7 @@ cd frontend; npm run build
 
 ## 문서
 
-- 화면·API가 실제로 어떻게 동작하는가 — `docs/AS-IS/코드설명/`
-- 왜 그렇게 만들었는가 — `docs/AS-IS/설계/`, `docs/참고자료/`
-- 무엇을 만들기로 했는가 — `docs/TO-BE/`
+- 화면·API가 실제로 어떻게 동작하는가 — `docs/설계 및 구현/2_중간발표 이전/코드설명/`
+- 왜 그렇게 만들었는가 — `docs/설계 및 구현/2_중간발표 이전/설계/`, `docs/참고자료/`
+- 무엇을 만들기로 했는가 — `docs/설계 및 구현/3_중간발표 이후/설계/`
 - 작업 기록 — `docs/작업기록/`

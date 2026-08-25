@@ -1299,7 +1299,7 @@ class PerCallDecisionTests(SimpleTestCase):
 
     모델이 한 턴에 side_effect 도구를 여러 개 부르면 확인 카드에 여러 항목이
     한꺼번에 뜨는데, 지금까지는 전부에 같은 결정만 적용할 수 있었다. 배경은
-    `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+    `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
     """
 
     def _requests(self, count=3):

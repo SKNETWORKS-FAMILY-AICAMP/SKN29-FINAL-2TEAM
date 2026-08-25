@@ -64,7 +64,7 @@ class AgentRepository:
 class AgentVersionRepository:
     """`agents`·`agent_versions`·`agent_version_tools` 조회 전용.
 
-    계약: docs/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md
+    계약: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_02_Deep-Agent_런타임_공통_계약_v1.md
     §6.1. `backend.db.errors`(`RecordNotFound`/`PermissionDenied`)만 던진다 —
     `services.agent_runtime.exceptions`로의 번역은 Loader
     (services/agent_runtime/loader.py)의 몫이다.
@@ -1343,7 +1343,7 @@ MCP_CALL_TIMED_OUT = "TIMED_OUT"
 class McpCallNoteRepository:
     """승인 카드 경고의 재료(2026-08-21, 병렬실행 Phase 3).
 
-    정본: `docs/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md`,
+    정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md`,
     `..._03_외부_Write_Tool_재시도_안전성.md` §4.2.
 
     **여기서 하는 일은 전부 "짧게 쓰고 바로 끝"이다.** 락을 쥔 채 기다리는

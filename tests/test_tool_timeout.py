@@ -1,6 +1,6 @@
 """middleware/tool_timeout.py(McpToolCallTimeoutMiddleware) 단위 테스트.
 
-정본: `docs/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
+정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_01_Tool_timeout_재설계.md`
 
 `ToolCallRequest`는 실제 `langchain.agents.middleware.types` 클래스를 그대로
 쓴다(mock 아님) — `test_memory_write_guard.py`와 같은 관례. 실제 시간을

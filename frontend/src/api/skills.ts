@@ -17,7 +17,7 @@ import { apiRequest, ApiError } from './client';
  * ## 칸이 셋뿐인 이유
  *
  * deepagents `SkillsMiddleware` 가 읽는 `SKILL.md` 의 모양 그대로다
- * (`docs/작업기록/Deep_Agents/2026-08-13_03_…벤치마킹.md` §9-3) — frontmatter
+ * (`docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_03_…벤치마킹.md` §9-3) — frontmatter
  * 의 `name`·`description` 만 매 턴 시스템 프롬프트에 실리고, `body` 는
  * 모델이 그 스킬을 고른 뒤에야 파일로 읽는다. 그래서 **`description` 이
  * 「고를지 말지」의 유일한 근거**다. 칸을 더 만들지 않는다 — 미들웨어가

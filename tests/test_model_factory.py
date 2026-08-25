@@ -1,6 +1,6 @@
 """models/factory.py(ModelConfigResolver, ModelFactory) 단위 테스트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §6-3
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §6-3
 
 DB는 안 띄운다 — `CustomModelRepository.for_model`을 mock한다(tests/test_harness.py의
 RegistryTests와 같은 패턴). 실제 Anthropic/OpenAI API는 호출하지 않는다 —

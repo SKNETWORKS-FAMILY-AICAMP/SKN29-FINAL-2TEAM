@@ -1,6 +1,6 @@
 """「스킬」 REST API — 설정 > 스킬 화면(`SkillsTab.tsx`)이 부르는 계약.
 
-정본: docs/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md.
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md.
 실제 저장·검증은 `services.agent_runtime.skills.service`가 전담한다(채팅의
 `skill_register` 도구와 같은 함수) — 여기는 인증·역할 조회와 HTTP 상태
 코드 변환만 한다.

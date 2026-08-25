@@ -1,6 +1,6 @@
 """runtime_policy.py(RuntimeCapabilityPolicy) 단위 테스트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §6-4
+정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §6-4
 
 숫자 자체를 검증하는 게 아니라(그건 정책 값이라 바뀔 수 있다), "방어선(ceiling)이
 실제로 적용되는가", "Root/Child는 이 클래스가 새 기본값을 만들지 않는가" 같은
@@ -194,7 +194,7 @@ class IsToolAllowedForRoleTests(SimpleTestCase):
         유일한 경계였는데, 이제 `factory.py`의 `build()`가 `interrupt_on`을
         만들 때 **같은 함수**를 다시 부르므로 팀원의 쓰기 호출도 팀장과 똑같이
         HITL 확인 카드(자기 승인)를 거친다. 자세한 배경은
-        `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+        `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
 
         이 테스트는 그 변경 때 같이 안 고쳐져서 옛 동작(member 차단)을 검증한
         채로 남아 있었다 — 2026-08-21에 실제 정책에 맞춘다."""

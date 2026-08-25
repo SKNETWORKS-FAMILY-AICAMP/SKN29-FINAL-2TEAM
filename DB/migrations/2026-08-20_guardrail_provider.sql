@@ -3,7 +3,7 @@
 --
 -- 고객이 이미 가진 가드레일(OpenAI Guardrails·AWS Bedrock·Azure Content
 -- Safety)을 등록해서 우리 에이전트가 그걸 거쳐 돌게 한다.
--- 정본: docs/작업기록/2026-08-20_가드레일_조사와_실측.md §8
+-- 정본: docs/설계 및 구현/3_중간발표 이후/작업기록/2026-08-20_가드레일_조사와_실측.md §8
 --
 -- **`mcp_server` 와 같은 틀이다** — 팀 소유, 비밀값은 암호화, status 가
 -- UNCHECKED 로 시작하고 「연결 확인」을 눌러야 CONNECTED 가 된다. 등록만 하고

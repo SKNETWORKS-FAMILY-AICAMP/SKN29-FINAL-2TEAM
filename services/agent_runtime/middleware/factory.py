@@ -26,8 +26,8 @@ if TYPE_CHECKING:
 #: 둘까지 켜면 오탐이 훨씬 잦다). `PIIMiddleware`는 langchain 실측 결과
 #: **타입 하나당 인스턴스 하나**라 여러 개를 리스트로 묶어 만든다
 #: (`langchain/agents/middleware/pii.py` `__init__` — `pii_type`이 단일
-#: 값만 받는다). 흐름은 `docs/작업기록/Jihun_Deep_Agents/13_7단계_05_미들웨어_조립.md`,
-#: 세부 설계는 `docs/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md`.
+#: 값만 받는다). 흐름은 `docs/설계 및 구현/3_중간발표 이후/작업기록/Jihun_Deep_Agents/13_7단계_05_미들웨어_조립.md`,
+#: 세부 설계는 `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md`.
 _PII_TYPES: tuple[str, ...] = ("credit_card", "ip", "mac_address")
 
 

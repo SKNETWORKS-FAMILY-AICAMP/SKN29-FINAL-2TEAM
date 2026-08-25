@@ -35,7 +35,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-SOURCE_DIR = REPO / "docs" / "참고자료" / "개발_기획서_샘플"
+#: ⚠ **이 폴더는 2026-08-25 에 지웠다.** 학습·평가 데이터(`data/*.jsonl`)는 이미
+#: 만들어져 커밋돼 있으므로 이 스크립트를 다시 돌릴 일은 없다. 다시 돌려야 하면
+#: git 이력에서 되살린다 — `git checkout <2026-08-25 이전 커밋> -- "docs/참고자료/개발_기획서_샘플"`.
+SOURCE_DIR = REPO / "docs" / "설계 및 구현" / "1_초안" / "기획서_샘플"
 OUT_DIR = Path(__file__).resolve().parent / "data"
 
 #: 평가 전용 문서. **학습에 한 글자도 들어가지 않는다.**

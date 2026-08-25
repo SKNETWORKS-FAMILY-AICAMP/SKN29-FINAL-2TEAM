@@ -1,6 +1,6 @@
 """`/memories/users/`(StoreBackend) 쓰기를 Postgres advisory lock으로 직렬화한다.
 
-정본: `docs/작업기록/Deep_Agents/2026-08-19_01_실행_안정성_설계.md` §4
+정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-19_01_실행_안정성_설계.md` §4
 
 **막는 경합**: `StoreBackend.write()`/`edit()`는 `store.get()` → 파이썬에서 계산
 → `store.put()`의 읽기-수정-쓰기를 락도 CAS도 없이 한다. `ToolNode`가 한

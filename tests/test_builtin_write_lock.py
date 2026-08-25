@@ -1,6 +1,6 @@
 """middleware/builtin_write_lock.py — 내장 쓰기 도구의 같은 프로젝트 직렬화.
 
-정본: `docs/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.2.
+정본: `docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.2.
 
 `test_memory_write_guard.py`/`test_memory_write_lock.py`와 같은 관례로, 실제
 `ToolCallRequest`를 쓰고 DB 연결만 가짜로 바꾼다 — 여기서 지키려는 건 "어떤
