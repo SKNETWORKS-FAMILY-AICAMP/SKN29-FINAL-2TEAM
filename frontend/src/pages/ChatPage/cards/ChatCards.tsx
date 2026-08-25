@@ -66,7 +66,7 @@ export function ProgressCard({
   const Wrapper = bare ? 'div' : 'section';
 
   return (
-    <Wrapper className={bare ? undefined : styles.card}>
+    <Wrapper className={bare ? styles.bareStack : styles.card}>
       <div className={styles.progressHead}>
         <span className={styles.progressTitle}>
           {running ? (
@@ -263,7 +263,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
   const Wrapper = bare ? 'div' : 'section';
 
   return (
-    <Wrapper className={bare ? undefined : styles.card}>
+    <Wrapper className={bare ? styles.bareStack : styles.card}>
       <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
         생각 과정 {entries.length}단계

@@ -8,6 +8,19 @@
   border-radius: var(--radius-lg);
 }
 
+/* `bare` 로 그릴 때 안쪽 골격(2026-08-25).
+   테두리를 안 그리는 대신 래퍼를 **클래스 없는 `<div>`** 로 두고 있었는데,
+   그러면 `display: block` 이라 위 `.card` 의 `gap` 을 못 받는다. 그래서
+   2026-08-19 에 진행 카드와 생각 과정을 한 카드로 합친 뒤로, 카드 **안쪽**은
+   간격이 0 이었다 — 제목 아래 1px 에 진행 막대가 붙어 밑줄처럼 보이고,
+   그 막대에 단계 목록이 또 0px 로 붙었다(2026-08-25 실측).
+   테두리·배경만 빼고 세로 골격은 `.card` 와 같게 둔다. */
+.bareStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
 .cardFlush {
   display: flex;
   flex-direction: column;
