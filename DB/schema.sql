@@ -1071,7 +1071,7 @@ CREATE TABLE tool_call_idempotency (
 --               에서 같은 도구를 또 부르면 "이미 실행됐을 수 있다"고 알린다.
 -- 같은 MCP 서버 호출을 직렬화(lock)하지 않고 경고만 하는 이유는
 -- DB/migrations/2026-08-21_mcp_call_note.sql 주석과
--- docs/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md §2.
+-- docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md §2.
 -- 성공한 결과만 담는 tool_call_idempotency 와는 담는 시점도 지우는 규칙도
 -- 다르므로 전용 표를 둔다.
 CREATE TABLE mcp_call_note (
@@ -1107,7 +1107,7 @@ CREATE INDEX idx_mcp_call_note_run_tool
 -- 쓴다. 아래 4테이블은 services/agent_runtime/(신규, 미완성) 전용이고 아직
 -- 아무 코드도 읽거나 쓰지 않는다 — 상세 배경은
 -- DB/migrations/2026-08-13_agent_versioning.sql 상단 주석과
--- docs/TO-BE/작업목록.md "2026-08-13 착수" 절.
+-- docs/설계 및 구현/중간발표 이후/설계/작업목록.md "2026-08-13 착수" 절.
 --
 -- agent_id 접두사('AG')를 위 agent 테이블과 공유한다 — 의도한 것이다(전환
 -- 완료 시 agent를 대체할 전제). 전환 전까지는 테이블명을 꼭 같이 확인할 것.

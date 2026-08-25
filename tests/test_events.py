@@ -617,7 +617,7 @@ class ToolCallIdArgumentsStatusTests(SimpleTestCase):
 class ParallelSideEffectPartialFailureTests(SimpleTestCase):
     """병렬 side-effect 호출 중 일부만 실패했을 때 결과가 **뭉개지지 않는지**.
 
-    정본: `docs/작업기록/Deep_Agents/2026-08-21_05_병렬_side-effect_부분실패_보고.md`
+    정본: `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_05_병렬_side-effect_부분실패_보고.md`
 
     이미 성공한 호출을 자동으로 되돌리지 않는 대신(사용자가 연결하는 임의의
     MCP 도구는 되돌리는 방법을 우리가 알 수 없고, 이메일 발송처럼 원천적으로

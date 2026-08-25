@@ -1,6 +1,6 @@
 """hitl_warnings.py — 승인 카드에 붙는 동시 실행·재시도 경고.
 
-정본: `docs/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md`,
+정본: `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_04_MCP_동시_쓰기_경고_설계.md`,
 `..._03_외부_Write_Tool_재시도_안전성.md` §4.2.
 
 DB는 `McpCallNoteRepository`를 통째로 patch해서 대신한다 — 여기서 지키려는

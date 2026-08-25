@@ -1,6 +1,6 @@
 """compat/deepagents_v075.py 단위 테스트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §6-2
+정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §6-2
 
 이 파일은 이 저장소의 다른 모듈과 달리 deepagents를 실제로 import한다(compat
 패키지가 정확히 그러라고 있는 경계다 — §4 참고). requirements/base.txt에

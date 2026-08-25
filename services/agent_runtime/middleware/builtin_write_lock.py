@@ -1,6 +1,6 @@
 """내장 side-effect Tool의 같은 자원 쓰기를 Postgres advisory lock으로 직렬화한다.
 
-정본: `docs/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.2
+정본: `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-20_02_에이전트_병렬실행_설계.md` §5.2
 
 **막는 경합**: `ProjectTaskRepository.register()`(`backend/db/agent_platform.py`)는
 읽고-고쳐-쓰기를 그대로 한다:

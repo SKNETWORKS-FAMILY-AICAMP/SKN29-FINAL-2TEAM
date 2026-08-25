@@ -1,6 +1,6 @@
 """model_key 매칭이 실제로 tool 제외를 적용하는지 확인하는 통합 테스트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §9.3
+정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-13_04_작업자B_실행코어_세부계획.md §9.3
 
 실제 ChatAnthropic/ChatOpenAI 인스턴스로 provider 문자열을 확인하고(네트워크 호출
 없음, 생성자 단계라 안전), 그 provider로 harness profile을 등록했을 때 deepagents가

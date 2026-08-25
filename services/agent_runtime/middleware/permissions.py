@@ -1,6 +1,6 @@
 """project_id로 한정된 프로젝트별 장기 메모리 파일 경로 접근 제어.
 
-정본: docs/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md §3~7.
+정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md §3~7.
 
 `/memories/projects/{project_id}.md`(프로젝트별 상세 메모리, `memory/backend.py`의
 `_MEMORY_ROUTING_PROMPT`가 모델에게 안내하는 경로)는 실제로는 별도 Store route가

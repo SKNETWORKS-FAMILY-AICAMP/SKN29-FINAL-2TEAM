@@ -1478,7 +1478,7 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         뚫린다"였다. 그 판단이 2026-08-20에 뒤집혔다 — "팀원이 자기 업무를
         직접 등록할 수 있게 하고 싶다"는 요구를 받아 자기 승인을 허용하기로
         했다. 배경과 그 대가(호출별 승인 UI를 Phase 2로 앞당김)는
-        `docs/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
+        `docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-21_02_MCP_승인_범위_변경_반영.md`.
         """
 
         mock_create_root.return_value = "GRAPH"

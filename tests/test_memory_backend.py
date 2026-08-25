@@ -1,6 +1,6 @@
 """memory/backend.py 단위 테스트.
 
-정본: docs/작업기록/Deep_Agents/2026-08-19_03_장기메모리_개인전용_최종구조.md
+정본: docs/설계 및 구현/중간발표 이후/작업기록/Deep_Agents/2026-08-19_03_장기메모리_개인전용_최종구조.md
 
 2026-08-19 — 팀·에이전트 공유 메모리(`/memories/AGENTS.md`,
 `/memories/projects/{project_id}.md`)를 없애기로 하면서 이 파일도 다시 썼다.
