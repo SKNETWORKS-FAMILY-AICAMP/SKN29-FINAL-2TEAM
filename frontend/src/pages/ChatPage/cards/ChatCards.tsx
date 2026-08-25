@@ -89,6 +89,12 @@ export function ProgressCard({
   const Wrapper = bare ? 'div' : 'section';
   const webSources = sources.filter((source) => Boolean(source.url));
   const documentSources = sources.filter((source) => !source.url);
+  // 단계가 하나뿐이면 머리말·1/1·단계 한 줄이 같은 내용을 세 번 반복한다.
+  // 그 한 단계를 머리말로 올려 진행 상태를 한 줄로만 보여 준다.
+  const compactStep = running && steps.length === 1 && subagents.length === 0 ? steps[0] : null;
+  const visibleTitle = compactStep
+    ? `${compactStep.label}${compactStep.meta ? ` · ${compactStep.meta}` : ''}`
+    : title;
 
   return (
     <Wrapper className={bare ? styles.bareStack : styles.card}>
@@ -101,7 +107,7 @@ export function ProgressCard({
           ) : (
             <Icon name="check-circle" size={16} color="var(--color-success)" />
           )}
-          {title}
+          {visibleTitle}
         </span>
         {/* **회전 수는 보여주지 않는다.**
             Loop 이 몇 바퀴 돌았는지는 우리가 디버깅할 때 보는 값이지 사람이 할
@@ -112,13 +118,13 @@ export function ProgressCard({
             떴는데, 단계를 안 쌓는 도구는 실행 내내 이 자리가 「대기 중」이라 왼쪽의
             「생각하는 중」·「프로젝트 조회 완료」와 정면으로 어긋났다. 지금 무슨
             일이 벌어지는지는 왼쪽 제목과 아이콘(도는 중/체크)이 이미 말한다. */}
-        {running && steps.length > 0 && (
+        {running && steps.length > 0 && !compactStep && (
           <span className={styles.progressCount}>{`${shown} / ${total} 단계`}</span>
         )}
       </div>
 
       {/* 막대도 단계가 있을 때만 그린다 — 단계가 없으면 늘 0%라 빈 띠만 남는다. */}
-      {running && steps.length > 0 && (
+      {running && steps.length > 0 && !compactStep && (
         <div className={styles.progressTrack}>
           <span
             className={
@@ -129,7 +135,7 @@ export function ProgressCard({
         </div>
       )}
 
-      {running && <ul className={styles.steps}>
+      {running && !compactStep && <ul className={styles.steps}>
         {/* 끝났으면 남아 있는 `doing` 도 더는 돌지 않는다 — 스트림이 닫혔는데
             마지막 단계만 회전하고 있으면 멈춘 것처럼 보인다. */}
         {(running ? steps : steps.map((s) => (s.state === 'doing' ? { ...s, state: 'done' as const } : s))).map((step, index) => (
@@ -165,7 +171,7 @@ export function ProgressCard({
             onClick={() => setWebSourcesOpen((open) => !open)}
           >
             <Icon name={webSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
-            검색한 링크 {webSources.length}개
+            검색 결과 {webSources.length}개
           </button>
           {webSourcesOpen && (
             <ul className={styles.queries}>
@@ -233,10 +239,9 @@ export function ProgressCard({
           `running` 을 보고 회전을 멈추는데 이 줄만 무조건 그려져서, 답변이 다
           나온 뒤에도 카드가 아직 도는 것처럼 보였다. 끝난 뒤 남길 값은 근거
           수뿐이고, 그것도 없으면 줄 자체를 안 그린다. */}
-      {running && (
+      {running && Boolean(evidenceCount) && (
         <p className={styles.foot}>
-          {evidenceCount ? `근거 ${evidenceCount}건` : ''}
-          {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
+          근거 {evidenceCount}건
         </p>
       )}
     </Wrapper>
@@ -562,7 +567,7 @@ export function ReasoningTrace({
                 size={13}
                 color="var(--color-primary)"
               />
-              검색 상세 {webSources.length > 0 ? `· 결과 ${webSources.length}개` : ''}
+              검색 결과 {webSources.length > 0 ? `${webSources.length}개` : ''}
             </button>
 
             {searchDetailsOpen && (
