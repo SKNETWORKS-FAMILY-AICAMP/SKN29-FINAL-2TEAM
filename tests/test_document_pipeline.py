@@ -1,4 +1,6 @@
+import importlib
 import json
+import os
 import pathlib
 import tempfile
 import zlib
@@ -171,6 +173,52 @@ class SigningTests(SimpleTestCase):
     def test_public_base_url_must_be_https(self):
         with self.assertRaises(PipelineConfigurationError):
             signed_download_url(doc_id="DC001", revision="rev-1")
+
+
+class TunnelHostAllowanceTests(SimpleTestCase):
+    """터널 호스트는 한 군데만 고치면 된다.
+
+    `PUBLIC_BACKEND_BASE_URL` 과 `ALLOWED_HOSTS` 를 손으로 맞추게 뒀더니
+    어긋났고, Django 가 DisallowedHost 로 400 을 줘서 워커가 원문을 못 받았다
+    (2026-08-25 RunPod 콘솔 로그 10건). Quick Tunnel 은 띄울 때마다 주소가
+    바뀌므로 고칠 곳이 둘이면 한쪽을 잊는다.
+    """
+
+    def _allowed_hosts(self, **environment):
+        """주어진 환경변수로 설정 모듈을 다시 읽어 `ALLOWED_HOSTS` 를 본다."""
+
+        import config.settings.base as settings_module
+
+        try:
+            with patch.dict(os.environ, environment):
+                importlib.reload(settings_module)
+                return list(settings_module.ALLOWED_HOSTS)
+        finally:
+            # 다른 테스트가 이 모듈을 그대로 쓰므로 원래 값으로 되돌린다.
+            importlib.reload(settings_module)
+
+    def test_터널_호스트가_저절로_허용된다(self):
+        hosts = self._allowed_hosts(
+            ALLOWED_HOSTS="localhost,127.0.0.1",
+            PUBLIC_BACKEND_BASE_URL="https://establishment-behavioral-acres-heather.trycloudflare.com",
+        )
+        self.assertIn("establishment-behavioral-acres-heather.trycloudflare.com", hosts)
+        self.assertIn("localhost", hosts)
+
+    def test_이미_적혀_있으면_두_번_넣지_않는다(self):
+        hosts = self._allowed_hosts(
+            ALLOWED_HOSTS="localhost,demo.example.com",
+            PUBLIC_BACKEND_BASE_URL="https://demo.example.com",
+        )
+        self.assertEqual(hosts.count("demo.example.com"), 1)
+
+    def test_주소가_없으면_아무것도_붙지_않는다(self):
+        """터널 없이 로컬만 쓰는 개발자가 있다. 빈 호스트를 넣으면 안 된다."""
+
+        hosts = self._allowed_hosts(
+            ALLOWED_HOSTS="localhost,127.0.0.1", PUBLIC_BACKEND_BASE_URL=""
+        )
+        self.assertEqual(hosts, ["localhost", "127.0.0.1"])
 
 
 class SourceDocumentSelectionTests(SimpleTestCase):
