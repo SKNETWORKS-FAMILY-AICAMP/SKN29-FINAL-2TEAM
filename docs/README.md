@@ -61,7 +61,7 @@ docs/
 | `설계/` | Agent Platform 설계 정본 `1_서비스구조_IA` ~ `12_문서처리_방식_비교`, Harness 조사, QA 체크리스트, 화면문구 정리표, **`작업목록.md`** |
 | `작업기록/` | 08-08 이후 구현 일지. `Deep_Agents/`(런타임 설계 근거 — 코드 주석이 직접 인용한다) · `Jihun_Deep_Agents/`(실행 흐름 10단계 해설) · `Jihun_eval/` · `jihun_buildingpage/` · `LangSmith_LangFuse/` |
 | `개발환경/` | 로컬 Docker 설치, DB 시작 가이드, AWS 구축·이전 절차. **지금 서버 상태는 `AWS_구성_현황.md` 한 장** — 나머지는 절차서다 |
-| `데이터모델/` | 스키마 설계 — 비정형 문서 · 플랫폼 운영·권한 · peopleHR |
+| `데이터모델/` | 스키마 설계 — **`Agent_Platform_DB_설계.md`**(에이전트·대화·실행·도구·가드레일 15테이블) · 비정형 문서 · 플랫폼 운영·권한 · peopleHR |
 | `Agent/` | 파싱·청킹·임베딩 파이프라인. RunPod 배포 인수인계, Cloudflare Tunnel 절차 |
 | `참고자료/` | 최종발표 요구 문서 3종 (기술 요구 PDF · 기술 점검표 XLSX · 결과보고서 템플릿 PPTX) |
 
