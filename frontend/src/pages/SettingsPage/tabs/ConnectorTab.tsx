@@ -9,7 +9,7 @@ import {
   listConnectors,
 } from '../../../api/connectors';
 import type { ConnectorType } from '../../../api/connectors';
-import type { IndexingProgress } from '../../../api/documentLibrary';
+import type { IndexingCounts } from '../../../api/documentLibrary';
 import { listRegisteredJiraProjects, listTeamFolders } from '../../../api/projects';
 import { fetchIndexingProgress } from '../../../api/documentLibrary';
 import { PATHS } from '../../../routes';
@@ -97,7 +97,7 @@ export function ConnectorTab() {
    * 그런데 그 일은 응답을 안 붙잡고 뒤에서 도는데다 문서당 100초씩 순차라, 여기서
    * 말해 주지 않으면 「연결됨 · 폴더 3」만 보고 다 됐다고 읽는다.
    */
-  const [indexProgress, setIndexProgress] = useState<IndexingProgress | null>(null);
+  const [indexProgress, setIndexProgress] = useState<IndexingCounts | null>(null);
   const [oauthStarting, setOauthStarting] = useState<OAuthConnectorId | null>(null);
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [peopleModalOpen, setPeopleModalOpen] = useState(false);
@@ -123,7 +123,9 @@ export function ConnectorTab() {
         // **집계만 받는다.** 전역 진행 카드와 같은 엔드포인트다 — 두 자리가
         // 서로 다른 소스를 세면 같은 순간에 다른 숫자를 말하게 된다.
         // 무엇이 실패했는지까지는 「문서」 화면에서 본다.
-        setIndexProgress(await fetchIndexingProgress(token));
+        // **팀 것만 센다.** 이 줄은 「이 커넥터가 가져온 문서」를 말하므로
+        // 내가 올린 파일이 섞이면 폴더 개수와 아귀가 안 맞는다.
+        setIndexProgress((await fetchIndexingProgress(token)).team);
       }
       if (next.JIRA === 'CONNECTED') {
         setJiraProjectCount((await listRegisteredJiraProjects(token)).length);
@@ -138,19 +140,52 @@ export function ConnectorTab() {
   }, [refresh]);
 
   /**
-   * 아직 읽는 중인 문서가 있는 동안만 다시 받는다 — 「내 파일」·「문서」가 쓰는
-   * 방식과 같다. **끝난 뒤에는 안 돈다.** 실패한 것은 스스로 끝나지 않으므로
-   * 남은 수에서 빼고 센다. 안 빼면 8/10 에서 영원히 멈춘 것처럼 보인다.
+   * 실패한 것은 스스로 끝나지 않으므로 **남은 수에서 빼고 센다.** 안 빼면
+   * 8/10 에서 영원히 멈춘 것처럼 보인다.
    */
   const indexing =
     indexProgress !== null &&
     indexProgress.ready + indexProgress.failed < indexProgress.total;
 
+  /**
+   * 진행만 따로, **무거운 `refresh` 와 떼어** 폴링한다.
+   *
+   * 두 가지를 고친 자리다. 하나는 비용 — `refresh` 는 연결·폴더·Jira 를 함께
+   * 부르므로 10초마다 돌릴 것이 아니다. 다른 하나는 **끝난 뒤에도 계속 봐야
+   * 한다**는 것이다. 도는 동안만 폴링하면 이 탭에 앉아 있는 사이 새 회차가
+   * 시작돼도(다른 팀원의 저장, 대화 시작 시 변경 반영) 영영 모른다 — 실제로
+   * 배지가 그 상태로 멈춰 있는 것을 확인했다.
+   *
+   * 전역 진행 카드와 같은 규칙이다: 도는 동안 10초, 아니면 60초, 탭이 숨겨져
+   * 있으면 안 돈다.
+   */
   useEffect(() => {
-    if (!indexing) return;
-    const timer = setInterval(() => void refresh(), 10_000);
-    return () => clearInterval(timer);
-  }, [indexing, refresh]);
+    if (!token || status.GOOGLE_DRIVE !== 'CONNECTED') return;
+
+    let timer: number | null = null;
+    async function tick() {
+      if (!token) return;
+      try {
+        // **팀 것만 센다.** 이 줄은 「이 커넥터가 가져온 문서」를 말하므로
+        // 내가 올린 파일이 섞이면 폴더 개수와 아귀가 안 맞는다.
+        setIndexProgress((await fetchIndexingProgress(token)).team);
+      } catch {
+        // 곁다리 정보다. 못 읽었다고 이 탭에 오류를 띄우지 않는다.
+      }
+    }
+    function start() {
+      if (timer !== null) window.clearInterval(timer);
+      if (document.hidden) return;
+      void tick();
+      timer = window.setInterval(() => void tick(), indexing ? 10_000 : 60_000);
+    }
+    start();
+    document.addEventListener('visibilitychange', start);
+    return () => {
+      if (timer !== null) window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', start);
+    };
+  }, [token, status.GOOGLE_DRIVE, indexing]);
 
   // OAuth 콜백이 여기로 돌아온다. StrictMode가 effect를 한 번 더 돌리므로 같은
   // 결과를 두 번 알리지 않는다.

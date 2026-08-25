@@ -76,14 +76,36 @@ export function reindexTeamDocument(token: string, docId: string) {
   );
 }
 
-/** 색인이 어디까지 왔는가 — 숫자 넷. 전역 진행 표시가 폴링한다. */
-export interface IndexingProgress {
+/** 한 갈래의 색인 진행. 팀 문서와 내 파일이 각각 이 모양이다. */
+export interface IndexingCounts {
   total: number;
   ready: number;
   /** 스스로 끝나지 않는다. 남은 것에서 빼야 진행이 멈춘 것처럼 안 보인다. */
   failed: number;
   /** 지금 워커에서 도는 것. `total - ready - failed` 로 계산하면 「아직 시작 안 한 것」과 뭉친다. */
   running: number;
+}
+
+/**
+ * 색인이 어디까지 왔는가. **팀 문서와 내 파일을 나눠서 준다.**
+ *
+ * 쓰는 자리가 다르기 때문이다 — 전역 진행 카드는 「내 문서가 읽히는 중인가」를
+ * 물어 둘을 합쳐 보지만, 설정 > 커넥터의 배지는 **그 커넥터가 가져온 문서**를
+ * 말하므로 내가 올린 파일이 섞이면 안 된다.
+ */
+export interface IndexingProgress {
+  team: IndexingCounts;
+  personal: IndexingCounts;
+}
+
+/** 두 갈래를 합친다. 사람이 기다리는 것은 「내 문서」 하나다. */
+export function sumIndexing(progress: IndexingProgress): IndexingCounts {
+  return {
+    total: progress.team.total + progress.personal.total,
+    ready: progress.team.ready + progress.personal.ready,
+    failed: progress.team.failed + progress.personal.failed,
+    running: progress.team.running + progress.personal.running,
+  };
 }
 
 /**

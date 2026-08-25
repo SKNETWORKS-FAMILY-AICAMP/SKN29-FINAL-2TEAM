@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
-import { fetchIndexingProgress } from '../../api/documentLibrary';
+import { fetchIndexingProgress, sumIndexing } from '../../api/documentLibrary';
 import type { IndexingProgress as Progress } from '../../api/documentLibrary';
 import { PATHS } from '../../routes';
 import { subscribeSession, loadSession } from '../../utils/session';
@@ -40,6 +40,16 @@ import styles from './IndexingProgress.module.css';
 
 const POLL_ACTIVE_MS = 10_000;
 const POLL_IDLE_MS = 60_000;
+
+/**
+ * 아직 읽을 것이 남았는가. **실패도 「끝난 것」으로 센다** — 실패한 문서는
+ * 스스로 끝나지 않으므로 빼지 않으면 10/12 에서 영원히 도는 것처럼 보인다.
+ */
+function isIndexing(progress: Progress | null): boolean {
+  if (progress === null) return false;
+  const counts = sumIndexing(progress);
+  return counts.total > 0 && counts.ready + counts.failed < counts.total;
+}
 
 export function IndexingProgress() {
   const navigate = useNavigate();
@@ -85,8 +95,8 @@ export function IndexingProgress() {
       stop();
       if (document.hidden) return;
       void poll();
-      const running = progress !== null && progress.ready + progress.failed < progress.total;
-      timer.current = window.setInterval(() => void poll(), running ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+      const interval = isIndexing(progress) ? POLL_ACTIVE_MS : POLL_IDLE_MS;
+      timer.current = window.setInterval(() => void poll(), interval);
     }
 
     start();
@@ -98,11 +108,15 @@ export function IndexingProgress() {
     // `progress` 를 의존성에 넣으면 폴링 결과마다 타이머를 다시 건다. 간격을
     // 바꾸는 것이 목적이므로 「도는가/아닌가」가 바뀔 때만 다시 걸면 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, poll, progress !== null && progress.ready + progress.failed < progress.total]);
+  }, [token, poll, isIndexing(progress)]);
 
-  const total = progress?.total ?? 0;
-  const done = (progress?.ready ?? 0) + (progress?.failed ?? 0);
-  const indexing = progress !== null && total > 0 && done < total;
+  // **팀 문서와 내 파일을 합쳐 본다.** 기다리는 사람에게는 「내 문서」 하나이고,
+  // 올린 파일도 커넥터 문서와 똑같이 워커를 100초씩 기다린다
+  // (`apps/personal_files` 의 `_start_processing`).
+  const counts = progress === null ? null : sumIndexing(progress);
+  const total = counts?.total ?? 0;
+  const done = (counts?.ready ?? 0) + (counts?.failed ?? 0);
+  const indexing = isIndexing(progress);
 
   // 회차가 끝나면 닫아 둔 것을 푼다 — 다음에 색인이 돌면 다시 떠야 한다.
   useEffect(() => {
@@ -110,8 +124,9 @@ export function IndexingProgress() {
   }, [indexing]);
 
   // 도는 것이 없으면 아무것도 안 그린다. 「전부 읽음」은 정상 상태라 화면 위에
-  // 남아 있을 이유가 없다.
-  if (!indexing || dismissed) return null;
+  // 남아 있을 이유가 없다. `counts` 를 함께 거르는 것은 아래에서 그것을 읽기
+  // 때문이다 — `indexing` 이 참이면 항상 있지만 타입은 그걸 모른다.
+  if (!indexing || dismissed || counts === null) return null;
 
   const percent = Math.round((done / total) * 100);
 
@@ -140,8 +155,8 @@ export function IndexingProgress() {
       <div className={styles.foot}>
         {/* 실패는 숨기지 않는다. 남은 수에서 빠지므로 이 줄이 없으면 왜 8/10
             에서 끝났는지 알 수 없다. */}
-        {progress.failed > 0 ? (
-          <span className={styles.failed}>실패 {progress.failed}</span>
+        {counts.failed > 0 ? (
+          <span className={styles.failed}>실패 {counts.failed}</span>
         ) : (
           <span className={styles.hint}>읽은 문서부터 검색에 쓰입니다</span>
         )}
