@@ -315,6 +315,45 @@ class PipelineDocumentRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def indexing_progress(account_id: str) -> dict[str, int]:
+        """지금 몇 개까지 읽었는가. **숫자 넷만 준다.**
+
+        `list_team_library` 와 나눠 둔 이유는 **부르는 빈도**다. 이쪽은 화면
+        어디에 있든 도는 전역 진행 표시가 쓰므로, 문서 목록을 통째로 실어
+        보내면 폴링마다 팀 문서 전부가 오간다. 집계 한 번으로 끝낸다.
+
+        `running` 은 따로 센다 — `total - ready - failed` 로 계산하면 「아직
+        시작 안 한 것」과 「지금 워커에서 도는 것」이 한 숫자에 뭉친다. 그 둘은
+        사람이 기다리는 성격이 다르다(하나는 곧, 하나는 순서를 기다린다).
+
+        **실패는 남은 것에서 뺀다.** 실패한 문서는 스스로 끝나지 않으므로
+        진행률의 분자에 넣어야 8/10 에서 영원히 멈춘 것처럼 보이지 않는다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT
+                        count(*) AS total,
+                        count(*) FILTER (WHERE {_HAS_ACTIVE_CHUNKS}) AS ready,
+                        count(*) FILTER (WHERE d.index_status = 'FAILED') AS failed,
+                        count(*) FILTER (WHERE d.index_status = 'RUNNING') AS running
+                    FROM doc AS d
+                    WHERE d.team_id = %s AND d.deleted = false
+                    """,
+                    (team_id,),
+                )
+                row = cursor.fetchone()
+        return {
+            "total": row["total"],
+            "ready": row["ready"],
+            "failed": row["failed"],
+            "running": row["running"],
+        }
+
+    @staticmethod
     def list_team_library(account_id: str) -> list[dict[str, Any]]:
         """「문서」 화면이 그리는 팀 문서 전부 — **폴더와 색인 상태까지.**
 

@@ -9,8 +9,9 @@ import {
   listConnectors,
 } from '../../../api/connectors';
 import type { ConnectorType } from '../../../api/connectors';
+import type { IndexingProgress } from '../../../api/documentLibrary';
 import { listRegisteredJiraProjects, listTeamFolders } from '../../../api/projects';
-import { fetchDocumentLibrary } from '../../../api/documentLibrary';
+import { fetchIndexingProgress } from '../../../api/documentLibrary';
 import { PATHS } from '../../../routes';
 import { useSession } from '../../../utils/session';
 import { DriveFolderModal } from '../DriveFolderModal/DriveFolderModal';
@@ -96,11 +97,7 @@ export function ConnectorTab() {
    * 그런데 그 일은 응답을 안 붙잡고 뒤에서 도는데다 문서당 100초씩 순차라, 여기서
    * 말해 주지 않으면 「연결됨 · 폴더 3」만 보고 다 됐다고 읽는다.
    */
-  const [indexProgress, setIndexProgress] = useState<{
-    total: number;
-    ready: number;
-    failed: number;
-  } | null>(null);
+  const [indexProgress, setIndexProgress] = useState<IndexingProgress | null>(null);
   const [oauthStarting, setOauthStarting] = useState<OAuthConnectorId | null>(null);
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [peopleModalOpen, setPeopleModalOpen] = useState(false);
@@ -123,14 +120,10 @@ export function ConnectorTab() {
       // 「연결됨」인데 읽는 것이 하나도 없는 상태를 알 수 없다.
       if (next.GOOGLE_DRIVE === 'CONNECTED') {
         setFolderCount((await listTeamFolders(token)).length);
-        // 같은 목록을 「문서」 화면도 쓴다. 여기서는 세 숫자만 접어서 본다 —
-        // 무엇이 실패했는지까지는 그쪽에서 본다.
-        const library = await fetchDocumentLibrary(token);
-        setIndexProgress({
-          total: library.documents.length,
-          ready: library.documents.filter((doc) => doc.search_ready).length,
-          failed: library.documents.filter((doc) => doc.index_status === 'FAILED').length,
-        });
+        // **집계만 받는다.** 전역 진행 카드와 같은 엔드포인트다 — 두 자리가
+        // 서로 다른 소스를 세면 같은 순간에 다른 숫자를 말하게 된다.
+        // 무엇이 실패했는지까지는 「문서」 화면에서 본다.
+        setIndexProgress(await fetchIndexingProgress(token));
       }
       if (next.JIRA === 'CONNECTED') {
         setJiraProjectCount((await listRegisteredJiraProjects(token)).length);

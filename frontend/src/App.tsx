@@ -1,6 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
-import { OpsLayout, OpsRouteGuard, RequireAuth, ToastProvider } from './components';
+import { IndexingProgress, OpsLayout, OpsRouteGuard, RequireAuth, ToastProvider } from './components';
 import { PATHS, ROUTES } from './routes';
 import styles from './App.module.css';
 
@@ -131,6 +131,10 @@ function App() {
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </Suspense>
+      {/* **`<Routes>` 바깥이다.** 라우트가 바뀌어도 이 컴포넌트는 언마운트되지
+          않아서 진행 카드와 폴링이 그대로 이어진다 — 페이지를 옮겨도 유지되는
+          것이 이 자리의 전부이고, 그래서 전역 상태 저장소가 따로 필요 없다. */}
+      <IndexingProgress />
     </ToastProvider>
   );
 }

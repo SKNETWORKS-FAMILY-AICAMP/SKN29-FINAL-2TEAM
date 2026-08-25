@@ -599,6 +599,26 @@ class TeamDocumentLibraryAPIView(AuthenticatedAPIView):
         )
 
 
+class TeamDocumentIndexingAPIView(AuthenticatedAPIView):
+    """색인이 어디까지 왔는가 — **숫자 넷.**
+
+    전역 진행 표시가 쓴다. 화면 어디에 있든 도는 물건이라 `library/` 를 부르면
+    폴링마다 팀 문서 전부가 오간다. 여기는 집계 한 번이다.
+
+    **왜 전역이어야 하는가:** 색인이 도는 시점이 둘인데(폴더 저장 · 대화 시작
+    시 Drive 변경 반영, `services/document_intake/__init__.py` 참고) 둘 다
+    사람이 그 화면에 있어야 볼 수 있었다. 대화를 열어 놓고 기다리는 사람은
+    문서가 들어오는 중이라는 사실 자체를 알 수 없었다.
+    """
+
+    def get(self, request):
+        try:
+            progress = PipelineDocumentRepository.indexing_progress(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(progress)
+
+
 class TeamDocumentReindexAPIView(AuthenticatedAPIView):
     """색인을 **다시 시킨다.** 실패한 문서를 사람이 되살리는 유일한 경로다.
 

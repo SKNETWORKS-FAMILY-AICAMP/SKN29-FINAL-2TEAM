@@ -75,3 +75,21 @@ export function reindexTeamDocument(token: string, docId: string) {
     { method: 'POST', token },
   );
 }
+
+/** 색인이 어디까지 왔는가 — 숫자 넷. 전역 진행 표시가 폴링한다. */
+export interface IndexingProgress {
+  total: number;
+  ready: number;
+  /** 스스로 끝나지 않는다. 남은 것에서 빼야 진행이 멈춘 것처럼 안 보인다. */
+  failed: number;
+  /** 지금 워커에서 도는 것. `total - ready - failed` 로 계산하면 「아직 시작 안 한 것」과 뭉친다. */
+  running: number;
+}
+
+/**
+ * 문서 목록을 통째로 받지 않는다. 화면 어디에 있든 도는 폴링이라, 여기서
+ * 목록을 실어 보내면 팀 문서 전부가 주기적으로 오간다.
+ */
+export function fetchIndexingProgress(token: string) {
+  return apiRequest<IndexingProgress>('/team/documents/indexing/', { token });
+}

@@ -11,6 +11,7 @@ from .api_views import (
     RunPodDocumentDownloadAPIView,
     TaskExtractionRunAPIView,
     TeamDocumentAPIView,
+    TeamDocumentIndexingAPIView,
     TeamDocumentLibraryAPIView,
     TeamDocumentReindexAPIView,
     TeamNewDocumentAPIView,
@@ -35,8 +36,14 @@ urlpatterns = [
         TeamDocumentLibraryAPIView.as_view(),
         name="api_team_document_library",
     ),
-    # 색인 재시도. **`library/` 보다 아래에 두면 안 된다** — `<str:doc_id>` 가
-    # 'library' 도 문서 id 로 받아 먹는다.
+    # 전역 진행 표시가 폴링하는 자리. 집계 넷만 준다.
+    path(
+        "team/documents/indexing/",
+        TeamDocumentIndexingAPIView.as_view(),
+        name="api_team_document_indexing",
+    ),
+    # 색인 재시도. **고정 경로들보다 아래에 두면 안 된다** — `<str:doc_id>` 가
+    # 'library'·'indexing' 도 문서 id 로 받아 먹는다.
     path(
         "team/documents/<str:doc_id>/reindex/",
         TeamDocumentReindexAPIView.as_view(),
