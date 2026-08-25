@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
 import { fetchIndexingProgress, sumIndexing } from '../../api/documentLibrary';
-import type { IndexingProgress as Progress } from '../../api/documentLibrary';
+import type { IndexingCounts as Counts, IndexingProgress as Progress } from '../../api/documentLibrary';
 import { PATHS } from '../../routes';
 import { subscribeSession, loadSession } from '../../utils/session';
 import styles from './IndexingProgress.module.css';
@@ -42,6 +42,19 @@ const POLL_ACTIVE_MS = 10_000;
 const POLL_IDLE_MS = 60_000;
 
 /**
+ * 다 읽은 뒤 카드를 얼마나 더 붙잡아 둘까.
+ *
+ * **표보다 먼저 꺼지던 것을 막는다.** 이 카드와 「문서」 화면의 표는 각자 10초로
+ * 따로 돈다 — 카드가 「다 됐다」를 먼저 보고 사라지는 사이 표는 아직 직전 응답을
+ * 들고 있어서, 마지막 파일이 「읽는 중」인 채로 카드만 없어졌다(실서버 실측).
+ * 표의 주기(10초)보다 길게 잡아야 그 사이가 덮인다.
+ *
+ * 겸해서 **끝났다는 말을 한다.** 그냥 사라지면 끝난 것인지 무엇이 잘못된 것인지
+ * 구별되지 않는다.
+ */
+const FINISH_HOLD_MS = 12_000;
+
+/**
  * 아직 읽을 것이 남았는가. **실패도 「끝난 것」으로 센다** — 실패한 문서는
  * 스스로 끝나지 않으므로 빼지 않으면 10/12 에서 영원히 도는 것처럼 보인다.
  */
@@ -57,6 +70,9 @@ export function IndexingProgress() {
   const [progress, setProgress] = useState<Progress | null>(null);
   /** 사람이 닫았다. 이번 회차가 끝날 때까지 다시 안 뜬다. */
   const [dismissed, setDismissed] = useState(false);
+  /** 막 끝난 회차. 잠시 「다 읽었습니다」로 남아 있다가 스스로 사라진다. */
+  const [finished, setFinished] = useState<Counts | null>(null);
+  const wasIndexing = useRef(false);
   const timer = useRef<number | null>(null);
 
   // 로그인·로그아웃을 따라간다. 로그아웃하면 폴링도 멈춰야 한다.
@@ -123,25 +139,48 @@ export function IndexingProgress() {
     if (!indexing) setDismissed(false);
   }, [indexing]);
 
-  // 도는 것이 없으면 아무것도 안 그린다. 「전부 읽음」은 정상 상태라 화면 위에
-  // 남아 있을 이유가 없다. `counts` 를 함께 거르는 것은 아래에서 그것을 읽기
-  // 때문이다 — `indexing` 이 참이면 항상 있지만 타입은 그걸 모른다.
-  if (!indexing || dismissed || counts === null) return null;
+  /**
+   * 도는 중 → 끝남으로 넘어가는 **그 순간의 숫자를 붙잡아** 잠시 더 보여준다.
+   * 의존성이 `indexing`(불리언) 하나뿐이라 전환에서 한 번만 돈다 — `counts` 를
+   * 넣으면 폴링마다 다시 걸려 타이머가 계속 연장된다.
+   */
+  useEffect(() => {
+    const was = wasIndexing.current;
+    wasIndexing.current = indexing;
+    if (was && !indexing && counts !== null && counts.total > 0) setFinished(counts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexing]);
 
-  const percent = Math.round((done / total) * 100);
+  useEffect(() => {
+    if (finished === null) return;
+    const timer = window.setTimeout(() => setFinished(null), FINISH_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [finished]);
+
+  // 도는 중도 아니고 막 끝난 것도 아니면 안 그린다.
+  if (dismissed) return null;
+  const shown = indexing ? counts : finished;
+  if (shown === null) return null;
+
+  const shownDone = indexing ? done : shown.total;
+  const percent = Math.round((shownDone / shown.total) * 100);
 
   return (
     <aside
       className={styles.card}
       role="status"
       aria-live="polite"
-      aria-label={`문서 색인 진행 ${done}/${total}`}
+      aria-label={indexing ? `문서 색인 진행 ${shownDone}/${shown.total}` : '문서 색인 완료'}
     >
       <div className={styles.head}>
-        <Icon name="loader" size={15} spin color="var(--color-primary)" />
-        <span className={styles.title}>문서를 읽는 중</span>
+        {indexing ? (
+          <Icon name="loader" size={15} spin color="var(--color-primary)" />
+        ) : (
+          <Icon name="check-circle" size={15} color="var(--color-success)" />
+        )}
+        <span className={styles.title}>{indexing ? '문서를 읽는 중' : '문서를 다 읽었습니다'}</span>
         <span className={styles.count}>
-          {done}/{total}
+          {shownDone}/{shown.total}
         </span>
         <button type="button" className={styles.close} onClick={() => setDismissed(true)} aria-label="닫기">
           <Icon name="x" size={13} />
@@ -154,11 +193,14 @@ export function IndexingProgress() {
 
       <div className={styles.foot}>
         {/* 실패는 숨기지 않는다. 남은 수에서 빠지므로 이 줄이 없으면 왜 8/10
-            에서 끝났는지 알 수 없다. */}
-        {counts.failed > 0 ? (
-          <span className={styles.failed}>실패 {counts.failed}</span>
+            에서 끝났는지 알 수 없다. **끝난 뒤에는 더 중요하다** — 그때가
+            사람이 「그럼 그 몇 건은?」을 물을 유일한 순간이다. */}
+        {shown.failed > 0 ? (
+          <span className={styles.failed}>실패 {shown.failed}</span>
         ) : (
-          <span className={styles.hint}>읽은 문서부터 검색에 쓰입니다</span>
+          <span className={styles.hint}>
+            {indexing ? '읽은 문서부터 검색에 쓰입니다' : '이제 검색에 쓰입니다'}
+          </span>
         )}
         <button type="button" className={styles.link} onClick={() => navigate(PATHS.documents)}>
           문서 보기
