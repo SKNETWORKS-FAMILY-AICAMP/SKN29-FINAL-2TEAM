@@ -48,13 +48,18 @@ EXPECTED_SIDE_EFFECT = {
     "task_register": True,
     "jira_create_issues": True,
     "skill_register": True,
+    # 2026-08-25 juyeon 병합. **이 도구만 side_effect=True 의 뜻이 다르다** —
+    # 외부 상태를 바꿔서가 아니라, 이 값이 있어야 `factory.py`의 `interrupt_on`
+    # 계산에 자동으로 포함되어 사람이 답할 때까지 실행이 멈추기 때문이다
+    # (registry.py의 같은 자리 주석 참고). 되묻기는 부작용이 아니라 대기다.
+    "skill_creator_ask_followup": True,
 }
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(15개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(17개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_fifteen_tools(self):
+    def test_real_registry_has_exactly_seventeen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
         #
@@ -67,7 +72,11 @@ class RealRegistryShapeTests(SimpleTestCase):
         # 양쪽 다 자기 것만 세어 15로 적었다 — main 은 `document_sync`를,
         # jihun 은 `skill_register`를 더했다. 병합해야만 드러나는 값이라
         # 여기서 실제 registry.py를 세어 16으로 고정한다.
-        self.assertEqual(len(BUILTIN_TOOLS), 16)
+        #
+        # 2026-08-25 juyeon 병합에서 17이 됐다 — `skill_creator_ask_followup`.
+        # 이번에도 병합해야만 드러났다(브랜치 쪽 테스트는 자기 것만 봤다).
+        # 이 신호가 세 번째로 제 역할을 했으므로 숫자 고정은 계속 둔다.
+        self.assertEqual(len(BUILTIN_TOOLS), 17)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}

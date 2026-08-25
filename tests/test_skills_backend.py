@@ -10,6 +10,7 @@
 from django.test import SimpleTestCase
 
 from services.agent_runtime.skills.backend import (
+    SKILLS_BUILTIN_PATH_PREFIX,
     SKILLS_PERSONAL_PATH_PREFIX,
     SKILLS_TEAM_PATH_PREFIX,
     personal_namespace,
@@ -21,11 +22,17 @@ from services.agent_runtime.skills.backend import (
 
 
 class SkillSourcesTests(SimpleTestCase):
-    def test_personal_before_team(self):
+    def test_builtin_then_personal_then_team(self):
         """`SkillsMiddleware`는 나중 소스가 같은 이름의 스킬을 덮어쓴다 — 팀 스킬이
-        더 넓은 합의를 거쳤으므로 이겨야 해서 팀을 뒤에 둔다(설계 문서 참고)."""
+        더 넓은 합의를 거쳤으므로 이겨야 해서 팀을 뒤에 둔다(설계 문서 참고).
+
+        2026-08-25 juyeon 병합 — 내장 스킬(`skill-creator`)이 맨 앞에 붙었다.
+        같은 규칙의 연장이다. 내장이 가려질 걱정은 `RESERVED_SKILL_NAMES`가
+        이름 자체를 못 쓰게 막아 없앤다(`skills/service.py`의 이름 검증).
+        """
         self.assertEqual(
-            skill_sources(), [SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX]
+            skill_sources(),
+            [SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX],
         )
 
 
@@ -38,10 +45,13 @@ class SkillMdPathTests(SimpleTestCase):
 
 
 class SkillRoutesTests(SimpleTestCase):
-    def test_routes_cover_both_prefixes(self):
+    def test_routes_cover_every_prefix(self):
         routes = skill_routes(account_id="AC001", team_id="TM001")
 
-        self.assertEqual(set(routes.keys()), {SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX})
+        self.assertEqual(
+            set(routes.keys()),
+            {SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX},
+        )
 
     def test_different_accounts_get_isolated_personal_namespaces(self):
         """계정 A/B가 서로 다른 namespace를 받아야 서로의 개인 스킬을 못 본다."""

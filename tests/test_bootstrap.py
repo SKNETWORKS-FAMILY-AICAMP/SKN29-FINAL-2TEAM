@@ -172,7 +172,21 @@ class ToolLoaderRealWiringTests(SimpleTestCase):
 
         # `skill_register`는 ALWAYS_ON_TOOL_REFS라 요청 안 해도 항상 딸려온다
         # (services/agent_runtime/tools/loader.py `ToolLoader.load()` 참고).
-        self.assertEqual([tool.ref for tool in tools], ["document_search", "skill_register"])
+        #
+        # 2026-08-25 juyeon 병합 — `skill_creator_ask_followup`도 항상 켜진다.
+        # 둘은 한 쌍이다: 하나만 켜면 스킬 생성 중간에 되물을 방법이 없어
+        # 그 자리에서 막힌다(registry.py의 ALWAYS_ON_TOOL_REFS 주석).
+        #
+        # ⚠ **항상 켜지는 것들 사이의 순서는 단언하지 않는다.** `ALWAYS_ON_TOOL_REFS`가
+        # `frozenset`이라 순회 순서가 프로세스마다 다르다(`loader.py`의
+        # `dict.fromkeys((*tool_refs, *ALWAYS_ON_TOOL_REFS))`). 실제로 이 테스트를
+        # 다섯 번 돌렸을 때 다섯 중 넷이 순서 때문에 빨개졌다 — 순서를 고정하면
+        # 무작위로 실패한다. 요청한 도구가 맨 앞이라는 것과 구성원만 본다.
+        refs = [tool.ref for tool in tools]
+        self.assertEqual(refs[0], "document_search")
+        self.assertEqual(
+            sorted(refs[1:]), ["skill_creator_ask_followup", "skill_register"]
+        )
 
     def test_unresolvable_builtin_ref_still_fails_explicitly_not_silently(self):
         """내장 도구 참조가 안 풀리면 그대로 막는다.
