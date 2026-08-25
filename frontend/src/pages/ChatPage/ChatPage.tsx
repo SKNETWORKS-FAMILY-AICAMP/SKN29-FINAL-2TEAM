@@ -1091,6 +1091,14 @@ export default function ChatPage() {
                 aria-label="대화 상대 에이전트"
                 onChange={(event) => {
                   setAgentId(event.target.value);
+                  // 읽던 대화가 있었으면 **말하고 넘어간다**(2026-08-25).
+                  // 셀렉트를 한 번 건드렸을 뿐인데 화면이 빈 대화로 바뀌어,
+                  // 읽던 답이 사라진 것인지 지워진 것인지 알 수 없었다.
+                  // 지워지지는 않으므로(목록에 남는다) 어디로 갔는지만 알려
+                  // 주면 된다.
+                  if (turns.length > 0) {
+                    showToast('새 대화로 넘어갔습니다. 읽던 대화는 왼쪽 목록에 있습니다.', 'info');
+                  }
                   // 에이전트를 바꾸는 순간 새 대화로 넘어간다 — 대화 하나는
                   // 만들어질 때 고른 에이전트에 묶여서, 중간에 못 바꾼다.
                   startNew(projId);
@@ -1246,7 +1254,18 @@ export default function ChatPage() {
                   {live && (
                     <>
                       {(() => {
-                        const showProgress = live.running || live.steps.length > 0 || live.subagents.length > 0;
+                        // `toolName`을 조건에 넣는다(2026-08-25). 전에는 도는 동안만
+                        // 참이고 끝나면 거짓이 되는 경로가 있었다 — 단계를 따로 안
+                        // 쌓는 도구(`프로젝트 조회` 등)는 `steps`가 비어서, 실행 중엔
+                        // 「프로젝트 조회 실행 중」이 보이다가 **끝나는 순간 카드가
+                        // 통째로 사라지고** 접힌 「생각 과정」 한 줄만 남았다. 무슨
+                        // 도구를 썼는지가 답변 옆에서 사라지는 셈이라, 끝난 뒤에도
+                        // 「… 완료」로 남긴다.
+                        const showProgress =
+                          live.running ||
+                          live.steps.length > 0 ||
+                          live.subagents.length > 0 ||
+                          live.toolName !== null;
                         const showReasoning = live.timeline.length > 0;
                         if (!showProgress && !showReasoning) return null;
                         // **진행 카드와 생각 과정을 한 카드로 묶는다**(2026-08-19) —
@@ -1275,8 +1294,13 @@ export default function ChatPage() {
                                   const active = live.subagents.find((run) => run.status === 'RUNNING');
                                   if (active) return `${active.name ?? active.alias ?? '다른 에이전트'}에게 위임 중`;
                                   if (live.running) return live.toolName ? `${live.toolName} 실행 중` : '생각하는 중';
+                                  // 실패한 호출에 「완료」라고 쓰지 않는다
+                                  // (2026-08-25). 사유는 답변 본문이 말하고,
+                                  // 여기서는 성공이 아니었다는 사실만 밝힌다.
+                                  if (live.toolFailed && live.toolName) return `${live.toolName} 실패`;
                                   return live.toolName ? `${live.toolName} 완료` : '정리 완료';
                                 })()}
+                                failed={live.toolFailed}
                               />
                             )}
 
@@ -1404,6 +1428,18 @@ export default function ChatPage() {
                         <p className={styles.warnLine}>
                           <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
                           끝까지 마치지 못했습니다 ({live.stoppedReason}). 위 결과는 여기까지 확인한 것입니다.
+                        </p>
+                      )}
+
+                      {/* 사람이 「중단」을 누른 경우(2026-08-25). 전에는 스피너만
+                          조용히 꺼져서, 멈춘 것인지 답이 안 오는 것인지 화면만
+                          봐서는 구분할 수 없었다. 위 `stoppedReason`과 문구를
+                          나누는 이유는 다음 행동이 다르기 때문이다 — 그쪽은
+                          "여기까지가 확인된 것"이고, 이쪽은 다시 물으면 된다. */}
+                      {live.abortedByUser && (
+                        <p className={styles.warnLine}>
+                          <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
+                          중단했습니다. 위까지만 진행됐고, 다시 물어보시면 처음부터 다시 합니다.
                         </p>
                       )}
 
@@ -1535,7 +1571,17 @@ export default function ChatPage() {
               <Button
                 variant="outline"
                 iconLeft={<Icon name="x" size={14} />}
-                onClick={() => abortRef.current?.abort()}
+                // 표시를 `run()`의 `finally`가 아니라 **여기서** 남긴다
+                // (2026-08-25). 그 자리는 새 발화가 이전 스트림을 abort 하는
+                // 경우도 함께 지나가는데, 그때 마지막 턴은 이미 방금 만든 새
+                // 턴이라 갓 시작한 발화에 「중단했습니다」가 붙는다. 버튼은
+                // 자기가 사람 손인 것을 알고, 지금 도는 그 턴을 가리킨다.
+                onClick={() => {
+                  abortRef.current?.abort();
+                  updateLastLive((prev) =>
+                    prev ? { ...prev, running: false, abortedByUser: true } : prev,
+                  );
+                }}
               >
                 중단
               </Button>

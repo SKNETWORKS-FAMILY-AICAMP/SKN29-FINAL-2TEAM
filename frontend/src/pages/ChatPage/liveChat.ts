@@ -38,6 +38,21 @@ export interface LiveChat {
   /** 도구 내부 진행. `tool_ref` 있는 stage·queries·stage_done 이 채운다. */
   steps: ProgressStep[];
   toolName: string | null;
+  /**
+   * `toolName` 이 가리키는 그 호출이 **실패로 끝났는지**(2026-08-25).
+   *
+   * 새 엔진은 실패를 `tool_completed` 의 `status: 'FAILED'` 로 알리는데,
+   * 리듀서가 그걸 타임라인 한 줄에만 반영하고 버렸다. 그래서 진행 카드
+   * 머리말은 실패한 호출에도 「… 완료」라고 썼다 — 문서 검색이 실패한 턴에
+   * 「문서 검색 완료」가 뜨고, 실제 사유는 답변 본문에만 있었다(2026-08-25
+   * 실측: `UnsafeEndpoint`, `RunPodRequestError`).
+   *
+   * `error` 를 세우지 않는 이유는 **오탐** 때문이다. `error` 는 붉은
+   * `ErrorCard`("요청을 끝내지 못했습니다")를 띄우는데, 도구가 한 번 실패해도
+   * 에이전트가 다른 경로로 답을 마치는 턴이 있다. 그런 턴까지 실패로 단정하는
+   * 대신, 머리말이 사실만 말하게 한다.
+   */
+  toolFailed: boolean;
   /** 도구가 내는 검색어. 에이전트가 실제로 한 판단이라 그대로 보여준다. */
   queries: string[];
   /** `document_search`가 좁힌 문서들 — "출처"(2026-08-18). */
@@ -99,6 +114,17 @@ export interface LiveChat {
   /** 상한에 걸려 멈춘 경우. 성공처럼 뭉개지 않는다. */
   stoppedReason: string | null;
   /**
+   * **사람이 「중단」을 눌러 끊은 경우**(2026-08-25). `stoppedReason`과 나누는
+   * 이유는 원인도 다음 행동도 다르기 때문이다 — 그쪽은 서버가 상한에 걸려
+   * 멈춘 것이라 "여기까지가 확인된 것"이지만, 이쪽은 사용자가 스스로 끊은
+   * 것이라 다시 물으면 된다.
+   *
+   * 이 값이 없던 동안 중단은 **화면에 아무 흔적도 남기지 않았다.** 카드가
+   * 도중까지만 그려지고 스피너만 조용히 꺼져서, 접힌 「생각 과정」 한 줄만
+   * 남은 빈 상자가 됐다(2026-08-25 실측).
+   */
+  abortedByUser: boolean;
+  /**
    * `title` 은 **보내기 자체가 실패한 경우**에만 채운다. `null` 이면 머리말을
    * 아예 안 그린다 — 사유 한 줄이 이미 다 말하기 때문이다.
    */
@@ -125,6 +151,7 @@ export function emptyLive(): LiveChat {
   return {
     steps: [],
     toolName: null,
+    toolFailed: false,
     queries: [],
     sources: [],
     evidenceCount: 0,
@@ -137,6 +164,7 @@ export function emptyLive(): LiveChat {
     answer: '',
     durationMs: null,
     stoppedReason: null,
+    abortedByUser: false,
     error: null,
     jira: null,
     timeline: [],
@@ -248,6 +276,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       return {
         ...state,
         toolName: event.tool_name ?? event.tool_ref,
+        // 새 호출이 시작됐으니 앞 호출의 실패 표시는 여기서 내린다 —
+        // 머리말은 늘 `toolName` 이 가리키는 그 호출을 말해야 한다.
+        toolFailed: false,
         timeline: [
           ...state.timeline,
           {
@@ -272,6 +303,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       if (event.subagent_alias) return state;
       return {
         ...state,
+        toolFailed: event.status === 'FAILED',
         timeline: state.timeline.map((entry) =>
           entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id
             ? { ...entry, status: event.status, output: event.output }

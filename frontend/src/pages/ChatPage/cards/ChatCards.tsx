@@ -40,6 +40,12 @@ export interface ProgressCardProps {
    * 두르는 경우) `true`를 준다 — 단독으로 쓸 땐 그대로 `<section>`을 두른다.
    */
   bare?: boolean;
+  /**
+   * 머리말이 가리키는 그 호출이 실패로 끝났는지(2026-08-25). 초록 체크는
+   * 성공에만 쓴다 — 실패한 호출 옆에 체크가 붙으면 아이콘이 문구와 반대말을
+   * 한다. `running` 이 true 면 아직 결론이 아니므로 무시된다.
+   */
+  failed?: boolean;
 }
 
 /** ① 진행 카드 — 장시간 작업의 단계·검색어·근거 수. 기존 진행 모달의 인라인판. */
@@ -52,6 +58,7 @@ export function ProgressCard({
   title = '업무를 정리하는 중',
   running = true,
   bare = false,
+  failed = false,
 }: ProgressCardProps) {
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
@@ -64,6 +71,8 @@ export function ProgressCard({
         <span className={styles.progressTitle}>
           {running ? (
             <Icon name="loader" size={16} color="var(--color-primary)" spin />
+          ) : failed ? (
+            <Icon name="triangle-alert" size={16} color="var(--color-danger)" />
           ) : (
             <Icon name="check-circle" size={16} color="var(--color-success)" />
           )}
@@ -74,14 +83,21 @@ export function ProgressCard({
             행동을 바꾸는 정보가 아니다. 「1/8」은 여덟 번 돌 예정인 것처럼 읽히고
             (실제로는 상한이다), 「2번째 생각」은 그냥 소음이다.
             실행 회전 수가 필요하면 `agent_run.iterations` 에 남아 있다. */}
-        <span className={styles.progressCount}>
-          {steps.length > 0 ? `${shown} / ${total} 단계` : '대기 중'}
-        </span>
+        {/* 단계가 없으면 **아무 말도 하지 않는다**(2026-08-25). 예전에는 「대기 중」이
+            떴는데, 단계를 안 쌓는 도구는 실행 내내 이 자리가 「대기 중」이라 왼쪽의
+            「생각하는 중」·「프로젝트 조회 완료」와 정면으로 어긋났다. 지금 무슨
+            일이 벌어지는지는 왼쪽 제목과 아이콘(도는 중/체크)이 이미 말한다. */}
+        {steps.length > 0 && (
+          <span className={styles.progressCount}>{`${shown} / ${total} 단계`}</span>
+        )}
       </div>
 
-      <div className={styles.progressTrack}>
-        <span className={styles.progressFill} style={{ width: `${(shown / total) * 100}%` }} />
-      </div>
+      {/* 막대도 단계가 있을 때만 그린다 — 단계가 없으면 늘 0%라 빈 띠만 남는다. */}
+      {steps.length > 0 && (
+        <div className={styles.progressTrack}>
+          <span className={styles.progressFill} style={{ width: `${(shown / total) * 100}%` }} />
+        </div>
+      )}
 
       <ul className={styles.steps}>
         {/* 끝났으면 남아 있는 `doing` 도 더는 돌지 않는다 — 스트림이 닫혔는데
