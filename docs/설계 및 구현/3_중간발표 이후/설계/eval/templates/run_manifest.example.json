@@ -1,0 +1,21 @@
+{
+  "git_commit": "REPLACE_WITH_GIT_COMMIT",
+  "dataset_id": "agent-poc-v1",
+  "dataset_version": 1,
+  "targets": [
+    {
+      "agent_id": "AG004",
+      "agent_version_id": "AV035"
+    },
+    {
+      "agent_id": "AG006",
+      "agent_version_id": "AV006"
+    }
+  ],
+  "models": [
+    "gpt-5.6-luna"
+  ],
+  "runtime": "deepagents-0.7.5",
+  "environment": "local-sandbox",
+  "repetitions": 1
+}
