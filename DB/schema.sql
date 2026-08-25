@@ -1148,9 +1148,10 @@ CREATE TABLE agent_versions (
     system_prompt     TEXT         NOT NULL DEFAULT '',
     model             VARCHAR(100),
     reasoning_effort  VARCHAR(20),
-    -- 기본 6 — apps/agents/serializers.py의 실제 기본값에 맞춤. 10으로
-    -- 되돌릴지는 작업목록.md "함께 정할 것" 확정 후 갱신.
-    max_iterations    INT          NOT NULL DEFAULT 6,
+    -- 기본 10 (2026-08-25) — 작업목록.md "함께 정할 것"에서 아키텍처 설계
+    -- (§3.1-2 "기본 10")대로 되돌리기로 정리. apps/agents/serializers.py의
+    -- default와 맞춘다. 기존 행은 소급 변경하지 않는다(2026-08-25_agent_versions_max_iterations_default_10.sql).
+    max_iterations    INT          NOT NULL DEFAULT 10,
     created_by        VARCHAR(5),               -- user_account.account_id(FK 없음)
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     UNIQUE (agent_id, version)

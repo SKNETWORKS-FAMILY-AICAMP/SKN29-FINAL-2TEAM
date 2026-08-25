@@ -95,7 +95,7 @@ class RuntimeCapabilityPolicy:
     #
     # tool 상한은 Root/Child에 설정 필드가 없어 이 값이 그대로 실제 상한이 된다.
     # 반면 모델 상한은 `min(agent_versions.max_iterations, ceiling)`이라, DB
-    # 기본값(6, `DB/schema.sql`)을 그대로 두면 새 에이전트는 여전히 6이다 —
+    # 기본값(10, `DB/schema.sql` — 2026-08-25 이전에는 6이었다)에 여전히 갇힌다.
     # 실제로 늘리려면 Builder에서 그 에이전트의 max_iterations를 올려야 한다.
     max_model_calls_ceiling: int = 50
     max_tool_calls_ceiling: int = 100

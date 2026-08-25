@@ -107,6 +107,22 @@ EXPECTED_INDEXES: list[tuple[str, str, str]] = [
     ),
 ]
 
+#: 컬럼이 **있기는 한데 기본값이 옛날 값에 멈춰 있는** 경우를 잡는다. 위
+#: `EXPECTED`는 존재 여부만 보므로, `ALTER COLUMN ... SET DEFAULT`만 하는
+#: 마이그레이션(컬럼 추가가 아니라 기본값만 바꾸는 것)은 안 돌려도 `--check`가
+#: "전부 있다"고 거짓으로 답한다 — 2026-08-25에 실제로 이 틈을 만났다
+#: (`agent_versions.max_iterations` 기본값 6→10 마이그레이션).
+#: `information_schema.columns.column_default`는 문자열로 온다(정수 컬럼은
+#: `"10"`처럼 캐스트 없이 그대로).
+EXPECTED_DEFAULTS: list[tuple[str, str, str, str]] = [
+    (
+        "agent_versions",
+        "max_iterations",
+        "10",
+        "2026-08-25 새 에이전트 기본 호출 상한 6→10",
+    ),
+]
+
 
 def _read_database_url() -> tuple[str, str]:
     """URL 과 **그것을 어디서 읽었는지**를 함께 준다.
@@ -174,6 +190,7 @@ def _split_statements(sql: str) -> list[str]:
 
 def check(url: str) -> int:
     missing: list[tuple[str, str | None, str]] = []
+    mismatched_defaults: list[tuple[str, str, str, str, str]] = []
     with psycopg.connect(url) as connection, connection.cursor() as cursor:
         for table, column, why in EXPECTED:
             if column is None:
@@ -215,13 +232,31 @@ def check(url: str) -> int:
             if not cursor.fetchone()[0]:
                 missing.append((table, index, why))
 
+        for table, column, expected_default, why in EXPECTED_DEFAULTS:
+            cursor.execute(
+                """
+                SELECT column_default FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+                """,
+                (table, column),
+            )
+            row = cursor.fetchone()
+            actual_default = row[0] if row else None
+            if actual_default != expected_default:
+                mismatched_defaults.append((table, column, expected_default, actual_default, why))
+
     name_of = lambda t, c: t if c is None else f"{t}.{c}"  # noqa: E731
     print(f"대상 DB: {_target(url)}")
-    checked = len(EXPECTED) + len(EXPECTED_INDEXES)
-    print(f"확인 항목 {checked}개 · 빠진 것 {len(missing)}개")
+    checked = len(EXPECTED) + len(EXPECTED_INDEXES) + len(EXPECTED_DEFAULTS)
+    print(f"확인 항목 {checked}개 · 빠진 것 {len(missing)}개 · 기본값 불일치 {len(mismatched_defaults)}개")
     for table, column, why in missing:
         print(f"  [없음] {name_of(table, column):<38} {why}")
-    if not missing:
+    for table, column, expected_default, actual_default, why in mismatched_defaults:
+        print(
+            f"  [값다름] {name_of(table, column):<38} "
+            f"기대 {expected_default!r} · 실제 {actual_default!r}  {why}"
+        )
+    if not missing and not mismatched_defaults:
         print("  [OK] 배포가 전제하는 스키마가 전부 있습니다.")
         return 0
     print("\n적용하려면 `DB_시작_가이드.md` §4.3 블록을 돌리거나, 해당 .sql 을 인자로 주세요.")

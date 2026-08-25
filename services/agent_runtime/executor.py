@@ -37,14 +37,30 @@ def _agent_execution_failure_event(
     메시지를 그대로 준다. 이걸 일반 문구로 뭉개면 "프로젝트를 못 골랐다"처럼
     사람이 그 자리에서 고칠 수 있는 사유까지 화면에서 사라진다.
 
+    호출 한도 초과(`ModelCallLimitExceededError`/`ToolCallLimitExceededError`)는
+    별도로 다룬다 — `exit_behavior="error"`가 그대로 던지는 원문은 영어이고
+    "run limit (6/6)"처럼 내부 카운터를 그대로 노출한다. `exit_behavior="end"`로
+    바꾸는 대신(모델을 다시 안 부르고 고정 문구만 넣는 방식이라 "지금까지 결과
+    정리"가 안 된다) 예외는 그대로 두고 여기서 사람이 읽을 문구로만 바꾼다.
+
     그 밖은 일반 문구를 쓰고 클래스 이름(또는 MCP 에러 코드)만 `error_code`에
     남긴다 — 문서 원문·토큰이 섞여 있을 수 있는 메시지를 화면에 내보내지 않는다.
     """
 
+    from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+    from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
+
     from services.harness.runner import SPEAKABLE_ERRORS
     from services.harness.trace import error_code_of
 
-    message = str(exc) if isinstance(exc, SPEAKABLE_ERRORS) else "에이전트 실행 중 오류가 발생했습니다."
+    if isinstance(exc, ModelCallLimitExceededError):
+        message = "모델 호출 한도에 도달해 실행이 중단되었습니다."
+    elif isinstance(exc, ToolCallLimitExceededError):
+        message = "도구 호출 한도에 도달해 실행이 중단되었습니다."
+    elif isinstance(exc, SPEAKABLE_ERRORS):
+        message = str(exc)
+    else:
+        message = "에이전트 실행 중 오류가 발생했습니다."
     return {
         "type": EVENT_ERROR,
         "error_code": error_code_of(exc),
