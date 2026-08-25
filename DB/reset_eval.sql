@@ -98,9 +98,17 @@ COMMIT;
 --    (대화 시작 시의 Changes 동기화는 변경분만 보므로 이때는 안 들어온다.
 --     그래서 「안 지웠는데 조용히 되살아나는」 형태로 나타난다.)
 --
--- 2. 문서 저장소(S3)의 원문을 치운다. `doc` 행이 사라져 가리키는 것이 없는
---    객체만 남는다. 새 문서와 뒤섞이지는 않지만(키가 doc_id 기반) 용량만 쓴다.
+-- 2. 문서 저장소의 원문을 치운다. `doc` 행이 사라져 가리키는 것이 없는 파일만
+--    남는다. 새 문서와 뒤섞이지는 않지만(키가 doc_id 기반) 용량만 쓴다.
 --
+--    ⚠ **EC2 의 원문 저장은 S3 가 아니라 도커 볼륨이다** — `document_storage`
+--    → `/var/lib/halil/documents` (AWS_구성_현황.md §S3 의 경고). `.env` 의
+--    `OBJECT_STORAGE_PROVIDER=s3` 만 보고 S3 를 지우면 실제 원문은 그대로 남는다.
+--
+--      docker compose -f infra/docker/docker-compose.yml exec web \
+--        sh -c 'rm -rf /var/lib/halil/documents/*'
+--
+--    S3 로 옮긴 뒤라면 이쪽이다:
 --      aws s3 rm s3://$AWS_STORAGE_BUCKET_NAME/documents/ --recursive
 --
 -- 3. 팀 폴더 지정을 다시 저장한다. `team_folder` 는 남겼으므로 폴더 설정
