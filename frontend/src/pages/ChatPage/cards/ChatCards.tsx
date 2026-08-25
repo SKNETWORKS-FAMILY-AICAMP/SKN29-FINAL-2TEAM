@@ -81,10 +81,14 @@ export function ProgressCard({
   bare = false,
   failed = false,
 }: ProgressCardProps) {
+  const [webSourcesOpen, setWebSourcesOpen] = useState(false);
+  const [documentSourcesOpen, setDocumentSourcesOpen] = useState(false);
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
   const shown = Math.min(doneCount + (steps.some((s) => s.state === 'doing') ? 1 : 0), total);
   const Wrapper = bare ? 'div' : 'section';
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
 
   return (
     <Wrapper className={bare ? styles.bareStack : styles.card}>
@@ -150,28 +154,56 @@ export function ProgressCard({
         </ul>
       )}
 
-      {/* "출처"(2026-08-18) — document_search가 실제로 좁혀서 보고 있는
-          문서, web_search가 찾은 페이지. 색인 여부와 무관하게 전부
-          보여준다(정직 표기 원칙 — not_indexed와 같은 이유). `url`이 있으면
-          웹 결과라 새 탭 링크로, 없으면(내부 문서) 그냥 텍스트로 그린다. */}
-      {sources.length > 0 && (
-        <ul className={styles.queries}>
-          {sources.map((source) =>
-            source.url ? (
-              <li key={source.id} className={styles.query}>
-                <Icon name="link" size={13} color="var(--color-placeholder)" />
-                <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
-                  {source.label}
-                </a>
-              </li>
-            ) : (
-              <li key={source.id} className={styles.query}>
-                <Icon name="file-text" size={13} color="var(--color-placeholder)" />
-                {source.label}
-              </li>
-            ),
+      {/* 웹 검색 링크와 팀 문서는 성격이 다르므로 각각 접는다. 결과가 많아도
+          진행 단계와 최종 답변을 밀어내지 않고, 개수는 접힌 상태에서도 보인다. */}
+      {webSources.length > 0 && (
+        <div className={styles.sourceGroup}>
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            aria-expanded={webSourcesOpen}
+            onClick={() => setWebSourcesOpen((open) => !open)}
+          >
+            <Icon name={webSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
+            검색한 링크 {webSources.length}개
+          </button>
+          {webSourcesOpen && (
+            <ul className={styles.queries}>
+              {webSources.map((source) => (
+                <li key={source.url ?? source.id} className={styles.query}>
+                  <Icon name="link" size={13} color="var(--color-placeholder)" />
+                  <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                    {source.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
-        </ul>
+        </div>
+      )}
+
+      {documentSources.length > 0 && (
+        <div className={styles.sourceGroup}>
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            aria-expanded={documentSourcesOpen}
+            onClick={() => setDocumentSourcesOpen((open) => !open)}
+          >
+            <Icon name={documentSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
+            참고한 문서 {documentSources.length}개
+          </button>
+          {documentSourcesOpen && (
+            <ul className={styles.queries}>
+              {documentSources.map((source) => (
+                <li key={source.id} className={styles.query}>
+                  <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                  {source.label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {/* 다른 에이전트에게 위임한 작업들(2026-08-18) — 위임 자체가 걸린

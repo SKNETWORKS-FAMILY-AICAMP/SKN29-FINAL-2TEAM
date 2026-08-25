@@ -527,7 +527,7 @@ class EventMapper:
                 return []
             # Reasoning summary는 관측·저장 호환성을 위해 이벤트 계약에 남긴다.
             # 채팅 UI는 이를 표시하지 않고, 사용자용 안내는 아래 updates/model
-            # 분기의 일반 text 블록에서 만든 agent_update만 소비한다.
+            # 분기의 일반 text 블록에서 만든 사용자용 작업 안내만 소비한다.
             return self._classify_reasoning_delta(ns_prefix=ns_prefix, chunk=chunk, run_id=run_id)
 
         if not isinstance(payload, dict):

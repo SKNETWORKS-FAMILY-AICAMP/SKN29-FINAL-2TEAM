@@ -864,6 +864,32 @@
   color: var(--color-body);
 }
 
+.sourceGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: var(--space-2);
+}
+
+.sourceToggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sourceToggle:hover {
+  color: var(--color-primary-hover);
+}
+
 /* "출처"(2026-08-18) 중 web_search 결과 — 새 탭으로 열리는 링크임을 밑줄로 표시. */
 .sourceLink {
   color: var(--color-body);

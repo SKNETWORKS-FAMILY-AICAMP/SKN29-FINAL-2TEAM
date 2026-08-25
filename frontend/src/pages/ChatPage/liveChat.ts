@@ -294,7 +294,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 새 문단이라 항목을 새로 만든다.
     case 'reasoning': {
       // 내부 Reasoning summary는 저장된 과거 이벤트가 다시 들어와도 사용자
-      // 작업 과정에 표시하지 않는다. 사용자용 안내는 agent_update만 사용한다.
+      // 작업 과정에 표시하지 않는다. 사용자용 안내는 user_update만 사용한다.
       return state;
     }
 
