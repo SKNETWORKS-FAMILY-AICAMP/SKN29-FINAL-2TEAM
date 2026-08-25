@@ -34,10 +34,19 @@ class ValidateSkillNameTests(SimpleTestCase):
 class ParseSkillMdTests(SimpleTestCase):
     def test_정상_형식을_나눈다(self):
         content = "---\nname: my-skill\ndescription: 설명입니다\n---\n\n본문 첫 줄\n본문 둘째 줄\n"
-        name, description, body = service.parse_skill_md(content)
+        name, description, body, enabled = service.parse_skill_md(content)
         self.assertEqual(name, "my-skill")
         self.assertEqual(description, "설명입니다")
         self.assertEqual(body, "본문 첫 줄\n본문 둘째 줄")
+        self.assertTrue(enabled)
+
+    def test_metadata_enabled가_false면_비활성으로_읽는다(self):
+        content = (
+            "---\nname: my-skill\ndescription: 설명입니다\n"
+            "metadata:\n  enabled: 'false'\n---\n\n본문\n"
+        )
+        _name, _description, _body, enabled = service.parse_skill_md(content)
+        self.assertFalse(enabled)
 
     def test_frontmatter_없으면_거부한다(self):
         with self.assertRaises(service.SkillError):
@@ -92,6 +101,58 @@ class PersonalSkillCrudTests(SimpleTestCase):
                 service.update_personal_skill("AC001", "no-such-skill", description="d")
             with self.assertRaises(service.SkillNotFound):
                 service.delete_personal_skill("AC001", "no-such-skill")
+
+
+class SkillEnabledTests(SimpleTestCase):
+    """2026-08-26, §7 — 활성화/비활성화 토글."""
+
+    def test_새로_만든_스킬은_기본_활성이다(self):
+        with _patched_store():
+            created = service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            self.assertTrue(created["enabled"])
+
+    def test_비활성화하면_enabled가_false로_읽힌다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            updated = service.update_personal_skill("AC001", "my-skill", enabled=False)
+            self.assertFalse(updated["enabled"])
+
+            fetched = service.get_personal_skill("AC001", "my-skill")
+            self.assertFalse(fetched["enabled"])
+
+    def test_다시_활성화하면_돌아온다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            service.update_personal_skill("AC001", "my-skill", enabled=False)
+            reenabled = service.update_personal_skill("AC001", "my-skill", enabled=True)
+            self.assertTrue(reenabled["enabled"])
+
+    def test_enabled를_안_넘기면_기존_값을_유지한다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            service.update_personal_skill("AC001", "my-skill", enabled=False)
+            # description만 바꾸고 enabled는 안 건드림 — 여전히 비활성이어야 한다.
+            updated = service.update_personal_skill("AC001", "my-skill", description="새 설명")
+            self.assertFalse(updated["enabled"])
+
+    def test_비활성화해도_삭제되지_않는다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            service.update_personal_skill("AC001", "my-skill", enabled=False)
+
+            listed = service.list_personal_skills("AC001")
+            self.assertEqual(len(listed), 1)
+            self.assertFalse(listed[0]["enabled"])
 
     def test_이름이_겹치면_거부하고_원본을_보존한다(self):
         with _patched_store():
@@ -178,7 +239,7 @@ class TeamSkillCrudTests(SimpleTestCase):
         꺼낸 뒤 `create_personal_skill`에 그대로 넘긴다."""
         with _patched_store():
             content = "---\nname: uploaded-skill\ndescription: 업로드로 만든 설명\n---\n\n업로드 본문\n"
-            name, description, body = service.parse_skill_md(content)
+            name, description, body, _enabled = service.parse_skill_md(content)
             created = service.create_personal_skill(
                 "AC001", team_id="TM001", name=name, description=description, body=body
             )

@@ -22,19 +22,16 @@ from services.agent_runtime.runtime_policy import (
 
 
 class DefaultExcludedBuiltinToolsTests(SimpleTestCase):
-    def test_excludes_only_delete(self):
-        """가상 파일 도구 중 **`delete` 만** 막는다.
+    def test_아무것도_막지_않는다(self):
+        """가상 파일 도구는 이제 아무것도 막지 않는다.
 
-        전에는 일곱 개를 전부 제외한다고 단언했는데 코드는 `delete` 하나만
-        막고 있었다 — 병합해 보고서야 어긋난 것이 드러났다(2026-08-15).
-        **코드 쪽이 의도한 것이 맞다고 확인받았다**(지훈). 읽기·쓰기 도구를
-        열어 두는 것이 Deep Agent 런타임의 전제라, 테스트를 코드에 맞춘다.
-
-        같은 파일의 `EXTERNAL_WRITE_TOOLS_POLICY_NOTE` 는 **외부 시스템**에
-        쓰는 도구 이야기다. 여기서 여는 것은 런타임의 가상 파일이라 다른 층이다.
+        `delete`가 마지막으로 남아 있던 항목이었다 — 2026-08-26에 다시 켰다.
+        노출은 열려도 `factory.py`의 `build()`가 `delete`를 다른 부수효과
+        도구와 똑같이 `interrupt_on`에 넣어 승인 카드를 거치게 한다
+        (`runtime_policy.py`의 주석 참고).
         """
 
-        self.assertEqual(DEFAULT_EXCLUDED_BUILTIN_TOOLS, frozenset({"delete"}))
+        self.assertEqual(DEFAULT_EXCLUDED_BUILTIN_TOOLS, frozenset())
 
     def test_does_not_exclude_execute(self):
         """execute는 SandboxBackend를 안 붙이면 애초에 안 생기는 도구라 제외 목록에 안 둔다."""
