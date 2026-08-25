@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { Badge, Button, Icon, InfoNote, Input, Modal, useToast } from '../../../components';
+import { Badge, Button, Icon, InfoNote, Input, Modal, ToggleSwitch, useToast } from '../../../components';
 import { listAgentVersions } from '../../../api/agentVersions';
 import {
   ApiError,
@@ -246,6 +246,8 @@ export function SkillsTab() {
   const [editing, setEditing] = useState<Editing>(null);
   const [confirming, setConfirming] = useState<{ scope: Scope; skill: Skill } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 상태 변경 중인 행만 잠근다. 개인·팀에서 id가 같을 수 있어 범위도 포함한다. */
+  const [togglingSkillKey, setTogglingSkillKey] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -626,6 +628,31 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     void load();
   }
 
+  /**
+   * 활성/비활성 토글. **삭제와 다르다** — 값은 그대로 두고
+   * `metadata.enabled` 만 바꿔서, 꺼진 스킬은 `SkillVisibilityMiddleware`가
+   * 에이전트에게 안 보이게만 거른다(2026-08-26). 목록 전체를 다시 안
+   * 불러온다 — 서버가 돌려준 그 한 건만 바꿔치면 된다(`remove()`와 같은 이유).
+   */
+  async function toggleEnabled(toggleScope: Scope, skill: Skill) {
+    const toggleKey = `${toggleScope}:${skill.skill_id}`;
+    if (!token || togglingSkillKey === toggleKey) return;
+    const next = !skill.enabled;
+    setTogglingSkillKey(toggleKey);
+    try {
+      const updated =
+        toggleScope === 'personal'
+          ? await updateMySkill(token, skill.skill_id, { enabled: next })
+          : await updateTeamSkill(token, skill.skill_id, { enabled: next });
+      const setRows = toggleScope === 'personal' ? setPersonalSkills : setTeamSkills;
+      setRows((prev) => prev.map((item) => (item.skill_id === updated.skill_id ? updated : item)));
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '상태를 바꾸지 못했습니다.', 'error');
+    } finally {
+      setTogglingSkillKey(null);
+    }
+  }
+
   async function remove(removeScope: Scope, skill: Skill) {
     if (!token) return;
     setConfirming(null);
@@ -723,6 +750,10 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                 이 목록에는 안 뜨지만(개인/팀 스킬이 아니라서), 채팅에서 "~하는 스킬
                 만들어줘"라고 하면 자동으로 켜져 필요한 것을 되물어 가며 스킬을 만듭니다.
               </p>
+              <p>
+                토글을 끄면 삭제하지 않고도 에이전트가 그 스킬을 못 보게 할 수 있습니다.
+                내용은 그대로 남아 있어 언제든 다시 켤 수 있습니다.
+              </p>
             </InfoNote>
           </h2>
           {/* 검색창을 「새 스킬」 옆에 둔다 — 목록 위 한 줄에서 필터와 만들기를
@@ -788,6 +819,8 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
 
           {filteredRows.map((skill) => {
             const colliding = collidingNames.has(skill.name);
+            const toggleKey = `${scope}:${skill.skill_id}`;
+            const toggling = togglingSkillKey === toggleKey;
             return (
               <div key={skill.skill_id} className={`${styles.row} ${styles.rowTall}`}>
                 <span className={styles.rowIcon}>
@@ -811,6 +844,24 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                 </div>
                 {canWriteRow && (
                   <div className={styles.rowActions}>
+                    {/* 꺼지면 값은 그대로 두고 에이전트에게만 안 보이게 한다
+                        (삭제와 다름) — `toggleEnabled()` 참고. */}
+                    <div
+                      className={[
+                        styles.skillState,
+                        skill.enabled ? styles.skillStateOn : styles.skillStateOff,
+                      ].join(' ')}
+                    >
+                      <span className={styles.skillStateText} aria-live="polite">
+                        {toggling ? '변경 중' : skill.enabled ? '활성' : '비활성'}
+                      </span>
+                      <ToggleSwitch
+                        checked={skill.enabled}
+                        disabled={toggling}
+                        ariaLabel={`${skill.name} 스킬을 ${skill.enabled ? '비활성화' : '활성화'}`}
+                        onChange={() => void toggleEnabled(scope, skill)}
+                      />
+                    </div>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => openEdit(scope, skill)}>
                       수정
                     </Button>

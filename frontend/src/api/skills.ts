@@ -14,13 +14,15 @@ import { apiRequest, ApiError } from './client';
  * 같은 함수를 쓴다). 개인 스킬(`/me/skills/`)은 계정 본인 것만, 팀 스킬
  * (`/teams/skills/`)은 조회는 팀원 전체가·쓰기는 팀장만 할 수 있다.
  *
- * ## 칸이 셋뿐인 이유
+ * ## 칸이 넷뿐인 이유
  *
  * deepagents `SkillsMiddleware` 가 읽는 `SKILL.md` 의 모양 그대로다
  * (`docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_03_…벤치마킹.md` §9-3) — frontmatter
  * 의 `name`·`description` 만 매 턴 시스템 프롬프트에 실리고, `body` 는
  * 모델이 그 스킬을 고른 뒤에야 파일로 읽는다. 그래서 **`description` 이
- * 「고를지 말지」의 유일한 근거**다. 칸을 더 만들지 않는다 — 미들웨어가
+ * 「고를지 말지」의 유일한 근거**다. `enabled` 만 예외로 하나 더 있다
+ * (2026-08-26) — `SkillVisibilityMiddleware` 가 `metadata.enabled` 를 보고
+ * 꺼진 스킬을 통째로 목록에서 뺀다. 그 외 칸을 더 만들지 않는다 — 미들웨어가
  * 안 읽는 값을 받아 두면 화면에만 있는 값이 된다.
  *
  * ## 이름은 한 번 정하면 못 바꾼다
@@ -37,6 +39,8 @@ export interface Skill {
   description: string;
   /** `SKILL.md` 본문(마크다운). 목록 응답에서는 안 준다 — 길어서 목록이 무거워진다. */
   body?: string;
+  /** frontmatter `metadata.enabled`. `false`면 에이전트에게 아예 안 보인다(삭제와 다름 — 값은 그대로 남는다). */
+  enabled: boolean;
   updated_at: string | null;
 }
 
@@ -63,7 +67,7 @@ export function createMySkill(token: string, input: SkillInput) {
 export function updateMySkill(
   token: string,
   skillId: string,
-  input: { description?: string; body?: string },
+  input: { description?: string; body?: string; enabled?: boolean },
 ) {
   return apiRequest<Skill>(`/me/skills/${skillId}/`, { method: 'PATCH', body: input, token });
 }
@@ -93,7 +97,7 @@ export function createTeamSkill(token: string, input: SkillInput) {
 export function updateTeamSkill(
   token: string,
   skillId: string,
-  input: { description?: string; body?: string },
+  input: { description?: string; body?: string; enabled?: boolean },
 ) {
   return apiRequest<Skill>(`/teams/skills/${skillId}/`, { method: 'PATCH', body: input, token });
 }
