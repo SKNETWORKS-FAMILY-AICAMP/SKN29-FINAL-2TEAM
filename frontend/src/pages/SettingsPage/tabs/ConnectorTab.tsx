@@ -10,6 +10,7 @@ import {
 } from '../../../api/connectors';
 import type { ConnectorType } from '../../../api/connectors';
 import { listRegisteredJiraProjects, listTeamFolders } from '../../../api/projects';
+import { fetchDocumentLibrary } from '../../../api/documentLibrary';
 import { PATHS } from '../../../routes';
 import { useSession } from '../../../utils/session';
 import { DriveFolderModal } from '../DriveFolderModal/DriveFolderModal';
@@ -88,6 +89,18 @@ export function ConnectorTab() {
   });
   const [folderCount, setFolderCount] = useState<number | null>(null);
   const [jiraProjectCount, setJiraProjectCount] = useState<number | null>(null);
+  /**
+   * 색인이 지금 어디까지 왔는가.
+   *
+   * **폴더를 저장하는 것이 곧 「이 문서들을 읽어라」다**(서버 `_start_document_intake`).
+   * 그런데 그 일은 응답을 안 붙잡고 뒤에서 도는데다 문서당 100초씩 순차라, 여기서
+   * 말해 주지 않으면 「연결됨 · 폴더 3」만 보고 다 됐다고 읽는다.
+   */
+  const [indexProgress, setIndexProgress] = useState<{
+    total: number;
+    ready: number;
+    failed: number;
+  } | null>(null);
   const [oauthStarting, setOauthStarting] = useState<OAuthConnectorId | null>(null);
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [peopleModalOpen, setPeopleModalOpen] = useState(false);
@@ -110,6 +123,14 @@ export function ConnectorTab() {
       // 「연결됨」인데 읽는 것이 하나도 없는 상태를 알 수 없다.
       if (next.GOOGLE_DRIVE === 'CONNECTED') {
         setFolderCount((await listTeamFolders(token)).length);
+        // 같은 목록을 「문서」 화면도 쓴다. 여기서는 세 숫자만 접어서 본다 —
+        // 무엇이 실패했는지까지는 그쪽에서 본다.
+        const library = await fetchDocumentLibrary(token);
+        setIndexProgress({
+          total: library.documents.length,
+          ready: library.documents.filter((doc) => doc.search_ready).length,
+          failed: library.documents.filter((doc) => doc.index_status === 'FAILED').length,
+        });
       }
       if (next.JIRA === 'CONNECTED') {
         setJiraProjectCount((await listRegisteredJiraProjects(token)).length);
@@ -122,6 +143,21 @@ export function ConnectorTab() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /**
+   * 아직 읽는 중인 문서가 있는 동안만 다시 받는다 — 「내 파일」·「문서」가 쓰는
+   * 방식과 같다. **끝난 뒤에는 안 돈다.** 실패한 것은 스스로 끝나지 않으므로
+   * 남은 수에서 빼고 센다. 안 빼면 8/10 에서 영원히 멈춘 것처럼 보인다.
+   */
+  const indexing =
+    indexProgress !== null &&
+    indexProgress.ready + indexProgress.failed < indexProgress.total;
+
+  useEffect(() => {
+    if (!indexing) return;
+    const timer = setInterval(() => void refresh(), 10_000);
+    return () => clearInterval(timer);
+  }, [indexing, refresh]);
 
   // OAuth 콜백이 여기로 돌아온다. StrictMode가 effect를 한 번 더 돌리므로 같은
   // 결과를 두 번 알리지 않는다.
@@ -172,6 +208,34 @@ export function ConnectorTab() {
    * 그 한 줄 때문에 줄 높이가 흔들린다. 0 은 숨기지 않는다. **읽을 것이 없다는
    * 사실이 그 자리에서 제일 중요한 정보**라 오히려 눈에 띄어야 한다.
    */
+  /**
+   * 색인이 어디까지 왔는가. **폴더 개수와 다른 질문이다** — 폴더 3개를 읽기로
+   * 했다는 것과 그 안의 문서를 다 읽었다는 것은 다르다.
+   *
+   * 도는 중에는 「읽는 중 M/N」. 「읽는 중」은 화면문구_정리표 §1-1 이 그대로
+   * 두기로 한 말이고(무엇을 하는 중인지 말해 준다), 막연한 시간 대신 **실제
+   * 건수**를 준다.
+   *
+   * 다 끝났으면 아무것도 안 그린다 — 「전부 읽음」은 정상 상태라 자리를 차지할
+   * 이유가 없다. 다만 **실패는 끝난 뒤에도 남긴다.** 그것을 안 보여주면 8/10 에서
+   * 멈춘 이유를 알 수 없고, 고칠 자리(「문서」 화면의 다시 시도)로 갈 생각도 못 한다.
+   */
+  function indexBadge() {
+    if (indexProgress === null || indexProgress.total === 0) return null;
+    const done = indexProgress.ready + indexProgress.failed;
+    if (done < indexProgress.total) {
+      return (
+        <Badge tone="info">
+          읽는 중 {done}/{indexProgress.total}
+        </Badge>
+      );
+    }
+    if (indexProgress.failed > 0) {
+      return <Badge tone="warning">색인 실패 {indexProgress.failed}</Badge>;
+    }
+    return null;
+  }
+
   function countBadge(count: number | null, label: string) {
     if (count === null) return null;
     return (
@@ -281,6 +345,7 @@ export function ConnectorTab() {
                 <span className={styles.rowBadges}>
                   {statusBadge('GOOGLE_DRIVE')}
                   {driveConnected && countBadge(folderCount, '폴더')}
+                  {driveConnected && indexBadge()}
                 </span>
               </span>
               {driveConnected && <span className={styles.rowVendor}>Google Drive</span>}

@@ -158,7 +158,18 @@ export function DriveFolderModal({ open, token, onClose, onSaved }: DriveFolderM
         // 물어보면, 토큰이 만료됐을 때 등록된 문서는 멀쩡한데 폴더 이름만 못 읽는다.
         Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
       );
-      showToast(`폴더 ${folders.length}개를 저장했습니다.`, 'success');
+      // **저장이 끝이 아니다.** 이 요청이 곧바로 전량 수집을 띄우는데(서버
+      // `_start_document_intake`) 응답은 그것을 기다리지 않는다. 「저장했습니다」로만
+      // 끝내면 뒤에서 문서당 100초씩 도는 일이 시작된 줄 아무도 모르고, 그동안
+      // 채팅에서 문서가 안 잡히면 「연결이 안 됐나」로 읽는다.
+      //
+      // 막연한 시간(「몇 분 걸립니다」)은 쓰지 않는다 — 화면문구_정리표 §1-1 이
+      // 그것을 걷어낸 자리다. 대신 **무엇을 하는 중인지**와 **어디서 보는지**만
+      // 말한다(「내 파일」 토스트 "업로드했습니다. 읽는 중입니다." 와 같은 꼴).
+      showToast(
+        `폴더 ${folders.length}개를 저장했습니다. 문서를 읽는 중입니다. 진행은 문서 화면에서 확인할 수 있습니다.`,
+        'success',
+      );
       onSaved();
       onClose();
     } catch (error) {
