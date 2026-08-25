@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -25,7 +24,6 @@ import {
   removeTeamMember,
 } from '../../api/teams';
 import type { TeamMember } from '../../api/teams';
-import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import styles from './TeamLeaderSettingsPage.module.css';
 
@@ -46,7 +44,6 @@ const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
 
 export default function TeamLeaderSettingsPage() {
-  const navigate = useNavigate();
   const { showToast } = useToast();
 
   /** 인사 시스템이 붙어 있는가. 「내 정보를 못 찾은 이유」가 이것으로 갈린다. */
