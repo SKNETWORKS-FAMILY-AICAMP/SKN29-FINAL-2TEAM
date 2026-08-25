@@ -246,6 +246,19 @@ class 삭제_대상_누락_검사(SimpleTestCase):
     }
     #: `reset_demo.sql` 이 일부러 남기는 것 — 테넌트 데이터가 아니라 플랫폼 설정이다.
     RESET_KEEP = {"sys_setting", "sys_notice"}
+    #: `reset_eval.sql`(평가용)이 `reset_demo.sql`(시연용)과 달리 **남기는** 것.
+    #: 테넌트 그 자체와 재연결이 귀찮은 것들이다 — 평가 초기화의 목적이
+    #: 「재로그인·재연결 없이 프로젝트와 문서만 갈아 끼우기」라서 남긴다.
+    EVAL_KEEP = {
+        "user_account", "team", "team_member", "team_folder",
+        "member_invite", "user_person_link",
+        "connector_conn",     # 이것을 남기려고 이 파일이 따로 있다
+        "agents", "agent_versions", "agent_version_tools",
+        "agent_version_subagents", "agent_favorites",
+        "mcp_server", "mcp_tool", "guardrail_provider",
+        "cal_event",          # 프로젝트와 무관하다
+        "audit_log",          # 대상이 사라져도 「누가 무엇을 했는가」는 남는다
+    }
 
     @staticmethod
     def _schema():
@@ -323,6 +336,44 @@ class 삭제_대상_누락_검사(SimpleTestCase):
             "reset_demo.sql 이 안 비우는 앱 테이블이 있다 — 옛 테넌트의 행이 남아 "
             "새 팀이 물려받는다(2026-08-12 실제 사고). 남길 이유가 있으면 "
             "RESET_KEEP 에 적고 스크립트 주석에도 남길 것",
+        )
+
+    def test_평가_초기화는_시연_초기화에서_남길_것만_뺀_것이다(self):
+        """`reset_eval.sql` 을 스키마가 아니라 `reset_demo.sql` 과 대조한다.
+
+        네 번째 손 관리 목록을 만들지 않으려는 것이다. 위 검사가 데모 쪽이
+        빠짐없음을 이미 보증하므로, 평가 쪽은 **거기서 무엇을 뺐는지**만
+        정확하면 된다. 테이블이 새로 늘면 데모 쪽 검사가 먼저 깨지고,
+        데모에 줄을 더한 사람은 이 검사 때문에 평가 쪽에서도 지울지 남길지를
+        **고르지 않을 수 없다.**
+        """
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+
+        def truncated(name):
+            text = (root / "DB" / name).read_text(encoding="utf-8")
+            # 주석 줄(`--`)에도 테이블 이름이 나오므로 먼저 걷어낸다.
+            text = re.sub(r"^\s*--.*$", "", text, flags=re.M)
+            found = set()
+            for m in re.finditer(r"TRUNCATE TABLE(.*?);", text, re.S):
+                found |= {x.strip() for x in m.group(1).replace("\n", " ").split(",") if x.strip()}
+            return found
+
+        demo = truncated("reset_demo.sql")
+        evaluation = truncated("reset_eval.sql")
+
+        self.assertEqual(
+            sorted(evaluation - demo),
+            [],
+            "reset_eval.sql 이 reset_demo.sql 에 없는 테이블을 비운다 — 둘 중 하나가 틀렸다",
+        )
+        self.assertEqual(
+            sorted(demo - evaluation),
+            sorted(self.EVAL_KEEP),
+            "평가 초기화가 남기는 목록이 EVAL_KEEP 과 다르다. 테이블을 새로 더했다면 "
+            "reset_eval.sql 에서 지울지 EVAL_KEEP 에 이유와 함께 남길지 고를 것",
         )
 
 

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>한빛몰 주문·정산 시스템 고도화 WBS 및 마일스톤</title>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+
+<h1>한빛몰 주문·정산 시스템 고도화<br>WBS 및 마일스톤</h1>
+
+<table class="cover-meta">
+  <tr><th>문서번호</th><td>HB-2026-WBS-001</td></tr>
+  <tr><th>사업명</th><td>한빛몰 주문·정산 시스템 고도화 구축</td></tr>
+  <tr><th>작성일</th><td>2026년 8월 30일</td></tr>
+  <tr><th>상위 문서</th><td>HB-2026-SOW-001 과업지시서 제7장</td></tr>
+</table>
+
+<h2>1. 산정 기준</h2>
+<ul>
+  <li>공수는 개발자 1인의 순수 작업 시간(인시)으로 적는다. 회의·보고·대기 시간은 제외한다.</li>
+  <li>1인월은 160인시로 환산한다.</li>
+  <li>일정은 착수일과 종료일을 모두 포함한다.</li>
+  <li>2026년 11월 11일부터 20일까지는 발주사 대형 판촉 기간으로 운영 반영을 하지 않는다.
+      해당 기간에도 개발은 계속하나 배포가 필요한 작업은 일정에서 뺐다.</li>
+</ul>
+
+<h2>2. 과업별 공수·일정·선후행</h2>
+<table>
+  <tr><th>WBS</th><th>과업</th><th>공수(인시)</th><th>시작</th><th>종료</th><th>선행 과업</th><th>우선순위</th></tr>
+  <tr><td>W-01</td><td>주문 도메인 재설계 및 상태기계 구현</td><td class="num">320</td>
+      <td>2026-09-22</td><td>2026-11-07</td><td>없음</td><td>최상</td></tr>
+  <tr><td>W-02</td><td>정산 엔진 신규 개발</td><td class="num">520</td>
+      <td>2026-10-05</td><td>2026-12-24</td><td>W-01 설계 완료</td><td>최상</td></tr>
+  <tr><td>W-03</td><td>결제대행(PG) 이중화 및 장애 자동 전환</td><td>미정</td>
+      <td>2026-11-02</td><td>2026-12-11</td><td>없음</td><td>상</td></tr>
+  <tr><td>W-04</td><td>재고 동기화 이벤트 기반 전환</td><td class="num">260</td>
+      <td>2026-10-19</td><td>2026-12-04</td><td>없음</td><td>중</td></tr>
+  <tr><td>W-05</td><td>판매자 정산 포털 신규 구축</td><td class="num">300</td>
+      <td>2026-11-09</td><td>2027-01-22</td><td>W-02</td><td>상</td></tr>
+  <tr><td>W-06</td><td>레거시 데이터 이관 및 검증</td><td class="num">200</td>
+      <td>2026-12-07</td><td>2027-01-16</td><td>W-01, W-02</td><td>&nbsp;</td></tr>
+  <tr><td>W-07</td><td>관측성 체계 구축</td><td class="num">160</td>
+      <td>2026-09-22</td><td>2026-10-30</td><td>없음</td><td>중</td></tr>
+  <tr><td>W-08</td><td>통합 성능시험 및 안정화</td><td class="num">240</td>
+      <td>2027-01-19</td><td>2027-02-20</td><td>W-01 ~ W-07 전건</td><td>최상</td></tr>
+</table>
+
+<div class="note">
+W-03의 공수는 아직 산정하지 못했다. 2차 PG(이스트페이)의 연동 규격서를 아직 받지
+못해 어댑터 개발 범위를 확정할 수 없다. 규격서 수령 후 2주 이내에 산정하여 본 문서를
+개정한다. 시작·종료일은 PG사 시험 환경 이용 가능일(화요일 야간)을 역산해 잡은 값이다.
+</div>
+
+<div class="note">
+W-06의 우선순위는 이번 개정에서 정하지 못했다. 재무팀은 개통 전 이관을, 개발팀은
+개통 후 순차 이관을 주장하고 있어 M1 설계 검토 회의의 결정을 기다린다.
+</div>
+
+<h2>3. 과업별 상세 작업</h2>
+
+<h3>3.1 W-01 주문 도메인 재설계 및 상태기계 구현 (320인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>현행 상태값 조사 및 매핑 정의</td><td class="num">48</td><td>09-22 ~ 09-30</td></tr>
+  <tr><td>상태 정의서 및 전이 규칙표 작성</td><td class="num">56</td><td>10-01 ~ 10-13</td></tr>
+  <tr><td>상태 전이 엔진 구현</td><td class="num">120</td><td>10-14 ~ 10-30</td></tr>
+  <tr><td>주문 서비스 연동 및 낙관적 잠금</td><td class="num">96</td><td>10-26 ~ 11-07</td></tr>
+</table>
+
+<h3>3.2 W-02 정산 엔진 신규 개발 (520인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>정산 계산 규칙 정의</td><td class="num">64</td><td>10-05 ~ 10-16</td></tr>
+  <tr><td>단계별 계산기 구현 (5단계)</td><td class="num">200</td><td>10-19 ~ 11-27</td></tr>
+  <tr><td>일 정산 배치 및 월 마감 처리</td><td class="num">120</td><td>11-23 ~ 12-11</td></tr>
+  <tr><td>정산 원장 및 조정 처리</td><td class="num">80</td><td>12-07 ~ 12-18</td></tr>
+  <tr><td>재무팀 대사 검증 도구</td><td class="num">56</td><td>12-14 ~ 12-24</td></tr>
+</table>
+
+<h3>3.3 W-04 재고 동기화 이벤트 기반 전환 (260인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>이벤트 스키마 정의 및 토픽 설계</td><td class="num">40</td><td>10-19 ~ 10-27</td></tr>
+  <tr><td>발행·구독 구현</td><td class="num">100</td><td>10-28 ~ 11-19</td></tr>
+  <tr><td>WMS 연계 어댑터</td><td class="num">80</td><td>11-16 ~ 11-30</td></tr>
+  <tr><td>보정 배치</td><td class="num">40</td><td>11-30 ~ 12-04</td></tr>
+</table>
+
+<h3>3.4 W-05 판매자 정산 포털 신규 구축 (300인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>화면 설계 및 디자인 시스템 구성</td><td class="num">60</td><td>11-09 ~ 11-27</td></tr>
+  <tr><td>로그인 및 권한 분리</td><td class="num">40</td><td>11-30 ~ 12-09</td></tr>
+  <tr><td>정산서 목록·상세 및 근거 펼침</td><td class="num">100</td><td>12-10 ~ 01-08</td></tr>
+  <tr><td>이의 제기 접수·추적</td><td class="num">60</td><td>01-05 ~ 01-15</td></tr>
+  <tr><td>내려받기 및 접근성 대응</td><td class="num">40</td><td>01-14 ~ 01-22</td></tr>
+</table>
+
+<h3>3.5 W-06 레거시 데이터 이관 및 검증 (200인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>이관 매핑 정의서 작성</td><td class="num">40</td><td>12-07 ~ 12-15</td></tr>
+  <tr><td>이관 파이프라인 구현</td><td class="num">80</td><td>12-16 ~ 01-06</td></tr>
+  <tr><td>시험 이관 3회 및 검증 리포트</td><td class="num">80</td><td>01-05 ~ 01-16</td></tr>
+</table>
+
+<h3>3.6 W-07 관측성 체계 구축 (160인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>구조화 로그 표준 정의 및 적용</td><td class="num">56</td><td>09-22 ~ 10-06</td></tr>
+  <tr><td>지표 수집 및 대시보드 3종</td><td class="num">56</td><td>10-07 ~ 10-20</td></tr>
+  <tr><td>분산추적 계측</td><td class="num">32</td><td>10-19 ~ 10-27</td></tr>
+  <tr><td>경보 규칙 정의</td><td class="num">16</td><td>10-28 ~ 10-30</td></tr>
+</table>
+
+<h3>3.7 W-08 통합 성능시험 및 안정화 (240인시)</h3>
+<table>
+  <tr><th>작업</th><th>공수</th><th>기간</th></tr>
+  <tr><td>시나리오 설계 및 부하 환경 구성</td><td class="num">48</td><td>01-19 ~ 01-27</td></tr>
+  <tr><td>성능시험 3회 및 병목 개선</td><td class="num">96</td><td>01-28 ~ 02-10</td></tr>
+  <tr><td>장애 주입 시험</td><td class="num">48</td><td>02-09 ~ 02-13</td></tr>
+  <tr><td>운영 이관 및 안정화 지원</td><td class="num">48</td><td>02-16 ~ 02-20</td></tr>
+</table>
+
+<h2>4. 마일스톤</h2>
+<table>
+  <tr><th>구분</th><th>명칭</th><th>일자</th><th>충족 조건</th></tr>
+  <tr><td>M0</td><td>착수보고</td><td>2026-09-14</td><td>수행 계획서 승인</td></tr>
+  <tr><td>M1</td><td>설계 완료</td><td>2026-10-30</td><td>아키텍처·상태전이·DB·화면 설계서 승인, 관측성 완료 기준 확정, W-06 우선순위 확정</td></tr>
+  <tr><td>M2</td><td>정산 엔진 1차 개통</td><td>2026-12-24</td><td>일 정산 배치 가동, 재무팀 대사 차액 0원</td></tr>
+  <tr><td>M3</td><td>통합시험 착수</td><td>2027-01-19</td><td>W-01 ~ W-07 개발 완료</td></tr>
+  <tr><td>M4</td><td>운영 개통</td><td>2027-02-01</td><td>비기능 요구사항 전건 충족, 결함 등급 상 0건</td></tr>
+  <tr><td>M5</td><td>안정화 종료</td><td>2027-02-27</td><td>개통 후 4주 무중대장애, 최종 검수 완료</td></tr>
+</table>
+
+<h2>5. 임계 경로</h2>
+<p>W-01 → W-02 → W-05 → W-08이 임계 경로다. 총 여유 기간은 9영업일뿐이며, 특히
+W-02의 단계별 계산기 구현(200인시)이 지연되면 W-05 착수가 밀려 M4를 지킬 수 없다.
+W-03과 W-04, W-07은 임계 경로 밖이라 각각 15일, 12일, 21일의 여유가 있다.</p>
+
+</body>
+</html>
