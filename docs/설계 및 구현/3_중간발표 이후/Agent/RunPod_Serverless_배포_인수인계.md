@@ -9,14 +9,21 @@ RunPod Serverless에 배포한 실제 과정과 현재 상태를 백엔드·프�
 - 작성 및 실환경 확인일: 2026-08-04
 - Django 통합 작업본: `C:\final_project\choi_local`
 - Worker 배포 저장소: `https://github.com/choiwon10/SKN29-RUNPOD-WORKER`
-- RunPod Endpoint ID: `wmsdhbftpejzjw`
-- RunPod 콘솔: `https://console.runpod.io/serverless/user/endpoint/wmsdhbftpejzjw`
+- RunPod Endpoint ID: `ugczgulvpawbyv`
+- RunPod 콘솔: `https://console.runpod.io/serverless/user/endpoint/ugczgulvpawbyv`
 - 임베딩 모델: `google/embeddinggemma-300m`
 - 임베딩 차원: 768
 - 실행 장치: CUDA 전용
 
 이 문서에는 API key, Hugging Face token, OpenAI key의 실제 값을 기록하지 않는다.
 비밀값은 저장소나 메신저 평문이 아닌 별도의 안전한 경로로 전달해야 한다.
+
+> **이 문서가 적고 있던 Endpoint ID `wmsdhbftpejzjw` 는 틀렸다 (2026-08-25 정정).**
+> 그 Endpoint 도, 한때 재생성했던 `ekysa59yf3ni6t` 도 지금은 **404 — 지워졌다.**
+> 2026-08-24 에 Endpoint 를 다시 만들었고, 살아 있는 것은 `ugczgulvpawbyv`
+> 하나뿐이다(`embed_queries` 실호출로 확인: `google/embeddinggemma-300m`, 768차원).
+> 아래 5.3 의 배포 브랜치·GPU 등 나머지 설정값은 새 Endpoint 기준으로 다시
+> 확인하지 못했다 — 콘솔에서 대조가 필요하다.
 
 ## 2. 현재 결론
 
@@ -126,7 +133,7 @@ EmbeddingGemma 모델 페이지의 사용 조건에 동의한 Hugging Face 계�
 | 항목 | 값 |
 |---|---|
 | Endpoint 이름 | `SKN29-RUNPOD-WORKER` |
-| Endpoint ID | `wmsdhbftpejzjw` |
+| Endpoint ID | `ugczgulvpawbyv` |
 | 배포 방식 | GitHub 저장소에서 Docker build |
 | 저장소 | `choiwon10/SKN29-RUNPOD-WORKER` |
 | 배포 브랜치 | `codex/install-triton-compiler` |
@@ -229,7 +236,7 @@ RunPod 대시보드에 실패 요청 1건이 남아 있는 것은 이 최초 검
 
 ```dotenv
 RUNPOD_API_KEY=<별도 안전한 경로로 전달>
-RUNPOD_ENDPOINT_ID=wmsdhbftpejzjw
+RUNPOD_ENDPOINT_ID=ugczgulvpawbyv
 PUBLIC_BACKEND_BASE_URL=https://<현재 Quick Tunnel 호스트>
 RUNPOD_JOB_TTL_MS=3600000
 RUNPOD_EXECUTION_TIMEOUT_MS=1800000

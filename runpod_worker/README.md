@@ -20,6 +20,18 @@ them in place on the parsed `DoclingDocument` so chunking sees the corrected
 structure. `promoted_heading_count` in the result's `validation` block reports
 how many were promoted.
 
+PDF picture description, chart extraction, and picture classification are
+enrichment steps that run *after* page preprocessing. A page that fails
+preprocessing is dropped from `conv_res.pages`, but enrichment still indexes
+that list by the element's original page number, so any PDF with a broken page
+died with `IndexError: list index out of range` inside
+`StandardPdfPipeline` — the whole document was lost. `_convert` now retries
+once with those three options off, which converts the same file successfully.
+The retry is PDF-only, happens once, and re-raises if it also fails, so the
+real reason still reaches the user. Documents rescued this way carry
+`validation.enrichment_disabled = true` and have no chart or image
+descriptions.
+
 Required environment:
 
 ```text

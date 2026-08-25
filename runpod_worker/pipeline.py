@@ -120,8 +120,8 @@ def _has_text_layer(path: Path) -> bool:
     return operators >= TEXT_OPERATOR_THRESHOLD
 
 
-@lru_cache(maxsize=2)
-def converter(use_ocr: bool = True):
+@lru_cache(maxsize=4)
+def converter(use_ocr: bool = True, enrich: bool = True):
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.image_classification_engine_options import (
         TransformersImageClassificationEngineOptions,
@@ -154,11 +154,14 @@ def converter(use_ocr: bool = True):
     )
     # `force_backend_text=True` 로도 OCR 결과가 본문을 덮었다. 그래서 텍스트
     # 레이어가 있는 PDF 는 아예 OCR 을 끈다 — 판정은 `_has_text_layer` 가 한다.
+    #
+    # `enrich=False` 는 이 셋을 한꺼번에 끈다 — 깨진 페이지를 가진 PDF 를
+    # 살리는 유일한 길이다. `_convert` 의 주석에 이유가 있다.
     pdf = PdfPipelineOptions(
-        do_picture_classification=True,
+        do_picture_classification=enrich,
         picture_classification_options=classifier,
-        do_picture_description=True,
-        do_chart_extraction=True,
+        do_picture_description=enrich,
+        do_chart_extraction=enrich,
         force_backend_text=True,
         images_scale=1.0,
         do_ocr=use_ocr,
@@ -173,10 +176,10 @@ def converter(use_ocr: bool = True):
         generate_parsed_pages=True,
     )
     docx = ConvertPipelineOptions(
-        do_picture_classification=True,
+        do_picture_classification=enrich,
         picture_classification_options=classifier,
-        do_picture_description=True,
-        do_chart_extraction=True,
+        do_picture_description=enrich,
+        do_chart_extraction=enrich,
     )
     # MD 에는 `format_options` 를 안 준다 — 기본 백엔드가 마크다운을 그대로 읽고,
     # 위 옵션들은 전부 PDF·DOCX 의 이미지·차트·OCR 설정이라 줄 것이 없다.
@@ -599,6 +602,43 @@ def _download(input_data: dict[str, Any]) -> tuple[Path, str]:
     return path, f"sha256:{hashlib.sha256(data).hexdigest()}"
 
 
+def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
+    """변환한다. 실패하면 이미지·차트 보강을 끄고 **한 번만** 다시 시도한다.
+
+    **깨진 페이지가 하나라도 있는 PDF 는 보강을 켠 채로는 절대 안 끝난다**
+    (2026-08-24 실측). 전처리에서 `'utf-8' codec can't decode byte 0xde` 로
+    죽은 페이지는 `conv_res.pages` 에서 **빠지는데**, 보강 단계는 항목이 들고
+    있는 **원래 페이지 번호**로 그 목록을 집는다:
+
+        RuntimeError: Pipeline StandardPdfPipeline failed
+          └ docling/models/base_model.py prepare_element
+            conv_res.pages[page_ix].get_image(...)
+            IndexError: list index out of range
+
+    113쪽짜리 제안요청서에서 12쪽이 빠져 `pages=101` 이 됐고, 원래 번호가 101
+    이상인 페이지의 그림을 만나는 순간 범위를 벗어났다. 보강 셋을 끄면 같은
+    문서가 그대로 변환된다(pages=101, texts=1037).
+
+    그래서 **문서 전체를 잃느니 차트·이미지 설명을 잃는 쪽**을 고른다. 멀쩡한
+    문서는 첫 번째 시도에서 끝나므로 아무것도 잃지 않는다.
+
+    되돌린 것은 PDF 뿐이다 — 위 오류는 PDF 파이프라인의 것이고, DOCX 가 죽는
+    이유는 달랐다(디스크 부족, `converter` 주석).
+
+    예외 종류를 안 가린다. docling 은 이 실패를 파이프라인 안에서 감싸 던지는데
+    그 형이 판마다 다르다. 대신 **한 번만** 되돌리고, 그 시도도 실패하면 그대로
+    올려보낸다 — 사유가 사람이 읽는 `index_detail` 에 그대로 들어가야 한다.
+    대가는 정말 못 읽는 PDF 의 변환 시간이 두 배가 되는 것이다.
+    """
+
+    try:
+        return converter(use_ocr).convert(path), True
+    except Exception:
+        if path.suffix != ".pdf":
+            raise
+        return converter(use_ocr, enrich=False).convert(path), False
+
+
 def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
     doc_id = str(input_data.get("doc_id") or "").strip()
     revision = str(input_data.get("revision") or "").strip()
@@ -620,7 +660,7 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
         # 결과 「스캔본이다」로 읽혀 OCR 켜진 변환기를 쓰게 된다 — 그쪽은
         # EasyOCR 모델을 딸고 오므로 텍스트 파일 하나 때문에 워커가 무거워진다.
         use_ocr = path.suffix == ".pdf" and not _has_text_layer(path)
-        result = converter(use_ocr).convert(path)
+        result, enriched = _convert(path, use_ocr)
         document = result.document
         # 밀도 기반 헤딩 승격(제자리 수정): 레이아웃 모델이 text/list_item으로 잘못
         # 분류한 실제 헤딩을 section_header로 바꿔치기한다. 청킹은 이 승격이 반영된
@@ -661,6 +701,9 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
                 # 밀도 기반으로 section_header로 승격된 항목 수. 0이어도 정상(해당
                 # 패턴의 오분류 헤딩이 없었다는 뜻)이라 오류로 취급하지 않는다.
                 "promoted_heading_count": len(promoted_headings),
+                # 보강을 끄고 되살린 문서다. 이 문서에는 차트·이미지 설명이
+                # 없다 — 검색 결과가 비어 보일 때 원인을 여기서 찾을 수 있다.
+                "enrichment_disabled": not enriched,
             },
         }
     finally:

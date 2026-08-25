@@ -9,6 +9,7 @@ from django.test import SimpleTestCase, override_settings
 from apps.accounts.tokens import issue_token
 from runpod_worker.pipeline import (
     ChunkValidationError,
+    _convert,
     _has_text_layer,
     _generic_row_records,
     _product_records,
@@ -311,6 +312,67 @@ class TextLayerTests(SimpleTestCase):
         """판정이 못 되면 OCR 을 켜는 쪽으로 떨어진다 — 파싱 자체를 막지 않는다."""
 
         self.assertFalse(_has_text_layer(pathlib.Path("/no/such/file.pdf")))
+
+
+class EnrichmentFallbackTests(SimpleTestCase):
+    """깨진 페이지를 가진 PDF 를 문서 전체를 잃지 않고 살린다.
+
+    전처리에서 죽은 페이지가 `conv_res.pages` 에서 빠지는데 보강 단계는 원래
+    페이지 번호로 그 목록을 집는다 — `IndexError: list index out of range` 로
+    문서 하나가 통째로 실패했다(2026-08-24 실측).
+    """
+
+    def _converter(self, *, fails_when_enriched):
+        """`converter(use_ocr, enrich=...)` 를 흉내낸다."""
+
+        def factory(use_ocr=True, enrich=True):
+            engine = Mock()
+            if enrich and fails_when_enriched:
+                engine.convert.side_effect = RuntimeError("Pipeline StandardPdfPipeline failed")
+            else:
+                engine.convert.return_value = f"converted(enrich={enrich})"
+            return engine
+
+        return factory
+
+    def test_보강이_죽인_pdf_는_보강을_끄고_살아난다(self):
+        with patch(
+            "runpod_worker.pipeline.converter", self._converter(fails_when_enriched=True)
+        ):
+            result, enriched = _convert(pathlib.Path("sample.pdf"), False)
+        self.assertEqual(result, "converted(enrich=False)")
+        self.assertFalse(enriched)
+
+    def test_멀쩡한_문서는_보강을_켠_채로_끝난다(self):
+        """되돌리기는 실패했을 때만이다 — 멀쩡한 문서가 차트를 잃으면 안 된다."""
+
+        with patch(
+            "runpod_worker.pipeline.converter", self._converter(fails_when_enriched=False)
+        ):
+            result, enriched = _convert(pathlib.Path("sample.pdf"), False)
+        self.assertEqual(result, "converted(enrich=True)")
+        self.assertTrue(enriched)
+
+    def test_pdf_가_아니면_되돌리지_않는다(self):
+        """위 오류는 PDF 파이프라인의 것이다. DOCX 가 죽는 이유는 다르다."""
+
+        with patch(
+            "runpod_worker.pipeline.converter", self._converter(fails_when_enriched=True)
+        ):
+            with self.assertRaises(RuntimeError):
+                _convert(pathlib.Path("sample.docx"), False)
+
+    def test_되돌린_시도도_실패하면_사유가_그대로_올라간다(self):
+        """사유는 사람이 읽는 `index_detail` 로 간다 — 삼키면 안 된다."""
+
+        def factory(use_ocr=True, enrich=True):
+            engine = Mock()
+            engine.convert.side_effect = RuntimeError("암호가 걸린 PDF 입니다")
+            return engine
+
+        with patch("runpod_worker.pipeline.converter", factory):
+            with self.assertRaisesMessage(RuntimeError, "암호가 걸린 PDF 입니다"):
+                _convert(pathlib.Path("sample.pdf"), False)
 
 
 class EvidenceCitationTests(SimpleTestCase):
