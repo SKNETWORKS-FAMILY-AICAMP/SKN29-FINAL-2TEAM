@@ -4233,7 +4233,14 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("에이전트 버전", "DELETE FROM agent_versions WHERE agent_id IN (SELECT agent_id FROM agents WHERE team_id = %(team_id)s)"),
     ("에이전트 즐겨찾기", "DELETE FROM agent_favorites WHERE agent_id IN (SELECT agent_id FROM agents WHERE team_id = %(team_id)s)"),
     ("에이전트", "DELETE FROM agents WHERE team_id = %(team_id)s"),
-    ("커스텀 도구", "DELETE FROM mcp_tool WHERE server_id IN (SELECT server_id FROM mcp_server WHERE team_id = %(team_id)s)"),
+    # ⚠ `mcp_server` 의 PK 는 `server_id` 가 **아니라** `mcp_server_id` 다.
+    #
+    # 2026-08-25 실제 DB 로 밟다가 잡았다 — 원래 `SELECT server_id FROM mcp_server`
+    # 였는데, 그 테이블에 없는 이름이라 PostgreSQL 이 **바깥 쿼리의
+    # `mcp_tool.server_id` 로 해석**했다(상관 서브쿼리). 그러면 조건이
+    # `server_id IN (server_id)` 라 항상 참이고, **한 팀을 지울 때 모든 팀의
+    # 커스텀 도구가 통째로 지워진다.** 오류가 안 나서 아무도 못 봤다.
+    ("커스텀 도구", "DELETE FROM mcp_tool WHERE server_id IN (SELECT mcp_server_id FROM mcp_server WHERE team_id = %(team_id)s)"),
     ("커스텀 도구 서버", "DELETE FROM mcp_server WHERE team_id = %(team_id)s"),
     # 팀이 등록한 외부 가드레일 공급자. team_id 가 NOT NULL 이라 남겨 두면
     # 짧은 코드가 001 부터 다시 나갈 때 **새 팀이 그대로 물려받는다**

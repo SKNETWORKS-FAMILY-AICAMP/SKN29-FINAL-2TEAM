@@ -146,6 +146,17 @@
 > (run_id 로만 묶여 고아가 된다)까지 더해 **39 → 42단계**가 됐다.
 > `guardrail_event` 는 원래부터 들어 있었고, 계정 삭제(15단계)는 처음부터 완전했다.
 >
+> **2026-08-25 에 실제 DB 로 팀 삭제를 한 번 밟았고, 훨씬 큰 것이 나왔다** —
+> `DELETE FROM mcp_tool WHERE server_id IN (SELECT server_id FROM mcp_server ...)`
+> 에서 `mcp_server` 의 PK 는 `mcp_server_id` 다. 없는 이름이라 PostgreSQL 이 바깥
+> 쿼리의 `mcp_tool.server_id` 로 해석해(상관 서브쿼리) 조건이 항상 참이 됐고,
+> **한 팀을 지우면 모든 팀의 커스텀 도구가 지워졌다.** 드릴에서 남의 팀 2건이
+> 실제로 사라졌다(백업에서 복구). 고쳤고 회귀 테스트를 붙였다.
+>
+> **밟는 법** — 버리는 팀을 하나 만들어 각 테이블에 한 행씩 넣고 `purge_team` 을
+> 부른 뒤, ① 그 팀 행이 0 인지 ② **다른 팀 행이 그대로인지** 둘 다 본다.
+> ②를 안 보면 이 결함을 놓친다.
+>
 > 왜 반복되나 — **외래키가 하나도 없어서 CASCADE 가 없다.** 테이블을 더할 때마다
 > `reset_demo.sql` 과 `backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS`·
 > `_ACCOUNT_PURGE_STEPS` **세 곳**에 손으로 줄을 더해야 한다. 지금은 셋 다
