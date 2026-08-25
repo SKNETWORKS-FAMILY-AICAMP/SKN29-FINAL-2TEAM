@@ -5,6 +5,15 @@
   /* **이 층은 흐르지 않는다.** 여기가 흐르면 안쪽 `.stream` 과 겹쳐 스크롤바가
      두 개로 보인다 — 흐르는 곳은 목록과 대화 두 군데뿐이어야 한다. */
   overflow: hidden;
+
+  /* 대화가 놓이는 한 칸의 폭(2026-08-25). 발화·답변·카드·입력창이 **같은
+     기준선**을 쓰게 하는 하나뿐인 숫자다 — 전에는 카드가 전체 폭, 답변이
+     620px, 발화가 오른쪽 끝이라 기준선이 셋이었고, FHD(1920)에서 답변과
+     발화 사이가 671px 벌어졌다.
+     읽기 좋은 한 줄은 대략 90자 아래이고, 이 화면 본문이 14px 이라 820px 이
+     그 언저리다. 더 넓히면 표·카드는 편해지지만 문장이 눈으로 따라가기
+     힘들어진다. */
+  --chat-column: 820px;
 }
 
 /* ---------- 대화 목록 ----------
@@ -337,19 +346,27 @@
 .stream {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-8);
   flex: 1;
   min-height: 0;
-  padding: var(--space-6) var(--space-8);
+  /* 좌우 여백으로 가운데 정렬한다 — 안쪽에 래퍼를 하나 더 두지 않는 이유는
+     **스크롤바가 화면 끝에 붙어야** 하기 때문이다. 래퍼를 좁히면 스크롤바도
+     같이 들어와 대화 옆에 떠 있게 된다. 화면이 좁으면 `max()` 가 원래
+     여백(--space-8)을 고르므로 좁은 폭에서는 지금과 똑같이 동작한다. */
+  padding: var(--space-6) max(var(--space-8), (100% - var(--chat-column)) / 2);
   overflow-y: auto;
 }
 
 /* 턴 하나. 발화와 그 답이 한 덩어리로 붙어 보여야 어느 답이 어느 질문의
-   것인지 읽힌다 — 턴 사이는 `.stream` 의 gap 보다 넓게 벌린다. */
+   것인지 읽힌다 — 턴 사이는 `.stream` 의 gap 보다 좁게 붙인다.
+   2026-08-25: 전에는 둘 다 `--space-5` 라 **간격이 같았고**, 그래서 한 턴이
+   어디서 끝나는지 화면상 구분이 없었다(주석은 벌린다고 적혀 있었지만 실제
+   값이 같았다). 벌리는 쪽을 키우는 대신 붙이는 쪽을 줄인다 — 화면 전체가
+   늘어지지 않는다. */
 .turn {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .userMessage {
@@ -367,8 +384,10 @@
   line-height: 1.6;
 }
 
+/* 답변은 **한 칸을 꽉 채운다.** 620px 로 묶어 두면 바로 위 진행·결과 카드는
+   칸 전체를 쓰는데 답변만 왼쪽에 짧게 남아, 같은 턴 안에서 폭이 두 개가 된다
+   (2026-08-25). 읽기 폭은 이제 `.stream` 의 `--chat-column` 이 정한다. */
 .agentMessage {
-  max-width: 620px;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -513,7 +532,12 @@
   align-items: center;
   gap: var(--space-3);
   flex-shrink: 0;
-  padding: var(--space-4) var(--space-8) var(--space-5);
+  /* 대화와 **같은 칸**에 세운다(2026-08-25). 전에는 전체 폭이라 FHD 에서
+     입력창 하나가 1498px 이었다 — 글자는 왼쪽 끝, 보내기 버튼은 1.2m 떨어진
+     오른쪽 끝. 가운데 정렬을 `margin` 이 아니라 좌우 여백으로 주는 이유는
+     위쪽 경계선(border-top)은 화면 끝까지 그어져야 하기 때문이다. */
+  padding: var(--space-4) max(var(--space-8), (100% - var(--chat-column)) / 2)
+    var(--space-5);
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
 }
@@ -523,9 +547,10 @@
    펼치면 잘린다. */
 .slashMenu {
   position: absolute;
-  right: var(--space-8);
+  /* 입력창과 같은 칸에 맞춘다 — `.inputBar` 의 좌우 여백과 같은 식이다. */
+  right: max(var(--space-8), (100% - var(--chat-column)) / 2);
   bottom: 100%;
-  left: var(--space-8);
+  left: max(var(--space-8), (100% - var(--chat-column)) / 2);
   z-index: 5;
   display: flex;
   flex-direction: column;
