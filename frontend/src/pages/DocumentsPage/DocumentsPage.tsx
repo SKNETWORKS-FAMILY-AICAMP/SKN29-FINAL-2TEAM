@@ -50,6 +50,18 @@ const STORE_LABEL: Record<string, string> = {
   PEOPLE_DB: '인사 시스템',
 };
 
+/**
+ * 쪽당 표시 개수. 기본 25 는 1080 높이에서 한 화면에 거의 들어가는 수다 —
+ * 더 크게 잡으면 표가 페이지 스크롤을 타고, 그러면 트리를 고정한 의미가 없다.
+ */
+const PAGE_SIZES = [10, 25, 50, 100];
+
+/** 날짜만 쓴다. 문서가 언제 고쳐졌는지에 분·초는 판단에 안 쓰인다. */
+function formatDate(iso: string | null): string {
+  if (!iso) return '-';
+  return iso.slice(0, 10).replace(/-/g, '.');
+}
+
 /** 트리에서 고른 자리. 「내 파일」은 폴더가 아니라 별도 갈래다. */
 type Selection =
   | { kind: 'folder'; folderId: string | null; path: string | null }
@@ -109,6 +121,15 @@ export default function DocumentsPage() {
   const [selection, setSelection] = useState<Selection | null>(null);
   /** 접힌 폴더. 기본은 펼침 — 처음 열었을 때 무엇이 있는지 보여야 한다. */
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /**
+   * 파일 이름으로 좁힌다. **고른 자리 안에서만 찾는다** — 트리로 자리를 고르는
+   * 화면에서 검색이 그 자리를 무시하면, 보고 있는 폴더와 결과가 어긋나 어느
+   * 쪽이 진짜인지 알 수 없게 된다. 폴더를 고르면 하위 경로까지 포함하므로
+   * 탐색기에서 폴더 안을 찾는 것과 같은 범위다.
+   */
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -206,6 +227,39 @@ export default function DocumentsPage() {
     });
   }, [library.documents, selection]);
 
+  /** 이름으로 좁힌 결과. 페이지네이션의 모수이기도 하다. */
+  const matched = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return visibleDocuments;
+    return visibleDocuments.filter((doc) => {
+      // 경로도 함께 본다 — 「기획」으로 찾으면 그 폴더 안의 파일이 나와야
+      // 사람이 기대한 대로다. 이름만 보면 폴더명으로는 아무것도 안 걸린다.
+      const haystack = `${doc.file_name ?? doc.doc_id} ${doc.src_folder_path ?? ''}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [visibleDocuments, query]);
+
+  const pageCount = Math.max(1, Math.ceil(matched.length / pageSize));
+  /**
+   * **현재 쪽이 범위를 넘으면 마지막 쪽으로 당긴다.** 3쪽을 보다가 검색을 걸어
+   * 결과가 한 쪽으로 줄면 빈 표가 뜬다 — 그 자리에서 계산으로 막고, 상태를
+   * 고치는 것은 아래 effect 가 한다(렌더 중에 setState 하지 않는다).
+   */
+  const safePage = Math.min(page, pageCount);
+  const paged = useMemo(
+    () => matched.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [matched, safePage, pageSize],
+  );
+
+  /** 자리를 옮기거나 검색어가 바뀌면 첫 쪽으로. 보던 쪽 번호를 물고 가면 빈 표가 뜬다. */
+  useEffect(() => {
+    setPage(1);
+  }, [selection, query, pageSize]);
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+
   function countIn(folderId: string | null): number {
     return library.documents.filter((doc) => doc.team_folder_id === folderId).length;
   }
@@ -235,8 +289,12 @@ export default function DocumentsPage() {
     return selection.path ? `${name} / ${selection.path}` : name;
   }, [selection, library.folders]);
 
-  /** 이 자리에서 아직 검색에 못 쓰는 문서 수. 제목 옆 요약이 된다. */
-  const notReady = visibleDocuments.filter((doc) => !doc.search_ready).length;
+  /**
+   * 아직 검색에 못 쓰는 문서 수. **좁힌 결과를 센다** — 한 줄에 나란히 붙는
+   * 「15 / 45건」과 같은 모수를 봐야 한다. 전체를 세면 15건을 걸러 놓고
+   * 「검색 대기 2」가 따라붙어, 그 2건이 보이는 15건 안에 있는 줄로 읽힌다.
+   */
+  const notReady = matched.filter((doc) => !doc.search_ready).length;
 
   return (
     <AppShell>
@@ -406,9 +464,48 @@ export default function DocumentsPage() {
                 <div className={styles.panelHead}>
                   <h2 className={styles.panelTitle}>{heading}</h2>
                   <span className={styles.panelCount}>
-                    {visibleDocuments.length}건
+                    {/* 검색 중이면 「몇 중 몇」을 말한다 — 결과 수만 보이면
+                        사라진 문서가 지워진 것인지 걸러진 것인지 알 수 없다. */}
+                    {query.trim() ? `${matched.length} / ${visibleDocuments.length}건` : `${visibleDocuments.length}건`}
                     {notReady > 0 && <span className={styles.panelWarn}> · 검색 대기 {notReady}</span>}
                   </span>
+                </div>
+
+                <div className={styles.toolbar}>
+                  <div className={styles.searchBox}>
+                    <Icon name="search" size={15} color="var(--color-placeholder)" />
+                    <input
+                      type="text"
+                      className={styles.searchInput}
+                      placeholder="이 폴더에서 파일 이름 검색..."
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        className={styles.searchClear}
+                        onClick={() => setQuery('')}
+                        aria-label="검색어 지우기"
+                      >
+                        <Icon name="x" size={13} />
+                      </button>
+                    )}
+                  </div>
+                  <label className={styles.pageSize}>
+                    <span>쪽당</span>
+                    <select
+                      value={pageSize}
+                      onChange={(event) => setPageSize(Number(event.target.value))}
+                      aria-label="쪽당 표시 개수"
+                    >
+                      {PAGE_SIZES.map((size) => (
+                        <option key={size} value={size}>
+                          {size}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
                 {loading && <p className={styles.muted}>문서를 불러오는 중…</p>}
@@ -417,51 +514,111 @@ export default function DocumentsPage() {
                   <p className={styles.muted}>이 폴더에서 읽어 온 문서가 없습니다.</p>
                 )}
 
-                <div className={styles.list}>
-                  {visibleDocuments.map((doc) => {
-                    const chip = statusChip(doc);
-                    return (
-                      <div key={doc.doc_id} className={styles.row}>
-                        <span className={styles.rowIcon}>
-                          <Icon name="file-text" size={18} color="var(--color-primary)" />
-                        </span>
-                        <div className={styles.rowBody}>
-                          <span className={styles.rowName}>
-                            {doc.file_name ?? doc.doc_id}
+                {/* 검색으로 0건인 것과 폴더가 원래 빈 것은 다른 상태다. */}
+                {!loading && visibleDocuments.length > 0 && matched.length === 0 && (
+                  <p className={styles.muted}>검색 결과가 없습니다.</p>
+                )}
+
+                {matched.length > 0 && (
+                  <div className={styles.table}>
+                    {/* 헤더를 스크롤 컨테이너 **안에** 둔다. 밖에 두면 목록에
+                        스크롤바가 생길 때 행만 좁아져 열이 어긋난다
+                        (`ProjectDetailPage` 업무 목록과 같은 이유). */}
+                    <div className={styles.tableHead}>
+                      <span>문서</span>
+                      <span>위치</span>
+                      <span>상태</span>
+                      <span>수정</span>
+                      <span />
+                    </div>
+
+                    {paged.map((doc) => {
+                      const chip = statusChip(doc);
+                      return (
+                        <div key={doc.doc_id} className={styles.tableRow}>
+                          <span className={styles.cellName}>
+                            <Icon name="file-text" size={15} color="var(--color-primary)" />
+                            <span className={styles.cellNameText}>
+                              <span className={styles.fileName}>{doc.file_name ?? doc.doc_id}</span>
+                              {/* 실패 사유는 이름 아래에 붙인다. 열로 만들면 표가
+                                  못 읽을 만큼 좁아지고, 성공한 행은 그 열이 늘 빈다. */}
+                              {chip.hint && (
+                                <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
+                                  {chip.hint}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+
+                          {/* 하위 폴더에서 온 문서는 어디서 왔는지 밝힌다 —
+                              폴더를 고르면 아래 전부가 나오므로 필요하다. */}
+                          <span className={styles.cellPath} data-label="위치">
+                            {doc.src_folder_path ? doc.src_folder_path : <span className={styles.dim}>—</span>}
+                          </span>
+
+                          <span className={styles.cellStatus} data-label="상태">
                             <Badge tone={chip.tone}>{chip.label}</Badge>
                             {/* 기준 문서는 지우거나 바꿀 때 파장이 다르다. */}
                             {doc.doc_role === 'PRIMARY' && <Badge tone="info">기준 문서</Badge>}
                             {doc.access_revoked && <Badge tone="warning">접근 권한 없음</Badge>}
                           </span>
-                          {/* 하위 폴더에서 온 문서는 어디서 왔는지 밝힌다 —
-                              폴더를 고르면 아래 전부가 나오므로 필요하다. */}
-                          {selection?.kind === 'folder' && selection.path === null && doc.src_folder_path && (
-                            <span className={styles.rowMeta}>{doc.src_folder_path}</span>
-                          )}
-                          {chip.hint && (
-                            <span className={`${styles.rowMeta} ${styles.rowDetail}`} title={chip.hint}>
-                              {chip.hint}
-                            </span>
-                          )}
+
+                          <span className={styles.cellDate} data-label="수정">
+                            {formatDate(doc.src_modified_at)}
+                          </span>
+
+                          <span className={styles.cellActions}>
+                            {/* 원문이 없으면 색인이 시작조차 못 하므로 안 보여준다 —
+                                눌러도 서버가 409 로 막는 버튼을 둘 이유가 없다. */}
+                            {doc.downloaded && doc.index_status !== 'RUNNING' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy === doc.doc_id}
+                                onClick={() => void retry(doc)}
+                              >
+                                {doc.search_ready ? '다시 읽기' : '다시 시도'}
+                              </Button>
+                            )}
+                          </span>
                         </div>
-                        <div className={styles.rowActions}>
-                          {/* 원문이 없으면 색인이 시작조차 못 하므로 안 보여준다 —
-                              눌러도 서버가 409 로 막는 버튼을 둘 이유가 없다. */}
-                          {doc.downloaded && doc.index_status !== 'RUNNING' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={busy === doc.doc_id}
-                              onClick={() => void retry(doc)}
-                            >
-                              {doc.search_ready ? '다시 읽기' : '다시 시도'}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 한 쪽에 다 들어가면 안 그린다 — 누를 수 없는 컨트롤이 자리만
+                    차지한다. 몇 건 중 몇 번째를 보고 있는지 함께 말한다. */}
+                {pageCount > 1 && (
+                  <div className={styles.pager}>
+                    <span className={styles.pagerRange}>
+                      {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, matched.length)} / {matched.length}
+                    </span>
+                    <div className={styles.pagerButtons}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={safePage <= 1}
+                        onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        <Icon name="arrow-left" size={14} />
+                        이전
+                      </Button>
+                      <span className={styles.pagerPage}>
+                        {safePage} / {pageCount}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={safePage >= pageCount}
+                        onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+                      >
+                        다음
+                        <Icon name="arrow-right" size={14} />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </section>
