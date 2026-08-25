@@ -60,6 +60,11 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "shared_team_id", "2026-08-18 개인 문서 팀 공유"),
     ("doc", "index_status", "2026-08-18 색인 상태"),
     ("doc", "index_detail", "2026-08-24 색인 실패 사유"),
+    # **이 둘은 빠지면 수집이 통째로 멈춘다.** 「문서」 화면이 읽기만 하는 것이
+    # 아니라 `add_drive_documents` 의 INSERT 가 두 칸을 함께 넣는다 — 컬럼이
+    # 없으면 새 문서 등록이 전부 실패한다.
+    ("doc", "team_folder_id", "2026-08-25 문서의 출처 폴더(「문서」 화면 트리)"),
+    ("doc", "src_folder_path", "2026-08-25 뿌리 폴더 안에서의 상대 경로"),
     ("connector_conn", "sync_cursor", "2026-08-24 증분 동기화 커서"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
