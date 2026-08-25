@@ -178,11 +178,6 @@ def extract_density_items(result, output_path: str | Path | None = None) -> list
     return items
 
 
-def load_density_items(path: str | Path) -> list[dict]:
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
 # ---------------------------------------------------------------------------
 # 밀도 피처 계산 — result 없이, 저장된 items만으로도 반복 가능한 순수 계산.
 # ---------------------------------------------------------------------------

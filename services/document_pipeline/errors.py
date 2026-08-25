@@ -8,11 +8,3 @@ class PipelineConfigurationError(DocumentPipelineError):
 
 class RunPodRequestError(DocumentPipelineError):
     pass
-
-
-class RunPodResultError(DocumentPipelineError):
-    pass
-
-
-class DocumentNotReadyError(DocumentPipelineError):
-    pass

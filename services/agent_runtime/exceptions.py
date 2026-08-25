@@ -75,10 +75,6 @@ class AgentBuildError(AgentRuntimeError):
     """Loader 또는 Factory에서 예상하지 못한 오류가 발생했을 때."""
 
 
-class AgentExecutionError(AgentRuntimeError):
-    """stream 시작 후 실행이 실패했을 때."""
-
-
 # Stream 시작 전 예외를 HTTP 상태 코드로 변환한다.
 # 실행 중 오류는 terminal error 이벤트로 반환하므로 여기 포함하지 않는다.
 HTTP_STATUS_BY_EXCEPTION: dict[type[AgentRuntimeError], int] = {
