@@ -7,6 +7,7 @@ Mock으로 먼저 진행). compat.create_root_graph/create_child_graph는 patch�
 RuntimeCapabilityPolicy·MiddlewareFactory·validate_subagents는 실물을 그대로 쓴다.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -85,6 +86,28 @@ class _FakeToolLoader:
     def load(self, *, tool_refs, context, agent_model=None):
         self.load_calls.append({"tool_refs": tool_refs, "context": context, "agent_model": agent_model})
         return _fake_tools()
+
+
+class _SkillToolLoader(_FakeToolLoader):
+    def load(self, *, tool_refs, context, agent_model=None):
+        self.load_calls.append(
+            {"tool_refs": tool_refs, "context": context, "agent_model": agent_model}
+        )
+        return (
+            *_fake_tools(),
+            Tool(
+                ref="skill_register",
+                name="skill_register",
+                description="스킬을 등록한다.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"scope": {"type": "string", "enum": ["PERSONAL", "TEAM"]}},
+                    "required": ["scope"],
+                },
+                handler=lambda **kwargs: "registered",
+                side_effect=True,
+            ),
+        )
 
 
 class _FakeCheckpointerProvider:
@@ -1490,3 +1513,54 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         interrupt_on = mock_create_root.call_args.kwargs["interrupt_on"]
         self.assertIsNotNone(interrupt_on)
         self.assertIn("task_register", interrupt_on)
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_member_team_skill_registration_skips_confirmation_but_personal_still_requires_it(
+        self, mock_create_root
+    ):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(
+            checkpointer_provider=_FakeCheckpointerProvider(),
+            tool_loader=_SkillToolLoader(),
+        )
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
+
+        factory.build(definition=_definition(), context=context)
+
+        config = mock_create_root.call_args.kwargs["interrupt_on"]["skill_register"]
+        def request(scope):
+            return SimpleNamespace(tool_call={"args": {"scope": scope}})
+
+        self.assertFalse(config["when"](request("TEAM")))
+        self.assertTrue(config["when"](request("PERSONAL")))
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_leader_team_skill_registration_still_requires_confirmation(self, mock_create_root):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(
+            checkpointer_provider=_FakeCheckpointerProvider(),
+            tool_loader=_SkillToolLoader(),
+        )
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        config = mock_create_root.call_args.kwargs["interrupt_on"]["skill_register"]
+        request = SimpleNamespace(tool_call={"args": {"scope": "TEAM"}})
+        self.assertTrue(config["when"](request))
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_member_skill_register_description_exposes_current_role_and_team_restriction(
+        self, mock_create_root
+    ):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(tool_loader=_SkillToolLoader())
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
+
+        factory.build(definition=_definition(), context=context)
+
+        skill_tool = next(
+            tool for tool in mock_create_root.call_args.kwargs["tools"] if tool.name == "skill_register"
+        )
+        self.assertIn("현재 요청자 역할은 'member'", skill_tool.description)
+        self.assertIn("TEAM 범위로 호출하지 마세요", skill_tool.description)

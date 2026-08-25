@@ -64,6 +64,24 @@ class DependencyGraphSource:
 # `tool_input` 복사본에 이 키를 얹으면, `_to_args_and_kwargs()`가 dict를 그대로
 # kwargs화하면서 `_run()`까지 살아남는다.
 _TOOL_CALL_ID_KWARG = "__langchain_tool_call_id__"
+_SKILL_REGISTER_REF = "skill_register"
+
+
+def _tool_description_for_context(tool: Tool, *, context: RuntimeContext) -> str:
+    if tool.ref != _SKILL_REGISTER_REF:
+        return tool.description
+    if context.role == "leader":
+        role_rule = "PERSONAL과 TEAM 범위 등록을 요청할 수 있습니다."
+    else:
+        role_rule = "PERSONAL 범위만 등록할 수 있으므로 TEAM 범위로 호출하지 마세요."
+    return f"{tool.description}\n\n현재 요청자 역할은 '{context.role}'입니다. {role_rule}"
+
+
+def _skill_register_requires_confirmation(request: Any, *, account_role: str) -> bool:
+    tool_call = getattr(request, "tool_call", {}) or {}
+    arguments = tool_call.get("args") or {}
+    scope = str(arguments.get("scope") or "").upper()
+    return not (account_role != "leader" and scope == "TEAM")
 
 
 class _IdempotencyAwareTool(StructuredTool):
@@ -256,7 +274,7 @@ def _to_langchain_tool(
         # tool_ref를 다시 읽을 때 쓴다 — 없으면 실행 로그에 `mcp__MT001`처럼
         # 망가진 값이 남는다.
         name=model_safe_tool_name(tool.ref),
-        description=tool.description,
+        description=_tool_description_for_context(tool, context=context),
         args_schema=tool.input_schema,
         infer_schema=False,
     )
@@ -382,18 +400,24 @@ class AgentRuntimeFactory:
                 context=context,
                 stale_after_seconds=GUNICORN_WORKER_TIMEOUT_SECONDS,
             )
-            side_effect_tools: dict[str, Any] = {
-                model_safe_tool_name(t.ref): (
-                    {
+            side_effect_tools: dict[str, Any] = {}
+            for tool in tools:
+                if not tool.side_effect or not allowed_side_effect:
+                    continue
+                confirmation: Any = True
+                if tool.ref.startswith(MCP_TOOL_REF_PREFIX):
+                    confirmation = {
                         "allowed_decisions": ["approve", "edit", "reject", "respond"],
                         "description": describe,
                     }
-                    if t.ref.startswith(MCP_TOOL_REF_PREFIX)
-                    else True
-                )
-                for t in tools
-                if t.side_effect and allowed_side_effect
-            }
+                elif tool.ref == _SKILL_REGISTER_REF:
+                    confirmation = {
+                        "allowed_decisions": ["approve", "edit", "reject", "respond"],
+                        "when": lambda request, role=context.role: _skill_register_requires_confirmation(
+                            request, account_role=role
+                        ),
+                    }
+                side_effect_tools[model_safe_tool_name(tool.ref)] = confirmation
             if side_effect_tools:
                 interrupt_on = side_effect_tools
 
