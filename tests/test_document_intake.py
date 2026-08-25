@@ -18,6 +18,7 @@ from services.document_intake.service import (
     _index_all,
     _refetch_changed,
     _worker_failure_detail,
+    intake_connector_documents,
     promote_to_searchable,
     sync_drive_changes,
 )
@@ -433,3 +434,72 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         saved = personal_repo.set_index_status.call_args.kwargs
         self.assertEqual(saved["status"], "FAILED")
         self.assertEqual(saved["detail"], "표 #/tables/14의 셀 구조가 비어 있습니다.")
+
+    def test_적재가_거절돼도_읽는_중에_갇히지_않는다(
+        self, pipeline_repo, submit, status, url, personal_repo
+    ):
+        """워커는 성공했는데 `ingest` 가 결과를 거절한 경우.
+
+        `ingest` 는 결과가 우리 기록과 안 맞으면 일부러 `ValueError` 를 낸다.
+        그것이 그냥 올라가 버리면 `_done` 이 안 불려 문서가 `RUNNING` 에 갇히고
+        화면은 영원히 「읽는 중」이다 — 2026-08-25 에 DC001 로 실제로 밟았다.
+        """
+
+        pipeline_repo.get_for_processing.return_value = {
+            "storage_key": "k", "cur_revision": "r", "mime_type": "application/pdf",
+        }
+        status.return_value = {"status": "COMPLETED", "output": {"chunks": [1]}}
+        pipeline_repo.ingest.side_effect = ValueError(
+            "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
+        )
+
+        outcome = promote_to_searchable(account_id="UA002", doc_id="DC001")
+
+        self.assertFalse(outcome["ok"])
+        saved = personal_repo.set_index_status.call_args.kwargs
+        self.assertEqual(saved["status"], "FAILED")
+        self.assertEqual(
+            saved["detail"], "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
+        )
+
+
+@patch("services.document_intake.service._index_all")
+@patch("services.document_intake.service._refetch_changed")
+@patch("services.document_intake.service._fetch_originals")
+@patch("services.document_intake.service.DocumentRepository")
+@patch("services.document_intake.service.AccountRepository")
+@patch("services.document_intake.service.TeamFolderRepository")
+@patch("services.document_intake.service.list_drive_files")
+class ScanDepthTests(SimpleTestCase):
+    """폴더 스캔 깊이가 **사람이 고른 값 그대로**인지 본다.
+
+    `max_depth` 의 규약은 저장소·API·화면이 모두 같다 — **`NULL`(`None`)이
+    제한 없음**이다(`clients.list_drive_files`, `_parse_depth`, DriveFolderModal
+    의 「제한 없음」). 수집만 `or 1` 로 접고 있어서 「제한 없음」으로 저장한 폴더가
+    선택한 폴더 한 겹만 훑었다.
+
+    **오류가 나지 않는 것이 이 결함의 성질이다.** 폴더 고르는 화면은
+    `depth=unlimited` 로 물어 하위 파일을 보여 주므로 사람은 붙었다고 믿는데,
+    수집은 0건으로 끝나고 아무 데도 그 말이 남지 않는다. 2026-08-25 실서버에서
+    평가 문서 8종이 이렇게 통째로 안 들어왔다.
+    """
+
+    def _run(self, list_files, folders, account, documents, max_depth):
+        folders.list_for_team.return_value = [
+            {"external_folder_id": "FOLDER-1", "max_depth": max_depth}
+        ]
+        account.team_id.return_value = "TE001"
+        documents.registered_file_ids.return_value = set()
+        list_files.return_value = []
+        intake_connector_documents(account_id="UA001")
+        return list_files.call_args.kwargs["max_depth"]
+
+    def test_제한_없음이면_제한_없이_훑는다(
+        self, list_files, folders, account, documents, *_
+    ):
+        depth = self._run(list_files, folders, account, documents, None)
+        self.assertIsNone(depth, "None 을 1 로 접으면 하위 폴더의 문서가 영영 안 들어온다")
+
+    def test_고른_깊이는_그대로_쓴다(self, list_files, folders, account, documents, *_):
+        depth = self._run(list_files, folders, account, documents, 3)
+        self.assertEqual(depth, 3)

@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import environ
 
@@ -11,6 +12,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="unsafe-development-only-key")
 DEBUG = env("DEBUG")
+# 아래 PUBLIC_BACKEND_BASE_URL 쪽에서 터널 호스트가 하나 더 붙는다.
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
@@ -121,6 +123,16 @@ RUNTIME_PROFILE_VERSION = env("RUNTIME_PROFILE_VERSION", default="") or None
 RUNPOD_API_KEY = env("RUNPOD_API_KEY", default="")
 RUNPOD_ENDPOINT_ID = env("RUNPOD_ENDPOINT_ID", default="")
 PUBLIC_BACKEND_BASE_URL = env("PUBLIC_BACKEND_BASE_URL", default="")
+# **이 호스트는 ALLOWED_HOSTS 에 저절로 들어간다.** 손으로 두 군데를 맞추게 두면
+# 어긋나고, 어긋나면 Django 가 DisallowedHost 로 400 을 준다 — RunPod 워커는 그
+# 400 을 원문 다운로드 실패로 받는다(2026-08-25 콘솔 로그 10건). Quick Tunnel 은
+# 띄울 때마다 주소가 바뀌므로 고칠 곳이 둘이면 반드시 한쪽을 잊는다.
+#
+# 신뢰를 넓히는 것이 아니다 — 이 값은 운영자가 「이 주소로 외부에 연다」고 직접
+# 적어 넣은 바로 그 호스트다.
+_public_backend_host = urlsplit(PUBLIC_BACKEND_BASE_URL).hostname
+if _public_backend_host and _public_backend_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_public_backend_host)
 RUNPOD_JOB_TTL_MS = env.int("RUNPOD_JOB_TTL_MS", default=3_600_000)
 RUNPOD_EXECUTION_TIMEOUT_MS = env.int(
     "RUNPOD_EXECUTION_TIMEOUT_MS", default=1_800_000

@@ -1508,9 +1508,9 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 #: `agent_version_tools` 저장 여부와 무관하게 넣고, 선택 화면
 #: (`apps/agents/serializers.py`의 `builtin_tool_response()`)에서도 뺀다 —
 #: 고를 필요 없는 항목이 선택 목록에 남아 있으면 "이건 꺼도 되나?"라는
-#: 오해를 만든다. `apps/agents/api_views.py`의 `_split()`도 이 집합을 써서,
-#: 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도 다음 저장에서
-#: 조용히 걸러낸다.
+#: 오해를 만든다. 예전에 이 도구를 선택해 저장해 둔 에이전트가 있어도
+#: 막히지 않는다 — `api_views.py`의 `_tool_catalog()`가 검증 카탈로그에는
+#: 이 도구를 넣어 둔다(고르는 화면은 좁게, 검증은 넉넉하게).
 #: 2026-08-24 — `skill_creator_ask_followup`도 같은 이유로 항상 켠다. 이
 #: 도구 혼자서는 아무 것도 못 하고(스킬을 실제로 저장하는 건 여전히
 #: `skill_register`), 새 스킬을 만드는 대화 흐름 전체가 이 도구를 쓸 수
@@ -1518,53 +1518,22 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 #: 중간에 되물을 방법이 없어 그 자리에서 막힌다.
 ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register", "skill_creator_ask_followup"})
 
+# 레거시 A2A 섹션(`agent:` 위임 도구, `load_for_agent`/`load_for_refs`/`resolve`)과
+# MCP 도구 팩토리(`_mcp_tool()`)가 여기 있었다. A2A 는 2026-08-22에, `_mcp_tool()`
+# 은 2026-08-25에 걷어냈다 — 둘 다 마지막 호출자가 없어진 뒤였다.
+#
+# 위임은 새 엔진의 `agent_version_subagents`/`SubagentReference`가 완전히 다른
+# 메커니즘으로 대체한다(services/agent_runtime/subagents/). MCP 도구 조립은
+# `services/agent_runtime/tools/adapters.py`의 `adapt_mcp_tools()`가 맡는다 —
+# "MCP 도구는 부작용이 있다고 본다"(list_tools 응답에 읽기/쓰기 구분이 없으므로
+# 안전한 쪽으로 가정)는 판단도 그쪽으로 옮겨 갔다. `ALWAYS_ON_TOOL_REFS`가 하던
+# "항상 켜진 도구" 역할은 `services/agent_runtime/tools/loader.py`의
+# `ToolLoader.load()`로 옮겼다.
+
+
 
 # ---------------------------------------------------------------------------
 # 에이전트별 조립
 # ---------------------------------------------------------------------------
 
 
-def _mcp_tool(row: dict[str, Any]) -> Tool:
-    """MCP 도구는 **부작용이 있다고 본다.**
-
-    list_tools 응답에는 그 도구가 읽기만 하는지 쓰는지를 말해 주는 필드가 없다.
-    모르는 것을 안전한 쪽으로 가정한다 — 읽기 전용 도구가 확인을 한 번 더 받는
-    것은 성가신 정도지만, 쓰기 도구가 승인 없이 도는 것은 남의 Jira 에 이슈를
-    만든다. 단계 6 에서 서버별로 표시할 수 있게 되면 그때 좁힌다.
-    """
-
-    tool_ref = row["tool_ref"]
-
-    def handler(*, team_id: str, **arguments: Any) -> dict[str, Any]:
-        """호출 직전에 서버·토큰을 다시 읽는다.
-
-        Registry 를 만들 때 토큰을 들고 있지 않는 이유는, 그 값이 Tool 객체와
-        함께 Loop 안을 돌아다니게 되기 때문이다 — 예외 문자열이나 디버그 출력에
-        섞여 나갈 자리가 그만큼 늘어난다. 쓰기 직전에만 꺼낸다(§4-2).
-        """
-
-        server = McpServerRepository.credentials_for_tool(tool_ref, team_id=team_id)
-        return mcp_client.call_tool(
-            endpoint_url=server["endpoint_url"],
-            auth_token=server["auth_token"],
-            name=server["tool_name"],
-            arguments=arguments,
-        )
-
-    return Tool(
-        ref=tool_ref,
-        name=row["name"],
-        description=row.get("description") or "",
-        input_schema=row.get("input_schema") or {"type": "object", "properties": {}},
-        handler=handler,
-        side_effect=True,
-    )
-
-
-# 레거시 A2A 섹션(`agent:` 위임 도구, `load_for_agent`/`load_for_refs`/`resolve`)이
-# 여기 있었다. 2026-08-22에 레거시 harness 실행기(`runner.run_agent()`)를
-# 지우면서 마지막 호출자가 없어졌다 — 위임은 이제 새 엔진의
-# `agent_version_subagents`/`SubagentReference`가 완전히 다른 메커니즘으로
-# 대체한다(services/agent_runtime/subagents/). `ALWAYS_ON_TOOL_REFS`가 하던
-# "항상 켜진 도구" 역할은 `services/agent_runtime/tools/loader.py`의
-# `ToolLoader.load()`로 옮겼다.

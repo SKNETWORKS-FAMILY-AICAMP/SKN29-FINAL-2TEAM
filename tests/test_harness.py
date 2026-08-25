@@ -5,8 +5,7 @@
 같이 지웠다 — 챗 실행 검증은 `tests/test_chat.py`(API 경계)와
 `tests/test_executor.py`·`tests/test_factory.py`(새 엔진)가 맡는다.
 
-남은 것은 **엔진이 바뀌어도 그대로인 조각들**이다: 공통 스캐폴드 문구,
-입력 요약, 내장 도구가 등록 직전에 거르는 날짜, 그리고 어느 엔진에서도
+남은 것은 **엔진이 바뀌어도 그대로인 조각들**이다: 입력 요약, 내장 도구가 등록 직전에 거르는 날짜, 그리고 어느 엔진에서도
 그대로 쓰이는 `_skill_register()` 핸들러.
 """
 
@@ -15,33 +14,8 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 from langgraph.store.memory import InMemoryStore
 
-from services.harness import registry, scaffold, trace
+from services.harness import registry, trace
 from services.harness.registry import ToolInputError
-
-
-class ScaffoldTests(SimpleTestCase):
-    def test_공통_스캐폴드가_지켜야_할_것을_말한다(self):
-        text = scaffold.compose(instruction="", max_iterations=10)
-
-        self.assertIn("10회", text)
-        self.assertIn("추측하지 않는다", text)
-        # 매 답변 앞에 "계획:"이 붙던 것을 막는다(2026-08-11).
-        self.assertIn("계획을 먼저 늘어놓지 않는다", text)
-        # 도구가 없는 능력(번역·코딩 등)을 나열하던 것을 막는다.
-        self.assertIn("가진 도구가 네가 할 수 있는 일", text)
-
-    def test_에이전트_지시는_스캐폴드_뒤에_붙는다(self):
-        """순서가 바뀌면 '추측 금지'가 개별 지시를 덮어쓴다."""
-
-        text = scaffold.compose(instruction="표만 읽어라", max_iterations=3)
-
-        self.assertLess(text.index("추측하지 않는다"), text.index("표만 읽어라"))
-
-    def test_지시가_비어도_스캐폴드는_나온다(self):
-        text = scaffold.compose(instruction="   ", max_iterations=5)
-
-        self.assertIn("추측하지 않는다", text)
-        self.assertNotIn("[이 에이전트의 지시]", text)
 
 
 class InputSummaryTests(SimpleTestCase):

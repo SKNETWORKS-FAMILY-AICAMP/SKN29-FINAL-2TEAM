@@ -186,7 +186,7 @@ class RootRunLifecycleTests(SimpleTestCase):
 
     def test_agent_started_without_agent_id_is_not_logged(self, runs, calls):
         """agent_id 없는 draft 시험 실행 — agent_run.agent_id는 NOT NULL이라
-        기록하지 않는다(harness run_ephemeral()과 같은 이유)."""
+        기록하지 않는다(빌더 시험 실행이 평가 모수를 흔들면 안 된다)."""
         events = [_agent_started(agent_id=None), _result()]
 
         list(trace_events(iter(events), context=_context()))

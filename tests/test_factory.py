@@ -3,7 +3,7 @@
 model_config_resolver/model_factory/tool_loader는 Fake로 주입한다(02 §17.3 —
 Mock으로 먼저 진행). compat.create_root_graph/create_child_graph는 patch해서
 "Factory가 무엇을 넘기는가"만 검증한다 — deepagents가 그 인자로 실제 그래프를
-잘 만드는지는 test_deepagents_compat.py/runtime_skeleton.py의 몫이다.
+잘 만드는지는 test_deepagents_compat.py의 몫이다.
 RuntimeCapabilityPolicy·MiddlewareFactory·validate_subagents는 실물을 그대로 쓴다.
 """
 

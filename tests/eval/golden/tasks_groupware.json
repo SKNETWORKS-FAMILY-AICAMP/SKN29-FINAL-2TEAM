@@ -1,0 +1,173 @@
+{
+  "_설명": "프로젝트 B 의 정답지. 본선은 프로젝트 A(tasks.json)이고 B 는 **격리 시험용**이다 — 문서 풀은 팀 소속이므로, 프로젝트를 둘로 두어야 「A 의 대화에 B 의 문서가 근거로 섞이는가」를 볼 수 있다. 2026-08-12 에 실제로 났던 「무관한 문서 매칭」이 이 형태다. B 의 기준 문서는 A 의 디스트랙터를 겸한다 — 두껍고 어휘가 겹칠수록 근거 잠식을 잘 잡는다.",
+  "project": "2027년도 사내 그룹웨어 유지보수 용역",
+  "primary_document": "한빛리테일_사내그룹웨어_유지보수_과업지시서.pdf",
+  "sub_documents": [
+    "한빛리테일_사내그룹웨어_SLA_부속합의서.pdf",
+    "한빛리테일_사내그룹웨어_개선요청_접수내역.pdf"
+  ],
+  "cross_project_documents": {
+    "project": "한빛몰 주문·정산 시스템 고도화 구축",
+    "documents": [
+      "한빛몰_주문정산_고도화_과업지시서.pdf",
+      "한빛몰_주문정산_요구사항정의서.pdf",
+      "한빛몰_주문정산_투입인력_운영계획서.pdf",
+      "한빛몰_주문정산_WBS_마일스톤.pdf",
+      "한빛몰_주문정산_기술검토회의록.pdf"
+    ]
+  },
+  "expected_task_count": 6,
+  "_우선순위_주의": "B 의 문서에는 과업 우선순위가 어디에도 없다. 6건 전건에서 priority 가 missing_fields 로 나와야 하며, 값이 채워져 나오면 지어낸 것이다.",
+
+  "tasks": [
+    {
+      "id": "G1",
+      "title": "장애 대응",
+      "source": { "document": "그룹웨어 과업지시서", "section": "3.1" },
+      "expected": {
+        "required_role": { "value": "애플리케이션 담당 (1등급은 유지보수 총괄 포함)", "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "required_skills": { "value": ["Java 8", "JSP", "G-Office 커스터마이징"], "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "effort_hours": { "value": 1080, "source": { "document": "그룹웨어 과업지시서", "section": "7 (연간 계획 공수)" } },
+        "start_date": { "value": null, "source": { "document": "그룹웨어 과업지시서", "section": "7 (상시·연중)" } },
+        "due_date": { "value": null, "source": { "document": "그룹웨어 과업지시서", "section": "7 (상시·연중)" } },
+        "priority": { "value": null, "source": null },
+        "dependencies": { "value": [], "source": null },
+        "acceptance_criteria": {
+          "value": [
+            "1등급 착수 15분 이내 95%",
+            "1등급 복구 2시간 이내 90%",
+            "월 가용성 99.5% 이상",
+            "중대 장애 원인 분석서를 복구 후 5영업일 이내 제출"
+          ],
+          "source": { "document": "SLA 부속합의서 3 / 그룹웨어 과업지시서 5" }
+        },
+        "constraints": {
+          "value": ["운영 서버 작업은 19시 이후 또는 주말", "휴일은 1등급만 2시간 이내 착수"],
+          "source": { "document": "그룹웨어 과업지시서 8 / SLA 부속합의서 2" }
+        },
+        "risks": { "value": [], "source": null }
+      },
+      "missing_fields_expected": ["priority", "start_date", "due_date"]
+    },
+    {
+      "id": "G2",
+      "title": "법규 변경 반영",
+      "source": { "document": "그룹웨어 과업지시서", "section": "3.2" },
+      "expected": {
+        "required_role": { "value": "애플리케이션 담당 (인사팀 협의는 유지보수 총괄)", "source": { "document": "그룹웨어 과업지시서 6 / 개선요청 접수내역 4" } },
+        "required_skills": { "value": ["Java 8", "JSP", "G-Office 커스터마이징"], "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "effort_hours": {
+          "value": 240,
+          "source": { "document": "그룹웨어 과업지시서", "section": "7" },
+          "also_acceptable": "48 (개선요청 접수내역 2 의 I-2027-02 한 건만 집계한 값)"
+        },
+        "due_date": { "value": "2027-01", "source": { "document": "그룹웨어 과업지시서", "section": "7.1" } },
+        "priority": { "value": null, "source": null },
+        "dependencies": { "value": [], "source": null },
+        "acceptance_criteria": {
+          "value": ["개정 시행일 전 반영 완료", "반영 전후 근태 집계 결과 비교 검증"],
+          "source": { "document": "그룹웨어 과업지시서 3.2 / 4" }
+        },
+        "constraints": { "value": ["인사시스템 연동 규격 변경은 담당 사업자와 협의 후 반영"], "source": { "document": "그룹웨어 과업지시서", "section": "8" } },
+        "risks": { "value": [], "source": null }
+      },
+      "missing_fields_expected": ["priority"]
+    },
+    {
+      "id": "G3",
+      "title": "경미 개선 (월 40인시 한도)",
+      "source": { "document": "그룹웨어 과업지시서", "section": "3.3" },
+      "expected": {
+        "required_role": { "value": "애플리케이션 담당", "source": { "document": "그룹웨어 과업지시서 6 / 개선요청 접수내역 4" } },
+        "effort_hours": { "value": 480, "source": { "document": "그룹웨어 과업지시서", "section": "7 (월 40인시 × 12)" } },
+        "due_date": { "value": "2027-06", "source": { "document": "그룹웨어 과업지시서", "section": "7.1 (우선 반영 4건)" } },
+        "priority": { "value": null, "source": null },
+        "dependencies": { "value": [], "source": null },
+        "acceptance_criteria": { "value": ["경미 개선 접수 후 10영업일 이내 처리 80%"], "source": { "document": "SLA 부속합의서", "section": "3" } },
+        "constraints": {
+          "value": ["40인시 초과 요청은 별도 계약", "상용 라이선스 범위 밖 소스 수정 불가"],
+          "source": { "document": "그룹웨어 과업지시서", "section": "3.3 / 8" }
+        },
+        "risks": { "value": ["G-R-03 경미 개선 요청이 월 40인시를 상시 초과"], "source": { "document": "그룹웨어 과업지시서", "section": "9" } },
+        "deliverables": { "value": ["I-2027-01 ~ I-2027-04 처리"], "source": { "document": "개선요청 접수내역", "section": "2" } }
+      },
+      "missing_fields_expected": ["priority"]
+    },
+    {
+      "id": "G4",
+      "title": "정기 점검 및 예방 조치",
+      "source": { "document": "그룹웨어 과업지시서", "section": "3.4" },
+      "expected": {
+        "required_role": { "value": "DB·인프라 담당", "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "required_skills": { "value": ["MS SQL Server", "Windows Server", "백업·복구"], "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "effort_hours": { "value": 360, "source": { "document": "그룹웨어 과업지시서", "section": "7" } },
+        "priority": { "value": null, "source": null },
+        "dependencies": { "value": [], "source": null },
+        "acceptance_criteria": {
+          "value": ["정기 점검 수행률 100%", "긴급 보안 패치는 1영업일 이내 적용"],
+          "source": { "document": "SLA 부속합의서 3 / 그룹웨어 과업지시서 3.4" }
+        },
+        "constraints": { "value": ["계획 정지는 월 1회, 셋째 주 토요일 22시부터 4시간 이내"], "source": { "document": "SLA 부속합의서", "section": "5" } },
+        "risks": { "value": ["G-R-02 MS SQL Server 2016 연장 지원 2027년 7월 종료"], "source": { "document": "그룹웨어 과업지시서", "section": "9" } }
+      },
+      "missing_fields_expected": ["priority"]
+    },
+    {
+      "id": "G5",
+      "title": "백업 및 재해 복구 훈련 지원",
+      "source": { "document": "그룹웨어 과업지시서", "section": "3.5" },
+      "expected": {
+        "required_role": { "value": "DB·인프라 담당", "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "required_skills": { "value": ["MS SQL Server", "Windows Server", "백업·복구"], "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "effort_hours": { "value": 80, "source": { "document": "그룹웨어 과업지시서", "section": "7" } },
+        "due_date": { "value": "2027-09", "source": { "document": "그룹웨어 과업지시서", "section": "7.1" } },
+        "priority": { "value": null, "source": null },
+        "dependencies": { "value": [], "source": null },
+        "acceptance_criteria": { "value": ["목표 복구 시간 4시간 이내 달성"], "source": { "document": "그룹웨어 과업지시서", "section": "3.5 / 5" } },
+        "constraints": { "value": ["훈련은 별도 환경에서 전체 복구로 수행"], "source": { "document": "그룹웨어 과업지시서", "section": "9 (G-R-04 대응)" } },
+        "risks": { "value": ["G-R-04 복구를 해 본 적이 없어 백업본의 유효성을 모른다"], "source": { "document": "그룹웨어 과업지시서", "section": "9" } },
+        "deliverables": { "value": ["복구 절차서", "재해 복구 훈련 결과 보고서"], "source": { "document": "그룹웨어 과업지시서", "section": "5" } }
+      },
+      "missing_fields_expected": ["priority"]
+    },
+    {
+      "id": "G6",
+      "title": "상위 버전 전환 사전 검토",
+      "source": { "document": "그룹웨어 과업지시서", "section": "3.6" },
+      "expected": {
+        "required_role": { "value": "유지보수 총괄", "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "required_skills": { "value": ["그룹웨어 운영 3년 이상", "서비스 수준 관리"], "source": { "document": "그룹웨어 과업지시서", "section": "6" } },
+        "effort_hours": { "value": null, "source": { "document": "그룹웨어 과업지시서", "section": "7 (미정 — 검토 대상 제품 미확정)" } },
+        "due_date": { "value": "2027-10", "source": { "document": "그룹웨어 과업지시서", "section": "7.1" } },
+        "priority": { "value": null, "source": null },
+        "dependencies": { "value": [], "source": null },
+        "acceptance_criteria": { "value": ["정보전략팀 검토 회의 승인"], "source": { "document": "그룹웨어 과업지시서", "section": "5" } },
+        "constraints": { "value": ["전환 자체는 범위가 아니다 — 검토와 제안까지"], "source": { "document": "그룹웨어 과업지시서", "section": "3.6" } },
+        "risks": { "value": ["G-R-01 G-Office 4.2 2028년 지원 종료"], "source": { "document": "그룹웨어 과업지시서", "section": "9" } },
+        "deliverables": { "value": ["상위 버전 전환 검토 제안서"], "source": { "document": "그룹웨어 과업지시서", "section": "5" } }
+      },
+      "missing_fields_expected": ["effort_hours", "priority"]
+    }
+  ],
+
+  "negative_tasks": {
+    "_설명": "B 에서 업무로 뽑으면 오답.",
+    "사업관리_절차": [
+      { "항목": "월간 보고회 개최", "출처": "그룹웨어 과업지시서 10" },
+      { "항목": "투입 인력 교체 사전 통보", "출처": "그룹웨어 과업지시서 10" },
+      { "항목": "보안서약서 제출", "출처": "그룹웨어 과업지시서 10" },
+      { "항목": "월간·분기·연간 산출물 제출", "출처": "그룹웨어 과업지시서 5" }
+    ],
+    "다른_사업": [
+      { "항목": "정산 엔진 개발, 결제 이중화 등 한빛몰 과업 전건", "출처": "한빛몰 과업지시서 3.1~3.8" }
+    ],
+    "반영하지_않기로_한_것": [
+      { "항목": "모바일 전용 앱 신규 개발", "출처": "개선요청 접수내역 3" },
+      { "항목": "결재선 자동 추천", "출처": "개선요청 접수내역 3" },
+      { "항목": "타 그룹웨어로의 데이터 이전", "출처": "개선요청 접수내역 3" }
+    ],
+    "범위_밖": [
+      { "항목": "G-Office 상위 버전으로의 실제 전환 수행", "출처": "그룹웨어 과업지시서 3.6 — 검토·제안까지가 범위다" }
+    ]
+  }
+}
