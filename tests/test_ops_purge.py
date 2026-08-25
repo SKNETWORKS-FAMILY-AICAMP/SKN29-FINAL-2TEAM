@@ -216,3 +216,164 @@ class PurgeStepShapeTests(SimpleTestCase):
                     sql,
                     f"{label}: thread_id(text) 와 session_id(uuid) 를 그냥 비교할 수 없다",
                 )
+
+
+class 삭제_대상_누락_검사(SimpleTestCase):
+    """`team_id`/`account_id` 를 든 테이블이 삭제 표에서 빠지지 않았는지 본다.
+
+    **이 저장소에는 외래키가 하나도 없어서 CASCADE 가 없다.** 테이블을 더할 때마다
+    세 곳(`_TEAM_PURGE_STEPS` · `_ACCOUNT_PURGE_STEPS` · `DB/reset_demo.sql`)에
+    손으로 줄을 더해야 하는데, **실제로 두 번 빠뜨렸다** —
+
+    - 2026-08-12: `reset_demo.sql` 에 Agent Platform 계열이 통째로 없었다.
+      짧은 코드가 001 부터 다시 나가는 탓에 **새 팀이 옛 TE001 의 행을 물려받았다.**
+    - 2026-08-25: 그 뒤 늘어난 `guardrail_provider`(team_id NOT NULL)·`mcp_call_note`
+      가 `_TEAM_PURGE_STEPS` 에서, 넷이 `reset_demo.sql` 에서 빠져 있었다.
+
+    사람이 기억해서 막을 수 없다는 것이 두 번으로 증명됐으므로 기계가 본다.
+    스키마 파일을 읽어 대조하므로 DB 가 필요 없다.
+    """
+
+    #: 일부러 안 지우는 것. 지우지 않는 **이유**가 있어야 여기 들어온다.
+    TEAM_KEEP = {
+        "user_account",  # 팀만 없애고 사람은 무소속으로 남긴다(PM 결정 2026-08-19)
+        "audit_log",     # 대상이 사라져도 「누가 무엇을 했는가」가 남는 것이 감사다
+        "team",          # 표의 마지막 단계에서 지운다
+    }
+    ACCOUNT_KEEP = {
+        "audit_log",
+        "user_account",  # 표의 마지막 단계에서 지운다
+    }
+    #: `reset_demo.sql` 이 일부러 남기는 것 — 테넌트 데이터가 아니라 플랫폼 설정이다.
+    RESET_KEEP = {"sys_setting", "sys_notice"}
+
+    @staticmethod
+    def _schema():
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        return (root / "DB" / "schema.sql").read_text(encoding="utf-8")
+
+    @classmethod
+    def _tables_with(cls, column):
+        """`column` 을 칼럼으로 가진 앱 테이블 이름. `mock_hr` 는 뺀다."""
+        import re
+
+        found = []
+        for m in re.finditer(r"CREATE TABLE ([a-z_.]+) \((.*?)\n\);", cls._schema(), re.S):
+            name, body = m.group(1), m.group(2)
+            if name.startswith("mock_hr."):
+                continue
+            if re.search(rf"\n    {column}\s", body):
+                found.append(name)
+        return found
+
+    @staticmethod
+    def _touched(steps):
+        """표가 DELETE/UPDATE 하는 테이블 이름."""
+        import re
+
+        return {
+            t
+            for _, sql in steps
+            for t in re.findall(r"(?:DELETE FROM|UPDATE)\s+([a-z_]+)", sql)
+        }
+
+    def test_팀_삭제가_team_id_를_든_테이블을_빠짐없이_덮는다(self):
+        missing = sorted(
+            set(self._tables_with("team_id"))
+            - self._touched(repositories._TEAM_PURGE_STEPS)
+            - self.TEAM_KEEP
+        )
+        self.assertEqual(
+            missing,
+            [],
+            "team_id 를 들었는데 _TEAM_PURGE_STEPS 에 없다 — 팀을 지워도 남는다. "
+            "지우지 않을 이유가 있으면 TEAM_KEEP 에 이유와 함께 적을 것",
+        )
+
+    def test_계정_삭제가_account_id_를_든_테이블을_빠짐없이_덮는다(self):
+        missing = sorted(
+            set(self._tables_with("account_id"))
+            - self._touched(repositories._ACCOUNT_PURGE_STEPS)
+            - self.ACCOUNT_KEEP
+        )
+        self.assertEqual(missing, [], "account_id 를 들었는데 _ACCOUNT_PURGE_STEPS 에 없다")
+
+    def test_데모_초기화가_앱_테이블을_빠짐없이_비운다(self):
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        reset = (root / "DB" / "reset_demo.sql").read_text(encoding="utf-8")
+
+        truncated = set()
+        for m in re.finditer(r"TRUNCATE TABLE(.*?);", reset, re.S):
+            truncated |= {x.strip() for x in m.group(1).replace("\n", " ").split(",") if x.strip()}
+
+        app_tables = {
+            name
+            for name in re.findall(r"^CREATE TABLE ([a-z_.]+)", self._schema(), re.M)
+            if not name.startswith("mock_hr.")
+        }
+        missing = sorted(app_tables - truncated - self.RESET_KEEP)
+        self.assertEqual(
+            missing,
+            [],
+            "reset_demo.sql 이 안 비우는 앱 테이블이 있다 — 옛 테넌트의 행이 남아 "
+            "새 팀이 물려받는다(2026-08-12 실제 사고). 남길 이유가 있으면 "
+            "RESET_KEEP 에 적고 스크립트 주석에도 남길 것",
+        )
+
+
+class 서브쿼리_칼럼_실재_검사(SimpleTestCase):
+    """삭제 SQL 의 서브쿼리가 **그 테이블에 없는 칼럼**을 고르지 않는지 본다.
+
+    PostgreSQL 은 서브쿼리 안에서 못 찾은 이름을 **바깥 쿼리에서 다시 찾는다**
+    (상관 서브쿼리). 그래서 오타가 오류로 드러나지 않고 **조건이 항상 참**이 된다.
+
+    실제로 그렇게 나갔다 — `DELETE FROM mcp_tool WHERE server_id IN
+    (SELECT server_id FROM mcp_server WHERE team_id = ...)`. `mcp_server` 의 PK 는
+    `mcp_server_id` 라 `server_id` 가 바깥 `mcp_tool.server_id` 로 묶였고,
+    조건이 `server_id IN (server_id)` 가 되어 **한 팀을 지울 때 모든 팀의 커스텀
+    도구가 통째로 지워졌다**(2026-08-25 실제 DB 로 밟다가 발견, 2건 손실 후 복구).
+
+    스키마 파일에서 칼럼을 읽으므로 DB 없이 돈다.
+    """
+
+    @staticmethod
+    def _columns_by_table():
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        schema = (root / "DB" / "schema.sql").read_text(encoding="utf-8")
+        out = {}
+        for m in re.finditer(r"CREATE TABLE ([a-z_.]+) \((.*?)\n\);", schema, re.S):
+            name, body = m.group(1), m.group(2)
+            cols = set(re.findall(r"\n    ([a-z_]+)\s+[A-Za-z]", body))
+            out[name.split(".")[-1]] = cols
+        return out
+
+    def test_서브쿼리가_고르는_칼럼이_그_테이블에_실재한다(self):
+        import re
+
+        columns = self._columns_by_table()
+        problems = []
+        for steps in (repositories._TEAM_PURGE_STEPS, repositories._ACCOUNT_PURGE_STEPS):
+            for label, sql in steps:
+                # 별칭 없는 단순 서브쿼리만 본다 — 별칭이 붙으면 모호하지 않다.
+                for selected, table in re.findall(
+                    r"SELECT\s+([a-z_]+)(?:::\w+)?\s+FROM\s+([a-z_]+)\s+WHERE", sql
+                ):
+                    known = columns.get(table)
+                    if known and selected not in known:
+                        problems.append(f"{label}: SELECT {selected} FROM {table}")
+
+        self.assertEqual(
+            problems,
+            [],
+            "서브쿼리가 그 테이블에 없는 칼럼을 고른다. PostgreSQL 은 이것을 "
+            "바깥 쿼리의 칼럼으로 해석해 조건이 **항상 참**이 된다 — 오류 없이 "
+            "다른 테넌트의 행까지 지운다",
+        )
