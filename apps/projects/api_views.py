@@ -72,6 +72,8 @@ from .serializers import (
     document_response,
     exist_task_response,
     extracted_task_response,
+    library_document_response,
+    library_folder_response,
     project_response,
     team_folder_response,
 )
@@ -565,6 +567,100 @@ class TeamDocumentAPIView(AuthenticatedAPIView):
         return Response([document_response(row) for row in rows])
 
 
+class TeamDocumentLibraryAPIView(AuthenticatedAPIView):
+    """「문서」 화면이 한 번에 받아 가는 것 — **폴더와 그 안의 파일 상태.**
+
+    폴더와 문서를 **나눠 부르지 않는다.** 나누면 그 사이에 수집이 끼었을 때
+    트리에는 있는데 문서는 없는(혹은 그 반대의) 화면이 뜬다. 프로젝트 상세가
+    진행률·업무·배분을 한 번에 받는 것과 같은 판단이다.
+
+    트리의 뿌리는 `folders`(사람이 고른 폴더)이고, 그 아래 가지는 문서들이
+    들고 있는 `src_folder_path` 의 서로 다른 값이다 — **하위 폴더를 담는 표가
+    따로 없다.** 폴더가 Drive 에서 바뀌어도 다음 수집이 문서와 함께 갱신하므로
+    맞춰 줄 두 번째 자리를 만들지 않았다.
+
+    팀원도 볼 수 있다. 무엇이 검색에 쓰이는지는 팀 전체의 사정이고, 여기서
+    바뀌는 것은 아무것도 없다(재시도는 별도 엔드포인트이고 그쪽도 읽기 상태만
+    되돌린다).
+    """
+
+    def get(self, request):
+        try:
+            folders = TeamFolderRepository.list_with_connector(request.user.account_id)
+            documents = PipelineDocumentRepository.list_team_library(request.user.account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        return Response(
+            {
+                "folders": [library_folder_response(row) for row in folders],
+                "documents": [library_document_response(row) for row in documents],
+            }
+        )
+
+
+class TeamDocumentReindexAPIView(AuthenticatedAPIView):
+    """색인을 **다시 시킨다.** 실패한 문서를 사람이 되살리는 유일한 경로다.
+
+    지금까지는 없었다 — 화면이 「본문 색인 실패」를 사유와 함께 보여 주기만 하고
+    (「내 파일」), 팀 문서는 그 사실조차 볼 자리가 없었다. 다시 시키려면 폴더를
+    저장해 전량 수집을 다시 돌리는 수밖에 없었는데, 그건 문서 하나 때문에 전부를
+    다시 훑는 일이다.
+
+    **응답을 붙잡지 않는다.** `promote_to_searchable` 은 워커를 기다리므로 한
+    건에 100초 남짓, 길면 240초다. 대신 그 함수가 시작할 때 `index_status` 를
+    `RUNNING` 으로 적고 끝날 때 결과를 적으므로(`set_index_status`), **화면은 그
+    칸을 폴링하면 된다** — 「내 파일」이 이미 쓰는 방식 그대로다.
+
+    되돌릴 수 없는 조작이 아니다. 같은 문서를 다시 읽어 청크를 갈아 끼우는
+    것뿐이고, 실패해도 사유가 칸에 남는다. 그래서 팀장 검사를 걸지 않는다 —
+    팀원도 자기가 쓰는 검색이 왜 안 되는지 고칠 수 있어야 한다.
+    """
+
+    def post(self, request, doc_id):
+        account_id = request.user.account_id
+        try:
+            # **권한을 여기서 확인한다.** 뒷작업으로 던지고 나면 남의 팀 문서를
+            # 돌리고 있어도 응답은 이미 202 로 나간 뒤다.
+            documents = PipelineDocumentRepository.list_team_library(account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+
+        target = next((row for row in documents if row["doc_id"] == doc_id), None)
+        if target is None:
+            return Response(
+                {"detail": "이 팀의 문서가 아닙니다."}, status=status.HTTP_404_NOT_FOUND
+            )
+        if not target["storage_key"]:
+            # 원문이 없으면 색인이 시작조차 못 한다. 던져 놓고 실패시키면
+            # 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+            return Response(
+                {"detail": "원문을 아직 받지 않아 색인할 수 없습니다. 문서 변경 확인을 먼저 하세요."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        _start_reindex(account_id=account_id, doc_id=doc_id)
+        return Response({"doc_id": doc_id, "started": True}, status=status.HTTP_202_ACCEPTED)
+
+
+def _start_reindex(*, account_id: str, doc_id: str) -> None:
+    """한 건만 다시 색인한다. `_start_document_intake` 와 같은 방식·같은 한계다.
+
+    ⚠ **작업 큐가 아니다.** 프로세스가 죽으면 이 회차는 사라지고 문서는
+    `RUNNING` 인 채로 남는다. 그때는 사람이 다시 누르면 된다 — 잃는 것은
+    시간뿐이고, 같은 문서를 다시 읽는 것은 안전하다.
+    """
+
+    def run() -> None:
+        try:
+            from services.document_intake import promote_to_searchable
+
+            outcome = promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            logger.info("색인 재시도: doc=%s ok=%s", doc_id, outcome.get("ok"))
+        except Exception:  # noqa: BLE001 — 뒷작업이다. 사유는 index_detail 에 남는다.
+            logger.exception("색인 재시도 실패: doc=%s", doc_id)
+
+    threading.Thread(target=run, daemon=True, name=f"reindex-{doc_id}").start()
 
 
 def _scan_drive_candidates(account_id: str) -> tuple[list[dict[str, Any]], set[str]]:

@@ -11,6 +11,8 @@ from .api_views import (
     RunPodDocumentDownloadAPIView,
     TaskExtractionRunAPIView,
     TeamDocumentAPIView,
+    TeamDocumentLibraryAPIView,
+    TeamDocumentReindexAPIView,
     TeamNewDocumentAPIView,
     TeamDocumentHistoryAPIView,
     TeamDocumentRemoveAPIView,
@@ -26,6 +28,20 @@ urlpatterns = [
     path("health/", HealthAPIView.as_view(), name="api_health"),
     path("team/folders/", TeamFolderAPIView.as_view(), name="api_team_folders"),
     path("team/documents/", TeamDocumentAPIView.as_view(), name="api_team_documents"),
+    # 「문서」 화면이 쓰는 한 방 — 폴더 트리와 그 안의 파일 상태를 함께 준다.
+    # 위 `documents/` 와 나눈 이유는 저쪽이 **문서의 신원**만 주기 때문이다.
+    path(
+        "team/documents/library/",
+        TeamDocumentLibraryAPIView.as_view(),
+        name="api_team_document_library",
+    ),
+    # 색인 재시도. **`library/` 보다 아래에 두면 안 된다** — `<str:doc_id>` 가
+    # 'library' 도 문서 id 로 받아 먹는다.
+    path(
+        "team/documents/<str:doc_id>/reindex/",
+        TeamDocumentReindexAPIView.as_view(),
+        name="api_team_document_reindex",
+    ),
     # Drive 와 우리 DB 를 맞대 본다 — 새로 생긴 파일과 **사라진 파일**을 함께 준다.
     # 수집 자체는 자동이라(2026-08-15) 새 파일 쪽은 이제 쓰이지 않지만, 아래
     # `remove/` 가 내릴 대상을 찾아 주는 곳이 여기뿐이라 남긴다.

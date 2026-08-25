@@ -315,6 +315,46 @@ class PipelineDocumentRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def list_team_library(account_id: str) -> list[dict[str, Any]]:
+        """「문서」 화면이 그리는 팀 문서 전부 — **폴더와 색인 상태까지.**
+
+        `list_ready_for_analysis` 와 무엇이 다른가: 저쪽은 **검색이 볼 범위**라
+        색인된 것만 쓸모가 있고, 여기는 **사람이 볼 목록**이라 안 된 것이 오히려
+        중요하다. 그래서 `search_ready = false` 도, `index_status = 'FAILED'` 도
+        빼지 않는다 — 실패한 문서를 숨기면 폴더를 저장해 놓고 왜 검색이 안 되는지
+        알 방법이 없다(2026-08-25 에 그것 때문에 로그를 뒤졌다).
+
+        **`deleted` 만 뺀다.** `access_revoked` 는 남긴다 — 권한이 끊긴 것도
+        「우리 폴더에 있던 문서」이고, 그 사실을 화면이 말해 줘야 사람이 Drive
+        쪽을 고칠 수 있다.
+
+        폴더는 `team_folder` 에서 이름을 끌어온다. 문서에 `team_folder_id` 가
+        NULL 이면(이 칸이 생기기 전에 등록된 문서) 조인이 비고, 화면은 그것을
+        「미분류」로 묶는다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           d.src_modified_at, d.storage_key, d.deleted, d.access_revoked,
+                           d.index_status, d.index_detail,
+                           d.team_folder_id, d.src_folder_path,
+                           tf.display_name AS folder_name, tf.conn_id,
+                           {_SEARCH_READY}
+                    FROM doc AS d
+                    LEFT JOIN team_folder AS tf ON tf.team_folder_id = d.team_folder_id
+                    WHERE d.team_id = %s AND d.deleted = false
+                    ORDER BY d.team_folder_id NULLS LAST, d.src_folder_path NULLS FIRST,
+                             d.file_name, d.doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def set_primary_document(
         *, proj_id: str, account_id: str, primary_doc_id: str | None
     ) -> dict[str, Any]:
