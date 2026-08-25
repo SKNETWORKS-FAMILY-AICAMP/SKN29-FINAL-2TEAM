@@ -135,23 +135,44 @@ def _store_backend(scope: _Scope) -> Any:
     return StoreBackend(namespace=lambda _rt: scope.namespace, store=get_memory_store())
 
 
-def _render_skill_md(*, name: str, description: str, body: str) -> str:
+#: `metadata.enabled`에 쓰는 값 — deepagents `_validate_metadata()`가
+#: `dict[str, str]`로 강제 변환하므로(YAML 불리언을 그대로 두면 `str(True)`가
+#: `"True"`가 돼 대문자 문제가 생긴다), 여기서부터 소문자 문자열로 직접 쓴다.
+_ENABLED_TRUE = "true"
+_ENABLED_FALSE = "false"
+
+
+def _render_skill_md(*, name: str, description: str, body: str, enabled: bool = True) -> str:
     import yaml
 
     frontmatter = yaml.safe_dump(
-        {"name": name, "description": description}, allow_unicode=True, default_flow_style=False
+        {
+            "name": name,
+            "description": description,
+            # 2026-08-26, 활성화/비활성화(§7) — LLM에게 보일지 말지를 이
+            # 메타데이터 한 줄로 결정한다. Agent Skills 스펙의 `metadata`는
+            # 클라이언트가 자유롭게 쓰는 확장 필드라 여기 넣어도 스펙을
+            # 벗어나지 않는다.
+            "metadata": {"enabled": _ENABLED_TRUE if enabled else _ENABLED_FALSE},
+        },
+        allow_unicode=True,
+        default_flow_style=False,
     )
     return f"---\n{frontmatter}---\n\n{body}\n"
 
 
-def parse_skill_md(content: str) -> tuple[str, str, str]:
-    """`---\\nyaml\\n---\\n\\nbody` 형식을 `(name, description, body)`로 나눈다.
+def parse_skill_md(content: str) -> tuple[str, str, str, bool]:
+    """`---\\nyaml\\n---\\n\\nbody` 형식을 `(name, description, body, enabled)`로 나눈다.
 
     업로드 탭에서 쓴다 — 사람이 올리는 `.md` 파일은 이미 frontmatter를 담고
     있어서, 만들 때와 달리 **읽어서** 이름·설명을 꺼내야 한다(Claude의 스킬
     업로드가 파일 안 frontmatter에서 이름을 가져오는 것과 같은 방식,
-    2026-08-22 확인). 여기서 나온 세 값은 그대로 `create_skill()`에 넘긴다 —
+    2026-08-22 확인). 여기서 나온 값은 그대로 `create_skill()`에 넘긴다 —
     저장 형식은 항상 이 모듈이 다시 만든 frontmatter 하나로 통일한다.
+
+    `enabled`(2026-08-26)는 `metadata.enabled`가 명시적으로 `"false"`일
+    때만 `False`다 — 이 필드가 없는 기존 스킬·업로드 파일은 전부 활성으로
+    취급한다(하위 호환).
     """
 
     if not content.startswith("---\n"):
@@ -176,18 +197,30 @@ def parse_skill_md(content: str) -> tuple[str, str, str]:
     if not description:
         raise SkillError("파일의 frontmatter에 description이 없습니다.")
 
+    metadata = frontmatter.get("metadata")
+    enabled = not (isinstance(metadata, dict) and str(metadata.get("enabled")).strip().lower() == _ENABLED_FALSE)
+
     body = content[end + 4 :]
     # frontmatter를 닫는 `---` 뒤 첫 줄바꿈까지만 건너뛴다.
     body = body[1:] if body.startswith("\n") else body
-    return name, description, body.strip("\n")
+    return name, description, body.strip("\n"), enabled
 
 
-def _skill_response(*, skill_id: str, name: str, description: str, updated_at: str | None, body: str | None = None) -> dict[str, Any]:
+def _skill_response(
+    *,
+    skill_id: str,
+    name: str,
+    description: str,
+    updated_at: str | None,
+    enabled: bool = True,
+    body: str | None = None,
+) -> dict[str, Any]:
     row: dict[str, Any] = {
         "skill_id": skill_id,
         "name": name,
         "description": description,
         "updated_at": updated_at,
+        "enabled": enabled,
     }
     if body is not None:
         row["body"] = body
@@ -206,7 +239,7 @@ def _read_skill(backend: Any, scope: _Scope, name: str, *, include_body: bool) -
         return None
     file_data = read.file_data
     try:
-        _, description, body = parse_skill_md(file_data["content"])
+        _, description, body, enabled = parse_skill_md(file_data["content"])
     except SkillError:
         return None
     return _skill_response(
@@ -214,6 +247,7 @@ def _read_skill(backend: Any, scope: _Scope, name: str, *, include_body: bool) -
         name=name,
         description=description,
         updated_at=file_data.get("modified_at"),
+        enabled=enabled,
         body=body if include_body else None,
     )
 
@@ -292,17 +326,30 @@ def create_skill(
     return get_skill(scope, name)
 
 
-def update_skill(scope: _Scope, name: str, *, description: str | None = None, body: str | None = None) -> dict[str, Any]:
+def update_skill(
+    scope: _Scope,
+    name: str,
+    *,
+    description: str | None = None,
+    body: str | None = None,
+    enabled: bool | None = None,
+) -> dict[str, Any]:
+    """`enabled`(2026-08-26, §7): `None`이면 안 건드린다. `False`로 주면
+    이 스킬을 LLM에게 보여주는 목록에서 뺀다 — `services.agent_runtime.
+    skills.visibility.SkillVisibilityMiddleware`가 세션 시작 시 이 값을 보고
+    거른다. 파일 자체는 지워지지 않는다 — 다시 `True`로 켜면 그대로 돌아온다.
+    """
     from .backend import skill_md_path
 
     current = get_skill(scope, name)  # SkillNotFound가 여기서 난다.
     next_description = description if description is not None else current["description"]
     next_body = body if body is not None else current["body"]
+    next_enabled = enabled if enabled is not None else current["enabled"]
     _validate_description(next_description)
     _validate_body(next_body)
 
     backend = _store_backend(scope)
-    content = _render_skill_md(name=name, description=next_description, body=next_body)
+    content = _render_skill_md(name=name, description=next_description, body=next_body, enabled=next_enabled)
     backend.write(skill_md_path(scope.prefix, name), content)
     return get_skill(scope, name)
 
@@ -338,8 +385,15 @@ def create_personal_skill(
     )
 
 
-def update_personal_skill(account_id: str, name: str, *, description: str | None = None, body: str | None = None) -> dict[str, Any]:
-    return update_skill(_personal_scope(account_id), name, description=description, body=body)
+def update_personal_skill(
+    account_id: str,
+    name: str,
+    *,
+    description: str | None = None,
+    body: str | None = None,
+    enabled: bool | None = None,
+) -> dict[str, Any]:
+    return update_skill(_personal_scope(account_id), name, description=description, body=body, enabled=enabled)
 
 
 def delete_personal_skill(account_id: str, name: str) -> None:
@@ -372,10 +426,16 @@ def create_team_skill(team_id: str, *, actor_role: str, name: str, description: 
 
 
 def update_team_skill(
-    team_id: str, name: str, *, actor_role: str, description: str | None = None, body: str | None = None
+    team_id: str,
+    name: str,
+    *,
+    actor_role: str,
+    description: str | None = None,
+    body: str | None = None,
+    enabled: bool | None = None,
 ) -> dict[str, Any]:
     _require_leader(actor_role)
-    return update_skill(_team_scope(team_id), name, description=description, body=body)
+    return update_skill(_team_scope(team_id), name, description=description, body=body, enabled=enabled)
 
 
 def delete_team_skill(team_id: str, name: str, *, actor_role: str) -> None:
