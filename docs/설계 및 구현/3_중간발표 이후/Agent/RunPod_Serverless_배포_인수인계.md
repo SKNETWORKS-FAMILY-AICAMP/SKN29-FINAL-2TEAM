@@ -22,8 +22,11 @@ RunPod Serverless에 배포한 실제 과정과 현재 상태를 백엔드·프�
 > 그 Endpoint 도, 한때 재생성했던 `ekysa59yf3ni6t` 도 지금은 **404 — 지워졌다.**
 > 2026-08-24 에 Endpoint 를 다시 만들었고, 살아 있는 것은 `ugczgulvpawbyv`
 > 하나뿐이다(`embed_queries` 실호출로 확인: `google/embeddinggemma-300m`, 768차원).
-> 아래 5.3 의 배포 브랜치·GPU 등 나머지 설정값은 새 Endpoint 기준으로 다시
-> 확인하지 못했다 — 콘솔에서 대조가 필요하다.
+> 5.3 도 콘솔과 대조해 고쳤다. **배포 방식이 바뀌었다** — GitHub 저장소
+> (`choiwon10/SKN29-RUNPOD-WORKER`, `codex/install-triton-compiler`) 에서
+> 빌드하던 것이 아니라, 미리 구운 이미지
+> `somber7/skn29-runpod-worker:2026-08-24` 를 가리킨다. 워커 코드를 고쳐도
+> **그 이미지를 다시 굽고 태그를 올리기 전에는 아무 일도 일어나지 않는다.**
 
 ## 2. 현재 결론
 
@@ -132,12 +135,12 @@ EmbeddingGemma 모델 페이지의 사용 조건에 동의한 Hugging Face 계�
 
 | 항목 | 값 |
 |---|---|
-| Endpoint 이름 | `SKN29-RUNPOD-WORKER` |
+| Endpoint 이름 | `SKN29-RUNPOD-WORKER-IMG` |
 | Endpoint ID | `ugczgulvpawbyv` |
-| 배포 방식 | GitHub 저장소에서 Docker build |
-| 저장소 | `choiwon10/SKN29-RUNPOD-WORKER` |
-| 배포 브랜치 | `codex/install-triton-compiler` |
-| GPU Worker | Serverless GPU, 24GB급 |
+| 생성일 | 2026-08-24 |
+| 배포 방식 | **미리 구운 Docker 이미지** (GitHub build 아님) |
+| 이미지 | `somber7/skn29-runpod-worker:2026-08-24` |
+| GPU Worker | Serverless GPU, 24 GB · 24 GB Pro · 48 GB (count 1) |
 | 최소 CUDA | 12.8 |
 | 최소 Worker | 0 |
 | 최대 Worker | 1 |
