@@ -1,6 +1,7 @@
 import type {
   ChatEvent,
   ExtractedTask as ApiTask,
+  JiraIssueEdit,
   JiraIssue,
   SourceRef,
   TaskExtractionPayload,
@@ -21,6 +22,8 @@ export const ASK_FOLLOWUP_TOOL_NAME = 'skill_creator_ask_followup';
  * 이름·설명을 미리 보여준다(`ASK_FOLLOWUP_TOOL_NAME`과 같은 이유).
  */
 export const SKILL_REGISTER_TOOL_NAME = 'skill_register';
+
+export const JIRA_CREATE_ISSUES_TOOL_NAME = 'jira_create_issues';
 
 /**
  * 이벤트 스트림 → 카드가 그릴 상태.
@@ -92,6 +95,8 @@ export interface LiveChat {
      * 카드는 평소 승인 카드(subject에 도구 이름)로 떨어진다.
      */
     skillPreview: { name: string; description: string } | null;
+    /** Jira 생성 호출의 승인 전 미리보기. 프로젝트와 assignee는 표시·편집하지 않는다. */
+    jiraPreview: JiraIssueEdit[] | null;
   } | null;
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
@@ -427,6 +432,10 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
               description: typeof args?.description === 'string' ? args.description : '',
             }
           : null;
+      const jiraPreview =
+        actions.length === 1 && actions[0].name === JIRA_CREATE_ISSUES_TOOL_NAME
+          ? readJiraIssuePreview(args)
+          : null;
       return {
         ...state,
         running: false,
@@ -437,6 +446,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           actions,
           askQuestion,
           skillPreview,
+          jiraPreview,
         },
       };
     }
@@ -475,6 +485,23 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     default:
       return state;
   }
+}
+
+function readJiraIssuePreview(args: Record<string, unknown> | undefined): JiraIssueEdit[] | null {
+  if (!Array.isArray(args?.issues) || args.issues.length === 0) return null;
+  const issues: JiraIssueEdit[] = [];
+  for (const value of args.issues) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const issue = value as Record<string, unknown>;
+    if (typeof issue.title !== 'string' || typeof issue.issuetype !== 'string') return null;
+    issues.push({
+      title: issue.title,
+      description: typeof issue.description === 'string' ? issue.description : '',
+      issuetype: issue.issuetype,
+      duedate: typeof issue.duedate === 'string' && issue.duedate ? issue.duedate : null,
+    });
+  }
+  return issues;
 }
 
 /** 확인 카드가 「몇 건을 승인하는가」를 말할 수 있게. 목록형 인자 하나를 센다. */

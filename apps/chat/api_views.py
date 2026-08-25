@@ -723,6 +723,11 @@ def _per_call_decisions(
     실행 전체를 깨뜨린다(langchain `RespondDecision.message`는 필수 필드) —
     `ChatConfirmSerializer`가 이미 `message` 필수를 검증하지만, 검증을
     통과한 값이 여기서 다시 잘리면 검증이 무의미해진다.
+
+    2026-08-25, Jira 카드 편집 — 화면이 보낸 이슈 전체를 그대로 실행하지
+    않는다. 현재 action이 `jira_create_issues`인지와 이슈 개수가 같은지 확인한
+    뒤 제목·설명·유형·기한만 원래 호출에 합친다. 프로젝트와 assignee는 원본을
+    유지한다.
     """
     by_index: dict[int, dict[str, Any]] = {}
     for item in per_call:
@@ -739,6 +744,39 @@ def _per_call_decisions(
         decision: dict[str, Any] = {"type": item["type"]}
         if item.get("message"):
             decision["message"] = item["message"]
+        if item["type"] == "edit":
+            request = action_requests[index]
+            if request.get("name") != "jira_create_issues":
+                raise PerCallDecisionsError("편집은 Jira 이슈 생성 요청에서만 지원합니다.")
+            original_args = request.get("args") or {}
+            original_issues = original_args.get("issues")
+            edited_issues = item.get("edited_issues")
+            if not isinstance(original_issues, list) or not isinstance(edited_issues, list):
+                raise PerCallDecisionsError("편집할 Jira 이슈 목록을 확인할 수 없습니다.")
+            if len(original_issues) != len(edited_issues):
+                raise PerCallDecisionsError("편집으로 Jira 이슈의 개수를 바꿀 수 없습니다.")
+
+            merged_issues: list[dict[str, Any]] = []
+            for original_issue, edited_issue in zip(original_issues, edited_issues, strict=True):
+                if not isinstance(original_issue, dict) or not isinstance(edited_issue, dict):
+                    raise PerCallDecisionsError("Jira 이슈 입력 형식이 올바르지 않습니다.")
+                merged = dict(original_issue)
+                for field in ("title", "description", "issuetype"):
+                    merged[field] = edited_issue[field]
+                due_date = edited_issue.get("duedate")
+                if due_date is None:
+                    merged.pop("duedate", None)
+                else:
+                    merged["duedate"] = due_date.isoformat() if hasattr(due_date, "isoformat") else str(due_date)
+                merged_issues.append(merged)
+
+            decision = {
+                "type": "edit",
+                "edited_action": {
+                    "name": request.get("name"),
+                    "args": {**original_args, "issues": merged_issues},
+                },
+            }
         by_index[index] = decision
 
     missing = [i for i in range(len(action_requests)) if i not in by_index]

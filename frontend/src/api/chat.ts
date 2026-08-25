@@ -395,11 +395,19 @@ export function streamMessage(
 }
 
 /** 호출 하나에 대한 승인·거절·응답(2026-08-21, 병렬실행 Phase 2 / 2026-08-24, 되묻기). */
+export interface JiraIssueEdit {
+  title: string;
+  description: string;
+  issuetype: string;
+  /** 비우면 Jira 기한을 넣지 않는다. */
+  duedate: string | null;
+}
+
 export interface ConfirmDecision {
   /** 그 턴의 `action_requests` 배열에서의 위치. 같은 도구를 두 번 부를 수 있어
    *  이름이 아니라 인덱스로 가리킨다. */
   action_index: number;
-  type: 'approve' | 'reject' | 'respond';
+  type: 'approve' | 'reject' | 'respond' | 'edit';
   /**
    * `type: 'respond'`일 때만 쓴다 — 도구를 실행하지 않고, 사용자가 입력창에
    * 쓴 이 텍스트를 그 도구 호출의 결과인 것처럼 모델에게 돌려준다
@@ -407,14 +415,16 @@ export interface ConfirmDecision {
    * `type: 'respond'`인데 이 값이 없으면 400으로 거부한다.
    */
   message?: string;
+  /** Jira 편집일 때만 보낸다. 프로젝트와 assignee는 서버가 원본을 유지한다. */
+  edited_issues?: JiraIssueEdit[];
 }
 
 /**
  * 확인 카드 승인 → 멈춘 실행을 이어 돌린다.
  *
- * **실행할 인자를 보내지 않는다.** 승인 대상은 서버가 저장해 둔 그 호출이고,
- * 화면이 보내는 것은 체크한 항목의 **인덱스뿐**이다 — 화면이 인자를 보내면
- * 그 값으로 외부 시스템이 바뀌므로 승인 게이트가 아무것도 막지 못한다.
+ * 승인 대상은 서버가 저장해 둔 그 호출이다. 평소에는 인자를 보내지 않고,
+ * Jira 편집 결정일 때만 사람이 고친 이슈 필드를 보낸다. 서버는 프로젝트와
+ * assignee를 원래 호출에서 유지한다.
  *
  * `selected`를 비우면(undefined) 전체 승인이다.
  *

@@ -173,6 +173,161 @@
   white-space: pre-wrap;
 }
 
+.jiraPreview {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.jiraPreviewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.jiraPreviewHead > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jiraProjectTarget {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-3);
+  background: var(--color-bg);
+  font-size: 12px;
+}
+
+.jiraProjectTarget span {
+  color: var(--color-placeholder);
+}
+
+.jiraProjectTarget strong {
+  color: var(--color-heading);
+}
+
+.editedBadge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.jiraIssuePreview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.jiraIssueTitle {
+  font-size: 15px;
+  color: var(--color-heading);
+}
+
+.jiraFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.jiraFacts > div {
+  display: flex;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.jiraFacts dt,
+.jiraDescription > span,
+.jiraField > span {
+  color: var(--color-placeholder);
+}
+
+.jiraFacts dd {
+  margin: 0;
+  color: var(--color-heading);
+}
+
+.jiraDescription {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.jiraDescription p {
+  margin: 0;
+  color: var(--color-heading);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.jiraFieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.jiraField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.jiraField input,
+.jiraField textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+}
+
+.jiraField textarea {
+  min-height: 96px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.jiraField input:focus,
+.jiraField textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.jiraEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+.jiraEditError {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-3);
+  color: var(--color-danger, #b42318);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .jiraFieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* 확인 카드가 바쁠 때(승인/거절 처리 중) 즉시 되돌아갈 수 있는 링크형
    버튼(2026-08-24) — "거절해도 왜 이렇게 오래 걸리지, 뒤로 가기는 없냐"는
    지적으로 추가. 이미 있는 "중단"(입력창 옆)을 카드 자리에서 바로 쓴다. */

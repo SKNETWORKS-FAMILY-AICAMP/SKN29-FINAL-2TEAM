@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Icon } from '../../../components';
-import type { JiraIssue, SourceRef } from '../../../api/chat';
+import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
 import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
 import styles from './cards.module.css';
 
@@ -426,7 +426,7 @@ export interface ConfirmCardProps {
   /** 체크된 업무의 **인덱스**. 승인 API 에 이 값만 보낸다. */
   selected: number[];
   onSelectedChange: (next: number[]) => void;
-  onApprove?: () => void;
+  onApprove?: (editedJiraIssues?: JiraIssueEdit[]) => void;
   onReject?: () => void;
   busy?: boolean;
   /**
@@ -466,6 +466,10 @@ export interface ConfirmCardProps {
    * 하는 스킬 자신의 이름·설명을 보여준다.
    */
   skillPreview?: { name: string; description: string } | null;
+  /** Jira 생성 호출 하나의 승인 전 필드. 수정해도 별도 승인 전에는 실행되지 않는다. */
+  jiraPreview?: JiraIssueEdit[] | null;
+  /** 현재 대화가 연결된 프로젝트. Jira 목적지는 편집하지 않고 확인만 한다. */
+  jiraProjectName?: string | null;
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
@@ -483,6 +487,8 @@ export function ConfirmCard({
   approvedActions,
   onApprovedActionsChange,
   skillPreview,
+  jiraPreview,
+  jiraProjectName,
   pendingAction,
   onAbort,
 }: ConfirmCardProps) {
@@ -499,6 +505,43 @@ export function ConfirmCard({
   // 2026-08-21, 병렬실행 Phase 2 — 호출이 2건 이상일 때만 호출별 줄을 그린다.
   const multi = (actions?.length ?? 0) > 1;
   const approved = approvedActions ?? [];
+  const [editingJira, setEditingJira] = useState(false);
+  const [jiraDraft, setJiraDraft] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
+  const [appliedJira, setAppliedJira] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
+  const [jiraEditError, setJiraEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = jiraPreview ?? [];
+    setJiraDraft(next);
+    setAppliedJira(next);
+    setEditingJira(false);
+    setJiraEditError(null);
+  }, [jiraPreview]);
+
+  const jiraEdited =
+    jiraPreview != null && JSON.stringify(appliedJira) !== JSON.stringify(jiraPreview);
+
+  function updateJiraIssue(index: number, field: keyof JiraIssueEdit, value: string | null) {
+    setJiraDraft((current) =>
+      current.map((issue, issueIndex) =>
+        issueIndex === index ? { ...issue, [field]: value } : issue,
+      ),
+    );
+  }
+
+  function applyJiraEdit() {
+    if (jiraDraft.some((issue) => !issue.title.trim() || !issue.issuetype.trim())) {
+      setJiraEditError('제목과 이슈 유형은 비울 수 없습니다.');
+      return;
+    }
+    if (jiraDraft.some((issue) => issue.duedate && !/^\d{4}-\d{2}-\d{2}$/.test(issue.duedate))) {
+      setJiraEditError('기한은 YYYY-MM-DD 형식으로 입력해 주세요.');
+      return;
+    }
+    setAppliedJira(jiraDraft.map((issue) => ({ ...issue })));
+    setJiraEditError(null);
+    setEditingJira(false);
+  }
 
   function toggle(index: number, next: boolean) {
     onSelectedChange(
@@ -546,6 +589,114 @@ export function ConfirmCard({
       ) : subject && !multi ? (
         <div className={styles.confirmHead}>
           <strong>{subject}</strong>
+        </div>
+      ) : null}
+
+      {jiraPreview && appliedJira.length > 0 ? (
+        <div className={styles.jiraPreview}>
+          <div className={styles.jiraPreviewHead}>
+            <span>
+              <strong>Jira 이슈 {appliedJira.length}건</strong>
+              {jiraEdited ? <span className={styles.editedBadge}>수정됨</span> : null}
+            </span>
+            {onApprove && !editingJira ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setJiraDraft(appliedJira.map((issue) => ({ ...issue })));
+                  setJiraEditError(null);
+                  setEditingJira(true);
+                }}
+                disabled={busy}
+              >
+                편집
+              </Button>
+            ) : null}
+          </div>
+          <div className={styles.jiraProjectTarget}>
+            <span>대상 프로젝트</span>
+            <strong>{jiraProjectName || '현재 대화에 연결된 Jira 프로젝트'}</strong>
+          </div>
+          {(editingJira ? jiraDraft : appliedJira).map((issue, index) => (
+            <div className={styles.jiraIssuePreview} key={index}>
+              {editingJira ? (
+                <>
+                  <label className={styles.jiraField}>
+                    <span>제목</span>
+                    <input
+                      value={issue.title}
+                      onChange={(event) => updateJiraIssue(index, 'title', event.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <div className={styles.jiraFieldRow}>
+                    <label className={styles.jiraField}>
+                      <span>유형</span>
+                      <input
+                        value={issue.issuetype}
+                        onChange={(event) => updateJiraIssue(index, 'issuetype', event.target.value)}
+                        disabled={busy}
+                      />
+                    </label>
+                    <label className={styles.jiraField}>
+                      <span>기한</span>
+                      <input
+                        type="date"
+                        value={issue.duedate ?? ''}
+                        onChange={(event) =>
+                          updateJiraIssue(index, 'duedate', event.target.value || null)
+                        }
+                        disabled={busy}
+                      />
+                    </label>
+                  </div>
+                  <label className={styles.jiraField}>
+                    <span>설명</span>
+                    <textarea
+                      value={issue.description}
+                      onChange={(event) =>
+                        updateJiraIssue(index, 'description', event.target.value)
+                      }
+                      disabled={busy}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <strong className={styles.jiraIssueTitle}>{issue.title}</strong>
+                  <dl className={styles.jiraFacts}>
+                    <div><dt>유형</dt><dd>{issue.issuetype}</dd></div>
+                    <div><dt>기한</dt><dd>{issue.duedate || '없음'}</dd></div>
+                  </dl>
+                  <div className={styles.jiraDescription}>
+                    <span>설명</span>
+                    <p>{issue.description || '없음'}</p>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {jiraEditError ? <p className={styles.jiraEditError}>{jiraEditError}</p> : null}
+          {editingJira ? (
+            <div className={styles.jiraEditActions}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setJiraDraft(appliedJira.map((issue) => ({ ...issue })));
+                  setJiraEditError(null);
+                  setEditingJira(false);
+                }}
+                disabled={busy}
+              >
+                편집 취소
+              </Button>
+              <Button variant="outline" size="sm" onClick={applyJiraEdit} disabled={busy}>
+                수정 적용
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -641,7 +792,7 @@ export function ConfirmCard({
               않는다 — 그건 "아무것도 하지 마"라는 유효한 결정이고, 서버도
               거절 결정을 그대로 받는다(2026-08-21). */}
           {!multi && onReject ? (
-            <Button variant="outline" size="sm" onClick={onReject} disabled={busy}>
+            <Button variant="outline" size="sm" onClick={onReject} disabled={busy || editingJira}>
               {rejecting ? (
                 <>
                   <Icon name="loader" size={13} spin /> {isSkillRegister ? '다시 설명 준비 중…' : '거절하는 중…'}
@@ -655,8 +806,8 @@ export function ConfirmCard({
           ) : null}
           <Button
             size="sm"
-            onClick={onApprove}
-            disabled={busy || (!multi && tasks.length > 0 && chosen.length === 0)}
+            onClick={() => onApprove(jiraEdited ? appliedJira : undefined)}
+            disabled={busy || editingJira || (!multi && tasks.length > 0 && chosen.length === 0)}
           >
             {/* **거절 중에는 이 버튼이 "등록하는 중…"이라고 말하지 않는다**
                 (2026-08-24 실측 버그 — 거절을 눌렀는데 승인 버튼 쪽에 등록

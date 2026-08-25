@@ -43,6 +43,19 @@ class ChatSessionToolsSerializer(serializers.Serializer):
     )
 
 
+class JiraIssueEditSerializer(serializers.Serializer):
+    """승인 카드에서 사람이 고칠 수 있는 Jira 이슈 필드만 받는다.
+
+    프로젝트와 assignee는 여기 없다. 대화가 가리키는 프로젝트와 서버가 저장해
+    둔 원래 호출 값을 화면이 바꾸지 못하게 하기 위해서다.
+    """
+
+    title = serializers.CharField(max_length=500, allow_blank=False)
+    description = serializers.CharField(max_length=10000, allow_blank=True, required=False, default="")
+    issuetype = serializers.CharField(max_length=100, allow_blank=False)
+    duedate = serializers.DateField(required=False, allow_null=True)
+
+
 class ConfirmDecisionSerializer(serializers.Serializer):
     """확인 카드의 호출 **하나**에 대한 결정(2026-08-21, 병렬실행 Phase 2).
 
@@ -61,9 +74,12 @@ class ConfirmDecisionSerializer(serializers.Serializer):
     """
 
     action_index = serializers.IntegerField(min_value=0)
-    type = serializers.ChoiceField(choices=["approve", "reject", "respond"])
+    type = serializers.ChoiceField(choices=["approve", "reject", "respond", "edit"])
     message = serializers.CharField(
         max_length=4000, required=False, allow_blank=False, allow_null=True, default=None
+    )
+    edited_issues = JiraIssueEditSerializer(
+        many=True, required=False, allow_empty=False, default=None
     )
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
@@ -71,15 +87,23 @@ class ConfirmDecisionSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"message": "respond 결정에는 message(사용자가 입력한 답)가 필요합니다."}
             )
+        if attrs.get("type") == "edit" and not attrs.get("edited_issues"):
+            raise serializers.ValidationError(
+                {"edited_issues": "edit 결정에는 수정한 Jira 이슈가 필요합니다."}
+            )
+        if attrs.get("type") != "edit" and attrs.get("edited_issues") is not None:
+            raise serializers.ValidationError(
+                {"edited_issues": "edited_issues는 edit 결정에만 사용할 수 있습니다."}
+            )
         return attrs
 
 
 class ChatConfirmSerializer(serializers.Serializer):
     """확인 카드의 승인.
 
-    **무엇을 실행할지는 받지 않는다.** 승인 대상은 서버가 저장해 둔 그 호출이고,
-    화면은 "그걸 승인한다"는 사실과 골라 낸 항목만 보낸다 — 실행할 인자를 화면이
-    보내면 승인 게이트가 아무것도 막지 못한다.
+    **무엇을 실행할지는 원칙적으로 받지 않는다.** 승인 대상은 서버가 저장해 둔
+    그 호출이다. 예외는 Jira 편집 결정의 `edited_issues`뿐이며, 서버가 원래
+    호출의 프로젝트·assignee를 유지한 채 사람이 고칠 수 있는 네 필드만 합친다.
 
     `selected` 는 확인 카드에서 체크한 항목의 인덱스다. 비우면 전체 승인이다.
     레거시 확인 카드 전용이다 — 새 엔진(`engine == "deepagents"`) 경로는 이

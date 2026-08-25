@@ -17,7 +17,7 @@ from apps.chat.api_views import (
     _decisions_for,
     _relay,
 )
-from apps.chat.serializers import message_response
+from apps.chat.serializers import ChatConfirmSerializer, message_response
 from backend.db.errors import PermissionDenied
 from services.guardrails import InputGuardOutcome
 
@@ -987,6 +987,71 @@ class HITLResumeConfirmTests(SimpleTestCase):
             ["가", "다"],
         )
 
+    def test_Jira_편집값이_승인한_호출로_재개된다(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        pending = {
+            "message_id": "M1",
+            "content": {
+                **self.PENDING["content"],
+                "action_requests": [
+                    {
+                        "name": "jira_create_issues",
+                        "args": {
+                            "project_key": "",
+                            "issues": [
+                                {
+                                    "title": "기존 제목",
+                                    "description": "기존 설명",
+                                    "issuetype": "Task",
+                                    "duedate": "2026-09-15",
+                                    "assignee_account_id": "original-account-id",
+                                }
+                            ],
+                        },
+                        "description": "Jira 이슈 생성",
+                    }
+                ],
+            },
+        }
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = pending
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {
+                "decisions": [
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {
+                                "title": "수정 제목",
+                                "description": "수정 설명",
+                                "issuetype": "Story",
+                                "duedate": "2026-09-20",
+                            }
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        decision = mock_executor.resume.call_args.kwargs["decisions"][0]
+        args = decision["edited_action"]["args"]
+        self.assertEqual(decision["type"], "edit")
+        self.assertEqual(args["issues"][0]["title"], "수정 제목")
+        self.assertEqual(args["issues"][0]["assignee_account_id"], "original-account-id")
+
     def test_decision_reject_is_forwarded(
         self, sessions, messages, accounts, _title, build_executor
     ):
@@ -1398,6 +1463,119 @@ class PerCallDecisionTests(SimpleTestCase):
 
     def test_per_call이_없으면_예전_동작_그대로다(self):
         self.assertEqual(_decisions_for(self._requests(2), None), [{"type": "approve"}] * 2)
+
+    def test_Jira_편집은_허용_필드만_원래_호출에_합친다(self):
+        requests = [
+            {
+                "name": "jira_create_issues",
+                "args": {
+                    "project_key": "",
+                    "issues": [
+                        {
+                            "title": "기존 제목",
+                            "description": "기존 설명",
+                            "issuetype": "Task",
+                            "duedate": "2026-09-15",
+                            "assignee_account_id": "original-account-id",
+                        }
+                    ],
+                },
+            }
+        ]
+
+        decisions = _decisions_for(
+            requests,
+            None,
+            per_call=[
+                {
+                    "action_index": 0,
+                    "type": "edit",
+                    "edited_issues": [
+                        {
+                            "title": "수정 제목",
+                            "description": "수정 설명",
+                            "issuetype": "Story",
+                            "duedate": "2026-09-20",
+                        }
+                    ],
+                }
+            ],
+        )
+
+        args = decisions[0]["edited_action"]["args"]
+        self.assertEqual(decisions[0]["type"], "edit")
+        self.assertEqual(args["project_key"], "")
+        self.assertEqual(args["issues"][0]["title"], "수정 제목")
+        self.assertEqual(args["issues"][0]["assignee_account_id"], "original-account-id")
+
+    def test_Jira_편집으로_이슈_개수를_바꿀_수_없다(self):
+        requests = [
+            {"name": "jira_create_issues", "args": {"issues": [{"title": "기존"}]}}
+        ]
+
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                requests,
+                None,
+                per_call=[
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {"title": "A", "description": "", "issuetype": "Task"},
+                            {"title": "B", "description": "", "issuetype": "Task"},
+                        ],
+                    }
+                ],
+            )
+
+    def test_Jira가_아닌_호출은_편집할_수_없다(self):
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                self._requests(1),
+                None,
+                per_call=[
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {"title": "A", "description": "", "issuetype": "Task"}
+                        ],
+                    }
+                ],
+            )
+
+
+class ConfirmDecisionSerializerTests(SimpleTestCase):
+    def test_edit에는_수정한_Jira_이슈가_필요하다(self):
+        serializer = ChatConfirmSerializer(
+            data={"decisions": [{"action_index": 0, "type": "edit"}]}
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("edited_issues", serializer.errors["decisions"][0])
+
+    def test_edit_Jira_이슈를_검증한다(self):
+        serializer = ChatConfirmSerializer(
+            data={
+                "decisions": [
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {
+                                "title": "수정 제목",
+                                "description": "수정 설명",
+                                "issuetype": "Task",
+                                "duedate": "2026-09-20",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
 
 @patch("services.agent_runtime.build_default_executor")

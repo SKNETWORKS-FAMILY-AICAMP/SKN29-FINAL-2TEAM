@@ -13,7 +13,7 @@ import {
   setSessionToolRefs,
   streamMessage,
 } from '../../api/chat';
-import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
+import type { ChatEvent, ChatMessage, ChatSession, JiraIssueEdit } from '../../api/chat';
 import { getAgentVersion, listAgentVersions } from '../../api/agentVersions';
 import type { AgentVersionSummary } from '../../api/agentVersions';
 import { listToolChoices } from '../../api/agents';
@@ -635,7 +635,7 @@ export default function ChatPage() {
     );
   }
 
-  async function approve() {
+  async function approve(editedJiraIssues?: JiraIssueEdit[]) {
     if (!token || !sessionId || confirmRequestRef.current) return;
     confirmRequestRef.current = true;
     setPendingAction('approve');
@@ -653,7 +653,15 @@ export default function ChatPage() {
     // 승인하면 사용자가 안 본 게 실행된다) 전체 길이만큼 만들어 보낸다.
     const actionCount = lastLive?.confirm?.actions.length ?? 0;
     const decisions =
-      actionCount > 1
+      editedJiraIssues
+        ? [
+            {
+              action_index: 0,
+              type: 'edit' as const,
+              edited_issues: editedJiraIssues,
+            },
+          ]
+        : actionCount > 1
         ? Array.from({ length: actionCount }, (_, index) => ({
             action_index: index,
             type: (approvedActions.includes(index) ? 'approve' : 'reject') as
@@ -1388,6 +1396,8 @@ export default function ChatPage() {
                           // 이름 대신 등록할 스킬의 실제 이름·설명을 보여준다
                           // (`ConfirmCard`가 있으면 `subject` 줄 대신 이걸 그린다).
                           skillPreview={live.confirm.skillPreview}
+                          jiraPreview={live.confirm.jiraPreview}
+                          jiraProjectName={currentProject?.name}
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
