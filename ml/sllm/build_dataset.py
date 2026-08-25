@@ -35,7 +35,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-SOURCE_DIR = REPO / "docs" / "참고자료" / "개발_기획서_샘플"
+SOURCE_DIR = REPO / "docs" / "설계 및 구현" / "1_초안" / "기획서_샘플"
 OUT_DIR = Path(__file__).resolve().parent / "data"
 
 #: 평가 전용 문서. **학습에 한 글자도 들어가지 않는다.**
