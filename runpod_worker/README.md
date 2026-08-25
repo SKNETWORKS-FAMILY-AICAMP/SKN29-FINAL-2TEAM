@@ -20,17 +20,24 @@ them in place on the parsed `DoclingDocument` so chunking sees the corrected
 structure. `promoted_heading_count` in the result's `validation` block reports
 how many were promoted.
 
-PDF picture description, chart extraction, and picture classification are
-enrichment steps that run *after* page preprocessing. A page that fails
-preprocessing is dropped from `conv_res.pages`, but enrichment still indexes
-that list by the element's original page number, so any PDF with a broken page
-died with `IndexError: list index out of range` inside
-`StandardPdfPipeline` — the whole document was lost. `_convert` now retries
-once with those three options off, which converts the same file successfully.
-The retry is PDF-only, happens once, and re-raises if it also fails, so the
-real reason still reaches the user. Documents rescued this way carry
-`validation.enrichment_disabled = true` and have no chart or image
-descriptions.
+PDF picture description, chart extraction, and picture classification killed
+whole documents in two measured ways. `do_chart_extraction` makes
+`StandardPdfPipeline.__init__` load Granite Vision V4 onto the GPU, where
+EmbeddingGemma, layout, TableFormer and EasyOCR already sit; it runs out of
+memory and dies before reading a single page (`NVML_SUCCESS == r INTERNAL
+ASSERT FAILED`, 14 jobs on 2026-08-25). Separately, a page that fails
+preprocessing is dropped from `conv_res.pages` while enrichment still indexes
+that list by the element's original page number, so a PDF with a broken page
+died with `IndexError: list index out of range`.
+
+`_convert` retries once with those three options off. docling guards the chart
+model's import and construction behind `if do_chart_extraction:`, so the retry
+provably avoids the GPU load. It is PDF-only, happens once, and re-raises if it
+also fails, so the real reason still reaches the user. Documents rescued this
+way carry `validation.enrichment_disabled = true` and have no chart or image
+descriptions. The GPU case recurs for every document on that worker, costing a
+doomed ~7s first attempt each time — sizing the GPU up, or turning enrichment
+off outright, is the real cure.
 
 Required environment:
 

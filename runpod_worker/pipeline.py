@@ -605,10 +605,26 @@ def _download(input_data: dict[str, Any]) -> tuple[Path, str]:
 def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
     """변환한다. 실패하면 이미지·차트 보강을 끄고 **한 번만** 다시 시도한다.
 
-    **깨진 페이지가 하나라도 있는 PDF 는 보강을 켠 채로는 절대 안 끝난다**
-    (2026-08-24 실측). 전처리에서 `'utf-8' codec can't decode byte 0xde` 로
-    죽은 페이지는 `conv_res.pages` 에서 **빠지는데**, 보강 단계는 항목이 들고
-    있는 **원래 페이지 번호**로 그 목록을 집는다:
+    보강 셋이 PDF 를 죽이는 길이 **둘** 있고, 둘 다 실측했다.
+
+    **① 차트 모델이 GPU 에 안 올라간다** (2026-08-25, RunPod 콘솔 로그 14건).
+    `do_chart_extraction` 이 켜져 있으면 `StandardPdfPipeline.__init__` 이
+    Granite Vision V4 를 GPU 로 올리는데, 그 앞에 EmbeddingGemma·layout·
+    TableFormer·EasyOCR 이 이미 올라가 있어 자리가 없다:
+
+        [W CUDACachingAllocator.cpp:3933] memory allocation failed with OOM
+        RuntimeError: NVML_SUCCESS == r INTERNAL ASSERT FAILED at
+          "c10/cuda/CUDACachingAllocator.cpp":1407
+          └ base_pipeline.py ChartExtractionModelGraniteVisionV4.__init__
+
+    **페이지를 한 장도 안 읽고** 죽는다. docling v2.117.0 의
+    `base_pipeline.py` 는 이 import·생성을 통째로 `if do_chart_extraction:` 으로
+    감싸므로, 끄면 모델을 아예 안 올린다 — 되돌리기가 이 실패를 확실히 없앤다.
+
+    **② 깨진 페이지를 가진 PDF** (2026-08-24). 전처리에서
+    `'utf-8' codec can't decode byte 0xde` 로 죽은 페이지가 `conv_res.pages`
+    에서 **빠지는데**, 보강 단계는 항목이 들고 있는 **원래 페이지 번호**로 그
+    목록을 집는다:
 
         RuntimeError: Pipeline StandardPdfPipeline failed
           └ docling/models/base_model.py prepare_element
@@ -622,13 +638,16 @@ def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
     그래서 **문서 전체를 잃느니 차트·이미지 설명을 잃는 쪽**을 고른다. 멀쩡한
     문서는 첫 번째 시도에서 끝나므로 아무것도 잃지 않는다.
 
-    되돌린 것은 PDF 뿐이다 — 위 오류는 PDF 파이프라인의 것이고, DOCX 가 죽는
+    되돌린 것은 PDF 뿐이다 — 위 둘 다 PDF 파이프라인의 것이고, DOCX 가 죽는
     이유는 달랐다(디스크 부족, `converter` 주석).
 
-    예외 종류를 안 가린다. docling 은 이 실패를 파이프라인 안에서 감싸 던지는데
-    그 형이 판마다 다르다. 대신 **한 번만** 되돌리고, 그 시도도 실패하면 그대로
-    올려보낸다 — 사유가 사람이 읽는 `index_detail` 에 그대로 들어가야 한다.
-    대가는 정말 못 읽는 PDF 의 변환 시간이 두 배가 되는 것이다.
+    예외 종류를 안 가린다. ①은 `RuntimeError`, ②도 `RuntimeError` 지만 docling
+    은 이 실패를 파이프라인 안에서 감싸 던지므로 그 형이 판마다 다르다. 대신
+    **한 번만** 되돌리고, 그 시도도 실패하면 그대로 올려보낸다 — 사유가 사람이
+    읽는 `index_detail` 에 그대로 들어가야 한다.
+
+    ①은 워커가 사는 동안 계속 나므로 문서마다 헛걸음 한 번(약 7초)을 문다.
+    GPU 를 키우거나 보강을 아예 끄는 것이 근본 해결이다.
     """
 
     try:
