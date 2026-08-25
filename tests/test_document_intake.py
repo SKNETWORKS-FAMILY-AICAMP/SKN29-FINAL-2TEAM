@@ -18,6 +18,7 @@ from services.document_intake.service import (
     _index_all,
     _refetch_changed,
     _worker_failure_detail,
+    intake_connector_documents,
     promote_to_searchable,
     sync_drive_changes,
 )
@@ -460,3 +461,45 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         self.assertEqual(
             saved["detail"], "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
         )
+
+
+@patch("services.document_intake.service._index_all")
+@patch("services.document_intake.service._refetch_changed")
+@patch("services.document_intake.service._fetch_originals")
+@patch("services.document_intake.service.DocumentRepository")
+@patch("services.document_intake.service.AccountRepository")
+@patch("services.document_intake.service.TeamFolderRepository")
+@patch("services.document_intake.service.list_drive_files")
+class ScanDepthTests(SimpleTestCase):
+    """폴더 스캔 깊이가 **사람이 고른 값 그대로**인지 본다.
+
+    `max_depth` 의 규약은 저장소·API·화면이 모두 같다 — **`NULL`(`None`)이
+    제한 없음**이다(`clients.list_drive_files`, `_parse_depth`, DriveFolderModal
+    의 「제한 없음」). 수집만 `or 1` 로 접고 있어서 「제한 없음」으로 저장한 폴더가
+    선택한 폴더 한 겹만 훑었다.
+
+    **오류가 나지 않는 것이 이 결함의 성질이다.** 폴더 고르는 화면은
+    `depth=unlimited` 로 물어 하위 파일을 보여 주므로 사람은 붙었다고 믿는데,
+    수집은 0건으로 끝나고 아무 데도 그 말이 남지 않는다. 2026-08-25 실서버에서
+    평가 문서 8종이 이렇게 통째로 안 들어왔다.
+    """
+
+    def _run(self, list_files, folders, account, documents, max_depth):
+        folders.list_for_team.return_value = [
+            {"external_folder_id": "FOLDER-1", "max_depth": max_depth}
+        ]
+        account.team_id.return_value = "TE001"
+        documents.registered_file_ids.return_value = set()
+        list_files.return_value = []
+        intake_connector_documents(account_id="UA001")
+        return list_files.call_args.kwargs["max_depth"]
+
+    def test_제한_없음이면_제한_없이_훑는다(
+        self, list_files, folders, account, documents, *_
+    ):
+        depth = self._run(list_files, folders, account, documents, None)
+        self.assertIsNone(depth, "None 을 1 로 접으면 하위 폴더의 문서가 영영 안 들어온다")
+
+    def test_고른_깊이는_그대로_쓴다(self, list_files, folders, account, documents, *_):
+        depth = self._run(list_files, folders, account, documents, 3)
+        self.assertEqual(depth, 3)

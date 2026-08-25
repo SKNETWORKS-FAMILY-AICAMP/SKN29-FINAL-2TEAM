@@ -101,7 +101,11 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
             for item in list_drive_files(
                 account_id=account_id,
                 parent_id=folder["external_folder_id"],
-                max_depth=folder.get("max_depth") or 1,
+                # **`None` 은 「제한 없음」이다.** `or 1` 로 접으면 사람이 화면에서
+                # 고른 「제한 없음」이 조용히 「선택한 폴더만」이 된다 — 폴더 고르는
+                # 화면은 `depth=unlimited` 로 물어 파일을 보여 주는데 수집은 0건이라,
+                # 어디가 틀렸는지 보이지 않는다(2026-08-25 실서버에서 실제로 겪었다).
+                max_depth=folder.get("max_depth"),
             ):
                 live_modified[item["file_id"]] = item["modified_at"]
                 # 파싱할 수 없는 형식은 받아들이지 않는다. 목록에는 보여 주되
