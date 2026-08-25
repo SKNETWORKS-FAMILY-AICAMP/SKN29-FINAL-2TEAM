@@ -105,11 +105,18 @@ COMMIT;
 --    → `/var/lib/halil/documents` (AWS_구성_현황.md §S3 의 경고). `.env` 의
 --    `OBJECT_STORAGE_PROVIDER=s3` 만 보고 S3 를 지우면 실제 원문은 그대로 남는다.
 --
---      docker compose -f infra/docker/docker-compose.yml exec web \
---        sh -c 'rm -rf /var/lib/halil/documents/*'
+--    ⚠ **`documents/*` 를 통째로 지우면 안 된다.** 그 아래에 `avatar/` 가 같이
+--    있는데, 이 초기화는 계정을 남기므로 **사진의 주인도 살아 있다.** 지우는 것은
+--    팀 디렉터리뿐이다(`build_key` 가 `<팀코드>/<문서코드>.<확장자>` 로 쓴다).
 --
---    S3 로 옮긴 뒤라면 이쪽이다:
---      aws s3 rm s3://$AWS_STORAGE_BUCKET_NAME/documents/ --recursive
+--      docker compose -f infra/docker/docker-compose.yml exec web \
+--        sh -c 'rm -rf /var/lib/halil/documents/TE001'
+--
+--    개인 파일(「내 파일」)이 있으면 계정 디렉터리도 함께 지운다 — `doc` 을
+--    비웠으므로 DB 에는 이미 없다.
+--
+--    S3 로 옮긴 뒤라면 이쪽이다(여기도 `avatar/` 를 피해 팀 접두사만):
+--      aws s3 rm s3://$AWS_STORAGE_BUCKET_NAME/TE001/ --recursive
 --
 -- 3. 팀 폴더 지정을 다시 저장한다. `team_folder` 는 남겼으므로 폴더 설정
 --    자체는 그대로지만, 저장을 다시 눌러야 전체 수집(`intake_connector_documents`)
