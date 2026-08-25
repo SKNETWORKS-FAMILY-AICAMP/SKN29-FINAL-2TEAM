@@ -6,11 +6,7 @@ import { fetchDocumentLibrary, reindexTeamDocument } from '../../api/documentLib
 import type { DocumentLibrary, LibraryDocument, LibraryFolder } from '../../api/documentLibrary';
 import { notifyIndexingStarted } from '../../utils/indexingSignal';
 import { useSession } from '../../utils/session';
-// 「내 파일」은 자리만 옮기고 화면은 그대로 쓴다. 업로드·검색 토글·팀 공유·삭제가
-// 이미 붙어 있고 동작이 검증돼 있어서, 여기서 다시 짜면 그 검증을 버리게 된다.
-// 파일이 아직 SettingsPage 밑에 있는 것은 `tabs.module.css` 를 커넥터·스킬 탭과
-// 함께 쓰기 때문이다 — 옮기면 그 셋이 CSS 를 서로 건너 참조하게 된다.
-import { MyFilesTab } from '../SettingsPage/tabs/MyFilesTab';
+import { MyFilesPanel } from './MyFilesPanel';
 import styles from './DocumentsPage.module.css';
 
 /**
@@ -459,9 +455,7 @@ export default function DocumentsPage() {
           {/* ── 우측: 그 자리의 파일 ────────────────────────────── */}
           <section className={styles.panel}>
             {selection?.kind === 'mine' ? (
-              // 「내 파일」은 화면을 그대로 쓴다. 업로드·검색 토글·팀 공유·삭제가
-              // 이미 붙어 있고, 여기서 다시 짜면 그 검증을 버린다.
-              <MyFilesTab />
+              <MyFilesPanel />
             ) : (
               <>
                 <div className={styles.panelHead}>
