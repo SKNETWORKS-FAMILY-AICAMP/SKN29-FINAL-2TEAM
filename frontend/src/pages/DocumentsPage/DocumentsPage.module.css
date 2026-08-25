@@ -1,0 +1,280 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.pageHeader h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 탐색기 두 칸. 트리는 폭을 고정하고 목록이 남는 자리를 전부 쓴다 —
+   폴더 이름은 길어야 두세 단어이고, 읽어야 하는 것은 파일 이름과 상태다. */
+.split {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+/* ---------------- 좌측 트리 ---------------- */
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  /* 폴더가 많아도 우측 목록과 함께 스크롤되지 않게 자기 안에서 흐른다. */
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.store {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storeHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+  text-transform: uppercase;
+}
+
+.folderRow,
+.childRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 하위 경로는 한 단 들여쓴다. 트위스티 자리만큼 밀면 부모와 세로선이 맞는다. */
+.childRow {
+  padding-left: 22px;
+}
+
+.twisty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 26px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+/* 트위스티가 없는 줄도 이름 시작점을 맞춘다 — 안 맞추면 폴더 이름이 들쭉날쭉하다. */
+.twistySpacer {
+  width: 18px;
+  flex: none;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.node:hover {
+  background: var(--color-bg);
+}
+
+.nodeOn {
+  background: var(--color-bg);
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+/* 긴 폴더 이름이 개수 배지를 밀어내지 않게 이름만 줄인다. */
+.nodeName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeCount {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-placeholder);
+}
+
+.treeEmpty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+
+/* ---------------- 우측 목록 ---------------- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelCount {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+/* 밝은 배경 위의 글자라 `--color-warning`(amber-500)이 아니라 텍스트용 토큰을
+   쓴다 — 배지 배경 위에서 쓰라고 따로 둔 값이다. */
+.panelWarn {
+  color: var(--color-warning-text);
+}
+
+.muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.rowIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.rowBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.rowName {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+  /* 파일 이름은 길다. 줄바꿈을 허용하되 단어 중간에서도 끊는다 —
+     안 그러면 확장자까지 붙은 한 덩어리가 카드를 삐져나간다. */
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 실패 사유는 서버가 준 문장을 그대로 쓴다 — 화면이 짐작해 뭉뚱그리는 것보다
+   언제나 정확하다. 다만 파이프라인이 내려 주는 값이라 파이썬 예외 문자열이
+   통째로 올 때가 있고(실측 500자 넘음), 그러면 한 줄이 카드 몇 개 높이가 된다.
+   **지우지 않고 접는다** — 앞머리에 원인이 있고, 필요하면 긁어서 읽을 수 있다. */
+.rowDetail {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/* 트리를 옆에 두면 목록이 읽을 수 없게 좁아진다. 위아래로 쌓고 트리 높이는 접는다. */
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tree {
+    max-height: 240px;
+  }
+}

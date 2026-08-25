@@ -11,6 +11,7 @@ const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage/ResetPasswordPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage/SettingsPage'));
+const DocumentsPage = lazy(() => import('./pages/DocumentsPage/DocumentsPage'));
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage/ProjectListPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage/ProjectDetailPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
@@ -89,8 +90,12 @@ function App() {
           <Route path="/settings" element={<Navigate to={PATHS.settingsTeam} replace />} />
           <Route path={PATHS.settingsTeam} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsConnectors} element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          <Route path={PATHS.settingsMyFiles} element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path={PATHS.settingsSkills} element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          {/* 「내 파일」이 있던 자리(`/settings/my-files`). 2026-08-25 에 「문서」로
+              옮겼고, 북마크한 사람이 랜딩으로 떨어지지 않게 넘겨 준다 — 탭 없는
+              `/settings` 가 랜딩으로 떨어졌던 것과 같은 사고를 되풀이하지 않는다. */}
+          <Route path="/settings/my-files" element={<Navigate to={PATHS.documents} replace />} />
+          <Route path={PATHS.documents} element={<RequireAuth><DocumentsPage /></RequireAuth>} />
           {/* TO-BE (Agent Platform) — 개발지시 2차. 로그인 후 랜딩은 4차 단계 1에서 /chat 이 됐다. */}
           <Route path={PATHS.chat} element={<RequireAuth><ChatPage /></RequireAuth>} />
           <Route path={PATHS.chatSession} element={<RequireAuth><ChatPage /></RequireAuth>} />

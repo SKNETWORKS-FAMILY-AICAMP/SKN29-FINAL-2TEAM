@@ -6,12 +6,16 @@ import { loadUserRole } from '../../utils/userRole';
 import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettingsPage';
 import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
-import { MyFilesTab } from './tabs/MyFilesTab';
 import { SkillsTab } from './tabs/SkillsTab';
 import styles from './SettingsPage.module.css';
 
 /**
- * Settings 허브 — 팀 / 커넥터 / 내 파일 / 스킬 탭 컨테이너.
+ * Settings 허브 — 팀 / 커넥터 / 스킬 탭 컨테이너.
+ *
+ * **「내 파일」 탭은 「문서」 화면으로 옮겼다**(2026-08-25 · `PATHS.documents`).
+ * 설정은 바꾸는 곳인데 파일은 쌓이는 곳이고, 같은 성격의 팀 문서(커넥터가
+ * 가져오는 쪽)는 볼 자리가 아예 없어서 둘이 갈라져 있었다. 스킬은 남긴다 —
+ * 그건 문서가 아니라 에이전트가 따를 절차다.
  *
  * **Model 탭은 걷었다**(2026-08-18 멘토링). 기본 채팅 모델은 운영자가 팀별로
  * 정하고(`/ops/models`), 에이전트별 모델은 빌더에 그대로 있다.
@@ -34,8 +38,6 @@ export default function SettingsPage() {
     switch (location.pathname) {
       case PATHS.settingsConnectors:
         return <ConnectorTab />;
-      case PATHS.settingsMyFiles:
-        return <MyFilesTab />;
       case PATHS.settingsSkills:
         return <SkillsTab />;
       default:

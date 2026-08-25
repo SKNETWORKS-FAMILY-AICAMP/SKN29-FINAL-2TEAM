@@ -56,8 +56,23 @@ export const PATHS = {
   agentVersionEdit: '/agents/versions/:agentId/edit',
   agentVersionNew: '/agents/versions/new/edit',
   settingsConnectors: '/settings/connectors',
-  settingsMyFiles: '/settings/my-files',
   settingsSkills: '/settings/skills',
+  /**
+   * 「문서」 — 커넥터가 가져온 팀 문서와 내가 올린 파일을 한자리에서 본다
+   * (2026-08-25). `/settings/my-files` 를 여기로 옮겼다.
+   *
+   * **설정에 있을 것이 아니었다.** 설정은 바꾸는 곳인데 문서는 쌓이는 곳이고,
+   * 정작 덩치가 큰 팀 문서(커넥터가 가져오는 쪽)는 볼 자리가 아예 없었다 —
+   * 폴더를 저장하면 문서당 100초씩 색인이 도는데 얼마나 됐는지, 무엇이
+   * 실패했는지 화면 어디에도 안 나왔다.
+   *
+   * 「문서」 화면은 `ac64372` 에서 한 번 지웠던 것이다. 그때 이유는 "본문은
+   * 필요해질 때 읽는다 — 사람이 문서 상태를 들여다볼 자리가 따로 있을 이유가
+   * 없다"였는데, **2026-08-24 에 전량 색인으로 바뀌면서 그 전제가 만료됐다.**
+   * 링크가 어디에도 없어 주소로만 들어가던 것도 지운 이유였고, 그건 이번에
+   * 사이드바 자리를 주면서 해소한다.
+   */
+  documents: '/documents',
 } as const;
 
 export interface RouteEntry {
@@ -100,8 +115,8 @@ export const ROUTES: RouteEntry[] = [
   },
   { path: PATHS.settingsTeam, label: '설정 · 팀', group: '설정' },
   { path: PATHS.settingsConnectors, label: '설정 · 커넥터', group: '설정' },
-  { path: PATHS.settingsMyFiles, label: '설정 · 내 파일', group: '설정' },
   { path: PATHS.settingsSkills, label: '설정 · 스킬', group: '설정' },
+  { path: PATHS.documents, label: '문서', group: '메인' },
   { path: PATHS.projects, label: '프로젝트 목록', group: '메인' },
   { path: PATHS.opsLogin, label: '운영자 로그인', group: '운영자 콘솔' },
   { path: PATHS.ops, label: '운영 현황', group: '운영자 콘솔' },
@@ -146,13 +161,18 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     match: [PATHS.agentVersions, PATHS.agentVersionsTeam, PATHS.agentVersionsFavorites],
   },
   { label: '프로젝트', to: PATHS.projects, icon: 'folder', match: [PATHS.projects] },
+  { label: '문서', to: PATHS.documents, icon: 'file-text', match: [PATHS.documents] },
   { label: '설정', to: PATHS.settingsTeam, icon: 'sliders', match: ['/settings'] },
 ];
 
-/** Settings 허브 탭. 8_화면개편_명세 §2 — SettingsPage를 탭 컨테이너로 개편. */
+/**
+ * Settings 허브 탭. 8_화면개편_명세 §2 — SettingsPage를 탭 컨테이너로 개편.
+ *
+ * 「내 파일」은 2026-08-25 에 「문서」 화면으로 옮겼다(`PATHS.documents`).
+ * 스킬은 남는다 — 그건 문서가 아니라 에이전트가 따를 절차라 설정이 맞다.
+ */
 export const SETTINGS_TABS = [
   { label: '팀', to: PATHS.settingsTeam },
   { label: '커넥터', to: PATHS.settingsConnectors },
-  { label: '내 파일', to: PATHS.settingsMyFiles },
   { label: '스킬', to: PATHS.settingsSkills },
 ];
