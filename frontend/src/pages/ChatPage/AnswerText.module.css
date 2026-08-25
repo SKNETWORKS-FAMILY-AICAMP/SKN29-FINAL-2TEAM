@@ -40,6 +40,17 @@
   color: var(--color-heading);
 }
 
+.link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.link:hover {
+  color: var(--color-primary-hover);
+}
+
 /* 도구 이름 같은 짧은 식별자. 문단 안에 들어가므로 배경만 옅게 깔고 크기는
    본문을 따라간다 — 여기서 줄바꿈 규칙이 달라지면 문단이 들쭉날쭉해진다. */
 .code {

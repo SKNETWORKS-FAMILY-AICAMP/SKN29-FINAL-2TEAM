@@ -4,6 +4,27 @@ import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
 import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
 import styles from './cards.module.css';
 
+const SENSITIVE_ARGUMENT_KEY = /(?:token|password|secret|api.?key|authorization|credential)/i;
+
+function maskToolArguments(value: unknown, key = ''): unknown {
+  if (SENSITIVE_ARGUMENT_KEY.test(key)) return '••••••••';
+  if (Array.isArray(value)) return value.map((item) => maskToolArguments(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        maskToolArguments(childValue, childKey),
+      ]),
+    );
+  }
+  return value;
+}
+
+function formatToolArguments(argumentsValue: Record<string, unknown> | undefined): string | null {
+  if (!argumentsValue || Object.keys(argumentsValue).length === 0) return null;
+  return JSON.stringify(maskToolArguments(argumentsValue), null, 2);
+}
+
 /**
  * Chat 스트림에 뜨는 카드.
  *
@@ -34,7 +55,7 @@ export interface ProgressCardProps {
    */
   running?: boolean;
   /**
-   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 생각 과정이
+   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 작업 과정이
    * 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로 추가했다. 하나로
    * 합칠 때(`ChatPage.tsx`가 바깥 `<section className={styles.card}>`를 직접
    * 두르는 경우) `true`를 준다 — 단독으로 쓸 땐 그대로 `<section>`을 두른다.
@@ -222,9 +243,9 @@ export interface ReasoningTraceProps {
 }
 
 /**
- * ⓪ 생각 과정 카드(2026-08-18) — 추론 모델(gpt-5.6-luna 등)이 도구를 부르기
- * 전이나 최종 답 전에 내는 생각을, **실제로 부른 도구·위임과 같은 순서로
- * 섞어서** 보여준다. `services/agent_runtime/events.py`가 내는 `reasoning`
+ * ⓪ 작업 과정 카드 — 모델이 도구를 부르기 전에 만든 사용자용 한국어 안내를
+ * **실제로 부른 도구·위임과 같은 순서로 섞어서** 보여준다. 내부 reasoning은
+ * 저장 호환을 위해 수신하더라도 화면에는 그리지 않는다.
  * 조각과 `tool_started`/`tool_completed`/`subagent_started`/`subagent_completed`
  * 를 `liveChat.ts`의 `reduce()`가 하나의 `timeline` 배열로 순서대로 쌓는다 —
  * 전에는 이 둘이 서로 다른 배열에 각자 쌓여서 "몇 번째 생각 다음에 이
@@ -271,13 +292,23 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
     <Wrapper className={bare ? styles.bareStack : styles.card}>
       <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
-        생각 과정 {entries.length}단계
+        작업 과정 {entries.length}단계
       </button>
 
       {open && (
         <ol className={styles.reasoningList} ref={logRef}>
           {entries.map((entry, index) => {
             const isLast = index === entries.length - 1;
+            if (entry.kind === 'update') {
+              return (
+                <li key={index} className={styles.reasoningStep}>
+                  <span>
+                    {entry.text}
+                    {running && isLast && <span className={styles.reasoningCursor} />}
+                  </span>
+                </li>
+              );
+            }
             if (entry.kind === 'reasoning') {
               return (
                 <li key={index} className={styles.reasoningStep}>
@@ -301,6 +332,8 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
             }
             if (entry.kind === 'tool') {
               const isExpanded = expandedOutputs.has(index);
+              const formattedArguments = formatToolArguments(entry.arguments);
+              const hasDetails = Boolean(formattedArguments || entry.output);
               return (
                 <li key={index} className={styles.reasoningToolGroup}>
                   {/* 도구가 실제로 뭘 반환했는지는 눌러야만 펼쳐진다(2026-08-18) —
@@ -310,7 +343,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                     type="button"
                     className={styles.reasoningTool}
                     onClick={() => toggleOutput(index)}
-                    disabled={!entry.output}
+                    disabled={!hasDetails}
                   >
                     {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
                     {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
@@ -322,7 +355,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                       {entry.status === 'FAILED' && ' 실패'}
                       {entry.status === 'REJECTED' && ' 취소'}
                     </span>
-                    {entry.output && (
+                    {hasDetails && (
                       <Icon
                         name={isExpanded ? 'chevron-down' : 'chevron-right'}
                         size={12}
@@ -330,7 +363,22 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                       />
                     )}
                   </button>
-                  {isExpanded && entry.output && <pre className={styles.reasoningOutput}>{entry.output}</pre>}
+                  {isExpanded && hasDetails && (
+                    <div className={styles.reasoningDetails}>
+                      {formattedArguments && (
+                        <div>
+                          <span className={styles.reasoningDetailLabel}>입력</span>
+                          <pre className={styles.reasoningOutput}>{formattedArguments}</pre>
+                        </div>
+                      )}
+                      {entry.output && (
+                        <div>
+                          <span className={styles.reasoningDetailLabel}>결과</span>
+                          <pre className={styles.reasoningOutput}>{entry.output}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             }

@@ -485,7 +485,7 @@
   font-weight: 700;
 }
 
-/* 생각 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
+/* 작업 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
    같은 로그 줄이지만 문장 대신 상태 아이콘이 그 자리(맨 앞)를 대신한다.
    도구 항목은 호출 줄(.reasoningTool) 아래에 반환값 줄(.reasoningOutput)이
    붙을 수 있어서 li 자체는 .reasoningToolGroup으로 세로로 묶는다. */
@@ -526,11 +526,27 @@
   margin-left: auto;
 }
 
+.reasoningDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 2px 19px;
+}
+
+.reasoningDetailLabel {
+  display: block;
+  margin-bottom: 3px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
 /* 도구가 실제로 반환한 값(2026-08-18) — 호출 여부만 보이고 결과는 안 보이던
    문제를 고치려고 추가했다. 아이콘 폭만큼 들여써서 그 도구 호출 줄에 딸린
    것임을 보이고, 길어도 로그 전체를 밀어내지 않게 자체 스크롤을 둔다. */
 .reasoningOutput {
-  margin: 0 0 2px 19px;
+  margin: 0;
   padding: 6px 8px;
   max-height: 120px;
   overflow-y: auto;
