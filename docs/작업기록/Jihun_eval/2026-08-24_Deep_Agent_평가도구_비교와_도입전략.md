@@ -13,13 +13,19 @@
 | 현재 코드 | Langfuse Python SDK v4 단일 callback 사용 |
 | P0 HITL 정합성 | 수정·수동 QA·회귀 테스트 완료 |
 | Langfuse/LangSmith | Langfuse v4 전환 완료, LangSmith 연결·자동 tracing 제거 완료 |
-| 다음 작업 | 평가 PoC dataset과 기준선 수집 |
+| 현재 평가 데이터 | 기능·안전장치 확인용 smoke PoC 10개 작성 완료 |
+| 다음 작업 | main 통합 후 최소 결과 계약 준비 → smoke 검증 → 복합 workflow·수동 기준선 |
+| 실행 계획 정본 | `2026-08-24_검증평가_실행계획.md` |
 | 평가 도구 | DeepEval·Ragas는 도입 설계 단계이며 아직 평가 pipeline이 완성되지 않음 |
+| 장기 관측 방향 | Langfuse Cloud는 과도기 플랫폼으로 사용하고 OTel 기반 사내 플랫폼으로 이전 |
 
 이 문서의 “결정”과 “현재 구현”을 구분한다. 2026-08-24 후속 구현으로
 LangSmith callback과 환경변수 제거까지 완료했다.
 
-평가 착수의 최우선 선행조건은 HITL 승인 도구의 DB 기록 정합성 수정이다. 현재 승인 대기 interrupt를 일반적인 스트림 조기 종료로 처리하여 실제 성공한 도구가 `FAILED / STREAM_CLOSED`로 남을 수 있으므로, 이 결함을 고치기 전의 Tool 성공률·HITL 승인 후 성공률은 평가 기준선으로 사용하지 않는다.
+평가 착수의 최우선 선행조건이었던 HITL 승인 도구의 DB 기록 정합성 수정은
+완료했다. 수정 전 기록은 승인 대기 interrupt를 일반적인 스트림 조기 종료로
+처리해 실제 성공한 도구가 `FAILED / STREAM_CLOSED`로 남을 수 있었으므로 정식
+평가 기준선으로 사용하지 않는다.
 
 ## 1. 배경
 
@@ -245,7 +251,10 @@ OpenTelemetry Collector
 
 OpenTelemetry용 저장소와 UI를 자체 개발하면 기술적으로 Langfuse를 사용하지 않아도 된다. 그러나 이 경우 단순 로그 화면이 아니라 사실상 작은 LLM 관측 플랫폼을 직접 만드는 셈이다.
 
-> **적용 상태: 장기 참고용·조건부 설계.** 현재 실행 범위는 Langfuse Cloud를 사용하면서 평가 체계와 공통 OpenTelemetry 계측을 구축하는 데까지다. 이 절은 자체 플랫폼 착수를 승인한 계획이 아니며, §10.5의 Go/No-Go 조건을 충족해 별도 결정을 내린 경우에만 실행한다.
+> **적용 상태: 장기 목표·단계적 착수.** 외부 데이터 전송과 사용량 기반 비용
+> 의존을 없애기 위해 최종적으로 OTel 기반 사내 관측·평가 플랫폼으로 이전한다.
+> 다만 자체 플랫폼 구현은 §10.6의 Go 조건과 운영 역량을 확인한 뒤 단계적으로
+> 착수하며, 병행 검증이 끝나기 전에는 Langfuse Cloud를 성급하게 끊지 않는다.
 
 ```text
 Deep Agent
@@ -482,11 +491,15 @@ LangSmith
 
 ## 10. 단계적 도입 전략
 
-### 10.0 0단계: P0 HITL tool-call 기록 정합성 수정
+### 10.0 0단계: P0 HITL tool-call 기록 정합성 수정 — 완료
 
-현재 `trace_events()`는 스트림마다 `open_tool_calls`를 빈 상태로 만들고, HITL interrupt 때 `_suspend_run()`은 `agent_run`만 PENDING으로 남긴다. 승인 대기 tool call은 `finally`의 `_close_orphans()`가 `FAILED / STREAM_CLOSED`로 종료하며, 재개 스트림은 기존 DB 행과 짝을 찾지 못해 실제 성공 결과를 반영하지 못한다.
+수정 전에는 `trace_events()`가 스트림마다 `open_tool_calls`를 빈 상태로 만들고,
+HITL interrupt 때 `_suspend_run()`이 `agent_run`만 PENDING으로 남겼다. 승인 대기
+tool call은 `finally`의 `_close_orphans()`가 `FAILED / STREAM_CLOSED`로
+종료했으며, 재개 스트림은 기존 DB 행과 짝을 찾지 못해 실제 성공 결과를 반영하지
+못했다.
 
-이 상태에서 Tool 성공률, HITL 승인 후 성공률, 실패 단계 분포를 측정하면 거짓 숫자가 기준선에 들어간다. 따라서 Langfuse v3 기준선 저장과 v4 마이그레이션보다 먼저 다음을 완료한다.
+이 상태의 기록은 정식 기준선에서 제외한다. 다음 수정과 회귀 검증은 완료됐다.
 
 1. HITL interrupt 시 해당 run의 승인 대기 tool call을 orphan 실패 처리 대상에서 제외하고 `PENDING`으로 유지한다.
 2. `tool_call` 행을 LangChain의 `tool_call_id`와 안정적으로 연결할 수단을 마련한다. `(run_id, langchain_tool_call_id)`를 직접 저장하거나 기존 idempotency 기록을 이용하는 방식 중 하나를 선택한다.
@@ -502,21 +515,70 @@ LangSmith
 - 병렬로 같은 tool을 호출해도 각 `tool_call_id`가 정확한 행과 연결된다.
 - HITL 관련 운영 집계와 Langfuse trace가 같은 실행 결과를 나타낸다.
 
-### 10.1 1단계: Langfuse v4 전환과 현행 기준선 고정
+### 10.1 1단계: Langfuse v4 단일 추적 전환 — 완료
 
-신규 Collector나 evaluator를 추가하기 전에 현재 v3 trace의 기준선을 저장하고 Python SDK v4 마이그레이션을 진행한다.
+Python SDK v4 전환, LangSmith 제거, 단일 callback 구성과 Cloud observation
+쓰기·조회 검증을 완료했다. v3 trace를 고정 시나리오로 별도 보관하지 못했으므로
+정식 성능 기준선은 v4에서 새로 수집한다.
 
-1. 대표 시나리오 5~10개의 v3 trace와 마스킹 결과를 기준선으로 보관한다.
-2. v4 호환 branch에서 callback, metadata 전파, span filtering, score API를 수정한다.
-3. 동일 시나리오로 trace 구조·token·비용·마스킹·유실 여부를 비교한다.
-4. v4 전환 후 LangSmith callback과 자동 tracing 경로를 비활성화하거나 제거한다.
-5. Langfuse만 활성화된 상태를 회귀 테스트로 고정한다.
+완료 결과는 다음과 같다.
 
-이 단계가 끝나야 이후 문서의 “현재”는 Langfuse v4 단일 중앙 플랫폼을 의미한다.
+1. Langfuse Python SDK `4.14.4`와 v4 callback을 적용했다.
+2. 마스킹된 Cloud observation 쓰기·조회에 성공했다.
+3. LangSmith callback, Django 설정과 자동 tracing 환경변수를 제거했다.
+4. Langfuse만 활성화된 상태를 회귀 테스트로 고정했다.
 
-### 10.2 2단계: 프로젝트 공통 OpenTelemetry 계측 도입
+따라서 이후 문서의 “현재”는 Langfuse v4 단일 중앙 플랫폼을 의미한다.
 
-현재 구현과 목표 구조를 구분한다. 현재 코드는 Langfuse의 LangChain callback을 사용하며, Langfuse SDK가 내부적으로 OpenTelemetry provider와 전송을 구성한다. 아직 프로젝트가 직접 관리하는 공통 OpenTelemetry 계측 계층과 Collector를 구축한 상태는 아니다. 즉 현재는 “Langfuse SDK가 OTel을 내부 기반으로 사용”하는 상태이지, “프로젝트 공통 OTel + Collector” 구축이 완료된 상태가 아니다.
+### 10.2 2단계: smoke에서 복합 workflow 평가 체계로 확장
+
+현재 `docs/TO-BE/eval/agent_poc_v1.json`의 10개는 완성된 Agent 성능
+데이터셋이 아니라, 단일 도구 선택·no-tool·RAG 정보 부재·HITL·권한·모호한
+요청 같은 기능과 안전장치를 확인하는 **smoke 평가**다. 이 smoke가 통과한 뒤
+실제 사용자가 Agent에게 맡길 복합 업무를 평가한다.
+
+실행 순서는 다음으로 고정한다.
+
+```text
+최소 결과 계약·append-only 기록기 준비
+→ smoke 평가 검증
+→ 실제 복합 업무 후보 수집 및 대표 workflow 5~8개 선정
+→ fixture와 정확성·안전성·금지 조건 정의
+→ latency·token·호출 수 수집 항목 정의
+→ 사람이 동일 시나리오를 여러 번 실행해 현실성과 변동 확인
+→ 성공률·p50/p95·token·비용 기준선 확보
+→ 기준선에 근거한 성능 예산 설정
+→ v0 결과를 바탕으로 정식 DB·내부 저장 구조 확정
+→ 평가 runner 구현
+→ 원시 결과를 DB/내부 저장소에, 비민감 요약 보고서를 Git에 저장
+→ Langfuse Experiment/Score에 결과 연결
+→ 실패 분석과 최소 수정 후 smoke·workflow 재실행
+```
+
+복합 workflow는 단순히 특정 도구가 호출됐는지를 보지 않는다. 목표 달성,
+정보 탐색과 근거 사용, 서브에이전트 위임, 승인 전 side effect 금지, 승인 후
+정확한 쓰기, 부분 실패 보고, 중복 방지와 최종 DB postcondition을 함께 평가한다.
+여러 안전한 경로가 같은 결과를 만들 수 있으므로 전체 trajectory 하나를 고정하지
+않고 필수 단계·금지 행동·호출 예산·사후조건을 기준으로 판정한다.
+
+성능 예산은 사전에 임의 숫자로 정하지 않는다. 동일 조건의 반복 실행으로 정상
+분포를 구한 뒤 active latency, token, 모델·도구 호출 수와 재시도 상한을 정한다.
+안전·권한·승인·tenant 격리는 평균 점수와 관계없이 항상 통과해야 한다.
+
+평가가 Agent를 자동으로 개선하는 것은 아니다. 실패를 도구 선택, 인자, RAG
+근거성, 위임, HITL, 복구, latency, token 등의 원인으로 분류하고 프롬프트·도구
+설명·컨텍스트·실행 구조 중 원인에 해당하는 최소 범위만 수정한다. 수정 후 smoke,
+workflow와 holdout을 다시 실행하여 정확성 향상이 다른 기능·안전성·비용을
+악화시키지 않았는지 확인한다.
+
+### 10.3 3단계: 프로젝트 공통 OpenTelemetry 계측 도입
+
+평가 runner와 Langfuse 기준선에서 실제로 필요한 trace·지표를 확인한 뒤 공통
+계측을 도입한다. 현재 코드는 Langfuse의 LangChain callback을 사용하며,
+Langfuse SDK가 내부적으로 OpenTelemetry provider와 전송을 구성한다. 아직
+프로젝트가 직접 관리하는 공통 OpenTelemetry 계측 계층과 Collector를 구축한
+상태는 아니다. 즉 현재는 “Langfuse SDK가 OTel을 내부 기반으로 사용”하는
+상태이지, “프로젝트 공통 OTel + Collector” 구축이 완료된 상태가 아니다.
 
 ```text
 현재
@@ -548,7 +610,7 @@ Collector가 Langfuse v4로 export할 때 인증 헤더와 함께 `x-langfuse-in
 
 원문 tool result는 공통 metadata에 넣지 않는다. §6.3의 allowlist, opt-in capture, 크기 제한과 fail-closed 정책을 적용한다.
 
-### 10.3 3단계: 실제 UI 요구사항 수집
+### 10.4 4단계: 실제 UI 요구사항 수집
 
 Langfuse를 사용하면서 다음을 확인한다.
 
@@ -560,9 +622,12 @@ Langfuse를 사용하면서 다음을 확인한다.
 - 개발자와 운영자의 화면 요구 차이
 - Langfuse에서 부족하거나 불편한 기능
 
-### 10.4 선택적 고도화: 프로젝트 전용 요약 UI 추가
+### 10.5 5단계: 프로젝트 전용 요약 UI와 내부 저장소 단계적 구축
 
-이 단계는 현재 필수 실행 범위가 아니다. Langfuse를 실제로 사용한 결과 프로젝트 고유의 운영 요약 요구가 명확하고 기존 `/ops/usage` 확장만으로 해결되지 않을 때 별도 승인을 받아 착수한다. 처음부터 Langfuse 전체를 복제하지 않고 운영 의사결정에 필요한 요약 화면부터 만든다. Langfuse 외부 trace를 직접 조회해야 할 필요가 확인된 경우에만 OTLP 수신, trace·평가 결과 저장, 검색·집계 API, 보존·삭제 정책을 추가한다.
+처음부터 Langfuse 전체를 복제하지 않고 실제로 사용한 기능부터 내부화한다.
+운영 의사결정에 필요한 요약 화면을 먼저 만들고, 이후 OTLP 수신, trace·평가
+결과 저장, 검색·집계 API, 권한, 보존·삭제와 재전송 정책을 단계적으로 추가한다.
+각 단계는 전담 운영 역량과 §10.6의 Go 조건을 확인하고 착수한다.
 
 - Agent 버전별 작업 성공률
 - 업무 유형별 평균 비용 및 지연
@@ -580,16 +645,21 @@ Langfuse를 사용하면서 다음을 확인한다.
 Langfuse: 특정 실행이 내부적으로 왜 실패했는가?
 ```
 
-### 10.5 장기 조건부 선택지: Langfuse 유지·축소·제거 판단
+### 10.6 6단계: Langfuse Cloud 병행 검증 후 제거
 
-Langfuse 대체 플랫폼은 현재 로드맵의 확정 작업이 아니다. 기존에 Langfuse 셀프호스팅도 현재 팀 규모·트래픽에서는 Cloud보다 운영비가 크다고 판단했으므로, 그보다 범위가 큰 자체 플랫폼은 다음 Go 조건 중 하나 이상이 명확하고 전담 역량이 확보됐을 때만 별도 의사결정으로 착수한다.
+장기 목표는 외부 데이터 전송과 사용량 기반 비용 의존을 없애고 OTel 기반 사내
+관측·평가 플랫폼으로 이전하는 것이다. 다만 Langfuse가 제공하던 저장·검색·평가·
+권한·보존 기능을 준비하지 않은 채 전송부터 끊으면 관측 공백이 생긴다. 자체
+플랫폼의 각 구현 단계는 다음 Go 조건 중 하나 이상이 명확하고 전담 역량이
+확보됐을 때 착수한다.
 
 - Langfuse 비용이 자체 구축·운영의 총비용보다 지속적으로 커짐
 - 외부 반출·데이터 주권 정책 때문에 Langfuse Cloud 사용이 불가능해짐
 - Langfuse와 기존 `/ops/usage`로 해결할 수 없는 핵심 도메인 요구가 반복적으로 확인됨
 - 플랫폼을 개발·운영할 담당 인력과 장기 제품 운영 계획이 확보됨
 
-Go 결정 후 자체 UI가 안정된 경우 다음 조건을 기준으로 Langfuse 유지 여부를 판단한다.
+자체 UI와 내부 저장소가 안정된 경우 다음 조건으로 Langfuse Cloud 제거 준비도를
+판단한다.
 
 - 상세 trace 디버깅을 자체 UI가 충분히 대체하는가
 - dataset/experiment/annotation 기능이 계속 필요한가
@@ -610,7 +680,11 @@ Go 결정 후 자체 UI가 안정된 경우 다음 조건을 기준으로 Langfu
 - 데이터 보존·삭제와 장애 시 재전송 정책 검증
 - 정해진 병행 운영 기간 동안 Langfuse와 자체 플랫폼의 결과 일치 여부
 
-실제 사용 결과 Langfuse가 충분하다면 자체 UI를 더 확장하지 않는 것도 올바른 결론이다. 반대로 위 기준을 충족한 자체 플랫폼이 안정적으로 병행 운영된 이후에만 Langfuse를 제거한다.
+위 기준을 충족한 자체 플랫폼을 정해진 기간 동안 Langfuse와 병행 운영하고 결과가
+일치한 뒤에만 Langfuse 전송을 중단한다. 중단 시에는 Cloud 보존 데이터의 삭제
+정책을 확인하고 API key와 배포 secret을 폐기한다. 비용·인력 조건이 충족되지
+않으면 전환 시점을 늦추거나 self-hosted Langfuse를 중간 단계로 사용할 수 있지만,
+외부 Cloud 의존 제거라는 장기 방향은 유지한다.
 
 ## 11. 자체 UI를 고려할 때 지켜야 할 경계
 
@@ -635,7 +709,71 @@ Langfuse                      = 초기 trace·평가 조회 및 실험 UI
 
 최소 보존 항목은 평가 케이스와 기대 결과, metric/rubric 버전, Agent·prompt·model·runtime 버전, 평가 모델, 내부 run/trace ID, 원시 점수, 평가 시각 및 사용자 피드백이다. Langfuse의 dataset과 prompt 기능을 사용하더라도 프로젝트 외부에만 유일한 원본이 존재하지 않게 한다.
 
-처음부터 Langfuse와 자체 저장소에 모든 데이터를 이중 영구 저장할 필요는 없다. 자체 UI 개발을 시작할 때 OpenTelemetry Collector에서 필요한 데이터만 복제하는 편이 효율적이다.
+평가 runner를 만들 때부터 평가 결과는 내부에 저장한다. 다만 모든 대용량 OTel
+trace를 처음부터 이중 영구 저장할 필요는 없다. 초기에는 평가 실행 조건, 사례별
+판정, 집계 지표, 내부 run/trace ID와 비민감 보고서를 보존하고, 자체 UI 개발을
+시작할 때 Collector에서 필요한 상세 trace만 내부 저장소로 복제한다.
+
+### 11.1 평가 결과 정본과 표시 계층
+
+평가 결과는 저장과 표시를 분리한다. 대시보드는 정본이 아니라 저장된 결과를
+조회하는 소비자다.
+
+첫 smoke도 평가 증거이므로 실행 전에 `eval_run_id`, `run_manifest`,
+`case_results`, `summary`, `report`로 구성된 v0 결과 계약과 수동 기록기를 먼저
+준비한다. v0 원시 결과는 접근 통제된 내부 저장 위치에 append-only로 보존하고,
+Git에는 비민감 요약만 남긴다. 정식 DB 스키마는 smoke와 workflow 실측으로 필요한
+필드가 확인된 뒤 확정하고 v0 결과를 `eval_run_id` 기준으로 가져온다.
+
+```text
+Git
+├─ dataset·rubric·성능 예산
+├─ 코드 버전별 비민감 요약 보고서
+└─ 알려진 실패·개선 이력
+
+프로젝트 DB
+├─ eval run과 사례별 판정
+├─ latency·token·비용·호출 수
+├─ Agent·model·prompt·runtime 버전
+└─ 내부 run/trace ID 매핑
+
+내부 object storage
+├─ 대용량 JSONL·상세 산출물
+├─ 마스킹된 원시 평가 결과
+└─ DB에 넣기 부적합한 trace·fixture
+
+표시 계층
+├─ Langfuse: 초기 trace·Experiment·Score 탐색
+└─ 자체 대시보드: 이후 DB/내부 저장소를 조회하는 내부 소비자
+```
+
+각 평가 실행에는 변경되지 않는 `eval_run_id`를 부여하고 다시 실행할 때 기존
+결과를 덮어쓰지 않는다. 최소 산출물은 다음 네 종류다.
+
+- `run_manifest`: git commit, dataset/rubric, Agent·model·prompt·runtime, 환경과 반복 수
+- `case_results`: 사례별 성공·실패, 점수, 실패 단계와 사유
+- `summary`: 성공률, 안전 위반, p50/p95, token·비용과 이전 버전 대비 변화
+- `report`: 사람이 읽는 결론, 실패 사례, 한계와 내부 증거 링크
+
+구체적인 DB 테이블과 object storage 경로는 최종 main 통합 후 smoke·workflow
+실측으로 실제 필드가 확인될 때 설계한다. 이 문서는 저장 책임과 필수 데이터만
+정하며, 아직 사용하지 않는 컬럼이나 경로를 제품 코드에 미리 하드코딩하지 않는다.
+
+Git에는 평가 기준과 비민감 요약만 보관하고 사용자 원문, 문서 전체, 비밀값,
+대용량 trace는 넣지 않는다. 원시 결과는 마스킹·tenant 격리·접근권한과 보존·삭제
+정책을 적용한 내부 저장소에 둔다. Langfuse에만 유일한 원본이 존재해서는 안 된다.
+
+사람에게 보여주는 기본 화면과 보고서는 다음을 함께 제시한다.
+
+- 평가한 smoke/workflow/holdout 수와 반복 횟수
+- 버전별 업무 성공률과 절대 성공·실패 건수
+- 승인·권한·중복 쓰기·tenant 격리 위반 건수
+- active latency p50/p95와 성공 작업당 token·비용
+- 이전 버전 대비 개선·악화와 대표 실패 사례
+- 평가하지 않은 범위, sandbox 차이와 남은 한계
+
+“안정적”이라는 표현은 결과만 단독으로 제시하지 않고 dataset 버전, 표본 수,
+반복 수, git commit과 실패·한계를 함께 공개할 때만 사용한다.
 
 ## 12. 평가 지표 설계
 
@@ -664,6 +802,19 @@ Deep Agent는 최종 답변만 평가해서는 안 된다. 문서 처리, 검색
 | 실패 위치 | Failure Stage Distribution | root/subagent/retriever/tool/HITL 단계별 trace 집계 |
 | 메모리 | 저장·검색 정확성 및 격리 | deterministic test |
 | 사용자 품질 | 만족도 및 수정 요청률 | Langfuse feedback |
+
+지연시간은 HITL 사용자 대기를 Agent 성능으로 오인하지 않도록 다음을 분리한다.
+
+- `end_to_end_latency`: 요청부터 최종 응답까지 전체 시간
+- `active_execution_latency`: 승인 대기를 제외한 실제 실행 시간
+- `approval_wait_latency`: 승인·거부를 기다린 시간
+- `time_to_first_token`: 첫 응답이 보이기까지의 시간
+- 모델·도구·서브에이전트 구간별 latency
+
+token과 비용은 마지막 루트 모델 호출만 보지 않고 루트·재시도·서브에이전트·
+후처리 모델 호출을 모두 합산한다. cache token 등 공급자가 제공하는 세부 usage도
+원시 결과에 보존한다. 성능 회귀는 한 번의 고정값보다 동일 조건 반복 실행의
+중앙값과 p95를 비교하며, 성능 예산은 첫 수동 기준선 이후 정한다.
 
 대표 계산식은 다음과 같다.
 
@@ -719,7 +870,12 @@ Jira 등록, 파일 쓰기, MCP 호출과 같은 평가가 실제 운영 데이�
 
 ## 13. 평가 dataset 제안
 
-초기부터 50~100개를 구축하면 평가 비용과 실행시간뿐 아니라 실패 원인 분석 부담이 커진다. 평가 pipeline과 rubric을 만드는 PoC는 대표 사례 10개로 시작하고, 개발·기준선 dataset 20개와 별도의 비공개 holdout 10개를 합친 총 30개를 첫 평가 기준으로 사용한다.
+현재 `agent_poc_v1.json`의 10개는 **smoke dataset**이다. 제품 코드의 응답을
+고정하는 하드코딩이 아니라 기능·안전장치 회귀를 빠르게 찾는 시험지이며, 실제
+복합 Agent 업무 품질을 대표한다고 주장하지 않는다. main 통합 후 이 10개를 먼저
+검증하고, 별도의 `agent_workflow_v1`에 대표 복합 업무 5~8개를 설계한다.
+
+초기부터 50~100개를 구축하면 평가 비용과 실행시간뿐 아니라 실패 원인 분석 부담이 커진다. smoke와 workflow를 합쳐 개발·기준선 dataset 20개로 확장하고, 별도의 비공개 holdout 10개를 더한 총 30개를 첫 전체 평가 기준으로 사용한다.
 
 ### 13.1 개발 dataset과 holdout 분리
 
@@ -826,20 +982,20 @@ PoC                         10개
 
 ## 14. 최종 결론
 
-현재 프로젝트에는 다음 전략이 가장 적합하다.
+현재 프로젝트에는 다음 순서가 가장 적합하다.
 
-1. 가장 먼저 HITL 승인 tool-call의 `FAILED / STREAM_CLOSED` 오기록과 resume 매칭 문제를 수정하고 회귀 테스트로 고정한다.
-2. 수정된 기록을 기준으로 Langfuse Python SDK v3 기준선을 저장하고 v4로 마이그레이션한다.
-3. LangSmith callback, 자동 tracing 환경변수와 outbound 경로를 비활성화하거나 제거한다.
-4. 프로젝트 공통 OpenTelemetry 계측과 Collector 구조를 단계적으로 도입한다.
-5. OTel GenAI semantic convention을 우선하고 프로젝트 고유 값만 `skn.*`로 정의한다.
-6. Langfuse를 통해 필요한 trace 구조, 필터, 평가 화면과 운영 지표를 학습한다.
-7. DeepEval과 pytest로 Agent의 end-to-end, component, trajectory, 안전 규칙 회귀 테스트를 구축한다.
-8. 문서 파싱·retriever는 deterministic 지표로 측정하고 Ragas는 RAG 응답의 문맥·근거성 평가에 사용한다.
-9. 평가 dataset과 Ragas·DeepEval·자체 evaluator의 원시 결과는 프로젝트 내부를 정본으로 관리하고 Langfuse에도 전송한다.
+1. HITL 승인 tool-call의 `FAILED / STREAM_CLOSED` 오기록과 resume 매칭 문제를 수정하고 회귀 테스트로 고정했다.
+2. Langfuse Python SDK v4로 전환했다. v3 고정 기준선은 보관하지 못했으므로 정식 기준선은 v4에서 새로 수집한다.
+3. LangSmith callback, 자동 tracing 환경변수와 outbound 경로를 제거했다.
+4. v0 결과 계약과 append-only 기록기를 먼저 준비한 뒤 현재 10개 smoke로 기능·안전장치를 확인하고 실제 복합 workflow 5~8개를 선정한다.
+5. 정확성·안전성·postcondition과 latency·token 수집 항목을 정의한다.
+6. 수동 반복 실행으로 기준선을 확보한 뒤 성능 예산을 정하고 평가 runner를 구현한다.
+7. 실행별 `eval_run_id`로 원시 결과를 DB/내부 저장소에 보관하고 비민감 요약·개선 이력을 Git에 남긴 뒤 Langfuse Experiment/Score에도 연결한다.
+8. 평가 과정에서 실제 필요한 trace·metadata를 확정한 뒤 프로젝트 공통 OpenTelemetry 계측과 Collector를 도입한다.
+9. OTel GenAI semantic convention을 우선하고 프로젝트 고유 값만 `skn.*`로 정의한다.
 10. 원문 tool payload는 기본 비수집하며 allowlist, opt-in, 크기 제한과 fail-closed 정책을 적용한다.
-11. 프로젝트 전용 요약 UI는 실제 요구가 확인된 경우에만 선택적으로 고도화한다.
-12. Langfuse 대체 플랫폼은 현재 확정 로드맵이 아닌 장기 조건부 선택지이며, 별도 Go 결정과 병행 운영 검증을 통과한 경우에만 Langfuse 제거를 검토한다.
+11. 내부 저장소·검색·평가·권한·보존 기능을 실제 사용 우선순위대로 구축하고 Langfuse와 병행 검증한다.
+12. 자체 플랫폼의 정합성과 운영성이 검증된 뒤 Langfuse Cloud 전송·키·외부 보존 데이터를 단계적으로 제거한다.
 
 핵심은 OpenTelemetry와 Langfuse를 경쟁 제품으로 보지 않는 것이다.
 
@@ -849,7 +1005,11 @@ Langfuse = 그 데이터를 저장·탐색·평가하는 완성된 플랫폼
 Ragas/DeepEval = 품질 점수를 계산하는 평가 계층
 ```
 
-초기에는 `OpenTelemetry + Langfuse`로 관측 요구사항을 발견하고, `DeepEval + pytest + Ragas`로 실제 품질을 검증하는 구성이 가장 균형 잡힌 선택이다. 장기적으로는 OpenTelemetry 자체가 아니라, OpenTelemetry를 기반으로 직접 구축한 수집·저장·분석·평가 플랫폼이 Langfuse를 대체한다.
+초기에는 Langfuse v4로 smoke와 workflow 기준선을 만들고
+`DeepEval + pytest + Ragas`로 실제 품질을 검증한다. 그 과정에서 확인한 요구사항을
+바탕으로 공통 OpenTelemetry 계측을 도입한다. 장기적으로는 OpenTelemetry 자체가
+아니라, OpenTelemetry를 기반으로 직접 구축한 사내 수집·저장·분석·평가 플랫폼이
+Langfuse Cloud를 대체한다.
 
 ## 15. 참고 자료
 
