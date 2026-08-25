@@ -21,7 +21,7 @@ runtime.stream()
 
 ## 추적 설정
 
-설정된 경우 Langfuse와 LangSmith 콜백을 생성한다. 콜백이 있으면 세션, 계정, 팀, Agent 식별 정보를 추적 메타데이터로 전달한다.
+설정된 경우 Langfuse 콜백을 생성한다(LangSmith는 2026-08-24에 제거됐다). 콜백이 있으면 세션, 계정, 팀, Agent 식별 정보를 추적 메타데이터로 전달한다.
 
 외부 추적 서비스로 보내는 입력과 출력의 사본에는 이메일, credential, 주민등록번호, 카드번호, 전화번호 등의 마스킹을 적용한다. 실제 Agent 입력과 사용자 응답은 변경하지 않는다.
 
@@ -96,7 +96,7 @@ stream_kwargs
 |---|---|
 | 실행 설정을 Stream Adapter에 전달 | `services/agent_runtime/executor.py` |
 | 입력 상태, config와 스트림 모드 구성 | `services/agent_runtime/stream_adapter.py` |
-| Langfuse·LangSmith 콜백 | `services/agent_runtime/tracing/callbacks.py` |
+| Langfuse 콜백 | `services/agent_runtime/tracing/callbacks.py` |
 | 외부 반출 데이터 마스킹 | `services/agent_runtime/sensitive_text.py` |
 | 동시 실행 정책 | `services/agent_runtime/runtime_policy.py` |
 | 도구의 custom 진행 이벤트 | `services/agent_runtime/tools/adapters.py` |
