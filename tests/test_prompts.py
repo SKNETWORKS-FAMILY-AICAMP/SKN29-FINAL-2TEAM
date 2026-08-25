@@ -34,6 +34,14 @@ class RuntimeScaffoldContentTests(SimpleTestCase):
         self.assertIn("도구 성공 결과를 받은 시점", RUNTIME_SCAFFOLD)
         self.assertIn("다시 승인을 요구하지", RUNTIME_SCAFFOLD)
 
+    def test_separates_verified_facts_from_inference_and_recommendation(self):
+        self.assertIn("직접 확인된 사실과 추론·추천을 구분", RUNTIME_SCAFFOLD)
+        self.assertIn("추론·추천을 확인된 사실처럼 표현하지 않는다", RUNTIME_SCAFFOLD)
+
+    def test_preserves_source_terms_and_marks_interpreted_roles(self):
+        self.assertIn("고유명칭·직책·역할·상태를 다른 확정 명칭으로 임의 변경하지 않는다", RUNTIME_SCAFFOLD)
+        self.assertIn("역할을 추론한 경우 반드시 추론임을 표시한다", RUNTIME_SCAFFOLD)
+
     def test_does_not_restate_limits_already_enforced_by_middleware(self):
         # 호출 횟수 상한은 ModelCallLimitMiddleware/ToolCallLimitMiddleware가
         # 이미 코드로 강제한다 — 프롬프트에 숫자를 다시 적으면 코드 쪽 정책이
