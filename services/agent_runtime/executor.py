@@ -41,10 +41,18 @@ def _agent_execution_failure_event(
     남긴다 — 문서 원문·토큰이 섞여 있을 수 있는 메시지를 화면에 내보내지 않는다.
     """
 
+    from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+    from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
+
     from services.harness.runner import SPEAKABLE_ERRORS
     from services.harness.trace import error_code_of
 
-    message = str(exc) if isinstance(exc, SPEAKABLE_ERRORS) else "에이전트 실행 중 오류가 발생했습니다."
+    if isinstance(exc, (ModelCallLimitExceededError, ToolCallLimitExceededError)):
+        message = "요청 처리에 필요한 모델·도구 호출 횟수가 한도를 넘어 실행을 중단했습니다. 요청을 더 작은 단위로 나눠 다시 시도해 주세요."
+    elif isinstance(exc, SPEAKABLE_ERRORS):
+        message = str(exc)
+    else:
+        message = "에이전트 실행 중 오류가 발생했습니다."
     return {
         "type": EVENT_ERROR,
         "error_code": error_code_of(exc),
