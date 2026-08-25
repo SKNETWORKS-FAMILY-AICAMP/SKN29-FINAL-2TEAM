@@ -359,4 +359,4 @@ docker compose -f infra/docker/docker-compose.yml down -v
 - 업무 분배·추천·검증 Agent
 - 서버 측 세션 강제 종료
 
-구체적인 상태와 다음 수정 위치는 `초기_구성_상태.md`를 함께 확인한다.
+구체적인 상태와 다음 수정 위치는 `../../중간발표 이전/초기_구성_상태.md` 를 함께 확인한다.

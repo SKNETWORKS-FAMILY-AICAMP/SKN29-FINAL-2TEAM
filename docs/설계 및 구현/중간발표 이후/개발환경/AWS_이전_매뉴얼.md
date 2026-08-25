@@ -454,4 +454,4 @@ docker compose -f infra/docker/docker-compose.aws.yml -f infra/docker/docker-com
 - `D:\Study\08. WEB\Day_77\RDS_S3.md`
 - `D:\Study\08. WEB\Day_75\ubuntu\docker_ubuntu_setup.md`
 - [로컬 Docker 개발환경 설치 매뉴얼](로컬_Docker_개발환경_설치_매뉴얼.md)
-- [초기 구성 상태](초기_구성_상태.md)
+- [초기 구성 상태](../../중간발표%20이전/초기_구성_상태.md)
