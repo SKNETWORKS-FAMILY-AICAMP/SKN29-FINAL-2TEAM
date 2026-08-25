@@ -22,6 +22,11 @@ BEGIN;
 ALTER TABLE team
     ADD COLUMN IF NOT EXISTS guardrail_on_failure VARCHAR(10) NOT NULL DEFAULT 'OPEN';
 
+-- 중간 마이그레이션을 건너뛴 DB에서도 아래 백필이 실행될 수 있게 한다.
+-- 이미 컬럼이 있으면 기존 OPEN/CLOSED 값은 그대로 보존된다.
+ALTER TABLE guardrail_provider
+    ADD COLUMN IF NOT EXISTS on_failure VARCHAR(10) NOT NULL DEFAULT 'OPEN';
+
 -- 옮겨 담는다. 한 팀에 CLOSED 인 등록이 하나라도 있으면 그 팀은 CLOSED 다 —
 -- 더 안전한 쪽으로 붙인다(막던 팀이 옮기다가 안 막게 되면 안 된다).
 UPDATE team AS t
