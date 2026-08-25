@@ -92,12 +92,14 @@ def json_response(payload):
     return Mock(json=Mock(return_value=payload), raise_for_status=Mock())
 
 
+@patch("apps.connectors.api_views.TeamRepository.leader_account_id", return_value="UA001")
+@patch("apps.connectors.api_views.AccountRepository.team_id", return_value="TM001")
 class ConnectorListApiTests(SimpleTestCase):
-    def test_requires_login(self):
+    def test_requires_login(self, _team_id, _leader):
         self.assertEqual(self.client.get("/api/connectors/").status_code, 401)
 
     @patch("apps.connectors.api_views.ConnectorRepository.list_for_account")
-    def test_lists_only_the_callers_connections(self, list_for_account):
+    def test_lists_the_teams_connections(self, list_for_account, _team_id, _leader):
         list_for_account.return_value = [people_db_connection()]
 
         response = self.client.get("/api/connectors/", headers=auth_header())
@@ -105,6 +107,35 @@ class ConnectorListApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]["connector_type"], "PEOPLE_DB")
         list_for_account.assert_called_once_with("UA001")
+
+    @patch("apps.connectors.api_views.ConnectorRepository.list_for_account")
+    def test_member_sees_what_the_leader_connected(self, list_for_account, _team_id, _leader):
+        """팀원은 연결한 적이 없다 — 자기 계정으로 읽으면 늘 빈 목록이었다.
+
+        연결은 팀장만 하고 `connector_conn` 은 연결한 계정에만 행이 생긴다.
+        설정 > 커넥터가 팀원에게 세 자리를 전부 「미연결」로 그리던 원인이다.
+        """
+
+        list_for_account.return_value = [people_db_connection()]
+
+        response = self.client.get("/api/connectors/", headers=auth_header("UA002"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["connector_type"], "PEOPLE_DB")
+        # 팀원(UA002)이 불렀는데 읽은 것은 팀장(UA001)의 연결이다.
+        list_for_account.assert_called_once_with("UA001")
+
+    @patch("apps.connectors.api_views.ConnectorRepository.list_for_account")
+    def test_account_without_a_team_falls_back_to_itself(self, list_for_account, team_id, _leader):
+        """가입 직후처럼 팀이 없으면 전과 같이 자기 계정을 읽는다."""
+
+        team_id.return_value = None
+        list_for_account.return_value = []
+
+        response = self.client.get("/api/connectors/", headers=auth_header("UA009"))
+
+        self.assertEqual(response.status_code, 200)
+        list_for_account.assert_called_once_with("UA009")
 
 
 class PeopleDbIdentityApiTests(SimpleTestCase):

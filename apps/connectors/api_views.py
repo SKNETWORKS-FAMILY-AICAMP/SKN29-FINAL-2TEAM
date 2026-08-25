@@ -14,6 +14,7 @@ from backend.db import (
     AccountRepository,
     ConnectorRepository,
     ProjectSourceRepository,
+    TeamRepository,
     log_audit,
 )
 from backend.db.errors import (
@@ -135,10 +136,27 @@ class AuthenticatedAPIView(APIView):
 
 
 class ConnectorListAPIView(AuthenticatedAPIView):
+    """지금 무엇이 연결돼 있는가. **팀의 상태이지 내 상태가 아니다.**
+
+    `connector_conn` 은 연결한 계정에만 행이 생기고 연결은 팀장만 할 수 있어서,
+    누른 사람의 `account_id` 로 그대로 읽으면 **팀원에게는 늘 빈 목록**이 온다 —
+    설정 > 커넥터가 세 자리를 전부 「미연결」로 그렸다. 팀장이 연결한 데이터를
+    그대로 쓰는 팀원이 정작 그것이 붙어 있는지 볼 수 없었다.
+
+    자격증명을 쓰는 쪽은 이미 같은 고침이 있다(`apps/projects/api_views.py` 의
+    `_jira_credential_account_id`, `services/harness/registry.py` 의 같은 이름
+    함수 — 2026-08-19). **읽기만 하는 이 조회에 그 처리가 빠져 있었다.**
+
+    팀장 자신은 `leader_account_id` 가 곧 자기 계정이라 전과 같다. 팀이 없으면
+    (가입 직후 등) 원래대로 자기 계정을 읽는다.
+    """
+
     def get(self, request):
         try:
-            rows = ConnectorRepository.list_for_account(request.user.account_id)
-        except psycopg.Error as exc:
+            team_id = AccountRepository.team_id(request.user.account_id)
+            owner = (TeamRepository.leader_account_id(team_id) if team_id else None) or request.user.account_id
+            rows = ConnectorRepository.list_for_account(owner)
+        except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response([connector_response(row) for row in rows])
 

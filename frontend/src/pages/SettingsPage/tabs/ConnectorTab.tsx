@@ -286,8 +286,12 @@ export function ConnectorTab() {
               {driveConnected && <span className={styles.rowVendor}>Google Drive</span>}
             </div>
             <div className={styles.rowActions}>
+              {/* 팀원에게도 이 줄이 「연결됨」으로 보이게 된 뒤로는 가드가 필요하다
+                  (2026-08-25). 폴더를 바꾸는 것은 팀장만 할 수 있고(서버 PUT
+                  `/team/folders/` 가 `require_leader`), 그 전까지는 팀원 화면에서
+                  `driveConnected` 가 늘 false 라 이 버튼이 뜨지 않았을 뿐이다. */}
               {driveConnected && (
-                <Button size="sm" variant="outline" onClick={() => setDriveModalOpen(true)}>
+                <Button size="sm" variant="outline" disabled={!isLeader} onClick={() => setDriveModalOpen(true)}>
                   폴더 설정
                 </Button>
               )}
