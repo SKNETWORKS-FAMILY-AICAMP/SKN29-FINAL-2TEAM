@@ -95,7 +95,12 @@ export function ProgressCard({
       {/* 막대도 단계가 있을 때만 그린다 — 단계가 없으면 늘 0%라 빈 띠만 남는다. */}
       {steps.length > 0 && (
         <div className={styles.progressTrack}>
-          <span className={styles.progressFill} style={{ width: `${(shown / total) * 100}%` }} />
+          <span
+            className={
+              !running && failed ? `${styles.progressFill} ${styles.progressFillFailed}` : styles.progressFill
+            }
+            style={{ width: `${(shown / total) * 100}%` }}
+          />
         </div>
       )}
 

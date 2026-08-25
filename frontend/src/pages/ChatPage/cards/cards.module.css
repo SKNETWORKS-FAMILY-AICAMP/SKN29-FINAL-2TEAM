@@ -80,6 +80,14 @@
   background: var(--color-primary);
 }
 
+/* 실패로 끝난 호출(2026-08-25). 막대는 "몇 단계까지 갔나"만 알아서, 실패한
+   호출에서도 마지막 단계까지 갔으면 100%로 꽉 찬다 — 「문서 검색 실패」 바로
+   밑에 완주한 남색 막대가 놓여 아이콘·문구와 반대말을 했다. 길이는 사실
+   그대로 두고 색만 바꾼다. */
+.progressFillFailed {
+  background: var(--color-danger);
+}
+
 .steps {
   display: flex;
   flex-direction: column;
