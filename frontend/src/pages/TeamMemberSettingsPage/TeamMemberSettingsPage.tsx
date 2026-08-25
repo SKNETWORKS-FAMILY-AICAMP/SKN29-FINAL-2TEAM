@@ -36,9 +36,6 @@ const DEFAULT_NOTIFICATION_STATE: Record<string, boolean> = {
   'system-notice': false,
 };
 
-export interface TeamMemberSettingsPageProps {
-}
-
 export default function TeamMemberSettingsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();

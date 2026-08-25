@@ -45,9 +45,6 @@ const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
 
-export interface TeamLeaderSettingsPageProps {
-}
-
 export default function TeamLeaderSettingsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();

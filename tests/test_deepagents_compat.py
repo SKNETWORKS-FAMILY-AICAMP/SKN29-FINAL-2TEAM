@@ -11,9 +11,11 @@ deepagents==0.7.5가 pin돼 있으므로, 이 pin이 실제로 설치된 환경�
   1. 부트스트랩 등록(register_default_harness_profile)이 중복 호출돼도 안전한가
   2. Root/Child spec 형태가 기대한 dict 구조인가(0-2/0-3의 구조적 보장)
 
-`_spike/runtime_skeleton.py`(§6-1)에서 이미 실제 create_deep_agent 호출로
-행동(behavior)은 확인했다 — 여기서는 create_deep_agent를 mock으로 바꿔
-"우리가 이걸 어떻게 호출하는가"만 본다(빠르고 API 키가 필요 없다).
+실제 create_deep_agent 호출로 행동(behavior)을 확인하던 스파이크
+(`_spike/runtime_skeleton.py`, §6-1)는 2026-08-25에 지웠다 — 아무도 부르지
+않는 실험 코드였고, 행동 검증은 그 뒤 `test_executor.py`·`test_factory.py`가
+받았다. 여기서는 create_deep_agent를 mock으로 바꿔 "우리가 이걸 어떻게
+호출하는가"만 본다(빠르고 API 키가 필요 없다).
 """
 
 from unittest.mock import Mock, NonCallableMock, patch

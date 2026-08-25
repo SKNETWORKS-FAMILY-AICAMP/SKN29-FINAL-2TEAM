@@ -9,14 +9,24 @@ RunPod Serverless에 배포한 실제 과정과 현재 상태를 백엔드·프�
 - 작성 및 실환경 확인일: 2026-08-04
 - Django 통합 작업본: `C:\final_project\choi_local`
 - Worker 배포 저장소: `https://github.com/choiwon10/SKN29-RUNPOD-WORKER`
-- RunPod Endpoint ID: `wmsdhbftpejzjw`
-- RunPod 콘솔: `https://console.runpod.io/serverless/user/endpoint/wmsdhbftpejzjw`
+- RunPod Endpoint ID: `ugczgulvpawbyv`
+- RunPod 콘솔: `https://console.runpod.io/serverless/user/endpoint/ugczgulvpawbyv`
 - 임베딩 모델: `google/embeddinggemma-300m`
 - 임베딩 차원: 768
 - 실행 장치: CUDA 전용
 
 이 문서에는 API key, Hugging Face token, OpenAI key의 실제 값을 기록하지 않는다.
 비밀값은 저장소나 메신저 평문이 아닌 별도의 안전한 경로로 전달해야 한다.
+
+> **이 문서가 적고 있던 Endpoint ID `wmsdhbftpejzjw` 는 틀렸다 (2026-08-25 정정).**
+> 그 Endpoint 도, 한때 재생성했던 `ekysa59yf3ni6t` 도 지금은 **404 — 지워졌다.**
+> 2026-08-24 에 Endpoint 를 다시 만들었고, 살아 있는 것은 `ugczgulvpawbyv`
+> 하나뿐이다(`embed_queries` 실호출로 확인: `google/embeddinggemma-300m`, 768차원).
+> 5.3 도 콘솔과 대조해 고쳤다. **배포 방식이 바뀌었다** — GitHub 저장소
+> (`choiwon10/SKN29-RUNPOD-WORKER`, `codex/install-triton-compiler`) 에서
+> 빌드하던 것이 아니라, 미리 구운 이미지
+> `somber7/skn29-runpod-worker:2026-08-24` 를 가리킨다. 워커 코드를 고쳐도
+> **그 이미지를 다시 굽고 태그를 올리기 전에는 아무 일도 일어나지 않는다.**
 
 ## 2. 현재 결론
 
@@ -125,12 +135,12 @@ EmbeddingGemma 모델 페이지의 사용 조건에 동의한 Hugging Face 계�
 
 | 항목 | 값 |
 |---|---|
-| Endpoint 이름 | `SKN29-RUNPOD-WORKER` |
-| Endpoint ID | `wmsdhbftpejzjw` |
-| 배포 방식 | GitHub 저장소에서 Docker build |
-| 저장소 | `choiwon10/SKN29-RUNPOD-WORKER` |
-| 배포 브랜치 | `codex/install-triton-compiler` |
-| GPU Worker | Serverless GPU, 24GB급 |
+| Endpoint 이름 | `SKN29-RUNPOD-WORKER-IMG` |
+| Endpoint ID | `ugczgulvpawbyv` |
+| 생성일 | 2026-08-24 |
+| 배포 방식 | **미리 구운 Docker 이미지** (GitHub build 아님) |
+| 이미지 | `somber7/skn29-runpod-worker:2026-08-24` |
+| GPU Worker | Serverless GPU, 24 GB · 24 GB Pro · 48 GB (count 1) |
 | 최소 CUDA | 12.8 |
 | 최소 Worker | 0 |
 | 최대 Worker | 1 |
@@ -229,7 +239,7 @@ RunPod 대시보드에 실패 요청 1건이 남아 있는 것은 이 최초 검
 
 ```dotenv
 RUNPOD_API_KEY=<별도 안전한 경로로 전달>
-RUNPOD_ENDPOINT_ID=wmsdhbftpejzjw
+RUNPOD_ENDPOINT_ID=ugczgulvpawbyv
 PUBLIC_BACKEND_BASE_URL=https://<현재 Quick Tunnel 호스트>
 RUNPOD_JOB_TTL_MS=3600000
 RUNPOD_EXECUTION_TIMEOUT_MS=1800000

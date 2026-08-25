@@ -1,4 +1,6 @@
+import importlib
 import json
+import os
 import pathlib
 import tempfile
 import zlib
@@ -9,6 +11,7 @@ from django.test import SimpleTestCase, override_settings
 from apps.accounts.tokens import issue_token
 from runpod_worker.pipeline import (
     ChunkValidationError,
+    _convert,
     _has_text_layer,
     _generic_row_records,
     _product_records,
@@ -172,6 +175,52 @@ class SigningTests(SimpleTestCase):
             signed_download_url(doc_id="DC001", revision="rev-1")
 
 
+class TunnelHostAllowanceTests(SimpleTestCase):
+    """터널 호스트는 한 군데만 고치면 된다.
+
+    `PUBLIC_BACKEND_BASE_URL` 과 `ALLOWED_HOSTS` 를 손으로 맞추게 뒀더니
+    어긋났고, Django 가 DisallowedHost 로 400 을 줘서 워커가 원문을 못 받았다
+    (2026-08-25 RunPod 콘솔 로그 10건). Quick Tunnel 은 띄울 때마다 주소가
+    바뀌므로 고칠 곳이 둘이면 한쪽을 잊는다.
+    """
+
+    def _allowed_hosts(self, **environment):
+        """주어진 환경변수로 설정 모듈을 다시 읽어 `ALLOWED_HOSTS` 를 본다."""
+
+        import config.settings.base as settings_module
+
+        try:
+            with patch.dict(os.environ, environment):
+                importlib.reload(settings_module)
+                return list(settings_module.ALLOWED_HOSTS)
+        finally:
+            # 다른 테스트가 이 모듈을 그대로 쓰므로 원래 값으로 되돌린다.
+            importlib.reload(settings_module)
+
+    def test_터널_호스트가_저절로_허용된다(self):
+        hosts = self._allowed_hosts(
+            ALLOWED_HOSTS="localhost,127.0.0.1",
+            PUBLIC_BACKEND_BASE_URL="https://establishment-behavioral-acres-heather.trycloudflare.com",
+        )
+        self.assertIn("establishment-behavioral-acres-heather.trycloudflare.com", hosts)
+        self.assertIn("localhost", hosts)
+
+    def test_이미_적혀_있으면_두_번_넣지_않는다(self):
+        hosts = self._allowed_hosts(
+            ALLOWED_HOSTS="localhost,demo.example.com",
+            PUBLIC_BACKEND_BASE_URL="https://demo.example.com",
+        )
+        self.assertEqual(hosts.count("demo.example.com"), 1)
+
+    def test_주소가_없으면_아무것도_붙지_않는다(self):
+        """터널 없이 로컬만 쓰는 개발자가 있다. 빈 호스트를 넣으면 안 된다."""
+
+        hosts = self._allowed_hosts(
+            ALLOWED_HOSTS="localhost,127.0.0.1", PUBLIC_BACKEND_BASE_URL=""
+        )
+        self.assertEqual(hosts, ["localhost", "127.0.0.1"])
+
+
 class SourceDocumentSelectionTests(SimpleTestCase):
     """기준 문서 선택이 프로젝트에 문서를 묶는다.
 
@@ -311,6 +360,67 @@ class TextLayerTests(SimpleTestCase):
         """판정이 못 되면 OCR 을 켜는 쪽으로 떨어진다 — 파싱 자체를 막지 않는다."""
 
         self.assertFalse(_has_text_layer(pathlib.Path("/no/such/file.pdf")))
+
+
+class EnrichmentFallbackTests(SimpleTestCase):
+    """깨진 페이지를 가진 PDF 를 문서 전체를 잃지 않고 살린다.
+
+    전처리에서 죽은 페이지가 `conv_res.pages` 에서 빠지는데 보강 단계는 원래
+    페이지 번호로 그 목록을 집는다 — `IndexError: list index out of range` 로
+    문서 하나가 통째로 실패했다(2026-08-24 실측).
+    """
+
+    def _converter(self, *, fails_when_enriched):
+        """`converter(use_ocr, enrich=...)` 를 흉내낸다."""
+
+        def factory(use_ocr=True, enrich=True):
+            engine = Mock()
+            if enrich and fails_when_enriched:
+                engine.convert.side_effect = RuntimeError("Pipeline StandardPdfPipeline failed")
+            else:
+                engine.convert.return_value = f"converted(enrich={enrich})"
+            return engine
+
+        return factory
+
+    def test_보강이_죽인_pdf_는_보강을_끄고_살아난다(self):
+        with patch(
+            "runpod_worker.pipeline.converter", self._converter(fails_when_enriched=True)
+        ):
+            result, enriched = _convert(pathlib.Path("sample.pdf"), False)
+        self.assertEqual(result, "converted(enrich=False)")
+        self.assertFalse(enriched)
+
+    def test_멀쩡한_문서는_보강을_켠_채로_끝난다(self):
+        """되돌리기는 실패했을 때만이다 — 멀쩡한 문서가 차트를 잃으면 안 된다."""
+
+        with patch(
+            "runpod_worker.pipeline.converter", self._converter(fails_when_enriched=False)
+        ):
+            result, enriched = _convert(pathlib.Path("sample.pdf"), False)
+        self.assertEqual(result, "converted(enrich=True)")
+        self.assertTrue(enriched)
+
+    def test_pdf_가_아니면_되돌리지_않는다(self):
+        """위 오류는 PDF 파이프라인의 것이다. DOCX 가 죽는 이유는 다르다."""
+
+        with patch(
+            "runpod_worker.pipeline.converter", self._converter(fails_when_enriched=True)
+        ):
+            with self.assertRaises(RuntimeError):
+                _convert(pathlib.Path("sample.docx"), False)
+
+    def test_되돌린_시도도_실패하면_사유가_그대로_올라간다(self):
+        """사유는 사람이 읽는 `index_detail` 로 간다 — 삼키면 안 된다."""
+
+        def factory(use_ocr=True, enrich=True):
+            engine = Mock()
+            engine.convert.side_effect = RuntimeError("암호가 걸린 PDF 입니다")
+            return engine
+
+        with patch("runpod_worker.pipeline.converter", factory):
+            with self.assertRaisesMessage(RuntimeError, "암호가 걸린 PDF 입니다"):
+                _convert(pathlib.Path("sample.pdf"), False)
 
 
 class EvidenceCitationTests(SimpleTestCase):

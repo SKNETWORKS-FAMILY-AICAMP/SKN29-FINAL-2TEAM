@@ -81,24 +81,6 @@ class AuthenticatedAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
 
-def _split(data: dict) -> tuple[dict, list[str]]:
-    """`tool_refs` 를 나머지 필드에서 떼어낸다.
-
-    `ALWAYS_ON_TOOL_REFS`(예: `skill_register`, 2026-08-22)는 여기서 걸러낸다
-    — 이제 그 도구들은 고르는 목록에도 없으니(`builtin_tool_response()`)
-    저장할 이유가 없고, 2026-08-22 이전에 이미 선택해 저장해 둔 에이전트가
-    있으면 그 값이 그대로 다시 제출될 때 `check_definition`이 "카탈로그에
-    없는 도구"라며 저장을 막는다 — 여기서 조용히 빼서 다음 저장부터
-    스스로 정리되게 한다.
-    """
-
-    from services.harness.registry import ALWAYS_ON_TOOL_REFS
-
-    fields = dict(data)
-    tool_refs = [ref for ref in fields.pop("tool_refs") if ref not in ALWAYS_ON_TOOL_REFS]
-    return fields, tool_refs
-
-
 def _model_rejection(account_id: str, model: str | None) -> Response | None:
     """이 팀이 고를 수 있는 모델인가. 괜찮으면 `None`, 아니면 그대로 돌려줄 응답.
 
@@ -156,7 +138,7 @@ def _tool_catalog(account_id: str) -> dict[str, dict]:
     "알려진 도구"이긴 하다. 여기서 안 넣으면 `check_definition`이 "카탈로그에
     없는 도구"로 본다 — 2026-08-22 이전에 이 도구를 선택해 저장해 둔
     에이전트가 있으면, `activate`(`AgentDetailAPIView`가 DB에 저장된
-    `tool_refs`를 그대로 다시 검증하는 경로, `_split()`을 안 거친다)에서
+    `tool_refs`를 그대로 다시 검증하는 경로)에서
     막힌다. 검증 카탈로그는 넉넉하게, 고르는 화면은 좁게 — 둘의 목적이 다르다.
     """
 

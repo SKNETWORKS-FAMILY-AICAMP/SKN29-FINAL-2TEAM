@@ -275,23 +275,6 @@ export interface MissingDocument {
   doc_role: 'PRIMARY' | 'SUB' | null;
 }
 
-export interface DocumentScanResult {
-  candidates: NewDocumentCandidate[];
-  missing: MissingDocument[];
-}
-
-export interface DocumentRemoveResult {
-  removed: number;
-  blocks: number;
-  chunks: number;
-  vectors: number;
-}
-
-export interface DocumentRegisterResult {
-  registered: TeamDocument[];
-  skipped: { file_id: string; reason: 'NOT_FOUND' | 'UNSUPPORTED' }[];
-}
-
 export interface DocumentHistoryEntry {
   audit_id: string;
   action: 'DOCUMENT_REGISTER' | 'DOCUMENT_DOWNLOAD' | 'DOCUMENT_REMOVE';
@@ -300,12 +283,6 @@ export interface DocumentHistoryEntry {
   /** 실제로 실패한 건이 있을 때만 PARTIAL. 미지원이라 걸러진 것은 실패가 아니다. */
   status: 'OK' | 'PARTIAL';
   payload: Record<string, unknown>;
-}
-
-export interface DocumentHistoryPage {
-  entries: DocumentHistoryEntry[];
-  /** 더 읽을 것이 남았는가. 남은 개수는 화면이 쓰지 않아 주지 않는다. */
-  has_more: boolean;
 }
 
 export interface TaskSyncResult {

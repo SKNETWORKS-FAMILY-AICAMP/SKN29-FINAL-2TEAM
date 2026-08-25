@@ -1,0 +1,86 @@
+/* 평가용 문서 공통 서식.
+ *
+ * 파서(docling)가 제목을 제목으로 알아보게 하는 것이 이 파일의 목적이다.
+ * 레이아웃 모델은 글자 크기·굵기·위쪽 여백으로 section_header 를 가르므로
+ * 본문과 제목의 차이를 넉넉히 벌린다 — 1.0/1.35/1.15/1.0em 처럼 붙여 두면
+ * 소제목이 본문으로 떨어지고, heading_path 가 비어 근거 인용이 뭉개진다.
+ */
+
+@page { size: A4; margin: 22mm 20mm; }
+
+body {
+  font-family: "Malgun Gothic", "맑은 고딕", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.75;
+  color: #111;
+}
+
+h1 {
+  font-size: 20pt;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: -0.02em;
+  margin: 0 0 6mm;
+  padding-bottom: 4mm;
+  border-bottom: 2.5px solid #111;
+}
+
+h2 {
+  font-size: 15pt;
+  font-weight: 700;
+  margin: 11mm 0 4mm;
+  padding-bottom: 2mm;
+  border-bottom: 1px solid #666;
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 12.5pt;
+  font-weight: 700;
+  margin: 7mm 0 3mm;
+  page-break-after: avoid;
+}
+
+h4 {
+  font-size: 11pt;
+  font-weight: 700;
+  margin: 5mm 0 2mm;
+  page-break-after: avoid;
+}
+
+p { margin: 0 0 3mm; }
+ul, ol { margin: 0 0 3mm; padding-left: 7mm; }
+li { margin-bottom: 1.5mm; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 3mm 0 5mm;
+  font-size: 9.5pt;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #999;
+  padding: 2mm 2.5mm;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #eee; font-weight: 700; }
+td.num { text-align: right; }
+
+.cover-meta {
+  width: 60%;
+  margin: 0 auto 10mm;
+  font-size: 10pt;
+}
+.cover-meta th { width: 30%; background: #f5f5f5; }
+
+.note {
+  border-left: 3px solid #888;
+  background: #f7f7f7;
+  padding: 3mm 4mm;
+  margin: 3mm 0 5mm;
+  font-size: 9.5pt;
+}
+
+.pagebreak { page-break-before: always; }
