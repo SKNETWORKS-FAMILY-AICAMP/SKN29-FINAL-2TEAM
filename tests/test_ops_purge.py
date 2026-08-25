@@ -216,3 +216,111 @@ class PurgeStepShapeTests(SimpleTestCase):
                     sql,
                     f"{label}: thread_id(text) 와 session_id(uuid) 를 그냥 비교할 수 없다",
                 )
+
+
+class 삭제_대상_누락_검사(SimpleTestCase):
+    """`team_id`/`account_id` 를 든 테이블이 삭제 표에서 빠지지 않았는지 본다.
+
+    **이 저장소에는 외래키가 하나도 없어서 CASCADE 가 없다.** 테이블을 더할 때마다
+    세 곳(`_TEAM_PURGE_STEPS` · `_ACCOUNT_PURGE_STEPS` · `DB/reset_demo.sql`)에
+    손으로 줄을 더해야 하는데, **실제로 두 번 빠뜨렸다** —
+
+    - 2026-08-12: `reset_demo.sql` 에 Agent Platform 계열이 통째로 없었다.
+      짧은 코드가 001 부터 다시 나가는 탓에 **새 팀이 옛 TE001 의 행을 물려받았다.**
+    - 2026-08-25: 그 뒤 늘어난 `guardrail_provider`(team_id NOT NULL)·`mcp_call_note`
+      가 `_TEAM_PURGE_STEPS` 에서, 넷이 `reset_demo.sql` 에서 빠져 있었다.
+
+    사람이 기억해서 막을 수 없다는 것이 두 번으로 증명됐으므로 기계가 본다.
+    스키마 파일을 읽어 대조하므로 DB 가 필요 없다.
+    """
+
+    #: 일부러 안 지우는 것. 지우지 않는 **이유**가 있어야 여기 들어온다.
+    TEAM_KEEP = {
+        "user_account",  # 팀만 없애고 사람은 무소속으로 남긴다(PM 결정 2026-08-19)
+        "audit_log",     # 대상이 사라져도 「누가 무엇을 했는가」가 남는 것이 감사다
+        "team",          # 표의 마지막 단계에서 지운다
+    }
+    ACCOUNT_KEEP = {
+        "audit_log",
+        "user_account",  # 표의 마지막 단계에서 지운다
+    }
+    #: `reset_demo.sql` 이 일부러 남기는 것 — 테넌트 데이터가 아니라 플랫폼 설정이다.
+    RESET_KEEP = {"sys_setting", "sys_notice"}
+
+    @staticmethod
+    def _schema():
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        return (root / "DB" / "schema.sql").read_text(encoding="utf-8")
+
+    @classmethod
+    def _tables_with(cls, column):
+        """`column` 을 칼럼으로 가진 앱 테이블 이름. `mock_hr` 는 뺀다."""
+        import re
+
+        found = []
+        for m in re.finditer(r"CREATE TABLE ([a-z_.]+) \((.*?)\n\);", cls._schema(), re.S):
+            name, body = m.group(1), m.group(2)
+            if name.startswith("mock_hr."):
+                continue
+            if re.search(rf"\n    {column}\s", body):
+                found.append(name)
+        return found
+
+    @staticmethod
+    def _touched(steps):
+        """표가 DELETE/UPDATE 하는 테이블 이름."""
+        import re
+
+        return {
+            t
+            for _, sql in steps
+            for t in re.findall(r"(?:DELETE FROM|UPDATE)\s+([a-z_]+)", sql)
+        }
+
+    def test_팀_삭제가_team_id_를_든_테이블을_빠짐없이_덮는다(self):
+        missing = sorted(
+            set(self._tables_with("team_id"))
+            - self._touched(repositories._TEAM_PURGE_STEPS)
+            - self.TEAM_KEEP
+        )
+        self.assertEqual(
+            missing,
+            [],
+            "team_id 를 들었는데 _TEAM_PURGE_STEPS 에 없다 — 팀을 지워도 남는다. "
+            "지우지 않을 이유가 있으면 TEAM_KEEP 에 이유와 함께 적을 것",
+        )
+
+    def test_계정_삭제가_account_id_를_든_테이블을_빠짐없이_덮는다(self):
+        missing = sorted(
+            set(self._tables_with("account_id"))
+            - self._touched(repositories._ACCOUNT_PURGE_STEPS)
+            - self.ACCOUNT_KEEP
+        )
+        self.assertEqual(missing, [], "account_id 를 들었는데 _ACCOUNT_PURGE_STEPS 에 없다")
+
+    def test_데모_초기화가_앱_테이블을_빠짐없이_비운다(self):
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        reset = (root / "DB" / "reset_demo.sql").read_text(encoding="utf-8")
+
+        truncated = set()
+        for m in re.finditer(r"TRUNCATE TABLE(.*?);", reset, re.S):
+            truncated |= {x.strip() for x in m.group(1).replace("\n", " ").split(",") if x.strip()}
+
+        app_tables = {
+            name
+            for name in re.findall(r"^CREATE TABLE ([a-z_.]+)", self._schema(), re.M)
+            if not name.startswith("mock_hr.")
+        }
+        missing = sorted(app_tables - truncated - self.RESET_KEEP)
+        self.assertEqual(
+            missing,
+            [],
+            "reset_demo.sql 이 안 비우는 앱 테이블이 있다 — 옛 테넌트의 행이 남아 "
+            "새 팀이 물려받는다(2026-08-12 실제 사고). 남길 이유가 있으면 "
+            "RESET_KEEP 에 적고 스크립트 주석에도 남길 것",
+        )

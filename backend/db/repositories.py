@@ -4214,6 +4214,11 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     # 같은 편이다 — 그 팀의 대화에서 나온 실행 기록이고, 대화가 사라지면 같이
     # 사라지는 게 맞다. `team_id`를 직접 들고 있어 조인이 필요 없다.
     ("가드레일 발동 기록", "DELETE FROM guardrail_event WHERE team_id = %(team_id)s"),
+    # 도구 호출에 딸린 둘. 2026-08-25 에 빠져 있는 것을 발견해 채웠다 —
+    # `mcp_call_note` 는 team_id 를 직접 들고, `tool_call_idempotency` 는
+    # run_id 로만 묶여 있어 agent_run 을 지우면 고아로 남는다.
+    ("커스텀 도구 호출 메모", "DELETE FROM mcp_call_note WHERE team_id = %(team_id)s"),
+    ("도구 재시도 방지 기록", "DELETE FROM tool_call_idempotency WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.team_id = %(team_id)s)"),
     ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.team_id = %(team_id)s)"),
     ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
     ("대화 메시지", "DELETE FROM chat_message WHERE session_id IN (SELECT session_id FROM chat_session WHERE team_id = %(team_id)s)"),
@@ -4230,6 +4235,10 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("에이전트", "DELETE FROM agents WHERE team_id = %(team_id)s"),
     ("커스텀 도구", "DELETE FROM mcp_tool WHERE server_id IN (SELECT server_id FROM mcp_server WHERE team_id = %(team_id)s)"),
     ("커스텀 도구 서버", "DELETE FROM mcp_server WHERE team_id = %(team_id)s"),
+    # 팀이 등록한 외부 가드레일 공급자. team_id 가 NOT NULL 이라 남겨 두면
+    # 짧은 코드가 001 부터 다시 나갈 때 **새 팀이 그대로 물려받는다**
+    # (2026-08-25 에 빠져 있는 것을 발견해 채웠다).
+    ("가드레일 공급자", "DELETE FROM guardrail_provider WHERE team_id = %(team_id)s"),
     ("연결 폴더", "DELETE FROM team_folder WHERE team_id = %(team_id)s"),
     ("팀 구성원(HR)", "DELETE FROM team_member WHERE team_id = %(team_id)s"),
     ("초대 사용 기록", "DELETE FROM user_person_link WHERE invite_id IN (SELECT invite_id FROM member_invite WHERE team_id = %(team_id)s)"),

@@ -133,24 +133,23 @@
 물려받는다.** 스크립트가 문서 저장소에 대해 경고해 둔 것과 같은 사고가 DB 안에서
 난다. 채워 넣었다.
 
-> ### ⚠ 2026-08-25 — **같은 구멍이 또 생겼다**
+> ### ⚠ 2026-08-25 — 같은 구멍이 또 생겼었다 (**고쳤다**)
 >
-> 8/12 에 채워 넣은 뒤로 테이블이 더 늘었는데 `DB/reset_demo.sql` 은 따라가지
-> 않았다. 지금 **빠져 있는 것 넷** —
+> 8/12 에 채워 넣은 뒤로 테이블이 더 늘었는데 `DB/reset_demo.sql` 이 따라가지
+> 않아 넷이 빠져 있었다 — `guardrail_provider` · `guardrail_event` ·
+> `tool_call_idempotency` · `mcp_call_note`. 그중 `guardrail_provider` 는
+> `team_id NOT NULL` 이라 **8/12 과 정확히 같은 사고**를 낸다(새 팀이 옛 `TE001`
+> 의 행을 물려받는다). 2026-08-25 에 스크립트에 채워 넣었다.
 >
-> | 테이블 | 위험 |
-> |---|---|
-> | `guardrail_provider` | **`team_id NOT NULL`.** 옛 `TE001` 을 가리킨 채 남아 새 팀이 그대로 물려받는다 — 8/12 과 **정확히 같은 사고** |
-> | `guardrail_event` | `team_id` 보유(nullable). 같은 부류 |
-> | `tool_call_idempotency` | `run_id` 로만 묶인다. 고아로 남지만 팀을 오염시키진 않는다 |
-> | `mcp_call_note` | `team_id` 보유. 같은 부류 |
->
-> **아직 안 고쳤다** — 문서 현행화 중에 발견한 것이라 코드는 그대로 두었다.
-> 시연 전에 DB 를 초기화한다면 이 넷을 손으로 지우거나 스크립트에 추가할 것.
+> **팀 완전 삭제(`_TEAM_PURGE_STEPS`)에도 둘이 빠져 있었다** —
+> `guardrail_provider` 와 `mcp_call_note`. 여기에 `tool_call_idempotency`
+> (run_id 로만 묶여 고아가 된다)까지 더해 **39 → 42단계**가 됐다.
+> `guardrail_event` 는 원래부터 들어 있었고, 계정 삭제(15단계)는 처음부터 완전했다.
 >
 > 왜 반복되나 — **외래키가 하나도 없어서 CASCADE 가 없다.** 테이블을 더할 때마다
-> `reset_demo.sql` 과 `backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS`(39단계)·
-> `_ACCOUNT_PURGE_STEPS`(15단계) **세 곳**에 손으로 줄을 더해야 한다.
+> `reset_demo.sql` 과 `backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS`·
+> `_ACCOUNT_PURGE_STEPS` **세 곳**에 손으로 줄을 더해야 한다. 지금은 셋 다
+> `team_id`/`account_id` 를 든 테이블을 빠짐없이 덮는다(2026-08-25 실측).
 
 초기화 뒤 순서는 스크립트 맨 아래에 있다. **에이전트 재시드는 더 이상 필요
 없다(2026-08-22부터)** — 팀을 만드는 순간 기본 어시스턴트가 자동으로 생겨서

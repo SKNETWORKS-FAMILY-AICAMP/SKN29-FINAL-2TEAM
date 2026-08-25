@@ -60,12 +60,26 @@ TRUNCATE TABLE connector_conn;
 -- 레거시 `agent`/`agent_tool`은 2026-08-22에 폐기했다
 -- (DB/migrations/2026-08-22_drop_legacy_agent.sql) — 에이전트 정의는 전부
 -- 아래 버전 스키마 네 테이블에 있다.
+--
+-- **2026-08-25 에 같은 구멍이 또 뚫려 있었다.** 8/12 에 채워 넣은 뒤로 테이블이
+-- 넷 늘었는데 여기가 따라가지 않았다. `guardrail_provider.team_id` 는 NOT NULL
+-- 이라 8/12 과 정확히 같은 사고를 낸다 — 새 팀이 옛 팀의 가드레일 공급자를
+-- 그대로 물려받는다. `mcp_call_note` 도 team_id 를 든다.
+--
+-- ⚠ **테이블을 더하면 손으로 줄을 더해야 하는 곳이 셋이다** — 여기,
+-- `backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS`, `_ACCOUNT_PURGE_STEPS`.
+-- 이 스키마엔 FK 가 하나도 없어 CASCADE 가 없다.
 TRUNCATE TABLE
+    tool_call_idempotency, mcp_call_note,
     tool_call, agent_run,
     chat_message, chat_session,
     agent_version_tools, agent_version_subagents, agent_favorites,
     agent_versions, agents,
     mcp_tool, mcp_server;
+
+-- 가드레일. `guardrail_provider` 는 팀이 등록한 외부 공급자(team_id NOT NULL),
+-- `guardrail_event` 는 걸린 사건 기록이다. 둘 다 테넌트에 매달린다.
+TRUNCATE TABLE guardrail_event, guardrail_provider;
 
 -- 팀·계정·초대. 캘린더는 아직 연동 전이지만 같이 비운다.
 TRUNCATE TABLE
