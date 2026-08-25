@@ -699,14 +699,32 @@ def _close_rejected_tool_calls(
 def _per_call_decision_types(
     action_requests: list[dict[str, Any]], per_call: list[dict[str, Any]]
 ) -> list[str]:
-    """호출별 `decisions` 입력을 `action_requests` 순서의 타입 목록으로 편다.
+    """`_per_call_decisions()`의 타입만 뽑은 얇은 래퍼.
+
+    `ChatConfirmAPIView.post()`가 스트림을 열기 전에 형식만 미리 검증할 때
+    쓴다(그 자리 주석 참고) — 이 시점엔 `message`까지는 필요 없다.
+    """
+    return [decision["type"] for decision in _per_call_decisions(action_requests, per_call)]
+
+
+def _per_call_decisions(
+    action_requests: list[dict[str, Any]], per_call: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """호출별 `decisions` 입력을 `action_requests` 순서의 결정 목록으로 편다.
 
     2026-08-21, 병렬실행 Phase 2. **빠진 항목을 조용히 승인하지 않는다** —
     사용자가 안 본 호출이 실행되면 승인 게이트의 의미가 없어지므로, 모든
     인덱스를 빠짐없이 덮지 않으면 거부한다. 중복 인덱스도 거부한다(같은
     호출에 승인과 거절이 동시에 오면 뭐가 이기는지 애매해진다).
+
+    2026-08-24, skill-creator 되묻기 — `type` 하나만 남기지 않고
+    `message`(있으면)도 같이 들고 나온다. `"respond"` 결정은 `message`가
+    없으면 `HumanInTheLoopMiddleware`가 그 자리에서 `KeyError`를 내며
+    실행 전체를 깨뜨린다(langchain `RespondDecision.message`는 필수 필드) —
+    `ChatConfirmSerializer`가 이미 `message` 필수를 검증하지만, 검증을
+    통과한 값이 여기서 다시 잘리면 검증이 무의미해진다.
     """
-    by_index: dict[int, str] = {}
+    by_index: dict[int, dict[str, Any]] = {}
     for item in per_call:
         index = item["action_index"]
         if index >= len(action_requests):
@@ -718,7 +736,10 @@ def _per_call_decision_types(
         if index in by_index:
             msg = f"action_index {index}에 대한 결정이 두 번 왔습니다."
             raise PerCallDecisionsError(msg)
-        by_index[index] = item["type"]
+        decision: dict[str, Any] = {"type": item["type"]}
+        if item.get("message"):
+            decision["message"] = item["message"]
+        by_index[index] = decision
 
     missing = [i for i in range(len(action_requests)) if i not in by_index]
     if missing:
@@ -749,8 +770,7 @@ def _decisions_for(
     `edit`로 덮어쓰면 거절이 승인으로 뒤집힌다.
     """
     if per_call is not None:
-        types = _per_call_decision_types(action_requests, per_call)
-        decisions: list[dict[str, Any]] = [{"type": t} for t in types]
+        decisions: list[dict[str, Any]] = _per_call_decisions(action_requests, per_call)
     else:
         decisions = [{"type": "approve"} for _ in action_requests]
 

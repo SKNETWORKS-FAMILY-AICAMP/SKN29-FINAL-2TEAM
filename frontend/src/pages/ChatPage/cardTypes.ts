@@ -45,7 +45,7 @@ export type TimelineEntry =
   | {
       kind: 'skill';
       skillName: string;
-      scope: 'personal' | 'team';
+      scope: 'personal' | 'team' | 'builtin';
     }
   | {
       kind: 'tool';
@@ -58,7 +58,7 @@ export type TimelineEntry =
        * `toolRef`로 그린다.
        */
       toolName: string | null;
-      status: 'RUNNING' | 'OK' | 'FAILED';
+      status: 'RUNNING' | 'OK' | 'FAILED' | 'REJECTED';
       /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). 완료 전엔 없다. */
       output?: string;
     }

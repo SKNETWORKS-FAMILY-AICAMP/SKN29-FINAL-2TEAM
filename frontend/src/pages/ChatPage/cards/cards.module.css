@@ -120,6 +120,115 @@
   color: var(--color-heading);
 }
 
+/* 스킬 등록 확인 카드(2026-08-24) — 「거절/승인 버튼만 있고 등록할 스킬의
+   이름과 설명이 안 보인다」는 지적으로 추가. `.confirmHead`와 같은 자리에
+   들어가지만, 체크박스·건수 줄이 아니라 이름(코드체) + 설명(본문급)을
+   세로로 쌓는다 — 사람이 승인 전에 실제로 읽어야 하는 내용이라 `.muted`
+   요약 크기로 죽이지 않는다. */
+.skillPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.skillPreviewLabel {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.skillPreviewName {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.skillPreviewDescription {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-heading);
+  white-space: pre-wrap;
+}
+
+/* 확인 카드가 바쁠 때(승인/거절 처리 중) 즉시 되돌아갈 수 있는 링크형
+   버튼(2026-08-24) — "거절해도 왜 이렇게 오래 걸리지, 뒤로 가기는 없냐"는
+   지적으로 추가. 이미 있는 "중단"(입력창 옆)을 카드 자리에서 바로 쓴다. */
+.abortHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--color-placeholder);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.abortHint:hover {
+  color: var(--color-heading);
+}
+
+/* ---------- 스킬 생성 되묻기 카드(2026-08-24) ---------- */
+
+.askHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.askLabel {
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.askBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+/* 승인 카드의 도구 이름·인자 요약과 다르게, 이 줄은 사람이 실제로 읽고
+   답할 질문이다 — 본문급 크기로 키워 승인 카드의 `.muted` 요약 줄과
+   또렷이 구분한다. */
+.askQuestion {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-heading);
+  white-space: pre-wrap;
+}
+
+.askTextarea {
+  width: 100%;
+  min-height: 72px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.askTextarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.askTextarea:disabled {
+  opacity: 0.6;
+}
+
 .taskRow {
   display: flex;
   align-items: flex-start;

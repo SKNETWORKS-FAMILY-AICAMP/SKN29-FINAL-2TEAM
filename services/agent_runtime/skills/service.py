@@ -64,13 +64,24 @@ class SkillPermissionDenied(SkillError):
     pass
 
 
-def validate_skill_name(name: str) -> str | None:
-    """문제가 있으면 사람에게 보여줄 한국어 문구를, 없으면 `None`을 돌려준다."""
+def validate_skill_name(name: str, *, allow_reserved: bool = False) -> str | None:
+    """문제가 있으면 사람에게 보여줄 한국어 문구를, 없으면 `None`을 돌려준다.
+
+    `allow_reserved`(2026-08-24, skill-creator 기본 등록)는 내장 스킬을
+    씨딩하는 `ensure_builtin_skill_creator()`만 `True`로 부른다 — 사람이
+    개인/팀 스킬을 만들 때(`create_personal_skill`/`create_team_skill`)는
+    항상 기본값(`False`)이라 예약된 이름을 못 쓴다.
+    """
 
     if not name or len(name) > MAX_SKILL_NAME_LENGTH:
         return f"스킬 이름은 1~{MAX_SKILL_NAME_LENGTH}자여야 합니다."
     if not _NAME_RE.match(name):
         return "스킬 이름은 소문자, 숫자, 하이픈(-)만 쓸 수 있고 하이픈으로 시작·끝나거나 연속될 수 없습니다."
+    if not allow_reserved:
+        from .backend import RESERVED_SKILL_NAMES
+
+        if name in RESERVED_SKILL_NAMES:
+            return f"'{name}'은(는) 시스템이 기본 제공하는 스킬 이름이라 쓸 수 없습니다."
     return None
 
 
@@ -96,6 +107,12 @@ class _Scope:
 
     prefix: str
     namespace: tuple[str, ...]
+
+
+def _builtin_scope() -> _Scope:
+    from .backend import SKILLS_BUILTIN_PATH_PREFIX, builtin_namespace
+
+    return _Scope(prefix=SKILLS_BUILTIN_PATH_PREFIX, namespace=builtin_namespace())
 
 
 def _personal_scope(account_id: str) -> _Scope:
@@ -232,7 +249,13 @@ def _exists(scope: _Scope, name: str) -> bool:
 
 
 def create_skill(
-    scope: _Scope, *, name: str, description: str, body: str, shadow_scope: _Scope | None = None
+    scope: _Scope,
+    *,
+    name: str,
+    description: str,
+    body: str,
+    shadow_scope: _Scope | None = None,
+    allow_reserved: bool = False,
 ) -> dict[str, Any]:
     """`shadow_scope`가 있으면 그쪽에도 같은 이름이 있는지 먼저 본다.
 
@@ -248,7 +271,7 @@ def create_skill(
     """
     from .backend import skill_md_path
 
-    name_error = validate_skill_name(name)
+    name_error = validate_skill_name(name, allow_reserved=allow_reserved)
     if name_error:
         raise SkillError(name_error)
     _validate_description(description)
@@ -360,6 +383,72 @@ def delete_team_skill(team_id: str, name: str, *, actor_role: str) -> None:
     delete_skill(_team_scope(team_id), name)
 
 
+# ---------------------------------------------------------------------------
+# 내장 스킬 — 계정·팀과 무관하게 항상 존재한다(2026-08-24, skill-creator).
+# 쓰기는 `ensure_builtin_skill_creator()`(아래) 하나뿐이고, 사람이 직접
+# 만들고·고치고·지우는 경로는 없다 — `validate_skill_name()`이 예약된
+# 이름을 개인/팀 생성에서 막는 것과 짝이다.
+# ---------------------------------------------------------------------------
+
+
+def list_builtin_skills() -> list[dict[str, Any]]:
+    return list_skills(_builtin_scope())
+
+
+def get_builtin_skill(name: str) -> dict[str, Any]:
+    return get_skill(_builtin_scope(), name)
+
+
+#: 이 프로세스에서 이미 한 번 확인했으면 다시 DB를 안 본다(2026-08-24).
+#: `bootstrap.py`의 "호출마다 새로 조립하지만 I/O는 실제 필요할 때만"
+#: 원칙과 같은 이유 — 매 채팅 턴마다 존재 확인 쓰기를 반복할 필요는 없다.
+#: 여러 워커 프로세스가 각자 한 번씩 확인하는 것은 안전하다(아래 `create_skill`
+#: 호출이 이미 있으면 `SkillNameConflict`로 조용히 넘어간다).
+_builtin_skill_creator_seeded = False
+
+
+def ensure_builtin_skill_creator() -> None:
+    """`skill-creator` 내장 스킬을 `builtin_content.py`의 현재 상수 값으로 맞춘다.
+
+    **2026-08-24 수정 — "없으면 만든다"에서 "항상 최신 내용으로 맞춘다"로
+    바꿨다.** 이 스킬 본문은 사람이 직접 고칠 방법이 없다(위 섹션 docstring
+    — 쓰기는 이 함수 하나뿐). 그러니 내용을 바꾸는 유일한 방법은
+    `builtin_content.py`의 상수를 고치고 서버를 재시작하는 것인데, 예전
+    "이미 있으면 그대로 둔다" 버전은 그렇게 고쳐도 이미 씌운 DB 내용이
+    안 바뀌어서 고친 게 반영이 안 됐다(실제로 겪음 — 질문 문구를 짧게
+    고쳤는데 배포해도 그대로였다). 현재 저장된 내용이 상수와 다를 때만
+    `update_skill()`을 부른다 — 매번 무조건 쓰기를 내지는 않는다.
+    """
+
+    global _builtin_skill_creator_seeded
+    if _builtin_skill_creator_seeded:
+        return
+
+    from .builtin_content import SKILL_CREATOR_BODY, SKILL_CREATOR_DESCRIPTION, SKILL_CREATOR_NAME
+
+    scope = _builtin_scope()
+    try:
+        current = get_skill(scope, SKILL_CREATOR_NAME)
+    except SkillNotFound:
+        current = None
+
+    if current is None:
+        try:
+            create_skill(
+                scope,
+                name=SKILL_CREATOR_NAME,
+                description=SKILL_CREATOR_DESCRIPTION,
+                body=SKILL_CREATOR_BODY,
+                allow_reserved=True,
+            )
+        except SkillNameConflict:
+            pass  # 다른 워커가 그 사이 먼저 만들었다 — 그대로 둔다.
+    elif current["description"] != SKILL_CREATOR_DESCRIPTION or current["body"] != SKILL_CREATOR_BODY:
+        update_skill(scope, SKILL_CREATOR_NAME, description=SKILL_CREATOR_DESCRIPTION, body=SKILL_CREATOR_BODY)
+
+    _builtin_skill_creator_seeded = True
+
+
 __all__ = [
     "MAX_SKILL_NAME_LENGTH",
     "MAX_SKILL_DESCRIPTION_LENGTH",
@@ -380,4 +469,7 @@ __all__ = [
     "create_team_skill",
     "update_team_skill",
     "delete_team_skill",
+    "list_builtin_skills",
+    "get_builtin_skill",
+    "ensure_builtin_skill_creator",
 ]

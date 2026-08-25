@@ -64,6 +64,23 @@ class ResolveInvocableSkillTests(SimpleTestCase):
     우선순위로 동작하므로(팀이 나중 소스라 개인을 덮어쓴다), 명시적 호출도
     같은 스킬을 가리켜야 한다(모듈 docstring 참고)."""
 
+    @patch("services.agent_runtime.skills.service.ensure_builtin_skill_creator")
+    @patch("services.agent_runtime.skills.service.get_builtin_skill")
+    def test_reserved_builtin_skill_is_resolved_explicitly(self, get_builtin, ensure_builtin):
+        get_builtin.return_value = {
+            "skill_id": "skill-creator",
+            "name": "skill-creator",
+            "body": "BUILTIN_BODY",
+        }
+
+        result = resolve_invocable_skill(
+            account_id="AC001", team_id="TM001", name="skill-creator"
+        )
+
+        self.assertEqual(result["body"], "BUILTIN_BODY")
+        self.assertEqual(result["scope"], "builtin")
+        ensure_builtin.assert_called_once_with()
+
     @patch("services.agent_runtime.skills.service.get_team_skill")
     def test_team_skill_found_first_does_not_check_personal(self, get_team):
         get_team.return_value = {"skill_id": "humanizer", "name": "humanizer", "body": "TEAM_BODY"}

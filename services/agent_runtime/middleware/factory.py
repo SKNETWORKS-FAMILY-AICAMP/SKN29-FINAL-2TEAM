@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    PIIMiddleware,
+    TodoListMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain.agents.middleware.todo import WRITE_TODOS_TOOL_DESCRIPTION
 
 from services.agent_runtime.middleware.builtin_write_lock import build_builtin_write_lock
@@ -14,6 +19,28 @@ if TYPE_CHECKING:
     from services.agent_runtime.context import RuntimeContext
     from services.agent_runtime.definitions import AgentDefinition
     from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
+
+#: 2026-08-24, PIIMiddleware 도입 — 탐지 대상은 `credit_card`/`ip`/
+#: `mac_address` 세 가지만 켠다. `email`/`url`은 뺀다(요청에 따른 결정 —
+#: 이 프로젝트 채팅에는 정상 업무 메일 주소·문서 링크가 늘 섞여 있어, 이
+#: 둘까지 켜면 오탐이 훨씬 잦다). `PIIMiddleware`는 langchain 실측 결과
+#: **타입 하나당 인스턴스 하나**라 여러 개를 리스트로 묶어 만든다
+#: (`langchain/agents/middleware/pii.py` `__init__` — `pii_type`이 단일
+#: 값만 받는다). 흐름은 `docs/작업기록/Jihun_Deep_Agents/13_7단계_05_미들웨어_조립.md`,
+#: 세부 설계는 `docs/작업기록/Deep_Agents/2026-08-18_06_미들웨어_전체_설계_정리.md`.
+_PII_TYPES: tuple[str, ...] = ("credit_card", "ip", "mac_address")
+
+
+def _build_pii_middleware() -> list[PIIMiddleware]:
+    """`_PII_TYPES` 각각을 `redact` 전략으로 감지하는 미들웨어 목록.
+
+    `apply_to_input`은 기본값(`True`) 그대로 둔다 — 사용자가 채팅에 직접
+    입력한 내용만 본다. `apply_to_output`/`apply_to_tool_results`는 켜지
+    않는다(기본값 `False`) — 모델 답변·도구 결과까지 검사 범위를 넓히는
+    것은 이번 요청 범위 밖이라, 필요해지면 그때 다시 판단한다.
+    """
+
+    return [PIIMiddleware(pii_type, strategy="redact") for pii_type in _PII_TYPES]
 
 #: LangChain 기본 `WRITE_TODOS_TOOL_DESCRIPTION`(언제 쓸지/말지가 이미 잘 짜여
 #: 있어 그대로 유지)에 이 프로젝트 전용 구분 문단만 덧붙인다. `write_todos`와
@@ -77,6 +104,12 @@ class MiddlewareFactory:
                 run_limit=self.runtime_policy.resolve_tool_call_limit(account_role=account_role),
                 exit_behavior="error",
             ),
+            # 2026-08-24 — PIIMiddleware. Root/Child 둘 다 이 build()를
+            # 거치므로 여기 한 곳이면 양쪽에 다 적용된다(위 `_build_pii_middleware`
+            # 주석 참고). GP는 별도 build_for_general_purpose()를 쓰므로 아직
+            # 안 붙는다 — GP가 사용자 원문을 직접 보는 경로가 생기면 그때
+            # 같은 줄을 추가한다.
+            *_build_pii_middleware(),
         ]
         if self.runtime_policy.enable_todo:
             # `system_prompt`를 넘기지 않아 LangChain 기본
