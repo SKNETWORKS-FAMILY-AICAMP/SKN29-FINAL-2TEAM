@@ -12,6 +12,7 @@ import {
 } from '../../../api/personalFiles';
 import type { PersonalFile } from '../../../api/personalFiles';
 import { loadSessionToken } from '../../../utils/session';
+import { notifyIndexingStarted } from '../../../utils/indexingSignal';
 import { josa } from '../../../utils/josa';
 import styles from './tabs.module.css';
 
@@ -122,6 +123,8 @@ export function MyFilesTab() {
       setBusy(file.name);
       try {
         await uploadPersonalFile(token, file);
+        // 올린 파일도 커넥터 문서와 같은 색인을 탄다. 전역 카드가 곧바로 잡게 한다.
+        notifyIndexingStarted();
         showToast(`${file.name} · 업로드했습니다. 읽는 중입니다.`, 'success');
       } catch (exc) {
         // 형식·크기 거절은 서버가 이유를 준다. 그 문장이 가장 정확하다.

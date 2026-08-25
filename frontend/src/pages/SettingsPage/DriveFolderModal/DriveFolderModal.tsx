@@ -4,6 +4,7 @@ import { ApiError } from '../../../api/client';
 import { getDriveFolders, listDriveFiles } from '../../../api/connectors';
 import type { DriveFile } from '../../../api/connectors';
 import { listTeamFolders, replaceTeamFolders } from '../../../api/projects';
+import { notifyIndexingStarted } from '../../../utils/indexingSignal';
 import { DriveFolderPickerModal } from './DriveFolderPickerModal';
 import type { PickedFolder } from './DriveFolderPickerModal';
 import styles from './DriveFolderModal.module.css';
@@ -159,10 +160,10 @@ export function DriveFolderModal({ open, token, onClose, onSaved }: DriveFolderM
         Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
       );
       // **저장이 끝이 아니다.** 이 요청이 곧바로 전량 수집을 띄우는데(서버
-      // `_start_document_intake`) 응답은 그것을 기다리지 않는다. 「저장했습니다」로만
-      // 끝내면 뒤에서 문서당 100초씩 도는 일이 시작된 줄 아무도 모르고, 그동안
-      // 채팅에서 문서가 안 잡히면 「연결이 안 됐나」로 읽는다.
-      //
+      // `_start_document_intake`) 응답은 그것을 기다리지 않는다. 시작됐다는 것을
+      // 두 가지로 알린다 — 전역 진행 카드에 곧바로(안 그러면 다음 폴링까지 최대
+      // 60초 동안 아무 일도 안 일어난 것처럼 보인다), 그리고 토스트로.
+      notifyIndexingStarted();
       // 막연한 시간(「몇 분 걸립니다」)은 쓰지 않는다 — 화면문구_정리표 §1-1 이
       // 그것을 걷어낸 자리다. 대신 **무엇을 하는 중인지**와 **어디서 보는지**만
       // 말한다(「내 파일」 토스트 "업로드했습니다. 읽는 중입니다." 와 같은 꼴).

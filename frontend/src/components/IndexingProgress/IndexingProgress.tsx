@@ -4,6 +4,7 @@ import { Icon } from '../Icon/Icon';
 import { fetchIndexingProgress, sumIndexing } from '../../api/documentLibrary';
 import type { IndexingCounts as Counts, IndexingProgress as Progress } from '../../api/documentLibrary';
 import { PATHS } from '../../routes';
+import { onIndexingStarted } from '../../utils/indexingSignal';
 import { subscribeSession, loadSession } from '../../utils/session';
 import styles from './IndexingProgress.module.css';
 
@@ -55,6 +56,16 @@ const POLL_IDLE_MS = 60_000;
 const FINISH_HOLD_MS = 12_000;
 
 /**
+ * 「방금 시작됐다」는 신호를 받은 뒤 얼마나 바짝 따라붙을까.
+ *
+ * 신호가 오는 순간 서버에는 **아직 `doc` 행이 없을 수 있다** — 폴더 저장은
+ * 응답을 붙잡지 않고 수집을 뒷작업으로 던지므로, 그 스레드가 Drive 를 훑어
+ * 등록하기까지 시차가 있다. 한 번만 물어보고 말면 「아직 0건」을 보고 다시
+ * 60초를 자 버린다. 그래서 잠시 10초 간격을 유지하며 나타나기를 기다린다.
+ */
+const NUDGE_WINDOW_MS = 30_000;
+
+/**
  * 아직 읽을 것이 남았는가. **실패도 「끝난 것」으로 센다** — 실패한 문서는
  * 스스로 끝나지 않으므로 빼지 않으면 10/12 에서 영원히 도는 것처럼 보인다.
  */
@@ -72,13 +83,32 @@ export function IndexingProgress() {
   const [dismissed, setDismissed] = useState(false);
   /** 막 끝난 회차. 잠시 「다 읽었습니다」로 남아 있다가 스스로 사라진다. */
   const [finished, setFinished] = useState<Counts | null>(null);
+  /** 이 시각까지는 색인이 도는 것으로 치고 바짝 따라붙는다. 0 이면 아님. */
+  const [nudgeUntil, setNudgeUntil] = useState(0);
   const wasIndexing = useRef(false);
   const timer = useRef<number | null>(null);
 
   // 로그인·로그아웃을 따라간다. 로그아웃하면 폴링도 멈춰야 한다.
   useEffect(() => subscribeSession(() => setSession(loadSession())), []);
 
+  // 폴더 저장·파일 업로드·재시도가 알려 온다. 그 자리에서 물어본다.
+  useEffect(() => onIndexingStarted(() => setNudgeUntil(Date.now() + NUDGE_WINDOW_MS)), []);
+
+  // 창이 지나면 스스로 푼다. 상태가 바뀌면서 폴링 간격도 원래대로 돌아간다.
+  useEffect(() => {
+    if (nudgeUntil === 0) return;
+    const remaining = nudgeUntil - Date.now();
+    if (remaining <= 0) {
+      setNudgeUntil(0);
+      return;
+    }
+    const timer = window.setTimeout(() => setNudgeUntil(0), remaining);
+    return () => window.clearTimeout(timer);
+  }, [nudgeUntil]);
+
   const token = session?.token;
+
+  const nudging = nudgeUntil !== 0;
 
   const poll = useCallback(async () => {
     if (!token) return;
@@ -111,7 +141,9 @@ export function IndexingProgress() {
       stop();
       if (document.hidden) return;
       void poll();
-      const interval = isIndexing(progress) ? POLL_ACTIVE_MS : POLL_IDLE_MS;
+      // 도는 중이거나, 방금 시작됐다는 말을 들었으면 바짝 따라붙는다.
+      const active = isIndexing(progress) || nudging;
+      const interval = active ? POLL_ACTIVE_MS : POLL_IDLE_MS;
       timer.current = window.setInterval(() => void poll(), interval);
     }
 
@@ -124,7 +156,7 @@ export function IndexingProgress() {
     // `progress` 를 의존성에 넣으면 폴링 결과마다 타이머를 다시 건다. 간격을
     // 바꾸는 것이 목적이므로 「도는가/아닌가」가 바뀔 때만 다시 걸면 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, poll, isIndexing(progress)]);
+  }, [token, poll, isIndexing(progress), nudging]);
 
   // **팀 문서와 내 파일을 합쳐 본다.** 기다리는 사람에게는 「내 문서」 하나이고,
   // 올린 파일도 커넥터 문서와 똑같이 워커를 100초씩 기다린다

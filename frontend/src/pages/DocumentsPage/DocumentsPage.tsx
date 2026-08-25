@@ -4,6 +4,7 @@ import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
 import { fetchDocumentLibrary, reindexTeamDocument } from '../../api/documentLibrary';
 import type { DocumentLibrary, LibraryDocument, LibraryFolder } from '../../api/documentLibrary';
+import { notifyIndexingStarted } from '../../utils/indexingSignal';
 import { useSession } from '../../utils/session';
 // 「내 파일」은 자리만 옮기고 화면은 그대로 쓴다. 업로드·검색 토글·팀 공유·삭제가
 // 이미 붙어 있고 동작이 검증돼 있어서, 여기서 다시 짜면 그 검증을 버리게 된다.
@@ -171,6 +172,8 @@ export default function DocumentsPage() {
     setBusy(doc.doc_id);
     try {
       await reindexTeamDocument(token, doc.doc_id);
+      // 한 건이어도 워커가 도는 것은 같다. 전역 카드에도 잡히게 알린다.
+      notifyIndexingStarted();
       // 낙관적으로 「읽는 중」으로 바꾼다. 서버도 곧 같은 값을 주지만, 폴링이
       // 10초라 그때까지 버튼이 아무 반응 없어 보인다.
       setLibrary((prev) => ({
