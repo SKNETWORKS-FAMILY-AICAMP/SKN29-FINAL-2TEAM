@@ -72,10 +72,16 @@ TRUNCATE TABLE connector_conn;
 TRUNCATE TABLE
     tool_call_idempotency, mcp_call_note,
     tool_call, agent_run,
+    eval_case_result, eval_run,
     chat_message, chat_session,
     agent_version_tools, agent_version_subagents, agent_favorites,
     agent_versions, agents,
     mcp_tool, mcp_server;
+
+-- `eval_case_result`·`eval_run`도 시연 초기화에서는 비운다. 이 결과는 특정
+-- 런타임·데이터셋으로 실행한 성적표라, 회원가입부터 다시 시작하는 새 시연에
+-- 이전 성적이 섞이면 안 된다. 평가 입력만 교체하는 `reset_eval.sql`은 반대로
+-- 이 두 테이블을 보존한다.
 
 -- 가드레일. `guardrail_provider` 는 팀이 등록한 외부 공급자(team_id NOT NULL),
 -- `guardrail_event` 는 걸린 사건 기록이다. 둘 다 테넌트에 매달린다.
