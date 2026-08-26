@@ -2,6 +2,7 @@ from django.urls import path
 
 from .api_views import (
     PersonalFileDetailAPIView,
+    PersonalFileDownloadAPIView,
     PersonalFileListAPIView,
     PersonalFileReindexAPIView,
     SharedFileListAPIView,
@@ -13,6 +14,11 @@ urlpatterns = [
     path("me/files/", PersonalFileListAPIView.as_view(), name="api_personal_files"),
     # `<doc_id>` 앞에 둔다 — 뒤에 있으면 `shared` 가 doc_id 로 잡힌다.
     path("me/files/shared/", SharedFileListAPIView.as_view(), name="api_shared_files"),
+    path(
+        "me/files/<str:doc_id>/download/",
+        PersonalFileDownloadAPIView.as_view(),
+        name="api_personal_file_download",
+    ),
     path(
         "me/files/<str:doc_id>/reindex/",
         PersonalFileReindexAPIView.as_view(),

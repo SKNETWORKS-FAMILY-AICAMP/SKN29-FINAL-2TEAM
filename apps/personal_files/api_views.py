@@ -19,8 +19,10 @@
 
 import logging
 import threading
+from urllib.parse import quote
 
 import psycopg
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -187,6 +189,50 @@ class PersonalFileReindexAPIView(AuthenticatedAPIView):
 
         _start_processing(account_id=account_id, doc_id=doc_id)
         return Response({"doc_id": doc_id, "started": True}, status=status.HTTP_202_ACCEPTED)
+
+
+class PersonalFileDownloadAPIView(AuthenticatedAPIView):
+    """원문을 그대로 내려준다.
+
+    **`RunPodDocumentDownloadAPIView` 와 다르다.** 그쪽은 로그인 세션이 없는
+    워커가 서명 token 으로 받아 가는 자리고, 여기는 로그인한 사람이 자기
+    라이브러리에서 받는 자리다 — 서명이 아니라 소유로 판단한다.
+
+    2026-08-26 에 붙였다. 그전에는 **올린 파일조차 다시 받을 방법이 없었다** —
+    `table_export` 가 만든 파일을 받으려면 필요해서 함께 메웠다.
+    """
+
+    def get(self, request, doc_id):
+        try:
+            row = PersonalDocumentRepository.get_for_download(
+                doc_id=doc_id, account_id=request.user.account_id
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _error_response(exc)
+
+        try:
+            data = storage.load(row["storage_key"])
+        except OSError as exc:
+            # 행은 있는데 원문이 없다. 사람이 할 수 있는 것이 없으므로 사유를 밝힌다.
+            logger.warning("내 파일 원문 읽기 실패: %s", row["storage_key"])
+            return Response(
+                {"detail": "파일을 읽지 못했습니다.", "error": exc.__class__.__name__},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        response = HttpResponse(
+            data, content_type=row["mime_type"] or "application/octet-stream"
+        )
+        # 파일 이름이 한글이라 `filename=` 만 쓰면 브라우저마다 깨진다. RFC 5987 의
+        # `filename*` 을 함께 준다 — 옛 브라우저는 앞을, 나머지는 뒤를 읽는다.
+        name = row["file_name"] or doc_id
+        response["Content-Disposition"] = (
+            f'attachment; filename="{doc_id}"; filename*=UTF-8\'\'{quote(name)}'
+        )
+        # 같은 URL 로 내용이 바뀌지는 않지만(파일은 덮어쓰지 않는다) 남의 자리에
+        # 캐시될 이유도 없다 — 개인 문서다.
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 class PersonalFileDetailAPIView(AuthenticatedAPIView):

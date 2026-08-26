@@ -784,6 +784,41 @@ class PersonalDocumentRepository:
                     raise RecordNotFound(f"존재하지 않는 내 파일입니다: {doc_id}")
 
     @staticmethod
+    def get_for_download(*, doc_id: str, account_id: str) -> dict[str, Any]:
+        """내려받을 파일 한 건. 내 것이거나, 팀원이 우리 팀에 공유한 것이다.
+
+        **공유분까지 여는 이유**는 목록이 이미 그것을 보여 주기 때문이다
+        (`list_shared_with_me`). 목록에 뜨는데 못 받으면 화면이 거짓말을 한다.
+
+        팀이 없는 계정도 있다(`get_for_processing` 과 같은 사정) — 그때는 내
+        것만 볼 수 있고, 팀을 못 물었다고 다운로드가 통째로 막히면 안 된다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                try:
+                    team_id = _require_team(cursor, account_id)
+                except PermissionDenied:
+                    team_id = None
+                cursor.execute(
+                    """
+                    SELECT doc_id, file_name, mime_type, storage_key
+                    FROM doc
+                    WHERE doc_id = %s AND deleted = false
+                      AND (owner_account_id = %s
+                           OR (%s::text IS NOT NULL AND shared_team_id = %s))
+                    """,
+                    (doc_id, account_id, team_id, team_id),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound(f"존재하지 않는 파일입니다: {doc_id}")
+        if not row["storage_key"]:
+            # 행은 있는데 원문이 없다. 올리다 만 것이지 권한 문제가 아니다.
+            raise RecordNotFound(f"원문이 저장되지 않은 파일입니다: {doc_id}")
+        return row
+
+    @staticmethod
     def delete(*, doc_id: str, account_id: str) -> str:
         """지우고 저장소 키를 돌려준다 — 부르는 쪽이 원문도 지운다.
 
