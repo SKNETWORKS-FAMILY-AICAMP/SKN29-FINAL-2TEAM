@@ -98,11 +98,15 @@ GET 하나만 남는다). 커스텀 도구는 우리가 내용을 모르므로 *
 
 ## 5. 내장 도구는 DB 에 없다
 
-**내장 도구 16종은 테이블이 아니라 코드다** — `services/harness/registry.py` 의
+**내장 도구 ~~16종~~ 17종(2026-08-26 재측정)은 테이블이 아니라 코드다** — `services/harness/registry.py` 의
 `BUILTIN_TOOLS` 가 정본이고, `agent_version_tools.tool_ref` 가 그 이름을 가리킨다.
 
 그중 **`task_update` · `task_register` · `jira_create_issues` · `skill_register`**
 넷이 `side_effect=True` 라 승인 게이트를 탄다.
+
+**`skill_creator_ask_followup` 도 `side_effect=True` 다**(2026-08-26 추가 확인). 다만
+화면이 승인/거절 버튼 대신 **질문+입력창 카드**를 그리고 답을 `respond` 로 돌려보내므로,
+세는 방식은 **「승인 게이트 4종 + 질문 카드 1종」**이다.
 
 ## 6. 지울 때 손으로 다 적어야 한다
 
