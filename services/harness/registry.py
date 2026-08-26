@@ -42,7 +42,7 @@ from backend.db.repositories import DocumentRepository
 from backend.services import storage
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_intake import sync_drive_changes
-from services.document_export import build_xlsx
+from services.document_export import build_docx, build_xlsx
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -553,6 +553,48 @@ def _document_sync(*, account_id: str):
 _EXPORT_MAX_ROWS = 5000
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+#: 파일 이름·시트 이름에 못 쓰는 글자. 제목이 그대로 이름이 되므로 턴다.
+_UNSAFE_NAME_CHARS = frozenset(r'\/:*?"<>|')
+
+
+def _safe_title(title: str, *, fallback: str) -> str:
+    """제목에서 파일 이름에 못 쓰는 글자를 턴다. 남는 게 없으면 `fallback`."""
+
+    return "".join(ch for ch in (title or "") if ch not in _UNSAFE_NAME_CHARS).strip() or fallback
+
+
+def _store_generated(
+    *, account_id: str, title: str, suffix: str, mime_type: str, data: bytes
+) -> tuple[str, str]:
+    """만든 파일을 「내 파일」에 넣고 `(doc_id, 파일 이름)` 을 돌려준다.
+
+    `table_export` 와 `document_create` 가 같은 자리를 쓴다. 두 번째 도구를
+    더하면서 뽑아낸 것이다 — 저장 규칙(개인 키 · 내용 해시를 revision 자리에)이
+    양쪽에서 갈리면 한쪽만 조용히 틀린다.
+    """
+
+    # 파일 이름이 곧 목록에 보이는 이름이다. 날짜를 붙이는 것은 같은 것을 여러 번
+    # 만들었을 때 어느 것이 언제 것인지 목록에서 갈리게 하려는 것이다.
+    stamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+    file_name = f"{_safe_title(title, fallback='제목 없음')}_{stamp}{suffix}"
+
+    doc_id = PersonalDocumentRepository.create_generated(
+        account_id=account_id, file_name=file_name, mime_type=mime_type
+    )
+    key = storage.build_personal_key(account_id=account_id, doc_id=doc_id, mime_type=mime_type)
+    content_hash = storage.save(key, data)
+    # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
+    # 없으므로 내용 해시를 그 자리에 쓴다.
+    DocumentRepository.mark_stored(
+        doc_id=doc_id,
+        storage_key=key,
+        content_hash=content_hash,
+        revision=content_hash.removeprefix("sha256:")[:16],
+    )
+    return doc_id, file_name
 
 
 def _table_export(
@@ -586,28 +628,15 @@ def _table_export(
                 f"{index}번째 행이 목록이 아닙니다. 각 행은 열 순서대로 값을 담은 목록이어야 합니다."
             )
 
-    # 파일 이름이 곧 목록에 보이는 이름이다. 날짜를 붙이는 것은 같은 표를 여러 번
-    # 내보냈을 때 어느 것이 언제 것인지 목록에서 갈리게 하려는 것이다.
-    stamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
-    safe_title = "".join(ch for ch in title if ch not in '\\/:*?"<>|').strip() or "표"
-    file_name = f"{safe_title}_{stamp}.xlsx"
-
-    data = build_xlsx(title=safe_title, columns=list(columns), rows=[list(r) for r in rows])
-
-    doc_id = PersonalDocumentRepository.create_generated(
-        account_id=account_id, file_name=file_name, mime_type=_XLSX_MIME
+    # 시트 이름은 파일 이름과 같은 글자를 쓴다 — 목록에서 본 이름과 열었을 때의
+    # 이름이 다르면 같은 파일인지 사람이 다시 확인해야 한다.
+    data = build_xlsx(
+        title=_safe_title(title, fallback="표"),
+        columns=list(columns),
+        rows=[list(r) for r in rows],
     )
-    key = storage.build_personal_key(
-        account_id=account_id, doc_id=doc_id, mime_type=_XLSX_MIME
-    )
-    content_hash = storage.save(key, data)
-    # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
-    # 없으므로 내용 해시를 그 자리에 쓴다.
-    DocumentRepository.mark_stored(
-        doc_id=doc_id,
-        storage_key=key,
-        content_hash=content_hash,
-        revision=content_hash.removeprefix("sha256:")[:16],
+    doc_id, file_name = _store_generated(
+        account_id=account_id, title=title, suffix=".xlsx", mime_type=_XLSX_MIME, data=data
     )
 
     # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
@@ -616,6 +645,33 @@ def _table_export(
         "file_name": file_name,
         "columns": len(columns),
         "rows": len(rows),
+        "note": "「내 파일」에 저장했습니다. 목록에서 내려받을 수 있습니다.",
+    }
+
+
+def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any]:
+    """글 한 편을 워드 파일(.docx)로 만들어 **「내 파일」에 넣는다.**
+
+    `table_export` 와 같은 자리·같은 규칙이다(`_store_generated`). 다른 것은
+    받는 것뿐이다 — 저쪽은 표(열·행), 이쪽은 글(제목·본문)이다.
+
+    **본문의 마크다운을 전부 해석하지 않는다.** 제목·목록·굵게만 그리고 나머지는
+    글자 그대로 둔다 — 화면(`AnswerText.tsx`)이 같은 이유로 내린 판단을 그대로
+    따른다(`document_export/docx.py` 모듈 주석).
+    """
+
+    if not (body or "").strip():
+        raise ToolInputError("본문이 비어 있습니다. 문서에 담을 내용을 먼저 정해 주세요.")
+
+    data = build_docx(title=title, body=body)
+    doc_id, file_name = _store_generated(
+        account_id=account_id, title=title, suffix=".docx", mime_type=_DOCX_MIME, data=data
+    )
+
+    # 본문을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
+    return {
+        "doc_id": doc_id,
+        "file_name": file_name,
         "note": "「내 파일」에 저장했습니다. 목록에서 내려받을 수 있습니다.",
     }
 
@@ -1332,6 +1388,37 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         },
         handler=_table_export,
         # 사용자의 서재에 파일을 만든다. 되돌리려면 사람이 지워야 하므로 승인을 받는다.
+        side_effect=True,
+        category="문서",
+    ),
+    "document_create": Tool(
+        ref="document_create",
+        name="문서 만들기",
+        description=(
+            "글 한 편을 워드 파일(.docx)로 만들어 사용자의 「내 파일」에 저장한다. "
+            "「워드로 정리해 줘」·「문서로 만들어 줘」·「보고서로 뽑아 줘」처럼 "
+            "**결과를 문서 파일로 달라고 할 때** 쓴다. 회의록 정리·요약본·보고서가 이것이다. "
+            "`body` 는 마크다운으로 적는다 — `#`~`###` 제목, `- ` 목록, `1. ` 번호 목록, "
+            "`**굵게**` 만 문서에 반영되고 나머지 문법은 글자 그대로 남으니 쓰지 않는다. "
+            "**표가 주된 내용이면 이 도구가 아니라 table_export 로 엑셀을 만든다.** "
+            "문서에 담을 내용을 지어내지 않는다 — 근거가 없는 항목은 비우거나 빼고 쓴다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "문서 제목. 파일 이름에도 쓴다(예: 「2026-08-26 회의록」)",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "본문. 위에 적힌 마크다운 문법만 쓴다",
+                },
+            },
+            "required": ["title", "body"],
+        },
+        handler=_document_create,
+        # 사용자의 서재에 파일을 만든다. `table_export` 와 같은 이유로 승인을 받는다.
         side_effect=True,
         category="문서",
     ),
