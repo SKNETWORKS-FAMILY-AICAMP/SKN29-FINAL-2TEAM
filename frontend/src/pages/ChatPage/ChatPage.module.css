@@ -27,6 +27,38 @@
   color: var(--color-muted);
 }
 
+.sessionSearch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin: 0 var(--space-1) var(--space-3);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.sessionSearch:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.sessionSearch input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 12px;
+}
+
+.sessionSearch input::placeholder {
+  color: var(--color-placeholder);
+}
+
 /* ---------- 프로젝트 > 대화 (2계층) ---------- */
 
 .projectGroup {
@@ -343,6 +375,253 @@
   white-space: nowrap;
 }
 
+.chatSearchButton,
+.searchIconButton,
+.searchControl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-body);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chatSearchButton {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.chatSearchButton:hover,
+.searchIconButton:hover:not(:disabled),
+.searchControl:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.chatSearchButton:disabled,
+.searchIconButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.chatSearchLauncher {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.conversationSearchBar {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 9px);
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(650px, calc(100vw - 380px));
+  min-width: 430px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 12px 32px rgb(15 23 42 / 14%);
+  transform-origin: top right;
+  animation: search-panel-in 160ms ease-out both;
+}
+
+@keyframes search-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.conversationSearchInput {
+  display: flex;
+  min-width: 140px;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.conversationSearchInput:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.conversationSearchInput input {
+  min-width: 0;
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 13px;
+}
+
+.conversationSearchInput input::placeholder {
+  color: var(--color-placeholder);
+}
+
+.searchControl {
+  min-width: 48px;
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.searchControlActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.searchIconButton {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.searchCount {
+  min-width: 34px;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.calendarControl {
+  position: relative;
+}
+
+.calendarPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 252px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 14%);
+}
+
+.calendarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.calendarHeader strong {
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.calendarHeader button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-body);
+  cursor: pointer;
+}
+
+.calendarHeader button:hover {
+  background: var(--color-bg);
+}
+
+.calendarWeekdays,
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.calendarWeekdays {
+  margin-bottom: 3px;
+}
+
+.calendarWeekdays span {
+  color: var(--color-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.calendarGrid button,
+.calendarGrid > span {
+  aspect-ratio: 1;
+}
+
+.calendarGrid button {
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calendarGrid button:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.calendarGrid button:disabled {
+  background: transparent;
+  color: var(--color-placeholder);
+  cursor: default;
+  opacity: 0.42;
+}
+
+.calendarGrid .calendarDaySelected {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.calendarClear {
+  width: 100%;
+  margin-top: var(--space-2);
+  padding: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.calendarClear:hover {
+  background: var(--color-bg);
+  color: var(--color-primary);
+}
+
 .stream {
   display: flex;
   flex-direction: column;
@@ -372,9 +651,18 @@
 .userMessage {
   display: flex;
   justify-content: flex-end;
+  border-radius: var(--radius-lg);
 }
 
-.userMessage > span {
+.userMessageBody {
+  display: flex;
+  max-width: 620px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.userMessageBody > span {
   max-width: 620px;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-lg);
@@ -382,6 +670,24 @@
   color: #fff;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.userMessageTime {
+  padding-right: 2px;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.searchMatch {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  outline-offset: 3px;
+}
+
+.searchMatchActive {
+  outline-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
 }
 
 /* 답변은 **한 칸을 꽉 채운다.** 620px 로 묶어 두면 바로 위 진행·결과 카드는
@@ -709,8 +1015,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -750,6 +1056,20 @@
 .input:focus {
   outline: 2px solid var(--color-primary);
   outline-offset: -1px;
+}
+
+/* 도구 선택·보내기·생성 중단은 같은 작성 줄의 동급 클릭 영역이다. 외곽을
+   42px로 맞추고, 보내기만 채운 색으로 주 행동임을 구분한다. */
+.composerAction {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.inputBar .composerAction:disabled {
+  cursor: default;
 }
 
 
@@ -809,3 +1129,36 @@
    대화 목록이 AppShell 사이드바 안으로 들어가면서(2026-08-18), 좁은 화면
    전용 덮개 열기·닫기는 셸의 모바일 드로어가 그대로 떠맡는다 — 이 화면에
    따로 둘 것이 없어졌다. */
+
+@media (max-width: 720px) {
+  .agentBar {
+    padding: 0 var(--space-4);
+  }
+
+  .conversationSearchBar {
+    position: fixed;
+    top: 64px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    min-width: 0;
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+
+  .conversationSearchInput {
+    flex-basis: calc(100% - 6px);
+    order: -1;
+  }
+
+  .calendarPopover {
+    right: auto;
+    left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversationSearchBar {
+    animation: none;
+  }
+}
