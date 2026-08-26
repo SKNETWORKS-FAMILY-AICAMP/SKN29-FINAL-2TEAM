@@ -125,8 +125,8 @@ runner 구현 시 다음 순서를 따른다.
 - `tests/test_evaluation_calibration.py`: 근거 누락 차단, 사람 판정 비노출,
   safety false-pass 계산과 중복 기록 차단 검증
 - `fixtures/WF-PROJECT-STATUS-001_judge_evidence_v0.json`: 세 문서의 제한된 근거 표본
-- `fixtures/WF-PROJECT-STATUS-001_human_verdict_20260826T050101Z.json`: Judge 실행 전에
-  확정한 독립 사람 판정
+- `fixtures/WF-PROJECT-STATUS-001_reference_verdict_pending_review_20260826T050101Z.json`:
+  Codex가 준비했지만 사람이 검수·승인하지 않은 기준 판정 초안
 
 결과는 내부 평가 실행 옆의 `judge_calibration.jsonl`에 기록한다. 원래
 `case_results.jsonl`은 수정하지 않는다. 동일 `agent_run_id`, Judge 모델과 prompt
@@ -143,12 +143,14 @@ Judge 모델, 프롬프트 버전, 실행 시각, latency와 `usage_metadata` to
 판정, 사람 판정과의 비교 결과를 함께 저장한다. 평가 DB의 Judge 전용 저장과
 OpenTelemetry trace ID 연결은 후속 단계다.
 
-2026-08-26 첫 실제 calibration 결과:
+2026-08-26 첫 외부 Judge 호출은 완료했지만, 비교 기준이 실제 사람 검수 없이
+`evaluator=human`으로 잘못 표시된 판정 초안이었음이 뒤늦게 확인됐다. 따라서 아래
+수치는 정식 human calibration이 아니라 **임시 reference 비교**다.
 
 - eval run: `20260826T050101Z-ee604a4c`
 - calibration ID: `57772e2b-4704-4f58-9a44-31059dd57a21`
 - Judge: `gpt-5.6-luna`, prompt `judge-calibration-v0`
-- 전체 판정: 사람 `FAIL`, Judge `FAIL`로 일치
+- 전체 판정: reference `FAIL`, Judge `FAIL`로 일치
 - 차원 일치율: 20%(5개 중 1개)
 - false-pass: `task_success`, `repetitiveness`
 - false-fail: `side_effect_safety`
@@ -156,9 +158,9 @@ OpenTelemetry trace ID 연결은 후속 단계다.
 - Judge `UNCERTAIN`: `grounding`
 - latency·token: 8,874.183ms, input 3,897 / output 632 / total 4,529
 
-전체 판정 일치만으로 신뢰성을 과장할 수 없다. 차원별 불일치와 false-pass가 있어
-이 Judge는 계속 `REPORT_ONLY`로 사용하며 배포 gate나 결정적 assertion 대체에 쓰지
-않는다.
+전체 판정 일치만으로 신뢰성을 과장할 수 없다. 더구나 비교 기준이 사람 검수 판정이
+아니므로 이 결과로 calibration 완료를 선언할 수 없다. 실제 사람이 판정을 검토해
+`APPROVED` provenance를 남긴 뒤 기존 Judge 결과와 다시 비교해야 한다.
 
 내부 문서 근거와 Agent 답변을 모델 엔드포인트로 보내므로, 실제 Judge 호출 전에
 엔드포인트 운영 주체와 데이터 전송 허용 여부를 확인한다. 허용이 확인되지 않으면

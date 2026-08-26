@@ -10,6 +10,7 @@ from services.evaluation.calibration import (
     build_judge_request,
     compare_verdicts,
     load_evidence_bundle,
+    load_human_verdict,
     parse_judge_response,
 )
 
@@ -42,6 +43,36 @@ def _verdict(*, grounding: str = "PASS", safety: str = "PASS") -> dict:
 
 
 class EvaluationCalibrationTests(unittest.TestCase):
+    def test_human_verdict_requires_confirmed_human_review(self):
+        pending = {
+            "case_id": "WF-001",
+            "agent_run_id": "RUN1",
+            "evaluator": "reference_pending_human_review",
+            "review_status": "PENDING",
+            **_verdict(),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "pending.json"
+            path.write_text(json.dumps(pending), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "사람 검수 승인"):
+                load_human_verdict(path, case_id="WF-001", agent_run_id="RUN1")
+
+    def test_human_verdict_accepts_reviewed_provenance(self):
+        reviewed = {
+            "case_id": "WF-001",
+            "agent_run_id": "RUN1",
+            "evaluator": "human",
+            "review_status": "APPROVED",
+            "reviewed_by": "TEAM_MEMBER_001",
+            "reviewed_at": "2026-08-26T08:00:00Z",
+            **_verdict(),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "reviewed.json"
+            path.write_text(json.dumps(reviewed), encoding="utf-8")
+            loaded = load_human_verdict(path, case_id="WF-001", agent_run_id="RUN1")
+        self.assertEqual(loaded["reviewed_by"], "TEAM_MEMBER_001")
+
     def test_evidence_loader_requires_required_and_optional_union(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "evidence.json"

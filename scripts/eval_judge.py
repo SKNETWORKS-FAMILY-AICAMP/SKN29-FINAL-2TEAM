@@ -30,7 +30,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--case-id", required=True)
     parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--human-verdict", type=Path, required=True)
+    parser.add_argument(
+        "--human-verdict",
+        type=Path,
+        required=True,
+        help="사람이 검수·승인하고 검수자와 시각을 기록한 기준 판정 JSON",
+    )
     parser.add_argument("--account-id", required=True)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--judge-model", help="생략하면 평가 실행에 기록된 모델 사용")

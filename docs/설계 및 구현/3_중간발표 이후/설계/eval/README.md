@@ -83,12 +83,17 @@ bundle이 없으면 자동으로 `UNCERTAIN`이며 호출하지 않는다. 호�
 범위가 제한된 마스킹 근거만 전달한다. 결과는 기존 case 결과를 수정하지 않고 같은
 실행 폴더의 `judge_calibration.jsonl`에 append-only로 기록한다.
 
+정식 사람 판정 파일은 `evaluator=human`, `review_status=APPROVED`, `reviewed_by`,
+`reviewed_at`을 모두 가져야 한다. Codex가 준비했지만 사람이 검수하지 않은
+`WF-PROJECT-STATUS-001_reference_verdict_pending_review_20260826T050101Z.json`은
+판정 초안일 뿐이며 `eval_judge.py` 입력으로 사용할 수 없다.
+
 ```powershell
 docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_judge.py `
   --run-dir outputs/eval-results/20260826T050101Z-ee604a4c `
   --case-id WF-PROJECT-STATUS-001 `
   --evidence "docs/설계 및 구현/3_중간발표 이후/설계/eval/fixtures/WF-PROJECT-STATUS-001_judge_evidence_v0.json" `
-  --human-verdict "docs/설계 및 구현/3_중간발표 이후/설계/eval/fixtures/WF-PROJECT-STATUS-001_human_verdict_20260826T050101Z.json" `
+  --human-verdict "<사람이-검수-승인한-verdict.json>" `
   --account-id UA002
 ```
 

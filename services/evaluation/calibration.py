@@ -56,6 +56,16 @@ def load_human_verdict(path: Path, *, case_id: str, agent_run_id: str | None) ->
         raise ValueError("사람 판정의 case_id가 평가 사례와 다릅니다.")
     if payload.get("agent_run_id") != agent_run_id:
         raise ValueError("사람 판정의 agent_run_id가 실행 결과와 다릅니다.")
+    if (
+        payload.get("evaluator") != "human"
+        or payload.get("review_status") != "APPROVED"
+        or not str(payload.get("reviewed_by") or "").strip()
+        or not str(payload.get("reviewed_at") or "").strip()
+    ):
+        raise ValueError(
+            "정식 calibration에는 사람 검수 승인(evaluator=human, "
+            "review_status=APPROVED, reviewed_by, reviewed_at)이 필요합니다."
+        )
     validate_judge_verdict(payload, label="human_verdict")
     return payload
 
