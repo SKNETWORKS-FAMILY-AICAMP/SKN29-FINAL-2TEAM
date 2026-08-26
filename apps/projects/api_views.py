@@ -117,6 +117,14 @@ class HealthAPIView(APIView):
 #: 지정과 같은 무게다(2026-08-19, 지훈 요청).
 PROJECT_LEADER_ONLY = "팀장만 프로젝트를 만들 수 있습니다."
 
+#: 삭제는 만드는 것보다 무겁다 — 프로젝트와 함께 읽어온 Jira 업무가 지워지고
+#: 팀 부하·마감 화면에서도 빠진다. 되돌릴 수 없으므로 만들 수 없는 사람이
+#: 지울 수도 없어야 한다(생성만 막혀 있어 팀원이 지울 수 있었다).
+#:
+#: 「완료 처리」(PATCH)는 여기 넣지 않는다. 그쪽은 「진행 중으로」 되돌릴 수
+#: 있어서 팀원이 눌러도 복구되는 조작이다 — 되돌릴 수 없는 것만 막는다.
+PROJECT_DELETE_LEADER_ONLY = "팀장만 프로젝트를 삭제할 수 있습니다."
+
 
 class ProjectListCreateAPIView(AuthenticatedAPIView):
     """내가 소유한 프로젝트. 온보딩은 여기서 DRAFT를 찾거나 만든다."""
@@ -402,7 +410,13 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
 
         화면이 무엇이 사라지는지 먼저 보여주고 한 번 묻는다. 여기서는 확인된
         요청만 받으므로 다시 묻지 않는다.
+
+        팀장만 지울 수 있다. 화면이 버튼을 흐리게 하는 것은 문지기가 아니라서
+        여기서도 막는다 — API 를 직접 부르면 그대로 통과했다.
         """
+
+        if denied := require_leader(request.user.account_id, PROJECT_DELETE_LEADER_ONLY):
+            return denied
 
         try:
             removed = ProjectRepository.delete(
