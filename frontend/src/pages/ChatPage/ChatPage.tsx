@@ -741,11 +741,27 @@ export default function ChatPage() {
         carried,
         sessionId,
       );
+      // **모든 거절에서** interrupt로 멈춘 도구 로그를 취소 상태로 닫는다 —
+      // 백엔드는 거절된 호출에 `tool_completed`를 보내지 않으므로, 화면이
+      // 직접 닫지 않으면 `tool_started`가 찍어둔 `RUNNING`이 영원히 안 풀린다
+      // (2026-08-26 실측 — 이 처리가 스킬 재설명 경로에만 있어서 Jira 등록
+      // 거절 같은 일반 거절에서 재현됨: 거절해도 작업 과정 카드가 계속 도는 중).
+      updateLastLive((prev) =>
+        prev
+          ? {
+              ...prev,
+              timeline: prev.timeline.map((entry) =>
+                entry.kind === 'tool' && entry.status === 'RUNNING'
+                  ? { ...entry, status: 'REJECTED' as const }
+                  : entry,
+              ),
+            }
+          : prev,
+      );
       if (reexplainSkill) {
         // 설정 > 스킬의 cancelled 단계와 같은 동작이다. 거절 뒤 모델이 만든
         // "등록되지 않았습니다" 문구를 최종 답으로 보여주지 않고, 곧바로
-        // 수정 설명을 받는다. interrupt에서 멈춘 도구 로그도 취소 상태로
-        // 닫아 스피너가 계속 돌지 않게 한다.
+        // 수정 설명을 받는다.
         updateLastLive((prev) =>
           prev
             ? {
@@ -754,11 +770,6 @@ export default function ChatPage() {
                 confirm: null,
                 answer: '',
                 toolName: null,
-                timeline: prev.timeline.map((entry) =>
-                  entry.kind === 'tool' && entry.status === 'RUNNING'
-                    ? { ...entry, status: 'REJECTED' as const }
-                    : entry,
-                ),
               }
             : prev,
         );
