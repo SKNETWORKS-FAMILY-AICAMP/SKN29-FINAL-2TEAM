@@ -299,7 +299,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
             {busy ? `${busy} 올리는 중…` : '여기로 끌어다 놓거나 눌러서 고르세요'}
           </span>
           <span className={styles.dropHint}>
-            PDF · Word(docx) · 텍스트(txt·md) · 한 개에 20MB까지 · 여러 개 한 번에
+            PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
           </span>
           <input
             ref={inputRef}

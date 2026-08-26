@@ -37,9 +37,17 @@ from .serializers import personal_file_response
 logger = logging.getLogger(__name__)
 
 #: 한 파일의 상한. **파싱하는 쪽이 정하는 값이다** — 저장은 되는데 파싱이 조용히
-#: 죽는 크기를 열어 두면 안 된다. RunPod 워커의 실측 상한을 확인하기 전까지는
-#: 보수적으로 잡는다(아바타 2MB 와는 다른 값이라 여기서 따로 정한다).
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+#: 죽는 크기를 열어 두면 안 된다(아바타 2MB 와는 다른 값이라 여기서 따로 정한다).
+#:
+#: 20MB 로 시작했다. 「워커의 실측 상한을 확인하기 전까지 보수적으로」였는데,
+#: 확인해 보니 **바이트를 재는 곳이 파이프라인 어디에도 없었다** — 커넥터가
+#: 가져오는 Drive 문서에는 상한이 아예 없고(`clients.py` 주석이 「수십 MB PDF」를
+#: 전제한다), 워커에도 크기 검사가 없다. 같은 파이프라인을 타는데 올린 파일만
+#: 20MB 에서 막을 근거가 없어 50MB 로 올린다(2026-08-26).
+#:
+#: **크기가 아니라 시간이 진짜 한계다.** 큰 PDF 는 바이트가 아니라 쪽수 때문에
+#: 오래 걸리고, 그건 `LONG_PROMOTE_WAIT_SECONDS` 가 다룬다.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 #: PDF·DOCX 는 본문까지, txt·md 는 요약까지 쓸 수 있다(`_UPLOAD_TYPES` 주석).
 ACCEPTED = "PDF · Word(docx) · 텍스트(txt·md)"
@@ -259,9 +267,15 @@ def _start_processing(*, account_id: str, doc_id: str) -> None:
 
     def run() -> None:
         try:
-            from services.document_intake import promote_to_searchable
+            from services.document_intake import (
+                LONG_PROMOTE_WAIT_SECONDS,
+                promote_to_searchable,
+            )
 
-            promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            # 사람이 응답을 붙잡고 있지 않다. 큰 문서를 4분에 포기할 이유가 없다.
+            promote_to_searchable(
+                account_id=account_id, doc_id=doc_id, wait_seconds=LONG_PROMOTE_WAIT_SECONDS
+            )
         except Exception:  # noqa: BLE001 - 뒤에서 도는 일이라 무엇이든 로그로 남긴다
             logger.exception("내 파일 색인 실패: %s", doc_id)
             # **로그만 남기면 문서가 `RUNNING` 에 갇힌다.** 승격은 시작하면서

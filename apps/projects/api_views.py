@@ -723,9 +723,15 @@ def _start_reindex(*, account_id: str, doc_id: str) -> None:
 
     def run() -> None:
         try:
-            from services.document_intake import promote_to_searchable
+            from services.document_intake import (
+                LONG_PROMOTE_WAIT_SECONDS,
+                promote_to_searchable,
+            )
 
-            outcome = promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            # 사람이 응답을 붙잡고 있지 않다. 큰 문서를 4분에 포기할 이유가 없다.
+            outcome = promote_to_searchable(
+                account_id=account_id, doc_id=doc_id, wait_seconds=LONG_PROMOTE_WAIT_SECONDS
+            )
             logger.info("색인 재시도: doc=%s ok=%s", doc_id, outcome.get("ok"))
         except Exception:  # noqa: BLE001 — 뒷작업이다. 사유는 index_detail 에 남는다.
             logger.exception("색인 재시도 실패: doc=%s", doc_id)

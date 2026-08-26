@@ -459,6 +459,19 @@ def _fetch_originals(*, account_id: str, team_id: str, result: IntakeResult) -> 
 #: — 조용히 실패하면 「관련 문서가 없다」로 읽힌다.
 PROMOTE_WAIT_SECONDS = 240
 
+#: 사람이 응답을 붙잡고 있지 **않을 때** 기다려 주는 한계(초).
+#:
+#: 위 240초는 대화 도구를 위한 값이다 — 그 턴 안에 답해야 하니 오래 못 기다린다.
+#: 그런데 업로드·「다시 읽기」는 뒷작업이라 붙잡고 있는 것이 없는데도 같은 4분에
+#: 포기했고, **그러면 그 문서는 영영 색인되지 않는다**: 시간이 다 되면 `_done` 을
+#: 안 부르고 나가므로 워커가 마친 결과를 아무도 적재하지 않고, 다시 눌러도 같은
+#: 4분을 다시 쓴다. 쪽수가 많은 문서(예: 200쪽 설계서)가 여기 걸린다.
+#:
+#: **RunPod 쪽은 원래 30분까지 허용해 두었다**(`RUNPOD_EXECUTION_TIMEOUT_MS`,
+#: 운영 `.env` 에서 1,800,000ms). 기다리는 쪽만 4분이라 그 여유를 못 쓰고 있었다.
+#: 그 아래로 잡아 워커가 끝낼 시간을 남긴다.
+LONG_PROMOTE_WAIT_SECONDS = 1_500
+
 
 def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
     """워커가 왜 실패했는지를 화면에 쓸 한 줄로 만든다.
@@ -539,7 +552,9 @@ def _discard_original(document: dict[str, Any]) -> None:
         logger.exception("원문 정리 실패: %s", document["doc_id"])
 
 
-def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
+def promote_to_searchable(
+    *, account_id: str, doc_id: str, wait_seconds: float = PROMOTE_WAIT_SECONDS
+) -> dict[str, Any]:
     """문서 하나를 **본문 검색 가능**한 상태로 올린다.
 
     요약까지만 되어 있던 문서를 청크로 쪼개 임베딩한다.
@@ -551,6 +566,10 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
 
     끝났는지 여기서 기다린다. 부르는 쪽이 도구라 「제출했습니다」로 끝내면
     그 턴 안에서 쓸 수가 없다.
+
+    `wait_seconds` 는 **누가 기다리느냐**로 갈린다. 기본값은 대화 도구용 4분이고,
+    사람이 응답을 붙잡고 있지 않은 뒷작업(업로드·「다시 읽기」)은
+    `LONG_PROMOTE_WAIT_SECONDS` 를 준다 — 그 주석에 왜인지 적어 두었다.
     """
 
     from django.conf import settings
@@ -600,7 +619,7 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
         }
     )
 
-    deadline = time.monotonic() + PROMOTE_WAIT_SECONDS
+    deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
         time.sleep(3)
         result = job_status(job["id"])

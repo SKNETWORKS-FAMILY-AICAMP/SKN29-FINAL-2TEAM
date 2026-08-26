@@ -14,6 +14,8 @@ from apps.connectors.oauth import OAuthError
 from backend.services.storage import content_hash
 from services.document_intake.service import (
     IntakeResult,
+    LONG_PROMOTE_WAIT_SECONDS,
+    PROMOTE_WAIT_SECONDS,
     _fetch_originals,
     _index_all,
     _refetch_changed,
@@ -461,6 +463,52 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         self.assertEqual(
             saved["detail"], "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
         )
+
+
+@patch("services.document_intake.service.time.sleep", lambda _: None)
+@patch("backend.db.document_pipeline.PersonalDocumentRepository")
+@patch("services.document_pipeline.signing.signed_download_url", return_value="https://x/y")
+@patch("services.document_pipeline.runpod_client.job_status")
+@patch("services.document_pipeline.runpod_client.submit_document_job", return_value={"id": "J1"})
+@patch("services.document_intake.service.PipelineDocumentRepository")
+class PromoteWaitIsCallerDecidedTests(SimpleTestCase):
+    """**누가 기다리느냐**로 한계가 갈린다 (2026-08-26).
+
+    대화 도구는 그 턴 안에 답해야 해서 4분이 한계지만, 업로드·「다시 읽기」는
+    뒷작업이라 붙잡고 있는 것이 없다. 같은 4분을 쓰면 쪽수 많은 문서가 영영
+    색인되지 않는다 — 시간이 다 되면 결과를 적재하지 않고 나가기 때문이다.
+    """
+
+    DOC = {
+        "doc_id": "DC020", "storage_key": "TE001/DC020.pdf", "cur_revision": "r",
+        "mime_type": "application/pdf", "src_file_id": "driveZ", "team_id": "TE001",
+    }
+
+    def test_기본값은_대화_도구용_4분이다(self, pipeline_repo, submit, status, url, personal_repo):
+        self.assertEqual(PROMOTE_WAIT_SECONDS, 240)
+
+    def test_뒷작업은_훨씬_오래_기다린다(self, pipeline_repo, submit, status, url, personal_repo):
+        """RunPod 쪽 실행 한계(운영 `.env` 의 30분) 안이어야 워커가 끝낼 시간이
+        남는다."""
+
+        self.assertGreater(LONG_PROMOTE_WAIT_SECONDS, PROMOTE_WAIT_SECONDS)
+        self.assertLess(LONG_PROMOTE_WAIT_SECONDS, 30 * 60)
+
+    def test_기다릴_시간이_없으면_실패로_적지_않는다(
+        self, pipeline_repo, submit, status, url, personal_repo
+    ):
+        """시간이 다 된 것과 못 읽은 것은 다르다. 다음에는 끝나 있을 수 있으므로
+        `FAILED` 로 적지 않는다 — 적으면 `list_pending_index` 가 영영 건너뛴다."""
+
+        pipeline_repo.get_for_processing.return_value = dict(self.DOC)
+        status.return_value = {"status": "IN_QUEUE"}
+
+        outcome = promote_to_searchable(account_id="UA001", doc_id="DC020", wait_seconds=0)
+
+        self.assertFalse(outcome["ok"])
+        self.assertIn("준비 중", outcome["detail"])
+        personal_repo.set_index_status.assert_called_once()
+        self.assertEqual(personal_repo.set_index_status.call_args.kwargs["status"], "RUNNING")
 
 
 @patch("services.document_intake.service.time.sleep", lambda _: None)
