@@ -1,0 +1,94 @@
+/* 로그인 없이 열리는 문서 화면이라 AppShell 을 안 쓴다 — 사이드바는 세션이
+   있는 사람의 것이고, Google 심사도 이 주소를 로그아웃 상태로 연다. */
+.page {
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.brand {
+  display: inline-flex;
+}
+
+/* 읽는 글이라 한 줄을 짧게 잡는다. 넓은 화면에서 끝까지 늘어나면 눈이 줄을 잃는다. */
+.body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) 80px;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--color-body);
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.updated {
+  margin: var(--space-2) 0 var(--space-6);
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* 상용 서비스가 아니라는 것을 맨 위에서 밝힌다. 아래 조항을 읽는 전제가 된다. */
+.notice {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.notice p {
+  margin: 0;
+}
+
+.body h2 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.body p {
+  margin: 0 0 var(--space-3);
+}
+
+.body ul {
+  margin: 0 0 var(--space-3);
+  padding-left: 20px;
+}
+
+.body li {
+  margin-bottom: var(--space-2);
+}
+
+.body code {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-bg);
+  font-size: 13px;
+  /* 스코프 이름은 원문 그대로 읽혀야 한다 — 줄바꿈에서 잘리면 다른 권한으로 보인다. */
+  overflow-wrap: anywhere;
+}
+
+.body a {
+  color: var(--color-primary);
+}
+
+.footer {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+}
