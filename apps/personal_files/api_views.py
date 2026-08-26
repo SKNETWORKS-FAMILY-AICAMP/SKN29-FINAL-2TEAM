@@ -227,5 +227,21 @@ def _start_processing(*, account_id: str, doc_id: str) -> None:
             promote_to_searchable(account_id=account_id, doc_id=doc_id)
         except Exception:  # noqa: BLE001 - 뒤에서 도는 일이라 무엇이든 로그로 남긴다
             logger.exception("내 파일 색인 실패: %s", doc_id)
+            # **로그만 남기면 문서가 `RUNNING` 에 갇힌다.** 승격은 시작하면서
+            # 먼저 `RUNNING` 을 적는데, 워커에 넘기기도 전에 터지면(예: 제출이
+            # 네트워크에서 실패) 결과를 적는 자리까지 못 간다. 그러면 화면은
+            # **영원히 「읽는 중」**이다 — 올린 사람은 업로드가 안 된 것으로 읽는다.
+            #
+            # 팀 문서는 다음 전량 색인이 주워 가지만(`list_pending_index` 가
+            # `RUNNING` 을 일부러 남긴다) **올린 파일은 `team_id` 가 없어서 그
+            # 목록에 영영 안 걸린다.** 여기서 끝을 내야 한다.
+            try:
+                PersonalDocumentRepository.set_index_status(
+                    doc_id=doc_id,
+                    status="FAILED",
+                    detail="문서를 읽지 못했습니다. 다시 올려 주세요.",
+                )
+            except Exception:  # noqa: BLE001 - 이것마저 실패하면 남길 곳이 없다
+                logger.exception("내 파일 실패 표시 실패: %s", doc_id)
 
     threading.Thread(target=run, daemon=True).start()
