@@ -5,11 +5,13 @@
 """
 
 from io import BytesIO
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from openpyxl import load_workbook
 
 from services.document_export import build_xlsx
+from services.harness.registry import _XLSX_MIME
 
 
 def _sheet(data: bytes):
@@ -82,3 +84,67 @@ class BuildXlsxTests(SimpleTestCase):
 
         # bool 은 int 의 하위형이라 순서를 안 지키면 1/0 으로 들어간다.
         self.assertEqual([c.value for c in sheet[2]], ["예", "아니오", None])
+
+
+class TableExportToolTests(SimpleTestCase):
+    """도구 핸들러가 「내 파일」에 무엇을 남기는가."""
+
+    def _call(self, **kwargs):
+        from services.harness.registry import _table_export
+
+        defaults = {
+            "account_id": "AC001",
+            "title": "업무 목록",
+            "columns": ["제목", "공수"],
+            "rows": [["로그인 구현", 16]],
+        }
+        return _table_export(**{**defaults, **kwargs})
+
+    @patch("services.harness.registry.DocumentRepository.mark_stored")
+    @patch("services.harness.registry.storage.save", return_value="sha256:abc123def4567890")
+    @patch(
+        "services.harness.registry.PersonalDocumentRepository.create_generated",
+        return_value="DC099",
+    )
+    def test_생성_문서로_저장한다(self, create, save, mark_stored):
+        result = self._call()
+
+        # 업로드가 아니라 생성이다 — `create` 를 부르면 목록에서 안 갈린다.
+        create.assert_called_once()
+        self.assertEqual(create.call_args.kwargs["mime_type"], _XLSX_MIME)
+        self.assertTrue(create.call_args.kwargs["file_name"].endswith(".xlsx"))
+
+        # 개인 소유 자리에 둔다. 팀 키에 두면 팀을 지울 때 함께 지워진다.
+        key = save.call_args.args[0]
+        self.assertTrue(key.startswith("user/AC001/DC099"), key)
+        self.assertTrue(key.endswith(".xlsx"), key)
+
+        # 저장된 바이트가 실제로 열리는 xlsx 여야 한다.
+        sheet = _sheet(save.call_args.args[1])
+        self.assertEqual([c.value for c in sheet[2]], ["로그인 구현", 16])
+
+        self.assertEqual(result["doc_id"], "DC099")
+        self.assertEqual(result["rows"], 1)
+        # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이다.
+        self.assertNotIn("data", result)
+
+    @patch("services.harness.registry.DocumentRepository.mark_stored")
+    @patch("services.harness.registry.storage.save", return_value="sha256:abc")
+    @patch(
+        "services.harness.registry.PersonalDocumentRepository.create_generated",
+        return_value="DC099",
+    )
+    def test_파일_이름에_경로_구분자를_넣지_않는다(self, create, save, mark_stored):
+        """제목이 곧 파일 이름이 된다. `/` 가 남으면 저장 경로가 갈라진다."""
+
+        self._call(title="8/26 주간 보고")
+        self.assertNotIn("/", create.call_args.kwargs["file_name"])
+
+    def test_사람이_고칠_수_있는_실패는_그대로_말한다(self):
+        from services.harness.registry import ToolInputError
+
+        with self.assertRaises(ToolInputError):
+            self._call(columns=[])
+        # 모델이 행을 dict 로 보내는 실수. 조용히 빈 칸으로 두면 안 된다.
+        with self.assertRaises(ToolInputError):
+            self._call(rows=[{"제목": "x"}])

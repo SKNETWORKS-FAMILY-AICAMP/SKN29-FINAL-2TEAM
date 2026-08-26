@@ -34,11 +34,15 @@ from backend.db.agent_platform import (
 from backend.db import ConnectorRepository
 from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
+    PersonalDocumentRepository,
     PipelineDocumentRepository,
     VectorSearchRepository,
 )
+from backend.db.repositories import DocumentRepository
+from backend.services import storage
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_intake import sync_drive_changes
+from services.document_export import build_xlsx
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -541,6 +545,78 @@ def _document_sync(*, account_id: str):
             if changed
             else "마지막 확인 이후 바뀐 문서가 없습니다."
         ),
+    }
+
+
+#: 내보낼 수 있는 행 수. 모델이 만든 배열이라 실제로는 출력 토큰이 먼저 막지만,
+#: 막히는 자리가 「엑셀이 안 열린다」가 되면 사람이 원인을 못 찾는다.
+_EXPORT_MAX_ROWS = 5000
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _table_export(
+    *,
+    account_id: str,
+    title: str,
+    columns: list[str],
+    rows: list[list[Any]],
+) -> dict[str, Any]:
+    """표 하나를 xlsx 로 만들어 **「내 파일」에 넣는다.**
+
+    **표를 모델에게서 받는다**(2026-08-26 결정). 「`task_list` 결과를 내보내라」
+    처럼 소스 도구를 지목하게 만들 수도 있었지만, 그러면 소스마다 매핑을
+    등록해야 하고 모델이 여러 도구 결과를 합쳐 만든 표는 못 낸다. 대신 값은
+    모델이 옮겨 적은 것이므로 **원본과 다를 수 있다** — 그 위험은 사람이 파일을
+    열어 확인하는 것으로 갈음한다.
+
+    만들어진 행은 `source_type='GENERATED'` 이고 검색이 꺼진 채로 들어간다
+    (`create_generated` 주석에 이유가 있다).
+    """
+
+    if not columns:
+        raise ToolInputError("표의 머리글이 비어 있습니다. 열 이름을 정해 주세요.")
+    if len(rows) > _EXPORT_MAX_ROWS:
+        raise ToolInputError(
+            f"한 번에 내보낼 수 있는 행은 {_EXPORT_MAX_ROWS}개까지입니다 (요청 {len(rows)}개)."
+        )
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, (list, tuple)):
+            raise ToolInputError(
+                f"{index}번째 행이 목록이 아닙니다. 각 행은 열 순서대로 값을 담은 목록이어야 합니다."
+            )
+
+    # 파일 이름이 곧 목록에 보이는 이름이다. 날짜를 붙이는 것은 같은 표를 여러 번
+    # 내보냈을 때 어느 것이 언제 것인지 목록에서 갈리게 하려는 것이다.
+    stamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+    safe_title = "".join(ch for ch in title if ch not in '\\/:*?"<>|').strip() or "표"
+    file_name = f"{safe_title}_{stamp}.xlsx"
+
+    data = build_xlsx(title=safe_title, columns=list(columns), rows=[list(r) for r in rows])
+
+    doc_id = PersonalDocumentRepository.create_generated(
+        account_id=account_id, file_name=file_name, mime_type=_XLSX_MIME
+    )
+    key = storage.build_personal_key(
+        account_id=account_id, doc_id=doc_id, mime_type=_XLSX_MIME
+    )
+    content_hash = storage.save(key, data)
+    # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
+    # 없으므로 내용 해시를 그 자리에 쓴다.
+    DocumentRepository.mark_stored(
+        doc_id=doc_id,
+        storage_key=key,
+        content_hash=content_hash,
+        revision=content_hash.removeprefix("sha256:")[:16],
+    )
+
+    # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
+    return {
+        "doc_id": doc_id,
+        "file_name": file_name,
+        "columns": len(columns),
+        "rows": len(rows),
+        "note": "「내 파일」에 저장했습니다. 목록에서 내려받을 수 있습니다.",
     }
 
 
@@ -1198,6 +1274,42 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_document_list,
+        category="문서",
+    ),
+    "table_export": Tool(
+        ref="table_export",
+        name="표 내보내기",
+        description=(
+            "표 하나를 엑셀 파일(.xlsx)로 만들어 사용자의 「내 파일」에 저장한다. "
+            "「엑셀로 뽑아 줘」·「파일로 받고 싶어」처럼 **결과를 파일로 달라고 할 때** 쓴다. "
+            "표는 이 도구가 만들어 주지 않는다 — 다른 도구(task_list·workload_report·"
+            "jira_get_issues 등)로 먼저 값을 얻은 뒤, 그 값을 `columns` 와 `rows` 로 "
+            "직접 옮겨 넘긴다. **값을 지어내거나 바꾸지 않는다** — 모르는 칸은 비운다. "
+            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "표 제목. 시트 이름과 파일 이름에 쓴다(예: 「업무 목록」)",
+                },
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "열 이름. 왼쪽부터의 순서다",
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {"type": "array"},
+                    "description": "행 목록. 각 행은 columns 와 같은 순서의 값 목록. 모르는 칸은 null",
+                },
+            },
+            "required": ["title", "columns", "rows"],
+        },
+        handler=_table_export,
+        # 사용자의 서재에 파일을 만든다. 되돌리려면 사람이 지워야 하므로 승인을 받는다.
+        side_effect=True,
         category="문서",
     ),
     "document_sync": Tool(

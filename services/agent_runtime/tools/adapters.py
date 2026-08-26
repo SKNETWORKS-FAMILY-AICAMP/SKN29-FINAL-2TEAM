@@ -55,6 +55,7 @@ _ACCOUNT_SCOPED: frozenset[str] = frozenset(
         "document_list",
         "document_sync",
         "absence_list",
+        "table_export",
     }
 )
 _PROJECT_SCOPED: frozenset[str] = frozenset(

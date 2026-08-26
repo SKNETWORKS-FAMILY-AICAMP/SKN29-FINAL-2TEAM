@@ -613,6 +613,11 @@ class PersonalDocumentRepository:
     #: 올릴 때는 원천이 없다. `source_type` 이 이 값이면 **다시 받아 올 곳이 없다**는 뜻이다.
     UPLOAD = "UPLOAD"
 
+    #: 도구가 만들어 낸 파일(2026-08-26 · `table_export`). 사람이 올린 것과 같은
+    #: 표에 살지만 **출처가 다르다** — 사용자는 목록에서 「내가 올린 것」과
+    #: 「에이전트가 만든 것」을 갈라 볼 수 있어야 한다.
+    GENERATED = "GENERATED"
+
     @staticmethod
     def create(*, account_id: str, file_name: str, mime_type: str) -> str:
         with database_connection() as connection:
@@ -625,6 +630,38 @@ class PersonalDocumentRepository:
                     VALUES (%s, %s, %s, %s, %s, now())
                     """,
                     (doc_id, account_id, PersonalDocumentRepository.UPLOAD, file_name, mime_type),
+                )
+        return doc_id
+
+    @staticmethod
+    def create_generated(*, account_id: str, file_name: str, mime_type: str) -> str:
+        """도구가 만든 파일의 행. `create` 와 두 가지가 다르다.
+
+        **`search_enabled` 를 끈 채로 넣는다.** 내보낸 표가 색인되면 에이전트가
+        자기가 만든 파일을 근거로 인용하게 된다 — 문서에서 뽑은 값이 한 바퀴
+        돌아 「문서에 이렇게 적혀 있다」로 되돌아오는 순환이다. 게다가 xlsx 는
+        워커가 읽지도 못해서(`storage._UPLOAD_TYPES` 주석) 켜 두면 색인이
+        `FAILED` 로 남고, 사용자는 고칠 수 없는 실패를 들여다보게 된다.
+
+        사람이 나중에 목록에서 켤 수는 있다. 끄는 것은 기본값이지 금지가 아니다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                doc_id = next_short_code(cursor, table="doc", column="doc_id", prefix="DC")
+                cursor.execute(
+                    """
+                    INSERT INTO doc (doc_id, owner_account_id, source_type, file_name,
+                                     mime_type, src_modified_at, search_enabled)
+                    VALUES (%s, %s, %s, %s, %s, now(), false)
+                    """,
+                    (
+                        doc_id,
+                        account_id,
+                        PersonalDocumentRepository.GENERATED,
+                        file_name,
+                        mime_type,
+                    ),
                 )
         return doc_id
 
@@ -642,7 +679,7 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.index_status, d.index_detail,
+                           d.index_status, d.index_detail, d.source_type,
                            {_SEARCH_READY}
                     FROM doc AS d
                     WHERE d.owner_account_id = %s AND d.deleted = false
@@ -668,7 +705,7 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.index_status, d.index_detail,
+                           d.index_status, d.index_detail, d.source_type,
                            d.owner_account_id, ua.display_name AS owner_name,
                            {_SEARCH_READY}
                     FROM doc AS d

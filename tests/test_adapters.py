@@ -33,6 +33,7 @@ EXPECTED_INJECTED_CONTEXT = {
     "task_list": ("project_id", "account_id"),
     "document_list": ("account_id",),
     "document_sync": ("account_id",),
+    "table_export": ("account_id",),
     "task_update": ("project_id", "account_id"),
     "web_search": (),
     "absence_list": ("account_id",),
@@ -53,13 +54,16 @@ EXPECTED_SIDE_EFFECT = {
     # 계산에 자동으로 포함되어 사람이 답할 때까지 실행이 멈추기 때문이다
     # (registry.py의 같은 자리 주석 참고). 되묻기는 부작용이 아니라 대기다.
     "skill_creator_ask_followup": True,
+    # 2026-08-26. 사용자의 「내 파일」에 파일을 만든다 — 되돌리려면 사람이
+    # 지워야 하므로 승인을 받는다.
+    "table_export": True,
 }
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(17개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(18개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_seventeen_tools(self):
+    def test_real_registry_has_exactly_eighteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
         #
@@ -76,7 +80,10 @@ class RealRegistryShapeTests(SimpleTestCase):
         # 2026-08-25 juyeon 병합에서 17이 됐다 — `skill_creator_ask_followup`.
         # 이번에도 병합해야만 드러났다(브랜치 쪽 테스트는 자기 것만 봤다).
         # 이 신호가 세 번째로 제 역할을 했으므로 숫자 고정은 계속 둔다.
-        self.assertEqual(len(BUILTIN_TOOLS), 17)
+        #
+        # 2026-08-26 에 18 이 됐다 — `table_export`. 이번에는 병합이 아니라
+        # 도구를 더하면서 그 자리에서 걸렸다(의도대로 동작한 네 번째 사례).
+        self.assertEqual(len(BUILTIN_TOOLS), 18)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}
