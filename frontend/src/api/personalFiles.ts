@@ -71,6 +71,18 @@ export function setPersonalFileFlags(
   );
 }
 
+/**
+ * 색인을 **다시 시킨다.** 팀 문서의 `reindexTeamDocument` 와 짝이다.
+ *
+ * 응답은 「시작했다」까지다(202). 끝났는지는 목록의 상태가 말한다.
+ */
+export function reindexPersonalFile(token: string, docId: string) {
+  return apiRequest<{ doc_id: string; started: boolean }>(`/me/files/${docId}/reindex/`, {
+    method: 'POST',
+    token,
+  });
+}
+
 /** **되살릴 수 없다.** 원본이 우리뿐이라 행·색인·원문을 함께 지운다. */
 export function deletePersonalFile(token: string, docId: string) {
   return apiRequest<void>(`/me/files/${docId}/`, { method: 'DELETE', token });

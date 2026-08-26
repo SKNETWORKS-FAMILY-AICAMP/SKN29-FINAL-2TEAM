@@ -138,6 +138,82 @@ class ConnectorListApiTests(SimpleTestCase):
         list_for_account.assert_called_once_with("UA009")
 
 
+@override_settings(GOOGLE_DRIVE_WEBHOOK_TOKEN="secret-token")
+class DriveChangeNotificationApiTests(SimpleTestCase):
+    """**인증 없이 열리는 경로다.** 여기가 뚫리면 남이 우리 워커를 돌린다.
+
+    Google 이 부르므로 세션도 토큰도 없고, 채널을 열 때 심은 비밀값이
+    `X-Goog-Channel-Token` 으로 되돌아오는 것이 유일한 신원 증명이다.
+    """
+
+    URL = "/api/internal/drive/notifications/"
+
+    def test_wrong_token_is_rejected(self):
+        response = self.client.post(self.URL, headers={"x-goog-channel-token": "guess"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_missing_token_is_rejected(self):
+        self.assertEqual(self.client.post(self.URL).status_code, 403)
+
+    @override_settings(GOOGLE_DRIVE_WEBHOOK_TOKEN="")
+    def test_closed_when_webhook_is_off(self):
+        """웹훅을 안 쓰는 배포에서는 이 문이 아예 없어야 한다."""
+
+        response = self.client.post(self.URL, headers={"x-goog-channel-token": "anything"})
+        self.assertEqual(response.status_code, 404)
+
+    @patch("apps.connectors.api_views._start_drive_sync")
+    def test_sync_handshake_does_nothing(self, start):
+        """채널을 열면 곧바로 오는 인사. 바뀐 것이 없으므로 동기화하지 않는다."""
+
+        response = self.client.post(
+            self.URL,
+            headers={
+                "x-goog-channel-token": "secret-token",
+                "x-goog-channel-id": "CH1",
+                "x-goog-resource-state": "sync",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        start.assert_not_called()
+
+    @patch("apps.connectors.api_views._start_drive_sync")
+    @patch("apps.connectors.api_views.ConnectorRepository.find_by_channel", return_value=None)
+    def test_unknown_channel_is_accepted_and_dropped(self, _find, start):
+        """모르는 채널은 정상적으로 생긴다 — 멈추지 못한 옛 채널이 마저 보낸다.
+
+        **200 을 준다.** 실패로 답하면 Google 이 같은 알림을 재시도한다.
+        """
+
+        response = self.client.post(
+            self.URL,
+            headers={
+                "x-goog-channel-token": "secret-token",
+                "x-goog-channel-id": "GONE",
+                "x-goog-resource-state": "change",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        start.assert_not_called()
+
+    @patch("apps.connectors.api_views._start_drive_sync")
+    @patch(
+        "apps.connectors.api_views.ConnectorRepository.find_by_channel",
+        return_value={"conn_id": "CN003", "account_id": "UA001"},
+    )
+    def test_known_channel_starts_sync(self, _find, start):
+        response = self.client.post(
+            self.URL,
+            headers={
+                "x-goog-channel-token": "secret-token",
+                "x-goog-channel-id": "CH1",
+                "x-goog-resource-state": "change",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        start.assert_called_once_with("UA001")
+
+
 class PeopleDbIdentityApiTests(SimpleTestCase):
     def person(self):
         return {

@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 from .connection import database_connection
 from .errors import PermissionDenied, RecordNotFound
 from .codes import next_short_code
-from .repositories import _require_team, _require_team_project, _team_of
+from .repositories import _HAS_ACTIVE_CHUNKS, _require_team, _require_team_project, _team_of
 
 
 #: 현재 revision 의 원문이 Block·Chunk·Vector 까지 적재됐는가. 세 단계 중 하나라도
@@ -33,15 +33,6 @@ _TEAM_OR_MINE = """
 #: 술어만 따로 둔다 — `_SEARCH_READY`(「됐는가」)와 `list_pending_index`
 #: (「해야 하는가」)가 **같은 판정**을 써야 하기 때문이다. 두 곳에 복사해 두면
 #: 갈라지는 순간 색인이 끝났다고 표시되면서 대기 목록에도 남는 문서가 생긴다.
-_HAS_ACTIVE_CHUNKS = """
-    EXISTS (
-        SELECT 1 FROM doc_block b
-        JOIN chunk c ON c.block_id = b.block_id AND c.is_active = true
-        JOIN vec_idx v ON v.chunk_id = c.chunk_id AND v.is_active = true
-        WHERE b.doc_id = d.doc_id AND b.revision = d.cur_revision
-    )
-"""
-
 _SEARCH_READY = f"{_HAS_ACTIVE_CHUNKS} AS search_ready"
 
 
@@ -79,7 +70,7 @@ class PipelineDocumentRepository:
                     """
                     SELECT doc_id, team_id, owner_account_id, proj_id, file_name, mime_type,
                            doc_role, cur_revision, content_hash, storage_key, deleted,
-                           access_revoked
+                           access_revoked, src_file_id
                     FROM doc WHERE doc_id = %s
                     """,
                     (doc_id,),
@@ -95,8 +86,12 @@ class PipelineDocumentRepository:
             raise PermissionDenied("이 문서에 접근할 수 없습니다.")
         if row["deleted"] or row["access_revoked"]:
             raise PermissionDenied("삭제되었거나 접근이 철회된 문서입니다.")
-        if not row["storage_key"] or not row["cur_revision"]:
-            raise ValueError("문서 원문과 revision이 로컬 저장소에 준비되지 않았습니다.")
+        if not row["cur_revision"]:
+            raise ValueError("문서 revision이 준비되지 않았습니다.")
+        # **`storage_key` 가 비어도 여기서 끊지 않는다**(2026-08-26). 색인이 끝난
+        # 커넥터 문서는 원문을 버리므로 비는 것이 정상이고, 다시 읽힐 때는
+        # `src_file_id` 로 Drive 에서 받아 오면 된다. 받아 올 수 있는지까지는
+        # 부르는 쪽이 판단한다 — 그 판단에 쓰라고 `src_file_id` 를 함께 준다.
         return row
 
     @staticmethod
@@ -400,7 +395,8 @@ class PipelineDocumentRepository:
                 cursor.execute(
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
-                           d.src_modified_at, d.storage_key, d.deleted, d.access_revoked,
+                           d.src_modified_at, d.storage_key, d.src_file_id,
+                           d.deleted, d.access_revoked,
                            d.index_status, d.index_detail,
                            d.team_folder_id, d.src_folder_path,
                            tf.display_name AS folder_name, tf.conn_id,

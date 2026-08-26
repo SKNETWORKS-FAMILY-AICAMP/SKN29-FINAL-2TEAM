@@ -6,6 +6,7 @@ import styles from './App.module.css';
 
 const LandingPage = lazy(() => import('./pages/LandingPage/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage/PrivacyPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage/SignupPage'));
 const InviteCodePage = lazy(() => import('./pages/InviteCodePage/InviteCodePage'));
 const FindPasswordPage = lazy(() => import('./pages/FindPasswordPage/FindPasswordPage'));
@@ -79,6 +80,8 @@ function App() {
             </>
           )}
           <Route path={PATHS.login} element={<LoginPage />} />
+          {/* 로그인 위쪽에 둔다 — 로그인 없이 열려야 하는 공개 문서다. */}
+          <Route path={PATHS.privacy} element={<PrivacyPage />} />
           <Route path={PATHS.signup} element={<SignupPage />} />
           <Route path={PATHS.inviteCode} element={<InviteCodePage />} />
           <Route path={PATHS.findPassword} element={<FindPasswordPage />} />

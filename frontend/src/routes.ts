@@ -9,6 +9,12 @@ export const PATHS = {
   devIndex: '/screens',
   devIndexAlias: '/dev/screens',
   login: '/login',
+  /**
+   * 개인정보처리방침. **로그인 없이 열려야 한다** — Google OAuth 앱 심사가
+   * 이 주소를 직접 연다(게시 상태가 「테스트 중」이면 refresh token 이 7일 만에
+   * 만료돼 커넥터를 매주 다시 연결해야 한다, 2026-08-25).
+   */
+  privacy: '/privacy',
   signup: '/signup',
   inviteCode: '/invite-code',
   findPassword: '/find-password',

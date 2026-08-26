@@ -72,19 +72,19 @@
   transition: width 400ms ease;
 }
 
+/* 실패가 없으면 「문서 보기」 하나만 남는다. 오른쪽에 붙이고, 실패 건수가
+   생기면 그것이 왼쪽을 밀고 들어온다 — 빈 자리를 채우려고 없어도 되는 설명을
+   두지 않는다. */
 .foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-3);
   font-size: 12px;
 }
 
-.hint {
-  color: var(--color-muted);
-}
-
 .failed {
+  margin-right: auto;
   color: var(--color-warning-text);
   font-weight: 600;
 }

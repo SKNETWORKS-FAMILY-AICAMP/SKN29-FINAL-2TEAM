@@ -74,6 +74,7 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate();
   const session = useSession();
   const token = session?.token;
+  const isLeader = session?.account.role === 'leader';
   const { showToast } = useToast();
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
@@ -214,11 +215,16 @@ export default function ProjectDetailPage() {
                 <button type="button" className={styles.primaryBtn} onClick={handleToggleArchive} disabled={busy}>
                   {archived ? '진행 중으로' : '완료 처리'}
                 </button>
+                {/* 삭제는 되돌릴 수 없고 읽어온 Jira 업무까지 함께 지운다.
+                    팀장만 지울 수 있다(서버도 `require_leader`로 같이 막는다,
+                    `ProjectListPage`의 `isLeader` disabled 관례를 따름).
+                    바로 위 「완료 처리」는 되돌릴 수 있어서 막지 않는다. */}
                 <button
                   type="button"
                   className={styles.dangerBtn}
                   onClick={() => setConfirming(true)}
-                  disabled={busy}
+                  disabled={busy || !isLeader}
+                  title={isLeader ? undefined : '팀장만 프로젝트를 삭제할 수 있습니다.'}
                 >
                   삭제
                 </button>

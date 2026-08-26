@@ -208,8 +208,21 @@ CREATE TABLE connector_conn (
     -- 델타 API 가 있는 것은 Drive·SharePoint 뿐이고(Notion·Confluence 는 수정
     -- 시각 폴링밖에 없다), 값의 모양도 저장소마다 다르다.
     sync_cursor               TEXT,
+    -- Drive 변경 알림 채널(2026-08-25). `changes.watch` 로 열어 두면 바뀔 때
+    -- Google 이 알려 준다 — 대화를 열 때마다 우리가 묻던 것을 대신한다.
+    --
+    -- 셋 다 NULL 이 정상이다: **채널이 없는 상태는 고장이 아니다.** 아직 안 연
+    -- 연결이고, 그때는 대화 시작 시 동기화가 받쳐 준다.
+    channel_id                VARCHAR(64),    -- 우리가 만든 채널 id. 알림이 이것만 들고 온다
+    channel_resource_id       VARCHAR(255),   -- Google 이 준 값. channels.stop 에 id 와 함께 필요하다
+                                              -- 없으면 채널을 못 멈춰 만료까지 알림이 계속 온다
+    channel_expires_at        TIMESTAMPTZ,    -- 만료 시각. changes 채널은 최대 1주이고 자동 갱신이 없다
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 알림은 채널 id 하나만 들고 온다. 그것으로 연결을 찾는 것이 가장 잦은 경로다.
+CREATE UNIQUE INDEX ux_connector_conn_channel
+    ON connector_conn (channel_id) WHERE channel_id IS NOT NULL;
 
 -- 이 프로젝트가 대응하는 Jira 프로젝트. **프로젝트 하나에 Jira 프로젝트 하나다**
 -- (2026-08-04). Jira 프로젝트 하나에는 프로젝트 하나의 업무가 들어 있으므로, 여러 개를

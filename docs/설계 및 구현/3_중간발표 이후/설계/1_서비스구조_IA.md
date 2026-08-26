@@ -103,9 +103,15 @@ P0 = E2E 데모에 필수. P1 = 데모 품질. P2 = 구조만 잡고 최소 구�
 (People DB 연결 모달이 팀 생성을 겸한다 → Drive 연결 → 「폴더 설정」 모달 →
 Jira 연결하면 전체 프로젝트 자동 수집).
 
-⚠ **그래서 새 계정의 첫 Chat 화면에는 팀도 에이전트도 없다.** Chat은 "쓸 수
+~~⚠ **그래서 새 계정의 첫 Chat 화면에는 팀도 에이전트도 없다.** Chat은 "쓸 수
 있는 에이전트가 없습니다"까지만 말하고 Settings로 안내하지 않는다 — 첫 사용
-경험의 빈 구멍이다. → `작업목록.md` 작업 6.
+경험의 빈 구멍이다. → `작업목록.md` 작업 6.~~
+
+⚠ **에이전트 부분은 틀렸다 (2026-08-15 해소).** 팀 생성과 **같은 트랜잭션**으로
+「기본 어시스턴트」(`is_default_chat`, 팀당 1개)가 발행된다
+(`backend/db/repositories.py` `TeamRepository.create()` →
+`agent_platform.provision_default_chat_agent()`). 팀이 없는 동안 비어 있는 것은
+그대로다.
 
 ~~가입 → 팀 생성 → Connector 연결(Drive 필수, Jira·HR 선택) → 폴더 선택 →
 Chat 진입. 기존과 차이: Jira 프로젝트 선택이 필수 스텝에서 빠지고, 끝이
@@ -163,7 +169,7 @@ Builder → 새 Agent → 이름·설명·지시문 작성 → Model 선택 → 
 | ~~`ConnectorOnboardingPage`~~ (683) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재배치~~ Settings > Connector 탭이 실연동되면서 대체됐다 |
 | ~~`FolderSelectPage`~~ (533) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~유지~~ `SettingsPage/DriveFolderModal/`로 이식. 폴더 트리(`DriveFolderPickerModal`)는 그대로 따라갔다 |
 | ~~`JiraProjectSelectPage`~~ (256) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재검토~~ 고르는 단계 자체가 없어졌다 |
-| `SettingsPage` (46) + `TeamLeaderSettingsPage` (556) + `TeamMemberSettingsPage` (204) | Settings | 확장 | ✅ **허브 승격 완료** — 탭 컨테이너. ~~sessionStorage DEV 전환 버튼~~은 걷어냈고(`2cc45c1`) 역할은 `account.role`에서 온다 |
+| `SettingsPage` (46) + ~~`TeamLeaderSettingsPage`~~ (556) + ~~`TeamMemberSettingsPage`~~ (204) | Settings | 확장 | ✅ **허브 승격 완료** — 탭 컨테이너. ~~sessionStorage DEV 전환 버튼~~은 걷어냈고(`2cc45c1`) 역할은 `account.role`에서 온다. **팀장·팀원 화면은 `tabs/TeamTab.tsx` 하나로 합쳤다**(2026-08-26) — 팀원용이 팀장용의 부분집합이라 한쪽만 고치면 다른 쪽이 뒤처졌다. 역할 분기는 「팀원 관리」 구획 하나에만 남는다 |
 | `Ops*Page` 8종 (2,809) | Admin | 유지 | 실행 현황·사용량 탭만 추가 |
 | `LandingPage` (348) · 인증 5종 (792) | IA 외 | 유지 | 방향과 무관 |
 

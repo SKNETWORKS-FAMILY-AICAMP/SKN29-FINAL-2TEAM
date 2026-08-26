@@ -96,6 +96,23 @@ GOOGLE_DRIVE_REDIRECT_URI = env(
     "GOOGLE_DRIVE_REDIRECT_URI",
     default="http://localhost:8000/api/connectors/google-drive/callback/",
 )
+
+# --- Drive 변경 알림(웹훅) ---------------------------------------------------
+#
+# **둘 다 없으면 웹훅을 안 연다.** 그때는 예전처럼 대화 시작 시 동기화가 받친다 —
+# 채널을 못 여는 것이 고장이 아니라, 로컬처럼 Google 이 닿을 수 없는 곳에서는
+# 정상 상태다.
+
+# Google 이 알림을 보낼 주소. **HTTPS 여야 하고 유효한 인증서가 필요하다**
+# (자체 서명 불가). localhost 는 애초에 안 되므로 로컬 기본값을 두지 않는다.
+GOOGLE_DRIVE_WEBHOOK_URL = env("GOOGLE_DRIVE_WEBHOOK_URL", default="")
+
+# 채널을 열 때 실어 보내는 비밀값. 알림이 오면 `X-Goog-Channel-Token` 으로 되돌아
+# 오고, 그것이 이 값과 같아야 우리가 연 채널로 인정한다.
+#
+# **이 검증이 없으면 콜백은 누구나 두드릴 수 있는 문이다** — 인증 없이 열리는
+# 경로라(Google 이 부르므로) 남이 POST 해서 우리 워커를 돌리게 할 수 있다.
+GOOGLE_DRIVE_WEBHOOK_TOKEN = env("GOOGLE_DRIVE_WEBHOOK_TOKEN", default="")
 JIRA_CLIENT_ID = env("JIRA_CLIENT_ID", default="")
 JIRA_CLIENT_SECRET = env("JIRA_CLIENT_SECRET", default="")
 JIRA_REDIRECT_URI = env(

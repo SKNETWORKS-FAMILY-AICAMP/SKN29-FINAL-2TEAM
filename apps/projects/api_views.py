@@ -39,6 +39,7 @@ from services.document_pipeline.signing import read_download_token
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
+    ConnectorRepository,
     DocumentRepository,
     ExistTaskRepository,
     ProjectRepository,
@@ -116,6 +117,14 @@ class HealthAPIView(APIView):
 #: 프로젝트 생성은 팀 전체의 작업 단위를 새로 여는 일이라 커넥터 연결·폴더
 #: 지정과 같은 무게다(2026-08-19, 지훈 요청).
 PROJECT_LEADER_ONLY = "팀장만 프로젝트를 만들 수 있습니다."
+
+#: 삭제는 만드는 것보다 무겁다 — 프로젝트와 함께 읽어온 Jira 업무가 지워지고
+#: 팀 부하·마감 화면에서도 빠진다. 되돌릴 수 없으므로 만들 수 없는 사람이
+#: 지울 수도 없어야 한다(생성만 막혀 있어 팀원이 지울 수 있었다).
+#:
+#: 「완료 처리」(PATCH)는 여기 넣지 않는다. 그쪽은 「진행 중으로」 되돌릴 수
+#: 있어서 팀원이 눌러도 복구되는 조작이다 — 되돌릴 수 없는 것만 막는다.
+PROJECT_DELETE_LEADER_ONLY = "팀장만 프로젝트를 삭제할 수 있습니다."
 
 
 class ProjectListCreateAPIView(AuthenticatedAPIView):
@@ -402,7 +411,13 @@ class ProjectDetailAPIView(AuthenticatedAPIView):
 
         화면이 무엇이 사라지는지 먼저 보여주고 한 번 묻는다. 여기서는 확인된
         요청만 받으므로 다시 묻지 않는다.
+
+        팀장만 지울 수 있다. 화면이 버튼을 흐리게 하는 것은 문지기가 아니라서
+        여기서도 막는다 — API 를 직접 부르면 그대로 통과했다.
         """
+
+        if denied := require_leader(request.user.account_id, PROJECT_DELETE_LEADER_ONLY):
+            return denied
 
         try:
             removed = ProjectRepository.delete(
@@ -458,8 +473,38 @@ class TeamFolderAPIView(AuthenticatedAPIView):
         # 워커 슬롯이 하나라 순차로 돌고 폴더가 크면 오래 걸린다. 그래서 응답을
         # 붙잡지 않고(아래), 못 끝낸 것은 다음 호출이 이어받는다.
         _start_document_intake(request.user.account_id)
+        # **읽을 폴더가 생긴 지금이 채널을 열 때다.** 연결하는 순간이 아니라
+        # 여기인 이유는, 폴더가 없으면 변경을 따라가도 받아들일 문서가 없어서다.
+        # 못 열어도 그냥 넘어간다 — 대화 시작 동기화가 받치고, 갱신 작업이
+        # 다음 회차에 다시 시도한다(`scripts/renew_drive_channels.py`).
+        _open_drive_channel_safely(request.user.account_id)
 
         return Response([team_folder_response(row) for row in rows])
+
+
+def _open_drive_channel_safely(account_id: str) -> None:
+    """이 팀의 Drive 연결에 변경 알림 채널을 연다. **실패해도 삼킨다.**
+
+    폴더 저장이 이미 끝난 자리라 여기서 예외를 올리면 방금 한 일이 실패로
+    보인다. 채널이 없어도 문서는 들어온다 — 웹훅은 대화 시작 동기화 위에 얹는
+    것이지 대체하는 것이 아니다.
+    """
+
+    try:
+        from apps.connectors import watch
+
+        if not watch.webhook_enabled():
+            return
+        target = ConnectorRepository.drive_sync_target(account_id)
+        if target is None:
+            return
+        watch.open_channel(
+            conn_id=target["conn_id"],
+            account_id=target["account_id"],
+            sync_cursor=target.get("sync_cursor"),
+        )
+    except Exception:  # noqa: BLE001 — 폴더 저장은 이미 끝났다.
+        logger.exception("Drive 알림 채널 열기 실패: account=%s", account_id)
 
 
 def _start_document_intake(account_id: str) -> None:
@@ -651,11 +696,16 @@ class TeamDocumentReindexAPIView(AuthenticatedAPIView):
             return Response(
                 {"detail": "이 팀의 문서가 아닙니다."}, status=status.HTTP_404_NOT_FOUND
             )
-        if not target["storage_key"]:
-            # 원문이 없으면 색인이 시작조차 못 한다. 던져 놓고 실패시키면
-            # 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+        if not target["storage_key"] and not target["src_file_id"]:
+            # 원문이 없고 받아 올 곳도 없으면 색인이 시작조차 못 한다. 던져 놓고
+            # 실패시키면 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+            #
+            # **원문이 없는 것 자체는 정상이다**(2026-08-26). 색인이 끝난 커넥터
+            # 문서는 원문을 버리고, 다시 읽힐 때 Drive 에서 받아 온다
+            # (`_refetch_original`). 여기서 `storage_key` 만 보고 막으면 정상적으로
+            # 색인된 문서가 전부 「다시 읽기」를 못 하게 된다.
             return Response(
-                {"detail": "원문을 아직 받지 않아 색인할 수 없습니다. 문서 변경 확인을 먼저 하세요."},
+                {"detail": "아직 파일을 받지 못했습니다."},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -673,9 +723,15 @@ def _start_reindex(*, account_id: str, doc_id: str) -> None:
 
     def run() -> None:
         try:
-            from services.document_intake import promote_to_searchable
+            from services.document_intake import (
+                LONG_PROMOTE_WAIT_SECONDS,
+                promote_to_searchable,
+            )
 
-            outcome = promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            # 사람이 응답을 붙잡고 있지 않다. 큰 문서를 4분에 포기할 이유가 없다.
+            outcome = promote_to_searchable(
+                account_id=account_id, doc_id=doc_id, wait_seconds=LONG_PROMOTE_WAIT_SECONDS
+            )
             logger.info("색인 재시도: doc=%s ok=%s", doc_id, outcome.get("ok"))
         except Exception:  # noqa: BLE001 — 뒷작업이다. 사유는 index_detail 에 남는다.
             logger.exception("색인 재시도 실패: doc=%s", doc_id)

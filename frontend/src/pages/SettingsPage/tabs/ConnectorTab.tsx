@@ -177,7 +177,7 @@ export function ConnectorTab() {
       if (timer !== null) window.clearInterval(timer);
       if (document.hidden) return;
       void tick();
-      timer = window.setInterval(() => void tick(), indexing ? 10_000 : 60_000);
+      timer = window.setInterval(() => void tick(), indexing ? 5_000 : 60_000);
     }
     start();
     document.addEventListener('visibilitychange', start);
@@ -259,7 +259,7 @@ export function ConnectorTab() {
       );
     }
     if (indexProgress.failed > 0) {
-      return <Badge tone="warning">색인 실패 {indexProgress.failed}</Badge>;
+      return <Badge tone="warning">읽기 실패 {indexProgress.failed}</Badge>;
     }
     return null;
   }
