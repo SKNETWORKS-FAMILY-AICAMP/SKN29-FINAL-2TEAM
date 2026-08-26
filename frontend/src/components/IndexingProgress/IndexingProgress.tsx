@@ -34,26 +34,39 @@ import styles from './IndexingProgress.module.css';
  *
  * ## 폴링 간격
  *
- * 도는 동안 10초, 아니면 60초. **탭이 숨겨져 있으면 아예 안 돈다** — 보지도
- * 않는 화면 때문에 서버를 두드릴 이유가 없다. 다시 보이면 그 자리에서 한 번
- * 물어본다(숨은 사이에 끝났을 수 있다).
+ * 막 시작됐을 때 2초, 도는 동안 5초, 아니면 60초. **탭이 숨겨져 있으면 아예
+ * 안 돈다** — 보지도 않는 화면 때문에 서버를 두드릴 이유가 없다. 다시 보이면
+ * 그 자리에서 한 번 물어본다(숨은 사이에 끝났을 수 있다).
  */
 
-const POLL_ACTIVE_MS = 10_000;
+const POLL_ACTIVE_MS = 5_000;
 const POLL_IDLE_MS = 60_000;
+
+/**
+ * 신호를 받은 직후에만 쓰는 짧은 간격.
+ *
+ * **카드가 늦게 뜨는 것이 여기서 갈린다.** 신호가 오는 순간 서버에는 아직
+ * `doc` 행이 없어서(수집 스레드가 Drive 를 훑는 중이다) 첫 폴링은 0건을 본다.
+ * 그 다음 폴링까지 10초를 기다리면 사람 눈에는 저장하고 한참 뒤에 뜨는 것으로
+ * 보인다 — 실제로 그렇게 느껴진다는 지적을 받았다.
+ *
+ * 짧게 잡아도 부담이 적다. 이 조회는 집계 한 번이고, 이 간격은 아래 창
+ * (`NUDGE_WINDOW_MS`) 동안만 쓴다.
+ */
+const POLL_NUDGE_MS = 2_000;
 
 /**
  * 다 읽은 뒤 카드를 얼마나 더 붙잡아 둘까.
  *
- * **표보다 먼저 꺼지던 것을 막는다.** 이 카드와 「문서」 화면의 표는 각자 10초로
- * 따로 돈다 — 카드가 「다 됐다」를 먼저 보고 사라지는 사이 표는 아직 직전 응답을
+ * **표보다 먼저 꺼지던 것을 막는다.** 이 카드와 「문서」 화면의 표는 각자 따로
+ * 돈다 — 카드가 「다 됐다」를 먼저 보고 사라지는 사이 표는 아직 직전 응답을
  * 들고 있어서, 마지막 파일이 「읽는 중」인 채로 카드만 없어졌다(실서버 실측).
- * 표의 주기(10초)보다 길게 잡아야 그 사이가 덮인다.
+ * 표의 주기(5초)보다 넉넉히 길게 잡아야 그 사이가 덮인다.
  *
  * 겸해서 **끝났다는 말을 한다.** 그냥 사라지면 끝난 것인지 무엇이 잘못된 것인지
  * 구별되지 않는다.
  */
-const FINISH_HOLD_MS = 12_000;
+const FINISH_HOLD_MS = 8_000;
 
 /**
  * 「방금 시작됐다」는 신호를 받은 뒤 얼마나 바짝 따라붙을까.
@@ -141,9 +154,9 @@ export function IndexingProgress() {
       stop();
       if (document.hidden) return;
       void poll();
-      // 도는 중이거나, 방금 시작됐다는 말을 들었으면 바짝 따라붙는다.
-      const active = isIndexing(progress) || nudging;
-      const interval = active ? POLL_ACTIVE_MS : POLL_IDLE_MS;
+      // 막 시작됐을 때가 제일 바쁘다 — 아직 없는 것이 나타나기를 기다리는
+      // 구간이라, 여기서 늦으면 카드가 늦게 뜬 것으로 보인다.
+      const interval = nudging ? POLL_NUDGE_MS : isIndexing(progress) ? POLL_ACTIVE_MS : POLL_IDLE_MS;
       timer.current = window.setInterval(() => void poll(), interval);
     }
 
@@ -226,14 +239,11 @@ export function IndexingProgress() {
       <div className={styles.foot}>
         {/* 실패는 숨기지 않는다. 남은 수에서 빠지므로 이 줄이 없으면 왜 8/10
             에서 끝났는지 알 수 없다. **끝난 뒤에는 더 중요하다** — 그때가
-            사람이 「그럼 그 몇 건은?」을 물을 유일한 순간이다. */}
-        {shown.failed > 0 ? (
-          <span className={styles.failed}>실패 {shown.failed}</span>
-        ) : (
-          <span className={styles.hint}>
-            {indexing ? '읽은 문서부터 검색에 쓰입니다' : '이제 검색에 쓰입니다'}
-          </span>
-        )}
+            사람이 「그럼 그 몇 건은?」을 물을 유일한 순간이다.
+
+            반대로 「읽은 문서부터 검색에 쓰입니다」 같은 설명은 걷었다. 없어도
+            사람이 할 행동이 안 바뀌고, 「검색」은 우리 쪽 말이다. */}
+        {shown.failed > 0 && <span className={styles.failed}>읽기 실패 {shown.failed}</span>}
         <button type="button" className={styles.link} onClick={() => navigate(PATHS.documents)}>
           문서 보기
         </button>

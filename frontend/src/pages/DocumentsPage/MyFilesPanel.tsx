@@ -53,7 +53,7 @@ const ACCEPT = '.pdf,.docx,.txt,.md';
 type Inner = 'mine' | 'shared';
 
 /**
- * 처리 상태 칩. 팀 문서 표(`DocumentsPage`의 `statusChip`)와 **같은 말을 쓴다** —
+ * 상태 칩. 팀 문서 표(`DocumentsPage`의 `statusChip`)와 **같은 말을 쓴다** —
  * 같은 파이프라인의 같은 상태라 다른 낱말을 쓰면 사람이 두 번 배운다.
  */
 function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint: string } {
@@ -62,17 +62,14 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
   if (file.index_status === 'FAILED') {
     return {
       tone: 'warning',
-      label: '본문 색인 실패',
+      label: '읽기 실패',
       hint: file.index_detail ?? '읽을 수 없는 형식이거나, 글자를 뽑을 수 없는 파일일 수 있습니다.',
     };
   }
-  if (file.index_status === 'RUNNING') {
-    return { tone: 'info', label: '읽는 중', hint: '' };
-  }
   if (file.search_ready) {
-    return { tone: 'success', label: '검색 준비됨', hint: '' };
+    return { tone: 'success', label: '사용 가능', hint: '' };
   }
-  return { tone: 'neutral', label: '읽는 중', hint: '' };
+  return { tone: 'info', label: '읽는 중', hint: '' };
 }
 
 function formatDate(iso: string | null): string {
@@ -126,7 +123,7 @@ export function MyFilesPanel() {
    */
   useEffect(() => {
     if (!pending) return;
-    const timer = setInterval(load, 10_000);
+    const timer = setInterval(load, 5_000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, token]);
@@ -228,7 +225,7 @@ export function MyFilesPanel() {
         <h2 className={styles.panelTitle}>{inner === 'mine' ? '내 파일' : '공유 받은 파일'}</h2>
         <span className={styles.panelCount}>
           {query.trim() ? `${matched.length} / ${rows.length}건` : `${rows.length}건`}
-          {notReady > 0 && <span className={styles.panelWarn}> · 검색 대기 {notReady}</span>}
+          {notReady > 0 && <span className={styles.panelWarn}> · 읽는 중 {notReady}</span>}
         </span>
       </div>
 

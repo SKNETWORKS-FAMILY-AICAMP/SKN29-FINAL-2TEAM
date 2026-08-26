@@ -65,30 +65,28 @@ type Selection =
   | { kind: 'mine' };
 
 /**
- * 색인 상태 칩. 「내 파일」의 `statusChip` 과 **같은 말을 쓴다** — 같은 파이프
- * 라인의 같은 상태라 다른 낱말을 쓰면 사람이 두 번 배운다.
+ * 상태 칩. **사용자가 알고 싶은 것은 「이 문서를 쓸 수 있나」 하나다.**
  *
- * 넷을 가른다. 원문을 아직 안 받은 것과 받아 놓고 색인을 안 돌린 것은 사람이
- * 할 일이 다르고, 돌고 있는 것과 실패한 것은 말할 것도 없다.
+ * 「검색 준비됨」·「색인 대기」·「원문 대기」로 넷을 갈랐던 것을 셋으로 줄였다.
+ * 그 넷은 우리 파이프라인의 단계이지 사람이 구별해서 할 일이 아니다 — 원문을
+ * 아직 못 받았든 워커 차례를 기다리든, 할 수 있는 것은 기다리는 것 하나다.
+ * 「검색」도 우리 쪽 말이라 걷었다: 사용자는 "무슨 검색?"이라고 되묻는다.
+ *
+ * 「내 파일」(`MyFilesPanel`)과 **같은 말을 쓴다** — 같은 파이프라인의 같은
+ * 상태라 다른 낱말을 쓰면 사람이 두 번 배운다.
  */
 function statusChip(doc: LibraryDocument): { tone: BadgeTone; label: string; hint: string } {
   if (doc.index_status === 'FAILED') {
     return {
       tone: 'warning',
-      label: '본문 색인 실패',
+      label: '읽기 실패',
       hint: doc.index_detail ?? '읽을 수 없는 형식이거나, 글자를 뽑을 수 없는 파일일 수 있습니다.',
     };
   }
-  if (doc.index_status === 'RUNNING') {
-    return { tone: 'info', label: '읽는 중', hint: '' };
-  }
   if (doc.search_ready) {
-    return { tone: 'success', label: '검색 준비됨', hint: '' };
+    return { tone: 'success', label: '사용 가능', hint: '' };
   }
-  if (!doc.downloaded) {
-    return { tone: 'neutral', label: '원문 대기', hint: '아직 원문을 받지 않아 색인을 시작할 수 없습니다.' };
-  }
-  return { tone: 'neutral', label: '색인 대기', hint: '' };
+  return { tone: 'info', label: '읽는 중', hint: '' };
 }
 
 /** 한 폴더 아래에 실제로 존재하는 하위 경로들. 문서가 들고 있는 값에서 나온다. */
@@ -159,7 +157,7 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     if (!pending) return;
-    const timer = setInterval(() => void load(), 10_000);
+    const timer = setInterval(() => void load(), 5_000);
     return () => clearInterval(timer);
   }, [pending, load]);
 
@@ -170,8 +168,8 @@ export default function DocumentsPage() {
       await reindexTeamDocument(token, doc.doc_id);
       // 한 건이어도 워커가 도는 것은 같다. 전역 카드에도 잡히게 알린다.
       notifyIndexingStarted();
-      // 낙관적으로 「읽는 중」으로 바꾼다. 서버도 곧 같은 값을 주지만, 폴링이
-      // 10초라 그때까지 버튼이 아무 반응 없어 보인다.
+      // 낙관적으로 「읽는 중」으로 바꾼다. 서버도 곧 같은 값을 주지만, 폴링
+      // 간격만큼은 버튼이 아무 반응 없어 보인다.
       setLibrary((prev) => ({
         ...prev,
         documents: prev.documents.map((row) =>
@@ -289,9 +287,9 @@ export default function DocumentsPage() {
   }, [selection, library.folders]);
 
   /**
-   * 아직 검색에 못 쓰는 문서 수. **좁힌 결과를 센다** — 한 줄에 나란히 붙는
+   * 아직 못 쓰는 문서 수. **좁힌 결과를 센다** — 한 줄에 나란히 붙는
    * 「15 / 45건」과 같은 모수를 봐야 한다. 전체를 세면 15건을 걸러 놓고
-   * 「검색 대기 2」가 따라붙어, 그 2건이 보이는 15건 안에 있는 줄로 읽힌다.
+   * 그 뒤 숫자가 따라붙어, 보이는 15건 안에 있는 줄로 읽힌다.
    */
   const notReady = matched.filter((doc) => !doc.search_ready).length;
 
@@ -302,19 +300,13 @@ export default function DocumentsPage() {
           <h1>
             문서
             <InfoNote title="문서">
+              {/* **네 문단이었다.** 파이프라인 사정을 문단마다 설명하고 있었는데,
+                  읽는 사람이 알아야 할 것은 「무엇을 쓰는가」와 「어디서 정하는가」
+                  둘뿐이다. 나머지는 상태 칩이 이미 말한다. */}
               <p>
-                에이전트가 답을 찾을 때 보는 문서입니다. <strong>커넥터가 가져온 팀 문서</strong>와
-                <strong> 내가 올린 파일</strong>이 함께 있습니다.
+                에이전트가 답을 찾을 때 보는 문서입니다. <strong>사용 가능</strong>인 문서만 씁니다.
               </p>
-              <p>
-                <strong>검색 준비됨</strong>이라야 문장 근거로 쓰입니다. 폴더를 저장하면 그 안의 문서를
-                전부 읽어 들이는데, 문서 하나에 몇 분씩 걸리고 순서대로 돕니다.
-              </p>
-              <p>
-                실패한 문서는 사유와 함께 표시됩니다. <strong>다시 읽기</strong>로 그 문서만 다시 시킬 수
-                있습니다.
-              </p>
-              <p>어떤 폴더를 읽을지 정하는 곳은 설정 &gt; 커넥터입니다.</p>
+              <p>어떤 폴더를 읽을지는 설정 &gt; 커넥터에서 정합니다.</p>
             </InfoNote>
           </h1>
         </header>
@@ -464,7 +456,7 @@ export default function DocumentsPage() {
                     {/* 검색 중이면 「몇 중 몇」을 말한다 — 결과 수만 보이면
                         사라진 문서가 지워진 것인지 걸러진 것인지 알 수 없다. */}
                     {query.trim() ? `${matched.length} / ${visibleDocuments.length}건` : `${visibleDocuments.length}건`}
-                    {notReady > 0 && <span className={styles.panelWarn}> · 검색 대기 {notReady}</span>}
+                    {notReady > 0 && <span className={styles.panelWarn}> · 읽는 중 {notReady}</span>}
                   </span>
                 </div>
 
@@ -574,7 +566,7 @@ export default function DocumentsPage() {
                                 disabled={busy === doc.doc_id}
                                 onClick={() => void retry(doc)}
                               >
-                                {doc.search_ready ? '다시 읽기' : '다시 시도'}
+                                다시 읽기
                               </Button>
                             )}
                           </span>

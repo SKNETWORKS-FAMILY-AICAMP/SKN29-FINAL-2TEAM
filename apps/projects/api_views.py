@@ -655,7 +655,7 @@ class TeamDocumentReindexAPIView(AuthenticatedAPIView):
             # 원문이 없으면 색인이 시작조차 못 한다. 던져 놓고 실패시키면
             # 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
             return Response(
-                {"detail": "원문을 아직 받지 않아 색인할 수 없습니다. 문서 변경 확인을 먼저 하세요."},
+                {"detail": "아직 파일을 받지 못했습니다."},
                 status=status.HTTP_409_CONFLICT,
             )
 
