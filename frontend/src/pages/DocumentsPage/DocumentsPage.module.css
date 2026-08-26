@@ -530,7 +530,12 @@
 
 .sharedHead,
 .sharedRow {
-  grid-template-columns: minmax(0, 1fr) 160px 130px 90px;
+  /*
+   * 이름 칸의 최소 폭은 「내 파일」 표와 같은 이유·같은 값이다(위 주석 참고).
+   * 여기는 고정 열이 적어 더 좁혀야 드러날 뿐 무너지는 방식은 똑같다
+   * (2026-08-26 실측: 컨테이너 478px 에서 이름 칸 22px, 398px 이하에서 0px).
+   */
+  grid-template-columns: minmax(220px, 1fr) 160px 130px 90px;
 }
 
 .cellToggle {
