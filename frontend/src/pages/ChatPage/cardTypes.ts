@@ -60,10 +60,10 @@ export type TimelineEntry =
        * `toolRef`로 그린다.
        */
       toolName: string | null;
-      /** 모델이 실제 도구에 넘긴 입력. 화면에서는 민감 키를 가리고 펼쳐 보여준다. */
+      /** 모델이 실제 도구에 넘긴 입력. 일반 UI는 웹 검색어처럼 정제 가능한 값만 보여준다. */
       arguments?: Record<string, unknown>;
       status: 'RUNNING' | 'OK' | 'FAILED' | 'REJECTED';
-      /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). 완료 전엔 없다. */
+      /** 도구 반환값(길이 제한 요약). 일반 UI는 검색 링크처럼 정제한 결과만 보여준다. */
       output?: string;
     }
   | {
