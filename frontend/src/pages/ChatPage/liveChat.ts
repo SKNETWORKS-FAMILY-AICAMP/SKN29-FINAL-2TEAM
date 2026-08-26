@@ -226,10 +226,17 @@ function sourceKey(source: SourceRef): string {
     const url = new URL(source.url);
     url.hash = '';
     for (const key of [...url.searchParams.keys()]) {
-      if (key.toLowerCase().startsWith('utm_')) url.searchParams.delete(key);
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey.startsWith('utm_') || normalizedKey === 'ref') url.searchParams.delete(key);
     }
     url.hostname = url.hostname.toLowerCase();
     url.pathname = url.pathname.replace(/\/$/, '') || '/';
+    // OpenAI 문서의 api-mode/lang/example/context/type 값은 같은 문서 안의
+    // 보기 상태만 바꾼다. 검색 결과가 이 변형 URL을 여럿 돌려줘도 사용자가
+    // 참고한 독립 출처 수는 한 페이지이므로 문서 경로 기준으로 합친다.
+    if (url.hostname === 'platform.openai.com' && url.pathname.startsWith('/docs/')) {
+      url.search = '';
+    }
     return url.toString();
   } catch {
     return source.url.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase();

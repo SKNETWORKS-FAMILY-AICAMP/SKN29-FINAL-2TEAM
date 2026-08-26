@@ -101,13 +101,13 @@
 .tableBlock {
   position: relative;
   min-width: 0;
-  padding-top: 34px;
 }
 
 .tableActions {
   position: absolute;
-  top: 0;
-  right: 0;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
   display: inline-flex;
   gap: 6px;
   opacity: 0;
@@ -124,7 +124,8 @@
   padding: 0 9px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
   color: var(--color-muted);
   font: inherit;
   font-size: 12px;
@@ -248,7 +249,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  min-width: 28px;
   height: 28px;
   padding: 0;
   border: none;
@@ -257,6 +258,14 @@
   color: var(--color-muted);
   font: inherit;
   cursor: pointer;
+}
+
+.sourceToggle {
+  width: auto;
+  gap: 4px;
+  padding: 0 7px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .answerCopy:hover,
@@ -274,6 +283,19 @@
   background: var(--color-bg);
   color: var(--color-muted);
   font-size: 12.5px;
+  transform-origin: top left;
+  animation: sources-open 160ms ease-out;
+}
+
+@keyframes sources-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
 }
 
 .sourcesTitle {
@@ -286,6 +308,11 @@
 .sources ul {
   margin: 0;
   padding-left: 18px;
+  list-style: disc;
+}
+
+.sources li + li {
+  margin-top: 4px;
 }
 
 .sources ul + ul {
@@ -298,6 +325,12 @@
 }
 
 @media (hover: none) {
+  /* 터치 화면은 hover가 없어 액션을 항상 보여준다. 표 안에 겹치면 좁은 화면의
+     마지막 헤더를 가리므로 이 경우에만 버튼 한 줄을 따로 확보한다. */
+  .tableBlock { padding-top: 34px; }
+
+  .tableActions { top: 0; }
+
   .tableActions,
   .answerActions {
     opacity: 1;
@@ -311,6 +344,8 @@
   .answerActions {
     transition: none;
   }
+
+  .sources { animation: none; }
 }
 
 @media (max-width: 640px) {

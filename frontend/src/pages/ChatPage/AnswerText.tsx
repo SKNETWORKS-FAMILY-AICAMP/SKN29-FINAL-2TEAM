@@ -179,6 +179,7 @@ export function AnswerText({
               title={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
             >
               <Icon name="link" size={16} />
+              <span>출처</span>
             </button>
           )}
         </div>
