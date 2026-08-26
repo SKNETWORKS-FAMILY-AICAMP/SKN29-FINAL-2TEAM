@@ -104,10 +104,19 @@
   padding-top: 34px;
 }
 
-.tableExpand {
+.tableActions {
   position: absolute;
   top: 0;
   right: 0;
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.tableAction {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -123,19 +132,20 @@
   cursor: pointer;
 }
 
-.tableExpand:hover {
+.tableAction:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
-.tableExpand:focus-visible {
+.tableAction:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
 .tableScroll {
   max-width: 100%;
-  overflow-x: auto;
+  max-height: min(520px, 60vh);
+  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -147,8 +157,8 @@
 }
 
 .table {
-  width: 100%;
-  min-width: 720px;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.94em;
   line-height: 1.55;
@@ -165,6 +175,8 @@
 
 .table th,
 .table td {
+  min-width: 120px;
+  max-width: 320px;
   padding: 9px 12px;
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
@@ -174,6 +186,9 @@
 }
 
 .table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--color-bg);
   color: var(--color-heading);
   font-weight: 700;
@@ -188,8 +203,82 @@
   font-size: 0.92em;
 }
 
+.tableBlock:hover .tableActions,
+.tableBlock:focus-within .tableActions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.answerActions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}
+
+.answerCopy,
+.sourceToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.answerCopy:hover,
+.sourceToggle:hover {
+  background: var(--color-bg);
+  color: var(--color-primary);
+}
+
+.sources {
+  max-height: 260px;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 12.5px;
+}
+
+.sourcesTitle {
+  display: block;
+  margin-bottom: var(--space-2);
+  color: var(--color-heading);
+  font-size: 12.5px;
+}
+
+.sources ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.sources ul + ul {
+  margin-top: var(--space-2);
+}
+
+.sources a {
+  color: var(--color-primary);
+  text-underline-offset: 2px;
+}
+
+@media (hover: none) {
+  .tableActions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
 @media (max-width: 640px) {
   .heading1 { font-size: 1.12rem; }
-  .table { min-width: 680px; }
-  .tableExpand span { display: none; }
 }

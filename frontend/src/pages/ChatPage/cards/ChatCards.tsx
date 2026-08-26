@@ -4,25 +4,82 @@ import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
 import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
 import styles from './cards.module.css';
 
-const SENSITIVE_ARGUMENT_KEY = /(?:token|password|secret|api.?key|authorization|credential)/i;
-
-function maskToolArguments(value: unknown, key = ''): unknown {
-  if (SENSITIVE_ARGUMENT_KEY.test(key)) return '••••••••';
-  if (Array.isArray(value)) return value.map((item) => maskToolArguments(item));
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
-        childKey,
-        maskToolArguments(childValue, childKey),
-      ]),
-    );
-  }
-  return value;
+interface SearchPreview {
+  queries: string[];
+  results: Array<{ label: string; url: string }>;
 }
 
-function formatToolArguments(argumentsValue: Record<string, unknown> | undefined): string | null {
-  if (!argumentsValue || Object.keys(argumentsValue).length === 0) return null;
-  return JSON.stringify(maskToolArguments(argumentsValue), null, 2);
+function isWebSearchTool(tool: Extract<TimelineEntry, { kind: 'tool' }>): boolean {
+  return /web.?search|웹.?검색/i.test(`${tool.toolRef} ${tool.toolName ?? ''}`);
+}
+
+/** 원시 도구 JSON 전체 대신 일반 사용자가 이해할 검색어·링크만 추린다. */
+function searchPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): SearchPreview {
+  const args = tool.arguments ?? {};
+  const queries = [args.query, args.search_query, ...(Array.isArray(args.queries) ? args.queries : [])]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim());
+  const resultMap = new Map<string, { label: string; url: string }>();
+
+  function collect(value: unknown) {
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    const url = typeof record.url === 'string' && /^https?:\/\//i.test(record.url) ? record.url : null;
+    if (url) {
+      const labelCandidate = record.title ?? record.label ?? record.name;
+      const label = typeof labelCandidate === 'string' && labelCandidate.trim() ? labelCandidate.trim() : url;
+      resultMap.set(url, { label, url });
+    }
+    Object.values(record).forEach(collect);
+  }
+
+  if (tool.output) {
+    try {
+      collect(JSON.parse(tool.output));
+    } catch {
+      for (const match of tool.output.matchAll(/https?:\/\/[^\s"'<>]+/g)) {
+        const url = match[0].replace(/[),.;]+$/, '');
+        resultMap.set(url, { label: url, url });
+      }
+    }
+  }
+  return { queries: [...new Set(queries)], results: [...resultMap.values()] };
+}
+
+function searchRunTitle(runIndex: number, preview: SearchPreview | null): string {
+  const query = preview?.queries[0];
+  if (!query) return `검색 ${runIndex + 1}`;
+  const compact = query.replace(/\s+/g, ' ').trim();
+  return `검색 ${runIndex + 1} · ${compact.length > 42 ? `${compact.slice(0, 42)}…` : compact}`;
+}
+
+function SearchRunDetails({ preview }: { preview: SearchPreview }) {
+  return (
+    <div className={styles.searchRunDetails}>
+      {preview.queries.map((query) => (
+        <div key={query} className={styles.searchRunSection}>
+          <strong className={styles.searchRunLabel}>검색어</strong>
+          <code className={styles.searchQuery}>{query}</code>
+        </div>
+      ))}
+      <div className={styles.searchRunSection}>
+        <strong className={styles.searchRunLabel}>검색 결과 {preview.results.length}개</strong>
+        {preview.results.length > 0 ? (
+          <ul>
+            {preview.results.map((result) => (
+              <li key={result.url}><a href={result.url} target="_blank" rel="noreferrer">{result.label}</a></li>
+            ))}
+          </ul>
+        ) : (
+          <span className={styles.searchEmpty}>검색 결과 없음</span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -313,11 +370,10 @@ export function ReasoningTrace({
   const logRef = useRef<HTMLOListElement>(null);
   const wasRunning = useRef(running);
   const [searchDetailsOpen, setSearchDetailsOpen] = useState(false);
-  // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
-  // "그 스트리밍된 툴을 눌러야만 보이게 해줘" 요청). index로 여닫힘을 추적한다
-  // — entries는 순서만 늘고 위치가 안 바뀌므로 li의 key(index)와 그대로 맞는다.
-  const [expandedOutputs, setExpandedOutputs] = useState<Set<number>>(new Set());
+  // 일반 사용자 화면에서는 도구의 원시 인자·JSON 반환값을 노출하지 않는다.
+  // 실제 실행 여부·횟수·성공/실패는 유지하고, 반복 호출만 하위 목록으로 묶는다.
   const [expandedToolGroups, setExpandedToolGroups] = useState<Set<number>>(new Set());
+  const [expandedSearchRuns, setExpandedSearchRuns] = useState<Set<number>>(new Set());
   const webSources = sources.filter((source) => Boolean(source.url));
   const documentSources = sources.filter((source) => !source.url);
   const timelineGroups = entries.reduce<Array<Array<{ entry: TimelineEntry; index: number }>>>((groups, entry, index) => {
@@ -335,20 +391,17 @@ export function ReasoningTrace({
     return groups;
   }, []);
 
-  function toggleOutput(index: number) {
-    setExpandedOutputs((prev) => {
+  function toggleToolGroup(index: number) {
+    setExpandedToolGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
       return next;
     });
   }
 
-  function toggleToolGroup(index: number) {
-    setExpandedToolGroups((prev) => {
+  function toggleSearchRun(index: number) {
+    setExpandedSearchRuns((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -426,45 +479,24 @@ export function ReasoningTrace({
                     <ol className={styles.toolRuns}>
                       {group.map((item, runIndex) => {
                         const tool = item.entry as Extract<TimelineEntry, { kind: 'tool' }>;
-                        const formattedArguments = formatToolArguments(tool.arguments);
-                        const hasDetails = Boolean(formattedArguments || tool.output);
-                        const runOpen = expandedOutputs.has(item.index);
+                        const preview = isWebSearchTool(tool) ? searchPreview(tool) : null;
+                        const hasPreview = Boolean(preview && (preview.queries.length > 0 || preview.results.length > 0));
+                        const runOpen = expandedSearchRuns.has(item.index);
                         return (
                           <li key={item.index} className={styles.toolRun}>
                             <button
                               type="button"
                               className={styles.toolRunToggle}
-                              onClick={() => toggleOutput(item.index)}
-                              disabled={!hasDetails}
+                              disabled={!hasPreview}
+                              onClick={() => hasPreview && toggleSearchRun(item.index)}
                             >
-                              <span>{runIndex + 1}차 실행</span>
+                              <span className={styles.toolRunTitle}>{searchRunTitle(runIndex, preview)}</span>
                               <span className={styles.toolRunStatus}>
                                 {tool.status === 'RUNNING' ? '진행 중' : tool.status === 'OK' ? '완료' : tool.status === 'FAILED' ? '실패' : '취소'}
                               </span>
-                              {hasDetails && (
-                                <Icon
-                                  name={runOpen ? 'chevron-down' : 'chevron-right'}
-                                  size={11}
-                                  color="var(--color-placeholder)"
-                                />
-                              )}
+                              {hasPreview && <Icon name={runOpen ? 'chevron-down' : 'chevron-right'} size={11} />}
                             </button>
-                            {runOpen && hasDetails && (
-                              <div className={styles.reasoningDetails}>
-                                {formattedArguments && (
-                                  <div>
-                                    <span className={styles.reasoningDetailLabel}>입력</span>
-                                    <pre className={styles.reasoningOutput}>{formattedArguments}</pre>
-                                  </div>
-                                )}
-                                {tool.output && (
-                                  <div>
-                                    <span className={styles.reasoningDetailLabel}>결과</span>
-                                    <pre className={styles.reasoningOutput}>{tool.output}</pre>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                            {runOpen && preview && <SearchRunDetails preview={preview} />}
                           </li>
                         );
                       })}
@@ -505,19 +537,16 @@ export function ReasoningTrace({
               );
             }
             if (entry.kind === 'tool') {
-              const isExpanded = expandedOutputs.has(index);
-              const formattedArguments = formatToolArguments(entry.arguments);
-              const hasDetails = Boolean(formattedArguments || entry.output);
+              const preview = isWebSearchTool(entry) ? searchPreview(entry) : null;
+              const hasPreview = Boolean(preview && (preview.queries.length > 0 || preview.results.length > 0));
+              const runOpen = expandedSearchRuns.has(index);
               return (
                 <li key={index} className={styles.reasoningToolGroup}>
-                  {/* 도구가 실제로 뭘 반환했는지는 눌러야만 펼쳐진다(2026-08-18) —
-                      로그 한 줄 한 줄이 다 자동으로 늘어지면 정작 보고 싶은 흐름이
-                      아래로 밀린다. 반환값이 없으면(아직 RUNNING) 누를 게 없다. */}
                   <button
                     type="button"
                     className={styles.reasoningTool}
-                    onClick={() => toggleOutput(index)}
-                    disabled={!hasDetails}
+                    disabled={!hasPreview}
+                    onClick={() => hasPreview && toggleSearchRun(index)}
                   >
                     {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
                     {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
@@ -529,30 +558,9 @@ export function ReasoningTrace({
                       {entry.status === 'FAILED' && ' 실패'}
                       {entry.status === 'REJECTED' && ' 취소'}
                     </span>
-                    {hasDetails && (
-                      <Icon
-                        name={isExpanded ? 'chevron-down' : 'chevron-right'}
-                        size={12}
-                        color="var(--color-placeholder)"
-                      />
-                    )}
+                    {hasPreview && <Icon name={runOpen ? 'chevron-down' : 'chevron-right'} size={12} />}
                   </button>
-                  {isExpanded && hasDetails && (
-                    <div className={styles.reasoningDetails}>
-                      {formattedArguments && (
-                        <div>
-                          <span className={styles.reasoningDetailLabel}>입력</span>
-                          <pre className={styles.reasoningOutput}>{formattedArguments}</pre>
-                        </div>
-                      )}
-                      {entry.output && (
-                        <div>
-                          <span className={styles.reasoningDetailLabel}>결과</span>
-                          <pre className={styles.reasoningOutput}>{entry.output}</pre>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {runOpen && preview && <SearchRunDetails preview={preview} />}
                 </li>
               );
             }
@@ -584,7 +592,7 @@ export function ReasoningTrace({
                 size={13}
                 color="var(--color-primary)"
               />
-              검색 결과 {webSources.length > 0 ? `${webSources.length}개` : ''}
+              참고한 출처 {webSources.length > 0 ? `${webSources.length}개` : ''}
             </button>
 
             {searchDetailsOpen && (
@@ -604,7 +612,7 @@ export function ReasoningTrace({
                 )}
                 {webSources.length > 0 && (
                   <div>
-                    <span className={styles.reasoningDetailLabel}>검색 결과</span>
+                    <span className={styles.reasoningDetailLabel}>웹 출처</span>
                     <ul className={styles.queries}>
                       {webSources.map((source) => (
                         <li key={source.url ?? source.id} className={styles.query}>

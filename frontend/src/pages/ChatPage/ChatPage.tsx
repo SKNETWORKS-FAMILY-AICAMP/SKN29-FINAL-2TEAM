@@ -1331,7 +1331,7 @@ export default function ChatPage() {
                                 bare
                                 steps={live.steps}
                                 queries={live.queries}
-                                sources={live.sources}
+                                sources={[]}
                                 subagents={live.subagents}
                                 evidenceCount={live.evidenceCount}
                                 running={live.running}
@@ -1382,10 +1382,11 @@ export default function ChatPage() {
                                     ? `${live.durationMs != null ? `${(live.durationMs / 1000).toFixed(1)}초 동안 작업` : '작업 완료'}${toolCount > 0 ? ` · 도구 ${toolCount}회` : ''}`
                                     : undefined
                                 }
-                                // 실행 중에는 진행 카드의 `검색 결과` 한 곳에만
-                                // 보여 주고, 완료 뒤에는 작업 과정 상세로 옮긴다.
-                                queries={live.running ? [] : live.queries}
-                                sources={live.running ? [] : live.sources}
+                                // 출처는 최종 답변 아래 한 곳에서만 제공한다.
+                                // 작업 과정은 판단·도구 상태에 집중해 같은 URL을
+                                // 진행 패널과 답변에 중복 노출하지 않는다.
+                                queries={[]}
+                                sources={[]}
                               />
                             )}
                           </section>
@@ -1489,7 +1490,7 @@ export default function ChatPage() {
 
                       {live.answer && (
                         <div className={styles.agentMessage}>
-                          <AnswerText text={live.answer} />
+                          <AnswerText text={live.answer} sources={live.sources} />
                         </div>
                       )}
 
@@ -1693,6 +1694,7 @@ export default function ChatPage() {
               <Button
                 className={styles.composerAction}
                 aria-label="보내기"
+                title="보내기"
                 onClick={send}
                 disabled={!utterance.trim()}
               >

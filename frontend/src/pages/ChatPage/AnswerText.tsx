@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentPropsWithoutRef } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import remarkCjkFriendlyGfmStrikethrough from 'remark-cjk-friendly-gfm-strikethrough';
 import remarkGfm from 'remark-gfm';
+import type { SourceRef } from '../../api/chat';
 import { Icon } from '../../components/Icon/Icon';
 import { Modal } from '../../components/Modal/Modal';
 import styles from './AnswerText.module.css';
@@ -41,21 +42,63 @@ function ExternalLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'
 
 function MarkdownTable({ children, ...props }: ComponentPropsWithoutRef<'table'>) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+
+  const checkOverflow = useCallback(() => {
+    const element = scrollRef.current;
+    setOverflowing(Boolean(element && element.scrollWidth > element.clientWidth + 1));
+  }, []);
+
+  useLayoutEffect(() => {
+    checkOverflow();
+    const element = scrollRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(element);
+    if (tableRef.current) observer.observe(tableRef.current);
+    return () => observer.disconnect();
+  }, [checkOverflow, children]);
+
+  async function copyTable() {
+    const rows = Array.from(tableRef.current?.rows ?? []);
+    const tsv = rows
+      .map((row) => Array.from(row.cells).map((cell) => cell.innerText.replace(/\s+/g, ' ').trim()).join('\t'))
+      .join('\n');
+    if (!tsv) return;
+    await navigator.clipboard.writeText(tsv);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
 
   return (
     <div className={styles.tableBlock}>
-      <button
-        type="button"
-        className={styles.tableExpand}
-        onClick={() => setExpanded(true)}
-        aria-label="표 펼치기"
-        title="표 펼치기"
-      >
-        <Icon name="expand" size={15} />
-        <span>표 펼치기</span>
-      </button>
-      <div className={styles.tableScroll} role="region" aria-label="답변 표, 가로로 스크롤 가능" tabIndex={0}>
-        <table {...props} className={styles.table}>{children}</table>
+      <div className={styles.tableActions}>
+        <button
+          type="button"
+          className={styles.tableAction}
+          onClick={copyTable}
+          aria-label={copied ? '표 복사 완료' : '표 복사'}
+          title={copied ? '복사했습니다' : '표 복사'}
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={15} />
+        </button>
+        {overflowing && (
+          <button
+            type="button"
+            className={`${styles.tableAction} ${styles.tableExpand}`}
+            onClick={() => setExpanded(true)}
+            aria-label="표 펼치기"
+            title="표 펼치기"
+          >
+            <Icon name="expand" size={15} />
+          </button>
+        )}
+      </div>
+      <div ref={scrollRef} className={styles.tableScroll} role="region" aria-label={overflowing ? '답변 표, 가로로 스크롤 가능' : '답변 표'} tabIndex={overflowing ? 0 : undefined}>
+        <table ref={tableRef} {...props} className={styles.table}>{children}</table>
       </div>
       <Modal open={expanded} onClose={() => setExpanded(false)} title="표 전체 보기" width={1200}>
         <div className={`${styles.tableScroll} ${styles.tableExpanded}`} role="region" aria-label="확장된 답변 표" tabIndex={0}>
@@ -84,7 +127,18 @@ const components: Components = {
   ),
 };
 
-export function AnswerText({ text }: { text: string }) {
+export function AnswerText({ text, sources = [] }: { text: string; sources?: SourceRef[] }) {
+  const [copied, setCopied] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
+
+  async function copyAnswer() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
   return (
     <div className={styles.answer}>
       <Markdown
@@ -95,6 +149,48 @@ export function AnswerText({ text }: { text: string }) {
       >
         {text}
       </Markdown>
+      <div className={styles.answerActions}>
+        <button
+          type="button"
+          className={styles.answerCopy}
+          onClick={copyAnswer}
+          aria-label={copied ? '답변 복사 완료' : '답변 복사'}
+          title={copied ? '복사했습니다' : '답변 복사'}
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={15} />
+        </button>
+        {sources.length > 0 && (
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            onClick={() => setSourcesOpen((open) => !open)}
+            aria-expanded={sourcesOpen}
+            aria-label={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
+            title={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
+          >
+            <Icon name="link" size={16} />
+          </button>
+        )}
+      </div>
+      {sourcesOpen && (
+        <div className={styles.sources}>
+          <strong className={styles.sourcesTitle}>참고한 출처 {sources.length}개</strong>
+          {webSources.length > 0 && (
+            <ul>
+              {webSources.map((source) => (
+                <li key={source.url ?? source.id}>
+                  <a href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {documentSources.length > 0 && (
+            <ul>
+              {documentSources.map((source) => <li key={source.id}>{source.label}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
