@@ -5,6 +5,8 @@ from django.test import SimpleTestCase
 from apps.accounts.tokens import issue_token
 from backend.db.errors import PermissionDenied, ReferenceNotFound
 
+from .test_accounts import leader_profile, member_profile
+
 
 def auth_header(account_id="UA001"):
     return {"authorization": f"Bearer {issue_token(account_id)}"}
@@ -567,14 +569,32 @@ class ProjectStatusApiTests(SimpleTestCase):
 
 
 class ProjectDeleteApiTests(SimpleTestCase):
-    """삭제는 되돌릴 수 없다. 무엇을 지우고 무엇을 남기는지 고정한다."""
+    """삭제는 되돌릴 수 없다. 무엇을 지우고 무엇을 남기는지 고정한다.
+
+    팀장만 지울 수 있다. 화면이 버튼을 흐리게 하는 것은 문지기가 아니라서
+    엔드포인트로 잰다 — 프로필을 목으로 두어 개발 DB 의 역할에 기대지 않는다.
+    """
 
     def test_requires_login(self):
         response = self.client.delete("/api/projects/PJ001/")
         self.assertEqual(response.status_code, 401)
 
+    @patch("apps.accounts.permissions.AccountRepository.get_profile", return_value=member_profile())
     @patch("apps.projects.api_views.ProjectRepository.delete")
-    def test_reports_what_was_removed(self, delete):
+    def test_member_cannot_delete(self, delete, _get_profile):
+        """팀원은 프로젝트를 만들 수 없었는데 지울 수는 있었다."""
+
+        response = self.client.delete("/api/projects/PJ007/", headers=auth_header("UA002"))
+
+        self.assertEqual(response.status_code, 403)
+        # 왜 막혔는지 화면이 그대로 보여줄 수 있어야 한다.
+        self.assertEqual(response.json()["detail"], "팀장만 프로젝트를 삭제할 수 있습니다.")
+        # 문지기는 저장소에 닿기 전에 선다.
+        delete.assert_not_called()
+
+    @patch("apps.accounts.permissions.AccountRepository.get_profile", return_value=leader_profile())
+    @patch("apps.projects.api_views.ProjectRepository.delete")
+    def test_reports_what_was_removed(self, delete, _get_profile):
         delete.return_value = {"tasks": 12, "sources": 1, "documents_released": 1}
 
         # 다른 화면들이 쓰는 PJ001 을 피한다. 같은 id 면 "경로의 것을 지웠는가"를
@@ -587,11 +607,12 @@ class ProjectDeleteApiTests(SimpleTestCase):
         self.assertEqual(response.json()["documents_released"], 1)
         self.assertEqual(delete.call_args.kwargs["proj_id"], "PJ007")
 
+    @patch("apps.accounts.permissions.AccountRepository.get_profile", return_value=leader_profile())
     @patch(
         "apps.projects.api_views.ProjectRepository.delete",
         side_effect=PermissionDenied("이 프로젝트에 접근할 수 없습니다."),
     )
-    def test_other_team_project_is_forbidden(self, _delete):
+    def test_other_team_project_is_forbidden(self, _delete, _get_profile):
         response = self.client.delete("/api/projects/PJ999/", headers=auth_header())
         self.assertEqual(response.status_code, 403)
 

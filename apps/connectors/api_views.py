@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import psycopg
 from django.conf import settings
@@ -14,6 +15,7 @@ from backend.db import (
     AccountRepository,
     ConnectorRepository,
     ProjectSourceRepository,
+    TeamRepository,
     log_audit,
 )
 from backend.db.errors import (
@@ -135,10 +137,27 @@ class AuthenticatedAPIView(APIView):
 
 
 class ConnectorListAPIView(AuthenticatedAPIView):
+    """지금 무엇이 연결돼 있는가. **팀의 상태이지 내 상태가 아니다.**
+
+    `connector_conn` 은 연결한 계정에만 행이 생기고 연결은 팀장만 할 수 있어서,
+    누른 사람의 `account_id` 로 그대로 읽으면 **팀원에게는 늘 빈 목록**이 온다 —
+    설정 > 커넥터가 세 자리를 전부 「미연결」로 그렸다. 팀장이 연결한 데이터를
+    그대로 쓰는 팀원이 정작 그것이 붙어 있는지 볼 수 없었다.
+
+    자격증명을 쓰는 쪽은 이미 같은 고침이 있다(`apps/projects/api_views.py` 의
+    `_jira_credential_account_id`, `services/harness/registry.py` 의 같은 이름
+    함수 — 2026-08-19). **읽기만 하는 이 조회에 그 처리가 빠져 있었다.**
+
+    팀장 자신은 `leader_account_id` 가 곧 자기 계정이라 전과 같다. 팀이 없으면
+    (가입 직후 등) 원래대로 자기 계정을 읽는다.
+    """
+
     def get(self, request):
         try:
-            rows = ConnectorRepository.list_for_account(request.user.account_id)
-        except psycopg.Error as exc:
+            team_id = AccountRepository.team_id(request.user.account_id)
+            owner = (TeamRepository.leader_account_id(team_id) if team_id else None) or request.user.account_id
+            rows = ConnectorRepository.list_for_account(owner)
+        except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         return Response([connector_response(row) for row in rows])
 
@@ -346,6 +365,86 @@ class JiraCallbackAPIView(APIView):
         _collect_jira_projects_safely(account_id)
 
         return _jira_callback_redirect("ok")
+
+
+class DriveChangeNotificationAPIView(APIView):
+    """Google 이 「뭔가 바뀌었다」고 두드리는 자리.
+
+    **인증이 없다.** Google 이 부르므로 세션도 토큰도 없다. 대신 채널을 열 때
+    실어 보낸 비밀값이 `X-Goog-Channel-Token` 으로 되돌아오고, **그것이 유일한
+    신원 증명이다.** 이 검사가 없으면 누구나 POST 해서 우리 워커를 돌릴 수 있다.
+    `RunPodDocumentDownloadAPIView` 가 서명으로 같은 일을 하는 것과 같은 꼴이다.
+
+    **알림에는 무엇이 바뀌었는지가 없다.** 본문이 빈 POST 이고 헤더에 채널
+    id·토큰·자원 상태만 온다. 그래서 여기가 하는 일은 「누구의 채널인가」를
+    확인하고 **평소의 증분 동기화를 그 자리에서 돌리는 것**뿐이다.
+
+    **언제나 200 을 준다.** Google 은 실패를 재시도하는데, 우리 사정(모르는
+    채널·동기화 실패)으로 재시도를 부르면 같은 알림이 반복해서 온다. 우리가
+    처리할 수 없는 알림은 **받았다고 답하고 버리는 것**이 맞다. 토큰이 틀린
+    것만 403 이다 — 그건 우리 사정이 아니라 남의 요청이다.
+
+    응답을 붙잡지 않는다. 바뀐 문서가 있으면 내려받아 다시 색인하는데 그게
+    문서당 몇 분이라, Google 의 타임아웃 안에 끝날 일이 아니다.
+    """
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def post(self, request):
+        expected = settings.GOOGLE_DRIVE_WEBHOOK_TOKEN
+        if not expected:
+            # 웹훅을 안 쓰기로 한 배포다. 열려 있을 이유가 없다.
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        if request.headers.get("X-Goog-Channel-Token") != expected:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        channel_id = request.headers.get("X-Goog-Channel-ID", "")
+        state = request.headers.get("X-Goog-Resource-State", "")
+
+        # 채널을 열면 곧바로 한 번 오는 인사다. 바뀐 것이 없으므로 아무것도 안 한다.
+        if state == "sync":
+            return Response(status=status.HTTP_200_OK)
+
+        try:
+            connection = ConnectorRepository.find_by_channel(channel_id) if channel_id else None
+        except (RepositoryError, psycopg.Error):
+            logger.exception("Drive 알림 처리 실패: channel=%s", channel_id)
+            return Response(status=status.HTTP_200_OK)
+
+        # 모르는 채널은 정상적으로 생긴다 — 멈추지 못한 옛 채널이 만료 전까지
+        # 마저 보낸다. 조용히 버린다.
+        if connection is None:
+            return Response(status=status.HTTP_200_OK)
+
+        _start_drive_sync(connection["account_id"])
+        return Response(status=status.HTTP_200_OK)
+
+
+def _start_drive_sync(account_id: str) -> None:
+    """알림을 받아 증분 동기화를 돌린다. `apps/chat` 의 같은 방식이다.
+
+    ⚠ **작업 큐가 아니다.** 프로세스가 죽으면 그 회차는 사라진다. 잃는 것은
+    시간뿐이고, 다음 알림이나 대화 시작이 이어받는다.
+    """
+
+    def run() -> None:
+        try:
+            from services.document_intake import sync_drive_changes
+
+            result = sync_drive_changes(account_id=account_id)
+            if result.refreshed or result.removed or result.failed:
+                logger.info(
+                    "Drive 알림 반영: account=%s 갱신=%d 내림=%d 실패=%d",
+                    account_id,
+                    len(result.refreshed),
+                    len(result.removed),
+                    len(result.failed),
+                )
+        except Exception:  # noqa: BLE001 — 뒷작업이다. 알림 응답은 이미 나갔다.
+            logger.exception("Drive 알림 동기화 실패: account=%s", account_id)
+
+    threading.Thread(target=run, daemon=True, name=f"drive-notify-{account_id}").start()
 
 
 class GoogleDriveFolderListAPIView(AuthenticatedAPIView):

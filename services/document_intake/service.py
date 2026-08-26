@@ -116,7 +116,11 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
                 # 끊으면 뒤쪽 폴더의 수정 시각을 못 보고, 첫 폴더가 매번 한도를
                 # 채우면 그 뒤 폴더의 변경은 영영 감지되지 않는다(2026-08-24).
                 if len(candidates) < limit:
-                    candidates.append(item)
+                    # **어느 폴더를 훑던 중인지는 여기서만 안다**(2026-08-25).
+                    # `list_drive_files` 는 뿌리 안에서의 상대 경로만 붙여 주고
+                    # 그 뿌리가 어느 `team_folder` 인지는 이 반복문이 들고 있다.
+                    # 「문서」 화면의 폴더 트리가 이 둘로 그려진다.
+                    candidates.append({**item, "team_folder_id": folder["team_folder_id"]})
     except Exception as exc:  # noqa: BLE001 — 저장소 사정이 이 함수를 죽이지 않는다
         logger.exception("연결된 저장소 목록을 읽지 못했다")
         result.storage_error = exc.__class__.__name__
@@ -135,6 +139,11 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
                         # `doc_role` 은 기준 문서로 뽑힐 때 채워진다.
                         "doc_role": None,
                         "src_modified_at": item["modified_at"],
+                        # 뿌리 폴더와 그 안에서의 상대 경로. `folder_path` 는
+                        # 뿌리 바로 아래면 빈 문자열이라 **NULL 과 뜻이 다르다** —
+                        # NULL 은 이 칸이 생기기 전에 등록된 문서다.
+                        "team_folder_id": item["team_folder_id"],
+                        "src_folder_path": item["folder_path"],
                     }
                     for item in candidates
                 ],

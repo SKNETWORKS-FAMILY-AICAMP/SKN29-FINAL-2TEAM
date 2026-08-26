@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 from .connection import database_connection
 from .errors import PermissionDenied, RecordNotFound
 from .codes import next_short_code
-from .repositories import _require_team, _require_team_project
+from .repositories import _require_team, _require_team_project, _team_of
 
 
 #: 현재 revision 의 원문이 Block·Chunk·Vector 까지 적재됐는가. 세 단계 중 하나라도
@@ -309,6 +309,107 @@ class PipelineDocumentRepository:
                     FROM doc d
                     WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
                     ORDER BY d.doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def indexing_progress(account_id: str) -> dict[str, dict[str, int]]:
+        """지금 몇 개까지 읽었는가. **팀 문서와 내 파일을 나눠서 센다.**
+
+        `list_team_library` 와 나눠 둔 이유는 **부르는 빈도**다. 이쪽은 화면
+        어디에 있든 도는 전역 진행 표시가 쓰므로, 문서 목록을 통째로 실어
+        보내면 폴링마다 팀 문서 전부가 오간다. 집계 한 번으로 끝낸다.
+
+        **둘을 나누는 이유는 쓰는 자리가 다르기 때문이다.** 전역 카드는 「내
+        문서가 읽히는 중인가」를 묻고 둘을 합쳐 보지만, 설정 > 커넥터의 배지는
+        **그 커넥터가 가져온 문서**를 말하므로 내가 올린 파일이 섞이면 안 된다.
+        한 숫자로 주면 그 자리에서 뺄 방법이 없다.
+
+        올린 파일도 같은 길을 간다 — `apps/personal_files` 의 `_start_processing`
+        이 커넥터 수집과 똑같이 뒷작업으로 `promote_to_searchable` 을 돌린다.
+        기다리는 성격이 같으니 표시에서 빠질 이유가 없다.
+
+        `running` 은 따로 센다 — `total - ready - failed` 로 계산하면 「아직
+        시작 안 한 것」과 「지금 워커에서 도는 것」이 한 숫자에 뭉친다. 그 둘은
+        사람이 기다리는 성격이 다르다(하나는 곧, 하나는 순서를 기다린다).
+
+        **실패는 남은 것에서 뺀다.** 실패한 문서는 스스로 끝나지 않으므로
+        진행률의 분자에 넣어야 8/10 에서 영원히 멈춘 것처럼 보이지 않는다.
+
+        팀이 없어도 답한다(`_require_team` 이 아니라 `_team_of`). 팀 배정 전에도
+        내 파일은 올릴 수 있고, `team_id = NULL` 비교는 SQL 에서 아무 행도 안
+        맞으므로 팀 쪽이 자연히 0 이 된다.
+        """
+
+        empty = {"total": 0, "ready": 0, "failed": 0, "running": 0}
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT
+                        (d.team_id IS NOT NULL) AS is_team,
+                        count(*) AS total,
+                        count(*) FILTER (WHERE {_HAS_ACTIVE_CHUNKS}) AS ready,
+                        count(*) FILTER (WHERE d.index_status = 'FAILED') AS failed,
+                        count(*) FILTER (WHERE d.index_status = 'RUNNING') AS running
+                    FROM doc AS d
+                    WHERE d.deleted = false
+                      AND (d.team_id = %s OR d.owner_account_id = %s)
+                    GROUP BY 1
+                    """,
+                    (team_id, account_id),
+                )
+                rows = cursor.fetchall()
+
+        result = {"team": dict(empty), "personal": dict(empty)}
+        for row in rows:
+            bucket = "team" if row["is_team"] else "personal"
+            result[bucket] = {
+                "total": row["total"],
+                "ready": row["ready"],
+                "failed": row["failed"],
+                "running": row["running"],
+            }
+        return result
+
+    @staticmethod
+    def list_team_library(account_id: str) -> list[dict[str, Any]]:
+        """「문서」 화면이 그리는 팀 문서 전부 — **폴더와 색인 상태까지.**
+
+        `list_ready_for_analysis` 와 무엇이 다른가: 저쪽은 **검색이 볼 범위**라
+        색인된 것만 쓸모가 있고, 여기는 **사람이 볼 목록**이라 안 된 것이 오히려
+        중요하다. 그래서 `search_ready = false` 도, `index_status = 'FAILED'` 도
+        빼지 않는다 — 실패한 문서를 숨기면 폴더를 저장해 놓고 왜 검색이 안 되는지
+        알 방법이 없다(2026-08-25 에 그것 때문에 로그를 뒤졌다).
+
+        **`deleted` 만 뺀다.** `access_revoked` 는 남긴다 — 권한이 끊긴 것도
+        「우리 폴더에 있던 문서」이고, 그 사실을 화면이 말해 줘야 사람이 Drive
+        쪽을 고칠 수 있다.
+
+        폴더는 `team_folder` 에서 이름을 끌어온다. 문서에 `team_folder_id` 가
+        NULL 이면(이 칸이 생기기 전에 등록된 문서) 조인이 비고, 화면은 그것을
+        「미분류」로 묶는다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           d.src_modified_at, d.storage_key, d.deleted, d.access_revoked,
+                           d.index_status, d.index_detail,
+                           d.team_folder_id, d.src_folder_path,
+                           tf.display_name AS folder_name, tf.conn_id,
+                           {_SEARCH_READY}
+                    FROM doc AS d
+                    LEFT JOIN team_folder AS tf ON tf.team_folder_id = d.team_folder_id
+                    WHERE d.team_id = %s AND d.deleted = false
+                    ORDER BY d.team_folder_id NULLS LAST, d.src_folder_path NULLS FIRST,
+                             d.file_name, d.doc_id
                     """,
                     (team_id,),
                 )

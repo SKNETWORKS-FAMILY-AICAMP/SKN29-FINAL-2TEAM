@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -7,42 +6,18 @@ import {
   AvatarPicker,
   PasswordChangeCard,
   SkillList,
-  ToggleSwitch,
   useToast,
 } from '../../components';
 import { fetchCurrentAccount } from '../../api/auth';
 import type { Account } from '../../api/auth';
-import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import styles from './TeamMemberSettingsPage.module.css';
 
-interface NotificationSetting {
-  id: string;
-  label: string;
-  desc: string;
-}
-
-const NOTIFICATION_SETTINGS: NotificationSetting[] = [
-  { id: 'task-assignment', label: '업무 배정 알림', desc: '새로운 태스크나 프로젝트 마일스톤에 담당자로 추가될 때 알림을 보냅니다.' },
-  { id: 'schedule-change', label: '일정 변경 알림', desc: '배정된 업무의 시작일, 종료일 또는 요구 공수가 업데이트될 경우 알림을 전송합니다.' },
-  { id: 'invite', label: '초대 알림', desc: '새로운 워크스페이스나 채널 워크스페이스에 초대를 수신할 때 메일과 인앱으로 알립니다.' },
-  { id: 'system-notice', label: '시스템 공지 알림', desc: '서비스 점검 예정 안내 및 중대한 보안기능 업데이트 공지사항을 수신합니다.' },
-];
-
-const DEFAULT_NOTIFICATION_STATE: Record<string, boolean> = {
-  'task-assignment': true,
-  'schedule-change': true,
-  invite: true,
-  'system-notice': false,
-};
-
 export default function TeamMemberSettingsPage() {
-  const navigate = useNavigate();
   const { showToast } = useToast();
 
   const [token] = useState(loadSessionToken);
   const [account, setAccount] = useState<Account | null>(null);
-  const [notifications, setNotifications] = useState<Record<string, boolean>>(DEFAULT_NOTIFICATION_STATE);
 
   // 이름·부서·직책과 기술 스택은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
   const reloadAccount = useCallback(async () => {
@@ -57,10 +32,6 @@ export default function TeamMemberSettingsPage() {
   useEffect(() => {
     void reloadAccount();
   }, [reloadAccount]);
-
-  function handleToggleNotification(id: string, checked: boolean) {
-    setNotifications((prev) => ({ ...prev, [id]: checked }));
-  }
 
   return (
     <>
@@ -126,28 +97,11 @@ export default function TeamMemberSettingsPage() {
           연결한 데이터를 그대로 사용합니다"라고 안내한다 — 팀원이 개인
           계정을 따로 연동할 이유가 없어 되살리지 않고 지운다. */}
 
-      <section id="notifications" className={styles.sectionBlock}>
-        <Card padding="lg">
-          <div className={styles.sectionHeading}>
-            <h2>알림 설정</h2>
-          </div>
+      {/* "알림 설정" 섹션도 같은 이유로 걷어냈다(2026-08-25) — 토글 넷이
+          `useState` 뿐이라 탭을 나갔다 오면 항상 기본값으로 돌아갔다. 알림
+          기능 자체를 만들지 않기로 해서(PM), 저장할 곳이 생길 일도 없다.
+          켜지지 않는 스위치는 없느니만 못하다. */}
 
-          <div className={styles.notificationList}>
-            {NOTIFICATION_SETTINGS.map((setting) => (
-              <div key={setting.id} className={styles.notificationRow}>
-                <div className={styles.notificationInfo}>
-                  <p className={styles.notificationLabel}>{setting.label}</p>
-                  <p className={styles.notificationDesc}>{setting.desc}</p>
-                </div>
-                <ToggleSwitch
-                  checked={notifications[setting.id]}
-                  onChange={(checked) => handleToggleNotification(setting.id, checked)}
-                />
-              </div>
-            ))}
-          </div>
-        </Card>
-      </section>
     </>
   );
 }

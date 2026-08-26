@@ -646,6 +646,39 @@ class TeamFolderRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def list_with_connector(account_id: str) -> list[dict[str, Any]]:
+        """폴더마다 **어느 저장소 연결에서 오는지**를 붙여 준다(2026-08-25).
+
+        「문서」 화면의 좌측은 저장소로 먼저 묶고 그 아래에 폴더를 늘어놓는다.
+        저장소가 지금은 Drive 하나뿐이지만 `team_folder.conn_id` 는 처음부터
+        연결을 가리키고 있었다 — **접고 있던 것은 화면이다.** 그래서 여기서는
+        연결별로 나올 수 있는 모양 그대로 준다.
+
+        연결이 사라진 폴더도 뺀 채로 두지 않는다(LEFT JOIN). 커넥터를 강제
+        해제하면(`auth_status='REVOKED'`) 행은 남고 자격증명만 지우는데, 그때
+        폴더가 목록에서 조용히 사라지면 「내가 고른 폴더가 어디 갔나」가 된다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT tf.team_folder_id, tf.conn_id, tf.external_folder_id,
+                           tf.display_name, tf.max_depth,
+                           cc.connector_type, cc.auth_status
+                    FROM team_folder AS tf
+                    LEFT JOIN connector_conn AS cc ON cc.conn_id = tf.conn_id
+                    WHERE tf.team_id = %s
+                    ORDER BY cc.connector_type NULLS LAST, tf.team_folder_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def replace(
         *,
         account_id: str,
@@ -1066,6 +1099,15 @@ class DocumentRepository:
 
         이미 있는 `src_file_id`는 건너뛴다(스캔과 등록 사이에 누가 먼저 넣었을
         수 있다). 새로 만든 행만 돌려준다.
+
+        **어느 폴더에서 왔는지 함께 남긴다**(2026-08-25). 스캔이 이미 알고 있는
+        값인데 여기서 버리고 있었다 — `clients.list_drive_files` 가 항목마다
+        `folder_path` 를 붙여 주고, 어느 뿌리 폴더를 훑던 중인지는 부르는 쪽이
+        안다. 「문서」 화면의 폴더 트리가 이 두 값에서 나온다.
+
+        옛 호출자를 위해 둘 다 없어도 된다 — 그때는 NULL 이 들어가고, 화면은
+        그것을 「미분류」로 묶는다. 빈 문자열('')은 **뿌리 바로 아래**라는 뜻이라
+        NULL 과 구별해야 한다.
         """
 
         if not documents:
@@ -1089,10 +1131,12 @@ class DocumentRepository:
                         """
                         INSERT INTO doc
                             (doc_id, team_id, src_file_id, source_type, file_name,
-                             mime_type, doc_role, src_modified_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                             mime_type, doc_role, src_modified_at,
+                             team_folder_id, src_folder_path)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING doc_id, team_id, proj_id, src_file_id, source_type, file_name,
-                                  mime_type, doc_role, src_modified_at, storage_key
+                                  mime_type, doc_role, src_modified_at, storage_key,
+                                  team_folder_id, src_folder_path
                         """,
                         (
                             doc_id,
@@ -1103,6 +1147,8 @@ class DocumentRepository:
                             document["mime_type"],
                             document["doc_role"],
                             document["src_modified_at"],
+                            document.get("team_folder_id"),
+                            document.get("src_folder_path"),
                         ),
                     )
                     created.append(cursor.fetchone())
@@ -2733,6 +2779,87 @@ class ConnectorRepository:
                     (team_id, ConnectorRepository.GOOGLE_DRIVE),
                 )
                 return cursor.fetchone()
+
+    @staticmethod
+    def find_by_channel(channel_id: str) -> dict[str, Any] | None:
+        """알림이 들고 온 채널 id 로 연결을 되찾는다. 모르는 채널이면 `None`.
+
+        **알림에는 이것 하나뿐이다.** 본문은 비어 있고 헤더에 채널 id·토큰만
+        온다. 그래서 채널을 열 때 id 를 우리가 만들어 저장해 두는 것이다.
+
+        모르는 채널이 정상적으로 생긴다 — 채널을 멈추지 못한 채 연결을 끊었거나,
+        갈아탄 옛 채널이 만료 전까지 알림을 마저 보낸다. 부르는 쪽은 `None` 을
+        오류가 아니라 **버릴 알림**으로 다룬다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT conn_id, account_id, connector_type, auth_status,
+                           sync_cursor, channel_id, channel_resource_id, channel_expires_at
+                    FROM connector_conn
+                    WHERE channel_id = %s
+                    """,
+                    (channel_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_watch_channel(
+        *,
+        conn_id: str,
+        channel_id: str | None,
+        resource_id: str | None,
+        expires_at: Any | None,
+    ) -> None:
+        """열어 둔 채널을 기억한다. 셋 다 `None` 이면 「채널 없음」으로 지운다.
+
+        지우는 쪽도 같은 함수로 하는 이유 — 채널을 멈추는 것과 기록을 지우는
+        것이 **항상 짝**이어야 한다. 따로 두면 멈춘 채널이 DB 에 남아 갱신
+        작업이 그것을 살아 있는 것으로 착각한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as connection_cursor:
+                connection_cursor.execute(
+                    """
+                    UPDATE connector_conn
+                    SET channel_id = %s, channel_resource_id = %s, channel_expires_at = %s
+                    WHERE conn_id = %s
+                    """,
+                    (channel_id, resource_id, expires_at, conn_id),
+                )
+
+    @staticmethod
+    def channels_needing_renewal(before) -> list[dict[str, Any]]:
+        """`before` 이전에 만료되는(또는 아직 안 연) Drive 연결.
+
+        갱신 작업이 이것만 보고 돈다. **아직 채널이 없는 연결도 함께 준다** —
+        웹훅을 켜기 전에 연결해 둔 팀과, 채널 열기가 한 번 실패한 팀이 여기
+        걸려야 다음 회차에 따라붙는다.
+
+        **읽을 폴더가 있는 연결만 본다.** 폴더를 안 고른 팀은 변경을 따라가도
+        받아들일 문서가 없다 — `drive_sync_target` 이 폴더를 거쳐 가는 것과
+        같은 판단이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT DISTINCT cc.conn_id, cc.account_id, cc.sync_cursor,
+                           cc.channel_id, cc.channel_resource_id, cc.channel_expires_at
+                    FROM connector_conn AS cc
+                    JOIN team_folder AS tf ON tf.conn_id = cc.conn_id
+                    WHERE cc.connector_type = %s
+                      AND cc.auth_status = 'CONNECTED'
+                      AND (cc.channel_expires_at IS NULL OR cc.channel_expires_at < %s)
+                    ORDER BY cc.conn_id
+                    """,
+                    (ConnectorRepository.GOOGLE_DRIVE, before),
+                )
+                return list(cursor.fetchall())
 
     @staticmethod
     def set_sync_cursor(*, conn_id: str, cursor_value: str) -> None:
