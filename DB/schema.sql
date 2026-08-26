@@ -1276,3 +1276,25 @@ CREATE TABLE eval_case_result (
 
 CREATE INDEX ix_eval_case_result_case
     ON eval_case_result (case_id, status, finished_at DESC);
+
+-- LLM Judge 판정(2026-08-26 추가). 같은 case에 Judge 모델·프롬프트 버전이
+-- 여러 개 쌓일 수 있어 셋을 함께 기본키로 쓴다. human_verdict/comparison은
+-- calibration(사람 판정과 비교) 표본일 때만 채운다.
+CREATE TABLE eval_judge_result (
+    eval_run_id      VARCHAR(64)  NOT NULL,  -- eval_case_result.eval_run_id(FK 없음)
+    case_index       INT          NOT NULL CHECK (case_index >= 1),
+    judge_model      VARCHAR(100) NOT NULL,
+    prompt_version   VARCHAR(100) NOT NULL,
+    mode             VARCHAR(20)  NOT NULL DEFAULT 'REPORT_ONLY'
+                     CHECK (mode = 'REPORT_ONLY'),
+    latency_ms       NUMERIC,
+    usage            JSONB,
+    verdict          JSONB        NOT NULL,
+    human_verdict    JSONB,
+    comparison       JSONB,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (eval_run_id, case_index, judge_model, prompt_version)
+);
+
+CREATE INDEX ix_eval_judge_result_case
+    ON eval_judge_result (case_index, created_at DESC);

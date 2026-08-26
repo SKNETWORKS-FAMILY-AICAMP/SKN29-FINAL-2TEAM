@@ -6,6 +6,11 @@ LLM Judge의 점수를 곧바로 정답으로 사용하지 않는다. AgentRewar
 방식을 참고해 동일한 Agent 실행 궤적을 사람과 Judge가 독립 판정하고 일치율과
 오류 유형을 확인한 뒤 사용 범위를 결정한다.
 
+이 문서는 사람 판정과 Judge 판정을 정식으로 비교(calibration)할 때의 계약이다.
+평가 화면에서 사람이 Judge의 판정·근거를 직접 보고 판단하는 용도로만 쓸 때는
+사람 판정 파일이 필요 없다 — `scripts/eval_judge.py`의 `--human-verdict`는 그 때만
+생략 가능한 선택 인자다(자세한 사용법은 `README.md` 참고).
+
 ## 판정 단위
 
 하나의 `agent_run_id`와 연결된 최종 답변, 도구 호출 요약, assertion 결과,

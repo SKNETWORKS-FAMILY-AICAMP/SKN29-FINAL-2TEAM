@@ -402,6 +402,7 @@ def evaluate_events(
     )
     return {
         "case_id": case["id"],
+        "input": case["input"],
         "agent_id": case["agent_id"],
         "agent_version_id": case["agent_version_id"],
         "model": model,

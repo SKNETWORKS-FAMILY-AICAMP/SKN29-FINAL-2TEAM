@@ -158,6 +158,7 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(result["judge"]["status"], "UNCERTAIN")
         self.assertEqual(result["judge"]["unavailable_documents"], ["DC001", "DC002"])
         self.assertEqual(result["langfuse_trace_id"], "TRACE001")
+        self.assertEqual(result["input"], "현황을 알려줘")
 
     def test_forbidden_tool_and_missing_required_evidence_fail(self):
         events = _events()

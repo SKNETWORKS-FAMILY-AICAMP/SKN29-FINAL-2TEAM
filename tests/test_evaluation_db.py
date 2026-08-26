@@ -141,5 +141,107 @@ class EvaluationResultRepositoryTests(unittest.TestCase):
                 )
 
 
+class EvaluationJudgeResultRepositoryTests(unittest.TestCase):
+    def setUp(self):
+        self.record = {
+            "schema_version": 1,
+            "calibration_id": "cal-1",
+            "eval_run_id": "20260826T000000Z-12345678",
+            "case_id": "WF-TEST-001",
+            "agent_run_id": "agent-run-uuid-1",
+            "mode": "REPORT_ONLY",
+            "human_verdict": {"overall_verdict": "FAIL", "dimensions": {}},
+            "judge": {
+                "model": "gpt-5.6-luna",
+                "prompt_version": "judge-calibration-v0",
+                "latency_ms": 123.456,
+                "usage": {"total_tokens": 50},
+                "verdict": {"overall_verdict": "FAIL", "dimensions": {}},
+            },
+            "comparison": {"overall_agreement": True},
+        }
+
+    def test_new_judge_result_is_synced(self):
+        cursor = _Cursor([{"case_index": 1}, {"case_index": 1}])
+
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            result = EvaluationResultRepository.sync_judge_result(self.record)
+
+        self.assertEqual(result["sync_status"], "SYNCED")
+        self.assertEqual(result["case_index"], 1)
+        self.assertEqual(len(cursor.executed), 2)
+        self.assertIn("INSERT INTO eval_judge_result", cursor.executed[1][0])
+
+    def test_missing_case_index_raises(self):
+        cursor = _Cursor([None])
+
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            with self.assertRaisesRegex(ValueError, "case_index를 찾지 못"):
+                EvaluationResultRepository.sync_judge_result(self.record)
+
+    def test_identical_judge_result_can_be_synced_again(self):
+        cursor = _Cursor(
+            [
+                {"case_index": 1},
+                None,
+                {"verdict": self.record["judge"]["verdict"]},
+            ]
+        )
+
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            result = EvaluationResultRepository.sync_judge_result(self.record)
+
+        self.assertEqual(result["sync_status"], "SYNCED")
+        self.assertEqual(len(cursor.executed), 3)
+
+    def test_conflicting_judge_result_is_rejected(self):
+        cursor = _Cursor(
+            [
+                {"case_index": 1},
+                None,
+                {"verdict": {"overall_verdict": "PASS", "dimensions": {}}},
+            ]
+        )
+
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            with self.assertRaisesRegex(ValueError, "다른 결과가 이미"):
+                EvaluationResultRepository.sync_judge_result(self.record)
+
+
+class FetchAgentExecutionSummaryTests(unittest.TestCase):
+    def test_recovers_final_answer_and_tool_call_ids(self):
+        cursor = _Cursor([{"session_id": "session-1"}])
+        cursor.fetchall_results = iter(
+            [
+                [
+                    {"content": {"type": "text", "text": "첫 번째 안내"}},
+                    {"content": {"type": "text", "text": "최종 답변"}},
+                ],
+                [{"tool_call_id": "tc-1"}, {"tool_call_id": "tc-2"}],
+            ]
+        )
+        cursor.fetchall = lambda: next(cursor.fetchall_results)
+
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            result = evaluation.EvaluationResultRepository.fetch_agent_execution_summary(
+                "agent-run-1"
+            )
+
+        self.assertEqual(result["final_answer"], "최종 답변")
+        self.assertEqual(result["tool_call_ids"], ["tc-1", "tc-2"])
+
+    def test_missing_session_returns_empty_answer(self):
+        cursor = _Cursor([None])
+        cursor.fetchall = lambda: []
+
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            result = evaluation.EvaluationResultRepository.fetch_agent_execution_summary(
+                "agent-run-missing"
+            )
+
+        self.assertIsNone(result["final_answer"])
+        self.assertEqual(result["tool_call_ids"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

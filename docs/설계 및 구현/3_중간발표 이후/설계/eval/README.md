@@ -98,10 +98,16 @@ v0는 `execution_mode=read_only`만 허용한다. Judge 연결부도 존재하�
 bundle이 없으면 자동으로 `UNCERTAIN`이며 호출하지 않는다. 호출하더라도
 `REPORT_ONLY`라서 실패한 코드 assertion을 성공으로 바꿀 수 없다.
 
-완료된 실행의 사람 판정과 독립 Judge 판정은 `scripts/eval_judge.py`로 비교한다.
-사람 판정 파일은 모델 입력에 포함되지 않으며, 모델에는 최종 답변·결정적 assertion과
-범위가 제한된 마스킹 근거만 전달한다. 결과는 기존 case 결과를 수정하지 않고 같은
-실행 폴더의 `judge_calibration.jsonl`에 append-only로 기록한다.
+완료된 실행에 독립 Judge 판정을 붙이는 데는 `scripts/eval_judge.py`를 쓴다.
+모델에는 최종 답변·결정적 assertion과 범위가 제한된 마스킹 근거만 전달한다. 결과는
+기존 case 결과를 수정하지 않고 같은 실행 폴더의 `judge_calibration.jsonl`에
+append-only로 기록한다.
+
+`--human-verdict`는 선택 인자다. 화면(`eval_report_viewer.py`)에서 사람이 Judge의
+판정과 근거를 직접 보고 판단하는 용도라면 생략해도 되며, 이 경우 Judge 단독 판정만
+기록되고 `human_verdict`·`comparison`은 `null`로 남는다(화면에도 표시하지 않는다).
+사람 판정과의 일치율까지 정식으로 비교(calibration)하려는 경우에만
+`--human-verdict`를 넘긴다 — 사람 판정 파일은 모델 입력에 포함되지 않는다.
 
 정식 사람 판정 파일은 `evaluator=human`, `review_status=APPROVED`, `reviewed_by`,
 `reviewed_at`을 모두 가져야 한다. Codex가 준비했지만 사람이 검수하지 않은
@@ -134,6 +140,14 @@ Langfuse trace `5fc296fcbcfe6d671f47cc4abf368d4d`에 observation 60개/root 1개
 결정론적 실패 score로 보존했다.
 
 ```powershell
+# 화면 표시용 Judge 단독 판정(사람 판정 없음)
+docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_judge.py `
+  --run-dir outputs/eval-results/20260826T050101Z-ee604a4c `
+  --case-id WF-PROJECT-STATUS-001 `
+  --evidence "docs/설계 및 구현/3_중간발표 이후/설계/eval/fixtures/WF-PROJECT-STATUS-001_judge_evidence_v0.json" `
+  --account-id UA002
+
+# 정식 calibration(사람 판정과 일치율 비교)이 필요할 때만 추가
 docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_judge.py `
   --run-dir outputs/eval-results/20260826T050101Z-ee604a4c `
   --case-id WF-PROJECT-STATUS-001 `
