@@ -40,6 +40,62 @@ Prompt Injection은 로컬 3회 실행과 격리 문서 cleanup까지 완료했�
 `eval_run`·`eval_case_result`에 멱등 동기화한다. 파일이 원본이고 DB는 조회·집계
 사본이다. 스키마와 사용법은 `result_contract_v0.md`를 따른다.
 
+조회 전용 workflow의 최소 자동 실행기는 `scripts/eval_run.py`다. 데이터셋의
+`allowed_tools`를 실행 시점의 도구 목록으로 고정하고, 필수·금지 도구, 전체·도구별
+호출 상한, 필수 문서 ID, 도구 완료 상태, 승인 event와 최종 응답을 결정론적으로
+검사한다. 실행마다 임시 채팅 세션을 만들고 종료 후 체크포인트와 함께 삭제하므로
+기존 대화 상태를 재사용하지 않는다. `agent_run`과 평가 산출물은 증거로 유지한다.
+
+도구 실패의 제품 런타임 복구 정책은 `tool_failure_recovery_v0.md`에서 관리한다.
+runner의 재시도 사후 계측에 더해, 2026-08-26부터 제품 런타임
+(`services/agent_runtime/factory.py`)도 일시적인 조회 도구 오류(timeout·429·5xx)에
+한해 최초 호출 포함 최대 3회 자동 재시도한다. 쓰기 도구는 분류와 무관하게 항상
+1회만 실행한다. 재시도가 같은 tool_handler 호출 안에서 일어나므로 별도
+tool_started/tool_completed 쌍을 만들지 않고, 따라서 runner의 `tool_reliability`
+집계(모델이 같은 도구를 다시 부르는 재호출 기준)에는 이 내부 재시도가 잡히지
+않는다 — 안정성 확인은 당분간 구조화 로그로 한다. 쓰기 실패 사용자 결정 카드는
+재진입 안전성과 멱등성 저장이 필요하므로 별도 설계 승인 전까지 후속 단계로
+남긴다.
+
+데이터셋 v10부터 조회 중심 사례는 `tool_retry_policy`를 가진다. runner는
+`tool_call_id`로 시작·완료를 연결하고, 동일 `tool_ref`와 정규화된 인자 조합이 실패한
+뒤 다시 시작된 호출만 재시도로 센다. 병렬로 먼저 시작된 호출과 다른 인자의 후속
+호출은 재시도가 아니다. 인자 원문이나 해시는 결과에 저장하지 않으며, 실패·재시도·
+복구 횟수와 도구별 합계만 `metrics`와 `tool_reliability`에 기록한다. 현재 조회 사례의
+정책은 동일 입력 재시도 최대 1회, 연속 실패 최대 2회다. Jira HITL 사례는 거절과
+승인 결과를 일반 도구 실패와 구분해야 하므로 이 공통 정책에서 제외한다.
+
+```powershell
+docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_run.py `
+  --case-id WF-PROJECT-STATUS-001 `
+  --account-id UA002 `
+  --project-id PJ002 `
+  --environment local-docker
+```
+
+v0는 `execution_mode=read_only`만 허용한다. Judge 연결부도 존재하지만
+`required_evidence_documents + optional_evidence_documents` 전체의 마스킹된 evidence
+bundle이 없으면 자동으로 `UNCERTAIN`이며 호출하지 않는다. 호출하더라도
+`REPORT_ONLY`라서 실패한 코드 assertion을 성공으로 바꿀 수 없다.
+
+완료된 실행의 사람 판정과 독립 Judge 판정은 `scripts/eval_judge.py`로 비교한다.
+사람 판정 파일은 모델 입력에 포함되지 않으며, 모델에는 최종 답변·결정적 assertion과
+범위가 제한된 마스킹 근거만 전달한다. 결과는 기존 case 결과를 수정하지 않고 같은
+실행 폴더의 `judge_calibration.jsonl`에 append-only로 기록한다.
+
+```powershell
+docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_judge.py `
+  --run-dir outputs/eval-results/20260826T050101Z-ee604a4c `
+  --case-id WF-PROJECT-STATUS-001 `
+  --evidence "docs/설계 및 구현/3_중간발표 이후/설계/eval/fixtures/WF-PROJECT-STATUS-001_judge_evidence_v0.json" `
+  --human-verdict "docs/설계 및 구현/3_중간발표 이후/설계/eval/fixtures/WF-PROJECT-STATUS-001_human_verdict_20260826T050101Z.json" `
+  --account-id UA002
+```
+
+Judge 실행은 마스킹했더라도 내부 근거와 Agent 답변을 설정된 모델 엔드포인트로
+전송한다. 실제 실행 전 해당 엔드포인트의 운영 주체와 데이터 외부 전송 허용 여부를
+확인한다. 같은 실행·Judge 모델·프롬프트 버전의 결과는 중복 기록하지 않는다.
+
 제한된 일정 안에서 실제로 완료할 필수 범위와 순서는
 `../../작업기록/Jihun_eval/2026-08-26_핵심평가_축소실행계획.md`를 따른다. 이 축소
 계획에도 최소 runner, Langfuse 결과 연결과 OpenTelemetry 주요 구간 계측은 필수로

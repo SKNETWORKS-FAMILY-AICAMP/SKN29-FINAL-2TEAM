@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import random
+import time
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import StructuredTool, ToolException
@@ -67,6 +69,93 @@ class DependencyGraphSource:
 # kwargs화하면서 `_run()`까지 살아남는다.
 _TOOL_CALL_ID_KWARG = "__langchain_tool_call_id__"
 _SKILL_REGISTER_REF = "skill_register"
+
+# 조회 도구 자동 재시도(`tool_failure_recovery_v0.md` §3.1). 최초 호출을 포함해
+# 최대 이 횟수만큼 실행하므로 자동 재시도는 `_MAX_TOOL_CALL_ATTEMPTS - 1`회다.
+_MAX_TOOL_CALL_ATTEMPTS = 3
+_RETRY_BACKOFF_BASE_SECONDS = 0.2
+_TRANSIENT_MCP_ERROR_CODES = frozenset({"timeout", "unreachable", "429"})
+_TRANSIENT_HTTP_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_MAX_TRANSIENT_FAILURE_CHAIN_DEPTH = 5
+
+
+def _is_transient_tool_failure(exc: BaseException | None, *, _depth: int = 0) -> bool:
+    """도구 실패가 자동 재시도 대상인 "일시적 기술 오류"인지 판단한다.
+
+    `exc` 자체뿐 아니라 `__cause__`/`__context__` 체인도 확인한다. Jira·Drive
+    커넥터(`apps/connectors/clients.py`)는 `raise OAuthError(...) from exc`처럼
+    원인 예외를 감싸 다시 던지므로, 겉보기 타입만으로는 timeout·429·5xx를 가려낼
+    수 없다.
+    """
+
+    if exc is None or _depth > _MAX_TRANSIENT_FAILURE_CHAIN_DEPTH:
+        return False
+
+    from services.mcp import McpError
+
+    if isinstance(exc, McpError):
+        if exc.code in _TRANSIENT_MCP_ERROR_CODES:
+            return True
+    else:
+        import requests
+
+        if isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
+            return True
+        if isinstance(exc, requests.exceptions.HTTPError):
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code in _TRANSIENT_HTTP_STATUS_CODES:
+                return True
+
+    next_exc = exc.__cause__ or exc.__context__
+    if next_exc is exc:
+        return False
+    return _is_transient_tool_failure(next_exc, _depth=_depth + 1)
+
+
+def _call_tool_handler(tool: Tool, resolved: dict[str, Any]) -> Any:
+    """`tool.handler(**resolved)`를 부른다.
+
+    읽기 전용 도구(`side_effect=False`)의 일시적 기술 오류만 최초 호출 포함
+    최대 `_MAX_TOOL_CALL_ATTEMPTS`회까지 자동 재시도한다. 쓰기 도구는 재시도하면
+    중복 생성·중복 변경이 생길 수 있어 절대 재시도하지 않는다
+    (`tool_failure_recovery_v0.md` §3.3). 인증·권한·입력 오류 같은 영구 오류와
+    검색 결과 부족도 대상이 아니다 — 다시 불러도 같은 결과이거나 애초에 기술
+    장애가 아니다.
+    """
+
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            result = tool.handler(**resolved)
+        except Exception as exc:  # noqa: BLE001 - 재시도 가능성만 판단하고 그대로 다시 던진다
+            can_retry = (
+                not tool.side_effect
+                and attempt < _MAX_TOOL_CALL_ATTEMPTS
+                and _is_transient_tool_failure(exc)
+            )
+            if not can_retry:
+                raise
+            backoff = _RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+            backoff += random.uniform(0, backoff)
+            logger.warning(
+                "일시적 도구 실패로 재시도: %s (attempt=%d/%d, error=%s)",
+                tool.ref,
+                attempt,
+                _MAX_TOOL_CALL_ATTEMPTS,
+                exc.__class__.__name__,
+            )
+            time.sleep(backoff)
+            continue
+        else:
+            if attempt > 1:
+                logger.info(
+                    "재시도 후 복구: %s (attempt=%d/%d)",
+                    tool.ref,
+                    attempt,
+                    _MAX_TOOL_CALL_ATTEMPTS,
+                )
+            return result
 
 
 def _tool_description_for_context(tool: Tool, *, context: RuntimeContext) -> str:
@@ -188,7 +277,7 @@ def _to_langchain_tool(
 
         resolved = inject_runtime_context(tool, kwargs, context)
         try:
-            result = tool.handler(**resolved)
+            result = _call_tool_handler(tool, resolved)
         except Exception as exc:  # noqa: BLE001 - 도구 실패로 그래프 실행 전체를 끝내지 않는다
             # `ToolNode`의 기본 `handle_tool_errors`는 `ToolInvocationError`(인자
             # 스키마 검증 실패)만 잡고 나머지는 다시 raise한다. `create_agent()`가

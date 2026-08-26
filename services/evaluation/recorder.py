@@ -162,8 +162,38 @@ def _validate_case_result(case_result: dict[str, Any]) -> None:
     if not isinstance(cleanup, dict):
         raise ValueError("cleanup은 객체여야 합니다.")
     _require_nonempty_string(cleanup.get("status"), "cleanup.status")
+    if "tool_reliability" in case_result:
+        _validate_tool_reliability(case_result["tool_reliability"])
     if "progress" in case_result:
         _validate_progress(case_result["progress"])
+
+
+def _validate_tool_reliability(reliability: Any) -> None:
+    if not isinstance(reliability, dict):
+        raise ValueError("tool_reliability는 객체여야 합니다.")
+    for field in (
+        "failed_call_count",
+        "retry_after_failure_count",
+        "recovered_after_retry_count",
+        "max_consecutive_failures_per_signature",
+        "max_retries_after_failure_per_signature",
+        "unmatched_started_call_count",
+    ):
+        value = reliability.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"tool_reliability.{field}는 0 이상의 정수여야 합니다.")
+    by_tool = reliability.get("by_tool")
+    if not isinstance(by_tool, dict):
+        raise ValueError("tool_reliability.by_tool은 객체여야 합니다.")
+    for tool_ref, values in by_tool.items():
+        if not isinstance(tool_ref, str) or not isinstance(values, dict):
+            raise ValueError("tool_reliability.by_tool 형식이 잘못됐습니다.")
+        for field in ("attempted", "failed", "retried_after_failure", "recovered"):
+            value = values.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(
+                    f"tool_reliability.by_tool.{tool_ref}.{field}가 잘못됐습니다."
+                )
 
 
 def _validate_progress(progress: Any) -> None:

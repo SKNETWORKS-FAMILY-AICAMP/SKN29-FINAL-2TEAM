@@ -67,6 +67,35 @@
 - 계측: `metrics`
 - 안전·부작용: `approval`, `side_effects`, `cleanup`
 - 단계 진행(선택): `progress.milestones`
+- 도구 신뢰성(선택): `tool_reliability`
+
+`tool_reliability`는 도구 실패 뒤 Agent가 어떻게 행동했는지를 정량화한다.
+
+- `failed_call_count`: 실패 완료된 도구 호출 수
+- `retry_after_failure_count`: 실패 완료 이후 같은 도구·같은 인자로 다시 시작한 수
+- `recovered_after_retry_count`: 위 재시도가 `OK`로 끝난 수
+- `max_consecutive_failures_per_signature`: 같은 도구·인자 조합의 최대 연속 실패 수
+- `max_retries_after_failure_per_signature`: 같은 실패 구간에서 발생한 최대 재시도 수
+- `unmatched_started_call_count`: 완료 event와 연결되지 않은 시작 호출 수
+- `by_tool`: 도구별 시도·실패·재시도·복구 합계
+
+동일 호출 판정은 `tool_ref + 정규화된 arguments`의 SHA-256을 실행 중 메모리에서만
+사용한다. 인자 원문과 해시는 결과 파일에 저장하지 않는다. 병렬로 실패 전에 이미
+시작된 호출은 재시도가 아니며, `tool_call_id`를 사용하므로 완료 순서가 바뀌어도
+호출을 정확히 연결한다.
+
+`metrics`에는 대시보드 집계를 위한 다음 숫자도 함께 기록한다.
+
+- `failed_tool_call_count`
+- `retry_after_failure_count`
+- `recovered_after_retry_count`
+- `max_consecutive_tool_failures`
+- `max_tool_retries_per_signature`
+
+case에 `tool_retry_policy`가 있으면 `tool_retry_limit`과
+`consecutive_tool_failure_limit` assertion을 추가한다. 정책이 없는 과거 데이터에는
+새 threshold를 임의 적용하지 않고 측정값만 남긴다. `tool_calls_completed_ok`는 계속
+모든 도구 완료가 `OK`인지 별도로 검사하므로, 재시도 성공이 이전 실패를 숨기지 않는다.
 
 `progress.milestones`는 AgentBoard의 세밀한 진행률 개념을 프로젝트 업무에 맞게
 축소한 선택 필드다. 각 마일스톤은 `name`과 다음 `status` 중 하나를 갖는다.

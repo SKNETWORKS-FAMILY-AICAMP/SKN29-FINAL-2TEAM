@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "dataset_id": "agent-workflow-v1",
-  "dataset_version": 9,
+  "dataset_version": 10,
   "split": "development",
   "cases": [
     {
@@ -17,6 +17,10 @@
       "forbidden_tools": ["web_search", "skill_register", "task_register", "jira_create_issues"],
       "max_calls_per_tool": {"document_search": 3, "document_list": 1},
       "max_tool_calls": 4,
+      "tool_retry_policy": {
+        "max_retries_after_failure_per_signature": 1,
+        "max_consecutive_failures_per_signature": 2
+      },
       "required_evidence_documents": ["DC001", "DC007"],
       "optional_evidence_documents": ["DC002"],
       "required_facts": [
@@ -82,6 +86,10 @@
         "absence_list": 1
       },
       "max_tool_calls": 7,
+      "tool_retry_policy": {
+        "max_retries_after_failure_per_signature": 1,
+        "max_consecutive_failures_per_signature": 2
+      },
       "required_evidence_documents": ["DC001", "DC007"],
       "optional_evidence_documents": ["DC002"],
       "required_facts": [
@@ -153,6 +161,10 @@
       "forbidden_tools": ["skill_register", "task_register", "task_update", "jira_create_issues", "web_search"],
       "max_calls_per_tool": {"document_search": 2, "document_list": 1},
       "max_tool_calls": 3,
+      "tool_retry_policy": {
+        "max_retries_after_failure_per_signature": 1,
+        "max_consecutive_failures_per_signature": 2
+      },
       "required_evidence_documents": ["DC011"],
       "required_facts": [
         "설계 회의는 2026년 9월 21일 14:00~15:00 온라인으로 진행",
@@ -329,6 +341,10 @@
       "forbidden_tools": ["task_extraction", "task_register", "task_update", "jira_create_issues", "skill_register", "web_search", "document_sync"],
       "max_calls_per_tool": {"document_search": 2, "document_list": 1, "project_list": 1, "task_list": 1, "jira_get_issues": 1},
       "max_tool_calls": 6,
+      "tool_retry_policy": {
+        "max_retries_after_failure_per_signature": 1,
+        "max_consecutive_failures_per_signature": 2
+      },
       "required_evidence_documents": ["DC001"],
       "required_action_items": [
         {"title": "총무 키워드 목록 회신 독촉 및 회신", "owner": "한지민", "due": "09-12", "note_contains": ["김도윤", "총무팀장", "별도 요청 예정"]},

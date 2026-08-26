@@ -79,6 +79,14 @@ class EvaluationRecorderTests(unittest.TestCase):
 
             self.assertEqual(len(recorder.manifest["targets"]), 2)
 
+    def test_case_rejects_malformed_tool_reliability(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = self._start_recorder(Path(temp_dir))
+            with self.assertRaisesRegex(ValueError, "failed_call_count"):
+                recorder.append_case(
+                    self._case_result(tool_reliability={"failed_call_count": -1})
+                )
+
     def test_manifest_cannot_override_generated_run_identity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             recorder = EvaluationRecorder.start(

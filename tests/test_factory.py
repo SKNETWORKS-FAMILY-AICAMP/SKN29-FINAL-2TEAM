@@ -593,6 +593,154 @@ class ToolExecutionErrorHandlingTests(SimpleTestCase):
         )
 
 
+class ToolTransientFailureRetryTests(SimpleTestCase):
+    """2026-08-26 추가 — 조회 도구의 일시적 기술 오류(timeout·429·5xx)만 최초
+    호출 포함 최대 3회까지 자동 재시도하는지 확인한다
+    (`tool_failure_recovery_v0.md` §3.1, §6 1단계). `time.sleep`은 patch해서
+    backoff 때문에 테스트가 느려지지 않게 한다."""
+
+    def _read_tool(self, *, handler) -> Tool:
+        return Tool(
+            ref="document_search",
+            name="document_search",
+            description="",
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=handler,
+            side_effect=False,
+        )
+
+    def _write_tool_with(self, *, handler) -> Tool:
+        return Tool(
+            ref="task_register",
+            name="task_register",
+            description="",
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=handler,
+            side_effect=True,
+        )
+
+    def _invoke(self, tool: Tool):
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+        langchain_tool = _to_langchain_tool(tool, context=context, runtime_policy=RuntimeCapabilityPolicy())
+        return langchain_tool.invoke({})
+
+    def test_first_call_success_does_not_retry(self):
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            return "ok"
+
+        result = self._invoke(self._read_tool(handler=_handler))
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(len(calls), 1)
+
+    @patch(f"{FACTORY_MODULE}.time.sleep")
+    def test_read_tool_retries_after_mcp_timeout_then_succeeds(self, mock_sleep):
+        from services.mcp import McpError
+
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            if len(calls) < 2:
+                raise McpError("timeout", "MCP 서버가 시간 안에 응답하지 않았습니다.")
+            return "recovered"
+
+        result = self._invoke(self._read_tool(handler=_handler))
+
+        self.assertEqual(result, "recovered")
+        self.assertEqual(len(calls), 2)
+        mock_sleep.assert_called_once()
+
+    @patch(f"{FACTORY_MODULE}.time.sleep")
+    def test_read_tool_retries_after_http_429_then_succeeds(self, mock_sleep):
+        import requests
+
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            if len(calls) < 2:
+                response = SimpleNamespace(status_code=429)
+                raise requests.exceptions.HTTPError("요청 한도 초과", response=response)
+            return "recovered"
+
+        result = self._invoke(self._read_tool(handler=_handler))
+
+        self.assertEqual(result, "recovered")
+        self.assertEqual(len(calls), 2)
+
+    @patch(f"{FACTORY_MODULE}.time.sleep")
+    def test_read_tool_stops_after_three_attempts(self, mock_sleep):
+        from services.mcp import McpError
+
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            raise McpError("unreachable", "MCP 서버에 연결하지 못했습니다.")
+
+        self._invoke(self._read_tool(handler=_handler))
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch(f"{FACTORY_MODULE}.time.sleep")
+    def test_permanent_error_is_not_retried(self, mock_sleep):
+        from services.mcp import McpError
+
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            raise McpError("401", "MCP 서버 인증에 실패했습니다.")
+
+        self._invoke(self._read_tool(handler=_handler))
+
+        self.assertEqual(len(calls), 1)
+        mock_sleep.assert_not_called()
+
+    @patch(f"{FACTORY_MODULE}.time.sleep")
+    def test_write_tool_is_never_retried_even_on_transient_error(self, mock_sleep):
+        from services.mcp import McpError
+
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            raise McpError("timeout", "MCP 서버가 시간 안에 응답하지 않았습니다.")
+
+        self._invoke(self._write_tool_with(handler=_handler))
+
+        self.assertEqual(len(calls), 1)
+        mock_sleep.assert_not_called()
+
+    @patch(f"{FACTORY_MODULE}.time.sleep")
+    def test_oauth_error_wrapping_timeout_is_retried_via_cause_chain(self, mock_sleep):
+        """Jira/Drive 커넥터는 `raise OAuthError(...) from exc`로 원인을 감싼다
+        (`apps/connectors/clients.py`). 겉보기 타입이 `OAuthError`뿐이라도
+        `__cause__`의 `requests.Timeout`을 보고 재시도해야 한다."""
+        import requests
+
+        calls = []
+
+        def _handler(**kwargs):
+            calls.append(1)
+            if len(calls) < 2:
+                try:
+                    raise requests.exceptions.Timeout("Jira 응답 지연")
+                except requests.exceptions.Timeout as exc:
+                    raise RuntimeError("Jira 이슈를 가져오지 못했습니다.") from exc
+            return "recovered"
+
+        result = self._invoke(self._read_tool(handler=_handler))
+
+        self.assertEqual(result, "recovered")
+        self.assertEqual(len(calls), 2)
+
+
 class ToLangchainToolNameTests(SimpleTestCase):
     """`_to_langchain_tool()`이 LangChain 함수 이름으로 `tool.ref`를 쓰는지
     확인한다(2026-08-14 추가 — 실제 라이브 실행에서 발견한 버그의 회귀 테스트).

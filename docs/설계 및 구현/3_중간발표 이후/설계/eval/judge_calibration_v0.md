@@ -113,9 +113,40 @@ runner 구현 시 다음 순서를 따른다.
 - Judge는 실패한 안전 assertion을 성공으로 뒤집을 수 없음
 - Judge 모델이나 프롬프트가 바뀌면 새 calibration 버전으로 다시 비교
 
-## 저장 계획
+## 구현 상태와 저장
 
-정식 runner 전에는 내부 평가 결과 옆의 별도 `judge_calibration.jsonl`에 기록한다.
-runner 구현 시 평가 DB에 `agent_run_id`, evaluator 종류·버전, 차원별 verdict,
-사유를 저장하고 OpenTelemetry trace ID와 연결한다. 현재 기록기는 Judge를 호출하지
-않으며, 이 문서는 향후 구현 계약이다.
+2026-08-26 기준 다음 최소 구현이 추가됐다.
+
+- `services/evaluation/calibration.py`: evidence 합집합 검증, Judge 요청 생성, JSON
+  응답 검증, 사람·Judge 일치율과 false-pass/false-fail 계산, append-only 저장
+- `services/evaluation/judge.py`: runner와 calibration이 함께 사용하는 단일 요청 구조,
+  5차원 응답 스키마와 검증 규칙
+- `scripts/eval_judge.py`: 완료된 실행 한 건에 대한 독립 Judge 호출
+- `tests/test_evaluation_calibration.py`: 근거 누락 차단, 사람 판정 비노출,
+  safety false-pass 계산과 중복 기록 차단 검증
+- `fixtures/WF-PROJECT-STATUS-001_judge_evidence_v0.json`: 세 문서의 제한된 근거 표본
+- `fixtures/WF-PROJECT-STATUS-001_human_verdict_20260826T050101Z.json`: Judge 실행 전에
+  확정한 독립 사람 판정
+
+결과는 내부 평가 실행 옆의 `judge_calibration.jsonl`에 기록한다. 원래
+`case_results.jsonl`은 수정하지 않는다. 동일 `agent_run_id`, Judge 모델과 prompt
+version 조합은 중복 기록을 거부한다.
+
+Judge 입력에는 사람 판정을 포함하지 않는다. 다음 항목만 전달한다.
+
+- 사례의 기대 결과·필수 사실·한정 조건·금지 주장
+- 최종 답변과 결정적 assertion
+- 도구 호출·완료 상태를 제한된 필드로 만든 tool trace
+- required·optional 합집합의 마스킹된 근거와 식별자
+
+Judge 모델, 프롬프트 버전, 실행 시각, latency와 `usage_metadata` token, 차원별
+판정, 사람 판정과의 비교 결과를 함께 저장한다. 평가 DB의 Judge 전용 저장과
+OpenTelemetry trace ID 연결은 후속 단계다.
+
+내부 문서 근거와 Agent 답변을 모델 엔드포인트로 보내므로, 실제 Judge 호출 전에
+엔드포인트 운영 주체와 데이터 전송 허용 여부를 확인한다. 허용이 확인되지 않으면
+코드·고정 표본·사람 판정까지만 보존하고 외부 호출은 실행하지 않는다.
+
+모델 호출 실패는 종료 코드 `2`, JSON 파싱 또는 5차원 응답 검증 실패는 종료 코드
+`3`으로 끝낸다. 실패 응답 원문이나 endpoint 세부정보는 콘솔에 출력하지 않고, 파싱에
+성공한 결과만 append-only 파일에 기록한다.
