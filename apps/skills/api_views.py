@@ -29,13 +29,16 @@ from services.agent_runtime.skills.service import (
     SkillPermissionDenied,
     create_personal_skill,
     create_team_skill,
-    delete_personal_skill,
+    delete_personal_skill_and_shared_copy,
     delete_team_skill,
     get_personal_skill,
     get_team_skill,
+    import_team_skill,
     list_personal_skills,
     list_team_skills,
-    update_personal_skill,
+    share_personal_skill,
+    stop_sharing_personal_skill,
+    update_personal_skill_and_shared_copy,
     update_team_skill,
 )
 
@@ -109,16 +112,15 @@ def _team_context(request) -> tuple[str, str] | Response:
 class MySkillListCreateAPIView(AuthenticatedAPIView):
     def get(self, request):
         skills = list_personal_skills(request.user.account_id)
-        return Response([skill_response(row) for row in skills])
+        return Response([skill_response(row, account_id=request.user.account_id) for row in skills])
 
     def post(self, request):
-        # 만들 때만 team_id가 필요하다 — 같은 이름의 팀 스킬이 있으면 만들어도
-        # 에이전트에게 안 보이는 상태가 되므로(`create_personal_skill` 참고)
-        # 여기서 막는다. 조회·수정·삭제는 이름이 안 바뀌니 필요 없다.
+        # 현재 팀 소속을 확인한다. 팀 카탈로그와 개인 스킬은 독립되어 같은
+        # 이름도 허용하지만, 팀에 속하지 않은 계정의 설정 변경은 막는다.
         context = _team_context(request)
         if isinstance(context, Response):
             return context
-        team_id, _role = context
+        team_id, role = context
 
         data = request.data
         try:
@@ -131,7 +133,10 @@ class MySkillListCreateAPIView(AuthenticatedAPIView):
             )
         except SkillError as exc:
             return _skill_error_response(exc)
-        return Response(skill_response(row), status=status.HTTP_201_CREATED)
+        return Response(
+            skill_response(row, account_id=request.user.account_id),
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class MySkillDetailAPIView(AuthenticatedAPIView):
@@ -140,25 +145,70 @@ class MySkillDetailAPIView(AuthenticatedAPIView):
             row = get_personal_skill(request.user.account_id, name)
         except SkillError as exc:
             return _skill_error_response(exc)
-        return Response(skill_response(row))
+        return Response(skill_response(row, account_id=request.user.account_id))
 
     def patch(self, request, name):
+        context = _team_context(request)
+        if isinstance(context, Response):
+            return context
+        team_id, _role = context
         data = request.data
         try:
-            row = update_personal_skill(
+            row = update_personal_skill_and_shared_copy(
                 request.user.account_id,
-                name,
+                team_id=team_id,
+                name=name,
                 description=(str(data["description"]).strip() if "description" in data else None),
                 body=(data["body"] if "body" in data else None),
                 enabled=(bool(data["enabled"]) if "enabled" in data else None),
             )
         except SkillError as exc:
             return _skill_error_response(exc)
-        return Response(skill_response(row))
+        return Response(skill_response(row, account_id=request.user.account_id))
 
     def delete(self, request, name):
+        context = _team_context(request)
+        if isinstance(context, Response):
+            return context
+        team_id, _role = context
         try:
-            delete_personal_skill(request.user.account_id, name)
+            delete_personal_skill_and_shared_copy(
+                request.user.account_id, team_id=team_id, name=name
+            )
+        except SkillError as exc:
+            return _skill_error_response(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MySkillShareAPIView(AuthenticatedAPIView):
+    """개인 스킬 한 건을 현재 팀에 공유하거나 공유를 중지한다."""
+
+    def post(self, request, name):
+        context = _team_context(request)
+        if isinstance(context, Response):
+            return context
+        team_id, role = context
+        try:
+            row = share_personal_skill(
+                request.user.account_id, team_id=team_id, name=name
+            )
+        except SkillError as exc:
+            return _skill_error_response(exc)
+        row["can_delete"] = role == "leader"
+        return Response(
+            skill_response(row, account_id=request.user.account_id),
+            status=status.HTTP_201_CREATED,
+        )
+
+    def delete(self, request, name):
+        context = _team_context(request)
+        if isinstance(context, Response):
+            return context
+        team_id, _role = context
+        try:
+            stop_sharing_personal_skill(
+                request.user.account_id, team_id=team_id, name=name
+            )
         except SkillError as exc:
             return _skill_error_response(exc)
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -169,9 +219,19 @@ class TeamSkillListCreateAPIView(AuthenticatedAPIView):
         context = _team_context(request)
         if isinstance(context, Response):
             return context
-        team_id, _role = context
+        team_id, role = context
         skills = list_team_skills(team_id)
-        return Response([skill_response(row) for row in skills])
+        imported_names = {
+            row.get("imported_from_skill_name")
+            for row in list_personal_skills(request.user.account_id)
+            if row.get("imported_from_team_id") == team_id
+        }
+        for row in skills:
+            row["imported_by_me"] = row["name"] in imported_names
+            row["can_delete"] = role == "leader"
+        return Response(
+            [skill_response(row, account_id=request.user.account_id) for row in skills]
+        )
 
     def post(self, request):
         context = _team_context(request)
@@ -189,7 +249,30 @@ class TeamSkillListCreateAPIView(AuthenticatedAPIView):
             )
         except SkillError as exc:
             return _skill_error_response(exc)
-        return Response(skill_response(row), status=status.HTTP_201_CREATED)
+        row["can_delete"] = True
+        return Response(skill_response(row, account_id=request.user.account_id), status=status.HTTP_201_CREATED)
+
+
+class TeamSkillImportAPIView(AuthenticatedAPIView):
+    """팀 공유 카탈로그의 스킬을 현재 사용자의 독립 개인 사본으로 가져온다."""
+
+    def post(self, request, name):
+        context = _team_context(request)
+        if isinstance(context, Response):
+            return context
+        team_id, _role = context
+        try:
+            row = import_team_skill(
+                request.user.account_id,
+                team_id=team_id,
+                name=name,
+            )
+        except SkillError as exc:
+            return _skill_error_response(exc)
+        return Response(
+            skill_response(row, account_id=request.user.account_id),
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class TeamSkillDetailAPIView(AuthenticatedAPIView):
@@ -197,12 +280,13 @@ class TeamSkillDetailAPIView(AuthenticatedAPIView):
         context = _team_context(request)
         if isinstance(context, Response):
             return context
-        team_id, _role = context
+        team_id, role = context
         try:
             row = get_team_skill(team_id, name)
         except SkillError as exc:
             return _skill_error_response(exc)
-        return Response(skill_response(row))
+        row["can_delete"] = role == "leader"
+        return Response(skill_response(row, account_id=request.user.account_id))
 
     def patch(self, request, name):
         context = _team_context(request)
@@ -221,7 +305,8 @@ class TeamSkillDetailAPIView(AuthenticatedAPIView):
             )
         except SkillError as exc:
             return _skill_error_response(exc)
-        return Response(skill_response(row))
+        row["can_delete"] = True
+        return Response(skill_response(row, account_id=request.user.account_id))
 
     def delete(self, request, name):
         context = _team_context(request)

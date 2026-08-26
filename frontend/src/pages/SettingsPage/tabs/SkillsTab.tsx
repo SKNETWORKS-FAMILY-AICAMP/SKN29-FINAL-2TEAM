@@ -5,15 +5,16 @@ import { listAgentVersions } from '../../../api/agentVersions';
 import {
   ApiError,
   createMySkill,
-  createTeamSkill,
   deleteMySkill,
   deleteTeamSkill,
   getMySkill,
   getTeamSkill,
+  importTeamSkill,
   listMySkills,
   listTeamSkills,
+  shareMySkill,
+  stopSharingMySkill,
   updateMySkill,
-  updateTeamSkill,
 } from '../../../api/skills';
 import type { Skill } from '../../../api/skills';
 import {
@@ -25,7 +26,7 @@ import {
 } from '../../../api/chat';
 import type { ChatEvent } from '../../../api/chat';
 import { ASK_FOLLOWUP_TOOL_NAME } from '../../ChatPage/liveChat';
-import { loadSessionToken, useSession } from '../../../utils/session';
+import { loadSessionToken } from '../../../utils/session';
 import { josa } from '../../../utils/josa';
 import styles from './tabs.module.css';
 
@@ -45,9 +46,13 @@ import styles from './tabs.module.css';
  *
  * 안쪽 탭으로 나눈다(「문서」 화면 `MyFilesPanel.tsx`의 내 파일/공유 받은 파일과
  * 같은 자리 — 2026-08-25 에 설정에서 그쪽으로 옮겨 갔다).
- * **개인 스킬은 나만 쓴다.** 팀 스킬은 **조회는 팀원 전체가, 만들고 고치고
- * 지우는 것은 팀장만** 할 수 있다 — 서버가 최종 판단하고, 여기서는 버튼을
- * 미리 숨겨 헛클릭을 줄인다.
+ *
+ * **개인 스킬만 에이전트가 사용한다.** 팀 스킬은 팀원이 공유한 카탈로그이며,
+ * 다른 팀원이 가져오면 독립 개인 사본이 된다. 원 공유자의 사용 중지·공유
+ * 중지와 팀장의 카탈로그 삭제는 이미 가져간 사본에 영향을 주지 않는다.
+ *
+ * 카탈로그를 만들고 고치고 지우는 것은 팀장만 할 수 있다(`_require_leader`) —
+ * 서버가 최종 판단하고, 여기서는 버튼을 미리 숨겨 헛클릭을 줄인다.
  *
  * ## 만드는 두 가지 방법
  *
@@ -74,19 +79,6 @@ import styles from './tabs.module.css';
  * 저장 경로 자체가 이름으로 정해져서다(`api/skills.ts` 참고). 수정 화면에서는
  * 이름 칸을 잠근다 — 바꿀 수 있는 것처럼 보여 주고 서버가 조용히 무시하면
  * 더 나쁘다.
- *
- * ## 개인 스킬과 팀 스킬 이름이 같으면 (2026-08-22)
- *
- * `deepagents`의 `SkillsMiddleware`를 직접 읽어 확인했다
- * (`deepagents/middleware/skills.py` `before_agent()`) — 이름이 같으면
- * **나중 소스가 완전히 덮어쓴다.** `(팀)`/`(개인)` 같은 구분 표시는 없다.
- * 소스 순서(`skill_sources()`)가 팀을 나중에 두므로 **팀 스킬이 개인 스킬을
- * 가리고, 가려진 개인 스킬은 그 세션 동안 에이전트에게 아예 안 보인다** —
- * 오류도 안 뜬다. 새로 만들 때 같은 이름이 다른 범위에 이미 있으면 서버가
- * 막아 주지만(팀 스킬이 있는 상태에서 같은 이름의 개인 스킬을 만들려는
- * 경우), 반대 순서(개인 스킬이 있는데 다른 팀원이 나중에 같은 이름의 팀
- * 스킬을 만드는 경우)는 서버가 미리 알 방법이 없다 — 그래서 목록에 겹치는
- * 이름을 배지로 표시해 둔다(아래 `collidingNames`).
  *
  * ## 업로드 용량 (2026-08-22)
  *
@@ -235,12 +227,17 @@ function formatKB(bytes: number): string {
 export function SkillsTab() {
   const { showToast } = useToast();
   const token = loadSessionToken();
-  const isLeader = useSession()?.account.role === 'leader';
 
   const [scope, setScope] = useState<Scope>('personal');
   const [personalSkills, setPersonalSkills] = useState<Skill[]>([]);
   const [teamSkills, setTeamSkills] = useState<Skill[]>([]);
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<
+    Record<Scope, { activeOnly: boolean; sharedOnly: boolean; importedOnly: boolean }>
+  >({
+    personal: { activeOnly: false, sharedOnly: false, importedOnly: false },
+    team: { activeOnly: false, sharedOnly: false, importedOnly: false },
+  });
   const [error, setError] = useState<string | null>(null);
   /** 한 번이라도 목록을 받아 봤는가. **빈 목록과 못 받은 것을 가른다.** */
   const [loaded, setLoaded] = useState(false);
@@ -249,6 +246,9 @@ export function SkillsTab() {
   const [busy, setBusy] = useState(false);
   /** 상태 변경 중인 행만 잠근다. 개인·팀에서 id가 같을 수 있어 범위도 포함한다. */
   const [togglingSkillKey, setTogglingSkillKey] = useState<string | null>(null);
+  const [sharingSkillKey, setSharingSkillKey] = useState<string | null>(null);
+  const [importingSkillKey, setImportingSkillKey] = useState<string | null>(null);
+  const [viewingSkill, setViewingSkill] = useState<Skill | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -301,6 +301,18 @@ export function SkillsTab() {
       });
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '불러오지 못했습니다.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openTeamSkill(skill: Skill) {
+    if (!token) return;
+    setBusy(true);
+    try {
+      setViewingSkill(await getTeamSkill(token, skill.skill_id));
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '스킬 내용을 불러오지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -369,13 +381,11 @@ export function SkillsTab() {
     try {
       if (editing.skill) {
         const patch = { description: editing.description.trim(), body: editing.body };
-        if (editing.scope === 'personal') await updateMySkill(token, editing.skill.skill_id, patch);
-        else await updateTeamSkill(token, editing.skill.skill_id, patch);
+        await updateMySkill(token, editing.skill.skill_id, patch);
         showToast('스킬을 수정했습니다.', 'success');
       } else {
         const input = { name: editing.name.trim(), description: editing.description.trim(), body: editing.body };
-        if (editing.scope === 'personal') await createMySkill(token, input);
-        else await createTeamSkill(token, input);
+        await createMySkill(token, input);
         showToast('스킬을 만들었습니다.', 'success');
       }
       setEditing(null);
@@ -641,12 +651,8 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     const next = !skill.enabled;
     setTogglingSkillKey(toggleKey);
     try {
-      const updated =
-        toggleScope === 'personal'
-          ? await updateMySkill(token, skill.skill_id, { enabled: next })
-          : await updateTeamSkill(token, skill.skill_id, { enabled: next });
-      const setRows = toggleScope === 'personal' ? setPersonalSkills : setTeamSkills;
-      setRows((prev) => prev.map((item) => (item.skill_id === updated.skill_id ? updated : item)));
+      const updated = await updateMySkill(token, skill.skill_id, { enabled: next });
+      setPersonalSkills((prev) => prev.map((item) => (item.skill_id === updated.skill_id ? updated : item)));
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '상태를 바꾸지 못했습니다.', 'error');
     } finally {
@@ -662,11 +668,25 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
       if (removeScope === 'personal') {
         await deleteMySkill(token, skill.skill_id);
         setPersonalSkills((prev) => prev.filter((item) => item.skill_id !== skill.skill_id));
+        setTeamSkills((prev) =>
+          prev
+            .filter((item) => !(item.shared_by_me && item.name === skill.name))
+            .map((item) =>
+              skill.imported_from_team && item.name === skill.name
+                ? { ...item, imported_by_me: false }
+                : item,
+            ),
+        );
       } else {
         await deleteTeamSkill(token, skill.skill_id);
         setTeamSkills((prev) => prev.filter((item) => item.skill_id !== skill.skill_id));
       }
-      showToast('스킬을 삭제했습니다.', 'success');
+      showToast(
+        removeScope === 'personal'
+          ? '내 스킬을 삭제했습니다.'
+          : '팀 공유 목록에서 삭제했습니다. 이미 가져간 개인 사본은 유지됩니다.',
+        'success',
+      );
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '삭제하지 못했습니다.', 'error');
     } finally {
@@ -674,34 +694,68 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     }
   }
 
+  async function setShared(skill: Skill, shared: boolean) {
+    if (!token || sharingSkillKey === skill.skill_id) return;
+    setSharingSkillKey(skill.skill_id);
+    try {
+      if (shared) {
+        const teamSkill = await shareMySkill(token, skill.skill_id);
+        setTeamSkills((prev) => [...prev, teamSkill].sort((a, b) => a.name.localeCompare(b.name)));
+        showToast('팀에 스킬을 공유했습니다.', 'success');
+      } else {
+        await stopSharingMySkill(token, skill.skill_id);
+        setTeamSkills((prev) => prev.filter((item) => !(item.shared_by_me && item.name === skill.name)));
+        showToast('팀 공유를 중지했습니다. 내 스킬은 그대로 남아 있습니다.', 'success');
+      }
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '공유 상태를 바꾸지 못했습니다.', 'error');
+    } finally {
+      setSharingSkillKey(null);
+    }
+  }
+
+  async function importSharedSkill(skill: Skill) {
+    if (!token || importingSkillKey === skill.skill_id || skill.imported_by_me) return;
+    setImportingSkillKey(skill.skill_id);
+    try {
+      const imported = await importTeamSkill(token, skill.skill_id);
+      setPersonalSkills((prev) => [...prev, imported].sort((a, b) => a.name.localeCompare(b.name)));
+      setTeamSkills((prev) =>
+        prev.map((item) =>
+          item.skill_id === skill.skill_id ? { ...item, imported_by_me: true } : item,
+        ),
+      );
+      showToast('내 스킬로 가져왔습니다. 이제 활성 상태와 내용은 나에게만 적용됩니다.', 'success');
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '내 스킬로 가져오지 못했습니다.', 'error');
+    } finally {
+      setImportingSkillKey(null);
+    }
+  }
+
   const rows = scope === 'personal' ? personalSkills : teamSkills;
-  /** 팀 스킬 화면에서 쓰기 조작(만들기·수정·삭제)을 낼 수 있는가. */
-  const canWriteTeam = isLeader === true;
-  const canCreate = scope === 'personal' || canWriteTeam;
-  const canWriteRow = scope === 'personal' || canWriteTeam;
+  const sharedPersonalNames = useMemo(
+    () => new Set(teamSkills.filter((skill) => skill.shared_by_me).map((skill) => skill.name)),
+    [teamSkills],
+  );
 
   /** 이름으로 걸러진 목록. 서버를 다시 안 부른다 — 두 목록 다 이미 화면에 있다. */
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return rows;
-    return rows.filter(
-      (skill) => skill.name.toLowerCase().includes(query) || skill.description.toLowerCase().includes(query),
-    );
-  }, [rows, search]);
-
-  /**
-   * 개인/팀에 같은 이름이 있는 스킬. **팀 스킬이 개인 스킬을 가린다**
-   * (`SkillsMiddleware` 실측, 위 컴포넌트 docstring 참고) — 서버가 미리 못
-   * 막는 방향(개인 스킬이 있는 뒤에 다른 팀원이 같은 이름의 팀 스킬을 만드는
-   * 경우)까지 여기서 보여준다.
-   */
-  const collidingNames = useMemo(() => {
-    const teamNames = new Set(teamSkills.map((skill) => skill.name));
-    const personalNames = new Set(personalSkills.map((skill) => skill.name));
-    const both = new Set<string>();
-    for (const name of personalNames) if (teamNames.has(name)) both.add(name);
-    return both;
-  }, [personalSkills, teamSkills]);
+    const currentFilters = filters[scope];
+    return rows.filter((skill) => {
+      if (currentFilters.activeOnly && !skill.enabled) return false;
+      if (currentFilters.sharedOnly) {
+        const matchesShare = scope === 'personal' ? sharedPersonalNames.has(skill.name) : skill.shared_by_me;
+        if (!matchesShare) return false;
+      }
+      if (currentFilters.importedOnly) {
+        const isImported = scope === 'personal' ? skill.imported_from_team : skill.imported_by_me;
+        if (!isImported) return false;
+      }
+      return !query || skill.name.toLowerCase().includes(query) || skill.description.toLowerCase().includes(query);
+    });
+  }, [filters, rows, scope, search, sharedPersonalNames]);
 
   const bodyBytes = editing ? byteLength(editing.body) : 0;
   const bodyTooLarge = bodyBytes > MAX_SKILL_BODY_BYTES;
@@ -735,17 +789,14 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
               </p>
               <p>내용은 고른 뒤에 읽습니다. 길어도 대화가 무거워지지 않습니다.</p>
               <p>
-                <strong>개인 스킬</strong>은 나만 씁니다. <strong>팀 스킬</strong>은 팀원 모두가
-                보되, 만들고 고치고 지우는 것은 팀장만 할 수 있습니다.
+                <strong>내 스킬</strong>만 에이전트가 사용합니다. <strong>팀 스킬</strong>은 팀원이
+                공유한 스킬을 살펴보고 내 스킬로 가져오는 곳입니다.
               </p>
               <p>
                 파일로 올릴 때는 이름을 따로 적지 않습니다 — 파일 안 <code>name</code>을 그대로
                 씁니다. 파일 하나는 최대 {formatKB(MAX_SKILL_BODY_BYTES)}까지 올릴 수 있습니다.
               </p>
-              <p>
-                개인 스킬과 팀 스킬 이름이 같으면 <strong>팀 스킬이 우선 적용</strong>됩니다 —
-                개인 스킬은 에이전트에게 안 보이게 됩니다. 겹치면 목록에 표시합니다.
-              </p>
+              <p>가져온 스킬은 독립된 내 스킬이므로 원 공유자의 비활성화나 공유 중지에 영향을 받지 않습니다.</p>
               <p>
                 <strong>skill-creator</strong>는 모든 팀원에게 기본 제공되는 내장 스킬입니다.
                 이 목록에는 안 뜨지만(개인/팀 스킬이 아니라서), 채팅에서 "~하는 스킬
@@ -753,7 +804,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
               </p>
               <p>
                 토글을 끄면 삭제하지 않고도 에이전트가 그 스킬을 못 보게 할 수 있습니다.
-                내용은 그대로 남아 있어 언제든 다시 켤 수 있습니다.
+                내용은 그대로 남아 있어 언제든 다시 켤 수 있습니다. 이 상태는 나에게만 적용됩니다.
               </p>
             </InfoNote>
           </h2>
@@ -770,7 +821,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
-            {canCreate && (
+            {scope === 'personal' && (
               <Button
                 size="sm"
                 variant="outline"
@@ -807,6 +858,67 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
           </button>
         </div>
 
+        <div className={styles.skillFilters} aria-label={`${scope === 'personal' ? '내' : '팀'} 스킬 필터`}>
+          {scope === 'personal' && (
+            <button
+              type="button"
+              aria-pressed={filters.personal.activeOnly}
+              className={[styles.skillFilter, filters.personal.activeOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
+              onClick={() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  personal: { ...prev.personal, activeOnly: !prev.personal.activeOnly },
+                }))
+              }
+            >
+              활성화된 스킬
+            </button>
+          )}
+          {scope === 'team' && (
+            <button
+              type="button"
+              aria-pressed={filters.team.importedOnly}
+              className={[styles.skillFilter, filters.team.importedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
+              onClick={() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  team: { ...prev.team, importedOnly: !prev.team.importedOnly },
+                }))
+              }
+            >
+              등록된 스킬
+            </button>
+          )}
+          <button
+            type="button"
+            aria-pressed={filters[scope].sharedOnly}
+            className={[styles.skillFilter, filters[scope].sharedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
+            onClick={() =>
+              setFilters((prev) => ({
+                ...prev,
+                [scope]: { ...prev[scope], sharedOnly: !prev[scope].sharedOnly },
+              }))
+            }
+          >
+            {scope === 'personal' ? '팀에 공유한 스킬' : '내가 공유한 스킬'}
+          </button>
+          {scope === 'personal' && (
+            <button
+              type="button"
+              aria-pressed={filters.personal.importedOnly}
+              className={[styles.skillFilter, filters.personal.importedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
+              onClick={() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  personal: { ...prev.personal, importedOnly: !prev.personal.importedOnly },
+                }))
+              }
+            >
+              팀 스킬에서 가져온 스킬
+            </button>
+          )}
+        </div>
+
         <div className={styles.list}>
           {loaded && rows.length === 0 && (
             <p className={styles.cardSub}>
@@ -815,13 +927,15 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
           )}
 
           {loaded && rows.length > 0 && filteredRows.length === 0 && (
-            <p className={styles.cardSub}>검색 결과가 없습니다.</p>
+            <p className={styles.cardSub}>선택한 조건에 맞는 스킬이 없습니다.</p>
           )}
 
           {filteredRows.map((skill) => {
-            const colliding = collidingNames.has(skill.name);
             const toggleKey = `${scope}:${skill.skill_id}`;
             const toggling = togglingSkillKey === toggleKey;
+            const sharedByMe = scope === 'team' ? skill.shared_by_me : sharedPersonalNames.has(skill.name);
+            const sharing = sharingSkillKey === skill.skill_id;
+            const importing = importingSkillKey === skill.skill_id;
             return (
               <div key={skill.skill_id} className={`${styles.row} ${styles.rowTall}`}>
                 <span className={styles.rowIcon}>
@@ -830,20 +944,16 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                 <div className={styles.rowBody}>
                   <span className={styles.rowName}>
                     {skill.name}
-                    {colliding && <Badge tone="warning">이름 겹침</Badge>}
+                    {sharedByMe && <Badge tone="primary">공유중</Badge>}
+                    {scope === 'personal' && skill.imported_from_team && (
+                      <Badge tone="neutral">팀 스킬</Badge>
+                    )}
                   </span>
                   {/* 설명은 줄여서 감추지 않는다 — 에이전트가 이것만 보고 고르는
                       값이라, 사람도 여기서 그대로 읽고 고칠 수 있어야 한다. */}
                   <span className={styles.rowMeta}>{skill.description}</span>
-                  {colliding && (
-                    <span className={styles.rowMeta}>
-                      {scope === 'personal'
-                        ? '같은 이름의 팀 스킬이 있어 에이전트는 이 개인 스킬 대신 팀 스킬을 씁니다.'
-                        : '같은 이름의 내 개인 스킬이 있습니다 — 에이전트는 이 팀 스킬을 씁니다.'}
-                    </span>
-                  )}
                 </div>
-                {canWriteRow && (
+                {scope === 'personal' ? (
                   <div className={styles.rowActions}>
                     {/* 꺼지면 값은 그대로 두고 에이전트에게만 안 보이게 한다
                         (삭제와 다름) — `toggleEnabled()` 참고. */}
@@ -863,12 +973,58 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                         onChange={() => void toggleEnabled(scope, skill)}
                       />
                     </div>
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => openEdit(scope, skill)}>
+                    {!skill.imported_from_team && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy || sharing}
+                        onClick={() => void setShared(skill, !sharedByMe)}
+                      >
+                        {sharing ? '처리 중…' : sharedByMe ? '중지' : '공유'}
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => openEdit('personal', skill)}>
                       수정
                     </Button>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming({ scope, skill })}>
                       삭제
                     </Button>
+                  </div>
+                ) : (
+                  <div className={styles.rowActions}>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => void openTeamSkill(skill)}>
+                      내용 보기
+                    </Button>
+                    {!skill.shared_by_me && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy || importing || skill.imported_by_me}
+                        onClick={() => void importSharedSkill(skill)}
+                      >
+                        {importing ? '가져오는 중…' : skill.imported_by_me ? '이미 등록됨' : '내 스킬로 등록'}
+                      </Button>
+                    )}
+                    {skill.shared_by_me && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={sharing}
+                        onClick={() => void setShared(skill, false)}
+                      >
+                        {sharing ? '처리 중…' : '중지'}
+                      </Button>
+                    )}
+                    {skill.can_delete && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => setConfirming({ scope: 'team', skill })}
+                      >
+                        삭제
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1262,6 +1418,32 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
         )}
       </Modal>
 
+      <Modal
+        open={viewingSkill !== null}
+        onClose={() => setViewingSkill(null)}
+        title="팀 스킬 내용"
+        footer={(
+          <Button variant="primary" onClick={() => setViewingSkill(null)}>
+            확인
+          </Button>
+        )}
+      >
+        <div className={styles.formStack}>
+          <div className={styles.formField}>
+            <span className={styles.formLabel}>이름</span>
+            <p className={styles.confirmText}>{viewingSkill?.name}</p>
+          </div>
+          <div className={styles.formField}>
+            <span className={styles.formLabel}>설명</span>
+            <p className={styles.confirmText}>{viewingSkill?.description}</p>
+          </div>
+          <div className={styles.formField}>
+            <span className={styles.formLabel}>내용</span>
+            <pre className={styles.skillBodyPreview}>{viewingSkill?.body || '작성된 내용이 없습니다.'}</pre>
+          </div>
+        </div>
+      </Modal>
+
       {/* 「내 파일」 삭제와 같은 꼴로 묻는다 — 되돌릴 수 없는 것은 무엇이
           사라지는지 먼저 말한다. */}
       <Modal
@@ -1273,7 +1455,11 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
             <Button variant="outline" onClick={() => setConfirming(null)}>
               취소
             </Button>
-            <Button variant="primary" disabled={busy} onClick={() => confirming && void remove(confirming.scope, confirming.skill)}>
+            <Button
+              variant="primary"
+              disabled={busy}
+              onClick={() => confirming && void remove(confirming.scope, confirming.skill)}
+            >
               {busy ? '삭제하는 중…' : '삭제'}
             </Button>
           </>
@@ -1285,7 +1471,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
         </p>
         <p className={styles.confirmText}>
           {confirming?.scope === 'team'
-            ? '팀 전체 에이전트가 더 이상 이 절차를 따르지 않습니다.'
+            ? '팀 공유 목록에서만 삭제됩니다. 팀원이 이미 가져간 개인 사본은 삭제되지 않습니다.'
             : '에이전트가 더 이상 이 절차를 따르지 않습니다.'}
         </p>
       </Modal>

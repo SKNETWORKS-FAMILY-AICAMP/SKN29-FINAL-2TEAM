@@ -165,21 +165,14 @@ class SkillEnabledTests(SimpleTestCase):
             # 거부됐으니 원본이 그대로 남아 있어야 한다 — 조용히 덮어쓰지 않는다.
             self.assertEqual(service.get_personal_skill("AC001", "dup")["description"], "원본")
 
-    def test_같은_이름의_팀_스킬이_있으면_개인_스킬을_못_만든다(self):
-        """`SkillsMiddleware`가 이름이 같으면 팀 스킬로 완전히 덮어쓴다
-        (`create_skill` docstring 근거) — 만들어도 안 보이는 스킬이 생기는
-        걸 여기서 막는다."""
+    def test_같은_이름의_팀_카탈로그가_있어도_개인_스킬을_만들_수_있다(self):
+        """팀 카탈로그는 SkillsMiddleware 소스가 아니므로 개인 스킬을 가리지 않는다."""
         with _patched_store():
             service.create_team_skill(
                 "TM001", actor_role="leader", name="shadowed", description="팀 것", body="팀 본문"
             )
-            with self.assertRaises(service.SkillNameConflict):
-                service.create_personal_skill(
-                    "AC001", team_id="TM001", name="shadowed", description="개인 것", body="개인 본문"
-                )
-            # 다른 팀 소속이면 안 겹친다 — team_id로 정확히 그 팀만 본다.
             created = service.create_personal_skill(
-                "AC001", team_id="TM002", name="shadowed", description="개인 것", body="개인 본문"
+                "AC001", team_id="TM001", name="shadowed", description="개인 것", body="개인 본문"
             )
             self.assertEqual(created["name"], "shadowed")
 
@@ -246,3 +239,102 @@ class TeamSkillCrudTests(SimpleTestCase):
             self.assertEqual(created["name"], "uploaded-skill")
             self.assertEqual(created["description"], "업로드로 만든 설명")
             self.assertEqual(created["body"], "업로드 본문")
+
+
+class SkillSharingTests(SimpleTestCase):
+    def test_개인_스킬을_팀에_공유하고_중지한다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+
+            shared = service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
+            self.assertEqual(shared["shared_by_account_id"], "AC001")
+            self.assertEqual(service.get_team_skill("TM001", "my-skill")["body"], "본문")
+
+            service.stop_sharing_personal_skill("AC001", team_id="TM001", name="my-skill")
+            with self.assertRaises(service.SkillNotFound):
+                service.get_team_skill("TM001", "my-skill")
+            self.assertEqual(service.get_personal_skill("AC001", "my-skill")["body"], "본문")
+
+    def test_다른_사용자는_공유를_중지할_수_없다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
+            with self.assertRaises(service.SkillPermissionDenied):
+                service.stop_sharing_personal_skill("AC002", team_id="TM001", name="my-skill")
+
+    def test_개인_스킬_내용은_공유본에_반영되지만_활성상태는_영향을_주지_않는다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
+
+            service.update_personal_skill_and_shared_copy(
+                "AC001",
+                team_id="TM001",
+                name="my-skill",
+                description="새 설명",
+                enabled=False,
+            )
+            team = service.get_team_skill("TM001", "my-skill")
+            self.assertEqual(team["description"], "새 설명")
+            self.assertTrue(team["enabled"])
+            self.assertEqual(team["shared_by_account_id"], "AC001")
+
+    def test_팀_스킬을_가져오면_독립_개인_사본이_된다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="원본", body="원본 본문"
+            )
+            service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
+
+            imported = service.import_team_skill("AC002", team_id="TM001", name="my-skill")
+            self.assertTrue(imported["enabled"])
+            self.assertEqual(imported["imported_from_team_id"], "TM001")
+
+            service.update_personal_skill("AC001", "my-skill", enabled=False)
+            service.stop_sharing_personal_skill("AC001", team_id="TM001", name="my-skill")
+
+            kept = service.get_personal_skill("AC002", "my-skill")
+            self.assertTrue(kept["enabled"])
+            self.assertEqual(kept["body"], "원본 본문")
+
+    def test_가져온_스킬은_가져온_사람이_비활성화하고_삭제할_수_있다(self):
+        with _patched_store():
+            service.create_team_skill(
+                "TM001", actor_role="leader", name="team-skill", description="d", body="b"
+            )
+            service.import_team_skill("AC002", team_id="TM001", name="team-skill")
+            disabled = service.update_personal_skill("AC002", "team-skill", enabled=False)
+            self.assertFalse(disabled["enabled"])
+            service.delete_personal_skill("AC002", "team-skill")
+            with self.assertRaises(service.SkillNotFound):
+                service.get_personal_skill("AC002", "team-skill")
+
+    def test_팀에서_가져온_개인_스킬은_다시_팀에_공유할_수_없다(self):
+        with _patched_store():
+            service.create_team_skill(
+                "TM001", actor_role="leader", name="team-skill", description="d", body="b"
+            )
+            service.import_team_skill("AC002", team_id="TM001", name="team-skill")
+
+            with self.assertRaises(service.SkillPermissionDenied):
+                service.share_personal_skill("AC002", team_id="TM001", name="team-skill")
+
+    def test_개인_원본을_삭제하면_팀_공유본도_정리한다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+            )
+            service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
+            service.delete_personal_skill_and_shared_copy(
+                "AC001", team_id="TM001", name="my-skill"
+            )
+            with self.assertRaises(service.SkillNotFound):
+                service.get_personal_skill("AC001", "my-skill")
+            with self.assertRaises(service.SkillNotFound):
+                service.get_team_skill("TM001", "my-skill")

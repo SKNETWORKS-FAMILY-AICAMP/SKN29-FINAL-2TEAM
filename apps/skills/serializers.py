@@ -8,13 +8,19 @@
 from typing import Any
 
 
-def skill_response(row: dict[str, Any]) -> dict[str, Any]:
+def skill_response(row: dict[str, Any], *, account_id: str | None = None) -> dict[str, Any]:
     response = {
         "skill_id": row["skill_id"],
         "name": row["name"],
         "description": row["description"],
         "updated_at": row.get("updated_at"),
         "enabled": row.get("enabled", True),
+        "shared_by_me": bool(
+            account_id and row.get("shared_by_account_id") == account_id
+        ),
+        "imported_from_team": bool(row.get("imported_from_team_id")),
+        "imported_by_me": bool(row.get("imported_by_me", False)),
+        "can_delete": bool(row.get("can_delete", False)),
     }
     if "body" in row:
         response["body"] = row["body"]

@@ -60,9 +60,7 @@ class ParseInvocationTests(SimpleTestCase):
 
 
 class ResolveInvocableSkillTests(SimpleTestCase):
-    """이름이 겹치면 팀이 이긴다 — `SkillsMiddleware`가 자동 호출에서 이미 같은
-    우선순위로 동작하므로(팀이 나중 소스라 개인을 덮어쓴다), 명시적 호출도
-    같은 스킬을 가리켜야 한다(모듈 docstring 참고)."""
+    """팀 스킬은 공유 카탈로그이며, 가져온 개인 스킬만 명시적으로 실행된다."""
 
     @patch("services.agent_runtime.skills.service.ensure_builtin_skill_creator")
     @patch("services.agent_runtime.skills.service.get_builtin_skill")
@@ -81,20 +79,8 @@ class ResolveInvocableSkillTests(SimpleTestCase):
         self.assertEqual(result["scope"], "builtin")
         ensure_builtin.assert_called_once_with()
 
-    @patch("services.agent_runtime.skills.service.get_team_skill")
-    def test_team_skill_found_first_does_not_check_personal(self, get_team):
-        get_team.return_value = {"skill_id": "humanizer", "name": "humanizer", "body": "TEAM_BODY"}
-
-        with patch("services.agent_runtime.skills.service.get_personal_skill") as get_personal:
-            result = resolve_invocable_skill(account_id="AC001", team_id="TM001", name="humanizer")
-
-        self.assertEqual(result["body"], "TEAM_BODY")
-        self.assertEqual(result["scope"], "team")
-        get_personal.assert_not_called()
-
-    @patch("services.agent_runtime.skills.service.get_team_skill", side_effect=SkillNotFound("없음"))
     @patch("services.agent_runtime.skills.service.get_personal_skill")
-    def test_falls_back_to_personal_skill_when_no_team_skill(self, get_personal, _get_team):
+    def test_resolves_personal_skill(self, get_personal):
         get_personal.return_value = {"skill_id": "humanizer", "name": "humanizer", "body": "PERSONAL_BODY"}
 
         result = resolve_invocable_skill(account_id="AC001", team_id="TM001", name="humanizer")
@@ -102,10 +88,22 @@ class ResolveInvocableSkillTests(SimpleTestCase):
         self.assertEqual(result["body"], "PERSONAL_BODY")
         self.assertEqual(result["scope"], "personal")
 
-    @patch("services.agent_runtime.skills.service.get_team_skill", side_effect=SkillNotFound("없음"))
     @patch("services.agent_runtime.skills.service.get_personal_skill", side_effect=SkillNotFound("없음"))
-    def test_returns_none_when_neither_scope_has_it(self, _get_personal, _get_team):
+    def test_returns_none_when_personal_scope_does_not_have_it(self, _get_personal):
         self.assertIsNone(resolve_invocable_skill(account_id="AC001", team_id="TM001", name="nope"))
+
+    @patch("services.agent_runtime.skills.service.get_personal_skill")
+    def test_disabled_personal_skill_is_not_invocable(self, get_personal):
+        get_personal.return_value = {
+            "skill_id": "humanizer",
+            "name": "humanizer",
+            "body": "PERSONAL_BODY",
+            "enabled": False,
+        }
+
+        self.assertIsNone(
+            resolve_invocable_skill(account_id="AC001", team_id="TM001", name="humanizer")
+        )
 
 
 class BuildInvocationInputTests(SimpleTestCase):

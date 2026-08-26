@@ -22,17 +22,11 @@ from services.agent_runtime.skills.backend import (
 
 
 class SkillSourcesTests(SimpleTestCase):
-    def test_builtin_then_personal_then_team(self):
-        """`SkillsMiddleware`는 나중 소스가 같은 이름의 스킬을 덮어쓴다 — 팀 스킬이
-        더 넓은 합의를 거쳤으므로 이겨야 해서 팀을 뒤에 둔다(설계 문서 참고).
-
-        2026-08-25 juyeon 병합 — 내장 스킬(`skill-creator`)이 맨 앞에 붙었다.
-        같은 규칙의 연장이다. 내장이 가려질 걱정은 `RESERVED_SKILL_NAMES`가
-        이름 자체를 못 쓰게 막아 없앤다(`skills/service.py`의 이름 검증).
-        """
+    def test_team_catalog_is_not_an_agent_skill_source(self):
+        """팀 카탈로그는 직접 적용하지 않고 개인 사본으로 가져와 사용한다."""
         self.assertEqual(
             skill_sources(),
-            [SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX],
+            [SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX],
         )
 
 

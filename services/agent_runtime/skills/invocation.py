@@ -33,8 +33,9 @@ def parse_invocation(text: str) -> tuple[str, str] | None:
 
 def resolve_invocable_skill(*, account_id: str, team_id: str, name: str) -> dict[str, Any] | None:
     """호출 대상 스킬을 찾는다. 예약된 내장 스킬을 먼저 보고, 그 밖의 이름은
-    팀 스킬(이름이 겹치면 팀이 이긴다)과 개인 스킬 순으로 찾는다. 모두 없으면
-    `None` — 호출부는 이 경우 평범한 채팅으로 그냥 흘려보낸다.
+    사용자의 개인 스킬에서 찾는다. 팀 스킬은 가져오기 전에는 실행할 수 없는
+    공유 카탈로그이므로 조회하지 않는다. 모두 없으면 `None` — 호출부는 이 경우
+    평범한 채팅으로 그냥 흘려보낸다.
 
     내장 스킬 조회가 필요한 이유는 설정 > 스킬 > 새 스킬이
     `/skill-creator ...`로 생성 모드를 명시하기 때문이다. 자동 description
@@ -47,7 +48,6 @@ def resolve_invocable_skill(*, account_id: str, team_id: str, name: str) -> dict
         ensure_builtin_skill_creator,
         get_builtin_skill,
         get_personal_skill,
-        get_team_skill,
     )
 
     if name in RESERVED_SKILL_NAMES:
@@ -60,14 +60,14 @@ def resolve_invocable_skill(*, account_id: str, team_id: str, name: str) -> dict
         except SkillNotFound:
             return None
 
+    del team_id  # 호출부 인터페이스 호환용. 팀 카탈로그는 실행 대상이 아니다.
     try:
-        return {**get_team_skill(team_id, name), "scope": "team"}
-    except SkillNotFound:
-        pass
-    try:
-        return {**get_personal_skill(account_id, name), "scope": "personal"}
+        personal = get_personal_skill(account_id, name)
     except SkillNotFound:
         return None
+    if not personal.get("enabled", True):
+        return None
+    return {**personal, "scope": "personal"}
 
 
 _INVOCATION_WRAPPER = """<explicit_skill_invocation>
