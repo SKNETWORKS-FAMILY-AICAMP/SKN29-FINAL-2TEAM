@@ -62,3 +62,8 @@ langfuse>=4.7,<5.0
 openai-guardrails>=0.3.0,<1.0.0
 # Bedrock ApplyGuardrail 은 SigV4 서명이 필요해 REST 로 직접 못 부른다.
 boto3>=1.40,<2.0.0
+
+# 도구가 만드는 xlsx(`table_export`, 2026-08-26). **새 의존성이다** — docling 이
+# 쓰긴 하지만 그쪽은 RunPod 워커 환경이라 백엔드 venv 에는 없었다. 순수 파이썬
+# 패키지라 가볍다(가드레일 때처럼 딸려 오는 것이 없다).
+openpyxl>=3.1,<4.0
