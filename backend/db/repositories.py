@@ -2781,6 +2781,87 @@ class ConnectorRepository:
                 return cursor.fetchone()
 
     @staticmethod
+    def find_by_channel(channel_id: str) -> dict[str, Any] | None:
+        """알림이 들고 온 채널 id 로 연결을 되찾는다. 모르는 채널이면 `None`.
+
+        **알림에는 이것 하나뿐이다.** 본문은 비어 있고 헤더에 채널 id·토큰만
+        온다. 그래서 채널을 열 때 id 를 우리가 만들어 저장해 두는 것이다.
+
+        모르는 채널이 정상적으로 생긴다 — 채널을 멈추지 못한 채 연결을 끊었거나,
+        갈아탄 옛 채널이 만료 전까지 알림을 마저 보낸다. 부르는 쪽은 `None` 을
+        오류가 아니라 **버릴 알림**으로 다룬다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT conn_id, account_id, connector_type, auth_status,
+                           sync_cursor, channel_id, channel_resource_id, channel_expires_at
+                    FROM connector_conn
+                    WHERE channel_id = %s
+                    """,
+                    (channel_id,),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def set_watch_channel(
+        *,
+        conn_id: str,
+        channel_id: str | None,
+        resource_id: str | None,
+        expires_at: Any | None,
+    ) -> None:
+        """열어 둔 채널을 기억한다. 셋 다 `None` 이면 「채널 없음」으로 지운다.
+
+        지우는 쪽도 같은 함수로 하는 이유 — 채널을 멈추는 것과 기록을 지우는
+        것이 **항상 짝**이어야 한다. 따로 두면 멈춘 채널이 DB 에 남아 갱신
+        작업이 그것을 살아 있는 것으로 착각한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as connection_cursor:
+                connection_cursor.execute(
+                    """
+                    UPDATE connector_conn
+                    SET channel_id = %s, channel_resource_id = %s, channel_expires_at = %s
+                    WHERE conn_id = %s
+                    """,
+                    (channel_id, resource_id, expires_at, conn_id),
+                )
+
+    @staticmethod
+    def channels_needing_renewal(before) -> list[dict[str, Any]]:
+        """`before` 이전에 만료되는(또는 아직 안 연) Drive 연결.
+
+        갱신 작업이 이것만 보고 돈다. **아직 채널이 없는 연결도 함께 준다** —
+        웹훅을 켜기 전에 연결해 둔 팀과, 채널 열기가 한 번 실패한 팀이 여기
+        걸려야 다음 회차에 따라붙는다.
+
+        **읽을 폴더가 있는 연결만 본다.** 폴더를 안 고른 팀은 변경을 따라가도
+        받아들일 문서가 없다 — `drive_sync_target` 이 폴더를 거쳐 가는 것과
+        같은 판단이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT DISTINCT cc.conn_id, cc.account_id, cc.sync_cursor,
+                           cc.channel_id, cc.channel_resource_id, cc.channel_expires_at
+                    FROM connector_conn AS cc
+                    JOIN team_folder AS tf ON tf.conn_id = cc.conn_id
+                    WHERE cc.connector_type = %s
+                      AND cc.auth_status = 'CONNECTED'
+                      AND (cc.channel_expires_at IS NULL OR cc.channel_expires_at < %s)
+                    ORDER BY cc.conn_id
+                    """,
+                    (ConnectorRepository.GOOGLE_DRIVE, before),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def set_sync_cursor(*, conn_id: str, cursor_value: str) -> None:
         """다음 회차가 이어받을 지점을 저장한다.
 

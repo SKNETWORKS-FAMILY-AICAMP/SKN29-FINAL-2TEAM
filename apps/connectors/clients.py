@@ -8,8 +8,10 @@
 (`Jira_Drive_커넥터_연결_설계.md` §4).
 """
 
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import requests
 
@@ -24,6 +26,8 @@ from .oauth import (
     decrypt_credential,
     encrypt_credential,
 )
+
+logger = logging.getLogger(__name__)
 
 # 호출 도중 만료되는 것을 피하려고 조금 이르게 갱신한다.
 _REFRESH_MARGIN_SECONDS = 60
@@ -299,6 +303,91 @@ def drive_start_page_token(*, account_id: str) -> str:
     if not isinstance(token, str) or not token:
         raise OAuthError("Google Drive가 예상한 형식으로 응답하지 않았습니다.")
     return token
+
+
+#: 채널을 얼마나 열어 둘까. Drive 의 `changes` 채널 상한이 1주일이고 **자동
+#: 갱신이 없다** — 만료 전에 새로 열어 주는 것은 우리 몫이다.
+#:
+#: 상한을 그대로 쓰지 않고 6일로 잡는다. 갱신 작업이 하루에 한 번 돈다고 할 때,
+#: 상한에 딱 맞추면 그 한 번을 놓치는 순간 구멍이 생긴다. 하루를 남겨 두면
+#: **한 번쯤 걸러도 채널이 살아 있다.**
+DRIVE_CHANNEL_TTL = timedelta(days=6)
+
+
+def watch_drive_changes(*, account_id: str, page_token: str, callback_url: str, token: str) -> dict[str, Any]:
+    """변경 알림 채널을 연다. 채널 id·resourceId·만료 시각을 돌려준다.
+
+    **알림에는 무엇이 바뀌었는지가 안 담긴다.** 본문이 빈 POST 가 올 뿐이라,
+    받은 쪽은 결국 `list_drive_changes` 를 불러야 한다. 그래서 이 채널이 없애는
+    것은 「호출」이 아니라 **「언제 물을지 우리가 정해야 하는 것」**이다 —
+    대화를 열 때마다 묻던 것을 바뀔 때만 묻는 것으로 바꾼다.
+
+    `token` 은 알림에 `X-Goog-Channel-Token` 으로 되돌아온다. 콜백이 인증 없이
+    열려 있으므로(Google 이 부른다) **이것이 유일한 신원 증명이다.**
+
+    채널 id 는 우리가 만든다. 알림은 이 값 하나만 들고 오므로, 어느 연결의
+    것인지 되찾을 수 있게 DB 에 저장해 둬야 한다.
+    """
+
+    credential = credential_for(account_id=account_id, connector_type=GOOGLE_DRIVE)
+    channel_id = str(uuid4())
+    expires_at = datetime.now(UTC) + DRIVE_CHANNEL_TTL
+    try:
+        response = requests.post(
+            f"{DRIVE_CHANGES_ENDPOINT}/watch",
+            headers={"Authorization": f"Bearer {credential['access_token']}"},
+            params={"pageToken": page_token},
+            json={
+                "id": channel_id,
+                "type": "web_hook",
+                "address": callback_url,
+                "token": token,
+                # Google 은 밀리초 유닉스 타임스탬프를 문자열로 받는다.
+                "expiration": str(int(expires_at.timestamp() * 1000)),
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise OAuthError("Google Drive 변경 알림 채널을 열지 못했습니다.") from exc
+
+    resource_id = payload.get("resourceId")
+    if not isinstance(resource_id, str) or not resource_id:
+        # resourceId 가 없으면 **채널을 멈출 방법이 없다.** 열린 채로 두면
+        # 만료까지 알림이 계속 오는데 우리는 그것이 무엇인지 모른다.
+        raise OAuthError("Google Drive가 채널 식별자를 주지 않았습니다.")
+
+    # 만료 시각은 Google 이 조정할 수 있다. 우리가 계산한 값이 아니라 **저쪽이
+    # 답한 값**을 쓴다 — 갱신 판단이 실제와 어긋나면 안 된다.
+    granted = payload.get("expiration")
+    if granted:
+        try:
+            expires_at = datetime.fromtimestamp(int(granted) / 1000, tz=UTC)
+        except (TypeError, ValueError):
+            pass
+
+    return {"channel_id": channel_id, "resource_id": resource_id, "expires_at": expires_at}
+
+
+def stop_drive_channel(*, account_id: str, channel_id: str, resource_id: str) -> None:
+    """열어 둔 채널을 멈춘다. **실패해도 올리지 않는다.**
+
+    부르는 자리가 「연결을 끊는다」·「새 채널로 갈아탄다」라, 여기서 예외를 올리면
+    정작 해야 할 일이 막힌다. 못 멈춘 채널은 만료되면 스스로 사라지고, 그때까지
+    오는 알림은 우리가 모르는 채널 id 라 콜백이 조용히 버린다.
+    """
+
+    try:
+        credential = credential_for(account_id=account_id, connector_type=GOOGLE_DRIVE)
+        requests.post(
+            "https://www.googleapis.com/drive/v3/channels/stop",
+            headers={"Authorization": f"Bearer {credential['access_token']}"},
+            json={"id": channel_id, "resourceId": resource_id},
+            timeout=15,
+        )
+    except Exception:  # noqa: BLE001 — 멈추기 실패가 부르는 쪽을 막으면 안 된다
+        logger.warning("Drive 채널을 멈추지 못했습니다: channel=%s", channel_id)
 
 
 def list_drive_changes(*, account_id: str, page_token: str) -> tuple[list[dict[str, Any]], str]:

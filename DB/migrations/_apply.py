@@ -66,6 +66,10 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("doc", "team_folder_id", "2026-08-25 문서의 출처 폴더(「문서」 화면 트리)"),
     ("doc", "src_folder_path", "2026-08-25 뿌리 폴더 안에서의 상대 경로"),
     ("connector_conn", "sync_cursor", "2026-08-24 증분 동기화 커서"),
+    # 웹훅 채널. 없으면 `changes.watch` 를 열어도 기억할 데가 없다.
+    ("connector_conn", "channel_id", "2026-08-25 Drive 변경 알림 채널"),
+    ("connector_conn", "channel_resource_id", "2026-08-25 채널 중지에 필요한 값"),
+    ("connector_conn", "channel_expires_at", "2026-08-25 채널 만료 시각(갱신 판단)"),
     ("agent_favorites", None, "2026-08-18 즐겨찾기"),
     ("chat_session", "tool_refs_override", "2026-08-18 대화별 도구 교체"),
     # `doc_meta` 는 2026-08-24 에 폐기했다(`2026-08-24_drop_doc_meta.sql`).

@@ -39,6 +39,7 @@ from services.document_pipeline.signing import read_download_token
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
+    ConnectorRepository,
     DocumentRepository,
     ExistTaskRepository,
     ProjectRepository,
@@ -472,8 +473,38 @@ class TeamFolderAPIView(AuthenticatedAPIView):
         # 워커 슬롯이 하나라 순차로 돌고 폴더가 크면 오래 걸린다. 그래서 응답을
         # 붙잡지 않고(아래), 못 끝낸 것은 다음 호출이 이어받는다.
         _start_document_intake(request.user.account_id)
+        # **읽을 폴더가 생긴 지금이 채널을 열 때다.** 연결하는 순간이 아니라
+        # 여기인 이유는, 폴더가 없으면 변경을 따라가도 받아들일 문서가 없어서다.
+        # 못 열어도 그냥 넘어간다 — 대화 시작 동기화가 받치고, 갱신 작업이
+        # 다음 회차에 다시 시도한다(`scripts/renew_drive_channels.py`).
+        _open_drive_channel_safely(request.user.account_id)
 
         return Response([team_folder_response(row) for row in rows])
+
+
+def _open_drive_channel_safely(account_id: str) -> None:
+    """이 팀의 Drive 연결에 변경 알림 채널을 연다. **실패해도 삼킨다.**
+
+    폴더 저장이 이미 끝난 자리라 여기서 예외를 올리면 방금 한 일이 실패로
+    보인다. 채널이 없어도 문서는 들어온다 — 웹훅은 대화 시작 동기화 위에 얹는
+    것이지 대체하는 것이 아니다.
+    """
+
+    try:
+        from apps.connectors import watch
+
+        if not watch.webhook_enabled():
+            return
+        target = ConnectorRepository.drive_sync_target(account_id)
+        if target is None:
+            return
+        watch.open_channel(
+            conn_id=target["conn_id"],
+            account_id=target["account_id"],
+            sync_cursor=target.get("sync_cursor"),
+        )
+    except Exception:  # noqa: BLE001 — 폴더 저장은 이미 끝났다.
+        logger.exception("Drive 알림 채널 열기 실패: account=%s", account_id)
 
 
 def _start_document_intake(account_id: str) -> None:
