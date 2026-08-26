@@ -89,6 +89,13 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   const [files, setFiles] = useState<PersonalFile[]>([]);
   const [shared, setShared] = useState<PersonalFile[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 올리다 거절당한 이유. **목록 오류와 한 칸을 쓰면 안 된다** — `upload()` 가
+   * 사유를 적자마자 뒤이어 도는 `load()` 가 성공하면서 그 칸을 비웠고, 그래서
+   * 20MB 넘는 파일을 놓았을 때 **화면이 아무 말도 안 했다**(2026-08-26).
+   * 사람은 드래그가 안 먹은 줄로 읽는다.
+   */
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   /** 지우려는 파일. 되돌릴 수 없어 한 번 묻는다. */
@@ -134,7 +141,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
 
   async function upload(picked: FileList | null) {
     if (!token || !picked || picked.length === 0) return;
-    setError(null);
+    setUploadError(null);
     for (const file of Array.from(picked)) {
       setBusy(file.name);
       try {
@@ -144,7 +151,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
         showToast(`${file.name} · 업로드했습니다. 읽는 중입니다.`, 'success');
       } catch (exc) {
         // 형식·크기 거절은 서버가 이유를 준다. 그 문장이 가장 정확하다.
-        setError(exc instanceof ApiError ? exc.message : '올리지 못했습니다.');
+        setUploadError(exc instanceof ApiError ? exc.message : `${file.name} · 올리지 못했습니다.`);
       }
     }
     setBusy(null);
@@ -308,6 +315,10 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           />
         </div>
       )}
+
+      {/* 거절 사유는 **놓은 자리 바로 아래**에 붙인다. 위쪽 목록 오류 자리에
+          두면 방금 한 동작과 멀어져 눈에 안 들어온다. */}
+      {tab === 'mine' && uploadError && <p className={styles.error}>{uploadError}</p>}
 
       <div className={styles.toolbar}>
         <div className={styles.searchBox}>

@@ -79,6 +79,30 @@ const FINISH_HOLD_MS = 8_000;
 const NUDGE_WINDOW_MS = 30_000;
 
 /**
+ * **이번 회차의 몫만 남긴다.**
+ *
+ * 서버가 주는 숫자는 내 문서 **전부**의 집계다. 그래서 파일 하나를 올렸을 뿐인데
+ * 지난주에 읽어 둔 팀 문서 8건까지 세어 「8/9」로 떴다(2026-08-26 지적). 사람이
+ * 기다리는 것은 방금 시킨 일이지 서재의 총량이 아니다.
+ *
+ * 회차가 시작될 때 **이미 끝나 있던 수**를 기준선으로 잡고 그만큼을 뺀다.
+ * 도중에 새 문서가 등록되면 `total` 이 늘어 분모도 따라 는다 — 폴더 저장처럼
+ * 문서가 하나씩 나타나는 경우가 그렇다.
+ *
+ * 문서가 지워지면 음수가 될 수 있어 0 에서 자른다.
+ */
+function sinceBase(now: Counts, base: Counts | null): Counts {
+  if (base === null) return now;
+  const doneBefore = base.ready + base.failed;
+  return {
+    total: Math.max(0, now.total - doneBefore),
+    ready: Math.max(0, now.ready - base.ready),
+    failed: Math.max(0, now.failed - base.failed),
+    running: now.running,
+  };
+}
+
+/**
  * 아직 읽을 것이 남았는가. **실패도 「끝난 것」으로 센다** — 실패한 문서는
  * 스스로 끝나지 않으므로 빼지 않으면 10/12 에서 영원히 도는 것처럼 보인다.
  */
@@ -98,6 +122,11 @@ export function IndexingProgress() {
   const [finished, setFinished] = useState<Counts | null>(null);
   /** 이 시각까지는 색인이 도는 것으로 치고 바짝 따라붙는다. 0 이면 아님. */
   const [nudgeUntil, setNudgeUntil] = useState(0);
+  /**
+   * 이번 회차가 시작될 때의 집계. 여기서부터가 「방금 시킨 일」이다.
+   * 회차가 끝나면 비운다 — 다음 회차는 그때의 상태에서 다시 센다.
+   */
+  const [base, setBase] = useState<Counts | null>(null);
   const wasIndexing = useRef(false);
   const timer = useRef<number | null>(null);
 
@@ -174,8 +203,8 @@ export function IndexingProgress() {
   // **팀 문서와 내 파일을 합쳐 본다.** 기다리는 사람에게는 「내 문서」 하나이고,
   // 올린 파일도 커넥터 문서와 똑같이 워커를 100초씩 기다린다
   // (`apps/personal_files` 의 `_start_processing`).
-  const counts = progress === null ? null : sumIndexing(progress);
-  const total = counts?.total ?? 0;
+  const all = progress === null ? null : sumIndexing(progress);
+  const counts = all === null ? null : sinceBase(all, base);
   const done = (counts?.ready ?? 0) + (counts?.failed ?? 0);
   const indexing = isIndexing(progress);
 
@@ -192,7 +221,12 @@ export function IndexingProgress() {
   useEffect(() => {
     const was = wasIndexing.current;
     wasIndexing.current = indexing;
-    if (was && !indexing && counts !== null && counts.total > 0) setFinished(counts);
+    // 회차가 시작된다. **지금 끝나 있는 것까지가 지난 일이다.**
+    if (!was && indexing && all !== null) setBase(all);
+    if (was && !indexing) {
+      if (counts !== null && counts.total > 0) setFinished(counts);
+      setBase(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indexing]);
 
@@ -204,8 +238,11 @@ export function IndexingProgress() {
 
   // 도는 중도 아니고 막 끝난 것도 아니면 안 그린다.
   if (dismissed) return null;
+  // 기준선을 잡기 전에는 안 그린다. 그리면 그 한 프레임 동안 서재 전체 수가
+  // 스쳐 지나간다 — 고치려던 바로 그 숫자다.
+  if (indexing && base === null) return null;
   const shown = indexing ? counts : finished;
-  if (shown === null) return null;
+  if (shown === null || shown.total === 0) return null;
 
   const shownDone = indexing ? done : shown.total;
   const percent = Math.round((shownDone / shown.total) * 100);
