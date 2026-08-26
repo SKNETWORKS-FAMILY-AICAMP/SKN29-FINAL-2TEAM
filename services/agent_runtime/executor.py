@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Callable, Iterator, Sequence
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from services.agent_runtime.context import RuntimeContext
@@ -22,6 +23,10 @@ if TYPE_CHECKING:
     from services.agent_runtime.loader import AgentDefinitionLoader
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _agent_execution_failure_event(
@@ -173,6 +178,7 @@ def _attach_langfuse_trace(event: dict[str, Any], trace_handle: Any | None) -> N
         resume_state = event.setdefault("trace_resume_state", {})
         resume_state["langfuse_trace_id"] = trace_handle.trace_id
         resume_state["langfuse_root_observation_id"] = trace_handle.root_observation_id
+        resume_state["langfuse_interrupted_at"] = _utc_now()
 
 
 class AgentExecutor:

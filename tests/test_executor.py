@@ -192,7 +192,11 @@ class TracingCallbackTests(SimpleTestCase):
         self.assertEqual(_tracing_callbacks(), [langfuse_callback])
         self.assertFalse(hasattr(tracing_callbacks, "get_langsmith_callback"))
 
-    def test_awaiting_confirmation_carries_trace_ids_into_resume_state(self):
+    @patch(
+        "services.agent_runtime.executor._utc_now",
+        return_value="2026-08-26T00:00:00Z",
+    )
+    def test_awaiting_confirmation_carries_trace_ids_into_resume_state(self, _now):
         event = {"type": EVENT_AWAITING_CONFIRMATION, "trace_resume_state": {}}
         trace = MagicMock(trace_id="TRACE001", root_observation_id="ROOT001")
 
@@ -204,6 +208,7 @@ class TracingCallbackTests(SimpleTestCase):
             {
                 "langfuse_trace_id": "TRACE001",
                 "langfuse_root_observation_id": "ROOT001",
+                "langfuse_interrupted_at": "2026-08-26T00:00:00Z",
             },
         )
 

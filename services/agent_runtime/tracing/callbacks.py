@@ -49,6 +49,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from services.agent_runtime.sensitive_text import mask_for_export
@@ -57,6 +58,10 @@ logger = logging.getLogger(__name__)
 
 _configured = False
 _client_lock = threading.Lock()
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -235,6 +240,30 @@ def get_langfuse_trace(
         if stored_trace_id and stored_root_id:
             trace_id = stored_trace_id
             root_id = stored_root_id
+            interrupted_at = str(
+                (resume_state or {}).get("langfuse_interrupted_at") or ""
+            )
+            if interrupted_at:
+                try:
+                    started = datetime.fromisoformat(
+                        interrupted_at.replace("Z", "+00:00")
+                    )
+                    resumed = _utc_now()
+                    wait_ms = max(0, round((resumed - started).total_seconds() * 1000))
+                    wait = get_client().start_observation(
+                        name="hitl-wait",
+                        as_type="span",
+                        trace_context={"trace_id": trace_id, "parent_span_id": root_id},
+                        metadata={
+                            "kind": "human_approval_wait",
+                            "wait_started_at": interrupted_at,
+                            "wait_resumed_at": resumed.isoformat().replace("+00:00", "Z"),
+                            "wait_duration_ms": wait_ms,
+                        },
+                    )
+                    wait.end()
+                except Exception:  # noqa: BLE001 - 대기 계측 실패가 resume을 막으면 안 된다
+                    logger.exception("Langfuse HITL 대기 observation을 기록하지 못했습니다.")
         else:
             root = get_client().start_observation(
                 name="agent-run",
@@ -267,4 +296,55 @@ def get_langfuse_trace(
         return None
 
 
-__all__ = ["LangfuseTraceHandle", "get_langfuse_callback", "get_langfuse_trace"]
+def record_langfuse_evaluation_result(
+    *,
+    trace_id: str | None,
+    case_id: str,
+    status: str,
+    failed_assertions: list[str],
+    environment: str | None,
+) -> bool:
+    """결정론적 평가 결과를 해당 trace의 score로 연결한다."""
+
+    from django.conf import settings
+
+    if not trace_id or not (
+        settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY
+    ):
+        return False
+    try:
+        _ensure_client_configured()
+        from langfuse import get_client
+
+        get_client().create_score(
+            trace_id=trace_id,
+            name="deterministic-evaluation-status",
+            value=status,
+            data_type="CATEGORICAL",
+            comment=", ".join(failed_assertions) if failed_assertions else None,
+            metadata={
+                "case_id": case_id,
+                "evaluator": "deterministic_code_assertions",
+            },
+            environment=environment,
+        )
+        if failed_assertions:
+            get_client().create_score(
+                trace_id=trace_id,
+                name="deterministic-evaluation-failure",
+                value=", ".join(failed_assertions),
+                data_type="TEXT",
+                environment=environment,
+            )
+        return True
+    except Exception:  # noqa: BLE001 - 평가 score 실패가 로컬·DB 저장을 막으면 안 된다
+        logger.exception("Langfuse 평가 score를 기록하지 못했습니다.")
+        return False
+
+
+__all__ = [
+    "LangfuseTraceHandle",
+    "get_langfuse_callback",
+    "get_langfuse_trace",
+    "record_langfuse_evaluation_result",
+]

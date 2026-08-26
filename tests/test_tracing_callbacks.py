@@ -1,8 +1,9 @@
 """외부 관측 백엔드 콜백 구성 계약을 검증한다."""
 
+from datetime import datetime, timezone
 from importlib.metadata import version
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from django.test import SimpleTestCase, override_settings
 from packaging.version import Version
@@ -114,3 +115,104 @@ class LangfuseCallbackTests(SimpleTestCase):
         )
         self.assertEqual(handle.trace_id, "TRACE001")
         handle.finish()
+
+    @override_settings(
+        LANGFUSE_PUBLIC_KEY="pk-lf-test",
+        LANGFUSE_SECRET_KEY="sk-lf-test",
+    )
+    @patch(
+        "services.agent_runtime.tracing.callbacks._utc_now",
+        return_value=datetime(2026, 8, 26, 0, 0, 5, tzinfo=timezone.utc),
+    )
+    @patch("langfuse.langchain.CallbackHandler")
+    @patch("langfuse.get_client")
+    def test_resume_records_hitl_wait_metric(
+        self, get_client, _callback_handler, _now
+    ):
+        callbacks._configured = True
+        wait = MagicMock()
+        get_client.return_value.start_observation.return_value = wait
+
+        callbacks.get_langfuse_trace(
+            run_id="RUN001",
+            metadata={},
+            resume_state={
+                "langfuse_trace_id": "TRACE001",
+                "langfuse_root_observation_id": "ROOT001",
+                "langfuse_interrupted_at": "2026-08-26T00:00:00Z",
+            },
+        )
+
+        get_client.return_value.start_observation.assert_called_once_with(
+            name="hitl-wait",
+            as_type="span",
+            trace_context={"trace_id": "TRACE001", "parent_span_id": "ROOT001"},
+            metadata={
+                "kind": "human_approval_wait",
+                "wait_started_at": "2026-08-26T00:00:00Z",
+                "wait_resumed_at": "2026-08-26T00:00:05Z",
+                "wait_duration_ms": 5000,
+            },
+        )
+        wait.end.assert_called_once_with()
+
+    @override_settings(
+        LANGFUSE_PUBLIC_KEY="pk-lf-test",
+        LANGFUSE_SECRET_KEY="sk-lf-test",
+    )
+    @patch("langfuse.get_client")
+    def test_evaluation_result_is_attached_as_trace_score(self, get_client):
+        callbacks._configured = True
+
+        recorded = callbacks.record_langfuse_evaluation_result(
+            trace_id="TRACE001",
+            case_id="CASE001",
+            status="FAILED",
+            failed_assertions=["tool_call_limit"],
+            environment="local-docker",
+        )
+
+        self.assertTrue(recorded)
+        self.assertEqual(get_client.return_value.create_score.call_count, 2)
+        get_client.return_value.create_score.assert_has_calls(
+            [
+                call(
+                    trace_id="TRACE001",
+                    name="deterministic-evaluation-status",
+                    value="FAILED",
+                    data_type="CATEGORICAL",
+                    comment="tool_call_limit",
+                    metadata={
+                        "case_id": "CASE001",
+                        "evaluator": "deterministic_code_assertions",
+                    },
+                    environment="local-docker",
+                ),
+                call(
+                    trace_id="TRACE001",
+                    name="deterministic-evaluation-failure",
+                    value="tool_call_limit",
+                    data_type="TEXT",
+                    environment="local-docker",
+                ),
+            ]
+        )
+
+    @override_settings(
+        LANGFUSE_PUBLIC_KEY="pk-lf-test",
+        LANGFUSE_SECRET_KEY="sk-lf-test",
+    )
+    @patch("langfuse.get_client")
+    def test_evaluation_score_failure_is_non_blocking(self, get_client):
+        callbacks._configured = True
+        get_client.return_value.create_score.side_effect = ConnectionError("unavailable")
+
+        recorded = callbacks.record_langfuse_evaluation_result(
+            trace_id="TRACE001",
+            case_id="CASE001",
+            status="FAILED",
+            failed_assertions=["tool_call_limit"],
+            environment="local-docker",
+        )
+
+        self.assertFalse(recorded)

@@ -54,10 +54,17 @@ case 결과와 DB에 보존한다. HITL interrupt 시 trace/root ID를 승인 �
 handler 인스턴스 캐시는 사용하지 않는다. Langfuse 초기화·전송 장애는 Agent 실행과
 로컬 평가 저장을 막지 않는다.
 
-합성 interrupt/resume 스파이크로 이 구조의 root 1개와 두 실행 단계 연결은 확인했다.
-실제 프로젝트 문서가 포함된 읽기 평가와 Jira HITL 사례의 외부 전송은 별도 승인을
-받기 전까지 실행하지 않는다. HITL 승인 대기 시간의 명시적 observation도 아직
-미구현이므로 Langfuse·OpenTelemetry 완료조건은 계속 미완료다.
+합성 스파이크 뒤 실제 실행도 확인했다. `WF-PROJECT-STATUS-001`의 Langfuse trace는
+root `agent-run` 1개 아래 모델·도구 observation 58개를 가졌고, case 결과와 DB의
+trace ID가 일치했다. 결정론적 평가 상태와 실패 assertion은 각각 CATEGORICAL·TEXT
+score로 같은 trace에 연결한다.
+
+`WF-JIRA-HITL-004A` 거절 경로는 interrupt 전·후 `LangGraph` observation이 같은
+trace에 연결됐다. 승인 카드에는 `langfuse_interrupted_at`을 저장하고 resume 시
+`hitl-wait` observation의 `wait_duration_ms`로 사람 대기 시간을 active 실행과
+분리한다. 실제 검증에서는 Jira 도구가 `REJECTED/HITL_REJECTED`로 끝났고 KAN은
+전후 0건이었다. Langfuse OTLP endpoint를 고의로 끊은 실행에서도 Agent·로컬 결과·
+DB 저장과 임시 세션 정리가 완료돼 관측 장애 격리도 확인했다.
 
 도구 실패의 제품 런타임 복구 정책은 `tool_failure_recovery_v0.md`에서 관리한다.
 runner의 재시도 사후 계측에 더해, 2026-08-26부터 제품 런타임

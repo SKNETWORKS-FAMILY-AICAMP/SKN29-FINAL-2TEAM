@@ -173,6 +173,21 @@ def main(argv: list[str] | None = None) -> int:
             model=model,
             runtime=runtime,
         )
+        from services.agent_runtime.tracing.callbacks import (
+            record_langfuse_evaluation_result,
+        )
+
+        record_langfuse_evaluation_result(
+            trace_id=result.get("langfuse_trace_id"),
+            case_id=result["case_id"],
+            status=result["status"],
+            failed_assertions=[
+                assertion["name"]
+                for assertion in result["assertions"]
+                if not assertion["passed"]
+            ],
+            environment=args.environment,
+        )
         cleanup_attempted = True
         cleanup_error = _append_result_after_cleanup_attempt(
             recorder=recorder,
