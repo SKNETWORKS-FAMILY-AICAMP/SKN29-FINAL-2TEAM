@@ -175,13 +175,29 @@ OpenTelemetry trace ID 연결은 후속 단계다.
 
 1. 기존 실행·초안·임시 Judge 결과는 수정하거나 덮어쓰지 않는다.
 2. UI 표시만 바뀌면 Agent version과 기존 판정은 유지한다.
-3. 프롬프트·답변 템플릿·후처리가 `final_answer`를 바꾸면 새 Agent version을 부여한다.
+3. 저장된 Agent 정의가 바뀌면 새 Agent version을 발행한다. 공통 런타임 프롬프트·
+   후처리 변경은 같은 Agent version과 별도 Git commit/runtime profile로 구분한다.
 4. 평가 사례 자체가 같으면 dataset v10을 유지한다.
 5. 대표 사례 1건을 새 eval run으로 재실행해 의미·근거·도구 호출을 비교한다.
 6. 새 출력이 생기면 기존 사람 판정을 재사용하지 않고 별도로 검토한다.
 
 기존 v9 실행의 `git_commit`은 `unknown`이다. 실행 ID·Agent version·모델·런타임과
 저장된 최종 답변으로 표본은 식별할 수 있지만 당시 커밋을 추측해 소급 기록하지 않는다.
+
+2026-08-26 `origin/juneok`를 충돌 없이 병합한 merge commit `dac322b`에서 대표 사례를
+다시 실행했다. dataset v10과 `AV035`는 유지했다.
+
+- eval run: `20260826T095913Z-8c4128af`
+- Agent run: `6335d4e8-7d99-48c2-8caa-572c46401b3b`
+- Langfuse trace: `5fc296fcbcfe6d671f47cc4abf368d4d`
+- 출력 변화: Markdown 제목·비교 표 사용, 요청서 필드의 계획 대비 지연을 명시
+- 결정론적 결과: `FAILED`
+- 실패: 전체 도구 6회/상한 4회, `document_search` 5회/상한 3회
+- 저장: 평가 DB `SYNCED`, Langfuse observation 60개/root 1개와 실패 score 2개
+
+형식 변경 후 새 출력이므로 기존 `050101Z` 사람 판정을 이 실행의 사람 판정으로
+재사용하지 않는다. 검색 호출 예산도 개선되지 않았으므로 정식 calibration 완료 상태는
+계속 미완료다.
 
 내부 문서 근거와 Agent 답변을 모델 엔드포인트로 보내므로, 실제 Judge 호출 전에
 엔드포인트 운영 주체와 데이터 전송 허용 여부를 확인한다. 허용이 확인되지 않으면

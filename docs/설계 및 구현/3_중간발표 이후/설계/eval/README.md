@@ -115,11 +115,23 @@ eval run `20260826T050101Z-ee604a4c`의 출력에만 적용하며 병합 후 새
 않는다. 기존 실행은 dataset v9, Agent version `AV035`, model `gpt-5.6-luna`를
 기록했지만 `git_commit=unknown`이므로 해당 한계를 그대로 보존한다.
 
-병합된 변경이 표시 계층에만 있으면 Agent 평가 버전은 유지한다. 프롬프트·답변
-템플릿·후처리처럼 평가되는 `final_answer`를 바꾸면 새 Agent version으로 기록하되,
-평가 사례가 바뀌지 않았다면 dataset v10은 유지한다. 이후
+병합된 변경이 표시 계층에만 있으면 Agent 평가 버전은 유지한다. 저장된 Agent의
+system prompt·도구·모델 구성이 바뀔 때만 새 Agent version을 발행한다. 공통 런타임
+프롬프트·후처리처럼 코드 배포가 `final_answer`를 바꾸는 경우에는 같은 Agent version과
+별도 Git commit/runtime profile로 구분한다. 평가 사례가 바뀌지 않았다면 dataset
+v10은 유지한다. 이후
 `WF-PROJECT-STATUS-001` 1건을 새 eval run으로 실행해 의미·근거·도구 호출이 유지되는지
 확인한 뒤 calibration을 재개한다.
+
+실제 `origin/juneok` 병합은 충돌 없이 merge commit `dac322b`로 완료됐다. 공통
+`RUNTIME_SCAFFOLD`는 제한적인 Markdown 표를 허용하고 작업 안내를 최종 답변에서
+반복하지 않도록 바뀌었으며, 저장된 `AV035` 정의와 평가 사례는 바뀌지 않았다. 따라서
+dataset v10·`AV035`를 유지하고 Git commit으로 런타임을 구분했다. 대표 재실행
+`20260826T095913Z-8c4128af`는 표 형식 출력과 핵심 지연 표현 일부 개선을 확인했지만
+도구 호출이 6회(`document_list` 1회, `document_search` 5회)로 증가해
+`tool_call_limit`, `per_tool_call_limits`가 다시 실패했다. 이 결과는 DB `SYNCED`,
+Langfuse trace `5fc296fcbcfe6d671f47cc4abf368d4d`에 observation 60개/root 1개와
+결정론적 실패 score로 보존했다.
 
 ```powershell
 docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_judge.py `
