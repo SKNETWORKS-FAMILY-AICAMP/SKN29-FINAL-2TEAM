@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import type { SourceRef } from '../../api/chat';
 import { Icon } from '../../components/Icon/Icon';
 import { Modal } from '../../components/Modal/Modal';
+import { formatMessageTime, formatMessageTimeFull } from './chatDate';
 import styles from './AnswerText.module.css';
 
 /**
@@ -127,7 +128,15 @@ const components: Components = {
   ),
 };
 
-export function AnswerText({ text, sources = [] }: { text: string; sources?: SourceRef[] }) {
+export function AnswerText({
+  text,
+  sources = [],
+  createdAt,
+}: {
+  text: string;
+  sources?: SourceRef[];
+  createdAt?: string | null;
+}) {
   const [copied, setCopied] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const webSources = sources.filter((source) => Boolean(source.url));
@@ -149,27 +158,34 @@ export function AnswerText({ text, sources = [] }: { text: string; sources?: Sou
       >
         {text}
       </Markdown>
-      <div className={styles.answerActions}>
-        <button
-          type="button"
-          className={styles.answerCopy}
-          onClick={copyAnswer}
-          aria-label={copied ? '답변 복사 완료' : '답변 복사'}
-          title={copied ? '복사했습니다' : '답변 복사'}
-        >
-          <Icon name={copied ? 'check' : 'copy'} size={15} />
-        </button>
-        {sources.length > 0 && (
+      <div className={styles.answerFooter}>
+        <div className={styles.answerActions}>
           <button
             type="button"
-            className={styles.sourceToggle}
-            onClick={() => setSourcesOpen((open) => !open)}
-            aria-expanded={sourcesOpen}
-            aria-label={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
-            title={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
+            className={styles.answerCopy}
+            onClick={copyAnswer}
+            aria-label={copied ? '답변 복사 완료' : '답변 복사'}
+            title={copied ? '복사했습니다' : '답변 복사'}
           >
-            <Icon name="link" size={16} />
+            <Icon name={copied ? 'check' : 'copy'} size={15} />
           </button>
+          {sources.length > 0 && (
+            <button
+              type="button"
+              className={styles.sourceToggle}
+              onClick={() => setSourcesOpen((open) => !open)}
+              aria-expanded={sourcesOpen}
+              aria-label={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
+              title={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
+            >
+              <Icon name="link" size={16} />
+            </button>
+          )}
+        </div>
+        {formatMessageTime(createdAt) && (
+          <time className={styles.messageTime} dateTime={createdAt ?? undefined} title={formatMessageTimeFull(createdAt) ?? undefined}>
+            {formatMessageTime(createdAt)}
+          </time>
         )}
       </div>
       {sourcesOpen && (

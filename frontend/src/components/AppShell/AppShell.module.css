@@ -154,17 +154,6 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* 사용자 영역은 입력창 푸터와 역할·높이가 다르다. 선을 억지로 이어 붙이면
-   프로필 줄에 불필요한 빈 공간이 생기므로 독립적인 짧은 푸터로 둔다. */
-.sidebarWithExtra .userArea {
-  min-height: 56px;
-  box-sizing: border-box;
-  margin-right: calc(var(--space-3) * -1);
-  margin-bottom: calc(var(--space-5) * -1);
-  margin-left: calc(var(--space-3) * -1);
-  padding: var(--space-3);
-}
-
 /* 접히면 아바타 하나뿐이므로 왼쪽 정렬이 어색하다. */
 .sidebarCollapsed .userArea {
   justify-content: center;
