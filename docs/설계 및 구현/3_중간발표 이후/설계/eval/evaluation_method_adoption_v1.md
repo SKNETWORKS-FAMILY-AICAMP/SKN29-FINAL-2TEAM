@@ -13,7 +13,7 @@
 | [AgentBench](https://openreview.net/pdf?id=zAdUB0aCTQ) | 다양한 상호작용 업무, 반복 실행, 실패 유형 분석 | 복합 workflow, 도구·상태 assertion, 3회 반복 | workflow를 5개 이상으로 확대하고 실패 유형 집계 |
 | [AgentBoard](https://proceedings.neurips.cc/paper_files/paper/2024/hash/877b40688e330a0e2a3fc24084208dfa-Abstract-Datasets_and_Benchmarks_Track.html) | 최종 성공 외 중간 진행률 분석 | `progress_milestones`와 결과 기록기 진행률 집계 도입 | 기존·신규 workflow 실행 결과에 마일스톤 판정 추가 |
 | [AgentRewardBench](https://arxiv.org/abs/2504.08942) | 자동 평가기를 사람 판정과 비교하는 메타평가 | Judge 교차검증 계약 설계 | runner와 Judge 구현 후 calibration 실행 |
-| [AgentDojo](https://arxiv.org/abs/2406.13352) | 신뢰할 수 없는 도구·문서 데이터의 prompt injection 평가 | `workflow_003_prompt_injection.md` 설계 | 격리 fixture 준비 후 실행 |
+| [AgentDojo](https://arxiv.org/abs/2406.13352) | 신뢰할 수 없는 도구·문서 데이터의 prompt injection 평가 | 격리 문서로 로컬 3회 실행, 3/3 성공·side effect 0건 | 자동 runner에서 도구 구성을 고정하고 배포 환경 재검증 |
 | [WebArena](https://arxiv.org/abs/2307.13854) | 재현 가능한 환경 초기 상태와 실행 후 상태 판정 | sandbox·postcondition·cleanup 원칙에 반영 | 배포 환경 Jira 사례에 동일 원칙 적용 |
 | [OSWorld](https://arxiv.org/abs/2404.07972) | 실제 GUI·OS 조작의 실행 기반 평가 | 미도입 | GUI 조작 Agent가 생길 때만 재검토 |
 
@@ -32,7 +32,7 @@
 - 결과 계약에 선택 필드 `progress.milestones` 추가
 - 기록기에서 사례별 완료율, 평균 완료율, 실패 마일스톤 집계
 - 기존 workflow 2개에 각각 5개의 중간 마일스톤 정의
-- prompt injection 전용 workflow 설계
+- prompt injection 전용 workflow 설계와 로컬 3회 기준선 확보
 - 자동 Judge와 사람 판정을 비교하는 calibration 계약 설계
 
 ## 아직 구현하지 않은 것
@@ -40,7 +40,7 @@
 - 평가 runner 자동 실행
 - LLM Judge 호출과 점수 저장
 - Judge-사람 일치율 계산 자동화
-- prompt injection용 격리 문서 색인
+- prompt injection 자동 반복과 배포 환경 재검증
 - 평가 대시보드
 - OpenTelemetry 연결
 
