@@ -1,0 +1,591 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.pageHeader h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/*
+ * 탐색기 두 칸. 트리는 폭을 고정하고 표가 남는 자리를 전부 쓴다 — 폴더 이름은
+ * 길어야 두세 단어이고, 읽어야 하는 것은 파일 이름과 상태다.
+ *
+ * 트리는 **페이지 높이에 고정한다.** 내용만큼만 차지하게 두면 폴더 수에 따라
+ * 왼쪽 기둥의 키가 들쭉날쭉하고, 폴더를 접었다 폈다 할 때마다 우측 표가 위아래로
+ * 흔들린다. 탐색기처럼 왼쪽은 늘 같은 자리에 같은 크기로 있어야 한다.
+ *
+ * `align-items: stretch`(기본값)를 그대로 쓰되 격자 자체에 높이를 준다.
+ * `start` 로 두면 자식이 내용 높이로 줄어들어 고정이 풀린다.
+ */
+.split {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-5);
+  /* 헤더(제목 + 여백)를 뺀 나머지 전부. AppShell 이 이미 페이지 패딩을 준다. */
+  height: calc(100vh - 172px);
+  min-height: 420px;
+}
+
+/* ---------------- 좌측 트리 ---------------- */
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  /* 격자가 준 높이를 그대로 채우고, 넘치는 폴더는 자기 안에서만 흐른다.
+     페이지가 통째로 스크롤되면 트리를 고정한 의미가 없다. */
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.store {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storeHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+  text-transform: uppercase;
+}
+
+.folderRow,
+.childRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 하위 경로는 한 단 들여쓴다. 트위스티 자리만큼 밀면 부모와 세로선이 맞는다. */
+.childRow {
+  padding-left: 22px;
+}
+
+.twisty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 26px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+/* 트위스티가 없는 줄도 이름 시작점을 맞춘다 — 안 맞추면 폴더 이름이 들쭉날쭉하다. */
+.twistySpacer {
+  width: 18px;
+  flex: none;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.node:hover {
+  background: var(--color-bg);
+}
+
+.nodeOn {
+  background: var(--color-bg);
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+/* 긴 폴더 이름이 개수 배지를 밀어내지 않게 이름만 줄인다. */
+.nodeName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeCount {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-placeholder);
+}
+
+.treeEmpty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+
+/* ---------------- 우측 목록 ---------------- */
+
+/* 우측도 격자 높이를 채운다. 표만 안에서 스크롤하고 도구줄·쪽 넘김은 붙박이다 —
+   문서가 많을 때 검색창을 찾으러 위로 올라가야 하면 그 검색은 쓸모가 없다. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelCount {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+/* 밝은 배경 위의 글자라 `--color-warning`(amber-500)이 아니라 텍스트용 토큰을
+   쓴다 — 배지 배경 위에서 쓰라고 따로 둔 값이다. */
+.panelWarn {
+  color: var(--color-warning-text);
+}
+
+.muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* 검색과 쪽당 개수. 표 위에 붙박이로 둔다 — 문서가 많을 때 검색창을 찾으러
+   위로 스크롤해야 하면 그 검색은 쓸모가 없다. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--space-3);
+  height: 34px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.searchInput::placeholder {
+  color: var(--color-placeholder);
+}
+
+.searchClear {
+  display: flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-placeholder);
+  cursor: pointer;
+}
+
+.pageSize {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.pageSize select {
+  height: 34px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-body);
+  cursor: pointer;
+}
+
+/* ---------------- 표 ---------------- */
+
+/*
+ * 표만 안에서 흐른다. 헤더는 이 컨테이너 **안에** 두고 sticky 로 붙인다 —
+ * 밖에 두면 스크롤바가 생길 때 행만 그 너비만큼 좁아져 열이 어긋난다
+ * (`ProjectDetailPage` 업무 목록에서 같은 이유로 같은 구조를 쓴다).
+ */
+.table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.tableHead,
+.tableRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 200px 90px 100px;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.tableHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-4) 0 10px;
+  /* 스크롤한 행이 헤더 밑으로 비쳐 보이지 않도록 카드와 같은 배경을 깔아 둔다. */
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
+.tableRow {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.tableRow:last-child {
+  border-bottom: none;
+}
+
+/* 그리드 칸은 기본 최소 너비가 내용 크기라, 이것이 없으면 긴 값이 열을 밀어낸다. */
+.tableHead > span,
+.tableRow > span {
+  min-width: 0;
+}
+
+.cellName {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cellNameText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fileName {
+  font-weight: 600;
+  color: var(--color-heading);
+  /* 파일 이름은 길다. 단어 중간에서도 끊어야 확장자까지 붙은 한 덩어리가
+     열을 삐져나가지 않는다. */
+  overflow-wrap: anywhere;
+}
+
+.cellHint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 실패 사유는 서버가 준 문장을 그대로 쓴다 — 화면이 짐작해 뭉뚱그리는 것보다
+   언제나 정확하다. 다만 파이프라인이 내려 주는 값이라 파이썬 예외 문자열이
+   통째로 올 때가 있고(실측 500자), 그러면 한 행이 표 몇 줄 높이가 된다.
+   **지우지 않고 접는다** — 앞머리에 원인이 있고, title 에 전문이 남는다. */
+.rowDetail {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.cellPath {
+  font-size: 12px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellStatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.cellDate {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.cellActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dim {
+  color: var(--color-placeholder);
+}
+
+/* ---------------- 쪽 넘김 ---------------- */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex: none;
+}
+
+.pagerRange,
+.pagerPage {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.pagerButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ---------------- 내가 올린 것 ---------------- */
+
+/* 안쪽 탭. 팀 문서 쪽에는 없는 갈래라 여기만 쓴다. */
+.innerTabs {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.innerTab {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.innerTab:hover {
+  background: var(--color-bg);
+}
+
+.innerTabOn {
+  background: var(--color-bg);
+  color: var(--color-heading);
+}
+
+/* 올리는 자리. 표 위에 두되 **한 줄로 낮게** — 화면 높이를 고정해 뒀으므로
+   여기가 두꺼워지면 그만큼 표에서 보이는 행이 줄어든다. */
+.dropZone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.dropZoneOn {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.dropTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.dropHint {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.fileInput {
+  display: none;
+}
+
+/*
+ * 열이 탭마다 다르다. 내 것은 스위치 둘과 삭제가 붙고, 받은 것은 조작이 없는
+ * 대신 「공유한 사람」이 온다. `composes` 를 쓰지 않고 열 정의만 따로 두는
+ * 이유는 나머지(패딩·테두리·글자)가 팀 문서 표와 완전히 같아서다.
+ */
+.myFileHead,
+.myFileRow,
+.sharedHead,
+.sharedRow {
+  display: grid;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.myFileHead,
+.sharedHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-4) 0 10px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
+.myFileRow,
+.sharedRow {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.myFileRow:last-child,
+.sharedRow:last-child {
+  border-bottom: none;
+}
+
+.myFileHead > span,
+.myFileRow > span,
+.sharedHead > span,
+.sharedRow > span {
+  min-width: 0;
+}
+
+.myFileHead,
+.myFileRow {
+  grid-template-columns: minmax(0, 1fr) 130px 90px 92px 84px 72px;
+}
+
+.sharedHead,
+.sharedRow {
+  grid-template-columns: minmax(0, 1fr) 160px 130px 90px;
+}
+
+.cellToggle {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.confirmText {
+  margin: 0 0 var(--space-3);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-body);
+}
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/*
+ * 트리를 옆에 두면 목록이 읽을 수 없게 좁아진다. 위아래로 쌓는다.
+ *
+ * 쌓을 때는 **높이 고정을 푼다.** 두 칸이 세로로 놓이는데 격자에 화면 높이를
+ * 박아 두면 둘이 그 높이를 나눠 갖게 되어 표가 몇 줄밖에 안 보인다. 트리만
+ * 접고(240px) 표는 내용만큼 늘어나 페이지가 스크롤되게 둔다.
+ */
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+
+  .tree {
+    height: auto;
+    max-height: 240px;
+  }
+
+  .panel {
+    height: auto;
+  }
+
+  .table {
+    /* 페이지가 스크롤되므로 표 안에서 또 스크롤하지 않는다 — 스크롤 두 겹은
+       손가락이 어느 쪽을 미는지 알 수 없다. */
+    max-height: none;
+    overflow-y: visible;
+  }
+}

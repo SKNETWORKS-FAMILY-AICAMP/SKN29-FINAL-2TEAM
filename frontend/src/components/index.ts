@@ -24,6 +24,7 @@ export { InfoNote } from './InfoNote/InfoNote';
 export type { ModalProps } from './Modal/Modal';
 
 export { ToastProvider, useToast } from './Toast/Toast';
+export { IndexingProgress } from './IndexingProgress/IndexingProgress';
 export type { ToastContextValue, ToastTone } from './Toast/Toast';
 
 export { Icon } from './Icon/Icon';

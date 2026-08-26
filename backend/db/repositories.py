@@ -646,6 +646,39 @@ class TeamFolderRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def list_with_connector(account_id: str) -> list[dict[str, Any]]:
+        """폴더마다 **어느 저장소 연결에서 오는지**를 붙여 준다(2026-08-25).
+
+        「문서」 화면의 좌측은 저장소로 먼저 묶고 그 아래에 폴더를 늘어놓는다.
+        저장소가 지금은 Drive 하나뿐이지만 `team_folder.conn_id` 는 처음부터
+        연결을 가리키고 있었다 — **접고 있던 것은 화면이다.** 그래서 여기서는
+        연결별로 나올 수 있는 모양 그대로 준다.
+
+        연결이 사라진 폴더도 뺀 채로 두지 않는다(LEFT JOIN). 커넥터를 강제
+        해제하면(`auth_status='REVOKED'`) 행은 남고 자격증명만 지우는데, 그때
+        폴더가 목록에서 조용히 사라지면 「내가 고른 폴더가 어디 갔나」가 된다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                if team_id is None:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT tf.team_folder_id, tf.conn_id, tf.external_folder_id,
+                           tf.display_name, tf.max_depth,
+                           cc.connector_type, cc.auth_status
+                    FROM team_folder AS tf
+                    LEFT JOIN connector_conn AS cc ON cc.conn_id = tf.conn_id
+                    WHERE tf.team_id = %s
+                    ORDER BY cc.connector_type NULLS LAST, tf.team_folder_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def replace(
         *,
         account_id: str,
@@ -1066,6 +1099,15 @@ class DocumentRepository:
 
         이미 있는 `src_file_id`는 건너뛴다(스캔과 등록 사이에 누가 먼저 넣었을
         수 있다). 새로 만든 행만 돌려준다.
+
+        **어느 폴더에서 왔는지 함께 남긴다**(2026-08-25). 스캔이 이미 알고 있는
+        값인데 여기서 버리고 있었다 — `clients.list_drive_files` 가 항목마다
+        `folder_path` 를 붙여 주고, 어느 뿌리 폴더를 훑던 중인지는 부르는 쪽이
+        안다. 「문서」 화면의 폴더 트리가 이 두 값에서 나온다.
+
+        옛 호출자를 위해 둘 다 없어도 된다 — 그때는 NULL 이 들어가고, 화면은
+        그것을 「미분류」로 묶는다. 빈 문자열('')은 **뿌리 바로 아래**라는 뜻이라
+        NULL 과 구별해야 한다.
         """
 
         if not documents:
@@ -1089,10 +1131,12 @@ class DocumentRepository:
                         """
                         INSERT INTO doc
                             (doc_id, team_id, src_file_id, source_type, file_name,
-                             mime_type, doc_role, src_modified_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                             mime_type, doc_role, src_modified_at,
+                             team_folder_id, src_folder_path)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING doc_id, team_id, proj_id, src_file_id, source_type, file_name,
-                                  mime_type, doc_role, src_modified_at, storage_key
+                                  mime_type, doc_role, src_modified_at, storage_key,
+                                  team_folder_id, src_folder_path
                         """,
                         (
                             doc_id,
@@ -1103,6 +1147,8 @@ class DocumentRepository:
                             document["mime_type"],
                             document["doc_role"],
                             document["src_modified_at"],
+                            document.get("team_folder_id"),
+                            document.get("src_folder_path"),
                         ),
                     )
                     created.append(cursor.fetchone())

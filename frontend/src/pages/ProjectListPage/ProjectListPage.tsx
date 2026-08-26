@@ -4,7 +4,6 @@ import { AppShell, Button, Icon, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { listMyProjects, syncTeamTasks } from '../../api/projects';
 import type { Project } from '../../api/projects';
-import { PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { NewProjectDialog } from './NewProjectDialog';
 import { ProjectRow } from './ProjectRow';
@@ -187,20 +186,10 @@ export default function ProjectListPage() {
           </div>
         </div>
 
-        {/* 「업무 분배 시작」 버튼이 있던 자리.
-            ⚠ 「업무를 뽑는 입구는 Chat 하나다(4차 단계 3)」는 **틀렸다 (2026-08-12)** —
-            프로젝트 상세의 기준 문서 카드에도 「업무 뽑기」가 있다. 다만 그 버튼도
-            결국 그 프로젝트의 대화를 열어 거기서 실행시킨다. 실행되는 자리는
-            여전히 하나이고, 들어가는 문이 둘이다. */}
-        <p className={styles.chatBanner}>
-          <Icon name="sparkles" size={18} color="var(--color-primary)" />
-          <span>
-            업무를 추출하려면 프로젝트에서 기준 문서를 지정하세요. 문서 근거와 함께 정리됩니다.
-          </span>
-          <button type="button" onClick={() => navigate(PATHS.chat)}>
-            채팅 열기 →
-          </button>
-        </p>
+        {/* 「업무 분배 시작」 버튼과, 그 자리를 이어받았던 Chat 안내 배너가 있던
+            자리(2026-08-25 걷음). 기준 문서를 지정하는 곳도 업무를 뽑는 곳도
+            프로젝트 상세이고, 목록에서 할 수 있는 일이 아니다 — 목록 맨 위에서
+            상세의 할 일을 설명하고 있었다. */}
 
         <div className={styles.toolbar}>
           <div className={styles.searchBox}>
