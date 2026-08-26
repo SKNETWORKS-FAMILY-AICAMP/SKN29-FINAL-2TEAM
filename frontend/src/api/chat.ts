@@ -133,6 +133,8 @@ export type ChatEvent =
       tool_call_id?: string | null;
       /** 부모 자신의 직접 호출일 때만 채워진다(`events.py` `_classify_parent_tool_calls`/자식 분기). */
       arguments?: Record<string, unknown>;
+      user_update?: string;
+      user_update_source?: 'model' | 'application_fallback';
     }
   | {
       type: 'tool_completed';
@@ -173,6 +175,8 @@ export type ChatEvent =
       subagent_alias: string | null;
       subagent_name?: string | null;
       task_summary?: string;
+      user_update?: string;
+      user_update_source?: 'model' | 'application_fallback';
     }
   | {
       type: 'subagent_completed';

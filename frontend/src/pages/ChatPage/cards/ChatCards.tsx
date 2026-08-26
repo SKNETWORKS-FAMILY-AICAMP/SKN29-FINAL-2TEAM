@@ -4,6 +4,27 @@ import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
 import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
 import styles from './cards.module.css';
 
+const SENSITIVE_ARGUMENT_KEY = /(?:token|password|secret|api.?key|authorization|credential)/i;
+
+function maskToolArguments(value: unknown, key = ''): unknown {
+  if (SENSITIVE_ARGUMENT_KEY.test(key)) return '••••••••';
+  if (Array.isArray(value)) return value.map((item) => maskToolArguments(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        maskToolArguments(childValue, childKey),
+      ]),
+    );
+  }
+  return value;
+}
+
+function formatToolArguments(argumentsValue: Record<string, unknown> | undefined): string | null {
+  if (!argumentsValue || Object.keys(argumentsValue).length === 0) return null;
+  return JSON.stringify(maskToolArguments(argumentsValue), null, 2);
+}
+
 /**
  * Chat 스트림에 뜨는 카드.
  *
@@ -34,7 +55,7 @@ export interface ProgressCardProps {
    */
   running?: boolean;
   /**
-   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 생각 과정이
+   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 작업 과정이
    * 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로 추가했다. 하나로
    * 합칠 때(`ChatPage.tsx`가 바깥 `<section className={styles.card}>`를 직접
    * 두르는 경우) `true`를 준다 — 단독으로 쓸 땐 그대로 `<section>`을 두른다.
@@ -60,10 +81,20 @@ export function ProgressCard({
   bare = false,
   failed = false,
 }: ProgressCardProps) {
+  const [webSourcesOpen, setWebSourcesOpen] = useState(false);
+  const [documentSourcesOpen, setDocumentSourcesOpen] = useState(false);
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
   const shown = Math.min(doneCount + (steps.some((s) => s.state === 'doing') ? 1 : 0), total);
   const Wrapper = bare ? 'div' : 'section';
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
+  // 단계가 하나뿐이면 머리말·1/1·단계 한 줄이 같은 내용을 세 번 반복한다.
+  // 그 한 단계를 머리말로 올려 진행 상태를 한 줄로만 보여 준다.
+  const compactStep = running && steps.length === 1 && subagents.length === 0 ? steps[0] : null;
+  const visibleTitle = compactStep
+    ? `${compactStep.label}${compactStep.meta ? ` · ${compactStep.meta}` : ''}`
+    : title;
 
   return (
     <Wrapper className={bare ? styles.bareStack : styles.card}>
@@ -76,7 +107,7 @@ export function ProgressCard({
           ) : (
             <Icon name="check-circle" size={16} color="var(--color-success)" />
           )}
-          {title}
+          {visibleTitle}
         </span>
         {/* **회전 수는 보여주지 않는다.**
             Loop 이 몇 바퀴 돌았는지는 우리가 디버깅할 때 보는 값이지 사람이 할
@@ -87,13 +118,13 @@ export function ProgressCard({
             떴는데, 단계를 안 쌓는 도구는 실행 내내 이 자리가 「대기 중」이라 왼쪽의
             「생각하는 중」·「프로젝트 조회 완료」와 정면으로 어긋났다. 지금 무슨
             일이 벌어지는지는 왼쪽 제목과 아이콘(도는 중/체크)이 이미 말한다. */}
-        {steps.length > 0 && (
+        {running && steps.length > 0 && !compactStep && (
           <span className={styles.progressCount}>{`${shown} / ${total} 단계`}</span>
         )}
       </div>
 
       {/* 막대도 단계가 있을 때만 그린다 — 단계가 없으면 늘 0%라 빈 띠만 남는다. */}
-      {steps.length > 0 && (
+      {running && steps.length > 0 && !compactStep && (
         <div className={styles.progressTrack}>
           <span
             className={
@@ -104,7 +135,7 @@ export function ProgressCard({
         </div>
       )}
 
-      <ul className={styles.steps}>
+      {running && !compactStep && <ul className={styles.steps}>
         {/* 끝났으면 남아 있는 `doing` 도 더는 돌지 않는다 — 스트림이 닫혔는데
             마지막 단계만 회전하고 있으면 멈춘 것처럼 보인다. */}
         {(running ? steps : steps.map((s) => (s.state === 'doing' ? { ...s, state: 'done' as const } : s))).map((step, index) => (
@@ -116,9 +147,9 @@ export function ProgressCard({
             {step.meta && <span className={styles.stepMeta}>{step.meta}</span>}
           </li>
         ))}
-      </ul>
+      </ul>}
 
-      {queries.length > 0 && (
+      {running && queries.length > 0 && (
         <ul className={styles.queries}>
           {queries.map((query) => (
             <li key={query} className={styles.query}>
@@ -129,28 +160,56 @@ export function ProgressCard({
         </ul>
       )}
 
-      {/* "출처"(2026-08-18) — document_search가 실제로 좁혀서 보고 있는
-          문서, web_search가 찾은 페이지. 색인 여부와 무관하게 전부
-          보여준다(정직 표기 원칙 — not_indexed와 같은 이유). `url`이 있으면
-          웹 결과라 새 탭 링크로, 없으면(내부 문서) 그냥 텍스트로 그린다. */}
-      {sources.length > 0 && (
-        <ul className={styles.queries}>
-          {sources.map((source) =>
-            source.url ? (
-              <li key={source.id} className={styles.query}>
-                <Icon name="link" size={13} color="var(--color-placeholder)" />
-                <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
-                  {source.label}
-                </a>
-              </li>
-            ) : (
-              <li key={source.id} className={styles.query}>
-                <Icon name="file-text" size={13} color="var(--color-placeholder)" />
-                {source.label}
-              </li>
-            ),
+      {/* 웹 검색 링크와 팀 문서는 성격이 다르므로 각각 접는다. 결과가 많아도
+          진행 단계와 최종 답변을 밀어내지 않고, 개수는 접힌 상태에서도 보인다. */}
+      {running && webSources.length > 0 && (
+        <div className={styles.sourceGroup}>
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            aria-expanded={webSourcesOpen}
+            onClick={() => setWebSourcesOpen((open) => !open)}
+          >
+            <Icon name={webSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
+            검색 결과 {webSources.length}개
+          </button>
+          {webSourcesOpen && (
+            <ul className={styles.queries}>
+              {webSources.map((source) => (
+                <li key={source.url ?? source.id} className={styles.query}>
+                  <Icon name="link" size={13} color="var(--color-placeholder)" />
+                  <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                    {source.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
-        </ul>
+        </div>
+      )}
+
+      {running && documentSources.length > 0 && (
+        <div className={styles.sourceGroup}>
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            aria-expanded={documentSourcesOpen}
+            onClick={() => setDocumentSourcesOpen((open) => !open)}
+          >
+            <Icon name={documentSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
+            참고한 문서 {documentSources.length}개
+          </button>
+          {documentSourcesOpen && (
+            <ul className={styles.queries}>
+              {documentSources.map((source) => (
+                <li key={source.id} className={styles.query}>
+                  <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                  {source.label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {/* 다른 에이전트에게 위임한 작업들(2026-08-18) — 위임 자체가 걸린
@@ -158,7 +217,7 @@ export function ProgressCard({
           동안 화면에 아무 변화가 없었다)를 고치려고 추가했다. 서브 에이전트
           *자신의* reasoning·도구 진행은 여전히 안 보여준다 — "지금
           위임했다/끝났다"는 사실만 보여준다. */}
-      {subagents.length > 0 && (
+      {running && subagents.length > 0 && (
         <ul className={styles.steps}>
           {subagents.map((run) => (
             <li key={run.runId} className={styles.step}>
@@ -180,10 +239,9 @@ export function ProgressCard({
           `running` 을 보고 회전을 멈추는데 이 줄만 무조건 그려져서, 답변이 다
           나온 뒤에도 카드가 아직 도는 것처럼 보였다. 끝난 뒤 남길 값은 근거
           수뿐이고, 그것도 없으면 줄 자체를 안 그린다. */}
-      {(running || Boolean(evidenceCount)) && (
+      {running && Boolean(evidenceCount) && (
         <p className={styles.foot}>
-          {evidenceCount ? `근거 ${evidenceCount}건` : ''}
-          {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
+          근거 {evidenceCount}건
         </p>
       )}
     </Wrapper>
@@ -219,12 +277,16 @@ export interface ReasoningTraceProps {
    * `<section className={styles.card}>`를 한 번만 두른다.
    */
   bare?: boolean;
+  /** 실제 도구가 사용한 검색어. 완료 화면에서는 작업 과정 상세 안에서만 보인다. */
+  queries?: string[];
+  /** 검색 결과·내부 문서 후보. 최종 답변의 인용 링크와 구분해 상세에만 둔다. */
+  sources?: SourceRef[];
 }
 
 /**
- * ⓪ 생각 과정 카드(2026-08-18) — 추론 모델(gpt-5.6-luna 등)이 도구를 부르기
- * 전이나 최종 답 전에 내는 생각을, **실제로 부른 도구·위임과 같은 순서로
- * 섞어서** 보여준다. `services/agent_runtime/events.py`가 내는 `reasoning`
+ * ⓪ 작업 과정 카드 — 모델이 도구를 부르기 전에 만든 사용자용 한국어 안내를
+ * **실제로 부른 도구·위임과 같은 순서로 섞어서** 보여준다. 내부 reasoning은
+ * 저장 호환을 위해 수신하더라도 화면에는 그리지 않는다.
  * 조각과 `tool_started`/`tool_completed`/`subagent_started`/`subagent_completed`
  * 를 `liveChat.ts`의 `reduce()`가 하나의 `timeline` 배열로 순서대로 쌓는다 —
  * 전에는 이 둘이 서로 다른 배열에 각자 쌓여서 "몇 번째 생각 다음에 이
@@ -236,13 +298,38 @@ export interface ReasoningTraceProps {
  * `defaultOpen`으로 펼쳐서 시작한다** — 실시간으로 쓰는 걸 보여주는 게
  * 이 기능의 목적이라, 접어 두면 매번 사람이 직접 펴야 그 효과를 본다.
  */
-export function ReasoningTrace({ entries, defaultOpen = false, running = false, bare = false }: ReasoningTraceProps) {
+export function ReasoningTrace({
+  entries,
+  defaultOpen = false,
+  running = false,
+  bare = false,
+  queries = [],
+  sources = [],
+}: ReasoningTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
   const logRef = useRef<HTMLOListElement>(null);
+  const [searchDetailsOpen, setSearchDetailsOpen] = useState(false);
   // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
   // "그 스트리밍된 툴을 눌러야만 보이게 해줘" 요청). index로 여닫힘을 추적한다
   // — entries는 순서만 늘고 위치가 안 바뀌므로 li의 key(index)와 그대로 맞는다.
   const [expandedOutputs, setExpandedOutputs] = useState<Set<number>>(new Set());
+  const [expandedToolGroups, setExpandedToolGroups] = useState<Set<number>>(new Set());
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
+  const timelineGroups = entries.reduce<Array<Array<{ entry: TimelineEntry; index: number }>>>((groups, entry, index) => {
+    const previous = groups[groups.length - 1];
+    const previousEntry = previous?.[0]?.entry;
+    if (
+      entry.kind === 'tool' &&
+      previousEntry?.kind === 'tool' &&
+      previousEntry.toolRef === entry.toolRef
+    ) {
+      previous.push({ entry, index });
+    } else {
+      groups.push([{ entry, index }]);
+    }
+    return groups;
+  }, []);
 
   function toggleOutput(index: number) {
     setExpandedOutputs((prev) => {
@@ -252,6 +339,15 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
       } else {
         next.add(index);
       }
+      return next;
+    });
+  }
+
+  function toggleToolGroup(index: number) {
+    setExpandedToolGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
       return next;
     });
   }
@@ -271,13 +367,105 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
     <Wrapper className={bare ? styles.bareStack : styles.card}>
       <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
-        생각 과정 {entries.length}단계
+        작업 과정 {entries.length}단계
       </button>
 
       {open && (
+        <div className={styles.reasoningPanel}>
         <ol className={styles.reasoningList} ref={logRef}>
-          {entries.map((entry, index) => {
-            const isLast = index === entries.length - 1;
+          {timelineGroups.map((group, groupIndex) => {
+            const { entry, index } = group[0];
+            const isLast = groupIndex === timelineGroups.length - 1;
+            if (group.length > 1 && group.every((item) => item.entry.kind === 'tool')) {
+              const tools = group.map((item) => item.entry as Extract<TimelineEntry, { kind: 'tool' }>);
+              const groupOpen = expandedToolGroups.has(index);
+              const status = tools.some((tool) => tool.status === 'RUNNING')
+                ? 'RUNNING'
+                : tools.some((tool) => tool.status === 'FAILED')
+                  ? 'FAILED'
+                  : tools.every((tool) => tool.status === 'REJECTED')
+                    ? 'REJECTED'
+                    : 'OK';
+              return (
+                <li key={`tool-group-${index}`} className={styles.reasoningToolGroup}>
+                  <button type="button" className={styles.reasoningTool} onClick={() => toggleToolGroup(index)}>
+                    {status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
+                    {status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
+                    {status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
+                    {status === 'REJECTED' && <Icon name="x" size={13} color="var(--color-muted)" />}
+                    <span>
+                      {tools[0].toolName ?? tools[0].toolRef} · {tools.length}회
+                      {status === 'OK' && ' 완료'}
+                      {status === 'FAILED' && ' · 일부 실패'}
+                      {status === 'REJECTED' && ' 취소'}
+                    </span>
+                    <Icon
+                      name={groupOpen ? 'chevron-down' : 'chevron-right'}
+                      size={12}
+                      color="var(--color-placeholder)"
+                    />
+                  </button>
+                  {groupOpen && (
+                    <ol className={styles.toolRuns}>
+                      {group.map((item, runIndex) => {
+                        const tool = item.entry as Extract<TimelineEntry, { kind: 'tool' }>;
+                        const formattedArguments = formatToolArguments(tool.arguments);
+                        const hasDetails = Boolean(formattedArguments || tool.output);
+                        const runOpen = expandedOutputs.has(item.index);
+                        return (
+                          <li key={item.index} className={styles.toolRun}>
+                            <button
+                              type="button"
+                              className={styles.toolRunToggle}
+                              onClick={() => toggleOutput(item.index)}
+                              disabled={!hasDetails}
+                            >
+                              <span>{runIndex + 1}차 실행</span>
+                              <span className={styles.toolRunStatus}>
+                                {tool.status === 'RUNNING' ? '진행 중' : tool.status === 'OK' ? '완료' : tool.status === 'FAILED' ? '실패' : '취소'}
+                              </span>
+                              {hasDetails && (
+                                <Icon
+                                  name={runOpen ? 'chevron-down' : 'chevron-right'}
+                                  size={11}
+                                  color="var(--color-placeholder)"
+                                />
+                              )}
+                            </button>
+                            {runOpen && hasDetails && (
+                              <div className={styles.reasoningDetails}>
+                                {formattedArguments && (
+                                  <div>
+                                    <span className={styles.reasoningDetailLabel}>입력</span>
+                                    <pre className={styles.reasoningOutput}>{formattedArguments}</pre>
+                                  </div>
+                                )}
+                                {tool.output && (
+                                  <div>
+                                    <span className={styles.reasoningDetailLabel}>결과</span>
+                                    <pre className={styles.reasoningOutput}>{tool.output}</pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </li>
+              );
+            }
+            if (entry.kind === 'update') {
+              return (
+                <li key={index} className={styles.reasoningStep}>
+                  <span>
+                    {entry.text}
+                    {running && isLast && <span className={styles.reasoningCursor} />}
+                  </span>
+                </li>
+              );
+            }
             if (entry.kind === 'reasoning') {
               return (
                 <li key={index} className={styles.reasoningStep}>
@@ -301,6 +489,8 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
             }
             if (entry.kind === 'tool') {
               const isExpanded = expandedOutputs.has(index);
+              const formattedArguments = formatToolArguments(entry.arguments);
+              const hasDetails = Boolean(formattedArguments || entry.output);
               return (
                 <li key={index} className={styles.reasoningToolGroup}>
                   {/* 도구가 실제로 뭘 반환했는지는 눌러야만 펼쳐진다(2026-08-18) —
@@ -310,7 +500,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                     type="button"
                     className={styles.reasoningTool}
                     onClick={() => toggleOutput(index)}
-                    disabled={!entry.output}
+                    disabled={!hasDetails}
                   >
                     {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
                     {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
@@ -322,7 +512,7 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                       {entry.status === 'FAILED' && ' 실패'}
                       {entry.status === 'REJECTED' && ' 취소'}
                     </span>
-                    {entry.output && (
+                    {hasDetails && (
                       <Icon
                         name={isExpanded ? 'chevron-down' : 'chevron-right'}
                         size={12}
@@ -330,7 +520,22 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                       />
                     )}
                   </button>
-                  {isExpanded && entry.output && <pre className={styles.reasoningOutput}>{entry.output}</pre>}
+                  {isExpanded && hasDetails && (
+                    <div className={styles.reasoningDetails}>
+                      {formattedArguments && (
+                        <div>
+                          <span className={styles.reasoningDetailLabel}>입력</span>
+                          <pre className={styles.reasoningOutput}>{formattedArguments}</pre>
+                        </div>
+                      )}
+                      {entry.output && (
+                        <div>
+                          <span className={styles.reasoningDetailLabel}>결과</span>
+                          <pre className={styles.reasoningOutput}>{entry.output}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             }
@@ -348,6 +553,71 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
             );
           })}
         </ol>
+
+        {(queries.length > 0 || sources.length > 0) && (
+          <div className={styles.searchDetails}>
+            <button
+              type="button"
+              className={styles.evidenceToggle}
+              aria-expanded={searchDetailsOpen}
+              onClick={() => setSearchDetailsOpen((previous) => !previous)}
+            >
+              <Icon
+                name={searchDetailsOpen ? 'chevron-down' : 'chevron-right'}
+                size={13}
+                color="var(--color-primary)"
+              />
+              검색 결과 {webSources.length > 0 ? `${webSources.length}개` : ''}
+            </button>
+
+            {searchDetailsOpen && (
+              <div className={styles.searchDetailsBody}>
+                {queries.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>검색어</span>
+                    <ul className={styles.queries}>
+                      {queries.map((query) => (
+                        <li key={query} className={styles.query}>
+                          <Icon name="search" size={13} color="var(--color-placeholder)" />
+                          {query}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {webSources.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>검색 결과</span>
+                    <ul className={styles.queries}>
+                      {webSources.map((source) => (
+                        <li key={source.url ?? source.id} className={styles.query}>
+                          <Icon name="link" size={13} color="var(--color-placeholder)" />
+                          <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                            {source.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {documentSources.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>참고 문서 후보</span>
+                    <ul className={styles.queries}>
+                      {documentSources.map((source) => (
+                        <li key={source.id} className={styles.query}>
+                          <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                          {source.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        </div>
       )}
     </Wrapper>
   );

@@ -127,7 +127,7 @@ export interface LiveChat {
    * 것이라 다시 물으면 된다.
    *
    * 이 값이 없던 동안 중단은 **화면에 아무 흔적도 남기지 않았다.** 카드가
-   * 도중까지만 그려지고 스피너만 조용히 꺼져서, 접힌 「생각 과정」 한 줄만
+   * 도중까지만 그려지고 스피너만 조용히 꺼져서, 접힌 「작업 과정」 한 줄만
    * 남은 빈 상자가 됐다(2026-08-25 실측).
    */
   abortedByUser: boolean;
@@ -201,6 +201,33 @@ export function unwrapToolProgress(event: ChatEvent): ChatEvent {
   return { ...event.detail, tool_ref: event.tool_ref } as ChatEvent;
 }
 
+function sourceKey(source: SourceRef): string {
+  if (!source.url) return `document:${source.id}`;
+  try {
+    const url = new URL(source.url);
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) {
+      if (key.toLowerCase().startsWith('utm_')) url.searchParams.delete(key);
+    }
+    url.hostname = url.hostname.toLowerCase();
+    url.pathname = url.pathname.replace(/\/$/, '') || '/';
+    return url.toString();
+  } catch {
+    return source.url.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase();
+  }
+}
+
+function mergeSources(current: SourceRef[], incoming: SourceRef[]): SourceRef[] {
+  const merged = new Map<string, SourceRef>();
+  for (const source of [...current, ...incoming]) {
+    const key = sourceKey(source);
+    const previous = merged.get(key);
+    // 같은 URL이면 더 구체적인 제목을 남긴다. URL 문자열 자체보다 페이지 제목이 낫다.
+    if (!previous || source.label.length > previous.label.length) merged.set(key, source);
+  }
+  return [...merged.values()];
+}
+
 /** 이벤트 하나를 접어 넣는다. 불변으로 다뤄 React 가 변화를 알아채게 한다. */
 export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
   const event = unwrapToolProgress(rawEvent);
@@ -224,26 +251,38 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         return state;
       }
       // 도구 진행. 앞 단계는 끝난 것으로 확정하고 이번 단계를 doing 으로 만든다.
+      const label = event.label ?? `${event.step}단계`;
       const steps = state.steps.map((step) =>
         step.state === 'doing' ? { ...step, state: 'done' as const } : step,
       );
-      steps.push({ state: 'doing', label: event.label ?? `${event.step}단계` });
-      return { ...state, steps, queries: [] };
+      const repeatedIndex = steps.findIndex((step) => step.label === label);
+      if (repeatedIndex >= 0) {
+        const runs = (steps[repeatedIndex].runs ?? 1) + 1;
+        steps[repeatedIndex] = { ...steps[repeatedIndex], state: 'doing', runs, meta: `${runs}회 실행` };
+      } else {
+        steps.push({ state: 'doing', label, runs: 1 });
+      }
+      return { ...state, steps };
     }
 
     case 'queries':
-      return toolRef ? { ...state, queries: event.queries } : state;
+      return toolRef ? { ...state, queries: [...new Set([...state.queries, ...event.queries])] } : state;
 
     // `document_search`가 coarse 단계에서 좁힌 문서들(2026-08-18) — "출처".
     // `stage`처럼 초기화하지 않는다 — 다음 단계(본문 검색)가 도는 동안에도
     // "무엇으로 좁혔는지"는 계속 보여야 한다.
     case 'sources':
-      return toolRef ? { ...state, sources: event.documents } : state;
+      return toolRef ? { ...state, sources: mergeSources(state.sources, event.documents) } : state;
 
     case 'stage_done': {
+      const activeIndex = state.steps.findIndex((step) => step.state === 'doing');
       const steps = state.steps.map((step, index) =>
-        index === state.steps.length - 1
-          ? { ...step, state: 'done' as const, meta: `근거 ${event.found}건` }
+        index === activeIndex
+          ? {
+              ...step,
+              state: 'done' as const,
+              meta: `${step.runs && step.runs > 1 ? `${step.runs}회 실행 · ` : ''}근거 ${event.found}건`,
+            }
           : step,
       );
       return { ...state, steps, evidenceCount: event.evidence };
@@ -256,15 +295,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 사이에 도구 호출이 끼었으면 새 문단으로 봐야 맞다)에 붙이고, false면
     // 새 문단이라 항목을 새로 만든다.
     case 'reasoning': {
-      if (event.subagent_alias) return state;
-      const timeline = state.timeline.slice();
-      const last = timeline[timeline.length - 1];
-      if (event.append && last?.kind === 'reasoning') {
-        timeline[timeline.length - 1] = { ...last, text: last.text + event.text };
-      } else {
-        timeline.push({ kind: 'reasoning', text: event.text });
-      }
-      return { ...state, timeline };
+      // 내부 Reasoning summary는 저장된 과거 이벤트가 다시 들어와도 사용자
+      // 작업 과정에 표시하지 않는다. 사용자용 안내는 user_update만 사용한다.
+      return state;
     }
 
     case 'tool_call_started':
@@ -280,6 +313,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 이벤트)만 ref 로 떨어진다.
     case 'tool_started': {
       if (event.subagent_alias) return state;
+      const update = event.user_update
+        ? [{ kind: 'update' as const, text: event.user_update, source: event.user_update_source ?? 'application_fallback' as const }]
+        : [];
       return {
         ...state,
         toolName: event.tool_name ?? event.tool_ref,
@@ -288,6 +324,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         toolFailed: false,
         timeline: [
           ...state.timeline,
+          ...update,
           {
             kind: 'tool',
             toolCallId: event.tool_call_id ?? null,
@@ -295,6 +332,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
             // 상태줄과 **같은 값**을 쓴다 — 한 화면에서 같은 도구가 위에서는
             // 「업무 등록」, 아래 로그에서는 `task_register` 로 갈리면 안 된다.
             toolName: event.tool_name ?? null,
+            arguments: event.arguments,
             status: 'RUNNING',
           },
         ],
@@ -326,6 +364,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 타임라인과 subagents 둘 다에 넣는다 — subagents는 ProgressCard의 요약
     // 목록용으로 그대로 두고, 타임라인은 순서를 보여준다.
     case 'subagent_started': {
+      const update = event.user_update
+        ? [{ kind: 'update' as const, text: event.user_update, source: event.user_update_source ?? 'application_fallback' as const }]
+        : [];
       const run: SubagentRun = {
         runId: event.run_id,
         alias: event.subagent_alias,
@@ -336,7 +377,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       return {
         ...state,
         subagents: [...state.subagents, run],
-        timeline: [...state.timeline, { kind: 'subagent', ...run }],
+        timeline: [...state.timeline, ...update, { kind: 'subagent', ...run }],
       };
     }
 
