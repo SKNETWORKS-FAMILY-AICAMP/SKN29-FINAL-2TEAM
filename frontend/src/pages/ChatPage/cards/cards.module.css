@@ -1159,3 +1159,42 @@
   font-weight: 700;
   color: var(--color-danger, #dc2626);
 }
+
+/*
+ * 도구가 만들어 낸 파일 카드(2026-08-26). 결과 카드(`cardFlush`)보다 조용하게
+ * 둔다 — 답변에 딸린 첨부지 답변 자체가 아니다.
+ */
+.filesCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 파일 이름이 길어도 단추를 밀어내지 않게 이름만 줄인다. */
+.fileName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}

@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Icon } from '../../../components';
 import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
-import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
+import type {
+  CreatedIssue,
+  ExtractedTask,
+  ProducedFile,
+  ProgressStep,
+  SubagentRun,
+  TimelineEntry,
+} from '../cardTypes';
+import { downloadPersonalFile, ApiError } from '../../../api/personalFiles';
+import { loadSessionToken } from '../../../utils/session';
 import styles from './cards.module.css';
 
 interface SearchPreview {
@@ -1464,6 +1473,58 @@ export interface JiraStatusCardProps {
  * 적다 틀릴 수 있고, 사람도 문단보다 표를 빨리 읽는다 — `task_extraction` 이
  * 결과를 이벤트로 내보내고 화면이 카드로 그리는 것과 같은 규칙이다.
  */
+/**
+ * 도구가 만들어 낸 파일을 받는 카드(2026-08-26).
+ *
+ * **링크로 대신할 수 없다.** 받는 곳이 Bearer 토큰을 요구해서 `<a href>` 는
+ * 401 이 된다 — 답변 본문이 이제 마크다운 링크를 그리게 됐어도(`AnswerText`)
+ * 이 자리는 여전히 카드여야 한다. blob 으로 받아 사람이 저장하게 한다.
+ *
+ * 「내 파일」 표의 `download()` 와 같은 방식이다 — 임시 URL 을 만들고 **반드시
+ * 되돌려준다.** 안 하면 파일 하나가 탭을 떠날 때까지 메모리에 남는다.
+ */
+export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function save(file: ProducedFile) {
+    const token = loadSessionToken();
+    if (!token) return;
+    setBusy(file.docId);
+    setFailed(null);
+    try {
+      const blob = await downloadPersonalFile(token, file.docId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (exc) {
+      // 카드 안에서 말한다 — 토스트로 띄우면 어느 파일이 안 됐는지 모른다.
+      setFailed(exc instanceof ApiError ? exc.message : '내려받지 못했습니다.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className={styles.filesCard}>
+      {files.map((file) => (
+        <div key={file.docId} className={styles.fileRow}>
+          <Icon name="file-text" size={16} color="var(--color-primary)" />
+          <span className={styles.fileName}>{file.fileName}</span>
+          <Button size="sm" variant="outline" disabled={busy === file.docId} onClick={() => void save(file)}>
+            다운로드
+          </Button>
+        </div>
+      ))}
+      {/* 「내 파일」에도 남는다는 것을 밝힌다 — 카드를 놓쳐도 찾을 곳이 있다. */}
+      <p className={styles.fileHint}>{failed ?? '「문서 > 내 파일」에도 저장되어 있습니다.'}</p>
+    </section>
+  );
+}
+
 export function JiraStatusCard({
   projectName,
   projectKey,

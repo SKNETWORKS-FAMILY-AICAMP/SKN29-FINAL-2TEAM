@@ -566,6 +566,18 @@ def _safe_title(title: str, *, fallback: str) -> str:
     return "".join(ch for ch in (title or "") if ch not in _UNSAFE_NAME_CHARS).strip() or fallback
 
 
+def _file_ref(doc_id: str, file_name: str, mime_type: str) -> dict[str, str]:
+    """도구가 **만들어 낸 파일**을 가리키는 값. 화면의 받기 단추가 이것으로 그려진다.
+
+    **`doc_id` 를 평평하게 두지 않고 `file` 안에 넣는 것이 계약이다**(2026-08-26).
+    읽기 도구의 결과에도 `doc_id` 가 잔뜩 들어 있어서(`document_search` 의 근거·
+    `document_list` 의 목록) 평평하게 두면 「본 문서」와 「만든 파일」을 구별할
+    방법이 없다. `events.py` 의 `_produced_file()` 이 이 모양만 찾는다.
+    """
+
+    return {"doc_id": doc_id, "file_name": file_name, "mime_type": mime_type}
+
+
 def _store_generated(
     *, account_id: str, title: str, suffix: str, mime_type: str, data: bytes
 ) -> tuple[str, str]:
@@ -641,11 +653,10 @@ def _table_export(
 
     # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
     return {
-        "doc_id": doc_id,
-        "file_name": file_name,
+        "file": _file_ref(doc_id, file_name, _XLSX_MIME),
         "columns": len(columns),
         "rows": len(rows),
-        "note": "「내 파일」에 저장했습니다. 목록에서 내려받을 수 있습니다.",
+        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
     }
 
 
@@ -670,9 +681,8 @@ def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any
 
     # 본문을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
     return {
-        "doc_id": doc_id,
-        "file_name": file_name,
-        "note": "「내 파일」에 저장했습니다. 목록에서 내려받을 수 있습니다.",
+        "file": _file_ref(doc_id, file_name, _DOCX_MIME),
+        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
     }
 
 

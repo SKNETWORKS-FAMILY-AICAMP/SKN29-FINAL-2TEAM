@@ -123,7 +123,11 @@ class TableExportToolTests(SimpleTestCase):
         sheet = _sheet(save.call_args.args[1])
         self.assertEqual([c.value for c in sheet[2]], ["로그인 구현", 16])
 
-        self.assertEqual(result["doc_id"], "DC099")
+        # **`file` 키가 채팅 다운로드 카드의 계약이다**(2026-08-26). 평평한
+        # `doc_id` 로 두면 `document_search` 결과의 `doc_id` 와 구별되지 않는다.
+        self.assertEqual(
+            result["file"], {"doc_id": "DC099", "file_name": create.call_args.kwargs["file_name"], "mime_type": _XLSX_MIME}
+        )
         self.assertEqual(result["rows"], 1)
         # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이다.
         self.assertNotIn("data", result)

@@ -6,7 +6,15 @@ import type {
   SourceRef,
   TaskExtractionPayload,
 } from '../../api/chat';
-import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from './cardTypes';
+import type {
+  CreatedIssue,
+  Evidence,
+  ExtractedTask,
+  ProducedFile,
+  ProgressStep,
+  SubagentRun,
+  TimelineEntry,
+} from './cardTypes';
 
 /**
  * `services/harness/registry.py`의 `skill_creator_ask_followup` 도구 이름과
@@ -144,6 +152,16 @@ export interface LiveChat {
    * 자신의 항목은 안 담는다 — `subagent_alias`가 있으면 이 턴의 최상위
    * 표시에는 안 쓴다(기존 `reasoningSteps`/`toolName`과 같은 규칙).
    */
+  /**
+   * 이 턴에서 도구가 **만들어 낸 파일**(2026-08-26). 없으면 빈 배열이라 카드도
+   * 안 그려진다.
+   *
+   * **`subagent_alias` 로 거르지 않는다** — 이 파일 아래 대부분의 이벤트는
+   * 서브 에이전트 것이면 최상위에 안 올리는데, 파일은 내부 진행이 아니라
+   * **결과물**이라 누가 만들었든 사람은 받아야 한다(`events.py` 의 같은 자리
+   * 주석과 짝이다).
+   */
+  files: ProducedFile[];
   timeline: TimelineEntry[];
   /**
    * 이 턴에서 다른 에이전트에게 위임한 작업들(2026-08-18). 서브 에이전트
@@ -163,6 +181,7 @@ export function emptyLive(): LiveChat {
     sources: [],
     evidenceCount: 0,
     running: true,
+    files: [],
     extraction: null,
     tasks: [],
     confirm: null,
@@ -345,9 +364,25 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 안 읽었다 — steps/toolName만으로는 완료 여부가 필요 없었지만, 타임라인은
     // "이 도구가 끝났다/실패했다"까지 보여줘야 한다.
     case 'tool_completed': {
-      if (event.subagent_alias) return state;
+      // 파일은 서브 에이전트가 만든 것도 담는다(위 `files` 주석). 아래 타임라인
+      // 갱신은 종전대로 최상위 호출만 본다.
+      const produced = event.produced_file;
+      const files =
+        produced && !state.files.some((f) => f.docId === produced.doc_id)
+          ? [
+              ...state.files,
+              {
+                docId: produced.doc_id,
+                fileName: produced.file_name,
+                mimeType: produced.mime_type ?? null,
+              },
+            ]
+          : state.files;
+
+      if (event.subagent_alias) return files === state.files ? state : { ...state, files };
       return {
         ...state,
+        files,
         toolFailed: event.status === 'FAILED',
         timeline: state.timeline.map((entry) =>
           entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id

@@ -99,7 +99,10 @@ class DocumentCreateToolTests(SimpleTestCase):
         self.assertTrue(save.call_args.args[0].endswith(".docx"))
 
         self.assertEqual([p.text for p in _doc(save.call_args.args[1]).paragraphs][:2], ["주간 보고", "요약"])
-        self.assertEqual(result["doc_id"], "DC100")
+        # `table_export` 와 같은 `file` 계약을 쓴다.
+        self.assertEqual(
+            result["file"], {"doc_id": "DC100", "file_name": create.call_args.kwargs["file_name"], "mime_type": _DOCX_MIME}
+        )
         # 본문을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
         self.assertNotIn("body", result)
 
