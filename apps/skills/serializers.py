@@ -14,6 +14,7 @@ def skill_response(row: dict[str, Any]) -> dict[str, Any]:
         "name": row["name"],
         "description": row["description"],
         "updated_at": row.get("updated_at"),
+        "enabled": row.get("enabled", True),
     }
     if "body" in row:
         response["body"] = row["body"]

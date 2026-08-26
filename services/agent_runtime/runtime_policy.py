@@ -14,7 +14,17 @@ Role = Literal["ROOT", "GENERAL_PURPOSE", "CHILD"]
 AccountRole = Literal["leader", "member"]
 
 # 업무 Agent에 노출하지 않는 Deep Agents 가상 파일 Tool.
-DEFAULT_EXCLUDED_BUILTIN_TOOLS = frozenset({"delete"})
+#
+# 2026-08-26 — `delete`를 다시 켰다. 노출만 켜는 게 아니라 `factory.py`의
+# `build()`가 이 목록에서 `delete`가 빠진 걸 보고 `interrupt_on`에도 같이
+# 넣는다 — 부수효과 있는 다른 도구와 똑같이 승인 카드를 거치게 하기
+# 위해서다(`EXTERNAL_WRITE_TOOLS_POLICY_NOTE` 참고 — "HITL 구현 전까지"
+# 조건이 이제 풀렸다). 다만 이 승인은 "사람이 한 번 더 확인한다"는 것이지
+# "팀장만 팀 스킬을 지울 수 있다" 같은 역할별 접근 제어는 아니다 — 이 도구는
+# `skills/service.py`의 권한 검사를 거치지 않는 별개 경로라서, 팀원도 채팅으로
+# 팀 스킬 파일을 지우자고 요청하고 스스로 승인할 수 있다. 이 간극은 아직 안
+# 막혀 있다.
+DEFAULT_EXCLUDED_BUILTIN_TOOLS: frozenset[str] = frozenset()
 
 # 외부 시스템을 변경하는 Tool의 운영 정책 메모. 실행을 직접 차단하지는 않는다.
 EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (

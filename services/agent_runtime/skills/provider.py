@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from deepagents.backends import StoreBackend
+    from langgraph.store.postgres import PostgresStore
 
 
 class SkillsProvider:
@@ -35,6 +36,16 @@ class SkillsProvider:
         from services.agent_runtime.skills.backend import skills_system_prompt
 
         return skills_system_prompt()
+
+    def store(self) -> "PostgresStore":
+        """2026-08-25 추가 — `memory_provider`가 없을 때 `factory.py`가 Skill
+        전용 backend를 만들면서 쓴다. `MemoryProvider.store()`와 똑같이
+        `get_memory_store()`를 부른다 — 이름이 memory지만 실제로는 이
+        저장소가 쓰는 프로세스 전역 Postgres Store 싱글턴이다. Skill 전용
+        인프라가 따로 있는 게 아니라, 같은 저장소를 재사용할 뿐이다."""
+        from services.agent_runtime.memory.store import get_memory_store
+
+        return get_memory_store()
 
 
 __all__ = ["SkillsProvider"]

@@ -17,6 +17,8 @@ from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
 from services.agent_runtime.memory.write_guard import build_memory_write_guard
 from services.agent_runtime.memory.write_lock import build_memory_write_lock
+from services.agent_runtime.skills.sync import build_skill_register_sync
+from services.agent_runtime.skills.visibility import build_skill_visibility_filter
 from services.agent_runtime.hitl_warnings import build_confirmation_description
 from services.agent_runtime.prompts import GP_DESCRIPTION
 from services.agent_runtime.runtime_policy import GUNICORN_WORKER_TIMEOUT_SECONDS
@@ -312,12 +314,13 @@ class AgentRuntimeFactory:
         self.checkpointer_provider = checkpointer_provider
         # memory_provider와 같은 이유로 기본값 None 허용(2026-08-21 추가,
         # 설계 문서 "저장 구조" 절). None이면 build()가 Skill 없이 예전과
-        # 동일하게 돈다. **memory_provider가 없으면 skills_provider가 있어도
-        # Skill을 안 붙인다** — Skill은 Memory와 같은 공유 backend 인스턴스에
-        # 얹혀야 해서(`memory/backend.py`의 `build_memory_backend(extra_routes=)`
-        # docstring 참고), backend 자체를 안 만드는 상태에선 Skill 라우트를
-        # 얹을 자리가 없다. 이 프로젝트는 지금 `bootstrap.py`가 memory_provider를
-        # 항상 켜 두므로 실제로는 걸리지 않는 제약이다.
+        # 동일하게 돈다.
+        #
+        # 2026-08-25 — memory_provider 유무와 독립적으로 붙는다. Skill이 쓰는
+        # backend(라우터 객체)는 memory_provider가 있으면 그게 만든 것에
+        # 얹히고, 없으면 `build()`가 Skill 전용 backend를 따로 만든다 —
+        # `build()`의 "공유 backend/스토어" 절 참고. Skill이 필요로 하는 건
+        # "장기 저장 가능한 backend 하나"뿐이지 메모리 그 자체가 아니다.
         self.skills_provider = skills_provider
 
     def build(
@@ -418,6 +421,11 @@ class AgentRuntimeFactory:
                         ),
                     }
                 side_effect_tools[model_safe_tool_name(tool.ref)] = confirmation
+            # `delete`(deepagents 기본 파일시스템 Tool, 2026-08-26 재활성화)는
+            # 이 프로젝트가 등록한 `tools` 목록에 없어서 위 루프를 안 탄다 —
+            # 여기서 따로 넣어야 다른 부수효과 도구와 똑같이 승인을 거친다.
+            if allowed_side_effect and "delete" not in self.runtime_policy.excluded_builtin_tools:
+                side_effect_tools["delete"] = True
             if side_effect_tools:
                 interrupt_on = side_effect_tools
 
@@ -480,18 +488,13 @@ class AgentRuntimeFactory:
         gp_read_only_tools = [
             lt for t, lt in zip(tools, langchain_tools) if not t.side_effect
         ]
-        # 2026-08-21, Skill 배선 — Skill은 Memory와 같은 공유 backend 인스턴스에
-        # 얹혀야 하므로(__init__의 skills_provider 주석 참고) memory_provider가
-        # 꺼져 있으면 skills_provider가 있어도 소스를 계산하지 않는다. GP에
-        # 여기서 명시적으로 넘기는 이유는 `build_general_purpose_spec()`
+        # 2026-08-21, Skill 배선 — 2026-08-25부터 memory_provider와 무관하게
+        # skills_provider만 있으면 계산한다(아래 "공유 backend/스토어" 절 참고).
+        # GP에 여기서 명시적으로 넘기는 이유는 `build_general_purpose_spec()`
         # docstring 참고 — deepagents 기본 GP만 top-level `skills=`를 자동으로
         # 물려받고, 이 저장소는 항상 GP를 직접 만들어 넘기므로 자동 상속 경로를
         # 안 탄다.
-        skill_sources = (
-            self.skills_provider.sources()
-            if self.memory_provider is not None and self.skills_provider is not None
-            else []
-        )
+        skill_sources = self.skills_provider.sources() if self.skills_provider is not None else []
         gp_spec = build_general_purpose_spec(
             middleware=self.middleware_factory.build_for_general_purpose(),
             system_prompt=self.prompt_assembler.assemble_general_purpose(
@@ -510,44 +513,66 @@ class AgentRuntimeFactory:
         # 써도 저장이 안 되므로 막을 대상이 없다. `custom_middleware`는 Root/Child가
         # 공유하는 리스트라 거기 넣지 않고 Root 전용 사본을 따로 만든다.
         root_middleware = custom_middleware
+
+        # 공유 backend/스토어 — Memory와 Skill이 같이 쓴다.
+        #
+        # deepagents는 에이전트 하나에 파일 경로 라우터(`backend=`)를 하나만
+        # 받는다. 그 라우터를 누가 만드느냐가 2026-08-25 전까지는 항상
+        # Memory였다(`memory_provider`가 없으면 Skill도 얹을 자리가 없었다).
+        # 이제는 **누구든 먼저 필요로 하는 쪽이 만든다**:
+        # - memory_provider가 있으면 그게 라우터를 만들고(`/memories/users/`
+        #   경로 포함), Skill 라우트는 거기에 병합된다(기존과 동일).
+        # - memory_provider가 없고 skills_provider만 있으면, Skill 전용
+        #   라우터를 따로 만든다 — `/memories/users/` 경로는 아예 없다.
+        skill_extra_routes = (
+            self.skills_provider.routes(account_id=context.account_id, team_id=context.team_id)
+            if self.skills_provider is not None
+            else None
+        )
+        shared_backend: Any = None
+        shared_store: Any = None
         if self.memory_provider is not None:
-            # 2026-08-21, Skill 배선 — skill_sources는 위 gp_spec 계산에서 이미
-            # 같은 조건으로 구했다. 라우트는 여기서 한 번만 계산해 Memory
-            # backend에 병합한다(단일 공유 backend 인스턴스 제약,
-            # `build_memory_backend()` docstring 참고).
-            skill_extra_routes = (
-                self.skills_provider.routes(account_id=context.account_id, team_id=context.team_id)
-                if self.skills_provider is not None
-                else None
+            shared_backend = self.memory_provider.backend(
+                team_id=context.team_id,
+                agent_id=definition.agent_id,
+                account_id=context.account_id,
+                extra_routes=skill_extra_routes,
             )
-            root_kwargs.update(
-                memory=self.memory_provider.paths(),
-                backend=self.memory_provider.backend(
-                    team_id=context.team_id,
-                    agent_id=definition.agent_id,
-                    account_id=context.account_id,
-                    extra_routes=skill_extra_routes,
-                ),
-                store=self.memory_provider.store(),
+            shared_store = self.memory_provider.store()
+        elif skill_extra_routes:
+            # 지연 import — deepagents.backends는 deepagents 전체를 끌고 들어온다.
+            from deepagents.backends import CompositeBackend, StateBackend
+
+            shared_backend = CompositeBackend(default=StateBackend(), routes=skill_extra_routes)
+            # 같은 프로세스 전역 Postgres Store 싱글턴을 재사용한다 — Memory
+            # 전용 인프라가 아니라 이 저장소가 쓰는 장기 저장소 자체다
+            # (`skills/provider.py`의 `store()` 참고).
+            shared_store = self.skills_provider.store()
+
+        if shared_backend is not None:
+            root_kwargs["backend"] = shared_backend
+            root_kwargs["store"] = shared_store
+            if self.memory_provider is not None:
+                root_kwargs["memory"] = self.memory_provider.paths()
                 # `MemoryMiddleware.system_prompt`에 라우팅 안내를 이어붙인다.
                 # `create_root_graph()`가 이 값으로 커스텀 MemoryMiddleware를
                 # 만들어 자동 생성분을 치환한다.
-                memory_system_prompt=self.memory_provider.system_prompt(),
+                root_kwargs["memory_system_prompt"] = self.memory_provider.system_prompt()
                 # 여기에 `build_filesystem_permissions(project_id=...)`는 배선하지
                 # 않는다. 메모리가 개인 전용이 되면서 프로젝트 간 접근 자체가
                 # 구조적으로 불가능해졌다(`memory/backend.py` docstring). 함수
                 # 자체는 `middleware/permissions.py`에 남아 있다(재사용 대비).
-                #
-                # skill_sources와 같은 조건(memory_provider·skills_provider
-                # 둘 다 있을 때만)에서만 의미가 있다 — skills 소스가 없으면
-                # `create_root_graph`가 이 값을 무시한다.
-                skills_system_prompt=(
-                    self.skills_provider.system_prompt() if self.skills_provider is not None else None
-                ),
-            )
+            if self.skills_provider is not None:
+                # skills 소스가 없으면 `create_root_graph`가 이 값을 무시한다.
+                root_kwargs["skills_system_prompt"] = self.skills_provider.system_prompt()
             if skill_sources:
                 root_kwargs["skills"] = skill_sources
-            # write_lock(`memory/write_lock.py`)도 같은 이유로 Root 전용이다.
+
+        if self.memory_provider is not None:
+            # write_guard/write_lock(`memory/write_guard.py`,
+            # `memory/write_lock.py`)은 `/memories/users/` 쓰기 전용 안전장치라
+            # memory_provider가 있을 때만 의미가 있다 — 스킬 전용 backend에는
+            # 그 경로 자체가 없다.
             #
             # **순서가 중요하다** — write_guard가 먼저다. guard가 credential/PII/
             # 권한 서술을 이유로 거부할 내용이면 Postgres 락을 잡을 필요조차 없다.
@@ -562,6 +587,21 @@ class AgentRuntimeFactory:
                 build_memory_write_lock(
                     namespace=(context.team_id, definition.agent_id, context.account_id)
                 ),
+            ]
+
+        # skill_register 직후 재스캔(2026-08-26) — 메모리 유무와 무관하게,
+        # 스킬 자체가 실제로 붙어 있을 때만(=root_kwargs에 "skills"가 있을
+        # 때만) 의미가 있다. `shared_backend`는 위에서 memory_provider 유무와
+        # 무관하게 이미 정해져 있다.
+        if shared_backend is not None and skill_sources:
+            root_middleware = [
+                *root_middleware,
+                build_skill_register_sync(backend=shared_backend),
+                # 비활성화된 스킬 걸러내기(2026-08-26, §7) — deepagents의
+                # SkillsMiddleware(4-9에서 조립)가 먼저 전체를 읽은 뒤,
+                # before_agent 체인에서 이 미들웨어가 그 뒤를 잇는다
+                # (`skills/visibility.py` docstring의 순서 근거 참고).
+                build_skill_visibility_filter(),
             ]
         if self.checkpointer_provider is not None:
             root_kwargs["checkpointer"] = self.checkpointer_provider.get()

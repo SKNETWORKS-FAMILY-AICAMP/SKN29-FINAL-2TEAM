@@ -258,13 +258,20 @@ export default function ChatPage() {
       ([mine, team]) => {
         // 이름이 겹치면 팀이 이긴다 — 실제 호출(서버)과 같은 우선순위를
         // 자동완성에도 맞춘다(위 `SlashSkillOption` docstring 참고).
+        // 꺼진 스킬은 자동완성에도 안 보인다 — `SkillVisibilityMiddleware`가
+        // 어차피 에이전트에게 안 보이게 거르므로(2026-08-26), 골라도 아무
+        // 일도 안 일어나는 항목을 목록에 남겨 두지 않는다.
         const merged = new Map<string, SlashSkillOption>();
-        mine.forEach((skill) =>
-          merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'personal' }),
-        );
-        team.forEach((skill) =>
-          merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'team' }),
-        );
+        mine
+          .filter((skill) => skill.enabled)
+          .forEach((skill) =>
+            merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'personal' }),
+          );
+        team
+          .filter((skill) => skill.enabled)
+          .forEach((skill) =>
+            merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'team' }),
+          );
         setSkillOptions(Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
       },
     );

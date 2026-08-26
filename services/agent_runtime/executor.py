@@ -54,9 +54,9 @@ def _agent_execution_failure_event(
     from services.harness.trace import error_code_of
 
     if isinstance(exc, ModelCallLimitExceededError):
-        message = "모델 호출 한도에 도달해 실행이 중단되었습니다."
+        message = "모델 호출 한도에 도달해 실행이 중단되었습니다. 요청을 더 작은 단위로 나눠 다시 시도해 주세요."
     elif isinstance(exc, ToolCallLimitExceededError):
-        message = "도구 호출 한도에 도달해 실행이 중단되었습니다."
+        message = "도구 호출 한도에 도달해 실행이 중단되었습니다. 요청을 더 작은 단위로 나눠 다시 시도해 주세요."
     elif isinstance(exc, SPEAKABLE_ERRORS):
         message = str(exc)
     else:
