@@ -144,6 +144,43 @@ class SharedFileListAPIView(AuthenticatedAPIView):
         return Response([personal_file_response(row) for row in rows])
 
 
+class PersonalFileReindexAPIView(AuthenticatedAPIView):
+    """색인을 **다시 시킨다.** 팀 문서의 같은 이름 화면과 짝이다
+    (`apps/projects/api_views.py` 의 `TeamDocumentReindexAPIView`).
+
+    올린 파일에는 이 길이 없었다. 실패하면 지우고 다시 올리는 수밖에 없었는데,
+    같은 파일을 같은 파서로 다시 읽히는 일에 파일을 지울 이유가 없다 — 실패는
+    대개 그때 워커가 못 돌았다는 뜻이라 다시 눌러 보는 것이 맞는 조치다.
+
+    **응답을 붙잡지 않는다.** 승격은 워커를 기다려 한 건에 100초 남짓이다.
+    시작할 때 `RUNNING` 을, 끝날 때 결과를 적으므로 화면은 그 칸을 폴링한다.
+    """
+
+    def post(self, request, doc_id):
+        account_id = request.user.account_id
+        try:
+            # **내 파일인지 여기서 본다.** 뒷작업으로 던지고 나면 남의 문서를
+            # 돌리고 있어도 응답은 이미 202 로 나간 뒤다.
+            rows = PersonalDocumentRepository.list_for_account(account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _error_response(exc)
+
+        target = next((row for row in rows if row["doc_id"] == doc_id), None)
+        if target is None:
+            return Response(
+                {"detail": "내가 올린 파일이 아닙니다."}, status=status.HTTP_404_NOT_FOUND
+            )
+        if not target["storage_key"]:
+            # 원문이 없으면 색인이 시작조차 못 한다. 던져 놓고 실패시키면
+            # 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+            return Response(
+                {"detail": "아직 파일을 받지 못했습니다."}, status=status.HTTP_409_CONFLICT
+            )
+
+        _start_processing(account_id=account_id, doc_id=doc_id)
+        return Response({"doc_id": doc_id, "started": True}, status=status.HTTP_202_ACCEPTED)
+
+
 class PersonalFileDetailAPIView(AuthenticatedAPIView):
     def patch(self, request, doc_id):
         """toggle 둘. 켜고 끄는 것뿐이라 다른 값은 안 받는다.

@@ -7,6 +7,7 @@ import {
   deletePersonalFile,
   listPersonalFiles,
   listSharedFiles,
+  reindexPersonalFile,
   setPersonalFileFlags,
   uploadPersonalFile,
 } from '../../api/personalFiles';
@@ -167,6 +168,34 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
     } catch (exc) {
       setFiles((prev) => prev.map((item) => (item.doc_id === file.doc_id ? { ...item, [key]: !next } : item)));
       showToast(exc instanceof ApiError ? exc.message : '바꾸지 못했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 다시 읽힌다. 팀 문서 표(`DocumentsPage` 의 `retry`)와 같은 방식이다.
+   *
+   * **지우고 다시 올릴 이유가 없다.** 실패는 대개 그때 워커가 못 돌았다는
+   * 뜻이라 같은 파일을 다시 읽히면 된다.
+   */
+  async function retry(file: PersonalFile) {
+    if (!token) return;
+    setBusy(file.doc_id);
+    try {
+      await reindexPersonalFile(token, file.doc_id);
+      // 한 건이어도 워커가 도는 것은 같다. 전역 카드에도 잡히게 알린다.
+      notifyIndexingStarted();
+      // 낙관적으로 「읽는 중」으로 바꾼다. 서버도 곧 같은 값을 주지만, 폴링
+      // 간격만큼은 버튼이 아무 반응 없어 보인다.
+      setFiles((prev) =>
+        prev.map((row) =>
+          row.doc_id === file.doc_id ? { ...row, index_status: 'RUNNING', index_detail: null } : row,
+        ),
+      );
+      showToast(`${file.file_name} · 다시 읽습니다.`, 'success');
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '다시 시작하지 못했습니다.', 'error');
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -389,6 +418,19 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                       <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
                     </span>
                     <span className={styles.cellActions}>
+                      {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
+                          권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
+                          표와 같은 조건이다. */}
+                      {(file.search_ready || file.index_status === 'FAILED') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy === file.doc_id}
+                          onClick={() => void retry(file)}
+                        >
+                          다시 읽기
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
