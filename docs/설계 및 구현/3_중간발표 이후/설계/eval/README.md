@@ -108,6 +108,19 @@ bundle이 없으면 자동으로 `UNCERTAIN`이며 호출하지 않는다. 호�
 `WF-PROJECT-STATUS-001_reference_verdict_pending_review_20260826T050101Z.json`은
 판정 초안일 뿐이며 `eval_judge.py` 입력으로 사용할 수 없다.
 
+2026-08-26 검토자는 위 초안의 5차원 판정과 종합 `FAIL`에 동의했다. 다만 팀원이
+답변 출력 형식을 수정한 변경분을 먼저 병합해 영향 범위를 확인하기로 했으므로,
+fixture의 `APPROVED` 전환과 정식 calibration 실행은 아직 보류한다. 이 동의는 기존
+eval run `20260826T050101Z-ee604a4c`의 출력에만 적용하며 병합 후 새 출력에 재사용하지
+않는다. 기존 실행은 dataset v9, Agent version `AV035`, model `gpt-5.6-luna`를
+기록했지만 `git_commit=unknown`이므로 해당 한계를 그대로 보존한다.
+
+병합된 변경이 표시 계층에만 있으면 Agent 평가 버전은 유지한다. 프롬프트·답변
+템플릿·후처리처럼 평가되는 `final_answer`를 바꾸면 새 Agent version으로 기록하되,
+평가 사례가 바뀌지 않았다면 dataset v10은 유지한다. 이후
+`WF-PROJECT-STATUS-001` 1건을 새 eval run으로 실행해 의미·근거·도구 호출이 유지되는지
+확인한 뒤 calibration을 재개한다.
+
 ```powershell
 docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/eval_judge.py `
   --run-dir outputs/eval-results/20260826T050101Z-ee604a4c `

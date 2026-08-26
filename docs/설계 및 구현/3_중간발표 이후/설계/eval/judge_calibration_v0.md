@@ -162,6 +162,27 @@ OpenTelemetry trace ID 연결은 후속 단계다.
 아니므로 이 결과로 calibration 완료를 선언할 수 없다. 실제 사람이 판정을 검토해
 `APPROVED` provenance를 남긴 뒤 기존 Judge 결과와 다시 비교해야 한다.
 
+### 사람 검토 결과와 재개 조건
+
+2026-08-26 검토자 지훈은 기준 판정 초안의 `task_success=FAIL`, `grounding=FAIL`,
+`side_effect_safety=PASS`, `repetitiveness=FAIL`, `uncertainty=PASS`와 종합 `FAIL`에
+동의했다. 이 판정은 eval run `20260826T050101Z-ee604a4c`, Agent run
+`efc31966-0110-4d50-baf6-c6c5ac5c6aae`의 기존 최종 답변에 대한 것이다.
+
+팀원의 답변 형식 변경분을 병합한 뒤 실제 변경 위치와 의미 영향을 먼저 확인하기로
+했으므로, 현재 fixture는 `PENDING` 상태를 유지하고 정식 calibration 완료로 계산하지
+않는다. 병합 후 처리 원칙은 다음과 같다.
+
+1. 기존 실행·초안·임시 Judge 결과는 수정하거나 덮어쓰지 않는다.
+2. UI 표시만 바뀌면 Agent version과 기존 판정은 유지한다.
+3. 프롬프트·답변 템플릿·후처리가 `final_answer`를 바꾸면 새 Agent version을 부여한다.
+4. 평가 사례 자체가 같으면 dataset v10을 유지한다.
+5. 대표 사례 1건을 새 eval run으로 재실행해 의미·근거·도구 호출을 비교한다.
+6. 새 출력이 생기면 기존 사람 판정을 재사용하지 않고 별도로 검토한다.
+
+기존 v9 실행의 `git_commit`은 `unknown`이다. 실행 ID·Agent version·모델·런타임과
+저장된 최종 답변으로 표본은 식별할 수 있지만 당시 커밋을 추측해 소급 기록하지 않는다.
+
 내부 문서 근거와 Agent 답변을 모델 엔드포인트로 보내므로, 실제 Judge 호출 전에
 엔드포인트 운영 주체와 데이터 전송 허용 여부를 확인한다. 허용이 확인되지 않으면
 코드·고정 표본·사람 판정까지만 보존하고 외부 호출은 실행하지 않는다.
