@@ -26,6 +26,126 @@ class InputSummaryTests(SimpleTestCase):
         self.assertIn("query=", summary)
 
 
+class JiraCreateIssuesTests(SimpleTestCase):
+    def _common_patches(self):
+        return patch.object(registry, "_jira_credential_account_id", return_value="UA001")
+
+    def test_선택한_프로젝트가_있으면_모델이_추측한_키를_무시한다(self):
+        credential_patch = self._common_patches()
+        with (
+            patch.object(
+                registry.ProjectSourceRepository,
+                "get_for_project",
+                return_value={"external_source_id": "KAN"},
+            ),
+            credential_patch,
+            patch.object(
+                registry,
+                "create_jira_issues",
+                return_value={"project_key": "KAN", "created": [{"key": "KAN-1"}], "failed": []},
+            ) as mock_create,
+        ):
+            registry._jira_create_issues(
+                account_id="UA002",
+                proj_id="PJ002",
+                project_key="TEAMHUN",
+                issues=[{"title": "제목"}],
+            )
+
+        self.assertEqual(mock_create.call_args.kwargs["project_key"], "KAN")
+
+    def test_프로젝트_문맥이_없으면_명시한_Jira_키를_사용한다(self):
+        credential_patch = self._common_patches()
+        with (
+            credential_patch,
+            patch.object(
+                registry,
+                "create_jira_issues",
+                return_value={"project_key": "KAN", "created": [{"key": "KAN-1"}], "failed": []},
+            ) as mock_create,
+        ):
+            registry._jira_create_issues(
+                account_id="UA002",
+                project_key="KAN",
+                issues=[{"title": "제목"}],
+            )
+
+        self.assertEqual(mock_create.call_args.kwargs["project_key"], "KAN")
+
+    def test_생성된_이슈가_없고_실패만_있으면_정상_완료로_처리하지_않는다(self):
+        credential_patch = self._common_patches()
+        with (
+            patch.object(
+                registry.ProjectSourceRepository,
+                "get_for_project",
+                return_value={"external_source_id": "KAN"},
+            ),
+            credential_patch,
+            patch.object(
+                registry,
+                "create_jira_issues",
+                return_value={
+                    "project_key": "KAN",
+                    "created": [],
+                    "failed": [{"error_code": "validation", "reason": "생성 권한이 없습니다."}],
+                },
+            ),
+        ):
+            with self.assertRaises(ToolInputError) as ctx:
+                registry._jira_create_issues(
+                    account_id="UA002",
+                    proj_id="PJ002",
+                    issues=[{"title": "제목"}],
+                )
+
+        self.assertIn("Jira 이슈를 생성하지 못했습니다", str(ctx.exception))
+        self.assertIn("생성 권한이 없습니다", str(ctx.exception))
+
+    def test_담당자_지시가_없으면_미배정으로_생성한다(self):
+        with (
+            self._common_patches(),
+            patch.object(registry, "_fill_default_jira_assignee") as mock_fill,
+            patch.object(
+                registry,
+                "create_jira_issues",
+                return_value={"project_key": "KAN", "created": [{"key": "KAN-1"}], "failed": []},
+            ) as mock_create,
+        ):
+            registry._jira_create_issues(
+                account_id="UA002",
+                project_key="KAN",
+                issues=[{"title": "제목", "assignee_account_id": ""}],
+            )
+
+        mock_fill.assert_not_called()
+        self.assertEqual(mock_create.call_args.kwargs["issues"][0]["assignee_account_id"], "")
+
+    def test_본인_배정을_명시하면_요청자_Jira_계정을_채운다(self):
+        filled = [{"title": "제목", "assignee_account_id": "jira-account-id"}]
+        with (
+            self._common_patches(),
+            patch.object(registry, "_fill_default_jira_assignee", return_value=filled) as mock_fill,
+            patch.object(
+                registry,
+                "create_jira_issues",
+                return_value={"project_key": "KAN", "created": [{"key": "KAN-1"}], "failed": []},
+            ) as mock_create,
+        ):
+            registry._jira_create_issues(
+                account_id="UA002",
+                project_key="KAN",
+                assign_to_requester=True,
+                issues=[{"title": "제목"}],
+            )
+
+        mock_fill.assert_called_once_with(
+            requester_account_id="UA002",
+            credential_account_id="UA001",
+            issues=[{"title": "제목"}],
+        )
+        self.assertEqual(mock_create.call_args.kwargs["issues"], filled)
+
+
 class SkillRegisterDescriptionTests(SimpleTestCase):
     def test_uses_the_system_confirmation_card_instead_of_chat_confirmation(self):
         description = registry.BUILTIN_TOOLS["skill_register"].description

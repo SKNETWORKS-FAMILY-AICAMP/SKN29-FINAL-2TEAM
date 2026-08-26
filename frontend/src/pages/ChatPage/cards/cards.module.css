@@ -211,6 +211,21 @@
   color: var(--color-heading);
 }
 
+.jiraApprovalImpact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 var(--space-5) var(--space-3);
+  background: var(--color-bg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.jiraApprovalImpact strong {
+  color: var(--color-heading);
+}
+
 .editedBadge {
   padding: 2px 7px;
   border-radius: 999px;

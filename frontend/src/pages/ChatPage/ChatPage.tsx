@@ -1398,6 +1398,7 @@ export default function ChatPage() {
                           skillPreview={live.confirm.skillPreview}
                           jiraPreview={live.confirm.jiraPreview}
                           jiraProjectName={currentProject?.name}
+                          jiraAssigneeMode={live.confirm.jiraAssigneeMode}
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
