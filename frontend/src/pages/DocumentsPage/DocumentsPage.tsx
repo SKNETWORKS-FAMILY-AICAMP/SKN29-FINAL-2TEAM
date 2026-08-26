@@ -557,9 +557,19 @@ export default function DocumentsPage() {
                           </span>
 
                           <span className={styles.cellActions}>
-                            {/* 원문이 없으면 색인이 시작조차 못 하므로 안 보여준다 —
-                                눌러도 서버가 409 로 막는 버튼을 둘 이유가 없다. */}
-                            {doc.downloaded && doc.index_status !== 'RUNNING' && (
+                            {/* **「읽는 중」에는 안 보여준다.** 상태를 셋으로 합치면서
+                                차례를 기다리는 문서(`index_status` 가 아직 null 인 것)에도
+                                버튼이 뜨고 있었다 — 칩은 「읽는 중」이라고 하는데 옆에서
+                                다시 읽으라고 권하는 꼴이라, 사람은 뭔가 잘못된 줄 안다.
+
+                                눌러야 하는 상황이 있지 않을까 싶지만 없다. 워커가 죽어
+                                `RUNNING` 인 채로 멈춘 문서도 **다음 수집이 다시 집는다**
+                                (`list_pending_index` 는 `FAILED` 만 뺀다). 원문을 아직
+                                못 받은 것도 같은 이유로 여기 안 걸린다.
+
+                                남는 것은 둘 — 다 읽은 것을 새로 읽히거나, 실패한 것을
+                                다시 시키거나. */}
+                            {(doc.search_ready || doc.index_status === 'FAILED') && (
                               <Button
                                 size="sm"
                                 variant="outline"
