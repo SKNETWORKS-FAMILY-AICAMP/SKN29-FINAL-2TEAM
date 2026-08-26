@@ -1673,7 +1673,7 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         self.assertIsNone(mock_create_root.call_args.kwargs["interrupt_on"])
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_checkpointer_provider_derives_interrupt_on_from_side_effect_tools_and_delete(
+    def test_checkpointer_provider_derives_interrupt_on_from_side_effect_tools_only(
         self, mock_create_root
     ):
         mock_create_root.return_value = "GRAPH"
@@ -1684,7 +1684,10 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
 
         self.assertEqual(
             mock_create_root.call_args.kwargs["interrupt_on"],
-            {"task_register": True, "delete": True},
+            # `delete` 는 없다 — 2026-08-26 병합에서 다시 제외했고
+            # (`runtime_policy.DEFAULT_EXCLUDED_BUILTIN_TOOLS`), 제외된 도구는
+            # 애초에 안 붙으므로 승인 목록에도 안 들어간다.
+            {"task_register": True},
         )
 
     @patch(f"{FACTORY_MODULE}.create_child_graph")
@@ -1699,7 +1702,10 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
 
         self.assertEqual(
             mock_create_child.call_args.kwargs["interrupt_on"],
-            {"task_register": True, "delete": True},
+            # `delete` 는 없다 — 2026-08-26 병합에서 다시 제외했고
+            # (`runtime_policy.DEFAULT_EXCLUDED_BUILTIN_TOOLS`), 제외된 도구는
+            # 애초에 안 붙으므로 승인 목록에도 안 들어간다.
+            {"task_register": True},
         )
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
