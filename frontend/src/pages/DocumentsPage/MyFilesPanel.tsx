@@ -300,8 +300,14 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   }
 
   // 실패한 것은 「읽는 중」이 아니다 — 팀 문서 표와 같은 규칙을 쓴다.
+  //
+  // **내보낸 파일도 아니다**(2026-08-26). 색인을 아예 안 타서 `search_ready` 가
+  // 영영 false 인데, 빼지 않으면 머리말이 「읽는 중 1」로 굳는다 — 위 `pending`
+  // (폴링 조건)과 **같은 규칙을 써야 한다.** 한쪽만 고치면 폴링은 멈췄는데
+  // 화면은 계속 읽는 중이라고 말하는, 서로 어긋난 상태가 된다.
   const notReady = matched.filter(
-    (file) => !file.search_ready && file.index_status !== 'FAILED',
+    (file) =>
+      file.origin !== 'generated' && !file.search_ready && file.index_status !== 'FAILED',
   ).length;
   const failed = matched.filter((file) => file.index_status === 'FAILED').length;
 
