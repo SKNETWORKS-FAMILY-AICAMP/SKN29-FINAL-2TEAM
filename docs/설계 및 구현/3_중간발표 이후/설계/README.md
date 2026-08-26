@@ -32,7 +32,7 @@ AI Agent 를 직접 만들고 활용할 수 있게 하는 Agent 기반 Project O
 | `1_서비스구조_IA.md` | 화면 구조 · 기존 화면 처리 표 · 사용자 흐름 | 화면 수는 지금 **31종**(`frontend/src/pages/`) |
 | `2_아키텍처_초안.md` | 레이어 · 기존 코드 매핑 · 실행 런타임 범위 · 스키마 | ⚠ **머리의 정정 배너부터 읽는다** — 「Harness 직접 구현」이 뒤집혔다 |
 | `3_Harness_조사/` | 참고 repo 분석(opencode · deep-agents · claw-code) | **조사는 끝났다.** 결론은 deep-agents 채택이고 `services/agent_runtime/` 이 그 결과다 |
-| `4_평가_설계.md` | 영역별 지표 · 측정 방법 · 정답셋 | ⚠ **골든셋 0건**이고 `tests/eval/` 도 없다 |
+| `4_평가_설계.md` | 영역별 지표 · 측정 방법 · 정답셋 | ~~⚠ **골든셋 0건**이고 `tests/eval/` 도 없다~~ **이 서술은 틀렸다 (2026-08-26).** `9595ad9`(8/25)로 골든셋이 들어왔다 — 질의 **14건**(목표 12~15 충족) · 평가 문서 **8종**(목표 G-DOC 10 대비 2건 부족) · 업무 추출 정답 **2프로젝트**(8건 + 6건). ⚠ 그러나 **측정 코드는 여전히 없다** — `tests/eval/*.py` 0개, `coarse_recall.py`·`macro_recall` 부재. 남은 것은 `DB/vectordb_measure.sql` 뿐이다 |
 | `5_E2E_시나리오.md` | 대표 시나리오 (문서 → Task 추출 → 확인 → Jira 생성) | — |
 | `6_시각화.md` | 필수 다이어그램 7종 Mermaid | ⑤ 실행 구조 그림이 옛 Harness 기준이다 |
 | `7_홈화면_정의.md` | 공통 셸 + Chat 홈 레이아웃 | 위임 표기가 옛 `agent:*` 다 |
@@ -68,6 +68,8 @@ AI Agent 를 직접 만들고 활용할 수 있게 하는 Agent 기반 Project O
   사용자 말이 아니다.
 - **되는 척하지 않는다.** 눌러도 아무 데도 안 가는 버튼은 만들지 않고, 모르는 값은
   0 으로 채우지 않으며, 실패는 사유와 함께 보여준다.
-- **바깥을 바꾸는 일은 사람이 승인한다.** 내장 도구 16종 중 4종(`task_update` ·
-  `task_register` · `jira_create_issues` · `skill_register`)이 승인 게이트를 타고,
+- **바깥을 바꾸는 일은 사람이 승인한다.** 내장 도구 ~~16종~~ **17종**(2026-08-26 재측정)
+  중 **승인 게이트 4종 + 질문 카드 1종**이다. 게이트는 `task_update` · `task_register` ·
+  `jira_create_issues` · `skill_register` 4종이고, `skill_creator_ask_followup` 은
+  `side_effect=True` 로 같은 자리에서 멈추지만 승인/거절이 아니라 **되묻는 질문 카드**다.
   커스텀 도구는 내용을 모르므로 **전부** 탄다.
