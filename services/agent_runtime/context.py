@@ -19,3 +19,7 @@ class RuntimeContext:
 
     run_id: str | None = None
     parent_run_id: str | None = None
+
+    eval_run_id: str | None = None
+    eval_case_id: str | None = None
+    environment: str | None = None

@@ -12,9 +12,19 @@ from django.test import SimpleTestCase
 
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, LoadedAgentDefinition
-from services.agent_runtime.events import EVENT_AGENT_STARTED, EVENT_ERROR, EVENT_RESULT
+from services.agent_runtime.events import (
+    EVENT_AGENT_STARTED,
+    EVENT_AWAITING_CONFIRMATION,
+    EVENT_ERROR,
+    EVENT_RESULT,
+)
 from services.agent_runtime.exceptions import AgentBuildError, InvalidExecutionTargetError
-from services.agent_runtime.executor import AgentExecutor, _tracing_callbacks, validate_execution_target
+from services.agent_runtime.executor import (
+    AgentExecutor,
+    _attach_langfuse_trace,
+    _tracing_callbacks,
+    validate_execution_target,
+)
 from services.agent_runtime.models.factory import ResolvedModelConfig
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 
@@ -181,6 +191,53 @@ class TracingCallbackTests(SimpleTestCase):
 
         self.assertEqual(_tracing_callbacks(), [langfuse_callback])
         self.assertFalse(hasattr(tracing_callbacks, "get_langsmith_callback"))
+
+    def test_awaiting_confirmation_carries_trace_ids_into_resume_state(self):
+        event = {"type": EVENT_AWAITING_CONFIRMATION, "trace_resume_state": {}}
+        trace = MagicMock(trace_id="TRACE001", root_observation_id="ROOT001")
+
+        _attach_langfuse_trace(event, trace)
+
+        self.assertEqual(event["langfuse_trace_id"], "TRACE001")
+        self.assertEqual(
+            event["trace_resume_state"],
+            {
+                "langfuse_trace_id": "TRACE001",
+                "langfuse_root_observation_id": "ROOT001",
+            },
+        )
+
+    @patch("services.agent_runtime.executor._langfuse_trace")
+    def test_eval_metadata_and_trace_id_reach_execution(self, langfuse_trace):
+        trace = MagicMock(trace_id="TRACE001")
+        trace.callback = object()
+        langfuse_trace.return_value = trace
+        stream_adapter = _FakeStreamAdapter(raw_events=[_final_answer_raw_event("ok")])
+        executor = AgentExecutor(
+            loader=_FakeLoader(), factory=_FakeFactory(), stream_adapter=stream_adapter
+        )
+        context = _context(
+            eval_run_id="EVAL001", eval_case_id="CASE001", environment="local-docker"
+        )
+
+        events = list(
+            executor.run(
+                agent_id="AG001",
+                agent_version_id="AV001",
+                user_input="hi",
+                context=context,
+            )
+        )
+
+        langfuse_trace.assert_called_once_with(
+            context=context,
+            agent_id="AG001",
+            agent_version_id="AV001",
+        )
+        self.assertEqual(events[0]["langfuse_trace_id"], "TRACE001")
+        self.assertEqual(events[-1]["langfuse_trace_id"], "TRACE001")
+        self.assertEqual(stream_adapter.stream_calls[0]["callbacks"], [trace.callback])
+        trace.finish.assert_called_once_with()
 
 class RunHappyPathTests(SimpleTestCase):
     def test_first_event_is_agent_started_then_result(self):

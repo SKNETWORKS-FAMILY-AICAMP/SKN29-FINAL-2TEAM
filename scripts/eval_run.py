@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import importlib.metadata
 import os
 import subprocess
@@ -157,6 +158,12 @@ def main(argv: list[str] | None = None) -> int:
             "memory_namespace": None,
         },
     )
+    context = dataclasses.replace(
+        context,
+        eval_run_id=recorder.manifest["eval_run_id"],
+        eval_case_id=case["id"],
+        environment=args.environment,
+    )
     cleanup_attempted = False
     try:
         result = run_read_only_case(
@@ -188,7 +195,6 @@ def main(argv: list[str] | None = None) -> int:
             status="COMPLETED",
             limitations=[
                 "LLM Judge는 REPORT_ONLY이며 evidence bundle 미연결 상태에서는 실행하지 않음",
-                "Langfuse trace id는 아직 자동 수집하지 않음",
             ],
         )
     except CleanupAfterEvaluationError:

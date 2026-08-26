@@ -8,7 +8,12 @@ from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from services.agent_runtime.context import RuntimeContext
-from services.agent_runtime.events import EVENT_AGENT_STARTED, EVENT_ERROR, EventMapper
+from services.agent_runtime.events import (
+    EVENT_AGENT_STARTED,
+    EVENT_AWAITING_CONFIRMATION,
+    EVENT_ERROR,
+    EventMapper,
+)
 from services.agent_runtime.exceptions import AgentBuildError, AgentRuntimeError, InvalidExecutionTargetError
 from services.agent_runtime.stream_adapter import DeepAgentStreamAdapter
 
@@ -116,6 +121,60 @@ def _tracing_callbacks() -> list[Any]:
     return [callback] if callback is not None else []
 
 
+def _langfuse_trace(
+    *,
+    context: RuntimeContext,
+    agent_id: str,
+    agent_version_id: str | None,
+    resume_state: dict[str, Any] | None = None,
+) -> Any | None:
+    from services.agent_runtime.tracing.callbacks import get_langfuse_trace
+
+    metadata = {
+        "team_id": context.team_id,
+        "account_id": context.account_id,
+        "session_id": context.session_id,
+        "agent_id": agent_id,
+        "agent_version_id": agent_version_id,
+        "eval_run_id": context.eval_run_id,
+        "case_id": context.eval_case_id,
+        "environment": context.environment,
+    }
+    return get_langfuse_trace(
+        run_id=str(context.run_id or ""),
+        metadata={key: value for key, value in metadata.items() if value is not None},
+        resume_state=resume_state,
+    )
+
+
+def _langfuse_metadata(*, context: RuntimeContext, agent_id: str) -> dict[str, Any]:
+    tags = [f"team:{context.team_id}", f"agent:{agent_id}"]
+    if context.eval_run_id:
+        tags.append(f"eval-run:{context.eval_run_id}")
+    if context.eval_case_id:
+        tags.append(f"eval-case:{context.eval_case_id}")
+    metadata = {
+        "langfuse_session_id": context.session_id,
+        "langfuse_user_id": context.account_id,
+        "langfuse_tags": tags,
+        "agent_run_id": context.run_id,
+        "eval_run_id": context.eval_run_id,
+        "case_id": context.eval_case_id,
+        "environment": context.environment,
+    }
+    return {key: value for key, value in metadata.items() if value is not None}
+
+
+def _attach_langfuse_trace(event: dict[str, Any], trace_handle: Any | None) -> None:
+    if trace_handle is None:
+        return
+    event["langfuse_trace_id"] = trace_handle.trace_id
+    if event.get("type") == EVENT_AWAITING_CONFIRMATION:
+        resume_state = event.setdefault("trace_resume_state", {})
+        resume_state["langfuse_trace_id"] = trace_handle.trace_id
+        resume_state["langfuse_root_observation_id"] = trace_handle.root_observation_id
+
+
 class AgentExecutor:
     """실행 의존성을 조합하고 공통 이벤트를 순서대로 반환한다."""
 
@@ -194,6 +253,12 @@ class AgentExecutor:
         # `factory.py`가 같은 이유로 `TYPE_CHECKING` + 생성자 주입을 쓴다.
         from services.agent_runtime.models.factory import resolved_endpoint_hash
 
+        langfuse_trace = _langfuse_trace(
+            context=context,
+            agent_id=loaded.definition.agent_id,
+            agent_version_id=loaded.definition.agent_version_id,
+        )
+
         yield {
             "type": EVENT_AGENT_STARTED,
             "run_id": context.run_id,
@@ -203,6 +268,9 @@ class AgentExecutor:
             # `tracing/__init__.py`의 `_start_run()`이 읽어 `agent_run`에 적재한다.
             "resolved_provider": resolved_model.provider,
             "resolved_endpoint_hash": resolved_endpoint_hash(resolved_model),
+            "langfuse_trace_id": (
+                langfuse_trace.trace_id if langfuse_trace is not None else None
+            ),
             "complete": False,
         }
 
@@ -211,7 +279,11 @@ class AgentExecutor:
         # Langfuse 콜백(`tracing/callbacks.py`) — 키가 없으면 빈
         # 리스트라 stream_adapter가 config에 아무것도 안 붙인다.
         # 지연 import 이유는 `_tracing_callbacks()` docstring 참고.
-        callbacks = _tracing_callbacks()
+        callbacks = (
+            [langfuse_trace.callback]
+            if langfuse_trace is not None
+            else _tracing_callbacks()
+        )
 
         try:
             for raw_event in self.stream_adapter.stream(
@@ -226,14 +298,9 @@ class AgentExecutor:
                 # Langfuse 대시보드에서 세션/계정/팀 단위로 걸러 보기 위한
                 # 메타데이터. 콜백이 없으면 아무도 쓰지 않으므로 `None`으로 둔다.
                 trace_metadata=(
-                    {
-                        "langfuse_session_id": context.session_id,
-                        "langfuse_user_id": context.account_id,
-                        "langfuse_tags": [
-                            f"team:{context.team_id}",
-                            f"agent:{loaded.definition.agent_id}",
-                        ],
-                    }
+                    _langfuse_metadata(
+                        context=context, agent_id=loaded.definition.agent_id
+                    )
                     if callbacks
                     else None
                 ),
@@ -253,6 +320,7 @@ class AgentExecutor:
                     root_resolved_model=resolved_model,
                     child_resolved_models=child_resolved_models,
                 ):
+                    _attach_langfuse_trace(converted, langfuse_trace)
                     yield converted
         except Exception as exc:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
             # 여기서는 사유를 가리지 않고 항상 `exception`으로 남긴다. 그래프 실행
@@ -271,6 +339,9 @@ class AgentExecutor:
                 run_id=context.run_id,
                 usage=event_mapper.usage_for(context.run_id, close=True),
             )
+        finally:
+            if langfuse_trace is not None:
+                langfuse_trace.finish()
 
     def resume(
         self,
@@ -353,7 +424,17 @@ class AgentExecutor:
         # Langfuse 콜백 — 승인을 기다리다 재개된 실행도
         # 실제 모델·도구 호출이라 트레이싱에서 뺄 이유가 없다 —
         # `stream_adapter.py`의 `resume` 분기도 이 값을 받게 이미 맞춰 뒀다.
-        callbacks = _tracing_callbacks()
+        langfuse_trace = _langfuse_trace(
+            context=context,
+            agent_id=loaded.definition.agent_id,
+            agent_version_id=loaded.definition.agent_version_id,
+            resume_state=trace_resume_state,
+        )
+        callbacks = (
+            [langfuse_trace.callback]
+            if langfuse_trace is not None
+            else _tracing_callbacks()
+        )
 
         try:
             for raw_event in self.stream_adapter.stream(
@@ -362,14 +443,9 @@ class AgentExecutor:
                 thread_id=context.session_id,
                 callbacks=callbacks,
                 trace_metadata=(
-                    {
-                        "langfuse_session_id": context.session_id,
-                        "langfuse_user_id": context.account_id,
-                        "langfuse_tags": [
-                            f"team:{context.team_id}",
-                            f"agent:{loaded.definition.agent_id}",
-                        ],
-                    }
+                    _langfuse_metadata(
+                        context=context, agent_id=loaded.definition.agent_id
+                    )
                     if callbacks
                     else None
                 ),
@@ -385,6 +461,7 @@ class AgentExecutor:
                     root_resolved_model=resolved_model,
                     child_resolved_models=child_resolved_models,
                 ):
+                    _attach_langfuse_trace(converted, langfuse_trace)
                     yield converted
         except Exception as exc:  # noqa: BLE001 - 열린 stream은 error 이벤트로 종료
             logger.exception(
@@ -399,3 +476,6 @@ class AgentExecutor:
                 run_id=context.run_id,
                 usage=event_mapper.usage_for(context.run_id, close=True),
             )
+        finally:
+            if langfuse_trace is not None:
+                langfuse_trace.finish()

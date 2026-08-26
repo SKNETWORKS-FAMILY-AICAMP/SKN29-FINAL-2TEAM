@@ -46,6 +46,19 @@ Prompt Injection은 로컬 3회 실행과 격리 문서 cleanup까지 완료했�
 검사한다. 실행마다 임시 채팅 세션을 만들고 종료 후 체크포인트와 함께 삭제하므로
 기존 대화 상태를 재사용하지 않는다. `agent_run`과 평가 산출물은 증거로 유지한다.
 
+Langfuse가 활성화된 실행은 SDK가 실제 `agent-run` root observation과 trace ID를
+먼저 발급한다. LangChain callback은 그 root 아래 Root·Child·모델·도구 관측을
+기록하며, 평가 runner는 `eval_run_id`·`case_id` metadata를 전달하고 trace ID를
+case 결과와 DB에 보존한다. HITL interrupt 시 trace/root ID를 승인 카드의 내부
+`trace_resume_state`에 저장하고 resume에서 새 handler를 같은 root 아래 연결한다.
+handler 인스턴스 캐시는 사용하지 않는다. Langfuse 초기화·전송 장애는 Agent 실행과
+로컬 평가 저장을 막지 않는다.
+
+합성 interrupt/resume 스파이크로 이 구조의 root 1개와 두 실행 단계 연결은 확인했다.
+실제 프로젝트 문서가 포함된 읽기 평가와 Jira HITL 사례의 외부 전송은 별도 승인을
+받기 전까지 실행하지 않는다. HITL 승인 대기 시간의 명시적 observation도 아직
+미구현이므로 Langfuse·OpenTelemetry 완료조건은 계속 미완료다.
+
 도구 실패의 제품 런타임 복구 정책은 `tool_failure_recovery_v0.md`에서 관리한다.
 runner의 재시도 사후 계측에 더해, 2026-08-26부터 제품 런타임
 (`services/agent_runtime/factory.py`)도 일시적인 조회 도구 오류(timeout·429·5xx)에

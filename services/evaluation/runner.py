@@ -392,6 +392,14 @@ def evaluate_events(
         )
     )
     violating_tools = sorted(set(tool_counts) - allowed | (set(tool_counts) & forbidden))
+    langfuse_trace_id = next(
+        (
+            str(event["langfuse_trace_id"])
+            for event in events
+            if event.get("langfuse_trace_id")
+        ),
+        None,
+    )
     return {
         "case_id": case["id"],
         "agent_id": case["agent_id"],
@@ -405,7 +413,7 @@ def evaluate_events(
         "failure_reason": ", ".join(failed) if failed else None,
         "agent_run_id": run_id,
         "tool_call_ids": tool_call_ids,
-        "langfuse_trace_id": None,
+        "langfuse_trace_id": langfuse_trace_id,
         "metrics": metrics,
         "approval": {"count": len(approvals)} if approvals else None,
         "side_effects": [
