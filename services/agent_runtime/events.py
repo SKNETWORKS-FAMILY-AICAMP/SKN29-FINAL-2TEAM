@@ -283,6 +283,40 @@ def _retrieved_doc_ids(content: Any) -> list[str]:
     return found
 
 
+def _produced_file(content: Any) -> dict[str, str] | None:
+    """도구가 **만들어 낸 파일**. 없으면 `None`(대부분의 도구가 그렇다).
+
+    `_retrieved_doc_ids` 와 달리 `doc_id` 를 찾아 헤매지 않는다 — 최상위 `file`
+    키 하나만 본다. 읽기 도구의 결과에는 `doc_id` 가 잔뜩 들어 있어서(검색 근거·
+    문서 목록) 그 방식으로는 「본 문서」와 「만든 파일」을 구별할 수 없다.
+    **도구가 명시적으로 `file` 로 담을 때만** 화면에 받기 단추가 생긴다
+    (`registry.py` 의 `_file_ref()` 가 그 모양을 만든다).
+
+    도구별로 분기하지 않는다 — 같은 계약을 지키는 도구가 늘어도 화면은 안 고친다.
+    """
+
+    if not isinstance(content, str) or '"file"' not in content:
+        # 흔한 경우를 JSON 파싱 없이 먼저 걸러낸다(`_retrieved_doc_ids` 와 같은 이유).
+        return None
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    node = parsed.get("file")
+    if not isinstance(node, dict):
+        return None
+    doc_id, file_name = node.get("doc_id"), node.get("file_name")
+    if not isinstance(doc_id, str) or not isinstance(file_name, str):
+        return None
+    return {
+        "doc_id": doc_id,
+        "file_name": file_name,
+        "mime_type": node.get("mime_type") if isinstance(node.get("mime_type"), str) else None,
+    }
+
+
 def _tool_label(tool_ref: str) -> str:
     """승인 카드·대화 기록에 쓸 사람이 읽는 도구 이름. 못 찾으면 ref 그대로.
 
@@ -769,6 +803,8 @@ class EventMapper:
                         "output": _summarize_tool_output(content),
                         # 이 호출이 건드린 문서. `tracing/` 이 `tool_call`에 적는다.
                         "retrieved_doc_ids": _retrieved_doc_ids(content),
+                        # 이 호출이 만들어 낸 파일. 화면이 받기 단추를 그린다.
+                        "produced_file": _produced_file(content),
                         "complete": False,
                     }
                 ]
@@ -820,6 +856,11 @@ class EventMapper:
                     "status": _tool_status(msg_status),
                     "output": _summarize_tool_output(content),
                     "retrieved_doc_ids": _retrieved_doc_ids(content),
+                    # **서브 에이전트가 만든 것도 낸다.** 여기 있는 다른 값들과
+                    # 달리 파일은 내부 진행이 아니라 **결과물**이라, 누가 만들었든
+                    # 사람은 받아야 한다(화면이 subagent_alias 로 거르는 규칙의
+                    # 의도적 예외 — `liveChat.ts` 의 같은 자리 주석 참고).
+                    "produced_file": _produced_file(content),
                     "complete": False,
                 }
             ]

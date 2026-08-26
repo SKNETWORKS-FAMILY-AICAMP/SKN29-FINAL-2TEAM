@@ -34,11 +34,15 @@ from backend.db.agent_platform import (
 from backend.db import ConnectorRepository
 from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
+    PersonalDocumentRepository,
     PipelineDocumentRepository,
     VectorSearchRepository,
 )
+from backend.db.repositories import DocumentRepository
+from backend.services import storage
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_intake import sync_drive_changes
+from services.document_export import build_docx, build_xlsx
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -541,6 +545,144 @@ def _document_sync(*, account_id: str):
             if changed
             else "마지막 확인 이후 바뀐 문서가 없습니다."
         ),
+    }
+
+
+#: 내보낼 수 있는 행 수. 모델이 만든 배열이라 실제로는 출력 토큰이 먼저 막지만,
+#: 막히는 자리가 「엑셀이 안 열린다」가 되면 사람이 원인을 못 찾는다.
+_EXPORT_MAX_ROWS = 5000
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+#: 파일 이름·시트 이름에 못 쓰는 글자. 제목이 그대로 이름이 되므로 턴다.
+_UNSAFE_NAME_CHARS = frozenset(r'\/:*?"<>|')
+
+
+def _safe_title(title: str, *, fallback: str) -> str:
+    """제목에서 파일 이름에 못 쓰는 글자를 턴다. 남는 게 없으면 `fallback`."""
+
+    return "".join(ch for ch in (title or "") if ch not in _UNSAFE_NAME_CHARS).strip() or fallback
+
+
+def _file_ref(doc_id: str, file_name: str, mime_type: str) -> dict[str, str]:
+    """도구가 **만들어 낸 파일**을 가리키는 값. 화면의 받기 단추가 이것으로 그려진다.
+
+    **`doc_id` 를 평평하게 두지 않고 `file` 안에 넣는 것이 계약이다**(2026-08-26).
+    읽기 도구의 결과에도 `doc_id` 가 잔뜩 들어 있어서(`document_search` 의 근거·
+    `document_list` 의 목록) 평평하게 두면 「본 문서」와 「만든 파일」을 구별할
+    방법이 없다. `events.py` 의 `_produced_file()` 이 이 모양만 찾는다.
+    """
+
+    return {"doc_id": doc_id, "file_name": file_name, "mime_type": mime_type}
+
+
+def _store_generated(
+    *, account_id: str, title: str, suffix: str, mime_type: str, data: bytes
+) -> tuple[str, str]:
+    """만든 파일을 「내 파일」에 넣고 `(doc_id, 파일 이름)` 을 돌려준다.
+
+    `table_export` 와 `document_create` 가 같은 자리를 쓴다. 두 번째 도구를
+    더하면서 뽑아낸 것이다 — 저장 규칙(개인 키 · 내용 해시를 revision 자리에)이
+    양쪽에서 갈리면 한쪽만 조용히 틀린다.
+    """
+
+    # 파일 이름이 곧 목록에 보이는 이름이다. 날짜를 붙이는 것은 같은 것을 여러 번
+    # 만들었을 때 어느 것이 언제 것인지 목록에서 갈리게 하려는 것이다.
+    stamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+    file_name = f"{_safe_title(title, fallback='제목 없음')}_{stamp}{suffix}"
+
+    doc_id = PersonalDocumentRepository.create_generated(
+        account_id=account_id, file_name=file_name, mime_type=mime_type
+    )
+    key = storage.build_personal_key(account_id=account_id, doc_id=doc_id, mime_type=mime_type)
+    content_hash = storage.save(key, data)
+    # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
+    # 없으므로 내용 해시를 그 자리에 쓴다.
+    DocumentRepository.mark_stored(
+        doc_id=doc_id,
+        storage_key=key,
+        content_hash=content_hash,
+        revision=content_hash.removeprefix("sha256:")[:16],
+    )
+    return doc_id, file_name
+
+
+def _table_export(
+    *,
+    account_id: str,
+    title: str,
+    columns: list[str],
+    rows: list[list[Any]],
+) -> dict[str, Any]:
+    """표 하나를 xlsx 로 만들어 **「내 파일」에 넣는다.**
+
+    **표를 모델에게서 받는다**(2026-08-26 결정). 「`task_list` 결과를 내보내라」
+    처럼 소스 도구를 지목하게 만들 수도 있었지만, 그러면 소스마다 매핑을
+    등록해야 하고 모델이 여러 도구 결과를 합쳐 만든 표는 못 낸다. 대신 값은
+    모델이 옮겨 적은 것이므로 **원본과 다를 수 있다** — 그 위험은 사람이 파일을
+    열어 확인하는 것으로 갈음한다.
+
+    만들어진 행은 `source_type='GENERATED'` 이고 검색이 꺼진 채로 들어간다
+    (`create_generated` 주석에 이유가 있다).
+    """
+
+    if not columns:
+        raise ToolInputError("표의 머리글이 비어 있습니다. 열 이름을 정해 주세요.")
+    if len(rows) > _EXPORT_MAX_ROWS:
+        raise ToolInputError(
+            f"한 번에 내보낼 수 있는 행은 {_EXPORT_MAX_ROWS}개까지입니다 (요청 {len(rows)}개)."
+        )
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, (list, tuple)):
+            raise ToolInputError(
+                f"{index}번째 행이 목록이 아닙니다. 각 행은 열 순서대로 값을 담은 목록이어야 합니다."
+            )
+
+    # 시트 이름은 파일 이름과 같은 글자를 쓴다 — 목록에서 본 이름과 열었을 때의
+    # 이름이 다르면 같은 파일인지 사람이 다시 확인해야 한다.
+    data = build_xlsx(
+        title=_safe_title(title, fallback="표"),
+        columns=list(columns),
+        rows=[list(r) for r in rows],
+    )
+    doc_id, file_name = _store_generated(
+        account_id=account_id, title=title, suffix=".xlsx", mime_type=_XLSX_MIME, data=data
+    )
+
+    # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
+    return {
+        "file": _file_ref(doc_id, file_name, _XLSX_MIME),
+        "columns": len(columns),
+        "rows": len(rows),
+        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
+    }
+
+
+def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any]:
+    """글 한 편을 워드 파일(.docx)로 만들어 **「내 파일」에 넣는다.**
+
+    `table_export` 와 같은 자리·같은 규칙이다(`_store_generated`). 다른 것은
+    받는 것뿐이다 — 저쪽은 표(열·행), 이쪽은 글(제목·본문)이다.
+
+    **본문의 마크다운을 전부 해석하지 않는다.** 제목·목록·굵게만 그리고 나머지는
+    글자 그대로 둔다 — 화면(`AnswerText.tsx`)이 같은 이유로 내린 판단을 그대로
+    따른다(`document_export/docx.py` 모듈 주석).
+    """
+
+    if not (body or "").strip():
+        raise ToolInputError("본문이 비어 있습니다. 문서에 담을 내용을 먼저 정해 주세요.")
+
+    data = build_docx(title=title, body=body)
+    doc_id, file_name = _store_generated(
+        account_id=account_id, title=title, suffix=".docx", mime_type=_DOCX_MIME, data=data
+    )
+
+    # 본문을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
+    return {
+        "file": _file_ref(doc_id, file_name, _DOCX_MIME),
+        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
     }
 
 
@@ -1221,6 +1363,73 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=_document_list,
+        category="문서",
+    ),
+    "table_export": Tool(
+        ref="table_export",
+        name="표 내보내기",
+        description=(
+            "표 하나를 엑셀 파일(.xlsx)로 만들어 사용자의 「내 파일」에 저장한다. "
+            "「엑셀로 뽑아 줘」·「파일로 받고 싶어」처럼 **결과를 파일로 달라고 할 때** 쓴다. "
+            "표는 이 도구가 만들어 주지 않는다 — 다른 도구(task_list·workload_report·"
+            "jira_get_issues 등)로 먼저 값을 얻은 뒤, 그 값을 `columns` 와 `rows` 로 "
+            "직접 옮겨 넘긴다. **값을 지어내거나 바꾸지 않는다** — 모르는 칸은 비운다. "
+            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "표 제목. 시트 이름과 파일 이름에 쓴다(예: 「업무 목록」)",
+                },
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "열 이름. 왼쪽부터의 순서다",
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {"type": "array"},
+                    "description": "행 목록. 각 행은 columns 와 같은 순서의 값 목록. 모르는 칸은 null",
+                },
+            },
+            "required": ["title", "columns", "rows"],
+        },
+        handler=_table_export,
+        # 사용자의 서재에 파일을 만든다. 되돌리려면 사람이 지워야 하므로 승인을 받는다.
+        side_effect=True,
+        category="문서",
+    ),
+    "document_create": Tool(
+        ref="document_create",
+        name="문서 만들기",
+        description=(
+            "글 한 편을 워드 파일(.docx)로 만들어 사용자의 「내 파일」에 저장한다. "
+            "「워드로 정리해 줘」·「문서로 만들어 줘」·「보고서로 뽑아 줘」처럼 "
+            "**결과를 문서 파일로 달라고 할 때** 쓴다. 회의록 정리·요약본·보고서가 이것이다. "
+            "`body` 는 마크다운으로 적는다 — `#`~`###` 제목, `- ` 목록, `1. ` 번호 목록, "
+            "`**굵게**` 만 문서에 반영되고 나머지 문법은 글자 그대로 남으니 쓰지 않는다. "
+            "**표가 주된 내용이면 이 도구가 아니라 table_export 로 엑셀을 만든다.** "
+            "문서에 담을 내용을 지어내지 않는다 — 근거가 없는 항목은 비우거나 빼고 쓴다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "문서 제목. 파일 이름에도 쓴다(예: 「2026-08-26 회의록」)",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "본문. 위에 적힌 마크다운 문법만 쓴다",
+                },
+            },
+            "required": ["title", "body"],
+        },
+        handler=_document_create,
+        # 사용자의 서재에 파일을 만든다. `table_export` 와 같은 이유로 승인을 받는다.
+        side_effect=True,
         category="문서",
     ),
     "document_sync": Tool(

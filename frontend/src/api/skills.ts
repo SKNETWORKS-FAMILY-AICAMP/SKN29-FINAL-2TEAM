@@ -41,6 +41,14 @@ export interface Skill {
   body?: string;
   /** frontmatter `metadata.enabled`. `false`면 에이전트에게 아예 안 보인다(삭제와 다름 — 값은 그대로 남는다). */
   enabled: boolean;
+  /** 팀 스킬일 때, 현재 사용자가 자신의 개인 스킬에서 공유한 항목인지. */
+  shared_by_me: boolean;
+  /** 개인 스킬일 때, 팀 공유 카탈로그에서 가져온 독립 사본인지. */
+  imported_from_team: boolean;
+  /** 팀 스킬일 때, 현재 사용자가 이미 개인 사본으로 가져왔는지. */
+  imported_by_me: boolean;
+  /** 팀 스킬을 공유 목록에서 삭제할 수 있는지. 서버가 현재 팀 역할로 판정한다. */
+  can_delete: boolean;
   updated_at: string | null;
 }
 
@@ -77,6 +85,16 @@ export function deleteMySkill(token: string, skillId: string) {
   return apiRequest<void>(`/me/skills/${skillId}/`, { method: 'DELETE', token });
 }
 
+/** 개인 스킬을 현재 팀에 공유한다. 개인 원본은 그대로 유지된다. */
+export function shareMySkill(token: string, skillId: string) {
+  return apiRequest<Skill>(`/me/skills/${skillId}/share/`, { method: 'POST', token });
+}
+
+/** 내가 만든 팀 공유본만 제거한다. 개인 원본은 삭제하지 않는다. */
+export function stopSharingMySkill(token: string, skillId: string) {
+  return apiRequest<void>(`/me/skills/${skillId}/share/`, { method: 'DELETE', token });
+}
+
 /**
  * 팀 스킬. **조회는 팀원 전체가 부를 수 있다** — 쓰기(create/update/delete)만
  * 서버가 팀장인지 확인한다(403). 화면에서도 미리 막아 두지만(버튼을 안 보이게),
@@ -88,6 +106,11 @@ export function listTeamSkills(token: string) {
 
 export function getTeamSkill(token: string, skillId: string) {
   return apiRequest<Skill>(`/teams/skills/${skillId}/`, { token });
+}
+
+/** 팀 공유 카탈로그의 스킬을 독립적인 내 스킬로 복사한다. */
+export function importTeamSkill(token: string, skillId: string) {
+  return apiRequest<Skill>(`/teams/skills/${skillId}/import/`, { method: 'POST', token });
 }
 
 export function createTeamSkill(token: string, input: SkillInput) {

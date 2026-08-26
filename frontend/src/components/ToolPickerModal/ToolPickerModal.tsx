@@ -80,6 +80,12 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
   web_search: '인터넷에서 정보를 찾아 출처와 함께 알려줍니다.',
   jira_get_issues: 'Jira 이슈를 조회합니다.',
   jira_create_issues: 'Jira 에 새 이슈를 등록합니다.',
+  // 2026-08-26. 아래 셋이 이 표에 없어서 모델용 지시문이 그대로 보이고 있었다 —
+  // 별표(`**`)와 내부 도구 이름까지 화면에 났다(위 주석이 막으려던 그것이다).
+  table_export: '표를 엑셀 파일로 만들어 「내 파일」에 저장합니다.',
+  document_create: '글을 워드 파일로 만들어 「내 파일」에 저장합니다.',
+  document_sync: '연결된 저장소에서 방금 바뀐 문서를 다시 읽어 옵니다.',
+  get_current_datetime: '오늘 날짜와 요일을 확인합니다.',
 };
 
 /** 카테고리 등장 순서를 그대로 유지해 그룹으로 묶는다. */

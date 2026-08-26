@@ -75,6 +75,19 @@ export type TimelineEntry =
       status: 'RUNNING' | 'DONE' | 'FAILED';
     };
 
+/**
+ * 도구가 만들어 낸 파일 하나(2026-08-26). `table_export`·`document_create` 처럼
+ * **결과를 파일로 내는 도구**가 있을 때만 생긴다.
+ *
+ * 링크로 대신할 수 없다 — 받는 곳(`/api/me/files/<id>/download/`)이 Bearer
+ * 토큰을 요구해서 `<a href>` 는 401 이 된다. 카드가 직접 받아 저장한다.
+ */
+export interface ProducedFile {
+  docId: string;
+  fileName: string;
+  mimeType: string | null;
+}
+
 /** 근거 한 건. `meta`는 「E1 · DC001 · 유사도 87%」처럼 되짚을 정보다. */
 export interface Evidence {
   quote: string;

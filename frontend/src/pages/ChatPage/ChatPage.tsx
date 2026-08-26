@@ -31,6 +31,7 @@ import {
   ConfirmCard,
   ErrorCard,
   JiraStatusCard,
+  ProducedFilesCard,
   ProgressCard,
   ReasoningTrace,
   ResultCard,
@@ -1775,6 +1776,10 @@ export default function ChatPage() {
                           </section>
                         );
                       })()}
+
+                      {/* 도구가 만든 파일. 결과 카드들보다 먼저 둔다 —
+                          「받을 것이 있다」가 제일 먼저 눈에 띄어야 한다. */}
+                      {live.files.length > 0 && <ProducedFilesCard files={live.files} />}
 
                       {live.jira && (
                         <JiraStatusCard

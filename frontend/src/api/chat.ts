@@ -146,6 +146,12 @@ export type ChatEvent =
       status: 'OK' | 'FAILED';
       /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). `events.py`의 `_summarize_tool_output()` 참고. */
       output?: string;
+      /**
+       * 이 호출이 **만들어 낸 파일**(2026-08-26). 도구가 결과에 최상위 `file`
+       * 키를 담았을 때만 온다(`events.py`의 `_produced_file()`). 읽기 도구는
+       * 언제나 `null` 이다 — `doc_id` 를 가진 결과와는 다른 값이라 섞이지 않는다.
+       */
+      produced_file?: { doc_id: string; file_name: string; mime_type?: string | null } | null;
     }
   /**
    * 도구 핸들러가 제너레이터로 흘리는 진행 이벤트(`task_extraction`,

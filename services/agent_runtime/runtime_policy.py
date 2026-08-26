@@ -24,7 +24,18 @@ AccountRole = Literal["leader", "member"]
 # `skills/service.py`의 권한 검사를 거치지 않는 별개 경로라서, 팀원도 채팅으로
 # 팀 스킬 파일을 지우자고 요청하고 스스로 승인할 수 있다. 이 간극은 아직 안
 # 막혀 있다.
-DEFAULT_EXCLUDED_BUILTIN_TOOLS: frozenset[str] = frozenset()
+#
+# ⚠ **2026-08-26 병합에서 다시 막았다(PM 결정).** 위 문단이 스스로 밝힌 그
+# 간극 때문이다 — 팀 스킬은 `/skills/team/`(`skills/backend.py`의
+# `SKILLS_TEAM_PATH_PREFIX`)에 있는 가상 파일이고, `delete`는 그 파일을 바로
+# 지운다. `skills/service.py`의 `_require_leader`는 API·`skill_register` 경로에만
+# 걸려 있어서, **팀 스킬 등록은 팀장 전용인데 삭제는 팀원도 되는** 비대칭이
+# 생긴다. 승인 카드는 "사람이 한 번 더 본다"일 뿐 역할 검사가 아니다.
+#
+# 서비스가 이미 공개 주소(halil-ai.site)로 나가 있어 그 상태로 둘 수 없었다.
+# **`delete` 자체를 반대하는 것이 아니다** — 위 경로에 역할 검사가 붙으면 이
+# 줄을 `frozenset()`으로 되돌리는 것이 맞다. 그때까지만 막는다.
+DEFAULT_EXCLUDED_BUILTIN_TOOLS: frozenset[str] = frozenset({"delete"})
 
 # 외부 시스템을 변경하는 Tool의 운영 정책 메모. 실행을 직접 차단하지는 않는다.
 EXTERNAL_WRITE_TOOLS_POLICY_NOTE = (

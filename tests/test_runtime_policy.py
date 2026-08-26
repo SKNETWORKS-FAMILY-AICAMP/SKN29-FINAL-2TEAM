@@ -22,16 +22,19 @@ from services.agent_runtime.runtime_policy import (
 
 
 class DefaultExcludedBuiltinToolsTests(SimpleTestCase):
-    def test_아무것도_막지_않는다(self):
-        """가상 파일 도구는 이제 아무것도 막지 않는다.
+    def test_delete_만_막는다(self):
+        """가상 파일 도구 중 `delete` 하나만 막는다.
 
-        `delete`가 마지막으로 남아 있던 항목이었다 — 2026-08-26에 다시 켰다.
-        노출은 열려도 `factory.py`의 `build()`가 `delete`를 다른 부수효과
-        도구와 똑같이 `interrupt_on`에 넣어 승인 카드를 거치게 한다
-        (`runtime_policy.py`의 주석 참고).
+        2026-08-26 병합에서 되돌린 자리다. jihun 이 그날 아침 `delete` 를 켰는데
+        (승인 카드를 거치게 하려는 의도), 그 커밋 자신이 밝힌 대로 **역할 검사가
+        없는 별개 경로**가 열린다 — 팀 스킬(`/skills/team/`)은 등록이 팀장
+        전용인데 삭제는 팀원도 되는 비대칭이다. 승인은 역할 검사가 아니다.
+
+        **되돌릴 조건이 분명하다**: 그 경로에 팀장 검사가 붙으면 `frozenset()`
+        으로 돌아가고 이 테스트도 그때 같이 바꾼다.
         """
 
-        self.assertEqual(DEFAULT_EXCLUDED_BUILTIN_TOOLS, frozenset())
+        self.assertEqual(DEFAULT_EXCLUDED_BUILTIN_TOOLS, frozenset({"delete"}))
 
     def test_does_not_exclude_execute(self):
         """execute는 SandboxBackend를 안 붙이면 애초에 안 생기는 도구라 제외 목록에 안 둔다."""

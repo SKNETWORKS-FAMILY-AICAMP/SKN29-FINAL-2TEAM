@@ -19,13 +19,9 @@ skills.py` 실측). 그래서 세션 도중 `skill_register`로 새 스킬을 �
 쓴 스킬 하나만 정확히 짚어서(`scope`/`name`으로 경로가 결정적으로 정해짐)
 `download_files()`를 한 번만 부르고, 기존 캐시에 그 항목 하나만 얹는다.
 
-이게 안전한 이유(우연이 아니라 `skill_register`의 쓰기 시점 보장 덕분):
-개인 스킬 등록(`create_personal_skill`)은 같은 이름의 팀 스킬이 이미
-있으면 **쓰기 자체를 거부한다**(`skills/service.py`의 `shadow_scope` 검사).
-그래서 `skill_register`가 성공했다는 건 "이 이름으로 더 높은 우선순위
-소스를 가리는 경우가 아니다"까지 이미 보장된 상태다 — 이름 하나를
-무조건 덮어써 넣어도 `before_agent()`가 소스를 순서대로(내장→개인→팀,
-나중 소스가 이김) 다시 스캔했을 때와 같은 결과가 나온다.
+팀 스킬은 가져오기용 카탈로그라 에이전트 스킬 목록에 직접 들어가지 않는다.
+개인 스킬 등록만 방금 쓴 개인 경로를 읽어 현재 세션 캐시에 합친다. 팀과
+개인은 서로 다른 역할이라 같은 이름이어도 에이전트 목록에서 충돌하지 않는다.
 
 Root에만 붙는다 — Child는 스킬 backend가 없다(`factory.py`의 4-6 분기).
 """
@@ -55,7 +51,6 @@ _GUARDED_TOOLS = {"skill_register"}
 #: `_skill_register`)가 받는 값과 정확히 같아야 한다.
 _SCOPE_TO_PREFIX = {
     "PERSONAL": "/skills/personal/",
-    "TEAM": "/skills/team/",
 }
 
 
@@ -82,6 +77,10 @@ class SkillRegisterSyncMiddleware(AgentMiddleware):
         args = request.tool_call["args"]
         prefix = _SCOPE_TO_PREFIX.get(args.get("scope"))
         skill_name = args.get("name")
+        if args.get("scope") == "TEAM":
+            # 팀 스킬은 가져오기용 카탈로그다. 등록은 성공했지만 현재
+            # 에이전트의 skills_metadata에는 직접 추가하지 않는다.
+            return result
         if prefix is None or not skill_name:
             # 방어적 분기 — `_skill_register`가 이미 scope/name을 검증해서
             # 실제로는 여기 안 걸린다. 걸리더라도 목록 갱신만 건너뛸 뿐,
