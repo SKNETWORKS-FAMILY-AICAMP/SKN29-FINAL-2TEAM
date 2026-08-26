@@ -44,13 +44,17 @@ const PAGE_SIZES = [10, 25, 50, 100];
 const ACCEPT = '.pdf,.docx,.txt,.md';
 
 /**
- * 안쪽 탭 둘.
+ * 어느 목록을 보는가. **트리가 정해서 넘겨준다**(2026-08-26).
  *
  * **한 목록에 섞지 않는다.** 내 것과 남이 준 것은 할 수 있는 일이 다르다 —
  * 내 것은 지우고 공유할 수 있고, 받은 것은 볼 수만 있다. 한 줄씩 배지로
  * 구분하면 목록을 훑을 때마다 그 판단을 다시 해야 한다.
+ *
+ * 전에는 이 패널이 안쪽 탭으로 직접 갈랐다. 그러면 **「내 파일」 안에 「공유
+ * 받은 파일」이 들어앉는다** — 받은 것은 내 것의 하위가 아니라 나란한 것인데
+ * 트리의 이름이 반대로 말했다. 이제 둘 다 「개인 문서」 아래 형제 노드다.
  */
-type Inner = 'mine' | 'shared';
+export type PersonalTab = 'mine' | 'shared';
 
 /**
  * 상태 칩. 팀 문서 표(`DocumentsPage`의 `statusChip`)와 **같은 말을 쓴다** —
@@ -77,11 +81,10 @@ function formatDate(iso: string | null): string {
   return iso.slice(0, 10).replace(/-/g, '.');
 }
 
-export function MyFilesPanel() {
+export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   const { showToast } = useToast();
   const token = loadSessionToken();
 
-  const [inner, setInner] = useState<Inner>('mine');
   const [files, setFiles] = useState<PersonalFile[]>([]);
   const [shared, setShared] = useState<PersonalFile[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +190,7 @@ export function MyFilesPanel() {
     }
   }
 
-  const rows = inner === 'mine' ? files : shared;
+  const rows = tab === 'mine' ? files : shared;
 
   const matched = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -202,10 +205,10 @@ export function MyFilesPanel() {
     [matched, safePage, pageSize],
   );
 
-  // 탭·검색어·쪽당 개수가 바뀌면 첫 쪽으로. 보던 쪽 번호를 물고 가면 빈 표가 뜬다.
+  // 자리·검색어·쪽당 개수가 바뀌면 첫 쪽으로. 보던 쪽 번호를 물고 가면 빈 표가 뜬다.
   useEffect(() => {
     setPage(1);
-  }, [inner, query, pageSize]);
+  }, [tab, query, pageSize]);
 
   useEffect(() => {
     if (page !== safePage) setPage(safePage);
@@ -217,46 +220,29 @@ export function MyFilesPanel() {
     upload(event.dataTransfer.files);
   }
 
-  const notReady = matched.filter((file) => !file.search_ready).length;
+  // 실패한 것은 「읽는 중」이 아니다 — 팀 문서 표와 같은 규칙을 쓴다.
+  const notReady = matched.filter(
+    (file) => !file.search_ready && file.index_status !== 'FAILED',
+  ).length;
+  const failed = matched.filter((file) => file.index_status === 'FAILED').length;
 
   return (
     <>
       <div className={styles.panelHead}>
-        <h2 className={styles.panelTitle}>{inner === 'mine' ? '내 파일' : '공유 받은 파일'}</h2>
+        <h2 className={styles.panelTitle}>{tab === 'mine' ? '내 파일' : '공유 받은 파일'}</h2>
         <span className={styles.panelCount}>
           {query.trim() ? `${matched.length} / ${rows.length}건` : `${rows.length}건`}
           {notReady > 0 && <span className={styles.panelWarn}> · 읽는 중 {notReady}</span>}
+          {failed > 0 && <span className={styles.panelWarn}> · 읽기 실패 {failed}</span>}
         </span>
       </div>
 
       {error && <p className={styles.error}>{error}</p>}
 
-      {/* 안쪽 탭. 내 것과 받은 것은 할 수 있는 일이 달라서 한 목록에 안 섞는다. */}
-      <div className={styles.innerTabs} role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={inner === 'mine'}
-          className={[styles.innerTab, inner === 'mine' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
-          onClick={() => setInner('mine')}
-        >
-          내 파일 {files.length}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={inner === 'shared'}
-          className={[styles.innerTab, inner === 'shared' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
-          onClick={() => setInner('shared')}
-        >
-          공유 받은 파일 {shared.length}
-        </button>
-      </div>
-
       {/* drag & drop. **누르는 것으로도 된다** — 드래그가 안 되는 환경(모바일)이
           있고, 되는 곳에서도 파일 고르기를 더 편하게 여기는 사람이 있다.
           받은 파일 탭에서는 안 보인다 — 거기 올릴 수는 없다. */}
-      {inner === 'mine' && (
+      {tab === 'mine' && (
         <div
           className={[styles.dropZone, dragging ? styles.dropZoneOn : ''].filter(Boolean).join(' ')}
           onDragOver={(event) => {
@@ -328,7 +314,7 @@ export function MyFilesPanel() {
 
       {rows.length === 0 && (
         <p className={styles.muted}>
-          {inner === 'mine' ? '아직 올린 파일이 없습니다.' : '팀원이 공유한 파일이 아직 없습니다.'}
+          {tab === 'mine' ? '아직 올린 파일이 없습니다.' : '팀원이 공유한 파일이 아직 없습니다.'}
         </p>
       )}
 
@@ -342,12 +328,12 @@ export function MyFilesPanel() {
               쓰인다. 그 자리에 스위치를 두면 「꺼도 쓰이는」 상태가 생긴다.
               대신 **누가 올렸는지**가 온다 — 팀 문서는 「우리 폴더에서 왔다」가
               믿을 근거인데 여기는 사람이 그 근거다. */}
-          <div className={inner === 'mine' ? styles.myFileHead : styles.sharedHead}>
+          <div className={tab === 'mine' ? styles.myFileHead : styles.sharedHead}>
             <span>문서</span>
-            {inner === 'shared' && <span>공유한 사람</span>}
+            {tab === 'shared' && <span>공유한 사람</span>}
             <span>상태</span>
             <span>올림</span>
-            {inner === 'mine' && (
+            {tab === 'mine' && (
               <>
                 <span>검색에 사용</span>
                 <span>팀에 공유</span>
@@ -359,7 +345,7 @@ export function MyFilesPanel() {
           {paged.map((file) => {
             const chip = statusChip(file);
             return (
-              <div key={file.doc_id} className={inner === 'mine' ? styles.myFileRow : styles.sharedRow}>
+              <div key={file.doc_id} className={tab === 'mine' ? styles.myFileRow : styles.sharedRow}>
                 <span className={styles.cellName}>
                   <Icon name="file-text" size={15} color="var(--color-primary)" />
                   <span className={styles.cellNameText}>
@@ -375,7 +361,7 @@ export function MyFilesPanel() {
                   </span>
                 </span>
 
-                {inner === 'shared' && (
+                {tab === 'shared' && (
                   <span className={styles.cellPath} data-label="공유한 사람">
                     {file.owner_name ?? '알 수 없음'}
                   </span>
@@ -389,7 +375,7 @@ export function MyFilesPanel() {
                   {formatDate(file.uploaded_at)}
                 </span>
 
-                {inner === 'mine' && (
+                {tab === 'mine' && (
                   <>
                     {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
                         끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
