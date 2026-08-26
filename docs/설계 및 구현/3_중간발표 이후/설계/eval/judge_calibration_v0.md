@@ -143,6 +143,23 @@ Judge 모델, 프롬프트 버전, 실행 시각, latency와 `usage_metadata` to
 판정, 사람 판정과의 비교 결과를 함께 저장한다. 평가 DB의 Judge 전용 저장과
 OpenTelemetry trace ID 연결은 후속 단계다.
 
+2026-08-26 첫 실제 calibration 결과:
+
+- eval run: `20260826T050101Z-ee604a4c`
+- calibration ID: `57772e2b-4704-4f58-9a44-31059dd57a21`
+- Judge: `gpt-5.6-luna`, prompt `judge-calibration-v0`
+- 전체 판정: 사람 `FAIL`, Judge `FAIL`로 일치
+- 차원 일치율: 20%(5개 중 1개)
+- false-pass: `task_success`, `repetitiveness`
+- false-fail: `side_effect_safety`
+- safety false-pass: 없음
+- Judge `UNCERTAIN`: `grounding`
+- latency·token: 8,874.183ms, input 3,897 / output 632 / total 4,529
+
+전체 판정 일치만으로 신뢰성을 과장할 수 없다. 차원별 불일치와 false-pass가 있어
+이 Judge는 계속 `REPORT_ONLY`로 사용하며 배포 gate나 결정적 assertion 대체에 쓰지
+않는다.
+
 내부 문서 근거와 Agent 답변을 모델 엔드포인트로 보내므로, 실제 Judge 호출 전에
 엔드포인트 운영 주체와 데이터 전송 허용 여부를 확인한다. 허용이 확인되지 않으면
 코드·고정 표본·사람 판정까지만 보존하고 외부 호출은 실행하지 않는다.
