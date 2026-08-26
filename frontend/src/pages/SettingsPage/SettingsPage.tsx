@@ -2,10 +2,8 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { AppShell } from '../../components';
 import { PATHS, SETTINGS_TABS } from '../../routes';
-import { loadUserRole } from '../../utils/userRole';
-import TeamLeaderSettingsPage from '../TeamLeaderSettingsPage/TeamLeaderSettingsPage';
-import TeamMemberSettingsPage from '../TeamMemberSettingsPage/TeamMemberSettingsPage';
 import { ConnectorTab } from './tabs/ConnectorTab';
+import { TeamTab } from './tabs/TeamTab';
 import { SkillsTab } from './tabs/SkillsTab';
 import styles from './SettingsPage.module.css';
 
@@ -25,14 +23,13 @@ import styles from './SettingsPage.module.css';
  * 편집의 도구 선택이다 — 쓰는 자리에서 보이면 설정에 또 둘 이유가 없다.
  * 8_화면개편_명세 §2에서 역할 분기 래퍼였던 이 화면을 허브로 승격시켰다.
  *
- * 「팀」 탭은 기존 팀장·팀원 설정 화면을 그대로 편입한다. 역할은
- * 로그인 계정(`account.role`)에서 온다 — Permission 설계 전까지는 그 값이 전부다.
+ * 「팀」 탭은 팀장·팀원 설정 화면 **둘을 합친 것**이다(2026-08-26). 예전에는
+ * 역할마다 화면 파일이 따로 있었는데 팀원용이 팀장용의 부분집합이라, 한쪽만
+ * 고치면 다른 쪽이 조용히 뒤처졌다 — 역할 분기는 이제 `TeamTab` 안에서
+ * 「팀원 관리」 구획 하나에만 걸린다.
  */
 export default function SettingsPage() {
   const location = useLocation();
-  // 역할은 로그인 계정에서 온다(`account.role`). DEV 전환기는 걷어냈다(`2cc45c1`) —
-  // 실제 흐름으로 확인한다.
-  const role = loadUserRole();
 
   function renderTab() {
     switch (location.pathname) {
@@ -41,11 +38,7 @@ export default function SettingsPage() {
       case PATHS.settingsSkills:
         return <SkillsTab />;
       default:
-        return role === 'leader' ? (
-          <TeamLeaderSettingsPage />
-        ) : (
-          <TeamMemberSettingsPage />
-        );
+        return <TeamTab />;
     }
   }
 

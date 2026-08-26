@@ -23,14 +23,18 @@
 >
 > `frontend/src/routes.ts` 에서 다시 쟀다. **§1 은 8/10 계획이고, 아래가 지금이다.**
 >
-> **AppShell 4메뉴 — 채팅 · 에이전트 · 프로젝트 · 설정** (Admin 은 별도 로그인이라 셸 밖이다)
+> ~~**AppShell 4메뉴 — 채팅 · 에이전트 · 프로젝트 · 설정**~~
+> **이 서술은 틀렸다 (2026-08-26).** 지금은 **AppShell 5메뉴 — 채팅 · 에이전트 ·
+> 프로젝트 · 문서 · 설정** 이다 (Admin 은 별도 로그인이라 셸 밖이다).
+> 「문서」는 **이 정정표를 쓴 날 저녁에 붙었다** — 정정표 8/25 10:11, 「문서」
+> 화면 `d654d53` 8/25 20:17. 정본은 `frontend/src/routes.ts` 의 `APP_NAV_ITEMS` 다.
 >
 > | 영역 | 지금 화면 | §1 과 다른 점 |
 > |---|---|---|
 > | Chat | `/chat` · `/chat/:sessionId` | **에이전트 선택기가 없다**(8/12). 고르는 것이 아니라 말하면 정해진다 |
 > | 에이전트 | `/agents/versions` (개인) · `/team` · `/favorites` · `/:agentId/edit` · `/new/edit` | 「목록 + 생성/편집」이 **개인·팀 공유·즐겨찾기 3탭 + 버전**으로 갈렸다 |
 > | 프로젝트 | `/projects` · `/projects/:projectId` | 그대로 |
-> | 설정 | **팀 · 커넥터 · 내 파일 · 스킬** (4탭) | §1 은 「팀 · Connector · MCP · Model · Permission」이었다. **MCP(→커스텀 도구)와 Model 은 운영자 콘솔로 갔고**(8/18), **Permission 탭은 걷어냈다**(8/13). 대신 **내 파일**(8/18)과 **스킬**(8/21)이 새로 붙었다 |
+> | 설정 | ~~**팀 · 커넥터 · 내 파일 · 스킬** (4탭)~~ → **팀 · 커넥터 · 스킬** (3탭) | §1 은 「팀 · Connector · MCP · Model · Permission」이었다. **MCP(→커스텀 도구)와 Model 은 운영자 콘솔로 갔고**(8/18), **Permission 탭은 걷어냈다**(8/13). 대신 **내 파일**(8/18)과 **스킬**(8/21)이 새로 붙었다. ⚠ **「내 파일」 부분은 틀렸다 (2026-08-26)** — 8/25 저녁에 「문서」 화면으로 나갔고(`d654d53`), 설정에는 `/settings/my-files` → `/documents` 리디렉트만 남는다 |
 > | 운영자 콘솔 | **15종** + 로그인 | §1 의 「8종」이 아니다. 운영 현황 · 팀 현황/상세 · 계정 관리/상세 · 계정 연결·초대 현황/초대 상세 · 연결 서비스 현황 · 모델 · **커스텀 도구** · **가드레일** · **사용 현황** · 감사 로그 · 전역 정책 |
 >
 > **「Agent 실행 현황·Token 사용량 — 여력」은 붙었다** — `/ops/usage`.
@@ -103,9 +107,15 @@ P0 = E2E 데모에 필수. P1 = 데모 품질. P2 = 구조만 잡고 최소 구�
 (People DB 연결 모달이 팀 생성을 겸한다 → Drive 연결 → 「폴더 설정」 모달 →
 Jira 연결하면 전체 프로젝트 자동 수집).
 
-⚠ **그래서 새 계정의 첫 Chat 화면에는 팀도 에이전트도 없다.** Chat은 "쓸 수
+~~⚠ **그래서 새 계정의 첫 Chat 화면에는 팀도 에이전트도 없다.** Chat은 "쓸 수
 있는 에이전트가 없습니다"까지만 말하고 Settings로 안내하지 않는다 — 첫 사용
-경험의 빈 구멍이다. → `작업목록.md` 작업 6.
+경험의 빈 구멍이다. → `작업목록.md` 작업 6.~~
+
+⚠ **에이전트 부분은 틀렸다 (2026-08-15 해소).** 팀 생성과 **같은 트랜잭션**으로
+「기본 어시스턴트」(`is_default_chat`, 팀당 1개)가 발행된다
+(`backend/db/repositories.py` `TeamRepository.create()` →
+`agent_platform.provision_default_chat_agent()`). 팀이 없는 동안 비어 있는 것은
+그대로다.
 
 ~~가입 → 팀 생성 → Connector 연결(Drive 필수, Jira·HR 선택) → 폴더 선택 →
 Chat 진입. 기존과 차이: Jira 프로젝트 선택이 필수 스텝에서 빠지고, 끝이
@@ -163,7 +173,7 @@ Builder → 새 Agent → 이름·설명·지시문 작성 → Model 선택 → 
 | ~~`ConnectorOnboardingPage`~~ (683) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재배치~~ Settings > Connector 탭이 실연동되면서 대체됐다 |
 | ~~`FolderSelectPage`~~ (533) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~유지~~ `SettingsPage/DriveFolderModal/`로 이식. 폴더 트리(`DriveFolderPickerModal`)는 그대로 따라갔다 |
 | ~~`JiraProjectSelectPage`~~ (256) | Settings | **제거 완료 (8/11 · 5차 단계 4)** | ~~재검토~~ 고르는 단계 자체가 없어졌다 |
-| `SettingsPage` (46) + `TeamLeaderSettingsPage` (556) + `TeamMemberSettingsPage` (204) | Settings | 확장 | ✅ **허브 승격 완료** — 탭 컨테이너. ~~sessionStorage DEV 전환 버튼~~은 걷어냈고(`2cc45c1`) 역할은 `account.role`에서 온다 |
+| `SettingsPage` (46) + ~~`TeamLeaderSettingsPage`~~ (556) + ~~`TeamMemberSettingsPage`~~ (204) | Settings | 확장 | ✅ **허브 승격 완료** — 탭 컨테이너. ~~sessionStorage DEV 전환 버튼~~은 걷어냈고(`2cc45c1`) 역할은 `account.role`에서 온다. **팀장·팀원 화면은 `tabs/TeamTab.tsx` 하나로 합쳤다**(2026-08-26) — 팀원용이 팀장용의 부분집합이라 한쪽만 고치면 다른 쪽이 뒤처졌다. 역할 분기는 「팀원 관리」 구획 하나에만 남는다 |
 | `Ops*Page` 8종 (2,809) | Admin | 유지 | 실행 현황·사용량 탭만 추가 |
 | `LandingPage` (348) · 인증 5종 (792) | IA 외 | 유지 | 방향과 무관 |
 

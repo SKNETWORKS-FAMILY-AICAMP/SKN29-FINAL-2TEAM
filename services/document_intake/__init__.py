@@ -28,6 +28,7 @@
 from .service import (
     IntakeResult,
     intake_connector_documents,
+    LONG_PROMOTE_WAIT_SECONDS,
     promote_to_searchable,
     sync_drive_changes,
 )
@@ -35,6 +36,7 @@ from .service import (
 __all__ = [
     "IntakeResult",
     "intake_connector_documents",
+    "LONG_PROMOTE_WAIT_SECONDS",
     "promote_to_searchable",
     "sync_drive_changes",
 ]

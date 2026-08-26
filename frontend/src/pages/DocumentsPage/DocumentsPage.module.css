@@ -396,6 +396,7 @@
 .cellActions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .dim {
@@ -424,35 +425,10 @@
   gap: var(--space-3);
 }
 
-/* ---------------- 내가 올린 것 ---------------- */
+/* ---------------- 개인 문서 ---------------- */
 
-/* 안쪽 탭. 팀 문서 쪽에는 없는 갈래라 여기만 쓴다. */
-.innerTabs {
-  display: flex;
-  gap: var(--space-1);
-  flex: none;
-}
-
-.innerTab {
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-muted);
-  cursor: pointer;
-}
-
-.innerTab:hover {
-  background: var(--color-bg);
-}
-
-.innerTabOn {
-  background: var(--color-bg);
-  color: var(--color-heading);
-}
+/* 안쪽 탭이 있던 자리. 「내 파일」·「공유 받은 파일」을 트리의 형제 노드로
+   끌어내면서(2026-08-26) 갈래를 고르는 일이 트리 하나로 모였다. */
 
 /* 올리는 자리. 표 위에 두되 **한 줄로 낮게** — 화면 높이를 고정해 뒀으므로
    여기가 두꺼워지면 그만큼 표에서 보이는 행이 줄어든다. */
@@ -537,7 +513,8 @@
 
 .myFileHead,
 .myFileRow {
-  grid-template-columns: minmax(0, 1fr) 130px 90px 92px 84px 72px;
+  /* 마지막 칸에 「다시 읽기」와 「삭제」가 나란히 선다(2026-08-26). */
+  grid-template-columns: minmax(0, 1fr) 130px 90px 92px 84px 168px;
 }
 
 .sharedHead,

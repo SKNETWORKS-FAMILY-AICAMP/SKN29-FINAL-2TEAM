@@ -583,3 +583,264 @@
   color: var(--color-danger);
   font-weight: 600;
 }
+/* ── 「팀」 탭 ── (TeamLeaderSettingsPage.module.css 에서 옮겨 옴, 2026-08-26) */
+
+.sectionBlock {
+  scroll-margin-top: var(--space-6);
+  /* 카드끼리 맞붙어 있어 어디까지가 한 섹션인지 안 보였다(2026-08-12). */
+  margin-bottom: var(--space-5);
+}
+
+.sectionBlock:last-child {
+  margin-bottom: 0;
+}
+
+.sectionHeading h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0 0 4px;
+}
+
+.sectionHeading p {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin: 0 0 var(--space-5);
+}
+
+/* ---------- HR read-only box ---------- */
+.identityRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.identityText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.identityName {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.identityMeta {
+  font-size: 13px;
+  color: var(--color-placeholder);
+}
+
+.hint {
+  margin-top: var(--space-3);
+  font-size: 12px;
+  color: var(--color-placeholder);
+}
+
+.subheading {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0 0 var(--space-3);
+}
+
+.accountRow {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.accountRow > * {
+  flex: 1;
+  min-width: 220px;
+}
+
+.sectionHeadingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* ---------- connector cards ---------- */
+/* ---------- team table ---------- */
+.tableCaption {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+  margin: 0 0 var(--space-3);
+}
+
+.teamTable {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.teamTableHead,
+.teamTableRow {
+  display: grid;
+  /* 이름 · 소속·직책 · 계정 · 초대 · 작업 */
+  grid-template-columns: 1.3fr 1.4fr 1.5fr 1.1fr 0.9fr;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+}
+
+.teamTableHead {
+  background: var(--color-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.teamTableRow {
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.teamTableRow:last-child {
+  border-bottom: none;
+}
+
+.memberName {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.memberEmail {
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ownerTag {
+  margin-left: var(--space-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.inviteCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.rowAction {
+  justify-self: end;
+}
+
+.dim {
+  color: var(--color-placeholder);
+}
+
+.removeLink {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cancelLink {
+  background: none;
+  border: none;
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+
+.emptyNote {
+  padding: var(--space-6);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-placeholder);
+  margin: 0;
+}
+
+.inviteResult {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: 14px;
+  color: var(--color-body);
+  line-height: 1.6;
+}
+
+.inviteResult p {
+  margin: 0;
+}
+
+.inviteCode {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: var(--font-mono, monospace);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-heading);
+  word-break: break-all;
+}
+
+.inviteHint {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* ---------------- 좁은 화면 ---------------- */
+
+/*
+ * **줄을 세로로 쌓는다. 옆으로 흐르게 하지 않는다.**
+ *
+ * 다섯 칸을 375px 에 나누면 이름이 한 글자씩 흐르고 버튼이 겹친다. 그렇다고
+ * 표를 가로로 흐르게 두면 **무엇이 더 있는지 안 보이고**, 세로 스크롤과
+ * 제스처가 싸운다(PM 지적).
+ *
+ * 열 이름을 각 값 앞에 붙여 한 줄씩 쌓으면 **숨기지도 흐르지도 않는다.**
+ * 머리글 줄은 값마다 라벨이 붙으므로 할 일이 없어 감춘다.
+ */
+@media (max-width: 980px) {
+  .teamTableHead {
+    display: none;
+  }
+
+  .teamTableRow {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: var(--space-4);
+  }
+
+  /* 값 앞에 열 이름. 이름 칸은 그 자체가 제목이라 라벨을 붙이지 않는다. */
+  .teamTableRow > span[data-label]::before {
+    /* 값 안에도 `·` 가 들어가서(개발팀 · 팀장) 같은 기호로 이으면 어디까지가
+       열 이름인지 안 읽힌다. 색과 간격으로만 가른다. */
+    content: attr(data-label);
+    margin-right: 6px;
+    color: var(--color-muted);
+    font-size: 12px;
+  }
+
+  .memberName {
+    font-weight: 700;
+  }
+}

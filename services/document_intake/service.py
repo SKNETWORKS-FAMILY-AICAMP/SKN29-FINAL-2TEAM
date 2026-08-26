@@ -35,6 +35,7 @@ from backend.db import (
 from backend.db.document_pipeline import PipelineDocumentRepository
 from backend.db.errors import RepositoryError
 from backend.services.storage import build_key, content_hash
+from backend.services.storage import remove as remove_document
 from backend.services.storage import save as save_document
 from services.document_pipeline.errors import DocumentPipelineError, PipelineConfigurationError
 
@@ -458,6 +459,19 @@ def _fetch_originals(*, account_id: str, team_id: str, result: IntakeResult) -> 
 #: — 조용히 실패하면 「관련 문서가 없다」로 읽힌다.
 PROMOTE_WAIT_SECONDS = 240
 
+#: 사람이 응답을 붙잡고 있지 **않을 때** 기다려 주는 한계(초).
+#:
+#: 위 240초는 대화 도구를 위한 값이다 — 그 턴 안에 답해야 하니 오래 못 기다린다.
+#: 그런데 업로드·「다시 읽기」는 뒷작업이라 붙잡고 있는 것이 없는데도 같은 4분에
+#: 포기했고, **그러면 그 문서는 영영 색인되지 않는다**: 시간이 다 되면 `_done` 을
+#: 안 부르고 나가므로 워커가 마친 결과를 아무도 적재하지 않고, 다시 눌러도 같은
+#: 4분을 다시 쓴다. 쪽수가 많은 문서(예: 200쪽 설계서)가 여기 걸린다.
+#:
+#: **RunPod 쪽은 원래 30분까지 허용해 두었다**(`RUNPOD_EXECUTION_TIMEOUT_MS`,
+#: 운영 `.env` 에서 1,800,000ms). 기다리는 쪽만 4분이라 그 여유를 못 쓰고 있었다.
+#: 그 아래로 잡아 워커가 끝낼 시간을 남긴다.
+LONG_PROMOTE_WAIT_SECONDS = 1_500
+
 
 def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
     """워커가 왜 실패했는지를 화면에 쓸 한 줄로 만든다.
@@ -483,7 +497,64 @@ def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
     return f"문서 처리 실패({state})"
 
 
-def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
+def _refetch_original(*, account_id: str, document: dict[str, Any]) -> bool:
+    """색인 뒤 버린 원문을 Drive 에서 다시 받아 온다. 받았으면 True.
+
+    **다시 읽히려면 원문이 다시 필요하다.** 커넥터 문서는 색인이 끝나면 원문을
+    버리므로(`_discard_original`), 「다시 읽기」나 재색인은 여기를 지난다.
+
+    올린 파일에는 돌아갈 곳이 없다(`src_file_id` 가 없다) — False 로 답하고
+    부르는 쪽이 사유를 적는다.
+    """
+
+    if not document.get("src_file_id") or not document.get("team_id"):
+        return False
+
+    fetched = download_drive_file(
+        account_id=account_id,
+        file_id=document["src_file_id"],
+        mime_type=document["mime_type"],
+    )
+    key = build_key(
+        team_id=document["team_id"], doc_id=document["doc_id"], mime_type=fetched["mime_type"]
+    )
+    # 파일을 먼저 쓰고 DB 에 기록한다 — `_fetch_originals` 와 같은 순서다.
+    fetched_hash = save_document(key, fetched["content"])
+    DocumentRepository.mark_stored(
+        doc_id=document["doc_id"],
+        storage_key=key,
+        content_hash=fetched_hash,
+        revision=fetched["revision"],
+    )
+    return True
+
+
+def _discard_original(document: dict[str, Any]) -> None:
+    """색인이 끝난 **커넥터 문서**의 원문을 버린다 (2026-08-26 결정).
+
+    원본은 Drive 에 있고 우리는 사본이었다. 검색이 쓰는 것은 청크와 임베딩이지
+    원문 파일이 아니라, 다 읽고 나면 들고 있을 이유가 없다. 다시 읽어야 할 때는
+    `_refetch_original` 이 Drive 에서 받아 온다.
+
+    **올린 파일은 안 버린다.** 그쪽은 원본이 우리뿐이라 버리면 되돌릴 곳이 없다 —
+    `src_file_id` 가 그 구분이다.
+
+    실패해도 색인 결과를 뒤집지 않는다. 파일이 남는 것은 다음 저장이 덮어쓰고,
+    최악이라도 「지웠어야 할 사본이 남았다」이지 문서가 망가지는 일은 아니다.
+    """
+
+    if not document.get("src_file_id") or not document.get("storage_key"):
+        return
+    try:
+        remove_document(document["storage_key"])
+        DocumentRepository.clear_stored_original(document["doc_id"])
+    except (OSError, RepositoryError):
+        logger.exception("원문 정리 실패: %s", document["doc_id"])
+
+
+def promote_to_searchable(
+    *, account_id: str, doc_id: str, wait_seconds: float = PROMOTE_WAIT_SECONDS
+) -> dict[str, Any]:
     """문서 하나를 **본문 검색 가능**한 상태로 올린다.
 
     요약까지만 되어 있던 문서를 청크로 쪼개 임베딩한다.
@@ -495,6 +566,10 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
 
     끝났는지 여기서 기다린다. 부르는 쪽이 도구라 「제출했습니다」로 끝내면
     그 턴 안에서 쓸 수가 없다.
+
+    `wait_seconds` 는 **누가 기다리느냐**로 갈린다. 기본값은 대화 도구용 4분이고,
+    사람이 응답을 붙잡고 있지 않은 뒷작업(업로드·「다시 읽기」)은
+    `LONG_PROMOTE_WAIT_SECONDS` 를 준다 — 그 주석에 왜인지 적어 두었다.
     """
 
     from django.conf import settings
@@ -506,7 +581,18 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
 
     document = PipelineDocumentRepository.get_for_processing(doc_id=doc_id, account_id=account_id)
     if not document["storage_key"]:
-        return {"doc_id": doc_id, "ok": False, "detail": "원문을 아직 받지 않았습니다."}
+        # 색인이 끝나 버린 원문이거나, 아직 한 번도 못 받은 문서다. Drive 에서
+        # 받아 올 수 있으면 받고, 아니면 여기서 끝낸다.
+        try:
+            recovered = _refetch_original(account_id=account_id, document=document)
+        except (OAuthError, OSError, RepositoryError) as exc:
+            logger.exception("원문 재수신 실패: %s", doc_id)
+            return {"doc_id": doc_id, "ok": False, "detail": exc.__class__.__name__}
+        if not recovered:
+            return {"doc_id": doc_id, "ok": False, "detail": "원문을 아직 받지 않았습니다."}
+        document = PipelineDocumentRepository.get_for_processing(
+            doc_id=doc_id, account_id=account_id
+        )
 
     # **결과를 남긴다.** 안 남기면 실패한 문서와 아직 안 돌린 문서가 화면에서
     # 같아 보인다 — 사람은 얼마나 더 기다려야 하는지 알 수 없다(2026-08-18).
@@ -533,7 +619,7 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
         }
     )
 
-    deadline = time.monotonic() + PROMOTE_WAIT_SECONDS
+    deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
         time.sleep(3)
         result = job_status(job["id"])
@@ -557,7 +643,11 @@ def promote_to_searchable(*, account_id: str, doc_id: str) -> dict[str, Any]:
                 # 2026-08-25 에 실제로 밟았다. DC001 의 `content_hash` 가 저장된
                 # 원문과 어긋나 있었고, 워커가 정상 완료한 뒤 여기서 터졌다.
                 return _done(False, detail=str(exc))
-            return _done(True)
+            # 다 읽었으면 사본을 들고 있을 이유가 없다. 상태를 먼저 적고 버린다 —
+            # 순서가 반대면 지우는 데 실패했을 때 「끝났다」가 안 적힌다.
+            outcome = _done(True)
+            _discard_original(document)
+            return outcome
         if state in {"FAILED", "CANCELLED", "TIMED_OUT"}:
             return _done(False, detail=_worker_failure_detail(result, state))
 

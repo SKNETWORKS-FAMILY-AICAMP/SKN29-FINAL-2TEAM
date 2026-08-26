@@ -14,6 +14,8 @@ from apps.connectors.oauth import OAuthError
 from backend.services.storage import content_hash
 from services.document_intake.service import (
     IntakeResult,
+    LONG_PROMOTE_WAIT_SECONDS,
+    PROMOTE_WAIT_SECONDS,
     _fetch_originals,
     _index_all,
     _refetch_changed,
@@ -461,6 +463,173 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         self.assertEqual(
             saved["detail"], "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
         )
+
+
+@patch("services.document_intake.service.time.sleep", lambda _: None)
+@patch("backend.db.document_pipeline.PersonalDocumentRepository")
+@patch("services.document_pipeline.signing.signed_download_url", return_value="https://x/y")
+@patch("services.document_pipeline.runpod_client.job_status")
+@patch("services.document_pipeline.runpod_client.submit_document_job", return_value={"id": "J1"})
+@patch("services.document_intake.service.PipelineDocumentRepository")
+class PromoteWaitIsCallerDecidedTests(SimpleTestCase):
+    """**누가 기다리느냐**로 한계가 갈린다 (2026-08-26).
+
+    대화 도구는 그 턴 안에 답해야 해서 4분이 한계지만, 업로드·「다시 읽기」는
+    뒷작업이라 붙잡고 있는 것이 없다. 같은 4분을 쓰면 쪽수 많은 문서가 영영
+    색인되지 않는다 — 시간이 다 되면 결과를 적재하지 않고 나가기 때문이다.
+    """
+
+    DOC = {
+        "doc_id": "DC020", "storage_key": "TE001/DC020.pdf", "cur_revision": "r",
+        "mime_type": "application/pdf", "src_file_id": "driveZ", "team_id": "TE001",
+    }
+
+    def test_기본값은_대화_도구용_4분이다(self, pipeline_repo, submit, status, url, personal_repo):
+        self.assertEqual(PROMOTE_WAIT_SECONDS, 240)
+
+    def test_뒷작업은_훨씬_오래_기다린다(self, pipeline_repo, submit, status, url, personal_repo):
+        """RunPod 쪽 실행 한계(운영 `.env` 의 30분) 안이어야 워커가 끝낼 시간이
+        남는다."""
+
+        self.assertGreater(LONG_PROMOTE_WAIT_SECONDS, PROMOTE_WAIT_SECONDS)
+        self.assertLess(LONG_PROMOTE_WAIT_SECONDS, 30 * 60)
+
+    def test_기다릴_시간이_없으면_실패로_적지_않는다(
+        self, pipeline_repo, submit, status, url, personal_repo
+    ):
+        """시간이 다 된 것과 못 읽은 것은 다르다. 다음에는 끝나 있을 수 있으므로
+        `FAILED` 로 적지 않는다 — 적으면 `list_pending_index` 가 영영 건너뛴다."""
+
+        pipeline_repo.get_for_processing.return_value = dict(self.DOC)
+        status.return_value = {"status": "IN_QUEUE"}
+
+        outcome = promote_to_searchable(account_id="UA001", doc_id="DC020", wait_seconds=0)
+
+        self.assertFalse(outcome["ok"])
+        self.assertIn("준비 중", outcome["detail"])
+        personal_repo.set_index_status.assert_called_once()
+        self.assertEqual(personal_repo.set_index_status.call_args.kwargs["status"], "RUNNING")
+
+
+@patch("services.document_intake.service.time.sleep", lambda _: None)
+@patch("backend.db.document_pipeline.PersonalDocumentRepository")
+@patch("services.document_pipeline.signing.signed_download_url", return_value="https://x/y")
+@patch("services.document_pipeline.runpod_client.job_status")
+@patch("services.document_pipeline.runpod_client.submit_document_job", return_value={"id": "J1"})
+@patch("services.document_intake.service.DocumentRepository")
+@patch("services.document_intake.service.remove_document")
+@patch("services.document_intake.service.PipelineDocumentRepository")
+class DiscardOriginalAfterIndexTests(SimpleTestCase):
+    """색인이 끝나면 **커넥터 문서의 원문을 버린다** (2026-08-26 결정).
+
+    원본은 Drive 에 있고 우리는 사본이다. 검색이 쓰는 것은 청크와 임베딩이라
+    다 읽고 나면 들고 있을 이유가 없다. 올린 파일은 원본이 우리뿐이라 버리지
+    않는다 — `src_file_id` 가 그 구분이다.
+    """
+
+    OK = {"status": "COMPLETED", "output": {"chunks": [1]}}
+
+    def test_커넥터_문서는_색인이_끝나면_원문을_버린다(
+        self, pipeline_repo, remove, doc_repo, submit, status, url, personal_repo
+    ):
+        pipeline_repo.get_for_processing.return_value = {
+            "doc_id": "DC010", "storage_key": "TE001/DC010.pdf", "cur_revision": "r",
+            "mime_type": "application/pdf", "src_file_id": "driveC", "team_id": "TE001",
+        }
+        status.return_value = self.OK
+
+        outcome = promote_to_searchable(account_id="UA001", doc_id="DC010")
+
+        self.assertTrue(outcome["ok"])
+        remove.assert_called_once_with("TE001/DC010.pdf")
+        doc_repo.clear_stored_original.assert_called_once_with("DC010")
+
+    def test_올린_파일의_원문은_그대로_둔다(
+        self, pipeline_repo, remove, doc_repo, submit, status, url, personal_repo
+    ):
+        """되돌릴 곳이 없다 — 여기서 버리면 다시 읽힐 방법이 사라진다."""
+
+        pipeline_repo.get_for_processing.return_value = {
+            "doc_id": "DC011", "storage_key": "user/UA002/DC011.pdf", "cur_revision": "r",
+            "mime_type": "application/pdf", "src_file_id": None, "team_id": None,
+        }
+        status.return_value = self.OK
+
+        outcome = promote_to_searchable(account_id="UA002", doc_id="DC011")
+
+        self.assertTrue(outcome["ok"])
+        remove.assert_not_called()
+        doc_repo.clear_stored_original.assert_not_called()
+
+    def test_실패하면_원문을_안_버린다(
+        self, pipeline_repo, remove, doc_repo, submit, status, url, personal_repo
+    ):
+        """다시 읽히려면 원문이 필요하다. 실패한 문서까지 버리면 Drive 를 한 번
+        더 때려야 한다."""
+
+        pipeline_repo.get_for_processing.return_value = {
+            "doc_id": "DC012", "storage_key": "TE001/DC012.pdf", "cur_revision": "r",
+            "mime_type": "application/pdf", "src_file_id": "driveD", "team_id": "TE001",
+        }
+        status.return_value = {"status": "FAILED", "error": "터짐"}
+
+        outcome = promote_to_searchable(account_id="UA001", doc_id="DC012")
+
+        self.assertFalse(outcome["ok"])
+        remove.assert_not_called()
+
+
+@patch("services.document_intake.service.time.sleep", lambda _: None)
+@patch("backend.db.document_pipeline.PersonalDocumentRepository")
+@patch("services.document_pipeline.signing.signed_download_url", return_value="https://x/y")
+@patch("services.document_pipeline.runpod_client.job_status")
+@patch("services.document_pipeline.runpod_client.submit_document_job", return_value={"id": "J1"})
+@patch("services.document_intake.service.save_document", return_value="sha256:zz")
+@patch("services.document_intake.service.download_drive_file")
+@patch("services.document_intake.service.DocumentRepository")
+@patch("services.document_intake.service.PipelineDocumentRepository")
+class RefetchOriginalTests(SimpleTestCase):
+    """버린 원문은 **다시 읽힐 때 Drive 에서 받아 온다.**
+
+    이것이 없으면 「다시 읽기」가 색인된 문서 전부에서 못 돈다 — 원문이 없는
+    것이 그 문서들의 정상 상태이기 때문이다.
+    """
+
+    def test_원문이_없으면_Drive에서_받아_온다(
+        self, pipeline_repo, doc_repo, download, save, submit, status, url, personal_repo
+    ):
+        buried = {
+            "doc_id": "DC010", "storage_key": None, "cur_revision": "r",
+            "mime_type": "application/pdf", "src_file_id": "driveC", "team_id": "TE001",
+        }
+        restored = dict(buried, storage_key="TE001/DC010.pdf")
+        pipeline_repo.get_for_processing.side_effect = [buried, restored]
+        download.return_value = {
+            "content": b"pdf", "mime_type": "application/pdf", "revision": "r2",
+        }
+        status.return_value = {"status": "COMPLETED", "output": {"chunks": [1]}}
+
+        outcome = promote_to_searchable(account_id="UA001", doc_id="DC010")
+
+        self.assertTrue(outcome["ok"])
+        download.assert_called_once()
+        self.assertEqual(doc_repo.mark_stored.call_args.kwargs["doc_id"], "DC010")
+
+    def test_돌아갈_곳이_없으면_사유를_남긴다(
+        self, pipeline_repo, doc_repo, download, save, submit, status, url, personal_repo
+    ):
+        """올린 파일의 원문이 사라진 경우다. Drive 에 없으니 받아 올 수 없다."""
+
+        pipeline_repo.get_for_processing.return_value = {
+            "doc_id": "DC011", "storage_key": None, "cur_revision": "r",
+            "mime_type": "application/pdf", "src_file_id": None, "team_id": None,
+        }
+
+        outcome = promote_to_searchable(account_id="UA002", doc_id="DC011")
+
+        self.assertFalse(outcome["ok"])
+        self.assertEqual(outcome["detail"], "원문을 아직 받지 않았습니다.")
+        download.assert_not_called()
 
 
 @patch("services.document_intake.service._index_all")

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell, Badge, Button, Icon, InfoNote, useToast } from '../../components';
-import type { BadgeTone } from '../../components';
+import type { BadgeTone, IconName } from '../../components';
 import { ApiError } from '../../api/client';
 import { fetchDocumentLibrary, reindexTeamDocument } from '../../api/documentLibrary';
 import type { DocumentLibrary, LibraryDocument, LibraryFolder } from '../../api/documentLibrary';
 import { notifyIndexingStarted } from '../../utils/indexingSignal';
 import { useSession } from '../../utils/session';
 import { MyFilesPanel } from './MyFilesPanel';
+import type { PersonalTab } from './MyFilesPanel';
 import styles from './DocumentsPage.module.css';
 
 /**
@@ -53,16 +54,30 @@ const STORE_LABEL: Record<string, string> = {
  */
 const PAGE_SIZES = [10, 25, 50, 100];
 
+/** 「개인 문서」 아래 두 갈래. 순서가 곧 화면 순서다. */
+const PERSONAL_NODES = [
+  { tab: 'mine', label: '내 파일', icon: 'file-text' },
+  { tab: 'shared', label: '공유 받은 파일', icon: 'users' },
+] as const satisfies readonly { tab: PersonalTab; label: string; icon: IconName }[];
+
 /** 날짜만 쓴다. 문서가 언제 고쳐졌는지에 분·초는 판단에 안 쓰인다. */
 function formatDate(iso: string | null): string {
   if (!iso) return '-';
   return iso.slice(0, 10).replace(/-/g, '.');
 }
 
-/** 트리에서 고른 자리. 「내 파일」은 폴더가 아니라 별도 갈래다. */
+/**
+ * 트리에서 고른 자리. 개인 문서는 폴더가 아니라 별도 갈래다.
+ *
+ * **「내 파일」 안에 탭으로 「공유 받은 파일」이 들어 있었다**(2026-08-26 정리).
+ * 받은 파일은 내 파일의 하위가 아니라 나란한 것인데 이름이 그것을 뒤집어
+ * 말했다. 둘을 「개인 문서」 아래 형제로 세우고, 고르는 일은 트리가 한다 —
+ * 왼쪽에서 자리를 고르는 화면에서 오른쪽이 또 탭으로 자리를 고르면 지금 어디를
+ * 보고 있는지가 두 곳에 적힌다.
+ */
 type Selection =
   | { kind: 'folder'; folderId: string | null; path: string | null }
-  | { kind: 'mine' };
+  | { kind: 'personal'; tab: PersonalTab };
 
 /**
  * 상태 칩. **사용자가 알고 싶은 것은 「이 문서를 쓸 수 있나」 하나다.**
@@ -211,11 +226,11 @@ export default function DocumentsPage() {
     const first = library.folders[0];
     if (first) setSelection({ kind: 'folder', folderId: first.team_folder_id, path: null });
     else if (hasUnfiled) setSelection({ kind: 'folder', folderId: null, path: null });
-    else setSelection({ kind: 'mine' });
+    else setSelection({ kind: 'personal', tab: 'mine' });
   }, [loading, library.folders, hasUnfiled, selection]);
 
   const visibleDocuments = useMemo(() => {
-    if (selection === null || selection.kind === 'mine') return [];
+    if (selection === null || selection.kind === 'personal') return [];
     return library.documents.filter((doc) => {
       if (doc.team_folder_id !== selection.folderId) return false;
       // 폴더 자신을 고르면 그 아래 전부를 보여준다. 경로를 고르면 그것만.
@@ -279,7 +294,7 @@ export default function DocumentsPage() {
   /** 우측 제목. 지금 보고 있는 자리가 어디인지 한 줄로 말한다. */
   const heading = useMemo(() => {
     if (selection === null) return '';
-    if (selection.kind === 'mine') return '내 파일';
+    if (selection.kind === 'personal') return selection.tab === 'mine' ? '내 파일' : '공유 받은 파일';
     if (selection.folderId === null) return '미분류';
     const folder = library.folders.find((row) => row.team_folder_id === selection.folderId);
     const name = folder?.display_name ?? folder?.external_folder_id ?? selection.folderId;
@@ -290,8 +305,16 @@ export default function DocumentsPage() {
    * 아직 못 쓰는 문서 수. **좁힌 결과를 센다** — 한 줄에 나란히 붙는
    * 「15 / 45건」과 같은 모수를 봐야 한다. 전체를 세면 15건을 걸러 놓고
    * 그 뒤 숫자가 따라붙어, 보이는 15건 안에 있는 줄로 읽힌다.
+   *
+   * **실패한 것을 「읽는 중」에 넣지 않는다.** `search_ready` 만 보면 실패도
+   * 거짓이라 같이 세어졌고, 줄에는 「읽기 실패」라고 적혀 있는데 머리말은
+   * 「읽는 중 2」라고 말했다(2026-08-26). 한 화면이 같은 문서를 두고 서로 다른
+   * 말을 하면 사람은 올린 것 자체가 안 됐다고 읽는다.
    */
-  const notReady = matched.filter((doc) => !doc.search_ready).length;
+  const notReady = matched.filter(
+    (doc) => !doc.search_ready && doc.index_status !== 'FAILED',
+  ).length;
+  const failed = matched.filter((doc) => doc.index_status === 'FAILED').length;
 
   return (
     <AppShell>
@@ -418,23 +441,32 @@ export default function DocumentsPage() {
               </div>
             )}
 
-            {/* 내 파일은 저장소가 아니라 내가 올린 것이라 갈래를 따로 세운다. */}
+            {/* 저장소가 아니라 사람이 들고 있는 것이라 갈래를 따로 세운다.
+                내 것과 받은 것은 **나란한 둘**이다 — 받은 파일이 「내 파일」
+                안쪽 탭에 있던 것을 여기로 끌어냈다(2026-08-26). */}
             <div className={styles.store}>
               <div className={styles.storeHead}>
                 <Icon name="user" size={14} color="var(--color-muted)" />
-                <span>내가 올린 것</span>
+                <span>개인 문서</span>
               </div>
-              <div className={styles.folderRow}>
-                <span className={styles.twistySpacer} />
-                <button
-                  type="button"
-                  className={[styles.node, selection?.kind === 'mine' ? styles.nodeOn : ''].filter(Boolean).join(' ')}
-                  onClick={() => setSelection({ kind: 'mine' })}
-                >
-                  <Icon name="file-text" size={15} />
-                  <span className={styles.nodeName}>내 파일</span>
-                </button>
-              </div>
+              {PERSONAL_NODES.map((node) => (
+                <div key={node.tab} className={styles.folderRow}>
+                  <span className={styles.twistySpacer} />
+                  <button
+                    type="button"
+                    className={[
+                      styles.node,
+                      selection?.kind === 'personal' && selection.tab === node.tab ? styles.nodeOn : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onClick={() => setSelection({ kind: 'personal', tab: node.tab })}
+                  >
+                    <Icon name={node.icon} size={15} />
+                    <span className={styles.nodeName}>{node.label}</span>
+                  </button>
+                </div>
+              ))}
             </div>
 
             {!loading && stores.length === 0 && !hasUnfiled && (
@@ -446,8 +478,8 @@ export default function DocumentsPage() {
 
           {/* ── 우측: 그 자리의 파일 ────────────────────────────── */}
           <section className={styles.panel}>
-            {selection?.kind === 'mine' ? (
-              <MyFilesPanel />
+            {selection?.kind === 'personal' ? (
+              <MyFilesPanel tab={selection.tab} />
             ) : (
               <>
                 <div className={styles.panelHead}>
@@ -457,6 +489,7 @@ export default function DocumentsPage() {
                         사라진 문서가 지워진 것인지 걸러진 것인지 알 수 없다. */}
                     {query.trim() ? `${matched.length} / ${visibleDocuments.length}건` : `${visibleDocuments.length}건`}
                     {notReady > 0 && <span className={styles.panelWarn}> · 읽는 중 {notReady}</span>}
+                    {failed > 0 && <span className={styles.panelWarn}> · 읽기 실패 {failed}</span>}
                   </span>
                 </div>
 

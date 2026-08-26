@@ -696,9 +696,14 @@ class TeamDocumentReindexAPIView(AuthenticatedAPIView):
             return Response(
                 {"detail": "이 팀의 문서가 아닙니다."}, status=status.HTTP_404_NOT_FOUND
             )
-        if not target["storage_key"]:
-            # 원문이 없으면 색인이 시작조차 못 한다. 던져 놓고 실패시키면
-            # 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+        if not target["storage_key"] and not target["src_file_id"]:
+            # 원문이 없고 받아 올 곳도 없으면 색인이 시작조차 못 한다. 던져 놓고
+            # 실패시키면 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+            #
+            # **원문이 없는 것 자체는 정상이다**(2026-08-26). 색인이 끝난 커넥터
+            # 문서는 원문을 버리고, 다시 읽힐 때 Drive 에서 받아 온다
+            # (`_refetch_original`). 여기서 `storage_key` 만 보고 막으면 정상적으로
+            # 색인된 문서가 전부 「다시 읽기」를 못 하게 된다.
             return Response(
                 {"detail": "아직 파일을 받지 못했습니다."},
                 status=status.HTTP_409_CONFLICT,
@@ -718,9 +723,15 @@ def _start_reindex(*, account_id: str, doc_id: str) -> None:
 
     def run() -> None:
         try:
-            from services.document_intake import promote_to_searchable
+            from services.document_intake import (
+                LONG_PROMOTE_WAIT_SECONDS,
+                promote_to_searchable,
+            )
 
-            outcome = promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            # 사람이 응답을 붙잡고 있지 않다. 큰 문서를 4분에 포기할 이유가 없다.
+            outcome = promote_to_searchable(
+                account_id=account_id, doc_id=doc_id, wait_seconds=LONG_PROMOTE_WAIT_SECONDS
+            )
             logger.info("색인 재시도: doc=%s ok=%s", doc_id, outcome.get("ok"))
         except Exception:  # noqa: BLE001 — 뒷작업이다. 사유는 index_detail 에 남는다.
             logger.exception("색인 재시도 실패: doc=%s", doc_id)
