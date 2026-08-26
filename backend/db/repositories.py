@@ -778,6 +778,21 @@ class TeamFolderRepository:
                 return list(cursor.fetchall())
 
 
+#: 이 문서의 **현재 리비전**에 살아 있는 청크가 있는가. 곧 「색인이 끝났다」다.
+#:
+#: `d` 라는 별칭을 쓰는 쿼리에 그대로 끼워 넣는다. `document_pipeline` 도 같은
+#: 것을 쓰는데, 그쪽이 이 모듈을 import 하므로 정의는 여기 둔다 — 반대로 두면
+#: 순환 import 다.
+_HAS_ACTIVE_CHUNKS = """
+    EXISTS (
+        SELECT 1 FROM doc_block b
+        JOIN chunk c ON c.block_id = b.block_id AND c.is_active = true
+        JOIN vec_idx v ON v.chunk_id = c.chunk_id AND v.is_active = true
+        WHERE b.doc_id = d.doc_id AND b.revision = d.cur_revision
+    )
+"""
+
+
 class DocumentRepository:
     """팀이 읽어들인 문서(`doc`). 역할 지정 화면이 쓰는 유일한 쓰기 경로다.
 
@@ -813,12 +828,16 @@ class DocumentRepository:
 
     @staticmethod
     def list_pending_download(account_id: str) -> list[dict[str, Any]]:
-        """아직 원문을 안 받았거나, 받은 뒤 Drive에서 수정된 문서.
+        """**원문을 아직 안 받은** Drive 문서.
 
-        `src_modified_at`이 저장 시각보다 최신인지를 보지 않고 **리비전이 비었거나
-        `storage_key`가 없는 것**만 고른다. 다시 받아야 하는지는 리비전 비교로
-        판정하는 것이 맞지만, 그러려면 매번 Drive를 조회해야 해서 여기서는
-        "아직 안 받은 것"만 다룬다. 재다운로드는 호출자가 강제할 수 있다.
+        `src_modified_at`이 저장 시각보다 최신인지는 보지 않는다 — 그러려면 매번
+        Drive를 조회해야 한다. 바뀐 문서는 `list_changed_on_drive` 가 따로 본다.
+
+        **「원문이 없다」와 「원문을 버렸다」를 가른다**(2026-08-26). 색인이 끝난
+        커넥터 문서는 원문을 지우므로(`clear_stored_original`) `storage_key` 가
+        비는 것이 **정상 상태**다. 그것까지 여기서 집으면 재수집이 돌 때마다 팀의
+        모든 문서를 Drive 에서 다시 받는다. 가르는 기준은 **살아 있는 청크**다 —
+        청크가 있으면 이미 읽은 문서고, 없으면 아직 못 읽은 문서다.
         """
 
         with database_connection() as connection:
@@ -827,14 +846,17 @@ class DocumentRepository:
                 if team_id is None:
                     return []
                 cursor.execute(
-                    """
-                    SELECT doc_id, src_file_id, file_name, mime_type, storage_key, cur_revision
-                    FROM doc
-                    WHERE team_id = %s
-                      AND deleted = false
-                      AND source_type = %s
-                      AND src_file_id IS NOT NULL
-                    ORDER BY doc_id
+                    f"""
+                    SELECT d.doc_id, d.src_file_id, d.file_name, d.mime_type,
+                           d.storage_key, d.cur_revision
+                    FROM doc AS d
+                    WHERE d.team_id = %s
+                      AND d.deleted = false
+                      AND d.source_type = %s
+                      AND d.src_file_id IS NOT NULL
+                      AND d.storage_key IS NULL
+                      AND NOT {_HAS_ACTIVE_CHUNKS}
+                    ORDER BY d.doc_id
                     """,
                     (team_id, DocumentRepository.DRIVE),
                 )
@@ -921,8 +943,11 @@ class DocumentRepository:
         `src_modified_at` 이 비어 있으면 **바뀐 것으로 친다.** 모르는 것을
         「안 바뀌었다」로 두면 영영 안 본다 — 내려받아 해시를 보면 결론이 난다.
 
-        `storage_key` 가 있는 것만 본다. 아직 안 받은 문서는 `_fetch_originals`
-        가 어차피 처음부터 받는다.
+        **한 번이라도 받은 적이 있는 문서만 본다**(`cur_revision`). 아직 안 받은
+        문서는 `_fetch_originals` 가 어차피 처음부터 받는다. 예전에는 `storage_key`
+        로 갈랐는데, 색인이 끝나면 원문을 지우게 되면서(2026-08-26) 그 기준으로는
+        **정상적으로 색인된 문서가 전부 빠져 변경 감지가 멈춘다.** 대조에 필요한
+        `content_hash` 는 칸에 남아 있으므로 원문이 없어도 판정은 그대로 된다.
         """
 
         if not live_modified:
@@ -946,7 +971,7 @@ class DocumentRepository:
                       ON live.file_id = d.src_file_id
                     WHERE d.team_id = %s AND d.source_type = %s
                       AND d.deleted = false AND d.access_revoked = false
-                      AND d.storage_key IS NOT NULL
+                      AND d.cur_revision IS NOT NULL
                       AND (d.src_modified_at IS NULL OR live.modified_at > d.src_modified_at)
                     ORDER BY d.doc_id
                     """,
@@ -1237,6 +1262,53 @@ class DocumentRepository:
                      WHERE doc_id = %s
                     """,
                     (storage_key, content_hash, revision, src_modified_at, doc_id),
+                )
+
+    @staticmethod
+    def list_discardable_originals() -> list[dict[str, Any]]:
+        """**이미 다 읽었는데 아직 원문을 들고 있는** 커넥터 문서.
+
+        2026-08-26 이전에 색인된 문서다. 그때는 원문을 계속 보관했다 —
+        `clear_stored_original` 은 그 뒤로 색인되는 것만 정리하므로, 옛 문서는
+        한 번 훑어 줘야 한다(`scripts/purge_indexed_originals.py`).
+
+        **팀 전체를 본다.** 운영자가 서버에서 한 번 돌리는 정리라 계정 범위가
+        없다. 올린 파일은 `src_file_id` 가 없어 애초에 안 걸린다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.storage_key
+                    FROM doc AS d
+                    WHERE d.src_file_id IS NOT NULL
+                      AND d.storage_key IS NOT NULL
+                      AND {_HAS_ACTIVE_CHUNKS}
+                    ORDER BY d.doc_id
+                    """
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
+    def clear_stored_original(doc_id: str) -> None:
+        """**커넥터 문서의 원문을 버렸다**는 기록 (2026-08-26).
+
+        색인이 끝나면 우리가 원문을 들고 있을 이유가 없다 — 원본은 Drive 에 있고
+        우리는 사본이었다. 검색이 쓰는 것은 청크와 임베딩이지 원문 파일이 아니다.
+
+        **`content_hash` 와 `cur_revision` 은 남긴다.** 변경 감지가 그 둘로
+        판정하고(`list_changed_on_drive`), 다시 받아야 할 때 서명 URL 이
+        `cur_revision` 을 필요로 한다. 지우는 것은 「어디에 두었는가」 하나다.
+
+        올린 파일에는 부르지 않는다. 그쪽은 원본이 우리뿐이라 버리면 끝이다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE doc SET storage_key = NULL WHERE doc_id = %s",
+                    (doc_id,),
                 )
 
     @staticmethod
