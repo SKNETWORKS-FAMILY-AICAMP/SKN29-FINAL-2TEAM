@@ -1,4 +1,4 @@
-import { apiRequest, apiUpload, ApiError } from './client';
+import { apiRequest, apiUpload, ApiError, API_BASE_URL } from './client';
 
 /**
  * 「내 파일」 — 내가 올린 개인 소유 문서(M④ · 2026-08-18).
@@ -27,6 +27,14 @@ export interface PersonalFile {
    * 행동이 안 정해진다.
    */
   index_detail: string | null;
+  /**
+   * 내가 올린 것인가(`upload`), 에이전트가 만든 것인가(`generated`).
+   *
+   * 같은 목록에 섞이므로 **화면이 갈라 보여야 한다** — 내보낸 표를 내가 올린
+   * 원본으로 착각하면 그것을 근거로 삼는다. 만들어진 파일은 색인을 타지
+   * 않으므로 `search_ready` 가 영영 false 다(상태 뱃지가 그것을 안다).
+   */
+  origin: 'upload' | 'generated';
   uploaded_at: string | null;
   /** 팀에 공유했는가. **소유는 안 옮긴다** — 보여 주는 것이지 넘기는 것이 아니다. */
   shared: boolean;
@@ -81,6 +89,24 @@ export function reindexPersonalFile(token: string, docId: string) {
     method: 'POST',
     token,
   });
+}
+
+/**
+ * 원문을 내려받는다.
+ *
+ * **`apiRequest` 를 못 쓴다** — 그쪽은 응답을 JSON 으로 바꾸는데 여기 오는 것은
+ * 파일 바이트다. 그리고 `<a href>` 로도 안 된다 — 인증이 Bearer 토큰이라 브라우저가
+ * 헤더를 못 붙인다. 받아서 blob 으로 만든 뒤 사람이 저장하게 한다.
+ */
+export async function downloadPersonalFile(token: string, docId: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/me/files/${docId}/download/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const failure = await response.json().catch(() => null);
+    throw new ApiError(failure?.detail ?? '파일을 내려받지 못했습니다.', response.status);
+  }
+  return response.blob();
 }
 
 /** **되살릴 수 없다.** 원본이 우리뿐이라 행·색인·원문을 함께 지운다. */

@@ -336,6 +336,11 @@ class PipelineDocumentRepository:
         팀이 없어도 답한다(`_require_team` 이 아니라 `_team_of`). 팀 배정 전에도
         내 파일은 올릴 수 있고, `team_id = NULL` 비교는 SQL 에서 아무 행도 안
         맞으므로 팀 쪽이 자연히 0 이 된다.
+
+        ⚠ **도구가 만든 파일(`GENERATED`)은 세지 않는다**(2026-08-26). 색인을
+        아예 안 타서 `ready` 도 `failed` 도 `running` 도 절대 안 되는데, 분모에만
+        들어가면 진행률이 3/4 에서 영원히 멈춘다 — 「진행 카드가 서재 전체를
+        세던 것」(`67b1154`)과 같은 모양의 실패다.
         """
 
         empty = {"total": 0, "ready": 0, "failed": 0, "running": 0}
@@ -353,6 +358,7 @@ class PipelineDocumentRepository:
                     FROM doc AS d
                     WHERE d.deleted = false
                       AND (d.team_id = %s OR d.owner_account_id = %s)
+                      AND d.source_type <> 'GENERATED'
                     GROUP BY 1
                     """,
                     (team_id, account_id),

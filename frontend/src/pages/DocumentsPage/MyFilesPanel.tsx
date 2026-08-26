@@ -5,6 +5,7 @@ import type { BadgeTone } from '../../components';
 import {
   ApiError,
   deletePersonalFile,
+  downloadPersonalFile,
   listPersonalFiles,
   listSharedFiles,
   reindexPersonalFile,
@@ -62,6 +63,15 @@ export type PersonalTab = 'mine' | 'shared';
  * 같은 파이프라인의 같은 상태라 다른 낱말을 쓰면 사람이 두 번 배운다.
  */
 function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint: string } {
+  // **에이전트가 만든 파일은 색인을 안 탄다**(2026-08-26 · `table_export`). 아래
+  // 기본값으로 떨어지면 「읽는 중」이 영영 걸려 있다 — 끝나지 않는 진행 표시다.
+  //
+  // 「내보낸 파일」은 새로 지은 말이다. 저장소에 받기·내려받기 문구가 한 곳도
+  // 없었고(2026-08-26 확인), 이 파일을 만드는 도구 이름이 「표 내보내기」라
+  // 거기서 그대로 따왔다 — 사용자가 같은 것을 두 이름으로 배우지 않게.
+  if (file.origin === 'generated') {
+    return { tone: 'neutral', label: '내보낸 파일', hint: '' };
+  }
   // **서버가 사유를 주면 그것을 쓴다.** 화면이 짐작해 쓰던 뭉뚱그린 문구보다
   // 언제나 정확하다. 사유가 없는 옛 행은 아래 기본 문구로 떨어진다.
   if (file.index_status === 'FAILED') {
@@ -104,8 +114,16 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const inputRef = useRef<HTMLInputElement>(null);
-  /** 아직 색인되지 않은 파일이 있는 동안만 목록을 다시 받는다. */
-  const pending = files.some((file) => !file.search_ready && file.index_status !== 'FAILED');
+  /**
+   * 아직 색인되지 않은 파일이 있는 동안만 목록을 다시 받는다.
+   *
+   * **내보낸 파일은 세지 않는다**(2026-08-26). 색인을 아예 안 타서 `search_ready`
+   * 가 영영 false 이고 `FAILED` 도 안 되는데, 빼지 않으면 그 파일 하나 때문에
+   * **5초 폴링이 영원히 돈다.**
+   */
+  const pending = files.some(
+    (file) => file.origin !== 'generated' && !file.search_ready && file.index_status !== 'FAILED',
+  );
 
   async function load() {
     if (!token) return;
@@ -201,6 +219,31 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
       showToast(`${file.file_name} · 다시 읽습니다.`, 'success');
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '다시 시작하지 못했습니다.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * 내려받는다(2026-08-26). 인증이 Bearer 토큰이라 `<a href>` 로는 안 되고,
+   * 받아 온 blob 을 임시 URL 로 만들어 사람이 저장하게 한다.
+   *
+   * **URL 을 반드시 되돌려준다** — 안 하면 blob 이 탭을 떠날 때까지 메모리에
+   * 남는다. 파일 하나가 몇 MB 라 목록에서 여러 번 누르면 쌓인다.
+   */
+  async function download(file: PersonalFile) {
+    if (!token) return;
+    setBusy(file.doc_id);
+    try {
+      const blob = await downloadPersonalFile(token, file.doc_id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.file_name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '내려받지 못했습니다.', 'error');
     } finally {
       setBusy(null);
     }
@@ -442,6 +485,17 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                           다시 읽기
                         </Button>
                       )}
+                      {/* 「다운로드」는 새로 지은 말이다 — 저장소에 받기·내려받기
+                          문구가 한 곳도 없었다(2026-08-26 확인). 「삭제」·「수정」
+                          처럼 이미 쓰는 한자어 명사와 결이 같은 쪽을 골랐다. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy === file.doc_id}
+                        onClick={() => void download(file)}
+                      >
+                        다운로드
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
