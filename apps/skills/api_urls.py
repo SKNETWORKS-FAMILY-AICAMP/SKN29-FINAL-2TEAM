@@ -1,9 +1,11 @@
 from django.urls import path
 
 from .api_views import (
+    MySkillShareAPIView,
     MySkillDetailAPIView,
     MySkillListCreateAPIView,
     TeamSkillDetailAPIView,
+    TeamSkillImportAPIView,
     TeamSkillListCreateAPIView,
 )
 
@@ -12,6 +14,12 @@ from .api_views import (
 urlpatterns = [
     path("me/skills/", MySkillListCreateAPIView.as_view(), name="api_my_skills"),
     path("me/skills/<str:name>/", MySkillDetailAPIView.as_view(), name="api_my_skill_detail"),
+    path("me/skills/<str:name>/share/", MySkillShareAPIView.as_view(), name="api_my_skill_share"),
     path("teams/skills/", TeamSkillListCreateAPIView.as_view(), name="api_team_skills"),
     path("teams/skills/<str:name>/", TeamSkillDetailAPIView.as_view(), name="api_team_skill_detail"),
+    path(
+        "teams/skills/<str:name>/import/",
+        TeamSkillImportAPIView.as_view(),
+        name="api_team_skill_import",
+    ),
 ]

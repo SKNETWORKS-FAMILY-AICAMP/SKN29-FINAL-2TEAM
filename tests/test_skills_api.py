@@ -98,7 +98,7 @@ class MySkillsApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 409)
 
     @patch("apps.skills.api_views.AccountRepository.get_profile")
-    def test_같은_이름의_팀_스킬이_있으면_409(self, get_profile):
+    def test_같은_이름의_팀_카탈로그가_있어도_개인_스킬을_만들_수_있다(self, get_profile):
         get_profile.return_value = _leader()
         with _store_patch():
             self.client.post(
@@ -113,7 +113,7 @@ class MySkillsApiTests(SimpleTestCase):
                 content_type="application/json",
                 headers=auth_header(),
             )
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 201)
 
     def test_없는_스킬_조회는_404(self):
         with _store_patch():
@@ -162,6 +162,54 @@ class MySkillsApiTests(SimpleTestCase):
             response = self.client.get("/api/me/skills/", headers=auth_header("UA002"))
         self.assertEqual(response.json(), [])
 
+    @patch("apps.skills.api_views.AccountRepository.get_profile")
+    def test_개인_스킬을_팀에_공유하고_중지한다(self, get_profile):
+        get_profile.return_value = _member()
+        with _store_patch():
+            self.client.post(
+                "/api/me/skills/",
+                {"name": "shared-skill", "description": "d", "body": "b"},
+                content_type="application/json",
+                headers=auth_header("UA001"),
+            )
+            shared = self.client.post(
+                "/api/me/skills/shared-skill/share/", headers=auth_header("UA001")
+            )
+            self.assertEqual(shared.status_code, 201)
+            self.assertTrue(shared.json()["shared_by_me"])
+
+            team_list = self.client.get("/api/teams/skills/", headers=auth_header("UA001"))
+            self.assertTrue(team_list.json()[0]["shared_by_me"])
+            self.assertFalse(team_list.json()[0]["can_delete"])
+
+            stopped = self.client.delete(
+                "/api/me/skills/shared-skill/share/", headers=auth_header("UA001")
+            )
+            self.assertEqual(stopped.status_code, 204)
+            personal = self.client.get(
+                "/api/me/skills/shared-skill/", headers=auth_header("UA001")
+            )
+            self.assertEqual(personal.status_code, 200)
+
+    @patch("apps.skills.api_views.AccountRepository.get_profile")
+    def test_다른_사람이_공유한_스킬은_공유중지할_수_없다(self, get_profile):
+        with _store_patch():
+            get_profile.return_value = _member()
+            self.client.post(
+                "/api/me/skills/",
+                {"name": "shared-skill", "description": "d", "body": "b"},
+                content_type="application/json",
+                headers=auth_header("UA001"),
+            )
+            self.client.post(
+                "/api/me/skills/shared-skill/share/", headers=auth_header("UA001")
+            )
+
+            response = self.client.delete(
+                "/api/me/skills/shared-skill/share/", headers=auth_header("UA002")
+            )
+            self.assertEqual(response.status_code, 403)
+
 
 class TeamSkillsApiTests(SimpleTestCase):
     """팀 스킬 — 조회는 팀원 전체, 쓰기는 leader만."""
@@ -204,6 +252,94 @@ class TeamSkillsApiTests(SimpleTestCase):
             listed = self.client.get("/api/teams/skills/", headers=auth_header("UA002"))
         self.assertEqual(len(listed.json()), 1)
         self.assertEqual(listed.json()[0]["name"], "team-skill")
+        self.assertFalse(listed.json()[0]["can_delete"])
+
+    @patch("apps.skills.api_views.AccountRepository.get_profile")
+    def test_팀장만_팀_목록에서_삭제_권한을_받는다(self, get_profile):
+        with _store_patch():
+            get_profile.return_value = _leader()
+            self.client.post(
+                "/api/teams/skills/",
+                {"name": "team-skill", "description": "d", "body": "b"},
+                content_type="application/json",
+                headers=auth_header("UA001"),
+            )
+            leader_list = self.client.get(
+                "/api/teams/skills/", headers=auth_header("UA001")
+            )
+            self.assertTrue(leader_list.json()[0]["can_delete"])
+
+            get_profile.return_value = _member()
+            member_list = self.client.get(
+                "/api/teams/skills/", headers=auth_header("UA002")
+            )
+            self.assertFalse(member_list.json()[0]["can_delete"])
+
+    @patch("apps.skills.api_views.AccountRepository.get_profile")
+    def test_가져온_개인_스킬을_삭제하면_팀_목록에서_다시_등록할_수_있다(self, get_profile):
+        with _store_patch():
+            get_profile.return_value = _leader()
+            self.client.post(
+                "/api/teams/skills/",
+                {"name": "team-skill", "description": "d", "body": "b"},
+                content_type="application/json",
+                headers=auth_header("UA001"),
+            )
+
+            get_profile.return_value = _member()
+            self.client.post(
+                "/api/teams/skills/team-skill/import/", headers=auth_header("UA002")
+            )
+            registered = self.client.get(
+                "/api/teams/skills/", headers=auth_header("UA002")
+            )
+            self.assertTrue(registered.json()[0]["imported_by_me"])
+
+            self.client.delete(
+                "/api/me/skills/team-skill/", headers=auth_header("UA002")
+            )
+            available_again = self.client.get(
+                "/api/teams/skills/", headers=auth_header("UA002")
+            )
+            self.assertFalse(available_again.json()[0]["imported_by_me"])
+
+    @patch("apps.skills.api_views.AccountRepository.get_profile")
+    def test_팀원이_내_스킬로_가져오면_독립_사본이_된다(self, get_profile):
+        with _store_patch():
+            get_profile.return_value = _leader()
+            self.client.post(
+                "/api/teams/skills/",
+                {"name": "team-skill", "description": "d", "body": "b"},
+                content_type="application/json",
+                headers=auth_header("UA001"),
+            )
+
+            get_profile.return_value = _member()
+            imported = self.client.post(
+                "/api/teams/skills/team-skill/import/",
+                headers=auth_header("UA002"),
+            )
+            self.assertEqual(imported.status_code, 201)
+            self.assertTrue(imported.json()["imported_from_team"])
+
+            reshared = self.client.post(
+                "/api/me/skills/team-skill/share/", headers=auth_header("UA002")
+            )
+            self.assertEqual(reshared.status_code, 403)
+
+            listed = self.client.get("/api/teams/skills/", headers=auth_header("UA002"))
+            self.assertTrue(listed.json()[0]["imported_by_me"])
+
+            get_profile.return_value = _leader()
+            self.client.delete(
+                "/api/teams/skills/team-skill/", headers=auth_header("UA001")
+            )
+
+            personal = self.client.get(
+                "/api/me/skills/team-skill/", headers=auth_header("UA002")
+            )
+            self.assertEqual(personal.status_code, 200)
+            self.assertEqual(personal.json()["body"], "b")
 
     @patch("apps.skills.api_views.AccountRepository.get_profile")
     def test_팀원이_고치거나_지우면_403(self, get_profile):

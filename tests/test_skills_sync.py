@@ -96,19 +96,21 @@ class RegisterSuccessTests(SimpleTestCase):
 
         self.assertEqual(backend.download_calls, [["/skills/personal/web-research/SKILL.md"]])
 
-    def test_team_scope_uses_team_path(self):
+    def test_team_scope_does_not_enter_agent_skill_metadata(self):
         backend = _FakeBackend()
         sync = SkillRegisterSyncMiddleware(backend=backend)
-        handler = Mock(return_value=ToolMessage(name="skill_register", content="등록됨", tool_call_id="call-1"))
+        ok_message = ToolMessage(name="skill_register", content="등록됨", tool_call_id="call-1")
+        handler = Mock(return_value=ok_message)
         request = _request(
             name="skill_register",
             args={"scope": "TEAM", "name": "onboarding", "description": "d", "body": "b"},
         )
 
         with patch(_METADATA_TARGET, return_value={"name": "onboarding"}):
-            sync.wrap_tool_call(request, handler)
+            result = sync.wrap_tool_call(request, handler)
 
-        self.assertEqual(backend.download_calls, [["/skills/team/onboarding/SKILL.md"]])
+        self.assertEqual(backend.download_calls, [])
+        self.assertIs(result, ok_message)
 
     def test_new_skill_is_merged_into_existing_cached_list(self):
         backend = _FakeBackend()

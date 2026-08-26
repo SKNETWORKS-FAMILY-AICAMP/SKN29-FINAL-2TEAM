@@ -141,19 +141,40 @@ def _store_backend(scope: _Scope) -> Any:
 _ENABLED_TRUE = "true"
 _ENABLED_FALSE = "false"
 
+#: 개인 스킬을 팀에 공유하면 팀 namespace에 같은 SKILL.md를 한 건 만들되,
+#: 누가 공유한 것인지 이 metadata로 남긴다. 팀원이 임의의 팀 스킬을 지우지
+#: 못하고 자신이 공유한 것만 중지할 수 있게 하는 서버측 권한 근거다.
+_SHARED_BY_ACCOUNT_ID = "shared_by_account_id"
+_IMPORTED_FROM_TEAM_ID = "imported_from_team_id"
+_IMPORTED_FROM_SKILL_NAME = "imported_from_skill_name"
 
-def _render_skill_md(*, name: str, description: str, body: str, enabled: bool = True) -> str:
+
+def _render_skill_md(
+    *,
+    name: str,
+    description: str,
+    body: str,
+    enabled: bool = True,
+    shared_by_account_id: str | None = None,
+    imported_from_team_id: str | None = None,
+    imported_from_skill_name: str | None = None,
+) -> str:
     import yaml
+
+    metadata = {"enabled": _ENABLED_TRUE if enabled else _ENABLED_FALSE}
+    if shared_by_account_id:
+        metadata[_SHARED_BY_ACCOUNT_ID] = shared_by_account_id
+    if imported_from_team_id:
+        metadata[_IMPORTED_FROM_TEAM_ID] = imported_from_team_id
+    if imported_from_skill_name:
+        metadata[_IMPORTED_FROM_SKILL_NAME] = imported_from_skill_name
 
     frontmatter = yaml.safe_dump(
         {
             "name": name,
             "description": description,
-            # 2026-08-26, 활성화/비활성화(§7) — LLM에게 보일지 말지를 이
-            # 메타데이터 한 줄로 결정한다. Agent Skills 스펙의 `metadata`는
-            # 클라이언트가 자유롭게 쓰는 확장 필드라 여기 넣어도 스펙을
-            # 벗어나지 않는다.
-            "metadata": {"enabled": _ENABLED_TRUE if enabled else _ENABLED_FALSE},
+            # Agent Skills 스펙의 `metadata`는 클라이언트 확장 필드다.
+            "metadata": metadata,
         },
         allow_unicode=True,
         default_flow_style=False,
@@ -161,7 +182,9 @@ def _render_skill_md(*, name: str, description: str, body: str, enabled: bool = 
     return f"---\n{frontmatter}---\n\n{body}\n"
 
 
-def parse_skill_md(content: str) -> tuple[str, str, str, bool]:
+def _parse_skill_md_details(
+    content: str,
+) -> tuple[str, str, str, bool, str | None, str | None, str | None]:
     """`---\\nyaml\\n---\\n\\nbody` 형식을 `(name, description, body, enabled)`로 나눈다.
 
     업로드 탭에서 쓴다 — 사람이 올리는 `.md` 파일은 이미 frontmatter를 담고
@@ -199,11 +222,35 @@ def parse_skill_md(content: str) -> tuple[str, str, str, bool]:
 
     metadata = frontmatter.get("metadata")
     enabled = not (isinstance(metadata, dict) and str(metadata.get("enabled")).strip().lower() == _ENABLED_FALSE)
+    shared_by_account_id = None
+    imported_from_team_id = None
+    imported_from_skill_name = None
+    if isinstance(metadata, dict):
+        shared_by_account_id = str(metadata.get(_SHARED_BY_ACCOUNT_ID) or "").strip() or None
+        imported_from_team_id = str(metadata.get(_IMPORTED_FROM_TEAM_ID) or "").strip() or None
+        imported_from_skill_name = str(metadata.get(_IMPORTED_FROM_SKILL_NAME) or "").strip() or None
 
     body = content[end + 4 :]
     # frontmatter를 닫는 `---` 뒤 첫 줄바꿈까지만 건너뛴다.
     body = body[1:] if body.startswith("\n") else body
-    return name, description, body.strip("\n"), enabled
+    return (
+        name,
+        description,
+        body.strip("\n"),
+        enabled,
+        shared_by_account_id,
+        imported_from_team_id,
+        imported_from_skill_name,
+    )
+
+
+def parse_skill_md(content: str) -> tuple[str, str, str, bool]:
+    """공개 호환 API. 공유 출처는 내부 상세 parser에서만 다룬다."""
+
+    name, description, body, enabled, _shared_by, _imported_team, _imported_name = (
+        _parse_skill_md_details(content)
+    )
+    return name, description, body, enabled
 
 
 def _skill_response(
@@ -239,10 +286,18 @@ def _read_skill(backend: Any, scope: _Scope, name: str, *, include_body: bool) -
         return None
     file_data = read.file_data
     try:
-        _, description, body, enabled = parse_skill_md(file_data["content"])
+        (
+            _,
+            description,
+            body,
+            enabled,
+            shared_by_account_id,
+            imported_from_team_id,
+            imported_from_skill_name,
+        ) = _parse_skill_md_details(file_data["content"])
     except SkillError:
         return None
-    return _skill_response(
+    row = _skill_response(
         skill_id=name,
         name=name,
         description=description,
@@ -250,6 +305,10 @@ def _read_skill(backend: Any, scope: _Scope, name: str, *, include_body: bool) -
         enabled=enabled,
         body=body if include_body else None,
     )
+    row["shared_by_account_id"] = shared_by_account_id
+    row["imported_from_team_id"] = imported_from_team_id
+    row["imported_from_skill_name"] = imported_from_skill_name
+    return row
 
 
 def list_skills(scope: _Scope) -> list[dict[str, Any]]:
@@ -275,33 +334,22 @@ def get_skill(scope: _Scope, name: str) -> dict[str, Any]:
     return row
 
 
-def _exists(scope: _Scope, name: str) -> bool:
-    from .backend import skill_md_path
-
-    backend = _store_backend(scope)
-    return backend.read(skill_md_path(scope.prefix, name)).error is None
-
-
 def create_skill(
     scope: _Scope,
     *,
     name: str,
     description: str,
     body: str,
-    shadow_scope: _Scope | None = None,
     allow_reserved: bool = False,
+    shared_by_account_id: str | None = None,
+    imported_from_team_id: str | None = None,
+    imported_from_skill_name: str | None = None,
+    enabled: bool = True,
 ) -> dict[str, Any]:
-    """`shadow_scope`가 있으면 그쪽에도 같은 이름이 있는지 먼저 본다.
+    """한 namespace에 스킬을 새로 만든다. 같은 namespace의 이름만 유일하다.
 
-    **`SkillsMiddleware`는 이름이 같으면 나중 소스가 앞 소스를 완전히
-    덮어쓴다**(`deepagents/middleware/skills.py` `before_agent()` 실측 —
-    `all_skills[skill["name"]] = skill`로 딕셔너리에 겹쳐 쓴다. `(팀)`/`(개인)`
-    같은 구분 표시는 없다). 소스 순서(`skill_sources()`)가 팀을 나중에 두므로,
-    이름이 겹치면 **팀 스킬이 개인 스킬을 완전히 가린다** — 개인 스킬은 그
-    세션 동안 에이전트에게 아예 안 보인다(오류도 안 뜬다). 만드는 시점에 이미
-    있는 쪽을 확인해 막을 수 있으면 막는다 — 여기서 못 잡는 경우(다른 팀원이
-    나중에 같은 이름으로 팀 스킬을 만드는 경우)는 화면에서 같은 이름을 표시로
-    알린다(`SkillsTab.tsx`).
+    팀 스킬은 에이전트에 직접 합쳐지는 소스가 아니라 가져오기용 카탈로그이므로,
+    팀과 개인에 같은 이름이 존재해도 서로 가리거나 충돌하지 않는다.
     """
     from .backend import skill_md_path
 
@@ -315,13 +363,15 @@ def create_skill(
     path = skill_md_path(scope.prefix, name)
     if backend.read(path).error is None:
         raise SkillNameConflict(f"이미 '{name}' 이름의 스킬이 있습니다. 다른 이름을 써주세요.")
-    if shadow_scope is not None and _exists(shadow_scope, name):
-        raise SkillNameConflict(
-            f"이미 '{name}' 이름의 팀 스킬이 있습니다. 같은 이름으로 개인 스킬을 만들면 "
-            "팀 스킬에 가려져 에이전트가 이 스킬을 못 봅니다. 다른 이름을 써주세요."
-        )
-
-    content = _render_skill_md(name=name, description=description, body=body)
+    content = _render_skill_md(
+        name=name,
+        description=description,
+        body=body,
+        enabled=enabled,
+        shared_by_account_id=shared_by_account_id,
+        imported_from_team_id=imported_from_team_id,
+        imported_from_skill_name=imported_from_skill_name,
+    )
     backend.write(path, content)
     return get_skill(scope, name)
 
@@ -349,7 +399,15 @@ def update_skill(
     _validate_body(next_body)
 
     backend = _store_backend(scope)
-    content = _render_skill_md(name=name, description=next_description, body=next_body, enabled=next_enabled)
+    content = _render_skill_md(
+        name=name,
+        description=next_description,
+        body=next_body,
+        enabled=next_enabled,
+        shared_by_account_id=current.get("shared_by_account_id"),
+        imported_from_team_id=current.get("imported_from_team_id"),
+        imported_from_skill_name=current.get("imported_from_skill_name"),
+    )
     backend.write(skill_md_path(scope.prefix, name), content)
     return get_skill(scope, name)
 
@@ -379,10 +437,14 @@ def get_personal_skill(account_id: str, name: str) -> dict[str, Any]:
 def create_personal_skill(
     account_id: str, *, team_id: str, name: str, description: str, body: str
 ) -> dict[str, Any]:
-    """`team_id`로 같은 이름의 팀 스킬이 있는지 먼저 본다 — `create_skill` docstring 참고."""
-    return create_skill(
-        _personal_scope(account_id), name=name, description=description, body=body, shadow_scope=_team_scope(team_id)
-    )
+    """개인 스킬을 만든다.
+
+    팀 스킬은 이제 에이전트가 직접 쓰는 상위 소스가 아니라 가져오기용
+    카탈로그다. 같은 이름의 팀 항목이 있어도 개인 스킬을 가리지 않으므로
+    예전의 `shadow_scope` 충돌 검사는 하지 않는다.
+    """
+    del team_id  # 호출 계약은 유지하되 이름 충돌 검사에는 더 이상 쓰지 않는다.
+    return create_skill(_personal_scope(account_id), name=name, description=description, body=body)
 
 
 def update_personal_skill(
@@ -398,6 +460,106 @@ def update_personal_skill(
 
 def delete_personal_skill(account_id: str, name: str) -> None:
     delete_skill(_personal_scope(account_id), name)
+
+
+def share_personal_skill(account_id: str, *, team_id: str, name: str) -> dict[str, Any]:
+    """내 개인 스킬을 팀 namespace에 공유본으로 만든다.
+
+    일반 팀 스킬 생성은 팀장만 가능하지만, 이 경로는 사용자가 **자기 개인
+    스킬 한 건**만 같은 팀에 공유한다. 원본 소유권과 공유자 metadata를 서버가
+    확인하므로 다른 사람의 내용을 팀에 올리는 우회 경로가 되지 않는다.
+    """
+
+    personal = get_personal_skill(account_id, name)
+    if personal.get("imported_from_team_id"):
+        raise SkillPermissionDenied(
+            "팀 스킬에서 가져온 스킬은 다시 팀에 공유할 수 없습니다."
+        )
+    return create_skill(
+        _team_scope(team_id),
+        name=personal["name"],
+        description=personal["description"],
+        body=personal["body"],
+        shared_by_account_id=account_id,
+        # 팀 카탈로그에는 활성/비활성 개념이 없다. 공유 당시 개인 상태와
+        # 무관하게 다른 팀원이 내용을 보고 가져올 수 있어야 한다.
+        enabled=True,
+    )
+
+
+def import_team_skill(account_id: str, *, team_id: str, name: str) -> dict[str, Any]:
+    """팀 카탈로그의 스킬을 독립적인 개인 사본으로 가져온다.
+
+    이후 원 공유자의 비활성화·수정·공유 중지나 팀장의 카탈로그 삭제는 이
+    개인 사본에 영향을 주지 않는다. 같은 이름의 개인 스킬이 이미 있으면
+    조용히 덮어쓰지 않고 기존 이름 충돌 규칙으로 거부한다.
+    """
+
+    shared = get_team_skill(team_id, name)
+    return create_skill(
+        _personal_scope(account_id),
+        name=shared["name"],
+        description=shared["description"],
+        body=shared["body"],
+        enabled=True,
+        imported_from_team_id=team_id,
+        imported_from_skill_name=name,
+    )
+
+
+def stop_sharing_personal_skill(account_id: str, *, team_id: str, name: str) -> None:
+    """자신이 만든 팀 공유본만 제거한다. 개인 원본은 건드리지 않는다."""
+
+    team_skill = get_team_skill(team_id, name)
+    if team_skill.get("shared_by_account_id") != account_id:
+        raise SkillPermissionDenied("내가 공유한 스킬만 공유를 중지할 수 있습니다.")
+    delete_skill(_team_scope(team_id), name)
+
+
+def update_personal_skill_and_shared_copy(
+    account_id: str,
+    *,
+    team_id: str,
+    name: str,
+    description: str | None = None,
+    body: str | None = None,
+    enabled: bool | None = None,
+) -> dict[str, Any]:
+    """개인 원본을 고치고, 내가 공유 중인 팀 사본도 같은 내용으로 맞춘다."""
+
+    updated = update_personal_skill(
+        account_id,
+        name,
+        description=description,
+        body=body,
+        enabled=enabled,
+    )
+    try:
+        team_skill = get_team_skill(team_id, name)
+    except SkillNotFound:
+        return updated
+    if team_skill.get("shared_by_account_id") == account_id:
+        update_skill(
+            _team_scope(team_id),
+            name,
+            description=updated["description"],
+            body=updated["body"],
+            # 팀 카탈로그에는 활성/비활성 상태가 없다. 개인 토글은 공유본과
+            # 이미 가져간 다른 팀원의 개인 사본에 영향을 주지 않는다.
+        )
+    return updated
+
+
+def delete_personal_skill_and_shared_copy(account_id: str, *, team_id: str, name: str) -> None:
+    """개인 원본 삭제 시 자신이 만든 팀 공유본도 함께 정리한다."""
+
+    try:
+        team_skill = get_team_skill(team_id, name)
+    except SkillNotFound:
+        team_skill = None
+    if team_skill is not None and team_skill.get("shared_by_account_id") == account_id:
+        delete_skill(_team_scope(team_id), name)
+    delete_personal_skill(account_id, name)
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +685,12 @@ __all__ = [
     "get_personal_skill",
     "create_personal_skill",
     "update_personal_skill",
+    "update_personal_skill_and_shared_copy",
     "delete_personal_skill",
+    "delete_personal_skill_and_shared_copy",
+    "share_personal_skill",
+    "import_team_skill",
+    "stop_sharing_personal_skill",
     "list_team_skills",
     "get_team_skill",
     "create_team_skill",

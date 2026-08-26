@@ -28,29 +28,25 @@ SKILLS_BUILTIN_PATH_PREFIX = "/skills/builtin/"
 #: 개인 스킬 소스 — 요청한 계정 자신의 스킬만, namespace가 격리한다.
 SKILLS_PERSONAL_PATH_PREFIX = "/skills/personal/"
 
-#: 팀 스킬 소스 — 같은 team_id 소속 전원에게 보인다.
+#: 팀 공유 카탈로그 저장 경로 — 설정 화면에서 조회·가져오기에 사용한다.
+#: 에이전트의 `skill_sources()`에는 포함하지 않는다.
 SKILLS_TEAM_PATH_PREFIX = "/skills/team/"
 
-#: 사람이 개인/팀 스킬로 새로 만들 수 없는 이름(2026-08-24). skill-creator는
-#: 항상 내장 소스에만 있어야 한다 — 같은 이름의 개인/팀 스킬을 허용하면
-#: `SkillsMiddleware`의 "나중 소스가 이긴다" 규칙에 따라 내장 스킬이 조용히
-#: 가려질 수 있다(위 `2026-08-22_02` 문서의 개인/팀 이름 겹침 문제와 같은
-#: 위험 — 내장 스킬은 아예 이름 자체를 못 쓰게 막아 그 문제가 생길 여지를
-#: 없앤다).
+#: 사람이 개인/팀 스킬로 새로 만들 수 없는 내장 이름. 특히 개인 스킬에 같은
+#: 이름을 허용하면 내장 스킬과 명시적 호출의 의미가 모호해지므로 이름 자체를
+#: 예약한다. 팀 카탈로그도 가져올 수 없는 항목이 생기지 않도록 같은 규칙을 쓴다.
 RESERVED_SKILL_NAMES = frozenset({"skill-creator"})
 
 
 def skill_sources() -> list[str]:
-    """`create_deep_agent(skills=...)`/서브에이전트 spec의 `skills` 키에 그대로 넘길 목록.
+    """에이전트가 실제로 사용할 스킬 소스 목록.
 
-    **순서가 의미를 가진다** — deepagents `SkillsMiddleware`는 "나중 소스가 같은
-    이름의 스킬을 덮어쓴다"(레이어링 규칙, `deepagents/middleware/skills.py`
-    모듈 docstring). 내장 → 개인 → 팀 순서로 둬서, 더 넓은 합의를 거친 쪽이
-    이긴다(설계 문서 "저장 구조" 절 — 팀이 개인을 이기는 규칙은 그대로 유지).
-    실제로는 `RESERVED_SKILL_NAMES`가 이름 충돌 자체를 막으므로 내장 스킬이
-    가려질 일은 없다 — 그래도 순서 규칙은 일관되게 지킨다.
+    팀 스킬은 팀원에게 자동 적용되는 소스가 아니라 가져오기용 카탈로그다.
+    팀원이 가져오면 개인 namespace에 독립 사본이 생기고, 그때부터 개인
+    스킬로 사용한다. 따라서 `SkillsMiddleware`에는 내장과 개인만 넘긴다.
+    팀 route 자체는 설정 화면의 조회·공유·가져오기 API가 계속 사용한다.
     """
-    return [SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX]
+    return [SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX]
 
 
 def builtin_namespace() -> tuple[str, str]:
