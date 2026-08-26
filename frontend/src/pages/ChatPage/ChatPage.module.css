@@ -709,8 +709,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -750,6 +750,15 @@
 .input:focus {
   outline: 2px solid var(--color-primary);
   outline-offset: -1px;
+}
+
+/* 보내기와 생성 중단은 같은 자리의 상태 변화다. 문구 유무로 폭이 바뀌면 입력창
+   자체가 좌우로 흔들리므로 외곽 48px와 아이콘 영역 16px를 고정한다. */
+.composerAction {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 

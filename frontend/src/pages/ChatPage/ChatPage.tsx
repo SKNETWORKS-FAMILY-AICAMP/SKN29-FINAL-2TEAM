@@ -241,7 +241,7 @@ export default function ChatPage() {
   const leftRef = useRef<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const lastTurnRef = useRef<HTMLDivElement | null>(null);
-  /** 새 질문이나 저장된 대화를 열었을 때 마지막 턴의 시작점을 한 번 맞춘다. */
+  /** 저장된 대화를 열었을 때만 마지막 턴의 시작점을 한 번 맞춘다. */
   const anchorLastTurn = useRef(false);
   /** 사용자가 맨 아래를 선택한 동안에만 새 내용을 따라간다. */
   const stickToBottom = useRef(true);
@@ -447,8 +447,9 @@ export default function ChatPage() {
   // RUNNING 으로 남지 않는다.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // 새 질문을 보내거나 저장된 대화를 열면 **마지막 턴의 시작점**을 한 번 보여준다.
-  // 답변 맨 아래로 보내면 긴 답을 처음부터 읽기 위해 다시 올려야 한다.
+  // 저장된 대화를 열면 **마지막 턴의 시작점**을 한 번 보여준다. 새 질문은 이
+  // 경로를 타지 않는다 — 이전 답변을 읽던 사용자의 위치를 전송 동작이 빼앗으면
+  // 안 된다. 새 내용은 아래 이동 컨트롤로 알린다.
   useEffect(() => {
     const node = streamRef.current;
     const turn = lastTurnRef.current;
@@ -615,9 +616,8 @@ export default function ChatPage() {
     // 끈 항목이 다음 카드의 다른 호출에 그대로 붙는다.
     setApprovedActions([]);
     setFatal(null);
-    anchorLastTurn.current = true;
-    stickToBottom.current = false;
-    setShowLatestButton(false);
+    // 기존 채팅의 자동 추적 의도를 보존한다. 사용자가 이미 최하단이면 새 턴을
+    // 따라가고, 위에서 이전 답변을 읽는 중이면 현재 위치를 그대로 둔다.
 
     let id = sessionId;
     try {
@@ -1326,7 +1326,7 @@ export default function ChatPage() {
                         // 그때만 있는 쪽만 그리고 경계선은 안 넣는다.
                         return (
                           <section className={cardStyles.card}>
-                            {showProgress && (
+                            {showProgress && (live.running || !showReasoning) && (
                               <ProgressCard
                                 bare
                                 steps={live.steps}
@@ -1357,7 +1357,7 @@ export default function ChatPage() {
                               />
                             )}
 
-                            {showProgress && showReasoning && <div className={cardStyles.cardDivider} />}
+                            {showProgress && showReasoning && live.running && <div className={cardStyles.cardDivider} />}
 
                             {/* **접은 채로 시작한다**(2026-08-18, PM: 「뭘 생각하는지만
                                 알면 된다」). OpenAI가 보내는 reasoning 요약은
@@ -1375,8 +1375,13 @@ export default function ChatPage() {
                               <ReasoningTrace
                                 bare
                                 entries={live.timeline}
-                                defaultOpen={false}
+                                defaultOpen={live.running}
                                 running={live.running}
+                                summary={
+                                  !live.running
+                                    ? `${live.durationMs != null ? `${(live.durationMs / 1000).toFixed(1)}초 동안 작업` : '작업 완료'}${toolCount > 0 ? ` · 도구 ${toolCount}회` : ''}`
+                                    : undefined
+                                }
                                 // 실행 중에는 진행 카드의 `검색 결과` 한 곳에만
                                 // 보여 주고, 완료 뒤에는 작업 과정 상세로 옮긴다.
                                 queries={live.running ? [] : live.queries}
@@ -1667,8 +1672,9 @@ export default function ChatPage() {
             />
             {streaming ? (
               <Button
-                variant="outline"
-                iconLeft={<Icon name="x" size={14} />}
+                className={styles.composerAction}
+                aria-label="답변 생성 중단"
+                title="답변 생성 중단"
                 // 표시를 `run()`의 `finally`가 아니라 **여기서** 남긴다
                 // (2026-08-25). 그 자리는 새 발화가 이전 스트림을 abort 하는
                 // 경우도 함께 지나가는데, 그때 마지막 턴은 이미 방금 만든 새
@@ -1681,10 +1687,15 @@ export default function ChatPage() {
                   );
                 }}
               >
-                중단
+                <Icon name="stop" size={16} />
               </Button>
             ) : (
-              <Button aria-label="보내기" onClick={send} disabled={!utterance.trim()}>
+              <Button
+                className={styles.composerAction}
+                aria-label="보내기"
+                onClick={send}
+                disabled={!utterance.trim()}
+              >
                 <Icon name="arrow-right" size={16} />
               </Button>
             )}

@@ -162,6 +162,7 @@ export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellP
           styles.sidebar,
           iconsOnly ? styles.sidebarCollapsed : '',
           drawerOpen ? styles.sidebarOpen : '',
+          sidebarExtra && !iconsOnly ? styles.sidebarWithExtra : '',
         ]
           .filter(Boolean)
           .join(' ')}

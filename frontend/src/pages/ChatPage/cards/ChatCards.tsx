@@ -281,6 +281,8 @@ export interface ReasoningTraceProps {
   queries?: string[];
   /** 검색 결과·내부 문서 후보. 최종 답변의 인용 링크와 구분해 상세에만 둔다. */
   sources?: SourceRef[];
+  /** 완료 뒤 접힌 한 줄에 표시할 소요 시간·도구 횟수 요약. */
+  summary?: string;
 }
 
 /**
@@ -305,9 +307,11 @@ export function ReasoningTrace({
   bare = false,
   queries = [],
   sources = [],
+  summary,
 }: ReasoningTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
   const logRef = useRef<HTMLOListElement>(null);
+  const wasRunning = useRef(running);
   const [searchDetailsOpen, setSearchDetailsOpen] = useState(false);
   // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
   // "그 스트리밍된 툴을 눌러야만 보이게 해줘" 요청). index로 여닫힘을 추적한다
@@ -360,18 +364,31 @@ export function ReasoningTrace({
     if (el) el.scrollTop = el.scrollHeight;
   }, [entries, open, running]);
 
+  // 실행 중에는 흐름을 바로 보여주고, 방금 완료된 순간에는 Codex처럼 소요
+  // 시간 한 줄로 접는다. 사용자가 완료 뒤 다시 펼친 선택은 건드리지 않는다.
+  useEffect(() => {
+    if (running) setOpen(true);
+    else if (wasRunning.current) setOpen(false);
+    wasRunning.current = running;
+  }, [running]);
+
   if (entries.length === 0) return null;
   const Wrapper = bare ? 'div' : 'section';
 
   return (
     <Wrapper className={bare ? styles.bareStack : styles.card}>
-      <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
+      <button
+        type="button"
+        className={styles.evidenceToggle}
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
-        작업 과정 {entries.length}단계
+        {running ? `작업 중 · ${entries.length}단계` : (summary ?? `작업 과정 ${entries.length}단계`)}
       </button>
 
       {open && (
-        <div className={styles.reasoningPanel}>
+        <div className={`${styles.reasoningPanel} ${running ? styles.reasoningPanelRunning : ''}`}>
         <ol className={styles.reasoningList} ref={logRef}>
           {timelineGroups.map((group, groupIndex) => {
             const { entry, index } = group[0];

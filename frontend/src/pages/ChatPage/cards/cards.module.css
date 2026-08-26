@@ -909,6 +909,34 @@
   gap: var(--space-3);
 }
 
+/* 실행 중인 마지막 항목만 잔잔하게 훑는다. 상태 아이콘과 문구를 바꾸지 않고
+   현재 위치만 알려 주므로 완료 목록이 번쩍이거나 색으로 뒤섞이지 않는다. */
+.reasoningPanelRunning .reasoningList > li:last-child {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary-soft) 55%, transparent);
+}
+
+.reasoningPanelRunning .reasoningList > li:last-child::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 52%), transparent);
+  transform: translateX(-130%);
+  animation: active-step-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes active-step-sweep {
+  55%, 100% { transform: translateX(340%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reasoningPanelRunning .reasoningList > li:last-child::after { animation: none; }
+}
+
 .searchDetails {
   display: flex;
   flex-direction: column;
