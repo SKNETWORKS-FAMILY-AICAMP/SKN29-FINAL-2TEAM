@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "case_id": "WF-PROJECT-STATUS-001",
+  "masking_policy": "평가에 필요한 문장과 문서·chunk 식별자만 포함하고 비밀값과 원문 전체는 제외",
+  "documents": {
+    "DC001": {
+      "status": "AVAILABLE",
+      "document_name": "워크데스크_2주차_진행점검_회의록.pdf",
+      "excerpts": [
+        {
+          "chunk_id": "ce5ee557-7744-450f-8768-26a34a3d4cdf",
+          "location": "chunk_index=2",
+          "text": "요구사항 정의서 초안은 9월 2일 완료됐고 요청서 필드 항목 확정은 진행 중이다."
+        },
+        {
+          "chunk_id": "2857903e-9618-40ba-a1bd-6cd0e92a9ec2",
+          "location": "chunk_index=3",
+          "text": "총무팀 키워드 목록 회신이 늦어지고 있으며 2단계 설계 착수(9/7, 이미 지연) 전에는 받아야 한다. 화면설계는 원래 계획(9/18)보다 최대 1주 늦어질 수 있다."
+        }
+      ]
+    },
+    "DC007": {
+      "status": "AVAILABLE",
+      "document_name": "워크데스크_주간_진행보고_0904.pdf",
+      "excerpts": [
+        {
+          "chunk_id": "536abcaf-4047-4cc3-8018-d46ae04aa6b7",
+          "location": "chunk_index=2",
+          "text": "1단계 기획 진척률은 약 70%이며 요구사항 정의서 초안 완료 후 검토가 진행 중이다. 총무·인사 키워드 회신 지연으로 2단계 착수가 일부 지연될 우려가 있다."
+        },
+        {
+          "chunk_id": "e4628868-e0ba-40fb-a576-1eaeb5a8b103",
+          "location": "chunk_index=4",
+          "text": "차주 계획에는 2단계 설계 착수가 9월 7일로 기록되어 있다."
+        }
+      ]
+    },
+    "DC002": {
+      "status": "AVAILABLE",
+      "document_name": "워크데스크_구축_기획서.docx",
+      "excerpts": [
+        {
+          "chunk_id": "660e090a-4536-499b-80cc-e92a67404a19",
+          "location": "chunk_index=69",
+          "text": "2단계 설계의 화면 설계(와이어프레임)는 09-07 시작, 09-18 종료, 상태 예정으로 계획됐다."
+        },
+        {
+          "chunk_id": "5877de8d-4231-4c9c-bcd7-a0ae8c9aca38",
+          "location": "chunk_index=70",
+          "text": "2단계 설계의 DB 스키마 설계는 09-07 시작, 09-18 종료, 상태 예정으로 계획됐다."
+        }
+      ]
+    }
+  }
+}

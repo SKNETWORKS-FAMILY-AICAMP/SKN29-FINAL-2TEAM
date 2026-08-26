@@ -25,7 +25,11 @@ from deepagents._models import get_model_provider
 
 from services.agent_runtime.compat import register_default_harness_profile
 from services.agent_runtime.models.factory import ModelFactory, ResolvedModelConfig
-from services.agent_runtime.runtime_policy import DEFAULT_EXCLUDED_BUILTIN_TOOLS
+
+# 정책 기본값(`DEFAULT_EXCLUDED_BUILTIN_TOOLS`)은 이제 비어 있다(2026-08-26) —
+# 여기서 검증하려는 건 "제외 목록이 실제로 필터링되는가"이지 그 목록이 뭔지가
+# 아니라서, 실제 존재하는 builtin tool 이름으로 이 테스트만의 값을 쓴다.
+_TEST_EXCLUDED_TOOLS: frozenset[str] = frozenset({"write_file"})
 
 
 class _ProviderAwareScriptedModel(BaseChatModel):
@@ -118,7 +122,7 @@ class ExcludedToolsActuallyFilteredTests(SimpleTestCase):
 
     def test_excluded_builtin_tools_never_reach_model_when_provider_matches(self):
         register_default_harness_profile(
-            model_key="anthropic", excluded_tools=DEFAULT_EXCLUDED_BUILTIN_TOOLS
+            model_key="anthropic", excluded_tools=_TEST_EXCLUDED_TOOLS
         )
         model = _ProviderAwareScriptedModel(responses=[AIMessage(content="ok")], provider="anthropic")
 
@@ -128,7 +132,7 @@ class ExcludedToolsActuallyFilteredTests(SimpleTestCase):
         graph.invoke({"messages": [{"role": "user", "content": "hi"}]})
 
         bound_names = {n for call in model.bind_calls_log for n in call if n}
-        self.assertFalse(bound_names & DEFAULT_EXCLUDED_BUILTIN_TOOLS)
+        self.assertFalse(bound_names & _TEST_EXCLUDED_TOOLS)
         self.assertIn("_document_search", bound_names)
 
     def test_mismatched_provider_key_does_not_apply_exclusion(self):
@@ -136,7 +140,7 @@ class ExcludedToolsActuallyFilteredTests(SimpleTestCase):
         excluded_tools는 그냥 조용히 무시된다(예외 없음)."""
 
         register_default_harness_profile(
-            model_key="anthropic", excluded_tools=DEFAULT_EXCLUDED_BUILTIN_TOOLS
+            model_key="anthropic", excluded_tools=_TEST_EXCLUDED_TOOLS
         )
         model = _ProviderAwareScriptedModel(
             responses=[AIMessage(content="ok")], provider="some-other-provider"
@@ -146,4 +150,4 @@ class ExcludedToolsActuallyFilteredTests(SimpleTestCase):
         graph.invoke({"messages": [{"role": "user", "content": "hi"}]})
 
         bound_names = {n for call in model.bind_calls_log for n in call if n}
-        self.assertTrue(bound_names & DEFAULT_EXCLUDED_BUILTIN_TOOLS)
+        self.assertTrue(bound_names & _TEST_EXCLUDED_TOOLS)

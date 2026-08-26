@@ -139,6 +139,7 @@ EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+# 도구 호출 전에 사용자에게 보여줄 짧은 실행 안내. Reasoning 원문과 분리한다.
 # §14 계약에 없는 타입이다. 추론 텍스트는 tool_started/result 어디에도 자연스럽게
 # 안 얹혀서 새 타입이 필요했다. `tracing/__init__.py`의 `_record()`는 모르는 타입을
 # 조용히 지나치므로 DB 적재는 없다 — 화면에 실시간으로 보여주는 것이 목적이다.
@@ -214,7 +215,7 @@ TOOL_OUTPUT_SUMMARY_MAX = 500
 
 
 def _summarize_tool_output(content: Any) -> str:
-    """도구가 실제로 돌려준 내용을 화면(생각 과정 타임라인)에 보일 만큼만 남긴다.
+    """도구가 실제로 돌려준 내용을 화면(작업 과정 타임라인)에 보일 만큼만 남긴다.
 
     `summarize_input()`(services/harness/trace.py)과 같은 동기다 — 다만 입력은
     키=값 쌍이라 사전을 받지만, 도구 출력은 이미 `ToolMessage.text`가 만들어 둔
@@ -524,6 +525,9 @@ class EventMapper:
             node_name = metadata.get("langgraph_node") if isinstance(metadata, dict) else None
             if node_name != "model":
                 return []
+            # Reasoning summary는 관측·저장 호환성을 위해 이벤트 계약에 남긴다.
+            # 채팅 UI는 이를 표시하지 않고, 사용자용 안내는 아래 updates/model
+            # 분기의 일반 text 블록에서 만든 사용자용 작업 안내만 소비한다.
             return self._classify_reasoning_delta(ns_prefix=ns_prefix, chunk=chunk, run_id=run_id)
 
         if not isinstance(payload, dict):
@@ -682,8 +686,11 @@ class EventMapper:
                 self._count_model_call(run_id, message)
                 events: list[dict[str, Any]] = []
                 if tool_calls:
-                    events.extend(
-                        self._classify_parent_tool_calls(
+                    # 프롬프트가 요청한 Preamble은 tool_calls와 같은 AIMessage의
+                    # 일반 text 블록으로 온다. 모델이 생략해도 UI가 영어
+                    # Reasoning에 의존하지 않도록 결정론적 한국어 안내를 보낸다.
+                    korean_content = content if any("가" <= char <= "힣" for char in content) else ""
+                    tool_events = self._classify_parent_tool_calls(
                             tool_calls=tool_calls,
                             run_id=run_id,
                             agent_id=agent_id,
@@ -692,7 +699,10 @@ class EventMapper:
                             root_resolved_model=root_resolved_model,
                             child_resolved_models=child_resolved_models,
                         )
-                    )
+                    if tool_events:
+                        tool_events[0]["user_update"] = korean_content or "요청을 처리하기 위해 필요한 도구를 확인하고 있습니다."
+                        tool_events[0]["user_update_source"] = "model" if korean_content else "application_fallback"
+                    events.extend(tool_events)
                     return events
                 if content:
                     # 도구 호출 없이 텍스트만 낸 최종 응답.

@@ -150,6 +150,7 @@ class MySkillDetailAPIView(AuthenticatedAPIView):
                 name,
                 description=(str(data["description"]).strip() if "description" in data else None),
                 body=(data["body"] if "body" in data else None),
+                enabled=(bool(data["enabled"]) if "enabled" in data else None),
             )
         except SkillError as exc:
             return _skill_error_response(exc)
@@ -216,6 +217,7 @@ class TeamSkillDetailAPIView(AuthenticatedAPIView):
                 actor_role=role,
                 description=(str(data["description"]).strip() if "description" in data else None),
                 body=(data["body"] if "body" in data else None),
+                enabled=(bool(data["enabled"]) if "enabled" in data else None),
             )
         except SkillError as exc:
             return _skill_error_response(exc)

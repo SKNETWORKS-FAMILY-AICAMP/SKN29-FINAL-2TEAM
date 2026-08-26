@@ -463,7 +463,7 @@ class AgentVersionCrudRepository:
                         "system_prompt": "",
                         "model": None,
                         "reasoning_effort": None,
-                        "max_iterations": 6,
+                        "max_iterations": 10,
                         "tool_refs": [],
                         "subagents": [],
                     }
@@ -566,7 +566,7 @@ class AgentVersionCrudRepository:
                         fields["system_prompt"],
                         fields.get("model"),
                         fields.get("reasoning_effort"),
-                        fields.get("max_iterations", 6),
+                        fields.get("max_iterations", 10),
                         account_id,
                     ),
                 )

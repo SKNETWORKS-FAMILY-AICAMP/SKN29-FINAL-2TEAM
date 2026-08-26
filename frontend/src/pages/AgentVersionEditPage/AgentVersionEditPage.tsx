@@ -58,7 +58,7 @@ export default function AgentVersionEditPage() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [effort, setEffort] = useState('low');
-  const [maxIterations, setMaxIterations] = useState(6);
+  const [maxIterations, setMaxIterations] = useState(10);
   const [toolRefs, setToolRefs] = useState<string[]>([]);
   const [subagents, setSubagents] = useState<SubagentRef[]>([]);
   const [subagentPickerOpen, setSubagentPickerOpen] = useState(false);
@@ -87,7 +87,7 @@ export default function AgentVersionEditPage() {
         setSystemPrompt(agent.system_prompt);
         setModel(agent.model ?? DEFAULT_MODEL);
         setEffort(agent.reasoning_effort ?? 'low');
-        setMaxIterations(agent.max_iterations ?? 6);
+        setMaxIterations(agent.max_iterations ?? 10);
         setToolRefs(agent.tool_refs);
         setSubagents(agent.subagents);
         setStatus(agent.status);

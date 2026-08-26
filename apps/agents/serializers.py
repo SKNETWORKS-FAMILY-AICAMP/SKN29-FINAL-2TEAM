@@ -74,7 +74,7 @@ class AgentVersionPublishSerializer(serializers.Serializer):
     # max_value는 `runtime_policy.RuntimeCapabilityPolicy.max_model_calls_ceiling`
     # (services/agent_runtime/runtime_policy.py)과 같은 값으로 맞춘다 — 한쪽만
     # 올리면 저장은 되는데 실행은 그 값을 못 넘기는 죽은 설정이 된다.
-    max_iterations = serializers.IntegerField(min_value=2, max_value=50, default=6)
+    max_iterations = serializers.IntegerField(min_value=2, max_value=50, default=10)
     tool_refs = serializers.ListField(
         child=serializers.CharField(max_length=100), allow_empty=True, default=list
     )

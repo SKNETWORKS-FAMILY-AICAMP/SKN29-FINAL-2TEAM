@@ -173,6 +173,176 @@
   white-space: pre-wrap;
 }
 
+.jiraPreview {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.jiraPreviewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.jiraPreviewHead > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jiraProjectTarget {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-3);
+  background: var(--color-bg);
+  font-size: 12px;
+}
+
+.jiraProjectTarget span {
+  color: var(--color-placeholder);
+}
+
+.jiraProjectTarget strong {
+  color: var(--color-heading);
+}
+
+.jiraApprovalImpact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 var(--space-5) var(--space-3);
+  background: var(--color-bg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.jiraApprovalImpact strong {
+  color: var(--color-heading);
+}
+
+.editedBadge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.jiraIssuePreview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.jiraIssueTitle {
+  font-size: 15px;
+  color: var(--color-heading);
+}
+
+.jiraFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.jiraFacts > div {
+  display: flex;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.jiraFacts dt,
+.jiraDescription > span,
+.jiraField > span {
+  color: var(--color-placeholder);
+}
+
+.jiraFacts dd {
+  margin: 0;
+  color: var(--color-heading);
+}
+
+.jiraDescription {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.jiraDescription p {
+  margin: 0;
+  color: var(--color-heading);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.jiraFieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.jiraField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.jiraField input,
+.jiraField textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+}
+
+.jiraField textarea {
+  min-height: 96px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.jiraField input:focus,
+.jiraField textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.jiraEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+.jiraEditError {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-3);
+  color: var(--color-danger, #b42318);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .jiraFieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* 확인 카드가 바쁠 때(승인/거절 처리 중) 즉시 되돌아갈 수 있는 링크형
    버튼(2026-08-24) — "거절해도 왜 이렇게 오래 걸리지, 뒤로 가기는 없냐"는
    지적으로 추가. 이미 있는 "중단"(입력창 옆)을 카드 자리에서 바로 쓴다. */
@@ -330,7 +500,7 @@
   font-weight: 700;
 }
 
-/* 생각 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
+/* 작업 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
    같은 로그 줄이지만 문장 대신 상태 아이콘이 그 자리(맨 앞)를 대신한다.
    도구 항목은 호출 줄(.reasoningTool) 아래에 반환값 줄(.reasoningOutput)이
    붙을 수 있어서 li 자체는 .reasoningToolGroup으로 세로로 묶는다. */
@@ -371,11 +541,27 @@
   margin-left: auto;
 }
 
+.reasoningDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 2px 19px;
+}
+
+.reasoningDetailLabel {
+  display: block;
+  margin-bottom: 3px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
 /* 도구가 실제로 반환한 값(2026-08-18) — 호출 여부만 보이고 결과는 안 보이던
    문제를 고치려고 추가했다. 아이콘 폭만큼 들여써서 그 도구 호출 줄에 딸린
    것임을 보이고, 길어도 로그 전체를 밀어내지 않게 자체 스크롤을 둔다. */
 .reasoningOutput {
-  margin: 0 0 2px 19px;
+  margin: 0;
   padding: 6px 8px;
   max-height: 120px;
   overflow-y: auto;
@@ -691,6 +877,95 @@
   gap: 6px;
   font-size: 12px;
   color: var(--color-body);
+}
+
+.toolRuns {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 19px;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.toolRun {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.toolRunToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolRunToggle:disabled {
+  cursor: default;
+}
+
+.toolRunStatus {
+  margin-left: auto;
+  color: var(--color-placeholder);
+}
+
+.reasoningPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.searchDetails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+.searchDetailsBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.sourceGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: var(--space-2);
+}
+
+.sourceToggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sourceToggle:hover {
+  color: var(--color-primary-hover);
 }
 
 /* "출처"(2026-08-18) 중 web_search 결과 — 새 탭으로 열리는 링크임을 밑줄로 표시. */

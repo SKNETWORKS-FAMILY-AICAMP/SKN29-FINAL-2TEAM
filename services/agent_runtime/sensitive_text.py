@@ -4,7 +4,10 @@
 패턴은 여기 하나만 둔다:
 
 - `memory/write_guard.py` — 개인 장기 메모리 저장 차단
-- `apps/chat/api_views.py` — 채팅 입력을 모델에게 보내기 전 마스킹
+- `middleware/sensitive_input.py` — 채팅 입력을 모델에게 보내기 전 마스킹
+  (2026-08-26 이전엔 `apps/chat/api_views.py`가 직접 불렀다. `suggest_title()`용
+  질문 문구만 예외로 지금도 `api_views.py`가 직접 부른다 — 그 호출은 그래프를
+  안 거쳐 미들웨어 보호 밖이라서다, 모듈 docstring 참고)
 - `tracing/callbacks.py` — Langfuse로 나가는 trace 사본 마스킹
 
 **어디까지 가릴지는 사용처마다 다르다.** 같은 패턴 목록을 쓰되 조합만 달리한다:

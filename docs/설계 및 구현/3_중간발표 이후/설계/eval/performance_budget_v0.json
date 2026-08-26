@@ -1,0 +1,216 @@
+{
+  "schema_version": 0,
+  "budget_version": "performance-budget-v0",
+  "status": "PROVISIONAL",
+  "created_at": "2026-08-25",
+  "mode": "REPORT_ONLY",
+  "purpose": "자동 평가 runner 구현 전 사용할 임시 성능 경고·실패 기준",
+  "policy": {
+    "comparison_operator": "greater_than",
+    "warning_action": "WARN",
+    "failure_action": "FAIL",
+    "missing_required_metric_action": "WARN",
+    "performance_failure_does_not_override_safety_or_correctness": true,
+    "activate_enforcement_when": {
+      "minimum_completed_samples_per_workflow": 10,
+      "minimum_strict_success_samples_per_workflow": 5,
+      "same_fixture_dataset_model_and_runtime_required": true
+    },
+    "notes": [
+      "현재는 표본이 작고 엄격 성공 표본이 부족하므로 임곗값을 기록만 하고 자동 차단하지 않는다.",
+      "warning은 최초 3회 p95의 약 1.2배를 보기 쉬운 값으로 올림했다.",
+      "failure는 최초 3회 p95의 약 1.5배를 보기 쉬운 값으로 올림했다.",
+      "임곗값은 논문에서 가져온 값이 아니라 2026-08-25 로컬 수동 실행의 프로젝트 기준선 후보다.",
+      "정확성, 안전성, 승인, 부작용과 cleanup은 이 파일이 아니라 workflow assertion으로 판정한다."
+    ]
+  },
+  "metric_definitions": {
+    "active_execution_latency_ms": "사람 승인 대기를 제외한 Agent 활성 실행 시간",
+    "end_to_end_latency_ms": "사용자 대기를 포함할 수 있는 전체 경과 시간",
+    "total_tokens": "모델 응답 usage_metadata의 input_tokens와 output_tokens를 실행 단위로 합산한 값",
+    "document_search_total_duration_ms": "한 실행에서 document_search 도구가 사용한 시간의 합"
+  },
+  "workflows": {
+    "WF-PROJECT-STATUS-001": {
+      "budget_state": "PROVISIONAL",
+      "source_eval_run_id": "20260825T054532Z-46833ae4",
+      "source_dataset_version": 1,
+      "sample_count": 3,
+      "strict_success_count": 0,
+      "baseline": {
+        "active_execution_latency_ms": {
+          "p50": 27280,
+          "p95": 33054
+        },
+        "total_tokens": {
+          "samples": [44111, 47221, 41043],
+          "p50": 44111,
+          "p95": 47221
+        }
+      },
+      "thresholds": {
+        "active_execution_latency_ms": {
+          "warning_gt": 40000,
+          "failure_gt": 50000
+        },
+        "total_tokens": {
+          "warning_gt": 57000,
+          "failure_gt": 71000
+        }
+      },
+      "limitations": [
+        "세 표본 모두 답변 품질은 통과했지만 당시 도구 경로 계약 때문에 엄격 판정은 실패했다.",
+        "수정된 dataset v2 재실행 후 기준선을 교체해야 한다."
+      ]
+    },
+    "WF-STAFFING-RECOMMENDATION-002": {
+      "budget_state": "PROVISIONAL",
+      "source_eval_run_id": "20260825T062411Z-b2f12f9a",
+      "source_dataset_version": 3,
+      "sample_count": 3,
+      "strict_success_count": 2,
+      "baseline": {
+        "active_execution_latency_ms": {
+          "p50": 20507,
+          "p95": 44399
+        },
+        "total_tokens": {
+          "samples": [44771, 28480, 28879],
+          "p50": 28879,
+          "p95": 44771
+        },
+        "document_search_total_duration_ms": {
+          "samples": [1182, 28025, 1336],
+          "p50": 1336,
+          "p95": 28025
+        }
+      },
+      "thresholds": {
+        "active_execution_latency_ms": {
+          "warning_gt": 54000,
+          "failure_gt": 67000
+        },
+        "total_tokens": {
+          "warning_gt": 54000,
+          "failure_gt": 68000
+        },
+        "document_search_total_duration_ms": {
+          "warning_gt": 34000,
+          "failure_gt": 43000
+        }
+      },
+      "limitations": [
+        "원시 기록은 3회 모두 역할 근거 assertion 실패지만 DC002 직접 근거 누락에 따른 평가 계약 오류였다.",
+        "정정 후 2·3회차는 통과이며 1회차만 금지 도구 호출 때문에 실패를 유지한다.",
+        "문서 검색 한 번이 28.025초 걸려 p95가 큰 영향을 받았다.",
+        "표본이 작으므로 REPORT_ONLY이며 runner에서 정정 판정 회귀를 검증해야 한다."
+      ]
+    },
+    "WF-PROMPT-INJECTION-003": {
+      "budget_state": "PROVISIONAL",
+      "source_eval_run_id": "20260825T105958Z-3824f606",
+      "source_dataset_version": 7,
+      "sample_count": 3,
+      "strict_success_count": 3,
+      "baseline": {
+        "active_execution_latency_ms": {
+          "samples": [44649, 6906, 8077],
+          "p50": 8077,
+          "p95": 44649
+        },
+        "total_tokens": {
+          "samples": [19578, 19226, 19093],
+          "p50": 19226,
+          "p95": 19578
+        },
+        "document_search_total_duration_ms": {
+          "samples": [39256, 1182, 2341],
+          "p50": 2341,
+          "p95": 39256
+        }
+      },
+      "thresholds": {
+        "active_execution_latency_ms": {
+          "warning_gt": 54000,
+          "failure_gt": 67000
+        },
+        "total_tokens": {
+          "warning_gt": 24000,
+          "failure_gt": 30000
+        },
+        "document_search_total_duration_ms": {
+          "warning_gt": 48000,
+          "failure_gt": 59000
+        }
+      },
+      "limitations": [
+        "표본이 3개뿐이므로 REPORT_ONLY 임시 기준이며 자동 차단에 사용하지 않는다.",
+        "첫 실행의 document_search가 39.256초여서 latency p95가 크게 상승했다.",
+        "수동 기본 채팅은 tool_refs_override가 null이었으므로 자동 runner에서는 데이터셋 도구 구성을 고정해야 한다."
+      ]
+    },
+    "WF-JIRA-HITL-004": {
+      "budget_state": "PENDING_ACTIVE_LATENCY_BASELINE",
+      "source_eval_run_id": "20260825T101440Z-6925aa7d",
+      "sample_count": 2,
+      "strict_success_count": 0,
+      "observed_total_tokens": [11756, 13155],
+      "thresholds": null,
+      "excluded_metrics": {
+        "end_to_end_latency_ms": "사람의 카드 검토·편집·승인 대기 시간이 포함되어 Agent 성능 예산으로 사용할 수 없음"
+      },
+      "requirements_before_budget": [
+        "사람 대기를 제외한 active_execution_latency_ms 수집",
+        "같은 거절 또는 승인 경로별 완료 표본 3회 이상",
+        "거절 경로와 승인 경로의 예산 분리"
+      ]
+    },
+    "WF-ACTION-ITEM-GAP-005": {
+      "budget_state": "PROVISIONAL_NO_STRICT_SUCCESS",
+      "source_eval_run_id": "20260826T000502Z-39c5cf0b",
+      "source_dataset_version": 9,
+      "sample_count": 3,
+      "strict_success_count": 0,
+      "baseline": {
+        "active_execution_latency_ms": {
+          "samples": [14415, 14843, 16290],
+          "p50": 14843,
+          "p95": 16290
+        },
+        "total_tokens": {
+          "samples": [36094, 32920, 33593],
+          "p50": 33593,
+          "p95": 36094
+        },
+        "document_search_total_duration_ms": {
+          "samples": [1221, 1237, 1662],
+          "p50": 1237,
+          "p95": 1662
+        }
+      },
+      "thresholds": {
+        "active_execution_latency_ms": {
+          "warning_gt": 20000,
+          "failure_gt": 25000
+        },
+        "total_tokens": {
+          "warning_gt": 44000,
+          "failure_gt": 55000
+        },
+        "document_search_total_duration_ms": {
+          "warning_gt": 2000,
+          "failure_gt": 2500
+        }
+      },
+      "requirements_before_budget": [
+        "같은 조건의 엄격 성공 표본 3회 이상",
+        "엄격 출력 계약 실패 수정 후 동일 v9 fixture 재실행",
+        "문서 검색 계층 고도화 후 동일 fixture 재실행"
+      ],
+      "limitations": [
+        "세 실행 모두 핵심 조회·대조·안전성은 통과했지만 섹션명 보존과 비교표 형식 assertion에 실패했다.",
+        "엄격 성공 표본이 없으므로 임곗값은 REPORT_ONLY 관찰값이며 자동 차단 근거가 아니다."
+      ]
+    }
+  }
+}

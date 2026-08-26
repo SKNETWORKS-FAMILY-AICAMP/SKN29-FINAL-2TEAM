@@ -13,6 +13,8 @@ export interface ProgressStep {
   state: StepState;
   label: string;
   meta?: string;
+  /** 같은 단계가 여러 도구 호출에서 반복된 횟수. 진행 요약에서는 한 줄로 묶는다. */
+  runs?: number;
 }
 
 /**
@@ -29,9 +31,8 @@ export interface SubagentRun {
 }
 
 /**
- * 생각 과정 카드에 순서대로 그릴 항목 하나(2026-08-18). reasoning 조각과
- * 도구 호출·위임을 **이벤트가 실제로 온 순서 그대로** 하나의 목록에
- * 담는다 — "몇 번째 생각 다음에 이 도구를 불렀는지"를 보여 달라는 요청.
+ * 작업 과정 카드에 순서대로 그릴 항목 하나. 사용자용 한국어 안내와
+ * 도구 호출·위임을 **이벤트가 실제로 온 순서 그대로** 하나의 목록에 담는다.
  * 그 전에는 reasoning과 도구 진행이 서로 다른 배열(`reasoningSteps`/
  * `steps`)에 따로 쌓여서, 실제로는 하나의 스트림으로 순서대로 온 이벤트인데
  * 화면에서는 그 순서 정보가 사라져 있었다.
@@ -41,6 +42,7 @@ export interface SubagentRun {
  * 바꾼다 — 새 항목을 만들지 않는다(`liveChat.ts`의 `reduce()` 참고).
  */
 export type TimelineEntry =
+  | { kind: 'update'; text: string; source: 'model' | 'application_fallback' }
   | { kind: 'reasoning'; text: string }
   | {
       kind: 'skill';
@@ -58,6 +60,8 @@ export type TimelineEntry =
        * `toolRef`로 그린다.
        */
       toolName: string | null;
+      /** 모델이 실제 도구에 넘긴 입력. 화면에서는 민감 키를 가리고 펼쳐 보여준다. */
+      arguments?: Record<string, unknown>;
       status: 'RUNNING' | 'OK' | 'FAILED' | 'REJECTED';
       /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). 완료 전엔 없다. */
       output?: string;

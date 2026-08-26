@@ -529,7 +529,7 @@
 .inputBar {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-3);
   flex-shrink: 0;
   /* 대화와 **같은 칸**에 세운다(2026-08-25). 전에는 전체 폭이라 FHD 에서
@@ -540,6 +540,96 @@
     var(--space-5);
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
+}
+
+.latestButton {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--space-3));
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 10%);
+  color: var(--color-primary);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  visibility: hidden;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out,
+    visibility 0s linear 160ms;
+}
+
+.latestButtonVisible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.latestButton:hover {
+  background: var(--color-bg);
+}
+
+.latestButton:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.latestPending {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.latestPending i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentcolor;
+  animation: latest-pending-dot 900ms ease-in-out infinite;
+}
+
+.latestPending i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.latestPending i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes latest-pending-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .latestButton {
+    transition: none;
+  }
+
+  .latestPending i {
+    animation: none;
+  }
 }
 
 /* "/스킬이름"을 치는 동안 뜨는 자동완성 — 입력창 바로 위, `.newMenu`와 같은
@@ -633,18 +723,24 @@
   border-color: var(--color-primary);
 }
 
-/* 실제 <input> 이다(예전에는 자리만 잡는 div 였다). 글자색을 placeholder 색으로
+/* 실제 <textarea>다(예전에는 자리만 잡는 div 였다). 글자색을 placeholder 색으로
    두면 사용자가 친 글씨가 흐리게 보인다 — 흐린 것은 placeholder 만이다. */
 .input {
   flex: 1;
   min-width: 0;
+  min-height: 42px;
+  max-height: 128px;
+  overflow-y: auto;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg);
   font-size: 14px;
   font-family: inherit;
+  line-height: 1.5;
   color: var(--color-heading);
+  resize: none;
+  field-sizing: content;
 }
 
 .input::placeholder {

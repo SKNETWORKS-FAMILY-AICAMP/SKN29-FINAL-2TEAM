@@ -17,7 +17,7 @@ from apps.chat.api_views import (
     _decisions_for,
     _relay,
 )
-from apps.chat.serializers import message_response
+from apps.chat.serializers import ChatConfirmSerializer, message_response
 from backend.db.errors import PermissionDenied
 from services.guardrails import InputGuardOutcome
 
@@ -639,6 +639,48 @@ class SlashSkillInvocationTests(SimpleTestCase):
         user_write = messages.append.call_args_list[0].kwargs
         self.assertEqual(user_write["content"]["text"], "/humanizer 이 문장을 자연스럽게 바꿔줘")
 
+    def test_sensitive_content_in_skill_request_reaches_the_graph_unmasked_but_title_is_masked(
+        self, sessions, messages, accounts, title, build_executor, _live_version, resolve_skill
+    ):
+        """2026-08-26 — `skill_request`도 더 이상 여기서 `mask_sensitive()`를
+        안 거친다(그래프 안 `SensitiveInputMaskMiddleware`가 처리). 다만
+        `suggest_title()`용 `question`은 그래프를 안 거치므로 이 API 레이어가
+        여전히 가려서 넘겨야 한다 — 이 둘이 한 요청 안에서 동시에 맞는지
+        확인한다."""
+
+        sessions.get.return_value = DEEP_SESSION
+        messages.list_for_session.return_value = []
+        sessions.rename_if_first_answer.return_value = True
+        accounts.get_profile.return_value = LEADER_PROFILE
+        resolve_skill.return_value = {
+            "skill_id": "humanizer",
+            "name": "humanizer",
+            "description": "번역체같지 않게 답변",
+            "body": "본문",
+        }
+        title.return_value = "전화번호 문의"
+        mock_executor = MagicMock()
+        mock_executor.run.return_value = iter([{"type": "result", "text": "확인했습니다.", "complete": True}])
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/messages/",
+            {"content": "/humanizer 제 전화번호는 010-1234-5678이에요"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        # 그래프로 가는 값 — 원문 그대로(미들웨어가 가릴 몫).
+        model_input = mock_executor.run.call_args.kwargs["user_input"]
+        self.assertIn("010-1234-5678", model_input)
+        self.assertIn("explicit_skill_invocation", model_input)
+
+        # 제목 생성용 값 — 이 레이어가 직접 가린 채로 넘어가야 한다.
+        question = title.call_args.kwargs["question"]
+        self.assertNotIn("010-1234-5678", question)
+        self.assertIn("explicit_skill_invocation", question)
+
     def test_unknown_skill_name_falls_through_to_plain_chat(
         self, sessions, messages, accounts, _title, build_executor, _live_version, resolve_skill
     ):
@@ -986,6 +1028,71 @@ class HITLResumeConfirmTests(SimpleTestCase):
             [t["title"] for t in decisions[0]["edited_action"]["args"]["tasks"]],
             ["가", "다"],
         )
+
+    def test_Jira_편집값이_승인한_호출로_재개된다(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        pending = {
+            "message_id": "M1",
+            "content": {
+                **self.PENDING["content"],
+                "action_requests": [
+                    {
+                        "name": "jira_create_issues",
+                        "args": {
+                            "project_key": "",
+                            "issues": [
+                                {
+                                    "title": "기존 제목",
+                                    "description": "기존 설명",
+                                    "issuetype": "Task",
+                                    "duedate": "2026-09-15",
+                                    "assignee_account_id": "original-account-id",
+                                }
+                            ],
+                        },
+                        "description": "Jira 이슈 생성",
+                    }
+                ],
+            },
+        }
+        sessions.get.return_value = DEEP_SESSION
+        accounts.get_profile.return_value = LEADER_PROFILE
+        messages.latest_pending_confirmation.return_value = pending
+        mock_executor = MagicMock()
+        mock_executor.resume.return_value = iter(
+            [{"type": "result", "text": "ok", "run_id": self.PENDING_RUN_ID, "complete": True}]
+        )
+        build_executor.return_value = mock_executor
+
+        response = self.client.post(
+            f"/api/chat/sessions/{DEEP_SESSION['session_id']}/confirm/",
+            {
+                "decisions": [
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {
+                                "title": "수정 제목",
+                                "description": "수정 설명",
+                                "issuetype": "Story",
+                                "duedate": "2026-09-20",
+                            }
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        decision = mock_executor.resume.call_args.kwargs["decisions"][0]
+        args = decision["edited_action"]["args"]
+        self.assertEqual(decision["type"], "edit")
+        self.assertEqual(args["issues"][0]["title"], "수정 제목")
+        self.assertEqual(args["issues"][0]["assignee_account_id"], "original-account-id")
 
     def test_decision_reject_is_forwarded(
         self, sessions, messages, accounts, _title, build_executor
@@ -1399,6 +1506,119 @@ class PerCallDecisionTests(SimpleTestCase):
     def test_per_call이_없으면_예전_동작_그대로다(self):
         self.assertEqual(_decisions_for(self._requests(2), None), [{"type": "approve"}] * 2)
 
+    def test_Jira_편집은_허용_필드만_원래_호출에_합친다(self):
+        requests = [
+            {
+                "name": "jira_create_issues",
+                "args": {
+                    "project_key": "",
+                    "issues": [
+                        {
+                            "title": "기존 제목",
+                            "description": "기존 설명",
+                            "issuetype": "Task",
+                            "duedate": "2026-09-15",
+                            "assignee_account_id": "original-account-id",
+                        }
+                    ],
+                },
+            }
+        ]
+
+        decisions = _decisions_for(
+            requests,
+            None,
+            per_call=[
+                {
+                    "action_index": 0,
+                    "type": "edit",
+                    "edited_issues": [
+                        {
+                            "title": "수정 제목",
+                            "description": "수정 설명",
+                            "issuetype": "Story",
+                            "duedate": "2026-09-20",
+                        }
+                    ],
+                }
+            ],
+        )
+
+        args = decisions[0]["edited_action"]["args"]
+        self.assertEqual(decisions[0]["type"], "edit")
+        self.assertEqual(args["project_key"], "")
+        self.assertEqual(args["issues"][0]["title"], "수정 제목")
+        self.assertEqual(args["issues"][0]["assignee_account_id"], "original-account-id")
+
+    def test_Jira_편집으로_이슈_개수를_바꿀_수_없다(self):
+        requests = [
+            {"name": "jira_create_issues", "args": {"issues": [{"title": "기존"}]}}
+        ]
+
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                requests,
+                None,
+                per_call=[
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {"title": "A", "description": "", "issuetype": "Task"},
+                            {"title": "B", "description": "", "issuetype": "Task"},
+                        ],
+                    }
+                ],
+            )
+
+    def test_Jira가_아닌_호출은_편집할_수_없다(self):
+        with self.assertRaises(PerCallDecisionsError):
+            _decisions_for(
+                self._requests(1),
+                None,
+                per_call=[
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {"title": "A", "description": "", "issuetype": "Task"}
+                        ],
+                    }
+                ],
+            )
+
+
+class ConfirmDecisionSerializerTests(SimpleTestCase):
+    def test_edit에는_수정한_Jira_이슈가_필요하다(self):
+        serializer = ChatConfirmSerializer(
+            data={"decisions": [{"action_index": 0, "type": "edit"}]}
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("edited_issues", serializer.errors["decisions"][0])
+
+    def test_edit_Jira_이슈를_검증한다(self):
+        serializer = ChatConfirmSerializer(
+            data={
+                "decisions": [
+                    {
+                        "action_index": 0,
+                        "type": "edit",
+                        "edited_issues": [
+                            {
+                                "title": "수정 제목",
+                                "description": "수정 설명",
+                                "issuetype": "Task",
+                                "duedate": "2026-09-20",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
 
 @patch("services.agent_runtime.build_default_executor")
 @patch("apps.chat.api_views.AgentVersionRepository.resolve_live_version_id", new=lambda **_: None)
@@ -1522,16 +1742,30 @@ class PiiMaskingTests(SimpleTestCase):
     """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술은
     모델에게 보내기 전에 가린다(2026-08-19, §2순위, 사용자 확정 범위).
 
-    **저장은 원문 그대로** 다 — 화면은 사용자 자신이 뭘 썼는지 그대로 봐야
-    한다. 마스킹은 모델로 가는 값에만 적용한다: 이번 턴 `user_input`,
-    이력 재전송(`conversation_messages`), 제목 생성용 `question`.
+    **2026-08-26부터 가리는 주체가 바뀌었다** — `api_views.py`가 직접
+    `mask_sensitive()`를 부르는 대신, 그래프 안의
+    `SensitiveInputMaskMiddleware`(`middleware/sensitive_input.py`)가
+    매 모델 호출 직전에 가린다. 그래서 이 API 레이어 테스트가 보는
+    `executor.run()`의 `user_input`/`conversation_messages`는 이제
+    **원문 그대로**다 — 실제로 가려지는지는
+    `tests/test_sensitive_input.py`·`tests/test_middleware_factory.py`의
+    `SensitiveInputMaskMiddlewareWiringTests`가 미들웨어 자체를 검증한다.
+    이 클래스는 "그래프에 뭐가 들어가는가"(여기)와 "그 안에서 가려지는가"
+    (미들웨어 테스트)가 분리됐다는 걸 보여주는 자리로 남긴다.
+
+    **저장은 여전히 원문 그대로** 다 — 화면은 사용자 자신이 뭘 썼는지
+    그대로 봐야 한다. `suggest_title()`용 `question`만 그래프를 안 거치므로
+    `api_views.py`가 지금도 직접 가린다.
     """
 
     SENSITIVE = "제 전화번호는 010-1234-5678이에요"
 
-    def test_이번_턴_발화는_모델에게_가려서_간다(
+    def test_이번_턴_발화는_원문_그대로_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor
     ):
+        """가리는 일은 이제 그래프 안 `SensitiveInputMaskMiddleware`의 몫이다
+        — 여기서 원문을 미리 가리면 오히려 그 미들웨어가 이미 가려진 텍스트를
+        받게 돼 이중 처리(멱등이라 해는 없지만 불필요)가 된다."""
         sessions.get.return_value = SESSION
         messages.list_for_session.return_value = []
         accounts.get_profile.return_value = LEADER_PROFILE
@@ -1546,8 +1780,7 @@ class PiiMaskingTests(SimpleTestCase):
         ndjson(response)
 
         user_input = mock_executor.run.call_args.kwargs["user_input"]
-        self.assertNotIn("010-1234-5678", user_input)
-        self.assertIn("제 전화번호는", user_input)
+        self.assertEqual(user_input, self.SENSITIVE)
 
     def test_저장은_원문_그대로_한다(
         self, sessions, messages, accounts, _title, build_executor
@@ -1573,11 +1806,13 @@ class PiiMaskingTests(SimpleTestCase):
         )
         self.assertEqual(user_write["content"]["text"], self.SENSITIVE)
 
-    def test_이력_재전송도_가려서_간다(
+    def test_이력_재전송도_원문_그대로_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor
     ):
-        """`_history()`가 저장된(원문) 과거 발화를 모델에게 다시 태울 때도
-        가린다 — 이번 요청만 막고 다음 턴 재전송에서 새면 의미가 없다."""
+        """`_history()`는 이제 저장된 원문을 그대로 돌려준다 — 이 값이 그래프
+        `state["messages"]`에 실릴 때마다(체크포인터가 없어 매 턴 재전송되는
+        경우 포함) `SensitiveInputMaskMiddleware`가 매번 다시 가린다(그
+        미들웨어 테스트가 "최근 것만이 아니라 전부 가리는지"를 확인한다)."""
 
         sessions.get.return_value = SESSION
         messages.list_for_session.return_value = [
@@ -1596,8 +1831,7 @@ class PiiMaskingTests(SimpleTestCase):
         ndjson(response)
 
         conversation_messages = mock_executor.run.call_args.kwargs["conversation_messages"]
-        self.assertNotIn("010-1234-5678", str(conversation_messages))
-        self.assertIn("제 전화번호는", conversation_messages[0]["content"])
+        self.assertIn("010-1234-5678", str(conversation_messages))
 
     def test_제목_생성도_가려진_값을_받는다(
         self, sessions, messages, accounts, title, build_executor

@@ -221,13 +221,14 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
         applied_skill: dict[str, str] | None = None
-        # 2026-08-19, §2순위 — 사용자가 채팅에 직접 입력한 credential·개인정보·
-        # 권한/보안 서술은 모델에게 보내지 않는다(`sensitive_text.py`, write_guard와
-        # 같은 패턴 재사용). **저장은 원문 그대로 한다** — 이건 "모델에게
-        # 전달되면 안 된다"는 요구지 "사용자 자신도 못 보게 하라"는 요구가
-        # 아니다. `model_input`은 모델로 가는 모든 경로(이번 턴 user_input,
-        # 제목 생성용 question)에 쓰고, `text`(원문)는 저장에만 쓴다.
-        model_input = mask_sensitive(text)
+        # 2026-08-26 — 마스킹은 `SensitiveInputMaskMiddleware`(그래프 안,
+        # `middleware/sensitive_input.py`)가 한다. 예전엔 여기서
+        # `mask_sensitive(text)`를 직접 불러 `model_input`을 만들었지만,
+        # 이제 `model_input`은 **원문 그대로** 그래프에 넘긴다 — 미들웨어가
+        # `before_model`에서 매 모델 호출 직전에 가린다. **저장은 항상
+        # 원문 그대로다** — 이건 "모델에게 전달되면 안 된다"는 요구지
+        # "사용자 자신도 못 보게 하라"는 요구가 아니다.
+        model_input = text
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
@@ -248,8 +249,11 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     account_id=account_id, team_id=session["team_id"], name=skill_name
                 )
                 if skill is not None:
+                    # `skill_request`도 원문 그대로 — 아래 그래프 진입 전에
+                    # `SensitiveInputMaskMiddleware`가 이 문자열이 실린
+                    # HumanMessage 전체를 가린다.
                     model_input = build_invocation_input(
-                        name=skill_name, body=skill["body"], request=mask_sensitive(skill_request)
+                        name=skill_name, body=skill["body"], request=skill_request
                     )
                     applied_skill = {
                         "name": skill_name,
@@ -270,9 +274,10 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 session_id=str(session_id),
             )
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
-            # `_history()`가 저장된 과거 발화(원문)를 모델에게 다시 보낼 때도
-            # 마스킹한다 — 이번 요청에서만 막고 다음 턴의 재전송(replay)에서
-            # 새어나가면 의미가 없다.
+            # `_history()`는 저장된 원문을 그대로 돌려준다 — 재전송(replay)
+            # 경로의 마스킹도 이제 `SensitiveInputMaskMiddleware`가 맡는다
+            # (그래프가 `state["messages"]`에 이 값을 얹는 매 순간마다 다시
+            # 가리므로, 여기서 한 번만 가리고 넘어가는 것보다 안전하다).
             history = _history(
                 ChatMessageRepository.list_for_session(
                     session_id=session_id, account_id=account_id
@@ -346,7 +351,11 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 events,
                 session_id=session_id,
                 account_id=account_id,
-                question=model_input,
+                # `suggest_title()`(`services/harness/naming.py`)은 deep agent
+                # 그래프를 안 거치고 OpenAI를 직접 부른다 —
+                # `SensitiveInputMaskMiddleware`의 보호 범위 밖이라 여기서만
+                # 예외적으로 계속 직접 가린다.
+                question=mask_sensitive(model_input),
             ),
             content_type="application/x-ndjson",
         )
@@ -388,6 +397,13 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     승인 대기로 끝난 턴은 그 사실을 한 줄로 적는다. 비워 두면 모델이 그 턴에
     아무 일도 없었다고 여긴다.
+
+    **여기서 마스킹하지 않는다.** 저장은 원문이고(§2순위 설계 — 화면은
+    사용자 자신의 발화를 그대로 보여준다), 이 원문이 그래프에 실릴 때
+    가리는 일은 `SensitiveInputMaskMiddleware`(`middleware/sensitive_input.py`)
+    가 매 모델 호출 직전에 한다 — 체크포인터가 없어 이 반환값이 매 턴
+    통째로 재전송(replay)되는 경우도 그 미들웨어가 매번 다시 보므로 놓치지
+    않는다.
     """
 
     history: list[dict[str, Any]] = []
@@ -395,12 +411,8 @@ def _history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         content = row.get("content") or {}
         if row["role"] == "user":
             text = content.get("text")
-            # 저장은 원문이다(§2순위 설계 — 화면은 사용자 자신의 발화를 그대로
-            # 보여준다). 그 원문을 모델에게 다시 태우는 건 여기뿐이므로,
-            # 처음 보낼 때만 가리고 재전송(replay) 경로를 빼먹으면 다음 턴부터
-            # 새어나간다 — 여기서도 독립적으로 가린다.
             if text:
-                history.append({"role": "user", "content": mask_sensitive(text)})
+                history.append({"role": "user", "content": text})
             continue
 
         if content.get("type") == EVENT_AWAITING_CONFIRMATION:
@@ -723,6 +735,11 @@ def _per_call_decisions(
     실행 전체를 깨뜨린다(langchain `RespondDecision.message`는 필수 필드) —
     `ChatConfirmSerializer`가 이미 `message` 필수를 검증하지만, 검증을
     통과한 값이 여기서 다시 잘리면 검증이 무의미해진다.
+
+    2026-08-25, Jira 카드 편집 — 화면이 보낸 이슈 전체를 그대로 실행하지
+    않는다. 현재 action이 `jira_create_issues`인지와 이슈 개수가 같은지 확인한
+    뒤 제목·설명·유형·기한만 원래 호출에 합친다. 프로젝트와 assignee는 원본을
+    유지한다.
     """
     by_index: dict[int, dict[str, Any]] = {}
     for item in per_call:
@@ -739,6 +756,39 @@ def _per_call_decisions(
         decision: dict[str, Any] = {"type": item["type"]}
         if item.get("message"):
             decision["message"] = item["message"]
+        if item["type"] == "edit":
+            request = action_requests[index]
+            if request.get("name") != "jira_create_issues":
+                raise PerCallDecisionsError("편집은 Jira 이슈 생성 요청에서만 지원합니다.")
+            original_args = request.get("args") or {}
+            original_issues = original_args.get("issues")
+            edited_issues = item.get("edited_issues")
+            if not isinstance(original_issues, list) or not isinstance(edited_issues, list):
+                raise PerCallDecisionsError("편집할 Jira 이슈 목록을 확인할 수 없습니다.")
+            if len(original_issues) != len(edited_issues):
+                raise PerCallDecisionsError("편집으로 Jira 이슈의 개수를 바꿀 수 없습니다.")
+
+            merged_issues: list[dict[str, Any]] = []
+            for original_issue, edited_issue in zip(original_issues, edited_issues, strict=True):
+                if not isinstance(original_issue, dict) or not isinstance(edited_issue, dict):
+                    raise PerCallDecisionsError("Jira 이슈 입력 형식이 올바르지 않습니다.")
+                merged = dict(original_issue)
+                for field in ("title", "description", "issuetype"):
+                    merged[field] = edited_issue[field]
+                due_date = edited_issue.get("duedate")
+                if due_date is None:
+                    merged.pop("duedate", None)
+                else:
+                    merged["duedate"] = due_date.isoformat() if hasattr(due_date, "isoformat") else str(due_date)
+                merged_issues.append(merged)
+
+            decision = {
+                "type": "edit",
+                "edited_action": {
+                    "name": request.get("name"),
+                    "args": {**original_args, "issues": merged_issues},
+                },
+            }
         by_index[index] = decision
 
     missing = [i for i in range(len(action_requests)) if i not in by_index]

@@ -60,6 +60,13 @@ class ModelListCreateView(AdminView):
         if error:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
 
+        # **토큰 사용량까지는 막지 않는다.** 답을 주는 것과 사용량을 알려주는
+        # 것은 별개 능력이다(`services/agent_runtime/models/factory.py`의
+        # `stream_usage=True` 주석 참고) — 여기서 안 된다고 등록 자체를 막으면
+        # 채팅 기능은 멀쩡한 모델을 못 쓰게 만든다. 대신 등록은 그대로 두고
+        # 화면에만 알린다.
+        usage_supported = _check_usage_support(data["api_key"], data["base_url"], data["model"])
+
         try:
             CustomModelRepository.add_for_team(
                 team_id=data["team_id"],
@@ -83,9 +90,13 @@ class ModelListCreateView(AdminView):
         # **목록을 여기서 다시 만들지 않는다.** 만들다 실패하면 이미 끝난 등록이
         # 실패로 보고된다 — 운영자는 안 됐다고 믿고 다시 누른다(2026-08-13 검토).
         # 목록은 화면이 따로 받아 간다.
-        return Response(
-            {"team_id": data["team_id"], "model": data["model"]}, status=status.HTTP_201_CREATED
-        )
+        response_body: dict[str, str] = {"team_id": data["team_id"], "model": data["model"]}
+        if not usage_supported:
+            response_body["warning"] = (
+                "이 서버는 토큰 사용량 정보를 제공하지 않는 것으로 보입니다. "
+                "등록은 완료됐지만 이 모델을 쓰는 대화의 토큰 사용량은 집계되지 않습니다."
+            )
+        return Response(response_body, status=status.HTTP_201_CREATED)
 
 
 class TeamDefaultModelView(AdminView):
@@ -224,3 +235,36 @@ def _verify(api_key: str, base_url: str, model: str) -> str | None:
         logger.warning("모델 등록 확인 실패: %s", type(exc).__name__)
         return "이 주소와 모델로 답을 받지 못했습니다. 주소·키·모델 이름을 확인해 주세요."
     return None
+
+
+def _check_usage_support(api_key: str, base_url: str, model: str) -> bool:
+    """스트리밍 응답에 실제로 토큰 사용량(`usage`)이 실려 오는가.
+
+    `services/agent_runtime/models/factory.py`의 `ModelFactory._create_openai_compatible()`가
+    실제 대화에서 쓰는 것과 같은 요청 모양(`stream_options={"include_usage": True}`)으로
+    확인한다. `_verify()`는 **답이 오는가**만 보고 이건 안 본다 — 목록 조회·일반
+    호출은 되는데 스트리밍 usage만 안 주는 서버가 있어서(2026-08-21 관측성 작업에서
+    실제로 겪음), 등록해 두면 그 팀의 `agent_run.token_in`/`token_out`이 영원히
+    `NULL`로 남는데 아무도 그 사실을 모르게 된다.
+
+    여기서 `False`가 나와도 **등록을 막지 않는다** — 답을 주는 능력과 사용량을
+    알려주는 능력은 별개라, 후자가 없다고 채팅 기능 자체가 되는 모델을 막을
+    이유는 없다. 판단이 안 서면(예외) 지원 안 하는 쪽으로 본다 — 어차피 경고만
+    띄우는 용도라 보수적으로 잡아도 위험이 없다.
+    """
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=25, max_retries=0)
+        stream = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        return any(getattr(chunk, "usage", None) for chunk in stream)
+    except Exception as exc:  # noqa: BLE001 - 판단 못 하면 지원 안 하는 쪽으로 본다
+        logger.info("토큰 사용량 지원 확인 실패: %s", type(exc).__name__)
+        return False

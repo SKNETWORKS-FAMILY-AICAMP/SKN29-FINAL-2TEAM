@@ -6,9 +6,10 @@ export interface ToggleSwitchProps {
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   label?: ReactNode;
+  ariaLabel?: string;
 }
 
-export function ToggleSwitch({ checked, onChange, disabled, label }: ToggleSwitchProps) {
+export function ToggleSwitch({ checked, onChange, disabled, label, ariaLabel }: ToggleSwitchProps) {
   const rootClasses = [styles.root, disabled ? styles.disabled : ''].filter(Boolean).join(' ');
   const trackClasses = [styles.track, checked ? styles.on : ''].filter(Boolean).join(' ');
 
@@ -18,6 +19,7 @@ export function ToggleSwitch({ checked, onChange, disabled, label }: ToggleSwitc
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         className={trackClasses}
         onClick={() => {

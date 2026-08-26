@@ -1,0 +1,43 @@
+{
+  "case_id": "CONTRACT-ROUNDTRIP-001",
+  "agent_id": "AG004",
+  "agent_version_id": "AV035",
+  "model": "gpt-5.6-luna",
+  "runtime": "deepagents-0.7.5",
+  "started_at": "2026-08-25T00:00:00Z",
+  "finished_at": "2026-08-25T00:00:00Z",
+  "status": "NOT_EXECUTED",
+  "assertions": [
+    {
+      "name": "contract_round_trip",
+      "passed": true
+    }
+  ],
+  "failure_reason": "계약 왕복 확인용 예시이며 Agent를 실행하지 않음",
+  "agent_run_id": null,
+  "tool_call_ids": [],
+  "langfuse_trace_id": null,
+  "metrics": {
+    "end_to_end_latency_ms": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tool_call_count": 0
+  },
+  "approval": null,
+  "side_effects": [],
+  "progress": {
+    "milestones": [
+      {
+        "name": "입력과 fixture 확인",
+        "status": "COMPLETED"
+      },
+      {
+        "name": "Agent 실행",
+        "status": "NOT_REACHED"
+      }
+    ]
+  },
+  "cleanup": {
+    "status": "NOT_REQUIRED"
+  }
+}
