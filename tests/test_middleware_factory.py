@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition
 from services.agent_runtime.middleware.factory import MiddlewareFactory
+from services.agent_runtime.middleware.sensitive_input import SensitiveInputMaskMiddleware
 from services.agent_runtime.runtime_policy import RuntimeCapabilityPolicy
 
 
@@ -350,3 +351,37 @@ class PiiMiddlewareWiringTests(SimpleTestCase):
         redacted_content = result["messages"][-1].content
         self.assertNotIn("4111111111111111", redacted_content)
         self.assertIn("REDACTED", redacted_content)
+
+
+class SensitiveInputMaskMiddlewareWiringTests(SimpleTestCase):
+    """2026-08-26 — 상시 정규식 필터(§2-①)가 `MiddlewareFactory.build()`에서
+    실제로 붙는지, GP에는 아직 안 붙는지 확인한다(`sensitive_input.py` 모듈
+    docstring). PII 배선 테스트와 같은 구조다."""
+
+    def setUp(self):
+        self.factory = MiddlewareFactory(runtime_policy=RuntimeCapabilityPolicy())
+
+    def test_build_adds_exactly_one_sensitive_input_mask(self):
+        middleware = self.factory.build(definition=_definition(), context=None)
+
+        matches = [m for m in middleware if isinstance(m, SensitiveInputMaskMiddleware)]
+        self.assertEqual(len(matches), 1)
+
+    def test_build_for_general_purpose_does_not_include_it(self):
+        """GP는 사용자 원문을 직접 보는 경로가 아직 없다 — PII와 같은 판단
+        (`_build_pii_middleware` 주석)."""
+        middleware = self.factory.build_for_general_purpose()
+
+        self.assertFalse(any(isinstance(m, SensitiveInputMaskMiddleware) for m in middleware))
+
+    def test_credential_in_human_message_is_masked_before_model(self):
+        """와이어링만 보고 "붙어 있으니 될 것"이라 가정하지 않는다 — 실제
+        `before_model` 훅을 돌려서 확인한다."""
+        middleware = self.factory.build(definition=_definition(), context=None)
+        mask_middleware = next(m for m in middleware if isinstance(m, SensitiveInputMaskMiddleware))
+
+        state = {"messages": [HumanMessage(content="내 API 키는 sk-abcdefghijklmnopqrstuvwx1234 입니다")]}
+        result = mask_middleware.before_model(state, runtime=None)
+
+        self.assertIsNotNone(result)
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwx1234", result["messages"][0].content)

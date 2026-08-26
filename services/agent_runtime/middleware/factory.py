@@ -13,6 +13,7 @@ from langchain.agents.middleware import (
 from langchain.agents.middleware.todo import WRITE_TODOS_TOOL_DESCRIPTION
 
 from services.agent_runtime.middleware.builtin_write_lock import build_builtin_write_lock
+from services.agent_runtime.middleware.sensitive_input import build_sensitive_input_mask
 from services.agent_runtime.middleware.tool_timeout import build_mcp_tool_call_timeout_middleware
 
 if TYPE_CHECKING:
@@ -118,6 +119,10 @@ class MiddlewareFactory:
             # 안 붙는다 — GP가 사용자 원문을 직접 보는 경로가 생기면 그때
             # 같은 줄을 추가한다.
             *_build_pii_middleware(),
+            # 2026-08-26 — 상시 정규식 필터(§2-①)를 미들웨어로 승격
+            # (`sensitive_input.py` 모듈 docstring). PII와 같은 이유로 GP는
+            # 아직 안 붙인다.
+            build_sensitive_input_mask(),
         ]
         if self.runtime_policy.enable_todo:
             # `system_prompt`를 넘기지 않아 LangChain 기본

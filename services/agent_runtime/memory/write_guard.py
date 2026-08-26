@@ -15,9 +15,9 @@
 문맥 없이 문자열 포함 여부만 본다 — 진위와 무관하게 카테고리째 막는 의도된
 선택이다.
 
-패턴 정의 자체는 `sensitive_text.py`에 있다. `apps/chat/api_views.py`의 채팅
-입력 마스킹도 같은 패턴을 쓰므로, 두 기능이 "무엇을 민감정보로 보는가"에 대해
-다른 정의를 갖지 않도록 여기서 중복 정의하지 않는다.
+패턴 정의 자체는 `sensitive_text.py`에 있다. `middleware/sensitive_input.py`의
+채팅 입력 마스킹도 같은 패턴을 쓰므로, 두 기능이 "무엇을 민감정보로 보는가"에
+대해 다른 정의를 갖지 않도록 여기서 중복 정의하지 않는다.
 """
 
 from __future__ import annotations
