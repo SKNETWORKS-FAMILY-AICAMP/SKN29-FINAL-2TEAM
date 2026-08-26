@@ -1,11 +1,20 @@
 import type {
   ChatEvent,
   ExtractedTask as ApiTask,
+  JiraIssueEdit,
   JiraIssue,
   SourceRef,
   TaskExtractionPayload,
 } from '../../api/chat';
-import type { CreatedIssue, Evidence, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from './cardTypes';
+import type {
+  CreatedIssue,
+  Evidence,
+  ExtractedTask,
+  ProducedFile,
+  ProgressStep,
+  SubagentRun,
+  TimelineEntry,
+} from './cardTypes';
 
 /**
  * `services/harness/registry.py`의 `skill_creator_ask_followup` 도구 이름과
@@ -21,6 +30,8 @@ export const ASK_FOLLOWUP_TOOL_NAME = 'skill_creator_ask_followup';
  * 이름·설명을 미리 보여준다(`ASK_FOLLOWUP_TOOL_NAME`과 같은 이유).
  */
 export const SKILL_REGISTER_TOOL_NAME = 'skill_register';
+
+export const JIRA_CREATE_ISSUES_TOOL_NAME = 'jira_create_issues';
 
 /**
  * 이벤트 스트림 → 카드가 그릴 상태.
@@ -92,6 +103,10 @@ export interface LiveChat {
      * 카드는 평소 승인 카드(subject에 도구 이름)로 떨어진다.
      */
     skillPreview: { name: string; description: string } | null;
+    /** Jira 생성 호출의 승인 전 미리보기. 프로젝트와 assignee는 편집하지 않는다. */
+    jiraPreview: JiraIssueEdit[] | null;
+    /** 승인 시 적용될 Jira 담당자 처리 방식. accountId 자체는 화면에 노출하지 않는다. */
+    jiraAssigneeMode: 'requester' | 'explicit' | 'unassigned' | null;
   } | null;
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
@@ -120,7 +135,7 @@ export interface LiveChat {
    * 것이라 다시 물으면 된다.
    *
    * 이 값이 없던 동안 중단은 **화면에 아무 흔적도 남기지 않았다.** 카드가
-   * 도중까지만 그려지고 스피너만 조용히 꺼져서, 접힌 「생각 과정」 한 줄만
+   * 도중까지만 그려지고 스피너만 조용히 꺼져서, 접힌 「작업 과정」 한 줄만
    * 남은 빈 상자가 됐다(2026-08-25 실측).
    */
   abortedByUser: boolean;
@@ -137,6 +152,16 @@ export interface LiveChat {
    * 자신의 항목은 안 담는다 — `subagent_alias`가 있으면 이 턴의 최상위
    * 표시에는 안 쓴다(기존 `reasoningSteps`/`toolName`과 같은 규칙).
    */
+  /**
+   * 이 턴에서 도구가 **만들어 낸 파일**(2026-08-26). 없으면 빈 배열이라 카드도
+   * 안 그려진다.
+   *
+   * **`subagent_alias` 로 거르지 않는다** — 이 파일 아래 대부분의 이벤트는
+   * 서브 에이전트 것이면 최상위에 안 올리는데, 파일은 내부 진행이 아니라
+   * **결과물**이라 누가 만들었든 사람은 받아야 한다(`events.py` 의 같은 자리
+   * 주석과 짝이다).
+   */
+  files: ProducedFile[];
   timeline: TimelineEntry[];
   /**
    * 이 턴에서 다른 에이전트에게 위임한 작업들(2026-08-18). 서브 에이전트
@@ -156,6 +181,7 @@ export function emptyLive(): LiveChat {
     sources: [],
     evidenceCount: 0,
     running: true,
+    files: [],
     extraction: null,
     tasks: [],
     confirm: null,
@@ -194,6 +220,33 @@ export function unwrapToolProgress(event: ChatEvent): ChatEvent {
   return { ...event.detail, tool_ref: event.tool_ref } as ChatEvent;
 }
 
+function sourceKey(source: SourceRef): string {
+  if (!source.url) return `document:${source.id}`;
+  try {
+    const url = new URL(source.url);
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) {
+      if (key.toLowerCase().startsWith('utm_')) url.searchParams.delete(key);
+    }
+    url.hostname = url.hostname.toLowerCase();
+    url.pathname = url.pathname.replace(/\/$/, '') || '/';
+    return url.toString();
+  } catch {
+    return source.url.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase();
+  }
+}
+
+function mergeSources(current: SourceRef[], incoming: SourceRef[]): SourceRef[] {
+  const merged = new Map<string, SourceRef>();
+  for (const source of [...current, ...incoming]) {
+    const key = sourceKey(source);
+    const previous = merged.get(key);
+    // 같은 URL이면 더 구체적인 제목을 남긴다. URL 문자열 자체보다 페이지 제목이 낫다.
+    if (!previous || source.label.length > previous.label.length) merged.set(key, source);
+  }
+  return [...merged.values()];
+}
+
 /** 이벤트 하나를 접어 넣는다. 불변으로 다뤄 React 가 변화를 알아채게 한다. */
 export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
   const event = unwrapToolProgress(rawEvent);
@@ -217,26 +270,38 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         return state;
       }
       // 도구 진행. 앞 단계는 끝난 것으로 확정하고 이번 단계를 doing 으로 만든다.
+      const label = event.label ?? `${event.step}단계`;
       const steps = state.steps.map((step) =>
         step.state === 'doing' ? { ...step, state: 'done' as const } : step,
       );
-      steps.push({ state: 'doing', label: event.label ?? `${event.step}단계` });
-      return { ...state, steps, queries: [] };
+      const repeatedIndex = steps.findIndex((step) => step.label === label);
+      if (repeatedIndex >= 0) {
+        const runs = (steps[repeatedIndex].runs ?? 1) + 1;
+        steps[repeatedIndex] = { ...steps[repeatedIndex], state: 'doing', runs, meta: `${runs}회 실행` };
+      } else {
+        steps.push({ state: 'doing', label, runs: 1 });
+      }
+      return { ...state, steps };
     }
 
     case 'queries':
-      return toolRef ? { ...state, queries: event.queries } : state;
+      return toolRef ? { ...state, queries: [...new Set([...state.queries, ...event.queries])] } : state;
 
     // `document_search`가 coarse 단계에서 좁힌 문서들(2026-08-18) — "출처".
     // `stage`처럼 초기화하지 않는다 — 다음 단계(본문 검색)가 도는 동안에도
     // "무엇으로 좁혔는지"는 계속 보여야 한다.
     case 'sources':
-      return toolRef ? { ...state, sources: event.documents } : state;
+      return toolRef ? { ...state, sources: mergeSources(state.sources, event.documents) } : state;
 
     case 'stage_done': {
+      const activeIndex = state.steps.findIndex((step) => step.state === 'doing');
       const steps = state.steps.map((step, index) =>
-        index === state.steps.length - 1
-          ? { ...step, state: 'done' as const, meta: `근거 ${event.found}건` }
+        index === activeIndex
+          ? {
+              ...step,
+              state: 'done' as const,
+              meta: `${step.runs && step.runs > 1 ? `${step.runs}회 실행 · ` : ''}근거 ${event.found}건`,
+            }
           : step,
       );
       return { ...state, steps, evidenceCount: event.evidence };
@@ -249,15 +314,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 사이에 도구 호출이 끼었으면 새 문단으로 봐야 맞다)에 붙이고, false면
     // 새 문단이라 항목을 새로 만든다.
     case 'reasoning': {
-      if (event.subagent_alias) return state;
-      const timeline = state.timeline.slice();
-      const last = timeline[timeline.length - 1];
-      if (event.append && last?.kind === 'reasoning') {
-        timeline[timeline.length - 1] = { ...last, text: last.text + event.text };
-      } else {
-        timeline.push({ kind: 'reasoning', text: event.text });
-      }
-      return { ...state, timeline };
+      // 내부 Reasoning summary는 저장된 과거 이벤트가 다시 들어와도 사용자
+      // 작업 과정에 표시하지 않는다. 사용자용 안내는 user_update만 사용한다.
+      return state;
     }
 
     case 'tool_call_started':
@@ -273,6 +332,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 이벤트)만 ref 로 떨어진다.
     case 'tool_started': {
       if (event.subagent_alias) return state;
+      const update = event.user_update
+        ? [{ kind: 'update' as const, text: event.user_update, source: event.user_update_source ?? 'application_fallback' as const }]
+        : [];
       return {
         ...state,
         toolName: event.tool_name ?? event.tool_ref,
@@ -281,6 +343,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         toolFailed: false,
         timeline: [
           ...state.timeline,
+          ...update,
           {
             kind: 'tool',
             toolCallId: event.tool_call_id ?? null,
@@ -288,6 +351,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
             // 상태줄과 **같은 값**을 쓴다 — 한 화면에서 같은 도구가 위에서는
             // 「업무 등록」, 아래 로그에서는 `task_register` 로 갈리면 안 된다.
             toolName: event.tool_name ?? null,
+            arguments: event.arguments,
             status: 'RUNNING',
           },
         ],
@@ -300,9 +364,25 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 안 읽었다 — steps/toolName만으로는 완료 여부가 필요 없었지만, 타임라인은
     // "이 도구가 끝났다/실패했다"까지 보여줘야 한다.
     case 'tool_completed': {
-      if (event.subagent_alias) return state;
+      // 파일은 서브 에이전트가 만든 것도 담는다(위 `files` 주석). 아래 타임라인
+      // 갱신은 종전대로 최상위 호출만 본다.
+      const produced = event.produced_file;
+      const files =
+        produced && !state.files.some((f) => f.docId === produced.doc_id)
+          ? [
+              ...state.files,
+              {
+                docId: produced.doc_id,
+                fileName: produced.file_name,
+                mimeType: produced.mime_type ?? null,
+              },
+            ]
+          : state.files;
+
+      if (event.subagent_alias) return files === state.files ? state : { ...state, files };
       return {
         ...state,
+        files,
         toolFailed: event.status === 'FAILED',
         timeline: state.timeline.map((entry) =>
           entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id
@@ -319,6 +399,9 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     // 타임라인과 subagents 둘 다에 넣는다 — subagents는 ProgressCard의 요약
     // 목록용으로 그대로 두고, 타임라인은 순서를 보여준다.
     case 'subagent_started': {
+      const update = event.user_update
+        ? [{ kind: 'update' as const, text: event.user_update, source: event.user_update_source ?? 'application_fallback' as const }]
+        : [];
       const run: SubagentRun = {
         runId: event.run_id,
         alias: event.subagent_alias,
@@ -329,7 +412,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       return {
         ...state,
         subagents: [...state.subagents, run],
-        timeline: [...state.timeline, { kind: 'subagent', ...run }],
+        timeline: [...state.timeline, ...update, { kind: 'subagent', ...run }],
       };
     }
 
@@ -427,6 +510,11 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
               description: typeof args?.description === 'string' ? args.description : '',
             }
           : null;
+      const jiraPreview =
+        actions.length === 1 && actions[0].name === JIRA_CREATE_ISSUES_TOOL_NAME
+          ? readJiraIssuePreview(args)
+          : null;
+      const jiraAssigneeMode = jiraPreview ? readJiraAssigneeMode(args) : null;
       return {
         ...state,
         running: false,
@@ -437,6 +525,8 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           actions,
           askQuestion,
           skillPreview,
+          jiraPreview,
+          jiraAssigneeMode,
         },
       };
     }
@@ -475,6 +565,43 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     default:
       return state;
   }
+}
+
+function readJiraIssuePreview(args: Record<string, unknown> | undefined): JiraIssueEdit[] | null {
+  if (!Array.isArray(args?.issues) || args.issues.length === 0) return null;
+  const issues: JiraIssueEdit[] = [];
+  for (const value of args.issues) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const issue = value as Record<string, unknown>;
+    if (typeof issue.title !== 'string' || typeof issue.issuetype !== 'string') return null;
+    issues.push({
+      title: issue.title,
+      description: typeof issue.description === 'string' ? issue.description : '',
+      issuetype: issue.issuetype,
+      duedate: typeof issue.duedate === 'string' && issue.duedate ? issue.duedate : null,
+    });
+  }
+  return issues;
+}
+
+function readJiraAssigneeMode(
+  args: Record<string, unknown> | undefined,
+): 'requester' | 'explicit' | 'unassigned' {
+  if (args?.assign_to_requester === true) return 'requester';
+  if (
+    Array.isArray(args?.issues) &&
+    args.issues.some(
+      (value) =>
+        Boolean(value) &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        typeof (value as Record<string, unknown>).assignee_account_id === 'string' &&
+        Boolean(((value as Record<string, unknown>).assignee_account_id as string).trim()),
+    )
+  ) {
+    return 'explicit';
+  }
+  return 'unassigned';
 }
 
 /** 확인 카드가 「몇 건을 승인하는가」를 말할 수 있게. 목록형 인자 하나를 센다. */

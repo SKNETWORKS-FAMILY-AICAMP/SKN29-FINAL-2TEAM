@@ -139,6 +139,7 @@ EVENT_TOOL_PROGRESS = "tool_progress"
 EVENT_MESSAGE_DELTA = "message_delta"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+# 도구 호출 전에 사용자에게 보여줄 짧은 실행 안내. Reasoning 원문과 분리한다.
 # §14 계약에 없는 타입이다. 추론 텍스트는 tool_started/result 어디에도 자연스럽게
 # 안 얹혀서 새 타입이 필요했다. `tracing/__init__.py`의 `_record()`는 모르는 타입을
 # 조용히 지나치므로 DB 적재는 없다 — 화면에 실시간으로 보여주는 것이 목적이다.
@@ -214,7 +215,7 @@ TOOL_OUTPUT_SUMMARY_MAX = 500
 
 
 def _summarize_tool_output(content: Any) -> str:
-    """도구가 실제로 돌려준 내용을 화면(생각 과정 타임라인)에 보일 만큼만 남긴다.
+    """도구가 실제로 돌려준 내용을 화면(작업 과정 타임라인)에 보일 만큼만 남긴다.
 
     `summarize_input()`(services/harness/trace.py)과 같은 동기다 — 다만 입력은
     키=값 쌍이라 사전을 받지만, 도구 출력은 이미 `ToolMessage.text`가 만들어 둔
@@ -280,6 +281,40 @@ def _retrieved_doc_ids(content: Any) -> list[str]:
 
     walk(parsed)
     return found
+
+
+def _produced_file(content: Any) -> dict[str, str] | None:
+    """도구가 **만들어 낸 파일**. 없으면 `None`(대부분의 도구가 그렇다).
+
+    `_retrieved_doc_ids` 와 달리 `doc_id` 를 찾아 헤매지 않는다 — 최상위 `file`
+    키 하나만 본다. 읽기 도구의 결과에는 `doc_id` 가 잔뜩 들어 있어서(검색 근거·
+    문서 목록) 그 방식으로는 「본 문서」와 「만든 파일」을 구별할 수 없다.
+    **도구가 명시적으로 `file` 로 담을 때만** 화면에 받기 단추가 생긴다
+    (`registry.py` 의 `_file_ref()` 가 그 모양을 만든다).
+
+    도구별로 분기하지 않는다 — 같은 계약을 지키는 도구가 늘어도 화면은 안 고친다.
+    """
+
+    if not isinstance(content, str) or '"file"' not in content:
+        # 흔한 경우를 JSON 파싱 없이 먼저 걸러낸다(`_retrieved_doc_ids` 와 같은 이유).
+        return None
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    node = parsed.get("file")
+    if not isinstance(node, dict):
+        return None
+    doc_id, file_name = node.get("doc_id"), node.get("file_name")
+    if not isinstance(doc_id, str) or not isinstance(file_name, str):
+        return None
+    return {
+        "doc_id": doc_id,
+        "file_name": file_name,
+        "mime_type": node.get("mime_type") if isinstance(node.get("mime_type"), str) else None,
+    }
 
 
 def _tool_label(tool_ref: str) -> str:
@@ -524,6 +559,9 @@ class EventMapper:
             node_name = metadata.get("langgraph_node") if isinstance(metadata, dict) else None
             if node_name != "model":
                 return []
+            # Reasoning summary는 관측·저장 호환성을 위해 이벤트 계약에 남긴다.
+            # 채팅 UI는 이를 표시하지 않고, 사용자용 안내는 아래 updates/model
+            # 분기의 일반 text 블록에서 만든 사용자용 작업 안내만 소비한다.
             return self._classify_reasoning_delta(ns_prefix=ns_prefix, chunk=chunk, run_id=run_id)
 
         if not isinstance(payload, dict):
@@ -682,8 +720,11 @@ class EventMapper:
                 self._count_model_call(run_id, message)
                 events: list[dict[str, Any]] = []
                 if tool_calls:
-                    events.extend(
-                        self._classify_parent_tool_calls(
+                    # 프롬프트가 요청한 Preamble은 tool_calls와 같은 AIMessage의
+                    # 일반 text 블록으로 온다. 모델이 생략해도 UI가 영어
+                    # Reasoning에 의존하지 않도록 결정론적 한국어 안내를 보낸다.
+                    korean_content = content if any("가" <= char <= "힣" for char in content) else ""
+                    tool_events = self._classify_parent_tool_calls(
                             tool_calls=tool_calls,
                             run_id=run_id,
                             agent_id=agent_id,
@@ -692,7 +733,10 @@ class EventMapper:
                             root_resolved_model=root_resolved_model,
                             child_resolved_models=child_resolved_models,
                         )
-                    )
+                    if tool_events:
+                        tool_events[0]["user_update"] = korean_content or "요청을 처리하기 위해 필요한 도구를 확인하고 있습니다."
+                        tool_events[0]["user_update_source"] = "model" if korean_content else "application_fallback"
+                    events.extend(tool_events)
                     return events
                 if content:
                     # 도구 호출 없이 텍스트만 낸 최종 응답.
@@ -759,6 +803,8 @@ class EventMapper:
                         "output": _summarize_tool_output(content),
                         # 이 호출이 건드린 문서. `tracing/` 이 `tool_call`에 적는다.
                         "retrieved_doc_ids": _retrieved_doc_ids(content),
+                        # 이 호출이 만들어 낸 파일. 화면이 받기 단추를 그린다.
+                        "produced_file": _produced_file(content),
                         "complete": False,
                     }
                 ]
@@ -810,6 +856,11 @@ class EventMapper:
                     "status": _tool_status(msg_status),
                     "output": _summarize_tool_output(content),
                     "retrieved_doc_ids": _retrieved_doc_ids(content),
+                    # **서브 에이전트가 만든 것도 낸다.** 여기 있는 다른 값들과
+                    # 달리 파일은 내부 진행이 아니라 **결과물**이라, 누가 만들었든
+                    # 사람은 받아야 한다(화면이 subagent_alias 로 거르는 규칙의
+                    # 의도적 예외 — `liveChat.ts` 의 같은 자리 주석 참고).
+                    "produced_file": _produced_file(content),
                     "complete": False,
                 }
             ]

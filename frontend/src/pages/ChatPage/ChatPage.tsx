@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal, useToast } from '../../components';
 import { PATHS } from '../../routes';
@@ -13,7 +13,7 @@ import {
   setSessionToolRefs,
   streamMessage,
 } from '../../api/chat';
-import type { ChatEvent, ChatMessage, ChatSession } from '../../api/chat';
+import type { ChatEvent, ChatMessage, ChatSession, JiraIssueEdit } from '../../api/chat';
 import { getAgentVersion, listAgentVersions } from '../../api/agentVersions';
 import type { AgentVersionSummary } from '../../api/agentVersions';
 import { listToolChoices } from '../../api/agents';
@@ -31,6 +31,7 @@ import {
   ConfirmCard,
   ErrorCard,
   JiraStatusCard,
+  ProducedFilesCard,
   ProgressCard,
   ReasoningTrace,
   ResultCard,
@@ -38,6 +39,12 @@ import {
 import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
 import type { LiveChat } from './liveChat';
 import { ToolPickerModal } from '../../components';
+import {
+  formatMessageTime,
+  formatMessageTimeFull,
+  searchableMessageTime,
+  seoulDateKey,
+} from './chatDate';
 import styles from './ChatPage.module.css';
 import cardStyles from './cards/cards.module.css';
 
@@ -48,7 +55,37 @@ import cardStyles from './cards/cards.module.css';
  */
 interface Turn {
   user: string;
+  userCreatedAt: string | null;
+  agentCreatedAt: string | null;
   live: LiveChat | null;
+}
+
+type ConversationMatch = {
+  key: string;
+  turnIndex: number;
+  role: 'user' | 'agent';
+};
+
+function monthCells(monthKey: string): Array<{ key: string; day: number } | null> {
+  const [year, month] = monthKey.split('-').map(Number);
+  const firstDay = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells: Array<{ key: string; day: number } | null> = Array(firstDay).fill(null);
+  for (let day = 1; day <= days; day += 1) {
+    cells.push({ key: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, day });
+  }
+  return cells;
+}
+
+function shiftMonth(monthKey: string, amount: number): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + amount, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  return `${year}년 ${month}월`;
 }
 
 /**
@@ -89,11 +126,19 @@ function toTurns(messages: ChatMessage[]): Turn[] {
     if (message.role === 'user') {
       flush();
       events = [];
-      turns.push({ user: message.content.text ?? '', live: null });
+      turns.push({
+        user: message.content.text ?? '',
+        userCreatedAt: message.created_at,
+        agentCreatedAt: null,
+        live: null,
+      });
     } else if (message.role === 'agent') {
       // 첫 발화보다 앞선 agent 메시지는 붙일 턴이 없다. 버린다.
       if (turns.length === 0) continue;
       events = [...events, ...(message.content.events ?? [])];
+      // 승인·재개가 있으면 agent 메시지가 여러 개 붙는다. 화면에는 그 턴의
+      // 가장 최근 답변 시각을 보여 주는 것이 현재 보이는 결과와 맞다.
+      turns[turns.length - 1].agentCreatedAt = message.created_at;
     }
   }
   flush();
@@ -212,6 +257,15 @@ export default function ChatPage() {
   /** 자동완성에서 키보드로 고른 항목의 인덱스. */
   const [slashIndex, setSlashIndex] = useState(0);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [sessionTitleQuery, setSessionTitleQuery] = useState('');
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [conversationQuery, setConversationQuery] = useState('');
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(
+    () => (seoulDateKey(new Date().toISOString()) ?? '2026-01-01').slice(0, 7),
+  );
+  const [searchResultIndex, setSearchResultIndex] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
   /**
    * 승인할 호출의 인덱스(2026-08-21, 병렬실행 Phase 2). 확인 카드에 호출이
@@ -240,10 +294,16 @@ export default function ChatPage() {
    */
   const leftRef = useRef<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
-  /** 사용자가 위로 올려 읽는 중이면 따라가지 않는다. */
+  const lastTurnRef = useRef<HTMLDivElement | null>(null);
+  /** 저장된 대화를 열었을 때만 마지막 턴의 시작점을 한 번 맞춘다. */
+  const anchorLastTurn = useRef(false);
+  /** 사용자가 맨 아래를 선택한 동안에만 새 내용을 따라간다. */
   const stickToBottom = useRef(true);
+  const [showLatestButton, setShowLatestButton] = useState(false);
   /** "/스킬이름" 자동완성에서 고른 뒤 입력창에 포커스를 되돌리는 데 쓴다. */
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const conversationSearchRef = useRef<HTMLInputElement | null>(null);
+  const searchResultRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   /** "/" 자동완성 목록 — 한 번만 불러와 둔다. 팀이 아직 없으면(가입 직후)
       `listTeamSkills`가 실패할 수 있어 조용히 빈 목록으로 넘어간다(다른
@@ -450,14 +510,41 @@ export default function ChatPage() {
   // RUNNING 으로 남지 않는다.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // 턴이 늘거나 답이 자라면 아래로 따라간다. 단 **사용자가 위로 올려 읽는
-  // 중이면 붙잡지 않는다** — 근거를 읽고 있는데 화면이 끌려 내려가면 읽을 수가
-  // 없다. 위로 올린 순간 `onScroll` 이 stick 을 끈다.
+  // 저장된 대화를 열면 **마지막 턴의 시작점**을 한 번 보여준다. 새 질문은 이
+  // 경로를 타지 않는다 — 이전 답변을 읽던 사용자의 위치를 전송 동작이 빼앗으면
+  // 안 된다. 새 내용은 아래 이동 컨트롤로 알린다.
   useEffect(() => {
     const node = streamRef.current;
-    if (!node || !stickToBottom.current) return;
-    node.scrollTop = node.scrollHeight;
+    const turn = lastTurnRef.current;
+    if (!node || !turn || !anchorLastTurn.current) return;
+    anchorLastTurn.current = false;
+    const nodeTop = node.getBoundingClientRect().top;
+    const turnTop = turn.getBoundingClientRect().top;
+    node.scrollTop = Math.max(0, node.scrollTop + turnTop - nodeTop - 16);
+    stickToBottom.current = false;
+    setShowLatestButton(node.scrollHeight - node.scrollTop - node.clientHeight > 24);
+  }, [turns.length, sessionId]);
+
+  // 사용자가 직접 맨 아래로 내려간 뒤에만 실시간 출력을 따라간다. 읽기 시작한
+  // 답변은 고정하고, 아래에 새 내용이 생기면 버튼으로 선택권을 돌려준다.
+  useEffect(() => {
+    const node = streamRef.current;
+    if (!node) return;
+    if (stickToBottom.current) {
+      node.scrollTop = node.scrollHeight;
+      setShowLatestButton(false);
+      return;
+    }
+    setShowLatestButton(node.scrollHeight - node.scrollTop - node.clientHeight > 24);
   }, [turns]);
+
+  function jumpToLatest() {
+    const node = streamRef.current;
+    if (!node) return;
+    stickToBottom.current = true;
+    node.scrollTop = node.scrollHeight;
+    setShowLatestButton(false);
+  }
 
   const openSession = useCallback(
     async (id: string) => {
@@ -477,7 +564,11 @@ export default function ChatPage() {
         // 모든 턴을 갖고 있었고, 화면이 마지막 답 하나만 쓰고 버리던 것이다.
         const restored = toTurns(detail.messages);
         setTurns(restored);
-        stickToBottom.current = true;
+        setConversationQuery('');
+        setSelectedDateKey(null);
+        setCalendarOpen(false);
+        anchorLastTurn.current = true;
+        stickToBottom.current = false;
         // 체크 상태는 **마지막 턴에만** 의미가 있다. 과거 턴의 확인 카드는
         // 읽기 전용이다.
         const lastLive = restored[restored.length - 1]?.live ?? null;
@@ -546,6 +637,10 @@ export default function ChatPage() {
     }
     setProjId(nextProjId);
     setTurns([]);
+    setConversationSearchOpen(false);
+    setConversationQuery('');
+    setSelectedDateKey(null);
+    setCalendarOpen(false);
     setSkillReexplain(false);
     setSelected([]);
     // 호출별 승인 상태도 같이 비운다(2026-08-21) — 안 비우면 앞 카드에서
@@ -585,13 +680,24 @@ export default function ChatPage() {
     setUtterance('');
     // 덧붙인다. 덮어쓰면 앞 턴이 화면에서 사라진다 — 서버는 지우지 않는데
     // 화면만 잊는 상태가 된다.
-    setTurns((prev) => [...prev, { user: text, live: null }]);
+    setTurns((prev) => [
+      ...prev,
+      {
+        user: text,
+        // 서버 저장 시각은 스트림 종료 뒤 아래 `refreshTurnTimes`가 다시
+        // 맞춘다. 그 전까지도 빈 자리 대신 사용자가 보낸 순간을 보여 준다.
+        userCreatedAt: new Date().toISOString(),
+        agentCreatedAt: null,
+        live: null,
+      },
+    ]);
     setSelected([]);
     // 호출별 승인 상태도 같이 비운다(2026-08-21) — 안 비우면 앞 카드에서
     // 끈 항목이 다음 카드의 다른 호출에 그대로 붙는다.
     setApprovedActions([]);
     setFatal(null);
-    stickToBottom.current = true;
+    // 기존 채팅의 자동 추적 의도를 보존한다. 사용자가 이미 최하단이면 새 턴을
+    // 따라가고, 위에서 이전 답변을 읽는 중이면 현재 위치를 그대로 둔다.
 
     let id = sessionId;
     try {
@@ -642,7 +748,7 @@ export default function ChatPage() {
     );
   }
 
-  async function approve() {
+  async function approve(editedJiraIssues?: JiraIssueEdit[]) {
     if (!token || !sessionId || confirmRequestRef.current) return;
     confirmRequestRef.current = true;
     setPendingAction('approve');
@@ -660,7 +766,15 @@ export default function ChatPage() {
     // 승인하면 사용자가 안 본 게 실행된다) 전체 길이만큼 만들어 보낸다.
     const actionCount = lastLive?.confirm?.actions.length ?? 0;
     const decisions =
-      actionCount > 1
+      editedJiraIssues
+        ? [
+            {
+              action_index: 0,
+              type: 'edit' as const,
+              edited_issues: editedJiraIssues,
+            },
+          ]
+        : actionCount > 1
         ? Array.from({ length: actionCount }, (_, index) => ({
             action_index: index,
             type: (approvedActions.includes(index) ? 'approve' : 'reject') as
@@ -707,11 +821,27 @@ export default function ChatPage() {
         carried,
         sessionId,
       );
+      // **모든 거절에서** interrupt로 멈춘 도구 로그를 취소 상태로 닫는다 —
+      // 백엔드는 거절된 호출에 `tool_completed`를 보내지 않으므로, 화면이
+      // 직접 닫지 않으면 `tool_started`가 찍어둔 `RUNNING`이 영원히 안 풀린다
+      // (2026-08-26 실측 — 이 처리가 스킬 재설명 경로에만 있어서 Jira 등록
+      // 거절 같은 일반 거절에서 재현됨: 거절해도 작업 과정 카드가 계속 도는 중).
+      updateLastLive((prev) =>
+        prev
+          ? {
+              ...prev,
+              timeline: prev.timeline.map((entry) =>
+                entry.kind === 'tool' && entry.status === 'RUNNING'
+                  ? { ...entry, status: 'REJECTED' as const }
+                  : entry,
+              ),
+            }
+          : prev,
+      );
       if (reexplainSkill) {
         // 설정 > 스킬의 cancelled 단계와 같은 동작이다. 거절 뒤 모델이 만든
         // "등록되지 않았습니다" 문구를 최종 답으로 보여주지 않고, 곧바로
-        // 수정 설명을 받는다. interrupt에서 멈춘 도구 로그도 취소 상태로
-        // 닫아 스피너가 계속 돌지 않게 한다.
+        // 수정 설명을 받는다.
         updateLastLive((prev) =>
           prev
             ? {
@@ -720,11 +850,6 @@ export default function ChatPage() {
                 confirm: null,
                 answer: '',
                 toolName: null,
-                timeline: prev.timeline.map((entry) =>
-                  entry.kind === 'tool' && entry.status === 'RUNNING'
-                    ? { ...entry, status: 'REJECTED' as const }
-                    : entry,
-                ),
               }
             : prev,
         );
@@ -780,6 +905,35 @@ export default function ChatPage() {
     setTurns((prev) =>
       prev.map((turn, index) => (index === prev.length - 1 ? { ...turn, live: next(turn.live) } : turn)),
     );
+  }
+
+  /**
+   * 스트림에는 저장된 chat_message의 `created_at`이 실리지 않는다. 브라우저
+   * 시계를 정본으로 삼지 않고, 실행이 끝난 뒤 서버의 마지막 턴 시각만 다시
+   * 읽어 화면에 반영한다. 카드 상태는 건드리지 않아 클라이언트 체감 시간 등
+   * 라이브 전용 값이 사라지지 않는다.
+   */
+  async function refreshTurnTimes(streamingId: string) {
+    if (!token) return;
+    try {
+      const detail = await getSession(token, streamingId);
+      const restored = toTurns(detail.messages);
+      const saved = restored[restored.length - 1];
+      if (!saved) return;
+      setTurns((prev) =>
+        prev.map((turn, index) =>
+          index === prev.length - 1
+            ? {
+                ...turn,
+                userCreatedAt: saved.userCreatedAt ?? turn.userCreatedAt,
+                agentCreatedAt: saved.agentCreatedAt ?? turn.agentCreatedAt,
+              }
+            : turn,
+        ),
+      );
+    } catch {
+      // 답변 자체는 이미 끝났다. 시각 재조회 실패가 답변 오류가 되어서는 안 된다.
+    }
   }
 
   async function run(
@@ -866,6 +1020,14 @@ export default function ChatPage() {
             }
           : prev,
       );
+      if (!controller.signal.aborted) {
+        setTurns((prev) =>
+          prev.map((turn, index) =>
+            index === prev.length - 1 ? { ...turn, agentCreatedAt: new Date().toISOString() } : turn,
+          ),
+        );
+        await refreshTurnTimes(streamingId);
+      }
     }
   }
 
@@ -888,6 +1050,107 @@ export default function ChatPage() {
   const streaming = Boolean(lastLive?.running);
   const waitingConfirm = Boolean(lastLive?.confirm);
 
+  const activeDateCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const turn of turns) {
+      for (const value of [turn.userCreatedAt, turn.agentCreatedAt]) {
+        const key = seoulDateKey(value);
+        if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [turns]);
+
+  const conversationMatches = useMemo<ConversationMatch[]>(() => {
+    const query = conversationQuery.trim().toLocaleLowerCase('ko-KR');
+    if (!query && !selectedDateKey) return [];
+    const matches: ConversationMatch[] = [];
+    turns.forEach((turn, turnIndex) => {
+      const candidates = [
+        { role: 'user' as const, text: turn.user, createdAt: turn.userCreatedAt },
+        { role: 'agent' as const, text: turn.live?.answer ?? '', createdAt: turn.agentCreatedAt },
+      ];
+      for (const candidate of candidates) {
+        if (!candidate.text && !candidate.createdAt) continue;
+        const dateMatches = !selectedDateKey || seoulDateKey(candidate.createdAt) === selectedDateKey;
+        const haystack = `${candidate.text} ${searchableMessageTime(candidate.createdAt)}`.toLocaleLowerCase('ko-KR');
+        const queryMatches = !query || haystack.includes(query);
+        if (dateMatches && queryMatches) {
+          matches.push({
+            key: `${turnIndex}:${candidate.role}`,
+            turnIndex,
+            role: candidate.role,
+          });
+        }
+      }
+    });
+    return matches;
+  }, [conversationQuery, selectedDateKey, turns]);
+
+  const matchKeys = useMemo(
+    () => new Set(conversationMatches.map((match) => match.key)),
+    [conversationMatches],
+  );
+  const activeMatchKey = conversationMatches[searchResultIndex]?.key ?? null;
+  const calendarDays = useMemo(() => monthCells(calendarMonth), [calendarMonth]);
+
+  useEffect(() => {
+    setSearchResultIndex(0);
+  }, [conversationQuery, selectedDateKey, sessionId]);
+
+  useEffect(() => {
+    if (!conversationSearchOpen || conversationMatches.length === 0) return;
+    const bounded = Math.min(searchResultIndex, conversationMatches.length - 1);
+    if (bounded !== searchResultIndex) {
+      setSearchResultIndex(bounded);
+      return;
+    }
+    searchResultRefs.current.get(conversationMatches[bounded].key)?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'center',
+    });
+  }, [conversationMatches, conversationSearchOpen, searchResultIndex]);
+
+  useEffect(() => {
+    if (conversationSearchOpen) conversationSearchRef.current?.focus();
+  }, [conversationSearchOpen]);
+
+  useEffect(() => {
+    const openSearch = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f' || turns.length === 0) return;
+      event.preventDefault();
+      setConversationSearchOpen(true);
+      setCalendarOpen(false);
+      window.setTimeout(() => conversationSearchRef.current?.focus(), 0);
+    };
+    window.addEventListener('keydown', openSearch);
+    return () => window.removeEventListener('keydown', openSearch);
+  }, [turns.length]);
+
+  function moveSearchResult(amount: number) {
+    if (conversationMatches.length === 0) return;
+    setSearchResultIndex((current) =>
+      (current + amount + conversationMatches.length) % conversationMatches.length,
+    );
+  }
+
+  function closeConversationSearch() {
+    setConversationSearchOpen(false);
+    setConversationQuery('');
+    setSelectedDateKey(null);
+    setCalendarOpen(false);
+  }
+
+  function toggleCalendar() {
+    setCalendarOpen((open) => {
+      if (!open) {
+        const latest = selectedDateKey ?? Array.from(activeDateCounts.keys()).sort().at(-1);
+        if (latest) setCalendarMonth(latest.slice(0, 7));
+      }
+      return !open;
+    });
+  }
+
   /**
    * 사이드바 계층 — 프로젝트 > 대화.
    *
@@ -900,13 +1163,20 @@ export default function ChatPage() {
    * 목록에 없는 프로젝트를 가리키는 대화(지워졌거나 조회가 실패한 경우)도 그쪽에
    * 담긴다 — 안 그러면 사이드바에서 조용히 사라진다.
    */
+  const visibleSessions = useMemo(() => {
+    const query = sessionTitleQuery.trim().toLocaleLowerCase('ko-KR');
+    if (!query) return sessions;
+    return sessions.filter((row) =>
+      (row.title ?? '제목 없는 대화').toLocaleLowerCase('ko-KR').includes(query),
+    );
+  }, [sessionTitleQuery, sessions]);
   const known = new Set(projects.map((item) => item.proj_id));
-  const loose = sessions.filter((row) => !row.proj_id || !known.has(row.proj_id));
+  const loose = visibleSessions.filter((row) => !row.proj_id || !known.has(row.proj_id));
   const groups = projects
     .map((item) => ({
       proj_id: item.proj_id,
       name: item.name,
-      rows: sessions.filter((row) => row.proj_id === item.proj_id),
+      rows: visibleSessions.filter((row) => row.proj_id === item.proj_id),
     }))
     .filter((group) => group.rows.length > 0);
   const currentProject = projects.find((item) => item.proj_id === projId) ?? null;
@@ -936,7 +1206,7 @@ export default function ChatPage() {
     }
     return Array.from(byAgent.entries()).map(([agentId, agentGroup]) => {
       const key = `${scope}:${agentId}`;
-      const open = openAgentGroups.has(key);
+      const open = Boolean(sessionTitleQuery.trim()) || openAgentGroups.has(key);
       return (
         <div key={key} className={styles.agentGroup}>
           <button
@@ -974,6 +1244,16 @@ export default function ChatPage() {
   const sessionsPanel = (
     <>
       <span className={styles.sessionsTitle}>대화 목록</span>
+      <label className={styles.sessionSearch}>
+        <Icon name="search" size={14} color="var(--color-muted)" />
+        <input
+          type="search"
+          value={sessionTitleQuery}
+          onChange={(event) => setSessionTitleQuery(event.target.value)}
+          placeholder="대화 제목 검색"
+          aria-label="대화 제목 검색"
+        />
+      </label>
 
       {/* 프로젝트에 안 속한 대화. 머리말을 달지 않는다 — 「프로젝트 없음」이라고
           쓰면 그런 이름의 프로젝트가 있는 것처럼 읽힌다. 그 안에서 다시
@@ -1003,6 +1283,9 @@ export default function ChatPage() {
       ))}
 
       {sessions.length === 0 && <p className={styles.groupEmpty}>아직 대화가 없습니다</p>}
+      {sessions.length > 0 && visibleSessions.length === 0 && (
+        <p className={styles.groupEmpty}>일치하는 대화가 없습니다</p>
+      )}
 
       {/* **프로젝트를 고르면서 새 대화를 여는 유일한 입구.**
           빈 프로젝트를 목록에서 걷어내면서 그 프로젝트의 첫 대화를 시작할
@@ -1136,6 +1419,118 @@ export default function ChatPage() {
                 </>
               )}
             </span>
+            <div className={styles.chatSearchLauncher}>
+              <button
+                type="button"
+                className={styles.chatSearchButton}
+                onClick={() => {
+                  setConversationSearchOpen((open) => !open);
+                  setCalendarOpen(false);
+                }}
+                disabled={turns.length === 0}
+                aria-label="현재 대화에서 검색"
+                title="현재 대화에서 검색 (Ctrl+F)"
+                aria-expanded={conversationSearchOpen}
+              >
+                <Icon name="search" size={16} />
+              </button>
+
+              {conversationSearchOpen && (
+                <div className={styles.conversationSearchBar} role="search">
+                  <div className={styles.conversationSearchInput}>
+                    <Icon name="search" size={14} color="var(--color-muted)" />
+                    <input
+                      ref={conversationSearchRef}
+                      type="search"
+                      value={conversationQuery}
+                      onChange={(event) => setConversationQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') closeConversationSearch();
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          moveSearchResult(event.shiftKey ? -1 : 1);
+                        }
+                      }}
+                      placeholder="질문·답변·날짜 검색"
+                      aria-label="현재 대화의 질문, 답변, 날짜 검색"
+                    />
+                  </div>
+                  <div className={styles.calendarControl}>
+                    <button
+                      type="button"
+                      className={[styles.searchControl, selectedDateKey ? styles.searchControlActive : ''].filter(Boolean).join(' ')}
+                      onClick={toggleCalendar}
+                      aria-expanded={calendarOpen}
+                    >
+                      {selectedDateKey ? selectedDateKey.replaceAll('-', '.') : '날짜'}
+                    </button>
+                    {calendarOpen && (
+                      <div className={styles.calendarPopover}>
+                        <div className={styles.calendarHeader}>
+                          <button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))} aria-label="이전 달">
+                            <Icon name="arrow-left" size={14} />
+                          </button>
+                          <strong>{monthLabel(calendarMonth)}</strong>
+                          <button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))} aria-label="다음 달">
+                            <Icon name="arrow-right" size={14} />
+                          </button>
+                        </div>
+                        <div className={styles.calendarWeekdays} aria-hidden="true">
+                          {['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}
+                        </div>
+                        <div className={styles.calendarGrid}>
+                          {calendarDays.map((cell, index) =>
+                            cell ? (
+                              <button
+                                type="button"
+                                key={cell.key}
+                                disabled={!activeDateCounts.has(cell.key)}
+                                className={cell.key === selectedDateKey ? styles.calendarDaySelected : undefined}
+                                title={activeDateCounts.has(cell.key) ? `메시지 ${activeDateCounts.get(cell.key)}개` : '메시지 없음'}
+                                onClick={() => {
+                                  setSelectedDateKey(cell.key);
+                                  setCalendarOpen(false);
+                                }}
+                              >
+                                {cell.day}
+                              </button>
+                            ) : <span key={`blank-${index}`} />,
+                          )}
+                        </div>
+                        {selectedDateKey && (
+                          <button
+                            type="button"
+                            className={styles.calendarClear}
+                            onClick={() => {
+                              setSelectedDateKey(null);
+                              setCalendarOpen(false);
+                            }}
+                          >
+                            날짜 선택 해제
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <span className={styles.searchCount} aria-live="polite">
+                    {conversationMatches.length > 0
+                      ? `${searchResultIndex + 1}/${conversationMatches.length}`
+                      : conversationQuery || selectedDateKey
+                        ? '0/0'
+                        : '—'}
+                  </span>
+                  <button type="button" className={styles.searchIconButton} onClick={() => moveSearchResult(-1)} disabled={conversationMatches.length === 0} aria-label="이전 검색 결과" title="이전 결과">
+                    <Icon name="arrow-left" size={14} />
+                  </button>
+                  <button type="button" className={styles.searchIconButton} onClick={() => moveSearchResult(1)} disabled={conversationMatches.length === 0} aria-label="다음 검색 결과" title="다음 결과">
+                    <Icon name="arrow-right" size={14} />
+                  </button>
+                  <button type="button" className={styles.searchIconButton} onClick={closeConversationSearch} aria-label="대화 검색 닫기" title="닫기">
+                    <Icon name="x" size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
             <Button size="sm" variant="outline" onClick={() => startNew(projId)}>
               새 대화
             </Button>
@@ -1146,9 +1541,11 @@ export default function ChatPage() {
             ref={streamRef}
             onScroll={(event) => {
               const node = event.currentTarget;
-              // 바닥에서 40px 안쪽이면 "따라가는 중"으로 본다. 스트리밍이
-              // 만드는 미세한 오차를 감안한 여유다.
-              stickToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+              // 스트리밍이 만드는 미세한 높이 오차만 무시한다. 사용자가 조금만
+              // 위로 이동해도 최신 위치로 돌아가는 컨트롤을 보여 준다.
+              const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 24;
+              stickToBottom.current = nearBottom;
+              setShowLatestButton(!nearBottom);
             }}
           >
             {fatal && <p className={styles.fatal}>{fatal}</p>}
@@ -1244,6 +1641,8 @@ export default function ChatPage() {
 
             {turns.map((turn, turnIndex) => {
               const live = turn.live;
+              const userSearchKey = `${turnIndex}:user`;
+              const agentSearchKey = `${turnIndex}:agent`;
               // 승인·체크는 **마지막 턴에만** 열려 있다. 지나간 턴의 확인 카드를
               // 다시 누를 수 있으면, 그 사이에 무엇이 바뀌었는지 모르는 채로
               // 남의 Jira 에 이슈가 만들어진다.
@@ -1253,9 +1652,30 @@ export default function ChatPage() {
               const abandoned = Boolean(live?.confirm) && !isLast;
 
               return (
-                <div key={turnIndex} className={styles.turn}>
-                  <div className={styles.userMessage}>
-                    <span>{turn.user}</span>
+                <div key={turnIndex} className={styles.turn} ref={isLast ? lastTurnRef : undefined}>
+                  <div
+                    ref={(node) => {
+                      if (node) searchResultRefs.current.set(userSearchKey, node);
+                      else searchResultRefs.current.delete(userSearchKey);
+                    }}
+                    className={[
+                      styles.userMessage,
+                      matchKeys.has(userSearchKey) ? styles.searchMatch : '',
+                      activeMatchKey === userSearchKey ? styles.searchMatchActive : '',
+                    ].filter(Boolean).join(' ')}
+                  >
+                    <div className={styles.userMessageBody}>
+                      <span>{turn.user}</span>
+                      {formatMessageTime(turn.userCreatedAt) && (
+                        <time
+                          className={styles.userMessageTime}
+                          dateTime={turn.userCreatedAt ?? undefined}
+                          title={formatMessageTimeFull(turn.userCreatedAt) ?? undefined}
+                        >
+                          {formatMessageTime(turn.userCreatedAt)}
+                        </time>
+                      )}
+                    </div>
                   </div>
 
                   {live && (
@@ -1275,6 +1695,12 @@ export default function ChatPage() {
                           live.toolName !== null;
                         const showReasoning = live.timeline.length > 0;
                         if (!showProgress && !showReasoning) return null;
+                        const toolCount = live.timeline.filter((entry) => entry.kind === 'tool').length;
+                        const durationLabel =
+                          !live.running && live.durationMs != null
+                            ? ` · ${(live.durationMs / 1000).toFixed(1)}초`
+                            : '';
+                        const countLabel = !live.running && toolCount > 0 ? ` · 도구 ${toolCount}회` : '';
                         // **진행 카드와 생각 과정을 한 카드로 묶는다**(2026-08-19) —
                         // 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로
                         // 합쳤다. 바깥 `<section className={cardStyles.card}>`를
@@ -1284,12 +1710,12 @@ export default function ChatPage() {
                         // 그때만 있는 쪽만 그리고 경계선은 안 넣는다.
                         return (
                           <section className={cardStyles.card}>
-                            {showProgress && (
+                            {showProgress && (live.running || !showReasoning) && (
                               <ProgressCard
                                 bare
                                 steps={live.steps}
                                 queries={live.queries}
-                                sources={live.sources}
+                                sources={[]}
                                 subagents={live.subagents}
                                 evidenceCount={live.evidenceCount}
                                 running={live.running}
@@ -1304,14 +1730,18 @@ export default function ChatPage() {
                                   // 실패한 호출에 「완료」라고 쓰지 않는다
                                   // (2026-08-25). 사유는 답변 본문이 말하고,
                                   // 여기서는 성공이 아니었다는 사실만 밝힌다.
-                                  if (live.toolFailed && live.toolName) return `${live.toolName} 실패`;
-                                  return live.toolName ? `${live.toolName} 완료` : '정리 완료';
+                                  if (live.toolFailed && live.toolName) {
+                                    return `${live.toolName} 실패${countLabel}${durationLabel}`;
+                                  }
+                                  return live.toolName
+                                    ? `${live.toolName} 완료${countLabel}${durationLabel}`
+                                    : `정리 완료${countLabel}${durationLabel}`;
                                 })()}
                                 failed={live.toolFailed}
                               />
                             )}
 
-                            {showProgress && showReasoning && <div className={cardStyles.cardDivider} />}
+                            {showProgress && showReasoning && live.running && <div className={cardStyles.cardDivider} />}
 
                             {/* **접은 채로 시작한다**(2026-08-18, PM: 「뭘 생각하는지만
                                 알면 된다」). OpenAI가 보내는 reasoning 요약은
@@ -1326,11 +1756,30 @@ export default function ChatPage() {
                                 클릭해서 볼 수 있으니, 자동으로 펼치지만 않으면 두
                                 요구가 부딪히지 않는다. */}
                             {showReasoning && (
-                              <ReasoningTrace bare entries={live.timeline} defaultOpen={false} running={live.running} />
+                              <ReasoningTrace
+                                bare
+                                entries={live.timeline}
+                                defaultOpen={live.running}
+                                running={live.running}
+                                summary={
+                                  !live.running
+                                    ? `${live.durationMs != null ? `${(live.durationMs / 1000).toFixed(1)}초 동안 작업` : '작업 완료'}${toolCount > 0 ? ` · 도구 ${toolCount}회` : ''}`
+                                    : undefined
+                                }
+                                // 출처는 최종 답변 아래 한 곳에서만 제공한다.
+                                // 작업 과정은 판단·도구 상태에 집중해 같은 URL을
+                                // 진행 패널과 답변에 중복 노출하지 않는다.
+                                queries={[]}
+                                sources={[]}
+                              />
                             )}
                           </section>
                         );
                       })()}
+
+                      {/* 도구가 만든 파일. 결과 카드들보다 먼저 둔다 —
+                          「받을 것이 있다」가 제일 먼저 눈에 띄어야 한다. */}
+                      {live.files.length > 0 && <ProducedFilesCard files={live.files} />}
 
                       {live.jira && (
                         <JiraStatusCard
@@ -1395,6 +1844,9 @@ export default function ChatPage() {
                           // 이름 대신 등록할 스킬의 실제 이름·설명을 보여준다
                           // (`ConfirmCard`가 있으면 `subject` 줄 대신 이걸 그린다).
                           skillPreview={live.confirm.skillPreview}
+                          jiraPreview={live.confirm.jiraPreview}
+                          jiraProjectName={currentProject?.name}
+                          jiraAssigneeMode={live.confirm.jiraAssigneeMode}
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}
@@ -1426,8 +1878,18 @@ export default function ChatPage() {
                       )}
 
                       {live.answer && (
-                        <div className={styles.agentMessage}>
-                          <AnswerText text={live.answer} />
+                        <div
+                          ref={(node) => {
+                            if (node) searchResultRefs.current.set(agentSearchKey, node);
+                            else searchResultRefs.current.delete(agentSearchKey);
+                          }}
+                          className={[
+                            styles.agentMessage,
+                            matchKeys.has(agentSearchKey) ? styles.searchMatch : '',
+                            activeMatchKey === agentSearchKey ? styles.searchMatchActive : '',
+                          ].filter(Boolean).join(' ')}
+                        >
+                          <AnswerText text={live.answer} sources={live.sources} createdAt={turn.agentCreatedAt} />
                         </div>
                       )}
 
@@ -1468,7 +1930,11 @@ export default function ChatPage() {
                         서버가 `duration_ms`를 아예 안 붙이므로(의도된 한계)
                         `durationMs`가 `null`이라 자연히 표시가 생략된다.
                       */}
-                      {!live.running && live.durationMs != null && (
+                      {!live.running &&
+                        live.durationMs != null &&
+                        live.steps.length === 0 &&
+                        live.subagents.length === 0 &&
+                        live.toolName === null && (
                         <p className={styles.durationLine}>
                           {(live.durationMs / 1000).toFixed(1)}초 만에 답변
                         </p>
@@ -1481,6 +1947,29 @@ export default function ChatPage() {
           </div>
 
           <div className={styles.inputBar}>
+            <button
+              type="button"
+              className={
+                showLatestButton
+                  ? `${styles.latestButton} ${styles.latestButtonVisible}`
+                  : styles.latestButton
+              }
+              onClick={jumpToLatest}
+              aria-label="최신 답변으로 이동"
+              aria-hidden={!showLatestButton}
+              tabIndex={showLatestButton ? 0 : -1}
+              title={showLatestButton ? '최신 답변으로 이동' : undefined}
+            >
+              {streaming ? (
+                <span className={styles.latestPending} aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              ) : (
+                <Icon name="chevron-down" size={17} color="var(--color-primary)" />
+              )}
+            </button>
             {/* "/스킬이름"을 치는 동안 뜬다(2026-08-22) — 클로드의 슬래시
                 커맨드와 같은 방식. 화살표로 고르고 Enter/Tab으로 넣는다,
                 Esc로 지운다. 채팅을 보낼 Enter와 겹치지 않게 이 메뉴가 열려
@@ -1534,9 +2023,10 @@ export default function ChatPage() {
                 없어 폼 위저드가 된다. 전용 「다시 정리해줘」 버튼을 만들지 않고
                 대화로 푸는 것이 이 제품의 성격에도 맞다.
                 서버는 pending 을 무시하고 새 턴을 시작한다(실측 — 결과 블록). */}
-            <input
+            <textarea
               ref={inputRef}
               className={styles.input}
+              rows={1}
               value={utterance}
               onChange={(event) => {
                 setUtterance(event.target.value);
@@ -1554,7 +2044,10 @@ export default function ChatPage() {
                     setSlashIndex((prev) => (prev - 1 + slashMatches.length) % slashMatches.length);
                     return;
                   }
-                  if ((event.key === 'Enter' || event.key === 'Tab') && !event.nativeEvent.isComposing) {
+                  if (
+                    ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') &&
+                    !event.nativeEvent.isComposing
+                  ) {
                     event.preventDefault();
                     selectSlashSkill(slashMatches[slashIndex]?.name ?? slashMatches[0].name);
                     return;
@@ -1565,9 +2058,12 @@ export default function ChatPage() {
                   setUtterance('');
                   return;
                 }
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing) send();
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  if (!streaming) send();
+                }
               }}
-              disabled={streaming || !agentId}
+              disabled={!agentId}
               placeholder={
                 waitingConfirm
                   ? '위에서 선택해 승인하거나, 고쳐서 다시 요청해 보세요'
@@ -1576,8 +2072,9 @@ export default function ChatPage() {
             />
             {streaming ? (
               <Button
-                variant="outline"
-                iconLeft={<Icon name="x" size={14} />}
+                className={styles.composerAction}
+                aria-label="답변 생성 중단"
+                title="답변 생성 중단"
                 // 표시를 `run()`의 `finally`가 아니라 **여기서** 남긴다
                 // (2026-08-25). 그 자리는 새 발화가 이전 스트림을 abort 하는
                 // 경우도 함께 지나가는데, 그때 마지막 턴은 이미 방금 만든 새
@@ -1590,10 +2087,16 @@ export default function ChatPage() {
                   );
                 }}
               >
-                중단
+                <Icon name="stop" size={16} />
               </Button>
             ) : (
-              <Button aria-label="보내기" onClick={send} disabled={!utterance.trim()}>
+              <Button
+                className={styles.composerAction}
+                aria-label="보내기"
+                title="보내기"
+                onClick={send}
+                disabled={!utterance.trim()}
+              >
                 <Icon name="arrow-right" size={16} />
               </Button>
             )}

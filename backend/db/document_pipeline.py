@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 from .connection import database_connection
 from .errors import PermissionDenied, RecordNotFound
 from .codes import next_short_code
-from .repositories import _require_team, _require_team_project
+from .repositories import _HAS_ACTIVE_CHUNKS, _require_team, _require_team_project, _team_of
 
 
 #: 현재 revision 의 원문이 Block·Chunk·Vector 까지 적재됐는가. 세 단계 중 하나라도
@@ -33,15 +33,6 @@ _TEAM_OR_MINE = """
 #: 술어만 따로 둔다 — `_SEARCH_READY`(「됐는가」)와 `list_pending_index`
 #: (「해야 하는가」)가 **같은 판정**을 써야 하기 때문이다. 두 곳에 복사해 두면
 #: 갈라지는 순간 색인이 끝났다고 표시되면서 대기 목록에도 남는 문서가 생긴다.
-_HAS_ACTIVE_CHUNKS = """
-    EXISTS (
-        SELECT 1 FROM doc_block b
-        JOIN chunk c ON c.block_id = b.block_id AND c.is_active = true
-        JOIN vec_idx v ON v.chunk_id = c.chunk_id AND v.is_active = true
-        WHERE b.doc_id = d.doc_id AND b.revision = d.cur_revision
-    )
-"""
-
 _SEARCH_READY = f"{_HAS_ACTIVE_CHUNKS} AS search_ready"
 
 
@@ -79,7 +70,7 @@ class PipelineDocumentRepository:
                     """
                     SELECT doc_id, team_id, owner_account_id, proj_id, file_name, mime_type,
                            doc_role, cur_revision, content_hash, storage_key, deleted,
-                           access_revoked
+                           access_revoked, src_file_id
                     FROM doc WHERE doc_id = %s
                     """,
                     (doc_id,),
@@ -95,8 +86,12 @@ class PipelineDocumentRepository:
             raise PermissionDenied("이 문서에 접근할 수 없습니다.")
         if row["deleted"] or row["access_revoked"]:
             raise PermissionDenied("삭제되었거나 접근이 철회된 문서입니다.")
-        if not row["storage_key"] or not row["cur_revision"]:
-            raise ValueError("문서 원문과 revision이 로컬 저장소에 준비되지 않았습니다.")
+        if not row["cur_revision"]:
+            raise ValueError("문서 revision이 준비되지 않았습니다.")
+        # **`storage_key` 가 비어도 여기서 끊지 않는다**(2026-08-26). 색인이 끝난
+        # 커넥터 문서는 원문을 버리므로 비는 것이 정상이고, 다시 읽힐 때는
+        # `src_file_id` 로 Drive 에서 받아 오면 된다. 받아 올 수 있는지까지는
+        # 부르는 쪽이 판단한다 — 그 판단에 쓰라고 `src_file_id` 를 함께 준다.
         return row
 
     @staticmethod
@@ -315,6 +310,114 @@ class PipelineDocumentRepository:
                 return list(cursor.fetchall())
 
     @staticmethod
+    def indexing_progress(account_id: str) -> dict[str, dict[str, int]]:
+        """지금 몇 개까지 읽었는가. **팀 문서와 내 파일을 나눠서 센다.**
+
+        `list_team_library` 와 나눠 둔 이유는 **부르는 빈도**다. 이쪽은 화면
+        어디에 있든 도는 전역 진행 표시가 쓰므로, 문서 목록을 통째로 실어
+        보내면 폴링마다 팀 문서 전부가 오간다. 집계 한 번으로 끝낸다.
+
+        **둘을 나누는 이유는 쓰는 자리가 다르기 때문이다.** 전역 카드는 「내
+        문서가 읽히는 중인가」를 묻고 둘을 합쳐 보지만, 설정 > 커넥터의 배지는
+        **그 커넥터가 가져온 문서**를 말하므로 내가 올린 파일이 섞이면 안 된다.
+        한 숫자로 주면 그 자리에서 뺄 방법이 없다.
+
+        올린 파일도 같은 길을 간다 — `apps/personal_files` 의 `_start_processing`
+        이 커넥터 수집과 똑같이 뒷작업으로 `promote_to_searchable` 을 돌린다.
+        기다리는 성격이 같으니 표시에서 빠질 이유가 없다.
+
+        `running` 은 따로 센다 — `total - ready - failed` 로 계산하면 「아직
+        시작 안 한 것」과 「지금 워커에서 도는 것」이 한 숫자에 뭉친다. 그 둘은
+        사람이 기다리는 성격이 다르다(하나는 곧, 하나는 순서를 기다린다).
+
+        **실패는 남은 것에서 뺀다.** 실패한 문서는 스스로 끝나지 않으므로
+        진행률의 분자에 넣어야 8/10 에서 영원히 멈춘 것처럼 보이지 않는다.
+
+        팀이 없어도 답한다(`_require_team` 이 아니라 `_team_of`). 팀 배정 전에도
+        내 파일은 올릴 수 있고, `team_id = NULL` 비교는 SQL 에서 아무 행도 안
+        맞으므로 팀 쪽이 자연히 0 이 된다.
+
+        ⚠ **도구가 만든 파일(`GENERATED`)은 세지 않는다**(2026-08-26). 색인을
+        아예 안 타서 `ready` 도 `failed` 도 `running` 도 절대 안 되는데, 분모에만
+        들어가면 진행률이 3/4 에서 영원히 멈춘다 — 「진행 카드가 서재 전체를
+        세던 것」(`67b1154`)과 같은 모양의 실패다.
+        """
+
+        empty = {"total": 0, "ready": 0, "failed": 0, "running": 0}
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _team_of(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT
+                        (d.team_id IS NOT NULL) AS is_team,
+                        count(*) AS total,
+                        count(*) FILTER (WHERE {_HAS_ACTIVE_CHUNKS}) AS ready,
+                        count(*) FILTER (WHERE d.index_status = 'FAILED') AS failed,
+                        count(*) FILTER (WHERE d.index_status = 'RUNNING') AS running
+                    FROM doc AS d
+                    WHERE d.deleted = false
+                      AND (d.team_id = %s OR d.owner_account_id = %s)
+                      AND d.source_type <> 'GENERATED'
+                    GROUP BY 1
+                    """,
+                    (team_id, account_id),
+                )
+                rows = cursor.fetchall()
+
+        result = {"team": dict(empty), "personal": dict(empty)}
+        for row in rows:
+            bucket = "team" if row["is_team"] else "personal"
+            result[bucket] = {
+                "total": row["total"],
+                "ready": row["ready"],
+                "failed": row["failed"],
+                "running": row["running"],
+            }
+        return result
+
+    @staticmethod
+    def list_team_library(account_id: str) -> list[dict[str, Any]]:
+        """「문서」 화면이 그리는 팀 문서 전부 — **폴더와 색인 상태까지.**
+
+        `list_ready_for_analysis` 와 무엇이 다른가: 저쪽은 **검색이 볼 범위**라
+        색인된 것만 쓸모가 있고, 여기는 **사람이 볼 목록**이라 안 된 것이 오히려
+        중요하다. 그래서 `search_ready = false` 도, `index_status = 'FAILED'` 도
+        빼지 않는다 — 실패한 문서를 숨기면 폴더를 저장해 놓고 왜 검색이 안 되는지
+        알 방법이 없다(2026-08-25 에 그것 때문에 로그를 뒤졌다).
+
+        **`deleted` 만 뺀다.** `access_revoked` 는 남긴다 — 권한이 끊긴 것도
+        「우리 폴더에 있던 문서」이고, 그 사실을 화면이 말해 줘야 사람이 Drive
+        쪽을 고칠 수 있다.
+
+        폴더는 `team_folder` 에서 이름을 끌어온다. 문서에 `team_folder_id` 가
+        NULL 이면(이 칸이 생기기 전에 등록된 문서) 조인이 비고, 화면은 그것을
+        「미분류」로 묶는다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                team_id = _require_team(cursor, account_id)
+                cursor.execute(
+                    f"""
+                    SELECT d.doc_id, d.file_name, d.mime_type, d.proj_id, d.doc_role,
+                           d.src_modified_at, d.storage_key, d.src_file_id,
+                           d.deleted, d.access_revoked,
+                           d.index_status, d.index_detail,
+                           d.team_folder_id, d.src_folder_path,
+                           tf.display_name AS folder_name, tf.conn_id,
+                           {_SEARCH_READY}
+                    FROM doc AS d
+                    LEFT JOIN team_folder AS tf ON tf.team_folder_id = d.team_folder_id
+                    WHERE d.team_id = %s AND d.deleted = false
+                    ORDER BY d.team_folder_id NULLS LAST, d.src_folder_path NULLS FIRST,
+                             d.file_name, d.doc_id
+                    """,
+                    (team_id,),
+                )
+                return list(cursor.fetchall())
+
+    @staticmethod
     def set_primary_document(
         *, proj_id: str, account_id: str, primary_doc_id: str | None
     ) -> dict[str, Any]:
@@ -516,6 +619,11 @@ class PersonalDocumentRepository:
     #: 올릴 때는 원천이 없다. `source_type` 이 이 값이면 **다시 받아 올 곳이 없다**는 뜻이다.
     UPLOAD = "UPLOAD"
 
+    #: 도구가 만들어 낸 파일(2026-08-26 · `table_export`). 사람이 올린 것과 같은
+    #: 표에 살지만 **출처가 다르다** — 사용자는 목록에서 「내가 올린 것」과
+    #: 「에이전트가 만든 것」을 갈라 볼 수 있어야 한다.
+    GENERATED = "GENERATED"
+
     @staticmethod
     def create(*, account_id: str, file_name: str, mime_type: str) -> str:
         with database_connection() as connection:
@@ -528,6 +636,38 @@ class PersonalDocumentRepository:
                     VALUES (%s, %s, %s, %s, %s, now())
                     """,
                     (doc_id, account_id, PersonalDocumentRepository.UPLOAD, file_name, mime_type),
+                )
+        return doc_id
+
+    @staticmethod
+    def create_generated(*, account_id: str, file_name: str, mime_type: str) -> str:
+        """도구가 만든 파일의 행. `create` 와 두 가지가 다르다.
+
+        **`search_enabled` 를 끈 채로 넣는다.** 내보낸 표가 색인되면 에이전트가
+        자기가 만든 파일을 근거로 인용하게 된다 — 문서에서 뽑은 값이 한 바퀴
+        돌아 「문서에 이렇게 적혀 있다」로 되돌아오는 순환이다. 게다가 xlsx 는
+        워커가 읽지도 못해서(`storage._UPLOAD_TYPES` 주석) 켜 두면 색인이
+        `FAILED` 로 남고, 사용자는 고칠 수 없는 실패를 들여다보게 된다.
+
+        사람이 나중에 목록에서 켤 수는 있다. 끄는 것은 기본값이지 금지가 아니다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                doc_id = next_short_code(cursor, table="doc", column="doc_id", prefix="DC")
+                cursor.execute(
+                    """
+                    INSERT INTO doc (doc_id, owner_account_id, source_type, file_name,
+                                     mime_type, src_modified_at, search_enabled)
+                    VALUES (%s, %s, %s, %s, %s, now(), false)
+                    """,
+                    (
+                        doc_id,
+                        account_id,
+                        PersonalDocumentRepository.GENERATED,
+                        file_name,
+                        mime_type,
+                    ),
                 )
         return doc_id
 
@@ -545,7 +685,7 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.index_status, d.index_detail,
+                           d.index_status, d.index_detail, d.source_type,
                            {_SEARCH_READY}
                     FROM doc AS d
                     WHERE d.owner_account_id = %s AND d.deleted = false
@@ -571,7 +711,7 @@ class PersonalDocumentRepository:
                     f"""
                     SELECT d.doc_id, d.file_name, d.mime_type, d.search_enabled,
                            d.src_modified_at, d.storage_key, d.shared_team_id,
-                           d.index_status, d.index_detail,
+                           d.index_status, d.index_detail, d.source_type,
                            d.owner_account_id, ua.display_name AS owner_name,
                            {_SEARCH_READY}
                     FROM doc AS d
@@ -648,6 +788,41 @@ class PersonalDocumentRepository:
                 )
                 if cursor.rowcount == 0:
                     raise RecordNotFound(f"존재하지 않는 내 파일입니다: {doc_id}")
+
+    @staticmethod
+    def get_for_download(*, doc_id: str, account_id: str) -> dict[str, Any]:
+        """내려받을 파일 한 건. 내 것이거나, 팀원이 우리 팀에 공유한 것이다.
+
+        **공유분까지 여는 이유**는 목록이 이미 그것을 보여 주기 때문이다
+        (`list_shared_with_me`). 목록에 뜨는데 못 받으면 화면이 거짓말을 한다.
+
+        팀이 없는 계정도 있다(`get_for_processing` 과 같은 사정) — 그때는 내
+        것만 볼 수 있고, 팀을 못 물었다고 다운로드가 통째로 막히면 안 된다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                try:
+                    team_id = _require_team(cursor, account_id)
+                except PermissionDenied:
+                    team_id = None
+                cursor.execute(
+                    """
+                    SELECT doc_id, file_name, mime_type, storage_key
+                    FROM doc
+                    WHERE doc_id = %s AND deleted = false
+                      AND (owner_account_id = %s
+                           OR (%s::text IS NOT NULL AND shared_team_id = %s))
+                    """,
+                    (doc_id, account_id, team_id, team_id),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound(f"존재하지 않는 파일입니다: {doc_id}")
+        if not row["storage_key"]:
+            # 행은 있는데 원문이 없다. 올리다 만 것이지 권한 문제가 아니다.
+            raise RecordNotFound(f"원문이 저장되지 않은 파일입니다: {doc_id}")
+        return row
 
     @staticmethod
     def delete(*, doc_id: str, account_id: str) -> str:

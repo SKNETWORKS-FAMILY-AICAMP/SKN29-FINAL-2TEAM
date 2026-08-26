@@ -55,8 +55,11 @@ export function fetchOpsModels(token: string) {
  * **목록을 돌려주지 않는다.** 등록이 끝난 뒤 목록을 다시 만들다 실패하면 이미
  * 성공한 등록이 실패로 보이기 때문이다(2026-08-13). 목록은 따로 받아 온다.
  */
+/** `warning`이 있으면 등록은 성공했지만(201) 그 서버가 토큰 사용량을 안 준다는
+ *  뜻이다 — 막지 않는다. 답을 주는 것과 사용량을 알려주는 것은 별개 능력이라,
+ *  후자가 없다고 채팅이 되는 모델을 등록 못 하게 할 이유는 없다. */
 export function registerOpsModel(token: string, body: OpsModelRegisterInput) {
-  return opsRequest<{ team_id: string; model: string }>('/ops/models/', {
+  return opsRequest<{ team_id: string; model: string; warning?: string }>('/ops/models/', {
     method: 'POST',
     token,
     body,

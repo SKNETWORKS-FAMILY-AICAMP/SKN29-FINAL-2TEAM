@@ -27,6 +27,9 @@ export type IconName =
   | 'app-window'
   | 'chart-network'
   | 'x'
+  | 'stop'
+  | 'expand'
+  | 'copy'
   | 'info'
   | 'sparkles'
   | 'user'
@@ -219,6 +222,27 @@ function renderPaths(name: IconName, color: string): ReactElement {
         <>
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
+        </>
+      );
+    case 'copy':
+      return (
+        <>
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </>
+      );
+    case 'stop':
+      // 아이콘의 바깥 영역은 다른 채팅 액션과 같은 16px로 두고, 실제 정지
+      // 도형은 그 안에서 8px 정도만 차지하게 한다. 16px를 전부 채우면 선으로
+      // 그린 화살표보다 훨씬 무겁게 보여 버튼이 바뀔 때 시각적으로 튄다.
+      return <rect x="4.5" y="4.5" width="15" height="15" rx="1.5" fill={color} stroke="none" />;
+    case 'expand':
+      return (
+        <>
+          <path d="M8 3H3v5" />
+          <path d="m3 3 6 6" />
+          <path d="M16 21h5v-5" />
+          <path d="m21 21-6-6" />
         </>
       );
     case 'info':

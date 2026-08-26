@@ -293,6 +293,30 @@ class ParallelDelegationTests(SimpleTestCase):
 
 
 class ParentFinalAnswerTests(SimpleTestCase):
+    def test_tool_call_with_preamble_attaches_korean_user_update(self):
+        message = AIMessage(
+            content="현재 자료를 검색해 확인하겠습니다.",
+            tool_calls=[{"name": "document_search", "args": {"query": "q"}, "id": "1"}],
+        )
+
+        events = EventMapper().convert(_raw((), "model", message), definition=_Definition(), context=_Context())
+
+        self.assertEqual([event["type"] for event in events], [EVENT_TOOL_STARTED])
+        self.assertEqual(events[0]["user_update"], "현재 자료를 검색해 확인하겠습니다.")
+        self.assertEqual(events[0]["user_update_source"], "model")
+
+    def test_tool_call_without_preamble_emits_korean_fallback(self):
+        message = AIMessage(
+            content="",
+            tool_calls=[{"name": "document_search", "args": {"query": "q"}, "id": "1"}],
+        )
+
+        events = EventMapper().convert(_raw((), "model", message), definition=_Definition(), context=_Context())
+
+        self.assertEqual([event["type"] for event in events], [EVENT_TOOL_STARTED])
+        self.assertEqual(events[0]["user_update_source"], "application_fallback")
+        self.assertIn("도구", events[0]["user_update"])
+
     def test_no_tool_calls_with_content_becomes_result(self):
         message = AIMessage(content="안녕하세요", tool_calls=[])
         raw = _raw((), "model", message)

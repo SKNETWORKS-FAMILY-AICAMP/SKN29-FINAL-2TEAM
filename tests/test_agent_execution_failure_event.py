@@ -25,7 +25,8 @@ class AgentExecutionFailureEventTests(SimpleTestCase):
         )
 
         self.assertEqual(event["type"], EVENT_ERROR)
-        self.assertIn("호출 횟수가 한도를 넘어", event["message"])
+        self.assertIn("모델 호출 한도에 도달해", event["message"])
+        self.assertIn("요청을 더 작은 단위로 나눠", event["message"])
         self.assertNotIn("run limit", event["message"])  # 원문 영어 문구가 새지 않는다
 
     def test_tool_call_limit_exceeded_gets_korean_actionable_message(self):
@@ -35,7 +36,8 @@ class AgentExecutionFailureEventTests(SimpleTestCase):
             exc, agent_id="AG001", agent_version_id="AV001", run_id="RUN001"
         )
 
-        self.assertIn("호출 횟수가 한도를 넘어", event["message"])
+        self.assertIn("도구 호출 한도에 도달해", event["message"])
+        self.assertIn("요청을 더 작은 단위로 나눠", event["message"])
 
     def test_speakable_error_still_passes_through_original_message(self):
         """기존 동작 회귀 방지 — `RepositoryError`(SPEAKABLE_ERRORS)는 원문 그대로."""

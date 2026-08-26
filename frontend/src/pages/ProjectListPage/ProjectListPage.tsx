@@ -4,13 +4,18 @@ import { AppShell, Button, Icon, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { listMyProjects, syncTeamTasks } from '../../api/projects';
 import type { Project } from '../../api/projects';
-import { PATHS } from '../../routes';
 import { useSession } from '../../utils/session';
 import { NewProjectDialog } from './NewProjectDialog';
 import { ProjectRow } from './ProjectRow';
 import styles from './ProjectListPage.module.css';
 
 type SortValue = 'date' | 'progress';
+
+/**
+ * 완료된 프로젝트의 정렬 기준. 진행중 쪽과 목록이 다르다 — 여기는 전부
+ * 100%라 「진행률순」이 아무것도 가르지 못한다.
+ */
+type CompletedSortValue = 'recent' | 'oldest';
 
 /** `created_at`이 없는 프로젝트가 있다. 모르는 날짜를 지어내지 않는다. */
 function formatDate(iso: string | null): string {
@@ -53,6 +58,11 @@ function summaryOf(project: Project): string {
   return parts.join(' · ');
 }
 
+/** 정렬용 생성 시각. `created_at`이 없으면 null로 둬서 뒤로 밀린다. */
+function createdMs(project: Project): number | null {
+  return project.created_at ? new Date(project.created_at).getTime() : null;
+}
+
 /** 정렬 기준이 없는 항목은 뒤로 보낸다. 0으로 치면 "진행률 0%"와 섞인다. */
 function compareDesc(a: number | null, b: number | null): number {
   if (a === null && b === null) return 0;
@@ -81,6 +91,7 @@ export default function ProjectListPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortValue>('date');
+  const [completedSort, setCompletedSort] = useState<CompletedSortValue>('recent');
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
@@ -103,8 +114,17 @@ export default function ProjectListPage() {
 
   const query = search.trim().toLowerCase();
 
+  // 입력창이 「이름 또는 내용」이라고 약속한다. 이름만 걸러서는 설명에 적어 둔
+  // 말로 찾을 수 없었다 — 새 프로젝트를 만들 때 받는 그 설명이 기준 문서를 찾는
+  // 질의에도 쓰이는 값이라, 사람이 기억하고 있는 쪽은 오히려 이쪽이다.
   const matched = useMemo(
-    () => projects.filter((project) => !query || project.name.toLowerCase().includes(query)),
+    () =>
+      projects.filter(
+        (project) =>
+          !query ||
+          project.name.toLowerCase().includes(query) ||
+          (project.description ?? '').toLowerCase().includes(query),
+      ),
     [projects, query],
   );
 
@@ -113,17 +133,19 @@ export default function ProjectListPage() {
     return [...rows].sort((a, b) =>
       sort === 'progress'
         ? compareDesc(a.progress?.progress ?? null, b.progress?.progress ?? null)
-        : compareDesc(
-            a.created_at ? new Date(a.created_at).getTime() : null,
-            b.created_at ? new Date(b.created_at).getTime() : null,
-          ),
+        : compareDesc(createdMs(a), createdMs(b)),
     );
   }, [matched, sort]);
 
-  const completedProjects = useMemo(
-    () => matched.filter((project) => project.status === 'ARCHIVED'),
-    [matched],
-  );
+  const completedProjects = useMemo(() => {
+    const rows = matched.filter((project) => project.status === 'ARCHIVED');
+    // 인자를 뒤집으면 오래된 순이 된다 — 날짜가 없는 것은 그대로 뒤에 남는다.
+    return [...rows].sort((a, b) =>
+      completedSort === 'oldest'
+        ? compareDesc(createdMs(b), createdMs(a))
+        : compareDesc(createdMs(a), createdMs(b)),
+    );
+  }, [matched, completedSort]);
 
   const syncable = useMemo(() => projects.filter((project) => project.has_jira_source), [projects]);
 
@@ -187,20 +209,10 @@ export default function ProjectListPage() {
           </div>
         </div>
 
-        {/* 「업무 분배 시작」 버튼이 있던 자리.
-            ⚠ 「업무를 뽑는 입구는 Chat 하나다(4차 단계 3)」는 **틀렸다 (2026-08-12)** —
-            프로젝트 상세의 기준 문서 카드에도 「업무 뽑기」가 있다. 다만 그 버튼도
-            결국 그 프로젝트의 대화를 열어 거기서 실행시킨다. 실행되는 자리는
-            여전히 하나이고, 들어가는 문이 둘이다. */}
-        <p className={styles.chatBanner}>
-          <Icon name="sparkles" size={18} color="var(--color-primary)" />
-          <span>
-            업무를 추출하려면 프로젝트에서 기준 문서를 지정하세요. 문서 근거와 함께 정리됩니다.
-          </span>
-          <button type="button" onClick={() => navigate(PATHS.chat)}>
-            채팅 열기 →
-          </button>
-        </p>
+        {/* 「업무 분배 시작」 버튼과, 그 자리를 이어받았던 Chat 안내 배너가 있던
+            자리(2026-08-25 걷음). 기준 문서를 지정하는 곳도 업무를 뽑는 곳도
+            프로젝트 상세이고, 목록에서 할 수 있는 일이 아니다 — 목록 맨 위에서
+            상세의 할 일을 설명하고 있었다. */}
 
         <div className={styles.toolbar}>
           <div className={styles.searchBox}>
@@ -288,6 +300,26 @@ export default function ProjectListPage() {
           <div className={styles.sectionHeader}>
             <span className={styles.label}>완료된 프로젝트</span>
             <span className={[styles.countBadge, styles.completedBadge].join(' ')}>{completedProjects.length}</span>
+            <div className={styles.sortControls}>
+              <button
+                type="button"
+                className={[styles.sortBtn, completedSort === 'recent' ? styles.sortBtnActive : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => setCompletedSort('recent')}
+              >
+                최신순
+              </button>
+              <button
+                type="button"
+                className={[styles.sortBtn, completedSort === 'oldest' ? styles.sortBtnActive : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => setCompletedSort('oldest')}
+              >
+                오래된순
+              </button>
+            </div>
           </div>
           <div className={[styles.listCard, styles.completedList].join(' ')}>
             {completedProjects.map((project) => (

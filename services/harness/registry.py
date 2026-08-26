@@ -34,11 +34,15 @@ from backend.db.agent_platform import (
 from backend.db import ConnectorRepository
 from backend.db.errors import RecordNotFound
 from backend.db.document_pipeline import (
+    PersonalDocumentRepository,
     PipelineDocumentRepository,
     VectorSearchRepository,
 )
+from backend.db.repositories import DocumentRepository
+from backend.services import storage
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_intake import sync_drive_changes
+from services.document_export import build_docx, build_xlsx
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
@@ -544,6 +548,144 @@ def _document_sync(*, account_id: str):
     }
 
 
+#: 내보낼 수 있는 행 수. 모델이 만든 배열이라 실제로는 출력 토큰이 먼저 막지만,
+#: 막히는 자리가 「엑셀이 안 열린다」가 되면 사람이 원인을 못 찾는다.
+_EXPORT_MAX_ROWS = 5000
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+#: 파일 이름·시트 이름에 못 쓰는 글자. 제목이 그대로 이름이 되므로 턴다.
+_UNSAFE_NAME_CHARS = frozenset(r'\/:*?"<>|')
+
+
+def _safe_title(title: str, *, fallback: str) -> str:
+    """제목에서 파일 이름에 못 쓰는 글자를 턴다. 남는 게 없으면 `fallback`."""
+
+    return "".join(ch for ch in (title or "") if ch not in _UNSAFE_NAME_CHARS).strip() or fallback
+
+
+def _file_ref(doc_id: str, file_name: str, mime_type: str) -> dict[str, str]:
+    """도구가 **만들어 낸 파일**을 가리키는 값. 화면의 받기 단추가 이것으로 그려진다.
+
+    **`doc_id` 를 평평하게 두지 않고 `file` 안에 넣는 것이 계약이다**(2026-08-26).
+    읽기 도구의 결과에도 `doc_id` 가 잔뜩 들어 있어서(`document_search` 의 근거·
+    `document_list` 의 목록) 평평하게 두면 「본 문서」와 「만든 파일」을 구별할
+    방법이 없다. `events.py` 의 `_produced_file()` 이 이 모양만 찾는다.
+    """
+
+    return {"doc_id": doc_id, "file_name": file_name, "mime_type": mime_type}
+
+
+def _store_generated(
+    *, account_id: str, title: str, suffix: str, mime_type: str, data: bytes
+) -> tuple[str, str]:
+    """만든 파일을 「내 파일」에 넣고 `(doc_id, 파일 이름)` 을 돌려준다.
+
+    `table_export` 와 `document_create` 가 같은 자리를 쓴다. 두 번째 도구를
+    더하면서 뽑아낸 것이다 — 저장 규칙(개인 키 · 내용 해시를 revision 자리에)이
+    양쪽에서 갈리면 한쪽만 조용히 틀린다.
+    """
+
+    # 파일 이름이 곧 목록에 보이는 이름이다. 날짜를 붙이는 것은 같은 것을 여러 번
+    # 만들었을 때 어느 것이 언제 것인지 목록에서 갈리게 하려는 것이다.
+    stamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+    file_name = f"{_safe_title(title, fallback='제목 없음')}_{stamp}{suffix}"
+
+    doc_id = PersonalDocumentRepository.create_generated(
+        account_id=account_id, file_name=file_name, mime_type=mime_type
+    )
+    key = storage.build_personal_key(account_id=account_id, doc_id=doc_id, mime_type=mime_type)
+    content_hash = storage.save(key, data)
+    # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
+    # 없으므로 내용 해시를 그 자리에 쓴다.
+    DocumentRepository.mark_stored(
+        doc_id=doc_id,
+        storage_key=key,
+        content_hash=content_hash,
+        revision=content_hash.removeprefix("sha256:")[:16],
+    )
+    return doc_id, file_name
+
+
+def _table_export(
+    *,
+    account_id: str,
+    title: str,
+    columns: list[str],
+    rows: list[list[Any]],
+) -> dict[str, Any]:
+    """표 하나를 xlsx 로 만들어 **「내 파일」에 넣는다.**
+
+    **표를 모델에게서 받는다**(2026-08-26 결정). 「`task_list` 결과를 내보내라」
+    처럼 소스 도구를 지목하게 만들 수도 있었지만, 그러면 소스마다 매핑을
+    등록해야 하고 모델이 여러 도구 결과를 합쳐 만든 표는 못 낸다. 대신 값은
+    모델이 옮겨 적은 것이므로 **원본과 다를 수 있다** — 그 위험은 사람이 파일을
+    열어 확인하는 것으로 갈음한다.
+
+    만들어진 행은 `source_type='GENERATED'` 이고 검색이 꺼진 채로 들어간다
+    (`create_generated` 주석에 이유가 있다).
+    """
+
+    if not columns:
+        raise ToolInputError("표의 머리글이 비어 있습니다. 열 이름을 정해 주세요.")
+    if len(rows) > _EXPORT_MAX_ROWS:
+        raise ToolInputError(
+            f"한 번에 내보낼 수 있는 행은 {_EXPORT_MAX_ROWS}개까지입니다 (요청 {len(rows)}개)."
+        )
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, (list, tuple)):
+            raise ToolInputError(
+                f"{index}번째 행이 목록이 아닙니다. 각 행은 열 순서대로 값을 담은 목록이어야 합니다."
+            )
+
+    # 시트 이름은 파일 이름과 같은 글자를 쓴다 — 목록에서 본 이름과 열었을 때의
+    # 이름이 다르면 같은 파일인지 사람이 다시 확인해야 한다.
+    data = build_xlsx(
+        title=_safe_title(title, fallback="표"),
+        columns=list(columns),
+        rows=[list(r) for r in rows],
+    )
+    doc_id, file_name = _store_generated(
+        account_id=account_id, title=title, suffix=".xlsx", mime_type=_XLSX_MIME, data=data
+    )
+
+    # 표 내용을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
+    return {
+        "file": _file_ref(doc_id, file_name, _XLSX_MIME),
+        "columns": len(columns),
+        "rows": len(rows),
+        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
+    }
+
+
+def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any]:
+    """글 한 편을 워드 파일(.docx)로 만들어 **「내 파일」에 넣는다.**
+
+    `table_export` 와 같은 자리·같은 규칙이다(`_store_generated`). 다른 것은
+    받는 것뿐이다 — 저쪽은 표(열·행), 이쪽은 글(제목·본문)이다.
+
+    **본문의 마크다운을 전부 해석하지 않는다.** 제목·목록·굵게만 그리고 나머지는
+    글자 그대로 둔다 — 화면(`AnswerText.tsx`)이 같은 이유로 내린 판단을 그대로
+    따른다(`document_export/docx.py` 모듈 주석).
+    """
+
+    if not (body or "").strip():
+        raise ToolInputError("본문이 비어 있습니다. 문서에 담을 내용을 먼저 정해 주세요.")
+
+    data = build_docx(title=title, body=body)
+    doc_id, file_name = _store_generated(
+        account_id=account_id, title=title, suffix=".docx", mime_type=_DOCX_MIME, data=data
+    )
+
+    # 본문을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
+    return {
+        "file": _file_ref(doc_id, file_name, _DOCX_MIME),
+        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
+    }
+
+
 def _document_list(*, account_id: str) -> dict[str, Any]:
     """팀에 어떤 문서가 있는가. **내용 검색이 아니라 목록이다.**
 
@@ -811,6 +953,7 @@ def _jira_create_issues(
     account_id: str,
     proj_id: str | None = None,
     project_key: str | None = None,
+    assign_to_requester: bool = False,
     issues: list[dict[str, Any]],
 ):
     """확인받은 업무를 Jira 에 등록한다.
@@ -832,32 +975,54 @@ def _jira_create_issues(
     참고).
     """
 
-    key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
+    # 쓰기 작업은 채팅에서 선택한 프로젝트 경계를 벗어나면 안 된다. 모델이
+    # 프로젝트 이름을 Jira key로 오해하거나 임의의 key를 추측해도, proj_id가
+    # 있으면 저장된 프로젝트 연결을 정본으로 사용한다. 프로젝트 문맥이 없는
+    # 독립 호출에서만 사용자가 명시한 실제 Jira key를 허용한다.
+    key = _resolve_project_key(
+        proj_id=proj_id,
+        account_id=account_id,
+        project_key=None if proj_id else project_key,
+    )
     credential_account_id = _jira_credential_account_id(account_id)
-    # 담당자 기본값 채우기는 **여기서** 해야 한다 — 이 아래 `create_jira_issues`
-    # 호출은 `account_id` 를 이미 팀장 것으로 바꿔 넘긴다(`_jira_credential_account_id`
-    # docstring). 그 함수 안에서 기본값을 채우면 담당자 없는 이슈가 전부 팀장
-    # 앞으로 배정된다 — 실제 요청자는 이 시점에서만 알 수 있다.
-    issues = _fill_default_jira_assignee(
-        requester_account_id=account_id,
-        credential_account_id=credential_account_id,
+    # 기본은 미배정이다. 사용자가 명시적으로 자신에게 배정해 달라고 했을 때만
+    # 요청자의 Jira accountId를 찾아 채운다. 이 조회는 실제 요청자를 알고 있는
+    # 여기서 해야 한다 — 아래 Jira 호출은 연결 자격증명을 가진 팀장 계정으로
+    # 실행되므로 그 안에서 찾으면 요청자가 아니라 팀장에게 배정될 수 있다.
+    if assign_to_requester:
+        issues = _fill_default_jira_assignee(
+            requester_account_id=account_id,
+            credential_account_id=credential_account_id,
+            issues=issues,
+        )
+    result = create_jira_issues(
+        account_id=credential_account_id,
+        project_key=key,
         issues=issues,
     )
-    return create_jira_issues(account_id=credential_account_id, project_key=key, issues=issues)
+    created = list(result.get("created") or [])
+    failed = list(result.get("failed") or [])
+    if failed and not created:
+        reasons = "; ".join(
+            str(item.get("reason") or item.get("error_code") or "알 수 없는 오류")
+            for item in failed
+        )
+        raise ToolInputError(f"Jira 이슈를 생성하지 못했습니다: {reasons}")
+    return result
 
 
 def _fill_default_jira_assignee(
     *, requester_account_id: str, credential_account_id: str, issues: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """담당자를 안 정한 이슈는 **요청자 자신**으로 채운다.
+    """사용자가 본인 배정을 명시한 이슈를 **요청자 자신**으로 채운다.
 
     2026-08-20 추가 — 실제로 겪은 문제: 담당자를 정하지 않고 등록을 시켰더니
     "등록하려면 Jira에서 필요한 다음 정보가 부족합니다 — 담당자: 누구에게
     배정할까요?"라고 되물었다. `assignee_account_id` 는 `jira_create_issues`
     의 필수 값이 아니다(`_JIRA_REQUIRED` 에 없음, `apps/connectors/clients.py`)
     — 되물은 건 서버가 막아서가 아니라 모델이 스스로 판단해 물은 것이었다.
-    되묻지 않고 "특별히 말이 없으면 나"로 채운다 — 실제로 등록을 요청한
-    사람이 가장 자연스러운 기본 담당자다.
+    현재 기본 정책은 미배정이며, `_jira_create_issues()`가
+    `assign_to_requester=True`를 받은 경우에만 이 함수를 호출한다.
 
     Jira 는 이메일이 아니라 Atlassian accountId 로만 배정을 받는다
     (`create_jira_issues` 의 GDPR 주석). 우리 계정과 Jira 계정을 잇는 저장된
@@ -1200,6 +1365,73 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_document_list,
         category="문서",
     ),
+    "table_export": Tool(
+        ref="table_export",
+        name="표 내보내기",
+        description=(
+            "표 하나를 엑셀 파일(.xlsx)로 만들어 사용자의 「내 파일」에 저장한다. "
+            "「엑셀로 뽑아 줘」·「파일로 받고 싶어」처럼 **결과를 파일로 달라고 할 때** 쓴다. "
+            "표는 이 도구가 만들어 주지 않는다 — 다른 도구(task_list·workload_report·"
+            "jira_get_issues 등)로 먼저 값을 얻은 뒤, 그 값을 `columns` 와 `rows` 로 "
+            "직접 옮겨 넘긴다. **값을 지어내거나 바꾸지 않는다** — 모르는 칸은 비운다. "
+            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "표 제목. 시트 이름과 파일 이름에 쓴다(예: 「업무 목록」)",
+                },
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "열 이름. 왼쪽부터의 순서다",
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {"type": "array"},
+                    "description": "행 목록. 각 행은 columns 와 같은 순서의 값 목록. 모르는 칸은 null",
+                },
+            },
+            "required": ["title", "columns", "rows"],
+        },
+        handler=_table_export,
+        # 사용자의 서재에 파일을 만든다. 되돌리려면 사람이 지워야 하므로 승인을 받는다.
+        side_effect=True,
+        category="문서",
+    ),
+    "document_create": Tool(
+        ref="document_create",
+        name="문서 만들기",
+        description=(
+            "글 한 편을 워드 파일(.docx)로 만들어 사용자의 「내 파일」에 저장한다. "
+            "「워드로 정리해 줘」·「문서로 만들어 줘」·「보고서로 뽑아 줘」처럼 "
+            "**결과를 문서 파일로 달라고 할 때** 쓴다. 회의록 정리·요약본·보고서가 이것이다. "
+            "`body` 는 마크다운으로 적는다 — `#`~`###` 제목, `- ` 목록, `1. ` 번호 목록, "
+            "`**굵게**` 만 문서에 반영되고 나머지 문법은 글자 그대로 남으니 쓰지 않는다. "
+            "**표가 주된 내용이면 이 도구가 아니라 table_export 로 엑셀을 만든다.** "
+            "문서에 담을 내용을 지어내지 않는다 — 근거가 없는 항목은 비우거나 빼고 쓴다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "문서 제목. 파일 이름에도 쓴다(예: 「2026-08-26 회의록」)",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "본문. 위에 적힌 마크다운 문법만 쓴다",
+                },
+            },
+            "required": ["title", "body"],
+        },
+        handler=_document_create,
+        # 사용자의 서재에 파일을 만든다. `table_export` 와 같은 이유로 승인을 받는다.
+        side_effect=True,
+        category="문서",
+    ),
     "document_sync": Tool(
         ref="document_sync",
         name="문서 변경 확인",
@@ -1334,8 +1566,9 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         description=(
             "확인받은 업무를 Jira 프로젝트에 이슈로 등록한다. 여러 건을 한 번에 보내고, "
             "건별 성공·실패를 그대로 돌려준다. 사용자 승인 없이는 실행되지 않는다. "
-            "**담당자를 되묻지 마라** — `assignee_account_id` 는 필수가 아니고, 사용자가 "
-            "누구인지 말하지 않으면 서버가 자동으로 요청한 사람 본인으로 채운다. "
+            "**담당자를 되묻지 마라** — `assignee_account_id` 는 필수가 아니며 기본은 "
+            "미배정이다. 사용자가 명시적으로 자신에게 배정해 달라고 했을 때만 "
+            "`assign_to_requester=true`로 보낸다. "
             "사용자가 이름이나 이메일로 다른 사람을 짚었을 때만 그 사람을 뜻하는 값을 "
             "고민하되, 우리에게는 그 사람의 Jira accountId 를 알아낼 방법이 아직 없으니 "
             "이 칸은 비워 두고 담당자 이름은 `description` 본문에 적어 사람이 나중에 "
@@ -1352,6 +1585,13 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                         "명시적으로 짚었을 때만 적는다."
                     ),
                 },
+                "assign_to_requester": {
+                    "type": "boolean",
+                    "description": (
+                        "사용자가 명시적으로 '나에게 배정'처럼 요청자 본인 배정을 "
+                        "요구한 경우에만 true. 별도 지시가 없으면 false로 두어 미배정한다."
+                    ),
+                },
                 "issues": {
                     "type": "array",
                     "items": {
@@ -1364,8 +1604,8 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                                 "type": "string",
                                 "description": (
                                     "Jira Atlassian accountId (이메일 아님). **보통 비워 둔다** "
-                                    "— 비우면 서버가 요청한 사람 본인으로 채운다. 사용자가 이 "
-                                    "accountId 값 자체를 알려줬을 때만 적는다."
+                                    "— 비우면 미배정으로 생성한다. 사용자가 이 accountId 값 "
+                                    "자체를 알려줬을 때만 적는다."
                                 ),
                             },
                             "duedate": {"type": "string", "description": "YYYY-MM-DD"},

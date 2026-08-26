@@ -40,9 +40,15 @@ DB/peopleDB/team_overrides.sql
 # sLLM 라벨링 작업 로그
 ml_label.log
 
-# Claude Code 의 미리보기 서버 설정. 사람마다 띄우는 포트·명령이 다르고,
-# 팀이 공유하는 것은 `.claude/settings.json` 하나다.
-.claude/launch.json
+# Claude Code 는 이 폴더에 사람마다 다른 것을 만든다 — 미리보기 서버 설정
+# (`launch.json`, 띄우는 포트·명령이 제각각), 개인 설정(`settings.local.json`),
+# 서브 에이전트가 쓰는 작업 폴더(`worktrees/`). 팀이 공유하는 것은
+# `settings.json` 하나뿐이라 그것만 남기고 전부 무시한다.
+#
+# ⚠ `.claude/` 로 적으면 안 된다 — 폴더를 통째로 제외하면 그 안쪽 파일은 `!` 로
+#   다시 넣을 수 없어서 `settings.json` 까지 같이 사라진다. 그래서 `.claude/*` 다.
+.claude/*
+!.claude/settings.json
 
 
 # understand-anything 플러그인이 만드는 지식 그래프 캐시. 분석 결과라 코드에서

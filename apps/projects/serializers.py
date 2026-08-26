@@ -245,6 +245,60 @@ def document_response(row: dict[str, Any]) -> dict[str, Any]:
         "downloaded": bool(row.get("storage_key")),
     }
 
+def library_folder_response(row: dict[str, Any]) -> dict[str, Any]:
+    """「문서」 화면 좌측 트리의 **뿌리** 한 줄 — 사람이 고른 폴더.
+
+    저장소(`conn_id`)를 함께 준다. 화면이 저장소로 먼저 묶기 때문이다. 연결이
+    강제 해제됐으면 `connector_type` 이 비는데, 그때도 폴더는 보여준다.
+    """
+
+    return {
+        "team_folder_id": row["team_folder_id"],
+        "conn_id": row["conn_id"],
+        "connector_type": row.get("connector_type"),
+        "auth_status": row.get("auth_status"),
+        # 고를 때 저장해 둔 이름. 없으면 화면이 id 로 대체한다 — 여기서
+        # Drive 에 다시 묻지 않는다(화면이 커넥터 생존에 묶이면 안 된다).
+        "display_name": row.get("display_name"),
+        "external_folder_id": row["external_folder_id"],
+        "max_depth": row.get("max_depth"),
+    }
+
+
+def library_document_response(row: dict[str, Any]) -> dict[str, Any]:
+    """「문서」 화면 우측 한 줄 — 이 파일이 **검색에 쓰일 수 있는가.**
+
+    `document_response` 와 나눈 이유: 저쪽은 문서의 신원(어느 파일인지)을
+    말하고, 여기는 **처리 상태**를 말한다. 한 함수로 합치면 상태가 필요 없는
+    자리까지 색인 칸을 들고 다닌다.
+
+    `search_ready` 와 `index_status` 를 **둘 다** 준다. 뜻이 다르다 —
+    앞은 「청크가 있는가」(계산값)이고 뒤는 「지금 돌고 있는가·실패했는가」다.
+    둘을 뭉치면 「실패했는데 옛 청크가 남아 있는」 상태를 표현할 수 없다.
+    """
+
+    modified_at = row.get("src_modified_at")
+    return {
+        "doc_id": row["doc_id"],
+        "file_name": row["file_name"],
+        "mime_type": row.get("mime_type"),
+        # 이 문서가 어느 프로젝트의 기준 문서인지. 지우기 전에 사람이 알아야 한다.
+        "proj_id": row.get("proj_id"),
+        "doc_role": row.get("doc_role"),
+        "src_modified_at": modified_at.isoformat() if modified_at else None,
+        # 원문을 받았는가. 안 받았으면 색인은 시작조차 못 한다.
+        "downloaded": bool(row.get("storage_key")),
+        "access_revoked": bool(row.get("access_revoked")),
+        "index_status": row.get("index_status"),
+        "index_detail": row.get("index_detail"),
+        "search_ready": bool(row.get("search_ready")),
+        # 트리에서 어디에 매달릴지. `team_folder_id` 가 null 이면 「미분류」이고,
+        # `src_folder_path` 가 빈 문자열이면 **뿌리 바로 아래**다(null 과 다르다).
+        "team_folder_id": row.get("team_folder_id"),
+        "src_folder_path": row.get("src_folder_path"),
+    }
+
+
 def missing_document_response(row: dict[str, Any]) -> dict[str, Any]:
     """Drive 스캔에 안 잡히는 등록 문서 한 줄.
 

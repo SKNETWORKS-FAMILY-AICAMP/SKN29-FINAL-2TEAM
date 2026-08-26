@@ -9,7 +9,9 @@ import {
   listConnectors,
 } from '../../../api/connectors';
 import type { ConnectorType } from '../../../api/connectors';
+import type { IndexingCounts } from '../../../api/documentLibrary';
 import { listRegisteredJiraProjects, listTeamFolders } from '../../../api/projects';
+import { fetchIndexingProgress } from '../../../api/documentLibrary';
 import { PATHS } from '../../../routes';
 import { useSession } from '../../../utils/session';
 import { DriveFolderModal } from '../DriveFolderModal/DriveFolderModal';
@@ -88,6 +90,14 @@ export function ConnectorTab() {
   });
   const [folderCount, setFolderCount] = useState<number | null>(null);
   const [jiraProjectCount, setJiraProjectCount] = useState<number | null>(null);
+  /**
+   * 색인이 지금 어디까지 왔는가.
+   *
+   * **폴더를 저장하는 것이 곧 「이 문서들을 읽어라」다**(서버 `_start_document_intake`).
+   * 그런데 그 일은 응답을 안 붙잡고 뒤에서 도는데다 문서당 100초씩 순차라, 여기서
+   * 말해 주지 않으면 「연결됨 · 폴더 3」만 보고 다 됐다고 읽는다.
+   */
+  const [indexProgress, setIndexProgress] = useState<IndexingCounts | null>(null);
   const [oauthStarting, setOauthStarting] = useState<OAuthConnectorId | null>(null);
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [peopleModalOpen, setPeopleModalOpen] = useState(false);
@@ -110,6 +120,12 @@ export function ConnectorTab() {
       // 「연결됨」인데 읽는 것이 하나도 없는 상태를 알 수 없다.
       if (next.GOOGLE_DRIVE === 'CONNECTED') {
         setFolderCount((await listTeamFolders(token)).length);
+        // **집계만 받는다.** 전역 진행 카드와 같은 엔드포인트다 — 두 자리가
+        // 서로 다른 소스를 세면 같은 순간에 다른 숫자를 말하게 된다.
+        // 무엇이 실패했는지까지는 「문서」 화면에서 본다.
+        // **팀 것만 센다.** 이 줄은 「이 커넥터가 가져온 문서」를 말하므로
+        // 내가 올린 파일이 섞이면 폴더 개수와 아귀가 안 맞는다.
+        setIndexProgress((await fetchIndexingProgress(token)).team);
       }
       if (next.JIRA === 'CONNECTED') {
         setJiraProjectCount((await listRegisteredJiraProjects(token)).length);
@@ -122,6 +138,54 @@ export function ConnectorTab() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /**
+   * 실패한 것은 스스로 끝나지 않으므로 **남은 수에서 빼고 센다.** 안 빼면
+   * 8/10 에서 영원히 멈춘 것처럼 보인다.
+   */
+  const indexing =
+    indexProgress !== null &&
+    indexProgress.ready + indexProgress.failed < indexProgress.total;
+
+  /**
+   * 진행만 따로, **무거운 `refresh` 와 떼어** 폴링한다.
+   *
+   * 두 가지를 고친 자리다. 하나는 비용 — `refresh` 는 연결·폴더·Jira 를 함께
+   * 부르므로 10초마다 돌릴 것이 아니다. 다른 하나는 **끝난 뒤에도 계속 봐야
+   * 한다**는 것이다. 도는 동안만 폴링하면 이 탭에 앉아 있는 사이 새 회차가
+   * 시작돼도(다른 팀원의 저장, 대화 시작 시 변경 반영) 영영 모른다 — 실제로
+   * 배지가 그 상태로 멈춰 있는 것을 확인했다.
+   *
+   * 전역 진행 카드와 같은 규칙이다: 도는 동안 10초, 아니면 60초, 탭이 숨겨져
+   * 있으면 안 돈다.
+   */
+  useEffect(() => {
+    if (!token || status.GOOGLE_DRIVE !== 'CONNECTED') return;
+
+    let timer: number | null = null;
+    async function tick() {
+      if (!token) return;
+      try {
+        // **팀 것만 센다.** 이 줄은 「이 커넥터가 가져온 문서」를 말하므로
+        // 내가 올린 파일이 섞이면 폴더 개수와 아귀가 안 맞는다.
+        setIndexProgress((await fetchIndexingProgress(token)).team);
+      } catch {
+        // 곁다리 정보다. 못 읽었다고 이 탭에 오류를 띄우지 않는다.
+      }
+    }
+    function start() {
+      if (timer !== null) window.clearInterval(timer);
+      if (document.hidden) return;
+      void tick();
+      timer = window.setInterval(() => void tick(), indexing ? 5_000 : 60_000);
+    }
+    start();
+    document.addEventListener('visibilitychange', start);
+    return () => {
+      if (timer !== null) window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', start);
+    };
+  }, [token, status.GOOGLE_DRIVE, indexing]);
 
   // OAuth 콜백이 여기로 돌아온다. StrictMode가 effect를 한 번 더 돌리므로 같은
   // 결과를 두 번 알리지 않는다.
@@ -172,6 +236,34 @@ export function ConnectorTab() {
    * 그 한 줄 때문에 줄 높이가 흔들린다. 0 은 숨기지 않는다. **읽을 것이 없다는
    * 사실이 그 자리에서 제일 중요한 정보**라 오히려 눈에 띄어야 한다.
    */
+  /**
+   * 색인이 어디까지 왔는가. **폴더 개수와 다른 질문이다** — 폴더 3개를 읽기로
+   * 했다는 것과 그 안의 문서를 다 읽었다는 것은 다르다.
+   *
+   * 도는 중에는 「읽는 중 M/N」. 「읽는 중」은 화면문구_정리표 §1-1 이 그대로
+   * 두기로 한 말이고(무엇을 하는 중인지 말해 준다), 막연한 시간 대신 **실제
+   * 건수**를 준다.
+   *
+   * 다 끝났으면 아무것도 안 그린다 — 「전부 읽음」은 정상 상태라 자리를 차지할
+   * 이유가 없다. 다만 **실패는 끝난 뒤에도 남긴다.** 그것을 안 보여주면 8/10 에서
+   * 멈춘 이유를 알 수 없고, 고칠 자리(「문서」 화면의 다시 시도)로 갈 생각도 못 한다.
+   */
+  function indexBadge() {
+    if (indexProgress === null || indexProgress.total === 0) return null;
+    const done = indexProgress.ready + indexProgress.failed;
+    if (done < indexProgress.total) {
+      return (
+        <Badge tone="info">
+          읽는 중 {done}/{indexProgress.total}
+        </Badge>
+      );
+    }
+    if (indexProgress.failed > 0) {
+      return <Badge tone="warning">읽기 실패 {indexProgress.failed}</Badge>;
+    }
+    return null;
+  }
+
   function countBadge(count: number | null, label: string) {
     if (count === null) return null;
     return (
@@ -281,13 +373,18 @@ export function ConnectorTab() {
                 <span className={styles.rowBadges}>
                   {statusBadge('GOOGLE_DRIVE')}
                   {driveConnected && countBadge(folderCount, '폴더')}
+                  {driveConnected && indexBadge()}
                 </span>
               </span>
               {driveConnected && <span className={styles.rowVendor}>Google Drive</span>}
             </div>
             <div className={styles.rowActions}>
+              {/* 팀원에게도 이 줄이 「연결됨」으로 보이게 된 뒤로는 가드가 필요하다
+                  (2026-08-25). 폴더를 바꾸는 것은 팀장만 할 수 있고(서버 PUT
+                  `/team/folders/` 가 `require_leader`), 그 전까지는 팀원 화면에서
+                  `driveConnected` 가 늘 false 라 이 버튼이 뜨지 않았을 뿐이다. */}
               {driveConnected && (
-                <Button size="sm" variant="outline" onClick={() => setDriveModalOpen(true)}>
+                <Button size="sm" variant="outline" disabled={!isLeader} onClick={() => setDriveModalOpen(true)}>
                   폴더 설정
                 </Button>
               )}

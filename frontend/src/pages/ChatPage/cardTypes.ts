@@ -13,6 +13,8 @@ export interface ProgressStep {
   state: StepState;
   label: string;
   meta?: string;
+  /** 같은 단계가 여러 도구 호출에서 반복된 횟수. 진행 요약에서는 한 줄로 묶는다. */
+  runs?: number;
 }
 
 /**
@@ -29,9 +31,8 @@ export interface SubagentRun {
 }
 
 /**
- * 생각 과정 카드에 순서대로 그릴 항목 하나(2026-08-18). reasoning 조각과
- * 도구 호출·위임을 **이벤트가 실제로 온 순서 그대로** 하나의 목록에
- * 담는다 — "몇 번째 생각 다음에 이 도구를 불렀는지"를 보여 달라는 요청.
+ * 작업 과정 카드에 순서대로 그릴 항목 하나. 사용자용 한국어 안내와
+ * 도구 호출·위임을 **이벤트가 실제로 온 순서 그대로** 하나의 목록에 담는다.
  * 그 전에는 reasoning과 도구 진행이 서로 다른 배열(`reasoningSteps`/
  * `steps`)에 따로 쌓여서, 실제로는 하나의 스트림으로 순서대로 온 이벤트인데
  * 화면에서는 그 순서 정보가 사라져 있었다.
@@ -41,6 +42,7 @@ export interface SubagentRun {
  * 바꾼다 — 새 항목을 만들지 않는다(`liveChat.ts`의 `reduce()` 참고).
  */
 export type TimelineEntry =
+  | { kind: 'update'; text: string; source: 'model' | 'application_fallback' }
   | { kind: 'reasoning'; text: string }
   | {
       kind: 'skill';
@@ -58,8 +60,10 @@ export type TimelineEntry =
        * `toolRef`로 그린다.
        */
       toolName: string | null;
+      /** 모델이 실제 도구에 넘긴 입력. 일반 UI는 웹 검색어처럼 정제 가능한 값만 보여준다. */
+      arguments?: Record<string, unknown>;
       status: 'RUNNING' | 'OK' | 'FAILED' | 'REJECTED';
-      /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). 완료 전엔 없다. */
+      /** 도구 반환값(길이 제한 요약). 일반 UI는 검색 링크처럼 정제한 결과만 보여준다. */
       output?: string;
     }
   | {
@@ -70,6 +74,19 @@ export type TimelineEntry =
       taskSummary: string;
       status: 'RUNNING' | 'DONE' | 'FAILED';
     };
+
+/**
+ * 도구가 만들어 낸 파일 하나(2026-08-26). `table_export`·`document_create` 처럼
+ * **결과를 파일로 내는 도구**가 있을 때만 생긴다.
+ *
+ * 링크로 대신할 수 없다 — 받는 곳(`/api/me/files/<id>/download/`)이 Bearer
+ * 토큰을 요구해서 `<a href>` 는 401 이 된다. 카드가 직접 받아 저장한다.
+ */
+export interface ProducedFile {
+  docId: string;
+  fileName: string;
+  mimeType: string | null;
+}
 
 /** 근거 한 건. `meta`는 「E1 · DC001 · 유사도 87%」처럼 되짚을 정보다. */
 export interface Evidence {

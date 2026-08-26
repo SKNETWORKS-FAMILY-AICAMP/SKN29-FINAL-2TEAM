@@ -31,6 +31,10 @@ def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
         # 다시 올려도 같다. 성공한 문서는 비어 있다.
         "index_detail": row.get("index_detail"),
         "uploaded_at": row.get("src_modified_at"),
+        # 내가 올린 것인가, 에이전트가 만든 것인가(2026-08-26 · `table_export`).
+        # 같은 목록에 섞이므로 **화면이 갈라 보여야 한다** — 내보낸 표를 내가
+        # 올린 원본으로 착각하면 그것을 근거로 삼는다.
+        "origin": "generated" if row.get("source_type") == "GENERATED" else "upload",
         "shared": row.get("shared_team_id") is not None,
         # 공유 받은 목록에만 있다. 누가 올렸는지 모르면 내용을 믿을 근거가 없다.
         "owner_name": row.get("owner_name"),

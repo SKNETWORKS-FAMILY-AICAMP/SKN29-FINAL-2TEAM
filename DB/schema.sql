@@ -208,8 +208,21 @@ CREATE TABLE connector_conn (
     -- 델타 API 가 있는 것은 Drive·SharePoint 뿐이고(Notion·Confluence 는 수정
     -- 시각 폴링밖에 없다), 값의 모양도 저장소마다 다르다.
     sync_cursor               TEXT,
+    -- Drive 변경 알림 채널(2026-08-25). `changes.watch` 로 열어 두면 바뀔 때
+    -- Google 이 알려 준다 — 대화를 열 때마다 우리가 묻던 것을 대신한다.
+    --
+    -- 셋 다 NULL 이 정상이다: **채널이 없는 상태는 고장이 아니다.** 아직 안 연
+    -- 연결이고, 그때는 대화 시작 시 동기화가 받쳐 준다.
+    channel_id                VARCHAR(64),    -- 우리가 만든 채널 id. 알림이 이것만 들고 온다
+    channel_resource_id       VARCHAR(255),   -- Google 이 준 값. channels.stop 에 id 와 함께 필요하다
+                                              -- 없으면 채널을 못 멈춰 만료까지 알림이 계속 온다
+    channel_expires_at        TIMESTAMPTZ,    -- 만료 시각. changes 채널은 최대 1주이고 자동 갱신이 없다
     connected_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 알림은 채널 id 하나만 들고 온다. 그것으로 연결을 찾는 것이 가장 잦은 경로다.
+CREATE UNIQUE INDEX ux_connector_conn_channel
+    ON connector_conn (channel_id) WHERE channel_id IS NOT NULL;
 
 -- 이 프로젝트가 대응하는 Jira 프로젝트. **프로젝트 하나에 Jira 프로젝트 하나다**
 -- (2026-08-04). Jira 프로젝트 하나에는 프로젝트 하나의 업무가 들어 있으므로, 여러 개를
@@ -452,6 +465,23 @@ CREATE TABLE doc (
     -- 이 하던 역할을 색인 단계로 옮긴 것이다 — 「실패했다」만 알고 이유를 모르는
     -- 상태를 만들지 않으려는 것이 요점이다.
     index_detail       TEXT,
+    -- 이 문서를 데려온 뿌리 폴더 = team_folder.team_folder_id(FK 없음), 2026-08-25.
+    -- 「문서」 화면이 좌측 트리를 그리는 근거다. 어느 저장소 연결에서 왔는지는
+    -- team_folder.conn_id 를 따라가면 나온다.
+    --
+    -- 개인 문서(「내 파일」)는 폴더에서 온 것이 아니라 NULL 이다.
+    team_folder_id     VARCHAR(5),
+    -- 뿌리 폴더 안에서의 상대 경로. clients.list_drive_files 의 folder_path 를
+    -- 그대로 받는다 — 빈 문자열이면 뿌리 바로 아래이고 '기획/요구사항' 처럼 이어진다.
+    --
+    -- **NULL 과 빈 문자열의 뜻이 다르다.** NULL 은 「모른다」(이 칸이 생기기 전에
+    -- 등록된 문서)이고 ''는 「뿌리 바로 아래」다. 뭉치면 화면이 옛 문서를 뿌리에
+    -- 있는 것처럼 그린다.
+    --
+    -- 하위 폴더 구조를 담는 표를 따로 두지 않는다. 트리의 뿌리는 team_folder 가,
+    -- 그 아래 가지는 이 값들의 서로 다른 조합이 만든다 — Drive 에서 폴더가 바뀌어도
+    -- 다음 수집이 문서와 함께 갱신하므로 맞춰 줄 두 번째 표가 없다.
+    src_folder_path    TEXT,
     -- 팀 것도 내 것도 아닌 문서, 그리고 둘 다인 문서를 막는다. 둘 다인 행이
     -- 생기면 그 순간 팀 검색에 개인 파일이 섞인다.
     CONSTRAINT doc_owner_xor_team CHECK (
@@ -461,6 +491,9 @@ CREATE TABLE doc (
 );
 
 CREATE INDEX ix_doc_owner ON doc (owner_account_id) WHERE owner_account_id IS NOT NULL;
+
+-- 「문서」 화면은 폴더로 묶어 보는 것이 기본 동작이다(2026-08-25).
+CREATE INDEX idx_doc_team_folder ON doc (team_id, team_folder_id);
 
 -- 기준 문서는 프로젝트당 하나다. 화면이 라디오라 둘이 될 일이 없어 보여도,
 -- 두 건이 되면 어느 것으로 업무를 뽑았는지 알 수 없어 조용히 틀린다.
@@ -1148,9 +1181,10 @@ CREATE TABLE agent_versions (
     system_prompt     TEXT         NOT NULL DEFAULT '',
     model             VARCHAR(100),
     reasoning_effort  VARCHAR(20),
-    -- 기본 6 — apps/agents/serializers.py의 실제 기본값에 맞춤. 10으로
-    -- 되돌릴지는 작업목록.md "함께 정할 것" 확정 후 갱신.
-    max_iterations    INT          NOT NULL DEFAULT 6,
+    -- 기본 10 (2026-08-25) — 작업목록.md "함께 정할 것"에서 아키텍처 설계
+    -- (§3.1-2 "기본 10")대로 되돌리기로 정리. apps/agents/serializers.py의
+    -- default와 맞춘다. 기존 행은 소급 변경하지 않는다(2026-08-25_agent_versions_max_iterations_default_10.sql).
+    max_iterations    INT          NOT NULL DEFAULT 10,
     created_by        VARCHAR(5),               -- user_account.account_id(FK 없음)
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     UNIQUE (agent_id, version)
@@ -1188,3 +1222,57 @@ CREATE TABLE agent_favorites (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (account_id, agent_id)
 );
+
+-- =====================================================================
+-- Agent 평가 결과 — 로컬 append-only 결과 계약의 DB 조회·집계 사본
+-- =====================================================================
+
+-- `run_manifest.json`과 종료 후 `summary.json`을 한 실행 단위로 보존한다.
+-- 로컬 파일이 원본이며 DB는 같은 eval_run_id로 멱등 동기화한다. DB 동기화가
+-- 실패해도 로컬 평가 결과가 사라지거나 제품 실행이 실패하면 안 된다.
+CREATE TABLE eval_run (
+    eval_run_id      VARCHAR(64) PRIMARY KEY,
+    schema_version   INT          NOT NULL,
+    git_commit       VARCHAR(64)  NOT NULL,
+    dataset_id       VARCHAR(100) NOT NULL,
+    dataset_version  VARCHAR(50)  NOT NULL,
+    runtime          VARCHAR(100) NOT NULL,
+    environment      VARCHAR(100) NOT NULL,
+    repetitions      INT          NOT NULL CHECK (repetitions >= 1),
+    run_status       VARCHAR(30),
+    sync_status      VARCHAR(20)  NOT NULL DEFAULT 'SYNC_PENDING'
+                     CHECK (sync_status IN ('SYNC_PENDING', 'SYNCED')),
+    started_at       TIMESTAMPTZ  NOT NULL,
+    finished_at      TIMESTAMPTZ,
+    manifest         JSONB        NOT NULL,
+    summary          JSONB,
+    synced_at        TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_eval_run_dataset
+    ON eval_run (dataset_id, dataset_version, started_at DESC);
+
+-- 같은 case_id를 한 실행 안에서 여러 번 반복할 수 있으므로 case_id가 아니라
+-- JSONL의 1-based 순서(case_index)를 실행 내 식별자로 사용한다.
+CREATE TABLE eval_case_result (
+    eval_run_id       VARCHAR(64)  NOT NULL,  -- eval_run.eval_run_id(FK 없음)
+    case_index        INT          NOT NULL CHECK (case_index >= 1),
+    case_id           VARCHAR(100) NOT NULL,
+    agent_id          VARCHAR(20)  NOT NULL,
+    agent_version_id  VARCHAR(20)  NOT NULL,
+    model             VARCHAR(100) NOT NULL,
+    runtime           VARCHAR(100) NOT NULL,
+    status            VARCHAR(30)  NOT NULL,
+    started_at        TIMESTAMPTZ  NOT NULL,
+    finished_at       TIMESTAMPTZ  NOT NULL,
+    agent_run_id      VARCHAR(64),
+    langfuse_trace_id VARCHAR(128),
+    metrics            JSONB        NOT NULL,
+    result             JSONB        NOT NULL,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (eval_run_id, case_index)
+);
+
+CREATE INDEX ix_eval_case_result_case
+    ON eval_case_result (case_id, status, finished_at DESC);

@@ -305,3 +305,72 @@ class ListTests(SimpleTestCase):
         self.assertFalse(body["search_ready"])
         self.assertIsNone(body["index_status"])
         self.assertTrue(body["search_enabled"])
+
+
+@patch("apps.personal_files.api_views.storage")
+@patch("apps.personal_files.api_views.PersonalDocumentRepository")
+class DownloadTests(SimpleTestCase):
+    """2026-08-26 에 붙인 자리. 그전에는 올린 파일조차 다시 받을 수 없었다."""
+
+    URL = "/api/me/files/DC009/download/"
+
+    def _row(self, **over):
+        return {
+            "doc_id": "DC009",
+            "file_name": "업무 목록_20260826.xlsx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "storage_key": "user/UA001/DC009.xlsx",
+            **over,
+        }
+
+    def test_원문을_그대로_내려준다(self, repo, store):
+        repo.get_for_download.return_value = self._row()
+        store.load.return_value = b"PK\x03\x04payload"
+
+        response = self.client.get(self.URL, headers=auth_header())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"PK\x03\x04payload")
+        self.assertEqual(response["Content-Type"], self._row()["mime_type"])
+        store.load.assert_called_once_with("user/UA001/DC009.xlsx")
+
+    def test_소유자를_함께_넘긴다(self, repo, store):
+        """`doc_id` 만으로 받으면 남의 파일도 받아진다."""
+
+        repo.get_for_download.return_value = self._row()
+        store.load.return_value = b"x"
+
+        self.client.get(self.URL, headers=auth_header())
+
+        self.assertEqual(
+            repo.get_for_download.call_args.kwargs,
+            {"doc_id": "DC009", "account_id": "UA001"},
+        )
+
+    def test_한글_파일_이름을_인코딩해_보낸다(self, repo, store):
+        """`filename=` 만 쓰면 브라우저마다 깨진다 — RFC 5987 을 함께 준다."""
+
+        repo.get_for_download.return_value = self._row()
+        store.load.return_value = b"x"
+
+        response = self.client.get(self.URL, headers=auth_header())
+
+        disposition = response["Content-Disposition"]
+        self.assertIn("filename*=UTF-8''", disposition)
+        # 헤더는 latin-1 이라 한글이 날것으로 들어가면 응답 자체가 터진다.
+        self.assertNotIn("업무", disposition)
+        disposition.encode("latin-1")
+
+    def test_원문이_없으면_사유를_말한다(self, repo, store):
+        repo.get_for_download.return_value = self._row()
+        store.load.side_effect = OSError("gone")
+
+        response = self.client.get(self.URL, headers=auth_header())
+
+        self.assertEqual(response.status_code, 503)
+
+    def test_로그인이_필요하다(self, repo, store):
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 401)
+        repo.get_for_download.assert_not_called()

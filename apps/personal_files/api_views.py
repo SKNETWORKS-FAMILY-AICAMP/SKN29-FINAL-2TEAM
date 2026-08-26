@@ -19,8 +19,10 @@
 
 import logging
 import threading
+from urllib.parse import quote
 
 import psycopg
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -37,9 +39,17 @@ from .serializers import personal_file_response
 logger = logging.getLogger(__name__)
 
 #: 한 파일의 상한. **파싱하는 쪽이 정하는 값이다** — 저장은 되는데 파싱이 조용히
-#: 죽는 크기를 열어 두면 안 된다. RunPod 워커의 실측 상한을 확인하기 전까지는
-#: 보수적으로 잡는다(아바타 2MB 와는 다른 값이라 여기서 따로 정한다).
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+#: 죽는 크기를 열어 두면 안 된다(아바타 2MB 와는 다른 값이라 여기서 따로 정한다).
+#:
+#: 20MB 로 시작했다. 「워커의 실측 상한을 확인하기 전까지 보수적으로」였는데,
+#: 확인해 보니 **바이트를 재는 곳이 파이프라인 어디에도 없었다** — 커넥터가
+#: 가져오는 Drive 문서에는 상한이 아예 없고(`clients.py` 주석이 「수십 MB PDF」를
+#: 전제한다), 워커에도 크기 검사가 없다. 같은 파이프라인을 타는데 올린 파일만
+#: 20MB 에서 막을 근거가 없어 50MB 로 올린다(2026-08-26).
+#:
+#: **크기가 아니라 시간이 진짜 한계다.** 큰 PDF 는 바이트가 아니라 쪽수 때문에
+#: 오래 걸리고, 그건 `LONG_PROMOTE_WAIT_SECONDS` 가 다룬다.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 #: PDF·DOCX 는 본문까지, txt·md 는 요약까지 쓸 수 있다(`_UPLOAD_TYPES` 주석).
 ACCEPTED = "PDF · Word(docx) · 텍스트(txt·md)"
@@ -144,6 +154,87 @@ class SharedFileListAPIView(AuthenticatedAPIView):
         return Response([personal_file_response(row) for row in rows])
 
 
+class PersonalFileReindexAPIView(AuthenticatedAPIView):
+    """색인을 **다시 시킨다.** 팀 문서의 같은 이름 화면과 짝이다
+    (`apps/projects/api_views.py` 의 `TeamDocumentReindexAPIView`).
+
+    올린 파일에는 이 길이 없었다. 실패하면 지우고 다시 올리는 수밖에 없었는데,
+    같은 파일을 같은 파서로 다시 읽히는 일에 파일을 지울 이유가 없다 — 실패는
+    대개 그때 워커가 못 돌았다는 뜻이라 다시 눌러 보는 것이 맞는 조치다.
+
+    **응답을 붙잡지 않는다.** 승격은 워커를 기다려 한 건에 100초 남짓이다.
+    시작할 때 `RUNNING` 을, 끝날 때 결과를 적으므로 화면은 그 칸을 폴링한다.
+    """
+
+    def post(self, request, doc_id):
+        account_id = request.user.account_id
+        try:
+            # **내 파일인지 여기서 본다.** 뒷작업으로 던지고 나면 남의 문서를
+            # 돌리고 있어도 응답은 이미 202 로 나간 뒤다.
+            rows = PersonalDocumentRepository.list_for_account(account_id)
+        except (RepositoryError, psycopg.Error) as exc:
+            return _error_response(exc)
+
+        target = next((row for row in rows if row["doc_id"] == doc_id), None)
+        if target is None:
+            return Response(
+                {"detail": "내가 올린 파일이 아닙니다."}, status=status.HTTP_404_NOT_FOUND
+            )
+        if not target["storage_key"]:
+            # 원문이 없으면 색인이 시작조차 못 한다. 던져 놓고 실패시키면
+            # 「돌고 있다」로 보였다가 조용히 실패하므로 여기서 끊는다.
+            return Response(
+                {"detail": "아직 파일을 받지 못했습니다."}, status=status.HTTP_409_CONFLICT
+            )
+
+        _start_processing(account_id=account_id, doc_id=doc_id)
+        return Response({"doc_id": doc_id, "started": True}, status=status.HTTP_202_ACCEPTED)
+
+
+class PersonalFileDownloadAPIView(AuthenticatedAPIView):
+    """원문을 그대로 내려준다.
+
+    **`RunPodDocumentDownloadAPIView` 와 다르다.** 그쪽은 로그인 세션이 없는
+    워커가 서명 token 으로 받아 가는 자리고, 여기는 로그인한 사람이 자기
+    라이브러리에서 받는 자리다 — 서명이 아니라 소유로 판단한다.
+
+    2026-08-26 에 붙였다. 그전에는 **올린 파일조차 다시 받을 방법이 없었다** —
+    `table_export` 가 만든 파일을 받으려면 필요해서 함께 메웠다.
+    """
+
+    def get(self, request, doc_id):
+        try:
+            row = PersonalDocumentRepository.get_for_download(
+                doc_id=doc_id, account_id=request.user.account_id
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _error_response(exc)
+
+        try:
+            data = storage.load(row["storage_key"])
+        except OSError as exc:
+            # 행은 있는데 원문이 없다. 사람이 할 수 있는 것이 없으므로 사유를 밝힌다.
+            logger.warning("내 파일 원문 읽기 실패: %s", row["storage_key"])
+            return Response(
+                {"detail": "파일을 읽지 못했습니다.", "error": exc.__class__.__name__},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        response = HttpResponse(
+            data, content_type=row["mime_type"] or "application/octet-stream"
+        )
+        # 파일 이름이 한글이라 `filename=` 만 쓰면 브라우저마다 깨진다. RFC 5987 의
+        # `filename*` 을 함께 준다 — 옛 브라우저는 앞을, 나머지는 뒤를 읽는다.
+        name = row["file_name"] or doc_id
+        response["Content-Disposition"] = (
+            f'attachment; filename="{doc_id}"; filename*=UTF-8\'\'{quote(name)}'
+        )
+        # 같은 URL 로 내용이 바뀌지는 않지만(파일은 덮어쓰지 않는다) 남의 자리에
+        # 캐시될 이유도 없다 — 개인 문서다.
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
 class PersonalFileDetailAPIView(AuthenticatedAPIView):
     def patch(self, request, doc_id):
         """toggle 둘. 켜고 끄는 것뿐이라 다른 값은 안 받는다.
@@ -222,10 +313,32 @@ def _start_processing(*, account_id: str, doc_id: str) -> None:
 
     def run() -> None:
         try:
-            from services.document_intake import promote_to_searchable
+            from services.document_intake import (
+                LONG_PROMOTE_WAIT_SECONDS,
+                promote_to_searchable,
+            )
 
-            promote_to_searchable(account_id=account_id, doc_id=doc_id)
+            # 사람이 응답을 붙잡고 있지 않다. 큰 문서를 4분에 포기할 이유가 없다.
+            promote_to_searchable(
+                account_id=account_id, doc_id=doc_id, wait_seconds=LONG_PROMOTE_WAIT_SECONDS
+            )
         except Exception:  # noqa: BLE001 - 뒤에서 도는 일이라 무엇이든 로그로 남긴다
             logger.exception("내 파일 색인 실패: %s", doc_id)
+            # **로그만 남기면 문서가 `RUNNING` 에 갇힌다.** 승격은 시작하면서
+            # 먼저 `RUNNING` 을 적는데, 워커에 넘기기도 전에 터지면(예: 제출이
+            # 네트워크에서 실패) 결과를 적는 자리까지 못 간다. 그러면 화면은
+            # **영원히 「읽는 중」**이다 — 올린 사람은 업로드가 안 된 것으로 읽는다.
+            #
+            # 팀 문서는 다음 전량 색인이 주워 가지만(`list_pending_index` 가
+            # `RUNNING` 을 일부러 남긴다) **올린 파일은 `team_id` 가 없어서 그
+            # 목록에 영영 안 걸린다.** 여기서 끝을 내야 한다.
+            try:
+                PersonalDocumentRepository.set_index_status(
+                    doc_id=doc_id,
+                    status="FAILED",
+                    detail="문서를 읽지 못했습니다. 다시 올려 주세요.",
+                )
+            except Exception:  # noqa: BLE001 - 이것마저 실패하면 남길 곳이 없다
+                logger.exception("내 파일 실패 표시 실패: %s", doc_id)
 
     threading.Thread(target=run, daemon=True).start()

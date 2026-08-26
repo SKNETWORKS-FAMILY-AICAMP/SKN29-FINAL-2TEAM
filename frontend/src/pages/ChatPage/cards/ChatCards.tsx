@@ -1,8 +1,95 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Icon } from '../../../components';
-import type { JiraIssue, SourceRef } from '../../../api/chat';
-import type { CreatedIssue, ExtractedTask, ProgressStep, SubagentRun, TimelineEntry } from '../cardTypes';
+import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
+import type {
+  CreatedIssue,
+  ExtractedTask,
+  ProducedFile,
+  ProgressStep,
+  SubagentRun,
+  TimelineEntry,
+} from '../cardTypes';
+import { downloadPersonalFile, ApiError } from '../../../api/personalFiles';
+import { loadSessionToken } from '../../../utils/session';
 import styles from './cards.module.css';
+
+interface SearchPreview {
+  queries: string[];
+  results: Array<{ label: string; url: string }>;
+}
+
+function isWebSearchTool(tool: Extract<TimelineEntry, { kind: 'tool' }>): boolean {
+  return /web.?search|웹.?검색/i.test(`${tool.toolRef} ${tool.toolName ?? ''}`);
+}
+
+/** 원시 도구 JSON 전체 대신 일반 사용자가 이해할 검색어·링크만 추린다. */
+function searchPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): SearchPreview {
+  const args = tool.arguments ?? {};
+  const queries = [args.query, args.search_query, ...(Array.isArray(args.queries) ? args.queries : [])]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim());
+  const resultMap = new Map<string, { label: string; url: string }>();
+
+  function collect(value: unknown) {
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    const url = typeof record.url === 'string' && /^https?:\/\//i.test(record.url) ? record.url : null;
+    if (url) {
+      const labelCandidate = record.title ?? record.label ?? record.name;
+      const label = typeof labelCandidate === 'string' && labelCandidate.trim() ? labelCandidate.trim() : url;
+      resultMap.set(url, { label, url });
+    }
+    Object.values(record).forEach(collect);
+  }
+
+  if (tool.output) {
+    try {
+      collect(JSON.parse(tool.output));
+    } catch {
+      for (const match of tool.output.matchAll(/https?:\/\/[^\s"'<>]+/g)) {
+        const url = match[0].replace(/[),.;]+$/, '');
+        resultMap.set(url, { label: url, url });
+      }
+    }
+  }
+  return { queries: [...new Set(queries)], results: [...resultMap.values()] };
+}
+
+function searchRunTitle(runIndex: number, preview: SearchPreview | null): string {
+  const query = preview?.queries[0];
+  if (!query) return `검색 ${runIndex + 1}`;
+  const compact = query.replace(/\s+/g, ' ').trim();
+  return `검색 ${runIndex + 1} · ${compact.length > 42 ? `${compact.slice(0, 42)}…` : compact}`;
+}
+
+function SearchRunDetails({ preview }: { preview: SearchPreview }) {
+  return (
+    <div className={styles.searchRunDetails}>
+      {preview.queries.map((query) => (
+        <div key={query} className={styles.searchRunSection}>
+          <strong className={styles.searchRunLabel}>검색어</strong>
+          <code className={styles.searchQuery}>{query}</code>
+        </div>
+      ))}
+      <div className={styles.searchRunSection}>
+        <strong className={styles.searchRunLabel}>검색 결과 {preview.results.length}개</strong>
+        {preview.results.length > 0 ? (
+          <ul>
+            {preview.results.map((result) => (
+              <li key={result.url}><a href={result.url} target="_blank" rel="noreferrer">{result.label}</a></li>
+            ))}
+          </ul>
+        ) : (
+          <span className={styles.searchEmpty}>검색 결과 없음</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Chat 스트림에 뜨는 카드.
@@ -34,7 +121,7 @@ export interface ProgressCardProps {
    */
   running?: boolean;
   /**
-   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 생각 과정이
+   * 카드 테두리 없이 안쪽 내용만 그린다(2026-08-19) — 진행 카드와 작업 과정이
    * 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로 추가했다. 하나로
    * 합칠 때(`ChatPage.tsx`가 바깥 `<section className={styles.card}>`를 직접
    * 두르는 경우) `true`를 준다 — 단독으로 쓸 땐 그대로 `<section>`을 두른다.
@@ -60,10 +147,20 @@ export function ProgressCard({
   bare = false,
   failed = false,
 }: ProgressCardProps) {
+  const [webSourcesOpen, setWebSourcesOpen] = useState(false);
+  const [documentSourcesOpen, setDocumentSourcesOpen] = useState(false);
   const doneCount = steps.filter((step) => step.state === 'done').length;
   const total = Math.max(steps.length, 1);
   const shown = Math.min(doneCount + (steps.some((s) => s.state === 'doing') ? 1 : 0), total);
   const Wrapper = bare ? 'div' : 'section';
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
+  // 단계가 하나뿐이면 머리말·1/1·단계 한 줄이 같은 내용을 세 번 반복한다.
+  // 그 한 단계를 머리말로 올려 진행 상태를 한 줄로만 보여 준다.
+  const compactStep = running && steps.length === 1 && subagents.length === 0 ? steps[0] : null;
+  const visibleTitle = compactStep
+    ? `${compactStep.label}${compactStep.meta ? ` · ${compactStep.meta}` : ''}`
+    : title;
 
   return (
     <Wrapper className={bare ? styles.bareStack : styles.card}>
@@ -76,7 +173,7 @@ export function ProgressCard({
           ) : (
             <Icon name="check-circle" size={16} color="var(--color-success)" />
           )}
-          {title}
+          {visibleTitle}
         </span>
         {/* **회전 수는 보여주지 않는다.**
             Loop 이 몇 바퀴 돌았는지는 우리가 디버깅할 때 보는 값이지 사람이 할
@@ -87,13 +184,13 @@ export function ProgressCard({
             떴는데, 단계를 안 쌓는 도구는 실행 내내 이 자리가 「대기 중」이라 왼쪽의
             「생각하는 중」·「프로젝트 조회 완료」와 정면으로 어긋났다. 지금 무슨
             일이 벌어지는지는 왼쪽 제목과 아이콘(도는 중/체크)이 이미 말한다. */}
-        {steps.length > 0 && (
+        {running && steps.length > 0 && !compactStep && (
           <span className={styles.progressCount}>{`${shown} / ${total} 단계`}</span>
         )}
       </div>
 
       {/* 막대도 단계가 있을 때만 그린다 — 단계가 없으면 늘 0%라 빈 띠만 남는다. */}
-      {steps.length > 0 && (
+      {running && steps.length > 0 && !compactStep && (
         <div className={styles.progressTrack}>
           <span
             className={
@@ -104,7 +201,7 @@ export function ProgressCard({
         </div>
       )}
 
-      <ul className={styles.steps}>
+      {running && !compactStep && <ul className={styles.steps}>
         {/* 끝났으면 남아 있는 `doing` 도 더는 돌지 않는다 — 스트림이 닫혔는데
             마지막 단계만 회전하고 있으면 멈춘 것처럼 보인다. */}
         {(running ? steps : steps.map((s) => (s.state === 'doing' ? { ...s, state: 'done' as const } : s))).map((step, index) => (
@@ -116,9 +213,9 @@ export function ProgressCard({
             {step.meta && <span className={styles.stepMeta}>{step.meta}</span>}
           </li>
         ))}
-      </ul>
+      </ul>}
 
-      {queries.length > 0 && (
+      {running && queries.length > 0 && (
         <ul className={styles.queries}>
           {queries.map((query) => (
             <li key={query} className={styles.query}>
@@ -129,28 +226,56 @@ export function ProgressCard({
         </ul>
       )}
 
-      {/* "출처"(2026-08-18) — document_search가 실제로 좁혀서 보고 있는
-          문서, web_search가 찾은 페이지. 색인 여부와 무관하게 전부
-          보여준다(정직 표기 원칙 — not_indexed와 같은 이유). `url`이 있으면
-          웹 결과라 새 탭 링크로, 없으면(내부 문서) 그냥 텍스트로 그린다. */}
-      {sources.length > 0 && (
-        <ul className={styles.queries}>
-          {sources.map((source) =>
-            source.url ? (
-              <li key={source.id} className={styles.query}>
-                <Icon name="link" size={13} color="var(--color-placeholder)" />
-                <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
-                  {source.label}
-                </a>
-              </li>
-            ) : (
-              <li key={source.id} className={styles.query}>
-                <Icon name="file-text" size={13} color="var(--color-placeholder)" />
-                {source.label}
-              </li>
-            ),
+      {/* 웹 검색 링크와 팀 문서는 성격이 다르므로 각각 접는다. 결과가 많아도
+          진행 단계와 최종 답변을 밀어내지 않고, 개수는 접힌 상태에서도 보인다. */}
+      {running && webSources.length > 0 && (
+        <div className={styles.sourceGroup}>
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            aria-expanded={webSourcesOpen}
+            onClick={() => setWebSourcesOpen((open) => !open)}
+          >
+            <Icon name={webSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
+            검색 결과 {webSources.length}개
+          </button>
+          {webSourcesOpen && (
+            <ul className={styles.queries}>
+              {webSources.map((source) => (
+                <li key={source.url ?? source.id} className={styles.query}>
+                  <Icon name="link" size={13} color="var(--color-placeholder)" />
+                  <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                    {source.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
-        </ul>
+        </div>
+      )}
+
+      {running && documentSources.length > 0 && (
+        <div className={styles.sourceGroup}>
+          <button
+            type="button"
+            className={styles.sourceToggle}
+            aria-expanded={documentSourcesOpen}
+            onClick={() => setDocumentSourcesOpen((open) => !open)}
+          >
+            <Icon name={documentSourcesOpen ? 'chevron-down' : 'chevron-right'} size={13} color="var(--color-primary)" />
+            참고한 문서 {documentSources.length}개
+          </button>
+          {documentSourcesOpen && (
+            <ul className={styles.queries}>
+              {documentSources.map((source) => (
+                <li key={source.id} className={styles.query}>
+                  <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                  {source.label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {/* 다른 에이전트에게 위임한 작업들(2026-08-18) — 위임 자체가 걸린
@@ -158,7 +283,7 @@ export function ProgressCard({
           동안 화면에 아무 변화가 없었다)를 고치려고 추가했다. 서브 에이전트
           *자신의* reasoning·도구 진행은 여전히 안 보여준다 — "지금
           위임했다/끝났다"는 사실만 보여준다. */}
-      {subagents.length > 0 && (
+      {running && subagents.length > 0 && (
         <ul className={styles.steps}>
           {subagents.map((run) => (
             <li key={run.runId} className={styles.step}>
@@ -180,10 +305,9 @@ export function ProgressCard({
           `running` 을 보고 회전을 멈추는데 이 줄만 무조건 그려져서, 답변이 다
           나온 뒤에도 카드가 아직 도는 것처럼 보였다. 끝난 뒤 남길 값은 근거
           수뿐이고, 그것도 없으면 줄 자체를 안 그린다. */}
-      {(running || Boolean(evidenceCount)) && (
+      {running && Boolean(evidenceCount) && (
         <p className={styles.foot}>
-          {evidenceCount ? `근거 ${evidenceCount}건` : ''}
-          {running && `${evidenceCount ? ' · ' : ''}처리 중입니다. 완료되면 결과가 표시됩니다`}
+          근거 {evidenceCount}건
         </p>
       )}
     </Wrapper>
@@ -219,12 +343,18 @@ export interface ReasoningTraceProps {
    * `<section className={styles.card}>`를 한 번만 두른다.
    */
   bare?: boolean;
+  /** 실제 도구가 사용한 검색어. 완료 화면에서는 작업 과정 상세 안에서만 보인다. */
+  queries?: string[];
+  /** 검색 결과·내부 문서 후보. 최종 답변의 인용 링크와 구분해 상세에만 둔다. */
+  sources?: SourceRef[];
+  /** 완료 뒤 접힌 한 줄에 표시할 소요 시간·도구 횟수 요약. */
+  summary?: string;
 }
 
 /**
- * ⓪ 생각 과정 카드(2026-08-18) — 추론 모델(gpt-5.6-luna 등)이 도구를 부르기
- * 전이나 최종 답 전에 내는 생각을, **실제로 부른 도구·위임과 같은 순서로
- * 섞어서** 보여준다. `services/agent_runtime/events.py`가 내는 `reasoning`
+ * ⓪ 작업 과정 카드 — 모델이 도구를 부르기 전에 만든 사용자용 한국어 안내를
+ * **실제로 부른 도구·위임과 같은 순서로 섞어서** 보여준다. 내부 reasoning은
+ * 저장 호환을 위해 수신하더라도 화면에는 그리지 않는다.
  * 조각과 `tool_started`/`tool_completed`/`subagent_started`/`subagent_completed`
  * 를 `liveChat.ts`의 `reduce()`가 하나의 `timeline` 배열로 순서대로 쌓는다 —
  * 전에는 이 둘이 서로 다른 배열에 각자 쌓여서 "몇 번째 생각 다음에 이
@@ -236,22 +366,54 @@ export interface ReasoningTraceProps {
  * `defaultOpen`으로 펼쳐서 시작한다** — 실시간으로 쓰는 걸 보여주는 게
  * 이 기능의 목적이라, 접어 두면 매번 사람이 직접 펴야 그 효과를 본다.
  */
-export function ReasoningTrace({ entries, defaultOpen = false, running = false, bare = false }: ReasoningTraceProps) {
+export function ReasoningTrace({
+  entries,
+  defaultOpen = false,
+  running = false,
+  bare = false,
+  queries = [],
+  sources = [],
+  summary,
+}: ReasoningTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
   const logRef = useRef<HTMLOListElement>(null);
-  // 도구 반환값은 기본으로는 접혀 있다 — 눌러야만 펼쳐 보인다(2026-08-18,
-  // "그 스트리밍된 툴을 눌러야만 보이게 해줘" 요청). index로 여닫힘을 추적한다
-  // — entries는 순서만 늘고 위치가 안 바뀌므로 li의 key(index)와 그대로 맞는다.
-  const [expandedOutputs, setExpandedOutputs] = useState<Set<number>>(new Set());
+  const wasRunning = useRef(running);
+  const [searchDetailsOpen, setSearchDetailsOpen] = useState(false);
+  // 일반 사용자 화면에서는 도구의 원시 인자·JSON 반환값을 노출하지 않는다.
+  // 실제 실행 여부·횟수·성공/실패는 유지하고, 반복 호출만 하위 목록으로 묶는다.
+  const [expandedToolGroups, setExpandedToolGroups] = useState<Set<number>>(new Set());
+  const [expandedSearchRuns, setExpandedSearchRuns] = useState<Set<number>>(new Set());
+  const webSources = sources.filter((source) => Boolean(source.url));
+  const documentSources = sources.filter((source) => !source.url);
+  const timelineGroups = entries.reduce<Array<Array<{ entry: TimelineEntry; index: number }>>>((groups, entry, index) => {
+    const previous = groups[groups.length - 1];
+    const previousEntry = previous?.[0]?.entry;
+    if (
+      entry.kind === 'tool' &&
+      previousEntry?.kind === 'tool' &&
+      previousEntry.toolRef === entry.toolRef
+    ) {
+      previous.push({ entry, index });
+    } else {
+      groups.push([{ entry, index }]);
+    }
+    return groups;
+  }, []);
 
-  function toggleOutput(index: number) {
-    setExpandedOutputs((prev) => {
+  function toggleToolGroup(index: number) {
+    setExpandedToolGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  function toggleSearchRun(index: number) {
+    setExpandedSearchRuns((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
       return next;
     });
   }
@@ -264,20 +426,104 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
     if (el) el.scrollTop = el.scrollHeight;
   }, [entries, open, running]);
 
+  // 실행 중에는 흐름을 바로 보여주고, 방금 완료된 순간에는 Codex처럼 소요
+  // 시간 한 줄로 접는다. 사용자가 완료 뒤 다시 펼친 선택은 건드리지 않는다.
+  useEffect(() => {
+    if (running) setOpen(true);
+    else if (wasRunning.current) setOpen(false);
+    wasRunning.current = running;
+  }, [running]);
+
   if (entries.length === 0) return null;
   const Wrapper = bare ? 'div' : 'section';
 
   return (
     <Wrapper className={bare ? styles.bareStack : styles.card}>
-      <button type="button" className={styles.evidenceToggle} onClick={() => setOpen((prev) => !prev)}>
+      <button
+        type="button"
+        className={styles.evidenceToggle}
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
-        생각 과정 {entries.length}단계
+        {running ? `작업 중 · ${entries.length}단계` : (summary ?? `작업 과정 ${entries.length}단계`)}
       </button>
 
       {open && (
+        <div className={`${styles.reasoningPanel} ${running ? styles.reasoningPanelRunning : ''}`}>
         <ol className={styles.reasoningList} ref={logRef}>
-          {entries.map((entry, index) => {
-            const isLast = index === entries.length - 1;
+          {timelineGroups.map((group, groupIndex) => {
+            const { entry, index } = group[0];
+            const isLast = groupIndex === timelineGroups.length - 1;
+            if (group.length > 1 && group.every((item) => item.entry.kind === 'tool')) {
+              const tools = group.map((item) => item.entry as Extract<TimelineEntry, { kind: 'tool' }>);
+              const groupOpen = expandedToolGroups.has(index);
+              const status = tools.some((tool) => tool.status === 'RUNNING')
+                ? 'RUNNING'
+                : tools.some((tool) => tool.status === 'FAILED')
+                  ? 'FAILED'
+                  : tools.every((tool) => tool.status === 'REJECTED')
+                    ? 'REJECTED'
+                    : 'OK';
+              return (
+                <li key={`tool-group-${index}`} className={styles.reasoningToolGroup}>
+                  <button type="button" className={styles.reasoningTool} onClick={() => toggleToolGroup(index)}>
+                    {status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
+                    {status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
+                    {status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
+                    {status === 'REJECTED' && <Icon name="x" size={13} color="var(--color-muted)" />}
+                    <span>
+                      {tools[0].toolName ?? tools[0].toolRef} · {tools.length}회
+                      {status === 'OK' && ' 완료'}
+                      {status === 'FAILED' && ' · 일부 실패'}
+                      {status === 'REJECTED' && ' 취소'}
+                    </span>
+                    <Icon
+                      name={groupOpen ? 'chevron-down' : 'chevron-right'}
+                      size={12}
+                      color="var(--color-placeholder)"
+                    />
+                  </button>
+                  {groupOpen && (
+                    <ol className={styles.toolRuns}>
+                      {group.map((item, runIndex) => {
+                        const tool = item.entry as Extract<TimelineEntry, { kind: 'tool' }>;
+                        const preview = isWebSearchTool(tool) ? searchPreview(tool) : null;
+                        const hasPreview = Boolean(preview && (preview.queries.length > 0 || preview.results.length > 0));
+                        const runOpen = expandedSearchRuns.has(item.index);
+                        return (
+                          <li key={item.index} className={styles.toolRun}>
+                            <button
+                              type="button"
+                              className={styles.toolRunToggle}
+                              disabled={!hasPreview}
+                              onClick={() => hasPreview && toggleSearchRun(item.index)}
+                            >
+                              <span className={styles.toolRunTitle}>{searchRunTitle(runIndex, preview)}</span>
+                              <span className={styles.toolRunStatus}>
+                                {tool.status === 'RUNNING' ? '진행 중' : tool.status === 'OK' ? '완료' : tool.status === 'FAILED' ? '실패' : '취소'}
+                              </span>
+                              {hasPreview && <Icon name={runOpen ? 'chevron-down' : 'chevron-right'} size={11} />}
+                            </button>
+                            {runOpen && preview && <SearchRunDetails preview={preview} />}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </li>
+              );
+            }
+            if (entry.kind === 'update') {
+              return (
+                <li key={index} className={styles.reasoningStep}>
+                  <span>
+                    {entry.text}
+                    {running && isLast && <span className={styles.reasoningCursor} />}
+                  </span>
+                </li>
+              );
+            }
             if (entry.kind === 'reasoning') {
               return (
                 <li key={index} className={styles.reasoningStep}>
@@ -300,17 +546,16 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
               );
             }
             if (entry.kind === 'tool') {
-              const isExpanded = expandedOutputs.has(index);
+              const preview = isWebSearchTool(entry) ? searchPreview(entry) : null;
+              const hasPreview = Boolean(preview && (preview.queries.length > 0 || preview.results.length > 0));
+              const runOpen = expandedSearchRuns.has(index);
               return (
                 <li key={index} className={styles.reasoningToolGroup}>
-                  {/* 도구가 실제로 뭘 반환했는지는 눌러야만 펼쳐진다(2026-08-18) —
-                      로그 한 줄 한 줄이 다 자동으로 늘어지면 정작 보고 싶은 흐름이
-                      아래로 밀린다. 반환값이 없으면(아직 RUNNING) 누를 게 없다. */}
                   <button
                     type="button"
                     className={styles.reasoningTool}
-                    onClick={() => toggleOutput(index)}
-                    disabled={!entry.output}
+                    disabled={!hasPreview}
+                    onClick={() => hasPreview && toggleSearchRun(index)}
                   >
                     {entry.status === 'RUNNING' && <Icon name="loader" size={13} color="var(--color-primary)" spin />}
                     {entry.status === 'OK' && <Icon name="check-circle" size={13} color="var(--color-success)" />}
@@ -322,15 +567,9 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
                       {entry.status === 'FAILED' && ' 실패'}
                       {entry.status === 'REJECTED' && ' 취소'}
                     </span>
-                    {entry.output && (
-                      <Icon
-                        name={isExpanded ? 'chevron-down' : 'chevron-right'}
-                        size={12}
-                        color="var(--color-placeholder)"
-                      />
-                    )}
+                    {hasPreview && <Icon name={runOpen ? 'chevron-down' : 'chevron-right'} size={12} />}
                   </button>
-                  {isExpanded && entry.output && <pre className={styles.reasoningOutput}>{entry.output}</pre>}
+                  {runOpen && preview && <SearchRunDetails preview={preview} />}
                 </li>
               );
             }
@@ -348,6 +587,71 @@ export function ReasoningTrace({ entries, defaultOpen = false, running = false, 
             );
           })}
         </ol>
+
+        {(queries.length > 0 || sources.length > 0) && (
+          <div className={styles.searchDetails}>
+            <button
+              type="button"
+              className={styles.evidenceToggle}
+              aria-expanded={searchDetailsOpen}
+              onClick={() => setSearchDetailsOpen((previous) => !previous)}
+            >
+              <Icon
+                name={searchDetailsOpen ? 'chevron-down' : 'chevron-right'}
+                size={13}
+                color="var(--color-primary)"
+              />
+              참고한 출처 {webSources.length > 0 ? `${webSources.length}개` : ''}
+            </button>
+
+            {searchDetailsOpen && (
+              <div className={styles.searchDetailsBody}>
+                {queries.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>검색어</span>
+                    <ul className={styles.queries}>
+                      {queries.map((query) => (
+                        <li key={query} className={styles.query}>
+                          <Icon name="search" size={13} color="var(--color-placeholder)" />
+                          {query}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {webSources.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>웹 출처</span>
+                    <ul className={styles.queries}>
+                      {webSources.map((source) => (
+                        <li key={source.url ?? source.id} className={styles.query}>
+                          <Icon name="link" size={13} color="var(--color-placeholder)" />
+                          <a href={source.url} target="_blank" rel="noreferrer" className={styles.sourceLink}>
+                            {source.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {documentSources.length > 0 && (
+                  <div>
+                    <span className={styles.reasoningDetailLabel}>참고 문서 후보</span>
+                    <ul className={styles.queries}>
+                      {documentSources.map((source) => (
+                        <li key={source.id} className={styles.query}>
+                          <Icon name="file-text" size={13} color="var(--color-placeholder)" />
+                          {source.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        </div>
       )}
     </Wrapper>
   );
@@ -426,7 +730,7 @@ export interface ConfirmCardProps {
   /** 체크된 업무의 **인덱스**. 승인 API 에 이 값만 보낸다. */
   selected: number[];
   onSelectedChange: (next: number[]) => void;
-  onApprove?: () => void;
+  onApprove?: (editedJiraIssues?: JiraIssueEdit[]) => void;
   onReject?: () => void;
   busy?: boolean;
   /**
@@ -466,6 +770,12 @@ export interface ConfirmCardProps {
    * 하는 스킬 자신의 이름·설명을 보여준다.
    */
   skillPreview?: { name: string; description: string } | null;
+  /** Jira 생성 호출 하나의 승인 전 필드. 수정해도 별도 승인 전에는 실행되지 않는다. */
+  jiraPreview?: JiraIssueEdit[] | null;
+  /** 현재 대화가 연결된 프로젝트. Jira 목적지는 편집하지 않고 확인만 한다. */
+  jiraProjectName?: string | null;
+  /** 승인 시 적용될 담당자 처리 방식. Jira accountId 자체는 표시하지 않는다. */
+  jiraAssigneeMode?: 'requester' | 'explicit' | 'unassigned' | null;
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
@@ -483,6 +793,9 @@ export function ConfirmCard({
   approvedActions,
   onApprovedActionsChange,
   skillPreview,
+  jiraPreview,
+  jiraProjectName,
+  jiraAssigneeMode,
   pendingAction,
   onAbort,
 }: ConfirmCardProps) {
@@ -499,6 +812,43 @@ export function ConfirmCard({
   // 2026-08-21, 병렬실행 Phase 2 — 호출이 2건 이상일 때만 호출별 줄을 그린다.
   const multi = (actions?.length ?? 0) > 1;
   const approved = approvedActions ?? [];
+  const [editingJira, setEditingJira] = useState(false);
+  const [jiraDraft, setJiraDraft] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
+  const [appliedJira, setAppliedJira] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
+  const [jiraEditError, setJiraEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = jiraPreview ?? [];
+    setJiraDraft(next);
+    setAppliedJira(next);
+    setEditingJira(false);
+    setJiraEditError(null);
+  }, [jiraPreview]);
+
+  const jiraEdited =
+    jiraPreview != null && JSON.stringify(appliedJira) !== JSON.stringify(jiraPreview);
+
+  function updateJiraIssue(index: number, field: keyof JiraIssueEdit, value: string | null) {
+    setJiraDraft((current) =>
+      current.map((issue, issueIndex) =>
+        issueIndex === index ? { ...issue, [field]: value } : issue,
+      ),
+    );
+  }
+
+  function applyJiraEdit() {
+    if (jiraDraft.some((issue) => !issue.title.trim() || !issue.issuetype.trim())) {
+      setJiraEditError('제목과 이슈 유형은 비울 수 없습니다.');
+      return;
+    }
+    if (jiraDraft.some((issue) => issue.duedate && !/^\d{4}-\d{2}-\d{2}$/.test(issue.duedate))) {
+      setJiraEditError('기한은 YYYY-MM-DD 형식으로 입력해 주세요.');
+      return;
+    }
+    setAppliedJira(jiraDraft.map((issue) => ({ ...issue })));
+    setJiraEditError(null);
+    setEditingJira(false);
+  }
 
   function toggle(index: number, next: boolean) {
     onSelectedChange(
@@ -546,6 +896,128 @@ export function ConfirmCard({
       ) : subject && !multi ? (
         <div className={styles.confirmHead}>
           <strong>{subject}</strong>
+        </div>
+      ) : null}
+
+      {jiraPreview && appliedJira.length > 0 ? (
+        <div className={styles.jiraPreview}>
+          <div className={styles.jiraPreviewHead}>
+            <span>
+              <strong>Jira 이슈 {appliedJira.length}건</strong>
+              {jiraEdited ? <span className={styles.editedBadge}>수정됨</span> : null}
+            </span>
+            {onApprove && !editingJira ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setJiraDraft(appliedJira.map((issue) => ({ ...issue })));
+                  setJiraEditError(null);
+                  setEditingJira(true);
+                }}
+                disabled={busy}
+              >
+                편집
+              </Button>
+            ) : null}
+          </div>
+          <div className={styles.jiraProjectTarget}>
+            <span>대상 프로젝트</span>
+            <strong>{jiraProjectName || '현재 대화에 연결된 Jira 프로젝트'}</strong>
+          </div>
+          <div className={styles.jiraApprovalImpact}>
+            <strong>
+              승인하면 위 프로젝트에 Jira 이슈 {appliedJira.length}건을 실제로 생성합니다.
+            </strong>
+            <span>
+              담당자:{' '}
+              {jiraAssigneeMode === 'requester'
+                ? '요청자 본인'
+                : jiraAssigneeMode === 'explicit'
+                  ? '지정된 Jira 계정'
+                  : '미배정'}
+            </span>
+            <span>편집과 ‘수정 적용’만으로는 생성되지 않습니다.</span>
+          </div>
+          {(editingJira ? jiraDraft : appliedJira).map((issue, index) => (
+            <div className={styles.jiraIssuePreview} key={index}>
+              {editingJira ? (
+                <>
+                  <label className={styles.jiraField}>
+                    <span>제목</span>
+                    <input
+                      value={issue.title}
+                      onChange={(event) => updateJiraIssue(index, 'title', event.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <div className={styles.jiraFieldRow}>
+                    <label className={styles.jiraField}>
+                      <span>유형</span>
+                      <input
+                        value={issue.issuetype}
+                        onChange={(event) => updateJiraIssue(index, 'issuetype', event.target.value)}
+                        disabled={busy}
+                      />
+                    </label>
+                    <label className={styles.jiraField}>
+                      <span>기한</span>
+                      <input
+                        type="date"
+                        value={issue.duedate ?? ''}
+                        onChange={(event) =>
+                          updateJiraIssue(index, 'duedate', event.target.value || null)
+                        }
+                        disabled={busy}
+                      />
+                    </label>
+                  </div>
+                  <label className={styles.jiraField}>
+                    <span>설명</span>
+                    <textarea
+                      value={issue.description}
+                      onChange={(event) =>
+                        updateJiraIssue(index, 'description', event.target.value)
+                      }
+                      disabled={busy}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <strong className={styles.jiraIssueTitle}>{issue.title}</strong>
+                  <dl className={styles.jiraFacts}>
+                    <div><dt>유형</dt><dd>{issue.issuetype}</dd></div>
+                    <div><dt>기한</dt><dd>{issue.duedate || '없음'}</dd></div>
+                  </dl>
+                  <div className={styles.jiraDescription}>
+                    <span>설명</span>
+                    <p>{issue.description || '없음'}</p>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {jiraEditError ? <p className={styles.jiraEditError}>{jiraEditError}</p> : null}
+          {editingJira ? (
+            <div className={styles.jiraEditActions}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setJiraDraft(appliedJira.map((issue) => ({ ...issue })));
+                  setJiraEditError(null);
+                  setEditingJira(false);
+                }}
+                disabled={busy}
+              >
+                편집 취소
+              </Button>
+              <Button variant="outline" size="sm" onClick={applyJiraEdit} disabled={busy}>
+                수정 적용
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -619,7 +1091,9 @@ export function ConfirmCard({
               ? isSkillRegister
                 ? '다시 설명할 수 있도록 정리하는 중입니다.'
                 : '거절을 반영하는 중입니다.'
-              : isSkillRegister
+              : jiraPreview
+                ? `승인하면 ${jiraProjectName || '연결된 Jira 프로젝트'}에 이슈 ${appliedJira.length}건을 생성합니다.`
+                : isSkillRegister
                 ? '등록하기 전까지 저장되지 않습니다. 마음에 들지 않으면 다시 설명해 주세요.'
                 : '승인하기 전까지 아무것도 등록되지 않습니다.'}
           </span>
@@ -641,11 +1115,13 @@ export function ConfirmCard({
               않는다 — 그건 "아무것도 하지 마"라는 유효한 결정이고, 서버도
               거절 결정을 그대로 받는다(2026-08-21). */}
           {!multi && onReject ? (
-            <Button variant="outline" size="sm" onClick={onReject} disabled={busy}>
+            <Button variant="outline" size="sm" onClick={onReject} disabled={busy || editingJira}>
               {rejecting ? (
                 <>
                   <Icon name="loader" size={13} spin /> {isSkillRegister ? '다시 설명 준비 중…' : '거절하는 중…'}
                 </>
+              ) : jiraPreview ? (
+                '생성 거절'
               ) : isSkillRegister ? (
                 '다시 설명하기'
               ) : (
@@ -655,22 +1131,26 @@ export function ConfirmCard({
           ) : null}
           <Button
             size="sm"
-            onClick={onApprove}
-            disabled={busy || (!multi && tasks.length > 0 && chosen.length === 0)}
+            onClick={() => onApprove(jiraEdited ? appliedJira : undefined)}
+            disabled={busy || editingJira || (!multi && tasks.length > 0 && chosen.length === 0)}
           >
             {/* **거절 중에는 이 버튼이 "등록하는 중…"이라고 말하지 않는다**
                 (2026-08-24 실측 버그 — 거절을 눌렀는데 승인 버튼 쪽에 등록
                 중이라고 떠서 마치 승인이 진행되는 것처럼 보였다). 거절 중엔
                 평소 라벨을 그대로 두고 비활성만 건다. */}
             {approving
-              ? '등록하는 중…'
+              ? jiraPreview
+                ? 'Jira 이슈 생성 중…'
+                : '등록하는 중…'
               : multi && actions
                 ? approved.length === 0
                   ? '전부 거절'
                   : `${approved.length}건 실행`
                 : tasks.length > 0
                   ? `선택한 ${chosen.length}건 등록`
-                  : '승인'}
+                  : jiraPreview
+                    ? `Jira 이슈 ${appliedJira.length}건 생성 승인`
+                    : '승인'}
           </Button>
         </div>
       ) : (
@@ -993,6 +1473,58 @@ export interface JiraStatusCardProps {
  * 적다 틀릴 수 있고, 사람도 문단보다 표를 빨리 읽는다 — `task_extraction` 이
  * 결과를 이벤트로 내보내고 화면이 카드로 그리는 것과 같은 규칙이다.
  */
+/**
+ * 도구가 만들어 낸 파일을 받는 카드(2026-08-26).
+ *
+ * **링크로 대신할 수 없다.** 받는 곳이 Bearer 토큰을 요구해서 `<a href>` 는
+ * 401 이 된다 — 답변 본문이 이제 마크다운 링크를 그리게 됐어도(`AnswerText`)
+ * 이 자리는 여전히 카드여야 한다. blob 으로 받아 사람이 저장하게 한다.
+ *
+ * 「내 파일」 표의 `download()` 와 같은 방식이다 — 임시 URL 을 만들고 **반드시
+ * 되돌려준다.** 안 하면 파일 하나가 탭을 떠날 때까지 메모리에 남는다.
+ */
+export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function save(file: ProducedFile) {
+    const token = loadSessionToken();
+    if (!token) return;
+    setBusy(file.docId);
+    setFailed(null);
+    try {
+      const blob = await downloadPersonalFile(token, file.docId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (exc) {
+      // 카드 안에서 말한다 — 토스트로 띄우면 어느 파일이 안 됐는지 모른다.
+      setFailed(exc instanceof ApiError ? exc.message : '내려받지 못했습니다.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className={styles.filesCard}>
+      {files.map((file) => (
+        <div key={file.docId} className={styles.fileRow}>
+          <Icon name="file-text" size={16} color="var(--color-primary)" />
+          <span className={styles.fileName}>{file.fileName}</span>
+          <Button size="sm" variant="outline" disabled={busy === file.docId} onClick={() => void save(file)}>
+            다운로드
+          </Button>
+        </div>
+      ))}
+      {/* 「내 파일」에도 남는다는 것을 밝힌다 — 카드를 놓쳐도 찾을 곳이 있다. */}
+      <p className={styles.fileHint}>{failed ?? '「문서 > 내 파일」에도 저장되어 있습니다.'}</p>
+    </section>
+  );
+}
+
 export function JiraStatusCard({
   projectName,
   projectKey,

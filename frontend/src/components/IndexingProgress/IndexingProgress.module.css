@@ -1,0 +1,112 @@
+/*
+ * 오른쪽 아래 고정. 화면 어디에 있든 같은 자리에 뜬다 — 자리가 옮겨 다니면
+ * 사람이 매번 찾아야 하고, 그러면 「어디 있든 보인다」는 뜻이 없어진다.
+ *
+ * 페이지 내용 위에 뜨지만 **모달이 아니다.** 뒤를 덮지 않고 클릭도 막지
+ * 않는다 — 색인은 사람이 하던 일을 멈추게 할 이유가 없는 뒷작업이다.
+ */
+.card {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 60;
+  width: 320px;
+  max-width: calc(100vw - var(--space-5) * 2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.count {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  /* 숫자가 늘어도(9/10 → 10/10) 닫기 버튼이 밀리지 않게 자리를 미리 잡는다. */
+  font-variant-numeric: tabular-nums;
+}
+
+.close {
+  display: flex;
+  align-items: center;
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-placeholder);
+  cursor: pointer;
+}
+
+.bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  /* 10초마다 값이 튀므로 그 사이를 부드럽게 잇는다. 안 이으면 막대가 끊겨
+     움직여서 멈춘 것처럼 보인다. */
+  transition: width 400ms ease;
+}
+
+/* 실패가 없으면 「문서 보기」 하나만 남는다. 오른쪽에 붙이고, 실패 건수가
+   생기면 그것이 왼쪽을 밀고 들어온다 — 빈 자리를 채우려고 없어도 되는 설명을
+   두지 않는다. */
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  font-size: 12px;
+}
+
+.failed {
+  margin-right: auto;
+  color: var(--color-warning-text);
+  font-weight: 600;
+}
+
+.link {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* 좁은 화면에서는 폭을 화면에 맞춘다. 320px 고정이면 오른쪽이 잘린다. */
+@media (max-width: 480px) {
+  .card {
+    right: var(--space-3);
+    left: var(--space-3);
+    bottom: var(--space-3);
+    width: auto;
+  }
+}

@@ -37,6 +37,8 @@ export default function OpsModelsPage() {
   const [model, setModel] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
+  /** 등록은 됐지만(201) 그 서버가 토큰 사용량을 안 준다는 안내 — 막지 않는다. */
+  const [registerWarning, setRegisterWarning] = useState('');
   /** 「모델 불러오기」로 받아 온 이름들. 비어 있으면 직접 입력으로 둔다. */
   const [available, setAvailable] = useState<string[]>([]);
   const [probeNote, setProbeNote] = useState('');
@@ -85,6 +87,7 @@ export default function OpsModelsPage() {
     setAvailable([]);
     setProbeNote('');
     setModel('');
+    setRegisterWarning('');
   }
 
   /** 그 주소·키가 가진 모델을 받아 온다. 못 받으면 직접 입력으로 남는다. */
@@ -110,8 +113,9 @@ export default function OpsModelsPage() {
     if (!session) return;
     setBusy(true);
     setFormError('');
+    setRegisterWarning('');
     try {
-      await registerOpsModel(session.token, {
+      const result = await registerOpsModel(session.token, {
         team_id: teamId,
         label: preset.label,
         base_url: baseUrl.trim(),
@@ -123,6 +127,7 @@ export default function OpsModelsPage() {
       setModel('');
       setAvailable([]);
       setProbeNote('');
+      setRegisterWarning(result.warning ?? '');
       await load();
     } catch (thrown) {
       setFormError(thrown instanceof ApiError ? thrown.message : '등록하지 못했습니다.');
@@ -265,6 +270,11 @@ export default function OpsModelsPage() {
 
 
         {formError && <p className={styles.inlineEmpty} role="alert">{formError}</p>}
+        {/* 막지 않는 안내다 — 등록(201)은 이미 끝났다. `role="status"`로 formError의
+            `role="alert"`와 구분한다. */}
+        {registerWarning && (
+          <p className={styles.inlineEmpty} role="status">{registerWarning}</p>
+        )}
 
         <div className={styles.formSubmit}>
           <Button onClick={register} disabled={!canRegister || busy}>
