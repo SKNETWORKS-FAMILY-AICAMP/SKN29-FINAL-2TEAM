@@ -2,9 +2,10 @@
 
 ## 목적
 
-첫 smoke부터 비교 가능한 증거를 남기기 위한 최소 파일 계약이다. 평가 runner나
-정식 평가 DB를 대신하지 않는다. 수동 실행 결과를 같은 모양으로 보존한 뒤, 실제
-조회 패턴이 확인되면 정식 저장 구조로 가져오기 위한 중간 형식이다.
+첫 smoke부터 비교 가능한 증거를 남기기 위한 최소 파일 계약이다. 평가 runner를
+대신하지 않는다. 수동 실행 결과를 같은 모양으로 보존하고, 종료된 실행은 같은
+`eval_run_id`로 프로젝트 DB의 `eval_run`·`eval_case_result`에 동기화한다. 로컬
+파일은 DB 장애와 무관하게 남는 원본이며 DB는 조회·집계 사본이다.
 
 ## 저장 위치
 
@@ -45,6 +46,16 @@
 - `targets`: 평가 대상 `agent_id`, `agent_version_id` 목록
 - `models`
 - `runtime`, `environment`, `repetitions`
+
+장기 메모리의 영향을 통제하는 실행은 다음 확장 필드도 함께 기록한다.
+
+- `account_id`, `team_id`
+- `memory_mode`: `CLEAN`, `SEEDED`, `UNKNOWN` 중 하나
+- `session_policy`
+- `memory_namespace`
+
+이 확장 필드는 기존 기록기와 DB의 manifest JSON에 그대로 보존된다. 메모리 원문은
+평가 결과에 복사하지 않는다.
 
 기록기가 `schema_version`, `eval_run_id`, `started_at`을 추가한다.
 
@@ -113,6 +124,21 @@ latency 분위수는 표본을 정렬한 nearest-rank 방식이며 작은 smoke 
   --status COMPLETED `
   --limitation "수동 실행이라 TTFT는 수집하지 못함"
 ```
+
+종료된 실행을 프로젝트 DB에 동기화한다. 먼저
+`DB/migrations/2026-08-26_eval_result_storage.sql`이 대상 DB에 적용돼 있어야 한다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\eval_record.py sync-db `
+  --run-dir <실행-폴더>
+```
+
+- `summary.json`이 없는 진행 중 실행은 동기화하지 않는다.
+- 같은 실행을 다시 동기화해도 case가 중복 생성되지 않는다.
+- 같은 `eval_run_id`에 다른 manifest·summary·case가 이미 있으면 덮어쓰지 않고
+  충돌로 거부한다.
+- DB 동기화가 실패해도 로컬 네 산출물은 변경하지 않는다. DB의 실행이 없거나
+  `SYNC_PENDING`이면 같은 명령으로 재시도한다.
 
 ## 현재 fixture 확인
 

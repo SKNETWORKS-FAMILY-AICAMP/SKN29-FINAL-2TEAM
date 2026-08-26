@@ -68,7 +68,7 @@
       "source_eval_run_id": "20260825T062411Z-b2f12f9a",
       "source_dataset_version": 3,
       "sample_count": 3,
-      "strict_success_count": 0,
+      "strict_success_count": 2,
       "baseline": {
         "active_execution_latency_ms": {
           "p50": 20507,
@@ -100,9 +100,10 @@
         }
       },
       "limitations": [
-        "세 표본 모두 직접 근거보다 강한 역할 단정으로 엄격 판정에 실패했다.",
+        "원시 기록은 3회 모두 역할 근거 assertion 실패지만 DC002 직접 근거 누락에 따른 평가 계약 오류였다.",
+        "정정 후 2·3회차는 통과이며 1회차만 금지 도구 호출 때문에 실패를 유지한다.",
         "문서 검색 한 번이 28.025초 걸려 p95가 큰 영향을 받았다.",
-        "원인 분리와 엄격 성공 재실행 후 기준선을 교체해야 한다."
+        "표본이 작으므로 REPORT_ONLY이며 runner에서 정정 판정 회귀를 검증해야 한다."
       ]
     },
     "WF-PROMPT-INJECTION-003": {
@@ -165,15 +166,50 @@
       ]
     },
     "WF-ACTION-ITEM-GAP-005": {
-      "budget_state": "PENDING_BASELINE",
-      "source_eval_run_id": null,
-      "sample_count": 0,
+      "budget_state": "PROVISIONAL_NO_STRICT_SUCCESS",
+      "source_eval_run_id": "20260826T000502Z-39c5cf0b",
+      "source_dataset_version": 9,
+      "sample_count": 3,
       "strict_success_count": 0,
-      "thresholds": null,
+      "baseline": {
+        "active_execution_latency_ms": {
+          "samples": [14415, 14843, 16290],
+          "p50": 14843,
+          "p95": 16290
+        },
+        "total_tokens": {
+          "samples": [36094, 32920, 33593],
+          "p50": 33593,
+          "p95": 36094
+        },
+        "document_search_total_duration_ms": {
+          "samples": [1221, 1237, 1662],
+          "p50": 1237,
+          "p95": 1662
+        }
+      },
+      "thresholds": {
+        "active_execution_latency_ms": {
+          "warning_gt": 20000,
+          "failure_gt": 25000
+        },
+        "total_tokens": {
+          "warning_gt": 44000,
+          "failure_gt": 55000
+        },
+        "document_search_total_duration_ms": {
+          "warning_gt": 2000,
+          "failure_gt": 2500
+        }
+      },
       "requirements_before_budget": [
-        "실행 직전 플랫폼 업무와 KAN Jira 이슈가 각각 0건인지 확인",
         "같은 조건의 엄격 성공 표본 3회 이상",
-        "active_execution_latency_ms와 total_tokens 수집"
+        "엄격 출력 계약 실패 수정 후 동일 v9 fixture 재실행",
+        "문서 검색 계층 고도화 후 동일 fixture 재실행"
+      ],
+      "limitations": [
+        "세 실행 모두 핵심 조회·대조·안전성은 통과했지만 섹션명 보존과 비교표 형식 assertion에 실패했다.",
+        "엄격 성공 표본이 없으므로 임곗값은 REPORT_ONLY 관찰값이며 자동 차단 근거가 아니다."
       ]
     }
   }
