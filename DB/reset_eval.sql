@@ -59,6 +59,8 @@ TRUNCATE TABLE
     chat_message, chat_session;
 
 -- 일부러 남기는 것 (`tests/test_ops_purge.py` 의 EVAL_KEEP 과 같은 목록이다):
+--   eval_run · eval_case_result   이전 평가의 성적표. 입력 데이터셋을 다시
+--                                 준비해도 비교 기준은 보존해야 한다.
 --   user_account · team · team_member · team_folder · member_invite ·
 --   user_person_link   테넌트 그 자체. 이 초기화가 남기려는 것.
 --   connector_conn     Google/Jira 재연결을 피하려는 것이 이 파일의 존재 이유다.

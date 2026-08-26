@@ -1222,3 +1222,57 @@ CREATE TABLE agent_favorites (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (account_id, agent_id)
 );
+
+-- =====================================================================
+-- Agent 평가 결과 — 로컬 append-only 결과 계약의 DB 조회·집계 사본
+-- =====================================================================
+
+-- `run_manifest.json`과 종료 후 `summary.json`을 한 실행 단위로 보존한다.
+-- 로컬 파일이 원본이며 DB는 같은 eval_run_id로 멱등 동기화한다. DB 동기화가
+-- 실패해도 로컬 평가 결과가 사라지거나 제품 실행이 실패하면 안 된다.
+CREATE TABLE eval_run (
+    eval_run_id      VARCHAR(64) PRIMARY KEY,
+    schema_version   INT          NOT NULL,
+    git_commit       VARCHAR(64)  NOT NULL,
+    dataset_id       VARCHAR(100) NOT NULL,
+    dataset_version  VARCHAR(50)  NOT NULL,
+    runtime          VARCHAR(100) NOT NULL,
+    environment      VARCHAR(100) NOT NULL,
+    repetitions      INT          NOT NULL CHECK (repetitions >= 1),
+    run_status       VARCHAR(30),
+    sync_status      VARCHAR(20)  NOT NULL DEFAULT 'SYNC_PENDING'
+                     CHECK (sync_status IN ('SYNC_PENDING', 'SYNCED')),
+    started_at       TIMESTAMPTZ  NOT NULL,
+    finished_at      TIMESTAMPTZ,
+    manifest         JSONB        NOT NULL,
+    summary          JSONB,
+    synced_at        TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_eval_run_dataset
+    ON eval_run (dataset_id, dataset_version, started_at DESC);
+
+-- 같은 case_id를 한 실행 안에서 여러 번 반복할 수 있으므로 case_id가 아니라
+-- JSONL의 1-based 순서(case_index)를 실행 내 식별자로 사용한다.
+CREATE TABLE eval_case_result (
+    eval_run_id       VARCHAR(64)  NOT NULL,  -- eval_run.eval_run_id(FK 없음)
+    case_index        INT          NOT NULL CHECK (case_index >= 1),
+    case_id           VARCHAR(100) NOT NULL,
+    agent_id          VARCHAR(20)  NOT NULL,
+    agent_version_id  VARCHAR(20)  NOT NULL,
+    model             VARCHAR(100) NOT NULL,
+    runtime           VARCHAR(100) NOT NULL,
+    status            VARCHAR(30)  NOT NULL,
+    started_at        TIMESTAMPTZ  NOT NULL,
+    finished_at       TIMESTAMPTZ  NOT NULL,
+    agent_run_id      VARCHAR(64),
+    langfuse_trace_id VARCHAR(128),
+    metrics            JSONB        NOT NULL,
+    result             JSONB        NOT NULL,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (eval_run_id, case_index)
+);
+
+CREATE INDEX ix_eval_case_result_case
+    ON eval_case_result (case_id, status, finished_at DESC);

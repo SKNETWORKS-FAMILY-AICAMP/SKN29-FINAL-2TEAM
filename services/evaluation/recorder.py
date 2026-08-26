@@ -523,3 +523,34 @@ class EvaluationRecorder:
                 return
             raise FileExistsError(report_path)
         _write_text_atomic_exclusive(report_path, report)
+
+
+def read_completed_run(
+    run_dir: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    """종료된 로컬 실행을 DB 동기화용으로 읽고 식별자 일관성을 확인한다."""
+
+    recorder = EvaluationRecorder.open(run_dir)
+    summary_path = run_dir / "summary.json"
+    if not summary_path.is_file():
+        raise RuntimeError("종료되지 않은 평가 실행은 DB에 동기화할 수 없습니다.")
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if not isinstance(summary, dict):
+        raise ValueError("summary.json은 JSON 객체여야 합니다.")
+    _require_fields(
+        summary,
+        {"eval_run_id", "run_status", "finished_at"},
+        "summary",
+    )
+    if summary["eval_run_id"] != recorder.eval_run_id:
+        raise ValueError("summary.json의 eval_run_id가 manifest와 다릅니다.")
+
+    case_results = recorder._read_case_results()
+    for index, case_result in enumerate(case_results, start=1):
+        _validate_case_result(case_result)
+        if case_result.get("eval_run_id") != recorder.eval_run_id:
+            raise ValueError(
+                f"case_results.jsonl {index}번째 eval_run_id가 manifest와 다릅니다."
+            )
+    return recorder.manifest, case_results, summary

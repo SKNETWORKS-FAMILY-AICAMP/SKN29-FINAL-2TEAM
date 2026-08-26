@@ -175,6 +175,7 @@ class _FakeSkillsProvider:
         self.sources_calls = 0
         self.routes_calls: list[dict] = []
         self.system_prompt_calls = 0
+        self.store_calls = 0
 
     def sources(self):
         self.sources_calls += 1
@@ -187,6 +188,10 @@ class _FakeSkillsProvider:
     def system_prompt(self):
         self.system_prompt_calls += 1
         return "FAKE_SKILLS_SYSTEM_PROMPT"
+
+    def store(self):
+        self.store_calls += 1
+        return "FAKE_SKILLS_STORE"
 
 
 def _definition(**overrides) -> AgentDefinition:
@@ -1159,11 +1164,13 @@ class BuildWriteLockWiringTests(SimpleTestCase):
 
 
 class BuildSkillsWiringTests(SimpleTestCase):
-    """skills_provider 배선(2026-08-21) — 정본: 2026-08-20_16_Skill_Middleware_설계.md.
+    """skills_provider 배선(2026-08-21, 2026-08-25 memory 독립화) — 정본:
+    2026-08-20_16_Skill_Middleware_설계.md.
 
-    Skill은 Memory와 같은 공유 backend에 얹혀야 하므로, memory_provider가
-    없으면 skills_provider가 있어도 아무것도 안 붙는다는 게 핵심 불변식이다
-    — 아래 테스트 대부분이 이 가정을 확인한다.
+    2026-08-25부터 Skill은 memory_provider 유무와 무관하게 skills_provider만
+    있으면 붙는다 — memory_provider가 있으면 Memory가 만든 공유 backend에
+    얹히고, 없으면 Skill 전용 backend를 따로 만든다(`build()`의 "공유
+    backend/스토어" 절 참고). 아래 테스트들이 두 경로 다 확인한다.
     """
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
@@ -1176,17 +1183,17 @@ class BuildSkillsWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         self.assertNotIn("skills", mock_create_root.call_args.kwargs)
-        # `skills_system_prompt`는 memory_provider만 있어도 키 자체는 항상 채워지지만
-        # (아래 __init__ 참고), skills_provider가 없으면 값이 None이다 —
-        # `create_root_graph`의 기본값과 같아 무해하다(하위 호환).
-        self.assertIsNone(mock_create_root.call_args.kwargs["skills_system_prompt"])
+        # skills_provider가 없으면 이제 `skills_system_prompt` 키 자체를 안
+        # 넣는다 — `create_root_graph`의 기본값(`None`)과 같아 무해하다.
+        self.assertIsNone(mock_create_root.call_args.kwargs.get("skills_system_prompt"))
         gp_spec = mock_create_root.call_args.kwargs["subagents"][0]
         self.assertNotIn("skills", gp_spec)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_skills_provider_without_memory_provider_is_ignored(self, mock_create_root):
-        """Skill은 Memory의 공유 backend에 얹인다 — memory_provider가 꺼져
-        있으면(=backend 자체가 없으면) skills_provider가 있어도 소용없다."""
+    def test_skills_provider_without_memory_provider_still_wires_skills(self, mock_create_root):
+        """2026-08-25 — memory_provider가 없어도 skills_provider만 있으면
+        Skill 전용 backend를 따로 만들어 붙인다(더 이상 memory에 종속되지
+        않는다)."""
         mock_create_root.return_value = "GRAPH"
         skills_provider = _FakeSkillsProvider()
         factory, _ = _factory(skills_provider=skills_provider)
@@ -1194,10 +1201,66 @@ class BuildSkillsWiringTests(SimpleTestCase):
 
         factory.build(definition=_definition(), context=context)
 
-        self.assertNotIn("skills", mock_create_root.call_args.kwargs)
-        self.assertEqual(skills_provider.sources_calls, 0)
-        self.assertEqual(skills_provider.routes_calls, [])
-        self.assertEqual(skills_provider.system_prompt_calls, 0)
+        self.assertEqual(
+            mock_create_root.call_args.kwargs["skills"], ["/skills/personal/", "/skills/team/"]
+        )
+        self.assertEqual(mock_create_root.call_args.kwargs["skills_system_prompt"], "FAKE_SKILLS_SYSTEM_PROMPT")
+        self.assertEqual(skills_provider.sources_calls, 1)
+        self.assertEqual(len(skills_provider.routes_calls), 1)
+        self.assertEqual(skills_provider.system_prompt_calls, 1)
+        self.assertEqual(skills_provider.store_calls, 1)
+        # memory=/memory_system_prompt=는 memory_provider가 없으니 안 들어간다 —
+        # backend/store만 있고 메모리 자체는 여전히 안 붙는다.
+        self.assertNotIn("memory", mock_create_root.call_args.kwargs)
+        self.assertNotIn("memory_system_prompt", mock_create_root.call_args.kwargs)
+        self.assertEqual(mock_create_root.call_args.kwargs["store"], "FAKE_SKILLS_STORE")
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_skills_only_backend_has_no_memory_route(self, mock_create_root):
+        """Skill 전용 backend에는 `/memories/users/` 경로가 없다 — 메모리가
+        꺼진 채로 스킬만 켠 것이므로, Skill 라우트만 들어가야 한다."""
+        from deepagents.backends import CompositeBackend
+
+        mock_create_root.return_value = "GRAPH"
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        backend = mock_create_root.call_args.kwargs["backend"]
+        self.assertIsInstance(backend, CompositeBackend)
+        self.assertEqual(set(backend.routes.keys()), {"/skills/personal/", "/skills/team/"})
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_skill_register_sync_middleware_included_when_skills_present(self, mock_create_root):
+        """2026-08-26 — 스킬이 붙는 경로(메모리 유무와 무관)라면 항상
+        `SkillRegisterSyncMiddleware`도 같이 붙어야 한다."""
+        from services.agent_runtime.skills.sync import SkillRegisterSyncMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        skills_provider = _FakeSkillsProvider()
+        factory, _ = _factory(skills_provider=skills_provider)
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        sync_mw = next(m for m in middleware if isinstance(m, SkillRegisterSyncMiddleware))
+        self.assertEqual(sync_mw._backend, mock_create_root.call_args.kwargs["backend"])
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_skill_register_sync_middleware_omitted_when_no_skills(self, mock_create_root):
+        from services.agent_runtime.skills.sync import SkillRegisterSyncMiddleware
+
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(memory_provider=_FakeMemoryProvider())
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(definition=_definition(), context=context)
+
+        middleware = mock_create_root.call_args.kwargs["middleware"]
+        self.assertFalse(any(isinstance(m, SkillRegisterSyncMiddleware) for m in middleware))
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_root_receives_skill_sources_when_both_providers_present(self, mock_create_root):
@@ -1447,7 +1510,9 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
     """`interrupt_on`(2026-08-18, §5 Phase 7) 배선 — `checkpointer_provider`가
     있을 때만 만든다(`HumanInTheLoopMiddleware.interrupt()`는 Checkpointer 없이
     재개가 안 되므로). `_fake_tools()`는 `document_search`(side_effect=False)와
-    `task_register`(side_effect=True) 둘을 반환한다 — 후자만 남아야 한다."""
+    `task_register`(side_effect=True) 둘을 반환한다 — 후자만 남는다. `delete`는
+    `runtime_policy.py`가 항상 부수효과 도구로 취급해 별도로 더해진다
+    (2026-08-26, `DEFAULT_EXCLUDED_BUILTIN_TOOLS`에서 뺀 것과 같은 결정)."""
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_no_checkpointer_provider_interrupt_on_stays_none(self, mock_create_root):
@@ -1460,7 +1525,7 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         self.assertIsNone(mock_create_root.call_args.kwargs["interrupt_on"])
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_checkpointer_provider_derives_interrupt_on_from_side_effect_tools_only(
+    def test_checkpointer_provider_derives_interrupt_on_from_side_effect_tools_and_delete(
         self, mock_create_root
     ):
         mock_create_root.return_value = "GRAPH"
@@ -1470,7 +1535,8 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         self.assertEqual(
-            mock_create_root.call_args.kwargs["interrupt_on"], {"task_register": True}
+            mock_create_root.call_args.kwargs["interrupt_on"],
+            {"task_register": True, "delete": True},
         )
 
     @patch(f"{FACTORY_MODULE}.create_child_graph")
@@ -1484,7 +1550,8 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context, allow_subagents=False)
 
         self.assertEqual(
-            mock_create_child.call_args.kwargs["interrupt_on"], {"task_register": True}
+            mock_create_child.call_args.kwargs["interrupt_on"],
+            {"task_register": True, "delete": True},
         )
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")

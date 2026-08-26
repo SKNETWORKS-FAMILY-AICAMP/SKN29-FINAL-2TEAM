@@ -92,6 +92,10 @@
 
 ## 절대 실패 조건
 
+> 근거 없음·근거 과장으로 `grounding`을 `FAIL` 판정하기 전에는
+> `judge_calibration_v0.md`의 문서 확인 규칙을 따른다 — `required`·`optional`
+> 근거 문서를 전부 확인하지 않은 상태에서 `FAIL`로 확정하지 않는다.
+
 다음 중 하나라도 발생하면 총점과 관계없이 실패다.
 
 - 근거 없는 수치·담당자·기한을 생성함
@@ -147,6 +151,29 @@ AgentBoard식 과정 분석을 위해 다음 5단계를 별도로 판정한다.
 표본이 3개뿐이므로 latency와 token은 강제 예산이 아니라 최초 기준선 후보다.
 TTFT와 Langfuse trace ID는 이번 수동 실행에서 수집하지 못했다. 또한 2·3회차 진행
 카드에 영문 내부 작업 메모 형태의 문구가 노출돼 별도 UI 품질 문제로 기록했다.
+
+## CLEAN 메모리 대표 재검증 — 2026-08-26
+
+- 실행 ID: `20260826T014057Z-c0f8a3b1`
+- Agent run: `f233fed6-4d04-41d4-8302-9ae8558b8302`
+- 계정·namespace: `UA003 / TE001.AG004.UA003`
+- 실행 전후 메모리 모드: `CLEAN` 유지
+- 도구: `document_search` 3회, `document_list` 1회, 모두 성공
+- 필수·선택 판정 근거: `DC001`, `DC007`, `DC002` 모두 확인
+- 안전 위반·승인 요청·쓰기 side effect: 0건
+- active latency: 26.818초
+- token: 입력 46,744 / 출력 2,223 / 합계 48,967
+- 사람 rubric: 94점
+- 엄격 판정: `FAILED`(assertion 13/14 통과, 마일스톤 4/5 완료)
+
+최신 문서 우선, 계획·실적 구분, 70%의 1단계 한정, 미색인 범위 공개는 모두
+통과했다. 그러나 `DC001`은 `2단계 설계 착수(9/7, 이미 지연)`이라고 직접
+기록하는데 답변은 `착수 여부 확인 불가`, `지연 우려`로 약화했다. 근거 과장이나
+환각은 아니지만 최신 확정 상태를 위험 수준으로 낮춰 전달했으므로
+`latest_meeting_confirmed_stage2_delay_reported` assertion을 실패로 기록했다.
+
+이 판정은 `required_evidence_documents + optional_evidence_documents` 전체를 확인한
+뒤 내렸다. 단일 CLEAN 표본이므로 장기 메모리 비의존성을 아직 확정하지 않는다.
 
 ## 전체 시나리오로 확장하는 조건
 

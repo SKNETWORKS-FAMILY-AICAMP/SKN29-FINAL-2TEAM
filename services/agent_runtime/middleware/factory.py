@@ -13,6 +13,7 @@ from langchain.agents.middleware import (
 from langchain.agents.middleware.todo import WRITE_TODOS_TOOL_DESCRIPTION
 
 from services.agent_runtime.middleware.builtin_write_lock import build_builtin_write_lock
+from services.agent_runtime.middleware.sensitive_input import build_sensitive_input_mask
 from services.agent_runtime.middleware.tool_timeout import build_mcp_tool_call_timeout_middleware
 
 if TYPE_CHECKING:
@@ -34,13 +35,21 @@ _PII_TYPES: tuple[str, ...] = ("credit_card", "ip", "mac_address")
 def _build_pii_middleware() -> list[PIIMiddleware]:
     """`_PII_TYPES` 각각을 `redact` 전략으로 감지하는 미들웨어 목록.
 
-    `apply_to_input`은 기본값(`True`) 그대로 둔다 — 사용자가 채팅에 직접
-    입력한 내용만 본다. `apply_to_output`/`apply_to_tool_results`는 켜지
-    않는다(기본값 `False`) — 모델 답변·도구 결과까지 검사 범위를 넓히는
-    것은 이번 요청 범위 밖이라, 필요해지면 그때 다시 판단한다.
+    2026-08-25 — `apply_to_input`(사용자 입력)뿐 아니라 `apply_to_output`
+    (모델 답변)·`apply_to_tool_results`(도구 실행 결과)도 켠다. 모델이 카드
+    번호를 그대로 되풀이하거나, 도구가 조회해 온 결과에 개인정보가 섞여
+    나오는 경로는 지금까지 안 걸러졌다.
     """
 
-    return [PIIMiddleware(pii_type, strategy="redact") for pii_type in _PII_TYPES]
+    return [
+        PIIMiddleware(
+            pii_type,
+            strategy="redact",
+            apply_to_output=True,
+            apply_to_tool_results=True,
+        )
+        for pii_type in _PII_TYPES
+    ]
 
 #: LangChain 기본 `WRITE_TODOS_TOOL_DESCRIPTION`(언제 쓸지/말지가 이미 잘 짜여
 #: 있어 그대로 유지)에 이 프로젝트 전용 구분 문단만 덧붙인다. `write_todos`와
@@ -110,6 +119,10 @@ class MiddlewareFactory:
             # 안 붙는다 — GP가 사용자 원문을 직접 보는 경로가 생기면 그때
             # 같은 줄을 추가한다.
             *_build_pii_middleware(),
+            # 2026-08-26 — 상시 정규식 필터(§2-①)를 미들웨어로 승격
+            # (`sensitive_input.py` 모듈 docstring). PII와 같은 이유로 GP는
+            # 아직 안 붙인다.
+            build_sensitive_input_mask(),
         ]
         if self.runtime_policy.enable_todo:
             # `system_prompt`를 넘기지 않아 LangChain 기본

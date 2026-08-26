@@ -9,7 +9,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from services.evaluation import recorder as recorder_module
-from services.evaluation.recorder import EvaluationRecorder, _writer_lock
+from services.evaluation.recorder import (
+    EvaluationRecorder,
+    _writer_lock,
+    read_completed_run,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -167,6 +171,26 @@ class EvaluationRecorderTests(unittest.TestCase):
             self.assertEqual(summary["metrics"]["total_tokens"], 15)
             self.assertIn(recorder.eval_run_id, report)
             self.assertIn("수동 실행 예시", report)
+
+    def test_completed_run_can_be_loaded_for_db_sync(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = self._start_recorder(Path(temp_dir))
+            recorder.append_case(self._case_result())
+            recorder.finalize(status="COMPLETED", limitations=[])
+
+            manifest, cases, summary = read_completed_run(recorder.run_dir)
+
+            self.assertEqual(manifest["eval_run_id"], recorder.eval_run_id)
+            self.assertEqual(len(cases), 1)
+            self.assertEqual(cases[0]["eval_run_id"], recorder.eval_run_id)
+            self.assertEqual(summary["eval_run_id"], recorder.eval_run_id)
+
+    def test_unfinished_run_cannot_be_loaded_for_db_sync(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = self._start_recorder(Path(temp_dir))
+
+            with self.assertRaisesRegex(RuntimeError, "종료되지 않은"):
+                read_completed_run(recorder.run_dir)
 
     def test_existing_run_can_be_reopened_before_finalize(self):
         with tempfile.TemporaryDirectory() as temp_dir:

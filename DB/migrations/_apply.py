@@ -89,6 +89,8 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     # `--check`가 "전부 있다"고 답한 사례로 발견됐다(`UndefinedTable`로
     # 실행이 깨진 뒤에야 드러남) — 코드가 실제로 쓰는 표 이름으로 바꾼다.
     ("tool_call_idempotency", None, "2026-08-19 외부 쓰기 도구 재실행 방지 — 전용 표"),
+    ("eval_run", None, "2026-08-26 Agent 평가 실행 결과"),
+    ("eval_case_result", None, "2026-08-26 Agent 평가 사례 결과"),
     ("guardrail_event", None, "2026-08-20 가드레일 발동 기록"),
     ("guardrail_provider", None, "2026-08-20 외부 가드레일 공급자 등록"),
     ("guardrail_provider", "is_active", "2026-08-20 여러 개 중 하나만 사용"),

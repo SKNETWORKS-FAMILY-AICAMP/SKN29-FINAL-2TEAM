@@ -258,13 +258,20 @@ export default function ChatPage() {
       ([mine, team]) => {
         // 이름이 겹치면 팀이 이긴다 — 실제 호출(서버)과 같은 우선순위를
         // 자동완성에도 맞춘다(위 `SlashSkillOption` docstring 참고).
+        // 꺼진 스킬은 자동완성에도 안 보인다 — `SkillVisibilityMiddleware`가
+        // 어차피 에이전트에게 안 보이게 거르므로(2026-08-26), 골라도 아무
+        // 일도 안 일어나는 항목을 목록에 남겨 두지 않는다.
         const merged = new Map<string, SlashSkillOption>();
-        mine.forEach((skill) =>
-          merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'personal' }),
-        );
-        team.forEach((skill) =>
-          merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'team' }),
-        );
+        mine
+          .filter((skill) => skill.enabled)
+          .forEach((skill) =>
+            merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'personal' }),
+          );
+        team
+          .filter((skill) => skill.enabled)
+          .forEach((skill) =>
+            merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'team' }),
+          );
         setSkillOptions(Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
       },
     );
@@ -741,11 +748,27 @@ export default function ChatPage() {
         carried,
         sessionId,
       );
+      // **모든 거절에서** interrupt로 멈춘 도구 로그를 취소 상태로 닫는다 —
+      // 백엔드는 거절된 호출에 `tool_completed`를 보내지 않으므로, 화면이
+      // 직접 닫지 않으면 `tool_started`가 찍어둔 `RUNNING`이 영원히 안 풀린다
+      // (2026-08-26 실측 — 이 처리가 스킬 재설명 경로에만 있어서 Jira 등록
+      // 거절 같은 일반 거절에서 재현됨: 거절해도 작업 과정 카드가 계속 도는 중).
+      updateLastLive((prev) =>
+        prev
+          ? {
+              ...prev,
+              timeline: prev.timeline.map((entry) =>
+                entry.kind === 'tool' && entry.status === 'RUNNING'
+                  ? { ...entry, status: 'REJECTED' as const }
+                  : entry,
+              ),
+            }
+          : prev,
+      );
       if (reexplainSkill) {
         // 설정 > 스킬의 cancelled 단계와 같은 동작이다. 거절 뒤 모델이 만든
         // "등록되지 않았습니다" 문구를 최종 답으로 보여주지 않고, 곧바로
-        // 수정 설명을 받는다. interrupt에서 멈춘 도구 로그도 취소 상태로
-        // 닫아 스피너가 계속 돌지 않게 한다.
+        // 수정 설명을 받는다.
         updateLastLive((prev) =>
           prev
             ? {
@@ -754,11 +777,6 @@ export default function ChatPage() {
                 confirm: null,
                 answer: '',
                 toolName: null,
-                timeline: prev.timeline.map((entry) =>
-                  entry.kind === 'tool' && entry.status === 'RUNNING'
-                    ? { ...entry, status: 'REJECTED' as const }
-                    : entry,
-                ),
               }
             : prev,
         );
@@ -1458,6 +1476,7 @@ export default function ChatPage() {
                           skillPreview={live.confirm.skillPreview}
                           jiraPreview={live.confirm.jiraPreview}
                           jiraProjectName={currentProject?.name}
+                          jiraAssigneeMode={live.confirm.jiraAssigneeMode}
                           selected={isLast ? selected : []}
                           onSelectedChange={isLast ? setSelected : () => undefined}
                           onApprove={isLast ? approve : undefined}

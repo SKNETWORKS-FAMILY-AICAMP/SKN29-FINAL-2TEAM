@@ -95,8 +95,10 @@ export interface LiveChat {
      * 카드는 평소 승인 카드(subject에 도구 이름)로 떨어진다.
      */
     skillPreview: { name: string; description: string } | null;
-    /** Jira 생성 호출의 승인 전 미리보기. 프로젝트와 assignee는 표시·편집하지 않는다. */
+    /** Jira 생성 호출의 승인 전 미리보기. 프로젝트와 assignee는 편집하지 않는다. */
     jiraPreview: JiraIssueEdit[] | null;
+    /** 승인 시 적용될 Jira 담당자 처리 방식. accountId 자체는 화면에 노출하지 않는다. */
+    jiraAssigneeMode: 'requester' | 'explicit' | 'unassigned' | null;
   } | null;
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
@@ -477,6 +479,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         actions.length === 1 && actions[0].name === JIRA_CREATE_ISSUES_TOOL_NAME
           ? readJiraIssuePreview(args)
           : null;
+      const jiraAssigneeMode = jiraPreview ? readJiraAssigneeMode(args) : null;
       return {
         ...state,
         running: false,
@@ -488,6 +491,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           askQuestion,
           skillPreview,
           jiraPreview,
+          jiraAssigneeMode,
         },
       };
     }
@@ -543,6 +547,26 @@ function readJiraIssuePreview(args: Record<string, unknown> | undefined): JiraIs
     });
   }
   return issues;
+}
+
+function readJiraAssigneeMode(
+  args: Record<string, unknown> | undefined,
+): 'requester' | 'explicit' | 'unassigned' {
+  if (args?.assign_to_requester === true) return 'requester';
+  if (
+    Array.isArray(args?.issues) &&
+    args.issues.some(
+      (value) =>
+        Boolean(value) &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        typeof (value as Record<string, unknown>).assignee_account_id === 'string' &&
+        Boolean(((value as Record<string, unknown>).assignee_account_id as string).trim()),
+    )
+  ) {
+    return 'explicit';
+  }
+  return 'unassigned';
 }
 
 /** 확인 카드가 「몇 건을 승인하는가」를 말할 수 있게. 목록형 인자 하나를 센다. */

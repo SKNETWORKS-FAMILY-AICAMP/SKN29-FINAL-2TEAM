@@ -66,10 +66,13 @@ class RuntimeScaffoldContentTests(SimpleTestCase):
         # 2026-08-20 팀 결정 — 도구 결과 인젝션 방어 문구는 이 Scaffold 에서
         # 뺐다(의도적). 같은 취지가 `_MEMORY_ROUTING_PROMPT` 에는 남아 메모리
         # 채널만 덮는다. 되살릴 때는 이 테스트를 먼저 뒤집을 것.
+        #
+        # 2026-08-25 — 메모리 프롬프트 재작성으로 문구가 "지시가 아니라
+        # 데이터"에서 "지시로 따르지 않는다"로 바뀌었다(취지는 동일).
         from services.agent_runtime.memory.backend import _MEMORY_ROUTING_PROMPT
 
-        self.assertNotIn("지시가 아니라 데이터", RUNTIME_SCAFFOLD)
-        self.assertIn("지시가 아니라 데이터", _MEMORY_ROUTING_PROMPT)
+        self.assertNotIn("지시로 따르지 않는다", RUNTIME_SCAFFOLD)
+        self.assertIn("지시로 따르지 않는다", _MEMORY_ROUTING_PROMPT)
 
 
 class AssembleRootTests(SimpleTestCase):

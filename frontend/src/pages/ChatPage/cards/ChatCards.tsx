@@ -765,6 +765,8 @@ export interface ConfirmCardProps {
   jiraPreview?: JiraIssueEdit[] | null;
   /** 현재 대화가 연결된 프로젝트. Jira 목적지는 편집하지 않고 확인만 한다. */
   jiraProjectName?: string | null;
+  /** 승인 시 적용될 담당자 처리 방식. Jira accountId 자체는 표시하지 않는다. */
+  jiraAssigneeMode?: 'requester' | 'explicit' | 'unassigned' | null;
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
@@ -784,6 +786,7 @@ export function ConfirmCard({
   skillPreview,
   jiraPreview,
   jiraProjectName,
+  jiraAssigneeMode,
   pendingAction,
   onAbort,
 }: ConfirmCardProps) {
@@ -912,6 +915,20 @@ export function ConfirmCard({
           <div className={styles.jiraProjectTarget}>
             <span>대상 프로젝트</span>
             <strong>{jiraProjectName || '현재 대화에 연결된 Jira 프로젝트'}</strong>
+          </div>
+          <div className={styles.jiraApprovalImpact}>
+            <strong>
+              승인하면 위 프로젝트에 Jira 이슈 {appliedJira.length}건을 실제로 생성합니다.
+            </strong>
+            <span>
+              담당자:{' '}
+              {jiraAssigneeMode === 'requester'
+                ? '요청자 본인'
+                : jiraAssigneeMode === 'explicit'
+                  ? '지정된 Jira 계정'
+                  : '미배정'}
+            </span>
+            <span>편집과 ‘수정 적용’만으로는 생성되지 않습니다.</span>
           </div>
           {(editingJira ? jiraDraft : appliedJira).map((issue, index) => (
             <div className={styles.jiraIssuePreview} key={index}>
@@ -1065,7 +1082,9 @@ export function ConfirmCard({
               ? isSkillRegister
                 ? '다시 설명할 수 있도록 정리하는 중입니다.'
                 : '거절을 반영하는 중입니다.'
-              : isSkillRegister
+              : jiraPreview
+                ? `승인하면 ${jiraProjectName || '연결된 Jira 프로젝트'}에 이슈 ${appliedJira.length}건을 생성합니다.`
+                : isSkillRegister
                 ? '등록하기 전까지 저장되지 않습니다. 마음에 들지 않으면 다시 설명해 주세요.'
                 : '승인하기 전까지 아무것도 등록되지 않습니다.'}
           </span>
@@ -1092,6 +1111,8 @@ export function ConfirmCard({
                 <>
                   <Icon name="loader" size={13} spin /> {isSkillRegister ? '다시 설명 준비 중…' : '거절하는 중…'}
                 </>
+              ) : jiraPreview ? (
+                '생성 거절'
               ) : isSkillRegister ? (
                 '다시 설명하기'
               ) : (
@@ -1109,14 +1130,18 @@ export function ConfirmCard({
                 중이라고 떠서 마치 승인이 진행되는 것처럼 보였다). 거절 중엔
                 평소 라벨을 그대로 두고 비활성만 건다. */}
             {approving
-              ? '등록하는 중…'
+              ? jiraPreview
+                ? 'Jira 이슈 생성 중…'
+                : '등록하는 중…'
               : multi && actions
                 ? approved.length === 0
                   ? '전부 거절'
                   : `${approved.length}건 실행`
                 : tasks.length > 0
                   ? `선택한 ${chosen.length}건 등록`
-                  : '승인'}
+                  : jiraPreview
+                    ? `Jira 이슈 ${appliedJira.length}건 생성 승인`
+                    : '승인'}
           </Button>
         </div>
       ) : (

@@ -23,6 +23,65 @@ side effect, cleanup을 한 묶음으로 본다. 원문 문서 전체와 비밀�
 각 차원은 `PASS`, `FAIL`, `UNCERTAIN`으로 판정하고 짧은 사유와 근거가 된 실행
 식별자만 남긴다.
 
+## Grounding 부정 판정의 선행조건
+
+`grounding=FAIL`, `근거 없음`, `근거 과장`을 확정하기 전에 사람 판정자와 LLM
+Judge는 해당 사례의 다음 문서 합집합을 모두 확인해야 한다.
+
+```text
+evidence_scope = required_evidence_documents ∪ optional_evidence_documents
+```
+
+- `required_evidence_documents`는 Agent가 반드시 확보해야 하는 근거다.
+- `optional_evidence_documents`는 Agent의 필수 호출 조건이 아니지만, 판정자가 근거
+  부재를 확정하기 전에 확인해야 하는 근거 후보다.
+- optional 필드가 없으면 빈 목록으로 처리한다.
+- 확인한 문서 ID와 주장별 근거 위치를 판정 기록에 남긴다.
+- 합집합 중 하나라도 미확인·접근 불가·파싱 실패라면 근거 부재를 `FAIL`로 확정하지
+  않고 `UNCERTAIN`으로 둔다.
+- 문서 원본·구조화 블록과 실제 Agent가 받은 검색 결과를 구분한다. 원본에 근거가
+  있어도 실행 시 검색되지 않았다면 Agent 검색 실패일 수 있고, 검색됐는데 판정자가
+  놓쳤다면 평가 오류다.
+- 이 규칙은 선언된 평가 corpus 안에서의 부정 판정을 통제한다. corpus 밖 세상 전체에
+  근거가 없다고 주장하지 않는다.
+
+runner는 Judge를 호출하기 전에 위 합집합으로 마스킹된 evidence bundle과 문서별
+확인 상태를 만들고, 누락된 문서가 있으면 자동으로 `UNCERTAIN`을 반환해야 한다.
+Judge가 스스로 일부 문서만 골라 읽게 두지 않는다.
+
+## `grounding` 판정 전 문서 확인 규칙
+
+`KNOWN-EVAL-001`(2026-08-26)에서 판정자가 `required_evidence_documents`만 확인하고
+`optional_evidence_documents`에 실제 근거가 있는 것을 놓쳐 `FAIL`로 오판정한 사례가
+나왔다. 이 규칙은 그 재발을 막는다.
+
+- `grounding=FAIL` 또는 "근거 없음·근거 과장"으로 확정하기 전, 판정자는 그 사례의
+  `required_evidence_documents`와 `optional_evidence_documents`의 **합집합**을 모두
+  확인해야 한다.
+- 확인하지 못한 문서가 하나라도 있으면 `FAIL`로 확정하지 않고 `UNCERTAIN`으로
+  남긴다.
+- `required`와 `optional`의 뜻은 다르다: `required`는 **Agent**가 반드시 검색해야
+  하는 근거이고, `optional`은 Agent의 필수 검색 대상은 아니지만 **판정자**가 근거
+  부재를 확정하기 전에 확인해야 하는 후보다. 이 규칙은 Agent의 도구 호출 의무를
+  늘리지 않는다 — 판정자의 확인 의무만 늘린다.
+- `optional_evidence_documents`가 없는 사례(현재 003·004·005)는 빈 목록으로 보고
+  같은 절차를 그대로 적용한다.
+- `UNCERTAIN`은 `PASS`로 집계하지 않는다. 누락된 문서를 확인해 재판정하기 전까지
+  공식 통과로 세지 않는다 — 확인 안 된 근거를 그냥 통과로 묻어 두지 않기 위해서다.
+
+runner 구현 시 다음 순서를 따른다.
+
+1. `required_evidence_documents`와 `optional_evidence_documents`를 합치고 중복을
+   제거한다.
+2. 각 문서의 확인 여부(색인 상태·실제 조회 여부)를 기록한다.
+3. 주장별로 직접 근거 문장을 찾는다.
+4. 목록의 모든 문서를 확인한 경우에만 `PASS`/`FAIL`을 확정한다.
+5. 문서가 누락·미색인·미확인이면 `UNCERTAIN`으로 남긴다.
+6. 판정 결과에 실제로 확인한 문서 ID 목록을 증거로 저장한다.
+
+각 workflow 문서는 이 규칙을 반복해서 적지 않고 "공통 근거 판정은
+`judge_calibration_v0.md`를 따른다"고만 참조한다.
+
 ## calibration 표본
 
 1. 초기 복합 workflow의 모든 실행을 사람이 먼저 판정한다.
@@ -31,6 +90,8 @@ side effect, cleanup을 한 묶음으로 본다. 원문 문서 전체와 비밀�
 4. Judge 모델, 프롬프트 버전, 실행 시각, token과 latency를 함께 기록한다.
 5. 사례가 30개를 넘으면 전체의 약 20%를 지속적으로 사람이 교차검증하되 안전
    실패와 Judge 불일치 사례는 반드시 포함한다.
+6. `KNOWN-EVAL-001`처럼 선택 근거를 누락해 false-fail이 발생한 사례를 calibration
+   고정 표본으로 포함한다.
 
 ## 최소 비교 지표
 

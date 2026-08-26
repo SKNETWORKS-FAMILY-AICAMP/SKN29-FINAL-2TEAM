@@ -811,6 +811,7 @@ def _jira_create_issues(
     account_id: str,
     proj_id: str | None = None,
     project_key: str | None = None,
+    assign_to_requester: bool = False,
     issues: list[dict[str, Any]],
 ):
     """확인받은 업무를 Jira 에 등록한다.
@@ -832,32 +833,54 @@ def _jira_create_issues(
     참고).
     """
 
-    key = _resolve_project_key(proj_id=proj_id, account_id=account_id, project_key=project_key)
+    # 쓰기 작업은 채팅에서 선택한 프로젝트 경계를 벗어나면 안 된다. 모델이
+    # 프로젝트 이름을 Jira key로 오해하거나 임의의 key를 추측해도, proj_id가
+    # 있으면 저장된 프로젝트 연결을 정본으로 사용한다. 프로젝트 문맥이 없는
+    # 독립 호출에서만 사용자가 명시한 실제 Jira key를 허용한다.
+    key = _resolve_project_key(
+        proj_id=proj_id,
+        account_id=account_id,
+        project_key=None if proj_id else project_key,
+    )
     credential_account_id = _jira_credential_account_id(account_id)
-    # 담당자 기본값 채우기는 **여기서** 해야 한다 — 이 아래 `create_jira_issues`
-    # 호출은 `account_id` 를 이미 팀장 것으로 바꿔 넘긴다(`_jira_credential_account_id`
-    # docstring). 그 함수 안에서 기본값을 채우면 담당자 없는 이슈가 전부 팀장
-    # 앞으로 배정된다 — 실제 요청자는 이 시점에서만 알 수 있다.
-    issues = _fill_default_jira_assignee(
-        requester_account_id=account_id,
-        credential_account_id=credential_account_id,
+    # 기본은 미배정이다. 사용자가 명시적으로 자신에게 배정해 달라고 했을 때만
+    # 요청자의 Jira accountId를 찾아 채운다. 이 조회는 실제 요청자를 알고 있는
+    # 여기서 해야 한다 — 아래 Jira 호출은 연결 자격증명을 가진 팀장 계정으로
+    # 실행되므로 그 안에서 찾으면 요청자가 아니라 팀장에게 배정될 수 있다.
+    if assign_to_requester:
+        issues = _fill_default_jira_assignee(
+            requester_account_id=account_id,
+            credential_account_id=credential_account_id,
+            issues=issues,
+        )
+    result = create_jira_issues(
+        account_id=credential_account_id,
+        project_key=key,
         issues=issues,
     )
-    return create_jira_issues(account_id=credential_account_id, project_key=key, issues=issues)
+    created = list(result.get("created") or [])
+    failed = list(result.get("failed") or [])
+    if failed and not created:
+        reasons = "; ".join(
+            str(item.get("reason") or item.get("error_code") or "알 수 없는 오류")
+            for item in failed
+        )
+        raise ToolInputError(f"Jira 이슈를 생성하지 못했습니다: {reasons}")
+    return result
 
 
 def _fill_default_jira_assignee(
     *, requester_account_id: str, credential_account_id: str, issues: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """담당자를 안 정한 이슈는 **요청자 자신**으로 채운다.
+    """사용자가 본인 배정을 명시한 이슈를 **요청자 자신**으로 채운다.
 
     2026-08-20 추가 — 실제로 겪은 문제: 담당자를 정하지 않고 등록을 시켰더니
     "등록하려면 Jira에서 필요한 다음 정보가 부족합니다 — 담당자: 누구에게
     배정할까요?"라고 되물었다. `assignee_account_id` 는 `jira_create_issues`
     의 필수 값이 아니다(`_JIRA_REQUIRED` 에 없음, `apps/connectors/clients.py`)
     — 되물은 건 서버가 막아서가 아니라 모델이 스스로 판단해 물은 것이었다.
-    되묻지 않고 "특별히 말이 없으면 나"로 채운다 — 실제로 등록을 요청한
-    사람이 가장 자연스러운 기본 담당자다.
+    현재 기본 정책은 미배정이며, `_jira_create_issues()`가
+    `assign_to_requester=True`를 받은 경우에만 이 함수를 호출한다.
 
     Jira 는 이메일이 아니라 Atlassian accountId 로만 배정을 받는다
     (`create_jira_issues` 의 GDPR 주석). 우리 계정과 Jira 계정을 잇는 저장된
@@ -1334,8 +1357,9 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         description=(
             "확인받은 업무를 Jira 프로젝트에 이슈로 등록한다. 여러 건을 한 번에 보내고, "
             "건별 성공·실패를 그대로 돌려준다. 사용자 승인 없이는 실행되지 않는다. "
-            "**담당자를 되묻지 마라** — `assignee_account_id` 는 필수가 아니고, 사용자가 "
-            "누구인지 말하지 않으면 서버가 자동으로 요청한 사람 본인으로 채운다. "
+            "**담당자를 되묻지 마라** — `assignee_account_id` 는 필수가 아니며 기본은 "
+            "미배정이다. 사용자가 명시적으로 자신에게 배정해 달라고 했을 때만 "
+            "`assign_to_requester=true`로 보낸다. "
             "사용자가 이름이나 이메일로 다른 사람을 짚었을 때만 그 사람을 뜻하는 값을 "
             "고민하되, 우리에게는 그 사람의 Jira accountId 를 알아낼 방법이 아직 없으니 "
             "이 칸은 비워 두고 담당자 이름은 `description` 본문에 적어 사람이 나중에 "
@@ -1352,6 +1376,13 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                         "명시적으로 짚었을 때만 적는다."
                     ),
                 },
+                "assign_to_requester": {
+                    "type": "boolean",
+                    "description": (
+                        "사용자가 명시적으로 '나에게 배정'처럼 요청자 본인 배정을 "
+                        "요구한 경우에만 true. 별도 지시가 없으면 false로 두어 미배정한다."
+                    ),
+                },
                 "issues": {
                     "type": "array",
                     "items": {
@@ -1364,8 +1395,8 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                                 "type": "string",
                                 "description": (
                                     "Jira Atlassian accountId (이메일 아님). **보통 비워 둔다** "
-                                    "— 비우면 서버가 요청한 사람 본인으로 채운다. 사용자가 이 "
-                                    "accountId 값 자체를 알려줬을 때만 적는다."
+                                    "— 비우면 미배정으로 생성한다. 사용자가 이 accountId 값 "
+                                    "자체를 알려줬을 때만 적는다."
                                 ),
                             },
                             "duedate": {"type": "string", "description": "YYYY-MM-DD"},
