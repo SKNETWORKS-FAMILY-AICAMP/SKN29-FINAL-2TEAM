@@ -43,9 +43,18 @@
   --shadow-card: 0 4px 12px rgba(15, 23, 42, 0.03);
   --shadow-card-md: 0 4px 8px rgba(0, 0, 0, 0.03);
   --shadow-lift: 0 4px 8px rgba(30, 58, 95, 0.13);
+  /* 랜딩 히어로 목업처럼 지면에서 확실히 떠 있어야 하는 것. --shadow-card 계열은
+     앱 화면의 카드용이라 넓은 여백 위에서는 그림자가 있는지도 안 보인다. */
+  --shadow-float: 0 24px 60px -20px rgba(15, 23, 42, 0.28);
 
   /* type */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* 큰 제목이 필요한 공개 화면(랜딩)용 3단. 앱 화면은 14~16px 본문 위주라
+     이 값을 쓰지 않는다 — 여기에 앱 본문 크기까지 넣으면 두 체계가 섞인다. */
+  --text-display: 46px;
+  --text-title: 34px;
+  --text-lead: 18px;
 
   /* spacing scale */
   --space-1: 4px;
@@ -57,4 +66,8 @@
   --space-8: 32px;
   --space-10: 40px;
   --space-12: 48px;
+  /* 여기부터는 섹션 사이 간격이다. 카드 안쪽 여백으로 쓰지 않는다. */
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
 }

@@ -1,26 +1,50 @@
 /*
- * 랜딩 (TO-BE). Figma 74:1131(v2) 기준. 색·간격·라운드는 tokens.css 변수만
- * 쓴다 — 새 값을 만들지 않는다.
+ * 랜딩 (TO-BE). 2026-08-27 리뉴얼.
+ *
+ * 색은 tokens.css 의 기존 값만 쓴다 — 리뉴얼에서 바꾼 것은 색이 아니라 여백·
+ * 정렬·타이포 위계다. 간격/타이포/그림자 토큰 일곱 개를 tokens.css 에 더했다
+ * (`--space-16·20·24` · `--text-display·title·lead` · `--shadow-float`).
+ *
+ * ⚠ **밴드 여백은 `--band-x` / `--band-y` 하나로 묶는다.** 예전에는 섹션마다
+ * `padding: 88px var(--space-12)` 를 적어 두고 미디어 쿼리에서 선택자를 나열해
+ * 줄였는데, 그 목록에 `.bandWhite` 가 빠져 있어 **모바일에서 두 섹션만 좌우
+ * 48px 로 남아 있었다.** 목록에 이름을 더하는 것으로는 다음에 또 빠진다 —
+ * 변수를 `.page` 에 두고 모든 섹션이 같은 변수를 읽게 한다.
  */
 
 .page {
+  --band-x: var(--space-12);
+  --band-y: var(--space-24);
+
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-body);
   font-family: var(--font-sans);
+  /* 한국어는 어절 단위로 끊어야 읽힌다. 기본값이면 「지어내 / 지 않고」·「팀 전체
+     / 가」처럼 낱말 한가운데가 갈린다. 어절 하나가 통째로 칸을 넘칠 때만
+     `break-word` 가 받아 준다 — 둘을 같이 둬야 넘침도 안 난다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 /* ---------- 상단 네비 ---------- */
 
 .nav {
-  background: var(--color-bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--color-border);
+  /* ⚠ 패딩은 **바깥**이 갖고 max-width 는 **안쪽**이 갖는다. 둘을 한 요소에
+     몰면 콘텐츠 폭이 `max-width - 패딩` 이 되어, 같은 1280 을 쓰는 본문
+     그리드와 로고가 어긋난다(실제로 48px 밀려 있었다). */
+  padding: var(--space-4) var(--band-x);
 }
 
 .navInner {
-  max-width: 1440px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: var(--space-4) var(--space-12);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -31,8 +55,6 @@
   align-items: center;
   gap: var(--space-2);
 }
-
-
 
 .navActions {
   display: flex;
@@ -84,11 +106,11 @@
 
 /* ---------- 공통 섹션 ---------- */
 
-/* 밴드는 bg(연회색)와 surface(흰색)를 번갈아 쓴다 — 구 랜딩의 whiteSection과
-   같은 방식이고, 토큰에 없는 회색을 새로 만들지 않기 위함이다. */
+/* 밴드는 bg(연회색)와 surface(흰색)를 번갈아 쓴다 — 토큰에 없는 회색을 새로
+   만들지 않기 위함이다. */
 .band,
 .bandWhite {
-  padding: 88px var(--space-12);
+  padding: var(--band-y) var(--band-x);
 }
 
 .band {
@@ -99,29 +121,29 @@
   background: var(--color-surface);
 }
 
-.centered {
-  max-width: 860px;
+/* 리뉴얼 전에는 히어로만 좌측 정렬이고 나머지 전부가 중앙 정렬이었다. 기본을
+   좌측으로 잡고, 중앙 정렬은 마감 CTA 하나에만 남긴다. */
+.bandInner {
+  max-width: 1280px;
   margin: 0 auto;
-  text-align: center;
 }
 
 .h2 {
   margin: 0;
-  font-size: 30px;
-  line-height: 1.4;
+  font-size: var(--text-title);
+  line-height: 1.35;
   font-weight: 800;
   color: var(--color-heading);
-}
-
-.h2Center {
-  text-align: center;
+  letter-spacing: -0.4px;
 }
 
 .lead {
-  margin: var(--space-4) auto 0;
-  max-width: 800px;
-  font-size: 16px;
-  line-height: 1.75;
+  /* 한 줄에 너무 많은 글자가 들어가면 다음 줄을 못 찾는다. 밴드 폭(1200)이
+     아니라 읽기 폭(720)으로 끊는다. */
+  margin: var(--space-5) 0 0;
+  max-width: 720px;
+  font-size: var(--text-lead);
+  line-height: 1.7;
   color: var(--color-body);
 }
 
@@ -132,7 +154,7 @@
   background: var(--color-primary);
   color: #fff;
   border-radius: var(--radius-lg);
-  padding: 14px 26px;
+  padding: 14px 28px;
   font-size: 15px;
   font-weight: 700;
   text-decoration: none;
@@ -150,7 +172,7 @@
   border: 1px solid var(--color-border);
   color: var(--color-body);
   border-radius: var(--radius-lg);
-  padding: 14px 26px;
+  padding: 14px 28px;
   font-size: 15px;
   font-weight: 600;
   text-decoration: none;
@@ -164,27 +186,28 @@
 /* ---------- 1 · 히어로 ---------- */
 
 .hero {
-  padding: 88px var(--space-12);
+  padding: var(--space-24) var(--band-x) var(--band-y);
 }
 
 .heroInner {
-  max-width: 1344px;
+  max-width: 1280px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 600px) minmax(0, 1fr);
-  gap: 56px;
-  align-items: center;
+  gap: var(--space-16);
+  /* `center` 였다. 목업이 세로로 길어 카피가 가운데로 밀리고 위아래에 120px씩
+     죽은 공간이 생겼다 — 히어로 좌측이 비어 보이던 것의 원인이다. */
+  align-items: start;
 }
 
 .heroCopy {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
   align-items: flex-start;
 }
 
 .badge {
-  margin: 0;
+  margin: 0 0 var(--space-5);
   border-radius: var(--radius-pill);
   background: var(--color-primary-soft);
   color: var(--color-primary);
@@ -195,25 +218,47 @@
 
 .heroTitle {
   margin: 0;
-  font-size: 44px;
-  line-height: 1.32;
+  font-size: var(--text-display);
+  line-height: 1.24;
   font-weight: 800;
   color: var(--color-heading);
-  letter-spacing: -0.5px;
+  letter-spacing: -1.2px;
 }
 
 .heroSub {
-  margin: 0;
-  max-width: 580px;
-  font-size: 16px;
-  line-height: 1.7;
+  margin: var(--space-5) 0 0;
+  font-size: var(--text-lead);
+  line-height: 1.65;
   color: var(--color-body);
 }
 
 .heroActions {
+  margin-top: var(--space-8);
   display: flex;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+/* 히어로 서브 뒷문장("모든 답변에는 원문 근거가 붙고, 실제 등록은 사람의 승인을
+   거칩니다")을 떼어 세운 자리다. 한 문단에 뭉쳐 있을 때는 안 읽혔다. */
+.proofs {
+  margin: var(--space-8) 0 0;
+  padding: var(--space-5) 0 0;
+  border-top: 1px solid var(--color-border);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: stretch;
+}
+
+.proof {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-body);
 }
 
 .heroVisual {
@@ -235,7 +280,8 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background: var(--color-surface);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  /* 앱 카드용 그림자(--shadow-card)는 이만한 여백 위에서는 있는지도 안 보인다. */
+  box-shadow: var(--shadow-float);
   overflow: hidden;
 }
 
@@ -289,7 +335,7 @@
   margin: 0;
   border-radius: var(--radius-md);
   background: var(--color-warning-bg);
-  color: #92400e;
+  color: var(--color-warning-text);
   padding: 10px var(--space-3);
   font-size: 12px;
   line-height: 1.6;
@@ -365,11 +411,43 @@
   font-weight: 600;
 }
 
+/* ---------- 2 · 흩어짐 ---------- */
+
+/* 「문서는 Drive에, 업무는 Jira에, 기준은 사람 머릿속에」를 문장으로만 두면
+   흩어져 있다는 말을 글자만 하고 화면은 안 한다. 셋으로 가른다. */
+.scatterRow {
+  margin-top: var(--space-8);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  max-width: 720px;
+}
+
+.scatterCard {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scatterLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
+.scatterPlace {
+  font-size: 15px;
+  color: var(--color-heading);
+}
+
 /* ---------- 3 · 핵심 기능 ---------- */
 
 .featureGrid {
-  max-width: 1344px;
-  margin: 0 auto;
+  margin-top: var(--space-10);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-6);
@@ -380,19 +458,10 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background: var(--color-surface);
-  padding: var(--space-5);
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-
-.featureVisual {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-  height: 148px;
-  overflow: hidden;
-  padding: var(--space-3);
+  gap: var(--space-3);
 }
 
 .featureTitle {
@@ -400,7 +469,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
   font-weight: 700;
   color: var(--color-heading);
@@ -423,8 +492,19 @@
 .featureBody {
   margin: 0;
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.7;
   color: var(--color-body);
+}
+
+/*
+ * `height: 148px; overflow: hidden` 이었다. 카드 ②·③ 의 내용이 각각 169px·134px
+ * 라 **행 한가운데서 잘려** 발췌가 아니라 고장으로 읽혔다. 높이 제한을 없애고,
+ * `margin-top: auto` 로 카드 아래쪽에 붙여 세 카드의 시각물 바닥을 맞춘다.
+ */
+.featureVisual {
+  margin-top: auto;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
 }
 
 /* ---------- 카드 안 미니 목업 ---------- */
@@ -453,7 +533,7 @@
 .miniEvidence {
   margin: 0;
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   padding: 8px;
   line-height: 1.55;
@@ -477,7 +557,7 @@
   align-items: center;
   gap: var(--space-2);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   padding: 6px 8px;
 }
@@ -528,7 +608,7 @@
   gap: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-warning-bg);
-  color: #92400e;
+  color: var(--color-warning-text);
   padding: 6px 8px;
   font-weight: 700;
 }
@@ -542,7 +622,7 @@
   align-items: center;
   gap: var(--space-2);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   padding: 6px 8px;
   min-width: 0;
@@ -570,33 +650,36 @@
 
 /* ---------- 4 · 작동 방식 ---------- */
 
-.stepGrid {
-  max-width: 1344px;
-  margin: 30px auto 0;
+/*
+ * 테두리 있는 회색 카드 4장이었다 — 네 칸이 한 줄기라는 것을 화면이 말해 주지
+ * 않았다. 카드를 없애고 항목 위쪽 선을 하나로 잇는다. `gap: 0` + 항목 오른쪽
+ * 여백으로 선이 끊기지 않게 한다.
+ */
+.stepRail {
+  margin: var(--space-10) 0 0;
+  padding: 0;
+  list-style: none;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-5);
-  align-items: stretch;
+  gap: 0;
 }
 
-.stepCard {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  /* 이 섹션이 흰 밴드라서 카드는 반대로 연회색을 깐다. */
-  background: var(--color-bg);
-  padding: 22px;
+.stepItem {
+  border-top: 2px solid var(--color-border);
+  padding: var(--space-5) var(--space-6) 0 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .stepNum {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-pill);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-size: 14px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -611,65 +694,97 @@
 
 .stepCaption {
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--color-muted);
-}
-
-.stepNote {
-  max-width: 1344px;
-  margin: var(--space-6) auto 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-body);
 }
 
 /* ---------- 5 · 확장성 ---------- */
 
-.pillRow {
-  margin-top: var(--space-5);
+.connectorRow {
+  margin-top: var(--space-8);
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
-.pill,
-.pillStrong {
+.connector,
+.connectorMore {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   border-radius: var(--radius-pill);
-  padding: 9px 16px;
+  padding: 10px 18px;
   font-size: 14px;
   font-weight: 600;
 }
 
-.pill {
+.connector {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  color: var(--color-body);
+  color: var(--color-heading);
 }
 
-.pillStrong {
+.connectorMore {
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-weight: 700;
 }
 
-/* ---------- 7 · 마감 CTA ---------- */
+/* ---------- 6 · 마감 CTA ---------- */
 
+/*
+ * `--color-primary-soft`(네이비 6%)라 사실상 연회색이었다 — 페이지의 마지막
+ * 전환 지점인데 그냥 밴드 하나로 지나갔다. 네이비를 꽉 채운 유일한 자리로
+ * 만든다. 중앙 정렬도 여기 하나만 남긴다.
+ */
 .cta {
-  background: var(--color-primary-soft);
-  padding: 88px var(--space-12) 96px;
+  background: var(--color-primary);
+  padding: var(--band-y) var(--band-x);
+}
+
+.ctaInner {
+  max-width: 720px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-4);
+  text-align: center;
 }
 
 .ctaTitle {
   margin: 0;
-  font-size: 32px;
+  font-size: var(--text-title);
+  line-height: 1.35;
   font-weight: 800;
-  color: var(--color-heading);
-  text-align: center;
+  color: #fff;
+  letter-spacing: -0.4px;
+}
+
+.ctaSub {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* 네이비 위에서는 primary 버튼이 배경에 묻는다. 색을 뒤집는다. */
+.btnOnDark {
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: var(--color-primary);
+  border-radius: var(--radius-lg);
+  padding: 14px 28px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.btnOnDark:hover {
+  background: var(--color-bg);
 }
 
 /* ---------- 푸터 ---------- */
@@ -677,7 +792,12 @@
 .footer {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
-  padding: 26px var(--space-12);
+  padding: var(--space-8) var(--band-x);
+}
+
+.footerInner {
+  max-width: 1280px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -686,62 +806,99 @@
   color: var(--color-muted);
 }
 
-.footer span:first-child {
+.footerName {
   font-weight: 600;
+}
+
+.footerSide {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.footerLink {
+  color: var(--color-muted);
+  text-decoration: none;
+}
+
+.footerLink:hover {
+  color: var(--color-heading);
 }
 
 /* ---------- 반응형 ---------- */
 
+/*
+ * 좌우·상하 여백은 `.page` 의 변수만 바꾼다. 섹션 선택자를 나열하지 않으므로
+ * 새 섹션을 넣어도 자동으로 따라온다 — 예전에 `.bandWhite` 가 목록에서 빠져
+ * 모바일에서 두 섹션만 48px 로 남아 있던 사고가 이 구조에서는 안 난다.
+ */
+
 @media (max-width: 1180px) {
+  .page {
+    --band-y: var(--space-20);
+  }
+
   .heroInner {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-10);
   }
 
-  .stepGrid {
+  /* 한 컬럼이 되면 근거 3줄을 가로로 눕혀 히어로가 세로로 길어지는 것을 막는다. */
+  .proofs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-6);
+  }
+
+  .featureGrid,
+  .stepRail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .featureGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* 2열이 되면 3·4번 항목 위쪽에도 선이 필요하다(그리드가 줄을 새로 만든다). */
+  .stepItem:nth-child(2) {
+    padding-right: 0;
   }
 }
 
 @media (max-width: 760px) {
-  .navInner,
-  .hero,
-  .band,
-  .bandMuted,
-  .cta,
-  .footer {
-    padding-left: var(--space-5);
-    padding-right: var(--space-5);
+  .page {
+    --band-x: var(--space-5);
+    --band-y: var(--space-16);
   }
 
-  .hero,
-  .band,
-  .bandMuted {
-    padding-top: 56px;
-    padding-bottom: 56px;
+  .hero {
+    padding-top: var(--space-16);
   }
 
   .heroTitle {
-    font-size: 32px;
+    font-size: 34px;
+    letter-spacing: -0.6px;
   }
 
   .h2,
   .ctaTitle {
-    font-size: 24px;
+    font-size: 26px;
   }
 
+  .heroSub,
+  .lead {
+    font-size: 16px;
+  }
+
+  .scatterRow,
   .featureGrid,
-  .stepGrid {
+  .stepRail {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .footer {
+  .stepItem {
+    padding-right: 0;
+  }
+
+  .footerInner {
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--space-2);
+    gap: var(--space-3);
   }
 }
