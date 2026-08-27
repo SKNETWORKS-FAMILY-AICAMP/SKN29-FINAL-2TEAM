@@ -1,15 +1,14 @@
 /*
- * 랜딩 (TO-BE). 2026-08-27 리뉴얼.
+ * 랜딩 (TO-BE). 2026-08-27 개편.
  *
  * 색은 tokens.css 의 기존 값만 쓴다 — 리뉴얼에서 바꾼 것은 색이 아니라 여백·
- * 정렬·타이포 위계다. 간격/타이포/그림자 토큰 일곱 개를 tokens.css 에 더했다
- * (`--space-16·20·24` · `--text-display·title·lead` · `--shadow-float`).
+ * 정렬·타이포 위계다.
  *
  * ⚠ **밴드 여백은 `--band-x` / `--band-y` 하나로 묶는다.** 예전에는 섹션마다
- * `padding: 88px var(--space-12)` 를 적어 두고 미디어 쿼리에서 선택자를 나열해
- * 줄였는데, 그 목록에 `.bandWhite` 가 빠져 있어 **모바일에서 두 섹션만 좌우
- * 48px 로 남아 있었다.** 목록에 이름을 더하는 것으로는 다음에 또 빠진다 —
- * 변수를 `.page` 에 두고 모든 섹션이 같은 변수를 읽게 한다.
+ * 값을 적어 두고 미디어 쿼리에서 선택자를 나열해 줄였는데, 그 목록에
+ * `.bandWhite` 가 빠져 있어 **모바일에서 두 섹션만 좌우 48px 로 남아 있었다.**
+ * 목록에 이름을 더하는 것으로는 다음에 또 빠진다 — 변수를 `.page` 에 두고 모든
+ * 섹션이 같은 변수를 읽게 한다.
  */
 
 .page {
@@ -20,9 +19,8 @@
   background: var(--color-bg);
   color: var(--color-body);
   font-family: var(--font-sans);
-  /* 한국어는 어절 단위로 끊어야 읽힌다. 기본값이면 「지어내 / 지 않고」·「팀 전체
-     / 가」처럼 낱말 한가운데가 갈린다. 어절 하나가 통째로 칸을 넘칠 때만
-     `break-word` 가 받아 준다 — 둘을 같이 둬야 넘침도 안 난다. */
+  /* 한국어는 어절 단위로 끊어야 읽힌다. 기본값이면 낱말 한가운데가 갈린다.
+     어절 하나가 통째로 칸을 넘칠 때만 `break-word` 가 받아 준다. */
   word-break: keep-all;
   overflow-wrap: break-word;
 }
@@ -37,8 +35,7 @@
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--color-border);
   /* ⚠ 패딩은 **바깥**이 갖고 max-width 는 **안쪽**이 갖는다. 둘을 한 요소에
-     몰면 콘텐츠 폭이 `max-width - 패딩` 이 되어, 같은 1280 을 쓰는 본문
-     그리드와 로고가 어긋난다(실제로 48px 밀려 있었다). */
+     몰면 콘텐츠 폭이 `max-width - 패딩` 이 되어 본문 그리드와 어긋난다. */
   padding: var(--space-4) var(--band-x);
 }
 
@@ -121,8 +118,7 @@
   background: var(--color-surface);
 }
 
-/* 리뉴얼 전에는 히어로만 좌측 정렬이고 나머지 전부가 중앙 정렬이었다. 기본을
-   좌측으로 잡고, 중앙 정렬은 마감 CTA 하나에만 남긴다. */
+/* 좌측 정렬이 기본이다. 중앙 정렬은 마감 CTA 하나에만 남긴다. */
 .bandInner {
   max-width: 1280px;
   margin: 0 auto;
@@ -138,12 +134,19 @@
 }
 
 .lead {
-  /* 한 줄에 너무 많은 글자가 들어가면 다음 줄을 못 찾는다. 밴드 폭(1200)이
-     아니라 읽기 폭(720)으로 끊는다. */
+  /* 밴드 폭(1280)이 아니라 읽기 폭(760)으로 끊는다. */
   margin: var(--space-5) 0 0;
-  max-width: 720px;
+  max-width: 760px;
   font-size: var(--text-lead);
-  line-height: 1.7;
+  line-height: 1.75;
+  color: var(--color-body);
+}
+
+/* 섹션 맨 아래 한 줄. 사실을 덧붙이는 자리라 lead 보다 작다. */
+.note {
+  margin: var(--space-8) 0 0;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--color-body);
 }
 
@@ -183,7 +186,7 @@
   color: var(--color-heading);
 }
 
-/* ---------- 1 · 히어로 ---------- */
+/* ---------- 0 · 히어로 ---------- */
 
 .hero {
   padding: var(--space-24) var(--band-x) var(--band-y);
@@ -193,10 +196,10 @@
   max-width: 1280px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 600px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 580px) minmax(0, 1fr);
   gap: var(--space-16);
-  /* `center` 였다. 목업이 세로로 길어 카피가 가운데로 밀리고 위아래에 120px씩
-     죽은 공간이 생겼다 — 히어로 좌측이 비어 보이던 것의 원인이다. */
+  /* `center` 였다. 목업이 세로로 길어 카피가 가운데로 밀리고 위아래에 죽은
+     공간이 생겼다 — 히어로 좌측이 비어 보이던 것의 원인이다. */
   align-items: start;
 }
 
@@ -219,7 +222,7 @@
 .heroTitle {
   margin: 0;
   font-size: var(--text-display);
-  line-height: 1.24;
+  line-height: 1.26;
   font-weight: 800;
   color: var(--color-heading);
   letter-spacing: -1.2px;
@@ -227,8 +230,9 @@
 
 .heroSub {
   margin: var(--space-5) 0 0;
+  max-width: 540px;
   font-size: var(--text-lead);
-  line-height: 1.65;
+  line-height: 1.75;
   color: var(--color-body);
 }
 
@@ -239,8 +243,6 @@
   flex-wrap: wrap;
 }
 
-/* 히어로 서브 뒷문장("모든 답변에는 원문 근거가 붙고, 실제 등록은 사람의 승인을
-   거칩니다")을 떼어 세운 자리다. 한 문단에 뭉쳐 있을 때는 안 읽혔다. */
 .proofs {
   margin: var(--space-8) 0 0;
   padding: var(--space-5) 0 0;
@@ -270,17 +272,20 @@
 .visualNote {
   margin: 0;
   font-size: 12px;
-  color: var(--color-placeholder);
+  color: var(--color-muted);
   text-align: right;
 }
 
 /* ---------- 히어로 목업 ---------- */
+/*
+ * 여기 값은 실제 Chat 화면(`cards.module.css`)에서 가져온 것이다. 랜딩만의
+ * 모양을 새로 만들면 공개 화면과 제품이 조금씩 달라진다.
+ */
 
 .mock {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background: var(--color-surface);
-  /* 앱 카드용 그림자(--shadow-card)는 이만한 여백 위에서는 있는지도 안 보인다. */
   box-shadow: var(--shadow-float);
   overflow: hidden;
 }
@@ -311,349 +316,254 @@
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
-.mockRowBetween {
+/* 사람이 친 말. 이 화면이 대화라는 것을 한눈에 알리는 유일한 장치다. */
+.mockAsk {
+  margin: 0;
+  align-self: flex-end;
+  max-width: 88%;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
+  background: var(--color-primary);
+  color: #fff;
+  padding: 10px var(--space-4);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.mockCard {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.mockConfirmHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.mockHeading {
-  font-size: 14px;
-  color: var(--color-heading);
-}
-
-.mockMeta {
-  font-size: 12px;
-  color: var(--color-muted);
-}
-
-.mockWarn {
-  margin: 0;
-  border-radius: var(--radius-md);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
-  padding: 10px var(--space-3);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.mockTask {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.mockTask strong {
+.mockConfirmLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
   color: var(--color-heading);
 }
 
-.mockChip {
+.mockCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
   border-radius: var(--radius-sm);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
+  background: var(--color-primary);
 }
 
-.mockTaskMeta {
+.mockMuted {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.mockTaskRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.mockTaskBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mockTaskTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.mockFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.mockFact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-heading);
+}
+
+.mockFactLabel {
+  color: var(--color-placeholder);
+}
+
+.mockMissing {
   margin: 0;
   font-size: 12px;
   color: var(--color-muted);
+}
+
+.mockEvidenceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
 }
 
 .mockEvidence {
   margin: 0;
-  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   background: var(--color-bg);
-  padding: 10px var(--space-3);
-  font-size: 12px;
-  line-height: 1.65;
+}
+
+.mockEvidence p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
   color: var(--color-body);
+}
+
+.mockEvidence footer {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.mockEvidenceMeta {
-  font-size: 11px;
-  color: var(--color-placeholder);
-}
-
-.mockFoot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-3);
-}
-
-.mockFootNote {
+  gap: var(--space-2);
+  margin-top: var(--space-2);
   font-size: 12px;
   color: var(--color-muted);
+}
+
+.mockEvidenceSource {
+  color: var(--color-muted);
+}
+
+.mockConfirmActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-border);
 }
 
 .mockFootBtn {
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: #fff;
-  padding: 8px 14px;
-  font-size: 12px;
+  padding: 9px 16px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
-/* ---------- 2 · 흩어짐 ---------- */
+.mockFootGhost {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  padding: 9px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-body);
+}
 
-/* 「문서는 Drive에, 업무는 Jira에, 기준은 사람 머릿속에」를 문장으로만 두면
-   흩어져 있다는 말을 글자만 하고 화면은 안 한다. 셋으로 가른다. */
-.scatterRow {
-  margin-top: var(--space-8);
+/* ---------- 1 · 이런 걸 물어보면 됩니다 ---------- */
+
+.askList {
+  margin: var(--space-10) 0 0;
+  padding: 0;
+  list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
-  max-width: 720px;
 }
 
-.scatterCard {
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-  padding: var(--space-4);
+.ask {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  padding: var(--space-6);
 }
 
-.scatterLabel {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-placeholder);
-}
-
-.scatterPlace {
-  font-size: 15px;
+.askQuote {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.6;
+  font-weight: 600;
   color: var(--color-heading);
 }
 
-/* ---------- 3 · 핵심 기능 ---------- */
+/* 그 요청이 실제로 부르는 도구. 말이 화면 기능과 이어져 있음을 보인다. */
+.askTools {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
 
-.featureGrid {
+/* ---------- 2 · 한 대화에서 다 봅니다 ---------- */
+
+.slotGrid {
   margin-top: var(--space-10);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-6);
-  align-items: stretch;
+  gap: var(--space-4);
 }
 
-.featureCard {
+.slotCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background: var(--color-surface);
   padding: var(--space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
 }
 
-.featureTitle {
-  margin: 0;
-  display: flex;
+.slotIcon {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: 17px;
-  line-height: 1.5;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft);
+}
+
+.slotTitle {
+  font-size: 18px;
   font-weight: 700;
   color: var(--color-heading);
 }
 
-.featureNum {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.featureBody {
+.slotBody {
   margin: 0;
   font-size: 14px;
   line-height: 1.7;
   color: var(--color-body);
 }
 
-/*
- * `height: 148px; overflow: hidden` 이었다. 카드 ②·③ 의 내용이 각각 169px·134px
- * 라 **행 한가운데서 잘려** 발췌가 아니라 고장으로 읽혔다. 높이 제한을 없애고,
- * `margin-top: auto` 로 카드 아래쪽에 붙여 세 카드의 시각물 바닥을 맞춘다.
- */
-.featureVisual {
-  margin-top: auto;
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--color-border);
-}
-
-/* ---------- 카드 안 미니 목업 ---------- */
-
-.mini {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 11px;
-}
-
-.miniLabel {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-.miniTitle {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-.miniEvidence {
-  margin: 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  padding: 8px;
-  line-height: 1.55;
-  color: var(--color-body);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.miniMeta {
-  color: var(--color-placeholder);
-}
-
-.miniEmpty {
-  margin: 0;
-  color: var(--color-muted);
-}
-
-.miniTool {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  padding: 6px 8px;
-}
-
-.miniCheck,
-.miniCheckOn {
-  width: 12px;
-  height: 12px;
-  flex: none;
-  border-radius: 3px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-.miniCheckOn {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-}
-
-.miniToolText {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.miniToolText strong {
-  font-size: 11px;
-  color: var(--color-heading);
-}
-
-.miniToolText small {
-  font-size: 10px;
-  color: var(--color-muted);
-}
-
-.miniTag {
-  flex: none;
-  font-size: 10px;
-  color: var(--color-muted);
-}
-
-.miniWarnBar {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
-  padding: 6px 8px;
-  font-weight: 700;
-}
-
-.miniWarnSide {
-  font-weight: 500;
-}
-
-.miniIssue {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  padding: 6px 8px;
-  min-width: 0;
-}
-
-.miniIssue strong {
-  flex: none;
-  color: var(--color-heading);
-}
-
-.miniIssue span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-body);
-}
-
-.miniFail {
-  margin: 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  padding: 6px 8px;
-}
-
-/* ---------- 4 · 작동 방식 ---------- */
+/* ---------- 3 · 조회 · 정리 · 생성 · 등록 ---------- */
 
 /*
- * 테두리 있는 회색 카드 4장이었다 — 네 칸이 한 줄기라는 것을 화면이 말해 주지
- * 않았다. 카드를 없애고 항목 위쪽 선을 하나로 잇는다. `gap: 0` + 항목 오른쪽
- * 여백으로 선이 끊기지 않게 한다.
+ * 테두리 있는 카드 4장이면 네 칸이 한 줄기라는 것이 안 보인다. 카드를 없애고
+ * 항목 위쪽 선을 하나로 잇는다 — `gap: 0` + 항목 오른쪽 여백.
  */
 .stepRail {
   margin: var(--space-10) 0 0;
@@ -687,56 +597,140 @@
 }
 
 .stepTitle {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
   color: var(--color-heading);
 }
 
 .stepCaption {
   font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-muted);
+}
+
+/* ---------- 4 · 에이전트로 만듭니다 ---------- */
+
+/* 빌더의 실제 입력 항목 일곱을 그대로 늘어놓는다. 「세 가지만 적으면」이라고
+   줄여 쓰던 자리다 — 화면에 없는 편의를 약속하지 않는다. */
+.fieldRow {
+  margin-top: var(--space-8);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.fieldChip {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  padding: 10px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+/* ---------- 5 · 개인 → 활성화 → 팀 공유 ---------- */
+
+.flowRow {
+  margin: var(--space-10) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.flowStage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.flowArrow {
+  display: inline-flex;
+  color: var(--color-placeholder);
+}
+
+.flowBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  padding: var(--space-4) var(--space-5);
+  min-width: 190px;
+}
+
+.flowLabel {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.flowSub {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* ---------- 6 · 실행 전 확인 ---------- */
+
+.gate {
+  margin-top: var(--space-8);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-10);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  padding: var(--space-8);
+}
+
+.gateBody {
+  margin: 0;
+  max-width: 720px;
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--color-body);
+}
+
+.gateBody strong {
+  color: var(--color-heading);
+}
+
+/* 실측값이라 크게 쓴다. 지어낸 수를 이렇게 키우면 안 된다. */
+.gateStat {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  border-left: 1px solid var(--color-border);
+  padding-left: var(--space-10);
+  text-align: center;
+}
+
+.gateStat strong {
+  font-size: 56px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--color-primary);
+  letter-spacing: -2px;
+}
+
+.gateStat span {
+  max-width: 170px;
+  font-size: 13px;
   line-height: 1.6;
   color: var(--color-muted);
 }
 
-/* ---------- 5 · 확장성 ---------- */
+/* ---------- 7 · 마감 CTA ---------- */
 
-.connectorRow {
-  margin-top: var(--space-8);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.connector,
-.connectorMore {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  border-radius: var(--radius-pill);
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.connector {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-heading);
-}
-
-.connectorMore {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-weight: 700;
-}
-
-/* ---------- 6 · 마감 CTA ---------- */
-
-/*
- * `--color-primary-soft`(네이비 6%)라 사실상 연회색이었다 — 페이지의 마지막
- * 전환 지점인데 그냥 밴드 하나로 지나갔다. 네이비를 꽉 채운 유일한 자리로
- * 만든다. 중앙 정렬도 여기 하나만 남긴다.
- */
+/* 네이비를 꽉 채운 유일한 밴드다. 중앙 정렬도 여기 하나만 남긴다. */
 .cta {
   background: var(--color-primary);
   padding: var(--band-y) var(--band-x);
@@ -829,8 +823,7 @@
 
 /*
  * 좌우·상하 여백은 `.page` 의 변수만 바꾼다. 섹션 선택자를 나열하지 않으므로
- * 새 섹션을 넣어도 자동으로 따라온다 — 예전에 `.bandWhite` 가 목록에서 빠져
- * 모바일에서 두 섹션만 48px 로 남아 있던 사고가 이 구조에서는 안 난다.
+ * 새 섹션을 넣어도 자동으로 따라온다.
  */
 
 @media (max-width: 1180px) {
@@ -850,14 +843,32 @@
     gap: var(--space-3) var(--space-6);
   }
 
-  .featureGrid,
   .stepRail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* 2열이 되면 3·4번 항목 위쪽에도 선이 필요하다(그리드가 줄을 새로 만든다). */
+  /* 2열이 되면 2번 항목의 오른쪽 여백이 필요 없다. */
   .stepItem:nth-child(2) {
     padding-right: 0;
+  }
+
+  .gate {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .gateStat {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-4);
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-5) 0 0;
+    text-align: left;
+  }
+
+  .gateStat span {
+    max-width: none;
   }
 }
 
@@ -886,14 +897,34 @@
     font-size: 16px;
   }
 
-  .scatterRow,
-  .featureGrid,
+  .askQuote {
+    font-size: 16px;
+  }
+
+  .askList,
+  .slotGrid,
   .stepRail {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .stepItem {
     padding-right: 0;
+  }
+
+  /* 화살표까지 줄바꿈되면 흐름이 끊겨 보인다. 세로로 세운다. */
+  .flowRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .flowStage {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .flowArrow {
+    justify-content: center;
+    transform: rotate(90deg);
   }
 
   .footerInner {

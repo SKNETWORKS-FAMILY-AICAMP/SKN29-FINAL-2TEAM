@@ -1,92 +1,90 @@
 import { Link } from 'react-router-dom';
 // 이 파일에도 `Logo` 라는 지역 함수가 있다. 이름이 겹치면 어느 쪽이 도는지
 // 읽는 사람이 헷갈리므로 들여올 때 이름을 바꾼다.
-import { BrandIcon, Icon, Logo as BrandLogo } from '../../components';
+import { Icon, Logo as BrandLogo } from '../../components';
 import { PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
 import styles from './LandingPage.module.css';
 
 /**
- * 랜딩 (TO-BE). 서사와 사실관계는 Figma `랜딩 (TO-BE) · /` (74:1131, 수정 지시
- * v2) 를 따르고, **레이아웃과 문장은 2026-08-27 리뉴얼에서 다시 짰다.**
+ * 랜딩 (TO-BE). 2026-08-27 개편.
  *
- * 리뉴얼이 고친 것 — 전부 「말이 틀렸다」가 아니라 「화면이 비어 있다」였다.
+ * ⚠ **이 화면의 정본은 기획 문서가 아니라 코드다**(PM 지시). 8/12 Figma v2 와
+ * 8/18 문구표를 출발점으로 삼던 것을 그만두고 실제 구현에서 문장을 뽑았다.
+ * 문서를 먼저 읽으면 「팀 내부 논쟁의 결론」이 그대로 화면에 올라가는데, 그것은
+ * 제품을 이미 아는 사람에게만 읽히는 말이었다.
  *
- * 1. 히어로 좌측이 비었다. 목업이 세로로 길어 카피가 가운데로 밀리고 위아래에
- *    120px 씩 죽은 공간이 생겼다. → 위 정렬로 바꾸고, 히어로 서브에서 뒷문장을
- *    떼어 근거 3줄(`PROOFS`)로 세웠다. 한 문단에 뭉쳐 있던 약속이 훑어진다.
- * 2. 모든 섹션이 중앙 정렬에 같은 패딩이었다. → 좌측 정렬을 기본으로 하고,
- *    중앙 정렬은 마감 CTA 하나에만 남겼다.
- * 3. 기능 카드가 시각물 → 제목 순서였고 시각물이 고정 높이에 잘렸다.
- *    → 제목 → 본문 → 시각물 순으로 뒤집고 높이 제한을 없앴다.
- * 4. 마감 CTA 가 `--color-primary-soft`(네이비 6%)라 사실상 연회색이었다.
- *    → 네이비를 꽉 채운 유일한 밴드로 만들었다. 페이지에서 여기만 어둡다.
+ * 이번에 폐기한 문장과 이유 —
  *
- * 화면 속 목업은 실제 07 TO-BE 화면(Chat 확인 대기·에이전트 편집·결과 카드)을
- * 축약한 것이다. 수치는 데모 기준선(20건 → 17/20, E1~E24)을 따른다.
+ * - 「모든 답변에 원문 근거가 붙습니다」 → **거짓이다.** 근거 문단이 붙는 것은
+ *   `document_search`·`task_extraction` 쪽이고, 날짜·팀원·부하·프로젝트 조회는
+ *   원문 문단을 갖지 않는다.
+ * - 「승인 없이는 아무것도 바꾸지 않습니다」 → **범위가 과하다.** 승인이 걸리는
+ *   것은 `side_effect=True` 도구뿐이다(`agent_runtime/factory.py` 의
+ *   `interrupt_on` 이 `tool.side_effect` 로만 만들어진다). 19개 중 7개이고
+ *   조회는 그냥 실행된다.
+ * - 「세 가지만 적으면 에이전트가 됩니다」 → 실제 빌더 항목은 일곱이다
+ *   (`AgentVersionEditPage.tsx`).
+ * - 「People DB」 → 지금 연결 가능한 인사 정보는 `mock`(예시 데이터)뿐이다.
+ * - 「요청 시 연결해 드립니다」 → 코드에도 운영 정책에도 근거가 없다.
+ * - 날짜가 박힌 데모 문구(「마감 2026.08.28」) → 시간이 지나면 낡는다.
+ * - 「확인이 필요합니다」 → **제품에 없는 헤더다.** 실제 확인 카드의 머리줄은
+ *   「전체 선택 · N건 선택됨 · 업무 N건」이다(`ChatCards.tsx`).
+ *
+ * **제품명을 메인 메시지에서 반복하지 않는다.** 커넥터는 제품이 아니라 자리이고,
+ * 그 어휘는 우리가 지어낸 것이 아니라 `ConnectorTab.tsx` 의 `SLOTS` 가 이미
+ * 쓰고 있다 — 「문서 저장소」·「업무 기록소」·「인사 시스템」. 자리마다 지금
+ * 켜진 선택지가 하나씩뿐이라, 로고를 늘어놓으면 지원 범위를 과장하게 된다.
  */
 
-/**
- * 히어로 근거 3줄. 리뉴얼 전에는 히어로 서브 뒷문장에 뭉쳐 있던 내용이다.
- *
- * ⚠ **명사로 끝내지 않는다.** 처음에는 「답변마다 원문 근거」처럼 명사만 쌓아
- * 뒀는데, 짧아 보일 뿐 무슨 일이 일어난다는 말이 없어 읽는 사람이 뜻을 스스로
- * 지어내야 했다. 세 줄 다 무엇이 일어나는지를 말하는 문장으로 둔다.
- */
+/** 히어로 아래 3줄. 각각 아래 섹션 하나와 짝이 맞는다. */
 const PROOFS = [
-  { icon: 'file-text', text: '답을 어디서 가져왔는지 같이 보여줍니다' },
-  { icon: 'shield-check', text: '사람이 승인해야 실제로 등록됩니다' },
-  { icon: 'sparkles', text: '코딩은 한 줄도 필요 없습니다' },
+  { icon: 'message-square', text: '조회 도구는 팀을 만들면 바로 붙어 있습니다' },
+  { icon: 'shield-check', text: '밖을 바꾸는 작업은 실행 전에 확인합니다' },
+  { icon: 'sparkles', text: '반복하는 일은 에이전트로 만들어 팀에 공유합니다' },
 ] as const;
 
 /**
- * 2 · 흩어짐. 「문서는 Drive에, 업무는 Jira에, 기준은 사람 머릿속에」를 문장
- * 그대로 두지 않고 셋으로 갈랐다 — 흩어져 있다는 말을 화면이 같이 해야 한다.
+ * 1 · 실제로 할 수 있는 일. **제품명 없이 사용자의 말로 적는다.**
+ * 오른쪽은 그 요청이 실제로 부르는 내장 도구 이름이다(`registry.py` 의 `name`).
  */
-const SCATTER = [
-  { label: '문서', place: 'Google Drive' },
-  { label: '업무', place: 'Jira' },
-  { label: '기준', place: '사람 머릿속' },
+const ASKS = [
+  { ask: '지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.', tools: '문서 검색 · 업무 추출' },
+  { ask: '다음 주 업무 여유가 있는 팀원을 알려 줘.', tools: '부하 리포트 · 부재 조회 · 팀원 조회' },
+  { ask: '확정한 내용만 프로젝트 업무로 등록해 줘.', tools: '업무 등록 · 실행 전 확인' },
 ] as const;
 
-const FEATURES = [
-  {
-    id: 'evidence',
-    title: '답에는 항상 근거가 붙습니다',
-    body: '어느 문서 어느 문단에서 가져왔는지 그대로 보여줍니다. 근거를 못 찾은 값은 지어내지 않고 비워 둡니다.',
-  },
-  {
-    id: 'builder',
-    title: '에이전트는 직접 만들어 씁니다',
-    // 리뉴얼 전 본문은 히어로 서브와 같은 말("세 가지만 적으면")이었다. 같은
-    // 화면에서 두 번 읽히므로, 여기서는 그다음에 무슨 일이 생기는지를 쓴다.
-    body: '만든 에이전트는 나만 쓸 수도, 팀에 공유할 수도 있습니다. 고칠 때마다 버전이 남아 언제든 되돌립니다.',
-  },
-  {
-    id: 'gate',
-    title: '승인 없이는 아무것도 바꾸지 않습니다',
-    // 「Jira에 등록하기 전」이라는 옛 문구가 여기 남아 있었다. 8/12 에 **등록은
-    // 우리 플랫폼(`task`)이 먼저**가 됐다 — 히어로 목업은 그때 고쳤는데 이
-    // 카드는 안 고쳐져 랜딩 안에서 두 말이 어긋나 있었다.
-    body: '등록하기 전에 무엇이 올라갈지 먼저 보여 줍니다. 20건 중 3건이 실패하면 3건이 실패했다고 말합니다.',
-  },
+/** 2 · 연결하는 자리. `ConnectorTab.tsx` 의 `SLOTS` 세 개와 1:1 이다. */
+const SLOTS = [
+  { icon: 'file-text', title: '문서 저장소', body: '회의록·기획서처럼 팀이 쌓아 둔 문서' },
+  { icon: 'users', title: '팀·인사 정보', body: '팀원, 맡은 역할, 근무 기준과 부재' },
+  { icon: 'folder', title: '프로젝트와 업무 기록', body: '진행 중인 프로젝트와 등록된 업무' },
 ] as const;
 
-const STEPS = [
-  { num: '1', title: '도구를 연결합니다', caption: '예: Google Drive, Jira' },
-  { num: '2', title: '에이전트를 고르거나 만듭니다', caption: '이미 있는 것으로 시작해도 됩니다' },
-  { num: '3', title: '필요한 일을 말합니다', caption: '어디서 나온 답인지 같이 봅니다' },
-  { num: '4', title: '승인하면 그때 등록됩니다', caption: '예: Jira 이슈 등록' },
+/** 3 · 도구가 하는 일을 네 갈래로. */
+const STAGES = [
+  { num: '1', title: '조회', caption: '흩어져 있는 문서·팀·프로젝트·업무를 한 번에 찾습니다' },
+  { num: '2', title: '정리', caption: '찾은 내용을 할 일 목록이나 팀별 업무량으로 정리합니다' },
+  { num: '3', title: '생성', caption: '정리한 결과를 문서나 표 파일로 만듭니다' },
+  { num: '4', title: '등록', caption: '확인한 내용만 실제 업무로 등록합니다' },
 ] as const;
 
-/**
- * 커넥터. Drive·Jira 는 `simple-icons` 의 공식 마크가 있고(`BrandIcon`),
- * People DB 는 없다 — 없는 로고를 지어내지 않고 일반 글리프로 둔다.
- */
-const CONNECTORS = [
-  { name: 'Google Drive', brand: 'google-drive' as const },
-  { name: 'Jira', brand: 'jira' as const },
-  { name: 'People DB', glyph: 'database' as const },
+/** 4 · 빌더 항목. `AgentVersionEditPage.tsx` 의 실제 입력 항목 그대로다. */
+const BUILDER_FIELDS = [
+  '이름',
+  '설명',
+  '행동 지시',
+  '모델',
+  '응답 강도',
+  '사용할 도구',
+  '서브 에이전트',
+] as const;
+
+/** 5 · 개인 → 활성화 → 팀 공유. `AgentVersionListPage.tsx` 의 DRAFT/ACTIVE 흐름. */
+const LIFECYCLE = [
+  { label: '개인', sub: '초안 — 나만 부릅니다' },
+  { label: '활성화', sub: '직접 써 보고 켭니다' },
+  { label: '팀 공유', sub: '팀 전체가 씁니다' },
 ] as const;
 
 function Logo() {
@@ -97,125 +95,81 @@ function Logo() {
   );
 }
 
-/** 히어로 목업 — Chat 확인 대기(07 · 39:118)의 확인 카드 축약. */
-function ApprovalMock() {
+/**
+ * 히어로 목업 — 실제 Chat 의 확인 카드(`ChatCards.tsx` 의 `ConfirmCard`).
+ *
+ * 머리줄·접기 문구·버튼 라벨을 코드에서 그대로 가져왔다. 지어낸 헤더를 쓰면
+ * 공개 주소의 첫 화면이 제품에 없는 화면을 보여주게 된다.
+ */
+function ChatMock() {
   return (
     <div className={styles.mock}>
       <div className={styles.mockBar}>
         <span className={styles.mockDot} />
         <span className={styles.mockDot} />
         <span className={styles.mockDot} />
-        <span className={styles.mockBarLabel}>Chat · 확인 대기</span>
+        <span className={styles.mockBarLabel}>Chat</span>
       </div>
 
       <div className={styles.mockBody}>
-        <div className={styles.mockRowBetween}>
-          <strong className={styles.mockHeading}>확인이 필요합니다</strong>
-          <span className={styles.mockMeta}>업무 20건 · 근거 24개 문단</span>
-        </div>
+        <p className={styles.mockAsk}>지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.</p>
 
-        <p className={styles.mockWarn}>
-          기준 문서에서 마감일 근거를 찾지 못한 업무가 있습니다. 근거 없는 항목은 채우지 않고 ‘근거 없어
-          비움’으로 표시합니다.
-        </p>
-
-        <div className={styles.mockTask}>
-          <div className={styles.mockRowBetween}>
-            <strong>통합포털 SSO 로그인 연동 설계</strong>
-            <span className={styles.mockChip}>HIGH</span>
+        <div className={styles.mockCard}>
+          {/* 실제 확인 카드의 머리줄이다. 「확인이 필요합니다」가 아니다. */}
+          <div className={styles.mockConfirmHead}>
+            <span className={styles.mockConfirmLeft}>
+              <span className={styles.mockCheck} aria-hidden="true">
+                <Icon name="check" size={11} color="#fff" />
+              </span>
+              <strong>전체 선택</strong>
+              <span className={styles.mockMuted}>8건 선택됨</span>
+            </span>
+            <span className={styles.mockMuted}>업무 8건</span>
           </div>
-          <p className={styles.mockTaskMeta}>담당 역할 백엔드 개발자 · 공수 32h · 마감 2026.08.28</p>
 
-          <p className={styles.mockEvidence}>
-            포털 로그인은 사내 계정과 고객 계정을 동일한 화면에서 처리하며, 인증 실패 시 3회까지 재시도를
-            허용한다.
-            <span className={styles.mockEvidenceMeta}>E1 · DOC-2026-0142 · 역할/기술 · 유사도 87%</span>
-          </p>
-          <p className={styles.mockEvidence}>
-            인증 설계는 8월 4주차까지 확정하여 개발 착수 전 검토를 받는다.
-            <span className={styles.mockEvidenceMeta}>E2 · DOC-2026-0139 · 공수/일정·제약 · 유사도 74%</span>
-          </p>
-        </div>
+          <div className={styles.mockTaskRow}>
+            <span className={styles.mockCheck} aria-hidden="true">
+              <Icon name="check" size={11} color="#fff" />
+            </span>
+            <div className={styles.mockTaskBody}>
+              <span className={styles.mockTaskTitle}>통합포털 SSO 로그인 연동 설계</span>
+              <div className={styles.mockFacts}>
+                <span className={styles.mockFact}>
+                  <span className={styles.mockFactLabel}>담당 역할</span>
+                  <strong>백엔드 개발자</strong>
+                </span>
+                <span className={styles.mockFact}>
+                  <span className={styles.mockFactLabel}>공수</span>
+                  <strong>32h</strong>
+                </span>
+              </div>
+              {/* 근거를 못 찾아 비운 칸. 날짜를 박으면 시간이 지나 낡는다. */}
+              <p className={styles.mockMissing}>마감일: 근거 없어 비움</p>
+              <span className={styles.mockEvidenceToggle}>
+                <Icon name="chevron-down" size={13} color="var(--color-primary)" />
+                원문 근거 2건
+              </span>
+              <blockquote className={styles.mockEvidence}>
+                <p>
+                  포털 로그인은 사내 계정과 고객 계정을 동일한 화면에서 처리하며, 인증 실패 시 3회까지
+                  재시도를 허용한다.
+                </p>
+                <footer>
+                  <span>E1 · 유사도 87%</span>
+                  <span className={styles.mockEvidenceSource}>통합포털_기획_회의록.docx</span>
+                </footer>
+              </blockquote>
+            </div>
+          </div>
 
-        {/* 실제 확인 카드와 문구를 맞춘다. 랜딩만 「Jira에 등록」인 옛 문구로 남아
-            있었다 — 8/12 에 **등록은 우리 플랫폼(`task`)이 먼저**가 됐고 버튼도
-            「선택한 N건 등록」으로 바뀌었다. 랜딩은 공개 주소의 첫 화면이라
-            여기서 어긋나면 제품이 아직 Jira 부속으로 읽힌다(2026-08-12 QA §C). */}
-        <div className={styles.mockFoot}>
-          <span className={styles.mockFootNote}>승인하기 전까지 아무 데도 등록하지 않습니다.</span>
-          <span className={styles.mockFootBtn}>선택한 20건 등록</span>
+          <div className={styles.mockConfirmActions}>
+            <span className={styles.mockFootBtn}>선택한 8건 등록</span>
+            <span className={styles.mockFootGhost}>취소</span>
+          </div>
         </div>
       </div>
     </div>
   );
-}
-
-/** 카드 ① — 근거 카드 발췌. */
-function EvidenceMini() {
-  return (
-    <div className={styles.mini}>
-      <p className={styles.miniTitle}>결제 API 연동 테스트 시나리오 작성</p>
-      <p className={styles.miniEvidence}>
-        결제 실패 케이스는 타임아웃·한도 초과·카드사 거절 세 가지를 모두 재현한다.
-        <span className={styles.miniMeta}>E7 · DOC-2026-0151 · 유사도 91%</span>
-      </p>
-      <p className={styles.miniEmpty}>마감일: 근거 없어 비움</p>
-    </div>
-  );
-}
-
-/** 카드 ② — 에이전트 편집의 도구 선택 발췌. */
-function ToolsMini() {
-  return (
-    <div className={styles.mini}>
-      <p className={styles.miniLabel}>사용할 도구</p>
-      {[
-        { name: '문서 검색', desc: '팀에 등록된 문서에서 근거를 찾습니다', tag: '기본 제공', on: true },
-        { name: '부하 리포트 생성', desc: '팀원별 주간 업무 시간을 계산합니다', tag: '기본 제공', on: false },
-        // Jira 는 **Connector 로 붙고 도구는 기본 제공**이다(`jira_create_issues`).
-        // 「MCP · Jira」는 두 번 틀린 표기였다 — MCP 탭은 사용자가 직접 운영하는
-        // 서버를 붙이는 곳이고, Jira 는 우리가 미리 붙여 둔 통로다(확정 ⑨).
-        { name: 'Jira 이슈 생성', desc: '확인받은 업무를 Jira에 등록합니다', tag: '기본 제공', on: true },
-      ].map((tool) => (
-        <div className={styles.miniTool} key={tool.name}>
-          <span className={tool.on ? styles.miniCheckOn : styles.miniCheck} aria-hidden="true" />
-          <span className={styles.miniToolText}>
-            <strong>{tool.name}</strong>
-            <small>{tool.desc}</small>
-          </span>
-          <span className={styles.miniTag}>{tool.tag}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** 카드 ③ — 부분 실패 결과 카드 발췌. */
-function ResultMini() {
-  return (
-    <div className={styles.mini}>
-      <p className={styles.miniWarnBar}>
-        <span>17/20 등록 완료 · 3건 실패</span>
-        <span className={styles.miniWarnSide}>성공분은 되돌리지 않습니다</span>
-      </p>
-      {[
-        ['PORTAL-141', '통합포털 SSO 로그인 연동 설계'],
-        ['PORTAL-142', '권한 등급별 메뉴 노출 규칙 정의'],
-      ].map(([key, title]) => (
-        <div className={styles.miniIssue} key={key}>
-          <strong>{key}</strong>
-          <span>{title}</span>
-        </div>
-      ))}
-      <p className={styles.miniFail}>실패 3건 · 사유 표시</p>
-    </div>
-  );
-}
-
-function FeatureVisual({ id }: { id: string }) {
-  if (id === 'evidence') return <EvidenceMini />;
-  if (id === 'builder') return <ToolsMini />;
-  return <ResultMini />;
 }
 
 export default function LandingPage() {
@@ -242,6 +196,12 @@ export default function LandingPage() {
               </>
             ) : (
               <>
+                <a className={styles.navLink} href="#can">
+                  할 수 있는 일
+                </a>
+                <a className={styles.navLink} href="#agent">
+                  에이전트
+                </a>
                 <Link className={styles.navLink} to={PATHS.login}>
                   로그인
                 </Link>
@@ -255,28 +215,26 @@ export default function LandingPage() {
       </header>
 
       <main>
-        {/* 1 · 히어로 */}
+        {/* 0 · 히어로 */}
         <section className={styles.hero}>
           <div className={styles.heroInner}>
             <div className={styles.heroCopy}>
-              <p className={styles.badge}>프로젝트 운영 Agent Platform</p>
+              <p className={styles.badge}>대화로 쓰는 팀 업무 플랫폼</p>
               <h1 className={styles.heroTitle}>
-                팀에 필요한 AI 에이전트를,
+                팀의 업무 정보를 연결해,
                 <br />
-                코딩 없이 만들어 씁니다
+                대화로 찾아보고 실행합니다
               </h1>
               <p className={styles.heroSub}>
-                할 일과 참고할 문서, 쓸 도구를 적으면 됩니다. 그렇게 만든 에이전트는 팀 전체가 같이
-                씁니다.
+                문서에서 필요한 내용을 찾고, 팀과 프로젝트의 상황을 확인하고, 정리한 결과를 실제 업무로
+                이어갑니다. 반복하는 방식은 에이전트로 만들어 직접 검증한 뒤 팀에 공유할 수 있습니다.
               </p>
               <div className={styles.heroActions}>
                 <Link className={styles.btnPrimary} to={startHref}>
                   시작하기
                 </Link>
-                {/* 「데모 보기」였다. 누르면 기능 카드로 갈 뿐 데모가 없어, 이름이
-                    없는 것을 약속하고 있었다. 목적지(#how)와 이름을 맞춘다. */}
-                <a className={styles.btnGhost} href="#how">
-                  작동 방식 보기
+                <a className={styles.btnGhost} href="#can">
+                  할 수 있는 일 보기
                 </a>
               </div>
 
@@ -291,102 +249,142 @@ export default function LandingPage() {
             </div>
 
             <div className={styles.heroVisual}>
-              <ApprovalMock />
-              <p className={styles.visualNote}>※ 화면 속 수치는 UI 설명용 예시입니다.</p>
+              <ChatMock />
+              <p className={styles.visualNote}>※ 화면 속 문서와 수치는 UI 설명용 예시입니다.</p>
             </div>
           </div>
         </section>
 
-        {/* 2 · 흩어짐 → 전환 */}
-        <section className={styles.bandWhite}>
+        {/* 1 · 실제로 할 수 있는 일 */}
+        <section className={styles.bandWhite} id="can">
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>일은 한 곳에서 안 끝납니다</h2>
-            <div className={styles.scatterRow}>
-              {SCATTER.map((item) => (
-                <div className={styles.scatterCard} key={item.label}>
-                  <span className={styles.scatterLabel}>{item.label}</span>
-                  <strong className={styles.scatterPlace}>{item.place}</strong>
-                </div>
+            <h2 className={styles.h2}>이런 걸 물어보면 됩니다</h2>
+            <ul className={styles.askList}>
+              {ASKS.map((item) => (
+                <li className={styles.ask} key={item.ask}>
+                  <p className={styles.askQuote}>“{item.ask}”</p>
+                  <span className={styles.askTools}>{item.tools}</span>
+                </li>
               ))}
-            </div>
+            </ul>
             <p className={styles.lead}>
-              halil은 이 셋을 한자리에 모읍니다. 그리고 거기서 일할 에이전트를 팀이 직접 만듭니다.
+              팀을 만들면 조회 도구는 처음부터 붙어 있습니다. 따로 설정하지 않아도 바로 물어볼 수 있습니다.
             </p>
           </div>
         </section>
 
-        {/* 3 · 핵심 기능 3 */}
-        <section className={styles.band} id="features">
+        {/* 2 · 한 대화에서 */}
+        <section className={styles.band}>
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>이런 점이 다릅니다</h2>
-            <div className={styles.featureGrid}>
-              {FEATURES.map((feature, index) => (
-                <article className={styles.featureCard} key={feature.id}>
-                  <h3 className={styles.featureTitle}>
-                    <span className={styles.featureNum}>{index + 1}</span>
-                    {feature.title}
-                  </h3>
-                  <p className={styles.featureBody}>{feature.body}</p>
-                  {/* 시각물이 제목 위에 있었다. 카드를 읽으려면 시선이 그림에서
-                      제목으로 한 번 되돌아가야 했다. 아래로 내린다. */}
-                  <div className={styles.featureVisual}>
-                    <FeatureVisual id={feature.id} />
-                  </div>
+            <h2 className={styles.h2}>한 대화에서 다 봅니다</h2>
+            <p className={styles.lead}>
+              팀 정보가 있는 자리를 한 번 연결해 두면, 그다음부터는 대화 한 곳에서 씁니다. 어디에 있는지
+              기억하지 않아도 됩니다.
+            </p>
+            <div className={styles.slotGrid}>
+              {SLOTS.map((slot) => (
+                <article className={styles.slotCard} key={slot.title}>
+                  <span className={styles.slotIcon}>
+                    <Icon name={slot.icon} size={20} />
+                  </span>
+                  <strong className={styles.slotTitle}>{slot.title}</strong>
+                  <p className={styles.slotBody}>{slot.body}</p>
                 </article>
               ))}
             </div>
+            <p className={styles.note}>
+              자리마다 하나씩 연결합니다. 연결은 팀장이 하고, 팀원은 그대로 씁니다.
+            </p>
           </div>
         </section>
 
-        {/* 4 · 작동 방식 */}
-        <section className={styles.bandWhite} id="how">
+        {/* 3 · 조회 · 정리 · 생성 · 등록 */}
+        <section className={styles.bandWhite}>
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>작동 방식</h2>
-            {/* 회색 상자 4개로 보이던 것을 하나의 선 위에 꿴다 — 네 칸이 별개가
-                아니라 한 줄기라는 것이 카드 테두리로는 안 보였다. */}
+            <h2 className={styles.h2}>찾고, 정리하고, 만들고, 등록합니다</h2>
             <ol className={styles.stepRail}>
-              {STEPS.map((step) => (
-                <li className={styles.stepItem} key={step.num}>
-                  <span className={styles.stepNum}>{step.num}</span>
-                  <strong className={styles.stepTitle}>{step.title}</strong>
-                  <small className={styles.stepCaption}>{step.caption}</small>
+              {STAGES.map((stage) => (
+                <li className={styles.stepItem} key={stage.num}>
+                  <span className={styles.stepNum}>{stage.num}</span>
+                  <strong className={styles.stepTitle}>{stage.title}</strong>
+                  <small className={styles.stepCaption}>{stage.caption}</small>
+                </li>
+              ))}
+            </ol>
+            {/* 19는 `BUILTIN_TOOLS` 의 실제 개수다. 실측이 아닌 수는 쓰지 않는다. */}
+            <p className={styles.note}>지금 쓸 수 있는 도구는 19가지입니다.</p>
+          </div>
+        </section>
+
+        {/* 4 · 반복 업무를 에이전트로 */}
+        <section className={styles.band} id="agent">
+          <div className={styles.bandInner}>
+            <h2 className={styles.h2}>자주 하는 일은 에이전트로 만듭니다</h2>
+            <p className={styles.lead}>
+              매번 같은 요청을 다시 쓰는 대신, 하는 일과 쓸 도구를 정해 두고 이름을 붙입니다.
+            </p>
+            <div className={styles.fieldRow}>
+              {BUILDER_FIELDS.map((field) => (
+                <span className={styles.fieldChip} key={field}>
+                  {field}
+                </span>
+              ))}
+            </div>
+            <p className={styles.note}>큰 일은 서브 에이전트에게 한 단계 나눠 맡길 수 있습니다.</p>
+          </div>
+        </section>
+
+        {/* 5 · 개인 검증 후 팀 공유 */}
+        <section className={styles.bandWhite}>
+          <div className={styles.bandInner}>
+            <h2 className={styles.h2}>먼저 혼자 써 보고, 그다음 팀에 넘깁니다</h2>
+            <p className={styles.lead}>
+              만든 에이전트는 처음에 나만 부를 수 있습니다. 대화에서 직접 시켜 보고 원하는 대로 동작하면
+              활성화해서 팀 전체가 쓰게 합니다. 쓰지 않게 되면 사용 중지할 수 있고, 고칠 때마다 버전이
+              남습니다.
+            </p>
+            <ol className={styles.flowRow}>
+              {LIFECYCLE.map((stage, index) => (
+                <li className={styles.flowStage} key={stage.label}>
+                  {index > 0 && (
+                    <span className={styles.flowArrow} aria-hidden="true">
+                      <Icon name="arrow-right" size={18} />
+                    </span>
+                  )}
+                  <span className={styles.flowBox}>
+                    <strong className={styles.flowLabel}>{stage.label}</strong>
+                    <small className={styles.flowSub}>{stage.sub}</small>
+                  </span>
                 </li>
               ))}
             </ol>
           </div>
         </section>
 
-        {/* 5 · 확장성 */}
+        {/* 6 · 변경 작업의 사전 확인 */}
         <section className={styles.band}>
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>쓰던 도구 그대로, 필요한 도구는 더</h2>
-            <p className={styles.lead}>
-              지금은 Google Drive와 Jira를 연결할 수 있습니다. 사용 중인 다른 시스템은 요청 시 연결해
-              드립니다. 한 번 연결하면 에이전트가 똑같이 씁니다.
-            </p>
-            <div className={styles.connectorRow}>
-              {CONNECTORS.map((conn) => (
-                <span className={styles.connector} key={conn.name}>
-                  {'brand' in conn ? (
-                    <BrandIcon name={conn.brand} size={20} />
-                  ) : (
-                    <Icon name={conn.glyph} size={20} />
-                  )}
-                  {conn.name}
-                </span>
-              ))}
-              <span className={styles.connectorMore}>+ 우리 시스템으로 확장</span>
+            <h2 className={styles.h2}>밖을 바꾸는 작업은 실행 전에 확인합니다</h2>
+            <div className={styles.gate}>
+              <p className={styles.gateBody}>
+                조회는 그대로 답합니다. 업무를 등록하거나 수정하는 것처럼{' '}
+                <strong>실제로 무언가를 바꾸는 작업</strong>은 실행 직전에 멈추고, 무엇을 할 것인지
+                보여줍니다. 그때 승인하거나, 고치거나, 거절할 수 있습니다.
+              </p>
+              {/* 19 / 7 은 `BUILTIN_TOOLS` 와 `side_effect` 플래그의 실제 값이다. */}
+              <p className={styles.gateStat}>
+                <strong>7</strong>
+                <span>19가지 도구 중 이 확인을 거치는 수</span>
+              </p>
             </div>
           </div>
         </section>
 
-        {/* 6 · 마감 CTA (요금제 섹션은 제외 — 8/12 결정) */}
+        {/* 7 · 마감 CTA */}
         <section className={styles.cta}>
           <div className={styles.ctaInner}>
-            <h2 className={styles.ctaTitle}>기본 에이전트부터 바로 써 보세요</h2>
-            {/* 「기본 제공 에이전트로 바로 시작할 수 있습니다」는 작동 방식 섹션
-                맨 아래에 홀로 떠 있던 줄이다. 전환을 청하는 자리로 옮긴다. */}
-            <p className={styles.ctaSub}>업무 추출과 부하 리포트가 이미 들어 있습니다.</p>
+            <h2 className={styles.ctaTitle}>팀을 만들고 바로 물어보세요</h2>
+            <p className={styles.ctaSub}>조회 도구는 처음부터 붙어 있습니다.</p>
             <Link className={styles.btnOnDark} to={startHref}>
               시작하기
             </Link>
