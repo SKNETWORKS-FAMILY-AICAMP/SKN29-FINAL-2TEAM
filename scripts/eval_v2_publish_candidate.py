@@ -14,9 +14,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 AGENT_ID = "AG004"
-ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067", "AV068", "AV069"}
+ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067", "AV068", "AV069", "AV070"}
 OWNER_ACCOUNT_ID = "UA002"
-PROMPT_MARKER = "[문서 근거 완전성 v4]"
+PROMPT_MARKER = "[문서 근거 완전성 v5]"
 PROMPT_ADDENDUM = f"""
 
 {PROMPT_MARKER}
@@ -32,6 +32,9 @@ PROMPT_ADDENDUM = f"""
 - 요청 범위를 벗어난 세부 정보는 단지 문서에 있다는 이유만으로 추가하지 않는다.
 - 답변에 쓰는 각 사실은 문서나 도구 결과에서 그 값을 직접 확인한다. 응답 형식을
   채우기 위해 확인되지 않은 우선순위·선행 작업·시스템 상태를 추측하지 않는다.
+- 문서에 이미 정의된 대상·범위와 아직 미정인 완료 판정 기준을 구분한다. 완료
+  기준이 미정이라는 이유로 이미 정해진 적용 대상이나 과업 범위까지 미정이라고
+  바꾸지 않는다.
 - 최종 답변 직전에 요청받은 하위 항목별 근거와 누락 여부를 다시 점검한다.
 - 문서의 담당 주체·고유명칭·조직명은 의미를 바꾸어 축약하지 않고 원문 표현을 보존한다.
 """.rstrip()
