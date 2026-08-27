@@ -430,8 +430,40 @@
 /* 안쪽 탭이 있던 자리. 「내 파일」·「공유 받은 파일」을 트리의 형제 노드로
    끌어내면서(2026-08-26) 갈래를 고르는 일이 트리 하나로 모였다. */
 
+/* 받는 자리는 **패널 전체다**(2026-08-27). 아래 막대만 받던 것을 바깥으로
+   넓혔다 — 막대는 얇아서 파일을 든 채로 겨누기 어려웠고, 그렇다고 막대를
+   두껍게 하면 화면 높이가 고정이라 표에서 보이는 행이 그만큼 줄어든다.
+   상자를 넓히면 둘 다 지킨다. */
+.panelDrop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* 표 머리말이 sticky(z-index: 1)라 그보다 위에 있어야 덮인다. 덮개는 보여
+   주기만 하므로 `pointer-events: none` — 이벤트는 바깥 상자가 받는다. */
+.panelDropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-lg);
+  /* 강조색을 옅게 덧입히되, 뒤의 표가 비치지 않게 카드 배경을 먼저 깐다. */
+  background: linear-gradient(var(--color-primary-soft), var(--color-primary-soft)), var(--color-surface);
+  pointer-events: none;
+}
+
 /* 올리는 자리. 표 위에 두되 **한 줄로 낮게** — 화면 높이를 고정해 뒀으므로
-   여기가 두꺼워지면 그만큼 표에서 보이는 행이 줄어든다. */
+   여기가 두꺼워지면 그만큼 표에서 보이는 행이 줄어든다. 놓는 것은 위
+   `panelDrop` 이 받고, 여기는 눌러서 고르기와 안내 문구가 사는 자리다. */
 .dropZone {
   display: flex;
   align-items: center;
@@ -442,11 +474,6 @@
   border-radius: var(--radius-md);
   background: var(--color-surface);
   cursor: pointer;
-}
-
-.dropZoneOn {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
 }
 
 .dropTitle {

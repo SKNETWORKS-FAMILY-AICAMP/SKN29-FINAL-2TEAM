@@ -293,10 +293,36 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
     if (page !== safePage) setPage(safePage);
   }, [page, safePage]);
 
+  /**
+   * 놓는 자리는 **패널 전체다**(2026-08-27). 얇은 막대만 받으면 파일을 든 채로
+   * 그 한 줄을 겨눠야 했다 — 표 위에 놓쳐 떨어뜨리면 브라우저가 그 파일을
+   * 열어 버려 보던 화면에서 아예 튕겨 나간다.
+   *
+   * 받은 파일 탭에서는 받지 않는다. 막지 않으면 남의 것을 모아 둔 자리에
+   * 내 파일이 올라간다.
+   */
   function onDrop(event: DragEvent<HTMLDivElement>) {
+    if (tab !== 'mine') return;
     event.preventDefault();
     setDragging(false);
     upload(event.dataTransfer.files);
+  }
+
+  function onDragOver(event: DragEvent<HTMLDivElement>) {
+    if (tab !== 'mine') return;
+    // 막지 않으면 브라우저가 「여기엔 못 놓는다」로 표시하고 drop 도 안 온다.
+    event.preventDefault();
+    setDragging(true);
+  }
+
+  /**
+   * 안쪽 요소를 지날 때마다 dragleave 가 뜬다. **정말 상자를 벗어났을 때만**
+   * 끈다 — 아니면 덮개가 표 위를 지나는 내내 깜빡인다. 창 밖으로 나가면
+   * relatedTarget 이 null 이라 `contains` 가 false 를 준다.
+   */
+  function onDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragging(false);
   }
 
   // 실패한 것은 「읽는 중」이 아니다 — 팀 문서 표와 같은 규칙을 쓴다.
@@ -312,7 +338,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   const failed = matched.filter((file) => file.index_status === 'FAILED').length;
 
   return (
-    <>
+    <div className={styles.panelDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <div className={styles.panelHead}>
         <h2 className={styles.panelTitle}>{tab === 'mine' ? '내 파일' : '공유 받은 파일'}</h2>
         <span className={styles.panelCount}>
@@ -329,13 +355,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           받은 파일 탭에서는 안 보인다 — 거기 올릴 수는 없다. */}
       {tab === 'mine' && (
         <div
-          className={[styles.dropZone, dragging ? styles.dropZoneOn : ''].filter(Boolean).join(' ')}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
+          className={styles.dropZone}
           onClick={() => inputRef.current?.click()}
           role="button"
           tabIndex={0}
@@ -570,7 +590,16 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           읽어 둔 내용과 원본 파일이 함께 삭제됩니다. 팀에 공유한 파일이면 팀원 목록에서도 제거됩니다.
         </p>
       </Modal>
-    </>
+
+      {/* 드래그하는 동안에만 덮는다. 표를 가리지만, 지금 놓아도 되는지가
+          그 순간에는 표에 무엇이 있는지보다 중요하다. */}
+      {dragging && (
+        <div className={styles.panelDropOverlay}>
+          <Icon name="plus" size={20} color="var(--color-primary)" />
+          <span className={styles.dropTitle}>여기로 끌어다 놓으세요</span>
+        </div>
+      )}
+    </div>
   );
 }
 
