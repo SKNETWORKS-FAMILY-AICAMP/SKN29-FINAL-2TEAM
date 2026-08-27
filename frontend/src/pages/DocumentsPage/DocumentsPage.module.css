@@ -203,12 +203,6 @@
   color: var(--color-warning-text);
 }
 
-.muted {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-muted);
-}
-
 /* 검색과 쪽당 개수. 표 위에 붙박이로 둔다 — 문서가 많을 때 검색창을 찾으러
    위로 스크롤해야 하면 그 검색은 쓸모가 없다. */
 .toolbar {
@@ -471,9 +465,8 @@
   color: var(--color-muted);
 }
 
-/* 올리는 자리. 표 위에 두되 **한 줄로 낮게** — 화면 높이를 고정해 뒀으므로
-   여기가 두꺼워지면 그만큼 표에서 보이는 행이 줄어든다. 놓는 것은 위
-   `panelDrop` 이 받고, 여기는 눌러서 고르기와 안내 문구가 사는 자리다. */
+/* 눌러서 고르는 자리. 놓는 것은 위 `panelDrop` 이 받고, 여기는 그 대체
+   수단(드래그가 안 되는 환경)과 올리는 중 표시만 남았다. */
 .dropZone {
   display: flex;
   align-items: center;
@@ -490,11 +483,6 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--color-heading);
-}
-
-.dropHint {
-  font-size: 12px;
-  color: var(--color-muted);
 }
 
 .fileInput {

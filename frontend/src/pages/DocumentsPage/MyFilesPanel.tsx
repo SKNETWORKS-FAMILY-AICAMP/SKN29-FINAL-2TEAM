@@ -358,20 +358,22 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           className={styles.dropZone}
           onClick={() => inputRef.current?.click()}
           role="button"
+          // 글자가 없어 아이콘뿐이라, 읽어 주는 이름을 따로 준다.
+          aria-label="파일 고르기"
           tabIndex={0}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
           }}
         >
           <Icon name="plus" size={18} color="var(--color-primary)" />
-          {/* 안내 문구를 뺐다(2026-08-27). 끌어다 놓는 것은 이제 패널 전체가
-              받고 덮개가 그때 말해 준다 — 「여기로」라고 적힌 막대는 받는 곳을
-              오히려 좁게 가리켰다. **올리는 중 표시는 남긴다** — 올라가고 있다는
-              것을 아는 자리가 여기밖에 없다. */}
+          {/* 안내 문구를 다 뺐다(2026-08-27). 끌어다 놓는 것은 패널 전체가
+              받고 덮개가 그때 말해 주므로, 「여기로」라고 적힌 막대는 받는 곳을
+              오히려 좁게 가리켰다. 형식·용량은 안 맞을 때 서버가 사유를 주고
+              그것이 `uploadError` 로 바로 아래 붙는다.
+
+              **올리는 중 표시만 남긴다** — 올라가고 있다는 것을 아는 자리가
+              여기밖에 없다. */}
           {busy && <span className={styles.dropTitle}>{busy} 올리는 중…</span>}
-          <span className={styles.dropHint}>
-            PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
-          </span>
           <input
             ref={inputRef}
             type="file"
