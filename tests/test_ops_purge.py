@@ -245,7 +245,9 @@ class 삭제_대상_누락_검사(SimpleTestCase):
         "user_account",  # 표의 마지막 단계에서 지운다
     }
     #: `reset_demo.sql` 이 일부러 남기는 것 — 테넌트 데이터가 아니라 플랫폼 설정이다.
-    RESET_KEEP = {"sys_setting", "sys_notice"}
+    #: `skill_worker_heartbeat` 는 워커 프로세스의 생존 신호다. 테넌트 데이터가
+    #: 아니고, 비우면 「워커가 떠 있나」를 다음 하트비트까지 알 수 없다.
+    RESET_KEEP = {"sys_setting", "sys_notice", "skill_worker_heartbeat"}
     #: `reset_eval.sql`(평가용)이 `reset_demo.sql`(시연용)과 달리 **남기는** 것.
     #: 테넌트 그 자체와 재연결이 귀찮은 것들이다 — 평가 초기화의 목적이
     #: 「재로그인·재연결 없이 프로젝트와 문서만 갈아 끼우기」라서 남긴다.
@@ -260,6 +262,11 @@ class 삭제_대상_누락_검사(SimpleTestCase):
         "mcp_server", "mcp_tool", "guardrail_provider",
         "cal_event",          # 프로젝트와 무관하다
         "audit_log",          # 대상이 사라져도 「누가 무엇을 했는가」는 남는다
+        # 등록된 스킬 자체는 `store` 에 있어 남는다. 그 카탈로그 리비전도 같이
+        # 남겨야 카탈로그가 바뀐 것처럼 보이지 않는다.
+        "skill_catalog_revision",
+        # 운영자가 손으로 넣은 회귀 데이터셋 — eval_run 과 같은 이유로 남긴다
+        "skill_eval_regression_case",
     }
 
     @staticmethod

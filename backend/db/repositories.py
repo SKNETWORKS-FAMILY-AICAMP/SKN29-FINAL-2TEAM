@@ -4445,6 +4445,13 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     # 짧은 코드가 001 부터 다시 나갈 때 **새 팀이 그대로 물려받는다**
     # (2026-08-25 에 빠져 있는 것을 발견해 채웠다).
     ("가드레일 공급자", "DELETE FROM guardrail_provider WHERE team_id = %(team_id)s"),
+    # 스킬 검증·등록 (2026-08-27 에 채웠다). 8/26~8/27 마이그레이션이 team_id 를
+    # 든 표를 셋 만들었는데 여기가 따라오지 않아, **팀을 완전 삭제해도 남았다** —
+    # 실제 DB 드릴로 확인했다(대조군 `guardrail_provider` 는 0, 이 셋은 1씩 남음).
+    # 회귀 사례가 신고를 가리키므로(`source_feedback_id`) 사례를 먼저 지운다.
+    ("스킬 검증 job", "DELETE FROM skill_registration_job WHERE team_id = %(team_id)s"),
+    ("스킬 회귀 사례", "DELETE FROM skill_eval_regression_case WHERE team_id = %(team_id)s"),
+    ("스킬 오발동 신고", "DELETE FROM skill_eval_feedback WHERE team_id = %(team_id)s"),
     ("연결 폴더", "DELETE FROM team_folder WHERE team_id = %(team_id)s"),
     ("팀 구성원(HR)", "DELETE FROM team_member WHERE team_id = %(team_id)s"),
     ("초대 사용 기록", "DELETE FROM user_person_link WHERE invite_id IN (SELECT invite_id FROM member_invite WHERE team_id = %(team_id)s)"),
@@ -4462,6 +4469,13 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
 #: 동기화가 조용히 실패한다. 이미 수집된 문서 자체는 남는다.
 _ACCOUNT_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("에이전트 즐겨찾기", "DELETE FROM agent_favorites WHERE account_id = %(account_id)s"),
+    # 스킬 검증·등록 (2026-08-27 에 채웠다 — 팀 쪽과 같은 누락이었다).
+    # 개인 스킬만 검증 대상이라(`target_scope='PERSONAL'`) job 은 사람에 매달린다.
+    # `skill_eval_regression_case.reviewed_by` 는 안 지운다 — 감사 기록과 같은
+    # 이유로, 사람이 나가도 「누가 승인했나」는 남는다.
+    ("스킬 검증 job", "DELETE FROM skill_registration_job WHERE account_id = %(account_id)s"),
+    ("스킬 오발동 신고", "DELETE FROM skill_eval_feedback WHERE account_id = %(account_id)s"),
+    ("스킬 카탈로그 리비전", "DELETE FROM skill_catalog_revision WHERE account_id = %(account_id)s"),
     ("가드레일 발동 기록", "DELETE FROM guardrail_event WHERE account_id = %(account_id)s"),
     ("도구 호출 기록", "DELETE FROM tool_call WHERE run_id IN (SELECT r.run_id FROM agent_run r JOIN chat_session s ON s.session_id = r.session_id WHERE s.account_id = %(account_id)s)"),
     ("실행 기록", "DELETE FROM agent_run WHERE session_id IN (SELECT session_id FROM chat_session WHERE account_id = %(account_id)s)"),

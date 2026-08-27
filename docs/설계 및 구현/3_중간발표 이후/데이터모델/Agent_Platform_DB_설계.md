@@ -113,17 +113,27 @@ GET 하나만 남는다). 커스텀 도구는 우리가 내용을 모르므로 *
 ## 6. 지울 때 손으로 다 적어야 한다
 
 **외래키가 없어서 CASCADE 가 없다.** 팀·계정 완전 삭제는 지울 것을 표로 손수 적어
-둔 것이 전부다 — 팀 ~~39단계~~ **42단계**(2026-08-25 에 셋을 채웠다) · 계정 **15단계**
-(`backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS` · `_ACCOUNT_PURGE_STEPS`).
+둔 것이 전부다 — 팀 ~~39단계~~ ~~42단계~~ **45단계** · 계정 ~~15단계~~ **18단계**
+(2026-08-27 에 스킬 넷을 채웠다 · `backend/db/repositories.py` 의
+`_TEAM_PURGE_STEPS` · `_ACCOUNT_PURGE_STEPS`).
 
 ⚠ **새 테이블이 `team_id`/`account_id` 를 갖게 되면 그 표에 줄을 더해야 한다.**
 안 더하면 지운 팀의 행이 조용히 남는다.
 
-🔴 **그리고 또 재발했다 (2026-08-27 · 실제 DB 드릴로 확인 · 아직 안 고쳤다).** 8/26~8/27 스킬
-마이그레이션이 만든 넷이 두 표 어디에도 없다 — `skill_registration_job`
-(`team_id`·`account_id`) · `skill_catalog_revision`(`account_id`) ·
-`skill_eval_regression_case`(`team_id`) · `skill_eval_feedback`
-(`team_id`·`account_id`). 다섯 번째 `skill_worker_heartbeat` 는 워커 기록이라
-대상이 아니다. **`DB/schema.sql` 과 `DB/reset_demo.sql` 에도 다섯 전부 빠져
-있다** — 상세는 `../설계/작업목록.md` 의 「스킬 테이블 다섯이 세 곳에서
-빠져 있다」.
+✅ **2026-08-27 에 또 재발했고 같은 날 고쳤다.** 8/26~8/27 스킬 마이그레이션이
+만든 넷이 두 표 어디에도 없어 **팀·계정을 완전 삭제해도 남았다**(실제 DB 드릴로
+확인). `skill_registration_job`(`team_id`·`account_id`) ·
+`skill_catalog_revision`(`account_id`) · `skill_eval_regression_case`(`team_id`) ·
+`skill_eval_feedback`(`team_id`·`account_id`) 넷을 채웠다. 다섯 번째
+`skill_worker_heartbeat` 는 워커 기록이라 대상이 아니다.
+
+⚠ **손댈 곳이 셋이 아니라 다섯이다.** 위 두 표와 `DB/reset_demo.sql` 에 더해
+`DB/reset_eval.sql` 과 `tests/test_ops_purge.py` 의 `RESET_KEEP`·`EVAL_KEEP` 이
+있다. 그 테스트가 다섯을 서로 대조하므로 **표를 더하면 먼저 깨진다** — 삭제
+표를 손대면 `python manage.py test tests.test_ops_purge` 부터 돌린다.
+
+🔴 **아직 안 지워지는 것이 하나 남았다 — `store`.** 등록된 스킬과 장기메모리는
+`skill_*` 표가 아니라 LangGraph 의 `store` 에 있는데(`skill.personal.<account_id>`
+같은 `prefix`) 삭제 표 어디에도 없다. `schema.sql` 이 아니라 런타임이 만드는
+표라 스키마 대조에도 안 걸린다. 상세와 판단은 `../설계/작업목록.md` 의 「개인
+스킬과 장기메모리는 아직 안 지워진다」.

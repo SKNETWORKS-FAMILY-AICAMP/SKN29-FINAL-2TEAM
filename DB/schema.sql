@@ -1276,3 +1276,211 @@ CREATE TABLE eval_case_result (
 
 CREATE INDEX ix_eval_case_result_case
     ON eval_case_result (case_id, status, finished_at DESC);
+
+
+-- =====================================================================
+-- 스킬 검증·등록 (2026-08-26 ~ 08-27)
+--
+-- 정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Juyeon_Agents_Description/
+--       03_스킬_검증_등록_설계.md
+--
+-- 개인 스킬 등록·수정은 즉시 SKILL.md 를 쓰지 않는다. `skill_registration_job`
+-- 에 검증 job 을 만들고, 별도 워커(`python manage.py skill_validation_worker`)가
+-- `FOR UPDATE SKIP LOCKED` 로 가져가 검증한 뒤에만 쓴다.
+--
+-- ⚠ **2026-08-27 에 여기에 뒤늦게 들어왔다.** 마이그레이션 7건으로 먼저 나가고
+-- 이 파일이 따라오지 않아, 새 볼륨을 만든 사람에게는 스킬 기능이 없는 상태였다.
+-- 아래 정의는 그 7건을 **전부 적용한 뒤의 모양**이다(실제 DB 에서 떠 왔다).
+-- =====================================================================
+
+CREATE TABLE skill_registration_job (
+    job_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- 검증 job 은 항상 개인 스킬만 대상으로 한다(정본 §2 「TEAM 직접 등록
+    -- 경로를 제거한다」). 숨기지 않고 CHECK 로 고정한다.
+    target_scope        VARCHAR(20) NOT NULL DEFAULT 'PERSONAL'
+                         CHECK (target_scope = 'PERSONAL'),
+
+    account_id          VARCHAR(5)  NOT NULL,   -- user_account.account_id(FK 없음)
+    team_id             VARCHAR(5),             -- team.team_id(FK 없음). 도구·소속 확인용
+
+    skill_name          VARCHAR(64) NOT NULL,
+    -- RETRY 가 5자를 넘어 VARCHAR(5) 로는 저장이 실패했다(2026-08-27 에 넓혔다).
+    operation           VARCHAR(10) NOT NULL
+                         CHECK (operation IN ('CREATE', 'UPDATE', 'RETRY')),
+
+    -- SkillDocument 초안. 검증 중이거나 실패한 동안은 여기가 유일한 저장소다 —
+    -- 통과해야만 개인 SKILL.md 로 옮겨 쓴다(정본 §3/§4).
+    candidate_document  JSONB       NOT NULL,
+    candidate_hash      VARCHAR(64) NOT NULL,   -- sha256(candidate_document)
+    base_content_hash   VARCHAR(64),            -- UPDATE 일 때 수정 전 등록본 해시
+
+    status              VARCHAR(20) NOT NULL DEFAULT 'QUEUED'
+                         CHECK (status IN (
+                             'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED',
+                             'CANCEL_REQUESTED', 'CANCELED'
+                         )),
+    stage               VARCHAR(20) NOT NULL DEFAULT 'WAITING'
+                         CHECK (stage IN (
+                             'WAITING', 'CHECKING', 'PREPARING_TESTS',
+                             'TESTING', 'PUBLISHING'
+                         )),
+
+    attempt             INT         NOT NULL DEFAULT 1,
+    retry_of_job_id     UUID,                   -- skill_registration_job.job_id(FK 없음)
+
+    -- 채팅에서 시작됐을 때의 세션. 설정 화면에서 시작하면 NULL.
+    source_session_id   UUID,                   -- chat_session.session_id(FK 없음)
+
+    -- 같은 HITL 재개·네트워크 재시도가 job 을 중복 생성하지 않게 막는 키.
+    idempotency_key     VARCHAR(128),
+
+    failure_code        VARCHAR(40),
+    failure_summary     TEXT,
+    failure_details     JSONB,
+
+    -- 실행 중인 워커. `FOR UPDATE SKIP LOCKED` 로 가져간 워커가 자기를 표시하고,
+    -- lease_expires_at 이 지나면 다른 워커가 회수한다.
+    lease_owner         VARCHAR(128),
+    lease_expires_at    TIMESTAMPTZ,
+    heartbeat_at        TIMESTAMPTZ,
+
+    cancel_requested_at TIMESTAMPTZ,
+
+    -- 평가 재현성 스냅샷 (2026-08-26 · 정본 §8).
+    evaluation_agent_id              VARCHAR(5),
+    evaluation_agent_version_id      VARCHAR(5),
+    base_catalog_revision            BIGINT,
+    test_case_set                    JSONB,
+    eval_suite_version               VARCHAR(64),
+    generator_prompt_version         VARCHAR(32),
+    semantic_reviewer_prompt_version VARCHAR(32),
+    behavior_reviewer_prompt_version VARCHAR(32),
+    evaluator_model_snapshot         VARCHAR(128),
+    platform_probe_version           VARCHAR(32),
+    regression_case_ids              TEXT[],
+    candidate_snapshot_hash          VARCHAR(64),
+    distractor_snapshot_hashes       JSONB,
+    tool_stub_version                VARCHAR(32),
+    trace_summary                    JSONB,
+    metrics                          JSONB,
+    runtime_profile_version          VARCHAR(128),
+    tool_registry_version            VARCHAR(128),
+
+    -- 사용자용 세부 진행. 5단계 stage 는 화면 구조로 두고, 그 안에서 워커가
+    -- 실제로 하는 일을 따로 전달한다. 모델의 내부 사고과정은 담지 않는다.
+    progress_message    TEXT        NOT NULL DEFAULT '검증을 시작할 차례를 기다리고 있어요.',
+    progress_current    INT,
+    progress_total      INT,
+    progress_events     JSONB       NOT NULL DEFAULT '[]'::jsonb,
+
+    model_call_count    INT         NOT NULL DEFAULT 0,
+    estimated_cost_usd  NUMERIC(12, 6) NOT NULL DEFAULT 0,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at          TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at        TIMESTAMPTZ
+);
+
+-- 워커가 큐를 가져갈 때 쓰는 자리 — status=QUEUED 만 스캔한다.
+CREATE INDEX ix_skill_registration_job_queue
+    ON skill_registration_job (status, created_at)
+    WHERE status = 'QUEUED';
+
+-- 사용자 화면(JobCenter · 스킬 목록)이 「내 열린 job」을 조회하는 자리.
+CREATE INDEX ix_skill_registration_job_account_open
+    ON skill_registration_job (account_id, status, created_at DESC);
+
+-- 「같은 사용자·스킬 이름에는 열린 job 을 하나만」(정본 §9)의 최종 방어선.
+CREATE UNIQUE INDEX ux_skill_registration_job_open_per_name
+    ON skill_registration_job (account_id, skill_name)
+    WHERE status IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED');
+
+-- 죽은 워커 회수 — lease_expires_at 이 지난 RUNNING job 을 찾는 자리.
+CREATE INDEX ix_skill_registration_job_lease
+    ON skill_registration_job (status, lease_expires_at)
+    WHERE status = 'RUNNING';
+
+
+-- 사람마다의 스킬 카탈로그 리비전. 검증이 어떤 카탈로그를 보고 돌았는지를
+-- job 의 base_catalog_revision 이 가리킨다.
+CREATE TABLE skill_catalog_revision (
+    account_id  VARCHAR(5) PRIMARY KEY,         -- user_account.account_id(FK 없음)
+    revision    BIGINT      NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+-- 워커 생존 신호. 큐에 쌓이기만 하고 아무 일도 안 일어날 때 「워커가 떠
+-- 있나」를 이 표로 본다. 팀·계정에 매달리지 않는다.
+CREATE TABLE skill_worker_heartbeat (
+    worker_id     VARCHAR(128) PRIMARY KEY,
+    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    heartbeat_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_skill_worker_heartbeat_recent
+    ON skill_worker_heartbeat (heartbeat_at DESC);
+
+
+-- 실제 오발동 회귀 케이스 — 정본 §8.8. 자동 수집 파이프라인은 아직 없고,
+-- 운영자가 익명화해 수동으로 넣는 것을 전제로 저장·승인 구조만 둔다.
+CREATE TABLE skill_eval_regression_case (
+    case_id            VARCHAR(40) PRIMARY KEY,
+    scope              VARCHAR(10) NOT NULL CHECK (scope IN ('GLOBAL', 'TEAM', 'SKILL')),
+    team_id            VARCHAR(5),             -- scope='TEAM' 일 때만. team.team_id(FK 없음)
+    skill_name         VARCHAR(64),            -- scope='SKILL' 일 때만
+    capability_tags    TEXT[]      NOT NULL DEFAULT '{}',
+    polarity           VARCHAR(10) NOT NULL CHECK (polarity IN ('positive', 'negative')),
+    case_document      JSONB       NOT NULL,   -- SkillEvalCase 전체(익명화된 messages/fixtures)
+    source_trace_hash  VARCHAR(64),            -- 원문을 노출하지 않는 추적용 해시
+    source_feedback_id UUID,                   -- skill_eval_feedback.feedback_id(FK 없음)
+    review_status      VARCHAR(10) NOT NULL DEFAULT 'DRAFT'
+                        CHECK (review_status IN ('DRAFT', 'APPROVED', 'REJECTED')),
+    reviewed_by        VARCHAR(5),             -- user_account.account_id(FK 없음), 운영자
+    dataset_version    VARCHAR(64) NOT NULL DEFAULT 'v1',
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    -- 범위마다 채워야 하는 칸이 다르다 — GLOBAL 은 둘 다 비고, TEAM 은 팀만,
+    -- SKILL 은 스킬 이름을 든다.
+    CONSTRAINT ck_skill_eval_regression_scope_fields CHECK (
+        (scope = 'GLOBAL' AND team_id IS NULL AND skill_name IS NULL)
+        OR (scope = 'TEAM' AND team_id IS NOT NULL AND skill_name IS NULL)
+        OR (scope = 'SKILL' AND skill_name IS NOT NULL)
+    )
+);
+
+CREATE INDEX ix_skill_eval_regression_case_lookup
+    ON skill_eval_regression_case (review_status, scope, team_id, skill_name);
+
+CREATE INDEX ix_skill_eval_regression_source_feedback
+    ON skill_eval_regression_case (source_feedback_id)
+    WHERE source_feedback_id IS NOT NULL;
+
+
+-- 「이 답에서 스킬이 잘못 쓰였다 / 쓰였어야 했다」는 사용자 신고. 승인되면
+-- 위 회귀 케이스로 옮겨 간다(source_feedback_id).
+CREATE TABLE skill_eval_feedback (
+    feedback_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id        UUID        NOT NULL,    -- chat_message.message_id(FK 없음)
+    session_id        UUID        NOT NULL,    -- chat_session.session_id(FK 없음)
+    account_id        VARCHAR(5)  NOT NULL,    -- user_account.account_id(FK 없음)
+    team_id           VARCHAR(5)  NOT NULL,    -- team.team_id(FK 없음)
+    feedback_kind     VARCHAR(20) NOT NULL
+                       CHECK (feedback_kind IN ('WRONG_USAGE', 'MISSED_USE')),
+    observed_skills   TEXT[]      NOT NULL DEFAULT '{}',
+    expected_skill    VARCHAR(64),
+    note              TEXT,
+    source_trace_hash VARCHAR(64) NOT NULL,
+    review_status     VARCHAR(12) NOT NULL DEFAULT 'PENDING'
+                       CHECK (review_status IN ('PENDING', 'CONVERTED', 'DISMISSED')),
+    reviewed_by       VARCHAR(5),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (message_id, account_id, feedback_kind)
+);
+
+CREATE INDEX ix_skill_eval_feedback_review
+    ON skill_eval_feedback (review_status, created_at DESC);
