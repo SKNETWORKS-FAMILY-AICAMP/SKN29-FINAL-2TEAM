@@ -83,19 +83,26 @@ function Logo() {
  * 그림 한 장으로는 「설명은 알겠는데 실제로도 이렇게 되나」가 남는다. 그래서
  * 묻기 → 찾기 → 확인 → 등록 → 결과까지 **직접 눌러 보게** 한다.
  *
- * ⚠ **서버를 부르지 않는다.** 화면만 도는 대본이다. 그래서 아래에 그렇게 적어
- * 둔다 — 여기서 「실제 결과」인 척하면 정직 표기 원칙이 무너진다.
+ * ⚠ **서버를 부르지 않는다.** 화면만 도는 대본이다.
+ *
+ * 「※ 실제 데이터가 아닙니다」 같은 표기는 붙이지 않는다(PM) — 눌러 보라고 해
+ * 놓고 바로 밑에서 변명하면 제품이 없어 보인다. 브라우저 틀 안의 미리보기라는
+ * 것은 관습으로 읽히고, 안에 든 값도 한눈에 예시다. 대신 **실제 결과인 척하는
+ * 문구를 어디에도 쓰지 않는 것**으로 지킨다.
  *
  * 단계 이름과 버튼 라벨은 전부 실제 Chat 에서 가져왔다 —
  * 「생각하는 중」·「문서 검색 실행 중」(`ChatPage.tsx` 의 `${toolName} 실행 중`) ·
  * 「선택한 N건 등록」·「등록하는 중…」·「N/N 등록 완료」(`ChatCards.tsx`).
  */
-type DemoStep = 'idle' | 'thinking' | 'searching' | 'confirm' | 'registering' | 'done';
+type DemoStep = 'thinking' | 'searching' | 'confirm' | 'registering' | 'done';
 
 const DEMO_ASK = '지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.';
 
 function ChatMock() {
-  const [step, setStep] = useState<DemoStep>('idle');
+  // **빈 채로 기다리지 않는다.** 처음에 「눌러서 실행해 보세요」 버튼만 두었더니
+  // 확인 카드 높이만큼 잡아 둔 프레임이 300px 넘게 비어 보였다. 바로 돌려서
+  // 1초 안에 채우고, 누를 자리는 진짜 버튼(「선택한 8건 등록」)에 남긴다.
+  const [step, setStep] = useState<DemoStep>('thinking');
   const timers = useRef<number[]>([]);
 
   // 단계마다 타이머를 걸어 두고, 다시 누르거나 화면을 떠나면 전부 정리한다.
@@ -107,8 +114,6 @@ function ChatMock() {
     );
   }
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
-
   function run() {
     setStep('thinking');
     schedule([
@@ -117,18 +122,24 @@ function ChatMock() {
     ]);
   }
 
+  useEffect(() => {
+    // 움직임을 줄이도록 설정한 사람에게는 단계를 돌리지 않고 결과부터 보인다 —
+    // 볼 것은 확인 카드이지 기다리는 과정이 아니다.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setStep('confirm');
+      return undefined;
+    }
+    run();
+    return () => timers.current.forEach(clearTimeout);
+    // 첫 마운트에서 한 번만 돈다. `run` 은 매 렌더 새로 만들어지므로 뺀다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function register() {
     setStep('registering');
     schedule([['done', 1400]]);
   }
 
-  function reset() {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    setStep('idle');
-  }
-
-  const asked = step !== 'idle';
   const running = step === 'thinking' || step === 'searching';
   const showCard = step === 'confirm' || step === 'registering';
 
@@ -139,22 +150,13 @@ function ChatMock() {
         <span className={styles.mockDot} />
         <span className={styles.mockDot} />
         <span className={styles.mockBarLabel}>Chat</span>
-        {asked && (
-          <button type="button" className={styles.mockReset} onClick={reset}>
-            처음부터
-          </button>
-        )}
+        <button type="button" className={styles.mockReset} onClick={run}>
+          다시 보기
+        </button>
       </div>
 
       <div className={styles.mockBody}>
-        {step === 'idle' ? (
-          <button type="button" className={styles.demoStart} onClick={run}>
-            <span className={styles.demoStartLabel}>눌러서 실행해 보세요</span>
-            <span className={styles.demoStartAsk}>{DEMO_ASK}</span>
-          </button>
-        ) : (
-          <p className={styles.mockAsk}>{DEMO_ASK}</p>
-        )}
+        <p className={styles.mockAsk}>{DEMO_ASK}</p>
 
         {running && (
           <p className={styles.mockThinking}>
@@ -249,6 +251,16 @@ function ChatMock() {
               <span className={styles.mockIssueKey}>PORTAL-142</span>
               <span className={styles.mockIssueTitle}>권한 등급별 메뉴 노출 규칙 정의</span>
               <span className={styles.mockMuted}>근거 3건</span>
+            </div>
+            <div className={styles.mockIssueRow}>
+              <span className={styles.mockIssueKey}>PORTAL-143</span>
+              <span className={styles.mockIssueTitle}>인증 실패 재시도 정책 정리</span>
+              <span className={styles.mockMuted}>근거 2건</span>
+            </div>
+            <div className={styles.mockIssueRow}>
+              <span className={styles.mockIssueKey}>PORTAL-144</span>
+              <span className={styles.mockIssueTitle}>계정 유형별 접근 범위 정의</span>
+              <span className={styles.mockMuted}>근거 4건</span>
             </div>
           </div>
         )}
@@ -424,7 +436,6 @@ export default function LandingPage() {
 
             <div className={styles.heroVisual}>
               <ChatMock />
-              <p className={styles.visualNote}>※ 눌러 볼 수 있는 예시입니다. 실제 데이터가 아니라 화면 흐름만 보여줍니다.</p>
             </div>
           </div>
         </section>
