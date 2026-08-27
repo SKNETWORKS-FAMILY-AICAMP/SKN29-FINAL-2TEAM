@@ -38,9 +38,20 @@ import styles from './LandingPage.module.css';
 
 /** 히어로 아래 3줄. 제품이 지키는 약속만 적는다 — 온보딩 정보는 여기 안 온다. */
 const PROOFS = [
-  { icon: 'file-text', text: '문서에서 찾은 내용은 근거를 함께 보여줍니다' },
-  { icon: 'shield-check', text: '변경 작업은 실행 전에 확인합니다' },
-  { icon: 'sparkles', text: '자주 하는 절차는 검증을 거쳐 팀에 공유합니다' },
+  { icon: 'file-text', text: '답이 어느 문서에서 나왔는지 같이 보여줍니다' },
+  { icon: 'shield-check', text: '올리기 전에 무엇이 올라갈지 먼저 보여줍니다' },
+  { icon: 'sparkles', text: '자주 하는 일은 이름 붙여 팀과 함께 씁니다' },
+] as const;
+
+/**
+ * 3 · 안 해도 되는 일. **제품 속성이 아니라 그 사람의 하루에서 사라지는 일**을
+ * 적는다 — 「그래서 내가 뭘 안 해도 되나」가 페이지에 한 줄도 없었다.
+ */
+const GAINS = [
+  { gone: '회의록 뒤져서 할 일 옮겨 적기', now: '지난 회의 정리해 달라고 하면 됩니다.' },
+  { gone: '누가 여유 있는지 물어보고 다니기', now: '다음 주에 여유 있는 팀원을 바로 알려 줍니다.' },
+  { gone: '업무 하나씩 손으로 등록하기', now: '확인한 것만 골라 한 번에 올립니다.' },
+  { gone: '주간 업무량 표 만들어 공유하기', now: '표 파일로 만들어 그 자리에서 받습니다.', file: true },
 ] as const;
 
 /**
@@ -55,7 +66,7 @@ const ASKS = [
 ] as const;
 
 /** 에이전트를 만들어 쓰는 차례. 상태 이름은 쓰지 않는다. */
-const AGENT_FLOW = ['절차를 적는다', '검증을 거친다', '팀이 함께 쓴다'] as const;
+const AGENT_FLOW = ['시킬 일을 적는다', '혼자 써 본다', '팀과 함께 쓴다'] as const;
 
 function Logo() {
   return (
@@ -268,7 +279,7 @@ export default function LandingPage() {
             ) : (
               <>
                 <a className={styles.navLink} href="#can">
-                  지키는 것
+                  달라지는 것
                 </a>
                 <a className={styles.navLink} href="#agent">
                   에이전트
@@ -305,7 +316,7 @@ export default function LandingPage() {
                   시작하기
                 </Link>
                 <a className={styles.btnGhost} href="#can">
-                  무엇을 지키는지 보기
+                  무엇이 달라지는지 보기
                 </a>
               </div>
 
@@ -340,22 +351,22 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
-            {/* 물으면 답만 오는 게 아니라 결과물이 나온다. 자리를 따로 만들지
-                않고 예시 바로 아래 둔다. */}
-            <FilesMock />
           </div>
         </section>
 
-        {/* 3 · 지어내지 않는다 */}
+        {/* 3 · 안 해도 되는 일 */}
         <section className={styles.bandDark} id="can">
           <div className={styles.bandInner}>
-            <div className={styles.statement}>
-              <h2 className={styles.h2}>모르는 것은 비워 둡니다</h2>
-              <p className={styles.statementBody}>
-                빈칸은 실패가 아니라 정보입니다. 문서에 없는 마감일을 그럴듯하게 채우는 대신 비워 두고,
-                20건 중 3건이 실패하면 3건이라고 적습니다. 이미 끝난 일은 되돌리지 않습니다.
-              </p>
-            </div>
+            <h2 className={styles.h2}>이런 일이 없어집니다</h2>
+            <ul className={styles.gainGrid}>
+              {GAINS.map((item) => (
+                <li className={styles.gain} key={item.gone}>
+                  <span className={styles.gainGone}>{item.gone}</span>
+                  <strong className={styles.gainNow}>{item.now}</strong>
+                  {'file' in item && <FilesMock />}
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
@@ -364,10 +375,10 @@ export default function LandingPage() {
           <div className={styles.bandInner}>
             <div className={styles.split}>
               <div className={styles.statement}>
-              <h2 className={styles.h2}>가르친 절차는 검증을 거칩니다</h2>
+              <h2 className={styles.h2}>적으면 됩니다</h2>
               <p className={styles.statementBody}>
-                자주 하는 일은 절차로 적어 둡니다. 적은 것을 그대로 저장하지 않고, 에이전트에게 넘기기
-                전에 실제로 돌려 봅니다. 통과한 절차와 쓸 도구를 묶으면 팀이 함께 쓰는 에이전트가 됩니다.
+                무엇을 시킬지 우리말로 적으면 됩니다. 자주 하는 일은 이름을 붙여 두고 팀과 함께 씁니다.
+                코딩은 한 줄도 하지 않습니다.
               </p>
               {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
                   쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
@@ -394,10 +405,10 @@ export default function LandingPage() {
           <div className={styles.bandInner}>
             <div className={styles.split}>
               <div className={styles.statement}>
-              <h2 className={styles.h2}>할 수 있는 일에 선을 그었습니다</h2>
+              <h2 className={styles.h2}>잘못 올라갈 일은 없습니다</h2>
               <p className={styles.statementBody}>
-                에이전트는 한 단계까지만 다른 에이전트에게 맡깁니다. 가져온 원본은 읽고 나면 남기지
-                않습니다. 밖을 바꾸는 일은 언제나 사람이 먼저 봅니다.
+                업무를 등록하거나 파일을 만들기 전에 무엇이 올라갈지 먼저 보여 줍니다. 승인하거나,
+                고치거나, 그만둘 수 있습니다. 문서에 없는 마감일을 지어내서 채우지 않습니다.
               </p>
               </div>
               <ApproveMock />
@@ -409,9 +420,7 @@ export default function LandingPage() {
         <section className={styles.cta}>
           <div className={styles.ctaInner}>
             <h2 className={styles.ctaTitle}>팀의 정보로 바로 시작해 보세요</h2>
-            <p className={styles.ctaSub}>
-              필요한 내용을 묻고, 정리한 결과를 실제 업무로 이어갈 수 있습니다.
-            </p>
+            <p className={styles.ctaSub}>새 팀을 만들거나, 받은 초대로 참여합니다.</p>
             <Link className={styles.btnOnDark} to={startHref}>
               시작하기
             </Link>

@@ -581,9 +581,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  /* 요청 예시 바로 아래. 카드 폭을 잡지 않으면 밴드 폭(1280)까지 늘어난다. */
-  max-width: 420px;
-  margin-top: var(--space-6);
+  /* 「표 만들기」 칸 안에 들어간다. 칸이 폭을 정하므로 여기서 잡지 않는다. */
+  margin-top: var(--space-3);
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border-radius: var(--radius-lg);
@@ -702,6 +701,46 @@
 .miniFlowArrow {
   display: inline-flex;
   color: var(--color-placeholder);
+}
+
+/* ---------- 3 · 안 해도 되는 일 ---------- */
+
+/*
+ * 제품 속성이 아니라 **그 사람의 하루에서 사라지는 일**을 적는 자리다. 하던 일에
+ * 줄을 긋고 그 아래에 이제 어떻게 되는지를 둔다 — 「없어진다」를 글자로만 말하지
+ * 않고 화면이 같이 말하게 한다.
+ */
+.gainGrid {
+  margin: var(--space-10) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.gain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-radius: var(--radius-2xl);
+  background: rgba(255, 255, 255, 0.07);
+  padding: var(--space-6);
+}
+
+.gainGone {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.gainNow {
+  font-size: 18px;
+  line-height: 1.6;
+  font-weight: 700;
+  color: #fff;
 }
 
 /* ---------- 글만 있던 두 섹션의 화면 ---------- */
@@ -946,6 +985,10 @@
     gap: var(--space-10);
   }
 
+  .gainGrid {
+    gap: var(--space-3);
+  }
+
   /* 2열이 되면 2번 항목의 오른쪽 여백이 필요 없다. */}
 
 @media (max-width: 760px) {
@@ -987,7 +1030,8 @@
     font-size: 17px;
   }
 
-  .askList {
+  .askList,
+  .gainGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 
