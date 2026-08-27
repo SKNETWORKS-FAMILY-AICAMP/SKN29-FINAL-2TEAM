@@ -14,9 +14,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 AGENT_ID = "AG004"
-ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067", "AV068"}
+ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067", "AV068", "AV069"}
 OWNER_ACCOUNT_ID = "UA002"
-PROMPT_MARKER = "[문서 근거 완전성 v3]"
+PROMPT_MARKER = "[문서 근거 완전성 v4]"
 PROMPT_ADDENDUM = f"""
 
 {PROMPT_MARKER}
@@ -24,6 +24,9 @@ PROMPT_ADDENDUM = f"""
 - 일정·범위처럼 여러 하위 항목이 있는 질문은 하위 항목을 먼저 나열하고, 각 항목의
   구체 값을 개별적으로 검색·확인한 뒤 답한다. 일부 항목만 찾은 채 전체를 확인했다고
   간주하거나 나머지가 문서에 없다고 단정하지 않는다.
+- WBS·과업 일정의 세부 행을 찾을 때는 같은 일반 검색을 반복하지 않는다. 먼저 찾은
+  하위 작업 명칭들과 찾으려는 열 이름(작업·공수·기간)을 한 질의에 함께 넣고 충분한
+  결과 수로 검색해 세부 표 행을 확인한다.
 - 사용자가 명시적으로 요청한 항목에 직접 관련된 세부 날짜·수치는 전체 합계나
   전체 기간으로 대체하지 않고 보존한다.
 - 요청 범위를 벗어난 세부 정보는 단지 문서에 있다는 이유만으로 추가하지 않는다.

@@ -11,6 +11,8 @@ class EvalV2PublishCandidateTests(unittest.TestCase):
         self.assertIn("사용자가 명시적으로 요청한 항목", prompt)
         self.assertIn("각 항목의", prompt)
         self.assertIn("개별적으로 검색·확인", prompt)
+        self.assertIn("하위 작업 명칭들", prompt)
+        self.assertIn("작업·공수·기간", prompt)
         self.assertIn("각 사실은 문서나 도구 결과에서 그 값을 직접 확인", prompt)
         self.assertIn("요청 범위를 벗어난", prompt)
         self.assertNotIn("2026-09-22", prompt)
