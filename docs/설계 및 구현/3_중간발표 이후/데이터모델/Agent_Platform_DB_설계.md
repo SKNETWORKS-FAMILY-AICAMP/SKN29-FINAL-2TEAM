@@ -119,7 +119,7 @@ GET 하나만 남는다). 커스텀 도구는 우리가 내용을 모르므로 *
 ⚠ **새 테이블이 `team_id`/`account_id` 를 갖게 되면 그 표에 줄을 더해야 한다.**
 안 더하면 지운 팀의 행이 조용히 남는다.
 
-🔴 **그리고 또 재발했다 (2026-08-27 · 아직 안 고쳤다).** 8/26~8/27 스킬
+🔴 **그리고 또 재발했다 (2026-08-27 · 실제 DB 드릴로 확인 · 아직 안 고쳤다).** 8/26~8/27 스킬
 마이그레이션이 만든 넷이 두 표 어디에도 없다 — `skill_registration_job`
 (`team_id`·`account_id`) · `skill_catalog_revision`(`account_id`) ·
 `skill_eval_regression_case`(`team_id`) · `skill_eval_feedback`
