@@ -12,7 +12,7 @@
 
 .page {
   --band-x: var(--space-12);
-  --band-y: var(--space-24);
+  --band-y: var(--space-20);
 
   min-height: 100vh;
   background: var(--color-bg);
@@ -132,6 +132,12 @@
   background: var(--color-primary);
 }
 
+/* 떠 있는 네비게이션 아래로 앵커 제목이 가려지지 않게 여유를 둔다. */
+.bandDark,
+.bandWhite {
+  scroll-margin-top: 104px;
+}
+
 .bandDark .h2 {
   color: #fff;
 }
@@ -153,6 +159,24 @@
   font-weight: 800;
   color: var(--color-heading);
   letter-spacing: -0.4px;
+}
+
+.sectionKicker,
+.sectionKickerDark {
+  margin: 0 0 var(--space-3);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sectionKicker {
+  color: var(--color-primary);
+}
+
+.sectionKickerDark {
+  color: rgba(255, 255, 255, 0.62);
 }
 
 /*
@@ -344,6 +368,71 @@
   color: var(--color-muted);
 }
 
+/* 데모가 비어 보이지 않도록 요청에서 등록까지의 현재 위치를 항상 남긴다. */
+.mockProgress {
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 68%, var(--color-surface));
+}
+
+.mockProgressStep {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
+.mockProgressStep:not(:last-child)::after {
+  content: '';
+  flex: 1;
+  min-width: 8px;
+  margin: 0 8px 0 2px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.mockProgressDot {
+  position: relative;
+  z-index: 1;
+  width: 21px;
+  height: 21px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.mockProgressCurrent {
+  color: var(--color-primary);
+}
+
+.mockProgressCurrent .mockProgressDot {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+}
+
+.mockProgressDone {
+  color: var(--color-body);
+}
+
+.mockProgressDone .mockProgressDot {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
 .mockBody {
   padding: var(--space-5);
   display: flex;
@@ -352,10 +441,8 @@
   /* ⚠ 데모는 단계마다 높이가 다르다 — 자리를 안 잡으면 누를 때마다 히어로가
      통째로 위아래로 튄다(1440 에서 121 → 449px). 제일 큰 단계(확인 카드)만큼
      미리 잡아 둔다. 실측값이고, 카드 내용이 바뀌면 다시 재야 한다. */
-  min-height: 452px;
-  /* 남는 자리는 위에 둔다 — 대화가 아래에서 쌓이는 실제 Chat 과 같은 모양이고,
-     그래서 빈 자리가 「덜 만든 것」이 아니라 「아직 안 한 대화」로 읽힌다. */
-  justify-content: flex-end;
+  min-height: 390px;
+  justify-content: flex-start;
 }
 
 /* 사람이 친 말. 이 화면이 대화라는 것을 한눈에 알리는 유일한 장치다. */
@@ -532,16 +619,45 @@
  * 제품에서 진행 카드가 답으로 바뀌는 것과 같은 순서다. 움직임이 없는 환경에서는
  * 아예 안 그린다(아래 reduce 블록).
  */
-.mockThinking {
-  margin: 0;
-  align-self: flex-start;
+.mockWorking {
+  margin-top: auto;
+  margin-bottom: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  padding: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mockWorkingIcon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft-strong);
+  color: var(--color-primary);
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--color-bg);
-  padding: 8px 14px;
-  font-size: 12.5px;
+  justify-content: center;
+}
+
+.mockWorkingText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mockWorkingText strong {
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.mockWorkingText small {
+  font-size: 11.5px;
   color: var(--color-muted);
 }
 
@@ -676,51 +792,56 @@
 
 /* ---------- 2 · 요청 예시 ---------- */
 
-/*
- * 카드 안에는 사용자가 칠 말 한 줄뿐이다. 예전에는 그 아래에 어떤 도구가
- * 도는지를 적어 뒀는데, 그건 사용자 가치가 아니라 내부 라우팅 설명이었다.
- */
-.askList {
-  margin: var(--space-10) 0 0;
+/* 히어로와 첫 본문 사이의 짧은 프롬프트 도크. 큰 카드 섹션 하나를 줄이고
+   사용자가 실제로 입력할 말을 제품 입력창처럼 한 줄에 모은다. */
+.promptBand {
+  padding: var(--space-10) var(--band-x);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.promptInner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.promptTitle {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+  color: var(--color-heading);
+}
+
+.promptList {
+  margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-.ask {
+.prompt {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  padding: var(--space-4);
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-4);
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  padding: var(--space-8) var(--space-6);
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-
-.ask:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-soft-lg);
-}
-
-.askIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-soft-strong);
+  gap: var(--space-3);
   color: var(--color-primary);
 }
 
-.askQuote {
+.prompt p {
   margin: 0;
-  font-size: 19px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.55;
   font-weight: 600;
   color: var(--color-heading);
 }
@@ -780,6 +901,23 @@
   padding: var(--space-6);
 }
 
+.gainBefore,
+.gainAfter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.gainBefore small {
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.58);
+}
+
 .gainGone {
   font-size: 15px;
   font-weight: 600;
@@ -795,6 +933,18 @@
   color: #fff;
 }
 
+.gainArrow {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: #fff;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ---------- 글만 있던 두 섹션의 화면 ---------- */
 
 /*
@@ -807,6 +957,10 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
   gap: var(--space-16);
   align-items: center;
+}
+
+.splitReverse {
+  grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
 }
 
 .panel {
@@ -913,6 +1067,50 @@
   gap: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);
+}
+
+.trustList {
+  margin: var(--space-8) 0 0;
+  padding: var(--space-5) 0 0;
+  border-top: 1px solid var(--color-border);
+  list-style: none;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.trustPoint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.trustIcon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft-strong);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trustPoint > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.trustPoint strong {
+  font-size: 14px;
+  color: var(--color-heading);
+}
+
+.trustPoint small {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-muted);
 }
 
 /* ---------- 6 · 마감 CTA ---------- */
@@ -1037,6 +1235,19 @@
     gap: var(--space-10);
   }
 
+  .splitReverse .statement {
+    order: 0;
+  }
+
+  .splitReverse .panel {
+    order: 1;
+  }
+
+  .promptInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
   .gainGrid {
     gap: var(--space-3);
   }
@@ -1064,7 +1275,7 @@
   }
 
   .mockBody {
-    min-height: 534px;
+    min-height: 430px;
   }
 
   .heroTitle {
@@ -1082,11 +1293,7 @@
     font-size: 16px;
   }
 
-  .askQuote {
-    font-size: 17px;
-  }
-
-  .askList,
+  .promptList,
   .gainGrid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1099,8 +1306,23 @@
     font-size: 15px;
   }
 
-  .ask {
-    padding: var(--space-6);
+  .promptBand {
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-8);
+  }
+
+  .mockProgress {
+    padding-inline: var(--space-4);
+  }
+
+  .mockProgressStep {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .mockProgressStep:not(:last-child)::after {
+    display: none;
   }
 
   .footerInner {
@@ -1197,11 +1419,12 @@
   }
 
   .mockAsk {
-    animation-delay: 460ms;
+    /* 첫 프레임부터 사용자의 요청이 보여야 빈 데모처럼 보이지 않는다. */
+    animation-delay: 0ms;
   }
 
   /* 단계가 바뀔 때마다 새로 붙으므로 지연 없이 그 자리에서 올라온다. */
-  .mockThinking {
+  .mockWorking {
     animation: riseIn 320ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
   }
 
@@ -1239,7 +1462,7 @@
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .bandInner > .h2,
-    .askList,
+    .promptInner,
     .split,
     .ctaInner {
       animation: riseIn linear both;

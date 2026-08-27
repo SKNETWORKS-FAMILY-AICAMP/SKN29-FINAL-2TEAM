@@ -69,6 +69,28 @@ const ASKS = [
 /** 에이전트를 만들어 쓰는 차례. 상태 이름은 쓰지 않는다. */
 const AGENT_FLOW = ['시킬 일을 적는다', '혼자 써 본다', '팀과 함께 쓴다'] as const;
 
+/** 히어로 데모의 한 흐름. 결과 카드가 바뀌어도 이 네 단계는 제품의 주 경로다. */
+const DEMO_PROGRESS = ['요청', '근거 찾기', '검토', '등록'] as const;
+
+/** 실행을 맡기는 제품에서 가입 전에 먼저 보여줘야 할 세 가지 통제 장치. */
+const TRUST_POINTS = [
+  {
+    icon: 'users',
+    title: '팀별 권한',
+    body: '만든 사람과 팀 권한에 맞춰 에이전트와 정보를 관리합니다.',
+  },
+  {
+    icon: 'shield-check',
+    title: '변경 전 확인',
+    body: '등록·수정·파일 생성은 무엇을 할지 보여 준 뒤 실행합니다.',
+  },
+  {
+    icon: 'file-text',
+    title: '실행 기록',
+    body: '누가 무엇을 실행했는지 확인할 수 있도록 기록을 남깁니다.',
+  },
+] as const;
+
 function Logo() {
   return (
     <span className={styles.logo}>
@@ -142,6 +164,8 @@ function ChatMock() {
 
   const running = step === 'thinking' || step === 'searching';
   const showCard = step === 'confirm' || step === 'registering';
+  const currentProgress =
+    step === 'thinking' ? 0 : step === 'searching' ? 1 : step === 'done' ? 3 : 2;
 
   return (
     <div className={styles.mock}>
@@ -155,18 +179,45 @@ function ChatMock() {
         </button>
       </div>
 
+      <ol className={styles.mockProgress} aria-label="업무 처리 과정">
+        {DEMO_PROGRESS.map((label, index) => (
+          <li
+            className={[
+              styles.mockProgressStep,
+              index < currentProgress ? styles.mockProgressDone : '',
+              index === currentProgress ? styles.mockProgressCurrent : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            key={label}
+            aria-current={index === currentProgress ? 'step' : undefined}
+          >
+            <span className={styles.mockProgressDot}>
+              {index < currentProgress ? <Icon name="check" size={10} /> : index + 1}
+            </span>
+            <span>{label}</span>
+          </li>
+        ))}
+      </ol>
+
       <div className={styles.mockBody}>
         <p className={styles.mockAsk}>{DEMO_ASK}</p>
 
         {running && (
-          <p className={styles.mockThinking}>
-            <span className={styles.mockThinkingDots}>
+          <div className={styles.mockWorking} role="status">
+            <span className={styles.mockWorkingIcon}>
+              <Icon name={step === 'thinking' ? 'sparkles' : 'search'} size={18} />
+            </span>
+            <span className={styles.mockWorkingText}>
+              <strong>{step === 'thinking' ? '요청을 이해하고 있습니다' : '팀 문서에서 근거를 찾고 있습니다'}</strong>
+              <small>{step === 'thinking' ? '필요한 작업과 사용할 도구를 정합니다' : '관련 문장과 출처를 함께 확인합니다'}</small>
+            </span>
+            <span className={styles.mockThinkingDots} aria-hidden="true">
               <span />
               <span />
               <span />
             </span>
-            {step === 'thinking' ? '생각하는 중' : '문서 검색 실행 중'}
-          </p>
+          </div>
         )}
 
         {showCard && (
@@ -240,7 +291,6 @@ function ChatMock() {
             </div>
             <div className={styles.mockIssueHead}>
               <strong>등록된 이슈 8건</strong>
-              <span className={styles.mockMuted}>이슈를 누르면 Jira에서 열립니다</span>
             </div>
             <div className={styles.mockIssueRow}>
               <span className={styles.mockIssueKey}>PORTAL-141</span>
@@ -437,17 +487,18 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 2 · 요청 예시 */}
-        <section className={styles.bandWhite}>
-          <div className={styles.bandInner}>
-            <h2 className={styles.h2}>이렇게 묻습니다</h2>
-            <ul className={styles.askList}>
+        {/* 2 · 요청 예시 — 큰 설명 섹션이 아니라 히어로 다음의 짧은 시작점이다. */}
+        <section className={styles.promptBand}>
+          <div className={styles.promptInner}>
+            <div className={styles.promptIntro}>
+              <span className={styles.sectionKicker}>처음에는</span>
+              <h2 className={styles.promptTitle}>한 문장으로 시작합니다</h2>
+            </div>
+            <ul className={styles.promptList}>
               {ASKS.map((ask) => (
-                <li className={styles.ask} key={ask}>
-                  <span className={styles.askIcon} aria-hidden="true">
-                    <Icon name="message-square" size={16} />
-                  </span>
-                  <p className={styles.askQuote}>“{ask}”</p>
+                <li className={styles.prompt} key={ask}>
+                  <Icon name="message-square" size={15} />
+                  <p>“{ask}”</p>
                 </li>
               ))}
             </ul>
@@ -457,12 +508,21 @@ export default function LandingPage() {
         {/* 3 · 안 해도 되는 일 */}
         <section className={styles.bandDark} id="can">
           <div className={styles.bandInner}>
+            <p className={styles.sectionKickerDark}>팀의 하루에서</p>
             <h2 className={styles.h2}>반복되는 수작업을 줄입니다</h2>
             <ul className={styles.gainGrid}>
               {GAINS.map((item) => (
                 <li className={styles.gain} key={item.gone}>
-                  <span className={styles.gainGone}>{item.gone}</span>
-                  <strong className={styles.gainNow}>{item.now}</strong>
+                  <span className={styles.gainBefore}>
+                    <small>기존</small>
+                    <span className={styles.gainGone}>{item.gone}</span>
+                  </span>
+                  <span className={styles.gainAfter}>
+                    <span className={styles.gainArrow} aria-hidden="true">
+                      <Icon name="arrow-right" size={16} />
+                    </span>
+                    <strong className={styles.gainNow}>{item.now}</strong>
+                  </span>
                   {'file' in item && <FilesMock />}
                 </li>
               ))}
@@ -475,25 +535,26 @@ export default function LandingPage() {
           <div className={styles.bandInner}>
             <div className={styles.split}>
               <div className={styles.statement}>
-              <h2 className={styles.h2}>코딩 없이 만들어 팀과 함께 씁니다</h2>
-              <p className={styles.statementBody}>
-                무엇을 시킬지 우리말로 적습니다. 자주 하는 일은 이름을 붙여 두고, 혼자 써 본 뒤 팀에
-                넘깁니다. 코딩은 한 줄도 하지 않습니다.
-              </p>
-              {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
-                  쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
-              <ol className={styles.miniFlow}>
-                {AGENT_FLOW.map((step, index) => (
-                  <li className={styles.miniFlowStep} key={step}>
-                    {index > 0 && (
-                      <span className={styles.miniFlowArrow} aria-hidden="true">
-                        <Icon name="arrow-right" size={15} />
-                      </span>
-                    )}
-                    {step}
-                  </li>
-                ))}
-              </ol>
+                <p className={styles.sectionKicker}>반복 업무</p>
+                <h2 className={styles.h2}>코딩 없이 만들어 팀과 함께 씁니다</h2>
+                <p className={styles.statementBody}>
+                  무엇을 시킬지 우리말로 적습니다. 자주 하는 일은 이름을 붙여 두고, 혼자 써 본 뒤 팀에
+                  넘깁니다. 코딩은 한 줄도 하지 않습니다.
+                </p>
+                {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
+                    쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
+                <ol className={styles.miniFlow}>
+                  {AGENT_FLOW.map((step, index) => (
+                    <li className={styles.miniFlowStep} key={step}>
+                      {index > 0 && (
+                        <span className={styles.miniFlowArrow} aria-hidden="true">
+                          <Icon name="arrow-right" size={15} />
+                        </span>
+                      )}
+                      {step}
+                    </li>
+                  ))}
+                </ol>
               </div>
               <BuilderMock />
             </div>
@@ -503,15 +564,29 @@ export default function LandingPage() {
         {/* 5 · 실행 전 확인 */}
         <section className={styles.band}>
           <div className={styles.bandInner}>
-            <div className={styles.split}>
-              <div className={styles.statement}>
-              <h2 className={styles.h2}>실행 전에 한 번 더 확인합니다</h2>
-              <p className={styles.statementBody}>
-                업무를 등록하거나 파일을 만들기 전에 무엇이 올라갈지 먼저 보여 줍니다. 승인하거나,
-                고치거나, 그만둘 수 있습니다. 문서에 없는 마감일을 지어내서 채우지 않습니다.
-              </p>
-              </div>
+            <div className={`${styles.split} ${styles.splitReverse}`}>
               <ApproveMock />
+              <div className={styles.statement}>
+                <p className={styles.sectionKicker}>통제와 기록</p>
+                <h2 className={styles.h2}>실행 전에 한 번 더 확인합니다</h2>
+                <p className={styles.statementBody}>
+                  업무를 등록하거나 파일을 만들기 전에 무엇이 올라갈지 먼저 보여 줍니다. 승인하거나,
+                  고치거나, 그만둘 수 있습니다. 문서에 없는 마감일을 지어내서 채우지 않습니다.
+                </p>
+                <ul className={styles.trustList}>
+                  {TRUST_POINTS.map((point) => (
+                    <li className={styles.trustPoint} key={point.title}>
+                      <span className={styles.trustIcon} aria-hidden="true">
+                        <Icon name={point.icon} size={16} />
+                      </span>
+                      <span>
+                        <strong>{point.title}</strong>
+                        <small>{point.body}</small>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </div>
         </section>
