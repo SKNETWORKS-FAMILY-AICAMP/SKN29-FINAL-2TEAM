@@ -32,6 +32,8 @@ FIXTURE_DIR = (
 )
 DEFAULT_BINDING = REPO_ROOT / "outputs" / "eval-v2-fixture-bindings" / "S01-DEV-001.json"
 DEFAULT_OUTPUT = REPO_ROOT / "outputs" / "eval-v2-results"
+S01_MAX_TOOL_CALLS = 8
+S01_MAX_CALLS_PER_TOOL = {"document_search": 8, "document_list": 1}
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -221,8 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         "required_tools": ["document_search"],
         "allowed_tools": fixture["allowed_tools"],
         "forbidden_tools": fixture["forbidden_tools"],
-        "max_tool_calls": 8,
-        "max_calls_per_tool": {"document_search": 7, "document_list": 1},
+        "max_tool_calls": S01_MAX_TOOL_CALLS,
+        "max_calls_per_tool": S01_MAX_CALLS_PER_TOOL,
         "required_evidence_documents": source_doc_ids,
         "optional_evidence_documents": [],
     }

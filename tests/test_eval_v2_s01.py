@@ -1,9 +1,18 @@
 import unittest
 
-from scripts.eval_v2_s01 import _judge_criteria, _load
+from scripts.eval_v2_s01 import (
+    S01_MAX_CALLS_PER_TOOL,
+    S01_MAX_TOOL_CALLS,
+    _judge_criteria,
+    _load,
+)
 
 
 class EvalV2S01ContractTests(unittest.TestCase):
+    def test_required_search_can_use_the_entire_total_tool_budget(self):
+        self.assertEqual(S01_MAX_TOOL_CALLS, 8)
+        self.assertEqual(S01_MAX_CALLS_PER_TOOL["document_search"], S01_MAX_TOOL_CALLS)
+
     def test_fixture_explicitly_requests_each_detailed_schedule(self):
         fixture, _gold = _load()
 
