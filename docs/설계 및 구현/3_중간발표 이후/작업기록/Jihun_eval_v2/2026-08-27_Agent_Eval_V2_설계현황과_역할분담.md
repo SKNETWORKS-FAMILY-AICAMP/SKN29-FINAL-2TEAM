@@ -225,6 +225,10 @@ custodian private store에 둔다.
 
 한 명의 팀원이 다음 두 Expansion 시나리오를 함께 담당한다.
 
+팀원에게는 별도 자료를 조합하게 하지 않고
+`2026-08-27_S10_S11_팀원_작업인계서.md` 한 파일을 공유한다. 이 인계서는 역할,
+프로젝트 코드 진입점, S10/S11 계약, 제출 template과 완료조건을 포함한다.
+
 ```text
 S10 Memory/session isolation
 → S11 Root/Child delegation boundary
