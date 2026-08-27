@@ -1,8 +1,7 @@
 /*
- * 랜딩 (TO-BE). 2026-08-27 개편.
+ * 랜딩 (TO-BE).
  *
- * 색은 tokens.css 의 기존 값만 쓴다 — 리뉴얼에서 바꾼 것은 색이 아니라 여백·
- * 정렬·타이포 위계다.
+ * 색은 tokens.css 의 기존 값만 쓴다. 깊이는 색이 아니라 그림자와 여백으로 낸다.
  *
  * ⚠ **밴드 여백은 `--band-x` / `--band-y` 하나로 묶는다.** 예전에는 섹션마다
  * 값을 적어 두고 미디어 쿼리에서 선택자를 나열해 줄였는데, 그 목록에
@@ -94,8 +93,8 @@
 .navCta {
   background: var(--color-primary);
   color: #fff;
-  border-radius: var(--radius-md);
-  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  padding: 10px 20px;
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
@@ -138,20 +137,19 @@
   letter-spacing: -0.4px;
 }
 
-.lead {
-  /* 밴드 폭(1280)이 아니라 읽기 폭(760)으로 끊는다. */
-  margin: var(--space-5) 0 0;
-  max-width: 760px;
-  font-size: var(--text-lead);
-  line-height: 1.75;
-  color: var(--color-body);
+/*
+ * 카드도 목록도 없이 문장만 놓는 섹션. 페이지 후반의 두 약속(에이전트·승인)이
+ * 여기 온다 — 예전에는 칩·상태 흐름도로 채웠는데 그게 「기능 명세서」로 읽혔다.
+ * 채우는 대신 폭을 좁히고 글자를 키워 조용히 둔다.
+ */
+.statement {
+  max-width: 820px;
 }
 
-/* 섹션 맨 아래 한 줄. 사실을 덧붙이는 자리라 lead 보다 작다. */
-.note {
-  margin: var(--space-8) 0 0;
-  font-size: 15px;
-  font-weight: 600;
+.statementBody {
+  margin: var(--space-6) 0 0;
+  font-size: var(--text-lead);
+  line-height: 1.85;
   color: var(--color-body);
 }
 
@@ -197,7 +195,7 @@
   box-shadow: var(--shadow-soft-lg);
 }
 
-/* ---------- 0 · 히어로 ---------- */
+/* ---------- 1 · 히어로 ---------- */
 
 .hero {
   position: relative;
@@ -236,9 +234,6 @@
 
 .heroInner {
   position: relative;
-}
-
-.heroInner {
   max-width: 1280px;
   margin: 0 auto;
   display: grid;
@@ -258,9 +253,9 @@
 .badge {
   margin: 0 0 var(--space-5);
   border-radius: var(--radius-pill);
-  background: var(--color-primary-soft);
+  background: var(--color-primary-soft-strong);
   color: var(--color-primary);
-  padding: 7px 14px;
+  padding: 7px 16px;
   font-size: 13px;
   font-weight: 600;
 }
@@ -310,6 +305,7 @@
 }
 
 .heroVisual {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -329,8 +325,7 @@
  */
 
 .mock {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   background: var(--color-surface);
   box-shadow: var(--shadow-float);
   overflow: hidden;
@@ -526,8 +521,12 @@
   color: var(--color-body);
 }
 
-/* ---------- 1 · 이런 걸 물어보면 됩니다 ---------- */
+/* ---------- 2 · 요청 예시 ---------- */
 
+/*
+ * 카드 안에는 사용자가 칠 말 한 줄뿐이다. 예전에는 그 아래에 어떤 도구가
+ * 도는지를 적어 뒀는데, 그건 사용자 가치가 아니라 내부 라우팅 설명이었다.
+ */
 .askList {
   margin: var(--space-10) 0 0;
   padding: 0;
@@ -537,16 +536,13 @@
   gap: var(--space-4);
 }
 
-/* 테두리 대신 그림자로 면을 띄운다. 1px 선은 흰 밴드 위에서 거의 안 보였다. */
 .ask {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  justify-content: space-between;
+  align-items: center;
   border-radius: var(--radius-2xl);
   background: var(--color-surface);
   box-shadow: var(--shadow-soft);
-  padding: var(--space-6);
+  padding: var(--space-8) var(--space-6);
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
@@ -557,68 +553,13 @@
 
 .askQuote {
   margin: 0;
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1.6;
   font-weight: 600;
   color: var(--color-heading);
 }
 
-/* 그 요청이 실제로 부르는 도구. 말이 화면 기능과 이어져 있음을 보인다. */
-.askTools {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-primary);
-}
-
-/* ---------- 2 · 한 대화에서 다 봅니다 ---------- */
-
-.slotGrid {
-  margin-top: var(--space-10);
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.slotCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  padding: var(--space-6);
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-
-.slotCard:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-soft-lg);
-}
-
-.slotIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-soft-strong);
-}
-
-.slotTitle {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-.slotBody {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--color-body);
-}
-
-/* ---------- 3 · 조회 · 정리 · 생성 · 등록 ---------- */
+/* ---------- 3 · 할 수 있는 일 ---------- */
 
 /*
  * 테두리 있는 카드 4장이면 네 칸이 한 줄기라는 것이 안 보인다. 카드를 없애고
@@ -656,138 +597,18 @@
 }
 
 .stepTitle {
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1.5;
   color: var(--color-heading);
 }
 
 .stepCaption {
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.7;
   color: var(--color-muted);
 }
 
-/* ---------- 4 · 에이전트로 만듭니다 ---------- */
-
-/* 빌더의 실제 입력 항목 일곱을 그대로 늘어놓는다. 「세 가지만 적으면」이라고
-   줄여 쓰던 자리다 — 화면에 없는 편의를 약속하지 않는다. */
-.fieldRow {
-  margin-top: var(--space-8);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.fieldChip {
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  padding: 11px 20px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-heading);
-}
-
-/* ---------- 5 · 개인 → 활성화 → 팀 공유 ---------- */
-
-.flowRow {
-  margin: var(--space-10) 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: var(--space-3);
-}
-
-.flowStage {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.flowArrow {
-  display: inline-flex;
-  color: var(--color-placeholder);
-}
-
-.flowBox {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  padding: var(--space-5) var(--space-6);
-  min-width: 190px;
-}
-
-.flowLabel {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-.flowSub {
-  font-size: 13px;
-  color: var(--color-muted);
-}
-
-/* ---------- 6 · 실행 전 확인 ---------- */
-
-.gate {
-  margin-top: var(--space-8);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-10);
-  align-items: center;
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-soft-lg);
-  padding: var(--space-8) var(--space-10);
-}
-
-.gateBody {
-  margin: 0;
-  max-width: 720px;
-  font-size: 16px;
-  line-height: 1.8;
-  color: var(--color-body);
-}
-
-.gateBody strong {
-  color: var(--color-heading);
-}
-
-/* 실측값이라 크게 쓴다. 지어낸 수를 이렇게 키우면 안 된다. */
-.gateStat {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  flex: none;
-  border-left: 1px solid var(--color-border);
-  padding-left: var(--space-10);
-  text-align: center;
-}
-
-.gateStat strong {
-  font-size: 56px;
-  line-height: 1;
-  font-weight: 800;
-  color: var(--color-primary);
-  letter-spacing: -2px;
-}
-
-.gateStat span {
-  max-width: 170px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--color-muted);
-}
-
-/* ---------- 7 · 마감 CTA ---------- */
+/* ---------- 6 · 마감 CTA ---------- */
 
 /* 네이비를 꽉 채운 유일한 밴드다. 중앙 정렬도 여기 하나만 남긴다. */
 .cta {
@@ -912,25 +733,6 @@
   .stepItem:nth-child(2) {
     padding-right: 0;
   }
-
-  .gate {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
-  }
-
-  .gateStat {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-4);
-    border-left: none;
-    border-top: 1px solid var(--color-border);
-    padding: var(--space-5) 0 0;
-    text-align: left;
-  }
-
-  .gateStat span {
-    max-width: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -940,7 +742,7 @@
   }
 
   /* 알약 안에 로고 + 링크 4개가 안 들어간다(375px 에서 16px 넘쳤다).
-     섹션 앵커 둘을 접는다 — 스크롤로 닿는 자리라 없어도 길이 막히지 않는다. */
+     섹션 앵커 둘을 접는다 — 스크롤로 닿는 자리라 길이 막히지 않는다. */
   .navLink[href^='#'] {
     display: none;
   }
@@ -964,38 +766,25 @@
   }
 
   .heroSub,
-  .lead {
+  .statementBody {
     font-size: 16px;
   }
 
   .askQuote {
-    font-size: 16px;
+    font-size: 17px;
   }
 
   .askList,
-  .slotGrid,
   .stepRail {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .ask {
+    padding: var(--space-6);
+  }
+
   .stepItem {
     padding-right: 0;
-  }
-
-  /* 화살표까지 줄바꿈되면 흐름이 끊겨 보인다. 세로로 세운다. */
-  .flowRow {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .flowStage {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .flowArrow {
-    justify-content: center;
-    transform: rotate(90deg);
   }
 
   .footerInner {
@@ -1010,7 +799,6 @@
 /* 움직임을 줄이도록 설정한 사람에게는 뜨는 동작을 걷어낸다. */
 @media (prefers-reduced-motion: reduce) {
   .ask,
-  .slotCard,
   .btnPrimary,
   .btnGhost,
   .btnOnDark,
@@ -1019,7 +807,6 @@
   }
 
   .ask:hover,
-  .slotCard:hover,
   .btnPrimary:hover,
   .btnGhost:hover,
   .btnOnDark:hover {

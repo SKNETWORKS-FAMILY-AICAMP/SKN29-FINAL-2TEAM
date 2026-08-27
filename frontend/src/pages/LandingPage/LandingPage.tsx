@@ -7,84 +7,59 @@ import { clearSession, useSession } from '../../utils/session';
 import styles from './LandingPage.module.css';
 
 /**
- * 랜딩 (TO-BE). 2026-08-27 개편.
+ * 랜딩 (TO-BE).
  *
- * ⚠ **이 화면의 정본은 기획 문서가 아니라 코드다**(PM 지시). 8/12 Figma v2 와
- * 8/18 문구표를 출발점으로 삼던 것을 그만두고 실제 구현에서 문장을 뽑았다.
- * 문서를 먼저 읽으면 「팀 내부 논쟁의 결론」이 그대로 화면에 올라가는데, 그것은
- * 제품을 이미 아는 사람에게만 읽히는 말이었다.
+ * ⚠ **이 화면의 정본은 기획 문서가 아니라 코드다**(PM 지시). 다만 코드를 정본으로
+ * 삼는다는 것이 **구현을 다 늘어놓는다**는 뜻은 아니다 — 한 번 그렇게 만들었다가
+ * 「랜딩이라기보다 기능 명세서를 예쁘게 펼쳐 놓은 상태」라는 지적을 받았다.
  *
- * 이번에 폐기한 문장과 이유 —
+ * 그때 걷어낸 것 —
  *
- * - 「모든 답변에 원문 근거가 붙습니다」 → **거짓이다.** 근거 문단이 붙는 것은
- *   `document_search`·`task_extraction` 쪽이고, 날짜·팀원·부하·프로젝트 조회는
- *   원문 문단을 갖지 않는다.
- * - 「승인 없이는 아무것도 바꾸지 않습니다」 → **범위가 과하다.** 승인이 걸리는
- *   것은 `side_effect=True` 도구뿐이다(`agent_runtime/factory.py` 의
- *   `interrupt_on` 이 `tool.side_effect` 로만 만들어진다). 19개 중 7개이고
- *   조회는 그냥 실행된다.
- * - 「세 가지만 적으면 에이전트가 됩니다」 → 실제 빌더 항목은 일곱이다
- *   (`AgentVersionEditPage.tsx`).
- * - 「People DB」 → 지금 연결 가능한 인사 정보는 `mock`(예시 데이터)뿐이다.
- * - 「요청 시 연결해 드립니다」 → 코드에도 운영 정책에도 근거가 없다.
- * - 날짜가 박힌 데모 문구(「마감 2026.08.28」) → 시간이 지나면 낡는다.
- * - 「확인이 필요합니다」 → **제품에 없는 헤더다.** 실제 확인 카드의 머리줄은
- *   「전체 선택 · N건 선택됨 · 업무 N건」이다(`ChatCards.tsx`).
+ * - **같은 말의 반복.** 「조회 도구는 처음부터 붙어 있습니다」가 히어로·예시·CTA
+ *   세 곳에 있었고, 실행 전 확인과 팀 공유도 각각 두세 번 설명했다.
+ * - **내부 구현 노출.** 「19가지 도구」·「7개 승인 도구」·「응답 강도」·「서브
+ *   에이전트」·「초안 → 활성화」는 처음 온 사람이 알아야 할 것이 아니다. 숫자는
+ *   기능이 늘 때마다 낡기도 한다.
+ * - **섹션 과다.** 실제로 할 말은 「할 수 있는 일 · 에이전트 · 승인」 셋인데
+ *   일곱 섹션으로 늘어나 흐름이 끊겼다.
  *
- * **제품명을 메인 메시지에서 반복하지 않는다.** 커넥터는 제품이 아니라 자리이고,
- * 그 어휘는 우리가 지어낸 것이 아니라 `ConnectorTab.tsx` 의 `SLOTS` 가 이미
- * 쓰고 있다 — 「문서 저장소」·「업무 기록소」·「인사 시스템」. 자리마다 지금
- * 켜진 선택지가 하나씩뿐이라, 로고를 늘어놓으면 지원 범위를 과장하게 된다.
+ * 지금은 히어로 + 본문 넷 + CTA 다. 빌더 사용법은 에이전트 화면이 안내한다.
+ *
+ * 그대로 지키는 것 — 실제 요청 예시 3개, 오른쪽 Chat 목업, 「찾고 정리하고
+ * 만들고」의 네 갈래, 개인 검증 후 팀 공유라는 실제 흐름, 그리고 **제품명을
+ * 전면에서 뺀 것**(커넥터는 제품이 아니라 자리다 — `ConnectorTab.tsx` 의
+ * `SLOTS` 가 이미 그렇게 부른다).
+ *
+ * 화면에 쓰지 않기로 한 문장 — 「모든 답변에 원문 근거가 붙습니다」(날짜·팀원·
+ * 부하·프로젝트 조회는 원문 문단이 없다) · 「승인 없이는 아무것도 바꾸지
+ * 않습니다」(승인은 `side_effect=True` 도구에만 걸린다) · 「요청 시 연결해
+ * 드립니다」(코드에도 정책에도 근거가 없다).
  */
 
-/** 히어로 아래 3줄. 각각 아래 섹션 하나와 짝이 맞는다. */
+/** 히어로 아래 3줄. 제품이 지키는 약속만 적는다 — 온보딩 정보는 여기 안 온다. */
 const PROOFS = [
-  { icon: 'message-square', text: '조회 도구는 팀을 만들면 바로 붙어 있습니다' },
-  { icon: 'shield-check', text: '밖을 바꾸는 작업은 실행 전에 확인합니다' },
-  { icon: 'sparkles', text: '반복하는 일은 에이전트로 만들어 팀에 공유합니다' },
+  { icon: 'file-text', text: '문서에서 찾은 내용은 근거를 함께 보여줍니다' },
+  { icon: 'shield-check', text: '변경 작업은 실행 전에 확인합니다' },
+  { icon: 'sparkles', text: '반복하는 방식은 에이전트로 만들어 공유합니다' },
 ] as const;
 
 /**
- * 1 · 실제로 할 수 있는 일. **제품명 없이 사용자의 말로 적는다.**
- * 오른쪽은 그 요청이 실제로 부르는 내장 도구 이름이다(`registry.py` 의 `name`).
+ * 실제 요청 예시. **제품명도, 내부 도구명도 쓰지 않는다.**
+ * 예전에는 각 카드 아래에 「문서 검색 · 업무 추출」처럼 어떤 도구가 도는지를
+ * 적어 뒀는데, 그건 사용자 가치가 아니라 내부 라우팅 설명이었다.
  */
 const ASKS = [
-  { ask: '지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.', tools: '문서 검색 · 업무 추출' },
-  { ask: '다음 주 업무 여유가 있는 팀원을 알려 줘.', tools: '부하 리포트 · 부재 조회 · 팀원 조회' },
-  { ask: '확정한 내용만 프로젝트 업무로 등록해 줘.', tools: '업무 등록 · 실행 전 확인' },
+  '지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.',
+  '다음 주 업무 여유가 있는 팀원을 알려 줘.',
+  '확정한 내용만 프로젝트 업무로 등록해 줘.',
 ] as const;
 
-/** 2 · 연결하는 자리. `ConnectorTab.tsx` 의 `SLOTS` 세 개와 1:1 이다. */
-const SLOTS = [
-  { icon: 'file-text', title: '문서 저장소', body: '회의록·기획서처럼 팀이 쌓아 둔 문서' },
-  { icon: 'users', title: '팀·인사 정보', body: '팀원, 맡은 역할, 근무 기준과 부재' },
-  { icon: 'folder', title: '프로젝트와 업무 기록', body: '진행 중인 프로젝트와 등록된 업무' },
-] as const;
-
-/** 3 · 도구가 하는 일을 네 갈래로. */
+/** 할 수 있는 일. 「한 대화에서 다 봅니다」와 합쳐 네 갈래로 줄였다. */
 const STAGES = [
-  { num: '1', title: '조회', caption: '흩어져 있는 문서·팀·프로젝트·업무를 한 번에 찾습니다' },
-  { num: '2', title: '정리', caption: '찾은 내용을 할 일 목록이나 팀별 업무량으로 정리합니다' },
-  { num: '3', title: '생성', caption: '정리한 결과를 문서나 표 파일로 만듭니다' },
-  { num: '4', title: '등록', caption: '확인한 내용만 실제 업무로 등록합니다' },
-] as const;
-
-/** 4 · 빌더 항목. `AgentVersionEditPage.tsx` 의 실제 입력 항목 그대로다. */
-const BUILDER_FIELDS = [
-  '이름',
-  '설명',
-  '행동 지시',
-  '모델',
-  '응답 강도',
-  '사용할 도구',
-  '서브 에이전트',
-] as const;
-
-/** 5 · 개인 → 활성화 → 팀 공유. `AgentVersionListPage.tsx` 의 DRAFT/ACTIVE 흐름. */
-const LIFECYCLE = [
-  { label: '개인', sub: '초안 — 나만 부릅니다' },
-  { label: '활성화', sub: '직접 써 보고 켭니다' },
-  { label: '팀 공유', sub: '팀 전체가 씁니다' },
+  { num: '1', title: '찾기', caption: '문서·팀원·프로젝트 정보를 확인합니다' },
+  { num: '2', title: '정리하기', caption: '할 일과 팀 업무량을 보기 좋게 정리합니다' },
+  { num: '3', title: '만들기', caption: '정리한 결과를 문서나 표로 만듭니다' },
+  { num: '4', title: '반영하기', caption: '확인한 내용만 실제 업무에 반영합니다' },
 ] as const;
 
 function Logo() {
@@ -215,19 +190,19 @@ export default function LandingPage() {
       </header>
 
       <main>
-        {/* 0 · 히어로 */}
+        {/* 1 · 히어로 */}
         <section className={styles.hero}>
           <div className={styles.heroInner}>
             <div className={styles.heroCopy}>
               <p className={styles.badge}>대화로 쓰는 팀 업무 플랫폼</p>
               <h1 className={styles.heroTitle}>
-                팀의 업무 정보를 연결해,
+                팀의 정보를 묻고,
                 <br />
-                대화로 찾아보고 실행합니다
+                필요한 업무까지 처리합니다
               </h1>
               <p className={styles.heroSub}>
-                문서에서 필요한 내용을 찾고, 팀과 프로젝트의 상황을 확인하고, 정리한 결과를 실제 업무로
-                이어갑니다. 반복하는 방식은 에이전트로 만들어 직접 검증한 뒤 팀에 공유할 수 있습니다.
+                문서와 팀원, 프로젝트 정보를 한 대화에서 확인하세요. 찾은 내용을 정리해 파일로 만들거나,
+                검토한 뒤 실제 업무로 등록할 수 있습니다.
               </p>
               <div className={styles.heroActions}>
                 <Link className={styles.btnPrimary} to={startHref}>
@@ -255,53 +230,24 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 1 · 실제로 할 수 있는 일 */}
-        <section className={styles.bandWhite} id="can">
+        {/* 2 · 요청 예시 */}
+        <section className={styles.bandWhite}>
           <div className={styles.bandInner}>
             <h2 className={styles.h2}>이런 걸 물어보면 됩니다</h2>
             <ul className={styles.askList}>
-              {ASKS.map((item) => (
-                <li className={styles.ask} key={item.ask}>
-                  <p className={styles.askQuote}>“{item.ask}”</p>
-                  <span className={styles.askTools}>{item.tools}</span>
+              {ASKS.map((ask) => (
+                <li className={styles.ask} key={ask}>
+                  <p className={styles.askQuote}>“{ask}”</p>
                 </li>
               ))}
             </ul>
-            <p className={styles.lead}>
-              팀을 만들면 조회 도구는 처음부터 붙어 있습니다. 따로 설정하지 않아도 바로 물어볼 수 있습니다.
-            </p>
           </div>
         </section>
 
-        {/* 2 · 한 대화에서 */}
-        <section className={styles.band}>
+        {/* 3 · 할 수 있는 일 */}
+        <section className={styles.band} id="can">
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>한 대화에서 다 봅니다</h2>
-            <p className={styles.lead}>
-              팀 정보가 있는 자리를 한 번 연결해 두면, 그다음부터는 대화 한 곳에서 씁니다. 어디에 있는지
-              기억하지 않아도 됩니다.
-            </p>
-            <div className={styles.slotGrid}>
-              {SLOTS.map((slot) => (
-                <article className={styles.slotCard} key={slot.title}>
-                  <span className={styles.slotIcon}>
-                    <Icon name={slot.icon} size={20} />
-                  </span>
-                  <strong className={styles.slotTitle}>{slot.title}</strong>
-                  <p className={styles.slotBody}>{slot.body}</p>
-                </article>
-              ))}
-            </div>
-            <p className={styles.note}>
-              자리마다 하나씩 연결합니다. 연결은 팀장이 하고, 팀원은 그대로 씁니다.
-            </p>
-          </div>
-        </section>
-
-        {/* 3 · 조회 · 정리 · 생성 · 등록 */}
-        <section className={styles.bandWhite}>
-          <div className={styles.bandInner}>
-            <h2 className={styles.h2}>찾고, 정리하고, 만들고, 등록합니다</h2>
+            <h2 className={styles.h2}>필요한 정보를 찾고, 결과를 업무로 이어갑니다</h2>
             <ol className={styles.stepRail}>
               {STAGES.map((stage) => (
                 <li className={styles.stepItem} key={stage.num}>
@@ -311,80 +257,42 @@ export default function LandingPage() {
                 </li>
               ))}
             </ol>
-            {/* 19는 `BUILTIN_TOOLS` 의 실제 개수다. 실측이 아닌 수는 쓰지 않는다. */}
-            <p className={styles.note}>지금 쓸 수 있는 도구는 19가지입니다.</p>
           </div>
         </section>
 
-        {/* 4 · 반복 업무를 에이전트로 */}
-        <section className={styles.band} id="agent">
+        {/* 4 · 에이전트 — 만들기와 팀 공유를 한 덩이로 합쳤다. */}
+        <section className={styles.bandWhite} id="agent">
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>자주 하는 일은 에이전트로 만듭니다</h2>
-            <p className={styles.lead}>
-              매번 같은 요청을 다시 쓰는 대신, 하는 일과 쓸 도구를 정해 두고 이름을 붙입니다.
-            </p>
-            <div className={styles.fieldRow}>
-              {BUILDER_FIELDS.map((field) => (
-                <span className={styles.fieldChip} key={field}>
-                  {field}
-                </span>
-              ))}
+            <div className={styles.statement}>
+              <h2 className={styles.h2}>반복하는 일은 팀 에이전트로 남깁니다</h2>
+              <p className={styles.statementBody}>
+                매번 같은 요청을 다시 설명하지 않아도 됩니다. 에이전트가 맡을 일과 사용할 도구를 정하고,
+                먼저 혼자 사용해 본 뒤 팀에 공유하세요. 내용을 고칠 때마다 이전 버전도 남습니다.
+              </p>
             </div>
-            <p className={styles.note}>큰 일은 서브 에이전트에게 한 단계 나눠 맡길 수 있습니다.</p>
           </div>
         </section>
 
-        {/* 5 · 개인 검증 후 팀 공유 */}
-        <section className={styles.bandWhite}>
-          <div className={styles.bandInner}>
-            <h2 className={styles.h2}>먼저 혼자 써 보고, 그다음 팀에 넘깁니다</h2>
-            <p className={styles.lead}>
-              만든 에이전트는 처음에 나만 부를 수 있습니다. 대화에서 직접 시켜 보고 원하는 대로 동작하면
-              활성화해서 팀 전체가 쓰게 합니다. 쓰지 않게 되면 사용 중지할 수 있고, 고칠 때마다 버전이
-              남습니다.
-            </p>
-            <ol className={styles.flowRow}>
-              {LIFECYCLE.map((stage, index) => (
-                <li className={styles.flowStage} key={stage.label}>
-                  {index > 0 && (
-                    <span className={styles.flowArrow} aria-hidden="true">
-                      <Icon name="arrow-right" size={18} />
-                    </span>
-                  )}
-                  <span className={styles.flowBox}>
-                    <strong className={styles.flowLabel}>{stage.label}</strong>
-                    <small className={styles.flowSub}>{stage.sub}</small>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        {/* 6 · 변경 작업의 사전 확인 */}
+        {/* 5 · 실행 전 확인 */}
         <section className={styles.band}>
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>밖을 바꾸는 작업은 실행 전에 확인합니다</h2>
-            <div className={styles.gate}>
-              <p className={styles.gateBody}>
-                조회는 그대로 답합니다. 업무를 등록하거나 수정하는 것처럼{' '}
-                <strong>실제로 무언가를 바꾸는 작업</strong>은 실행 직전에 멈추고, 무엇을 할 것인지
-                보여줍니다. 그때 승인하거나, 고치거나, 거절할 수 있습니다.
-              </p>
-              {/* 19 / 7 은 `BUILTIN_TOOLS` 와 `side_effect` 플래그의 실제 값이다. */}
-              <p className={styles.gateStat}>
-                <strong>7</strong>
-                <span>19가지 도구 중 이 확인을 거치는 수</span>
+            <div className={styles.statement}>
+              <h2 className={styles.h2}>업무를 바꾸는 작업은 실행 전에 확인합니다</h2>
+              <p className={styles.statementBody}>
+                정보 조회는 바로 답합니다. 업무 등록·수정이나 파일 생성처럼 결과를 남기는 작업은 실행 전에
+                내용을 보여줍니다. 승인하거나 내용을 고치거나 실행하지 않을 수 있습니다.
               </p>
             </div>
           </div>
         </section>
 
-        {/* 7 · 마감 CTA */}
+        {/* 6 · 마감 CTA */}
         <section className={styles.cta}>
           <div className={styles.ctaInner}>
-            <h2 className={styles.ctaTitle}>팀을 만들고 바로 물어보세요</h2>
-            <p className={styles.ctaSub}>조회 도구는 처음부터 붙어 있습니다.</p>
+            <h2 className={styles.ctaTitle}>팀의 정보로 바로 시작해 보세요</h2>
+            <p className={styles.ctaSub}>
+              필요한 내용을 묻고, 정리한 결과를 실제 업무로 이어갈 수 있습니다.
+            </p>
             <Link className={styles.btnOnDark} to={startHref}>
               시작하기
             </Link>
