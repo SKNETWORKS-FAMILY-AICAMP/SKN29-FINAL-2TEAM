@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.eval_v2_publish_candidate import PROMPT_MARKER, build_candidate_prompt
+from scripts.eval_v2_publish_candidate import PROMPT_MARKER, _parser, build_candidate_prompt
 
 
 class EvalV2PublishCandidateTests(unittest.TestCase):
@@ -21,6 +21,13 @@ class EvalV2PublishCandidateTests(unittest.TestCase):
         twice = build_candidate_prompt(once)
 
         self.assertEqual(once, twice)
+
+    def test_reasoning_override_is_explicit(self):
+        self.assertIsNone(_parser().parse_args([]).reasoning_effort)
+        self.assertEqual(
+            _parser().parse_args(["--reasoning-effort", "medium"]).reasoning_effort,
+            "medium",
+        )
 
 
 if __name__ == "__main__":

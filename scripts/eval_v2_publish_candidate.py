@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 AGENT_ID = "AG004"
-ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067"}
+ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067", "AV068"}
 OWNER_ACCOUNT_ID = "UA002"
 PROMPT_MARKER = "[문서 근거 완전성 v3]"
 PROMPT_ADDENDUM = f"""
@@ -48,6 +48,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="생략하면 변경 예정 내용만 출력하고 DB에는 발행하지 않는다.",
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("low", "medium", "high"),
+        help="생략하면 기준 버전 값을 보존한다. 스모크 실패 후 변수 하나만 바꿀 때 사용한다.",
+    )
     return parser
 
 
@@ -62,7 +67,11 @@ def main(argv: list[str] | None = None) -> int:
     current = AgentVersionCrudRepository.get(
         agent_id=AGENT_ID, account_id=OWNER_ACCOUNT_ID
     )
-    if PROMPT_MARKER in current["system_prompt"]:
+    target_reasoning_effort = args.reasoning_effort or current["reasoning_effort"]
+    if (
+        PROMPT_MARKER in current["system_prompt"]
+        and target_reasoning_effort == current["reasoning_effort"]
+    ):
         print(json.dumps({
             "status": "ALREADY_PUBLISHED",
             "agent_id": AGENT_ID,
@@ -81,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         "description": current["description"],
         "system_prompt": build_candidate_prompt(current["system_prompt"]),
         "model": current["model"],
-        "reasoning_effort": current["reasoning_effort"],
+        "reasoning_effort": target_reasoning_effort,
         "max_iterations": current["max_iterations"],
         "tool_refs": current["tool_refs"],
         "subagents": current["subagents"],
