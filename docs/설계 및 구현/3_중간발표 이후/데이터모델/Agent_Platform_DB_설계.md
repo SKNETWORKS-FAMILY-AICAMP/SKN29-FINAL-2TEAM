@@ -98,21 +98,32 @@ GET 하나만 남는다). 커스텀 도구는 우리가 내용을 모르므로 *
 
 ## 5. 내장 도구는 DB 에 없다
 
-**내장 도구 ~~16종~~ 17종(2026-08-26 재측정)은 테이블이 아니라 코드다** — `services/harness/registry.py` 의
+**내장 도구 ~~16종~~ ~~17종~~ 19종(2026-08-27 재측정)은 테이블이 아니라 코드다** — `services/harness/registry.py` 의
 `BUILTIN_TOOLS` 가 정본이고, `agent_version_tools.tool_ref` 가 그 이름을 가리킨다.
 
-그중 **`task_update` · `task_register` · `jira_create_issues` · `skill_register`**
-넷이 `side_effect=True` 라 승인 게이트를 탄다.
+그중 **`task_update` · `task_register` · `jira_create_issues` · `skill_register` ·
+`table_export` · `document_create`** 여섯이 `side_effect=True` 라 승인 게이트를 탄다
+(뒤의 둘은 2026-08-26 추가 — 결과 파일을 「내 파일」에 저장한다).
 
 **`skill_creator_ask_followup` 도 `side_effect=True` 다**(2026-08-26 추가 확인). 다만
 화면이 승인/거절 버튼 대신 **질문+입력창 카드**를 그리고 답을 `respond` 로 돌려보내므로,
-세는 방식은 **「승인 게이트 4종 + 질문 카드 1종」**이다.
+세는 방식은 ~~「승인 게이트 4종 + 질문 카드 1종」~~ **「승인 게이트 6종 + 질문 카드 1종」**
+(2026-08-27 재측정 · `side_effect=True` 는 모두 7개)이다.
 
 ## 6. 지울 때 손으로 다 적어야 한다
 
 **외래키가 없어서 CASCADE 가 없다.** 팀·계정 완전 삭제는 지울 것을 표로 손수 적어
-둔 것이 전부다 — 팀 **39단계** · 계정 **15단계**
+둔 것이 전부다 — 팀 ~~39단계~~ **42단계**(2026-08-25 에 셋을 채웠다) · 계정 **15단계**
 (`backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS` · `_ACCOUNT_PURGE_STEPS`).
 
 ⚠ **새 테이블이 `team_id`/`account_id` 를 갖게 되면 그 표에 줄을 더해야 한다.**
 안 더하면 지운 팀의 행이 조용히 남는다.
+
+🔴 **그리고 또 재발했다 (2026-08-27 · 아직 안 고쳤다).** 8/26~8/27 스킬
+마이그레이션이 만든 넷이 두 표 어디에도 없다 — `skill_registration_job`
+(`team_id`·`account_id`) · `skill_catalog_revision`(`account_id`) ·
+`skill_eval_regression_case`(`team_id`) · `skill_eval_feedback`
+(`team_id`·`account_id`). 다섯 번째 `skill_worker_heartbeat` 는 워커 기록이라
+대상이 아니다. **`DB/schema.sql` 과 `DB/reset_demo.sql` 에도 다섯 전부 빠져
+있다** — 상세는 `../설계/작업목록.md` 의 「스킬 테이블 다섯이 세 곳에서
+빠져 있다」.
