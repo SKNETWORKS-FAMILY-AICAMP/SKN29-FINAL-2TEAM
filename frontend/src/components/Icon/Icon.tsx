@@ -9,6 +9,9 @@ export type IconName =
   | 'chevron-right'
   | 'arrow-left'
   | 'arrow-right'
+  | 'arrow-up'
+  | 'arrow-down'
+  | 'calendar'
   | 'folder'
   | 'folder-open'
   | 'file-text'
@@ -42,6 +45,9 @@ export type IconName =
   | 'message-square'
   | 'plus'
   | 'menu'
+  | 'more-horizontal'
+  | 'edit'
+  | 'trash'
   | 'star'
   | 'star-filled';
 
@@ -222,6 +228,51 @@ function renderPaths(name: IconName, color: string): ReactElement {
         <>
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
+        </>
+      );
+    case 'more-horizontal':
+      return (
+        <>
+          <circle cx="5" cy="12" r="1.45" fill={color} stroke="none" />
+          <circle cx="12" cy="12" r="1.45" fill={color} stroke="none" />
+          <circle cx="19" cy="12" r="1.45" fill={color} stroke="none" />
+        </>
+      );
+    case 'edit':
+      return (
+        <>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </>
+      );
+    case 'trash':
+      return (
+        <>
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14H6L5 6m3 0V4h8v2" />
+        </>
+      );
+    case 'arrow-up':
+      return (
+        <>
+          <line x1="12" y1="19" x2="12" y2="5" />
+          <polyline points="5 12 12 5 19 12" />
+        </>
+      );
+    case 'arrow-down':
+      return (
+        <>
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <polyline points="19 12 12 19 5 12" />
+        </>
+      );
+    case 'calendar':
+      return (
+        <>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <line x1="16" y1="3" x2="16" y2="7" />
+          <line x1="8" y1="3" x2="8" y2="7" />
+          <line x1="3" y1="11" x2="21" y2="11" />
         </>
       );
     case 'copy':

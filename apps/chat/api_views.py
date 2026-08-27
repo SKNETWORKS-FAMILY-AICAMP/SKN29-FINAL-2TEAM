@@ -49,6 +49,7 @@ from .serializers import (
     ChatConfirmSerializer,
     ChatMessageCreateSerializer,
     ChatSessionCreateSerializer,
+    ChatSessionRenameSerializer,
     ChatSessionToolsSerializer,
     message_response,
     session_response,
@@ -179,6 +180,19 @@ class ChatSessionDetailAPIView(AuthenticatedAPIView):
         return Response(
             session_response(session) | {"messages": [message_response(m) for m in messages]}
         )
+
+    def patch(self, request, session_id):
+        serializer = ChatSessionRenameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            row = ChatSessionRepository.rename(
+                session_id=session_id,
+                account_id=request.user.account_id,
+                title=serializer.validated_data["title"],
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(session_response(row))
 
     def delete(self, request, session_id):
         try:

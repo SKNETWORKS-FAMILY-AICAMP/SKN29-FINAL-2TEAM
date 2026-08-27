@@ -2,8 +2,19 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   color: inherit;
+}
+
+.answerContent {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
 }
 
 .heading {
@@ -58,6 +69,22 @@
 }
 
 .link:hover { color: var(--color-primary-hover); }
+
+.searchHighlight,
+.searchHighlightActive {
+  padding: 0 1px;
+  border-radius: 2px;
+  color: inherit;
+}
+
+.searchHighlight {
+  background: #fde68a;
+}
+
+.searchHighlightActive {
+  background: #fb923c;
+  box-shadow: 0 0 0 2px rgb(251 146 60 / 24%);
+}
 
 .quote {
   margin: 0;
@@ -215,14 +242,19 @@
   display: flex;
   min-height: 28px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
-  margin-top: var(--space-2);
+  padding: 0 2px;
 }
 
 .answerActions {
   display: flex;
+  align-items: center;
   gap: 2px;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
   opacity: 0;
   pointer-events: none;
   transform: translateY(3px);
@@ -230,18 +262,11 @@
 }
 
 .answer:hover .answerActions,
-.answer:focus-within .answerActions {
+.answer:focus-within .answerActions,
+.answerActionsVisible {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
-}
-
-.messageTime {
-  margin-left: auto;
-  color: var(--color-muted);
-  font-size: 11.5px;
-  line-height: 1;
-  white-space: nowrap;
 }
 
 .answerCopy,

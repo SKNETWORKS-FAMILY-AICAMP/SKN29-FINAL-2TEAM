@@ -29,6 +29,12 @@ class ChatMessageCreateSerializer(serializers.Serializer):
     content = serializers.CharField(max_length=10000)
 
 
+class ChatSessionRenameSerializer(serializers.Serializer):
+    """사용자가 직접 정한 대화 제목 하나만 받는다."""
+
+    title = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True)
+
+
 class ChatSessionToolsSerializer(serializers.Serializer):
     """이 대화 전용 도구 목록을 저장한다(2026-08-18, Chat "+" 버튼).
 

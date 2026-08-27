@@ -1711,6 +1711,39 @@ class ChatSessionRepository:
                 return cursor.fetchone()
 
     @staticmethod
+    def rename(*, session_id: str, account_id: str, title: str) -> dict[str, Any]:
+        """개인 대화의 제목을 바꾼다.
+
+        같은 팀은 링크로 대화를 읽을 수 있지만 목록과 사용자 설정은 개인
+        영역이다. 따라서 도구 override와 마찬가지로 소유자만 수정한다.
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_team(cursor, account_id)
+                cursor.execute(
+                    "SELECT account_id FROM chat_session WHERE session_id::text = %s",
+                    (session_id,),
+                )
+                owner = cursor.fetchone()
+                if owner is None:
+                    raise RecordNotFound(f"존재하지 않는 대화입니다: {session_id}")
+                if owner["account_id"] != account_id:
+                    raise PermissionDenied("이 대화를 수정할 수 없습니다.")
+
+                cursor.execute(
+                    """
+                    UPDATE chat_session SET title = %s, updated_at = now()
+                    WHERE session_id::text = %s
+                    RETURNING session_id::text, team_id, account_id, agent_id,
+                              agent_version_id, proj_id, title, tool_refs_override,
+                              created_at, updated_at
+                    """,
+                    (title, session_id),
+                )
+                return cursor.fetchone()
+
+    @staticmethod
     def rename_if_first_answer(*, session_id: str, account_id: str, title: str) -> bool:
         """**첫 답이 끝났을 때 한 번만** 제목을 바꾼다. 바꿨으면 True.
 
