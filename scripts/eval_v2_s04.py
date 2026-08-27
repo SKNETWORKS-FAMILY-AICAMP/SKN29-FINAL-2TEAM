@@ -385,7 +385,8 @@ def main(argv: list[str] | None = None) -> int:
                 break
             except (json.JSONDecodeError, ValueError) as exc:
                 judge_error = f"{type(exc).__name__}: {exc}"
-                break
+                if attempt == 1:
+                    break
             except Exception as exc:
                 judge_error = type(exc).__name__
                 if attempt == 1:
