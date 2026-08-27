@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Icon, Input, Logo, useToast } from '../../components';
 import { confirmPasswordReset } from '../../api/auth';
 import { ApiError } from '../../api/client';
+import { PATHS } from '../../routes';
 import styles from './ResetPasswordPage.module.css';
 
 export default function ResetPasswordPage() {
@@ -56,9 +57,12 @@ export default function ResetPasswordPage() {
 
       <div className={styles.authContainer}>
         <div className={styles.header}>
-          <div className={styles.logoBadge}>
+          {/* 로고를 눌러 랜딩으로 돌아간다. 예전에는 그냥 `div` 라, 랜딩에서
+              「시작하기」를 눌러 들어온 사람이 뒤로가기 말고는 돌아갈 길이
+              없었다. `PrivacyPage` 가 이미 쓰던 방식과 문구를 그대로 쓴다. */}
+          <Link to={PATHS.landing} className={styles.logoBadge} aria-label="halil 홈으로">
             <Logo height={34} />
-          </div>
+          </Link>
           <p className={styles.tagline}>프로젝트 운영 AI 플랫폼</p>
         </div>
 
