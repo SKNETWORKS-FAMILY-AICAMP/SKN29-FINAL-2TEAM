@@ -6,6 +6,7 @@ from .api_views import (
     ChatSessionDetailAPIView,
     ChatSessionListCreateAPIView,
     ChatSessionToolsAPIView,
+    SkillFeedbackAPIView,
 )
 
 # 대화는 프로젝트가 아니라 팀에 속한다. `proj_id` 는 문맥일 뿐이고 없을 수도
@@ -31,5 +32,10 @@ urlpatterns = [
         "sessions/<str:session_id>/confirm/",
         ChatConfirmAPIView.as_view(),
         name="api_chat_confirm",
+    ),
+    path(
+        "messages/<str:message_id>/skill-feedback/",
+        SkillFeedbackAPIView.as_view(),
+        name="api_chat_skill_feedback",
     ),
 ]

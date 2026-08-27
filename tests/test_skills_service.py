@@ -13,10 +13,45 @@ from django.test import SimpleTestCase
 from langgraph.store.memory import InMemoryStore
 
 from services.agent_runtime.skills import service
+from services.agent_runtime.skills.document import SkillDocument
 
 
 def _patched_store():
     return patch("services.agent_runtime.memory.store.get_memory_store", return_value=InMemoryStore())
+
+
+def _create_verified_personal(
+    account_id="AC001", *, name="my-skill", description="설명", body="본문"
+):
+    from services.agent_runtime.skills.versioning import (
+        runtime_profile_version, tool_registry_version, validation_hash,
+    )
+
+    document = {"name": name, "description": description, "body": body}
+    return service.create_personal_skill(
+        account_id, team_id="TM001", name=name, description=description, body=body,
+        validation_receipt={
+            "validation_state": "VERIFIED",
+            "validated_hash": validation_hash(document),
+            "source_job_id": "test-job",
+            "runtime_profile_version": runtime_profile_version(),
+            "tool_registry_version": tool_registry_version(),
+        },
+    )
+
+
+def _create_legacy_team_skill(
+    *, team_id="TM001", name="legacy-skill", description="설명", body="본문"
+):
+    """직접 팀 등록 기능이 사라지기 전에 저장된 데이터를 테스트에만 만든다."""
+
+    return service.create_skill(
+        service._team_scope(team_id),
+        name=name,
+        description=description,
+        body=body,
+        validation_receipt={"validation_state": "LEGACY_UNVERIFIED"},
+    )
 
 
 class ValidateSkillNameTests(SimpleTestCase):
@@ -63,6 +98,20 @@ class ParseSkillMdTests(SimpleTestCase):
     def test_description이_없으면_거부한다(self):
         with self.assertRaises(service.SkillError):
             service.parse_skill_md("---\nname: foo\n---\n\nbody")
+
+    def test_표준과_추가_frontmatter를_손실_없이_왕복한다(self):
+        content = (
+            "---\nname: my-skill\ndescription: 설명\nlicense: Apache-2.0\n"
+            "compatibility: Python 3.13\nallowed-tools:\n  - document_search\n"
+            "metadata:\n  owner: platform\ncustom-field:\n  nested: value\n---\n\n본문\n"
+        )
+        first = SkillDocument.parse(content)
+        second = SkillDocument.parse(first.updated(description="새 설명", enabled=False).render())
+        self.assertEqual(second.frontmatter["license"], "Apache-2.0")
+        self.assertEqual(second.frontmatter["allowed-tools"], ["document_search"])
+        self.assertEqual(second.frontmatter["custom-field"], {"nested": "value"})
+        self.assertEqual(second.metadata["owner"], "platform")
+        self.assertFalse(second.enabled)
 
 
 class PersonalSkillCrudTests(SimpleTestCase):
@@ -114,7 +163,8 @@ class SkillEnabledTests(SimpleTestCase):
             self.assertTrue(created["enabled"])
 
     def test_비활성화하면_enabled가_false로_읽힌다(self):
-        with _patched_store():
+        store = InMemoryStore()
+        with patch("services.agent_runtime.memory.store.get_memory_store", return_value=store):
             service.create_personal_skill(
                 "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
             )
@@ -123,6 +173,10 @@ class SkillEnabledTests(SimpleTestCase):
 
             fetched = service.get_personal_skill("AC001", "my-skill")
             self.assertFalse(fetched["enabled"])
+            self.assertIsNone(store.get(("skill", "personal", "AC001"), "/my-skill/SKILL.md"))
+            self.assertIsNotNone(
+                store.get(("skill", "inactive-personal", "AC001"), "/my-skill/SKILL.md")
+            )
 
     def test_다시_활성화하면_돌아온다(self):
         with _patched_store():
@@ -132,6 +186,36 @@ class SkillEnabledTests(SimpleTestCase):
             service.update_personal_skill("AC001", "my-skill", enabled=False)
             reenabled = service.update_personal_skill("AC001", "my-skill", enabled=True)
             self.assertTrue(reenabled["enabled"])
+
+    def test_구버전_false파일은_조회전에_비활성_namespace로_이관한다(self):
+        from deepagents.backends import StoreBackend
+
+        store = InMemoryStore()
+        StoreBackend(namespace=lambda _rt: ("skill", "personal", "AC001"), store=store).write(
+            "/legacy/SKILL.md",
+            service._render_skill_md(name="legacy", description="설명", body="본문", enabled=False),
+        )
+        with patch("services.agent_runtime.memory.store.get_memory_store", return_value=store):
+            rows = service.list_personal_skills("AC001")
+        self.assertEqual([row["name"] for row in rows], ["legacy"])
+        self.assertIsNone(store.get(("skill", "personal", "AC001"), "/legacy/SKILL.md"))
+        self.assertIsNotNone(
+            store.get(("skill", "inactive-personal", "AC001"), "/legacy/SKILL.md")
+        )
+
+    def test_수정해도_추가_frontmatter가_보존된다(self):
+        with _patched_store():
+            service.create_personal_skill(
+                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문",
+                frontmatter={
+                    "name": "my-skill", "description": "설명", "license": "MIT",
+                    "allowed-tools": ["document_search"], "metadata": {"owner": "platform"},
+                },
+            )
+            updated = service.update_personal_skill("AC001", "my-skill", description="새 설명")
+        self.assertEqual(updated["frontmatter"]["license"], "MIT")
+        self.assertEqual(updated["frontmatter"]["allowed-tools"], ["document_search"])
+        self.assertEqual(updated["frontmatter"]["metadata"]["owner"], "platform")
 
     def test_enabled를_안_넘기면_기존_값을_유지한다(self):
         with _patched_store():
@@ -168,9 +252,7 @@ class SkillEnabledTests(SimpleTestCase):
     def test_같은_이름의_팀_카탈로그가_있어도_개인_스킬을_만들_수_있다(self):
         """팀 카탈로그는 SkillsMiddleware 소스가 아니므로 개인 스킬을 가리지 않는다."""
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="shadowed", description="팀 것", body="팀 본문"
-            )
+            _create_legacy_team_skill(name="shadowed", description="팀 것", body="팀 본문")
             created = service.create_personal_skill(
                 "AC001", team_id="TM001", name="shadowed", description="개인 것", body="개인 본문"
             )
@@ -193,28 +275,20 @@ class SkillEnabledTests(SimpleTestCase):
 
 
 class TeamSkillCrudTests(SimpleTestCase):
-    def test_리더만_만들고_고치고_지울_수_있다(self):
+    def test_팀_직접_생성_수정_경로는_노출하지_않는다(self):
+        self.assertFalse(hasattr(service, "create_team_skill"))
+        self.assertFalse(hasattr(service, "update_team_skill"))
+
+    def test_리더만_팀_카탈로그에서_지울_수_있다(self):
         with _patched_store():
-            with self.assertRaises(service.SkillPermissionDenied):
-                service.create_team_skill(
-                    "TM001", actor_role="member", name="foo", description="d", body="b"
-                )
-
-            created = service.create_team_skill(
-                "TM001", actor_role="leader", name="foo", description="d", body="b"
-            )
-            self.assertEqual(created["name"], "foo")
-
-            with self.assertRaises(service.SkillPermissionDenied):
-                service.update_team_skill("TM001", "foo", actor_role="member", description="d2")
+            _create_legacy_team_skill(name="foo", description="d", body="b")
             with self.assertRaises(service.SkillPermissionDenied):
                 service.delete_team_skill("TM001", "foo", actor_role="member")
+            service.delete_team_skill("TM001", "foo", actor_role="leader")
 
     def test_팀원도_조회는_할_수_있다(self):
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="foo", description="d", body="b"
-            )
+            _create_legacy_team_skill(name="foo", description="d", body="b")
             # list_team_skills/get_team_skill 자체는 role을 안 받는다 — 호출부
             # (REST 뷰)가 "조회는 팀원 전체"를 그냥 통과시키면 된다는 뜻이다.
             self.assertEqual(len(service.list_team_skills("TM001")), 1)
@@ -222,9 +296,7 @@ class TeamSkillCrudTests(SimpleTestCase):
 
     def test_다른_팀은_서로_안_보인다(self):
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="only-team1", description="d", body="b"
-            )
+            _create_legacy_team_skill(name="only-team1", description="d", body="b")
             self.assertEqual(service.list_team_skills("TM002"), [])
 
     def test_업로드로_받은_frontmatter_이름_설명이_그대로_저장된다(self):
@@ -242,11 +314,32 @@ class TeamSkillCrudTests(SimpleTestCase):
 
 
 class SkillSharingTests(SimpleTestCase):
-    def test_개인_스킬을_팀에_공유하고_중지한다(self):
+    def test_검증하지_않은_개인_스킬은_공유하지_못한다(self):
         with _patched_store():
             service.create_personal_skill(
-                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
+                "AC001", team_id="TM001", name="draft-skill", description="설명", body="본문"
             )
+            with self.assertRaises(service.SkillError):
+                service.share_personal_skill("AC001", team_id="TM001", name="draft-skill")
+
+    def test_기존_팀_항목은_미검증으로_표시되고_가져올_때_job을_만든다(self):
+        from types import SimpleNamespace
+
+        with _patched_store(), patch(
+            "services.agent_runtime.skills.registration.SkillRegistrationService.enqueue"
+        ) as enqueue:
+            enqueue.return_value = SimpleNamespace(job={"job_id": "job-legacy"}, created=True)
+            created = _create_legacy_team_skill()
+            self.assertEqual(created["validation_state"], "LEGACY_UNVERIFIED")
+            result = service.import_team_skill("AC002", team_id="TM001", name="legacy-skill")
+
+        self.assertTrue(result["requires_validation"])
+        self.assertEqual(result["job"]["job_id"], "job-legacy")
+        enqueue.assert_called_once()
+
+    def test_개인_스킬을_팀에_공유하고_중지한다(self):
+        with _patched_store():
+            _create_verified_personal()
 
             shared = service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
             self.assertEqual(shared["shared_by_account_id"], "AC001")
@@ -259,18 +352,14 @@ class SkillSharingTests(SimpleTestCase):
 
     def test_다른_사용자는_공유를_중지할_수_없다(self):
         with _patched_store():
-            service.create_personal_skill(
-                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
-            )
+            _create_verified_personal()
             service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
             with self.assertRaises(service.SkillPermissionDenied):
                 service.stop_sharing_personal_skill("AC002", team_id="TM001", name="my-skill")
 
     def test_개인_스킬_내용은_공유본에_반영되지만_활성상태는_영향을_주지_않는다(self):
         with _patched_store():
-            service.create_personal_skill(
-                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
-            )
+            _create_verified_personal()
             service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
 
             service.update_personal_skill_and_shared_copy(
@@ -287,12 +376,10 @@ class SkillSharingTests(SimpleTestCase):
 
     def test_팀_스킬을_가져오면_독립_개인_사본이_된다(self):
         with _patched_store():
-            service.create_personal_skill(
-                "AC001", team_id="TM001", name="my-skill", description="원본", body="원본 본문"
-            )
+            _create_verified_personal(description="원본", body="원본 본문")
             service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
 
-            imported = service.import_team_skill("AC002", team_id="TM001", name="my-skill")
+            imported = service.import_team_skill("AC002", team_id="TM001", name="my-skill")["skill"]
             self.assertTrue(imported["enabled"])
             self.assertEqual(imported["imported_from_team_id"], "TM001")
 
@@ -305,9 +392,8 @@ class SkillSharingTests(SimpleTestCase):
 
     def test_가져온_스킬은_가져온_사람이_비활성화하고_삭제할_수_있다(self):
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="team-skill", description="d", body="b"
-            )
+            _create_verified_personal(name="team-skill", description="d", body="b")
+            service.share_personal_skill("AC001", team_id="TM001", name="team-skill")
             service.import_team_skill("AC002", team_id="TM001", name="team-skill")
             disabled = service.update_personal_skill("AC002", "team-skill", enabled=False)
             self.assertFalse(disabled["enabled"])
@@ -317,9 +403,8 @@ class SkillSharingTests(SimpleTestCase):
 
     def test_팀에서_가져온_개인_스킬은_다시_팀에_공유할_수_없다(self):
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="team-skill", description="d", body="b"
-            )
+            _create_verified_personal(name="team-skill", description="d", body="b")
+            service.share_personal_skill("AC001", team_id="TM001", name="team-skill")
             service.import_team_skill("AC002", team_id="TM001", name="team-skill")
 
             with self.assertRaises(service.SkillPermissionDenied):
@@ -327,9 +412,7 @@ class SkillSharingTests(SimpleTestCase):
 
     def test_개인_원본을_삭제하면_팀_공유본도_정리한다(self):
         with _patched_store():
-            service.create_personal_skill(
-                "AC001", team_id="TM001", name="my-skill", description="설명", body="본문"
-            )
+            _create_verified_personal()
             service.share_personal_skill("AC001", team_id="TM001", name="my-skill")
             service.delete_personal_skill_and_shared_copy(
                 "AC001", team_id="TM001", name="my-skill"

@@ -5,6 +5,7 @@ import { Button, Input, Logo, useToast } from '../../components';
 import { ApiError } from '../../api/client';
 import { previewInvite } from '../../api/invites';
 import type { InvitePreview } from '../../api/invites';
+import { PATHS } from '../../routes';
 import styles from './InviteCodePage.module.css';
 
 const EXPIRY_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeStyle: 'short' });
@@ -46,10 +47,13 @@ export default function InviteCodePage() {
 
       <div className={styles.authContainer}>
         <div className={styles.header}>
-          <div className={styles.logoBadge}>
+          {/* 로고를 눌러 랜딩으로 돌아간다. 예전에는 그냥 `div` 라, 랜딩에서
+              「시작하기」를 눌러 들어온 사람이 뒤로가기 말고는 돌아갈 길이
+              없었다. `PrivacyPage` 가 이미 쓰던 방식과 문구를 그대로 쓴다. */}
+          <Link to={PATHS.landing} className={styles.logoBadge} aria-label="halil 홈으로">
             <Logo height={34} />
-          </div>
-          <p className={styles.tagline}>프로젝트 운영 Agent Platform</p>
+          </Link>
+          <p className={styles.tagline}>프로젝트 운영 AI 플랫폼</p>
         </div>
 
         <div className={styles.card}>

@@ -8,9 +8,11 @@
 """
 
 from django.test import SimpleTestCase
+from langgraph.store.memory import InMemoryStore
 
 from services.agent_runtime.skills.backend import (
     SKILLS_BUILTIN_PATH_PREFIX,
+    SKILLS_INACTIVE_PERSONAL_PATH_PREFIX,
     SKILLS_PERSONAL_PATH_PREFIX,
     SKILLS_TEAM_PATH_PREFIX,
     personal_namespace,
@@ -44,8 +46,23 @@ class SkillRoutesTests(SimpleTestCase):
 
         self.assertEqual(
             set(routes.keys()),
-            {SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX},
+            {
+                SKILLS_BUILTIN_PATH_PREFIX,
+                SKILLS_PERSONAL_PATH_PREFIX,
+                SKILLS_INACTIVE_PERSONAL_PATH_PREFIX,
+                SKILLS_TEAM_PATH_PREFIX,
+            },
         )
+
+    def test_inactive_route_is_not_an_agent_source(self):
+        self.assertNotIn(SKILLS_INACTIVE_PERSONAL_PATH_PREFIX, skill_sources())
+
+    def test_explicit_store_is_bound_to_every_runtime_route(self):
+        store = InMemoryStore()
+        routes = skill_routes(account_id="AC001", team_id="TM001", store=store)
+
+        self.assertTrue(routes)
+        self.assertTrue(all(route._store is store for route in routes.values()))
 
     def test_different_accounts_get_isolated_personal_namespaces(self):
         """계정 A/B가 서로 다른 namespace를 받아야 서로의 개인 스킬을 못 본다."""
@@ -115,3 +132,11 @@ class SkillsSystemPromptTests(SimpleTestCase):
 
         self.assertIn("Skill usage rules", prompt)
         self.assertIn("memory", prompt.lower())
+
+    def test_requires_the_requested_result_to_match_not_just_the_topic(self):
+        """같은 입력 소재를 다루더라도 최종 작업이 제외 범위면 읽지 않는다."""
+        prompt = skills_system_prompt()
+
+        self.assertIn("primary requested result or action", prompt)
+        self.assertIn("explicitly excluded", prompt)
+        self.assertIn("shared topic alone", prompt)

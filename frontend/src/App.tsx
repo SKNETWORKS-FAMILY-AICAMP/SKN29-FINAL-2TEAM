@@ -1,6 +1,14 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
-import { IndexingProgress, OpsLayout, OpsRouteGuard, RequireAuth, ToastProvider } from './components';
+import {
+  IndexingProgress,
+  OpsLayout,
+  OpsRouteGuard,
+  ProgressCardStack,
+  RequireAuth,
+  SkillJobCenter,
+  ToastProvider,
+} from './components';
 import { PATHS, ROUTES } from './routes';
 import styles from './App.module.css';
 
@@ -134,10 +142,16 @@ function App() {
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </Suspense>
-      {/* **`<Routes>` 바깥이다.** 라우트가 바뀌어도 이 컴포넌트는 언마운트되지
+      {/* **`<Routes>` 바깥이다.** 라우트가 바뀌어도 이 컴포넌트들은 언마운트되지
           않아서 진행 카드와 폴링이 그대로 이어진다 — 페이지를 옮겨도 유지되는
-          것이 이 자리의 전부이고, 그래서 전역 상태 저장소가 따로 필요 없다. */}
+          것이 이 자리의 전부이고, 그래서 전역 상태 저장소가 따로 필요 없다.
+          `IndexingProgress`/`SkillJobCenter`는 이제 직접 안 그리고
+          `useStackedCard()`로 등록만 한다(2026-08-26) — 실제로 오른쪽 아래에
+          쌓아 그리는 건 `ProgressCardStack` 하나뿐이라 두 카드가 동시에
+          떠도 겹치지 않는다. */}
       <IndexingProgress />
+      <SkillJobCenter />
+      <ProgressCardStack />
     </ToastProvider>
   );
 }

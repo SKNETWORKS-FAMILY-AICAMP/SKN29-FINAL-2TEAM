@@ -24,18 +24,33 @@ class FakeCursor:
         correlation_index: bool = True,
         correlation_index_unique: bool = True,
         max_iterations_default: str = "10",
+        regression_scope_constraint: bool = True,
+        dataset_version_length: int = 64,
+        job_operation_length: int = 10,
     ) -> None:
         self.correlation_column = correlation_column
         self.correlation_index = correlation_index
         self.correlation_index_unique = correlation_index_unique
         self.max_iterations_default = max_iterations_default
+        self.regression_scope_constraint = regression_scope_constraint
+        self.dataset_version_length = dataset_version_length
+        self.job_operation_length = job_operation_length
         self.result = True
 
     def execute(self, sql, params=None) -> None:
         normalized = " ".join(str(sql).split())
         # `column_default` 조회도 `information_schema.columns`를 쓰므로 이 분기를
         # 먼저 본다 — 안 그러면 아래 EXISTS 분기로 잘못 잡혀 bool을 돌려준다.
-        if "column_default" in normalized:
+        if "data_type, character_maximum_length" in normalized:
+            length = (
+                self.job_operation_length
+                if params == ("skill_registration_job", "operation")
+                else self.dataset_version_length
+            )
+            self.result = ("character varying", length)
+        elif "table_constraints" in normalized:
+            self.result = self.regression_scope_constraint
+        elif "column_default" in normalized:
             self.result = self.max_iterations_default
         elif "information_schema.columns" in normalized:
             self.result = not (
@@ -51,7 +66,7 @@ class FakeCursor:
             self.result = True
 
     def fetchone(self):
-        return (self.result,)
+        return self.result if isinstance(self.result, tuple) else (self.result,)
 
     def __enter__(self):
         return self
@@ -117,6 +132,23 @@ class MigrationCheckTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("[값다름]", output)
         self.assertIn("agent_versions.max_iterations", output)
+
+    def test_missing_regression_scope_constraint_fails(self):
+        result, output = self.run_check(regression_scope_constraint=False)
+        self.assertEqual(result, 1)
+        self.assertIn("ck_skill_eval_regression_scope_fields", output)
+
+    def test_wrong_dataset_version_length_fails(self):
+        result, output = self.run_check(dataset_version_length=32)
+        self.assertEqual(result, 1)
+        self.assertIn("[타입다름]", output)
+        self.assertIn("skill_eval_regression_case.dataset_version", output)
+
+    def test_legacy_job_operation_length_fails(self):
+        result, output = self.run_check(job_operation_length=5)
+        self.assertEqual(result, 1)
+        self.assertIn("[타입다름]", output)
+        self.assertIn("skill_registration_job.operation", output)
 
 
 class SplitStatementsTests(unittest.TestCase):

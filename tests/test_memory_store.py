@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import threading
 import time
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
@@ -106,3 +107,8 @@ class MemoryStoreLockTests(SimpleTestCase):
         self.assertEqual(calls, ["enter", "setup"])
         self.assertEqual(len(results), worker_count)
         self.assertEqual(len({id(store) for store in results}), 1)
+
+    def test_runtime_store_uses_the_same_postgres_singleton(self) -> None:
+        sentinel = object()
+        with patch.object(store_module, "get_memory_store", return_value=sentinel):
+            self.assertIs(store_module.get_runtime_store(), sentinel)

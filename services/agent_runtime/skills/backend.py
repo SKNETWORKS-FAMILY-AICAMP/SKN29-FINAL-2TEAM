@@ -28,6 +28,10 @@ SKILLS_BUILTIN_PATH_PREFIX = "/skills/builtin/"
 #: 개인 스킬 소스 — 요청한 계정 자신의 스킬만, namespace가 격리한다.
 SKILLS_PERSONAL_PATH_PREFIX = "/skills/personal/"
 
+#: 비활성 개인 스킬 보관소. 라우트는 존재하지만 ``skill_sources()``에는
+#: 포함하지 않으므로 Root와 GP가 파일 이름·설명조차 읽을 수 없다.
+SKILLS_INACTIVE_PERSONAL_PATH_PREFIX = "/inactive-skills/personal/"
+
 #: 팀 공유 카탈로그 저장 경로 — 설정 화면에서 조회·가져오기에 사용한다.
 #: 에이전트의 `skill_sources()`에는 포함하지 않는다.
 SKILLS_TEAM_PATH_PREFIX = "/skills/team/"
@@ -61,6 +65,10 @@ def personal_namespace(account_id: str) -> tuple[str, str, str]:
     return ("skill", "personal", account_id)
 
 
+def inactive_personal_namespace(account_id: str) -> tuple[str, str, str]:
+    return ("skill", "inactive-personal", account_id)
+
+
 def team_namespace(team_id: str) -> tuple[str, str]:
     """이 팀의 팀 스킬 namespace. `personal_namespace`와 같은 이유로 단일 진실 공급원이다."""
     return ("skill", "team", team_id)
@@ -77,7 +85,9 @@ def skill_md_path(prefix: str, name: str) -> str:
     return f"{prefix}{name}/SKILL.md"
 
 
-def skill_routes(*, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
+def skill_routes(
+    *, account_id: str, team_id: str, store: Any | None = None
+) -> dict[str, "StoreBackend"]:
     """`CompositeBackend(routes={...})`에 그대로 병합할 내장/개인/팀 스킬 라우트 세 개.
 
     `StoreBackend`는 deepagents가 제공하는, `BackendProtocol`을 완전히 구현한
@@ -88,29 +98,31 @@ def skill_routes(*, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
     """
     from deepagents.backends import StoreBackend
 
+    # 운영 Provider는 PostgresStore를 명시적으로 넘긴다. ``store=None``은
+    # namespace 배선만 검사하는 단위 테스트와 LangGraph가 runtime store를
+    # 주입하는 호환 경로를 위한 값이며, 서비스 조립에서는 사용하지 않는다.
+    backend_kwargs = {"store": store} if store is not None else {}
+
     return {
-        SKILLS_BUILTIN_PATH_PREFIX: StoreBackend(namespace=lambda _rt: builtin_namespace()),
-        SKILLS_PERSONAL_PATH_PREFIX: StoreBackend(namespace=lambda _rt: personal_namespace(account_id)),
-        SKILLS_TEAM_PATH_PREFIX: StoreBackend(namespace=lambda _rt: team_namespace(team_id)),
+        SKILLS_BUILTIN_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: builtin_namespace(), **backend_kwargs
+        ),
+        SKILLS_PERSONAL_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: personal_namespace(account_id), **backend_kwargs
+        ),
+        SKILLS_INACTIVE_PERSONAL_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: inactive_personal_namespace(account_id), **backend_kwargs
+        ),
+        SKILLS_TEAM_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: team_namespace(team_id), **backend_kwargs
+        ),
     }
 
 
-#: 2026-08-22, 사용자 실측 피드백 — "번역체 같다"는 답변 스타일 피드백을 줬는데
-#: 등록해 둔 스킬이 안 불려지고, 대신 `MemoryMiddleware`가 "장기 기억에 저장할
-#: 선호"로 판단해 버렸다. `deepagents/middleware/memory.py`의
-#: `MEMORY_SYSTEM_PROMPT`를 실측하면 "사용자가 답변의 좋고 나쁨을 말하면
-#: 패턴으로 기억해라"는 지침과 정확히 이 모양의 worked example(Example 2 —
-#: 스타일 피드백 → `edit_file`로 저장)이 있는 반면, deepagents 기본
-#: `SKILLS_SYSTEM_PROMPT`(`deepagents/middleware/skills.py`)의 worked example은
-#: "최신 연구 조사해줘" 같은 명시적 작업 요청 하나뿐이고, "지금 답변에 대한
-#: 스타일 피드백도 스킬을 켜는 신호"라는 언급이 없다. 즉 서로 다른 미들웨어가
-#: 독립적으로 시스템 프롬프트를 얹는 지금 구조에서는, 어느 쪽 지침이 더
-#: 구체적인지에 따라 모델의 판단이 갈린다 — Skill을 쓸지 말지가 전부 모델의
-#: 자율 판단에 맡겨져 있다는 뜻이다.
-#:
 #: 최소한의 우선순위 규칙을 여기서 덧붙인다. Memory의 `_MEMORY_ROUTING_PROMPT`
 #: (`memory/backend.py`)와 같은 방식 — 새 지침 체계를 만들지 않고, deepagents
 #: 기본 프롬프트 뒤에 그대로 이어붙인다.
+
 _SKILLS_ROUTING_PROMPT = """
 
 ## Skill usage rules — decide before you act
@@ -119,18 +131,39 @@ _SKILLS_ROUTING_PROMPT = """
    description or usage condition, search for and read that skill FIRST —
    before responding, and before considering anything else (including
    whether to save something to memory).
-2. A skill defines HOW to perform a task. Do not use a skill as a place to
+2. Judge the match by the skill's complete description — what result it
+   produces, when to use it, and when not to use it — not by its name or by
+   a shared topic alone. A plausible-sounding name or similar input is not
+   evidence that the requested task is the same.
+3. Compare the user's primary requested result or action with the skill's
+   result before reading it. If that result is explicitly excluded or is a
+   different task, do not read the skill even when the request mentions the
+   same subject matter. If the match is weak or only tangentially related,
+   answer normally instead of forcing the skill.
+4. If more than one skill seems relevant, read only the ones you actually
+   need for this request — not every skill whose description brushes
+   against it.
+5. Do not assume you already know a skill's procedure from its name and
+   description alone. Once you decide a skill applies, read its file before
+   following it — the description is only enough to decide whether to read
+   it, not enough to act on.
+6. A skill defines HOW to perform a task. Do not use a skill as a place to
    store the user's long-term preferences or facts about them — writing
    standing preferences to memory is a different system's job, not this one.
-3. If the user asks you to revise the current answer, or comments on the
+7. If the user asks you to revise the current answer, or comments on the
    style or manner of the current answer or task (e.g. "this sounds too
    translated", "make this shorter", "that's not quite right"), check for a
    matching skill FIRST. This is a live task to act on in this turn, not
    merely something to remember for later.
-4. Only when the user explicitly signals a standing, future preference —
+8. Only when the user explicitly signals a standing, future preference —
    words like "from now on", "always", "remember this" — consider that a
    candidate for memory instead. A one-time stylistic correction on the
-   current answer is rule 3, not this one.
+   current answer is rule 7, not this one.
+9. A skill's `allowed-tools` metadata documents tools that its author permits;
+   it does not add those tools to this agent. Call only tools that are actually
+   available in the current agent. If an allowed tool is unavailable, continue
+   with the parts of the skill that can be completed safely and state the
+   limitation when it prevents the requested result. Never invent a tool call.
 """
 
 
@@ -157,11 +190,13 @@ def skills_system_prompt() -> str:
 __all__ = [
     "SKILLS_BUILTIN_PATH_PREFIX",
     "SKILLS_PERSONAL_PATH_PREFIX",
+    "SKILLS_INACTIVE_PERSONAL_PATH_PREFIX",
     "SKILLS_TEAM_PATH_PREFIX",
     "RESERVED_SKILL_NAMES",
     "skill_sources",
     "builtin_namespace",
     "personal_namespace",
+    "inactive_personal_namespace",
     "team_namespace",
     "skill_md_path",
     "skill_routes",

@@ -1,4 +1,5 @@
 import { apiRequest, ApiError } from './client';
+import type { SkillJob } from './skillJobs';
 
 /**
  * 「스킬」 — 사람이 적어 두는 업무 절차. 에이전트가 필요할 때 골라 읽는다.
@@ -14,16 +15,15 @@ import { apiRequest, ApiError } from './client';
  * 같은 함수를 쓴다). 개인 스킬(`/me/skills/`)은 계정 본인 것만, 팀 스킬
  * (`/teams/skills/`)은 조회는 팀원 전체가·쓰기는 팀장만 할 수 있다.
  *
- * ## 칸이 넷뿐인 이유
+ * ## 화면에서 편집하는 칸이 넷뿐인 이유
  *
  * deepagents `SkillsMiddleware` 가 읽는 `SKILL.md` 의 모양 그대로다
  * (`docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-13_03_…벤치마킹.md` §9-3) — frontmatter
  * 의 `name`·`description` 만 매 턴 시스템 프롬프트에 실리고, `body` 는
  * 모델이 그 스킬을 고른 뒤에야 파일로 읽는다. 그래서 **`description` 이
- * 「고를지 말지」의 유일한 근거**다. `enabled` 만 예외로 하나 더 있다
- * (2026-08-26) — `SkillVisibilityMiddleware` 가 `metadata.enabled` 를 보고
- * 꺼진 스킬을 통째로 목록에서 뺀다. 그 외 칸을 더 만들지 않는다 — 미들웨어가
- * 안 읽는 값을 받아 두면 화면에만 있는 값이 된다.
+ * 「고를지 말지」의 유일한 근거**다. 비활성 스킬은 별도 namespace로 옮긴다.
+ * 업로드 파일의 `license`, `compatibility`, `allowed-tools`, 추가 metadata는
+ * 화면에서 직접 편집하지 않지만 서버가 원문대로 보존한다.
  *
  * ## 이름은 한 번 정하면 못 바꾼다
  *
@@ -39,7 +39,7 @@ export interface Skill {
   description: string;
   /** `SKILL.md` 본문(마크다운). 목록 응답에서는 안 준다 — 길어서 목록이 무거워진다. */
   body?: string;
-  /** frontmatter `metadata.enabled`. `false`면 에이전트에게 아예 안 보인다(삭제와 다름 — 값은 그대로 남는다). */
+  /** 비활성 스킬은 별도 보관소에 남고 에이전트 source에서는 제외된다. */
   enabled: boolean;
   /** 팀 스킬일 때, 현재 사용자가 자신의 개인 스킬에서 공유한 항목인지. */
   shared_by_me: boolean;
@@ -49,6 +49,9 @@ export interface Skill {
   imported_by_me: boolean;
   /** 팀 스킬을 공유 목록에서 삭제할 수 있는지. 서버가 현재 팀 역할로 판정한다. */
   can_delete: boolean;
+  /** 팀 공유본이 현재 검증 영수증을 갖는지. */
+  validation_state: 'VERIFIED' | 'LEGACY_UNVERIFIED' | null;
+  requires_validation: boolean;
   updated_at: string | null;
 }
 
@@ -56,6 +59,8 @@ export interface SkillInput {
   name: string;
   description: string;
   body: string;
+  /** 업로드한 원본. 서버가 추가 frontmatter까지 손실 없이 검증·저장한다. */
+  source_content?: string;
 }
 
 /** 내가 만든 스킬. 목록에는 `body` 를 싣지 않는다. */
@@ -69,15 +74,20 @@ export function getMySkill(token: string, skillId: string) {
 }
 
 export function createMySkill(token: string, input: SkillInput) {
-  return apiRequest<Skill>('/me/skills/', { method: 'POST', body: input, token });
+  return apiRequest<SkillJob>('/me/skills/', { method: 'POST', body: input, token });
 }
 
-export function updateMySkill(
+export function submitMySkillUpdate(
   token: string,
   skillId: string,
-  input: { description?: string; body?: string; enabled?: boolean },
+  input: { description?: string; body?: string },
 ) {
-  return apiRequest<Skill>(`/me/skills/${skillId}/`, { method: 'PATCH', body: input, token });
+  return apiRequest<SkillJob>(`/me/skills/${skillId}/`, { method: 'PATCH', body: input, token });
+}
+
+/** 활성 상태는 본문 검증과 무관하므로 즉시 변경한다. */
+export function setMySkillEnabled(token: string, skillId: string, enabled: boolean) {
+  return apiRequest<Skill>(`/me/skills/${skillId}/`, { method: 'PATCH', body: { enabled }, token });
 }
 
 /** **되돌릴 수 없다.** 원본이 우리뿐이다(`deletePersonalFile` 과 같은 이유). */
@@ -96,9 +106,8 @@ export function stopSharingMySkill(token: string, skillId: string) {
 }
 
 /**
- * 팀 스킬. **조회는 팀원 전체가 부를 수 있다** — 쓰기(create/update/delete)만
- * 서버가 팀장인지 확인한다(403). 화면에서도 미리 막아 두지만(버튼을 안 보이게),
- * 최종 판단은 항상 서버 쪽이다.
+ * 팀 스킬은 검증된 개인 스킬을 공유해 채우는 카탈로그다. 팀원은 조회·가져오기,
+ * 공유자는 공유 중지, 팀장은 카탈로그 삭제만 할 수 있다.
  */
 export function listTeamSkills(token: string) {
   return apiRequest<Skill[]>('/teams/skills/', { token });
@@ -110,19 +119,7 @@ export function getTeamSkill(token: string, skillId: string) {
 
 /** 팀 공유 카탈로그의 스킬을 독립적인 내 스킬로 복사한다. */
 export function importTeamSkill(token: string, skillId: string) {
-  return apiRequest<Skill>(`/teams/skills/${skillId}/import/`, { method: 'POST', token });
-}
-
-export function createTeamSkill(token: string, input: SkillInput) {
-  return apiRequest<Skill>('/teams/skills/', { method: 'POST', body: input, token });
-}
-
-export function updateTeamSkill(
-  token: string,
-  skillId: string,
-  input: { description?: string; body?: string; enabled?: boolean },
-) {
-  return apiRequest<Skill>(`/teams/skills/${skillId}/`, { method: 'PATCH', body: input, token });
+  return apiRequest<Skill | SkillJob>(`/teams/skills/${skillId}/import/`, { method: 'POST', token });
 }
 
 export function deleteTeamSkill(token: string, skillId: string) {

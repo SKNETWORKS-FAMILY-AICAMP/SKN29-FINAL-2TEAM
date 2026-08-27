@@ -1381,10 +1381,8 @@ class BuildSkillsWiringTests(SimpleTestCase):
         self.assertEqual(set(backend.routes.keys()), {"/skills/personal/", "/skills/team/"})
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_skill_register_sync_middleware_included_when_skills_present(self, mock_create_root):
-        """2026-08-26 — 스킬이 붙는 경로(메모리 유무와 무관)라면 항상
-        `SkillRegisterSyncMiddleware`도 같이 붙어야 한다."""
-        from services.agent_runtime.skills.sync import SkillRegisterSyncMiddleware
+    def test_skill_catalog_refresh_middleware_included_when_skills_present(self, mock_create_root):
+        from services.agent_runtime.skills.catalog_refresh import SkillCatalogRefreshMiddleware
 
         mock_create_root.return_value = "GRAPH"
         skills_provider = _FakeSkillsProvider()
@@ -1394,12 +1392,13 @@ class BuildSkillsWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         middleware = mock_create_root.call_args.kwargs["middleware"]
-        sync_mw = next(m for m in middleware if isinstance(m, SkillRegisterSyncMiddleware))
-        self.assertEqual(sync_mw._backend, mock_create_root.call_args.kwargs["backend"])
+        refresh = next(m for m in middleware if isinstance(m, SkillCatalogRefreshMiddleware))
+        self.assertEqual(refresh._backend, mock_create_root.call_args.kwargs["backend"])
+        self.assertEqual(list(refresh._sources), skills_provider.sources())
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_skill_register_sync_middleware_omitted_when_no_skills(self, mock_create_root):
-        from services.agent_runtime.skills.sync import SkillRegisterSyncMiddleware
+    def test_skill_catalog_refresh_middleware_omitted_when_no_skills(self, mock_create_root):
+        from services.agent_runtime.skills.catalog_refresh import SkillCatalogRefreshMiddleware
 
         mock_create_root.return_value = "GRAPH"
         factory, _ = _factory(memory_provider=_FakeMemoryProvider())
@@ -1408,7 +1407,7 @@ class BuildSkillsWiringTests(SimpleTestCase):
         factory.build(definition=_definition(), context=context)
 
         middleware = mock_create_root.call_args.kwargs["middleware"]
-        self.assertFalse(any(isinstance(m, SkillRegisterSyncMiddleware) for m in middleware))
+        self.assertFalse(any(isinstance(m, SkillCatalogRefreshMiddleware) for m in middleware))
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
     def test_root_receives_skill_sources_when_both_providers_present(self, mock_create_root):
@@ -1736,44 +1735,41 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         self.assertIn("task_register", interrupt_on)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_member_team_skill_registration_skips_confirmation_but_personal_still_requires_it(
+    def test_skill_register_always_requires_confirmation_regardless_of_role(
         self, mock_create_root
     ):
+        """2026-08-26 — `scope`(PERSONAL/TEAM)를 도구 입력에서 없애면서
+        ("스킬 검증·등록 최종 설계.md" §2/§5) "TEAM인데 leader가 아니면 확인
+        생략"이라는 조건부 `when`도 같이 없앴다. 이제 `skill_register`는
+        다른 side_effect 도구처럼 `confirmation = True` 하나뿐이고, member든
+        leader든 항상 승인 카드를 거친다 — 그 카드가 실제로 하는 일은 이제
+        "즉시 등록"이 아니라 "검증 시작"이다.
+        """
+
         mock_create_root.return_value = "GRAPH"
-        factory, _ = _factory(
-            checkpointer_provider=_FakeCheckpointerProvider(),
-            tool_loader=_SkillToolLoader(),
-        )
-        context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
+        for role in ("member", "leader"):
+            with self.subTest(role=role):
+                mock_create_root.reset_mock()
+                factory, _ = _factory(
+                    checkpointer_provider=_FakeCheckpointerProvider(),
+                    tool_loader=_SkillToolLoader(),
+                )
+                context = RuntimeContext(account_id="AC001", team_id="TM001", role=role)
 
-        factory.build(definition=_definition(), context=context)
+                factory.build(definition=_definition(), context=context)
 
-        config = mock_create_root.call_args.kwargs["interrupt_on"]["skill_register"]
-        def request(scope):
-            return SimpleNamespace(tool_call={"args": {"scope": scope}})
-
-        self.assertFalse(config["when"](request("TEAM")))
-        self.assertTrue(config["when"](request("PERSONAL")))
+                config = mock_create_root.call_args.kwargs["interrupt_on"]["skill_register"]
+                self.assertIs(config, True)
 
     @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_leader_team_skill_registration_still_requires_confirmation(self, mock_create_root):
-        mock_create_root.return_value = "GRAPH"
-        factory, _ = _factory(
-            checkpointer_provider=_FakeCheckpointerProvider(),
-            tool_loader=_SkillToolLoader(),
-        )
-        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
-
-        factory.build(definition=_definition(), context=context)
-
-        config = mock_create_root.call_args.kwargs["interrupt_on"]["skill_register"]
-        request = SimpleNamespace(tool_call={"args": {"scope": "TEAM"}})
-        self.assertTrue(config["when"](request))
-
-    @patch(f"{FACTORY_MODULE}.create_root_graph")
-    def test_member_skill_register_description_exposes_current_role_and_team_restriction(
+    def test_skill_register_description_no_longer_varies_by_role(
         self, mock_create_root
     ):
+        """`scope`가 없어졌으니 "TEAM 범위로 호출하지 마세요" 같은 역할별
+        안내를 덧붙일 대상 자체가 없다 — `tool.description`을 그대로 쓴다
+        (`_tool_description_for_context()`를 제거하면서 호출부도
+        `description=tool.description`으로 단순화했다)."""
+
         mock_create_root.return_value = "GRAPH"
         factory, _ = _factory(tool_loader=_SkillToolLoader())
         context = RuntimeContext(account_id="AC001", team_id="TM001", role="member")
@@ -1783,5 +1779,5 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
         skill_tool = next(
             tool for tool in mock_create_root.call_args.kwargs["tools"] if tool.name == "skill_register"
         )
-        self.assertIn("현재 요청자 역할은 'member'", skill_tool.description)
-        self.assertIn("TEAM 범위로 호출하지 마세요", skill_tool.description)
+        self.assertNotIn("현재 요청자 역할은", skill_tool.description)
+        self.assertNotIn("TEAM 범위", skill_tool.description)

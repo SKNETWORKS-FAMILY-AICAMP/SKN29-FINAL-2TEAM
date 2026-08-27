@@ -372,6 +372,14 @@ export function deleteSession(token: string, sessionId: string) {
   return apiRequest<void>(`/chat/sessions/${sessionId}/`, { method: 'DELETE', token });
 }
 
+export function renameSession(token: string, sessionId: string, title: string) {
+  return apiRequest<ChatSession>(`/chat/sessions/${sessionId}/`, {
+    method: 'PATCH',
+    body: { title },
+    token,
+  });
+}
+
 /**
  * 이 대화 전용 도구·MCP 목록을 저장한다(2026-08-18, Chat "+" 버튼). 에이전트
  * 원본은 안 건드린다 — `toolRefs=null`을 주면 커스터마이즈를 지우고
@@ -402,6 +410,17 @@ export function streamMessage(
   signal?: AbortSignal,
 ) {
   return streamNdjson<ChatEvent>(`/chat/sessions/${sessionId}/messages/`, token, { content }, onEvent, signal);
+}
+
+export function submitSkillFeedback(
+  token: string,
+  messageId: string,
+  feedbackKind: 'WRONG_USAGE' | 'MISSED_USE',
+) {
+  return apiRequest<{ feedback_id: string; review_status: string }>(
+    `/chat/messages/${messageId}/skill-feedback/`,
+    { method: 'POST', token, body: { feedback_kind: feedbackKind } },
+  );
 }
 
 /** 호출 하나에 대한 승인·거절·응답(2026-08-21, 병렬실행 Phase 2 / 2026-08-24, 되묻기). */

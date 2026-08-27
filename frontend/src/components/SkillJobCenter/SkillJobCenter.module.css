@@ -1,0 +1,206 @@
+/*
+ * `IndexingProgress.module.css`와 같은 카드 생김새 — 자리(위치)는
+ * `ProgressCardStack`이 정한다. 이 파일은 카드 자체와, 이 카드만 있는
+ * 5단계 스텝(§7)만 다룬다.
+ */
+.card {
+  width: 440px;
+  max-width: calc(100vw - var(--space-5) * 2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 480px) {
+  .card {
+    width: auto;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.title {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.expandButton,
+.close {
+  display: flex;
+  align-items: center;
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-placeholder);
+  cursor: pointer;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+/* 다섯 단계 묶음은 항상 한 줄을 유지한다. 좁은 화면에서는 각 단계가 같은
+   폭을 나눠 쓰고 라벨 안에서만 줄이 바뀐다. */
+.steps {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+
+.stepCircle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 2px solid var(--color-border);
+  color: var(--color-muted);
+  background: var(--color-surface);
+}
+
+.stepLabel {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--color-muted);
+  word-break: keep-all;
+}
+
+/* 아직 안 된 단계 — 기본값 그대로(회색 테두리). */
+.step[data-state='pending'] .stepCircle {
+  border-color: var(--color-border);
+  color: var(--color-placeholder);
+}
+
+/* 지금 진행 중인 단계 — 파란 테두리 원. 안은 아직 안 채운다(진행 중이라는
+   뜻이지 완료가 아니다). */
+.step[data-state='current'] .stepCircle {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.step[data-state='current'] .stepLabel {
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+/* 끝난 단계 — 파란 원을 채우고 체크 표시. */
+.step[data-state='done'] .stepCircle {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-surface);
+}
+
+/* 이 단계에서 실패했다 — 채운 원 + X. */
+.step[data-state='error'] .stepCircle {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-surface);
+}
+.step[data-state='error'] .stepLabel {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.failureSummary {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg, #fef2f2);
+  color: var(--color-danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.activity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-body);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.activity > svg,
+.activity > strong {
+  flex: none;
+}
+
+.activity > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.activity > strong {
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.link {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}

@@ -69,6 +69,18 @@ export function formatMessageTimeFull(value: string | null | undefined): string 
   }).format(date);
 }
 
+export function formatDateSeparator(dateKey: string): string {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  if (!year || !month || !day) return dateKey;
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: SEOUL_TIME_ZONE,
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
 /** 표시 형식과 ISO형 날짜·24시간 표기를 모두 검색할 수 있게 만든다. */
 export function searchableMessageTime(value: string | null | undefined): string {
   const date = validDate(value);
@@ -93,4 +105,3 @@ export function searchableMessageTime(value: string | null | undefined): string 
     .join(' ')
     .toLocaleLowerCase('ko-KR');
 }
-

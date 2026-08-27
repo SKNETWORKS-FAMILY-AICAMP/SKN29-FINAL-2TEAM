@@ -1160,68 +1160,77 @@ def _skill_register(
     *,
     account_id: str,
     team_id: str,
-    account_role: str,
-    scope: str,
+    session_id: str | None = None,
     name: str,
     description: str,
     body: str,
 ) -> dict[str, Any]:
-    """반복되는 업무 절차를 Skill(`SKILL.md`)로 저장한다.
+    """개인 스킬 검증 job을 만든다. **더 이상 SKILL.md를 바로 쓰지 않는다.**
 
-    정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Deep_Agents/2026-08-20_16_Skill_Middleware_설계.md
+    정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Juyeon_Agents_Description/
+          03_스킬_검증_등록_설계.md §5 ("`skill_register`의 새 계약")
 
-    **실제 저장·검증 로직은 `services.agent_runtime.skills.service`에 있다**
-    (2026-08-22 리팩터) — 설정 > 스킬 화면의 REST API도 같은 함수를 부른다.
-    채팅 쪽(여기)만 가진 것은 `scope` 문자열(`PERSONAL`/`TEAM`) 해석과, 그
-    문자열이 둘 중 하나가 아닐 때의 거부뿐이다. 이름 검증·설명/본문 빈 값
-    검사·팀 스킬 leader 검사·이름 충돌 거부는 전부 그 모듈이 한다.
+    **2026-08-26 재작성.** 예전엔 `scope`(PERSONAL/TEAM)를 받아 그 자리에서
+    바로 SKILL.md를 썼다. 이제는 다음 세 가지가 바뀌었다.
 
-    **팀 스킬은 팀장만 등록한다** — 팀원이 팀 스킬로 등록해 달라고 요청하는
-    경로 자체가 없다는 게 정본 문서의 결정이다. 그래서 막는 것이지, "팀장이
-    도메인 전문가라서"가 아니다 — 이 시스템엔 그런 역할이 없다
-    (`runtime_policy.py`의 `AccountRole`은 `leader`/`member` 둘뿐).
+    1. `scope`가 없다 — 팀 스킬 직접 등록 경로 자체를 없앴다(정본 §2). 팀
+       카탈로그는 검증을 통과한 개인 스킬을 공유해서만 채워진다
+       (`share_personal_skill`, `MySkillShareAPIView`).
+    2. 승인해도 즉시 등록되지 않는다 — `SkillRegistrationService.enqueue()`가
+       `skill_registration_job`에 검증 요청만 남기고, 실제 SKILL.md 쓰기는
+       `python manage.py skill_validation_worker`가 형식 검사(그리고 앞으로는
+       트리거 정확도 테스트까지)를 통과시킨 뒤에만 한다.
+    3. 반환값에 저장 경로가 없다 — 아직 파일이 없기 때문이다. 모델은 이
+       결과를 "등록 완료"가 아니라 "검증을 시작했다"로 알려야 한다(아래
+       `message`, 그리고 `skill_register` 도구 설명 자체에도 같은 지시가
+       있다).
 
-    **개인 스킬이든 팀 스킬이든 별도 승인 단계가 없다.** `side_effect=True`
-    도구라 `HumanInTheLoopMiddleware` 확인 카드(내용 미리보기 + 등록/취소)를
-    이미 거친다 — 그게 유일한 확인 지점이다.
+    **실제 검증·등록 로직은 `services.agent_runtime.skills.registration`에
+    있다** — 설정 화면의 생성·수정 REST 뷰도 앞으로 같은 서비스를 쓴다
+    (정본 §15 10번). 이름 검증·설명/본문 빈 값 검사·이름 충돌 거부는
+    `enqueue()`와 워커의 `run_checking()`이 나눠서 한다(`registration.py`
+    docstring 참고).
     """
 
-    if scope not in ("PERSONAL", "TEAM"):
-        raise ToolInputError("scope는 'PERSONAL' 또는 'TEAM'이어야 합니다.")
+    # 지연 import — services.agent_runtime과 backend.db는 이 파일(harness
+    # 레거시 레이어)이 평소엔 끌고 들어올 이유가 없는 무거운 의존성(langgraph,
+    # psycopg 등)을 진다. tools/adapters.py가 정반대 방향(agent_runtime ->
+    # harness)으로 이미 지연 import를 쓰는 것과 같은 이유다.
+    from services.agent_runtime.skills.service import SkillError
 
-    # 지연 import — services.agent_runtime은 이 파일(harness 레거시 레이어)이
-    # 평소엔 끌고 들어올 이유가 없는 무거운 의존성(langgraph 등)을 진다.
-    # tools/adapters.py가 정반대 방향(agent_runtime -> harness)으로 이미
-    # 지연 import를 쓰는 것과 같은 이유다.
-    from services.agent_runtime.skills.backend import (
-        SKILLS_PERSONAL_PATH_PREFIX,
-        SKILLS_TEAM_PATH_PREFIX,
-        skill_md_path,
-    )
-    from services.agent_runtime.skills.service import (
-        SkillError,
-        create_personal_skill,
-        create_team_skill,
-    )
+    from services.agent_runtime.skills.registration import SkillRegistrationService
 
     try:
-        if scope == "PERSONAL":
-            create_personal_skill(
-                account_id, team_id=team_id, name=name, description=description, body=body
-            )
-            path = skill_md_path(SKILLS_PERSONAL_PATH_PREFIX, name)
-        else:
-            create_team_skill(
-                team_id, actor_role=account_role, name=name, description=description, body=body
-            )
-            path = skill_md_path(SKILLS_TEAM_PATH_PREFIX, name)
+        result = SkillRegistrationService.enqueue(
+            account_id=account_id,
+            team_id=team_id,
+            name=name,
+            description=description,
+            body=body,
+            source_session_id=session_id,
+        )
     except SkillError as exc:
-        # `SkillError`(및 그 하위 `SkillNameConflict`/`SkillPermissionDenied`)는
-        # 이미 사람에게 그대로 보여도 되는 한국어 문구다 — `ToolInputError`
-        # 관례(Jira/업무 등록과 같은 자리)로 그대로 옮긴다.
+        # `SkillError`(및 그 하위 `SkillNameConflict`)는 이미 사람에게 그대로
+        # 보여도 되는 한국어 문구다 — `ToolInputError` 관례(Jira/업무 등록과
+        # 같은 자리)로 그대로 옮긴다.
         raise ToolInputError(str(exc)) from exc
 
-    return {"scope": scope, "name": name, "path": path}
+    job = result.job
+    if result.created:
+        message = "스킬 검증을 시작했습니다. 결과는 작업 알림 또는 설정 > 스킬에서 확인해 주세요."
+    else:
+        # §9 "같은 사용자와 스킬 이름에는 열린 job을 하나만 허용한다" — 이미
+        # 진행 중인 검증이 있으면 새로 만들지 않고 그 job을 그대로 돌려준다.
+        message = "이미 같은 이름의 스킬 검증이 진행 중입니다. 그 결과를 기다려 주세요."
+
+    return {
+        # `job_id`는 DB에서 `uuid.UUID`로 온다 — 도구 결과는 JSON으로 나가야
+        # 하므로 문자열로 바꾼다.
+        "job_id": str(job["job_id"]),
+        "status": job["status"],
+        "stage": job["stage"],
+        "message": message,
+    }
 
 
 def _skill_creator_ask_followup(*, question: str) -> dict[str, Any]:
@@ -1645,27 +1654,26 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ref="skill_register",
         name="스킬 등록",
         description=(
-            "반복되는 업무 절차를 스킬(SKILL.md)로 저장한다. 사용자가 '이 방식을 스킬로 "
-            "등록해줘'처럼 명시적으로 요청했을 때만 부른다. "
-            "scope='PERSONAL'이면 요청한 계정 본인에게만 보이고, 시스템 확인 카드에서 "
-            "승인되면 즉시 활성화된다. "
-            "scope='TEAM'이면 팀 전체에 보이지만 **팀장만 등록할 수 있다** — 팀원이 "
-            "팀 스킬로 등록해 달라고 하면 이 도구를 부르지 말고, 팀장에게 요청하라고 "
-            "안내한다. 등록에 필요한 값이 충분하면 채팅 답변으로 승인을 따로 묻지 말고 "
-            "이 도구를 호출한다 — 실제 실행 여부는 시스템 확인 카드에서 사용자가 정한다. "
+            "반복되는 업무 절차를 개인 스킬 초안으로 만들어 검증 대기열에 올린다. "
+            "사용자가 '이 방식을 스킬로 등록해줘'처럼 명시적으로 요청했을 때만 부른다. "
+            "**승인된다고 즉시 등록되지 않는다** — 백그라운드 검증을 통과해야 "
+            "내 스킬에 등록된다. 이 도구는 항상 요청한 계정 본인의 개인 스킬만 "
+            "만든다(팀 스킬은 검증을 통과한 개인 스킬을 설정 화면에서 공유해야만 "
+            "생긴다 — 이 도구로는 팀 스킬을 직접 만들 수 없다). "
+            "등록에 필요한 값이 충분하면 채팅 답변으로 승인을 따로 묻지 말고 "
+            "이 도구를 호출한다 — 실제 검증 시작 여부는 시스템 확인 카드에서 "
+            "사용자가 정한다. "
             "name은 소문자·숫자·하이픈만 쓰고(예: "
             "'jira-이슈-생성-절차'가 아니라 'jira-issue-registration'), 64자를 넘지 않게 "
             "짓는다. body는 이 대화에서 실제로 처리한 절차를 일반화한 것이어야 한다 — "
-            "한 번의 사례를 그대로 절차라고 우기지 말고, 재사용 가능한 단계로 정리한다."
+            "한 번의 사례를 그대로 절차라고 우기지 말고, 재사용 가능한 단계로 정리한다. "
+            "**이 도구가 돌려주는 결과는 등록 완료가 아니라 검증 시작이다** — "
+            "'등록했습니다'라고 말하지 말고, '검증을 시작했으며 결과는 작업 알림이나 "
+            "설정 > 스킬에서 확인할 수 있다'고 안내한다."
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "scope": {
-                    "type": "string",
-                    "enum": ["PERSONAL", "TEAM"],
-                    "description": "개인 스킬이면 'PERSONAL', 팀 스킬이면 'TEAM'.",
-                },
                 "name": {
                     "type": "string",
                     "description": "소문자·숫자·하이픈만, 64자 이내. 하이픈으로 시작·끝나거나 연달아 쓸 수 없다.",
@@ -1679,11 +1687,11 @@ BUILTIN_TOOLS: dict[str, Tool] = {
                     "description": "SKILL.md 본문 — 마크다운으로 적은 절차.",
                 },
             },
-            "required": ["scope", "name", "description", "body"],
+            "required": ["name", "description", "body"],
         },
         handler=_skill_register,
-        # DB나 외부 API는 아니지만 Store에 새 스킬을 만들고, 팀 스킬이면 팀
-        # 전체가 보게 되는 지점이라 승인 게이트를 탄다(task_register와 같은 이유).
+        # DB나 외부 API는 아니지만 검증 job을 만들고 통과하면 Store에 새 스킬이
+        # 생기는 지점이라 승인 게이트를 탄다(task_register와 같은 이유).
         side_effect=True,
         category="Skill",
     ),

@@ -49,6 +49,7 @@ from .serializers import (
     ChatConfirmSerializer,
     ChatMessageCreateSerializer,
     ChatSessionCreateSerializer,
+    ChatSessionRenameSerializer,
     ChatSessionToolsSerializer,
     message_response,
     session_response,
@@ -179,6 +180,19 @@ class ChatSessionDetailAPIView(AuthenticatedAPIView):
         return Response(
             session_response(session) | {"messages": [message_response(m) for m in messages]}
         )
+
+    def patch(self, request, session_id):
+        serializer = ChatSessionRenameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            row = ChatSessionRepository.rename(
+                session_id=session_id,
+                account_id=request.user.account_id,
+                title=serializer.validated_data["title"],
+            )
+        except (RepositoryError, psycopg.Error) as exc:
+            return _repository_error_response(exc)
+        return Response(session_response(row))
 
     def delete(self, request, session_id):
         try:
@@ -358,6 +372,40 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 question=mask_sensitive(model_input),
             ),
             content_type="application/x-ndjson",
+        )
+
+
+class SkillFeedbackAPIView(AuthenticatedAPIView):
+    """답변 단위 스킬 오사용·미사용 신고. 원문은 회귀 DB에 복사하지 않는다."""
+
+    def post(self, request, message_id):
+        from django.conf import settings
+        from backend.db.skill_eval import (
+            SkillEvalFeedbackNotFound, SkillEvalFeedbackRepository,
+        )
+        from services.agent_runtime.skills.service import validate_skill_name
+
+        feedback_kind = str(request.data.get("feedback_kind") or "").strip()
+        if feedback_kind not in {"WRONG_USAGE", "MISSED_USE"}:
+            return Response({"detail": "피드백 종류가 올바르지 않습니다."}, status=400)
+        expected_skill = str(request.data.get("expected_skill") or "").strip() or None
+        if expected_skill:
+            name_error = validate_skill_name(expected_skill, allow_reserved=True)
+            if name_error:
+                return Response({"detail": name_error}, status=400)
+        note = str(request.data.get("note") or "").strip() or None
+        if note and len(note) > settings.SKILL_FEEDBACK_NOTE_MAX_LENGTH:
+            return Response({"detail": "피드백 설명이 너무 깁니다."}, status=400)
+        try:
+            row, created = SkillEvalFeedbackRepository.create(
+                message_id=message_id, account_id=request.user.account_id,
+                feedback_kind=feedback_kind, expected_skill=expected_skill, note=note,
+            )
+        except SkillEvalFeedbackNotFound as exc:
+            return Response({"detail": str(exc)}, status=404)
+        return Response(
+            {"feedback_id": str(row["feedback_id"]), "review_status": row["review_status"]},
+            status=201 if created else 200,
         )
 
 

@@ -36,6 +36,31 @@ services:
       - ../../:/app
       - document_storage:/var/lib/halil/documents
 
+  # 스킬 등록 검증 워커 — 정본: "스킬 검증·등록 최종 설계.md" §10.
+  #
+  # `web`과 같은 이미지·환경변수·DB를 쓰되 HTTP 포트는 안 연다 — 요청을 받는
+  # 프로세스가 아니라 `skill_registration_job`을 폴링하는 상시 프로세스다.
+  # 2026-08-26 이전에는 사람이 `docker exec ... skill_validation_worker`로
+  # 수동 실행했다 — 그 사이엔 job이 QUEUED에 머물러서 진행 카드(SkillJobCenter)가
+  # 계속 "검증 대기 중"으로 안 넘어갔다(실제로 겪음). 이 서비스가 그 문제를 없앤다.
+  skill-validation-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: >
+      sh -c "python manage.py skill_validation_worker"
+    env_file:
+      - ../../.env
+    volumes:
+      - ../../:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    # 프로세스는 하나만 두고 내부 실행 슬롯 2개가 서로 다른 계정의 job을 병렬
+    # 처리한다. 같은 계정의 job은 DB claim 단계에서 순차 처리한다.
+    deploy:
+      replicas: 1
+
   frontend:
     build:
       context: ../../frontend

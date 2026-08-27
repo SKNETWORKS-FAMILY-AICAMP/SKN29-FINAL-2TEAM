@@ -19,6 +19,16 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    # **`apps/*`는 원래 여기 안 올린다** — 이 저장소는 Django ORM/migration을
+    # 쓰지 않고(`apps/projects/models.py`) `DB/schema.sql` + raw SQL로 관리하므로,
+    # 지금까지 REST 뷰들은 INSTALLED_APPS 없이 `config/urls.py`에 직접 매달아
+    # 쓸 수 있었다. `apps.skills`만 예외다 — `python manage.py
+    # skill_validation_worker`(스킬 등록 검증 워커, "스킬 검증·등록 최종
+    # 설계.md" §10)를 두려면 Django의 관리 명령 탐색이 그 앱을
+    # `INSTALLED_APPS`에서 찾아야 한다(`django.core.management.get_commands()`가
+    # `apps.get_app_configs()`를 스캔). 이 앱에는 여전히 models.py도 migration도
+    # 없다 — 순전히 관리 명령 탐색용이다.
+    "apps.skills",
 ]
 
 MIDDLEWARE = [
@@ -134,6 +144,43 @@ OBJECT_STORAGE_PROVIDER = env("OBJECT_STORAGE_PROVIDER", default="local")
 # (Dockerfile 참고) 로컬 등에서는 계속 빈 값이다 — 가짜 값을 만들지 않고 None으로
 # 둔다(2026-08-14).
 RUNTIME_PROFILE_VERSION = env("RUNTIME_PROFILE_VERSION", default="") or None
+
+# 스킬 검증 운영 정책. 설계 기본값은 환경설정의 default일 뿐이며 워커·API·UI는
+# 아래 값만 읽는다. 배포별로 코드를 고치지 않고 환경변수로 조정한다.
+SKILL_VALIDATION_QUEUE_DELAY_SECONDS = env.int("SKILL_VALIDATION_QUEUE_DELAY_SECONDS", default=60)
+SKILL_VALIDATION_WORKER_HEARTBEAT_TTL_SECONDS = env.int(
+    "SKILL_VALIDATION_WORKER_HEARTBEAT_TTL_SECONDS", default=90
+)
+SKILL_VALIDATION_ACCOUNT_OPEN_JOB_LIMIT = env.int("SKILL_VALIDATION_ACCOUNT_OPEN_JOB_LIMIT", default=2)
+SKILL_VALIDATION_TEAM_RUNNING_JOB_LIMIT = env.int("SKILL_VALIDATION_TEAM_RUNNING_JOB_LIMIT", default=4)
+# 상시 워커 프로세스는 하나만 운영하고, 서로 다른 계정의 job은 이 프로세스
+# 안의 실행 슬롯에서 병렬 처리한다. 같은 계정은 claim_next()가 직렬화한다.
+SKILL_VALIDATION_WORKER_CONCURRENCY = env.int("SKILL_VALIDATION_WORKER_CONCURRENCY", default=2)
+SKILL_VALIDATION_MAX_MODEL_CALLS = env.int("SKILL_VALIDATION_MAX_MODEL_CALLS", default=60)
+SKILL_VALIDATION_PROVIDER_MAX_CONCURRENCY = env.int(
+    "SKILL_VALIDATION_PROVIDER_MAX_CONCURRENCY", default=6
+)
+SKILL_VALIDATION_PROVIDER_REQUESTS_PER_MINUTE = env.int(
+    "SKILL_VALIDATION_PROVIDER_REQUESTS_PER_MINUTE", default=120
+)
+SKILL_VALIDATION_ESTIMATED_COST_PER_CALL_USD = env.float(
+    "SKILL_VALIDATION_ESTIMATED_COST_PER_CALL_USD", default=0.01
+)
+SKILL_VALIDATION_SUCCEEDED_RETENTION_DAYS = env.int("SKILL_VALIDATION_SUCCEEDED_RETENTION_DAYS", default=30)
+SKILL_VALIDATION_TERMINAL_RETENTION_DAYS = env.int("SKILL_VALIDATION_TERMINAL_RETENTION_DAYS", default=30)
+SKILL_EVAL_FEEDBACK_RETENTION_DAYS = env.int("SKILL_EVAL_FEEDBACK_RETENTION_DAYS", default=90)
+SKILL_EVAL_UNAPPROVED_CASE_RETENTION_DAYS = env.int("SKILL_EVAL_UNAPPROVED_CASE_RETENTION_DAYS", default=90)
+SKILL_FEEDBACK_NOTE_MAX_LENGTH = env.int("SKILL_FEEDBACK_NOTE_MAX_LENGTH", default=1000)
+SKILL_EVAL_REGRESSION_CASE_MAX_BYTES = env.int("SKILL_EVAL_REGRESSION_CASE_MAX_BYTES", default=65536)
+SKILL_EVAL_REGRESSION_CASE_MAX_MESSAGES = env.int("SKILL_EVAL_REGRESSION_CASE_MAX_MESSAGES", default=20)
+SKILL_EVAL_MAX_CAPABILITY_TAGS = env.int("SKILL_EVAL_MAX_CAPABILITY_TAGS", default=20)
+SKILL_EVAL_CAPABILITY_TAG_MAX_LENGTH = env.int("SKILL_EVAL_CAPABILITY_TAG_MAX_LENGTH", default=64)
+SKILL_EVAL_DATASET_VERSION_MAX_LENGTH = env.int("SKILL_EVAL_DATASET_VERSION_MAX_LENGTH", default=64)
+SKILL_EVAL_DEBUG_COMMANDS_ENABLED = env.bool("SKILL_EVAL_DEBUG_COMMANDS_ENABLED", default=DEBUG)
+SKILL_EVAL_SINGLE_RUN_TIMEOUT_SECONDS = env.int("SKILL_EVAL_SINGLE_RUN_TIMEOUT_SECONDS", default=30)
+SKILL_EVAL_CONCURRENCY = env.int("SKILL_EVAL_CONCURRENCY", default=6)
+SKILL_EVAL_JOB_TIMEOUT_SECONDS = env.int("SKILL_EVAL_JOB_TIMEOUT_SECONDS", default=300)
+SKILL_EVAL_AGENT_MAX_ITERATIONS = env.int("SKILL_EVAL_AGENT_MAX_ITERATIONS", default=10)
 
 # No operational default is provided for secrets or external addresses. The
 # integration validates these settings at the boundary where they are needed.

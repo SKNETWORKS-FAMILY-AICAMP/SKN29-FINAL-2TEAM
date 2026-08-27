@@ -26,8 +26,12 @@ class SkillsProvider:
 
     def routes(self, *, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
         from services.agent_runtime.skills.backend import skill_routes
+        from services.agent_runtime.skills.service import migrate_legacy_inactive_skills
 
-        return skill_routes(account_id=account_id, team_id=team_id)
+        # 그래프가 활성 source를 스캔하기 전에 구버전 ``enabled=false`` 파일을
+        # 비활성 namespace로 옮긴다. 따라서 첫 대화부터 Root·GP에 노출되지 않는다.
+        migrate_legacy_inactive_skills(account_id)
+        return skill_routes(account_id=account_id, team_id=team_id, store=self.store())
 
     def system_prompt(self) -> str:
         """2026-08-22 추가 — `MemoryProvider.system_prompt()`와 같은 자리.
@@ -39,13 +43,12 @@ class SkillsProvider:
 
     def store(self) -> "PostgresStore":
         """2026-08-25 추가 — `memory_provider`가 없을 때 `factory.py`가 Skill
-        전용 backend를 만들면서 쓴다. `MemoryProvider.store()`와 똑같이
-        `get_memory_store()`를 부른다 — 이름이 memory지만 실제로는 이
-        저장소가 쓰는 프로세스 전역 Postgres Store 싱글턴이다. Skill 전용
-        인프라가 따로 있는 게 아니라, 같은 저장소를 재사용할 뿐이다."""
-        from services.agent_runtime.memory.store import get_memory_store
+        전용 backend를 만들면서 쓴다. `MemoryProvider.store()`와 같은
+        프로세스 전역 PostgresStore 싱글턴을 재사용한다. Skill 전용 로컬
+        파일 저장소나 별도 DB는 없다."""
+        from services.agent_runtime.memory.store import get_runtime_store
 
-        return get_memory_store()
+        return get_runtime_store()
 
 
 __all__ = ["SkillsProvider"]
