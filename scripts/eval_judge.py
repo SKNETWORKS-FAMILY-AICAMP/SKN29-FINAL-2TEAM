@@ -12,6 +12,8 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_JUDGE_MODEL = "gpt-5.6-sol"
+DEFAULT_REASONING_EFFORT = "medium"
 DEFAULT_DATASET = (
     REPO_ROOT
     / "docs"
@@ -43,8 +45,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--account-id", required=True)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
-    parser.add_argument("--judge-model", help="생략하면 평가 실행에 기록된 모델 사용")
-    parser.add_argument("--reasoning-effort", default="low")
+    parser.add_argument(
+        "--judge-model",
+        default=DEFAULT_JUDGE_MODEL,
+        help=f"Judge 모델(기본값: {DEFAULT_JUDGE_MODEL})",
+    )
+    parser.add_argument("--reasoning-effort", default=DEFAULT_REASONING_EFFORT)
     parser.add_argument("--prompt-version", default="judge-calibration-v0")
     return parser
 
@@ -136,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     profile = AccountRepository.get_profile(args.account_id)
-    judge_model = args.judge_model or case_result["model"]
+    judge_model = args.judge_model
     resolved = ModelConfigResolver().resolve(
         model=judge_model,
         reasoning_effort=args.reasoning_effort,

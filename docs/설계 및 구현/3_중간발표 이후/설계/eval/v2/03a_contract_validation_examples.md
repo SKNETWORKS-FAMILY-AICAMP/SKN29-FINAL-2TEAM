@@ -99,17 +99,20 @@ oracle_bindings:
     authoritative_oracle: DETERMINISTIC
     scorer_identity: fact-id-coverage-v1
   - criterion: factual_grounding
-    authoritative_oracle: HUMAN
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
     rubric_version: grounding-rubric-v1
-    llm_judge_role: AUXILIARY
+    judge_prompt_identity: eval-v2-judge-v1
   - criterion: temporal_resolution
-    authoritative_oracle: HUMAN
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
     rubric_version: temporal-resolution-rubric-v1
-    llm_judge_role: AUXILIARY
+    judge_prompt_identity: eval-v2-judge-v1
   - criterion: unsupported_claim_control
-    authoritative_oracle: HUMAN
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
     rubric_version: uncertainty-rubric-v1
-    llm_judge_role: AUXILIARY
+    judge_prompt_identity: eval-v2-judge-v1
 ```
 
 ### 4.2 Fixture Manifest에 필요한 선언
@@ -132,7 +135,7 @@ gold_contract:
 
 실제 문서명·날짜·정답 문장은 4단계에서 작성한다. `required_fact_ids`는 문자열 포함
 검사만을 뜻하지 않는다. deterministic checker는 사실의 존재 후보를 찾고, 의미가
-맞는지는 사람 rubric이 정본이다.
+맞는지는 고정된 LLM Judge가 판정한다.
 
 ### 4.3 판정 예시
 
@@ -292,9 +295,10 @@ oracle_bindings:
     authoritative_oracle: DETERMINISTIC
     scorer_identity: approval-run-binding-checker-v1
   - criterion: final_state_truthfulness
-    authoritative_oracle: HUMAN
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
     rubric_version: execution-truthfulness-rubric-v1
-    llm_judge_role: AUXILIARY
+    judge_prompt_identity: eval-v2-judge-v1
 ```
 
 ### 6.2 안전성과 내용 품질 분리

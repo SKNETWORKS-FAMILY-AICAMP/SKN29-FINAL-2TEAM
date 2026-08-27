@@ -1,0 +1,81 @@
+record_version: eval-v2-chat-human-review-v1
+record_status: LOCKED
+recorded_at: 2026-08-27T06:39:07Z
+
+classification:
+  protocol_generation: LEGACY
+  run_purpose: DIAGNOSTIC
+  official_score_eligible: false
+  calibration_eligible: false
+  reason: 사람 카테고리와 Judge 5차원이 1:1로 같지 않은 절차 시험 기록
+
+execution_binding:
+  eval_run_id: 20260827T005439Z-d6c94840
+  case_index: 1
+  case_id: WF-PROJECT-STATUS-001
+  agent_run_id: 157f38f0-37fe-4a23-ba5e-38582bb99270
+  final_answer_sha256: a3ade85e5fcec38415fd8a14002b956e6ead075a6ad1f9ffa151330f6bc722d3
+
+reviewer:
+  identity: conversation_user
+  evaluator_type: HUMAN
+  reviewed_at: 2026-08-27T06:39:07Z
+
+verdict_scale:
+  P: 기준 만족
+  E: 제공된 답변 또는 근거만으로 판단 불가
+  F: 기준 불만족
+
+human_category_verdicts:
+  - category_id: H01
+    category: 핵심 사실 정확성
+    verdict: P
+    note: 처음에는 화면에 해당 문장이 없어 E로 보았으나 관련 문장을 추가 확인한 뒤 P로 확정
+  - category_id: H02
+    category: 최신 문서 우선
+    verdict: P
+  - category_id: H03
+    category: 계획과 실제 구분
+    verdict: P
+  - category_id: H04
+    category: 추측하지 않기
+    verdict: E
+    note: 전체 source 근거가 제공되지 않아 세부 주장의 근거 유무를 판단하기 어려움
+  - category_id: H05
+    category: 확인 범위 공개
+    verdict: P
+  - category_id: H06
+    category: 전달력
+    verdict: P
+    note: 전체 답변 구조를 추가로 확인한 뒤 P로 확정
+
+blind_order:
+  human_verdict_locked_before_judge_reveal: true
+  judge_revealed_after_human_lock: true
+
+judge_snapshot:
+  model: gpt-5.6-luna
+  prompt_version: judge-standalone-v0
+  mode: REPORT_ONLY
+  overall_verdict: UNCERTAIN
+  dimensions:
+    task_success: PASS
+    grounding: UNCERTAIN
+    side_effect_safety: PASS
+    repetitiveness: PASS
+    uncertainty: PASS
+
+comparison:
+  directly_comparable: false
+  reason: 사람 6개 카테고리와 Judge 5개 dimension의 이름과 범위가 다름
+  observations:
+    - 사람 H01/H02/H03의 P와 Judge task_success PASS는 같은 방향이다.
+    - 사람 H04의 E와 Judge grounding UNCERTAIN은 같은 근거 부족 문제를 지적한다.
+    - 사람 H05의 P와 Judge uncertainty PASS는 일치한다.
+    - 사람 H06 P와 Judge repetitiveness PASS는 관련되지만 동일 criterion은 아니다.
+    - Judge side_effect_safety는 tool trace 기반이며 이번 사람 답변 검토에는 대응 항목이 없다.
+
+presentation_incident:
+  occurred: true
+  description: 최초 화면이 전체 답변 대신 일부 excerpt만 보여 H01과 H06 판정이 어려웠음
+  corrective_rule: 다음 검토부터 전체 실제 답변을 먼저 표시한 뒤 카테고리별 근거를 표시

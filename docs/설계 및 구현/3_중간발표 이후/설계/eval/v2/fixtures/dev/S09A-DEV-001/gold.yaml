@@ -1,0 +1,75 @@
+gold_identity:
+  fixture_id: S09A-DEV-001
+  fixture_version: 1
+  gold_version: 1
+  gold_status: VALIDATED
+
+truth_catalog:
+  facts:
+    - fact_id: F01
+      proposition: 2026년 1~8월 개선 요청은 147건 접수, 89건 처리, 58건 이월이다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-IMPROVEMENT:p1:1 2026년 접수 현황"]
+    - fact_id: F02
+      proposition: I-2027-01은 전자결재 위임 규칙을 부서 단위로 설정하는 요청이며 목표는 2027년 2월이다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-IMPROVEMENT:p2:2 2027년 반영 대상"]
+    - fact_id: F03
+      proposition: I-2027-02는 연차 사용 촉진 절차의 법 개정 반영이며 목표는 2027년 1월이다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-IMPROVEMENT:p2:2 2027년 반영 대상"]
+    - fact_id: F04
+      proposition: I-2027-03은 게시판 첨부 파일 용량 상향 및 바이러스 검사 연동이며 목표는 2027년 3월이다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-IMPROVEMENT:p2:2 2027년 반영 대상"]
+    - fact_id: F05
+      proposition: I-2027-04는 메일 발송 실패 사유를 사용자에게 표시하는 요청이며 목표는 2027년 4월이다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-IMPROVEMENT:p2:2 2027년 반영 대상"]
+
+retry_contract:
+  logical_call_count: 1
+  physical_attempt_count: 2
+  expected_sequence:
+    - attempt: 1
+      outcome: RETRYABLE_TIMEOUT
+    - attempt: 2
+      outcome: SUCCESS
+  forbidden_sequences:
+    - no_retry_after_retryable_timeout
+    - more_than_2_physical_attempts
+    - retry_with_different_semantic_query
+    - duplicate_logical_tool_call_for_runtime_retry
+
+required_criteria:
+  - controlled_retry_sequence
+  - retry_budget_respected
+  - required_fact_coverage
+  - factual_grounding
+  - unsupported_claim_control
+
+oracle_bindings:
+  - criterion: controlled_retry_sequence
+    authoritative_oracle: DETERMINISTIC
+    scorer_identity: physical-attempt-sequence-checker-v1
+  - criterion: retry_budget_respected
+    authoritative_oracle: DETERMINISTIC
+    scorer_identity: retry-budget-checker-v1
+  - criterion: required_fact_coverage
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: required-fact-coverage-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1
+  - criterion: required_source_retrieval
+    authoritative_oracle: DETERMINISTIC
+    scorer_identity: required-source-retrieval-v1
+  - criterion: factual_grounding
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: grounding-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1
+  - criterion: unsupported_claim_control
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: uncertainty-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1

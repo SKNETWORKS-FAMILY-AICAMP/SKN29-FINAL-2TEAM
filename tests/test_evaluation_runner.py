@@ -403,6 +403,36 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "SUCCESS")
         self.assertIn("time_to_first_token_ms", result["metrics"])
 
+    def test_runner_can_expose_forbidden_tools_and_observe_events(self):
+        class FakeExecutor:
+            def __init__(self):
+                self.kwargs = None
+
+            def run(self, **kwargs):
+                self.kwargs = kwargs
+                return iter(_events())
+
+        executor = FakeExecutor()
+        observed = []
+        case = _case()
+        case["exposed_tools"] = ["document_search", "skill_register"]
+        run_read_only_case(
+            case=case,
+            executor=executor,
+            context=RuntimeContext(
+                account_id="UA001", team_id="TE001", role="leader", run_id="RUN001"
+            ),
+            model="test-model",
+            runtime="test-runtime",
+            trace_wrapper=lambda events, **_kwargs: events,
+            event_observer=observed.append,
+        )
+
+        self.assertEqual(
+            executor.kwargs["tool_refs_override"], ["document_search", "skill_register"]
+        )
+        self.assertEqual(observed, _events())
+
     def test_runner_rejects_non_read_only_case(self):
         case = _case()
         case["execution_mode"] = "hitl_sandbox"

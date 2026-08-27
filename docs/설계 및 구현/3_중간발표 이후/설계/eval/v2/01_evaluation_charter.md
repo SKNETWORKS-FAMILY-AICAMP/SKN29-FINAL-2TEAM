@@ -6,6 +6,7 @@
 - 상태: **APPROVED**
 - 승인일: 2026-08-27
 - 보강일: 2026-08-27 — SUT 경계, 직교 상태 축, raw 정본, scorer provenance 명시
+- 자동 평가 개정: 2026-08-27 — 공식 사람 판정 제거, deterministic + LLM Judge로 고정
 - 적용 범위: 프로젝트 관리 업무를 수행하는 제품 Agent
 - 선행 조건: 기존 결과를 `LEGACY`로 분리
 
@@ -227,7 +228,7 @@ protocol 위반, 재현 가능한 fixture 결함, 잘못된 candidate 결속처�
 제외하더라도 expected-run coverage를 숨기지 않는다. promotion에 필요한 최소 valid
 coverage 임계값은 5단계 채점 계약에서 정한다.
 
-실행 유효성 판정은 사람 품질 점수와 Judge 결과를 공개하기 전에 완료한다. 실행 후
+실행 유효성 판정은 자동 품질 점수와 Judge 결과를 집계하기 전에 완료한다. 실행 후
 발견한 증거 손상처럼 사후 지정이 불가피하면 품질 verdict와 무관한 객관적 근거와
 검토 이력을 남긴다. 실패 유형이나 낮은 점수 자체는 유효성 변경 근거가 될 수 없다.
 
@@ -259,13 +260,13 @@ bundle 내부 사실이 충돌하면 다음 순서로 신뢰한다.
 3. 실행 trace와 도구 반환 상태
 4. 최종 답변
 
-사실 증거를 해석해 품질 rubric을 적용하는 기준 판정자는 사람이다. calibration gate를
-통과한 LLM Judge는 그 판정을 보조할 수 있지만 원시 사실이나 사람 기준을 대체하지
-않는다. evidence bundle은 문서 ID가 있다는 것뿐 아니라 기대 결과를 재현하기에
-충분한 범위인지 사람이 검토해야 한다.
+원시 사실·상태·권한·부작용은 deterministic checker가 정본이다. 의미 정확성,
+근거 표현, 시점 해석과 불확실성 통제처럼 결정론적으로 판정하기 어려운 criterion은
+고정된 LLM Judge가 authoritative semantic oracle을 맡는다. Judge는 원시 사실이나
+deterministic checker 결과를 대체하거나 덮어쓸 수 없다.
 
 평가 DB는 raw record에서 idempotent ingest한 검색·catalog·판정·집계 계층이다. DB가
-유효성·공식 자격·사람 판정의 운영 정본이더라도 raw 답변·event·timestamp 같은 실행
+유효성·공식 자격·자동 판정의 운영 정본이더라도 raw 답변·event·timestamp 같은 실행
 사실을 수정하거나 대체할 수 없다. 실행 사실이 충돌하면 raw record를 기준으로 DB를
 재수집하고 reconciliation 이력을 남긴다. raw record와 DB는 `run_id`와 content hash로
 대조하며 불일치하면 공식 보고서를 생성하지 않는다. 둘을 동시에 execution record의
@@ -279,8 +280,8 @@ bundle 내부 사실이 충돌하면 다음 순서로 신뢰한다.
 - candidate manifest 필수값이 빠진 실행
 - fixture 사전조건 또는 cleanup을 확인하지 못한 실행
 - 개발 중 임의 실행
-- 사람 판정 초안
-- calibration gate를 통과하지 않은 Judge 단독 판정
+- scorer identity나 evidence bundle hash가 빠진 자동 판정
+- 고정 model·prompt·parser와 다른 Judge 판정
 - 서로 다른 candidate 조건을 합친 통과율
 
 성능 p95의 표시와 공식 판단을 분리한다.
@@ -305,36 +306,25 @@ Official Metric
 보고서에는 candidate, scenario set, protocol, cohort query, aggregation 버전과
 `planned/attempted/valid/invalid/scored` coverage를 표시한다.
 
-## 10. Judge 상태와 승격 원칙
+## 10. Judge 고정·운용 원칙
 
-Judge는 다음 상태를 가진다.
+V2 Judge는 `gpt-5.6-sol`, reasoning `medium`, versioned prompt와 strict parser로
+고정한다. model·reasoning·prompt·parser 중 하나라도 다르면 같은 Judge cohort로
+합치지 않는다. V1 사람 비교와 Judge 결과는 `LEGACY`로 보존하지만 V2 공식 판정이나
+승격 조건으로 사용하지 않는다.
 
-- `UNVALIDATED`: 사람 기준으로 검증되지 않음
-- `CALIBRATING`: blind 사람 표본과 비교 중
-- `CALIBRATED`: 정한 범위와 버전에서 보조 평가 사용 가능
-- `SUSPENDED`: model·prompt·rubric·parser 또는 대상 분포 변화로 재검증 필요
-
-현재까지의 V1 Judge 결과는 V2에서 `UNVALIDATED/LEGACY`이며 승격 근거로 사용하지
-않는다. calibration은 Judge 결과를 보지 않은 사람 판정에 exact run과 evidence
-checksum을 결속해 수행한다. 다음 항목을 전체와 위험 범주별로 기록한다.
-
-- overall·dimension agreement
-- FAIL precision/recall과 false pass·false fail
-- `UNCERTAIN` 비율
-- safety false pass
-- 사람 검토자 간 일치와 불일치 조정 결과
-
-현재 Judge 출력은 범주형이므로 연속 점수 correlation을 필수 지표로 사용하지 않는다.
-승격에 필요한 사람 표본 수와 허용 기준은 시나리오 분포를 확정한 뒤 6단계에서
-정한다. Judge 조정에 사용한 표본과 최종 승격 검증 표본은 분리한다.
+Judge의 유효한 범주형 출력은 `PASS`, `FAIL`, `UNCERTAIN`이다. `UNCERTAIN`은
+`INCONCLUSIVE`로 전환하며 PASS가 아니다. 모델 호출 실패, timeout, 빈 응답, schema
+위반과 parser 실패는 candidate 실패가 아니라 `INVALID_EVALUATION_INFRA`다. 정확한
+결합·분모 규칙은 5단계, 입력·provenance 계약은 6단계에서 고정한다.
 
 모든 판정에는 provenance를 독립적으로 저장한다.
 
-- `scorer_type`: `DETERMINISTIC`, `HUMAN`, `LLM_JUDGE`
+- `scorer_type`: `DETERMINISTIC`, `LLM_JUDGE`
 - `scorer_identity`
 - `rubric_version`, `scoring_contract_version`
 - LLM Judge인 경우 `judge_prompt_identity`, model·parser identity
-- `adjudication_status`: 미검토, 합의, 불일치 조정 등
+- `judge_execution_status`, `judge_output_status`
 
 canary 노출, forbidden tool·authorization event, DB/Jira 사후조건처럼 기계적으로
 검증 가능한 항목은 deterministic oracle을 우선한다. LLM Judge는 의미 정확성처럼
@@ -344,11 +334,11 @@ canary 노출, forbidden tool·authorization event, DB/Jira 사후조건처럼 �
 
 - 시나리오 작성자는 초기 상태·기대 사후조건·위험을 정의한다.
 - 실행자는 fixture와 candidate manifest를 확인하고 실행한다.
-- 사람 검토자는 Judge 결과를 보기 전에 rubric을 작성한다.
-- Judge는 사람 판정을 입력받지 않고 참고 판정을 만든다.
+- deterministic scorer는 원시 evidence에서 기계 판정을 만든다.
+- Judge는 candidate 답변, versioned rubric과 제한된 evidence bundle에서 의미 판정을 만든다.
 - 보고서는 수동 숫자를 받지 않고 공식 cohort에서 자동 생성한다.
 
-같은 사람이 여러 역할을 맡을 수는 있지만, 역할별 시각과 입력 순서는 기록해야 한다.
+fixture·gold 작성 책임과 실행 책임은 구분하고 모든 자동 scorer identity를 기록한다.
 
 ## 12. 1단계 완료 조건
 
@@ -359,7 +349,7 @@ canary 노출, forbidden tool·authorization event, DB/Jira 사후조건처럼 �
 - Hard Gate가 권한·승인·부작용 중심으로 제한돼 있다.
 - 실행 유효성·종료 상태·품질 결과가 분리돼 있다.
 - 기존 결과가 V2 공식 모집단에서 제외돼 있다.
-- Judge는 사람 기준으로 검증되기 전까지 참고용이다.
+- Judge는 의미 criterion의 정본이지만 deterministic 사실을 덮어쓰지 않는다.
 - candidate 조건이 바뀌면 같은 반복으로 합치지 않는다.
 - SUT와 candidate component identity 경계가 정의돼 있다.
 - `INVALID` 허용 사유와 Agent 실패가 책임 영역으로 분리돼 있다.

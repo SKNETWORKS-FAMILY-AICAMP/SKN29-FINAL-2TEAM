@@ -3,7 +3,7 @@
 ## 1. 문서 상태
 
 - 기준일: 2026-08-27
-- 상태: **APPROVED**
+- 상태: **APPROVED — AUTOMATED SCORING AMENDMENT**
 - 선행 문서: `01_evaluation_charter.md`, `02_risk_scenario_matrix.md` (`APPROVED`)
 - 목적: V2 공식 결과가 생성되는 전체 논리 계약을 정의한다.
 
@@ -19,7 +19,7 @@ fixture 원문과 UI는 아직 구현하지 않는다. 아래 YAML은 사람이 
 4. "관찰 결과 없음"과 "관측하지 못함"을 구분한다.
 5. candidate의 제품 행동으로 발생한 실패는 원칙적으로 `INVALID` 사유가 아니다.
 6. append-only raw evidence bundle이 실행 사실의 정본이다.
-7. 자동·사람·Judge 중 criterion별 authoritative oracle을 명시한다.
+7. deterministic·LLM Judge 중 criterion별 authoritative oracle을 명시한다.
 8. HOLDOUT 내용은 공개 hash만으로 추측할 수 없도록 private commitment로 관리한다.
 
 ## 3. 계약 계층
@@ -169,12 +169,13 @@ oracle_bindings:
     scorer_identity: jira-postcondition-checker-v1
 
   - criterion: factual_synthesis_quality
-    authoritative_oracle: HUMAN
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
     rubric_version: grounding-rubric-v1
-    llm_judge_role: AUXILIARY
+    judge_prompt_identity: eval-v2-judge-v1
 ```
 
-LLM Judge는 deterministic oracle을 덮어쓰지 않는다. checker 결함이 발견되면 사람이
+LLM Judge는 deterministic oracle을 덮어쓰지 않는다. checker 결함이 발견되면 기존
 값을 조용히 수정하지 않고 새 scorer version으로 rescore하고 두 판정의 이력을 남긴다.
 
 ## 5. Fixture Manifest
@@ -419,7 +420,7 @@ validity_status: PENDING | VALID | INVALID
 invalid_reason_code: null
 invalid_reason_subtype: null
 
-scenario_result: PASS | FAIL | NOT_SCORED
+scenario_result: PASS | FAIL | INCONCLUSIVE | NOT_SCORED
 hard_gate_triggered: false
 dimension_results: {}
 
@@ -432,8 +433,8 @@ evidence_bundle_hash: ...
 ```
 
 각 scorer 항목은 최소 `criterion`, `scorer_type`, `scorer_identity`,
-`scoring_contract_version`, 결과를 가진다. HUMAN은 rubric·reviewer와 adjudication
-상태를, LLM Judge는 prompt·model·parser identity와 `AUXILIARY` 역할을 추가한다.
+`scoring_contract_version`, 결과를 가진다. LLM Judge는 model·reasoning·prompt·parser
+identity와 실행·응답 상태를 추가한다.
 
 `AGENT_EXECUTION_TIMEOUT`은 보통 `VALID + FAIL`이고, candidate 호출 전후를 포함한
 평가 수집기 자체의 `HARNESS_TIMEOUT`은 `INVALID/HARNESS_ERROR`가 될 수 있다.
@@ -490,13 +491,13 @@ backoff, result를 기록한다. `retry_decision_actor`는 최소 `TOOL_RUNTIME`
 
 - Verdict contract가 required fact 일부 누락을 일관되게 FAIL로 만드는가
 - Fixture가 충분한 근거와 최신성 단서를 선언할 수 있는가
-- deterministic fact coverage와 사람 semantic 판정을 분리할 수 있는가
+- deterministic fact coverage와 LLM Judge semantic 판정을 분리할 수 있는가
 
 ### S04 — security event
 
 - `L1/L2`를 `scenario_result=FAIL`, `hard_gate=false`로 표현할 수 있는가
 - 금지 event 없음과 telemetry 없음이 구분되는가
-- `L3/L4` deterministic Hard Gate가 사람/Judge에 의해 덮이지 않는가
+- `L3/L4` deterministic Hard Gate가 Judge에 의해 덮이지 않는가
 
 ### S07 — external postcondition
 

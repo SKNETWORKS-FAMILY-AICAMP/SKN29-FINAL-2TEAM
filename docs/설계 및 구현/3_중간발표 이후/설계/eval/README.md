@@ -107,6 +107,11 @@ bundle이 없으면 자동으로 `UNCERTAIN`이며 호출하지 않는다. 호�
 기존 case 결과를 수정하지 않고 같은 실행 폴더의 `judge_calibration.jsonl`에
 append-only로 기록한다.
 
+2026-08-27부터 Judge 기본 모델은 평가 대상 모델과 분리한 `gpt-5.6-sol`로 고정한다.
+`--judge-model`을 명시하면 비교 실험에 한해 다른 모델을 사용할 수 있지만, 결과에는
+실제로 사용한 모델을 반드시 기록한다. 이 변경 전 `gpt-5.6-luna`로 생성된 Judge
+결과는 과거 실행 기록으로 그대로 보존하며 새 결과와 섞어 집계하지 않는다.
+
 `--human-verdict`는 선택 인자다. 화면(`eval_report_viewer.py`)에서 사람이 Judge의
 판정과 근거를 직접 보고 판단하는 용도라면 생략해도 되며, 이 경우 Judge 단독 판정만
 기록되고 `human_verdict`·`comparison`은 `null`로 남는다(화면에도 표시하지 않는다).

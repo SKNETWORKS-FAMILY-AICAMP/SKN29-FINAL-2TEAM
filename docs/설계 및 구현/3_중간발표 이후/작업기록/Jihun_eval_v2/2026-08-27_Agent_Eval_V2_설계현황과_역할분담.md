@@ -55,7 +55,7 @@ candidate에 합치지 않지만 다른 environment 실행을 같은 직접 비�
 - `run_purpose`: `DEVELOPMENT | DIAGNOSTIC | CALIBRATION | OFFICIAL`
 - `validity_status`: `PENDING | VALID | INVALID`
 - `termination_status`: `COMPLETED | ERROR | INTERRUPTED`
-- `scenario_result`: `PASS | FAIL | NOT_SCORED`
+- `scenario_result`: `PASS | FAIL | INCONCLUSIVE | NOT_SCORED`
 - `hard_gate_triggered`: `true | false`
 - `official_score_eligible`: `true | false`
 
@@ -66,7 +66,7 @@ candidate에 합치지 않지만 다른 environment 실행을 같은 직접 비�
 
 immutable `run_id`와 content hash를 가진 append-only raw evidence bundle을 실행 사실의
 정본으로 둔다. 평가 DB는 raw에서 idempotent ingest한 catalog·판정·집계 계층이다.
-DB는 유효성과 사람 판정의 운영 정본일 수 있지만 raw 답변·event·timestamp를 바꾸지
+DB는 유효성과 자동 판정의 운영 정본일 수 있지만 raw 답변·event·timestamp를 바꾸지
 못한다. 불일치하면 raw 기준으로 재수집하고 공식 보고서 생성을 막는다.
 
 ## 3. 현재 시나리오 구조
@@ -357,7 +357,7 @@ V2 공식 실행에 추가로 필요한 항목은 다음과 같다.
 3. 팀원에게 동일 계약으로 S10·S11 작업 전달
 4. S01~S09B와 S10·S11을 병렬 상세 설계
 5. fixture와 gold 정책 확정
-6. 채점·사람 검토·Judge 계약 확정
+6. deterministic·LLM Judge 자동 채점 계약 확정
 7. 공통 runner·DB 구현
 8. DEV pilot
 9. candidate 동결
@@ -430,7 +430,7 @@ candidate identity는 3~7단계 계약과 구현이 완료된 뒤 별도로 계�
 공통 Scenario Contract를 S01, S04, S07, S09A에 실제로 대입한 검증 문서
 `설계/eval/v2/03a_contract_validation_examples.md`를 작성했다.
 
-- S01: deterministic 사실 coverage와 사람 semantic oracle을 분리
+- S01: deterministic 사실 coverage와 LLM Judge semantic oracle을 분리
 - S04: 공격 추종·금지 호출·handler 시작·외부 부작용을 L0~L4로 분리
 - S07: Action Safety Primary와 승인 카드 내용 품질 Secondary를 분리
 - S09A: runtime physical attempt가 현재 구조화 evidence에 없어
@@ -453,3 +453,40 @@ criteria에서 유도하며 Secondary dimension은 별도 결과로 보존한다
 
 따라서 공통 계약 자체의 미결정 사항은 없다. 다음 순서는 동일 계약을 S10/S11 담당자에게
 전달하고, Jihun 트랙에서 Phase 4 fixture·gold 정책을 설계하는 것이다.
+
+## 15. Phase 4 착수
+
+LEGACY dataset, workflow 문서, fixture, Judge evidence와 현재 runner를 대조해
+`설계/eval/v2/04_fixture_and_gold_policy.md` 초안을 작성했다.
+
+핵심 방향은 다음과 같다.
+
+- Fixture는 입력·초기 상태·도구 응답·승인/오류 script·cleanup을 정의
+- Gold는 모범답안 문장이 아니라 atomic fact·관계·상태·금지 추론·evidence mapping
+- 실제 운영 DB ID와 가변 상태를 immutable fixture identity로 사용하지 않음
+- S01의 미색인·근거 부족 요구는 S06으로 분리해 능력 경계 복원
+- S04는 run별 synthetic canary, S09A는 deterministic fault schedule 사용
+- HOLDOUT은 교차 custodian과 독립 reviewer가 private store에서 관리
+
+현재 Phase 4는 `DRAFT / REVIEW_REQUIRED`이며 코드는 수정하지 않았다.
+
+2026-08-27 사용자 동의로 Fixture·Gold 정책을 `APPROVED`로 전환했다. Phase 4 자체는
+대표 S01/S04/S07/S09A DEV fixture package 작성과 재현성 검토가 남아 있어 진행 중이다.
+
+## 16. 대표 DEV fixture package 작성
+
+새 Markdown 문서로 S01, S04, S07, S09A package 초안을 한 차례 작성했으나
+2026-08-27 사용자 검토에서 저장소에 이미 있는 PDF를 기준으로 다시 만들기로 결정했다.
+해당 Markdown 기반 fixture, gold, source와 review template은 모두 삭제했다.
+
+`S01-DEV-001`은 `tests/eval/documents/pdf`의 기존 한빛몰 PDF 4개를 경로·SHA-256·
+페이지에 결속해 다시 작성했다. 새 source Markdown은 만들지 않았다. YAML,
+fixture/gold identity와 version, 파일 hash, conclusion 참조 검사를 통과했으며 현재
+내용 검토 전 `DRAFT`다. S04/S07/S09A의 공격·거절·장애 조건은 기존 PDF를 바탕으로
+평가 환경에서만 별도로 주입해 작성한다.
+
+## 17. 독립 fixture 검토 인계
+
+독립 검토 원칙은 유지하지만 검토할 package가 삭제됐으므로 인계는 보류한다. 실제 PDF
+기반 package와 새 review template을 만든 뒤, 작성자가 아닌 reviewer에게 source-first
+재구성 절차로 다시 인계한다.
