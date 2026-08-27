@@ -31,17 +31,21 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--color-border);
   /* ⚠ 패딩은 **바깥**이 갖고 max-width 는 **안쪽**이 갖는다. 둘을 한 요소에
      몰면 콘텐츠 폭이 `max-width - 패딩` 이 되어 본문 그리드와 어긋난다. */
-  padding: var(--space-4) var(--band-x);
+  padding: var(--space-5) var(--band-x) 0;
 }
 
+/* 화면에 붙은 띠가 아니라 지면 위에 떠 있는 알약이다. 아래 카드들과 같은
+   그림자를 써서 한 화면 안에서 층이 하나로 읽히게 한다. */
 .navInner {
   max-width: 1280px;
   margin: 0 auto;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -95,6 +99,7 @@
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
+  transition: background 160ms ease;
 }
 
 .navCta:hover {
@@ -161,10 +166,14 @@
   font-size: 15px;
   font-weight: 700;
   text-decoration: none;
+  box-shadow: 0 14px 30px -12px rgba(30, 58, 95, 0.75);
+  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 .btnPrimary:hover {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px -12px rgba(30, 58, 95, 0.8);
 }
 
 .btnGhost {
@@ -172,24 +181,61 @@
   align-items: center;
   justify-content: center;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
   color: var(--color-body);
   border-radius: var(--radius-lg);
   padding: 14px 28px;
   font-size: 15px;
   font-weight: 600;
   text-decoration: none;
+  box-shadow: var(--shadow-soft);
+  transition: color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 .btnGhost:hover {
-  border-color: var(--color-primary);
   color: var(--color-heading);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft-lg);
 }
 
 /* ---------- 0 · 히어로 ---------- */
 
 .hero {
+  position: relative;
+  overflow: hidden;
   padding: var(--space-24) var(--band-x) var(--band-y);
+}
+
+/*
+ * 단색 지면 위에 은은한 빛 두 덩이. 색을 늘리지 않고 깊이만 준다 — 브랜드
+ * 네이비를 아주 옅게 깐 것이라 새 색이 아니다. 평평한 단색 지면이 「비어
+ * 있다」는 인상의 절반이었다.
+ */
+.hero::before,
+.hero::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hero::before {
+  top: -240px;
+  right: -180px;
+  width: 780px;
+  height: 780px;
+  background: radial-gradient(circle, var(--color-primary-soft-strong) 0%, transparent 70%);
+}
+
+.hero::after {
+  top: 180px;
+  left: -260px;
+  width: 640px;
+  height: 640px;
+  background: radial-gradient(circle, var(--color-primary-soft) 0%, transparent 70%);
+}
+
+.heroInner {
+  position: relative;
 }
 
 .heroInner {
@@ -491,15 +537,22 @@
   gap: var(--space-4);
 }
 
+/* 테두리 대신 그림자로 면을 띄운다. 1px 선은 흰 밴드 위에서 거의 안 보였다. */
 .ask {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   justify-content: space-between;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  background: var(--color-bg);
+  border-radius: var(--radius-2xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
   padding: var(--space-6);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.ask:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft-lg);
 }
 
 .askQuote {
@@ -530,20 +583,26 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
   padding: var(--space-6);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.slotCard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft-lg);
 }
 
 .slotIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-lg);
-  background: var(--color-primary-soft);
+  background: var(--color-primary-soft-strong);
 }
 
 .slotTitle {
@@ -620,10 +679,10 @@
 }
 
 .fieldChip {
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface);
-  padding: 10px 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 11px 20px;
   font-size: 15px;
   font-weight: 600;
   color: var(--color-heading);
@@ -656,10 +715,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+  padding: var(--space-5) var(--space-6);
   min-width: 190px;
 }
 
@@ -682,10 +741,10 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-10);
   align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   background: var(--color-surface);
-  padding: var(--space-8);
+  box-shadow: var(--shadow-soft-lg);
+  padding: var(--space-8) var(--space-10);
 }
 
 .gateBody {
@@ -775,10 +834,12 @@
   font-size: 15px;
   font-weight: 700;
   text-decoration: none;
+  transition: background 160ms ease, transform 160ms ease;
 }
 
 .btnOnDark:hover {
   background: var(--color-bg);
+  transform: translateY(-1px);
 }
 
 /* ---------- 푸터 ---------- */
@@ -878,6 +939,16 @@
     --band-y: var(--space-16);
   }
 
+  /* 알약 안에 로고 + 링크 4개가 안 들어간다(375px 에서 16px 넘쳤다).
+     섹션 앵커 둘을 접는다 — 스크롤로 닿는 자리라 없어도 길이 막히지 않는다. */
+  .navLink[href^='#'] {
+    display: none;
+  }
+
+  .navInner {
+    padding-left: var(--space-5);
+  }
+
   .hero {
     padding-top: var(--space-16);
   }
@@ -931,5 +1002,27 @@
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-3);
+  }
+}
+
+/* ---------- 움직임 ---------- */
+
+/* 움직임을 줄이도록 설정한 사람에게는 뜨는 동작을 걷어낸다. */
+@media (prefers-reduced-motion: reduce) {
+  .ask,
+  .slotCard,
+  .btnPrimary,
+  .btnGhost,
+  .btnOnDark,
+  .navCta {
+    transition: none;
+  }
+
+  .ask:hover,
+  .slotCard:hover,
+  .btnPrimary:hover,
+  .btnGhost:hover,
+  .btnOnDark:hover {
+    transform: none;
   }
 }
