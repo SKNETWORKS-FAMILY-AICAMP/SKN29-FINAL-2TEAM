@@ -50,7 +50,6 @@ export type IconName =
   | 'sidebar'
   | 'more-horizontal'
   | 'edit'
-  | 'trash'
   | 'star'
   | 'star-filled';
 
@@ -262,13 +261,6 @@ function renderPaths(name: IconName, color: string): ReactElement {
         <>
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-        </>
-      );
-    case 'trash':
-      return (
-        <>
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6l-1 14H6L5 6m3 0V4h8v2" />
         </>
       );
     case 'arrow-up':
