@@ -972,7 +972,118 @@
 
 /* ---------- 움직임 ---------- */
 
-/* 움직임을 줄이도록 설정한 사람에게는 뜨는 동작을 걷어낸다. */
+/*
+ * 움직임은 두 가지만 쓴다 — **처음 뜰 때 한 번**과 **스크롤로 들어올 때 한 번**.
+ * 둘 다 같은 동작(살짝 아래에서 올라오며 나타남)이라 페이지 전체가 한 가지
+ * 리듬으로 움직인다. 서로 다른 효과를 섞으면 그때부터 산만해진다.
+ *
+ * ⚠ **JS 를 쓰지 않는다.** 스크롤 등장은 `animation-timeline: view()` 로 낸다.
+ * 지원하지 않는 브라우저에서는 `@supports` 가 통째로 꺼져 **처음부터 보이는
+ * 상태**가 된다 — 스크립트가 못 돌아 내용이 안 보이는 사고가 구조적으로 안 난다.
+ */
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 히어로 뒤 빛덩이. 아주 느리고 폭이 작아야 한다 — 눈에 띄면 실패다. */
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-18px, 22px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 처음 뜰 때 — 위에서부터 차례로. `backwards` 라야 지연 중에도 숨어 있다. */
+  .badge,
+  .heroTitle,
+  .heroSub,
+  .heroActions,
+  .proofs,
+  .heroVisual {
+    animation: riseIn 560ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  }
+
+  .heroTitle {
+    animation-delay: 70ms;
+  }
+
+  .heroSub {
+    animation-delay: 140ms;
+  }
+
+  .heroActions {
+    animation-delay: 210ms;
+  }
+
+  .proofs {
+    animation-delay: 280ms;
+  }
+
+  /* 목업은 카피가 자리를 잡은 뒤에 들어온다. */
+  .heroVisual {
+    animation-delay: 180ms;
+    animation-duration: 700ms;
+  }
+
+  /* 목업 안에서도 대화 순서대로 — 사람이 묻고, 그다음 카드가 온다. */
+  .mockAsk,
+  .mockCard {
+    animation: riseIn 500ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  }
+
+  .mockAsk {
+    animation-delay: 460ms;
+  }
+
+  .mockCard {
+    animation-delay: 640ms;
+  }
+
+  .hero::before,
+  .hero::after {
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+
+  .hero::after {
+    animation-duration: 34s;
+    animation-direction: alternate-reverse;
+  }
+}
+
+/*
+ * 스크롤로 들어올 때. 지원하지 않는 브라우저는 이 블록 자체가 안 걸려
+ * 처음부터 보인다.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .bandInner > .h2,
+    .askList,
+    .stepRail,
+    .split,
+    .ctaInner {
+      animation: riseIn linear both;
+      animation-timeline: view();
+      /* 화면에 조금 들어오면 시작해서 금방 끝난다 — 다 올라올 때까지
+         기다리게 하면 「왜 안 보이지」가 된다. */
+      animation-range: entry 12% entry 55%;
+    }
+  }
+}
+
+/* 움직임을 줄이도록 설정한 사람에게는 전부 걷어낸다. */
 @media (prefers-reduced-motion: reduce) {
   .ask,
   .btnPrimary,
