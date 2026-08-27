@@ -1,0 +1,33 @@
+/*
+ * 오른쪽 아래 고정 자리 — 예전에 `IndexingProgress.module.css`의 `.card`가
+ * 갖고 있던 위치 규칙을 여기로 옮겼다(2026-08-26). 카드 자체(배경·테두리·
+ * 그림자)는 각 카드 컴포넌트가 계속 맡고, "어디에 쌓이는가"만 여기서
+ * 정한다.
+ */
+.stack {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 60;
+  display: flex;
+  /* 먼저 뜬 카드가 맨 아래 그대로 있고, 새 카드가 그 위로 쌓인다. */
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: var(--space-3);
+  /* 페이지 내용을 덮지만 클릭은 막지 않는다 — 카드가 없는 빈 틈은 뒤를
+     그대로 통과시킨다. 카드 자체는 각자 pointer-events: auto로 되돌린다. */
+  pointer-events: none;
+}
+
+.slot {
+  pointer-events: auto;
+}
+
+@media (max-width: 480px) {
+  .stack {
+    right: var(--space-3);
+    left: var(--space-3);
+    bottom: var(--space-3);
+    align-items: stretch;
+  }
+}

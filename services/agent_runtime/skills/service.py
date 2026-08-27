@@ -22,9 +22,14 @@ docstring에 명시된 대로, `store`를 직접 주면 LangGraph 그래프 실�
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
+
+from .document import SkillDocument
+
+logger = logging.getLogger(__name__)
 
 MAX_SKILL_NAME_LENGTH = 64
 MAX_SKILL_DESCRIPTION_LENGTH = 1024
@@ -121,6 +126,15 @@ def _personal_scope(account_id: str) -> _Scope:
     return _Scope(prefix=SKILLS_PERSONAL_PATH_PREFIX, namespace=personal_namespace(account_id))
 
 
+def _inactive_personal_scope(account_id: str) -> _Scope:
+    from .backend import SKILLS_INACTIVE_PERSONAL_PATH_PREFIX, inactive_personal_namespace
+
+    return _Scope(
+        prefix=SKILLS_INACTIVE_PERSONAL_PATH_PREFIX,
+        namespace=inactive_personal_namespace(account_id),
+    )
+
+
 def _team_scope(team_id: str) -> _Scope:
     from .backend import SKILLS_TEAM_PATH_PREFIX, team_namespace
 
@@ -128,11 +142,38 @@ def _team_scope(team_id: str) -> _Scope:
 
 
 def _store_backend(scope: _Scope) -> Any:
-    from deepagents.backends import StoreBackend
+    """2026-08-26 수정 — 예전엔 `StoreBackend`를 절대경로(`scope.prefix`가
+    붙은 `skill_md_path()` 결과)로 직접 썼는데, deepagents의 실제 규약은
+    그 반대다: `StoreBackend`의 Store 키는 **route prefix가 이미 벗겨진
+    상대경로**여야 한다(`CompositeBackend.write()`가 라우팅할 때 prefix를
+    떼고 `"/"+나머지`만 하위 backend에 넘기는 것과 같은 규약 —
+    `deepagents/backends/composite.py`의 `_route_for_path()` 실측 확인).
+
+    이걸 어긴 채로 절대경로를 키로 그대로 썼더니, **실제 채팅 그래프가
+    스킬을 읽을 때 쓰는 `CompositeBackend`(`SkillsMiddleware`가 이걸로
+    `backend.ls(source_path)`를 부른다 — `source_path`는 라우트 prefix와
+    정확히 같은 문자열)가 그 prefix를 완전히 벗기고 하위 backend에는 루트
+    `"/"`만 물어봤다** — 그러면 `StoreBackend.ls("/")`가 저장된 키의 첫
+    글자("/")만 벗겨서 첫 경로 조각(`"skills"`)을 마치 스킬 디렉터리인 것
+    처럼 잘못 돌려줬다. 즉 **여태 등록된 개인/내장 스킬이 실제 채팅에서는
+    단 하나도 안 보이고 있었다** — 설정 화면에 보이는 건 이 함수를 거치는
+    REST 직접 조회(`list_personal_skills()` 등, prefix를 그대로 써서 우연히
+    맞았다)일 뿐, 실제 `SkillsMiddleware` 스캔은 항상 빈 목록이었다(2026-08-26
+    §8 하네스에서 재현·확인).
+
+    고친 방식 — 여기서부터 `CompositeBackend`로 한 번 감싼다. 그러면 이
+    모듈의 기존 호출부(`backend.write(skill_md_path(prefix,name), ...)`,
+    `backend.ls(scope.prefix)` 등)는 절대경로를 그대로 써도 되고, 실제
+    그래프가 쓰는 것과 **완전히 동일한 경로 변환**을 거치게 된다 — 쓰기와
+    읽기가 서로 다른 규약을 쓰다가 어긋나는 일이 구조적으로 불가능해진다.
+    """
+
+    from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
     from services.agent_runtime.memory.store import get_memory_store
 
-    return StoreBackend(namespace=lambda _rt: scope.namespace, store=get_memory_store())
+    inner = StoreBackend(namespace=lambda _rt: scope.namespace, store=get_memory_store())
+    return CompositeBackend(default=StateBackend(), routes={scope.prefix: inner})
 
 
 #: `metadata.enabled`에 쓰는 값 — deepagents `_validate_metadata()`가
@@ -147,6 +188,10 @@ _ENABLED_FALSE = "false"
 _SHARED_BY_ACCOUNT_ID = "shared_by_account_id"
 _IMPORTED_FROM_TEAM_ID = "imported_from_team_id"
 _IMPORTED_FROM_SKILL_NAME = "imported_from_skill_name"
+_VALIDATION_RECEIPT_KEYS = (
+    "validation_state", "validated_hash", "source_job_id", "source_revision",
+    "runtime_profile_version", "tool_registry_version",
+)
 
 
 def _render_skill_md(
@@ -158,28 +203,22 @@ def _render_skill_md(
     shared_by_account_id: str | None = None,
     imported_from_team_id: str | None = None,
     imported_from_skill_name: str | None = None,
+    frontmatter: dict[str, Any] | None = None,
+    validation_receipt: dict[str, Any] | None = None,
 ) -> str:
-    import yaml
-
-    metadata = {"enabled": _ENABLED_TRUE if enabled else _ENABLED_FALSE}
-    if shared_by_account_id:
-        metadata[_SHARED_BY_ACCOUNT_ID] = shared_by_account_id
-    if imported_from_team_id:
-        metadata[_IMPORTED_FROM_TEAM_ID] = imported_from_team_id
-    if imported_from_skill_name:
-        metadata[_IMPORTED_FROM_SKILL_NAME] = imported_from_skill_name
-
-    frontmatter = yaml.safe_dump(
-        {
-            "name": name,
-            "description": description,
-            # Agent Skills 스펙의 `metadata`는 클라이언트 확장 필드다.
-            "metadata": metadata,
-        },
-        allow_unicode=True,
-        default_flow_style=False,
-    )
-    return f"---\n{frontmatter}---\n\n{body}\n"
+    updates = {
+        _SHARED_BY_ACCOUNT_ID: shared_by_account_id,
+        _IMPORTED_FROM_TEAM_ID: imported_from_team_id,
+        _IMPORTED_FROM_SKILL_NAME: imported_from_skill_name,
+    }
+    if validation_receipt is not None:
+        updates.update({key: validation_receipt.get(key) for key in _VALIDATION_RECEIPT_KEYS})
+    return SkillDocument.create(
+        name=name,
+        description=description,
+        body=body,
+        frontmatter=frontmatter,
+    ).updated(enabled=enabled, metadata_updates=updates).render()
 
 
 def _parse_skill_md_details(
@@ -198,49 +237,23 @@ def _parse_skill_md_details(
     취급한다(하위 호환).
     """
 
-    if not content.startswith("---\n"):
-        raise SkillError("스킬 파일 형식이 올바르지 않습니다 — frontmatter(---로 시작하는 부분)가 없습니다.")
-    end = content.find("\n---", 4)
-    if end == -1:
-        raise SkillError("스킬 파일 형식이 올바르지 않습니다 — frontmatter가 닫히지 않았습니다.")
-
-    import yaml
-
     try:
-        frontmatter = yaml.safe_load(content[4:end]) or {}
-    except yaml.YAMLError as exc:
-        raise SkillError(f"frontmatter를 읽을 수 없습니다: {exc}") from exc
-    if not isinstance(frontmatter, dict):
-        raise SkillError("frontmatter 형식이 올바르지 않습니다.")
-
-    name = str(frontmatter.get("name") or "").strip()
-    description = str(frontmatter.get("description") or "").strip()
-    if not name:
-        raise SkillError("파일의 frontmatter에 name이 없습니다.")
-    if not description:
-        raise SkillError("파일의 frontmatter에 description이 없습니다.")
-
-    metadata = frontmatter.get("metadata")
-    enabled = not (isinstance(metadata, dict) and str(metadata.get("enabled")).strip().lower() == _ENABLED_FALSE)
-    shared_by_account_id = None
-    imported_from_team_id = None
-    imported_from_skill_name = None
-    if isinstance(metadata, dict):
-        shared_by_account_id = str(metadata.get(_SHARED_BY_ACCOUNT_ID) or "").strip() or None
-        imported_from_team_id = str(metadata.get(_IMPORTED_FROM_TEAM_ID) or "").strip() or None
-        imported_from_skill_name = str(metadata.get(_IMPORTED_FROM_SKILL_NAME) or "").strip() or None
-
-    body = content[end + 4 :]
-    # frontmatter를 닫는 `---` 뒤 첫 줄바꿈까지만 건너뛴다.
-    body = body[1:] if body.startswith("\n") else body
+        document = SkillDocument.parse(content)
+    except ValueError as exc:
+        logger.info("스킬 파일 frontmatter 파싱 실패", exc_info=exc)
+        raise SkillError(
+            "스킬 파일의 기본 정보 형식을 확인해 주세요. "
+            "파일 맨 위에 name과 description을 올바른 YAML 형식으로 적어야 합니다."
+        ) from exc
+    metadata = document.metadata
     return (
-        name,
-        description,
-        body.strip("\n"),
-        enabled,
-        shared_by_account_id,
-        imported_from_team_id,
-        imported_from_skill_name,
+        document.name,
+        document.description,
+        document.body,
+        document.enabled,
+        str(metadata.get(_SHARED_BY_ACCOUNT_ID) or "").strip() or None,
+        str(metadata.get(_IMPORTED_FROM_TEAM_ID) or "").strip() or None,
+        str(metadata.get(_IMPORTED_FROM_SKILL_NAME) or "").strip() or None,
     )
 
 
@@ -308,6 +321,13 @@ def _read_skill(backend: Any, scope: _Scope, name: str, *, include_body: bool) -
     row["shared_by_account_id"] = shared_by_account_id
     row["imported_from_team_id"] = imported_from_team_id
     row["imported_from_skill_name"] = imported_from_skill_name
+    try:
+        parsed = SkillDocument.parse(file_data["content"])
+        row["frontmatter"] = parsed.frontmatter
+        for key in _VALIDATION_RECEIPT_KEYS:
+            row[key] = parsed.metadata.get(key)
+    except ValueError:
+        row["frontmatter"] = {"name": name, "description": description}
     return row
 
 
@@ -345,6 +365,8 @@ def create_skill(
     imported_from_team_id: str | None = None,
     imported_from_skill_name: str | None = None,
     enabled: bool = True,
+    frontmatter: dict[str, Any] | None = None,
+    validation_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """한 namespace에 스킬을 새로 만든다. 같은 namespace의 이름만 유일하다.
 
@@ -371,6 +393,8 @@ def create_skill(
         shared_by_account_id=shared_by_account_id,
         imported_from_team_id=imported_from_team_id,
         imported_from_skill_name=imported_from_skill_name,
+        frontmatter=frontmatter,
+        validation_receipt=validation_receipt,
     )
     backend.write(path, content)
     return get_skill(scope, name)
@@ -383,11 +407,11 @@ def update_skill(
     description: str | None = None,
     body: str | None = None,
     enabled: bool | None = None,
+    frontmatter: dict[str, Any] | None = None,
+    validation_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`enabled`(2026-08-26, §7): `None`이면 안 건드린다. `False`로 주면
-    이 스킬을 LLM에게 보여주는 목록에서 뺀다 — `services.agent_runtime.
-    skills.visibility.SkillVisibilityMiddleware`가 세션 시작 시 이 값을 보고
-    거른다. 파일 자체는 지워지지 않는다 — 다시 `True`로 켜면 그대로 돌아온다.
+    """`enabled`가 없으면 유지한다. 개인 스킬의 실제 namespace 이동은
+    `update_personal_skill()`이 담당하며, 이 함수는 한 scope 안의 내용 갱신만 한다.
     """
     from .backend import skill_md_path
 
@@ -407,6 +431,8 @@ def update_skill(
         shared_by_account_id=current.get("shared_by_account_id"),
         imported_from_team_id=current.get("imported_from_team_id"),
         imported_from_skill_name=current.get("imported_from_skill_name"),
+        frontmatter=frontmatter if frontmatter is not None else current.get("frontmatter"),
+        validation_receipt=validation_receipt,
     )
     backend.write(skill_md_path(scope.prefix, name), content)
     return get_skill(scope, name)
@@ -427,15 +453,28 @@ def delete_skill(scope: _Scope, name: str) -> None:
 
 
 def list_personal_skills(account_id: str) -> list[dict[str, Any]]:
-    return list_skills(_personal_scope(account_id))
+    migrate_legacy_inactive_skills(account_id)
+    rows = [*list_skills(_personal_scope(account_id)), *list_skills(_inactive_personal_scope(account_id))]
+    rows.sort(key=lambda row: row["name"])
+    return rows
 
 
 def get_personal_skill(account_id: str, name: str) -> dict[str, Any]:
-    return get_skill(_personal_scope(account_id), name)
+    migrate_legacy_inactive_skills(account_id)
+    for scope in (_personal_scope(account_id), _inactive_personal_scope(account_id)):
+        try:
+            return get_skill(scope, name)
+        except SkillNotFound:
+            pass
+    raise SkillNotFound("스킬을 찾을 수 없습니다.")
 
 
 def create_personal_skill(
-    account_id: str, *, team_id: str, name: str, description: str, body: str
+    account_id: str, *, team_id: str, name: str, description: str, body: str,
+    enabled: bool = True, frontmatter: dict[str, Any] | None = None,
+    validation_receipt: dict[str, Any] | None = None,
+    imported_from_team_id: str | None = None,
+    imported_from_skill_name: str | None = None,
 ) -> dict[str, Any]:
     """개인 스킬을 만든다.
 
@@ -444,7 +483,25 @@ def create_personal_skill(
     예전의 `shadow_scope` 충돌 검사는 하지 않는다.
     """
     del team_id  # 호출 계약은 유지하되 이름 충돌 검사에는 더 이상 쓰지 않는다.
-    return create_skill(_personal_scope(account_id), name=name, description=description, body=body)
+    migrate_legacy_inactive_skills(account_id)
+    try:
+        get_personal_skill(account_id, name)
+    except SkillNotFound:
+        pass
+    else:
+        raise SkillNameConflict(f"이미 '{name}' 이름의 스킬이 있습니다. 다른 이름을 써주세요.")
+    scope = _personal_scope(account_id) if enabled else _inactive_personal_scope(account_id)
+    from .versioning import increment_catalog_revision
+    revision = increment_catalog_revision(account_id)
+    receipt = dict(validation_receipt) if validation_receipt is not None else None
+    if receipt is not None:
+        receipt["source_revision"] = revision
+    return create_skill(
+        scope, name=name, description=description, body=body, enabled=enabled,
+        frontmatter=frontmatter, validation_receipt=receipt,
+        imported_from_team_id=imported_from_team_id,
+        imported_from_skill_name=imported_from_skill_name,
+    )
 
 
 def update_personal_skill(
@@ -454,12 +511,92 @@ def update_personal_skill(
     description: str | None = None,
     body: str | None = None,
     enabled: bool | None = None,
+    frontmatter: dict[str, Any] | None = None,
+    validation_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return update_skill(_personal_scope(account_id), name, description=description, body=body, enabled=enabled)
+    migrate_legacy_inactive_skills(account_id)
+    source = _personal_scope(account_id)
+    try:
+        current = get_skill(source, name)
+    except SkillNotFound:
+        source = _inactive_personal_scope(account_id)
+        current = get_skill(source, name)
+    target_enabled = current["enabled"] if enabled is None else enabled
+    target = _personal_scope(account_id) if target_enabled else _inactive_personal_scope(account_id)
+    from .versioning import increment_catalog_revision
+    revision = increment_catalog_revision(account_id)
+    receipt = dict(validation_receipt) if validation_receipt is not None else None
+    if receipt is not None:
+        receipt["source_revision"] = revision
+    if target == source:
+        return update_skill(
+            source,
+            name,
+            description=description,
+            body=body,
+            enabled=target_enabled,
+            frontmatter=frontmatter,
+            validation_receipt=receipt,
+        )
+    updated_document = SkillDocument.create(
+        name=name,
+        description=current["description"],
+        body=current["body"],
+        frontmatter=frontmatter if frontmatter is not None else current.get("frontmatter"),
+    ).updated(
+        description=description, body=body, enabled=target_enabled,
+        metadata_updates=receipt or {},
+    )
+    backend = _store_backend(target)
+    from .backend import skill_md_path
+    target_path = skill_md_path(target.prefix, name)
+    if backend.read(target_path).error is None:
+        raise SkillNameConflict(f"대상 보관소에 이미 '{name}' 스킬이 있습니다.")
+    backend.write(target_path, updated_document.render())
+    delete_skill(source, name)
+    return get_skill(target, name)
 
 
 def delete_personal_skill(account_id: str, name: str) -> None:
-    delete_skill(_personal_scope(account_id), name)
+    migrate_legacy_inactive_skills(account_id)
+    for scope in (_personal_scope(account_id), _inactive_personal_scope(account_id)):
+        try:
+            delete_skill(scope, name)
+            from .versioning import increment_catalog_revision
+            increment_catalog_revision(account_id)
+            return
+        except SkillNotFound:
+            pass
+    raise SkillNotFound("스킬을 찾을 수 없습니다.")
+
+
+def migrate_legacy_inactive_skills(account_id: str) -> int:
+    """기존 활성 namespace의 ``metadata.enabled=false`` 파일을 한 번에 옮긴다."""
+    from .backend import skill_md_path
+
+    active = _personal_scope(account_id)
+    inactive = _inactive_personal_scope(account_id)
+    active_backend = _store_backend(active)
+    inactive_backend = _store_backend(inactive)
+    moved = 0
+    for row in list_skills(active):
+        if row["enabled"]:
+            continue
+        source_path = skill_md_path(active.prefix, row["name"])
+        read = active_backend.read(source_path)
+        if read.error:
+            continue
+        target_path = skill_md_path(inactive.prefix, row["name"])
+        # 이전 이관이 write 뒤 delete 전에 중단됐다면 양쪽에 같은 이름이 남을
+        # 수 있다. 비활성 보관소를 정본으로 두고 활성 쪽만 제거하면 재실행 가능하다.
+        if inactive_backend.read(target_path).error is not None:
+            inactive_backend.write(target_path, read.file_data["content"])
+        active_backend.delete(source_path)
+        moved += 1
+    if moved:
+        from .versioning import increment_catalog_revision
+        increment_catalog_revision(account_id)
+    return moved
 
 
 def share_personal_skill(account_id: str, *, team_id: str, name: str) -> dict[str, Any]:
@@ -475,15 +612,24 @@ def share_personal_skill(account_id: str, *, team_id: str, name: str) -> dict[st
         raise SkillPermissionDenied(
             "팀 스킬에서 가져온 스킬은 다시 팀에 공유할 수 없습니다."
         )
+    from .versioning import validation_hash
+    if (
+        personal.get("validation_state") != "VERIFIED"
+        or personal.get("validated_hash") != validation_hash(personal)
+    ):
+        raise SkillError("검증을 통과한 스킬만 팀에 공유할 수 있습니다.")
+    receipt = {key: personal.get(key) for key in _VALIDATION_RECEIPT_KEYS}
     return create_skill(
         _team_scope(team_id),
         name=personal["name"],
         description=personal["description"],
         body=personal["body"],
         shared_by_account_id=account_id,
+        frontmatter=personal.get("frontmatter"),
         # 팀 카탈로그에는 활성/비활성 개념이 없다. 공유 당시 개인 상태와
         # 무관하게 다른 팀원이 내용을 보고 가져올 수 있어야 한다.
         enabled=True,
+        validation_receipt=receipt,
     )
 
 
@@ -496,15 +642,43 @@ def import_team_skill(account_id: str, *, team_id: str, name: str) -> dict[str, 
     """
 
     shared = get_team_skill(team_id, name)
-    return create_skill(
-        _personal_scope(account_id),
-        name=shared["name"],
-        description=shared["description"],
-        body=shared["body"],
-        enabled=True,
-        imported_from_team_id=team_id,
-        imported_from_skill_name=name,
+    from .versioning import runtime_profile_version, tool_registry_version, validation_hash
+    compatible = (
+        shared.get("validation_state") == "VERIFIED"
+        and shared.get("validated_hash") == validation_hash(shared)
+        and shared.get("runtime_profile_version") == runtime_profile_version()
+        and shared.get("tool_registry_version") == tool_registry_version()
     )
+    receipt = {key: shared.get(key) for key in _VALIDATION_RECEIPT_KEYS}
+    if compatible:
+        return {
+            "requires_validation": False,
+            "skill": create_personal_skill(
+                account_id, team_id=team_id, name=shared["name"],
+                description=shared["description"], body=shared["body"], enabled=True,
+                frontmatter=shared.get("frontmatter"), validation_receipt=receipt,
+                imported_from_team_id=team_id, imported_from_skill_name=name,
+            ),
+        }
+
+    # 검증되지 않았거나 현재 실행 환경과 영수증이 다른 공유본은 개인 공간에
+    # 바로 쓰지 않는다. 일반 등록과 같은 검증 job을 만든다.
+    from .registration import SkillRegistrationService
+    document = SkillDocument.create(
+        name=shared["name"], description=shared["description"], body=shared["body"],
+        frontmatter=shared.get("frontmatter"),
+    ).updated(metadata_updates={
+        _SHARED_BY_ACCOUNT_ID: None,
+        _IMPORTED_FROM_TEAM_ID: team_id,
+        _IMPORTED_FROM_SKILL_NAME: name,
+        **{key: None for key in _VALIDATION_RECEIPT_KEYS},
+    })
+    result = SkillRegistrationService.enqueue(
+        account_id=account_id, team_id=team_id, name=document.name,
+        description=document.description, body=document.body,
+        frontmatter=document.frontmatter,
+    )
+    return {"requires_validation": True, "job": result.job, "created": result.created}
 
 
 def stop_sharing_personal_skill(account_id: str, *, team_id: str, name: str) -> None:
@@ -524,6 +698,8 @@ def update_personal_skill_and_shared_copy(
     description: str | None = None,
     body: str | None = None,
     enabled: bool | None = None,
+    frontmatter: dict[str, Any] | None = None,
+    validation_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """개인 원본을 고치고, 내가 공유 중인 팀 사본도 같은 내용으로 맞춘다."""
 
@@ -533,6 +709,8 @@ def update_personal_skill_and_shared_copy(
         description=description,
         body=body,
         enabled=enabled,
+        frontmatter=frontmatter,
+        validation_receipt=validation_receipt,
     )
     try:
         team_skill = get_team_skill(team_id, name)
@@ -544,6 +722,7 @@ def update_personal_skill_and_shared_copy(
             name,
             description=updated["description"],
             body=updated["body"],
+            validation_receipt={key: updated.get(key) for key in _VALIDATION_RECEIPT_KEYS},
             # 팀 카탈로그에는 활성/비활성 상태가 없다. 개인 토글은 공유본과
             # 이미 가져간 다른 팀원의 개인 사본에 영향을 주지 않는다.
         )
@@ -575,16 +754,39 @@ def _require_leader(actor_role: str) -> None:
 
 
 def list_team_skills(team_id: str) -> list[dict[str, Any]]:
+    _mark_legacy_team_skills(team_id)
     return list_skills(_team_scope(team_id))
 
 
 def get_team_skill(team_id: str, name: str) -> dict[str, Any]:
-    return get_skill(_team_scope(team_id), name)
+    row = get_skill(_team_scope(team_id), name)
+    if not row.get("validation_state"):
+        row = update_skill(
+            _team_scope(team_id), name,
+            validation_receipt={"validation_state": "LEGACY_UNVERIFIED"},
+        )
+    return row
+
+
+def _mark_legacy_team_skills(team_id: str) -> None:
+    """영수증 도입 전에 저장된 팀 카탈로그 항목을 명시적으로 표시한다."""
+
+    scope = _team_scope(team_id)
+    for row in list_skills(scope):
+        if not row.get("validation_state"):
+            update_skill(
+                scope, row["name"],
+                validation_receipt={"validation_state": "LEGACY_UNVERIFIED"},
+            )
 
 
 def create_team_skill(team_id: str, *, actor_role: str, name: str, description: str, body: str) -> dict[str, Any]:
     _require_leader(actor_role)
-    return create_skill(_team_scope(team_id), name=name, description=description, body=body)
+    # 직접 등록 경로는 검증 영수증이 없으므로 가져올 때 반드시 개인 검증을 탄다.
+    return create_skill(
+        _team_scope(team_id), name=name, description=description, body=body,
+        validation_receipt={"validation_state": "LEGACY_UNVERIFIED"},
+    )
 
 
 def update_team_skill(

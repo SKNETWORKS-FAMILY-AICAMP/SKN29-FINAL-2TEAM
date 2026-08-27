@@ -375,6 +375,40 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         )
 
 
+class SkillFeedbackAPIView(AuthenticatedAPIView):
+    """답변 단위 스킬 오사용·미사용 신고. 원문은 회귀 DB에 복사하지 않는다."""
+
+    def post(self, request, message_id):
+        from django.conf import settings
+        from backend.db.skill_eval import (
+            SkillEvalFeedbackNotFound, SkillEvalFeedbackRepository,
+        )
+        from services.agent_runtime.skills.service import validate_skill_name
+
+        feedback_kind = str(request.data.get("feedback_kind") or "").strip()
+        if feedback_kind not in {"WRONG_USAGE", "MISSED_USE"}:
+            return Response({"detail": "피드백 종류가 올바르지 않습니다."}, status=400)
+        expected_skill = str(request.data.get("expected_skill") or "").strip() or None
+        if expected_skill:
+            name_error = validate_skill_name(expected_skill, allow_reserved=True)
+            if name_error:
+                return Response({"detail": name_error}, status=400)
+        note = str(request.data.get("note") or "").strip() or None
+        if note and len(note) > settings.SKILL_FEEDBACK_NOTE_MAX_LENGTH:
+            return Response({"detail": "피드백 설명이 너무 깁니다."}, status=400)
+        try:
+            row, created = SkillEvalFeedbackRepository.create(
+                message_id=message_id, account_id=request.user.account_id,
+                feedback_kind=feedback_kind, expected_skill=expected_skill, note=note,
+            )
+        except SkillEvalFeedbackNotFound as exc:
+            return Response({"detail": str(exc)}, status=404)
+        return Response(
+            {"feedback_id": str(row["feedback_id"]), "review_status": row["review_status"]},
+            status=201 if created else 200,
+        )
+
+
 def _with_skill_applied_event(events, *, skill: dict[str, str]):
     """명시 호출로 조회·주입한 스킬을 실제 실행 이벤트 앞에 한 번 알린다.
 

@@ -26,7 +26,11 @@ class SkillsProvider:
 
     def routes(self, *, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
         from services.agent_runtime.skills.backend import skill_routes
+        from services.agent_runtime.skills.service import migrate_legacy_inactive_skills
 
+        # 그래프가 활성 source를 스캔하기 전에 구버전 ``enabled=false`` 파일을
+        # 비활성 namespace로 옮긴다. 따라서 첫 대화부터 Root·GP에 노출되지 않는다.
+        migrate_legacy_inactive_skills(account_id)
         return skill_routes(account_id=account_id, team_id=team_id)
 
     def system_prompt(self) -> str:

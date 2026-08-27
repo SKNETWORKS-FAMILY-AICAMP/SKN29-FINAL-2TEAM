@@ -4,6 +4,10 @@ from .api_views import (
     MySkillShareAPIView,
     MySkillDetailAPIView,
     MySkillListCreateAPIView,
+    SkillRegistrationJobCancelAPIView,
+    SkillRegistrationJobDetailAPIView,
+    SkillRegistrationJobListCreateAPIView,
+    SkillRegistrationJobRetryAPIView,
     TeamSkillDetailAPIView,
     TeamSkillImportAPIView,
     TeamSkillListCreateAPIView,
@@ -21,5 +25,26 @@ urlpatterns = [
         "teams/skills/<str:name>/import/",
         TeamSkillImportAPIView.as_view(),
         name="api_team_skill_import",
+    ),
+    # 검증 job — 정본 §14. "스킬 검증·등록 최종 설계.md".
+    path(
+        "skill-registration-jobs/",
+        SkillRegistrationJobListCreateAPIView.as_view(),
+        name="api_skill_registration_jobs",
+    ),
+    path(
+        "skill-registration-jobs/<str:job_id>/",
+        SkillRegistrationJobDetailAPIView.as_view(),
+        name="api_skill_registration_job_detail",
+    ),
+    path(
+        "skill-registration-jobs/<str:job_id>/cancel/",
+        SkillRegistrationJobCancelAPIView.as_view(),
+        name="api_skill_registration_job_cancel",
+    ),
+    path(
+        "skill-registration-jobs/<str:job_id>/retry/",
+        SkillRegistrationJobRetryAPIView.as_view(),
+        name="api_skill_registration_job_retry",
     ),
 ]

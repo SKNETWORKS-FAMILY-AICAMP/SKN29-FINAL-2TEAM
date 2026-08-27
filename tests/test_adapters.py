@@ -41,7 +41,10 @@ EXPECTED_INJECTED_CONTEXT = {
     "task_register": ("project_id", "account_id"),
     "jira_create_issues": ("project_id", "account_id"),
     "jira_get_issues": ("project_id", "account_id"),
-    "skill_register": ("account_id", "team_id", "account_role"),
+    # 2026-08-26 — `scope`(PERSONAL/TEAM)를 없애면서 `account_role`도 같이
+    # 뺐다("스킬 검증·등록 최종 설계.md" §2/§5). 대신 `SkillRegistrationJob.
+    # source_session_id`를 채우려고 `session_id`를 추가했다.
+    "skill_register": ("account_id", "team_id", "session_id"),
 }
 
 # BUILTIN_TOOLS에 정의된 실제 side_effect 값(registry.py 직접 확인).
