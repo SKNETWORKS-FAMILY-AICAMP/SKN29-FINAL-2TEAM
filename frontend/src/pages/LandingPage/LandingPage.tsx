@@ -144,7 +144,7 @@ function ChatMock() {
   const showCard = step === 'confirm' || step === 'registering';
 
   return (
-    <div className={styles.mock} id="demo">
+    <div className={styles.mock}>
       <div className={styles.mockBar}>
         <span className={styles.mockDot} />
         <span className={styles.mockDot} />
@@ -419,9 +419,6 @@ export default function LandingPage() {
                 <Link className={styles.btnPrimary} to={startHref}>
                   시작하기
                 </Link>
-                <a className={styles.btnGhost} href="#demo">
-                  1분 만에 작동 방식 보기
-                </a>
               </div>
 
               <ul className={styles.proofs}>
