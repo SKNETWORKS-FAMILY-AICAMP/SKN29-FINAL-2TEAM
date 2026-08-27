@@ -178,8 +178,9 @@
   background: var(--color-primary);
   color: #fff;
   border-radius: var(--radius-lg);
-  padding: 14px 28px;
-  font-size: 15px;
+  /* 49px 짜리였다. 첫 화면의 유일한 행동인데 본문 글자와 무게가 비슷했다. */
+  padding: 18px 36px;
+  font-size: 17px;
   font-weight: 700;
   text-decoration: none;
   box-shadow: 0 14px 30px -12px rgba(30, 58, 95, 0.75);
@@ -199,8 +200,8 @@
   background: var(--color-surface);
   color: var(--color-body);
   border-radius: var(--radius-lg);
-  padding: 14px 28px;
-  font-size: 15px;
+  padding: 18px 32px;
+  font-size: 17px;
   font-weight: 600;
   text-decoration: none;
   box-shadow: var(--shadow-soft);
@@ -703,6 +704,126 @@
   color: var(--color-placeholder);
 }
 
+/* ---------- 글만 있던 두 섹션의 화면 ---------- */
+
+/*
+ * 4·5 섹션이 제목과 문단뿐이라 페이지 후반이 글 덩어리로 읽혔다. 문구를 늘리는
+ * 대신 **코드에 있는 화면**을 옆에 붙인다 — 지어낸 도해가 아니라 실제 화면이라
+ * 설명을 대신할 수 있다.
+ */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  gap: var(--space-16);
+  align-items: center;
+}
+
+.panel {
+  border-radius: var(--radius-2xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft-lg);
+  overflow: hidden;
+}
+
+.panelBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.panelBody {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 값은 실제 빌더 화면(`AgentVersionEditPage.module.css`)에서 가져왔다. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.fieldBox,
+.fieldArea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px var(--space-3);
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.fieldArea {
+  line-height: 1.75;
+  background: var(--color-bg);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip,
+.chipAdd {
+  border-radius: var(--radius-pill);
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.chip {
+  background: var(--color-primary-soft-strong);
+  color: var(--color-primary);
+}
+
+.chipAdd {
+  border: 1px dashed var(--color-border);
+  color: var(--color-muted);
+}
+
+.approveBody {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.approveHead {
+  font-size: 14px;
+  color: var(--color-heading);
+}
+
+.approveNote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+
+.approveNoteSmall {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.approveActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
 /* ---------- 6 · 마감 CTA ---------- */
 
 /* 네이비를 꽉 채운 유일한 밴드다. 중앙 정렬도 여기 하나만 남긴다. */
@@ -746,8 +867,8 @@
   background: #fff;
   color: var(--color-primary);
   border-radius: var(--radius-lg);
-  padding: 14px 28px;
-  font-size: 15px;
+  padding: 18px 36px;
+  font-size: 17px;
   font-weight: 700;
   text-decoration: none;
   transition: background 160ms ease, transform 160ms ease;
