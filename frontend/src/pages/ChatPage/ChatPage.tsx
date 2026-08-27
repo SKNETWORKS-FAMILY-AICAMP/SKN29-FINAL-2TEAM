@@ -13,7 +13,6 @@ import {
   listSessions,
   renameSession,
   setSessionToolRefs,
-  submitSkillFeedback,
   streamMessage,
 } from '../../api/chat';
 import type { ChatEvent, ChatMessage, ChatSession, JiraIssueEdit } from '../../api/chat';
@@ -467,7 +466,6 @@ export default function ChatPage() {
   /** 자동완성에서 키보드로 고른 항목의 인덱스. */
   const [slashIndex, setSlashIndex] = useState(0);
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [skillFeedback, setSkillFeedback] = useState<Record<string, string>>({});
   const [sessionTitleQuery, setSessionTitleQuery] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [conversationQuery, setConversationQuery] = useState('');
@@ -1159,25 +1157,6 @@ export default function ChatPage() {
       );
     } catch {
       // 답변 자체는 이미 끝났다. 시각 재조회 실패가 답변 오류가 되어서는 안 된다.
-    }
-  }
-
-  async function reportSkillFeedback(
-    messageId: string,
-    kind: 'WRONG_USAGE' | 'MISSED_USE',
-  ) {
-    if (!token || skillFeedback[messageId]) return;
-    setSkillFeedback((previous) => ({ ...previous, [messageId]: 'sending' }));
-    try {
-      await submitSkillFeedback(token, messageId, kind);
-      setSkillFeedback((previous) => ({ ...previous, [messageId]: 'sent' }));
-    } catch (error) {
-      setSkillFeedback((previous) => {
-        const next = { ...previous };
-        delete next[messageId];
-        return next;
-      });
-      showToast(error instanceof ApiError ? error.message : '의견을 보내지 못했습니다.', 'error');
     }
   }
 
@@ -2302,22 +2281,6 @@ export default function ChatPage() {
                               else searchResultRefs.current.delete(key);
                             }}
                           />
-                          {turn.agentMessageId && !live.running && (
-                            <div className={styles.skillFeedback}>
-                              {skillFeedback[turn.agentMessageId] === 'sent' ? (
-                                <span>의견을 보냈습니다.</span>
-                              ) : (
-                                <>
-                                  <button type="button" disabled={skillFeedback[turn.agentMessageId] === 'sending'} onClick={() => void reportSkillFeedback(turn.agentMessageId!, 'WRONG_USAGE')}>
-                                    스킬 사용이 맞지 않아요
-                                  </button>
-                                  <button type="button" disabled={skillFeedback[turn.agentMessageId] === 'sending'} onClick={() => void reportSkillFeedback(turn.agentMessageId!, 'MISSED_USE')}>
-                                    필요한 스킬이 빠졌어요
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
                         </div>
                       )}
 

@@ -9,6 +9,7 @@ from services.agent_runtime.skills.evaluation.harness import (
     _check_argument_rule,
     _case_input,
     _event_text,
+    _run_behavior_case,
     _tool_fixtures,
 )
 from services.agent_runtime.skills.evaluation.ephemeral_skills import build_ephemeral_skill_store
@@ -20,6 +21,97 @@ from services.agent_runtime.skills.evaluation.behavior_reviewer import (
 
 
 class SkillEvalP1HarnessTests(TestCase):
+    @patch("services.agent_runtime.executor.AgentExecutor")
+    @patch("services.agent_runtime.skills.evaluation.harness._build_eval_factory")
+    def test_승인없는_행동평가는_checkpointer없이_임시_draft를_실행한다(
+        self, build_factory, executor_class
+    ):
+        executor = executor_class.return_value
+        executor.run.return_value = iter([])
+        draft = {
+            "name": "skill-evaluation-agent",
+            "description": "평가",
+            "system_prompt": "평가",
+            "model": "test-model",
+            "reasoning_effort": "low",
+            "max_iterations": 10,
+            "tool_refs": [],
+            "subagents": [],
+        }
+
+        result = _run_behavior_case(
+            case={
+                "case_id": "case-1",
+                "messages": [{"role": "user", "content": "정리해줘"}],
+                "approval_fixtures": [],
+                "required_tools": [],
+                "forbidden_tools": [],
+            },
+            snapshot=build_ephemeral_skill_store(
+                candidate_document={"name": "candidate", "content": "---\nname: candidate\ndescription: 설명\n---\n본문"},
+                distractor_documents=[],
+            ),
+            evaluation_agent_draft=draft,
+            account_id="AC001",
+            team_id="TM001",
+        )
+
+        self.assertIsNone(result.error)
+        self.assertIsNone(build_factory.call_args.kwargs["checkpointer_provider"])
+        run_kwargs = executor.run.call_args.kwargs
+        self.assertEqual(run_kwargs["draft"], draft)
+        self.assertIsNone(run_kwargs["agent_id"])
+        self.assertIsNone(run_kwargs["context"].session_id)
+
+    @patch("services.agent_runtime.executor.AgentExecutor")
+    @patch("services.agent_runtime.skills.evaluation.harness._build_eval_factory")
+    def test_승인이_필요한_행동평가는_session과_같은_draft로_재개한다(
+        self, build_factory, executor_class
+    ):
+        executor = executor_class.return_value
+        executor.run.return_value = iter(
+            [
+                {
+                    "type": "awaiting_confirmation",
+                    "action_requests": [{"name": "task_register"}],
+                }
+            ]
+        )
+        executor.resume.return_value = iter([{"type": "result", "text": "등록 완료"}])
+        draft = {
+            "name": "skill-evaluation-agent",
+            "description": "평가",
+            "system_prompt": "평가",
+            "model": "test-model",
+            "reasoning_effort": "low",
+            "max_iterations": 10,
+            "tool_refs": ["task_register"],
+            "subagents": [],
+        }
+
+        result = _run_behavior_case(
+            case={
+                "case_id": "case-approval",
+                "messages": [{"role": "user", "content": "업무를 등록해줘"}],
+                "approval_fixtures": [{"tool_ref": "task_register", "decision": "approve"}],
+                "required_tools": [],
+                "forbidden_tools": [],
+            },
+            snapshot=build_ephemeral_skill_store(
+                candidate_document={"name": "candidate", "content": "---\nname: candidate\ndescription: 설명\n---\n본문"},
+                distractor_documents=[],
+            ),
+            evaluation_agent_draft=draft,
+            account_id="AC001",
+            team_id="TM001",
+        )
+
+        self.assertIsNone(result.error)
+        self.assertIsNotNone(build_factory.call_args.kwargs["checkpointer_provider"])
+        self.assertIsNotNone(executor.run.call_args.kwargs["context"].session_id)
+        self.assertEqual(executor.resume.call_args.kwargs["draft"], draft)
+        self.assertEqual(executor.resume.call_args.kwargs["decisions"], [{"action_index": 0, "type": "approve"}])
+
     def test_behavior_reviewer_receives_the_original_input_and_document(self):
         payload = build_behavior_review_payload(
             assertions=[{"criterion": "입력 순서를 유지한다"}],

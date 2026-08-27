@@ -40,6 +40,20 @@ def _create_verified_personal(
     )
 
 
+def _create_legacy_team_skill(
+    *, team_id="TM001", name="legacy-skill", description="설명", body="본문"
+):
+    """직접 팀 등록 기능이 사라지기 전에 저장된 데이터를 테스트에만 만든다."""
+
+    return service.create_skill(
+        service._team_scope(team_id),
+        name=name,
+        description=description,
+        body=body,
+        validation_receipt={"validation_state": "LEGACY_UNVERIFIED"},
+    )
+
+
 class ValidateSkillNameTests(SimpleTestCase):
     def test_정상_이름은_통과한다(self):
         for name in ("foo", "foo-bar", "a1-b2-c3", "a" * 64):
@@ -238,9 +252,7 @@ class SkillEnabledTests(SimpleTestCase):
     def test_같은_이름의_팀_카탈로그가_있어도_개인_스킬을_만들_수_있다(self):
         """팀 카탈로그는 SkillsMiddleware 소스가 아니므로 개인 스킬을 가리지 않는다."""
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="shadowed", description="팀 것", body="팀 본문"
-            )
+            _create_legacy_team_skill(name="shadowed", description="팀 것", body="팀 본문")
             created = service.create_personal_skill(
                 "AC001", team_id="TM001", name="shadowed", description="개인 것", body="개인 본문"
             )
@@ -263,28 +275,20 @@ class SkillEnabledTests(SimpleTestCase):
 
 
 class TeamSkillCrudTests(SimpleTestCase):
-    def test_리더만_만들고_고치고_지울_수_있다(self):
+    def test_팀_직접_생성_수정_경로는_노출하지_않는다(self):
+        self.assertFalse(hasattr(service, "create_team_skill"))
+        self.assertFalse(hasattr(service, "update_team_skill"))
+
+    def test_리더만_팀_카탈로그에서_지울_수_있다(self):
         with _patched_store():
-            with self.assertRaises(service.SkillPermissionDenied):
-                service.create_team_skill(
-                    "TM001", actor_role="member", name="foo", description="d", body="b"
-                )
-
-            created = service.create_team_skill(
-                "TM001", actor_role="leader", name="foo", description="d", body="b"
-            )
-            self.assertEqual(created["name"], "foo")
-
-            with self.assertRaises(service.SkillPermissionDenied):
-                service.update_team_skill("TM001", "foo", actor_role="member", description="d2")
+            _create_legacy_team_skill(name="foo", description="d", body="b")
             with self.assertRaises(service.SkillPermissionDenied):
                 service.delete_team_skill("TM001", "foo", actor_role="member")
+            service.delete_team_skill("TM001", "foo", actor_role="leader")
 
     def test_팀원도_조회는_할_수_있다(self):
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="foo", description="d", body="b"
-            )
+            _create_legacy_team_skill(name="foo", description="d", body="b")
             # list_team_skills/get_team_skill 자체는 role을 안 받는다 — 호출부
             # (REST 뷰)가 "조회는 팀원 전체"를 그냥 통과시키면 된다는 뜻이다.
             self.assertEqual(len(service.list_team_skills("TM001")), 1)
@@ -292,9 +296,7 @@ class TeamSkillCrudTests(SimpleTestCase):
 
     def test_다른_팀은_서로_안_보인다(self):
         with _patched_store():
-            service.create_team_skill(
-                "TM001", actor_role="leader", name="only-team1", description="d", body="b"
-            )
+            _create_legacy_team_skill(name="only-team1", description="d", body="b")
             self.assertEqual(service.list_team_skills("TM002"), [])
 
     def test_업로드로_받은_frontmatter_이름_설명이_그대로_저장된다(self):
@@ -327,9 +329,7 @@ class SkillSharingTests(SimpleTestCase):
             "services.agent_runtime.skills.registration.SkillRegistrationService.enqueue"
         ) as enqueue:
             enqueue.return_value = SimpleNamespace(job={"job_id": "job-legacy"}, created=True)
-            created = service.create_team_skill(
-                "TM001", actor_role="leader", name="legacy-skill", description="설명", body="본문"
-            )
+            created = _create_legacy_team_skill()
             self.assertEqual(created["validation_state"], "LEGACY_UNVERIFIED")
             result = service.import_team_skill("AC002", team_id="TM001", name="legacy-skill")
 

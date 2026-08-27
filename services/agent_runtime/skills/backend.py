@@ -85,7 +85,9 @@ def skill_md_path(prefix: str, name: str) -> str:
     return f"{prefix}{name}/SKILL.md"
 
 
-def skill_routes(*, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
+def skill_routes(
+    *, account_id: str, team_id: str, store: Any | None = None
+) -> dict[str, "StoreBackend"]:
     """`CompositeBackend(routes={...})`에 그대로 병합할 내장/개인/팀 스킬 라우트 세 개.
 
     `StoreBackend`는 deepagents가 제공하는, `BackendProtocol`을 완전히 구현한
@@ -96,13 +98,24 @@ def skill_routes(*, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:
     """
     from deepagents.backends import StoreBackend
 
+    # 운영 Provider는 PostgresStore를 명시적으로 넘긴다. ``store=None``은
+    # namespace 배선만 검사하는 단위 테스트와 LangGraph가 runtime store를
+    # 주입하는 호환 경로를 위한 값이며, 서비스 조립에서는 사용하지 않는다.
+    backend_kwargs = {"store": store} if store is not None else {}
+
     return {
-        SKILLS_BUILTIN_PATH_PREFIX: StoreBackend(namespace=lambda _rt: builtin_namespace()),
-        SKILLS_PERSONAL_PATH_PREFIX: StoreBackend(namespace=lambda _rt: personal_namespace(account_id)),
-        SKILLS_INACTIVE_PERSONAL_PATH_PREFIX: StoreBackend(
-            namespace=lambda _rt: inactive_personal_namespace(account_id)
+        SKILLS_BUILTIN_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: builtin_namespace(), **backend_kwargs
         ),
-        SKILLS_TEAM_PATH_PREFIX: StoreBackend(namespace=lambda _rt: team_namespace(team_id)),
+        SKILLS_PERSONAL_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: personal_namespace(account_id), **backend_kwargs
+        ),
+        SKILLS_INACTIVE_PERSONAL_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: inactive_personal_namespace(account_id), **backend_kwargs
+        ),
+        SKILLS_TEAM_PATH_PREFIX: StoreBackend(
+            namespace=lambda _rt: team_namespace(team_id), **backend_kwargs
+        ),
     }
 
 
@@ -118,11 +131,15 @@ _SKILLS_ROUTING_PROMPT = """
    description or usage condition, search for and read that skill FIRST —
    before responding, and before considering anything else (including
    whether to save something to memory).
-2. Judge the match by the skill's description — what it does and when to
-   use it — not by its name. A plausible-sounding name is not evidence.
-3. If the match is weak or only tangentially related to the request, do not
-   force the skill. Answer normally instead of reading a skill that doesn't
-   clearly fit.
+2. Judge the match by the skill's complete description — what result it
+   produces, when to use it, and when not to use it — not by its name or by
+   a shared topic alone. A plausible-sounding name or similar input is not
+   evidence that the requested task is the same.
+3. Compare the user's primary requested result or action with the skill's
+   result before reading it. If that result is explicitly excluded or is a
+   different task, do not read the skill even when the request mentions the
+   same subject matter. If the match is weak or only tangentially related,
+   answer normally instead of forcing the skill.
 4. If more than one skill seems relevant, read only the ones you actually
    need for this request — not every skill whose description brushes
    against it.
@@ -142,6 +159,11 @@ _SKILLS_ROUTING_PROMPT = """
    words like "from now on", "always", "remember this" — consider that a
    candidate for memory instead. A one-time stylistic correction on the
    current answer is rule 7, not this one.
+9. A skill's `allowed-tools` metadata documents tools that its author permits;
+   it does not add those tools to this agent. Call only tools that are actually
+   available in the current agent. If an allowed tool is unavailable, continue
+   with the parts of the skill that can be completed safely and state the
+   limitation when it prevents the requested result. Never invent a tool call.
 """
 
 

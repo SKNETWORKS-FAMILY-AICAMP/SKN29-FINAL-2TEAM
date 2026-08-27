@@ -248,25 +248,29 @@ class SkillRegistrationJobRepository:
 
         대상은 `QUEUED`이거나, lease가 만료된 `RUNNING`(죽은 워커가 들고 있던
         것 — §10 "워커가 하나도 없을 때"가 아니라 "워커 하나가 죽었을 때"의
-        회수다)이다. `SKIP LOCKED`라 여러 워커가 동시에 이 질의를 돌려도 같은
-        행을 두 번 집지 않는다.
+        회수다)이다. 같은 계정이어도 이름이 다른 job은 워커 내부 슬롯과 팀별
+        실행 상한 안에서 병렬 처리한다. 같은 계정·같은 이름은 생성 시 부분
+        유니크 인덱스가 이미 하나만 허용하고, 게시 직전에는 이름·원본 hash를
+        다시 확인한다. `SKIP LOCKED`라 여러 실행 슬롯이 동시에 이 질의를
+        돌려도 같은 행을 두 번 집지 않는다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT * FROM skill_registration_job
-                    WHERE status = %s
-                       AND (
-                           team_id IS NULL OR (
+                    SELECT candidate.* FROM skill_registration_job candidate
+                    WHERE (
+                           (candidate.status = %s AND (
+                               candidate.team_id IS NULL OR (
                                SELECT count(*) FROM skill_registration_job running
-                                WHERE running.team_id = skill_registration_job.team_id
+                                WHERE running.team_id = candidate.team_id
                                   AND running.status = %s
-                           ) < %s
+                               ) < %s
+                           ))
+                           OR (candidate.status = %s AND candidate.lease_expires_at < now())
                        )
-                        OR (status = %s AND lease_expires_at < now())
-                     ORDER BY created_at
+                     ORDER BY candidate.created_at
                      LIMIT 1
                      FOR UPDATE SKIP LOCKED
                     """,

@@ -74,7 +74,7 @@ def validate_skill_name(name: str, *, allow_reserved: bool = False) -> str | Non
 
     `allow_reserved`(2026-08-24, skill-creator 기본 등록)는 내장 스킬을
     씨딩하는 `ensure_builtin_skill_creator()`만 `True`로 부른다 — 사람이
-    개인/팀 스킬을 만들 때(`create_personal_skill`/`create_team_skill`)는
+    개인 스킬을 만들 때(`create_personal_skill`)는
     항상 기본값(`False`)이라 예약된 이름을 못 쓴다.
     """
 
@@ -170,9 +170,9 @@ def _store_backend(scope: _Scope) -> Any:
 
     from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
-    from services.agent_runtime.memory.store import get_memory_store
+    from services.agent_runtime.memory.store import get_runtime_store
 
-    inner = StoreBackend(namespace=lambda _rt: scope.namespace, store=get_memory_store())
+    inner = StoreBackend(namespace=lambda _rt: scope.namespace, store=get_runtime_store())
     return CompositeBackend(default=StateBackend(), routes={scope.prefix: inner})
 
 
@@ -780,28 +780,6 @@ def _mark_legacy_team_skills(team_id: str) -> None:
             )
 
 
-def create_team_skill(team_id: str, *, actor_role: str, name: str, description: str, body: str) -> dict[str, Any]:
-    _require_leader(actor_role)
-    # 직접 등록 경로는 검증 영수증이 없으므로 가져올 때 반드시 개인 검증을 탄다.
-    return create_skill(
-        _team_scope(team_id), name=name, description=description, body=body,
-        validation_receipt={"validation_state": "LEGACY_UNVERIFIED"},
-    )
-
-
-def update_team_skill(
-    team_id: str,
-    name: str,
-    *,
-    actor_role: str,
-    description: str | None = None,
-    body: str | None = None,
-    enabled: bool | None = None,
-) -> dict[str, Any]:
-    _require_leader(actor_role)
-    return update_skill(_team_scope(team_id), name, description=description, body=body, enabled=enabled)
-
-
 def delete_team_skill(team_id: str, name: str, *, actor_role: str) -> None:
     _require_leader(actor_role)
     delete_skill(_team_scope(team_id), name)
@@ -895,8 +873,6 @@ __all__ = [
     "stop_sharing_personal_skill",
     "list_team_skills",
     "get_team_skill",
-    "create_team_skill",
-    "update_team_skill",
     "delete_team_skill",
     "list_builtin_skills",
     "get_builtin_skill",

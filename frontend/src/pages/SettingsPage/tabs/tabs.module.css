@@ -321,6 +321,7 @@
   border-color: var(--color-danger);
   background: var(--color-danger-bg, #fef2f2);
   color: var(--color-danger);
+  white-space: pre-line;
 }
 
 /* 첫 자식에만 주면 옆의 Input 이 자기 폭을 고집해 셀렉트가 찌그러진다
@@ -729,6 +730,8 @@
   color: var(--color-heading);
   font-size: 14px;
   line-height: 1.65;
+  white-space: pre-line;
+  word-break: keep-all;
 }
 
 .failurePanelHead > svg {

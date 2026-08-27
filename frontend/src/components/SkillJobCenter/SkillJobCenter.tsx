@@ -77,6 +77,8 @@ export function SkillJobCenter() {
   const [nudgeUntil, setNudgeUntil] = useState(0);
   const timer = useRef<number | null>(null);
   const jobsRef = useRef<Record<string, TrackedJob>>({});
+  // 제거된 카드의 늦게 도착한 폴링 응답이 같은 job을 다시 살리지 못하게 한다.
+  const hiddenJobIdsRef = useRef(new Set<string>());
   const token = session?.token;
   const hasTrackedWork = Object.values(jobs).some(
     ({ job, terminalAt }) =>
@@ -102,21 +104,36 @@ export function SkillJobCenter() {
   }, [nudgeUntil]);
 
   const applyJob = useCallback((job: SkillJob) => {
+    const parentJobId = job.retry_of_job_id;
+    if (hiddenJobIdsRef.current.has(job.job_id)) return;
+    if (parentJobId) hiddenJobIdsRef.current.add(parentJobId);
     setJobs((prev) => {
+      const next = { ...prev };
+      // 재검증 작업이 발견되면 이전 실패 카드는 새 작업으로 교체한다.
+      // 이 처리는 다른 탭에서 재검증을 시작해 로컬 제거 신호를 놓친 경우도
+      // 열린 작업 목록의 retry_of_job_id만으로 복구한다.
+      if (parentJobId) delete next[parentJobId];
       const existing = prev[job.job_id];
       const nowTerminal = isSkillJobTerminal(job);
       // 이미 종료 상태로 기록해 둔 게 있으면(=terminalAt이 이미 찍혀 있으면)
       // 그 시각을 그대로 지킨다 — 폴링마다 다시 지금 시각으로 덮어쓰면
       // SUCCESS_HOLD_MS 카운트다운이 매번 리셋돼 카드가 영원히 안 사라진다.
       const terminalAt = !nowTerminal ? null : (existing?.terminalAt ?? Date.now());
-      return {
-        ...prev,
-        [job.job_id]: { job, terminalAt },
-      };
+      next[job.job_id] = { job, terminalAt };
+      return next;
     });
+    if (parentJobId) {
+      setExpanded((prev) => {
+        if (!(parentJobId in prev)) return prev;
+        const next = { ...prev };
+        delete next[parentJobId];
+        return next;
+      });
+    }
   }, []);
 
   const removeJob = useCallback((jobId: string) => {
+    hiddenJobIdsRef.current.add(jobId);
     setJobs((prev) => {
       const next = { ...prev };
       delete next[jobId];

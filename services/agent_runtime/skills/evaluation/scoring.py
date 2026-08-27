@@ -3,16 +3,17 @@
 정본: 03_스킬_검증_등록_설계.md §8.12.
 
 ```
-recall = 긍정 반복 중 candidate 활성화 성공 / 전체 긍정 반복
-false_activation_rate = 부정 반복 중 candidate 활성화 / 전체 부정 반복
+각 질문은 3회 실행 중 2회 이상 나온 결과를 그 질문의 최종 선택으로 확정한다.
+recall = 활성화된 긍정 질문 / 유효한 긍정 질문
+false_activation_rate = 활성화된 부정 질문 / 유효한 부정 질문
 precision = TP / (TP + FP)
 behavior_pass_rate = 통과한 행동 assertion / 전체 행동 assertion
 ```
 
 **공식 skill-creator `run_eval.py`와의 차이**는 정본 §8.12에 이미 적혀 있다 —
-공식은 질문 단위로 `trigger_rate`를 구해 하나의 threshold(기본 0.5)와
-비교하지만, 여기는 반복(36회) 하나하나를 데이터포인트로 삼는다. 이 파일은
-그 "반복 단위" 계산을 그대로 구현한다.
+공식처럼 같은 질문의 반복 결과를 먼저 질문 단위로 확정한다. 한 번의 확률적
+흔들림 때문에 스킬 전체가 실패하지 않게 하되, 2회 이상 같은 결과가 나와야
+하므로 일회성 성공도 통과시키지 않는다.
 """
 
 from __future__ import annotations
@@ -69,14 +70,32 @@ class ScoreResult:
 
 
 def score_routing(results: list[CaseRunResult], *, case_polarity: dict[str, str]) -> RoutingMetrics:
-    positive_valid = [r for r in results if case_polarity.get(r.case_id) == "positive" and r.error is None]
-    negative_valid = [r for r in results if case_polarity.get(r.case_id) == "negative" and r.error is None]
-    positive_total = sum(1 for r in results if case_polarity.get(r.case_id) == "positive")
-    negative_total = sum(1 for r in results if case_polarity.get(r.case_id) == "negative")
+    grouped: dict[str, list[CaseRunResult]] = {}
+    for result in results:
+        if result.case_id in case_polarity:
+            grouped.setdefault(result.case_id, []).append(result)
 
-    true_positive = sum(1 for r in positive_valid if r.activated_candidate)
-    false_negative = len(positive_valid) - true_positive
-    false_positive = sum(1 for r in negative_valid if r.activated_candidate)
+    def majority(group: list[CaseRunResult]) -> bool | None:
+        """전체 예정 반복의 과반이 같은 결과일 때만 질문 결과를 확정한다."""
+
+        needed = len(group) // 2 + 1
+        valid = [result for result in group if result.error is None]
+        activated = sum(1 for result in valid if result.activated_candidate)
+        not_activated = sum(1 for result in valid if not result.activated_candidate)
+        if activated >= needed:
+            return True
+        if not_activated >= needed:
+            return False
+        return None
+
+    resolved = {case_id: majority(group) for case_id, group in grouped.items()}
+    positive_ids = [case_id for case_id in grouped if case_polarity[case_id] == "positive"]
+    negative_ids = [case_id for case_id in grouped if case_polarity[case_id] == "negative"]
+    positive_valid = [resolved[case_id] for case_id in positive_ids if resolved[case_id] is not None]
+    negative_valid = [resolved[case_id] for case_id in negative_ids if resolved[case_id] is not None]
+
+    true_positive = sum(1 for activated in positive_valid if activated)
+    false_positive = sum(1 for activated in negative_valid if activated)
 
     recall = true_positive / len(positive_valid) if positive_valid else 0.0
     false_activation_rate = false_positive / len(negative_valid) if negative_valid else 0.0
@@ -87,9 +106,9 @@ def score_routing(results: list[CaseRunResult], *, case_polarity: dict[str, str]
         recall=recall,
         precision=precision,
         false_activation_rate=false_activation_rate,
-        positive_total=positive_total,
+        positive_total=len(positive_ids),
         positive_valid=len(positive_valid),
-        negative_total=negative_total,
+        negative_total=len(negative_ids),
         negative_valid=len(negative_valid),
         true_positive=true_positive,
         false_positive=false_positive,
@@ -105,10 +124,20 @@ def score_behavior(results: list[BehaviorRunResult]) -> tuple[float, int, int, l
     실패는 reviewer가 뒤집을 수 없다.
     """
 
-    total = len(results)
-    passed = sum(1 for r in results if not r.deterministic_tool_failures and r.error is None)
-    all_failures = [f for r in results for f in r.deterministic_tool_failures]
-    rate = passed / total if total else 1.0
+    valid = [result for result in results if result.error is None]
+    assertion_total = sum(result.semantic_assertion_total for result in valid)
+    if assertion_total:
+        total = assertion_total
+        passed = sum(result.semantic_assertion_passed for result in valid)
+    else:
+        # 구조 검증이나 기존 호출자가 assertion 집계를 제공하지 않는 경우의
+        # 호환 경로. 실제 pipeline은 각 assertion의 개수를 항상 채운다.
+        total = len(valid)
+        passed = sum(1 for result in valid if not result.deterministic_tool_failures)
+    all_failures = [failure for result in valid for failure in result.deterministic_tool_failures]
+    # 실행 오류는 스킬 행동 실패가 아니다. 유효 결과 비율은 evaluate()가 별도로
+    # 검사해 인프라 오류로 분류한다.
+    rate = passed / total if total else (1.0 if not results else 0.0)
     return rate, total, passed, all_failures
 
 
@@ -129,6 +158,11 @@ def evaluate(
     if routing.negative_total and routing.negative_valid / routing.negative_total < MIN_VALID_RATIO:
         infra_error = True
         reasons.append("부정 질문 실행 중 유효 결과 비율이 80% 미만입니다(인프라 오류 가능성).")
+    behavior_run_total = len(behavior_results)
+    behavior_valid = sum(1 for result in behavior_results if result.error is None)
+    if behavior_run_total and behavior_valid / behavior_run_total < MIN_VALID_RATIO:
+        infra_error = True
+        reasons.append("행동 검증 실행 중 유효 결과 비율이 80% 미만입니다(인프라 오류 가능성).")
 
     if infra_error:
         return ScoreResult(

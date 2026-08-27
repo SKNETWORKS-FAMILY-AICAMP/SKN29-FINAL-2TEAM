@@ -766,7 +766,7 @@ ${targetScopeLabel} 범위로 스킬을 설계하고 skill_register까지 진행
     const namingInstruction = job.failure_code === 'SKILL_NAME_CONFLICT'
       ? '기존 스킬과 구분되는 이름으로 바꾸고, 설명과 본문도 보완해 주세요.'
       : `기존 이름 "${candidate.name}"은 그대로 유지하고, 설명과 본문만 보완해 주세요.`;
-    const request = `다음 기존 스킬이 검증에 실패했습니다. 기존 의도는 유지하되 사용자의 보완 요청을 반영해 다시 작성해 주세요.
+    const request = `다음 기존 스킬이 검증에 실패했습니다. 이미 통과한 사용 조건과 절차는 바꾸지 말고, 실패 근거에 해당하는 부분만 최소한으로 보완해 주세요.
 ${namingInstruction}
 
 기존 이름: ${candidate.name}
@@ -778,10 +778,8 @@ ${candidate.body}
 보완 방향: ${failure.suggestion}
 사용자의 보완 요청: ${instruction}`;
     try {
-      // 화면에서는 이전 실패를 치우되 DB 행은 RETRY 계보의 부모로 보존한다.
-      removedJobIdsRef.current.add(job.job_id);
-      setRegistrationJobs((rows) => rows.filter((row) => row.job_id !== job.job_id));
-      notifySkillJobRemoved(job.job_id);
+      // 보완 대화를 취소할 수도 있으므로, 실제 RETRY job이 만들어지기 전에는
+      // 이전 실패 기록을 그대로 둔다.
       setRepairingJob(null);
       setRepairInstruction('');
       setViewingJob(null);
@@ -798,7 +796,12 @@ ${candidate.body}
     if (!token) return;
     try {
       const retried = await retrySkillJob(token, job.job_id);
-      setRegistrationJobs((rows) => [retried, ...rows.filter((row) => row.job_id !== retried.job_id)]);
+      removedJobIdsRef.current.add(job.job_id);
+      setRegistrationJobs((rows) => [
+        retried,
+        ...rows.filter((row) => row.job_id !== job.job_id && row.job_id !== retried.job_id),
+      ]);
+      notifySkillJobRemoved(job.job_id);
       notifySkillJobStarted();
       setViewingJob(retried);
       showToast('현재 환경에서 검증을 다시 시작했습니다.', 'success');
@@ -847,6 +850,7 @@ ${candidate.body}
     try {
       if (approve) {
         if (retrySourceJobId) {
+          const sourceJobId = retrySourceJobId;
           const registerAction = pending.find((action) => action.name === 'skill_register');
           const args = registerAction?.args ?? {};
           const candidate = {
@@ -854,9 +858,16 @@ ${candidate.body}
             description: String(args.description ?? '').trim(),
             body: String(args.body ?? ''),
           };
-          const retried = await retrySkillJob(token, retrySourceJobId, candidate);
+          const retried = await retrySkillJob(token, sourceJobId, candidate);
+          // 새 검증 작업 생성이 성공한 시점에만 이전 실패를 화면에서 교체한다.
+          // DB의 부모 행은 재시도 이력 추적을 위해 그대로 보존된다.
+          removedJobIdsRef.current.add(sourceJobId);
+          setRegistrationJobs((rows) => [
+            retried,
+            ...rows.filter((row) => row.job_id !== sourceJobId && row.job_id !== retried.job_id),
+          ]);
+          notifySkillJobRemoved(sourceJobId);
           notifySkillJobStarted();
-          setRegistrationJobs((rows) => [retried, ...rows.filter((row) => row.job_id !== retried.job_id)]);
           setRetrySourceJobId(null);
           setCreation((prev) => prev ? {
             ...prev, phase: 'done', registered: true, actions: null, runningReason: null,
@@ -1369,7 +1380,7 @@ ${candidate.body}
                           : skill.imported_by_me
                             ? '이미 등록됨'
                             : skill.requires_validation
-                              ? '검증 후 내 스킬로 등록'
+                              ? '내 스킬로 등록'
                               : '내 스킬로 등록'}
                       </Button>
                     )}

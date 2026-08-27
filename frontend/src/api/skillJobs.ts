@@ -76,6 +76,32 @@ export interface SkillJobRepairCopy {
   placeholder: string;
 }
 
+function falseActivationRequests(details: Record<string, unknown>): string[] {
+  const rows = details.false_activation_examples;
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') return '';
+      const request = (row as Record<string, unknown>).request;
+      return typeof request === 'string' ? request.trim() : '';
+    })
+    .filter(Boolean);
+}
+
+function behaviorFailureCriteria(details: Record<string, unknown>): string[] {
+  const rows = details.behavior_failure_examples;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== 'object') return [];
+    const criteria = (row as Record<string, unknown>).failed_criteria;
+    return Array.isArray(criteria) ? criteria.filter((value): value is string => typeof value === 'string') : [];
+  });
+}
+
+function listedExamples(values: string[], limit = 2): string {
+  return values.slice(0, limit).map((value) => `• ${value}`).join('\n');
+}
+
 /** 내부 평가 지표를 숨기고 사용자가 고칠 수 있는 말로 바꾼다. */
 export function getSkillJobFailureCopy(job: SkillJob): SkillJobFailureCopy {
   const details = job.failure_details ?? {};
@@ -88,6 +114,8 @@ export function getSkillJobFailureCopy(job: SkillJob): SkillJobFailureCopy {
       const activatedTooBroadly =
         (metric('precision') ?? 1) < 0.8 || (metric('false_activation_rate') ?? 0) > 0.2;
       const didNotFollowProcedure = (metric('behavior_pass_rate') ?? 1) < 0.8;
+      const falseRequests = falseActivationRequests(details);
+      const failedCriteria = behaviorFailureCriteria(details);
       if (didNotFollowProcedure && (missedWhenNeeded || activatedTooBroadly)) {
         return {
           reason: `${missedWhenNeeded ? '필요한 요청에서 안정적으로 선택되지 않았고, ' : ''}${activatedTooBroadly ? '비슷하지만 관계없는 요청에서도 선택되었으며, ' : ''}선택된 뒤에도 작성한 절차와 결과 기준을 충분히 따르지 못했습니다.`,
@@ -96,8 +124,10 @@ export function getSkillJobFailureCopy(job: SkillJob): SkillJobFailureCopy {
       }
       if (didNotFollowProcedure) {
         return {
-          reason: '스킬은 선택되었지만 작성한 절차나 결과 기준을 답변에서 안정적으로 지키지 못했습니다.',
-          suggestion: '처리 순서를 짧고 분명하게 정리하고, 정상 결과의 예시와 반드시 지켜야 할 항목을 추가해 주세요.',
+          reason: failedCriteria.length > 0
+            ? `스킬은 선택되었지만 다음 결과 기준을 지키지 못했습니다: ${failedCriteria.slice(0, 2).join(' / ')}`
+            : '스킬은 선택되었지만 작성한 절차나 결과 기준을 답변에서 안정적으로 지키지 못했습니다.',
+          suggestion: '이미 잘 동작한 사용 조건은 유지하고, 실패한 결과 기준만 더 짧고 분명하게 보완해 주세요.',
         };
       }
       if (missedWhenNeeded && activatedTooBroadly) {
@@ -113,8 +143,10 @@ export function getSkillJobFailureCopy(job: SkillJob): SkillJobFailureCopy {
         };
       }
       return {
-        reason: '이 스킬과 직접 관계없는 비슷한 요청에서도 스킬이 선택되었습니다.',
-        suggestion: '설명의 사용 범위를 더 좁혀 주세요. 반드시 만족해야 하는 조건과 사용하지 않아야 할 경우를 명확히 적어 주세요.',
+        reason: falseRequests.length > 0
+          ? `다른 목적의 요청에서도 스킬이 선택되었습니다.\n${listedExamples(falseRequests)}`
+          : '이 스킬과 직접 관계없는 비슷한 요청에서도 스킬이 선택되었습니다.',
+        suggestion: '기존 목적과 결과 형식은 유지하고, 위 요청과 구분되는 경계만 설명에 추가해 주세요.',
       };
     }
     case 'SKILL_NAME_CONFLICT':
@@ -167,11 +199,15 @@ export function getSkillJobRepairCopy(job: SkillJob): SkillJobRepairCopy {
     const activatedTooBroadly =
       (metric('precision') ?? 1) < 0.8 || (metric('false_activation_rate') ?? 0) > 0.2;
     const didNotFollowProcedure = (metric('behavior_pass_rate') ?? 1) < 0.8;
+    const falseRequests = falseActivationRequests(details);
+    const failedCriteria = behaviorFailureCriteria(details);
     if (didNotFollowProcedure) {
       return {
-        missing: '현재 초안에는 사용 범위뿐 아니라, 결과가 올바른지 바로 확인할 수 있는 필수 항목과 잘못된 결과의 기준도 부족합니다.',
-        question: '이 스킬의 결과에 반드시 들어가야 할 내용과 절대로 하면 안 되는 행동을 실제 예시와 함께 알려주세요.',
-        placeholder: '정상 결과에는 …가 반드시 있어야 해. …는 하지 말고, 예시는 …처럼 보여줘.',
+        missing: failedCriteria.length > 0
+          ? `다음 결과 기준이 실제 답변에서 지켜지지 않았습니다: ${failedCriteria.slice(0, 2).join(' / ')}`
+          : '작성한 결과 기준 중 일부가 실제 답변에서 안정적으로 지켜지지 않았습니다.',
+        question: '현재 초안은 그대로 두고, 위 기준을 지키기 위해 추가할 규칙만 알려주세요.',
+        placeholder: '위 기준을 어기지 않도록 …한 경우에는 …라고 처리해줘.',
       };
     }
     if (missedWhenNeeded && activatedTooBroadly) {
@@ -189,9 +225,11 @@ export function getSkillJobRepairCopy(job: SkillJob): SkillJobRepairCopy {
       };
     }
     return {
-      missing: '현재 설명만으로는 이 스킬과 가까운 다른 작업의 경계가 분명하지 않습니다.',
-      question: '이 스킬이 처리할 범위의 끝은 어디이며, 가장 헷갈리기 쉬운 다른 작업은 무엇인가요?',
-      placeholder: '처리할 범위와 처리하지 않을 가까운 작업을 함께 적어주세요.',
+      missing: falseRequests.length > 0
+        ? '현재 설명만으로 다음 요청과의 차이를 구분하지 못했습니다.'
+        : '현재 설명만으로는 이 스킬과 가까운 다른 작업의 경계가 분명하지 않습니다.',
+      question: '위 요청은 처리하지 않고 기존 목적만 유지하도록 보완할까요? 필요한 차이가 있다면 함께 적어주세요.',
+      placeholder: '기존 목적은 유지하고, 위 예시 같은 요청은 처리하지 않도록 보완해줘.',
     };
   }
 

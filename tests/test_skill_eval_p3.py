@@ -18,7 +18,8 @@ from services.agent_runtime.skills.evaluation.name_suggester import suggest_name
 from services.agent_runtime.skills.evaluation.privacy import RegressionPrivacyError, validate_anonymized_case
 from services.agent_runtime.skills.evaluation.rate_limit import _ProviderLimiter
 from services.agent_runtime.skills.evaluation.platform_probes import load_platform_probes
-from services.agent_runtime.skills.versioning import validation_hash
+from services.agent_runtime.skills.versioning import tool_registry_version, validation_hash
+from services.harness.registry import BUILTIN_TOOLS, Tool
 from backend.db.skill_eval import SkillEvalRegressionCaseRepository
 
 
@@ -61,6 +62,28 @@ class ValidationHashTests(SimpleTestCase):
             },
         }
         self.assertEqual(validation_hash(base), validation_hash(stored))
+
+    def test_tool_input_schema_changes_registry_version(self):
+        common = {
+            "ref": "schema-probe",
+            "name": "검사용 도구",
+            "description": "입력 계약 변경 감지",
+            "handler": lambda **_kwargs: None,
+        }
+        first = Tool(
+            **common,
+            input_schema={"type": "object", "properties": {"a": {"type": "string"}}},
+        )
+        second = Tool(
+            **common,
+            input_schema={"type": "object", "properties": {"a": {"type": "integer"}}},
+        )
+        with patch.dict(BUILTIN_TOOLS, {"schema-probe": first}, clear=True):
+            first_version = tool_registry_version()
+        with patch.dict(BUILTIN_TOOLS, {"schema-probe": second}, clear=True):
+            second_version = tool_registry_version()
+
+        self.assertNotEqual(first_version, second_version)
 
 
 class NameSuggestionTests(SimpleTestCase):

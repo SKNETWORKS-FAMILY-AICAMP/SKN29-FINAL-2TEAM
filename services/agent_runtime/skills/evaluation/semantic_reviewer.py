@@ -80,7 +80,7 @@ def _build_model():
 
 
 def review_cases(
-    cases: list[GeneratedCase], *, skill_description: str
+    cases: list[GeneratedCase], *, skill_document: dict
 ) -> tuple[list[CaseReview], str]:
     """`(케이스 순서와 짝을 맞춘 review 목록, 사용한 model_id)`를 돌려준다."""
 
@@ -89,7 +89,9 @@ def review_cases(
 
     structured_model, resolved = _build_model()
     payload = {
-        "skill_description": skill_description,
+        # 설명만 넘기면 본문의 누락 입력 처리·제외 조건·금지 행동을 검토자가
+        # 볼 수 없어 정상적인 요청을 hard negative로 승인할 수 있다.
+        "skill_candidate": skill_document,
         "cases": [
             {
                 "case_index": index,

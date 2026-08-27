@@ -82,6 +82,19 @@ class RequestCancelTests(unittest.TestCase):
                 SkillRegistrationJobRepository.request_cancel("missing", account_id="AC001")
 
 
+class ClaimNextTests(unittest.TestCase):
+    def test_same_account_jobs_are_not_artificially_serialized(self):
+        cursor = _Cursor([None])
+        with patch.object(skill_jobs, "database_connection", _connection_factory(cursor)):
+            result = SkillRegistrationJobRepository.claim_next(lease_owner="worker-1", lease_seconds=120)
+
+        self.assertIsNone(result)
+        sql, params = cursor.executed[0]
+        self.assertNotIn("running.account_id = candidate.account_id", sql)
+        self.assertIn("running.team_id = candidate.team_id", sql)
+        self.assertEqual(params[-1], skill_jobs.STATUS_RUNNING)
+
+
 class DeleteTerminalTests(unittest.TestCase):
     def test_only_deletes_failed_or_canceled(self):
         class _DeleteCursor(_Cursor):

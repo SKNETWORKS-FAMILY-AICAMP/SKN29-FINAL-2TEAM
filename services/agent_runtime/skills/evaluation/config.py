@@ -35,6 +35,10 @@ EVAL_CONCURRENCY = settings.SKILL_EVAL_CONCURRENCY
 #: job 하나(질문 생성부터 채점까지)의 전체 timeout(§8.8/§8.12 "전체 timeout 5분").
 EVAL_JOB_TIMEOUT_SECONDS = settings.SKILL_EVAL_JOB_TIMEOUT_SECONDS
 
+#: DB에 등록하지 않는 평가 전용 draft 에이전트의 모델 호출 상한. 사용자의
+#: 채팅 에이전트 설정과 분리해야 검증 job이 채팅 설정을 바꾸거나 상속하지 않는다.
+EVAL_AGENT_MAX_ITERATIONS = settings.SKILL_EVAL_AGENT_MAX_ITERATIONS
+
 __all__ = [
     "SKILL_EVAL_AUTHOR_MODEL",
     "SKILL_EVAL_AUTHOR_EFFORT",
@@ -43,4 +47,5 @@ __all__ = [
     "EVAL_SINGLE_RUN_TIMEOUT_SECONDS",
     "EVAL_CONCURRENCY",
     "EVAL_JOB_TIMEOUT_SECONDS",
+    "EVAL_AGENT_MAX_ITERATIONS",
 ]

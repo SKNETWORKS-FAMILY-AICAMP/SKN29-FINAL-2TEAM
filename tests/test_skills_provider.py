@@ -4,7 +4,10 @@
 검증한다 — 각 함수 자체의 행동은 test_skills_backend.py의 몫이다.
 """
 
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
+from langgraph.store.memory import InMemoryStore
 
 from services.agent_runtime.skills.provider import SkillsProvider
 
@@ -20,11 +23,14 @@ class RoutesTests(SimpleTestCase):
     def test_passes_account_and_team_id_through(self):
         from services.agent_runtime.skills.backend import SKILLS_PERSONAL_PATH_PREFIX, personal_namespace
 
-        routes = SkillsProvider().routes(account_id="AC001", team_id="TM001")
+        store = InMemoryStore()
+        with patch("services.agent_runtime.memory.store.get_memory_store", return_value=store):
+            routes = SkillsProvider().routes(account_id="AC001", team_id="TM001")
 
         self.assertEqual(
             routes[SKILLS_PERSONAL_PATH_PREFIX]._namespace(None), personal_namespace("AC001")
         )
+        self.assertIs(routes[SKILLS_PERSONAL_PATH_PREFIX]._store, store)
 
 
 class SystemPromptTests(SimpleTestCase):
