@@ -94,11 +94,13 @@ def _evidence(fixture: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _judge_criteria(gold: dict[str, Any]) -> list[dict[str, str]]:
+    catalog_facts = (gold.get("truth_catalog") or {}).get("facts") or []
     facts = [
         item["proposition"]
-        for item in (gold.get("truth_catalog") or {}).get("facts") or []
+        for item in catalog_facts
         if item.get("importance") == "REQUIRED"
     ]
+    known_facts = [item["proposition"] for item in catalog_facts]
     conclusions = [item["proposition"] for item in gold.get("required_conclusions") or []]
     uncertainty = gold.get("uncertainty_contract") or {}
     return [
@@ -109,7 +111,8 @@ def _judge_criteria(gold: dict[str, Any]) -> list[dict[str, str]]:
         },
         {
             "criterion_id": "factual_grounding",
-            "rubric": "답변의 사실 주장이 제공된 PDF evidence와 Gold 사실에 부합하면 PASS.",
+            "rubric": "답변의 사실 주장이 제공된 PDF evidence와 다음 Gold 사실에 부합하면 PASS: "
+            + json.dumps(known_facts, ensure_ascii=False),
         },
         {
             "criterion_id": "temporal_resolution",

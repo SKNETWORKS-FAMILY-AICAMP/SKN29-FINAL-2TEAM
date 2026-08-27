@@ -1,19 +1,20 @@
 protocol_version: eval-v2
 fixture_id: S01-DEV-001
-fixture_version: 1
-gold_version: 1
+fixture_version: 2
+gold_version: 2
 family_id: S01
 variant_id: S01
 split: DEV
 fixture_status: VALIDATED
-compatible_scenario_versions: [1]
+compatible_scenario_versions: [2]
 
 title: 한빛몰 관측성 과업의 계획과 현재 결정 종합
 purpose: 기존 PDF 여러 개를 비교해 기준 범위, 계획 일정, 현재 허용된 진행 범위와 미확정 사항을 구분한다.
 
 input: >-
   한빛몰 주문·정산 시스템 고도화 구축의 관측성 체계(W-07) 상태를
-  2026-08-31 현재 문서 기준으로 정리해줘. 전체 범위, 계획 일정,
+  2026-08-31 현재 문서 기준으로 정리해줘. 전체 범위, 로그·대시보드·
+  분산추적·경보 각각의 세부 계획 일정,
   현재 진행 가능한 범위, 미확정 사항과 위험을 구분해줘. 계획된 일정을
   실제 착수나 완료로 표현하지 말고, 문서에 없는 진척률은 추측하지 마.
 
@@ -43,7 +44,7 @@ source_artifacts:
     mime_type: application/pdf
     sha256: d3a7fcd899d6c66e2b3ea029cc5b3feb1907e30a77cf20741326bedf0859758d
     document_date: 2026-08-30
-    relevant_pages: [4, 5]
+    relevant_pages: [2, 4, 5]
   - source_id: PDF-MIN
     repo_path: tests/eval/documents/pdf/한빛몰_주문정산_기술검토회의록.pdf
     mime_type: application/pdf
