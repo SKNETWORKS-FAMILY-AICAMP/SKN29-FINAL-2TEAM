@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -185,6 +186,34 @@ def _document_search(
         team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k,
         account_id=account_id,
     )
+    # PDF 표는 행별 청크다. 같은 표에서 관련 행이 둘 이상 검색됐다면 top-k 바로
+    # 밖의 형제 행도 한 묶음으로 돌려준다. 그래야 일정표 네 행 중 둘만 보고
+    # 나머지는 문서에 없다고 답하지 않는다. 한 행만 맞은 표는 확장하지 않아 큰
+    # 표 전체가 우연히 딸려 오는 일을 막는다.
+    table_hits = Counter(
+        row.get("block_id")
+        for row in rows
+        if row.get("block_type") == "TABLE" and row.get("block_id")
+    )
+    expandable = [block_id for block_id, count in table_hits.items() if count >= 2]
+    if expandable:
+        block_scores = {
+            block_id: max(
+                float(row["retrieval_score"])
+                for row in rows
+                if row.get("block_id") == block_id
+            )
+            for block_id in expandable
+        }
+        seen_chunk_ids = {str(row["chunk_id"]) for row in rows}
+        for sibling in VectorSearchRepository.table_block_chunks(
+            team_id=team_id, block_ids=expandable, account_id=account_id
+        ):
+            if str(sibling["chunk_id"]) in seen_chunk_ids:
+                continue
+            sibling["retrieval_score"] = block_scores[sibling["block_id"]]
+            rows.append(sibling)
+            seen_chunk_ids.add(str(sibling["chunk_id"]))
     result = {
         "query": query,
         "evidence": [

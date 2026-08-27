@@ -591,6 +591,9 @@ class ChunkRevisionScopeTests(SimpleTestCase):
             "VectorSearchRepository.search": self._sql_only(
                 pipeline.VectorSearchRepository.search
             ),
+            "VectorSearchRepository.table_block_chunks": self._sql_only(
+                pipeline.VectorSearchRepository.table_block_chunks
+            ),
             "VectorSearchRepository.rank_by_content": self._sql_only(
                 pipeline.VectorSearchRepository.rank_by_content
             ),
