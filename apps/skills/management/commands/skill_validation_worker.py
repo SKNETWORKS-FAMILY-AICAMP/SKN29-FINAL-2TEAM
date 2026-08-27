@@ -3,10 +3,9 @@
 정본: docs/설계 및 구현/3_중간발표 이후/작업기록/Juyeon_Agents_Description/
       03_스킬_검증_등록_설계.md §10 ("워커 배포와 운영")
 
-**웹 요청 스레드나 `ThreadPoolExecutor`로 돌리지 않는다.** 웹 프로세스가
-재시작되거나(배포) 요청이 끝나도 검증은 계속돼야 한다 — 그래서 별도 상시
-프로세스다. `infra/docker/docker-compose.yml`에 이 커맨드를 실행하는 서비스를
-추가해서 띄운다(§10 "배포").
+**웹 요청 스레드에서 돌리지 않는다.** 웹 프로세스가 재시작되거나(배포) 요청이
+끝나도 검증은 계속돼야 하므로 별도 상시 프로세스로 실행한다. 이 워커 프로세스
+내부의 제한된 `ThreadPoolExecutor`는 서로 다른 계정의 job만 병렬 처리한다.
 
 `backend/db/skill_jobs.py`의 `SkillRegistrationJobRepository.claim_next()`가
 `FOR UPDATE SKIP LOCKED`로 동시에 여러 워커가 떠 있어도 같은 job을 두 번
@@ -21,7 +20,9 @@ import signal
 import threading
 import time
 import uuid
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from backend.db.skill_jobs import (
@@ -80,6 +81,12 @@ class Command(BaseCommand):
             help=f"job을 붙잡는 lease 길이(초). 기본 {DEFAULT_LEASE_SECONDS}",
         )
         parser.add_argument(
+            "--concurrency",
+            type=int,
+            default=settings.SKILL_VALIDATION_WORKER_CONCURRENCY,
+            help="한 워커 프로세스 안에서 동시에 처리할 job 수",
+        )
+        parser.add_argument(
             "--once",
             action="store_true",
             help="큐에 있는 job을 전부 처리하면(더 없으면) 종료한다 — 테스트·수동 실행용.",
@@ -89,6 +96,7 @@ class Command(BaseCommand):
         poll_interval: float = options["poll_interval"]
         lease_seconds: int = options["lease_seconds"]
         run_once: bool = options["once"]
+        concurrency = max(1, int(options.get("concurrency", settings.SKILL_VALIDATION_WORKER_CONCURRENCY)))
 
         # 이 프로세스(+PID)가 붙잡은 job을 다른 워커·재실행과 구분하는 값.
         worker_id = f"{uuid.uuid4().hex[:12]}"
@@ -102,24 +110,54 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, _request_stop)
         signal.signal(signal.SIGINT, _request_stop)
 
-        self.stdout.write(self.style.SUCCESS(f"skill_validation_worker 시작 (worker_id={worker_id})"))
+        self.stdout.write(self.style.SUCCESS(
+            f"skill_validation_worker 시작 (worker_id={worker_id}, concurrency={concurrency})"
+        ))
         self._touch_worker(worker_id)
 
-        idle_rounds = 0
-        while not stop["requested"]:
-            self._touch_worker(worker_id)
-            job = SkillRegistrationJobRepository.claim_next(
-                lease_owner=worker_id, lease_seconds=lease_seconds
-            )
-            if job is None:
-                if run_once:
-                    break
-                idle_rounds += 1
-                time.sleep(poll_interval)
-                continue
+        active: set[Future[None]] = set()
+        with ThreadPoolExecutor(
+            max_workers=concurrency,
+            thread_name_prefix="skill-validation-job",
+        ) as executor:
+            while True:
+                self._touch_worker(worker_id)
 
-            idle_rounds = 0
-            self._process(job, lease_owner=worker_id, lease_seconds=lease_seconds)
+                completed = {future for future in active if future.done()}
+                active -= completed
+                for future in completed:
+                    try:
+                        future.result()
+                    except Exception:  # noqa: BLE001 — 슬롯 하나의 예외가 워커 전체를 끝내면 안 된다.
+                        logger.exception("skill_validation_worker: 실행 슬롯에서 예상 못 한 오류")
+
+                if stop["requested"]:
+                    if not active:
+                        break
+                    wait(active, timeout=poll_interval, return_when=FIRST_COMPLETED)
+                    continue
+
+                queue_empty = False
+                while len(active) < concurrency:
+                    job = SkillRegistrationJobRepository.claim_next(
+                        lease_owner=worker_id, lease_seconds=lease_seconds
+                    )
+                    if job is None:
+                        queue_empty = True
+                        break
+                    active.add(executor.submit(
+                        self._process,
+                        job,
+                        lease_owner=worker_id,
+                        lease_seconds=lease_seconds,
+                    ))
+
+                if run_once and queue_empty and not active:
+                    break
+                if active:
+                    wait(active, timeout=poll_interval, return_when=FIRST_COMPLETED)
+                else:
+                    time.sleep(poll_interval)
 
         self.stdout.write(self.style.SUCCESS("skill_validation_worker 종료"))
 

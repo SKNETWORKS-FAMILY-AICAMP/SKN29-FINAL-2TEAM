@@ -1,5 +1,6 @@
 """장시간 평가 중 검증 job lease 유지 회귀 테스트."""
 
+import threading
 import time
 from unittest.mock import patch
 
@@ -9,6 +10,43 @@ from apps.skills.management.commands.skill_validation_worker import Command
 
 
 class WorkerHeartbeatTests(SimpleTestCase):
+    @patch("apps.skills.management.commands.skill_validation_worker.signal.signal")
+    @patch.object(Command, "_touch_worker")
+    @patch.object(Command, "_process")
+    @patch("apps.skills.management.commands.skill_validation_worker.SkillRegistrationJobRepository")
+    def test_one_process_runs_two_different_claimed_jobs_in_parallel(
+        self, repository, process, _touch_worker, _signal
+    ):
+        jobs = iter([{"job_id": "job-1"}, {"job_id": "job-2"}])
+        repository.claim_next.side_effect = lambda **_kwargs: next(jobs, None)
+        lock = threading.Lock()
+        release = threading.Event()
+        running = 0
+        peak = 0
+
+        def _process(_job, **_kwargs):
+            nonlocal running, peak
+            with lock:
+                running += 1
+                peak = max(peak, running)
+                if running == 2:
+                    release.set()
+            release.wait(timeout=1)
+            with lock:
+                running -= 1
+
+        process.side_effect = _process
+
+        Command().handle(
+            poll_interval=0.01,
+            lease_seconds=120,
+            once=True,
+            concurrency=2,
+        )
+
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual(peak, 2)
+
     @patch("apps.skills.management.commands.skill_validation_worker.run_publishing")
     @patch("apps.skills.management.commands.skill_validation_worker.run_testing")
     @patch("apps.skills.management.commands.skill_validation_worker.run_preparing_tests")
