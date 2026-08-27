@@ -65,11 +65,10 @@ _PROJECT_SCOPED: frozenset[str] = frozenset(
 _TASK_EXTRACTION_REF = "task_extraction"
 
 #: 2026-08-21, Skill 배선 — `skill_register`는 프로젝트 스코프가 아니라
-#: 계정·팀·역할 스코프다(설계 문서 "skill_register가 담당하는 것" 절):
-#: `scope=TEAM`인데 `account_role`이 `leader`가 아니면 거부해야 해서 역할값도
-#: 필요하다 — 다른 write 도구는 이 값을 안 쓴다(RBAC 재검사가
-#: `is_tool_allowed_for_role()`로 이미 따로 걸려 있어서, `factory.py`의
-#: `_to_langchain_tool()` 참고).
+#: 계정·팀 스코프다. **2026-08-26 갱신** — `scope`(PERSONAL/TEAM) 인자를
+#: 없애면서(정본 "스킬 검증·등록 최종 설계.md" §2/§5) 이 도구만 따로
+#: `account_role`을 받던 이유(TEAM인데 leader가 아니면 거부)도 같이
+#: 사라졌다. 지금은 항상 개인 스킬 검증 job만 만든다.
 _SKILL_REGISTER_REF = "skill_register"
 
 #: 레거시 핸들러의 실제 키워드 인자 이름 — CONTEXT_VALUES 쪽 이름(project_id)과 다르다.
@@ -86,7 +85,12 @@ def _injected_context_names(tool_ref: str) -> tuple[str, ...]:
     if tool_ref in _PROJECT_SCOPED:
         return ("project_id", "account_id")
     if tool_ref == _SKILL_REGISTER_REF:
-        return ("account_id", "team_id", "account_role")
+        # 2026-08-26 — `scope`(PERSONAL/TEAM)를 도구 입력에서 없앴다("스킬
+        # 검증·등록 최종 설계.md" §2/§5) — 팀 스킬 직접 등록 경로 자체가
+        # 없어져서 `account_role`로 TEAM/leader를 가릴 이유가 사라졌다.
+        # 대신 `SkillRegistrationJob.source_session_id`(같은 문서 §9)를
+        # 채우려면 `session_id`가 필요하다.
+        return ("account_id", "team_id", "session_id")
     if tool_ref in _ACCOUNT_SCOPED:
         return ("account_id",)
     return ()

@@ -103,6 +103,18 @@ EXPECTED: list[tuple[str, str | None, str]] = [
         "2026-08-24 HITL 도구 호출 상관관계",
     ),
     ("team", "default_model", "2026-08-22 팀 기본 채팅 모델 — 레거시 정문 에이전트에서 옮김"),
+    ("skill_registration_job", None, "2026-08-26 스킬 등록 검증 job 큐"),
+    ("skill_registration_job", "metrics", "2026-08-26 §8 평가 지표·재현성 컬럼"),
+    ("skill_registration_job", "progress_message", "2026-08-27 스킬 검증 세부 진행 문구"),
+    ("skill_registration_job", "progress_events", "2026-08-27 스킬 검증 진행 이력"),
+    ("skill_registration_job", "runtime_profile_version", "2026-08-27 스킬 검증 런타임 스냅샷"),
+    ("skill_registration_job", "tool_registry_version", "2026-08-27 스킬 검증 도구 스냅샷"),
+    ("skill_registration_job", "model_call_count", "2026-08-27 스킬 검증 호출 예산"),
+    ("skill_catalog_revision", None, "2026-08-27 개인 스킬 카탈로그 revision"),
+    ("skill_worker_heartbeat", None, "2026-08-27 스킬 검증 워커 상태"),
+    ("skill_eval_regression_case", None, "2026-08-26 실제 오발동 회귀 케이스"),
+    ("skill_eval_feedback", None, "2026-08-27 스킬 사용 피드백"),
+    ("skill_eval_regression_case", "source_feedback_id", "2026-08-27 회귀 사례 신고 연결"),
     # 2026-08-22_drop_legacy_agent.sql 은 여기 못 적는다 — 이 표는 "있어야 할
     # 것이 있는가"만 보는데, 그 마이그레이션이 하는 일은 `agent`/`agent_tool`을
     # **없애는** 것이다. 적용 여부는 아래 쿼리로 직접 확인한다(0이어야 한다):
@@ -115,6 +127,31 @@ EXPECTED_INDEXES: list[tuple[str, str, str]] = [
         "tool_call",
         "ux_tool_call_run_langchain_id",
         "2026-08-24 HITL 도구 호출 중복 방지",
+    ),
+]
+
+EXPECTED_CONSTRAINTS: list[tuple[str, str, str]] = [
+    (
+        "skill_eval_regression_case",
+        "ck_skill_eval_regression_scope_fields",
+        "2026-08-27 회귀 사례 범위별 team/skill 필드 정합성",
+    ),
+]
+
+EXPECTED_COLUMN_TYPES: list[tuple[str, str, str, int | None, str]] = [
+    (
+        "skill_registration_job",
+        "operation",
+        "character varying",
+        10,
+        "2026-08-27 스킬 재검증 RETRY 저장 길이",
+    ),
+    (
+        "skill_eval_regression_case",
+        "dataset_version",
+        "character varying",
+        64,
+        "2026-08-27 회귀 평가 데이터 버전 길이",
     ),
 ]
 
@@ -202,6 +239,7 @@ def _split_statements(sql: str) -> list[str]:
 def check(url: str) -> int:
     missing: list[tuple[str, str | None, str]] = []
     mismatched_defaults: list[tuple[str, str, str, str, str]] = []
+    mismatched_types: list[tuple[str, str, str, str, str]] = []
     with psycopg.connect(url) as connection, connection.cursor() as cursor:
         for table, column, why in EXPECTED:
             if column is None:
@@ -243,6 +281,33 @@ def check(url: str) -> int:
             if not cursor.fetchone()[0]:
                 missing.append((table, index, why))
 
+        for table, constraint, why in EXPECTED_CONSTRAINTS:
+            cursor.execute(
+                """SELECT EXISTS (
+                       SELECT 1 FROM information_schema.table_constraints
+                        WHERE table_schema = 'public' AND table_name = %s
+                          AND constraint_name = %s
+                   )""",
+                (table, constraint),
+            )
+            if not cursor.fetchone()[0]:
+                missing.append((table, constraint, why))
+
+        for table, column, expected_type, expected_length, why in EXPECTED_COLUMN_TYPES:
+            cursor.execute(
+                """SELECT data_type, character_maximum_length
+                     FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s AND column_name = %s""",
+                (table, column),
+            )
+            row = cursor.fetchone()
+            actual = None if row is None else (row[0], row[1])
+            if actual != (expected_type, expected_length):
+                mismatched_types.append((
+                    table, column, f"{expected_type}({expected_length})",
+                    "없음" if actual is None else f"{actual[0]}({actual[1]})", why,
+                ))
+
         for table, column, expected_default, why in EXPECTED_DEFAULTS:
             cursor.execute(
                 """
@@ -258,8 +323,14 @@ def check(url: str) -> int:
 
     name_of = lambda t, c: t if c is None else f"{t}.{c}"  # noqa: E731
     print(f"대상 DB: {_target(url)}")
-    checked = len(EXPECTED) + len(EXPECTED_INDEXES) + len(EXPECTED_DEFAULTS)
-    print(f"확인 항목 {checked}개 · 빠진 것 {len(missing)}개 · 기본값 불일치 {len(mismatched_defaults)}개")
+    checked = (
+        len(EXPECTED) + len(EXPECTED_INDEXES) + len(EXPECTED_CONSTRAINTS)
+        + len(EXPECTED_COLUMN_TYPES) + len(EXPECTED_DEFAULTS)
+    )
+    print(
+        f"확인 항목 {checked}개 · 빠진 것 {len(missing)}개 · "
+        f"기본값 불일치 {len(mismatched_defaults)}개 · 타입 불일치 {len(mismatched_types)}개"
+    )
     for table, column, why in missing:
         print(f"  [없음] {name_of(table, column):<38} {why}")
     for table, column, expected_default, actual_default, why in mismatched_defaults:
@@ -267,7 +338,9 @@ def check(url: str) -> int:
             f"  [값다름] {name_of(table, column):<38} "
             f"기대 {expected_default!r} · 실제 {actual_default!r}  {why}"
         )
-    if not missing and not mismatched_defaults:
+    for table, column, expected, actual, why in mismatched_types:
+        print(f"  [타입다름] {name_of(table, column):<38} 기대 {expected} · 실제 {actual}  {why}")
+    if not missing and not mismatched_defaults and not mismatched_types:
         print("  [OK] 배포가 전제하는 스키마가 전부 있습니다.")
         return 0
     print("\n적용하려면 `DB_시작_가이드.md` §4.3 블록을 돌리거나, 해당 .sql 을 인자로 주세요.")

@@ -1,15 +1,12 @@
 /*
- * 오른쪽 아래 고정. 화면 어디에 있든 같은 자리에 뜬다 — 자리가 옮겨 다니면
- * 사람이 매번 찾아야 하고, 그러면 「어디 있든 보인다」는 뜻이 없어진다.
+ * 위치는 이제 `ProgressCardStack`이 정한다(2026-08-26) — 여기서는 카드
+ * 자체의 생김새만 맡는다. 자리가 화면 어디를 가리키든 항상 같은 곳(오른쪽
+ * 아래)에 뜨는 건 그대로다.
  *
  * 페이지 내용 위에 뜨지만 **모달이 아니다.** 뒤를 덮지 않고 클릭도 막지
  * 않는다 — 색인은 사람이 하던 일을 멈추게 할 이유가 없는 뒷작업이다.
  */
 .card {
-  position: fixed;
-  right: var(--space-5);
-  bottom: var(--space-5);
-  z-index: 60;
   width: 320px;
   max-width: calc(100vw - var(--space-5) * 2);
   display: flex;
@@ -101,12 +98,10 @@
   cursor: pointer;
 }
 
-/* 좁은 화면에서는 폭을 화면에 맞춘다. 320px 고정이면 오른쪽이 잘린다. */
+/* 좁은 화면에서는 폭을 화면에 맞춘다. 320px 고정이면 오른쪽이 잘린다.
+   가로 위치는 `ProgressCardStack.module.css`가 `.stack`에 이미 맞춰 둔다. */
 @media (max-width: 480px) {
   .card {
-    right: var(--space-3);
-    left: var(--space-3);
-    bottom: var(--space-3);
     width: auto;
   }
 }

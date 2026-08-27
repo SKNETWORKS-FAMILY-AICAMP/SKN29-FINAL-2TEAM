@@ -43,8 +43,18 @@ from .views.policies import (
     NoticeListCreateView,
     PolicyChangeListView,
 )
+from .views.skill_eval import (
+    SkillEvalFeedbackDetailView,
+    SkillEvalFeedbackListView,
+    SkillEvalRegressionCaseDetailView,
+    SkillEvalRegressionCaseListCreateView,
+)
 
 urlpatterns = [
+    path("skill-eval-feedback/", SkillEvalFeedbackListView.as_view(), name="api_ops_skill_eval_feedback"),
+    path("skill-eval-feedback/<str:feedback_id>/", SkillEvalFeedbackDetailView.as_view(), name="api_ops_skill_eval_feedback_detail"),
+    path("skill-eval-regression-cases/", SkillEvalRegressionCaseListCreateView.as_view(), name="api_ops_skill_eval_cases"),
+    path("skill-eval-regression-cases/<str:case_id>/", SkillEvalRegressionCaseDetailView.as_view(), name="api_ops_skill_eval_case_detail"),
     path("auth/login/", LoginView.as_view(), name="api_ops_auth_login"),
     path("auth/logout/", LogoutView.as_view(), name="api_ops_auth_logout"),
     path("overview/", OverviewView.as_view(), name="api_ops_overview"),

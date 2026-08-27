@@ -58,6 +58,48 @@
   gap: var(--space-3);
 }
 
+.jobSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.jobSectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.jobSectionHead span {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.jobRow {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jobRow:hover {
+  border-color: var(--color-primary);
+}
+
+.jobDetailText {
+  flex: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .row {
   display: flex;
   /* 설명 문구를 걷어내면서 줄 대부분이 한 줄짜리가 됐다. `flex-start` 로 두면
@@ -153,11 +195,28 @@
   flex-shrink: 0;
 }
 
+.personalActions {
+  display: grid;
+  grid-template-columns: 118px 72px 52px 52px;
+  justify-items: center;
+}
+
+.personalActions > * {
+  min-width: 0;
+}
+
+.shareActionSlot {
+  width: 72px;
+  height: 1px;
+}
+
 /* 상태 글자만 배지로 표시하고 토글은 독립된 조작으로 둔다. */
 .skillState {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
+  width: 118px;
 }
 
 .skillStateText {
@@ -315,6 +374,25 @@
   .rowActions {
     flex: 1 0 100%;
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .personalActions {
+    grid-template-columns: 104px 62px 48px 48px;
+    column-gap: 4px;
+  }
+
+  .skillState {
+    width: 104px;
+  }
+
+  .shareActionSlot {
+    width: 62px;
+  }
+
+  .failurePanel {
+    padding: 18px;
   }
 }
 
@@ -550,6 +628,168 @@
   flex-direction: column;
   gap: var(--space-2);
   width: 100%;
+}
+
+.jobActivityCurrent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  color: var(--color-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.jobActivityCurrent > svg {
+  flex: none;
+}
+
+.jobActivityCurrent > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.jobActivityCurrent > strong {
+  flex: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jobActivityHistory {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0 2px;
+  list-style: none;
+}
+
+.jobActivityHistory li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.jobActivityHistory li > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.jobActivityHistory li > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.jobActivityHistory li > strong {
+  flex: none;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.repairDraft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.repairDraft summary {
+  cursor: pointer;
+  color: var(--color-body);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.failurePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.failurePanelHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--color-heading);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.failurePanelHead > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.failureNext {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-body);
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.failureNext span {
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.failureNext p {
+  margin: 0;
+  color: var(--color-body);
+}
+
+.repairDraft > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.repairDraft span {
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.repairDraft strong,
+.repairDraft p,
+.repairDraft pre {
+  margin: 0;
+  color: var(--color-body);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.repairDraft pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
 }
 
 .formLabel {
