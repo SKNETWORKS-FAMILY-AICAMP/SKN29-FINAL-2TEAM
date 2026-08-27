@@ -170,5 +170,132 @@ class EvaluationResultRepository:
                     ),
                 )
 
+    @staticmethod
+    def sync_judge_result(record: dict[str, Any]) -> dict[str, Any]:
+        """`judge_calibration.jsonl`의 레코드 한 줄을 `eval_judge_result`에 동기화한다.
+
+        `case_id`가 아니라 `agent_run_id`로 대상 `eval_case_result`의
+        `case_index`를 찾는다 — 같은 case_id가 한 실행 안에서 여러 번
+        반복될 수 있어서(다른 표와 같은 이유), case_id만으로는 어느 반복인지
+        구분할 수 없다. `human_verdict`/`comparison`은 calibration 표본일 때만
+        있는 값이라 없으면 NULL로 둔다 — 지어내지 않는다.
+        """
+        eval_run_id = str(record["eval_run_id"])
+        agent_run_id = record.get("agent_run_id")
+        judge = record["judge"]
+        human_verdict = record.get("human_verdict")
+        comparison = record.get("comparison")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT case_index FROM eval_case_result
+                    WHERE eval_run_id = %s AND agent_run_id = %s
+                    """,
+                    (eval_run_id, agent_run_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError(
+                        "이 agent_run_id에 대응하는 eval_case_result의 "
+                        "case_index를 찾지 못했습니다 — case 동기화를 먼저 하세요."
+                    )
+                case_index = row["case_index"]
+
+                cursor.execute(
+                    """
+                    INSERT INTO eval_judge_result (
+                        eval_run_id, case_index, judge_model, prompt_version,
+                        mode, latency_ms, usage, verdict,
+                        human_verdict, comparison
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (eval_run_id, case_index, judge_model, prompt_version)
+                    DO NOTHING
+                    RETURNING case_index
+                    """,
+                    (
+                        eval_run_id,
+                        case_index,
+                        judge["model"],
+                        judge["prompt_version"],
+                        record.get("mode", "REPORT_ONLY"),
+                        judge.get("latency_ms"),
+                        Jsonb(judge.get("usage")),
+                        Jsonb(judge["verdict"]),
+                        Jsonb(human_verdict) if human_verdict is not None else None,
+                        Jsonb(comparison) if comparison is not None else None,
+                    ),
+                )
+                if cursor.fetchone() is not None:
+                    return {
+                        "eval_run_id": eval_run_id,
+                        "case_index": case_index,
+                        "sync_status": "SYNCED",
+                    }
+
+                cursor.execute(
+                    """
+                    SELECT verdict FROM eval_judge_result
+                    WHERE eval_run_id = %s AND case_index = %s
+                      AND judge_model = %s AND prompt_version = %s
+                    """,
+                    (eval_run_id, case_index, judge["model"], judge["prompt_version"]),
+                )
+                existing = cursor.fetchone()
+                if existing is None or existing["verdict"] != judge["verdict"]:
+                    raise ValueError(
+                        "같은 실행·case·Judge·프롬프트에 다른 결과가 이미 "
+                        "저장되어 있습니다."
+                    )
+                return {
+                    "eval_run_id": eval_run_id,
+                    "case_index": case_index,
+                    "sync_status": "SYNCED",
+                }
+
+    @staticmethod
+    def fetch_agent_execution_summary(agent_run_id: str) -> dict[str, Any]:
+        """사람이 UI로 실행한 case를 기록할 때 최종 답변·도구 호출을 손으로
+        옮겨 적지 않아도 되게, 실제 실행된 agent_run의 결과를 제품 DB에서
+        조회한다.
+
+        세션이 없거나 지워졌으면(자동 runner의 임시 세션 정리 등) 빈 값을
+        돌려준다 — 이 조회는 있으면 좋은 보강이지, 없다고 기록 자체를
+        막지 않는다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT session_id FROM agent_run WHERE run_id = %s",
+                    (agent_run_id,),
+                )
+                row = cursor.fetchone()
+                session_id = row["session_id"] if row else None
+
+                final_answer = None
+                if session_id:
+                    cursor.execute(
+                        "SELECT content FROM chat_message "
+                        "WHERE session_id = %s AND role = 'agent' "
+                        "ORDER BY created_at",
+                        (session_id,),
+                    )
+                    for message in cursor.fetchall():
+                        content = message.get("content") or {}
+                        if isinstance(content, dict) and content.get("text"):
+                            final_answer = content["text"]
+
+                cursor.execute(
+                    "SELECT tool_call_id FROM tool_call "
+                    "WHERE run_id = %s ORDER BY created_at",
+                    (agent_run_id,),
+                )
+                tool_call_ids = [str(r["tool_call_id"]) for r in cursor.fetchall()]
+
+        return {"final_answer": final_answer, "tool_call_ids": tool_call_ids}
+
 
 __all__ = ["EvaluationResultRepository"]

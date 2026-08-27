@@ -139,9 +139,12 @@ class EvaluationRunnerTests(unittest.TestCase):
                 load_workflow_dataset(path)
 
     def test_deterministic_assertions_pass_and_optional_doc_is_not_agent_requirement(self):
+        events = _events()
+        for event in events:
+            event["langfuse_trace_id"] = "TRACE001"
         result = evaluate_events(
             case=_case(),
-            events=_events(),
+            events=events,
             started_at="2026-08-26T00:00:00Z",
             finished_at="2026-08-26T00:00:01Z",
             elapsed_ms=150,
@@ -154,6 +157,8 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["total_tokens"], 14)
         self.assertEqual(result["judge"]["status"], "UNCERTAIN")
         self.assertEqual(result["judge"]["unavailable_documents"], ["DC001", "DC002"])
+        self.assertEqual(result["langfuse_trace_id"], "TRACE001")
+        self.assertEqual(result["input"], "현황을 알려줘")
 
     def test_forbidden_tool_and_missing_required_evidence_fail(self):
         events = _events()

@@ -30,7 +30,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--case-id", required=True)
     parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--human-verdict", type=Path, required=True)
+    parser.add_argument(
+        "--human-verdict",
+        type=Path,
+        default=None,
+        help=(
+            "사람이 검수·승인하고 검수자와 시각을 기록한 기준 판정 JSON. "
+            "생략하면 사람 비교 없이 Judge 단독 판정만 기록한다 — 화면에서 "
+            "사람이 직접 보고 판단하는 용도라면 이걸로 충분하다. calibration"
+            "(사람 판정과 일치율 비교)이 필요할 때만 넘긴다."
+        ),
+    )
     parser.add_argument("--account-id", required=True)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--judge-model", help="생략하면 평가 실행에 기록된 모델 사용")
@@ -108,10 +118,14 @@ def main(argv: list[str] | None = None) -> int:
     case = select_case(dataset, args.case_id)
     case_result = _read_case_result(args.run_dir, args.case_id)
     evidence = load_evidence_bundle(args.evidence, case)
-    human = load_human_verdict(
-        args.human_verdict,
-        case_id=args.case_id,
-        agent_run_id=case_result.get("agent_run_id"),
+    human = (
+        load_human_verdict(
+            args.human_verdict,
+            case_id=args.case_id,
+            agent_run_id=case_result.get("agent_run_id"),
+        )
+        if args.human_verdict is not None
+        else None
     )
     request = build_judge_request(
         case=case,
