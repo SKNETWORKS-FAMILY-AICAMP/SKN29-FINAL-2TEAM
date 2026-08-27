@@ -179,21 +179,40 @@ export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellP
           />
         )}
         <div className={styles.brandRow}>
-          {/* 접히면 글자가 들어갈 자리가 없다 — 그때만 마크로 바꾼다.
-              높이가 두 쪽이 다른 것은 여백 때문이다. 워드마크는 글자가 그림 끝까지 차
-              있어 44 가 곧 글자 높이지만, 마크는 96px 그림 안에 글리프가 53px 뿐이라
-              같은 44 로는 작아 보인다 — 접힘 폭(68px)이 허락하는 만큼 키웠다. */}
-          <Link to={PATHS.chat} className={styles.logo} aria-label="채팅으로 이동">
-            <Logo variant={iconsOnly ? 'mark' : 'full'} height={iconsOnly ? 40 : 44} />
-          </Link>
+          {/* 워드마크와 축약 마크를 같은 자리에 겹쳐 둔다. 접힐 때 이미지를 즉시
+              교체하면 로고가 번쩍 바뀌므로, 사이드바 폭 변화와 함께 짧게 교차
+              전환한다. 실제 글자를 분해하는 모션은 아니어서 로고 원형도 보존한다. */}
+          <div className={styles.logoSlot}>
+            <Link
+              to={PATHS.chat}
+              className={styles.logo}
+              aria-label="채팅으로 이동"
+              aria-hidden={iconsOnly}
+              tabIndex={iconsOnly ? -1 : undefined}
+            >
+              <Logo variant="full" height={44} className={styles.logoFull} />
+            </Link>
+            <button
+              type="button"
+              className={styles.compactBrand}
+              onClick={toggleCollapsed}
+              aria-label="사이드바 열기"
+              title="사이드바 열기"
+              tabIndex={iconsOnly ? undefined : -1}
+              aria-hidden={!iconsOnly}
+            >
+              <Logo variant="mark" height={40} className={styles.logoMark} />
+              <Icon name="sidebar" size={20} className={styles.compactSidebarIcon} />
+            </button>
+          </div>
           <button
             type="button"
             className={styles.collapse}
             onClick={toggleCollapsed}
             aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-            title={collapsed ? '펼치기' : '접기'}
+            title={collapsed ? '사이드바 열기' : '사이드바 접기'}
           >
-            <Icon name={collapsed ? 'arrow-right' : 'arrow-left'} size={16} color="var(--color-muted)" />
+            <Icon name="sidebar" size={18} color="var(--color-muted)" />
           </button>
         </div>
 

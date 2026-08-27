@@ -37,7 +37,13 @@ fi
 
 echo "::: 2. 빌드·기동"
 # t3.micro(909MB + swap 2G)라 병렬 빌드가 버겁다. 순차로 돌린다.
-COMPOSE_PARALLEL_LIMIT=1 docker compose $FILES up -d --build web frontend caddy
+#
+# `skill-validation-worker` 는 포트를 안 열어서 눈에 안 띄지만 **이 줄에 없으면
+# 아예 안 뜬다**(2026-08-27 추가). 빠지면 스킬 등록 요청이
+# `skill_registration_job` 에 쌓이기만 하고 화면에는 「검증 중」으로 멈춘 채
+# 남는다 — 에러가 아니라 침묵이라 배포로는 안 보인다.
+# `web` 과 같은 이미지라 빌드는 캐시로 끝난다.
+COMPOSE_PARALLEL_LIMIT=1 docker compose $FILES up -d --build web frontend caddy skill-validation-worker
 
 echo "::: 3. MCP 시연 서버"
 # server.py 는 바인드 마운트라 재빌드가 아니라 재생성이면 반영된다.

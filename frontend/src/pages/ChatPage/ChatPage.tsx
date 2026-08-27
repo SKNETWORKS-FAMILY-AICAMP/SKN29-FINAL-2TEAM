@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal, useToast } from '../../components';
 import { PATHS } from '../../routes';
@@ -10,6 +11,7 @@ import {
   deleteSession,
   getSession,
   listSessions,
+  renameSession,
   setSessionToolRefs,
   streamMessage,
 } from '../../api/chat';
@@ -41,9 +43,9 @@ import type { LiveChat } from './liveChat';
 import { notifySkillJobStarted } from '../../utils/skillJobSignal';
 import { ToolPickerModal } from '../../components';
 import {
+  formatDateSeparator,
   formatMessageTime,
   formatMessageTimeFull,
-  searchableMessageTime,
   seoulDateKey,
 } from './chatDate';
 import styles from './ChatPage.module.css';
@@ -64,9 +66,99 @@ interface Turn {
 
 type ConversationMatch = {
   key: string;
+  messageKey?: string;
+  localIndex?: number;
+  dateKey?: string;
   turnIndex: number;
-  role: 'user' | 'agent';
+  role: 'user' | 'agent' | 'date';
 };
+
+function occurrenceCount(text: string, query: string): number {
+  const needle = query.trim().toLocaleLowerCase('ko-KR');
+  if (!needle) return 0;
+  const haystack = text.toLocaleLowerCase('ko-KR');
+  let count = 0;
+  let cursor = 0;
+  while (cursor < haystack.length) {
+    const found = haystack.indexOf(needle, cursor);
+    if (found < 0) break;
+    count += 1;
+    cursor = found + needle.length;
+  }
+  return count;
+}
+
+function dateInRange(dateKey: string | null, start: string | null, end: string | null): boolean {
+  if (!dateKey || !start) return !start;
+  const upper = end ?? start;
+  return dateKey >= start && dateKey <= upper;
+}
+
+function dateRangeLabel(start: string | null, end: string | null): string | null {
+  if (!start) return null;
+  if (!end || start === end) return start.replaceAll('-', '.');
+  return `${start.replaceAll('-', '.')}~${end.replaceAll('-', '.')}`;
+}
+
+function HighlightedText({
+  text,
+  query,
+  activeIndex,
+  register,
+}: {
+  text: string;
+  query: string;
+  activeIndex: number | null;
+  register: (index: number, node: HTMLElement | null) => void;
+}) {
+  const needle = query.trim().toLocaleLowerCase('ko-KR');
+  if (!needle) return <>{text}</>;
+  const lower = text.toLocaleLowerCase('ko-KR');
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let index = 0;
+  while (cursor < text.length) {
+    const found = lower.indexOf(needle, cursor);
+    if (found < 0) break;
+    if (found > cursor) parts.push(text.slice(cursor, found));
+    const currentIndex = index;
+    parts.push(
+      <mark
+        key={`${found}:${currentIndex}`}
+        ref={(node) => register(currentIndex, node)}
+        className={currentIndex === activeIndex ? styles.searchTextActive : styles.searchTextMatch}
+      >
+        {text.slice(found, found + needle.length)}
+      </mark>,
+    );
+    index += 1;
+    cursor = found + needle.length;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
+
+function CopyMessageButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  return (
+    <button
+      type="button"
+      className={styles.messageCopy}
+      onClick={() => void copy()}
+      aria-label={copied ? `${label} 복사 완료` : `${label} 복사`}
+      title={copied ? '복사했습니다' : `${label} 복사`}
+    >
+      <Icon name={copied ? 'check' : 'copy'} size={15} />
+    </button>
+  );
+}
 
 function monthCells(monthKey: string): Array<{ key: string; day: number } | null> {
   const [year, month] = monthKey.split('-').map(Number);
@@ -165,35 +257,148 @@ function toTurns(messages: ChatMessage[]): Turn[] {
 function SessionRow({
   session,
   active,
+  running,
   onOpen,
   onRemove,
+  onRename,
 }: {
   session: ChatSession;
   active: boolean;
+  running: boolean;
   onOpen: (id: string) => void;
   /** 바로 지우지 않는다 — 확인 모달을 연다. */
   onRemove: (session: ChatSession) => void;
+  onRename: (session: ChatSession, title: string) => Promise<boolean>;
 }) {
   const title = session.title ?? '제목 없는 대화';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
+  const [overflowPx, setOverflowPx] = useState(0);
+  const menuRef = useRef<HTMLSpanElement | null>(null);
+  const sessionButtonRef = useRef<HTMLButtonElement | null>(null);
+  const titleTextRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
+
+  useEffect(() => setDraft(title), [title]);
+
+  useEffect(() => {
+    if (running) setMenuOpen(false);
+  }, [running]);
+
+  useEffect(() => {
+    if (editing) return;
+    const button = sessionButtonRef.current;
+    const text = titleTextRef.current;
+    if (!button || !text) return;
+    const measure = () => setOverflowPx(Math.max(0, text.scrollWidth - button.clientWidth + 20));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, [editing, title]);
+
+  async function saveRename() {
+    const nextTitle = draft.trim();
+    if (!nextTitle || saving) return;
+    if (nextTitle === title) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const saved = await onRename(session, nextTitle);
+    setSaving(false);
+    if (saved) setEditing(false);
+  }
+
   return (
-    <span className={styles.sessionRow}>
-      <button
-        type="button"
-        onClick={() => onOpen(session.session_id)}
-        className={[styles.session, active ? styles.sessionActive : ''].filter(Boolean).join(' ')}
-        // 한 줄로 자르므로 전체는 툴팁으로 남긴다.
-        title={title}
-      >
-        {title}
-      </button>
-      <button
-        type="button"
-        className={styles.sessionDelete}
-        aria-label={`${title} 삭제`}
-        onClick={() => onRemove(session)}
-      >
-        <Icon name="x" size={13} color="var(--color-placeholder)" />
-      </button>
+    <span
+      ref={menuRef}
+      className={[styles.sessionRow, active ? styles.sessionRowActive : ''].filter(Boolean).join(' ')}
+    >
+      {editing ? (
+        <span className={[styles.session, active ? styles.sessionActive : '', styles.sessionRenameForm].filter(Boolean).join(' ')}>
+          <input
+            type="text"
+            value={draft}
+            maxLength={200}
+            autoFocus
+            aria-label={`${title} 이름 바꾸기`}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            onBlur={() => {
+              if (saving) return;
+              setDraft(title);
+              setEditing(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void saveRename();
+              }
+              if (event.key === 'Escape') {
+                setDraft(title);
+                setEditing(false);
+              }
+            }}
+          />
+        </span>
+      ) : (
+        <>
+          <button
+            ref={sessionButtonRef}
+            type="button"
+            onClick={() => onOpen(session.session_id)}
+            className={[styles.session, active ? styles.sessionActive : ''].filter(Boolean).join(' ')}
+            // 한 줄로 자르므로 전체는 툴팁으로 남긴다.
+            title={title}
+          >
+            <span
+              ref={titleTextRef}
+              className={overflowPx > 0 ? styles.sessionTitleOverflow : styles.sessionTitle}
+              style={{ '--session-overflow': `${overflowPx}px` } as CSSProperties}
+            >
+              {title}
+            </span>
+          </button>
+          {running ? (
+            <span className={styles.sessionRunning} role="status" aria-label="답변 생성 중" title="답변 생성 중" />
+          ) : (
+            <>
+              <button
+                type="button"
+                className={styles.sessionMore}
+                aria-label={`${title} 메뉴`}
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                <Icon name="more-horizontal" size={17} color="var(--color-muted)" />
+              </button>
+              {menuOpen && (
+                <span className={styles.sessionMenu} role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setEditing(true); }}>
+                    <Icon name="edit" size={14} />
+                    이름 바꾸기
+                  </button>
+                  <button type="button" role="menuitem" className={styles.sessionMenuDanger} onClick={() => { setMenuOpen(false); onRemove(session); }}>
+                    <Icon name="trash" size={14} />
+                    삭제
+                  </button>
+                </span>
+              )}
+            </>
+          )}
+        </>
+      )}
     </span>
   );
 }
@@ -264,7 +469,10 @@ export default function ChatPage() {
   const [sessionTitleQuery, setSessionTitleQuery] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [conversationQuery, setConversationQuery] = useState('');
-  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [selectedDateStart, setSelectedDateStart] = useState<string | null>(null);
+  const [selectedDateEnd, setSelectedDateEnd] = useState<string | null>(null);
+  const [draftDateStart, setDraftDateStart] = useState<string | null>(null);
+  const [draftDateEnd, setDraftDateEnd] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(
     () => (seoulDateKey(new Date().toISOString()) ?? '2026-01-01').slice(0, 7),
@@ -546,7 +754,11 @@ export default function ChatPage() {
     const node = streamRef.current;
     if (!node) return;
     stickToBottom.current = true;
-    node.scrollTop = node.scrollHeight;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollTo({
+      top: node.scrollHeight,
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
     setShowLatestButton(false);
   }
 
@@ -569,7 +781,10 @@ export default function ChatPage() {
         const restored = toTurns(detail.messages);
         setTurns(restored);
         setConversationQuery('');
-        setSelectedDateKey(null);
+        setSelectedDateStart(null);
+        setSelectedDateEnd(null);
+        setDraftDateStart(null);
+        setDraftDateEnd(null);
         setCalendarOpen(false);
         anchorLastTurn.current = true;
         stickToBottom.current = false;
@@ -643,7 +858,10 @@ export default function ChatPage() {
     setTurns([]);
     setConversationSearchOpen(false);
     setConversationQuery('');
-    setSelectedDateKey(null);
+    setSelectedDateStart(null);
+    setSelectedDateEnd(null);
+    setDraftDateStart(null);
+    setDraftDateEnd(null);
     setCalendarOpen(false);
     setSkillReexplain(false);
     setSelected([]);
@@ -1079,42 +1297,57 @@ export default function ChatPage() {
     return counts;
   }, [turns]);
 
-  const conversationMatches = useMemo<ConversationMatch[]>(() => {
+  const conversationMatchResult = useMemo(() => {
     const query = conversationQuery.trim().toLocaleLowerCase('ko-KR');
-    if (!query && !selectedDateKey) return [];
+    if (!query && !selectedDateStart) return { matches: [] as ConversationMatch[], overflow: false };
     const matches: ConversationMatch[] = [];
+    if (!query && selectedDateStart) {
+      Array.from(activeDateCounts.keys())
+        .filter((dateKey) => dateInRange(dateKey, selectedDateStart, selectedDateEnd))
+        .sort()
+        .forEach((dateKey) => matches.push({
+          key: `date:${dateKey}`,
+          dateKey,
+          turnIndex: turns.findIndex((turn) =>
+            [turn.userCreatedAt, turn.agentCreatedAt].some((value) => seoulDateKey(value) === dateKey),
+          ),
+          role: 'date',
+        }));
+      return { matches: matches.slice(0, 100), overflow: matches.length > 100 };
+    }
     turns.forEach((turn, turnIndex) => {
       const candidates = [
         { role: 'user' as const, text: turn.user, createdAt: turn.userCreatedAt },
         { role: 'agent' as const, text: turn.live?.answer ?? '', createdAt: turn.agentCreatedAt },
       ];
       for (const candidate of candidates) {
-        if (!candidate.text && !candidate.createdAt) continue;
-        const dateMatches = !selectedDateKey || seoulDateKey(candidate.createdAt) === selectedDateKey;
-        const haystack = `${candidate.text} ${searchableMessageTime(candidate.createdAt)}`.toLocaleLowerCase('ko-KR');
-        const queryMatches = !query || haystack.includes(query);
-        if (dateMatches && queryMatches) {
+        if (!candidate.text) continue;
+        if (!dateInRange(seoulDateKey(candidate.createdAt), selectedDateStart, selectedDateEnd)) continue;
+        const messageKey = `${turnIndex}:${candidate.role}`;
+        const count = occurrenceCount(candidate.text, query);
+        for (let localIndex = 0; localIndex < count; localIndex += 1) {
           matches.push({
-            key: `${turnIndex}:${candidate.role}`,
+            key: `${messageKey}:${localIndex}`,
+            messageKey,
+            localIndex,
             turnIndex,
             role: candidate.role,
           });
         }
       }
     });
-    return matches;
-  }, [conversationQuery, selectedDateKey, turns]);
+    return { matches: matches.slice(0, 100), overflow: matches.length > 100 };
+  }, [activeDateCounts, conversationQuery, selectedDateEnd, selectedDateStart, turns]);
 
-  const matchKeys = useMemo(
-    () => new Set(conversationMatches.map((match) => match.key)),
-    [conversationMatches],
-  );
-  const activeMatchKey = conversationMatches[searchResultIndex]?.key ?? null;
+  const conversationMatches = conversationMatchResult.matches;
+
+  const activeMatch = conversationMatches[searchResultIndex] ?? null;
+  const activeMatchKey = activeMatch?.key ?? null;
   const calendarDays = useMemo(() => monthCells(calendarMonth), [calendarMonth]);
 
   useEffect(() => {
     setSearchResultIndex(0);
-  }, [conversationQuery, selectedDateKey, sessionId]);
+  }, [conversationQuery, selectedDateEnd, selectedDateStart, sessionId]);
 
   useEffect(() => {
     if (!conversationSearchOpen || conversationMatches.length === 0) return;
@@ -1155,18 +1388,64 @@ export default function ChatPage() {
   function closeConversationSearch() {
     setConversationSearchOpen(false);
     setConversationQuery('');
-    setSelectedDateKey(null);
+    setSelectedDateStart(null);
+    setSelectedDateEnd(null);
+    setDraftDateStart(null);
+    setDraftDateEnd(null);
     setCalendarOpen(false);
+  }
+
+  async function rename(session: ChatSession, title: string): Promise<boolean> {
+    if (!token) return false;
+    try {
+      const updated = await renameSession(token, session.session_id, title);
+      setSessions((prev) => prev.map((item) => (
+        item.session_id === session.session_id ? { ...item, ...updated, agent_name: item.agent_name } : item
+      )));
+      showToast('대화 이름을 변경했습니다.', 'success');
+      return true;
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : '대화 이름을 바꾸지 못했습니다.', 'error');
+      return false;
+    }
   }
 
   function toggleCalendar() {
     setCalendarOpen((open) => {
       if (!open) {
-        const latest = selectedDateKey ?? Array.from(activeDateCounts.keys()).sort().at(-1);
+        const latest = selectedDateStart ?? Array.from(activeDateCounts.keys()).sort().at(-1);
         if (latest) setCalendarMonth(latest.slice(0, 7));
+        setDraftDateStart(selectedDateStart);
+        setDraftDateEnd(selectedDateEnd);
       }
       return !open;
     });
+  }
+
+  useEffect(() => {
+    if (!calendarOpen) return;
+    const closeCalendar = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setCalendarOpen(false);
+      window.setTimeout(() => conversationSearchRef.current?.focus(), 0);
+    };
+    window.addEventListener('keydown', closeCalendar);
+    return () => window.removeEventListener('keydown', closeCalendar);
+  }, [calendarOpen]);
+
+  function selectCalendarDate(dateKey: string) {
+    if (!draftDateStart || draftDateEnd) {
+      setDraftDateStart(dateKey);
+      setDraftDateEnd(null);
+      return;
+    }
+    if (dateKey < draftDateStart) {
+      setDraftDateEnd(draftDateStart);
+      setDraftDateStart(dateKey);
+    } else {
+      setDraftDateEnd(dateKey);
+    }
   }
 
   /**
@@ -1245,8 +1524,10 @@ export default function ChatPage() {
                 key={session.session_id}
                 session={session}
                 active={session.session_id === sessionId}
+                running={streaming && session.session_id === sessionId}
                 onOpen={openFromList}
                 onRemove={setPendingDelete}
+                onRename={rename}
               />
             ))}
         </div>
@@ -1455,7 +1736,8 @@ export default function ChatPage() {
 
               {conversationSearchOpen && (
                 <div className={styles.conversationSearchBar} role="search">
-                  <div className={styles.conversationSearchInput}>
+                  <div className={styles.conversationSearchTopRow}>
+                    <div className={styles.conversationSearchInput}>
                     <Icon name="search" size={14} color="var(--color-muted)" />
                     <input
                       ref={conversationSearchRef}
@@ -1463,89 +1745,128 @@ export default function ChatPage() {
                       value={conversationQuery}
                       onChange={(event) => setConversationQuery(event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === 'Escape') closeConversationSearch();
+                        if (event.key === 'Escape') {
+                          if (calendarOpen) setCalendarOpen(false);
+                          else closeConversationSearch();
+                        }
                         if (event.key === 'Enter') {
                           event.preventDefault();
                           moveSearchResult(event.shiftKey ? -1 : 1);
                         }
                       }}
-                      placeholder="질문·답변·날짜 검색"
-                      aria-label="현재 대화의 질문, 답변, 날짜 검색"
+                      placeholder="대화 내용 검색"
+                      aria-label="현재 대화 내용 검색"
                     />
-                  </div>
-                  <div className={styles.calendarControl}>
-                    <button
-                      type="button"
-                      className={[styles.searchControl, selectedDateKey ? styles.searchControlActive : ''].filter(Boolean).join(' ')}
-                      onClick={toggleCalendar}
-                      aria-expanded={calendarOpen}
-                    >
-                      {selectedDateKey ? selectedDateKey.replaceAll('-', '.') : '날짜'}
-                    </button>
-                    {calendarOpen && (
-                      <div className={styles.calendarPopover}>
-                        <div className={styles.calendarHeader}>
-                          <button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))} aria-label="이전 달">
-                            <Icon name="arrow-left" size={14} />
-                          </button>
-                          <strong>{monthLabel(calendarMonth)}</strong>
-                          <button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))} aria-label="다음 달">
-                            <Icon name="arrow-right" size={14} />
-                          </button>
-                        </div>
-                        <div className={styles.calendarWeekdays} aria-hidden="true">
-                          {['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}
-                        </div>
-                        <div className={styles.calendarGrid}>
-                          {calendarDays.map((cell, index) =>
-                            cell ? (
+                      <div className={styles.calendarControl}>
+                        <button
+                          type="button"
+                          className={[styles.searchEmbeddedButton, selectedDateStart ? styles.searchEmbeddedButtonActive : ''].filter(Boolean).join(' ')}
+                          onClick={toggleCalendar}
+                          aria-expanded={calendarOpen}
+                          aria-label="날짜 범위 지정"
+                          title="날짜 범위 지정"
+                        >
+                          <Icon name="calendar" size={15} />
+                        </button>
+                        {calendarOpen && (
+                          <div className={styles.calendarPopover}>
+                            <div className={styles.calendarHeader}>
+                              <button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))} aria-label="이전 달">
+                                <Icon name="arrow-left" size={14} />
+                              </button>
+                              <strong>{monthLabel(calendarMonth)}</strong>
+                              <button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))} aria-label="다음 달">
+                                <Icon name="arrow-right" size={14} />
+                              </button>
+                            </div>
+                            <div className={styles.calendarWeekdays} aria-hidden="true">
+                              {['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}
+                            </div>
+                            <div className={styles.calendarGrid}>
+                              {calendarDays.map((cell, index) => {
+                                if (!cell) return <span key={`blank-${index}`} />;
+                                const inRange = Boolean(draftDateStart && dateInRange(cell.key, draftDateStart, draftDateEnd));
+                                const isStart = cell.key === draftDateStart;
+                                const isEnd = cell.key === draftDateEnd;
+                                const isSingle = isStart && (!draftDateEnd || draftDateEnd === draftDateStart);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={cell.key}
+                                    disabled={!activeDateCounts.has(cell.key)}
+                                    className={[
+                                      inRange ? styles.calendarDayInRange : '',
+                                      isStart || isEnd ? styles.calendarDaySelected : '',
+                                      isStart && !isSingle ? styles.calendarDayRangeStart : '',
+                                      isEnd && !isSingle ? styles.calendarDayRangeEnd : '',
+                                      isSingle ? styles.calendarDaySingle : '',
+                                    ].filter(Boolean).join(' ')}
+                                    title={activeDateCounts.has(cell.key) ? `메시지 ${activeDateCounts.get(cell.key)}개` : '메시지 없음'}
+                                    onClick={() => selectCalendarDate(cell.key)}
+                                  >
+                                    <span>{cell.day}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className={styles.calendarFooter}>
                               <button
                                 type="button"
-                                key={cell.key}
-                                disabled={!activeDateCounts.has(cell.key)}
-                                className={cell.key === selectedDateKey ? styles.calendarDaySelected : undefined}
-                                title={activeDateCounts.has(cell.key) ? `메시지 ${activeDateCounts.get(cell.key)}개` : '메시지 없음'}
+                                className={styles.calendarConfirm}
+                                disabled={!draftDateStart}
                                 onClick={() => {
-                                  setSelectedDateKey(cell.key);
+                                  setSelectedDateStart(draftDateStart);
+                                  setSelectedDateEnd(draftDateEnd ?? draftDateStart);
                                   setCalendarOpen(false);
                                 }}
                               >
-                                {cell.day}
+                                확인
                               </button>
-                            ) : <span key={`blank-${index}`} />,
-                          )}
-                        </div>
-                        {selectedDateKey && (
-                          <button
-                            type="button"
-                            className={styles.calendarClear}
-                            onClick={() => {
-                              setSelectedDateKey(null);
-                              setCalendarOpen(false);
-                            }}
-                          >
-                            날짜 선택 해제
-                          </button>
+                            </div>
+                          </div>
                         )}
                       </div>
-                    )}
+                    </div>
+                    <button type="button" className={styles.searchIconButton} onClick={closeConversationSearch} aria-label="대화 검색 닫기" title="닫기">
+                      <Icon name="x" size={15} />
+                    </button>
                   </div>
-                  <span className={styles.searchCount} aria-live="polite">
-                    {conversationMatches.length > 0
-                      ? `${searchResultIndex + 1}/${conversationMatches.length}`
-                      : conversationQuery || selectedDateKey
-                        ? '0/0'
-                        : '—'}
-                  </span>
-                  <button type="button" className={styles.searchIconButton} onClick={() => moveSearchResult(-1)} disabled={conversationMatches.length === 0} aria-label="이전 검색 결과" title="이전 결과">
-                    <Icon name="arrow-left" size={14} />
-                  </button>
-                  <button type="button" className={styles.searchIconButton} onClick={() => moveSearchResult(1)} disabled={conversationMatches.length === 0} aria-label="다음 검색 결과" title="다음 결과">
-                    <Icon name="arrow-right" size={14} />
-                  </button>
-                  <button type="button" className={styles.searchIconButton} onClick={closeConversationSearch} aria-label="대화 검색 닫기" title="닫기">
-                    <Icon name="x" size={14} />
-                  </button>
+                  {(conversationQuery.trim() || selectedDateStart) && (
+                    <div className={styles.conversationSearchNav}>
+                      <span className={styles.searchRangeGroup}>
+                        <span className={styles.searchRange}>{dateRangeLabel(selectedDateStart, selectedDateEnd) ?? '전체 기간'}</span>
+                        {selectedDateStart && (
+                          <button
+                            type="button"
+                            className={styles.searchRangeClear}
+                            onClick={() => {
+                              setSelectedDateStart(null);
+                              setSelectedDateEnd(null);
+                              setDraftDateStart(null);
+                              setDraftDateEnd(null);
+                            }}
+                            aria-label="날짜 조건 해제"
+                            title="날짜 조건 해제"
+                          >
+                            <Icon name="x" size={11} />
+                          </button>
+                        )}
+                      </span>
+                      <div className={styles.searchNavButtons}>
+                        <button type="button" className={styles.searchIconButton} onClick={() => moveSearchResult(-1)} disabled={conversationMatches.length === 0} aria-label="이전 검색 결과" title="이전 결과">
+                          <Icon name="arrow-up" size={14} />
+                        </button>
+                        <button type="button" className={styles.searchIconButton} onClick={() => moveSearchResult(1)} disabled={conversationMatches.length === 0} aria-label="다음 검색 결과" title="다음 결과">
+                          <Icon name="arrow-down" size={14} />
+                        </button>
+                      </div>
+                      <span className={styles.searchCount} aria-live="polite">
+                        {conversationMatches.length > 0
+                          ? `${searchResultIndex + 1}/${conversationMatchResult.overflow ? '100+' : conversationMatches.length}`
+                          : '0/0'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1661,6 +1982,14 @@ export default function ChatPage() {
               const live = turn.live;
               const userSearchKey = `${turnIndex}:user`;
               const agentSearchKey = `${turnIndex}:agent`;
+              const userDateKey = seoulDateKey(turn.userCreatedAt);
+              const agentDateKey = seoulDateKey(turn.agentCreatedAt);
+              const previousTurn = turns[turnIndex - 1];
+              const previousDateKey = previousTurn
+                ? seoulDateKey(previousTurn.agentCreatedAt) ?? seoulDateKey(previousTurn.userCreatedAt)
+                : null;
+              const showUserDate = Boolean(userDateKey && userDateKey !== previousDateKey);
+              const showAgentDate = Boolean(agentDateKey && agentDateKey !== userDateKey);
               // 승인·체크는 **마지막 턴에만** 열려 있다. 지나간 턴의 확인 카드를
               // 다시 누를 수 있으면, 그 사이에 무엇이 바뀌었는지 모르는 채로
               // 남의 Jira 에 이슈가 만들어진다.
@@ -1670,34 +1999,65 @@ export default function ChatPage() {
               const abandoned = Boolean(live?.confirm) && !isLast;
 
               return (
-                <div key={turnIndex} className={styles.turn} ref={isLast ? lastTurnRef : undefined}>
+                <div key={turnIndex} className={styles.turnGroup}>
+                  {showUserDate && userDateKey && (
+                    <div
+                      ref={(node) => {
+                        const key = `date:${userDateKey}`;
+                        if (node) searchResultRefs.current.set(key, node);
+                        else searchResultRefs.current.delete(key);
+                      }}
+                      className={[styles.dateSeparator, activeMatchKey === `date:${userDateKey}` ? styles.dateSeparatorActive : ''].filter(Boolean).join(' ')}
+                    >
+                      <span>{formatDateSeparator(userDateKey)}</span>
+                    </div>
+                  )}
+                <div className={styles.turn} ref={isLast ? lastTurnRef : undefined}>
                   <div
-                    ref={(node) => {
-                      if (node) searchResultRefs.current.set(userSearchKey, node);
-                      else searchResultRefs.current.delete(userSearchKey);
-                    }}
-                    className={[
-                      styles.userMessage,
-                      matchKeys.has(userSearchKey) ? styles.searchMatch : '',
-                      activeMatchKey === userSearchKey ? styles.searchMatchActive : '',
-                    ].filter(Boolean).join(' ')}
+                    className={styles.userMessage}
                   >
                     <div className={styles.userMessageBody}>
-                      <span>{turn.user}</span>
-                      {formatMessageTime(turn.userCreatedAt) && (
-                        <time
-                          className={styles.userMessageTime}
-                          dateTime={turn.userCreatedAt ?? undefined}
-                          title={formatMessageTimeFull(turn.userCreatedAt) ?? undefined}
-                        >
-                          {formatMessageTime(turn.userCreatedAt)}
-                        </time>
-                      )}
+                      <span>
+                        <HighlightedText
+                          text={turn.user}
+                          query={dateInRange(userDateKey, selectedDateStart, selectedDateEnd) ? conversationQuery : ''}
+                          activeIndex={activeMatch?.messageKey === userSearchKey ? activeMatch.localIndex ?? null : null}
+                          register={(index, node) => {
+                            const key = `${userSearchKey}:${index}`;
+                            if (node) searchResultRefs.current.set(key, node);
+                            else searchResultRefs.current.delete(key);
+                          }}
+                        />
+                      </span>
+                      <div className={[styles.userMessageMeta, isLast ? styles.userMessageMetaVisible : ''].filter(Boolean).join(' ')}>
+                        {formatMessageTime(turn.userCreatedAt) && (
+                          <time
+                            className={styles.userMessageTime}
+                            dateTime={turn.userCreatedAt ?? undefined}
+                            title={formatMessageTimeFull(turn.userCreatedAt) ?? undefined}
+                          >
+                            {formatMessageTime(turn.userCreatedAt)}
+                          </time>
+                        )}
+                        <CopyMessageButton text={turn.user} label="질문" />
+                      </div>
                     </div>
                   </div>
 
                   {live && (
                     <>
+                      {showAgentDate && agentDateKey && (
+                        <div
+                          ref={(node) => {
+                            const key = `date:${agentDateKey}`;
+                            if (node) searchResultRefs.current.set(key, node);
+                            else searchResultRefs.current.delete(key);
+                          }}
+                          className={[styles.dateSeparator, activeMatchKey === `date:${agentDateKey}` ? styles.dateSeparatorActive : ''].filter(Boolean).join(' ')}
+                        >
+                          <span>{formatDateSeparator(agentDateKey)}</span>
+                        </div>
+                      )}
                       {(() => {
                         // `toolName`을 조건에 넣는다(2026-08-25). 전에는 도는 동안만
                         // 참이고 끝나면 거짓이 되는 경로가 있었다 — 단계를 따로 안
@@ -1897,17 +2257,30 @@ export default function ChatPage() {
 
                       {live.answer && (
                         <div
-                          ref={(node) => {
-                            if (node) searchResultRefs.current.set(agentSearchKey, node);
-                            else searchResultRefs.current.delete(agentSearchKey);
-                          }}
-                          className={[
-                            styles.agentMessage,
-                            matchKeys.has(agentSearchKey) ? styles.searchMatch : '',
-                            activeMatchKey === agentSearchKey ? styles.searchMatchActive : '',
-                          ].filter(Boolean).join(' ')}
+                          className={styles.agentMessage}
                         >
-                          <AnswerText text={live.answer} sources={live.sources} createdAt={turn.agentCreatedAt} />
+                          <AnswerText
+                            text={live.answer}
+                            sources={live.sources}
+                            actionsAlwaysVisible={isLast}
+                            createdAt={turn.agentCreatedAt}
+                            durationMs={
+                              !live.running &&
+                              live.steps.length === 0 &&
+                              live.subagents.length === 0 &&
+                              live.toolName === null
+                                ? live.durationMs
+                                : null
+                            }
+                            searchQuery={conversationQuery}
+                            searchEnabled={dateInRange(agentDateKey, selectedDateStart, selectedDateEnd)}
+                            activeSearchIndex={activeMatch?.messageKey === agentSearchKey ? activeMatch.localIndex ?? null : null}
+                            registerSearchMatch={(index, node) => {
+                              const key = `${agentSearchKey}:${index}`;
+                              if (node) searchResultRefs.current.set(key, node);
+                              else searchResultRefs.current.delete(key);
+                            }}
+                          />
                         </div>
                       )}
 
@@ -1940,25 +2313,9 @@ export default function ChatPage() {
                         />
                       )}
 
-                      {/*
-                        2026-08-19 §12순위. `live.running`이 아직 true면(스트림
-                        도중 새로고침 복원 등) 값이 있어도 안 보여준다 — 실행이
-                        끝나기 전 시간은 "총 걸린 시간"이 아니라 지금까지
-                        흐른 시간이라 오해를 준다. 재개(resume) 스트림은
-                        서버가 `duration_ms`를 아예 안 붙이므로(의도된 한계)
-                        `durationMs`가 `null`이라 자연히 표시가 생략된다.
-                      */}
-                      {!live.running &&
-                        live.durationMs != null &&
-                        live.steps.length === 0 &&
-                        live.subagents.length === 0 &&
-                        live.toolName === null && (
-                        <p className={styles.durationLine}>
-                          {(live.durationMs / 1000).toFixed(1)}초 만에 답변
-                        </p>
-                      )}
                     </>
                   )}
+                </div>
                 </div>
               );
             })}

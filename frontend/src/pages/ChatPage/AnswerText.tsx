@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentPropsWithoutRef } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
@@ -128,19 +128,99 @@ const components: Components = {
   ),
 };
 
+type MarkdownNode = {
+  type?: string;
+  value?: string;
+  children?: MarkdownNode[];
+  data?: {
+    hName?: string;
+    hProperties?: Record<string, string>;
+  };
+};
+
+/** Markdown 구조를 보존한 채 텍스트 노드의 검색어만 `mark`로 바꾼다. */
+function remarkSearchHighlights(query: string) {
+  return () => (tree: MarkdownNode) => {
+    const needle = query.trim().toLocaleLowerCase('ko-KR');
+    if (!needle) return;
+    let matchIndex = 0;
+
+    const visit = (node: MarkdownNode) => {
+      if (!node.children) return;
+      const nextChildren: MarkdownNode[] = [];
+      for (const child of node.children) {
+        if (child.type !== 'text' || typeof child.value !== 'string') {
+          visit(child);
+          nextChildren.push(child);
+          continue;
+        }
+        const lower = child.value.toLocaleLowerCase('ko-KR');
+        let cursor = 0;
+        while (cursor < child.value.length) {
+          const found = lower.indexOf(needle, cursor);
+          if (found < 0) break;
+          if (found > cursor) nextChildren.push({ type: 'text', value: child.value.slice(cursor, found) });
+          nextChildren.push({
+            type: 'text',
+            value: child.value.slice(found, found + needle.length),
+            data: {
+              hName: 'mark',
+              hProperties: { 'data-search-index': String(matchIndex) },
+            },
+          });
+          matchIndex += 1;
+          cursor = found + needle.length;
+        }
+        if (cursor < child.value.length) nextChildren.push({ type: 'text', value: child.value.slice(cursor) });
+      }
+      node.children = nextChildren;
+    };
+
+    visit(tree);
+  };
+}
+
 export function AnswerText({
   text,
   sources = [],
   createdAt,
+  durationMs,
+  actionsAlwaysVisible = false,
+  searchQuery = '',
+  searchEnabled = true,
+  activeSearchIndex = null,
+  registerSearchMatch,
 }: {
   text: string;
   sources?: SourceRef[];
   createdAt?: string | null;
+  durationMs?: number | null;
+  actionsAlwaysVisible?: boolean;
+  searchQuery?: string;
+  searchEnabled?: boolean;
+  activeSearchIndex?: number | null;
+  registerSearchMatch?: (index: number, node: HTMLElement | null) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const webSources = sources.filter((source) => Boolean(source.url));
   const documentSources = sources.filter((source) => !source.url);
+  const markdownComponents = useMemo<Components>(() => ({
+    ...components,
+    mark: ({ node: _node, ...props }) => {
+      const rawIndex = (props as Record<string, unknown>)['data-search-index'];
+      const index = typeof rawIndex === 'string' ? Number(rawIndex) : -1;
+      return (
+        <mark
+          {...props}
+          ref={(node) => registerSearchMatch?.(index, node)}
+          className={index === activeSearchIndex ? styles.searchHighlightActive : styles.searchHighlight}
+        />
+      );
+    },
+  }), [activeSearchIndex, registerSearchMatch]);
+  const effectiveSearchQuery = searchEnabled ? searchQuery : '';
+  const searchPlugin = useMemo(() => remarkSearchHighlights(effectiveSearchQuery), [effectiveSearchQuery]);
 
   async function copyAnswer() {
     await navigator.clipboard.writeText(text);
@@ -150,16 +230,18 @@ export function AnswerText({
 
   return (
     <div className={styles.answer}>
-      <Markdown
-        remarkPlugins={[remarkGfm, remarkCjkFriendly, remarkCjkFriendlyGfmStrikethrough]}
-        components={components}
-        skipHtml
-        urlTransform={safeUrl}
-      >
-        {text}
-      </Markdown>
+      <div className={styles.answerContent}>
+        <Markdown
+          remarkPlugins={[remarkGfm, remarkCjkFriendly, remarkCjkFriendlyGfmStrikethrough, searchPlugin]}
+          components={markdownComponents}
+          skipHtml
+          urlTransform={safeUrl}
+        >
+          {text}
+        </Markdown>
+      </div>
       <div className={styles.answerFooter}>
-        <div className={styles.answerActions}>
+        <div className={[styles.answerActions, actionsAlwaysVisible ? styles.answerActionsVisible : ''].filter(Boolean).join(' ')}>
           <button
             type="button"
             className={styles.answerCopy}
@@ -179,14 +261,17 @@ export function AnswerText({
               title={sourcesOpen ? '출처 접기' : `출처 ${sources.length}개 보기`}
             >
               <Icon name="link" size={16} />
+              <span>출처</span>
             </button>
           )}
+          {durationMs != null && <span>{(durationMs / 1000).toFixed(1)}초</span>}
+          {durationMs != null && formatMessageTime(createdAt) && <span aria-hidden="true">·</span>}
+          {formatMessageTime(createdAt) && (
+            <time dateTime={createdAt ?? undefined} title={formatMessageTimeFull(createdAt) ?? undefined}>
+              {formatMessageTime(createdAt)}
+            </time>
+          )}
         </div>
-        {formatMessageTime(createdAt) && (
-          <time className={styles.messageTime} dateTime={createdAt ?? undefined} title={formatMessageTimeFull(createdAt) ?? undefined}>
-            {formatMessageTime(createdAt)}
-          </time>
-        )}
       </div>
       {sourcesOpen && (
         <div className={styles.sources}>

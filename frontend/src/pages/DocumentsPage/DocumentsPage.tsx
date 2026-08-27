@@ -530,94 +530,114 @@ export default function DocumentsPage() {
                   </label>
                 </div>
 
-                {loading && <p className={styles.muted}>문서를 불러오는 중…</p>}
+                {/* **비어 있어도 표는 남긴다**(2026-08-27) — 「내 파일」
+                    (`MyFilesPanel`)·팀원 목록(`TeamTab`)·업무 목록
+                    (`ProjectDetailPage`)과 같은 방식이다. 표가 통째로 사라지면
+                    같은 페이지인데 트리에서 무엇을 고르느냐에 따라 빈 화면
+                    모양이 갈렸다. */}
+                <div className={styles.table}>
+                  {/* 헤더를 스크롤 컨테이너 **안에** 둔다. 밖에 두면 목록에
+                      스크롤바가 생길 때 행만 좁아져 열이 어긋난다
+                      (`ProjectDetailPage` 업무 목록과 같은 이유). */}
+                  <div className={styles.tableHead}>
+                    <span>문서</span>
+                    <span>위치</span>
+                    <span>상태</span>
+                    <span>수정</span>
+                    <span />
+                  </div>
 
-                {!loading && visibleDocuments.length === 0 && (
-                  <p className={styles.muted}>이 폴더에서 읽어 온 문서가 없습니다.</p>
-                )}
-
-                {/* 검색으로 0건인 것과 폴더가 원래 빈 것은 다른 상태다. */}
-                {!loading && visibleDocuments.length > 0 && matched.length === 0 && (
-                  <p className={styles.muted}>검색 결과가 없습니다.</p>
-                )}
-
-                {matched.length > 0 && (
-                  <div className={styles.table}>
-                    {/* 헤더를 스크롤 컨테이너 **안에** 둔다. 밖에 두면 목록에
-                        스크롤바가 생길 때 행만 좁아져 열이 어긋난다
-                        (`ProjectDetailPage` 업무 목록과 같은 이유). */}
-                    <div className={styles.tableHead}>
-                      <span>문서</span>
-                      <span>위치</span>
-                      <span>상태</span>
-                      <span>수정</span>
-                      <span />
+                  {loading && (
+                    <div className={styles.tableEmpty}>
+                      <span className={styles.tableEmptyIcon}>
+                        <Icon name="loader" size={22} color="var(--color-primary)" spin />
+                      </span>
+                      <p className={styles.tableEmptyTitle}>문서를 불러오는 중…</p>
                     </div>
+                  )}
 
-                    {paged.map((doc) => {
-                      const chip = statusChip(doc);
-                      return (
-                        <div key={doc.doc_id} className={styles.tableRow}>
-                          <span className={styles.cellName}>
-                            <Icon name="file-text" size={15} color="var(--color-primary)" />
-                            <span className={styles.cellNameText}>
-                              <span className={styles.fileName}>{doc.file_name ?? doc.doc_id}</span>
-                              {/* 실패 사유는 이름 아래에 붙인다. 열로 만들면 표가
-                                  못 읽을 만큼 좁아지고, 성공한 행은 그 열이 늘 빈다. */}
-                              {chip.hint && (
-                                <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
-                                  {chip.hint}
-                                </span>
-                              )}
-                            </span>
-                          </span>
+                  {/* 검색으로 0건인 것과 폴더가 원래 빈 것은 다른 상태다.
+                      아이콘도 그 둘을 갈라 준다 — 「내 파일」과 같은 꼴이다. */}
+                  {!loading && matched.length === 0 && (
+                    <div className={styles.tableEmpty}>
+                      <span className={styles.tableEmptyIcon}>
+                        <Icon
+                          name={visibleDocuments.length > 0 ? 'search' : 'folder-open'}
+                          size={22}
+                          color="var(--color-primary)"
+                        />
+                      </span>
+                      <p className={styles.tableEmptyTitle}>
+                        {visibleDocuments.length > 0
+                          ? '검색 결과가 없습니다.'
+                          : '이 폴더에서 읽어 온 문서가 없습니다.'}
+                      </p>
+                    </div>
+                  )}
 
-                          {/* 하위 폴더에서 온 문서는 어디서 왔는지 밝힌다 —
-                              폴더를 고르면 아래 전부가 나오므로 필요하다. */}
-                          <span className={styles.cellPath} data-label="위치">
-                            {doc.src_folder_path ? doc.src_folder_path : <span className={styles.dim}>—</span>}
-                          </span>
-
-                          <span className={styles.cellStatus} data-label="상태">
-                            <Badge tone={chip.tone}>{chip.label}</Badge>
-                            {/* 기준 문서는 지우거나 바꿀 때 파장이 다르다. */}
-                            {doc.doc_role === 'PRIMARY' && <Badge tone="info">기준 문서</Badge>}
-                            {doc.access_revoked && <Badge tone="warning">접근 권한 없음</Badge>}
-                          </span>
-
-                          <span className={styles.cellDate} data-label="수정">
-                            {formatDate(doc.src_modified_at)}
-                          </span>
-
-                          <span className={styles.cellActions}>
-                            {/* **「읽는 중」에는 안 보여준다.** 상태를 셋으로 합치면서
-                                차례를 기다리는 문서(`index_status` 가 아직 null 인 것)에도
-                                버튼이 뜨고 있었다 — 칩은 「읽는 중」이라고 하는데 옆에서
-                                다시 읽으라고 권하는 꼴이라, 사람은 뭔가 잘못된 줄 안다.
-
-                                눌러야 하는 상황이 있지 않을까 싶지만 없다. 워커가 죽어
-                                `RUNNING` 인 채로 멈춘 문서도 **다음 수집이 다시 집는다**
-                                (`list_pending_index` 는 `FAILED` 만 뺀다). 원문을 아직
-                                못 받은 것도 같은 이유로 여기 안 걸린다.
-
-                                남는 것은 둘 — 다 읽은 것을 새로 읽히거나, 실패한 것을
-                                다시 시키거나. */}
-                            {(doc.search_ready || doc.index_status === 'FAILED') && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={busy === doc.doc_id}
-                                onClick={() => void retry(doc)}
-                              >
-                                다시 읽기
-                              </Button>
+                  {paged.map((doc) => {
+                    const chip = statusChip(doc);
+                    return (
+                      <div key={doc.doc_id} className={styles.tableRow}>
+                        <span className={styles.cellName}>
+                          <Icon name="file-text" size={15} color="var(--color-primary)" />
+                          <span className={styles.cellNameText}>
+                            <span className={styles.fileName}>{doc.file_name ?? doc.doc_id}</span>
+                            {/* 실패 사유는 이름 아래에 붙인다. 열로 만들면 표가
+                                못 읽을 만큼 좁아지고, 성공한 행은 그 열이 늘 빈다. */}
+                            {chip.hint && (
+                              <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
+                                {chip.hint}
+                              </span>
                             )}
                           </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        </span>
+
+                        {/* 하위 폴더에서 온 문서는 어디서 왔는지 밝힌다 —
+                            폴더를 고르면 아래 전부가 나오므로 필요하다. */}
+                        <span className={styles.cellPath} data-label="위치">
+                          {doc.src_folder_path ? doc.src_folder_path : <span className={styles.dim}>—</span>}
+                        </span>
+
+                        <span className={styles.cellStatus} data-label="상태">
+                          <Badge tone={chip.tone}>{chip.label}</Badge>
+                          {/* 기준 문서는 지우거나 바꿀 때 파장이 다르다. */}
+                          {doc.doc_role === 'PRIMARY' && <Badge tone="info">기준 문서</Badge>}
+                          {doc.access_revoked && <Badge tone="warning">접근 권한 없음</Badge>}
+                        </span>
+
+                        <span className={styles.cellDate} data-label="수정">
+                          {formatDate(doc.src_modified_at)}
+                        </span>
+
+                        <span className={styles.cellActions}>
+                          {/* **「읽는 중」에는 안 보여준다.** 상태를 셋으로 합치면서
+                              차례를 기다리는 문서(`index_status` 가 아직 null 인 것)에도
+                              버튼이 뜨고 있었다 — 칩은 「읽는 중」이라고 하는데 옆에서
+                              다시 읽으라고 권하는 꼴이라, 사람은 뭔가 잘못된 줄 안다.
+
+                              눌러야 하는 상황이 있지 않을까 싶지만 없다. 워커가 죽어
+                              `RUNNING` 인 채로 멈춘 문서도 **다음 수집이 다시 집는다**
+                              (`list_pending_index` 는 `FAILED` 만 뺀다). 원문을 아직
+                              못 받은 것도 같은 이유로 여기 안 걸린다.
+
+                              남는 것은 둘 — 다 읽은 것을 새로 읽히거나, 실패한 것을
+                              다시 시키거나. */}
+                          {(doc.search_ready || doc.index_status === 'FAILED') && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy === doc.doc_id}
+                              onClick={() => void retry(doc)}
+                            >
+                              다시 읽기
+                            </Button>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
 
                 {/* 한 쪽에 다 들어가면 안 그린다 — 누를 수 없는 컨트롤이 자리만
                     차지한다. 몇 건 중 몇 번째를 보고 있는지 함께 말한다. */}
