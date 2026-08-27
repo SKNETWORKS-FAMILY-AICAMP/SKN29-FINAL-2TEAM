@@ -40,7 +40,7 @@ import styles from './LandingPage.module.css';
 const PROOFS = [
   { icon: 'file-text', text: '문서에서 찾은 내용은 근거를 함께 보여줍니다' },
   { icon: 'shield-check', text: '변경 작업은 실행 전에 확인합니다' },
-  { icon: 'sparkles', text: '반복하는 방식은 에이전트로 만들 수 있습니다' },
+  { icon: 'sparkles', text: '자주 하는 절차는 검증을 거쳐 팀에 공유합니다' },
 ] as const;
 
 /**
@@ -54,16 +54,8 @@ const ASKS = [
   '확정한 내용만 프로젝트 업무로 등록해 줘.',
 ] as const;
 
-/** 할 수 있는 일. 「한 대화에서 다 봅니다」와 합쳐 네 갈래로 줄였다. */
-const STAGES = [
-  { num: '1', title: '찾기', caption: '문서·팀원·프로젝트 정보를 확인합니다' },
-  { num: '2', title: '정리하기', caption: '할 일과 팀 업무량을 보기 좋게 정리합니다' },
-  { num: '3', title: '만들기', caption: '정리한 결과를 문서나 표로 만듭니다' },
-  { num: '4', title: '반영하기', caption: '확인한 내용만 실제 업무에 반영합니다' },
-] as const;
-
 /** 에이전트를 만들어 쓰는 차례. 상태 이름은 쓰지 않는다. */
-const AGENT_FLOW = ['정하기', '혼자 써 보기', '팀 공유'] as const;
+const AGENT_FLOW = ['절차를 적는다', '검증을 거친다', '팀이 함께 쓴다'] as const;
 
 function Logo() {
   return (
@@ -276,7 +268,7 @@ export default function LandingPage() {
             ) : (
               <>
                 <a className={styles.navLink} href="#can">
-                  할 수 있는 일
+                  지키는 것
                 </a>
                 <a className={styles.navLink} href="#agent">
                   에이전트
@@ -313,7 +305,7 @@ export default function LandingPage() {
                   시작하기
                 </Link>
                 <a className={styles.btnGhost} href="#can">
-                  할 수 있는 일 보기
+                  무엇을 지키는지 보기
                 </a>
               </div>
 
@@ -337,7 +329,7 @@ export default function LandingPage() {
         {/* 2 · 요청 예시 */}
         <section className={styles.bandWhite}>
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>이런 걸 물어보면 됩니다</h2>
+            <h2 className={styles.h2}>이렇게 묻습니다</h2>
             <ul className={styles.askList}>
               {ASKS.map((ask) => (
                 <li className={styles.ask} key={ask}>
@@ -348,25 +340,22 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
+            {/* 물으면 답만 오는 게 아니라 결과물이 나온다. 자리를 따로 만들지
+                않고 예시 바로 아래 둔다. */}
+            <FilesMock />
           </div>
         </section>
 
-        {/* 3 · 할 수 있는 일 */}
+        {/* 3 · 지어내지 않는다 */}
         <section className={styles.bandDark} id="can">
           <div className={styles.bandInner}>
-            <h2 className={styles.h2}>필요한 정보를 찾고, 결과를 업무로 이어갑니다</h2>
-            <ol className={styles.stepRail}>
-              {STAGES.map((stage) => (
-                <li className={styles.stepItem} key={stage.num}>
-                  <span className={styles.stepNum}>{stage.num}</span>
-                  <strong className={styles.stepTitle}>{stage.title}</strong>
-                  <small className={styles.stepCaption}>{stage.caption}</small>
-                  {/* 「만들기」 칸에만 결과물을 붙인다. 말로 설명하는 대신 나오는
-                      것을 보인다 — 본문 넷 중 여기만 시각물이 없었다. */}
-                  {stage.num === '3' && <FilesMock />}
-                </li>
-              ))}
-            </ol>
+            <div className={styles.statement}>
+              <h2 className={styles.h2}>모르는 것은 비워 둡니다</h2>
+              <p className={styles.statementBody}>
+                빈칸은 실패가 아니라 정보입니다. 문서에 없는 마감일을 그럴듯하게 채우는 대신 비워 두고,
+                20건 중 3건이 실패하면 3건이라고 적습니다. 이미 끝난 일은 되돌리지 않습니다.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -375,10 +364,10 @@ export default function LandingPage() {
           <div className={styles.bandInner}>
             <div className={styles.split}>
               <div className={styles.statement}>
-              <h2 className={styles.h2}>반복하는 일은 에이전트로 만들어 공유합니다</h2>
+              <h2 className={styles.h2}>가르친 절차는 검증을 거칩니다</h2>
               <p className={styles.statementBody}>
-                매번 같은 요청을 다시 설명하지 않아도 됩니다. 에이전트가 맡을 일과 사용할 도구를 정하고,
-                먼저 혼자 사용해 본 뒤 팀에 공유하세요. 내용을 고칠 때마다 이전 버전도 남습니다.
+                자주 하는 일은 절차로 적어 둡니다. 적은 것을 그대로 저장하지 않고, 에이전트에게 넘기기
+                전에 실제로 돌려 봅니다. 통과한 절차와 쓸 도구를 묶으면 팀이 함께 쓰는 에이전트가 됩니다.
               </p>
               {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
                   쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
@@ -405,10 +394,10 @@ export default function LandingPage() {
           <div className={styles.bandInner}>
             <div className={styles.split}>
               <div className={styles.statement}>
-              <h2 className={styles.h2}>등록·수정·파일 생성은 실행 전에 확인합니다</h2>
+              <h2 className={styles.h2}>할 수 있는 일에 선을 그었습니다</h2>
               <p className={styles.statementBody}>
-                정보 조회는 바로 답합니다. 결과를 남기는 작업은 실행 전에 무엇을 할지 보여줍니다. 승인하거나,
-                내용을 고치거나, 실행하지 않을 수 있습니다.
+                에이전트는 한 단계까지만 다른 에이전트에게 맡깁니다. 가져온 원본은 읽고 나면 남기지
+                않습니다. 밖을 바꾸는 일은 언제나 사람이 먼저 봅니다.
               </p>
               </div>
               <ApproveMock />
