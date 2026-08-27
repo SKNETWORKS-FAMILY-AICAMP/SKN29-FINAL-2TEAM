@@ -84,7 +84,7 @@ export default function LoginPage() {
           <div className={styles.logoBadge}>
             <Logo height={34} />
           </div>
-          <p className={styles.tagline}>프로젝트 운영 Agent Platform</p>
+          <p className={styles.tagline}>프로젝트 운영 AI 플랫폼</p>
         </div>
 
         <div className={styles.card}>

@@ -40,7 +40,7 @@ import styles from './LandingPage.module.css';
 const PROOFS = [
   { icon: 'file-text', text: '문서에서 찾은 내용은 근거를 함께 보여줍니다' },
   { icon: 'shield-check', text: '변경 작업은 실행 전에 확인합니다' },
-  { icon: 'sparkles', text: '반복하는 방식은 에이전트로 만들어 공유합니다' },
+  { icon: 'sparkles', text: '반복하는 방식은 에이전트로 만들 수 있습니다' },
 ] as const;
 
 /**
@@ -61,6 +61,9 @@ const STAGES = [
   { num: '3', title: '만들기', caption: '정리한 결과를 문서나 표로 만듭니다' },
   { num: '4', title: '반영하기', caption: '확인한 내용만 실제 업무에 반영합니다' },
 ] as const;
+
+/** 에이전트를 만들어 쓰는 차례. 상태 이름은 쓰지 않는다. */
+const AGENT_FLOW = ['정하기', '혼자 써 보기', '팀 공유'] as const;
 
 function Logo() {
   return (
@@ -196,7 +199,7 @@ export default function LandingPage() {
             <div className={styles.heroCopy}>
               <p className={styles.badge}>대화로 쓰는 팀 업무 플랫폼</p>
               <h1 className={styles.heroTitle}>
-                팀의 정보를 묻고,
+                팀의 정보를 한 번에 찾고,
                 <br />
                 필요한 업무까지 처리합니다
               </h1>
@@ -264,11 +267,25 @@ export default function LandingPage() {
         <section className={styles.bandWhite} id="agent">
           <div className={styles.bandInner}>
             <div className={styles.statement}>
-              <h2 className={styles.h2}>반복하는 일은 팀 에이전트로 남깁니다</h2>
+              <h2 className={styles.h2}>반복하는 일은 에이전트로 만들어 공유합니다</h2>
               <p className={styles.statementBody}>
                 매번 같은 요청을 다시 설명하지 않아도 됩니다. 에이전트가 맡을 일과 사용할 도구를 정하고,
                 먼저 혼자 사용해 본 뒤 팀에 공유하세요. 내용을 고칠 때마다 이전 버전도 남습니다.
               </p>
+              {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
+                  쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
+              <ol className={styles.miniFlow}>
+                {AGENT_FLOW.map((step, index) => (
+                  <li className={styles.miniFlowStep} key={step}>
+                    {index > 0 && (
+                      <span className={styles.miniFlowArrow} aria-hidden="true">
+                        <Icon name="arrow-right" size={15} />
+                      </span>
+                    )}
+                    {step}
+                  </li>
+                ))}
+              </ol>
             </div>
           </div>
         </section>
@@ -277,10 +294,10 @@ export default function LandingPage() {
         <section className={styles.band}>
           <div className={styles.bandInner}>
             <div className={styles.statement}>
-              <h2 className={styles.h2}>업무를 바꾸는 작업은 실행 전에 확인합니다</h2>
+              <h2 className={styles.h2}>등록·수정·파일 생성은 실행 전에 확인합니다</h2>
               <p className={styles.statementBody}>
-                정보 조회는 바로 답합니다. 업무 등록·수정이나 파일 생성처럼 결과를 남기는 작업은 실행 전에
-                내용을 보여줍니다. 승인하거나 내용을 고치거나 실행하지 않을 수 있습니다.
+                정보 조회는 바로 답합니다. 결과를 남기는 작업은 실행 전에 무엇을 할지 보여줍니다. 승인하거나,
+                내용을 고치거나, 실행하지 않을 수 있습니다.
               </p>
             </div>
           </div>
@@ -302,7 +319,7 @@ export default function LandingPage() {
 
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
-          <span className={styles.footerName}>halil · 프로젝트 운영 Agent Platform</span>
+          <span className={styles.footerName}>halil · 프로젝트 운영 AI 플랫폼</span>
           <span className={styles.footerSide}>
             {/* 개인정보처리방침은 로그인 없이 열려야 하는데(Google 커넥터 심사가
                 이 주소를 직접 연다) 공개 화면 어디에도 링크가 없었다. */}

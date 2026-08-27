@@ -559,6 +559,36 @@
   color: var(--color-heading);
 }
 
+/* ---------- 4 · 에이전트 흐름 ---------- */
+
+/*
+ * 제목과 문단만 있어 아래가 비어 보이던 자리. 문구를 늘리는 대신 차례만
+ * 보인다 — 카드나 상태 배지로 만들면 다시 「기능 명세서」가 된다.
+ */
+.miniFlow {
+  margin: var(--space-8) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.miniFlowStep {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.miniFlowArrow {
+  display: inline-flex;
+  color: var(--color-placeholder);
+}
+
 /* ---------- 3 · 할 수 있는 일 ---------- */
 
 /*
@@ -777,6 +807,14 @@
   .askList,
   .stepRail {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .miniFlow {
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .miniFlowStep {
+    font-size: 15px;
   }
 
   .ask {
