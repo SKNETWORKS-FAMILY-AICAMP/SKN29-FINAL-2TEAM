@@ -27,6 +27,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 
+# 에이전트 개발 도구가 프론트엔드 폴더에 내려받는 로컬 스킬 캐시.
+# 서비스 스킬은 PostgreSQL의 LangGraph Store에만 저장한다.
+frontend/.agents/skills/
+frontend/skills-lock.json
+
 # 실제 팀원 이름·이메일이 담긴 목업 오버라이드 (team_overrides.example.sql만 커밋)
 DB/peopleDB/team_overrides.sql
 

@@ -33,7 +33,10 @@ def tool_registry_version() -> str:
             "name": tool.name,
             "description": tool.description,
             "side_effect": tool.side_effect,
-            "schema": repr(getattr(tool, "args_schema", None)),
+            # harness.Tool의 정본 필드는 ``input_schema``다. 존재하지 않는
+            # ``args_schema``를 읽으면 모든 도구 스키마가 None으로 해시되어,
+            # 입력 계약이 바뀌어도 기존 검증 영수증이 계속 유효해지는 버그가 난다.
+            "schema": tool.input_schema,
         }
         for ref, tool in sorted(BUILTIN_TOOLS.items())
     ]

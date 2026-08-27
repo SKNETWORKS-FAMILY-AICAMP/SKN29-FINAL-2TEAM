@@ -139,10 +139,17 @@ class EvalSkillsProvider:
     def routes(self, *, account_id: str, team_id: str) -> dict[str, "StoreBackend"]:  # noqa: ARG002
         from deepagents.backends import StoreBackend
 
+        store = self._snapshot.store
         return {
-            "/skills/builtin/": StoreBackend(namespace=lambda _rt: _eval_builtin_namespace()),
-            EVAL_CANDIDATE_PATH_PREFIX: StoreBackend(namespace=lambda _rt: _eval_candidate_namespace()),
-            EVAL_DISTRACTOR_PATH_PREFIX: StoreBackend(namespace=lambda _rt: _eval_distractor_namespace()),
+            "/skills/builtin/": StoreBackend(
+                namespace=lambda _rt: _eval_builtin_namespace(), store=store
+            ),
+            EVAL_CANDIDATE_PATH_PREFIX: StoreBackend(
+                namespace=lambda _rt: _eval_candidate_namespace(), store=store
+            ),
+            EVAL_DISTRACTOR_PATH_PREFIX: StoreBackend(
+                namespace=lambda _rt: _eval_distractor_namespace(), store=store
+            ),
         }
 
     def system_prompt(self) -> str:

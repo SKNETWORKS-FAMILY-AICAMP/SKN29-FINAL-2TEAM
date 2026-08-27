@@ -66,4 +66,16 @@ def get_memory_store() -> "PostgresStore":
         return _store
 
 
-__all__ = ["get_memory_store"]
+def get_runtime_store() -> "PostgresStore":
+    """Memory와 Skill이 함께 쓰는 PostgreSQL 기반 LangGraph Store.
+
+    기존 함수명은 최초 사용처가 Memory였던 역사 때문에 남아 있다. Skill 코드가
+    ``get_memory_store``라는 이름에 의존하면 로컬/메모리 전용 저장소로 오해하기
+    쉬우므로, 런타임 공용 저장소라는 이름을 공개한다. 구현은 기존 싱글턴을
+    그대로 호출해 연결 풀과 ``store`` 테이블도 하나만 사용한다.
+    """
+
+    return get_memory_store()
+
+
+__all__ = ["get_memory_store", "get_runtime_store"]

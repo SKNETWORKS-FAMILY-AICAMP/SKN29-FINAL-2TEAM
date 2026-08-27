@@ -8,6 +8,7 @@
 """
 
 from django.test import SimpleTestCase
+from langgraph.store.memory import InMemoryStore
 
 from services.agent_runtime.skills.backend import (
     SKILLS_BUILTIN_PATH_PREFIX,
@@ -55,6 +56,13 @@ class SkillRoutesTests(SimpleTestCase):
 
     def test_inactive_route_is_not_an_agent_source(self):
         self.assertNotIn(SKILLS_INACTIVE_PERSONAL_PATH_PREFIX, skill_sources())
+
+    def test_explicit_store_is_bound_to_every_runtime_route(self):
+        store = InMemoryStore()
+        routes = skill_routes(account_id="AC001", team_id="TM001", store=store)
+
+        self.assertTrue(routes)
+        self.assertTrue(all(route._store is store for route in routes.values()))
 
     def test_different_accounts_get_isolated_personal_namespaces(self):
         """계정 A/B가 서로 다른 namespace를 받아야 서로의 개인 스킬을 못 본다."""
