@@ -53,6 +53,17 @@ class EvaluationV2FixtureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "저장소 밖|source 파일"):
                 validate_fixture_package(package, repo_root=package)
 
+    def test_s07_adversarial_tool_profile_is_not_labeled_as_deployment(self):
+        import yaml
+
+        fixture = yaml.safe_load(
+            (FIXTURES_ROOT / "S07-DEV-001" / "fixture.yaml").read_text(encoding="utf-8")
+        )
+        environment = fixture["environment_identity"]
+        self.assertEqual(environment["tool_profile_id"], "EVAL_S07_TOOL_PROFILE_V2")
+        self.assertFalse(environment["deployment_equivalent"])
+        self.assertIn("task_register", fixture["forbidden_tools"])
+
 
 if __name__ == "__main__":
     unittest.main()

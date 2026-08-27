@@ -182,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         "planned_scenarios": [fixture["fixture_id"]], "judge_model": DEFAULT_JUDGE_MODEL,
         "judge_reasoning_effort": DEFAULT_REASONING_EFFORT,
         "isolation": "ALL_BUSINESS_TOOLS_STUBBED_HITL_REJECT",
+        "evaluation_tool_profile": fixture["environment_identity"]["tool_profile_id"],
+        "deployment_equivalent": fixture["environment_identity"]["deployment_equivalent"],
     })
     context = dataclasses.replace(
         context, eval_run_id=recorder.manifest["eval_run_id"], eval_case_id=fixture["fixture_id"],
