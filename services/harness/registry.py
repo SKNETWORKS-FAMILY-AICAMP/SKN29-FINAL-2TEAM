@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -186,34 +185,6 @@ def _document_search(
         team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k,
         account_id=account_id,
     )
-    # PDF 표는 행별 청크다. 같은 표에서 관련 행이 둘 이상 검색됐다면 top-k 바로
-    # 밖의 형제 행도 한 묶음으로 돌려준다. 그래야 일정표 네 행 중 둘만 보고
-    # 나머지는 문서에 없다고 답하지 않는다. 한 행만 맞은 표는 확장하지 않아 큰
-    # 표 전체가 우연히 딸려 오는 일을 막는다.
-    table_hits = Counter(
-        row.get("block_id")
-        for row in rows
-        if row.get("block_type") == "TABLE" and row.get("block_id")
-    )
-    expandable = [block_id for block_id, count in table_hits.items() if count >= 2]
-    if expandable:
-        block_scores = {
-            block_id: max(
-                float(row["retrieval_score"])
-                for row in rows
-                if row.get("block_id") == block_id
-            )
-            for block_id in expandable
-        }
-        seen_chunk_ids = {str(row["chunk_id"]) for row in rows}
-        for sibling in VectorSearchRepository.table_block_chunks(
-            team_id=team_id, block_ids=expandable, account_id=account_id
-        ):
-            if str(sibling["chunk_id"]) in seen_chunk_ids:
-                continue
-            sibling["retrieval_score"] = block_scores[sibling["block_id"]]
-            rows.append(sibling)
-            seen_chunk_ids.add(str(sibling["chunk_id"]))
     result = {
         "query": query,
         "evidence": [
@@ -1307,14 +1278,7 @@ BUILTIN_TOOLS: dict[str, Tool] = {
     "document_search": Tool(
         ref="document_search",
         name="문서 검색",
-        description=(
-            "팀에 등록된 문서에서 질의와 관련된 문장을 찾아 근거로 돌려준다. 일정·범위처럼 "
-            "여러 하위 항목을 묻는 질문은 한 번의 넓은 검색으로 끝내지 말고, 확인되지 않은 "
-            "하위 항목을 각각 구체적으로 다시 검색한다. 관련 문서 ID만 반환됐다고 그 문서의 "
-            "모든 세부 값을 확인한 것은 아니다. WBS나 과업의 세부 일정을 찾을 때는 발견한 "
-            "하위 작업 명칭과 `작업 공수 기간`을 한 질의에 함께 넣고 `top_k=20`으로 검색한다. "
-            "같은 일반 질의를 반복하지 않는다. 직접 반환된 문장에서 값을 확인한 사실만 답에 쓴다."
-        ),
+        description="팀에 등록된 문서에서 질의와 관련된 문장을 찾아 근거로 돌려준다.",
         input_schema={
             "type": "object",
             "properties": {

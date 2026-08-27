@@ -162,16 +162,6 @@ class TaskDestinationDescriptionTests(SimpleTestCase):
         self.assertIn("함께 등록하라는 요청이 없으면", description)
 
 
-class DocumentSearchDescriptionTests(SimpleTestCase):
-    def test_requires_targeted_followup_and_direct_evidence(self):
-        description = registry.BUILTIN_TOOLS["document_search"].description
-
-        self.assertIn("하위 항목을 각각 구체적으로 다시 검색", description)
-        self.assertIn("작업 공수 기간", description)
-        self.assertIn("top_k=20", description)
-        self.assertIn("직접 반환된 문장에서 값을 확인한 사실만", description)
-
-
 class SkillRegisterDescriptionTests(SimpleTestCase):
     def test_uses_the_system_confirmation_card_instead_of_chat_confirmation(self):
         description = registry.BUILTIN_TOOLS["skill_register"].description

@@ -1,7 +1,7 @@
 gold_identity:
   fixture_id: S01-DEV-001
-  fixture_version: 2
-  gold_version: 2
+  fixture_version: 1
+  gold_version: 1
   gold_status: VALIDATED
 
 as_of: 2026-08-31
@@ -36,10 +36,6 @@ truth_catalog:
       proposition: W-07은 WBS상 임계 경로 밖이며 여유 기간은 21일이다.
       importance: OPTIONAL
       evidence_refs: ["PDF-WBS:p5:5 임계 경로"]
-    - fact_id: F08
-      proposition: WBS상 W-07의 선행 과업은 없고 우선순위는 중이다.
-      importance: OPTIONAL
-      evidence_refs: ["PDF-WBS:p2:2 과업별 공수·일정·선후행"]
 
   relations:
     - relation_id: R01

@@ -53,41 +53,6 @@ class DocumentSearchScopeTests(SimpleTestCase):
 
         self.assertEqual(search.call_args.kwargs["document_ids"], ["DC001", "DC002"])
 
-    def test_같은_표의_검색_행이_둘이면_형제_행도_근거로_돌린다(
-        self, scope, search, _embed
-    ):
-        scope.return_value = [_doc("DC001", "wbs.pdf")]
-        search.return_value = [
-            {
-                "doc_id": "DC001", "chunk_id": "C1", "block_id": "B1",
-                "block_type": "TABLE", "text": "로그 일정", "heading_path": [],
-                "retrieval_score": 0.9,
-            },
-            {
-                "doc_id": "DC001", "chunk_id": "C2", "block_id": "B1",
-                "block_type": "TABLE", "text": "추적 일정", "heading_path": [],
-                "retrieval_score": 0.8,
-            },
-        ]
-        sibling = {
-            "doc_id": "DC001", "chunk_id": "C3", "block_id": "B1",
-            "block_type": "TABLE", "text": "경보 일정", "heading_path": [],
-        }
-
-        with patch.object(
-            registry.VectorSearchRepository,
-            "table_block_chunks",
-            return_value=[sibling],
-        ) as expand:
-            result = _run_document_search(team_id="TE001", query="세부 일정")
-
-        expand.assert_called_once_with(
-            team_id="TE001", block_ids=["B1"], account_id=None
-        )
-        self.assertEqual([item["text"] for item in result["evidence"]], [
-            "로그 일정", "추적 일정", "경보 일정",
-        ])
-
     def test_색인_안_된_문서는_숨기지_않고_알린다(self, scope, search, _embed):
         """조용히 빼면 에이전트가 '관련 문서 없다'고 답하는데 실제로는 색인이
         아직 안 닿았을 뿐이다."""

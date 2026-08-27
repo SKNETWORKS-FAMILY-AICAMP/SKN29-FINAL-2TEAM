@@ -2,8 +2,9 @@
 
 ## 1. 결론
 
-**Core DEV의 기술 작업은 완료됐지만, Candidate 처리 방침을 정하기 전까지 Phase 9에는
-진입하지 않는다.** 현재 게이트 판정은 `STOP_BEFORE_PHASE_9`다.
+**Core DEV의 기술 작업은 완료됐고 Candidate 처리 방침도 정했다. 다만 사용자의 별도
+승인 전까지 Phase 9에는 진입하지 않는다.** 현재 게이트 판정은
+`STOP_BEFORE_PHASE_9`다.
 
 실행이 승인된 Core 10개 variant의 fixture·runner·자동 판정·반복 실행을 모두 완료했다.
 현재 결과는 문제를 찾고 수정하기 위한 DEV 진단 결과이며 공식 HOLDOUT 성적은 아니다.
@@ -51,18 +52,23 @@ S04가 9회이고 나머지는 3회이므로 대표 수치에는 단순 실행 �
 - Judge는 `gpt-5.6-sol`, reasoning `medium`으로 고정했다. Hard Gate와 결정론적 사실은
   Judge가 뒤집지 못한다.
 
-## 4. Candidate 결함 처리 — 사용자 결정 필요
+## 4. Candidate 결함 처리 — 결정 완료
 
-평가기 결함은 수정하고 회귀 테스트로 고정했다. S01 3건과 S07 1건은 현재 증거상
-Candidate 행동 문제이므로 fixture를 완화하거나 PASS로 바꾸지 않는다.
+평가기 결함은 수정하고 회귀 테스트로 고정했다. S01 3건과 S07 1건은 fixture를
+완화하거나 PASS로 바꾸지 않는다. 대신 두 문제를 다음과 같이 분리해 처리한다.
 
-Phase 9 직전에 다음 중 하나를 선택해야 한다.
+- `S01`: 현재 Candidate에서 해결하지 않는다. PDF의 상위 WBS 행과 하위 상세표가
+  독립 chunk로 분리되는 구조를 먼저 개선해야 하므로
+  `KNOWN_LIMITATION`·`DEFERRED_DOCUMENT_PREPROCESSING`으로 기록한다.
+- `S07`: 평가용 도구 설명 때문에 불필요한 승인 요청이 유도되는 문제를 수정한 상태를
+  유지한다. 이 수정은 실제 배포 도구 구성이 아니라
+  `EVAL_S07_TOOL_PROFILE_V2`라는 적대적 평가 환경의 정확도를 높이는 변경이다.
+- Candidate: S01 실험용 prompt와 검색 변경을 제거하고 `AG004/AV035`의 정의를 그대로
+  복제한 `AG004/AV072`를 발행했다. S07 registry 수정은 AV072에도 적용된다.
 
-1. 현재 `AG004/AV035`를 알려진 결함과 함께 동결한다.
-2. S01·S07 행동을 고친 새 Candidate version을 만들고 Core DEV 전체를 새 cohort로
-   재실행한 뒤 동결한다.
-
-기존 실행은 어느 선택에서도 덮어쓰지 않는다.
+S01을 수정하려고 만든 `AV067`~`AV071`과 그 실행 결과는 원인을 찾기 위한
+`DIAGNOSTIC_ONLY` 자료로만 보존하고 공식 cohort와 점수에서 제외한다. 기존 실행은
+덮어쓰거나 삭제하지 않는다.
 
 ## 5. Phase 8 종료 게이트
 
@@ -75,9 +81,10 @@ Phase 9 직전에 다음 중 하나를 선택해야 한다.
 - [x] V2 원시 결과의 별도 DB 저장
 - [x] 로컬 원본과 DB의 run·scenario 수·SHA-256 자동 대조
 - [x] 평가기 결함 수정과 회귀 테스트
-- [ ] 전체 DEV 결과를 기준으로 Candidate 처리 방침 결정
+- [x] 전체 DEV 결과를 기준으로 Candidate 처리 방침 결정
 
-위 마지막 항목을 정하기 전까지 Phase 8은 `DECISION_PENDING`이다.
+Phase 8의 결정 항목은 닫혔다. 다만 Phase 9 시작 승인은 아직 하지 않았으므로 현재
+게이트는 계속 `STOP_BEFORE_PHASE_9`다.
 
 ## 6. Phase 9 직전 동결 때 정할 항목
 
@@ -94,7 +101,7 @@ Phase 9 직전에 다음 중 하나를 선택해야 한다.
 
 ## 7. 다음 행동
 
-사용자가 Candidate 처리 방침을 선택하면 이 문서를 최종 승인하고 freeze manifest를
-만든다. 그 전에는 HOLDOUT을 열거나 실행하지 않는다.
+다음 단계에서는 `AG004/AV072`와 S01의 알려진 한계를 freeze manifest에 명시한다.
+사용자가 Phase 9 진입을 별도로 승인하기 전에는 HOLDOUT을 열거나 실행하지 않는다.
 
 현재 게이트 판정: `STOP_BEFORE_PHASE_9`.

@@ -974,7 +974,6 @@ class VectorSearchRepository:
                     -- 임시 파일명이 들어 있어 평균 927자·최대 7,622자인데, 모델도
                     -- 화면도 쓰지 않으면서 프롬프트와 응답을 그만큼 불린다.
                     SELECT d.doc_id, c.chunk_id::text, c.chunk_idx AS sequence,
-                           b.block_id::text, b.block_type,
                            c.search_text AS text, c.heading_path,
                            1 - (v.embedding <=> %s::vector) AS retrieval_score
                     FROM vec_idx v
@@ -994,43 +993,6 @@ class VectorSearchRepository:
                         vector_literal(query_vector), team_id, account_id, team_id, document_ids,
                         "google/embeddinggemma-300m", vector_literal(query_vector), top_k,
                     ),
-                )
-                return list(cursor.fetchall())
-
-    @staticmethod
-    def table_block_chunks(
-        *, team_id: str, block_ids: list[str], account_id: str | None = None,
-    ) -> list[dict]:
-        """벡터 검색에서 같은 표의 여러 행이 맞으면 그 표의 나머지 행도 읽는다.
-
-        PDF 표는 한 행씩 별도 청크가 된다. 서로 강하게 관련된 행 두 개가 검색돼도
-        나머지 행이 top-k 바로 밖에 있으면 표 일부만 근거로 전달되는 문제가 있다.
-        호출자가 이미 검색으로 확인한 TABLE block만 받고, 현재 revision과 팀/개인
-        접근 경계를 다시 검사한다.
-        """
-
-        if not block_ids:
-            return []
-        with database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f"""
-                    SELECT d.doc_id, c.chunk_id::text, c.chunk_idx AS sequence,
-                           b.block_id::text, b.block_type,
-                           c.search_text AS text, c.heading_path
-                    FROM chunk c
-                    JOIN doc_block b ON b.block_id = c.block_id
-                    JOIN doc d ON d.doc_id = b.doc_id
-                    WHERE {_TEAM_OR_MINE}
-                      AND b.block_id::text = ANY(%s)
-                      AND b.block_type = 'TABLE'
-                      AND d.deleted = false AND d.access_revoked = false
-                      AND b.revision = d.cur_revision
-                      AND c.is_active = true
-                    ORDER BY d.doc_id, b.sequence, c.chunk_idx
-                    LIMIT 60
-                    """,
-                    (team_id, account_id, team_id, block_ids),
                 )
                 return list(cursor.fetchall())
 

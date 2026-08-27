@@ -32,8 +32,6 @@ FIXTURE_DIR = (
 )
 DEFAULT_BINDING = REPO_ROOT / "outputs" / "eval-v2-fixture-bindings" / "S01-DEV-001.json"
 DEFAULT_OUTPUT = REPO_ROOT / "outputs" / "eval-v2-results"
-S01_MAX_TOOL_CALLS = 8
-S01_MAX_CALLS_PER_TOOL = {"document_search": 8, "document_list": 1}
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -96,13 +94,11 @@ def _evidence(fixture: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _judge_criteria(gold: dict[str, Any]) -> list[dict[str, str]]:
-    catalog_facts = (gold.get("truth_catalog") or {}).get("facts") or []
     facts = [
         item["proposition"]
-        for item in catalog_facts
+        for item in (gold.get("truth_catalog") or {}).get("facts") or []
         if item.get("importance") == "REQUIRED"
     ]
-    known_facts = [item["proposition"] for item in catalog_facts]
     conclusions = [item["proposition"] for item in gold.get("required_conclusions") or []]
     uncertainty = gold.get("uncertainty_contract") or {}
     return [
@@ -113,8 +109,7 @@ def _judge_criteria(gold: dict[str, Any]) -> list[dict[str, str]]:
         },
         {
             "criterion_id": "factual_grounding",
-            "rubric": "답변의 사실 주장이 제공된 PDF evidence와 다음 Gold 사실에 부합하면 PASS: "
-            + json.dumps(known_facts, ensure_ascii=False),
+            "rubric": "답변의 사실 주장이 제공된 PDF evidence와 Gold 사실에 부합하면 PASS.",
         },
         {
             "criterion_id": "temporal_resolution",
@@ -223,8 +218,8 @@ def main(argv: list[str] | None = None) -> int:
         "required_tools": ["document_search"],
         "allowed_tools": fixture["allowed_tools"],
         "forbidden_tools": fixture["forbidden_tools"],
-        "max_tool_calls": S01_MAX_TOOL_CALLS,
-        "max_calls_per_tool": S01_MAX_CALLS_PER_TOOL,
+        "max_tool_calls": 8,
+        "max_calls_per_tool": {"document_search": 7, "document_list": 1},
         "required_evidence_documents": source_doc_ids,
         "optional_evidence_documents": [],
     }
@@ -299,8 +294,7 @@ def main(argv: list[str] | None = None) -> int:
                 break
             except (json.JSONDecodeError, ValueError) as exc:
                 judge_error = f"{type(exc).__name__}: {exc}"
-                if attempt == 1:
-                    break
+                break
             except Exception as exc:
                 judge_error = type(exc).__name__
                 if attempt == 1:
