@@ -372,6 +372,14 @@ export function deleteSession(token: string, sessionId: string) {
   return apiRequest<void>(`/chat/sessions/${sessionId}/`, { method: 'DELETE', token });
 }
 
+export function renameSession(token: string, sessionId: string, title: string) {
+  return apiRequest<ChatSession>(`/chat/sessions/${sessionId}/`, {
+    method: 'PATCH',
+    body: { title },
+    token,
+  });
+}
+
 /**
  * 이 대화 전용 도구·MCP 목록을 저장한다(2026-08-18, Chat "+" 버튼). 에이전트
  * 원본은 안 건드린다 — `toolRefs=null`을 주면 커스터마이즈를 지우고

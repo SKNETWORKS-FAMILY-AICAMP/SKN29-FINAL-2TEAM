@@ -163,6 +163,44 @@ class ChatSessionApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_대화_이름을_바꾼다(self, sessions, _messages):
+        sessions.rename.return_value = SESSION | {"title": "주간 업무 정리"}
+
+        response = self.client.patch(
+            f"/api/chat/sessions/{SESSION['session_id']}/",
+            {"title": "  주간 업무 정리  "},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["title"], "주간 업무 정리")
+        self.assertEqual(sessions.rename.call_args.kwargs["title"], "주간 업무 정리")
+        self.assertEqual(sessions.rename.call_args.kwargs["account_id"], "UA001")
+
+    def test_빈_대화_이름은_거절한다(self, sessions, _messages):
+        response = self.client.patch(
+            f"/api/chat/sessions/{SESSION['session_id']}/",
+            {"title": "   "},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        sessions.rename.assert_not_called()
+
+    def test_남의_대화_이름은_바꿀_수_없다(self, sessions, _messages):
+        sessions.rename.side_effect = PermissionDenied("이 대화를 수정할 수 없습니다.")
+
+        response = self.client.patch(
+            f"/api/chat/sessions/{SESSION['session_id']}/",
+            {"title": "남의 대화"},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_로그인_없이는_401(self, _sessions, _messages):
         self.assertEqual(self.client.get("/api/chat/sessions/").status_code, 401)
 

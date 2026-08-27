@@ -55,11 +55,12 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  min-height: 44px;
 }
 
 .sidebarCollapsed .brandRow {
-  flex-direction: column;
-  gap: var(--space-3);
+  justify-content: center;
+  gap: 0;
 }
 
 .collapse {
@@ -70,6 +71,7 @@
   height: 28px;
   flex-shrink: 0;
   border: none;
+  padding: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
@@ -79,6 +81,12 @@
   background: var(--color-bg);
 }
 
+.sidebarCollapsed .collapse {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 접힌 상태에서는 아이콘을 가운데로. 라벨이 없으니 왼쪽 정렬이 어색하다. */
 .sidebarCollapsed .navItem {
   justify-content: center;
@@ -86,15 +94,90 @@
 }
 
 .logo {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-2);
   text-decoration: none;
+  opacity: 1;
+  transition: opacity 0.14s ease, transform 0.18s ease;
+}
+
+.logoSlot {
+  position: relative;
+  width: 94px;
+  height: 44px;
+  flex-shrink: 0;
+  transition: width 0.18s ease;
+}
+
+.sidebarCollapsed .logoSlot {
+  width: 40px;
 }
 
 .sidebarCollapsed .logo {
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+}
+
+.logoFull {
+  width: auto;
+}
+
+.compactBrand {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  margin-block: 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
   padding: 0;
+  background: transparent;
+  color: var(--color-muted);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 0.14s ease, background 0.15s ease;
+}
+
+.sidebarCollapsed .compactBrand {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.logoMark {
+  width: auto;
+  transform: scale(0.9);
+  transition: opacity 0.14s ease, transform 0.18s ease;
+}
+
+.compactSidebarIcon {
+  position: absolute;
+  opacity: 0;
+  transform: scale(0.86);
+  transition: opacity 0.14s ease, transform 0.18s ease;
+}
+
+.compactBrand:hover,
+.compactBrand:focus-visible {
+  background: var(--color-bg);
+}
+
+.compactBrand:hover .logoMark,
+.compactBrand:focus-visible .logoMark {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.compactBrand:hover .compactSidebarIcon,
+.compactBrand:focus-visible .compactSidebarIcon {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .nav {
@@ -311,6 +394,15 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar {
+    transition: none;
+  }
+
+  .logo,
+  .logoSlot,
+  .logoFull,
+  .logoMark,
+  .compactBrand,
+  .compactSidebarIcon {
     transition: none;
   }
 }
