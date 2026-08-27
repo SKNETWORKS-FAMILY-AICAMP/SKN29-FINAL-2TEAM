@@ -468,20 +468,66 @@
 /* 비어 있을 때 표 안에 놓는 문장. 표를 지우는 대신 머리말 아래에 둔다 —
    담기는 열이 그대로 보여야 무엇이 없는 것인지 알 수 있다. */
 .tableEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
-  padding: var(--space-8) 0;
+  padding: var(--space-10) 0;
   text-align: center;
   font-size: 13px;
   color: var(--color-muted);
 }
 
+/* 아이콘은 옅은 원에 담는다. 그냥 두면 표 한가운데 그림 하나가 떠 있는 것처럼
+   보이고, 원을 씌우면 「여기가 비었다」는 한 덩어리로 읽힌다. */
+.tableEmptyIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+}
+
+.tableEmptyTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
 /* 올리는 법. 무엇이 없다는 문장보다 한 단계 낮춘다 — 먼저 읽을 것은 상태고,
    이건 그다음에 무엇을 하면 되는지다. */
 .tableEmptyHint {
-  display: block;
-  margin-top: var(--space-2);
+  margin: 0;
   font-size: 12px;
-  line-height: 1.7;
+  color: var(--color-muted);
+}
+
+/* 받는 형식. 낱개로 끊어 두면 내 파일이 그중에 있는지 훑지 않고 찾는다. */
+.tableEmptyChips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.tableEmptyChips > span {
+  padding: 3px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-placeholder);
+}
+
+/* 한도는 형식보다 한 단계 더 낮춘다 — 걸리는 사람만 읽으면 된다. */
+.tableEmptyNote {
+  margin: 0;
+  font-size: 11px;
   color: var(--color-placeholder);
 }
 

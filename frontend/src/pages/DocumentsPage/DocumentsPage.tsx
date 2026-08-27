@@ -547,15 +547,32 @@ export default function DocumentsPage() {
                     <span />
                   </div>
 
-                  {loading && <p className={styles.tableEmpty}>문서를 불러오는 중…</p>}
+                  {loading && (
+                    <div className={styles.tableEmpty}>
+                      <span className={styles.tableEmptyIcon}>
+                        <Icon name="loader" size={22} color="var(--color-primary)" spin />
+                      </span>
+                      <p className={styles.tableEmptyTitle}>문서를 불러오는 중…</p>
+                    </div>
+                  )}
 
-                  {/* 검색으로 0건인 것과 폴더가 원래 빈 것은 다른 상태다. */}
+                  {/* 검색으로 0건인 것과 폴더가 원래 빈 것은 다른 상태다.
+                      아이콘도 그 둘을 갈라 준다 — 「내 파일」과 같은 꼴이다. */}
                   {!loading && matched.length === 0 && (
-                    <p className={styles.tableEmpty}>
-                      {visibleDocuments.length > 0
-                        ? '검색 결과가 없습니다.'
-                        : '이 폴더에서 읽어 온 문서가 없습니다.'}
-                    </p>
+                    <div className={styles.tableEmpty}>
+                      <span className={styles.tableEmptyIcon}>
+                        <Icon
+                          name={visibleDocuments.length > 0 ? 'search' : 'folder-open'}
+                          size={22}
+                          color="var(--color-primary)"
+                        />
+                      </span>
+                      <p className={styles.tableEmptyTitle}>
+                        {visibleDocuments.length > 0
+                          ? '검색 결과가 없습니다.'
+                          : '이 폴더에서 읽어 온 문서가 없습니다.'}
+                      </p>
+                    </div>
                   )}
 
                   {paged.map((doc) => {

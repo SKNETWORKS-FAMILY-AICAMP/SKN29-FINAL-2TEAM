@@ -442,22 +442,39 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
 
         {/* 검색으로 0건인 것과 원래 빈 것은 다른 상태다. */}
         {matched.length === 0 && (
-          <p className={styles.tableEmpty}>
-            {rows.length > 0
-              ? '검색 결과가 없습니다.'
-              : tab === 'mine'
-                ? '아직 올린 파일이 없습니다.'
-                : '팀원이 공유한 파일이 아직 없습니다.'}
+          <div className={styles.tableEmpty}>
+            {/* 아이콘은 **왜 비었는지**를 가리킨다 — 검색해서 0건인 것과 원래
+                아무것도 없는 것은 다음에 할 일이 다르다. */}
+            <span className={styles.tableEmptyIcon}>
+              <Icon
+                name={rows.length > 0 ? 'search' : tab === 'mine' ? 'file-text' : 'users'}
+                size={22}
+                color="var(--color-primary)"
+              />
+            </span>
+            <p className={styles.tableEmptyTitle}>
+              {rows.length > 0
+                ? '검색 결과가 없습니다.'
+                : tab === 'mine'
+                  ? '아직 올린 파일이 없습니다.'
+                  : '팀원이 공유한 파일이 아직 없습니다.'}
+            </p>
             {/* 올리는 법은 **빈 표 안에서** 말한다. 늘 떠 있던 안내 막대는
                 파일이 쌓인 뒤로는 아무도 안 읽으면서 자리만 차지했다. */}
             {tab === 'mine' && rows.length === 0 && (
-              <span className={styles.tableEmptyHint}>
-                여기로 끌어다 놓거나 「파일 업로드」로 고르세요
-                <br />
-                PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
-              </span>
+              <>
+                <p className={styles.tableEmptyHint}>여기로 끌어다 놓거나 「파일 업로드」로 고르세요</p>
+                {/* 받는 형식을 한 문장으로 늘어놓으면 눈이 훑고 지나간다.
+                    낱개로 끊어 두면 내 파일이 그중에 있는지 바로 찾는다. */}
+                <div className={styles.tableEmptyChips}>
+                  <span>PDF</span>
+                  <span>Word(docx)</span>
+                  <span>텍스트(txt·md)</span>
+                </div>
+                <p className={styles.tableEmptyNote}>한 개에 50MB까지 · 여러 개 한 번에</p>
+              </>
             )}
-          </p>
+          </div>
         )}
 
         {paged.map((file) => {
