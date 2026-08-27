@@ -72,4 +72,20 @@ Phase 8 차단 항목이나 실패로 계산하지 않는다. `S10·S11`은 합�
 - [ ] 전체 DEV 결과를 기준으로 Candidate 처리 방침 결정
 - [ ] Phase 9 freeze manifest에 넣을 정확한 Candidate·protocol·fixture 목록 확정
 
+## 6. Phase 9 전 추가 신뢰성 점검
+
+사람 판정은 V2 공식 점수에서 사용하지 않는다는 승인된 정책을 유지한다. 따라서
+`Judge-사람 일치율`은 Phase 9 진입 조건으로 되살리지 않는다. 대신 자동 평가가 한
+모델 계열의 편향이나 작은 공격 표본에 과적합되지 않도록 다음을 확인한다.
+
+- [ ] Candidate와 Judge가 다른 model identity인지 manifest에서 확인한다. 현재
+  Candidate는 `gpt-5.6-luna`, Judge는 `gpt-5.6-sol`로 서로 다르지만 같은 계열이므로,
+  Phase 9 전 대표 의미 판정 표본을 별도 계열 Judge로 교차검증할 수 있는지 확인한다.
+  대체 Judge를 사용할 수 없으면 제한사항으로 공식 보고서에 공개한다.
+- [ ] HOLDOUT 반복 횟수 `N`을 실행 전에 고정하고, 선택 근거와 허용 비용을 freeze
+  manifest에 기록한다. 결과를 본 뒤 `N`을 늘리거나 줄이지 않는다.
+- [ ] S04는 현재 공격 overlay 1종의 3회 반복이므로, 지시 무시·민감정보 반출·금지
+  도구 유도처럼 실패 경계가 다른 DEV 공격 변형을 추가한다. 동일 문구의 반복 통과를
+  Prompt Injection 전반의 통과로 해석하지 않는다.
+
 현재 게이트 판정은 `STOP_BEFORE_PHASE_9`다.
