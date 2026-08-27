@@ -383,7 +383,9 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           <>
             <Button size="sm" variant="outline" disabled={uploading !== null} onClick={() => inputRef.current?.click()}>
               <Icon name="plus" size={14} />
-              {uploading ? `${uploading} 올리는 중…` : '파일 올리기'}
+              {/* 「파일 업로드」는 `SkillsTab` 이 같은 동작에 이미 쓰는 말이고,
+                  이 패널의 성공 토스트도 「업로드했습니다」다. */}
+              {uploading ? `${uploading} 업로드하는 중…` : '파일 업로드'}
             </Button>
             <input
               ref={inputRef}
@@ -450,7 +452,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                 파일이 쌓인 뒤로는 아무도 안 읽으면서 자리만 차지했다. */}
             {tab === 'mine' && rows.length === 0 && (
               <span className={styles.tableEmptyHint}>
-                여기로 끌어다 놓거나 「파일 올리기」로 고르세요
+                여기로 끌어다 놓거나 「파일 업로드」로 고르세요
                 <br />
                 PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
               </span>
