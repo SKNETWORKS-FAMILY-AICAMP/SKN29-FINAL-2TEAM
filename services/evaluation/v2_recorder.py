@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,50 @@ def _write_exclusive(path: Path, payload: dict[str, Any]) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     with path.open("x", encoding="utf-8", newline="\n", errors="strict") as destination:
         destination.write(text)
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def read_completed_v2_run(run_dir: Path) -> dict[str, Any]:
+    """완료된 V2 디렉터리를 DB 동기화 가능한 원본 묶음으로 읽는다."""
+
+    paths = {
+        "manifest": run_dir / "v2_run_manifest.json",
+        "results": run_dir / "v2_scenario_results.jsonl",
+        "summary": run_dir / "v2_summary.json",
+        "disposition": run_dir / "v2_disposition.json",
+    }
+    for name in ("manifest", "results", "summary"):
+        if not paths[name].is_file():
+            raise RuntimeError(f"완료된 V2 실행 파일이 없습니다: {paths[name]}")
+
+    raw = {name: path.read_bytes() for name, path in paths.items() if path.is_file()}
+    manifest = json.loads(raw["manifest"])
+    summary = json.loads(raw["summary"])
+    result_lines = [line for line in raw["results"].splitlines() if line.strip()]
+    results = [json.loads(line) for line in result_lines]
+    run_id = manifest.get("eval_run_id")
+    if manifest.get("protocol") != "AGENT_EVAL_V2" or not run_id:
+        raise ValueError("AGENT_EVAL_V2 manifest가 아닙니다.")
+    if summary.get("eval_run_id") != run_id:
+        raise ValueError("V2 summary의 eval_run_id가 manifest와 다릅니다.")
+    if any(item.get("eval_run_id") != run_id for item in results):
+        raise ValueError("V2 scenario result의 eval_run_id가 manifest와 다릅니다.")
+    if summary.get("planned") != len(manifest.get("planned_scenarios", [])):
+        raise ValueError("V2 summary planned가 manifest와 다릅니다.")
+    disposition = json.loads(raw["disposition"]) if "disposition" in raw else None
+    if disposition and disposition.get("eval_run_id") != run_id:
+        raise ValueError("V2 disposition의 eval_run_id가 manifest와 다릅니다.")
+    return {
+        "manifest": manifest,
+        "results": results,
+        "result_line_sha256": [_sha256_bytes(line) for line in result_lines],
+        "summary": summary,
+        "disposition": disposition,
+        "hashes": {name: _sha256_bytes(value) for name, value in raw.items()},
+    }
 
 
 @dataclass(frozen=True)
@@ -142,4 +187,4 @@ class V2EvaluationRecorder:
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-__all__ = ["V2EvaluationRecorder"]
+__all__ = ["V2EvaluationRecorder", "read_completed_v2_run"]

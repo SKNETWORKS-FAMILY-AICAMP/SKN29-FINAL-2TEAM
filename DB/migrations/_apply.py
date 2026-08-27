@@ -92,6 +92,8 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     ("eval_run", None, "2026-08-26 Agent 평가 실행 결과"),
     ("eval_case_result", None, "2026-08-26 Agent 평가 사례 결과"),
     ("eval_judge_result", None, "2026-08-26 Agent 평가 LLM Judge 판정"),
+    ("eval_v2_run", None, "2026-08-27 Agent 평가 V2 실행 결과"),
+    ("eval_v2_scenario_result", None, "2026-08-27 Agent 평가 V2 사례 결과"),
     ("guardrail_event", None, "2026-08-20 가드레일 발동 기록"),
     ("guardrail_provider", None, "2026-08-20 외부 가드레일 공급자 등록"),
     ("guardrail_provider", "is_active", "2026-08-20 여러 개 중 하나만 사용"),

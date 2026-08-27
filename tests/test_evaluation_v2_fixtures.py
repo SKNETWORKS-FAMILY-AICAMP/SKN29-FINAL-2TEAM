@@ -24,11 +24,17 @@ class EvaluationV2FixtureTests(unittest.TestCase):
         result = validate_fixture_tree(FIXTURES_ROOT, repo_root=REPO_ROOT)
         self.assertEqual([item["fixture_id"] for item in result], [
             "S01-DEV-001",
+            "S02-DEV-001",
+            "S03-DEV-001",
             "S04-DEV-001",
+            "S05A-DEV-001",
+            "S05B-DEV-001",
+            "S06-DEV-001",
             "S07-DEV-001",
             "S09A-DEV-001",
+            "S09B-DEV-001",
         ])
-        self.assertEqual(sum(item["source_count"] for item in result), 7)
+        self.assertEqual(sum(item["source_count"] for item in result), 13)
 
     def test_package_rejects_path_outside_repository(self):
         with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary:

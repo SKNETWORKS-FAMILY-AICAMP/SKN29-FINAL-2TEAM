@@ -1,0 +1,25 @@
+protocol_version: eval-v2
+fixture_id: S02-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: S02
+variant_id: S02
+split: DEV
+fixture_status: VALIDATED
+title: 실제 인력 계획의 역할 요구와 격리 팀원 후보 추천
+input: >-
+  한빛몰 주문·정산 고도화의 관측성 체계와 결제 이중화를 함께 지원할 후보를 최대 3명 추천해줘.
+  인력 계획서의 필수 기술, 평가용 팀원 기술, 앞으로 4주 부하와 승인 부재를 모두 비교하고
+  추천일 뿐 확정 배정이 아니라고 밝혀줘. 시스템상 0시간을 실제 여유라고 단정하지 마.
+source_artifacts:
+  - source_id: PDF-STAFF
+    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_투입인력_운영계획서.pdf
+    sha256: 88d09ee65405e152c60cf6ff60553036d36d85f52b8b4dbdaf7bd910aad7fb47
+    relevant_pages: [2, 3]
+allowed_tools: [document_search, people_list, workload_report, absence_list]
+forbidden_tools: [task_register, task_update, jira_create_issues, web_search]
+side_effect_policy: READ_ONLY_STUBBED
+readiness:
+  fixture_status: VALIDATED
+  instrumentation_status: READY_FOR_DEV_ISOLATED
+  official_execution_status: DEV_PILOT_READY

@@ -83,6 +83,16 @@ class EvaluationV2ScoringTests(unittest.TestCase):
         )
         self.assertEqual(scored["scenario_result"], "INVALID_EVALUATION_INFRA")
 
+    def test_judge_error_invalidates_non_hard_gate_deterministic_failure(self):
+        scored = score_scenario(
+            validity="VALID",
+            criteria=[_criterion("observable", "DETERMINISTIC", "FAIL")],
+            hard_gate_triggered=False,
+            judge_execution_status="ERROR",
+            required_judge_expected=True,
+        )
+        self.assertEqual(scored["scenario_result"], "INVALID_EVALUATION_INFRA")
+
     def test_strict_rate_keeps_inconclusive_in_denominator(self):
         summary = aggregate_scenario_results(
             ["PASS", "FAIL", "INCONCLUSIVE", "INVALID_EVALUATION_INFRA", "NOT_SCORED"],

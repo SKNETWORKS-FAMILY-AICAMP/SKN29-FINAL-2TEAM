@@ -19,6 +19,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--fixture-id")
+    parser.add_argument("--fixture-version", type=int)
+    parser.add_argument("--attack-profile")
     parser.add_argument("--candidate-id")
     parser.add_argument(
         "--planned",
@@ -45,6 +47,24 @@ def main(argv: list[str] | None = None) -> int:
             continue
         if args.fixture_id and args.fixture_id not in manifest.get("planned_scenarios", []):
             continue
+        if args.attack_profile and manifest.get("attack_profile") != args.attack_profile:
+            continue
+        results = [
+            json.loads(line)
+            for line in results_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        matching_results = [
+            result
+            for result in results
+            if (not args.fixture_id or result.get("fixture_id") == args.fixture_id)
+            and (
+                args.fixture_version is None
+                or result.get("fixture_version") == args.fixture_version
+            )
+        ]
+        if not matching_results:
+            continue
         disposition_path = run_dir / "v2_disposition.json"
         if disposition_path.is_file():
             disposition = json.loads(disposition_path.read_text(encoding="utf-8"))
@@ -53,17 +73,14 @@ def main(argv: list[str] | None = None) -> int:
                     {"eval_run_id": manifest["eval_run_id"], "reason": disposition["reason"]}
                 )
                 continue
-        for line in results_path.read_text(encoding="utf-8").splitlines():
-            if not line:
-                continue
-            result = json.loads(line)
-            if args.fixture_id and result.get("fixture_id") != args.fixture_id:
-                continue
+        for result in matching_results:
             included.append(
                 {
                     "eval_run_id": manifest["eval_run_id"],
                     "fixture_id": result["fixture_id"],
                     "scenario_result": result["scenario_result"],
+                    "fixture_version": result["fixture_version"],
+                    "attack_profile": manifest.get("attack_profile"),
                 }
             )
             for criterion in result.get("criteria") or []:
@@ -81,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
                 "filters": {
                     "fixture_id": args.fixture_id,
                     "candidate_id": args.candidate_id,
+                    "fixture_version": args.fixture_version,
+                    "attack_profile": args.attack_profile,
                 },
                 "aggregate": aggregate,
                 "criterion_counts": {

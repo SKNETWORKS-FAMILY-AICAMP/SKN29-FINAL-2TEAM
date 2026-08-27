@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 from backend.db import evaluation
-from backend.db.evaluation import EvaluationResultRepository
+from backend.db.evaluation import EvaluationResultRepository, V2EvaluationResultRepository
 
 
 class _Cursor:
@@ -139,6 +139,48 @@ class EvaluationResultRepositoryTests(unittest.TestCase):
                     case_results=[self.case],
                     summary=self.summary,
                 )
+
+
+class V2EvaluationResultRepositoryTests(unittest.TestCase):
+    def setUp(self):
+        self.result = {
+            "eval_run_id": "v2-20260827T000000Z-12345678",
+            "scenario_id": "S01-DEV-001", "fixture_id": "S01-DEV-001",
+            "fixture_version": 1, "gold_version": 1,
+            "scenario_result": "PASS", "validity": "VALID",
+        }
+        self.bundle = {
+            "manifest": {
+                "protocol": "AGENT_EVAL_V2", "schema_version": 1,
+                "eval_run_id": self.result["eval_run_id"], "git_commit": "abc123",
+                "candidate_id": "AG004/AV035", "candidate_model": "model",
+                "runtime_profile": "runtime", "started_at": "2026-08-27T00:00:00Z",
+            },
+            "results": [self.result], "result_line_sha256": ["d" * 64],
+            "summary": {"eval_run_id": self.result["eval_run_id"], "finished_at": "2026-08-27T00:00:01Z"},
+            "disposition": None,
+            "hashes": {"manifest": "a" * 64, "results": "b" * 64, "summary": "c" * 64},
+        }
+
+    def test_new_v2_run_is_synced(self):
+        cursor = _Cursor([{"eval_run_id": self.result["eval_run_id"]}, {"scenario_index": 1}])
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            synced = V2EvaluationResultRepository.sync_completed_run(self.bundle)
+        self.assertEqual(synced["sync_status"], "SYNCED")
+        self.assertEqual(synced["scenario_count"], 1)
+
+    def test_v2_reconciliation_compares_payload_and_hashes(self):
+        expected_run = {
+            "manifest": self.bundle["manifest"], "summary": self.bundle["summary"],
+            "disposition": None, "manifest_sha256": "a" * 64,
+            "results_sha256": "b" * 64, "summary_sha256": "c" * 64,
+            "disposition_sha256": None,
+        }
+        cursor = _Cursor([expected_run])
+        cursor.fetchall = lambda: [{"scenario_index": 1, "result": self.result, "record_sha256": "d" * 64}]
+        with patch.object(evaluation, "database_connection", _connection_factory(cursor)):
+            checked = V2EvaluationResultRepository.reconcile_completed_run(self.bundle)
+        self.assertTrue(checked["matched"])
 
 
 class EvaluationJudgeResultRepositoryTests(unittest.TestCase):

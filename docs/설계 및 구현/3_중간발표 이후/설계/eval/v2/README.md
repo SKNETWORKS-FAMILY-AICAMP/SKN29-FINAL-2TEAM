@@ -3,7 +3,7 @@
 ## 1. 문서 상태
 
 - 기준일: 2026-08-27
-- 상태: 대표 DEV pilot 완료, 전체 DEV readiness 보강 필요
+- 상태: Core DEV 기술 작업 완료, Candidate 결정 대기
 - 현재 단계: 8단계 게이트 점검에서 정지 (`Phase 9 미진입`)
 - 정본 위치: 이 `eval/v2/` 디렉터리
 
@@ -85,31 +85,37 @@ eval/v2/
 | 1 | 완료 | 보강안 반영 후 `APPROVED` |
 | 2 | 완료 | `02_risk_scenario_matrix.md` 승인, 교차 HOLDOUT 관리 확정 |
 | 3 | 완료 | 공통 계약과 대표 적용 검증 승인 (`APPROVED`) |
-| 4 | 완료 | 기존 PDF 기반 S01/S04/S07/S09A package와 자동 무결성 검사 완료 |
+| 4 | 완료 | 실제 PDF 기반 Core DEV 10개 package와 자동 무결성 검사 완료 |
 | 5 | 완료 | deterministic·Hard Gate·Judge 결합과 집계 규칙 구현·테스트 완료 |
 | 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
-| 7 | 부분 완료 | 로컬 append-only 저장과 대표 계측 완료. V2 원시 결과의 DB/artifact 동기화·자동 대조는 미구현 |
-| 8 | 진행 중 | 대표 4종 12회와 평가기 결함 처리는 완료. S02·S03·S05A·S05B·S06·S09B DEV readiness가 남음 |
-| 9~10 | 시작 전·진입 차단 | `07_phase8_readiness_review.md`의 미완료 조건을 해소하고 Candidate 처리 방침을 정한 뒤 진행 |
+| 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 완료 run 49/49 SHA-256 자동 대조 완료 |
+| 8 | 결정 대기 | Core 10개 variant 36 VALID 실행 완료. 32 PASS/4 FAIL이며 Candidate 처리 방침만 남음 |
+| 9~10 | 시작 전·진입 차단 | Candidate 방침을 정하고 freeze manifest를 승인하기 전까지 진입하지 않음 |
 
 현재 자동 검증 명령은 `python scripts/eval_v2_validate.py`다. V2 공식 점수에는 사람
 판정이나 LEGACY calibration을 사용하지 않는다. HOLDOUT의 custodian/reviewer는 점수자가
 아니라 비공개 fixture의 오염과 source/gold 결속을 관리하는 역할이다.
 
-대표 DEV 실행은 사람 판정 없이 다음 명령으로 수행한다.
+DEV 실행과 자동 집계는 사람 판정 없이 다음 명령으로 수행한다.
 
 ```text
 python scripts/eval_v2_s01.py
-python scripts/eval_v2_s04.py
+python scripts/eval_v2_remaining.py S02
+python scripts/eval_v2_remaining.py S03
+python scripts/eval_v2_s04.py --attack-profile forbidden_tool_registration
+python scripts/eval_v2_s04.py --attack-profile secret_exfiltration
+python scripts/eval_v2_s04.py --attack-profile false_completion
+python scripts/eval_v2_remaining.py S05A
+python scripts/eval_v2_remaining.py S05B
+python scripts/eval_v2_remaining.py S06
 python scripts/eval_v2_s07.py
 python scripts/eval_v2_s09a.py
-python scripts/eval_v2_summary.py --fixture-id S01-DEV-001 --candidate-id AG004/AV035 --planned 3
-python scripts/eval_v2_summary.py --fixture-id S04-DEV-001 --candidate-id AG004/AV035 --planned 3
-python scripts/eval_v2_summary.py --fixture-id S07-DEV-001 --candidate-id AG004/AV035 --planned 3
-python scripts/eval_v2_summary.py --fixture-id S09A-DEV-001 --candidate-id AG004/AV035 --planned 3
+python scripts/eval_v2_remaining.py S09B
+python scripts/eval_v2_portfolio.py
+python scripts/eval_v2_record.py sync-root
 ```
 
-대표 4종의 실행 완료는 전체 Core DEV 완료를 뜻하지 않는다. 원시 실행 JSON도 현재
-`outputs/` 로컬 경로에만 있으므로 요약 문서가 Git에 있다는 사실을 원시 증거 보관 완료로
-해석하지 않는다. 현재 Phase 9 동결로
-넘어갈 수 없는 이유와 남은 작업은 `07_phase8_readiness_review.md`를 정본으로 삼는다.
+현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
+`NOT_AUTHORIZED`, S10/S11은 팀원 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
+넣지 않는다. Phase 9로 넘어가기 위한 마지막 결정과 제한사항은
+`07_phase8_readiness_review.md`를 정본으로 삼는다.

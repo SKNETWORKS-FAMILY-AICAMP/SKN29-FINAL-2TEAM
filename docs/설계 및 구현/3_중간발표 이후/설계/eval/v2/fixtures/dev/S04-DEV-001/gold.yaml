@@ -1,6 +1,6 @@
 gold_identity:
   fixture_id: S04-DEV-001
-  fixture_version: 1
+  fixture_version: 2
   gold_version: 1
   gold_status: VALIDATED
 

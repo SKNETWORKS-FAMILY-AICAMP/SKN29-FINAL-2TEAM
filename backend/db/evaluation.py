@@ -9,6 +9,156 @@ from psycopg.types.json import Jsonb
 from .connection import database_connection
 
 
+class V2EvaluationResultRepository:
+    """V2 원본은 파일로 유지하고 DB에는 충돌 불가 조회 사본을 저장한다."""
+
+    @staticmethod
+    def sync_completed_run(bundle: dict[str, Any]) -> dict[str, Any]:
+        manifest = bundle["manifest"]
+        summary = bundle["summary"]
+        results = bundle["results"]
+        hashes = bundle["hashes"]
+        line_hashes = bundle["result_line_sha256"]
+        run_id = str(manifest["eval_run_id"])
+        candidate_id = str(manifest["candidate_id"])
+        if "/" not in candidate_id:
+            raise ValueError("V2 candidate_id는 agent/version 형식이어야 합니다.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO eval_v2_run (
+                        eval_run_id, schema_version, git_commit, candidate_id,
+                        candidate_model, runtime_profile, started_at, finished_at,
+                        manifest, summary, disposition, manifest_sha256,
+                        results_sha256, summary_sha256, disposition_sha256
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (eval_run_id) DO NOTHING
+                    RETURNING eval_run_id
+                    """,
+                    (
+                        run_id, manifest["schema_version"], manifest["git_commit"],
+                        candidate_id, manifest["candidate_model"], manifest["runtime_profile"],
+                        manifest["started_at"], summary["finished_at"], Jsonb(manifest),
+                        Jsonb(summary), Jsonb(bundle["disposition"]) if bundle["disposition"] else None,
+                        hashes["manifest"], hashes["results"], hashes["summary"],
+                        hashes.get("disposition"),
+                    ),
+                )
+                inserted = cursor.fetchone() is not None
+                if not inserted:
+                    cursor.execute(
+                        """SELECT manifest, summary, disposition, manifest_sha256,
+                                  results_sha256, summary_sha256, disposition_sha256
+                           FROM eval_v2_run WHERE eval_run_id = %s""",
+                        (run_id,),
+                    )
+                    existing = cursor.fetchone()
+                    expected = {
+                        "manifest": manifest, "summary": summary,
+                        "disposition": bundle["disposition"],
+                        "manifest_sha256": hashes["manifest"],
+                        "results_sha256": hashes["results"],
+                        "summary_sha256": hashes["summary"],
+                        "disposition_sha256": hashes.get("disposition"),
+                    }
+                    if existing != expected:
+                        comparable_existing = {key: value for key, value in existing.items() if key not in {"disposition", "disposition_sha256"}}
+                        comparable_expected = {key: value for key, value in expected.items() if key not in {"disposition", "disposition_sha256"}}
+                        append_only_disposition = (
+                            comparable_existing == comparable_expected
+                            and existing["disposition"] is None
+                            and existing["disposition_sha256"] is None
+                            and expected["disposition"] is not None
+                            and expected["disposition_sha256"] is not None
+                        )
+                        if not append_only_disposition:
+                            raise ValueError("같은 V2 eval_run_id에 다른 원시 결과가 이미 있습니다.")
+                        cursor.execute(
+                            """UPDATE eval_v2_run
+                               SET disposition = %s, disposition_sha256 = %s, synced_at = now()
+                               WHERE eval_run_id = %s AND disposition IS NULL""",
+                            (Jsonb(expected["disposition"]), expected["disposition_sha256"], run_id),
+                        )
+
+                for index, (result, record_hash) in enumerate(
+                    zip(results, line_hashes, strict=True), start=1
+                ):
+                    cursor.execute(
+                        """
+                        INSERT INTO eval_v2_scenario_result (
+                            eval_run_id, scenario_index, scenario_id, fixture_id,
+                            fixture_version, gold_version, scenario_result, validity,
+                            record_sha256, result
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (eval_run_id, scenario_index) DO NOTHING
+                        RETURNING scenario_index
+                        """,
+                        (
+                            run_id, index, result["scenario_id"], result["fixture_id"],
+                            result["fixture_version"], result["gold_version"],
+                            result["scenario_result"], result["validity"], record_hash,
+                            Jsonb(result),
+                        ),
+                    )
+                    if cursor.fetchone() is not None:
+                        continue
+                    cursor.execute(
+                        """SELECT result, record_sha256
+                           FROM eval_v2_scenario_result
+                           WHERE eval_run_id = %s AND scenario_index = %s""",
+                        (run_id, index),
+                    )
+                    existing = cursor.fetchone()
+                    if existing != {"result": result, "record_sha256": record_hash}:
+                        raise ValueError("같은 V2 run/scenario에 다른 결과가 이미 있습니다.")
+        return {"eval_run_id": run_id, "scenario_count": len(results), "sync_status": "SYNCED"}
+
+    @staticmethod
+    def reconcile_completed_run(bundle: dict[str, Any]) -> dict[str, Any]:
+        run_id = str(bundle["manifest"]["eval_run_id"])
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT manifest, summary, disposition, manifest_sha256,
+                              results_sha256, summary_sha256, disposition_sha256
+                       FROM eval_v2_run WHERE eval_run_id = %s""",
+                    (run_id,),
+                )
+                stored_run = cursor.fetchone()
+                cursor.execute(
+                    """SELECT scenario_index, result, record_sha256
+                       FROM eval_v2_scenario_result
+                       WHERE eval_run_id = %s ORDER BY scenario_index""",
+                    (run_id,),
+                )
+                stored_results = cursor.fetchall()
+        hashes = bundle["hashes"]
+        expected_run = {
+            "manifest": bundle["manifest"], "summary": bundle["summary"],
+            "disposition": bundle["disposition"], "manifest_sha256": hashes["manifest"],
+            "results_sha256": hashes["results"], "summary_sha256": hashes["summary"],
+            "disposition_sha256": hashes.get("disposition"),
+        }
+        expected_results = [
+            {"scenario_index": index, "result": result, "record_sha256": record_hash}
+            for index, (result, record_hash) in enumerate(
+                zip(bundle["results"], bundle["result_line_sha256"], strict=True), start=1
+            )
+        ]
+        matched = stored_run == expected_run and stored_results == expected_results
+        return {
+            "eval_run_id": run_id,
+            "matched": matched,
+            "local_scenario_count": len(expected_results),
+            "db_scenario_count": len(stored_results),
+        }
+
+
 class EvaluationResultRepository:
     """같은 ``eval_run_id``를 다른 내용으로 덮어쓰지 않는 평가 저장소."""
 

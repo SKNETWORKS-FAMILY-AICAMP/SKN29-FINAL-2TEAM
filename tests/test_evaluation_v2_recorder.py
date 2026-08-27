@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.evaluation.v2_recorder import V2EvaluationRecorder
+from services.evaluation.v2_recorder import V2EvaluationRecorder, read_completed_v2_run
 
 
 def _record(scenario_id="S01", result="PASS"):
@@ -80,6 +80,29 @@ class EvaluationV2RecorderTests(unittest.TestCase):
             self.assertEqual(disposition["status"], "INVALID_EVALUATION_INFRA")
             with self.assertRaises(FileExistsError):
                 recorder.record_disposition(status="VALID", reason="덮어쓰기 시도")
+
+    def test_completed_run_bundle_has_file_and_line_hashes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            recorder = V2EvaluationRecorder.start(
+                output_root=Path(temporary),
+                manifest={
+                    "git_commit": "abc123",
+                    "candidate_id": "AG004/AV035",
+                    "candidate_model": "model",
+                    "runtime_profile": "test",
+                    "planned_scenarios": ["S01"],
+                },
+            )
+            recorder.append_scenario(_record("S01"))
+            recorder.finalize()
+
+            bundle = read_completed_v2_run(recorder.run_dir)
+
+            self.assertEqual(bundle["manifest"]["eval_run_id"], recorder.manifest["eval_run_id"])
+            self.assertEqual(len(bundle["results"]), 1)
+            self.assertEqual(len(bundle["result_line_sha256"]), 1)
+            self.assertEqual(set(bundle["hashes"]), {"manifest", "results", "summary"})
+            self.assertTrue(all(len(value) == 64 for value in bundle["hashes"].values()))
 
 
 if __name__ == "__main__":

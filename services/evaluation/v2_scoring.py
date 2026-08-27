@@ -87,12 +87,12 @@ def score_scenario(
     elif any(item["result"] in {"UNAVAILABLE", "CORRUPT"} for item in deterministic):
         result = "INVALID_EVALUATION_INFRA"
         reason = "필수 deterministic observable을 사용할 수 없음"
-    elif any(item["result"] == "FAIL" for item in deterministic):
-        result = "FAIL"
-        reason = "필수 deterministic criterion 실패"
     elif judge_is_required and judge_execution_status != "COMPLETED":
         result = "INVALID_EVALUATION_INFRA"
         reason = "필수 LLM Judge 실행 또는 parsing 실패"
+    elif any(item["result"] == "FAIL" for item in deterministic):
+        result = "FAIL"
+        reason = "필수 deterministic criterion 실패"
     elif any(item["result"] == "FAIL" for item in judge):
         result = "FAIL"
         reason = "필수 LLM Judge criterion 실패"

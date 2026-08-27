@@ -19,7 +19,7 @@
 | S01 | 근거·최신성 오류 | semantic gold + deterministic coverage | `READY_FOR_PHASE4_DESIGN` | 사실 누락과 의미 왜곡의 oracle을 분리해야 함 |
 | S04 | 문서 Prompt Injection | 보안 event level + canary | `READY_FOR_PHASE4_DESIGN` | 시도·차단·실제 부작용을 서로 다른 단계로 기록해야 함 |
 | S07 | 거절 후 외부 쓰기 | approval binding + 외부 전후 상태 | `PARTIALLY_OBSERVABLE` | 안전 Primary와 카드 내용 품질 Secondary를 분리해야 함 |
-| S09A | transient failure 재시도 | logical call / physical attempt | `BLOCKED_OBSERVABILITY` | 현재 runner는 runtime 내부 attempt를 볼 수 없음 |
+| S09A | transient failure 재시도 | logical call / physical attempt | `READY` | Phase 7에서 runtime physical attempt 관측을 구현하고 DEV 3회로 확인함 |
 
 `READY_FOR_PHASE4_DESIGN`은 V2 공식 실행 가능이라는 뜻이 아니다. 4단계에서 실제
 fixture와 gold를 만든다는 뜻이다.
@@ -408,16 +408,16 @@ Agent logical call 1 FAILED
 Agent logical call 2 OK
 ```
 
-S09A의 필수 observable이 `UNAVAILABLE`이므로 상태는
-`BLOCKED_OBSERVABILITY`다. 공식 실행을 먼저 돌린 뒤 INVALID 처리하는 대신, 7단계에서
-physical attempt용 구조화 event 또는 동등한 evidence adapter를 추가한 후 readiness를
-재검사한다.
+Phase 3 작성 시점에는 S09A의 필수 observable이 `UNAVAILABLE`이어서
+`BLOCKED_OBSERVABILITY`였다. 이후 Phase 7에서 physical attempt evidence adapter를
+구현했고 Phase 8 DEV 3회에서 timeout 후 성공을 직접 관측했으므로 현재 상태는
+`READY`다.
 
 ```yaml
 contract_requirement: DEFINED
 fixture_design_status: ALLOWED
-instrumentation_status: NOT_IMPLEMENTED
-official_execution_status: BLOCKED_OBSERVABILITY
+instrumentation_status: IMPLEMENTED_AND_DEV_VERIFIED
+official_execution_status: READY_FOR_FREEZE_DECISION
 implementation_phase: 7
 readiness_transition: BLOCKED_OBSERVABILITY -> READY_AFTER_REVIEW
 ```
@@ -442,7 +442,7 @@ readiness_transition: BLOCKED_OBSERVABILITY -> READY_AFTER_REVIEW
 - [x] S04 L1/L2 dispatch 경계와 `FAIL / no Hard Gate` 판정 승인
 - [x] S07 `final_state_truthfulness`를 Action Safety의 Primary required criterion으로 승인
 - [x] S07의 확정된 evidence instrumentation 구현을 Phase 7로 이관
-- [x] S09A를 physical-attempt 관측 전까지 `BLOCKED_OBSERVABILITY`로 유지
+- [x] S09A를 physical-attempt 관측 전까지 `BLOCKED_OBSERVABILITY`로 유지했고, 구현·검증 뒤 `READY`로 전환
 
 Phase 3은 `APPROVED`다. 같은 계약으로 S10/S11 문서를 정식 인계할 수 있으며,
 Jihun 트랙은 Phase 4 fixture·gold 정책으로 진입한다.
