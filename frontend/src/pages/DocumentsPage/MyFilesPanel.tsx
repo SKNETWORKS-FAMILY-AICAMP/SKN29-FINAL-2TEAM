@@ -107,6 +107,11 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
    */
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * 올리는 중인 파일 이름. **행 조작(`busy`)과 한 칸을 쓰면 안 된다** — 지우기
+   * 하나만 눌러도 버튼이 「올리는 중…」이라고 말하게 된다.
+   */
+  const [uploading, setUploading] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   /** 지우려는 파일. 되돌릴 수 없어 한 번 묻는다. */
   const [confirming, setConfirming] = useState<PersonalFile | null>(null);
@@ -161,7 +166,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
     if (!token || !picked || picked.length === 0) return;
     setUploadError(null);
     for (const file of Array.from(picked)) {
-      setBusy(file.name);
+      setUploading(file.name);
       try {
         await uploadPersonalFile(token, file);
         // 올린 파일도 커넥터 문서와 같은 색인을 탄다. 전역 카드가 곧바로 잡게 한다.
@@ -172,7 +177,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
         setUploadError(exc instanceof ApiError ? exc.message : `${file.name} · 올리지 못했습니다.`);
       }
     }
-    setBusy(null);
+    setUploading(null);
     await load();
   }
 
@@ -293,10 +298,36 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
     if (page !== safePage) setPage(safePage);
   }, [page, safePage]);
 
+  /**
+   * 놓는 자리는 **패널 전체다**(2026-08-27). 얇은 막대만 받으면 파일을 든 채로
+   * 그 한 줄을 겨눠야 했다 — 표 위에 놓쳐 떨어뜨리면 브라우저가 그 파일을
+   * 열어 버려 보던 화면에서 아예 튕겨 나간다.
+   *
+   * 받은 파일 탭에서는 받지 않는다. 막지 않으면 남의 것을 모아 둔 자리에
+   * 내 파일이 올라간다.
+   */
   function onDrop(event: DragEvent<HTMLDivElement>) {
+    if (tab !== 'mine') return;
     event.preventDefault();
     setDragging(false);
     upload(event.dataTransfer.files);
+  }
+
+  function onDragOver(event: DragEvent<HTMLDivElement>) {
+    if (tab !== 'mine') return;
+    // 막지 않으면 브라우저가 「여기엔 못 놓는다」로 표시하고 drop 도 안 온다.
+    event.preventDefault();
+    setDragging(true);
+  }
+
+  /**
+   * 안쪽 요소를 지날 때마다 dragleave 가 뜬다. **정말 상자를 벗어났을 때만**
+   * 끈다 — 아니면 덮개가 표 위를 지나는 내내 깜빡인다. 창 밖으로 나가면
+   * relatedTarget 이 null 이라 `contains` 가 false 를 준다.
+   */
+  function onDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragging(false);
   }
 
   // 실패한 것은 「읽는 중」이 아니다 — 팀 문서 표와 같은 규칙을 쓴다.
@@ -312,7 +343,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   const failed = matched.filter((file) => file.index_status === 'FAILED').length;
 
   return (
-    <>
+    <div className={styles.panelDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <div className={styles.panelHead}>
         <h2 className={styles.panelTitle}>{tab === 'mine' ? '내 파일' : '공유 받은 파일'}</h2>
         <span className={styles.panelCount}>
@@ -324,49 +355,9 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
 
       {error && <p className={styles.error}>{error}</p>}
 
-      {/* drag & drop. **누르는 것으로도 된다** — 드래그가 안 되는 환경(모바일)이
-          있고, 되는 곳에서도 파일 고르기를 더 편하게 여기는 사람이 있다.
-          받은 파일 탭에서는 안 보인다 — 거기 올릴 수는 없다. */}
-      {tab === 'mine' && (
-        <div
-          className={[styles.dropZone, dragging ? styles.dropZoneOn : ''].filter(Boolean).join(' ')}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          onClick={() => inputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
-          }}
-        >
-          <Icon name="plus" size={18} color="var(--color-primary)" />
-          <span className={styles.dropTitle}>
-            {busy ? `${busy} 올리는 중…` : '여기로 끌어다 놓거나 눌러서 고르세요'}
-          </span>
-          <span className={styles.dropHint}>
-            PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
-          </span>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept={ACCEPT}
-            className={styles.fileInput}
-            onChange={(event) => {
-              upload(event.target.files);
-              // 같은 파일을 다시 고를 수 있게 비운다 — 안 비우면 change 가 안 뜬다.
-              event.target.value = '';
-            }}
-          />
-        </div>
-      )}
-
-      {/* 거절 사유는 **놓은 자리 바로 아래**에 붙인다. 위쪽 목록 오류 자리에
-          두면 방금 한 동작과 멀어져 눈에 안 들어온다. */}
+      {/* 거절 사유는 표 바로 위에 붙인다. 놓는 자리가 패널 전체가 되면서
+          「놓은 자리 바로 아래」라는 곳이 없어졌다 — 목록이 시작되기 전
+          한 줄이 방금 한 동작과 가장 가깝다. */}
       {tab === 'mine' && uploadError && <p className={styles.error}>{uploadError}</p>}
 
       <div className={styles.toolbar}>
@@ -385,6 +376,31 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
             </button>
           )}
         </div>
+        {/* 고르는 버튼. **막대를 없애도 이건 남아야 한다**(2026-08-27) —
+            드래그가 안 되는 환경(모바일)에서는 이것이 올리는 유일한 길이다.
+            표가 비었을 때만 두면 파일이 하나라도 있는 순간 길이 끊긴다. */}
+        {tab === 'mine' && (
+          <>
+            <Button size="sm" variant="outline" disabled={uploading !== null} onClick={() => inputRef.current?.click()}>
+              <Icon name="plus" size={14} />
+              {/* 「파일 업로드」는 `SkillsTab` 이 같은 동작에 이미 쓰는 말이고,
+                  이 패널의 성공 토스트도 「업로드했습니다」다. */}
+              {uploading ? `${uploading} 업로드하는 중…` : '파일 업로드'}
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept={ACCEPT}
+              className={styles.fileInput}
+              onChange={(event) => {
+                upload(event.target.files);
+                // 같은 파일을 다시 고를 수 있게 비운다 — 안 비우면 change 가 안 뜬다.
+                event.target.value = '';
+              }}
+            />
+          </>
+        )}
         <label className={styles.pageSize}>
           <span>쪽당</span>
           <select
@@ -401,123 +417,171 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
         </label>
       </div>
 
-      {rows.length === 0 && (
-        <p className={styles.muted}>
-          {tab === 'mine' ? '아직 올린 파일이 없습니다.' : '팀원이 공유한 파일이 아직 없습니다.'}
-        </p>
-      )}
+      {/* **비어 있어도 표는 남긴다**(2026-08-27). 표가 통째로 사라지면 문장
+          한 줄만 뜬 채 화면이 무너져 보이고, 어떤 열이 담기는 자리인지도 함께
+          사라진다 — 처음 온 사람이 가장 알고 싶어 하는 것이다. */}
+      <div className={styles.table}>
+        {/* 열이 탭마다 다르다. **받은 파일에는 조작이 없다** — 남의 것이라
+            지울 수도 공유를 거둘 수도 없고, 검색에는 공유한 순간부터 이미
+            쓰인다. 그 자리에 스위치를 두면 「꺼도 쓰이는」 상태가 생긴다.
+            대신 **누가 올렸는지**가 온다 — 팀 문서는 「우리 폴더에서 왔다」가
+            믿을 근거인데 여기는 사람이 그 근거다. */}
+        <div className={tab === 'mine' ? styles.myFileHead : styles.sharedHead}>
+          <span>문서</span>
+          {tab === 'shared' && <span>공유한 사람</span>}
+          <span>상태</span>
+          <span>올림</span>
+          {tab === 'mine' && (
+            <>
+              <span>검색에 사용</span>
+              <span>팀에 공유</span>
+              <span />
+            </>
+          )}
+        </div>
 
-      {/* 검색으로 0건인 것과 원래 빈 것은 다른 상태다. */}
-      {rows.length > 0 && matched.length === 0 && <p className={styles.muted}>검색 결과가 없습니다.</p>}
-
-      {matched.length > 0 && (
-        <div className={styles.table}>
-          {/* 열이 탭마다 다르다. **받은 파일에는 조작이 없다** — 남의 것이라
-              지울 수도 공유를 거둘 수도 없고, 검색에는 공유한 순간부터 이미
-              쓰인다. 그 자리에 스위치를 두면 「꺼도 쓰이는」 상태가 생긴다.
-              대신 **누가 올렸는지**가 온다 — 팀 문서는 「우리 폴더에서 왔다」가
-              믿을 근거인데 여기는 사람이 그 근거다. */}
-          <div className={tab === 'mine' ? styles.myFileHead : styles.sharedHead}>
-            <span>문서</span>
-            {tab === 'shared' && <span>공유한 사람</span>}
-            <span>상태</span>
-            <span>올림</span>
-            {tab === 'mine' && (
+        {/* 검색으로 0건인 것과 원래 빈 것은 다른 상태다. */}
+        {matched.length === 0 && (
+          <div className={styles.tableEmpty}>
+            {/* 아이콘은 **왜 비었는지**를 가리킨다 — 검색해서 0건인 것과 원래
+                아무것도 없는 것은 다음에 할 일이 다르다. */}
+            <span className={styles.tableEmptyIcon}>
+              <Icon
+                name={rows.length > 0 ? 'search' : tab === 'mine' ? 'file-text' : 'users'}
+                size={22}
+                color="var(--color-primary)"
+              />
+            </span>
+            <p className={styles.tableEmptyTitle}>
+              {rows.length > 0
+                ? '검색 결과가 없습니다.'
+                : tab === 'mine'
+                  ? '아직 올린 파일이 없습니다.'
+                  : '팀원이 공유한 파일이 아직 없습니다.'}
+            </p>
+            {/* 올리는 법은 **빈 표 안에서** 말한다. 늘 떠 있던 안내 막대는
+                파일이 쌓인 뒤로는 아무도 안 읽으면서 자리만 차지했다. */}
+            {tab === 'mine' && rows.length === 0 && (
               <>
-                <span>검색에 사용</span>
-                <span>팀에 공유</span>
-                <span />
+                <p className={styles.tableEmptyHint}>여기로 끌어다 놓거나 「파일 업로드」로 고르세요</p>
+                {/* 받는 형식을 한 문장으로 늘어놓으면 눈이 훑고 지나간다.
+                    낱개로 끊어 두면 내 파일이 그중에 있는지 바로 찾는다. */}
+                <div className={styles.tableEmptyChips}>
+                  <span>PDF</span>
+                  <span>Word(docx)</span>
+                  <span>텍스트(txt·md)</span>
+                </div>
+                {/* 「N 이하」는 저장소가 이미 쓰는 말이다 — 서버 거절 문장이
+                    「파일은 50MB 이하여야 합니다.」이고 `AvatarPicker` 도
+                    「2MB 이하」로 적는다. 「파일 하나」는 `SkillsTab` 에서 왔다.
+
+                    「여러 개 한 번에」는 뺐다. 제약이 아니라 되는 일인데 한도와
+                    가운뎃점으로 묶여 있어 같이 제약처럼 읽혔다. */}
+                <p className={styles.tableEmptyNote}>파일 하나에 50MB 이하</p>
               </>
             )}
           </div>
+        )}
 
-          {paged.map((file) => {
-            const chip = statusChip(file);
-            return (
-              <div key={file.doc_id} className={tab === 'mine' ? styles.myFileRow : styles.sharedRow}>
-                <span className={styles.cellName}>
-                  <Icon name="file-text" size={15} color="var(--color-primary)" />
-                  <span className={styles.cellNameText}>
-                    <span className={styles.fileName}>{file.file_name}</span>
-                    {/* **문서 내용은 목록에 안 찍는다**(2026-08-18 PM). 요약을
-                        그대로 얹었더니 줄마다 기획서 본문이 문단째로 쏟아졌다 —
-                        파일 목록은 어느 파일인지 고르는 자리지 읽는 자리가 아니다. */}
-                    {chip.hint && (
-                      <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
-                        {chip.hint}
-                      </span>
-                    )}
-                  </span>
-                </span>
-
-                {tab === 'shared' && (
-                  <span className={styles.cellPath} data-label="공유한 사람">
-                    {file.owner_name ?? '알 수 없음'}
-                  </span>
-                )}
-
-                <span className={styles.cellStatus} data-label="상태">
-                  <Badge tone={chip.tone}>{chip.label}</Badge>
-                </span>
-
-                <span className={styles.cellDate} data-label="올림">
-                  {formatDate(file.uploaded_at)}
-                </span>
-
-                {tab === 'mine' && (
-                  <>
-                    {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
-                        끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
-                    <span className={styles.cellToggle}>
-                      <ToggleSwitch
-                        checked={file.search_enabled}
-                        onChange={(next) => toggle(file, 'search_enabled', next)}
-                      />
+        {paged.map((file) => {
+          const chip = statusChip(file);
+          return (
+            <div key={file.doc_id} className={tab === 'mine' ? styles.myFileRow : styles.sharedRow}>
+              <span className={styles.cellName}>
+                <Icon name="file-text" size={15} color="var(--color-primary)" />
+                <span className={styles.cellNameText}>
+                  <span className={styles.fileName}>{file.file_name}</span>
+                  {/* **문서 내용은 목록에 안 찍는다**(2026-08-18 PM). 요약을
+                      그대로 얹었더니 줄마다 기획서 본문이 문단째로 쏟아졌다 —
+                      파일 목록은 어느 파일인지 고르는 자리지 읽는 자리가 아니다. */}
+                  {chip.hint && (
+                    <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
+                      {chip.hint}
                     </span>
-                    <span className={styles.cellToggle}>
-                      <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
-                    </span>
-                    <span className={styles.cellActions}>
-                      {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
-                          권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
-                          표와 같은 조건이다. */}
-                      {(file.search_ready || file.index_status === 'FAILED') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === file.doc_id}
-                          onClick={() => void retry(file)}
-                        >
-                          다시 읽기
-                        </Button>
-                      )}
-                      {/* 「다운로드」는 새로 지은 말이다 — 저장소에 받기·내려받기
-                          문구가 한 곳도 없었다(2026-08-26 확인). 「삭제」·「수정」
-                          처럼 이미 쓰는 한자어 명사와 결이 같은 쪽을 골랐다. */}
+                  )}
+                </span>
+              </span>
+
+              {tab === 'shared' && (
+                <span className={styles.cellPath} data-label="공유한 사람">
+                  {file.owner_name ?? '알 수 없음'}
+                </span>
+              )}
+
+              <span className={styles.cellStatus} data-label="상태">
+                <Badge tone={chip.tone}>{chip.label}</Badge>
+              </span>
+
+              <span className={styles.cellDate} data-label="올림">
+                {formatDate(file.uploaded_at)}
+              </span>
+
+              {tab === 'mine' && (
+                <>
+                  {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
+                      끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
+                  <span className={styles.cellToggle}>
+                    <ToggleSwitch
+                      checked={file.search_enabled}
+                      onChange={(next) => toggle(file, 'search_enabled', next)}
+                    />
+                  </span>
+                  <span className={styles.cellToggle}>
+                    <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
+                  </span>
+                  {/* **아이콘만 남긴다**(2026-08-27). 글자로 셋을 세우면 조작
+                      칸이 248px 이라 표 전체(924px)가 패널(약 800px)보다 넓어져
+                      「내 파일」만 가로로 스크롤됐다. 이름은 `title`(툴팁)과
+                      `aria-label`(읽어 주는 이름)에 그대로 남는다. */}
+                  <span className={styles.cellActions}>
+                    {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
+                        권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
+                        표와 같은 조건이다. */}
+                    {(file.search_ready || file.index_status === 'FAILED') && (
                       <Button
                         size="sm"
                         variant="outline"
+                        className={styles.iconAction}
+                        title="다시 읽기"
+                        aria-label="다시 읽기"
                         disabled={busy === file.doc_id}
-                        onClick={() => void download(file)}
+                        onClick={() => void retry(file)}
                       >
-                        다운로드
+                        <Icon name="refresh" size={15} />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy === file.doc_id}
-                        onClick={() => setConfirming(file)}
-                      >
-                        삭제
-                      </Button>
-                    </span>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                    )}
+                    {/* 「다운로드」는 새로 지은 말이다 — 저장소에 받기·내려받기
+                        문구가 한 곳도 없었다(2026-08-26 확인). 「삭제」·「수정」
+                        처럼 이미 쓰는 한자어 명사와 결이 같은 쪽을 골랐다. */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={styles.iconAction}
+                      title="다운로드"
+                      aria-label="다운로드"
+                      disabled={busy === file.doc_id}
+                      onClick={() => void download(file)}
+                    >
+                      <Icon name="download" size={15} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className={styles.iconAction}
+                      title="삭제"
+                      aria-label="삭제"
+                      disabled={busy === file.doc_id}
+                      onClick={() => setConfirming(file)}
+                    >
+                      <Icon name="trash" size={15} />
+                    </Button>
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {pageCount > 1 && (
         <div className={styles.pager}>
@@ -570,7 +634,16 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           읽어 둔 내용과 원본 파일이 함께 삭제됩니다. 팀에 공유한 파일이면 팀원 목록에서도 제거됩니다.
         </p>
       </Modal>
-    </>
+
+      {/* 드래그하는 동안에만 덮는다. 표를 가리지만, 지금 놓아도 되는지가
+          그 순간에는 표에 무엇이 있는지보다 중요하다. */}
+      {dragging && (
+        <div className={styles.panelDropOverlay}>
+          <Icon name="plus" size={20} color="var(--color-primary)" />
+          <span className={styles.dropTitle}>여기로 끌어다 놓으세요</span>
+        </div>
+      )}
+    </div>
   );
 }
 

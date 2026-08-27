@@ -44,6 +44,8 @@ export type IconName =
   | 'lock'
   | 'message-square'
   | 'plus'
+  | 'download'
+  | 'trash'
   | 'menu'
   | 'sidebar'
   | 'more-horizontal'
@@ -165,6 +167,22 @@ function renderPaths(name: IconName, color: string): ReactElement {
       );
     case 'loader':
       return <path d="M21 12a9 9 0 1 1-6.219-8.56" />;
+    case 'download':
+      return (
+        <>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M12 15V3" />
+        </>
+      );
+    case 'trash':
+      return (
+        <>
+          <path d="M3 6h18" />
+          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+        </>
+      );
     case 'refresh':
       return (
         <>
