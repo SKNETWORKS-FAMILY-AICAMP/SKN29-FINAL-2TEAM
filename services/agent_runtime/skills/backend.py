@@ -118,11 +118,15 @@ _SKILLS_ROUTING_PROMPT = """
    description or usage condition, search for and read that skill FIRST —
    before responding, and before considering anything else (including
    whether to save something to memory).
-2. Judge the match by the skill's description — what it does and when to
-   use it — not by its name. A plausible-sounding name is not evidence.
-3. If the match is weak or only tangentially related to the request, do not
-   force the skill. Answer normally instead of reading a skill that doesn't
-   clearly fit.
+2. Judge the match by the skill's complete description — what result it
+   produces, when to use it, and when not to use it — not by its name or by
+   a shared topic alone. A plausible-sounding name or similar input is not
+   evidence that the requested task is the same.
+3. Compare the user's primary requested result or action with the skill's
+   result before reading it. If that result is explicitly excluded or is a
+   different task, do not read the skill even when the request mentions the
+   same subject matter. If the match is weak or only tangentially related,
+   answer normally instead of forcing the skill.
 4. If more than one skill seems relevant, read only the ones you actually
    need for this request — not every skill whose description brushes
    against it.

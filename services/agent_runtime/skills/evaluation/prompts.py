@@ -8,7 +8,7 @@ job의 `generator_prompt_version` 등을 보고 "그때 어떤 프롬프트로 �
 
 from __future__ import annotations
 
-EVAL_CASE_GENERATOR_PROMPT_VERSION = "v3"
+EVAL_CASE_GENERATOR_PROMPT_VERSION = "v5"
 
 EVAL_CASE_GENERATOR_SYSTEM_PROMPT = """\
 당신은 업무용 Agent Skill의 라우팅 평가 케이스를 설계합니다.
@@ -33,7 +33,7 @@ EVAL_CASE_GENERATOR_SYSTEM_PROMPT = """\
 
 <negative_categories>
 - adjacent_intent: 주제는 비슷하지만 목적이 다른 요청 3개
-- missing_precondition: 스킬 실행 조건이 부족한 요청 2개
+- excluded_boundary: 입력은 충분하지만 후보 본문이 명시적으로 제외한 목적의 요청 2개
 - other_skill: 다른 등록 스킬이나 일반 답변이 더 적절한 요청 3개
 </negative_categories>
 
@@ -56,6 +56,13 @@ EVAL_CASE_GENERATOR_SYSTEM_PROMPT = """\
     합니다. 후보의 사용 조건을 완전히 만족하는 하위 요청에 다른 업무를 덧붙여
     부정으로 만들지 마세요. 그런 다중 의도 요청은 후보도 함께 사용해야 하므로
     오발동 사례가 아닙니다.
+11. 사용 목적은 분명하지만 원문·대상·필수 입력만 빠진 요청은 부정 케이스가
+    아닙니다. 스킬을 선택한 뒤 누락된 입력을 요청하는 것이 정상일 수 있습니다.
+12. 부정 케이스는 하나의 평가 목적만 가져야 합니다. 후보 스킬이 처리할 작업에
+    다른 산출물이나 후속 작업을 붙인 복합 요청을 부정 케이스로 만들지 마세요.
+13. excluded_boundary는 사용자가 요구한 최종 작업 전체가 후보의 제외 범위에
+    있어야 합니다. 후보가 처리할 입력을 언급하는 것과 후보의 결과를 실제로
+    요청하는 것을 구분하세요.
 """
 
 EVAL_CASE_GENERATOR_OUTPUT_SCHEMA = {
@@ -143,7 +150,7 @@ def build_generator_user_message(
     )
 
 
-EVAL_CASE_SEMANTIC_REVIEWER_PROMPT_VERSION = "v3"
+EVAL_CASE_SEMANTIC_REVIEWER_PROMPT_VERSION = "v5"
 
 EVAL_CASE_SEMANTIC_REVIEWER_PROMPT = """\
 당신은 생성된 Skill 평가 케이스의 의미 품질 검토자입니다.
@@ -173,9 +180,25 @@ hard_negative_quality=FAIL입니다.
 부정 케이스 안에 후보 스킬의 사용 조건을 완전히 만족하는 하위 요청이 하나라도
 있으면 hard_negative_quality=FAIL입니다. 다른 작업이 함께 있다는 이유만으로
 후보를 사용하면 안 된다고 판정하지 마세요.
+특히 "후보가 맡을 결과도 만들고, 다른 결과도 함께 만들어 달라"는 복합 요청은
+후보가 정당하게 사용되는 요청입니다. 전체 산출물 중 일부가 후보 범위 밖이라는
+이유로 부정 케이스로 인정하지 마세요.
+excluded_boundary는 사용자가 요구한 최종 작업 전체가 후보의 제외 범위일 때만
+PASS입니다. 후보가 처리할 결과를 함께 요구하면 FAIL입니다.
+후보 본문이 누락된 입력을 질문하거나 확인 필요로 표시하도록 정했다면, 입력이
+빠졌다는 이유만으로 그 요청을 부정 케이스로 인정하지 마세요.
 fixture 없이 이해할 수 없는 질문은 fixture_sufficiency=FAIL입니다.
 판단 근거가 부족하면 추측하지 말고 UNCERTAIN을 반환하세요.
 반드시 제공된 JSON Schema만 출력하세요.
+"""
+
+
+#: 실제 RuntimePromptAssembler가 공통 실행 정책을 앞에 붙인다. 이 프롬프트는
+#: 평가 draft에만 더해져 후보 스킬 검증 외의 역할이나 고유 업무 지식을 주지 않는다.
+SKILL_EVALUATION_AGENT_PROMPT = """\
+등록 전 후보 스킬을 실제 채팅과 같은 방식으로 평가한다.
+사용자 요청에 관련된 스킬이 있으면 해당 SKILL.md를 읽고 그 지침을 따른다.
+관련되지 않은 스킬은 읽지 않는다. 제공된 도구 중 필요한 것만 사용한다.
 """
 
 EVAL_CASE_SEMANTIC_REVIEW_SCHEMA = {
@@ -244,6 +267,7 @@ __all__ = [
     "build_generator_user_message",
     "EVAL_CASE_SEMANTIC_REVIEWER_PROMPT_VERSION",
     "EVAL_CASE_SEMANTIC_REVIEWER_PROMPT",
+    "SKILL_EVALUATION_AGENT_PROMPT",
     "EVAL_CASE_SEMANTIC_REVIEW_SCHEMA",
     "BEHAVIOR_SEMANTIC_REVIEWER_PROMPT_VERSION",
     "BEHAVIOR_SEMANTIC_REVIEWER_PROMPT",

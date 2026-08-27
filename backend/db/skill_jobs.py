@@ -248,25 +248,36 @@ class SkillRegistrationJobRepository:
 
         대상은 `QUEUED`이거나, lease가 만료된 `RUNNING`(죽은 워커가 들고 있던
         것 — §10 "워커가 하나도 없을 때"가 아니라 "워커 하나가 죽었을 때"의
-        회수다)이다. `SKIP LOCKED`라 여러 워커가 동시에 이 질의를 돌려도 같은
-        행을 두 번 집지 않는다.
+        회수다)이다. 서로 다른 계정은 여러 워커가 병렬 처리하지만 같은 계정의
+        개인 스킬 검증은 하나씩 처리한다. 한 작업이 게시되면 그 계정의 카탈로그
+        revision이 바뀌므로, 같은 계정 작업을 동시에 실행하면 나머지가 검증
+        막바지에 `STALE_EVAL_CONTEXT`로 실패하기 때문이다. `SKIP LOCKED`라 여러
+        워커가 동시에 이 질의를 돌려도 같은 행을 두 번 집지 않는다.
         """
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT * FROM skill_registration_job
-                    WHERE status = %s
-                       AND (
-                           team_id IS NULL OR (
+                    SELECT candidate.* FROM skill_registration_job candidate
+                    WHERE (
+                           (candidate.status = %s AND (
+                               candidate.team_id IS NULL OR (
                                SELECT count(*) FROM skill_registration_job running
-                                WHERE running.team_id = skill_registration_job.team_id
+                                WHERE running.team_id = candidate.team_id
                                   AND running.status = %s
-                           ) < %s
+                               ) < %s
+                           ))
+                           OR (candidate.status = %s AND candidate.lease_expires_at < now())
                        )
-                        OR (status = %s AND lease_expires_at < now())
-                     ORDER BY created_at
+                       AND NOT EXISTS (
+                           SELECT 1 FROM skill_registration_job running
+                            WHERE running.account_id = candidate.account_id
+                              AND running.job_id <> candidate.job_id
+                              AND running.status = %s
+                              AND (running.lease_expires_at IS NULL OR running.lease_expires_at >= now())
+                       )
+                     ORDER BY candidate.created_at
                      LIMIT 1
                      FOR UPDATE SKIP LOCKED
                     """,
@@ -274,6 +285,7 @@ class SkillRegistrationJobRepository:
                         STATUS_QUEUED,
                         STATUS_RUNNING,
                         settings.SKILL_VALIDATION_TEAM_RUNNING_JOB_LIMIT,
+                        STATUS_RUNNING,
                         STATUS_RUNNING,
                     ),
                 )

@@ -177,6 +177,7 @@ SKILL_EVAL_DEBUG_COMMANDS_ENABLED = env.bool("SKILL_EVAL_DEBUG_COMMANDS_ENABLED"
 SKILL_EVAL_SINGLE_RUN_TIMEOUT_SECONDS = env.int("SKILL_EVAL_SINGLE_RUN_TIMEOUT_SECONDS", default=30)
 SKILL_EVAL_CONCURRENCY = env.int("SKILL_EVAL_CONCURRENCY", default=6)
 SKILL_EVAL_JOB_TIMEOUT_SECONDS = env.int("SKILL_EVAL_JOB_TIMEOUT_SECONDS", default=300)
+SKILL_EVAL_AGENT_MAX_ITERATIONS = env.int("SKILL_EVAL_AGENT_MAX_ITERATIONS", default=10)
 
 # No operational default is provided for secrets or external addresses. The
 # integration validates these settings at the boundary where they are needed.

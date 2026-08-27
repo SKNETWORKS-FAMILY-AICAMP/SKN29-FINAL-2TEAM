@@ -81,8 +81,7 @@ def _run_once(
     *,
     case: SkillEvalCase,
     executor,
-    agent_id: str,
-    agent_version_id: str,
+    evaluation_agent_draft: dict[str, Any],
     account_id: str,
     team_id: str,
     attempt: int,
@@ -107,8 +106,9 @@ def _run_once(
     error: str | None = None
     try:
         for event in executor.run(
-            agent_id=agent_id,
-            agent_version_id=agent_version_id,
+            agent_id=None,
+            agent_version_id=None,
+            draft=evaluation_agent_draft,
             user_input=user_input,
             context=context,
             conversation_messages=conversation_messages,
@@ -138,8 +138,7 @@ def run_routing_case(
     *,
     case: SkillEvalCase,
     snapshot: EphemeralSkillSnapshot,
-    agent_id: str,
-    agent_version_id: str,
+    evaluation_agent_draft: dict[str, Any],
     account_id: str,
     team_id: str,
     attempts: int = 3,
@@ -168,8 +167,7 @@ def run_routing_case(
             lambda: _run_once(
                 case=case,
                 executor=executor,
-                agent_id=agent_id,
-                agent_version_id=agent_version_id,
+                evaluation_agent_draft=evaluation_agent_draft,
                 account_id=account_id,
                 team_id=team_id,
                 attempt=attempt_offset + attempt,
@@ -193,6 +191,9 @@ class BehaviorRunResult:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     final_response: str = ""
     error: str | None = None
+    semantic_assertion_total: int = 0
+    semantic_assertion_passed: int = 0
+    semantic_assertion_failures: list[str] = field(default_factory=list)
 
 
 def _bounded_call(fn, timeout_seconds: float):
@@ -311,8 +312,7 @@ def _run_behavior_case(
     *,
     case: SkillEvalCase,
     snapshot: EphemeralSkillSnapshot,
-    agent_id: str,
-    agent_version_id: str,
+    evaluation_agent_draft: dict[str, Any],
     account_id: str,
     team_id: str,
 ) -> BehaviorRunResult:
@@ -330,14 +330,14 @@ def _run_behavior_case(
     recorder = ToolCallRecorder()
     tool_loader = EvalToolLoader(tool_fixtures=_tool_fixtures(case), recorder=recorder)
     skills_provider = EvalSkillsProvider(snapshot)
-    checkpointer_provider = EvalCheckpointerProvider()
+    needs_checkpoint = bool(case.get("approval_fixtures"))
+    checkpointer_provider = EvalCheckpointerProvider() if needs_checkpoint else None
     factory = _build_eval_factory(
         tool_loader=tool_loader, skills_provider=skills_provider, checkpointer_provider=checkpointer_provider
     )
     executor = AgentExecutor(loader=AgentDefinitionLoader(), factory=factory)
 
     run_id = str(uuid.uuid4())
-    needs_checkpoint = bool(case.get("approval_fixtures"))
     session_id = str(uuid.uuid4()) if needs_checkpoint else None
     context = RuntimeContext(
         account_id=account_id, team_id=team_id, role="member", session_id=session_id, run_id=run_id
@@ -354,8 +354,9 @@ def _run_behavior_case(
 
     try:
         events = executor.run(
-            agent_id=agent_id,
-            agent_version_id=agent_version_id,
+            agent_id=None,
+            agent_version_id=None,
+            draft=evaluation_agent_draft,
             user_input=user_input,
             context=context,
             conversation_messages=conversation_messages,
@@ -397,7 +398,11 @@ def _run_behavior_case(
                     decision = queue_for_tool.popleft()
                 decisions.append({"action_index": index, "type": decision})
             events = executor.resume(
-                agent_id=agent_id, agent_version_id=agent_version_id, context=context, decisions=decisions
+                agent_id=None,
+                agent_version_id=None,
+                draft=evaluation_agent_draft,
+                context=context,
+                decisions=decisions,
             )
     except Exception as exc:  # noqa: BLE001
         error = f"{exc.__class__.__name__}: {exc}"

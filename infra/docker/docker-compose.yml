@@ -56,6 +56,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # claim_next()가 SKIP LOCKED로 서로 다른 job을 가져가므로 두 등록을 병렬 검증한다.
+    deploy:
+      replicas: 2
 
   frontend:
     build:

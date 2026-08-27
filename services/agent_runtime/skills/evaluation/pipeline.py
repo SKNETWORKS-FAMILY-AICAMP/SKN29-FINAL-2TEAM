@@ -15,14 +15,25 @@ from typing import Any, Callable
 from backend.db.skill_eval import SkillEvalRegressionCaseRepository
 from backend.db.skill_jobs import SkillEvalBudgetExceeded, SkillRegistrationJobRepository
 
-from .config import EVAL_CONCURRENCY, EVAL_JOB_TIMEOUT_SECONDS, SKILL_EVAL_AUTHOR_MODEL, SKILL_EVAL_REVIEWER_MODEL
+from .config import (
+    EVAL_AGENT_MAX_ITERATIONS,
+    EVAL_CONCURRENCY,
+    EVAL_JOB_TIMEOUT_SECONDS,
+    SKILL_EVAL_AUTHOR_EFFORT,
+    SKILL_EVAL_AUTHOR_MODEL,
+    SKILL_EVAL_REVIEWER_MODEL,
+)
 from .behavior_reviewer import review_behavior
 from .ephemeral_skills import build_ephemeral_skill_store
 from .generator import EVAL_CASE_GENERATOR_PROMPT_VERSION, EvalGenerationError, generate_valid_candidates
 from .generator import MAX_REGENERATION_ATTEMPTS
 from .harness import run_behavior_case, run_routing_case
 from .platform_probes import load_platform_probes
-from .prompts import BEHAVIOR_SEMANTIC_REVIEWER_PROMPT_VERSION, EVAL_CASE_SEMANTIC_REVIEWER_PROMPT_VERSION
+from .prompts import (
+    BEHAVIOR_SEMANTIC_REVIEWER_PROMPT_VERSION,
+    EVAL_CASE_SEMANTIC_REVIEWER_PROMPT_VERSION,
+    SKILL_EVALUATION_AGENT_PROMPT,
+)
 from .scoring import evaluate
 from .semantic_reviewer import review_cases
 from .stub_tools import TOOL_STUB_VERSION
@@ -91,16 +102,25 @@ class EvalPipelineError(Exception):
 
 
 def _available_tools_for(account_id: str, team_id: str) -> list[dict[str, Any]]:  # noqa: ARG001
-    """플랫폼에서 스킬이 참조할 수 있는 전체 내장 도구를 생성기에 넘긴다.
+    """플랫폼 내장 도구와 현재 팀에서 켠 MCP 도구를 하나의 정본으로 만든다.
 
     스킬은 특정 에이전트에 종속되지 않으므로 작성 시점에는 전체 도구를 본다.
     실제 에이전트에 도구가 없으면 런타임의 가용성 규칙에 따라 해당 절차를
     건너뛴다. 계정·팀 인자는 이후 커넥터 도구를 합칠 계약을 위해 유지한다.
     """
 
-    from services.agent_runtime.tools.adapters import adapt_builtin_tools
+    from services.agent_runtime.tools.adapters import adapt_builtin_tools, adapt_mcp_tools
 
-    return [{"tool_ref": t.ref, "name": t.name, "description": t.description} for t in adapt_builtin_tools()]
+    tools = (*adapt_builtin_tools(agent_model=SKILL_EVAL_AUTHOR_MODEL), *adapt_mcp_tools(team_id=team_id))
+    return [
+        {
+            "tool_ref": tool.ref,
+            "name": tool.name,
+            "description": tool.description,
+            "side_effect": tool.side_effect,
+        }
+        for tool in tools
+    ]
 
 
 def _other_skills_for(account_id: str) -> list[dict[str, Any]]:
@@ -134,27 +154,27 @@ def _select_behavior_sample(positive_cases: list[dict[str, Any]]) -> list[dict[s
     return selected
 
 
-def _default_chat_agent(team_id: str) -> tuple[str, str, str]:
-    from backend.db.connection import database_connection
+def _evaluation_agent(team_id: str, available_tools: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
+    """사용자의 저장된 에이전트와 무관한 평가 전용 draft와 provider를 만든다."""
 
-    with database_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """SELECT a.agent_id, a.current_version_id, v.model, v.reasoning_effort
-                     FROM agents a JOIN agent_versions v ON v.agent_version_id = a.current_version_id
-                    WHERE a.team_id = %s AND a.is_default_chat = true LIMIT 1""",
-                (team_id,),
-            )
-            row = cursor.fetchone()
-    if row is None or not row["current_version_id"]:
-        raise EvalPipelineError(
-            "EVAL_INFRA_ERROR", "이 팀에 기본 채팅 에이전트가 없어 검증을 실행할 수 없습니다."
-        )
     from services.agent_runtime.models.factory import ModelConfigResolver
+
     resolved = ModelConfigResolver().resolve(
-        model=row["model"], reasoning_effort=row["reasoning_effort"], team_id=team_id
+        model=SKILL_EVAL_AUTHOR_MODEL,
+        reasoning_effort=SKILL_EVAL_AUTHOR_EFFORT,
+        team_id=team_id,
     )
-    return row["agent_id"], row["current_version_id"], resolved.provider
+    draft = {
+        "name": "skill-evaluation-agent",
+        "description": "등록 전 후보 스킬을 격리 검증하는 임시 에이전트",
+        "system_prompt": SKILL_EVALUATION_AGENT_PROMPT,
+        "model": SKILL_EVAL_AUTHOR_MODEL,
+        "reasoning_effort": SKILL_EVAL_AUTHOR_EFFORT,
+        "max_iterations": EVAL_AGENT_MAX_ITERATIONS,
+        "tool_refs": [tool["tool_ref"] for tool in available_tools],
+        "subagents": [],
+    }
+    return draft, resolved.provider
 
 
 def _run_with_provider_slot(provider: str, deadline: float, fn):
@@ -246,7 +266,7 @@ def run_preparing_tests(job: dict[str, Any], *, progress: ProgressReporter | Non
         reviews, reviewer_model_id = _call_until_deadline(
             lambda: _run_with_provider_slot(
                 reviewer_provider, deadline,
-                lambda: review_cases(merged_cases, skill_description=document["description"]),
+                lambda: review_cases(merged_cases, skill_document=document),
             ), deadline
         )
         _ensure_deadline(deadline)
@@ -388,7 +408,8 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
         )
 
     snapshot = build_ephemeral_skill_store(candidate_document=candidate_rendered, distractor_documents=distractors)
-    agent_id, agent_version_id, provider = _default_chat_agent(team_id)
+    available_tools = _available_tools_for(account_id, team_id)
+    evaluation_agent_draft, provider = _evaluation_agent(team_id, available_tools)
 
     # 실행 하나마다 ToolLoader/recorder/checkpointer가 독립적이므로 안전하게
     # 병렬화할 수 있다. future는 제출 순서대로 읽어 trace 순서를 결정적으로
@@ -403,8 +424,8 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
             pool.submit(
                 _run_with_provider_slot, provider, deadline,
                 lambda case=case, attempt=attempt: run_routing_case(
-                    case=case, snapshot=snapshot, agent_id=agent_id,
-                    agent_version_id=agent_version_id, account_id=account_id,
+                    case=case, snapshot=snapshot, evaluation_agent_draft=evaluation_agent_draft,
+                    account_id=account_id,
                     team_id=team_id, attempts=1, attempt_offset=attempt - 1,
                 ),
             )
@@ -444,8 +465,8 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
             pool.submit(
                 _run_with_provider_slot, provider, deadline,
                 lambda case=case: run_behavior_case(
-                    case=case, snapshot=snapshot, agent_id=agent_id,
-                    agent_version_id=agent_version_id, account_id=account_id, team_id=team_id,
+                    case=case, snapshot=snapshot, evaluation_agent_draft=evaluation_agent_draft,
+                    account_id=account_id, team_id=team_id,
                 ),
             )
             for case in behavior_sample
@@ -470,6 +491,7 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
     case_by_id = {case["case_id"]: case for case in behavior_sample}
     for result in behavior_results:
         assertions = case_by_id[result.case_id].get("behavior_assertions") or []
+        result.semantic_assertion_total = len(assertions)
         if not assertions or result.error or result.deterministic_tool_failures:
             continue
         _reserve_model_calls(job, 1)
@@ -506,8 +528,10 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
             )
             verdicts = merge_uncertain_verdicts(verdicts, retry_verdicts)
         for verdict in verdicts:
-            if verdict.verdict != "PASS":
-                result.deterministic_tool_failures.append(
+            if verdict.verdict == "PASS":
+                result.semantic_assertion_passed += 1
+            else:
+                result.semantic_assertion_failures.append(
                     f"BEHAVIOR_ASSERTION_{verdict.verdict}:{verdict.assertion_index}"
                 )
 
@@ -521,6 +545,9 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
         ],
         "behavior": [
             {"case_id": r.case_id, "activated": r.activated_candidate, "failures": r.deterministic_tool_failures,
+             "semantic_failures": r.semantic_assertion_failures,
+             "semantic_assertion_total": r.semantic_assertion_total,
+             "semantic_assertion_passed": r.semantic_assertion_passed,
              "tool_calls": r.tool_calls, "final_response": r.final_response, "error": r.error}
             for r in behavior_results
         ],
@@ -535,8 +562,9 @@ def run_testing(job: dict[str, Any], *, progress: ProgressReporter | None = None
         evaluator_model_snapshot=(job.get("evaluator_model_snapshot") or "") + (
             f";behavior_reviewer={behavior_reviewer_model_id}" if behavior_reviewer_model_id else ""
         ),
-        evaluation_agent_id=agent_id,
-        evaluation_agent_version_id=agent_version_id,
+        # 평가 draft는 DB에 등록되지 않으므로 사용자 에이전트 식별자를 남기지 않는다.
+        evaluation_agent_id=None,
+        evaluation_agent_version_id=None,
         trace_summary=trace_summary,
         metrics=score.to_metrics_dict(),
     )

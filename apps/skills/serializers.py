@@ -65,6 +65,7 @@ def job_response(
     elif queue_delayed:
         waiting_reason = "앞선 검증 작업이 끝나기를 기다리고 있어요."
 
+    failure_details = _failure_details_with_examples(job)
     response = {
         "job_id": str(job["job_id"]),
         "skill_name": job["skill_name"],
@@ -77,7 +78,7 @@ def job_response(
         "stage_count": len(JOB_STAGE_ORDER),
         "failure_code": job.get("failure_code"),
         "failure_summary": job.get("failure_summary"),
-        "failure_details": job.get("failure_details"),
+        "failure_details": failure_details,
         "failure_category": _failure_category(job.get("failure_code")),
         "progress_message": job.get("progress_message") or _default_progress_message(job),
         "progress_current": job.get("progress_current"),
@@ -100,6 +101,78 @@ def job_response(
     if include_candidate:
         response["candidate_document"] = job.get("candidate_document")
     return response
+
+
+def _failure_details_with_examples(job: dict[str, Any]) -> dict[str, Any] | None:
+    """기존 job도 다시 돌리지 않고 실제 실패 질문을 이해할 수 있게 보강한다.
+
+    평가 질문은 합성 데이터이며 React가 일반 문자열로 렌더링한다. 원래 사용자
+    대화를 복사하지 않고 job에 이미 저장된 suite와 trace만 결합한다.
+    """
+
+    raw_details = job.get("failure_details")
+    details = dict(raw_details) if isinstance(raw_details, dict) else {}
+    if job.get("failure_code") != "TRIGGER_ACCURACY_TOO_LOW":
+        return details or None
+
+    suite = job.get("test_case_set") or []
+    trace = job.get("trace_summary") or {}
+    cases_by_id = {case.get("case_id"): case for case in suite if case.get("case_id")}
+
+    false_counts: dict[str, int] = {}
+    valid_counts: dict[str, int] = {}
+    for result in trace.get("routing") or []:
+        case_id = result.get("case_id")
+        case = cases_by_id.get(case_id)
+        if not case or case.get("polarity") != "negative" or result.get("error") is not None:
+            continue
+        valid_counts[case_id] = valid_counts.get(case_id, 0) + 1
+        if result.get("activated") is True:
+            false_counts[case_id] = false_counts.get(case_id, 0) + 1
+
+    false_examples = []
+    for case_id, count in sorted(false_counts.items(), key=lambda item: (-item[1], item[0])):
+        case = cases_by_id[case_id]
+        messages = case.get("messages") or []
+        request = next(
+            (str(message.get("content") or "") for message in reversed(messages) if message.get("role") == "user"),
+            "",
+        )
+        false_examples.append(
+            {
+                "request": request,
+                "reason": str(case.get("reason") or ""),
+                "selected_count": count,
+                "attempt_count": valid_counts.get(case_id, count),
+            }
+        )
+    if false_examples:
+        details["false_activation_examples"] = false_examples[:4]
+
+    behavior_examples = []
+    for result in trace.get("behavior") or []:
+        failures = result.get("semantic_failures") or [
+            failure for failure in (result.get("failures") or [])
+            if str(failure).startswith("BEHAVIOR_ASSERTION_")
+        ]
+        if not failures:
+            continue
+        case = cases_by_id.get(result.get("case_id")) or {}
+        assertions = case.get("behavior_assertions") or []
+        failed_criteria = []
+        for failure in failures:
+            try:
+                index = int(str(failure).rsplit(":", 1)[1])
+            except (IndexError, ValueError):
+                continue
+            if 0 <= index < len(assertions):
+                failed_criteria.append(str(assertions[index].get("criterion") or ""))
+        if failed_criteria:
+            behavior_examples.append({"failed_criteria": failed_criteria})
+    if behavior_examples:
+        details["behavior_failure_examples"] = behavior_examples[:3]
+
+    return details or None
 
 
 def _failure_category(code: str | None) -> str | None:

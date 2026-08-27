@@ -124,3 +124,11 @@ class SkillsSystemPromptTests(SimpleTestCase):
 
         self.assertIn("Skill usage rules", prompt)
         self.assertIn("memory", prompt.lower())
+
+    def test_requires_the_requested_result_to_match_not_just_the_topic(self):
+        """같은 입력 소재를 다루더라도 최종 작업이 제외 범위면 읽지 않는다."""
+        prompt = skills_system_prompt()
+
+        self.assertIn("primary requested result or action", prompt)
+        self.assertIn("explicitly excluded", prompt)
+        self.assertIn("shared topic alone", prompt)

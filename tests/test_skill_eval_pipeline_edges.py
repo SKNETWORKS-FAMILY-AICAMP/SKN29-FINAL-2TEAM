@@ -4,6 +4,8 @@ from django.test import SimpleTestCase
 
 from services.agent_runtime.skills.evaluation.pipeline import (
     EvalPipelineError,
+    _available_tools_for,
+    _evaluation_agent,
     _other_skills_for,
     _select_behavior_sample,
     run_preparing_tests,
@@ -11,6 +13,38 @@ from services.agent_runtime.skills.evaluation.pipeline import (
 
 
 class PreparingPipelineEdgeTests(SimpleTestCase):
+    @patch("services.agent_runtime.tools.adapters.adapt_mcp_tools")
+    @patch("services.agent_runtime.tools.adapters.adapt_builtin_tools")
+    def test_평가_도구_카탈로그는_내장과_팀_MCP를_함께_사용한다(self, builtins, mcp):
+        builtins.return_value = [
+            MagicMock(ref="document_search", name="문서 검색", description="검색", side_effect=False)
+        ]
+        mcp.return_value = [
+            MagicMock(ref="mcp:mail", name="메일", description="전송", side_effect=True)
+        ]
+
+        result = _available_tools_for("AC001", "TM001")
+
+        self.assertEqual([tool["tool_ref"] for tool in result], ["document_search", "mcp:mail"])
+        mcp.assert_called_once_with(team_id="TM001")
+
+    @patch("services.agent_runtime.models.factory.ModelConfigResolver")
+    def test_평가_에이전트는_DB_에이전트가_아닌_전체도구_draft다(self, resolver):
+        resolver.return_value.resolve.return_value = MagicMock(provider="openai")
+        draft, provider = _evaluation_agent(
+            "TM001",
+            [
+                {"tool_ref": "document_search"},
+                {"tool_ref": "mcp:mail"},
+            ],
+        )
+
+        self.assertEqual(provider, "openai")
+        self.assertEqual(draft["tool_refs"], ["document_search", "mcp:mail"])
+        self.assertEqual(draft["subagents"], [])
+        self.assertNotIn("agent_id", draft)
+        self.assertNotIn("agent_version_id", draft)
+
     @patch("services.agent_runtime.skills.service.list_personal_skills")
     def test_비활성_스킬은_평가_경쟁_목록에서_뺀다(self, list_skills):
         list_skills.return_value = [

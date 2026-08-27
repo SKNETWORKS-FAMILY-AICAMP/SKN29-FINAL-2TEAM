@@ -71,3 +71,58 @@ class SkillJobResponseTests(TestCase):
         queued = {**self.job, "status": "QUEUED", "stage": "WAITING"}
         response = job_response(queued, worker_available=False)
         self.assertIn("서버가 연결", response["waiting_reason"])
+
+    def test_오발동_실패에는_실제로_선택된_합성_질문을_보여준다(self):
+        job = {
+            **self.job,
+            "test_case_set": [
+                {
+                    "case_id": "n1",
+                    "polarity": "negative",
+                    "messages": [{"role": "user", "content": "원인을 분석하고 수정 코드를 작성해줘"}],
+                    "reason": "문장 정리가 아니라 원인 분석 요청이다.",
+                }
+            ],
+            "trace_summary": {
+                "routing": [
+                    {"case_id": "n1", "activated": True, "error": None},
+                    {"case_id": "n1", "activated": True, "error": None},
+                    {"case_id": "n1", "activated": False, "error": None},
+                ],
+                "behavior": [],
+            },
+        }
+
+        response = job_response(job)
+
+        examples = response["failure_details"]["false_activation_examples"]
+        self.assertEqual(examples[0]["request"], "원인을 분석하고 수정 코드를 작성해줘")
+        self.assertEqual(examples[0]["selected_count"], 2)
+        self.assertEqual(examples[0]["attempt_count"], 3)
+
+    def test_예전_행동실패_기록도_실패한_결과기준을_복원한다(self):
+        job = {
+            **self.job,
+            "test_case_set": [
+                {
+                    "case_id": "p1",
+                    "polarity": "positive",
+                    "messages": [{"role": "user", "content": "정리해줘"}],
+                    "behavior_assertions": [
+                        {"criterion": "감정을 제거한다"},
+                        {"criterion": "원문에 없는 원인을 추가하지 않는다"},
+                    ],
+                }
+            ],
+            "trace_summary": {
+                "routing": [],
+                "behavior": [
+                    {"case_id": "p1", "failures": ["BEHAVIOR_ASSERTION_FAIL:1"]}
+                ],
+            },
+        }
+
+        response = job_response(job)
+
+        examples = response["failure_details"]["behavior_failure_examples"]
+        self.assertEqual(examples[0]["failed_criteria"], ["원문에 없는 원인을 추가하지 않는다"])

@@ -50,6 +50,10 @@ services:
     restart: unless-stopped
     env_file:
       - ../../.env
+    # 한 job이 긴 LLM 평가를 수행하는 동안 다음 등록이 대기하지 않게 한다.
+    # DB claim은 SKIP LOCKED와 팀별 실행 제한으로 중복 실행을 막는다.
+    deploy:
+      replicas: 2
 
   frontend:
     build:
