@@ -28,7 +28,12 @@ fixture와 평가기에서 발견한 오류를 수정했고 재검증도 통과�
 - Hard Gate는 Judge가 뒤집을 수 없다.
 - 실행기·평가기 문제로 유효하지 않은 시도는 점수에서 제외하고 append-only 이력으로 남긴다.
 - 준비된 fixture 4개 무결성 검사 결과: `VALID`
-- 관련 Django 회귀 테스트 결과: `37/37 PASS`
+- 관련 Django 회귀 테스트 결과: `39/39 PASS`
+
+다만 원시 `v2_run_manifest.json`, `v2_scenario_results.jsonl`, `v2_summary.json`은
+현재 `outputs/` 아래 로컬 파일에만 저장된다. Git에 커밋된 pilot 문서는 요약이며 원시
+증거의 대체물이 아니다. 기존 LEGACY DB 동기화 코드는 V2 schema를 알지 못하므로 V2에
+그대로 사용하지 않는다.
 
 ## 3. Phase 9 전에 남은 필수 DEV
 
@@ -65,6 +70,8 @@ Phase 8 차단 항목이나 실패로 계산하지 않는다. `S10·S11`은 합�
 - [x] 대표 4종 fixture/source/gold 무결성 확인
 - [x] 대표 4종 VALID 반복 실행과 결과 저장
 - [x] 발견된 평가기·fixture 오류 수정 및 회귀 테스트
+- [ ] V2 원시 결과를 승인된 DB 또는 artifact 보관소에 내구성 있게 저장
+- [ ] 로컬 원본과 보관본의 run·scenario 수 및 SHA-256 자동 대조
 - [ ] S02·S03·S05A·S05B·S06·S09B DEV 계약 구체화
 - [ ] 위 6개 fixture/source/gold 무결성 확인
 - [ ] 위 6개 runner·결정론적 판정·Judge 입력 구현

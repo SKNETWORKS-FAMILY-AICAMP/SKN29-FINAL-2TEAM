@@ -88,7 +88,7 @@ eval/v2/
 | 4 | 완료 | 기존 PDF 기반 S01/S04/S07/S09A package와 자동 무결성 검사 완료 |
 | 5 | 완료 | deterministic·Hard Gate·Judge 결합과 집계 규칙 구현·테스트 완료 |
 | 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
-| 7 | 완료 | 공통 저장과 S01·S04·S07·S09A 대표 계측 완료 |
+| 7 | 부분 완료 | 로컬 append-only 저장과 대표 계측 완료. V2 원시 결과의 DB/artifact 동기화·자동 대조는 미구현 |
 | 8 | 진행 중 | 대표 4종 12회와 평가기 결함 처리는 완료. S02·S03·S05A·S05B·S06·S09B DEV readiness가 남음 |
 | 9~10 | 시작 전·진입 차단 | `07_phase8_readiness_review.md`의 미완료 조건을 해소하고 Candidate 처리 방침을 정한 뒤 진행 |
 
@@ -109,5 +109,7 @@ python scripts/eval_v2_summary.py --fixture-id S07-DEV-001 --candidate-id AG004/
 python scripts/eval_v2_summary.py --fixture-id S09A-DEV-001 --candidate-id AG004/AV035 --planned 3
 ```
 
-대표 4종의 실행 완료는 전체 Core DEV 완료를 뜻하지 않는다. 현재 Phase 9 동결로
+대표 4종의 실행 완료는 전체 Core DEV 완료를 뜻하지 않는다. 원시 실행 JSON도 현재
+`outputs/` 로컬 경로에만 있으므로 요약 문서가 Git에 있다는 사실을 원시 증거 보관 완료로
+해석하지 않는다. 현재 Phase 9 동결로
 넘어갈 수 없는 이유와 남은 작업은 `07_phase8_readiness_review.md`를 정본으로 삼는다.
