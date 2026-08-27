@@ -142,9 +142,81 @@ function ChatMock() {
 
           <div className={styles.mockConfirmActions}>
             <span className={styles.mockFootBtn}>선택한 8건 등록</span>
-            <span className={styles.mockFootGhost}>취소</span>
+            <span className={styles.mockFootGhost}>거절</span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 「에이전트 만들기」 발췌 — `AgentVersionEditPage.tsx`. 카드 제목·라벨·
+ * placeholder 가 전부 그 화면의 실제 값이다. 지시문을 우리가 지어내면 「이렇게
+ * 적으면 된다」가 제품과 다른 말이 된다.
+ */
+function BuilderMock() {
+  return (
+    <div className={styles.panel}>
+      <div className={styles.panelBar}>
+        <span className={styles.mockDot} />
+        <span className={styles.mockDot} />
+        <span className={styles.mockDot} />
+        <span className={styles.mockBarLabel}>에이전트 만들기</span>
+      </div>
+      <div className={styles.panelBody}>
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>이름</span>
+          <span className={styles.fieldBox}>회의록 정리 에이전트</span>
+        </div>
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>행동 지시</span>
+          <span className={styles.fieldArea}>
+            회의록을 읽고 결정된 것과 해야 할 일을 나눠서 정리해줘. 담당자가 없으면 지어내지 말고
+            미지정으로 남겨.
+          </span>
+        </div>
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>사용할 도구</span>
+          <span className={styles.chipRow}>
+            <span className={styles.chip}>문서 검색</span>
+            <span className={styles.chip}>업무 등록</span>
+            <span className={styles.chipAdd}>+ 도구 추가</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 확인 카드의 다른 모양 — 업무 목록이 없는 승인이면 머리줄에 무엇을 할지가
+ * 오고 버튼이 「승인 / 거절」이 된다(`ChatCards.tsx` 의 `ConfirmCard`).
+ * 히어로의 업무 등록 카드와 겹치지 않게 파일을 만드는 쪽을 보인다.
+ */
+function ApproveMock() {
+  return (
+    <div className={styles.panel}>
+      <div className={styles.panelBar}>
+        <span className={styles.mockDot} />
+        <span className={styles.mockDot} />
+        <span className={styles.mockDot} />
+        <span className={styles.mockBarLabel}>Chat · 실행 전 확인</span>
+      </div>
+      <div className={styles.approveBody}>
+        <div className={styles.approveHead}>
+          <strong>주간 업무량 표 만들기</strong>
+        </div>
+        <p className={styles.approveNote}>
+          팀원 8명의 이번 주 업무 시간을 표 파일로 만듭니다.
+        </p>
+        <div className={styles.approveActions}>
+          <span className={styles.mockFootBtn}>승인</span>
+          <span className={styles.mockFootGhost}>거절</span>
+        </div>
+        {/* 빌더 목업의 지시문은 실제 placeholder 라 표시가 필요 없지만, 이쪽
+            내용은 우리가 지어낸 예시라 그렇다고 적는다. */}
+        <span className={styles.approveNoteSmall}>※ 내용은 예시입니다.</span>
       </div>
     </div>
   );
@@ -240,6 +312,9 @@ export default function LandingPage() {
             <ul className={styles.askList}>
               {ASKS.map((ask) => (
                 <li className={styles.ask} key={ask}>
+                  <span className={styles.askIcon} aria-hidden="true">
+                    <Icon name="message-square" size={16} />
+                  </span>
                   <p className={styles.askQuote}>“{ask}”</p>
                 </li>
               ))}
@@ -266,7 +341,8 @@ export default function LandingPage() {
         {/* 4 · 에이전트 — 만들기와 팀 공유를 한 덩이로 합쳤다. */}
         <section className={styles.bandWhite} id="agent">
           <div className={styles.bandInner}>
-            <div className={styles.statement}>
+            <div className={styles.split}>
+              <div className={styles.statement}>
               <h2 className={styles.h2}>반복하는 일은 에이전트로 만들어 공유합니다</h2>
               <p className={styles.statementBody}>
                 매번 같은 요청을 다시 설명하지 않아도 됩니다. 에이전트가 맡을 일과 사용할 도구를 정하고,
@@ -286,6 +362,8 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ol>
+              </div>
+              <BuilderMock />
             </div>
           </div>
         </section>
@@ -293,12 +371,15 @@ export default function LandingPage() {
         {/* 5 · 실행 전 확인 */}
         <section className={styles.band}>
           <div className={styles.bandInner}>
-            <div className={styles.statement}>
+            <div className={styles.split}>
+              <div className={styles.statement}>
               <h2 className={styles.h2}>등록·수정·파일 생성은 실행 전에 확인합니다</h2>
               <p className={styles.statementBody}>
                 정보 조회는 바로 답합니다. 결과를 남기는 작업은 실행 전에 무엇을 할지 보여줍니다. 승인하거나,
                 내용을 고치거나, 실행하지 않을 수 있습니다.
               </p>
+              </div>
+              <ApproveMock />
             </div>
           </div>
         </section>
