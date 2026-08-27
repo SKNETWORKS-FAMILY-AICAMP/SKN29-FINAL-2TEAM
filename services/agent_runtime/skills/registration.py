@@ -231,15 +231,25 @@ def run_checking(job: dict[str, Any]) -> None:
     document = job["candidate_document"]
     name = document["name"]
 
+    # QUEUED에서 기다리는 동안 다른 스킬이 등록되거나 런타임 설정이 배포될 수
+    # 있다. 아직 평가 질문을 만들기 전인 CHECKING에서는 실패시킬 이유가 없다.
+    # 실제 검증에 사용할 최신 문맥으로 snapshot을 갱신하고 그대로 진행한다.
+    current_context = _evaluation_context(job["account_id"])
     expected_context = (
-        job.get("base_catalog_revision"), job.get("runtime_profile_version"), job.get("tool_registry_version")
+        job.get("base_catalog_revision"),
+        job.get("runtime_profile_version"),
+        job.get("tool_registry_version"),
     )
-    if all(value is not None for value in expected_context) and _evaluation_context(job["account_id"]) != expected_context:
-        raise CheckingFailure(
-            "STALE_EVAL_CONTEXT",
-            "검증 중 스킬 목록이나 실행 환경이 변경되었습니다. 현재 환경에서 다시 검증해 주세요.",
-            {"retryable": True},
+    if all(value is not None for value in expected_context) and current_context != expected_context:
+        updates = {
+            "base_catalog_revision": current_context[0],
+            "runtime_profile_version": current_context[1],
+            "tool_registry_version": current_context[2],
+        }
+        SkillRegistrationJobRepository.update_eval_fields(
+            job["job_id"], lease_owner=job["lease_owner"], **updates
         )
+        job.update(updates)
     description = document["description"]
     body = document["body"]
 
@@ -334,13 +344,21 @@ def run_publishing(job: dict[str, Any]) -> dict[str, Any]:
     document = job["candidate_document"]
     name = document["name"]
 
-    expected_context = (
-        job.get("base_catalog_revision"), job.get("runtime_profile_version"), job.get("tool_registry_version")
-    )
-    if all(value is not None for value in expected_context) and _evaluation_context(job["account_id"]) != expected_context:
+    # 다른 이름의 스킬이 병렬로 먼저 게시되면 catalog revision은 정상적으로
+    # 달라진다. 그것만으로 현재 후보를 실패시키지 않는다. 실제 충돌은 아래의
+    # 같은 이름 검사와 base_content_hash가 잡는다. 반면 모델/도구 계약 변경은
+    # 평가 조건 자체를 바꾸므로 계속 실패시킨다.
+    _current_catalog, current_runtime, current_tools = _evaluation_context(job["account_id"])
+    expected_runtime = job.get("runtime_profile_version")
+    expected_tools = job.get("tool_registry_version")
+    if (
+        expected_runtime is not None
+        and expected_tools is not None
+        and (current_runtime, current_tools) != (expected_runtime, expected_tools)
+    ):
         raise CheckingFailure(
             "STALE_EVAL_CONTEXT",
-            "검증 중 스킬 목록이나 실행 환경이 변경되었습니다. 현재 환경에서 다시 검증해 주세요.",
+            "검증 중 실행 환경이 변경되었습니다. 현재 환경에서 다시 검증해 주세요.",
             {"retryable": True},
         )
 

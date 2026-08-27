@@ -83,16 +83,15 @@ class RequestCancelTests(unittest.TestCase):
 
 
 class ClaimNextTests(unittest.TestCase):
-    def test_same_account_jobs_are_serialized_while_other_accounts_can_run(self):
+    def test_same_account_jobs_are_not_artificially_serialized(self):
         cursor = _Cursor([None])
         with patch.object(skill_jobs, "database_connection", _connection_factory(cursor)):
             result = SkillRegistrationJobRepository.claim_next(lease_owner="worker-1", lease_seconds=120)
 
         self.assertIsNone(result)
         sql, params = cursor.executed[0]
-        self.assertIn("running.account_id = candidate.account_id", sql)
-        self.assertIn("running.job_id <> candidate.job_id", sql)
-        self.assertIn("running.lease_expires_at >= now()", sql)
+        self.assertNotIn("running.account_id = candidate.account_id", sql)
+        self.assertIn("running.team_id = candidate.team_id", sql)
         self.assertEqual(params[-1], skill_jobs.STATUS_RUNNING)
 
 

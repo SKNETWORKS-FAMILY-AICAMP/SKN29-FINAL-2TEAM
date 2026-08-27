@@ -248,11 +248,11 @@ class SkillRegistrationJobRepository:
 
         대상은 `QUEUED`이거나, lease가 만료된 `RUNNING`(죽은 워커가 들고 있던
         것 — §10 "워커가 하나도 없을 때"가 아니라 "워커 하나가 죽었을 때"의
-        회수다)이다. 서로 다른 계정은 여러 워커가 병렬 처리하지만 같은 계정의
-        개인 스킬 검증은 하나씩 처리한다. 한 작업이 게시되면 그 계정의 카탈로그
-        revision이 바뀌므로, 같은 계정 작업을 동시에 실행하면 나머지가 검증
-        막바지에 `STALE_EVAL_CONTEXT`로 실패하기 때문이다. `SKIP LOCKED`라 여러
-        워커가 동시에 이 질의를 돌려도 같은 행을 두 번 집지 않는다.
+        회수다)이다. 같은 계정이어도 이름이 다른 job은 워커 내부 슬롯과 팀별
+        실행 상한 안에서 병렬 처리한다. 같은 계정·같은 이름은 생성 시 부분
+        유니크 인덱스가 이미 하나만 허용하고, 게시 직전에는 이름·원본 hash를
+        다시 확인한다. `SKIP LOCKED`라 여러 실행 슬롯이 동시에 이 질의를
+        돌려도 같은 행을 두 번 집지 않는다.
         """
 
         with database_connection() as connection:
@@ -270,13 +270,6 @@ class SkillRegistrationJobRepository:
                            ))
                            OR (candidate.status = %s AND candidate.lease_expires_at < now())
                        )
-                       AND NOT EXISTS (
-                           SELECT 1 FROM skill_registration_job running
-                            WHERE running.account_id = candidate.account_id
-                              AND running.job_id <> candidate.job_id
-                              AND running.status = %s
-                              AND (running.lease_expires_at IS NULL OR running.lease_expires_at >= now())
-                       )
                      ORDER BY candidate.created_at
                      LIMIT 1
                      FOR UPDATE SKIP LOCKED
@@ -285,7 +278,6 @@ class SkillRegistrationJobRepository:
                         STATUS_QUEUED,
                         STATUS_RUNNING,
                         settings.SKILL_VALIDATION_TEAM_RUNNING_JOB_LIMIT,
-                        STATUS_RUNNING,
                         STATUS_RUNNING,
                     ),
                 )

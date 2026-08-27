@@ -172,6 +172,32 @@ class RetryTests(SimpleTestCase):
 
 
 class RunCheckingTests(SimpleTestCase):
+    @patch("services.agent_runtime.skills.registration.SkillRegistrationJobRepository")
+    def test_대기중_다른_스킬이_등록되면_최신_context로_갱신하고_계속한다(
+        self, repository
+    ):
+        job = _job(
+            lease_owner="worker-1",
+            base_catalog_revision=1,
+            runtime_profile_version="runtime-a",
+            tool_registry_version="tools-a",
+        )
+        with _fake_store() as mock_get_store, patch(
+            "services.agent_runtime.skills.registration._evaluation_context",
+            return_value=(2, "runtime-a", "tools-a"),
+        ):
+            mock_get_store.return_value = InMemoryStore()
+            run_checking(job)
+
+        repository.update_eval_fields.assert_called_once_with(
+            "job-test",
+            lease_owner="worker-1",
+            base_catalog_revision=2,
+            runtime_profile_version="runtime-a",
+            tool_registry_version="tools-a",
+        )
+        self.assertEqual(job["base_catalog_revision"], 2)
+
     def test_형식이_틀리면_INVALID_SKILL_FORMAT(self):
         job = _job(candidate_document={"name": "Bad Name", "description": "d", "body": "b", "enabled": True})
         with _fake_store() as mock_get_store:
@@ -227,7 +253,21 @@ class RunCheckingTests(SimpleTestCase):
 
 
 class RunPublishingTests(SimpleTestCase):
-    def test_평가_환경이_바뀌면_STALE_EVAL_CONTEXT(self):
+    def test_다른_스킬_등록으로_catalog만_바뀌면_게시한다(self):
+        job = _job(
+            base_catalog_revision=1,
+            runtime_profile_version="runtime-a",
+            tool_registry_version="tools-a",
+        )
+        with _fake_store() as mock_get_store, patch(
+            "services.agent_runtime.skills.registration._evaluation_context",
+            return_value=(2, "runtime-a", "tools-a"),
+        ):
+            mock_get_store.return_value = InMemoryStore()
+            result = run_publishing(job)
+        self.assertEqual(result["name"], "my-skill")
+
+    def test_런타임이나_도구가_바뀌면_STALE_EVAL_CONTEXT(self):
         job = _job(
             base_catalog_revision=1,
             runtime_profile_version="runtime-a",
@@ -235,7 +275,7 @@ class RunPublishingTests(SimpleTestCase):
         )
         with patch(
             "services.agent_runtime.skills.registration._evaluation_context",
-            return_value=(2, "runtime-a", "tools-a"),
+            return_value=(1, "runtime-b", "tools-a"),
         ):
             with self.assertRaises(CheckingFailure) as ctx:
                 run_publishing(job)
