@@ -128,6 +128,7 @@ import uuid
 from typing import Any
 
 from services.agent_runtime.tools.loader import tool_ref_from_model_name
+from services.agent_runtime.user_results import build_user_result
 
 # --- 이벤트 타입(§14.1) -----------------------------------------------------
 EVENT_AGENT_STARTED = "agent_started"
@@ -792,15 +793,21 @@ class EventMapper:
                 # 부모가 직접 호출한 도구의 완료 — 자식 네임스페이스의
                 # tool_completed와 동일한 모양, subagent_alias만 None.
                 self._forget_direct_tool_call(msg_tool_call_id)
+                completed_tool_ref = tool_ref_from_model_name(msg_name)
                 return [
                     {
                         "type": EVENT_TOOL_COMPLETED,
                         "run_id": run_id,
                         "subagent_alias": None,
-                        "tool_ref": tool_ref_from_model_name(msg_name),
+                        "tool_ref": completed_tool_ref,
                         "tool_call_id": msg_tool_call_id,
                         "status": _tool_status(msg_status),
                         "output": _summarize_tool_output(content),
+                        # 화면용 허용 필드. 원본 모델 입력과 500자 output 계약은
+                        # 그대로 두고, 큰 구조화 결과도 UI가 안전하게 읽게 한다.
+                        "user_result": build_user_result(
+                            tool_ref=completed_tool_ref, content=content
+                        ),
                         # 이 호출이 건드린 문서. `tracing/` 이 `tool_call`에 적는다.
                         "retrieved_doc_ids": _retrieved_doc_ids(content),
                         # 이 호출이 만들어 낸 파일. 화면이 받기 단추를 그린다.
@@ -845,16 +852,20 @@ class EventMapper:
 
         if node_name == "tools" and msg_name and msg_name != DELEGATION_TOOL_NAME:
             self._forget_direct_tool_call(msg_tool_call_id)
+            completed_tool_ref = tool_ref_from_model_name(msg_name)
             return [
                 {
                     "type": EVENT_TOOL_COMPLETED,
                     "run_id": child_run_id,
                     "parent_run_id": run_id,
                     "subagent_alias": alias,
-                    "tool_ref": tool_ref_from_model_name(msg_name),
+                    "tool_ref": completed_tool_ref,
                     "tool_call_id": msg_tool_call_id,
                     "status": _tool_status(msg_status),
                     "output": _summarize_tool_output(content),
+                    "user_result": build_user_result(
+                        tool_ref=completed_tool_ref, content=content
+                    ),
                     "retrieved_doc_ids": _retrieved_doc_ids(content),
                     # **서브 에이전트가 만든 것도 낸다.** 여기 있는 다른 값들과
                     # 달리 파일은 내부 진행이 아니라 **결과물**이라, 누가 만들었든

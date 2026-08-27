@@ -398,7 +398,12 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         toolFailed: event.status === 'FAILED',
         timeline: state.timeline.map((entry) =>
           entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id
-            ? { ...entry, status: event.status, output: event.output }
+            ? {
+                ...entry,
+                status: event.status,
+                output: event.output,
+                userResult: event.user_result ?? null,
+              }
             : entry,
         ),
       };

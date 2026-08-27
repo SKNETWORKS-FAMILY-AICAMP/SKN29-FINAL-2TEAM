@@ -12,6 +12,8 @@ Mock 없이 진짜 EventMapper.convert()/_classify()를 돌린다. `convert()`�
 반영한다.
 """
 
+import json
+
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from django.test import SimpleTestCase
 from langgraph.types import Interrupt
@@ -596,6 +598,27 @@ class ToolCallIdArgumentsStatusTests(SimpleTestCase):
 
         self.assertEqual(event["tool_call_id"], "call-1")
         self.assertEqual(event["status"], "OK")
+
+    def test_workload_completion_carries_bounded_user_result_without_changing_output_limit(self):
+        content = json.dumps(
+            {
+                "period_start": "2026-08-27",
+                "period_end": "2026-09-24",
+                "workdays": 20,
+                "people": [{"person_id": "PB001", "name": "김지훈", "load_rate": 25}],
+                "limitations": ["회의 일정은 반영하지 않았습니다."],
+                "padding": "x" * 600,
+            },
+            ensure_ascii=False,
+        )
+        message = ToolMessage(name="workload_report", content=content, tool_call_id="call-workload")
+        event = _convert_one(EventMapper(), _raw((), "tools", message))
+
+        self.assertTrue(event["output"].endswith("..."))
+        self.assertLessEqual(len(event["output"]), 503)
+        self.assertEqual(event["user_result"]["people_count"], 1)
+        self.assertEqual(event["user_result"]["people"][0]["name"], "김지훈")
+        self.assertNotIn("person_id", json.dumps(event["user_result"], ensure_ascii=False))
 
     def test_parent_direct_tool_completed_error_becomes_failed(self):
         message = ToolMessage(

@@ -70,6 +70,34 @@ export interface SourceRef {
   url?: string;
 }
 
+export interface WorkloadUserResult {
+  version: 1;
+  kind: 'workload_report';
+  period_start: string | null;
+  period_end: string | null;
+  workdays: number | null;
+  as_of: string | null;
+  workload_weeks: number | null;
+  people_count: number;
+  people: Array<{
+    name: string | null;
+    job_role: string | null;
+    effective_capacity: number | null;
+    current_allocation: number | null;
+    remaining_capacity: number | null;
+    load_rate: number | null;
+    blocked_reason: string | null;
+  }>;
+  warnings: {
+    missing_estimate_count: number | null;
+    unmapped_assignee_count: number | null;
+    unscheduled_backlog_hours: number | null;
+    limitations: string[];
+  };
+}
+
+export type UserToolResult = WorkloadUserResult;
+
 export type ToolProgressDetail =
   | { type: 'stage'; step: number; total: number; label?: string; intent?: string }
   | { type: 'queries'; step: number; queries: string[] }
@@ -146,6 +174,8 @@ export type ChatEvent =
       status: 'OK' | 'FAILED';
       /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). `events.py`의 `_summarize_tool_output()` 참고. */
       output?: string;
+      /** 도구별 허용 필드만 담은 사용자 표시용 결과. 기존 output과 독립적인 선택 계약이다. */
+      user_result?: UserToolResult | null;
       /**
        * 이 호출이 **만들어 낸 파일**(2026-08-26). 도구가 결과에 최상위 `file`
        * 키를 담았을 때만 온다(`events.py`의 `_produced_file()`). 읽기 도구는

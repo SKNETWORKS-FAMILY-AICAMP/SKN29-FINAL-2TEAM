@@ -1,3 +1,5 @@
+import type { UserToolResult } from '../../api/chat';
+
 /**
  * 카드가 그리는 데이터 모양.
  *
@@ -65,6 +67,8 @@ export type TimelineEntry =
       status: 'RUNNING' | 'OK' | 'FAILED' | 'REJECTED';
       /** 도구 반환값(길이 제한 요약). 일반 UI는 검색 링크처럼 정제한 결과만 보여준다. */
       output?: string;
+      /** 서버가 허용 필드만 추린 사용자 표시용 구조화 결과. */
+      userResult?: UserToolResult | null;
     }
   | {
       kind: 'subagent';

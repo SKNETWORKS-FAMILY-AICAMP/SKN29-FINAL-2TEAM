@@ -71,13 +71,66 @@ function searchRunTitle(runIndex: number, preview: SearchPreview | null): string
   return `검색 ${runIndex + 1} · ${compact.length > 42 ? `${compact.slice(0, 42)}…` : compact}`;
 }
 
+function workloadBlockedReason(reason: string): string {
+  const labels: Record<string, string> = {
+    NO_SCHEDULE: '근무시간 정보 없음',
+    ON_LEAVE: '조회 기간 전체 부재',
+    NO_EFFECTIVE_CAPACITY: '유효 가용시간 없음',
+  };
+  return labels[reason] ?? '산정 조건 미충족';
+}
+
 /** 내장 조회 도구의 원시 JSON에서 일반 사용자에게 필요한 결과만 추린다. */
 function userToolPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): UserToolPreview | null {
   const ref = tool.toolRef.toLowerCase();
+  if (tool.status === 'FAILED' && ref === 'jira_get_issues') {
+    const failure = tool.output ?? '';
+    if (/어느 Jira 프로젝트인지 정해지지 않았|프로젝트를 고르고 다시 요청/.test(failure)) {
+      return {
+        summary: 'Jira 이슈를 조회하지 못했습니다',
+        items: ['프로젝트를 먼저 선택해야 합니다'],
+      };
+    }
+    if (/연결된 Jira 프로젝트가 없습니다|설정에서 먼저 연결/.test(failure)) {
+      return {
+        summary: 'Jira 이슈를 조회하지 못했습니다',
+        items: ['선택한 프로젝트에 Jira 연결이 필요합니다'],
+      };
+    }
+  }
   if (tool.status === 'FAILED' && ref === 'task_list' && !tool.arguments?.proj_id) {
     return {
       summary: '등록된 업무를 조회하지 못했습니다',
       items: ['프로젝트를 먼저 선택해야 합니다'],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'workload_report') {
+    const result = tool.userResult;
+    const periodLabel = [result.period_start, result.period_end].filter(Boolean).join(' ~ ');
+    const warningItems = [
+      result.warnings.missing_estimate_count ? `예상시간 누락 ${result.warnings.missing_estimate_count}건` : null,
+      result.warnings.unmapped_assignee_count ? `담당자 미매핑 ${result.warnings.unmapped_assignee_count}건` : null,
+      result.warnings.unscheduled_backlog_hours ? `미배정 백로그 ${result.warnings.unscheduled_backlog_hours}시간` : null,
+      ...result.warnings.limitations,
+    ].filter((item): item is string => Boolean(item));
+    return {
+      summary: `팀원 ${result.people_count}명의 업무 부하를 확인했습니다`,
+      items: [
+        ...(periodLabel ? [`조회 기간 · ${periodLabel}`] : []),
+        ...result.people.slice(0, 8).map((person) => {
+          const name = person.name ?? '이름 미확인';
+          if (person.blocked_reason) {
+            return `${name} · 산정 불가 (${workloadBlockedReason(person.blocked_reason)})`;
+          }
+          return [
+            name,
+            person.load_rate === null ? null : `부하 ${person.load_rate}%`,
+            person.remaining_capacity === null ? null : `여유 ${person.remaining_capacity}시간`,
+          ].filter(Boolean).join(' · ');
+        }),
+        ...(result.people_count > 8 ? [`외 ${result.people_count - 8}명`] : []),
+        ...warningItems,
+      ],
     };
   }
   if (!tool.output || tool.status !== 'OK') return null;
@@ -98,6 +151,8 @@ function userToolPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): UserTo
   };
   const text = (row: Record<string, unknown>, key: string): string | null =>
     typeof row[key] === 'string' && row[key] ? String(row[key]) : null;
+  const number = (row: Record<string, unknown>, key: string): number | null =>
+    typeof row[key] === 'number' && Number.isFinite(row[key]) ? Number(row[key]) : null;
 
   if (ref === 'get_current_datetime') {
     const date = typeof record.date === 'string' ? record.date : null;
@@ -136,6 +191,63 @@ function userToolPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): UserTo
     return {
       summary: `문서 근거 ${evidence}건을 확인했습니다`,
       items: notIndexed > 0 ? [`검색 준비 전 문서 ${notIndexed}개`] : [],
+    };
+  }
+
+  if (ref === 'workload_report') {
+    const people = rows('people');
+    return {
+      summary: `팀원 ${people.length}명의 업무 부하를 확인했습니다`,
+      items: people.slice(0, 8).map((person) => {
+        const name = text(person, 'name') ?? '이름 미확인';
+        const loadRate = number(person, 'load_rate');
+        const remaining = number(person, 'remaining_capacity');
+        const blocked = text(person, 'blocked_reason');
+        if (blocked) return `${name} · 산정 불가 (${blocked})`;
+        return [name, loadRate === null ? null : `부하 ${loadRate}%`, remaining === null ? null : `여유 ${remaining}시간`]
+          .filter(Boolean).join(' · ');
+      }),
+    };
+  }
+
+  if (ref === 'absence_list') {
+    const absences = rows('absences');
+    const period = record.period && typeof record.period === 'object' && !Array.isArray(record.period)
+      ? record.period as Record<string, unknown>
+      : null;
+    const periodLabel = period
+      ? [text(period, 'start'), text(period, 'end')].filter(Boolean).join(' ~ ')
+      : null;
+    return {
+      summary: `승인된 부재 ${absences.length}건을 확인했습니다`,
+      items: [
+        ...(periodLabel ? [`조회 기간 · ${periodLabel}`] : []),
+        ...absences.slice(0, 8).map((absence) => [
+          text(absence, 'name'),
+          text(absence, 'absence_type'),
+          [text(absence, 'start_at'), text(absence, 'end_at')].filter(Boolean).join(' ~ '),
+        ].filter(Boolean).join(' · ')),
+      ],
+    };
+  }
+
+  if (ref === 'jira_get_issues') {
+    const total = typeof record.total === 'number' && Number.isFinite(record.total) ? record.total : 0;
+    const counts = record.counts && typeof record.counts === 'object' && !Array.isArray(record.counts)
+      ? record.counts as Record<string, unknown>
+      : {};
+    const upcoming = rows('upcoming');
+    const countLabel = [
+      typeof counts.TO_DO === 'number' ? `할 일 ${counts.TO_DO}` : null,
+      typeof counts.IN_PROGRESS === 'number' ? `진행 중 ${counts.IN_PROGRESS}` : null,
+      typeof counts.DONE === 'number' ? `완료 ${counts.DONE}` : null,
+    ].filter(Boolean).join(' · ');
+    return {
+      summary: `Jira 이슈 ${total}건을 확인했습니다`,
+      items: [
+        ...(countLabel ? [countLabel] : []),
+        ...upcoming.slice(0, 5).map((issue) => [text(issue, 'title'), text(issue, 'due')].filter(Boolean).join(' · ')),
+      ].filter(Boolean),
     };
   }
   return null;

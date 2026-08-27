@@ -40,7 +40,10 @@
   gap: 6px;
   margin: 0;
   padding-left: 1.4rem;
+  list-style: disc;
 }
+
+.orderedList { list-style: decimal; }
 
 .list .list { margin-top: 6px; }
 
