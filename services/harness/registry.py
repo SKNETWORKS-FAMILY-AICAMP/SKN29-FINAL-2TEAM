@@ -1278,7 +1278,12 @@ BUILTIN_TOOLS: dict[str, Tool] = {
     "document_search": Tool(
         ref="document_search",
         name="문서 검색",
-        description="팀에 등록된 문서에서 질의와 관련된 문장을 찾아 근거로 돌려준다.",
+        description=(
+            "팀에 등록된 문서에서 질의와 관련된 문장을 찾아 근거로 돌려준다. 일정·범위처럼 "
+            "여러 하위 항목을 묻는 질문은 한 번의 넓은 검색으로 끝내지 말고, 확인되지 않은 "
+            "하위 항목을 각각 구체적으로 다시 검색한다. 관련 문서 ID만 반환됐다고 그 문서의 "
+            "모든 세부 값을 확인한 것은 아니다. 직접 반환된 문장에서 값을 확인한 사실만 답에 쓴다."
+        ),
         input_schema={
             "type": "object",
             "properties": {

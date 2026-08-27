@@ -14,18 +14,22 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 AGENT_ID = "AG004"
-BASE_VERSION_ID = "AV035"
+ALLOWED_BASE_VERSION_IDS = {"AV035", "AV067"}
 OWNER_ACCOUNT_ID = "UA002"
-PROMPT_MARKER = "[문서 종합 완전성 v2]"
+PROMPT_MARKER = "[문서 근거 완전성 v3]"
 PROMPT_ADDENDUM = f"""
 
 {PROMPT_MARKER}
 - 사용자가 요청한 항목을 먼저 구분하고 최종 답변에서 각 항목을 모두 다룬다.
+- 일정·범위처럼 여러 하위 항목이 있는 질문은 하위 항목을 먼저 나열하고, 각 항목의
+  구체 값을 개별적으로 검색·확인한 뒤 답한다. 일부 항목만 찾은 채 전체를 확인했다고
+  간주하거나 나머지가 문서에 없다고 단정하지 않는다.
 - 사용자가 명시적으로 요청한 항목에 직접 관련된 세부 날짜·수치는 전체 합계나
   전체 기간으로 대체하지 않고 보존한다.
 - 요청 범위를 벗어난 세부 정보는 단지 문서에 있다는 이유만으로 추가하지 않는다.
-- 응답 형식을 채우기 위해 문서나 도구 결과에서 확인되지 않은 우선순위·선행 작업·
-  시스템 상태를 추측하지 않는다.
+- 답변에 쓰는 각 사실은 문서나 도구 결과에서 그 값을 직접 확인한다. 응답 형식을
+  채우기 위해 확인되지 않은 우선순위·선행 작업·시스템 상태를 추측하지 않는다.
+- 최종 답변 직전에 요청받은 하위 항목별 근거와 누락 여부를 다시 점검한다.
 - 문서의 담당 주체·고유명칭·조직명은 의미를 바꾸어 축약하지 않고 원문 표현을 보존한다.
 """.rstrip()
 
@@ -66,9 +70,9 @@ def main(argv: list[str] | None = None) -> int:
             "version": current["version"],
         }, ensure_ascii=False, indent=2))
         return 0
-    if current["current_version_id"] != BASE_VERSION_ID:
+    if current["current_version_id"] not in ALLOWED_BASE_VERSION_IDS:
         raise RuntimeError(
-            f"예상한 기준 버전은 {BASE_VERSION_ID}인데 현재 버전은 "
+            f"허용한 기준 버전은 {sorted(ALLOWED_BASE_VERSION_IDS)}인데 현재 버전은 "
             f"{current['current_version_id']}입니다. 자동 발행을 중단합니다."
         )
 
@@ -85,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.apply:
         print(json.dumps({
             "status": "DRY_RUN",
-            "base_version_id": BASE_VERSION_ID,
+            "base_version_id": current["current_version_id"],
             "candidate": candidate,
         }, ensure_ascii=False, indent=2, default=str))
         return 0
