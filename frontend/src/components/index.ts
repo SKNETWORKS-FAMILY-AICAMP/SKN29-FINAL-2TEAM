@@ -25,6 +25,8 @@ export type { ModalProps } from './Modal/Modal';
 
 export { ToastProvider, useToast } from './Toast/Toast';
 export { IndexingProgress } from './IndexingProgress/IndexingProgress';
+export { ProgressCardStack } from './ProgressCardStack/ProgressCardStack';
+export { SkillJobCenter } from './SkillJobCenter/SkillJobCenter';
 export type { ToastContextValue, ToastTone } from './Toast/Toast';
 
 export { Icon } from './Icon/Icon';

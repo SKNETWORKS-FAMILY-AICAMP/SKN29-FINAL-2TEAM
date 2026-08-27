@@ -11,6 +11,7 @@ import {
   getSession,
   listSessions,
   setSessionToolRefs,
+  submitSkillFeedback,
   streamMessage,
 } from '../../api/chat';
 import type { ChatEvent, ChatMessage, ChatSession, JiraIssueEdit } from '../../api/chat';
@@ -36,8 +37,9 @@ import {
   ReasoningTrace,
   ResultCard,
 } from './cards/ChatCards';
-import { emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
+import { SKILL_REGISTER_TOOL_NAME, emptyLive, reduce, toCards, traceLine, unwrapToolProgress } from './liveChat';
 import type { LiveChat } from './liveChat';
+import { notifySkillJobStarted } from '../../utils/skillJobSignal';
 import { ToolPickerModal } from '../../components';
 import {
   formatMessageTime,
@@ -57,6 +59,7 @@ interface Turn {
   user: string;
   userCreatedAt: string | null;
   agentCreatedAt: string | null;
+  agentMessageId: string | null;
   live: LiveChat | null;
 }
 
@@ -130,6 +133,7 @@ function toTurns(messages: ChatMessage[]): Turn[] {
         user: message.content.text ?? '',
         userCreatedAt: message.created_at,
         agentCreatedAt: null,
+        agentMessageId: null,
         live: null,
       });
     } else if (message.role === 'agent') {
@@ -139,6 +143,7 @@ function toTurns(messages: ChatMessage[]): Turn[] {
       // 승인·재개가 있으면 agent 메시지가 여러 개 붙는다. 화면에는 그 턴의
       // 가장 최근 답변 시각을 보여 주는 것이 현재 보이는 결과와 맞다.
       turns[turns.length - 1].agentCreatedAt = message.created_at;
+      turns[turns.length - 1].agentMessageId = message.message_id;
     }
   }
   flush();
@@ -257,6 +262,7 @@ export default function ChatPage() {
   /** 자동완성에서 키보드로 고른 항목의 인덱스. */
   const [slashIndex, setSlashIndex] = useState(0);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [skillFeedback, setSkillFeedback] = useState<Record<string, string>>({});
   const [sessionTitleQuery, setSessionTitleQuery] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [conversationQuery, setConversationQuery] = useState('');
@@ -314,7 +320,7 @@ export default function ChatPage() {
       ([mine, team]) => {
         // 이름이 겹치면 팀이 이긴다 — 실제 호출(서버)과 같은 우선순위를
         // 자동완성에도 맞춘다(위 `SlashSkillOption` docstring 참고).
-        // 꺼진 스킬은 자동완성에도 안 보인다 — `SkillVisibilityMiddleware`가
+        // 꺼진 스킬은 비활성 namespace에 있어 자동완성에도 안 보인다.
         // 어차피 에이전트에게 안 보이게 거르므로(2026-08-26), 골라도 아무
         // 일도 안 일어나는 항목을 목록에 남겨 두지 않는다.
         const merged = new Map<string, SlashSkillOption>();
@@ -688,6 +694,7 @@ export default function ChatPage() {
         // 맞춘다. 그 전까지도 빈 자리 대신 사용자가 보낸 순간을 보여 준다.
         userCreatedAt: new Date().toISOString(),
         agentCreatedAt: null,
+        agentMessageId: null,
         live: null,
       },
     ]);
@@ -927,12 +934,32 @@ export default function ChatPage() {
                 ...turn,
                 userCreatedAt: saved.userCreatedAt ?? turn.userCreatedAt,
                 agentCreatedAt: saved.agentCreatedAt ?? turn.agentCreatedAt,
+                agentMessageId: saved.agentMessageId ?? turn.agentMessageId,
               }
             : turn,
         ),
       );
     } catch {
       // 답변 자체는 이미 끝났다. 시각 재조회 실패가 답변 오류가 되어서는 안 된다.
+    }
+  }
+
+  async function reportSkillFeedback(
+    messageId: string,
+    kind: 'WRONG_USAGE' | 'MISSED_USE',
+  ) {
+    if (!token || skillFeedback[messageId]) return;
+    setSkillFeedback((previous) => ({ ...previous, [messageId]: 'sending' }));
+    try {
+      await submitSkillFeedback(token, messageId, kind);
+      setSkillFeedback((previous) => ({ ...previous, [messageId]: 'sent' }));
+    } catch (error) {
+      setSkillFeedback((previous) => {
+        const next = { ...previous };
+        delete next[messageId];
+        return next;
+      });
+      showToast(error instanceof ApiError ? error.message : '의견을 보내지 못했습니다.', 'error');
     }
   }
 
@@ -976,6 +1003,18 @@ export default function ChatPage() {
           const count =
             'action_requests' in unwrapped ? unwrapped.action_requests.length : 1;
           setApprovedActions(Array.from({ length: count }, (_, index) => index));
+        }
+        // 스킬 검증 job이 방금 생겼다(2026-08-26) — `SkillJobCenter`에게
+        // 바짝 따라붙어 물어보라고 알린다. `notifyIndexingStarted()`와 같은
+        // 이유(서버 응답을 실제로 받은 뒤에만 알린다) — 여기는 SkillsTab의
+        // 전용 모달이 아니라 **일반 채팅**에서 "스킬로 등록해줘"라고 했을
+        // 때도 이 자리를 지난다.
+        if (
+          unwrapped.type === 'tool_completed' &&
+          unwrapped.tool_ref === SKILL_REGISTER_TOOL_NAME &&
+          unwrapped.status === 'OK'
+        ) {
+          notifySkillJobStarted();
         }
         // 첫 답이 끝나면 서버가 이 대화의 이름을 지어 보낸다. 사이드바만
         // 바뀌는 일이라 대화 상태(`reduce`)에는 넣지 않는다.
@@ -1890,6 +1929,22 @@ export default function ChatPage() {
                           ].filter(Boolean).join(' ')}
                         >
                           <AnswerText text={live.answer} sources={live.sources} createdAt={turn.agentCreatedAt} />
+                          {turn.agentMessageId && !live.running && (
+                            <div className={styles.skillFeedback}>
+                              {skillFeedback[turn.agentMessageId] === 'sent' ? (
+                                <span>의견을 보냈습니다.</span>
+                              ) : (
+                                <>
+                                  <button type="button" disabled={skillFeedback[turn.agentMessageId] === 'sending'} onClick={() => void reportSkillFeedback(turn.agentMessageId!, 'WRONG_USAGE')}>
+                                    스킬 사용이 맞지 않아요
+                                  </button>
+                                  <button type="button" disabled={skillFeedback[turn.agentMessageId] === 'sending'} onClick={() => void reportSkillFeedback(turn.agentMessageId!, 'MISSED_USE')}>
+                                    필요한 스킬이 빠졌어요
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 

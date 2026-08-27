@@ -19,8 +19,7 @@ from services.agent_runtime.context import RuntimeContext
 from services.agent_runtime.definitions import AgentDefinition, SubagentReference
 from services.agent_runtime.memory.write_guard import build_memory_write_guard
 from services.agent_runtime.memory.write_lock import build_memory_write_lock
-from services.agent_runtime.skills.sync import build_skill_register_sync
-from services.agent_runtime.skills.visibility import build_skill_visibility_filter
+from services.agent_runtime.skills.catalog_refresh import build_skill_catalog_refresh
 from services.agent_runtime.hitl_warnings import build_confirmation_description
 from services.agent_runtime.prompts import GP_DESCRIPTION
 from services.agent_runtime.runtime_policy import GUNICORN_WORKER_TIMEOUT_SECONDS
@@ -68,7 +67,6 @@ class DependencyGraphSource:
 # `tool_input` 복사본에 이 키를 얹으면, `_to_args_and_kwargs()`가 dict를 그대로
 # kwargs화하면서 `_run()`까지 살아남는다.
 _TOOL_CALL_ID_KWARG = "__langchain_tool_call_id__"
-_SKILL_REGISTER_REF = "skill_register"
 
 # 조회 도구 자동 재시도(`tool_failure_recovery_v0.md` §3.1). 최초 호출을 포함해
 # 최대 이 횟수만큼 실행하므로 자동 재시도는 `_MAX_TOOL_CALL_ATTEMPTS - 1`회다.
@@ -157,22 +155,6 @@ def _call_tool_handler(tool: Tool, resolved: dict[str, Any]) -> Any:
                 )
             return result
 
-
-def _tool_description_for_context(tool: Tool, *, context: RuntimeContext) -> str:
-    if tool.ref != _SKILL_REGISTER_REF:
-        return tool.description
-    if context.role == "leader":
-        role_rule = "PERSONAL과 TEAM 범위 등록을 요청할 수 있습니다."
-    else:
-        role_rule = "PERSONAL 범위만 등록할 수 있으므로 TEAM 범위로 호출하지 마세요."
-    return f"{tool.description}\n\n현재 요청자 역할은 '{context.role}'입니다. {role_rule}"
-
-
-def _skill_register_requires_confirmation(request: Any, *, account_role: str) -> bool:
-    tool_call = getattr(request, "tool_call", {}) or {}
-    arguments = tool_call.get("args") or {}
-    scope = str(arguments.get("scope") or "").upper()
-    return not (account_role != "leader" and scope == "TEAM")
 
 
 class _IdempotencyAwareTool(StructuredTool):
@@ -365,7 +347,7 @@ def _to_langchain_tool(
         # tool_ref를 다시 읽을 때 쓴다 — 없으면 실행 로그에 `mcp__MT001`처럼
         # 망가진 값이 남는다.
         name=model_safe_tool_name(tool.ref),
-        description=_tool_description_for_context(tool, context=context),
+        description=tool.description,
         args_schema=tool.input_schema,
         infer_schema=False,
     )
@@ -502,13 +484,11 @@ class AgentRuntimeFactory:
                         "allowed_decisions": ["approve", "edit", "reject", "respond"],
                         "description": describe,
                     }
-                elif tool.ref == _SKILL_REGISTER_REF:
-                    confirmation = {
-                        "allowed_decisions": ["approve", "edit", "reject", "respond"],
-                        "when": lambda request, role=context.role: _skill_register_requires_confirmation(
-                            request, account_role=role
-                        ),
-                    }
+                # `skill_register`는 2026-08-26부터 조건부 `when`이 없다 — `scope`가
+                # 사라져 "TEAM인데 leader가 아니면 확인 생략" 분기 자체가 없어졌다
+                # (정본 §2/§5). `confirmation = True`로도 이미 approve/edit/reject/
+                # respond 네 결정이 다 열린다(바로 위 주석 — `HumanInTheLoopMiddleware.
+                # __init__`이 `True`를 그렇게 편다) — 별도 dict가 필요 없다.
                 side_effect_tools[model_safe_tool_name(tool.ref)] = confirmation
             # `delete`(deepagents 기본 파일시스템 Tool, 2026-08-26 재활성화)는
             # 이 프로젝트가 등록한 `tools` 목록에 없어서 위 루프를 안 탄다 —
@@ -678,19 +658,15 @@ class AgentRuntimeFactory:
                 ),
             ]
 
-        # skill_register 직후 재스캔(2026-08-26) — 메모리 유무와 무관하게,
-        # 스킬 자체가 실제로 붙어 있을 때만(=root_kwargs에 "skills"가 있을
-        # 때만) 의미가 있다. `shared_backend`는 위에서 memory_provider 유무와
-        # 무관하게 이미 정해져 있다.
+        # background 검증 성공은 이미 끝난 채팅을 재개하지 않는다. 같은 세션의
+        # 다음 사용자 턴에도 checkpointer의 오래된 skills_metadata가 남으므로,
+        # 실제 Store source를 다시 읽어 최신 카탈로그로 교체한다.
         if shared_backend is not None and skill_sources:
             root_middleware = [
                 *root_middleware,
-                build_skill_register_sync(backend=shared_backend),
-                # 비활성화된 스킬 걸러내기(2026-08-26, §7) — deepagents의
-                # SkillsMiddleware(4-9에서 조립)가 먼저 전체를 읽은 뒤,
-                # before_agent 체인에서 이 미들웨어가 그 뒤를 잇는다
-                # (`skills/visibility.py` docstring의 순서 근거 참고).
-                build_skill_visibility_filter(),
+                build_skill_catalog_refresh(
+                    backend=shared_backend, sources=skill_sources, account_id=context.account_id
+                ),
             ]
         if self.checkpointer_provider is not None:
             root_kwargs["checkpointer"] = self.checkpointer_provider.get()

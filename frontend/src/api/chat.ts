@@ -404,6 +404,17 @@ export function streamMessage(
   return streamNdjson<ChatEvent>(`/chat/sessions/${sessionId}/messages/`, token, { content }, onEvent, signal);
 }
 
+export function submitSkillFeedback(
+  token: string,
+  messageId: string,
+  feedbackKind: 'WRONG_USAGE' | 'MISSED_USE',
+) {
+  return apiRequest<{ feedback_id: string; review_status: string }>(
+    `/chat/messages/${messageId}/skill-feedback/`,
+    { method: 'POST', token, body: { feedback_kind: feedbackKind } },
+  );
+}
+
 /** 호출 하나에 대한 승인·거절·응답(2026-08-21, 병렬실행 Phase 2 / 2026-08-24, 되묻기). */
 export interface JiraIssueEdit {
   title: string;

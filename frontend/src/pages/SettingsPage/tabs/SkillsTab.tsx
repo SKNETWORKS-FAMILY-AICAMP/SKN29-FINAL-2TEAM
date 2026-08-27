@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Icon, InfoNote, Input, Modal, ToggleSwitch, useToast } from '../../../components';
 import { listAgentVersions } from '../../../api/agentVersions';
 import {
@@ -14,9 +15,21 @@ import {
   listTeamSkills,
   shareMySkill,
   stopSharingMySkill,
-  updateMySkill,
+  setMySkillEnabled,
+  submitMySkillUpdate,
 } from '../../../api/skills';
 import type { Skill } from '../../../api/skills';
+import {
+  cancelSkillJob,
+  deleteSkillJob,
+  getSkillJob,
+  getSkillJobFailureCopy,
+  getSkillJobRepairCopy,
+  isSkillJobOpen,
+  listSkillJobs,
+  retrySkillJob,
+} from '../../../api/skillJobs';
+import type { SkillJob, SkillJobStage } from '../../../api/skillJobs';
 import {
   confirmMessage,
   createSession,
@@ -27,6 +40,7 @@ import {
 import type { ChatEvent } from '../../../api/chat';
 import { ASK_FOLLOWUP_TOOL_NAME } from '../../ChatPage/liveChat';
 import { loadSessionToken } from '../../../utils/session';
+import { notifySkillJobRemoved, notifySkillJobStarted } from '../../../utils/skillJobSignal';
 import { josa } from '../../../utils/josa';
 import styles from './tabs.module.css';
 
@@ -42,17 +56,24 @@ import styles from './tabs.module.css';
  * — 채팅의 `skill_register` 도구와 같은 함수)가 한다. 404 를 「준비 중」으로
  * 따로 그리던 자리는 이제 없다 — 진짜 실패만 오류로 보인다.
  *
- * ## 개인 스킬 / 팀 스킬
+ * ## 활성화된 스킬 / 내 스킬 / 팀 스킬
  *
- * 안쪽 탭으로 나눈다(「문서」 화면 `MyFilesPanel.tsx`의 내 파일/공유 받은 파일과
- * 같은 자리 — 2026-08-25 에 설정에서 그쪽으로 옮겨 갔다).
+ * 안쪽 탭 셋으로 나눈다(`MyFilesTab.tsx`의 내 파일/공유 받은 파일과 같은
+ * 자리). **개인 스킬만 에이전트가 사용한다.** 팀 스킬은 팀원이 공유한
+ * 카탈로그이며, 다른 팀원이 가져오면 독립 개인 사본이 된다. 원 공유자의
+ * 비활성화·공유 중지와 팀장의 카탈로그 삭제는 이미 가져간 사본에 영향을
+ * 주지 않는다.
  *
- * **개인 스킬만 에이전트가 사용한다.** 팀 스킬은 팀원이 공유한 카탈로그이며,
- * 다른 팀원이 가져오면 독립 개인 사본이 된다. 원 공유자의 사용 중지·공유
- * 중지와 팀장의 카탈로그 삭제는 이미 가져간 사본에 영향을 주지 않는다.
- *
- * 카탈로그를 만들고 고치고 지우는 것은 팀장만 할 수 있다(`_require_leader`) —
- * 서버가 최종 판단하고, 여기서는 버튼을 미리 숨겨 헛클릭을 줄인다.
+ * **「활성화된 스킬」은 새 데이터가 아니라 필터다**(2026-08-26). 맨 앞
+ * 탭이자 기본 화면이다 — "지금 에이전트가 실제로 쓰는 스킬이 뭔지"가
+ * 가장 자주 확인하는 정보라서다. `personalSkills`를 `enabled`로 거른
+ * 것과 완전히 같은 목록이라(`viewTabToScope`), 수정·삭제·공유·끄기 같은
+ * 행동은 「내 스킬」 탭과 똑같이 그대로 된다 — 끄면 이 탭에서는 바로
+ * 사라지고 「내 스킬」에는 비활성으로 남는다. 예전에 「내 스킬」 탭
+ * 안에 있던 활성화된 스킬/팀에 공유한 스킬/팀 스킬에서 가져온 스킬 세
+ * 필터는 지웠다 — 첫 번째는 이 탭으로 대체됐고, 나머지 둘은 각 행의
+ * "공유중"/"팀 스킬" 배지로 이미 보이는 정보라 필터로 한 번 더 물을
+ * 필요가 없었다.
  *
  * ## 만드는 두 가지 방법
  *
@@ -90,7 +111,62 @@ import styles from './tabs.module.css';
  */
 
 type Scope = 'personal' | 'team';
+/**
+ * 상단 내비게이션 탭(2026-08-26). `Scope`와 분리한다 — 「활성화된 스킬」은
+ * 새 데이터 소스가 아니라 `personalSkills`를 `enabled`로 한 번 더 거른
+ * 화면일 뿐이라, 만들기·수정·삭제·공유 같은 실제 동작은 전부 `scope`가
+ * 여전히 `'personal'`인 채로(`viewTabToScope` 아래) 그대로 동작해야 한다.
+ */
+type ViewTab = 'active' | 'personal' | 'team';
+
+function viewTabToScope(viewTab: ViewTab): Scope {
+  return viewTab === 'team' ? 'team' : 'personal';
+}
+
 type CreateMode = 'write' | 'upload';
+
+const JOB_STAGE_LABELS: Record<SkillJobStage, string> = {
+  WAITING: '검증 대기',
+  CHECKING: '기본 정보 확인',
+  PREPARING_TESTS: '테스트 준비',
+  TESTING: '스킬 테스트',
+  PUBLISHING: '스킬 등록',
+};
+
+function jobStatusLabel(job: SkillJob): string {
+  switch (job.status) {
+    case 'SUCCEEDED':
+      return '등록 완료';
+    case 'FAILED':
+      return '등록 실패';
+    case 'CANCEL_REQUESTED':
+      return '취소 중';
+    case 'CANCELED':
+      return '취소됨';
+    default:
+      return JOB_STAGE_LABELS[job.stage];
+  }
+}
+
+function jobStatusTone(job: SkillJob): 'neutral' | 'success' | 'warning' | 'danger' | 'info' {
+  if (job.status === 'FAILED') return 'danger';
+  if (job.status === 'SUCCEEDED') return 'success';
+  if (job.status === 'CANCELED') return 'neutral';
+  if (job.status === 'CANCEL_REQUESTED') return 'warning';
+  return 'info';
+}
+
+/** 같은 반복 작업의 3/36, 6/36…은 한 줄로 합쳐 상세 로그를 읽기 쉽게 한다. */
+function recentProgressEvents(job: SkillJob) {
+  const collapsed: SkillJob['progress_events'] = [];
+  for (const event of job.progress_events.slice(0, -1)) {
+    const last = collapsed[collapsed.length - 1];
+    if (last?.message === event.message) collapsed[collapsed.length - 1] = event;
+    else collapsed.push(event);
+  }
+  return collapsed.slice(-5);
+}
+
 
 /** 만들기와 수정이 같은 폼을 쓴다. `null` 이면 폼이 닫혀 있다. */
 type Editing = {
@@ -102,6 +178,7 @@ type Editing = {
   mode: CreateMode;
   /** 업로드 탭에서 고른 파일 이름. 미리보기 표시 여부를 가른다. */
   uploadFileName: string | null;
+  uploadSourceContent: string | null;
   /** 업로드한 파일을 못 읽었을 때의 사유. */
   uploadError: string | null;
   /**
@@ -161,6 +238,7 @@ function emptyEditing(scope: Scope): NonNullable<Editing> {
     body: '',
     mode: 'write',
     uploadFileName: null,
+    uploadSourceContent: null,
     uploadError: null,
     sentence: '',
   };
@@ -227,17 +305,21 @@ function formatKB(bytes: number): string {
 export function SkillsTab() {
   const { showToast } = useToast();
   const token = loadSessionToken();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [scope, setScope] = useState<Scope>('personal');
+  // 「활성화된 스킬」을 맨 앞 탭으로 둔다(2026-08-26) — 지금 에이전트가
+  // 실제로 쓰는 스킬이 뭔지가 가장 자주 확인하는 정보라 기본 화면으로 둔다.
+  const [viewTab, setViewTab] = useState<ViewTab>('active');
+  const scope = viewTabToScope(viewTab);
   const [personalSkills, setPersonalSkills] = useState<Skill[]>([]);
   const [teamSkills, setTeamSkills] = useState<Skill[]>([]);
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState<
-    Record<Scope, { activeOnly: boolean; sharedOnly: boolean; importedOnly: boolean }>
-  >({
-    personal: { activeOnly: false, sharedOnly: false, importedOnly: false },
-    team: { activeOnly: false, sharedOnly: false, importedOnly: false },
-  });
+  // 팀 스킬에만 남는 필터(2026-08-26) — 「활성화된 스킬」이 전용 탭으로
+  // 빠지면서 개인 쪽 필터(활성화된 스킬/팀에 공유한 스킬/팀 스킬에서
+  // 가져온 스킬)는 다 지웠다. 셋 다 이제 탭이나 배지로 이미 보이는
+  // 정보라(활성 탭, 행의 "공유중"/"팀 스킬" 배지) 필터로 한 번 더 물을
+  // 필요가 없다.
+  const [teamFilters, setTeamFilters] = useState({ sharedOnly: false, importedOnly: false });
   const [error, setError] = useState<string | null>(null);
   /** 한 번이라도 목록을 받아 봤는가. **빈 목록과 못 받은 것을 가른다.** */
   const [loaded, setLoaded] = useState(false);
@@ -249,11 +331,19 @@ export function SkillsTab() {
   const [sharingSkillKey, setSharingSkillKey] = useState<string | null>(null);
   const [importingSkillKey, setImportingSkillKey] = useState<string | null>(null);
   const [viewingSkill, setViewingSkill] = useState<Skill | null>(null);
+  const [registrationJobs, setRegistrationJobs] = useState<SkillJob[]>([]);
+  const [viewingJob, setViewingJob] = useState<SkillJob | null>(null);
+  const [repairingJob, setRepairingJob] = useState<SkillJob | null>(null);
+  const [repairInstruction, setRepairInstruction] = useState('');
+  const [repairSubmitting, setRepairSubmitting] = useState(false);
+  /** 삭제 직전 시작된 목록 요청이 늦게 끝나도 지운 실패 job을 되살리지 않는다. */
+  const removedJobIdsRef = useRef(new Set<string>());
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /** `null`이면 아직 「직접 작성」 한 문장 입력 단계 — `goCreateHere()`가 채운다. */
   const [creation, setCreation] = useState<CreationState | null>(null);
+  const [retrySourceJobId, setRetrySourceJobId] = useState<string | null>(null);
   /** 되묻기 카드(`skill_creator_ask_followup`)의 답변 입력값. 질문이 바뀔 때마다 비운다. */
   const [followupAnswer, setFollowupAnswer] = useState('');
 
@@ -261,9 +351,14 @@ export function SkillsTab() {
     if (!token) return;
     try {
       // 둘을 함께 받는다. 탭을 바꿀 때마다 부르면 넘어갈 때 빈 화면이 번쩍인다.
-      const [mine, team] = await Promise.all([listMySkills(token), listTeamSkills(token)]);
+      const [mine, team, jobs] = await Promise.all([
+        listMySkills(token),
+        listTeamSkills(token),
+        listSkillJobs(token),
+      ]);
       setPersonalSkills(mine);
       setTeamSkills(team);
+      setRegistrationJobs(jobs.filter((job) => !removedJobIdsRef.current.has(job.job_id)));
       setError(null);
       setLoaded(true);
     } catch (exc) {
@@ -275,6 +370,110 @@ export function SkillsTab() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // 설정 화면을 열어 둔 동안에도 백그라운드 워커의 단계를 반영한다. 완료되면
+  // 실제 SKILL.md 목록도 다시 받아 방금 등록된 스킬이 즉시 나타나게 한다.
+  useEffect(() => {
+    if (!token || !registrationJobs.some(isSkillJobOpen)) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const jobs = await listSkillJobs(token);
+        const hadOpen = registrationJobs.some(isSkillJobOpen);
+        const hasOpen = jobs.some(isSkillJobOpen);
+        const visibleJobs = jobs.filter((job) => !removedJobIdsRef.current.has(job.job_id));
+        setRegistrationJobs(visibleJobs);
+        setViewingJob((current) => visibleJobs.find((job) => job.job_id === current?.job_id) ?? current);
+        if (hadOpen && !hasOpen) await load();
+      } catch {
+        // 전역 진행 카드와 마찬가지로 다음 폴링에서 다시 확인한다.
+      }
+    }, 3_000);
+    return () => window.clearInterval(timer);
+    // `load`는 이 컴포넌트 안의 목록 전체 갱신 함수다. job 상태가 변할 때마다
+    // interval을 재설정하는 것이 의도된 동작이다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, registrationJobs]);
+
+  // 오른쪽 아래 카드의 `?job=` 링크로 들어오면 해당 작업을 바로 연다.
+  useEffect(() => {
+    const jobId = searchParams.get('job');
+    if (!token || !jobId) return;
+    const cached = registrationJobs.find((job) => job.job_id === jobId);
+    if (cached) {
+      setViewTab('personal');
+      setViewingJob(cached);
+      return;
+    }
+    getSkillJob(token, jobId)
+      .then((job) => {
+        setViewTab('personal');
+        setViewingJob(job);
+      })
+      .catch((exc) => {
+        showToast(exc instanceof ApiError ? exc.message : '검증 작업을 찾지 못했습니다.', 'error');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, searchParams, registrationJobs]);
+
+  function closeJobDetail() {
+    setViewingJob(null);
+    if (!searchParams.has('job')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('job');
+    setSearchParams(next, { replace: true });
+  }
+
+  async function openJobDetail(job: SkillJob) {
+    if (!token) return;
+    try {
+      const full = await getSkillJob(token, job.job_id);
+      setViewingJob(full);
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '검증 작업을 불러오지 못했습니다.', 'error');
+    }
+  }
+
+  async function cancelRegistrationJob(job: SkillJob) {
+    if (!token) return;
+    try {
+      const updated = await cancelSkillJob(token, job.job_id);
+      setRegistrationJobs((rows) => rows.map((row) => (row.job_id === updated.job_id ? updated : row)));
+      setViewingJob(updated);
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '검증 작업을 취소하지 못했습니다.', 'error');
+    }
+  }
+
+  async function removeRegistrationJob(job: SkillJob) {
+    if (!token) return;
+    try {
+      await deleteSkillJob(token, job.job_id);
+      removedJobIdsRef.current.add(job.job_id);
+      setRegistrationJobs((rows) => rows.filter((row) => row.job_id !== job.job_id));
+      notifySkillJobRemoved(job.job_id);
+      closeJobDetail();
+      showToast('검증 기록을 삭제했습니다.', 'success');
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '검증 기록을 삭제하지 못했습니다.', 'error');
+    }
+  }
+
+  /** 수정 창을 여는 것만으로는 실패 기록을 지우지 않는다. 취소하면 그대로 남는다. */
+  async function openRepair(job: SkillJob, initialInstruction = '') {
+    if (!token) return;
+    try {
+      const full = job.candidate_document ? job : await getSkillJob(token, job.job_id);
+      if (!full.candidate_document) {
+        showToast('보완할 기존 스킬 초안을 찾지 못했습니다.', 'error');
+        return;
+      }
+      closeJobDetail();
+      setRepairingJob(full);
+      setRepairInstruction(initialInstruction);
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '실패한 스킬을 수정하지 못했습니다.', 'error');
+    }
+  }
 
   /**
    * 수정 폼을 연다. **본문은 그때 받는다** — 목록 응답에 본문을 실으면
@@ -296,6 +495,7 @@ export function SkillsTab() {
         body: full.body ?? '',
         mode: 'write',
         uploadFileName: null,
+        uploadSourceContent: null,
         uploadError: null,
         sentence: '',
       });
@@ -350,6 +550,7 @@ export function SkillsTab() {
                 description: parsed.description,
                 body: parsed.body,
                 uploadFileName: file.name,
+                uploadSourceContent: text,
                 uploadError: null,
               }
             : prev,
@@ -381,15 +582,22 @@ export function SkillsTab() {
     try {
       if (editing.skill) {
         const patch = { description: editing.description.trim(), body: editing.body };
-        await updateMySkill(token, editing.skill.skill_id, patch);
-        showToast('스킬을 수정했습니다.', 'success');
+        await submitMySkillUpdate(token, editing.skill.skill_id, patch);
+        showToast('수정 내용을 검증하기 시작했습니다.', 'success');
       } else {
-        const input = { name: editing.name.trim(), description: editing.description.trim(), body: editing.body };
+        const input = {
+          name: editing.name.trim(),
+          description: editing.description.trim(),
+          body: editing.body,
+          ...(editing.mode === 'upload' && editing.uploadSourceContent
+            ? { source_content: editing.uploadSourceContent }
+            : {}),
+        };
         await createMySkill(token, input);
-        showToast('스킬을 만들었습니다.', 'success');
+        showToast('스킬을 검증하기 시작했습니다.', 'success');
       }
+      notifySkillJobStarted();
       setEditing(null);
-      await load();
     } catch (exc) {
       // 이름이 겹치면 서버가 409로 거부한다 — 그 문구를 그대로 보여준다.
       showToast(exc instanceof ApiError ? exc.message : '저장하지 못했습니다.', 'error');
@@ -439,11 +647,18 @@ export function SkillsTab() {
         setFollowupAnswer('');
         setCreation((prev) => (prev ? { ...prev, phase: 'ask', question, actions: null } : prev));
       } else {
+        // 앞 단계의 답변이 재설명 입력칸에 남아 그대로 재전송되는 일을 막는다.
+        setFollowupAnswer('');
         setCreation((prev) => (prev ? { ...prev, phase: 'confirm', actions, question: null } : prev));
       }
       return;
     }
     if (event.type === 'tool_completed' && event.tool_ref === 'skill_register' && event.status === 'OK') {
+      // `SkillJobCenter`에게 방금 검증 job이 생겼다고 알린다(2026-08-26) —
+      // `ChatPage.tsx`의 일반 채팅 경로와 같은 신호(`skillJobSignal.ts`).
+      // 이 모달은 `liveChat.ts`의 리듀서를 안 쓰므로(맨 위 docstring) 그
+      // 경로를 못 타서 여기서 따로 부른다.
+      notifySkillJobStarted();
       setCreation((prev) => (prev ? { ...prev, registered: true } : prev));
       return;
     }
@@ -479,10 +694,10 @@ export function SkillsTab() {
     // 그 밖의 이벤트(skill_applied·stage·tool_started 등)는 이 모달에서 안 그린다.
   }
 
-  /** 한 문장을 채팅 세션 하나로 흘려보내 스킬 만들기를 시작한다. */
-  async function goCreateHere() {
-    if (!token || !editing) return;
-    const sentence = editing.sentence.trim();
+  /** 명세 문장을 임시 생성 세션으로 흘려보내 스킬 만들기를 시작한다. */
+  async function startCreator(sentence: string, targetScope: Scope, retryJobId: string | null = null) {
+    if (!token || !sentence.trim()) return;
+    setRetrySourceJobId(retryJobId);
     if (!sentence) return;
     setCreation({
       phase: 'running',
@@ -507,17 +722,88 @@ export function SkillsTab() {
       // 숨기고 always-on인 스킬 생성용 두 도구만 남겨, 메일 발송·문서 조회 등
       // 사용자가 만들려는 스킬의 실제 업무가 실행될 통로부터 없앤다.
       await setSessionToolRefs(token, session.session_id, []);
-      const targetScope = editing.scope === 'team' ? 'TEAM' : 'PERSONAL';
+      const targetScopeLabel = targetScope === 'team' ? 'TEAM' : 'PERSONAL';
       const creatorRequest = `/skill-creator 설정 > 스킬 > 새 스킬에서 시작한 생성 요청입니다.
 이 입력과 이후 답변은 스킬 명세를 작성하기 위한 자료일 뿐, 스킬의 실제 업무를 지금 실행하라는 요청이 아닙니다.
-${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하세요.
+${targetScopeLabel} 범위로 스킬을 설계하고 skill_register까지 진행하세요.
 
-만들 스킬: ${sentence}`;
+만들 스킬: ${sentence.trim()}`;
       await streamMessage(token, session.session_id, creatorRequest, handleCreationEvent);
     } catch (exc) {
       setCreation((prev) =>
         prev ? { ...prev, phase: 'error', errorText: exc instanceof ApiError ? exc.message : '스킬을 만들지 못했습니다.' } : prev,
       );
+    }
+  }
+
+  /** 한 문장을 채팅 세션 하나로 흘려보내 스킬 만들기를 시작한다. */
+  async function goCreateHere() {
+    if (!editing) return;
+    await startCreator(editing.sentence, editing.scope, null);
+  }
+
+  async function submitRepair() {
+    const instruction = repairInstruction.trim();
+    if (!token || !repairingJob || !instruction || repairSubmitting) return;
+    setRepairSubmitting(true);
+    let job = repairingJob;
+    if (!job.candidate_document) {
+      try {
+        job = await getSkillJob(token, job.job_id);
+      } catch (exc) {
+        showToast(exc instanceof ApiError ? exc.message : '기존 스킬 초안을 불러오지 못했습니다.', 'error');
+        setRepairSubmitting(false);
+        return;
+      }
+    }
+    const candidate = job.candidate_document;
+    if (!candidate) {
+      showToast('보완할 기존 스킬 초안을 찾지 못했습니다.', 'error');
+      setRepairSubmitting(false);
+      return;
+    }
+    const failure = getSkillJobFailureCopy(job);
+    const namingInstruction = job.failure_code === 'SKILL_NAME_CONFLICT'
+      ? '기존 스킬과 구분되는 이름으로 바꾸고, 설명과 본문도 보완해 주세요.'
+      : `기존 이름 "${candidate.name}"은 그대로 유지하고, 설명과 본문만 보완해 주세요.`;
+    const request = `다음 기존 스킬이 검증에 실패했습니다. 기존 의도는 유지하되 사용자의 보완 요청을 반영해 다시 작성해 주세요.
+${namingInstruction}
+
+기존 이름: ${candidate.name}
+기존 설명: ${candidate.description}
+기존 내용:
+${candidate.body}
+
+실패한 이유: ${failure.reason}
+보완 방향: ${failure.suggestion}
+사용자의 보완 요청: ${instruction}`;
+    try {
+      // 화면에서는 이전 실패를 치우되 DB 행은 RETRY 계보의 부모로 보존한다.
+      removedJobIdsRef.current.add(job.job_id);
+      setRegistrationJobs((rows) => rows.filter((row) => row.job_id !== job.job_id));
+      notifySkillJobRemoved(job.job_id);
+      setRepairingJob(null);
+      setRepairInstruction('');
+      setViewingJob(null);
+      setEditing({ ...emptyEditing('personal'), sentence: request });
+      await startCreator(request, 'personal', job.job_id);
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '스킬을 다시 만들지 못했습니다.', 'error');
+    } finally {
+      setRepairSubmitting(false);
+    }
+  }
+
+  async function retryUnchanged(job: SkillJob) {
+    if (!token) return;
+    try {
+      const retried = await retrySkillJob(token, job.job_id);
+      setRegistrationJobs((rows) => [retried, ...rows.filter((row) => row.job_id !== retried.job_id)]);
+      notifySkillJobStarted();
+      setViewingJob(retried);
+      showToast('현재 환경에서 검증을 다시 시작했습니다.', 'success');
+    } catch (exc) {
+      showToast(exc instanceof ApiError ? exc.message : '검증을 다시 시작하지 못했습니다.', 'error');
     }
   }
 
@@ -560,6 +846,24 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     );
     try {
       if (approve) {
+        if (retrySourceJobId) {
+          const registerAction = pending.find((action) => action.name === 'skill_register');
+          const args = registerAction?.args ?? {};
+          const candidate = {
+            name: String(args.name ?? '').trim(),
+            description: String(args.description ?? '').trim(),
+            body: String(args.body ?? ''),
+          };
+          const retried = await retrySkillJob(token, retrySourceJobId, candidate);
+          notifySkillJobStarted();
+          setRegistrationJobs((rows) => [retried, ...rows.filter((row) => row.job_id !== retried.job_id)]);
+          setRetrySourceJobId(null);
+          setCreation((prev) => prev ? {
+            ...prev, phase: 'done', registered: true, actions: null, runningReason: null,
+            finalText: '보완한 내용으로 스킬 검증을 다시 시작했습니다.',
+          } : prev);
+          return;
+        }
         await confirmMessage(token, creation.sessionId, undefined, handleCreationEvent);
       } else {
         await confirmMessage(
@@ -569,6 +873,27 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
           handleCreationEvent,
           undefined,
           pending.map((_, index) => ({ action_index: index, type: 'reject' as const })),
+        );
+        // 거절 뒤 모델이 반환하는 문장에는 도구명·저장 범위 같은 내부 구현
+        // 용어가 섞일 수 있다. 사용자가 보고 있던 초안의 핵심만 다시 보여
+        // 주고, 그 상태에서 자연어로 수정 요청을 이어가게 한다.
+        const registerAction = pending.find((action) => action.name === 'skill_register');
+        const draftName = String(registerAction?.args.name ?? '').trim();
+        const draftDescription = String(registerAction?.args.description ?? '').trim();
+        const draftSummary = [
+          draftName ? `작성 중인 스킬: ${draftName}` : '',
+          draftDescription,
+        ].filter(Boolean).join('\n');
+        setCreation((prev) =>
+          prev
+            ? {
+                ...prev,
+                phase: 'cancelled',
+                registrationCancelled: true,
+                runningReason: null,
+                finalText: draftSummary || '작성 중인 초안은 아직 등록하지 않았습니다.',
+              }
+            : prev,
         );
       }
     } catch (exc) {
@@ -641,8 +966,8 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
 
   /**
    * 활성/비활성 토글. **삭제와 다르다** — 값은 그대로 두고
-   * `metadata.enabled` 만 바꿔서, 꺼진 스킬은 `SkillVisibilityMiddleware`가
-   * 에이전트에게 안 보이게만 거른다(2026-08-26). 목록 전체를 다시 안
+   * 꺼진 스킬은 서버가 비활성 namespace로 옮겨 에이전트에게 보이지 않게 한다.
+   * 목록 전체를 다시 안
    * 불러온다 — 서버가 돌려준 그 한 건만 바꿔치면 된다(`remove()`와 같은 이유).
    */
   async function toggleEnabled(toggleScope: Scope, skill: Skill) {
@@ -651,7 +976,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     const next = !skill.enabled;
     setTogglingSkillKey(toggleKey);
     try {
-      const updated = await updateMySkill(token, skill.skill_id, { enabled: next });
+      const updated = await setMySkillEnabled(token, skill.skill_id, next);
       setPersonalSkills((prev) => prev.map((item) => (item.skill_id === updated.skill_id ? updated : item)));
     } catch (exc) {
       showToast(exc instanceof ApiError ? exc.message : '상태를 바꾸지 못했습니다.', 'error');
@@ -719,6 +1044,12 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     setImportingSkillKey(skill.skill_id);
     try {
       const imported = await importTeamSkill(token, skill.skill_id);
+      if ('job_id' in imported) {
+        setRegistrationJobs((prev) => [imported, ...prev]);
+        notifySkillJobStarted();
+        showToast('현재 환경에서 검증한 뒤 내 스킬로 등록합니다.', 'success');
+        return;
+      }
       setPersonalSkills((prev) => [...prev, imported].sort((a, b) => a.name.localeCompare(b.name)));
       setTeamSkills((prev) =>
         prev.map((item) =>
@@ -739,23 +1070,29 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
     [teamSkills],
   );
 
-  /** 이름으로 걸러진 목록. 서버를 다시 안 부른다 — 두 목록 다 이미 화면에 있다. */
+  /**
+   * 이름으로 걸러진 목록. 서버를 다시 안 부른다 — 두 목록 다 이미 화면에 있다.
+   * 「활성화된 스킬」 탭은 여기서 `enabled`로 한 번 더 거른다 — 별도 API가
+   * 아니라 `personalSkills`를 보여주는 필터일 뿐이다(위 `viewTabToScope`).
+   */
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const currentFilters = filters[scope];
     return rows.filter((skill) => {
-      if (currentFilters.activeOnly && !skill.enabled) return false;
-      if (currentFilters.sharedOnly) {
-        const matchesShare = scope === 'personal' ? sharedPersonalNames.has(skill.name) : skill.shared_by_me;
-        if (!matchesShare) return false;
-      }
-      if (currentFilters.importedOnly) {
-        const isImported = scope === 'personal' ? skill.imported_from_team : skill.imported_by_me;
-        if (!isImported) return false;
+      if (viewTab === 'active' && !skill.enabled) return false;
+      if (scope === 'team') {
+        if (teamFilters.sharedOnly && !skill.shared_by_me) return false;
+        if (teamFilters.importedOnly && !skill.imported_by_me) return false;
       }
       return !query || skill.name.toLowerCase().includes(query) || skill.description.toLowerCase().includes(query);
     });
-  }, [filters, rows, scope, search, sharedPersonalNames]);
+  }, [rows, scope, viewTab, search, teamFilters]);
+
+  // 성공한 작업은 아래 실제 스킬 목록으로 자리를 넘긴다. 진행·실패·취소
+  // 작업만 이 구획에 남겨 "왜 스킬이 아직 안 보이는지"를 설명한다.
+  const visibleRegistrationJobs = useMemo(
+    () => registrationJobs.filter((job) => job.status !== 'SUCCEEDED'),
+    [registrationJobs],
+  );
 
   const bodyBytes = editing ? byteLength(editing.body) : 0;
   const bodyTooLarge = bodyBytes > MAX_SKILL_BODY_BYTES;
@@ -791,6 +1128,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
               <p>
                 <strong>내 스킬</strong>만 에이전트가 사용합니다. <strong>팀 스킬</strong>은 팀원이
                 공유한 스킬을 살펴보고 내 스킬로 가져오는 곳입니다.
+                <strong>활성화된 스킬</strong>은 내 스킬 중 지금 켜져 있는 것만 모아 보여줍니다.
               </p>
               <p>
                 파일로 올릴 때는 이름을 따로 적지 않습니다 — 파일 안 <code>name</code>을 그대로
@@ -837,97 +1175,120 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
           </div>
         </div>
 
+        {visibleRegistrationJobs.length > 0 && (
+          <div className={styles.jobSection}>
+            <div className={styles.jobSectionHead}>
+              <strong>등록 진행</strong>
+              <span>검증을 통과한 뒤 내 스킬에 표시됩니다.</span>
+            </div>
+            <div className={styles.list}>
+              {visibleRegistrationJobs.map((job) => (
+                <button
+                  key={job.job_id}
+                  type="button"
+                  className={`${styles.row} ${styles.jobRow}`}
+                  onClick={() => void openJobDetail(job)}
+                >
+                  <span className={styles.rowIcon}>
+                    <Icon
+                      name={job.status === 'FAILED' ? 'triangle-alert' : isSkillJobOpen(job) ? 'loader' : 'x'}
+                      size={18}
+                      spin={isSkillJobOpen(job)}
+                      color={job.status === 'FAILED' ? 'var(--color-danger)' : 'var(--color-primary)'}
+                    />
+                  </span>
+                  <span className={styles.rowBody}>
+                    <span className={styles.rowName}>{job.skill_name}</span>
+                    <span className={styles.rowMeta}>
+                      {job.status === 'FAILED'
+                        ? getSkillJobFailureCopy(job).reason
+                        : job.waiting_reason ?? `${job.stage_index + 1}/5 · ${JOB_STAGE_LABELS[job.stage]}`}
+                    </span>
+                  </span>
+                  <Badge tone={jobStatusTone(job)}>{jobStatusLabel(job)}</Badge>
+                  <span className={styles.jobDetailText}>자세히보기</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className={styles.innerTabs} role="tablist">
           <button
             type="button"
             role="tab"
-            aria-selected={scope === 'personal'}
-            className={[styles.innerTab, scope === 'personal' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
-            onClick={() => setScope('personal')}
+            aria-selected={viewTab === 'active'}
+            className={[styles.innerTab, viewTab === 'active' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
+            onClick={() => setViewTab('active')}
+          >
+            활성화된 스킬 {personalSkills.filter((skill) => skill.enabled).length}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewTab === 'personal'}
+            className={[styles.innerTab, viewTab === 'personal' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
+            onClick={() => setViewTab('personal')}
           >
             내 스킬 {personalSkills.length}
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={scope === 'team'}
-            className={[styles.innerTab, scope === 'team' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
-            onClick={() => setScope('team')}
+            aria-selected={viewTab === 'team'}
+            className={[styles.innerTab, viewTab === 'team' ? styles.innerTabOn : ''].filter(Boolean).join(' ')}
+            onClick={() => setViewTab('team')}
           >
             팀 스킬 {teamSkills.length}
           </button>
         </div>
 
-        <div className={styles.skillFilters} aria-label={`${scope === 'personal' ? '내' : '팀'} 스킬 필터`}>
-          {scope === 'personal' && (
+        {/* 팀 스킬에만 필터를 남긴다 — 개인 쪽(활성화된 스킬/팀에 공유한
+            스킬/팀 스킬에서 가져온 스킬)은 지웠다(2026-08-26). 「활성화된
+            스킬」은 이제 필터가 아니라 전용 탭이고, 나머지 둘은 각 행의
+            "공유중"/"팀 스킬" 배지로 이미 보인다. */}
+        {scope === 'team' && (
+          <div className={styles.skillFilters} aria-label="팀 스킬 필터">
             <button
               type="button"
-              aria-pressed={filters.personal.activeOnly}
-              className={[styles.skillFilter, filters.personal.activeOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
+              aria-pressed={teamFilters.importedOnly}
+              className={[styles.skillFilter, teamFilters.importedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
               onClick={() =>
-                setFilters((prev) => ({
-                  ...prev,
-                  personal: { ...prev.personal, activeOnly: !prev.personal.activeOnly },
-                }))
-              }
-            >
-              활성화된 스킬
-            </button>
-          )}
-          {scope === 'team' && (
-            <button
-              type="button"
-              aria-pressed={filters.team.importedOnly}
-              className={[styles.skillFilter, filters.team.importedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
-              onClick={() =>
-                setFilters((prev) => ({
-                  ...prev,
-                  team: { ...prev.team, importedOnly: !prev.team.importedOnly },
-                }))
+                setTeamFilters((prev) => ({ ...prev, importedOnly: !prev.importedOnly }))
               }
             >
               등록된 스킬
             </button>
-          )}
-          <button
-            type="button"
-            aria-pressed={filters[scope].sharedOnly}
-            className={[styles.skillFilter, filters[scope].sharedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
-            onClick={() =>
-              setFilters((prev) => ({
-                ...prev,
-                [scope]: { ...prev[scope], sharedOnly: !prev[scope].sharedOnly },
-              }))
-            }
-          >
-            {scope === 'personal' ? '팀에 공유한 스킬' : '내가 공유한 스킬'}
-          </button>
-          {scope === 'personal' && (
             <button
               type="button"
-              aria-pressed={filters.personal.importedOnly}
-              className={[styles.skillFilter, filters.personal.importedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
+              aria-pressed={teamFilters.sharedOnly}
+              className={[styles.skillFilter, teamFilters.sharedOnly ? styles.skillFilterOn : ''].filter(Boolean).join(' ')}
               onClick={() =>
-                setFilters((prev) => ({
-                  ...prev,
-                  personal: { ...prev.personal, importedOnly: !prev.personal.importedOnly },
-                }))
+                setTeamFilters((prev) => ({ ...prev, sharedOnly: !prev.sharedOnly }))
               }
             >
-              팀 스킬에서 가져온 스킬
+              내가 공유한 스킬
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className={styles.list}>
           {loaded && rows.length === 0 && (
             <p className={styles.cardSub}>
-              {scope === 'personal' ? '아직 만든 스킬이 없습니다.' : '아직 등록된 팀 스킬이 없습니다.'}
+              {viewTab === 'active'
+                ? '아직 만든 스킬이 없습니다.'
+                : scope === 'personal'
+                  ? '아직 만든 스킬이 없습니다.'
+                  : '아직 등록된 팀 스킬이 없습니다.'}
             </p>
           )}
 
           {loaded && rows.length > 0 && filteredRows.length === 0 && (
-            <p className={styles.cardSub}>선택한 조건에 맞는 스킬이 없습니다.</p>
+            <p className={styles.cardSub}>
+              {viewTab === 'active'
+                ? '활성화된 스킬이 없습니다. 내 스킬 탭에서 켤 수 있습니다.'
+                : '선택한 조건에 맞는 스킬이 없습니다.'}
+            </p>
           )}
 
           {filteredRows.map((skill) => {
@@ -954,7 +1315,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                   <span className={styles.rowMeta}>{skill.description}</span>
                 </div>
                 {scope === 'personal' ? (
-                  <div className={styles.rowActions}>
+                  <div className={`${styles.rowActions} ${styles.personalActions}`}>
                     {/* 꺼지면 값은 그대로 두고 에이전트에게만 안 보이게 한다
                         (삭제와 다름) — `toggleEnabled()` 참고. */}
                     <div
@@ -983,6 +1344,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                         {sharing ? '처리 중…' : sharedByMe ? '중지' : '공유'}
                       </Button>
                     )}
+                    {skill.imported_from_team && <span className={styles.shareActionSlot} aria-hidden="true" />}
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => openEdit('personal', skill)}>
                       수정
                     </Button>
@@ -1002,7 +1364,13 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                         disabled={busy || importing || skill.imported_by_me}
                         onClick={() => void importSharedSkill(skill)}
                       >
-                        {importing ? '가져오는 중…' : skill.imported_by_me ? '이미 등록됨' : '내 스킬로 등록'}
+                        {importing
+                          ? '가져오는 중…'
+                          : skill.imported_by_me
+                            ? '이미 등록됨'
+                            : skill.requires_validation
+                              ? '검증 후 내 스킬로 등록'
+                              : '내 스킬로 등록'}
                       </Button>
                     )}
                     {skill.shared_by_me && (
@@ -1056,14 +1424,14 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
               ? {
                   start: '스킬을 만드는 중…',
                   answer: '답변을 반영하는 중…',
-                  approve: '스킬을 등록하는 중…',
+                  approve: '검증을 시작하는 중…',
                   cancel: '취소하는 중…',
                 }[creation.runningReason ?? 'start']
               : creation.phase === 'done'
-                ? '스킬을 만들었습니다'
+                ? '검증을 시작했습니다'
                 : {
                     ask: '하나만 확인할게요',
-                    confirm: '등록 확인',
+                    confirm: '검증 시작 확인',
                     cancelled: '다시 설명해 주세요',
                     error: '스킬을 만들지 못했습니다',
                   }[creation.phase]
@@ -1095,7 +1463,7 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
                   다시 설명하기
                 </Button>
                 <Button variant="primary" onClick={() => void submitConfirm(true)}>
-                  등록
+                  검증 시작
                 </Button>
               </>
             ) : creation.phase === 'done' ? (
@@ -1203,7 +1571,11 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
 
             {creation.phase === 'confirm' && (
               <>
-                <p className={styles.confirmText}>다음 스킬을 등록합니다.</p>
+                {/* **"등록합니다"가 아니다**(2026-08-26) — 승인해도 즉시
+                    등록되지 않는다. 검증 job만 만들고, 실제 등록은 백그라운드
+                    검증(형식 검사, 앞으로는 트리거 테스트까지)을 통과해야
+                    일어난다("스킬 검증·등록 최종 설계.md" §5/§6). */}
+                <p className={styles.confirmText}>다음 스킬의 검증을 시작합니다.</p>
                 {(creation.actions ?? []).map((action, index) => {
                   const name = typeof action.args.name === 'string' ? action.args.name : action.name;
                   const description = typeof action.args.description === 'string' ? action.args.description : null;
@@ -1229,7 +1601,15 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
             {creation.phase === 'done' && (
               <div className={styles.statusRow}>
                 <Icon name="check-circle" size={16} color="var(--color-primary)" />
-                <p className={styles.confirmText}>{creation.finalText || '스킬을 등록했습니다.'}</p>
+                <div className={styles.formStack}>
+                  <p className={styles.confirmText}>{creation.finalText || '검증을 시작했습니다.'}</p>
+                  {/* 결과는 이 화면이 아니라 오른쪽 아래 진행 카드(SkillJobCenter)나
+                      스킬 목록에서 확인한다 — 검증이 몇 초~몇 분 걸릴 수 있어
+                      이 모달을 붙잡고 기다릴 필요가 없다는 걸 명시한다. */}
+                  <p className={styles.cardSub}>
+                    검증 결과는 화면 오른쪽 아래 진행 카드나 위 스킬 목록에서 확인할 수 있습니다.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1416,6 +1796,215 @@ ${targetScope} 범위로 스킬을 설계하고 skill_register까지 진행하�
           )}
         </div>
         )}
+      </Modal>
+
+      <Modal
+        open={viewingJob !== null}
+        onClose={closeJobDetail}
+        title="스킬 검증 상세"
+        footer={(
+          <>
+            {viewingJob && isSkillJobOpen(viewingJob) && viewingJob.status !== 'CANCEL_REQUESTED' && (
+              <Button variant="outline" onClick={() => void cancelRegistrationJob(viewingJob)}>
+                검증 취소
+              </Button>
+            )}
+            {viewingJob && (viewingJob.status === 'FAILED' || viewingJob.status === 'CANCELED') && (
+              <Button variant="outline" onClick={() => void removeRegistrationJob(viewingJob)}>
+                기록 삭제
+              </Button>
+            )}
+            {viewingJob?.status === 'FAILED' && (
+              <Button
+                variant="outline"
+                onClick={() => void openRepair(viewingJob)}
+              >
+                수정
+              </Button>
+            )}
+            {viewingJob?.status === 'FAILED' && ['SYSTEM', 'CHANGED_CONTEXT'].includes(viewingJob.failure_category ?? '') && (
+              <Button variant="outline" onClick={() => void retryUnchanged(viewingJob)}>
+                그대로 다시 검증
+              </Button>
+            )}
+            <Button variant="primary" onClick={closeJobDetail}>
+              확인
+            </Button>
+          </>
+        )}
+      >
+        <div className={styles.formStack}>
+          <div className={styles.formField}>
+            <span className={styles.formLabel}>스킬</span>
+            <p className={styles.confirmText}>{viewingJob?.skill_name}</p>
+          </div>
+          <div className={styles.formField}>
+            <span className={styles.formLabel}>현재 상태</span>
+            {viewingJob && <Badge tone={jobStatusTone(viewingJob)}>{jobStatusLabel(viewingJob)}</Badge>}
+            {viewingJob && isSkillJobOpen(viewingJob) && (
+              <p className={styles.cardSub}>
+                {viewingJob.stage_index + 1}/5 · {JOB_STAGE_LABELS[viewingJob.stage]}
+              </p>
+            )}
+          </div>
+          {viewingJob && isSkillJobOpen(viewingJob) && (
+            <div className={styles.formField}>
+              <span className={styles.formLabel}>현재 진행 중인 작업</span>
+              <div className={styles.jobActivityCurrent} aria-live="polite">
+                <Icon name="loader" size={16} spin color="var(--color-primary)" />
+                <span>{viewingJob.progress_message}</span>
+                {viewingJob.progress_total !== null && viewingJob.progress_total > 0 && (
+                  <strong>
+                    {viewingJob.progress_current ?? 0}/{viewingJob.progress_total}
+                  </strong>
+                )}
+              </div>
+              {recentProgressEvents(viewingJob).length > 0 && (
+                <ol className={styles.jobActivityHistory} aria-label="최근 완료한 검증 작업">
+                  {recentProgressEvents(viewingJob).map((event, index) => (
+                    <li key={`${event.at}-${index}`}>
+                      <Icon name="check" size={12} color="var(--color-success)" />
+                      <span>{event.message}</span>
+                      {event.total !== null && event.total > 0 && (
+                        <strong>{event.current ?? 0}/{event.total}</strong>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
+          {viewingJob?.status === 'FAILED' && (
+            <>
+              <div className={styles.failurePanel}>
+                <div className={styles.failurePanelHead}>
+                  <Icon name="triangle-alert" size={17} color="var(--color-danger)" />
+                  <strong>{getSkillJobFailureCopy(viewingJob).reason}</strong>
+                </div>
+                <div className={styles.failureNext}>
+                  <span>다시 만들 때</span>
+                  <p>{getSkillJobFailureCopy(viewingJob).suggestion}</p>
+                </div>
+              </div>
+              {viewingJob.candidate_document && (
+                <details className={styles.repairDraft}>
+                  <summary>검증한 스킬 내용 전체 보기</summary>
+                  <div><span>이름</span><strong>{viewingJob.candidate_document.name}</strong></div>
+                  <div><span>설명</span><p>{viewingJob.candidate_document.description}</p></div>
+                  <div><span>내용</span><pre>{viewingJob.candidate_document.body || '작성된 내용이 없습니다.'}</pre></div>
+                </details>
+              )}
+              {viewingJob.failure_code === 'SKILL_NAME_CONFLICT' &&
+                Array.isArray(viewingJob.failure_details?.suggested_names) &&
+                viewingJob.failure_details.suggested_names.length > 0 && (
+                  <div className={styles.formField}>
+                    <span className={styles.formLabel}>다른 이름 제안</span>
+                    <div className={styles.filterRow}>
+                      {viewingJob.failure_details.suggested_names.map((name) => (
+                        <Button
+                          key={String(name)}
+                          variant="outline"
+                          onClick={() => void openRepair(
+                            viewingJob,
+                            `스킬 이름을 ${String(name)}(으)로 바꿔 주세요.`,
+                          )}
+                        >
+                          {String(name)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </>
+          )}
+          {viewingJob?.status === 'CANCELED' && (
+            <p className={styles.cardSub}>취소된 작업입니다. 실제 스킬은 등록되지 않았습니다.</p>
+          )}
+          {viewingJob?.status === 'SUCCEEDED' && (
+            <p className={styles.cardSub}>검증을 통과해 내 스킬에 등록되었습니다.</p>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={repairingJob !== null}
+        onClose={() => {
+          if (repairSubmitting) return;
+          setRepairingJob(null);
+          setRepairInstruction('');
+        }}
+        title="실패한 스킬 보완"
+        footer={(
+          <>
+            <Button
+              variant="outline"
+              disabled={repairSubmitting}
+              onClick={() => {
+                setRepairingJob(null);
+                setRepairInstruction('');
+              }}
+            >
+              취소
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!repairInstruction.trim() || repairSubmitting}
+              onClick={() => void submitRepair()}
+            >
+              {repairSubmitting ? '준비 중…' : '다시 만들기'}
+            </Button>
+          </>
+        )}
+      >
+        <div className={styles.formStack}>
+          {repairingJob?.candidate_document && (
+            <div className={styles.repairDraft}>
+              <div>
+                <span>이름</span>
+                <strong>{repairingJob.candidate_document.name}</strong>
+              </div>
+              <div>
+                <span>설명</span>
+                <p>{repairingJob.candidate_document.description}</p>
+              </div>
+              <div>
+                <span>현재 내용</span>
+                <pre>{repairingJob.candidate_document.body || '작성된 내용이 없습니다.'}</pre>
+              </div>
+            </div>
+          )}
+          {repairingJob && (
+            <>
+              <div className={styles.formField}>
+                <span className={styles.formLabel}>왜 보완이 필요한가요?</span>
+                <p className={`${styles.notice} ${styles.noticeDanger}`}>
+                  {getSkillJobFailureCopy(repairingJob).reason}
+                </p>
+              </div>
+              <div className={styles.formField}>
+                <span className={styles.formLabel}>현재 초안에 부족한 내용</span>
+                <p className={`${styles.notice} ${styles.noticeNeutral}`}>
+                  {getSkillJobRepairCopy(repairingJob).missing}
+                </p>
+              </div>
+            </>
+          )}
+          <div className={styles.formField}>
+            <label className={styles.formLabel} htmlFor="skill-repair-instruction">
+              {repairingJob ? getSkillJobRepairCopy(repairingJob).question : '추가할 내용을 알려주세요.'}
+            </label>
+            <textarea
+              id="skill-repair-instruction"
+              className={styles.formTextarea}
+              rows={5}
+              autoFocus
+              value={repairInstruction}
+              placeholder={repairingJob ? getSkillJobRepairCopy(repairingJob).placeholder : '추가할 내용을 적어주세요.'}
+              disabled={repairSubmitting}
+              onChange={(event) => setRepairInstruction(event.target.value)}
+            />
+          </div>
+        </div>
       </Modal>
 
       <Modal

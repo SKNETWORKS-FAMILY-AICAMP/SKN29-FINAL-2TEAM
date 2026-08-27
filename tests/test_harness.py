@@ -154,151 +154,173 @@ class SkillRegisterDescriptionTests(SimpleTestCase):
         self.assertIn("채팅 답변", description)
         self.assertNotIn("승인 없이 즉시 활성", description)
 
+    def test_등록_완료가_아니라_검증_시작이라고_말한다(self):
+        """§16 "모델이 job 생성 직후 등록 완료라고 안내하지 않는다"를 도구
+        설명 자체에 못박는다 — 모델은 이 텍스트만 보고 판단하므로, 여기 없으면
+        아무리 워커·job이 맞아도 모델이 "등록했습니다"라고 말할 수 있다."""
+        description = registry.BUILTIN_TOOLS["skill_register"].description
+
+        self.assertIn("등록 완료가 아니라 검증 시작", description)
+        self.assertNotIn("scope", description.lower())
+
+    def test_입력_스키마에_scope가_없다(self):
+        schema = registry.BUILTIN_TOOLS["skill_register"].input_schema
+        self.assertNotIn("scope", schema["properties"])
+        self.assertEqual(set(schema["required"]), {"name", "description", "body"})
+
+
+class _FakeSkillJobRepository:
+    """`SkillRegistrationJobRepository.create()`의 관찰 가능한 계약만 흉내 낸
+    인메모리 가짜(2026-08-26) — `_skill_register()`가 검증 job **생성**을
+    요청하는 시점의 로직(형식 검사, CREATE/UPDATE 판정, "열린 job은 하나")만
+    검증한다.
+
+    `backend/db/skill_jobs.py`의 실제 SQL(FOR UPDATE SKIP LOCKED, lease,
+    부분 유니크 인덱스 등)은 여기서 다시 흉내 내지 않는다 — 이 저장소의
+    다른 raw-SQL 테스트들(`test_evaluation_db.py`)이 쓰는 손으로 만든
+    커서 mock과 같은 이유로, 여기서는 그 계층까지 검증하는 대신 워커/DB
+    쪽은 실제 컨테이너에서 직접 확인했다(설계 문서 "얇은 종단 경로" 검증).
+    """
+
+    def __init__(self):
+        self._open: dict[tuple[str, str], dict] = {}
+        self._seq = 0
+
+    def create(self, *, account_id, team_id, skill_name, operation, candidate_document,
+               candidate_hash, base_content_hash, source_session_id, idempotency_key,
+               retry_of_job_id=None, base_catalog_revision=None,
+               runtime_profile_version=None, tool_registry_version=None):
+        key = (account_id, skill_name)
+        existing = self._open.get(key)
+        if existing is not None:
+            return existing, False
+        self._seq += 1
+        job = {
+            "job_id": f"fake-job-{self._seq}",
+            "account_id": account_id,
+            "team_id": team_id,
+            "skill_name": skill_name,
+            "operation": operation,
+            "candidate_document": candidate_document,
+            "candidate_hash": candidate_hash,
+            "base_content_hash": base_content_hash,
+            "base_catalog_revision": base_catalog_revision,
+            "runtime_profile_version": runtime_profile_version,
+            "tool_registry_version": tool_registry_version,
+            "source_session_id": source_session_id,
+            "status": "QUEUED",
+            "stage": "WAITING",
+        }
+        self._open[key] = job
+        return job, True
+
 
 class SkillRegisterTests(SimpleTestCase):
-    """`_skill_register()` — 정본: 2026-08-20_16_Skill_Middleware_설계.md.
+    """`_skill_register()` — 정본: 03_스킬_검증_등록_설계.md §5.
 
-    2026-08-22 리팩터로 실제 저장·검증은 `services.agent_runtime.skills.service`가
-    맡는다 — 그 모듈이 부르는 `StoreBackend`가 그래프 실행 컨텍스트 밖에서
-    쓰려면 진짜 `BaseStore` 구현이 필요하다(`.get`/`.put`/`.search`/`.batch`
-    전부). 손으로 만든 put-only 가짜 대신 langgraph가 제공하는 실제 인메모리
-    구현(`InMemoryStore`)을 쓴다 — 프로토콜을 다시 흉내 내지 않아도 되고,
-    실제 저장소와 동작이 어긋날 걱정이 없다.
+    **2026-08-26 재작성.** 이 도구는 더 이상 SKILL.md를 즉시 쓰지 않고
+    `skill_registration_job`을 만든다(§6). `services.agent_runtime.skills.
+    service`가 여전히 부르는 `StoreBackend`는 이름 충돌 판정(CREATE/UPDATE
+    구분)에 쓰이므로 이전처럼 langgraph 실제 인메모리 구현(`InMemoryStore`)을
+    쓰고, job 생성 자체는 위 `_FakeSkillJobRepository`로 대체한다.
     """
 
     def _fake_store(self):
         return patch("services.agent_runtime.memory.store.get_memory_store")
 
-    def test_scope가_아니면_사유를_말하며_거부한다(self):
-        with self.assertRaises(ToolInputError):
+    def _fake_jobs(self):
+        return patch(
+            "services.agent_runtime.skills.registration.SkillRegistrationJobRepository",
+            new=_FakeSkillJobRepository(),
+        )
+
+    def test_scope_인자는_더_이상_받지_않는다(self):
+        with self.assertRaises(TypeError):
             registry._skill_register(
                 account_id="AC001",
                 team_id="TM001",
-                account_role="leader",
-                scope="ORG",
+                scope="PERSONAL",
                 name="foo",
                 description="d",
                 body="b",
             )
 
-    def test_팀원이_팀_스킬을_요청하면_거부한다(self):
-        with self.assertRaises(ToolInputError) as ctx:
-            registry._skill_register(
-                account_id="AC001",
-                team_id="TM001",
-                account_role="member",
-                scope="TEAM",
-                name="foo",
-                description="d",
-                body="b",
-            )
-        self.assertIn("팀장", str(ctx.exception))
-
-    def test_팀장은_팀_스킬을_등록할_수_있다(self):
-        with self._fake_store() as mock_get_store:
+    def test_개인_스킬_검증_job을_만든다(self):
+        with self._fake_store() as mock_get_store, self._fake_jobs():
             mock_get_store.return_value = InMemoryStore()
 
             result = registry._skill_register(
                 account_id="AC001",
                 team_id="TM001",
-                account_role="leader",
-                scope="TEAM",
-                name="jira-issue-registration",
-                description="Jira 이슈 등록 절차",
-                body="1. 프로젝트 키를 확인한다\n2. 이슈를 만든다",
-            )
-
-        self.assertEqual(result["scope"], "TEAM")
-        self.assertEqual(result["path"], "/skills/team/jira-issue-registration/SKILL.md")
-
-    def test_개인_스킬은_역할과_무관하게_등록된다(self):
-        with self._fake_store() as mock_get_store:
-            store = InMemoryStore()
-            mock_get_store.return_value = store
-
-            result = registry._skill_register(
-                account_id="AC001",
-                team_id="TM001",
-                account_role="member",
-                scope="PERSONAL",
+                session_id="SESS001",
                 name="my-note-taking",
                 description="회의록 정리 절차",
                 body="회의록을 이렇게 정리한다",
             )
 
-        self.assertEqual(result["scope"], "PERSONAL")
-        self.assertIsNotNone(store.get(("skill", "personal", "AC001"), result["path"]))
+        self.assertEqual(result["status"], "QUEUED")
+        self.assertEqual(result["stage"], "WAITING")
+        self.assertIn("job_id", result)
+
+    def test_반환값에_저장_경로가_없다(self):
+        """§5 "반환값" — 아직 파일이 없으므로 `path`를 안 돌려준다."""
+        with self._fake_store() as mock_get_store, self._fake_jobs():
+            mock_get_store.return_value = InMemoryStore()
+            result = registry._skill_register(
+                account_id="AC001", team_id="TM001",
+                name="foo", description="d", body="b",
+            )
+        self.assertNotIn("path", result)
+        self.assertNotIn("scope", result)
 
     def test_잘못된_이름은_거부한다(self):
         for bad_name in ("Foo-Bar", "-foo", "foo-", "foo--bar", "a" * 65, ""):
             with self.subTest(bad_name=bad_name):
-                with self._fake_store() as mock_get_store:
+                with self._fake_store() as mock_get_store, self._fake_jobs():
                     mock_get_store.return_value = InMemoryStore()
                     with self.assertRaises(ToolInputError):
                         registry._skill_register(
                             account_id="AC001",
                             team_id="TM001",
-                            account_role="leader",
-                            scope="PERSONAL",
                             name=bad_name,
                             description="d",
                             body="b",
                         )
 
     def test_빈_설명이나_본문은_거부한다(self):
-        with self._fake_store() as mock_get_store:
+        with self._fake_store() as mock_get_store, self._fake_jobs():
             mock_get_store.return_value = InMemoryStore()
             with self.assertRaises(ToolInputError):
                 registry._skill_register(
-                    account_id="AC001", team_id="TM001", account_role="leader",
-                    scope="PERSONAL", name="foo", description="  ", body="b",
+                    account_id="AC001", team_id="TM001",
+                    name="foo", description="  ", body="b",
                 )
-        with self._fake_store() as mock_get_store:
+        with self._fake_store() as mock_get_store, self._fake_jobs():
             mock_get_store.return_value = InMemoryStore()
             with self.assertRaises(ToolInputError):
                 registry._skill_register(
-                    account_id="AC001", team_id="TM001", account_role="leader",
-                    scope="PERSONAL", name="foo", description="d", body="   ",
+                    account_id="AC001", team_id="TM001",
+                    name="foo", description="d", body="   ",
                 )
 
-    def test_이름이_겹치면_거부한다(self):
-        """2026-08-22 추가 — 이전에는 같은 이름으로 다시 등록하면 조용히
-        덮어썼다. 설정 화면과 로직을 합치면서 "거부하고 알려준다"로
-        정했다(업로드/직접 작성 둘 다 같은 규칙)."""
-        with self._fake_store() as mock_get_store:
+    def test_같은_이름을_다시_요청하면_새_job_대신_열린_job을_돌려준다(self):
+        """§9 "같은 사용자와 스킬 이름에는 열린 job을 하나만 허용한다" —
+        예전(즉시 쓰기 시절)엔 두 번째 호출이 이름 충돌로 거부됐지만, 이제는
+        첫 job이 아직 처리 중이라는 뜻이라 조용히 그 job을 다시 돌려준다.
+        이름 충돌 자체는 워커의 `run_checking()`이 판정한다(더 이상 이
+        핸들러의 책임이 아니다)."""
+        with self._fake_store() as mock_get_store, self._fake_jobs():
             mock_get_store.return_value = InMemoryStore()
-            registry._skill_register(
-                account_id="AC001", team_id="TM001", account_role="leader",
-                scope="PERSONAL", name="dup-skill", description="d", body="b",
+            first = registry._skill_register(
+                account_id="AC001", team_id="TM001",
+                name="dup-skill", description="d", body="b",
             )
-            with self.assertRaises(ToolInputError) as ctx:
-                registry._skill_register(
-                    account_id="AC001", team_id="TM001", account_role="leader",
-                    scope="PERSONAL", name="dup-skill", description="d2", body="b2",
-                )
-        self.assertIn("이미", str(ctx.exception))
-
-    def test_저장한_내용은_이름_설명이_있는_frontmatter다(self):
-        with self._fake_store() as mock_get_store:
-            store = InMemoryStore()
-            mock_get_store.return_value = store
-
-            registry._skill_register(
-                account_id="AC001",
-                team_id="TM001",
-                account_role="leader",
-                scope="PERSONAL",
-                name="my-skill",
-                description="설명입니다",
-                body="본문 절차",
+            second = registry._skill_register(
+                account_id="AC001", team_id="TM001",
+                name="dup-skill", description="d2", body="b2",
             )
-
-        item = store.get(("skill", "personal", "AC001"), "/skills/personal/my-skill/SKILL.md")
-        content = item.value["content"]
-        self.assertTrue(content.startswith("---\n"))
-        self.assertIn("name: my-skill", content)
-        self.assertIn("description:", content)
-        self.assertIn("본문 절차", content)
+        self.assertEqual(first["job_id"], second["job_id"])
+        self.assertIn("진행 중", second["message"])
 
 class TaskRegisterDateTests(SimpleTestCase):
     """등록 직전에 날짜를 거른다.

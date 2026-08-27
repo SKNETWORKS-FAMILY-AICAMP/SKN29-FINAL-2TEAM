@@ -38,6 +38,19 @@ services:
       # 루프백 전용. 인터넷에서는 안 보이고 서버 안에서만 붙는다.
       - "127.0.0.1:8000:8000"
 
+  # 스킬 등록 검증 워커 — 정본: "스킬 검증·등록 최종 설계.md" §10. `web`과 같은
+  # 이미지·환경변수를 쓰되 인터넷은 물론 루프백에도 포트를 안 연다 — 요청을
+  # 받지 않고 `skill_registration_job`을 폴링만 하는 상시 프로세스다.
+  skill-validation-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: >
+      sh -c "python manage.py skill_validation_worker"
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+
   frontend:
     build:
       context: ../../frontend

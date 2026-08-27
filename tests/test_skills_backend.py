@@ -11,6 +11,7 @@ from django.test import SimpleTestCase
 
 from services.agent_runtime.skills.backend import (
     SKILLS_BUILTIN_PATH_PREFIX,
+    SKILLS_INACTIVE_PERSONAL_PATH_PREFIX,
     SKILLS_PERSONAL_PATH_PREFIX,
     SKILLS_TEAM_PATH_PREFIX,
     personal_namespace,
@@ -44,8 +45,16 @@ class SkillRoutesTests(SimpleTestCase):
 
         self.assertEqual(
             set(routes.keys()),
-            {SKILLS_BUILTIN_PATH_PREFIX, SKILLS_PERSONAL_PATH_PREFIX, SKILLS_TEAM_PATH_PREFIX},
+            {
+                SKILLS_BUILTIN_PATH_PREFIX,
+                SKILLS_PERSONAL_PATH_PREFIX,
+                SKILLS_INACTIVE_PERSONAL_PATH_PREFIX,
+                SKILLS_TEAM_PATH_PREFIX,
+            },
         )
+
+    def test_inactive_route_is_not_an_agent_source(self):
+        self.assertNotIn(SKILLS_INACTIVE_PERSONAL_PATH_PREFIX, skill_sources())
 
     def test_different_accounts_get_isolated_personal_namespaces(self):
         """계정 A/B가 서로 다른 namespace를 받아야 서로의 개인 스킬을 못 본다."""

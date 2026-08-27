@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../Icon/Icon';
 import { fetchIndexingProgress, sumIndexing } from '../../api/documentLibrary';
 import type { IndexingCounts as Counts, IndexingProgress as Progress } from '../../api/documentLibrary';
 import { PATHS } from '../../routes';
 import { onIndexingStarted } from '../../utils/indexingSignal';
+import { useStackedCard } from '../../utils/progressStack';
 import { subscribeSession, loadSession } from '../../utils/session';
 import styles from './IndexingProgress.module.css';
 
@@ -236,57 +237,65 @@ export function IndexingProgress() {
     return () => window.clearTimeout(timer);
   }, [finished]);
 
-  // 도는 중도 아니고 막 끝난 것도 아니면 안 그린다.
-  if (dismissed) return null;
+  // 도는 중도 아니고 막 끝난 것도 아니면 안 그린다. 세 조건 다 예전엔 이
+  // 자리에서 바로 `return null`이었다 — 이제 이 컴포넌트는 자기 자리를
+  // 직접 안 그리고 `ProgressCardStack`에 등록만 하므로(2026-08-26), 그
+  // 값을 변수(`content`)로 만들어 아래 `useStackedCard()` 한 번으로
+  // 넘긴다. 판정 순서와 조건은 그대로다.
+  let content: ReactNode = null;
   // 기준선을 잡기 전에는 안 그린다. 그리면 그 한 프레임 동안 서재 전체 수가
   // 스쳐 지나간다 — 고치려던 바로 그 숫자다.
-  if (indexing && base === null) return null;
-  const shown = indexing ? counts : finished;
-  if (shown === null || shown.total === 0) return null;
+  if (!dismissed && !(indexing && base === null)) {
+    const shown = indexing ? counts : finished;
+    if (shown !== null && shown.total > 0) {
+      const shownDone = indexing ? done : shown.total;
+      const percent = Math.round((shownDone / shown.total) * 100);
 
-  const shownDone = indexing ? done : shown.total;
-  const percent = Math.round((shownDone / shown.total) * 100);
+      content = (
+        <aside
+          className={styles.card}
+          role="status"
+          aria-live="polite"
+          aria-label={indexing ? `문서 색인 진행 ${shownDone}/${shown.total}` : '문서 색인 완료'}
+        >
+          <div className={styles.head}>
+            {indexing ? (
+              <Icon name="loader" size={15} spin color="var(--color-primary)" />
+            ) : (
+              <Icon name="check-circle" size={15} color="var(--color-success)" />
+            )}
+            <span className={styles.title}>{indexing ? '문서를 읽는 중' : '문서를 다 읽었습니다'}</span>
+            <span className={styles.count}>
+              {shownDone}/{shown.total}
+            </span>
+            <button type="button" className={styles.close} onClick={() => setDismissed(true)} aria-label="닫기">
+              <Icon name="x" size={13} />
+            </button>
+          </div>
 
-  return (
-    <aside
-      className={styles.card}
-      role="status"
-      aria-live="polite"
-      aria-label={indexing ? `문서 색인 진행 ${shownDone}/${shown.total}` : '문서 색인 완료'}
-    >
-      <div className={styles.head}>
-        {indexing ? (
-          <Icon name="loader" size={15} spin color="var(--color-primary)" />
-        ) : (
-          <Icon name="check-circle" size={15} color="var(--color-success)" />
-        )}
-        <span className={styles.title}>{indexing ? '문서를 읽는 중' : '문서를 다 읽었습니다'}</span>
-        <span className={styles.count}>
-          {shownDone}/{shown.total}
-        </span>
-        <button type="button" className={styles.close} onClick={() => setDismissed(true)} aria-label="닫기">
-          <Icon name="x" size={13} />
-        </button>
-      </div>
+          <div className={styles.bar}>
+            <div className={styles.barFill} style={{ width: `${percent}%` }} />
+          </div>
 
-      <div className={styles.bar}>
-        <div className={styles.barFill} style={{ width: `${percent}%` }} />
-      </div>
+          <div className={styles.foot}>
+            {/* 실패는 숨기지 않는다. 남은 수에서 빠지므로 이 줄이 없으면 왜 8/10
+                에서 끝났는지 알 수 없다. **끝난 뒤에는 더 중요하다** — 그때가
+                사람이 「그럼 그 몇 건은?」을 물을 유일한 순간이다.
 
-      <div className={styles.foot}>
-        {/* 실패는 숨기지 않는다. 남은 수에서 빠지므로 이 줄이 없으면 왜 8/10
-            에서 끝났는지 알 수 없다. **끝난 뒤에는 더 중요하다** — 그때가
-            사람이 「그럼 그 몇 건은?」을 물을 유일한 순간이다.
+                반대로 「읽은 문서부터 검색에 쓰입니다」 같은 설명은 걷었다. 없어도
+                사람이 할 행동이 안 바뀌고, 「검색」은 우리 쪽 말이다. */}
+            {shown.failed > 0 && <span className={styles.failed}>읽기 실패 {shown.failed}</span>}
+            <button type="button" className={styles.link} onClick={() => navigate(PATHS.documents)}>
+              문서 보기
+            </button>
+          </div>
+        </aside>
+      );
+    }
+  }
 
-            반대로 「읽은 문서부터 검색에 쓰입니다」 같은 설명은 걷었다. 없어도
-            사람이 할 행동이 안 바뀌고, 「검색」은 우리 쪽 말이다. */}
-        {shown.failed > 0 && <span className={styles.failed}>읽기 실패 {shown.failed}</span>}
-        <button type="button" className={styles.link} onClick={() => navigate(PATHS.documents)}>
-          문서 보기
-        </button>
-      </div>
-    </aside>
-  );
+  useStackedCard('indexing-progress', content);
+  return null;
 }
 
 export default IndexingProgress;
