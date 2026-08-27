@@ -471,7 +471,13 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                   <span>Word(docx)</span>
                   <span>텍스트(txt·md)</span>
                 </div>
-                <p className={styles.tableEmptyNote}>한 개에 50MB까지 · 여러 개 한 번에</p>
+                {/* 「N 이하」는 저장소가 이미 쓰는 말이다 — 서버 거절 문장이
+                    「파일은 50MB 이하여야 합니다.」이고 `AvatarPicker` 도
+                    「2MB 이하」로 적는다. 「파일 하나」는 `SkillsTab` 에서 왔다.
+
+                    「여러 개 한 번에」는 뺐다. 제약이 아니라 되는 일인데 한도와
+                    가운뎃점으로 묶여 있어 같이 제약처럼 읽혔다. */}
+                <p className={styles.tableEmptyNote}>파일 하나에 50MB 이하</p>
               </>
             )}
           </div>
