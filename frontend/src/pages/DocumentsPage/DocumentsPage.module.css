@@ -465,20 +465,18 @@
   color: var(--color-muted);
 }
 
-/* 눌러서 고르는 자리. 놓는 것은 위 `panelDrop` 이 받고, 여기는 그 대체
-   수단(드래그가 안 되는 환경)과 올리는 중 표시만 남았다. */
-.dropZone {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex: none;
-  padding: var(--space-3) var(--space-4);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  cursor: pointer;
+/* 올리는 법. 무엇이 없다는 문장보다 한 단계 낮춘다 — 먼저 읽을 것은 상태고,
+   이건 그다음에 무엇을 하면 되는지다. */
+.tableEmptyHint {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-placeholder);
 }
 
+/* 덮개 글자. 늘 떠 있던 안내 막대는 없앴다(2026-08-27) — 올리는 법은 빈 표
+   안에서 말하고, 고르는 것은 툴바 버튼이 한다. */
 .dropTitle {
   font-size: 13px;
   font-weight: 600;

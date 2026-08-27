@@ -107,6 +107,11 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
    */
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * 올리는 중인 파일 이름. **행 조작(`busy`)과 한 칸을 쓰면 안 된다** — 지우기
+   * 하나만 눌러도 버튼이 「올리는 중…」이라고 말하게 된다.
+   */
+  const [uploading, setUploading] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   /** 지우려는 파일. 되돌릴 수 없어 한 번 묻는다. */
   const [confirming, setConfirming] = useState<PersonalFile | null>(null);
@@ -161,7 +166,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
     if (!token || !picked || picked.length === 0) return;
     setUploadError(null);
     for (const file of Array.from(picked)) {
-      setBusy(file.name);
+      setUploading(file.name);
       try {
         await uploadPersonalFile(token, file);
         // 올린 파일도 커넥터 문서와 같은 색인을 탄다. 전역 카드가 곧바로 잡게 한다.
@@ -172,7 +177,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
         setUploadError(exc instanceof ApiError ? exc.message : `${file.name} · 올리지 못했습니다.`);
       }
     }
-    setBusy(null);
+    setUploading(null);
     await load();
   }
 
@@ -350,47 +355,9 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
 
       {error && <p className={styles.error}>{error}</p>}
 
-      {/* drag & drop. **누르는 것으로도 된다** — 드래그가 안 되는 환경(모바일)이
-          있고, 되는 곳에서도 파일 고르기를 더 편하게 여기는 사람이 있다.
-          받은 파일 탭에서는 안 보인다 — 거기 올릴 수는 없다. */}
-      {tab === 'mine' && (
-        <div
-          className={styles.dropZone}
-          onClick={() => inputRef.current?.click()}
-          role="button"
-          // 글자가 없어 아이콘뿐이라, 읽어 주는 이름을 따로 준다.
-          aria-label="파일 고르기"
-          tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
-          }}
-        >
-          <Icon name="plus" size={18} color="var(--color-primary)" />
-          {/* 안내 문구를 다 뺐다(2026-08-27). 끌어다 놓는 것은 패널 전체가
-              받고 덮개가 그때 말해 주므로, 「여기로」라고 적힌 막대는 받는 곳을
-              오히려 좁게 가리켰다. 형식·용량은 안 맞을 때 서버가 사유를 주고
-              그것이 `uploadError` 로 바로 아래 붙는다.
-
-              **올리는 중 표시만 남긴다** — 올라가고 있다는 것을 아는 자리가
-              여기밖에 없다. */}
-          {busy && <span className={styles.dropTitle}>{busy} 올리는 중…</span>}
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept={ACCEPT}
-            className={styles.fileInput}
-            onChange={(event) => {
-              upload(event.target.files);
-              // 같은 파일을 다시 고를 수 있게 비운다 — 안 비우면 change 가 안 뜬다.
-              event.target.value = '';
-            }}
-          />
-        </div>
-      )}
-
-      {/* 거절 사유는 **놓은 자리 바로 아래**에 붙인다. 위쪽 목록 오류 자리에
-          두면 방금 한 동작과 멀어져 눈에 안 들어온다. */}
+      {/* 거절 사유는 표 바로 위에 붙인다. 놓는 자리가 패널 전체가 되면서
+          「놓은 자리 바로 아래」라는 곳이 없어졌다 — 목록이 시작되기 전
+          한 줄이 방금 한 동작과 가장 가깝다. */}
       {tab === 'mine' && uploadError && <p className={styles.error}>{uploadError}</p>}
 
       <div className={styles.toolbar}>
@@ -409,6 +376,29 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
             </button>
           )}
         </div>
+        {/* 고르는 버튼. **막대를 없애도 이건 남아야 한다**(2026-08-27) —
+            드래그가 안 되는 환경(모바일)에서는 이것이 올리는 유일한 길이다.
+            표가 비었을 때만 두면 파일이 하나라도 있는 순간 길이 끊긴다. */}
+        {tab === 'mine' && (
+          <>
+            <Button size="sm" variant="outline" disabled={uploading !== null} onClick={() => inputRef.current?.click()}>
+              <Icon name="plus" size={14} />
+              {uploading ? `${uploading} 올리는 중…` : '파일 올리기'}
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept={ACCEPT}
+              className={styles.fileInput}
+              onChange={(event) => {
+                upload(event.target.files);
+                // 같은 파일을 다시 고를 수 있게 비운다 — 안 비우면 change 가 안 뜬다.
+                event.target.value = '';
+              }}
+            />
+          </>
+        )}
         <label className={styles.pageSize}>
           <span>쪽당</span>
           <select
@@ -456,6 +446,15 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
               : tab === 'mine'
                 ? '아직 올린 파일이 없습니다.'
                 : '팀원이 공유한 파일이 아직 없습니다.'}
+            {/* 올리는 법은 **빈 표 안에서** 말한다. 늘 떠 있던 안내 막대는
+                파일이 쌓인 뒤로는 아무도 안 읽으면서 자리만 차지했다. */}
+            {tab === 'mine' && rows.length === 0 && (
+              <span className={styles.tableEmptyHint}>
+                여기로 끌어다 놓거나 「파일 올리기」로 고르세요
+                <br />
+                PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
+              </span>
+            )}
           </p>
         )}
 
