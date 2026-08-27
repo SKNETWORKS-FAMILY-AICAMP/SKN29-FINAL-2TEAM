@@ -364,9 +364,11 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
           }}
         >
           <Icon name="plus" size={18} color="var(--color-primary)" />
-          <span className={styles.dropTitle}>
-            {busy ? `${busy} 올리는 중…` : '여기로 끌어다 놓거나 눌러서 고르세요'}
-          </span>
+          {/* 안내 문구를 뺐다(2026-08-27). 끌어다 놓는 것은 이제 패널 전체가
+              받고 덮개가 그때 말해 준다 — 「여기로」라고 적힌 막대는 받는 곳을
+              오히려 좁게 가리켰다. **올리는 중 표시는 남긴다** — 올라가고 있다는
+              것을 아는 자리가 여기밖에 없다. */}
+          {busy && <span className={styles.dropTitle}>{busy} 올리는 중…</span>}
           <span className={styles.dropHint}>
             PDF · Word(docx) · 텍스트(txt·md) · 한 개에 50MB까지 · 여러 개 한 번에
           </span>
@@ -421,123 +423,126 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
         </label>
       </div>
 
-      {rows.length === 0 && (
-        <p className={styles.muted}>
-          {tab === 'mine' ? '아직 올린 파일이 없습니다.' : '팀원이 공유한 파일이 아직 없습니다.'}
-        </p>
-      )}
+      {/* **비어 있어도 표는 남긴다**(2026-08-27). 표가 통째로 사라지면 문장
+          한 줄만 뜬 채 화면이 무너져 보이고, 어떤 열이 담기는 자리인지도 함께
+          사라진다 — 처음 온 사람이 가장 알고 싶어 하는 것이다. */}
+      <div className={styles.table}>
+        {/* 열이 탭마다 다르다. **받은 파일에는 조작이 없다** — 남의 것이라
+            지울 수도 공유를 거둘 수도 없고, 검색에는 공유한 순간부터 이미
+            쓰인다. 그 자리에 스위치를 두면 「꺼도 쓰이는」 상태가 생긴다.
+            대신 **누가 올렸는지**가 온다 — 팀 문서는 「우리 폴더에서 왔다」가
+            믿을 근거인데 여기는 사람이 그 근거다. */}
+        <div className={tab === 'mine' ? styles.myFileHead : styles.sharedHead}>
+          <span>문서</span>
+          {tab === 'shared' && <span>공유한 사람</span>}
+          <span>상태</span>
+          <span>올림</span>
+          {tab === 'mine' && (
+            <>
+              <span>검색에 사용</span>
+              <span>팀에 공유</span>
+              <span />
+            </>
+          )}
+        </div>
 
-      {/* 검색으로 0건인 것과 원래 빈 것은 다른 상태다. */}
-      {rows.length > 0 && matched.length === 0 && <p className={styles.muted}>검색 결과가 없습니다.</p>}
+        {/* 검색으로 0건인 것과 원래 빈 것은 다른 상태다. */}
+        {matched.length === 0 && (
+          <p className={styles.tableEmpty}>
+            {rows.length > 0
+              ? '검색 결과가 없습니다.'
+              : tab === 'mine'
+                ? '아직 올린 파일이 없습니다.'
+                : '팀원이 공유한 파일이 아직 없습니다.'}
+          </p>
+        )}
 
-      {matched.length > 0 && (
-        <div className={styles.table}>
-          {/* 열이 탭마다 다르다. **받은 파일에는 조작이 없다** — 남의 것이라
-              지울 수도 공유를 거둘 수도 없고, 검색에는 공유한 순간부터 이미
-              쓰인다. 그 자리에 스위치를 두면 「꺼도 쓰이는」 상태가 생긴다.
-              대신 **누가 올렸는지**가 온다 — 팀 문서는 「우리 폴더에서 왔다」가
-              믿을 근거인데 여기는 사람이 그 근거다. */}
-          <div className={tab === 'mine' ? styles.myFileHead : styles.sharedHead}>
-            <span>문서</span>
-            {tab === 'shared' && <span>공유한 사람</span>}
-            <span>상태</span>
-            <span>올림</span>
-            {tab === 'mine' && (
-              <>
-                <span>검색에 사용</span>
-                <span>팀에 공유</span>
-                <span />
-              </>
-            )}
-          </div>
-
-          {paged.map((file) => {
-            const chip = statusChip(file);
-            return (
-              <div key={file.doc_id} className={tab === 'mine' ? styles.myFileRow : styles.sharedRow}>
-                <span className={styles.cellName}>
-                  <Icon name="file-text" size={15} color="var(--color-primary)" />
-                  <span className={styles.cellNameText}>
-                    <span className={styles.fileName}>{file.file_name}</span>
-                    {/* **문서 내용은 목록에 안 찍는다**(2026-08-18 PM). 요약을
-                        그대로 얹었더니 줄마다 기획서 본문이 문단째로 쏟아졌다 —
-                        파일 목록은 어느 파일인지 고르는 자리지 읽는 자리가 아니다. */}
-                    {chip.hint && (
-                      <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
-                        {chip.hint}
-                      </span>
-                    )}
-                  </span>
-                </span>
-
-                {tab === 'shared' && (
-                  <span className={styles.cellPath} data-label="공유한 사람">
-                    {file.owner_name ?? '알 수 없음'}
-                  </span>
-                )}
-
-                <span className={styles.cellStatus} data-label="상태">
-                  <Badge tone={chip.tone}>{chip.label}</Badge>
-                </span>
-
-                <span className={styles.cellDate} data-label="올림">
-                  {formatDate(file.uploaded_at)}
-                </span>
-
-                {tab === 'mine' && (
-                  <>
-                    {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
-                        끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
-                    <span className={styles.cellToggle}>
-                      <ToggleSwitch
-                        checked={file.search_enabled}
-                        onChange={(next) => toggle(file, 'search_enabled', next)}
-                      />
+        {paged.map((file) => {
+          const chip = statusChip(file);
+          return (
+            <div key={file.doc_id} className={tab === 'mine' ? styles.myFileRow : styles.sharedRow}>
+              <span className={styles.cellName}>
+                <Icon name="file-text" size={15} color="var(--color-primary)" />
+                <span className={styles.cellNameText}>
+                  <span className={styles.fileName}>{file.file_name}</span>
+                  {/* **문서 내용은 목록에 안 찍는다**(2026-08-18 PM). 요약을
+                      그대로 얹었더니 줄마다 기획서 본문이 문단째로 쏟아졌다 —
+                      파일 목록은 어느 파일인지 고르는 자리지 읽는 자리가 아니다. */}
+                  {chip.hint && (
+                    <span className={`${styles.cellHint} ${styles.rowDetail}`} title={chip.hint}>
+                      {chip.hint}
                     </span>
-                    <span className={styles.cellToggle}>
-                      <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
-                    </span>
-                    <span className={styles.cellActions}>
-                      {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
-                          권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
-                          표와 같은 조건이다. */}
-                      {(file.search_ready || file.index_status === 'FAILED') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === file.doc_id}
-                          onClick={() => void retry(file)}
-                        >
-                          다시 읽기
-                        </Button>
-                      )}
-                      {/* 「다운로드」는 새로 지은 말이다 — 저장소에 받기·내려받기
-                          문구가 한 곳도 없었다(2026-08-26 확인). 「삭제」·「수정」
-                          처럼 이미 쓰는 한자어 명사와 결이 같은 쪽을 골랐다. */}
+                  )}
+                </span>
+              </span>
+
+              {tab === 'shared' && (
+                <span className={styles.cellPath} data-label="공유한 사람">
+                  {file.owner_name ?? '알 수 없음'}
+                </span>
+              )}
+
+              <span className={styles.cellStatus} data-label="상태">
+                <Badge tone={chip.tone}>{chip.label}</Badge>
+              </span>
+
+              <span className={styles.cellDate} data-label="올림">
+                {formatDate(file.uploaded_at)}
+              </span>
+
+              {tab === 'mine' && (
+                <>
+                  {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
+                      끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
+                  <span className={styles.cellToggle}>
+                    <ToggleSwitch
+                      checked={file.search_enabled}
+                      onChange={(next) => toggle(file, 'search_enabled', next)}
+                    />
+                  </span>
+                  <span className={styles.cellToggle}>
+                    <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
+                  </span>
+                  <span className={styles.cellActions}>
+                    {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
+                        권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
+                        표와 같은 조건이다. */}
+                    {(file.search_ready || file.index_status === 'FAILED') && (
                       <Button
                         size="sm"
                         variant="outline"
                         disabled={busy === file.doc_id}
-                        onClick={() => void download(file)}
+                        onClick={() => void retry(file)}
                       >
-                        다운로드
+                        다시 읽기
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy === file.doc_id}
-                        onClick={() => setConfirming(file)}
-                      >
-                        삭제
-                      </Button>
-                    </span>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                    )}
+                    {/* 「다운로드」는 새로 지은 말이다 — 저장소에 받기·내려받기
+                        문구가 한 곳도 없었다(2026-08-26 확인). 「삭제」·「수정」
+                        처럼 이미 쓰는 한자어 명사와 결이 같은 쪽을 골랐다. */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === file.doc_id}
+                      onClick={() => void download(file)}
+                    >
+                      다운로드
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy === file.doc_id}
+                      onClick={() => setConfirming(file)}
+                    >
+                      삭제
+                    </Button>
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {pageCount > 1 && (
         <div className={styles.pager}>

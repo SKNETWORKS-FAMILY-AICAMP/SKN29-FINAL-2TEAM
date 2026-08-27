@@ -461,6 +461,16 @@
   pointer-events: none;
 }
 
+/* 비어 있을 때 표 안에 놓는 문장. 표를 지우는 대신 머리말 아래에 둔다 —
+   담기는 열이 그대로 보여야 무엇이 없는 것인지 알 수 있다. */
+.tableEmpty {
+  margin: 0;
+  padding: var(--space-8) 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
 /* 올리는 자리. 표 위에 두되 **한 줄로 낮게** — 화면 높이를 고정해 뒀으므로
    여기가 두꺼워지면 그만큼 표에서 보이는 행이 줄어든다. 놓는 것은 위
    `panelDrop` 이 받고, 여기는 눌러서 고르기와 안내 문구가 사는 자리다. */
