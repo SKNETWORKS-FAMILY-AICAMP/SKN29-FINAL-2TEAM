@@ -494,10 +494,13 @@
 }
 
 .reasoningStep::before {
-  content: '\203A';
+  content: '';
   flex-shrink: 0;
-  color: var(--color-placeholder);
-  font-weight: 700;
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: var(--color-placeholder);
 }
 
 /* 작업 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과

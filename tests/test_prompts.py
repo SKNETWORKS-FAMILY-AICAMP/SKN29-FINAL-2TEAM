@@ -51,6 +51,10 @@ class RuntimeScaffoldContentTests(SimpleTestCase):
     def test_forbids_external_markdown_images(self):
         self.assertIn("외부 이미지를 Markdown 이미지 문법으로 삽입하지 않는다", RUNTIME_SCAFFOLD)
 
+    def test_places_web_sources_next_to_supported_claims(self):
+        self.assertIn("근거가 되는 문장이나 문단 바로 뒤", RUNTIME_SCAFFOLD)
+        self.assertIn("답변 마지막에만 몰아두지 않는다", RUNTIME_SCAFFOLD)
+
     def test_does_not_repeat_progress_updates_in_the_final_answer(self):
         self.assertIn("작업 안내와 추가 확인 이유는 작업 과정에만 표시", RUNTIME_SCAFFOLD)
         self.assertIn("최종 답변에서는 반복하지 않고 결과와 근거만 전달", RUNTIME_SCAFFOLD)

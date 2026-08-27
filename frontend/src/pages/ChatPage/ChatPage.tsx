@@ -2073,12 +2073,10 @@ export default function ChatPage() {
                           live.toolName !== null;
                         const showReasoning = live.timeline.length > 0;
                         if (!showProgress && !showReasoning) return null;
-                        const toolCount = live.timeline.filter((entry) => entry.kind === 'tool').length;
                         const durationLabel =
                           !live.running && live.durationMs != null
                             ? ` · ${(live.durationMs / 1000).toFixed(1)}초`
                             : '';
-                        const countLabel = !live.running && toolCount > 0 ? ` · 도구 ${toolCount}회` : '';
                         // **진행 카드와 생각 과정을 한 카드로 묶는다**(2026-08-19) —
                         // 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로
                         // 합쳤다. 바깥 `<section className={cardStyles.card}>`를
@@ -2109,11 +2107,11 @@ export default function ChatPage() {
                                   // (2026-08-25). 사유는 답변 본문이 말하고,
                                   // 여기서는 성공이 아니었다는 사실만 밝힌다.
                                   if (live.toolFailed && live.toolName) {
-                                    return `${live.toolName} 실패${countLabel}${durationLabel}`;
+                                    return `${live.toolName} 실패${durationLabel}`;
                                   }
                                   return live.toolName
-                                    ? `${live.toolName} 완료${countLabel}${durationLabel}`
-                                    : `정리 완료${countLabel}${durationLabel}`;
+                                    ? `${live.toolName} 완료${durationLabel}`
+                                    : `정리 완료${durationLabel}`;
                                 })()}
                                 failed={live.toolFailed}
                               />
@@ -2141,7 +2139,7 @@ export default function ChatPage() {
                                 running={live.running}
                                 summary={
                                   !live.running
-                                    ? `${live.durationMs != null ? `${(live.durationMs / 1000).toFixed(1)}초 동안 작업` : '작업 완료'}${toolCount > 0 ? ` · 도구 ${toolCount}회` : ''}`
+                                    ? `${live.durationMs != null ? `${(live.durationMs / 1000).toFixed(1)}초 동안 작업` : '작업 완료'}`
                                     : undefined
                                 }
                                 // 출처는 최종 답변 아래 한 곳에서만 제공한다.

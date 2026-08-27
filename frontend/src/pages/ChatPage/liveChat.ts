@@ -230,6 +230,9 @@ function sourceKey(source: SourceRef): string {
       if (normalizedKey.startsWith('utm_') || normalizedKey === 'ref') url.searchParams.delete(key);
     }
     url.hostname = url.hostname.toLowerCase();
+    // 웹의 http/https 변형은 사용자 관점에서 같은 문서다. 검색 공급자가
+    // 두 스킴을 섞어 돌려줘도 출처 수를 두 건으로 부풀리지 않는다.
+    if (url.protocol === 'http:' || url.protocol === 'https:') url.protocol = 'https:';
     url.pathname = url.pathname.replace(/\/$/, '') || '/';
     // OpenAI 문서의 api-mode/lang/example/context/type 값은 같은 문서 안의
     // 보기 상태만 바꾼다. 검색 결과가 이 변형 URL을 여럿 돌려줘도 사용자가
@@ -246,6 +249,8 @@ function sourceKey(source: SourceRef): string {
 function mergeSources(current: SourceRef[], incoming: SourceRef[]): SourceRef[] {
   const merged = new Map<string, SourceRef>();
   for (const source of [...current, ...incoming]) {
+    // 검색 결과의 제목 자체가 실패 페이지임을 밝히는 항목은 답변 근거가 아니다.
+    if (/^(?:page\s+not\s+found|not\s+found|404)(?:\b|\s*\|)/i.test(source.label.trim())) continue;
     const key = sourceKey(source);
     const previous = merged.get(key);
     // 같은 URL이면 더 구체적인 제목을 남긴다. URL 문자열 자체보다 페이지 제목이 낫다.

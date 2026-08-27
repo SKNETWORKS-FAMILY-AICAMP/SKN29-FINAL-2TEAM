@@ -18,6 +18,11 @@ interface SearchPreview {
   results: Array<{ label: string; url: string }>;
 }
 
+interface UserToolPreview {
+  summary: string;
+  items: string[];
+}
+
 function isWebSearchTool(tool: Extract<TimelineEntry, { kind: 'tool' }>): boolean {
   return /web.?search|웹.?검색/i.test(`${tool.toolRef} ${tool.toolName ?? ''}`);
 }
@@ -66,6 +71,76 @@ function searchRunTitle(runIndex: number, preview: SearchPreview | null): string
   return `검색 ${runIndex + 1} · ${compact.length > 42 ? `${compact.slice(0, 42)}…` : compact}`;
 }
 
+/** 내장 조회 도구의 원시 JSON에서 일반 사용자에게 필요한 결과만 추린다. */
+function userToolPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): UserToolPreview | null {
+  const ref = tool.toolRef.toLowerCase();
+  if (tool.status === 'FAILED' && ref === 'task_list' && !tool.arguments?.proj_id) {
+    return {
+      summary: '등록된 업무를 조회하지 못했습니다',
+      items: ['프로젝트를 먼저 선택해야 합니다'],
+    };
+  }
+  if (!tool.output || tool.status !== 'OK') return null;
+  let output: unknown;
+  try {
+    output = JSON.parse(tool.output);
+  } catch {
+    return null;
+  }
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return null;
+  const record = output as Record<string, unknown>;
+
+  const rows = (key: string): Array<Record<string, unknown>> => {
+    const value = record[key];
+    return Array.isArray(value)
+      ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      : [];
+  };
+  const text = (row: Record<string, unknown>, key: string): string | null =>
+    typeof row[key] === 'string' && row[key] ? String(row[key]) : null;
+
+  if (ref === 'get_current_datetime') {
+    const date = typeof record.date === 'string' ? record.date : null;
+    const time = typeof record.time === 'string' ? record.time : null;
+    const timezone = typeof record.timezone === 'string' ? record.timezone : null;
+    if (!date && !time) return null;
+    return { summary: '현재 날짜와 시간을 확인했습니다', items: [[date, time].filter(Boolean).join(' '), timezone].filter((item): item is string => Boolean(item)) };
+  }
+
+  const definitions: Array<{
+    refs: string[];
+    key: string;
+    noun: string;
+    unit: string;
+    particle: string;
+    label: (row: Record<string, unknown>) => string | null;
+  }> = [
+    { refs: ['people_list'], key: 'members', noun: '팀원', unit: '명', particle: '을', label: (row) => [text(row, 'name'), text(row, 'job_role'), text(row, 'org_name')].filter(Boolean).join(' · ') || null },
+    { refs: ['project_list'], key: 'projects', noun: '프로젝트', unit: '개', particle: '를', label: (row) => [text(row, 'name'), text(row, 'status')].filter(Boolean).join(' · ') || null },
+    { refs: ['task_list'], key: 'tasks', noun: '업무', unit: '개', particle: '를', label: (row) => [text(row, 'title'), text(row, 'status')].filter(Boolean).join(' · ') || null },
+    { refs: ['document_list'], key: 'documents', noun: '문서', unit: '개', particle: '를', label: (row) => [text(row, 'file_name'), text(row, 'project')].filter(Boolean).join(' · ') || null },
+  ];
+  const definition = definitions.find((item) => item.refs.includes(ref));
+  if (definition) {
+    const values = rows(definition.key);
+    return {
+      summary: `${definition.noun} ${values.length}${definition.unit}${definition.particle} 확인했습니다`,
+      items: values.map(definition.label).filter((item): item is string => Boolean(item)).slice(0, 8),
+    };
+  }
+
+  if (ref === 'document_search') {
+    const evidence = Array.isArray(record.evidence) ? record.evidence.length : 0;
+    const notIndexed = Array.isArray(record.not_indexed) ? record.not_indexed.length : 0;
+    if (evidence === 0 && notIndexed === 0) return null;
+    return {
+      summary: `문서 근거 ${evidence}건을 확인했습니다`,
+      items: notIndexed > 0 ? [`검색 준비 전 문서 ${notIndexed}개`] : [],
+    };
+  }
+  return null;
+}
+
 function SearchRunDetails({ preview }: { preview: SearchPreview }) {
   return (
     <div className={styles.searchRunDetails}>
@@ -87,6 +162,19 @@ function SearchRunDetails({ preview }: { preview: SearchPreview }) {
           <span className={styles.searchEmpty}>검색 결과 없음</span>
         )}
       </div>
+    </div>
+  );
+}
+
+function UserToolDetails({ preview }: { preview: UserToolPreview }) {
+  return (
+    <div className={styles.searchRunDetails}>
+      <strong className={styles.searchRunLabel}>{preview.summary}</strong>
+      {preview.items.length > 0 && (
+        <ul>
+          {preview.items.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      )}
     </div>
   );
 }
@@ -488,8 +576,12 @@ export function ReasoningTrace({
                     <ol className={styles.toolRuns}>
                       {group.map((item, runIndex) => {
                         const tool = item.entry as Extract<TimelineEntry, { kind: 'tool' }>;
-                        const preview = isWebSearchTool(tool) ? searchPreview(tool) : null;
-                        const hasPreview = Boolean(preview && (preview.queries.length > 0 || preview.results.length > 0));
+                        const webPreview = isWebSearchTool(tool) ? searchPreview(tool) : null;
+                        const resultPreview = webPreview ? null : userToolPreview(tool);
+                        const hasPreview = Boolean(
+                          (webPreview && (webPreview.queries.length > 0 || webPreview.results.length > 0))
+                          || resultPreview,
+                        );
                         const runOpen = expandedSearchRuns.has(item.index);
                         return (
                           <li key={item.index} className={styles.toolRun}>
@@ -499,13 +591,18 @@ export function ReasoningTrace({
                               disabled={!hasPreview}
                               onClick={() => hasPreview && toggleSearchRun(item.index)}
                             >
-                              <span className={styles.toolRunTitle}>{searchRunTitle(runIndex, preview)}</span>
+                              <span className={styles.toolRunTitle}>
+                                {webPreview
+                                  ? searchRunTitle(runIndex, webPreview)
+                                  : resultPreview?.summary ?? `결과 ${runIndex + 1}`}
+                              </span>
                               <span className={styles.toolRunStatus}>
                                 {tool.status === 'RUNNING' ? '진행 중' : tool.status === 'OK' ? '완료' : tool.status === 'FAILED' ? '실패' : '취소'}
                               </span>
                               {hasPreview && <Icon name={runOpen ? 'chevron-down' : 'chevron-right'} size={11} />}
                             </button>
-                            {runOpen && preview && <SearchRunDetails preview={preview} />}
+                            {runOpen && webPreview && <SearchRunDetails preview={webPreview} />}
+                            {runOpen && resultPreview && <UserToolDetails preview={resultPreview} />}
                           </li>
                         );
                       })}
@@ -546,8 +643,12 @@ export function ReasoningTrace({
               );
             }
             if (entry.kind === 'tool') {
-              const preview = isWebSearchTool(entry) ? searchPreview(entry) : null;
-              const hasPreview = Boolean(preview && (preview.queries.length > 0 || preview.results.length > 0));
+              const webPreview = isWebSearchTool(entry) ? searchPreview(entry) : null;
+              const resultPreview = webPreview ? null : userToolPreview(entry);
+              const hasPreview = Boolean(
+                (webPreview && (webPreview.queries.length > 0 || webPreview.results.length > 0))
+                || resultPreview,
+              );
               const runOpen = expandedSearchRuns.has(index);
               return (
                 <li key={index} className={styles.reasoningToolGroup}>
@@ -569,7 +670,8 @@ export function ReasoningTrace({
                     </span>
                     {hasPreview && <Icon name={runOpen ? 'chevron-down' : 'chevron-right'} size={12} />}
                   </button>
-                  {runOpen && preview && <SearchRunDetails preview={preview} />}
+                  {runOpen && webPreview && <SearchRunDetails preview={webPreview} />}
+                  {runOpen && resultPreview && <UserToolDetails preview={resultPreview} />}
                 </li>
               );
             }
