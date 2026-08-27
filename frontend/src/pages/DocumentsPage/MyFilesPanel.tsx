@@ -506,6 +506,10 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                   <span className={styles.cellToggle}>
                     <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
                   </span>
+                  {/* **아이콘만 남긴다**(2026-08-27). 글자로 셋을 세우면 조작
+                      칸이 248px 이라 표 전체(924px)가 패널(약 800px)보다 넓어져
+                      「내 파일」만 가로로 스크롤됐다. 이름은 `title`(툴팁)과
+                      `aria-label`(읽어 주는 이름)에 그대로 남는다. */}
                   <span className={styles.cellActions}>
                     {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
                         권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
@@ -514,10 +518,13 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                       <Button
                         size="sm"
                         variant="outline"
+                        className={styles.iconAction}
+                        title="다시 읽기"
+                        aria-label="다시 읽기"
                         disabled={busy === file.doc_id}
                         onClick={() => void retry(file)}
                       >
-                        다시 읽기
+                        <Icon name="refresh" size={15} />
                       </Button>
                     )}
                     {/* 「다운로드」는 새로 지은 말이다 — 저장소에 받기·내려받기
@@ -526,18 +533,24 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                     <Button
                       size="sm"
                       variant="outline"
+                      className={styles.iconAction}
+                      title="다운로드"
+                      aria-label="다운로드"
                       disabled={busy === file.doc_id}
                       onClick={() => void download(file)}
                     >
-                      다운로드
+                      <Icon name="download" size={15} />
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
+                      className={styles.iconAction}
+                      title="삭제"
+                      aria-label="삭제"
                       disabled={busy === file.doc_id}
                       onClick={() => setConfirming(file)}
                     >
-                      삭제
+                      <Icon name="trash" size={15} />
                     </Button>
                   </span>
                 </>

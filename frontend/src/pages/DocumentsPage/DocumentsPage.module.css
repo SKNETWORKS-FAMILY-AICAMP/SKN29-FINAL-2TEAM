@@ -393,6 +393,16 @@
   gap: var(--space-2);
 }
 
+/* 아이콘만 든 조작 단추. 기본 `sm` 은 좌우 16px 씩이라 글자 없이도 47px 이
+   된다 — 정사각으로 줄여 세 개가 112px 안에 선다.
+   **선택자를 두 겹으로 둔다** — `Button` 의 `.sm` 과 같은 한 겹이면 어느 쪽이
+   이기는지가 번들에 실리는 파일 순서에 달리게 된다. */
+.cellActions .iconAction {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
 .dim {
   color: var(--color-placeholder);
 }
@@ -537,7 +547,9 @@
 .myFileHead,
 .myFileRow {
   /*
-   * 마지막 칸에 「다운로드」·「다시 읽기」·「삭제」가 나란히 선다(2026-08-26).
+   * 마지막 칸에 「다시 읽기」·「다운로드」·「삭제」가 나란히 선다 — 글자를 빼고
+   * 아이콘만 남겨 248px 에서 112px 로 줄였다(2026-08-27). 글자로 두면 표가
+   * 924px 이라 패널(약 800px)을 넘겨 이 표만 가로로 스크롤됐다.
    *
    * ⚠ **이름 칸에 최소 폭을 준다.** `minmax(0, 1fr)` 이면 고정 열 합계가
    * 컨테이너보다 넓어지는 순간 이름 칸이 **0px 로 눌려** 파일 이름이 한 글자씩
@@ -548,7 +560,7 @@
    * 더 좁혔을 뿐이다. 넘칠 때는 눌리는 대신 가로로 스크롤되게 둔다(바깥
    * `.table` 이 이미 `overflow-x` 다).
    */
-  grid-template-columns: minmax(220px, 1fr) 130px 90px 92px 84px 248px;
+  grid-template-columns: minmax(220px, 1fr) 130px 90px 92px 84px 112px;
 }
 
 .sharedHead,
