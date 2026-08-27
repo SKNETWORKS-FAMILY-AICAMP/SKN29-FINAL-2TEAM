@@ -92,6 +92,18 @@ function ChatMock() {
       <div className={styles.mockBody}>
         <p className={styles.mockAsk}>지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.</p>
 
+        {/* 실제 제품은 답이 한 번에 안 나온다 — 진행 카드가 먼저 뜬다. 「생각하는
+            중」은 문구 정리표가 **일부러 남긴** 문구다(무엇을 하는 중인지 말해
+            주므로). 등장이 끝나면 카드에 자리를 내주고 사라진다. */}
+        <p className={styles.mockThinking} aria-hidden="true">
+          <span className={styles.mockThinkingDots}>
+            <span />
+            <span />
+            <span />
+          </span>
+          생각하는 중
+        </p>
+
         <div className={styles.mockCard}>
           {/* 실제 확인 카드의 머리줄이다. 「확인이 필요합니다」가 아니다. */}
           <div className={styles.mockConfirmHead}>
@@ -222,6 +234,23 @@ function ApproveMock() {
   );
 }
 
+/**
+ * 도구가 만든 파일 카드 — `ChatCards.tsx` 의 `ProducedFilesCard`.
+ * 안내 문구(「문서 > 내 파일」에도 저장되어 있습니다)는 그 카드의 실제 문장이다.
+ */
+function FilesMock() {
+  return (
+    <div className={styles.filesCard}>
+      <div className={styles.fileRow}>
+        <Icon name="file-text" size={16} color="var(--color-primary)" />
+        <span className={styles.fileName}>주간_업무량.xlsx</span>
+        <span className={styles.fileBtn}>다운로드</span>
+      </div>
+      <p className={styles.fileHint}>「문서 &gt; 내 파일」에도 저장되어 있습니다.</p>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const session = useSession();
   // 로그인한 사람은 가입이 아니라 자기 작업으로 보낸다. 4차 단계 1에서 목적지가
@@ -323,7 +352,7 @@ export default function LandingPage() {
         </section>
 
         {/* 3 · 할 수 있는 일 */}
-        <section className={styles.band} id="can">
+        <section className={styles.bandDark} id="can">
           <div className={styles.bandInner}>
             <h2 className={styles.h2}>필요한 정보를 찾고, 결과를 업무로 이어갑니다</h2>
             <ol className={styles.stepRail}>
@@ -332,6 +361,9 @@ export default function LandingPage() {
                   <span className={styles.stepNum}>{stage.num}</span>
                   <strong className={styles.stepTitle}>{stage.title}</strong>
                   <small className={styles.stepCaption}>{stage.caption}</small>
+                  {/* 「만들기」 칸에만 결과물을 붙인다. 말로 설명하는 대신 나오는
+                      것을 보인다 — 본문 넷 중 여기만 시각물이 없었다. */}
+                  {stage.num === '3' && <FilesMock />}
                 </li>
               ))}
             </ol>

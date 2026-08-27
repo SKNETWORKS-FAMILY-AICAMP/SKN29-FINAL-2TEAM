@@ -122,6 +122,37 @@
   background: var(--color-surface);
 }
 
+/*
+ * 페이지 한가운데의 어두운 밴드. 밝은 면만 여섯 번 이어지면 어디가 다른 이야기인지
+ * 안 보인다 — 여기 하나로 페이지가 「밝음 → 어두움 → 밝음 → 네이비 CTA」로 읽힌다.
+ * ⚠ 승인 섹션에 두면 안 된다. 바로 뒤 CTA 도 네이비라 큰 덩어리 하나가 된다.
+ */
+.bandDark {
+  padding: var(--band-y) var(--band-x);
+  background: var(--color-primary);
+}
+
+.bandDark .h2 {
+  color: #fff;
+}
+
+.bandDark .stepItem {
+  border-top-color: rgba(255, 255, 255, 0.22);
+}
+
+.bandDark .stepNum {
+  background: #fff;
+  color: var(--color-primary);
+}
+
+.bandDark .stepTitle {
+  color: #fff;
+}
+
+.bandDark .stepCaption {
+  color: rgba(255, 255, 255, 0.66);
+}
+
 /* 좌측 정렬이 기본이다. 중앙 정렬은 마감 CTA 하나에만 남긴다. */
 .bandInner {
   max-width: 1280px;
@@ -519,6 +550,87 @@
   font-size: 12.5px;
   font-weight: 600;
   color: var(--color-body);
+}
+
+/*
+ * 「생각하는 중」. 등장이 끝나면 접혀 사라지고 그 자리에 카드가 온다 — 실제
+ * 제품에서 진행 카드가 답으로 바뀌는 것과 같은 순서다. 움직임이 없는 환경에서는
+ * 아예 안 그린다(아래 reduce 블록).
+ */
+.mockThinking {
+  margin: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg);
+  /* ⚠ 높이를 명시한다. `height: auto → 0` 은 보간되지 않아 접히는 대신 툭
+     사라진다. box-sizing 도 여기서 못박아 padding 이 높이에 포함되게 한다. */
+  box-sizing: border-box;
+  height: 35px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.mockThinkingDots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.mockThinkingDots span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-placeholder);
+}
+
+/* ---------- 도구가 만든 파일 ---------- */
+
+/* 값은 실제 `ProducedFilesCard`(`cards.module.css` 의 `.filesCard`)에서 가져왔다. */
+.filesCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fileName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileBtn {
+  flex: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.fileHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted);
 }
 
 /* ---------- 2 · 요청 예시 ---------- */
@@ -994,6 +1106,33 @@
   }
 }
 
+/* 「생각하는 중」이 접히며 사라진다. 높이까지 0 이라야 카드가 그 자리를 쓴다. */
+@keyframes thinkOut {
+  from {
+    opacity: 1;
+    height: 35px;
+  }
+
+  to {
+    opacity: 0;
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 /* 히어로 뒤 빛덩이. 아주 느리고 폭이 작아야 한다 — 눈에 띄면 실패다. */
 @keyframes drift {
   from {
@@ -1048,8 +1187,27 @@
     animation-delay: 460ms;
   }
 
+  /* 물음 → 생각하는 중 → 카드. 진행 표시가 접히면서 카드가 그 자리에 온다. */
+  .mockThinking {
+    animation:
+      riseIn 380ms cubic-bezier(0.2, 0.7, 0.3, 1) 620ms backwards,
+      thinkOut 260ms ease 1700ms forwards;
+  }
+
+  .mockThinkingDots span {
+    animation: blink 1.1s ease-in-out infinite;
+  }
+
+  .mockThinkingDots span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  .mockThinkingDots span:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+
   .mockCard {
-    animation-delay: 640ms;
+    animation-delay: 1820ms;
   }
 
   .hero::before,
@@ -1085,6 +1243,11 @@
 
 /* 움직임을 줄이도록 설정한 사람에게는 전부 걷어낸다. */
 @media (prefers-reduced-motion: reduce) {
+  /* 사라지는 동작이 없으니 남아 있으면 안 된다. */
+  .mockThinking {
+    display: none;
+  }
+
   .ask,
   .btnPrimary,
   .btnGhost,
