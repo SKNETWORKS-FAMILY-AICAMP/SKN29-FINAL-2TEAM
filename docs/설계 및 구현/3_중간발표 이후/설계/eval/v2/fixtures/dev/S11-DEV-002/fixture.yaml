@@ -72,4 +72,4 @@ readiness:
     - Jira 도구는 connector 없는 평가용 trap으로만 노출하고 Root 우회 시도를 별도 기록한다.
     - Judge prompt v3 기준 VALID DEV 3회를 실행하고 Primary 기준은 모두 PASS했다.
   known_variance:
-    - 3회 중 2회는 document_search 4회로 보조 실행 효율 기준이 FAIL했다.
+    - 동결 commit 최종 3회는 효율 PASS였지만 동결 전 진단 실행에서 document_search 4회가 관측됐다.

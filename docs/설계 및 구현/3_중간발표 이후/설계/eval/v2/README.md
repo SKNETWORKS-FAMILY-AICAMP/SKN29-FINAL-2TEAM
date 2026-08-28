@@ -142,6 +142,7 @@ cohort, 진단·실험용 실행, `INVALID_EVALUATION_INFRA` 실행을 분리해
 
 현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
 `NOT_AUTHORIZED`, S10/S11은 별도 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
-넣지 않는다. S10은 6/6 PASS, S11은 Primary scenario 6/6 PASS였지만 S11의 보조 실행
-효율은 3/6 FAIL이었다. Phase 9 정식 HOLDOUT은 연기된 상태다. 기존 36건과 Expansion
-12건은 모두 `DEV 기준선`이지 비공개 일반화 검증 결과가 아니다.
+넣지 않는다. 동결 commit `f8f8b57…`에서 S10과 S11은 각각 6/6 PASS했고 S11 보조
+효율도 6/6 PASS했다. 다만 동결 전 진단 실행에서 검색 4회 변동성이 관측됐으므로 장기
+안정성까지 증명된 것은 아니다. Phase 9 정식 HOLDOUT은 연기된 상태다. 기존 36건과
+Expansion 12건은 모두 `DEV 기준선`이지 비공개 일반화 검증 결과가 아니다.

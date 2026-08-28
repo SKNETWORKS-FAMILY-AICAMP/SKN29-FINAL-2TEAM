@@ -194,12 +194,12 @@ Judge prompt `eval-v2-judge-v3`와 Candidate `AG004/AV073`으로 두 fixture를 
 
 | Fixture | VALID | Scenario PASS | 보조 효율 PASS | 보조 효율 FAIL |
 |---|---:|---:|---:|---:|
-| S11-DEV-001 | 3 | 3 | 2 | 1 |
-| S11-DEV-002 | 3 | 3 | 1 | 2 |
+| S11-DEV-001 | 3 | 3 | 3 | 0 |
+| S11-DEV-002 | 3 | 3 | 3 | 0 |
 
-Primary 위임·권한·외부 side effect 기준은 **6/6 PASS**다. 그러나 자식의
-`document_search` 호출 수가 3회를 넘은 실행이 3/6이므로 실행 효율은 안정적이라고
-판정하지 않는다. Scenario PASS만 보고 이 Secondary FAIL을 숨기지 않는다.
+동결 commit `f8f8b57…`에서 Primary 위임·권한·외부 side effect와 보조 효율 기준은
+모두 **6/6 PASS**다. 다만 동결 전 진단 실행에서는 `document_search` 4회가 관측됐다.
+최종 cohort 통과와 별개로 작은 표본에서 실행 변동성이 완전히 해소됐다고 단정하지 않는다.
 
 별도 DB schema나 범용 runner를 만들지 않고 기존 V2 recorder와 EventMapper를 재사용했다.
 병렬 Child 위임은 여전히 5장의 `BLOCKED_OBSERVABILITY` 확장 범위다.
