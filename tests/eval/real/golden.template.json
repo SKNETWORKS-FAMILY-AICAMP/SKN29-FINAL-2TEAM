@@ -16,7 +16,9 @@
     "lexical_trigram_weight": 0.25,
     "lexical_exact_weight": 0.2,
     "top_k": 20,
-    "embedding_model": "google/embeddinggemma-300m"
+    "embedding_model": "평가 전 동일 모델임을 증명하거나 재임베딩 후 확정",
+    "embedding_dimension": 768,
+    "embedding_provenance_status": "UNVERIFIED"
   },
   "acceptance_thresholds": {
     "evidence_recall_at_20_not_below_vector": true,

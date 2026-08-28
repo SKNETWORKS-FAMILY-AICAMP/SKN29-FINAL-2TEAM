@@ -117,7 +117,10 @@ def main() -> int:
                     runtime_vector_version text NOT NULL,
                     fts_config text NOT NULL,
                     revision_scope text NOT NULL,
-                    contains_raw_pdf boolean NOT NULL
+                    contains_raw_pdf boolean NOT NULL,
+                    embedding_dimension integer NOT NULL,
+                    embedding_model_claim text NOT NULL,
+                    embedding_provenance_status text NOT NULL
                 );
                 CREATE TABLE {SCHEMA}.document (
                     doc_id text PRIMARY KEY,
@@ -160,7 +163,7 @@ def main() -> int:
             destination_cursor.execute(
                 f"""
                 INSERT INTO {SCHEMA}.dataset_meta
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     imported_at, expires_at, args.approved_by, args.approval_note,
@@ -168,7 +171,8 @@ def main() -> int:
                     runtime_environment["postgres_version"],
                     runtime_environment["pg_trgm_version"],
                     runtime_environment["vector_version"],
-                    "simple", "current_only", False,
+                    "simple", "current_only", False, 768, "unknown",
+                    "dimension_only_unverified",
                 ),
             )
             for index, row in enumerate(documents, start=1):

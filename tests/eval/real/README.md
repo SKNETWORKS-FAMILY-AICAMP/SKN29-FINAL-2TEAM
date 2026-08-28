@@ -68,6 +68,10 @@ S3 원문 또는 비식별 복사본을 로컬 파이프라인으로 색인해�
 감사 이력을 남긴다. 그 보정으로 알고리즘을 다시 선택하지 않고 전체 결과만 다시
 계산한다.
 
+질문 문구는 Codex가 검색 결과나 청크를 보고 대신 생성하지 않는다. 사람이 검색을
+실행하기 전에 실제 업무에서 물을 법한 질문을 먼저 작성하고 작성 시각과 작성자를
+남긴다. Codex는 형식 검증, 중복 검사, 지표 계산만 보조한다.
+
 동결할 때 문서는 `doc_id + revision + content_hash`, 검색기는 vector/lexical 및
 내부 가중치, Top-K, embedding model, 실행 commit SHA까지 함께 기록한다. 같은
 정답지를 다시 실행했을 때 데이터 변화와 코드 변화를 구분하기 위한 기준이다.
@@ -108,8 +112,35 @@ S3 원문 또는 비식별 복사본을 로컬 파이프라인으로 색인해�
   17.10, pg_trgm 1.6, vector 0.8.5, FTS simple인 로컬 DB에서 수행한다.
 - 이번 실문서 평가는 current revision 검색 품질만 다룬다. 이전 revision 누수는
   기존 합성·회귀 테스트가 담당한다.
+- 복사된 294개 embedding은 모두 768차원이지만 `vec_idx.metadata`에 모델 식별자가
+  없다. 복사 후 공용 DB에서 해당 문서 이력도 정리되어, 현재 단계에서는
+  `google/embeddinggemma-300m`과 동일하다고 입증할 수 없다. 차원 일치는 충분한
+  증거가 아니므로 provenance 상태를 `UNVERIFIED`로 두고 벡터 비교 실행을 보류한다.
+- 실문서 평가는 문서 8개·청크 294개의 current revision에 한정된 최소 확인이며,
+  전체 문서 유형이나 향후 revision에 대한 일반화 증명이 아니다.
 - 평가 종료 또는 폐기 예정일 도달 시 로컬 DB에서 `eval_real` 스키마만 제거한다.
   제거 전 정답지와 결과에 본문이 포함되지 않았는지 다시 확인한다.
+
+## 로컬 평가 데이터 폐기
+
+`expires_at`은 기록일 뿐 자동 삭제 기능이 아니다. 평가 완료 직후에는 다음처럼
+명시적 확인 문구와 사유를 주어 로컬 `eval_real` 스키마만 제거한다.
+
+```powershell
+docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/cleanup_real_document_search_eval.py --confirm DROP-EVAL-REAL --reason evaluation-complete
+```
+
+기한 만료 사유로 제거할 때는 `--reason expired`를 쓴다. 이 방식은 기록된 만료
+시각 전에는 실패한다. 명령은 대상 DB 호스트가 `db`, `localhost`, `127.0.0.1` 중
+하나가 아니면 중단하며 공용 DB에는 사용할 수 없다.
+
+## 평가 실행 전 남은 차단 조건
+
+1. 문서 embedding과 질의 embedding의 모델·전처리 동일성을 증명한다.
+2. 증명 자료가 없으면 승인받은 로컬 복사본의 `chunk.search_text` 294개를 현재
+   평가 모델로 다시 임베딩하고, 모델 ID·revision·전처리·생성 시각을 기록한다.
+3. 사람이 검색 전에 질문과 근거를 작성·교차 검수하고 Golden Set을 동결한다.
+4. 실제 실행 commit SHA와 모든 가중치·Top-K·모델 정보를 고정한다.
 
 ## 필요한 사용자 결정
 
