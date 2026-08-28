@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone
+import json
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg
@@ -31,9 +33,21 @@ def main() -> int:
     parser.add_argument("--approved-by", required=True)
     parser.add_argument("--approval-note", required=True)
     parser.add_argument("--retention-days", type=int, default=7)
+    parser.add_argument(
+        "--manifest", type=Path,
+        default=Path("tests/eval/real/approved_documents.json"),
+    )
     args = parser.parse_args()
     if args.retention_days < 1 or args.retention_days > 30:
         raise ValueError("보관 기간은 1~30일이어야 합니다.")
+
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    approved_documents = manifest.get("approved_documents")
+    if not isinstance(approved_documents, list) or len(approved_documents) != 8:
+        raise RuntimeError("승인 문서 manifest는 정확히 8개여야 합니다.")
+    approved_by_id = {row["doc_id"]: row for row in approved_documents}
+    if len(approved_by_id) != 8:
+        raise RuntimeError("승인 문서 manifest의 doc_id가 중복됐습니다.")
 
     source_url = os.environ.get("EVAL_SOURCE_DATABASE_URL", "").strip()
     destination_url = os.environ.get("DATABASE_URL", "").strip()
@@ -79,7 +93,8 @@ def main() -> int:
                 """
                 SELECT d.doc_id, d.cur_revision AS revision, d.content_hash, d.mime_type
                   FROM doc d
-                 WHERE d.team_id IS NOT NULL
+                 WHERE d.doc_id = ANY(%s)
+                   AND d.team_id IS NOT NULL
                    AND d.owner_account_id IS NULL
                    AND d.mime_type = 'application/pdf'
                    AND d.deleted = false
@@ -93,10 +108,13 @@ def main() -> int:
                    )
                  ORDER BY d.doc_id
                 """
+                , (list(approved_by_id),)
             )
             documents = list(source_cursor.fetchall())
-            if len(documents) != 8:
-                raise RuntimeError(f"승인 후보 팀 PDF가 예상한 8개가 아닙니다: {len(documents)}개")
+            actual = {(row["doc_id"], row["revision"], row["content_hash"]) for row in documents}
+            expected = {(row["doc_id"], row["revision"], row["content_hash"]) for row in approved_documents}
+            if actual != expected:
+                raise RuntimeError("공용 DB 문서가 승인된 doc_id/revision/content_hash와 다릅니다.")
             doc_ids = [row["doc_id"] for row in documents]
 
             destination_cursor.execute("SELECT to_regnamespace(%s) AS existing", (SCHEMA,))
@@ -175,11 +193,12 @@ def main() -> int:
                     "dimension_only_unverified",
                 ),
             )
-            for index, row in enumerate(documents, start=1):
+            for row in documents:
+                approved = approved_by_id[row["doc_id"]]
                 destination_cursor.execute(
                     f"INSERT INTO {SCHEMA}.document VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
-                        row["doc_id"], f"TEAM-PDF-{index:02d}", row["revision"],
+                        row["doc_id"], approved["display_alias"], row["revision"],
                         row["content_hash"], row["mime_type"], True,
                         args.approved_by, imported_at,
                     ),

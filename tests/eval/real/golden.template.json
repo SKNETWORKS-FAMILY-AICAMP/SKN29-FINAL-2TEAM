@@ -4,7 +4,8 @@
     "status": "DRAFT",
     "purpose": "현재 vector 0.5 + lexical 0.5 검색의 실제 문서 독립 검증",
     "algorithm_selection_allowed": false,
-    "contains_raw_content": false,
+    "golden_file_contains_raw_content": false,
+    "local_eval_store_contains_extracted_text": true,
     "approved_scope": "사용자 확인 후 입력",
     "frozen_at": "Golden Set 동결 시각",
     "code_commit": "평가 실행 commit SHA"

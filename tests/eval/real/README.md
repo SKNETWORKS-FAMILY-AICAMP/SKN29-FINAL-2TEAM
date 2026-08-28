@@ -37,6 +37,10 @@
 7. 복사본에서 개인정보·고객명을 비식별화할 수 있는지 확인하고 보관·폐기 시점을 정한다.
 8. 실제 벡터/하이브리드 평가는 공용 DB가 아니라 로컬 복사본에서 실행한다.
 
+승인 범위는 `tests/eval/real/approved_documents.json`의 정확한
+`doc_id + revision + content_hash` 8개로 동결한다. 실행 시점에 조건에 맞는 문서
+8개를 다시 고르는 방식은 사용하지 않는다.
+
 공용 DB에 청크나 embedding이 없다면 RDS만으로는 평가할 수 없다. 이 경우 승인된
 S3 원문 또는 비식별 복사본을 로컬 파이프라인으로 색인해야 한다.
 
@@ -118,6 +122,9 @@ S3 원문 또는 비식별 복사본을 로컬 파이프라인으로 색인해�
   증거가 아니므로 provenance 상태를 `UNVERIFIED`로 두고 벡터 비교 실행을 보류한다.
 - 실문서 평가는 문서 8개·청크 294개의 current revision에 한정된 최소 확인이며,
   전체 문서 유형이나 향후 revision에 대한 일반화 증명이 아니다.
+- Golden JSON 자체에는 본문이 없지만 로컬 `eval_real`에는 실제
+  `doc_block.content`와 `chunk.search_text`가 있다. 두 범위를 하나의
+  `contains_raw_content`로 표현하지 않고 각각 별도 필드로 기록한다.
 - 평가 종료 또는 폐기 예정일 도달 시 로컬 DB에서 `eval_real` 스키마만 제거한다.
   제거 전 정답지와 결과에 본문이 포함되지 않았는지 다시 확인한다.
 
@@ -141,6 +148,12 @@ docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/cle
    평가 모델로 다시 임베딩하고, 모델 ID·revision·전처리·생성 시각을 기록한다.
 3. 사람이 검색 전에 질문과 근거를 작성·교차 검수하고 Golden Set을 동결한다.
 4. 실제 실행 commit SHA와 모든 가중치·Top-K·모델 정보를 고정한다.
+
+재임베딩 결과는 기존 출처 미확인 `eval_real.vector`를 덮어쓰지 않는다.
+`eval_real.verified_vector`와 `verified_vector_run`에 모델, 차원, document 모드,
+정규화 여부, 각 `search_text` hash, 생성 시각, commit SHA를 별도 기록한다.
+RunPod에는 `chunk.search_text`만 최대 20개씩 보내며 파일명·원본 PDF·block 전체·
+계정·대화·업무·기타 메타데이터는 보내지 않는다.
 
 ## 필요한 사용자 결정
 

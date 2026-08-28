@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 import runpod
 
-from pipeline import PipelineConfigurationError, embed_queries, process_document
+from pipeline import PipelineConfigurationError, embed_documents, embed_queries, process_document
 
 
 load_dotenv()
@@ -20,6 +20,8 @@ def handler(job: dict) -> dict:
         return process_document(payload)
     if action == "embed_queries":
         return embed_queries(payload)
+    if action == "embed_documents":
+        return embed_documents(payload)
     raise ValueError(f"지원하지 않는 Worker action입니다: {action}")
 
 

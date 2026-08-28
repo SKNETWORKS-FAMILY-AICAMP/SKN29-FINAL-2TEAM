@@ -747,3 +747,26 @@ def embed_queries(input_data: dict[str, Any]) -> dict[str, Any]:
         "embedding_dimension": EXPECTED_DIMENSION,
         "embeddings": [v.astype(float).tolist() for v in vectors],
     }
+
+
+def embed_documents(input_data: dict[str, Any]) -> dict[str, Any]:
+    """이미 청킹된 평가 텍스트를 문서 모드로만 임베딩한다."""
+    texts = input_data.get("texts")
+    if not isinstance(texts, list) or not texts or not all(isinstance(x, str) and x.strip() for x in texts):
+        raise InvalidDocumentError("비어 있지 않은 texts 문자열 배열이 필요합니다.")
+    if len(texts) > 20:
+        raise InvalidDocumentError("한 요청에서 문서 텍스트는 최대 20개입니다.")
+    vectors = embedding_model().encode_document(
+        texts, normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False
+    )
+    if vectors.shape != (len(texts), EXPECTED_DIMENSION):
+        raise ChunkValidationError(
+            f"문서 임베딩 차원이 올바르지 않습니다: {vectors.shape}; expected (*, 768)"
+        )
+    return {
+        "embedding_model": _required_env("EMBEDDING_MODEL"),
+        "embedding_dimension": EXPECTED_DIMENSION,
+        "embedding_mode": "document",
+        "normalized": True,
+        "embeddings": [v.astype(float).tolist() for v in vectors],
+    }

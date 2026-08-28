@@ -89,15 +89,15 @@ def _await_job(job_id: str) -> dict[str, Any]:
     return payload
 
 
-def embed_queries(texts: list[str]) -> list[list[float]]:
+def _embed_texts(texts: list[str], *, action: str) -> dict[str, Any]:
     base, headers = _configuration()
     if not texts or any(not isinstance(text, str) or not text.strip() for text in texts):
-        raise ValueError("검색 임베딩에는 비어 있지 않은 문자열이 필요합니다.")
+        raise ValueError("임베딩에는 비어 있지 않은 문자열이 필요합니다.")
     try:
         response = requests.post(
             f"{base}/runsync",
             json={
-                "input": {"action": "embed_queries", "texts": texts},
+                "input": {"action": action, "texts": texts},
                 "policy": {"executionTimeout": settings.RUNPOD_EXECUTION_TIMEOUT_MS},
             },
             headers=headers,
@@ -120,7 +120,22 @@ def embed_queries(texts: list[str]) -> list[list[float]]:
     output = payload.get("output")
     vectors = output.get("embeddings") if isinstance(output, dict) else None
     if not isinstance(vectors, list) or len(vectors) != len(texts):
-        raise RunPodRequestError("검색 임베딩 결과 개수가 요청과 다릅니다.")
+        raise RunPodRequestError("임베딩 결과 개수가 요청과 다릅니다.")
     if any(not isinstance(v, list) or len(v) != 768 for v in vectors):
-        raise RunPodRequestError("검색 임베딩은 모두 768차원이어야 합니다.")
-    return vectors
+        raise RunPodRequestError("임베딩은 모두 768차원이어야 합니다.")
+    if output.get("embedding_model") != "google/embeddinggemma-300m":
+        raise RunPodRequestError("승인된 임베딩 모델과 RunPod 응답 모델이 다릅니다.")
+    if output.get("embedding_dimension") != 768:
+        raise RunPodRequestError("RunPod 응답의 임베딩 차원이 다릅니다.")
+    return output
+
+
+def embed_queries(texts: list[str]) -> list[list[float]]:
+    return _embed_texts(texts, action="embed_queries")["embeddings"]
+
+
+def embed_documents(texts: list[str]) -> dict[str, Any]:
+    output = _embed_texts(texts, action="embed_documents")
+    if output.get("embedding_mode") != "document" or output.get("normalized") is not True:
+        raise RunPodRequestError("RunPod 문서 임베딩 설정을 확인할 수 없습니다.")
+    return output
