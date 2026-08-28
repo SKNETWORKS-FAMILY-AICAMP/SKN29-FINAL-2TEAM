@@ -35,7 +35,7 @@ from services.document_pipeline.runpod_client import embed_queries  # noqa: E402
 
 
 #: 한 번에 임베딩할 질의 수. **37건을 한 번에 넘기면 워커가 FAILED 로 떨어진다**
-#: (2026-08-25 실측, 16건은 정상). 제품은 `document_search` 가 질의 하나씩만
+#: (2026-08-28 실측, 16건은 정상). 제품은 `document_search` 가 질의 하나씩만
 #: 부르므로 이 한도에 닿은 적이 없다 — 평가만 여러 건을 모아 부른다.
 EMBED_BATCH = 16
 

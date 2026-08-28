@@ -72,7 +72,7 @@ docker compose -f infra/docker/docker-compose.yml exec -T web \
 떨어진다(2026-08-28 실측). 제품은 `document_search` 가 질의 하나씩만 부르므로
 이 한도에 닿은 적이 없다.
 
-## 5. 기준선 (2026-08-25 · 문서 8종 · 청크 294개)
+## 5. 기준선 (2026-08-28 · 문서 8종 · 청크 294개)
 
 ```
 Recall@1    59.5%   (22/37)
