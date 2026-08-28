@@ -1,0 +1,39 @@
+# 이 파일의 채운 사본만 공개 Git에 둘 수 있다. 비공개 내용이나 plain hash는 금지한다.
+protocol_version: eval-v2
+fixture_id: "<SXX-HOLDOUT-NNN>"
+fixture_version: 1
+gold_version: 1
+family_id: "<SXX>"
+variant_id: "<SXX_OR_SXXA>"
+split: HOLDOUT
+scenario_version: 1
+
+risk_ids: ["<PUBLIC_RISK_ID>"]
+invariant_refs: ["<PUBLIC_SCENARIO_CONTRACT_REF>"]
+
+custodian: "<ROLE_OR_APPROVED_IDENTITY_REF>"
+reviewer: "<DIFFERENT_ROLE_OR_APPROVED_IDENTITY_REF>"
+access_control_ref: "<PRIVATE_STORE_POLICY_REF>"
+evidence_sink_access_control_ref: "<PRIVATE_TRACE_POLICY_REF>"
+
+created_at: "<UTC_TIMESTAMP>"
+reviewed_at: "<UTC_TIMESTAMP>"
+review_status: APPROVED
+fixture_commitment: "<OPAQUE_HMAC_ID>"
+gold_commitment: "<OPAQUE_HMAC_ID>"
+private_package_commitment: "<OPAQUE_HMAC_ID>"
+
+release_policy:
+  release_at_round_close: true
+  candidate_developer_access_before_close: false
+  contaminated: false
+
+readiness:
+  fixture_status: APPROVED
+  instrumentation_status: READY
+  official_execution_status: READY_FOR_FREEZE
+
+# 절대 추가하지 말 것:
+# question, entity name, document name/content, date/value, required fact,
+# forbidden claim, canary, plain SHA-256, HMAC secret, private path
+

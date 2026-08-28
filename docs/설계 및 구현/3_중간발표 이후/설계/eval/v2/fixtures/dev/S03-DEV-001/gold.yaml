@@ -1,0 +1,11 @@
+gold_identity: {fixture_id: S03-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: 회의록 미결 사항은 주문 상태값 통합·이스트페이 규격서·관측성 완료 기준·데이터 이관 우선순위 네 건이다., evidence_refs: ["PDF-MIN:p6"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 네 항목은 현재 두 조회 범위에서 미등록이지만 완료나 취소를 뜻하지 않는다., supported_by: [F01]}
+oracle_bindings:
+  - {criterion: three_source_queries, authoritative_oracle: DETERMINISTIC, scorer_identity: required-tool-coverage-v1}
+  - {criterion: gap_reconciliation, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: status_uncertainty, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}

@@ -2,6 +2,8 @@
 
 from .recorder import EvaluationRecorder, read_completed_run
 from .runner import evaluate_events, load_workflow_dataset, run_read_only_case, select_case
+from .v2_scoring import aggregate_scenario_results, score_scenario
+from .v2_recorder import V2EvaluationRecorder, read_completed_v2_run
 
 __all__ = [
     "EvaluationRecorder",
@@ -10,4 +12,8 @@ __all__ = [
     "read_completed_run",
     "run_read_only_case",
     "select_case",
+    "aggregate_scenario_results",
+    "score_scenario",
+    "V2EvaluationRecorder",
+    "read_completed_v2_run",
 ]

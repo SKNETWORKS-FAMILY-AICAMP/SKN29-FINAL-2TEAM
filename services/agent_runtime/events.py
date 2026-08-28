@@ -765,6 +765,7 @@ class EventMapper:
                     "type": EVENT_SUBAGENT_COMPLETED,
                     "run_id": info.get("run_id"),
                     "parent_run_id": run_id,
+                    "delegation_tool_call_id": info.get("delegation_tool_call_id"),
                     # Child 자신의 agent_id/agent_version_id다(§14.3/§14.4) — 아래
                     # info.get(...)이 없으면(정상 경로에선 안 생김) 루트 값으로
                     # 폴백한다.
@@ -912,6 +913,7 @@ class EventMapper:
                     "alias": alias,
                     "task_summary": task_summary,
                     "run_id": child_run_id,
+                    "delegation_tool_call_id": call_id,
                     "agent_id": child_agent_id,
                     "agent_version_id": child_agent_version_id,
                     "subagent_name": subagent_name,
@@ -931,6 +933,7 @@ class EventMapper:
                         "type": EVENT_SUBAGENT_STARTED,
                         "run_id": child_run_id,
                         "parent_run_id": run_id,
+                        "delegation_tool_call_id": call_id,
                         "agent_id": child_agent_id,
                         "agent_version_id": child_agent_version_id,
                         "subagent_alias": alias,

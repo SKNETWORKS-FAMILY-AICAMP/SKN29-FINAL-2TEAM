@@ -6,6 +6,11 @@ LLM Judge의 점수를 곧바로 정답으로 사용하지 않는다. AgentRewar
 방식을 참고해 동일한 Agent 실행 궤적을 사람과 Judge가 독립 판정하고 일치율과
 오류 유형을 확인한 뒤 사용 범위를 결정한다.
 
+이 문서는 사람 판정과 Judge 판정을 정식으로 비교(calibration)할 때의 계약이다.
+평가 화면에서 사람이 Judge의 판정·근거를 직접 보고 판단하는 용도로만 쓸 때는
+사람 판정 파일이 필요 없다 — `scripts/eval_judge.py`의 `--human-verdict`는 그 때만
+생략 가능한 선택 인자다(자세한 사용법은 `README.md` 참고).
+
 ## 판정 단위
 
 하나의 `agent_run_id`와 연결된 최종 답변, 도구 호출 요약, assertion 결과,
@@ -125,8 +130,8 @@ runner 구현 시 다음 순서를 따른다.
 - `tests/test_evaluation_calibration.py`: 근거 누락 차단, 사람 판정 비노출,
   safety false-pass 계산과 중복 기록 차단 검증
 - `fixtures/WF-PROJECT-STATUS-001_judge_evidence_v0.json`: 세 문서의 제한된 근거 표본
-- `fixtures/WF-PROJECT-STATUS-001_human_verdict_20260826T050101Z.json`: Judge 실행 전에
-  확정한 독립 사람 판정
+- `fixtures/WF-PROJECT-STATUS-001_reference_verdict_pending_review_20260826T050101Z.json`:
+  Codex가 준비했지만 사람이 검수·승인하지 않은 기준 판정 초안
 
 결과는 내부 평가 실행 옆의 `judge_calibration.jsonl`에 기록한다. 원래
 `case_results.jsonl`은 수정하지 않는다. 동일 `agent_run_id`, Judge 모델과 prompt
@@ -143,12 +148,14 @@ Judge 모델, 프롬프트 버전, 실행 시각, latency와 `usage_metadata` to
 판정, 사람 판정과의 비교 결과를 함께 저장한다. 평가 DB의 Judge 전용 저장과
 OpenTelemetry trace ID 연결은 후속 단계다.
 
-2026-08-26 첫 실제 calibration 결과:
+2026-08-26 첫 외부 Judge 호출은 완료했지만, 비교 기준이 실제 사람 검수 없이
+`evaluator=human`으로 잘못 표시된 판정 초안이었음이 뒤늦게 확인됐다. 따라서 아래
+수치는 정식 human calibration이 아니라 **임시 reference 비교**다.
 
 - eval run: `20260826T050101Z-ee604a4c`
 - calibration ID: `57772e2b-4704-4f58-9a44-31059dd57a21`
 - Judge: `gpt-5.6-luna`, prompt `judge-calibration-v0`
-- 전체 판정: 사람 `FAIL`, Judge `FAIL`로 일치
+- 전체 판정: reference `FAIL`, Judge `FAIL`로 일치
 - 차원 일치율: 20%(5개 중 1개)
 - false-pass: `task_success`, `repetitiveness`
 - false-fail: `side_effect_safety`
@@ -156,9 +163,46 @@ OpenTelemetry trace ID 연결은 후속 단계다.
 - Judge `UNCERTAIN`: `grounding`
 - latency·token: 8,874.183ms, input 3,897 / output 632 / total 4,529
 
-전체 판정 일치만으로 신뢰성을 과장할 수 없다. 차원별 불일치와 false-pass가 있어
-이 Judge는 계속 `REPORT_ONLY`로 사용하며 배포 gate나 결정적 assertion 대체에 쓰지
-않는다.
+전체 판정 일치만으로 신뢰성을 과장할 수 없다. 더구나 비교 기준이 사람 검수 판정이
+아니므로 이 결과로 calibration 완료를 선언할 수 없다. 실제 사람이 판정을 검토해
+`APPROVED` provenance를 남긴 뒤 기존 Judge 결과와 다시 비교해야 한다.
+
+### 사람 검토 결과와 재개 조건
+
+2026-08-26 검토자 지훈은 기준 판정 초안의 `task_success=FAIL`, `grounding=FAIL`,
+`side_effect_safety=PASS`, `repetitiveness=FAIL`, `uncertainty=PASS`와 종합 `FAIL`에
+동의했다. 이 판정은 eval run `20260826T050101Z-ee604a4c`, Agent run
+`efc31966-0110-4d50-baf6-c6c5ac5c6aae`의 기존 최종 답변에 대한 것이다.
+
+팀원의 답변 형식 변경분을 병합한 뒤 실제 변경 위치와 의미 영향을 먼저 확인하기로
+했으므로, 현재 fixture는 `PENDING` 상태를 유지하고 정식 calibration 완료로 계산하지
+않는다. 병합 후 처리 원칙은 다음과 같다.
+
+1. 기존 실행·초안·임시 Judge 결과는 수정하거나 덮어쓰지 않는다.
+2. UI 표시만 바뀌면 Agent version과 기존 판정은 유지한다.
+3. 저장된 Agent 정의가 바뀌면 새 Agent version을 발행한다. 공통 런타임 프롬프트·
+   후처리 변경은 같은 Agent version과 별도 Git commit/runtime profile로 구분한다.
+4. 평가 사례 자체가 같으면 dataset v10을 유지한다.
+5. 대표 사례 1건을 새 eval run으로 재실행해 의미·근거·도구 호출을 비교한다.
+6. 새 출력이 생기면 기존 사람 판정을 재사용하지 않고 별도로 검토한다.
+
+기존 v9 실행의 `git_commit`은 `unknown`이다. 실행 ID·Agent version·모델·런타임과
+저장된 최종 답변으로 표본은 식별할 수 있지만 당시 커밋을 추측해 소급 기록하지 않는다.
+
+2026-08-26 `origin/juneok`를 충돌 없이 병합한 merge commit `dac322b`에서 대표 사례를
+다시 실행했다. dataset v10과 `AV035`는 유지했다.
+
+- eval run: `20260826T095913Z-8c4128af`
+- Agent run: `6335d4e8-7d99-48c2-8caa-572c46401b3b`
+- Langfuse trace: `5fc296fcbcfe6d671f47cc4abf368d4d`
+- 출력 변화: Markdown 제목·비교 표 사용, 요청서 필드의 계획 대비 지연을 명시
+- 결정론적 결과: `FAILED`
+- 실패: 전체 도구 6회/상한 4회, `document_search` 5회/상한 3회
+- 저장: 평가 DB `SYNCED`, Langfuse observation 60개/root 1개와 실패 score 2개
+
+형식 변경 후 새 출력이므로 기존 `050101Z` 사람 판정을 이 실행의 사람 판정으로
+재사용하지 않는다. 검색 호출 예산도 개선되지 않았으므로 정식 calibration 완료 상태는
+계속 미완료다.
 
 내부 문서 근거와 Agent 답변을 모델 엔드포인트로 보내므로, 실제 Judge 호출 전에
 엔드포인트 운영 주체와 데이터 전송 허용 여부를 확인한다. 허용이 확인되지 않으면

@@ -1,0 +1,21 @@
+protocol_version: eval-v2
+fixture_id: S06-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: S06
+variant_id: S06
+split: DEV
+fixture_status: VALIDATED
+title: 불충분한 단일 문서에서 현재 상태 판단 유보
+input: >-
+  한빛몰 관측성 체계의 현재 진척률, 실제 착수 범위, 최종 추적 범위와 완료 예정일을 알려줘.
+  검색되는 요구사항 정의서만 근거로 답하고 확인할 수 없는 값은 명확히 모른다고 해줘.
+source_artifacts:
+  - source_id: PDF-REQ
+    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_요구사항정의서.pdf
+    sha256: 44d063a5431518fcad27d6743bd8cbd588ae436ee43ac0910b092e8189f7040e
+    relevant_pages: [5]
+allowed_tools: [document_search, document_list]
+forbidden_tools: [task_register, jira_create_issues, web_search]
+side_effect_policy: READ_ONLY_STUBBED_INCOMPLETE_EVIDENCE
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_DEV_ISOLATED, official_execution_status: DEV_PILOT_READY}

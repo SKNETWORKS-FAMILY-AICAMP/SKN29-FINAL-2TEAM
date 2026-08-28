@@ -48,6 +48,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from services.agent_runtime.sensitive_text import mask_for_export
@@ -56,6 +58,28 @@ logger = logging.getLogger(__name__)
 
 _configured = False
 _client_lock = threading.Lock()
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True)
+class LangfuseTraceHandle:
+    """한 Agent 실행과 HITL 재개가 공유하는 Langfuse 상관관계."""
+
+    callback: Any
+    trace_id: str
+    root_observation_id: str
+    root_observation: Any | None = None
+
+    def finish(self) -> None:
+        if self.root_observation is None:
+            return
+        try:
+            self.root_observation.end()
+        except Exception:  # noqa: BLE001 - 관측 종료 실패가 Agent 실행을 막으면 안 된다
+            logger.exception("Langfuse Agent root observation을 종료하지 못했습니다.")
 
 
 def _mask_data(*, data: Any, **_kwargs: Any) -> Any:
@@ -159,12 +183,12 @@ def _ensure_client_configured() -> None:
         _configured = True
 
 
-def get_langfuse_callback() -> Any | None:
+def get_langfuse_callback(*, trace_context: dict[str, str] | None = None) -> Any | None:
     """키가 있으면 `CallbackHandler` 인스턴스를, 없으면 `None`을 돌려준다.
 
-    호출 하나마다 새로 만든다 — v4 `CallbackHandler`는 생성자 인자를 안 받는
-    가벼운 객체라(실제 상태는 싱글턴 클라이언트에 있다), 매번 새로 만들어도
-    비용이 없고 여러 요청이 같은 인스턴스를 공유하다 상태가 섞일 걱정도 없다.
+    호출 하나마다 새로 만든다. v4 `CallbackHandler`는 `trace_context`를 받아
+    기존 trace/root 아래에 연결할 수 있다. handler 인스턴스 자체는 재사용하지
+    않아 동시 요청 상태가 섞이지 않게 한다.
     """
     from django.conf import settings
 
@@ -175,10 +199,152 @@ def get_langfuse_callback() -> Any | None:
         _ensure_client_configured()
         from langfuse.langchain import CallbackHandler
 
-        return CallbackHandler()
+        return (
+            CallbackHandler(trace_context=trace_context)
+            if trace_context is not None
+            else CallbackHandler()
+        )
     except Exception:  # noqa: BLE001 - 트레이싱 연동 실패가 실제 응답을 막으면 안 된다
         logger.exception("Langfuse 콜백 핸들러를 만들지 못했습니다 — 이번 실행은 Langfuse 없이 진행합니다.")
         return None
 
 
-__all__ = ["get_langfuse_callback"]
+def get_langfuse_trace(
+    *,
+    run_id: str,
+    metadata: dict[str, Any],
+    resume_state: dict[str, Any] | None = None,
+) -> LangfuseTraceHandle | None:
+    """Agent root를 만들거나 HITL 카드에 저장된 trace/root를 재사용한다.
+
+    `CallbackHandler` 인스턴스 캐시는 쓰지 않는다. Langfuse v4의 내장 resume
+    저장소가 handler 인스턴스 소유라 웹 요청을 건너 보존되지 않기 때문이다.
+    최초 실행에서 Langfuse가 실제 root observation과 trace ID를 발급하고,
+    resume에서는 그 두 ID를 명시적으로 전달해 같은 tree 아래에 붙인다.
+    """
+
+    from django.conf import settings
+
+    if not (settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY):
+        return None
+
+    root = None
+    try:
+        _ensure_client_configured()
+        from langfuse import get_client
+
+        stored_trace_id = str((resume_state or {}).get("langfuse_trace_id") or "")
+        stored_root_id = str(
+            (resume_state or {}).get("langfuse_root_observation_id") or ""
+        )
+        if stored_trace_id and stored_root_id:
+            trace_id = stored_trace_id
+            root_id = stored_root_id
+            interrupted_at = str(
+                (resume_state or {}).get("langfuse_interrupted_at") or ""
+            )
+            if interrupted_at:
+                try:
+                    started = datetime.fromisoformat(
+                        interrupted_at.replace("Z", "+00:00")
+                    )
+                    resumed = _utc_now()
+                    wait_ms = max(0, round((resumed - started).total_seconds() * 1000))
+                    wait = get_client().start_observation(
+                        name="hitl-wait",
+                        as_type="span",
+                        trace_context={"trace_id": trace_id, "parent_span_id": root_id},
+                        metadata={
+                            "kind": "human_approval_wait",
+                            "wait_started_at": interrupted_at,
+                            "wait_resumed_at": resumed.isoformat().replace("+00:00", "Z"),
+                            "wait_duration_ms": wait_ms,
+                        },
+                    )
+                    wait.end()
+                except Exception:  # noqa: BLE001 - 대기 계측 실패가 resume을 막으면 안 된다
+                    logger.exception("Langfuse HITL 대기 observation을 기록하지 못했습니다.")
+        else:
+            root = get_client().start_observation(
+                name="agent-run",
+                as_type="agent",
+                metadata={"run_id": run_id, **metadata},
+            )
+            trace_id = str(root.trace_id)
+            root_id = str(root.id)
+
+        callback = get_langfuse_callback(
+            trace_context={"trace_id": trace_id, "parent_span_id": root_id}
+        )
+        if callback is None:
+            if root is not None:
+                root.end()
+            return None
+        return LangfuseTraceHandle(
+            callback=callback,
+            trace_id=trace_id,
+            root_observation_id=root_id,
+            root_observation=root,
+        )
+    except Exception:  # noqa: BLE001 - 관측 연동 실패가 실제 실행을 막으면 안 된다
+        if root is not None:
+            try:
+                root.end()
+            except Exception:  # noqa: BLE001
+                pass
+        logger.exception("Langfuse Agent trace를 만들지 못했습니다 — 이번 실행은 Langfuse 없이 진행합니다.")
+        return None
+
+
+def record_langfuse_evaluation_result(
+    *,
+    trace_id: str | None,
+    case_id: str,
+    status: str,
+    failed_assertions: list[str],
+    environment: str | None,
+) -> bool:
+    """결정론적 평가 결과를 해당 trace의 score로 연결한다."""
+
+    from django.conf import settings
+
+    if not trace_id or not (
+        settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY
+    ):
+        return False
+    try:
+        _ensure_client_configured()
+        from langfuse import get_client
+
+        get_client().create_score(
+            trace_id=trace_id,
+            name="deterministic-evaluation-status",
+            value=status,
+            data_type="CATEGORICAL",
+            comment=", ".join(failed_assertions) if failed_assertions else None,
+            metadata={
+                "case_id": case_id,
+                "evaluator": "deterministic_code_assertions",
+            },
+            environment=environment,
+        )
+        if failed_assertions:
+            get_client().create_score(
+                trace_id=trace_id,
+                name="deterministic-evaluation-failure",
+                value=", ".join(failed_assertions),
+                data_type="TEXT",
+                environment=environment,
+            )
+        return True
+    except Exception:  # noqa: BLE001 - 평가 score 실패가 로컬·DB 저장을 막으면 안 된다
+        logger.exception("Langfuse 평가 score를 기록하지 못했습니다.")
+        return False
+
+
+__all__ = [
+    "LangfuseTraceHandle",
+    "get_langfuse_callback",
+    "get_langfuse_trace",
+    "record_langfuse_evaluation_result",
+]

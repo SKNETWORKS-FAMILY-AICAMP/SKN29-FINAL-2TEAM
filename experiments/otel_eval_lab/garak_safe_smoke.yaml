@@ -1,0 +1,11 @@
+run:
+  generations: 1
+  seed: 42
+  soft_probe_prompt_cap: 3
+
+system:
+  parallel_attempts: 1
+  parallel_requests: 1
+
+reporting:
+  confidence_interval_method: none

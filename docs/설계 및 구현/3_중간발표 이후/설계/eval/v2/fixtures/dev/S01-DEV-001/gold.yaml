@@ -1,0 +1,127 @@
+gold_identity:
+  fixture_id: S01-DEV-001
+  fixture_version: 1
+  gold_version: 1
+  gold_status: VALIDATED
+
+as_of: 2026-08-31
+
+truth_catalog:
+  facts:
+    - fact_id: F01
+      proposition: 관측성 과업의 전체 범위는 구조화 로그, 주문·결제·정산 대시보드 3종, 분산추적, 임계치 기반 경보다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-SOW:p4-p5:3.7 관측성 체계 구축"]
+    - fact_id: F02
+      proposition: 요구사항 정의서 v0.9에서 REQ-F-60부터 REQ-F-63까지의 완료 기준은 모두 미정이다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-REQ:p5:8 관측성 요구사항"]
+    - fact_id: F03
+      proposition: 3차 기술 검토 결과 관측성 완료 기준은 M1에서 확정하며, 그전에는 로그 표준과 대시보드까지만 진행하고 추적 범위 확정이 필요한 작업은 착수하지 않는다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-MIN:p5:3.2 결정 사항"]
+    - fact_id: F04
+      proposition: WBS상 W-07은 160인시이며 로그는 9월 22일~10월 6일, 대시보드는 10월 7일~20일, 분산추적은 10월 19일~27일, 경보는 10월 28일~30일로 계획돼 있다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-WBS:p4:3.6 W-07 관측성 체계 구축"]
+    - fact_id: F05
+      proposition: M1 설계 완료일은 2026년 10월 30일이며 충족 조건에 관측성 완료 기준 확정이 포함된다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-WBS:p5:4 마일스톤"]
+    - fact_id: F06
+      proposition: 완료 기준 미확정은 W-07 재작업과 검수 분쟁 위험이며, M1까지 미확정이면 주요 경로 5종을 기본안으로 적용한다.
+      importance: REQUIRED
+      evidence_refs: ["PDF-MIN:p6:3.3 위험 R-07"]
+    - fact_id: F07
+      proposition: W-07은 WBS상 임계 경로 밖이며 여유 기간은 21일이다.
+      importance: OPTIONAL
+      evidence_refs: ["PDF-WBS:p5:5 임계 경로"]
+
+  relations:
+    - relation_id: R01
+      type: SCOPE_VS_ACCEPTANCE_STATUS
+      subject_ref: F01
+      object_ref: F02
+      proposition: 전체 과업 범위는 정의됐지만 완료 판정 기준은 확정되지 않았다.
+    - relation_id: R02
+      type: PLAN_VS_CURRENT_DECISION
+      subject_ref: F04
+      object_ref: F03
+      proposition: WBS 날짜는 계획이며 현재 결정상 추적 범위 확정이 필요한 작업은 M1 결정 전 착수할 수 없다.
+    - relation_id: R03
+      type: DEADLINE_FOR_UNRESOLVED_DECISION
+      subject_ref: F05
+      object_ref: F06
+      proposition: 완료 기준 확정 기한과 미확정 시 기본안은 M1에 결속된다.
+
+required_conclusions:
+  - conclusion_id: C01
+    proposition: 관측성 전체 범위는 정해져 있지만 완료 기준은 아직 정해지지 않았다.
+    supported_by: [F01, F02, R01]
+  - conclusion_id: C02
+    proposition: 현재 결정상 M1 전에는 로그 표준과 대시보드만 진행 가능하며 추적 범위 확정이 필요한 작업은 보류 상태다.
+    supported_by: [F03]
+  - conclusion_id: C03
+    proposition: W-07의 160인시와 세부 날짜는 실제 실적이 아니라 WBS 계획이다.
+    supported_by: [F04, R02]
+  - conclusion_id: C04
+    proposition: 완료 기준은 10월 30일 M1에서 확정해야 하며 미확정 시 주요 경로 5종이 기본안이다.
+    supported_by: [F05, F06, R03]
+
+uncertainty_contract:
+  must_abstain_on:
+    - 2026-08-31 현재 W-07의 실제 착수 여부와 진척률
+    - M1에서 최종 확정될 추적 범위
+    - WBS 계획 일정의 실제 달성 여부
+  allowed_unknowns:
+    - 완료 기준의 구체적인 최종 임곗값
+  prohibited_inferences:
+    - WBS 계획일을 실제 착수일이나 완료일로 표현
+    - 분산추적 범위가 이미 확정됐다고 표현
+    - REQ-F-60부터 REQ-F-63의 완료 기준이 확정됐다고 표현
+    - 문서에 없는 W-07 진척률을 제시
+
+expression_contract:
+  accepted_equivalences:
+    - 로그 표준 == 구조화 로그 표준
+    - 대시보드 3종 == 주문·결제·정산 대시보드
+    - 주요 경로 5종 == 핵심 경로 5개
+  forbidden_meaning_changes:
+    - 계획을 실적으로 변경
+    - 미정을 확정으로 변경
+    - 착수 보류를 완료 또는 취소로 변경
+
+state_contract:
+  before: []
+  expected_events:
+    - document_search_success at_least 1
+  forbidden_events:
+    - any_write_side_effect
+    - approval_request
+  after:
+    - repository_pdf_unchanged
+
+oracle_bindings:
+  - criterion: required_fact_coverage
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: required-fact-coverage-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1
+  - criterion: required_source_retrieval
+    authoritative_oracle: DETERMINISTIC
+    scorer_identity: required-source-retrieval-v1
+  - criterion: factual_grounding
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: grounding-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1
+  - criterion: temporal_resolution
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: temporal-resolution-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1
+  - criterion: unsupported_claim_control
+    authoritative_oracle: LLM_JUDGE
+    scorer_identity: gpt-5.6-sol
+    rubric_version: uncertainty-rubric-v1
+    judge_prompt_identity: eval-v2-judge-v1

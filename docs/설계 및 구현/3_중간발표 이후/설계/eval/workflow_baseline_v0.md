@@ -70,14 +70,27 @@
 | 사용자 격리 | 통과 | `UA004` run `fa4b8ba5-c655-495a-84ed-5d800b84885d`, 정확 namespace 0건과 marker 미노출 |
 | 현재 요청 우선 | 통과 | `UA003` run `604cb96e-4dc8-4c80-99c3-57530e1efd87`, 저장 marker 유지 중 현재 요청에 따라 미적용 |
 | cleanup | 통과 | 평가용 namespace·key·marker 일치 행 1건만 삭제, `TE001.AG004.UA003` 0건 복구 |
-| 제품 `delete` 재검증 | 통과 | run `9f2a91cd-32f0-45c8-88cc-9f1fcdf039a4`; `ls`·`read_file`·`delete=OK`, HITL 승인, namespace 0건 |
+| 제품 `delete` 재검증 | 통과(당시 기준) | run `9f2a91cd-32f0-45c8-88cc-9f1fcdf039a4`; `ls`·`read_file`·`delete=OK`, HITL 승인, namespace 0건 |
 
 이는 자동 평가 case가 아닌 두 로컬 평가 계정·기본 챗 `AV035`의 수동 표본이며,
 전체 workflow 통계에는 합산하지 않는다.
 
 초기 cleanup 때는 기본 챗에 삭제 도구가 없어 평가자가 DB에서 합성 행을 제거했다.
 이후 기능 추가 후에는 제품의 `delete` 도구와 HITL 승인만으로 같은 cleanup을
-완료했으므로, 현재 삭제 기능 부재는 열린 결함이 아니다.
+완료했다(위 행의 검증 시점 기준).
+
+**2026-08-26 재차단 반영.** `22cdad4`(main 병합분)가 `delete`를
+`DEFAULT_EXCLUDED_BUILTIN_TOOLS`에 다시 넣었다 — 팀 스킬 삭제에 역할 검사가
+없어 팀원도 TEAM 스킬을 스스로 승인해 지울 수 있는 권한 격차가 원인이다.
+`delete`는 이 프로젝트가 만든 도구가 아니라 deepagents가 제공하는 경로 무관
+가상 파일시스템 도구 하나라서, 이 재차단은 스킬 경로뿐 아니라
+`/memories/users/` 경로의 삭제(위 행)에도 그대로 적용된다
+(`services/agent_runtime/memory/write_lock.py`가 이 사실을 주석으로 이미
+전제하고 있다). 따라서 **현재는 다시 삭제 기능 부재 상태**이며, 위 "제품
+`delete` 재검증" 행은 그 시점의 결과일 뿐 지금 재현되지 않는다. 스킬 삭제
+경로에 역할 검사가 붙어 `delete`가 다시 켜지기 전까지, CLEAN 메모리 테스트의
+cleanup은 평가자가 DB에서 직접 지우는 방식(위 "cleanup" 행과 동일한 방식)으로
+되돌아간다.
 
 ## 반드시 공개할 알려진 결함
 

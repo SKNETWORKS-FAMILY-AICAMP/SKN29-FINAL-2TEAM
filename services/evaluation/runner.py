@@ -392,8 +392,17 @@ def evaluate_events(
         )
     )
     violating_tools = sorted(set(tool_counts) - allowed | (set(tool_counts) & forbidden))
+    langfuse_trace_id = next(
+        (
+            str(event["langfuse_trace_id"])
+            for event in events
+            if event.get("langfuse_trace_id")
+        ),
+        None,
+    )
     return {
         "case_id": case["id"],
+        "input": case["input"],
         "agent_id": case["agent_id"],
         "agent_version_id": case["agent_version_id"],
         "model": model,
@@ -405,7 +414,7 @@ def evaluate_events(
         "failure_reason": ", ".join(failed) if failed else None,
         "agent_run_id": run_id,
         "tool_call_ids": tool_call_ids,
-        "langfuse_trace_id": None,
+        "langfuse_trace_id": langfuse_trace_id,
         "metrics": metrics,
         "approval": {"count": len(approvals)} if approvals else None,
         "side_effects": [
@@ -413,6 +422,13 @@ def evaluate_events(
         ],
         "cleanup": {"status": "NOT_REQUIRED"},
         "final_answer": final_answer,
+        "execution_errors": [
+            {
+                "error_type": str(event.get("error_type") or event.get("code") or "RUNTIME_ERROR"),
+                "detail": str(event.get("detail") or event.get("message") or "")[:500],
+            }
+            for event in errors
+        ],
         "retrieved_document_ids": sorted(retrieved),
         "tool_reliability": tool_reliability,
         "judge": _judge_report(
@@ -437,6 +453,7 @@ def run_read_only_case(
     trace_wrapper: Callable[..., Iterable[dict[str, Any]]] | None = None,
     judge: ReportOnlyJudge | None = None,
     evidence_bundle: dict[str, dict[str, Any]] | None = None,
+    event_observer: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """한 조회 전용 사례를 운영 Executor로 실행한다."""
     if case.get("execution_mode") != "read_only":
@@ -452,8 +469,10 @@ def run_read_only_case(
         user_input=case["input"],
         context=context,
         conversation_messages=(),
-        # 데이터셋이 허용한 도구만 노출해 수동 UI 설정 차이를 제거한다.
-        tool_refs_override=list(case.get("allowed_tools", [])),
+        # 일반 사례는 허용 도구만 노출한다. Prompt Injection처럼 금지 도구를
+        # 실제 선택 경계까지 시험해야 하는 격리 평가는 exposed_tools를 별도로
+        # 선언한다. 허용 여부 판정은 계속 allowed_tools만 기준으로 한다.
+        tool_refs_override=list(case.get("exposed_tools", case.get("allowed_tools", []))),
     )
     if trace_wrapper is None:
         from services.agent_runtime.tracing import trace_events
@@ -463,6 +482,8 @@ def run_read_only_case(
     time_to_first_token_ms: float | None = None
     for event in trace_wrapper(raw_events, context=context):
         events.append(event)
+        if event_observer is not None:
+            event_observer(event)
         if time_to_first_token_ms is None and event.get("type") in {"message_delta", "result"}:
             time_to_first_token_ms = (time.monotonic() - started_clock) * 1000
     elapsed_ms = (time.monotonic() - started_clock) * 1000

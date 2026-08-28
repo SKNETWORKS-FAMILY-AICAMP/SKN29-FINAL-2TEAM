@@ -1,0 +1,88 @@
+protocol_version: eval-v2
+fixture_id: S09A-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: S09
+variant_id: S09A
+split: DEV
+fixture_status: VALIDATED
+compatible_scenario_versions: [1]
+
+title: 기존 개선요청 PDF 검색의 일시 장애 복구
+purpose: 동일한 읽기 요청의 첫 physical attempt가 timeout이어도 허용 범위에서 재시도해 답변한다.
+
+input: >-
+  사내 그룹웨어 개선요청 PDF에서 2026년 접수·처리·이월 건수와
+  2027년 상반기 우선 반영 4건의 번호, 내용, 목표 월을 정리해줘.
+
+context:
+  execution_mode: isolated_read_only_fault_injection
+  account_role: evaluation_account
+  new_session_per_run: true
+
+source_binding_policy: EXISTING_REPOSITORY_PDF
+source_artifacts:
+  - source_id: PDF-IMPROVEMENT
+    repo_path: tests/eval/documents/pdf/한빛리테일_사내그룹웨어_개선요청_접수내역.pdf
+    mime_type: application/pdf
+    sha256: 6b5be4b0455cf11689a1f369b59abff7e6251f266ef9e66727729a05615c15e6
+    document_date: 2026-08-25
+    relevant_pages: [1, 2]
+
+fixture_instance_policy: STATIC_EXISTING_PDF_WITH_FAULT_SCHEDULE
+fault_schedule:
+  target_handler: document_search
+  logical_call_match:
+    source_id: PDF-IMPROVEMENT
+  physical_attempts:
+    - attempt: 1
+      outcome: RETRYABLE_TIMEOUT
+      response_exposed_to_model: false
+    - attempt: 2
+      outcome: SUCCESS
+      response_source: PDF-IMPROVEMENT
+  max_physical_attempts: 2
+
+preconditions:
+  - PDF가 평가 계정의 격리 문서 공간에 원본 그대로 업로드되고 검색 준비 상태다.
+  - fault injector가 동일 logical call의 첫 attempt에만 timeout을 주입한다.
+  - logical_call_id와 physical_attempt_id를 모두 수집할 수 있다.
+
+allowed_tools: [document_search, document_list]
+forbidden_tools: [skill_register, task_register, task_update, jira_create_issues, web_search]
+side_effect_policy: READ_ONLY
+
+required_observables:
+  - final_answer
+  - logical_tool_calls
+  - physical_attempts
+  - error_classification
+  - retry_decision
+  - retrieved_document_identity
+
+preflight_contract:
+  checksum_match_required: true
+  search_probe_required: true
+  fault_injector_probe_required: true
+  attempt_observer_required: true
+
+cleanup_contract:
+  preserve_repository_pdf: true
+  delete_only_fixture_upload_copy: true
+  verify_document_and_index_rows_zero: true
+
+readiness:
+  contract_requirement: DEFINED
+  fixture_status: VALIDATED
+  instrumentation_status: READY_FOR_DEV
+  official_execution_status: DEV_PILOT_COMPLETE
+  implementation_evidence:
+    - EvalToolLoader v2가 첫 physical handler attempt에 통제된 retryable timeout을 주입한다.
+    - ToolCallRecorder가 physical attempt 순번과 outcome을 기록한다.
+    - 유일한 logical tool event와 physical attempt sequence를 결속해 retry budget을 판정한다.
+    - 동일 조건의 VALID DEV 3회를 실행하고 append-only 결과를 저장했다.
+
+provenance:
+  source_type: EXISTING_EVALUATION_PDF
+  creates_new_source_document: false
+  fault_type: CONTROLLED_TRANSIENT

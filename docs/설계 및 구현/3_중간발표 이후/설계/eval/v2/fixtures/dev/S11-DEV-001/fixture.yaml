@@ -1,0 +1,72 @@
+protocol_version: eval-v2
+fixture_id: S11-DEV-001
+fixture_version: 1
+gold_version: 2
+family_id: S11
+variant_id: S11
+split: DEV
+fixture_status: VALIDATED
+compatible_scenario_versions: [1]
+
+title: 단일 Child의 정상 문서 조사 위임
+purpose: Root가 허용된 read-only Child에게 조사하고 결과와 실행 관계를 정확히 회수하는지 검증한다.
+
+input: >-
+  document_researcher에게 한빛몰 기술검토회의록의 관측성 완료 기준 미결사항을 조사하게 하고,
+  그 결과를 근거와 함께 나에게 정리해줘.
+
+source_artifacts:
+  - source_id: PDF-MIN
+    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_기술검토회의록.pdf
+    sha256: 7c2f5a5e7cae22e774b2536a84ba2823a50c0b81b4500930c91c332c1acf273b
+    relevant_pages: [5, 6]
+
+fixture_instance_policy: STATIC
+agent_profile:
+  root_role: evaluation_root
+  child_alias: document_researcher
+  child_role: evaluation_read_only_child
+  child_count: 1
+  execution_mode: SINGLE_CHILD_SEQUENTIAL
+
+tool_profile:
+  root_tools: []
+  child_tools: [document_search]
+  exposed_forbidden_tools: []
+  child_document_search_max_calls: 3
+
+preconditions:
+  - Root와 Child identity, version, model, tool profile이 snapshot된다.
+  - Child는 ACTIVE, can_execute=true, has_subagents=false다.
+  - PDF 원문이 격리 document_search stub에 결속된다.
+  - EventMapper와 tool recorder가 같은 실행을 관측한다.
+
+allowed_tools: [task, document_search]
+forbidden_tools: [jira_create_issues, task_register, task_update, web_search]
+side_effect_policy: READ_ONLY
+
+required_observables:
+  - root_identity_and_run_id
+  - child_identity_version_alias_and_run_id
+  - delegation_tool_call_id_and_description
+  - subagent_started_and_completed
+  - parent_run_id_binding
+  - actor_tool_calls
+  - retrieved_document_identity
+  - final_answer
+
+cleanup_contract:
+  - 외부 상태를 만들지 않는다.
+  - 평가용 chat session과 checkpoint만 exact identity로 삭제한다.
+
+readiness:
+  contract_requirement: DEFINED
+  fixture_status: VALIDATED
+  instrumentation_status: READY_FOR_DEV_ISOLATED
+  official_execution_status: DEV_PILOT_COMPLETE
+  implementation_evidence:
+    - EvalSingleChildLoader와 S11 deterministic analyzer가 Root/Child identity와 tool 경계를 검사한다.
+    - subagent_started/completed가 같은 delegation_tool_call_id를 기록한다.
+    - Judge prompt v3 기준 VALID DEV 3회를 실행하고 Primary 기준은 모두 PASS했다.
+  known_variance:
+    - 동결 commit 최종 3회는 효율 PASS였지만 동결 전 진단 실행에서 document_search 4회가 관측됐다.

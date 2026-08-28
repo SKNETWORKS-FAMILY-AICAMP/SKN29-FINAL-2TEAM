@@ -1,0 +1,12 @@
+gold_identity: {fixture_id: S02-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: DevOps/SRE에는 OpenTelemetry·Prometheus·Grafana·Loki와 Kafka 운영 기술이 필요하다., evidence_refs: ["PDF-STAFF:p3"]}
+    - {fact_id: F02, importance: REQUIRED, proposition: 백엔드 리드는 결제 PG 연동과 멱등 처리 설계 경험이 필요하다., evidence_refs: ["PDF-STAFF:p2"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 기술·부하·부재를 함께 비교한 최대 3명의 추천이며 확정 배정이 아니다., supported_by: [F01, F02]}
+oracle_bindings:
+  - {criterion: required_tool_coverage, authoritative_oracle: DETERMINISTIC, scorer_identity: required-tool-coverage-v1}
+  - {criterion: recommendation_quality, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: availability_uncertainty, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}

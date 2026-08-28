@@ -101,6 +101,7 @@ class ParentDelegationTests(SimpleTestCase):
         self.assertEqual(event["type"], EVENT_SUBAGENT_STARTED)
         self.assertEqual(event["subagent_alias"], "researcher")
         self.assertEqual(event["task_summary"], "조사")
+        self.assertEqual(event["delegation_tool_call_id"], "1")
 
     def test_subagent_started_gets_its_own_run_id_distinct_from_parent(self):
         message = AIMessage(
@@ -133,6 +134,7 @@ class ParentDelegationTests(SimpleTestCase):
         # completed는 started와 같은 run_id를 이어받는다 — 별개 id가 아니다.
         self.assertEqual(event["run_id"], started["run_id"])
         self.assertEqual(event["parent_run_id"], "RUN1")
+        self.assertEqual(event["delegation_tool_call_id"], "1")
 
     def test_delegation_failure_with_unknown_subagent_type_becomes_failed_not_done(self):
         # deepagents==0.7.5는 존재하지 않는 subagent_type을 예외가 아니라

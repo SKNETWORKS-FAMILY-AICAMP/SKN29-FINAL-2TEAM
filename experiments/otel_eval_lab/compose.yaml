@@ -1,0 +1,25 @@
+services:
+  phoenix:
+    image: arizephoenix/phoenix:20.4.0
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    volumes:
+      - phoenix_data:/mnt/data
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+
+  garak:
+    profiles: ["garak"]
+    build:
+      context: .
+      dockerfile: Dockerfile.garak
+    working_dir: /lab
+    volumes:
+      - ./:/lab:ro
+      - ./garak_runs:/root/.local/share/garak
+    environment:
+      REST_API_KEY: ${REST_API_KEY:-}
+
+volumes:
+  phoenix_data:

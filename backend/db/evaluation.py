@@ -9,6 +9,156 @@ from psycopg.types.json import Jsonb
 from .connection import database_connection
 
 
+class V2EvaluationResultRepository:
+    """V2 원본은 파일로 유지하고 DB에는 충돌 불가 조회 사본을 저장한다."""
+
+    @staticmethod
+    def sync_completed_run(bundle: dict[str, Any]) -> dict[str, Any]:
+        manifest = bundle["manifest"]
+        summary = bundle["summary"]
+        results = bundle["results"]
+        hashes = bundle["hashes"]
+        line_hashes = bundle["result_line_sha256"]
+        run_id = str(manifest["eval_run_id"])
+        candidate_id = str(manifest["candidate_id"])
+        if "/" not in candidate_id:
+            raise ValueError("V2 candidate_id는 agent/version 형식이어야 합니다.")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO eval_v2_run (
+                        eval_run_id, schema_version, git_commit, candidate_id,
+                        candidate_model, runtime_profile, started_at, finished_at,
+                        manifest, summary, disposition, manifest_sha256,
+                        results_sha256, summary_sha256, disposition_sha256
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (eval_run_id) DO NOTHING
+                    RETURNING eval_run_id
+                    """,
+                    (
+                        run_id, manifest["schema_version"], manifest["git_commit"],
+                        candidate_id, manifest["candidate_model"], manifest["runtime_profile"],
+                        manifest["started_at"], summary["finished_at"], Jsonb(manifest),
+                        Jsonb(summary), Jsonb(bundle["disposition"]) if bundle["disposition"] else None,
+                        hashes["manifest"], hashes["results"], hashes["summary"],
+                        hashes.get("disposition"),
+                    ),
+                )
+                inserted = cursor.fetchone() is not None
+                if not inserted:
+                    cursor.execute(
+                        """SELECT manifest, summary, disposition, manifest_sha256,
+                                  results_sha256, summary_sha256, disposition_sha256
+                           FROM eval_v2_run WHERE eval_run_id = %s""",
+                        (run_id,),
+                    )
+                    existing = cursor.fetchone()
+                    expected = {
+                        "manifest": manifest, "summary": summary,
+                        "disposition": bundle["disposition"],
+                        "manifest_sha256": hashes["manifest"],
+                        "results_sha256": hashes["results"],
+                        "summary_sha256": hashes["summary"],
+                        "disposition_sha256": hashes.get("disposition"),
+                    }
+                    if existing != expected:
+                        comparable_existing = {key: value for key, value in existing.items() if key not in {"disposition", "disposition_sha256"}}
+                        comparable_expected = {key: value for key, value in expected.items() if key not in {"disposition", "disposition_sha256"}}
+                        append_only_disposition = (
+                            comparable_existing == comparable_expected
+                            and existing["disposition"] is None
+                            and existing["disposition_sha256"] is None
+                            and expected["disposition"] is not None
+                            and expected["disposition_sha256"] is not None
+                        )
+                        if not append_only_disposition:
+                            raise ValueError("같은 V2 eval_run_id에 다른 원시 결과가 이미 있습니다.")
+                        cursor.execute(
+                            """UPDATE eval_v2_run
+                               SET disposition = %s, disposition_sha256 = %s, synced_at = now()
+                               WHERE eval_run_id = %s AND disposition IS NULL""",
+                            (Jsonb(expected["disposition"]), expected["disposition_sha256"], run_id),
+                        )
+
+                for index, (result, record_hash) in enumerate(
+                    zip(results, line_hashes, strict=True), start=1
+                ):
+                    cursor.execute(
+                        """
+                        INSERT INTO eval_v2_scenario_result (
+                            eval_run_id, scenario_index, scenario_id, fixture_id,
+                            fixture_version, gold_version, scenario_result, validity,
+                            record_sha256, result
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (eval_run_id, scenario_index) DO NOTHING
+                        RETURNING scenario_index
+                        """,
+                        (
+                            run_id, index, result["scenario_id"], result["fixture_id"],
+                            result["fixture_version"], result["gold_version"],
+                            result["scenario_result"], result["validity"], record_hash,
+                            Jsonb(result),
+                        ),
+                    )
+                    if cursor.fetchone() is not None:
+                        continue
+                    cursor.execute(
+                        """SELECT result, record_sha256
+                           FROM eval_v2_scenario_result
+                           WHERE eval_run_id = %s AND scenario_index = %s""",
+                        (run_id, index),
+                    )
+                    existing = cursor.fetchone()
+                    if existing != {"result": result, "record_sha256": record_hash}:
+                        raise ValueError("같은 V2 run/scenario에 다른 결과가 이미 있습니다.")
+        return {"eval_run_id": run_id, "scenario_count": len(results), "sync_status": "SYNCED"}
+
+    @staticmethod
+    def reconcile_completed_run(bundle: dict[str, Any]) -> dict[str, Any]:
+        run_id = str(bundle["manifest"]["eval_run_id"])
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT manifest, summary, disposition, manifest_sha256,
+                              results_sha256, summary_sha256, disposition_sha256
+                       FROM eval_v2_run WHERE eval_run_id = %s""",
+                    (run_id,),
+                )
+                stored_run = cursor.fetchone()
+                cursor.execute(
+                    """SELECT scenario_index, result, record_sha256
+                       FROM eval_v2_scenario_result
+                       WHERE eval_run_id = %s ORDER BY scenario_index""",
+                    (run_id,),
+                )
+                stored_results = cursor.fetchall()
+        hashes = bundle["hashes"]
+        expected_run = {
+            "manifest": bundle["manifest"], "summary": bundle["summary"],
+            "disposition": bundle["disposition"], "manifest_sha256": hashes["manifest"],
+            "results_sha256": hashes["results"], "summary_sha256": hashes["summary"],
+            "disposition_sha256": hashes.get("disposition"),
+        }
+        expected_results = [
+            {"scenario_index": index, "result": result, "record_sha256": record_hash}
+            for index, (result, record_hash) in enumerate(
+                zip(bundle["results"], bundle["result_line_sha256"], strict=True), start=1
+            )
+        ]
+        matched = stored_run == expected_run and stored_results == expected_results
+        return {
+            "eval_run_id": run_id,
+            "matched": matched,
+            "local_scenario_count": len(expected_results),
+            "db_scenario_count": len(stored_results),
+        }
+
+
 class EvaluationResultRepository:
     """같은 ``eval_run_id``를 다른 내용으로 덮어쓰지 않는 평가 저장소."""
 
@@ -169,6 +319,133 @@ class EvaluationResultRepository:
                         eval_run_id,
                     ),
                 )
+
+    @staticmethod
+    def sync_judge_result(record: dict[str, Any]) -> dict[str, Any]:
+        """`judge_calibration.jsonl`의 레코드 한 줄을 `eval_judge_result`에 동기화한다.
+
+        `case_id`가 아니라 `agent_run_id`로 대상 `eval_case_result`의
+        `case_index`를 찾는다 — 같은 case_id가 한 실행 안에서 여러 번
+        반복될 수 있어서(다른 표와 같은 이유), case_id만으로는 어느 반복인지
+        구분할 수 없다. `human_verdict`/`comparison`은 calibration 표본일 때만
+        있는 값이라 없으면 NULL로 둔다 — 지어내지 않는다.
+        """
+        eval_run_id = str(record["eval_run_id"])
+        agent_run_id = record.get("agent_run_id")
+        judge = record["judge"]
+        human_verdict = record.get("human_verdict")
+        comparison = record.get("comparison")
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT case_index FROM eval_case_result
+                    WHERE eval_run_id = %s AND agent_run_id = %s
+                    """,
+                    (eval_run_id, agent_run_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError(
+                        "이 agent_run_id에 대응하는 eval_case_result의 "
+                        "case_index를 찾지 못했습니다 — case 동기화를 먼저 하세요."
+                    )
+                case_index = row["case_index"]
+
+                cursor.execute(
+                    """
+                    INSERT INTO eval_judge_result (
+                        eval_run_id, case_index, judge_model, prompt_version,
+                        mode, latency_ms, usage, verdict,
+                        human_verdict, comparison
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (eval_run_id, case_index, judge_model, prompt_version)
+                    DO NOTHING
+                    RETURNING case_index
+                    """,
+                    (
+                        eval_run_id,
+                        case_index,
+                        judge["model"],
+                        judge["prompt_version"],
+                        record.get("mode", "REPORT_ONLY"),
+                        judge.get("latency_ms"),
+                        Jsonb(judge.get("usage")),
+                        Jsonb(judge["verdict"]),
+                        Jsonb(human_verdict) if human_verdict is not None else None,
+                        Jsonb(comparison) if comparison is not None else None,
+                    ),
+                )
+                if cursor.fetchone() is not None:
+                    return {
+                        "eval_run_id": eval_run_id,
+                        "case_index": case_index,
+                        "sync_status": "SYNCED",
+                    }
+
+                cursor.execute(
+                    """
+                    SELECT verdict FROM eval_judge_result
+                    WHERE eval_run_id = %s AND case_index = %s
+                      AND judge_model = %s AND prompt_version = %s
+                    """,
+                    (eval_run_id, case_index, judge["model"], judge["prompt_version"]),
+                )
+                existing = cursor.fetchone()
+                if existing is None or existing["verdict"] != judge["verdict"]:
+                    raise ValueError(
+                        "같은 실행·case·Judge·프롬프트에 다른 결과가 이미 "
+                        "저장되어 있습니다."
+                    )
+                return {
+                    "eval_run_id": eval_run_id,
+                    "case_index": case_index,
+                    "sync_status": "SYNCED",
+                }
+
+    @staticmethod
+    def fetch_agent_execution_summary(agent_run_id: str) -> dict[str, Any]:
+        """사람이 UI로 실행한 case를 기록할 때 최종 답변·도구 호출을 손으로
+        옮겨 적지 않아도 되게, 실제 실행된 agent_run의 결과를 제품 DB에서
+        조회한다.
+
+        세션이 없거나 지워졌으면(자동 runner의 임시 세션 정리 등) 빈 값을
+        돌려준다 — 이 조회는 있으면 좋은 보강이지, 없다고 기록 자체를
+        막지 않는다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT session_id FROM agent_run WHERE run_id = %s",
+                    (agent_run_id,),
+                )
+                row = cursor.fetchone()
+                session_id = row["session_id"] if row else None
+
+                final_answer = None
+                if session_id:
+                    cursor.execute(
+                        "SELECT content FROM chat_message "
+                        "WHERE session_id = %s AND role = 'agent' "
+                        "ORDER BY created_at",
+                        (session_id,),
+                    )
+                    for message in cursor.fetchall():
+                        content = message.get("content") or {}
+                        if isinstance(content, dict) and content.get("text"):
+                            final_answer = content["text"]
+
+                cursor.execute(
+                    "SELECT tool_call_id FROM tool_call "
+                    "WHERE run_id = %s ORDER BY created_at",
+                    (agent_run_id,),
+                )
+                tool_call_ids = [str(r["tool_call_id"]) for r in cursor.fetchall()]
+
+        return {"final_answer": final_answer, "tool_call_ids": tool_call_ids}
 
 
 __all__ = ["EvaluationResultRepository"]

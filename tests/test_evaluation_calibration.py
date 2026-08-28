@@ -10,6 +10,9 @@ from services.evaluation.calibration import (
     build_judge_request,
     compare_verdicts,
     load_evidence_bundle,
+    load_human_verdict,
+    load_judge_calibration_records,
+    make_calibration_record,
     parse_judge_response,
 )
 
@@ -42,6 +45,36 @@ def _verdict(*, grounding: str = "PASS", safety: str = "PASS") -> dict:
 
 
 class EvaluationCalibrationTests(unittest.TestCase):
+    def test_human_verdict_requires_confirmed_human_review(self):
+        pending = {
+            "case_id": "WF-001",
+            "agent_run_id": "RUN1",
+            "evaluator": "reference_pending_human_review",
+            "review_status": "PENDING",
+            **_verdict(),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "pending.json"
+            path.write_text(json.dumps(pending), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "사람 검수 승인"):
+                load_human_verdict(path, case_id="WF-001", agent_run_id="RUN1")
+
+    def test_human_verdict_accepts_reviewed_provenance(self):
+        reviewed = {
+            "case_id": "WF-001",
+            "agent_run_id": "RUN1",
+            "evaluator": "human",
+            "review_status": "APPROVED",
+            "reviewed_by": "TEAM_MEMBER_001",
+            "reviewed_at": "2026-08-26T08:00:00Z",
+            **_verdict(),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "reviewed.json"
+            path.write_text(json.dumps(reviewed), encoding="utf-8")
+            loaded = load_human_verdict(path, case_id="WF-001", agent_run_id="RUN1")
+        self.assertEqual(loaded["reviewed_by"], "TEAM_MEMBER_001")
+
     def test_evidence_loader_requires_required_and_optional_union(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "evidence.json"
@@ -102,6 +135,61 @@ class EvaluationCalibrationTests(unittest.TestCase):
             self.assertTrue(output.is_file())
             with self.assertRaisesRegex(ValueError, "이미"):
                 append_calibration(run_dir, record)
+
+    def test_load_judge_calibration_records_reads_all_lines(self):
+        record1 = {"case_id": "WF-001", "agent_run_id": "RUN1", "judge": {"model": "m", "prompt_version": "v0"}}
+        record2 = {"case_id": "WF-002", "agent_run_id": "RUN2", "judge": {"model": "m", "prompt_version": "v0"}}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "summary.json").write_text("{}", encoding="utf-8")
+            append_calibration(run_dir, record1)
+            append_calibration(run_dir, record2)
+
+            records = load_judge_calibration_records(run_dir)
+
+        self.assertEqual([r["case_id"] for r in records], ["WF-001", "WF-002"])
+
+    def test_load_judge_calibration_records_returns_empty_when_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            records = load_judge_calibration_records(Path(temp_dir))
+        self.assertEqual(records, [])
+
+    def test_make_calibration_record_without_human_verdict_has_no_comparison(self):
+        record = make_calibration_record(
+            eval_run_id="RUN1",
+            case_result={"case_id": "WF-001", "agent_run_id": "AR1"},
+            evidence_bundle={"DC001": {}},
+            human_verdict=None,
+            judge_verdict=_verdict(),
+            judge_model="judge-model",
+            prompt_version="judge-standalone-v0",
+            latency_ms=10.0,
+            usage={"total_tokens": 5},
+        )
+
+        self.assertIsNone(record["human_verdict"])
+        self.assertIsNone(record["comparison"])
+        self.assertEqual(record["judge"]["verdict"], _verdict())
+
+    def test_make_calibration_record_with_human_verdict_still_computes_comparison(self):
+        human = _verdict(grounding="FAIL")
+        judge = _verdict()
+
+        record = make_calibration_record(
+            eval_run_id="RUN1",
+            case_result={"case_id": "WF-001", "agent_run_id": "AR1"},
+            evidence_bundle={"DC001": {}},
+            human_verdict=human,
+            judge_verdict=judge,
+            judge_model="judge-model",
+            prompt_version="judge-calibration-v0",
+            latency_ms=10.0,
+            usage={"total_tokens": 5},
+        )
+
+        self.assertEqual(record["human_verdict"], human)
+        self.assertIsNotNone(record["comparison"])
+        self.assertFalse(record["comparison"]["overall_agreement"] is None)
 
 
 if __name__ == "__main__":

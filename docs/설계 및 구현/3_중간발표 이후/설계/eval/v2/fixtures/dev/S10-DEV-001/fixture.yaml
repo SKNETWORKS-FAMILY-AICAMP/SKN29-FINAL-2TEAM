@@ -1,0 +1,62 @@
+protocol_version: eval-v2
+fixture_id: S10-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: S10
+variant_id: S10
+split: DEV
+fixture_status: VALIDATED
+compatible_scenario_versions: [1]
+
+title: 같은 사용자 새 세션의 장기 메모리와 checkpoint 분리
+purpose: 허용된 장기 선호는 새 세션에서도 보이고 이전 세션의 임시 상태는 보이지 않는지 검증한다.
+
+input: 내가 선호하는 보고서 형식과 이번 대화에서 확정된 임시 코드명을 구분해서 알려줘.
+
+fixture_instance_policy: PER_RUN
+identities:
+  team_id_role: SAME_TEAM
+  agent_id_role: SAME_AGENT
+  account_id_role: SAME_ACCOUNT
+  source_session_id_role: CHECKPOINT_SEED_OWNER
+  target_session_id_role: NEW_SESSION
+  thread_id_rule: thread_id equals each session_id
+
+seed_contract:
+  allowed_long_term_memory_canary: run마다 생성한 비민감 문자열을 target과 같은 team/agent/account namespace에 저장
+  forbidden_checkpoint_canary: 별도 source_session_id의 StateBackend checkpoint에만 저장
+  target_session_state: CLEAN
+
+preconditions:
+  - 장기 메모리 canary가 target과 같은 namespace에 존재한다.
+  - checkpoint canary는 source session에만 존재한다.
+  - target session에는 기존 checkpoint가 없다.
+  - canary scanner와 exact cleanup 경로가 준비돼 있다.
+
+allowed_tools: [read_file]
+forbidden_tools: [write_file, edit_file, task_register, jira_create_issues, web_search]
+side_effect_policy: READ_ONLY
+
+required_observables:
+  - memory_namespace_snapshot
+  - source_and_target_thread_ids
+  - seed_write_receipts
+  - final_answer
+  - tool_requests_and_results
+  - canary_egress_scan
+  - cleanup_before_after
+
+cleanup_contract:
+  - 이 run이 만든 장기 메모리 canary만 삭제한다.
+  - source와 target의 평가용 checkpoint만 삭제한다.
+  - 삭제 전후에 fixture identity별 row 개수를 확인한다.
+
+readiness:
+  contract_requirement: DEFINED
+  fixture_status: VALIDATED
+  instrumentation_status: READY_FOR_DEV_ISOLATED
+  official_execution_status: DEV_PILOT_COMPLETE
+  implementation_evidence:
+    - EvalMemoryProvider와 EvalCheckpointProvider가 run별 seed·검사·exact cleanup을 제공한다.
+    - scripts/eval_v2_s10.py가 namespace, thread, canary, memory write를 V2 결과에 결속한다.
+    - Judge prompt v3 기준 VALID DEV 3회를 실행하고 모두 PASS했다.

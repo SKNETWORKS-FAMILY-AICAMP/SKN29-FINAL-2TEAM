@@ -1,0 +1,154 @@
+# Agent 평가 V2 설계 로드맵
+
+## 1. 문서 상태
+
+- 기준일: 2026-08-28
+- 상태: Core DEV 기술 작업과 S10·S11 Expansion DEV pilot 완료
+- 현재 단계: Phase 9 정식 HOLDOUT 연기, S10·S11 결과 정리 완료
+- 정본 위치: 이 `eval/v2/` 디렉터리
+- main 병합 인계: [`2026-08-28_jihun_main_병합_인계서.md`](../../../작업기록/Jihun_eval_v2/2026-08-28_jihun_main_병합_인계서.md)
+- HOLDOUT 전달 자료: [`전달 문서/README.md`](../../../작업기록/Jihun_eval_v2/전달%20문서/README.md)
+
+기존 `agent_poc_v1/v2`, `agent_workflow_v1`, workflow별 문서, 실행 결과와
+`workflow_baseline_v0.md`는 평가 기준을 발견한 `LEGACY` 개발 증거다. 삭제하지
+않지만 V2 공식 성적의 분자·분모에는 넣지 않는다.
+
+## 2. V2가 해결해야 하는 문제
+
+V2는 다음 문제를 구조적으로 막아야 한다.
+
+1. 로컬 파일·DB·수동 기준선의 표본 수가 서로 다른 문제
+2. 도구 호출은 맞지만 답변 내용이 틀린 실행이 통과할 수 있는 문제
+3. 내용이 맞아도 출력 형식이나 임시 호출 예산 때문에 전체 실패하는 문제
+4. LLM Judge 결과가 결정론적 사실을 덮거나 불확실한 판정이 PASS로 섞이는 문제
+5. 공개된 소수 사례에 맞춘 수정이 일반 성능 향상처럼 보이는 문제
+6. 서로 다른 Agent·dataset·runtime 결과를 하나의 통과율로 합치는 문제
+
+## 3. 설계 원칙
+
+- **하나의 모집단:** 공식 보고서는 평가 카탈로그의 `VALID` cohort만 집계한다.
+- **역할이 다른 두 저장소:** 변경 불가능한 원시 산출물은 증거 원본이고, DB 평가
+  카탈로그는 유효성·cohort·집계의 정본이다. 둘은 실행 ID와 checksum으로 대조한다.
+- **점수 분리:** 실행, 안전, 과업 품질, 근거, 효율, 성능을 하나의 PASS/FAIL로
+  뭉치지 않는다.
+- **Hard Gate 최소화:** 권한·승인·외부 부작용·격리·허가되지 않은 민감정보 노출만
+  즉시 차단한다.
+- **자동 oracle 분리:** 확인 가능한 사실·상태·Hard Gate는 deterministic checker가,
+  의미 정확성·근거 표현·불확실성은 LLM Judge가 판정한다.
+- **Judge 모델 고정:** Judge는 `gpt-5.6-sol`, reasoning `medium`으로 고정하고 평가
+  대상 모델과 Judge model·prompt·parser identity를 각각 기록한다.
+- **불확실성 비통과:** Judge `UNCERTAIN`은 `INCONCLUSIVE`이며 PASS가 아니다.
+- **개발/holdout 분리:** 개발 사례로 수정하고 비공개 holdout으로 최종 확인한다.
+- **같은 조건만 비교:** Agent version, Git commit/runtime profile, model, tools,
+  memory mode, fixture가 같은 cohort만 직접 비교한다.
+- **수동 숫자 금지:** 기준선 문서와 HTML의 수치는 동일한 집계 코드로 생성한다.
+
+## 4. 단계와 통과 게이트
+
+| 단계 | 설계 대상 | 필수 산출물 | 다음 단계 진입 조건 |
+|---:|---|---|---|
+| 0 | 기존 평가 동결 | LEGACY 분류 원칙 | V2 공식 집계에서 기존 결과 제외 |
+| 1 | 평가 헌장 | `01_evaluation_charter.md` | 목적·비목적·판정 축·Hard Gate 합의 |
+| 2 | 위험과 포트폴리오 | 위험 목록, scenario matrix | 각 위험이 최소 한 사례에 연결됨 |
+| 3 | 시나리오 계약 | 공통 schema와 작성 지침 | 입력·초기 상태·사후조건이 모호하지 않음 |
+| 4 | fixture와 정답 | 개발 fixture, holdout 관리 규칙 | 자동 무결성 검사로 source·gold 결속 재현 가능 |
+| 5 | 자동 채점 계약 | hard gate, deterministic/Judge 결합, 집계 규칙 | 같은 증거에서 자동 판정이 재현 가능 |
+| 6 | LLM Judge 운용 | 고정 model·prompt·parser, 오류·UNCERTAIN 처리 | Judge가 의미 기준만 판정하고 provenance 저장 |
+| 7 | 실행·저장 | runner, cohort catalog, reconciliation | 원시 결과와 DB가 자동 대조됨 |
+| 8 | 개발 pilot | 개발 사례 반복 결과 | 기준 오류와 fixture 오류가 해소됨 |
+| 9 | 동결·holdout | 버전 동결 기록, 비공개 실행 | 실행 전 조건 변경 없음 |
+| 10 | 공식 보고 | 자동 생성 성적표 | 분모·제외 사유·불확실성 공개 |
+
+앞 단계의 통과 조건이 충족되지 않으면 다음 단계의 코드나 UI를 구현하지 않는다.
+
+## 5. 산출물 명명 규칙
+
+```text
+eval/v2/
+├─ README.md
+├─ 01_evaluation_charter.md
+├─ 02_risk_scenario_matrix.md
+├─ 03_scenario_contract.md
+├─ 03a_contract_validation_examples.md
+├─ 04_fixture_and_gold_policy.md
+├─ 05_scoring_contract.md
+├─ 06_llm_judge_protocol.md
+└─ scenarios/
+```
+
+뒤 단계 파일은 해당 단계에 착수할 때 만든다. 빈 문서를 미리 만들어 완료된 것처럼
+보이게 하지 않는다.
+
+## 6. 현재 진행 상태
+
+| 단계 | 상태 | 비고 |
+|---:|---|---|
+| 0 | 완료 | 기존 결과는 보존하되 V2 공식 집계에서 제외 |
+| 1 | 완료 | 보강안 반영 후 `APPROVED` |
+| 2 | 완료 | `02_risk_scenario_matrix.md` 승인, DEV/HOLDOUT 역할 분리 확정 |
+| 3 | 완료 | 공통 계약과 대표 적용 검증 승인 (`APPROVED`) |
+| 4 | 완료 | 실제 PDF 기반 Core DEV 10개 package와 자동 무결성 검사 완료 |
+| 5 | 완료 | deterministic·Hard Gate·Judge 결합과 집계 규칙 구현·테스트 완료 |
+| 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
+| 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 현재 완료 run 101/101 DB·SHA-256 대조 완료 |
+| 8 | 완료 | AV073·Git `e888d6b…`로 Core 10개 variant 36 VALID 재실행 완료. 32 PASS/4 FAIL, S01 보류·S07 3/3 PASS |
+| 9 | 연기 | 현재 발표 범위에서는 정식 비공개 HOLDOUT 인프라보다 S10·S11 Expansion 검증을 우선한다. 제작 가이드와 템플릿은 후속 작업 자료로 보존 |
+| 10 | 시작 전·실행 차단 | Phase 9 재개, freeze manifest 승인과 preflight 통과 전 HOLDOUT batch 실행 금지 |
+
+현재 자동 검증 명령은 `python scripts/eval_v2_validate.py`다. V2 공식 점수에는 사람
+판정이나 LEGACY calibration을 사용하지 않는다. HOLDOUT의 custodian/reviewer는 점수자가
+아니라 비공개 fixture의 오염과 source/gold 결속을 관리하는 역할이다.
+
+DEV 실행과 자동 집계는 사람 판정 없이 다음 명령으로 수행한다.
+
+```text
+python scripts/eval_v2_s01.py
+python scripts/eval_v2_remaining.py S02
+python scripts/eval_v2_remaining.py S03
+python scripts/eval_v2_s04.py --attack-profile forbidden_tool_registration
+python scripts/eval_v2_s04.py --attack-profile secret_exfiltration
+python scripts/eval_v2_s04.py --attack-profile false_completion
+python scripts/eval_v2_remaining.py S05A
+python scripts/eval_v2_remaining.py S05B
+python scripts/eval_v2_remaining.py S06
+python scripts/eval_v2_s07.py
+python scripts/eval_v2_s09a.py
+python scripts/eval_v2_remaining.py S09B
+python scripts/eval_v2_s10.py S10-DEV-001
+python scripts/eval_v2_s10.py S10-DEV-002
+python scripts/eval_v2_s11.py S11-DEV-001
+python scripts/eval_v2_s11.py S11-DEV-002
+python scripts/eval_v2_portfolio.py
+python scripts/eval_v2_record.py sync-root
+```
+
+새 cohort를 직접 비교할 때는 Candidate ID뿐 아니라 실행 manifest에 기록된 exact Git
+commit도 함께 고정한다.
+
+```text
+python scripts/eval_v2_portfolio.py --candidate-id AG004/AVxxx --git-commit <40자리 SHA>
+```
+
+저장된 모든 V2 실행은 다음 명령으로 로컬 정적 HTML 대시보드로 만든다.
+
+```text
+python scripts/eval_v2_dashboard.py
+```
+
+생성 파일은 `outputs/eval-v2-dashboard/index.html`이다. 제품 프론트엔드나 DB를
+사용하지 않으며 `outputs/eval-v2-results/`의 append-only 원본을 정본으로 읽는다.
+`experiments/otel_eval_lab/artifacts/v2_professional_results.json`이 있으면 같은
+`eval_run_id`의 Ragas·DeepEval 보조지표와 운영 통계를 읽기 전용으로 결합한다. 이
+또한 `garak_agent_safe_results.json`과 3건 제한 모델 단독 Garak report가 있으면
+모델 단독·격리 에이전트 보안 진단을 분리해 표시한다. 이 보조 파일들이 없어도
+V2 전용 화면은 정상 생성된다. 공식 Core cohort, 진단·실험용 실행,
+`INVALID_EVALUATION_INFRA` 실행을 분리해서 표시하고 각 실행의 실제 답변·보조지표·
+결정론적 판정·LLM Judge·실행 증거를 펼쳐 볼 수 있다. 보조지표는 V2 공식 PASS/FAIL을
+변경하지 않으며 Garak 결과도 공식 통과율에 합산하지 않는다.
+
+현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
+`NOT_AUTHORIZED`, S10/S11은 별도 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
+넣지 않는다. 동결 commit `f8f8b57…`에서 S10과 S11은 각각 6/6 PASS했고 S11 보조
+효율도 6/6 PASS했다. 다만 동결 전 진단 실행에서 검색 4회 변동성이 관측됐으므로 장기
+안정성까지 증명된 것은 아니다. Phase 9 정식 HOLDOUT은 연기된 상태다. 기존 36건과
+Expansion 12건은 모두 `DEV 기준선`이지 비공개 일반화 검증 결과가 아니다.

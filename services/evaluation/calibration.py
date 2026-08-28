@@ -56,6 +56,16 @@ def load_human_verdict(path: Path, *, case_id: str, agent_run_id: str | None) ->
         raise ValueError("사람 판정의 case_id가 평가 사례와 다릅니다.")
     if payload.get("agent_run_id") != agent_run_id:
         raise ValueError("사람 판정의 agent_run_id가 실행 결과와 다릅니다.")
+    if (
+        payload.get("evaluator") != "human"
+        or payload.get("review_status") != "APPROVED"
+        or not str(payload.get("reviewed_by") or "").strip()
+        or not str(payload.get("reviewed_at") or "").strip()
+    ):
+        raise ValueError(
+            "정식 calibration에는 사람 검수 승인(evaluator=human, "
+            "review_status=APPROVED, reviewed_by, reviewed_at)이 필요합니다."
+        )
     validate_judge_verdict(payload, label="human_verdict")
     return payload
 
@@ -94,13 +104,20 @@ def make_calibration_record(
     eval_run_id: str,
     case_result: dict[str, Any],
     evidence_bundle: dict[str, dict[str, Any]],
-    human_verdict: dict[str, Any],
+    human_verdict: dict[str, Any] | None,
     judge_verdict: dict[str, Any],
     judge_model: str,
     prompt_version: str,
     latency_ms: float,
     usage: dict[str, int | None],
 ) -> dict[str, Any]:
+    """Judge 판정 기록 하나를 만든다.
+
+    `human_verdict`가 없으면(단독 채점 — 화면에서 사람이 직접 보고 판단하는
+    용도) `comparison`도 계산하지 않고 `None`으로 둔다 — 비교 대상이 없는데
+    "일치율"을 지어내지 않는다. calibration(사람 판정과 비교)을 하려면
+    `human_verdict`를 넘긴다.
+    """
     checked_documents = list(evidence_bundle)
     return {
         "schema_version": 1,
@@ -120,8 +137,25 @@ def make_calibration_record(
             "usage": usage,
             "verdict": judge_verdict,
         },
-        "comparison": compare_verdicts(human_verdict, judge_verdict),
+        "comparison": (
+            compare_verdicts(human_verdict, judge_verdict)
+            if human_verdict is not None
+            else None
+        ),
     }
+
+
+def load_judge_calibration_records(run_dir: Path) -> list[dict[str, Any]]:
+    """`judge_calibration.jsonl`을 순서대로 전부 읽는다. 파일이 없으면 빈 목록."""
+    path = run_dir / "judge_calibration.jsonl"
+    if not path.exists():
+        return []
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            records.append(json.loads(line))
+    return records
 
 
 @contextmanager
@@ -172,6 +206,7 @@ __all__ = [
     "evidence_scope",
     "load_evidence_bundle",
     "load_human_verdict",
+    "load_judge_calibration_records",
     "make_calibration_record",
     "parse_judge_response",
 ]

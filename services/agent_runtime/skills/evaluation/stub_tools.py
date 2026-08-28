@@ -20,15 +20,17 @@ if TYPE_CHECKING:
 
 #: 이 stub 로직 자체의 버전. `tool_fixtures` 해석 규칙이나 합성 성공 응답의
 #: 모양을 바꾸면 올린다 — job의 `tool_stub_version`에 그대로 남는다.
-TOOL_STUB_VERSION = "v1"
+TOOL_STUB_VERSION = "v2"
 
 FIXTURE_NOT_CONFIGURED = "FIXTURE_NOT_CONFIGURED"
+EVAL_FAULT_KEY = "__eval_fault__"
 
 
 @dataclasses.dataclass
 class RecordedCall:
     tool_ref: str
     args: dict[str, Any]
+    outcome: str = "STARTED"
 
 
 class ToolCallRecorder:
@@ -37,8 +39,10 @@ class ToolCallRecorder:
     def __init__(self) -> None:
         self.calls: list[RecordedCall] = []
 
-    def record(self, tool_ref: str, args: dict[str, Any]) -> None:
-        self.calls.append(RecordedCall(tool_ref=tool_ref, args=dict(args)))
+    def record(self, tool_ref: str, args: dict[str, Any]) -> RecordedCall:
+        call = RecordedCall(tool_ref=tool_ref, args=dict(args))
+        self.calls.append(call)
+        return call
 
     def tool_refs(self) -> list[str]:
         return [c.tool_ref for c in self.calls]
@@ -55,18 +59,26 @@ def _make_stub_handler(
     def _stub(**kwargs: Any) -> Any:
         # 예약 키(`_TOOL_CALL_ID_KWARG` 등)는 실제 handler와 마찬가지로 그냥
         # kwargs에 섞여 들어온다 — 기록에는 남기되 stub 응답에는 영향 없다.
-        recorder.record(tool.ref, kwargs)
+        recorded = recorder.record(tool.ref, kwargs)
 
         if not tool.side_effect:
             # 읽기 도구 — fixture가 없으면 조용히 성공한 것처럼 굴지 않는다
             # (§8.10 "fixture가 없는 읽기 호출은 FIXTURE_NOT_CONFIGURED").
             fixture = next(fixture_iter, None)
             if fixture is None:
+                recorded.outcome = FIXTURE_NOT_CONFIGURED
                 return {"error": FIXTURE_NOT_CONFIGURED, "tool_ref": tool.ref}
+            if fixture.get(EVAL_FAULT_KEY) == "RETRYABLE_TIMEOUT":
+                import requests
+
+                recorded.outcome = "RETRYABLE_TIMEOUT"
+                raise requests.exceptions.Timeout("controlled evaluation timeout")
+            recorded.outcome = "SUCCESS"
             return fixture
 
         # 쓰기·전송·삭제 도구 — 실제 handler를 절대 안 부른다. 합성 성공만
         # 돌려준다. 호출 자체는 이미 recorder에 남았으므로 채점은 그걸로 한다.
+        recorded.outcome = "STUBBED_SIDE_EFFECT"
         return {"status": "ok", "stub": True, "tool_ref": tool.ref}
 
     return _stub
@@ -104,4 +116,11 @@ class EvalToolLoader:
         return tuple(stubbed)
 
 
-__all__ = ["EvalToolLoader", "ToolCallRecorder", "RecordedCall", "FIXTURE_NOT_CONFIGURED", "TOOL_STUB_VERSION"]
+__all__ = [
+    "EVAL_FAULT_KEY",
+    "EvalToolLoader",
+    "ToolCallRecorder",
+    "RecordedCall",
+    "FIXTURE_NOT_CONFIGURED",
+    "TOOL_STUB_VERSION",
+]

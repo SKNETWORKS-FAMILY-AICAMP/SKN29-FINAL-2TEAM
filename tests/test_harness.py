@@ -146,6 +146,22 @@ class JiraCreateIssuesTests(SimpleTestCase):
         self.assertEqual(mock_create.call_args.kwargs["issues"], filled)
 
 
+class TaskDestinationDescriptionTests(SimpleTestCase):
+    def test_task_registration_is_not_a_jira_prerequisite(self):
+        description = registry.BUILTIN_TOOLS["task_register"].description
+
+        self.assertIn("Jira 등록의 선행 단계가 아니다", description)
+        self.assertIn("Jira만 명시했다면", description)
+        self.assertNotIn("Jira 보다 먼저", description)
+
+    def test_jira_only_request_does_not_add_platform_registration(self):
+        description = registry.BUILTIN_TOOLS["jira_create_issues"].description
+
+        self.assertIn("Jira 등록을 명시했다면 이 도구를 직접 사용", description)
+        self.assertIn("task_register", description)
+        self.assertIn("함께 등록하라는 요청이 없으면", description)
+
+
 class SkillRegisterDescriptionTests(SimpleTestCase):
     def test_uses_the_system_confirmation_card_instead_of_chat_confirmation(self):
         description = registry.BUILTIN_TOOLS["skill_register"].description
