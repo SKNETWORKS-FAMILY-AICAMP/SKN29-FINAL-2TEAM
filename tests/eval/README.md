@@ -69,7 +69,7 @@ docker compose -f infra/docker/docker-compose.yml exec -T web \
 `--json` 으로 남긴 파일끼리 비교하는 것이 고도화 전후 판정이다.
 
 ⚠ **질의를 16개씩 나눠 임베딩한다.** 37개를 한 번에 넘기면 워커가 `FAILED` 로
-떨어진다(2026-08-25 실측). 제품은 `document_search` 가 질의 하나씩만 부르므로
+떨어진다(2026-08-28 실측). 제품은 `document_search` 가 질의 하나씩만 부르므로
 이 한도에 닿은 적이 없다.
 
 ## 5. 기준선 (2026-08-25 · 문서 8종 · 청크 294개)
