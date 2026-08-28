@@ -89,6 +89,23 @@ EXPECTED: list[tuple[str, str | None, str]] = [
     # `--check`가 "전부 있다"고 답한 사례로 발견됐다(`UndefinedTable`로
     # 실행이 깨진 뒤에야 드러남) — 코드가 실제로 쓰는 표 이름으로 바꾼다.
     ("tool_call_idempotency", None, "2026-08-19 외부 쓰기 도구 재실행 방지 — 전용 표"),
+    ("tool_call_idempotency", "status", "2026-08-27 claim 상태(RUNNING/SUCCEEDED)"),
+    ("tool_call_idempotency", "lease_until", "2026-08-27 claim 임대 만료 시각"),
+    ("tool_call_idempotency", "updated_at", "2026-08-27 claim 갱신 시각"),
+    ("storage_cleanup_outbox", None, "2026-08-27 저장소 정리 아웃박스"),
+    # 아래 다섯은 여기 못 적는다 — 이 표는 "있어야 할 스키마가 있는가"만 보는데,
+    # 그 마이그레이션들이 하는 일은 스키마가 아니라 **데이터**를 넣고 지우는
+    # 것이다. 적용 여부는 아래 쿼리로 직접 확인한다.
+    #   2026-08-27_builtin_tools_p3 / 2026-08-29_default_chat_tools /
+    #   2026-08-30_curate_default_chat_tools — 기본 어시스턴트의 도구 목록:
+    #     SELECT count(*) FROM agent_version_tools avt
+    #       JOIN agents a ON a.current_version_id = avt.agent_version_id
+    #      WHERE a.is_default_chat = true;                        -- 22 여야 한다
+    #   2026-08-30_task_extraction_agent — 기본 어시스턴트가 있는 팀마다 하나:
+    #     SELECT count(*) FROM agents
+    #      WHERE is_prebuilt = true AND name = '업무 추출 에이전트';
+    #   2026-08-28_doc_kept + 2026-08-29_drop_doc_kept 은 넣었다 다시 빼는 쌍이라
+    #   최종 상태에 흔적이 없다 — `doc.kept` 는 **없는 것이 맞다**.
     ("eval_run", None, "2026-08-26 Agent 평가 실행 결과"),
     ("eval_case_result", None, "2026-08-26 Agent 평가 사례 결과"),
     ("eval_judge_result", None, "2026-08-26 Agent 평가 LLM Judge 판정"),
@@ -138,6 +155,11 @@ EXPECTED_CONSTRAINTS: list[tuple[str, str, str]] = [
         "skill_eval_regression_case",
         "ck_skill_eval_regression_scope_fields",
         "2026-08-27 회귀 사례 범위별 team/skill 필드 정합성",
+    ),
+    (
+        "tool_call_idempotency",
+        "tool_call_idempotency_status_ck",
+        "2026-08-27 claim 상태 값 제한",
     ),
 ]
 
@@ -212,9 +234,30 @@ def _split_statements(sql: str) -> list[str]:
     statements: list[str] = []
     current: list[str] = []
     in_string = False
+    #: `DO $$ … $$;` 처럼 달러로 감싼 블록 안이면 그 표식(`$$` 또는 `$tag$`).
+    #: 블록 안에는 세미콜론이 여러 개 들어가는데 그것을 문장 끝으로 보면 블록이
+    #: 잘려 `unterminated dollar-quoted string` 으로 실패한다 — 2026-08-28 에
+    #: `2026-08-27_tool_call_idempotency_claim.sql` 적용이 여기서 멈췄다.
+    dollar_tag: str | None = None
     index = 0
     while index < len(without_comments):
         char = without_comments[index]
+        if dollar_tag is not None:
+            if without_comments.startswith(dollar_tag, index):
+                current.append(dollar_tag)
+                index += len(dollar_tag)
+                dollar_tag = None
+                continue
+            current.append(char)
+            index += 1
+            continue
+        if char == "$" and not in_string:
+            opening = re.match(r"\$[A-Za-z_]\w*\$|\$\$", without_comments[index:])
+            if opening:
+                dollar_tag = opening.group(0)
+                current.append(dollar_tag)
+                index += len(dollar_tag)
+                continue
         if char == "'":
             current.append(char)
             if in_string and index + 1 < len(without_comments) and without_comments[index + 1] == "'":
