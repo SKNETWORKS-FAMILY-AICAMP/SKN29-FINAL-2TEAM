@@ -2,8 +2,8 @@
 
 ## 1. 문서 상태
 
-- 기준일: 2026-08-27
-- 상태: Core DEV 기술 작업 완료, Candidate 결정 대기
+- 기준일: 2026-08-28
+- 상태: Core DEV 기술 작업과 Candidate 처리 결정 완료, Phase 9 승인 대기
 - 현재 단계: 8단계 게이트 점검에서 정지 (`Phase 9 미진입`)
 - 정본 위치: 이 `eval/v2/` 디렉터리
 
@@ -89,8 +89,8 @@ eval/v2/
 | 5 | 완료 | deterministic·Hard Gate·Judge 결합과 집계 규칙 구현·테스트 완료 |
 | 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
 | 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 완료 run 49/49 SHA-256 자동 대조 완료 |
-| 8 | 결정 대기 | Core 10개 variant 36 VALID 실행 완료. 32 PASS/4 FAIL이며 Candidate 처리 방침만 남음 |
-| 9~10 | 시작 전·진입 차단 | Candidate 방침을 정하고 freeze manifest를 승인하기 전까지 진입하지 않음 |
+| 8 | 완료 | Core 10개 variant 36 VALID 실행 완료. S01 보류·S07 수정 유지·AV072 복원 결정 완료 |
+| 9~10 | 시작 전·진입 차단 | freeze manifest를 승인하기 전까지 진입하지 않음 |
 
 현재 자동 검증 명령은 `python scripts/eval_v2_validate.py`다. V2 공식 점수에는 사람
 판정이나 LEGACY calibration을 사용하지 않는다. HOLDOUT의 custodian/reviewer는 점수자가
@@ -114,6 +114,17 @@ python scripts/eval_v2_remaining.py S09B
 python scripts/eval_v2_portfolio.py
 python scripts/eval_v2_record.py sync-root
 ```
+
+저장된 모든 V2 실행은 다음 명령으로 로컬 정적 HTML 대시보드로 만든다.
+
+```text
+python scripts/eval_v2_dashboard.py
+```
+
+생성 파일은 `outputs/eval-v2-dashboard/index.html`이다. 제품 프론트엔드나 DB를
+사용하지 않으며 `outputs/eval-v2-results/`의 append-only 원본만 읽는다. 공식 Core
+cohort, 진단·실험용 실행, `INVALID_EVALUATION_INFRA` 실행을 분리해서 표시하고 각
+실행의 실제 답변·결정론적 판정·LLM Judge·실행 증거를 펼쳐 볼 수 있다.
 
 현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
 `NOT_AUTHORIZED`, S10/S11은 팀원 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
