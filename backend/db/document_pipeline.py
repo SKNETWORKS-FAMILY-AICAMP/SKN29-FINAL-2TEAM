@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -969,8 +970,153 @@ class StorageCleanupOutboxRepository:
 #: 정도면 후보 5건을 뽑기에 충분하고, 벡터 인덱스로 잘리므로 전량 스캔이 아니다.
 _CONTENT_RANK_CHUNKS = 200
 
+# 대화 문서 검색은 모델이 임의로 결과 수를 바꾸지 못하게 서버에서 고정한다.
+HYBRID_SEARCH_TOP_K = 20
+_HYBRID_CANDIDATE_K = HYBRID_SEARCH_TOP_K * 3
+HYBRID_VECTOR_WEIGHT = 0.40
+HYBRID_LEXICAL_WEIGHT = 0.60
+HYBRID_FTS_WEIGHT = 0.55
+HYBRID_TRIGRAM_WEIGHT = 0.25
+HYBRID_EXACT_WEIGHT = 0.20
+
+
+def lexical_tsquery(query_text: str) -> str:
+    """한국어 조사에 막히지 않는 안전한 PostgreSQL prefix-OR tsquery.
+
+    ``simple`` 사전은 「정산」과 「정산을」을 다른 lexeme으로 본다. 일반
+    websearch 질의는 공백 토큰을 AND로 묶어 한국어 문서에서 0건이 되기 쉬우므로,
+    영문·숫자·한글 토큰만 남겨 prefix OR로 만든다. tsquery 연산자는 제거되므로
+    사용자가 검색 문법을 주입할 수도 없다.
+    """
+
+    tokens = re.findall(r"[0-9A-Za-z가-힣]+", query_text.lower())
+    expanded: list[str] = []
+    particles = ("으로", "에서", "에게", "까지", "부터", "과", "와", "을", "를", "은", "는", "이", "가", "의", "에", "로", "도", "만")
+    for token in tokens:
+        expanded.append(token)
+        particle = next((item for item in particles if token.endswith(item)), None)
+        if particle and len(token) - len(particle) >= 2:
+            expanded.append(token[: -len(particle)])
+    useful = [token for token in expanded if len(token) >= 2]
+    if not useful:
+        useful = expanded
+    return " | ".join(f"{token}:*" for token in dict.fromkeys(useful))
+
 
 class VectorSearchRepository:
+    @staticmethod
+    def search_hybrid(
+        *,
+        team_id: str,
+        document_ids: list[str],
+        query_text: str,
+        query_vector: list[float],
+        account_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """키워드와 의미 유사도를 같은 비중으로 합쳐 근거 20개를 찾는다.
+
+        키워드는 가공 전 원문을 새로 저장하지 않고 ``chunk.search_text``를 쓴다.
+        이 값에는 제목 경로 등 청킹 문맥이 붙어 있어 짧은 본문만 검색할 때보다
+        용어가 어느 절에 속하는지 잘 드러난다. 모델에 돌려주는 실제 근거 본문은
+        ``doc_block.content``다.
+
+        후보는 벡터·전문검색·부분어절 검색에서 각각 넉넉히 모은 뒤 후보군 안에서
+        점수를 0~1로 정규화한다. 최종 점수는 lexical 0.6 + cosine 0.4이며,
+        lexical 안에서는 전문검색 0.55 + 부분어절 0.25 + 정확 포함 0.20이다.
+        0.4/0.6은 원빈님 인계 14질의 평가에서 0.5/0.5보다 개발·전체 MRR이
+        높고 Recall@20 1.0과 잠식률 0을 유지한 값이다(2026-08-28).
+        """
+
+        query_text = query_text.strip()
+        if not query_text:
+            raise ValueError("검색어가 비어 있습니다.")
+        if not document_ids:
+            raise ValueError("검색 문서 범위가 비어 있습니다.")
+
+        vector = vector_literal(query_vector)
+        tsquery = lexical_tsquery(query_text)
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    WITH params AS (
+                        SELECT %s::vector AS query_vector,
+                               to_tsquery('simple', %s) AS query_ts,
+                               %s::text AS query_text
+                    ),
+                    scoped AS NOT MATERIALIZED (
+                        SELECT d.doc_id, c.chunk_id::text AS chunk_id,
+                               c.chunk_idx AS sequence, c.heading_path,
+                               b.content AS text, c.search_text,
+                               p.query_ts, p.query_text,
+                               GREATEST(0.0, 1 - (v.embedding <=> p.query_vector))
+                                   AS vector_raw,
+                               ts_rank_cd(
+                                   to_tsvector('simple', c.search_text), p.query_ts
+                               ) AS fts_raw,
+                               word_similarity(p.query_text, c.search_text) AS trigram_raw,
+                               CASE WHEN position(
+                                   lower(p.query_text) IN lower(c.search_text)
+                               ) > 0 THEN 1.0 ELSE 0.0 END AS exact_raw
+                        FROM vec_idx v
+                        JOIN chunk c ON c.chunk_id = v.chunk_id
+                        JOIN doc_block b ON b.block_id = c.block_id
+                        JOIN doc d ON d.doc_id = b.doc_id
+                        CROSS JOIN params p
+                        WHERE {_TEAM_OR_MINE}
+                          AND d.doc_id = ANY(%s)
+                          AND d.deleted = false AND d.access_revoked = false
+                          AND b.revision = d.cur_revision
+                          AND c.is_active = true AND v.is_active = true
+                          AND v.embed_model = %s AND v.embed_dim = 768
+                    ),
+                    candidates AS (
+                        (SELECT chunk_id FROM scoped ORDER BY vector_raw DESC LIMIT %s)
+                        UNION
+                        (SELECT chunk_id FROM scoped
+                          WHERE to_tsvector('simple', search_text) @@ query_ts
+                          ORDER BY fts_raw DESC LIMIT %s)
+                        UNION
+                        (SELECT chunk_id FROM scoped
+                          WHERE query_text <%% search_text OR exact_raw > 0
+                          ORDER BY exact_raw DESC, trigram_raw DESC LIMIT %s)
+                    ),
+                    normalized AS (
+                        SELECT s.*,
+                               s.vector_raw / NULLIF(MAX(s.vector_raw) OVER (), 0)
+                                   AS vector_score,
+                               s.fts_raw / NULLIF(MAX(s.fts_raw) OVER (), 0)
+                                   AS fts_score,
+                               s.trigram_raw / NULLIF(MAX(s.trigram_raw) OVER (), 0)
+                                   AS trigram_score
+                        FROM scoped s JOIN candidates c USING (chunk_id)
+                    ),
+                    scored AS (
+                        SELECT normalized.*,
+                               {HYBRID_FTS_WEIGHT} * COALESCE(fts_score, 0)
+                               + {HYBRID_TRIGRAM_WEIGHT} * COALESCE(trigram_score, 0)
+                               + {HYBRID_EXACT_WEIGHT} * exact_raw AS lexical_score
+                        FROM normalized
+                    )
+                    SELECT doc_id, chunk_id, sequence, heading_path, text,
+                           {HYBRID_VECTOR_WEIGHT} * COALESCE(vector_score, 0)
+                           + {HYBRID_LEXICAL_WEIGHT} * lexical_score AS retrieval_score,
+                           COALESCE(vector_score, 0) AS vector_score,
+                           lexical_score
+                    FROM scored
+                    ORDER BY retrieval_score DESC, chunk_id
+                    LIMIT %s
+                    """,
+                    (
+                        vector, tsquery, query_text,
+                        team_id, account_id, team_id, document_ids,
+                        "google/embeddinggemma-300m",
+                        _HYBRID_CANDIDATE_K, _HYBRID_CANDIDATE_K,
+                        _HYBRID_CANDIDATE_K, HYBRID_SEARCH_TOP_K,
+                    ),
+                )
+                return list(cursor.fetchall())
+
     @staticmethod
     def rank_by_content(
         *,

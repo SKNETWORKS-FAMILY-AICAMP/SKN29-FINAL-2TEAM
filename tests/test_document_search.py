@@ -36,7 +36,7 @@ def _doc(doc_id, file_name, *, ready=True, index_status=None):
 
 
 @patch("services.harness.registry.embed_queries", return_value=[[0.2] * 768])
-@patch("services.harness.registry.VectorSearchRepository.search")
+@patch("services.harness.registry.VectorSearchRepository.search_hybrid")
 @patch("services.harness.registry.PipelineDocumentRepository.searchable_documents")
 class DocumentSearchScopeTests(SimpleTestCase):
     """`document_search` 는 **범위를 정하고 청크로 찾는다**(2026-08-24).
@@ -52,6 +52,31 @@ class DocumentSearchScopeTests(SimpleTestCase):
         _run_document_search(team_id="TE001", query="납기일")
 
         self.assertEqual(search.call_args.kwargs["document_ids"], ["DC001", "DC002"])
+        self.assertEqual(search.call_args.kwargs["query_text"], "납기일")
+
+    def test_검색어_앞뒤_공백은_제거하고_빈_질의는_거부한다(self, scope, search, embed):
+        scope.return_value = [_doc("DC001", "a.pdf")]
+        search.return_value = []
+
+        _run_document_search(team_id="TE001", query="  납기일  ")
+
+        self.assertEqual(embed.call_args.args[0], ["납기일"])
+        self.assertEqual(search.call_args.kwargs["query_text"], "납기일")
+
+        with self.assertRaises(registry.ToolInputError):
+            _run_document_search(team_id="TE001", query="   ")
+
+    def test_검색_개수는_모델_입력이_아니라_서버에서_20개로_고정한다(
+        self, scope, search, _embed
+    ):
+        scope.return_value = [_doc("DC001", "a.pdf")]
+        search.return_value = []
+
+        _run_document_search(team_id="TE001", query="납기일")
+
+        self.assertNotIn("top_k", search.call_args.kwargs)
+        schema = registry.BUILTIN_TOOLS["document_search"].input_schema
+        self.assertEqual(set(schema["properties"]), {"query"})
 
     def test_색인_안_된_문서는_숨기지_않고_알린다(self, scope, search, _embed):
         """조용히 빼면 에이전트가 '관련 문서 없다'고 답하는데 실제로는 색인이
@@ -114,6 +139,18 @@ class DocumentSearchScopeTests(SimpleTestCase):
         _run_document_search(team_id="TE001", query="납기일", account_id="UA001")
 
         self.assertEqual(scope.call_args.kwargs["account_id"], "UA001")
+
+
+class DocumentSearchCatalogTests(SimpleTestCase):
+    def test_도구_목록에_문서_검색이_기본_검색_도구로_노출된다(self):
+        from apps.agents.serializers import builtin_tool_response
+
+        tools = {tool["tool_ref"]: tool for tool in builtin_tool_response()}
+
+        self.assertIn("document_search", tools)
+        self.assertEqual(tools["document_search"]["category"], "검색")
+        self.assertTrue(tools["document_search"]["is_default"])
+        self.assertEqual(set(tools["document_search"]["input_schema"]["properties"]), {"query"})
 
 
 def _run_document_sync(**kwargs):

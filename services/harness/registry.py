@@ -127,13 +127,12 @@ def _document_search(
     query: str,
     account_id: str | None = None,
     proj_id: str | None = None,
-    top_k: int = 10,
 ):
     """팀 문서에서 근거 문장을 찾는다.
 
     1) 범위 — 이 요청이 볼 수 있는 문서를 정한다(팀 + 내가 켠 내 파일 + 공유분,
        프로젝트 대화면 그 프로젝트로 좁혀서). **순위는 매기지 않는다.**
-    2) 근거 — 그 범위 안의 청크 임베딩을 검색한다.
+    2) 근거 — 그 범위 안의 청크를 키워드 0.6 + 임베딩 0.4로 검색한다.
 
     **요약으로 문서를 먼저 좁히던 단계(coarse)를 걷어냈다**(2026-08-24). 폴더를
     저장하면 그 문서 전부가 본문까지 색인되므로(`services/document_intake`)
@@ -153,6 +152,10 @@ def _document_search(
     도구 결과다. 직접 호출하는 테스트(`tests/test_document_meta.py`)는
     `_drain_with_progress`와 같은 방식으로 끝까지 돌려 반환값을 얻는다.
     """
+
+    query = query.strip()
+    if not query:
+        raise ToolInputError("찾을 내용을 한 글자 이상 입력해 주세요.")
 
     yield {"type": "stage", "step": 1, "total": 2, "label": "관련 문서 찾는 중"}
 
@@ -216,8 +219,8 @@ def _document_search(
 
     yield {"type": "stage", "step": 2, "total": 2, "label": "본문에서 근거 찾는 중"}
 
-    rows = VectorSearchRepository.search(
-        team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k,
+    rows = VectorSearchRepository.search_hybrid(
+        team_id=team_id, document_ids=doc_ids, query_text=query, query_vector=vector,
         account_id=account_id,
     )
     result = {
@@ -1908,8 +1911,11 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         input_schema={
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "찾고 싶은 내용을 한국어 문장으로"},
-                "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+                "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "찾고 싶은 내용을 한국어 문장으로",
+                },
             },
             "required": ["query"],
         },

@@ -537,6 +537,21 @@ class EvidenceBudgetTests(SimpleTestCase):
         self.assertEqual(scores, sorted(scores, reverse=True))
 
 
+class KoreanLexicalQueryTests(SimpleTestCase):
+    def test_한국어_토큰을_조사_대응_prefix_or로_만든다(self):
+        from backend.db.document_pipeline import lexical_tsquery
+
+        self.assertEqual(
+            lexical_tsquery("정산 금액과 중간값, 정산"),
+            "정산:* | 금액과:* | 금액:* | 중간값:*",
+        )
+
+    def test_tsquery_연산자는_검색어에서_제거한다(self):
+        from backend.db.document_pipeline import lexical_tsquery
+
+        self.assertEqual(lexical_tsquery("결제 & 실패 | 복귀:*"), "결제:* | 실패:* | 복귀:*")
+
+
 class ChunkRevisionScopeTests(SimpleTestCase):
     """청크를 읽는 자리는 **전부** 현재 revision 만 봐야 한다.
 
@@ -590,6 +605,9 @@ class ChunkRevisionScopeTests(SimpleTestCase):
             "_HAS_ACTIVE_CHUNKS": pipeline._HAS_ACTIVE_CHUNKS,
             "VectorSearchRepository.search": self._sql_only(
                 pipeline.VectorSearchRepository.search
+            ),
+            "VectorSearchRepository.search_hybrid": self._sql_only(
+                pipeline.VectorSearchRepository.search_hybrid
             ),
             "VectorSearchRepository.rank_by_content": self._sql_only(
                 pipeline.VectorSearchRepository.rank_by_content

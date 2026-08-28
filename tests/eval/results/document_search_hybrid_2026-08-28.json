@@ -1,0 +1,52 @@
+{
+  "provenance": {
+    "owner": "원빈님에게 인계받아 실시한 문서 검색 평가",
+    "corpus": "tests/eval/documents HTML 8종, 절 단위 95개",
+    "gold": "tests/eval/golden/retrieval.json 질의 14개",
+    "embedding_model": "google/embeddinggemma-300m",
+    "development_queries": "Q01-Q10",
+    "holdout_queries": "Q11-Q14"
+  },
+  "acceptance_thresholds": {
+    "query_recall_at_20_min": 0.9,
+    "precision_at_20_not_below_vector": true,
+    "mrr_not_below_vector": true,
+    "lexical_critical_success": 1.0,
+    "contamination_at_3": 0.0
+  },
+  "vector_baseline": {
+    "query_recall_at_20": 1.0,
+    "evidence_recall_at_20": 0.9285714286,
+    "precision_at_20": 0.1214285714,
+    "mrr": 0.7202380952,
+    "contamination_at_3": 0.0,
+    "holdout_evidence_recall_at_20": 0.8888888889,
+    "holdout_mrr": 0.8333333333
+  },
+  "selected_hybrid": {
+    "weights": {
+      "vector": 0.4,
+      "lexical": 0.6,
+      "lexical_fts": 0.55,
+      "lexical_trigram": 0.25,
+      "lexical_exact": 0.2
+    },
+    "query_recall_at_20": 1.0,
+    "evidence_recall_at_20": 1.0,
+    "precision_at_20": 0.1392857143,
+    "mrr": 0.7797619048,
+    "contamination_at_3": 0.0,
+    "lexical_critical_success": 1.0,
+    "holdout_evidence_recall_at_20": 1.0,
+    "holdout_mrr": 1.0,
+    "passed": true
+  },
+  "alternatives": {
+    "vector_0.5_lexical_0.5": {
+      "evidence_recall_at_20": 1.0,
+      "precision_at_20": 0.1464285714,
+      "mrr": 0.7673992674
+    },
+    "selection_reason": "개발 세트에서 Recall@20 1.0을 유지한 후보 중 MRR이 가장 높은 0.4/0.6을 선택하고 Q11-Q14 홀드아웃으로 재검증했다."
+  }
+}

@@ -9,6 +9,7 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- =====================================================================
 -- 네임스페이스 분리 (2026-07-31)
@@ -619,6 +620,13 @@ CREATE TABLE chunk (
     heading_path    TEXT[] NOT NULL DEFAULT '{}',
     chunker_ver     VARCHAR(30)
 );
+
+-- 대화 문서 검색의 lexical 후보를 빠르게 좁힌다. 원문을 별도 복제하지 않고
+-- 청킹 문맥이 붙은 search_text 하나를 전문검색·부분어절 검색에 함께 쓴다.
+CREATE INDEX idx_chunk_search_text_fts
+    ON chunk USING GIN (to_tsvector('simple', search_text));
+CREATE INDEX idx_chunk_search_text_trgm
+    ON chunk USING GIN (search_text gin_trgm_ops);
 
 -- CHUNK와 1:1인 pgvector 검색 인덱스.
 -- FK 제약은 사용하지 않으며 chunk_id 존재 여부는 적재 코드에서 검증한다.
