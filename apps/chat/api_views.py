@@ -35,7 +35,7 @@ from backend.db.errors import (
 )
 from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
-from services.agent_runtime.sensitive_text import mask_sensitive
+from services.agent_runtime.sensitive_text import mask_for_storage, mask_sensitive
 from services.agent_runtime.skills.invocation import (
     build_invocation_input,
     parse_invocation,
@@ -235,13 +235,23 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
         applied_skill: dict[str, str] | None = None
-        # 2026-08-26 — 마스킹은 `SensitiveInputMaskMiddleware`(그래프 안,
-        # `middleware/sensitive_input.py`)가 한다. 예전엔 여기서
-        # `mask_sensitive(text)`를 직접 불러 `model_input`을 만들었지만,
-        # 이제 `model_input`은 **원문 그대로** 그래프에 넘긴다 — 미들웨어가
-        # `before_model`에서 매 모델 호출 직전에 가린다. **저장은 항상
-        # 원문 그대로다** — 이건 "모델에게 전달되면 안 된다"는 요구지
-        # "사용자 자신도 못 보게 하라"는 요구가 아니다.
+        # 2026-08-26 — 모델에게 나가는 값의 마스킹은 `SensitiveInputMaskMiddleware`
+        # (그래프 안, `middleware/sensitive_input.py`)가 한다. `model_input`은
+        # **원문 그대로** 그래프에 넘긴다 — 미들웨어가 `before_model`에서 매
+        # 모델 호출 직전에 가린다. 가드레일·스킬 호출 파싱도 원문이 필요하므로
+        # `text` 자체는 이 시점까지 원문을 유지한다.
+        #
+        # 2026-08-27 — **저장은 다르다.** DB에 쓰는 값은 아래 `ChatMessageRepository
+        # .append()` 직전에 `mask_for_storage()`로 한 번 더 가린다(`text` 자체는
+        # 안 바꾼다 — `model_input` 계산에 원문이 필요하다). 예전엔 "저장은 항상
+        # 원문 그대로"였다(화면이 사용자 발화를 그대로 보여줘야 한다는 원칙) —
+        # 그런데 그 말은 채팅에 실제 API 키를 붙여넣으면 그 값이 DB에 평문으로
+        # 영구히 남는다는 뜻이었다. LLM에게 안 보내는 것과 DB 자체에 안 남기는
+        # 것은 다른 문제다(백업·로그·DB 접근 권한이 있는 운영자는 여전히 볼 수
+        # 있고, 키가 유효하면 레코드 하나가 곧 작동하는 크리덴셜이다) — 그래서
+        # credential·PII는 저장 시점부터 가린다. 권한/보안 *서술*(`AUTHORITY_
+        # KEYWORDS`)은 값이 아니라 사용자가 무엇을 물었는지의 기록이라 이력에는
+        # 남긴다(`mask_for_storage()` docstring 참고).
         model_input = text
 
         try:
@@ -338,14 +348,15 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 
             # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
             # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
-            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 여기 저장하는
-            # `text`는 원문이다 — 화면이 사용자 자신의 발화를 그대로 보여줘야
-            # 하고, 마스킹은 모델에게 나가는 값에만 적용한다.
+            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 저장하는 값은
+            # `mask_for_storage(text)`다 — credential·PII는 DB에도 영구히
+            # 남기지 않는다(위 `model_input` 주석 참고). `model_input`은 이
+            # 마스킹과 무관하게 원문 `text`를 그대로 쓴다.
             ChatMessageRepository.append(
                 session_id=session_id,
                 account_id=account_id,
                 role="user",
-                content={"type": "text", "text": text},
+                content={"type": "text", "text": mask_for_storage(text)},
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)

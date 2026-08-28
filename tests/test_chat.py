@@ -1791,12 +1791,16 @@ class PiiMaskingTests(SimpleTestCase):
     이 클래스는 "그래프에 뭐가 들어가는가"(여기)와 "그 안에서 가려지는가"
     (미들웨어 테스트)가 분리됐다는 걸 보여주는 자리로 남긴다.
 
-    **저장은 여전히 원문 그대로** 다 — 화면은 사용자 자신이 뭘 썼는지
-    그대로 봐야 한다. `suggest_title()`용 `question`만 그래프를 안 거치므로
-    `api_views.py`가 지금도 직접 가린다.
+    **2026-08-27부터 저장은 다르다** — `ChatMessageRepository.append()`
+    직전에 `mask_for_storage()`(credential+PII, 권한 서술 제외)로 한 번 더
+    가린다. `model_input`/`conversation_messages`(그래프로 가는 값)는 여전히
+    원문이다 — 저장 마스킹과 무관하게 `SensitiveInputMaskMiddleware`가
+    모델 호출 직전에 매번 가린다. `suggest_title()`용 `question`만 그래프를
+    안 거치므로 `api_views.py`가 지금도 직접 가린다.
     """
 
     SENSITIVE = "제 전화번호는 010-1234-5678이에요"
+    CREDENTIAL = "제 API 키는 sk-proj-abcdefghijklmnopqrstuvwx예요"
 
     def test_이번_턴_발화는_원문_그대로_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor
@@ -1820,11 +1824,11 @@ class PiiMaskingTests(SimpleTestCase):
         user_input = mock_executor.run.call_args.kwargs["user_input"]
         self.assertEqual(user_input, self.SENSITIVE)
 
-    def test_저장은_원문_그대로_한다(
+    def test_저장은_credential과_PII를_가린다(
         self, sessions, messages, accounts, _title, build_executor
     ):
-        """화면은 사용자 자신의 발화를 그대로 봐야 한다 — 마스킹은 모델
-        입력에만 적용하고 저장에는 적용하지 않는다."""
+        """2026-08-27 — DB에 쓰는 값은 `mask_for_storage()`를 거친다. 아직
+        회수되지 않은 API 키가 DB에 평문으로 영구히 남는 걸 막는다."""
 
         sessions.get.return_value = SESSION
         messages.list_for_session.return_value = []
@@ -1842,7 +1846,57 @@ class PiiMaskingTests(SimpleTestCase):
         user_write = next(
             call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
         )
-        self.assertEqual(user_write["content"]["text"], self.SENSITIVE)
+        self.assertNotIn("010-1234-5678", user_write["content"]["text"])
+        self.assertIn("[가려짐]", user_write["content"]["text"])
+
+    def test_저장은_권한_서술은_안_가린다(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """권한/보안 *서술*은 값이 아니라 사용자가 무엇을 물었는지의 기록이라
+        이력에는 남긴다 — `mask_for_storage()`가 `AUTHORITY_KEYWORDS`는
+        빼는 이유(`sensitive_text.py` docstring)."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+        text = "관리자 권한을 어떻게 받나요?"
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": text},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_write = next(
+            call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
+        )
+        self.assertEqual(user_write["content"]["text"], text)
+
+    def test_저장에서_가려도_모델_입력은_원문이다(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """저장 마스킹과 모델 입력 마스킹은 별개 경로다 — 저장을 가려도
+        `model_input`은 여전히 원문이고(`SensitiveInputMaskMiddleware`가
+        따로 가린다), 이중으로 가려지지 않는다."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.CREDENTIAL},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_input = mock_executor.run.call_args.kwargs["user_input"]
+        self.assertEqual(user_input, self.CREDENTIAL)
 
     def test_이력_재전송도_원문_그대로_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor
