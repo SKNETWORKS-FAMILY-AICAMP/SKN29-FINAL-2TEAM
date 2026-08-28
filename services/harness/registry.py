@@ -48,7 +48,7 @@ from backend.services import storage
 from backend.services.storage import STORAGE_ERRORS
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_intake import sync_drive_changes
-from services.document_export import build_docx, build_xlsx
+from services.document_export import build_docx, build_xlsx, validate_document_spec
 from services.builtin_tools.calculation import calculate
 from services.builtin_tools.common.errors import BuiltinToolError
 from services.builtin_tools.data import check_data_quality, compare_files, transform_table
@@ -826,7 +826,15 @@ def _table_export(
     }
 
 
-def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any]:
+def _document_create(
+    *,
+    account_id: str,
+    title: str,
+    body: str = "",
+    template_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    blocks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """글 한 편을 워드 파일(.docx)로 만들어 **「내 파일」에 넣는다.**
 
     `table_export` 와 같은 자리·같은 규칙이다(`_store_generated`). 다른 것은
@@ -837,10 +845,25 @@ def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any
     따른다(`document_export/docx.py` 모듈 주석).
     """
 
-    if not (body or "").strip():
-        raise ToolInputError("본문이 비어 있습니다. 문서에 담을 내용을 먼저 정해 주세요.")
+    if not (body or "").strip() and not blocks:
+        raise ToolInputError("본문 또는 구조화 블록이 비어 있습니다. 문서에 담을 내용을 먼저 정해 주세요.")
+    try:
+        validate_document_spec(
+            body=body,
+            template_id=template_id,
+            metadata=metadata,
+            blocks=blocks,
+        )
+    except ValueError as exc:
+        raise ToolInputError(str(exc)) from exc
 
-    data = build_docx(title=title, body=body)
+    data = build_docx(
+        title=title,
+        body=body,
+        template_id=template_id,
+        metadata=metadata,
+        blocks=blocks,
+    )
     doc_id, file_name = _store_generated(
         account_id=account_id, title=title, suffix=".docx", mime_type=_DOCX_MIME, data=data
     )
@@ -1986,14 +2009,21 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "표는 이 도구가 만들어 주지 않는다 — 다른 도구(task_list·workload_report·"
             "jira_get_issues 등)로 먼저 값을 얻은 뒤, 그 값을 `columns` 와 `rows` 로 "
             "직접 옮겨 넘긴다. **값을 지어내거나 바꾸지 않는다** — 모르는 칸은 비운다. "
-            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다."
+            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다. 출처를 표에 넣을 때 "
+            "근거에 실제 URL이 있다면 출처 셀을 `[출처명](https://원문-주소)` 형식으로 넘겨 "
+            "출처명이 클릭 가능한 링크로 남게 한다. **링크 보존만을 위한 별도 URL 행이나 URL 열은 "
+            "추가하지 않는다.** URL을 출처명으로 바꾸거나 추측해서 만들지 않는다."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "표 제목. 시트 이름과 파일 이름에 쓴다(예: 「업무 목록」)",
+                    "description": (
+                        "표 제목. 시트 이름과 파일 이름에 쓴다. 사용자가 이름을 지정했다면 "
+                        "그 이름을 보존하고, 지정하지 않았다면 현재 요청의 결과물을 대표하는 "
+                        "짧은 명사형 제목을 쓴다(예: 「주간 업무 현황」). 날짜와 확장자는 넣지 않는다"
+                    ),
                 },
                 "columns": {
                     "type": "array",
@@ -2020,9 +2050,12 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "글 한 편을 워드 파일(.docx)로 만들어 사용자의 「내 파일」에 저장한다. "
             "「워드로 정리해 줘」·「문서로 만들어 줘」·「보고서로 뽑아 줘」처럼 "
             "**결과를 문서 파일로 달라고 할 때** 쓴다. 회의록 정리·요약본·보고서가 이것이다. "
-            "`body` 는 마크다운으로 적는다 — `#`~`###` 제목, `- ` 목록, `1. ` 번호 목록, "
-            "`**굵게**` 만 문서에 반영되고 나머지 문법은 글자 그대로 남으니 쓰지 않는다. "
-            "**표가 주된 내용이면 이 도구가 아니라 table_export 로 엑셀을 만든다.** "
+            "간단한 글은 기존처럼 `body`에 제한된 마크다운으로 적는다. 업무보고서처럼 구조가 "
+            "중요하면 `template_id=business_report`, `metadata`, `blocks`를 사용한다. 구조화 블록은 "
+            "제목·문단·목록·안내·실제 Word 표를 지원한다. **표 자체가 결과물이면 document_create의 "
+            "표 블록이 아니라 table_export로 Excel을 만든다.** "
+            "본문·목록·표에 출처를 적을 때 실제 URL이 있으면 `[출처명](https://원문-주소)`로 넘겨 "
+            "Word에서도 출처 이름을 유지한 채 클릭할 수 있게 한다. URL은 추측해서 만들지 않는다. "
             "문서에 담을 내용을 지어내지 않는다 — 근거가 없는 항목은 비우거나 빼고 쓴다."
         ),
         input_schema={
@@ -2030,14 +2063,57 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "문서 제목. 파일 이름에도 쓴다(예: 「2026-08-26 회의록」)",
+                    "description": (
+                        "문서 제목. 문서 본문 제목과 파일 이름에 함께 쓴다. 사용자가 이름을 "
+                        "지정했다면 그 이름을 보존하고, 지정하지 않았다면 현재 대화의 결과물을 "
+                        "대표하는 짧은 명사형 제목을 쓴다(예: 「프로젝트 주간 회의록」). "
+                        "날짜와 확장자는 넣지 않는다"
+                    ),
                 },
                 "body": {
                     "type": "string",
-                    "description": "본문. 위에 적힌 마크다운 문법만 쓴다",
+                    "description": "간단한 본문. blocks를 쓰지 않을 때 사용한다",
+                },
+                "template_id": {
+                    "type": "string",
+                    "enum": ["business_report"],
+                    "description": "내장 문서 양식. 현재는 한국어 업무보고서만 지원한다",
+                },
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "department": {"type": "string"},
+                        "author": {"type": "string"},
+                        "date": {"type": "string"},
+                        "security": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                    "description": "보고서 표지 아래에 표시할 문서 정보",
+                },
+                "blocks": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "description": "문서 순서대로 배치할 구조화 블록. body 대신 사용한다",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["heading", "paragraph", "bullet_list", "number_list", "note", "table", "page_break"],
+                            },
+                            "text": {"type": "string"},
+                            "level": {"type": "integer", "minimum": 1, "maximum": 3},
+                            "label": {"type": "string"},
+                            "items": {"type": "array", "items": {"type": "string"}},
+                            "headers": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+                            "rows": {"type": "array", "items": {"type": "array"}, "maxItems": 200},
+                        },
+                        "required": ["type"],
+                        "additionalProperties": False,
+                    },
                 },
             },
-            "required": ["title", "body"],
+            "required": ["title"],
         },
         handler=_document_create,
         # 사용자의 서재에 파일을 만든다. `table_export` 와 같은 이유로 승인을 받는다.

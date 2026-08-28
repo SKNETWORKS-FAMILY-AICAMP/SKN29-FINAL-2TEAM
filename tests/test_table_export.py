@@ -5,6 +5,7 @@
 """
 
 from io import BytesIO
+from datetime import datetime
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -51,6 +52,37 @@ class BuildXlsxTests(SimpleTestCase):
         # 값 자체는 안 바꾼다. 보이는 글자가 원문과 달라지면 그것도 왜곡이다.
         self.assertEqual(sheet.cell(row=2, column=1).value, "=1+1")
 
+    def test_http_url은_클릭_가능한_하이퍼링크로_남긴다(self):
+        sheet = _sheet(
+            build_xlsx(
+                title="출처",
+                columns=["이름", "URL"],
+                rows=[
+                    ["공식 문서", "https://example.com/docs?q=1"],
+                    ["안전하지 않은 스킴", "javascript:alert(1)"],
+                    ["문장 속 주소", "참고: https://example.com"],
+                ],
+            )
+        )
+
+        self.assertEqual(sheet["B2"].value, "https://example.com/docs?q=1")
+        self.assertEqual(sheet["B2"].hyperlink.target, "https://example.com/docs?q=1")
+        self.assertEqual(sheet["B2"].font.underline, "single")
+        self.assertIsNone(sheet["B3"].hyperlink)
+        self.assertIsNone(sheet["B4"].hyperlink)
+
+    def test_출처명과_http_url을_한_셀의_하이퍼링크로_남긴다(self):
+        sheet = _sheet(
+            build_xlsx(
+                title="출처",
+                columns=["출처"],
+                rows=[["[공식 홈페이지](https://example.com/company)"]],
+            )
+        )
+
+        self.assertEqual(sheet["A2"].value, "공식 홈페이지")
+        self.assertEqual(sheet["A2"].hyperlink.target, "https://example.com/company")
+
     def test_열_수가_안_맞는_행을_머리글에_맞춘다(self):
         sheet = _sheet(
             build_xlsx(
@@ -84,6 +116,28 @@ class BuildXlsxTests(SimpleTestCase):
 
         # bool 은 int 의 하위형이라 순서를 안 지키면 1/0 으로 들어간다.
         self.assertEqual([c.value for c in sheet[2]], ["예", "아니오", None])
+
+    def test_큰_표를_읽기_위한_기본_서식을_적용한다(self):
+        sheet = _sheet(
+            build_xlsx(
+                title="진행 현황",
+                columns=["상태", "시작일", "진행률", "비고"],
+                rows=[["진행 중", "2026-08-28", 0.85, "긴 설명"]],
+            )
+        )
+
+        self.assertEqual(sheet.freeze_panes, "A2")
+        self.assertIsNone(sheet.auto_filter.ref)
+        self.assertEqual(list(sheet.tables), ["ExportedData"])
+        self.assertEqual(sheet.tables["ExportedData"].autoFilter.ref, "A1:D2")
+        self.assertEqual(sheet["A1"].fill.fgColor.rgb, "00243B67")
+        self.assertEqual(sheet["A1"].font.color.rgb, "00FFFFFF")
+        self.assertTrue(sheet.sheet_view.showGridLines)
+
+        self.assertIsInstance(sheet["B2"].value, datetime)
+        self.assertEqual(sheet["B2"].number_format, "yyyy-mm-dd")
+        self.assertEqual(sheet["C2"].number_format, "0%")
+        self.assertTrue(sheet["D2"].alignment.wrap_text)
 
 
 class TableExportToolTests(SimpleTestCase):

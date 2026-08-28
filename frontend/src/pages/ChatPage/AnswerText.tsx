@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentPropsWithoutRef } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import remarkCjkFriendlyGfmStrikethrough from 'remark-cjk-friendly-gfm-strikethrough';
@@ -191,6 +191,7 @@ export function AnswerText({
   searchEnabled = true,
   activeSearchIndex = null,
   registerSearchMatch,
+  afterContent,
 }: {
   text: string;
   sources?: SourceRef[];
@@ -201,6 +202,8 @@ export function AnswerText({
   searchEnabled?: boolean;
   activeSearchIndex?: number | null;
   registerSearchMatch?: (index: number, node: HTMLElement | null) => void;
+  /** 답변 본문과 하단 액션 사이에 놓는 구조화 결과 카드. */
+  afterContent?: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -240,6 +243,7 @@ export function AnswerText({
         >
           {text}
         </Markdown>
+        {afterContent}
       </div>
       <div className={styles.answerFooter}>
         <div className={[styles.answerActions, actionsAlwaysVisible ? styles.answerActionsVisible : ''].filter(Boolean).join(' ')}>
@@ -265,7 +269,7 @@ export function AnswerText({
               <span>출처</span>
             </button>
           )}
-          {durationMs != null && <span>{(durationMs / 1000).toFixed(1)}초</span>}
+          {durationMs != null && <span>{Math.max(1, Math.round(durationMs / 1000))}초</span>}
           {durationMs != null && formatMessageTime(createdAt) && <span aria-hidden="true">·</span>}
           {formatMessageTime(createdAt) && (
             <time dateTime={createdAt ?? undefined} title={formatMessageTimeFull(createdAt) ?? undefined}>

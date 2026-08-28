@@ -30,6 +30,100 @@
   overflow: hidden;
 }
 
+/* 스트림 단계가 새 DOM으로 교체되어도 같은 작업의 연속으로 느껴지게 한다.
+   높이를 고정하지 않고 짧은 투명도·이동만 사용하므로 긴 미리보기와 답변의
+   자연스러운 확장을 방해하지 않는다. */
+.stageTransition {
+  animation: stage-transition-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 생각/작업 카드 뒤에 승인 카드가 붙을 때 새 카드의 최종 높이를 한 프레임에
+   점유하지 않고 위에서 아래로 펼친다. 동적 미리보기 높이를 고정값으로 추측하지
+   않기 위해 grid의 0fr → 1fr 전환을 사용한다. */
+.stageReveal {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  animation: stage-reveal-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stageReveal > * {
+  min-height: 0;
+}
+
+@keyframes stage-transition-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes stage-reveal-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+/* 승인 후 생성 단계에서는 큰 미리보기를 즉시 제거하지 않고 같은 자리에서
+   접는다. 그래서 생성 상태와 중단 버튼이 위로 순간 이동하지 않는다. */
+.approvalPreviewStage {
+  display: grid;
+  min-width: 0;
+  transition:
+    grid-template-rows 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 240ms ease;
+}
+
+.approvalPreviewStageExpanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.approvalPreviewStageCollapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.approvalPreviewStageInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.approvalPreviewCollapsedVisible,
+.approvalPreviewCollapsedHidden {
+  transition:
+    max-height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease;
+}
+
+.approvalPreviewCollapsedVisible {
+  max-height: 52px;
+  opacity: 1;
+}
+
+.approvalPreviewCollapsedHidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* 진행 카드와 생각 과정을 한 카드로 합칠 때(2026-08-19) 그 경계선 — 흰 박스
    두 개로 따로 떠 있던 걸 하나로 묶어 달라는 지적으로 추가했다. `.card`의
    flex `gap`이 위아래 여백을 이미 주므로 선만 긋는다. */
@@ -343,27 +437,6 @@
   }
 }
 
-/* 확인 카드가 바쁠 때(승인/거절 처리 중) 즉시 되돌아갈 수 있는 링크형
-   버튼(2026-08-24) — "거절해도 왜 이렇게 오래 걸리지, 뒤로 가기는 없냐"는
-   지적으로 추가. 이미 있는 "중단"(입력창 옆)을 카드 자리에서 바로 쓴다. */
-.abortHint {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 12px;
-  color: var(--color-placeholder);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.abortHint:hover {
-  color: var(--color-heading);
-}
-
 /* ---------- 스킬 생성 되묻기 카드(2026-08-24) ---------- */
 
 .askHead {
@@ -494,10 +567,385 @@
 }
 
 .reasoningStep::before {
-  content: '\203A';
+  content: '';
   flex-shrink: 0;
-  color: var(--color-placeholder);
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: var(--color-placeholder);
+}
+
+.taskStatus {
+  color: var(--color-muted);
+  font-size: 13px;
+  animation: stage-transition-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.approvalActionGroup {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approvalActionGroup .taskRow {
+  border-bottom: 0;
+}
+
+.approvalPreview {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.approvalActionGroup .approvalPreview {
+  margin: 0 var(--space-5) var(--space-4) 42px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.approvalPreviewHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.approvalPreviewHead > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.approvalPreviewHead strong {
+  overflow-wrap: anywhere;
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.approvalPreviewLabel,
+.approvalPreviewMeta,
+.approvalPreviewNote {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.approvalHistory {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface, #fff);
+}
+
+.approvalHistory > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--color-body);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.approvalHistory > summary::-webkit-details-marker {
+  display: none;
+}
+
+.approvalHistory[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.approvalHistory > summary svg {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.approvalHistoryCount {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.approvalHistoryBody {
+  border-top: 1px solid var(--color-border);
+}
+
+.approvalPreviewCollapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-muted);
+  font-size: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  animation: stage-transition-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.approvalHistoryBody .approvalPreview:last-child {
+  border-bottom: 0;
+}
+
+.approvalPreviewMeta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.approvalPreviewTools {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.approvalPreviewAction {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  color: var(--color-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.approvalPreviewAction:hover {
+  background: var(--color-bg);
+  color: var(--color-heading);
+}
+
+.approvalTableWrap {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+}
+
+.approvalTableExpanded {
+  max-height: min(72vh, 760px);
+}
+
+.approvalTableExpanded .approvalTable {
+  font-size: 13px;
+}
+
+.approvalTable {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.approvalTable th,
+.approvalTable td {
+  max-width: 280px;
+  padding: 8px 10px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.approvalTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg);
+  color: var(--color-heading);
   font-weight: 700;
+}
+
+.approvalTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.approvalTable th:last-child,
+.approvalTable td:last-child {
+  border-right: 0;
+}
+
+.approvalDocumentBody {
+  max-height: 280px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  color: var(--color-body);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.approvalDocumentExpanded {
+  max-height: min(72vh, 760px);
+  padding: var(--space-6);
+}
+
+.approvalDocumentLegacy {
+  min-width: 0;
+}
+
+.approvalDocumentLegacy h1,
+.approvalDocumentLegacy h2,
+.approvalDocumentLegacy h3 {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--color-heading);
+  line-height: 1.4;
+}
+
+.approvalDocumentLegacy h1:first-child,
+.approvalDocumentLegacy h2:first-child,
+.approvalDocumentLegacy h3:first-child {
+  margin-top: 0;
+}
+
+.approvalDocumentLegacy h1 {
+  font-size: 18px;
+}
+
+.approvalDocumentLegacy h2 {
+  font-size: 16px;
+}
+
+.approvalDocumentLegacy h3 {
+  font-size: 14px;
+}
+
+.approvalDocumentLegacy a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.approvalDocumentLegacy code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--color-bg);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.approvalDocumentBody p {
+  margin: 0 0 var(--space-3);
+}
+
+.approvalDocumentBody ul,
+.approvalDocumentBody ol {
+  margin: 0 0 var(--space-3);
+  padding-left: 22px;
+}
+
+.approvalDocumentHeading {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--color-heading);
+  font-size: 15px;
+}
+
+.approvalDocumentHeading:first-child {
+  margin-top: 0;
+}
+
+.approvalDocumentMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 var(--space-5);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.approvalDocumentMeta > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approvalDocumentMeta > div:nth-child(odd) {
+  border-right: 1px solid var(--color-border);
+}
+
+.approvalDocumentMeta dt,
+.approvalDocumentMeta dd {
+  margin: 0;
+  padding: 7px 9px;
+}
+
+.approvalDocumentMeta dt {
+  background: var(--color-bg);
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+.approvalDocumentNote {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-bg);
+}
+
+.approvalDocumentTableWrap {
+  margin-bottom: var(--space-4);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.approvalDocumentTableWrap .approvalTable th,
+.approvalDocumentTableWrap .approvalTable td {
+  min-width: 100px;
+}
+
+.approvalDocumentTableWrap .approvalPreviewNote {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.approvalDocumentPageBreak {
+  margin: var(--space-5) 0;
+  border: 0;
+  border-top: 1px dashed var(--color-border);
+}
+
+.approvalPreviewNote {
+  margin: var(--space-2) 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .approvalPreviewHead {
+    flex-direction: column;
+  }
+
+  .approvalActionGroup .approvalPreview {
+    margin-left: var(--space-5);
+  }
+
+  .approvalDocumentMeta {
+    grid-template-columns: 1fr;
+  }
+
+  .approvalDocumentMeta > div:nth-child(odd) {
+    border-right: 0;
+  }
 }
 
 /* 작업 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
@@ -660,6 +1108,20 @@
 .confirmActions > span {
   flex: 1;
   min-width: 0;
+}
+
+/* 중단은 되돌릴 수 없는 오류 버튼만큼 강하게 채우지 않는다. 평소에는 위험
+   동작임을 빨간 윤곽으로 알리고, 사용자가 가리켰을 때만 배경을 더해 의도를
+   재확인하게 한다. */
+.abortButton {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.abortButton:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 /* ---------- 결과 카드 ---------- */
@@ -930,6 +1392,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  animation: stage-transition-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* 실행 중인 마지막 항목만 잔잔하게 훑는다. 상태 아이콘과 문구를 바꾸지 않고
@@ -957,6 +1420,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .stageTransition,
+  .stageReveal,
+  .reasoningPanel,
+  .approvalPreviewCollapsed,
+  .taskStatus {
+    animation: none;
+  }
+
+  .approvalPreviewStage,
+  .approvalPreviewCollapsedVisible,
+  .approvalPreviewCollapsedHidden {
+    transition: none;
+  }
+
   .reasoningPanelRunning .reasoningList > li:last-child::after { animation: none; }
 }
 
@@ -1168,11 +1645,23 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-3);
+  margin-top: 0;
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  animation: generated-files-in 180ms ease-out both;
+}
+
+@keyframes generated-files-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 답변 말풍선 아래에 붙는 첨부라는 것을 제목으로 밝힌다. */
@@ -1251,4 +1740,129 @@
   margin: 0;
   font-size: 12px;
   color: var(--color-muted);
+}
+
+.fileItem {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fileNameButton {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileNameButton:hover .fileName,
+.fileNameButton:focus-visible .fileName {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fileIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fileType {
+  display: grid;
+  min-height: 18px;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--color-muted);
+}
+
+.fileTypeDefault,
+.fileTypeHover {
+  grid-area: 1 / 1;
+  transform: translateY(0);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+
+.fileTypeHover {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+}
+
+.fileDownload {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-body);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: background 150ms ease-out, opacity 150ms ease-out, transform 150ms ease-out;
+}
+
+.fileItem:hover .fileDownload,
+.fileItem:focus-within .fileDownload {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.fileDownload:hover { background: var(--color-surface-muted); }
+
+.fileDownload:disabled { cursor: wait; }
+
+.fileItem:hover .fileTypeDefault,
+.fileItem:focus-within .fileTypeDefault {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+.fileItem:hover .fileTypeHover,
+.fileItem:focus-within .fileTypeHover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.filePreviewSaved {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filesCard {
+    animation: none;
+  }
+
+  .fileTypeDefault,
+  .fileTypeHover,
+  .fileDownload {
+    transition: none;
+  }
+}
+
+@media (hover: none) {
+  .fileDownload {
+    opacity: 1;
+    transform: none;
+  }
 }

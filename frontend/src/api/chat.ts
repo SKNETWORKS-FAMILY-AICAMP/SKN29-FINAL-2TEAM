@@ -29,6 +29,8 @@ export interface ChatMessageContent {
   type: 'text' | 'result' | 'awaiting_confirmation' | 'error';
   text?: string;
   complete?: boolean;
+  /** 서버가 측정할 수 있었던 해당 실행 구간의 처리 시간. */
+  duration_ms?: number;
   /** 에이전트 답에 붙는 이벤트 전체. 화면은 이걸로 카드를 다시 그린다. */
   events?: ChatEvent[];
   tool_ref?: string;
@@ -71,6 +73,131 @@ export interface SourceRef {
   /** 개인 「내 파일」 문서면 그 doc_id. 화면이 이 값으로 파일로 가는 링크를 건다. */
   file_id?: string;
 }
+
+export interface WorkloadUserResult {
+  version: 1;
+  kind: 'workload_report';
+  period_start: string | null;
+  period_end: string | null;
+  workdays: number | null;
+  as_of: string | null;
+  workload_weeks: number | null;
+  people_count: number;
+  people: Array<{
+    name: string | null;
+    job_role: string | null;
+    effective_capacity: number | null;
+    current_allocation: number | null;
+    remaining_capacity: number | null;
+    load_rate: number | null;
+    blocked_reason: string | null;
+  }>;
+  warnings: {
+    missing_estimate_count: number | null;
+    unmapped_assignee_count: number | null;
+    unscheduled_backlog_hours: number | null;
+    limitations: string[];
+  };
+}
+
+export interface AbsenceUserResult {
+  version: 1;
+  kind: 'absence_list';
+  period_start: string | null;
+  period_end: string | null;
+  absence_count: number;
+  absences: Array<{
+    name: string | null;
+    absence_type: string | null;
+    start_at: string | null;
+    end_at: string | null;
+  }>;
+}
+
+export interface JiraIssuesUserResult {
+  version: 1;
+  kind: 'jira_get_issues';
+  project_key: string | null;
+  total: number | null;
+  counts: {
+    to_do: number | null;
+    in_progress: number | null;
+    done: number | null;
+    unknown: number | null;
+  };
+  upcoming: Array<{
+    key: string | null;
+    title: string | null;
+    due: string | null;
+  }>;
+}
+
+export interface CurrentDatetimeUserResult {
+  version: 1;
+  kind: 'current_datetime';
+  date: string | null;
+  time: string | null;
+  timezone: string | null;
+  weekday_kr: string | null;
+}
+
+export interface PeopleListUserResult {
+  version: 1;
+  kind: 'people_list';
+  member_count: number;
+  members: Array<{ name: string | null; job_role: string | null; org_name: string | null }>;
+}
+
+export interface ProjectListUserResult {
+  version: 1;
+  kind: 'project_list';
+  project_count: number;
+  projects: Array<{ name: string | null; status: string | null; progress: number | null }>;
+}
+
+export interface TaskListUserResult {
+  version: 1;
+  kind: 'task_list';
+  task_count: number;
+  tasks: Array<{
+    title: string | null;
+    status: string | null;
+    priority: string | null;
+    due_at: string | null;
+    effort_hours: number | null;
+    required_role: string | null;
+  }>;
+}
+
+export interface DocumentListUserResult {
+  version: 1;
+  kind: 'document_list';
+  document_count: number;
+  documents: Array<{
+    file_name: string | null;
+    project: string | null;
+    role: string | null;
+    search_ready: boolean | null;
+  }>;
+  not_collected_count: number;
+  not_collected: Array<{
+    file_name: string | null;
+    folder: string | null;
+    supported: boolean | null;
+  }>;
+  truncated: boolean;
+  storage_unavailable: boolean;
+}
+
+export type UserToolResult =
+  | WorkloadUserResult
+  | AbsenceUserResult
+  | JiraIssuesUserResult
+  | CurrentDatetimeUserResult
+  | PeopleListUserResult
+  | ProjectListUserResult
+  | TaskListUserResult
+  | DocumentListUserResult;
 
 export type ToolProgressDetail =
   | { type: 'stage'; step: number; total: number; label?: string; intent?: string }
@@ -148,6 +275,8 @@ export type ChatEvent =
       status: 'OK' | 'FAILED';
       /** 도구가 실제로 반환한 값(길이 제한 요약, 2026-08-18). `events.py`의 `_summarize_tool_output()` 참고. */
       output?: string;
+      /** 도구별 허용 필드만 담은 사용자 표시용 결과. 기존 output과 독립적인 선택 계약이다. */
+      user_result?: UserToolResult | null;
       /**
        * 이 호출이 **만들어 낸 파일**(2026-08-26). 도구가 결과에 최상위 `file`
        * 키를 담았을 때만 온다(`events.py`의 `_produced_file()`). 읽기 도구는
