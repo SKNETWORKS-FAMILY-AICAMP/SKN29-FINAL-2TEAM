@@ -1,0 +1,1245 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>7주차 주간 발표 | Halil</title>
+  <style>
+    :root {
+      --navy: #071b47;
+      --blue: #1557ff;
+      --blue-soft: #edf3ff;
+      --ink: #17213a;
+      --muted: #66718a;
+      --line: #dfe5f0;
+      --panel: #f6f8fc;
+      --green: #16a66a;
+      --green-soft: #e7f8f0;
+      --orange: #f59e0b;
+      --white: #fff;
+      --shadow: 0 24px 70px rgba(7, 27, 71, .14);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #e8edf6;
+      color: var(--ink);
+      font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+      word-break: keep-all;
+    }
+
+    button { font: inherit; }
+
+    .deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+
+    .slide {
+      position: absolute;
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      padding: 4.2% 5.2% 4.4%;
+      background: var(--white);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(4%) scale(.985);
+      transition: opacity .28s ease, transform .35s ease;
+      overflow: hidden;
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0) scale(1);
+    }
+
+    .slide::after {
+      content: attr(data-number);
+      position: absolute;
+      right: 4.1%;
+      bottom: 2.5%;
+      color: #9aa5ba;
+      font-size: clamp(10px, .78vw, 16px);
+      font-weight: 700;
+      letter-spacing: .1em;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: .7em;
+      margin: 0 0 .75em;
+      color: var(--blue);
+      font-size: clamp(11px, .82vw, 17px);
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 2.4em;
+      height: 3px;
+      border-radius: 10px;
+      background: var(--blue);
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: .35em;
+      color: var(--navy);
+      font-size: clamp(38px, 4.55vw, 86px);
+      line-height: 1.08;
+      letter-spacing: -.055em;
+    }
+
+    h2 {
+      margin-bottom: .35em;
+      color: var(--navy);
+      font-size: clamp(28px, 3vw, 58px);
+      line-height: 1.16;
+      letter-spacing: -.045em;
+    }
+
+    h3 {
+      margin-bottom: .35em;
+      font-size: clamp(16px, 1.38vw, 28px);
+      line-height: 1.3;
+      letter-spacing: -.025em;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: clamp(14px, 1.25vw, 25px);
+      line-height: 1.55;
+    }
+
+    .title-slide {
+      color: var(--ink);
+      background: var(--white);
+    }
+
+    .title-slide::before {
+      content: "";
+      position: absolute;
+      width: 38%;
+      aspect-ratio: 1;
+      right: -10%;
+      bottom: -30%;
+      border: 2px solid rgba(21,87,255,.08);
+      border-radius: 50%;
+      box-shadow: 0 0 0 5vw rgba(21,87,255,.025), 0 0 0 10vw rgba(21,87,255,.018);
+    }
+
+    .title-slide h1 { color: var(--navy); max-width: 78%; }
+    .title-slide .eyebrow { color: var(--blue); }
+    .title-slide .eyebrow::before { background: var(--blue); }
+    .title-slide .lead { color: var(--muted); max-width: 67%; }
+
+    .title-meta {
+      display: flex;
+      gap: 2em;
+      margin-top: 2.2em;
+      color: var(--muted);
+      font-size: clamp(11px, .95vw, 19px);
+      font-weight: 650;
+    }
+
+    .pillars {
+      position: absolute;
+      left: 5.2%;
+      right: 5.2%;
+      bottom: 8.5%;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.3%;
+    }
+
+    .pillar {
+      min-height: 6.8em;
+      padding: 1.25em 1.35em;
+      border: 1px solid var(--line);
+      border-radius: 1.15em;
+      background: var(--panel);
+    }
+
+    .pillar .num {
+      display: block;
+      margin-bottom: .45em;
+      color: var(--blue);
+      font-size: clamp(10px, .72vw, 15px);
+      font-weight: 900;
+    }
+
+    .pillar strong {
+      display: block;
+      margin-bottom: .25em;
+      color: var(--navy);
+      font-size: clamp(15px, 1.25vw, 25px);
+    }
+
+    .pillar span:last-child {
+      color: var(--muted);
+      font-size: clamp(10px, .78vw, 16px);
+      line-height: 1.45;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 33% 64%;
+      gap: 3%;
+      align-items: stretch;
+      height: 74%;
+      margin-top: 2.1%;
+    }
+
+    .copy-column {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .bullet-list {
+      display: grid;
+      gap: .8em;
+      margin: 1.35em 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .bullet-list li {
+      position: relative;
+      padding-left: 1.4em;
+      color: #424d65;
+      font-size: clamp(12px, 1vw, 20px);
+      line-height: 1.48;
+    }
+
+    .bullet-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: .55em;
+      width: .55em;
+      height: .55em;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 .25em var(--blue-soft);
+    }
+
+    .takeaway {
+      padding: 1em 1.15em;
+      border-left: 4px solid var(--blue);
+      border-radius: .45em .9em .9em .45em;
+      background: var(--blue-soft);
+      color: var(--navy);
+      font-size: clamp(12px, .95vw, 19px);
+      font-weight: 760;
+      line-height: 1.45;
+    }
+
+    .screen {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid #d9e1ee;
+      border-radius: 1.1em;
+      background: #f7f9fc;
+      box-shadow: var(--shadow);
+    }
+
+    .screen img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: white;
+    }
+
+    .screen-label {
+      position: absolute;
+      left: 1.25em;
+      bottom: 1.15em;
+      display: inline-flex;
+      align-items: center;
+      gap: .55em;
+      padding: .62em .85em;
+      border-radius: 999px;
+      background: rgba(7, 27, 71, .92);
+      color: white;
+      font-size: clamp(9px, .72vw, 14px);
+      font-weight: 750;
+      box-shadow: 0 9px 25px rgba(7,27,71,.25);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+      gap: .7em;
+      align-items: center;
+      margin-top: 2.5em;
+    }
+
+    .flow-card {
+      min-height: 8.2em;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 1.25em;
+      border: 1px solid var(--line);
+      border-radius: 1em;
+      background: var(--panel);
+    }
+
+    .flow-card strong {
+      display: block;
+      color: var(--navy);
+      font-size: clamp(14px, 1.22vw, 24px);
+    }
+
+    .flow-card span {
+      display: block;
+      margin-top: .55em;
+      color: var(--muted);
+      font-size: clamp(10px, .8vw, 16px);
+      line-height: 1.45;
+    }
+
+    .flow-card.highlight {
+      border-color: #b9cdfd;
+      background: var(--blue-soft);
+    }
+
+    .arrow {
+      color: #98a7c2;
+      font-size: clamp(18px, 1.7vw, 34px);
+      font-weight: 300;
+    }
+
+    .capability-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.2em;
+      margin-top: 2em;
+    }
+
+    .capability {
+      padding: 1.25em 1.35em;
+      border-top: 4px solid var(--blue);
+      border-radius: .85em;
+      background: #fff;
+      box-shadow: 0 12px 35px rgba(7,27,71,.09);
+    }
+
+    .capability:nth-child(2) { border-color: var(--green); }
+    .capability:nth-child(3) { border-color: var(--orange); }
+    .capability p {
+      margin: .45em 0 0;
+      color: var(--muted);
+      font-size: clamp(10px, .78vw, 16px);
+      line-height: 1.48;
+    }
+
+    .skill-layout {
+      display: grid;
+      grid-template-columns: 56% 41.5%;
+      gap: 2.5%;
+      height: 67%;
+      margin-top: 1.7%;
+    }
+
+    .skill-layout .screen:first-child img { object-position: 50% 50%; }
+    .skill-layout .screen:last-child img { object-position: 50% 50%; }
+
+    .caption-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1em;
+      margin-top: 1.3em;
+    }
+
+    .caption-strip div {
+      padding: .8em 1em;
+      border-radius: .75em;
+      background: var(--panel);
+      color: #4d5870;
+      font-size: clamp(10px, .78vw, 16px);
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .doc-layout {
+      display: grid;
+      grid-template-columns: 25% 72%;
+      gap: 3%;
+      height: 73%;
+      margin-top: 1.8%;
+    }
+
+    .doc-points {
+      display: grid;
+      gap: 1em;
+      align-content: start;
+    }
+
+    .doc-point {
+      padding: 1.15em;
+      border: 1px solid var(--line);
+      border-radius: .9em;
+      background: white;
+    }
+
+    .doc-point strong {
+      display: block;
+      margin-bottom: .35em;
+      color: var(--navy);
+      font-size: clamp(13px, 1.05vw, 21px);
+    }
+
+    .doc-point span {
+      color: var(--muted);
+      font-size: clamp(10px, .78vw, 16px);
+      line-height: 1.5;
+    }
+
+    .next-slide {
+      background: var(--white);
+    }
+
+    .skill-final-layout {
+      display: grid;
+      grid-template-columns: 31% 66%;
+      gap: 3%;
+      height: 68%;
+      margin-top: 1.7%;
+    }
+
+    .mini-flow {
+      display: grid;
+      align-content: center;
+      gap: .42em;
+      padding: 1.1em;
+      border: 1px solid var(--line);
+      border-radius: 1em;
+      background: var(--panel);
+    }
+
+    .mini-step {
+      display: grid;
+      grid-template-columns: 2.15em 1fr;
+      align-items: center;
+      gap: .8em;
+      min-height: 3.45em;
+      padding: .68em .78em;
+      border: 1px solid #d9e2f2;
+      border-radius: .72em;
+      background: white;
+      color: var(--navy);
+      font-size: clamp(10px, .82vw, 17px);
+      font-weight: 780;
+    }
+
+    .mini-step span {
+      display: grid;
+      place-items: center;
+      width: 2.15em;
+      height: 2.15em;
+      border-radius: .65em;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: .86em;
+    }
+
+    .mini-arrow {
+      height: .65em;
+      color: #9aa8c0;
+      font-size: clamp(11px, .9vw, 18px);
+      line-height: .65em;
+      text-align: center;
+    }
+
+    .parser-layout {
+      display: grid;
+      grid-template-columns: 32% 65%;
+      gap: 3%;
+      height: 70%;
+      margin-top: 1.8%;
+    }
+
+    .parser-copy {
+      display: grid;
+      align-content: start;
+      gap: .9em;
+    }
+
+    .parser-point {
+      padding: 1.05em 1.15em;
+      border: 1px solid var(--line);
+      border-radius: .85em;
+      background: #fff;
+    }
+
+    .parser-point strong {
+      display: block;
+      margin-bottom: .28em;
+      color: var(--navy);
+      font-size: clamp(13px, 1.02vw, 21px);
+    }
+
+    .parser-point span {
+      color: var(--muted);
+      font-size: clamp(10px, .77vw, 16px);
+      line-height: 1.48;
+    }
+
+    .quality-layout {
+      display: grid;
+      grid-template-columns: 57% 40%;
+      gap: 3%;
+      height: 68%;
+      margin-top: 2%;
+    }
+
+    .quality-flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: .7em;
+      align-items: center;
+    }
+
+    .quality-step {
+      position: relative;
+      min-height: 9.4em;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 1em;
+      border: 1px solid var(--line);
+      border-radius: .9em;
+      background: var(--panel);
+      text-align: center;
+    }
+
+    .quality-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -.75em;
+      z-index: 2;
+      color: #99a6bd;
+      font-size: clamp(15px, 1.3vw, 25px);
+      transform: translate(50%, -50%);
+    }
+
+    .quality-step strong {
+      color: var(--navy);
+      font-size: clamp(12px, .98vw, 20px);
+      line-height: 1.35;
+    }
+
+    .quality-step span {
+      margin-top: .55em;
+      color: var(--muted);
+      font-size: clamp(9px, .68vw, 14px);
+      line-height: 1.4;
+    }
+
+    .quality-step.focus {
+      border-color: #aac4ff;
+      background: var(--blue-soft);
+    }
+
+    .gate-list {
+      display: grid;
+      align-content: start;
+      gap: .9em;
+    }
+
+    .gate-item {
+      padding: 1em 1.1em;
+      border-left: 4px solid var(--blue);
+      border-radius: .45em .8em .8em .45em;
+      background: var(--panel);
+      color: #445069;
+      font-size: clamp(10px, .8vw, 16px);
+      font-weight: 720;
+      line-height: 1.4;
+    }
+
+    .prompt-matrix {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .72em;
+      align-content: start;
+      padding: 1em;
+      border: 1px solid var(--line);
+      border-radius: .9em;
+      background: var(--panel);
+    }
+
+    .prompt-item {
+      display: grid;
+      grid-template-columns: 4.7em 1fr;
+      gap: .7em;
+      align-items: center;
+      min-height: 3.45em;
+      padding: .68em .8em;
+      border: 1px solid #dfe5f0;
+      border-radius: .65em;
+      background: white;
+    }
+
+    .prompt-item strong {
+      color: var(--blue);
+      font-size: clamp(15px, 1.08vw, 20px);
+    }
+
+    .prompt-item span {
+      color: #59647a;
+      font-size: clamp(14px, .96vw, 18px);
+      line-height: 1.4;
+    }
+
+    .eval-categories {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1em;
+      margin-top: 1.8em;
+    }
+
+    .eval-category {
+      min-height: 8.2em;
+      padding: 1.2em;
+      border: 1px solid var(--line);
+      border-radius: .9em;
+      background: white;
+      box-shadow: 0 10px 28px rgba(7,27,71,.06);
+    }
+
+    .eval-category strong {
+      display: block;
+      margin-bottom: .5em;
+      color: var(--navy);
+      font-size: clamp(13px, 1.05vw, 21px);
+    }
+
+    .eval-category span {
+      color: var(--muted);
+      font-size: clamp(10px, .76vw, 15px);
+      line-height: 1.5;
+    }
+
+    .judge-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.2em;
+      margin-top: 1.35em;
+    }
+
+    .judge-card {
+      padding: 1.1em 1.25em;
+      border-radius: .85em;
+      background: var(--blue-soft);
+    }
+
+    .judge-card:last-child { background: var(--green-soft); }
+    .judge-card strong { color: var(--navy); font-size: clamp(12px, .95vw, 19px); }
+    .judge-card span { color: var(--muted); font-size: clamp(10px, .76vw, 15px); }
+
+    .eval-test-layout {
+      display: grid;
+      grid-template-columns: 59% 38%;
+      gap: 3%;
+      height: 64%;
+      margin-top: 2.4%;
+    }
+
+    .eval-scope-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1em;
+    }
+
+    .scope-row {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 1.25em 1.35em;
+      border: 1px solid var(--line);
+      border-radius: .95em;
+      background: white;
+      box-shadow: 0 10px 30px rgba(7,27,71,.06);
+    }
+
+    .scope-row strong {
+      display: block;
+      margin-bottom: .45em;
+      color: var(--navy);
+      font-size: clamp(16px, 1.24vw, 25px);
+    }
+
+    .scope-row span {
+      color: var(--muted);
+      font-size: clamp(12px, .92vw, 18px);
+      line-height: 1.55;
+    }
+
+    .judge-stack {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 1em;
+    }
+
+    .judge-large {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 1.45em 1.55em;
+      border: 1px solid #bad0ff;
+      border-radius: .95em;
+      background: var(--blue-soft);
+    }
+
+    .judge-large:last-child {
+      border-color: #a9e4c9;
+      background: var(--green-soft);
+    }
+
+    .judge-large .tag {
+      margin-bottom: .5em;
+      color: var(--blue);
+      font-size: clamp(10px, .72vw, 15px);
+      font-weight: 900;
+      letter-spacing: .1em;
+    }
+
+    .judge-large:last-child .tag { color: #0c8b58; }
+
+    .judge-large strong {
+      color: var(--navy);
+      font-size: clamp(17px, 1.3vw, 26px);
+    }
+
+    .judge-large p {
+      margin: .6em 0 0;
+      color: var(--muted);
+      font-size: clamp(12px, .9vw, 18px);
+      line-height: 1.55;
+    }
+
+    .result-layout {
+      display: grid;
+      grid-template-columns: 31% 66%;
+      gap: 3%;
+      height: 68%;
+      margin-top: 1.8%;
+    }
+
+    .score-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 1.7em;
+      border-radius: 1em;
+      background: var(--navy);
+      color: white;
+    }
+
+    .score-panel .score {
+      margin: .08em 0;
+      font-size: clamp(46px, 5.7vw, 108px);
+      font-weight: 900;
+      letter-spacing: -.06em;
+      line-height: 1;
+    }
+
+    .score-panel .score-label {
+      color: #a9c2f5;
+      font-size: clamp(11px, .88vw, 18px);
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+
+    .score-panel .score-detail {
+      margin-top: 1.2em;
+      color: #d3def3;
+      font-size: clamp(13px, 1.05vw, 21px);
+      font-weight: 720;
+      line-height: 1.55;
+    }
+
+    .failure-list {
+      display: grid;
+      align-content: center;
+      gap: 1.15em;
+    }
+
+    .failure-card {
+      padding: 1.25em 1.4em;
+      border: 1px solid #ffd0c7;
+      border-radius: .9em;
+      background: #fff8f6;
+    }
+
+    .failure-card .failure-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1em;
+      margin-bottom: .55em;
+      color: var(--navy);
+      font-size: clamp(13px, 1.02vw, 21px);
+      font-weight: 820;
+    }
+
+    .failure-card .badge {
+      flex: none;
+      color: #c43b2f;
+      font-size: .82em;
+    }
+
+    .failure-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(10px, .78vw, 16px);
+      line-height: 1.5;
+    }
+
+    .end-to-end {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: .75em;
+      margin-top: 2.4em;
+    }
+
+    .next-slide .end-to-end {
+      margin-top: 5.4em;
+    }
+
+    .end-step {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 7.2em;
+      padding: .9em;
+      border: 1px solid var(--line);
+      border-radius: .85em;
+      background: var(--panel);
+      color: var(--navy);
+      font-size: clamp(12px, .96vw, 19px);
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .end-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -.78em;
+      color: #95a3ba;
+      font-size: clamp(15px, 1.25vw, 24px);
+      transform: translateX(50%);
+    }
+
+    .next-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25em;
+      margin-top: 2.2em;
+    }
+
+    .next-card {
+      position: relative;
+      min-height: 8.4em;
+      padding: 1.45em 1.55em 1.35em 4.4em;
+      border: 1px solid var(--line);
+      border-radius: 1em;
+      background: white;
+      box-shadow: 0 10px 30px rgba(7,27,71,.07);
+    }
+
+    .next-card .index {
+      position: absolute;
+      left: 1.25em;
+      top: 1.25em;
+      display: grid;
+      place-items: center;
+      width: 2.2em;
+      height: 2.2em;
+      border-radius: .7em;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: clamp(11px, .9vw, 18px);
+      font-weight: 900;
+    }
+
+    .next-card p {
+      margin: .5em 0 0;
+      color: var(--muted);
+      font-size: clamp(10px, .8vw, 16px);
+      line-height: 1.45;
+    }
+
+    .closing {
+      margin-top: 1.7em;
+      color: var(--navy);
+      font-size: clamp(16px, 1.35vw, 27px);
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .controls {
+      position: fixed;
+      z-index: 20;
+      right: 20px;
+      bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: .25;
+      transition: opacity .2s ease;
+    }
+
+    .controls:hover, .controls:focus-within { opacity: 1; }
+
+    .controls button {
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(255,255,255,.45);
+      border-radius: 10px;
+      background: rgba(7,27,71,.84);
+      color: white;
+      cursor: pointer;
+    }
+
+    .progress {
+      position: fixed;
+      z-index: 21;
+      left: 0;
+      bottom: 0;
+      height: 4px;
+      background: var(--blue);
+      transition: width .25s ease;
+    }
+
+    .notes-panel {
+      position: fixed;
+      z-index: 30;
+      left: 50%;
+      bottom: 18px;
+      width: min(820px, 86vw);
+      max-height: 31vh;
+      overflow: auto;
+      padding: 18px 22px;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 14px;
+      background: rgba(7, 27, 71, .96);
+      color: white;
+      box-shadow: 0 18px 55px rgba(0,0,0,.28);
+      font-size: 15px;
+      line-height: 1.68;
+      transform: translate(-50%, calc(100% + 40px));
+      transition: transform .25s ease;
+    }
+
+    .notes-panel.open { transform: translate(-50%, 0); }
+    .notes-panel strong { color: #8db2ff; }
+
+    .kbd-help {
+      position: fixed;
+      z-index: 12;
+      left: 18px;
+      bottom: 14px;
+      color: #7c879e;
+      font-size: 11px;
+    }
+
+    .speaker-note { display: none; }
+
+    @media print {
+      html, body { overflow: visible; background: white; }
+      .deck { display: block; width: auto; height: auto; }
+      .slide {
+        position: relative;
+        display: block;
+        width: 13.333in;
+        height: 7.5in;
+        page-break-after: always;
+        opacity: 1;
+        transform: none;
+      }
+      .controls, .progress, .notes-panel, .kbd-help { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="7주차 주간 발표 슬라이드">
+    <section class="slide title-slide active" data-number="01 / 08">
+      <p class="eyebrow">Weekly Update · Week 7</p>
+      <h1>기능을 만들고,<br />실제로 검증했습니다</h1>
+      <p class="lead">채팅 화면 · 스킬 · 이미지 파싱 · 에이전트 평가</p>
+      <div class="title-meta">
+        <span>2026.08.24 — 08.28</span>
+        <span>SKN29 FINAL · 2TEAM</span>
+      </div>
+      <div class="pillars">
+        <div class="pillar"><span class="num">01</span><strong>채팅 화면</strong><span>작업 과정과 결과를 한눈에</span></div>
+        <div class="pillar"><span class="num">02</span><strong>스킬 기능</strong><span>한 문장으로 생성하고 검증</span></div>
+        <div class="pillar"><span class="num">03</span><strong>이미지 파싱</strong><span>한국어 설명과 품질 게이트</span></div>
+        <div class="pillar"><span class="num">04</span><strong>에이전트 평가</strong><span>36건 실행으로 정확성과 안전성 확인</span></div>
+      </div>
+      <aside class="speaker-note">
+        안녕하세요. 이번 주는 플랫폼 화면을 개선했고 스킬 기능을 추가했습니다. 또한 이미지가 포함된 PDF의 파싱 품질을 개선하고, 에이전트가 실제 업무에서도 정확하고 안전하게 동작하는지 검증 테스트를 진행했습니다.
+      </aside>
+    </section>
+
+    <section class="slide" data-number="02 / 08">
+      <p class="eyebrow">Platform UX</p>
+      <h2>처리 과정과 결과를<br />채팅 안에서 확인</h2>
+      <div class="split">
+        <div class="copy-column">
+          <div>
+            <p class="lead">여러 단계의 업무도 현재 상태와 완료 결과가 분명하게 보입니다.</p>
+            <ul class="bullet-list">
+              <li>사용한 도구와 단계별 완료 상태</li>
+              <li>생성된 결과물 확인</li>
+              <li>표·목록·출처·복사 기능 개선</li>
+              <li>대화 검색과 날짜별 이동</li>
+            </ul>
+          </div>
+          <div class="takeaway">최종 답변뿐 아니라, 어떻게 처리됐고 무엇이 만들어졌는지까지 보여줍니다.</div>
+        </div>
+        <figure class="screen" style="margin:0">
+          <img src="presentation_assets/chat-ui.png" alt="도구 실행 과정과 생성 파일을 보여주는 채팅 화면" />
+          <figcaption class="screen-label">도구 3회 실행 → 작업 완료 → 결과 생성</figcaption>
+        </figure>
+      </div>
+      <aside class="speaker-note">
+        AI에게 여러 단계의 업무를 요청했을 때 작업 과정과 완료 결과를 한눈에 확인할 수 있도록 채팅 화면을 개선했습니다. 화면처럼 원본과 수정본 비교, 작성자 정보 제거를 요청하면 에이전트가 문서 조회와 파일 비교, 정보 제거 작업을 순서대로 수행합니다. 사용자는 몇 개의 도구가 실행됐는지, 각 작업이 완료됐는지, 어떤 결과물이 만들어졌는지 확인할 수 있습니다. 답변의 표와 목록, 출처 표시를 보완했고 긴 대화의 검색과 날짜 이동도 추가했습니다.
+      </aside>
+    </section>
+
+    <section class="slide" data-number="03 / 08">
+      <p class="eyebrow">Skills</p>
+      <h2>한 문장으로 요청하고,<br />검증을 통과한 스킬만 등록</h2>
+      <div class="skill-final-layout">
+        <div class="mini-flow" aria-label="스킬 등록 검증 흐름">
+          <div class="mini-step"><span>01</span>한 문장 등록 요청</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><span>02</span>형식·구성 검증</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><span>03</span>12개 격리 실행</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><span>04</span>점수 판정</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><span>05</span>통과 시 게시 · 미달 시 미반영</div>
+        </div>
+        <figure class="screen" style="margin:0">
+          <img src="presentation_assets/skill-create.png" alt="만들고 싶은 스킬을 한 문장으로 입력하는 화면" />
+          <figcaption class="screen-label">원하는 업무 방식을 한 문장으로 입력</figcaption>
+        </figure>
+      </div>
+      <aside class="speaker-note">
+        사용자는 복잡한 설정을 작성하지 않고 어떤 스킬을 만들고 싶은지 한 문장으로 입력하면 됩니다. 시스템이 이름과 설명을 구성하고 백그라운드에서 형식과 실행 가능성을 검증합니다. 격리된 환경의 실행 테스트까지 통과한 스킬만 등록됩니다. 등록된 스킬은 활성화하거나 중지할 수 있고 개인이 사용하거나 팀원에게 공유할 수 있습니다.
+      </aside>
+    </section>
+
+    <section class="slide" data-number="04 / 08">
+      <p class="eyebrow">Document Parsing</p>
+      <h2>PDF 속 이미지도<br />검색 가능한 정보로</h2>
+      <div class="parser-layout">
+        <div class="parser-copy">
+          <div class="parser-point"><strong>한국어 VLM 선택</strong><span>영어 중심 기본 모델 대신 한국어가 안정적이고 할루시네이션이 적은 Qwen2.5-VL을 적용했습니다.</span></div>
+          <div class="parser-point"><strong>주변 문맥 함께 제공</strong><span>제목·캡션·앞뒤 문장을 함께 전달해 이미지의 문서 내 의미를 보완합니다.</span></div>
+          <div class="parser-point"><strong>이미지별 추출 기준</strong><span>차트는 축·단위·수치, 장치 구성도는 명칭·기호·연결, 표는 행·열 관계와 주요 값을 추출합니다.</span></div>
+          <div class="takeaway">복잡한 판단보다, 화면에서 확인되는 명확한 정보 추출에 집중했습니다.</div>
+        </div>
+        <figure class="screen" style="margin:0">
+          <img src="presentation_assets/parsing-result.png" alt="장치 구성도 이미지와 생성된 한국어 설명 결과" />
+          <figcaption class="screen-label">원본 이미지 → 한국어 검색용 설명</figcaption>
+        </figure>
+      </div>
+      <aside class="speaker-note">
+        PDF 안의 이미지도 검색에 활용할 수 있도록 이미지 내용을 한국어 설명으로 생성해 문서에 추가했습니다. Docling의 기본 모델은 영어 중심이라, 비교 결과 한국어 출력이 안정적이고 할루시네이션이 적은 Qwen2.5-VL을 선택했습니다. 이미지 주변 제목과 캡션, 앞뒤 문장도 함께 전달해 문맥을 보완했습니다. 차트는 축과 단위, 수치를 보고 장치 구성도는 부품명과 기호, 연결 관계를 확인하며 표는 행과 열의 관계와 주요 값을 추출하도록 이미지 종류별 프롬프트를 적용했습니다.
+      </aside>
+    </section>
+
+    <section class="slide" data-number="05 / 08">
+      <p class="eyebrow">Parsing Quality</p>
+      <h2>생성 결과를 그대로 쓰지 않고,<br />정규화와 검증을 통과한 설명만 저장</h2>
+      <div class="quality-layout">
+        <div class="quality-flow" aria-label="이미지 설명 품질 처리 흐름">
+          <div class="quality-step"><strong>이미지·문맥</strong><span>제목과 주변 문장</span></div>
+          <div class="quality-step"><strong>유형별 추출</strong><span>보이는 정보 중심</span></div>
+          <div class="quality-step focus"><strong>정규화</strong><span>시맨틱 태그 제거</span></div>
+          <div class="quality-step focus"><strong>검증 게이트</strong><span>비정상 출력 검사</span></div>
+          <div class="quality-step"><strong>설명 저장</strong><span>통과 결과만 반영</span></div>
+        </div>
+        <div class="gate-list">
+          <div class="gate-item">같은 문장이 반복되는가?</div>
+          <div class="gate-item">다른 언어가 비정상적으로 출력됐는가?</div>
+          <div class="gate-item">프롬프트나 입력 문맥이 노출됐는가?</div>
+          <div class="takeaway">실패한 설명은 검색 데이터에 넣지 않습니다.</div>
+        </div>
+        <div class="prompt-matrix" aria-label="이미지 유형별 추출 항목">
+          <div class="prompt-item"><strong>차트</strong><span>축 · 단위 · 범례 · 주요 값</span></div>
+          <div class="prompt-item"><strong>흐름도</strong><span>노드 · 화살표 · 분기 · 순서</span></div>
+          <div class="prompt-item"><strong>장치 도면</strong><span>부품명 · 기호 · 치수 · 연결</span></div>
+          <div class="prompt-item"><strong>화면 캡처</strong><span>메뉴 · 버튼 · 입력값 · 상태</span></div>
+          <div class="prompt-item"><strong>지도</strong><span>지명 · 범례 · 경계 · 경로</span></div>
+          <div class="prompt-item"><strong>사진</strong><span>피사체 · 행동 · 배경 · 라벨</span></div>
+          <div class="prompt-item"><strong>화학 구조</strong><span>원자 · 결합 · 작용기 · 반응</span></div>
+          <div class="prompt-item"><strong>표</strong><span>행 · 열 · 단위 · 주요 값</span></div>
+          <div class="prompt-item"><strong>기타</strong><span>글자 · 위치 · 연결 관계</span></div>
+        </div>
+      </div>
+      <aside class="speaker-note">
+        VLM은 복잡한 판단을 요구할수록 이미지에 없는 내용을 만드는 경향이 있어, 직접 확인되는 수치와 명칭, 연결 관계 중심으로 출력 범위를 제한했습니다. 또 모델의 시맨틱 태그와 불필요한 형식이 결과에 섞이는 문제가 있어 저장 전에 제거하고 형식을 정규화했습니다. 그 뒤에도 할루시네이션이 남을 수 있어 검증 게이트를 추가했습니다. 문장 반복, 비정상적인 다른 언어 출력, 프롬프트나 입력 문맥 노출을 검사하고 통과한 설명만 최종 이미지 디스크립션에 넣습니다.
+      </aside>
+    </section>
+
+    <section class="slide" data-number="06 / 08">
+      <p class="eyebrow">Agent Evaluation</p>
+      <h2>에이전트 검증 테스트</h2>
+      <p class="lead">답변의 정확성부터 권한·승인·장애 대응까지 실제 업무 시나리오로 확인했습니다.</p>
+      <div class="eval-test-layout">
+        <div class="eval-scope-list">
+          <div class="scope-row"><strong>업무 정확성</strong><span>여러 문서의 정보 종합, 담당자 추천, 플랫폼 업무와 Jira 대조</span></div>
+          <div class="scope-row"><strong>보안</strong><span>문서 속 프롬프트 인젝션 방어, 다른 팀 정보와 민감정보 유출 방지</span></div>
+          <div class="scope-row"><strong>사용자 통제</strong><span>근거가 부족하면 판단을 유보하고, 승인 거절 시 실제 실행을 중단</span></div>
+          <div class="scope-row"><strong>장애 대응</strong><span>일시 오류는 정해진 범위에서 재시도하고, 지속 오류는 실패 상태를 정확히 안내</span></div>
+        </div>
+        <div class="judge-stack">
+          <div class="judge-large">
+            <span class="tag">EXECUTION RECORD</span>
+            <strong>규칙 기반 판정</strong>
+            <p>필요한 도구를 호출했는지, 권한을 넘지 않았는지, 외부 시스템이 실제로 변경됐는지 확인합니다.</p>
+          </div>
+          <div class="judge-large">
+            <span class="tag">ANSWER QUALITY</span>
+            <strong>AI 평가 모델 판정</strong>
+            <p>답변이 문서 근거와 일치하는지, 확인되지 않은 내용을 사실처럼 단정하지 않았는지 평가합니다.</p>
+          </div>
+        </div>
+      </div>
+      <aside class="speaker-note">
+        에이전트 평가는 실제 업무 상황을 시나리오로 구성했습니다. 문서 기반 업무의 정확성, 프롬프트 인젝션과 정보 유출 방어, 사용자 승인 처리, 도구 장애 대응을 확인했습니다. 도구 호출이나 권한 위반, 외부 시스템 변경처럼 실행 기록으로 확인할 수 있는 항목은 규칙으로 판정했습니다. 답변이 문서 근거와 일치하는지, 확인되지 않은 내용을 단정하지 않았는지는 정해진 기준을 사용하는 별도의 AI 평가 모델로 판정했습니다.
+      </aside>
+    </section>
+
+    <section class="slide" data-number="07 / 08">
+      <p class="eyebrow">Evaluation Result</p>
+      <h2>36건 실행, 32건 통과<br />실패 4건에서 남은 약점을 확인</h2>
+      <div class="result-layout">
+        <div class="score-panel">
+          <span class="score-label">CURRENT PASS RATE</span>
+          <span class="score">88.9%</span>
+          <div class="score-detail">PASS 32<br />FAIL 4<br />프롬프트 인젝션 9건 방어</div>
+        </div>
+        <div class="failure-list">
+          <div class="failure-card">
+            <div class="failure-head"><span>프로젝트 현황 종합</span><span class="badge">0 PASS / 3 FAIL</span></div>
+            <p>문서의 상위 작업 항목과 하위 세부표 관계가 파싱·검색 과정에서 유지되지 않아 필요한 정보를 정확히 연결하지 못했습니다.</p>
+          </div>
+          <div class="failure-card">
+            <div class="failure-head"><span>근거 부족 시 판단 유보</span><span class="badge">2 PASS / 1 FAIL</span></div>
+            <p>확정되지 않은 최종 추적 범위를 요구사항에 적힌 범위와 같다고 단정한 것이 실패 원인이었습니다.</p>
+          </div>
+          <div class="takeaway">기능 실행 여부뿐 아니라, 파싱된 정보의 관계와 답변의 확실성까지 평가했습니다.</div>
+        </div>
+      </div>
+      <aside class="speaker-note">
+        총 36건을 검증한 결과 32건이 통과하고 4건이 실패해 통과율은 88.9퍼센트입니다. 프롬프트 인젝션 공격은 아홉 건 모두 방어했고 정보 유출, 승인 거절, 도구 오류 대응도 확인했습니다. 실패 사례 중 프로젝트 현황 종합은 세 번 모두 실패했습니다. 문서의 상위 작업과 하위 세부표 관계가 파싱과 검색 과정에서 유지되지 않은 것이 원인입니다. 판단 유보 시나리오는 세 번 중 한 번 실패했습니다. 확인할 수 없는 정보는 유보했지만 아직 확정되지 않은 추적 범위를 단정했습니다.
+      </aside>
+    </section>
+
+    <section class="slide next-slide" data-number="08 / 08">
+      <p class="eyebrow">Next</p>
+      <h2>실제 파싱 결과를 연결해<br />전체 과정을 검증합니다</h2>
+      <div class="end-to-end" aria-label="다음 단계 전체 검증 흐름">
+        <div class="end-step">실제 PDF</div>
+        <div class="end-step">파싱·이미지 설명</div>
+        <div class="end-step">청킹</div>
+        <div class="end-step">리트리버 검색</div>
+        <div class="end-step">에이전트 답변</div>
+        <div class="end-step">전체 과정 평가</div>
+      </div>
+      <div class="caption-strip" style="margin-top:2em">
+        <div>QA 테스트</div>
+        <div>파싱 성능 평가</div>
+        <div>UI/UX 고도화</div>
+      </div>
+      <aside class="speaker-note">
+        다음에는 실제 파싱 결과를 평가 과정에 연결합니다. 실제 PDF를 파싱해 이미지 설명과 문서 구조를 반영하고, 청킹과 리트리버 검색을 거쳐 에이전트가 근거 있는 답변을 만드는 전체 과정을 테스트할 예정입니다. 이와 함께 전체 QA 테스트와 실제 문서 기반 파싱 성능 평가, 사용자 피드백을 반영한 UI와 UX 고도화를 진행하겠습니다. 이상입니다.
+      </aside>
+    </section>
+  </main>
+
+  <div class="kbd-help">← → 이동 · N 발표자 노트 · F 전체화면</div>
+  <div class="progress" aria-hidden="true"></div>
+  <div class="controls" aria-label="슬라이드 조작">
+    <button id="prev" type="button" aria-label="이전 슬라이드">←</button>
+    <button id="notes" type="button" aria-label="발표자 노트">N</button>
+    <button id="full" type="button" aria-label="전체 화면">⛶</button>
+    <button id="next" type="button" aria-label="다음 슬라이드">→</button>
+  </div>
+  <div class="notes-panel" aria-live="polite"></div>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const progress = document.querySelector('.progress');
+    const notesPanel = document.querySelector('.notes-panel');
+    let current = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+
+    function render() {
+      slides.forEach((slide, index) => slide.classList.toggle('active', index === current));
+      progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+      location.hash = String(current + 1);
+      const note = slides[current].querySelector('.speaker-note');
+      notesPanel.innerHTML = `<strong>발표자 노트 ${current + 1}/${slides.length}</strong><br>${note ? note.innerHTML : ''}`;
+    }
+
+    function move(delta) {
+      current = Math.max(0, Math.min(slides.length - 1, current + delta));
+      render();
+    }
+
+    function toggleNotes() { notesPanel.classList.toggle('open'); }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    }
+
+    document.querySelector('#prev').addEventListener('click', () => move(-1));
+    document.querySelector('#next').addEventListener('click', () => move(1));
+    document.querySelector('#notes').addEventListener('click', toggleNotes);
+    document.querySelector('#full').addEventListener('click', toggleFullscreen);
+
+    document.addEventListener('keydown', (event) => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); move(1); }
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); move(-1); }
+      if (event.key.toLowerCase() === 'n') toggleNotes();
+      if (event.key.toLowerCase() === 'f') toggleFullscreen();
+      if (event.key === 'Home') { current = 0; render(); }
+      if (event.key === 'End') { current = slides.length - 1; render(); }
+    });
+
+    window.addEventListener('hashchange', () => {
+      const target = Number(location.hash.slice(1)) - 1;
+      if (Number.isInteger(target) && target >= 0 && target < slides.length && target !== current) {
+        current = target;
+        render();
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>
