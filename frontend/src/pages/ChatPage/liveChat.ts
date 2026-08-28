@@ -7,6 +7,9 @@ import type {
   TaskExtractionPayload,
 } from '../../api/chat';
 import type {
+  ApprovalAction,
+  ApprovalPreview,
+  DocumentPreviewBlock,
   CreatedIssue,
   Evidence,
   ExtractedTask,
@@ -32,6 +35,122 @@ export const ASK_FOLLOWUP_TOOL_NAME = 'skill_creator_ask_followup';
 export const SKILL_REGISTER_TOOL_NAME = 'skill_register';
 
 export const JIRA_CREATE_ISSUES_TOOL_NAME = 'jira_create_issues';
+export const TABLE_EXPORT_TOOL_NAME = 'table_export';
+export const DOCUMENT_CREATE_TOOL_NAME = 'document_create';
+
+const APPROVAL_PREVIEW_MAX_COLUMNS = 12;
+const APPROVAL_PREVIEW_MAX_ROWS = 20;
+const APPROVAL_PREVIEW_MAX_CELL_CHARS = 160;
+const APPROVAL_PREVIEW_MAX_BODY_CHARS = 4000;
+const APPROVAL_PREVIEW_MAX_DOCUMENT_BLOCKS = 60;
+
+function previewText(value: unknown, maxLength: number): string {
+  if (value == null) return '';
+  if (!['string', 'number', 'boolean'].includes(typeof value)) return '(구조화된 값)';
+  const text = String(value).replace(/\s+/g, ' ').trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function readDocumentBlocks(value: unknown): { blocks: DocumentPreviewBlock[]; clipped: boolean } {
+  if (!Array.isArray(value)) return { blocks: [], clipped: false };
+  const blocks: DocumentPreviewBlock[] = [];
+  for (const raw of value.slice(0, APPROVAL_PREVIEW_MAX_DOCUMENT_BLOCKS)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const block = raw as Record<string, unknown>;
+    const type = block.type;
+    if (type === 'heading' || type === 'paragraph') {
+      const text = previewText(block.text, 2000);
+      if (text) blocks.push(type === 'heading'
+        ? { type, text, level: Math.max(1, Math.min(Number(block.level) || 2, 3)) }
+        : { type, text });
+    } else if (type === 'bullet_list' || type === 'number_list') {
+      const items = Array.isArray(block.items)
+        ? block.items.slice(0, 30).map((item) => previewText(item, 500)).filter(Boolean)
+        : [];
+      if (items.length) blocks.push({ type, items });
+    } else if (type === 'note') {
+      const text = previewText(block.text, 2000);
+      if (text) blocks.push({ type, text, label: previewText(block.label, 80) });
+    } else if (type === 'table') {
+      const rawHeaders = Array.isArray(block.headers) ? block.headers : [];
+      const rawRows = Array.isArray(block.rows) ? block.rows : [];
+      const headers = rawHeaders.slice(0, APPROVAL_PREVIEW_MAX_COLUMNS)
+        .map((item) => previewText(item, 80) || '(열 이름 없음)');
+      const rows = rawRows.slice(0, APPROVAL_PREVIEW_MAX_ROWS).map((row) => {
+        const cells = Array.isArray(row) ? row : [];
+        return headers.map((_, index) => previewText(cells[index], APPROVAL_PREVIEW_MAX_CELL_CHARS));
+      });
+      if (headers.length) blocks.push({
+        type,
+        headers,
+        rows,
+        totalRows: rawRows.length,
+        clipped: rawRows.length > rows.length || rawHeaders.length > headers.length,
+      });
+    } else if (type === 'page_break') {
+      blocks.push({ type });
+    }
+  }
+  return { blocks, clipped: value.length > APPROVAL_PREVIEW_MAX_DOCUMENT_BLOCKS };
+}
+
+/** 승인 이벤트의 원시 인자 중 사용자에게 안전하고 유용한 필드만 허용한다. */
+function readApprovalPreview(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+): ApprovalPreview | null {
+  if (!args) return null;
+
+  if (toolName === TABLE_EXPORT_TOOL_NAME) {
+    const rawColumns = Array.isArray(args.columns) ? args.columns : [];
+    const rawRows = Array.isArray(args.rows) ? args.rows : [];
+    if (rawColumns.length === 0) return null;
+    const columns = rawColumns
+      .slice(0, APPROVAL_PREVIEW_MAX_COLUMNS)
+      .map((value) => previewText(value, 80) || '(열 이름 없음)');
+    const rows = rawRows.slice(0, APPROVAL_PREVIEW_MAX_ROWS).map((row) => {
+      const cells = Array.isArray(row) ? row : [];
+      return columns.map((_, index) => previewText(cells[index], APPROVAL_PREVIEW_MAX_CELL_CHARS));
+    });
+    return {
+      kind: 'table',
+      title: previewText(args.title, 160) || '제목 없는 표',
+      columns,
+      rows,
+      totalColumns: rawColumns.length,
+      totalRows: rawRows.length,
+      clippedColumns: rawColumns.length > columns.length,
+      clippedRows: rawRows.length > rows.length,
+    };
+  }
+
+  if (toolName === DOCUMENT_CREATE_TOOL_NAME) {
+    const rawBody = typeof args.body === 'string' ? args.body : '';
+    const body = rawBody.slice(0, APPROVAL_PREVIEW_MAX_BODY_CHARS);
+    const structured = readDocumentBlocks(args.blocks);
+    if (!body && structured.blocks.length === 0) return null;
+    const rawMetadata = args.metadata && typeof args.metadata === 'object' && !Array.isArray(args.metadata)
+      ? args.metadata as Record<string, unknown>
+      : {};
+    const metadataLabels: Array<[string, string]> = [
+      ['부서', 'department'], ['작성자', 'author'], ['작성일', 'date'], ['보안 등급', 'security'],
+    ];
+    return {
+      kind: 'document',
+      title: previewText(args.title, 160) || '제목 없는 문서',
+      body,
+      templateId: typeof args.template_id === 'string' ? args.template_id : null,
+      metadata: metadataLabels
+        .map(([label, key]) => ({ label, value: previewText(rawMetadata[key], 160) }))
+        .filter((item) => item.value),
+      blocks: structured.blocks,
+      originalLength: rawBody.length,
+      clipped: rawBody.length > body.length || structured.clipped,
+    };
+  }
+
+  return null;
+}
 
 /**
  * 이벤트 스트림 → 카드가 그릴 상태.
@@ -86,7 +205,7 @@ export interface LiveChat {
     toolName: string;
     runId: string;
     count: number;
-    actions: { name: string; count: number }[];
+    actions: ApprovalAction[];
     /**
      * 2026-08-24, skill-creator 되묻기. 이 턴의 확인 카드가 승인/거절
      * 카드가 아니라 `skill_creator_ask_followup` 질문 카드일 때만 채운다 —
@@ -108,6 +227,13 @@ export interface LiveChat {
     /** 승인 시 적용될 Jira 담당자 처리 방식. accountId 자체는 화면에 노출하지 않는다. */
     jiraAssigneeMode: 'requester' | 'explicit' | 'unassigned' | null;
   } | null;
+  /**
+   * 이 턴에서 사용자가 승인 전에 확인한 파일 내용. 승인·거절 뒤에도 이미
+   * 저장된 awaiting_confirmation 이벤트에서 복원해, 무엇을 보고 결정했는지
+   * 대화 기록 안에서 다시 확인할 수 있게 한다. 원시 인자가 아니라 위에서
+   * 허용 목록으로 정규화한 미리보기만 담는다.
+   */
+  approvalPreviews: ApprovalPreview[];
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
   answer: string;
@@ -185,6 +311,7 @@ export function emptyLive(): LiveChat {
     extraction: null,
     tasks: [],
     confirm: null,
+    approvalPreviews: [],
     created: [],
     failures: [],
     answer: '',
@@ -492,7 +619,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       let args: Record<string, unknown> | undefined;
       // 2026-08-21, 병렬실행 Phase 2 — 첫 호출만 보지 않고 전부 담는다.
       // 화면이 호출별로 승인·거절하려면 목록 전체가 있어야 한다.
-      let actions: { name: string; count: number }[];
+      let actions: ApprovalAction[];
       if ('action_requests' in event) {
         const first = event.action_requests[0];
         toolName = first?.name;
@@ -500,11 +627,16 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         actions = event.action_requests.map((request) => ({
           name: request.name,
           count: countIssues(request.args ?? {}),
+          preview: readApprovalPreview(request.name, request.args),
         }));
       } else {
         toolName = event.tool_name;
         args = event.arguments;
-        actions = [{ name: event.tool_name, count: countIssues(event.arguments ?? {}) }];
+        actions = [{
+          name: event.tool_name,
+          count: countIssues(event.arguments ?? {}),
+          preview: readApprovalPreview(event.tool_name, event.arguments),
+        }];
       }
       // 2026-08-24, skill-creator 되묻기 — 이 턴에 걸린 확인 대상이
       // `skill_creator_ask_followup` 딱 하나뿐일 때만 질문 카드로 그린다.
@@ -532,9 +664,13 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           ? readJiraIssuePreview(args)
           : null;
       const jiraAssigneeMode = jiraPreview ? readJiraAssigneeMode(args) : null;
+      const approvalPreviews = actions
+        .map((action) => action.preview)
+        .filter((preview): preview is ApprovalPreview => preview !== null);
       return {
         ...state,
         running: false,
+        approvalPreviews: [...state.approvalPreviews, ...approvalPreviews],
         confirm: {
           toolName: toolName ?? '확인 필요',
           runId: event.run_id,

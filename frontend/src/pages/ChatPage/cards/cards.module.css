@@ -503,6 +503,355 @@
   background: var(--color-placeholder);
 }
 
+.approvalActionGroup {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approvalActionGroup .taskRow {
+  border-bottom: 0;
+}
+
+.approvalPreview {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.approvalActionGroup .approvalPreview {
+  margin: 0 var(--space-5) var(--space-4) 42px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.approvalPreviewHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.approvalPreviewHead > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.approvalPreviewHead strong {
+  overflow-wrap: anywhere;
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.approvalPreviewLabel,
+.approvalPreviewMeta,
+.approvalPreviewNote {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.approvalHistory {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface, #fff);
+}
+
+.approvalHistory > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--color-body);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.approvalHistory > summary::-webkit-details-marker {
+  display: none;
+}
+
+.approvalHistory[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.approvalHistory > summary svg {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.approvalHistoryCount {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.approvalHistoryBody {
+  border-top: 1px solid var(--color-border);
+}
+
+.approvalHistoryBody .approvalPreview:last-child {
+  border-bottom: 0;
+}
+
+.approvalPreviewMeta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.approvalPreviewTools {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.approvalPreviewAction {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.approvalPreviewAction:hover {
+  background: var(--color-bg);
+  color: var(--color-heading);
+}
+
+.approvalTableWrap {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+}
+
+.approvalTableExpanded {
+  max-height: min(72vh, 760px);
+}
+
+.approvalTableExpanded .approvalTable {
+  font-size: 13px;
+}
+
+.approvalTable {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.approvalTable th,
+.approvalTable td {
+  max-width: 280px;
+  padding: 8px 10px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.approvalTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg);
+  color: var(--color-heading);
+  font-weight: 700;
+}
+
+.approvalTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.approvalTable th:last-child,
+.approvalTable td:last-child {
+  border-right: 0;
+}
+
+.approvalDocumentBody {
+  max-height: 280px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  color: var(--color-body);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.approvalDocumentExpanded {
+  max-height: min(72vh, 760px);
+  padding: var(--space-6);
+}
+
+.approvalDocumentLegacy {
+  min-width: 0;
+}
+
+.approvalDocumentLegacy h1,
+.approvalDocumentLegacy h2,
+.approvalDocumentLegacy h3 {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--color-heading);
+  line-height: 1.4;
+}
+
+.approvalDocumentLegacy h1:first-child,
+.approvalDocumentLegacy h2:first-child,
+.approvalDocumentLegacy h3:first-child {
+  margin-top: 0;
+}
+
+.approvalDocumentLegacy h1 {
+  font-size: 18px;
+}
+
+.approvalDocumentLegacy h2 {
+  font-size: 16px;
+}
+
+.approvalDocumentLegacy h3 {
+  font-size: 14px;
+}
+
+.approvalDocumentLegacy a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.approvalDocumentLegacy code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--color-bg);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.approvalDocumentBody p {
+  margin: 0 0 var(--space-3);
+}
+
+.approvalDocumentBody ul,
+.approvalDocumentBody ol {
+  margin: 0 0 var(--space-3);
+  padding-left: 22px;
+}
+
+.approvalDocumentHeading {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--color-heading);
+  font-size: 15px;
+}
+
+.approvalDocumentHeading:first-child {
+  margin-top: 0;
+}
+
+.approvalDocumentMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 var(--space-5);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.approvalDocumentMeta > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approvalDocumentMeta > div:nth-child(odd) {
+  border-right: 1px solid var(--color-border);
+}
+
+.approvalDocumentMeta dt,
+.approvalDocumentMeta dd {
+  margin: 0;
+  padding: 7px 9px;
+}
+
+.approvalDocumentMeta dt {
+  background: var(--color-bg);
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+.approvalDocumentNote {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-bg);
+}
+
+.approvalDocumentTableWrap {
+  margin-bottom: var(--space-4);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.approvalDocumentTableWrap .approvalTable th,
+.approvalDocumentTableWrap .approvalTable td {
+  min-width: 100px;
+}
+
+.approvalDocumentTableWrap .approvalPreviewNote {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.approvalDocumentPageBreak {
+  margin: var(--space-5) 0;
+  border: 0;
+  border-top: 1px dashed var(--color-border);
+}
+
+.approvalPreviewNote {
+  margin: var(--space-2) 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .approvalPreviewHead {
+    flex-direction: column;
+  }
+
+  .approvalActionGroup .approvalPreview {
+    margin-left: var(--space-5);
+  }
+
+  .approvalDocumentMeta {
+    grid-template-columns: 1fr;
+  }
+
+  .approvalDocumentMeta > div:nth-child(odd) {
+    border-right: 0;
+  }
+}
+
 /* 작업 과정 타임라인 안의 도구 호출·위임 항목(2026-08-18) — reasoningStep과
    같은 로그 줄이지만 문장 대신 상태 아이콘이 그 자리(맨 앞)를 대신한다.
    도구 항목은 호출 줄(.reasoningTool) 아래에 반환값 줄(.reasoningOutput)이
@@ -1176,6 +1525,18 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  animation: generated-files-in 180ms ease-out both;
+}
+
+@keyframes generated-files-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .fileRow {
@@ -1200,4 +1561,25 @@
   margin: 0;
   font-size: 12px;
   color: var(--color-muted);
+}
+
+/* 완료 파일과 승인 당시 내용을 한 카드 안에서 읽는다. 별도 카드처럼 겹겹이
+   보이지 않도록 내부 구분선만 남긴다. */
+.filesCard .approvalHistory {
+  margin-top: var(--space-1);
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.filesCard .approvalHistory > summary {
+  min-height: 38px;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filesCard {
+    animation: none;
+  }
 }

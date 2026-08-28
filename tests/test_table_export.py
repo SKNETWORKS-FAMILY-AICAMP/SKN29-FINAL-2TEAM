@@ -5,6 +5,7 @@
 """
 
 from io import BytesIO
+from datetime import datetime
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -84,6 +85,27 @@ class BuildXlsxTests(SimpleTestCase):
 
         # bool 은 int 의 하위형이라 순서를 안 지키면 1/0 으로 들어간다.
         self.assertEqual([c.value for c in sheet[2]], ["예", "아니오", None])
+
+    def test_큰_표를_읽기_위한_기본_서식을_적용한다(self):
+        sheet = _sheet(
+            build_xlsx(
+                title="진행 현황",
+                columns=["상태", "시작일", "진행률", "비고"],
+                rows=[["진행 중", "2026-08-28", 0.85, "긴 설명"]],
+            )
+        )
+
+        self.assertEqual(sheet.freeze_panes, "A2")
+        self.assertEqual(sheet.auto_filter.ref, "A1:D2")
+        self.assertEqual(list(sheet.tables), ["ExportedData"])
+        self.assertEqual(sheet["A1"].fill.fgColor.rgb, "00243B67")
+        self.assertEqual(sheet["A1"].font.color.rgb, "00FFFFFF")
+        self.assertFalse(sheet.sheet_view.showGridLines)
+
+        self.assertIsInstance(sheet["B2"].value, datetime)
+        self.assertEqual(sheet["B2"].number_format, "yyyy-mm-dd")
+        self.assertEqual(sheet["C2"].number_format, "0%")
+        self.assertTrue(sheet["D2"].alignment.wrap_text)
 
 
 class TableExportToolTests(SimpleTestCase):

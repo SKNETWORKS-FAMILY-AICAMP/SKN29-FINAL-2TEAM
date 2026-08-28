@@ -92,6 +92,49 @@ export interface ProducedFile {
   mimeType: string | null;
 }
 
+export type DocumentPreviewBlock =
+  | { type: 'heading'; text: string; level: number }
+  | { type: 'paragraph'; text: string }
+  | { type: 'bullet_list' | 'number_list'; items: string[] }
+  | { type: 'note'; text: string; label: string }
+  | { type: 'table'; headers: string[]; rows: string[][]; totalRows: number; clipped: boolean }
+  | { type: 'page_break' };
+
+/**
+ * 부작용 도구를 승인하기 전에 보여 주는 사용자용 "생성 예정 내용".
+ * 실제 파일 결과가 아니라 `awaiting_confirmation`의 계획된 입력을 안전한
+ * 표시 모양으로 정규화한 값이다. 지원하지 않는 도구는 `null`로 두어 기존
+ * 승인 카드로 자연스럽게 돌아간다.
+ */
+export type ApprovalPreview =
+  | {
+      kind: 'table';
+      title: string;
+      columns: string[];
+      rows: string[][];
+      totalColumns: number;
+      totalRows: number;
+      clippedColumns: boolean;
+      clippedRows: boolean;
+    }
+  | {
+      kind: 'document';
+      title: string;
+      body: string;
+      templateId: string | null;
+      metadata: { label: string; value: string }[];
+      blocks: DocumentPreviewBlock[];
+      originalLength: number;
+      clipped: boolean;
+    };
+
+/** 한 승인 카드에 함께 걸린 도구 호출 하나. */
+export interface ApprovalAction {
+  name: string;
+  count: number;
+  preview: ApprovalPreview | null;
+}
+
 /** 근거 한 건. `meta`는 「E1 · DC001 · 유사도 87%」처럼 되짚을 정보다. */
 export interface Evidence {
   quote: string;

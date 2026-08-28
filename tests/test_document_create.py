@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from docx import Document
+from docx.oxml.ns import qn
 
 from services.document_export import build_docx
 from services.harness.registry import _DOCX_MIME
@@ -75,6 +76,48 @@ class BuildDocxTests(SimpleTestCase):
 
         self.assertEqual([p.text for p in _doc(data).paragraphs], ["t", "앞뒤"])
 
+    def test_회사_문서용_기본_서식과_페이지_정보를_넣는다(self):
+        doc = _doc(build_docx(title="주간 보고", body="# 요약\n본문"))
+
+        self.assertEqual(doc.core_properties.title, "주간 보고")
+        self.assertEqual(doc.sections[0].header.paragraphs[0].text, "주간 보고")
+        self.assertIn("페이지", doc.sections[0].footer.paragraphs[0].text)
+        self.assertEqual(doc.styles["Normal"].element.rPr.rFonts.get(qn("w:eastAsia")), "맑은 고딕")
+        self.assertEqual(doc.styles["Heading 1"].font.color.rgb, doc.paragraphs[0].runs[0].font.color.rgb)
+        self.assertTrue(doc.styles["Heading 1"].paragraph_format.keep_with_next)
+
+    def test_업무보고서_메타데이터와_구조화_블록을_그린다(self):
+        data = build_docx(
+            title="주간 업무 보고",
+            template_id="business_report",
+            metadata={"department": "개발팀", "author": "임준억", "date": "2026-08-28"},
+            blocks=[
+                {"type": "heading", "level": 1, "text": "핵심 요약"},
+                {"type": "note", "label": "결론", "text": "승인 전에 내용을 확인합니다."},
+                {"type": "bullet_list", "items": ["문서 생성", "미리보기 검증"]},
+                {
+                    "type": "table",
+                    "headers": ["항목", "상태"],
+                    "rows": [["문서 생성", "완료"], ["배포", "대기"]],
+                },
+            ],
+        )
+        doc = _doc(data)
+
+        self.assertEqual(doc.tables[0].cell(0, 0).text, "부서")
+        self.assertEqual(doc.tables[0].cell(0, 1).text, "개발팀")
+        self.assertEqual(doc.tables[1].cell(0, 0).text, "항목")
+        self.assertEqual(doc.tables[1].cell(2, 1).text, "대기")
+        self.assertIn(("Heading 1", "핵심 요약"), _paras(data))
+        self.assertIn(("List Bullet", "문서 생성"), _paras(data))
+
+    def test_구조화_표의_잘못된_행은_거절한다(self):
+        with self.assertRaisesRegex(ValueError, "열 개수"):
+            build_docx(
+                title="잘못된 표",
+                blocks=[{"type": "table", "headers": ["하나"], "rows": [[1, 2]]}],
+            )
+
 
 class DocumentCreateToolTests(SimpleTestCase):
     def _call(self, **kwargs):
@@ -113,3 +156,19 @@ class DocumentCreateToolTests(SimpleTestCase):
             self._call(body="")
         with self.assertRaises(ToolInputError):
             self._call(body="   \n\n  ")
+
+    @patch("services.harness.registry.DocumentRepository.mark_stored")
+    @patch("services.harness.registry.storage.save", return_value="sha256:abc123def4567890")
+    @patch(
+        "services.harness.registry.PersonalDocumentRepository.create_generated",
+        return_value="DC101",
+    )
+    def test_구조화_블록만으로도_문서를_만든다(self, create, save, mark_stored):
+        result = self._call(
+            body="",
+            template_id="business_report",
+            blocks=[{"type": "paragraph", "text": "구조화 본문"}],
+        )
+
+        self.assertEqual(result["file"]["doc_id"], "DC101")
+        self.assertIn("구조화 본문", [p.text for p in _doc(save.call_args.args[1]).paragraphs])

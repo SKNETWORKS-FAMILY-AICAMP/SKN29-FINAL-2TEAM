@@ -96,7 +96,104 @@ export interface WorkloadUserResult {
   };
 }
 
-export type UserToolResult = WorkloadUserResult;
+export interface AbsenceUserResult {
+  version: 1;
+  kind: 'absence_list';
+  period_start: string | null;
+  period_end: string | null;
+  absence_count: number;
+  absences: Array<{
+    name: string | null;
+    absence_type: string | null;
+    start_at: string | null;
+    end_at: string | null;
+  }>;
+}
+
+export interface JiraIssuesUserResult {
+  version: 1;
+  kind: 'jira_get_issues';
+  project_key: string | null;
+  total: number | null;
+  counts: {
+    to_do: number | null;
+    in_progress: number | null;
+    done: number | null;
+    unknown: number | null;
+  };
+  upcoming: Array<{
+    key: string | null;
+    title: string | null;
+    due: string | null;
+  }>;
+}
+
+export interface CurrentDatetimeUserResult {
+  version: 1;
+  kind: 'current_datetime';
+  date: string | null;
+  time: string | null;
+  timezone: string | null;
+  weekday_kr: string | null;
+}
+
+export interface PeopleListUserResult {
+  version: 1;
+  kind: 'people_list';
+  member_count: number;
+  members: Array<{ name: string | null; job_role: string | null; org_name: string | null }>;
+}
+
+export interface ProjectListUserResult {
+  version: 1;
+  kind: 'project_list';
+  project_count: number;
+  projects: Array<{ name: string | null; status: string | null; progress: number | null }>;
+}
+
+export interface TaskListUserResult {
+  version: 1;
+  kind: 'task_list';
+  task_count: number;
+  tasks: Array<{
+    title: string | null;
+    status: string | null;
+    priority: string | null;
+    due_at: string | null;
+    effort_hours: number | null;
+    required_role: string | null;
+  }>;
+}
+
+export interface DocumentListUserResult {
+  version: 1;
+  kind: 'document_list';
+  document_count: number;
+  documents: Array<{
+    file_name: string | null;
+    project: string | null;
+    role: string | null;
+    search_ready: boolean | null;
+  }>;
+  not_collected_count: number;
+  not_collected: Array<{
+    file_name: string | null;
+    folder: string | null;
+    supported: boolean | null;
+  }>;
+  truncated: boolean;
+  storage_unavailable: boolean;
+}
+
+export type UserToolResult =
+  | WorkloadUserResult
+  | AbsenceUserResult
+  | JiraIssuesUserResult
+  | CurrentDatetimeUserResult
+  | PeopleListUserResult
+  | ProjectListUserResult
+  | TaskListUserResult
+  | DocumentListUserResult;
 
 export type ToolProgressDetail =
   | { type: 'stage'; step: number; total: number; label?: string; intent?: string }

@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import Markdown, { type Components } from 'react-markdown';
+import remarkCjkFriendly from 'remark-cjk-friendly';
+import remarkCjkFriendlyGfmStrikethrough from 'remark-cjk-friendly-gfm-strikethrough';
+import remarkGfm from 'remark-gfm';
 import { Button, Checkbox, Icon } from '../../../components';
+import { Modal } from '../../../components/Modal/Modal';
 import type { JiraIssue, JiraIssueEdit, SourceRef } from '../../../api/chat';
 import type {
+  ApprovalAction,
+  ApprovalPreview,
   CreatedIssue,
+  DocumentPreviewBlock,
   ExtractedTask,
   ProducedFile,
   ProgressStep,
@@ -22,6 +30,17 @@ interface UserToolPreview {
   summary: string;
   items: string[];
 }
+
+function safePreviewUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : '';
+}
+
+const documentPreviewMarkdownComponents: Components = {
+  a: ({ href, children, ...props }) => href ? (
+    <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+  ) : <span>{children}</span>,
+  img: ({ alt }) => <span>{alt ? `[이미지: ${alt}]` : '[외부 이미지]'}</span>,
+};
 
 function isWebSearchTool(tool: Extract<TimelineEntry, { kind: 'tool' }>): boolean {
   return /web.?search|웹.?검색/i.test(`${tool.toolRef} ${tool.toolName ?? ''}`);
@@ -130,6 +149,114 @@ function userToolPreview(tool: Extract<TimelineEntry, { kind: 'tool' }>): UserTo
         }),
         ...(result.people_count > 8 ? [`외 ${result.people_count - 8}명`] : []),
         ...warningItems,
+      ],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'absence_list') {
+    const result = tool.userResult;
+    const periodLabel = [result.period_start, result.period_end].filter(Boolean).join(' ~ ');
+    return {
+      summary: `승인된 부재 ${result.absence_count}건을 확인했습니다`,
+      items: [
+        ...(periodLabel ? [`조회 기간 · ${periodLabel}`] : []),
+        ...result.absences.slice(0, 8).map((absence) => [
+          absence.name,
+          absence.absence_type,
+          [absence.start_at, absence.end_at].filter(Boolean).join(' ~ '),
+        ].filter(Boolean).join(' · ')),
+        ...(result.absence_count > 8 ? [`외 ${result.absence_count - 8}건`] : []),
+      ],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'jira_get_issues') {
+    const result = tool.userResult;
+    const countLabel = [
+      result.counts.to_do === null ? null : `할 일 ${result.counts.to_do}`,
+      result.counts.in_progress === null ? null : `진행 중 ${result.counts.in_progress}`,
+      result.counts.done === null ? null : `완료 ${result.counts.done}`,
+    ].filter(Boolean).join(' · ');
+    return {
+      summary: `Jira 이슈 ${result.total ?? 0}건을 확인했습니다`,
+      items: [
+        ...(result.project_key ? [`프로젝트 · ${result.project_key}`] : []),
+        ...(countLabel ? [countLabel] : []),
+        ...result.upcoming.map((issue) => [issue.key, issue.title, issue.due].filter(Boolean).join(' · ')),
+      ],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'current_datetime') {
+    const result = tool.userResult;
+    return {
+      summary: '현재 날짜와 시간을 확인했습니다',
+      items: [
+        [result.date, result.weekday_kr ? `${result.weekday_kr}요일` : null, result.time].filter(Boolean).join(' · '),
+        result.timezone,
+      ].filter((item): item is string => Boolean(item)),
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'people_list') {
+    const result = tool.userResult;
+    return {
+      summary: `팀원 ${result.member_count}명을 확인했습니다`,
+      items: [
+        ...result.members.slice(0, 8).map((member) =>
+          [member.name, member.job_role, member.org_name].filter(Boolean).join(' · '),
+        ),
+        ...(result.member_count > 8 ? [`외 ${result.member_count - 8}명`] : []),
+      ],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'project_list') {
+    const result = tool.userResult;
+    return {
+      summary: `프로젝트 ${result.project_count}개를 확인했습니다`,
+      items: [
+        ...result.projects.slice(0, 8).map((project) =>
+          [project.name, project.status, project.progress === null ? null : `진행률 ${project.progress}%`]
+            .filter(Boolean).join(' · '),
+        ),
+        ...(result.project_count > 8 ? [`외 ${result.project_count - 8}개`] : []),
+      ],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'task_list') {
+    const result = tool.userResult;
+    return {
+      summary: `등록된 업무 ${result.task_count}개를 확인했습니다`,
+      items: [
+        ...result.tasks.slice(0, 8).map((task) =>
+          [
+            task.title,
+            task.status,
+            task.priority,
+            task.due_at ? `마감 ${task.due_at}` : null,
+            task.effort_hours === null ? null : `예상 ${task.effort_hours}시간`,
+          ].filter(Boolean).join(' · '),
+        ),
+        ...(result.task_count > 8 ? [`외 ${result.task_count - 8}개`] : []),
+      ],
+    };
+  }
+  if (tool.status === 'OK' && tool.userResult?.kind === 'document_list') {
+    const result = tool.userResult;
+    const notices = [
+      result.not_collected_count > 0 ? `아직 읽지 않은 저장소 파일 ${result.not_collected_count}개` : null,
+      result.truncated ? '저장소 파일 목록 일부만 표시했습니다' : null,
+      result.storage_unavailable ? '연결된 저장소의 최신 목록은 확인하지 못했습니다' : null,
+    ].filter((item): item is string => Boolean(item));
+    return {
+      summary: `문서 ${result.document_count}개를 확인했습니다`,
+      items: [
+        ...result.documents.slice(0, 8).map((document) =>
+          [
+            document.file_name,
+            document.project,
+            document.role,
+            document.search_ready === false ? '검색 준비 중' : null,
+          ].filter(Boolean).join(' · '),
+        ),
+        ...(result.document_count > 8 ? [`외 ${result.document_count - 8}개`] : []),
+        ...notices,
       ],
     };
   }
@@ -972,7 +1099,7 @@ export interface ConfirmCardProps {
    * 2건 이상일 때만 호출별 줄을 그린다. 1건이면 예전과 똑같이 그린다 —
    * 호출이 하나뿐인데 "호출 1건 중 1건 승인" 같은 줄을 더하는 건 잡음이다.
    */
-  actions?: { name: string; count: number }[];
+  actions?: ApprovalAction[];
   /** 승인할 호출의 인덱스. 여기 없는 호출은 거절로 보낸다. */
   approvedActions?: number[];
   onApprovedActionsChange?: (next: number[]) => void;
@@ -990,6 +1117,179 @@ export interface ConfirmCardProps {
   jiraProjectName?: string | null;
   /** 승인 시 적용될 담당자 처리 방식. Jira accountId 자체는 표시하지 않는다. */
   jiraAssigneeMode?: 'requester' | 'explicit' | 'unassigned' | null;
+}
+
+function DocumentPreviewContent({
+  preview,
+  expanded = false,
+}: {
+  preview: Extract<ApprovalPreview, { kind: 'document' }>;
+  expanded?: boolean;
+}) {
+  function renderBlock(block: DocumentPreviewBlock, index: number) {
+    if (block.type === 'heading') {
+      const Tag = (`h${Math.max(2, Math.min(block.level + 1, 4))}`) as 'h2' | 'h3' | 'h4';
+      return <Tag key={index} className={styles.approvalDocumentHeading}>{block.text}</Tag>;
+    }
+    if (block.type === 'paragraph') return <p key={index}>{block.text}</p>;
+    if (block.type === 'bullet_list' || block.type === 'number_list') {
+      const List = block.type === 'bullet_list' ? 'ul' : 'ol';
+      return <List key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</List>;
+    }
+    if (block.type === 'note') {
+      return <aside key={index} className={styles.approvalDocumentNote}>
+        {block.label ? <strong>{block.label}</strong> : null}<span>{block.text}</span>
+      </aside>;
+    }
+    if (block.type === 'table') {
+      return <div key={index} className={styles.approvalDocumentTableWrap} tabIndex={0}>
+        <table className={styles.approvalTable}>
+          <thead><tr>{block.headers.map((header, headerIndex) => <th key={headerIndex}>{header}</th>)}</tr></thead>
+          <tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>
+            {row.map((cell, cellIndex) => <td key={cellIndex}>{cell || '—'}</td>)}
+          </tr>)}</tbody>
+        </table>
+        {block.clipped ? <p className={styles.approvalPreviewNote}>전체 {block.totalRows}행 중 앞부분만 표시합니다.</p> : null}
+      </div>;
+    }
+    return <hr key={index} className={styles.approvalDocumentPageBreak} />;
+  }
+
+  return <div className={`${styles.approvalDocumentBody} ${expanded ? styles.approvalDocumentExpanded : ''}`}>
+    {preview.metadata.length > 0 ? <dl className={styles.approvalDocumentMeta}>
+      {preview.metadata.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}
+    </dl> : null}
+    {preview.blocks.length > 0
+      ? preview.blocks.map(renderBlock)
+      : <div className={styles.approvalDocumentLegacy}>
+        <Markdown
+          remarkPlugins={[remarkGfm, remarkCjkFriendly, remarkCjkFriendlyGfmStrikethrough]}
+          components={documentPreviewMarkdownComponents}
+          skipHtml
+          urlTransform={safePreviewUrl}
+        >
+          {preview.body || '문서 본문이 비어 있습니다.'}
+        </Markdown>
+      </div>}
+  </div>;
+}
+
+function ApprovalPreviewBlock({
+  preview,
+  archived = false,
+}: {
+  preview: ApprovalPreview;
+  archived?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (preview.kind === 'table') {
+    const table = (
+      <table className={styles.approvalTable}>
+        <thead>
+          <tr>{preview.columns.map((column, index) => <th key={`${column}-${index}`}>{column}</th>)}</tr>
+        </thead>
+        <tbody>
+          {preview.rows.length > 0 ? preview.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, columnIndex) => <td key={columnIndex}>{cell || '—'}</td>)}
+            </tr>
+          )) : (
+            <tr><td colSpan={Math.max(preview.columns.length, 1)}>표에 입력할 행이 없습니다.</td></tr>
+          )}
+        </tbody>
+      </table>
+    );
+    return (
+      <section className={styles.approvalPreview} aria-label="생성 예정 표 미리보기">
+        <div className={styles.approvalPreviewHead}>
+          <span>
+            <span className={styles.approvalPreviewLabel}>{archived ? '승인한 내용' : '생성 예정 내용'}</span>
+            <strong>{preview.title}</strong>
+          </span>
+          <span className={styles.approvalPreviewTools}>
+            <span className={styles.approvalPreviewMeta}>
+              Excel · {preview.totalRows}행 × {preview.totalColumns}열
+            </span>
+            <button
+              type="button"
+              className={styles.approvalPreviewAction}
+              onClick={() => setExpanded(true)}
+              aria-label="표 펼치기"
+              title="표 펼치기"
+            >
+              <Icon name="expand" size={15} />
+            </button>
+          </span>
+        </div>
+        <div className={styles.approvalTableWrap} tabIndex={0}>
+          {table}
+        </div>
+        {preview.clippedRows || preview.clippedColumns ? (
+          <p className={styles.approvalPreviewNote}>
+            승인 판단을 위해 앞부분만 표시합니다. 생성 파일에는 전체 데이터가 사용됩니다.
+          </p>
+        ) : null}
+        <Modal open={expanded} onClose={() => setExpanded(false)} title={preview.title} width={1200}>
+          <div className={`${styles.approvalTableWrap} ${styles.approvalTableExpanded}`} tabIndex={0}>
+            {table}
+          </div>
+        </Modal>
+      </section>
+    );
+  }
+
+  return (
+    <section className={styles.approvalPreview} aria-label="생성 예정 문서 미리보기">
+      <div className={styles.approvalPreviewHead}>
+        <span>
+          <span className={styles.approvalPreviewLabel}>{archived ? '승인한 내용' : '생성 예정 내용'}</span>
+          <strong>{preview.title}</strong>
+        </span>
+        <span className={styles.approvalPreviewTools}>
+          <span className={styles.approvalPreviewMeta}>
+            Word 문서{preview.templateId === 'business_report' ? ' · 업무보고서' : ''}
+          </span>
+          <button
+            type="button"
+            className={styles.approvalPreviewAction}
+            onClick={() => setExpanded(true)}
+            aria-label="문서 크게 보기"
+            title="문서 크게 보기"
+          >
+            <Icon name="expand" size={15} />
+          </button>
+        </span>
+      </div>
+      <DocumentPreviewContent preview={preview} />
+      {preview.clipped ? (
+        <p className={styles.approvalPreviewNote}>
+          승인 판단을 위해 앞부분만 표시합니다. 생성 파일에는 전체 내용이 사용됩니다.
+        </p>
+      ) : null}
+      <Modal open={expanded} onClose={() => setExpanded(false)} title={preview.title} width={1000}>
+        <DocumentPreviewContent preview={preview} expanded />
+      </Modal>
+    </section>
+  );
+}
+
+/** 승인·거절 뒤에도 대화 기록에 남는 접힌 미리보기. */
+export function ApprovalPreviewHistory({ previews }: { previews: ApprovalPreview[] }) {
+  if (previews.length === 0) return null;
+  return (
+    <details className={styles.approvalHistory}>
+      <summary>
+        <Icon name="chevron-right" size={15} color="var(--color-muted)" />
+        <span>생성 내용</span>
+        <span className={styles.approvalHistoryCount}>{previews.length}건</span>
+      </summary>
+      <div className={styles.approvalHistoryBody}>
+        {previews.map((preview, index) => (
+          <ApprovalPreviewBlock key={`${preview.kind}-${preview.title}-${index}`} preview={preview} archived />
+        ))}
+      </div>
+    </details>
+  );
 }
 
 /** ③ 확인 카드 — E2E STEP 6. 승인 전까지 Jira에 아무것도 만들지 않는다. */
@@ -1025,6 +1325,14 @@ export function ConfirmCard({
 
   // 2026-08-21, 병렬실행 Phase 2 — 호출이 2건 이상일 때만 호출별 줄을 그린다.
   const multi = (actions?.length ?? 0) > 1;
+  const singlePreview = !multi ? actions?.[0]?.preview ?? null : null;
+  const hasFilePreview = Boolean(actions?.some((action) => action.preview));
+  const previewKinds = new Set(actions?.map((action) => action.preview?.kind).filter(Boolean));
+  const fileTypeLabel = previewKinds.size > 1
+    ? '여러'
+    : previewKinds.has('table')
+      ? 'Excel'
+      : 'Word';
   const approved = approvedActions ?? [];
   const [editingJira, setEditingJira] = useState(false);
   const [jiraDraft, setJiraDraft] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
@@ -1107,7 +1415,7 @@ export function ConfirmCard({
           <strong className={styles.skillPreviewName}>{skillPreview.name || '(이름 없음)'}</strong>
           <p className={styles.skillPreviewDescription}>{skillPreview.description || '(설명 없음)'}</p>
         </div>
-      ) : subject && !multi ? (
+      ) : subject && !multi && !singlePreview ? (
         <div className={styles.confirmHead}>
           <strong>{subject}</strong>
         </div>
@@ -1235,6 +1543,8 @@ export function ConfirmCard({
         </div>
       ) : null}
 
+      {singlePreview ? <ApprovalPreviewBlock preview={singlePreview} /> : null}
+
       {/* 호출이 여러 개면 무엇이 같이 실행되는지 전부 보여주고, 하나씩 켜고
           끌 수 있게 한다(2026-08-21, 병렬실행 Phase 2). 예전엔 첫 호출만
           보이고 승인은 전부에 일괄 적용돼서, 사용자는 자기가 무엇을
@@ -1257,17 +1567,20 @@ export function ConfirmCard({
             <span className={styles.muted}>실행할 작업 {actions.length}건</span>
           </div>
           {actions.map((action, index) => (
-            <div key={`${action.name}-${index}`} className={styles.taskRow}>
-              <Checkbox
-                checked={approved.includes(index)}
-                onChange={(next) => toggleAction(index, next)}
-              />
-              <div className={styles.taskBody}>
-                <span className={styles.taskTitle}>{action.name}</span>
-                {action.count > 0 ? (
-                  <span className={styles.muted}>대상 {action.count}건</span>
-                ) : null}
+            <div key={`${action.name}-${index}`} className={styles.approvalActionGroup}>
+              <div className={styles.taskRow}>
+                <Checkbox
+                  checked={approved.includes(index)}
+                  onChange={(next) => toggleAction(index, next)}
+                />
+                <div className={styles.taskBody}>
+                  <span className={styles.taskTitle}>{action.name}</span>
+                  {action.count > 0 ? (
+                    <span className={styles.muted}>대상 {action.count}건</span>
+                  ) : null}
+                </div>
               </div>
+              {action.preview ? <ApprovalPreviewBlock preview={action.preview} /> : null}
             </div>
           ))}
         </>
@@ -1305,8 +1618,12 @@ export function ConfirmCard({
               ? isSkillRegister
                 ? '다시 설명할 수 있도록 정리하는 중입니다.'
                 : '거절을 반영하는 중입니다.'
+              : approving && hasFilePreview
+                ? `${fileTypeLabel} 파일을 생성하고 있습니다. 완료되면 ‘내 파일’에 저장됩니다.`
               : jiraPreview
                 ? `승인하면 ${jiraProjectName || '연결된 Jira 프로젝트'}에 이슈 ${appliedJira.length}건을 생성합니다.`
+                : hasFilePreview
+                  ? '승인하면 위 내용으로 파일을 생성해 ‘내 파일’에 저장합니다.'
                 : isSkillRegister
                 ? '등록하기 전까지 저장되지 않습니다. 마음에 들지 않으면 다시 설명해 주세요.'
                 : '승인하기 전까지 아무것도 등록되지 않습니다.'}
@@ -1320,7 +1637,7 @@ export function ConfirmCard({
           {busy && onAbort && (
             <button type="button" className={styles.abortHint} onClick={onAbort}>
               <Icon name="loader" size={13} color="var(--color-placeholder)" spin />
-              {rejecting ? '다시 설명 준비 중…' : '등록하는 중…'} · 눌러서 바로 되돌아가기
+              {rejecting ? '다시 설명 준비 중…' : hasFilePreview ? '파일 생성 중…' : '등록하는 중…'} · 누르면 중단
             </button>
           )}
           {/* ⚠ 업무가 없는 승인(추출을 안 거친 도구)은 고를 것이 없으므로
@@ -1328,7 +1645,7 @@ export function ConfirmCard({
               호출별 승인(multi)일 때는 **전부 거절도 정상 동작**이라 막지
               않는다 — 그건 "아무것도 하지 마"라는 유효한 결정이고, 서버도
               거절 결정을 그대로 받는다(2026-08-21). */}
-          {!multi && onReject ? (
+          {!busy && !multi && onReject ? (
             <Button variant="outline" size="sm" onClick={onReject} disabled={busy || editingJira}>
               {rejecting ? (
                 <>
@@ -1355,6 +1672,8 @@ export function ConfirmCard({
             {approving
               ? jiraPreview
                 ? 'Jira 이슈 생성 중…'
+                : hasFilePreview
+                  ? '파일 생성 중…'
                 : '등록하는 중…'
               : multi && actions
                 ? approved.length === 0
@@ -1364,6 +1683,8 @@ export function ConfirmCard({
                   ? `선택한 ${chosen.length}건 등록`
                   : jiraPreview
                     ? `Jira 이슈 ${appliedJira.length}건 생성 승인`
+                    : hasFilePreview
+                      ? '파일 생성 승인'
                     : '승인'}
           </Button>
         </div>
@@ -1697,7 +2018,13 @@ export interface JiraStatusCardProps {
  * 「내 파일」 표의 `download()` 와 같은 방식이다 — 임시 URL 을 만들고 **반드시
  * 되돌려준다.** 안 하면 파일 하나가 탭을 떠날 때까지 메모리에 남는다.
  */
-export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
+export function ProducedFilesCard({
+  files,
+  previews = [],
+}: {
+  files: ProducedFile[];
+  previews?: ApprovalPreview[];
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -1735,6 +2062,7 @@ export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
       ))}
       {/* 「내 파일」에도 남는다는 것을 밝힌다 — 카드를 놓쳐도 찾을 곳이 있다. */}
       <p className={styles.fileHint}>{failed ?? '「문서 > 내 파일」에도 저장되어 있습니다.'}</p>
+      {previews.length > 0 ? <ApprovalPreviewHistory previews={previews} /> : null}
     </section>
   );
 }

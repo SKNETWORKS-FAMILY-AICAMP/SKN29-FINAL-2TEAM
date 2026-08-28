@@ -9,3 +9,7 @@ staticfiles/
 outputs/
 .codex_tmp/
 .codex_work/
+.codex_staging/
+pytest_tmp_rotation/
+.pytest_cache/
+**/node_modules/

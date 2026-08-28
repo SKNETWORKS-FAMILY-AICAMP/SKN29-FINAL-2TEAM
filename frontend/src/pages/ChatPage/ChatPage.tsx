@@ -31,6 +31,7 @@ import { WelcomeTour } from './WelcomeTour';
 import {
   AskFollowupCard,
   ConfirmCard,
+  ApprovalPreviewHistory,
   ErrorCard,
   JiraStatusCard,
   ProducedFilesCard,
@@ -98,6 +99,16 @@ function dateRangeLabel(start: string | null, end: string | null): string | null
   if (!start) return null;
   if (!end || start === end) return start.replaceAll('-', '.');
   return `${start.replaceAll('-', '.')}~${end.replaceAll('-', '.')}`;
+}
+
+/**
+ * 생성 파일 카드가 이미 성공 사실과 다운로드를 보여줄 때 의미가 완전히 같은
+ * 정형 문장만 숨긴다. 모델이 결과 설명이나 제한을 덧붙인 답변은 보존한다.
+ */
+function isRedundantFileCompletionAnswer(text: string): boolean {
+  return /^(?:승인한 작업 \d+건|(?:표 내보내기|문서 만들기|파일 생성) 작업)을 완료했습니다\.$/.test(
+    text.trim(),
+  );
 }
 
 function HighlightedText({
@@ -2155,7 +2166,16 @@ export default function ChatPage() {
 
                       {/* 도구가 만든 파일. 결과 카드들보다 먼저 둔다 —
                           「받을 것이 있다」가 제일 먼저 눈에 띄어야 한다. */}
-                      {live.files.length > 0 && <ProducedFilesCard files={live.files} />}
+                      {live.files.length > 0 && (
+                        <ProducedFilesCard
+                          files={live.files}
+                          previews={!live.confirm ? live.approvalPreviews : []}
+                        />
+                      )}
+
+                      {live.files.length === 0 && !live.confirm && live.approvalPreviews.length > 0 && (
+                        <ApprovalPreviewHistory previews={live.approvalPreviews} />
+                      )}
 
                       {live.jira && (
                         <JiraStatusCard
@@ -2253,7 +2273,9 @@ export default function ChatPage() {
                         <ResultCard created={live.created} failures={live.failures} />
                       )}
 
-                      {live.answer && (
+                      {live.answer && !(
+                        live.files.length > 0 && isRedundantFileCompletionAnswer(live.answer)
+                      ) && (
                         <div
                           className={styles.agentMessage}
                         >

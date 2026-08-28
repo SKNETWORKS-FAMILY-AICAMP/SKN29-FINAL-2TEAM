@@ -14,11 +14,14 @@
 
 from __future__ import annotations
 
+import re
+from datetime import date
 from io import BytesIO
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
 
 #: 시트 이름 상한(엑셀 규격). 넘으면 파일이 열리지 않는다.
@@ -28,8 +31,25 @@ _SHEET_TITLE_MAX = 31
 _SHEET_TITLE_BANNED = set(r"[]:*?/\\")
 
 #: 열 너비 상한. 긴 셀 하나가 화면을 다 먹는 것을 막는다.
-_WIDTH_MAX = 60
+_WIDTH_MAX = 42
 _WIDTH_MIN = 8
+
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_HEADERS = ("날짜", "일자", "시작일", "마감일", "기한")
+_PERCENT_HEADERS = ("진행률", "부하율", "달성률", "비율")
+
+_HEADER_FILL = PatternFill("solid", fgColor="243B67")
+_HEADER_FONT = Font(bold=True, color="FFFFFF")
+_STATUS_FILLS = {
+    "완료": PatternFill("solid", fgColor="E5F4EA"),
+    "진행 중": PatternFill("solid", fgColor="E8F0FE"),
+    "검수 중": PatternFill("solid", fgColor="FFF4D6"),
+    "할 일": PatternFill("solid", fgColor="F1F3F5"),
+}
+_PRIORITY_FILLS = {
+    "최우선": PatternFill("solid", fgColor="FDE8E7"),
+    "높음": PatternFill("solid", fgColor="FFF0E0"),
+}
 
 
 def _sheet_title(title: str) -> str:
@@ -55,6 +75,26 @@ def _cell_value(value: Any) -> tuple[Any, bool]:
     return str(value), True
 
 
+def _typed_value(header: str, value: Any) -> tuple[Any, bool, str | None]:
+    """열 이름이 명확할 때만 날짜·백분율 표시 형식을 덧붙인다.
+
+    모델 값의 의미를 추측해 바꾸지는 않는다. ISO 날짜 문자열만 실제 날짜로
+    바꾸고, 0~1 범위 숫자만 백분율로 표시한다.
+    """
+
+    normalized = str(header).replace(" ", "")
+    if isinstance(value, str) and _ISO_DATE.fullmatch(value) and any(
+        token in normalized for token in _DATE_HEADERS
+    ):
+        return date.fromisoformat(value), False, "yyyy-mm-dd"
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and any(
+        token in normalized for token in _PERCENT_HEADERS
+    ) and 0 <= value <= 1:
+        return value, False, "0%"
+    cell_value, force_text = _cell_value(value)
+    return cell_value, force_text, None
+
+
 def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> bytes:
     """제목·머리글·행으로 xlsx 를 만들어 바이트로 돌려준다."""
 
@@ -64,8 +104,9 @@ def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> byte
 
     sheet.append(list(columns))
     for cell in sheet[1]:
-        cell.font = Font(bold=True)
-        cell.alignment = Alignment(vertical="center")
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         # 머리글도 모델이 준 글자다. 본문과 같은 이유로 못박는다.
         if cell.value is not None:
             cell.data_type = "s"
@@ -75,11 +116,23 @@ def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> byte
         padded = list(row[: len(columns)]) + [None] * max(0, len(columns) - len(row))
         written = sheet.max_row + 1
         for index, raw in enumerate(padded, start=1):
-            value, force_text = _cell_value(raw)
+            value, force_text, number_format = _typed_value(columns[index - 1], raw)
             cell = sheet.cell(row=written, column=index, value=value)
             if force_text:
                 # 여기가 수식 실행을 막는 한 줄이다. 위 모듈 주석 1번.
                 cell.data_type = "s"
+            if number_format:
+                cell.number_format = number_format
+            cell.alignment = Alignment(
+                horizontal="right" if isinstance(value, (int, float)) else "left",
+                vertical="top",
+                wrap_text=True,
+            )
+            text = str(raw).strip() if raw is not None else ""
+            if text in _STATUS_FILLS:
+                cell.fill = _STATUS_FILLS[text]
+            elif text in _PRIORITY_FILLS:
+                cell.fill = _PRIORITY_FILLS[text]
 
     # 폭은 그 열에서 제일 긴 글자에 맞춘다. 안 맞추면 전부 `#####` 로 보인다.
     for index in range(1, len(columns) + 1):
@@ -93,6 +146,28 @@ def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> byte
 
     # 머리글을 고정한다. 행이 많으면 스크롤했을 때 어느 열인지 알 수 없다.
     sheet.freeze_panes = "A2"
+    sheet.row_dimensions[1].height = 26
+    sheet.sheet_view.showGridLines = False
+
+    # 필터와 줄무늬 행은 큰 표를 빠르게 훑기 위한 최소 장치다. 값이나 계산을
+    # 추가하지 않고 같은 범위의 표현만 보강한다.
+    end_column = get_column_letter(max(len(columns), 1))
+    end_row = max(sheet.max_row, 1)
+    table = Table(displayName="ExportedData", ref=f"A1:{end_column}{end_row}")
+    table.tableStyleInfo = TableStyleInfo(
+        name="TableStyleMedium2",
+        showFirstColumn=False,
+        showLastColumn=False,
+        showRowStripes=True,
+        showColumnStripes=False,
+    )
+    sheet.add_table(table)
+    sheet.auto_filter.ref = f"A1:{end_column}{end_row}"
+    sheet.print_title_rows = "1:1"
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.outlinePr.summaryBelow = True
 
     buffer = BytesIO()
     workbook.save(buffer)
