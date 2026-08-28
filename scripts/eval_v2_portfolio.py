@@ -10,7 +10,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT = REPO_ROOT / "outputs" / "eval-v2-results"
-DEFAULT_CANDIDATE = "AG004/AV035"
+DEFAULT_CANDIDATE = "AG004/AV073"
+DEFAULT_GIT_COMMIT = "e888d6b05729af24617509cdecd2b4d540d330aa"
 
 # S08은 실행 미승인, S10/S11은 Expansion이므로 이 Core DEV cohort에 포함하지 않는다.
 CORE_DEV_COHORT = {
@@ -33,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-id", default=DEFAULT_CANDIDATE)
     parser.add_argument(
         "--git-commit",
+        default=DEFAULT_GIT_COMMIT,
         help="동일 Candidate ID라도 다른 코드 상태의 실행을 섞지 않도록 exact commit을 고정한다.",
     )
     return parser

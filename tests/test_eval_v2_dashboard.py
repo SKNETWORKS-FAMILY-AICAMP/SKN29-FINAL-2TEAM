@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from scripts.eval_v2_dashboard import classify_entry, load_entries, render_dashboard, summarize
+from scripts.eval_v2_portfolio import DEFAULT_CANDIDATE, DEFAULT_GIT_COMMIT
 
 
 class EvalV2DashboardTests(unittest.TestCase):
@@ -12,7 +13,8 @@ class EvalV2DashboardTests(unittest.TestCase):
         root: Path,
         suffix: str,
         *,
-        candidate: str = "AG004/AV035",
+        candidate: str = DEFAULT_CANDIDATE,
+        git_commit: str = DEFAULT_GIT_COMMIT,
         fixture: str = "S01-DEV-001",
         version: int = 1,
         result: str = "PASS",
@@ -25,6 +27,7 @@ class EvalV2DashboardTests(unittest.TestCase):
             "protocol": "AGENT_EVAL_V2",
             "eval_run_id": f"v2-{suffix}",
             "candidate_id": candidate,
+            "git_commit": git_commit,
             "planned_scenarios": [fixture],
         }), encoding="utf-8")
         (run / "v2_scenario_results.jsonl").write_text(json.dumps({
@@ -57,8 +60,22 @@ class EvalV2DashboardTests(unittest.TestCase):
 
     def test_old_fixture_version_is_diagnostic(self):
         entry = {
-            "manifest": {"candidate_id": "AG004/AV035"},
+            "manifest": {
+                "candidate_id": DEFAULT_CANDIDATE,
+                "git_commit": DEFAULT_GIT_COMMIT,
+            },
             "result": {"fixture_id": "S04-DEV-001", "fixture_version": 1},
+            "disposition": None,
+        }
+        self.assertEqual(classify_entry(entry), "diagnostic")
+
+    def test_same_candidate_from_other_git_commit_is_diagnostic(self):
+        entry = {
+            "manifest": {
+                "candidate_id": DEFAULT_CANDIDATE,
+                "git_commit": "other-commit",
+            },
+            "result": {"fixture_id": "S01-DEV-001", "fixture_version": 1},
             "disposition": None,
         }
         self.assertEqual(classify_entry(entry), "diagnostic")

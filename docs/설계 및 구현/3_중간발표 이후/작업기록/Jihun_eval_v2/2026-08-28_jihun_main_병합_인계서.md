@@ -16,7 +16,7 @@
 - 확인일: 2026-08-28
 - 대상 브랜치: `jihun`
 - 비교한 `origin/main`: `6322656`
-- 비교한 `origin/jihun`: `05f3ed1`까지이며 이 인계서 커밋은 그 뒤에 추가된다.
+- 비교한 `origin/jihun`: `b7db97b`. AV073 재평가와 후속 문서 커밋은 그 뒤에 추가된다.
 - `git merge-tree --write-tree --messages origin/main jihun` 확인 결과: 충돌 없음
 - 실제 병합 직전에는 `origin/main`을 다시 fetch하고 충돌 검사를 반복한다.
 
@@ -43,7 +43,9 @@
 
 ## 4. 평가 결과의 정확한 의미
 
-현재 공식 DEV cohort는 `AG004/AV035`의 36건이다.
+현재 공식 DEV cohort는 `AG004/AV073`과 Git
+`e888d6b05729af24617509cdecd2b4d540d330aa`를 함께 고정한 36건이다. AV035 결과는
+과거 기준선으로 보존한다.
 
 | 구분 | 건수 |
 |---|---:|
@@ -51,7 +53,7 @@
 | PASS | 32 |
 | FAIL | 4 |
 | 실행 가중 통과율 | 88.9% |
-| 현재 로컬 진단·실험용 | 18 |
+| 현재 로컬 진단·실험용 | 54 |
 | 현재 로컬 평가 인프라 무효 | 12 |
 
 이 수치는 개발용 진단 결과이며 HOLDOUT 공식 성적이 아니다. LEGACY, S08, S10/S11은
@@ -65,9 +67,15 @@ Core DEV 분모에 포함하지 않는다.
 - S01 개선용 `AV067`~`AV071`과 실행 결과는 `DIAGNOSTIC_ONLY`다.
 - 특정 답을 prompt에 넣거나 fixture·gold·Judge를 완화해 통과시키지 않는다.
 
+### S06
+
+- 공식 결과: 2 PASS / 1 FAIL
+- 1회 REQ-F-62의 목표 요구사항을 최종 확정 범위처럼 답했다.
+- 나머지 2회는 최종 범위를 확인할 수 없다고 정확히 유보했다.
+
 ### S07
 
-- 공식 과거 결과: 2 PASS / 1 FAIL
+- 현재 AV073 결과: 3 PASS / 0 FAIL
 - 평가 fixture가 Jira와 무관한 `task_register`까지 선행 도구처럼 설명하던 문제를
   수정했다.
 - 이 registry 변경은 전역 코드에 적용된다. 사용자가 Jira만 요청하면
@@ -78,9 +86,9 @@ Core DEV 분모에 포함하지 않는다.
 
 ### 다음 Candidate
 
-`AG004/AV072`는 S01 실험 전 `AV035` 정의를 복제해 DB에 발행한 다음 freeze 검토
-Candidate다. S07 registry 수정은 코드 수준에서 적용된다. AV072로 Phase 9를 시작하도록
-승인한 것은 아니다.
+`AG004/AV073`은 `AV072`를 덮어쓰지 않고 일반 산술 검산 규칙 한 개만 추가해 발행한
+freeze 검토 Candidate다. S07 registry 수정은 코드 수준에서 적용된다. AV073으로
+Phase 9를 시작하도록 승인한 것은 아니다.
 
 ## 5. Git에 포함되지 않는 것
 
@@ -88,18 +96,18 @@ Candidate다. S07 registry 수정은 코드 수준에서 적용된다. AV072로 
 
 | 항목 | 현재 상태 | 병합자가 알아야 할 점 |
 |---|---|---|
-| `outputs/eval-v2-results/` | 로컬 실행 폴더 66개 | Git에 없음. 별도 원본 bundle이 없으면 과거 대시보드를 재현할 수 없음 |
+| `outputs/eval-v2-results/` | 로컬 실행 폴더 102개, 완료 원본 101개 | Git에 없음. 별도 원본 bundle이 없으면 과거 대시보드를 재현할 수 없음 |
 | `outputs/eval-v2-dashboard/index.html` | 로컬 생성 파일 | Git에 없음. 생성기로 다시 만듦 |
-| V2 DB 결과 | Phase 8 시점 49/49 파일·DB 대조 증거 있음 | 뒤의 진단 실행까지 전부 DB에 있다고 가정하면 안 됨 |
-| `AG004/AV072` | 현재 사용한 DB에 발행됨 | 독립 DB에는 자동 생성되지 않음 |
+| V2 DB 결과 | AV073 재평가 후 완료 원본 101/101 파일·DB 대조 | 원본 없는 실행까지 DB에 있다고 가정하면 안 됨 |
+| `AG004/AV073` | 현재 사용한 DB에 발행됨 | 독립 DB에는 자동 생성되지 않음 |
 | Langfuse trace/score | 설정된 Langfuse project에 저장 | Git이나 DB migration으로 복제되지 않음 |
 
 현재는 DB에서 V2 원시 파일을 다시 내려받는 명령이 없다. 대시보드는 DB가 아니라
-`outputs/eval-v2-results/`를 읽는다. 따라서 다른 컴퓨터에서 과거 66개 실행을 봐야 하면
+`outputs/eval-v2-results/`를 읽는다. 따라서 다른 컴퓨터에서 과거 실행을 봐야 하면
 원본 bundle을 checksum과 함께 별도로 전달해야 한다. 원본 없이 빈 폴더에서 대시보드
 생성기를 실행하면 빈 화면이 나오는 것이 정상이다.
 
-AV072 역시 migration이나 seed가 아니다. 공유 DB를 사용하면 존재 여부를 확인하고,
+AV073 역시 migration이나 seed가 아니다. 공유 DB를 사용하면 존재 여부를 확인하고,
 독립 DB라면 임의로 같은 ID를 만들지 말고 Candidate 재현 절차를 먼저 합의한다.
 
 ## 6. DB migration
@@ -187,7 +195,8 @@ python scripts/eval_v2_record.py sync-root
 python scripts/eval_v2_dashboard.py
 ```
 
-- `eval_v2_portfolio.py`의 공식 기준 Candidate는 `AG004/AV035`다.
+- `eval_v2_portfolio.py`의 공식 기준은 `AG004/AV073`과 평가 Git commit
+  `e888d6b05729af24617509cdecd2b4d540d330aa`다.
 - `sync-root`는 로컬 원본을 DB에 올리고 checksum을 대조한다. 운영/공유 DB에 쓰는
   명령이므로 대상 DB를 확인한 뒤 실행한다.
 - 대시보드 생성 결과는 `outputs/eval-v2-dashboard/index.html`이다.
@@ -200,7 +209,7 @@ python scripts/eval_v2_dashboard.py
 - S01 FAIL을 숨기거나 AV067~AV071 결과를 공식 점수에 넣지 않는다.
 - 진단·무효 실행을 36건 공식 cohort에 섞지 않는다.
 - 원본 파일 없이 DB 숫자만 보고 파일·DB 대조가 끝났다고 쓰지 않는다.
-- AV072가 모든 DB에 존재한다고 가정하지 않는다.
+- AV073이 모든 DB에 존재한다고 가정하지 않는다.
 
 ## 10. 문제 발생 시 되돌리는 범위
 
@@ -216,6 +225,7 @@ python scripts/eval_v2_dashboard.py
 - Phase 8 게이트: `설계/eval/v2/07_phase8_readiness_review.md`
 - S01/S07 최종 결정: `2026-08-27_S01_보류_S07_유지_결정.md`
 - 공식 DEV 결과: `2026-08-27_Core_DEV_36건_Phase8_결과.md`
+- 현재 AV073 재평가 결과: `2026-08-28_AV073_Core_DEV_36건_재평가.md`
 - S10/S11 팀원 범위: `2026-08-27_S10_S11_팀원_작업인계서.md`
 
 현재 게이트: `STOP_BEFORE_PHASE_9`.

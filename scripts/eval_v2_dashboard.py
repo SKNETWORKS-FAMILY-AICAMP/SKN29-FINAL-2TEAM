@@ -19,12 +19,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.eval_v2_portfolio import CORE_DEV_COHORT, DEFAULT_CANDIDATE
+from scripts.eval_v2_portfolio import (
+    CORE_DEV_COHORT,
+    DEFAULT_CANDIDATE,
+    DEFAULT_GIT_COMMIT,
+)
 
 
 DEFAULT_RESULTS_ROOT = REPO_ROOT / "outputs" / "eval-v2-results"
 DEFAULT_OUTPUT = REPO_ROOT / "outputs" / "eval-v2-dashboard" / "index.html"
-CURRENT_CANDIDATE = "AG004/AV072"
+CURRENT_CANDIDATE = DEFAULT_CANDIDATE
 
 GROUP_LABELS = {
     "official": "공식 Core DEV",
@@ -62,6 +66,7 @@ def classify_entry(entry: dict[str, Any]) -> str:
     specification = CORE_DEV_COHORT.get(fixture_id)
     if (
         manifest.get("candidate_id") == DEFAULT_CANDIDATE
+        and manifest.get("git_commit") == DEFAULT_GIT_COMMIT
         and specification
         and result.get("fixture_version") == specification["fixture_version"]
         and result.get("validity", "VALID") == "VALID"

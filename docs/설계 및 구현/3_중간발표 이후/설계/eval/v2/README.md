@@ -89,8 +89,8 @@ eval/v2/
 | 4 | 완료 | 실제 PDF 기반 Core DEV 10개 package와 자동 무결성 검사 완료 |
 | 5 | 완료 | deterministic·Hard Gate·Judge 결합과 집계 규칙 구현·테스트 완료 |
 | 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
-| 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 완료 run 49/49 SHA-256 자동 대조 완료 |
-| 8 | 완료 | Core 10개 variant 36 VALID 실행 완료. S01 보류·S07 수정 유지·AV072 복원 결정 완료 |
+| 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 현재 완료 run 101/101 DB·SHA-256 대조 완료 |
+| 8 | 완료 | AV073·Git `e888d6b…`로 Core 10개 variant 36 VALID 재실행 완료. 32 PASS/4 FAIL, S01 보류·S07 3/3 PASS |
 | 9~10 | 시작 전·진입 차단 | freeze manifest를 승인하기 전까지 진입하지 않음 |
 
 현재 자동 검증 명령은 `python scripts/eval_v2_validate.py`다. V2 공식 점수에는 사람
