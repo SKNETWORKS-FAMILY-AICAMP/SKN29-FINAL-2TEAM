@@ -251,7 +251,7 @@ class 삭제_대상_누락_검사(SimpleTestCase):
     #: 「재로그인·재연결 없이 프로젝트와 문서만 갈아 끼우기」라서 남긴다.
     #: 이전 평가 성적표도 비교 기준이므로 입력 초기화와 함께 지우지 않는다.
     EVAL_KEEP = {
-        "eval_run", "eval_case_result",
+        "eval_run", "eval_case_result", "eval_judge_result",
         "user_account", "team", "team_member", "team_folder",
         "member_invite", "user_person_link",
         "connector_conn",     # 이것을 남기려고 이 파일이 따로 있다
