@@ -49,8 +49,6 @@ CACHE_PATH = ROOT / ".codex_staging" / "document-search-eval-embeddings.json"
 
 TOP_K = 20
 CANDIDATE_K = TOP_K * 3
-DEV_QUERY_IDS = {f"Q{i:02d}" for i in range(1, 11)}
-HOLDOUT_QUERY_IDS = {f"Q{i:02d}" for i in range(11, 15)}
 LEXICAL_CRITICAL_IDS = {"Q03", "Q04", "Q05", "Q06", "Q08", "Q12", "Q13", "Q14"}
 
 DOCUMENT_ALIASES = {
@@ -413,6 +411,13 @@ def main() -> int:
     corpus = load_corpus()
     golden = json.loads(GOLD_PATH.read_text(encoding="utf-8"))
     queries = golden["queries"]
+    query_ids = {query["id"] for query in queries}
+    dev_query_ids = set(golden["splits"]["development"])
+    holdout_query_ids = set(golden["splits"]["holdout"])
+    if dev_query_ids & holdout_query_ids:
+        raise ValueError("development와 holdout 질의 ID가 겹칩니다.")
+    if dev_query_ids | holdout_query_ids != query_ids:
+        raise ValueError("모든 평가 질의는 development 또는 holdout에 정확히 한 번 속해야 합니다.")
     texts = [row["search_text"] for row in corpus]
     all_vectors = _vectors(texts + [query["query"] for query in queries], refresh=args.refresh_embeddings)
     corpus_vectors = all_vectors[: len(corpus)]
@@ -452,13 +457,13 @@ def main() -> int:
     for name, by_query in rankings.items():
         report["variants"][name] = {
             "all": score(queries, by_query),
-            "dev": score([q for q in queries if q["id"] in DEV_QUERY_IDS], by_query),
-            "holdout": score([q for q in queries if q["id"] in HOLDOUT_QUERY_IDS], by_query),
+            "dev": score([q for q in queries if q["id"] in dev_query_ids], by_query),
+            "holdout": score([q for q in queries if q["id"] in holdout_query_ids], by_query),
             "by_tag": score_by_tag(queries, by_query),
         }
     vector = report["variants"]["vector"]["all"]
     candidates = [name for name in variants if name.startswith("hybrid_")]
-    dev_queries = [query for query in queries if query["id"] in DEV_QUERY_IDS]
+    dev_queries = [query for query in queries if query["id"] in dev_query_ids]
     regression_free = [
         name for name in candidates
         if not compare_rankings(
@@ -476,6 +481,8 @@ def main() -> int:
     )
     report["selected_variant"] = selected
     report["selection_policy"] = {
+        "selection_data": "development_only",
+        "holdout_used_for_selection": False,
         "development_regression_guard": True,
         "regression_free_candidates": regression_free,
         "fallback_used": not regression_free,
