@@ -58,6 +58,12 @@ TRUNCATE TABLE
     guardrail_event,
     chat_message, chat_session;
 
+-- 스킬 검증의 「진행 중」 상태. 등록이 끝난 스킬 자체는 `store` 에 있어 남고,
+-- 여기 있는 것은 검증 job 과 오발동 신고다. 둘 다 지워지는 대화를 가리키므로
+-- (`source_session_id` · `message_id`) 같이 비운다 — 남으면 없는 대화를
+-- 가리키는 신고가 화면에 남는다.
+TRUNCATE TABLE skill_eval_feedback, skill_registration_job;
+
 -- 일부러 남기는 것 (`tests/test_ops_purge.py` 의 EVAL_KEEP 과 같은 목록이다):
 --   eval_run · eval_case_result · eval_judge_result
 --                                 이전 평가의 성적표와 Judge 판정. 입력 데이터셋을
@@ -72,6 +78,10 @@ TRUNCATE TABLE
 --                      와 같은 원칙). 지워진 프로젝트를 가리키는 행이 남지만
 --                      로그는 그 시점의 사실이다.
 --   cal_event          아직 연동 전이라 프로젝트와 무관하다.
+--   skill_catalog_revision   등록된 스킬은 `store` 에 남으므로 그 리비전
+--                      카운터도 남긴다. 비우면 카탈로그가 바뀐 것처럼 보인다.
+--   skill_eval_regression_case   운영자가 익명화해 손으로 넣은 회귀 데이터셋.
+--                      eval_run 과 같은 이유로 비교 기준이라 보존한다.
 --   sys_setting · sys_notice · mock_hr.*   플랫폼 설정과 고객사 HR 몫.
 
 COMMIT;

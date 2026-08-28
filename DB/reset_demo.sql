@@ -66,9 +66,13 @@ TRUNCATE TABLE connector_conn;
 -- 이라 8/12 과 정확히 같은 사고를 낸다 — 새 팀이 옛 팀의 가드레일 공급자를
 -- 그대로 물려받는다. `mcp_call_note` 도 team_id 를 든다.
 --
--- ⚠ **테이블을 더하면 손으로 줄을 더해야 하는 곳이 셋이다** — 여기,
--- `backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS`, `_ACCOUNT_PURGE_STEPS`.
+-- ⚠ **테이블을 더하면 손으로 줄을 더해야 하는 곳이 ~~셋~~ 다섯이다** — 여기,
+-- `backend/db/repositories.py` 의 `_TEAM_PURGE_STEPS`, `_ACCOUNT_PURGE_STEPS`,
+-- 그리고 `DB/reset_eval.sql` 과 `tests/test_ops_purge.py` 의
+-- `RESET_KEEP`·`EVAL_KEEP`(2026-08-27 정정 — 스킬 표를 더하다 드러났다).
 -- 이 스키마엔 FK 가 하나도 없어 CASCADE 가 없다.
+-- 그 테스트가 다섯을 서로 대조하므로 표를 더하면 먼저 깨진다 — 고칠 때는
+-- `python manage.py test tests.test_ops_purge` 부터 돌린다.
 TRUNCATE TABLE
     tool_call_idempotency, mcp_call_note,
     tool_call, agent_run,
@@ -87,6 +91,17 @@ TRUNCATE TABLE
 -- `guardrail_event` 는 걸린 사건 기록이다. 둘 다 테넌트에 매달린다.
 TRUNCATE TABLE guardrail_event, guardrail_provider;
 
+-- 스킬 검증·등록 (2026-08-27 에 채웠다 — 8/26~8/27 마이그레이션이 나갈 때
+-- 여기가 또 따라오지 않았다. 8/12 · 8/25 에 이어 세 번째다).
+--   skill_registration_job      account_id·team_id 를 든 검증 job
+--   skill_catalog_revision      사람마다의 카탈로그 리비전
+--   skill_eval_regression_case  team_id 를 든 회귀 사례
+--   skill_eval_feedback         account_id·team_id 를 든 오발동 신고
+-- 넷 다 옛 테넌트를 가리킨 채 남으면 새 팀이 그대로 물려받는다.
+TRUNCATE TABLE
+    skill_eval_feedback, skill_eval_regression_case,
+    skill_catalog_revision, skill_registration_job;
+
 -- 팀·계정·초대. 캘린더는 아직 연동 전이지만 같이 비운다.
 TRUNCATE TABLE
     cal_event,
@@ -102,6 +117,9 @@ TRUNCATE TABLE audit_log;
 --                데이터가 아니다.
 --   sys_notice   운영자가 등록하는 공지. 같은 이유.
 --   mock_hr.*    고객사 HR 시스템 몫.
+--   skill_worker_heartbeat
+--                워커 프로세스의 생존 신호다. 테넌트 데이터가 아니고, 비우면
+--                「워커가 떠 있나」를 다음 하트비트까지 알 수 없다.
 
 COMMIT;
 

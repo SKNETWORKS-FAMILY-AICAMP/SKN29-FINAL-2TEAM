@@ -96,7 +96,9 @@ skn29-final-2team-db-1   Up (healthy)   0.0.0.0:5432->5432/tcp
 docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilot -d project_copilot -c "\dt"
 ```
 
-`user_account`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 등 **49개**가 보이면 정상이다(2026-08-11 Agent Platform 9개 추가 전에는 40개였다). `schema.sql`의 `CREATE TABLE`은 전부 **57개**지만, HR 8개(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)는 `mock_hr` 스키마에 있어 `\dt`(search_path = `public`)에는 나오지 않는다 — 그 8개는 `\dt mock_hr.*`로 따로 본다(§4.3·5장 참고).
+`user_account`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 가 보이면 정상이다. HR 8개(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)는 `mock_hr` 스키마에 있어 `\dt`(search_path = `public`)에는 나오지 않는다 — 그 8개는 `\dt mock_hr.*`로 따로 본다(§4.3·5장 참고).
+
+> **개수로 판정하지 않는다 (2026-08-27 정정).** ~~「**49개**가 보이면 정상 · `schema.sql` 의 `CREATE TABLE` 은 전부 **57개**」~~ — 이 두 숫자는 8/11 기준이라 지금은 둘 다 틀렸다. 2026-08-27 실측으로 `schema.sql` 의 `CREATE TABLE` 은 **65개**(mock_hr 8 · public 57)이고, 여기에 **`schema.sql` 에 아직 안 들어온 스킬 테이블 5개**와 LangGraph 체크포인트 표가 실제 DB 에 더 있다. 볼륨을 언제 만들었는지에 따라 개수가 달라지므로 **「빠진 것이 있나」는 개수가 아니라 `python DB/migrations/_apply.py --check` 로 묻는다**(§4.3).
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
@@ -140,6 +142,20 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 > 「코드는 새 스키마, DB 는 옛 스키마」로 배포돼 채팅이 통째로 막혔는데,
 > 테스트 700건이 전부 통과한 상태였다 — 테스트가 실제 RDS 를 안 쓰기 때문이다.
 > **새 마이그레이션을 더하면 `_apply.py` 의 `EXPECTED` 에 한 줄 추가한다.**
+>
+> 🔴 **아래 붙여넣기 블록은 2026-08-18 에서 멈춰 있다 (2026-08-27 확인).**
+> 그 뒤로 마이그레이션이 **28개** 더 나왔는데(가드레일 · `tool_call_idempotency` ·
+> `mcp_call_note` · `team.default_model` · 증분 동기화 · Drive 변경 알림 ·
+> 색인 상세 · `doc_meta` 폐기 · 평가 결과 저장 · 스킬 검증 7건 …) 한 줄도
+> 안 들어와 있다. **블록만 붙여넣고 「최신 스키마가 됐다」고 읽으면 안 된다.**
+>
+> **지금의 정본은 `_apply.py` 다** — `EXPECTED` 는 8/27 까지 따라와 있고,
+> `--check` 로 빠진 것을 묻고 `_apply.py <파일.sql>` 로 적용한다. 아래 블록은
+> **8/18 이전 볼륨을 쓰는 사람이 한 번에 따라잡는 용도**로만 남긴다.
+>
+> **`--check` 가 알려 준 것만** 파일 이름 순으로 적용한다 — 폴더를 통째로 다시
+> 돌리지 않는다. 지우는 마이그레이션(`*_drop*.sql`)이 섞여 있어서 순서를
+> 흐트러뜨리면 방금 만든 것을 다시 지운다.
 
 
 `DB/schema.sql`은 **`db` 컨테이너를 처음 만들 때만** 실행된다. 이미 볼륨이 있으면 이후 `schema.sql` 변경은 반영되지 않는다. 이 프로젝트는 마이그레이션 도구를 쓰지 않으므로(`DATABASES = {}`) 수동 `ALTER`로 공유한다.
