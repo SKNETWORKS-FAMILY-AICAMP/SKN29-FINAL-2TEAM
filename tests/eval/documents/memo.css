@@ -1,0 +1,21 @@
+/* 간이 메모·현장 기록체. 굴림에 작은 글자, 좁은 여백, 표 테두리 최소. */
+@page { size: A4; margin: 16mm 15mm; }
+body { font-family: "Gulim", "굴림", sans-serif; font-size: 9.5pt; line-height: 1.55; color: #222; }
+h1 { font-size: 15pt; font-weight: 700; text-align: left; margin: 0 0 4mm; }
+h2 { font-size: 11.5pt; font-weight: 700; margin: 6mm 0 2mm; page-break-after: avoid; }
+h3 { font-size: 10pt; font-weight: 700; margin: 4mm 0 1.5mm; page-break-after: avoid; }
+h4 { font-size: 9.5pt; font-weight: 700; margin: 3mm 0 1mm; }
+p { margin: 0 0 2.5mm; }
+ul, ol { margin: 0 0 2.5mm; padding-left: 5mm; }
+li { margin-bottom: 1mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-size: 8.5pt;
+        page-break-inside: avoid; }
+th, td { border: 1px solid #ddd; padding: 1.5mm 2mm; vertical-align: top; }
+th { background: #f5f5f5; font-weight: 700; }
+td.num { text-align: right; }
+.cover-meta { width: 55%; margin: 0 0 5mm; font-size: 9pt; }
+.cover-meta th { width: 34%; }
+.note { border-left: 2px solid #999; padding: 2mm 3mm; margin: 2mm 0 4mm; font-size: 9pt; }
+.pagebreak { page-break-before: always; }
+figure { margin: 4mm 0 5mm; page-break-inside: avoid; }
+figcaption { font-size: 8.5pt; color: #666; margin-top: 1.5mm; }

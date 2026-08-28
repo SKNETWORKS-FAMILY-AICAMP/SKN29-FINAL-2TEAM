@@ -84,3 +84,14 @@ td.num { text-align: right; }
 }
 
 .pagebreak { page-break-before: always; }
+
+figure {
+  margin: 5mm 0 6mm;
+  text-align: center;
+  page-break-inside: avoid;
+}
+figcaption {
+  font-size: 9.5pt;
+  color: #555;
+  margin-top: 2mm;
+}

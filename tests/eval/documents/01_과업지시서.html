@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>한빛몰 주문·정산 시스템 고도화 구축 과업지시서</title>
-<link rel="stylesheet" href="doc.css">
+<link rel="stylesheet" href="gov.css">
 </head>
 <body>
 
@@ -27,6 +27,8 @@
 겹치면 어느 것이 최종 상태인지 코드로 판정할 수 없고, 정산은 월 1회 수작업 배치와
 엑셀 대사에 의존한다. 2026년 상반기에 판매자 정산 이의 제기가 412건 접수되었으며
 이 중 63%가 시스템이 계산한 금액과 판매자 집계의 불일치였다.</p>
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 204" width="560" height="204" font-family="Malgun Gothic, sans-serif"><text x="0" y="16" font-size="12.5" font-weight="700">2026년 상반기 월별 정산 이의 접수 건수</text><line x1="150" y1="34" x2="150" y2="192" stroke="#888"/><text x="142" y="47" text-anchor="end" font-size="11">1월</text><rect x="150" y="37" width="141" height="14" fill="#e9e9e9" stroke="#111"/><text x="297" y="48" font-size="10.5">52건</text><text x="142" y="73" text-anchor="end" font-size="11">2월</text><rect x="150" y="63" width="165" height="14" fill="#e9e9e9" stroke="#111"/><text x="321" y="74" font-size="10.5">61건</text><text x="142" y="99" text-anchor="end" font-size="11">3월</text><rect x="150" y="89" width="157" height="14" fill="#e9e9e9" stroke="#111"/><text x="313" y="100" font-size="10.5">58건</text><text x="142" y="125" text-anchor="end" font-size="11">4월</text><rect x="150" y="115" width="149" height="14" fill="#e9e9e9" stroke="#111"/><text x="305" y="126" font-size="10.5">55건</text><text x="142" y="151" text-anchor="end" font-size="11">5월</text><rect x="150" y="141" width="184" height="14" fill="#e9e9e9" stroke="#111"/><text x="340" y="152" font-size="10.5">68건</text><text x="142" y="177" text-anchor="end" font-size="11">6월</text><rect x="150" y="167" width="320" height="14" fill="#e9e9e9" stroke="#111"/><text x="476" y="178" font-size="10.5">118건</text></svg><figcaption>그림 1 2026년 상반기 월별 정산 이의 접수 건수 (합계 412건)</figcaption></figure>
+
 <p>또한 결제대행사(PG) 단일 연동 구조라 2026년 5월 PG 장애 시 4시간 17분 동안
 전체 결제가 중단되었다. 재무·CS·개발 조직이 모두 같은 원인을 지목했고, 본 사업은
 그 원인을 구조에서 걷어내는 것을 목표로 한다.</p>
@@ -64,6 +66,8 @@
 상세 요구사항은 「한빛몰 주문·정산 시스템 요구사항 정의서」를, 일정과 공수는 「한빛몰
 주문·정산 시스템 고도화 WBS 및 마일스톤」을, 투입 인력의 역할과 자격은 「한빛몰
 주문·정산 시스템 고도화 투입 인력 운영 계획서」를 따른다.</p>
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 270" width="560" height="270" font-family="Malgun Gothic, sans-serif"><text x="0" y="16" font-size="12.5" font-weight="700">신규 주문·정산 시스템 계층 구성</text><rect x="0" y="34" width="560" height="38" fill="#e9e9e9" stroke="#111"/><text x="10" y="50" font-size="11" font-weight="700">채널 계층</text><text x="10" y="64" font-size="10">한빛몰 웹·앱, 판매자 정산 포털(과업 3.5)</text><rect x="0" y="80" width="560" height="38" fill="#e9e9e9" stroke="#111"/><text x="10" y="96" font-size="11" font-weight="700">도메인 계층</text><text x="10" y="110" font-size="10">주문 상태기계(과업 3.1), 정산 엔진(과업 3.2)</text><rect x="0" y="126" width="560" height="38" fill="#e9e9e9" stroke="#111"/><text x="10" y="142" font-size="11" font-weight="700">연동 계층</text><text x="10" y="156" font-size="10">결제 게이트웨이 추상화(과업 3.3), WMS 재고 이벤트(과업 3.4)</text><rect x="0" y="172" width="560" height="38" fill="#e9e9e9" stroke="#111"/><text x="10" y="188" font-size="11" font-weight="700">데이터 계층</text><text x="10" y="202" font-size="10">PostgreSQL 신규 스키마, Oracle 11g 이관 대상(과업 3.6)</text><rect x="0" y="218" width="560" height="38" fill="#e9e9e9" stroke="#111"/><text x="10" y="234" font-size="11" font-weight="700">관측 계층</text><text x="10" y="248" font-size="10">구조화 로그·지표·분산추적(과업 3.7)</text></svg><figcaption>그림 2 신규 주문·정산 시스템 계층 구성</figcaption></figure>
+
 
 <h3>3.1 주문 도메인 재설계 및 상태기계 구현</h3>
 <p>여덟 개 테이블에 흩어진 주문·취소·교환·반품 상태를 하나의 주문 상태기계로 통합한다.

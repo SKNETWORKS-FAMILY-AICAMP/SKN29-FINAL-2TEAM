@@ -1,0 +1,24 @@
+/* 기업 보고서체. 왼쪽 강조 막대와 넓은 여백, 큰 제목을 쓴다. 표는 가로줄만. */
+@page { size: A4; margin: 20mm 18mm 20mm 24mm; }
+body { font-family: "Malgun Gothic", "맑은 고딕", sans-serif; font-size: 10pt;
+       line-height: 1.7; color: #1a1a1a; }
+h1 { font-size: 24pt; font-weight: 700; text-align: left; margin: 0 0 10mm;
+     line-height: 1.25; letter-spacing: -0.03em; }
+h2 { font-size: 16pt; font-weight: 700; margin: 12mm 0 4mm; padding-left: 4mm;
+     border-left: 5px solid #1a1a1a; page-break-after: avoid; }
+h3 { font-size: 12pt; font-weight: 700; margin: 7mm 0 2mm; color: #333; page-break-after: avoid; }
+h4 { font-size: 10.5pt; font-weight: 700; margin: 4mm 0 2mm; }
+p { margin: 0 0 3.5mm; }
+ul, ol { margin: 0 0 3.5mm; padding-left: 6mm; }
+li { margin-bottom: 1.8mm; }
+table { width: 100%; border-collapse: collapse; margin: 4mm 0 6mm; font-size: 9pt;
+        page-break-inside: avoid; }
+th, td { border: none; border-bottom: 1px solid #ccc; padding: 2.5mm 2mm; vertical-align: top; }
+th { border-bottom: 2px solid #1a1a1a; font-weight: 700; }
+td.num { text-align: right; }
+.cover-meta { width: 100%; margin: 0 0 12mm; font-size: 9.5pt; }
+.cover-meta th { width: 26%; border-bottom: 1px solid #ccc; }
+.note { background: #f0f0f0; padding: 4mm 5mm; margin: 4mm 0 6mm; font-size: 9.5pt; }
+.pagebreak { page-break-before: always; }
+figure { margin: 6mm 0 7mm; page-break-inside: avoid; }
+figcaption { font-size: 9pt; color: #555; margin-top: 2mm; }

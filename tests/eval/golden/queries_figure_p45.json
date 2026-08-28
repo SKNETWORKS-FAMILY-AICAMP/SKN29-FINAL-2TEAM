@@ -1,0 +1,45 @@
+{
+  "_설명": "P4(케이뱅크플러스 오픈뱅킹 API)·P5(메디컬링크 EMR) 문서에 넣은 그림(SVG)만을 겨냥한 정답지. 앵커는 모두 그림 라벨에만 있고 본문 문장·표에는 없다 — 파싱이 그림 속 <text> 를 살려내지 못하면 이 질의는 전부 틀린다. 그래서 `\"figure\": true` 를 붙여 일반 질의와 따로 집계한다.",
+  "queries": [
+    {
+      "id": "FIG-P4-01",
+      "query": "게이트웨이 계층 구성에서 가장 아래에 있는 것",
+      "expect": {
+        "document": "케이뱅크플러스_오픈뱅킹API_설계서.pdf",
+        "anchor": "원장 연계 계층",
+        "section": "그림 1"
+      },
+      "figure": true
+    },
+    {
+      "id": "FIG-P4-02",
+      "query": "보안 통제 항목이 가장 많이 걸린 과업과 그 항목 수",
+      "expect": {
+        "document": "케이뱅크플러스_오픈뱅킹API_보안요구사항서.pdf",
+        "anchor": "G-06 관제·시험 6건",
+        "section": "그림 1"
+      },
+      "figure": true
+    },
+    {
+      "id": "FIG-P5-01",
+      "query": "EMR 이관 절차에서 리허설에 해당하는 단계 번호",
+      "expect": {
+        "document": "메디컬링크_EMR클라우드전환_데이터이관계획서.pdf",
+        "anchor": "M4 리허설",
+        "section": "그림 2"
+      },
+      "figure": true
+    },
+    {
+      "id": "FIG-P5-02",
+      "query": "간호사 교육은 몇 회차로 편성했나",
+      "expect": {
+        "document": "메디컬링크_EMR클라우드전환_교육및이행계획서.pdf",
+        "anchor": "간호사 16회차",
+        "section": "그림 1"
+      },
+      "figure": true
+    }
+  ]
+}

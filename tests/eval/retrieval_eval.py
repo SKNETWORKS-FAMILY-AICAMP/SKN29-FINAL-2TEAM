@@ -208,6 +208,7 @@ def main() -> int:
 
             results, hits_at = [], {1: 0, 5: 0, 10: 0}
             rr_sum, contaminated, noise_hit = 0.0, 0, 0
+            fig_total = fig_hit = 0
             for q, vector in zip(queries, vectors):
                 want, anchor = q["expect"]["document"], flat(q["expect"]["anchor"])
                 cursor.execute(SEARCH, (str(vector), tid, str(vector), args.top_k))
@@ -231,6 +232,11 @@ def main() -> int:
                 if noised:
                     noise_hit += 1
 
+                in_figure = bool(q.get("figure"))
+                if in_figure:
+                    fig_total += 1
+                    if rank:
+                        fig_hit += 1
                 if rank:
                     rr_sum += 1 / rank
                     for k in hits_at:
@@ -246,6 +252,7 @@ def main() -> int:
                         "top1_score": round(float(rows[0]["score"]), 4) if rows else None,
                         "leaked": leaked,
                         "noise": noised,
+                        "figure": in_figure,
                     }
                 )
 
@@ -263,6 +270,10 @@ def main() -> int:
     print(f"  잠식률     {contaminated/n:6.1%}   (상위 {CONTAMINATION_K} 에 다른 프로젝트 문서)")
     print(f"  노이즈혼입 {noise_hit/n:6.1%}   (상위 {CONTAMINATION_K} 에 배경 문서)")
     print(f"  앵커 정착  {(n-len(missing))/n:6.1%}   ({n-len(missing)}/{n})")
+    if fig_total:
+        # 그림 속 글자만 따로 센다. 본 지표에 섞으면 「검색이 나쁜 것」과
+        # 「파서가 SVG 글자를 흘린 것」이 한 숫자에 뭉개진다.
+        print(f"  그림 회수  {fig_hit/fig_total:6.1%}   ({fig_hit}/{fig_total}, 앵커가 그림 라벨에만 있는 질의)")
 
     if args.json:
         args.json.write_text(
@@ -275,6 +286,8 @@ def main() -> int:
                     "contamination": contaminated / n,
                     "noise_hit": noise_hit / n,
                     "anchor_present": (n - len(missing)) / n,
+                    "figure_recall": (fig_hit / fig_total) if fig_total else None,
+                    "figure_queries": fig_total,
                     "missing_anchors": [m[0] for m in missing],
                     "results": results,
                 },
