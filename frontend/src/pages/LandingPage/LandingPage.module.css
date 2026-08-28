@@ -438,10 +438,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  /* ⚠ 데모는 단계마다 높이가 다르다 — 자리를 안 잡으면 누를 때마다 히어로가
-     통째로 위아래로 튄다(1440 에서 121 → 449px). 제일 큰 단계(확인 카드)만큼
-     미리 잡아 둔다. 실측값이고, 카드 내용이 바뀌면 다시 재야 한다. */
-  min-height: 390px;
+  /* `min-height` 로는 확인 카드가 더 길 때 본문이 390 → 446px 로 늘어난다.
+     가장 큰 단계의 실측 높이를 고정해 thinking·confirm·done 전환이 히어로와
+     다음 섹션의 위치를 밀지 않게 한다. */
+  height: 446px;
+  overflow: hidden;
   justify-content: flex-start;
 }
 
@@ -1275,7 +1276,10 @@
   }
 
   .mockBody {
-    min-height: 430px;
+    /* 390px 화면의 확인 카드가 526px, 320px 화면에서는 658px다.
+       좁아질수록 문장이 감기는 만큼만 늘리되 각 화면 안에서는 단계와 무관하게
+       같은 높이를 유지한다. */
+    height: clamp(526px, calc(1260px - 188vw), 658px);
   }
 
   .heroTitle {
