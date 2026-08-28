@@ -482,15 +482,31 @@ CREATE TABLE doc (
     -- 그 아래 가지는 이 값들의 서로 다른 조합이 만든다 — Drive 에서 폴더가 바뀌어도
     -- 다음 수집이 문서와 함께 갱신하므로 맞춰 줄 두 번째 표가 없다.
     src_folder_path    TEXT,
+    -- 개인 문서를 공유한 팀(team.team_id, FK 없음), 2026-08-18. NULL 이면
+    -- 소유자만 본다. `team_id` 와 다르다 — 이 값이 있어도 소유는 여전히
+    -- `owner_account_id` 다. 공유는 소유를 옮기는 것이 아니라 보여 주는 것이다.
+    --
+    -- ⚠ 이 칸도 `2026-08-18_document_sharing.sql` 에만 있고 여기엔 없어서,
+    -- 이 파일로 만든 DB 는 `_apply.py --check` 에서 걸렸다(2026-08-28 에 되접었다).
+    -- 위 `index_status` 와 같은 사고가 같은 날 두 번 났던 것이다.
+    shared_team_id     VARCHAR(5),
     -- 팀 것도 내 것도 아닌 문서, 그리고 둘 다인 문서를 막는다. 둘 다인 행이
     -- 생기면 그 순간 팀 검색에 개인 파일이 섞인다.
     CONSTRAINT doc_owner_xor_team CHECK (
         (team_id IS NOT NULL AND owner_account_id IS NULL)
      OR (team_id IS NULL AND owner_account_id IS NOT NULL)
+    ),
+    -- 팀 문서는 공유할 것이 없다. 채워지면 팀 문서 목록과 공유 받은 목록
+    -- 두 경로로 같은 문서가 들어온다.
+    CONSTRAINT doc_share_is_personal_only CHECK (
+        shared_team_id IS NULL OR owner_account_id IS NOT NULL
     )
 );
 
 CREATE INDEX ix_doc_owner ON doc (owner_account_id) WHERE owner_account_id IS NOT NULL;
+
+-- 공유 받은 목록이 이 칸으로만 걸린다.
+CREATE INDEX ix_doc_shared_team ON doc (shared_team_id) WHERE shared_team_id IS NOT NULL;
 
 -- 「문서」 화면은 폴더로 묶어 보는 것이 기본 동작이다(2026-08-25).
 CREATE INDEX idx_doc_team_folder ON doc (team_id, team_folder_id);

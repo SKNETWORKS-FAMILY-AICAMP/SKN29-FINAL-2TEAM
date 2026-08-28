@@ -4452,6 +4452,15 @@ _TEAM_PURGE_STEPS: tuple[tuple[str, str], ...] = (
     ("스킬 검증 job", "DELETE FROM skill_registration_job WHERE team_id = %(team_id)s"),
     ("스킬 회귀 사례", "DELETE FROM skill_eval_regression_case WHERE team_id = %(team_id)s"),
     ("스킬 오발동 신고", "DELETE FROM skill_eval_feedback WHERE team_id = %(team_id)s"),
+    # 개인 문서를 이 팀에 공유해 둔 것(2026-08-18 `doc.shared_team_id`, 2026-08-28
+    # 에 채웠다). **문서는 지우지 않는다** — 다른 팀 사람이 소유한 개인 파일이고,
+    # 공유는 소유가 아니라 「보여 주기」다. 대신 공유를 푼다. 남겨 두면 짧은
+    # 코드가 재사용될 때 **새 팀이 남의 개인 문서를 그대로 열람한다**
+    # (`document_pipeline.py` 의 조회가 `d.shared_team_id = %s` 하나로 걸린다).
+    #
+    # 이 칸은 `team_id` 라는 이름이 아니라서 아래 가드
+    # (`_tables_with("team_id")`)가 잡지 못한다 — 손으로 찾은 것이다.
+    ("개인 문서 공유 해제", "UPDATE doc SET shared_team_id = NULL WHERE shared_team_id = %(team_id)s"),
     ("연결 폴더", "DELETE FROM team_folder WHERE team_id = %(team_id)s"),
     ("팀 구성원(HR)", "DELETE FROM team_member WHERE team_id = %(team_id)s"),
     ("초대 사용 기록", "DELETE FROM user_person_link WHERE invite_id IN (SELECT invite_id FROM member_invite WHERE team_id = %(team_id)s)"),
