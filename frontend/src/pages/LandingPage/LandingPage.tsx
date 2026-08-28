@@ -39,9 +39,9 @@ import styles from './LandingPage.module.css';
 
 /** 히어로 아래 3줄. 제품이 지키는 약속만 적는다 — 온보딩 정보는 여기 안 온다. */
 const PROOFS = [
-  { icon: 'file-text', text: '문서에서 찾은 답은 근거를 같이 보여줍니다' },
-  { icon: 'shield-check', text: '올리기 전에 무엇이 올라갈지 먼저 보여줍니다' },
-  { icon: 'sparkles', text: '자주 하는 일은 이름 붙여 팀과 함께 씁니다' },
+  { icon: 'file-text', text: '답마다 남는 확인 근거' },
+  { icon: 'shield-check', text: '실행 직전, 사람의 확인' },
+  { icon: 'sparkles', text: '반복할수록 쌓이는 팀의 방식' },
 ] as const;
 
 /**
@@ -49,10 +49,10 @@ const PROOFS = [
  * 적는다 — 「그래서 내가 뭘 안 해도 되나」가 페이지에 한 줄도 없었다.
  */
 const GAINS = [
-  { gone: '회의록 뒤져서 할 일 옮겨 적기', now: '지난 회의에서 결정된 일을 정리해 줍니다.' },
-  { gone: '누가 여유 있는지 물어보고 다니기', now: '다음 주에 여유 있는 팀원을 바로 알려 줍니다.' },
-  { gone: '업무 하나씩 손으로 등록하기', now: '확인한 것만 골라 한 번에 올립니다.' },
-  { gone: '주간 업무량 표 만들어 공유하기', now: '표 파일로 만들어 그 자리에서 받습니다.', file: true },
+  { gone: '회의록 뒤져서 할 일 옮겨 적기', now: '결정과 다음 할 일을 한 번에' },
+  { gone: '누가 여유 있는지 물어보고 다니기', now: '다음 주 여유 인력, 바로 확인' },
+  { gone: '업무 하나씩 손으로 등록하기', now: '확인한 업무만 골라 일괄 등록' },
+  { gone: '주간 업무량 표 만들어 공유하기', now: '업무량 표를 만들고 즉시 다운로드' },
 ] as const;
 
 /**
@@ -77,17 +77,17 @@ const TRUST_POINTS = [
   {
     icon: 'users',
     title: '팀별 권한',
-    body: '만든 사람과 팀 권한에 맞춰 에이전트와 정보를 관리합니다.',
+    body: '만든 사람과 팀 권한에 맞춘 에이전트·정보 관리',
   },
   {
     icon: 'shield-check',
     title: '변경 전 확인',
-    body: '등록·수정·파일 생성은 무엇을 할지 보여 준 뒤 실행합니다.',
+    body: '등록·수정·파일 생성 전, 실행 내용 미리보기',
   },
   {
     icon: 'file-text',
     title: '실행 기록',
-    body: '누가 무엇을 실행했는지 확인할 수 있도록 기록을 남깁니다.',
+    body: '누가 무엇을 실행했는지 빠짐없이 남는 기록',
   },
 ] as const;
 
@@ -391,23 +391,6 @@ function ApproveMock() {
   );
 }
 
-/**
- * 도구가 만든 파일 카드 — `ChatCards.tsx` 의 `ProducedFilesCard`.
- * 안내 문구(「문서 > 내 파일」에도 저장되어 있습니다)는 그 카드의 실제 문장이다.
- */
-function FilesMock() {
-  return (
-    <div className={styles.filesCard}>
-      <div className={styles.fileRow}>
-        <Icon name="file-text" size={16} color="var(--color-primary)" />
-        <span className={styles.fileName}>주간_업무량.xlsx</span>
-        <span className={styles.fileBtn}>다운로드</span>
-      </div>
-      <p className={styles.fileHint}>「문서 &gt; 내 파일」에도 저장되어 있습니다.</p>
-    </div>
-  );
-}
-
 export default function LandingPage() {
   const session = useSession();
   // 로그인한 사람은 가입이 아니라 자기 작업으로 보낸다. 4차 단계 1에서 목적지가
@@ -455,19 +438,18 @@ export default function LandingPage() {
         <section className={styles.hero}>
           <div className={styles.heroInner}>
             <div className={styles.heroCopy}>
-              <p className={styles.badge}>프로젝트를 운영하는 팀을 위한 AI</p>
+              <p className={styles.badge}>프로젝트를 움직이는 팀의 AI</p>
               <h1 className={styles.heroTitle}>
-                팀의 정보를 한 번에 찾고,
-                <br />
-                필요한 업무까지 처리합니다
+                찾은 정보에서,
+                <span className={styles.heroAccent}>실행할 업무까지.</span>
               </h1>
               <p className={styles.heroSub}>
-                문서와 팀원, 프로젝트 정보를 한 대화에서 확인하세요. 찾은 내용을 정리해 파일로 만들거나,
-                검토한 뒤 실제 업무로 등록할 수 있습니다.
+                halil은 문서·사람·프로젝트에 흩어진 정보를 찾아 근거와 함께 답합니다. 확인한 결과는 곧바로
+                실제 업무로 연결할 수 있습니다.
               </p>
               <div className={styles.heroActions}>
                 <Link className={styles.btnPrimary} to={startHref}>
-                  시작하기
+                  우리 팀에서 시작하기
                 </Link>
               </div>
 
@@ -491,8 +473,8 @@ export default function LandingPage() {
         <section className={styles.promptBand}>
           <div className={styles.promptInner}>
             <div className={styles.promptIntro}>
-              <span className={styles.sectionKicker}>처음에는</span>
-              <h2 className={styles.promptTitle}>한 문장으로 시작합니다</h2>
+              <span className={styles.sectionKicker}>시작은 간단하게</span>
+              <h2 className={styles.promptTitle}>해야 할 일을, 평소 말하듯 적어보세요.</h2>
             </div>
             <ul className={styles.promptList}>
               {ASKS.map((ask) => (
@@ -508,8 +490,12 @@ export default function LandingPage() {
         {/* 3 · 안 해도 되는 일 */}
         <section className={styles.bandDark} id="can">
           <div className={styles.bandInner}>
-            <p className={styles.sectionKickerDark}>팀의 하루에서</p>
-            <h2 className={styles.h2}>반복되는 수작업을 줄입니다</h2>
+            <p className={styles.sectionKickerDark}>사라지는 수작업</p>
+            <h2 className={`${styles.h2} ${styles.bandHeadline}`}>
+              찾고, 옮기고, 다시 적는 일은
+              <br />
+              이제 그만.
+            </h2>
             <ul className={styles.gainGrid}>
               {GAINS.map((item) => (
                 <li className={styles.gain} key={item.gone}>
@@ -523,7 +509,6 @@ export default function LandingPage() {
                     </span>
                     <strong className={styles.gainNow}>{item.now}</strong>
                   </span>
-                  {'file' in item && <FilesMock />}
                 </li>
               ))}
             </ul>
@@ -535,11 +520,15 @@ export default function LandingPage() {
           <div className={styles.bandInner}>
             <div className={styles.split}>
               <div className={styles.statement}>
-                <p className={styles.sectionKicker}>반복 업무</p>
-                <h2 className={styles.h2}>코딩 없이 만들어 팀과 함께 씁니다</h2>
+                <p className={styles.sectionKicker}>팀의 방식</p>
+                <h2 className={styles.h2}>
+                  우리 팀의 일하는 방식을,
+                  <br />
+                  하나의 AI에.
+                </h2>
                 <p className={styles.statementBody}>
-                  무엇을 시킬지 우리말로 적습니다. 자주 하는 일은 이름을 붙여 두고, 혼자 써 본 뒤 팀에
-                  넘깁니다. 코딩은 한 줄도 하지 않습니다.
+                  자주 반복하는 일을 우리말로 한 번 적어 두세요. 먼저 혼자 써 보고, 준비되면 팀에 공유할 수
+                  있습니다. 코딩은 필요 없습니다.
                 </p>
                 {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
                     쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
@@ -567,11 +556,15 @@ export default function LandingPage() {
             <div className={`${styles.split} ${styles.splitReverse}`}>
               <ApproveMock />
               <div className={styles.statement}>
-                <p className={styles.sectionKicker}>통제와 기록</p>
-                <h2 className={styles.h2}>실행 전에 한 번 더 확인합니다</h2>
+                <p className={styles.sectionKicker}>사람이 정하는 마지막 단계</p>
+                <h2 className={styles.h2}>
+                  AI는 준비하고,
+                  <br />
+                  마지막 결정은 사람이.
+                </h2>
                 <p className={styles.statementBody}>
-                  업무를 등록하거나 파일을 만들기 전에 무엇이 올라갈지 먼저 보여 줍니다. 승인하거나,
-                  고치거나, 그만둘 수 있습니다. 문서에 없는 마감일을 지어내서 채우지 않습니다.
+                  업무 등록이나 파일 생성처럼 실제 결과가 달라지는 순간에는 먼저 내용을 보여 줍니다. 승인,
+                  수정, 중단 중 무엇을 택할지는 사람의 몫. 근거 없는 값은 그대로 비워 둡니다.
                 </p>
                 <ul className={styles.trustList}>
                   {TRUST_POINTS.map((point) => (
@@ -594,10 +587,14 @@ export default function LandingPage() {
         {/* 6 · 마감 CTA */}
         <section className={styles.cta}>
           <div className={styles.ctaInner}>
-            <h2 className={styles.ctaTitle}>우리 팀의 정보로 시작해 보세요</h2>
-            <p className={styles.ctaSub}>새 팀을 만들거나 받은 초대로 참여할 수 있습니다.</p>
+            <h2 className={styles.ctaTitle}>
+              이제, 찾은 정보를
+              <br />
+              다음 업무로 이어 보세요.
+            </h2>
+            <p className={styles.ctaSub}>새 팀을 만들 수도, 받은 초대로 바로 합류할 수도 있습니다.</p>
             <Link className={styles.btnOnDark} to={startHref}>
-              시작하기
+              우리 팀에서 시작하기
             </Link>
           </div>
         </section>
