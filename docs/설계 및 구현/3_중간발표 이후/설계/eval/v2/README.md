@@ -3,10 +3,11 @@
 ## 1. 문서 상태
 
 - 기준일: 2026-08-28
-- 상태: Core DEV 기술 작업과 Candidate 처리 결정 완료, Phase 9 승인 대기
-- 현재 단계: 8단계 게이트 점검에서 정지 (`Phase 9 미진입`)
+- 상태: Core DEV 기술 작업 완료, Phase 9 freeze 준비 진행 중
+- 현재 단계: 9단계 (`PHASE9_FREEZE_PREPARATION`), HOLDOUT 실행 전
 - 정본 위치: 이 `eval/v2/` 디렉터리
 - main 병합 인계: [`2026-08-28_jihun_main_병합_인계서.md`](../../../작업기록/Jihun_eval_v2/2026-08-28_jihun_main_병합_인계서.md)
+- HOLDOUT 전달 자료: [`전달 문서/README.md`](../../../작업기록/Jihun_eval_v2/전달%20문서/README.md)
 
 기존 `agent_poc_v1/v2`, `agent_workflow_v1`, workflow별 문서, 실행 결과와
 `workflow_baseline_v0.md`는 평가 기준을 발견한 `LEGACY` 개발 증거다. 삭제하지
@@ -84,14 +85,15 @@ eval/v2/
 |---:|---|---|
 | 0 | 완료 | 기존 결과는 보존하되 V2 공식 집계에서 제외 |
 | 1 | 완료 | 보강안 반영 후 `APPROVED` |
-| 2 | 완료 | `02_risk_scenario_matrix.md` 승인, 교차 HOLDOUT 관리 확정 |
+| 2 | 완료 | `02_risk_scenario_matrix.md` 승인, DEV/HOLDOUT 역할 분리 확정 |
 | 3 | 완료 | 공통 계약과 대표 적용 검증 승인 (`APPROVED`) |
 | 4 | 완료 | 실제 PDF 기반 Core DEV 10개 package와 자동 무결성 검사 완료 |
 | 5 | 완료 | deterministic·Hard Gate·Judge 결합과 집계 규칙 구현·테스트 완료 |
 | 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
 | 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 현재 완료 run 101/101 DB·SHA-256 대조 완료 |
 | 8 | 완료 | AV073·Git `e888d6b…`로 Core 10개 variant 36 VALID 재실행 완료. 32 PASS/4 FAIL, S01 보류·S07 3/3 PASS |
-| 9~10 | 시작 전·진입 차단 | freeze manifest를 승인하기 전까지 진입하지 않음 |
+| 9 | 진행 중 | 비공개 문제 제작 가이드·빈 템플릿 완료, private package와 freeze manifest 준비 필요 |
+| 10 | 시작 전·실행 차단 | freeze manifest 승인과 preflight 통과 전 HOLDOUT batch 실행 금지 |
 
 현재 자동 검증 명령은 `python scripts/eval_v2_validate.py`다. V2 공식 점수에는 사람
 판정이나 LEGACY calibration을 사용하지 않는다. HOLDOUT의 custodian/reviewer는 점수자가

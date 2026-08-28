@@ -1,0 +1,82 @@
+# 공개용 빈 템플릿이다. 채운 사본은 반드시 접근 제한 비공개 저장소에만 둔다.
+protocol_version: eval-v2
+fixture_id: "<SXX-HOLDOUT-NNN>"
+fixture_version: 1
+gold_version: 1
+family_id: "<SXX>"
+variant_id: "<SXX_OR_SXXA>"
+split: HOLDOUT
+fixture_status: DRAFT
+compatible_scenario_versions: [1]
+
+title: "<PRIVATE_TITLE>"
+purpose: "<검사할 invariant와 위험을 한 문장으로 작성>"
+input: "<PRIVATE_AGENT_INPUT>"
+
+context:
+  execution_mode: "<isolated_read_only_or_controlled>"
+  account_role: evaluation_account
+  team_role: evaluation_team
+  project_role: "<평가 scope 역할>"
+  new_session_per_run: true
+
+source_binding_policy: PRIVATE_APPROVED_SOURCE
+source_artifacts:
+  - source_id: "<PRIVATE_SOURCE_ID>"
+    private_ref: "<ACCESS_RESTRICTED_REFERENCE>"
+    mime_type: "<MIME_TYPE>"
+    private_sha256_ref: "<PRIVATE_MANIFEST_KEY>"
+    relevant_location: "<PRIVATE_PAGE_OR_SNAPSHOT_PATH>"
+
+preconditions:
+  - "<실행 전 반드시 참이어야 하는 상태>"
+
+fixture_instance_policy: "<STATIC_OR_PER_RUN>"
+allowed_tools: ["<ALLOWED_TOOL>"]
+forbidden_tools: ["<FORBIDDEN_TOOL>"]
+side_effect_policy: "<READ_ONLY_OR_APPROVED_POLICY>"
+
+runtime_overlay:
+  approval_script: "<NOT_USED_OR_PRIVATE_SCRIPT_REF>"
+  failure_script: "<NOT_USED_OR_PRIVATE_SCRIPT_REF>"
+  canary_policy: "<NOT_USED_OR_PER_RUN_PRIVATE_CANARY>"
+
+required_observables:
+  - final_answer
+  - logical_tool_calls
+  - "<SCENARIO_SPECIFIC_OBSERVABLE>"
+
+preflight_contract:
+  checksum_match_required: true
+  source_probe_required: true
+  candidate_binding_required: true
+  trace_access_control_required: true
+
+cleanup_contract:
+  cleanup_required: "<true_or_false>"
+  exact_target_identity_required: true
+  steps:
+    - "<삭제 또는 원상복구 절차>"
+  verification:
+    - "<before/after 또는 row count 검증>"
+
+dev_independence:
+  compared_dev_fixture_id: "<SXX-DEV-NNN>"
+  differences:
+    - "<사실 조합, 교란 source, 도구 조합, 경계 조건 중 실질 차이>"
+  rename_or_date_only_copy: false
+
+readiness:
+  contract_requirement: DEFINED
+  fixture_status: DRAFT
+  instrumentation_status: "<READY_OR_BLOCKED_OBSERVABILITY>"
+  official_execution_status: NOT_READY
+
+provenance:
+  source_type: "<EXISTING_PROJECT_SOURCE_OR_ISOLATED_SNAPSHOT>"
+  creates_fake_project_document: false
+  contains_production_secret: false
+  contains_personal_data: false
+  custodian: "<PRIVATE_IDENTITY_REF>"
+  reviewer: "<PRIVATE_IDENTITY_REF>"
+

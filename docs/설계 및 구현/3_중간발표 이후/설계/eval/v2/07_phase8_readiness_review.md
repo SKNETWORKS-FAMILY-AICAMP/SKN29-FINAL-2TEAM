@@ -2,9 +2,9 @@
 
 ## 1. 결론
 
-**Core DEV의 기술 작업은 완료됐고 Candidate 처리 방침도 정했다. 다만 사용자의 별도
-승인 전까지 Phase 9에는 진입하지 않는다.** 현재 게이트 판정은
-`STOP_BEFORE_PHASE_9`다.
+**Core DEV의 기술 작업은 완료됐고 Candidate 처리 방침도 정했다.** 2026-08-28 사용자가
+Phase 9 진입을 승인해 현재 상태는 `PHASE9_FREEZE_PREPARATION`이다. 이 승인은 HOLDOUT
+원문 공개나 batch 실행 승인이 아니며 freeze manifest 승인 전에는 실행하지 않는다.
 
 실행이 승인된 Core 10개 variant의 fixture·runner·자동 판정·반복 실행을 모두 완료했다.
 현재 결과는 문제를 찾고 수정하기 위한 DEV 진단 결과이며 공식 HOLDOUT 성적은 아니다.
@@ -107,6 +107,8 @@ Phase 8의 결정 항목은 닫혔다. 다만 Phase 9 시작 승인은 아직 �
 
 다음 단계에서는 `AG004/AV073`, 정확한 평가 Git commit, S01의 알려진 한계와 S06의
 관측 변동성을 freeze manifest에 명시한다.
-사용자가 Phase 9 진입을 별도로 승인하기 전에는 HOLDOUT을 열거나 실행하지 않는다.
+Phase 9 진입 승인은 받았다. 다음에는 비공개 package의 공개 commitment, 담당자,
+반복 횟수, 비용과 접근 통제를 freeze manifest에 결속한다. manifest 승인 전에는
+HOLDOUT을 열거나 실행하지 않는다.
 
-현재 게이트 판정: `STOP_BEFORE_PHASE_9`.
+현재 게이트 판정: `PHASE9_FREEZE_PREPARATION`.

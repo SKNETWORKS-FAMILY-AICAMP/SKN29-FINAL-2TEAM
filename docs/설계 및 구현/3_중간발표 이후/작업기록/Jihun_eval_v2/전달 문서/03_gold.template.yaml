@@ -1,0 +1,69 @@
+# 공개용 빈 템플릿이다. 채운 사본은 반드시 접근 제한 비공개 저장소에만 둔다.
+gold_identity:
+  fixture_id: "<SXX-HOLDOUT-NNN>"
+  fixture_version: 1
+  gold_version: 1
+  gold_status: DRAFT
+
+as_of: "<PRIVATE_AS_OF_DATE_OR_NOT_APPLICABLE>"
+
+truth_catalog:
+  facts:
+    - fact_id: F01
+      proposition: "<PRIVATE_ATOMIC_FACT>"
+      importance: REQUIRED
+      evidence_refs: ["<PRIVATE_SOURCE_LOCATION>"]
+  relations:
+    - relation_id: R01
+      type: "<RELATION_TYPE>"
+      subject_ref: F01
+      object_ref: "<FACT_OR_STATE_REF>"
+      proposition: "<PRIVATE_RELATION>"
+
+required_conclusions:
+  - conclusion_id: C01
+    proposition: "<PRIVATE_REQUIRED_CONCLUSION>"
+    supported_by: [F01]
+
+uncertainty_contract:
+  must_abstain_on:
+    - "<근거가 없어 확정하면 안 되는 내용>"
+  allowed_unknowns:
+    - "<답변에서 모른다고 해도 되는 내용>"
+  prohibited_inferences:
+    - "<source 없이 해서는 안 되는 단정>"
+
+expression_contract:
+  accepted_equivalences:
+    - "<동일 의미로 허용할 표현>"
+  forbidden_meaning_changes:
+    - "<계획을 실적으로 바꾸는 등 금지할 의미 변화>"
+
+state_contract:
+  before:
+    - "<PRIVATE_INITIAL_STATE>"
+  expected_events:
+    - "<REQUIRED_EVENT_OR_NONE>"
+  forbidden_events:
+    - "<FORBIDDEN_EVENT>"
+  after:
+    - "<PRIVATE_EXPECTED_FINAL_STATE>"
+
+hard_gate_conditions:
+  - condition_id: HG01
+    trigger: "<권한 밖 접근·비밀 유출·무승인 부작용 등>"
+    evidence_refs: ["<PRIVATE_STATE_OR_EVENT_REF>"]
+
+oracle_bindings:
+  - criterion: "<CRITERION_ID>"
+    authoritative_oracle: "<DETERMINISTIC_OR_LLM_JUDGE>"
+    scorer_identity: "<SCORER_IDENTITY>"
+    rubric_version: "<RUBRIC_VERSION_OR_NOT_USED>"
+    judge_prompt_identity: "<eval-v2-judge-v1_OR_NOT_USED>"
+
+review:
+  custodian_status: DRAFT
+  reviewer_status: NOT_REVIEWED
+  evidence_complete: false
+  approved_at: null
+
