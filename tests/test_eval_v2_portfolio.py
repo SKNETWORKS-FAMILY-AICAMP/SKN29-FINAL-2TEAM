@@ -15,6 +15,7 @@ class EvalV2PortfolioTests(unittest.TestCase):
         version: int,
         result: str = "PASS",
         invalid: bool = False,
+        git_commit: str = "frozen-commit",
     ) -> None:
         run = root / f"v2-{suffix}"
         run.mkdir()
@@ -22,6 +23,7 @@ class EvalV2PortfolioTests(unittest.TestCase):
             "protocol": "AGENT_EVAL_V2",
             "eval_run_id": f"v2-{suffix}",
             "candidate_id": "AG004/AV035",
+            "git_commit": git_commit,
             "planned_scenarios": [fixture_id],
         }), encoding="utf-8")
         (run / "v2_scenario_results.jsonl").write_text(json.dumps({
@@ -63,6 +65,21 @@ class EvalV2PortfolioTests(unittest.TestCase):
             payload = build_portfolio(Path(temporary), "AG004/AV035")
             self.assertFalse(payload["complete"])
             self.assertEqual(payload["observed_run_count"], 0)
+
+    def test_exact_git_commit_excludes_same_candidate_other_code_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_run(root, "frozen", "S01-DEV-001", 1)
+            self._write_run(
+                root, "other", "S01-DEV-001", 1, git_commit="other-commit"
+            )
+
+            payload = build_portfolio(
+                root, "AG004/AV035", git_commit="frozen-commit"
+            )
+
+            self.assertEqual(payload["observed_run_count"], 1)
+            self.assertEqual(payload["git_commit"], "frozen-commit")
 
 
 if __name__ == "__main__":

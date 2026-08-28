@@ -116,6 +116,13 @@ python scripts/eval_v2_portfolio.py
 python scripts/eval_v2_record.py sync-root
 ```
 
+새 cohort를 직접 비교할 때는 Candidate ID뿐 아니라 실행 manifest에 기록된 exact Git
+commit도 함께 고정한다.
+
+```text
+python scripts/eval_v2_portfolio.py --candidate-id AG004/AVxxx --git-commit <40자리 SHA>
+```
+
 저장된 모든 V2 실행은 다음 명령으로 로컬 정적 HTML 대시보드로 만든다.
 
 ```text

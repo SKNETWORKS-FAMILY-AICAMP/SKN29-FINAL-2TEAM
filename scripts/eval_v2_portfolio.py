@@ -31,10 +31,16 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--candidate-id", default=DEFAULT_CANDIDATE)
+    parser.add_argument(
+        "--git-commit",
+        help="동일 Candidate ID라도 다른 코드 상태의 실행을 섞지 않도록 exact commit을 고정한다.",
+    )
     return parser
 
 
-def build_portfolio(results_root: Path, candidate_id: str) -> dict:
+def build_portfolio(
+    results_root: Path, candidate_id: str, git_commit: str | None = None
+) -> dict:
     by_fixture: dict[str, list[dict]] = {key: [] for key in CORE_DEV_COHORT}
     invalid: list[dict] = []
 
@@ -45,6 +51,8 @@ def build_portfolio(results_root: Path, candidate_id: str) -> dict:
             continue
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("candidate_id") != candidate_id:
+            continue
+        if git_commit and manifest.get("git_commit") != git_commit:
             continue
         results = [
             json.loads(line)
@@ -107,6 +115,7 @@ def build_portfolio(results_root: Path, candidate_id: str) -> dict:
         "protocol": "AGENT_EVAL_V2",
         "cohort": "CORE_DEV_PRE_FREEZE",
         "candidate_id": candidate_id,
+        "git_commit": git_commit,
         "complete": complete,
         "variant_count": len(CORE_DEV_COHORT),
         "planned_run_count": planned_total,
@@ -131,7 +140,7 @@ def build_portfolio(results_root: Path, candidate_id: str) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    payload = build_portfolio(args.results_root, args.candidate_id)
+    payload = build_portfolio(args.results_root, args.candidate_id, args.git_commit)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload["complete"] else 2
 
