@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -117,17 +118,54 @@ def preflight(cursor, queries, tid):
 
 
 def project_index(golden: dict) -> dict[str, str]:
-    """문서 → 프로젝트. 정답지의 `projects` 목록이 정본이다.
+    """문서 → 소속. 정답지의 `projects` 와 문서 명세가 정본이다.
 
     파일 이름 규칙(접두사)으로 가르지 않는다. 처음에 그렇게 했다가, 정답 문서를
     부분 문자열(「과업지시서」)로 적은 것이 두 프로젝트의 파일에 **다 걸려**
     잠식률이 거꾸로 나왔다 — 자기 프로젝트 문서를 남의 것으로 셌다.
+
+    `documents/specs/` 는 파일 하나가 프로젝트 하나다(`noise_*` 만 예외로 묶는다).
+    거기서 `target` 을 읽어 소속을 채운다 — 정답지에 목록을 두 번 적지 않는다.
     """
-    return {
+    index = {
         name: project
         for project, names in golden.get("projects", {}).items()
         for name in names
     }
+
+    specs = Path(__file__).resolve().parent / "documents" / "specs"
+    for path in sorted(specs.glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        owner = "노이즈" if path.stem.startswith("noise") else path.stem
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception as exc:  # noqa: BLE001 — 명세 하나가 깨져도 나머지는 잰다
+            print(f"⚠ 명세를 읽지 못했다: {path.name} ({exc})")
+            continue
+        for doc in getattr(module, "DOCUMENTS", []):
+            index[doc["target"]] = owner
+    return index
+
+
+def load_golden() -> dict:
+    """`retrieval.json` 에 `queries_*.json` 을 합친다.
+
+    프로젝트별 정답지를 나눠 만들기 때문이다 — 한 파일에 모아 두면 여럿이
+    동시에 쓸 때 서로를 덮어쓴다.
+    """
+    base = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    seen = {q["id"] for q in base["queries"]}
+    for path in sorted(GOLDEN.parent.glob("queries_*.json")):
+        extra = json.loads(path.read_text(encoding="utf-8"))
+        for q in extra.get("queries", []):
+            if q["id"] in seen:
+                raise SystemExit(f"질의 id 가 겹친다: {q['id']} ({path.name})")
+            seen.add(q["id"])
+            base["queries"].append(q)
+    return base
 
 
 def main() -> int:
@@ -136,7 +174,7 @@ def main() -> int:
     parser.add_argument("--json", type=Path)
     args = parser.parse_args()
 
-    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    golden = load_golden()
     queries = golden["queries"]
     projects = project_index(golden)
 
@@ -169,7 +207,7 @@ def main() -> int:
             vectors = embed_all([q["query"] for q in queries])
 
             results, hits_at = [], {1: 0, 5: 0, 10: 0}
-            rr_sum, contaminated = 0.0, 0
+            rr_sum, contaminated, noise_hit = 0.0, 0, 0
             for q, vector in zip(queries, vectors):
                 want, anchor = q["expect"]["document"], flat(q["expect"]["anchor"])
                 cursor.execute(SEARCH, (str(vector), tid, str(vector), args.top_k))
@@ -182,13 +220,16 @@ def main() -> int:
                         break
 
                 want_project = projects.get(want)
-                leaked = [
-                    r["file_name"]
+                others = [
+                    (r["file_name"], projects.get(r["file_name"], want_project))
                     for r in rows[:CONTAMINATION_K]
-                    if projects.get(r["file_name"], want_project) != want_project
                 ]
+                leaked = [n for n, owner in others if owner not in (want_project, "노이즈")]
+                noised = [n for n, owner in others if owner == "노이즈"]
                 if leaked:
                     contaminated += 1
+                if noised:
+                    noise_hit += 1
 
                 if rank:
                     rr_sum += 1 / rank
@@ -204,6 +245,7 @@ def main() -> int:
                         "top1_document": rows[0]["file_name"] if rows else None,
                         "top1_score": round(float(rows[0]["score"]), 4) if rows else None,
                         "leaked": leaked,
+                        "noise": noised,
                     }
                 )
 
@@ -219,6 +261,7 @@ def main() -> int:
     print(f"  Recall@10  {hits_at[10]/n:6.1%}   ({hits_at[10]}/{n})")
     print(f"  MRR        {rr_sum/n:6.3f}")
     print(f"  잠식률     {contaminated/n:6.1%}   (상위 {CONTAMINATION_K} 에 다른 프로젝트 문서)")
+    print(f"  노이즈혼입 {noise_hit/n:6.1%}   (상위 {CONTAMINATION_K} 에 배경 문서)")
     print(f"  앵커 정착  {(n-len(missing))/n:6.1%}   ({n-len(missing)}/{n})")
 
     if args.json:
@@ -230,6 +273,7 @@ def main() -> int:
                     "recall": {str(k): v / n for k, v in hits_at.items()},
                     "mrr": rr_sum / n,
                     "contamination": contaminated / n,
+                    "noise_hit": noise_hit / n,
                     "anchor_present": (n - len(missing)) / n,
                     "missing_anchors": [m[0] for m in missing],
                     "results": results,
