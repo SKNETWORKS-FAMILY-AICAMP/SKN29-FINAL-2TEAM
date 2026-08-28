@@ -21,15 +21,20 @@ def builtin_tool_response() -> list[dict[str, Any]]:
     """내장 도구 목록. Registry가 정본이다 — 화면이 따로 적어 두면 어긋난다.
 
     `ALWAYS_ON_TOOL_REFS`(예: `skill_register`)는 안 낸다 — 모든 에이전트에
-    무조건 붙는 도구라 고르고 말고가 없다. 골라야 하는 목록에 고를 필요 없는
+    무조건 붙는 도구라 고르고 말고가 없다. `AGENT_ONLY_TOOL_REFS`(예:
+    `task_extraction`)도 안 낸다 — 특정 prebuilt 에이전트가 자기 구현으로만
+    쓰는 도구라 사용자가 고를 대상이 아니다. 골라야 하는 목록에 고를 필요 없는
     항목이 섞이면 "이건 꺼도 되나?"라는 오해를 만든다.
     """
 
     from services.harness.registry import (
+        AGENT_ONLY_TOOL_REFS,
         ALWAYS_ON_TOOL_REFS,
         BUILTIN_TOOLS,
         DEFAULT_CHAT_TOOL_REFS,
     )
+
+    hidden = ALWAYS_ON_TOOL_REFS | AGENT_ONLY_TOOL_REFS
 
     return [
         {
@@ -47,7 +52,7 @@ def builtin_tool_response() -> list[dict[str, Any]]:
             "input_schema": tool.input_schema,
         }
         for tool in BUILTIN_TOOLS.values()
-        if tool.ref not in ALWAYS_ON_TOOL_REFS
+        if tool.ref not in hidden
     ]
 
 

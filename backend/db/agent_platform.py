@@ -381,6 +381,102 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
     return agent_id
 
 
+#: 「업무 추출 에이전트」(prebuilt)의 시스템 프롬프트. `provision_task_extraction_agent`
+#: 와 `DB/migrations/2026-08-30_task_extraction_agent.sql` 이 **같은 문구**를 써야 한다
+#: — 한쪽만 고치면 신규 팀과 기존 팀의 에이전트가 달라진다.
+TASK_EXTRACTION_AGENT_PROMPT = (
+    "너는 프로젝트 문서에서 해야 할 업무를 뽑아 정리하는 전담 에이전트다.\n\n"
+    "사용자가 「이 프로젝트 문서에서 업무를 뽑아 줘」·「할 일 정리해 줘」처럼 요청하면 "
+    "`task_extraction` 을 **인자 없이** 부른다. 기준 문서는 사람이 프로젝트 화면에서 "
+    "미리 골라 둔 것을 쓰므로 네가 문서를 고르거나 id 를 넘기지 않는다. "
+    "몇 분 걸리는 작업이니 시작 전에 그 사실을 한 줄로 알린다.\n\n"
+    "추출이 끝나면 결과를 제목·담당 역할·예상 공수·근거 요약이 보이는 표로 정리해 "
+    "보여 준다. 사용자가 등록을 원하면 `task_register` 로 넘긴다(실행 전 승인 카드가 "
+    "뜬다). 같은 제목이 이미 있는지 궁금하면 먼저 `task_list` 로 확인한다.\n\n"
+    "추출 결과에 `model_fallback_from` 값이 있으면, 답변에 「요청하신 모델("
+    "<그 값>)로는 이 추출을 돌릴 수 없어 gpt-5.6-sol 로 대체했습니다」를 반드시 "
+    "명시한다.\n\n"
+    "「기준 문서가 지정되지 않았다」는 오류가 나면, 프로젝트 화면의 「기준 문서 "
+    "선택」에서 문서를 정한 뒤 다시 요청하라고 안내한다."
+)
+
+#: 이 에이전트가 붙이는 도구. 추출 + 등록 + (중복 확인용) 조회.
+TASK_EXTRACTION_AGENT_TOOLS = (
+    "task_extraction",
+    "task_register",
+    "task_list",
+    "document_list",
+)
+
+
+def provision_task_extraction_agent(cursor, *, team_id: str, owner_account_id: str) -> str:
+    """팀에 「업무 추출 에이전트」(prebuilt) 하나를 만들고 바로 ACTIVE 로 발행한다
+    (2026-08-30).
+
+    `task_extraction` 은 원래 채팅 도구 하나였다. 이걸 독립 선택 가능한 에이전트로
+    올려, 채팅 상단 드롭다운에서 고를 수도 있고 기본 어시스턴트가 위임할 수도 있게
+    한다. 파이프라인(`services/task_extraction/service.py`) 자체는 그대로다 — 이
+    에이전트는 그 도구를 부르는 얇은 껍데기이며, 종합 단계 모델은 이 에이전트에
+    설정된 모델(`agent_versions.model`)을 그대로 쓴다.
+
+    `provision_default_chat_agent` 와 같은 규칙 — 넘겨받은 커서에 얹혀 돌고
+    (`TeamRepository.create()` 트랜잭션), model 을 NULL 로 두지 않는다.
+    """
+
+    agent_id = _next_shared_agent_id(cursor)
+    cursor.execute(
+        """
+        INSERT INTO agents
+            (agent_id, team_id, name, description, owner_account_id,
+             status, is_prebuilt, is_default_chat)
+        VALUES (%s, %s, %s, %s, %s, 'ACTIVE', true, false)
+        """,
+        (
+            agent_id,
+            team_id,
+            "업무 추출 에이전트",
+            "프로젝트 기준 문서에서 업무 후보를 뽑아 근거와 함께 정리하고, "
+            "원하면 플랫폼 업무로 등록합니다.",
+            owner_account_id,
+        ),
+    )
+
+    agent_version_id = next_short_code(
+        cursor, table="agent_versions", column="agent_version_id", prefix="AV"
+    )
+    cursor.execute(
+        """
+        INSERT INTO agent_versions
+            (agent_version_id, agent_id, version, system_prompt, model,
+             reasoning_effort, created_by)
+        VALUES (%s, %s, 1, %s, %s, %s, %s)
+        """,
+        (
+            agent_version_id,
+            agent_id,
+            TASK_EXTRACTION_AGENT_PROMPT,
+            # 파이프라인의 기본 종합 모델과 같은 값. 팀장이 Builder 에서 바꾸면
+            # 그 모델로 종합한다(Claude 면 sol 로 fallback + 답변에 고지).
+            "gpt-5.6-sol",
+            "medium",
+            owner_account_id,
+        ),
+    )
+
+    for tool_ref in TASK_EXTRACTION_AGENT_TOOLS:
+        cursor.execute(
+            "INSERT INTO agent_version_tools (agent_version_id, tool_ref) VALUES (%s, %s)",
+            (agent_version_id, tool_ref),
+        )
+
+    cursor.execute(
+        "UPDATE agents SET current_version_id = %s WHERE agent_id = %s",
+        (agent_version_id, agent_id),
+    )
+
+    return agent_id
+
+
 class AgentVersionCrudRepository:
     """Builder가 쓰는 새 버전 스키마 CRUD — "저장"은 곧 "발행"이다.
 

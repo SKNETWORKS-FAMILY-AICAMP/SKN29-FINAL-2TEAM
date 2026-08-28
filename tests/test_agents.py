@@ -22,19 +22,29 @@ class ToolCatalogTests(SimpleTestCase):
     def test_내장_도구는_Registry_가_정본이다(self):
         """화면이 목록을 따로 적어 두면 Registry 가 바뀔 때 어긋난다.
 
-        `ALWAYS_ON_TOOL_REFS`(예: `skill_register`, 2026-08-22)만 예외다 —
-        고르고 말고가 없는 도구라 화면 목록에서 뺀다(`builtin_tool_response()`
-        docstring 참고)."""
+        예외 둘: `ALWAYS_ON_TOOL_REFS`(예: `skill_register`, 2026-08-22 — 고르고
+        말고가 없는 도구)와 `AGENT_ONLY_TOOL_REFS`(예: `task_extraction`,
+        2026-08-30 — 「업무 추출 에이전트」 전용). 둘 다 화면 목록에서 뺀다
+        (`builtin_tool_response()` docstring 참고)."""
 
-        from services.harness.registry import ALWAYS_ON_TOOL_REFS, BUILTIN_TOOLS
+        from services.harness.registry import (
+            AGENT_ONLY_TOOL_REFS,
+            ALWAYS_ON_TOOL_REFS,
+            BUILTIN_TOOLS,
+        )
 
         rows = builtin_tool_response()
 
-        self.assertEqual({row["tool_ref"] for row in rows}, set(BUILTIN_TOOLS) - ALWAYS_ON_TOOL_REFS)
+        self.assertEqual(
+            {row["tool_ref"] for row in rows},
+            set(BUILTIN_TOOLS) - ALWAYS_ON_TOOL_REFS - AGENT_ONLY_TOOL_REFS,
+        )
 
     def test_고르고_말고가_없는_도구는_목록에서_빠진다(self):
         rows = builtin_tool_response()
-        self.assertNotIn("skill_register", {row["tool_ref"] for row in rows})
+        refs = {row["tool_ref"] for row in rows}
+        self.assertNotIn("skill_register", refs)
+        self.assertNotIn("task_extraction", refs)
 
     def test_승인_필요_여부를_화면에_알려준다(self):
         by_ref = {row["tool_ref"]: row for row in builtin_tool_response()}

@@ -2334,9 +2334,18 @@ class TeamRepository:
                 # Chat의 기본 상대가 없으면 랜딩 화면(/chat)이 비어 보이므로,
                 # 팀 생성과 같은 트랜잭션으로 묶어 반쪽 상태를 막는다
                 # (2026-08-15, Chat 재설계).
-                from .agent_platform import provision_default_chat_agent
+                from .agent_platform import (
+                    provision_default_chat_agent,
+                    provision_task_extraction_agent,
+                )
 
                 provision_default_chat_agent(
+                    cursor, team_id=team_id, owner_account_id=owner_account_id
+                )
+                # 「업무 추출 에이전트」(prebuilt) — 에이전트 드롭다운에서 직접
+                # 골라야 쓰는 독립 에이전트다. 기본 어시스턴트에 위임으로 붙이지
+                # 않는다(2026-08-30).
+                provision_task_extraction_agent(
                     cursor, team_id=team_id, owner_account_id=owner_account_id
                 )
 

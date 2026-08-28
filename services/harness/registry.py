@@ -2760,6 +2760,19 @@ BUILTIN_TOOLS = {
 #: 중간에 되물을 방법이 없어 그 자리에서 막힌다.
 ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register", "skill_creator_ask_followup"})
 
+#: 레지스트리에는 있지만 **도구 선택 화면에는 안 낸다** — 특정 prebuilt
+#: 에이전트가 자기 구현으로만 부르는 도구다(2026-08-30).
+#:
+#: `task_extraction` 이 여기 있다. 「업무 추출 에이전트」(prebuilt, AG0xx)가 그
+#: 파이프라인(`services/task_extraction/service.py` — OpenAI 검색어 생성 + RunPod
+#: 임베딩 + pgvector 검색 + `responses.parse` 구조화 종합)을 실행하는 유일한
+#: 통로이며, 다른 에이전트나 채팅 「+」·빌더에서는 고를 수 없다. `ToolLoader.load()`
+#: 는 `BUILTIN_TOOLS` 에 있으므로 그대로 로드하고(그 에이전트의 `agent_version_tools`
+#: 에 저장돼 있다), `builtin_tool_response()` 는 이 집합을 빼서 선택 목록에서
+#: 감춘다. `api_views.py` 의 `_tool_catalog()`(검증용)는 `ALWAYS_ON` 과 같은
+#: 규칙으로 이 집합을 도로 넣어 준다 — 저장된 참조가 검증에서 막히지 않게.
+AGENT_ONLY_TOOL_REFS: frozenset[str] = frozenset({"task_extraction"})
+
 #: 새 팀의 「기본 어시스턴트」(`provision_default_chat_agent`)에 자동으로 붙는 도구
 #: 이자, 채팅 「+」 도구 선택의 **「기본값으로 초기화」가 되돌리는 고정 집합**이다
 #: (2026-08-30). 화면(`serializers.builtin_tool_response()`의 `is_default` 플래그)과
@@ -2774,10 +2787,14 @@ ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register", "skill_creato
 #:   - `archive_manage`  — ZIP 묶기/풀기(대화에서 드묾)
 #:   - `data_quality_check` — 빈 값·중복·스키마 감사(데이터 전문 작업)
 #:   - `diagram_create` / `chart_create` / `graph_create` — 시각화(자주 안 씀)
+#:   - `task_extraction` — 「업무 추출 에이전트」(prebuilt) 전용이라 아예 선택
+#:     화면에 안 나온다(`AGENT_ONLY_TOOL_REFS`). 기본 어시스턴트는 이 도구도,
+#:     그 에이전트에 대한 위임도 갖지 않는다 — 업무 추출은 사용자가 에이전트
+#:     드롭다운에서 「업무 추출 에이전트」를 직접 골라야 쓴다(2026-08-30).
 #:
-#: Jira 조회·등록과 `task_extraction`은 시연 범위라 남긴다. 쓰기 도구도 실행 전
-#: 사람 승인(HITL)이 걸리므로 기본에 둔다. 시스템 도구 2개(`ALWAYS_ON_TOOL_REFS`)는
-#: 별도 경로라 여기 없다.
+#: Jira 조회·등록은 시연 범위라 남긴다. 쓰기 도구도 실행 전 사람 승인(HITL)이
+#: 걸리므로 기본에 둔다. 시스템 도구 2개(`ALWAYS_ON_TOOL_REFS`)는 별도 경로라
+#: 여기 없다.
 _DEFAULT_CHAT_EXCLUDED: frozenset[str] = frozenset(
     {
         "document_sync",
@@ -2788,6 +2805,7 @@ _DEFAULT_CHAT_EXCLUDED: frozenset[str] = frozenset(
         "diagram_create",
         "chart_create",
         "graph_create",
+        "task_extraction",
     }
 )
 DEFAULT_CHAT_TOOL_REFS: frozenset[str] = (

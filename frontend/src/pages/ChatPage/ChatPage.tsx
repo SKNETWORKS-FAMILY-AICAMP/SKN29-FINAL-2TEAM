@@ -874,13 +874,16 @@ export default function ChatPage() {
   function startNew(nextProjId: string | null) {
     abortRef.current?.abort();
     setSessionId(null);
-    // 옛 대화를 열면서 그 대화의 에이전트로 바뀌어 있을 수 있다(`openSession`).
-    // 새 대화는 팀 기본 챗 에이전트로 시작한다 — 안 그러면 삭제된 에이전트
-    // (예: DB 리셋 전 대화)를 그대로 들고 가 "존재하지 않는 에이전트" 오류가 난다.
+    // **지금 고른 에이전트가 아직 목록에 있으면 그대로 둔다.** 드롭다운에서
+    // 다른 에이전트를 고르면 onChange 가 `setAgentId(새 값)` 뒤에 이 함수를
+    // 부르는데, 여기서 무조건 기본 챗 에이전트로 되돌리면 선택이 즉시 튕겨
+    // 나온다(2026-08-30 사용자 신고: "다른 에이전트 눌러도 기본만 나와").
+    // 삭제된 에이전트(예: DB 리셋 전 대화)를 들고 가는 경우만 막으면 되고,
+    // 그건 `prev` 가 목록에 없을 때 아래 fallback 이 처리한다.
     setAgentId(
       (prev) =>
-        agents.find((row) => row.is_default_chat)?.agent_id ??
         agents.find((row) => row.agent_id === prev)?.agent_id ??
+        agents.find((row) => row.is_default_chat)?.agent_id ??
         agents[0]?.agent_id ??
         prev,
     );
