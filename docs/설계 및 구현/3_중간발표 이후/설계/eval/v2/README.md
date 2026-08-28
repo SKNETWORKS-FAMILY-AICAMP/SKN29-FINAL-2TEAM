@@ -6,6 +6,7 @@
 - 상태: Core DEV 기술 작업과 Candidate 처리 결정 완료, Phase 9 승인 대기
 - 현재 단계: 8단계 게이트 점검에서 정지 (`Phase 9 미진입`)
 - 정본 위치: 이 `eval/v2/` 디렉터리
+- main 병합 인계: [`2026-08-28_jihun_main_병합_인계서.md`](../../../작업기록/Jihun_eval_v2/2026-08-28_jihun_main_병합_인계서.md)
 
 기존 `agent_poc_v1/v2`, `agent_workflow_v1`, workflow별 문서, 실행 결과와
 `workflow_baseline_v0.md`는 평가 기준을 발견한 `LEGACY` 개발 증거다. 삭제하지
