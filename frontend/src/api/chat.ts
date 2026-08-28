@@ -68,6 +68,8 @@ export interface SourceRef {
   id: string;
   label: string;
   url?: string;
+  /** 개인 「내 파일」 문서면 그 doc_id. 화면이 이 값으로 파일로 가는 링크를 건다. */
+  file_id?: string;
 }
 
 export type ToolProgressDetail =
@@ -152,6 +154,14 @@ export type ChatEvent =
        * 언제나 `null` 이다 — `doc_id` 를 가진 결과와는 다른 값이라 섞이지 않는다.
        */
       produced_file?: { doc_id: string; file_name: string; mime_type?: string | null } | null;
+      /** 분할·압축 해제처럼 한 호출이 여러 파일을 만들었을 때의 전체 결과. */
+      produced_files?: Array<{ doc_id: string; file_name: string; mime_type?: string | null }>;
+      /**
+       * 이 호출이 **근거로 읽은 파일**(2026-08-28). `document_read`·`table_transform`
+       * 처럼 특정 파일을 읽고 답의 근거로 삼는 도구가 결과에 `source_file(s)` 키를
+       * 담았을 때 온다. 화면이 답변 아래에 그 파일로 가는 링크를 그린다.
+       */
+      source_files?: Array<{ doc_id: string; file_name: string }>;
     }
   /**
    * 도구 핸들러가 제너레이터로 흘리는 진행 이벤트(`task_extraction`,

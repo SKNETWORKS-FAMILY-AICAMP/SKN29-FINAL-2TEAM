@@ -71,3 +71,26 @@ openpyxl>=3.1,<4.0
 # 도구가 만드는 docx(`document_create`, 2026-08-26). openpyxl 과 같은 자리다 —
 # 순수 파이썬이고 딸려 오는 것은 lxml 하나뿐이라 가볍다.
 python-docx>=1.1,<2.0
+
+# Root 기본 Tool P1(2026-08-27). Python 3.13 컨테이너에서 한국어 fixture,
+# 의존성 충돌(`pip check`), 10만 행·Parquet 왕복을 POC한 버전으로 고정한다.
+pdfplumber==0.11.10
+duckdb==1.5.5
+frictionless==5.19.0
+sympy==1.14.0
+pint==0.25.3
+dateparser==1.4.2
+holidays==0.103
+python-magic==0.4.27
+
+# MarkItDown 0.1.7은 결과는 맞았지만 ONNX Runtime·Magika·pandas까지 설치돼
+# POC venv가 369MB 증가했다. PDF·DOCX·XLSX→Markdown은 위 parser와 기존
+# python-docx·openpyxl로 직접 구현해 같은 결과를 더 작은 의존성으로 만든다.
+
+# 시각화 Tool P4(2026-08-29). `diagram_create`·`chart_create`·`graph_create`가
+# Mermaid 스펙을 SVG로 렌더한다. **시스템 패키지가 없다** — mermaid-cli가 요구하는
+# Node·headless Chrome 대신 임베디드 QuickJS(quickjs-ng)와 resvg(resvg-py)를 쓰는
+# 순수 파이썬 휠이다. `[embed]`는 SVG에 CJK 폰트를 심을 fontTools를 딸려 온다.
+# 컨테이너에서 flowchart·sequence·class·ER·state·gantt·mindmap·pie·xychart를
+# 한국어로 렌더 POC 통과. 결정적 벡터 출력이라 이미지 생성이 아니다.
+mermaidx[embed]==0.9.4

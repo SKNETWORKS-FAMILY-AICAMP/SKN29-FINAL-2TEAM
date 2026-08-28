@@ -591,6 +591,21 @@
 }
 
 .myFileHead,
+/* 채팅 「근거」 링크로 들어왔을 때 그 줄을 잠깐 강조한다. */
+.rowFlash {
+  animation: rowFlash 2.4s ease-out;
+}
+
+@keyframes rowFlash {
+  0%,
+  40% {
+    background: var(--color-primary-soft, rgba(59, 130, 246, 0.16));
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 .myFileRow {
   /*
    * 마지막 칸에 「다시 읽기」·「다운로드」·「삭제」가 나란히 선다 — 글자를 빼고

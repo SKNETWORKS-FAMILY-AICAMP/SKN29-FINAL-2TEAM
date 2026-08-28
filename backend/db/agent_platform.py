@@ -2272,10 +2272,22 @@ class ProjectTaskRepository:
     잃는다.
     """
 
+    #: `task.src_type` 허용값(스키마 주석). 추출-승인 흐름은 `EXTRACTED`,
+    #: 사용자가 새 업무를 직접 등록하면 `USER_ADDED`.
+    _SRC_TYPES = frozenset({"EXTRACTED", "USER_ADDED", "AI_SUGGESTED_MISSING_TASK"})
+
     @staticmethod
-    def register(*, proj_id: str, account_id: str, tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    def register(
+        *,
+        proj_id: str,
+        account_id: str,
+        tasks: list[dict[str, Any]],
+        src_type: str = "EXTRACTED",
+    ) -> dict[str, Any]:
         if not tasks:
             raise RepositoryError("등록할 업무가 없습니다.")
+        if src_type not in ProjectTaskRepository._SRC_TYPES:
+            src_type = "EXTRACTED"
 
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -2365,11 +2377,11 @@ class ProjectTaskRepository:
                         """
                         INSERT INTO task (task_id, model_id, task_name, req_role, effort,
                                           start_at, due_at, priority, src_type, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'EXTRACTED', 'PROPOSED')
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'PROPOSED')
                         """,
                         (
                             task_id, model_id, task["title"], req_role,
-                            effort, start_at, due_at, priority,
+                            effort, start_at, due_at, priority, src_type,
                         ),
                     )
                     created.append({"task_id": task_id, "title": task["title"]})

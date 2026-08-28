@@ -1175,6 +1175,37 @@
   border-radius: var(--radius-lg);
 }
 
+/* 답변 말풍선 아래에 붙는 첨부라는 것을 제목으로 밝힌다. */
+.filesCardTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.fileEntry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 도구가 만든 다이어그램·차트를 카드 안에서 바로 보여준다. */
+.svgPreview {
+  max-width: 100%;
+  max-height: 420px;
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
+.svgPreviewLoading {
+  font-size: 12px;
+  color: var(--color-muted);
+  padding: var(--space-3) 0;
+}
+
 .fileRow {
   display: flex;
   align-items: center;
@@ -1185,12 +1216,35 @@
 .fileName {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.fileNameText {
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 「Excel」·「PDF」 같은 형식 라벨. 이름 옆에서 작고 흐리게. */
+.fileMeta {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+  text-transform: uppercase;
+}
+
+.fileActions {
+  flex-shrink: 0;
+  display: flex;
+  gap: var(--space-2);
 }
 
 .fileHint {

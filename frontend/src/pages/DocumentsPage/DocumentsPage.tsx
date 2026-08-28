@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppShell, Badge, Button, Icon, InfoNote, useToast } from '../../components';
 import type { BadgeTone, IconName } from '../../components';
 import { ApiError } from '../../api/client';
@@ -131,6 +132,17 @@ export default function DocumentsPage() {
   const [selection, setSelection] = useState<Selection | null>(null);
   /** 접힌 폴더. 기본은 펼침 — 처음 열었을 때 무엇이 있는지 보여야 한다. */
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  /**
+   * 채팅의 「근거」 링크로 들어오면 `?file=<doc_id>` 가 붙는다(2026-08-28).
+   * 그 파일이 있는 「내 파일」로 자리를 옮기고, 목록이 그 줄을 강조하게 한다.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusFileId = searchParams.get('file');
+  useEffect(() => {
+    if (!focusFileId) return;
+    setSelection({ kind: 'personal', tab: 'mine' });
+  }, [focusFileId]);
   /**
    * 파일 이름으로 좁힌다. **고른 자리 안에서만 찾는다** — 트리로 자리를 고르는
    * 화면에서 검색이 그 자리를 무시하면, 보고 있는 폴더와 결과가 어긋나 어느
@@ -479,7 +491,15 @@ export default function DocumentsPage() {
           {/* ── 우측: 그 자리의 파일 ────────────────────────────── */}
           <section className={styles.panel}>
             {selection?.kind === 'personal' ? (
-              <MyFilesPanel tab={selection.tab} />
+              <MyFilesPanel
+                tab={selection.tab}
+                focusDocId={selection.tab === 'mine' ? focusFileId : null}
+                onFocusHandled={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('file');
+                  setSearchParams(next, { replace: true });
+                }}
+              />
             ) : (
               <>
                 <div className={styles.panelHead}>

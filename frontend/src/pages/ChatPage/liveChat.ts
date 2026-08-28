@@ -373,23 +373,39 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
     case 'tool_completed': {
       // 파일은 서브 에이전트가 만든 것도 담는다(위 `files` 주석). 아래 타임라인
       // 갱신은 종전대로 최상위 호출만 본다.
-      const produced = event.produced_file;
-      const files =
-        produced && !state.files.some((f) => f.docId === produced.doc_id)
-          ? [
-              ...state.files,
-              {
-                docId: produced.doc_id,
-                fileName: produced.file_name,
-                mimeType: produced.mime_type ?? null,
-              },
-            ]
-          : state.files;
+      const produced = event.produced_files?.length
+        ? event.produced_files
+        : event.produced_file
+          ? [event.produced_file]
+          : [];
+      const known = new Set(state.files.map((file) => file.docId));
+      const additions = produced
+        .filter((file) => !known.has(file.doc_id))
+        .map((file) => ({
+          docId: file.doc_id,
+          fileName: file.file_name,
+          mimeType: file.mime_type ?? null,
+        }));
+      const files = additions.length ? [...state.files, ...additions] : state.files;
 
-      if (event.subagent_alias) return files === state.files ? state : { ...state, files };
+      // 근거로 읽은 「내 파일」 문서 — 답변 아래 출처 링크로 그린다.
+      const citedFiles = (event.source_files ?? []).map((file) => ({
+        id: file.doc_id,
+        label: file.file_name,
+        file_id: file.doc_id,
+      }));
+      const sources = citedFiles.length
+        ? mergeSources(state.sources, citedFiles)
+        : state.sources;
+
+      if (event.subagent_alias) {
+        if (files === state.files && sources === state.sources) return state;
+        return { ...state, files, sources };
+      }
       return {
         ...state,
         files,
+        sources,
         toolFailed: event.status === 'FAILED',
         timeline: state.timeline.map((entry) =>
           entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id

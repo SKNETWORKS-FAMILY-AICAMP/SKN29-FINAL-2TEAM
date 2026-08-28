@@ -42,8 +42,9 @@ import styles from './DocumentsPage.module.css';
 /** 쪽당 표시 개수. 팀 문서 표와 같은 값을 쓴다 — 한 화면에서 다르면 안 된다. */
 const PAGE_SIZES = [10, 25, 50, 100];
 
-//: 파서가 읽는 것과 같아야 한다. 더 받으면 색인에서 반드시 실패한다.
-const ACCEPT = '.pdf,.docx,.txt,.md';
+//: pdf·docx·txt·md 는 색인까지 간다(파서가 읽는 것과 같아야 한다).
+//: xlsx·csv·json·zip 은 색인 없이 "다운로드 전용"으로만 받는다(2026-08-28).
+const ACCEPT = '.pdf,.docx,.txt,.md,.xlsx,.csv,.json,.zip';
 
 /**
  * 어느 목록을 보는가. **트리가 정해서 넘겨준다**(2026-08-26).
@@ -72,6 +73,11 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
   if (file.origin === 'generated') {
     return { tone: 'neutral', label: '내보낸 파일', hint: '' };
   }
+  // xlsx·csv·json·zip 은 색인 없이 받는다(2026-08-28). 「읽는 중」으로 떨어지면
+  // 영영 안 끝난다 — 도구 입력과 내려받기로만 쓰는 파일이라 그렇게 표시한다.
+  if (file.download_only) {
+    return { tone: 'neutral', label: '다운로드 전용', hint: '표·데이터 도구의 입력과 내려받기로만 쓰는 형식입니다.' };
+  }
   // **서버가 사유를 주면 그것을 쓴다.** 화면이 짐작해 쓰던 뭉뚱그린 문구보다
   // 언제나 정확하다. 사유가 없는 옛 행은 아래 기본 문구로 떨어진다.
   if (file.index_status === 'FAILED') {
@@ -92,9 +98,20 @@ function formatDate(iso: string | null): string {
   return iso.slice(0, 10).replace(/-/g, '.');
 }
 
-export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
+export function MyFilesPanel({
+  tab,
+  focusDocId = null,
+  onFocusHandled,
+}: {
+  tab: PersonalTab;
+  /** 채팅 「근거」 링크로 들어온 파일. 목록에서 그 줄을 강조하고 스크롤한다. */
+  focusDocId?: string | null;
+  onFocusHandled?: () => void;
+}) {
   const { showToast } = useToast();
   const token = loadSessionToken();
+  const [flashDocId, setFlashDocId] = useState<string | null>(null);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const [files, setFiles] = useState<PersonalFile[]>([]);
   const [shared, setShared] = useState<PersonalFile[]>([]);
@@ -122,12 +139,16 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
   /**
    * 아직 색인되지 않은 파일이 있는 동안만 목록을 다시 받는다.
    *
-   * **내보낸 파일은 세지 않는다**(2026-08-26). 색인을 아예 안 타서 `search_ready`
-   * 가 영영 false 이고 `FAILED` 도 안 되는데, 빼지 않으면 그 파일 하나 때문에
-   * **5초 폴링이 영원히 돈다.**
+   * **내보낸 파일과 다운로드 전용 파일은 세지 않는다**(2026-08-26, 2026-08-28).
+   * 색인을 아예 안 타서 `search_ready` 가 영영 false 이고 `FAILED` 도 안 되는데,
+   * 빼지 않으면 그 파일 하나 때문에 **5초 폴링이 영원히 돈다.**
    */
   const pending = files.some(
-    (file) => file.origin !== 'generated' && !file.search_ready && file.index_status !== 'FAILED',
+    (file) =>
+      file.origin !== 'generated' &&
+      !file.download_only &&
+      !file.search_ready &&
+      file.index_status !== 'FAILED',
   );
 
   async function load() {
@@ -147,6 +168,19 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // 「근거」 링크로 들어온 파일을 목록에서 찾으면 스크롤하고 잠깐 강조한다.
+  useEffect(() => {
+    if (!focusDocId || tab !== 'mine') return;
+    if (!files.some((file) => file.doc_id === focusDocId)) return;
+    const node = rowRefs.current.get(focusDocId);
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashDocId(focusDocId);
+    onFocusHandled?.();
+    const timer = window.setTimeout(() => setFlashDocId(null), 2400);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDocId, files, tab]);
 
   /**
    * 처리가 끝날 때까지 목록을 다시 받는다.
@@ -332,13 +366,15 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
 
   // 실패한 것은 「읽는 중」이 아니다 — 팀 문서 표와 같은 규칙을 쓴다.
   //
-  // **내보낸 파일도 아니다**(2026-08-26). 색인을 아예 안 타서 `search_ready` 가
-  // 영영 false 인데, 빼지 않으면 머리말이 「읽는 중 1」로 굳는다 — 위 `pending`
-  // (폴링 조건)과 **같은 규칙을 써야 한다.** 한쪽만 고치면 폴링은 멈췄는데
-  // 화면은 계속 읽는 중이라고 말하는, 서로 어긋난 상태가 된다.
+  // **내보낸 파일·다운로드 전용 파일도 아니다**(2026-08-26, 2026-08-28). 색인을
+  // 아예 안 타서 `search_ready` 가 영영 false 인데, 빼지 않으면 머리말이 「읽는
+  // 중 N」으로 굳는다 — 위 `pending`(폴링 조건)과 **같은 규칙을 써야 한다.**
   const notReady = matched.filter(
     (file) =>
-      file.origin !== 'generated' && !file.search_ready && file.index_status !== 'FAILED',
+      file.origin !== 'generated' &&
+      !file.download_only &&
+      !file.search_ready &&
+      file.index_status !== 'FAILED',
   ).length;
   const failed = matched.filter((file) => file.index_status === 'FAILED').length;
 
@@ -470,6 +506,7 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                   <span>PDF</span>
                   <span>Word(docx)</span>
                   <span>텍스트(txt·md)</span>
+                  <span>표·데이터(xlsx·csv·json·zip)</span>
                 </div>
                 {/* 「N 이하」는 저장소가 이미 쓰는 말이다 — 서버 거절 문장이
                     「파일은 50MB 이하여야 합니다.」이고 `AvatarPicker` 도
@@ -486,7 +523,19 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
         {paged.map((file) => {
           const chip = statusChip(file);
           return (
-            <div key={file.doc_id} className={tab === 'mine' ? styles.myFileRow : styles.sharedRow}>
+            <div
+              key={file.doc_id}
+              ref={(node) => {
+                if (node) rowRefs.current.set(file.doc_id, node);
+                else rowRefs.current.delete(file.doc_id);
+              }}
+              className={[
+                tab === 'mine' ? styles.myFileRow : styles.sharedRow,
+                flashDocId === file.doc_id ? styles.rowFlash : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            >
               <span className={styles.cellName}>
                 <Icon name="file-text" size={15} color="var(--color-primary)" />
                 <span className={styles.cellNameText}>
@@ -521,8 +570,11 @@ export function MyFilesPanel({ tab }: { tab: PersonalTab }) {
                   {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
                       끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
                   <span className={styles.cellToggle}>
+                    {/* 색인 없이 받은 형식은 검색에 못 쓴다(2026-08-28) — 토글을
+                        열어 두면 켰는데 아무 일도 안 일어나는 것처럼 보인다. */}
                     <ToggleSwitch
-                      checked={file.search_enabled}
+                      checked={file.download_only ? false : file.search_enabled}
+                      disabled={file.download_only}
                       onChange={(next) => toggle(file, 'search_enabled', next)}
                     />
                   </span>

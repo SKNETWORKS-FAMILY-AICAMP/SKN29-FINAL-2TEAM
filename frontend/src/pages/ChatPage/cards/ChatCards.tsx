@@ -601,7 +601,9 @@ export function ReasoningTrace({
                 size={13}
                 color="var(--color-primary)"
               />
-              참고한 출처 {webSources.length > 0 ? `${webSources.length}개` : ''}
+              {/* 출처가 하나도 없으면 「검색어」만 있는 상태다 — "참고한 출처 0개"
+                  대신 그 상황에 맞는 말을 쓴다. */}
+              {sources.length > 0 ? `참고한 출처 ${sources.length}개` : '검색 과정'}
             </button>
 
             {searchDetailsOpen && (
@@ -1473,24 +1475,77 @@ export interface JiraStatusCardProps {
  * 적다 틀릴 수 있고, 사람도 문단보다 표를 빨리 읽는다 — `task_extraction` 이
  * 결과를 이벤트로 내보내고 화면이 카드로 그리는 것과 같은 규칙이다.
  */
-/**
- * 도구가 만들어 낸 파일을 받는 카드(2026-08-26).
- *
- * **링크로 대신할 수 없다.** 받는 곳이 Bearer 토큰을 요구해서 `<a href>` 는
- * 401 이 된다 — 답변 본문이 이제 마크다운 링크를 그리게 됐어도(`AnswerText`)
- * 이 자리는 여전히 카드여야 한다. blob 으로 받아 사람이 저장하게 한다.
- *
- * 「내 파일」 표의 `download()` 와 같은 방식이다 — 임시 URL 을 만들고 **반드시
- * 되돌려준다.** 안 하면 파일 하나가 탭을 떠날 때까지 메모리에 남는다.
- */
-export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+/** 결과 파일의 형식 라벨. mime 을 못 알아보면 확장자로 떨어진다. */
+const PRODUCED_FILE_TYPE_LABEL: Record<string, string> = {
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+  'application/pdf': 'PDF',
+  'application/zip': 'ZIP',
+  'text/csv': 'CSV',
+  'application/json': 'JSON',
+  'text/markdown': 'Markdown',
+  'text/html': 'HTML',
+  'text/plain': '텍스트',
+  'image/svg+xml': 'SVG',
+};
 
-  async function save(file: ProducedFile) {
+/**
+ * 도구가 만든 SVG(다이어그램·차트·관계 그래프)를 카드 안에서 바로 보여준다.
+ *
+ * **`<img>` 로 그린다** — 인라인 HTML(`dangerouslySetInnerHTML`)이 아니라 blob
+ * URL 을 `src` 로 주면 SVG 안의 스크립트가 실행되지 않는다. 받는 곳이 Bearer
+ * 토큰을 요구하므로 fetch 로 받아 object URL 을 만들고, 언마운트 때 되돌려준다.
+ */
+function SvgPreview({ docId, alt }: { docId: string; alt: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
     const token = loadSessionToken();
     if (!token) return;
-    setBusy(file.docId);
+    let objectUrl: string | null = null;
+    let alive = true;
+    void downloadPersonalFile(token, docId)
+      .then((blob) => {
+        if (!alive) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [docId]);
+  if (failed) return null;
+  if (!url) return <div className={styles.svgPreviewLoading}>그림 불러오는 중…</div>;
+  return <img className={styles.svgPreview} src={url} alt={alt} />;
+}
+
+function producedFileType(mimeType: string | null, fileName: string): string {
+  if (mimeType && PRODUCED_FILE_TYPE_LABEL[mimeType]) return PRODUCED_FILE_TYPE_LABEL[mimeType];
+  const ext = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() : undefined;
+  return ext && ext.length <= 5 ? ext : '파일';
+}
+
+/**
+ * 도구가 만들어 낸 파일 카드(2026-08-26, 2026-08-29 정리).
+ *
+ * **답변 말풍선 아래**에 붙인다 — ChatGPT·Claude 가 첨부를 답변 밑에 다는 것과
+ * 같은 자리다. 예전엔 답변 위에 떠서 "만들었다는데 어디 있냐"는 말을 들었다.
+ *
+ * 만들어진 파일은 **자동으로 「내 파일」에 저장된다** — 카드는 「다운로드」만 준다.
+ * 받는 곳이 Bearer 토큰을 요구해 `<a href>` 로는 401 이라, blob 으로 받아
+ * 저장한다. 임시 URL 은 **반드시 되돌려준다**. SVG(다이어그램·차트)는 그림도
+ * 인라인으로 보여준다.
+ */
+export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function download(file: ProducedFile) {
+    const token = loadSessionToken();
+    if (!token) return;
+    setDownloading(file.docId);
     setFailed(null);
     try {
       const blob = await downloadPersonalFile(token, file.docId);
@@ -1504,22 +1559,39 @@ export function ProducedFilesCard({ files }: { files: ProducedFile[] }) {
       // 카드 안에서 말한다 — 토스트로 띄우면 어느 파일이 안 됐는지 모른다.
       setFailed(exc instanceof ApiError ? exc.message : '내려받지 못했습니다.');
     } finally {
-      setBusy(null);
+      setDownloading(null);
     }
   }
 
   return (
-    <section className={styles.filesCard}>
+    <section className={styles.filesCard} aria-label="생성된 파일">
+      <p className={styles.filesCardTitle}>
+        생성된 파일{files.length > 1 ? ` ${files.length}개` : ''}
+      </p>
       {files.map((file) => (
-        <div key={file.docId} className={styles.fileRow}>
-          <Icon name="file-text" size={16} color="var(--color-primary)" />
-          <span className={styles.fileName}>{file.fileName}</span>
-          <Button size="sm" variant="outline" disabled={busy === file.docId} onClick={() => void save(file)}>
-            다운로드
-          </Button>
+        <div key={file.docId} className={styles.fileEntry}>
+          {file.mimeType === 'image/svg+xml' && (
+            <SvgPreview docId={file.docId} alt={file.fileName} />
+          )}
+          <div className={styles.fileRow}>
+            <Icon name="file-text" size={20} color="var(--color-primary)" />
+            <span className={styles.fileName}>
+              <span className={styles.fileNameText}>{file.fileName}</span>
+              <span className={styles.fileMeta}>{producedFileType(file.mimeType, file.fileName)}</span>
+            </span>
+            <div className={styles.fileActions}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={downloading === file.docId}
+                onClick={() => void download(file)}
+              >
+                다운로드
+              </Button>
+            </div>
+          </div>
         </div>
       ))}
-      {/* 「내 파일」에도 남는다는 것을 밝힌다 — 카드를 놓쳐도 찾을 곳이 있다. */}
       <p className={styles.fileHint}>{failed ?? '「문서 > 내 파일」에도 저장되어 있습니다.'}</p>
     </section>
   );

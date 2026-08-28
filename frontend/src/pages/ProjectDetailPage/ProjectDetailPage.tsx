@@ -284,11 +284,11 @@ export default function ProjectDetailPage() {
             {project.extracted_tasks.length > 0 && (
               <section className={styles.card}>
                 <span className={styles.cardTitle}>
-                  추출된 업무 {project.extracted_tasks.length}건
-                  <InfoNote title="추출된 업무">
+                  등록된 업무 {project.extracted_tasks.length}건
+                  <InfoNote title="등록된 업무">
                     <p>
-                      기준 문서에서 추출해 등록한 업무입니다. 아직 <strong>승인 전(PROPOSED)</strong>이라
-                      진행률과 담당자별 배분에는 들어가지 않습니다.
+                      기준 문서에서 추출했거나 대화에서 직접 등록한 업무입니다. 아직{' '}
+                      <strong>승인 전(PROPOSED)</strong>이라 진행률과 담당자별 배분에는 들어가지 않습니다.
                     </p>
                     <p>문서에 없던 값은 채우지 않고 비워 둡니다.</p>
                   </InfoNote>

@@ -9,12 +9,11 @@ import type { ToolChoice } from '../../api/agents';
 import type { McpServer } from '../../api/mcp';
 import styles from './ToolPickerModal.module.css';
 
-type Tab = 'builtin' | 'mcp' | 'create';
+type Tab = 'builtin' | 'mcp';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'builtin', label: '툴 선택' },
   { id: 'mcp', label: '커스텀 도구 선택' },
-  { id: 'create', label: '툴 생성' },
 ];
 
 const SERVER_STATUS: Record<McpServer['status'], { tone: BadgeTone; label: string }> = {
@@ -38,6 +37,20 @@ export interface ToolPickerModalProps {
    * 반영된다. 그룹 전체를 한 번에 계산하는 별도 콜백으로 받는다.
    */
   onToggleGroup: (refs: string[], turnOn: boolean) => void;
+  /**
+   * 이 대화의 도구 선택을 **고정 기본 집합**(`ToolChoice.is_default === true`)으로
+   * 되돌린다. 채팅 「+」에서만 준다 — 에이전트 편집 화면은 원본 자체를 고치는
+   * 자리라 되돌릴 대상이 없다. 안 주면 초기화 버튼이 안 뜬다. 지금 선택이 이미
+   * 고정 기본 집합과 같으면 버튼은 비활성이다.
+   */
+  onReset?: () => void;
+}
+
+/** 두 문자열 목록이 (순서 무관) 같은 집합인가. */
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((item) => set.has(item));
 }
 
 /** `ToolChoice.category`가 없으면(MCP 등) 이 이름으로 묶는다. */
@@ -49,22 +62,20 @@ const UNCATEGORIZED = '기타';
  * 보인다(카드 자체는 뜬다).
  */
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
-  Jira: 'Jira 이슈를 조회하고, 확인을 거쳐 새 이슈로 등록합니다.',
-  문서: '팀에 등록된 문서를 검색하고 목록을 확인합니다.',
-  '업무 추출(AI)': '문서에서 업무 후보를 찾아 근거 문장과 함께 정리합니다.',
-  '업무 관리': '등록된 업무를 조회·수정하고, 새 업무를 등록합니다.',
-  프로젝트: '팀의 프로젝트 목록과 진행률을 확인합니다.',
-  // 팀원 조회·부하 리포트·부재 조회를 하나로 묶었다 — 셋 다 같은 HR 데이터
-  // (팀원 명부·역량·부재)가 원본이다.
-  HR: '팀원의 이름·직책·기술 스택, 업무 부하, 부재(휴가 등) 현황을 조회합니다.',
-  '웹 검색': '인터넷에서 정보를 찾아 출처 URL과 함께 알려줍니다.',
+  검색: '팀 문서와 웹에서 필요한 자료를 찾습니다.',
+  문서: '문서를 만들거나 파일을 변환·정리합니다.',
+  업무: '프로젝트와 플랫폼·Jira 업무를 조회하고 변경합니다.',
+  팀: '팀원, 업무량, 부재 정보를 확인합니다.',
+  데이터: '표를 가공하고 데이터 품질과 파일 변경점을 확인합니다.',
+  계산: '현재 시각, 날짜, 수식과 단위를 계산합니다.',
   [UNCATEGORIZED]: '카테고리가 지정되지 않은 도구입니다.',
 };
 
 /**
- * 개별 도구의 사람용 한 줄 설명. 백엔드의 `description`을 그대로 보여주면
- * 안 된다 — 그건 모델에게 쓴 지시문이라 내부 이름과 명령문이 그대로
- * 노출된다. 없으면 백엔드 설명으로 물러선다(MCP 도구 등).
+ * 개별 도구의 **사람용 한 줄 설명**. 백엔드의 `description`은 모델이 도구를
+ * 고르라고 쓴 라우팅 지시문이라(다른 도구 이름·명령문·별표까지 들어 있다)
+ * 사용자에게 그대로 보이면 안 된다 — 그래서 화면 문구를 여기 따로 둔다.
+ * 여기 없는 도구는 이름만 보인다(새 도구를 더하면 여기에 짧게 한 문장 추가).
  */
 const TOOL_DESCRIPTIONS: Record<string, string> = {
   document_search: '문서에서 질문과 관련된 문장을 찾아 근거로 보여줍니다.',
@@ -76,7 +87,7 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
   project_list: '팀의 프로젝트 목록과 진행률을 조회합니다.',
   task_list: '등록된 업무를 조회합니다.',
   task_register: '정리된 업무를 시스템에 등록합니다.',
-  task_update: '등록된 업무의 상태·담당자·마감을 고칩니다.',
+  task_update: '등록된 업무의 상태와 마감을 고칩니다.',
   web_search: '인터넷에서 정보를 찾아 출처와 함께 알려줍니다.',
   jira_get_issues: 'Jira 이슈를 조회합니다.',
   jira_create_issues: 'Jira 에 새 이슈를 등록합니다.',
@@ -85,7 +96,20 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
   table_export: '표를 엑셀 파일로 만들어 「내 파일」에 저장합니다.',
   document_create: '글을 워드 파일로 만들어 「내 파일」에 저장합니다.',
   document_sync: '연결된 저장소에서 방금 바뀐 문서를 다시 읽어 옵니다.',
+  document_read: '선택한 PDF·Word·Excel 파일의 본문과 표를 읽습니다.',
+  document_convert: '파일을 다른 형식으로 변환해 새 파일로 저장합니다.',
+  pdf_edit: 'PDF를 병합·분할하거나 페이지 순서와 방향을 바꿉니다.',
+  file_inspect: '파일의 실제 형식, 크기, 해시와 작성 정보를 확인합니다.',
+  file_sanitize: '파일의 작성자·생성 도구 정보를 제거한 사본을 만듭니다.',
+  archive_manage: '여러 파일을 ZIP으로 묶거나 ZIP 파일을 풀어 저장합니다.',
+  table_transform: '표를 필터·정렬·결합·집계하고 필요하면 결과 파일로 저장합니다.',
+  data_quality_check: '표의 빈 값, 중복, 타입과 스키마 오류를 찾습니다.',
+  file_compare: '두 PDF·Word·Excel 파일의 추가·삭제·수정 내역을 비교합니다.',
+  calculate: '수식, 단위, 기간, 영업일과 시간대를 계산합니다.',
   get_current_datetime: '오늘 날짜와 요일을 확인합니다.',
+  diagram_create: '순서도·시퀀스 같은 다이어그램을 그립니다.',
+  chart_create: '값을 막대·꺾은선·파이 차트로 그립니다.',
+  graph_create: '노드와 연결로 관계 그래프를 그립니다.',
 };
 
 /** 카테고리 등장 순서를 그대로 유지해 그룹으로 묶는다. */
@@ -117,9 +141,17 @@ export function ToolPickerModal({
   toolRefs,
   onToggle,
   onToggleGroup,
+  onReset,
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
   const builtinGroups = groupByCategory(builtinTools);
+  /** 「기본값으로 초기화」가 되돌릴 고정 집합과, 지금 선택이 이미 그 집합인지. */
+  const defaultRefs = builtinTools.filter((tool) => tool.is_default).map((tool) => tool.tool_ref);
+  const builtinRefSet = new Set(builtinTools.map((tool) => tool.tool_ref));
+  const atDefault = sameSet(
+    toolRefs.filter((ref) => builtinRefSet.has(ref)),
+    defaultRefs,
+  );
   /** "세부 툴 확인"으로 펼친 카테고리 — 기본은 다 접혀 있다. 먼저 카테고리
    * 단위로만 고르게 하고, 안에 뭐가 있는지는 필요할 때만 보게 한다. */
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -158,6 +190,13 @@ export function ToolPickerModal({
 
       {tab === 'builtin' && (
         <div className={styles.serverList}>
+          {onReset && (
+            <div className={styles.resetRow}>
+              <Button size="sm" variant="ghost" disabled={atDefault} onClick={onReset}>
+                기본값으로 초기화
+              </Button>
+            </div>
+          )}
           {builtinGroups.map(([category, items]) => {
             const allOn = items.every((toolItem) => toolRefs.includes(toolItem.tool_ref));
             const expanded = expandedCategories.has(category);
@@ -206,9 +245,9 @@ export function ToolPickerModal({
                               {toolItem.name}
                               {toolItem.side_effect && <span className={styles.gate}> · 승인 필요</span>}
                             </strong>
-                            <span>
-                              {TOOL_DESCRIPTIONS[toolItem.tool_ref] ?? toolItem.description}
-                            </span>
+                            {TOOL_DESCRIPTIONS[toolItem.tool_ref] && (
+                              <span>{TOOL_DESCRIPTIONS[toolItem.tool_ref]}</span>
+                            )}
                           </div>
                         </div>
                       );
@@ -280,17 +319,6 @@ export function ToolPickerModal({
         </div>
       )}
 
-      {tab === 'create' && (
-        <div className={styles.createTab}>
-          <p className={styles.help}>
-            팀에서 직접 도구를 만드는 기능은 아직 준비 중입니다. 지금은 기본 제공 도구와 이 팀에
-            붙어 있는 커스텀 도구만 쓸 수 있습니다.
-          </p>
-          <Button variant="outline" disabled>
-            새 도구 등록 (준비 중)
-          </Button>
-        </div>
-      )}
     </Modal>
   );
 }

@@ -13,12 +13,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Root 기본 문서 Tool(P2). GUI·Java·권장 패키지는 설치하지 않고 한글 렌더링에
+# 필요한 글꼴과 고정된 변환·검사 실행 파일만 둔다.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        fonts-noto-cjk \
+        libarchive-zip-perl \
+        libimage-exiftool-perl \
+        libmagic1t64 \
+        libreoffice-calc-nogui \
+        libreoffice-core-nogui \
+        libreoffice-writer-nogui \
+        pandoc \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements/ requirements/
 RUN pip install --no-cache-dir -r requirements/production.txt
 
-COPY . .
-
-RUN useradd --create-home appuser && chown -R appuser:appuser /app
+RUN useradd --create-home appuser
+COPY --chown=appuser:appuser . .
 
 # 문서 저장소. 이미지 안에 미리 만들어 둬야 한다 — Docker는 명명 볼륨을 처음
 # 붙일 때 이미지의 같은 경로에서 소유권을 복사하는데, 경로가 없으면 root 소유로
