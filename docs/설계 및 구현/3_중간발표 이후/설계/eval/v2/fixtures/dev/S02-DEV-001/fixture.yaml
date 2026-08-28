@@ -13,8 +13,8 @@ input: >-
   추천일 뿐 확정 배정이 아니라고 밝혀줘. 시스템상 0시간을 실제 여유라고 단정하지 마.
 source_artifacts:
   - source_id: PDF-STAFF
-    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_투입인력_운영계획서.pdf
-    sha256: 88d09ee65405e152c60cf6ff60553036d36d85f52b8b4dbdaf7bd910aad7fb47
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_투입인력_운영계획서.pdf
+    sha256: 9ed1ca77946eeb1c899465c99f6587fbc8bbbecef0fcb8513761848e567e718d
     relevant_pages: [2, 3]
 allowed_tools: [document_search, people_list, workload_report, absence_list]
 forbidden_tools: [task_register, task_update, jira_create_issues, web_search]

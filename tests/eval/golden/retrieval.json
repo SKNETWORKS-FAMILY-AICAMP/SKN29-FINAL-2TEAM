@@ -1,175 +1,362 @@
 {
-  "_설명": "근거 검색(벡터 검색) 평가의 정답지. 질의 하나당 「이 절이 상위 k 안에 들어와야 한다」를 적는다. 질의문은 Query Agent 가 실제로 만드는 형태(문서 제목·날짜를 넣지 않은 자연스러운 어구)를 따랐다.",
-  "top_k": 10,
-  "splits": {
-    "development": ["Q01", "Q02", "Q03", "Q04", "Q05", "Q06", "Q07", "Q08", "Q09", "Q10"],
-    "holdout": ["Q11", "Q12", "Q13", "Q14"],
-    "policy": "가중치·검색 구조 선택은 development만 사용한다. holdout은 선택이 끝난 뒤 최종 확인에만 사용한다."
+  "_설명": "검색 품질(파싱·청킹·임베딩) 평가의 정답지. 정답을 chunk_id 로 적지 않는다 — 재색인마다 UUID 가 새로 나오므로 청킹을 바꾸는 순간 정답지가 무효가 되고, 그 전후를 비교하는 것이 이 세트의 목적이다. 정답은 「문서 + 원문에 그대로 있는 앵커 문장」이고, 채점은 검색된 청크의 본문이 앵커를 품는지로 한다(공백 제거 후 부분 문자열).",
+  "_채점": {
+    "적중": "상위 k 개 청크 중 하나가 expect.document 의 것이면서 본문에 anchor 를 품으면 맞은 것",
+    "지표": [
+      "Recall@1",
+      "Recall@5",
+      "Recall@10",
+      "MRR"
+    ],
+    "잠식률": "다른 프로젝트 문서의 청크가 상위 3 안에 든 질의의 비율"
   },
-  "label_corrections": [
-    {
-      "date": "2026-08-28",
-      "queries": ["Q04", "Q07"],
-      "added_evidence": { "document": "과업지시서", "section": "3.3" },
-      "reason": "검색 결과의 순위 하락 원인을 조사하던 중 기존 정답 목록에 없는 관련 절을 발견했다.",
-      "human_verification": "원문 3.3은 실패율 임계치 기반 자동 전환·복귀 정책과 같은 주문의 중복 결제 방지를 명시한다. 검색 점수와 무관하게 두 질의의 직접 근거이므로 라벨 누락을 보정했다.",
-      "impact": "보정 전 Q04·Q07 회귀 판정은 취소하고 모든 가중치 후보를 같은 보정 정답으로 다시 평가했다."
-    }
-  ],
   "queries": [
     {
       "id": "Q01",
-      "intent": "ASSIGNMENT_REQUIREMENT",
-      "tags": ["people_requirement", "cross_document", "confusing_document"],
-      "query": "투입 인력의 역할과 담당 과업, 필수 기술",
-      "expected": [
-        { "document": "인력운영계획서", "section": "2.2 ~ 2.8" },
-        { "document": "인력운영계획서", "section": "1" }
-      ],
-      "must_not_cite": ["그룹웨어 과업지시서 5"]
+      "query": "일 정산 배치가 끝나야 하는 시간",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "2,100개사 기준 30분 이내",
+        "section": "9 REQ-N-02"
+      }
     },
     {
       "id": "Q02",
-      "intent": "TASK_CORE",
-      "tags": ["exact_terms", "confusing_document"],
-      "query": "단계별 산출물과 검수 기준",
-      "expected": [{ "document": "과업지시서", "section": "5" }],
-      "must_not_cite": ["그룹웨어 과업지시서 4"]
+      "query": "주문 생성 API 응답시간 목표",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "1,200 TPS 부하 30분 유지",
+        "section": "9 REQ-N-01"
+      }
     },
     {
       "id": "Q03",
-      "intent": "TASK_CORE",
-      "tags": ["exact_terms", "cross_document"],
-      "query": "정산 금액을 계산하는 단계와 중간값 보존",
-      "expected": [
-        { "document": "요구사항정의서", "section": "3 (REQ-F-12)" },
-        { "document": "과업지시서", "section": "3.2" }
-      ],
-      "must_not_cite": []
+      "query": "결제 자동 전환이 일어나는 실패율 기준",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "5분 이동평균 실패율이 10%",
+        "section": "4 REQ-F-21"
+      }
     },
     {
       "id": "Q04",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["exact_terms", "numeric_condition", "cross_document"],
-      "query": "결제 실패율 임계치와 자동 전환, 복귀 조건",
-      "expected": [
-        { "document": "과업지시서", "section": "3.3" },
-        { "document": "요구사항정의서", "section": "4 (REQ-F-21, REQ-F-23)" },
-        { "document": "기술검토회의록", "section": "2.2" }
-      ],
-      "must_not_cite": []
+      "query": "같은 주문이 두 번 결제되는 것을 막는 방법",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "동일 멱등키로 100회 재요청",
+        "section": "4 REQ-F-22"
+      }
     },
     {
       "id": "Q05",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["exact_terms", "numeric_condition", "confusing_document"],
-      "query": "과업별 공수 산정과 선후행 관계",
-      "expected": [
-        { "document": "WBS", "section": "2" },
-        { "document": "WBS", "section": "1" }
-      ],
-      "must_not_cite": ["그룹웨어 과업지시서 5"]
+      "query": "완료 기준이 아직 정해지지 않은 항목",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "설계 검토 회의(M1)로 넘긴다",
+        "section": "8"
+      }
     },
     {
       "id": "Q06",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["exact_terms", "cross_document"],
-      "query": "운영 데이터베이스 접근 제한과 이관 방식",
-      "expected": [
-        { "document": "과업지시서", "section": "8" },
-        { "document": "기술검토회의록", "section": "3.1 / 3.2" },
-        { "document": "요구사항정의서", "section": "7 (REQ-F-51)" }
-      ],
-      "must_not_cite": []
+      "query": "정산 금액을 계산하는 단계와 중간값 보존",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "5단계로 계산하고 각 단계의 중간값을 보존",
+        "section": "3 REQ-F-12"
+      }
     },
     {
       "id": "Q07",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["paraphrase", "cross_document"],
-      "query": "같은 주문이 두 번 결제되는 것을 막는 방법",
-      "expected": [
-        { "document": "과업지시서", "section": "3.3" },
-        { "document": "기술검토회의록", "section": "2.1 / 2.2" },
-        { "document": "요구사항정의서", "section": "4 (REQ-F-22)" }
-      ],
-      "must_not_cite": []
+      "query": "재고 반영 지연 목표",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "p95 반영 지연 5초 이하",
+        "section": "5 REQ-F-30"
+      }
     },
     {
       "id": "Q08",
-      "intent": "TASK_CORE",
-      "tags": ["exact_terms", "numeric_condition", "confusing_document"],
-      "query": "목표 응답시간과 처리량, 가용성 수준",
-      "expected": [{ "document": "요구사항정의서", "section": "9 (REQ-N-01 ~ REQ-N-04)" }],
-      "must_not_cite": ["그룹웨어 과업지시서 3.1"]
+      "query": "웹 접근성 자동 점검 기준",
+      "expect": {
+        "document": "한빛몰_주문정산_요구사항정의서.pdf",
+        "anchor": "자동 점검 도구 오류 0건",
+        "section": "6 REQ-F-44"
+      }
     },
     {
       "id": "Q09",
-      "intent": "TASK_CORE",
-      "tags": ["paraphrase", "cross_document"],
-      "query": "아직 완료 기준이 정해지지 않은 항목",
-      "expected": [
-        { "document": "요구사항정의서", "section": "8" },
-        { "document": "기술검토회의록", "section": "3.1 / 3.3 (R-07)" },
-        { "document": "기술검토회의록", "section": "4" }
-      ],
-      "must_not_cite": []
+      "query": "판매자 정산 이의 제기가 얼마나 접수됐나",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "이의 제기가 412건",
+        "section": "1.1"
+      }
     },
     {
       "id": "Q10",
-      "intent": "TASK_DISCOVERY",
-      "tags": ["paraphrase", "confusing_document"],
-      "query": "발주자가 만들어 내라고 요구한 결과물과 그것을 만드는 과업",
-      "expected": [
-        { "document": "과업지시서", "section": "3.1 ~ 3.8" }
-      ],
-      "must_not_cite": ["과업지시서 9", "그룹웨어 과업지시서 3"],
-      "note": "9장(사업관리)이 상위에 올라오면 1단계 검색이 관리 절차 쪽으로 끌린 것이다. 오추출의 선행 신호."
+      "query": "결제대행 장애로 결제가 멈춘 시간",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "4시간 17분",
+        "section": "1.1"
+      }
     },
     {
       "id": "Q11",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["paraphrase", "numeric_condition", "cross_document"],
-      "query": "판촉 기간 운영 반영 제한과 배포 가능 시점",
-      "expected": [
-        { "document": "과업지시서", "section": "8" },
-        { "document": "WBS", "section": "1" },
-        { "document": "기술검토회의록", "section": "3.3 (R-09)" }
-      ],
-      "must_not_cite": []
+      "query": "폴링 방식 재고 동기화가 만드는 문제",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "품절 오노출 월 평균 1,900건",
+        "section": "2"
+      }
     },
     {
       "id": "Q12",
-      "intent": "ASSIGNMENT_REQUIREMENT",
-      "tags": ["people_requirement", "exact_terms", "cross_document"],
-      "query": "웹 접근성 준수 수준과 담당 인력의 대응 경험",
-      "expected": [
-        { "document": "요구사항정의서", "section": "6 (REQ-F-44)" },
-        { "document": "인력운영계획서", "section": "2.4" }
-      ],
-      "must_not_cite": []
+      "query": "주문 상태와 전이 규칙의 규모",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "상태 14종, 전이 41종",
+        "section": "3.1"
+      }
     },
     {
       "id": "Q13",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["exact_terms", "paraphrase", "cross_document"],
-      "query": "메시지 유실과 중복 수신에 대한 보정 처리",
-      "expected": [
-        { "document": "요구사항정의서", "section": "5 (REQ-F-31, REQ-F-32)" },
-        { "document": "과업지시서", "section": "3.4" }
-      ],
-      "must_not_cite": []
+      "query": "결제대행사 시험 환경 이용 제약",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "화요일 야간에만 이용할 수 있다",
+        "section": "8"
+      }
     },
     {
       "id": "Q14",
-      "intent": "EXECUTION_CONDITION",
-      "tags": ["exact_terms", "confusing_document", "cross_document"],
-      "query": "시험 환경 이용 제약과 예약",
-      "expected": [
-        { "document": "과업지시서", "section": "8" },
-        { "document": "기술검토회의록", "section": "2.1 / 3.1 / 3.3" }
-      ],
-      "must_not_cite": [],
-      "note": "그룹웨어 문서 6장에도 「공용 성능시험 환경 1식 예약」이 있다. 여기가 근거 잠식이 가장 잘 나는 자리다 — 그룹웨어 청크가 상위 3 안에 들면 감점."
+      "query": "운영 반영이 금지되는 기간",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "11월 11일 ~ 11월 20일",
+        "section": "8"
+      }
+    },
+    {
+      "id": "Q15",
+      "query": "개발 단계 검수 기준",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "커버리지 70% 이상",
+        "section": "5"
+      }
+    },
+    {
+      "id": "Q16",
+      "query": "이 사업의 총 사업비",
+      "expect": {
+        "document": "한빛몰_주문정산_고도화_과업지시서.pdf",
+        "anchor": "사억팔천만원정",
+        "section": "1.3"
+      }
+    },
+    {
+      "id": "Q17",
+      "query": "백엔드 리드의 결제 연동 자격 요건",
+      "expect": {
+        "document": "한빛몰_주문정산_투입인력_운영계획서.pdf",
+        "anchor": "연동 경험 2건 이상",
+        "section": "2.2"
+      }
+    },
+    {
+      "id": "Q18",
+      "query": "관측성 담당이 다뤄야 하는 기술",
+      "expect": {
+        "document": "한빛몰_주문정산_투입인력_운영계획서.pdf",
+        "anchor": "OpenTelemetry, Prometheus, Grafana, Loki",
+        "section": "2.6"
+      }
+    },
+    {
+      "id": "Q19",
+      "query": "정산 개발자에게 필요한 금액 계산 경험",
+      "expect": {
+        "document": "한빛몰_주문정산_투입인력_운영계획서.pdf",
+        "anchor": "BigDecimal, 반올림 정책",
+        "section": "2.3"
+      }
+    },
+    {
+      "id": "Q20",
+      "query": "총 투입 규모",
+      "expect": {
+        "document": "한빛몰_주문정산_투입인력_운영계획서.pdf",
+        "anchor": "41.9 M/M",
+        "section": "1"
+      }
+    },
+    {
+      "id": "Q21",
+      "query": "발주사 상주 요일",
+      "expect": {
+        "document": "한빛몰_주문정산_투입인력_운영계획서.pdf",
+        "anchor": "화·수·목을 원칙으로",
+        "section": "3"
+      }
+    },
+    {
+      "id": "Q22",
+      "query": "공수를 산정하지 못한 과업과 그 이유",
+      "expect": {
+        "document": "한빛몰_주문정산_WBS_마일스톤.pdf",
+        "anchor": "연동 규격서를 아직 받지",
+        "section": "2"
+      }
+    },
+    {
+      "id": "Q23",
+      "query": "통합 성능시험의 선행 과업",
+      "expect": {
+        "document": "한빛몰_주문정산_WBS_마일스톤.pdf",
+        "anchor": "W-01 ~ W-07 전건",
+        "section": "2"
+      }
+    },
+    {
+      "id": "Q24",
+      "query": "임계 경로의 여유 기간",
+      "expect": {
+        "document": "한빛몰_주문정산_WBS_마일스톤.pdf",
+        "anchor": "총 여유 기간은 9영업일",
+        "section": "5"
+      }
+    },
+    {
+      "id": "Q25",
+      "query": "공수 산정에서 제외하는 시간",
+      "expect": {
+        "document": "한빛몰_주문정산_WBS_마일스톤.pdf",
+        "anchor": "회의·보고·대기 시간은 제외한다",
+        "section": "1"
+      }
+    },
+    {
+      "id": "Q26",
+      "query": "정산 엔진 1차 개통의 충족 조건",
+      "expect": {
+        "document": "한빛몰_주문정산_WBS_마일스톤.pdf",
+        "anchor": "재무팀 대사 차액 0원",
+        "section": "4 M2"
+      }
+    },
+    {
+      "id": "Q27",
+      "query": "과거 장애 때 중복 승인이 몇 건이었나",
+      "expect": {
+        "document": "한빛몰_주문정산_기술검토회의록.pdf",
+        "anchor": "중복 승인 17건",
+        "section": "2.1"
+      }
+    },
+    {
+      "id": "Q28",
+      "query": "의미가 겹치는 주문 상태값",
+      "expect": {
+        "document": "한빛몰_주문정산_기술검토회의록.pdf",
+        "anchor": "출고대기",
+        "section": "1.1"
+      }
+    },
+    {
+      "id": "Q29",
+      "query": "레거시 데이터를 받아 오는 방식",
+      "expect": {
+        "document": "한빛몰_주문정산_기술검토회의록.pdf",
+        "anchor": "새벽 2시에 생성하는 스냅샷",
+        "section": "3.1"
+      }
+    },
+    {
+      "id": "Q30",
+      "query": "카프카 운영 경험 부재에 대한 대응",
+      "expect": {
+        "document": "한빛몰_주문정산_기술검토회의록.pdf",
+        "anchor": "교육을 수행사가 2회",
+        "section": "2.2"
+      }
+    },
+    {
+      "id": "Q31",
+      "query": "부가세 반올림 정책",
+      "expect": {
+        "document": "한빛몰_주문정산_기술검토회의록.pdf",
+        "anchor": "주문 건별 원 단위 절사",
+        "section": "1.2"
+      }
+    },
+    {
+      "id": "Q32",
+      "query": "1등급 장애 착수 시간",
+      "expect": {
+        "document": "한빛리테일_사내그룹웨어_유지보수_과업지시서.pdf",
+        "anchor": "전사 사용 불가",
+        "section": "3.1"
+      }
+    },
+    {
+      "id": "Q33",
+      "query": "그룹웨어 연간 공수 배분 합계",
+      "expect": {
+        "document": "한빛리테일_사내그룹웨어_유지보수_과업지시서.pdf",
+        "anchor": "배분표 합계는 2,240인시",
+        "section": "7"
+      }
+    },
+    {
+      "id": "Q34",
+      "query": "그룹웨어 월 가용성 목표",
+      "expect": {
+        "document": "한빛리테일_사내그룹웨어_SLA_부속합의서.pdf",
+        "anchor": "계획 정지 시간을 제외한 가동 시간 비율",
+        "section": "3"
+      }
+    },
+    {
+      "id": "Q35",
+      "query": "서비스 수준이 연속 미달하면 어떻게 되나",
+      "expect": {
+        "document": "한빛리테일_사내그룹웨어_SLA_부속합의서.pdf",
+        "anchor": "대금의 5%를 감액",
+        "section": "4"
+      }
+    },
+    {
+      "id": "Q36",
+      "query": "연차 사용 촉진 절차 반영에 드는 공수",
+      "expect": {
+        "document": "한빛리테일_사내그룹웨어_개선요청_접수내역.pdf",
+        "anchor": "48인시",
+        "section": "2 I-2027-02"
+      }
+    },
+    {
+      "id": "Q37",
+      "query": "2026년 개선 요청 접수 건수",
+      "expect": {
+        "document": "한빛리테일_사내그룹웨어_개선요청_접수내역.pdf",
+        "anchor": "총 147건",
+        "section": "1"
+      }
     }
-  ]
+  ],
+  "projects": {
+    "한빛몰 주문·정산 시스템 고도화 구축": [
+      "한빛몰_주문정산_고도화_과업지시서.pdf",
+      "한빛몰_주문정산_요구사항정의서.pdf",
+      "한빛몰_주문정산_투입인력_운영계획서.pdf",
+      "한빛몰_주문정산_WBS_마일스톤.pdf",
+      "한빛몰_주문정산_기술검토회의록.pdf"
+    ],
+    "2027년도 사내 그룹웨어 유지보수 용역": [
+      "한빛리테일_사내그룹웨어_유지보수_과업지시서.pdf",
+      "한빛리테일_사내그룹웨어_SLA_부속합의서.pdf",
+      "한빛리테일_사내그룹웨어_개선요청_접수내역.pdf"
+    ]
+  }
 }

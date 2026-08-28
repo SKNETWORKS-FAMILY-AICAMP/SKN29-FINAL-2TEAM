@@ -1,0 +1,28 @@
+/* 관공서·공공기관 문서체. 명조 계열에 절 번호를 강조하고 표 테두리를 굵게 쓴다.
+ *
+ * `doc.css` 와 나란히 두는 이유는 **레이아웃이 파싱에 미치는 영향을 재기 위해서**다.
+ * 모든 문서가 같은 서식이면 제목 인식이 나쁠 때 그것이 파서 탓인지 서식 탓인지
+ * 가를 수 없다. 글꼴 계열·제목 크기·정렬·여백을 통째로 다르게 잡는다.
+ */
+@page { size: A4; margin: 25mm 22mm; }
+body { font-family: "Batang", "바탕", serif; font-size: 11pt; line-height: 1.85; color: #000; }
+h1 { font-size: 19pt; font-weight: 700; text-align: center; margin: 0 0 8mm;
+     letter-spacing: 0.06em; border-bottom: 3px double #000; padding-bottom: 5mm; }
+h2 { font-size: 14pt; font-weight: 700; margin: 10mm 0 3mm; page-break-after: avoid; }
+h3 { font-size: 12pt; font-weight: 700; margin: 6mm 0 2mm; page-break-after: avoid;
+     font-family: "Malgun Gothic", "맑은 고딕", sans-serif; }
+h4 { font-size: 11pt; font-weight: 700; margin: 4mm 0 2mm; }
+p { margin: 0 0 3mm; text-indent: 3mm; }
+ul, ol { margin: 0 0 3mm; padding-left: 9mm; }
+li { margin-bottom: 1.5mm; }
+table { width: 100%; border-collapse: collapse; margin: 3mm 0 6mm; font-size: 10pt;
+        page-break-inside: avoid; border: 2px solid #000; }
+th, td { border: 1px solid #000; padding: 2.5mm 3mm; vertical-align: top; }
+th { background: #e8e8e8; font-weight: 700; text-align: center; }
+td.num { text-align: right; }
+.cover-meta { width: 72%; margin: 0 auto 12mm; font-size: 10.5pt; }
+.cover-meta th { width: 32%; }
+.note { border: 1px solid #000; padding: 3mm 4mm; margin: 3mm 0 5mm; font-size: 10pt; }
+.pagebreak { page-break-before: always; }
+figure { margin: 5mm 0 6mm; text-align: center; page-break-inside: avoid; }
+figcaption { font-size: 9.5pt; margin-top: 2mm; }

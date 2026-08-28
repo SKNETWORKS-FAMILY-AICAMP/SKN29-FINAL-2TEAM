@@ -1,0 +1,79 @@
+/* 파싱 난이도를 일부러 올린 문서의 서식.
+ *
+ * 목적이 「예쁘게」가 아니라 **실제 회사 문서가 파서에게 어려운 이유를 재현하는
+ * 것**이다. 한글(HWP)에서 나온 PDF 가 특히 그렇다 —
+ *
+ *   · 제목이 개조식 기호(□ ○ -)로만 구분되고 글자 크기 차이가 거의 없다
+ *   · 머리말·꼬리말·쪽번호가 매 쪽 반복된다
+ *   · 표에 병합셀과 중첩 헤더가 있고 쪽을 넘어간다
+ *   · 본문 옆에 표가 붙거나 2단으로 흐른다
+ *
+ * 여기서 쉬운 쪽으로 손대면(제목을 크게, 표를 단순하게) 시험 자체가 없어진다.
+ */
+
+@page { size: A4; margin: 26mm 18mm 24mm; }
+
+body {
+  font-family: "Malgun Gothic", "맑은 고딕", sans-serif;
+  font-size: 10pt;
+  line-height: 1.6;
+  color: #000;
+}
+
+/* 매 쪽 반복되는 머리말·꼬리말. 본문 청크에 섞여 들어오면 안 되는 것들이다. */
+.running-header {
+  position: fixed;
+  top: -16mm; left: 0; right: 0;
+  font-size: 8pt;
+  color: #333;
+  border-bottom: 0.5px solid #999;
+  padding-bottom: 1mm;
+  display: flex;
+  justify-content: space-between;
+}
+.running-footer {
+  position: fixed;
+  bottom: -14mm; left: 0; right: 0;
+  font-size: 8pt;
+  color: #333;
+  border-top: 0.5px solid #999;
+  padding-top: 1mm;
+  text-align: center;
+}
+
+h1 { font-size: 15pt; font-weight: 700; text-align: center; margin: 0 0 7mm; letter-spacing: 0.3em; }
+
+/* 개조식 제목 — **본문과 크기 차이를 거의 두지 않는다.** 레이아웃 모델이
+ * 제목으로 알아보는지가 이 문서의 시험 항목이다. */
+h2 { font-size: 11pt;   font-weight: 700; margin: 6mm 0 2mm; }
+h3 { font-size: 10.5pt; font-weight: 700; margin: 4mm 0 1.5mm; padding-left: 3mm; }
+h4 { font-size: 10pt;   font-weight: 600; margin: 3mm 0 1mm;  padding-left: 6mm; }
+
+p  { margin: 0 0 2mm; text-align: justify; }
+p.body   { padding-left: 9mm; }
+ul { margin: 0 0 2mm; padding-left: 12mm; list-style: none; }
+li { margin-bottom: 1mm; text-indent: -4mm; padding-left: 4mm; }
+
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-size: 9pt; }
+th, td { border: 0.75px solid #000; padding: 1.2mm 1.8mm; vertical-align: middle; }
+th { background: #f0f0f0; font-weight: 700; text-align: center; }
+td.num { text-align: right; }
+td.ctr { text-align: center; }
+tr.sum td, tr.sum th { background: #e8e8e8; font-weight: 700; }
+
+/* 쪽을 넘어가는 긴 표. 머리 행이 매 쪽 반복되게 둔다 — 반복된 머리 행이
+ * 본문으로 흘러드는지가 시험 항목이다. */
+table.long { page-break-inside: auto; }
+table.long thead { display: table-header-group; }
+table.long tr { page-break-inside: avoid; }
+
+/* 2단 편집 — 읽기 순서가 열 단위로 잡히는지 본다. */
+.two-col { column-count: 2; column-gap: 8mm; column-rule: 0.5px solid #ccc; }
+
+.stamp { float: right; margin: -18mm 2mm 0 0; }
+.footnote {
+  border-top: 0.5px solid #666;
+  margin-top: 5mm; padding-top: 1.5mm;
+  font-size: 8pt; color: #222;
+}
+.pagebreak { page-break-before: always; }

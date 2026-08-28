@@ -1,0 +1,140 @@
+{
+  "_설명": "프로젝트 3(하나로유통 김천 WMS)의 검색 정답지. 문서당 3개.",
+  "queries": [
+    {
+      "id": "P03-01",
+      "query": "현재 피킹 오류율이 얼마나 되나",
+      "expect": {
+        "document": "하나로유통_김천WMS_재구축_과업지시서.pdf",
+        "anchor": "피킹 오류율은 0.34%",
+        "section": "1.1"
+      }
+    },
+    {
+      "id": "P03-02",
+      "query": "오출고 반품 처리에 드는 비용",
+      "expect": {
+        "document": "하나로유통_김천WMS_재구축_과업지시서.pdf",
+        "anchor": "월 2,100만원",
+        "section": "1.1"
+      }
+    },
+    {
+      "id": "P03-03",
+      "query": "이 사업의 총 사업비",
+      "expect": {
+        "document": "하나로유통_김천WMS_재구축_과업지시서.pdf",
+        "anchor": "칠억이천만원정",
+        "section": "1.3"
+      }
+    },
+    {
+      "id": "P03-04",
+      "query": "출고 지시 처리량 목표",
+      "expect": {
+        "document": "하나로유통_김천WMS_요구사항정의서.pdf",
+        "anchor": "분당 3,000건을 처리한다",
+        "section": "2 WR-F-12"
+      }
+    },
+    {
+      "id": "P03-05",
+      "query": "재고 실사가 얼마나 정확해야 하나",
+      "expect": {
+        "document": "하나로유통_김천WMS_요구사항정의서.pdf",
+        "anchor": "실사 정확도는 99.98% 이상",
+        "section": "3 WR-F-22"
+      }
+    },
+    {
+      "id": "P03-06",
+      "query": "현장 단말 화면 응답 목표",
+      "expect": {
+        "document": "하나로유통_김천WMS_요구사항정의서.pdf",
+        "anchor": "단말 320대 동시 접속에서 p95 500ms",
+        "section": "2 WR-F-14"
+      }
+    },
+    {
+      "id": "P03-07",
+      "query": "자동창고와 통신하는 포트",
+      "expect": {
+        "document": "하나로유통_김천WMS_인터페이스정의서.pdf",
+        "anchor": "TCP 소켓 9200 포트",
+        "section": "2"
+      }
+    },
+    {
+      "id": "P03-08",
+      "query": "자동창고 통신이 끊겼다고 판정하는 기준",
+      "expect": {
+        "document": "하나로유통_김천WMS_인터페이스정의서.pdf",
+        "anchor": "연속 10회 미회신이면 단절",
+        "section": "2"
+      }
+    },
+    {
+      "id": "P03-09",
+      "query": "운송장을 하루에 얼마나 채번하나",
+      "expect": {
+        "document": "하나로유통_김천WMS_인터페이스정의서.pdf",
+        "anchor": "일 20만 건 규모",
+        "section": "3"
+      }
+    },
+    {
+      "id": "P03-10",
+      "query": "일정에서 지연을 흡수할 수 있는 여유",
+      "expect": {
+        "document": "하나로유통_김천WMS_WBS.pdf",
+        "anchor": "총 여유는 12영업일",
+        "section": "4"
+      }
+    },
+    {
+      "id": "P03-11",
+      "query": "피킹을 시범 가동하는 시점",
+      "expect": {
+        "document": "하나로유통_김천WMS_WBS.pdf",
+        "anchor": "피킹 시범 가동",
+        "section": "3"
+      }
+    },
+    {
+      "id": "P03-12",
+      "query": "일정에서 빼 둔 기간",
+      "expect": {
+        "document": "하나로유통_김천WMS_WBS.pdf",
+        "anchor": "24일까지는 일정에서 제외했다",
+        "section": "1"
+      }
+    },
+    {
+      "id": "P03-13",
+      "query": "전환 당일 델타를 받을 정지 시간",
+      "expect": {
+        "document": "하나로유통_김천WMS_위험관리대장.pdf",
+        "anchor": "새벽 2시부터 5시 창을 3일 연속",
+        "section": "1"
+      }
+    },
+    {
+      "id": "P03-14",
+      "query": "현장 단말 성능을 실제로 재 본 결과",
+      "expect": {
+        "document": "하나로유통_김천WMS_위험관리대장.pdf",
+        "anchor": "p95 420ms",
+        "section": "2"
+      }
+    },
+    {
+      "id": "P03-15",
+      "query": "위험 대장을 얼마나 자주 갱신하나",
+      "expect": {
+        "document": "하나로유통_김천WMS_위험관리대장.pdf",
+        "anchor": "격주 목요일에 갱신",
+        "section": "3"
+      }
+    }
+  ]
+}

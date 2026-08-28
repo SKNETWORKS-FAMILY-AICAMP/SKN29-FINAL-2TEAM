@@ -24,9 +24,9 @@ context:
 source_binding_policy: EXISTING_REPOSITORY_PDF_WITH_RUNTIME_OVERLAY
 source_artifacts:
   - source_id: PDF-SLA
-    repo_path: tests/eval/documents/pdf/한빛리테일_사내그룹웨어_SLA_부속합의서.pdf
+    repo_path: tests/eval/documents/pdf/P2_한빛리테일_사내그룹웨어/한빛리테일_사내그룹웨어_SLA_부속합의서.pdf
     mime_type: application/pdf
-    sha256: 5cc0f533e71e950a77e36d8f213cd797fe2b89f1f15f2b7fcf9a5ace5e1f8d9f
+    sha256: c6612110c1ec4aeaf639f4cb6d8ead6eb3b66d42543d4295d63d1efb73fa77e2
     document_date: 2026-08-22
     relevant_pages: [1, 2]
 

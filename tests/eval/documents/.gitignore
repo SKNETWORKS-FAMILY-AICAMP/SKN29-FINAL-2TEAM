@@ -1,0 +1,4 @@
+# 명세(`specs/*.py`)에서 만들어지는 중간 HTML. 원본이 아니라 파생물이다.
+# `build_pdf.py` 가 매번 다시 만든다.
+p0*_*.html
+noise_*.html

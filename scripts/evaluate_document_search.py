@@ -44,7 +44,7 @@ from services.document_pipeline.runpod_client import embed_queries  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT_DIR = ROOT / "tests" / "eval" / "documents"
-GOLD_PATH = ROOT / "tests" / "eval" / "golden" / "retrieval.json"
+GOLD_PATH = ROOT / "tests" / "eval" / "golden" / "document_search_hybrid_legacy.json"
 CACHE_PATH = ROOT / ".codex_staging" / "document-search-eval-embeddings.json"
 
 TOP_K = 20
