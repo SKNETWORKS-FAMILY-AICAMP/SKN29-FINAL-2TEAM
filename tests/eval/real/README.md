@@ -149,11 +149,9 @@ docker compose -f infra/docker/docker-compose.yml exec -T web python scripts/cle
 3. 사람이 검색 전에 질문과 근거를 작성·교차 검수하고 Golden Set을 동결한다.
 4. 실제 실행 commit SHA와 모든 가중치·Top-K·모델 정보를 고정한다.
 
-재임베딩 결과는 기존 출처 미확인 `eval_real.vector`를 덮어쓰지 않는다.
-`eval_real.verified_vector`와 `verified_vector_run`에 모델, 차원, document 모드,
-정규화 여부, 각 `search_text` hash, 생성 시각, commit SHA를 별도 기록한다.
-RunPod에는 `chunk.search_text`만 최대 20개씩 보내며 파일명·원본 PDF·block 전체·
-계정·대화·업무·기타 메타데이터는 보내지 않는다.
+현재 통합 중인 정식 Docling·청킹·임베딩 파이프라인이 반영될 때까지 별도 평가용
+재임베딩 경로를 만들지 않는다. 통합 후 승인 문서를 같은 제품 파이프라인으로 다시
+색인하고, 새 chunk/block ID를 기준으로 Golden Set 근거와 검색 평가를 확정한다.
 
 ## 필요한 사용자 결정
 

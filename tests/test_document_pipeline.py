@@ -297,13 +297,7 @@ class QueryEmbeddingTests(SimpleTestCase):
         from services.document_pipeline import runpod_client
 
         queued = self._response({"id": "job-1", "status": "IN_QUEUE"})
-        done = self._response({
-            "id": "job-1", "status": "COMPLETED", "output": {
-                "embedding_model": "google/embeddinggemma-300m",
-                "embedding_dimension": 768,
-                "embeddings": [[0.1] * 768],
-            },
-        })
+        done = self._response({"id": "job-1", "status": "COMPLETED", "output": {"embeddings": [[0.1] * 768]}})
 
         with patch.object(runpod_client.requests, "post", return_value=queued), patch.object(
             runpod_client.requests, "get", side_effect=[self._response({"status": "IN_PROGRESS"}), done]
@@ -314,24 +308,6 @@ class QueryEmbeddingTests(SimpleTestCase):
         self.assertEqual(len(vectors[0]), 768)
         # 큐에 있는 동안 계속 물었다.
         self.assertEqual(get.call_count, 2)
-
-    def test_document_embedding_requires_explicit_provenance(self):
-        from services.document_pipeline import runpod_client
-
-        done = self._response({
-            "id": "job-2", "status": "COMPLETED", "output": {
-                "embedding_model": "google/embeddinggemma-300m",
-                "embedding_dimension": 768,
-                "embedding_mode": "document",
-                "normalized": True,
-                "embeddings": [[0.2] * 768],
-            },
-        })
-        with patch.object(runpod_client.requests, "post", return_value=done):
-            output = runpod_client.embed_documents(["비민감 검증 문구"])
-
-        self.assertEqual(output["embedding_mode"], "document")
-        self.assertEqual(len(output["embeddings"][0]), 768)
 
     def test_gives_up_after_the_deadline(self):
         """무한정 매달리지 않는다. 마지막 상태를 그대로 말한다."""

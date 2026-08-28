@@ -50,9 +50,3 @@ EMBEDDING_DEVICE=cuda
 The handler accepts a signed `source_url`; it never receives a local Django
 path or database credentials. It returns blocks, chunks, 768-dimensional
 embeddings, and diagnostics. Django owns the database transaction.
-
-For a frozen evaluation set, the handler also accepts `embed_documents` with
-at most 20 already-chunked text strings. It uses SentenceTransformers
-`encode_document(..., normalize_embeddings=True)` and returns the model,
-dimension, document mode, and normalization provenance. It receives no file
-name, document/account identifier, database credential, or unrelated metadata.
