@@ -135,6 +135,6 @@ cohort, 진단·실험용 실행, `INVALID_EVALUATION_INFRA` 실행을 분리해
 실행의 실제 답변·결정론적 판정·LLM Judge·실행 증거를 펼쳐 볼 수 있다.
 
 현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
-`NOT_AUTHORIZED`, S10/S11은 팀원 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
+`NOT_AUTHORIZED`, S10/S11은 Jihun 후속 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
 넣지 않는다. Phase 9로 넘어가기 위한 마지막 결정과 제한사항은
 `07_phase8_readiness_review.md`를 정본으로 삼는다.

@@ -372,13 +372,14 @@ HOLDOUT 실패를 공개 DEV로 바꾸고 같은 공식 라운드를 다시 계�
 
 ## 12. 승인된 결정 사항
 
-1. 초기 공식 범위는 Core 9 family로 고정하고 S10/S11은 팀원 병렬 트랙의 Expansion
+1. 초기 공식 범위는 Core 9 family로 고정하고 S10/S11은 Jihun 후속 트랙의 Expansion
    score로 분리한다. 완료돼도 별도 승격 승인 전 Core 분모를 바꾸지 않는다.
 2. `S08` Jira 승인 경로는 현재 권한 범위에 따라 `DESIGN_ONLY`를 유지한다. 추후 실제
    실행을 요청할 때 실행 권한과 cleanup 책임자를 새로 정한다.
 3. HOLDOUT 원문과 정답을 볼 수 있는 관리자를 정한다. candidate를 수정하는 사람이
-   HOLDOUT 정답을 일상적으로 보지 않도록 분리하는 것이 원칙이다. S01~S09 HOLDOUT은
-   S10/S11 담당 팀원이, S10/S11 HOLDOUT은 Jihun이 교차 관리한다.
+   HOLDOUT 정답을 일상적으로 보지 않도록 분리하는 것이 원칙이다. Jihun은 S01~S11
+   DEV 설계·개선을 맡고, 별도 HOLDOUT 담당 팀원이 S01~S11 비공개 package와 공식
+   batch 실행을 관리한다.
 4. 이 포트폴리오와 상태·분모 규칙은 2026-08-27 최종 승인됐다.
 
 ## 13. 2단계 완료 체크리스트

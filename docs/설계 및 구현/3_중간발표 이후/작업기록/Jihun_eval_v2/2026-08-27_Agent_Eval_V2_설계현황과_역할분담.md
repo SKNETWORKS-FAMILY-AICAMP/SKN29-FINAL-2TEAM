@@ -227,12 +227,11 @@ custodian private store에 둔다.
 - LEGACY/V2 공식 통계 분리
 - 원시 결과와 DB reconciliation
 
-### 6.2 팀원 1명 담당
+### 6.2 Jihun 후속 담당
 
-한 명의 팀원이 다음 두 Expansion 시나리오를 함께 담당한다.
+Jihun이 다음 두 Expansion 시나리오도 함께 담당한다.
 
-팀원에게는 별도 자료를 조합하게 하지 않고
-`2026-08-27_S10_S11_팀원_작업인계서.md` 한 파일을 공유한다. 이 인계서는 역할,
+실행 기준은 `2026-08-27_S10_S11_Jihun_작업계획.md` 한 파일로 모은다. 이 문서는 역할,
 프로젝트 코드 진입점, S10/S11 계약, 제출 template과 완료조건을 포함한다.
 
 ```text
@@ -268,27 +267,24 @@ coverage로 보고하고, protocol·denominator 변경을 명시한 승격 승�
 
 ### 6.3 HOLDOUT 역할 분리 — 확정
 
-S10·S11 담당자가 해당 기능이나 Agent 코드를 수정하므로 자신이 담당하는 S10·S11
-HOLDOUT 원문과 정답은 관리하지 않는다. 두 작업 트랙이 서로의 HOLDOUT을 교차
-관리하는 것으로 2026-08-27 확정했다.
+Jihun이 S01~S11 기능과 Agent를 설계·개선하므로 전체 HOLDOUT 원문과 정답은 관리하지
+않는다. 별도 HOLDOUT 담당 팀원이 S01~S11 비공개 package와 공식 batch 실행을
+관리하는 것으로 2026-08-28 역할을 정정했다.
 
 ```text
 Jihun
-├─ S01~S09 DEV 설계·실행·개선
-└─ S10·S11 HOLDOUT 원문·정답·manifest 관리
+└─ S01~S11 DEV 설계·실행·개선
 
-팀원
-├─ S10·S11 DEV 설계·실행·개선
-└─ S01~S09 HOLDOUT 원문·정답·manifest 관리
+HOLDOUT 담당 팀원
+└─ S01~S11 HOLDOUT 원문·정답·manifest 관리와 공식 batch 실행
 ```
 
-각 담당자는 자신이 개발하는 영역의 HOLDOUT 원문·gold를 round 종료 전에 열람하지
-않는다. HOLDOUT 관리자는 `freeze → N회 batch 실행 → cohort close → 결과 공개`
-순서를 지킨다.
+Jihun은 HOLDOUT 원문·gold를 round 종료 전에 열람하지 않는다. HOLDOUT 관리자는
+`freeze → N회 batch 실행 → cohort close → 결과 공개` 순서를 지킨다.
 
-## 7. 팀원에게 넘길 때의 공통 제출 형식
+## 7. S10·S11 공통 제출 형식
 
-팀원은 최종적으로 다음 필드를 공통 계약에 맞춰 제출한다.
+Jihun은 최종적으로 다음 필드를 공통 계약에 맞춰 작성한다.
 
 ```text
 scenario_id
@@ -342,7 +338,7 @@ candidate에서 수행하고 새 버전으로 재평가한다. 실패했던 유�
 - S07: 거절 실행은 가능하지만 V2 계약·저장 방식 필요
 - S08: 실행 미승인
 - S09A/B: 오류 주입과 attempt별 관측 보강 필요
-- S10/S11: 공통 계약 확정 후 팀원 트랙에서 설계
+- S10/S11: 공통 계약 확정 후 Jihun 후속 트랙에서 설계
 
 V2 공식 실행에 추가로 필요한 항목은 다음과 같다.
 
@@ -360,8 +356,8 @@ V2 공식 실행에 추가로 필요한 항목은 다음과 같다.
 ```text
 1. 위험·시나리오 포트폴리오 승인
 2. 03_scenario_contract.md 초안 검토·승인
-3. 팀원에게 동일 계약으로 S10·S11 작업 전달
-4. S01~S09B와 S10·S11을 병렬 상세 설계
+3. Jihun이 동일 계약으로 S10·S11 작업 계속
+4. S01~S09B와 S10·S11 상세 설계
 5. fixture와 gold 정책 확정
 6. deterministic·LLM Judge 자동 채점 계약 확정
 7. 공통 runner·DB 구현
@@ -371,8 +367,8 @@ V2 공식 실행에 추가로 필요한 항목은 다음과 같다.
 ```
 
 2단계 포트폴리오는 `APPROVED` 상태다. 다음은 3단계 공통 Scenario Contract를
-설계하는 작업이다. 공통 계약 확정 전에 팀원은 S10·S11의 조사와 초안 작성까지만
-진행하고 독립 구현은 시작하지 않는다.
+설계하는 작업이다. 공통 계약 확정 전에는 S10·S11의 조사와 초안 작성까지만 진행하고
+독립 구현은 시작하지 않는다.
 
 ## 10. 조건부 승인 검토 반영 기록
 
@@ -392,8 +388,8 @@ V2 공식 실행에 추가로 필요한 항목은 다음과 같다.
 - S10/S11을 Core에 자동 합치지 않고 별도 Expansion score로 유지
 
 이 보강으로 조건부 승인 사유를 해소했고 포트폴리오는 2026-08-27 사용자 승인을
-받았다. 같은 날 Jihun과 S10/S11 담당 팀원이 서로의 HOLDOUT을 교차 관리하는 방식도
-확정했다.
+받았다. 이후 역할을 정정해 Jihun이 S01~S11 DEV 설계·개선을 모두 맡고, 별도 HOLDOUT
+담당 팀원이 S01~S11 비공개 package와 공식 batch 실행을 관리하도록 확정했다.
 
 ## 11. Scenario Contract 추가 검토 반영
 
@@ -457,8 +453,8 @@ criteria에서 유도하며 Secondary dimension은 별도 결과로 보존한다
 - S07 evidence 요구사항은 확정하고 instrumentation 구현만 Phase 7로 이관
 - S09A는 physical attempt 관측 전까지 공식 실행 `BLOCKED_OBSERVABILITY`
 
-따라서 공통 계약 자체의 미결정 사항은 없다. 다음 순서는 동일 계약을 S10/S11 담당자에게
-전달하고, Jihun 트랙에서 Phase 4 fixture·gold 정책을 설계하는 것이다.
+따라서 공통 계약 자체의 미결정 사항은 없다. 다음 순서는 Jihun이 동일 계약으로
+S10/S11 Expansion 설계를 이어가고, Phase 4 fixture·gold 정책과 정합성을 유지하는 것이다.
 
 ## 15. Phase 4 착수
 

@@ -310,8 +310,8 @@ DEV fixture의 공식 실행 진입은 자동 무결성 검사를 필수로 한�
 
 ### 10.1 접근
 
-- S01~S09 HOLDOUT custodian: S10/S11 담당 팀원
-- S10/S11 HOLDOUT custodian: Jihun
+- S01~S11 HOLDOUT custodian: 별도 HOLDOUT 담당 팀원
+- S01~S11 DEV 설계·Candidate 개선: Jihun
 - candidate를 수정하는 사람은 자기 영역 HOLDOUT의 원문·gold를 보지 않는다.
 - HOLDOUT author/custodian과 내용 reviewer는 candidate 수정자와 분리한다.
 - reviewer는 author/custodian과 달라야 한다. 독립 reviewer를 확보하지 못하면

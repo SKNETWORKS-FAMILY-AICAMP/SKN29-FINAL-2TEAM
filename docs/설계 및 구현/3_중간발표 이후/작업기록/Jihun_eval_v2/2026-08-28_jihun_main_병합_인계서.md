@@ -226,10 +226,11 @@ python scripts/eval_v2_dashboard.py
 - S01/S07 최종 결정: `2026-08-27_S01_보류_S07_유지_결정.md`
 - 공식 DEV 결과: `2026-08-27_Core_DEV_36건_Phase8_결과.md`
 - 현재 AV073 재평가 결과: `2026-08-28_AV073_Core_DEV_36건_재평가.md`
-- S10/S11 팀원 범위: `2026-08-27_S10_S11_팀원_작업인계서.md`
+- S10/S11 Jihun 작업계획: `2026-08-27_S10_S11_Jihun_작업계획.md`
 
-S10·S11 담당 팀원은 Phase 9 freeze 승인 후 S01~S09 HOLDOUT 공식 batch 실행을 맡고,
-Jihun은 S10·S11 HOLDOUT을 관리·실행한다. 이는 자기 담당 시나리오의 비공개 정답을 먼저
-보지 않기 위한 교차 배정이며, 사람 판정 도입을 뜻하지 않는다.
+Jihun은 S01~S11 DEV 설계·개선을 모두 맡는다. 별도 HOLDOUT 담당 팀원은 Phase 9
+freeze 승인 후 S01~S11 비공개 package 관리와 공식 batch 실행을 맡는다. 이는 Jihun이
+자기 담당 시나리오의 비공개 정답을 먼저 보지 않게 하기 위한 역할 분리이며, 사람 판정
+도입을 뜻하지 않는다.
 
 현재 게이트: `STOP_BEFORE_PHASE_9`.

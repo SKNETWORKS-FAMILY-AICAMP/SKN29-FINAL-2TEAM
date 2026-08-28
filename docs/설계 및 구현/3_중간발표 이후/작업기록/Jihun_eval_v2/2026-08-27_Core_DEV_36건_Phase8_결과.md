@@ -61,7 +61,7 @@ S04 v1의 과거 유효 실행 3건은 보존하지만 현재 v2 cohort에는 �
 ## 범위에서 빠진 것
 
 - S08: 실제 Jira 승인 경로는 `NOT_AUTHORIZED`, 성공이나 실패로 계산하지 않음
-- S10/S11: 팀원 담당 Expansion 트랙, Core 점수에 섞지 않음
+- S10/S11: Jihun 후속 Expansion 트랙, Core 점수에 섞지 않음
 - LEGACY: 과거 참고용이며 V2 점수에 섞지 않음
 - HOLDOUT: 아직 열거나 실행하지 않음
 

@@ -444,5 +444,5 @@ readiness_transition: BLOCKED_OBSERVABILITY -> READY_AFTER_REVIEW
 - [x] S07의 확정된 evidence instrumentation 구현을 Phase 7로 이관
 - [x] S09A를 physical-attempt 관측 전까지 `BLOCKED_OBSERVABILITY`로 유지했고, 구현·검증 뒤 `READY`로 전환
 
-Phase 3은 `APPROVED`다. 같은 계약으로 S10/S11 문서를 정식 인계할 수 있으며,
-Jihun 트랙은 Phase 4 fixture·gold 정책으로 진입한다.
+Phase 3은 `APPROVED`다. Jihun은 같은 계약으로 S10/S11 Expansion 문서를 이어서
+설계하고 Phase 4 fixture·gold 정책과 정합성을 유지한다.
