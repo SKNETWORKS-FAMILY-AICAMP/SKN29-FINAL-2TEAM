@@ -271,22 +271,58 @@ class 삭제_대상_누락_검사(SimpleTestCase):
 
     @staticmethod
     def _schema():
+        """`schema.sql` **과 `migrations/*.sql`** 을 함께 읽는다.
+
+        ⚠ 2026-08-28 까지 이 함수는 `schema.sql` 하나만 읽었다. 그래서 스킬
+        표 다섯이 마이그레이션에만 있던 동안 **아래 검사들이 그 표를 아예
+        대상으로 세지 않았다** — 팀·계정 삭제가 빠뜨린 채로 초록이 나왔고,
+        하루 뒤 사람이 손으로 찾아서야 드러났다(2026-08-27).
+
+        정본은 `schema.sql` 이고 되접는 것이 규칙이다. 다만 규칙을 어겼을 때
+        조용히 통과하는 검사는 안전망이 아니라서 둘 다 읽는다.
+        """
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        return (root / "DB" / "schema.sql").read_text(encoding="utf-8")
+        parts = [(root / "DB" / "schema.sql").read_text(encoding="utf-8")]
+        parts += [
+            path.read_text(encoding="utf-8")
+            for path in sorted((root / "DB" / "migrations").glob("*.sql"))
+        ]
+        return "\n".join(parts)
+
+    @classmethod
+    def _dropped(cls):
+        """마이그레이션이 지운 테이블. 만들었다가 지운 것은 세지 않는다."""
+        import re
+
+        return set(re.findall(r"DROP TABLE (?:IF EXISTS )?([a-z_]+)", cls._schema()))
 
     @classmethod
     def _tables_with(cls, column):
-        """`column` 을 칼럼으로 가진 앱 테이블 이름. `mock_hr` 는 뺀다."""
+        """`column` 을 칼럼으로 가진 앱 테이블 이름. `mock_hr` 는 뺀다.
+
+        `CREATE TABLE` 본문뿐 아니라 나중에 `ALTER TABLE ... ADD COLUMN` 으로
+        붙은 것도 센다 — `proj`·`doc` 의 `team_id` 가 그렇게 붙었다.
+        """
         import re
 
+        dropped = cls._dropped()
         found = []
-        for m in re.finditer(r"CREATE TABLE ([a-z_.]+) \((.*?)\n\);", cls._schema(), re.S):
+        for m in re.finditer(
+            r"CREATE TABLE (?:IF NOT EXISTS )?([a-z_.]+) \((.*?)\n\);", cls._schema(), re.S
+        ):
             name, body = m.group(1), m.group(2)
-            if name.startswith("mock_hr."):
+            if name.startswith("mock_hr.") or name in dropped or name in found:
                 continue
             if re.search(rf"\n    {column}\s", body):
+                found.append(name)
+        for m in re.finditer(
+            rf"ALTER TABLE (?:ONLY )?([a-z_]+)\s+ADD COLUMN (?:IF NOT EXISTS )?{column}\s",
+            cls._schema(),
+        ):
+            name = m.group(1)
+            if name not in found and name not in dropped:
                 found.append(name)
         return found
 
@@ -335,8 +371,10 @@ class 삭제_대상_누락_검사(SimpleTestCase):
 
         app_tables = {
             name
-            for name in re.findall(r"^CREATE TABLE ([a-z_.]+)", self._schema(), re.M)
-            if not name.startswith("mock_hr.")
+            for name in re.findall(
+                r"^CREATE TABLE (?:IF NOT EXISTS )?([a-z_.]+)", self._schema(), re.M
+            )
+            if not name.startswith("mock_hr.") and name not in self._dropped()
         }
         missing = sorted(app_tables - truncated - self.RESET_KEEP)
         self.assertEqual(
