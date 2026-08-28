@@ -94,6 +94,23 @@ S3 원문 또는 비식별 복사본을 로컬 파이프라인으로 색인해�
   제외하고 팀 공유 PDF 8개만 복사 후보로 둔다.
 - 팀 PDF의 본문·청크·embedding을 로컬로 복사하는 것은 별도 사용자 확인 후 진행한다.
 
+## 2026-08-28 승인 데이터 복사 결과
+
+- 사용자가 팀 공유 PDF 8개의 실문서 평가용 로컬 복사를 승인했다.
+- `scripts/import_real_document_search_eval.py`가 공용 RDS를 read-only로 열고,
+  개인 문서를 제외한 팀 PDF 8개의 current revision만 로컬 `eval_real` 스키마에
+  복사했다.
+- 복사 결과: 문서 8, 블록 238, 청크 294, 벡터 294. content hash와 벡터 누락은
+  0개이며 원본 PDF 파일은 복사하지 않았다. 로컬 저장 크기는 약 2.1MB다.
+- 승인자·승인 문구·가져온 시각·폐기 예정일(2026-09-04)과 source/runtime DB
+  환경을 `eval_real.dataset_meta`에 기록했다.
+- 데이터 출처 RDS는 PostgreSQL 18.3이며 pg_trgm이 없다. 평가는 PostgreSQL
+  17.10, pg_trgm 1.6, vector 0.8.5, FTS simple인 로컬 DB에서 수행한다.
+- 이번 실문서 평가는 current revision 검색 품질만 다룬다. 이전 revision 누수는
+  기존 합성·회귀 테스트가 담당한다.
+- 평가 종료 또는 폐기 예정일 도달 시 로컬 DB에서 `eval_real` 스키마만 제거한다.
+  제거 전 정답지와 결과에 본문이 포함되지 않았는지 다시 확인한다.
+
 ## 필요한 사용자 결정
 
 - 평가에 사용해도 되는 로컬 계정 또는 문서 묶음
