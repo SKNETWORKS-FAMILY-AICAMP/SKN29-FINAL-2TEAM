@@ -3,8 +3,8 @@
 ## 1. 문서 상태
 
 - 기준일: 2026-08-28
-- 상태: Core DEV 기술 작업 완료, Phase 9 freeze 준비 진행 중
-- 현재 단계: 9단계 (`PHASE9_FREEZE_PREPARATION`), HOLDOUT 실행 전
+- 상태: Core DEV 기술 작업과 S10·S11 Expansion DEV pilot 완료
+- 현재 단계: Phase 9 정식 HOLDOUT 연기, S10·S11 결과 정리 완료
 - 정본 위치: 이 `eval/v2/` 디렉터리
 - main 병합 인계: [`2026-08-28_jihun_main_병합_인계서.md`](../../../작업기록/Jihun_eval_v2/2026-08-28_jihun_main_병합_인계서.md)
 - HOLDOUT 전달 자료: [`전달 문서/README.md`](../../../작업기록/Jihun_eval_v2/전달%20문서/README.md)
@@ -92,8 +92,8 @@ eval/v2/
 | 6 | 완료 | `gpt-5.6-sol`, reasoning `medium`, strict parser 구현·테스트 완료 |
 | 7 | 완료 | append-only 원본과 별도 V2 DB 저장, 현재 완료 run 101/101 DB·SHA-256 대조 완료 |
 | 8 | 완료 | AV073·Git `e888d6b…`로 Core 10개 variant 36 VALID 재실행 완료. 32 PASS/4 FAIL, S01 보류·S07 3/3 PASS |
-| 9 | 진행 중 | 비공개 문제 제작 가이드·빈 템플릿 완료, private package와 freeze manifest 준비 필요 |
-| 10 | 시작 전·실행 차단 | freeze manifest 승인과 preflight 통과 전 HOLDOUT batch 실행 금지 |
+| 9 | 연기 | 현재 발표 범위에서는 정식 비공개 HOLDOUT 인프라보다 S10·S11 Expansion 검증을 우선한다. 제작 가이드와 템플릿은 후속 작업 자료로 보존 |
+| 10 | 시작 전·실행 차단 | Phase 9 재개, freeze manifest 승인과 preflight 통과 전 HOLDOUT batch 실행 금지 |
 
 현재 자동 검증 명령은 `python scripts/eval_v2_validate.py`다. V2 공식 점수에는 사람
 판정이나 LEGACY calibration을 사용하지 않는다. HOLDOUT의 custodian/reviewer는 점수자가
@@ -114,6 +114,10 @@ python scripts/eval_v2_remaining.py S06
 python scripts/eval_v2_s07.py
 python scripts/eval_v2_s09a.py
 python scripts/eval_v2_remaining.py S09B
+python scripts/eval_v2_s10.py S10-DEV-001
+python scripts/eval_v2_s10.py S10-DEV-002
+python scripts/eval_v2_s11.py S11-DEV-001
+python scripts/eval_v2_s11.py S11-DEV-002
 python scripts/eval_v2_portfolio.py
 python scripts/eval_v2_record.py sync-root
 ```
@@ -137,6 +141,7 @@ cohort, 진단·실험용 실행, `INVALID_EVALUATION_INFRA` 실행을 분리해
 실행의 실제 답변·결정론적 판정·LLM Judge·실행 증거를 펼쳐 볼 수 있다.
 
 현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
-`NOT_AUTHORIZED`, S10/S11은 Jihun 후속 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
-넣지 않는다. Phase 9로 넘어가기 위한 마지막 결정과 제한사항은
-`07_phase8_readiness_review.md`를 정본으로 삼는다.
+`NOT_AUTHORIZED`, S10/S11은 별도 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
+넣지 않는다. S10은 6/6 PASS, S11은 Primary scenario 6/6 PASS였지만 S11의 보조 실행
+효율은 3/6 FAIL이었다. Phase 9 정식 HOLDOUT은 연기된 상태다. 기존 36건과 Expansion
+12건은 모두 `DEV 기준선`이지 비공개 일반화 검증 결과가 아니다.
