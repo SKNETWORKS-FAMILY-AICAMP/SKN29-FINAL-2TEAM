@@ -693,6 +693,11 @@ export default function ChatPage() {
   const leftRef = useRef<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const lastTurnRef = useRef<HTMLDivElement | null>(null);
+  const approvalScrollFrameRef = useRef<number | null>(null);
+  const approvalScrollTimeoutRef = useRef<number | null>(null);
+  /** 승인 직후 확장되는 실행 영역의 끝. 전체 대화 끝으로 끌고 가지 않고
+   * 새로 생긴 상태·중단 버튼이 보이는 데 필요한 만큼만 이동한다. */
+  const approvalProgressEndRef = useRef<HTMLDivElement | null>(null);
   /** 저장된 대화를 열었을 때만 마지막 턴의 시작점을 한 번 맞춘다. */
   const anchorLastTurn = useRef(false);
   /** 사용자가 맨 아래를 선택한 동안에만 새 내용을 따라간다. */
@@ -934,13 +939,17 @@ export default function ChatPage() {
   useEffect(() => {
     const node = streamRef.current;
     if (!node) return;
+    // 승인 직후에는 승인 카드 접힘과 생성 상태 노출이 같은 렌더에서 일어난다.
+    // 이때 일반 하단 추적까지 실행하면 아래의 승인 전용 스크롤과 겹쳐 화면이
+    // 두 번 움직인다. 승인 전환은 전용 경로에서 한 번만 처리한다.
+    if (pendingAction === 'approve') return;
     if (stickToBottom.current) {
       node.scrollTop = node.scrollHeight;
       setShowLatestButton(false);
       return;
     }
     setShowLatestButton(node.scrollHeight - node.scrollTop - node.clientHeight > 24);
-  }, [turns]);
+  }, [turns, pendingAction]);
 
   function jumpToLatest() {
     const node = streamRef.current;
@@ -953,6 +962,34 @@ export default function ChatPage() {
     });
     setShowLatestButton(false);
   }
+
+  // 사용자가 직접 승인을 눌렀을 때만 승인 카드 아래쪽을 드러낸다. 일반 답변
+  // 생성이나 완료 이벤트에는 적용하지 않아, 이전 내용을 읽는 사용자의 스크롤을
+  // 빼앗지 않는다. `nearest`는 필요한 최소 거리만 움직인다.
+  useEffect(() => {
+    if (pendingAction !== 'approve') return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // 승인 카드가 접히는 동안 화면까지 동시에 움직이면 전환이 끊어 보인다.
+    // 카드 높이 전환(380ms)이 거의 끝난 뒤 진행 영역을 한 번만 따라간다.
+    approvalScrollTimeoutRef.current = window.setTimeout(() => {
+      approvalScrollFrameRef.current = window.requestAnimationFrame(() => {
+        approvalProgressEndRef.current?.scrollIntoView({
+          block: 'nearest',
+          behavior: reduceMotion ? 'auto' : 'smooth',
+        });
+      });
+    }, reduceMotion ? 0 : 360);
+    return () => {
+      if (approvalScrollTimeoutRef.current != null) {
+        window.clearTimeout(approvalScrollTimeoutRef.current);
+        approvalScrollTimeoutRef.current = null;
+      }
+      if (approvalScrollFrameRef.current != null) {
+        window.cancelAnimationFrame(approvalScrollFrameRef.current);
+        approvalScrollFrameRef.current = null;
+      }
+    };
+  }, [pendingAction]);
 
   const openSession = useCallback(
     async (id: string) => {
@@ -2314,7 +2351,7 @@ export default function ChatPage() {
                         // 어느 한쪽만 있을 수도 있다(예: 도구 없이 생각만 한 턴) —
                         // 그때만 있는 쪽만 그리고 경계선은 안 넣는다.
                         return (
-                          <section className={cardStyles.card}>
+                          <section className={`${cardStyles.card} ${cardStyles.stageTransition}`}>
                             {showProgress && (live.running || !showReasoning) && (
                               <ProgressCard
                                 bare
@@ -2334,7 +2371,7 @@ export default function ChatPage() {
                                   if (live.running) {
                                     const elapsed = durationSeconds != null ? ` · ${durationSeconds}초` : '';
                                     return live.toolName
-                                      ? `${live.toolName} 실행 중${elapsed}`
+                                      ? `작업 중${elapsed}`
                                       : `생각하는 중${elapsed}`;
                                   }
                                   if (live.confirm) {
@@ -2483,6 +2520,10 @@ export default function ChatPage() {
                         />
                       )}
 
+                      {isLast && pendingAction === 'approve' && (
+                        <div ref={approvalProgressEndRef} className={styles.approvalProgressAnchor} />
+                      )}
+
                       {abandoned && (
                         <p className={styles.warnLine}>
                           <Icon name="triangle-alert" size={14} color="var(--color-warning-text)" />
@@ -2496,7 +2537,7 @@ export default function ChatPage() {
 
                       {shouldShowAgentAnswer(live) && (
                         <div
-                          className={styles.agentMessage}
+                          className={`${styles.agentMessage} ${styles.agentMessageEnter}`}
                         >
                           <AnswerText
                             text={

@@ -491,7 +491,7 @@ export function ProgressCard({
     : title;
 
   return (
-    <Wrapper className={bare ? styles.bareStack : styles.card}>
+    <Wrapper className={`${bare ? styles.bareStack : styles.card} ${styles.stageTransition}`}>
       <div className={styles.progressHead}>
         <span className={styles.progressTitle}>
           {running ? (
@@ -1406,7 +1406,8 @@ export function ConfirmCard({
   }
 
   return (
-    <section className={styles.cardFlush}>
+    <div className={styles.stageReveal}>
+    <section className={`${styles.cardFlush} ${styles.stageTransition}`}>
       {/* 고를 것이 있을 때만 선택 줄을 그린다. 없으면 무엇을 승인하는지 적는다.
           — 예전엔 목록이 없어도 이 줄을 그려서 「전체 선택 · 0건 선택됨 ·
           업무 0건」이 남았다(2026-08-18 QA). 체크할 것도 없는데 전체 선택이
@@ -1562,13 +1563,31 @@ export function ConfirmCard({
         </div>
       ) : null}
 
-      {singlePreview && !fileGenerationInProgress ? (
-        <ApprovalPreviewBlock preview={singlePreview} />
-      ) : singlePreview ? (
-        <div className={styles.approvalPreviewCollapsed}>
-          <Icon name="check-circle" size={16} color="var(--color-success)" />
-          <span>생성 승인</span>
-        </div>
+      {singlePreview ? (
+        <>
+          <div
+            className={`${styles.approvalPreviewStage} ${
+              fileGenerationInProgress
+                ? styles.approvalPreviewStageCollapsed
+                : styles.approvalPreviewStageExpanded
+            }`}
+          >
+            <div className={styles.approvalPreviewStageInner}>
+              <ApprovalPreviewBlock preview={singlePreview} />
+            </div>
+          </div>
+          <div
+            className={`${styles.approvalPreviewCollapsed} ${
+              fileGenerationInProgress
+                ? styles.approvalPreviewCollapsedVisible
+                : styles.approvalPreviewCollapsedHidden
+            }`}
+            aria-hidden={!fileGenerationInProgress}
+          >
+            <Icon name="check-circle" size={16} color="var(--color-success)" />
+            <span>생성 승인</span>
+          </div>
+        </>
       ) : null}
 
       {/* 호출이 여러 개면 무엇이 같이 실행되는지 전부 보여주고, 하나씩 켜고
@@ -1613,8 +1632,18 @@ export function ConfirmCard({
                   ) : null}
                 </div>
               </div>
-              {action.preview && !fileGenerationInProgress ? (
-                <ApprovalPreviewBlock preview={action.preview} />
+              {action.preview ? (
+                <div
+                  className={`${styles.approvalPreviewStage} ${
+                    fileGenerationInProgress
+                      ? styles.approvalPreviewStageCollapsed
+                      : styles.approvalPreviewStageExpanded
+                  }`}
+                >
+                  <div className={styles.approvalPreviewStageInner}>
+                    <ApprovalPreviewBlock preview={action.preview} />
+                  </div>
+                </div>
               ) : null}
             </div>
           ))}
@@ -1727,6 +1756,7 @@ export function ConfirmCard({
         </div>
       )}
     </section>
+    </div>
   );
 }
 

@@ -30,6 +30,100 @@
   overflow: hidden;
 }
 
+/* 스트림 단계가 새 DOM으로 교체되어도 같은 작업의 연속으로 느껴지게 한다.
+   높이를 고정하지 않고 짧은 투명도·이동만 사용하므로 긴 미리보기와 답변의
+   자연스러운 확장을 방해하지 않는다. */
+.stageTransition {
+  animation: stage-transition-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 생각/작업 카드 뒤에 승인 카드가 붙을 때 새 카드의 최종 높이를 한 프레임에
+   점유하지 않고 위에서 아래로 펼친다. 동적 미리보기 높이를 고정값으로 추측하지
+   않기 위해 grid의 0fr → 1fr 전환을 사용한다. */
+.stageReveal {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  animation: stage-reveal-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stageReveal > * {
+  min-height: 0;
+}
+
+@keyframes stage-transition-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes stage-reveal-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+/* 승인 후 생성 단계에서는 큰 미리보기를 즉시 제거하지 않고 같은 자리에서
+   접는다. 그래서 생성 상태와 중단 버튼이 위로 순간 이동하지 않는다. */
+.approvalPreviewStage {
+  display: grid;
+  min-width: 0;
+  transition:
+    grid-template-rows 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 240ms ease;
+}
+
+.approvalPreviewStageExpanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.approvalPreviewStageCollapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.approvalPreviewStageInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.approvalPreviewCollapsedVisible,
+.approvalPreviewCollapsedHidden {
+  transition:
+    max-height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease;
+}
+
+.approvalPreviewCollapsedVisible {
+  max-height: 52px;
+  opacity: 1;
+}
+
+.approvalPreviewCollapsedHidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* 진행 카드와 생각 과정을 한 카드로 합칠 때(2026-08-19) 그 경계선 — 흰 박스
    두 개로 따로 떠 있던 걸 하나로 묶어 달라는 지적으로 추가했다. `.card`의
    flex `gap`이 위아래 여백을 이미 주므로 선만 긋는다. */
@@ -485,6 +579,7 @@
 .taskStatus {
   color: var(--color-muted);
   font-size: 13px;
+  animation: stage-transition-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .approvalActionGroup {
@@ -590,6 +685,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg);
+  animation: stage-transition-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .approvalHistoryBody .approvalPreview:last-child {
@@ -1296,6 +1392,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  animation: stage-transition-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* 실행 중인 마지막 항목만 잔잔하게 훑는다. 상태 아이콘과 문구를 바꾸지 않고
@@ -1323,6 +1420,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .stageTransition,
+  .stageReveal,
+  .reasoningPanel,
+  .approvalPreviewCollapsed,
+  .taskStatus {
+    animation: none;
+  }
+
+  .approvalPreviewStage,
+  .approvalPreviewCollapsedVisible,
+  .approvalPreviewCollapsedHidden {
+    transition: none;
+  }
+
   .reasoningPanelRunning .reasoningList > li:last-child::after { animation: none; }
 }
 
