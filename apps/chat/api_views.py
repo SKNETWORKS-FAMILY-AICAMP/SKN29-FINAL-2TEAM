@@ -35,7 +35,7 @@ from backend.db.errors import (
 )
 from services.agent_runtime import RuntimeContext
 from services.agent_runtime.exceptions import AgentRuntimeError, HTTP_STATUS_BY_EXCEPTION
-from services.agent_runtime.sensitive_text import mask_for_storage, mask_sensitive
+from services.agent_runtime.sensitive_text import mask_for_storage, mask_sensitive, match_category
 from services.agent_runtime.skills.invocation import (
     build_invocation_input,
     parse_invocation,
@@ -235,27 +235,43 @@ class ChatMessageAPIView(AuthenticatedAPIView):
         account_id = request.user.account_id
         text = serializer.validated_data["content"]
         applied_skill: dict[str, str] | None = None
-        # 2026-08-26 — 모델에게 나가는 값의 마스킹은 `SensitiveInputMaskMiddleware`
-        # (그래프 안, `middleware/sensitive_input.py`)가 한다. `model_input`은
-        # **원문 그대로** 그래프에 넘긴다 — 미들웨어가 `before_model`에서 매
-        # 모델 호출 직전에 가린다. 가드레일·스킬 호출 파싱도 원문이 필요하므로
-        # `text` 자체는 이 시점까지 원문을 유지한다.
-        #
-        # 2026-08-27 — **저장은 다르다.** DB에 쓰는 값은 아래 `ChatMessageRepository
-        # .append()` 직전에 `mask_for_storage()`로 한 번 더 가린다(`text` 자체는
-        # 안 바꾼다 — `model_input` 계산에 원문이 필요하다). 예전엔 "저장은 항상
-        # 원문 그대로"였다(화면이 사용자 발화를 그대로 보여줘야 한다는 원칙) —
-        # 그런데 그 말은 채팅에 실제 API 키를 붙여넣으면 그 값이 DB에 평문으로
-        # 영구히 남는다는 뜻이었다. LLM에게 안 보내는 것과 DB 자체에 안 남기는
-        # 것은 다른 문제다(백업·로그·DB 접근 권한이 있는 운영자는 여전히 볼 수
-        # 있고, 키가 유효하면 레코드 하나가 곧 작동하는 크리덴셜이다) — 그래서
-        # credential·PII는 저장 시점부터 가린다. 권한/보안 *서술*(`AUTHORITY_
-        # KEYWORDS`)은 값이 아니라 사용자가 무엇을 물었는지의 기록이라 이력에는
-        # 남긴다(`mask_for_storage()` docstring 참고).
         model_input = text
 
         try:
             session = ChatSessionRepository.get(session_id=session_id, account_id=account_id)
+
+            # 2026-08-27 — **credential은 마스킹이 아니라 차단이다.** 여기서
+            # 막는 이유는 규모 때문이 아니라 순서 때문이다 — 아래로 내려갈수록
+            # 원문이 닿는 곳이 늘어난다: 외부 가드레일(제3자 서버로 나간다),
+            # `ChatMessageRepository`(DB), Graph의 PostgresSaver checkpoint
+            # (재개용으로 그래프 state를 그대로 저장한다). 이 중 하나라도
+            # 마스킹을 빠뜨리면 그 경로로 원문이 샌다 — "모든 소비처에서
+            # 빠짐없이 가린다"는 계속 늘어나는 목록을 지키는 대신, 아직 유효할
+            # 수 있는 자격증명은 **어디에도 닿기 전에** 요청 자체를 끝낸다.
+            # PII·권한서술처럼 "사용자가 무엇을 물었는지" 자체가 값은 아닌
+            # 카테고리는 여기서 막지 않는다 — 아래에서 마스킹만 한다.
+            if match_category(text) == "credential":
+                logger.info("채팅 입력에서 credential로 보이는 값을 감지해 요청을 막았습니다(session=%s)", session_id)
+                return Response(
+                    {
+                        "detail": "API 키·비밀번호로 보이는 값이 있어 이 요청을 처리하지 않았습니다. "
+                        "해당 값을 지우고 다시 보내 주세요."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # 2026-08-27 — **여기서부터 `text`는 마스킹된 값이다.** credential은
+            # 위에서 이미 걸러졌으니 여기 남는 건 PII뿐이다(권한서술은 이
+            # 조합에서 빠진다 — `mask_for_storage()` docstring 참고). 스킬 호출
+            # 파싱·외부 가드레일·DB 저장·Graph 입력이 **전부 이 값 하나**를
+            # 쓴다 — 예전처럼 "가드레일은 원문, 저장은 별도 마스킹, 모델
+            # 입력은 그래프 안 미들웨어가 마스킹" 식으로 소비처마다 다른 값을
+            # 만들지 않는다. 그래프 안 `SensitiveInputMaskMiddleware`(`before_
+            # model`)는 이제 이중 방어다 — 권한서술과, 이 변경 전에 이미
+            # 저장된 옛 이력(아직 원문일 수 있다)의 재전송을 여전히 가린다.
+            text = mask_for_storage(text)
+            model_input = text
+
             # 2026-08-22, 명시적 스킬 호출("/스킬이름 ...") — 클로드의 슬래시
             # 커맨드와 같은 방식(사용자 요청). "/"로 시작하는 문장은 이미
             # 어느 스킬을 쓸지 사용자가 확정한 것이라, 모델이 스스로 스킬
@@ -273,9 +289,6 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     account_id=account_id, team_id=session["team_id"], name=skill_name
                 )
                 if skill is not None:
-                    # `skill_request`도 원문 그대로 — 아래 그래프 진입 전에
-                    # `SensitiveInputMaskMiddleware`가 이 문자열이 실린
-                    # HumanMessage 전체를 가린다.
                     model_input = build_invocation_input(
                         name=skill_name, body=skill["body"], request=skill_request
                     )
@@ -298,10 +311,9 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                 session_id=str(session_id),
             )
             # **앞선 턴을 읽는다.** 새 발화를 적기 전에 읽어야 방금 것이 안 섞인다.
-            # `_history()`는 저장된 원문을 그대로 돌려준다 — 재전송(replay)
-            # 경로의 마스킹도 이제 `SensitiveInputMaskMiddleware`가 맡는다
-            # (그래프가 `state["messages"]`에 이 값을 얹는 매 순간마다 다시
-            # 가리므로, 여기서 한 번만 가리고 넘어가는 것보다 안전하다).
+            # `_history()`는 저장된 값을 그대로 돌려준다 — 이 변경 이후 저장된
+            # 행은 이미 마스킹된 값이고, 그 이전 행은 원문일 수 있다(아래
+            # `SensitiveInputMaskMiddleware`가 재전송 시점에 다시 가린다).
             history = _history(
                 ChatMessageRepository.list_for_session(
                     session_id=session_id, account_id=account_id
@@ -348,15 +360,15 @@ class ChatMessageAPIView(AuthenticatedAPIView):
 
             # 사용자 발화는 **스트림 전에** 확정한다. 실행이 어떻게 끝나든 사람이
             # 무엇을 물었는지는 남아야 한다 — 답만 없는 대화는 다시 물어보면
-            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. 저장하는 값은
-            # `mask_for_storage(text)`다 — credential·PII는 DB에도 영구히
-            # 남기지 않는다(위 `model_input` 주석 참고). `model_input`은 이
-            # 마스킹과 무관하게 원문 `text`를 그대로 쓴다.
+            # 되지만, 질문이 사라진 대화는 복구할 방법이 없다. `text`는 위에서
+            # 이미 `mask_for_storage()`를 거쳤다 — 여기서 다시 부르지 않는다
+            # (멱등이라 안전은 하지만, 소비처마다 매번 새로 가리지 않고 한 번
+            # 가린 값을 그대로 흘려보낸다는 걸 코드로도 보이게 한다).
             ChatMessageRepository.append(
                 session_id=session_id,
                 account_id=account_id,
                 role="user",
-                content={"type": "text", "text": mask_for_storage(text)},
+                content={"type": "text", "text": text},
             )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
