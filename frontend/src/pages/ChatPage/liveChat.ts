@@ -37,6 +37,7 @@ export const SKILL_REGISTER_TOOL_NAME = 'skill_register';
 export const JIRA_CREATE_ISSUES_TOOL_NAME = 'jira_create_issues';
 export const TABLE_EXPORT_TOOL_NAME = 'table_export';
 export const DOCUMENT_CREATE_TOOL_NAME = 'document_create';
+const APPROVAL_UPDATE_TEXT = '생성 예정 내용을 승인해 파일 생성을 진행했습니다.';
 
 const APPROVAL_PREVIEW_MAX_COLUMNS = 12;
 const APPROVAL_PREVIEW_MAX_ROWS = 20;
@@ -234,6 +235,8 @@ export interface LiveChat {
    * 허용 목록으로 정규화한 미리보기만 담는다.
    */
   approvalPreviews: ApprovalPreview[];
+  /** 부분 승인에서 사용자가 실제로 거절한 파일 생성 미리보기. */
+  rejectedApprovalPreviews: ApprovalPreview[];
   created: CreatedIssue[];
   failures: { title: string; reason: string }[];
   answer: string;
@@ -243,8 +246,11 @@ export interface LiveChat {
    * 이 값은 `agent_started` 이벤트부터 잰 시간이라 요청 전송·네트워크
    * 왕복·에이전트 시작 전 백엔드 처리는 빠져 있다. **라이브 실행**에서는
    * `ChatPage.tsx`의 `run()`이 끝나는 시점에 클라이언트에서 직접 잰
-   * 값으로 덮어쓴다(2026-08-24 수정) — 화면 스피너("생각하는 중")가 뜨는
+   * 값으로 보정한다(2026-08-24 수정) — 화면 스피너("생각하는 중")가 뜨는
    * 순간부터 답이 뜨는 순간까지, 사용자가 실제로 기다린 시간과 맞춘다.
+   * HITL 재개는 같은 턴의 다음 실행 구간이므로 `ChatPage.tsx`가 최초 질문부터
+   * 최종 결과까지의 전체 경과시간을 사용한다(2026-08-28). 저장된 과거 턴도
+   * 같은 기준으로 복원해 새로고침 전후 숫자가 달라지지 않게 한다.
    * 새로고침으로 **복원된 과거 턴**은 `run()`을 거치지 않으므로 여전히
    * 저장된 서버 값을 그대로 쓴다. 재개(resume) 스트림도 서버가 이 필드를
    * 안 붙이는 건 여전하지만, 라이브 실행이면 위 클라이언트 값이 덮어써서
@@ -312,6 +318,7 @@ export function emptyLive(): LiveChat {
     tasks: [],
     confirm: null,
     approvalPreviews: [],
+    rejectedApprovalPreviews: [],
     created: [],
     failures: [],
     answer: '',
@@ -519,20 +526,44 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
           : state.files;
 
       if (event.subagent_alias) return files === state.files ? state : { ...state, files };
+
+      const shouldRecordApproval =
+        Boolean(produced) &&
+        state.approvalPreviews.length > 0 &&
+        !state.timeline.some(
+          (entry) => entry.kind === 'update' && entry.text === APPROVAL_UPDATE_TEXT,
+        );
+      const completedTimeline = state.timeline.map((entry) =>
+        entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id
+          ? {
+              ...entry,
+              status: event.status,
+              output: event.output,
+              userResult: event.user_result ?? null,
+            }
+          : entry,
+      );
+
+      if (shouldRecordApproval) {
+        const toolIndex = completedTimeline.findIndex(
+          (entry) =>
+            entry.kind === 'tool' &&
+            entry.toolCallId !== null &&
+            entry.toolCallId === event.tool_call_id,
+        );
+        const approvalUpdate: TimelineEntry = {
+          kind: 'update',
+          text: APPROVAL_UPDATE_TEXT,
+          source: 'application_fallback',
+        };
+        completedTimeline.splice(toolIndex < 0 ? completedTimeline.length : toolIndex, 0, approvalUpdate);
+      }
+
       return {
         ...state,
         files,
         toolFailed: event.status === 'FAILED',
-        timeline: state.timeline.map((entry) =>
-          entry.kind === 'tool' && entry.toolCallId !== null && entry.toolCallId === event.tool_call_id
-            ? {
-                ...entry,
-                status: event.status,
-                output: event.output,
-                userResult: event.user_result ?? null,
-              }
-            : entry,
-        ),
+        timeline: completedTimeline,
       };
     }
 
@@ -686,6 +717,68 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
 
     case 'result': {
       const jira = readJiraResult(state.extraction, event);
+      // 부분 승인에서 거절한 호출은 실행되지 않으므로 tool_completed가 오지
+      // 않는다. 결과가 도착한 시점에는 이 턴이 끝났으므로, 승인 미리보기가
+      // 있었던 턴에 남은 RUNNING 호출을 취소 상태로 닫는다. 실행된 호출은
+      // 이미 OK/FAILED라 이 변환의 영향을 받지 않는다.
+      const closedTimeline = state.approvalPreviews.length > 0
+        ? state.timeline.map((entry) =>
+            entry.kind === 'tool' && entry.status === 'RUNNING'
+              ? { ...entry, status: 'REJECTED' as const }
+              : entry,
+          )
+        : state.timeline;
+      const rejectedToolRefs = new Set(
+        state.timeline
+          .filter((entry) => entry.kind === 'tool' && entry.status === 'RUNNING')
+          .map((entry) => entry.kind === 'tool' ? entry.toolRef : ''),
+      );
+      const rejectedApprovalPreviews = state.confirm?.actions
+        .filter((action) => rejectedToolRefs.has(action.name) && action.preview !== null)
+        .map((action) => action.preview as ApprovalPreview) ?? [];
+      const actionCounts = new Map<string, number>();
+      for (const action of state.confirm?.actions ?? []) {
+        actionCounts.set(action.name, (actionCounts.get(action.name) ?? 0) + 1);
+      }
+      const toolOffsets = new Map<string, number>();
+      const decisionSummaries = state.confirm?.actions.flatMap((action) => {
+        if (!action.preview) return [];
+        const tools = closedTimeline.filter(
+          (entry) => entry.kind === 'tool' && entry.toolRef === action.name,
+        );
+        const offset = toolOffsets.get(action.name) ?? 0;
+        toolOffsets.set(action.name, offset + 1);
+        // 같은 도구가 앞선 승인 재시도에서도 등장했을 수 있으므로 현재
+        // 확인 카드의 action 개수만큼을 타임라인 뒤에서 골라 짝지어 준다.
+        const toolIndex = Math.max(0, tools.length - (actionCounts.get(action.name) ?? 1)) + offset;
+        const status = tools[toolIndex]?.kind === 'tool' ? tools[toolIndex].status : null;
+        const format = action.preview.kind === 'table' ? 'Excel 파일' : 'Word 문서';
+        if (status === 'REJECTED') {
+          return [`${action.preview.title} ${format} 생성은 승인하지 않아 취소했습니다.`];
+        }
+        if (status === 'FAILED') {
+          return [`${action.preview.title} ${format} 생성을 승인했지만 완료하지 못했습니다.`];
+        }
+        if (status === 'OK') {
+          return [`${action.preview.title} ${format} 생성을 승인해 완료했습니다.`];
+        }
+        return [];
+      }) ?? [];
+      const decisionText = decisionSummaries.join(' ');
+      const replacedApprovalUpdate = closedTimeline.map((entry) =>
+        entry.kind === 'update' && entry.text === APPROVAL_UPDATE_TEXT && decisionText
+          ? { ...entry, text: decisionText }
+          : entry,
+      );
+      const hasDecisionUpdate = replacedApprovalUpdate.some(
+        (entry) => entry.kind === 'update' && entry.text === decisionText,
+      );
+      const timeline = decisionText && !hasDecisionUpdate
+        ? [
+            ...replacedApprovalUpdate,
+            { kind: 'update' as const, text: decisionText, source: 'application_fallback' as const },
+          ]
+        : replacedApprovalUpdate;
       return {
         ...state,
         running: false,
@@ -696,10 +789,14 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         // 끝난 과거 턴에 승인 버튼이 다시 켜진다.
         confirm: null,
         answer: event.text ?? '',
-        durationMs: event.duration_ms ?? null,
+        // 승인 전 실행과 승인 후 재개는 같은 사용자 턴이다. 재개 스트림에는
+        // duration_ms가 없을 수 있으므로 앞서 복원한 시간을 null로 지우지 않는다.
+        durationMs: event.duration_ms ?? state.durationMs,
         stoppedReason: event.complete ? null : event.stopped_reason ?? '알 수 없는 이유',
         created: jira.created,
         failures: jira.failures,
+        timeline,
+        rejectedApprovalPreviews,
       };
     }
 
@@ -711,7 +808,7 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
       return {
         ...state,
         running: false,
-        durationMs: event.duration_ms ?? null,
+        durationMs: event.duration_ms ?? state.durationMs,
         error: { detail: event.detail ?? event.message, errorCode: event.error_code },
       };
 

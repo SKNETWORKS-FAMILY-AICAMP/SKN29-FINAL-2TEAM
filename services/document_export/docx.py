@@ -6,10 +6,9 @@
     모델이 실제로 쓰는 문법은 몇 개뿐이고(제목 · 목록 · 굵게 · 문단),
     그것만 그리면 의존성이 0이다.
 
-그래서 마크다운 파서를 넣지 않고 줄 단위로 읽는다. 처리하는 것은 넷이다 —
-`#`~`###` 제목, `- `/`* ` 목록, `1. ` 번호 목록, `**굵게**`. 나머지는 **글자
-그대로** 둔다. 잘못 그리는 것보다 낫고, 그 판단은 화면이 이미 같은 이유로
-내렸다.
+그래서 마크다운 파서를 넣지 않고 줄 단위로 읽는다. 처리하는 것은 제목,
+글머리·번호 목록, 굵게, 이름이 붙은 HTTP(S) 링크다. 나머지는 **글자 그대로**
+둔다. 잘못 그리는 것보다 낫고, 실제 URL만 외부 링크로 연결한다.
 
 기존 `body` 문자열은 그대로 지원한다. 다만 보고서처럼 구조가 중요한 문서는
 `blocks` 로 제목·문단·목록·안내·표를 명시할 수 있다. 이 구조는 승인 미리보기와
@@ -29,10 +28,13 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.shared import Inches, Pt, RGBColor
 
-#: `**굵게**` 를 조각으로 가른다. 화면의 `inline()` 이 쓰는 것과 같은 규칙이다.
-_BOLD = re.compile(r"(\*\*[^*]+\*\*)")
+#: 굵게와 실제 HTTP(S) 링크만 인라인 요소로 해석한다. 링크 표시는 사람이 읽을
+#: 이름으로 유지하고, 주소는 Word 관계로만 넣는다.
+_INLINE = re.compile(r"(\*\*[^*]+\*\*|\[[^\]\r\n]+\]\(https?://[^\s)]+\))")
+_MARKDOWN_LINK = re.compile(r"^\[([^\]\r\n]+)\]\((https?://[^\s)]+)\)$")
 
 #: `1. ` · `1) ` 로 시작하는 번호 목록.
 _ORDERED = re.compile(r"^\s*\d+[.)]\s+")
@@ -142,24 +144,46 @@ def _configure_document(document: Document, title: str) -> None:
         run.font.color.rgb = _MUTED
         run._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT_KOREAN)
 
-    settings = document.settings.element
-    update_fields = settings.find(qn("w:updateFields"))
-    if update_fields is None:
-        update_fields = OxmlElement("w:updateFields")
-        settings.append(update_fields)
-    update_fields.set(qn("w:val"), "true")
+    # 페이지 번호에는 저장된 표시값이 이미 들어 있다. 모든 필드를 문서 열기 때
+    # 강제로 갱신하면 Word가 외부 파일 참조 경고를 띄울 수 있으므로 사용하지 않는다.
+
+
+def _append_hyperlink(paragraph, label: str, url: str) -> None:
+    """표시 이름을 유지하는 외부 HTTP(S) 링크를 문단에 추가한다."""
+
+    relationship_id = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), relationship_id)
+
+    run = OxmlElement("w:r")
+    properties = OxmlElement("w:rPr")
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "0563C1")
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    properties.extend((color, underline))
+    run.append(properties)
+    text = OxmlElement("w:t")
+    text.text = label
+    run.append(text)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 def _write_inline(paragraph, text: str) -> None:
-    """`**굵게**` 만 살려서 문단에 적는다. 나머지는 글자 그대로."""
+    """굵게와 이름이 있는 HTTP(S) 링크만 살려 문단에 적는다."""
 
-    for part in _BOLD.split(text):
+    for part in _INLINE.split(text):
         if not part:
             continue
         if part.startswith("**") and part.endswith("**") and len(part) > 4:
             paragraph.add_run(part[2:-2]).bold = True
         else:
-            paragraph.add_run(part)
+            markdown_link = _MARKDOWN_LINK.fullmatch(part)
+            if markdown_link:
+                _append_hyperlink(paragraph, markdown_link.group(1), markdown_link.group(2))
+            else:
+                paragraph.add_run(part)
 
 
 def _clean(value: Any) -> str:
@@ -217,11 +241,12 @@ def _write_cell(cell, value: Any, *, header: bool = False) -> None:
     cell.text = ""
     paragraph = cell.paragraphs[0]
     paragraph.paragraph_format.space_after = Pt(0)
-    run = paragraph.add_run(_clean(value) or "—")
-    run.bold = header
-    run.font.name = _FONT_LATIN
-    run.font.size = Pt(9)
-    run.font.color.rgb = RGBColor(255, 255, 255) if header else _BODY
+    _write_inline(paragraph, _clean(value) or "—")
+    for run in paragraph.runs:
+        run.bold = header
+        run.font.name = _FONT_LATIN
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(255, 255, 255) if header else _BODY
     run._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT_KOREAN)
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 

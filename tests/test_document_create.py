@@ -1,10 +1,12 @@
 """`document_create` 가 굽는 docx 의 계약.
 
 여기서 보는 것은 **모델이 쓴 마크다운 중 무엇을 그리고 무엇을 안 그리는가**다.
-해석 범위를 좁게 고정해 둔다 — 넓히면 화면(`AnswerText.tsx`)과 어긋난다.
+해석 범위를 좁게 고정하되, 검증 가능한 HTTP(S) 출처는 표시 이름을 보존한
+클릭 가능한 링크로 만든다.
 """
 
 from io import BytesIO
+from zipfile import ZipFile
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -47,14 +49,37 @@ class BuildDocxTests(SimpleTestCase):
         )
         self.assertEqual([t for _, t in paras[1:]], ["글머리", "같은것", "번호", "도번호"])
 
-    def test_굵게만_살리고_나머지_문법은_글자_그대로_둔다(self):
-        data = build_docx(title="t", body="**핵심**은 배포다. `코드` 와 [링크](http://x) 는 그대로.")
+    def test_굵게와_http_링크를_살리고_나머지_문법은_글자_그대로_둔다(self):
+        data = build_docx(title="t", body="**핵심**은 배포다. `코드` 와 [공식 문서](https://example.com/docs)를 본다.")
         body = _doc(data).paragraphs[1]
 
         self.assertEqual([(r.text, r.bold) for r in body.runs][0], ("핵심", True))
-        # 백틱·링크는 그리지 않는다 — 화면과 같은 판단이다. 글자로 남아야 한다.
+        # 백틱은 그대로 두되, 링크 문법과 원시 URL은 본문에서 숨긴다.
         self.assertIn("`코드`", body.text)
-        self.assertIn("[링크](http://x)", body.text)
+        with ZipFile(BytesIO(data)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+            relationships = archive.read("word/_rels/document.xml.rels").decode("utf-8")
+        self.assertIn("공식 문서", document_xml)
+        self.assertNotIn("[공식 문서]", document_xml)
+        self.assertIn("https://example.com/docs", relationships)
+
+    def test_구조화_표의_출처_이름도_클릭_가능하게_만든다(self):
+        data = build_docx(
+            title="출처 표",
+            blocks=[
+                {
+                    "type": "table",
+                    "headers": ["항목", "출처"],
+                    "rows": [["Claude", "[Anthropic 공식 홈페이지](https://www.anthropic.com)"]],
+                }
+            ],
+        )
+
+        with ZipFile(BytesIO(data)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+            relationships = archive.read("word/_rels/document.xml.rels").decode("utf-8")
+        self.assertIn("Anthropic 공식 홈페이지", document_xml)
+        self.assertIn("https://www.anthropic.com", relationships)
 
     def test_빈_줄은_빈_문단을_만들지_않는다(self):
         """워드는 문단 간격을 이미 주므로 빈 문단을 넣으면 여백이 두 배가 된다."""
@@ -77,7 +102,8 @@ class BuildDocxTests(SimpleTestCase):
         self.assertEqual([p.text for p in _doc(data).paragraphs], ["t", "앞뒤"])
 
     def test_회사_문서용_기본_서식과_페이지_정보를_넣는다(self):
-        doc = _doc(build_docx(title="주간 보고", body="# 요약\n본문"))
+        data = build_docx(title="주간 보고", body="# 요약\n본문")
+        doc = _doc(data)
 
         self.assertEqual(doc.core_properties.title, "주간 보고")
         self.assertEqual(doc.sections[0].header.paragraphs[0].text, "주간 보고")
@@ -85,6 +111,11 @@ class BuildDocxTests(SimpleTestCase):
         self.assertEqual(doc.styles["Normal"].element.rPr.rFonts.get(qn("w:eastAsia")), "맑은 고딕")
         self.assertEqual(doc.styles["Heading 1"].font.color.rgb, doc.paragraphs[0].runs[0].font.color.rgb)
         self.assertTrue(doc.styles["Heading 1"].paragraph_format.keep_with_next)
+        with ZipFile(BytesIO(data)) as archive:
+            footer_xml = archive.read("word/footer1.xml").decode("utf-8")
+            settings_xml = archive.read("word/settings.xml").decode("utf-8")
+        self.assertIn(" PAGE ", footer_xml)
+        self.assertNotIn("updateFields", settings_xml)
 
     def test_업무보고서_메타데이터와_구조화_블록을_그린다(self):
         data = build_docx(

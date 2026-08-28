@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { ReactNode, CSSProperties } from 'react';
 import { Icon } from '../Icon/Icon';
 import styles from './Modal.module.css';
@@ -27,6 +27,24 @@ export function Modal({
   dismissible = true,
 }: ModalProps) {
   const titleId = useId();
+  const [rendered, setRendered] = useState(open);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true);
+      setClosing(false);
+      return;
+    }
+    if (!rendered) return;
+
+    setClosing(true);
+    const timer = window.setTimeout(() => {
+      setRendered(false);
+      setClosing(false);
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [open, rendered]);
 
   useEffect(() => {
     if (!open || !dismissible) return;
@@ -41,12 +59,15 @@ export function Modal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose, dismissible]);
 
-  if (!open) return null;
+  if (!rendered) return null;
 
   const dialogStyle: CSSProperties = { width };
 
   return (
-    <div className={styles.backdrop} onClick={dismissible ? onClose : undefined}>
+    <div
+      className={`${styles.backdrop} ${closing ? styles.closing : styles.opening}`}
+      onClick={open && dismissible ? onClose : undefined}
+    >
       <div
         className={styles.dialog}
         style={dialogStyle}

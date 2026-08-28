@@ -343,27 +343,6 @@
   }
 }
 
-/* 확인 카드가 바쁠 때(승인/거절 처리 중) 즉시 되돌아갈 수 있는 링크형
-   버튼(2026-08-24) — "거절해도 왜 이렇게 오래 걸리지, 뒤로 가기는 없냐"는
-   지적으로 추가. 이미 있는 "중단"(입력창 옆)을 카드 자리에서 바로 쓴다. */
-.abortHint {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 12px;
-  color: var(--color-placeholder);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.abortHint:hover {
-  color: var(--color-heading);
-}
-
 /* ---------- 스킬 생성 되묻기 카드(2026-08-24) ---------- */
 
 .askHead {
@@ -503,6 +482,11 @@
   background: var(--color-placeholder);
 }
 
+.taskStatus {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
 .approvalActionGroup {
   border-bottom: 1px solid var(--color-border);
 }
@@ -529,7 +513,6 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
 }
 
 .approvalPreviewHead > span:first-child {
@@ -596,6 +579,19 @@
   border-top: 1px solid var(--color-border);
 }
 
+.approvalPreviewCollapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-muted);
+  font-size: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
 .approvalHistoryBody .approvalPreview:last-child {
   border-bottom: 0;
 }
@@ -614,16 +610,20 @@
 
 .approvalPreviewAction {
   display: inline-flex;
-  width: 28px;
+  min-width: 28px;
   height: 28px;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 5px;
+  padding: 0 9px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface, #fff);
   color: var(--color-muted);
   cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .approvalPreviewAction:hover {
@@ -1012,6 +1012,20 @@
 .confirmActions > span {
   flex: 1;
   min-width: 0;
+}
+
+/* 중단은 되돌릴 수 없는 오류 버튼만큼 강하게 채우지 않는다. 평소에는 위험
+   동작임을 빨간 윤곽으로 알리고, 사용자가 가리켰을 때만 배경을 더해 의도를
+   재확인하게 한다. */
+.abortButton {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.abortButton:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 /* ---------- 결과 카드 ---------- */
@@ -1520,7 +1534,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-3);
+  margin-top: 0;
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -1563,23 +1577,127 @@
   color: var(--color-muted);
 }
 
-/* 완료 파일과 승인 당시 내용을 한 카드 안에서 읽는다. 별도 카드처럼 겹겹이
-   보이지 않도록 내부 구분선만 남긴다. */
-.filesCard .approvalHistory {
-  margin-top: var(--space-1);
-  border: 0;
-  border-top: 1px solid var(--color-border);
-  border-radius: 0;
-  background: transparent;
+.fileItem {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.filesCard .approvalHistory > summary {
-  min-height: 38px;
-  padding: 0;
+.fileNameButton {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileNameButton:hover .fileName,
+.fileNameButton:focus-visible .fileName {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fileIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fileType {
+  display: grid;
+  min-height: 18px;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--color-muted);
+}
+
+.fileTypeDefault,
+.fileTypeHover {
+  grid-area: 1 / 1;
+  transform: translateY(0);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+
+.fileTypeHover {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+}
+
+.fileDownload {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-body);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: background 150ms ease-out, opacity 150ms ease-out, transform 150ms ease-out;
+}
+
+.fileItem:hover .fileDownload,
+.fileItem:focus-within .fileDownload {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.fileDownload:hover { background: var(--color-surface-muted); }
+
+.fileDownload:disabled { cursor: wait; }
+
+.fileItem:hover .fileTypeDefault,
+.fileItem:focus-within .fileTypeDefault {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+.fileItem:hover .fileTypeHover,
+.fileItem:focus-within .fileTypeHover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.filePreviewSaved {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .filesCard {
     animation: none;
+  }
+
+  .fileTypeDefault,
+  .fileTypeHover,
+  .fileDownload {
+    transition: none;
+  }
+}
+
+@media (hover: none) {
+  .fileDownload {
+    opacity: 1;
+    transform: none;
   }
 }

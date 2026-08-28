@@ -111,6 +111,156 @@ function isRedundantFileCompletionAnswer(text: string): boolean {
   );
 }
 
+/**
+ * 파일 생성 턴은 첫 파일이 도착했다고 끝난 것이 아니다. 병렬 생성 중 일부
+ * 파일만 먼저 도착한 상태에서 완료 답변을 그리면 승인 카드 아래가 먼저 밀리고,
+ * 잠시 뒤 나머지 파일이 붙으며 화면이 다시 움직인다. 승인·실행이 모두 끝난 뒤
+ * 한 번만 결과 답변과 파일 카드를 공개한다. 일반 텍스트 스트리밍은 그대로 둔다.
+ */
+function shouldShowAgentAnswer(live: LiveChat): boolean {
+  const fileGenerationTurn = live.approvalPreviews.length > 0 || live.files.length > 0;
+  if (fileGenerationTurn && (live.running || live.confirm !== null)) return false;
+  return Boolean(live.answer || live.files.length > 0);
+}
+
+/** 실제 생성 결과만으로 만드는 짧은 완료 안내. 별도 모델 호출은 하지 않는다. */
+function fileCompletionAnswer(
+  files: LiveChat['files'],
+  previews: LiveChat['approvalPreviews'],
+  rejectedPreviews: LiveChat['rejectedApprovalPreviews'],
+): string {
+  const isExcelFile = (file: LiveChat['files'][number]) =>
+    /\.xlsx$|spreadsheet/i.test(`${file.fileName} ${file.mimeType ?? ''}`);
+  const isWordFile = (file: LiveChat['files'][number]) =>
+    /\.docx$|wordprocessing/i.test(`${file.fileName} ${file.mimeType ?? ''}`);
+  const excelFiles = files.filter(isExcelFile);
+  const wordFiles = files.filter(isWordFile);
+  const rejectedSet = new Set(rejectedPreviews);
+  const approvedPreviews = previews.filter((preview) => !rejectedSet.has(preview));
+  const approvedTablePreviews = approvedPreviews.filter((preview) => preview.kind === 'table');
+  const approvedDocumentPreviews = approvedPreviews.filter((preview) => preview.kind === 'document');
+  const rejectedLines = [
+    ...rejectedPreviews.filter((preview) => preview.kind === 'document').map((preview) =>
+      `- **생성하지 않은 파일:** ${preview.title} Word 문서는 승인하지 않아 생성하지 않았습니다.`,
+    ),
+    ...rejectedPreviews.filter((preview) => preview.kind === 'table').map((preview) =>
+      `- **생성하지 않은 파일:** ${preview.title} Excel 파일은 승인하지 않아 생성하지 않았습니다.`,
+    ),
+  ];
+  const retryLines = rejectedLines.length > 0
+    ? [
+        ...rejectedLines,
+        '- 생성하지 않은 파일도 보완할 내용을 알려주시면 다시 구성해 드릴 수 있습니다.',
+      ]
+    : [];
+
+  if (files.length !== 1) {
+    const excelCount = excelFiles.length;
+    const wordCount = wordFiles.length;
+    const parts = [
+      excelCount > 0 ? `Excel 파일 ${excelCount}개` : '',
+      wordCount > 0 ? `Word 문서 ${wordCount}개` : '',
+    ].filter(Boolean);
+    const target = parts.length > 0 ? parts.join('와 ') : `파일 ${files.length}개`;
+    const details = approvedPreviews.map((preview) => {
+      if (preview.kind === 'table') {
+        const columns = preview.columns.slice(0, 4).join(', ');
+        const more = preview.columns.length > 4 ? ' 등' : '';
+        return `${preview.title}은 ${columns}${more} 열로 구성한 ${preview.totalRows}행 표입니다.`;
+      }
+      const rawHeadings = [...new Set(preview.blocks
+        .filter((block) => block.type === 'heading')
+        .map((block) => block.text.trim())
+        .filter((text) => text && text !== preview.title.trim()))];
+      const headings = rawHeadings
+        .filter((heading) => !rawHeadings.some((other) => other !== heading && heading.includes(other)))
+        .slice(0, 3);
+      return headings.length > 0
+        ? `${preview.title}은 ${headings.join(', ')} 순서로 구성했습니다.`
+        : `${preview.title} 내용을 Word 문서로 정리했습니다.`;
+    });
+    return [
+      `요청한 내용을 바탕으로 ${target}를 생성했습니다.`,
+      '- **파일 구성:** 결과를 용도와 형식에 따라 각각의 파일로 나눴습니다.',
+      ...details.map((detail) => `- ${detail}`),
+      ...retryLines,
+      '- 승인 전에 확인한 파일별 제목과 내용 구조를 생성 결과에 그대로 반영했습니다.',
+      '- 각 파일은 독립적으로 미리보거나 내려받을 수 있게 구성했습니다.',
+      '아래 파일명을 눌러 내용을 미리보거나 원본을 다운로드할 수 있습니다.',
+    ].join('\n\n');
+  }
+  const file = files[0];
+  // 부분 승인에서는 previews[0]이 거절한 Word이고 실제 파일은 Excel일 수
+  // 있다. 파일 형식과 같은 미리보기를 골라야 결과 설명도 승인 선택과 맞다.
+  const preview = isExcelFile(file)
+    ? approvedTablePreviews[0]
+    : isWordFile(file)
+      ? approvedDocumentPreviews[0]
+      : approvedPreviews[0];
+  const lower = `${file.fileName} ${file.mimeType ?? ''}`.toLowerCase();
+  if (preview?.kind === 'table' || lower.includes('.xlsx') || lower.includes('spreadsheet')) {
+    if (preview?.kind === 'table') {
+      const columns = preview.columns.slice(0, 5).join(', ');
+      const more = preview.columns.length > 5 ? ' 등' : '';
+      return [
+        `요청한 데이터를 ${preview.totalRows}행 × ${preview.totalColumns}열의 Excel 표로 정리했습니다.`,
+        `- **작성 형식:** ${columns}${more} 항목을 열로 구성했습니다.`,
+        '- **데이터 배열:** 전달된 항목을 행 단위로 배치해 서로 비교하기 쉽게 정리했습니다.',
+        `- **반영 범위:** 승인 전에 확인한 ${preview.totalRows}개 행과 ${preview.totalColumns}개 열 구조를 그대로 사용했습니다.`,
+        ...retryLines,
+        '아래 파일명을 눌러 표를 미리보거나 원본을 다운로드할 수 있습니다.',
+      ].join('\n\n');
+    }
+    return [
+      '요청한 표 데이터를 Excel 파일로 생성했습니다.',
+      '- **작성 형식:** 전달된 열과 행 구조를 Excel 표로 구성했습니다.',
+      '- **데이터 배열:** 각 항목을 행 단위로 배치해 비교하기 쉽게 정리했습니다.',
+      '- **반영 범위:** 승인 전에 확인한 표 구조를 생성 결과에 그대로 사용했습니다.',
+      ...retryLines,
+      '아래 파일명을 눌러 표를 미리보거나 원본을 다운로드할 수 있습니다.',
+    ].join('\n\n');
+  }
+  if (preview?.kind === 'document' || lower.includes('.docx') || lower.includes('wordprocessing')) {
+    if (preview?.kind === 'document') {
+      const rawHeadings = [...new Set(preview.blocks
+        .filter((block) => block.type === 'heading')
+        .map((block) => block.text.trim())
+        .filter((text) => text && text !== preview.title.trim()))];
+      const headings = rawHeadings
+        .filter((heading) => !rawHeadings.some((other) => other !== heading && heading.includes(other)))
+        .slice(0, 4);
+      const structure = headings.length > 0
+        ? `${headings.join(', ')} 순서로 내용을 구성했습니다.`
+        : '';
+      const format = preview.templateId === 'business_report' ? '업무보고서 형식의 ' : '';
+      return [
+        `요청한 내용을 ${format}Word 문서로 정리했습니다.`,
+        `- **작성 형식:** ${format ? '업무보고서의 제목과 본문 계층을 적용했습니다.' : '문서 제목과 본문 계층을 적용했습니다.'}`,
+        `- **주요 구성:** ${structure || '전달된 내용을 읽기 쉬운 순서로 구성했습니다.'}`,
+        '- **반영 범위:** 승인 전에 확인한 문서 제목과 본문 구조를 생성 결과에 그대로 사용했습니다.',
+        ...retryLines,
+        '아래 파일명을 눌러 문서를 미리보거나 원본을 다운로드할 수 있습니다.',
+      ].join('\n\n');
+    }
+    return [
+      '요청한 내용을 Word 문서로 생성했습니다.',
+      '- **작성 형식:** 문서 제목과 본문 계층을 적용했습니다.',
+      '- **주요 구성:** 전달된 내용을 읽기 쉬운 순서로 정리했습니다.',
+      '- **반영 범위:** 승인 전에 확인한 제목과 본문 구조를 생성 결과에 그대로 사용했습니다.',
+      ...retryLines,
+      '아래 파일명을 눌러 문서를 미리보거나 원본을 다운로드할 수 있습니다.',
+    ].join('\n\n');
+  }
+  return [
+    '요청한 내용을 파일로 생성했습니다.',
+    '- **작성 형식:** 요청한 파일 형식에 맞는 기본 구조를 적용했습니다.',
+    '- **주요 구성:** 전달된 내용을 확인하기 쉬운 순서로 정리했습니다.',
+    '- **반영 범위:** 승인 전에 확인한 내용을 생성 결과에 그대로 사용했습니다.',
+    ...retryLines,
+    '아래 파일명을 눌러 내용을 미리보거나 원본을 다운로드할 수 있습니다.',
+  ].join('\n\n');
+}
+
 function HighlightedText({
   text,
   query,
@@ -219,18 +369,38 @@ interface SlashSkillOption {
 function toTurns(messages: ChatMessage[]): Turn[] {
   const turns: Turn[] = [];
   let events: ChatEvent[] = [];
+  let agentMessageCount = 0;
 
   const flush = () => {
     if (turns.length === 0) return;
-    turns[turns.length - 1].live = events.length
+    const turn = turns[turns.length - 1];
+    const live = events.length
       ? events.reduce(reduce, { ...emptyLive(), running: false })
       : null;
+    // HITL은 승인 전·후가 별도 agent message로 저장된다. 재개 결과에는 서버
+    // duration_ms가 없을 수 있어 새로고침하면 시간이 사라졌으므로, 이 경우에만
+    // 질문 저장부터 최종 결과 저장까지의 전체 경과시간을 복원한다. 승인 대기도
+    // 포함하는 Codex식 경과시간이며, 일반 단일 실행은 기존 서버 측 시간을 쓴다.
+    if (
+      live &&
+      agentMessageCount > 1 &&
+      turn.userCreatedAt &&
+      turn.agentCreatedAt
+    ) {
+      const startedAt = Date.parse(turn.userCreatedAt);
+      const finishedAt = Date.parse(turn.agentCreatedAt);
+      if (Number.isFinite(startedAt) && Number.isFinite(finishedAt) && finishedAt >= startedAt) {
+        live.durationMs = finishedAt - startedAt;
+      }
+    }
+    turn.live = live;
   };
 
   for (const message of messages) {
     if (message.role === 'user') {
       flush();
       events = [];
+      agentMessageCount = 0;
       turns.push({
         user: message.content.text ?? '',
         userCreatedAt: message.created_at,
@@ -242,6 +412,7 @@ function toTurns(messages: ChatMessage[]): Turn[] {
       // 첫 발화보다 앞선 agent 메시지는 붙일 턴이 없다. 버린다.
       if (turns.length === 0) continue;
       events = [...events, ...(message.content.events ?? [])];
+      agentMessageCount += 1;
       // 승인·재개가 있으면 agent 메시지가 여러 개 붙는다. 화면에는 그 턴의
       // 가장 최근 답변 시각을 보여 주는 것이 현재 보이는 결과와 맞다.
       turns[turns.length - 1].agentCreatedAt = message.created_at;
@@ -509,6 +680,10 @@ export default function ChatPage() {
   const [skillReexplain, setSkillReexplain] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** 마지막 턴의 활성 실행 구간을 초 단위로 보여 주는 클라이언트 시계. */
+  const activeRunClockRef = useRef<{ startedAt: number; carriedMs: number } | null>(null);
+  const activeRunTimerRef = useRef<number | null>(null);
+  const [durationTick, setDurationTick] = useState(0);
   /** React가 busy 상태를 다시 그리기 전의 연속 클릭도 즉시 막는다. */
   const confirmRequestRef = useRef(false);
   /**
@@ -731,7 +906,13 @@ export default function ChatPage() {
 
   // 화면을 떠나면 스트림을 끊는다. 서버는 그 run 을 FAILED 로 닫으므로
   // RUNNING 으로 남지 않는다.
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      if (activeRunTimerRef.current != null) window.clearInterval(activeRunTimerRef.current);
+    },
+    [],
+  );
 
   // 저장된 대화를 열면 **마지막 턴의 시작점**을 한 번 보여준다. 새 질문은 이
   // 경로를 타지 않는다 — 이전 답변을 읽던 사용자의 위치를 전송 동작이 빼앗으면
@@ -909,6 +1090,7 @@ export default function ChatPage() {
   async function sendText(raw: string) {
     if (!token || !raw.trim() || !agentId) return;
     const text = raw.trim();
+    const submittedAt = Date.now();
     setSkillReexplain(false);
     setUtterance('');
     // 덧붙인다. 덮어쓰면 앞 턴이 화면에서 사라진다 — 서버는 지우지 않는데
@@ -919,7 +1101,7 @@ export default function ChatPage() {
         user: text,
         // 서버 저장 시각은 스트림 종료 뒤 아래 `refreshTurnTimes`가 다시
         // 맞춘다. 그 전까지도 빈 자리 대신 사용자가 보낸 순간을 보여 준다.
-        userCreatedAt: new Date().toISOString(),
+        userCreatedAt: new Date(submittedAt).toISOString(),
         agentCreatedAt: null,
         agentMessageId: null,
         live: null,
@@ -979,6 +1161,7 @@ export default function ChatPage() {
       // `id` 로 존재하고, 상태는 다음 렌더에나 반영된다 — `run` 의 클로저는
       // 아직 null 을 본다. 제목이 그 대화에 안 붙는 이유가 이것이었다.
       id as string,
+      submittedAt,
     );
   }
 
@@ -1027,6 +1210,7 @@ export default function ChatPage() {
           confirmMessage(token, sessionId, indices, onEvent, signal, decisions),
         carried,
         sessionId,
+        Date.parse(turns[turns.length - 1]?.userCreatedAt ?? ''),
       );
     } finally {
       confirmRequestRef.current = false;
@@ -1054,6 +1238,7 @@ export default function ChatPage() {
           ]),
         carried,
         sessionId,
+        Date.parse(turns[turns.length - 1]?.userCreatedAt ?? ''),
       );
       // **모든 거절에서** interrupt로 멈춘 도구 로그를 취소 상태로 닫는다 —
       // 백엔드는 거절된 호출에 `tool_completed`를 보내지 않으므로, 화면이
@@ -1128,6 +1313,7 @@ export default function ChatPage() {
           ]),
         carried,
         sessionId,
+        Date.parse(turns[turns.length - 1]?.userCreatedAt ?? ''),
       );
     } finally {
       confirmRequestRef.current = false;
@@ -1176,6 +1362,8 @@ export default function ChatPage() {
     initial: LiveChat,
     /** 이 스트림이 속한 대화. 방금 만든 대화는 아직 `sessionId` 상태에 없다. */
     streamingId: string,
+    /** HITL을 포함한 동일 턴의 최초 질문 전송 시각. */
+    turnStartedAt?: number,
   ) {
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -1192,6 +1380,16 @@ export default function ChatPage() {
     // 이 실행이 끝나는 순간 클라이언트 값으로 덮어써 화면에 보이는 숫자와
     // 실제 체감 대기 시간이 어긋나지 않게 한다.
     const startedAt = Date.now();
+    // 승인 전·후를 포함한 같은 턴은 최초 질문부터 최종 답변까지의 전체 경과
+    // 시간을 쓴다. 저장 세션도 같은 기준으로 복원하므로 새로고침 전후 숫자가
+    // 달라지지 않는다. 전달된 시각이 없거나 잘못됐으면 현재 실행부터 잰다.
+    const wholeTurnStartedAt = Number.isFinite(turnStartedAt) ? turnStartedAt as number : startedAt;
+    activeRunClockRef.current = { startedAt: wholeTurnStartedAt, carriedMs: 0 };
+    if (activeRunTimerRef.current != null) window.clearInterval(activeRunTimerRef.current);
+    activeRunTimerRef.current = window.setInterval(
+      () => setDurationTick((tick) => tick + 1),
+      1000,
+    );
     let state = initial;
     updateLastLive(() => state);
     try {
@@ -1254,6 +1452,11 @@ export default function ChatPage() {
           : prev,
       );
     } finally {
+      if (activeRunTimerRef.current != null) {
+        window.clearInterval(activeRunTimerRef.current);
+        activeRunTimerRef.current = null;
+      }
+      activeRunClockRef.current = null;
       // 취소(사용자가 다른 발화를 보내 이전 스트림을 abort한 경우)는 실제로
       // 끝까지 안 갔으므로 시간을 재지 않는다 — 재지 않은 실행에 값을 지어
       // 붙이면 "쟀는데 0초"류 문제가 그대로 재현된다.
@@ -1263,7 +1466,10 @@ export default function ChatPage() {
           ? {
               ...prev,
               running: false,
-              durationMs: elapsedMs ?? prev.durationMs,
+              durationMs:
+                elapsedMs != null
+                  ? Date.now() - wholeTurnStartedAt
+                  : prev.durationMs,
             }
           : prev,
       );
@@ -2084,9 +2290,21 @@ export default function ChatPage() {
                           live.toolName !== null;
                         const showReasoning = live.timeline.length > 0;
                         if (!showProgress && !showReasoning) return null;
+                        // `durationTick`은 1초마다 이 계산을 다시 하게 한다. 서버에
+                        // 매초 이벤트를 추가하지 않고도 현재 활성 구간만 자연스럽게
+                        // 증가하며, 승인 대기 중에는 타이머가 멈춘다.
+                        void durationTick;
+                        const activeClock = isLast && live.running ? activeRunClockRef.current : null;
+                        const effectiveDurationMs = activeClock
+                          ? activeClock.carriedMs + Date.now() - activeClock.startedAt
+                          : live.durationMs;
+                        const durationSeconds =
+                          effectiveDurationMs != null
+                            ? Math.max(1, Math.round(effectiveDurationMs / 1000))
+                            : null;
                         const durationLabel =
                           !live.running && live.durationMs != null
-                            ? ` · ${(live.durationMs / 1000).toFixed(1)}초`
+                            ? ` · ${durationSeconds}초`
                             : '';
                         // **진행 카드와 생각 과정을 한 카드로 묶는다**(2026-08-19) —
                         // 흰 박스 두 개로 따로 떠서 "왜 나뉘어 있냐"는 지적으로
@@ -2113,7 +2331,17 @@ export default function ChatPage() {
                                   // 일하는 중이라는 게 지금 사실과 더 가깝다.
                                   const active = live.subagents.find((run) => run.status === 'RUNNING');
                                   if (active) return `${active.name ?? active.alias ?? '다른 에이전트'}에게 위임 중`;
-                                  if (live.running) return live.toolName ? `${live.toolName} 실행 중` : '생각하는 중';
+                                  if (live.running) {
+                                    const elapsed = durationSeconds != null ? ` · ${durationSeconds}초` : '';
+                                    return live.toolName
+                                      ? `${live.toolName} 실행 중${elapsed}`
+                                      : `생각하는 중${elapsed}`;
+                                  }
+                                  if (live.confirm) {
+                                    return durationSeconds != null
+                                      ? `${durationSeconds}초 작업 후 승인 대기`
+                                      : '승인 대기';
+                                  }
                                   // 실패한 호출에 「완료」라고 쓰지 않는다
                                   // (2026-08-25). 사유는 답변 본문이 말하고,
                                   // 여기서는 성공이 아니었다는 사실만 밝힌다.
@@ -2150,7 +2378,9 @@ export default function ChatPage() {
                                 running={live.running}
                                 summary={
                                   !live.running
-                                    ? `${live.durationMs != null ? `${(live.durationMs / 1000).toFixed(1)}초 동안 작업` : '작업 완료'}`
+                                    ? live.confirm
+                                      ? `${durationSeconds != null ? `${durationSeconds}초 작업 후 승인 대기` : '승인 대기'}`
+                                      : `${durationSeconds != null ? `총 ${durationSeconds}초 동안 작업` : '작업 완료'}`
                                     : undefined
                                 }
                                 // 출처는 최종 답변 아래 한 곳에서만 제공한다.
@@ -2163,15 +2393,6 @@ export default function ChatPage() {
                           </section>
                         );
                       })()}
-
-                      {/* 도구가 만든 파일. 결과 카드들보다 먼저 둔다 —
-                          「받을 것이 있다」가 제일 먼저 눈에 띄어야 한다. */}
-                      {live.files.length > 0 && (
-                        <ProducedFilesCard
-                          files={live.files}
-                          previews={!live.confirm ? live.approvalPreviews : []}
-                        />
-                      )}
 
                       {live.files.length === 0 && !live.confirm && live.approvalPreviews.length > 0 && (
                         <ApprovalPreviewHistory previews={live.approvalPreviews} />
@@ -2273,24 +2494,42 @@ export default function ChatPage() {
                         <ResultCard created={live.created} failures={live.failures} />
                       )}
 
-                      {live.answer && !(
-                        live.files.length > 0 && isRedundantFileCompletionAnswer(live.answer)
-                      ) && (
+                      {shouldShowAgentAnswer(live) && (
                         <div
                           className={styles.agentMessage}
                         >
                           <AnswerText
-                            text={live.answer}
+                            text={
+                              live.files.length > 0 && (
+                                !live.answer || isRedundantFileCompletionAnswer(live.answer)
+                              )
+                                ? fileCompletionAnswer(
+                                    live.files,
+                                    live.approvalPreviews,
+                                    live.rejectedApprovalPreviews,
+                                  )
+                                : live.answer
+                            }
                             sources={live.sources}
                             actionsAlwaysVisible={isLast}
                             createdAt={turn.agentCreatedAt}
                             durationMs={
                               !live.running &&
-                              live.steps.length === 0 &&
-                              live.subagents.length === 0 &&
-                              live.toolName === null
+                              (live.files.length > 0 || (
+                                live.steps.length === 0 &&
+                                live.subagents.length === 0 &&
+                                live.toolName === null
+                              ))
                                 ? live.durationMs
                                 : null
+                            }
+                            afterContent={
+                              live.files.length > 0 ? (
+                                <ProducedFilesCard
+                                  files={live.files}
+                                  previews={!live.confirm ? live.approvalPreviews : []}
+                                />
+                              ) : undefined
                             }
                             searchQuery={conversationQuery}
                             searchEnabled={dateInRange(agentDateKey, selectedDateStart, selectedDateEnd)}

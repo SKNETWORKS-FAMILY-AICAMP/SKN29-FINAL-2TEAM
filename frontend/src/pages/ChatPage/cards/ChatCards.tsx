@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Markdown, { type Components } from 'react-markdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import remarkCjkFriendlyGfmStrikethrough from 'remark-cjk-friendly-gfm-strikethrough';
@@ -1182,6 +1183,7 @@ function ApprovalPreviewBlock({
   archived?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const previewLabel = archived ? '승인한 내용' : '생성 예정 내용';
   if (preview.kind === 'table') {
     const table = (
       <table className={styles.approvalTable}>
@@ -1203,7 +1205,7 @@ function ApprovalPreviewBlock({
       <section className={styles.approvalPreview} aria-label="생성 예정 표 미리보기">
         <div className={styles.approvalPreviewHead}>
           <span>
-            <span className={styles.approvalPreviewLabel}>{archived ? '승인한 내용' : '생성 예정 내용'}</span>
+            <span className={styles.approvalPreviewLabel}>{previewLabel}</span>
             <strong>{preview.title}</strong>
           </span>
           <span className={styles.approvalPreviewTools}>
@@ -1214,26 +1216,29 @@ function ApprovalPreviewBlock({
               type="button"
               className={styles.approvalPreviewAction}
               onClick={() => setExpanded(true)}
-              aria-label="표 펼치기"
-              title="표 펼치기"
+              aria-label="표 미리보기"
+              title="표 미리보기"
             >
-              <Icon name="expand" size={15} />
+              <Icon name="eye" size={15} />
+              <span>미리보기</span>
             </button>
           </span>
         </div>
-        <div className={styles.approvalTableWrap} tabIndex={0}>
-          {table}
-        </div>
-        {preview.clippedRows || preview.clippedColumns ? (
-          <p className={styles.approvalPreviewNote}>
-            승인 판단을 위해 앞부분만 표시합니다. 생성 파일에는 전체 데이터가 사용됩니다.
-          </p>
-        ) : null}
-        <Modal open={expanded} onClose={() => setExpanded(false)} title={preview.title} width={1200}>
-          <div className={`${styles.approvalTableWrap} ${styles.approvalTableExpanded}`} tabIndex={0}>
-            {table}
-          </div>
-        </Modal>
+        {typeof document !== 'undefined'
+          ? createPortal(
+              <Modal open={expanded} onClose={() => setExpanded(false)} title={preview.title} width={1200}>
+                <div className={`${styles.approvalTableWrap} ${styles.approvalTableExpanded}`} tabIndex={0}>
+                  {table}
+                </div>
+                {preview.clippedRows || preview.clippedColumns ? (
+                  <p className={styles.approvalPreviewNote}>
+                    승인 판단을 위해 앞부분만 표시합니다. 생성 파일에는 전체 데이터가 사용됩니다.
+                  </p>
+                ) : null}
+              </Modal>,
+              document.body,
+            )
+          : null}
       </section>
     );
   }
@@ -1242,7 +1247,7 @@ function ApprovalPreviewBlock({
     <section className={styles.approvalPreview} aria-label="생성 예정 문서 미리보기">
       <div className={styles.approvalPreviewHead}>
         <span>
-          <span className={styles.approvalPreviewLabel}>{archived ? '승인한 내용' : '생성 예정 내용'}</span>
+          <span className={styles.approvalPreviewLabel}>{previewLabel}</span>
           <strong>{preview.title}</strong>
         </span>
         <span className={styles.approvalPreviewTools}>
@@ -1253,22 +1258,27 @@ function ApprovalPreviewBlock({
             type="button"
             className={styles.approvalPreviewAction}
             onClick={() => setExpanded(true)}
-            aria-label="문서 크게 보기"
-            title="문서 크게 보기"
+            aria-label="문서 미리보기"
+            title="문서 미리보기"
           >
-            <Icon name="expand" size={15} />
+            <Icon name="eye" size={15} />
+            <span>미리보기</span>
           </button>
         </span>
       </div>
-      <DocumentPreviewContent preview={preview} />
-      {preview.clipped ? (
-        <p className={styles.approvalPreviewNote}>
-          승인 판단을 위해 앞부분만 표시합니다. 생성 파일에는 전체 내용이 사용됩니다.
-        </p>
-      ) : null}
-      <Modal open={expanded} onClose={() => setExpanded(false)} title={preview.title} width={1000}>
-        <DocumentPreviewContent preview={preview} expanded />
-      </Modal>
+      {typeof document !== 'undefined'
+        ? createPortal(
+            <Modal open={expanded} onClose={() => setExpanded(false)} title={preview.title} width={1000}>
+              <DocumentPreviewContent preview={preview} expanded />
+              {preview.clipped ? (
+                <p className={styles.approvalPreviewNote}>
+                  승인 판단을 위해 앞부분만 표시합니다. 생성 파일에는 전체 내용이 사용됩니다.
+                </p>
+              ) : null}
+            </Modal>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }
@@ -1327,13 +1337,22 @@ export function ConfirmCard({
   const multi = (actions?.length ?? 0) > 1;
   const singlePreview = !multi ? actions?.[0]?.preview ?? null : null;
   const hasFilePreview = Boolean(actions?.some((action) => action.preview));
-  const previewKinds = new Set(actions?.map((action) => action.preview?.kind).filter(Boolean));
+  const approved = approvedActions ?? [];
+  const executingActions = multi
+    ? actions?.filter((_, index) => approved.includes(index)) ?? []
+    : actions ?? [];
+  const approvedFileCount = executingActions.filter((action) => action.preview).length;
+  const hasApprovedFilePreview = approvedFileCount > 0;
+  const fileGenerationInProgress =
+    busy && pendingAction === 'approve' && hasApprovedFilePreview;
+  const previewKinds = new Set(
+    executingActions.map((action) => action.preview?.kind).filter(Boolean),
+  );
   const fileTypeLabel = previewKinds.size > 1
     ? '여러'
     : previewKinds.has('table')
       ? 'Excel'
       : 'Word';
-  const approved = approvedActions ?? [];
   const [editingJira, setEditingJira] = useState(false);
   const [jiraDraft, setJiraDraft] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
   const [appliedJira, setAppliedJira] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
@@ -1543,7 +1562,14 @@ export function ConfirmCard({
         </div>
       ) : null}
 
-      {singlePreview ? <ApprovalPreviewBlock preview={singlePreview} /> : null}
+      {singlePreview && !fileGenerationInProgress ? (
+        <ApprovalPreviewBlock preview={singlePreview} />
+      ) : singlePreview ? (
+        <div className={styles.approvalPreviewCollapsed}>
+          <Icon name="check-circle" size={16} color="var(--color-success)" />
+          <span>생성 승인</span>
+        </div>
+      ) : null}
 
       {/* 호출이 여러 개면 무엇이 같이 실행되는지 전부 보여주고, 하나씩 켜고
           끌 수 있게 한다(2026-08-21, 병렬실행 Phase 2). 예전엔 첫 호출만
@@ -1564,7 +1590,9 @@ export function ConfirmCard({
                 {approved.length}/{actions.length}건 승인
               </span>
             </span>
-            <span className={styles.muted}>실행할 작업 {actions.length}건</span>
+            <span className={styles.muted}>
+              {approved.length > 0 ? `실행할 작업 ${approved.length}건` : '실행할 작업 없음'}
+            </span>
           </div>
           {actions.map((action, index) => (
             <div key={`${action.name}-${index}`} className={styles.approvalActionGroup}>
@@ -1578,9 +1606,16 @@ export function ConfirmCard({
                   {action.count > 0 ? (
                     <span className={styles.muted}>대상 {action.count}건</span>
                   ) : null}
+                  {fileGenerationInProgress ? (
+                    <span className={styles.taskStatus}>
+                      {approved.includes(index) ? '생성 승인' : '승인하지 않음'}
+                    </span>
+                  ) : null}
                 </div>
               </div>
-              {action.preview ? <ApprovalPreviewBlock preview={action.preview} /> : null}
+              {action.preview && !fileGenerationInProgress ? (
+                <ApprovalPreviewBlock preview={action.preview} />
+              ) : null}
             </div>
           ))}
         </>
@@ -1619,7 +1654,9 @@ export function ConfirmCard({
                 ? '다시 설명할 수 있도록 정리하는 중입니다.'
                 : '거절을 반영하는 중입니다.'
               : approving && hasFilePreview
-                ? `${fileTypeLabel} 파일을 생성하고 있습니다. 완료되면 ‘내 파일’에 저장됩니다.`
+                ? hasApprovedFilePreview
+                  ? `${approvedFileCount > 1 ? `${approvedFileCount}개 ` : ''}${fileTypeLabel} 파일을 생성하고 있습니다. 완료되면 ‘내 파일’에 저장됩니다.`
+                  : '선택하지 않은 작업을 반영하고 있습니다.'
               : jiraPreview
                 ? `승인하면 ${jiraProjectName || '연결된 Jira 프로젝트'}에 이슈 ${appliedJira.length}건을 생성합니다.`
                 : hasFilePreview
@@ -1634,12 +1671,6 @@ export function ConfirmCard({
               그 사이 이미 있는 "중단"(입력창 옆 버튼, `ChatPage.tsx`)을 카드
               자리에서 바로 쓸 수 있게 연결한다. 새 취소 경로를 만들지 않고
               같은 abort를 부른다. */}
-          {busy && onAbort && (
-            <button type="button" className={styles.abortHint} onClick={onAbort}>
-              <Icon name="loader" size={13} color="var(--color-placeholder)" spin />
-              {rejecting ? '다시 설명 준비 중…' : hasFilePreview ? '파일 생성 중…' : '등록하는 중…'} · 누르면 중단
-            </button>
-          )}
           {/* ⚠ 업무가 없는 승인(추출을 안 거친 도구)은 고를 것이 없으므로
               `chosen` 으로 막지 않는다 — 막으면 버튼이 영원히 비활성이다.
               호출별 승인(multi)일 때는 **전부 거절도 정상 동작**이라 막지
@@ -1660,22 +1691,21 @@ export function ConfirmCard({
               )}
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            onClick={() => onApprove(jiraEdited ? appliedJira : undefined)}
-            disabled={busy || editingJira || (!multi && tasks.length > 0 && chosen.length === 0)}
-          >
+          {busy && onAbort ? (
+            <Button className={styles.abortButton} variant="outline" size="sm" onClick={onAbort}>
+              중단
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={() => onApprove(jiraEdited ? appliedJira : undefined)}
+              disabled={editingJira || (!multi && tasks.length > 0 && chosen.length === 0)}
+            >
             {/* **거절 중에는 이 버튼이 "등록하는 중…"이라고 말하지 않는다**
                 (2026-08-24 실측 버그 — 거절을 눌렀는데 승인 버튼 쪽에 등록
                 중이라고 떠서 마치 승인이 진행되는 것처럼 보였다). 거절 중엔
                 평소 라벨을 그대로 두고 비활성만 건다. */}
-            {approving
-              ? jiraPreview
-                ? 'Jira 이슈 생성 중…'
-                : hasFilePreview
-                  ? '파일 생성 중…'
-                : '등록하는 중…'
-              : multi && actions
+            {multi && actions
                 ? approved.length === 0
                   ? '전부 거절'
                   : `${approved.length}건 실행`
@@ -1686,7 +1716,8 @@ export function ConfirmCard({
                     : hasFilePreview
                       ? '파일 생성 승인'
                     : '승인'}
-          </Button>
+            </Button>
+          )}
         </div>
       ) : (
         <div className={styles.confirmActions}>
@@ -2027,6 +2058,23 @@ export function ProducedFilesCard({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  function fileType(file: ProducedFile): string {
+    const lower = `${file.fileName} ${file.mimeType ?? ''}`.toLowerCase();
+    if (lower.includes('.xlsx') || lower.includes('spreadsheet')) return 'Excel';
+    if (lower.includes('.docx') || lower.includes('wordprocessing')) return 'Word 문서';
+    if (lower.includes('.pdf') || lower.includes('pdf')) return 'PDF';
+    return '파일';
+  }
+
+  function previewKind(file: ProducedFile): ApprovalPreview['kind'] | null {
+    const lower = `${file.fileName} ${file.mimeType ?? ''}`.toLowerCase();
+    if (lower.includes('.xlsx') || lower.includes('spreadsheet')) return 'table';
+    if (lower.includes('.docx') || lower.includes('wordprocessing')) return 'document';
+    return null;
+  }
 
   async function save(file: ProducedFile) {
     const token = loadSessionToken();
@@ -2049,20 +2097,104 @@ export function ProducedFilesCard({
     }
   }
 
+  // 일부 작업만 승인되면 `previews`에는 거절된 작업도 남지만 `files`에는 생성된
+  // 파일만 온다. 배열 위치로 묶으면 Excel 카드가 Word 미리보기를 여는 식으로
+  // 어긋나므로, 파일 형식과 미리보기 종류를 기준으로 일대일 대응한다.
+  const usedPreviewIndexes = new Set<number>();
+  const matchedPreviews = files.map((file) => {
+    const kind = previewKind(file);
+    if (!kind) return null;
+    const matchIndex = previews.findIndex(
+      (preview, index) => preview.kind === kind && !usedPreviewIndexes.has(index),
+    );
+    if (matchIndex < 0) return null;
+    usedPreviewIndexes.add(matchIndex);
+    return previews[matchIndex];
+  });
+
+  const selectedPreview = previewIndex != null ? matchedPreviews[previewIndex] ?? null : null;
+  const selectedFile = previewIndex != null ? files[previewIndex] ?? null : null;
+
+  function fullPreview(preview: ApprovalPreview) {
+    if (preview.kind === 'table') {
+      return (
+        <div className={`${styles.approvalTableWrap} ${styles.approvalTableExpanded}`} tabIndex={0}>
+          <table className={styles.approvalTable}>
+            <thead><tr>{preview.columns.map((column, index) => <th key={`${column}-${index}`}>{column}</th>)}</tr></thead>
+            <tbody>{preview.rows.length > 0 ? preview.rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>{row.map((cell, columnIndex) => <td key={columnIndex}>{cell || '—'}</td>)}</tr>
+            )) : <tr><td colSpan={Math.max(preview.columns.length, 1)}>표에 입력할 행이 없습니다.</td></tr>}</tbody>
+          </table>
+        </div>
+      );
+    }
+    return <DocumentPreviewContent preview={preview} expanded />;
+  }
+
   return (
     <section className={styles.filesCard}>
-      {files.map((file) => (
-        <div key={file.docId} className={styles.fileRow}>
-          <Icon name="file-text" size={16} color="var(--color-primary)" />
-          <span className={styles.fileName}>{file.fileName}</span>
-          <Button size="sm" variant="outline" disabled={busy === file.docId} onClick={() => void save(file)}>
-            다운로드
-          </Button>
-        </div>
-      ))}
-      {/* 「내 파일」에도 남는다는 것을 밝힌다 — 카드를 놓쳐도 찾을 곳이 있다. */}
-      <p className={styles.fileHint}>{failed ?? '「문서 > 내 파일」에도 저장되어 있습니다.'}</p>
-      {previews.length > 0 ? <ApprovalPreviewHistory previews={previews} /> : null}
+      {files.map((file, index) => {
+        const preview = matchedPreviews[index] ?? null;
+        return (
+          <div key={file.docId} className={styles.fileItem}>
+            <div className={styles.fileRow}>
+              <Icon name="file-text" size={16} color="var(--color-primary)" />
+              {preview ? (
+                <button
+                  type="button"
+                  className={styles.fileNameButton}
+                  onClick={() => {
+                    setPreviewIndex(index);
+                    setPreviewOpen(true);
+                  }}
+                  aria-haspopup="dialog"
+                  title="미리보기 열기"
+                >
+                  <span className={styles.fileIdentity}>
+                    <span className={styles.fileName}>{file.fileName}</span>
+                    <span className={styles.fileType}>
+                      <span className={styles.fileTypeDefault}>{fileType(file)}</span>
+                      <span className={styles.fileTypeHover}>미리보기 열기</span>
+                    </span>
+                  </span>
+                </button>
+              ) : (
+                <span className={styles.fileIdentity}>
+                  <span className={styles.fileName}>{file.fileName}</span>
+                  <span className={styles.fileType}>{fileType(file)}</span>
+                </span>
+              )}
+              <button
+                type="button"
+                className={styles.fileDownload}
+                disabled={busy === file.docId}
+                onClick={() => void save(file)}
+                aria-label={`${file.fileName} 다운로드`}
+                title={busy === file.docId ? '다운로드 중' : '다운로드'}
+              >
+                <Icon name={busy === file.docId ? 'loader' : 'download'} size={18} spin={busy === file.docId} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      {failed ? <p className={styles.fileHint}>{failed}</p> : null}
+      {selectedPreview && typeof document !== 'undefined'
+        ? createPortal(
+            <Modal
+              open={previewOpen}
+              onClose={() => setPreviewOpen(false)}
+              title={selectedFile?.fileName ?? selectedPreview.title ?? '파일 미리보기'}
+              width={selectedPreview.kind === 'table' ? 1200 : 1000}
+            >
+              {fullPreview(selectedPreview)}
+              <p className={styles.filePreviewSaved}>
+                이 파일은 「문서 &gt; 내 파일」에도 저장되어 있습니다.
+              </p>
+            </Modal>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }

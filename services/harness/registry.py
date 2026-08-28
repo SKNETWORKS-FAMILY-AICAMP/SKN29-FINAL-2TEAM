@@ -1406,7 +1406,10 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "표는 이 도구가 만들어 주지 않는다 — 다른 도구(task_list·workload_report·"
             "jira_get_issues 등)로 먼저 값을 얻은 뒤, 그 값을 `columns` 와 `rows` 로 "
             "직접 옮겨 넘긴다. **값을 지어내거나 바꾸지 않는다** — 모르는 칸은 비운다. "
-            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다."
+            "`rows` 의 각 행은 `columns` 와 **같은 순서**의 목록이다. 출처를 표에 넣을 때 "
+            "근거에 실제 URL이 있다면 출처 셀을 `[출처명](https://원문-주소)` 형식으로 넘겨 "
+            "출처명이 클릭 가능한 링크로 남게 한다. **링크 보존만을 위한 별도 URL 행이나 URL 열은 "
+            "추가하지 않는다.** URL을 출처명으로 바꾸거나 추측해서 만들지 않는다."
         ),
         input_schema={
             "type": "object",
@@ -1448,6 +1451,8 @@ BUILTIN_TOOLS: dict[str, Tool] = {
             "중요하면 `template_id=business_report`, `metadata`, `blocks`를 사용한다. 구조화 블록은 "
             "제목·문단·목록·안내·실제 Word 표를 지원한다. **표 자체가 결과물이면 document_create의 "
             "표 블록이 아니라 table_export로 Excel을 만든다.** "
+            "본문·목록·표에 출처를 적을 때 실제 URL이 있으면 `[출처명](https://원문-주소)`로 넘겨 "
+            "Word에서도 출처 이름을 유지한 채 클릭할 수 있게 한다. URL은 추측해서 만들지 않는다. "
             "문서에 담을 내용을 지어내지 않는다 — 근거가 없는 항목은 비우거나 빼고 쓴다."
         ),
         input_schema={

@@ -29,6 +29,8 @@ export interface ChatMessageContent {
   type: 'text' | 'result' | 'awaiting_confirmation' | 'error';
   text?: string;
   complete?: boolean;
+  /** 서버가 측정할 수 있었던 해당 실행 구간의 처리 시간. */
+  duration_ms?: number;
   /** 에이전트 답에 붙는 이벤트 전체. 화면은 이걸로 카드를 다시 그린다. */
   events?: ChatEvent[];
   tool_ref?: string;

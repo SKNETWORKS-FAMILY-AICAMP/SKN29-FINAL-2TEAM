@@ -35,6 +35,8 @@ _WIDTH_MAX = 42
 _WIDTH_MIN = 8
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HTTP_URL = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
+_MARKDOWN_LINK = re.compile(r"^\[([^\]\r\n]+)\]\((https?://[^\s)]+)\)$", re.IGNORECASE)
 _DATE_HEADERS = ("날짜", "일자", "시작일", "마감일", "기한")
 _PERCENT_HEADERS = ("진행률", "부하율", "달성률", "비율")
 
@@ -121,6 +123,17 @@ def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> byte
             if force_text:
                 # 여기가 수식 실행을 막는 한 줄이다. 위 모듈 주석 1번.
                 cell.data_type = "s"
+            # 셀 전체가 HTTP(S) URL일 때만 클릭 가능한 링크로 만든다. 임의의
+            # 스킴이나 문장 속 URL은 연결하지 않아, 모델 입력이 엑셀의 외부
+            # 동작으로 과도하게 확장되지 않게 한다. 표시 문자열은 원문 그대로다.
+            markdown_link = _MARKDOWN_LINK.fullmatch(value.strip()) if isinstance(value, str) else None
+            if markdown_link:
+                cell.value = markdown_link.group(1)
+                cell.hyperlink = markdown_link.group(2)
+                cell.font = Font(color="0563C1", underline="single")
+            elif isinstance(value, str) and _HTTP_URL.fullmatch(value.strip()):
+                cell.hyperlink = value.strip()
+                cell.font = Font(color="0563C1", underline="single")
             if number_format:
                 cell.number_format = number_format
             cell.alignment = Alignment(
@@ -147,7 +160,9 @@ def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> byte
     # 머리글을 고정한다. 행이 많으면 스크롤했을 때 어느 열인지 알 수 없다.
     sheet.freeze_panes = "A2"
     sheet.row_dimensions[1].height = 26
-    sheet.sheet_view.showGridLines = False
+    # 표 바깥의 빈 셀까지 선이 사라지면 작은 표가 시트에서 고립되거나 깨진
+    # 것처럼 보인다. Excel의 익숙한 탐색 기준을 유지하도록 기본 눈금선을 둔다.
+    sheet.sheet_view.showGridLines = True
 
     # 필터와 줄무늬 행은 큰 표를 빠르게 훑기 위한 최소 장치다. 값이나 계산을
     # 추가하지 않고 같은 범위의 표현만 보강한다.
@@ -161,8 +176,9 @@ def build_xlsx(*, title: str, columns: list[str], rows: list[list[Any]]) -> byte
         showRowStripes=True,
         showColumnStripes=False,
     )
+    # Excel Table 자체가 같은 범위의 AutoFilter를 가진다. 워크시트에도 별도
+    # AutoFilter를 기록하면 Excel 데스크톱이 중복 정의로 판단해 표를 복구·제거한다.
     sheet.add_table(table)
-    sheet.auto_filter.ref = f"A1:{end_column}{end_row}"
     sheet.print_title_rows = "1:1"
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.page_setup.fitToWidth = 1
