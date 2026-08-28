@@ -29,10 +29,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.authentication import BearerTokenAuthentication
-from backend.db.document_pipeline import PersonalDocumentRepository
+from backend.db.document_pipeline import (
+    PersonalDocumentRepository,
+    StorageCleanupOutboxRepository,
+)
 from backend.db.errors import PermissionDenied, RecordNotFound, RepositoryError
 from backend.db.repositories import DocumentRepository
 from backend.services import storage
+from backend.services.storage import STORAGE_ERRORS
 
 from .serializers import personal_file_response
 
@@ -52,7 +56,8 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 #: PDF·DOCX 는 본문까지, txt·md 는 요약까지 쓸 수 있다(`_UPLOAD_TYPES` 주석).
-ACCEPTED = "PDF · Word(docx) · 텍스트(txt·md)"
+#: xlsx·csv·json·zip 은 색인 없이 "다운로드 전용"으로 받는다(2026-08-28).
+ACCEPTED = "PDF · Word(docx) · 텍스트(txt·md) · 표/데이터(xlsx·csv·json·zip, 다운로드 전용)"
 
 
 def _error_response(exc: Exception) -> Response:
@@ -108,6 +113,11 @@ class PersonalFileListAPIView(AuthenticatedAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # xlsx·csv·json·zip 은 "다운로드 전용"이다(2026-08-28). 워커가 못 읽어
+        # 색인 파이프라인을 태우면 계속 FAILED 로 남는다 — 아예 안 태우고,
+        # 검색에서도 빼 둔다. 표·데이터 도구가 `file_id` 로만 읽는다.
+        download_only = bool(storage.is_download_only_upload(mime_type))
+
         account_id = request.user.account_id
         try:
             doc_id = PersonalDocumentRepository.create(
@@ -126,18 +136,28 @@ class PersonalFileListAPIView(AuthenticatedAPIView):
                 content_hash=content_hash,
                 revision=content_hash.removeprefix("sha256:")[:16],
             )
+            if download_only:
+                PersonalDocumentRepository.set_search_enabled(
+                    doc_id=doc_id, account_id=account_id, enabled=False
+                )
         except (RepositoryError, psycopg.Error) as exc:
             return _error_response(exc)
-        except OSError as exc:
+        except STORAGE_ERRORS as exc:
             logger.exception("내 파일 저장 실패: %s", upload.name)
             return Response(
                 {"detail": "파일을 저장하지 못했습니다.", "error": exc.__class__.__name__},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        _start_processing(account_id=account_id, doc_id=doc_id)
+        if not download_only:
+            _start_processing(account_id=account_id, doc_id=doc_id)
         return Response(
-            {"doc_id": doc_id, "file_name": upload.name, "processing": True},
+            {
+                "doc_id": doc_id,
+                "file_name": upload.name,
+                "processing": not download_only,
+                "download_only": download_only,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -212,7 +232,7 @@ class PersonalFileDownloadAPIView(AuthenticatedAPIView):
 
         try:
             data = storage.load(row["storage_key"])
-        except OSError as exc:
+        except STORAGE_ERRORS as exc:
             # 행은 있는데 원문이 없다. 사람이 할 수 있는 것이 없으므로 사유를 밝힌다.
             logger.warning("내 파일 원문 읽기 실패: %s", row["storage_key"])
             return Response(
@@ -287,10 +307,16 @@ class PersonalFileDetailAPIView(AuthenticatedAPIView):
         if key:
             try:
                 storage.remove(key)
-            except OSError:
+            except STORAGE_ERRORS as exc:
                 # 행은 이미 지웠다. 원문만 남는 것은 아무도 못 찾는 파일 하나이지
                 # 화면이 깨지는 상태는 아니라, 여기서 실패를 되돌리지 않는다.
                 logger.warning("내 파일 원문 삭제 실패: %s", key)
+                try:
+                    StorageCleanupOutboxRepository.enqueue(
+                        storage_key=key, error_code=exc.__class__.__name__
+                    )
+                except Exception:  # noqa: BLE001 - 삭제 API 성공 상태는 보존한다.
+                    logger.exception("저장소 정리 outbox 기록 실패: %s", key)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

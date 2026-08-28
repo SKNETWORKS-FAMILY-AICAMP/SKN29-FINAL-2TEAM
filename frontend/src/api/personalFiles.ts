@@ -35,6 +35,11 @@ export interface PersonalFile {
    * 않으므로 `search_ready` 가 영영 false 다(상태 뱃지가 그것을 안다).
    */
   origin: 'upload' | 'generated';
+  /**
+   * xlsx·csv·json·zip 처럼 색인 없이 받은 형식(2026-08-28). 색인 상태·검색
+   * 토글·재색인을 숨기고 "다운로드 전용" 배지를 보인다.
+   */
+  download_only: boolean;
   uploaded_at: string | null;
   /** 팀에 공유했는가. **소유는 안 옮긴다** — 보여 주는 것이지 넘기는 것이 아니다. */
   shared: boolean;
@@ -53,7 +58,12 @@ export function listSharedFiles(token: string) {
 
 /** 올린다. multipart 처리는 `apiUpload` 가 한다(401 이면 세션도 정리한다). */
 export function uploadPersonalFile(token: string, file: File) {
-  return apiUpload<{ doc_id: string; file_name: string; processing: boolean }>(
+  return apiUpload<{
+    doc_id: string;
+    file_name: string;
+    processing: boolean;
+    download_only: boolean;
+  }>(
     '/me/files/',
     file,
     { method: 'POST', token },

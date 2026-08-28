@@ -677,14 +677,14 @@ class SlashSkillInvocationTests(SimpleTestCase):
         user_write = messages.append.call_args_list[0].kwargs
         self.assertEqual(user_write["content"]["text"], "/humanizer 이 문장을 자연스럽게 바꿔줘")
 
-    def test_sensitive_content_in_skill_request_reaches_the_graph_unmasked_but_title_is_masked(
+    def test_sensitive_content_in_skill_request_is_masked_before_it_reaches_the_graph(
         self, sessions, messages, accounts, title, build_executor, _live_version, resolve_skill
     ):
-        """2026-08-26 — `skill_request`도 더 이상 여기서 `mask_sensitive()`를
-        안 거친다(그래프 안 `SensitiveInputMaskMiddleware`가 처리). 다만
-        `suggest_title()`용 `question`은 그래프를 안 거치므로 이 API 레이어가
-        여전히 가려서 넘겨야 한다 — 이 둘이 한 요청 안에서 동시에 맞는지
-        확인한다."""
+        """2026-08-27 — `text`는 스킬 호출을 파싱하기 전에 이미
+        `mask_for_storage()`를 거친다(§4.3). `skill_request`는 그 마스킹된
+        `text`에서 잘라낸 조각이라 애초에 원문 PII를 담지 않는다 — 그래프에
+        전달되는 `model_input`도, 저장되는 값도, 제목 생성용 `question`도
+        전부 같은 값 하나에서 나온다."""
 
         sessions.get.return_value = DEEP_SESSION
         messages.list_for_session.return_value = []
@@ -709,12 +709,13 @@ class SlashSkillInvocationTests(SimpleTestCase):
         )
         ndjson(response)
 
-        # 그래프로 가는 값 — 원문 그대로(미들웨어가 가릴 몫).
+        # 그래프로 가는 값 — 스킬 파싱 전에 이미 가려졌다.
         model_input = mock_executor.run.call_args.kwargs["user_input"]
-        self.assertIn("010-1234-5678", model_input)
+        self.assertNotIn("010-1234-5678", model_input)
+        self.assertIn("[가려짐]", model_input)
         self.assertIn("explicit_skill_invocation", model_input)
 
-        # 제목 생성용 값 — 이 레이어가 직접 가린 채로 넘어가야 한다.
+        # 제목 생성용 값도 같은 값에서 나온다 — 당연히 안 보인다.
         question = title.call_args.kwargs["question"]
         self.assertNotIn("010-1234-5678", question)
         self.assertIn("explicit_skill_invocation", question)
@@ -1777,33 +1778,44 @@ class ChatHistoryTests(SimpleTestCase):
 @patch("apps.chat.api_views.ChatMessageRepository")
 @patch("apps.chat.api_views.ChatSessionRepository")
 class PiiMaskingTests(SimpleTestCase):
-    """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술은
-    모델에게 보내기 전에 가린다(2026-08-19, §2순위, 사용자 확정 범위).
+    """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술을
+    다루는 규칙(2026-08-19, §2순위, 사용자 확정 범위 → 2026-08-27 재설계).
 
-    **2026-08-26부터 가리는 주체가 바뀌었다** — `api_views.py`가 직접
-    `mask_sensitive()`를 부르는 대신, 그래프 안의
-    `SensitiveInputMaskMiddleware`(`middleware/sensitive_input.py`)가
-    매 모델 호출 직전에 가린다. 그래서 이 API 레이어 테스트가 보는
-    `executor.run()`의 `user_input`/`conversation_messages`는 이제
-    **원문 그대로**다 — 실제로 가려지는지는
+    **2026-08-27 최종 형태** — 요청을 받은 직후, 세션을 확인하자마자 가장
+    먼저 `match_category(text)`로 credential 여부를 본다.
+
+    - **credential**(API 키·시크릿·토큰·비밀번호 형태): 여기서 요청을
+      끝낸다. 400을 돌려주고 저장·외부 가드레일 호출·Graph 실행 중 아무것도
+      하지 않는다. 마스킹 후 계속 진행하지 않는 이유는, 아래로 내려갈수록
+      원문이 닿는 곳(외부 가드레일 — 제3자 서버, DB, Graph의 PostgresSaver
+      checkpoint)이 늘어나기 때문이다 — 그 각각에서 마스킹을 빠뜨리지 않는
+      것보다, 아직 유효할 수 있는 자격증명은 애초에 어디에도 안 보내는
+      쪽이 더 안전하다.
+    - **credential이 없으면**(PII만 있거나 평범한 문장) `text`를
+      `mask_for_storage()`로 한 번 가리고, 그 값 **하나**를 스킬 호출
+      파싱·외부 가드레일·DB 저장·`model_input`(Graph 입력)이 전부 공유한다.
+      권한/보안 서술(`AUTHORITY_KEYWORDS`)은 이 조합에서 빠진다 — 값이
+      아니라 사용자가 무엇을 물었는지의 기록이라 남긴다.
+
+    그래프 안 `SensitiveInputMaskMiddleware`(`middleware/sensitive_input.py`)는
+    이제 이중 방어다 — 권한서술과, 이 변경 **전**에 이미 원문으로 저장된
+    옛 이력이 재전송될 때를 여전히 가린다. 미들웨어 자체 동작은
     `tests/test_sensitive_input.py`·`tests/test_middleware_factory.py`의
-    `SensitiveInputMaskMiddlewareWiringTests`가 미들웨어 자체를 검증한다.
-    이 클래스는 "그래프에 뭐가 들어가는가"(여기)와 "그 안에서 가려지는가"
-    (미들웨어 테스트)가 분리됐다는 걸 보여주는 자리로 남긴다.
-
-    **저장은 여전히 원문 그대로** 다 — 화면은 사용자 자신이 뭘 썼는지
-    그대로 봐야 한다. `suggest_title()`용 `question`만 그래프를 안 거치므로
-    `api_views.py`가 지금도 직접 가린다.
+    `SensitiveInputMaskMiddlewareWiringTests`가 따로 검증한다.
+    `suggest_title()`용 `question`만 그래프를 안 거치므로 `api_views.py`가
+    지금도 직접 `mask_sensitive()`를 부른다.
     """
 
     SENSITIVE = "제 전화번호는 010-1234-5678이에요"
+    CREDENTIAL = "제 API 키는 sk-proj-abcdefghijklmnopqrstuvwx예요"
 
-    def test_이번_턴_발화는_원문_그대로_그래프에_들어간다(
+    def test_이번_턴_발화는_저장_시점에_이미_가려진_값이_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor
     ):
-        """가리는 일은 이제 그래프 안 `SensitiveInputMaskMiddleware`의 몫이다
-        — 여기서 원문을 미리 가리면 오히려 그 미들웨어가 이미 가려진 텍스트를
-        받게 돼 이중 처리(멱등이라 해는 없지만 불필요)가 된다."""
+        """2026-08-27 — PII는 요청 맨 앞에서 한 번 가리고, 그 값 하나를
+        가드레일·저장·Graph가 전부 공유한다(더 이상 소비처마다 원문을 따로
+        받지 않는다). 그래프 안 `SensitiveInputMaskMiddleware`는 이제 이중
+        방어(권한서술, 이 변경 전 저장된 옛 이력의 재전송)만 맡는다."""
         sessions.get.return_value = SESSION
         messages.list_for_session.return_value = []
         accounts.get_profile.return_value = LEADER_PROFILE
@@ -1818,13 +1830,38 @@ class PiiMaskingTests(SimpleTestCase):
         ndjson(response)
 
         user_input = mock_executor.run.call_args.kwargs["user_input"]
-        self.assertEqual(user_input, self.SENSITIVE)
+        self.assertNotIn("010-1234-5678", user_input)
+        self.assertIn("[가려짐]", user_input)
 
-    def test_저장은_원문_그대로_한다(
+    @patch("apps.chat.api_views.check_user_input")
+    def test_credential은_어디에도_닿기_전에_요청을_막는다(
+        self, guard_check, sessions, messages, accounts, _title, build_executor
+    ):
+        """2026-08-27 — 마스킹 후 실행이 아니라 차단이다. 저장·가드레일(제3자
+        서버로 나간다)·Graph 실행(PostgresSaver checkpoint에 남는다) 어느
+        것도 안 일어나야 한다."""
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": self.CREDENTIAL},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        messages.append.assert_not_called()
+        mock_executor.run.assert_not_called()
+        guard_check.assert_not_called()
+
+    def test_저장은_credential과_PII를_가린다(
         self, sessions, messages, accounts, _title, build_executor
     ):
-        """화면은 사용자 자신의 발화를 그대로 봐야 한다 — 마스킹은 모델
-        입력에만 적용하고 저장에는 적용하지 않는다."""
+        """2026-08-27 — DB에 쓰는 값은 `mask_for_storage()`를 거친다. 아직
+        회수되지 않은 API 키가 DB에 평문으로 영구히 남는 걸 막는다."""
 
         sessions.get.return_value = SESSION
         messages.list_for_session.return_value = []
@@ -1842,7 +1879,34 @@ class PiiMaskingTests(SimpleTestCase):
         user_write = next(
             call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
         )
-        self.assertEqual(user_write["content"]["text"], self.SENSITIVE)
+        self.assertNotIn("010-1234-5678", user_write["content"]["text"])
+        self.assertIn("[가려짐]", user_write["content"]["text"])
+
+    def test_저장은_권한_서술은_안_가린다(
+        self, sessions, messages, accounts, _title, build_executor
+    ):
+        """권한/보안 *서술*은 값이 아니라 사용자가 무엇을 물었는지의 기록이라
+        이력에는 남긴다 — `mask_for_storage()`가 `AUTHORITY_KEYWORDS`는
+        빼는 이유(`sensitive_text.py` docstring)."""
+
+        sessions.get.return_value = SESSION
+        messages.list_for_session.return_value = []
+        accounts.get_profile.return_value = LEADER_PROFILE
+        _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
+        text = "관리자 권한을 어떻게 받나요?"
+
+        response = self.client.post(
+            f"/api/chat/sessions/{SESSION['session_id']}/messages/",
+            {"content": text},
+            content_type="application/json",
+            headers=auth_header(),
+        )
+        ndjson(response)
+
+        user_write = next(
+            call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
+        )
+        self.assertEqual(user_write["content"]["text"], text)
 
     def test_이력_재전송도_원문_그대로_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor

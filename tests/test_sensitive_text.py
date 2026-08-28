@@ -12,6 +12,7 @@ from services.agent_runtime.sensitive_text import (
     EXPORT_PLACEHOLDERS,
     MASK_PLACEHOLDER,
     mask_for_export,
+    mask_for_storage,
     mask_sensitive,
     match_category,
 )
@@ -151,3 +152,38 @@ class MaskForExportTests(SimpleTestCase):
     def test_ordinary_sentence_passes_through(self):
         text = "9월 10일 기준 지연 업무를 정리했습니다"
         self.assertEqual(mask_for_export(text), text)
+
+
+class MaskForStorageTests(SimpleTestCase):
+    """`mask_for_storage()` — `ChatMessageRepository.append()` 직전 조합
+    (2026-08-27, `apps/chat/api_views.py`).
+
+    `mask_sensitive()`와 한 가지가 다르다: 권한 서술(`AUTHORITY_KEYWORDS`)은
+    **제외**한다 — 값이 아니라 사용자가 무엇을 물었는지의 기록이라 이력에는
+    남긴다. credential·PII는 둘 다 가린다는 점은 `mask_sensitive()`와 같다.
+    """
+
+    def test_credential_is_masked(self):
+        masked = mask_for_storage("api_key: sk-abcdefghijklmnopqrstuvwx")
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwx", masked)
+        self.assertIn(MASK_PLACEHOLDER, masked)
+
+    def test_pii_is_masked(self):
+        masked = mask_for_storage("연락처 010-1234-5678, 주민번호 900101-1234567")
+        self.assertNotIn("010-1234-5678", masked)
+        self.assertNotIn("900101-1234567", masked)
+
+    def test_authority_phrase_is_kept(self):
+        """`mask_sensitive()`는 가리지만 여기서는 그대로 둔다 — 대화 이력은
+        사람이 무엇을 물었는지 남아야 한다."""
+        text = "이 계정은 관리자 권한이 없습니다"
+        self.assertEqual(mask_for_storage(text), text)
+        self.assertNotEqual(mask_sensitive(text), text)
+
+    def test_ordinary_sentence_passes_through(self):
+        text = "9월 10일 기준 지연 업무를 정리했습니다"
+        self.assertEqual(mask_for_storage(text), text)
+
+    def test_masked_result_never_contains_the_original_matched_value(self):
+        masked = mask_for_storage("제 카드번호는 1234-5678-9012-3456입니다")
+        self.assertNotIn("1234-5678-9012-3456", masked)

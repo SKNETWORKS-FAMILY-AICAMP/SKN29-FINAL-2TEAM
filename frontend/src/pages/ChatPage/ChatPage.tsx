@@ -645,6 +645,20 @@ export default function ChatPage() {
   }
 
   /**
+   * 「기본값으로 초기화」 — 이 대화의 도구 선택을 **고정 기본 집합**
+   * (`ToolChoice.is_default`, 백엔드 `DEFAULT_CHAT_TOOL_REFS`)으로 맞춘다.
+   * 에이전트 원본이 아니라 이 집합으로 되돌린다 — 팀장이 Builder 에서 무엇을
+   * 켜고 껐든, 대화에서 「초기화」를 누르면 같은 결과가 나오도록.
+   */
+  async function resetSessionToolRefs() {
+    if (!token || togglingTool) return;
+    const defaults = toolChoices
+      .filter((tool) => !tool.tool_ref.startsWith('mcp:') && tool.is_default)
+      .map((tool) => tool.tool_ref);
+    await applySessionToolRefs(defaults);
+  }
+
+  /**
    * 도구 선택 화면의 그룹(카테고리) 마스터 체크박스용(2026-08-18) — 그룹에
    * 속한 도구 여러 개를 **한 번의 저장으로** 켜거나 끈다. `onToggle`을
    * 그룹 크기만큼 연달아 부르면 `sessionToolOverride`가 아직 안 바뀐
@@ -809,6 +823,17 @@ export default function ChatPage() {
     [token, navigate],
   );
 
+  // 대화에 저장된 에이전트가 더 이상 없으면(DB 리셋 등) 기본 챗 에이전트로
+  // 되돌린다 — 그대로 두면 그 대화에서 무언가 보낼 때 "존재하지 않는
+  // 에이전트: AGxxx" 오류가 난다. `agents` 는 목록 조회가 끝나야 채워진다.
+  useEffect(() => {
+    if (agents.length === 0 || !agentId) return;
+    if (agents.some((row) => row.agent_id === agentId)) return;
+    setAgentId(
+      agents.find((row) => row.is_default_chat)?.agent_id ?? agents[0].agent_id,
+    );
+  }, [agents, agentId]);
+
   /**
    * 주소가 가리키는 대화를 연다. 새로고침·딥링크가 이 경로로 들어온다 —
    * 예전에는 URL 이 `/chat` 뿐이라 새로고침하면 빈 화면으로 떨어졌다(2026-08-12 QA).
@@ -849,6 +874,19 @@ export default function ChatPage() {
   function startNew(nextProjId: string | null) {
     abortRef.current?.abort();
     setSessionId(null);
+    // **지금 고른 에이전트가 아직 목록에 있으면 그대로 둔다.** 드롭다운에서
+    // 다른 에이전트를 고르면 onChange 가 `setAgentId(새 값)` 뒤에 이 함수를
+    // 부르는데, 여기서 무조건 기본 챗 에이전트로 되돌리면 선택이 즉시 튕겨
+    // 나온다(2026-08-30 사용자 신고: "다른 에이전트 눌러도 기본만 나와").
+    // 삭제된 에이전트(예: DB 리셋 전 대화)를 들고 가는 경우만 막으면 되고,
+    // 그건 `prev` 가 목록에 없을 때 아래 fallback 이 처리한다.
+    setAgentId(
+      (prev) =>
+        agents.find((row) => row.agent_id === prev)?.agent_id ??
+        agents.find((row) => row.is_default_chat)?.agent_id ??
+        agents[0]?.agent_id ??
+        prev,
+    );
     // 주소도 함께 비운다. 떠난 id 를 남겨 두는 이유는 위 effect 의 주석에 있다.
     if (routeSessionId) {
       leftRef.current = routeSessionId;
@@ -1941,7 +1979,6 @@ export default function ChatPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
                   <h2>무엇을 도와드릴까요?</h2>
-                  <p>필요한 작업을 입력하세요.</p>
                   {/* 무엇을 근거로 답하는지가 답의 전제라 먼저 말한다. */}
                   <p className={styles.projectContext}>
                     {currentProject ? (
@@ -1955,8 +1992,7 @@ export default function ChatPage() {
                       <>
                         <Icon name="users" size={14} color="var(--color-muted)" />
                         <span>
-                          <strong>팀 전체 문서</strong>를 근거로 답합니다. 업무 추출처럼 기준 문서가
-                          기준 문서가 필요한 작업은 프로젝트를 선택한 뒤 시작하세요.
+                          <strong>팀 전체 문서</strong>를 근거로 답합니다. 기준 문서가 필요한 작업은 프로젝트를 선택한 뒤 시작하세요.
                         </span>
                       </>
                     )}
@@ -2155,10 +2191,6 @@ export default function ChatPage() {
                         );
                       })()}
 
-                      {/* 도구가 만든 파일. 결과 카드들보다 먼저 둔다 —
-                          「받을 것이 있다」가 제일 먼저 눈에 띄어야 한다. */}
-                      {live.files.length > 0 && <ProducedFilesCard files={live.files} />}
-
                       {live.jira && (
                         <JiraStatusCard
                           projectName={currentProject?.name}
@@ -2283,6 +2315,11 @@ export default function ChatPage() {
                           />
                         </div>
                       )}
+
+                      {/* 도구가 만든 파일. 다른 서비스처럼 **답변 아래**에 첨부로 단다
+                          (2026-08-28). 답변이 아직 없어도(파일만 만들고 끝난 흐름)
+                          받을 것은 보여야 하므로 `live.answer` 와 독립적으로 건다. */}
+                      {live.files.length > 0 && <ProducedFilesCard files={live.files} />}
 
                       {live.stoppedReason && (
                         <p className={styles.warnLine}>
@@ -2516,6 +2553,7 @@ export default function ChatPage() {
         toolRefs={sessionToolOverride ?? agentOwnToolRefs}
         onToggle={(ref) => void toggleSessionTool(ref)}
         onToggleGroup={(refs, turnOn) => void toggleSessionToolGroup(refs, turnOn)}
+        onReset={() => void resetSessionToolRefs()}
       />
     </AppShell>
   );

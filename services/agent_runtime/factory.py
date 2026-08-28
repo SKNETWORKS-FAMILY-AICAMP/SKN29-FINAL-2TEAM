@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 import time
@@ -220,12 +221,28 @@ def _to_langchain_tool(
         idempotency_scope = (
             tool.side_effect and langchain_tool_call_id and context.run_id
         )
+        idempotency_claimed = False
         if idempotency_scope:
             from backend.db.agent_platform import ToolCallIdempotencyRepository
 
-            cached = ToolCallIdempotencyRepository.find_result(
-                run_id=context.run_id, langchain_tool_call_id=langchain_tool_call_id
-            )
+            deadline = time.monotonic() + GUNICORN_WORKER_TIMEOUT_SECONDS
+            cached = None
+            while True:
+                claim_status, cached = ToolCallIdempotencyRepository.claim_or_get(
+                    run_id=context.run_id,
+                    langchain_tool_call_id=langchain_tool_call_id,
+                    tool_ref=tool.ref,
+                )
+                if claim_status == "CLAIMED":
+                    idempotency_claimed = True
+                    break
+                if claim_status == "SUCCEEDED":
+                    break
+                if time.monotonic() >= deadline:
+                    raise ToolException(
+                        "같은 도구 호출이 이미 실행 중입니다. 잠시 후 다시 확인해 주세요."
+                    )
+                time.sleep(0.1)
             if cached is not None:
                 logger.info(
                     "idempotent 재생: %s (run_id=%s, tool_call_id=%s) — "
@@ -234,7 +251,12 @@ def _to_langchain_tool(
                     context.run_id,
                     langchain_tool_call_id,
                 )
-                return cached
+                try:
+                    # 새 기록은 JSON으로 저장해 원래 dict/list 모양을 복원한다.
+                    # 예전 배포가 남긴 평문·Python repr은 그대로 돌려 하위 호환한다.
+                    return json.loads(cached)
+                except (json.JSONDecodeError, TypeError):
+                    return cached
 
         # MCP 호출이 "지금 도는 중"이라고 표시한다(`2026-08-21_04` §3.1). 승인
         # 카드가 이 표시를 보고 "같은 서버에 다른 실행이 진행 중"을 알린다.
@@ -247,20 +269,32 @@ def _to_langchain_tool(
             and langchain_tool_call_id
             and context.run_id
         )
-        if active_scope:
-            from backend.db.agent_platform import McpCallNoteRepository
-
-            McpCallNoteRepository.begin_active(
-                run_id=context.run_id,
-                langchain_tool_call_id=langchain_tool_call_id,
-                tool_ref=tool.ref,
-                team_id=context.team_id,
-            )
-
-        resolved = inject_runtime_context(tool, kwargs, context)
+        active_started = False
         try:
+            if active_scope:
+                from backend.db.agent_platform import McpCallNoteRepository
+
+                McpCallNoteRepository.begin_active(
+                    run_id=context.run_id,
+                    langchain_tool_call_id=langchain_tool_call_id,
+                    tool_ref=tool.ref,
+                    team_id=context.team_id,
+                )
+                active_started = True
+
+            resolved = inject_runtime_context(tool, kwargs, context)
             result = _call_tool_handler(tool, resolved)
         except Exception as exc:  # noqa: BLE001 - 도구 실패로 그래프 실행 전체를 끝내지 않는다
+            if idempotency_claimed:
+                from backend.db.agent_platform import ToolCallIdempotencyRepository
+
+                try:
+                    ToolCallIdempotencyRepository.abandon_claim(
+                        run_id=context.run_id,
+                        langchain_tool_call_id=langchain_tool_call_id,
+                    )
+                except Exception:  # noqa: BLE001 - 원래 도구 오류를 보존한다
+                    logger.exception("실패한 idempotency claim 정리 실패: %s", tool.ref)
             # `ToolNode`의 기본 `handle_tool_errors`는 `ToolInvocationError`(인자
             # 스키마 검증 실패)만 잡고 나머지는 다시 raise한다. `create_agent()`가
             # 내부에서 만드는 ToolNode라 우리가 값을 넣을 수도 없다. 그대로 두면
@@ -306,7 +340,7 @@ def _to_langchain_tool(
                     run_id=context.run_id,
                     langchain_tool_call_id=langchain_tool_call_id,
                     tool_ref=tool.ref,
-                    result=str(result),
+                    result=json.dumps(result, ensure_ascii=False, default=str),
                 )
             return result
         finally:
@@ -318,7 +352,7 @@ def _to_langchain_tool(
             # 지우기가 실패해도 도구 실행 결과를 뒤집지 않는다 — 경고용 부가
             # 정보지 실행의 일부가 아니다. 남은 행은 조회 시점의 stale 필터가
             # 걸러 낸다.
-            if active_scope:
+            if active_started:
                 from backend.db.agent_platform import McpCallNoteRepository
 
                 try:
@@ -479,6 +513,14 @@ class AgentRuntimeFactory:
                 if not tool.side_effect or not allowed_side_effect:
                     continue
                 confirmation: Any = True
+                if tool.approval_when is not None:
+                    predicate = tool.approval_when
+                    confirmation = {
+                        "allowed_decisions": ["approve", "edit", "reject", "respond"],
+                        "when": lambda request, predicate=predicate: predicate(
+                            request.tool_call.get("args") or {}
+                        ),
+                    }
                 if tool.ref.startswith(MCP_TOOL_REF_PREFIX):
                     confirmation = {
                         "allowed_decisions": ["approve", "edit", "reject", "respond"],

@@ -34,6 +34,9 @@ from backend.db.skill_jobs import (
     SkillRegistrationJobRepository,
 )
 from backend.db.skill_operations import SkillWorkerHeartbeatRepository
+from backend.db.document_pipeline import StorageCleanupOutboxRepository
+from backend.services import storage
+from backend.services.storage import STORAGE_ERRORS
 from services.agent_runtime.skills.registration import (
     CheckingFailure,
     run_checking,
@@ -122,6 +125,7 @@ class Command(BaseCommand):
         ) as executor:
             while True:
                 self._touch_worker(worker_id)
+                self._process_one_storage_cleanup()
 
                 completed = {future for future in active if future.done()}
                 active -= completed
@@ -160,6 +164,32 @@ class Command(BaseCommand):
                     time.sleep(poll_interval)
 
         self.stdout.write(self.style.SUCCESS("skill_validation_worker 종료"))
+
+    @staticmethod
+    def _process_one_storage_cleanup() -> None:
+        """같은 상시 워커에서 고아 저장 객체 한 건을 재시도한다."""
+        try:
+            item = StorageCleanupOutboxRepository.claim_due()
+        except Exception:  # noqa: BLE001 - 스킬 job 처리를 막지 않는다.
+            logger.exception("storage cleanup outbox 조회 실패")
+            return
+        if item is None:
+            return
+        try:
+            storage.remove(item["storage_key"])
+        except STORAGE_ERRORS as exc:
+            logger.warning("저장 객체 재정리 실패: %s", item["storage_key"])
+            try:
+                StorageCleanupOutboxRepository.record_failure(
+                    cleanup_id=item["cleanup_id"], error_code=exc.__class__.__name__
+                )
+            except Exception:  # noqa: BLE001 - 다음 due 시점에 다시 시도한다.
+                logger.exception("storage cleanup 실패 상태 기록 실패")
+            return
+        try:
+            StorageCleanupOutboxRepository.complete(cleanup_id=item["cleanup_id"])
+        except Exception:  # noqa: BLE001 - remove는 멱등이라 다음 주기 재실행이 안전하다.
+            logger.exception("storage cleanup outbox 완료 처리 실패")
 
     def _process(self, job: dict, *, lease_owner: str, lease_seconds: int) -> None:
         from services.agent_runtime.skills.evaluation.config import EVAL_JOB_TIMEOUT_SECONDS

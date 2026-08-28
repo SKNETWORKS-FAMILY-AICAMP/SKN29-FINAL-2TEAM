@@ -72,7 +72,7 @@ TRUNCATE TABLE connector_conn;
 TRUNCATE TABLE
     tool_call_idempotency, mcp_call_note,
     tool_call, agent_run,
-    eval_case_result, eval_run,
+    eval_judge_result, eval_case_result, eval_run,
     chat_message, chat_session,
     agent_version_tools, agent_version_subagents, agent_favorites,
     agent_versions, agents,

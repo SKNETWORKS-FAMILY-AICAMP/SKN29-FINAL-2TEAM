@@ -1,0 +1,38 @@
+{
+  "dataset_id": "builtin-tool-routing",
+  "version": 1,
+  "cases": [
+    {"id": "p-read", "kind": "related", "query": "내 파일에 올린 DC101 계약서의 본문과 표를 전부 읽어줘.", "expected_tool": "document_read"},
+    {"id": "p-convert", "kind": "related", "query": "DC102 워드 파일을 PDF로 변환해서 새 파일로 저장해줘.", "expected_tool": "document_convert"},
+    {"id": "p-pdf-edit", "kind": "related", "query": "PDF DC103의 3페이지를 90도 회전한 사본을 만들어줘.", "expected_tool": "pdf_edit"},
+    {"id": "p-inspect", "kind": "related", "query": "DC104 파일의 실제 형식과 SHA-256, 페이지 수를 확인해줘.", "expected_tool": "file_inspect"},
+    {"id": "p-sanitize", "kind": "related", "query": "DC105 문서에서 작성자와 생성 프로그램 정보를 지운 사본을 만들어줘.", "expected_tool": "file_sanitize"},
+    {"id": "p-archive", "kind": "related", "query": "내 파일 DC106, DC107, DC108을 하나의 ZIP으로 묶어줘.", "expected_tool": "archive_manage"},
+    {"id": "p-transform", "kind": "related", "query": "DC109 표를 부서별로 묶어서 평균 공수를 계산해줘.", "expected_tool": "table_transform"},
+    {"id": "p-quality", "kind": "related", "query": "DC110 CSV에서 빈 값과 중복 행, 열 타입 오류를 검사해줘.", "expected_tool": "data_quality_check"},
+    {"id": "p-compare", "kind": "related", "query": "DC111과 DC112 워드 문서에서 어떤 문단이 추가되고 삭제됐는지 비교해줘.", "expected_tool": "file_compare"},
+    {"id": "p-calculate", "kind": "related", "query": "2026년 9월 1일부터 9월 30일까지 한국 공휴일을 뺀 영업일 수를 계산해줘.", "expected_tool": "calculate"},
+
+    {"id": "c-search-read", "kind": "conflict", "query": "프로젝트 문서들 중 개인정보 처리방침이 언급된 근거 문장을 찾아줘.", "expected_tool": "document_search"},
+    {"id": "c-list-read", "kind": "conflict", "query": "우리 팀에 등록된 문서 파일 이름만 보여줘.", "expected_tool": "document_list"},
+    {"id": "c-create-convert", "kind": "conflict", "query": "이 회의 내용을 새 워드 보고서로 작성해줘.", "expected_tool": "document_create"},
+    {"id": "c-export-transform", "kind": "conflict", "query": "이미 정리한 열과 행을 그대로 엑셀 파일로 만들어줘.", "expected_tool": "table_export"},
+    {"id": "c-read-inspect", "kind": "conflict", "query": "DC113 파일의 작성자가 누군지와 파일 크기만 확인해줘.", "expected_tool": "file_inspect"},
+    {"id": "c-inspect-sanitize", "kind": "conflict", "query": "DC114 문서에 작성자 정보가 들어 있는지만 확인해줘. 지우지는 마.", "expected_tool": "file_inspect"},
+    {"id": "c-quality-transform", "kind": "conflict", "query": "DC115 표의 빈 값을 찾기만 하고 데이터를 수정하지 마.", "expected_tool": "data_quality_check"},
+    {"id": "c-compare-quality", "kind": "conflict", "query": "DC116 한 파일에서 스키마 오류가 있는지 검사해줘.", "expected_tool": "data_quality_check"},
+    {"id": "c-time-calculate", "kind": "conflict", "query": "지금 서울 날짜와 요일이 뭐야? 계산은 필요 없어.", "expected_tool": "get_current_datetime"},
+    {"id": "c-pdf-convert", "kind": "conflict", "query": "DC117 PDF에서 2페이지만 뽑아 새 PDF로 만들어줘.", "expected_tool": "pdf_edit"},
+
+    {"id": "n-chat", "kind": "unrelated", "query": "안녕하세요. 오늘 기분이 어때?", "expected_tool": null},
+    {"id": "n-writing", "kind": "unrelated", "query": "팀원에게 감사하다는 짧은 문장을 써줘.", "expected_tool": null},
+    {"id": "n-explain", "kind": "unrelated", "query": "애자일과 폭포수 방법론의 차이를 일반적으로 설명해줘.", "expected_tool": null},
+    {"id": "n-brainstorm", "kind": "unrelated", "query": "신규 서비스 이름 아이디어를 다섯 개 제안해줘.", "expected_tool": null},
+    {"id": "n-translate", "kind": "unrelated", "query": "‘회의가 연기되었습니다’를 영어로 번역해줘.", "expected_tool": null},
+    {"id": "n-project", "kind": "unrelated", "query": "현재 우리 팀 프로젝트 목록을 보여줘.", "expected_tool": "project_list"},
+    {"id": "n-task", "kind": "unrelated", "query": "현재 프로젝트에 등록된 업무와 마감일을 조회해줘.", "expected_tool": "task_list"},
+    {"id": "n-people", "kind": "unrelated", "query": "우리 팀원의 직책과 기술 스택을 알려줘.", "expected_tool": "people_list"},
+    {"id": "n-web", "kind": "unrelated", "query": "오늘 발표된 외부 AI 뉴스를 웹에서 찾아 출처와 함께 알려줘.", "expected_tool": "web_search"},
+    {"id": "n-jira", "kind": "unrelated", "query": "현재 프로젝트의 Jira 이슈 목록을 조회해줘.", "expected_tool": "jira_get_issues"}
+  ]
+}

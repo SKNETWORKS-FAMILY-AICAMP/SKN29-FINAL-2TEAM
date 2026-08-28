@@ -3,14 +3,6 @@
 정본: `sensitive_text.py` 모듈 docstring, `docs/설계 및 구현/3_중간발표 이후/작업기록/
 Juyeon_Agents_Description/00_내부_흐름_분석.md` §2-①.
 
-2026-08-26 이전에는 `apps/chat/api_views.py`가 `mask_sensitive()`를 직접 불러
-그래프에 넘길 문자열(`model_input`)과 과거 대화 재전송(`_history()`)을 각각
-가렸다. 이 미들웨어가 그 두 호출을 대체한다 — `before_model`은 매 모델 호출
-직전에 그 시점의 `state["messages"]` 전체를 보므로, 이번 턴에 새로 들어온
-입력이든(§2-①의 "채팅 입력") 체크포인터가 없어 매 턴 통째로 다시 실리는
-과거 대화든(§2-①의 재전송 경로, `stream_adapter.py`의 `thread_id` 없는 분기)
-같은 자리에서 한 번에 처리된다 — 호출 지점을 둘로 나눌 필요가 없어졌다.
-
 **모든 `HumanMessage`를 본다** — langchain 표준 `PIIMiddleware`는 가장 최근
 사용자 메시지 하나만 본다(그 미들웨어가 지키는 카테고리는 매 턴 새로 도착하는
 값이라 그걸로 충분하다). 이 미들웨어는 그렇게 하면 안 된다 — 체크포인터가
@@ -19,14 +11,6 @@ Juyeon_Agents_Description/00_내부_흐름_분석.md` §2-①.
 가려진 텍스트(`MASK_PLACEHOLDER`)를 다시 넣어도 그대로 돌려주므로(멱등),
 매번 전체를 다시 훑어도 안전하다.
 
-`suggest_title()`(`services/harness/naming.py`)에 넘기는 질문 문구는 예외다
-— 그 호출은 deep agent 그래프를 거치지 않고 OpenAI를 직접 부르므로 이
-미들웨어의 보호 범위 밖이고, `api_views.py`가 그 자리에서만 `mask_sensitive()`를
-계속 직접 부른다.
-
-**메모리 write guard(`memory/write_guard.py`)와는 다른 문제다.** 그쪽은
-저장을 거부하는 차단이고, 이건 값을 가리고 통과시키는 마스킹이다 — 코드도
-따로, 시점도 따로다.
 """
 
 from __future__ import annotations

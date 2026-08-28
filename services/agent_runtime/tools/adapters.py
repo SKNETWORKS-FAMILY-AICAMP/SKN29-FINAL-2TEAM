@@ -5,7 +5,7 @@
   document_search                          -> team_id, account_id, project_id
   people_list / workload_report /
   project_list / document_list /
-  document_sync / absence_list             -> account_id
+  document_sync / absence_list / 신규 파일 Tool 9개 -> account_id
   task_extraction                          -> project_id, account_id, team_id (+model)
   task_register / task_list / task_update /
   jira_create_issues / jira_get_issues     -> project_id, account_id
@@ -57,6 +57,18 @@ _ACCOUNT_SCOPED: frozenset[str] = frozenset(
         "absence_list",
         "table_export",
         "document_create",
+        "document_read",
+        "document_convert",
+        "pdf_edit",
+        "file_inspect",
+        "file_sanitize",
+        "archive_manage",
+        "table_transform",
+        "data_quality_check",
+        "file_compare",
+        "diagram_create",
+        "chart_create",
+        "graph_create",
     }
 )
 _PROJECT_SCOPED: frozenset[str] = frozenset(
@@ -146,7 +158,7 @@ def _wrap_handler(
 
 
 def adapt_builtin_tools(*, agent_model: str | None = None) -> tuple[RuntimeTool, ...]:
-    """`services.harness.registry.BUILTIN_TOOLS`(15개)를 실행 코어 `Tool`로 바꾼다.
+    """Registry의 내장 Tool을 실행 코어 `Tool`로 바꾼다.
 
     `agent_model`은 `task_extraction`에만 쓰인다(위 모듈 docstring 참고) — 다른
     도구는 이 값을 무시한다.
@@ -165,6 +177,7 @@ def adapt_builtin_tools(*, agent_model: str | None = None) -> tuple[RuntimeTool,
                 input_schema=legacy_tool.input_schema,
                 handler=_wrap_handler(legacy_tool.handler, tool_ref=ref, static_kwargs=static_kwargs),
                 side_effect=legacy_tool.side_effect,
+                approval_when=legacy_tool.approval_when,
                 injected_context=_injected_context_names(ref),
             )
         )
@@ -208,6 +221,7 @@ def adapt_mcp_tools(*, team_id: str) -> tuple[RuntimeTool, ...]:
                 input_schema=row.get("input_schema") or {"type": "object", "properties": {}},
                 handler=_mcp_handler(tool_ref),
                 side_effect=True,
+                approval_when=None,
                 injected_context=("team_id",),
             )
         )

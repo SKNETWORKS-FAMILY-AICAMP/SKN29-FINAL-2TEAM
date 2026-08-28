@@ -4,6 +4,7 @@ import Markdown, { type Components } from 'react-markdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import remarkCjkFriendlyGfmStrikethrough from 'remark-cjk-friendly-gfm-strikethrough';
 import remarkGfm from 'remark-gfm';
+import { Link } from 'react-router-dom';
 import type { SourceRef } from '../../api/chat';
 import { Icon } from '../../components/Icon/Icon';
 import { Modal } from '../../components/Modal/Modal';
@@ -287,7 +288,18 @@ export function AnswerText({
           )}
           {documentSources.length > 0 && (
             <ul>
-              {documentSources.map((source) => <li key={source.id}>{source.label}</li>)}
+              {documentSources.map((source) =>
+                source.file_id ? (
+                  // 「내 파일」 문서면 그 파일로 바로 갈 수 있게 링크로 건다.
+                  <li key={source.id}>
+                    <Link to={`/documents?file=${encodeURIComponent(source.file_id)}`}>
+                      {source.label}
+                    </Link>
+                  </li>
+                ) : (
+                  <li key={source.id}>{source.label}</li>
+                ),
+              )}
             </ul>
           )}
         </div>

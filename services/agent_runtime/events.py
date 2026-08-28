@@ -283,6 +283,73 @@ def _retrieved_doc_ids(content: Any) -> list[str]:
     return found
 
 
+def _source_files(content: Any) -> list[dict[str, str]]:
+    """도구가 **근거로 읽은 파일**(2026-08-28). 결과에 top-level `source_file`
+    (dict) 또는 `source_files`(list)로 담겼을 때만 온다.
+
+    `_produced_files`(만든 파일)와 짝이다 — 이건 "이 답의 근거가 어느 파일인지"
+    라, 화면이 답변 아래에 그 파일로 가는 링크를 그린다.
+    """
+
+    if not isinstance(content, str) or (
+        '"source_file"' not in content and '"source_files"' not in content
+    ):
+        return []
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    candidates: list[Any] = []
+    if isinstance(parsed.get("source_file"), dict):
+        candidates.append(parsed["source_file"])
+    if isinstance(parsed.get("source_files"), list):
+        candidates.extend(item for item in parsed["source_files"] if isinstance(item, dict))
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for node in candidates:
+        doc_id, file_name = node.get("doc_id"), node.get("file_name")
+        if not isinstance(doc_id, str) or not isinstance(file_name, str) or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        results.append({"doc_id": doc_id, "file_name": file_name})
+    return results
+
+
+def _produced_files(content: Any) -> list[dict[str, str | None]]:
+    """도구가 만든 단일 `file` 또는 복수 `files`를 모두 검증해 반환한다."""
+
+    if not isinstance(content, str) or ('"file"' not in content and '"files"' not in content):
+        return []
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    candidates = []
+    if isinstance(parsed.get("file"), dict):
+        candidates.append(parsed["file"])
+    if isinstance(parsed.get("files"), list):
+        candidates.extend(item for item in parsed["files"] if isinstance(item, dict))
+    results = []
+    seen = set()
+    for node in candidates:
+        doc_id, file_name = node.get("doc_id"), node.get("file_name")
+        if not isinstance(doc_id, str) or not isinstance(file_name, str) or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        results.append(
+            {
+                "doc_id": doc_id,
+                "file_name": file_name,
+                "mime_type": node.get("mime_type") if isinstance(node.get("mime_type"), str) else None,
+            }
+        )
+    return results
+
+
 def _produced_file(content: Any) -> dict[str, str] | None:
     """도구가 **만들어 낸 파일**. 없으면 `None`(대부분의 도구가 그렇다).
 
@@ -295,26 +362,8 @@ def _produced_file(content: Any) -> dict[str, str] | None:
     도구별로 분기하지 않는다 — 같은 계약을 지키는 도구가 늘어도 화면은 안 고친다.
     """
 
-    if not isinstance(content, str) or '"file"' not in content:
-        # 흔한 경우를 JSON 파싱 없이 먼저 걸러낸다(`_retrieved_doc_ids` 와 같은 이유).
-        return None
-    try:
-        parsed = json.loads(content)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    node = parsed.get("file")
-    if not isinstance(node, dict):
-        return None
-    doc_id, file_name = node.get("doc_id"), node.get("file_name")
-    if not isinstance(doc_id, str) or not isinstance(file_name, str):
-        return None
-    return {
-        "doc_id": doc_id,
-        "file_name": file_name,
-        "mime_type": node.get("mime_type") if isinstance(node.get("mime_type"), str) else None,
-    }
+    files = _produced_files(content)
+    return files[0] if files else None
 
 
 def _tool_label(tool_ref: str) -> str:
@@ -806,6 +855,9 @@ class EventMapper:
                         "retrieved_doc_ids": _retrieved_doc_ids(content),
                         # 이 호출이 만들어 낸 파일. 화면이 받기 단추를 그린다.
                         "produced_file": _produced_file(content),
+                        "produced_files": _produced_files(content),
+                        # 이 호출이 근거로 읽은 파일. 답변 아래 링크로 그린다.
+                        "source_files": _source_files(content),
                         "complete": False,
                     }
                 ]
@@ -862,6 +914,8 @@ class EventMapper:
                     # 사람은 받아야 한다(화면이 subagent_alias 로 거르는 규칙의
                     # 의도적 예외 — `liveChat.ts` 의 같은 자리 주석 참고).
                     "produced_file": _produced_file(content),
+                    "produced_files": _produced_files(content),
+                    "source_files": _source_files(content),
                     "complete": False,
                 }
             ]

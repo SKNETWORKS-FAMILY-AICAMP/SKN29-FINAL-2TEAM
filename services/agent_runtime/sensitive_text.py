@@ -1,6 +1,6 @@
 """코드로 형태 판단이 가능한 민감정보 패턴 — credential/개인정보/권한·보안 서술.
 
-세 곳이 **같은 패턴을 공유**한다 — 정의가 갈리면 한쪽만 고쳐질 위험이 있어
+네 곳이 **같은 패턴을 공유**한다 — 정의가 갈리면 한쪽만 고쳐질 위험이 있어
 패턴은 여기 하나만 둔다:
 
 - `memory/write_guard.py` — 개인 장기 메모리 저장 차단
@@ -8,12 +8,15 @@
   (2026-08-26 이전엔 `apps/chat/api_views.py`가 직접 불렀다. `suggest_title()`용
   질문 문구만 예외로 지금도 `api_views.py`가 직접 부른다 — 그 호출은 그래프를
   안 거쳐 미들웨어 보호 밖이라서다, 모듈 docstring 참고)
+- `apps/chat/api_views.py` — 사용자 발화를 `ChatMessageRepository`에 쓰기
+  **직전** 마스킹(2026-08-27 추가, 아래 `mask_for_storage()` docstring 참고)
 - `tracing/callbacks.py` — Langfuse로 나가는 trace 사본 마스킹
 
 **어디까지 가릴지는 사용처마다 다르다.** 같은 패턴 목록을 쓰되 조합만 달리한다:
-채팅 입력·메모리는 `mask_sensitive()`(credential+PII+권한 서술), 외부 반출
-trace는 `mask_for_export()`(credential+PII+**이메일**, 권한 서술 제외). 이유는
-각 함수 docstring에 있다.
+모델에게 보내는 값과 장기 메모리는 `mask_sensitive()`(credential+PII+권한
+서술), DB 저장은 `mask_for_storage()`(credential+PII, 권한 서술 제외), 외부
+반출 trace는 `mask_for_export()`(credential+PII+**이메일**, 권한 서술 제외).
+이유는 각 함수 docstring에 있다.
 
 판단 범위는 **값의 "형태"만으로 가릴 수 있는 세 카테고리뿐이다** — 맥락 판단은
 각 사용처의 몫이다. 한계는 `memory/write_guard.py`와 같다: 여러 조각으로 쪼개면
@@ -118,6 +121,37 @@ def mask_sensitive(text: str) -> str:
     return masked
 
 
+def mask_for_storage(text: str) -> str:
+    """`ChatMessageRepository`에 **쓰기 직전** 적용한다 — 화면·DB에 영구히
+    남기 전에 credential·PII를 가린다.
+
+    2026-08-27 결정 — 그 전까지는 사용자 발화를 저장할 때 항상 원문
+    그대로였다("화면이 사용자 자신의 발화를 그대로 보여줘야 한다"는 원칙,
+    `apps/chat/api_views.py`의 옛 주석). 채팅에 실제로 살아있는 API
+    키·비밀번호를 붙여넣으면 그 값이 DB에 평문으로 영구히 남는다는 뜻이었다
+    — LLM에게 안 보내는 것과는 다른 문제다: DB 백업·로그 적재·DB 접근
+    권한이 있는 운영자는 여전히 그 값을 그대로 볼 수 있고, 키가 아직
+    유효하면 레코드 하나가 곧 작동하는 크리덴셜이다.
+
+    `mask_sensitive()`와 두 가지가 다르다.
+
+    1. **`AUTHORITY_KEYWORDS`는 제외한다** — "관리자 비밀번호 알려줘" 같은
+       *서술*은 실제 유출 가능한 값이 아니라 사용자가 무엇을 물었는지 보여주는
+       기록이라, `mask_for_export()`와 같은 이유로 대화 이력에는 남긴다.
+    2. **`PII_PATTERNS`는 포함한다** — `mask_sensitive()`가 채팅 입력·메모리에
+       쓸 때 이 셋을 다 가리는 것과 같은 이유(모듈 상단 "왜 이메일은
+       PII_PATTERNS에 없는가" 참고)로 주민등록번호·카드번호·전화번호 형태도
+       저장 시점부터 가린다. 이 부분은 "사용자 자신의 발화를 그대로 보여준다"는
+       기존 원칙과 정면으로 충돌하는 선택이다 — 그 원칙보다 저장 자체를 막는
+       쪽을 우선한 것이다(2026-08-27, 사용자 결정).
+    """
+
+    masked = text
+    for pattern in [*CREDENTIAL_PATTERNS, *PII_PATTERNS]:
+        masked = pattern.sub(MASK_PLACEHOLDER, masked)
+    return masked
+
+
 #: `mask_for_export()`가 쓰는 자리표시자. `MASK_PLACEHOLDER`와 달리 카테고리를
 #: 구분해 적는다 — trace는 사람이 디버깅하려고 보는 화면이라 "뭐가 지워졌는지"는
 #: 남는 편이 낫고, 평가 채점기가 "trace에 원문이 없다"를 판정할 때 이 문자열을
@@ -162,6 +196,7 @@ __all__ = [
     "MASK_PLACEHOLDER",
     "PII_PATTERNS",
     "mask_for_export",
+    "mask_for_storage",
     "mask_sensitive",
     "match_category",
 ]

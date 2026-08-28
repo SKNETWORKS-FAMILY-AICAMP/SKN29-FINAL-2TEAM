@@ -9,7 +9,12 @@ import json
 
 from django.test import SimpleTestCase
 
-from services.agent_runtime.events import _produced_file, _retrieved_doc_ids
+from services.agent_runtime.events import (
+    _produced_file,
+    _produced_files,
+    _retrieved_doc_ids,
+    _source_files,
+)
 
 
 class ProducedFileTests(SimpleTestCase):
@@ -68,3 +73,53 @@ class ProducedFileTests(SimpleTestCase):
             _produced_file(content),
             {"doc_id": "DC009", "file_name": "보고서.docx", "mime_type": "a/b"},
         )
+
+    def test_분할과_압축해제의_복수_결과를_하나도_버리지_않는다(self):
+        content = json.dumps(
+            {
+                "files": [
+                    {"doc_id": "DC101", "file_name": "1.pdf", "mime_type": "application/pdf"},
+                    {"doc_id": "DC102", "file_name": "2.pdf", "mime_type": "application/pdf"},
+                ]
+            },
+            ensure_ascii=False,
+        )
+
+        self.assertEqual([item["doc_id"] for item in _produced_files(content)], ["DC101", "DC102"])
+        self.assertEqual(_produced_file(content)["doc_id"], "DC101")
+
+
+class SourceFileTests(SimpleTestCase):
+    """`_source_files` — 도구가 근거로 읽은 「내 파일」(2026-08-28)."""
+
+    def test_single_source_file_is_extracted(self):
+        content = json.dumps(
+            {"file_id": "DC012", "source_file": {"doc_id": "DC012", "file_name": "보고서.docx"}, "sections": []},
+            ensure_ascii=False,
+        )
+        self.assertEqual(_source_files(content), [{"doc_id": "DC012", "file_name": "보고서.docx"}])
+
+    def test_two_compared_files_are_extracted_in_order(self):
+        content = json.dumps(
+            {
+                "change_count": 1,
+                "source_files": [
+                    {"doc_id": "DC012", "file_name": "before.docx"},
+                    {"doc_id": "DC013", "file_name": "after.docx"},
+                ],
+            },
+            ensure_ascii=False,
+        )
+        self.assertEqual(
+            _source_files(content),
+            [
+                {"doc_id": "DC012", "file_name": "before.docx"},
+                {"doc_id": "DC013", "file_name": "after.docx"},
+            ],
+        )
+
+    def test_absent_or_malformed_source_file_is_empty(self):
+        self.assertEqual(_source_files(json.dumps({"rows": []})), [])
+        self.assertEqual(_source_files(json.dumps({"source_file": {"doc_id": "DC1"}})), [])
+        self.assertEqual(_source_files("등록했습니다."), [])
+        self.assertEqual(_source_files(None), [])

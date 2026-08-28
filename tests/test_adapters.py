@@ -1,6 +1,6 @@
 """tools/adapters.py(adapt_builtin_tools) 테스트.
 
-`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 15개
+`services.harness.registry.BUILTIN_TOOLS`를 실제로 import해서(mock 아님) 전체가
 전부가 정확한 injected_context로 옮겨지는지 확인한다. `EXPECTED_INJECTED_CONTEXT`
 표가 유일한 정본이다 — 비교할 레거시 구현(`services/harness/runner.py`의
 `_injected()`)이 2026-08-22 레거시 실행기 폐기로 없어졌다(아래 클래스 앞
@@ -35,6 +35,19 @@ EXPECTED_INJECTED_CONTEXT = {
     "document_sync": ("account_id",),
     "table_export": ("account_id",),
     "document_create": ("account_id",),
+    "document_read": ("account_id",),
+    "document_convert": ("account_id",),
+    "pdf_edit": ("account_id",),
+    "file_inspect": ("account_id",),
+    "file_sanitize": ("account_id",),
+    "archive_manage": ("account_id",),
+    "table_transform": ("account_id",),
+    "data_quality_check": ("account_id",),
+    "file_compare": ("account_id",),
+    "diagram_create": ("account_id",),
+    "chart_create": ("account_id",),
+    "graph_create": ("account_id",),
+    "calculate": (),
     "task_update": ("project_id", "account_id"),
     "web_search": (),
     "absence_list": ("account_id",),
@@ -62,11 +75,20 @@ EXPECTED_SIDE_EFFECT = {
     # 지워야 하므로 승인을 받는다.
     "table_export": True,
     "document_create": True,
+    "document_convert": True,
+    "pdf_edit": True,
+    "file_sanitize": True,
+    "archive_manage": True,
+    "table_transform": True,
+    # 2026-08-29. 시각화 3종도 「내 파일」에 SVG 를 만든다 — 같은 이유로 승인.
+    "diagram_create": True,
+    "chart_create": True,
+    "graph_create": True,
 }
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(19개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(29개)를 그대로 변환했을 때의 모양을 확인한다."""
 
     def test_real_registry_has_exactly_nineteen_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
@@ -89,7 +111,9 @@ class RealRegistryShapeTests(SimpleTestCase):
         # 2026-08-26 에 18 이 됐다 — `table_export`. 이번에는 병합이 아니라
         # 도구를 더하면서 그 자리에서 걸렸다(의도대로 동작한 네 번째 사례).
         # 같은 날 19 — `document_create`(문서 출력 도구 두 번째).
-        self.assertEqual(len(BUILTIN_TOOLS), 19)
+        # P3에서 파일·데이터·계산 Tool 10개를 Registry에 연결했다.
+        # 2026-08-29 에 시각화 3종(diagram/chart/graph)을 더해 32.
+        self.assertEqual(len(BUILTIN_TOOLS), 32)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}

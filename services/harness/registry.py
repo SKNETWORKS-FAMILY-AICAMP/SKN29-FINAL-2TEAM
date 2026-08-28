@@ -7,13 +7,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
+import json
+import logging
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from apps.connectors.clients import (
     create_jira_issues,
+    download_drive_file,
     find_jira_account_id_by_email,
     list_drive_files,
     search_jira_issues,
@@ -33,21 +36,45 @@ from backend.db.agent_platform import (
 )
 from backend.db import ConnectorRepository
 from backend.db.errors import RecordNotFound
+from backend.db.errors import PermissionDenied
 from backend.db.document_pipeline import (
     PersonalDocumentRepository,
     PipelineDocumentRepository,
+    StorageCleanupOutboxRepository,
     VectorSearchRepository,
 )
 from backend.db.repositories import DocumentRepository
 from backend.services import storage
+from backend.services.storage import STORAGE_ERRORS
 from backend.services.hr import list_absences, list_capacity_profiles, list_person_skills
 from services.document_intake import sync_drive_changes
 from services.document_export import build_docx, build_xlsx
+from services.builtin_tools.calculation import calculate
+from services.builtin_tools.common.errors import BuiltinToolError
+from services.builtin_tools.data import check_data_quality, compare_files, transform_table
+from services.builtin_tools.documents import (
+    create_zip,
+    detect_mime_type,
+    document_to_markdown,
+    edit_pdf,
+    extract_zip,
+    inspect_file,
+    markdown_to_docx,
+    markdown_to_html,
+    markdown_to_pdf,
+    office_to_pdf,
+    read_document,
+    sanitize_file,
+)
+from services.builtin_tools.visualization import build_chart, build_graph, render_mermaid
+from services.builtin_tools.visualization.renderer import DIAGRAM_PREFIXES
 from services.document_pipeline.runpod_client import embed_queries
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
 from services.websearch import WebSearchUnavailable, search_web
 from services.workload import calculator
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -64,9 +91,17 @@ class Tool:
     #: 외부 시스템을 바꾸는가. True 면 Runner 가 승인 전에 실행하지 않는다
     #: (8/11 확정 ③).
     side_effect: bool = False
+    #: 같은 Tool 안에서 일부 호출만 실제 변경을 만들 때의 승인 조건.
+    approval_when: Callable[[dict[str, Any]], bool] | None = None
     #: 도구 선택 화면이 묶어 보여줄 단위(예: "Jira", "문서"). 저장·실행에는
     #: 안 쓴다 — 화면 표현 전용(2026-08-18, 도구 선택 그룹화).
     category: str = "기타"
+    #: 화면의 서비스 배지. 실행 권한이나 자격증명 조회에는 사용하지 않는다.
+    provider: str = "플랫폼"
+    #: 화면에서 같은 카테고리 안의 행동을 구분하는 짧은 이름.
+    capability: str = "조회"
+    #: 사용자별 외부 연결이 필요한 Tool인지 화면에서 안내할 때 사용한다.
+    requires_connection: bool = False
 
 
 class ToolInputError(ValueError):
@@ -436,7 +471,19 @@ def _task_register(*, proj_id: str | None, account_id: str, tasks: list[dict[str
 
     if not proj_id:
         raise ToolInputError("어느 프로젝트의 업무인지 정해지지 않았습니다. 프로젝트를 먼저 고르세요.")
-    return ProjectTaskRepository.register(proj_id=proj_id, account_id=account_id, tasks=tasks)
+    # 문서 추출을 거친 업무는 근거 청크를 달고 온다. 그런 신호가 없으면 사용자가
+    # 대화에서 직접 만든 업무이므로 `USER_ADDED` 로 남긴다(추출본과 구분).
+    from_extraction = any(
+        isinstance(task, dict)
+        and (task.get("evidence_chunk_ids") or task.get("evidence") or task.get("evidence_refs"))
+        for task in tasks
+    )
+    return ProjectTaskRepository.register(
+        proj_id=proj_id,
+        account_id=account_id,
+        tasks=tasks,
+        src_type="EXTRACTED" if from_extraction else "USER_ADDED",
+    )
 
 
 def _project_list(*, account_id: str) -> dict[str, Any]:
@@ -554,10 +601,32 @@ _EXPORT_MAX_ROWS = 5000
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_PDF_MIME = "application/pdf"
+_ZIP_MIME = "application/zip"
+_MARKDOWN_MIME = "text/markdown"
+_HTML_MIME = "text/html"
+_CSV_MIME = "text/csv"
+_JSON_MIME = "application/json"
+_PARQUET_MIME = "application/vnd.apache.parquet"
+_SVG_MIME = "image/svg+xml"
+
+_OUTPUT_FILE_TYPES: dict[str, tuple[str, str]] = {
+    "pdf": (".pdf", _PDF_MIME),
+    "docx": (".docx", _DOCX_MIME),
+    "xlsx": (".xlsx", _XLSX_MIME),
+    "md": (".md", _MARKDOWN_MIME),
+    "html": (".html", _HTML_MIME),
+    "csv": (".csv", _CSV_MIME),
+    "json": (".json", _JSON_MIME),
+    "parquet": (".parquet", _PARQUET_MIME),
+    "zip": (".zip", _ZIP_MIME),
+    "svg": (".svg", _SVG_MIME),
+}
 
 
 #: 파일 이름·시트 이름에 못 쓰는 글자. 제목이 그대로 이름이 되므로 턴다.
 _UNSAFE_NAME_CHARS = frozenset(r'\/:*?"<>|')
+_MAX_FILE_NAME_CHARS = 255
 
 
 def _safe_title(title: str, *, fallback: str) -> str:
@@ -591,22 +660,119 @@ def _store_generated(
     # 파일 이름이 곧 목록에 보이는 이름이다. 날짜를 붙이는 것은 같은 것을 여러 번
     # 만들었을 때 어느 것이 언제 것인지 목록에서 갈리게 하려는 것이다.
     stamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
-    file_name = f"{_safe_title(title, fallback='제목 없음')}_{stamp}{suffix}"
+    tail = f"_{stamp}{suffix}"
+    max_title_chars = max(1, _MAX_FILE_NAME_CHARS - len(tail))
+    # 모델이 제목에 이미 확장자를 붙여 보내면(`분기보고서.pdf`) 결과가
+    # `분기보고서.pdf_20260828.pdf` 처럼 확장자가 두 번 붙는다. 우리가 붙일
+    # 것과 같은 확장자면 하나 떼어 낸다.
+    cleaned_title = _safe_title(title, fallback="제목 없음")
+    for known_suffix, _mime in _OUTPUT_FILE_TYPES.values():
+        if cleaned_title.lower().endswith(known_suffix):
+            cleaned_title = cleaned_title[: -len(known_suffix)].rstrip(" .")
+            break
+    safe_title = (cleaned_title or "제목 없음")[:max_title_chars].rstrip()
+    file_name = f"{safe_title or '제목 없음'[:max_title_chars]}{tail}"
 
     doc_id = PersonalDocumentRepository.create_generated(
         account_id=account_id, file_name=file_name, mime_type=mime_type
     )
     key = storage.build_personal_key(account_id=account_id, doc_id=doc_id, mime_type=mime_type)
-    content_hash = storage.save(key, data)
-    # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
-    # 없으므로 내용 해시를 그 자리에 쓴다.
-    DocumentRepository.mark_stored(
-        doc_id=doc_id,
-        storage_key=key,
-        content_hash=content_hash,
-        revision=content_hash.removeprefix("sha256:")[:16],
-    )
+    saved = False
+    try:
+        content_hash = storage.save(key, data)
+        saved = True
+        # 올린 파일과 같은 규칙이다(`apps/personal_files/api_views.py`) — 원천 리비전이
+        # 없으므로 내용 해시를 그 자리에 쓴다.
+        DocumentRepository.mark_stored(
+            doc_id=doc_id,
+            storage_key=key,
+            content_hash=content_hash,
+            revision=content_hash.removeprefix("sha256:")[:16],
+        )
+    except Exception:
+        # DB 행만 남거나 저장소 객체만 남는 부분 성공을 없애다.
+        try:
+            PersonalDocumentRepository.delete(doc_id=doc_id, account_id=account_id)
+        except Exception:
+            pass
+        if saved:
+            try:
+                storage.remove(key)
+            except STORAGE_ERRORS as cleanup_exc:
+                logger.exception("생성 실패 뒤 저장소 객체를 정리하지 못했습니다: %s", key)
+                try:
+                    StorageCleanupOutboxRepository.enqueue(
+                        storage_key=key, error_code=cleanup_exc.__class__.__name__
+                    )
+                except Exception:  # noqa: BLE001 - 원래 생성 실패를 보존한다.
+                    logger.exception("저장소 정리 outbox 기록 실패: %s", key)
+        raise
     return doc_id, file_name
+
+
+def _tool_input_file(*, account_id: str, doc_id: str) -> tuple[dict[str, Any], bytes]:
+    """권한이 확인된 플랫폼 파일만 읽는다. 커넥터 원본은 요청 시점에만 다시 받는다."""
+
+    try:
+        row = PipelineDocumentRepository.get_for_processing(
+            doc_id=doc_id, account_id=account_id
+        )
+    except (RecordNotFound, PermissionDenied, ValueError) as exc:
+        raise ToolInputError(str(exc)) from exc
+    try:
+        if row.get("storage_key"):
+            return row, storage.load(row["storage_key"])
+        if row.get("src_file_id"):
+            fetched = download_drive_file(
+                account_id=account_id,
+                file_id=row["src_file_id"],
+                mime_type=row.get("mime_type"),
+            )
+            return {**row, "mime_type": fetched.get("mime_type") or row.get("mime_type")}, fetched[
+                "content"
+            ]
+    except STORAGE_ERRORS as exc:
+        raise ToolInputError("파일 원문을 읽지 못했습니다.") from exc
+    raise ToolInputError("이 파일의 원문이 아직 준비되지 않았습니다.")
+
+
+def _as_tool_input_error(call: Callable[[], Any]) -> Any:
+    try:
+        return call()
+    except BuiltinToolError as exc:
+        raise ToolInputError(str(exc)) from exc
+
+
+def _store_tool_output(
+    *, account_id: str, title: str, output_format: str, data: bytes
+) -> dict[str, str]:
+    try:
+        suffix, mime_type = _OUTPUT_FILE_TYPES[output_format]
+    except KeyError as exc:
+        raise ToolInputError("지원하지 않는 결과 형식입니다.") from exc
+    doc_id, file_name = _store_generated(
+        account_id=account_id,
+        title=title,
+        suffix=suffix,
+        mime_type=mime_type,
+        data=data,
+    )
+    return _file_ref(doc_id, file_name, mime_type)
+
+
+def _remove_generated_files(*, account_id: str, refs: list[dict[str, str]]) -> None:
+    """여러 결과 저장 중 실패했을 때 이미 만든 부분 결과를 회수한다."""
+
+    for ref in refs:
+        try:
+            key = PersonalDocumentRepository.delete(
+                doc_id=ref["doc_id"], account_id=account_id
+            )
+            if key:
+                storage.remove(key)
+        except Exception:
+            logger.exception("부분 생성 파일 정리 실패: %s", ref.get("doc_id"))
+            continue
 
 
 def _table_export(
@@ -656,7 +822,7 @@ def _table_export(
         "file": _file_ref(doc_id, file_name, _XLSX_MIME),
         "columns": len(columns),
         "rows": len(rows),
-        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
+        "note": "엑셀 파일을 「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
     }
 
 
@@ -682,7 +848,441 @@ def _document_create(*, account_id: str, title: str, body: str) -> dict[str, Any
     # 본문을 되돌려주지 않는다 — 모델이 방금 보낸 값이라 컨텍스트만 두 배가 된다.
     return {
         "file": _file_ref(doc_id, file_name, _DOCX_MIME),
-        "note": "「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
+        "note": "워드 문서를 「내 파일」에 저장했습니다. 채팅에서 바로 내려받을 수 있습니다.",
+    }
+
+
+def _cited_file(file_id: str, file_name: str) -> dict[str, str]:
+    """이 도구 결과의 **근거 파일**. 화면이 답변 아래에 이 파일로 가는 링크를 그린다
+    (`events.py` 의 `_source_files()` 가 이 모양만 찾는다).
+    """
+
+    return {"doc_id": file_id, "file_name": file_name}
+
+
+def _document_read_tool(*, account_id: str, file_id: str) -> dict[str, Any]:
+    row, data = _tool_input_file(account_id=account_id, doc_id=file_id)
+    result = _as_tool_input_error(
+        lambda: read_document(data=data, mime_type=row["mime_type"])
+    )
+    return {
+        "file_id": file_id,
+        "file_name": row["file_name"],
+        "source_file": _cited_file(file_id, row["file_name"]),
+        **result,
+    }
+
+
+def _document_convert_tool(
+    *, account_id: str, file_id: str, target_format: str, title: str | None = None
+) -> dict[str, Any]:
+    row, data = _tool_input_file(account_id=account_id, doc_id=file_id)
+    source_mime = row["mime_type"]
+    target = target_format.lower()
+
+    def convert() -> bytes:
+        if target in {"md", "markdown"}:
+            return document_to_markdown(data=data, mime_type=source_mime).encode("utf-8")
+        if source_mime == _MARKDOWN_MIME:
+            try:
+                markdown = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise BuiltinToolError("INVALID_MARKDOWN", "Markdown은 UTF-8이어야 합니다.") from exc
+            if target == "html":
+                return markdown_to_html(markdown)
+            if target == "docx":
+                return markdown_to_docx(markdown)
+            if target == "pdf":
+                return markdown_to_pdf(markdown)
+        if target == "pdf" and source_mime in {_DOCX_MIME, _XLSX_MIME}:
+            return office_to_pdf(data=data, mime_type=source_mime)
+        raise BuiltinToolError("UNSUPPORTED_CONVERSION", "지원하지 않는 파일 변환 조합입니다.")
+
+    normalized_target = "md" if target == "markdown" else target
+    output = _as_tool_input_error(convert)
+    file_ref = _store_tool_output(
+        account_id=account_id,
+        title=title or f"{row['file_name']} 변환본",
+        output_format=normalized_target,
+        data=output,
+    )
+    return {"source_file_id": file_id, "file": file_ref}
+
+
+def _pdf_edit_tool(
+    *,
+    account_id: str,
+    operation: str,
+    file_ids: list[str],
+    title: str | None = None,
+    pages: list[int] | None = None,
+    rotation: int | None = None,
+    crop_box: list[float] | None = None,
+    watermark_file_id: str | None = None,
+) -> dict[str, Any]:
+    loaded = [_tool_input_file(account_id=account_id, doc_id=item) for item in file_ids]
+    if any(row["mime_type"] != _PDF_MIME for row, _data in loaded):
+        raise ToolInputError("PDF 파일만 편집할 수 있습니다.")
+    watermark = None
+    if watermark_file_id:
+        watermark_row, watermark = _tool_input_file(
+            account_id=account_id, doc_id=watermark_file_id
+        )
+        if watermark_row["mime_type"] != _PDF_MIME:
+            raise ToolInputError("워터마크도 PDF 파일이어야 합니다.")
+    output = _as_tool_input_error(
+        lambda: edit_pdf(
+            operation=operation,
+            files=[data for _row, data in loaded],
+            pages=pages,
+            rotation=rotation,
+            crop_box=crop_box,
+            watermark=watermark,
+        )
+    )
+    outputs = output if isinstance(output, list) else [output]
+    refs: list[dict[str, str]] = []
+    try:
+        for index, item in enumerate(outputs, start=1):
+            refs.append(
+                _store_tool_output(
+                    account_id=account_id,
+                    title=title or f"PDF {operation}" + (f" {index}" if len(outputs) > 1 else ""),
+                    output_format="pdf",
+                    data=item,
+                )
+            )
+    except Exception:
+        _remove_generated_files(account_id=account_id, refs=refs)
+        raise
+    return {"operation": operation, "files": refs}
+
+
+def _file_inspect_tool(*, account_id: str, file_id: str) -> dict[str, Any]:
+    row, data = _tool_input_file(account_id=account_id, doc_id=file_id)
+    result = _as_tool_input_error(
+        lambda: inspect_file(data=data, mime_type=row["mime_type"])
+    )
+    return {
+        "file_id": file_id,
+        "file_name": row["file_name"],
+        "source_file": _cited_file(file_id, row["file_name"]),
+        **result,
+    }
+
+
+def _file_sanitize_tool(
+    *, account_id: str, file_id: str, title: str | None = None
+) -> dict[str, Any]:
+    row, data = _tool_input_file(account_id=account_id, doc_id=file_id)
+    output = _as_tool_input_error(
+        lambda: sanitize_file(data=data, mime_type=row["mime_type"])
+    )
+    format_by_mime = {_PDF_MIME: "pdf", _DOCX_MIME: "docx", _XLSX_MIME: "xlsx"}
+    try:
+        output_format = format_by_mime[row["mime_type"]]
+    except KeyError as exc:
+        raise ToolInputError("PDF, DOCX, XLSX 파일만 정리할 수 있습니다.") from exc
+    return {
+        "source_file_id": file_id,
+        "file": _store_tool_output(
+            account_id=account_id,
+            title=title or f"{row['file_name']} 속성 정리본",
+            output_format=output_format,
+            data=output,
+        ),
+    }
+
+
+def _archive_manage_tool(
+    *,
+    account_id: str,
+    operation: str,
+    file_ids: list[str] | None = None,
+    archive_file_id: str | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    if operation == "create":
+        loaded = [
+            _tool_input_file(account_id=account_id, doc_id=item) for item in (file_ids or [])
+        ]
+        output = _as_tool_input_error(
+            lambda: create_zip([(row["file_name"], data) for row, data in loaded])
+        )
+        return {
+            "operation": operation,
+            "files": [
+                _store_tool_output(
+                    account_id=account_id,
+                    title=title or "압축 파일",
+                    output_format="zip",
+                    data=output,
+                )
+            ],
+        }
+    if operation == "extract":
+        # 모델이 `archive_file_id` 대신 `file_ids` 에 ZIP 하나를 넣는 실수를 흡수한다.
+        if not archive_file_id and file_ids and len(file_ids) == 1:
+            archive_file_id = file_ids[0]
+        if not archive_file_id:
+            raise ToolInputError("풀 ZIP 파일 하나를 archive_file_id로 지정해 주세요.")
+        _row, data = _tool_input_file(account_id=account_id, doc_id=archive_file_id)
+        extracted = _as_tool_input_error(lambda: extract_zip(data))
+        refs: list[dict[str, str]] = []
+        try:
+            for name, content in extracted:
+                suffix = "." + name.rsplit(".", 1)[1].lower() if "." in name else ".bin"
+                supported_types = {
+                    ".pdf": _PDF_MIME,
+                    ".docx": _DOCX_MIME,
+                    ".xlsx": _XLSX_MIME,
+                    ".md": _MARKDOWN_MIME,
+                    ".txt": "text/plain",
+                    ".csv": _CSV_MIME,
+                    ".json": _JSON_MIME,
+                }
+                mime_type = supported_types.get(suffix)
+                if mime_type in {_PDF_MIME, _DOCX_MIME, _XLSX_MIME}:
+                    if detect_mime_type(content) != mime_type:
+                        raise ToolInputError(
+                            f"ZIP 안의 {name} 파일은 확장자와 실제 형식이 다릅니다."
+                        )
+                elif mime_type == _JSON_MIME:
+                    try:
+                        json.loads(content.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        raise ToolInputError(f"ZIP 안의 {name} 파일은 올바른 JSON이 아닙니다.") from exc
+                elif mime_type in {_MARKDOWN_MIME, "text/plain", _CSV_MIME}:
+                    try:
+                        content.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise ToolInputError(f"ZIP 안의 {name} 텍스트 파일은 UTF-8이 아닙니다.") from exc
+                else:
+                    # 실행 파일·스크립트·위장 확장자를 신뢰 가능한 문서처럼 등록하지 않는다.
+                    suffix = ".bin"
+                    mime_type = "application/octet-stream"
+                doc_id, file_name = _store_generated(
+                    account_id=account_id,
+                    title=name.rsplit(".", 1)[0],
+                    suffix=suffix,
+                    mime_type=mime_type,
+                    data=content,
+                )
+                refs.append(_file_ref(doc_id, file_name, mime_type))
+        except Exception:
+            _remove_generated_files(account_id=account_id, refs=refs)
+            raise
+        return {"operation": operation, "files": refs}
+    raise ToolInputError("압축 작업은 create 또는 extract여야 합니다.")
+
+
+def _table_transform_tool(
+    *,
+    account_id: str,
+    file_id: str,
+    operation: str,
+    title: str | None = None,
+    columns: list[str] | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    sort: list[dict[str, Any]] | None = None,
+    group_by: list[str] | None = None,
+    metrics: list[dict[str, str]] | None = None,
+    join_file_id: str | None = None,
+    join_on: list[dict[str, str]] | None = None,
+    limit: int = 100,
+    output_format: str | None = None,
+) -> dict[str, Any]:
+    row, data = _tool_input_file(account_id=account_id, doc_id=file_id)
+    join_row = None
+    join_data = None
+    if join_file_id:
+        join_row, join_data = _tool_input_file(account_id=account_id, doc_id=join_file_id)
+    result = _as_tool_input_error(
+        lambda: transform_table(
+            data=data,
+            mime_type=row["mime_type"],
+            operation=operation,
+            columns=columns,
+            filters=filters,
+            sort=sort,
+            group_by=group_by,
+            metrics=metrics,
+            join_data=join_data,
+            join_mime_type=join_row["mime_type"] if join_row else None,
+            join_on=join_on,
+            limit=limit,
+            output_format=output_format,
+        )
+    )
+    output = result.pop("output_bytes", None)
+    result.pop("output_mime_type", None)
+    if output is not None and output_format:
+        result["file"] = _store_tool_output(
+            account_id=account_id,
+            title=title or f"{row['file_name']} 가공 결과",
+            output_format=output_format,
+            data=output,
+        )
+    result["source_file"] = _cited_file(file_id, row["file_name"])
+    return result
+
+
+def _data_quality_tool(
+    *,
+    account_id: str,
+    file_id: str,
+    schema: dict[str, Any] | None = None,
+    json_schema: dict[str, Any] | None = None,
+    check_missing: bool = True,
+    check_duplicates: bool = True,
+    duplicate_keys: list[str] | None = None,
+) -> dict[str, Any]:
+    row, data = _tool_input_file(account_id=account_id, doc_id=file_id)
+    result = _as_tool_input_error(
+        lambda: check_data_quality(
+            data=data,
+            mime_type=row["mime_type"],
+            schema=schema,
+            json_schema=json_schema,
+            check_missing=check_missing,
+            check_duplicates=check_duplicates,
+            duplicate_keys=duplicate_keys,
+        )
+    )
+    return {**result, "source_file": _cited_file(file_id, row["file_name"])}
+
+
+def _file_compare_tool(
+    *, account_id: str, before_file_id: str, after_file_id: str
+) -> dict[str, Any]:
+    before_row, before = _tool_input_file(account_id=account_id, doc_id=before_file_id)
+    after_row, after = _tool_input_file(account_id=account_id, doc_id=after_file_id)
+    if before_row["mime_type"] != after_row["mime_type"]:
+        raise ToolInputError("같은 형식의 두 파일만 비교할 수 있습니다.")
+    result = _as_tool_input_error(
+        lambda: compare_files(
+            before=before, after=after, mime_type=before_row["mime_type"]
+        )
+    )
+    return {
+        **result,
+        "source_files": [
+            _cited_file(before_file_id, before_row["file_name"]),
+            _cited_file(after_file_id, after_row["file_name"]),
+        ],
+    }
+
+
+def _calculate_tool(*, operation: str, **arguments: Any) -> dict[str, Any]:
+    return _as_tool_input_error(lambda: calculate(operation=operation, **arguments))
+
+
+def _diagram_create_tool(
+    *, account_id: str, mermaid: str, title: str | None = None
+) -> dict[str, Any]:
+    """Mermaid 스펙을 SVG로 렌더해 「내 파일」에 저장한다. 종류는 화이트리스트."""
+
+    svg = _as_tool_input_error(lambda: render_mermaid(mermaid, allowed=DIAGRAM_PREFIXES))
+    return {
+        "file": _store_tool_output(
+            account_id=account_id, title=title or "다이어그램", output_format="svg", data=svg
+        ),
+        "mermaid": mermaid.strip(),
+    }
+
+
+def _chart_create_tool(
+    *,
+    account_id: str,
+    chart_type: str = "bar",
+    title: str | None = None,
+    labels: list[Any] | None = None,
+    values: list[Any] | None = None,
+    source_file_id: str | None = None,
+    label_column: str | None = None,
+    value_column: str | None = None,
+) -> dict[str, Any]:
+    """표/전달값으로 막대·꺾은선·파이 차트 SVG를 만든다. 이미지 생성이 아니라
+    Mermaid 스펙 → 결정적 렌더다."""
+
+    source_file: dict[str, str] | None = None
+    resolved_labels = list(labels or [])
+    resolved_values = list(values or [])
+
+    if source_file_id:
+        if not label_column or not value_column:
+            raise ToolInputError(
+                "표에서 차트를 만들려면 label_column과 value_column을 지정해 주세요."
+            )
+        row, data = _tool_input_file(account_id=account_id, doc_id=source_file_id)
+        table = _as_tool_input_error(
+            lambda: transform_table(
+                data=data,
+                mime_type=row["mime_type"],
+                operation="preview",
+                columns=[label_column, value_column],
+                limit=200,
+            )
+        )
+        columns = table.get("columns") or []
+        try:
+            label_index = columns.index(label_column)
+            value_index = columns.index(value_column)
+        except ValueError as exc:
+            raise ToolInputError(
+                f"표에 없는 열입니다: {label_column} 또는 {value_column}"
+            ) from exc
+        resolved_labels = [r[label_index] for r in table.get("rows", [])]
+        resolved_values = [r[value_index] for r in table.get("rows", [])]
+        source_file = _cited_file(source_file_id, row["file_name"])
+
+    if not resolved_labels or not resolved_values:
+        raise ToolInputError("차트에 넣을 데이터가 없습니다. data 또는 source_file_id를 주세요.")
+
+    svg, mermaid = _as_tool_input_error(
+        lambda: build_chart(
+            chart_type=chart_type,
+            title=title,
+            labels=resolved_labels,
+            values=resolved_values,
+        )
+    )
+    result: dict[str, Any] = {
+        "file": _store_tool_output(
+            account_id=account_id,
+            title=title or f"{chart_type} 차트",
+            output_format="svg",
+            data=svg,
+        ),
+        "mermaid": mermaid,
+        "data": {
+            "labels": [str(item) for item in resolved_labels],
+            "values": resolved_values,
+        },
+    }
+    if source_file:
+        result["source_file"] = source_file
+    return result
+
+
+def _graph_create_tool(
+    *,
+    account_id: str,
+    nodes: list[Any],
+    edges: list[dict[str, Any]] | None = None,
+    direction: str | None = "TD",
+    title: str | None = None,
+) -> dict[str, Any]:
+    """노드·간선 구조를 관계 그래프 SVG로 만든다."""
+
+    svg, mermaid = _as_tool_input_error(
+        lambda: build_graph(nodes=nodes, edges=edges, direction=direction)
+    )
+    return {
+        "file": _store_tool_output(
+            account_id=account_id, title=title or "관계 그래프", output_format="svg", data=svg
+        ),
+        "mermaid": mermaid,
     }
 
 
@@ -711,9 +1311,12 @@ def _document_list(*, account_id: str) -> dict[str, Any]:
                 # 그대로 옮겨 적어서, 화면에 「프로젝트 PJ004 의 PRIMARY 기준
                 # 문서」가 나왔다 — 사용자는 둘 다 모르는 말이다(§0 원칙 2).
                 # 대신 사람이 읽는 이름과 한국어 한 줄로 준다.
-                "project": row.get("proj_name"),
+                "owner": "내 파일" if row.get("is_personal") else "팀 문서",
+                "project": None if row.get("is_personal") else row.get("proj_name"),
                 "role": (
-                    "이 프로젝트의 기준 문서"
+                    "내가 올린 개인 파일"
+                    if row.get("is_personal")
+                    else "이 프로젝트의 기준 문서"
                     if (row.get("doc_role") or "").upper() == "PRIMARY"
                     else "프로젝트에 묶이지 않은 팀 문서"
                 ),
@@ -1522,10 +2125,14 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         ref="task_register",
         name="업무 등록",
         description=(
-            "추출한 업무를 **우리 플랫폼의 프로젝트 업무**로 등록한다. 사용자가 우리 플랫폼의 "
-            "업무 등록을 요청했을 때만 사용한다. **Jira 등록의 선행 단계가 아니다.** 사용자가 "
-            "Jira만 명시했다면 이 도구를 함께 호출하지 않는다. 두 시스템 모두에 등록하라는 "
-            "명시적 요청이 있을 때만 각각의 등록 도구를 사용한다. 사용자 승인 없이는 실행되지 않는다. "
+            "추출한 업무나 사용자가 대화에서 직접 말한 업무를 **우리 플랫폼의 프로젝트 "
+            "업무**로 등록한다. 사용자가 우리 플랫폼의 업무 등록을 요청했을 때만 사용한다. "
+            "**Jira 등록의 선행 단계가 아니다.** 사용자가 Jira만 명시했다면 이 도구를 함께 "
+            "호출하지 않는다. 두 시스템 모두에 등록하라는 명시적 요청이 있을 때만 각각의 "
+            "등록 도구를 사용한다. 사용자 승인 없이는 실행되지 않는다. "
+            "**필수 값은 `title` 하나뿐이다** — 역할·공수·시작일·마감일·우선순위는 모두 선택이다. "
+            "사용자가 제목만 줬거나 「나머지는 비워 둬」라고 하면 되묻지 말고 그 제목만 담아 바로 "
+            "등록 카드를 띄운다(빈 칸은 그대로 빈 채로 저장된다). "
             "날짜는 `YYYY-MM-DD` 만 저장된다 — 「5일 이내」 같은 상대 표현은 비운 채 등록한다. "
             "**모르는 값을 `0` 이나 빈 문자열로 채우지 마라** — 공수 0 은 「0시간짜리 업무」라는 "
             "뜻이 되어 배정과 진행률을 망가뜨린다. 모르면 그 칸을 아예 빼고 보낸다. "
@@ -1653,6 +2260,293 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_jira_get_issues,
         category="Jira",
     ),
+    "document_read": Tool(
+        ref="document_read",
+        name="문서 내용 추출",
+        description="사용자가 지정한 PDF·DOCX·XLSX 파일의 실제 내용과 구조를 읽을 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {"file_id": {"type": "string", "description": "플랫폼 파일 ID"}},
+            "required": ["file_id"],
+        },
+        handler=_document_read_tool,
+    ),
+    "document_convert": Tool(
+        ref="document_convert",
+        name="파일 변환",
+        description="기존 파일의 내용을 바꾸지 않고 지원되는 다른 파일 형식으로 변환해 새 파일을 만들 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "target_format": {"type": "string", "enum": ["pdf", "docx", "md", "html"]},
+                "title": {"type": "string"},
+            },
+            "required": ["file_id", "target_format"],
+        },
+        handler=_document_convert_tool,
+        side_effect=True,
+    ),
+    "pdf_edit": Tool(
+        ref="pdf_edit",
+        name="PDF 편집",
+        description="기존 PDF의 병합·분할·페이지 추출·순서 변경·회전·자르기·워터마크 작업을 요청할 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "operation": {"type": "string", "enum": ["merge", "split", "extract", "reorder", "rotate", "crop", "watermark"]},
+                "file_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "title": {"type": "string"},
+                "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+                "rotation": {"type": "integer", "enum": [90, 180, 270]},
+                "crop_box": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+                "watermark_file_id": {"type": "string"},
+            },
+            "required": ["operation", "file_ids"],
+        },
+        handler=_pdf_edit_tool,
+        side_effect=True,
+    ),
+    "file_inspect": Tool(
+        ref="file_inspect",
+        name="파일 정보",
+        description="파일의 실제 형식, 크기, 해시, 페이지·시트 수와 작성 정보 같은 속성을 확인할 때 사용한다.",
+        input_schema={"type": "object", "properties": {"file_id": {"type": "string"}}, "required": ["file_id"]},
+        handler=_file_inspect_tool,
+    ),
+    "file_sanitize": Tool(
+        ref="file_sanitize",
+        name="메타데이터 제거",
+        description="PDF·DOCX·XLSX에서 작성자와 생성 도구 등 정책 대상 메타데이터를 제거한 사본을 만들 때 사용한다.",
+        input_schema={"type": "object", "properties": {"file_id": {"type": "string"}, "title": {"type": "string"}}, "required": ["file_id"]},
+        handler=_file_sanitize_tool,
+        side_effect=True,
+    ),
+    "archive_manage": Tool(
+        ref="archive_manage",
+        name="압축·해제",
+        description="여러 플랫폼 파일을 ZIP으로 묶거나 ZIP 파일을 안전하게 풀 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "operation": {"type": "string", "enum": ["create", "extract"]},
+                "file_ids": {"type": "array", "items": {"type": "string"}, "description": "operation=create 일 때 묶을 파일들의 id."},
+                "archive_file_id": {"type": "string", "description": "operation=extract 일 때 풀 ZIP 파일 id 하나."},
+                "title": {"type": "string"},
+            },
+            "required": ["operation"],
+        },
+        handler=_archive_manage_tool,
+        side_effect=True,
+    ),
+    "table_transform": Tool(
+        ref="table_transform",
+        name="표 가공·집계",
+        description="CSV·JSON·XLSX·Parquet 표를 필터·정렬·결합·집계하거나 기본 통계를 계산할 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "operation": {"type": "string", "enum": ["preview", "filter", "sort", "aggregate", "statistics", "join", "convert"]},
+                "title": {"type": "string"},
+                "columns": {"type": "array", "items": {"type": "string"}},
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": {"type": "string"},
+                            "operator": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "is_null", "not_null"]},
+                            "value": {},
+                        },
+                        "required": ["column", "operator"],
+                    },
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"column": {"type": "string"}, "direction": {"type": "string", "enum": ["asc", "desc"]}},
+                        "required": ["column"],
+                    },
+                },
+                "group_by": {"type": "array", "items": {"type": "string"}},
+                "metrics": {
+                    "type": "array",
+                    "description": "각 항목은 {column, function, as} 객체. 예: [{\"column\": \"공수\", \"function\": \"avg\", \"as\": \"평균 공수\"}]. 객체 하나만 두거나 {열이름: {...}} 모양으로 보내지 않는다.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": {"type": "string"},
+                            "function": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]},
+                            "as": {"type": "string"},
+                        },
+                        "required": ["function"],
+                    },
+                },
+                "join_file_id": {"type": "string"},
+                "join_on": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"left": {"type": "string"}, "right": {"type": "string"}},
+                        "required": ["left", "right"],
+                    },
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100},
+                "output_format": {
+                    "type": "string",
+                    "enum": ["csv", "json", "xlsx", "parquet"],
+                    "description": "사용자가 결과를 파일로 만들어 달라고 명시했을 때만 지정한다. 값을 보기만 하려는 요청에는 넣지 않는다.",
+                },
+            },
+            "required": ["file_id", "operation"],
+        },
+        handler=_table_transform_tool,
+        side_effect=True,
+        approval_when=lambda arguments: bool(arguments.get("output_format")),
+    ),
+    "data_quality_check": Tool(
+        ref="data_quality_check",
+        name="데이터 품질 검사",
+        description="표나 JSON의 빈 값·중복·타입·범위·열 구성·스키마 오류를 검사할 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "schema": {"type": "object"},
+                "json_schema": {"type": "object"},
+                "check_missing": {"type": "boolean", "default": True},
+                "check_duplicates": {"type": "boolean", "default": True},
+                "duplicate_keys": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["file_id"],
+        },
+        handler=_data_quality_tool,
+    ),
+    "file_compare": Tool(
+        ref="file_compare",
+        name="파일 비교",
+        description="두 PDF·DOCX·XLSX 파일 사이의 본문·표·셀 값과 수식 변경점을 확인할 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {"before_file_id": {"type": "string"}, "after_file_id": {"type": "string"}},
+            "required": ["before_file_id", "after_file_id"],
+        },
+        handler=_file_compare_tool,
+    ),
+    "calculate": Tool(
+        ref="calculate",
+        name="수식·날짜 계산",
+        description="사칙연산·백분율·허용 수식, 단위 변환, 날짜 차이, 영업일과 시간대 변환을 정확히 계산할 때 사용한다.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "operation": {"type": "string", "enum": ["math", "unit", "date", "duration", "business_days", "timezone"]},
+                "expression": {"type": "string"}, "amount": {"type": "number"},
+                "from_unit": {"type": "string"}, "to_unit": {"type": "string"},
+                "relative_base": {"type": "string"}, "timezone": {"type": "string"},
+                "start": {"type": "string"}, "end": {"type": "string"},
+                "start_date": {"type": "string"}, "end_date": {"type": "string"},
+                "country": {"type": "string"},
+                "company_holidays": {"type": "array", "items": {"type": "string"}},
+                "datetime": {"type": "string"}, "from_timezone": {"type": "string"},
+                "to_timezone": {"type": "string"},
+            },
+            "required": ["operation"],
+        },
+        handler=_calculate_tool,
+        category="계산",
+    ),
+    "diagram_create": Tool(
+        ref="diagram_create",
+        name="다이어그램 만들기",
+        description=(
+            "순서도·시퀀스·클래스·ER·상태·간트·마인드맵 같은 다이어그램을 그려 달라는 요청에 사용한다. "
+            "Mermaid 스펙을 받아 SVG 파일로 만들어 반환한다. 값의 크기 비교는 chart_create, "
+            "노드·간선 관계도는 graph_create를 사용한다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "mermaid": {
+                    "type": "string",
+                    "description": (
+                        "완성된 Mermaid 코드. 첫 줄이 flowchart/graph/sequenceDiagram/classDiagram/"
+                        "erDiagram/stateDiagram-v2/gantt/mindmap/timeline/journey/requirementDiagram "
+                        "중 하나여야 한다. %%{init}%% 같은 지시문은 쓰지 않는다."
+                    ),
+                },
+                "title": {"type": "string"},
+            },
+            "required": ["mermaid"],
+        },
+        handler=_diagram_create_tool,
+        side_effect=True,
+    ),
+    "chart_create": Tool(
+        ref="chart_create",
+        name="차트 만들기",
+        description=(
+            "값의 크기·비율·추이를 막대·꺾은선·파이 차트로 보여 달라는 요청에 사용한다. "
+            "전달한 labels·values 또는 표 파일의 두 열로 SVG 차트를 만든다. 흐름·구조를 그리는 "
+            "요청에는 diagram_create, 관계도는 graph_create를 사용한다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "chart_type": {"type": "string", "enum": ["bar", "line", "pie"], "default": "bar"},
+                "title": {"type": "string"},
+                "labels": {"type": "array", "items": {"type": "string"}},
+                "values": {"type": "array", "items": {"type": "number"}},
+                "source_file_id": {"type": "string", "description": "표 파일에서 값을 뽑을 때 지정."},
+                "label_column": {"type": "string"},
+                "value_column": {"type": "string"},
+            },
+            "required": ["chart_type"],
+        },
+        handler=_chart_create_tool,
+        side_effect=True,
+    ),
+    "graph_create": Tool(
+        ref="graph_create",
+        name="관계 그래프 만들기",
+        description=(
+            "노드와 그 사이 연결(의존·참조·흐름)을 관계 그래프로 그려 달라는 요청에 사용한다. "
+            "nodes와 edges 구조를 받아 SVG로 만든다. 정해진 다이어그램 문법이 필요하면 "
+            "diagram_create, 값 비교는 chart_create를 사용한다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}, "label": {"type": "string"}},
+                        "required": ["id"],
+                    },
+                },
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "from": {"type": "string"},
+                            "to": {"type": "string"},
+                            "label": {"type": "string"},
+                        },
+                        "required": ["from", "to"],
+                    },
+                },
+                "direction": {"type": "string", "enum": ["TD", "TB", "LR", "RL", "BT"], "default": "TD"},
+                "title": {"type": "string"},
+            },
+            "required": ["nodes"],
+        },
+        handler=_graph_create_tool,
+        side_effect=True,
+    ),
     "skill_register": Tool(
         ref="skill_register",
         name="스킬 등록",
@@ -1740,6 +2634,106 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 }
 
 
+# P0 카탈로그 정리. 기존 handler·schema·tool_ref는 그대로 두고 화면용 정보만
+# 한곳에서 덮어쓴다. P3에서 신규 Tool 등록과 함께 각 description도 §9 초안으로
+# 교체한다. 이름과 카테고리를 생성부 곳곳에서 하나씩 고치면 이전 분류가 다시
+# 섞이기 쉬우므로 최종 카탈로그 값을 이 표 하나로 관리한다.
+_CATALOG_METADATA: dict[str, dict[str, Any]] = {
+    "document_search": {"name": "문서 검색", "category": "검색", "provider": "연결 문서", "capability": "검색"},
+    "document_list": {"name": "문서 목록", "category": "검색", "provider": "연결 문서·내 파일", "capability": "목록"},
+    "document_sync": {
+        "name": "문서 동기화",
+        "category": "검색",
+        "provider": "연결 문서",
+        "capability": "동기화",
+        "requires_connection": True,
+    },
+    "web_search": {"name": "웹 검색", "category": "검색", "provider": "웹", "capability": "검색"},
+    "document_create": {"name": "Word 만들기", "category": "문서", "provider": "내 파일", "capability": "만들기"},
+    "table_export": {"name": "Excel 만들기", "category": "문서", "provider": "내 파일", "capability": "만들기"},
+    "document_read": {"name": "문서 내용 추출", "category": "문서", "provider": "내 파일", "capability": "읽기"},
+    "document_convert": {"name": "파일 변환", "category": "문서", "provider": "내 파일", "capability": "변환"},
+    "pdf_edit": {"name": "PDF 편집", "category": "문서", "provider": "내 파일", "capability": "편집"},
+    "file_inspect": {"name": "파일 정보", "category": "문서", "provider": "내 파일", "capability": "검사"},
+    "file_sanitize": {"name": "메타데이터 제거", "category": "문서", "provider": "내 파일", "capability": "정리"},
+    "archive_manage": {"name": "압축·해제", "category": "문서", "provider": "내 파일", "capability": "압축"},
+    "table_transform": {"name": "표 가공·집계", "category": "데이터", "provider": "내 파일", "capability": "가공"},
+    "data_quality_check": {"name": "데이터 품질 검사", "category": "데이터", "provider": "내 파일", "capability": "검사"},
+    "file_compare": {"name": "파일 비교", "category": "데이터", "provider": "내 파일", "capability": "비교"},
+    "calculate": {"name": "수식·날짜 계산", "category": "계산", "provider": "플랫폼", "capability": "계산"},
+    "diagram_create": {"name": "다이어그램 만들기", "category": "시각화", "provider": "내 파일", "capability": "만들기"},
+    "chart_create": {"name": "차트 만들기", "category": "시각화", "provider": "내 파일", "capability": "만들기"},
+    "graph_create": {"name": "관계 그래프 만들기", "category": "시각화", "provider": "내 파일", "capability": "만들기"},
+    "project_list": {"name": "프로젝트 조회", "category": "업무", "provider": "플랫폼", "capability": "목록"},
+    "task_list": {"name": "업무 조회", "category": "업무", "provider": "플랫폼", "capability": "목록"},
+    "task_register": {"name": "업무 등록", "category": "업무", "provider": "플랫폼", "capability": "등록"},
+    "task_update": {"name": "업무 수정", "category": "업무", "provider": "플랫폼", "capability": "수정"},
+    "task_extraction": {"name": "업무 추출", "category": "업무", "provider": "플랫폼", "capability": "추출"},
+    "jira_get_issues": {
+        "name": "Jira 이슈 조회",
+        "category": "업무",
+        "provider": "Jira",
+        "capability": "목록",
+        "requires_connection": True,
+    },
+    "jira_create_issues": {
+        "name": "Jira 이슈 등록",
+        "category": "업무",
+        "provider": "Jira",
+        "capability": "등록",
+        "requires_connection": True,
+    },
+    "people_list": {"name": "팀원 조회", "category": "팀", "provider": "플랫폼", "capability": "목록"},
+    "workload_report": {"name": "업무량 조회", "category": "팀", "provider": "플랫폼", "capability": "조회"},
+    "absence_list": {"name": "부재 일정 조회", "category": "팀", "provider": "플랫폼", "capability": "목록"},
+    "get_current_datetime": {"name": "날짜·시간 확인", "category": "계산", "provider": "플랫폼", "capability": "조회"},
+    "skill_register": {"category": "시스템", "provider": "플랫폼", "capability": "등록"},
+    "skill_creator_ask_followup": {"category": "시스템", "provider": "플랫폼", "capability": "확인"},
+}
+
+_FINAL_DESCRIPTIONS: dict[str, str] = {
+    "document_search": "팀에 등록되어 색인된 문서에서 질문과 관련된 내용과 원문 근거를 찾을 때 사용한다. 관련 문장과 출처 문서를 반환한다. 문서 이름이나 보유 목록만 필요하면 document_list, 사용자가 지정한 파일 전체를 읽어야 하면 document_read, 외부 최신 정보가 필요하면 web_search를 사용한다.",
+    "document_list": "답 자체가 보유 문서의 파일명 목록·수집/색인 상태여야 하거나, 사용자가 파일을 이름·설명으로만 가리켜(예: '내 파일에 있는 계약서', '분기보고서 워드') 그 file_id를 먼저 찾아야 할 때 사용한다. 팀 문서와 사용자가 올린 내 파일을 함께 반환하고(owner 필드로 구분), 연결 저장소에 있지만 아직 수집하지 않은 문서도 구분해 준다. 이미 file_id가 주어진 요청에서 그 존재를 확인하려는 선행 호출로는 쓰지 않는다 — 그 경우 document_read 등 처리 도구가 접근 권한까지 스스로 확인한다. 여러 문서의 본문에서 관련 내용을 찾는 요청에는 document_search를 사용한다.",
+    "document_sync": "사용자가 연결 저장소의 문서를 새로 올렸거나 수정했으며 최신 변경을 지금 반영해 달라고 할 때 사용한다. 변경된 문서를 확인해 수집·색인 작업을 시작하고 처리 상태를 반환한다. 일반적인 문서 조회나 검색에는 사용하지 않는다.",
+    "web_search": "인터넷의 최신 정보, 외부 자료 또는 팀 문서에 없는 사실을 출처와 함께 찾을 때 사용한다. 검색 결과의 제목·요약·URL을 반환한다. 사내 문서에 있을 내용은 document_search를 우선 사용하고, 이 Tool의 결과로 답할 때는 출처 URL을 함께 제시한다.",
+    "document_read": "특정 file_id의 PDF·DOCX·XLSX 본문이나 표를 읽어 달라는 요청에 사용하는 첫 도구다. 이 도구가 파일 존재와 접근 권한도 함께 확인하므로 file_id가 명시된 읽기 요청에서는 document_list를 먼저 호출하지 않는다. 본문·표와 페이지·문단·시트 위치를 반환한다. 여러 문서에서 관련 내용을 찾는 요청은 document_search, 답 자체가 파일 이름 목록이어야 하는 요청만 document_list를 사용한다.",
+    "document_convert": "기존 파일의 내용을 바꾸지 않고 지원되는 다른 파일 형식으로 변환해 새 파일을 만들 때 사용한다. 입력 file_id와 변환 형식을 받아 결과 파일을 반환한다. 내용을 새로 작성하는 요청은 document_create 또는 table_export, PDF 페이지를 재구성하는 요청은 pdf_edit를 사용한다.",
+    "document_create": "완성된 글을 새 Word 문서로 만들어 달라는 요청에 사용한다. 제목과 본문을 DOCX로 저장해 결과 파일을 반환한다. 표 데이터가 주된 결과면 table_export를 사용하고, 기존 파일의 형식만 바꾸는 요청에는 document_convert를 사용한다.",
+    "table_export": "확정된 열과 행 데이터를 새 Excel 파일로 만들어 달라는 요청에 사용한다. 전달받은 표를 XLSX로 저장해 결과 파일을 반환하며 데이터를 검색하거나 분석하지 않는다. 필터·집계·정렬이 먼저 필요하면 table_transform을 실행한 뒤 사용한다.",
+    "pdf_edit": "기존 PDF의 병합·분할·페이지 추출·순서 변경·회전·자르기·워터마크 작업을 요청할 때 사용한다. 원본을 덮어쓰지 않고 편집된 새 PDF를 반환한다. PDF의 내용을 다른 형식으로 바꾸려면 document_convert, 본문을 읽으려면 document_read를 사용한다.",
+    "file_inspect": "파일의 실제 형식, 크기, 해시, 페이지·시트 수와 작성 정보 같은 속성을 확인할 때 사용한다. 파일 내용 요약이 아니라 구조와 메타데이터를 반환한다. 본문을 읽는 요청에는 document_read, 메타데이터를 제거하는 요청에는 file_sanitize를 사용한다.",
+    "file_sanitize": "PDF·DOCX·XLSX에서 작성자와 생성 도구 등 정책 대상 메타데이터를 제거한 사본을 만들 때 사용한다. 제거 결과와 남은 메타데이터 경고를 반환하며 원본과 본문은 변경하지 않는다. 속성을 확인만 하는 요청에는 file_inspect를 사용한다.",
+    "archive_manage": "여러 플랫폼 파일을 하나의 ZIP으로 묶거나 ZIP 파일을 안전하게 풀어 달라는 요청에 사용한다. 생성하거나 해제한 파일 목록을 반환한다. 문서 형식 변환이나 개별 문서 내용 변경에는 사용하지 않는다.",
+    "project_list": "팀의 프로젝트 목록과 각 프로젝트의 상태·진행률을 확인할 때 사용한다. 프로젝트 단위의 요약을 반환한다. 특정 프로젝트의 개별 업무가 필요하면 task_list, Jira 이슈가 필요하면 jira_get_issues를 사용한다.",
+    "task_list": "현재 프로젝트에 우리 플랫폼으로 등록된 업무와 상태·마감 정보를 조회할 때 사용한다. 플랫폼 업무 목록을 반환하며 Jira 이슈는 포함하지 않는다. Jira 업무는 jira_get_issues, 문서에서 아직 등록되지 않은 업무 후보를 찾는 요청은 task_extraction을 사용한다.",
+    "task_register": "사용자가 확인했거나 대화에서 직접 말한 업무를 현재 프로젝트의 플랫폼 업무로 등록할 때 사용한다. 필수 값은 제목(title) 하나뿐이고 역할·공수·시작일·마감일·우선순위는 모두 선택이다 — 사용자가 제목만 줬거나 나머지를 비우라고 하면 되묻지 말고 제목만 담아 승인 카드를 띄운다. 등록·중복·누락 결과를 건별로 반환하며 실행 전 사용자 승인이 필요하다. 문서에서 후보를 찾는 작업은 task_extraction, Jira 등록은 jira_create_issues를 사용한다.",
+    "task_update": "task_list로 확인한 기존 플랫폼 업무의 상태나 마감일을 변경할 때 사용한다. 실제 task_id가 있는 업무만 수정하며 실행 전 사용자 승인이 필요하다. 새 업무 생성에는 task_register, Jira 이슈 변경에는 사용하지 않는다.",
+    "task_extraction": "현재 프로젝트에서 사람이 미리 선택한 기준 문서와 관련 문서를 바탕으로 업무 후보와 원문 근거를 추출해 달라는 요청에 사용한다. 후보와 근거만 반환하고 자동 등록하지 않으며 몇 분 걸릴 수 있다. 단순 문서 요약이나 이미 확인된 업무의 등록에는 사용하지 않는다.",
+    "jira_get_issues": "현재 프로젝트에 연결된 Jira의 기존 이슈와 진행 상태를 조회할 때 사용한다. Jira 이슈 목록을 반환하며 플랫폼 업무는 포함하지 않는다. 플랫폼 업무는 task_list를 사용하고, 프로젝트 키는 사용자가 다른 Jira 프로젝트를 명시한 경우에만 지정한다.",
+    "jira_create_issues": "사용자가 확인한 업무를 연결된 Jira에 새 이슈로 등록할 때 사용한다. 건별 성공·실패 결과를 반환하며 실행 전 사용자 승인이 필요하다. 플랫폼 업무 등록은 task_register를 사용하고, 담당자 정보가 확인되지 않으면 임의로 배정하지 않는다.",
+    "people_list": "현재 팀에 누가 있는지와 각 팀원의 직책·기술을 확인할 때 사용한다. 팀원 명부와 역할 정보를 반환한다. 업무량은 workload_report, 휴가·교육 일정은 absence_list를 사용하며 사람을 자동 배정하지 않는다.",
+    "workload_report": "지정한 기간의 팀원별 예정 업무 시간과 남은 여유를 비교할 때 사용한다. 팀원별 업무량 요약을 반환한다. 직책·기술만 필요하면 people_list, 부재 일정 자체를 확인하려면 absence_list를 사용한다.",
+    "absence_list": "지정한 기간에 승인된 팀원의 휴가·교육 등 부재 일정을 확인할 때 사용한다. 부재자와 기간을 반환한다. 전체 업무량이나 남은 여유를 비교하는 요청에는 workload_report를 사용한다.",
+    "table_transform": "CSV·JSON·XLSX·Parquet 표를 필터·정렬·결합·집계하거나 기본 통계를 계산할 때 사용한다. 사용자가 값을 보기만 원하면 output_format 없이 호출해 반환된 미리보기 값을 답변에 직접 제시한다. output_format은 사용자가 결과를 파일로 만들어 달라고 명시했을 때만 지정하며, 그 경우 사용자 승인이 필요하다. 빈 값·중복·타입 오류를 찾는 요청에는 data_quality_check를 사용한다.",
+    "data_quality_check": "표나 JSON의 빈 값·중복·타입·범위·열 구성·스키마 오류를 검사할 때 사용한다. 오류 위치와 이유를 반환하며 원본 데이터를 수정하지 않는다. 값을 집계·정렬·결합하는 요청에는 table_transform, 두 파일의 변경점 확인에는 file_compare를 사용한다.",
+    "file_compare": "두 PDF·DOCX·XLSX 파일 사이의 본문·표·셀 값과 수식 변경점을 확인할 때 사용한다. 형식별 위치와 함께 추가·삭제·수정 내역을 반환한다. 한 파일의 품질 검사에는 data_quality_check, 파일 형식 변환에는 document_convert를 사용한다.",
+    "get_current_datetime": "현재 날짜·시간·요일 또는 상대 날짜 계산의 기준 시각이 필요할 때 사용한다. 계정 시간대의 현재 시각을 반환한다. 수식·단위·기간·영업일처럼 실제 계산이 필요한 요청에는 calculate를 사용한다.",
+    "calculate": "사칙연산·백분율·허용 수식, 단위 변환, 날짜 차이, 영업일과 시간대 변환을 정확히 계산할 때 사용한다. 계산 결과와 적용한 기준을 반환한다. 현재 시각만 묻는 요청에는 get_current_datetime을 사용하며 환율처럼 실시간 외부 값이 필요한 계산은 지원하지 않는다.",
+    "diagram_create": "순서도·시퀀스·클래스·ER·상태·간트·마인드맵 같은 다이어그램을 그려 달라는 요청에 사용한다. 허용된 종류의 Mermaid 스펙을 받아 SVG 파일과 그 스펙을 반환한다. 값의 크기·비율 비교는 chart_create, 노드와 그 사이 연결 관계도는 graph_create를 사용한다.",
+    "chart_create": "값의 크기·비율·추이를 막대·꺾은선·파이 차트로 보여 달라는 요청에 사용한다. 전달한 labels·values 또는 source_file_id로 표 파일의 두 열을 직접 읽어 SVG 차트와 사용한 데이터를 반환한다. 표 기반이면 document_read를 먼저 부르지 않는다. 정해진 도형으로 흐름·구조를 그리는 요청에는 diagram_create를 사용한다.",
+    "graph_create": "노드와 그 사이 연결(의존·참조·흐름)을 관계 그래프로 그려 달라는 요청에 사용한다. nodes와 edges 구조를 받아 SVG와 Mermaid 스펙을 반환한다. 특정 다이어그램 문법이 필요하면 diagram_create, 수치 비교는 chart_create를 사용한다.",
+}
+
+BUILTIN_TOOLS = {
+    ref: replace(
+        tool,
+        **_CATALOG_METADATA.get(ref, {}),
+        description=_FINAL_DESCRIPTIONS.get(ref, tool.description),
+    )
+    for ref, tool in BUILTIN_TOOLS.items()
+}
+
+
 #: 고르고 말고가 없는 내장 도구 — 모든 에이전트에 무조건 붙는다(2026-08-22).
 #:
 #: `skill_register`는 원래 다른 내장 도구(HR·Jira 등)와 같은 자리에서 팀장이
@@ -1769,6 +2763,58 @@ BUILTIN_TOOLS: dict[str, Tool] = {
 #: 중간에 되물을 방법이 없어 그 자리에서 막힌다.
 ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register", "skill_creator_ask_followup"})
 
+#: 레지스트리에는 있지만 **도구 선택 화면에는 안 낸다** — 특정 prebuilt
+#: 에이전트가 자기 구현으로만 부르는 도구다(2026-08-30).
+#:
+#: `task_extraction` 이 여기 있다. 「업무 추출 에이전트」(prebuilt, AG0xx)가 그
+#: 파이프라인(`services/task_extraction/service.py` — OpenAI 검색어 생성 + RunPod
+#: 임베딩 + pgvector 검색 + `responses.parse` 구조화 종합)을 실행하는 유일한
+#: 통로이며, 다른 에이전트나 채팅 「+」·빌더에서는 고를 수 없다. `ToolLoader.load()`
+#: 는 `BUILTIN_TOOLS` 에 있으므로 그대로 로드하고(그 에이전트의 `agent_version_tools`
+#: 에 저장돼 있다), `builtin_tool_response()` 는 이 집합을 빼서 선택 목록에서
+#: 감춘다. `api_views.py` 의 `_tool_catalog()`(검증용)는 `ALWAYS_ON` 과 같은
+#: 규칙으로 이 집합을 도로 넣어 준다 — 저장된 참조가 검증에서 막히지 않게.
+AGENT_ONLY_TOOL_REFS: frozenset[str] = frozenset({"task_extraction"})
+
+#: 새 팀의 「기본 어시스턴트」(`provision_default_chat_agent`)에 자동으로 붙는 도구
+#: 이자, 채팅 「+」 도구 선택의 **「기본값으로 초기화」가 되돌리는 고정 집합**이다
+#: (2026-08-30). 화면(`serializers.builtin_tool_response()`의 `is_default` 플래그)과
+#: 프로비저닝이 같은 이 집합을 본다.
+#:
+#: 고르는 기준 — "실제 업무에서 바로 쓸 법한 것 + 검색·조회". 아래 여덟은 여기서
+#: **뺀다**(전문·관리 성격이거나 자주 안 쓰는 것이라 기본으로 켜 두면 목록만
+#: 길어진다). 필요한 팀은 팀장이 Builder 에서 개별로 켠다:
+#:   - `document_sync`   — 연결 저장소 재색인(관리 작업, 조회가 아님)
+#:   - `file_inspect`    — 형식·해시·페이지 수 같은 기술 점검
+#:   - `file_sanitize`   — 작성자 메타데이터 제거(보안 정책용)
+#:   - `archive_manage`  — ZIP 묶기/풀기(대화에서 드묾)
+#:   - `data_quality_check` — 빈 값·중복·스키마 감사(데이터 전문 작업)
+#:   - `diagram_create` / `chart_create` / `graph_create` — 시각화(자주 안 씀)
+#:   - `task_extraction` — 「업무 추출 에이전트」(prebuilt) 전용이라 아예 선택
+#:     화면에 안 나온다(`AGENT_ONLY_TOOL_REFS`). 기본 어시스턴트는 이 도구도,
+#:     그 에이전트에 대한 위임도 갖지 않는다 — 업무 추출은 사용자가 에이전트
+#:     드롭다운에서 「업무 추출 에이전트」를 직접 골라야 쓴다(2026-08-30).
+#:
+#: Jira 조회·등록은 시연 범위라 남긴다. 쓰기 도구도 실행 전 사람 승인(HITL)이
+#: 걸리므로 기본에 둔다. 시스템 도구 2개(`ALWAYS_ON_TOOL_REFS`)는 별도 경로라
+#: 여기 없다.
+_DEFAULT_CHAT_EXCLUDED: frozenset[str] = frozenset(
+    {
+        "document_sync",
+        "file_inspect",
+        "file_sanitize",
+        "archive_manage",
+        "data_quality_check",
+        "diagram_create",
+        "chart_create",
+        "graph_create",
+        "task_extraction",
+    }
+)
+DEFAULT_CHAT_TOOL_REFS: frozenset[str] = (
+    frozenset(BUILTIN_TOOLS) - ALWAYS_ON_TOOL_REFS - _DEFAULT_CHAT_EXCLUDED
+)
+
 # 레거시 A2A 섹션(`agent:` 위임 도구, `load_for_agent`/`load_for_refs`/`resolve`)과
 # MCP 도구 팩토리(`_mcp_tool()`)가 여기 있었다. A2A 는 2026-08-22에, `_mcp_tool()`
 # 은 2026-08-25에 걷어냈다 — 둘 다 마지막 호출자가 없어진 뒤였다.
@@ -1786,5 +2832,3 @@ ALWAYS_ON_TOOL_REFS: frozenset[str] = frozenset({"skill_register", "skill_creato
 # ---------------------------------------------------------------------------
 # 에이전트별 조립
 # ---------------------------------------------------------------------------
-
-
