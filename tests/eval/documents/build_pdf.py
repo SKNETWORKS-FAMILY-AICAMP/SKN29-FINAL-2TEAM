@@ -38,6 +38,31 @@ OUT = HERE / "pdf"
 sys.path.insert(0, str(HERE))
 from render import render  # noqa: E402
 
+#: 문서를 담을 폴더. Drive 에도 이 구조 그대로 올린다 — 실제 팀 드라이브가
+#: 그렇게 생겼고, 폴더 스캔 깊이(`team_folder.max_depth`)가 하위까지 훑는지도
+#: 함께 확인된다. 폴더 이름은 색인에 안 들어가므로 정답지와는 무관하다.
+FOLDERS = {
+    "p03_wms": "P3_하나로유통_김천WMS_재구축",
+    "p04_openbanking": "P4_케이뱅크플러스_오픈뱅킹API",
+    "p05_emr": "P5_메디컬링크_EMR_클라우드전환",
+    "p06_pdm": "P6_정우기계_예지보전플랫폼",
+    "p07_transit": "P7_시티모빌리티_교통카드정산",
+    "p08_lms": "P8_에듀랩_차세대LMS",
+    "noise_a": "00_배경문서",
+    "noise_b": "00_배경문서",
+    "noise_c": "00_배경문서",
+}
+
+#: 손으로 쓴 8종은 파일 이름으로 가른다.
+HAND_FOLDER = {
+    "01": "P1_한빛몰_주문정산_고도화", "02": "P1_한빛몰_주문정산_고도화",
+    "03": "P1_한빛몰_주문정산_고도화", "04": "P1_한빛몰_주문정산_고도화",
+    "05": "P1_한빛몰_주문정산_고도화",
+    "06": "P2_한빛리테일_사내그룹웨어", "07": "P2_한빛리테일_사내그룹웨어",
+    "08": "P2_한빛리테일_사내그룹웨어",
+}
+
+
 #: 손으로 쓴 HTML. (원본, 나갈 PDF 이름)
 DOCUMENTS = [
     ("01_과업지시서.html", "한빛몰_주문정산_고도화_과업지시서.pdf"),
@@ -68,9 +93,9 @@ def find_browser() -> str:
     raise SystemExit("Chrome 또는 Edge 를 찾지 못했다. CHROME_CANDIDATES 에 경로를 더할 것.")
 
 
-def load_specs() -> list[tuple[str, str]]:
-    """`specs/*.py` 를 읽어 HTML 로 펼치고 (원본, 나갈 이름) 목록을 돌려준다."""
-    pairs: list[tuple[str, str]] = []
+def load_specs() -> list[tuple[str, str, str]]:
+    """`specs/*.py` 를 읽어 HTML 로 펼치고 (원본, 폴더, 나갈 이름) 목록을 돌려준다."""
+    pairs: list[tuple[str, str, str]] = []
     for path in sorted(SPECS.glob("*.py")):
         if path.name.startswith("_"):
             continue
@@ -79,7 +104,7 @@ def load_specs() -> list[tuple[str, str]]:
         spec.loader.exec_module(module)
         for doc in getattr(module, "DOCUMENTS", []):
             (HERE / doc["source"]).write_text(render(doc), encoding="utf-8")
-            pairs.append((doc["source"], doc["target"]))
+            pairs.append((doc["source"], FOLDERS.get(path.stem, "00_배경문서"), doc["target"]))
     return pairs
 
 
@@ -115,7 +140,7 @@ def main() -> int:
     browser = find_browser()
     OUT.mkdir(exist_ok=True)
 
-    pairs = DOCUMENTS + load_specs()
+    pairs = [(src, HAND_FOLDER[src[:2]], tgt) for src, tgt in DOCUMENTS] + load_specs()
     if args.only:
         pairs = [p for p in pairs if args.only in p[0]]
     if not pairs:
@@ -123,17 +148,18 @@ def main() -> int:
 
     failed: list[str] = []
     with tempfile.TemporaryDirectory() as profile:
-        for source_name, target_name in pairs:
+        for source_name, folder, target_name in pairs:
             source = HERE / source_name
             if not source.exists():
                 failed.append(f"{source_name}: 원본이 없다")
                 continue
-            target = OUT / target_name
+            (OUT / folder).mkdir(parents=True, exist_ok=True)
+            target = OUT / folder / target_name
             problem = to_pdf(browser, profile, source, target)
             if problem:
                 failed.append(f"{source_name}: {problem}")
                 continue
-            print(f"  {target_name}  {target.stat().st_size // 1024}KB")
+            print(f"  {folder}/{target_name}  {target.stat().st_size // 1024}KB")
 
     if failed:
         print("\n실패:", file=sys.stderr)
