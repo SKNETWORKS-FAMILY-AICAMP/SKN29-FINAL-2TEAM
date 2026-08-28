@@ -12,7 +12,7 @@
 
 .page {
   --band-x: var(--space-12);
-  --band-y: var(--space-24);
+  --band-y: var(--space-20);
 
   min-height: 100vh;
   background: var(--color-bg);
@@ -122,6 +122,30 @@
   background: var(--color-surface);
 }
 
+/*
+ * 페이지 한가운데의 어두운 밴드. 밝은 면만 여섯 번 이어지면 어디가 다른 이야기인지
+ * 안 보인다 — 여기 하나로 페이지가 「밝음 → 어두움 → 밝음 → 네이비 CTA」로 읽힌다.
+ * ⚠ 승인 섹션에 두면 안 된다. 바로 뒤 CTA 도 네이비라 큰 덩어리 하나가 된다.
+ */
+.bandDark {
+  padding: var(--band-y) var(--band-x);
+  background: var(--color-primary);
+}
+
+/* 떠 있는 네비게이션 아래로 앵커 제목이 가려지지 않게 여유를 둔다. */
+.bandDark,
+.bandWhite {
+  scroll-margin-top: 104px;
+}
+
+.bandDark .h2 {
+  color: #fff;
+}
+
+.bandDark .statementBody {
+  color: rgba(255, 255, 255, 0.78);
+}
+
 /* 좌측 정렬이 기본이다. 중앙 정렬은 마감 CTA 하나에만 남긴다. */
 .bandInner {
   max-width: 1280px;
@@ -135,6 +159,24 @@
   font-weight: 800;
   color: var(--color-heading);
   letter-spacing: -0.4px;
+}
+
+.sectionKicker,
+.sectionKickerDark {
+  margin: 0 0 var(--space-3);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sectionKicker {
+  color: var(--color-primary);
+}
+
+.sectionKickerDark {
+  color: rgba(255, 255, 255, 0.62);
 }
 
 /*
@@ -160,8 +202,9 @@
   background: var(--color-primary);
   color: #fff;
   border-radius: var(--radius-lg);
-  padding: 14px 28px;
-  font-size: 15px;
+  /* 49px 짜리였다. 첫 화면의 유일한 행동인데 본문 글자와 무게가 비슷했다. */
+  padding: 18px 36px;
+  font-size: 17px;
   font-weight: 700;
   text-decoration: none;
   box-shadow: 0 14px 30px -12px rgba(30, 58, 95, 0.75);
@@ -172,27 +215,6 @@
   background: var(--color-primary-hover);
   transform: translateY(-1px);
   box-shadow: 0 18px 34px -12px rgba(30, 58, 95, 0.8);
-}
-
-.btnGhost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface);
-  color: var(--color-body);
-  border-radius: var(--radius-lg);
-  padding: 14px 28px;
-  font-size: 15px;
-  font-weight: 600;
-  text-decoration: none;
-  box-shadow: var(--shadow-soft);
-  transition: color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-}
-
-.btnGhost:hover {
-  color: var(--color-heading);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-soft-lg);
 }
 
 /* ---------- 1 · 히어로 ---------- */
@@ -311,13 +333,6 @@
   gap: var(--space-2);
 }
 
-.visualNote {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-muted);
-  text-align: right;
-}
-
 /* ---------- 히어로 목업 ---------- */
 /*
  * 여기 값은 실제 Chat 화면(`cards.module.css`)에서 가져온 것이다. 랜딩만의
@@ -353,11 +368,81 @@
   color: var(--color-muted);
 }
 
+/* 데모가 비어 보이지 않도록 요청에서 등록까지의 현재 위치를 항상 남긴다. */
+.mockProgress {
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 68%, var(--color-surface));
+}
+
+.mockProgressStep {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-placeholder);
+}
+
+.mockProgressStep:not(:last-child)::after {
+  content: '';
+  flex: 1;
+  min-width: 8px;
+  margin: 0 8px 0 2px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.mockProgressDot {
+  position: relative;
+  z-index: 1;
+  width: 21px;
+  height: 21px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.mockProgressCurrent {
+  color: var(--color-primary);
+}
+
+.mockProgressCurrent .mockProgressDot {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+}
+
+.mockProgressDone {
+  color: var(--color-body);
+}
+
+.mockProgressDone .mockProgressDot {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
 .mockBody {
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* ⚠ 데모는 단계마다 높이가 다르다 — 자리를 안 잡으면 누를 때마다 히어로가
+     통째로 위아래로 튄다(1440 에서 121 → 449px). 제일 큰 단계(확인 카드)만큼
+     미리 잡아 둔다. 실측값이고, 카드 내용이 바뀌면 다시 재야 한다. */
+  min-height: 390px;
+  justify-content: flex-start;
 }
 
 /* 사람이 친 말. 이 화면이 대화라는 것을 한눈에 알리는 유일한 장치다. */
@@ -504,12 +589,20 @@
 }
 
 .mockFootBtn {
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: #fff;
   padding: 9px 16px;
   font-size: 12.5px;
   font-weight: 600;
+}
+
+.mockFootBtn:disabled {
+  opacity: 0.75;
+  cursor: default;
 }
 
 .mockFootGhost {
@@ -521,53 +614,234 @@
   color: var(--color-body);
 }
 
+/*
+ * 「생각하는 중」. 등장이 끝나면 접혀 사라지고 그 자리에 카드가 온다 — 실제
+ * 제품에서 진행 카드가 답으로 바뀌는 것과 같은 순서다. 움직임이 없는 환경에서는
+ * 아예 안 그린다(아래 reduce 블록).
+ */
+.mockWorking {
+  margin-top: auto;
+  margin-bottom: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  padding: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mockWorkingIcon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft-strong);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mockWorkingText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mockWorkingText strong {
+  font-size: 13px;
+  color: var(--color-heading);
+}
+
+.mockWorkingText small {
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+.mockThinkingDots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.mockThinkingDots span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-placeholder);
+}
+
+/* ---------- 도구가 만든 파일 ---------- */
+
+/* 값은 실제 `ProducedFilesCard`(`cards.module.css` 의 `.filesCard`)에서 가져왔다. */
+.filesCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* 「표 만들기」 칸 안에 들어간다. 칸이 폭을 정하므로 여기서 잡지 않는다. */
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fileName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileBtn {
+  flex: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-body);
+}
+
+.fileHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/* ---------- 히어로 데모 ---------- */
+
+.mockReset {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.mockReset:hover {
+  color: var(--color-heading);
+}
+
+/* 등록 결과 — `ChatCards.tsx` 의 결과 카드에서 값을 가져왔다. */
+.mockResultHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-success-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-success-text);
+}
+
+.mockIssueHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+  font-size: 12.5px;
+  color: var(--color-heading);
+}
+
+.mockIssueRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12.5px;
+}
+
+.mockIssueRow:last-child {
+  border-bottom: none;
+}
+
+.mockIssueKey {
+  flex: none;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.mockIssueTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-heading);
+}
+
 /* ---------- 2 · 요청 예시 ---------- */
 
-/*
- * 카드 안에는 사용자가 칠 말 한 줄뿐이다. 예전에는 그 아래에 어떤 도구가
- * 도는지를 적어 뒀는데, 그건 사용자 가치가 아니라 내부 라우팅 설명이었다.
- */
-.askList {
-  margin: var(--space-10) 0 0;
+/* 히어로와 첫 본문 사이의 짧은 프롬프트 도크. 큰 카드 섹션 하나를 줄이고
+   사용자가 실제로 입력할 말을 제품 입력창처럼 한 줄에 모은다. */
+.promptBand {
+  padding: var(--space-10) var(--band-x);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.promptInner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.promptTitle {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+  color: var(--color-heading);
+}
+
+.promptList {
+  margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-.ask {
+.prompt {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  padding: var(--space-4);
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-4);
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  padding: var(--space-8) var(--space-6);
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-
-.ask:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-soft-lg);
-}
-
-.askIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-soft-strong);
+  gap: var(--space-3);
   color: var(--color-primary);
 }
 
-.askQuote {
+.prompt p {
   margin: 0;
-  font-size: 19px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.55;
   font-weight: 600;
   color: var(--color-heading);
 }
@@ -602,53 +876,73 @@
   color: var(--color-placeholder);
 }
 
-/* ---------- 3 · 할 수 있는 일 ---------- */
+/* ---------- 3 · 안 해도 되는 일 ---------- */
 
 /*
- * 테두리 있는 카드 4장이면 네 칸이 한 줄기라는 것이 안 보인다. 카드를 없애고
- * 항목 위쪽 선을 하나로 잇는다 — `gap: 0` + 항목 오른쪽 여백.
+ * 제품 속성이 아니라 **그 사람의 하루에서 사라지는 일**을 적는 자리다. 하던 일에
+ * 줄을 긋고 그 아래에 이제 어떻게 되는지를 둔다 — 「없어진다」를 글자로만 말하지
+ * 않고 화면이 같이 말하게 한다.
  */
-.stepRail {
+.gainGrid {
   margin: var(--space-10) 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
-.stepItem {
-  border-top: 2px solid var(--color-border);
-  padding: var(--space-5) var(--space-6) 0 0;
+.gain {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: var(--space-2);
+  border-radius: var(--radius-2xl);
+  background: rgba(255, 255, 255, 0.07);
+  padding: var(--space-6);
 }
 
-.stepNum {
-  width: 28px;
-  height: 28px;
+.gainBefore,
+.gainAfter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.gainBefore small {
+  flex: none;
   border-radius: var(--radius-pill);
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 13px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.gainGone {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.gainNow {
+  font-size: 18px;
+  line-height: 1.6;
   font-weight: 700;
+  color: #fff;
+}
+
+.gainArrow {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: #fff;
+  color: var(--color-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-.stepTitle {
-  font-size: 18px;
-  line-height: 1.5;
-  color: var(--color-heading);
-}
-
-.stepCaption {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--color-muted);
 }
 
 /* ---------- 글만 있던 두 섹션의 화면 ---------- */
@@ -663,6 +957,10 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
   gap: var(--space-16);
   align-items: center;
+}
+
+.splitReverse {
+  grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
 }
 
 .panel {
@@ -771,6 +1069,50 @@
   border-top: 1px solid var(--color-border);
 }
 
+.trustList {
+  margin: var(--space-8) 0 0;
+  padding: var(--space-5) 0 0;
+  border-top: 1px solid var(--color-border);
+  list-style: none;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.trustPoint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.trustIcon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft-strong);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trustPoint > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.trustPoint strong {
+  font-size: 14px;
+  color: var(--color-heading);
+}
+
+.trustPoint small {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-muted);
+}
+
 /* ---------- 6 · 마감 CTA ---------- */
 
 /* 네이비를 꽉 채운 유일한 밴드다. 중앙 정렬도 여기 하나만 남긴다. */
@@ -814,8 +1156,8 @@
   background: #fff;
   color: var(--color-primary);
   border-radius: var(--radius-lg);
-  padding: 14px 28px;
-  font-size: 15px;
+  padding: 18px 36px;
+  font-size: 17px;
   font-weight: 700;
   text-decoration: none;
   transition: background 160ms ease, transform 160ms ease;
@@ -888,20 +1230,29 @@
     gap: var(--space-3) var(--space-6);
   }
 
-  .stepRail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .split {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-10);
   }
 
-  /* 2열이 되면 2번 항목의 오른쪽 여백이 필요 없다. */
-  .stepItem:nth-child(2) {
-    padding-right: 0;
+  .splitReverse .statement {
+    order: 0;
   }
-}
+
+  .splitReverse .panel {
+    order: 1;
+  }
+
+  .promptInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .gainGrid {
+    gap: var(--space-3);
+  }
+
+  /* 2열이 되면 2번 항목의 오른쪽 여백이 필요 없다. */}
 
 @media (max-width: 760px) {
   .page {
@@ -923,6 +1274,10 @@
     padding-top: var(--space-16);
   }
 
+  .mockBody {
+    min-height: 430px;
+  }
+
   .heroTitle {
     font-size: 34px;
     letter-spacing: -0.6px;
@@ -938,12 +1293,8 @@
     font-size: 16px;
   }
 
-  .askQuote {
-    font-size: 17px;
-  }
-
-  .askList,
-  .stepRail {
+  .promptList,
+  .gainGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -955,12 +1306,23 @@
     font-size: 15px;
   }
 
-  .ask {
-    padding: var(--space-6);
+  .promptBand {
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-8);
   }
 
-  .stepItem {
-    padding-right: 0;
+  .mockProgress {
+    padding-inline: var(--space-4);
+  }
+
+  .mockProgressStep {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .mockProgressStep:not(:last-child)::after {
+    display: none;
   }
 
   .footerInner {
@@ -991,6 +1353,18 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* 「생각하는 중」이 접히며 사라진다. 높이까지 0 이라야 카드가 그 자리를 쓴다. */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
   }
 }
 
@@ -1045,11 +1419,29 @@
   }
 
   .mockAsk {
-    animation-delay: 460ms;
+    /* 첫 프레임부터 사용자의 요청이 보여야 빈 데모처럼 보이지 않는다. */
+    animation-delay: 0ms;
+  }
+
+  /* 단계가 바뀔 때마다 새로 붙으므로 지연 없이 그 자리에서 올라온다. */
+  .mockWorking {
+    animation: riseIn 320ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  }
+
+  .mockThinkingDots span {
+    animation: blink 1.1s ease-in-out infinite;
+  }
+
+  .mockThinkingDots span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  .mockThinkingDots span:nth-child(3) {
+    animation-delay: 0.36s;
   }
 
   .mockCard {
-    animation-delay: 640ms;
+    animation-delay: 60ms;
   }
 
   .hero::before,
@@ -1070,8 +1462,7 @@
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .bandInner > .h2,
-    .askList,
-    .stepRail,
+    .promptInner,
     .split,
     .ctaInner {
       animation: riseIn linear both;
@@ -1087,7 +1478,6 @@
 @media (prefers-reduced-motion: reduce) {
   .ask,
   .btnPrimary,
-  .btnGhost,
   .btnOnDark,
   .navCta {
     transition: none;
@@ -1095,7 +1485,6 @@
 
   .ask:hover,
   .btnPrimary:hover,
-  .btnGhost:hover,
   .btnOnDark:hover {
     transform: none;
   }
