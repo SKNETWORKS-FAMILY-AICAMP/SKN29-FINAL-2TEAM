@@ -12,7 +12,7 @@
 
 .page {
   --band-x: var(--space-12);
-  --band-y: var(--space-20);
+  --band-y: clamp(88px, 8vw, 104px);
 
   min-height: 100vh;
   background: var(--color-bg);
@@ -32,19 +32,18 @@
   z-index: 10;
   /* ⚠ 패딩은 **바깥**이 갖고 max-width 는 **안쪽**이 갖는다. 둘을 한 요소에
      몰면 콘텐츠 폭이 `max-width - 패딩` 이 되어 본문 그리드와 어긋난다. */
-  padding: var(--space-5) var(--band-x) 0;
+  padding: 0 var(--band-x);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  backdrop-filter: blur(16px);
 }
 
-/* 화면에 붙은 띠가 아니라 지면 위에 떠 있는 알약이다. 아래 카드들과 같은
-   그림자를 써서 한 화면 안에서 층이 하나로 읽히게 한다. */
+/* 콘텐츠 폭에 맞춘 얇은 상단 바다. 히어로의 큰 문장과 경쟁하지 않게 그림자와
+   두꺼운 외곽선은 걷어낸다. */
 .navInner {
-  max-width: 1280px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
-  backdrop-filter: blur(10px);
-  box-shadow: var(--shadow-soft);
+  padding: var(--space-4) 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -222,7 +221,13 @@
 .hero {
   position: relative;
   overflow: hidden;
-  padding: var(--space-24) var(--band-x) var(--band-y);
+  padding: clamp(72px, 8vw, 104px) var(--band-x) 88px;
+}
+
+.statement .h2 {
+  font-size: clamp(40px, 4vw, 56px);
+  line-height: 1.22;
+  letter-spacing: -1.8px;
 }
 
 /*
@@ -239,95 +244,110 @@
 }
 
 .hero::before {
-  top: -240px;
-  right: -180px;
-  width: 780px;
-  height: 780px;
+  top: -420px;
+  left: calc(50% - 490px);
+  width: 980px;
+  height: 980px;
   background: radial-gradient(circle, var(--color-primary-soft-strong) 0%, transparent 70%);
 }
 
 .hero::after {
-  top: 180px;
-  left: -260px;
-  width: 640px;
-  height: 640px;
-  background: radial-gradient(circle, var(--color-primary-soft) 0%, transparent 70%);
+  top: 520px;
+  left: calc(50% - 590px);
+  width: 1180px;
+  height: 520px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, var(--color-primary-soft) 0%, transparent 72%);
 }
 
 .heroInner {
   position: relative;
-  max-width: 1280px;
+  max-width: 1120px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 580px) minmax(0, 1fr);
-  gap: var(--space-16);
-  /* `center` 였다. 목업이 세로로 길어 카피가 가운데로 밀리고 위아래에 죽은
-     공간이 생겼다 — 히어로 좌측이 비어 보이던 것의 원인이다. */
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 52px;
+  align-items: center;
 }
 
 .heroCopy {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  text-align: center;
 }
 
 .badge {
-  margin: 0 0 var(--space-5);
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-soft-strong);
+  margin: 0 0 18px;
   color: var(--color-primary);
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
 }
 
 .heroTitle {
   margin: 0;
-  font-size: var(--text-display);
-  line-height: 1.26;
-  font-weight: 800;
+  max-width: 940px;
+  font-size: clamp(54px, 6vw, 78px);
+  line-height: 1.08;
+  font-weight: 850;
   color: var(--color-heading);
-  letter-spacing: -1.2px;
+  letter-spacing: -3.4px;
+}
+
+/* 기능을 나열하는 제목이 아니라, 이 제품이 만드는 변화를 한 번 더 읽히게 한다. */
+.heroAccent {
+  display: block;
+  color: var(--color-primary);
 }
 
 .heroSub {
-  margin: var(--space-5) 0 0;
-  max-width: 540px;
-  font-size: var(--text-lead);
-  line-height: 1.75;
+  margin: 24px 0 0;
+  max-width: 720px;
+  font-size: 19px;
+  line-height: 1.8;
   color: var(--color-body);
 }
 
 .heroActions {
-  margin-top: var(--space-8);
+  margin-top: 30px;
   display: flex;
   gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .proofs {
-  margin: var(--space-8) 0 0;
-  padding: var(--space-5) 0 0;
-  border-top: 1px solid var(--color-border);
+  margin: 18px 0 0;
+  padding: 0;
+  border-top: none;
   list-style: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  align-self: stretch;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
 }
 
 .proof {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: 14px;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  padding: 7px 11px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--color-body);
+  color: var(--color-muted);
 }
 
 .heroVisual {
   position: relative;
+  isolation: isolate;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -438,11 +458,27 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  /* ⚠ 데모는 단계마다 높이가 다르다 — 자리를 안 잡으면 누를 때마다 히어로가
-     통째로 위아래로 튄다(1440 에서 121 → 449px). 제일 큰 단계(확인 카드)만큼
-     미리 잡아 둔다. 실측값이고, 카드 내용이 바뀌면 다시 재야 한다. */
-  min-height: 390px;
+  /* `min-height` 로는 확인 카드가 더 길 때 본문이 390 → 446px 로 늘어난다.
+     가장 큰 단계의 실측 높이를 고정해 thinking·confirm·done 전환이 히어로와
+     다음 섹션의 위치를 밀지 않게 한다. */
+  height: 446px;
+  overflow: hidden;
   justify-content: flex-start;
+}
+
+.heroVisual::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 8% -4% -5%;
+  border-radius: 48px;
+  background: color-mix(in srgb, var(--color-primary-soft-strong) 72%, transparent);
+  transform: rotate(-1.2deg);
+}
+
+.heroVisual .mock {
+  border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+  box-shadow: 0 42px 90px -44px rgba(30, 58, 95, 0.72), var(--shadow-float);
 }
 
 /* 사람이 친 말. 이 화면이 대화라는 것을 한눈에 알리는 유일한 장치다. */
@@ -673,54 +709,6 @@
   background: var(--color-placeholder);
 }
 
-/* ---------- 도구가 만든 파일 ---------- */
-
-/* 값은 실제 `ProducedFilesCard`(`cards.module.css` 의 `.filesCard`)에서 가져왔다. */
-.filesCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  /* 「표 만들기」 칸 안에 들어간다. 칸이 폭을 정하므로 여기서 잡지 않는다. */
-  margin-top: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft);
-}
-
-.fileRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.fileName {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-heading);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fileBtn {
-  flex: none;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 5px 11px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-body);
-}
-
-.fileHint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-muted);
-}
-
 /* ---------- 히어로 데모 ---------- */
 
 .mockReset {
@@ -792,29 +780,43 @@
 
 /* ---------- 2 · 요청 예시 ---------- */
 
-/* 히어로와 첫 본문 사이의 짧은 프롬프트 도크. 큰 카드 섹션 하나를 줄이고
-   사용자가 실제로 입력할 말을 제품 입력창처럼 한 줄에 모은다. */
+/* 제품을 설명한 뒤, 사용자가 실제로 입력할 말을 큰 여백과 함께 보여 주는
+   독립 장면이다. 기능 목록보다 먼저 사용 모습을 떠올리게 한다. */
 .promptBand {
-  padding: var(--space-10) var(--band-x);
+  padding: clamp(72px, 7vw, 88px) var(--band-x);
   background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
 }
 
 .promptInner {
-  max-width: 1280px;
+  max-width: 1080px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-8);
   align-items: center;
 }
 
+.promptIntro {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+}
+
 .promptTitle {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.35;
+  font-size: clamp(34px, 4vw, 48px);
+  line-height: 1.25;
+  letter-spacing: -1.6px;
   color: var(--color-heading);
+}
+
+/* 어두운 전환 구간은 페이지의 중심 명제라 일반 섹션 제목보다 한 단계 크게 둔다. */
+.bandHeadline {
+  max-width: 880px;
+  font-size: clamp(48px, 5vw, 64px);
+  line-height: 1.18;
+  letter-spacing: -2px;
 }
 
 .promptList {
@@ -823,25 +825,26 @@
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .prompt {
   min-width: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   background: var(--color-bg);
-  padding: var(--space-4);
+  padding: var(--space-5);
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
   color: var(--color-primary);
+  box-shadow: var(--shadow-soft);
 }
 
 .prompt p {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.65;
   font-weight: 600;
   color: var(--color-heading);
 }
@@ -884,21 +887,24 @@
  * 않고 화면이 같이 말하게 한다.
  */
 .gainGrid {
-  margin: var(--space-10) 0 0;
+  margin: 44px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: var(--space-4);
 }
 
 .gain {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-rows: 28px 44px;
+  gap: var(--space-5);
   border-radius: var(--radius-2xl);
   background: rgba(255, 255, 255, 0.07);
+  min-height: 0;
   padding: var(--space-6);
+  align-content: center;
 }
 
 .gainBefore,
@@ -1133,11 +1139,11 @@
 
 .ctaTitle {
   margin: 0;
-  font-size: var(--text-title);
-  line-height: 1.35;
+  font-size: clamp(42px, 4.5vw, 60px);
+  line-height: 1.2;
   font-weight: 800;
   color: #fff;
-  letter-spacing: -0.4px;
+  letter-spacing: -1.8px;
 }
 
 .ctaSub {
@@ -1249,6 +1255,7 @@
   }
 
   .gainGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
   }
 
@@ -1267,7 +1274,7 @@
   }
 
   .navInner {
-    padding-left: var(--space-5);
+    padding-inline: 0;
   }
 
   .hero {
@@ -1275,17 +1282,26 @@
   }
 
   .mockBody {
-    min-height: 430px;
+    /* 390px 화면의 확인 카드가 526px, 320px 화면에서는 658px다.
+       좁아질수록 문장이 감기는 만큼만 늘리되 각 화면 안에서는 단계와 무관하게
+       같은 높이를 유지한다. */
+    height: clamp(526px, calc(1260px - 188vw), 658px);
   }
 
   .heroTitle {
-    font-size: 34px;
-    letter-spacing: -0.6px;
+    font-size: 40px;
+    letter-spacing: -1.4px;
   }
 
-  .h2,
-  .ctaTitle {
+  .h2 {
     font-size: 26px;
+  }
+
+  .bandHeadline,
+  .statement .h2,
+  .ctaTitle {
+    font-size: 34px;
+    letter-spacing: -0.9px;
   }
 
   .heroSub,
@@ -1299,6 +1315,8 @@
   }
 
   .miniFlow {
+    flex-direction: column;
+    align-items: flex-start;
     gap: var(--space-2) var(--space-3);
   }
 
@@ -1307,8 +1325,18 @@
   }
 
   .promptBand {
-    padding-top: var(--space-8);
-    padding-bottom: var(--space-8);
+    padding-top: var(--space-16);
+    padding-bottom: var(--space-16);
+  }
+
+  .promptTitle {
+    font-size: 30px;
+    letter-spacing: -0.8px;
+  }
+
+  .gain {
+    min-height: 0;
+    grid-template-rows: auto auto;
   }
 
   .mockProgress {
