@@ -110,3 +110,44 @@ class WorkerHeartbeatTests(SimpleTestCase):
         self.assertIn("테스트 상황을 만들고 있어요.", progress_messages)
         self.assertIn("검증을 통과한 내용을 개인 스킬로 저장하고 있어요.", progress_messages)
         repository.mark_succeeded.assert_called_once_with("job-1", lease_owner="worker-1")
+
+
+class StorageCleanupWorkerTests(SimpleTestCase):
+    @patch("apps.skills.management.commands.skill_validation_worker.storage.remove")
+    @patch(
+        "apps.skills.management.commands.skill_validation_worker."
+        "StorageCleanupOutboxRepository"
+    )
+    def test_due_object_is_removed_and_outbox_row_is_completed(self, repository, remove):
+        repository.claim_due.return_value = {
+            "cleanup_id": 7,
+            "storage_key": "user/UA001/orphan.pdf",
+            "attempts": 1,
+        }
+
+        Command()._process_one_storage_cleanup()
+
+        remove.assert_called_once_with("user/UA001/orphan.pdf")
+        repository.complete.assert_called_once_with(cleanup_id=7)
+
+    @patch("apps.skills.management.commands.skill_validation_worker.storage.remove")
+    @patch(
+        "apps.skills.management.commands.skill_validation_worker."
+        "StorageCleanupOutboxRepository"
+    )
+    def test_storage_failure_keeps_row_for_backoff_retry(self, repository, remove):
+        from botocore.exceptions import BotoCoreError
+
+        repository.claim_due.return_value = {
+            "cleanup_id": 8,
+            "storage_key": "user/UA001/orphan.pdf",
+            "attempts": 2,
+        }
+        remove.side_effect = BotoCoreError()
+
+        Command()._process_one_storage_cleanup()
+
+        repository.complete.assert_not_called()
+        repository.record_failure.assert_called_once_with(
+            cleanup_id=8, error_code="BotoCoreError"
+        )

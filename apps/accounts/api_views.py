@@ -12,6 +12,7 @@ from django.http import HttpResponse
 
 from backend.db import AccountRepository, MemberInviteRepository, log_audit
 from backend.services import storage
+from backend.services.storage import STORAGE_ERRORS
 from backend.services.hr import list_person_skills
 from backend.db.errors import (
     DuplicateRecord,
@@ -317,7 +318,7 @@ class CurrentAvatarAPIView(AuthenticatedAPIView):
             # 파일이 없는" 상태가 생겨 화면이 깨진 이미지를 그린다.
             storage.save(key, data)
             AccountRepository.set_avatar_key(account_id=account_id, avatar_key=key)
-        except OSError as exc:
+        except STORAGE_ERRORS as exc:
             return Response(
                 {"detail": f"사진을 저장하지 못했습니다: {exc}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

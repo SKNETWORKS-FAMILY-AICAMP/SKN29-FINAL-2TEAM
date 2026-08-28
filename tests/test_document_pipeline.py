@@ -617,21 +617,35 @@ class UploadWorkerFormatParityTests(SimpleTestCase):
     2026-08-24 에 실제로 그 상태였다 — 요약 단계를 없애면서 txt·md 의 근거
     (「워커는 못 읽어도 요약은 우리 CPU 가 만든다」)가 사라졌는데 업로드 목록에는
     그대로 남아 있었다. 워커에 MD 백엔드를 붙여 맞췄다.
+
+    2026-08-28 에 xlsx·csv·json·zip 을 "다운로드 전용"으로 받기 시작했다 — 이쪽은
+    **일부러 색인을 안 하므로** 이 대조에서 제외한다(`_DOWNLOAD_ONLY_UPLOAD_TYPES`).
     """
 
-    def test_올릴_수_있는_형식은_워커가_전부_읽는다(self):
+    def test_색인하는_업로드_형식은_워커가_전부_읽는다(self):
         from backend.services import storage
         from runpod_worker.pipeline import SUPPORTED_MIME_TYPES
 
-        uploadable = set(storage._UPLOAD_TYPES.values())
+        indexed = set(storage._INDEXED_UPLOAD_TYPES.values())
         readable = set(SUPPORTED_MIME_TYPES)
 
         self.assertEqual(
-            sorted(uploadable - readable),
+            sorted(indexed - readable),
             [],
-            "올릴 수는 있는데 워커가 못 읽는 형식이 있다. "
+            "색인 대상인데 워커가 못 읽는 형식이 있다. "
             "업로드에서 빼거나 워커에 백엔드를 붙여야 한다.",
         )
+
+    def test_다운로드_전용_형식은_색인_대상에서_빠진다(self):
+        from backend.services import storage
+        from runpod_worker.pipeline import SUPPORTED_MIME_TYPES
+
+        download_only = set(storage._DOWNLOAD_ONLY_UPLOAD_TYPES.values())
+
+        # 색인 대상과 겹치지 않고, 워커가 읽지도 않는다 — 겹치면 "다운로드 전용"이
+        # 무의미해지고, 워커가 읽으면 자기가 만든 표를 근거로 인용하게 된다.
+        self.assertEqual(download_only & set(storage._INDEXED_UPLOAD_TYPES.values()), set())
+        self.assertEqual(download_only & set(SUPPORTED_MIME_TYPES), set())
 
     def test_평문은_마크다운_백엔드로_보낸다(self):
         """docling 2.117 의 `InputFormat` 에는 평문 형식이 아예 없다(휠 실측).

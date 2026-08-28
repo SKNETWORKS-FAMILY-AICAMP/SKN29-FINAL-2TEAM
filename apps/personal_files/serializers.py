@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from backend.services import storage
+
 
 def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
     """**상태를 하나로 뭉개지 않는다.** 사람이 할 행동이 각각 다르다 —
@@ -35,6 +37,9 @@ def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
         # 같은 목록에 섞이므로 **화면이 갈라 보여야 한다** — 내보낸 표를 내가
         # 올린 원본으로 착각하면 그것을 근거로 삼는다.
         "origin": "generated" if row.get("source_type") == "GENERATED" else "upload",
+        # xlsx·csv·json·zip 처럼 색인 없이 받은 형식(2026-08-28). 화면이 색인
+        # 상태나 검색 토글 대신 "다운로드 전용" 배지를 보이게 한다.
+        "download_only": storage.is_download_only_upload(row.get("mime_type")),
         "shared": row.get("shared_team_id") is not None,
         # 공유 받은 목록에만 있다. 누가 올렸는지 모르면 내용을 믿을 근거가 없다.
         "owner_name": row.get("owner_name"),

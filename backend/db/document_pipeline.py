@@ -53,9 +53,9 @@ class PipelineDocumentRepository:
     def get_for_processing(*, doc_id: str, account_id: str) -> dict[str, Any]:
         """파싱·요약이 읽는 한 건.
 
-        **팀 문서와 내 파일 둘 다 여기로 온다**(2026-08-18). 파이프라인은 소유를
-        모르고 `doc_id` 만 보므로 갈래를 하나로 둔다 — 나누면 파싱 경로가 두 벌이
-        된다. 대신 **누구 것인지는 여기서 반드시 확인한다.**
+        **팀 문서·내 파일·우리 팀에 공유된 파일이 모두 여기로 온다**. 파이프라인은
+        소유를 모르고 `doc_id` 만 보므로 갈래를 하나로 둔다 — 나누면 파싱 경로가
+        두 벌이 된다. 대신 **누가 볼 수 있는지는 여기서 반드시 확인한다.**
         """
 
         with database_connection() as connection:
@@ -68,7 +68,8 @@ class PipelineDocumentRepository:
                     team_id = None
                 cursor.execute(
                     """
-                    SELECT doc_id, team_id, owner_account_id, proj_id, file_name, mime_type,
+                    SELECT doc_id, team_id, owner_account_id, shared_team_id,
+                           proj_id, file_name, mime_type,
                            doc_role, cur_revision, content_hash, storage_key, deleted,
                            access_revoked, src_file_id
                     FROM doc WHERE doc_id = %s
@@ -82,7 +83,12 @@ class PipelineDocumentRepository:
         # 소유자 비교를 따로 둔다. 둘 다 아니면 남의 것이다.
         mine = row["owner_account_id"] is not None and row["owner_account_id"] == account_id
         ours = row["team_id"] is not None and row["team_id"] == team_id
-        if not (mine or ours):
+        shared_with_us = (
+            team_id is not None
+            and row["shared_team_id"] is not None
+            and row["shared_team_id"] == team_id
+        )
+        if not (mine or ours or shared_with_us):
             raise PermissionDenied("이 문서에 접근할 수 없습니다.")
         if row["deleted"] or row["access_revoked"]:
             raise PermissionDenied("삭제되었거나 접근이 철회된 문서입니다.")
@@ -226,7 +232,7 @@ class PipelineDocumentRepository:
 
     @staticmethod
     def list_documents(account_id: str) -> list[dict[str, Any]]:
-        """문서 화면·`document_list` 도구가 쓰는 팀 문서 목록.
+        """문서 화면·`document_list` 도구가 쓰는 목록 — **팀 문서 + 내가 올린 내 파일**.
 
         **상태를 하나로 뭉개지 않는다.** 「아직 색인 전」·「색인 중」·「색인에
         실패했다」·「본문까지 됐다」는 사람이 할 행동이 각각 다르다 — 순서대로
@@ -235,6 +241,11 @@ class PipelineDocumentRepository:
         전에는 `doc_meta` 를 조인해 요약·추출상태를 함께 줬다. 요약을 없애면서
         (2026-08-24) 그 자리를 `index_status`·`index_detail` 이 대신한다 —
         묻는 것이 「요약이 됐나」에서 「본문이 색인됐나」로 바뀌었기 때문이다.
+
+        **개인 파일도 함께 준다**(2026-08-28). "내 파일에 있는 계약서 읽어줘"
+        처럼 사용자가 파일을 이름으로 지목하면 에이전트가 그 이름을 `doc_id` 로
+        옮길 곳이 필요하다 — 전에는 팀 문서만 줘서 개인 파일은 이름으로 못 찾았다.
+        `is_personal` 로 팀/개인을 구분해 돌려준다.
         """
 
         with database_connection() as connection:
@@ -247,14 +258,16 @@ class PipelineDocumentRepository:
                            -- 「프로젝트 PJ004 의 기준 문서」라고 옮겨 적는다
                            -- (2026-08-19 실측 · §0 원칙 2).
                            p.name AS proj_name,
+                           (d.owner_account_id IS NOT NULL) AS is_personal,
                            d.src_modified_at, d.storage_key,
                            d.index_status, d.index_detail, {_SEARCH_READY}
                     FROM doc AS d
                     LEFT JOIN proj AS p ON p.proj_id = d.proj_id
-                    WHERE d.team_id = %s AND d.deleted = false AND d.access_revoked = false
+                    WHERE d.deleted = false AND d.access_revoked = false
+                      AND (d.team_id = %s OR d.owner_account_id = %s)
                     ORDER BY d.src_modified_at DESC NULLS LAST, d.doc_id
                     """,
-                    (team_id,),
+                    (team_id, account_id),
                 )
                 return list(cursor.fetchall())
 
@@ -341,6 +354,12 @@ class PipelineDocumentRepository:
         아예 안 타서 `ready` 도 `failed` 도 `running` 도 절대 안 되는데, 분모에만
         들어가면 진행률이 3/4 에서 영원히 멈춘다 — 「진행 카드가 서재 전체를
         세던 것」(`67b1154`)과 같은 모양의 실패다.
+
+        ⚠ **"다운로드 전용"으로 올린 파일도 안 센다**(2026-08-28). xlsx·csv·json·zip
+        은 색인 파이프라인을 안 태우고 `search_enabled = false` 로 들어온다 —
+        `GENERATED` 와 같은 이유로 분모에서 뺀다. 사용자가 일반 파일의 검색을
+        직접 끈 경우도 같이 빠지는데, 그 파일은 이미 「안 읽겠다」는 뜻이라 진행
+        표시에 있을 이유가 없다.
         """
 
         empty = {"total": 0, "ready": 0, "failed": 0, "running": 0}
@@ -359,6 +378,7 @@ class PipelineDocumentRepository:
                     WHERE d.deleted = false
                       AND (d.team_id = %s OR d.owner_account_id = %s)
                       AND d.source_type <> 'GENERATED'
+                      AND NOT (d.source_type = 'UPLOAD' AND d.search_enabled = false)
                     GROUP BY 1
                     """,
                     (team_id, account_id),
@@ -649,7 +669,10 @@ class PersonalDocumentRepository:
         워커가 읽지도 못해서(`storage._UPLOAD_TYPES` 주석) 켜 두면 색인이
         `FAILED` 로 남고, 사용자는 고칠 수 없는 실패를 들여다보게 된다.
 
-        사람이 나중에 목록에서 켤 수는 있다. 끄는 것은 기본값이지 금지가 아니다.
+        만든 즉시 「내 파일」 라이브러리에 올린다 — 채팅 카드에서 바로 내려받을
+        수도 있다(2026-08-29 원복). 사람이 나중에 목록에서 검색을 켤 수는 있다.
+
+        사람이 나중에 목록에서 검색을 켤 수는 있다. 끄는 것은 기본값이지 금지가 아니다.
         """
 
         with database_connection() as connection:
@@ -866,6 +889,79 @@ class PersonalDocumentRepository:
                 cursor.execute("DELETE FROM doc_block WHERE doc_id = %s", (doc_id,))
                 cursor.execute("DELETE FROM doc WHERE doc_id = %s", (doc_id,))
         return row["storage_key"]
+
+
+class StorageCleanupOutboxRepository:
+    """삭제 실패한 저장 객체를 기존 상시 워커가 재시도하게 하는 outbox."""
+
+    @staticmethod
+    def enqueue(*, storage_key: str, error_code: str | None = None) -> None:
+        if not storage_key:
+            return
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO storage_cleanup_outbox (storage_key, last_error_code)
+                    VALUES (%s, %s)
+                    ON CONFLICT (storage_key) DO UPDATE
+                       SET next_attempt_at = LEAST(
+                               storage_cleanup_outbox.next_attempt_at, now()
+                           ),
+                           last_error_code = EXCLUDED.last_error_code,
+                           updated_at = now()
+                    """,
+                    (storage_key, error_code),
+                )
+
+    @staticmethod
+    def claim_due() -> dict[str, Any] | None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    WITH candidate AS (
+                        SELECT cleanup_id
+                          FROM storage_cleanup_outbox
+                         WHERE next_attempt_at <= now()
+                         ORDER BY next_attempt_at, cleanup_id
+                         FOR UPDATE SKIP LOCKED
+                         LIMIT 1
+                    )
+                    UPDATE storage_cleanup_outbox AS item
+                       SET attempts = item.attempts + 1,
+                           next_attempt_at = now() + make_interval(
+                               secs => LEAST(3600, 15 * (2 ^ LEAST(item.attempts, 8)))
+                           ),
+                           updated_at = now()
+                      FROM candidate
+                     WHERE item.cleanup_id = candidate.cleanup_id
+                    RETURNING item.cleanup_id, item.storage_key, item.attempts
+                    """
+                )
+                return cursor.fetchone()
+
+    @staticmethod
+    def complete(*, cleanup_id: int) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM storage_cleanup_outbox WHERE cleanup_id = %s",
+                    (cleanup_id,),
+                )
+
+    @staticmethod
+    def record_failure(*, cleanup_id: int, error_code: str) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE storage_cleanup_outbox
+                       SET last_error_code = %s, updated_at = now()
+                     WHERE cleanup_id = %s
+                    """,
+                    (error_code[:100], cleanup_id),
+                )
 
 
 #: `rank_by_content` 가 훑을 청크 수. 문서 순위를 매기려면 문서 하나가 상위를

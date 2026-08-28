@@ -48,12 +48,33 @@ class UploadTypeTests(SimpleTestCase):
             storage.upload_mime_type("a.md", "# 제목".encode("utf-8")), "text/markdown"
         )
 
-    def test_formats_we_cannot_read_at_all_are_rejected(self):
-        """pptx·xlsx 는 워커도 CPU 추출기도 못 읽는다 — 올려 봐야 요약조차 안 나온다."""
+    def test_formats_we_cannot_use_at_all_are_rejected(self):
+        """pptx·hwp 는 워커도 CPU 추출기도 못 읽고, 도구 입력으로도 안 쓴다.
 
-        for name in ("a.pptx", "a.xlsx", "a.csv", "a.hwp", "a.zip", "noext"):
+        xlsx·csv·json·zip 은 2026-08-28 부터 "다운로드 전용"으로 받는다 —
+        아래 `test_data_formats_are_accepted_as_download_only` 가 그쪽을 본다.
+        """
+
+        for name in ("a.pptx", "a.hwp", "noext"):
             with self.subTest(name=name):
                 self.assertIsNone(storage.upload_mime_type(name, b"PK"))
+
+    def test_data_formats_are_accepted_as_download_only(self):
+        """xlsx·csv·json·zip 은 색인은 안 하지만 표·데이터 도구 입력·내려받기로 받는다."""
+
+        pk = b"PK\x03\x04rest"
+        text = b"a,b\n1,2\n"
+        cases = [
+            ("표.xlsx", pk, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("명단.csv", text, "text/csv"),
+            ("설정.json", text, "application/json"),
+            ("묶음.zip", pk, "application/zip"),
+        ]
+        for name, body, mime in cases:
+            with self.subTest(name=name):
+                self.assertEqual(storage.upload_mime_type(name, body), mime)
+                self.assertTrue(storage.is_download_only_upload(mime))
+        self.assertFalse(storage.is_download_only_upload("application/pdf"))
 
     def test_extension_case_does_not_matter(self):
         self.assertEqual(storage.upload_mime_type("A.PDF", b"%PDF-"), "application/pdf")

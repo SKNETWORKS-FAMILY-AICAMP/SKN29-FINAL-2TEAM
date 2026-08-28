@@ -20,6 +20,11 @@ import hashlib
 import os
 from pathlib import Path
 
+from botocore.exceptions import BotoCoreError, ClientError
+
+# 로컬 파일시스템과 S3의 실패를 호출자가 같은 경계로 처리하게 한다.
+STORAGE_ERRORS = (OSError, BotoCoreError, ClientError)
+
 # 저장 위치. 기본값은 저장소 바깥이다 — `/app`은 소스 바인드 마운트라 여기에 쓰면
 # 내려받은 문서가 git 작업 트리에 섞인다.
 _DEFAULT_ROOT = "/var/lib/halil/documents"
@@ -34,6 +39,11 @@ _EXTENSIONS = {
     "text/plain": ".txt",
     "text/markdown": ".md",
     "text/csv": ".csv",
+    "text/html": ".html",
+    "application/json": ".json",
+    "application/zip": ".zip",
+    "application/vnd.apache.parquet": ".parquet",
+    "application/octet-stream": ".bin",
 }
 
 
@@ -81,20 +91,44 @@ def build_personal_key(*, account_id: str, doc_id: str, mime_type: str | None) -
 #: 읽어도 요약은 우리 CPU 가 만든다」는 근거가 사라졌고, 그러면 이 둘이 올릴
 #: 수만 있고 검색은 안 되는 형식이 되기 때문이다.
 #:
-#: pptx·xlsx 는 안 받는다. 워커가 못 읽는 것은 그대로다.
-_UPLOAD_TYPES = {
+#: pptx 는 안 받는다. 워커가 못 읽는 것은 그대로다. xlsx·csv·json·zip 은
+#: 2026-08-28 에 "다운로드 전용"으로 받기 시작했다 — 색인 파이프라인은 안 타고
+#: 표·데이터 도구의 입력과 내려받기로만 쓴다(아래 `_DOWNLOAD_ONLY_UPLOAD_TYPES`).
+#: 본문까지 파싱·색인하는 형식. 올리면 승격 파이프라인을 탄다.
+_INDEXED_UPLOAD_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".txt": "text/plain",
     ".md": "text/markdown",
 }
 
-#: 앞부분 시그니처. 받는 둘 다 시그니처가 있어서 바이트로 한 번 더 본다.
+#: 표·데이터 도구(`table_transform`·`data_quality_check`·`archive_manage`)의 입력용.
+#: **색인은 안 한다**(2026-08-28) — 워커가 xlsx·zip 을 못 읽고, csv·json 도 청크로
+#: 쪼갤 대상이 아니다. 올려서 `file_id` 로 도구에 넘기고 내려받기만 한다.
+_DOWNLOAD_ONLY_UPLOAD_TYPES = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".zip": "application/zip",
+}
+
+_UPLOAD_TYPES = {**_INDEXED_UPLOAD_TYPES, **_DOWNLOAD_ONLY_UPLOAD_TYPES}
+
+
+def is_download_only_upload(mime_type: str | None) -> bool:
+    """올려도 색인하지 않고 내려받기·도구 입력으로만 쓰는 형식인가(2026-08-28)."""
+
+    return mime_type in _DOWNLOAD_ONLY_UPLOAD_TYPES.values()
+
+
+#: 앞부분 시그니처. 있는 형식만 바이트로 한 번 더 본다(csv·json 은 시그니처가 없다).
 _UPLOAD_SIGNATURES = {
     "application/pdf": b"%PDF-",
     # docx 는 zip 이다. 「zip 인가」까지만 확인할 수 있고 pptx·xlsx 와는 서로
     # 구분하지 못한다 — 그 둘은 받지 않으므로 지금은 문제가 되지 않는다.
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": b"PK",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": b"PK",
+    "application/zip": b"PK",
 }
 
 
