@@ -1,0 +1,38 @@
+{
+  "dataset": {
+    "name": "real-document-validation-v1",
+    "status": "DRAFT",
+    "purpose": "현재 vector 0.5 + lexical 0.5 검색의 실제 문서 독립 검증",
+    "algorithm_selection_allowed": false,
+    "contains_raw_content": false,
+    "approved_scope": "사용자 확인 후 입력"
+  },
+  "documents": [
+    {
+      "doc_id": "사용자 확인 후 입력",
+      "revision": "동결한 revision",
+      "display_alias": "비식별 별칭",
+      "approved_for_evaluation": false
+    }
+  ],
+  "queries": [
+    {
+      "id": "R001",
+      "query": "사람이 실제 문서를 보고 작성한 자연스러운 질문",
+      "tags": ["paraphrase"],
+      "expected": [
+        {
+          "doc_id": "정답 문서 ID",
+          "revision": "정답 revision",
+          "chunk_id": "정답 청크 ID",
+          "block_id": "정답 블록 ID"
+        }
+      ],
+      "must_not_cite": [],
+      "written_before_search": true,
+      "human_verified": false,
+      "reviewer": "담당자 식별자"
+    }
+  ],
+  "label_corrections": []
+}
