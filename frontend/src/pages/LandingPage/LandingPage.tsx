@@ -61,9 +61,9 @@ const GAINS = [
  * 적어 뒀는데, 그건 사용자 가치가 아니라 내부 라우팅 설명이었다.
  */
 const ASKS = [
-  '지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.',
-  '다음 주 업무 여유가 있는 팀원을 알려 줘.',
-  '확정한 내용만 프로젝트 업무로 등록해 줘.',
+  '회의에서 정한 일을 정리해 줘.',
+  '다음 주 여유 인력을 알려 줘.',
+  '확정한 업무만 등록해 줘.',
 ] as const;
 
 /** 에이전트를 만들어 쓰는 차례. 상태 이름은 쓰지 않는다. */
@@ -100,10 +100,10 @@ function Logo() {
 }
 
 /**
- * 히어로 데모 — 눌러서 흐름을 한 번 돌려 보는 자리.
+ * 히어로 데모 — 요청부터 등록 결과까지 자동으로 반복해 보여 주는 자리.
  *
  * 그림 한 장으로는 「설명은 알겠는데 실제로도 이렇게 되나」가 남는다. 그래서
- * 묻기 → 찾기 → 확인 → 등록 → 결과까지 **직접 눌러 보게** 한다.
+ * 묻기 → 찾기 → 확인 → 등록 → 결과를 짧은 대본으로 이어 보여 준다.
  *
  * ⚠ **서버를 부르지 않는다.** 화면만 도는 대본이다.
  *
@@ -116,32 +116,38 @@ function Logo() {
  * 「생각하는 중」·「문서 검색 실행 중」(`ChatPage.tsx` 의 `${toolName} 실행 중`) ·
  * 「선택한 N건 등록」·「등록하는 중…」·「N/N 등록 완료」(`ChatCards.tsx`).
  */
-type DemoStep = 'thinking' | 'searching' | 'confirm' | 'registering' | 'done';
+type DemoStep =
+  | 'thinking'
+  | 'searching'
+  | 'verifying'
+  | 'ready'
+  | 'confirm'
+  | 'registering'
+  | 'done';
 
-const DEMO_ASK = '지난 회의에서 결정된 일과 해야 할 일을 정리해 줘.';
+const DEMO_ASK = '어제 회의에서 정한 업무를 정리해 줘.';
 
 function ChatMock() {
-  // **빈 채로 기다리지 않는다.** 처음에 「눌러서 실행해 보세요」 버튼만 두었더니
-  // 확인 카드 높이만큼 잡아 둔 프레임이 300px 넘게 비어 보였다. 바로 돌려서
-  // 1초 안에 채우고, 누를 자리는 진짜 버튼(「선택한 8건 등록」)에 남긴다.
+  // **빈 채로 기다리지 않는다.** 첫 요청을 바로 보여 주고, 사용자의 클릭 없이
+  // 확인과 등록까지 진행한 뒤 처음부터 반복한다.
   const [step, setStep] = useState<DemoStep>('thinking');
   const timers = useRef<number[]>([]);
 
-  // 단계마다 타이머를 걸어 두고, 다시 누르거나 화면을 떠나면 전부 정리한다.
-  // 안 치우면 「다시 보기」를 누른 뒤 옛 타이머가 살아나 단계가 건너뛴다.
-  function schedule(steps: [DemoStep, number][]) {
+  // 한 주기의 타이머는 다음 주기가 시작되거나 화면을 떠날 때 전부 정리한다.
+  // 이전 주기의 타이머가 남으면 단계가 건너뛰므로 매번 먼저 비운다.
+  function startCycle() {
     timers.current.forEach(clearTimeout);
-    timers.current = steps.map(([next, delay]) =>
-      window.setTimeout(() => setStep(next), delay),
-    );
-  }
-
-  function run() {
     setStep('thinking');
-    schedule([
-      ['searching', 900],
-      ['confirm', 2100],
-    ]);
+    timers.current = [
+      // 진행 카드의 등장 애니메이션이 끝난 뒤에도 문구를 읽을 시간을 남긴다.
+      window.setTimeout(() => setStep('searching'), 2400),
+      window.setTimeout(() => setStep('verifying'), 4800),
+      window.setTimeout(() => setStep('ready'), 7200),
+      window.setTimeout(() => setStep('confirm'), 8100),
+      window.setTimeout(() => setStep('registering'), 11400),
+      window.setTimeout(() => setStep('done'), 12800),
+      window.setTimeout(startCycle, 16400),
+    ];
   }
 
   useEffect(() => {
@@ -151,21 +157,56 @@ function ChatMock() {
       setStep('confirm');
       return undefined;
     }
-    run();
+    startCycle();
     return () => timers.current.forEach(clearTimeout);
-    // 첫 마운트에서 한 번만 돈다. `run` 은 매 렌더 새로 만들어지므로 뺀다.
+    // 첫 마운트에서 한 번만 시작한다. `startCycle` 은 타이머 안에서 스스로 반복한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function register() {
-    setStep('registering');
-    schedule([['done', 1400]]);
-  }
-
-  const running = step === 'thinking' || step === 'searching';
+  const running =
+    step === 'thinking' || step === 'searching' || step === 'verifying' || step === 'ready';
   const showCard = step === 'confirm' || step === 'registering';
   const currentProgress =
     step === 'thinking' ? 0 : step === 'searching' ? 1 : step === 'done' ? 3 : 2;
+  const workSteps = [
+    { label: '요청 내용 파악', state: step === 'thinking' ? 'doing' : 'done' },
+    {
+      label: '회의록에서 결정사항 찾기',
+      state: step === 'thinking' ? 'todo' : step === 'searching' ? 'doing' : 'done',
+    },
+    {
+      label: '담당자와 마감일 확인',
+      state:
+        step === 'thinking' || step === 'searching'
+          ? 'todo'
+          : step === 'verifying'
+            ? 'doing'
+            : 'done',
+    },
+  ] as const;
+
+  const workingCopy = {
+    thinking: {
+      title: '요청을 파악하는 중',
+      description: '확인할 내용을 정리합니다',
+      count: '1 / 3 단계',
+    },
+    searching: {
+      title: '회의록에서 결정사항 찾는 중',
+      description: '결정된 일과 다음 할 일을 찾습니다',
+      count: '2 / 3 단계',
+    },
+    verifying: {
+      title: '담당자와 마감일 확인 중',
+      description: '빠진 정보가 없는지 살펴봅니다',
+      count: '3 / 3 단계',
+    },
+    ready: {
+      title: '확인이 끝났습니다',
+      description: '근거 있는 업무만 준비했습니다',
+      count: '3 / 3 완료',
+    },
+  }[running ? step : 'thinking'];
 
   return (
     <div className={styles.mock}>
@@ -174,9 +215,7 @@ function ChatMock() {
         <span className={styles.mockDot} />
         <span className={styles.mockDot} />
         <span className={styles.mockBarLabel}>Chat</span>
-        <button type="button" className={styles.mockReset} onClick={run}>
-          다시 보기
-        </button>
+        <span className={styles.mockAuto}>자동 재생</span>
       </div>
 
       <ol className={styles.mockProgress} aria-label="업무 처리 과정">
@@ -205,18 +244,63 @@ function ChatMock() {
 
         {running && (
           <div className={styles.mockWorking} role="status">
-            <span className={styles.mockWorkingIcon}>
-              <Icon name={step === 'thinking' ? 'sparkles' : 'search'} size={18} />
+            <div className={styles.mockWorkingHead}>
+              <span className={styles.mockWorkingIcon}>
+                <Icon name={step === 'thinking' ? 'sparkles' : step === 'ready' ? 'check-circle' : 'search'} size={18} />
+              </span>
+              <span className={styles.mockWorkingText}>
+                <strong>{workingCopy.title}</strong>
+                <small>{workingCopy.description}</small>
+              </span>
+              <span className={styles.mockWorkingCount}>{workingCopy.count}</span>
+              {step !== 'ready' && (
+                <span className={styles.mockThinkingDots} aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              )}
+            </div>
+            <span className={styles.mockWorkingTrack} aria-hidden="true">
+              <span
+                style={{
+                  width:
+                    step === 'thinking'
+                      ? '33%'
+                      : step === 'searching'
+                        ? '66%'
+                        : '100%',
+                }}
+              />
             </span>
-            <span className={styles.mockWorkingText}>
-              <strong>{step === 'thinking' ? '요청을 이해하고 있습니다' : '팀 문서에서 근거를 찾고 있습니다'}</strong>
-              <small>{step === 'thinking' ? '필요한 작업과 사용할 도구를 정합니다' : '관련 문장과 출처를 함께 확인합니다'}</small>
-            </span>
-            <span className={styles.mockThinkingDots} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
+            <ul className={styles.mockWorkSteps}>
+              {workSteps.map((item) => (
+                <li className={item.state === 'todo' ? styles.mockWorkStepTodo : styles.mockWorkStep} key={item.label}>
+                  <Icon
+                    name={item.state === 'done' ? 'check-circle' : item.state === 'doing' ? 'loader' : 'circle-help'}
+                    size={14}
+                    color={
+                      item.state === 'done'
+                        ? 'var(--color-success)'
+                        : item.state === 'doing'
+                          ? 'var(--color-primary)'
+                          : 'var(--color-border)'
+                    }
+                    spin={item.state === 'doing'}
+                  />
+                  {item.label}
+                </li>
+              ))}
+            </ul>
+            {(step === 'searching' || step === 'verifying' || step === 'ready') && (
+              <>
+                <span className={styles.mockWorkQuery}>
+                  <Icon name="search" size={13} color="var(--color-placeholder)" />
+                  “고객 안내문” · “담당자” · “금요일”
+                </span>
+                <p className={styles.mockWorkFoot}>참고한 문서 1개 · 근거 1건</p>
+              </>
+            )}
           </div>
         )}
 
@@ -229,9 +313,9 @@ function ChatMock() {
                   <Icon name="check" size={11} color="#fff" />
                 </span>
                 <strong>전체 선택</strong>
-                <span className={styles.mockMuted}>8건 선택됨</span>
+                <span className={styles.mockMuted}>3건 선택됨</span>
               </span>
-              <span className={styles.mockMuted}>업무 8건</span>
+              <span className={styles.mockMuted}>업무 3건</span>
             </div>
 
             <div className={styles.mockTaskRow}>
@@ -239,45 +323,40 @@ function ChatMock() {
                 <Icon name="check" size={11} color="#fff" />
               </span>
               <div className={styles.mockTaskBody}>
-                <span className={styles.mockTaskTitle}>통합포털 SSO 로그인 연동 설계</span>
+                <span className={styles.mockTaskTitle}>고객 안내문 최종본 검토</span>
                 <div className={styles.mockFacts}>
                   <span className={styles.mockFact}>
-                    <span className={styles.mockFactLabel}>담당 역할</span>
-                    <strong>백엔드 개발자</strong>
+                    <span className={styles.mockFactLabel}>담당자</span>
+                    <strong>김민지</strong>
                   </span>
                   <span className={styles.mockFact}>
-                    <span className={styles.mockFactLabel}>공수</span>
-                    <strong>32h</strong>
+                    <span className={styles.mockFactLabel}>마감</span>
+                    <strong>이번 주 금요일</strong>
                   </span>
                 </div>
-                {/* 근거를 못 찾아 비운 칸. 날짜를 박으면 시간이 지나 낡는다. */}
-                <p className={styles.mockMissing}>마감일: 근거 없어 비움</p>
+                {/* 근거를 못 찾아 비운 칸. 회의록에 없는 예상 시간은 임의로 채우지 않는다. */}
+                <p className={styles.mockMissing}>예상 시간: 근거 없어 비움</p>
                 <span className={styles.mockEvidenceToggle}>
                   <Icon name="chevron-down" size={13} color="var(--color-primary)" />
-                  원문 근거 2건
+                  원문 근거 1건
                 </span>
                 <blockquote className={styles.mockEvidence}>
                   <p>
-                    포털 로그인은 사내 계정과 고객 계정을 동일한 화면에서 처리하며, 인증 실패 시 3회까지
-                    재시도를 허용한다.
+                    고객 안내문은 이번 주 금요일까지 최종 검토한다. 김민지 님이 문안을 확인하고, 영업팀은
+                    발송 대상 목록과 안내 메일을 준비한다.
                   </p>
                   <footer>
-                    <span>E1 · 유사도 87%</span>
-                    <span className={styles.mockEvidenceSource}>통합포털_기획_회의록.docx</span>
+                    <span>4문단</span>
+                    <span className={styles.mockEvidenceSource}>출시_준비_회의록.docx</span>
                   </footer>
                 </blockquote>
               </div>
             </div>
 
             <div className={styles.mockConfirmActions}>
-              <button
-                type="button"
-                className={styles.mockFootBtn}
-                onClick={register}
-                disabled={step === 'registering'}
-              >
-                {step === 'registering' ? '등록하는 중…' : '선택한 8건 등록'}
-              </button>
+              <span className={styles.mockFootBtn}>
+                {step === 'registering' ? '등록하는 중…' : '선택한 3건 등록'}
+              </span>
               <span className={styles.mockFootGhost}>거절</span>
             </div>
           </div>
@@ -287,31 +366,38 @@ function ChatMock() {
           <div className={styles.mockCard}>
             <div className={styles.mockResultHead}>
               <Icon name="check-circle" size={17} color="var(--color-success-text)" />
-              8/8 등록 완료
+              3/3 등록 완료
             </div>
             <div className={styles.mockIssueHead}>
-              <strong>등록된 이슈 8건</strong>
+              <strong>등록된 업무 3건</strong>
             </div>
             <div className={styles.mockIssueRow}>
-              <span className={styles.mockIssueKey}>PORTAL-141</span>
-              <span className={styles.mockIssueTitle}>통합포털 SSO 로그인 연동 설계</span>
-              <span className={styles.mockMuted}>근거 2건</span>
+              <span className={styles.mockIssueKey}>업무 1</span>
+              <span className={styles.mockIssueBody}>
+                <strong className={styles.mockIssueTitle}>고객 안내문 최종본 검토</strong>
+                <span className={styles.mockIssueMeta}>김민지 · 이번 주 금요일</span>
+              </span>
+              <span className={styles.mockMuted}>근거 1건</span>
             </div>
             <div className={styles.mockIssueRow}>
-              <span className={styles.mockIssueKey}>PORTAL-142</span>
-              <span className={styles.mockIssueTitle}>권한 등급별 메뉴 노출 규칙 정의</span>
-              <span className={styles.mockMuted}>근거 3건</span>
+              <span className={styles.mockIssueKey}>업무 2</span>
+              <span className={styles.mockIssueBody}>
+                <strong className={styles.mockIssueTitle}>발송 대상 고객 목록 정리</strong>
+                <span className={styles.mockIssueMeta}>영업팀 · 이번 주 목요일</span>
+              </span>
+              <span className={styles.mockMuted}>근거 1건</span>
             </div>
             <div className={styles.mockIssueRow}>
-              <span className={styles.mockIssueKey}>PORTAL-143</span>
-              <span className={styles.mockIssueTitle}>인증 실패 재시도 정책 정리</span>
-              <span className={styles.mockMuted}>근거 2건</span>
+              <span className={styles.mockIssueKey}>업무 3</span>
+              <span className={styles.mockIssueBody}>
+                <strong className={styles.mockIssueTitle}>안내 메일 발송 준비</strong>
+                <span className={styles.mockIssueMeta}>영업팀 · 안내문 검토 후</span>
+              </span>
+              <span className={styles.mockMuted}>근거 1건</span>
             </div>
-            <div className={styles.mockIssueRow}>
-              <span className={styles.mockIssueKey}>PORTAL-144</span>
-              <span className={styles.mockIssueTitle}>계정 유형별 접근 범위 정의</span>
-              <span className={styles.mockMuted}>근거 4건</span>
-            </div>
+            <p className={styles.mockResultNote}>
+              업무별 근거는 이 대화에 그대로 저장됩니다. 새로고침해도 사라지지 않습니다.
+            </p>
           </div>
         )}
       </div>
@@ -444,8 +530,10 @@ export default function LandingPage() {
                 <span className={styles.heroAccent}>실행할 업무까지.</span>
               </h1>
               <p className={styles.heroSub}>
-                halil은 문서·사람·프로젝트에 흩어진 정보를 찾아 근거와 함께 답합니다. 확인한 결과는 곧바로
-                실제 업무로 연결할 수 있습니다.
+                halil은 문서·사람·프로젝트에 흩어진 정보를 찾아 근거와 함께 답합니다.
+                <br />
+                확인한 결과는 곧바로
+                <br className={styles.mobileBreak} /> 실제 업무로 연결할 수 있습니다.
               </p>
               <div className={styles.heroActions}>
                 <Link className={styles.btnPrimary} to={startHref}>
@@ -490,24 +578,37 @@ export default function LandingPage() {
         {/* 3 · 안 해도 되는 일 */}
         <section className={styles.bandDark} id="can">
           <div className={styles.bandInner}>
-            <p className={styles.sectionKickerDark}>사라지는 수작업</p>
-            <h2 className={`${styles.h2} ${styles.bandHeadline}`}>
-              찾고, 옮기고, 다시 적는 일은
-              <br />
-              이제 그만.
-            </h2>
+            <div className={styles.gainHeader}>
+              <div>
+                <p className={styles.sectionKickerDark}>사라지는 수작업</p>
+                <h2 className={`${styles.h2} ${styles.bandHeadline}`}>반복 업무는 이제 그만.</h2>
+              </div>
+              <p className={styles.gainLead}>
+                회의록 확인부터 업무 등록까지,
+                <br />
+                팀이 반복하던 손일을 줄입니다.
+              </p>
+            </div>
             <ul className={styles.gainGrid}>
-              {GAINS.map((item) => (
+              {GAINS.map((item, index) => (
                 <li className={styles.gain} key={item.gone}>
                   <span className={styles.gainBefore}>
-                    <small>기존</small>
-                    <span className={styles.gainGone}>{item.gone}</span>
+                    <span>
+                      <small>직접 하던 일</small>
+                      <span className={styles.gainGone}>{item.gone}</span>
+                    </span>
+                    <span className={styles.gainNumber} aria-hidden="true">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
                   </span>
                   <span className={styles.gainAfter}>
                     <span className={styles.gainArrow} aria-hidden="true">
                       <Icon name="arrow-right" size={16} />
                     </span>
-                    <strong className={styles.gainNow}>{item.now}</strong>
+                    <span>
+                      <small>이제는</small>
+                      <strong className={styles.gainNow}>{item.now}</strong>
+                    </span>
                   </span>
                 </li>
               ))}
@@ -521,14 +622,11 @@ export default function LandingPage() {
             <div className={styles.split}>
               <div className={styles.statement}>
                 <p className={styles.sectionKicker}>팀의 방식</p>
-                <h2 className={styles.h2}>
-                  우리 팀의 일하는 방식을,
-                  <br />
-                  하나의 AI에.
-                </h2>
+                <h2 className={styles.h2}>팀의 방식을 담은 AI.</h2>
                 <p className={styles.statementBody}>
-                  자주 반복하는 일을 우리말로 한 번 적어 두세요. 먼저 혼자 써 보고, 준비되면 팀에 공유할 수
-                  있습니다. 코딩은 필요 없습니다.
+                  반복하는 일을 우리말로 적고 먼저 혼자 써 보세요.
+                  <br />
+                  준비되면 코딩 없이 팀에 공유할 수 있습니다.
                 </p>
                 {/* 문구를 더 늘리는 대신 흐름만 보인다. 상태 이름(DRAFT·ACTIVE)은
                     쓰지 않는다 — 처음 온 사람이 알아야 할 것이 아니다. */}
@@ -557,14 +655,12 @@ export default function LandingPage() {
               <ApproveMock />
               <div className={styles.statement}>
                 <p className={styles.sectionKicker}>사람이 정하는 마지막 단계</p>
-                <h2 className={styles.h2}>
-                  AI는 준비하고,
-                  <br />
-                  마지막 결정은 사람이.
-                </h2>
+                <h2 className={styles.h2}>마지막 결정은 사람이.</h2>
                 <p className={styles.statementBody}>
-                  업무 등록이나 파일 생성처럼 실제 결과가 달라지는 순간에는 먼저 내용을 보여 줍니다. 승인,
-                  수정, 중단 중 무엇을 택할지는 사람의 몫. 근거 없는 값은 그대로 비워 둡니다.
+                  업무 등록이나 파일 생성 전,
+                  <br className={styles.mobileBreak} /> 실행 내용을 먼저 보여 줍니다.
+                  <br />
+                  실행 여부는 사람이 정합니다.
                 </p>
                 <ul className={styles.trustList}>
                   {TRUST_POINTS.map((point) => (
@@ -587,12 +683,11 @@ export default function LandingPage() {
         {/* 6 · 마감 CTA */}
         <section className={styles.cta}>
           <div className={styles.ctaInner}>
-            <h2 className={styles.ctaTitle}>
-              이제, 찾은 정보를
-              <br />
-              다음 업무로 이어 보세요.
-            </h2>
-            <p className={styles.ctaSub}>새 팀을 만들 수도, 받은 초대로 바로 합류할 수도 있습니다.</p>
+            <h2 className={styles.ctaTitle}>찾은 정보, 바로 실행.</h2>
+            <p className={styles.ctaSub}>
+              새 팀을 만들거나,
+              <br className={styles.mobileBreak} /> 초대받은 팀에 합류하세요.
+            </p>
             <Link className={styles.btnOnDark} to={startHref}>
               우리 팀에서 시작하기
             </Link>
