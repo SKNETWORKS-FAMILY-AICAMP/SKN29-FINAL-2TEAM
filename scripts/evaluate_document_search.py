@@ -234,8 +234,16 @@ def rank(
             + exact_weight * exact_raw[index]
         )
         retrieval_score = vector_weight * vector_score[index] + (1 - vector_weight) * lexical_score
-        scored.append(corpus[index] | {"retrieval_score": retrieval_score})
-    return sorted(scored, key=lambda row: (-row["retrieval_score"], row["id"]))[:TOP_K]
+        scored.append(
+            corpus[index]
+            | {
+                "vector_score": vector_score[index],
+                "lexical_score": lexical_score,
+                "retrieval_score": retrieval_score,
+            }
+        )
+    rows = sorted(scored, key=lambda row: (-row["retrieval_score"], row["id"]))[:TOP_K]
+    return [row | {"rank": index} for index, row in enumerate(rows, start=1)]
 
 
 def _expected_match(row: dict[str, Any], expected: dict[str, str]) -> bool:
@@ -265,7 +273,7 @@ def score(queries: list[dict[str, Any]], rankings: dict[str, list[dict[str, Any]
     relevant_total = 0
     relevant_found = 0
     reciprocal_ranks: list[float] = []
-    precisions: list[float] = []
+    precisions = {cutoff: [] for cutoff in (5, 8, TOP_K)}
     query_hits = 0
     contamination = 0
     lexical_success = 0
@@ -283,7 +291,8 @@ def score(queries: list[dict[str, Any]], rankings: dict[str, list[dict[str, Any]
         first_rank = min(relevant_positions, default=None)
         query_hits += int(first_rank is not None)
         reciprocal_ranks.append(1 / first_rank if first_rank else 0.0)
-        precisions.append(len(relevant_positions) / TOP_K)
+        for cutoff in precisions:
+            precisions[cutoff].append(sum(position <= cutoff for position in relevant_positions) / cutoff)
         contaminated = any(
             _must_not_match(row, forbidden)
             for row in rows[:3]
@@ -305,7 +314,9 @@ def score(queries: list[dict[str, Any]], rankings: dict[str, list[dict[str, Any]
     return {
         "query_recall_at_20": query_hits / len(queries),
         "evidence_recall_at_20": relevant_found / relevant_total,
-        "precision_at_20": sum(precisions) / len(precisions),
+        "precision_at_5": sum(precisions[5]) / len(precisions[5]),
+        "precision_at_8": sum(precisions[8]) / len(precisions[8]),
+        "precision_at_20": sum(precisions[TOP_K]) / len(precisions[TOP_K]),
         "mrr": sum(reciprocal_ranks) / len(reciprocal_ranks),
         "contamination_at_3": contamination / len(queries),
         "lexical_critical_success": lexical_success / lexical_count if lexical_count else None,
@@ -313,9 +324,55 @@ def score(queries: list[dict[str, Any]], rankings: dict[str, list[dict[str, Any]
     }
 
 
+def compare_rankings(
+    queries: list[dict[str, Any]],
+    baseline: dict[str, list[dict[str, Any]]],
+    candidate: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    comparisons = []
+    for query in queries:
+        query_id = query["id"]
+
+        def first_relevant(rows: list[dict[str, Any]]) -> int | None:
+            return next(
+                (
+                    index
+                    for index, row in enumerate(rows, start=1)
+                    if any(_expected_match(row, expected) for expected in query["expected"])
+                ),
+                None,
+            )
+
+        vector_rank = first_relevant(baseline[query_id])
+        hybrid_rank = first_relevant(candidate[query_id])
+        delta = None if vector_rank is None or hybrid_rank is None else vector_rank - hybrid_rank
+        comparisons.append(
+            {
+                "id": query_id,
+                "query": query["query"],
+                "vector_rank": vector_rank,
+                "hybrid_rank": hybrid_rank,
+                "rank_improvement": delta,
+                "status": (
+                    "recovered" if vector_rank is None and hybrid_rank is not None
+                    else "lost" if vector_rank is not None and hybrid_rank is None
+                    else "improved" if delta is not None and delta > 0
+                    else "regressed" if delta is not None and delta < 0
+                    else "unchanged"
+                ),
+            }
+        )
+    return {
+        "queries": comparisons,
+        "regressions": [row for row in comparisons if row["status"] in {"lost", "regressed"}],
+        "improvements": [row for row in comparisons if row["status"] in {"recovered", "improved"}],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--refresh-embeddings", action="store_true")
+    parser.add_argument("--output", type=Path, help="전체 평가·질의별 진단 JSON 저장 경로")
     args = parser.parse_args()
 
     corpus = load_corpus()
@@ -374,6 +431,9 @@ def main() -> int:
         ),
     )
     report["selected_variant"] = selected
+    report["selected_comparison"] = compare_rankings(
+        queries, rankings["vector"], rankings[selected],
+    )
     hybrid = report["variants"][selected]["all"]
     report["selected_variant_passed"] = (
         hybrid["query_recall_at_20"] >= 0.90
@@ -382,7 +442,11 @@ def main() -> int:
         and hybrid["lexical_critical_success"] == 1.0
         and hybrid["contamination_at_3"] == 0.0
     )
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    rendered = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
     return 0 if report["selected_variant_passed"] else 1
 
 

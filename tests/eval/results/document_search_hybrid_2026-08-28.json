@@ -17,6 +17,8 @@
   "vector_baseline": {
     "query_recall_at_20": 1.0,
     "evidence_recall_at_20": 0.9285714286,
+    "precision_at_5": 0.3142857143,
+    "precision_at_8": 0.2321428571,
     "precision_at_20": 0.1214285714,
     "mrr": 0.7202380952,
     "contamination_at_3": 0.0,
@@ -33,6 +35,8 @@
     },
     "query_recall_at_20": 1.0,
     "evidence_recall_at_20": 1.0,
+    "precision_at_5": 0.3571428571,
+    "precision_at_8": 0.2946428571,
     "precision_at_20": 0.1392857143,
     "mrr": 0.7797619048,
     "contamination_at_3": 0.0,
@@ -40,6 +44,16 @@
     "holdout_evidence_recall_at_20": 1.0,
     "holdout_mrr": 1.0,
     "passed": true
+  },
+  "rank_diagnostics": {
+    "improved_queries": ["Q01", "Q08", "Q13"],
+    "regressed_queries": ["Q04", "Q07"],
+    "unchanged_notable_query": {
+      "id": "Q10",
+      "vector_rank": 12,
+      "hybrid_rank": 12
+    },
+    "interpretation": "첫 정답 순위 기준으로 3개 질의가 개선되고 2개가 한 단계 하락했다. 전체 Recall과 MRR은 개선됐지만 실제 문서 질의를 추가하기 전 규칙 기반 reranker를 더 얹지 않는다."
   },
   "alternatives": {
     "vector_0.5_lexical_0.5": {
