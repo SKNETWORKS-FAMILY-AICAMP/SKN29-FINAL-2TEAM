@@ -33,8 +33,12 @@ class EvaluationV2FixtureTests(unittest.TestCase):
             "S07-DEV-001",
             "S09A-DEV-001",
             "S09B-DEV-001",
+            "S10-DEV-001",
+            "S10-DEV-002",
+            "S11-DEV-001",
+            "S11-DEV-002",
         ])
-        self.assertEqual(sum(item["source_count"] for item in result), 13)
+        self.assertEqual(sum(item["source_count"] for item in result), 15)
 
     def test_package_rejects_path_outside_repository(self):
         with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary:

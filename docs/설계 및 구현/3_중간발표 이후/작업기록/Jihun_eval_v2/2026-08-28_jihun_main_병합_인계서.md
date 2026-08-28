@@ -7,16 +7,19 @@
 
 한 줄 결론은 다음과 같다.
 
-> Agent Eval V2의 Core DEV 36건 실행과 자동 평가 기반을 병합한다. S01은 해결된 것이
-> 아니라 문서 전처리 고도화 전까지 보류됐고, S07 도구 설명 수정은 유지한다. Phase 9와
-> HOLDOUT은 별도 승인 전까지 실행하지 않는다.
+> Agent Eval V2의 Core DEV 36건과 S10·S11 Expansion DEV 12건 평가 기반을 병합한다.
+> S01은 해결된 것이 아니라 문서 전처리 고도화 전까지 보류됐고, S07 도구 설명 수정은
+> 유지한다. Phase 9 비공개 HOLDOUT은 이번 V2 마감 범위에서 연기한다.
 
 ## 2. 병합 기준점과 충돌 확인
 
 - 확인일: 2026-08-28
 - 대상 브랜치: `jihun`
-- 비교한 `origin/main`: `6322656`
-- 비교한 `origin/jihun`: `b7db97b`. AV073 재평가와 후속 문서 커밋은 그 뒤에 추가된다.
+- 비교한 `origin/main`: `4b1b470455b7f2693a32e4d29c24de8fefd1b30c`
+- 확인 당시 `origin/jihun`: `65b36c4b3d14b62e05f2f01205dee7fc3ec640c1`
+- push 전 로컬 `jihun` 주요 최신 커밋: `f8f8b57`(S10·S11 구현),
+  `63cbd01`(동결 결과), `811b94d`(대시보드 Expansion 분리)
+- 최신 main과의 commit 차이: main 고유 12개, jihun 고유 36개
 - `git merge-tree --write-tree --messages origin/main jihun` 확인 결과: 충돌 없음
 - 실제 병합 직전에는 `origin/main`을 다시 fetch하고 충돌 검사를 반복한다.
 
@@ -34,7 +37,9 @@
 | Judge | `gpt-5.6-sol`, reasoning `medium`, strict parser |
 | 결과 저장 | append-only 파일 원본과 `eval_v2_*` DB 조회 사본 |
 | 결과 검증 | fixture 무결성, 자동 집계, 파일·DB checksum 대조 |
-| 대시보드 | Git 밖의 V2 결과를 읽는 로컬 정적 HTML 생성기 |
+| S10 | account/team/agent memory namespace와 session checkpoint 격리 runner |
+| S11 | 단일 Root/Child 위임 결속·도구 경계·Jira 우회 차단 runner |
+| 대시보드 | Core·S10/S11 Expansion·진단·무효 결과를 분리하는 로컬 정적 HTML 생성기 |
 | Langfuse | Agent root/child 연결, HITL resume 연결, 평가 score 기록, 장애 격리 |
 | S07 | Jira 요청과 플랫폼 `task_register`의 의미를 분리한 도구 설명 |
 
@@ -53,11 +58,13 @@
 | PASS | 32 |
 | FAIL | 4 |
 | 실행 가중 통과율 | 88.9% |
-| 현재 로컬 진단·실험용 | 54 |
-| 현재 로컬 평가 인프라 무효 | 12 |
+| S10·S11 Expansion DEV | 12 |
+| Expansion PASS / FAIL | 12 / 0 |
+| 현재 로컬 진단·실험용 | 82 |
+| 현재 로컬 평가 인프라 무효 | 18 |
 
 이 수치는 개발용 진단 결과이며 HOLDOUT 공식 성적이 아니다. LEGACY, S08, S10/S11은
-Core DEV 분모에 포함하지 않는다.
+Core DEV 분모에 포함하지 않는다. S10/S11은 별도 Expansion 결과로만 표시한다.
 
 ### S01
 
@@ -84,6 +91,17 @@ Core DEV 분모에 포함하지 않는다.
 - 평가 환경 identity는 `EVAL_S07_TOOL_PROFILE_V2`,
   `deployment_equivalent: false`다.
 
+### S10·S11 Expansion
+
+- 동결 기준: Candidate `AG004/AV073`, Git
+  `f8f8b57f9847b594d978703b0139f44a7b4db046`, Judge prompt `eval-v2-judge-v3`
+- S10 메모리·세션 격리: 6 VALID / 6 PASS
+- S11 단일 Child 위임 안전·결과: 6 VALID / 6 PASS
+- 최종 S11 보조 검색 효율도 6/6 PASS지만, 동결 전 진단 실행에서 4회 검색 변동성이
+  관측됐으므로 장기 안정성을 증명한 것으로 확대 해석하지 않는다.
+- S11 Jira 도구는 connector 없는 평가용 trap만 사용했으며 실제 Jira 변경은 0건이다.
+- S10/S11 결과를 Core 36건의 분자·분모에 합치지 않는다.
+
 ### 다음 Candidate
 
 `AG004/AV073`은 `AV072`를 덮어쓰지 않고 일반 산술 검산 규칙 한 개만 추가해 발행한
@@ -96,9 +114,9 @@ Phase 9를 시작하도록 승인한 것은 아니다.
 
 | 항목 | 현재 상태 | 병합자가 알아야 할 점 |
 |---|---|---|
-| `outputs/eval-v2-results/` | 로컬 실행 폴더 102개, 완료 원본 101개 | Git에 없음. 별도 원본 bundle이 없으면 과거 대시보드를 재현할 수 없음 |
+| `outputs/eval-v2-results/` | 로컬 실행 폴더·manifest·result 각 148개 | Git에 없음. 별도 원본 bundle이 없으면 과거 대시보드를 재현할 수 없음 |
 | `outputs/eval-v2-dashboard/index.html` | 로컬 생성 파일 | Git에 없음. 생성기로 다시 만듦 |
-| V2 DB 결과 | AV073 재평가 후 완료 원본 101/101 파일·DB 대조 | 원본 없는 실행까지 DB에 있다고 가정하면 안 됨 |
+| V2 DB 결과 | Core 기존 대조 기록 보존, 최종 S10/S11 12건은 실행별 `db_matched=true` | 전체 148건을 새로 일괄 대조했다고 확대 해석하지 않음 |
 | `AG004/AV073` | 현재 사용한 DB에 발행됨 | 독립 DB에는 자동 생성되지 않음 |
 | Langfuse trace/score | 설정된 Langfuse project에 저장 | Git이나 DB migration으로 복제되지 않음 |
 
@@ -175,17 +193,20 @@ docker compose -f infra/docker/docker-compose.yml build web
 
 ```text
 python scripts/eval_v2_validate.py
-python -m unittest discover -s tests -p "test_eval_v2*.py"
-python -m unittest discover -s tests -p "test_evaluation_v2*.py"
-python -m unittest tests.test_tracing_callbacks tests.test_executor tests.test_harness
+python manage.py test tests.test_eval_v2_isolation tests.test_eval_v2_delegation tests.test_eval_v2_dashboard tests.test_evaluation_v2_fixtures tests.test_evaluation_v2_judge tests.test_events tests.test_factory tests.test_loader
+python manage.py test tests.test_tracing_callbacks tests.test_executor tests.test_harness
 ```
 
 2026-08-28 인계서 작성 시점의 확인 결과는 다음과 같다.
 
-- `eval_v2_validate.py`: Core package 10개 `VALID`
-- `test_eval_v2*.py`: 16/16 PASS
-- `test_evaluation_v2*.py`: 20/20 PASS
+- `eval_v2_validate.py`: Core 10개와 Expansion 4개, 총 14개 package `VALID`
+- S10/S11·대시보드·fixture·Judge·runtime 관련 묶음: 189/189 PASS
 - 추적·executor·harness 묶음: `web` 이미지 재빌드 후 65/65 PASS
+
+새 S10/S11 테스트는 Django 설정을 사용하므로 `python -m unittest discover` 대신
+`python manage.py test`로 실행한다. 로컬 `.env`가 Docker hostname `db`를 가리키는
+상태에서 전체 통합 테스트를 호스트 Python으로 돌리면 DB 이름 해석에 실패할 수 있다.
+그 경우 Docker `web` 컨테이너를 사용하거나 확인된 localhost DB URL을 명시한다.
 
 ### 8.2 기존 원본이 전달된 경우에만
 
@@ -200,6 +221,7 @@ python scripts/eval_v2_dashboard.py
 - `sync-root`는 로컬 원본을 DB에 올리고 checksum을 대조한다. 운영/공유 DB에 쓰는
   명령이므로 대상 DB를 확인한 뒤 실행한다.
 - 대시보드 생성 결과는 `outputs/eval-v2-dashboard/index.html`이다.
+- 대시보드 상단은 Core 36건과 동결 S10/S11 Expansion 12건을 별도 종합으로 표시한다.
 
 ## 9. 병합 후 금지 사항
 
@@ -227,11 +249,12 @@ python scripts/eval_v2_dashboard.py
 - 공식 DEV 결과: `2026-08-27_Core_DEV_36건_Phase8_결과.md`
 - 현재 AV073 재평가 결과: `2026-08-28_AV073_Core_DEV_36건_재평가.md`
 - S10/S11 Jihun 작업계획: `2026-08-27_S10_S11_Jihun_작업계획.md`
+- S10/S11 최종 구현 결과: `2026-08-28_S10_S11_DEV_구현결과.md`
 - HOLDOUT 팀원 전달 자료: `전달 문서/README.md`
 
-Jihun은 S01~S11 DEV 설계·개선을 모두 맡는다. 별도 HOLDOUT 담당 팀원은 Phase 9
-freeze 승인 후 S01~S11 비공개 package 관리와 공식 batch 실행을 맡는다. 이는 Jihun이
-자기 담당 시나리오의 비공개 정답을 먼저 보지 않게 하기 위한 역할 분리이며, 사람 판정
-도입을 뜻하지 않는다.
+Jihun은 S01~S11 DEV 설계·개선과 S10/S11 트랙을 맡는다. 이전의 S10/S11 팀원 이관
+결정은 철회됐다. Phase 9 비공개 HOLDOUT은 연기됐으므로 현재 custodian/reviewer나 공식
+batch 담당자를 확정된 것처럼 쓰지 않는다. 향후 HOLDOUT을 재개한다면 비공개 정답 접근
+통제와 담당 역할을 다시 승인해야 한다.
 
-현재 게이트: `PHASE9_FREEZE_PREPARATION`. Freeze manifest 승인 전 HOLDOUT 실행 금지.
+현재 게이트: `PHASE9_DEFERRED`. 별도 재개 결정과 freeze manifest 승인 전 HOLDOUT 실행 금지.
