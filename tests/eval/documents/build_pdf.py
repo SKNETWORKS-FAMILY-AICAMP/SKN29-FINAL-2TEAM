@@ -53,8 +53,9 @@ FOLDERS = {
     "noise_c": "00_배경문서",
 }
 
-#: 손으로 쓴 8종은 파일 이름으로 가른다.
+#: 손으로 쓴 것은 원본 이름 앞자리로 가른다.
 HAND_FOLDER = {
+    "hard/": "P1_한빛몰_주문정산_고도화",
     "01": "P1_한빛몰_주문정산_고도화", "02": "P1_한빛몰_주문정산_고도화",
     "03": "P1_한빛몰_주문정산_고도화", "04": "P1_한빛몰_주문정산_고도화",
     "05": "P1_한빛몰_주문정산_고도화",
@@ -73,6 +74,10 @@ DOCUMENTS = [
     ("06_타사업_그룹웨어_유지보수.html", "한빛리테일_사내그룹웨어_유지보수_과업지시서.pdf"),
     ("07_그룹웨어_SLA합의서.html", "한빛리테일_사내그룹웨어_SLA_부속합의서.pdf"),
     ("08_그룹웨어_개선요청_접수내역.html", "한빛리테일_사내그룹웨어_개선요청_접수내역.pdf"),
+    # 파싱 난이도를 일부러 올린 문서(`hard/hard.css`) — 제목을 개조식 기호로만
+    # 구분하고 글자 크기 차이를 없앴다. 서식 네 벌이 「제목 크기가 다르면」을
+    # 묻는다면 이쪽은 「차이가 아예 없으면」을 묻는다.
+    ("hard/H01_품의서.html", "한빛리테일_주문정산_고도화_추진품의서.pdf"),
 ]
 
 CHROME_CANDIDATES = [
@@ -80,6 +85,13 @@ CHROME_CANDIDATES = [
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
+
+
+def _hand_folder(source: str) -> str:
+    for prefix, folder in HAND_FOLDER.items():
+        if source.startswith(prefix):
+            return folder
+    raise KeyError(f"폴더를 못 정했다: {source}")
 
 
 def find_browser() -> str:
@@ -140,7 +152,7 @@ def main() -> int:
     browser = find_browser()
     OUT.mkdir(exist_ok=True)
 
-    pairs = [(src, HAND_FOLDER[src[:2]], tgt) for src, tgt in DOCUMENTS] + load_specs()
+    pairs = [(src, _hand_folder(src), tgt) for src, tgt in DOCUMENTS] + load_specs()
     if args.only:
         pairs = [p for p in pairs if args.only in p[0]]
     if not pairs:
