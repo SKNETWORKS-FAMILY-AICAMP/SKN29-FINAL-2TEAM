@@ -60,3 +60,12 @@ ml_label.log
 # 언제든 다시 만들 수 있고, 설치한 사람만 생기며 크기도 계속 불어난다.
 .ua/
 .understand-anything/
+
+# PPT 시안을 만들면서 생기는 작업 폴더. 슬라이드 레이아웃 JSON 과 렌더 이미지,
+# 그리고 pnpm 이 `.pnpm-store/` 로 걸어 둔 node_modules 링크가 들어 있어 100MB 를
+# 넘는다. 결과물인 pptx 는 `docs/발표자료/` 에 두므로 여기는 언제든 버려도 된다.
+.tmp/
+.pnpm-store/
+
+# pptx 를 뜯어보는 도구가 파일마다 남기는 검사 기록. 원본 pptx 에서 다시 만든다.
+*.inspect.ndjson
