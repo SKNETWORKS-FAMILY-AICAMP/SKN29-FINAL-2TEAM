@@ -5,12 +5,30 @@
     "purpose": "현재 vector 0.5 + lexical 0.5 검색의 실제 문서 독립 검증",
     "algorithm_selection_allowed": false,
     "contains_raw_content": false,
-    "approved_scope": "사용자 확인 후 입력"
+    "approved_scope": "사용자 확인 후 입력",
+    "frozen_at": "Golden Set 동결 시각",
+    "code_commit": "평가 실행 commit SHA"
+  },
+  "search_config": {
+    "vector_weight": 0.5,
+    "lexical_weight": 0.5,
+    "lexical_fts_weight": 0.55,
+    "lexical_trigram_weight": 0.25,
+    "lexical_exact_weight": 0.2,
+    "top_k": 20,
+    "embedding_model": "google/embeddinggemma-300m"
+  },
+  "acceptance_thresholds": {
+    "evidence_recall_at_20_not_below_vector": true,
+    "mrr_delta_min": -0.05,
+    "precision_at_5_delta_min": -0.05,
+    "forbidden_evidence_contamination_at_3": 0.0
   },
   "documents": [
     {
       "doc_id": "사용자 확인 후 입력",
       "revision": "동결한 revision",
+      "content_hash": "동결한 본문의 content hash",
       "display_alias": "비식별 별칭",
       "approved_for_evaluation": false
     }

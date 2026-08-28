@@ -68,15 +68,31 @@ S3 원문 또는 비식별 복사본을 로컬 파이프라인으로 색인해�
 감사 이력을 남긴다. 그 보정으로 알고리즘을 다시 선택하지 않고 전체 결과만 다시
 계산한다.
 
+동결할 때 문서는 `doc_id + revision + content_hash`, 검색기는 vector/lexical 및
+내부 가중치, Top-K, embedding model, 실행 commit SHA까지 함께 기록한다. 같은
+정답지를 다시 실행했을 때 데이터 변화와 코드 변화를 구분하기 위한 기준이다.
+
 ## 합격과 중단 기준
 
 - Evidence Recall@20이 벡터 단독 이상
-- Precision@5와 MRR이 벡터 단독보다 유의미하게 나빠지지 않음
+- MRR과 Precision@5의 벡터 대비 하락폭이 각각 0.05 이내
 - 권한 밖·삭제·이전 revision 근거 Top-3 잠식 0
 - 심각한 오답이 반복되지 않음
 
 15~20개는 강한 일반화 증명이 아니라 실제 데이터에서의 최소 독립 확인이다.
 한두 질의의 변화보다 반복되는 실패 유형과 사용자 체감 상위 순위를 함께 본다.
+
+## 2026-08-28 공용 DB 읽기 전용 조사 결과
+
+- 평가 전용 URL은 서울 RDS를 가리키고 SSL을 요구한다.
+- 연결 계정은 SELECT 전용이 아니며 DB CREATE와 `doc` INSERT/UPDATE/DELETE가
+  가능한 고권한 계정이다. 웹·워커와 일반 관리 명령에는 절대 사용하지 않는다.
+- 조사 세션은 `default_transaction_read_only=on`, statement timeout 5초,
+  lock timeout 1초를 강제했고 SELECT 집계 후 rollback했다.
+- 사용 가능한 문서 13개, 활성 청크 301개, 벡터 301개가 있다.
+- 현재 revision까지 완전 색인된 문서는 10개다. 개인 Markdown 2개는 평가 범위에서
+  제외하고 팀 공유 PDF 8개만 복사 후보로 둔다.
+- 팀 PDF의 본문·청크·embedding을 로컬로 복사하는 것은 별도 사용자 확인 후 진행한다.
 
 ## 필요한 사용자 결정
 
