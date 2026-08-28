@@ -177,6 +177,7 @@ def adapt_builtin_tools(*, agent_model: str | None = None) -> tuple[RuntimeTool,
                 input_schema=legacy_tool.input_schema,
                 handler=_wrap_handler(legacy_tool.handler, tool_ref=ref, static_kwargs=static_kwargs),
                 side_effect=legacy_tool.side_effect,
+                approval_when=legacy_tool.approval_when,
                 injected_context=_injected_context_names(ref),
             )
         )
@@ -220,6 +221,7 @@ def adapt_mcp_tools(*, team_id: str) -> tuple[RuntimeTool, ...]:
                 input_schema=row.get("input_schema") or {"type": "object", "properties": {}},
                 handler=_mcp_handler(tool_ref),
                 side_effect=True,
+                approval_when=None,
                 injected_context=("team_id",),
             )
         )

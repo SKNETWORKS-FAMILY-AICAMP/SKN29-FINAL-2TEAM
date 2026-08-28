@@ -24,6 +24,7 @@ class Tool:
     handler: Callable[..., Any]
 
     side_effect: bool = False
+    approval_when: Callable[[dict[str, Any]], bool] | None = None
     injected_context: tuple[str, ...] = ()
 
 

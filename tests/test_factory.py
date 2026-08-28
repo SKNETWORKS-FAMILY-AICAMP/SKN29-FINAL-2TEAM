@@ -110,6 +110,24 @@ class _SkillToolLoader(_FakeToolLoader):
         )
 
 
+class _ConditionalApprovalToolLoader(_FakeToolLoader):
+    def load(self, *, tool_refs, context, agent_model=None):
+        self.load_calls.append(
+            {"tool_refs": tool_refs, "context": context, "agent_model": agent_model}
+        )
+        return (
+            Tool(
+                ref="table_transform",
+                name="table_transform",
+                description="표를 가공한다.",
+                input_schema={"type": "object", "properties": {}},
+                handler=lambda **kwargs: kwargs,
+                side_effect=True,
+                approval_when=lambda arguments: bool(arguments.get("output_format")),
+            ),
+        )
+
+
 class _FakeCheckpointerProvider:
     """`CheckpointerProvider`(services/agent_runtime/checkpoint/provider.py)를 대신한다.
 
@@ -1687,6 +1705,33 @@ class BuildInterruptOnWiringTests(SimpleTestCase):
             # (`runtime_policy.DEFAULT_EXCLUDED_BUILTIN_TOOLS`), 제외된 도구는
             # 애초에 안 붙으므로 승인 목록에도 안 들어간다.
             {"task_register": True},
+        )
+
+    @patch(f"{FACTORY_MODULE}.create_root_graph")
+    def test_conditional_write_tool_only_interrupts_when_it_will_create_a_file(
+        self, mock_create_root
+    ):
+        mock_create_root.return_value = "GRAPH"
+        factory, _ = _factory(
+            checkpointer_provider=_FakeCheckpointerProvider(),
+            tool_loader=_ConditionalApprovalToolLoader(),
+        )
+        context = RuntimeContext(account_id="AC001", team_id="TM001", role="leader")
+
+        factory.build(
+            definition=_definition(tool_refs=("table_transform",)), context=context
+        )
+
+        config = mock_create_root.call_args.kwargs["interrupt_on"]["table_transform"]
+        request = lambda args: type("Request", (), {"tool_call": {"args": args}})()
+        self.assertFalse(config["when"](request({"operation": "preview"})))
+        self.assertTrue(
+            config["when"](
+                request({"operation": "convert", "output_format": "xlsx"})
+            )
+        )
+        self.assertEqual(
+            config["allowed_decisions"], ["approve", "edit", "reject", "respond"]
         )
 
     @patch(f"{FACTORY_MODULE}.create_child_graph")

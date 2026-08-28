@@ -1284,6 +1284,7 @@ class ToolCallRepository:
 # 비정상적으로 큰 결과를 낼 가능성까지 무제한으로 열어 두면 안 되므로
 # 애플리케이션 레벨에서만 넉넉한 상한을 건다(DB 컬럼 자체는 TEXT로 무제한).
 IDEMPOTENCY_RESULT_MAX_CHARS = 50_000
+IDEMPOTENCY_LEASE_SECONDS = 180
 
 
 class ToolCallIdempotencyRepository:
@@ -1305,11 +1306,77 @@ class ToolCallIdempotencyRepository:
                     SELECT result_text
                       FROM tool_call_idempotency
                      WHERE run_id = %s AND langchain_tool_call_id = %s
+                       AND status = 'SUCCEEDED'
                     """,
                     (run_id, langchain_tool_call_id),
                 )
                 row = cursor.fetchone()
                 return row["result_text"] if row else None
+
+    @staticmethod
+    def claim_or_get(*, run_id: str, langchain_tool_call_id: str, tool_ref: str) -> tuple[str, str | None]:
+        """한 호출의 실행권을 원자적으로 확보한다.
+
+        ``CLAIMED``면 호출자가 실행하고, ``SUCCEEDED``면 저장 결과를 재생하며,
+        ``RUNNING``이면 다른 요청이 같은 호출을 실행 중이다. 만료된 lease는
+        현재 호출이 가져가므로 프로세스가 죽어도 영구 대기가 생기지 않는다.
+        """
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO tool_call_idempotency
+                        (run_id, langchain_tool_call_id, tool_ref, status,
+                         result_text, lease_until, updated_at)
+                    VALUES (%s, %s, %s, 'RUNNING', NULL,
+                            now() + make_interval(secs => %s), now())
+                    ON CONFLICT (run_id, langchain_tool_call_id) DO NOTHING
+                    RETURNING status
+                    """,
+                    (run_id, langchain_tool_call_id, tool_ref, IDEMPOTENCY_LEASE_SECONDS),
+                )
+                if cursor.fetchone():
+                    return "CLAIMED", None
+
+                cursor.execute(
+                    """
+                    SELECT status, result_text, lease_until
+                      FROM tool_call_idempotency
+                     WHERE run_id = %s AND langchain_tool_call_id = %s
+                     FOR UPDATE
+                    """,
+                    (run_id, langchain_tool_call_id),
+                )
+                row = cursor.fetchone()
+                if row and row["status"] == "SUCCEEDED":
+                    return "SUCCEEDED", row["result_text"]
+                cursor.execute(
+                    """
+                    UPDATE tool_call_idempotency
+                       SET tool_ref = %s, status = 'RUNNING', result_text = NULL,
+                           lease_until = now() + make_interval(secs => %s),
+                           updated_at = now()
+                     WHERE run_id = %s AND langchain_tool_call_id = %s
+                       AND (status <> 'RUNNING' OR lease_until IS NULL OR lease_until <= now())
+                    RETURNING status
+                    """,
+                    (tool_ref, IDEMPOTENCY_LEASE_SECONDS, run_id, langchain_tool_call_id),
+                )
+                return ("CLAIMED", None) if cursor.fetchone() else ("RUNNING", None)
+
+    @staticmethod
+    def abandon_claim(*, run_id: str, langchain_tool_call_id: str) -> None:
+        """실패한 실행의 RUNNING claim만 지워 즉시 재시도할 수 있게 한다."""
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM tool_call_idempotency
+                     WHERE run_id = %s AND langchain_tool_call_id = %s
+                       AND status = 'RUNNING'
+                    """,
+                    (run_id, langchain_tool_call_id),
+                )
 
     @staticmethod
     def record_result(
@@ -1327,9 +1394,13 @@ class ToolCallIdempotencyRepository:
                 cursor.execute(
                     """
                     INSERT INTO tool_call_idempotency
-                        (run_id, langchain_tool_call_id, tool_ref, result_text)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (run_id, langchain_tool_call_id) DO NOTHING
+                        (run_id, langchain_tool_call_id, tool_ref, status,
+                         result_text, lease_until, updated_at)
+                    VALUES (%s, %s, %s, 'SUCCEEDED', %s, NULL, now())
+                    ON CONFLICT (run_id, langchain_tool_call_id) DO UPDATE
+                       SET status = 'SUCCEEDED', result_text = EXCLUDED.result_text,
+                           lease_until = NULL, updated_at = now()
+                     WHERE tool_call_idempotency.status = 'RUNNING'
                     """,
                     (run_id, langchain_tool_call_id, tool_ref, text),
                 )

@@ -1091,8 +1091,14 @@ CREATE TABLE tool_call_idempotency (
     run_id                   UUID         NOT NULL,   -- agent_run.run_id(FK 없음)
     langchain_tool_call_id   VARCHAR(64)  NOT NULL,    -- AIMessage.tool_calls[i]["id"]
     tool_ref                 VARCHAR(100) NOT NULL,
-    result_text              TEXT         NOT NULL,    -- 재실행 대신 그대로 돌려줄 결과(원문)
+    status                   VARCHAR(16)  NOT NULL DEFAULT 'SUCCEEDED'
+                                           CHECK (status IN ('RUNNING', 'SUCCEEDED')),
+    result_text              TEXT,                    -- 성공 뒤 재실행할 결과(원문)
+    lease_until              TIMESTAMPTZ,
     created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CHECK ((status = 'RUNNING' AND result_text IS NULL) OR
+           (status = 'SUCCEEDED' AND result_text IS NOT NULL)),
     PRIMARY KEY (run_id, langchain_tool_call_id)
 );
 
