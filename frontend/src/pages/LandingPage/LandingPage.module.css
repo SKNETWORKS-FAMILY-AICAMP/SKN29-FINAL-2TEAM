@@ -160,6 +160,11 @@
   letter-spacing: -0.4px;
 }
 
+/* 넓은 화면에서는 문장을 한 줄로 유지하고, 모바일에서만 의미 단위로 끊는다. */
+.mobileBreak {
+  display: none;
+}
+
 .sectionKicker,
 .sectionKickerDark {
   margin: 0 0 var(--space-3);
@@ -627,18 +632,13 @@
 .mockFootBtn {
   border: none;
   font-family: inherit;
-  cursor: pointer;
+  cursor: default;
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: #fff;
   padding: 9px 16px;
   font-size: 12.5px;
   font-weight: 600;
-}
-
-.mockFootBtn:disabled {
-  opacity: 0.75;
-  cursor: default;
 }
 
 .mockFootGhost {
@@ -662,6 +662,12 @@
   border-radius: var(--radius-xl);
   background: var(--color-bg);
   padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mockWorkingHead {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -697,6 +703,13 @@
   color: var(--color-muted);
 }
 
+.mockWorkingCount {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
 .mockThinkingDots {
   display: inline-flex;
   gap: 3px;
@@ -709,22 +722,82 @@
   background: var(--color-placeholder);
 }
 
+.mockWorkingTrack {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.mockWorkingTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+  transition: width 220ms ease;
+}
+
+.mockWorkSteps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+
+.mockWorkStep,
+.mockWorkStepTodo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mockWorkStep {
+  color: var(--color-body);
+}
+
+.mockWorkStepTodo {
+  color: var(--color-placeholder);
+}
+
+.mockWorkQuery {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 7px 10px;
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+.mockWorkFoot {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
 /* ---------- 히어로 데모 ---------- */
 
-.mockReset {
+.mockAuto {
   margin-left: auto;
-  border: none;
-  background: none;
-  padding: 0;
-  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-muted);
-  cursor: pointer;
 }
 
-.mockReset:hover {
-  color: var(--color-heading);
+.mockAuto::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-success-text);
 }
 
 /* 등록 결과 — `ChatCards.tsx` 의 결과 카드에서 값을 가져왔다. */
@@ -759,6 +832,19 @@
   font-size: 12.5px;
 }
 
+.mockIssueBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mockIssueMeta {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
 .mockIssueRow:last-child {
   border-bottom: none;
 }
@@ -770,7 +856,6 @@
 }
 
 .mockIssueTitle {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -809,6 +894,16 @@
   line-height: 1.25;
   letter-spacing: -1.6px;
   color: var(--color-heading);
+}
+
+.mockResultNote {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--color-muted);
 }
 
 /* 어두운 전환 구간은 페이지의 중심 명제라 일반 섹션 제목보다 한 단계 크게 둔다. */
@@ -882,12 +977,27 @@
 /* ---------- 3 · 안 해도 되는 일 ---------- */
 
 /*
- * 제품 속성이 아니라 **그 사람의 하루에서 사라지는 일**을 적는 자리다. 하던 일에
- * 줄을 긋고 그 아래에 이제 어떻게 되는지를 둔다 — 「없어진다」를 글자로만 말하지
- * 않고 화면이 같이 말하게 한다.
+ * 제품 속성이 아니라 **그 사람의 하루에서 사라지는 일**을 적는 자리다. 카드 안을
+ * 어두운 이전 상태와 밝은 이후 상태로 나눠, 문구를 읽기 전에도 변화가 먼저 보인다.
  */
+.gainHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  align-items: end;
+  gap: var(--space-12);
+}
+
+.gainLead {
+  margin: 0 0 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+  padding-left: var(--space-6);
+  font-size: 17px;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .gainGrid {
-  margin: 44px 0 0;
+  margin: 56px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
@@ -897,58 +1007,100 @@
 }
 
 .gain {
-  display: grid;
-  grid-template-rows: 28px 44px;
-  gap: var(--space-5);
+  position: relative;
+  overflow: hidden;
   border-radius: var(--radius-2xl);
-  background: rgba(255, 255, 255, 0.07);
-  min-height: 0;
-  padding: var(--space-6);
-  align-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 18px 44px rgba(5, 18, 40, 0.14);
 }
 
 .gainBefore,
 .gainAfter {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+}
+
+.gainBefore {
+  min-height: 96px;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 22px 26px 26px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+}
+
+.gainBefore > span:first-child,
+.gainAfter > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.gainBefore small,
+.gainAfter small {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
 }
 
 .gainBefore small {
-  flex: none;
-  border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.08);
-  padding: 4px 8px;
-  font-size: 10px;
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.58);
+  color: rgba(255, 255, 255, 0.46);
 }
 
 .gainGone {
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.5;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.56);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
+  text-decoration-color: rgba(255, 255, 255, 0.42);
+}
+
+.gainNumber {
+  flex: none;
+  font-size: 42px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  color: rgba(255, 255, 255, 0.12);
+}
+
+.gainAfter {
+  position: relative;
+  min-height: 112px;
+  padding: 32px 26px 24px;
+  background: #fff;
+}
+
+.gainAfter small {
+  color: var(--color-placeholder);
 }
 
 .gainNow {
-  font-size: 18px;
-  line-height: 1.6;
-  font-weight: 700;
-  color: #fff;
+  display: block;
+  font-size: 20px;
+  line-height: 1.45;
+  font-weight: 800;
+  color: var(--color-primary);
 }
 
 .gainArrow {
-  width: 30px;
-  height: 30px;
-  flex: none;
+  position: absolute;
+  top: -18px;
+  left: 26px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-pill);
-  background: #fff;
-  color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(24, 59, 99, 0.25);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transform: rotate(90deg);
 }
 
 /* ---------- 글만 있던 두 섹션의 화면 ---------- */
@@ -1254,6 +1406,19 @@
     gap: var(--space-5);
   }
 
+  .gainHeader {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .gainLead {
+    max-width: 620px;
+    margin-bottom: 0;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+    padding: var(--space-5) 0 0;
+  }
+
   .gainGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
@@ -1265,6 +1430,15 @@
   .page {
     --band-x: var(--space-5);
     --band-y: var(--space-16);
+  }
+
+  .mobileBreak {
+    display: initial;
+  }
+
+  .mockWorkingCount,
+  .mockThinkingDots {
+    display: none;
   }
 
   /* 알약 안에 로고 + 링크 4개가 안 들어간다(375px 에서 16px 넘쳤다).
@@ -1336,7 +1510,28 @@
 
   .gain {
     min-height: 0;
-    grid-template-rows: auto auto;
+  }
+
+  .gainGrid {
+    margin-top: var(--space-8);
+  }
+
+  .gainBefore {
+    min-height: 88px;
+    padding-inline: var(--space-5);
+  }
+
+  .gainAfter {
+    min-height: 104px;
+    padding-inline: var(--space-5);
+  }
+
+  .gainArrow {
+    left: var(--space-5);
+  }
+
+  .gainNumber {
+    font-size: 36px;
   }
 
   .mockProgress {
