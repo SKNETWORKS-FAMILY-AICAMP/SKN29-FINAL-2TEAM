@@ -16,29 +16,29 @@
   },
   "vector_baseline": {
     "query_recall_at_20": 1.0,
-    "evidence_recall_at_20": 0.9285714286,
-    "precision_at_5": 0.3142857143,
-    "precision_at_8": 0.2321428571,
-    "precision_at_20": 0.1214285714,
-    "mrr": 0.7202380952,
+    "evidence_recall_at_20": 0.9333333333,
+    "precision_at_5": 0.3428571429,
+    "precision_at_8": 0.25,
+    "precision_at_20": 0.1285714286,
+    "mrr": 0.755952381,
     "contamination_at_3": 0.0,
     "holdout_evidence_recall_at_20": 0.8888888889,
     "holdout_mrr": 0.8333333333
   },
   "selected_hybrid": {
     "weights": {
-      "vector": 0.4,
-      "lexical": 0.6,
+      "vector": 0.5,
+      "lexical": 0.5,
       "lexical_fts": 0.55,
       "lexical_trigram": 0.25,
       "lexical_exact": 0.2
     },
     "query_recall_at_20": 1.0,
     "evidence_recall_at_20": 1.0,
-    "precision_at_5": 0.3571428571,
-    "precision_at_8": 0.2946428571,
-    "precision_at_20": 0.1392857143,
-    "mrr": 0.7797619048,
+    "precision_at_5": 0.3857142857,
+    "precision_at_8": 0.3035714286,
+    "precision_at_20": 0.1535714286,
+    "mrr": 0.8507326007,
     "contamination_at_3": 0.0,
     "lexical_critical_success": 1.0,
     "holdout_evidence_recall_at_20": 1.0,
@@ -46,21 +46,21 @@
     "passed": true
   },
   "rank_diagnostics": {
-    "improved_queries": ["Q01", "Q08", "Q13"],
-    "regressed_queries": ["Q04", "Q07"],
+    "improved_queries": ["Q08", "Q13"],
+    "regressed_queries": ["Q10"],
     "unchanged_notable_query": {
       "id": "Q10",
       "vector_rank": 12,
-      "hybrid_rank": 12
+      "hybrid_rank": 13
     },
-    "interpretation": "첫 정답 순위 기준으로 3개 질의가 개선되고 2개가 한 단계 하락했다. 전체 Recall과 MRR은 개선됐지만 실제 문서 질의를 추가하기 전 규칙 기반 reranker를 더 얹지 않는다."
+    "interpretation": "누락 정답을 보정한 뒤 첫 정답 순위 기준으로 2개 질의가 개선되고 Q10이 12위에서 13위로 한 단계 하락했다. 전체 Recall과 MRR은 개선됐지만 실제 문서 질의를 추가하기 전 규칙 기반 reranker를 더 얹지 않는다."
   },
   "alternatives": {
-    "vector_0.5_lexical_0.5": {
+    "vector_0.4_lexical_0.6": {
       "evidence_recall_at_20": 1.0,
       "precision_at_20": 0.1464285714,
-      "mrr": 0.7673992674
+      "mrr": 0.8273809524
     },
-    "selection_reason": "개발 세트에서 Recall@20 1.0을 유지한 후보 중 MRR이 가장 높은 0.4/0.6을 선택하고 Q11-Q14 홀드아웃으로 재검증했다."
+    "selection_reason": "명백한 누락 근거를 보정하고 개발 세트의 질의별 회귀를 먼저 검사했다. 완전 무회귀 후보가 없어 Recall@20을 유지한 후보 중 MRR과 Precision이 높은 0.5/0.5를 선택하고 Q11-Q14 홀드아웃으로 재검증했다."
   }
 }

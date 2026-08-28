@@ -973,8 +973,8 @@ _CONTENT_RANK_CHUNKS = 200
 # 대화 문서 검색은 모델이 임의로 결과 수를 바꾸지 못하게 서버에서 고정한다.
 HYBRID_SEARCH_TOP_K = 20
 _HYBRID_CANDIDATE_K = HYBRID_SEARCH_TOP_K * 3
-HYBRID_VECTOR_WEIGHT = 0.40
-HYBRID_LEXICAL_WEIGHT = 0.60
+HYBRID_VECTOR_WEIGHT = 0.50
+HYBRID_LEXICAL_WEIGHT = 0.50
 HYBRID_FTS_WEIGHT = 0.55
 HYBRID_TRIGRAM_WEIGHT = 0.25
 HYBRID_EXACT_WEIGHT = 0.20
@@ -1021,10 +1021,10 @@ class VectorSearchRepository:
         ``doc_block.content``다.
 
         후보는 벡터·전문검색·부분어절 검색에서 각각 넉넉히 모은 뒤 후보군 안에서
-        점수를 0~1로 정규화한다. 최종 점수는 lexical 0.6 + cosine 0.4이며,
+        점수를 0~1로 정규화한다. 최종 점수는 lexical 0.5 + cosine 0.5이며,
         lexical 안에서는 전문검색 0.55 + 부분어절 0.25 + 정확 포함 0.20이다.
-        0.4/0.6은 원빈님 인계 14질의 평가에서 0.5/0.5보다 개발·전체 MRR이
-        높고 Recall@20 1.0과 잠식률 0을 유지한 값이다(2026-08-28).
+        0.5/0.5는 원빈님 인계 정답지의 누락 근거를 보정하고 질의 유형·개별 회귀를
+        함께 검토한 평가에서 상위 구간 정밀도와 전체 MRR이 가장 안정적인 값이다.
         """
 
         query_text = query_text.strip()

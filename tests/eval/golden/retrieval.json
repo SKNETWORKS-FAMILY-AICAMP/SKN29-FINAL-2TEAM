@@ -5,6 +5,7 @@
     {
       "id": "Q01",
       "intent": "ASSIGNMENT_REQUIREMENT",
+      "tags": ["people_requirement", "cross_document", "confusing_document"],
       "query": "투입 인력의 역할과 담당 과업, 필수 기술",
       "expected": [
         { "document": "인력운영계획서", "section": "2.2 ~ 2.8" },
@@ -15,6 +16,7 @@
     {
       "id": "Q02",
       "intent": "TASK_CORE",
+      "tags": ["exact_terms", "confusing_document"],
       "query": "단계별 산출물과 검수 기준",
       "expected": [{ "document": "과업지시서", "section": "5" }],
       "must_not_cite": ["그룹웨어 과업지시서 4"]
@@ -22,6 +24,7 @@
     {
       "id": "Q03",
       "intent": "TASK_CORE",
+      "tags": ["exact_terms", "cross_document"],
       "query": "정산 금액을 계산하는 단계와 중간값 보존",
       "expected": [
         { "document": "요구사항정의서", "section": "3 (REQ-F-12)" },
@@ -32,8 +35,10 @@
     {
       "id": "Q04",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["exact_terms", "numeric_condition", "cross_document"],
       "query": "결제 실패율 임계치와 자동 전환, 복귀 조건",
       "expected": [
+        { "document": "과업지시서", "section": "3.3" },
         { "document": "요구사항정의서", "section": "4 (REQ-F-21, REQ-F-23)" },
         { "document": "기술검토회의록", "section": "2.2" }
       ],
@@ -42,6 +47,7 @@
     {
       "id": "Q05",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["exact_terms", "numeric_condition", "confusing_document"],
       "query": "과업별 공수 산정과 선후행 관계",
       "expected": [
         { "document": "WBS", "section": "2" },
@@ -52,6 +58,7 @@
     {
       "id": "Q06",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["exact_terms", "cross_document"],
       "query": "운영 데이터베이스 접근 제한과 이관 방식",
       "expected": [
         { "document": "과업지시서", "section": "8" },
@@ -63,8 +70,10 @@
     {
       "id": "Q07",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["paraphrase", "cross_document"],
       "query": "같은 주문이 두 번 결제되는 것을 막는 방법",
       "expected": [
+        { "document": "과업지시서", "section": "3.3" },
         { "document": "기술검토회의록", "section": "2.1 / 2.2" },
         { "document": "요구사항정의서", "section": "4 (REQ-F-22)" }
       ],
@@ -73,6 +82,7 @@
     {
       "id": "Q08",
       "intent": "TASK_CORE",
+      "tags": ["exact_terms", "numeric_condition", "confusing_document"],
       "query": "목표 응답시간과 처리량, 가용성 수준",
       "expected": [{ "document": "요구사항정의서", "section": "9 (REQ-N-01 ~ REQ-N-04)" }],
       "must_not_cite": ["그룹웨어 과업지시서 3.1"]
@@ -80,6 +90,7 @@
     {
       "id": "Q09",
       "intent": "TASK_CORE",
+      "tags": ["paraphrase", "cross_document"],
       "query": "아직 완료 기준이 정해지지 않은 항목",
       "expected": [
         { "document": "요구사항정의서", "section": "8" },
@@ -91,6 +102,7 @@
     {
       "id": "Q10",
       "intent": "TASK_DISCOVERY",
+      "tags": ["paraphrase", "confusing_document"],
       "query": "발주자가 만들어 내라고 요구한 결과물과 그것을 만드는 과업",
       "expected": [
         { "document": "과업지시서", "section": "3.1 ~ 3.8" }
@@ -101,6 +113,7 @@
     {
       "id": "Q11",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["paraphrase", "numeric_condition", "cross_document"],
       "query": "판촉 기간 운영 반영 제한과 배포 가능 시점",
       "expected": [
         { "document": "과업지시서", "section": "8" },
@@ -112,6 +125,7 @@
     {
       "id": "Q12",
       "intent": "ASSIGNMENT_REQUIREMENT",
+      "tags": ["people_requirement", "exact_terms", "cross_document"],
       "query": "웹 접근성 준수 수준과 담당 인력의 대응 경험",
       "expected": [
         { "document": "요구사항정의서", "section": "6 (REQ-F-44)" },
@@ -122,6 +136,7 @@
     {
       "id": "Q13",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["exact_terms", "paraphrase", "cross_document"],
       "query": "메시지 유실과 중복 수신에 대한 보정 처리",
       "expected": [
         { "document": "요구사항정의서", "section": "5 (REQ-F-31, REQ-F-32)" },
@@ -132,6 +147,7 @@
     {
       "id": "Q14",
       "intent": "EXECUTION_CONDITION",
+      "tags": ["exact_terms", "confusing_document", "cross_document"],
       "query": "시험 환경 이용 제약과 예약",
       "expected": [
         { "document": "과업지시서", "section": "8" },

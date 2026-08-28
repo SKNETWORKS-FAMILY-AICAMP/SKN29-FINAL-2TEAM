@@ -238,6 +238,9 @@ def rank(
             corpus[index]
             | {
                 "vector_score": vector_score[index],
+                "fts_score": fts_score[index],
+                "trigram_score": trigram_score[index],
+                "exact_score": exact_raw[index],
                 "lexical_score": lexical_score,
                 "retrieval_score": retrieval_score,
             }
@@ -333,18 +336,19 @@ def compare_rankings(
     for query in queries:
         query_id = query["id"]
 
-        def first_relevant(rows: list[dict[str, Any]]) -> int | None:
-            return next(
+        def first_relevant(rows: list[dict[str, Any]]) -> tuple[int | None, dict[str, Any] | None]:
+            match = next(
                 (
-                    index
+                    (index, row)
                     for index, row in enumerate(rows, start=1)
                     if any(_expected_match(row, expected) for expected in query["expected"])
                 ),
                 None,
             )
+            return match if match else (None, None)
 
-        vector_rank = first_relevant(baseline[query_id])
-        hybrid_rank = first_relevant(candidate[query_id])
+        vector_rank, vector_relevant = first_relevant(baseline[query_id])
+        hybrid_rank, hybrid_relevant = first_relevant(candidate[query_id])
         delta = None if vector_rank is None or hybrid_rank is None else vector_rank - hybrid_rank
         comparisons.append(
             {
@@ -353,6 +357,8 @@ def compare_rankings(
                 "vector_rank": vector_rank,
                 "hybrid_rank": hybrid_rank,
                 "rank_improvement": delta,
+                "hybrid_first_relevant": _score_diagnostic(hybrid_relevant),
+                "hybrid_top_result": _score_diagnostic(candidate[query_id][0]),
                 "status": (
                     "recovered" if vector_rank is None and hybrid_rank is not None
                     else "lost" if vector_rank is not None and hybrid_rank is None
@@ -366,6 +372,35 @@ def compare_rankings(
         "queries": comparisons,
         "regressions": [row for row in comparisons if row["status"] in {"lost", "regressed"}],
         "improvements": [row for row in comparisons if row["status"] in {"recovered", "improved"}],
+    }
+
+
+def _score_diagnostic(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "document": row["document"],
+        "section": row["section"],
+        "vector_score": row["vector_score"],
+        "fts_score": row["fts_score"],
+        "trigram_score": row["trigram_score"],
+        "exact_score": row["exact_score"],
+        "lexical_score": row["lexical_score"],
+        "retrieval_score": row["retrieval_score"],
+    }
+
+
+def score_by_tag(
+    queries: list[dict[str, Any]], rankings: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    tags = sorted({tag for query in queries for tag in query.get("tags", [])})
+    return {
+        tag: {
+            "query_count": len(tagged),
+            **score(tagged, rankings),
+        }
+        for tag in tags
+        if (tagged := [query for query in queries if tag in query.get("tags", [])])
     }
 
 
@@ -419,11 +454,20 @@ def main() -> int:
             "all": score(queries, by_query),
             "dev": score([q for q in queries if q["id"] in DEV_QUERY_IDS], by_query),
             "holdout": score([q for q in queries if q["id"] in HOLDOUT_QUERY_IDS], by_query),
+            "by_tag": score_by_tag(queries, by_query),
         }
     vector = report["variants"]["vector"]["all"]
     candidates = [name for name in variants if name.startswith("hybrid_")]
+    dev_queries = [query for query in queries if query["id"] in DEV_QUERY_IDS]
+    regression_free = [
+        name for name in candidates
+        if not compare_rankings(
+            dev_queries, rankings["vector"], rankings[name],
+        )["regressions"]
+    ]
+    selection_pool = regression_free or candidates
     selected = max(
-        candidates,
+        selection_pool,
         key=lambda name: (
             report["variants"][name]["dev"]["evidence_recall_at_20"],
             report["variants"][name]["dev"]["mrr"],
@@ -431,6 +475,12 @@ def main() -> int:
         ),
     )
     report["selected_variant"] = selected
+    report["selection_policy"] = {
+        "development_regression_guard": True,
+        "regression_free_candidates": regression_free,
+        "fallback_used": not regression_free,
+        "ranking": ["evidence_recall_at_20", "mrr", "precision_at_20"],
+    }
     report["selected_comparison"] = compare_rankings(
         queries, rankings["vector"], rankings[selected],
     )
