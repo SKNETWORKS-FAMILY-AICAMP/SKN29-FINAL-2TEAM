@@ -1107,14 +1107,19 @@ CREATE TABLE tool_call_idempotency (
     run_id                   UUID         NOT NULL,   -- agent_run.run_id(FK 없음)
     langchain_tool_call_id   VARCHAR(64)  NOT NULL,    -- AIMessage.tool_calls[i]["id"]
     tool_ref                 VARCHAR(100) NOT NULL,
-    status                   VARCHAR(16)  NOT NULL DEFAULT 'SUCCEEDED'
-                                           CHECK (status IN ('RUNNING', 'SUCCEEDED')),
+    status                   VARCHAR(16)  NOT NULL DEFAULT 'SUCCEEDED',
     result_text              TEXT,                    -- 성공 뒤 재실행할 결과(원문)
     lease_until              TIMESTAMPTZ,
     created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    CHECK ((status = 'RUNNING' AND result_text IS NULL) OR
-           (status = 'SUCCEEDED' AND result_text IS NOT NULL)),
+    -- **이름을 준다.** 마이그레이션(`2026-08-27_tool_call_idempotency_claim.sql`)이
+    -- 이 이름으로 만들고 `_apply.py --check` 도 이름으로 찾는다 — 이름 없이 적으면
+    -- 제약은 있는데 검사기는 「없다」고 보고한다(2026-08-28 실제로 그랬다).
+    CONSTRAINT tool_call_idempotency_status_ck
+        CHECK (status IN ('RUNNING', 'SUCCEEDED')),
+    CONSTRAINT tool_call_idempotency_result_ck
+        CHECK ((status = 'RUNNING' AND result_text IS NULL) OR
+               (status = 'SUCCEEDED' AND result_text IS NOT NULL)),
     PRIMARY KEY (run_id, langchain_tool_call_id)
 );
 
@@ -1320,6 +1325,79 @@ CREATE TABLE eval_judge_result (
 
 CREATE INDEX ix_eval_judge_result_case
     ON eval_judge_result (case_index, created_at DESC);
+
+-- =====================================================================
+-- Agent 평가 V2 — 원시 결과의 조회·백업용 사본
+-- =====================================================================
+--
+-- 위 `eval_run`·`eval_case_result`(LEGACY)와 **의도적으로 분리한다.** 같은 표에
+-- 섞으면 스키마가 다른 두 세대의 결과를 한 열로 비교하게 된다.
+--
+-- ⚠ 이 둘과 아래 `storage_cleanup_outbox` 는 2026-08-28 병합 직후까지
+-- `DB/migrations/` 에만 있었다. 이 파일이 정본이므로 되접는다 — 안 되접으면
+-- 새로 만든 DB 에 표가 없고(배포는 `_apply.py --check` 에서 멈춘다),
+-- 삭제·초기화 대상 목록도 이 파일에서 만들어지므로 조용히 빠진다.
+CREATE TABLE eval_v2_run (
+    eval_run_id        VARCHAR(64) PRIMARY KEY,
+    schema_version     INT          NOT NULL,
+    git_commit         VARCHAR(64)  NOT NULL,
+    candidate_id       VARCHAR(64)  NOT NULL,
+    candidate_model    VARCHAR(100) NOT NULL,
+    runtime_profile    VARCHAR(100) NOT NULL,
+    sync_status        VARCHAR(20)  NOT NULL DEFAULT 'SYNCED'
+                       CHECK (sync_status = 'SYNCED'),
+    started_at         TIMESTAMPTZ  NOT NULL,
+    finished_at        TIMESTAMPTZ  NOT NULL,
+    manifest           JSONB        NOT NULL,
+    summary            JSONB        NOT NULL,
+    disposition        JSONB,
+    -- 로컬 파일이 원본이라 해시로 대조한다. DB 사본이 조용히 어긋나면
+    -- 「같은 실행인데 결과가 다른」 상태를 아무도 못 본다.
+    manifest_sha256    CHAR(64)     NOT NULL,
+    results_sha256     CHAR(64)     NOT NULL,
+    summary_sha256     CHAR(64)     NOT NULL,
+    disposition_sha256 CHAR(64),
+    synced_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE TABLE eval_v2_scenario_result (
+    eval_run_id      VARCHAR(64)  NOT NULL,  -- eval_v2_run.eval_run_id(FK 없음)
+    scenario_index   INT          NOT NULL CHECK (scenario_index >= 1),
+    scenario_id      VARCHAR(100) NOT NULL,
+    fixture_id       VARCHAR(100) NOT NULL,
+    fixture_version  INT          NOT NULL,
+    gold_version     INT          NOT NULL,
+    scenario_result  VARCHAR(40)  NOT NULL,
+    validity         VARCHAR(40)  NOT NULL,
+    record_sha256    CHAR(64)     NOT NULL,
+    result           JSONB        NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (eval_run_id, scenario_index)
+);
+
+CREATE INDEX ix_eval_v2_scenario_fixture
+    ON eval_v2_scenario_result (fixture_id, scenario_result, created_at DESC);
+
+-- =====================================================================
+-- 저장소 정리 아웃박스
+-- =====================================================================
+--
+-- S3·로컬 저장소에서 파일을 지우다 일시적으로 실패해도 워커가 다시 시도하도록
+-- 남기는 큐다. 여기 행이 남아 있다는 것은 **아직 안 지워진 파일이 있다**는 뜻이라,
+-- 비울 때는 파일 쪽도 함께 정리했는지 봐야 한다.
+CREATE TABLE storage_cleanup_outbox (
+    cleanup_id      BIGSERIAL   PRIMARY KEY,
+    storage_key     TEXT        NOT NULL UNIQUE,
+    attempts        INTEGER     NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error_code VARCHAR(100),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_storage_cleanup_outbox_due
+    ON storage_cleanup_outbox (next_attempt_at, cleanup_id);
 
 -- =====================================================================
 -- 스킬 검증·등록 (2026-08-26 ~ 08-27)

@@ -267,6 +267,12 @@ class 삭제_대상_누락_검사(SimpleTestCase):
         "skill_catalog_revision",
         # 운영자가 손으로 넣은 회귀 데이터셋 — eval_run 과 같은 이유로 남긴다
         "skill_eval_regression_case",
+        # 평가 V2 성적표. LEGACY(eval_run·eval_case_result)와 표만 다르고
+        # 남기는 이유는 같다 — 입력을 갈아 끼워도 비교 기준은 보존한다.
+        "eval_v2_run", "eval_v2_scenario_result",
+        # 저장소에서 아직 못 지운 파일의 재시도 큐. 평가 초기화는 DB 만 비우고
+        # 파일은 그대로 두므로, 비우면 그 파일이 영영 고아가 된다.
+        "storage_cleanup_outbox",
     }
 
     @staticmethod
@@ -296,7 +302,7 @@ class 삭제_대상_누락_검사(SimpleTestCase):
         """마이그레이션이 지운 테이블. 만들었다가 지운 것은 세지 않는다."""
         import re
 
-        return set(re.findall(r"DROP TABLE (?:IF EXISTS )?([a-z_]+)", cls._schema()))
+        return set(re.findall(r"DROP TABLE (?:IF EXISTS )?([a-z0-9_]+)", cls._schema()))
 
     @classmethod
     def _tables_with(cls, column):
@@ -310,7 +316,7 @@ class 삭제_대상_누락_검사(SimpleTestCase):
         dropped = cls._dropped()
         found = []
         for m in re.finditer(
-            r"CREATE TABLE (?:IF NOT EXISTS )?([a-z_.]+) \((.*?)\n\);", cls._schema(), re.S
+            r"CREATE TABLE (?:IF NOT EXISTS )?([a-z0-9_.]+) \((.*?)\n\);", cls._schema(), re.S
         ):
             name, body = m.group(1), m.group(2)
             if name.startswith("mock_hr.") or name in dropped or name in found:
@@ -372,7 +378,7 @@ class 삭제_대상_누락_검사(SimpleTestCase):
         app_tables = {
             name
             for name in re.findall(
-                r"^CREATE TABLE (?:IF NOT EXISTS )?([a-z_.]+)", self._schema(), re.M
+                r"^CREATE TABLE (?:IF NOT EXISTS )?([a-z0-9_.]+)", self._schema(), re.M
             )
             if not name.startswith("mock_hr.") and name not in self._dropped()
         }

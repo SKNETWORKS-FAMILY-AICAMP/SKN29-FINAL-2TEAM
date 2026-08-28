@@ -77,6 +77,7 @@ TRUNCATE TABLE
     tool_call_idempotency, mcp_call_note,
     tool_call, agent_run,
     eval_judge_result, eval_case_result, eval_run,
+    eval_v2_scenario_result, eval_v2_run,
     chat_message, chat_session,
     agent_version_tools, agent_version_subagents, agent_favorites,
     agent_versions, agents,
@@ -101,6 +102,12 @@ TRUNCATE TABLE guardrail_event, guardrail_provider;
 TRUNCATE TABLE
     skill_eval_feedback, skill_eval_regression_case,
     skill_catalog_revision, skill_registration_job;
+
+-- 저장소 정리 아웃박스(2026-08-27). 아직 못 지운 파일의 재시도 큐다.
+-- 아래 「실행 후 반드시 할 것」 1번이 문서 저장소를 통째로 지우므로, 그 뒤에는
+-- 이 큐가 가리키는 키가 아예 없다 — 남겨 두면 워커가 없는 파일을 계속 다시
+-- 지우려 한다.
+TRUNCATE TABLE storage_cleanup_outbox;
 
 -- 팀·계정·초대. 캘린더는 아직 연동 전이지만 같이 비운다.
 TRUNCATE TABLE

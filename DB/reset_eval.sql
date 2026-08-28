@@ -65,9 +65,14 @@ TRUNCATE TABLE
 TRUNCATE TABLE skill_eval_feedback, skill_registration_job;
 
 -- 일부러 남기는 것 (`tests/test_ops_purge.py` 의 EVAL_KEEP 과 같은 목록이다):
---   eval_run · eval_case_result · eval_judge_result
+--   eval_run · eval_case_result · eval_judge_result · eval_v2_run ·
+--   eval_v2_scenario_result
 --                                 이전 평가의 성적표와 Judge 판정. 입력 데이터셋을
---                                 다시 준비해도 비교 기준은 보존해야 한다.
+--                                 다시 준비해도 비교 기준은 보존해야 한다. V2 는
+--                                 LEGACY 와 분리된 표지만 남기는 이유는 같다.
+--   storage_cleanup_outbox   저장소에서 아직 못 지운 파일의 재시도 큐. 이 초기화는
+--                      DB 만 비우고 파일은 그대로 두므로(시연 초기화와 다른 점),
+--                      비우면 그 파일들이 영영 고아로 남는다.
 --   user_account · team · team_member · team_folder · member_invite ·
 --   user_person_link   테넌트 그 자체. 이 초기화가 남기려는 것.
 --   connector_conn     Google/Jira 재연결을 피하려는 것이 이 파일의 존재 이유다.
