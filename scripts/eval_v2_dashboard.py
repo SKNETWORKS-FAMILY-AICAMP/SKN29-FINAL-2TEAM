@@ -32,8 +32,31 @@ CURRENT_CANDIDATE = DEFAULT_CANDIDATE
 
 GROUP_LABELS = {
     "official": "공식 Core DEV",
+    "expansion": "S10·S11 Expansion DEV",
     "diagnostic": "진단·실험용",
     "invalid": "평가 인프라 무효",
+}
+EXPANSION_DEV_COMMIT = "f8f8b57f9847b594d978703b0139f44a7b4db046"
+EXPANSION_DEV_PROMPT_ID = "eval-v2-judge-v3"
+EXPANSION_DEV_COHORT = {
+    "S10-DEV-001": {"fixture_version": 1, "gold_version": 1, "planned": 3},
+    "S10-DEV-002": {"fixture_version": 1, "gold_version": 1, "planned": 3},
+    "S11-DEV-001": {"fixture_version": 1, "gold_version": 2, "planned": 3},
+    "S11-DEV-002": {"fixture_version": 1, "gold_version": 2, "planned": 3},
+}
+EXPANSION_DEV_RUN_IDS = {
+    "v2-20260828T031234Z-20542f88",
+    "v2-20260828T031300Z-bf9e9bce",
+    "v2-20260828T031324Z-a378b749",
+    "v2-20260828T031351Z-16511da6",
+    "v2-20260828T031419Z-0b36831e",
+    "v2-20260828T031444Z-1069b7ac",
+    "v2-20260828T031509Z-54abd71b",
+    "v2-20260828T031554Z-c19c7e22",
+    "v2-20260828T031642Z-50000dbd",
+    "v2-20260828T031727Z-401afbbc",
+    "v2-20260828T031817Z-a26cc9c3",
+    "v2-20260828T031901Z-9e0af423",
 }
 SCENARIO_NOTES = {
     "S01-DEV-001": "현재 미해결 · 문서 전처리 고도화 후 재평가",
@@ -72,6 +95,18 @@ def classify_entry(entry: dict[str, Any]) -> str:
         and result.get("validity", "VALID") == "VALID"
     ):
         return "official"
+    expansion = EXPANSION_DEV_COHORT.get(fixture_id)
+    if (
+        manifest.get("eval_run_id") in EXPANSION_DEV_RUN_IDS
+        and manifest.get("candidate_id") == DEFAULT_CANDIDATE
+        and manifest.get("git_commit") == EXPANSION_DEV_COMMIT
+        and manifest.get("judge_prompt_id") == EXPANSION_DEV_PROMPT_ID
+        and expansion
+        and result.get("fixture_version") == expansion["fixture_version"]
+        and result.get("gold_version") == expansion["gold_version"]
+        and result.get("validity", "VALID") == "VALID"
+    ):
+        return "expansion"
     return "diagnostic"
 
 
@@ -106,15 +141,27 @@ def load_entries(results_root: Path) -> list[dict[str, Any]]:
 def summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
     groups = Counter(entry["group"] for entry in entries)
     official = [entry for entry in entries if entry["group"] == "official"]
+    expansion = [entry for entry in entries if entry["group"] == "expansion"]
     results = Counter(entry["result"].get("scenario_result", "UNKNOWN") for entry in official)
+    expansion_results = Counter(
+        entry["result"].get("scenario_result", "UNKNOWN") for entry in expansion
+    )
     by_scenario: dict[str, Counter] = {}
     for entry in official:
         fixture_id = entry["result"].get("fixture_id", "UNKNOWN")
         by_scenario.setdefault(fixture_id, Counter())[entry["result"].get("scenario_result", "UNKNOWN")] += 1
+    expansion_by_scenario: dict[str, Counter] = {}
+    for entry in expansion:
+        fixture_id = entry["result"].get("fixture_id", "UNKNOWN")
+        expansion_by_scenario.setdefault(fixture_id, Counter())[
+            entry["result"].get("scenario_result", "UNKNOWN")
+        ] += 1
     return {
         "groups": groups,
         "official_results": results,
         "official_by_scenario": by_scenario,
+        "expansion_results": expansion_results,
+        "expansion_by_scenario": expansion_by_scenario,
     }
 
 
@@ -239,7 +286,7 @@ def _entry_html(entry: dict[str, Any], index: int) -> str:
 
 CSS = r"""
 :root{--bg:#f5f3ee;--paper:#fffdfa;--ink:#1d2529;--muted:#68747a;--line:#d9d7d0;--good:#18724a;--good-bg:#e4f3ea;--bad:#a83434;--bad-bg:#f8e5e2;--warn:#8a6420;--warn-bg:#f7edd6;--blue:#285c78;--blue-bg:#e2eef4;--shadow:0 8px 30px rgba(40,48,52,.08)}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;line-height:1.55}.wrap{max-width:1380px;margin:auto;padding:36px 28px 80px}.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--blue);font-weight:800}.hero{display:flex;justify-content:space-between;gap:30px;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:24px}.hero h1{margin:5px 0 8px;font-size:34px}.hero p{margin:0;color:var(--muted)}.gate{background:var(--warn-bg);color:var(--warn);padding:11px 16px;border-radius:999px;font-weight:800;white-space:nowrap}.cards{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:24px 0}.metric{background:var(--paper);border:1px solid var(--line);padding:18px;border-radius:10px;box-shadow:var(--shadow)}.metric span{display:block;color:var(--muted);font-size:13px}.metric b{display:block;font-size:28px;margin-top:4px}.decision{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 24px}.decision>div{padding:16px 18px;border-radius:9px;background:var(--paper);border:1px solid var(--line)}.decision b{display:block;margin-bottom:4px}.decision p{margin:0;color:var(--muted)}.scenario-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 24px}.scenario{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:13px}.scenario b,.scenario span{display:block}.scenario span{color:var(--muted);font-size:13px;margin-top:3px}.filters{position:sticky;top:0;z-index:3;background:rgba(245,243,238,.95);backdrop-filter:blur(8px);display:grid;grid-template-columns:2fr repeat(3,1fr);gap:10px;padding:14px 0}.filters input,.filters select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink)}.shown{color:var(--muted);font-size:13px;margin:4px 0 10px}.run-card{background:var(--paper);border:1px solid var(--line);border-radius:9px;margin-bottom:9px;box-shadow:0 2px 10px rgba(40,48,52,.04)}.run-card>details>summary{display:flex;align-items:center;gap:11px;cursor:pointer;padding:15px 17px;list-style:none}.run-card>details>summary::-webkit-details-marker{display:none}.summary-meta{margin-left:auto;color:var(--muted);font-size:13px}.run-body{border-top:1px solid var(--line);padding:18px}.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800}.pass{background:var(--good-bg);color:var(--good)}.fail{background:var(--bad-bg);color:var(--bad)}.neutral{background:#ececea;color:#596267}.group-official{background:var(--blue-bg);color:var(--blue)}.group-diagnostic{background:var(--warn-bg);color:var(--warn)}.group-invalid{background:var(--bad-bg);color:var(--bad)}.scenario-note,.warning{padding:11px 14px;border-radius:7px;background:var(--warn-bg);color:var(--warn)}.warning{background:var(--bad-bg);color:var(--bad)}.warning p{margin:4px 0 0}.meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}.meta-grid>div{background:#f4f3ef;padding:10px;border-radius:6px;min-width:0}.meta-grid span,.meta-grid b{display:block}.meta-grid span{font-size:11px;color:var(--muted)}.meta-grid b{font-size:12px;overflow-wrap:anywhere}section h3{font-size:15px;margin:22px 0 8px}.answer{white-space:pre-wrap;background:#f4f3ef;border-left:3px solid var(--blue);padding:15px;border-radius:5px}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}th{color:var(--muted);font-size:11px}.judge-head{display:flex;justify-content:space-between}.judge-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.judge-criterion{background:#f4f3ef;padding:11px;border-radius:6px}.judge-criterion p{margin:6px 0}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.small{font-size:11px}.empty{color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#20282c;color:#e9eeef;padding:14px;border-radius:7px;font-size:11px}.raw{margin-top:18px}.raw>summary{cursor:pointer;color:var(--muted)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;line-height:1.55}.wrap{max-width:1380px;margin:auto;padding:36px 28px 80px}.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--blue);font-weight:800}.hero{display:flex;justify-content:space-between;gap:30px;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:24px}.hero h1{margin:5px 0 8px;font-size:34px}.hero p{margin:0;color:var(--muted)}.gate{background:var(--warn-bg);color:var(--warn);padding:11px 16px;border-radius:999px;font-weight:800;white-space:nowrap}.cards{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:24px 0}.metric{background:var(--paper);border:1px solid var(--line);padding:18px;border-radius:10px;box-shadow:var(--shadow)}.metric span{display:block;color:var(--muted);font-size:13px}.metric b{display:block;font-size:28px;margin-top:4px}.section-title{margin:28px 0 10px}.decision{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 24px}.decision>div{padding:16px 18px;border-radius:9px;background:var(--paper);border:1px solid var(--line)}.decision b{display:block;margin-bottom:4px}.decision p{margin:0;color:var(--muted)}.scenario-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 24px}.scenario{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:13px}.scenario b,.scenario span{display:block}.scenario span{color:var(--muted);font-size:13px;margin-top:3px}.filters{position:sticky;top:0;z-index:3;background:rgba(245,243,238,.95);backdrop-filter:blur(8px);display:grid;grid-template-columns:2fr repeat(3,1fr);gap:10px;padding:14px 0}.filters input,.filters select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink)}.shown{color:var(--muted);font-size:13px;margin:4px 0 10px}.run-card{background:var(--paper);border:1px solid var(--line);border-radius:9px;margin-bottom:9px;box-shadow:0 2px 10px rgba(40,48,52,.04)}.run-card>details>summary{display:flex;align-items:center;gap:11px;cursor:pointer;padding:15px 17px;list-style:none}.run-card>details>summary::-webkit-details-marker{display:none}.summary-meta{margin-left:auto;color:var(--muted);font-size:13px}.run-body{border-top:1px solid var(--line);padding:18px}.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800}.pass{background:var(--good-bg);color:var(--good)}.fail{background:var(--bad-bg);color:var(--bad)}.neutral{background:#ececea;color:#596267}.group-official{background:var(--blue-bg);color:var(--blue)}.group-expansion{background:var(--good-bg);color:var(--good)}.group-diagnostic{background:var(--warn-bg);color:var(--warn)}.group-invalid{background:var(--bad-bg);color:var(--bad)}.scenario-note,.warning{padding:11px 14px;border-radius:7px;background:var(--warn-bg);color:var(--warn)}.warning{background:var(--bad-bg);color:var(--bad)}.warning p{margin:4px 0 0}.meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}.meta-grid>div{background:#f4f3ef;padding:10px;border-radius:6px;min-width:0}.meta-grid span,.meta-grid b{display:block}.meta-grid span{font-size:11px;color:var(--muted)}.meta-grid b{font-size:12px;overflow-wrap:anywhere}section h3{font-size:15px;margin:22px 0 8px}.answer{white-space:pre-wrap;background:#f4f3ef;border-left:3px solid var(--blue);padding:15px;border-radius:5px}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}th{color:var(--muted);font-size:11px}.judge-head{display:flex;justify-content:space-between}.judge-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.judge-criterion{background:#f4f3ef;padding:11px;border-radius:6px}.judge-criterion p{margin:6px 0}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.small{font-size:11px}.empty{color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#20282c;color:#e9eeef;padding:14px;border-radius:7px;font-size:11px}.raw{margin-top:18px}.raw>summary{cursor:pointer;color:var(--muted)}
 @media(max-width:900px){.cards,.scenario-grid{grid-template-columns:repeat(2,1fr)}.decision,.meta-grid,.judge-grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.hero{display:block}.gate{display:inline-block;margin-top:15px}.summary-meta{display:none}}
 """
 
@@ -269,6 +316,11 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
     official_results = summary["official_results"]
     official_total = sum(official_results.values())
     pass_rate = official_results["PASS"] / official_total * 100 if official_total else 0
+    expansion_results = summary["expansion_results"]
+    expansion_total = sum(expansion_results.values())
+    expansion_pass_rate = (
+        expansion_results["PASS"] / expansion_total * 100 if expansion_total else 0
+    )
     scenario_cards = []
     for fixture_id, specification in CORE_DEV_COHORT.items():
         counts = summary["official_by_scenario"].get(fixture_id, Counter())
@@ -278,6 +330,15 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
             f'<b>{_e(fixture_id.replace("-DEV-001", ""))}</b>'
             f'<span>{counts["PASS"]} PASS · {counts["FAIL"]} FAIL · 계획 {specification["planned"]}</span>'
             f'<span>{_e(note)}</span></div>'
+        )
+    expansion_cards = []
+    for fixture_id, specification in EXPANSION_DEV_COHORT.items():
+        counts = summary["expansion_by_scenario"].get(fixture_id, Counter())
+        expansion_cards.append(
+            '<div class="scenario">'
+            f'<b>{_e(fixture_id)}</b>'
+            f'<span>{counts["PASS"]} PASS · {counts["FAIL"]} FAIL · 계획 {specification["planned"]}</span>'
+            '</div>'
         )
     scenarios = sorted({entry["result"].get("fixture_id", "UNKNOWN") for entry in entries})
     scenario_options = "".join(f'<option value="{_e(value)}">{_e(value)}</option>' for value in scenarios)
@@ -297,10 +358,18 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
   </div>
   <div class="decision"><div><b>S01 · 보류</b><p>현재 통과시키지 않음. 문서 전처리와 표 구조 검색을 고도화한 뒤 재평가합니다.</p></div>
     <div><b>S07 · 수정 유지</b><p>평가용 도구 설명을 바로잡은 상태를 유지합니다. 다음 freeze 검토 Candidate는 {CURRENT_CANDIDATE}입니다.</p></div></div>
+  <h2 class="section-title">S10·S11 Expansion DEV 종합</h2>
+  <div class="cards">
+    <div class="metric"><span>동결 Expansion 실행</span><b>{summary['groups']['expansion']}</b></div>
+    <div class="metric"><span>Expansion PASS / FAIL</span><b>{expansion_results['PASS']} / {expansion_results['FAIL']}</b></div>
+    <div class="metric"><span>Expansion 통과율</span><b>{expansion_pass_rate:.1f}%</b></div>
+  </div>
+  <div class="scenario-grid">{"".join(expansion_cards)}</div>
+  <h2 class="section-title">공식 Core DEV 시나리오</h2>
   <div class="scenario-grid">{"".join(scenario_cards)}</div>
   <div class="filters">
     <input data-filter="search" placeholder="시나리오·Candidate·답변 검색">
-    <select data-filter="group"><option value="">모든 분류</option><option value="official">공식 Core DEV</option><option value="diagnostic">진단·실험용</option><option value="invalid">평가 인프라 무효</option></select>
+    <select data-filter="group"><option value="">모든 분류</option><option value="official">공식 Core DEV</option><option value="expansion">S10·S11 Expansion DEV</option><option value="diagnostic">진단·실험용</option><option value="invalid">평가 인프라 무효</option></select>
     <select data-filter="result"><option value="">모든 결과</option><option value="pass">PASS</option><option value="fail">FAIL</option><option value="no_result">결과 없음</option></select>
     <select data-filter="scenario"><option value="">모든 시나리오</option>{scenario_options}</select>
   </div>
@@ -325,7 +394,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"생성 완료: {args.output.resolve()}\n"
         f"공식 {summary['groups']['official']}건 · 진단 {summary['groups']['diagnostic']}건 · "
-        f"무효 {summary['groups']['invalid']}건"
+        f"Expansion {summary['groups']['expansion']}건 · 무효 {summary['groups']['invalid']}건"
     )
     if args.open:
         webbrowser.open(args.output.resolve().as_uri())
