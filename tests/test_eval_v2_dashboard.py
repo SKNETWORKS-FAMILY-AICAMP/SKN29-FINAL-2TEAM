@@ -9,6 +9,7 @@ from scripts.eval_v2_dashboard import (
     EXPANSION_DEV_RUN_IDS,
     classify_entry,
     load_entries,
+    load_garak_results,
     render_dashboard,
     summarize,
 )
@@ -140,6 +141,106 @@ class EvalV2DashboardTests(unittest.TestCase):
             page = render_dashboard(load_entries(root))
             self.assertIn("S10·S11 Expansion DEV 종합", page)
             self.assertIn("Expansion PASS / FAIL</span><b>1 / 0", page)
+
+    def test_dashboard_joins_auxiliary_scores_by_eval_run_id(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "v2-auxiliary"
+            self._write_run(root, "auxiliary", eval_run_id=run_id)
+            auxiliary_path = root / "auxiliary.json"
+            auxiliary_path.write_text(json.dumps([{
+                "eval_run_id": run_id,
+                "scores": [
+                    {
+                        "evaluator": "ragas",
+                        "metric": "faithfulness",
+                        "score": 0.75,
+                        "passed": True,
+                        "reason": "<근거 확인>",
+                    },
+                    {
+                        "evaluator": "deepeval",
+                        "metric": "answer_relevancy",
+                        "score": 0.5,
+                        "passed": False,
+                        "reason": "질문 집중도 부족",
+                    },
+                ],
+                "operational_metrics": {"total_tokens": 1234},
+                "not_available": ["task_completion: 전체 Trace 없음"],
+                "errors": [],
+            }], ensure_ascii=False), encoding="utf-8")
+
+            entries = load_entries(root, auxiliary_path)
+            page = render_dashboard(entries)
+
+            self.assertIn("Ragas · 근거 충실도", page)
+            self.assertIn("DeepEval · 답변 관련성", page)
+            self.assertIn("0.750", page)
+            self.assertIn("1,234", page)
+            self.assertIn("&lt;근거 확인&gt;", page)
+            self.assertNotIn("<근거 확인>", page)
+
+    def test_dashboard_renders_model_and_agent_garak_separately(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_run(root, "garak")
+            agent_path = root / "agent.json"
+            agent_path.write_text(json.dumps({
+                "candidate_id": "AG004/AV073",
+                "total": 1,
+                "passed": 1,
+                "protocol": "GARAK_PROMPT_LOCAL_AGENT_REPLAY_V1",
+                "results": [{
+                    "seq": 0,
+                    "passed": True,
+                    "execution_ok": True,
+                    "attack_triggered": False,
+                    "tools_called": [],
+                    "candidate_model": "gpt-5.6-luna",
+                    "answer": "<안전 답변>",
+                }],
+            }, ensure_ascii=False), encoding="utf-8")
+            model_path = root / "model.report.jsonl"
+            model_path.write_text(json.dumps({
+                "entry_type": "eval",
+                "probe": "promptinject.HijackLongPrompt",
+                "detector": "promptinject.AttackRogueString",
+                "passed": 0,
+                "fails": 1,
+                "total_evaluated": 1,
+            }), encoding="utf-8")
+
+            garak = load_garak_results(agent_path, model_path)
+            page = render_dashboard(load_entries(root), garak)
+
+            self.assertIn("Garak 적대적 보안 진단", page)
+            self.assertIn("모델 단독 방어 통과</span><b>0 / 1", page)
+            self.assertIn("격리 에이전트 방어 통과</span><b>1 / 1", page)
+            self.assertIn("&lt;안전 답변&gt;", page)
+            self.assertNotIn("<안전 답변>", page)
+
+    def test_dashboard_renders_llm_judge_summary(self):
+        page = render_dashboard([{
+            "group": "diagnostic",
+            "run_dir": "v2-test",
+            "manifest": {"eval_run_id": "v2-test", "candidate_id": "AG/AV"},
+            "disposition": None,
+            "auxiliary": None,
+            "result": {
+                "fixture_id": "S01-DEV-001",
+                "scenario_result": "PASS",
+                "criteria": [],
+                "judge": {
+                    "model": "judge-model",
+                    "reasoning_effort": "medium",
+                    "status": "COMPLETED",
+                    "verdict": {"overall_verdict": "PASS", "summary": "판정 요약"},
+                },
+            },
+        }])
+        self.assertIn("judge-model · reasoning medium", page)
+        self.assertIn("판정 요약", page)
 
 
 if __name__ == "__main__":

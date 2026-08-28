@@ -1,0 +1,9 @@
+# 기존 프로젝트 환경과 섞지 않는 학습용 전용 의존성입니다.
+arize-phoenix-otel==0.17.1
+arize-phoenix-client==2.13.0
+ragas==0.4.3
+# Ragas 0.4.3이 0.4.2에서 제거된 VertexAI 모듈을 import하는 upstream 문제 회피.
+langchain-community==0.4.1
+deepeval==3.9.9
+python-dotenv==1.2.3
+pypdf==6.15.0

@@ -28,6 +28,28 @@ from scripts.eval_v2_portfolio import (
 
 DEFAULT_RESULTS_ROOT = REPO_ROOT / "outputs" / "eval-v2-results"
 DEFAULT_OUTPUT = REPO_ROOT / "outputs" / "eval-v2-dashboard" / "index.html"
+DEFAULT_AUXILIARY_RESULTS = (
+    REPO_ROOT
+    / "experiments"
+    / "otel_eval_lab"
+    / "artifacts"
+    / "v2_professional_results.json"
+)
+DEFAULT_GARAK_AGENT_RESULTS = (
+    REPO_ROOT
+    / "experiments"
+    / "otel_eval_lab"
+    / "artifacts"
+    / "garak_agent_safe_results.json"
+)
+DEFAULT_GARAK_MODEL_REPORT = (
+    REPO_ROOT
+    / "experiments"
+    / "otel_eval_lab"
+    / "garak_runs"
+    / "garak_runs"
+    / "safe_model_promptinject_3.report.jsonl"
+)
 CURRENT_CANDIDATE = DEFAULT_CANDIDATE
 
 GROUP_LABELS = {
@@ -61,6 +83,13 @@ EXPANSION_DEV_RUN_IDS = {
 SCENARIO_NOTES = {
     "S01-DEV-001": "현재 미해결 · 문서 전처리 고도화 후 재평가",
     "S07-DEV-001": "평가용 도구 설명 수정 유지",
+}
+
+AUXILIARY_METRIC_LABELS = {
+    "ragas.id_context_precision": "Ragas · 검색 정밀도",
+    "ragas.id_context_recall": "Ragas · 검색 재현율",
+    "ragas.faithfulness": "Ragas · 근거 충실도",
+    "deepeval.answer_relevancy": "DeepEval · 답변 관련성",
 }
 
 
@@ -110,7 +139,56 @@ def classify_entry(entry: dict[str, Any]) -> str:
     return "diagnostic"
 
 
-def load_entries(results_root: Path) -> list[dict[str, Any]]:
+def load_auxiliary_results(path: Path | None) -> dict[str, dict[str, Any]]:
+    if path is None or not path.is_file():
+        return {}
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(rows, list):
+        raise ValueError("보조평가 결과의 최상위 값은 배열이어야 합니다.")
+    return {
+        str(row["eval_run_id"]): row
+        for row in rows
+        if isinstance(row, dict) and row.get("eval_run_id")
+    }
+
+
+def load_garak_results(
+    agent_results: Path | None, model_report: Path | None
+) -> dict[str, Any]:
+    data: dict[str, Any] = {"agent": None, "model": None}
+    if agent_results is not None and agent_results.is_file():
+        payload = _read_json(agent_results)
+        results = payload.get("results") or []
+        data["agent"] = {
+            "candidate_id": payload.get("candidate_id"),
+            "total": int(payload.get("total") or len(results)),
+            "passed": int(payload.get("passed") or 0),
+            "results": results,
+            "protocol": payload.get("protocol"),
+        }
+    if model_report is not None and model_report.is_file():
+        eval_rows = [
+            row for row in _read_jsonl(model_report) if row.get("entry_type") == "eval"
+        ]
+        if eval_rows:
+            passed = sum(int(row.get("passed") or 0) for row in eval_rows)
+            total = sum(int(row.get("total_evaluated") or 0) for row in eval_rows)
+            data["model"] = {
+                "candidate_id": "gpt-5.6-sol · 모델 단독",
+                "passed": passed,
+                "total": total,
+                "fails": sum(int(row.get("fails") or 0) for row in eval_rows),
+                "probes": [
+                    f"{row.get('probe')}:{row.get('detector')}" for row in eval_rows
+                ],
+            }
+    return data
+
+
+def load_entries(
+    results_root: Path, auxiliary_results: Path | None = None
+) -> list[dict[str, Any]]:
+    auxiliary_by_run = load_auxiliary_results(auxiliary_results)
     entries: list[dict[str, Any]] = []
     for run_dir in sorted(results_root.glob("v2-*")):
         manifest_path = run_dir / "v2_run_manifest.json"
@@ -132,6 +210,7 @@ def load_entries(results_root: Path) -> list[dict[str, Any]]:
                 "manifest": manifest,
                 "result": result,
                 "disposition": disposition,
+                "auxiliary": auxiliary_by_run.get(str(manifest.get("eval_run_id"))),
             }
             entry["group"] = classify_entry(entry)
             entries.append(entry)
@@ -156,12 +235,30 @@ def summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
         expansion_by_scenario.setdefault(fixture_id, Counter())[
             entry["result"].get("scenario_result", "UNKNOWN")
         ] += 1
+    auxiliary_scores: dict[str, list[float]] = {}
+    auxiliary_operations: dict[str, list[float]] = {}
+    auxiliary_error_count = 0
+    for entry in official + expansion:
+        auxiliary = entry.get("auxiliary") or {}
+        auxiliary_error_count += len(auxiliary.get("errors") or [])
+        operations = auxiliary.get("operational_metrics") or {}
+        for key in ("end_to_end_latency_ms", "total_tokens"):
+            if isinstance(operations.get(key), (int, float)):
+                auxiliary_operations.setdefault(key, []).append(float(operations[key]))
+        for score in auxiliary.get("scores") or []:
+            if score.get("evaluator") == "v2":
+                continue
+            key = f"{score.get('evaluator')}.{score.get('metric')}"
+            auxiliary_scores.setdefault(key, []).append(float(score["score"]))
     return {
         "groups": groups,
         "official_results": results,
         "official_by_scenario": by_scenario,
         "expansion_results": expansion_results,
         "expansion_by_scenario": expansion_by_scenario,
+        "auxiliary_scores": auxiliary_scores,
+        "auxiliary_operations": auxiliary_operations,
+        "auxiliary_error_count": auxiliary_error_count,
     }
 
 
@@ -224,6 +321,117 @@ def _judge_html(judge: dict[str, Any] | None) -> str:
     )
 
 
+def _auxiliary_html(auxiliary: dict[str, Any] | None) -> str:
+    if not auxiliary:
+        return '<p class="empty">이 실행과 결합된 보조평가 결과가 없습니다.</p>'
+    score_rows = []
+    for score in auxiliary.get("scores") or []:
+        if score.get("evaluator") == "v2":
+            continue
+        key = f"{score.get('evaluator')}.{score.get('metric')}"
+        passed = score.get("passed")
+        result = "PASS" if passed is True else "FAIL" if passed is False else "SCORE"
+        score_rows.append(
+            "<tr>"
+            f'<td>{_e(AUXILIARY_METRIC_LABELS.get(key, key))}</td>'
+            f'<td><b>{float(score.get("score", 0)):.3f}</b></td>'
+            f'<td><span class="pill {_result_class(result)}">{result}</span></td>'
+            f'<td>{_e(score.get("reason") or "—")}</td>'
+            "</tr>"
+        )
+    score_table = (
+        '<div class="table-wrap"><table><thead><tr><th>보조지표</th><th>점수</th>'
+        '<th>기준 판정</th><th>이유</th></tr></thead><tbody>'
+        f'{"".join(score_rows)}</tbody></table></div>'
+        if score_rows
+        else '<p class="empty">계산된 Ragas·DeepEval 점수가 없습니다.</p>'
+    )
+    metrics = auxiliary.get("operational_metrics") or {}
+    operation_rows = "".join(
+        f'<div><span>{_e(label)}</span><b>{_e(value)}</b></div>'
+        for key, label in (
+            ("end_to_end_latency_ms", "전체 응답시간(ms)"),
+            ("active_execution_latency_ms", "실제 실행시간(ms)"),
+            ("tool_call_count", "도구 호출"),
+            ("model_calls", "모델 호출"),
+            ("failed_tool_call_count", "실패 도구 호출"),
+            ("total_tokens", "전체 토큰"),
+        )
+        if (value := metrics.get(key)) is not None
+    )
+    errors = auxiliary.get("errors") or []
+    errors_html = (
+        f'<div class="warning"><b>보조평가 오류</b><pre>{_json(errors)}</pre></div>'
+        if errors
+        else ""
+    )
+    unavailable = auxiliary.get("not_available") or []
+    unavailable_html = (
+        '<p class="aux-na"><b>N/A:</b> '
+        f'{_e(" · ".join(str(value) for value in unavailable))}</p>'
+        if unavailable
+        else ""
+    )
+    return (
+        score_table
+        + (f'<div class="meta-grid aux-ops">{operation_rows}</div>' if operation_rows else "")
+        + unavailable_html
+        + errors_html
+    )
+
+
+def _garak_html(garak: dict[str, Any] | None) -> str:
+    garak = garak or {}
+    model = garak.get("model") or {}
+    agent = garak.get("agent") or {}
+    model_total = int(model.get("total") or 0)
+    model_passed = int(model.get("passed") or 0)
+    agent_total = int(agent.get("total") or 0)
+    agent_passed = int(agent.get("passed") or 0)
+
+    def rate(passed: int, total: int) -> str:
+        return f"{passed / total * 100:.1f}%" if total else "N/A"
+
+    rows = []
+    for item in agent.get("results") or []:
+        passed = bool(item.get("passed"))
+        rows.append(
+            "<tr>"
+            f'<td class="mono">#{_e(item.get("seq"))}</td>'
+            f'<td><span class="pill {_result_class("PASS" if passed else "FAIL")}">'
+            f'{"PASS" if passed else "FAIL"}</span></td>'
+            f'<td>{"정상" if item.get("execution_ok") else "실행 오류"}</td>'
+            f'<td>{"탐지" if item.get("attack_triggered") else "미탐지"}</td>'
+            f'<td>{_e(", ".join(item.get("tools_called") or []) or "없음")}</td>'
+            f'<td>{_e(item.get("candidate_model") or "—")}</td>'
+            f'<td class="garak-answer">{_e(item.get("answer") or "답변 없음")}</td>'
+            "</tr>"
+        )
+    detail = (
+        '<div class="table-wrap"><table><thead><tr><th>케이스</th><th>결과</th>'
+        '<th>실행</th><th>공격 문자열</th><th>도구 호출</th><th>모델</th><th>실제 답변</th>'
+        f'</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+        if rows
+        else '<p class="empty">저장된 격리 에이전트 Garak 결과가 없습니다.</p>'
+    )
+    return (
+        '<div class="cards garak-cards">'
+        '<div class="metric"><span>모델 단독 방어 통과</span>'
+        f'<b>{model_passed} / {model_total}</b><small>{rate(model_passed, model_total)}</small></div>'
+        '<div class="metric"><span>모델 단독 공격 성공률</span>'
+        f'<b>{rate(int(model.get("fails") or 0), model_total)}</b>'
+        f'<small>{_e(model.get("candidate_id") or "N/A")}</small></div>'
+        '<div class="metric"><span>격리 에이전트 방어 통과</span>'
+        f'<b>{agent_passed} / {agent_total}</b><small>{rate(agent_passed, agent_total)}</small></div>'
+        '<div class="metric"><span>격리 Candidate</span>'
+        f'<b class="garak-candidate">{_e(agent.get("candidate_id") or "N/A")}</b>'
+        '<small>업무 도구 노출 0개</small></div></div>'
+        '<div class="garak-note"><b>해석 주의</b> 모델 단독과 격리 에이전트는 후보 모델과 '
+        '보호 계층이 다릅니다. Garak 결과는 V2 공식 통과율에 합산하지 않습니다.</div>'
+        + detail
+    )
+
+
 def _entry_html(entry: dict[str, Any], index: int) -> str:
     manifest = entry["manifest"]
     result = entry["result"]
@@ -274,6 +482,7 @@ def _entry_html(entry: dict[str, Any], index: int) -> str:
             <div><span>Fixture / Gold</span><b>v{_e(result.get('fixture_version'))} / v{_e(result.get('gold_version'))}</b></div>
           </div>
           <section><h3>실제 에이전트 답변</h3><div class="answer">{_e(candidate.get('final_answer') or '기록된 최종 답변이 없습니다.')}</div></section>
+          <section><h3>Ragas·DeepEval 보조지표</h3>{_auxiliary_html(entry.get('auxiliary'))}</section>
           <section><h3>결정론적·계약 판정</h3>{_criteria_html(result.get('criteria') or [])}</section>
           <section><h3>LLM as Judge</h3>{_judge_html(result.get('judge'))}</section>
           <section><h3>실행 증거</h3><pre>{_json(evidence) if evidence else '기록된 추가 증거가 없습니다.'}</pre></section>
@@ -287,6 +496,8 @@ def _entry_html(entry: dict[str, Any], index: int) -> str:
 CSS = r"""
 :root{--bg:#f5f3ee;--paper:#fffdfa;--ink:#1d2529;--muted:#68747a;--line:#d9d7d0;--good:#18724a;--good-bg:#e4f3ea;--bad:#a83434;--bad-bg:#f8e5e2;--warn:#8a6420;--warn-bg:#f7edd6;--blue:#285c78;--blue-bg:#e2eef4;--shadow:0 8px 30px rgba(40,48,52,.08)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;line-height:1.55}.wrap{max-width:1380px;margin:auto;padding:36px 28px 80px}.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--blue);font-weight:800}.hero{display:flex;justify-content:space-between;gap:30px;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:24px}.hero h1{margin:5px 0 8px;font-size:34px}.hero p{margin:0;color:var(--muted)}.gate{background:var(--warn-bg);color:var(--warn);padding:11px 16px;border-radius:999px;font-weight:800;white-space:nowrap}.cards{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:24px 0}.metric{background:var(--paper);border:1px solid var(--line);padding:18px;border-radius:10px;box-shadow:var(--shadow)}.metric span{display:block;color:var(--muted);font-size:13px}.metric b{display:block;font-size:28px;margin-top:4px}.section-title{margin:28px 0 10px}.decision{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 24px}.decision>div{padding:16px 18px;border-radius:9px;background:var(--paper);border:1px solid var(--line)}.decision b{display:block;margin-bottom:4px}.decision p{margin:0;color:var(--muted)}.scenario-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 24px}.scenario{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:13px}.scenario b,.scenario span{display:block}.scenario span{color:var(--muted);font-size:13px;margin-top:3px}.filters{position:sticky;top:0;z-index:3;background:rgba(245,243,238,.95);backdrop-filter:blur(8px);display:grid;grid-template-columns:2fr repeat(3,1fr);gap:10px;padding:14px 0}.filters input,.filters select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink)}.shown{color:var(--muted);font-size:13px;margin:4px 0 10px}.run-card{background:var(--paper);border:1px solid var(--line);border-radius:9px;margin-bottom:9px;box-shadow:0 2px 10px rgba(40,48,52,.04)}.run-card>details>summary{display:flex;align-items:center;gap:11px;cursor:pointer;padding:15px 17px;list-style:none}.run-card>details>summary::-webkit-details-marker{display:none}.summary-meta{margin-left:auto;color:var(--muted);font-size:13px}.run-body{border-top:1px solid var(--line);padding:18px}.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800}.pass{background:var(--good-bg);color:var(--good)}.fail{background:var(--bad-bg);color:var(--bad)}.neutral{background:#ececea;color:#596267}.group-official{background:var(--blue-bg);color:var(--blue)}.group-expansion{background:var(--good-bg);color:var(--good)}.group-diagnostic{background:var(--warn-bg);color:var(--warn)}.group-invalid{background:var(--bad-bg);color:var(--bad)}.scenario-note,.warning{padding:11px 14px;border-radius:7px;background:var(--warn-bg);color:var(--warn)}.warning{background:var(--bad-bg);color:var(--bad)}.warning p{margin:4px 0 0}.meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}.meta-grid>div{background:#f4f3ef;padding:10px;border-radius:6px;min-width:0}.meta-grid span,.meta-grid b{display:block}.meta-grid span{font-size:11px;color:var(--muted)}.meta-grid b{font-size:12px;overflow-wrap:anywhere}section h3{font-size:15px;margin:22px 0 8px}.answer{white-space:pre-wrap;background:#f4f3ef;border-left:3px solid var(--blue);padding:15px;border-radius:5px}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}th{color:var(--muted);font-size:11px}.judge-head{display:flex;justify-content:space-between}.judge-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.judge-criterion{background:#f4f3ef;padding:11px;border-radius:6px}.judge-criterion p{margin:6px 0}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.small{font-size:11px}.empty{color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#20282c;color:#e9eeef;padding:14px;border-radius:7px;font-size:11px}.raw{margin-top:18px}.raw>summary{cursor:pointer;color:var(--muted)}
+.aux-cards{grid-template-columns:repeat(4,minmax(180px,1fr))}.aux-na{padding:10px 12px;background:#f4f3ef;border-radius:6px;color:var(--muted);font-size:12px}.aux-ops{grid-template-columns:repeat(6,1fr)}
+.metric small{display:block;color:var(--muted);margin-top:4px}.garak-cards{grid-template-columns:repeat(4,minmax(180px,1fr))}.garak-candidate{font-size:20px!important}.garak-note{padding:12px 14px;margin:-10px 0 14px;border-left:3px solid var(--warn);background:var(--warn-bg);color:var(--warn);border-radius:5px}.garak-answer{white-space:pre-wrap;min-width:220px;max-width:520px}
 @media(max-width:900px){.cards,.scenario-grid{grid-template-columns:repeat(2,1fr)}.decision,.meta-grid,.judge-grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.hero{display:block}.gate{display:inline-block;margin-top:15px}.summary-meta{display:none}}
 """
 
@@ -311,7 +522,9 @@ applyFilters();
 """
 
 
-def render_dashboard(entries: list[dict[str, Any]]) -> str:
+def render_dashboard(
+    entries: list[dict[str, Any]], garak: dict[str, Any] | None = None
+) -> str:
     summary = summarize(entries)
     official_results = summary["official_results"]
     official_total = sum(official_results.values())
@@ -320,6 +533,35 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
     expansion_total = sum(expansion_results.values())
     expansion_pass_rate = (
         expansion_results["PASS"] / expansion_total * 100 if expansion_total else 0
+    )
+    auxiliary_cards = []
+    for key in (
+        "ragas.id_context_precision",
+        "ragas.id_context_recall",
+        "ragas.faithfulness",
+        "deepeval.answer_relevancy",
+    ):
+        values = summary["auxiliary_scores"].get(key, [])
+        value = f"{sum(values) / len(values):.3f}" if values else "N/A"
+        auxiliary_cards.append(
+            '<div class="metric"><span>'
+            f'{_e(AUXILIARY_METRIC_LABELS[key])} · {len(values)}건</span><b>{value}</b></div>'
+        )
+    latency = summary["auxiliary_operations"].get("end_to_end_latency_ms", [])
+    tokens = summary["auxiliary_operations"].get("total_tokens", [])
+    auxiliary_cards.extend(
+        [
+            '<div class="metric"><span>평균 전체 응답시간</span>'
+            f'<b>{sum(latency) / len(latency) / 1000:.2f}초</b></div>'
+            if latency
+            else '<div class="metric"><span>평균 전체 응답시간</span><b>N/A</b></div>',
+            '<div class="metric"><span>평균 전체 토큰</span>'
+            f'<b>{sum(tokens) / len(tokens):,.0f}</b></div>'
+            if tokens
+            else '<div class="metric"><span>평균 전체 토큰</span><b>N/A</b></div>',
+            '<div class="metric"><span>보조평가 오류</span>'
+            f'<b>{summary["auxiliary_error_count"]}</b></div>',
+        ]
     )
     scenario_cards = []
     for fixture_id, specification in CORE_DEV_COHORT.items():
@@ -348,7 +590,7 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
 <title>Agent Eval V2 대시보드</title><style>{CSS}</style></head><body><main class="wrap">
   <header class="hero"><div><span class="eyebrow">AGENT EVAL V2 · LOCAL REPORT</span>
     <h1>에이전트 평가 대시보드</h1><p>공식 점수와 실험·무효 실행을 분리한 로컬 읽기 전용 화면</p></div>
-    <span class="gate">STOP BEFORE PHASE 9</span></header>
+    <span class="gate">V2 + AUXILIARY VIEW</span></header>
   <div class="cards">
     <div class="metric"><span>공식 Core 실행</span><b>{summary['groups']['official']}</b></div>
     <div class="metric"><span>공식 PASS / FAIL</span><b>{official_results['PASS']} / {official_results['FAIL']}</b></div>
@@ -358,6 +600,12 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
   </div>
   <div class="decision"><div><b>S01 · 보류</b><p>현재 통과시키지 않음. 문서 전처리와 표 구조 검색을 고도화한 뒤 재평가합니다.</p></div>
     <div><b>S07 · 수정 유지</b><p>평가용 도구 설명을 바로잡은 상태를 유지합니다. 다음 freeze 검토 Candidate는 {CURRENT_CANDIDATE}입니다.</p></div></div>
+  <h2 class="section-title">Ragas·DeepEval 보조지표 종합</h2>
+  <p class="shown">V2 공식 PASS/FAIL에는 반영하지 않는 원인 분석용 점수입니다.</p>
+  <div class="cards aux-cards">{"".join(auxiliary_cards)}</div>
+  <h2 class="section-title">Garak 적대적 보안 진단</h2>
+  <p class="shown">동일한 Prompt Injection 3건의 모델 단독 결과와 업무 도구 없는 실제 에이전트 결과를 분리해 표시합니다.</p>
+  {_garak_html(garak)}
   <h2 class="section-title">S10·S11 Expansion DEV 종합</h2>
   <div class="cards">
     <div class="metric"><span>동결 Expansion 실행</span><b>{summary['groups']['expansion']}</b></div>
@@ -381,15 +629,28 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-root", type=Path, default=DEFAULT_RESULTS_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--auxiliary-results", type=Path, default=DEFAULT_AUXILIARY_RESULTS,
+        help="Ragas·DeepEval 보조평가 JSON. 파일이 없으면 V2만 표시합니다.",
+    )
+    parser.add_argument(
+        "--garak-agent-results", type=Path, default=DEFAULT_GARAK_AGENT_RESULTS,
+        help="업무 도구 없는 실제 에이전트 Garak 재생 결과 JSON.",
+    )
+    parser.add_argument(
+        "--garak-model-report", type=Path, default=DEFAULT_GARAK_MODEL_REPORT,
+        help="모델 단독 Garak report JSONL.",
+    )
     parser.add_argument("--open", action="store_true", help="생성 후 기본 브라우저로 연다.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    entries = load_entries(args.results_root)
+    entries = load_entries(args.results_root, args.auxiliary_results)
+    garak = load_garak_results(args.garak_agent_results, args.garak_model_report)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render_dashboard(entries), encoding="utf-8")
+    args.output.write_text(render_dashboard(entries, garak), encoding="utf-8")
     summary = summarize(entries)
     print(
         f"생성 완료: {args.output.resolve()}\n"

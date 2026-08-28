@@ -1,0 +1,30 @@
+[
+  {
+    "case_id": "LAB-RAG-001",
+    "input": "관측성 완료 기준은 언제 확정되나요?",
+    "actual_output": "관측성 완료 기준은 M1 설계 검토 회의에서 확정합니다.",
+    "retrieval_context": [
+      "관측성 완료 기준은 설계 검토 회의 M1에서 확정한다. M1 전까지는 로그 표준과 대시보드 작업만 진행한다."
+    ],
+    "retrieved_context_ids": ["DOC-MIN-1"],
+    "reference_context_ids": ["DOC-MIN-1"],
+    "expected_output": "M1 설계 검토 회의에서 확정한다.",
+    "tools_called": ["document_search"],
+    "expected_tools": ["document_search"],
+    "source": "SYNTHETIC_LEARNING_FIXTURE"
+  },
+  {
+    "case_id": "LAB-TOOL-001",
+    "input": "회의록에서 일정 위험을 찾아줘.",
+    "actual_output": "검색된 회의록에서 일정 위험을 확인했습니다.",
+    "retrieval_context": [
+      "외부 연동 지연으로 전체 일정이 최대 1주 지연될 가능성이 있다."
+    ],
+    "retrieved_context_ids": ["DOC-RISK-1", "DOC-NOISE-1"],
+    "reference_context_ids": ["DOC-RISK-1"],
+    "expected_output": "외부 연동으로 최대 1주 지연될 수 있다.",
+    "tools_called": ["document_search"],
+    "expected_tools": ["document_search"],
+    "source": "SYNTHETIC_LEARNING_FIXTURE"
+  }
+]

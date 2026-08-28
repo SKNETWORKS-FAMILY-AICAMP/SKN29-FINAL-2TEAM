@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+RUN python -m pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.7.1+cpu
+RUN python -m pip install --no-cache-dir garak==0.15.1
+
+WORKDIR /lab
+ENTRYPOINT ["python", "-m", "garak"]

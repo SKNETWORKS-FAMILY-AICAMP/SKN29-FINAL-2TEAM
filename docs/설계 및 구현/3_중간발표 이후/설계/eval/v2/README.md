@@ -136,9 +136,15 @@ python scripts/eval_v2_dashboard.py
 ```
 
 생성 파일은 `outputs/eval-v2-dashboard/index.html`이다. 제품 프론트엔드나 DB를
-사용하지 않으며 `outputs/eval-v2-results/`의 append-only 원본만 읽는다. 공식 Core
-cohort, 진단·실험용 실행, `INVALID_EVALUATION_INFRA` 실행을 분리해서 표시하고 각
-실행의 실제 답변·결정론적 판정·LLM Judge·실행 증거를 펼쳐 볼 수 있다.
+사용하지 않으며 `outputs/eval-v2-results/`의 append-only 원본을 정본으로 읽는다.
+`experiments/otel_eval_lab/artifacts/v2_professional_results.json`이 있으면 같은
+`eval_run_id`의 Ragas·DeepEval 보조지표와 운영 통계를 읽기 전용으로 결합한다. 이
+또한 `garak_agent_safe_results.json`과 3건 제한 모델 단독 Garak report가 있으면
+모델 단독·격리 에이전트 보안 진단을 분리해 표시한다. 이 보조 파일들이 없어도
+V2 전용 화면은 정상 생성된다. 공식 Core cohort, 진단·실험용 실행,
+`INVALID_EVALUATION_INFRA` 실행을 분리해서 표시하고 각 실행의 실제 답변·보조지표·
+결정론적 판정·LLM Judge·실행 증거를 펼쳐 볼 수 있다. 보조지표는 V2 공식 PASS/FAIL을
+변경하지 않으며 Garak 결과도 공식 통과율에 합산하지 않는다.
 
 현재 자동 집계는 Core DEV 10개 variant, 36 VALID run을 대상으로 한다. S08은
 `NOT_AUTHORIZED`, S10/S11은 별도 Expansion 트랙, LEGACY는 별도 protocol이라 이 분모에
