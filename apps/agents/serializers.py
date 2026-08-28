@@ -25,7 +25,11 @@ def builtin_tool_response() -> list[dict[str, Any]]:
     항목이 섞이면 "이건 꺼도 되나?"라는 오해를 만든다.
     """
 
-    from services.harness.registry import ALWAYS_ON_TOOL_REFS, BUILTIN_TOOLS
+    from services.harness.registry import (
+        ALWAYS_ON_TOOL_REFS,
+        BUILTIN_TOOLS,
+        DEFAULT_CHAT_TOOL_REFS,
+    )
 
     return [
         {
@@ -34,7 +38,12 @@ def builtin_tool_response() -> list[dict[str, Any]]:
             "description": tool.description,
             "source": "기본 제공",
             "category": tool.category,
+            "provider": tool.provider,
+            "capability": tool.capability,
+            "requires_connection": tool.requires_connection,
             "side_effect": tool.side_effect,
+            # 채팅 「+」의 「기본값으로 초기화」가 되돌리는 고정 집합에 드는가.
+            "is_default": tool.ref in DEFAULT_CHAT_TOOL_REFS,
             "input_schema": tool.input_schema,
         }
         for tool in BUILTIN_TOOLS.values()

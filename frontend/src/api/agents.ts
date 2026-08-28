@@ -27,8 +27,16 @@ export interface ToolChoice {
    * 도구만 갖는다(2026-08-18). MCP 도구는 아직 서버 단위로만 묶는다.
    */
   category?: string;
+  /** 기본 제공 Tool의 실행 대상 또는 연결 서비스. */
+  provider?: string;
+  /** 검색·목록·등록처럼 Tool이 수행하는 행동. */
+  capability?: string;
+  /** 사용하기 전에 사용자별 외부 서비스 연결이 필요한가. */
+  requires_connection?: boolean;
   /** 승인 게이트를 타는 도구인가. 화면이 「승인 필요」를 표시한다. */
   side_effect: boolean;
+  /** 채팅 「+」의 「기본값으로 초기화」가 되돌리는 고정 집합에 드는 도구인가(기본 제공 도구만). */
+  is_default?: boolean;
   server_status?: string;
   /** 기본 제공·MCP 도구 모두 갖는다. 「도구 확인」 패널이 입력 폼을 만드는 데 쓴다. */
   input_schema?: {

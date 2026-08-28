@@ -361,13 +361,13 @@ def provision_default_chat_agent(cursor, *, team_id: str, owner_account_id: str)
         ),
     )
 
-    # 읽기 도구를 기본으로 붙인다. 쓰기 도구는 뺀다 — `side_effect` 플래그가
-    # 「밖을 바꾸는가」의 정본이라, 새 도구가 늘어도 읽기면 자동으로 붙는다.
-    from services.harness.registry import BUILTIN_TOOLS
+    # 기본 도구 목록은 `DEFAULT_CHAT_TOOL_REFS` 가 정본이다(2026-08-29). 예전에는
+    # `side_effect=False` 만 붙였는데, "엑셀로 만들어줘" 같은 쓰기 도구가 빠져서
+    # 기본 어시스턴트가 못 하는 일이 많았다. 쓰기 도구도 실행 전 승인(HITL)이
+    # 걸리므로 켜 둔다. 팀장이 Builder 에서 개별로 끌 수 있다.
+    from services.harness.registry import DEFAULT_CHAT_TOOL_REFS
 
-    for tool_ref, tool in BUILTIN_TOOLS.items():
-        if tool.side_effect:
-            continue
+    for tool_ref in sorted(DEFAULT_CHAT_TOOL_REFS):
         cursor.execute(
             "INSERT INTO agent_version_tools (agent_version_id, tool_ref) VALUES (%s, %s)",
             (agent_version_id, tool_ref),

@@ -42,6 +42,31 @@ class ToolCatalogTests(SimpleTestCase):
         self.assertTrue(by_ref["jira_create_issues"]["side_effect"])
         self.assertFalse(by_ref["document_search"]["side_effect"])
 
+    def test_기본값_초기화_집합을_화면에_알려준다(self):
+        """채팅 「+」의 「기본값으로 초기화」가 되돌릴 고정 집합(`is_default`)."""
+
+        by_ref = {row["tool_ref"]: row for row in builtin_tool_response()}
+
+        self.assertTrue(by_ref["table_export"]["is_default"])
+        self.assertFalse(by_ref["diagram_create"]["is_default"])
+        self.assertFalse(by_ref["file_inspect"]["is_default"])
+        self.assertFalse(by_ref["document_sync"]["is_default"])
+
+    def test_P0_기존도구를_최종_카테고리와_서비스로_표시한다(self):
+        by_ref = {row["tool_ref"]: row for row in builtin_tool_response()}
+
+        self.assertEqual(
+            {row["category"] for row in by_ref.values()},
+            {"검색", "문서", "업무", "팀", "데이터", "계산", "시각화"},
+        )
+        self.assertEqual(by_ref["jira_create_issues"]["provider"], "Jira")
+        self.assertEqual(by_ref["jira_create_issues"]["capability"], "등록")
+        self.assertTrue(by_ref["jira_create_issues"]["requires_connection"])
+        self.assertEqual(by_ref["document_create"]["name"], "Word 만들기")
+        self.assertEqual(by_ref["table_export"]["name"], "Excel 만들기")
+        self.assertEqual(by_ref["data_quality_check"]["category"], "데이터")
+        self.assertEqual(by_ref["calculate"]["capability"], "계산")
+
 
 class MainModelGoneTests(SimpleTestCase):
     """메인 모델 API 는 **팀 쪽에 없다**(2026-08-18 멘토링).

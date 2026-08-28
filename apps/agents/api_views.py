@@ -155,6 +155,9 @@ def _tool_catalog(account_id: str) -> dict[str, dict]:
                 "description": tool.description,
                 "source": "기본 제공",
                 "category": tool.category,
+                "provider": tool.provider,
+                "capability": tool.capability,
+                "requires_connection": tool.requires_connection,
                 "side_effect": tool.side_effect,
                 "input_schema": tool.input_schema,
             }
