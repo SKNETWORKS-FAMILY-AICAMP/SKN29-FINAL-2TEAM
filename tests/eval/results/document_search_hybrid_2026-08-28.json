@@ -2,7 +2,7 @@
   "provenance": {
     "owner": "원빈님에게 인계받아 실시한 문서 검색 평가",
     "corpus": "tests/eval/documents HTML 8종, 절 단위 95개",
-    "gold": "tests/eval/golden/retrieval.json 질의 14개",
+    "gold": "tests/eval/golden/document_search_hybrid_legacy.json 질의 14개",
     "embedding_model": "google/embeddinggemma-300m",
     "development_queries": "Q01-Q10",
     "holdout_queries": "Q11-Q14"
@@ -11,7 +11,7 @@
     "selection_data": "Q01-Q10 development only",
     "holdout_used_for_selection": false,
     "holdout_usage": "가중치와 구조 선택을 끝낸 뒤 Q11-Q14로 최종 확인",
-    "label_correction": "Q04·Q07 분석 중 과업지시서 3.3의 직접 근거를 발견하고 원문을 사람이 확인한 뒤 누락 라벨을 보정했다. 상세 감사 이력은 golden retrieval.json에 보존한다.",
+    "label_correction": "Q04·Q07 분석 중 과업지시서 3.3의 직접 근거를 발견하고 원문을 사람이 확인한 뒤 누락 라벨을 보정했다. 상세 감사 이력은 tests/eval/golden/document_search_hybrid_legacy.json에 보존한다.",
     "interpretation_limit": "질의 14개의 합성 평가에서 현재 가장 안정적인 값이며 일반적인 최적 가중치로 해석하지 않는다."
   },
   "acceptance_thresholds": {

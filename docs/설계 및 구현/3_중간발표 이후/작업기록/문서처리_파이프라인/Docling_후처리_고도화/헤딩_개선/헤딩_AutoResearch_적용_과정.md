@@ -2,6 +2,11 @@
 
 작성일: 2026-08-25
 
+> 출처 표기: 본문의 `heading_validation/*`, `autoresearch_lite/*`, `practice/*`,
+> `handoff/*`는 이 제품 저장소 내부 경로가 아니라 개인 Docling 실험 정본과
+> canonical handoff `docling_postprocess_merge_handoff_20260825_v2`에서 검증한
+> 원본 상대 경로다. 현재 저장소에는 큐레이션 문서와 대표 이미지만 포함한다.
+
 ## 1. AutoResearch를 사용한 이유
 
 이 프로젝트의 AutoResearch-lite는 모델 재학습이나 LLM 자율 연구가 아니다. Docling 2.119가 한 번 추출한 고정 JSON과 사람이 확정한 라벨을 대상으로, 제한된 threshold 조합을 로컬 CPU에서 반복 평가하는 결정론적 실험기다.

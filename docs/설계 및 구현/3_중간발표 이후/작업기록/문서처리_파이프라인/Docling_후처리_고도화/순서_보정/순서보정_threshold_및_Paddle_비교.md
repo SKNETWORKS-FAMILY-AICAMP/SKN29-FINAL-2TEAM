@@ -1,5 +1,10 @@
 # Reading Order threshold 근거와 PaddleOCR-VL 비교 결과
 
+> 출처 표기: 본문의 `practice/*`, `heading_validation/*`, `autoresearch_lite/*`,
+> `handoff/*`는 이 제품 저장소 내부 경로가 아니라 개인 Docling 실험 정본과
+> canonical handoff `docling_postprocess_merge_handoff_20260825_v2`에서 검증한
+> 원본 상대 경로다. 현재 저장소에는 큐레이션 문서와 대표 이미지만 포함한다.
+
 ## 1. threshold를 정하는 원칙
 
 현재 threshold는 문서 결과를 보고 매번 임의로 바꾸는 값이 아니다.

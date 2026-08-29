@@ -29,7 +29,15 @@
 10. [원본 전체 작업로그](./병합_준비_및_작업기록/원본_전체_작업로그.md)
 
 보조 근거로 순서 threshold·Paddle shadow 비교 결과와 순서보정·헤딩의 대표 전후
-이미지를 각 관련 폴더에 함께 두었다.
+이미지를 각 관련 폴더에 함께 두었다. 리뷰용 대표 증거는 다음 두 쌍이다.
+
+- 읽기 순서: [NEXTY 6쪽 보정 전](./순서_보정/증거_이미지/reading_order_nexty_page6_before.png) ·
+  [보정 후](./순서_보정/증거_이미지/reading_order_nexty_page6_after.png)
+- 헤딩 승격: [Asia-Pacific 보정 전](./헤딩_개선/증거_이미지/heading_promotion_asia_pacific_before.png) ·
+  [보정 후](./헤딩_개선/증거_이미지/heading_promotion_asia_pacific_after.png)
+
+한화 2쪽 전체 비교와 Heading AutoResearch 과정 이미지는 세부 검토용 보조 자료로
+유지한다. 대표 쌍과 보조 이미지를 섞어 하나의 성능 주장으로 해석하지 않는다.
 
 ## AutoResearch 적용 범위
 
