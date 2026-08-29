@@ -108,7 +108,7 @@ export default function OpsConnectorsPage() {
     return (
       <div className={styles.page}>
         <OpsPageHeader title="연결 서비스 현황" />
-        <p className={styles.inlineEmpty}>연결된 서비스가 없습니다.</p>
+        <div className={styles.pageEmptyState}>연결된 서비스가 없습니다.</div>
       </div>
     );
   }

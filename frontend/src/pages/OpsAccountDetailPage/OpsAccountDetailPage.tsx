@@ -170,8 +170,8 @@ export default function OpsAccountDetailPage() {
   }
 
   const back = (
-    <Button variant="secondary" onClick={() => navigate('/ops/accounts')}>
-      계정 목록으로
+    <Button variant="secondary" onClick={() => navigate('/ops/accounts')} aria-label="계정 목록으로">
+      ← 목록으로
     </Button>
   );
 
@@ -205,6 +205,8 @@ export default function OpsAccountDetailPage() {
   const canUnlink = account.mapping_status === 'DUPLICATE';
   const canGrantAdmin = !account.is_admin && !isWithdrawn;
   const canRevokeAdmin = account.is_admin && !isSelf;
+  const hasStandardActions = canUnlock || canUnlink || canGrantAdmin;
+  const hasDangerActions = canLock || canRevokeAdmin || !isSelf;
 
   return (
     <div className={styles.page}>
@@ -273,8 +275,7 @@ export default function OpsAccountDetailPage() {
         {isSelf && !isWithdrawn && (
           <p className={styles.detailText}>본인 계정은 정지하거나 권한을 내릴 수 없습니다.</p>
         )}
-        <div className={styles.rowActions}>
-          {canLock && <Button variant="danger" onClick={() => setPendingAction('lock')}>계정 정지</Button>}
+        {hasStandardActions && <div className={styles.rowActions}>
           {canUnlock && <Button variant="primary" onClick={() => setPendingAction('unlock')}>계정 재활성</Button>}
           {canUnlink && (
             <Button variant="outline" onClick={() => setPendingAction('unlink')}>직원 연결 해제</Button>
@@ -282,6 +283,9 @@ export default function OpsAccountDetailPage() {
           {canGrantAdmin && (
             <Button variant="outline" onClick={() => setPendingAction('grant-admin')}>운영자로 지정</Button>
           )}
+        </div>}
+        {hasDangerActions && <div className={styles.dangerActions}>
+          {canLock && <Button variant="danger" onClick={() => setPendingAction('lock')}>계정 정지</Button>}
           {canRevokeAdmin && (
             <Button variant="danger" onClick={() => setPendingAction('revoke-admin')}>운영자 권한 회수</Button>
           )}
@@ -289,7 +293,7 @@ export default function OpsAccountDetailPage() {
               **누를 수 있게 두면 안 된다** — 눌러 보고 거절당하는 것은 안내가
               아니다. */}
           {!isSelf && <Button variant="danger" onClick={openPurge}>계정 삭제</Button>}
-        </div>
+        </div>}
       </OpsSectionCard>
 
       <Modal

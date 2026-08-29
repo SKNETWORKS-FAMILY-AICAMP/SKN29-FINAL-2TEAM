@@ -27,6 +27,10 @@
 .policyGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+.policyOverviewCard > div:first-child {
+  min-height: 52px;
+}
 .overviewVisuals {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 20px;
@@ -87,6 +91,18 @@
   font-size: 12px;
 }
 
+.bottomPanel {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+.bottomPanel .linkAction {
+  align-self: flex-start;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
 .usageMetrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -94,12 +110,37 @@
   margin-top: 14px;
 }
 
+.usagePanelBody {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  padding: 14px 0;
+}
+
+.usagePanelBody .usageMetrics {
+  width: 100%;
+  margin-top: 0;
+}
+
+.statusPanel {
+  display: flex;
+  flex-direction: column;
+}
+
+.overviewEmpty {
+  display: grid;
+  flex: 1;
+  min-height: 138px;
+  place-items: center;
+  margin: 14px 0 0;
+}
+
 .usageMetric {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 6px;
-  padding: 14px;
+  padding: 12px 14px;
   border-radius: var(--radius-md);
   background: #f8fafc;
 }
@@ -222,7 +263,6 @@
 
 .actionList,
 .activityList,
-.noticeList,
 .policyHistory {
   display: flex;
   flex-direction: column;
@@ -266,6 +306,25 @@
   cursor: pointer;
 }
 
+.linkAction {
+  margin-left: -6px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  transition: background-color 140ms ease;
+}
+
+.linkAction:hover,
+.linkAction:focus-visible {
+  background: var(--color-primary-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.linkAction:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .outlineAction {
   padding: 7px 12px;
   border: 1px solid currentColor;
@@ -295,17 +354,48 @@
   text-align: left;
 }
 
-.historyButton:hover {
+.historyButton:hover,
+.historyButton:focus-visible {
   background: var(--color-primary-soft);
 }
 
+.historyButton:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.guardrailToggle {
+  min-width: 88px;
+}
+
+.jsonBlock {
+  max-height: 360px;
+  overflow: auto;
+  margin: 16px 0 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #f8fafc;
+  color: var(--color-heading);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.modalDetailTable {
+  margin-top: 0;
+}
+
 .historyButtonActive {
-  background: var(--color-primary);
-  color: var(--color-surface);
+  background: var(--color-primary-soft);
+  color: var(--color-heading);
+  box-shadow: inset 3px 0 0 var(--color-primary);
 }
 
 .historyButtonActive:hover {
-  background: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .historyMeta {
@@ -317,7 +407,7 @@
 }
 
 .historyButtonActive .historyMeta {
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--color-muted);
 }
 
 .historyRow {
@@ -348,6 +438,16 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: 16px;
+}
+
+.dangerActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
 }
 
 .modalCopy {
@@ -381,6 +481,33 @@
   color: var(--color-heading);
   font: inherit;
   font-size: 13px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.fieldGroup select {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+.fieldGroup input:hover,
+.fieldGroup textarea:hover,
+.fieldGroup select:hover {
+  border-color: rgba(30, 58, 95, 0.34);
+}
+
+.fieldGroup input:focus,
+.fieldGroup textarea:focus,
+.fieldGroup select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .fieldGroup textarea {
@@ -407,11 +534,38 @@
 }
 
 .inlineEmpty {
+  margin: 14px 0 0;
   padding: 24px;
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
   color: var(--color-muted);
   font-size: 12px;
+  text-align: center;
+}
+
+.periodBadge {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: #f8fafc;
+  color: var(--color-body);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pageEmptyState {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  padding: 32px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 13px;
   text-align: center;
 }
 
@@ -422,40 +576,11 @@
   gap: 14px;
 }
 
-.inlinePolicy .fieldGroup {
-  width: 180px;
+.inlinePolicy input {
+  min-width: 0;
+  flex: 1;
 }
 
-.inlinePolicyReason {
-  margin-top: 14px;
-  max-width: 480px;
-}
-
-.noticeItem {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 0;
-  border-bottom: 1px solid #eef2f7;
-}
-
-.noticeItem:last-child {
-  border-bottom: 0;
-}
-
-.noticeItem strong {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--color-heading);
-  font-size: 13px;
-}
-
-.noticeItem p {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 11px;
-}
 
 /**
  * 표 안의 조작 버튼 짝(연결 확인 · 지우기).
@@ -490,6 +615,41 @@
 
 .compactActions button:last-child {
   color: var(--color-danger);
+}
+
+.policyValue {
+  margin: 14px 0 0;
+  color: var(--color-heading);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.modalList {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.modalContentSwap {
+  animation: modal-content-enter 140ms ease-out both;
+}
+
+@keyframes modal-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modalContentSwap {
+    animation: none;
+  }
 }
 .compareFlow {
   display: grid;
@@ -539,7 +699,7 @@
 }
 .policyMetadata {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) minmax(140px, 0.8fr);
+  grid-template-columns: minmax(130px, 0.8fr) minmax(190px, 1.1fr) minmax(0, 1.6fr);
   gap: 10px;
   margin: 0;
 }
@@ -564,6 +724,51 @@
   font-size: 12px;
   font-weight: 700;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.targetValue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.targetType {
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 10px;
+}
+
+.targetId {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.payloadEmpty {
+  margin: 16px 0 0;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.pagerInfo {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.pagerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .noticeDetail {
@@ -595,6 +800,10 @@
   font-size: 13px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+.formGrid textarea {
+  min-height: 140px;
 }
 
 .scheduleFieldset {
@@ -645,8 +854,13 @@
     grid-template-columns: 1fr;
   }
 
-  .noticeItem {
-    grid-template-columns: auto minmax(0, 1fr);
+  .pager {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagerActions {
+    justify-content: space-between;
   }
 
   .compactActions {
@@ -825,7 +1039,7 @@
 .radioRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 8px;
   min-height: 40px;      /* select 가 있던 자리와 높이를 맞춘다 */
   align-items: center;
 }
@@ -836,10 +1050,31 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.fieldGroup .radioRow label:hover {
+  border-color: rgba(30, 58, 95, 0.34);
+  background: var(--color-primary-soft);
+}
+
+.fieldGroup .radioRow label:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
 /* `.fieldGroup input`(너비 100%·높이 40px·테두리)은 텍스트 칸용이다. */

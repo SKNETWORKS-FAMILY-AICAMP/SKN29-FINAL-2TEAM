@@ -84,7 +84,7 @@ export default function OpsAccountsPage() {
       const matchesMapping = mappingFilter === '전체' || account.mapping_status === mappingFilter;
 
       return matchesQuery && matchesStatus && matchesMapping && matchesTeam;
-    });
+    }).sort((a, b) => Number(b.is_admin) - Number(a.is_admin));
   }, [accounts, mappingFilter, query, statusFilter, teamFilter]);
 
 
@@ -181,7 +181,7 @@ export default function OpsAccountsPage() {
                     navigate(`/ops/accounts/${account.account_id}`);
                   }}
                 >
-                  상세 보기
+                  상세
                 </button>
               </td>
             </tr>

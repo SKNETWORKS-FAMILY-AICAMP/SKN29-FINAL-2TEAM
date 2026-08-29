@@ -137,7 +137,7 @@ export default function OpsConnectorDetailPage() {
             <td>{connector.person?.org_name ?? '미지정'}</td>
           </tr>
           <tr>
-            <th scope="row">최근 확인</th>
+            <th scope="row">연결 시각</th>
             <td>{formatConnectedAt(connector.connected_at)}</td>
           </tr>
           <tr>

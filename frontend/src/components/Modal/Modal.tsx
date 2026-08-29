@@ -1,7 +1,33 @@
 import { useEffect, useId, useState } from 'react';
 import type { ReactNode, CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../Icon/Icon';
 import styles from './Modal.module.css';
+
+let bodyScrollLockCount = 0;
+let previousBodyOverflow = '';
+let previousBodyPaddingRight = '';
+
+function lockBodyScroll() {
+  if (bodyScrollLockCount === 0) {
+    previousBodyOverflow = document.body.style.overflow;
+    previousBodyPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      const currentPadding = Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
+      document.body.style.paddingRight = `${currentPadding + scrollbarWidth}px`;
+    }
+    document.body.style.overflow = 'hidden';
+  }
+  bodyScrollLockCount += 1;
+}
+
+function unlockBodyScroll() {
+  bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+  if (bodyScrollLockCount > 0) return;
+  document.body.style.overflow = previousBodyOverflow;
+  document.body.style.paddingRight = previousBodyPaddingRight;
+}
 
 export interface ModalProps {
   open: boolean;
@@ -59,11 +85,17 @@ export function Modal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose, dismissible]);
 
+  useEffect(() => {
+    if (!rendered) return;
+    lockBodyScroll();
+    return unlockBodyScroll;
+  }, [rendered]);
+
   if (!rendered) return null;
 
   const dialogStyle: CSSProperties = { width };
 
-  return (
+  const modal = (
     <div
       className={`${styles.backdrop} ${closing ? styles.closing : styles.opening}`}
       onClick={open && dismissible ? onClose : undefined}
@@ -91,4 +123,6 @@ export function Modal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

@@ -57,6 +57,19 @@ const AGENT_TONES: Record<string, OpsTone> = {
   DISABLED: 'warning',
 };
 
+const AGENT_LABELS: Record<string, string> = {
+  ACTIVE: '사용 중',
+  DRAFT: '초안',
+  DISABLED: '사용 안 함',
+};
+
+const RUN_LABELS: Record<string, string> = {
+  DONE: '완료',
+  FAILED: '실패',
+  RUNNING: '실행 중',
+  CANCELLED: '취소됨',
+};
+
 function at(iso: string | null): string {
   if (!iso) return '-';
   const date = new Date(iso);
@@ -74,8 +87,7 @@ export default function OpsTeamDetailPage() {
   const [runs, setRuns] = useState<OpsTeamRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  /** 지시문은 길다. 펼친 것만 보여준다. */
-  const [openAgent, setOpenAgent] = useState('');
+  const [selectedAgentId, setSelectedAgentId] = useState('');
 
   const { showToast } = useToast();
   const [transferOpen, setTransferOpen] = useState(false);
@@ -85,6 +97,7 @@ export default function OpsTeamDetailPage() {
   const [nextOwner, setNextOwner] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const selectedAgent = agents.find((agent) => agent.agent_id === selectedAgentId) ?? null;
 
   const load = useCallback(async () => {
     const session = loadOpsSession();
@@ -193,7 +206,7 @@ export default function OpsTeamDetailPage() {
     <OpsPageHeader
       title="팀 상세"
       actions={(
-        <Button variant="secondary" onClick={() => navigate('/ops/teams')}>팀 목록으로</Button>
+        <Button variant="secondary" onClick={() => navigate('/ops/teams')} aria-label="팀 목록으로">← 목록으로</Button>
       )}
     />
   );
@@ -252,11 +265,11 @@ export default function OpsTeamDetailPage() {
       <OpsSectionCard title="조치">
         <div className={styles.rowActions}>
           <Button variant="outline" onClick={() => navigate(`/ops/accounts?team=${teamId}`)}>
-            이 팀 계정 보기
+            소속 계정
           </Button>
           <Button variant="outline" onClick={openTransfer}>소유자 이전</Button>
           {/* 되돌릴 수 없는 것은 **다른 색**으로, 그리고 줄 끝에 둔다 —
-              「이 팀 계정 보기」 옆에 같은 모양으로 있으면 손이 먼저 간다. */}
+              「소속 계정」 옆에 같은 모양으로 있으면 손이 먼저 간다. */}
           <Button variant="danger" onClick={openPurge}>팀 삭제</Button>
         </div>
       </OpsSectionCard>
@@ -287,7 +300,7 @@ export default function OpsTeamDetailPage() {
                   <td>{agent.name}</td>
                   <td>
                     <OpsStatusBadge tone={AGENT_TONES[agent.status] ?? 'neutral'}>
-                      {agent.status}
+                      {AGENT_LABELS[agent.status] ?? agent.status}
                     </OpsStatusBadge>
                   </td>
                   <td>{agent.model ?? '-'}</td>
@@ -297,10 +310,11 @@ export default function OpsTeamDetailPage() {
                   </td>
                   <td>
                     <button
+                      data-button
                       type="button"
-                      onClick={() => setOpenAgent(openAgent === agent.agent_id ? '' : agent.agent_id)}
+                      onClick={() => setSelectedAgentId(agent.agent_id)}
                     >
-                      {openAgent === agent.agent_id ? '접기' : '구성 보기'}
+                      구성 보기
                     </button>
                   </td>
                 </tr>
@@ -309,30 +323,9 @@ export default function OpsTeamDetailPage() {
           </OpsDataTable>
         )}
 
-        {/* 도구 목록과 지시문은 길어서 표 칸에 안 들어간다. 고른 하나만 아래에 편다. */}
-        {agents
-          .filter((agent) => agent.agent_id === openAgent)
-          .map((agent) => (
-            <table key={agent.agent_id} className={styles.detailTable} style={{ marginTop: 16 }}>
-              <tbody>
-                <tr>
-                  <th scope="row">도구</th>
-                  <td>{agent.tool_refs.join(' · ') || '없음'}</td>
-                </tr>
-                <tr>
-                  <th scope="row">응답 방식 · 반복 상한</th>
-                  <td>{agent.reasoning_effort ?? '-'} · {agent.max_iterations ?? '-'}</td>
-                </tr>
-                <tr>
-                  <th scope="row">지시문</th>
-                  <td style={{ whiteSpace: 'pre-wrap' }}>{agent.instruction || '없음'}</td>
-                </tr>
-              </tbody>
-            </table>
-          ))}
       </OpsSectionCard>
 
-      <OpsSectionCard title={`최근 실행 ${runs.length}건`}>
+      <OpsSectionCard title={`빌더 에이전트 최근 실행 ${runs.length}건`}>
         {runs.length === 0 ? (
           <OpsEmpty message="아직 실행 기록이 없습니다." />
         ) : (
@@ -354,7 +347,9 @@ export default function OpsTeamDetailPage() {
                   <td>{at(run.started_at)}</td>
                   <td>{run.agent_name}</td>
                   <td>
-                    <OpsStatusBadge tone={RUN_TONES[run.status] ?? 'neutral'}>{run.status}</OpsStatusBadge>
+                    <OpsStatusBadge tone={RUN_TONES[run.status] ?? 'neutral'}>
+                      {RUN_LABELS[run.status] ?? run.status}
+                    </OpsStatusBadge>
                   </td>
                   <td>{run.iterations}</td>
                   <td>{run.tool_calls}</td>
@@ -368,6 +363,41 @@ export default function OpsTeamDetailPage() {
           </OpsDataTable>
         )}
       </OpsSectionCard>
+
+      <Modal
+        open={selectedAgent !== null}
+        onClose={() => setSelectedAgentId('')}
+        title={selectedAgent ? `${selectedAgent.name} 구성` : '에이전트 구성'}
+        width={680}
+        footer={<Button variant="secondary" onClick={() => setSelectedAgentId('')}>닫기</Button>}
+      >
+        {selectedAgent && (
+          <table className={[styles.detailTable, styles.modalDetailTable].join(' ')}>
+            <tbody>
+              <tr>
+                <th scope="row">상태</th>
+                <td>{AGENT_LABELS[selectedAgent.status] ?? selectedAgent.status}</td>
+              </tr>
+              <tr>
+                <th scope="row">모델</th>
+                <td>{selectedAgent.model ?? '-'}</td>
+              </tr>
+              <tr>
+                <th scope="row">도구</th>
+                <td>{selectedAgent.tool_refs.join(' · ') || '없음'}</td>
+              </tr>
+              <tr>
+                <th scope="row">응답 방식 · 반복 상한</th>
+                <td>{selectedAgent.reasoning_effort ?? '-'} · {selectedAgent.max_iterations ?? '-'}</td>
+              </tr>
+              <tr>
+                <th scope="row">지시문</th>
+                <td style={{ whiteSpace: 'pre-wrap' }}>{selectedAgent.instruction || '없음'}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+      </Modal>
 
       <Modal
         open={transferOpen}

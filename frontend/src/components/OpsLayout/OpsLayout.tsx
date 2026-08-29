@@ -120,9 +120,7 @@ export function OpsLayout() {
             .join(' ')}
         >
           <div className={styles.sidebarHead}>
-            <p className={styles.sidebarLabel}>운영자 메뉴</p>
-            {/* 표가 열 여덟아홉 개라 본문 폭이 곧 읽히는 양이다 — 접으면 172px 이
-                표로 간다. */}
+            <span className={styles.sidebarLabel}>메뉴</span>
             <button
               type="button"
               className={styles.collapse}
@@ -130,7 +128,7 @@ export function OpsLayout() {
               aria-label={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
               title={collapsed ? '펼치기' : '접기'}
             >
-              <Icon name={collapsed ? 'arrow-right' : 'arrow-left'} size={15} color="var(--color-muted)" />
+              <Icon name="sidebar" size={18} />
             </button>
           </div>
           <nav className={styles.navigation} aria-label="운영자 메뉴">
@@ -146,14 +144,16 @@ export function OpsLayout() {
                 title={iconsOnly ? item.label : undefined}
               >
                 <Icon name={item.icon} size={17} />
-                {!iconsOnly && <span>{item.label}</span>}
+                <span className={styles.navLabel}>{item.label}</span>
               </NavLink>
             ))}
           </nav>
         </aside>
 
         <main className={styles.main}>
-          <Outlet />
+          <div key={location.pathname} className={styles.routeContent}>
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

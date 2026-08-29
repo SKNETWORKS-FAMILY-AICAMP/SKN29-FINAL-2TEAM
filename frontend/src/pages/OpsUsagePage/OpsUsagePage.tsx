@@ -107,9 +107,10 @@ export default function OpsUsagePage() {
 
   return (
     <div className={styles.page}>
-      {header}
-
-      <p className={styles.resultSummary}>최근 {data.window_days}일</p>
+      <OpsPageHeader
+        title="사용 현황"
+        actions={<span className={styles.periodBadge}>최근 {data.window_days}일</span>}
+      />
 
       <OpsSummaryGrid>
         <OpsSummaryCard
@@ -143,9 +144,9 @@ export default function OpsUsagePage() {
           NULL 이었고, 커스텀 엔드포인트는 지금도 제공자가 usage 를 안 주면
           NULL 로 남는다. */}
       {runs.runs_without_tokens > 0 && (
-        <p className={styles.inlineEmpty}>
-          이 중 {num(runs.runs_without_tokens)}건은 토큰을 재지 못했습니다. 아래 합계에서 빠져 있습니다.
-        </p>
+        <div className={styles.notice}>
+          토큰 사용량을 제공하지 않은 실행 {num(runs.runs_without_tokens)}건은 토큰 합계에서 제외됩니다.
+        </div>
       )}
 
       <OpsSectionCard title="팀별">

@@ -43,6 +43,7 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
+  transition: color 140ms ease;
 }
 
 .operator button:hover {
@@ -64,19 +65,16 @@
 .sidebar {
   position: sticky;
   top: 68px;
-  width: 240px;
+  width: 220px;
   height: calc(100dvh - 68px);
-  flex: 0 0 240px;
-  padding: 28px 16px;
+  flex: 0 0 220px;
+  padding: 28px 14px;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
-}
-
-.sidebarLabel {
-  margin: 0 0 8px;
-  color: var(--color-muted);
-  font-size: 11px;
-  font-weight: 600;
+  transition:
+    width 180ms ease,
+    flex-basis 180ms ease,
+    padding 180ms ease;
 }
 
 .navigation {
@@ -86,16 +84,39 @@
 }
 
 .navItem {
+  position: relative;
   display: flex;
+  width: 100%;
   height: 40px;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 11px;
+  overflow: hidden;
   border-radius: var(--radius-md);
   color: var(--color-body);
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.navItem > svg {
+  position: absolute;
+  left: 11px;
+  flex: 0 0 18px;
+}
+
+.navLabel {
+  margin-left: 28px;
+  max-width: 160px;
+  overflow: hidden;
+  opacity: 1;
+  white-space: nowrap;
+  transition:
+    max-width 160ms ease,
+    opacity 120ms ease;
 }
 
 .navItem:hover {
@@ -113,6 +134,22 @@
   min-width: 0;
   flex: 1;
   padding: 36px 40px 56px;
+}
+
+.routeContent {
+  animation: route-enter 170ms ease-out both;
+}
+
+@keyframes route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 900px) {
@@ -136,48 +173,85 @@
 
 /* ---------- 접기 ---------- */
 
-/* 표가 열 여덟아홉 개라 본문 폭이 곧 읽히는 양이다 — 접으면 172px 이 표로 간다. */
+/* 접으면 본문에 152px을 돌려 주되, 메뉴 아이콘의 중심축은 유지한다. */
 .sidebarCollapsed {
   width: 68px;
   flex-basis: 68px;
-  padding-left: 10px;
-  padding-right: 10px;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 .sidebarHead {
   display: flex;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-
-/* 접히면 「운영자 메뉴」가 들어갈 자리가 없다. 접기 버튼만 남는다. */
-.sidebarCollapsed .sidebarLabel {
-  display: none;
+  margin-bottom: 12px;
 }
 
 .sidebarCollapsed .sidebarHead {
-  justify-content: center;
+  margin-bottom: 12px;
 }
 
 .collapse {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
+  color: var(--color-body);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 
 .collapse:hover {
-  background: var(--color-bg);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.sidebarLabel {
+  max-width: 120px;
+  overflow: hidden;
+  opacity: 1;
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    max-width 160ms ease,
+    opacity 120ms ease;
+}
+
+.sidebarCollapsed .collapse {
+  gap: 0;
+}
+
+.sidebarCollapsed .sidebarLabel {
+  max-width: 0;
+  opacity: 0;
 }
 
 .sidebarCollapsed .navItem {
-  justify-content: center;
+  width: 40px;
+  flex: 0 0 40px;
+  align-self: flex-start;
+  gap: 0;
+  padding: 0;
+}
+
+.sidebarCollapsed .navLabel {
+  max-width: 0;
+  opacity: 0;
 }
 
 /* 햄버거와 덮개는 좁을 때만 나온다. */
@@ -262,8 +336,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar {
+  .sidebar,
+  .navItem,
+  .navLabel,
+  .sidebarLabel,
+  .operator button {
     transition: none;
+  }
+
+  .routeContent {
+    animation: none;
   }
 }
 

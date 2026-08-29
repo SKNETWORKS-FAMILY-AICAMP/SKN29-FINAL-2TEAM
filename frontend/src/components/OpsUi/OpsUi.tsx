@@ -48,7 +48,7 @@ export function OpsSummaryCard({
 }: {
   label: string;
   value: string | number;
-  detail: string;
+  detail?: string;
   tone?: OpsTone;
   onClick?: () => void;
 }) {
@@ -56,7 +56,7 @@ export function OpsSummaryCard({
     <>
       <span className={styles.summaryLabel}>{label}</span>
       <strong>{value}</strong>
-      <span className={styles[`summaryDetail_${tone}`]}>{detail}</span>
+      {detail && <span className={styles[`summaryDetail_${tone}`]}>{detail}</span>}
     </>
   );
 
