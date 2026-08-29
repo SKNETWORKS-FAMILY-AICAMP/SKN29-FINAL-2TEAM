@@ -29,6 +29,10 @@ function actorLabel(activity: OpsOverview['recent_activity'][number]) {
   return activity.actor_display_name ?? activity.actor_email ?? '시스템';
 }
 
+function num(value: number): string {
+  return value.toLocaleString('ko-KR');
+}
+
 function buildActionItems(data: OpsOverview): ActionItem[] {
   const items: ActionItem[] = [];
 
@@ -151,11 +155,32 @@ export default function OpsOverviewPage() {
         title="운영 현황"
       />
 
+      <section className={[styles.panel, styles.attentionPanel].join(' ')}>
+        <h2>운영 점검 항목 · {actionItems.length}개</h2>
+        {actionItems.length > 0 ? (
+          <div className={styles.actionList}>
+            {actionItems.map((item) => (
+              <div key={item.title} className={[styles.actionItem, styles[`action_${item.tone}`]].join(' ')}>
+                <OpsStatusBadge tone={item.tone}>{item.badge}</OpsStatusBadge>
+                <div className={styles.actionCopy}>
+                  <strong>{item.title}</strong>
+                </div>
+                <button type="button" className={styles.outlineAction} onClick={() => navigate(item.to)}>
+                  {item.actionLabel}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className={styles.inlineEmpty}>확인이 필요한 항목이 없습니다.</p>
+        )}
+      </section>
+
       <OpsSummaryGrid>
         <OpsSummaryCard
-          label="사용 중인 팀"
+          label="등록된 팀"
           value={data.team_count}
-          detail="플랫폼을 쓰는 단위"
+          detail="계정·설정 관리 단위"
           onClick={() => navigate('/ops/teams')}
         />
         <OpsSummaryCard
@@ -218,7 +243,7 @@ export default function OpsOverviewPage() {
 
         <section className={styles.panel}>
           <h2>연결 서비스 상태</h2>
-          <p className={styles.panelSubtitle}>저장된 외부 연결 {data.connectors.total}개의 상태</p>
+          <p className={styles.panelSubtitle}>외부 연결 {data.connectors.total}개</p>
           {data.connectors.total > 0 ? (
             <div className={styles.barRows}>
               {(
@@ -251,25 +276,31 @@ export default function OpsOverviewPage() {
 
       <div className={styles.overviewBottom}>
         <section className={styles.panel}>
-          <h2>운영 점검 항목 · {actionItems.length}개</h2>
-          <p className={styles.panelSubtitle}>관련 화면에서 원인과 현재 상태를 확인하세요.</p>
-          {actionItems.length > 0 ? (
-            <div className={styles.actionList}>
-              {actionItems.map((item) => (
-                <div key={item.title} className={[styles.actionItem, styles[`action_${item.tone}`]].join(' ')}>
-                  <OpsStatusBadge tone={item.tone}>{item.badge}</OpsStatusBadge>
-                  <div className={styles.actionCopy}>
-                    <strong>{item.title}</strong>
-                  </div>
-                  <button type="button" className={styles.outlineAction} onClick={() => navigate(item.to)}>
-                    {item.actionLabel}
-                  </button>
-                </div>
-              ))}
+          <h2>최근 {data.runtime.window_days}일 사용 현황</h2>
+          <div className={styles.usageMetrics}>
+            <div className={styles.usageMetric}>
+              <span>AI 실행</span>
+              <strong>{num(data.runtime.runs)}건</strong>
+              <small>실패 {num(data.runtime.runs_failed)}건</small>
             </div>
-          ) : (
-            <p className={styles.inlineEmpty}>확인이 필요한 항목이 없습니다.</p>
-          )}
+            <div className={styles.usageMetric}>
+              <span>측정된 토큰</span>
+              <strong>{num(data.runtime.token_in + data.runtime.token_out)}</strong>
+              <small>
+                {data.runtime.runs_without_tokens > 0
+                  ? `미측정 실행 ${num(data.runtime.runs_without_tokens)}건`
+                  : '모든 실행 측정됨'}
+              </small>
+            </div>
+            <div className={styles.usageMetric}>
+              <span>완료된 도구 호출</span>
+              <strong>{num(data.runtime.tool_calls_completed)}회</strong>
+              <small>실패 {num(data.runtime.tool_calls_failed)}회</small>
+            </div>
+          </div>
+          <button type="button" className={styles.linkAction} onClick={() => navigate('/ops/usage')}>
+            사용 현황에서 상세 보기 →
+          </button>
         </section>
 
         <section className={styles.panel}>

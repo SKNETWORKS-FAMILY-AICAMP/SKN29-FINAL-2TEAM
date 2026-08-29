@@ -24,7 +24,12 @@ export interface OpsInviteStats {
 
 export interface OpsRuntimeStats {
   window_days: number;
+  runs: number;
   runs_failed: number;
+  token_in: number;
+  token_out: number;
+  runs_without_tokens: number;
+  tool_calls_completed: number;
   tool_calls_failed: number;
 }
 

@@ -101,7 +101,12 @@ class OpsOverviewContractTests(SimpleTestCase):
             "invites": {"pending": 0, "expiring_today": 0},
             "runtime": {
                 "window_days": 30,
+                "runs": 30,
                 "runs_failed": 2,
+                "token_in": 158836,
+                "token_out": 2811,
+                "runs_without_tokens": 2,
+                "tool_calls_completed": 32,
                 "tool_calls_failed": 4,
             },
             "recent_activity": [],
@@ -112,7 +117,9 @@ class OpsOverviewContractTests(SimpleTestCase):
         self.assertEqual(body["accounts"]["active"], 7)
         self.assertEqual(body["accounts"]["withdrawn"], 0)
         self.assertEqual(body["connectors"]["revoked"], 1)
+        self.assertEqual(body["runtime"]["runs"], 30)
         self.assertEqual(body["runtime"]["runs_failed"], 2)
+        self.assertEqual(body["runtime"]["tool_calls_completed"], 32)
         self.assertEqual(body["runtime"]["tool_calls_failed"], 4)
         repo.summary.assert_called_once_with()
 
@@ -1016,7 +1023,7 @@ class OpsConnectorRevokeTests(SimpleTestCase):
 
         body = self.client.get("/api/ops/connectors/", **self._headers()).json()
 
-        self.assertEqual(body[0]["diagnosis"], "연결 정보가 저장돼 있습니다.")
+        self.assertEqual(body[0]["diagnosis"], "연결 정보 저장됨")
         self.assertIn("connected_at", body[0])
 
     def test_끊는다(self, repo, _admin):
