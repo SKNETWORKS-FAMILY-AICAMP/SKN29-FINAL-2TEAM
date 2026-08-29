@@ -69,9 +69,13 @@ AI Agent 를 직접 만들고 활용할 수 있게 하는 Agent 기반 Project O
   사용자 말이 아니다.
 - **되는 척하지 않는다.** 눌러도 아무 데도 안 가는 버튼은 만들지 않고, 모르는 값은
   0 으로 채우지 않으며, 실패는 사유와 함께 보여준다.
-- **바깥을 바꾸는 일은 사람이 승인한다.** 내장 도구 ~~16종~~ ~~17종~~ **19종**(2026-08-27 재측정)
-  중 **승인 게이트 6종 + 질문 카드 1종**이다. 게이트는 `task_update` · `task_register` ·
-  `jira_create_issues` · `skill_register` 에 **`table_export` · `document_create`**
-  (2026-08-26 추가 · 결과를 「내 파일」에 저장한다)가 더해져 여섯이고,
+- **바깥을 바꾸는 일은 사람이 승인한다.** 내장 도구 ~~16종~~ ~~17종~~ ~~19종~~ **32종**(2026-08-29 재측정)
+  중 **승인 게이트 14종 + 질문 카드 1종**이다(`side_effect=True` 는 모두 15개).
+  게이트는 `task_update` · `task_register` · `jira_create_issues` · `skill_register` ·
+  `table_export` · `document_create` 에 **`document_convert` · `pdf_edit` ·
+  `file_sanitize` · `archive_manage` · `table_transform` · `diagram_create` ·
+  `chart_create` · `graph_create`**(2026-08-29 확인)가 더해져 열넷이고,
   `skill_creator_ask_followup` 은 `side_effect=True` 로 같은 자리에서 멈추지만
   승인/거절이 아니라 **되묻는 질문 카드**다. 커스텀 도구는 내용을 모르므로 **전부** 탄다.
+  ⚠ **게이트는 「어디를 바꾸나」가 아니라 「바꾸느냐」로 건다** — 우리 저장소를 바꾸는
+  것도 바깥을 바꾸는 것과 같은 자리에서 멈춘다.

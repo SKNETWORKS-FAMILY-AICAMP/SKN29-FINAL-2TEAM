@@ -203,7 +203,10 @@ Chat 결과 스텝으로 옮길 때 그대로 가져갈 것:
 `OpsLayout` `OpsRouteGuard` `OpsUi` `RequireAuth` ~~`SettingsLayout`~~
 
 취소선 세 개는 이 문서 작성 후 삭제됐다(2026-08-13, `AppShell`로 대체) — 지금
-남은 건 17종이다.
+남은 건 ~~17종~~ **25종**이다(2026-08-29 재측정 · `frontend/src/components/`).
+위 목록에 없는 여덟은 그 뒤에 생겼다 — `AppShell` · `BrandIcon` ·
+`IndexingProgress` · `InfoNote` · `Logo` · `ProgressCardStack` ·
+`SkillJobCenter` · `ToolPickerModal`.
 
 Chat·Builder 신규 화면은 이 위에 얹는다. 특히 `Modal`(Tool 승인), `Badge`(Tool
 상태)는 바로 쓸 수 있다.
