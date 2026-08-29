@@ -3044,17 +3044,39 @@ class OpsOverviewRepository:
                     SELECT
                         (SELECT count(*) FROM team) AS team_total,
                         (SELECT count(*) FROM user_account) AS account_total,
+                        (SELECT count(*) FROM user_account WHERE account_status = 'ACTIVE') AS account_active,
                         (SELECT count(*) FROM user_account WHERE account_status = 'LOCKED') AS account_locked,
+                        (SELECT count(*) FROM user_account WHERE account_status = 'WITHDRAWN') AS account_withdrawn,
                         (SELECT count(*) FROM dup_accounts) AS account_duplicate_mapping,
                         (
                             SELECT count(*) FROM user_account ua
                             WHERE ua.account_status = 'LOCKED'
                                OR ua.account_id IN (SELECT account_id FROM dup_accounts)
                         ) AS account_needs_review,
-                        (SELECT count(*) FROM connector_conn) AS connector_total,
-                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'CONNECTED') AS connector_connected,
-                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'EXPIRED') AS connector_expired,
-                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'ERROR') AS connector_error,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                        ) AS connector_total,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'CONNECTED'
+                        ) AS connector_connected,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'EXPIRED'
+                        ) AS connector_expired,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'ERROR'
+                        ) AS connector_error,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'REVOKED'
+                        ) AS connector_revoked,
                         (
                             SELECT count(*) FROM member_invite
                             WHERE status = 'PENDING' AND expires_at > now()
@@ -3063,7 +3085,18 @@ class OpsOverviewRepository:
                             SELECT count(*) FROM member_invite
                             WHERE status = 'PENDING' AND expires_at > now()
                               AND expires_at::date = CURRENT_DATE
-                        ) AS invite_expiring_today
+                        ) AS invite_expiring_today,
+                        (
+                            SELECT count(*) FROM agent_run
+                            WHERE started_at >= now() - interval '30 days'
+                              AND status = 'FAILED'
+                        ) AS runtime_runs_failed,
+                        (
+                            SELECT count(*) FROM tool_call AS tc
+                            JOIN agent_run AS r ON r.run_id = tc.run_id
+                            WHERE r.started_at >= now() - interval '30 days'
+                              AND tc.status = 'FAILED'
+                        ) AS runtime_tool_calls_failed
                     """
                 )
                 totals = cursor.fetchone()
@@ -3075,6 +3108,7 @@ class OpsOverviewRepository:
                         ua.display_name AS actor_display_name, ua.email AS actor_email
                     FROM audit_log AS al
                     LEFT JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    WHERE al.action NOT IN ('LOGIN', 'OPS_LOGIN', 'OPS_LOGOUT', 'SIGNUP', 'PASSWORD_RESET', 'PASSWORD_CHANGE')
                     ORDER BY al.occurred_at DESC
                     LIMIT 5
                     """
@@ -3086,7 +3120,9 @@ class OpsOverviewRepository:
             "org_count": hr.count_orgs(),
             "accounts": {
                 "total": totals["account_total"],
+                "active": totals["account_active"],
                 "locked": totals["account_locked"],
+                "withdrawn": totals["account_withdrawn"],
                 "duplicate_mapping": totals["account_duplicate_mapping"],
                 "needs_review": totals["account_needs_review"],
             },
@@ -3095,10 +3131,16 @@ class OpsOverviewRepository:
                 "connected": totals["connector_connected"],
                 "expired": totals["connector_expired"],
                 "error": totals["connector_error"],
+                "revoked": totals["connector_revoked"],
             },
             "invites": {
                 "pending": totals["invite_pending"],
                 "expiring_today": totals["invite_expiring_today"],
+            },
+            "runtime": {
+                "window_days": 30,
+                "runs_failed": totals["runtime_runs_failed"],
+                "tool_calls_failed": totals["runtime_tool_calls_failed"],
             },
             "recent_activity": recent_activity,
         }

@@ -32,13 +32,23 @@ function actorLabel(activity: OpsOverview['recent_activity'][number]) {
 function buildActionItems(data: OpsOverview): ActionItem[] {
   const items: ActionItem[] = [];
 
-  if (data.accounts.needs_review > 0) {
+  if (data.accounts.locked > 0) {
     items.push({
       tone: 'danger',
       badge: '확인',
-      title: `확인 필요 계정 ${data.accounts.needs_review}건`,
-      to: '/ops/accounts',
+      title: `잠긴 계정 ${data.accounts.locked}건`,
+      to: '/ops/accounts?status=LOCKED',
       actionLabel: '계정 보기',
+    });
+  }
+
+  if (data.accounts.duplicate_mapping > 0) {
+    items.push({
+      tone: 'danger',
+      badge: '확인',
+      title: `중복 직원 매핑 ${data.accounts.duplicate_mapping}건`,
+      to: '/ops/accounts?mapping=DUPLICATE',
+      actionLabel: '매핑 보기',
     });
   }
 
@@ -60,6 +70,16 @@ function buildActionItems(data: OpsOverview): ActionItem[] {
       title: `오늘 만료 예정 초대 ${data.invites.expiring_today}건`,
       to: '/ops/mappings',
       actionLabel: '초대 보기',
+    });
+  }
+
+  if (data.runtime.runs_failed > 0 || data.runtime.tool_calls_failed > 0) {
+    items.push({
+      tone: 'warning',
+      badge: '실패',
+      title: `최근 ${data.runtime.window_days}일 실행 실패 ${data.runtime.runs_failed}건 · 도구 실패 ${data.runtime.tool_calls_failed}건`,
+      to: '/ops/usage',
+      actionLabel: '사용 현황 보기',
     });
   }
 
@@ -121,8 +141,9 @@ export default function OpsOverviewPage() {
   if (!data) return null;
 
   const actionItems = buildActionItems(data);
-  const accountOkRatio = pct(data.accounts.total - data.accounts.needs_review, data.accounts.total);
-  const accountReviewRatio = pct(data.accounts.needs_review, data.accounts.total);
+  const accountActiveRatio = pct(data.accounts.active, data.accounts.total);
+  const accountLockedRatio = pct(data.accounts.locked, data.accounts.total);
+  const accountWithdrawnRatio = pct(data.accounts.withdrawn, data.accounts.total);
 
   return (
     <div className={styles.page}>
@@ -140,14 +161,14 @@ export default function OpsOverviewPage() {
         <OpsSummaryCard
           label="전체 계정"
           value={data.accounts.total}
-          detail={`정상 ${data.accounts.total - data.accounts.needs_review} · 확인 필요 ${data.accounts.needs_review}`}
-          tone={data.accounts.needs_review > 0 ? 'danger' : 'success'}
+          detail={`활성 ${data.accounts.active} · 잠김 ${data.accounts.locked} · 탈퇴 ${data.accounts.withdrawn}`}
+          tone={data.accounts.locked > 0 ? 'danger' : 'success'}
           onClick={() => navigate('/ops/accounts')}
         />
         <OpsSummaryCard
-          label="연결 확인 필요"
+          label="외부 연결 확인 필요"
           value={data.connectors.expired + data.connectors.error}
-          detail={`확인 필요 ${data.connectors.expired} · 오류 ${data.connectors.error}`}
+          detail={`만료 ${data.connectors.expired} · 오류 ${data.connectors.error}`}
           tone={data.connectors.expired + data.connectors.error > 0 ? 'warning' : 'success'}
           onClick={() => navigate('/ops/connectors')}
         />
@@ -171,17 +192,21 @@ export default function OpsOverviewPage() {
             <>
               <div
                 className={styles.stackedBar}
-                aria-label={`정상 계정 ${data.accounts.total - data.accounts.needs_review}개, 확인 필요 계정 ${data.accounts.needs_review}개`}
+                aria-label={`활성 계정 ${data.accounts.active}개, 잠김 계정 ${data.accounts.locked}개, 탈퇴 계정 ${data.accounts.withdrawn}개`}
               >
-                <span className={styles.barSuccess} style={{ width: `${accountOkRatio}%` }} />
-                <span className={styles.barDanger} style={{ width: `${accountReviewRatio}%` }} />
+                <span className={styles.barSuccess} style={{ width: `${accountActiveRatio}%` }} />
+                <span className={styles.barDanger} style={{ width: `${accountLockedRatio}%` }} />
+                <span className={styles.barNeutral} style={{ width: `${accountWithdrawnRatio}%` }} />
               </div>
               <div className={styles.legend}>
-                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=정상')}>
-                  <span className={styles.successText}>● 정상 {data.accounts.total - data.accounts.needs_review}개</span>
+                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=ACTIVE')}>
+                  <span className={styles.successText}>● 활성 {data.accounts.active}개</span>
                 </button>
-                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=확인 필요')}>
-                  <span className={styles.dangerText}>● 확인 필요 {data.accounts.needs_review}개</span>
+                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=LOCKED')}>
+                  <span className={styles.dangerText}>● 잠김 {data.accounts.locked}개</span>
+                </button>
+                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=WITHDRAWN')}>
+                  <span className={styles.neutralText}>● 탈퇴 {data.accounts.withdrawn}개</span>
                 </button>
               </div>
               <p className={styles.panelSubtitle}>상태를 누르면 계정 관리의 해당 목록으로 이동합니다.</p>
@@ -193,14 +218,15 @@ export default function OpsOverviewPage() {
 
         <section className={styles.panel}>
           <h2>연결 서비스 상태</h2>
-          <p className={styles.panelSubtitle}>플랫폼 연결 {data.connectors.total}개의 최근 확인 결과</p>
+          <p className={styles.panelSubtitle}>저장된 외부 연결 {data.connectors.total}개의 상태</p>
           {data.connectors.total > 0 ? (
             <div className={styles.barRows}>
               {(
                 [
                   ['연결됨', data.connectors.connected, styles.barSuccess, styles.successText],
-                  ['확인 필요', data.connectors.expired, styles.barWarning, styles.warningText],
+                  ['만료됨', data.connectors.expired, styles.barWarning, styles.warningText],
                   ['오류', data.connectors.error, styles.barDanger, styles.dangerText],
+                  ['해제됨', data.connectors.revoked, styles.barNeutral, styles.neutralText],
                 ] as const
               ).map(([label, count, barClass, textClass]) => (
                 <button
@@ -225,7 +251,7 @@ export default function OpsOverviewPage() {
 
       <div className={styles.overviewBottom}>
         <section className={styles.panel}>
-          <h2>오늘 확인할 일 · {actionItems.length}건</h2>
+          <h2>운영 점검 항목 · {actionItems.length}개</h2>
           <p className={styles.panelSubtitle}>관련 화면에서 원인과 현재 상태를 확인하세요.</p>
           {actionItems.length > 0 ? (
             <div className={styles.actionList}>

@@ -72,6 +72,52 @@ class OpsAuthenticationTests(SimpleTestCase):
 
 
 @patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
+@patch("apps.ops.views.overview.OpsOverviewRepository")
+class OpsOverviewContractTests(SimpleTestCase):
+    """운영 현황은 화면이 임의로 상태를 재계산하지 않도록 사실 단위 집계를 준다."""
+
+    def _headers(self):
+        return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_계정_상태와_외부_연결_상태를_분리해_준다(self, repo, _admin):
+        repo.summary.return_value = {
+            "team_count": 1,
+            "org_count": 2,
+            "accounts": {
+                "total": 7,
+                "active": 7,
+                "locked": 0,
+                "withdrawn": 0,
+                "duplicate_mapping": 0,
+                "needs_review": 0,
+            },
+            "connectors": {
+                "total": 3,
+                "connected": 2,
+                "expired": 0,
+                "error": 0,
+                "revoked": 1,
+            },
+            "invites": {"pending": 0, "expiring_today": 0},
+            "runtime": {
+                "window_days": 30,
+                "runs_failed": 2,
+                "tool_calls_failed": 4,
+            },
+            "recent_activity": [],
+        }
+
+        body = self.client.get(OVERVIEW_URL, **self._headers()).json()
+
+        self.assertEqual(body["accounts"]["active"], 7)
+        self.assertEqual(body["accounts"]["withdrawn"], 0)
+        self.assertEqual(body["connectors"]["revoked"], 1)
+        self.assertEqual(body["runtime"]["runs_failed"], 2)
+        self.assertEqual(body["runtime"]["tool_calls_failed"], 4)
+        repo.summary.assert_called_once_with()
+
+
+@patch("apps.ops.authentication.AccountRepository.find_credentials_by_id", return_value=admin_account())
 @patch("apps.ops.views.models.log_audit")
 @patch("apps.ops.views.models.CustomModelRepository")
 @patch("apps.ops.views.models.TeamRepository")
@@ -951,6 +997,27 @@ class OpsConnectorRevokeTests(SimpleTestCase):
 
     def _headers(self):
         return {"HTTP_AUTHORIZATION": f"Bearer {ops_tokens.issue_token('UA001')}"}
+
+    def test_목록은_저장된_연결을_실제_정상으로_단정하지_않는다(self, repo, _admin):
+        from datetime import datetime, timezone
+
+        repo.list.return_value = [{
+            "conn_id": "CN003",
+            "account_id": "UA002",
+            "owner_email": "owner@example.com",
+            "connector_type": "GOOGLE_DRIVE",
+            "auth_status": "CONNECTED",
+            "connected_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
+            "person_id": None,
+            "person_name": None,
+            "org_id": None,
+            "org_name": None,
+        }]
+
+        body = self.client.get("/api/ops/connectors/", **self._headers()).json()
+
+        self.assertEqual(body[0]["diagnosis"], "연결 정보가 저장돼 있습니다.")
+        self.assertIn("connected_at", body[0])
 
     def test_끊는다(self, repo, _admin):
         repo.revoke.return_value = {

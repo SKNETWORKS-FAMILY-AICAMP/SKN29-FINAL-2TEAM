@@ -103,6 +103,10 @@
   background: var(--color-danger);
 }
 
+.barNeutral {
+  background: var(--color-muted);
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -134,6 +138,10 @@
 
 .dangerText {
   color: var(--color-danger);
+}
+
+.neutralText {
+  color: var(--color-muted);
 }
 
 .barRows {

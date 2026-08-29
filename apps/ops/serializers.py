@@ -78,7 +78,7 @@ def account_row_response(row: dict[str, Any]) -> dict[str, Any]:
 # 조치 문구는 여기서만 만든다(DB에는 그런 컬럼이 없음). CHECK 제약이 없는 컬럼이라
 # 스키마 주석에 없는 값이 들어올 수도 있어, 두 매핑 다 기본값을 둔다.
 _CONNECTOR_DIAGNOSIS = {
-    "CONNECTED": "정상",
+    "CONNECTED": "연결 정보가 저장돼 있습니다.",
     "EXPIRED": "인증이 만료됐습니다.",
     "ERROR": "연결 중 오류가 발생했습니다.",
     "REVOKED": "운영자가 연결을 해제했습니다.",

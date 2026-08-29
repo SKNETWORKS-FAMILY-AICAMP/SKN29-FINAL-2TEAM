@@ -524,6 +524,8 @@ export default function OpsPoliciesPage() {
     const matchesQuery = !normalized || [changeTitle(change), actorLabel(change)].some((value) => value.toLowerCase().includes(normalized));
     return matchesAction && matchesQuery;
   });
+  const inviteValueChanged = savedInviteDays !== null && Number(inviteDays) !== savedInviteDays;
+  const inviteEditDirty = inviteValueChanged || inviteReason.trim().length > 0;
 
   return (
     <div className={styles.page}>
@@ -549,10 +551,10 @@ export default function OpsPoliciesPage() {
             />
           </div>
           <span className={styles.detailText}>일</span>
-          <Button variant="primary" onClick={saveInvitePolicy} disabled={savingInvite}>
+          <Button variant="primary" onClick={saveInvitePolicy} disabled={savingInvite || !inviteValueChanged}>
             {savingInvite ? '저장 중…' : '변경사항 저장'}
           </Button>
-          <Button variant="secondary" onClick={cancelInviteEdit} disabled={savingInvite}>변경 취소</Button>
+          <Button variant="secondary" onClick={cancelInviteEdit} disabled={savingInvite || !inviteEditDirty}>변경 취소</Button>
         </div>
         <div className={[styles.fieldGroup, styles.inlinePolicyReason].join(' ')}>
           <label htmlFor="invite-reason">변경 사유(선택)</label>

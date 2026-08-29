@@ -2,7 +2,9 @@ import { opsRequest } from './opsClient';
 
 export interface OpsAccountStats {
   total: number;
+  active: number;
   locked: number;
+  withdrawn: number;
   duplicate_mapping: number;
   needs_review: number;
 }
@@ -12,11 +14,18 @@ export interface OpsConnectorStats {
   connected: number;
   expired: number;
   error: number;
+  revoked: number;
 }
 
 export interface OpsInviteStats {
   pending: number;
   expiring_today: number;
+}
+
+export interface OpsRuntimeStats {
+  window_days: number;
+  runs_failed: number;
+  tool_calls_failed: number;
 }
 
 export interface OpsActivity {
@@ -35,6 +44,7 @@ export interface OpsOverview {
   accounts: OpsAccountStats;
   connectors: OpsConnectorStats;
   invites: OpsInviteStats;
+  runtime: OpsRuntimeStats;
   recent_activity: OpsActivity[];
 }
 

@@ -26,8 +26,26 @@ const ACTION_LABELS: Record<string, string> = {
   OPS_MCP_UPDATE: '커스텀 도구 수정',
   OPS_MCP_REMOVE: '커스텀 도구 삭제',
   OPS_CONNECTOR_REVOKE: '연결 강제 해제',
+  OPS_GUARDRAIL_REGISTER: '가드레일 등록',
+  OPS_GUARDRAIL_UPDATE: '가드레일 수정',
+  OPS_GUARDRAIL_DELETE: '가드레일 삭제',
+  OPS_GUARDRAIL_TEST: '가드레일 연결 확인',
+  OPS_GUARDRAIL_ON_FAILURE: '가드레일 실패 정책 변경',
+  OPS_GUARDRAIL_ACTIVATE: '가드레일 활성 전환',
+  PROJECT_DELETE: '프로젝트 삭제',
+  DOCUMENT_REMOVE: '문서 삭제',
+  ACCOUNT_PURGE: '계정 영구 삭제',
+  TEAM_PURGE: '팀 영구 삭제',
+  TEAM_CREATE: '팀 생성',
+  PASSWORD_CHANGE: '비밀번호 변경',
 };
+
+const AUTH_ACTIONS = new Set(['LOGIN', 'OPS_LOGIN', 'OPS_LOGOUT', 'SIGNUP', 'PASSWORD_RESET', 'PASSWORD_CHANGE']);
 
 export function actionLabel(action: string): string {
   return ACTION_LABELS[action] ?? action;
+}
+
+export function isAuthenticationAction(action: string): boolean {
+  return AUTH_ACTIONS.has(action);
 }

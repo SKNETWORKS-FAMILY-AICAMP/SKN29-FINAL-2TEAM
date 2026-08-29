@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button,
   OpsDataTable,
@@ -11,7 +11,7 @@ import {
 import { fetchOperationLogs } from '../../api/opsAudit';
 import type { OpsOperationLog } from '../../api/opsAudit';
 import { ApiError } from '../../api/client';
-import { actionLabel } from '../../utils/auditActions';
+import { actionLabel, isAuthenticationAction } from '../../utils/auditActions';
 import { loadOpsSession } from '../../utils/opsSession';
 import { timeAgo } from '../../utils/relativeTime';
 import styles from '../OpsShared/OpsPages.module.css';
@@ -51,11 +51,13 @@ function downloadCsv(filename: string, headers: string[], rows: string[][]) {
 
 export default function OpsAuditPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [logs, setLogs] = useState<OpsOperationLog[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('전체');
+  const [categoryFilter, setCategoryFilter] = useState(searchParams.get('view') === 'operations' ? '운영 변경' : '전체');
   const [selectedId, setSelectedId] = useState('');
 
   async function load() {
@@ -85,7 +87,11 @@ export default function OpsAuditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const actions = useMemo(() => [...new Set((logs ?? []).map((row) => row.action))], [logs]);
+  const actions = useMemo(() => [...new Set((logs ?? [])
+    .filter((row) => categoryFilter === '전체'
+      || (categoryFilter === '운영 변경' && !isAuthenticationAction(row.action))
+      || (categoryFilter === '로그인·인증' && isAuthenticationAction(row.action)))
+    .map((row) => row.action))], [categoryFilter, logs]);
 
   const filtered = useMemo(() => {
     const all = logs ?? [];
@@ -98,9 +104,13 @@ export default function OpsAuditPage() {
         row.target_type ?? '',
       ].some((value) => value.toLowerCase().includes(normalized));
       const matchesAction = actionFilter === '전체' || row.action === actionFilter;
-      return matchesQuery && matchesAction;
+      const isAuthentication = isAuthenticationAction(row.action);
+      const matchesCategory = categoryFilter === '전체'
+        || (categoryFilter === '운영 변경' && !isAuthentication)
+        || (categoryFilter === '로그인·인증' && isAuthentication);
+      return matchesQuery && matchesAction && matchesCategory;
     });
-  }, [logs, query, actionFilter]);
+  }, [logs, query, actionFilter, categoryFilter]);
 
   const selected = filtered.find((row) => row.audit_id === selectedId) ?? filtered[0] ?? null;
 
@@ -155,6 +165,18 @@ export default function OpsAuditPage() {
 
       <OpsFilterBar>
         <OpsSearchField value={query} onChange={setQuery} placeholder="수행자 또는 대상 검색" />
+        <select
+          value={categoryFilter}
+          onChange={(e) => {
+            setCategoryFilter(e.target.value);
+            setActionFilter('전체');
+          }}
+          aria-label="기록 구분"
+        >
+          <option>전체</option>
+          <option>운영 변경</option>
+          <option>로그인·인증</option>
+        </select>
         <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} aria-label="작업 종류">
           <option>전체</option>
           {/* 보이는 것은 한글 라벨, 고르는 값은 원본 코드다 — 라벨을 값으로 쓰면
