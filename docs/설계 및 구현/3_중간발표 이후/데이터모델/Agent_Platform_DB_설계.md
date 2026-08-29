@@ -2,7 +2,8 @@
 
 > **2026-08-25 작성.** 이 폴더의 다른 문서와 `../../2_중간발표 이전/데이터모델/` 은
 > **피벗 이전 스키마(문서·업무·팀·HR)만** 다룬다. 8/08 이후 늘어난 **Agent Platform
-> 15개 테이블은 어느 데이터모델 문서에도 없었다.** 그 구멍을 메운다.
+> 테이블(~~15개~~ 20개)은 어느 데이터모델 문서에도 없었다.** 그 구멍을 메운다
+> (스킬 5테이블은 8/26~8/27 에 들어와 **2026-08-29 에 §5 로 채웠다**).
 >
 > **정본은 `DB/schema.sql` 이다** — 컬럼 주석이 「왜 이 모양인가」를 담고 있으므로
 > 여기 옮겨 적지 않는다. 이 문서는 **무엇이 있고 어떻게 이어지는지**의 지도다.
@@ -96,25 +97,68 @@ GET 하나만 남는다). 커스텀 도구는 우리가 내용을 모르므로 *
 내장 정책으로 만들었다가 걷어낸 경위는
 `../작업기록/2026-08-20_가드레일_조사와_실측.md` §8.
 
-## 5. 내장 도구는 DB 에 없다
+## 5. 스킬 — 5테이블 (2026-08-29 추가)
 
-**내장 도구 ~~16종~~ ~~17종~~ 19종(2026-08-27 재측정)은 테이블이 아니라 코드다** — `services/harness/registry.py` 의
+**이 문서를 쓴 8/25 에는 없던 표다.** 8/26~8/27 마이그레이션으로 들어왔고, 이 문서가
+메우겠다던 바로 그 구멍이 같은 자리에 다시 뚫려 있었다 — §7 의 삭제 절에만 이름이
+나오고 정작 「무엇이 있는가」는 어디에도 없었다.
+
+| 테이블 | PK | 무엇 |
+|---|---|---|
+| `skill_registration_job` | UUID | 등록 요청 한 건. `candidate_document`(JSONB) · `candidate_hash` · `operation`(CREATE/UPDATE/RETRY) · `status`(QUEUED→RUNNING→SUCCEEDED/FAILED) · `stage` · `attempt` · `retry_of_job_id`(자기 참조) |
+| `skill_catalog_revision` | `account_id` | 그 계정의 스킬 목록이 몇 번 바뀌었나. 런타임이 카탈로그를 다시 읽을지 판단하는 값 |
+| `skill_worker_heartbeat` | `worker_id` | 검증 워커의 생존 신호. **테넌트 데이터가 아니라** 프로세스 기록이다 |
+| `skill_eval_regression_case` | `case_id` | 운영자가 손으로 넣는 회귀 데이터셋. `scope`(GLOBAL/TEAM/SKILL) · `polarity` · `case_document` |
+| `skill_eval_feedback` | UUID | 사용자가 남긴 「이 스킬이 맞았나」. `observed_skills` · `expected_skill` · `review_status` |
+
+⚠ **`target_scope` 가 `CHECK (target_scope = 'PERSONAL')` 로 고정돼 있다.** 만들 수
+있는 것은 개인 스킬뿐이고, 팀 스킬은 공유를 거친다. 팀 등록 경로를 「숨긴」 것이
+아니라 **DB 가 거절**한다.
+
+⚠ **원문을 안 남긴다.** `skill_eval_regression_case.source_trace_hash` ·
+`skill_eval_feedback.source_trace_hash` 는 추적용 해시다 — `tool_call.input_summary`
+가 요약만 남기는 것과 같은 판단이다.
+
+🔴 **등록된 스킬 자체는 이 표에 없다.** 여기 있는 것은 **등록 절차**이고, 스킬 본문과
+장기메모리는 LangGraph 의 `store` 에 있다(§7 마지막 절).
+
+## 6. 내장 도구는 DB 에 없다
+
+**내장 도구 ~~16종~~ ~~17종~~ ~~19종~~ 32종(2026-08-29 재측정)은 테이블이 아니라 코드다** — `services/harness/registry.py` 의
 `BUILTIN_TOOLS` 가 정본이고, `agent_version_tools.tool_ref` 가 그 이름을 가리킨다.
 
-그중 **`task_update` · `task_register` · `jira_create_issues` · `skill_register` ·
-`table_export` · `document_create`** 여섯이 `side_effect=True` 라 승인 게이트를 탄다
-(뒤의 둘은 2026-08-26 추가 — 결과 파일을 「내 파일」에 저장한다).
+**8/27 이후 열셋이 더 붙었다** — 파일·데이터·시각화 계열이다(`document_read` ·
+`document_convert` · `pdf_edit` · `file_inspect` · `file_sanitize` · `archive_manage` ·
+`table_transform` · `data_quality_check` · `file_compare` · `calculate` ·
+`diagram_create` · `chart_create` · `graph_create`). 갈래도 `_CATALOG_METADATA` 가
+덮어써서 여덟이다 — 검색 4 · 문서 8 · 팀 3 · 업무 7 · 데이터 3 · 시각화 3 · 계산 2 ·
+시스템 2.
+
+그중 ~~여섯~~ **열다섯**이 `side_effect=True` 라 승인 게이트를 탄다 —
+`task_update` · `task_register` · `jira_create_issues` · `skill_register` ·
+`table_export` · `document_create` 에 **`document_convert` · `pdf_edit` ·
+`file_sanitize` · `archive_manage` · `table_transform` · `diagram_create` ·
+`chart_create` · `graph_create` · `skill_creator_ask_followup`** 이 더해졌다.
 
 **`skill_creator_ask_followup` 도 `side_effect=True` 다**(2026-08-26 추가 확인). 다만
 화면이 승인/거절 버튼 대신 **질문+입력창 카드**를 그리고 답을 `respond` 로 돌려보내므로,
-세는 방식은 ~~「승인 게이트 4종 + 질문 카드 1종」~~ **「승인 게이트 6종 + 질문 카드 1종」**
-(2026-08-27 재측정 · `side_effect=True` 는 모두 7개)이다.
+세는 방식은 ~~「승인 게이트 4종 + 질문 카드 1종」~~ ~~「승인 게이트 6종 + 질문 카드 1종」~~
+**「승인 게이트 14종 + 질문 카드 1종」**(2026-08-29 재측정 · `side_effect=True` 는 모두 15개)이다.
 
-## 6. 지울 때 손으로 다 적어야 한다
+⚠ **`table_transform` 은 조건부다**(2026-08-29). `approval_when` 이 붙어 있어
+**결과를 파일로 만들 때만**(`output_format` 지정) 멈춘다 — 값을 보기만 하는 호출은
+승인 없이 지나간다. `BUILTIN_TOOLS` 에서 `approval_when` 이 있는 도구는 이것뿐이다.
+
+⚠ **`interrupt_on` 은 이 15개로 끝이 아니다**(`services/agent_runtime/factory.py`).
+매 요청 시점의 실제 도구 목록을 훑으므로 팀마다 다른 **MCP 커스텀 도구가 전부**
+들어오고, deepagents 기본 파일시스템의 `delete` 도 같은 자리에서 따로 붙는다.
+
+## 7. 지울 때 손으로 다 적어야 한다
 
 **외래키가 없어서 CASCADE 가 없다.** 팀·계정 완전 삭제는 지울 것을 표로 손수 적어
-둔 것이 전부다 — 팀 ~~39단계~~ ~~42단계~~ **45단계** · 계정 ~~15단계~~ **18단계**
-(2026-08-27 에 스킬 넷을 채웠다 · `backend/db/repositories.py` 의
+둔 것이 전부다 — 팀 ~~39단계~~ ~~42단계~~ ~~45단계~~ **46단계** · 계정 ~~15단계~~ **18단계**
+(2026-08-27 에 스킬 넷을 채웠고, 팀 쪽은 그 뒤 한 단계가 더 늘었다 —
+2026-08-29 재측정 · `backend/db/repositories.py` 의
 `_TEAM_PURGE_STEPS` · `_ACCOUNT_PURGE_STEPS`).
 
 ⚠ **새 테이블이 `team_id`/`account_id` 를 갖게 되면 그 표에 줄을 더해야 한다.**

@@ -98,7 +98,7 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U project_copilo
 
 `user_account`, `doc`, `chunk`, `vec_idx`, `member_invite`, `user_person_link`, `sys_setting`, `sys_notice` 가 보이면 정상이다. HR 8개(`org`·`level`·`skill`·`person`·`person_skill`·`person_link`·`sched`·`absence`)는 `mock_hr` 스키마에 있어 `\dt`(search_path = `public`)에는 나오지 않는다 — 그 8개는 `\dt mock_hr.*`로 따로 본다(§4.3·5장 참고).
 
-> **개수로 판정하지 않는다 (2026-08-27 정정).** ~~「**49개**가 보이면 정상 · `schema.sql` 의 `CREATE TABLE` 은 전부 **57개**」~~ — 이 두 숫자는 8/11 기준이라 지금은 둘 다 틀렸다. 2026-08-27 실측으로 `schema.sql` 의 `CREATE TABLE` 은 **65개**(mock_hr 8 · public 57)이고, 여기에 **`schema.sql` 에 아직 안 들어온 스킬 테이블 5개**와 LangGraph 체크포인트 표가 실제 DB 에 더 있다. 볼륨을 언제 만들었는지에 따라 개수가 달라지므로 **「빠진 것이 있나」는 개수가 아니라 `python DB/migrations/_apply.py --check` 로 묻는다**(§4.3).
+> **개수로 판정하지 않는다 (2026-08-27 정정 · 2026-08-29 재측정).** ~~「**49개**가 보이면 정상 · `schema.sql` 의 `CREATE TABLE` 은 전부 **57개**」~~ — 이 두 숫자는 8/11 기준이라 지금은 둘 다 틀렸다. 2026-08-29 실측으로 `schema.sql` 의 `CREATE TABLE` 은 ~~65개(mock_hr 8 · public 57)~~ **74개**(mock_hr 8 · public 66)이고, 여기에 LangGraph 체크포인트·`store` 표가 실제 DB 에 더 있다. ✅ **8/27 에 「`schema.sql` 에 아직 안 들어왔다」던 스킬 표 다섯은 들어왔다**(`86a7732`), 병합으로 들어온 넷도 되접었다(`91eae62`). 그래도 **볼륨을 언제 만들었는지에 따라 개수가 달라지므로 「빠진 것이 있나」는 개수가 아니라 `python DB/migrations/_apply.py --check` 로 묻는다**(§4.3) — 이 문서에서 개수가 세 번 낡은 것이 그 이유다.
 
 GUI 앱(TablePlus, DBeaver, pgAdmin 등)으로 직접 보고 싶으면 아래 정보로 접속한다.
 
