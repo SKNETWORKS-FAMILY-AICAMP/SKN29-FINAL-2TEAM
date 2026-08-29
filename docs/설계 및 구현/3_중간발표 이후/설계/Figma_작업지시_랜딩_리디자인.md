@@ -265,7 +265,7 @@ v1·v2 는 **팀 내부 논쟁의 결론**이다. 「플랫폼이 정체성, 커
 | 커넥터는 제품이 아니라 **자리 3개** | `ConnectorTab.tsx` 의 `SLOTS` — 「인사 시스템」·「**문서 저장소**」·「**업무 기록소**」. 이 어휘를 제품이 이미 쓰고 있었다 |
 | 자리마다 켜진 선택지는 하나씩 | `available: true` 는 예시 데이터 · Google Drive · Jira 뿐. Workday·사내 인사·Notion·Confluence·SharePoint·Asana·Linear·Trello 는 전부 `false` |
 | People DB 는 **예시 데이터**뿐 | `{ id: 'mock', label: '예시 데이터', available: true }` |
-| 내장 도구 19개, 그중 승인 대상은 **7개** | `registry.py` 의 `BUILTIN_TOOLS` · `side_effect=True`. `agent_runtime/factory.py` 의 `interrupt_on` 이 `tool.side_effect` 로만 만들어진다 |
+| 내장 도구 ~~19개~~ **32개**, 그중 승인 대상은 ~~7개~~ **15개**(2026-08-29 재측정) | `registry.py` 의 `BUILTIN_TOOLS` · `side_effect=True`. `agent_runtime/factory.py` 의 `interrupt_on` 이 `tool.side_effect` 로만 만들어진다 |
 | 기본 어시스턴트가 **읽기 도구 전부**를 달고 시작 | `agent_platform.py` 의 `provision_default_chat_agent` — `if tool.side_effect: continue` |
 | 빌더 항목은 **일곱** | `AgentVersionEditPage.tsx` — 이름·설명·행동 지시·모델·응답 강도·도구·서브 에이전트 |
 | 근거 범위는 대화마다 다르다 | `ChatPage.tsx` — 프로젝트를 고르면 그 문서, 아니면 팀 전체 문서 |
@@ -275,7 +275,7 @@ v1·v2 는 **팀 내부 논쟁의 결론**이다. 「플랫폼이 정체성, 커
 | 폐기 | 이유 |
 |---|---|
 | 모든 답변에 원문 근거가 붙습니다 | **거짓이다.** 날짜·팀원·부하·프로젝트 조회에는 원문 문단이 없다 |
-| 승인 없이는 아무것도 바꾸지 않습니다 | **범위가 과하다.** 19개 중 7개이고 조회는 그냥 실행된다 |
+| 승인 없이는 아무것도 바꾸지 않습니다 | **범위가 과하다.** ~~19개 중 7개~~ **32개 중 15개**이고 조회는 그냥 실행된다(2026-08-29) |
 | 세 가지만 적으면 에이전트가 됩니다 | 실제 항목은 일곱이다 |
 | People DB | 지금 연결 가능한 인사 정보는 예시 데이터뿐이다 |
 | 요청 시 연결해 드립니다 | **코드에도 운영 정책에도 근거가 없다** |
