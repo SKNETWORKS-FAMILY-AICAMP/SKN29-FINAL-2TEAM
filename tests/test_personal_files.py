@@ -299,7 +299,11 @@ class ListTests(SimpleTestCase):
             {
                 "doc_id": "DC010", "file_name": "계약서.pdf", "mime_type": "application/pdf",
                 "search_enabled": True, "search_ready": False,
-                "index_status": "FAILED", "index_detail": "암호가 걸린 PDF 라 열 수 없습니다.",
+                "index_status": "FAILED",
+                # 저장된 값은 `public_errors` 가 고른 우리 문장이다 — 워커가 준
+                # 문장을 그대로 싣지 않기로 했다. 여기서 지키는 것은 「사유 칸이
+                # 비지 않는다」이고, 그 구체성은 원인별로 갈린 문장이 맡는다.
+                "index_detail": "문서에서 읽을 내용을 찾지 못했습니다. 파일을 확인해 다시 올려 주세요.",
                 "src_modified_at": None, "shared_team_id": None, "owner_name": None,
             }
         ]
@@ -307,7 +311,10 @@ class ListTests(SimpleTestCase):
         body = self.client.get("/api/me/files/", headers=auth_header()).json()[0]
 
         self.assertEqual(body["index_status"], "FAILED")
-        self.assertEqual(body["index_detail"], "암호가 걸린 PDF 라 열 수 없습니다.")
+        self.assertEqual(
+            body["index_detail"],
+            "문서에서 읽을 내용을 찾지 못했습니다. 파일을 확인해 다시 올려 주세요.",
+        )
 
     def test_기존_실패행의_내부_URL은_API에_노출하지_않는다(self, repo):
         repo.list_for_account.return_value = [

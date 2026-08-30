@@ -702,8 +702,29 @@ def _apply_final_parse_layers(result: Any, *, picture_enabled: bool) -> dict[str
     )
     result.document = document
 
-    heading_audit = promote_headings_by_density(result)
-    table_audit = apply_table_gate(result.document)
+    # 읽기 순서(위)와 이미지 설명(아래)은 실패해도 문서를 살린다. 이 둘만
+    # 예외를 그대로 올리면 **보완 레이어 하나가 문서 전체를 죽인다** — 표
+    # 게이트는 이름부터 fail-open 인데(`TABLEITEM_HIGH_PRECISION_FAIL_OPEN_V1`)
+    # 삭제 뒤 재검사가 어긋나면 `RuntimeError` 로 나간다. 보완이 안 된 문서가
+    # 못 읽은 문서보다 낫다. 무엇이 안 됐는지는 audit 에 남는다.
+    try:
+        heading_audit = promote_headings_by_density(result)
+    except Exception as exc:  # fail-open at the heading boundary
+        heading_audit = {
+            "schema": "final-parse-heading-audit/1.0",
+            "outcome": "PRESERVED",
+            "applied_count": 0,
+            "failure_reason": f"HEADING_PROMOTION_FAILED: {type(exc).__name__}: {exc}",
+        }
+
+    try:
+        table_audit = apply_table_gate(result.document)
+    except Exception as exc:  # fail-open at the table gate boundary
+        table_audit = {
+            "schema": "final-table-gate-audit/1.0",
+            "outcome": "PRESERVED",
+            "failure_reason": f"TABLE_GATE_FAILED: {type(exc).__name__}: {exc}",
+        }
 
     picture_audit = {
         "schema": "final-parse-picture-audit/1.0",

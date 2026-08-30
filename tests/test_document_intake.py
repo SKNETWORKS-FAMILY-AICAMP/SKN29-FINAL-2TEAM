@@ -24,6 +24,7 @@ from services.document_intake.service import (
     promote_to_searchable,
     sync_drive_changes,
 )
+from services.document_intake.public_errors import safe_document_failure_detail
 from services.document_pipeline.errors import PipelineConfigurationError, RunPodRequestError
 
 
@@ -370,10 +371,17 @@ class WorkerFailureDetailTests(SimpleTestCase):
         }
     )
 
-    def test_워커가_말한_이유를_그대로_쓴다(self):
+    def test_워커가_말한_원인을_우리_문장으로_바꾼다(self):
+        """원문(`표 #/tables/14 …`)은 로그로 가고, 화면에는 할 행동이 남는다.
+
+        표 번호는 사용자가 할 수 있는 일을 바꾸지 않는다. 바꾸는 것은 「이
+        파일로는 안 된다」이고, 그것은 `error_type` 으로 갈린다.
+        """
+
         detail = _worker_failure_detail({"error": self.WORKER_ERROR}, "FAILED")
 
-        self.assertEqual(detail, "표 #/tables/14의 셀 구조가 비어 있습니다.")
+        self.assertEqual(detail, "문서에서 읽을 내용을 찾지 못했습니다. 파일을 확인해 다시 올려 주세요.")
+        self.assertNotIn("#/tables/14", detail)
 
     def test_트레이스백은_넣지_않는다(self):
         """사람이 읽는 칸이다. 스택은 워커 로그에 있다."""
@@ -397,12 +405,56 @@ class WorkerFailureDetailTests(SimpleTestCase):
                     "문서를 읽는 시간이 초과되었습니다. 잠시 후 다시 읽어 주세요.",
                 )
 
-    def test_아주_긴_사유는_잘라_넣는다(self):
-        """화면에 뜨는 칸이라 통째로 넣으면 읽을 수 없다."""
+    def test_아무리_긴_사유도_원문이_아니라_우리_문장이_나간다(self):
+        """길이를 자르는 것으로는 부족했다 — 500자 안에도 토큰은 들어간다."""
 
         long = json.dumps({"error_message": "가" * 900})
 
-        self.assertEqual(len(_worker_failure_detail({"error": long}, "FAILED")), 500)
+        self.assertEqual(
+            _worker_failure_detail({"error": long}, "FAILED"),
+            "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.",
+        )
+
+    def test_표지가_없는_기술_문자열도_통과하지_못한다(self):
+        """차단 목록이던 시절 실제로 새어 나간 다섯 가지다.
+
+        내부 경로·내부 주소·JWT·엔드포인트 이름·환경변수 값 어디에도 예전
+        표지(`http://`·`?token=`·`traceback` …)가 없어서 그대로 화면에 갔다.
+        허용 목록으로 뒤집은 뒤에는 표지를 세지 않으므로 전부 걸린다.
+        """
+
+        leaked = (
+            "문서 변환 실패: /srv/app/media/team/T001/원본.pdf (No such file or directory)",
+            "connect to 10.0.3.14:8000 failed",
+            "invalid credential eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc.def",
+            "RunPod endpoint SKN29-RUNPOD-WORKER-IMG returned 502",
+            "HF_TOKEN=hf_xxxxxxxxxxxx is invalid",
+        )
+
+        for raw in leaked:
+            with self.subTest(raw=raw):
+                detail = _worker_failure_detail(
+                    {"error": json.dumps({"error_message": raw})}, "FAILED"
+                )
+
+                self.assertEqual(detail, "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.")
+
+    def test_두_번_거쳐도_같은_문장이_나온다(self):
+        """쓸 때 한 번, 읽을 때 한 번 거친다. 두 번째에 문구가 바뀌면 안 된다."""
+
+        once = _worker_failure_detail({"error": self.WORKER_ERROR}, "FAILED")
+
+        self.assertEqual(safe_document_failure_detail(once), once)
+
+    def test_저장_계층이_직접_쓴_문구는_그대로_둔다(self):
+        """워커를 거치지 않고 우리가 적는 문장이다(색인 제출 자체가 실패한 경우)."""
+
+        for authored in (
+            "문서를 읽지 못했습니다. 다시 올려 주세요.",
+            "처리 결과가 비어 있습니다.",
+        ):
+            with self.subTest(authored=authored):
+                self.assertEqual(safe_document_failure_detail(authored), authored)
 
     def test_연결_오류의_URL과_서명값은_노출하지_않는다(self):
         raw = json.dumps(
@@ -453,9 +505,15 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
     것은 「화면에 진짜 이유가 뜬다」이므로, 저장되는 값까지 봐야 지켜진다.
     """
 
-    def test_저장되는_사유가_워커가_말한_것이다(
+    def test_저장되는_사유가_상태값이_아니라_할_행동이다(
         self, pipeline_repo, submit, status, url, personal_repo
     ):
+        """칸에 들어가는 것이 「문서 처리 실패(FAILED)」로 되돌아가면 안 된다.
+
+        워커 원문을 그대로 넣지는 않는다(`public_errors`). 대신 사람이 할
+        행동이 적힌 우리 문장이 저장되는지 본다.
+        """
+
         pipeline_repo.get_for_processing.return_value = {
             "storage_key": "k", "cur_revision": "r", "mime_type": "text/markdown",
         }
@@ -467,10 +525,11 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         outcome = promote_to_searchable(account_id="UA002", doc_id="DC005")
 
         self.assertFalse(outcome["ok"])
-        self.assertEqual(outcome["detail"], "표 #/tables/14의 셀 구조가 비어 있습니다.")
+        self.assertEqual(outcome["detail"], "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.")
         saved = personal_repo.set_index_status.call_args.kwargs
         self.assertEqual(saved["status"], "FAILED")
-        self.assertEqual(saved["detail"], "표 #/tables/14의 셀 구조가 비어 있습니다.")
+        self.assertEqual(saved["detail"], "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.")
+        self.assertNotIn("FAILED", saved["detail"])
 
     def test_적재가_거절돼도_읽는_중에_갇히지_않는다(
         self, pipeline_repo, submit, status, url, personal_repo
@@ -495,9 +554,10 @@ class PromoteWritesWorkerReasonTests(SimpleTestCase):
         self.assertFalse(outcome["ok"])
         saved = personal_repo.set_index_status.call_args.kwargs
         self.assertEqual(saved["status"], "FAILED")
-        self.assertEqual(
-            saved["detail"], "RunPod가 받은 원문의 content hash가 로컬 원문과 다릅니다."
-        )
+        # 거절 사유(revision·content hash)는 내부 식별자다 — 로그로 가고 칸에는
+        # 할 행동이 남는다. 여기서 볼 것은 「`RUNNING` 에 갇히지 않는다」이다.
+        self.assertEqual(saved["detail"], "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.")
+        self.assertNotIn("content hash", saved["detail"])
 
 
 @patch("services.document_intake.service.time.sleep", lambda _: None)

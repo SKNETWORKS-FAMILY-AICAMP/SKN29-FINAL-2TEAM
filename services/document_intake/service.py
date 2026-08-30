@@ -480,10 +480,12 @@ def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
     RunPod 의 `error` 는 워커가 만든 **JSON 문자열**이다 — `error_type`,
     `error_message`, `error_traceback` 이 들어 있다. 상태값만 적으면 화면에
     「문서 처리 실패(FAILED)」가 뜨는데, 그건 `index_detail` 을 만든 이유를
-    지우는 것이다(2026-08-24). 실제로 그 자리에 들어가야 할 말은 예를 들어
-    「표 #/tables/14의 셀 구조가 비어 있습니다」다.
+    지우는 것이다(2026-08-24).
 
-    트레이스백은 넣지 않는다. 사람이 읽는 칸이고, 스택은 워커 로그에 있다.
+    **워커가 준 문장을 그대로 쓰지는 않는다.** 그 안에 서명된 주소·내부 호스트·
+    토큰이 섞여 오고, 표지를 세어 거르는 방식은 새는 것이 확인됐다
+    (`public_errors` 모듈 docstring). 화면에는 원인별로 고른 우리 문장을 쓰고,
+    원문은 여기서 로그로 남긴다 — 트레이스백과 함께 워커 로그에도 있다.
     """
 
     raw = result.get("error")
@@ -496,6 +498,9 @@ def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
         except (ValueError, AttributeError):
             message = raw
         if message:
+            logger.warning(
+                "문서 처리 실패(%s) · type=%s · message=%s", state, error_type, message
+            )
             return safe_document_failure_detail(message, state=state, error_type=error_type)
     return safe_document_failure_detail(None, state=state)
 
@@ -645,7 +650,12 @@ def promote_to_searchable(
                 #
                 # 2026-08-25 에 실제로 밟았다. DC001 의 `content_hash` 가 저장된
                 # 원문과 어긋나 있었고, 워커가 정상 완료한 뒤 여기서 터졌다.
-                return _done(False, detail=str(exc))
+                #
+                # 이 문장도 화면에 그대로 싣지 않는다 — `ingest` 의 거절 사유는
+                # revision·content hash 같은 내부 식별자라 사용자가 할 수 있는
+                # 일을 바꾸지 않는다. 원인은 로그에 남긴다.
+                logger.warning("문서 적재 거절: %s · %s", doc_id, exc)
+                return _done(False, detail=safe_document_failure_detail(None))
             # 다 읽었으면 사본을 들고 있을 이유가 없다. 상태를 먼저 적고 버린다 —
             # 순서가 반대면 지우는 데 실패했을 때 「끝났다」가 안 적힌다.
             outcome = _done(True)

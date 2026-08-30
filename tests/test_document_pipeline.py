@@ -183,6 +183,57 @@ class FinalParseLayerTests(SimpleTestCase):
             "FIRST_STAGE_CLASSIFICATION_DISABLED",
         )
 
+    def test_heading_or_table_failure_keeps_the_document(self):
+        """A correction layer must never turn a readable document into a failure.
+
+        Reading order and picture description already preserve the document on
+        error; the heading and table layers used to raise straight through, so
+        one gate postcondition would fail the whole ingest.
+        """
+
+        for failing, audit_key, marker in (
+            ("promote_headings_by_density", "heading", "HEADING_PROMOTION_FAILED"),
+            ("apply_table_gate", "table_gate", "TABLE_GATE_FAILED"),
+        ):
+            with self.subTest(layer=failing):
+                corrected = Mock(name="corrected", pictures=[])
+                result = Mock(document=Mock(name="original", pictures=[]))
+
+                with patch(
+                    "runpod_worker.pipeline.postprocess_docling_document",
+                    return_value=(corrected, {"outcome": "PRESERVED"}),
+                ), patch(
+                    "runpod_worker.pipeline.promote_headings_by_density",
+                    return_value={"applied_count": 3},
+                ), patch(
+                    "runpod_worker.pipeline.apply_table_gate",
+                    return_value={"table_count_after": 0},
+                ), patch(
+                    f"runpod_worker.pipeline.{failing}",
+                    side_effect=RuntimeError("gate postcondition failed"),
+                ):
+                    audit = _apply_final_parse_layers(result, picture_enabled=False)
+
+                self.assertIs(result.document, corrected)
+                self.assertEqual(audit[audit_key]["outcome"], "PRESERVED")
+                self.assertIn(marker, audit[audit_key]["failure_reason"])
+
+    def test_heading_failure_still_reports_a_promoted_count(self):
+        """`process_document` reads `heading.applied_count` for the response."""
+
+        result = Mock(document=Mock(name="original", pictures=[]))
+
+        with patch(
+            "runpod_worker.pipeline.postprocess_docling_document",
+            return_value=(result.document, {"outcome": "PRESERVED"}),
+        ), patch(
+            "runpod_worker.pipeline.promote_headings_by_density",
+            side_effect=RuntimeError("boom"),
+        ), patch("runpod_worker.pipeline.apply_table_gate", return_value={}):
+            audit = _apply_final_parse_layers(result, picture_enabled=False)
+
+        self.assertEqual(audit["heading"]["applied_count"], 0)
+
     def test_density_uses_corrected_reading_order_not_vertical_order(self):
         def item(ref, text_length, reading_order_index, top):
             return {
