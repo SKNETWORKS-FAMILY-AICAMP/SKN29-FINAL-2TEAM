@@ -68,15 +68,12 @@ class IntakeResult:
     storage_error: str | None = None
 
 
-def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeResult:
+def intake_connector_documents(*, account_id: str) -> IntakeResult:
     """연결된 폴더의 파일을 `doc` 에 넣고 내려받아 **본문 색인까지** 만든다.
 
-    `limit` 은 한 번에 새로 **등록**하는 문서 수다. 폴더가 크면 첫 호출이 통째로
-    길어지므로 나눠 받고, 나머지는 다음 호출이 이어받는다.
-
-    색인(`_index_all`)에는 `limit` 이 걸리지 않는다. 등록이 회차당 `limit` 건으로
-    묶여 있으므로 색인 대기도 자연히 그 언저리이고, 앞 회차에서 못 끝낸 것을
-    여기서 마저 집어야 폴더가 결국 전부 색인된다.
+    Drive 에서 찾은 지원 형식은 한 번에 전부 등록한다. 무거운 원문 처리와 색인은
+    이 함수를 부르는 백그라운드 실행 안에서 순차로 진행되므로, 등록까지 임의의
+    20건 상한으로 가려 사용자가 일부 문서만 연결됐다고 오해하게 만들지 않는다.
 
     **이미 있는 것은 건드리지 않는다.** 등록된 파일은 건너뛰고, 청크가 있는
     문서는 다시 색인하지 않는다. 여러 번 불러도 안전해야 저장소가 바뀔 때마다
@@ -114,15 +111,11 @@ def intake_connector_documents(*, account_id: str, limit: int = 20) -> IntakeRes
                 # (`document_list`) 저장소에 넣어 봐야 읽을 수 없다.
                 if not item["supported"] or item["file_id"] in known:
                     continue
-                # `limit` 은 **새로 등록하는 수**만 묶는다. 폴더 순회를 여기서
-                # 끊으면 뒤쪽 폴더의 수정 시각을 못 보고, 첫 폴더가 매번 한도를
-                # 채우면 그 뒤 폴더의 변경은 영영 감지되지 않는다(2026-08-24).
-                if len(candidates) < limit:
-                    # **어느 폴더를 훑던 중인지는 여기서만 안다**(2026-08-25).
-                    # `list_drive_files` 는 뿌리 안에서의 상대 경로만 붙여 주고
-                    # 그 뿌리가 어느 `team_folder` 인지는 이 반복문이 들고 있다.
-                    # 「문서」 화면의 폴더 트리가 이 둘로 그려진다.
-                    candidates.append({**item, "team_folder_id": folder["team_folder_id"]})
+                # **어느 폴더를 훑던 중인지는 여기서만 안다**(2026-08-25).
+                # `list_drive_files` 는 뿌리 안에서의 상대 경로만 붙여 주고
+                # 그 뿌리가 어느 `team_folder` 인지는 이 반복문이 들고 있다.
+                # 「문서」 화면의 폴더 트리가 이 둘로 그려진다.
+                candidates.append({**item, "team_folder_id": folder["team_folder_id"]})
     except Exception as exc:  # noqa: BLE001 — 저장소 사정이 이 함수를 죽이지 않는다
         logger.exception("연결된 저장소 목록을 읽지 못했다")
         result.storage_error = exc.__class__.__name__

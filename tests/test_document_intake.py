@@ -767,3 +767,35 @@ class ScanDepthTests(SimpleTestCase):
     def test_고른_깊이는_그대로_쓴다(self, list_files, folders, account, documents, *_):
         depth = self._run(list_files, folders, account, documents, 3)
         self.assertEqual(depth, 3)
+
+    def test_지원하는_새_문서는_개수_제한_없이_전부_등록한다(
+        self, list_files, folders, account, documents, *_
+    ):
+        folders.list_for_team.return_value = [
+            {
+                "team_folder_id": "TF001",
+                "external_folder_id": "FOLDER-1",
+                "max_depth": None,
+            }
+        ]
+        account.team_id.return_value = "TE001"
+        documents.registered_file_ids.return_value = set()
+        list_files.return_value = [
+            {
+                "file_id": f"file-{number:03d}",
+                "name": f"문서-{number:03d}.pdf",
+                "mime_type": "application/pdf",
+                "modified_at": "2026-08-30T00:00:00Z",
+                "supported": True,
+                "folder_path": "",
+            }
+            for number in range(100)
+        ]
+        documents.add_drive_documents.return_value = [
+            {"file_name": f"문서-{number:03d}.pdf"} for number in range(100)
+        ]
+
+        result = intake_connector_documents(account_id="UA001")
+
+        self.assertEqual(len(result.registered), 100)
+        self.assertEqual(len(documents.add_drive_documents.call_args.kwargs["documents"]), 100)
