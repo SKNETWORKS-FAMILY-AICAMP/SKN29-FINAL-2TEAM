@@ -26,7 +26,7 @@ import type { McpServer } from '../../api/mcp';
 import { listMyProjects } from '../../api/projects';
 import type { Project } from '../../api/projects';
 import { listConnectors } from '../../api/connectors';
-import { listMySkills, listTeamSkills } from '../../api/skills';
+import { listMySkills } from '../../api/skills';
 import { AnswerText } from './AnswerText';
 import { WelcomeTour } from './WelcomeTour';
 import {
@@ -348,16 +348,15 @@ function monthLabel(monthKey: string): string {
 /**
  * "/스킬이름"으로 채팅 입력창에서 바로 부를 수 있는 스킬 하나.
  *
- * **팀 스킬이 이긴다** — 서버(`services/agent_runtime/skills/invocation.py`)가
- * 이름이 겹치면 팀 스킬을 먼저 찾으므로("/이름"이 실제로 부르는 것과 같은
- * 우선순위, 자동 호출에서 팀이 개인을 가리는 것과 같은 근거), 자동완성
- * 목록도 같은 우선순위로 합친다 — 안 그러면 자동완성에 뜨는 스킬과 실제로
- * 불려지는 스킬이 다른 모순이 생긴다.
+ * **켜져 있는 내 스킬만 담는다.** 서버(`services/agent_runtime/skills/invocation.py`
+ * `resolve_invocable_skill`)는 "/이름"을 개인 스킬에서만 찾는다 — 팀 스킬은
+ * 가져오기 전에는 실행할 수 없는 공유 카탈로그라 조회조차 안 한다. 자동완성이
+ * 팀 스킬이나 꺼진 스킬까지 보여주면 골라도 아무 일이 안 일어나므로, 실제로
+ * 불려지는 것과 같은 목록만 보여준다.
  */
 interface SlashSkillOption {
   name: string;
   description: string;
-  scope: 'personal' | 'team';
 }
 
 /**
@@ -710,32 +709,23 @@ export default function ChatPage() {
   const conversationSearchRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef<Map<string, HTMLElement>>(new Map());
 
-  /** "/" 자동완성 목록 — 한 번만 불러와 둔다. 팀이 아직 없으면(가입 직후)
-      `listTeamSkills`가 실패할 수 있어 조용히 빈 목록으로 넘어간다(다른
-      목록 로더들과 같은 관례, 위 `listConnectors`/`listAgentVersions` 참고). */
+  /** "/" 자동완성 목록 — 한 번만 불러와 둔다. */
   useEffect(() => {
     if (!token) return;
-    Promise.all([listMySkills(token).catch(() => []), listTeamSkills(token).catch(() => [])]).then(
-      ([mine, team]) => {
-        // 이름이 겹치면 팀이 이긴다 — 실제 호출(서버)과 같은 우선순위를
-        // 자동완성에도 맞춘다(위 `SlashSkillOption` docstring 참고).
-        // 꺼진 스킬은 비활성 namespace에 있어 자동완성에도 안 보인다.
-        // 어차피 에이전트에게 안 보이게 거르므로(2026-08-26), 골라도 아무
-        // 일도 안 일어나는 항목을 목록에 남겨 두지 않는다.
-        const merged = new Map<string, SlashSkillOption>();
-        mine
-          .filter((skill) => skill.enabled)
-          .forEach((skill) =>
-            merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'personal' }),
-          );
-        team
-          .filter((skill) => skill.enabled)
-          .forEach((skill) =>
-            merged.set(skill.name, { name: skill.name, description: skill.description, scope: 'team' }),
-          );
-        setSkillOptions(Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
-      },
-    );
+    listMySkills(token)
+      .catch(() => [])
+      .then((mine) => {
+        // 켜져 있는 내 스킬만 — 서버가 "/이름"을 개인 스킬에서만 찾으므로
+        // (위 `SlashSkillOption` docstring). 팀 스킬은 가져오기 전에는 실행
+        // 대상이 아니고, 꺼진 스킬은 에이전트에게 안 보이므로, 골라도 아무
+        // 일이 안 일어나는 항목을 목록에 남겨 두지 않는다.
+        setSkillOptions(
+          mine
+            .filter((skill) => skill.enabled)
+            .map((skill) => ({ name: skill.name, description: skill.description }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      });
   }, [token]);
 
   useEffect(() => {
@@ -2696,7 +2686,7 @@ export default function ChatPage() {
                 ) : (
                   slashMatches.map((skill, index) => (
                     <button
-                      key={`${skill.scope}-${skill.name}`}
+                      key={skill.name}
                       type="button"
                       role="option"
                       aria-selected={index === slashIndex}
@@ -2709,7 +2699,6 @@ export default function ChatPage() {
                       onClick={() => selectSlashSkill(skill.name)}
                     >
                       <span className={styles.slashName}>/{skill.name}</span>
-                      <span className={styles.slashScope}>{skill.scope === 'team' ? '팀' : '개인'}</span>
                       <span className={styles.slashDesc}>{skill.description}</span>
                     </button>
                   ))

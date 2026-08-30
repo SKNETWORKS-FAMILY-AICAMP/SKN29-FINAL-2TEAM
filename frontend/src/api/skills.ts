@@ -117,9 +117,12 @@ export function getTeamSkill(token: string, skillId: string) {
   return apiRequest<Skill>(`/teams/skills/${skillId}/`, { token });
 }
 
-/** 팀 공유 카탈로그의 스킬을 독립적인 내 스킬로 복사한다. */
+/**
+ * 팀 공유 카탈로그의 스킬을 독립적인 내 스킬로 복사한다. 팀 카탈로그에는
+ * 검증된 스킬만 올라오므로 가져올 때 재검증하지 않고 바로 복사한다.
+ */
 export function importTeamSkill(token: string, skillId: string) {
-  return apiRequest<Skill | SkillJob>(`/teams/skills/${skillId}/import/`, { method: 'POST', token });
+  return apiRequest<Skill>(`/teams/skills/${skillId}/import/`, { method: 'POST', token });
 }
 
 export function deleteTeamSkill(token: string, skillId: string) {

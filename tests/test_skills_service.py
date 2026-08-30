@@ -322,20 +322,21 @@ class SkillSharingTests(SimpleTestCase):
             with self.assertRaises(service.SkillError):
                 service.share_personal_skill("AC001", team_id="TM001", name="draft-skill")
 
-    def test_기존_팀_항목은_미검증으로_표시되고_가져올_때_job을_만든다(self):
-        from types import SimpleNamespace
+    def test_가져올_때_재검증하지_않고_바로_개인_사본을_만든다(self):
+        """팀 카탈로그에는 검증된 스킬만 올라오므로 가져오기는 복사일 뿐이다.
+        미검증으로 표시된 기존(legacy) 항목도 검증 job 없이 바로 가져온다."""
 
         with _patched_store(), patch(
             "services.agent_runtime.skills.registration.SkillRegistrationService.enqueue"
         ) as enqueue:
-            enqueue.return_value = SimpleNamespace(job={"job_id": "job-legacy"}, created=True)
             created = _create_legacy_team_skill()
             self.assertEqual(created["validation_state"], "LEGACY_UNVERIFIED")
             result = service.import_team_skill("AC002", team_id="TM001", name="legacy-skill")
 
-        self.assertTrue(result["requires_validation"])
-        self.assertEqual(result["job"]["job_id"], "job-legacy")
-        enqueue.assert_called_once()
+        self.assertFalse(result["requires_validation"])
+        self.assertEqual(result["skill"]["name"], "legacy-skill")
+        self.assertEqual(result["skill"]["imported_from_team_id"], "TM001")
+        enqueue.assert_not_called()
 
     def test_개인_스킬을_팀에_공유하고_중지한다(self):
         with _patched_store():
