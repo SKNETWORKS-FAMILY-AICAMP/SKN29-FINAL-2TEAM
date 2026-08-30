@@ -1848,6 +1848,24 @@
   font-size: 12px;
 }
 
+.filePreviewNotice {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.filePreviewNotice strong {
+  color: var(--color-heading);
+  font-size: 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .filesCard {
     animation: none;

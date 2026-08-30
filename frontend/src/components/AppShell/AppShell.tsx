@@ -5,6 +5,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_NAV_ITEMS, PATHS } from '../../routes';
 import { clearSession, useSession } from '../../utils/session';
 import { useNarrowViewport } from '../../utils/viewport';
+import { preloadUserRoute } from '../../utils/routePreload';
 import { Icon } from '../Icon/Icon';
 import { Logo } from '../Logo/Logo';
 import styles from './AppShell.module.css';
@@ -224,6 +225,8 @@ export function AppShell({ children, variant = 'page', sidebarExtra }: AppShellP
               className={[styles.navItem, isActive(item.match) ? styles.navItemActive : ''].filter(Boolean).join(' ')}
               // 접히면 라벨이 없으므로 아이콘만으로 무엇인지 알아야 한다.
               title={iconsOnly ? item.label : undefined}
+              onMouseEnter={() => preloadUserRoute(item.to)}
+              onFocus={() => preloadUserRoute(item.to)}
             >
               <Icon name={item.icon} size={18} />
               {!iconsOnly && <span>{item.label}</span>}

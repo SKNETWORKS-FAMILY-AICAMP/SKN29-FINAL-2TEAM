@@ -19,7 +19,9 @@ import type {
   TimelineEntry,
 } from '../cardTypes';
 import { downloadPersonalFile, ApiError } from '../../../api/personalFiles';
-import { loadSessionToken } from '../../../utils/session';
+import { loadSessionToken } from '../../../utils/session';
+
+import { approvalToolLabel } from '../toolLabels';
 import styles from './cards.module.css';
 
 interface SearchPreview {
@@ -27,10 +29,14 @@ interface SearchPreview {
   results: Array<{ label: string; url: string }>;
 }
 
-interface UserToolPreview {
+interface UserToolPreview {
   summary: string;
   items: string[];
-}
+}
+
+function approvalActionLabel(action: ApprovalAction): string {
+  return approvalToolLabel(action.name);
+}
 
 function safePreviewUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : '';
@@ -774,7 +780,7 @@ export function ReasoningTrace({
         onClick={() => setOpen((prev) => !prev)}
       >
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color="var(--color-primary)" />
-        {running ? `작업 중 · ${entries.length}단계` : (summary ?? `작업 과정 ${entries.length}단계`)}
+        {running ? `진행 과정 · ${entries.length}단계` : (summary ?? `작업 과정 ${entries.length}단계`)}
       </button>
 
       {open && (
@@ -801,7 +807,7 @@ export function ReasoningTrace({
                     {status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
                     {status === 'REJECTED' && <Icon name="x" size={13} color="var(--color-muted)" />}
                     <span>
-                      {tools[0].toolName ?? tools[0].toolRef} · {tools.length}회
+                      {approvalToolLabel(tools[0].toolName ?? tools[0].toolRef)} · {tools.length}회
                       {status === 'OK' && ' 완료'}
                       {status === 'FAILED' && ' · 일부 실패'}
                       {status === 'REJECTED' && ' 취소'}
@@ -903,7 +909,7 @@ export function ReasoningTrace({
                     {entry.status === 'FAILED' && <Icon name="circle-x" size={13} color="var(--color-danger)" />}
                     {entry.status === 'REJECTED' && <Icon name="x" size={13} color="var(--color-muted)" />}
                     <span>
-                      {entry.toolName ?? entry.toolRef} 호출
+                      {approvalToolLabel(entry.toolName ?? entry.toolRef)}
                       {entry.status === 'OK' && ' 완료'}
                       {entry.status === 'FAILED' && ' 실패'}
                       {entry.status === 'REJECTED' && ' 취소'}
@@ -1350,11 +1356,16 @@ export function ConfirmCard({
   const previewKinds = new Set(
     executingActions.map((action) => action.preview?.kind).filter(Boolean),
   );
-  const fileTypeLabel = previewKinds.size > 1
-    ? '여러'
-    : previewKinds.has('table')
-      ? 'Excel'
-      : 'Word';
+  const fileTypeLabel = previewKinds.size > 1
+    ? null
+    : previewKinds.has('table')
+      ? 'Excel'
+      : 'Word';
+  const approvedFileSubject = approvedFileCount > 1
+    ? `${fileTypeLabel ? `${fileTypeLabel} ` : ''}파일 ${approvedFileCount}개`
+    : `${fileTypeLabel ?? '생성할'} 파일`;
+  const allApprovedActionsAreFiles =
+    approved.length > 0 && approvedFileCount === approved.length;
   const [editingJira, setEditingJira] = useState(false);
   const [jiraDraft, setJiraDraft] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
   const [appliedJira, setAppliedJira] = useState<JiraIssueEdit[]>(jiraPreview ?? []);
@@ -1606,15 +1617,14 @@ export function ConfirmCard({
                   onApprovedActionsChange?.(next ? actions.map((_, index) => index) : [])
                 }
               />
-              <strong>전체 승인</strong>
-              <span className={styles.muted}>
-                {approved.length}/{actions.length}건 승인
-              </span>
-            </span>
-            <span className={styles.muted}>
-              {approved.length > 0 ? `실행할 작업 ${approved.length}건` : '실행할 작업 없음'}
-            </span>
-          </div>
+              <strong>전체 선택</strong>
+              {approved.length !== actions.length ? (
+                <span className={styles.muted}>
+                  {approved.length > 0 ? `${approved.length}/${actions.length}개 선택` : '선택 없음'}
+                </span>
+              ) : null}
+            </span>
+          </div>
           {actions.map((action, index) => (
             <div key={`${action.name}-${index}`} className={styles.approvalActionGroup}>
               <div className={styles.taskRow}>
@@ -1623,8 +1633,8 @@ export function ConfirmCard({
                   onChange={(next) => toggleAction(index, next)}
                 />
                 <div className={styles.taskBody}>
-                  <span className={styles.taskTitle}>{action.name}</span>
-                  {action.count > 0 ? (
+                  <span className={styles.taskTitle}>{approvalActionLabel(action)}</span>
+                  {action.count > 0 && !action.preview ? (
                     <span className={styles.muted}>대상 {action.count}건</span>
                   ) : null}
                   {fileGenerationInProgress ? (
@@ -1686,12 +1696,12 @@ export function ConfirmCard({
                 : '거절을 반영하는 중입니다.'
               : approving && hasFilePreview
                 ? hasApprovedFilePreview
-                  ? `${approvedFileCount > 1 ? `${approvedFileCount}개 ` : ''}${fileTypeLabel} 파일을 생성하고 있습니다. 완료되면 ‘내 파일’에 저장됩니다.`
+                  ? `${approvedFileSubject}${approvedFileCount > 1 ? '를' : '을'} 만들고 있습니다. 완료 후 ‘문서 > 내 파일’에서 확인할 수 있습니다.`
                   : '선택하지 않은 작업을 반영하고 있습니다.'
               : jiraPreview
                 ? `승인하면 ${jiraProjectName || '연결된 Jira 프로젝트'}에 이슈 ${appliedJira.length}건을 생성합니다.`
                 : hasFilePreview
-                  ? '승인하면 위 내용으로 파일을 생성해 ‘내 파일’에 저장합니다.'
+                  ? '승인하면 파일을 만들고 ‘문서 > 내 파일’에 저장합니다.'
                 : isSkillRegister
                 ? '등록하기 전까지 저장되지 않습니다. 마음에 들지 않으면 다시 설명해 주세요.'
                 : '승인하기 전까지 아무것도 등록되지 않습니다.'}
@@ -1739,13 +1749,15 @@ export function ConfirmCard({
             {multi && actions
                 ? approved.length === 0
                   ? '전부 거절'
-                  : `${approved.length}건 실행`
+                  : allApprovedActionsAreFiles
+                    ? `파일 ${approvedFileCount}개 만들기`
+                    : `선택한 ${approved.length}건 실행`
                 : tasks.length > 0
                   ? `선택한 ${chosen.length}건 등록`
                   : jiraPreview
                     ? `Jira 이슈 ${appliedJira.length}건 생성 승인`
                     : hasFilePreview
-                      ? '파일 생성 승인'
+                      ? '파일 만들기'
                     : '승인'}
             </Button>
           )}
@@ -2236,13 +2248,14 @@ export function ProducedFilesCard({
                     setPreviewOpen(true);
                   }}
                   aria-haspopup="dialog"
-                  title="미리보기 열기"
+                  aria-label={`${file.fileName} 생성에 반영된 내용 보기`}
+                  title="생성에 반영된 내용 보기"
                 >
                   <span className={styles.fileIdentity}>
                     <span className={styles.fileName}>{file.fileName}</span>
                     <span className={styles.fileType}>
                       <span className={styles.fileTypeDefault}>{producedFileType(file.mimeType, file.fileName)}</span>
-                      <span className={styles.fileTypeHover}>미리보기 열기</span>
+                      <span className={styles.fileTypeHover}>반영 내용 보기</span>
                     </span>
                   </span>
                 </button>
@@ -2275,8 +2288,24 @@ export function ProducedFilesCard({
               title={selectedFile?.fileName ?? selectedPreview.title ?? '파일 미리보기'}
               width={selectedPreview.kind === 'table' ? 1200 : 1000}
             >
-              {fullPreview(selectedPreview)}
-              <p className={styles.filePreviewSaved}>
+              {fullPreview(selectedPreview)}
+              <div className={styles.filePreviewNotice}>
+                <strong>생성에 반영된 내용</strong>
+                <span>
+                  승인한 내용을 대화에서 다시 확인하는 화면입니다. Excel·Word 앱에서 렌더링한 실제 파일 화면은 아니며,
+                  서식까지 확인하려면 원본을 다운로드해 주세요.
+                </span>
+                {selectedPreview.kind === 'table' && (selectedPreview.clippedRows || selectedPreview.clippedColumns) ? (
+                  <span>
+                    현재 {selectedPreview.rows.length}행 × {selectedPreview.columns.length}열만 표시하며,
+                    생성 파일에는 전체 {selectedPreview.totalRows}행 × {selectedPreview.totalColumns}열이 반영되었습니다.
+                  </span>
+                ) : null}
+                {selectedPreview.kind === 'document' && selectedPreview.clipped ? (
+                  <span>긴 문서는 앞부분만 표시하며, 생성 파일에는 승인한 전체 내용이 반영되었습니다.</span>
+                ) : null}
+              </div>
+              <p className={styles.filePreviewSaved}>
                 이 파일은 「문서 &gt; 내 파일」에도 저장되어 있습니다.
               </p>
             </Modal>,

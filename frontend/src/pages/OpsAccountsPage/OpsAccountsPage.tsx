@@ -38,6 +38,7 @@ export default function OpsAccountsPage() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '전체');
+  const [mappingFilter, setMappingFilter] = useState(searchParams.get('mapping') ?? '전체');
   // 팀 현황에서 팀을 눌러 넘어온 경우 그 팀으로 좁혀 보여준다.
   const teamFilter = searchParams.get('team');
 
@@ -79,15 +80,12 @@ export default function OpsAccountsPage() {
       ].some((value) => value.toLowerCase().includes(normalized));
 
       const matchesTeam = !teamFilter || account.team_id === teamFilter;
-      const matchesStatus = statusFilter === '전체'
-        || (statusFilter === '확인 필요' && (account.mapping_status !== 'LINKED' || account.account_status === 'LOCKED'))
-        || (statusFilter === '정상' && account.account_status === 'ACTIVE')
-        || (statusFilter === '잠김' && account.account_status === 'LOCKED')
-        || (statusFilter === '탈퇴' && account.account_status === 'WITHDRAWN');
+      const matchesStatus = statusFilter === '전체' || account.account_status === statusFilter;
+      const matchesMapping = mappingFilter === '전체' || account.mapping_status === mappingFilter;
 
-      return matchesQuery && matchesStatus && matchesTeam;
-    });
-  }, [accounts, query, statusFilter, teamFilter]);
+      return matchesQuery && matchesStatus && matchesMapping && matchesTeam;
+    }).sort((a, b) => Number(b.is_admin) - Number(a.is_admin));
+  }, [accounts, mappingFilter, query, statusFilter, teamFilter]);
 
 
   if (loading && !accounts) {
@@ -127,11 +125,16 @@ export default function OpsAccountsPage() {
       <OpsFilterBar>
         <OpsSearchField value={query} onChange={setQuery} placeholder="계정 이메일 또는 직원 이름 검색" />
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="계정 상태">
-          <option>전체</option>
-          <option>확인 필요</option>
-          <option>정상</option>
-          <option>잠김</option>
-          <option>탈퇴</option>
+          <option value="전체">계정 상태 전체</option>
+          <option value="ACTIVE">활성</option>
+          <option value="LOCKED">잠김</option>
+          <option value="WITHDRAWN">탈퇴</option>
+        </select>
+        <select value={mappingFilter} onChange={(event) => setMappingFilter(event.target.value)} aria-label="직원 매핑 상태">
+          <option value="전체">직원 매핑 전체</option>
+          <option value="LINKED">연결됨</option>
+          <option value="UNMAPPED">미연결</option>
+          <option value="DUPLICATE">중복 연결</option>
         </select>
       </OpsFilterBar>
 
@@ -178,7 +181,7 @@ export default function OpsAccountsPage() {
                     navigate(`/ops/accounts/${account.account_id}`);
                   }}
                 >
-                  상세 보기
+                  상세
                 </button>
               </td>
             </tr>

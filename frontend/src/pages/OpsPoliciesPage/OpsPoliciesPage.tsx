@@ -155,7 +155,8 @@ function defaultScheduleParts() {
   };
 }
 
-const HISTORY_PREVIEW_COUNT = 5;
+const OVERVIEW_PREVIEW_COUNT = 3;
+const GUARDRAIL_PREVIEW_COUNT = 5;
 
 const POLICY_CHANGE_ACTIONS = [
   'POLICY_INVITE_TTL_CHANGE',
@@ -223,19 +224,26 @@ export default function OpsPoliciesPage() {
   const [inviteDays, setInviteDays] = useState('');
   const [inviteReason, setInviteReason] = useState('');
   const [savingInvite, setSavingInvite] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[] | null>(null);
 
   const [notices, setNotices] = useState<OpsNotice[] | null>(null);
+  const [noticeListOpen, setNoticeListOpen] = useState(false);
+  const [noticeStatusFilter, setNoticeStatusFilter] = useState('전체');
+  const [noticeQuery, setNoticeQuery] = useState('');
   const [changes, setChanges] = useState<OpsPolicyChange[] | null>(null);
   const [selectedChangeId, setSelectedChangeId] = useState('');
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [changeDetailOpen, setChangeDetailOpen] = useState(false);
+  const [returnToHistoryList, setReturnToHistoryList] = useState(false);
   const [historyActionFilter, setHistoryActionFilter] = useState('전체');
   const [historyQuery, setHistoryQuery] = useState('');
 
   const [selectedNotice, setSelectedNotice] = useState<OpsNotice | null>(null);
   const [form, setForm] = useState<NoticeForm | null>(null);
   const [modalMode, setModalMode] = useState<'view' | 'edit' | 'create' | null>(null);
+  const [returnToNoticeList, setReturnToNoticeList] = useState(false);
   const [savingNotice, setSavingNotice] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<OpsNotice | null>(null);
@@ -307,16 +315,39 @@ export default function OpsPoliciesPage() {
   function openHistoryModal() {
     setHistoryActionFilter('전체');
     setHistoryQuery('');
+    setChangeDetailOpen(false);
+    setReturnToHistoryList(false);
     setHistoryModalOpen(true);
   }
 
   function closeHistoryModal() {
     setHistoryModalOpen(false);
+    setChangeDetailOpen(false);
+    setReturnToHistoryList(false);
   }
 
-  function pickHistoryChange(auditId: string) {
+  function pickHistoryChange(auditId: string, returnToList = false) {
     setSelectedChangeId(auditId);
-    setHistoryModalOpen(false);
+    setHistoryModalOpen(true);
+    setReturnToHistoryList(returnToList);
+    setChangeDetailOpen(true);
+  }
+
+  function closeHistoryDetail() {
+    setChangeDetailOpen(false);
+    if (!returnToHistoryList) setHistoryModalOpen(false);
+    setReturnToHistoryList(false);
+  }
+
+  function openInviteModal() {
+    cancelInviteEdit();
+    setInviteModalOpen(true);
+  }
+
+  function closeInviteModal() {
+    if (savingInvite) return;
+    cancelInviteEdit();
+    setInviteModalOpen(false);
   }
 
   async function saveInvitePolicy() {
@@ -343,6 +374,7 @@ export default function OpsPoliciesPage() {
       setSavedInviteDays(result.days);
       setInviteDays(String(result.days));
       setInviteReason('');
+      setInviteModalOpen(false);
       showToast('초대 정책을 저장했습니다.', 'success');
       await reloadChanges();
     } catch (thrown) {
@@ -361,7 +393,7 @@ export default function OpsPoliciesPage() {
     setInviteReason('');
   }
 
-  function openCreate() {
+  function openCreate(returnToList = false) {
     const { date, time } = defaultScheduleParts();
     setForm({
       notice_id: null,
@@ -374,12 +406,30 @@ export default function OpsPoliciesPage() {
       reason: '',
     });
     setSelectedNotice(null);
+    setReturnToNoticeList(returnToList);
     setModalMode('create');
   }
 
-  function openView(notice: OpsNotice) {
+  function openNoticeList() {
+    setNoticeStatusFilter('전체');
+    setNoticeQuery('');
+    setNoticeListOpen(true);
+  }
+
+  function openCreateFromList() {
+    setNoticeListOpen(false);
+    openCreate(true);
+  }
+
+  function openViewFromList(notice: OpsNotice) {
+    setNoticeListOpen(false);
+    openView(notice, true);
+  }
+
+  function openView(notice: OpsNotice, returnToList = false) {
     setSelectedNotice(notice);
     setForm(null);
+    setReturnToNoticeList(returnToList);
     setModalMode('view');
   }
 
@@ -409,9 +459,12 @@ export default function OpsPoliciesPage() {
   }
 
   function closeModal() {
+    const shouldReturnToList = returnToNoticeList;
     setModalMode(null);
     setForm(null);
     setSelectedNotice(null);
+    setReturnToNoticeList(false);
+    if (shouldReturnToList) setNoticeListOpen(true);
   }
 
   async function saveNotice() {
@@ -517,6 +570,13 @@ export default function OpsPoliciesPage() {
   const changeRows = changes ?? [];
   const publishedCount = noticeRows.filter((notice) => notice.status === 'PUBLISHED').length;
   const scheduledCount = noticeRows.filter((notice) => notice.status === 'SCHEDULED').length;
+  const filteredNotices = noticeRows.filter((notice) => {
+    const matchesStatus = noticeStatusFilter === '전체' || notice.status === noticeStatusFilter;
+    const normalized = noticeQuery.trim().toLowerCase();
+    const matchesQuery = !normalized || [notice.title, notice.content, notice.created_by_name ?? '']
+      .some((value) => value.toLowerCase().includes(normalized));
+    return matchesStatus && matchesQuery;
+  });
 
   const filteredHistory = changeRows.filter((change) => {
     const matchesAction = historyActionFilter === '전체' || change.action === historyActionFilter;
@@ -524,6 +584,7 @@ export default function OpsPoliciesPage() {
     const matchesQuery = !normalized || [changeTitle(change), actorLabel(change)].some((value) => value.toLowerCase().includes(normalized));
     return matchesAction && matchesQuery;
   });
+  const inviteValueChanged = savedInviteDays !== null && Number(inviteDays) !== savedInviteDays;
 
   return (
     <div className={styles.page}>
@@ -531,62 +592,30 @@ export default function OpsPoliciesPage() {
         title="전역 정책"
       />
 
-      <OpsSectionCard
-        title="초대 정책"
-        subtitle={`현재 ${savedInviteDays ?? '-'}일 · 바꿔도 이미 발급된 초대에는 영향 없음`}
-      >
-        <div className={styles.inlinePolicy}>
-          <div className={styles.fieldGroup}>
-            <label htmlFor="invite-days">초대 코드 만료 기간</label>
-            <input
-              id="invite-days"
-              type="number"
-              min={1}
-              max={90}
-              value={inviteDays}
-              onChange={(event) => setInviteDays(event.target.value)}
-              disabled={savingInvite}
-            />
-          </div>
-          <span className={styles.detailText}>일</span>
-          <Button variant="primary" onClick={saveInvitePolicy} disabled={savingInvite}>
-            {savingInvite ? '저장 중…' : '변경사항 저장'}
-          </Button>
-          <Button variant="secondary" onClick={cancelInviteEdit} disabled={savingInvite}>변경 취소</Button>
-        </div>
-        <div className={[styles.fieldGroup, styles.inlinePolicyReason].join(' ')}>
-          <label htmlFor="invite-reason">변경 사유(선택)</label>
-          <input
-            id="invite-reason"
-            value={inviteReason}
-            onChange={(event) => setInviteReason(event.target.value)}
-            placeholder="정책을 변경하는 이유를 입력하세요"
-            disabled={savingInvite}
-          />
-        </div>
-      </OpsSectionCard>
-
       <div className={styles.policyGrid}>
         <OpsSectionCard
+          className={styles.policyOverviewCard}
           title="시스템 공지"
           subtitle={`전체 ${noticeRows.length} · 게시 중 ${publishedCount} · 게시 예정 ${scheduledCount}`}
-          actions={<Button variant="primary" size="sm" onClick={openCreate}>새 공지 작성</Button>}
+          actions={<Button variant="outline" size="sm" onClick={openNoticeList}>목록</Button>}
         >
           {noticeRows.length > 0 ? (
-            <div className={styles.noticeList}>
-              {noticeRows.map((notice) => (
-                <div className={styles.noticeItem} key={notice.notice_id}>
-                  <OpsStatusBadge tone={NOTICE_STATUS_TONES[notice.status]}>
-                    {NOTICE_STATUS_LABELS[notice.status]}
-                  </OpsStatusBadge>
-                  <div>
-                    <strong>{notice.title}</strong>
-                    <p>{scheduleLabel(notice.schedule_at, notice.schedule_mode)}</p>
-                  </div>
-                  <div className={styles.compactActions}>
-                    <button type="button" aria-label={`${notice.title} 보기`} onClick={() => openView(notice)}>보기</button>
-                  </div>
-                </div>
+            <div className={styles.policyHistory}>
+              {noticeRows.slice(0, OVERVIEW_PREVIEW_COUNT).map((notice) => (
+                <button
+                  type="button"
+                  className={styles.historyButton}
+                  key={notice.notice_id}
+                  onClick={() => openView(notice)}
+                >
+                  <span className={styles.historyRow}>
+                    <OpsStatusBadge tone={NOTICE_STATUS_TONES[notice.status]}>
+                      {NOTICE_STATUS_LABELS[notice.status]}
+                    </OpsStatusBadge>
+                    <span className={styles.historyTitle}>{notice.title}</span>
+                  </span>
+                  <span className={styles.historyMeta}>{scheduleLabel(notice.schedule_at, notice.schedule_mode)}</span>
+                </button>
               ))}
             </div>
           ) : (
@@ -595,19 +624,20 @@ export default function OpsPoliciesPage() {
         </OpsSectionCard>
 
         <OpsSectionCard
+          className={styles.policyOverviewCard}
           title="정책 변경 이력"
           actions={changeRows.length > 0 ? (
-            <Button variant="outline" size="sm" onClick={openHistoryModal}>전체 보기</Button>
+            <Button variant="outline" size="sm" onClick={openHistoryModal}>목록</Button>
           ) : undefined}
         >
           {changeRows.length > 0 ? (
             <div className={styles.policyHistory}>
-              {changeRows.slice(0, HISTORY_PREVIEW_COUNT).map((change) => (
+              {changeRows.slice(0, OVERVIEW_PREVIEW_COUNT).map((change) => (
                 <button
                   key={change.audit_id}
                   type="button"
-                  className={[styles.historyButton, selectedChange?.audit_id === change.audit_id ? styles.historyButtonActive : ''].filter(Boolean).join(' ')}
-                  onClick={() => setSelectedChangeId(change.audit_id)}
+                  className={styles.historyButton}
+                  onClick={() => pickHistoryChange(change.audit_id)}
                 >
                   <span className={styles.historyRow}>
                     <OpsStatusBadge tone={policyActionTone(change.action)}>{actionLabel(change.action)}</OpsStatusBadge>
@@ -622,15 +652,23 @@ export default function OpsPoliciesPage() {
           )}
         </OpsSectionCard>
 
-        {/* 정한 것(위)과 걸린 것(아래)을 한 화면에서 본다 — 기준값을 어디로
-            옮길지는 실제로 무엇이 걸렸는지를 봐야 정할 수 있다. */}
         <OpsSectionCard
+          className={styles.policyOverviewCard}
+          title="초대 정책"
+          subtitle="초대 코드 만료 기간"
+          actions={<Button variant="outline" size="sm" onClick={openInviteModal}>수정</Button>}
+        >
+          <p className={styles.policyValue}>{savedInviteDays ?? '-'}일</p>
+        </OpsSectionCard>
+
+        <OpsSectionCard
+          className={styles.policyOverviewCard}
           title="가드레일 발동"
           subtitle={guardrailEvents ? `최근 ${guardrailEvents.length}건` : ''}
         >
           {guardrailEvents && guardrailEvents.length > 0 ? (
             <div className={styles.policyHistory}>
-              {guardrailEvents.slice(0, HISTORY_PREVIEW_COUNT).map((event) => (
+              {guardrailEvents.slice(0, GUARDRAIL_PREVIEW_COUNT).map((event) => (
                 <div key={event.event_id} className={styles.historyButton}>
                   <span className={styles.historyRow}>
                     <OpsStatusBadge tone={guardrailEventTone(event.action)}>
@@ -651,33 +689,72 @@ export default function OpsPoliciesPage() {
         </OpsSectionCard>
       </div>
 
-      {selectedChange && (
-        <OpsSectionCard
-          title={`선택 변경 · ${changeTitle(selectedChange)}`}
-        >
-          <div className={styles.compareFlow}>
-            <div className={styles.compareCard}><span>변경 전</span><strong>{changeCompareValue(selectedChange, 'before')}</strong></div>
-            <span className={styles.compareArrow} aria-label="변경 후로 이동">→</span>
-            <div className={styles.compareCard}><span>변경 후</span><strong>{changeCompareValue(selectedChange, 'after')}</strong></div>
+      <Modal
+        open={inviteModalOpen}
+        onClose={closeInviteModal}
+        title="초대 정책 수정"
+        width={480}
+        dismissible={!savingInvite}
+        footer={(
+          <>
+            <Button variant="secondary" onClick={closeInviteModal} disabled={savingInvite}>취소</Button>
+            <Button variant="primary" onClick={saveInvitePolicy} disabled={savingInvite || !inviteValueChanged}>
+              {savingInvite ? '저장 중…' : '저장'}
+            </Button>
+          </>
+        )}
+      >
+        <div className={styles.formGrid}>
+          <div className={styles.fieldGroup}>
+            <label htmlFor="invite-days">초대 코드 만료 기간</label>
+            <div className={styles.inlinePolicy}>
+              <input
+                id="invite-days"
+                type="number"
+                min={1}
+                max={90}
+                value={inviteDays}
+                onChange={(event) => setInviteDays(event.target.value)}
+                disabled={savingInvite}
+              />
+              <span className={styles.detailText}>일</span>
+            </div>
           </div>
-          <dl className={styles.policyMetadata}>
-            <div><dt>변경 시각</dt><dd>{occurredAtLabel(selectedChange.occurred_at)}</dd></div>
-            <div><dt>변경 사유</dt><dd>{reasonLabel(selectedChange)}</dd></div>
-            <div><dt>변경자</dt><dd>{actorLabel(selectedChange)}</dd></div>
-          </dl>
-        </OpsSectionCard>
-      )}
+          <div className={styles.fieldGroup}>
+            <label htmlFor="invite-reason">변경 사유(선택)</label>
+            <input
+              id="invite-reason"
+              value={inviteReason}
+              onChange={(event) => setInviteReason(event.target.value)}
+              placeholder="정책을 변경하는 이유를 입력하세요"
+              disabled={savingInvite}
+            />
+          </div>
+          <p className={styles.modalCopy}>변경한 기간은 새로 발급하는 초대 코드부터 적용됩니다.</p>
+        </div>
+      </Modal>
 
       <Modal
-        open={modalMode !== null && (modalMode === 'create' ? form !== null : selectedNotice !== null)}
-        onClose={closeModal}
-        title={modalMode === 'create' ? '새 시스템 공지' : modalMode === 'edit' ? '시스템 공지 수정' : '시스템 공지 상세'}
-        width={600}
-        footer={modalMode === 'view' ? (
+        open={noticeListOpen || (modalMode !== null && (modalMode === 'create' ? form !== null : selectedNotice !== null))}
+        onClose={noticeListOpen ? () => setNoticeListOpen(false) : closeModal}
+        title={noticeListOpen
+          ? '시스템 공지 목록'
+          : modalMode === 'create'
+            ? '새 시스템 공지'
+            : modalMode === 'edit'
+              ? '시스템 공지 수정'
+              : '시스템 공지 상세'}
+        width={noticeListOpen ? 640 : 600}
+        footer={noticeListOpen ? (
+          <>
+            <Button variant="secondary" onClick={() => setNoticeListOpen(false)}>닫기</Button>
+            <Button variant="primary" onClick={openCreateFromList}>작성</Button>
+          </>
+        ) : modalMode === 'view' ? (
           <>
             <Button variant="secondary" onClick={closeModal}>닫기</Button>
-            <Button variant="danger" onClick={requestDelete}>삭제</Button>
             <Button variant="primary" onClick={startEdit}>수정</Button>
+            <Button variant="danger" onClick={requestDelete}>삭제</Button>
           </>
         ) : (
           <>
@@ -688,8 +765,49 @@ export default function OpsPoliciesPage() {
           </>
         )}
       >
-        {selectedNotice && modalMode === 'view' && (
-          <div className={styles.noticeDetail}>
+        {noticeListOpen && (
+          <div className={styles.modalContentSwap}>
+            <OpsFilterBar>
+              <select
+                value={noticeStatusFilter}
+                onChange={(event) => setNoticeStatusFilter(event.target.value)}
+                aria-label="공지 상태"
+              >
+                <option value="전체">전체</option>
+                <option value="PUBLISHED">게시 중</option>
+                <option value="SCHEDULED">게시 예정</option>
+                <option value="ENDED">종료</option>
+              </select>
+              <OpsSearchField value={noticeQuery} onChange={setNoticeQuery} placeholder="제목 또는 내용 검색" />
+            </OpsFilterBar>
+
+            {filteredNotices.length > 0 ? (
+              <div className={[styles.policyHistory, styles.modalList].join(' ')}>
+                {filteredNotices.map((notice) => (
+                  <button
+                    type="button"
+                    className={styles.historyButton}
+                    key={notice.notice_id}
+                    onClick={() => openViewFromList(notice)}
+                  >
+                    <span className={styles.historyRow}>
+                      <OpsStatusBadge tone={NOTICE_STATUS_TONES[notice.status]}>
+                        {NOTICE_STATUS_LABELS[notice.status]}
+                      </OpsStatusBadge>
+                      <span className={styles.historyTitle}>{notice.title}</span>
+                    </span>
+                    <span className={styles.historyMeta}>{scheduleLabel(notice.schedule_at, notice.schedule_mode)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className={styles.inlineEmpty}>조건에 맞는 공지가 없습니다.</p>
+            )}
+          </div>
+        )}
+
+        {!noticeListOpen && selectedNotice && modalMode === 'view' && (
+          <div className={[styles.noticeDetail, styles.modalContentSwap].join(' ')}>
             <div className={styles.noticeDetailTopline}>
               <OpsStatusBadge tone={NOTICE_STATUS_TONES[selectedNotice.status]}>
                 {NOTICE_STATUS_LABELS[selectedNotice.status]}
@@ -701,8 +819,8 @@ export default function OpsPoliciesPage() {
           </div>
         )}
 
-        {form && modalMode !== 'view' && (
-          <div className={styles.formGrid}>
+        {!noticeListOpen && form && modalMode !== 'view' && (
+          <div className={[styles.formGrid, styles.modalContentSwap].join(' ')}>
             <div className={styles.fieldGroup}>
               <label htmlFor="notice-title">공지 제목</label>
               <input
@@ -786,44 +904,67 @@ export default function OpsPoliciesPage() {
 
       <Modal
         open={historyModalOpen}
-        onClose={closeHistoryModal}
-        title="정책 변경 이력 전체 보기"
-        width={640}
-        footer={<Button variant="secondary" onClick={closeHistoryModal}>닫기</Button>}
+        onClose={changeDetailOpen ? closeHistoryDetail : closeHistoryModal}
+        title={changeDetailOpen && selectedChange ? changeTitle(selectedChange) : '정책 변경 이력 목록'}
+        width={changeDetailOpen ? 720 : 640}
+        footer={<Button variant="secondary" onClick={changeDetailOpen ? closeHistoryDetail : closeHistoryModal}>닫기</Button>}
       >
-        <OpsFilterBar>
-          <select
-            value={historyActionFilter}
-            onChange={(event) => setHistoryActionFilter(event.target.value)}
-            aria-label="변경 유형"
-          >
-            <option value="전체">전체</option>
-            {POLICY_CHANGE_ACTIONS.map((action) => (
-              <option key={action} value={action}>{actionLabel(action)}</option>
-            ))}
-          </select>
-          <OpsSearchField value={historyQuery} onChange={setHistoryQuery} placeholder="제목 또는 변경자 검색" />
-        </OpsFilterBar>
-
-        {filteredHistory.length > 0 ? (
-          <div className={styles.policyHistory} style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
-            {filteredHistory.map((change) => (
-              <button
-                key={change.audit_id}
-                type="button"
-                className={[styles.historyButton, selectedChange?.audit_id === change.audit_id ? styles.historyButtonActive : ''].filter(Boolean).join(' ')}
-                onClick={() => pickHistoryChange(change.audit_id)}
-              >
-                <span className={styles.historyRow}>
-                  <OpsStatusBadge tone={policyActionTone(change.action)}>{actionLabel(change.action)}</OpsStatusBadge>
-                  <span className={styles.historyTitle}>{changeTitle(change)}</span>
-                </span>
-                <span className={styles.historyMeta}>변경자 {actorLabel(change)} · {occurredAtLabel(change.occurred_at)}</span>
-              </button>
-            ))}
+        {changeDetailOpen && selectedChange ? (
+          <div className={styles.modalContentSwap}>
+            <div className={styles.compareFlow}>
+              <div className={styles.compareCard}>
+                <span>변경 전</span>
+                <strong>{changeCompareValue(selectedChange, 'before')}</strong>
+              </div>
+              <span className={styles.compareArrow} aria-label="변경 후로 이동">→</span>
+              <div className={styles.compareCard}>
+                <span>변경 후</span>
+                <strong>{changeCompareValue(selectedChange, 'after')}</strong>
+              </div>
+            </div>
+            <dl className={styles.policyMetadata}>
+              <div><dt>변경 시각</dt><dd>{occurredAtLabel(selectedChange.occurred_at)}</dd></div>
+              <div><dt>변경 사유</dt><dd>{reasonLabel(selectedChange)}</dd></div>
+              <div><dt>변경자</dt><dd>{actorLabel(selectedChange)}</dd></div>
+            </dl>
           </div>
         ) : (
-          <p className={styles.inlineEmpty}>조건에 맞는 정책 변경 이력이 없습니다.</p>
+          <div className={styles.modalContentSwap}>
+            <OpsFilterBar>
+              <select
+                value={historyActionFilter}
+                onChange={(event) => setHistoryActionFilter(event.target.value)}
+                aria-label="변경 유형"
+              >
+                <option value="전체">전체</option>
+                {POLICY_CHANGE_ACTIONS.map((action) => (
+                  <option key={action} value={action}>{actionLabel(action)}</option>
+                ))}
+              </select>
+              <OpsSearchField value={historyQuery} onChange={setHistoryQuery} placeholder="제목 또는 변경자 검색" />
+            </OpsFilterBar>
+
+            {filteredHistory.length > 0 ? (
+              <div className={[styles.policyHistory, styles.modalList].join(' ')}>
+                {filteredHistory.map((change) => (
+                  <button
+                    key={change.audit_id}
+                    type="button"
+                    className={[styles.historyButton, selectedChange?.audit_id === change.audit_id ? styles.historyButtonActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => pickHistoryChange(change.audit_id, true)}
+                  >
+                    <span className={styles.historyRow}>
+                      <OpsStatusBadge tone={policyActionTone(change.action)}>{actionLabel(change.action)}</OpsStatusBadge>
+                      <span className={styles.historyTitle}>{changeTitle(change)}</span>
+                    </span>
+                    <span className={styles.historyMeta}>변경자 {actorLabel(change)} · {occurredAtLabel(change.occurred_at)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className={styles.inlineEmpty}>조건에 맞는 정책 변경 이력이 없습니다.</p>
+            )}
+          </div>
         )}
       </Modal>
 

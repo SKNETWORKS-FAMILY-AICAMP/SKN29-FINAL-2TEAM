@@ -590,7 +590,6 @@
   min-width: 0;
 }
 
-.myFileHead,
 /* 채팅 「근거」 링크로 들어왔을 때 그 줄을 잠깐 강조한다. */
 .rowFlash {
   animation: rowFlash 2.4s ease-out;
@@ -606,6 +605,7 @@
   }
 }
 
+.myFileHead,
 .myFileRow {
   /*
    * 마지막 칸에 「다시 읽기」·「다운로드」·「삭제」가 나란히 선다 — 글자를 빼고
@@ -622,6 +622,12 @@
    * `.table` 이 이미 `overflow-x` 다).
    */
   grid-template-columns: minmax(220px, 1fr) 130px 90px 92px 84px 112px;
+}
+
+/* 상태 문구 길이가 달라도 같은 열에서 같은 폭·축으로 읽히게 한다. */
+.cellStatus > span {
+  min-width: 104px;
+  justify-content: center;
 }
 
 .sharedHead,

@@ -38,6 +38,7 @@ from backend.services.storage import build_key, content_hash
 from backend.services.storage import remove as remove_document
 from backend.services.storage import save as save_document
 from services.document_pipeline.errors import DocumentPipelineError, PipelineConfigurationError
+from services.document_intake.public_errors import safe_document_failure_detail
 
 logger = logging.getLogger(__name__)
 
@@ -487,14 +488,16 @@ def _worker_failure_detail(result: dict[str, Any], state: str) -> str:
 
     raw = result.get("error")
     if isinstance(raw, str) and raw.strip():
+        error_type = ""
         try:
-            message = json.loads(raw).get("error_message")
+            parsed = json.loads(raw)
+            message = parsed.get("error_message")
+            error_type = str(parsed.get("error_type") or "")
         except (ValueError, AttributeError):
-            # 워커가 JSON 이 아닌 문자열을 준 경우다. 그래도 상태값보다는 낫다.
             message = raw
         if message:
-            return str(message).strip()[:500]
-    return f"문서 처리 실패({state})"
+            return safe_document_failure_detail(message, state=state, error_type=error_type)
+    return safe_document_failure_detail(None, state=state)
 
 
 def _refetch_original(*, account_id: str, document: dict[str, Any]) -> bool:

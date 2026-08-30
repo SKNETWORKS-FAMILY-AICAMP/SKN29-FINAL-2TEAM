@@ -150,6 +150,23 @@ EXPECTED_INDEXES: list[tuple[str, str, str]] = [
     ),
 ]
 
+EXPECTED_NONUNIQUE_INDEXES: list[tuple[str, str, str]] = [
+    (
+        "chunk",
+        "idx_chunk_search_text_fts",
+        "2026-08-28 문서 검색 PostgreSQL 전문검색 인덱스",
+    ),
+    (
+        "chunk",
+        "idx_chunk_search_text_trgm",
+        "2026-08-28 문서 검색 부분어절 인덱스",
+    ),
+]
+
+EXPECTED_EXTENSIONS: list[tuple[str, str]] = [
+    ("pg_trgm", "2026-08-28 문서 검색 부분어절 유사도"),
+]
+
 EXPECTED_CONSTRAINTS: list[tuple[str, str, str]] = [
     (
         "skill_eval_regression_case",
@@ -327,6 +344,36 @@ def check(url: str) -> int:
             if not cursor.fetchone()[0]:
                 missing.append((table, index, why))
 
+        for table, index, why in EXPECTED_NONUNIQUE_INDEXES:
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM pg_class AS index_class
+                      JOIN pg_index AS index_meta
+                        ON index_class.oid = index_meta.indexrelid
+                      JOIN pg_class AS table_class
+                        ON table_class.oid = index_meta.indrelid
+                      JOIN pg_namespace AS namespace
+                        ON namespace.oid = table_class.relnamespace
+                     WHERE namespace.nspname = 'public'
+                       AND table_class.relname = %s
+                       AND index_class.relname = %s
+                )
+                """,
+                (table, index),
+            )
+            if not cursor.fetchone()[0]:
+                missing.append((table, index, why))
+
+        for extension, why in EXPECTED_EXTENSIONS:
+            cursor.execute(
+                "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = %s)",
+                (extension,),
+            )
+            if not cursor.fetchone()[0]:
+                missing.append((extension, None, why))
+
         for table, constraint, why in EXPECTED_CONSTRAINTS:
             cursor.execute(
                 """SELECT EXISTS (
@@ -370,7 +417,8 @@ def check(url: str) -> int:
     name_of = lambda t, c: t if c is None else f"{t}.{c}"  # noqa: E731
     print(f"대상 DB: {_target(url)}")
     checked = (
-        len(EXPECTED) + len(EXPECTED_INDEXES) + len(EXPECTED_CONSTRAINTS)
+        len(EXPECTED) + len(EXPECTED_INDEXES) + len(EXPECTED_NONUNIQUE_INDEXES)
+        + len(EXPECTED_EXTENSIONS) + len(EXPECTED_CONSTRAINTS)
         + len(EXPECTED_COLUMN_TYPES) + len(EXPECTED_DEFAULTS)
     )
     print(

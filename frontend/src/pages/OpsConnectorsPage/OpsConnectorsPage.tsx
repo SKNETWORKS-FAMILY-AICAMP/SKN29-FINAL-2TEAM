@@ -102,13 +102,13 @@ export default function OpsConnectorsPage() {
   const countByType = (type: string) => all.filter((c) => c.connector_type === type).length;
   const countByStatus = (list: OpsConnector[], status: string) => list.filter((c) => c.auth_status === status).length;
   const summaryDetail = (list: OpsConnector[]) =>
-    `정상 ${countByStatus(list, 'CONNECTED')} · 만료 ${countByStatus(list, 'EXPIRED')} · 오류 ${countByStatus(list, 'ERROR')}`;
+    `연결 ${countByStatus(list, 'CONNECTED')} · 만료 ${countByStatus(list, 'EXPIRED')} · 오류 ${countByStatus(list, 'ERROR')} · 해제 ${countByStatus(list, 'REVOKED')}`;
 
   if (all.length === 0) {
     return (
       <div className={styles.page}>
         <OpsPageHeader title="연결 서비스 현황" />
-        <p className={styles.inlineEmpty}>연결된 서비스가 없습니다.</p>
+        <div className={styles.pageEmptyState}>연결된 서비스가 없습니다.</div>
       </div>
     );
   }
@@ -147,6 +147,7 @@ export default function OpsConnectorsPage() {
           <option>연결됨</option>
           <option>만료됨</option>
           <option>오류</option>
+          <option>해제됨</option>
         </select>
       </OpsFilterBar>
 
@@ -157,7 +158,7 @@ export default function OpsConnectorsPage() {
             <th>소유 계정</th>
             <th>연결 팀·조직</th>
             <th>상태</th>
-            <th>최근 확인</th>
+            <th>연결 시각</th>
             <th>진단</th>
             <th>작업</th>
           </tr>

@@ -97,9 +97,6 @@ export default function OpsTeamsPage() {
     return (
       <div className={styles.page}>
         <OpsPageHeader title={TITLE} />
-        <div className={styles.notice}>
-          팀은 팀장이 온보딩에서 직접 만듭니다. 운영자가 만들지 않습니다.
-        </div>
         <p className={styles.inlineEmpty}>아직 만들어진 팀이 없습니다.</p>
       </div>
     );
@@ -109,12 +106,10 @@ export default function OpsTeamsPage() {
     <div className={styles.page}>
       <OpsPageHeader title={TITLE} />
 
-      <div className={styles.notice}>
-        팀은 HR 조직과 다릅니다. 회사 전체가 아니라 그 안의 그룹이 플랫폼을 쓰므로, 팀장이
-        온보딩에서 직접 만든 팀이 사용 단위입니다. 팀 {totals.teams}개 · 가입 계정{' '}
-        {totals.accounts}개
+      <p className={styles.resultSummary}>
+        팀 {totals.teams}개 · 가입 계정 {totals.accounts}개
         {totals.review > 0 ? ` · 확인 필요 ${totals.review}개 팀` : ' · 확인 필요 없음'}
-      </div>
+      </p>
 
       <OpsFilterBar>
         <OpsSearchField value={query} onChange={setQuery} placeholder="팀 이름, 팀장 이메일, 출처 조직 검색" />
@@ -164,7 +159,7 @@ export default function OpsTeamsPage() {
                     navigate(`/ops/teams/${team.team_id}`);
                   }}
                 >
-                  상세 보기
+                  상세
                 </button>
               </td>
             </tr>

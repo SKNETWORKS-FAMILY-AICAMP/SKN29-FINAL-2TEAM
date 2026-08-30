@@ -29,16 +29,30 @@ function actorLabel(activity: OpsOverview['recent_activity'][number]) {
   return activity.actor_display_name ?? activity.actor_email ?? '시스템';
 }
 
+function num(value: number): string {
+  return value.toLocaleString('ko-KR');
+}
+
 function buildActionItems(data: OpsOverview): ActionItem[] {
   const items: ActionItem[] = [];
 
-  if (data.accounts.needs_review > 0) {
+  if (data.accounts.locked > 0) {
     items.push({
       tone: 'danger',
       badge: '확인',
-      title: `확인 필요 계정 ${data.accounts.needs_review}건`,
-      to: '/ops/accounts',
+      title: `잠긴 계정 ${data.accounts.locked}건`,
+      to: '/ops/accounts?status=LOCKED',
       actionLabel: '계정 보기',
+    });
+  }
+
+  if (data.accounts.duplicate_mapping > 0) {
+    items.push({
+      tone: 'danger',
+      badge: '확인',
+      title: `중복 직원 매핑 ${data.accounts.duplicate_mapping}건`,
+      to: '/ops/accounts?mapping=DUPLICATE',
+      actionLabel: '매핑 보기',
     });
   }
 
@@ -121,8 +135,9 @@ export default function OpsOverviewPage() {
   if (!data) return null;
 
   const actionItems = buildActionItems(data);
-  const accountOkRatio = pct(data.accounts.total - data.accounts.needs_review, data.accounts.total);
-  const accountReviewRatio = pct(data.accounts.needs_review, data.accounts.total);
+  const accountActiveRatio = pct(data.accounts.active, data.accounts.total);
+  const accountLockedRatio = pct(data.accounts.locked, data.accounts.total);
+  const accountWithdrawnRatio = pct(data.accounts.withdrawn, data.accounts.total);
 
   return (
     <div className={styles.page}>
@@ -130,32 +145,50 @@ export default function OpsOverviewPage() {
         title="운영 현황"
       />
 
+      <section className={[styles.panel, styles.attentionPanel].join(' ')}>
+        <h2>운영 점검 항목 · {actionItems.length}개</h2>
+        {actionItems.length > 0 ? (
+          <div className={styles.actionList}>
+            {actionItems.map((item) => (
+              <div key={item.title} className={[styles.actionItem, styles[`action_${item.tone}`]].join(' ')}>
+                <OpsStatusBadge tone={item.tone}>{item.badge}</OpsStatusBadge>
+                <div className={styles.actionCopy}>
+                  <strong>{item.title}</strong>
+                </div>
+                <button type="button" className={styles.outlineAction} onClick={() => navigate(item.to)}>
+                  {item.actionLabel}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
       <OpsSummaryGrid>
         <OpsSummaryCard
-          label="사용 중인 팀"
+          label="등록된 팀"
           value={data.team_count}
-          detail="플랫폼을 쓰는 단위"
           onClick={() => navigate('/ops/teams')}
         />
         <OpsSummaryCard
           label="전체 계정"
           value={data.accounts.total}
-          detail={`정상 ${data.accounts.total - data.accounts.needs_review} · 확인 필요 ${data.accounts.needs_review}`}
-          tone={data.accounts.needs_review > 0 ? 'danger' : 'success'}
+          detail={`활성 ${data.accounts.active} · 잠김 ${data.accounts.locked} · 탈퇴 ${data.accounts.withdrawn}`}
+          tone={data.accounts.locked > 0 ? 'danger' : 'neutral'}
           onClick={() => navigate('/ops/accounts')}
         />
         <OpsSummaryCard
-          label="연결 확인 필요"
+          label="외부 연결 확인 필요"
           value={data.connectors.expired + data.connectors.error}
-          detail={`확인 필요 ${data.connectors.expired} · 오류 ${data.connectors.error}`}
-          tone={data.connectors.expired + data.connectors.error > 0 ? 'warning' : 'success'}
+          detail={`만료 ${data.connectors.expired} · 오류 ${data.connectors.error}`}
+          tone={data.connectors.expired + data.connectors.error > 0 ? 'warning' : 'neutral'}
           onClick={() => navigate('/ops/connectors')}
         />
         <OpsSummaryCard
           label="수락 대기 초대"
           value={data.invites.pending}
           detail={`오늘 만료 예정 ${data.invites.expiring_today}개`}
-          tone={data.invites.expiring_today > 0 ? 'info' : 'success'}
+          tone={data.invites.expiring_today > 0 ? 'info' : 'neutral'}
           onClick={() => navigate('/ops/mappings')}
         />
       </OpsSummaryGrid>
@@ -171,86 +204,100 @@ export default function OpsOverviewPage() {
             <>
               <div
                 className={styles.stackedBar}
-                aria-label={`정상 계정 ${data.accounts.total - data.accounts.needs_review}개, 확인 필요 계정 ${data.accounts.needs_review}개`}
+                aria-label={`활성 계정 ${data.accounts.active}개, 잠김 계정 ${data.accounts.locked}개, 탈퇴 계정 ${data.accounts.withdrawn}개`}
               >
-                <span className={styles.barSuccess} style={{ width: `${accountOkRatio}%` }} />
-                <span className={styles.barDanger} style={{ width: `${accountReviewRatio}%` }} />
+                <span className={styles.barSuccess} style={{ width: `${accountActiveRatio}%` }} />
+                <span className={styles.barDanger} style={{ width: `${accountLockedRatio}%` }} />
+                <span className={styles.barNeutral} style={{ width: `${accountWithdrawnRatio}%` }} />
               </div>
               <div className={styles.legend}>
-                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=정상')}>
-                  <span className={styles.successText}>● 정상 {data.accounts.total - data.accounts.needs_review}개</span>
+                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=ACTIVE')}>
+                  <span className={styles.successText}>● 활성 {data.accounts.active}개</span>
                 </button>
-                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=확인 필요')}>
-                  <span className={styles.dangerText}>● 확인 필요 {data.accounts.needs_review}개</span>
+                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=LOCKED')}>
+                  <span className={styles.dangerText}>● 잠김 {data.accounts.locked}개</span>
+                </button>
+                <button type="button" className={styles.statusLink} onClick={() => navigate('/ops/accounts?status=WITHDRAWN')}>
+                  <span className={styles.neutralText}>● 탈퇴 {data.accounts.withdrawn}개</span>
                 </button>
               </div>
-              <p className={styles.panelSubtitle}>상태를 누르면 계정 관리의 해당 목록으로 이동합니다.</p>
             </>
           ) : (
             <p className={styles.inlineEmpty}>등록된 계정이 없습니다.</p>
           )}
         </section>
 
-        <section className={styles.panel}>
+        <section className={[styles.panel, styles.statusPanel].join(' ')}>
           <h2>연결 서비스 상태</h2>
-          <p className={styles.panelSubtitle}>플랫폼 연결 {data.connectors.total}개의 최근 확인 결과</p>
           {data.connectors.total > 0 ? (
-            <div className={styles.barRows}>
-              {(
-                [
-                  ['연결됨', data.connectors.connected, styles.barSuccess, styles.successText],
-                  ['확인 필요', data.connectors.expired, styles.barWarning, styles.warningText],
-                  ['오류', data.connectors.error, styles.barDanger, styles.dangerText],
-                ] as const
-              ).map(([label, count, barClass, textClass]) => (
-                <button
-                  type="button"
-                  className={[styles.barRow, styles.barRowButton].join(' ')}
-                  key={label}
-                  onClick={() => navigate(`/ops/connectors?status=${encodeURIComponent(label)}`)}
-                >
-                  <span>{label}</span>
-                  <div className={styles.barTrack}>
-                    <span className={barClass} style={{ width: `${pct(count, data.connectors.total)}%` }} />
-                  </div>
-                  <strong className={textClass}>{count}</strong>
-                </button>
-              ))}
-            </div>
+            <>
+              <p className={styles.panelSubtitle}>외부 연결 {data.connectors.total}개</p>
+              <div className={styles.barRows}>
+                {(
+                  [
+                    ['연결됨', data.connectors.connected, styles.barSuccess, styles.successText],
+                    ['만료됨', data.connectors.expired, styles.barWarning, styles.warningText],
+                    ['오류', data.connectors.error, styles.barDanger, styles.dangerText],
+                    ['해제됨', data.connectors.revoked, styles.barNeutral, styles.neutralText],
+                  ] as const
+                ).map(([label, count, barClass, textClass]) => (
+                  <button
+                    type="button"
+                    className={[styles.barRow, styles.barRowButton].join(' ')}
+                    key={label}
+                    onClick={() => navigate(`/ops/connectors?status=${encodeURIComponent(label)}`)}
+                  >
+                    <span>{label}</span>
+                    <div className={styles.barTrack}>
+                      <span className={barClass} style={{ width: `${pct(count, data.connectors.total)}%` }} />
+                    </div>
+                    <strong className={textClass}>{count}</strong>
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
-            <p className={styles.inlineEmpty}>연결된 서비스가 없습니다.</p>
+            <p className={[styles.inlineEmpty, styles.overviewEmpty].join(' ')}>연결된 서비스가 없습니다.</p>
           )}
         </section>
       </div>
 
       <div className={styles.overviewBottom}>
-        <section className={styles.panel}>
-          <h2>오늘 확인할 일 · {actionItems.length}건</h2>
-          <p className={styles.panelSubtitle}>관련 화면에서 원인과 현재 상태를 확인하세요.</p>
-          {actionItems.length > 0 ? (
-            <div className={styles.actionList}>
-              {actionItems.map((item) => (
-                <div key={item.title} className={[styles.actionItem, styles[`action_${item.tone}`]].join(' ')}>
-                  <OpsStatusBadge tone={item.tone}>{item.badge}</OpsStatusBadge>
-                  <div className={styles.actionCopy}>
-                    <strong>{item.title}</strong>
-                  </div>
-                  <button type="button" className={styles.outlineAction} onClick={() => navigate(item.to)}>
-                    {item.actionLabel}
-                  </button>
-                </div>
-              ))}
+        <section className={[styles.panel, styles.bottomPanel].join(' ')}>
+          <h2>최근 {data.runtime.window_days}일 사용 현황</h2>
+          <div className={styles.usagePanelBody}>
+            <div className={styles.usageMetrics}>
+              <div className={styles.usageMetric}>
+                <span>AI 실행</span>
+                <strong>{num(data.runtime.runs)}건</strong>
+                <small>실패 {num(data.runtime.runs_failed)}건</small>
+              </div>
+              <div className={styles.usageMetric}>
+                <span>측정된 토큰</span>
+                <strong>{num(data.runtime.token_in + data.runtime.token_out)}</strong>
+                <small>
+                  {data.runtime.runs_without_tokens > 0
+                    ? `미측정 실행 ${num(data.runtime.runs_without_tokens)}건`
+                    : '모든 실행 측정됨'}
+                </small>
+              </div>
+              <div className={styles.usageMetric}>
+                <span>완료된 도구 호출</span>
+                <strong>{num(data.runtime.tool_calls_completed)}회</strong>
+                <small>실패 {num(data.runtime.tool_calls_failed)}회</small>
+              </div>
             </div>
-          ) : (
-            <p className={styles.inlineEmpty}>확인이 필요한 항목이 없습니다.</p>
-          )}
+          </div>
+          <button type="button" className={styles.linkAction} onClick={() => navigate('/ops/usage')}>
+            사용 현황에서 상세 보기 →
+          </button>
         </section>
 
-        <section className={styles.panel}>
+        <section className={[styles.panel, styles.bottomPanel].join(' ')}>
           <h2>최근 운영 활동</h2>
           {data.recent_activity.length > 0 ? (
             <div className={styles.activityList}>
-              {data.recent_activity.map((activity) => (
+              {data.recent_activity.slice(0, 3).map((activity) => (
                 <div className={styles.activityItem} key={activity.audit_id}>
                   <span className={styles.activityDot} />
                   <strong>{actorLabel(activity)} · {actionLabel(activity.action)}</strong>

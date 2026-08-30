@@ -27,27 +27,27 @@ context:
 source_binding_policy: EXISTING_REPOSITORY_PDF
 source_artifacts:
   - source_id: PDF-SOW
-    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_고도화_과업지시서.pdf
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_고도화_과업지시서.pdf
     mime_type: application/pdf
-    sha256: 8b9beb7b5581400be918063a3b4359f865459422d6afc6170fd9702621105ffe
+    sha256: 9933053a2a4a747f416ca87ffedf9bd1c1fea7c3b7030906ef9afd0866ea6d2b
     document_date: 2026-08-28
     relevant_pages: [4, 5, 7]
   - source_id: PDF-REQ
-    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_요구사항정의서.pdf
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_요구사항정의서.pdf
     mime_type: application/pdf
-    sha256: 44d063a5431518fcad27d6743bd8cbd588ae436ee43ac0910b092e8189f7040e
+    sha256: 3f7598b372e8ab7d99166f577ad32572403852801cc5769cb22d443addda88d0
     document_date: 2026-08-29
     relevant_pages: [5]
   - source_id: PDF-WBS
-    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_WBS_마일스톤.pdf
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_WBS_마일스톤.pdf
     mime_type: application/pdf
-    sha256: d3a7fcd899d6c66e2b3ea029cc5b3feb1907e30a77cf20741326bedf0859758d
+    sha256: dcfd65666426a033250c5389c0fe4cf525b7464a76a3c8a198d93f913984ea1c
     document_date: 2026-08-30
     relevant_pages: [4, 5]
   - source_id: PDF-MIN
-    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_기술검토회의록.pdf
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_기술검토회의록.pdf
     mime_type: application/pdf
-    sha256: 7c2f5a5e7cae22e774b2536a84ba2823a50c0b81b4500930c91c332c1acf273b
+    sha256: 808d169acd4d02e79f9b6af31166aaf09349c3c2260e45a6e9baecd47ab297de
     document_date: 2026-08-31
     latest_event_date: 2026-08-26
     relevant_pages: [5, 6]

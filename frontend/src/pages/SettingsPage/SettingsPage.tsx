@@ -62,7 +62,9 @@ export default function SettingsPage() {
           ))}
         </nav>
 
-        <div className={styles.tabPanel}>{renderTab()}</div>
+        <div className={styles.tabPanel}>
+          <div key={location.pathname} className={styles.tabPanelContent}>{renderTab()}</div>
+        </div>
       </div>
     </AppShell>
   );

@@ -8,6 +8,8 @@ documents/   문서 원본(HTML)과 PDF 생성기
   pdf/       Drive 에 올릴 PDF 8종
 golden/
   retrieval.json         질의 37개와 각 정답의 앵커 문장   ← 이 세트의 중심
+  document_search_hybrid_legacy.json
+                         하이브리드 가중치 선택 당시 사용한 14질의 감사용 세트
   tasks.json             부록. 아래 「범위」 참고
   tasks_groupware.json   부록
 retrieval_eval.py        측정 하네스

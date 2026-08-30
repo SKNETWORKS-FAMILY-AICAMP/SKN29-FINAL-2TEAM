@@ -50,6 +50,10 @@
   color: inherit;
   font: inherit;
   text-align: left;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
 button.summaryCard {
@@ -59,6 +63,7 @@ button.summaryCard {
 button.summaryCard:hover {
   border-color: rgba(30, 58, 95, 0.32);
   box-shadow: var(--shadow-lift);
+  transform: translateY(-1px);
 }
 
 .summaryCard strong {
@@ -157,6 +162,31 @@ button.summaryCard:hover {
   color: var(--color-body);
   font: inherit;
   font-size: 13px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+  background-color 140ms ease;
+}
+
+.filterBar select {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+.filterBar select:hover,
+.filterBar input:not([type='search']):hover {
+  border-color: rgba(30, 58, 95, 0.34);
+}
+
+.filterBar select:focus,
+.filterBar input:not([type='search']):focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .searchField {
@@ -230,6 +260,7 @@ button.summaryCard:hover {
 
 .tableWrap tbody tr {
   cursor: pointer;
+  transition: background-color 120ms ease;
 }
 
 .tableWrap tbody tr:hover {
@@ -256,6 +287,28 @@ button.summaryCard:hover {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.tableWrap button[data-button] {
+  min-width: 58px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.tableWrap button[data-button]:hover {
+  border-color: rgba(30, 58, 95, 0.35);
+  background: var(--color-primary-soft);
 }
 
 .detailPanel,
@@ -297,6 +350,14 @@ button.summaryCard:hover {
   color: var(--color-muted);
   font-size: 13px;
   text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summaryCard,
+  .tableWrap tbody tr,
+  .tableWrap button[data-button] {
+    transition: none;
+  }
 }
 
 @media (max-width: 1100px) {

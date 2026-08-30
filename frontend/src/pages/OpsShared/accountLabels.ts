@@ -10,7 +10,7 @@ import type { OpsMappingStatus } from '../../api/opsAccounts';
  */
 
 const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: '정상',
+  ACTIVE: '활성',
   LOCKED: '잠김',
   WITHDRAWN: '탈퇴',
 };

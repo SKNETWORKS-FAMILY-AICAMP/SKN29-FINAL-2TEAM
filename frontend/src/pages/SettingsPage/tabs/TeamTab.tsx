@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
@@ -10,6 +10,7 @@ import {
   AvatarPicker,
   PasswordChangeCard,
   SkillList,
+  skillCategoryLabel,
   useToast,
 } from '../../../components';
 import type { BadgeTone } from '../../../components';
@@ -40,6 +41,7 @@ const INVITE_STATUS_TONE: Record<InviteStatus, BadgeTone> = {
 };
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' });
+const SKILL_PREVIEW_LIMIT = 6;
 
 /**
  * 설정 > 팀.
@@ -64,14 +66,18 @@ export function TeamTab() {
    */
   const [peopleConnected, setPeopleConnected] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
 
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(isLeader);
   const [memberError, setMemberError] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [candidates, setCandidates] = useState<InviteCandidate[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState<IssuedInvite | null>(null);
+  const [skillsModalOpen, setSkillsModalOpen] = useState(false);
+  const [skillCategory, setSkillCategory] = useState('ALL');
 
   // 명부가 주인공이다. 초대는 각 팀원의 계정 상태로 붙는다 — 초대 목록을 따로
   // 받지 않는다. 팀원에게는 명부 구획 자체가 없으므로 부르지 않는다.
@@ -79,6 +85,7 @@ export function TeamTab() {
     if (!isLeader) return;
     if (!token) {
       setMemberError('로그인해야 팀원 목록을 볼 수 있습니다.');
+      setMembersLoading(false);
       return;
     }
     try {
@@ -86,6 +93,8 @@ export function TeamTab() {
       setMemberError('');
     } catch (error) {
       setMemberError(error instanceof ApiError ? error.message : '팀원 목록을 불러오지 못했습니다.');
+    } finally {
+      setMembersLoading(false);
     }
   }, [token, isLeader]);
 
@@ -105,13 +114,38 @@ export function TeamTab() {
 
   // 이름·부서·직책과 기술 스택은 전부 HR에서 온다. 우리가 저장하는 값이 아니다.
   const reloadAccount = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setAccountLoading(false);
+      return;
+    }
     try {
       setAccount(await fetchCurrentAccount(token));
     } catch {
       // 프로필을 못 읽어도 나머지 구획은 보여준다.
+    } finally {
+      setAccountLoading(false);
     }
   }, [token]);
+
+  const accountSkills = account?.skills ?? [];
+  const skillCategories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          accountSkills
+            .map((skill) => skill.category)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
+    [accountSkills],
+  );
+  const filteredSkills = useMemo(
+    () =>
+      skillCategory === 'ALL'
+        ? accountSkills
+        : accountSkills.filter((skill) => skill.category === skillCategory),
+    [accountSkills, skillCategory],
+  );
 
   useEffect(() => {
     void reloadAccount();
@@ -194,18 +228,24 @@ export function TeamTab() {
             <h2>내 프로필</h2>
           </div>
 
-          <div className={styles.identityRow}>
-            <AvatarPicker
-              token={token}
-              name={account?.person?.name ?? account?.display_name ?? ''}
-              hasAvatar={account?.has_avatar ?? false}
-              onChanged={() => void reloadAccount()}
-              onError={(message) => showToast(message, 'error')}
-            />
-            <div className={styles.identityText}>
-              <span className={styles.identityName}>
-                {account?.person?.name ?? account?.display_name ?? '-'}
-              </span>
+          {accountLoading ? (
+            <div className={styles.profileLoading} role="status" aria-label="프로필을 불러오는 중">
+              <span className={styles.loadingAvatar} />
+              <span className={styles.loadingLines}><i /><i /></span>
+            </div>
+          ) : (
+            <div className={styles.identityRow}>
+              <AvatarPicker
+                token={token}
+                name={account?.person?.name ?? account?.display_name ?? ''}
+                hasAvatar={account?.has_avatar ?? false}
+                onChanged={() => void reloadAccount()}
+                onError={(message) => showToast(message, 'error')}
+              />
+              <div className={styles.identityText}>
+                <span className={styles.identityName}>
+                  {account?.person?.name ?? account?.display_name ?? '-'}
+                </span>
               {/* **빈 값은 빈 값 자리에서 말한다.** 노란 경고 바를 카드 한가운데
                   끼워 넣었더니 프로필 안에 오류가 난 것처럼 보였다(2026-08-12).
                   부서·직책이 들어올 자리가 비어 있는 것이므로 그 줄에서 이유를
@@ -214,30 +254,55 @@ export function TeamTab() {
                   **원인을 짐작해서 말하지 않는다.** 예전에는 「회사 이메일로
                   가입했는지 확인해 주세요」라고 이메일을 탓했는데, 연결을 아직
                   안 했을 때도 똑같이 떴다 — 그때는 이메일 문제가 아니다. */}
-              <span className={styles.identityMeta}>
-                {account?.person
-                  ? [account.person.org_name, account.person.job_role].filter(Boolean).join(' · ') || '-'
-                  : peopleConnected
-                    ? '인사 시스템에서 찾지 못했습니다. 가입한 이메일이 회사 이메일과 같은지 확인해 주세요'
-                    : '인사 시스템을 연결하면 부서와 직책이 채워집니다'}
-              </span>
+                <span className={styles.identityMeta}>
+                  {account?.person
+                    ? [account.person.org_name, account.person.job_role].filter(Boolean).join(' · ') || '-'
+                    : peopleConnected
+                      ? '인사 시스템에서 찾지 못했습니다. 가입한 이메일이 회사 이메일과 같은지 확인해 주세요'
+                      : '인사 시스템을 연결하면 부서와 직책이 채워집니다'}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
-          <p className={styles.subheading}>계정 정보</p>
-          <div className={styles.accountRow}>
-            <Input label="이메일" type="email" value={account?.email ?? ''} readOnly disabled />
-            <Input label="표시 이름" value={account?.display_name ?? ''} readOnly disabled />
-          </div>
+          {!accountLoading && (
+            <>
+              <p className={styles.subheading}>계정 정보</p>
+              <div className={styles.accountRow}>
+                <Input label="이메일" type="email" value={account?.email ?? ''} readOnly disabled />
+                <Input label="표시 이름" value={account?.display_name ?? ''} readOnly disabled />
+              </div>
+            </>
+          )}
         </Card>
       </section>
 
       <section id="skills" className={styles.sectionBlock}>
         <Card padding="lg">
-          <div className={styles.sectionHeading}>
-            <h2>기술 스택</h2>
+          <div className={styles.sectionHeadingRow}>
+            <div className={styles.sectionHeading}>
+              <h2>기술 스택</h2>
+            </div>
+            {!accountLoading && accountSkills.length > SKILL_PREVIEW_LIMIT && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSkillCategory('ALL');
+                  setSkillsModalOpen(true);
+                }}
+              >
+                전체 {accountSkills.length}개 보기
+              </Button>
+            )}
           </div>
-          <SkillList skills={account?.skills ?? []} />
+          {accountLoading ? (
+            <div className={styles.skillLoading} role="status" aria-label="기술 스택을 불러오는 중">
+              <span /><span /><span />
+            </div>
+          ) : (
+            <SkillList skills={accountSkills.slice(0, SKILL_PREVIEW_LIMIT)} />
+          )}
         </Card>
       </section>
 
@@ -286,11 +351,12 @@ export function TeamTab() {
                 <span>초대</span>
                 <span />
               </div>
-              {memberError && <p className={styles.emptyNote}>{memberError}</p>}
-              {!memberError && members.length === 0 && (
+              {membersLoading && <p className={styles.emptyNote}>팀원 목록을 불러오는 중…</p>}
+              {!membersLoading && memberError && <p className={styles.emptyNote}>{memberError}</p>}
+              {!membersLoading && !memberError && members.length === 0 && (
                 <p className={styles.emptyNote}>아직 팀원이 없습니다.</p>
               )}
-              {members.map((member) => (
+              {!membersLoading && members.map((member) => (
                 <div key={member.team_member_id} className={styles.teamTableRow}>
                   <span className={styles.memberName}>
                     {member.name ?? member.person_id}
@@ -346,6 +412,33 @@ export function TeamTab() {
           </Card>
         </section>
       )}
+
+      <Modal
+        open={skillsModalOpen}
+        onClose={() => setSkillsModalOpen(false)}
+        title={`기술 스택 전체 ${accountSkills.length}개`}
+        width={680}
+        footer={<Button variant="primary" onClick={() => setSkillsModalOpen(false)}>닫기</Button>}
+      >
+        <div className={styles.skillModal}>
+          {skillCategories.length > 1 && (
+            <label className={styles.skillCategoryFilter}>
+              <span>분류</span>
+              <Select
+                size="sm"
+                aria-label="기술 스택 분류"
+                value={skillCategory}
+                onChange={(event) => setSkillCategory(event.target.value)}
+                options={[
+                  { value: 'ALL', label: '전체 분류' },
+                  ...skillCategories.map((category) => ({ value: category, label: skillCategoryLabel(category) })),
+                ]}
+              />
+            </label>
+          )}
+          <SkillList skills={filteredSkills} emptyText="선택한 분류의 기술 스택이 없습니다." />
+        </div>
+      </Modal>
 
       <Modal
         open={inviteModalOpen}

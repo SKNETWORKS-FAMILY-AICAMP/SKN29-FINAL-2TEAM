@@ -50,7 +50,7 @@ class DocumentP1Tests(SimpleTestCase):
     def test_real_korean_pdf_text_and_tables_are_extracted(self):
         path = (
             Path(__file__).parent
-            / "eval/documents/pdf/한빛몰_주문정산_요구사항정의서.pdf"
+            / "eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_요구사항정의서.pdf"
         )
         result = read_document(data=path.read_bytes(), mime_type=PDF_MIME)
 
@@ -67,7 +67,7 @@ class DocumentP1Tests(SimpleTestCase):
         self.assertIn("## 업무", xlsx_markdown)
 
     def test_pdf_comparison_detects_text_change(self):
-        base = Path(__file__).parent / "eval/documents/pdf"
+        base = Path(__file__).parent / "eval/documents/pdf/P1_한빛몰_주문정산_고도화"
         result = compare_files(
             before=(base / "한빛몰_주문정산_요구사항정의서.pdf").read_bytes(),
             after=(base / "한빛몰_주문정산_기술검토회의록.pdf").read_bytes(),

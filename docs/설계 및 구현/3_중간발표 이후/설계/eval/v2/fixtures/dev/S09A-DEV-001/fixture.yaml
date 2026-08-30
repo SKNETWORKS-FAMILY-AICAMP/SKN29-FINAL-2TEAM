@@ -23,9 +23,9 @@ context:
 source_binding_policy: EXISTING_REPOSITORY_PDF
 source_artifacts:
   - source_id: PDF-IMPROVEMENT
-    repo_path: tests/eval/documents/pdf/한빛리테일_사내그룹웨어_개선요청_접수내역.pdf
+    repo_path: tests/eval/documents/pdf/P2_한빛리테일_사내그룹웨어/한빛리테일_사내그룹웨어_개선요청_접수내역.pdf
     mime_type: application/pdf
-    sha256: 6b5be4b0455cf11689a1f369b59abff7e6251f266ef9e66727729a05615c15e6
+    sha256: 2ff69353e963fa70945ed17fecf933b0d4abad8f1841783624639a5f79b58a2a
     document_date: 2026-08-25
     relevant_pages: [1, 2]
 

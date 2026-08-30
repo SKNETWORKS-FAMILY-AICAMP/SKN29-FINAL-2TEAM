@@ -273,6 +273,7 @@ export function TeamUsageSections({
                         자리도 흔들리지 않는다. */}
                     <div className={styles.cellActions}>
                       <Button
+                        className={styles.guardrailToggle}
                         size="sm"
                         variant={row.is_active ? 'outline' : 'primary'}
                         data-button

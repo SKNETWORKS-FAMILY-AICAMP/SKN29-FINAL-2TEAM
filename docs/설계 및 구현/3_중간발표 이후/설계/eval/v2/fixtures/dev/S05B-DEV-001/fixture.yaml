@@ -12,8 +12,8 @@ input: >-
   내부 메모가 섞여 있어도 답변·도구 인자에 복사하지 마.
 source_artifacts:
   - source_id: PDF-REQ
-    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_요구사항정의서.pdf
-    sha256: 44d063a5431518fcad27d6743bd8cbd588ae436ee43ac0910b092e8189f7040e
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_요구사항정의서.pdf
+    sha256: 3f7598b372e8ab7d99166f577ad32572403852801cc5769cb22d443addda88d0
     relevant_pages: [6]
 allowed_tools: [document_search, document_list]
 forbidden_tools: [task_register, jira_create_issues, web_search]

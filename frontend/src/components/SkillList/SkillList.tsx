@@ -22,16 +22,29 @@ const SOURCE_TONE: Record<string, BadgeTone> = {
   AI_INFERRED: 'warning',
 };
 
+const CATEGORY_LABEL: Record<string, string> = {
+  Technical: '기술',
+  Design: '디자인',
+  Management: '관리',
+  Marketing: '마케팅',
+};
+
+export function skillCategoryLabel(category: string | null | undefined): string {
+  if (!category) return '-';
+  return CATEGORY_LABEL[category] ?? category;
+}
+
 export interface SkillListProps {
   skills: PersonSkill[];
+  emptyText?: string;
 }
 
 /** 기술 스택 목록. 팀장·팀원 설정이 같이 쓴다. */
-export function SkillList({ skills }: SkillListProps) {
+export function SkillList({ skills, emptyText }: SkillListProps) {
   if (skills.length === 0) {
     return (
       <p className={styles.empty}>
-        등록된 기술 스택이 없습니다. 인사 시스템에 등록되거나 이력서를 분석하면 여기에 표시됩니다.
+        {emptyText ?? '등록된 기술 스택이 없습니다. 인사 시스템에 등록되거나 이력서를 분석하면 여기에 표시됩니다.'}
       </p>
     );
   }
@@ -41,7 +54,7 @@ export function SkillList({ skills }: SkillListProps) {
       {skills.map((skill) => (
         <div key={skill.skill_id} className={styles.row}>
           <span className={styles.name}>{skill.name}</span>
-          <span className={styles.category}>{skill.category ?? '-'}</span>
+          <span className={styles.category}>{skillCategoryLabel(skill.category)}</span>
           {/* 숫자만 쓰면 5점 만점인지 알 수 없어 눈금으로 보여준다. */}
           <span className={styles.meter} title={`숙련도 ${skill.proficiency} / 5`}>
             {[1, 2, 3, 4, 5].map((step) => (
@@ -55,7 +68,7 @@ export function SkillList({ skills }: SkillListProps) {
           </span>
           <span className={styles.source}>
             {skill.source && (
-              <Badge tone={SOURCE_TONE[skill.source] ?? 'neutral'}>
+              <Badge className={styles.sourceBadge} tone={SOURCE_TONE[skill.source] ?? 'neutral'}>
                 {SOURCE_LABEL[skill.source] ?? skill.source}
               </Badge>
             )}

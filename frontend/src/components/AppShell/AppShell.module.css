@@ -291,6 +291,7 @@
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-8) var(--space-10) var(--space-12);
+  animation: user-page-enter 160ms ease-out both;
 }
 
 /* Chat처럼 자체 레이아웃을 쓰는 화면 — 여백 없이 남은 높이를 그대로 준다. */
@@ -300,6 +301,18 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  animation: user-page-enter 160ms ease-out both;
+}
+
+@keyframes user-page-enter {
+  from {
+    opacity: 0.72;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---------------- 좁은 화면 ---------------- */
@@ -395,6 +408,11 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar {
     transition: none;
+  }
+
+  .content,
+  .contentFlush {
+    animation: none;
   }
 
   .logo,

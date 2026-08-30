@@ -309,6 +309,29 @@ class ListTests(SimpleTestCase):
         self.assertEqual(body["index_status"], "FAILED")
         self.assertEqual(body["index_detail"], "암호가 걸린 PDF 라 열 수 없습니다.")
 
+    def test_기존_실패행의_내부_URL은_API에_노출하지_않는다(self, repo):
+        repo.list_for_account.return_value = [
+            {
+                "doc_id": "DC010", "file_name": "계약서.pdf", "mime_type": "application/pdf",
+                "search_enabled": True, "search_ready": False,
+                "index_status": "FAILED",
+                "index_detail": (
+                    "HTTPSConnectionPool(host='internal.example', port=443): "
+                    "Max retries exceeded with url: /documents/1?token=secret-value"
+                ),
+                "src_modified_at": None, "shared_team_id": None, "owner_name": None,
+            }
+        ]
+
+        body = self.client.get("/api/me/files/", headers=auth_header()).json()[0]
+
+        self.assertEqual(
+            body["index_detail"],
+            "문서 처리 서버에 연결하지 못했습니다. 잠시 후 다시 읽어 주세요.",
+        )
+        self.assertNotIn("internal.example", body["index_detail"])
+        self.assertNotIn("secret-value", body["index_detail"])
+
     def test_states_are_not_collapsed(self, repo):
         """「아직 차례가 안 왔다」·「읽는 중」·「실패」·「색인됨」은 사람이 할
         행동이 각각 다르다."""

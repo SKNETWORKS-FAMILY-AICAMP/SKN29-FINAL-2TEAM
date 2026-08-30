@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button,
+  Modal,
   OpsDataTable,
-  OpsDetailPanel,
   OpsFilterBar,
   OpsPageHeader,
   OpsSearchField,
@@ -11,10 +11,12 @@ import {
 import { fetchOperationLogs } from '../../api/opsAudit';
 import type { OpsOperationLog } from '../../api/opsAudit';
 import { ApiError } from '../../api/client';
-import { actionLabel } from '../../utils/auditActions';
+import { actionLabel, isAuthenticationAction } from '../../utils/auditActions';
 import { loadOpsSession } from '../../utils/opsSession';
 import { timeAgo } from '../../utils/relativeTime';
 import styles from '../OpsShared/OpsPages.module.css';
+
+const PAGE_SIZE = 25;
 
 /**
  * 감사 로그 — **누가 무엇을 했는가.**
@@ -51,12 +53,15 @@ function downloadCsv(filename: string, headers: string[], rows: string[][]) {
 
 export default function OpsAuditPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [logs, setLogs] = useState<OpsOperationLog[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('전체');
+  const [categoryFilter, setCategoryFilter] = useState(searchParams.get('view') === 'operations' ? '운영 변경' : '전체');
   const [selectedId, setSelectedId] = useState('');
+  const [page, setPage] = useState(1);
 
   async function load() {
     const session = loadOpsSession();
@@ -85,7 +90,11 @@ export default function OpsAuditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const actions = useMemo(() => [...new Set((logs ?? []).map((row) => row.action))], [logs]);
+  const actions = useMemo(() => [...new Set((logs ?? [])
+    .filter((row) => categoryFilter === '전체'
+      || (categoryFilter === '운영 변경' && !isAuthenticationAction(row.action))
+      || (categoryFilter === '로그인·인증' && isAuthenticationAction(row.action)))
+    .map((row) => row.action))], [categoryFilter, logs]);
 
   const filtered = useMemo(() => {
     const all = logs ?? [];
@@ -98,11 +107,21 @@ export default function OpsAuditPage() {
         row.target_type ?? '',
       ].some((value) => value.toLowerCase().includes(normalized));
       const matchesAction = actionFilter === '전체' || row.action === actionFilter;
-      return matchesQuery && matchesAction;
+      const isAuthentication = isAuthenticationAction(row.action);
+      const matchesCategory = categoryFilter === '전체'
+        || (categoryFilter === '운영 변경' && !isAuthentication)
+        || (categoryFilter === '로그인·인증' && isAuthentication);
+      return matchesQuery && matchesAction && matchesCategory;
     });
-  }, [logs, query, actionFilter]);
+  }, [logs, query, actionFilter, categoryFilter]);
 
-  const selected = filtered.find((row) => row.audit_id === selectedId) ?? filtered[0] ?? null;
+  const selected = filtered.find((row) => row.audit_id === selectedId) ?? null;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   const header = (
     <OpsPageHeader
@@ -154,8 +173,35 @@ export default function OpsAuditPage() {
       {header}
 
       <OpsFilterBar>
-        <OpsSearchField value={query} onChange={setQuery} placeholder="수행자 또는 대상 검색" />
-        <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} aria-label="작업 종류">
+        <OpsSearchField
+          value={query}
+          onChange={(value) => {
+            setQuery(value);
+            setPage(1);
+          }}
+          placeholder="수행자 또는 대상 검색"
+        />
+        <select
+          value={categoryFilter}
+          onChange={(e) => {
+            setCategoryFilter(e.target.value);
+            setActionFilter('전체');
+            setPage(1);
+          }}
+          aria-label="기록 구분"
+        >
+          <option>전체</option>
+          <option>운영 변경</option>
+          <option>로그인·인증</option>
+        </select>
+        <select
+          value={actionFilter}
+          onChange={(e) => {
+            setActionFilter(e.target.value);
+            setPage(1);
+          }}
+          aria-label="작업 종류"
+        >
           <option>전체</option>
           {/* 보이는 것은 한글 라벨, 고르는 값은 원본 코드다 — 라벨을 값으로 쓰면
               표의 `action` 과 안 맞아 아무것도 안 걸린다. */}
@@ -164,14 +210,16 @@ export default function OpsAuditPage() {
         <Button variant="outline" onClick={exportRows}>현재 목록 내보내기</Button>
       </OpsFilterBar>
 
-      <p className={styles.resultSummary}>현재 {filtered.length}건 표시 · 전체 기록 {all.length}건</p>
+      <p className={styles.resultSummary}>
+        필터 결과 {filtered.length}건 · 최근 기록 {all.length === 200 ? '최대 200건' : `${all.length}건`}
+      </p>
 
       <OpsDataTable minWidth={1100}>
         <thead>
           <tr><th>시각</th><th>수행자</th><th>작업</th><th>대상</th></tr>
         </thead>
         <tbody>
-          {filtered.length > 0 ? filtered.map((row) => (
+          {pageRows.length > 0 ? pageRows.map((row) => (
             <tr
               key={row.audit_id}
               aria-selected={selected?.audit_id === row.audit_id}
@@ -186,17 +234,57 @@ export default function OpsAuditPage() {
         </tbody>
       </OpsDataTable>
 
-      {selected ? (
-        <OpsDetailPanel title={`선택 기록 · ${actionLabel(selected.action)}`}>
-          <p className={styles.detailText}>
-            수행자 {selected.actor_display_name ?? selected.actor_email ?? '알 수 없음'} ·
-            {' '}{new Date(selected.occurred_at).toLocaleString('ko-KR')}
-          </p>
-          <p className={styles.detailText}>
-            {hasContent(selected.payload) ? JSON.stringify(selected.payload) : '추가 정보 없음'}
-          </p>
-        </OpsDetailPanel>
-      ) : <div className={styles.inlineEmpty}>검색 조건을 변경하면 기록 상세를 확인할 수 있습니다.</div>}
+      {filtered.length > PAGE_SIZE && (
+        <div className={styles.pager} aria-label="감사 로그 페이지 이동">
+          <span className={styles.pagerInfo}>
+            {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} / {filtered.length}건
+          </span>
+          <div className={styles.pagerActions}>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+              이전
+            </Button>
+            <span className={styles.pagerInfo}>{currentPage} / {totalPages} 페이지</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
+              다음
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Modal
+        open={selected !== null}
+        onClose={() => setSelectedId('')}
+        title={selected ? actionLabel(selected.action) : '감사 기록 상세'}
+        width={680}
+        footer={<Button variant="secondary" onClick={() => setSelectedId('')}>닫기</Button>}
+      >
+        {selected && (
+          <>
+            <dl className={styles.policyMetadata}>
+              <div>
+                <dt>수행자</dt>
+                <dd>{selected.actor_display_name ?? selected.actor_email ?? '알 수 없음'}</dd>
+              </div>
+              <div>
+                <dt>시각</dt>
+                <dd>{new Date(selected.occurred_at).toLocaleString('ko-KR')}</dd>
+              </div>
+              <div>
+                <dt>대상</dt>
+                <dd className={styles.targetValue}>
+                  {selected.target_type ? <span className={styles.targetType}>{selected.target_type}</span> : '-'}
+                  {selected.target_id && <span className={styles.targetId}>{selected.target_id}</span>}
+                </dd>
+              </div>
+            </dl>
+            {hasContent(selected.payload) ? (
+              <pre className={styles.jsonBlock}>{JSON.stringify(selected.payload, null, 2)}</pre>
+            ) : (
+              <p className={[styles.inlineEmpty, styles.payloadEmpty].join(' ')}>추가 정보가 없습니다.</p>
+            )}
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

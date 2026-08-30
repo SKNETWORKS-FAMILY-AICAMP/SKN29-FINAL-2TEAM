@@ -907,6 +907,90 @@
   margin-bottom: var(--space-5);
 }
 
+.profileLoading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 68px;
+  margin-bottom: var(--space-5);
+}
+
+.loadingAvatar,
+.loadingLines i,
+.skillLoading span {
+  display: block;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--color-bg) 25%, var(--color-border) 50%, var(--color-bg) 75%);
+  background-size: 200% 100%;
+  animation: settings-loading 1.2s ease-in-out infinite;
+}
+
+.loadingAvatar {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.loadingLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 9px;
+  max-width: 260px;
+}
+
+.loadingLines i {
+  height: 13px;
+}
+
+.loadingLines i:last-child {
+  width: 68%;
+}
+
+.skillLoading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 122px;
+  padding-block: 6px;
+}
+
+.skillLoading span {
+  height: 30px;
+}
+
+.skillModal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+}
+
+.skillCategoryFilter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@keyframes settings-loading {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingAvatar,
+  .loadingLines i,
+  .skillLoading span {
+    animation: none;
+  }
+}
+
 .identityText {
   display: flex;
   flex-direction: column;

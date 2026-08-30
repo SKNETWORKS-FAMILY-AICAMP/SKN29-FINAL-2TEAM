@@ -40,7 +40,7 @@ export { AvatarPicker } from './AvatarPicker/AvatarPicker';
 export type { AvatarPickerProps } from './AvatarPicker/AvatarPicker';
 export { PasswordChangeCard } from './PasswordChangeCard/PasswordChangeCard';
 export type { PasswordChangeCardProps } from './PasswordChangeCard/PasswordChangeCard';
-export { SkillList } from './SkillList/SkillList';
+export { SkillList, skillCategoryLabel } from './SkillList/SkillList';
 export type { SkillListProps } from './SkillList/SkillList';
 
 export { AppShell } from './AppShell/AppShell';

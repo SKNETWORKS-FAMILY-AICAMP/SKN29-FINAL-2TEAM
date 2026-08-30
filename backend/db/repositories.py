@@ -3040,21 +3040,61 @@ class OpsOverviewRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
-                    WITH {_DUP_ACCOUNTS_CTE}
+                    WITH {_DUP_ACCOUNTS_CTE},
+                    runtime_runs AS (
+                        SELECT
+                            count(*) AS runs,
+                            count(*) FILTER (WHERE status = 'FAILED') AS runs_failed,
+                            COALESCE(sum(token_in), 0) AS token_in,
+                            COALESCE(sum(token_out), 0) AS token_out,
+                            count(*) FILTER (WHERE token_in IS NULL) AS runs_without_tokens
+                        FROM agent_run
+                        WHERE started_at >= now() - interval '30 days'
+                    ),
+                    runtime_tools AS (
+                        SELECT
+                            count(*) FILTER (WHERE tc.status IN ('OK', 'FAILED')) AS calls_completed,
+                            count(*) FILTER (WHERE tc.status = 'FAILED') AS calls_failed
+                        FROM tool_call AS tc
+                        JOIN agent_run AS r ON r.run_id = tc.run_id
+                        WHERE r.started_at >= now() - interval '30 days'
+                    )
                     SELECT
                         (SELECT count(*) FROM team) AS team_total,
                         (SELECT count(*) FROM user_account) AS account_total,
+                        (SELECT count(*) FROM user_account WHERE account_status = 'ACTIVE') AS account_active,
                         (SELECT count(*) FROM user_account WHERE account_status = 'LOCKED') AS account_locked,
+                        (SELECT count(*) FROM user_account WHERE account_status = 'WITHDRAWN') AS account_withdrawn,
                         (SELECT count(*) FROM dup_accounts) AS account_duplicate_mapping,
                         (
                             SELECT count(*) FROM user_account ua
                             WHERE ua.account_status = 'LOCKED'
                                OR ua.account_id IN (SELECT account_id FROM dup_accounts)
                         ) AS account_needs_review,
-                        (SELECT count(*) FROM connector_conn) AS connector_total,
-                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'CONNECTED') AS connector_connected,
-                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'EXPIRED') AS connector_expired,
-                        (SELECT count(*) FROM connector_conn WHERE auth_status = 'ERROR') AS connector_error,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                        ) AS connector_total,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'CONNECTED'
+                        ) AS connector_connected,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'EXPIRED'
+                        ) AS connector_expired,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'ERROR'
+                        ) AS connector_error,
+                        (
+                            SELECT count(*) FROM connector_conn
+                            WHERE connector_type IN ('GOOGLE_DRIVE', 'JIRA')
+                              AND auth_status = 'REVOKED'
+                        ) AS connector_revoked,
                         (
                             SELECT count(*) FROM member_invite
                             WHERE status = 'PENDING' AND expires_at > now()
@@ -3063,7 +3103,14 @@ class OpsOverviewRepository:
                             SELECT count(*) FROM member_invite
                             WHERE status = 'PENDING' AND expires_at > now()
                               AND expires_at::date = CURRENT_DATE
-                        ) AS invite_expiring_today
+                        ) AS invite_expiring_today,
+                        (SELECT runs FROM runtime_runs) AS runtime_runs,
+                        (SELECT runs_failed FROM runtime_runs) AS runtime_runs_failed,
+                        (SELECT token_in FROM runtime_runs) AS runtime_token_in,
+                        (SELECT token_out FROM runtime_runs) AS runtime_token_out,
+                        (SELECT runs_without_tokens FROM runtime_runs) AS runtime_runs_without_tokens,
+                        (SELECT calls_completed FROM runtime_tools) AS runtime_tool_calls_completed,
+                        (SELECT calls_failed FROM runtime_tools) AS runtime_tool_calls_failed
                     """
                 )
                 totals = cursor.fetchone()
@@ -3075,6 +3122,7 @@ class OpsOverviewRepository:
                         ua.display_name AS actor_display_name, ua.email AS actor_email
                     FROM audit_log AS al
                     LEFT JOIN user_account AS ua ON ua.account_id = al.actor_account_id
+                    WHERE al.action NOT IN ('LOGIN', 'OPS_LOGIN', 'OPS_LOGOUT', 'SIGNUP', 'PASSWORD_RESET', 'PASSWORD_CHANGE')
                     ORDER BY al.occurred_at DESC
                     LIMIT 5
                     """
@@ -3086,7 +3134,9 @@ class OpsOverviewRepository:
             "org_count": hr.count_orgs(),
             "accounts": {
                 "total": totals["account_total"],
+                "active": totals["account_active"],
                 "locked": totals["account_locked"],
+                "withdrawn": totals["account_withdrawn"],
                 "duplicate_mapping": totals["account_duplicate_mapping"],
                 "needs_review": totals["account_needs_review"],
             },
@@ -3095,10 +3145,21 @@ class OpsOverviewRepository:
                 "connected": totals["connector_connected"],
                 "expired": totals["connector_expired"],
                 "error": totals["connector_error"],
+                "revoked": totals["connector_revoked"],
             },
             "invites": {
                 "pending": totals["invite_pending"],
                 "expiring_today": totals["invite_expiring_today"],
+            },
+            "runtime": {
+                "window_days": 30,
+                "runs": totals["runtime_runs"],
+                "runs_failed": totals["runtime_runs_failed"],
+                "token_in": totals["runtime_token_in"],
+                "token_out": totals["runtime_token_out"],
+                "runs_without_tokens": totals["runtime_runs_without_tokens"],
+                "tool_calls_completed": totals["runtime_tool_calls_completed"],
+                "tool_calls_failed": totals["runtime_tool_calls_failed"],
             },
             "recent_activity": recent_activity,
         }
