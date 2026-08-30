@@ -4,7 +4,7 @@ Queue-based RunPod Serverless worker for PDF/DOCX/Markdown parsing,
 structure-preserving chunking, and `google/embeddinggemma-300m` CUDA embeddings.
 
 `SUPPORTED_MIME_TYPES` in `pipeline.py` is the authoritative list. `text/plain`
-maps to `.md` on purpose: docling 2.117 has no plain-text `InputFormat`, and
+maps to `.md` on purpose: Docling has no plain-text `InputFormat`, and
 plain text is valid Markdown, so the MD backend reads it as paragraphs. That
 list must stay in sync with `_UPLOAD_TYPES` in `backend/services/storage.py` —
 otherwise users can upload files the worker cannot index
@@ -13,31 +13,42 @@ otherwise users can upload files the worker cannot index
 **Changing `pipeline.py` does nothing until the image is rebuilt and the RunPod
 endpoint points at the new tag.**
 
-Before chunking, `density_heading_correction.py` promotes `text`/`list_item`
-elements that the layout model misclassified back to `section_header` — short,
-large-font, well-spaced-above, densely-followed-below items — and rewrites
-them in place on the parsed `DoclingDocument` so chunking sees the corrected
-structure. `promoted_heading_count` in the result's `validation` block reports
-how many were promoted.
+Before chunking, the worker now applies the final parsing layers in this order:
 
-PDF picture description, chart extraction, and picture classification killed
-whole documents in two measured ways. `do_chart_extraction` makes
-`StandardPdfPipeline.__init__` load Granite Vision V4 onto the GPU, where
-EmbeddingGemma, layout, TableFormer and EasyOCR already sit; it runs out of
-memory and dies before reading a single page (`NVML_SUCCESS == r INTERNAL
-ASSERT FAILED`, 14 jobs on 2026-08-25). Separately, a page that fails
-preprocessing is dropped from `conv_res.pages` while enrichment still indexes
-that list by the element's original page number, so a PDF with a broken page
-died with `IndexError: list index out of range`.
+1. Docling 2.119: Heron, selective EasyOCR, TableFormer ACCURATE/cell matching,
+   picture classification, and heading hierarchy.
+2. `reading_order_postprocess/`: only validated same-parent adjacent inversions.
+3. `density_heading_correction.py`: corrected-order density; only plain `text`
+   is auto-promoted. Density-only `list_item` candidates remain shadow-only.
+4. `table_gate.py`: remove only the frozen high-precision non-table patterns.
+5. `context_picture_description.py`: run Qwen after structural correction so
+   captions, section path, and sibling context reflect the final order. Picture
+   elements are inferred in batches of 4.
+6. `picture_description_serializer.py`: serialize a `PictureItem` as the
+   accepted `meta.description.text` only. Caption, classification, other picture
+   metadata, placeholders, and adjacent body text are excluded. Picture chunks
+   remain merge boundaries even when `merge_peers=true`; non-picture chunks
+   retain Docling's normal merge and contextualization behavior.
 
-`_convert` retries once with those three options off. docling guards the chart
-model's import and construction behind `if do_chart_extraction:`, so the retry
-provably avoids the GPU load. It is PDF-only, happens once, and re-raises if it
-also fails, so the real reason still reaches the user. Documents rescued this
-way carry `validation.enrichment_disabled = true` and have no chart or image
-descriptions. The GPU case recurs for every document on that worker, costing a
-doomed ~7s first attempt each time — sizing the GPU up, or turning enrichment
-off outright, is the real cure.
+The complete audit is returned under `validation.final_parse`. Existing
+`validation.promoted_heading_count` remains for backward compatibility.
+
+The first Docling pass does not load built-in picture description or Granite
+chart extraction. It creates embedded crops and classifications only. The
+converter cache is released before Qwen is loaded. If first-stage picture
+classification fails, PDF conversion is retried once without classification.
+If the optional Qwen stage fails, the corrected structured document is kept
+and the exact failure is written to the picture audit; document indexing does
+not fail only because an image description failed.
+
+A picture with no accepted description emits no picture text chunk. For a
+described picture, the embedding input is the description itself rather than
+`HybridChunker.contextualize()`, so headings are not prepended to image text.
+
+Runtime pins are `docling[easyocr,vlm]==2.119.0`, `transformers==5.8.0`, and
+`sentence-transformers==6.0.0`.
+Rebuild the image; changing this read-only repository copy alone does not update
+the separately deployed production Worker.
 
 Required environment:
 

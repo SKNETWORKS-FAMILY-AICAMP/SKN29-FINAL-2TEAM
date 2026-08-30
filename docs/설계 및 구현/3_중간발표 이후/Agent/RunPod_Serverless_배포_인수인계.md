@@ -88,6 +88,11 @@ SKN29-RUNPOD-WORKER/
 ├─ Dockerfile
 ├─ handler.py
 ├─ pipeline.py
+├─ density_heading_correction.py
+├─ table_gate.py
+├─ context_picture_description.py
+├─ picture_description_serializer.py
+├─ reading_order_postprocess/
 ├─ requirements.txt
 └─ README.md
 ```
@@ -105,7 +110,7 @@ SKN29-RUNPOD-WORKER/
 ### 5.1 Worker 저장소 생성 및 업로드
 
 1. GitHub에 `SKN29-RUNPOD-WORKER` 비공개 저장소를 만들었다.
-2. 통합 프로젝트의 `runpod_worker` 파일 5개를 저장소 루트에 배치했다.
+2. 최초 배포 당시 통합 프로젝트의 `runpod_worker` 파일 5개를 저장소 루트에 배치했다.
 3. 최초 Worker 코드를 `main`에 올렸다.
 4. RunPod가 저장소를 읽을 수 있도록 GitHub 연결을 승인했다.
 
@@ -189,8 +194,16 @@ COPY . .
 CMD ["python3", "handler.py"]
 ```
 
-주요 Python 의존성은 `runpod`, `docling==2.117.0`, `transformers`,
-`sentence-transformers`, `torch`, `requests`, `python-dotenv`다.
+주요 Python 의존성은 `runpod`, `docling[easyocr,vlm]==2.119.0`,
+`transformers==5.8.0`,
+`sentence-transformers==6.0.0`, `torch`, `requests`, `python-dotenv`다.
+
+> **2026-08-30 최종 파싱 보완 반영.** Docker image에는
+> `reading_order_postprocess/`, `table_gate.py`,
+> `context_picture_description.py`가 함께 들어가야 한다. 내장 Granite chart
+> extraction과 변환 중 picture description은 꺼져 있고, 구조 보완 뒤 Qwen 설명
+> 단계가 `VLM batch=4`로 별도 실행된다. 상세 계약은
+> `최종_파싱_보완_병합_구현명세.md`를 본다.
 
 ### 5.5 Worker action
 
@@ -533,20 +546,37 @@ Vector 전체를 콘솔이나 로그에 출력할 필요는 없다.
 Worker 코드를 수정할 때는 다음 순서를 사용한다.
 
 1. 비밀값이 포함되지 않았는지 확인한다.
-2. 기능 브랜치에 변경을 commit/push한다.
-3. RunPod Endpoint가 감시하는 브랜치를 확인한다.
-4. 새 build가 `Succeeded`인지 확인한다.
-5. Endpoint 상태가 `Ready`가 될 때까지 기다린다.
-6. `embed_queries` smoke test로 CUDA·모델·768차원을 확인한다.
-7. PDF 또는 DOCX의 `process_document` E2E를 별도로 확인한다.
-8. 실패하면 Build log와 Worker log를 구분해서 확인한다.
+2. 통합 저장소의 변경을 실제 `SKN29-RUNPOD-WORKER` Docker build context에 동기화한다.
+3. `linux/amd64` 이미지를 새 불변 tag로 build한다. `latest`를 재사용하지 않는다.
+4. `somber7/skn29-runpod-worker:<새-tag>`를 registry에 push한다.
+5. RunPod Console의 Serverless template에서 Container Image를 새 tag로 바꾼다.
+   template 변경은 연결된 Endpoint의 rolling release를 일으킨다.
+6. Endpoint `SKN29-RUNPOD-WORKER-IMG`의 `Manage → Edit Endpoint`에서 아래 값을 확인한다.
+   - Endpoint type: Queue 유지
+   - GPU count: 1
+   - VLM batch 4 첫 검증: 48 GB GPU를 최우선으로 사용하고 24 GB fallback은 OOM
+     실측 전에는 제외
+   - CUDA: 12.8 이상 허용
+   - Active workers: 0 유지(시연 시 cold start 제거가 필요하면 일시적으로 1)
+   - Max workers: 1 유지
+   - Idle timeout: 300초 유지
+   - Execution timeout: 1,800초 유지
+   - FlashBoot: 활성 유지
+7. Environment Variables/Secrets의 `HF_TOKEN`, `EMBEDDING_MODEL`,
+   `EMBEDDING_DEVICE`를 확인한다. 값이 같으면 다시 만들 필요는 없다.
+8. 저장 후 기존 worker가 `Outdated`에서 교체되고 새 worker가 `Ready`가 되는지 확인한다.
+9. `embed_queries` smoke test로 CUDA·모델·768차원을 확인한다.
+10. text PDF, scan PDF, table PDF, picture PDF의 `process_document` E2E를 확인한다.
+11. picture PDF에서는 `validation.final_parse.picture_description.described_count`,
+    VLM batch 4, peak VRAM, container disk, 처리 시간을 확인한다. 반환된 picture
+    chunk의 `text`는 VLM description만 포함하고 `source_refs`는 해당 picture ref
+    하나만 포함하는지 확인한다.
+12. 실패하면 image pull/build 문제와 Worker runtime/model 문제의 로그를 나눠 확인한다.
 
-현재는 feature branch 배포 상태이므로 팀 합의 후 다음 중 하나를 선택해야 한다.
-
-- 수정 브랜치를 `main`에 병합하고 RunPod 배포 브랜치를 `main`으로 변경한다.
-- 당분간 수정 브랜치를 배포 기준으로 유지한다.
-
-이 선택은 아직 수행하지 않았다.
+원문 crop은 Django가 보관한 원본에서 응답 시점에 만들므로 RunPod Network Volume은
+필수가 아니다. Network Volume 또는 Cached Model은 모델 cold start 완화용 선택 사항이다.
+현재 custom Worker는 cached-model 경로를 직접 resolve하지 않으므로 Console의 Model
+필드만 채우는 것으로는 충분하지 않다.
 
 ## 13. 장애 확인표
 

@@ -11,12 +11,15 @@ from django.test import SimpleTestCase, override_settings
 from apps.accounts.tokens import issue_token
 from runpod_worker.pipeline import (
     ChunkValidationError,
+    _apply_final_parse_layers,
     _convert,
     _has_text_layer,
     _generic_row_records,
     _product_records,
     _screen_oversized,
 )
+from runpod_worker.density_heading_correction import compute_density_features
+from runpod_worker.table_gate import gate_tableitem
 from services.document_pipeline.errors import PipelineConfigurationError, RunPodRequestError
 from services.document_pipeline.signing import read_download_token, signed_download_url
 
@@ -142,6 +145,86 @@ class TableChunkingTests(SimpleTestCase):
         rows = _generic_row_records(source, 0)
         self.assertEqual(len(rows), 1)
         self.assertIn("요구사항: 로그인", rows[0]["text"])
+
+
+class FinalParseLayerTests(SimpleTestCase):
+    """The four correction layers keep their validated execution order."""
+
+    def test_layers_run_reading_heading_table_then_picture(self):
+        calls = []
+        original = Mock(name="original", pictures=[])
+        corrected = Mock(name="corrected", pictures=[])
+        result = Mock(document=original)
+
+        def reading(document, policy):
+            calls.append(("reading_order", document, policy))
+            return corrected, {"outcome": "PRESERVED", "applied_count": 0}
+
+        def heading(conversion_result):
+            calls.append(("heading", conversion_result.document))
+            return {"candidate_count": 1, "applied_count": 0}
+
+        def table_gate(document):
+            calls.append(("table_gate", document))
+            return {"table_count_before": 0, "table_count_after": 0}
+
+        with patch("runpod_worker.pipeline.postprocess_docling_document", side_effect=reading), patch(
+            "runpod_worker.pipeline.promote_headings_by_density", side_effect=heading
+        ), patch("runpod_worker.pipeline.apply_table_gate", side_effect=table_gate):
+            audit = _apply_final_parse_layers(result, picture_enabled=False)
+
+        self.assertEqual([entry[0] for entry in calls], ["reading_order", "heading", "table_gate"])
+        self.assertIs(result.document, corrected)
+        self.assertEqual(audit["stage_order"], [
+            "docling", "reading_order", "heading", "table_gate", "picture_description"
+        ])
+        self.assertEqual(
+            audit["picture_description"]["failure_reason"],
+            "FIRST_STAGE_CLASSIFICATION_DISABLED",
+        )
+
+    def test_density_uses_corrected_reading_order_not_vertical_order(self):
+        def item(ref, text_length, reading_order_index, top):
+            return {
+                "self_ref": ref, "label": "text", "is_candidate": True,
+                "text_length": text_length, "page_no": 1,
+                "l": 10.0, "t": top, "r": 100.0, "b": top + 10.0,
+                "height": 10.0, "reading_order_index": reading_order_index,
+            }
+
+        # Coordinate order is A-B-C, corrected reading order is B-C-A.
+        values = [
+            item("A", 100, 2, 10.0),
+            item("B", 10, 0, 30.0),
+            item("C", 30, 1, 50.0),
+        ]
+        result = compute_density_features(values, density_window_items=1)
+        by_ref = {value["self_ref"]: value for value in result}
+
+        self.assertEqual(by_ref["B"]["density_above"], 0.0)
+        self.assertEqual(by_ref["B"]["density_below"], 30.0)
+        self.assertEqual(by_ref["C"]["density_above"], 10.0)
+        self.assertEqual(by_ref["C"]["density_below"], 100.0)
+
+    def test_table_gate_rejects_dot_leader_toc_and_passes_normal_table(self):
+        def source(text):
+            return {
+                "data": {
+                    "num_rows": 1, "num_cols": 1,
+                    "table_cells": [{
+                        "text": text,
+                        "start_row_offset_idx": 0, "end_row_offset_idx": 1,
+                        "start_col_offset_idx": 0, "end_col_offset_idx": 1,
+                    }],
+                },
+                "prov": [{"bbox": {"l": 0, "r": 300, "t": 100, "b": 0}}],
+            }
+
+        rejected = gate_tableitem(source("Appendix ........ 12"))
+        passed = gate_tableitem(source("압력 10 bar"))
+
+        self.assertEqual((rejected["decision"], rejected["reason"]), ("REJECT", "DOT_LEADER_TOC"))
+        self.assertEqual(passed["decision"], "PASS")
 
 
 class SigningTests(SimpleTestCase):

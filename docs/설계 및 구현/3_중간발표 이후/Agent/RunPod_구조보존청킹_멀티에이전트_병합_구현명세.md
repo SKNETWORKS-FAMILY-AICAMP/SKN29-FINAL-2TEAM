@@ -1,5 +1,11 @@
 # RunPod 구조 보존 청킹·pgvector·멀티에이전트 병합 구현 명세
 
+> **2026-08-30 현재 파싱 구현 정정.** 이 문서의 2026-08-04 병합 이력과
+> Backend/청킹/EmbeddingGemma 계약은 유효하다. 다만 Docling 파싱 앞단은 이후
+> `Reading Order → Density Heading → Table gate → 문맥 기반 Picture Description`
+> 순서로 보강됐고, Docling은 2.119.0으로 올라갔다. 현재 파싱 파라미터와 변경 파일,
+> DB·RunPod 영향은 같은 폴더의 `최종_파싱_보완_병합_구현명세.md`가 정본이다.
+
 ## 1. 문서 목적과 기준
 
 이 문서는 기존 `SKN29-FINAL-2TEAM` 프로젝트를 그대로 복사한

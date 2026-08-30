@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import gc
 import hashlib
 import os
 from pathlib import Path
@@ -16,10 +17,18 @@ try:
     # handler.py"로 실행되므로, 실행 스크립트의 디렉터리가 sys.path[0]이라
     # 같은 폴더 기준 import가 된다.
     from density_heading_correction import promote_headings_by_density
+    from reading_order_postprocess.worker_reading_order_adapter import (
+        postprocess_docling_document,
+    )
+    from table_gate import apply_table_gate
 except ModuleNotFoundError:
     # 저장소 루트 테스트: "from runpod_worker.pipeline import ..."로 이 모듈이
     # 패키지 하위 모듈로 임포트되면 위 경로는 안 잡힌다.
     from runpod_worker.density_heading_correction import promote_headings_by_density
+    from runpod_worker.reading_order_postprocess.worker_reading_order_adapter import (
+        postprocess_docling_document,
+    )
+    from runpod_worker.table_gate import apply_table_gate
 
 
 CONTROL_PATTERN = re.compile(r"<end_of_(?:utterance|turn|text)?[^>\s]*>?", re.I)
@@ -122,6 +131,7 @@ def _has_text_layer(path: Path) -> bool:
 
 @lru_cache(maxsize=4)
 def converter(use_ocr: bool = True, enrich: bool = True):
+    from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.image_classification_engine_options import (
         TransformersImageClassificationEngineOptions,
@@ -131,55 +141,74 @@ def converter(use_ocr: bool = True, enrich: bool = True):
         DocumentPictureClassifierOptions,
         EasyOcrOptions,
         HeadingHierarchyOptions,
+        LayoutOptions,
         OcrMode,
         PdfPipelineOptions,
+        TableFormerMode,
+        TableStructureOptions,
     )
+    from docling.datamodel.layout_model_specs import DOCLING_LAYOUT_HERON
     from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption
 
-    # ⚠ 아래 이미지 계열 셋은 **워커 디스크를 많이 쓴다.** Docling 이 Granite Vision
-    # 차트 모델과 이미지 설명 VLM 을 런타임에 HuggingFace 에서 내려받는데, 수 GB다.
-    # 2026-08-04 기본 디스크로 DOCX 한 건을 돌렸다가 파싱 전에 죽었다:
-    #
-    #   OSError: I/O error: No space left on device (os error 28)
-    #     └ docling/models/stages/chart_extraction/granite_vision.py
-    #
-    # Endpoint 의 Container Disk 를 키워서 해결했다. 워커를 새로 만들 때 이 값을
-    # 줄이면 같은 곳에서 다시 죽는다.
-    #
-    # Dockerfile 이 모델을 굽지 않고 Cached model 에도 없어서, **최소 Worker 0 이면
-    # 워커가 새로 뜰 때마다 다시 받는다**(Idle timeout 300초). 콜드 스타트를 줄이려면
-    # Network Volume 에 HF 캐시를 두거나 이미지에 구워야 한다.
+    # 첫 변환에서는 분류와 crop만 만든다. 설명 VLM은 reading-order/heading/table
+    # 보완이 끝난 JSON을 다시 읽는 후단에서 실행한다. 그래야 보정된 sibling과
+    # section path가 이미지 문맥에 반영되고 Granite chart model과 중복 적재되지 않는다.
     classifier = DocumentPictureClassifierOptions(
         engine_options=TransformersImageClassificationEngineOptions(compile_model=False)
     )
     # `force_backend_text=True` 로도 OCR 결과가 본문을 덮었다. 그래서 텍스트
     # 레이어가 있는 PDF 는 아예 OCR 을 끈다 — 판정은 `_has_text_layer` 가 한다.
     #
-    # `enrich=False` 는 이 셋을 한꺼번에 끈다 — 깨진 페이지를 가진 PDF 를
-    # 살리는 유일한 길이다. `_convert` 의 주석에 이유가 있다.
+    # `enrich=False` 는 깨진 페이지를 가진 PDF 재시도에서 1차 분류 모델을
+    # 건너뛴다. 설명과 차트 추출은 항상 끄고 후처리 계층이 담당한다.
     pdf = PdfPipelineOptions(
+        accelerator_options=AcceleratorOptions(
+            device=AcceleratorDevice.CUDA, num_threads=4
+        ),
+        layout_options=LayoutOptions(model_spec=DOCLING_LAYOUT_HERON),
         do_picture_classification=enrich,
         picture_classification_options=classifier,
-        do_picture_description=enrich,
-        do_chart_extraction=enrich,
+        do_picture_description=False,
+        do_chart_extraction=False,
+        do_table_structure=True,
+        table_structure_options=TableStructureOptions(
+            mode=TableFormerMode.ACCURATE,
+            do_cell_matching=True,
+        ),
         force_backend_text=True,
-        images_scale=1.0,
+        images_scale=2.0,
         do_ocr=use_ocr,
         ocr_options=EasyOcrOptions(
-            lang=["ko", "en"], mode=OcrMode.LAYOUT_REGIONS, force_full_page_ocr=False
+            lang=["ko", "en"],
+            mode=OcrMode.LAYOUT_REGIONS,
+            force_full_page_ocr=False,
+            scale=3.0,
+            confidence_threshold=0.35,
         ),
-        heading_hierarchy_options=HeadingHierarchyOptions(enabled=True),
+        heading_hierarchy_options=HeadingHierarchyOptions(
+            enabled=True,
+            max_level=6,
+            use_bookmarks=True,
+            bookmark_match_threshold=0.8,
+            use_numbering=True,
+            use_style=True,
+        ),
         # density_heading_correction이 backend/OCR cell(parsed_page.textline_cells)로
         # 실측 글자 높이를 재려면 필수 — 없으면 item bbox 전체 높이로 대체돼 여러 줄
         # 문단에서 부풀려진다. heading_hierarchy_options.use_style(글꼴 기반 제목 깊이
         # 추론)도 이 옵션 없이는 조용히 생략된다.
         generate_parsed_pages=True,
+        generate_page_images=True,
+        generate_picture_images=True,
+        ocr_batch_size=1,
+        layout_batch_size=1,
+        table_batch_size=1,
     )
     docx = ConvertPipelineOptions(
         do_picture_classification=enrich,
         picture_classification_options=classifier,
-        do_picture_description=enrich,
-        do_chart_extraction=enrich,
+        do_picture_description=False,
+        do_chart_extraction=False,
     )
     # MD 에는 `format_options` 를 안 준다 — 기본 백엔드가 마크다운을 그대로 읽고,
     # 위 옵션들은 전부 PDF·DOCX 의 이미지·차트·OCR 설정이라 줄 것이 없다.
@@ -398,16 +427,31 @@ def _document_order(raw: dict[str, Any]) -> dict[str, int]:
 
 
 def _chunk_document(document: Any, max_tokens: int, merge_peers: bool) -> tuple[list[dict], list[dict]]:
-    from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
     from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+
+    try:
+        from picture_description_serializer import (
+            DescriptionOnlyHybridChunker,
+            DescriptionOnlySerializerProvider,
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name != "picture_description_serializer":
+            raise
+        from runpod_worker.picture_description_serializer import (
+            DescriptionOnlyHybridChunker,
+            DescriptionOnlySerializerProvider,
+        )
 
     model = embedding_model()
     raw = _model_dict(document)
     order = _document_order(raw)
     table_refs = _table_refs(raw)
     token_counter = HuggingFaceTokenizer(tokenizer=model.tokenizer, max_tokens=max_tokens)
-    hybrid = HybridChunker(
-        tokenizer=token_counter, max_tokens=max_tokens, merge_peers=merge_peers
+    hybrid = DescriptionOnlyHybridChunker(
+        tokenizer=token_counter,
+        max_tokens=max_tokens,
+        merge_peers=merge_peers,
+        serializer_provider=DescriptionOnlySerializerProvider(),
     )
 
     # 원본 문서를 그대로 청킹하고 표에서 나온 청크만 뒤에서 걸러낸다(2026-08-04).
@@ -425,7 +469,13 @@ def _chunk_document(document: Any, max_tokens: int, merge_peers: bool) -> tuple[
     for item in hybrid.chunk(dl_doc=document):
         meta = _model_dict(getattr(item, "meta", None))
         refs = [str(x["self_ref"]) for x in meta.get("doc_items") or [] if x.get("self_ref")]
-        text = CONTROL_PATTERN.sub("", hybrid.contextualize(chunk=item)).strip()
+        is_picture_chunk = any(ref.startswith("#/pictures/") for ref in refs)
+        serialized = (
+            str(getattr(item, "text", ""))
+            if is_picture_chunk
+            else hybrid.contextualize(chunk=item)
+        )
+        text = CONTROL_PATTERN.sub("", serialized).strip()
         if not refs:
             raise ChunkValidationError("Hybrid Chunk에 source reference가 없습니다.")
         # 표만으로 이뤄진 청크는 버린다 — 아래 구조 보존 청킹이 같은 표를 행/제품
@@ -603,25 +653,11 @@ def _download(input_data: dict[str, Any]) -> tuple[Path, str]:
 
 
 def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
-    """변환한다. 실패하면 이미지·차트 보강을 끄고 **한 번만** 다시 시도한다.
+    """변환한다. 실패하면 picture classification을 끄고 한 번만 다시 시도한다.
 
     보강 셋이 PDF 를 죽이는 길이 **둘** 있고, 둘 다 실측했다.
 
-    **① 차트 모델이 GPU 에 안 올라간다** (2026-08-25, RunPod 콘솔 로그 14건).
-    `do_chart_extraction` 이 켜져 있으면 `StandardPdfPipeline.__init__` 이
-    Granite Vision V4 를 GPU 로 올리는데, 그 앞에 EmbeddingGemma·layout·
-    TableFormer·EasyOCR 이 이미 올라가 있어 자리가 없다:
-
-        [W CUDACachingAllocator.cpp:3933] memory allocation failed with OOM
-        RuntimeError: NVML_SUCCESS == r INTERNAL ASSERT FAILED at
-          "c10/cuda/CUDACachingAllocator.cpp":1407
-          └ base_pipeline.py ChartExtractionModelGraniteVisionV4.__init__
-
-    **페이지를 한 장도 안 읽고** 죽는다. docling v2.117.0 의
-    `base_pipeline.py` 는 이 import·생성을 통째로 `if do_chart_extraction:` 으로
-    감싸므로, 끄면 모델을 아예 안 올린다 — 되돌리기가 이 실패를 확실히 없앤다.
-
-    **② 깨진 페이지를 가진 PDF** (2026-08-24). 전처리에서
+    깨진 페이지를 가진 PDF는 전처리에서
     `'utf-8' codec can't decode byte 0xde` 로 죽은 페이지가 `conv_res.pages`
     에서 **빠지는데**, 보강 단계는 항목이 들고 있는 **원래 페이지 번호**로 그
     목록을 집는다:
@@ -635,8 +671,8 @@ def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
     이상인 페이지의 그림을 만나는 순간 범위를 벗어났다. 보강 셋을 끄면 같은
     문서가 그대로 변환된다(pages=101, texts=1037).
 
-    그래서 **문서 전체를 잃느니 차트·이미지 설명을 잃는 쪽**을 고른다. 멀쩡한
-    문서는 첫 번째 시도에서 끝나므로 아무것도 잃지 않는다.
+    그래서 **문서 전체를 잃느니 picture classification과 후단 설명을 잃는 쪽**을
+    고른다. 멀쩡한 문서는 첫 번째 시도에서 끝난다.
 
     되돌린 것은 PDF 뿐이다 — 위 둘 다 PDF 파이프라인의 것이고, DOCX 가 죽는
     이유는 달랐다(디스크 부족, `converter` 주석).
@@ -646,8 +682,8 @@ def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
     **한 번만** 되돌리고, 그 시도도 실패하면 그대로 올려보낸다 — 사유가 사람이
     읽는 `index_detail` 에 그대로 들어가야 한다.
 
-    ①은 워커가 사는 동안 계속 나므로 문서마다 헛걸음 한 번(약 7초)을 문다.
-    GPU 를 키우거나 보강을 아예 끄는 것이 근본 해결이다.
+    후단 Qwen 설명 실패는 이 함수가 아니라 `_apply_final_parse_layers`에서 문서
+    구조를 보존하고 audit에만 실패 사유를 남긴다.
     """
 
     try:
@@ -656,6 +692,77 @@ def _convert(path: Path, use_ocr: bool) -> tuple[Any, bool]:
         if path.suffix != ".pdf":
             raise
         return converter(use_ocr, enrich=False).convert(path), False
+
+
+def _apply_final_parse_layers(result: Any, *, picture_enabled: bool) -> dict[str, Any]:
+    """Apply the four final-parse layers in their validated order."""
+    document, reading_order_audit = postprocess_docling_document(
+        result.document,
+        policy="validated-local-v1",
+    )
+    result.document = document
+
+    heading_audit = promote_headings_by_density(result)
+    table_audit = apply_table_gate(result.document)
+
+    picture_audit = {
+        "schema": "final-parse-picture-audit/1.0",
+        "outcome": "PRESERVED",
+        "picture_count": len(getattr(result.document, "pictures", []) or []),
+        "described_count": 0,
+        "failure_reason": "FIRST_STAGE_CLASSIFICATION_DISABLED"
+        if not picture_enabled
+        else None,
+    }
+    if picture_enabled and picture_audit["picture_count"]:
+        from docling.datamodel.accelerator_options import (
+            AcceleratorDevice,
+            AcceleratorOptions,
+        )
+        import torch
+
+        try:
+            from context_picture_description import describe_document_with_context
+        except ModuleNotFoundError:
+            from runpod_worker.context_picture_description import (
+                describe_document_with_context,
+            )
+
+        structured_document = result.document
+        try:
+            # Release the first-stage converter before loading Qwen. The
+            # document owns embedded crops, so clearing the model cache does
+            # not discard parsing output.
+            converter.cache_clear()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            described, picture_audit = describe_document_with_context(
+                structured_document,
+                accelerator_options=AcceleratorOptions(
+                    device=AcceleratorDevice.CUDA, num_threads=4
+                ),
+            )
+            result.document = described
+        except Exception as exc:  # fail-open at the optional VLM boundary
+            result.document = structured_document
+            picture_audit["failure_reason"] = (
+                f"PICTURE_DESCRIPTION_FAILED: {type(exc).__name__}: {exc}"
+            )
+
+    return {
+        "stage_order": [
+            "docling",
+            "reading_order",
+            "heading",
+            "table_gate",
+            "picture_description",
+        ],
+        "reading_order": reading_order_audit,
+        "heading": heading_audit,
+        "table_gate": table_audit,
+        "picture_description": picture_audit,
+    }
 
 
 def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
@@ -680,12 +787,10 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
         # EasyOCR 모델을 딸고 오므로 텍스트 파일 하나 때문에 워커가 무거워진다.
         use_ocr = path.suffix == ".pdf" and not _has_text_layer(path)
         result, enriched = _convert(path, use_ocr)
+        final_parse_audit = _apply_final_parse_layers(
+            result, picture_enabled=enriched
+        )
         document = result.document
-        # 밀도 기반 헤딩 승격(제자리 수정): 레이아웃 모델이 text/list_item으로 잘못
-        # 분류한 실제 헤딩을 section_header로 바꿔치기한다. 청킹은 이 승격이 반영된
-        # document를 그대로 넘겨받으므로, HybridChunker가 만드는 chunk.meta.headings도
-        # 승격 결과를 따라간다.
-        promoted_headings = promote_headings_by_density(result)
         chunks, diagnostics, dropped = _chunk_document(document, max_tokens, merge_peers)
         blocks = _blocks_for_chunks(document, chunks)
         block_by_ref = {b["source_ref"]: b["local_block_key"] for b in blocks}
@@ -717,12 +822,11 @@ def process_document(input_data: dict[str, Any]) -> dict[str, Any]:
                 # 한도를 넘어 버려진 청크. 비어 있지 않으면 그 문서의 일부가
                 # 검색에 안 잡힌다는 뜻이라 결과에 실어 보낸다.
                 "dropped_chunks": dropped,
-                # 밀도 기반으로 section_header로 승격된 항목 수. 0이어도 정상(해당
-                # 패턴의 오분류 헤딩이 없었다는 뜻)이라 오류로 취급하지 않는다.
-                "promoted_heading_count": len(promoted_headings),
+                "promoted_heading_count": final_parse_audit["heading"]["applied_count"],
                 # 보강을 끄고 되살린 문서다. 이 문서에는 차트·이미지 설명이
                 # 없다 — 검색 결과가 비어 보일 때 원인을 여기서 찾을 수 있다.
                 "enrichment_disabled": not enriched,
+                "final_parse": final_parse_audit,
             },
         }
     finally:
