@@ -1,0 +1,22 @@
+protocol_version: eval-v2
+fixture_id: S03-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: S03
+variant_id: S03
+split: DEV
+fixture_status: VALIDATED
+title: 실제 회의록 미결 항목과 두 업무 시스템의 교차 점검
+input: >-
+  한빛몰 기술 검토 회의록의 미결 사항을 찾아 평가용 플랫폼 업무와 Jira 이슈에 각각
+  등록됐는지 비교해줘. 조회되지 않은 항목은 현재 조회 범위에서 미등록이라고만 말하고
+  완료·취소로 추측하지 마. 아무것도 등록하거나 수정하지 마.
+source_artifacts:
+  - source_id: PDF-MIN
+    repo_path: tests/eval/documents/pdf/한빛몰_주문정산_기술검토회의록.pdf
+    sha256: 7c2f5a5e7cae22e774b2536a84ba2823a50c0b81b4500930c91c332c1acf273b
+    relevant_pages: [6]
+allowed_tools: [document_search, task_list, jira_get_issues]
+forbidden_tools: [task_register, task_update, jira_create_issues, web_search]
+side_effect_policy: READ_ONLY_STUBBED
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_DEV_ISOLATED, official_execution_status: DEV_PILOT_READY}
