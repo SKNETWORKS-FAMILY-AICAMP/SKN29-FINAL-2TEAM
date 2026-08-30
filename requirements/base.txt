@@ -15,6 +15,8 @@ pydantic>=2.11,<3.0
 # 문서 메타의 CPU 텍스트 추출(PDF 텍스트 레이어). docling 은 RunPod 워커 쪽이라
 # 백엔드에는 없다 — 팀 문서 전부에 돌릴 가벼운 경로가 따로 필요하다.
 pypdf>=5.1,<7.0
+# 검색된 이미지 block을 원본 PDF bbox에서 동적으로 렌더링한다.
+PyMuPDF>=1.26,<2.0
 
 # Deep Agent 런타임(services/agent_runtime/). 2026-08-13 착수 — requires-python
 # >=3.11 (Dockerfile은 3.13-slim이라 문제 없음). 버전은 02_런타임_공통_계약

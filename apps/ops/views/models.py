@@ -74,6 +74,7 @@ class ModelListCreateView(AdminView):
                 base_url=data["base_url"],
                 api_key=data["api_key"],
                 model=data["model"],
+                supports_image_input=data["supports_image_input"],
                 registered_by=request.user.account_id,
             )
             # 남의 팀에 외부 호출 경로를 심는 일이라 반드시 기록에 남는다.
@@ -83,7 +84,11 @@ class ModelListCreateView(AdminView):
                 action="OPS_MODEL_REGISTER",
                 target_type="TEAM",
                 target_id=data["team_id"],
-                payload={"model": data["model"], "label": data["label"], "base_url": data["base_url"]},
+                payload={
+                    "model": data["model"], "label": data["label"],
+                    "base_url": data["base_url"],
+                    "supports_image_input": data["supports_image_input"],
+                },
             )
         except (RepositoryError, psycopg.Error) as exc:
             return to_response(exc)

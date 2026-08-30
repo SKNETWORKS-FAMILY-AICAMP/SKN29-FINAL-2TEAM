@@ -7,7 +7,7 @@
 
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from services.document_intake import IntakeResult
 from services.harness import registry
@@ -114,6 +114,48 @@ class DocumentSearchScopeTests(SimpleTestCase):
         _run_document_search(team_id="TE001", query="납기일", account_id="UA001")
 
         self.assertEqual(scope.call_args.kwargs["account_id"], "UA001")
+
+    @override_settings(PUBLIC_BACKEND_BASE_URL="https://api.example.com")
+    def test_이미지_도구는_picture_청크만_원본_crop과_연결한다(self, scope, search, _embed):
+        scope.return_value = [_doc("DC001", "도면.pdf")]
+        search.return_value = [
+            {
+                "chunk_id": "CH001",
+                "doc_id": "DC001",
+                "file_name": "도면.pdf",
+                "mime_type": "application/pdf",
+                "block_id": "BL001",
+                "block_type": "PICTURE",
+                "page": 3,
+                "revision": "REV1",
+                "heading_path": ["구조도"],
+                "text": "배관 연결 구조를 나타낸 도면",
+                "retrieval_score": 0.91,
+            }
+        ]
+
+        result = _run_document_search(
+            team_id="TE001", query="배관 구조", include_images=True
+        )
+
+        self.assertEqual(result[0]["type"], "text")
+        self.assertEqual(result[1]["type"], "image")
+        self.assertIn("/api/internal/document-picture-crops/BL001/", result[1]["url"])
+
+    @override_settings(PUBLIC_BACKEND_BASE_URL="https://api.example.com")
+    def test_일반_문서검색은_picture라도_텍스트만_반환한다(self, scope, search, _embed):
+        scope.return_value = [_doc("DC001", "도면.pdf")]
+        search.return_value = [
+            {
+                "chunk_id": "CH001", "doc_id": "DC001", "block_type": "PICTURE",
+                "heading_path": [], "text": "도면 설명", "retrieval_score": 0.8,
+            }
+        ]
+
+        result = _run_document_search(team_id="TE001", query="도면")
+
+        self.assertIsInstance(result, dict)
+        self.assertNotIn("image", result["evidence"][0])
 
 
 def _run_document_sync(**kwargs):

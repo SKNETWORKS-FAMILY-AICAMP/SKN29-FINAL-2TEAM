@@ -940,6 +940,7 @@ class CustomModelRepository:
                         "label": row["payload"].get("label") or row["payload"].get("base_url") or "",
                         "base_url": row["payload"].get("base_url") or "",
                         "model": row["payload"].get("model") or "",
+                        "supports_image_input": row["payload"].get("supports_image_input") is True,
                         "connected_at": row["connected_at"],
                     }
                     for row in CustomModelRepository._rows(cursor, team_id)
@@ -996,6 +997,7 @@ class CustomModelRepository:
                             "label": "읽을 수 없음" if broken else (payload.get("label") or payload.get("base_url") or ""),
                             "base_url": payload.get("base_url") or "",
                             "model": payload.get("model") or "",
+                            "supports_image_input": payload.get("supports_image_input") is True,
                             "connected_at": row["connected_at"],
                         }
                     )
@@ -1014,7 +1016,8 @@ class CustomModelRepository:
 
     @staticmethod
     def add_for_team(
-        *, team_id: str, label: str, base_url: str, api_key: str, model: str, registered_by: str
+        *, team_id: str, label: str, base_url: str, api_key: str, model: str,
+        supports_image_input: bool, registered_by: str
     ) -> None:
         """운영자가 **그 팀에** 등록한다.
 
@@ -1066,6 +1069,7 @@ class CustomModelRepository:
                                 "base_url": base_url,
                                 "api_key": api_key,
                                 "model": model,
+                                "supports_image_input": supports_image_input,
                                 "registered_by": registered_by,
                             }
                         ),

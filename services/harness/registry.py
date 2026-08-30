@@ -69,6 +69,7 @@ from services.builtin_tools.documents import (
 from services.builtin_tools.visualization import build_chart, build_graph, render_mermaid
 from services.builtin_tools.visualization.renderer import DIAGRAM_PREFIXES
 from services.document_pipeline.runpod_client import embed_queries
+from services.document_pipeline.picture_crop import signed_picture_crop_url
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
 from services.websearch import WebSearchUnavailable, search_web
@@ -102,6 +103,8 @@ class Tool:
     capability: str = "조회"
     #: 사용자별 외부 연결이 필요한 Tool인지 화면에서 안내할 때 사용한다.
     requires_connection: bool = False
+    #: 이 도구를 선택·실행할 모델에 필요한 입력 capability.
+    required_model_capability: str | None = None
 
 
 class ToolInputError(ValueError):
@@ -128,6 +131,7 @@ def _document_search(
     account_id: str | None = None,
     proj_id: str | None = None,
     top_k: int = 10,
+    include_images: bool = False,
 ):
     """팀 문서에서 근거 문장을 찾는다.
 
@@ -220,19 +224,34 @@ def _document_search(
         team_id=team_id, document_ids=doc_ids, query_vector=vector, top_k=top_k,
         account_id=account_id,
     )
-    result = {
-        "query": query,
-        "evidence": [
-            {
-                "chunk_id": str(row["chunk_id"]),
-                "doc_id": row["doc_id"],
-                "heading_path": row["heading_path"],
-                "text": row["text"],
-                "retrieval_score": float(row["retrieval_score"]),
+    evidence = []
+    image_urls: list[str] = []
+    for row in rows:
+        item = {
+            "chunk_id": str(row["chunk_id"]),
+            "doc_id": row["doc_id"],
+            "heading_path": row["heading_path"],
+            "text": row["text"],
+            "retrieval_score": float(row["retrieval_score"]),
+        }
+        if (
+            include_images
+            and row.get("block_type") == "PICTURE"
+            and row.get("mime_type") == "application/pdf"
+        ):
+            crop_url = signed_picture_crop_url(
+                block_id=str(row["block_id"]),
+                doc_id=str(row["doc_id"]),
+                revision=str(row["revision"]),
+            )
+            item["image"] = {
+                "url": crop_url,
+                "file_name": row.get("file_name"),
+                "page": row.get("page"),
             }
-            for row in rows
-        ],
-    }
+            image_urls.append(crop_url)
+        evidence.append(item)
+    result = {"query": query, "evidence": evidence}
     if not_indexed:
         result["not_indexed"] = not_indexed
         result["note"] = "아래 문서는 본문이 아직 색인되지 않아 근거에서 빠졌습니다."
@@ -257,7 +276,23 @@ def _document_search(
         }
 
     yield {"type": "stage_done", "step": 2, "found": len(doc_ids), "evidence": len(result["evidence"])}
+    if include_images and image_urls:
+        # LangChain 표준 content block. ChatOpenAI/ChatAnthropic이 각 provider의
+        # 이미지 입력 형식으로 변환하며, text block에는 인용·표시용 URL도 남긴다.
+        return [
+            {"type": "text", "text": json.dumps(result, ensure_ascii=False)},
+            *[
+                {"type": "image", "url": url, "mime_type": "image/png"}
+                for url in image_urls
+            ],
+        ]
     return result
+
+
+def _document_search_with_images(**kwargs: Any):
+    """VLM 전용 검색. 진행 이벤트를 유지하면서 최종 결과만 멀티모달로 만든다."""
+
+    return (yield from _document_search(**kwargs, include_images=True))
 
 
 def _people_list(*, account_id: str) -> dict[str, Any]:
@@ -1916,6 +1951,27 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_document_search,
         category="문서",
     ),
+    "document_search_with_images": Tool(
+        ref="document_search_with_images",
+        name="문서 검색 · 원본 이미지",
+        description=(
+            "팀 문서에서 관련 근거를 찾고, 상위 결과에 이미지 설명 청크가 있으면 "
+            "원본 PDF의 해당 영역을 이미지 입력으로 함께 돌려준다. 답변에서는 "
+            "evidence.image.url을 Markdown 이미지로 포함하고 문서명과 페이지를 밝힌다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "찾고 싶은 내용을 한국어 문장으로"},
+                "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+            },
+            "required": ["query"],
+        },
+        handler=_document_search_with_images,
+        category="문서",
+        capability="이미지 근거 검색",
+        required_model_capability="image_input",
+    ),
     "people_list": Tool(
         ref="people_list",
         name="팀원 조회",
@@ -2885,6 +2941,7 @@ _DEFAULT_CHAT_EXCLUDED: frozenset[str] = frozenset(
         "chart_create",
         "graph_create",
         "task_extraction",
+        "document_search_with_images",
     }
 )
 DEFAULT_CHAT_TOOL_REFS: frozenset[str] = (

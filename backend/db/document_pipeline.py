@@ -972,6 +972,34 @@ _CONTENT_RANK_CHUNKS = 200
 
 class VectorSearchRepository:
     @staticmethod
+    def picture_crop_source(
+        *, block_id: str, doc_id: str, revision: str
+    ) -> dict[str, Any]:
+        """서명 URL이 가리킨 현재 PDF Picture block의 원본과 bbox를 반환한다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT b.block_id::text, b.doc_id, b.revision, b.block_type,
+                           b.page, b.src_locator, d.storage_key, d.mime_type,
+                           d.file_name
+                    FROM doc_block b
+                    JOIN doc d ON d.doc_id = b.doc_id
+                    WHERE b.block_id = %s AND b.doc_id = %s AND b.revision = %s
+                      AND b.revision = d.cur_revision
+                      AND b.block_type = 'PICTURE'
+                      AND d.deleted = false AND d.access_revoked = false
+                      AND d.storage_key IS NOT NULL
+                    """,
+                    (block_id, doc_id, revision),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound("이미지 원본 위치를 찾을 수 없습니다.")
+        return dict(row)
+
+    @staticmethod
     def rank_by_content(
         *,
         team_id: str,
@@ -1069,8 +1097,10 @@ class VectorSearchRepository:
                     -- `v.metadata` 는 안 읽는다(2026-08-05). bbox 좌표·binary_hash·
                     -- 임시 파일명이 들어 있어 평균 927자·최대 7,622자인데, 모델도
                     -- 화면도 쓰지 않으면서 프롬프트와 응답을 그만큼 불린다.
-                    SELECT d.doc_id, c.chunk_id::text, c.chunk_idx AS sequence,
-                           c.search_text AS text, c.heading_path,
+                    SELECT d.doc_id, d.file_name, d.mime_type,
+                           b.block_id::text, b.block_type, b.page, b.revision,
+                           b.src_locator, c.chunk_id::text,
+                           c.chunk_idx AS sequence, c.search_text AS text, c.heading_path,
                            1 - (v.embedding <=> %s::vector) AS retrieval_score
                     FROM vec_idx v
                     JOIN chunk c ON c.chunk_id = v.chunk_id
