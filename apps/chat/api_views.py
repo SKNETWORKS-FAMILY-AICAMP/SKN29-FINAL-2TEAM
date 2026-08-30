@@ -248,9 +248,8 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             # 마스킹을 빠뜨리면 그 경로로 원문이 샌다 — "모든 소비처에서
             # 빠짐없이 가린다"는 계속 늘어나는 목록을 지키는 대신, 아직 유효할
             # 수 있는 자격증명은 **어디에도 닿기 전에** 요청 자체를 끝낸다.
-            # PII·권한서술처럼 "사용자가 무엇을 물었는지" 자체가 값은 아닌
-            # 카테고리는 여기서 막지 않는다 — 아래에서 마스킹만 한다.
-            if match_category(text) == "credential":
+            category = match_category(text)
+            if category == "credential":
                 logger.info("채팅 입력에서 credential로 보이는 값을 감지해 요청을 막았습니다(session=%s)", session_id)
                 return Response(
                     {
@@ -260,14 +259,31 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # 2026-08-27 — **여기서부터 `text`는 마스킹된 값이다.** credential은
-            # 위에서 이미 걸러졌으니 여기 남는 건 PII뿐이다(권한서술은 이
-            # 조합에서 빠진다 — `mask_for_storage()` docstring 참고). 스킬 호출
-            # 파싱·외부 가드레일·DB 저장·Graph 입력이 **전부 이 값 하나**를
-            # 쓴다 — 예전처럼 "가드레일은 원문, 저장은 별도 마스킹, 모델
-            # 입력은 그래프 안 미들웨어가 마스킹" 식으로 소비처마다 다른 값을
-            # 만들지 않는다. 그래프 안 `SensitiveInputMaskMiddleware`(`before_
-            # model`)는 이제 이중 방어다 — 권한서술과, 이 변경 전에 이미
+            # 2026-08-30 — **권한/보안 서술도 마스킹이 아니라 차단이다.**
+            # 예전엔 `AUTHORITY_KEYWORDS`("루트 계정"·"관리자 비밀번호"·
+            # "내부 접속 정보" …)를 마스킹만 하고 요청을 계속 태웠다. 그러면
+            # 모델은 `[가려짐]이 필요해` 라는 구멍만 받아 "무엇이 필요하신가요?"
+            # 하고 되물었다 — 거절해야 할 자리에서 오히려 사용자에게 빈칸을
+            # 채워 달라고 하는 꼴이다. 이런 요청은 되묻지 말고 여기서 끝낸다.
+            if category == "authority":
+                logger.info("채팅 입력에서 권한/보안 관련 요청을 감지해 요청을 막았습니다(session=%s)", session_id)
+                return Response(
+                    {
+                        "detail": "관리자·루트 계정이나 내부 접속 정보 같은 권한·보안 관련 정보는 "
+                        "알려드릴 수 없습니다."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # 2026-08-27 — **여기서부터 `text`는 마스킹된 값이다.** credential·
+            # 권한서술은 위에서 이미 요청째 걸러졌으니 여기 남는 건 PII뿐이다
+            # (`mask_for_storage()`는 원래도 이 둘을 조합에서 빼므로 그대로
+            # 쓴다). 스킬 호출 파싱·외부 가드레일·DB 저장·Graph 입력이
+            # **전부 이 값 하나**를 쓴다 — 예전처럼 "가드레일은 원문, 저장은
+            # 별도 마스킹, 모델 입력은 그래프 안 미들웨어가 마스킹" 식으로
+            # 소비처마다 다른 값을 만들지 않는다. 그래프 안
+            # `SensitiveInputMaskMiddleware`(`before_model`)는 이제 이중
+            # 방어다 — 이 채널 밖에서 들어온 권한서술과, 이 변경 전에 이미
             # 저장된 옛 이력(아직 원문일 수 있다)의 재전송을 여전히 가린다.
             text = mask_for_storage(text)
             model_input = text

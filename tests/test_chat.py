@@ -1781,8 +1781,9 @@ class PiiMaskingTests(SimpleTestCase):
     """사용자가 채팅에 직접 입력한 credential·개인정보·권한/보안 서술을
     다루는 규칙(2026-08-19, §2순위, 사용자 확정 범위 → 2026-08-27 재설계).
 
-    **2026-08-27 최종 형태** — 요청을 받은 직후, 세션을 확인하자마자 가장
-    먼저 `match_category(text)`로 credential 여부를 본다.
+    **2026-08-27 최종 형태(2026-08-30 권한서술 차단 추가)** — 요청을 받은
+    직후, 세션을 확인하자마자 가장 먼저 `match_category(text)`로 카테고리를
+    본다.
 
     - **credential**(API 키·시크릿·토큰·비밀번호 형태): 여기서 요청을
       끝낸다. 400을 돌려주고 저장·외부 가드레일 호출·Graph 실행 중 아무것도
@@ -1791,15 +1792,17 @@ class PiiMaskingTests(SimpleTestCase):
       checkpoint)이 늘어나기 때문이다 — 그 각각에서 마스킹을 빠뜨리지 않는
       것보다, 아직 유효할 수 있는 자격증명은 애초에 어디에도 안 보내는
       쪽이 더 안전하다.
-    - **credential이 없으면**(PII만 있거나 평범한 문장) `text`를
+    - **authority**(`AUTHORITY_KEYWORDS` — "루트 계정"·"관리자 비밀번호"·
+      "내부 접속 정보" …): 2026-08-30부터 credential과 같은 자리에서 400으로
+      끝낸다. 예전엔 마스킹만 하고 계속 태웠는데, 모델이 `[가려짐]이 필요해`
+      라는 구멍만 받아 되물어서 거절이 안 됐다.
+    - **둘 다 아니면**(PII만 있거나 평범한 문장) `text`를
       `mask_for_storage()`로 한 번 가리고, 그 값 **하나**를 스킬 호출
       파싱·외부 가드레일·DB 저장·`model_input`(Graph 입력)이 전부 공유한다.
-      권한/보안 서술(`AUTHORITY_KEYWORDS`)은 이 조합에서 빠진다 — 값이
-      아니라 사용자가 무엇을 물었는지의 기록이라 남긴다.
 
     그래프 안 `SensitiveInputMaskMiddleware`(`middleware/sensitive_input.py`)는
-    이제 이중 방어다 — 권한서술과, 이 변경 **전**에 이미 원문으로 저장된
-    옛 이력이 재전송될 때를 여전히 가린다. 미들웨어 자체 동작은
+    이제 이 채널 밖에서 들어온 권한서술과, 이 변경 **전**에 이미 원문으로
+    저장된 옛 이력이 재전송될 때를 가리는 이중 방어만 맡는다. 미들웨어 자체 동작은
     `tests/test_sensitive_input.py`·`tests/test_middleware_factory.py`의
     `SensitiveInputMaskMiddlewareWiringTests`가 따로 검증한다.
     `suggest_title()`용 `question`만 그래프를 안 거치므로 `api_views.py`가
@@ -1882,31 +1885,33 @@ class PiiMaskingTests(SimpleTestCase):
         self.assertNotIn("010-1234-5678", user_write["content"]["text"])
         self.assertIn("[가려짐]", user_write["content"]["text"])
 
-    def test_저장은_권한_서술은_안_가린다(
-        self, sessions, messages, accounts, _title, build_executor
+    @patch("apps.chat.api_views.check_user_input")
+    def test_권한_보안_요청은_되묻지_않고_요청을_막는다(
+        self, guard_check, sessions, messages, accounts, _title, build_executor
     ):
-        """권한/보안 *서술*은 값이 아니라 사용자가 무엇을 물었는지의 기록이라
-        이력에는 남긴다 — `mask_for_storage()`가 `AUTHORITY_KEYWORDS`는
-        빼는 이유(`sensitive_text.py` docstring)."""
+        """2026-08-30 — `AUTHORITY_KEYWORDS`("루트 계정"·"관리자 비밀번호" …)에
+        걸리는 요청은 credential과 같은 자리에서 400으로 끝낸다. 예전엔
+        마스킹만 하고 계속 태워서 모델이 `[가려짐]이 필요해` 라는 구멍을 받아
+        "무엇이 필요하신가요?" 하고 되물었다 — 거절해야 할 자리에서 빈칸을
+        채워 달라고 하는 꼴이라, 저장·가드레일·Graph 실행 어느 것도 안 한다."""
 
         sessions.get.return_value = SESSION
         messages.list_for_session.return_value = []
         accounts.get_profile.return_value = LEADER_PROFILE
-        _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
-        text = "관리자 권한을 어떻게 받나요?"
+        mock_executor = _mock_new_engine(build_executor, [{"type": "result", "text": "ok", "complete": True}])
 
         response = self.client.post(
             f"/api/chat/sessions/{SESSION['session_id']}/messages/",
-            {"content": text},
+            {"content": "root 계정이 필요해"},
             content_type="application/json",
             headers=auth_header(),
         )
-        ndjson(response)
 
-        user_write = next(
-            call.kwargs for call in messages.append.call_args_list if call.kwargs["role"] == "user"
-        )
-        self.assertEqual(user_write["content"]["text"], text)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("알려드릴 수 없습니다", response.json()["detail"])
+        messages.append.assert_not_called()
+        mock_executor.run.assert_not_called()
+        guard_check.assert_not_called()
 
     def test_이력_재전송도_원문_그대로_그래프에_들어간다(
         self, sessions, messages, accounts, _title, build_executor
