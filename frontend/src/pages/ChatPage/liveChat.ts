@@ -37,7 +37,7 @@ export const SKILL_REGISTER_TOOL_NAME = 'skill_register';
 export const JIRA_CREATE_ISSUES_TOOL_NAME = 'jira_create_issues';
 export const TABLE_EXPORT_TOOL_NAME = 'table_export';
 export const DOCUMENT_CREATE_TOOL_NAME = 'document_create';
-const APPROVAL_UPDATE_TEXT = '생성 예정 내용을 승인해 파일 생성을 진행했습니다.';
+const APPROVAL_UPDATE_TEXT = '파일 생성을 승인했습니다.';
 
 const APPROVAL_PREVIEW_MAX_COLUMNS = 12;
 const APPROVAL_PREVIEW_MAX_ROWS = 20;
@@ -770,13 +770,13 @@ export function reduce(state: LiveChat, rawEvent: ChatEvent): LiveChat {
         const status = tools[toolIndex]?.kind === 'tool' ? tools[toolIndex].status : null;
         const format = action.preview.kind === 'table' ? 'Excel 파일' : 'Word 문서';
         if (status === 'REJECTED') {
-          return [`${action.preview.title} ${format} 생성은 승인하지 않아 취소했습니다.`];
+          return [`${action.preview.title} ${format} 생성 취소.`];
         }
         if (status === 'FAILED') {
-          return [`${action.preview.title} ${format} 생성을 승인했지만 완료하지 못했습니다.`];
+          return [`${action.preview.title} ${format} 생성 실패.`];
         }
         if (status === 'OK') {
-          return [`${action.preview.title} ${format} 생성을 승인해 완료했습니다.`];
+          return [`${action.preview.title} ${format} 생성 완료.`];
         }
         return [];
       }) ?? [];

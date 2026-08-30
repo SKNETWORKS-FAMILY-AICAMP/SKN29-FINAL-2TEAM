@@ -3,6 +3,7 @@
 from typing import Any
 
 from backend.services import storage
+from services.document_intake.public_errors import safe_document_failure_detail
 
 
 def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
@@ -31,7 +32,11 @@ def personal_file_response(row: dict[str, Any]) -> dict[str, Any]:
         # **왜 실패했는지.** 상태만으로는 사람이 할 행동이 안 정해진다 —
         # 「암호가 걸린 PDF」면 암호를 풀어 다시 올리면 되고, 「스캔본」이면
         # 다시 올려도 같다. 성공한 문서는 비어 있다.
-        "index_detail": row.get("index_detail"),
+        "index_detail": (
+            safe_document_failure_detail(row.get("index_detail"), state=row.get("index_status") or "FAILED")
+            if row.get("index_detail")
+            else None
+        ),
         "uploaded_at": row.get("src_modified_at"),
         # 내가 올린 것인가, 에이전트가 만든 것인가(2026-08-26 · `table_export`).
         # 같은 목록에 섞이므로 **화면이 갈라 보여야 한다** — 내보낸 표를 내가

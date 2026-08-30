@@ -67,11 +67,10 @@ function statusChip(file: PersonalFile): { tone: BadgeTone; label: string; hint:
   // **에이전트가 만든 파일은 색인을 안 탄다**(2026-08-26 · `table_export`). 아래
   // 기본값으로 떨어지면 「읽는 중」이 영영 걸려 있다 — 끝나지 않는 진행 표시다.
   //
-  // 「내보낸 파일」은 새로 지은 말이다. 저장소에 받기·내려받기 문구가 한 곳도
-  // 없었고(2026-08-26 확인), 이 파일을 만드는 도구 이름이 「표 내보내기」라
-  // 거기서 그대로 따왔다 — 사용자가 같은 것을 두 이름으로 배우지 않게.
+  // 파일 형식과 관계없이 대화에서 AI가 만든 결과라는 출처를 먼저 말한다.
+  // 「내보낸 파일」은 Excel에는 맞아도 Word 생성에는 맞지 않았다.
   if (file.origin === 'generated') {
-    return { tone: 'neutral', label: '내보낸 파일', hint: '' };
+    return { tone: 'neutral', label: 'AI 생성', hint: '' };
   }
   // xlsx·csv·json·zip 은 색인 없이 받는다(2026-08-28). 「읽는 중」으로 떨어지면
   // 영영 안 끝난다 — 도구 입력과 내려받기로만 쓰는 파일이라 그렇게 표시한다.
@@ -139,7 +138,7 @@ export function MyFilesPanel({
   /**
    * 아직 색인되지 않은 파일이 있는 동안만 목록을 다시 받는다.
    *
-   * **내보낸 파일과 다운로드 전용 파일은 세지 않는다**(2026-08-26, 2026-08-28).
+   * **AI 생성 파일과 다운로드 전용 파일은 세지 않는다**(2026-08-26, 2026-08-28).
    * 색인을 아예 안 타서 `search_ready` 가 영영 false 이고 `FAILED` 도 안 되는데,
    * 빼지 않으면 그 파일 하나 때문에 **5초 폴링이 영원히 돈다.**
    */
@@ -366,7 +365,7 @@ export function MyFilesPanel({
 
   // 실패한 것은 「읽는 중」이 아니다 — 팀 문서 표와 같은 규칙을 쓴다.
   //
-  // **내보낸 파일·다운로드 전용 파일도 아니다**(2026-08-26, 2026-08-28). 색인을
+  // **AI 생성 파일·다운로드 전용 파일도 아니다**(2026-08-26, 2026-08-28). 색인을
   // 아예 안 타서 `search_ready` 가 영영 false 인데, 빼지 않으면 머리말이 「읽는
   // 중 N」으로 굳는다 — 위 `pending`(폴링 조건)과 **같은 규칙을 써야 한다.**
   const notReady = matched.filter(
@@ -575,11 +574,16 @@ export function MyFilesPanel({
                     <ToggleSwitch
                       checked={file.download_only ? false : file.search_enabled}
                       disabled={file.download_only}
+                      ariaLabel={`${file.file_name} 검색에 사용`}
                       onChange={(next) => toggle(file, 'search_enabled', next)}
                     />
                   </span>
                   <span className={styles.cellToggle}>
-                    <ToggleSwitch checked={file.shared} onChange={(next) => toggle(file, 'shared', next)} />
+                    <ToggleSwitch
+                      checked={file.shared}
+                      ariaLabel={`${file.file_name} 팀에 공유`}
+                      onChange={(next) => toggle(file, 'shared', next)}
+                    />
                   </span>
                   {/* **아이콘만 남긴다**(2026-08-27). 글자로 셋을 세우면 조작
                       칸이 248px 이라 표 전체(924px)가 패널(약 800px)보다 넓어져

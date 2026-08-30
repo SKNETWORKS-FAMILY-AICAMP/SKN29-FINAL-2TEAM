@@ -382,10 +382,10 @@ class WorkerFailureDetailTests(SimpleTestCase):
 
         self.assertNotIn("Traceback", detail)
 
-    def test_JSON_이_아니어도_상태값보다는_낫게_쓴다(self):
+    def test_JSON이_아닌_기술_오류는_안전한_문구로_바꾼다(self):
         detail = _worker_failure_detail({"error": "worker exited unexpectedly"}, "FAILED")
 
-        self.assertEqual(detail, "worker exited unexpectedly")
+        self.assertEqual(detail, "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.")
 
     def test_사유가_없으면_상태값으로_돌아간다(self):
         """오류 칸이 비어 오는 경우가 있다(CANCELLED·TIMED_OUT). 그때는 상태라도 남긴다."""
@@ -393,7 +393,8 @@ class WorkerFailureDetailTests(SimpleTestCase):
         for payload in ({}, {"error": ""}, {"error": None}):
             with self.subTest(payload=payload):
                 self.assertEqual(
-                    _worker_failure_detail(payload, "TIMED_OUT"), "문서 처리 실패(TIMED_OUT)"
+                    _worker_failure_detail(payload, "TIMED_OUT"),
+                    "문서를 읽는 시간이 초과되었습니다. 잠시 후 다시 읽어 주세요.",
                 )
 
     def test_아주_긴_사유는_잘라_넣는다(self):
@@ -402,6 +403,40 @@ class WorkerFailureDetailTests(SimpleTestCase):
         long = json.dumps({"error_message": "가" * 900})
 
         self.assertEqual(len(_worker_failure_detail({"error": long}, "FAILED")), 500)
+
+    def test_연결_오류의_URL과_서명값은_노출하지_않는다(self):
+        raw = json.dumps(
+            {
+                "error_type": "requests.exceptions.ConnectionError",
+                "error_message": (
+                    "HTTPSConnectionPool(host='internal.example', port=443): "
+                    "Max retries exceeded with url: /documents/1?token=secret-value"
+                ),
+            }
+        )
+
+        detail = _worker_failure_detail({"error": raw}, "FAILED")
+
+        self.assertEqual(
+            detail,
+            "문서 처리 서버에 연결하지 못했습니다. 잠시 후 다시 읽어 주세요.",
+        )
+        self.assertNotIn("internal.example", detail)
+        self.assertNotIn("secret-value", detail)
+
+    def test_상대_경로에_남은_인증값도_노출하지_않는다(self):
+        for raw in (
+            "/documents/1?part=2&token=private-value",
+            "/documents/1?X-Amz-Credential=account&X-Amz-Signature=signed-value",
+            "request header Bearer private-value",
+            "/documents/1?api_key=private-value",
+        ):
+            with self.subTest(raw=raw):
+                detail = _worker_failure_detail({"error": raw}, "FAILED")
+
+                self.assertEqual(detail, "문서를 읽지 못했습니다. 잠시 후 다시 읽어 주세요.")
+                self.assertNotIn("private-value", detail)
+                self.assertNotIn("signed-value", detail)
 
 
 @patch("services.document_intake.service.time.sleep", lambda _: None)

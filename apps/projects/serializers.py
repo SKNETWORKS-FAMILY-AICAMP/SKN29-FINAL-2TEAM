@@ -6,6 +6,7 @@ from typing import Any
 from rest_framework import serializers
 
 from apps.connectors.clients import MAX_SCAN_DEPTH
+from services.document_intake.public_errors import safe_document_failure_detail
 
 class ProjectCreateSerializer(serializers.Serializer):
     """소유자는 요청이 아니라 로그인 토큰에서 정한다."""
@@ -290,7 +291,11 @@ def library_document_response(row: dict[str, Any]) -> dict[str, Any]:
         "downloaded": bool(row.get("storage_key")),
         "access_revoked": bool(row.get("access_revoked")),
         "index_status": row.get("index_status"),
-        "index_detail": row.get("index_detail"),
+        "index_detail": (
+            safe_document_failure_detail(row.get("index_detail"), state=row.get("index_status") or "FAILED")
+            if row.get("index_detail")
+            else None
+        ),
         "search_ready": bool(row.get("search_ready")),
         # 트리에서 어디에 매달릴지. `team_folder_id` 가 null 이면 「미분류」이고,
         # `src_folder_path` 가 빈 문자열이면 **뿌리 바로 아래**다(null 과 다르다).

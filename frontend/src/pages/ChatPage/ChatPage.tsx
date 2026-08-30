@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppShell, Button, Icon, Modal, useToast } from '../../components';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
+import { josa } from '../../utils/josa';
 import {
   ApiError,
   confirmMessage,
@@ -51,6 +52,7 @@ import {
 } from './chatDate';
 import styles from './ChatPage.module.css';
 import cardStyles from './cards/cards.module.css';
+import { approvalToolLabel } from './toolLabels';
 
 /**
  * 대화 한 턴 — 사람의 발화 하나와 그에 딸린 에이전트의 답.
@@ -166,7 +168,7 @@ function fileCompletionAnswer(
       if (preview.kind === 'table') {
         const columns = preview.columns.slice(0, 4).join(', ');
         const more = preview.columns.length > 4 ? ' 등' : '';
-        return `${preview.title}은 ${columns}${more} 열로 구성한 ${preview.totalRows}행 표입니다.`;
+        return `‘${preview.title}’${josa(preview.title, '은/는')} ${columns}${more} 열로 구성한 ${preview.totalRows}행 표입니다.`;
       }
       const rawHeadings = [...new Set(preview.blocks
         .filter((block) => block.type === 'heading')
@@ -176,7 +178,7 @@ function fileCompletionAnswer(
         .filter((heading) => !rawHeadings.some((other) => other !== heading && heading.includes(other)))
         .slice(0, 3);
       return headings.length > 0
-        ? `${preview.title}은 ${headings.join(', ')} 순서로 구성했습니다.`
+        ? `‘${preview.title}’${josa(preview.title, '은/는')} ${headings.join(', ')} 순서로 구성했습니다.`
         : `${preview.title} 내용을 Word 문서로 정리했습니다.`;
     });
     return [
@@ -185,8 +187,8 @@ function fileCompletionAnswer(
       ...details.map((detail) => `- ${detail}`),
       ...retryLines,
       '- 승인 전에 확인한 파일별 제목과 내용 구조를 생성 결과에 그대로 반영했습니다.',
-      '- 각 파일은 독립적으로 미리보거나 내려받을 수 있게 구성했습니다.',
-      '아래 파일명을 눌러 내용을 미리보거나 원본을 다운로드할 수 있습니다.',
+      '- 각 파일은 생성에 반영된 내용을 확인하거나 원본을 내려받을 수 있게 구성했습니다.',
+      '아래 파일명을 누르면 생성에 반영된 내용을 확인할 수 있고, 다운로드 버튼으로 원본을 받을 수 있습니다.',
     ].join('\n\n');
   }
   const file = files[0];
@@ -208,7 +210,7 @@ function fileCompletionAnswer(
         '- **데이터 배열:** 전달된 항목을 행 단위로 배치해 서로 비교하기 쉽게 정리했습니다.',
         `- **반영 범위:** 승인 전에 확인한 ${preview.totalRows}개 행과 ${preview.totalColumns}개 열 구조를 그대로 사용했습니다.`,
         ...retryLines,
-        '아래 파일명을 눌러 표를 미리보거나 원본을 다운로드할 수 있습니다.',
+        '아래 파일명을 누르면 생성에 반영된 표 내용을 확인할 수 있고, 다운로드 버튼으로 원본을 받을 수 있습니다.',
       ].join('\n\n');
     }
     return [
@@ -217,7 +219,7 @@ function fileCompletionAnswer(
       '- **데이터 배열:** 각 항목을 행 단위로 배치해 비교하기 쉽게 정리했습니다.',
       '- **반영 범위:** 승인 전에 확인한 표 구조를 생성 결과에 그대로 사용했습니다.',
       ...retryLines,
-      '아래 파일명을 눌러 표를 미리보거나 원본을 다운로드할 수 있습니다.',
+      '아래 파일명을 누르면 생성에 반영된 표 내용을 확인할 수 있고, 다운로드 버튼으로 원본을 받을 수 있습니다.',
     ].join('\n\n');
   }
   if (preview?.kind === 'document' || lower.includes('.docx') || lower.includes('wordprocessing')) {
@@ -239,7 +241,7 @@ function fileCompletionAnswer(
         `- **주요 구성:** ${structure || '전달된 내용을 읽기 쉬운 순서로 구성했습니다.'}`,
         '- **반영 범위:** 승인 전에 확인한 문서 제목과 본문 구조를 생성 결과에 그대로 사용했습니다.',
         ...retryLines,
-        '아래 파일명을 눌러 문서를 미리보거나 원본을 다운로드할 수 있습니다.',
+        '아래 파일명을 누르면 생성에 반영된 문서 내용을 확인할 수 있고, 다운로드 버튼으로 원본을 받을 수 있습니다.',
       ].join('\n\n');
     }
     return [
@@ -248,7 +250,7 @@ function fileCompletionAnswer(
       '- **주요 구성:** 전달된 내용을 읽기 쉬운 순서로 정리했습니다.',
       '- **반영 범위:** 승인 전에 확인한 제목과 본문 구조를 생성 결과에 그대로 사용했습니다.',
       ...retryLines,
-      '아래 파일명을 눌러 문서를 미리보거나 원본을 다운로드할 수 있습니다.',
+      '아래 파일명을 누르면 생성에 반영된 문서 내용을 확인할 수 있고, 다운로드 버튼으로 원본을 받을 수 있습니다.',
     ].join('\n\n');
   }
   return [
@@ -257,7 +259,7 @@ function fileCompletionAnswer(
     '- **주요 구성:** 전달된 내용을 확인하기 쉬운 순서로 정리했습니다.',
     '- **반영 범위:** 승인 전에 확인한 내용을 생성 결과에 그대로 사용했습니다.',
     ...retryLines,
-    '아래 파일명을 눌러 내용을 미리보거나 원본을 다운로드할 수 있습니다.',
+    '아래 파일명을 누르면 생성에 반영된 내용을 확인할 수 있고, 다운로드 버튼으로 원본을 받을 수 있습니다.',
   ].join('\n\n');
 }
 
@@ -2527,8 +2529,8 @@ export default function ChatPage() {
                           // `count` 가 0 이라 「대상 0건」이 거짓이 된다.
                           subject={
                             live.confirm.count > 0
-                              ? `${live.confirm.toolName} · 대상 ${live.confirm.count}건`
-                              : live.confirm.toolName
+                              ? `${approvalToolLabel(live.confirm.toolName)} · 대상 ${live.confirm.count}건`
+                              : approvalToolLabel(live.confirm.toolName)
                           }
                           // 2026-08-24 — `skill_register` 확인 카드는 도구
                           // 이름 대신 등록할 스킬의 실제 이름·설명을 보여준다
@@ -2619,11 +2621,6 @@ export default function ChatPage() {
                           />
                         </div>
                       )}
-
-                      {/* 도구가 만든 파일. 다른 서비스처럼 **답변 아래**에 첨부로 단다
-                          (2026-08-28). 답변이 아직 없어도(파일만 만들고 끝난 흐름)
-                          받을 것은 보여야 하므로 `live.answer` 와 독립적으로 건다. */}
-                      {live.files.length > 0 && <ProducedFilesCard files={live.files} />}
 
                       {live.stoppedReason && (
                         <p className={styles.warnLine}>

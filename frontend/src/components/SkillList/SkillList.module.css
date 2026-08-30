@@ -49,7 +49,14 @@
 }
 
 .source {
+  width: 84px;
   justify-self: end;
+}
+
+.sourceBadge {
+  width: 84px;
+  justify-content: center;
+  padding-inline: var(--space-2);
 }
 
 .empty {
