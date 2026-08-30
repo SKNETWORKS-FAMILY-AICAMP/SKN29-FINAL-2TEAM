@@ -9,6 +9,7 @@ import { notifyIndexingStarted } from '../../utils/indexingSignal';
 import { useSession } from '../../utils/session';
 import { MyFilesPanel } from './MyFilesPanel';
 import type { PersonalTab } from './MyFilesPanel';
+import { DocumentPagination } from './DocumentPagination';
 import styles from './DocumentsPage.module.css';
 
 /**
@@ -660,37 +661,8 @@ export default function DocumentsPage() {
                 </div>
 
                 {/* 한 쪽에 다 들어가면 안 그린다 — 누를 수 없는 컨트롤이 자리만
-                    차지한다. 몇 건 중 몇 번째를 보고 있는지 함께 말한다. */}
-                {pageCount > 1 && (
-                  <div className={styles.pager}>
-                    <span className={styles.pagerRange}>
-                      {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, matched.length)} / {matched.length}
-                    </span>
-                    <div className={styles.pagerButtons}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={safePage <= 1}
-                        onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                      >
-                        <Icon name="arrow-left" size={14} />
-                        이전
-                      </Button>
-                      <span className={styles.pagerPage}>
-                        {safePage} / {pageCount}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={safePage >= pageCount}
-                        onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
-                      >
-                        다음
-                        <Icon name="arrow-right" size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                    차지한다. 번호는 현재 쪽 주변 최대 5개를 중앙에 모아 보여 준다. */}
+                <DocumentPagination page={safePage} pageCount={pageCount} onPageChange={setPage} />
               </>
             )}
           </section>

@@ -17,6 +17,7 @@ import { loadSessionToken } from '../../utils/session';
 import { notifyIndexingStarted } from '../../utils/indexingSignal';
 import { josa } from '../../utils/josa';
 import styles from './DocumentsPage.module.css';
+import { DocumentPagination } from './DocumentPagination';
 
 /**
  * 「문서」 화면의 **내가 올린 것** 자리 (M④ · 2026-08-18 멘토링).
@@ -639,31 +640,7 @@ export function MyFilesPanel({
         })}
       </div>
 
-      {pageCount > 1 && (
-        <div className={styles.pager}>
-          <span className={styles.pagerRange}>
-            {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, matched.length)} / {matched.length}
-          </span>
-          <div className={styles.pagerButtons}>
-            <Button size="sm" variant="outline" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              <Icon name="arrow-left" size={14} />
-              이전
-            </Button>
-            <span className={styles.pagerPage}>
-              {safePage} / {pageCount}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={safePage >= pageCount}
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-            >
-              다음
-              <Icon name="arrow-right" size={14} />
-            </Button>
-          </div>
-        </div>
-      )}
+      <DocumentPagination page={safePage} pageCount={pageCount} onPageChange={setPage} />
 
       {/* 되돌릴 수 없다. 무엇이 사라지는지 먼저 말한다 — 문구는 프로젝트 삭제
           (`ProjectDetailPage`)와 같은 꼴로 맞춘다. */}

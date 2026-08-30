@@ -412,21 +412,22 @@
 .pager {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  justify-content: center;
+  width: 100%;
   flex: none;
-}
-
-.pagerRange,
-.pagerPage {
-  font-size: 12px;
-  color: var(--color-muted);
 }
 
 .pagerButtons {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pagerNumber {
+  width: 36px;
+  padding: 0;
 }
 
 /* ---------------- 개인 문서 ---------------- */

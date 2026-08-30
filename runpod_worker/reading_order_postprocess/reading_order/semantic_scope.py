@@ -9,8 +9,18 @@ content. Furniture is outside the body reading flow.
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any, Mapping
+
+try:
+    from enum import StrEnum
+except ImportError:  # Python 3.10 used by the Ubuntu 22.04 Worker image.
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        """Minimal Python 3.10-compatible subset used by this module."""
+
+        def __str__(self) -> str:
+            return self.value
 
 
 class OrderingRelevance(StrEnum):
