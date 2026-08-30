@@ -9,7 +9,7 @@ from typing import Any
 import psycopg
 from django.conf import settings
 from django.core import signing
-from django.http import FileResponse, StreamingHttpResponse
+from django.http import FileResponse, HttpResponse, StreamingHttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -36,6 +36,8 @@ from services.document_pipeline.errors import (
 )
 from services.document_pipeline.runpod_client import embed_queries
 from services.document_pipeline.signing import read_download_token
+from services.document_pipeline.picture_crop import read_picture_crop_token
+from services.document_pipeline.crop_renderer import PictureCropError, render_picture_crop
 from services.task_extraction import extract_tasks_stream
 from backend.db import (
     AccountRepository,
@@ -1147,6 +1149,43 @@ class RunPodDocumentDownloadAPIView(APIView):
             as_attachment=True,
             filename=document["file_name"] or f"{doc_id}.bin",
         )
+
+
+class DocumentPictureCropAPIView(APIView):
+    """서명된 Picture block을 현재 원본 PDF에서 동적으로 crop한다."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, block_id):
+        try:
+            payload = read_picture_crop_token(request.query_params.get("token", ""))
+            if payload["block_id"] != block_id:
+                raise signing.BadSignature("URL과 서명 block ID가 다릅니다.")
+            source = VectorSearchRepository.picture_crop_source(
+                block_id=block_id,
+                doc_id=payload["doc_id"],
+                revision=payload["revision"],
+            )
+            if source["mime_type"] != "application/pdf":
+                raise PictureCropError("현재 원본 crop은 PDF만 지원합니다.")
+            if not document_exists(source["storage_key"]):
+                raise RecordNotFound("문서 원본이 없습니다.")
+            png = render_picture_crop(
+                load_document(source["storage_key"]), source["src_locator"] or {}
+            )
+        except signing.SignatureExpired:
+            return Response({"detail": "이미지 crop 서명이 만료되었습니다."}, status=403)
+        except signing.BadSignature:
+            return Response({"detail": "이미지 crop 서명이 올바르지 않습니다."}, status=403)
+        except (RecordNotFound, PermissionDenied, PictureCropError):
+            return Response({"detail": "이미지를 찾을 수 없습니다."}, status=404)
+        response = HttpResponse(png, content_type="image/png")
+        response["Cache-Control"] = (
+            f"private, max-age={settings.DOCUMENT_PICTURE_CROP_TOKEN_MAX_AGE_SECONDS}"
+        )
+        response["Content-Disposition"] = f'inline; filename="{block_id}.png"'
+        return response
 
 
 class ProjectSourceDocumentAPIView(AuthenticatedAPIView):

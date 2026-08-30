@@ -1005,6 +1005,34 @@ def lexical_tsquery(query_text: str) -> str:
 
 class VectorSearchRepository:
     @staticmethod
+    def picture_crop_source(
+        *, block_id: str, doc_id: str, revision: str
+    ) -> dict[str, Any]:
+        """서명 URL이 가리킨 현재 PDF Picture block의 원본과 bbox를 반환한다."""
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT b.block_id::text, b.doc_id, b.revision, b.block_type,
+                           b.page, b.src_locator, d.storage_key, d.mime_type,
+                           d.file_name
+                    FROM doc_block b
+                    JOIN doc d ON d.doc_id = b.doc_id
+                    WHERE b.block_id = %s AND b.doc_id = %s AND b.revision = %s
+                      AND b.revision = d.cur_revision
+                      AND b.block_type = 'PICTURE'
+                      AND d.deleted = false AND d.access_revoked = false
+                      AND d.storage_key IS NOT NULL
+                    """,
+                    (block_id, doc_id, revision),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise RecordNotFound("이미지 원본 위치를 찾을 수 없습니다.")
+        return dict(row)
+
+    @staticmethod
     def search_hybrid(
         *,
         team_id: str,
@@ -1017,8 +1045,9 @@ class VectorSearchRepository:
 
         키워드는 가공 전 원문을 새로 저장하지 않고 ``chunk.search_text``를 쓴다.
         이 값에는 제목 경로 등 청킹 문맥이 붙어 있어 짧은 본문만 검색할 때보다
-        용어가 어느 절에 속하는지 잘 드러난다. 모델에 돌려주는 실제 근거 본문은
-        ``doc_block.content``다.
+        용어가 어느 절에 속하는지 잘 드러난다. PICTURE의 description 또는 기본
+        serializer fallback도 검색 점수 계산에만 쓰며 모델의 텍스트 근거로는
+        반환하지 않는다. 일반 근거 본문만 ``doc_block.content``에서 돌려준다.
 
         후보는 벡터·전문검색·부분어절 검색에서 각각 넉넉히 모은 뒤 후보군 안에서
         점수를 0~1로 정규화한다. 최종 점수는 lexical 0.5 + cosine 0.5이며,
@@ -1045,9 +1074,16 @@ class VectorSearchRepository:
                                %s::text AS query_text
                     ),
                     scoped AS NOT MATERIALIZED (
-                        SELECT d.doc_id, c.chunk_id::text AS chunk_id,
+                        SELECT d.doc_id, d.file_name, d.mime_type,
+                               b.block_id::text AS block_id, b.block_type,
+                               b.page, b.revision,
+                               c.chunk_id::text AS chunk_id,
                                c.chunk_idx AS sequence, c.heading_path,
-                               b.content AS text, c.search_text,
+                               CASE WHEN b.block_type = 'PICTURE'
+                                    THEN NULL
+                                    ELSE b.content
+                               END AS text,
+                               c.search_text,
                                p.query_ts, p.query_text,
                                GREATEST(0.0, 1 - (v.embedding <=> p.query_vector))
                                    AS vector_raw,
@@ -1098,7 +1134,9 @@ class VectorSearchRepository:
                                + {HYBRID_EXACT_WEIGHT} * exact_raw AS lexical_score
                         FROM normalized
                     )
-                    SELECT doc_id, chunk_id, sequence, heading_path, text,
+                    SELECT doc_id, file_name, mime_type,
+                           block_id, block_type, page, revision,
+                           chunk_id, sequence, heading_path, text,
                            {HYBRID_VECTOR_WEIGHT} * COALESCE(vector_score, 0)
                            + {HYBRID_LEXICAL_WEIGHT} * lexical_score AS retrieval_score,
                            COALESCE(vector_score, 0) AS vector_score,

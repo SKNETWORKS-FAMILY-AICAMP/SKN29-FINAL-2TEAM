@@ -148,7 +148,7 @@ Jira 등록은 그다음입니다.
 
 | 갈래 | 도구 |
 |---|---|
-| 검색 (4) | `document_search` · `document_list` · `document_sync` · `web_search` |
+| 검색 (5) | `document_search` · `document_search_with_images` · `document_list` · `document_sync` · `web_search` |
 | 문서 (8) | `document_read` · `file_inspect` · ⚠`document_create`(글→`.docx`) · ⚠`table_export`(표→`.xlsx`) · ⚠`document_convert` · ⚠`pdf_edit` · ⚠`file_sanitize` · ⚠`archive_manage` |
 | 팀 (3) | `people_list` · `workload_report` · `absence_list` |
 | 업무 (7) | `task_extraction` · `project_list` · `task_list` · `jira_get_issues` · ⚠`task_update` · ⚠`task_register` · ⚠`jira_create_issues` |

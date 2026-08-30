@@ -69,6 +69,7 @@ from services.builtin_tools.documents import (
 from services.builtin_tools.visualization import build_chart, build_graph, render_mermaid
 from services.builtin_tools.visualization.renderer import DIAGRAM_PREFIXES
 from services.document_pipeline.runpod_client import embed_queries
+from services.document_pipeline.picture_crop import signed_picture_crop_url
 from services.mcp import client as mcp_client
 from services.task_extraction import extract_tasks_stream
 from services.websearch import WebSearchUnavailable, search_web
@@ -102,6 +103,8 @@ class Tool:
     capability: str = "조회"
     #: 사용자별 외부 연결이 필요한 Tool인지 화면에서 안내할 때 사용한다.
     requires_connection: bool = False
+    #: 이 도구를 선택·실행할 모델에 필요한 입력 capability.
+    required_model_capability: str | None = None
 
 
 class ToolInputError(ValueError):
@@ -121,12 +124,18 @@ class ToolInputError(ValueError):
 # ---------------------------------------------------------------------------
 
 
+# 하이브리드 검색의 텍스트 근거는 20개를 유지하되, 같은 Picture block을 여러 번
+# 보내거나 한 호출에 원본 이미지를 과도하게 싣지 않는다.
+_DOCUMENT_SEARCH_IMAGE_LIMIT = 5
+
+
 def _document_search(
     *,
     team_id: str,
     query: str,
     account_id: str | None = None,
     proj_id: str | None = None,
+    include_images: bool = False,
 ):
     """팀 문서에서 근거 문장을 찾는다.
 
@@ -223,22 +232,63 @@ def _document_search(
         team_id=team_id, document_ids=doc_ids, query_text=query, query_vector=vector,
         account_id=account_id,
     )
-    result = {
-        "query": query,
-        "evidence": [
-            {
+    evidence = []
+    image_urls: list[str] = []
+    attached_picture_blocks: set[str] = set()
+    skipped_picture_hits = 0
+    for row in rows:
+        block_id = str(row.get("block_id") or "")
+        if row.get("block_type") == "PICTURE":
+            can_attach = (
+                include_images
+                and row.get("mime_type") == "application/pdf"
+                and block_id
+                and block_id not in attached_picture_blocks
+                and len(image_urls) < _DOCUMENT_SEARCH_IMAGE_LIMIT
+            )
+            if not can_attach:
+                skipped_picture_hits += 1
+                continue
+            crop_url = signed_picture_crop_url(
+                block_id=block_id,
+                doc_id=str(row["doc_id"]),
+                revision=str(row["revision"]),
+            )
+            item = {
+                "evidence_type": "image",
+                "chunk_id": str(row["chunk_id"]),
+                "doc_id": row["doc_id"],
+                "heading_path": row["heading_path"],
+                "retrieval_score": float(row["retrieval_score"]),
+                "image": {
+                    "url": crop_url,
+                    "file_name": row.get("file_name"),
+                    "page": row.get("page"),
+                },
+            }
+            image_urls.append(crop_url)
+            attached_picture_blocks.add(block_id)
+        else:
+            item = {
+                "evidence_type": "text",
                 "chunk_id": str(row["chunk_id"]),
                 "doc_id": row["doc_id"],
                 "heading_path": row["heading_path"],
                 "text": row["text"],
                 "retrieval_score": float(row["retrieval_score"]),
             }
-            for row in rows
-        ],
-    }
+        evidence.append(item)
+    result = {"query": query, "evidence": evidence}
     if not_indexed:
         result["not_indexed"] = not_indexed
         result["note"] = "아래 문서는 본문이 아직 색인되지 않아 근거에서 빠졌습니다."
+    if skipped_picture_hits:
+        result["picture_hits_not_attached"] = skipped_picture_hits
+        if not include_images:
+            result["picture_note"] = (
+                "이미지 description은 검색 점수 계산에만 사용했습니다. 원본 이미지는 "
+                "이미지 입력 모델의 '문서 검색 · 원본 이미지' 도구에서 확인할 수 있습니다."
+            )
 
     # **출처는 근거가 실제로 나온 문서다**(2026-08-24). 전에는 coarse 가 좁힌
     # 후보 목록을 그대로 냈는데, 좁히는 단계를 걷어낸 지금 그 자리에 넣을 것은
@@ -248,11 +298,12 @@ def _document_search(
     # `id`/`label` 은 `_web_search` 도 같이 쓰는 공통 모양이다(2026-08-18) —
     # 웹 결과는 `url` 도 채운다, 내부 문서는 안 채운다(화면이 그 유무로 링크를
     # 걸지 그냥 텍스트로 보일지 정한다).
-    if rows:
+    if evidence:
         names = {row["doc_id"]: row["file_name"] for row in documents}
         cited: dict[str, str] = {}
-        for row in rows:
-            cited.setdefault(row["doc_id"], names.get(row["doc_id"]) or row["doc_id"])
+        for item in evidence:
+            doc_id = item["doc_id"]
+            cited.setdefault(doc_id, names.get(doc_id) or doc_id)
         yield {
             "type": "sources",
             "step": 2,
@@ -260,7 +311,21 @@ def _document_search(
         }
 
     yield {"type": "stage_done", "step": 2, "found": len(doc_ids), "evidence": len(result["evidence"])}
+    if include_images and image_urls:
+        return [
+            {"type": "text", "text": json.dumps(result, ensure_ascii=False)},
+            *[
+                {"type": "image", "url": url, "mime_type": "image/png"}
+                for url in image_urls
+            ],
+        ]
     return result
+
+
+def _document_search_with_images(**kwargs: Any):
+    """최신 하이브리드 검색 결과에 원본 PDF Picture crop을 덧붙인다."""
+
+    return (yield from _document_search(**kwargs, include_images=True))
 
 
 def _people_list(*, account_id: str) -> dict[str, Any]:
@@ -1922,6 +1987,29 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         handler=_document_search,
         category="문서",
     ),
+    "document_search_with_images": Tool(
+        ref="document_search_with_images",
+        name="문서 검색 · 원본 이미지",
+        description=(
+            "팀 문서의 최신 하이브리드 검색 결과를 찾고, 상위 PICTURE 근거에는 "
+            "원본 PDF의 해당 영역을 이미지 입력으로 함께 돌려준다."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "찾고 싶은 내용을 한국어 문장으로",
+                },
+            },
+            "required": ["query"],
+        },
+        handler=_document_search_with_images,
+        category="문서",
+        capability="이미지 근거 검색",
+        required_model_capability="image_input",
+    ),
     "people_list": Tool(
         ref="people_list",
         name="팀원 조회",
@@ -2891,6 +2979,7 @@ _DEFAULT_CHAT_EXCLUDED: frozenset[str] = frozenset(
         "chart_create",
         "graph_create",
         "task_extraction",
+        "document_search_with_images",
     }
 )
 DEFAULT_CHAT_TOOL_REFS: frozenset[str] = (

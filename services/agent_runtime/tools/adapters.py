@@ -47,6 +47,7 @@ from services.mcp import client as mcp_client
 #: 것처럼 보인다.
 #: 레거시 `runner.py` 의 같은 자리에서 옮겨 올 때 함께 빠져 있었다(2026-08-18 QA).
 _DOCUMENT_SEARCH_REF = "document_search"
+_IMAGE_DOCUMENT_SEARCH_REF = "document_search_with_images"
 _ACCOUNT_SCOPED: frozenset[str] = frozenset(
     {
         "people_list",
@@ -91,7 +92,7 @@ def _injected_context_names(tool_ref: str) -> tuple[str, ...]:
     """`services.agent_runtime.tools.loader.CONTEXT_VALUES` 키 이름 기준으로 돌려준다."""
     if tool_ref == _TASK_EXTRACTION_REF:
         return ("project_id", "account_id", "team_id")
-    if tool_ref == _DOCUMENT_SEARCH_REF:
+    if tool_ref in {_DOCUMENT_SEARCH_REF, _IMAGE_DOCUMENT_SEARCH_REF}:
         # `project_id`는 `_call`이 레거시 이름(`proj_id`)으로 바꿔 넘긴다.
         return ("team_id", "account_id", "project_id")
     if tool_ref in _PROJECT_SCOPED:

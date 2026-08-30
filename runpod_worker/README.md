@@ -25,10 +25,11 @@ Before chunking, the worker now applies the final parsing layers in this order:
    captions, section path, and sibling context reflect the final order. Picture
    elements are inferred in batches of 4.
 6. `picture_description_serializer.py`: serialize a `PictureItem` as the
-   accepted `meta.description.text` only. Caption, classification, other picture
-   metadata, placeholders, and adjacent body text are excluded. Picture chunks
-   remain merge boundaries even when `merge_peers=true`; non-picture chunks
-   retain Docling's normal merge and contextualization behavior.
+   accepted `meta.description.text` only when that description exists. If the
+   VLM description is missing or rejected by the quality layer, use Docling's
+   default picture and metadata serializers as a searchable fallback. Picture
+   chunks remain merge boundaries even when `merge_peers=true`; non-picture
+   chunks retain Docling's normal merge and contextualization behavior.
 
 The complete audit is returned under `validation.final_parse`. Existing
 `validation.promoted_heading_count` remains for backward compatibility.
@@ -41,9 +42,11 @@ If the optional Qwen stage fails, the corrected structured document is kept
 and the exact failure is written to the picture audit; document indexing does
 not fail only because an image description failed.
 
-A picture with no accepted description emits no picture text chunk. For a
-described picture, the embedding input is the description itself rather than
-`HybridChunker.contextualize()`, so headings are not prepended to image text.
+A described picture uses the accepted description itself as embedding input
+rather than `HybridChunker.contextualize()`, so headings are not prepended.
+A picture with no accepted description still emits the default Docling picture
+serialization, allowing its caption or metadata to participate in retrieval
+and preserving the source reference needed for an original-PDF crop.
 
 Runtime pins are `docling[easyocr,vlm]==2.119.0`, `transformers==5.8.0`, and
 `sentence-transformers==6.0.0`.

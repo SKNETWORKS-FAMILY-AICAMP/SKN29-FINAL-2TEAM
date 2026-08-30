@@ -686,6 +686,22 @@ class KoreanLexicalQueryTests(SimpleTestCase):
         self.assertEqual(lexical_tsquery("결제 & 실패 | 복귀:*"), "결제:* | 실패:* | 복귀:*")
 
 
+class HybridPictureEvidenceContractTests(SimpleTestCase):
+    def test_picture_description은_순위에만_쓰고_crop_식별자를_반환한다(self):
+        import inspect
+
+        from backend.db.document_pipeline import VectorSearchRepository
+
+        source = inspect.getsource(VectorSearchRepository.search_hybrid)
+
+        self.assertIn("to_tsvector('simple', c.search_text)", source)
+        self.assertIn("word_similarity(p.query_text, c.search_text)", source)
+        self.assertIn("WHEN b.block_type = 'PICTURE'", source)
+        self.assertIn("THEN NULL", source)
+        for field in ("block_id", "block_type", "mime_type", "page", "revision"):
+            self.assertIn(field, source)
+
+
 class ChunkRevisionScopeTests(SimpleTestCase):
     """청크를 읽는 자리는 **전부** 현재 revision 만 봐야 한다.
 
