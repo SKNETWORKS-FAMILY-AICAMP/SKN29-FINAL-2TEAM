@@ -41,7 +41,9 @@ class EvaluationV2FixtureTests(unittest.TestCase):
         self.assertEqual(sum(item["source_count"] for item in result), 15)
 
     def test_package_rejects_path_outside_repository(self):
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary:
+        # CI의 체크아웃은 컨테이너 appuser에게 읽기 전용일 수 있다. 이 검증은
+        # 합성 package 경계만 필요하므로 쓰기 가능한 시스템 임시 경로를 쓴다.
+        with tempfile.TemporaryDirectory() as temporary:
             package = Path(temporary) / "BAD"
             package.mkdir()
             (package / "fixture.yaml").write_text(
