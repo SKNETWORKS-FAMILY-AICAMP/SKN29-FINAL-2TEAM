@@ -636,49 +636,28 @@ def share_personal_skill(account_id: str, *, team_id: str, name: str) -> dict[st
 def import_team_skill(account_id: str, *, team_id: str, name: str) -> dict[str, Any]:
     """팀 카탈로그의 스킬을 독립적인 개인 사본으로 가져온다.
 
+    **가져올 때 다시 검증하지 않는다**(2026-08-30 결정). 팀 카탈로그에는
+    검증을 통과한 스킬만 올라온다(`share_personal_skill`가 `VERIFIED`만
+    허용) — 이미 검증이 끝난 내용을 그대로 개인 공간으로 복사할 뿐이므로,
+    일반 등록과 같은 검증 job을 만들 이유가 없다. 공유본의 검증 영수증도
+    그대로 옮겨 개인 사본이 검증 상태를 유지하게 한다.
+
     이후 원 공유자의 비활성화·수정·공유 중지나 팀장의 카탈로그 삭제는 이
     개인 사본에 영향을 주지 않는다. 같은 이름의 개인 스킬이 이미 있으면
     조용히 덮어쓰지 않고 기존 이름 충돌 규칙으로 거부한다.
     """
 
     shared = get_team_skill(team_id, name)
-    from .versioning import runtime_profile_version, tool_registry_version, validation_hash
-    compatible = (
-        shared.get("validation_state") == "VERIFIED"
-        and shared.get("validated_hash") == validation_hash(shared)
-        and shared.get("runtime_profile_version") == runtime_profile_version()
-        and shared.get("tool_registry_version") == tool_registry_version()
-    )
     receipt = {key: shared.get(key) for key in _VALIDATION_RECEIPT_KEYS}
-    if compatible:
-        return {
-            "requires_validation": False,
-            "skill": create_personal_skill(
-                account_id, team_id=team_id, name=shared["name"],
-                description=shared["description"], body=shared["body"], enabled=True,
-                frontmatter=shared.get("frontmatter"), validation_receipt=receipt,
-                imported_from_team_id=team_id, imported_from_skill_name=name,
-            ),
-        }
-
-    # 검증되지 않았거나 현재 실행 환경과 영수증이 다른 공유본은 개인 공간에
-    # 바로 쓰지 않는다. 일반 등록과 같은 검증 job을 만든다.
-    from .registration import SkillRegistrationService
-    document = SkillDocument.create(
-        name=shared["name"], description=shared["description"], body=shared["body"],
-        frontmatter=shared.get("frontmatter"),
-    ).updated(metadata_updates={
-        _SHARED_BY_ACCOUNT_ID: None,
-        _IMPORTED_FROM_TEAM_ID: team_id,
-        _IMPORTED_FROM_SKILL_NAME: name,
-        **{key: None for key in _VALIDATION_RECEIPT_KEYS},
-    })
-    result = SkillRegistrationService.enqueue(
-        account_id=account_id, team_id=team_id, name=document.name,
-        description=document.description, body=document.body,
-        frontmatter=document.frontmatter,
-    )
-    return {"requires_validation": True, "job": result.job, "created": result.created}
+    return {
+        "requires_validation": False,
+        "skill": create_personal_skill(
+            account_id, team_id=team_id, name=shared["name"],
+            description=shared["description"], body=shared["body"], enabled=True,
+            frontmatter=shared.get("frontmatter"), validation_receipt=receipt,
+            imported_from_team_id=team_id, imported_from_skill_name=name,
+        ),
+    }
 
 
 def stop_sharing_personal_skill(account_id: str, *, team_id: str, name: str) -> None:

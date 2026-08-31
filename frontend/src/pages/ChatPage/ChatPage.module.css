@@ -1235,15 +1235,6 @@
   color: var(--color-primary);
 }
 
-.slashScope {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  font-size: 11px;
-  color: var(--color-muted);
-}
-
 .slashDesc {
   min-width: 0;
   overflow: hidden;

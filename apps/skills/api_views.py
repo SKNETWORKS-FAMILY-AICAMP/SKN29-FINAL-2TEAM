@@ -286,7 +286,11 @@ class TeamSkillListCreateAPIView(AuthenticatedAPIView):
         )
 
 class TeamSkillImportAPIView(AuthenticatedAPIView):
-    """팀 공유 카탈로그의 스킬을 현재 사용자의 독립 개인 사본으로 가져온다."""
+    """팀 공유 카탈로그의 스킬을 현재 사용자의 독립 개인 사본으로 가져온다.
+
+    팀 카탈로그에는 검증을 통과한 스킬만 올라오므로, 가져오기는 재검증
+    없이 개인 공간으로 복사만 한다(`import_team_skill` docstring).
+    """
 
     def post(self, request, name):
         context = _team_context(request)
@@ -301,11 +305,6 @@ class TeamSkillImportAPIView(AuthenticatedAPIView):
             )
         except SkillError as exc:
             return _skill_error_response(exc)
-        if result["requires_validation"]:
-            return Response(
-                job_response(result["job"]),
-                status=status.HTTP_202_ACCEPTED if result.get("created") else status.HTTP_200_OK,
-            )
         return Response(
             skill_response(result["skill"], account_id=request.user.account_id),
             status=status.HTTP_201_CREATED,

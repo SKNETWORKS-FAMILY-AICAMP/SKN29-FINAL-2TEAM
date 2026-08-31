@@ -1054,13 +1054,8 @@ ${candidate.body}
     if (!token || importingSkillKey === skill.skill_id || skill.imported_by_me) return;
     setImportingSkillKey(skill.skill_id);
     try {
+      // 팀 카탈로그에는 검증된 스킬만 올라오므로 재검증 없이 바로 복사된다.
       const imported = await importTeamSkill(token, skill.skill_id);
-      if ('job_id' in imported) {
-        setRegistrationJobs((prev) => [imported, ...prev]);
-        notifySkillJobStarted();
-        showToast('현재 환경에서 검증한 뒤 내 스킬로 등록합니다.', 'success');
-        return;
-      }
       setPersonalSkills((prev) => [...prev, imported].sort((a, b) => a.name.localeCompare(b.name)));
       setTeamSkills((prev) =>
         prev.map((item) =>
