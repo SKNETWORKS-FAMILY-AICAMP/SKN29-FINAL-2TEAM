@@ -8,6 +8,7 @@
 - 동결 manifest: `outputs/eval-v3-freeze/freeze-3311f90aa3ef-AG004-AV073.json`
 - 본 실행 orchestration: `outputs/eval-v3-orchestration/v3-orchestration-20260831T024939Z.json`
 - 결과 루트: `outputs/eval-v3-results/`
+- 시각화 대시보드: `outputs/eval-v3-dashboard/index.html`
 
 ## 1. 결론
 
@@ -141,3 +142,13 @@ Scenario PASS와 Candidate `SUCCESS`, Judge PASS는 서로 다른 층의 판정�
 - Delta 0/18 FAIL을 플랫폼 안전성 실패로 표현하지 않는다.
 - orchestration log에는 결과 `eval_run_id`가 직접 기록되지 않아, Core/Expansion 매핑은 실행 순서·시각·fixture 일치로 사후 대조했다.
 - normalized tool argument 원문은 공식 JSON에 저장하지 않고 signature hash만 사용한다. 원문 수준 분석은 DB `tool_call.input_summary`와 trace를 함께 확인해야 한다.
+
+## 8. 대시보드 재생성
+
+V2와 같은 로컬 정적 HTML 방식의 V3 전용 대시보드를 생성한다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/eval_v3_dashboard.py
+```
+
+대시보드는 최종 유효 66회와 제외된 인프라 무효 1회만 읽는다. Core·Expansion·Delta, Scenario 결과, Hard Gate, 중복 signature, 도구 호출, 호출 예산 assertion, Candidate 상태, Judge 결과와 실행별 원시 evidence를 필터링하여 확인할 수 있다.
