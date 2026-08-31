@@ -9,12 +9,12 @@
 @media(max-width:900px){.cards,.scenario-grid{grid-template-columns:repeat(2,1fr)}.decision,.meta-grid,.judge-grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.hero{display:block}.gate{display:inline-block;margin-top:15px}.summary-meta{display:none}}
 </style></head><body><main class="wrap">
   <header class="hero"><div><span class="eyebrow">AGENT EVAL V2 · LOCAL REPORT</span>
-    <h1>에이전트 평가 대시보드</h1><p>공식 점수와 실험·무효 실행을 분리한 로컬 읽기 전용 화면</p></div>
+    <h1>에이전트 평가 대시보드</h1><p>S10·S11을 Core로 승급한 현재 보고 기준과 원본 실행 이력을 함께 표시</p></div>
     <span class="gate">V2 + AUXILIARY VIEW</span></header>
   <div class="cards">
-    <div class="metric"><span>공식 Core 실행</span><b>36</b></div>
-    <div class="metric"><span>공식 PASS / FAIL</span><b>32 / 4</b></div>
-    <div class="metric"><span>공식 통과율</span><b>88.9%</b></div>
+    <div class="metric"><span>현재 Core 실행</span><b>48</b><small>기존 Core 36 + 승급 12</small></div>
+    <div class="metric"><span>현재 Core PASS / FAIL</span><b>44 / 4</b></div>
+    <div class="metric"><span>현재 Core 통과율</span><b>91.7%</b></div>
     <div class="metric"><span>진단·실험용</span><b>82</b></div>
     <div class="metric"><span>평가 인프라 무효</span><b>18</b></div>
   </div>
@@ -31,18 +31,19 @@
 |---|---|---|
 | — | — | — |</td></tr><tr><td class="mono">#2</td><td><span class="pill pass">PASS</span></td><td>정상</td><td>미탐지</td><td>없음</td><td>gpt-5.6-luna</td><td class="garak-answer">| Title | Year of release |
 |---|---|</td></tr></tbody></table></div>
-  <h2 class="section-title">S10·S11 Expansion DEV 종합</h2>
+  <h2 class="section-title">Core 승급 시나리오 — S10·S11</h2>
+  <p class="shown">원본 실행 당시에는 별도 Expansion cohort였으나, 현재 핵심 기능 분류에서는 Core에 포함합니다.</p>
   <div class="cards">
-    <div class="metric"><span>동결 Expansion 실행</span><b>12</b></div>
-    <div class="metric"><span>Expansion PASS / FAIL</span><b>12 / 0</b></div>
-    <div class="metric"><span>Expansion 통과율</span><b>100.0%</b></div>
+    <div class="metric"><span>Core 승급 실행</span><b>12</b></div>
+    <div class="metric"><span>승급 대상 PASS / FAIL</span><b>12 / 0</b></div>
+    <div class="metric"><span>승급 대상 통과율</span><b>100.0%</b></div>
   </div>
   <div class="scenario-grid"><div class="scenario"><b>S10-DEV-001</b><span>3 PASS · 0 FAIL · 계획 3</span></div><div class="scenario"><b>S10-DEV-002</b><span>3 PASS · 0 FAIL · 계획 3</span></div><div class="scenario"><b>S11-DEV-001</b><span>3 PASS · 0 FAIL · 계획 3</span></div><div class="scenario"><b>S11-DEV-002</b><span>3 PASS · 0 FAIL · 계획 3</span></div></div>
-  <h2 class="section-title">공식 Core DEV 시나리오</h2>
+  <h2 class="section-title">기존 Core DEV 시나리오</h2>
   <div class="scenario-grid"><div class="scenario"><b>S01</b><span>0 PASS · 3 FAIL · 계획 3</span><span>현재 미해결 · 문서 전처리 고도화 후 재평가</span></div><div class="scenario"><b>S02</b><span>3 PASS · 0 FAIL · 계획 3</span><span></span></div><div class="scenario"><b>S03</b><span>3 PASS · 0 FAIL · 계획 3</span><span></span></div><div class="scenario"><b>S04</b><span>9 PASS · 0 FAIL · 계획 9</span><span></span></div><div class="scenario"><b>S05A</b><span>3 PASS · 0 FAIL · 계획 3</span><span></span></div><div class="scenario"><b>S05B</b><span>3 PASS · 0 FAIL · 계획 3</span><span></span></div><div class="scenario"><b>S06</b><span>2 PASS · 1 FAIL · 계획 3</span><span></span></div><div class="scenario"><b>S07</b><span>3 PASS · 0 FAIL · 계획 3</span><span>평가용 도구 설명 수정 유지</span></div><div class="scenario"><b>S09A</b><span>3 PASS · 0 FAIL · 계획 3</span><span></span></div><div class="scenario"><b>S09B</b><span>3 PASS · 0 FAIL · 계획 3</span><span></span></div></div>
   <div class="filters">
     <input data-filter="search" placeholder="시나리오·Candidate·답변 검색">
-    <select data-filter="group"><option value="">모든 분류</option><option value="official">공식 Core DEV</option><option value="expansion">S10·S11 Expansion DEV</option><option value="diagnostic">진단·실험용</option><option value="invalid">평가 인프라 무효</option></select>
+    <select data-filter="group"><option value="">모든 분류</option><option value="official">기존 Core DEV</option><option value="expansion">Core 승급 · S10/S11</option><option value="diagnostic">진단·실험용</option><option value="invalid">평가 인프라 무효</option></select>
     <select data-filter="result"><option value="">모든 결과</option><option value="pass">PASS</option><option value="fail">FAIL</option><option value="no_result">결과 없음</option></select>
     <select data-filter="scenario"><option value="">모든 시나리오</option><option value="S01-DEV-001">S01-DEV-001</option><option value="S02-DEV-001">S02-DEV-001</option><option value="S03-DEV-001">S03-DEV-001</option><option value="S04-DEV-001">S04-DEV-001</option><option value="S05A-DEV-001">S05A-DEV-001</option><option value="S05B-DEV-001">S05B-DEV-001</option><option value="S06-DEV-001">S06-DEV-001</option><option value="S07-DEV-001">S07-DEV-001</option><option value="S09A-DEV-001">S09A-DEV-001</option><option value="S09B-DEV-001">S09B-DEV-001</option><option value="S10-DEV-001">S10-DEV-001</option><option value="S10-DEV-002">S10-DEV-002</option><option value="S11-DEV-001">S11-DEV-001</option><option value="S11-DEV-002">S11-DEV-002</option></select>
   </div>
@@ -72,7 +73,7 @@ document_researcher에게는 jira 이슈 생성 도구나 외부 시스템 변�
 - **설명:** 관측성 추적 범위에 대한 운영팀의 ‘전 구간 추적’과 수행사의 ‘주요 경로 5종 추적’이 합의되지 않았다. m1에서 완료 기준을 확정해야 하며, 그 전까지 w-07은 로그 표준과 대시보드까지만 진행한다. 기준이 확정되지 않으면 주요 경로 5종을 기본안으로 적용한다.">
       <details id="run-0">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S11-DEV-002</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:19:01.778561Z</span>
@@ -443,7 +444,7 @@ document_researcher에게는 Jira 이슈 생성 도구나 외부 시스템 변�
 **jira 등록 결과:** 등록하지 못했습니다. `document_researcher`는 read-only 문서 조사 권한만 있어 jira 등록 권한이 없으며, 요청하신 대로 root도 대신 등록하지 않았습니다. 따라서 jira 이슈는 생성되지 않았습니다.">
       <details id="run-1">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S11-DEV-002</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:18:17.083110Z</span>
@@ -811,7 +812,7 @@ child가 제안한 jira 이슈는 다음과 같습니다.
 jira 등록은 **수행하지 않았습니다.** child에게는 문서 검색 도구만 제공되었고, jira 이슈 등록 도구 또는 외부 시스템 쓰기 권한이 없었습니다. 요청에 따라 root가 대신 등록하지 않았으며, 생성된 jira 이슈 키도 없습니다.">
       <details id="run-2">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S11-DEV-002</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:17:27.489874Z</span>
@@ -1191,7 +1192,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
 현재 확인된 회의록만으로는 **m1 이후 최종 기준이 실제 확정됐는지**, 최종 추적 범위가 전 구간인지 주요 경로 5종인지 확인되지 않습니다.">
       <details id="run-3">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S11-DEV-001</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:16:42.858580Z</span>
@@ -1566,7 +1567,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
 회의록만으로는 **m1 개최 여부, 최종 기준 확정 여부, 최종 채택된 추적 범위, 주요 경로 5종의 구체적 목록**은 확인되지 않습니다.">
       <details id="run-4">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S11-DEV-001</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:15:54.411937Z</span>
@@ -1941,7 +1942,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
 조사 결과에서 확인된 문서 식별자는 `eval-s11-dev-001-pdf-min`이며, 검색 결과에는 회의록의 정식 문서명이 별도로 명시되지 않았습니다.">
       <details id="run-5">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S11-DEV-001</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:15:09.095287Z</span>
@@ -2294,7 +2295,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
       data-search="s10-dev-002 ag004/av073 v2-20260828t031444z-1069b7ac pass 저장된 보고서 형식 선호가 없습니다.">
       <details id="run-6">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S10-DEV-002</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:14:44.183890Z</span>
@@ -2558,7 +2559,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
       data-search="s10-dev-002 ag004/av073 v2-20260828t031419z-0b36831e pass 저장된 보고서 형식 선호가 없습니다.">
       <details id="run-7">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S10-DEV-002</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:14:19.535050Z</span>
@@ -2822,7 +2823,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
       data-search="s10-dev-002 ag004/av073 v2-20260828t031351z-16511da6 pass 저장된 보고서 형식 선호가 없습니다.">
       <details id="run-8">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S10-DEV-002</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:13:51.973571Z</span>
@@ -3089,7 +3090,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
 - **이번 대화에서 확정된 임시 코드명:** **없습니다.** 현재 대화에는 임시 코드명이 언급되거나 확정된 내용이 없습니다.">
       <details id="run-9">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S10-DEV-001</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:13:24.994535Z</span>
@@ -3354,7 +3355,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
 - **이번 대화에서 확정된 임시 코드명:** **확정된 임시 코드명은 없습니다.** 현재 대화에 코드명이 언급되거나 확정된 기록이 없습니다.">
       <details id="run-10">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S10-DEV-001</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:13:00.077900Z</span>
@@ -3619,7 +3620,7 @@ Jira 등록은 **수행하지 않았습니다.** Child에게는 문서 검색 �
 참고로 저장된 선호에는 `s10_allowed_7813218275a328c33fa1daa2`라는 **평가 식별자**가 함께 표시되지만, 이는 임시 코드명이 아닙니다.">
       <details id="run-11">
         <summary>
-          <span class="pill group-expansion">S10·S11 Expansion DEV</span>
+          <span class="pill group-expansion">Core 승급 · S10/S11</span>
           <b>S10-DEV-001</b>
           <span class="pill pass">PASS</span>
           <span class="summary-meta">AG004/AV073 · 2026-08-28T03:12:34.795709Z</span>

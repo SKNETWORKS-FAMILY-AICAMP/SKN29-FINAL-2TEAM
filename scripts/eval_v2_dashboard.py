@@ -54,7 +54,7 @@ CURRENT_CANDIDATE = DEFAULT_CANDIDATE
 
 GROUP_LABELS = {
     "official": "공식 Core DEV",
-    "expansion": "S10·S11 Expansion DEV",
+    "expansion": "Core 승급 · S10/S11",
     "diagnostic": "진단·실험용",
     "invalid": "평가 인프라 무효",
 }
@@ -584,12 +584,16 @@ def render_dashboard(
 ) -> str:
     summary = summarize(entries)
     official_results = summary["official_results"]
-    official_total = sum(official_results.values())
-    pass_rate = official_results["PASS"] / official_total * 100 if official_total else 0
     expansion_results = summary["expansion_results"]
     expansion_total = sum(expansion_results.values())
     expansion_pass_rate = (
         expansion_results["PASS"] / expansion_total * 100 if expansion_total else 0
+    )
+    current_core_results = official_results + expansion_results
+    current_core_total = sum(current_core_results.values())
+    current_core_pass_rate = (
+        current_core_results["PASS"] / current_core_total * 100
+        if current_core_total else 0
     )
     auxiliary_cards = []
     for key in (
@@ -646,12 +650,12 @@ def render_dashboard(
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agent Eval V2 대시보드</title><style>{CSS}</style></head><body><main class="wrap">
   <header class="hero"><div><span class="eyebrow">AGENT EVAL V2 · LOCAL REPORT</span>
-    <h1>에이전트 평가 대시보드</h1><p>공식 점수와 실험·무효 실행을 분리한 로컬 읽기 전용 화면</p></div>
+    <h1>에이전트 평가 대시보드</h1><p>S10·S11을 Core로 승급한 현재 보고 기준과 원본 실행 이력을 함께 표시</p></div>
     <span class="gate">V2 + AUXILIARY VIEW</span></header>
   <div class="cards">
-    <div class="metric"><span>공식 Core 실행</span><b>{summary['groups']['official']}</b></div>
-    <div class="metric"><span>공식 PASS / FAIL</span><b>{official_results['PASS']} / {official_results['FAIL']}</b></div>
-    <div class="metric"><span>공식 통과율</span><b>{pass_rate:.1f}%</b></div>
+    <div class="metric"><span>현재 Core 실행</span><b>{current_core_total}</b><small>기존 Core 36 + 승급 12</small></div>
+    <div class="metric"><span>현재 Core PASS / FAIL</span><b>{current_core_results['PASS']} / {current_core_results['FAIL']}</b></div>
+    <div class="metric"><span>현재 Core 통과율</span><b>{current_core_pass_rate:.1f}%</b></div>
     <div class="metric"><span>진단·실험용</span><b>{summary['groups']['diagnostic']}</b></div>
     <div class="metric"><span>평가 인프라 무효</span><b>{summary['groups']['invalid']}</b></div>
   </div>
@@ -663,18 +667,19 @@ def render_dashboard(
   <h2 class="section-title">Garak 적대적 보안 진단</h2>
   <p class="shown">동일한 Prompt Injection 3건의 모델 단독 결과와 업무 도구 없는 실제 에이전트 결과를 분리해 표시합니다.</p>
   {_garak_html(garak)}
-  <h2 class="section-title">S10·S11 Expansion DEV 종합</h2>
+  <h2 class="section-title">Core 승급 시나리오 — S10·S11</h2>
+  <p class="shown">원본 실행 당시에는 별도 Expansion cohort였으나, 현재 핵심 기능 분류에서는 Core에 포함합니다.</p>
   <div class="cards">
-    <div class="metric"><span>동결 Expansion 실행</span><b>{summary['groups']['expansion']}</b></div>
-    <div class="metric"><span>Expansion PASS / FAIL</span><b>{expansion_results['PASS']} / {expansion_results['FAIL']}</b></div>
-    <div class="metric"><span>Expansion 통과율</span><b>{expansion_pass_rate:.1f}%</b></div>
+    <div class="metric"><span>Core 승급 실행</span><b>{summary['groups']['expansion']}</b></div>
+    <div class="metric"><span>승급 대상 PASS / FAIL</span><b>{expansion_results['PASS']} / {expansion_results['FAIL']}</b></div>
+    <div class="metric"><span>승급 대상 통과율</span><b>{expansion_pass_rate:.1f}%</b></div>
   </div>
   <div class="scenario-grid">{"".join(expansion_cards)}</div>
-  <h2 class="section-title">공식 Core DEV 시나리오</h2>
+  <h2 class="section-title">기존 Core DEV 시나리오</h2>
   <div class="scenario-grid">{"".join(scenario_cards)}</div>
   <div class="filters">
     <input data-filter="search" placeholder="시나리오·Candidate·답변 검색">
-    <select data-filter="group"><option value="">모든 분류</option><option value="official">공식 Core DEV</option><option value="expansion">S10·S11 Expansion DEV</option><option value="diagnostic">진단·실험용</option><option value="invalid">평가 인프라 무효</option></select>
+    <select data-filter="group"><option value="">모든 분류</option><option value="official">기존 Core DEV</option><option value="expansion">Core 승급 · S10/S11</option><option value="diagnostic">진단·실험용</option><option value="invalid">평가 인프라 무효</option></select>
     <select data-filter="result"><option value="">모든 결과</option><option value="pass">PASS</option><option value="fail">FAIL</option><option value="no_result">결과 없음</option></select>
     <select data-filter="scenario"><option value="">모든 시나리오</option>{scenario_options}</select>
   </div>
@@ -711,8 +716,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = summarize(entries)
     print(
         f"생성 완료: {args.output.resolve()}\n"
-        f"공식 {summary['groups']['official']}건 · 진단 {summary['groups']['diagnostic']}건 · "
-        f"Expansion {summary['groups']['expansion']}건 · 무효 {summary['groups']['invalid']}건"
+        f"현재 Core {summary['groups']['official'] + summary['groups']['expansion']}건 · "
+        f"진단 {summary['groups']['diagnostic']}건 · 무효 {summary['groups']['invalid']}건"
     )
     if args.open:
         webbrowser.open(args.output.resolve().as_uri())

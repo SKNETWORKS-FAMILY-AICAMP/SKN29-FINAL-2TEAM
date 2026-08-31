@@ -52,9 +52,10 @@ class EvalV3DashboardTests(unittest.TestCase):
             self._run(root, "v2-delta", "D01-DEV-001", "FAIL")
             entries = load_entries(root)
             summary = summarize(entries)
-            self.assertEqual([entry["group"] for entry in entries], ["core", "delta", "expansion"])
+            self.assertEqual([entry["group"] for entry in entries], ["core", "delta", "core"])
             self.assertEqual(summary["scored_runs"], 3)
             self.assertEqual(summary["results"], {"PASS": 2, "FAIL": 1})
+            self.assertEqual(summary["cohorts"]["core"], {"PASS": 2})
             self.assertEqual(summary["tool_calls"], 6)
 
     def test_dashboard_discloses_comparability_and_hard_gate_caveats(self):

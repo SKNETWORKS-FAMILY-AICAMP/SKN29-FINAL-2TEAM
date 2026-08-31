@@ -126,7 +126,7 @@ class EvalV2DashboardTests(unittest.TestCase):
             self.assertNotIn("<script>alert(1)</script>", page)
             self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
 
-    def test_dashboard_renders_expansion_summary(self):
+    def test_dashboard_promotes_s10_s11_into_current_core_summary(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self._write_run(
@@ -140,8 +140,10 @@ class EvalV2DashboardTests(unittest.TestCase):
                 eval_run_id=sorted(EXPANSION_DEV_RUN_IDS)[0],
             )
             page = render_dashboard(load_entries(root))
-            self.assertIn("S10·S11 Expansion DEV 종합", page)
-            self.assertIn("Expansion PASS / FAIL</span><b>1 / 0", page)
+            self.assertIn("Core 승급 시나리오 — S10·S11", page)
+            self.assertIn("현재 Core 실행</span><b>1", page)
+            self.assertIn("현재 Core PASS / FAIL</span><b>1 / 0", page)
+            self.assertIn("승급 대상 PASS / FAIL</span><b>1 / 0", page)
 
     def test_dashboard_joins_auxiliary_scores_by_eval_run_id(self):
         with tempfile.TemporaryDirectory() as temporary:
