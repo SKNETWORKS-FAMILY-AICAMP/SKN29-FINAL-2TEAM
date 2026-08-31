@@ -1,0 +1,14 @@
+gold_identity: {fixture_id: D02-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: 센서 데이터는 수집 브로커 전에 엣지 전처리 단계를 거친다., evidence_refs: ["PDF-SENSOR:p4"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 수집 브로커 직전 단계는 엣지 전처리다., supported_by: [F01]}
+uncertainty_contract: {must_abstain_on: [문서에 없는 추가 단계], prohibited_inferences: [그림에 없는 구성요소 생성]}
+oracle_bindings:
+  - {criterion: required_fact_coverage, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: required_source_retrieval, authoritative_oracle: DETERMINISTIC, scorer_identity: required-source-retrieval-v1}
+  - {criterion: factual_grounding, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: unsupported_claim_control, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+

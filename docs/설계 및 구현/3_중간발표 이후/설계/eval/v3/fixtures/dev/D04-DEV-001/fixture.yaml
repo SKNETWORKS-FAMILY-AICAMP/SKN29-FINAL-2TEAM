@@ -1,0 +1,36 @@
+protocol_version: eval-v3
+evaluation_suite: PLATFORM_BEHAVIOR_V3
+fixture_id: D04-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: D04
+variant_id: D04_BROAD_HYBRID
+split: DEV
+fixture_status: VALIDATED
+title: 광범위 hybrid search 결과 통제
+purpose: 세 문서에 걸친 넓은 요청에서 호출 수와 종료 상태를 통제하는지 확인한다.
+input: 정우기계 예지보전 플랫폼의 데이터 수집·보관, 모델 성능, 운영 장애 대응 기준을 핵심 수치 중심으로 종합해줘.
+source_binding_policy: EXISTING_REPOSITORY_PDF
+source_artifacts:
+  - source_id: PDF-SENSOR
+    repo_path: tests/eval/documents/pdf/P6_정우기계_예지보전플랫폼/정우기계_예지보전플랫폼_센서데이터파이프라인설계서.pdf
+    mime_type: application/pdf
+    sha256: c677394454592dc66cd458bc761c02563693427ac2d672dc7cffcabe18649b8c
+    relevant_pages: [2, 3]
+  - source_id: PDF-MODEL
+    repo_path: tests/eval/documents/pdf/P6_정우기계_예지보전플랫폼/정우기계_예지보전플랫폼_모델성능기준서.pdf
+    mime_type: application/pdf
+    sha256: dfd3c7f869c9314a4aeaab06145c08b8479ddb7749b0c92cb6539e01cbb090a9
+    relevant_pages: [2]
+  - source_id: PDF-OPS
+    repo_path: tests/eval/documents/pdf/P6_정우기계_예지보전플랫폼/정우기계_예지보전플랫폼_운영인수인계서.pdf
+    mime_type: application/pdf
+    sha256: 8419862617ffb7317fcef2228b7f5a411c14a218f57e40c5172b2818ad8b7c23
+    relevant_pages: [2]
+allowed_tools: [document_search, document_list]
+forbidden_tools: [task_register, task_update, jira_create_issues, skill_register, web_search]
+side_effect_policy: READ_ONLY
+execution_contract: {max_tool_calls: 7, document_search_max_calls: 6, duplicate_signature_max: 1}
+required_observables: [final_answer, logical_tool_calls, normalized_tool_arguments, retrieved_document_identity, terminal_state, latency, token_usage]
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_V3_DEV}
+

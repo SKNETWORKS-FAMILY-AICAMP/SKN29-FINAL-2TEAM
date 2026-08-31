@@ -1,4 +1,4 @@
-"""S01-DEV-001을 실제 Agent와 gpt-5.6-sol Judge로 자동 평가한다."""
+"""S01 또는 호환되는 조회 fixture를 실제 Agent와 고정 Judge로 자동 평가한다."""
 
 from __future__ import annotations
 
@@ -41,7 +41,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--account-id", default="UA002")
     parser.add_argument("--agent-id", default="AG004")
     parser.add_argument("--agent-version-id", default="AV035")
-    parser.add_argument("--binding", type=Path, default=DEFAULT_BINDING)
+    parser.add_argument("--fixture-dir", type=Path, default=FIXTURE_DIR)
+    parser.add_argument("--binding", type=Path)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--environment", default="local-dev")
     return parser
@@ -56,9 +57,9 @@ def _git_commit() -> str:
     return head or "unknown"
 
 
-def _load() -> tuple[dict[str, Any], dict[str, Any]]:
-    fixture = yaml.safe_load((FIXTURE_DIR / "fixture.yaml").read_text(encoding="utf-8"))
-    gold = yaml.safe_load((FIXTURE_DIR / "gold.yaml").read_text(encoding="utf-8"))
+def _load(fixture_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    fixture = yaml.safe_load((fixture_dir / "fixture.yaml").read_text(encoding="utf-8"))
+    gold = yaml.safe_load((fixture_dir / "gold.yaml").read_text(encoding="utf-8"))
     return fixture, gold
 
 
@@ -165,15 +166,20 @@ def main(argv: list[str] | None = None) -> int:
     from services.evaluation.v2_recorder import V2EvaluationRecorder
     from services.evaluation.v2_scoring import score_scenario
 
-    fixture, gold = _load()
-    binding = _binding(args.binding, fixture, args.account_id)
+    fixture, gold = _load(args.fixture_dir)
+    binding_path = args.binding or (
+        DEFAULT_BINDING
+        if args.fixture_dir.resolve() == FIXTURE_DIR.resolve()
+        else REPO_ROOT / "outputs" / "eval-v3-fixture-bindings" / f"{fixture['fixture_id']}.json"
+    )
+    binding = _binding(binding_path, fixture, args.account_id)
     source_doc_ids = [item["doc_id"] for item in binding["documents"]]
     profile = AccountRepository.get_profile(args.account_id)
     session = ChatSessionRepository.create(
         account_id=args.account_id,
         agent_id=args.agent_id,
         proj_id=None,
-        title="[EVAL V2] S01-DEV-001",
+        title=f"[EVAL] {fixture['fixture_id']}",
     )
     context = RuntimeContext(
         account_id=args.account_id,
@@ -197,7 +203,8 @@ def main(argv: list[str] | None = None) -> int:
             "candidate_model": candidate_model,
             "runtime_profile": runtime,
             "planned_scenarios": [fixture["fixture_id"]],
-            "fixture_binding": str(args.binding),
+            "fixture_binding": str(binding_path),
+            "evaluation_suite": fixture.get("evaluation_suite", "AGENT_EVAL_V2"),
             "judge_model": DEFAULT_JUDGE_MODEL,
             "judge_reasoning_effort": DEFAULT_REASONING_EFFORT,
         },
@@ -208,6 +215,7 @@ def main(argv: list[str] | None = None) -> int:
         eval_case_id=fixture["fixture_id"],
         environment=args.environment,
     )
+    execution_contract = fixture.get("execution_contract") or {}
     case = {
         "id": fixture["fixture_id"],
         "input": fixture["input"],
@@ -218,11 +226,18 @@ def main(argv: list[str] | None = None) -> int:
         "required_tools": ["document_search"],
         "allowed_tools": fixture["allowed_tools"],
         "forbidden_tools": fixture["forbidden_tools"],
-        "max_tool_calls": 8,
-        "max_calls_per_tool": {"document_search": 7, "document_list": 1},
+        "max_tool_calls": int(execution_contract.get("max_tool_calls", 8)),
+        "max_calls_per_tool": {
+            "document_search": int(execution_contract.get("document_search_max_calls", 7)),
+            "document_list": 1,
+        },
         "required_evidence_documents": source_doc_ids,
         "optional_evidence_documents": [],
     }
+    if "duplicate_signature_max" in execution_contract:
+        case["max_calls_per_signature"] = int(
+            execution_contract["duplicate_signature_max"]
+        )
 
     try:
         candidate = run_read_only_case(

@@ -8,10 +8,12 @@ from scripts.eval_v2_dashboard import (
     EXPANSION_DEV_PROMPT_ID,
     EXPANSION_DEV_RUN_IDS,
     classify_entry,
+    _criteria_html,
     load_entries,
     load_garak_results,
     render_dashboard,
     summarize,
+    _user_input,
 )
 from scripts.eval_v2_portfolio import DEFAULT_CANDIDATE, DEFAULT_GIT_COMMIT
 
@@ -51,7 +53,7 @@ class EvalV2DashboardTests(unittest.TestCase):
             "scenario_result": result,
             "validity": "VALID",
             "criteria": [],
-            "candidate": {"final_answer": answer},
+            "candidate": {"input": "평가 사용자 입력", "final_answer": answer},
         }) + "\n", encoding="utf-8")
         if invalid:
             (run / "v2_disposition.json").write_text(json.dumps({
@@ -125,7 +127,19 @@ class EvalV2DashboardTests(unittest.TestCase):
             self.assertNotIn("<script>alert(1)</script>", page)
             self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
 
-    def test_dashboard_renders_expansion_summary(self):
+    def test_dashboard_renders_user_input_and_s07_fixture_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_run(root, "input")
+            page = render_dashboard(load_entries(root))
+            self.assertIn("평가 사용자 입력</h3>", page)
+            self.assertIn('<div class="user-input">평가 사용자 입력</div>', page)
+        self.assertIn(
+            "실제 등록 전에 반드시 승인을 요청해",
+            _user_input({"fixture_id": "S07-DEV-001", "candidate": {}}),
+        )
+
+    def test_dashboard_promotes_s10_s11_into_current_core_summary(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self._write_run(
@@ -139,8 +153,10 @@ class EvalV2DashboardTests(unittest.TestCase):
                 eval_run_id=sorted(EXPANSION_DEV_RUN_IDS)[0],
             )
             page = render_dashboard(load_entries(root))
-            self.assertIn("S10·S11 Expansion DEV 종합", page)
-            self.assertIn("Expansion PASS / FAIL</span><b>1 / 0", page)
+            self.assertIn("Core 승급 시나리오 — S10·S11", page)
+            self.assertIn("현재 Core 실행</span><b>1", page)
+            self.assertIn("현재 Core PASS / FAIL</span><b>1 / 0", page)
+            self.assertIn("승급 대상 PASS / FAIL</span><b>1 / 0", page)
 
     def test_dashboard_joins_auxiliary_scores_by_eval_run_id(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -241,6 +257,30 @@ class EvalV2DashboardTests(unittest.TestCase):
         }])
         self.assertIn("judge-model · reasoning medium", page)
         self.assertIn("판정 요약", page)
+
+    def test_contract_criteria_are_rendered_in_korean(self):
+        table = _criteria_html([
+            {
+                "criterion_id": "required_source_retrieval",
+                "role": "PRIMARY",
+                "oracle": "DETERMINISTIC",
+                "result": "PASS",
+            },
+            {
+                "criterion_id": "factual_grounding",
+                "role": "SECONDARY",
+                "oracle": "LLM_JUDGE",
+                "result": "FAIL",
+            },
+        ])
+        self.assertIn("필수 출처 검색", table)
+        self.assertIn("정답에 필요한 문서를 실제로 검색했는지 확인", table)
+        self.assertIn("사실 근거성", table)
+        self.assertIn("핵심 기준", table)
+        self.assertIn("보조 기준", table)
+        self.assertIn("규칙 기반 판정", table)
+        self.assertIn("LLM 판정", table)
+        self.assertIn('title="required_source_retrieval"', table)
 
 
 if __name__ == "__main__":

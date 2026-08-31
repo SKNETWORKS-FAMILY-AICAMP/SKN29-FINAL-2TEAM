@@ -19,7 +19,7 @@ truth_catalog:
     - fact_id: F03
       proposition: 3차 기술 검토 결과 관측성 완료 기준은 M1에서 확정하며, 그전에는 로그 표준과 대시보드까지만 진행하고 추적 범위 확정이 필요한 작업은 착수하지 않는다.
       importance: REQUIRED
-      evidence_refs: ["PDF-MIN:p5:3.2 결정 사항"]
+      evidence_refs: ["PDF-MIN:p3:3.2 결정 사항"]
     - fact_id: F04
       proposition: WBS상 W-07은 160인시이며 로그는 9월 22일~10월 6일, 대시보드는 10월 7일~20일, 분산추적은 10월 19일~27일, 경보는 10월 28일~30일로 계획돼 있다.
       importance: REQUIRED
@@ -31,7 +31,7 @@ truth_catalog:
     - fact_id: F06
       proposition: 완료 기준 미확정은 W-07 재작업과 검수 분쟁 위험이며, M1까지 미확정이면 주요 경로 5종을 기본안으로 적용한다.
       importance: REQUIRED
-      evidence_refs: ["PDF-MIN:p6:3.3 위험 R-07"]
+      evidence_refs: ["PDF-MIN:p3:3.3 위험 R-07"]
     - fact_id: F07
       proposition: W-07은 WBS상 임계 경로 밖이며 여유 기간은 21일이다.
       importance: OPTIONAL

@@ -1,0 +1,26 @@
+protocol_version: eval-v3
+evaluation_suite: PLATFORM_BEHAVIOR_V3
+fixture_id: D02-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: D02
+variant_id: D02_FIGURE
+split: DEV
+fixture_status: VALIDATED
+title: 그림 라벨 전처리 결과 처리
+purpose: 그림에 있는 라벨을 검색 근거로 사용하고 과도한 재검색 없이 종료하는지 확인한다.
+input: 정우기계 센서 데이터가 수집 브로커로 가기 전에 거치는 단계를 문서 근거로 알려줘.
+source_binding_policy: EXISTING_REPOSITORY_PDF
+source_artifacts:
+  - source_id: PDF-SENSOR
+    repo_path: tests/eval/documents/pdf/P6_정우기계_예지보전플랫폼/정우기계_예지보전플랫폼_센서데이터파이프라인설계서.pdf
+    mime_type: application/pdf
+    sha256: c677394454592dc66cd458bc761c02563693427ac2d672dc7cffcabe18649b8c
+    relevant_pages: [4]
+allowed_tools: [document_search, document_list]
+forbidden_tools: [task_register, task_update, jira_create_issues, skill_register, web_search]
+side_effect_policy: READ_ONLY
+execution_contract: {max_tool_calls: 4, document_search_max_calls: 3, duplicate_signature_max: 1}
+required_observables: [final_answer, logical_tool_calls, normalized_tool_arguments, retrieved_document_identity, terminal_state]
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_V3_DEV}
+

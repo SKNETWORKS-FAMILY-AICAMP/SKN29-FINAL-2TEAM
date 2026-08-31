@@ -19,7 +19,7 @@ source_artifacts:
   - source_id: PDF-MIN
     repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛몰_주문정산_기술검토회의록.pdf
     sha256: 808d169acd4d02e79f9b6af31166aaf09349c3c2260e45a6e9baecd47ab297de
-    relevant_pages: [5, 6]
+    relevant_pages: [3, 4]
 
 fixture_instance_policy: PER_RUN_EXTERNAL_SNAPSHOT
 agent_profile:

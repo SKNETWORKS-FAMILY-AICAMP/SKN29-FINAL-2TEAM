@@ -1,0 +1,16 @@
+gold_identity: {fixture_id: D04-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: 원시 신호 샘플링 주파수는 2.56kHz이며 원시 파형은 90일 보관한다., evidence_refs: ["PDF-SENSOR:p2"]}
+    - {fact_id: F02, importance: REQUIRED, proposition: 고장 예지 분류 모델 기준은 F1 0.82 이상이다., evidence_refs: ["PDF-MODEL:p2"]}
+    - {fact_id: F03, importance: REQUIRED, proposition: 가장 높은 등급 장애의 복구 시한은 4시간 이내다., evidence_refs: ["PDF-OPS:p2"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 데이터·모델·운영 기준은 세 문서를 함께 확인해야 한다., supported_by: [F01, F02, F03]}
+uncertainty_contract: {must_abstain_on: [현재 운영 실적], prohibited_inferences: [목표와 기준을 실적으로 표현]}
+oracle_bindings:
+  - {criterion: required_fact_coverage, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: required_source_retrieval, authoritative_oracle: DETERMINISTIC, scorer_identity: required-source-retrieval-v1}
+  - {criterion: factual_grounding, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: unsupported_claim_control, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+

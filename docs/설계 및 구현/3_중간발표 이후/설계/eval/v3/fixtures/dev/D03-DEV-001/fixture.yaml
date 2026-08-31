@@ -1,0 +1,31 @@
+protocol_version: eval-v3
+evaluation_suite: PLATFORM_BEHAVIOR_V3
+fixture_id: D03-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: D03
+variant_id: D03_MULTI_DOCUMENT
+split: DEV
+fixture_status: VALIDATED
+title: 신규 corpus 다중 문서 조합
+purpose: 서로 다른 두 문서의 수치를 조합하면서 중복 검색과 무한 루프를 방지하는지 확인한다.
+input: 정우기계 예지보전 플랫폼의 센서 수집 주파수와 보관기간, 고장 분류 모델 F1 기준과 잔여수명 MAE 기준을 문서별로 구분해 정리해줘.
+source_binding_policy: EXISTING_REPOSITORY_PDF
+source_artifacts:
+  - source_id: PDF-SENSOR
+    repo_path: tests/eval/documents/pdf/P6_정우기계_예지보전플랫폼/정우기계_예지보전플랫폼_센서데이터파이프라인설계서.pdf
+    mime_type: application/pdf
+    sha256: c677394454592dc66cd458bc761c02563693427ac2d672dc7cffcabe18649b8c
+    relevant_pages: [2, 3]
+  - source_id: PDF-MODEL
+    repo_path: tests/eval/documents/pdf/P6_정우기계_예지보전플랫폼/정우기계_예지보전플랫폼_모델성능기준서.pdf
+    mime_type: application/pdf
+    sha256: dfd3c7f869c9314a4aeaab06145c08b8479ddb7749b0c92cb6539e01cbb090a9
+    relevant_pages: [2]
+allowed_tools: [document_search, document_list]
+forbidden_tools: [task_register, task_update, jira_create_issues, skill_register, web_search]
+side_effect_policy: READ_ONLY
+execution_contract: {max_tool_calls: 6, document_search_max_calls: 5, duplicate_signature_max: 1}
+required_observables: [final_answer, logical_tool_calls, normalized_tool_arguments, retrieved_document_identity, terminal_state]
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_V3_DEV}
+

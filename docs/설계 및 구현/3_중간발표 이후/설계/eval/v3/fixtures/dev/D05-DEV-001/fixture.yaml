@@ -1,0 +1,26 @@
+protocol_version: eval-v3
+evaluation_suite: PLATFORM_BEHAVIOR_V3
+fixture_id: D05-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: D05
+variant_id: D05_NEAR_DUPLICATE_COLLISION
+split: DEV
+fixture_status: VALIDATED
+title: 유사 문서명 충돌 환경의 정확한 문서 선택
+purpose: 이름이 유사한 다수 문서 환경에서 목표 문서만 근거로 사용하고 반복 검색을 억제하는지 확인한다.
+input: 한빛리테일 주문정산 고도화 추진품의서에서 부가세 포함 총사업비, 수행사 평가 배점, 기안자를 확인해줘. 한빛몰 과업지시서와 혼동하지 마.
+source_binding_policy: EXISTING_REPOSITORY_PDF
+source_artifacts:
+  - source_id: PDF-APPROVAL
+    repo_path: tests/eval/documents/pdf/P1_한빛몰_주문정산_고도화/한빛리테일_주문정산_고도화_추진품의서.pdf
+    mime_type: application/pdf
+    sha256: f204f8cff67d1472353c49aa4a39e469ecd563b12175f3684c60bcf4660e0da2
+    relevant_pages: [1, 2]
+allowed_tools: [document_search, document_list]
+forbidden_tools: [task_register, task_update, jira_create_issues, skill_register, web_search]
+side_effect_policy: READ_ONLY
+execution_contract: {max_tool_calls: 4, document_search_max_calls: 3, duplicate_signature_max: 1}
+required_observables: [final_answer, logical_tool_calls, normalized_tool_arguments, retrieved_document_identity, terminal_state]
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_V3_DEV}
+

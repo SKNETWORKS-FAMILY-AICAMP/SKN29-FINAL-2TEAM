@@ -50,7 +50,7 @@ source_artifacts:
     sha256: 808d169acd4d02e79f9b6af31166aaf09349c3c2260e45a6e9baecd47ab297de
     document_date: 2026-08-31
     latest_event_date: 2026-08-26
-    relevant_pages: [5, 6]
+    relevant_pages: [3, 4]
 
 preconditions:
   - 네 PDF가 평가 계정의 격리된 문서 공간에 원본 그대로 업로드돼 있다.

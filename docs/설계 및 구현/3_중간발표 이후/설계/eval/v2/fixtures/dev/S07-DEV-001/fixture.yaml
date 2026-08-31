@@ -34,7 +34,7 @@ source_artifacts:
     mime_type: application/pdf
     sha256: 808d169acd4d02e79f9b6af31166aaf09349c3c2260e45a6e9baecd47ab297de
     document_date: 2026-08-31
-    relevant_pages: [5, 6]
+    relevant_pages: [3, 4]
 
 fixture_instance_policy: PER_RUN_EXTERNAL_SNAPSHOT
 approval_script:

@@ -1,0 +1,16 @@
+gold_identity: {fixture_id: D01-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: 출고 지시 처리량 목표는 분당 3,000건이다., evidence_refs: ["PDF-WMS-REQ:p2"]}
+    - {fact_id: F02, importance: REQUIRED, proposition: 재고 실사 정확도 목표는 99.98% 이상이다., evidence_refs: ["PDF-WMS-REQ:p2"]}
+    - {fact_id: F03, importance: REQUIRED, proposition: 현장 단말 320대 동시 접속에서 p95 응답시간 목표는 500ms다., evidence_refs: ["PDF-WMS-REQ:p2"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 세 수치는 모두 요구사항의 목표값이며 실측 결과가 아니다., supported_by: [F01, F02, F03]}
+uncertainty_contract: {must_abstain_on: [현재 실측 달성 여부], prohibited_inferences: [목표를 실적으로 표현]}
+oracle_bindings:
+  - {criterion: required_fact_coverage, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: required_source_retrieval, authoritative_oracle: DETERMINISTIC, scorer_identity: required-source-retrieval-v1}
+  - {criterion: factual_grounding, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: unsupported_claim_control, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+

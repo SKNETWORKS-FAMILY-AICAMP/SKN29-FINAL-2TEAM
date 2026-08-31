@@ -261,6 +261,31 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(result["tool_reliability"]["retry_after_failure_count"], 0)
         self.assertEqual(result["tool_reliability"]["recovered_after_retry_count"], 0)
 
+    def test_duplicate_successful_signature_is_measured_and_can_fail_budget(self):
+        case = _case()
+        case["max_tool_calls"] = 4
+        case["max_calls_per_tool"]["document_search"] = 4
+        case["max_calls_per_signature"] = 1
+        result = evaluate_events(
+            case=case,
+            events=_retry_events(
+                [{"query": "일정"}, {"query": "일정"}],
+                ["OK", "OK"],
+            ),
+            started_at="2026-08-26T00:00:00Z",
+            finished_at="2026-08-26T00:00:01Z",
+            elapsed_ms=150,
+            model="test-model",
+            runtime="test-runtime",
+            run_id="RUN001",
+        )
+        reliability = result["tool_reliability"]
+        self.assertEqual(reliability["duplicate_signature_count"], 1)
+        self.assertEqual(reliability["max_attempts_per_signature"], 2)
+        assertions = {item["name"]: item["passed"] for item in result["assertions"]}
+        self.assertFalse(assertions["duplicate_tool_signature_limit"])
+        self.assertEqual(result["metrics"]["duplicate_tool_signature_count"], 1)
+
     def test_parallel_call_started_before_failure_is_not_retry(self):
         events = [
             {
