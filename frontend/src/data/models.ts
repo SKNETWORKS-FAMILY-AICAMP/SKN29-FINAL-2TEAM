@@ -28,15 +28,16 @@ export interface ModelOption {
    * (2026-08-12 PM 지적).
    */
   tier: '빠름' | '보통' | '느림·비쌈';
+  supportsImageInput: boolean;
 }
 
 export const MODEL_OPTIONS: ModelOption[] = [
-  { value: 'gpt-5.6-luna', label: 'GPT-5.6 luna', tier: '빠름' },
-  { value: 'gpt-5.6-terra', label: 'GPT-5.6 terra', tier: '보통' },
-  { value: 'gpt-5.6-sol', label: 'GPT-5.6 sol', tier: '느림·비쌈' },
-  { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: '빠름' },
-  { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', tier: '보통' },
-  { value: 'claude-opus-4-5', label: 'Claude Opus 4.5', tier: '느림·비쌈' },
+  { value: 'gpt-5.6-luna', label: 'GPT-5.6 luna', tier: '빠름', supportsImageInput: true },
+  { value: 'gpt-5.6-terra', label: 'GPT-5.6 terra', tier: '보통', supportsImageInput: true },
+  { value: 'gpt-5.6-sol', label: 'GPT-5.6 sol', tier: '느림·비쌈', supportsImageInput: true },
+  { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: '빠름', supportsImageInput: true },
+  { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', tier: '보통', supportsImageInput: true },
+  { value: 'claude-opus-4-5', label: 'Claude Opus 4.5', tier: '느림·비쌈', supportsImageInput: true },
 ];
 
 export const DEFAULT_MODEL = 'gpt-5.6-luna';
@@ -52,6 +53,7 @@ interface TeamModel {
   model: string;
   /** 제공자 이름(「Google Gemini」 등). 모델 이름만으로는 어디 것인지 모른다. */
   label: string;
+  supports_image_input: boolean;
 }
 
 /**
@@ -63,7 +65,19 @@ interface TeamModel {
  */
 export function modelSelectOptions(customs: TeamModel[] = []) {
   return [
-    ...MODEL_OPTIONS.map((model) => ({ value: model.value, label: `${model.label} · ${model.tier}` })),
-    ...customs.map((custom) => ({ value: custom.model, label: `${custom.model} · ${custom.label}` })),
+    ...MODEL_OPTIONS.map((model) => ({
+      value: model.value,
+      label: `${model.label} · ${model.tier}${model.supportsImageInput ? ' · 이미지' : ''}`,
+    })),
+    ...customs.map((custom) => ({
+      value: custom.model,
+      label: `${custom.model} · ${custom.label}${custom.supports_image_input ? ' · 이미지' : ''}`,
+    })),
   ];
+}
+
+export function modelSupportsImageInput(model: string, customs: TeamModel[] = []): boolean {
+  const builtin = MODEL_OPTIONS.find((item) => item.value === model);
+  if (builtin) return builtin.supportsImageInput;
+  return customs.find((item) => item.model === model)?.supports_image_input === true;
 }

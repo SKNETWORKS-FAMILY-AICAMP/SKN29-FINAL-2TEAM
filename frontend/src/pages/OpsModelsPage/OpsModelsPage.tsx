@@ -35,6 +35,7 @@ export default function OpsModelsPage() {
   const [baseUrl, setBaseUrl] = useState(PROVIDER_PRESETS[0].baseUrl);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
+  const [supportsImageInput, setSupportsImageInput] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
   /** 등록은 됐지만(201) 그 서버가 토큰 사용량을 안 준다는 안내 — 막지 않는다. */
@@ -88,6 +89,7 @@ export default function OpsModelsPage() {
     setProbeNote('');
     setModel('');
     setRegisterWarning('');
+    setSupportsImageInput(false);
   }
 
   /** 그 주소·키가 가진 모델을 받아 온다. 못 받으면 직접 입력으로 남는다. */
@@ -121,6 +123,7 @@ export default function OpsModelsPage() {
         base_url: baseUrl.trim(),
         api_key: apiKey.trim(),
         model: model.trim(),
+        supports_image_input: supportsImageInput,
       });
       // 키는 화면에도 남기지 않는다.
       setApiKey('');
@@ -188,6 +191,18 @@ export default function OpsModelsPage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className={styles.fieldGroup}>
+            <label htmlFor="model-image-input">입력 기능</label>
+            <label>
+              <input
+                id="model-image-input"
+                type="checkbox"
+                checked={supportsImageInput}
+                onChange={(event) => setSupportsImageInput(event.target.checked)}
+              />{' '}
+              이미지 입력 지원
+            </label>
           </div>
 
           <div className={styles.fieldGroup}>
@@ -296,6 +311,7 @@ export default function OpsModelsPage() {
                 <th style={{ width: 210 }}>모델</th>
                 <th style={{ width: 130 }}>제공자</th>
                 <th>주소</th>
+                <th style={{ width: 90 }}>이미지</th>
                 <th style={{ width: 100 }}>등록일</th>
                 <th style={{ width: 80 }} />
               </tr>
@@ -309,6 +325,7 @@ export default function OpsModelsPage() {
                   <td className={styles.cellEllipsis} title={row.base_url}>
                     {row.base_url}
                   </td>
+                  <td>{row.supports_image_input ? '지원' : '텍스트'}</td>
                   <td>{row.connected_at.slice(0, 10)}</td>
                   <td>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(row)}>

@@ -46,6 +46,7 @@ def builtin_tool_response() -> list[dict[str, Any]]:
             "provider": tool.provider,
             "capability": tool.capability,
             "requires_connection": tool.requires_connection,
+            "required_model_capability": tool.required_model_capability,
             "side_effect": tool.side_effect,
             # 채팅 「+」의 「기본값으로 초기화」가 되돌리는 고정 집합에 드는가.
             "is_default": tool.ref in DEFAULT_CHAT_TOOL_REFS,

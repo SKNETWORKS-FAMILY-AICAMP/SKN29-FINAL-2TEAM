@@ -118,6 +118,33 @@ class LoadTests(SimpleTestCase):
 
         self.assertEqual(result, ())
 
+    def test_image_search_is_blocked_for_text_only_model(self):
+        with patch(
+            "services.agent_runtime.models.capabilities.supports_image_input",
+            return_value=False,
+        ), self.assertRaises(ToolUnavailableError):
+            ToolLoader().load(
+                tool_refs=("document_search_with_images",),
+                context=_context(),
+                agent_model="custom-text-model",
+            )
+
+    def test_image_search_is_loaded_for_image_capable_model(self):
+        image_tool = _fake_tool("document_search_with_images")
+        with patch(
+            "services.agent_runtime.models.capabilities.supports_image_input",
+            return_value=True,
+        ), patch(
+            f"{ADAPTERS_MODULE}.adapt_builtin_tools", return_value=(image_tool,)
+        ):
+            result = ToolLoader().load(
+                tool_refs=("document_search_with_images",),
+                context=_context(),
+                agent_model="custom-vlm",
+            )
+
+        self.assertEqual([tool.ref for tool in result], ["document_search_with_images"])
+
 
 class ToolNameManglingTests(SimpleTestCase):
     """model_safe_tool_name()/tool_ref_from_model_name() — OpenAI 함수 이름
