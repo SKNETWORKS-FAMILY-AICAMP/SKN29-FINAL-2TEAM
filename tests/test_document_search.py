@@ -140,6 +140,26 @@ class DocumentSearchScopeTests(SimpleTestCase):
 
         self.assertEqual(scope.call_args.kwargs["account_id"], "UA001")
 
+    def test_일반_문서검색은_다중_블록_청크_전체를_텍스트_근거로_전달한다(
+        self, scope, search, _embed
+    ):
+        scope.return_value = [_doc("DC001", "qa.md")]
+        merged_chunk = "# 점검 항목\n고유 문구 라일락-파도-7319\n위험 등급 QA-안전"
+        search.return_value = [
+            {
+                "chunk_id": "CH001",
+                "doc_id": "DC001",
+                "heading_path": ["점검 항목"],
+                "text": merged_chunk,
+                "retrieval_score": 0.95,
+            }
+        ]
+
+        result = _run_document_search(team_id="TE001", query="라일락-파도-7319")
+
+        self.assertEqual(result["evidence"][0]["text"], merged_chunk)
+        self.assertIn("위험 등급 QA-안전", result["evidence"][0]["text"])
+
 
 class DocumentSearchCatalogTests(SimpleTestCase):
     def test_도구_목록에_문서_검색이_기본_검색_도구로_노출된다(self):

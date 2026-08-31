@@ -1017,8 +1017,9 @@ class VectorSearchRepository:
 
         키워드는 가공 전 원문을 새로 저장하지 않고 ``chunk.search_text``를 쓴다.
         이 값에는 제목 경로 등 청킹 문맥이 붙어 있어 짧은 본문만 검색할 때보다
-        용어가 어느 절에 속하는지 잘 드러난다. 모델에 돌려주는 실제 근거 본문은
-        ``doc_block.content``다.
+        용어가 어느 절에 속하는지 잘 드러난다. ``merge_peers``로 여러 block이
+        하나의 청크에 합쳐질 수 있으므로, 모델에도 대표 ``doc_block.content``
+        하나가 아니라 검색에 사용한 ``chunk.search_text`` 전체를 근거로 돌려준다.
 
         후보는 벡터·전문검색·부분어절 검색에서 각각 넉넉히 모은 뒤 후보군 안에서
         점수를 0~1로 정규화한다. 최종 점수는 lexical 0.5 + cosine 0.5이며,
@@ -1047,7 +1048,7 @@ class VectorSearchRepository:
                     scoped AS NOT MATERIALIZED (
                         SELECT d.doc_id, c.chunk_id::text AS chunk_id,
                                c.chunk_idx AS sequence, c.heading_path,
-                               b.content AS text, c.search_text,
+                               c.search_text AS text,
                                p.query_ts, p.query_text,
                                GREATEST(0.0, 1 - (v.embedding <=> p.query_vector))
                                    AS vector_raw,

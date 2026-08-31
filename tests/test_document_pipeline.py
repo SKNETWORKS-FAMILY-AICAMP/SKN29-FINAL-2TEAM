@@ -686,6 +686,18 @@ class KoreanLexicalQueryTests(SimpleTestCase):
         self.assertEqual(lexical_tsquery("결제 & 실패 | 복귀:*"), "결제:* | 실패:* | 복귀:*")
 
 
+class HybridSearchEvidenceContractTests(SimpleTestCase):
+    def test_다중_블록_청크_전체를_근거로_반환한다(self):
+        import inspect
+
+        from backend.db.document_pipeline import VectorSearchRepository
+
+        source = inspect.getsource(VectorSearchRepository.search_hybrid)
+
+        self.assertIn("c.search_text AS text", source)
+        self.assertNotIn("b.content AS text", source)
+
+
 class ChunkRevisionScopeTests(SimpleTestCase):
     """청크를 읽는 자리는 **전부** 현재 revision 만 봐야 한다.
 
