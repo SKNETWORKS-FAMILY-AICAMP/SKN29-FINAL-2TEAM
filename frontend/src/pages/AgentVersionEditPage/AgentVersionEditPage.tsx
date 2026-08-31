@@ -19,7 +19,7 @@ import { ApiError } from '../../api/client';
 import { PATHS } from '../../routes';
 import { loadSessionToken } from '../../utils/session';
 import { josa } from '../../utils/josa';
-import { modelSelectOptions, DEFAULT_MODEL } from '../../data/models';
+import { modelSelectOptions, modelSupportsImageInput, DEFAULT_MODEL } from '../../data/models';
 import { ToolPickerModal } from '../../components';
 import { SubagentPickerModal } from './SubagentPickerModal';
 import styles from './AgentVersionEditPage.module.css';
@@ -104,6 +104,17 @@ export default function AgentVersionEditPage() {
     const label = customModels === null ? model : `${model} · 지금은 쓸 수 없음`;
     return [...options, { value: model, label }];
   }, [customModels, model]);
+
+  const selectedModelSupportsImages = useMemo(
+    () => modelSupportsImageInput(model, customModels ?? []),
+    [model, customModels],
+  );
+
+  useEffect(() => {
+    if (!selectedModelSupportsImages) {
+      setToolRefs((prev) => prev.filter((ref) => ref !== 'document_search_with_images'));
+    }
+  }, [selectedModelSupportsImages]);
 
   /** 자기 자신은 뺀다 — 자기 참조는 서버가 어차피 409로 막지만, 화면에서
    * 애초에 고를 수 없게 하는 편이 낫다. DISABLED도 뺀다 — 서버가 ACTIVE와
@@ -358,6 +369,9 @@ export default function AgentVersionEditPage() {
             <label className={styles.field}>
               <span className={styles.fieldLabel}>모델</span>
               <Select options={modelOptions} value={model} onChange={(event) => setModel(event.target.value)} />
+              <span className={styles.help}>
+                {selectedModelSupportsImages ? '이미지 입력 지원 모델' : '텍스트 입력 모델'}
+              </span>
             </label>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>응답 방식</span>
@@ -445,6 +459,7 @@ export default function AgentVersionEditPage() {
           toolRefs={toolRefs}
           onToggle={toggleTool}
           onToggleGroup={toggleToolGroup}
+          disabledToolRefs={selectedModelSupportsImages ? [] : ['document_search_with_images']}
         />
 
         <div className={styles.actions}>

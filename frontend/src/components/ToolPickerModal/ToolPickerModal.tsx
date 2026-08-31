@@ -37,6 +37,7 @@ export interface ToolPickerModalProps {
    * 반영된다. 그룹 전체를 한 번에 계산하는 별도 콜백으로 받는다.
    */
   onToggleGroup: (refs: string[], turnOn: boolean) => void;
+  disabledToolRefs?: string[];
   /**
    * 이 대화의 도구 선택을 **고정 기본 집합**(`ToolChoice.is_default === true`)으로
    * 되돌린다. 채팅 「+」에서만 준다 — 에이전트 편집 화면은 원본 자체를 고치는
@@ -79,6 +80,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
  */
 const TOOL_DESCRIPTIONS: Record<string, string> = {
   document_search: '문서에서 질문과 관련된 문장을 찾아 근거로 보여줍니다.',
+  document_search_with_images: '관련 문장과 함께 원본 PDF의 이미지 영역을 찾아 답변에 보여줍니다.',
   document_list: '팀에 어떤 문서가 있는지 목록으로 보여줍니다. 아직 읽지 않은 파일도 함께 알려줍니다.',
   people_list: '팀원의 이름·직책·기술 스택을 조회합니다.',
   workload_report: '팀원별로 남은 업무 시간을 계산해 보여줍니다.',
@@ -142,6 +144,7 @@ export function ToolPickerModal({
   onToggle,
   onToggleGroup,
   onReset,
+  disabledToolRefs = [],
 }: ToolPickerModalProps) {
   const [tab, setTab] = useState<Tab>('builtin');
   const builtinGroups = groupByCategory(builtinTools);
@@ -198,7 +201,8 @@ export function ToolPickerModal({
             </div>
           )}
           {builtinGroups.map(([category, items]) => {
-            const allOn = items.every((toolItem) => toolRefs.includes(toolItem.tool_ref));
+            const enabledItems = items.filter((item) => !disabledToolRefs.includes(item.tool_ref));
+            const allOn = enabledItems.length > 0 && enabledItems.every((toolItem) => toolRefs.includes(toolItem.tool_ref));
             const expanded = expandedCategories.has(category);
             return (
               <div key={category} className={styles.serverGroup}>
@@ -208,7 +212,7 @@ export function ToolPickerModal({
                       checked={allOn}
                       onChange={(next) =>
                         onToggleGroup(
-                          items.map((toolItem) => toolItem.tool_ref),
+                          enabledItems.map((toolItem) => toolItem.tool_ref),
                           next,
                         )
                       }
@@ -234,12 +238,13 @@ export function ToolPickerModal({
                   <div className={styles.toolList}>
                     {items.map((toolItem) => {
                       const checked = toolRefs.includes(toolItem.tool_ref);
+                      const disabled = disabledToolRefs.includes(toolItem.tool_ref);
                       return (
                         <div
                           key={toolItem.tool_ref}
                           className={[styles.toolRow, checked ? styles.toolRowOn : ''].filter(Boolean).join(' ')}
                         >
-                          <Checkbox checked={checked} onChange={() => onToggle(toolItem.tool_ref)} />
+                          <Checkbox checked={checked} disabled={disabled} onChange={() => onToggle(toolItem.tool_ref)} />
                           <div className={styles.toolText}>
                             <strong>
                               {toolItem.name}
@@ -248,6 +253,7 @@ export function ToolPickerModal({
                             {TOOL_DESCRIPTIONS[toolItem.tool_ref] && (
                               <span>{TOOL_DESCRIPTIONS[toolItem.tool_ref]}</span>
                             )}
+                            {disabled && <span>이미지 입력을 지원하는 모델을 선택해야 사용할 수 있습니다.</span>}
                           </div>
                         </div>
                       );

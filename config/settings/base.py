@@ -233,6 +233,9 @@ ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 OPENAI_SERVICE_TIER = env("OPENAI_SERVICE_TIER", default="auto")
 CHUNKING_MAX_TOKENS = env.int("CHUNKING_MAX_TOKENS", default=512)
 CHUNKING_MERGE_PEERS = env.bool("CHUNKING_MERGE_PEERS", default=True)
+DOCUMENT_PICTURE_CROP_TOKEN_MAX_AGE_SECONDS = env.int(
+    "DOCUMENT_PICTURE_CROP_TOKEN_MAX_AGE_SECONDS", default=900
+)
 
 # Deep Agents 검증·평가용 트레이싱은 Langfuse 하나만 사용한다.
 # `services/agent_runtime/tracing/callbacks.py`가

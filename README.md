@@ -141,14 +141,14 @@ Jira 등록은 그다음입니다.
 만드는 것은 **개인 스킬**뿐이고(`target_scope`가 `PERSONAL`로 고정돼 있습니다), 팀에
 쓰려면 공유를 거칩니다.
 
-### 4.7 에이전트가 쓰는 도구 32종
+### 4.7 에이전트가 쓰는 도구 33종
 
 정본은 `services/harness/registry.py`의 `BUILTIN_TOOLS`입니다. ⚠ 표시가 승인
 게이트를 타는 도구입니다.
 
 | 갈래 | 도구 |
 |---|---|
-| 검색 (4) | `document_search` · `document_list` · `document_sync` · `web_search` |
+| 검색 (5) | `document_search` · `document_search_with_images` · `document_list` · `document_sync` · `web_search` |
 | 문서 (8) | `document_read` · `file_inspect` · ⚠`document_create`(글→`.docx`) · ⚠`table_export`(표→`.xlsx`) · ⚠`document_convert` · ⚠`pdf_edit` · ⚠`file_sanitize` · ⚠`archive_manage` |
 | 팀 (3) | `people_list` · `workload_report` · `absence_list` |
 | 업무 (7) | `task_extraction` · `project_list` · `task_list` · `jira_get_issues` · ⚠`task_update` · ⚠`task_register` · ⚠`jira_create_issues` |
@@ -246,7 +246,7 @@ flowchart TB
 
     subgraph SV["services · 도메인 로직"]
         S1["agent_runtime<br/>실행 루프 · 미들웨어 · 메모리 · 스킬 · 위임"]
-        S6["harness<br/>도구 레지스트리 32종"]
+        S6["harness<br/>도구 레지스트리 33종"]
         S7["builtin_tools<br/>문서 · 데이터 · 시각화 · 계산"]
         S2["agent_builder<br/>검증 · 시험 실행"]
         S3["document_pipeline"]

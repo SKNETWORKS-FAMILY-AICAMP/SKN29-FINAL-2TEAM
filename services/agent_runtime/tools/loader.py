@@ -119,6 +119,18 @@ class ToolLoader:
         # import되기만 해도 끌고 들어오지 않게 한다.
         from services.agent_runtime.tools.adapters import adapt_builtin_tools, adapt_mcp_tools
         from services.harness.registry import ALWAYS_ON_TOOL_REFS
+        from services.agent_runtime.models.capabilities import (
+            IMAGE_DOCUMENT_SEARCH_TOOL_REF,
+            supports_image_input,
+        )
+
+        if (
+            IMAGE_DOCUMENT_SEARCH_TOOL_REF in tool_refs
+            and not supports_image_input(model=agent_model, team_id=context.team_id)
+        ):
+            raise ToolUnavailableError(
+                "'문서 검색 · 원본 이미지' 도구는 이미지 입력을 지원하는 모델에서만 사용할 수 있습니다."
+            )
 
         available = {tool.ref: tool for tool in adapt_builtin_tools(agent_model=agent_model)}
 

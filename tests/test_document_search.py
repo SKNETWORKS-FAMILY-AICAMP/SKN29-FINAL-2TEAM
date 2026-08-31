@@ -5,9 +5,10 @@
 `test_document_meta.py` 에서 바꿨다 — 남은 것은 검색뿐이다.
 """
 
+import json
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from services.document_intake import IntakeResult
 from services.harness import registry
@@ -149,6 +150,7 @@ class DocumentSearchScopeTests(SimpleTestCase):
             {
                 "chunk_id": "CH001",
                 "doc_id": "DC001",
+                "block_type": "TEXT",
                 "heading_path": ["점검 항목"],
                 "text": merged_chunk,
                 "retrieval_score": 0.95,
@@ -159,6 +161,83 @@ class DocumentSearchScopeTests(SimpleTestCase):
 
         self.assertEqual(result["evidence"][0]["text"], merged_chunk)
         self.assertIn("위험 등급 QA-안전", result["evidence"][0]["text"])
+
+    @override_settings(PUBLIC_BACKEND_BASE_URL="https://api.example.com")
+    def test_이미지_도구는_picture_청크만_원본_crop과_연결한다(self, scope, search, _embed):
+        scope.return_value = [_doc("DC001", "도면.pdf")]
+        search.return_value = [
+            {
+                "chunk_id": "CH001",
+                "doc_id": "DC001",
+                "file_name": "도면.pdf",
+                "mime_type": "application/pdf",
+                "block_id": "BL001",
+                "block_type": "PICTURE",
+                "page": 3,
+                "revision": "REV1",
+                "heading_path": ["구조도"],
+                "text": "배관 연결 구조를 나타낸 도면",
+                "retrieval_score": 0.91,
+            }
+        ]
+
+        result = _run_document_search(
+            team_id="TE001", query="배관 구조", include_images=True
+        )
+
+        self.assertEqual(result[0]["type"], "text")
+        self.assertEqual(result[1]["type"], "image")
+        self.assertIn("/api/internal/document-picture-crops/BL001/", result[1]["url"])
+        text_payload = json.loads(result[0]["text"])
+        self.assertNotIn("text", text_payload["evidence"][0])
+        self.assertNotIn("배관 연결 구조를 나타낸 도면", result[0]["text"])
+
+    @override_settings(PUBLIC_BACKEND_BASE_URL="https://api.example.com")
+    def test_일반_문서검색은_picture라도_텍스트만_반환한다(self, scope, search, _embed):
+        scope.return_value = [_doc("DC001", "도면.pdf")]
+        search.return_value = [
+            {
+                "chunk_id": "CH001", "doc_id": "DC001", "block_type": "PICTURE",
+                "heading_path": [], "text": "도면 설명", "retrieval_score": 0.8,
+            }
+        ]
+
+        result = _run_document_search(team_id="TE001", query="도면")
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["evidence"], [])
+        self.assertIn("검색 점수", result["picture_note"])
+
+    @override_settings(PUBLIC_BACKEND_BASE_URL="https://api.example.com")
+    def test_이미지는_block_id로_중복제거하고_서버에서_다섯개로_제한한다(
+        self, scope, search, _embed
+    ):
+        scope.return_value = [_doc("DC001", "도면.pdf")]
+        search.return_value = [
+            {
+                "chunk_id": f"CH{index:03d}",
+                "doc_id": "DC001",
+                "file_name": "도면.pdf",
+                "mime_type": "application/pdf",
+                "block_id": "BL001" if index <= 2 else f"BL{index:03d}",
+                "block_type": "PICTURE",
+                "page": index,
+                "revision": "REV1",
+                "heading_path": [],
+                "text": f"검색용 description {index}",
+                "retrieval_score": 1 - index / 100,
+            }
+            for index in range(1, 8)
+        ]
+
+        result = _run_document_search(
+            team_id="TE001", query="도면", include_images=True
+        )
+
+        self.assertEqual(len([block for block in result if block["type"] == "image"]), 5)
+        payload = json.loads(result[0]["text"])
+        self.assertEqual(len(payload["evidence"]), 5)
+        self.assertNotIn("검색용 description", result[0]["text"])
 
 
 class DocumentSearchCatalogTests(SimpleTestCase):
@@ -171,6 +250,11 @@ class DocumentSearchCatalogTests(SimpleTestCase):
         self.assertEqual(tools["document_search"]["category"], "검색")
         self.assertTrue(tools["document_search"]["is_default"])
         self.assertEqual(set(tools["document_search"]["input_schema"]["properties"]), {"query"})
+        self.assertEqual(
+            set(tools["document_search_with_images"]["input_schema"]["properties"]),
+            {"query"},
+        )
+        self.assertFalse(tools["document_search_with_images"]["is_default"])
 
 
 def _run_document_sync(**kwargs):

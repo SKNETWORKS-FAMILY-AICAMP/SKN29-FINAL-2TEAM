@@ -142,12 +142,14 @@ class DefaultChatToolsTests(SimpleTestCase):
             "diagram_create",
             "chart_create",
             "graph_create",
+            # 이미지 입력 capability가 있는 모델에서만 명시적으로 선택한다.
+            "document_search_with_images",
             # 「업무 추출 에이전트」(prebuilt)가 담당한다 — 기본 어시스턴트는
             # 그 에이전트에 위임하지 직접 도구로 부르지 않는다(2026-08-30).
             "task_extraction",
         }
         self.assertFalse(excluded & DEFAULT_CHAT_TOOL_REFS)
-        # 그 아홉만 빠진다 — 나머지는 전부 기본이다(시스템 2개 제외).
+        # 위 전문 도구만 빠진다 — 나머지는 전부 기본이다(시스템 2개 제외).
         self.assertEqual(len(DEFAULT_CHAT_TOOL_REFS), len(BUILTIN_TOOLS) - 2 - len(excluded))
         # 시연 범위라 남긴 것.
         self.assertIn("jira_get_issues", DEFAULT_CHAT_TOOL_REFS)

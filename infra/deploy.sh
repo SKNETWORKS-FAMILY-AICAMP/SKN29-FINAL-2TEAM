@@ -63,11 +63,13 @@ docker compose $FILES run --rm --no-deps web python DB/migrations/_apply.py --ch
 echo "::: 2.7 서비스 기동"
 docker compose $FILES up -d web frontend caddy skill-validation-worker
 
-# Caddy 이미지는 보통 바뀌지 않아서 `up -d`만으로는 바인드 마운트된 Caddyfile의
-# 내용 변경을 감지하지 못한다. 설정을 원자적으로 다시 읽고, 문법이 틀리면 이
-# 배포를 실패시켜 보안 헤더·라우팅 변경이 코드에만 남는 일을 막는다.
+# Git은 갱신한 파일을 새 inode로 교체할 수 있다. 파일 단위 bind mount는 그때도
+# 옛 inode를 가리켜서 컨테이너 안에서 reload만 하면 옛 Caddyfile을 다시 읽는다.
+# Caddy만 재생성해 현재 파일을 다시 마운트한다. 인증서는 named volume에 있어
+# 보존된다. 새 컨테이너 안의 설정도 검증해 헤더·라우팅 변경 누락을 막는다.
+docker compose $FILES up -d --force-recreate caddy
 docker compose $FILES exec -T caddy \
-  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 echo "::: 3. MCP 시연 서버"
 # server.py 는 바인드 마운트라 재빌드가 아니라 재생성이면 반영된다.

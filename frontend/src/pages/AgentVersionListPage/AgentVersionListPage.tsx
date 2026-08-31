@@ -193,9 +193,6 @@ export default function AgentVersionListPage() {
         <header className={styles.header}>
           <div className={styles.headerText}>
             <h1 className={styles.title}>에이전트</h1>
-            <p className={styles.subtitle}>
-              저장할 때마다 새 버전이 발행됩니다. 발행된 버전은 이후 수정할 수 없습니다 — 바꾸려면 새 버전을 다시 발행합니다.
-            </p>
           </div>
           <Button
             onClick={() => navigate(PATHS.agentVersionNew)}
@@ -204,13 +201,6 @@ export default function AgentVersionListPage() {
             새 에이전트
           </Button>
         </header>
-
-        {activeTab === 'personal' && (
-          <p className={styles.notice}>
-            <Icon name="info" size={15} color="var(--color-info)" />
-            여기서 만든 에이전트는 나만 Chat에서 부를 수 있습니다 — 먼저 검증해 보고, 팀에 공유하려면 활성화하세요.
-          </p>
-        )}
 
         {/* 저장만 하면 "개인"에 머문다 — 활성화해야 "팀 공유"로 넘어간다.
             "즐겨찾기"는 개인·팀 공유와 별개 갈래다. */}

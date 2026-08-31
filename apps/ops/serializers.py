@@ -216,6 +216,7 @@ class OpsModelRegisterSerializer(serializers.Serializer):
     base_url = serializers.URLField(max_length=300)
     api_key = serializers.CharField(max_length=200, trim_whitespace=True)
     model = serializers.CharField(max_length=100, trim_whitespace=True)
+    supports_image_input = serializers.BooleanField(default=False)
 
     def validate_model(self, value):
         from apps.agents.serializers import AGENT_MODELS
@@ -281,6 +282,7 @@ def ops_model_row_response(row: dict[str, Any]) -> dict[str, Any]:
         "label": row["label"],
         "base_url": row["base_url"],
         "model": row["model"],
+        "supports_image_input": row.get("supports_image_input", False),
         "connected_at": row["connected_at"],
     }
 

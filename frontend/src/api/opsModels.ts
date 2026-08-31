@@ -9,6 +9,7 @@ export interface OpsModel {
   label: string;
   base_url: string;
   model: string;
+  supports_image_input: boolean;
   connected_at: string;
 }
 
@@ -18,6 +19,7 @@ export interface OpsModelRegisterInput {
   base_url: string;
   api_key: string;
   model: string;
+  supports_image_input: boolean;
 }
 
 /** 그 팀의 **기본 채팅 모델** — 아무 에이전트도 안 고르고 말을 걸었을 때 도는 것.

@@ -5,7 +5,6 @@ import type { BadgeTone } from '../../components';
 import { ApiError } from '../../api/client';
 import { deleteProject, getProject, setProjectStatus, syncProjectTasks } from '../../api/projects';
 import type { ExistTask, ProjectDetail } from '../../api/projects';
-import { PATHS } from '../../routes';
 import { josa } from '../../utils/josa';
 import { useSession } from '../../utils/session';
 import { PrimaryDocumentCard } from './PrimaryDocumentCard';
@@ -256,15 +255,11 @@ export default function ProjectDetailPage() {
                   )}
                 </div>
               </section>
-            ) : (
+            ) : project.has_jira_source ? (
               <section className={styles.card}>
-                <p className={styles.notice}>
-                  {project.has_jira_source
-                    ? 'Jira 업무를 아직 읽지 않았습니다. ‘갱신’을 선택하세요.'
-                    : '연결된 Jira 프로젝트가 없어 진행률을 계산할 수 없습니다.'}
-                </p>
+                <p className={styles.notice}>Jira 업무를 아직 읽지 않았습니다. ‘갱신’을 선택하세요.</p>
               </section>
-            )}
+            ) : null}
 
             {/* 진행률 다음, 업무 목록 앞. 업무가 어디서 나온 것인지가 그 숫자를
                 읽는 전제라 목록보다 위에 있어야 한다. */}

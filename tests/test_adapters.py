@@ -88,9 +88,9 @@ EXPECTED_SIDE_EFFECT = {
 
 
 class RealRegistryShapeTests(SimpleTestCase):
-    """실제 BUILTIN_TOOLS(29개)를 그대로 변환했을 때의 모양을 확인한다."""
+    """실제 BUILTIN_TOOLS(33개)를 그대로 변환했을 때의 모양을 확인한다."""
 
-    def test_real_registry_has_exactly_nineteen_tools(self):
+    def test_real_registry_has_exactly_thirty_three_tools(self):
         # 이 숫자가 바뀌면(도구 추가/제거) 아래 EXPECTED_* 표도 같이 갱신해야 한다는
         # 신호다 — 조용히 지나치지 않게 실제 registry.py의 크기를 직접 고정해 둔다.
         #
@@ -113,7 +113,8 @@ class RealRegistryShapeTests(SimpleTestCase):
         # 같은 날 19 — `document_create`(문서 출력 도구 두 번째).
         # P3에서 파일·데이터·계산 Tool 10개를 Registry에 연결했다.
         # 2026-08-29 에 시각화 3종(diagram/chart/graph)을 더해 32.
-        self.assertEqual(len(BUILTIN_TOOLS), 32)
+        # 2026-08-31 에 원본 이미지 문서 검색을 더해 33.
+        self.assertEqual(len(BUILTIN_TOOLS), 33)
 
     def test_adapts_every_real_builtin_tool(self):
         adapted = {tool.ref: tool for tool in adapt_builtin_tools()}

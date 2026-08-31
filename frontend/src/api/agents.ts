@@ -33,6 +33,7 @@ export interface ToolChoice {
   capability?: string;
   /** 사용하기 전에 사용자별 외부 서비스 연결이 필요한가. */
   requires_connection?: boolean;
+  required_model_capability?: 'image_input' | null;
   /** 승인 게이트를 타는 도구인가. 화면이 「승인 필요」를 표시한다. */
   side_effect: boolean;
   /** 채팅 「+」의 「기본값으로 초기화」가 되돌리는 고정 집합에 드는 도구인가(기본 제공 도구만). */
@@ -55,6 +56,7 @@ export interface CustomModel {
   label: string;
   base_url: string;
   model: string;
+  supports_image_input: boolean;
   connected_at: string | null;
 }
 

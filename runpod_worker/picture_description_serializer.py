@@ -1,9 +1,10 @@
-"""Docling chunk serializer that emits only the VLM picture description.
+"""Prefer an accepted VLM picture description and keep a default fallback.
 
 Text, table, list, and heading serialization keep Docling's defaults.  Only
-``PictureItem`` serialization is replaced so captions, image placeholders,
-classification results, and other annotations cannot leak into the embedding
-text for a picture.
+``PictureItem`` serialization is specialized: an accepted VLM description is
+the only embedding text when present; otherwise Docling's default picture and
+metadata serializers provide a searchable fallback instead of dropping the
+picture from the chunk set.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from typing_extensions import override
 
 
 class DescriptionOnlyPictureSerializer(MarkdownPictureSerializer):
-    """Serialize a picture as its accepted VLM description and nothing else."""
+    """Use accepted VLM text first, then Docling's default picture serializer."""
 
     @override
     def serialize(
@@ -41,20 +42,26 @@ class DescriptionOnlyPictureSerializer(MarkdownPictureSerializer):
         doc: DoclingDocument,
         **kwargs: Any,
     ) -> SerializationResult:
-        del doc, kwargs
         description = getattr(getattr(item, "meta", None), "description", None)
         text = str(getattr(description, "text", "") or "").strip()
-        text = doc_serializer.post_process(text=text)
-        return create_ser_result(text=text, span_source=item)
+        if text:
+            text = doc_serializer.post_process(text=text)
+            return create_ser_result(text=text, span_source=item)
+        return super().serialize(
+            item=item,
+            doc_serializer=doc_serializer,
+            doc=doc,
+            **kwargs,
+        )
 
 
 class PictureMetaSuppressingSerializer(MarkdownMetaSerializer):
-    """Prevent the document serializer from appending picture meta twice.
+    """Suppress picture metadata only when an accepted description exists.
 
     ``ChunkingDocSerializer`` serializes an item's meta independently from its
-    item serializer.  The picture serializer above already reads the one
-    allowed meta field, so picture meta must be suppressed here.  Non-picture
-    item metadata keeps Docling's default behavior.
+    item serializer. Accepted descriptions must remain description-only, but a
+    picture without one intentionally falls back to Docling's default metadata
+    serialization.
     """
 
     @override
@@ -66,12 +73,14 @@ class PictureMetaSuppressingSerializer(MarkdownMetaSerializer):
         **kwargs: Any,
     ) -> SerializationResult:
         if isinstance(item, PictureItem):
-            return create_ser_result()
+            description = getattr(getattr(item, "meta", None), "description", None)
+            if str(getattr(description, "text", "") or "").strip():
+                return create_ser_result()
         return super().serialize(item=item, doc=doc, **kwargs)
 
 
 class DescriptionOnlySerializerProvider(ChunkingSerializerProvider):
-    """Keep Docling defaults except for ``PictureItem`` serialization."""
+    """Use description-first Picture serialization with a default fallback."""
 
     @override
     def get_serializer(self, doc: DoclingDocument) -> ChunkingDocSerializer:
@@ -83,7 +92,7 @@ class DescriptionOnlySerializerProvider(ChunkingSerializerProvider):
 
 
 class DescriptionOnlyHybridChunker(HybridChunker):
-    """Preserve picture chunks as merge boundaries.
+    """Preserve description and default-fallback picture chunks as boundaries.
 
     Docling's ``merge_peers=True`` may otherwise merge a description-only
     picture chunk with adjacent body text that has the same heading metadata.

@@ -9,6 +9,7 @@ from .api_views import (
     ProjectSourceDocumentAPIView,
     ProjectTaskSyncAPIView,
     RunPodDocumentDownloadAPIView,
+    DocumentPictureCropAPIView,
     TaskExtractionRunAPIView,
     TeamDocumentAPIView,
     TeamDocumentIndexingAPIView,
@@ -71,6 +72,11 @@ urlpatterns = [
         "internal/runpod/documents/<str:doc_id>/",
         RunPodDocumentDownloadAPIView.as_view(),
         name="api_runpod_document_download",
+    ),
+    path(
+        "internal/document-picture-crops/<str:block_id>/",
+        DocumentPictureCropAPIView.as_view(),
+        name="api_document_picture_crop",
     ),
     path("projects/", ProjectListCreateAPIView.as_view(), name="api_project_list_create"),
     # 프로젝트를 **만드는** 요청이라 프로젝트 하위가 아니다.
