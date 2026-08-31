@@ -44,7 +44,7 @@ Candidate와 현재 Git commit에서 새로 실행한다.
 
 # 평가 관련 변경을 커밋한 뒤 Candidate·commit·index·binding 동결
 .\.venv\Scripts\python.exe scripts\eval_v3.py freeze `
-  --account-id UA002 --team-id TM001 `
+  --account-id UA002 --team-id TE001 `
   --agent-id AG004 --agent-version-id AV073
 
 # 전체 66회: 실제 Agent/Judge 호출

@@ -728,7 +728,7 @@ def _parser() -> argparse.ArgumentParser:
 
     freeze = sub.add_parser("freeze", help="101개 index·binding·Candidate·commit을 동결")
     freeze.add_argument("--account-id", default="UA002")
-    freeze.add_argument("--team-id", default="TM001")
+    freeze.add_argument("--team-id", default="TE001")
     freeze.add_argument("--agent-id", required=True)
     freeze.add_argument("--agent-version-id", required=True)
 

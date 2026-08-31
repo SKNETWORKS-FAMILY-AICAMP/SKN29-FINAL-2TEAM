@@ -555,7 +555,7 @@ V3 delta fixture package         6개 검증
 
 # 4. 평가 변경 커밋 후 commit·Candidate·index·binding 동결
 .\.venv\Scripts\python.exe scripts\eval_v3.py freeze `
-  --account-id UA002 --team-id TM001 `
+  --account-id UA002 --team-id TE001 `
   --agent-id AG004 --agent-version-id AV073
 
 # 5. 공식 66회
