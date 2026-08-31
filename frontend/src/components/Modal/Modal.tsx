@@ -1,5 +1,5 @@
-import { useEffect, useId, useState } from 'react';
-import type { ReactNode, CSSProperties } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import type { ReactNode, CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../Icon/Icon';
 import styles from './Modal.module.css';
@@ -53,6 +53,8 @@ export function Modal({
   dismissible = true,
 }: ModalProps) {
   const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const [rendered, setRendered] = useState(open);
   const [closing, setClosing] = useState(false);
 
@@ -72,18 +74,33 @@ export function Modal({
     return () => window.clearTimeout(timer);
   }, [open, rendered]);
 
+  /* 모달이 열리면 키보드 위치도 모달 안으로 옮기고, 닫히면 호출한 조작으로
+     돌려놓는다. `aria-modal`만 붙이고 포커스를 배경에 남겨 두면 스크린리더는
+     모달이라고 말하면서 실제 Tab은 뒤 페이지를 도는 모순이 생긴다. */
   useEffect(() => {
-    if (!open || !dismissible) return;
+    if (!open || !rendered) return;
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        onClose();
+    const previous = document.activeElement;
+    returnFocusRef.current = previous instanceof HTMLElement ? previous : null;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const first =
+        dialog.querySelector<HTMLElement>('[autofocus]') ??
+        dialog.querySelector<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+      (first ?? dialog).focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const target = returnFocusRef.current;
+      if (target?.isConnected) {
+        window.requestAnimationFrame(() => target.focus());
       }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose, dismissible]);
+    };
+  }, [open, rendered]);
 
   useEffect(() => {
     if (!rendered) return;
@@ -93,6 +110,41 @@ export function Modal({
 
   if (!rendered) return null;
 
+  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape' && dismissible) {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true');
+
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   const dialogStyle: CSSProperties = { width };
 
   const modal = (
@@ -101,11 +153,14 @@ export function Modal({
       onClick={open && dismissible ? onClose : undefined}
     >
       <div
+        ref={dialogRef}
         className={styles.dialog}
         style={dialogStyle}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
         onClick={(event) => event.stopPropagation()}
       >
         {dismissible && (

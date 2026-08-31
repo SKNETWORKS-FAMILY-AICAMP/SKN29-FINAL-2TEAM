@@ -38,12 +38,17 @@
 }
 
 .cardTitle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
+  margin: 0;
   font-size: 16px;
   font-weight: 700;
   color: var(--color-heading);
+}
+
+.cardTitleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .cardSub {
@@ -835,6 +840,7 @@
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .searchBox {
@@ -847,6 +853,24 @@
   padding: 9px var(--space-3);
   width: 280px;
   max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .cardHeadRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headActions {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .searchBox {
+    width: auto;
+    flex: 1;
+  }
 }
 
 .searchInput {

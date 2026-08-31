@@ -13,19 +13,33 @@
 # 컨테이너가 조용히 재시작만 반복하고 web·frontend 는 200 이라 원인이 안 보인다.
 # 주소를 넣고 싶으면 빈 값이 아닌 실제 주소를 여기 직접 적을 것.
 
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+}
+
 # **apex 가 본 주소다**(2026-08-14 결정). 발표 중 주소창에 `halil-ai.site` 가
 # 그대로 보여야 해서 리디렉트가 아니라 여기서 직접 서빙한다.
 # apex 는 CNAME 을 못 걸지만 탄력적 IP 가 고정이라 A 레코드로 바로 찍으면 된다.
 halil-ai.site {
+	import security_headers
+	header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.halil-ai.site wss://api.halil-ai.site; upgrade-insecure-requests"
 	reverse_proxy frontend:5173
 }
 
 # 둘 다 본 주소로 보낸다. 앱이 두 주소로 열리면 쿠키·CORS 를 두 벌 관리하게 된다.
 www.halil-ai.site, app.halil-ai.site {
+	import security_headers
 	redir https://halil-ai.site{uri} permanent
 }
 
 api.halil-ai.site {
+	import security_headers
 	reverse_proxy web:8000
 }
 

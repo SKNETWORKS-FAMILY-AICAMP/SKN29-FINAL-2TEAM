@@ -1127,8 +1127,8 @@ ${candidate.body}
 
       <section className={styles.card}>
         <div className={`${styles.cardHead} ${styles.cardHeadRow}`}>
-          <h2 className={styles.cardTitle}>
-            스킬
+          <div className={styles.cardTitleRow}>
+            <h2 className={styles.cardTitle}>스킬</h2>
             <InfoNote title="스킬">
               <p>회사에서 일하는 절차를 적어 두는 곳입니다. 에이전트가 그대로 따라 합니다.</p>
               <p>
@@ -1156,7 +1156,7 @@ ${candidate.body}
                 내용은 그대로 남아 있어 언제든 다시 켤 수 있습니다. 이 상태는 나에게만 적용됩니다.
               </p>
             </InfoNote>
-          </h2>
+          </div>
           {/* 검색창을 「새 스킬」 옆에 둔다 — 목록 위 한 줄에서 필터와 만들기를
               같이 다룬다. */}
           <div className={styles.headActions}>

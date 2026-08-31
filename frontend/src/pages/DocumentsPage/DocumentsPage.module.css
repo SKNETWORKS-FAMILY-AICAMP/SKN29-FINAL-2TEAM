@@ -4,14 +4,22 @@
   gap: var(--space-5);
 }
 
-.pageHeader h1 {
+.pageHeader {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+.pageHeader h1 {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
   color: var(--color-heading);
+}
+
+.pageHelp {
+  display: flex;
+  align-items: center;
 }
 
 .error {
@@ -683,5 +691,72 @@
        손가락이 어느 쪽을 미는지 알 수 없다. */
     max-height: none;
     overflow-y: visible;
+  }
+
+  /* 좁은 화면에서는 표를 카드형 라벨-값 목록으로 바꾼다. 고정 열을 억지로
+     줄이면 파일명이 한 글자씩 세로로 쌓이므로, 값의 의미를 각 줄에 붙여
+     가로 스크롤 없이 모두 보이게 한다. */
+  .tableHead,
+  .myFileHead,
+  .sharedHead {
+    display: none;
+  }
+
+  .tableRow,
+  .myFileRow,
+  .sharedRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    margin: var(--space-3) 0;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+  }
+
+  .tableRow:last-child,
+  .myFileRow:last-child,
+  .sharedRow:last-child {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .cellName {
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .tableRow > [data-label],
+  .myFileRow > [data-label],
+  .sharedRow > [data-label] {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .tableRow > [data-label]::before,
+  .myFileRow > [data-label]::before,
+  .sharedRow > [data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 92px;
+    color: var(--color-muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .cellPath {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .cellStatus > span {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .cellActions,
+  .cellToggle {
+    justify-content: flex-start;
   }
 }

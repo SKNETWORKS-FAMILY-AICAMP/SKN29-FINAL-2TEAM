@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react';
-import { Routes, Route, Link, Navigate } from 'react-router-dom';
+import { Suspense, lazy, useEffect } from 'react';
+import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import {
   IndexingProgress,
   OpsLayout,
@@ -9,6 +9,7 @@ import {
   SkillJobCenter,
   ToastProvider,
 } from './components';
+import { AppErrorBoundary } from './components/AppErrorBoundary/AppErrorBoundary';
 import { PATHS, ROUTES } from './routes';
 import styles from './App.module.css';
 
@@ -42,6 +43,70 @@ const OpsGuardrailsPage = lazy(() => import('./pages/OpsGuardrailsPage/OpsGuardr
 const OpsUsagePage = lazy(() => import('./pages/OpsUsagePage/OpsUsagePage'));
 const OpsAuditPage = lazy(() => import('./pages/OpsAuditPage/OpsAuditPage'));
 const OpsPoliciesPage = lazy(() => import('./pages/OpsPoliciesPage/OpsPoliciesPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage/NotFoundPage'));
+
+const DEFAULT_DESCRIPTION =
+  'halil은 팀의 문서·사람·프로젝트 정보를 근거와 함께 찾아 실제 업무 실행으로 연결하는 프로젝트 운영 AI 플랫폼입니다.';
+
+function pageMeta(pathname: string): { title: string; description: string; canonical: boolean } {
+  const exact: Record<string, [string, string, boolean]> = {
+    [PATHS.landing]: ['halil · 프로젝트 운영 AI 플랫폼', DEFAULT_DESCRIPTION, true],
+    [PATHS.login]: ['로그인 · halil', 'halil 프로젝트 운영 AI 플랫폼에 로그인합니다.', true],
+    [PATHS.signup]: ['회원가입 · halil', 'halil 팀 계정을 만들고 프로젝트 운영을 시작합니다.', true],
+    [PATHS.inviteCode]: ['초대코드 회원가입 · halil', '팀 초대코드로 halil 계정을 만듭니다.', true],
+    [PATHS.findPassword]: ['비밀번호 찾기 · halil', 'halil 계정의 비밀번호 재설정 링크를 요청합니다.', true],
+    [PATHS.resetPassword]: ['비밀번호 재설정 · halil', 'halil 계정의 비밀번호를 재설정합니다.', false],
+    [PATHS.privacy]: ['개인정보처리방침 · halil', 'halil의 개인정보 수집·이용·보관 방침을 확인합니다.', true],
+    [PATHS.chat]: ['채팅 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.agentVersions]: ['에이전트 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.agentVersionsTeam]: ['팀 에이전트 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.agentVersionsFavorites]: ['즐겨찾는 에이전트 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.projects]: ['프로젝트 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.documents]: ['문서 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.settingsTeam]: ['팀 설정 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.settingsConnectors]: ['커넥터 설정 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.settingsSkills]: ['스킬 설정 · halil', DEFAULT_DESCRIPTION, false],
+    [PATHS.opsLogin]: ['운영자 로그인 · halil', 'halil 운영자 콘솔에 로그인합니다.', false],
+  };
+  const found = exact[pathname];
+  if (found) return { title: found[0], description: found[1], canonical: found[2] };
+  if (pathname.startsWith('/chat/')) return { title: '대화 · halil', description: DEFAULT_DESCRIPTION, canonical: false };
+  if (pathname.startsWith('/projects/')) return { title: '프로젝트 상세 · halil', description: DEFAULT_DESCRIPTION, canonical: false };
+  if (pathname.startsWith('/agents/versions/')) return { title: '에이전트 편집 · halil', description: DEFAULT_DESCRIPTION, canonical: false };
+  if (pathname.startsWith('/ops')) return { title: '운영자 콘솔 · halil', description: DEFAULT_DESCRIPTION, canonical: false };
+  return { title: '페이지를 찾을 수 없음 · halil', description: '요청한 halil 페이지를 찾을 수 없습니다.', canonical: false };
+}
+
+function RouteMeta() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const meta = pageMeta(pathname);
+    document.title = meta.title;
+
+    let description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (!description) {
+      description = document.createElement('meta');
+      description.name = 'description';
+      document.head.append(description);
+    }
+    description.content = meta.description;
+
+    let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (meta.canonical) {
+      if (!canonical) {
+        canonical = document.createElement('link');
+        canonical.rel = 'canonical';
+        document.head.append(canonical);
+      }
+      canonical.href = `${window.location.origin}${pathname}`;
+    } else {
+      canonical?.remove();
+    }
+  }, [pathname]);
+
+  return null;
+}
 
 function DevIndexPage() {
   const groups = Array.from(new Set(ROUTES.map((r) => r.group)));
@@ -73,10 +138,14 @@ function LoadingFallback() {
 }
 
 function App() {
+  const location = useLocation();
+
   return (
     <ToastProvider>
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
+      <RouteMeta />
+      <AppErrorBoundary key={location.pathname}>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
           <Route path={PATHS.landing} element={<LandingPage />} />
           {/* 개발용 화면 목록은 개발 서버에서만 연다. 배포본에서는 라우트가 없어
               랜딩으로 떨어진다 — `ROUTES` 에 운영자 콘솔 경로와 「문서 관리 (구)」가
@@ -139,9 +208,10 @@ function App() {
               <Route path="*" element={<Navigate to={PATHS.ops} replace />} />
             </Route>
           </Route>
-          <Route path="*" element={<LandingPage />} />
-        </Routes>
-      </Suspense>
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </AppErrorBoundary>
       {/* **`<Routes>` 바깥이다.** 라우트가 바뀌어도 이 컴포넌트들은 언마운트되지
           않아서 진행 카드와 폴링이 그대로 이어진다 — 페이지를 옮겨도 유지되는
           것이 이 자리의 전부이고, 그래서 전역 상태 저장소가 따로 필요 없다.

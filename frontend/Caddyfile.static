@@ -2,12 +2,11 @@
 # TLS 를 이미 끝냈으므로 여기서는 평문 http 만 받는다.
 :5173 {
 	root * /srv
+	# 첫 방문과 새 배포의 청크 다운로드를 줄인다. 앞단 Caddy가 다시 압축하지
+	# 않아도 이 응답의 Content-Encoding은 reverse proxy를 그대로 통과한다.
+	encode zstd gzip
 
-	# 해시가 붙은 자산은 내용이 바뀌면 이름이 바뀌므로 오래 캐시해도 안전하다.
-	@hashed path /assets/*
-	header @hashed Cache-Control "public, max-age=31536000, immutable"
-
-	# **나머지는 매번 물어본다.** `index.html` 에 헤더가 없으면 브라우저가
+	# **SPA 문서는 매번 물어본다.** `index.html` 에 헤더가 없으면 브라우저가
 	# 스스로 캐시 기간을 **추측한다**(Last-Modified 로부터 경과한 시간의 10%
 	# 정도가 관행이다). 그러면 배포한 뒤 새로고침해도 옛 `index.html` 이 나오고,
 	# 그것이 가리키는 옛 해시 자산은 `immutable` 이라 더 확실히 캐시돼 있어서
@@ -20,9 +19,6 @@
 	#
 	# `no-store` 가 아니라 `no-cache` 다 — 받아 두되 쓰기 전에 반드시 물어본다는
 	# 뜻이라, 안 바뀌었으면 `304`(본문 없음)로 끝난다. 매번 새로 받지 않는다.
-	@revalidate not path /assets/*
-	header @revalidate Cache-Control "no-cache"
-
 	# **자산은 있는 그대로 준다. 없으면 404 다.**
 	#
 	# 배포로 해시가 바뀌면 열려 있던 탭이 옛 조각(`/assets/index-옛해시.js`)을
@@ -36,14 +32,55 @@
 	# 동작은 아무것도 안 바뀐다(2026-08-19 실측: 없는 자산이 계속 200 text/html
 	# 이었다). 경로를 가르는 것은 `handle` 이 맞다.
 	handle /assets/* {
+		# 존재하는 해시 자산만 1년 캐시한다. 경로만 보고 헤더를 붙이면 404까지
+		# immutable이 되어, 배포 직후 이전 청크 실패가 장기간 캐시된다.
+		@exists file
+		handle @exists {
+			header Cache-Control "public, max-age=31536000, immutable"
+			file_server
+		}
+		handle {
+			header Cache-Control "no-store"
+			respond "Not Found" 404
+		}
+	}
+
+	# 실제 공개 정적 파일. SPA fallback으로 HTML을 반환하면 크롤러와 브라우저가
+	# 파일로 오인하므로 경로를 명시한다.
+	handle /favicon.png {
+		header Cache-Control "public, max-age=604800"
+		file_server
+	}
+	handle /robots.txt {
+		header Cache-Control "public, max-age=86400"
+		file_server
+	}
+	handle /sitemap.xml {
+		header Cache-Control "public, max-age=86400"
 		file_server
 	}
 
-	# 나머지는 SPA 다. 라우팅이 브라우저 쪽에 있어서 `/settings/team` 같은
-	# 주소에 해당하는 파일이 서버에 없다 — 이 대체가 없으면 **새로고침할 때만**
-	# 404 가 난다(링크를 눌러 이동할 때는 멀쩡해서 늦게 발견된다).
-	handle {
+	# 알려진 앱 라우트만 SPA fallback을 허용한다. 라우팅이 브라우저 쪽에 있어서
+	# `/settings/team` 같은 주소에 해당하는 파일은 서버에 없다.
+	@appRoutes path / /index.html /login /privacy /signup /invite-code /find-password /reset-password /settings /settings/* /documents /chat /chat/* /agents/versions /agents/versions/* /projects /projects/* /ops /ops/*
+	handle @appRoutes {
+		header Cache-Control "no-cache"
 		try_files {path} /index.html
+		file_server
+	}
+
+	# 오타 URL·없는 정적 파일을 랜딩 HTML 200으로 돌리지 않는다.
+	# 주소에 해당하는 파일이 서버에 없다 — 이 대체가 없으면 **새로고침할 때만**
+	# 404 가 나므로, 위 allowlist에 앱 라우트를 추가할 때 함께 갱신해야 한다.
+	handle {
+		error 404
+	}
+
+	# 직접 입력한 잘못된 URL도 앱의 NotFound 화면을 그리되 HTTP 상태는 404로
+	# 유지한다. `/assets/*`의 실패는 위에서 `respond`로 끝나므로 여기 오지 않는다.
+	handle_errors {
+		header Cache-Control "no-store"
+		rewrite * /index.html
 		file_server
 	}
 }

@@ -12,7 +12,6 @@ from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
-import magic
 
 from services.builtin_tools.common.errors import BuiltinToolError
 from services.builtin_tools.common.limits import MAX_FILE_BYTES
@@ -24,9 +23,25 @@ def detect_mime_type(data: bytes) -> str:
     """확장자나 사용자 선언값이 아니라 파일 signature로 MIME을 판별한다."""
 
     try:
+        # python-magic은 import 시점에 OS의 libmagic을 즉시 로드한다. Windows처럼
+        # 네이티브 라이브러리가 없는 개발 환경에서도 Django 자체는 시작돼야 하므로
+        # 실제 MIME 판별을 요청할 때까지 로드를 미룬다.
+        import magic
+
         detected = str(magic.from_buffer(data, mime=True))
-    except magic.MagicException as exc:
-        raise BuiltinToolError("MIME_DETECTION_FAILED", "파일 형식을 확인하지 못했습니다.") from exc
+    except (ImportError, OSError) as exc:
+        raise BuiltinToolError(
+            "MIME_DETECTOR_UNAVAILABLE",
+            "파일 형식 판별기를 사용할 수 없습니다. libmagic 설치 상태를 확인해 주세요.",
+        ) from exc
+    except Exception as exc:
+        # python-magic의 예외 타입은 모듈 로드 후에만 참조할 수 있다. 라이브러리
+        # 내부 오류를 외부로 노출하지 않고 기존 도구 오류 계약으로 변환한다.
+        if exc.__class__.__module__.startswith("magic"):
+            raise BuiltinToolError(
+                "MIME_DETECTION_FAILED", "파일 형식을 확인하지 못했습니다."
+            ) from exc
+        raise
     return detected.split(";", 1)[0].strip().lower()
 
 

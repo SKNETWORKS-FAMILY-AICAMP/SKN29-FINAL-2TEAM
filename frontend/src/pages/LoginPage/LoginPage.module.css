@@ -107,6 +107,9 @@
   border: none;
   background: none;
   padding: 0;
+  width: 40px;
+  height: 40px;
+  margin: -10px;
   cursor: pointer;
   color: var(--color-placeholder);
 }
@@ -127,6 +130,9 @@
 }
 
 .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--color-primary);
   font-weight: 600;
   text-decoration: underline;

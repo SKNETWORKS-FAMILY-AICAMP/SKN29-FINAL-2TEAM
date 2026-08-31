@@ -67,6 +67,9 @@
 }
 
 .navLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: 14px;
   font-weight: 600;
   color: var(--color-body);
@@ -90,6 +93,10 @@
 }
 
 .navCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   background: var(--color-primary);
   color: #fff;
   border-radius: var(--radius-pill);
@@ -1356,6 +1363,9 @@
 }
 
 .footerLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--color-muted);
   text-decoration: none;
 }

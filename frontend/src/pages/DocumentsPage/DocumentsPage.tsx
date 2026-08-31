@@ -333,8 +333,8 @@ export default function DocumentsPage() {
     <AppShell>
       <div className={styles.page}>
         <header className={styles.pageHeader}>
-          <h1>
-            문서
+          <h1>문서</h1>
+          <div className={styles.pageHelp}>
             <InfoNote title="문서">
               {/* **네 문단이었다.** 파이프라인 사정을 문단마다 설명하고 있었는데,
                   읽는 사람이 알아야 할 것은 「무엇을 쓰는가」와 「어디서 정하는가」
@@ -344,7 +344,7 @@ export default function DocumentsPage() {
               </p>
               <p>어떤 폴더를 읽을지는 설정 &gt; 커넥터에서 정합니다.</p>
             </InfoNote>
-          </h1>
+          </div>
         </header>
 
         {error && <p className={styles.error}>{error}</p>}
@@ -631,7 +631,7 @@ export default function DocumentsPage() {
                           {formatDate(doc.src_modified_at)}
                         </span>
 
-                        <span className={styles.cellActions}>
+                        <span className={styles.cellActions} data-label="작업">
                           {/* **「읽는 중」에는 안 보여준다.** 상태를 셋으로 합치면서
                               차례를 기다리는 문서(`index_status` 가 아직 null 인 것)에도
                               버튼이 뜨고 있었다 — 칩은 「읽는 중」이라고 하는데 옆에서
@@ -648,6 +648,7 @@ export default function DocumentsPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              aria-label={`${doc.file_name ?? doc.doc_id} 다시 읽기`}
                               disabled={busy === doc.doc_id}
                               onClick={() => void retry(doc)}
                             >

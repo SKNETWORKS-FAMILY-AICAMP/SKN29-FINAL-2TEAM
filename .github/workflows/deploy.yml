@@ -22,8 +22,60 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  verify:
+    name: Build, test, and security gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 프런트엔드 빌드·의존성 감사
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 프런트엔드 검증
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
+
+      - name: 백엔드 테스트 환경 준비
+        run: |
+          cp .env.example .env
+          docker compose -f infra/docker/docker-compose.yml up -d --wait db
+          docker compose -f infra/docker/docker-compose.yml build web
+
+      - name: Django 전체 회귀 테스트
+        run: |
+          docker compose -f infra/docker/docker-compose.yml run --rm \
+            -e DATABASE_URL=postgres://project_copilot:project_copilot@db:5432/project_copilot \
+            web python manage.py test tests
+
+      - name: Python 의존성·배포 설정 검사
+        run: |
+          docker compose -f infra/docker/docker-compose.yml run --rm --no-deps web pip check
+          docker compose -f infra/docker/docker-compose.yml run --rm --no-deps \
+            -e DJANGO_SETTINGS_MODULE=config.settings.production \
+            -e DATABASE_URL=postgres://project_copilot:project_copilot@db:5432/project_copilot \
+            -e SECRET_KEY=ci-only-9f64c3b21a8e47d5b02c6a91f8473e625bc9d7418ef503ac761204de \
+            -e SECURE_SSL_REDIRECT=True \
+            web python manage.py check --deploy --settings=config.settings.production
+
+      - name: 테스트 컨테이너 정리
+        if: always()
+        run: docker compose -f infra/docker/docker-compose.yml down -v
+
   deploy:
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

@@ -307,8 +307,8 @@ export function ConnectorTab() {
       <section className={styles.card}>
         <div className={styles.cardHead}>
           {/* 설명은 ⓘ 안으로 넣는다. 제목은 탭 이름과 같은 말이면 된다. */}
-          <h2 className={styles.cardTitle}>
-            커넥터
+          <div className={styles.cardTitleRow}>
+            <h2 className={styles.cardTitle}>커넥터</h2>
             <InfoNote title="커넥터">
               <p>
                 데이터를 가져오는 <strong>자리</strong>입니다. 자리마다 하나씩 연결하고, 여기서 연결한
@@ -333,7 +333,7 @@ export function ConnectorTab() {
                 숫자가 맞는 숫자처럼 보이기 때문입니다.
               </p>
             </InfoNote>
-          </h2>
+          </div>
         </div>
 
         <div className={styles.list}>

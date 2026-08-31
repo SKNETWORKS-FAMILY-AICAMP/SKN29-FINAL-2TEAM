@@ -256,6 +256,7 @@ export default function ProjectListPage() {
               <button
                 type="button"
                 className={[styles.sortBtn, sort === 'date' ? styles.sortBtnActive : ''].filter(Boolean).join(' ')}
+                aria-pressed={sort === 'date'}
                 onClick={() => setSort('date')}
               >
                 최신순
@@ -263,6 +264,7 @@ export default function ProjectListPage() {
               <button
                 type="button"
                 className={[styles.sortBtn, sort === 'progress' ? styles.sortBtnActive : ''].filter(Boolean).join(' ')}
+                aria-pressed={sort === 'progress'}
                 onClick={() => setSort('progress')}
               >
                 진행률순
@@ -306,6 +308,7 @@ export default function ProjectListPage() {
                 className={[styles.sortBtn, completedSort === 'recent' ? styles.sortBtnActive : '']
                   .filter(Boolean)
                   .join(' ')}
+                aria-pressed={completedSort === 'recent'}
                 onClick={() => setCompletedSort('recent')}
               >
                 최신순
@@ -315,6 +318,7 @@ export default function ProjectListPage() {
                 className={[styles.sortBtn, completedSort === 'oldest' ? styles.sortBtnActive : '']
                   .filter(Boolean)
                   .join(' ')}
+                aria-pressed={completedSort === 'oldest'}
                 onClick={() => setCompletedSort('oldest')}
               >
                 오래된순

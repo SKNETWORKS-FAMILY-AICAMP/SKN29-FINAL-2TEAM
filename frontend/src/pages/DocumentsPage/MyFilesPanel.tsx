@@ -569,7 +569,7 @@ export function MyFilesPanel({
                 <>
                   {/* 색인이 끝나기 전에도 켤 수 있다 — 끝나는 대로 쓰인다.
                       끝나야 켜지게 하면 「올려 뒀는데 왜 안 쓰지」가 된다. */}
-                  <span className={styles.cellToggle}>
+                  <span className={styles.cellToggle} data-label="검색에 사용">
                     {/* 색인 없이 받은 형식은 검색에 못 쓴다(2026-08-28) — 토글을
                         열어 두면 켰는데 아무 일도 안 일어나는 것처럼 보인다. */}
                     <ToggleSwitch
@@ -579,7 +579,7 @@ export function MyFilesPanel({
                       onChange={(next) => toggle(file, 'search_enabled', next)}
                     />
                   </span>
-                  <span className={styles.cellToggle}>
+                  <span className={styles.cellToggle} data-label="팀에 공유">
                     <ToggleSwitch
                       checked={file.shared}
                       ariaLabel={`${file.file_name} 팀에 공유`}
@@ -590,7 +590,7 @@ export function MyFilesPanel({
                       칸이 248px 이라 표 전체(924px)가 패널(약 800px)보다 넓어져
                       「내 파일」만 가로로 스크롤됐다. 이름은 `title`(툴팁)과
                       `aria-label`(읽어 주는 이름)에 그대로 남는다. */}
-                  <span className={styles.cellActions}>
+                  <span className={styles.cellActions} data-label="작업">
                     {/* 「읽는 중」에는 안 보인다 — 돌고 있는 것을 다시 시키라고
                         권하면 기다리면 될 일을 사람이 의심하게 된다. 팀 문서
                         표와 같은 조건이다. */}
@@ -599,8 +599,8 @@ export function MyFilesPanel({
                         size="sm"
                         variant="outline"
                         className={styles.iconAction}
-                        title="다시 읽기"
-                        aria-label="다시 읽기"
+                        title={`${file.file_name} 다시 읽기`}
+                        aria-label={`${file.file_name} 다시 읽기`}
                         disabled={busy === file.doc_id}
                         onClick={() => void retry(file)}
                       >
@@ -614,8 +614,8 @@ export function MyFilesPanel({
                       size="sm"
                       variant="outline"
                       className={styles.iconAction}
-                      title="다운로드"
-                      aria-label="다운로드"
+                      title={`${file.file_name} 다운로드`}
+                      aria-label={`${file.file_name} 다운로드`}
                       disabled={busy === file.doc_id}
                       onClick={() => void download(file)}
                     >
@@ -625,8 +625,8 @@ export function MyFilesPanel({
                       size="sm"
                       variant="ghost"
                       className={styles.iconAction}
-                      title="삭제"
-                      aria-label="삭제"
+                      title={`${file.file_name} 삭제`}
+                      aria-label={`${file.file_name} 삭제`}
                       disabled={busy === file.doc_id}
                       onClick={() => setConfirming(file)}
                     >

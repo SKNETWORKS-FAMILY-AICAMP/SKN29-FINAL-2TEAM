@@ -54,7 +54,13 @@ docker compose $FILES run --rm --no-deps web \
   python DB/migrations/_apply.py \
   DB/migrations/2026-08-28_document_search_hybrid_indexes.sql
 
-echo "::: 2.6 서비스 기동"
+echo "::: 2.6 스키마 재확인"
+# 새 서비스를 올리기 전에 새 이미지가 전제하는 컬럼·인덱스를 읽기만 해서
+# 확인한다. 이 단계가 실패해도 현재 서비스는 그대로 떠 있으므로 부분 배포가
+# 되지 않는다.
+docker compose $FILES run --rm --no-deps web python DB/migrations/_apply.py --check
+
+echo "::: 2.7 서비스 기동"
 docker compose $FILES up -d web frontend caddy skill-validation-worker
 
 echo "::: 3. MCP 시연 서버"
@@ -65,24 +71,6 @@ if [ "$MCP_UP" = 1 ]; then
 else
   echo "    안 떠 있어서 건너뜀"
 fi
-
-echo "::: 3.5 스키마 재확인"
-# 코드가 전제하는 컬럼·인덱스가 RDS 에 있는지 **읽기만** 해서 확인한다.
-# 임의의 마이그레이션을 전부 자동 적용하지는 않는다. DROP·DELETE 가 섞일 수
-# 있기 때문에, 배포에 자동 적용할 파일은 위 2.5 단계에 안전성을 검토한 뒤
-# 명시적으로 하나씩 추가한다.
-#
-# 왜 필요한가: 4단계 헬스 체크의 `database` 항목은 **연결만** 본다. 그래서
-# 「새 컬럼을 읽는 코드 + 그 컬럼이 없는 RDS」가 헬스 체크를 멀쩡히 통과한다.
-# 2026-08-18 에 그 상태로 배포돼 채팅이 통째로 막혔고, 2026-08-24 에도 같은
-# 순서로 나갔다(그때는 운으로 안 터졌다).
-#
-# 2.5 단계에서 허용한 마이그레이션 외의 누락이 있으면 여기서 걸린다. 그 경우
-# 새 서비스가 이미 기동됐으므로, 다음 변경부터는 필요한 안전한 마이그레이션을
-# 반드시 2.5 단계 허용 목록에 함께 추가해야 한다.
-#
-# set -e 가 걸려 있어 빠진 것이 있으면 여기서 배포가 멈춘다.
-docker compose $FILES exec -T web python DB/migrations/_apply.py --check
 
 echo "::: 4. 헬스 체크"
 # ⚠ X-Forwarded-Proto 를 붙여야 한다. production 설정의 SECURE_SSL_REDIRECT 가

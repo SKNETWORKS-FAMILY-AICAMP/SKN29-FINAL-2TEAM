@@ -2199,7 +2199,7 @@ export default function ChatPage() {
             {isEmpty && needsPeopleDb && (
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
-                  <h2>시작할 준비를 해요</h2>
+                  <h1>시작할 준비를 해요</h1>
                   <p>데이터를 가져올 자리를 연결하면 그때부터 대화로 일할 수 있습니다.</p>
                 </div>
 
@@ -2234,7 +2234,7 @@ export default function ChatPage() {
             {isEmpty && !needsPeopleDb && (
               <div className={styles.empty}>
                 <div className={styles.emptyIntro}>
-                  <h2>무엇을 도와드릴까요?</h2>
+                  <h1>무엇을 도와드릴까요?</h1>
                   {/* 무엇을 근거로 답하는지가 답의 전제라 먼저 말한다. */}
                   <p className={styles.projectContext}>
                     {currentProject ? (

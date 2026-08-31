@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Icon } from '../../components';
 import { ApiError } from '../../api/client';
@@ -47,12 +48,64 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const [candidates, setCandidates] = useState<PrimaryCandidate[]>([]);
   /** 검색 자체가 실패한 경우. 「후보가 없다」와 다르게 말해야 한다. */
   const [searchError, setSearchError] = useState('');
   /** 사람이 고른 기준 문서. 아직 저장하지 않았다. */
   const [chosen, setChosen] = useState<PrimaryCandidate | null>(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      const first =
+        dialog?.querySelector<HTMLElement>('[autofocus]') ??
+        dialog?.querySelector<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+      (first ?? dialog)?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) window.requestAnimationFrame(() => previousFocus.focus());
+    };
+  }, []);
+
+  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!first || !last) {
+      event.preventDefault();
+      dialog.focus();
+    } else if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   /** 1걸음 — 아직 아무것도 만들지 않고 문서만 찾아 본다. */
   async function handleFind() {
@@ -114,8 +167,16 @@ export function NewProjectDialog({ onClose, onCreated }: NewProjectDialogProps) 
   }
 
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true" aria-label="새 프로젝트">
-      <div className={styles.dialog}>
+    <div className={styles.backdrop}>
+      <div
+        ref={dialogRef}
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label="새 프로젝트"
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
+      >
         <header className={styles.head}>
           <h2>
             {step === 'form' && '새 프로젝트'}
