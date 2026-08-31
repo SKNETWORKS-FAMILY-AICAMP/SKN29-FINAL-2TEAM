@@ -1,0 +1,26 @@
+protocol_version: eval-v3
+evaluation_suite: PLATFORM_BEHAVIOR_V3
+fixture_id: D01-DEV-001
+fixture_version: 1
+gold_version: 1
+family_id: D01
+variant_id: D01_TABLE
+split: DEV
+fixture_status: VALIDATED
+title: 표 중심 PDF 검색 결과 처리
+purpose: 전처리된 표의 수치를 검색하고 중복 호출 없이 종료하는지 확인한다.
+input: 하나로유통 김천 WMS 요구사항에서 출고 지시 처리량, 재고 실사 정확도, 현장 단말 응답 목표를 근거와 함께 정리해줘.
+source_binding_policy: EXISTING_REPOSITORY_PDF
+source_artifacts:
+  - source_id: PDF-WMS-REQ
+    repo_path: tests/eval/documents/pdf/P3_하나로유통_김천WMS_재구축/하나로유통_김천WMS_요구사항정의서.pdf
+    mime_type: application/pdf
+    sha256: bd182cc2a9bcf2fdf2d727cd64fe79aa095db8eee4a4fac6ca65686c97efa1c9
+    relevant_pages: [2]
+allowed_tools: [document_search, document_list]
+forbidden_tools: [task_register, task_update, jira_create_issues, skill_register, web_search]
+side_effect_policy: READ_ONLY
+execution_contract: {max_tool_calls: 4, document_search_max_calls: 3, duplicate_signature_max: 1}
+required_observables: [final_answer, logical_tool_calls, normalized_tool_arguments, retrieved_document_identity, terminal_state]
+readiness: {fixture_status: VALIDATED, instrumentation_status: READY_FOR_V3_DEV}
+

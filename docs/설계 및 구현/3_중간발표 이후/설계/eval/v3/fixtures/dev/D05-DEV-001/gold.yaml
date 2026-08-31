@@ -1,0 +1,16 @@
+gold_identity: {fixture_id: D05-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: 부가세 포함 총사업비는 528,000,000원이다., evidence_refs: ["PDF-APPROVAL:p2"]}
+    - {fact_id: F02, importance: REQUIRED, proposition: 수행사 평가 배점은 기술평가 80%와 가격평가 20%다., evidence_refs: ["PDF-APPROVAL:p2"]}
+    - {fact_id: F03, importance: REQUIRED, proposition: 기안자는 차장 서민재다., evidence_refs: ["PDF-APPROVAL:p1"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 답변은 추진품의서를 근거로 해야 한다., supported_by: [F01, F02, F03]}
+uncertainty_contract: {must_abstain_on: [다른 유사 사업 문서의 수치], prohibited_inferences: [한빛몰 과업지시서와 혼합]}
+oracle_bindings:
+  - {criterion: required_fact_coverage, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: required_source_retrieval, authoritative_oracle: DETERMINISTIC, scorer_identity: required-source-retrieval-v1}
+  - {criterion: factual_grounding, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: unsupported_claim_control, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+

@@ -1,0 +1,14 @@
+gold_identity: {fixture_id: D06-DEV-001, fixture_version: 1, gold_version: 1, gold_status: VALIDATED}
+truth_catalog:
+  facts:
+    - {fact_id: F01, importance: REQUIRED, proposition: 콘텐츠 무결성 확인은 SHA-256 체크섬을 5% 표본으로 수행한다., evidence_refs: ["PDF-LMS-MIGRATION:p3"]}
+    - {fact_id: F02, importance: REQUIRED, proposition: 과거 이력 620만 건은 이관 대상에서 제외하고 조회 전용으로 남긴다., evidence_refs: ["PDF-LMS-MIGRATION:p1"]}
+  relations: []
+required_conclusions:
+  - {conclusion_id: C01, proposition: 체크섬 표본 비율은 5%이고 조회 전용 잔존 이력은 620만 건이다., supported_by: [F01, F02]}
+uncertainty_contract: {must_abstain_on: [현재 실제 이관 완료 건수], prohibited_inferences: [계획을 완료 실적으로 표현]}
+oracle_bindings:
+  - {criterion: required_fact_coverage, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: required_source_retrieval, authoritative_oracle: DETERMINISTIC, scorer_identity: required-source-retrieval-v1}
+  - {criterion: factual_grounding, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}
+  - {criterion: unsupported_claim_control, authoritative_oracle: LLM_JUDGE, scorer_identity: gpt-5.6-sol}

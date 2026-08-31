@@ -1,0 +1,42 @@
+protocol: PLATFORM_BEHAVIOR_V3
+schema_version: 1
+suite_version: 1
+repetitions: 3
+expected:
+  variants: 22
+  legacy_variants: 16
+  delta_variants: 6
+  official_runs: 66
+
+cohorts:
+  - id: V2_CORE_REGRESSION
+    expected_variants: 12
+    variants:
+      - {id: S01, fixture_id: S01-DEV-001, runner: scripts/eval_v2_s01.py, args: []}
+      - {id: S02, fixture_id: S02-DEV-001, runner: scripts/eval_v2_remaining.py, args: [S02]}
+      - {id: S03, fixture_id: S03-DEV-001, runner: scripts/eval_v2_remaining.py, args: [S03]}
+      - {id: S04_FORBIDDEN_TOOL, fixture_id: S04-DEV-001, runner: scripts/eval_v2_s04.py, args: [--attack-profile, forbidden_tool_registration]}
+      - {id: S04_SECRET_EXFILTRATION, fixture_id: S04-DEV-001, runner: scripts/eval_v2_s04.py, args: [--attack-profile, secret_exfiltration]}
+      - {id: S04_FALSE_COMPLETION, fixture_id: S04-DEV-001, runner: scripts/eval_v2_s04.py, args: [--attack-profile, false_completion]}
+      - {id: S05A, fixture_id: S05A-DEV-001, runner: scripts/eval_v2_remaining.py, args: [S05A]}
+      - {id: S05B, fixture_id: S05B-DEV-001, runner: scripts/eval_v2_remaining.py, args: [S05B]}
+      - {id: S06, fixture_id: S06-DEV-001, runner: scripts/eval_v2_remaining.py, args: [S06]}
+      - {id: S07, fixture_id: S07-DEV-001, runner: scripts/eval_v2_s07.py, args: []}
+      - {id: S09A, fixture_id: S09A-DEV-001, runner: scripts/eval_v2_s09a.py, args: []}
+      - {id: S09B, fixture_id: S09B-DEV-001, runner: scripts/eval_v2_remaining.py, args: [S09B]}
+  - id: V2_EXPANSION_REGRESSION
+    expected_variants: 4
+    variants:
+      - {id: S10_001, fixture_id: S10-DEV-001, runner: scripts/eval_v2_s10.py, args: [S10-DEV-001]}
+      - {id: S10_002, fixture_id: S10-DEV-002, runner: scripts/eval_v2_s10.py, args: [S10-DEV-002]}
+      - {id: S11_001, fixture_id: S11-DEV-001, runner: scripts/eval_v2_s11.py, args: [S11-DEV-001]}
+      - {id: S11_002, fixture_id: S11-DEV-002, runner: scripts/eval_v2_s11.py, args: [S11-DEV-002]}
+  - id: DOCUMENT_SEARCH_DELTA
+    expected_variants: 6
+    variants:
+      - {id: D01, fixture_id: D01-DEV-001, runner: scripts/eval_v2_s01.py, args: []}
+      - {id: D02, fixture_id: D02-DEV-001, runner: scripts/eval_v2_s01.py, args: []}
+      - {id: D03, fixture_id: D03-DEV-001, runner: scripts/eval_v2_s01.py, args: []}
+      - {id: D04, fixture_id: D04-DEV-001, runner: scripts/eval_v2_s01.py, args: []}
+      - {id: D05, fixture_id: D05-DEV-001, runner: scripts/eval_v2_s01.py, args: []}
+      - {id: D06, fixture_id: D06-DEV-001, runner: scripts/eval_v2_s01.py, args: []}

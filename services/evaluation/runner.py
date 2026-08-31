@@ -75,6 +75,7 @@ def _assertion(name: str, passed: bool, *, detail: str, category: str) -> dict[s
 def _tool_reliability(events: list[dict[str, Any]]) -> dict[str, Any]:
     """도구 실패 뒤 같은 입력 재시도와 복구 여부를 정량화한다."""
     signature_states: dict[str, dict[str, int | bool]] = {}
+    signature_attempt_counts: Counter[str] = Counter()
     pending: dict[str, tuple[str, str, bool]] = {}
     by_tool: dict[str, dict[str, int]] = {}
     failed_count = 0
@@ -99,6 +100,7 @@ def _tool_reliability(events: list[dict[str, Any]]) -> dict[str, Any]:
             signature = hashlib.sha256(
                 f"{tool_ref}\0{canonical_arguments}".encode("utf-8")
             ).hexdigest()
+            signature_attempt_counts[signature] += 1
             state = signature_states.setdefault(
                 signature,
                 {"failure_open": False, "consecutive_failures": 0, "retries": 0},
@@ -158,6 +160,10 @@ def _tool_reliability(events: list[dict[str, Any]]) -> dict[str, Any]:
         "max_consecutive_failures_per_signature": max_consecutive_failures,
         "max_retries_after_failure_per_signature": max_retries_per_signature,
         "unmatched_started_call_count": unmatched_count,
+        "duplicate_signature_count": sum(
+            count - 1 for count in signature_attempt_counts.values() if count > 1
+        ),
+        "max_attempts_per_signature": max(signature_attempt_counts.values(), default=0),
         "by_tool": by_tool,
         "argument_storage": "sha256-only-in-memory",
     }
@@ -354,6 +360,20 @@ def evaluate_events(
                 ),
             ]
         )
+    if "max_calls_per_signature" in case:
+        max_calls_per_signature = int(case["max_calls_per_signature"])
+        assertions.append(
+            _assertion(
+                "duplicate_tool_signature_limit",
+                tool_reliability["max_attempts_per_signature"] <= max_calls_per_signature,
+                detail=(
+                    "actual_max_attempts_per_signature="
+                    f"{tool_reliability['max_attempts_per_signature']}, "
+                    f"max={max_calls_per_signature}"
+                ),
+                category="budget",
+            )
+        )
     failed = [item["name"] for item in assertions if not item["passed"]]
     status = "FAILED" if failed else terminal_status
     terminal = results[-1] if results else (errors[-1] if errors else {})
@@ -375,6 +395,8 @@ def evaluate_events(
         "max_tool_retries_per_signature": tool_reliability[
             "max_retries_after_failure_per_signature"
         ],
+        "duplicate_tool_signature_count": tool_reliability["duplicate_signature_count"],
+        "max_tool_attempts_per_signature": tool_reliability["max_attempts_per_signature"],
     }
     if time_to_first_token_ms is not None:
         metrics["time_to_first_token_ms"] = round(time_to_first_token_ms, 3)
