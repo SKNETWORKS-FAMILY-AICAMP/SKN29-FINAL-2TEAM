@@ -174,8 +174,9 @@ def _entry_html(entry: dict[str, Any], index: int) -> str:
     metrics = candidate.get("metrics") or {}
     fixture_id = result.get("fixture_id", "UNKNOWN")
     scenario_result = result.get("scenario_result", "UNKNOWN")
+    user_input = v2_dashboard._user_input(result)
     search = " ".join(
-        [fixture_id, str(manifest.get("eval_run_id") or ""), str(candidate.get("final_answer") or "")]
+        [fixture_id, str(manifest.get("eval_run_id") or ""), user_input, str(candidate.get("final_answer") or "")]
     ).lower()
     replacement = '<span class="pill replacement">대체 실행</span>' if entry["is_replacement"] else ""
     evidence = {
@@ -202,6 +203,7 @@ def _entry_html(entry: dict[str, Any], index: int) -> str:
           <div><span>도구 호출</span><b>{v2_dashboard._e(metrics.get('tool_call_count', 0))}</b></div>
           <div><span>총 토큰</span><b>{int(metrics.get('total_tokens') or 0):,}</b></div>
         </div>
+        <section><h3>평가 사용자 입력</h3><div class="user-input">{v2_dashboard._e(user_input)}</div></section>
         <section><h3>실제 에이전트 답변</h3><div class="answer">{v2_dashboard._e(candidate.get('final_answer') or '전용 runner 결과')}</div></section>
         <section><h3>결정론적·계약 판정</h3>{v2_dashboard._criteria_html(result.get('criteria') or [])}</section>
         <section><h3>LLM as Judge</h3>{v2_dashboard._judge_html(result.get('judge'))}</section>
@@ -275,7 +277,7 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
 <div class="split"><div><h2 class="section-title">시나리오별 결과</h2><div class="scenario-grid">{''.join(fixture_cards)}</div></div>
 <div><h2 class="section-title">실패 assertion</h2><div class="table-wrap"><table><thead><tr><th>Assertion</th><th>실패 실행</th></tr></thead><tbody>{assertion_rows}</tbody></table></div></div></div>
 <div class="filters">
-  <input data-filter="search" placeholder="시나리오·run ID·답변 검색">
+  <input data-filter="search" placeholder="시나리오·run ID·사용자 입력·답변 검색">
   <select data-filter="group"><option value="">모든 코호트</option><option value="core">Core · S10/S11 포함</option><option value="delta">Delta</option><option value="invalid">인프라 무효</option></select>
   <select data-filter="result"><option value="">모든 결과</option><option value="pass">PASS</option><option value="fail">FAIL</option></select>
   <select data-filter="scenario"><option value="">모든 시나리오</option>{scenario_options}</select>

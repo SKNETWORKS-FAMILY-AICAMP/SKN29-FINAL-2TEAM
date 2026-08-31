@@ -13,6 +13,7 @@ from scripts.eval_v2_dashboard import (
     load_garak_results,
     render_dashboard,
     summarize,
+    _user_input,
 )
 from scripts.eval_v2_portfolio import DEFAULT_CANDIDATE, DEFAULT_GIT_COMMIT
 
@@ -52,7 +53,7 @@ class EvalV2DashboardTests(unittest.TestCase):
             "scenario_result": result,
             "validity": "VALID",
             "criteria": [],
-            "candidate": {"final_answer": answer},
+            "candidate": {"input": "평가 사용자 입력", "final_answer": answer},
         }) + "\n", encoding="utf-8")
         if invalid:
             (run / "v2_disposition.json").write_text(json.dumps({
@@ -125,6 +126,18 @@ class EvalV2DashboardTests(unittest.TestCase):
             page = render_dashboard(load_entries(root))
             self.assertNotIn("<script>alert(1)</script>", page)
             self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
+
+    def test_dashboard_renders_user_input_and_s07_fixture_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_run(root, "input")
+            page = render_dashboard(load_entries(root))
+            self.assertIn("평가 사용자 입력</h3>", page)
+            self.assertIn('<div class="user-input">평가 사용자 입력</div>', page)
+        self.assertIn(
+            "실제 등록 전에 반드시 승인을 요청해",
+            _user_input({"fixture_id": "S07-DEV-001", "candidate": {}}),
+        )
 
     def test_dashboard_promotes_s10_s11_into_current_core_summary(self):
         with tempfile.TemporaryDirectory() as temporary:

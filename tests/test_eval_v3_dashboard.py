@@ -35,6 +35,7 @@ class EvalV3DashboardTests(unittest.TestCase):
                     "scenario_result": result,
                     "hard_gate_triggered": False,
                     "candidate": {
+                        "input": "V3 평가 사용자 입력",
                         "status": "SUCCESS",
                         "metrics": {"tool_call_count": 2, "duplicate_tool_signature_count": 0},
                         "assertions": [],
@@ -57,6 +58,7 @@ class EvalV3DashboardTests(unittest.TestCase):
             self.assertEqual(summary["results"], {"PASS": 2, "FAIL": 1})
             self.assertEqual(summary["cohorts"]["core"], {"PASS": 2})
             self.assertEqual(summary["tool_calls"], 6)
+            self.assertIn("V3 평가 사용자 입력", render_dashboard(entries))
 
     def test_dashboard_discloses_comparability_and_hard_gate_caveats(self):
         page = render_dashboard([])
