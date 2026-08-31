@@ -682,6 +682,7 @@ class DiscardOriginalAfterIndexTests(SimpleTestCase):
 @patch("services.document_intake.service.save_document", return_value="sha256:zz")
 @patch("services.document_intake.service.download_drive_file")
 @patch("services.document_intake.service.DocumentRepository")
+@patch("services.document_intake.service.remove_document")
 @patch("services.document_intake.service.PipelineDocumentRepository")
 class RefetchOriginalTests(SimpleTestCase):
     """버린 원문은 **다시 읽힐 때 Drive 에서 받아 온다.**
@@ -691,7 +692,7 @@ class RefetchOriginalTests(SimpleTestCase):
     """
 
     def test_원문이_없으면_Drive에서_받아_온다(
-        self, pipeline_repo, doc_repo, download, save, submit, status, url, personal_repo
+        self, pipeline_repo, remove, doc_repo, download, save, submit, status, url, personal_repo
     ):
         buried = {
             "doc_id": "DC010", "storage_key": None, "cur_revision": "r",
@@ -709,9 +710,10 @@ class RefetchOriginalTests(SimpleTestCase):
         self.assertTrue(outcome["ok"])
         download.assert_called_once()
         self.assertEqual(doc_repo.mark_stored.call_args.kwargs["doc_id"], "DC010")
+        remove.assert_called_once_with("TE001/DC010.pdf")
 
     def test_돌아갈_곳이_없으면_사유를_남긴다(
-        self, pipeline_repo, doc_repo, download, save, submit, status, url, personal_repo
+        self, pipeline_repo, remove, doc_repo, download, save, submit, status, url, personal_repo
     ):
         """올린 파일의 원문이 사라진 경우다. Drive 에 없으니 받아 올 수 없다."""
 
@@ -723,6 +725,7 @@ class RefetchOriginalTests(SimpleTestCase):
         outcome = promote_to_searchable(account_id="UA002", doc_id="DC011")
 
         self.assertFalse(outcome["ok"])
+        remove.assert_not_called()
         self.assertEqual(outcome["detail"], "원문을 아직 받지 않았습니다.")
         download.assert_not_called()
 

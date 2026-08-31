@@ -23,6 +23,13 @@ class HealthApiTests(SimpleTestCase):
 
 
 class ProjectApiTests(SimpleTestCase):
+    def setUp(self):
+        super().setUp()
+        # 리포지토리 배선 테스트가 로컬 UA001 시드에 의존하지 않게 한다.
+        leader_guard = patch("apps.projects.api_views.require_leader", return_value=None)
+        leader_guard.start()
+        self.addCleanup(leader_guard.stop)
+
     @patch("apps.projects.api_views.ProjectRepository.list_for_team")
     def test_project_list_uses_direct_repository(self, list_for_team):
         list_for_team.return_value = [

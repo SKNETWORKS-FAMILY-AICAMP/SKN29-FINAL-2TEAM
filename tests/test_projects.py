@@ -81,6 +81,13 @@ def doc_row(doc_id="DC001", src_file_id="file-plan", name="기획서.docx", role
 
 
 class ProjectListCreateApiTests(SimpleTestCase):
+    def setUp(self):
+        super().setUp()
+        # 프로젝트 생성 계약이 로컬의 UA001 팀장 시드 유무에 흔들리지 않게 한다.
+        leader_guard = patch("apps.projects.api_views.require_leader", return_value=None)
+        leader_guard.start()
+        self.addCleanup(leader_guard.stop)
+
     def test_requires_login(self):
         self.assertEqual(self.client.get("/api/projects/").status_code, 401)
         self.assertEqual(self.client.post("/api/projects/", {"name": "몰래"}).status_code, 401)
@@ -286,6 +293,13 @@ class JiraProjectRegisterApiTests(SimpleTestCase):
 
 class TeamFolderApiTests(SimpleTestCase):
     """폴더는 팀에 매단다 — 프로젝트가 아니라."""
+
+    def setUp(self):
+        super().setUp()
+        # 폴더 API의 입력·저장 계약을 보는 테스트이므로 권한 DB 조회를 격리한다.
+        leader_guard = patch("apps.projects.api_views.require_leader", return_value=None)
+        leader_guard.start()
+        self.addCleanup(leader_guard.stop)
 
     def replace_body(self, ids=("folder-SKN29",)):
         return {"external_folder_ids": list(ids)}

@@ -570,6 +570,14 @@ class AvatarApiTests(SimpleTestCase):
 
 
 class InviteApiTests(SimpleTestCase):
+    def setUp(self):
+        super().setUp()
+        # 초대 API 계약은 권한 가드와 별도로 검증한다. 빈 CI DB에서도 실제
+        # UA001 팀장 행을 요구하지 않도록 이 클래스의 권한 결과를 고정한다.
+        leader_guard = patch("apps.accounts.api_views.require_leader", return_value=None)
+        leader_guard.start()
+        self.addCleanup(leader_guard.stop)
+
     def auth_header(self):
         return {"authorization": f"Bearer {issue_token('UA001')}"}
 

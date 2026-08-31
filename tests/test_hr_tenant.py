@@ -91,6 +91,14 @@ class TeamCreationGuardTests(SimpleTestCase):
 class TeamMemberApiTests(SimpleTestCase):
     """팀 명부. 초대 현황과 다르다 — 명부는 업무 배정 대상이다."""
 
+    def setUp(self):
+        super().setUp()
+        # 쓰기 API 자체의 계약을 검증하는 단위 테스트다. 권한 판정까지 실 DB의
+        # UA001 시드에 기대면 빈 CI DB에서 본문에 도달하기 전에 503이 난다.
+        leader_guard = patch("apps.people.api_views.require_leader", return_value=None)
+        leader_guard.start()
+        self.addCleanup(leader_guard.stop)
+
     def _headers(self):
         from apps.accounts.tokens import issue_token
 
@@ -223,6 +231,14 @@ class TeamMemberApiTests(SimpleTestCase):
 
 class TeamSettingApiTests(SimpleTestCase):
     """팀 업무량 기준. 비우면 "설정 안 함"이고 HR 값·100%·4주로 돌아간다."""
+
+    def setUp(self):
+        super().setUp()
+        # 권한 정책은 별도 테스트에서 검증한다. 여기서는 설정 API의 입력·저장
+        # 계약만 보므로 빈 DB에서도 팀장 권한을 명시적으로 고정한다.
+        leader_guard = patch("apps.people.api_views.require_leader", return_value=None)
+        leader_guard.start()
+        self.addCleanup(leader_guard.stop)
 
     def _headers(self):
         from apps.accounts.tokens import issue_token
