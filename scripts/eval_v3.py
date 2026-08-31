@@ -86,6 +86,31 @@ def _golden_query_count() -> int:
     return total
 
 
+def _validate_relevant_pages(fixture_roots: tuple[Path, ...]) -> None:
+    from pypdf import PdfReader
+
+    errors: list[str] = []
+    for root in fixture_roots:
+        for fixture_path in sorted(root.glob("*/fixture.yaml")):
+            fixture = _load_yaml(fixture_path)
+            for source in fixture.get("source_artifacts") or []:
+                source_path = REPO_ROOT / str(source["repo_path"])
+                page_count = len(PdfReader(source_path).pages)
+                invalid = [
+                    int(page)
+                    for page in source.get("relevant_pages") or []
+                    if int(page) < 1 or int(page) > page_count
+                ]
+                if invalid:
+                    errors.append(
+                        f"{fixture_path}: pages={invalid}, pdf_pages={page_count}"
+                    )
+    if errors:
+        raise ValueError(
+            "fixture relevant_pages가 PDF 범위를 벗어났습니다:\n" + "\n".join(errors)
+        )
+
+
 def _git_state() -> dict[str, Any]:
     try:
         commit = subprocess.run(
@@ -206,6 +231,7 @@ def validate_setup() -> dict[str, Any]:
     if delta_fixture_ids != {str(row["fixture_id"]) for row in delta}:
         raise ValueError("suite의 delta fixture와 실제 package가 다릅니다.")
     legacy_packages = validate_fixture_tree(V2_FIXTURES, repo_root=REPO_ROOT)
+    _validate_relevant_pages((V2_FIXTURES, V3_FIXTURES))
 
     corpus_count = len(list(CORPUS_ROOT.rglob("*.pdf")))
     query_count = _golden_query_count()
