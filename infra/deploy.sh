@@ -63,6 +63,12 @@ docker compose $FILES run --rm --no-deps web python DB/migrations/_apply.py --ch
 echo "::: 2.7 서비스 기동"
 docker compose $FILES up -d web frontend caddy skill-validation-worker
 
+# Caddy 이미지는 보통 바뀌지 않아서 `up -d`만으로는 바인드 마운트된 Caddyfile의
+# 내용 변경을 감지하지 못한다. 설정을 원자적으로 다시 읽고, 문법이 틀리면 이
+# 배포를 실패시켜 보안 헤더·라우팅 변경이 코드에만 남는 일을 막는다.
+docker compose $FILES exec -T caddy \
+  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+
 echo "::: 3. MCP 시연 서버"
 # server.py 는 바인드 마운트라 재빌드가 아니라 재생성이면 반영된다.
 if [ "$MCP_UP" = 1 ]; then
