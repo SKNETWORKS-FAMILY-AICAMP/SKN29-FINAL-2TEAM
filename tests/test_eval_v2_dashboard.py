@@ -8,6 +8,7 @@ from scripts.eval_v2_dashboard import (
     EXPANSION_DEV_PROMPT_ID,
     EXPANSION_DEV_RUN_IDS,
     classify_entry,
+    _criteria_html,
     load_entries,
     load_garak_results,
     render_dashboard,
@@ -241,6 +242,30 @@ class EvalV2DashboardTests(unittest.TestCase):
         }])
         self.assertIn("judge-model · reasoning medium", page)
         self.assertIn("판정 요약", page)
+
+    def test_contract_criteria_are_rendered_in_korean(self):
+        table = _criteria_html([
+            {
+                "criterion_id": "required_source_retrieval",
+                "role": "PRIMARY",
+                "oracle": "DETERMINISTIC",
+                "result": "PASS",
+            },
+            {
+                "criterion_id": "factual_grounding",
+                "role": "SECONDARY",
+                "oracle": "LLM_JUDGE",
+                "result": "FAIL",
+            },
+        ])
+        self.assertIn("필수 출처 검색", table)
+        self.assertIn("정답에 필요한 문서를 실제로 검색했는지 확인", table)
+        self.assertIn("사실 근거성", table)
+        self.assertIn("핵심 기준", table)
+        self.assertIn("보조 기준", table)
+        self.assertIn("규칙 기반 판정", table)
+        self.assertIn("LLM 판정", table)
+        self.assertIn('title="required_source_retrieval"', table)
 
 
 if __name__ == "__main__":
