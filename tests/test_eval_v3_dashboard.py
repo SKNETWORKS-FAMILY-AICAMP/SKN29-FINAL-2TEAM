@@ -3,7 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.eval_v3_dashboard import OFFICIAL_CANDIDATE, OFFICIAL_COMMIT, load_entries, summarize
+from scripts.eval_v3_dashboard import (
+    OFFICIAL_CANDIDATE,
+    OFFICIAL_COMMIT,
+    load_entries,
+    render_dashboard,
+    summarize,
+)
 
 
 class EvalV3DashboardTests(unittest.TestCase):
@@ -50,6 +56,13 @@ class EvalV3DashboardTests(unittest.TestCase):
             self.assertEqual(summary["scored_runs"], 3)
             self.assertEqual(summary["results"], {"PASS": 2, "FAIL": 1})
             self.assertEqual(summary["tool_calls"], 6)
+
+    def test_dashboard_discloses_comparability_and_hard_gate_caveats(self):
+        page = render_dashboard([])
+        self.assertIn("V2 ↔ V3 실행조건: 부분 확인", page)
+        self.assertIn("V2 실행 artifact만으로 독립 검증할 수 없습니다", page)
+        self.assertIn("Hard Gate 0/66은 계약 판정", page)
+        self.assertIn("도구 경계 위반", page)
 
 
 if __name__ == "__main__":

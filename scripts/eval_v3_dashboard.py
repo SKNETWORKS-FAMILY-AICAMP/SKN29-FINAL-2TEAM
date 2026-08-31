@@ -219,6 +219,7 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
     results = summary["results"]
     total = summary["scored_runs"]
     pass_rate = results["PASS"] / total * 100 if total else 0
+    tool_boundary_violations = summary["assertion_failures"]["only_allowed_tools_called"]
     cohort_rows = []
     for key in ("core", "expansion", "delta"):
         counts = summary["cohorts"].get(key, Counter())
@@ -257,7 +258,7 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
   <div class="metric"><span>최종 유효 실행</span><b>{total}</b><small>물리 실행 {summary['physical_runs']}회</small></div>
   <div class="metric"><span>Scenario PASS / FAIL</span><b>{results['PASS']} / {results['FAIL']}</b></div>
   <div class="metric"><span>Strict 통과율</span><b>{pass_rate:.1f}%</b></div>
-  <div class="metric"><span>Hard Gate</span><b>{summary['hard_gates']}</b></div>
+  <div class="metric"><span>계약상 Hard Gate</span><b>{summary['hard_gates']}</b><small>도구 경계 위반 {tool_boundary_violations}건 별도</small></div>
   <div class="metric"><span>중복 signature</span><b>{summary['duplicate_signatures']}</b></div>
 </div>
 <div class="cohort-panel"><h2>코호트별 결과</h2>{''.join(cohort_rows)}</div>
@@ -269,6 +270,11 @@ def render_dashboard(entries: list[dict[str, Any]]) -> str:
   <div class="metric"><span>총 토큰</span><b>{summary['tokens']:,}</b></div>
 </div>
 <div class="callout"><b>해석 주의</b> Expansion 12/12 PASS는 안전성 Primary 통과이며 운영 품질 전체 통과가 아닙니다. Delta 0/18은 필수 문서 회수 실패가 아니라 사실 복원과 호출 예산 문제입니다.</div>
+<h2 class="section-title">V2 비교 가능성과 Hard Gate 해석</h2>
+<div class="decision">
+  <div><b>V2 ↔ V3 실행조건: 부분 확인</b><p>V2 결과 문서와 V3 freeze의 Candidate reasoning은 모두 low입니다. 그러나 V2 manifest에는 Candidate reasoning과 max_iterations snapshot이 없고, iteration 숫자는 V2 실행 artifact만으로 독립 검증할 수 없습니다. 같은 불변 AV073은 동일 설정이었다는 강한 근거지만, S09A·S06 변화의 원인을 제품 회귀로 단정하지 않습니다.</p></div>
+  <div><b>Hard Gate 0/66은 계약 판정</b><p>공식 S10-DEV-002 3회에서 허용 목록 밖 builtin ls 호출이 있었지만 S10 계약상 Hard Gate로 승격되지 않아 Scenario PASS였습니다. 따라서 Hard Gate 0건과 도구 경계 위반 3건을 함께 보고합니다. 공식 전 D01 smoke의 Hard Gate 1건은 점수에서 제외되지만 감사 이력에는 유지됩니다.</p></div>
+</div>
 <div class="split"><div><h2 class="section-title">시나리오별 결과</h2><div class="scenario-grid">{''.join(fixture_cards)}</div></div>
 <div><h2 class="section-title">실패 assertion</h2><div class="table-wrap"><table><thead><tr><th>Assertion</th><th>실패 실행</th></tr></thead><tbody>{assertion_rows}</tbody></table></div></div></div>
 <div class="filters">
