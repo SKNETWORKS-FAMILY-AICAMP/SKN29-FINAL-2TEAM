@@ -168,11 +168,26 @@ def _tool_catalog(account_id: str) -> dict[str, dict]:
     return catalog
 
 
-def _check_tool_refs(*, account_id: str, tool_refs: list[str]) -> str | None:
+def _check_tool_refs(
+    *, account_id: str, tool_refs: list[str], model: str | None = None
+) -> str | None:
     """`AgentListCreateAPIView`/`AgentDetailAPIView`/`AgentActivateAPIView`가 함께 쓰는
     구조 검증 — 도구 참조가 실제로 존재하는지, 중복 선택은 없는지만 본다."""
 
-    return check_definition(tool_refs=tool_refs, catalog=_tool_catalog(account_id))
+    blocker = check_definition(tool_refs=tool_refs, catalog=_tool_catalog(account_id))
+    if blocker is not None:
+        return blocker
+    from backend.db.repositories import AccountRepository
+    from services.agent_runtime.models.capabilities import (
+        IMAGE_DOCUMENT_SEARCH_TOOL_REF,
+        supports_image_input,
+    )
+
+    if IMAGE_DOCUMENT_SEARCH_TOOL_REF in tool_refs:
+        team_id = AccountRepository.team_id(account_id)
+        if not supports_image_input(model=model, team_id=team_id):
+            return "'문서 검색 · 원본 이미지' 도구는 이미지 입력을 지원하는 모델에서만 선택할 수 있습니다."
+    return None
 
 
 def _cascade_activate_draft_subagents(*, agent_id: str, account_id: str) -> list[str]:
@@ -194,7 +209,11 @@ def _cascade_activate_draft_subagents(*, agent_id: str, account_id: str) -> list
         if _model_rejection(account_id, child.get("model")) is not None:
             continue
         try:
-            if _check_tool_refs(account_id=account_id, tool_refs=list(child.get("tool_refs") or [])) is not None:
+            if _check_tool_refs(
+                account_id=account_id,
+                tool_refs=list(child.get("tool_refs") or []),
+                model=child.get("model"),
+            ) is not None:
                 continue
         except (RepositoryError, psycopg.Error):
             continue
@@ -240,7 +259,9 @@ class AgentVersionListCreateAPIView(AuthenticatedAPIView):
         if rejection is not None:
             return rejection
         try:
-            blocker = _check_tool_refs(account_id=account_id, tool_refs=data["tool_refs"])
+            blocker = _check_tool_refs(
+                account_id=account_id, tool_refs=data["tool_refs"], model=fields.get("model")
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         if blocker is not None:
@@ -308,7 +329,9 @@ class AgentVersionDetailAPIView(AuthenticatedAPIView):
         if rejection is not None:
             return rejection
         try:
-            blocker = _check_tool_refs(account_id=account_id, tool_refs=data["tool_refs"])
+            blocker = _check_tool_refs(
+                account_id=account_id, tool_refs=data["tool_refs"], model=fields.get("model")
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         if blocker is not None:
@@ -404,7 +427,9 @@ class AgentVersionActivateAPIView(AuthenticatedAPIView):
         if rejection is not None:
             return rejection
         try:
-            blocker = _check_tool_refs(account_id=account_id, tool_refs=agent["tool_refs"])
+            blocker = _check_tool_refs(
+                account_id=account_id, tool_refs=agent["tool_refs"], model=agent.get("model")
+            )
         except (RepositoryError, psycopg.Error) as exc:
             return _repository_error_response(exc)
         if blocker is not None:
