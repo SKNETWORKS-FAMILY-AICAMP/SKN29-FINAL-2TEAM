@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Button, Icon, InfoNote } from '../../components';
 import { ApiError } from '../../api/client';
 import {
@@ -8,7 +7,6 @@ import {
   suggestPrimaryCandidates,
 } from '../../api/projects';
 import type { PipelineDocument, PrimaryCandidate } from '../../api/projects';
-import { PATHS } from '../../routes';
 import styles from './PrimaryDocumentCard.module.css';
 
 /**
@@ -32,8 +30,6 @@ export interface PrimaryDocumentCardProps {
 }
 
 export function PrimaryDocumentCard({ projectId, token, name, description }: PrimaryDocumentCardProps) {
-  const navigate = useNavigate();
-
   const [documents, setDocuments] = useState<PipelineDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -62,14 +58,12 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
 
   /**
    * **`proj_id` 까지 봐야 한다.** 이 목록은 「이 프로젝트의 문서」가 아니라
-   * **팀 문서 전체**다 — 서버가 일부러 그렇게 준다(업무 추출이 근거를 찾을
-   * 범위라서. `list_ready_for_analysis` docstring 참고). 그래서 `doc_role`
+   * **팀 문서 전체**다 — 서버가 일부러 그렇게 준다. 그래서 `doc_role`
    * 하나로 고르면 **남의 프로젝트 기준 문서를 자기 것으로 그린다.**
    *
    * 팀에 기준 문서가 하나뿐일 때는 우연히 맞아서 오래 안 드러났다. 기준 문서가
    * 있는 프로젝트와 없는 프로젝트가 함께 생긴 2026-08-19 에야 나왔다 — 없는
-   * 쪽이 남의 것을 가져다 그렸고, 「업무 추출」 버튼까지 활성이라 **엉뚱한
-   * 문서로 업무를 뽑을 수 있었다.**
+   * 쪽이 남의 것을 가져다 그릴 수 있었다.
    */
   const primary =
     documents.find(
@@ -112,35 +106,13 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
     }
   }
 
-  /**
-   * 업무 추출은 **Chat 에서 돌린다.** 여기서 직접 부르지 않는다.
-   *
-   * 도구 자체는 여기서도 부를 수 있다(`streamTaskExtraction`). 그런데 뽑은
-   * 업무를 Jira 에 올리려면 승인 게이트를 타야 하고, 그 확인 카드는 대화 안에서
-   * 뜬다(`awaiting_confirmation` → `confirm` → resume). 추출만 여기서 하면
-   * **그 결과가 버려지고 Chat 에서 처음부터 다시 뽑게 된다** — 몇 분짜리 작업을
-   * 두 번 하는 것이다.
-   *
-   * 그래서 이 버튼은 대화를 열고 **거기서 바로 실행시킨다.** 사람이 다시 칠
-   * 것은 없다(`ChatPage` 가 `ask` 를 받으면 자동으로 보낸다).
-   */
-  function handleExtract() {
-    navigate(
-      `${PATHS.chat}?proj=${projectId}&ask=${encodeURIComponent('이 프로젝트의 기준 문서에서 업무를 뽑아줘')}`,
-    );
-  }
-
   return (
     <section className={styles.card}>
       <div className={styles.head}>
         <span className={styles.title}>
           기준 문서
           <InfoNote title="기준 문서">
-            <p>
-              업무 추출이 <strong>근거로 삼는 문서</strong>입니다. 근거 문서는 따로 묶지 않고 에이전트가
-              팀 문서에서 찾습니다.
-            </p>
-            <p>‘업무 추출’을 누르면 이 프로젝트의 대화가 열리고 곧바로 실행됩니다.</p>
+            <p>프로젝트 작업 시 참고 기준으로 사용할 문서입니다.</p>
           </InfoNote>
         </span>
       </div>
@@ -193,12 +165,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
             <Icon name="file-text" size={16} color="var(--color-primary)" />
             <span className={styles.primaryName}>{primary.file_name ?? primary.doc_id}</span>
           </div>
-          {/* 이 문서로 할 수 있는 일과 이 문서를 바꾸는 일. 같은 대상에 대한
-              행동이라 한 줄에 둔다. */}
           <div className={styles.actions}>
-            <Button size="sm" disabled={busy} onClick={handleExtract}>
-              업무 추출
-            </Button>
             <Button variant="outline" size="sm" onClick={handleFind} disabled={busy}>
               기준 문서 변경
             </Button>
@@ -212,8 +179,7 @@ export function PrimaryDocumentCard({ projectId, token, name, description }: Pri
       ) : (
         <>
           <p className={styles.muted}>
-            기준 문서가 아직 없습니다. 업무 추출에는 기준 문서가 필요합니다. ‘기준 문서 선택’으로
-            정해 주세요.
+            기준 문서가 아직 없습니다. ‘기준 문서 선택’으로 정해 주세요.
           </p>
           <div className={styles.actions}>
             <Button size="sm" onClick={handleFind} disabled={busy}>

@@ -23,12 +23,6 @@
   color: var(--color-heading);
 }
 
-.subtitle {
-  font-size: 14px;
-  color: var(--color-muted);
-  line-height: 1.55;
-}
-
 .tabBar {
   display: flex;
   gap: 4px;
@@ -53,18 +47,6 @@
   border-bottom-color: var(--color-primary);
   color: var(--color-primary);
   font-weight: 700;
-}
-
-.notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  font-size: 12px;
-  color: var(--color-muted);
 }
 
 .sectionSub {
