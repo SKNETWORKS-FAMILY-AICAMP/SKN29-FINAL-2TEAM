@@ -1047,7 +1047,9 @@ class VectorSearchRepository:
         이 값에는 제목 경로 등 청킹 문맥이 붙어 있어 짧은 본문만 검색할 때보다
         용어가 어느 절에 속하는지 잘 드러난다. PICTURE의 description 또는 기본
         serializer fallback도 검색 점수 계산에만 쓰며 모델의 텍스트 근거로는
-        반환하지 않는다. 일반 근거 본문만 ``doc_block.content``에서 돌려준다.
+        반환하지 않는다. 일반 텍스트 청크는 ``merge_peers``로 여러 block을 합칠
+        수 있으므로 대표 ``doc_block.content`` 하나가 아니라 검색에 사용한
+        ``chunk.search_text`` 전체를 근거로 돌려준다.
 
         후보는 벡터·전문검색·부분어절 검색에서 각각 넉넉히 모은 뒤 후보군 안에서
         점수를 0~1로 정규화한다. 최종 점수는 lexical 0.5 + cosine 0.5이며,
@@ -1081,7 +1083,7 @@ class VectorSearchRepository:
                                c.chunk_idx AS sequence, c.heading_path,
                                CASE WHEN b.block_type = 'PICTURE'
                                     THEN NULL
-                                    ELSE b.content
+                                    ELSE c.search_text
                                END AS text,
                                c.search_text,
                                p.query_ts, p.query_text,

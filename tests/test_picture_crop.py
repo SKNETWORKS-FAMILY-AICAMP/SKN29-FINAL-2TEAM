@@ -1,7 +1,10 @@
 """검색 이미지의 서명 URL과 Docling provenance 계약."""
 
+from unittest.mock import patch
+
 from django.core import signing
 from django.test import SimpleTestCase, override_settings
+from django.urls import reverse
 
 from services.document_pipeline.crop_renderer import (
     PictureCropError,
@@ -34,6 +37,56 @@ class PictureCropContractTests(SimpleTestCase):
 
         with self.assertRaises(signing.BadSignature):
             read_picture_crop_token(token + "x")
+
+    def test_crop_api_rejects_a_token_for_another_block(self):
+        url = signed_picture_crop_url(block_id="BL001", doc_id="DC001", revision="REV1")
+        token = url.split("token=", 1)[1]
+
+        response = self.client.get(
+            reverse("api_document_picture_crop", kwargs={"block_id": "BL002"}),
+            {"token": token},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"], "이미지 crop 서명이 올바르지 않습니다."
+        )
+
+    @patch("apps.projects.api_views.render_picture_crop", return_value=b"\x89PNG\r\n")
+    @patch("apps.projects.api_views.load_document", return_value=b"%PDF-1.7")
+    @patch("apps.projects.api_views.document_exists", return_value=True)
+    @patch("apps.projects.api_views.VectorSearchRepository.picture_crop_source")
+    def test_crop_api_returns_the_current_pdf_picture_as_png(
+        self,
+        picture_crop_source,
+        _document_exists,
+        _load_document,
+        _render_picture_crop,
+    ):
+        picture_crop_source.return_value = {
+            "mime_type": "application/pdf",
+            "storage_key": "documents/DC001/source.pdf",
+            "src_locator": {
+                "prov": [
+                    {"page_no": 1, "bbox": {"l": 1, "t": 2, "r": 3, "b": 4}}
+                ]
+            },
+        }
+        url = signed_picture_crop_url(block_id="BL001", doc_id="DC001", revision="REV1")
+        token = url.split("token=", 1)[1]
+
+        response = self.client.get(
+            reverse("api_document_picture_crop", kwargs={"block_id": "BL001"}),
+            {"token": token},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertEqual(response["Content-Disposition"], 'inline; filename="BL001.png"')
+        self.assertEqual(response.content, b"\x89PNG\r\n")
+        picture_crop_source.assert_called_once_with(
+            block_id="BL001", doc_id="DC001", revision="REV1"
+        )
 
     def test_first_valid_provenance_is_used(self):
         locator = {

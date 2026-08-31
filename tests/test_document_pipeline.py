@@ -687,7 +687,7 @@ class KoreanLexicalQueryTests(SimpleTestCase):
 
 
 class HybridPictureEvidenceContractTests(SimpleTestCase):
-    def test_picture_description은_순위에만_쓰고_crop_식별자를_반환한다(self):
+    def test_picture_description은_순위에만_쓰고_일반_청크_전체를_근거로_반환한다(self):
         import inspect
 
         from backend.db.document_pipeline import VectorSearchRepository
@@ -698,6 +698,8 @@ class HybridPictureEvidenceContractTests(SimpleTestCase):
         self.assertIn("word_similarity(p.query_text, c.search_text)", source)
         self.assertIn("WHEN b.block_type = 'PICTURE'", source)
         self.assertIn("THEN NULL", source)
+        self.assertIn("ELSE c.search_text", source)
+        self.assertNotIn("ELSE b.content", source)
         for field in ("block_id", "block_type", "mime_type", "page", "revision"):
             self.assertIn(field, source)
 
