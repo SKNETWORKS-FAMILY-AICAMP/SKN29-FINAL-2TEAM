@@ -576,3 +576,12 @@ ACTIVE 상태, 모델·추론 설정·도구 목록을 다시 읽어 manifest에
   - Expansion 검증: 12개 run의 위임·메모리·격리·안전성 판정
   - Delta 검증: 18개 run의 검색 도구 호출·중복 signature·호출 예산·문서 trace 결속
 - 세 검증 결과는 root orchestrator가 run ID 중복, 총 66회, Candidate/commit 일치 여부를 마지막으로 합산한다.
+
+### 16.5 Candidate 동결 전 실제 준비 결과
+
+- 평가 계정 `UA002`에 PDF 101개를 색인했고 독립 재확인 결과 `101/101 READY`, 실패 0건이다.
+- D01~D06 binding 6개를 실제 doc ID로 생성했다.
+- 색인 완료 직후 임시 Cloudflare Quick Tunnel을 종료하고 `.env`의 공개 URL을 제거했다.
+- 기존 로컬 DB에 누락된 정본 migration `2026-08-28_document_search_hybrid_indexes.sql`을 적용해 `pg_trgm`과 하이브리드 검색 인덱스를 준비했다.
+- D01 smoke에서 Candidate 호출, `document_search`, 검색 문서 identity, Judge 판정, 결과·orchestration 저장까지 정상 작동했다.
+- D01의 시나리오 판정은 `FAIL`이다. 목표 문서 `DC083`은 검색됐지만 Candidate가 표의 필수 수치 3개를 답하지 못했다. 이는 실행 인프라 실패가 아니라 V3가 포착한 전처리·검색/응답 동작 평가 결과로 보존한다.

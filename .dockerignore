@@ -12,5 +12,6 @@ outputs/
 .codex_staging/
 pytest_tmp_rotation/
 .pytest_cache/
+**/.pytest_cache/
 .pnpm-store/
 **/node_modules/

@@ -87,35 +87,59 @@ def _golden_query_count() -> int:
 
 
 def _git_state() -> dict[str, Any]:
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    ).stdout.strip()
-    tracked_status = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=no"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    ).stdout.splitlines()
-    all_status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    ).stdout.splitlines()
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout.strip()
+        tracked_status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout.splitlines()
+        all_status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout.splitlines()
+    except FileNotFoundError:
+        git_dir = REPO_ROOT / ".git"
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref: "):
+            commit = head
+        else:
+            ref = head.removeprefix("ref: ")
+            ref_path = git_dir / ref
+            if ref_path.is_file():
+                commit = ref_path.read_text(encoding="utf-8").strip()
+            else:
+                packed = (git_dir / "packed-refs").read_text(encoding="utf-8").splitlines()
+                commit = next(line.split(" ", 1)[0] for line in packed if line.endswith(f" {ref}"))
+        # git이 없는 runtime image에서는 변경 여부를 증명할 수 없다. provision은
+        # 허용하되 공식 run/freeze는 dirty 판정으로 계속 차단한다.
+        return {
+            "commit": commit,
+            "dirty": True,
+            "tracked_changed_path_count": None,
+            "untracked_path_count": None,
+            "git_available": False,
+        }
     return {
         "commit": commit,
         "dirty": bool(tracked_status),
         "tracked_changed_path_count": len(tracked_status),
         "untracked_path_count": len(all_status) - len(tracked_status),
+        "git_available": True,
     }
 
 
