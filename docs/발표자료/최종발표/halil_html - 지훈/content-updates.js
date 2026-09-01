@@ -640,6 +640,31 @@
     sources: ['../Jihun_발표준비/deep_agent_deck.html'],
   }));
 
+  // 16페이지는 오프닝 iframe 대신 공통 슬라이드 양식(5페이지 기준) 위에
+  // 에이전트 생성·질의 흐름을 두 화면 캡처로 제시한다. 헤더·푸터 크롬은 원본 그대로 재사용한다.
+  deepAgentSlides[0] = (() => {
+    const s = clone(slide(16));
+    removeContentArea(s);
+    s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    setElementText(s.elements.find((e) => e.name === 'section-16'), 'AGENT LIFECYCLE');
+    setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'AGENT LIFECYCLE');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '에이전트 생성과 사용자 질의 요청');
+    const createBox = [196, 186, 372, 452];
+    const queryBox = [712, 186, 372, 452];
+    s.elements.push(
+      textElement('s16-create-name', [196, 150, 372, 30], '에이전트 생성', 20, '#000000', true, 'center'),
+      textElement('s16-query-name', [712, 150, 372, 30], '에이전트에 질의 요청', 20, '#000000', true, 'center'),
+      imageElement('s16-create-img', createBox, '../../halil_html/media/Agent-create.png', 'contain'),
+      imageElement('s16-query-img', queryBox, '../../halil_html/media/Agent-query.png', 'contain'),
+      { kind: 'shape', geometry: 'rect', bbox: createBox, lineColor: '#000000', lineWidth: 1, name: 's16-create-frame' },
+      { kind: 'shape', geometry: 'rect', bbox: queryBox, lineColor: '#000000', lineWidth: 1, name: 's16-query-frame' },
+      textElement('s16-flow-label', [570, 372, 140, 22], '저장', 13, '#6C7482', false, 'center'),
+      textElement('s16-flow-arrow', [570, 398, 140, 52], '→', 40, '#A6B4C7', false, 'center'),
+    );
+    s.sources = ['../../halil_html/media/Agent-create.png', '../../halil_html/media/Agent-query.png'];
+    return s;
+  })();
+
   const evaluationSlides = Array.from({ length: 10 }, (_, index) => ({
     background: '#FFFFFF',
     elements: [{
