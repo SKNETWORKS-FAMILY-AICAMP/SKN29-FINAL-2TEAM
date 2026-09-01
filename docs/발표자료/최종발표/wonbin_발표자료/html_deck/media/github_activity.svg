@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="430" viewBox="0 0 1400 430">
+  <rect width="1400" height="430" rx="24" fill="#F8FAFC"/>
+  <rect x="1" y="1" width="1398" height="428" rx="23" fill="none" stroke="#D0D5DD" stroke-width="2"/>
+  <style>
+    text{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif;fill:#101828}
+    .label{font-size:20px;font-weight:700;fill:#475467}
+    .value{font-size:50px;font-weight:800;letter-spacing:-2px}
+    .small{font-size:17px;fill:#667085}
+    .date{font-size:16px;font-weight:700;fill:#344054}
+    .version{font-size:15px;fill:#155EEF}
+  </style>
+  <text x="52" y="54" font-size="23" font-weight="800">도클링 깃허브 활동 지표</text>
+  <text x="1348" y="54" text-anchor="end" class="small">2026.09.01 확인</text>
+
+  <line x1="350" y1="88" x2="350" y2="250" stroke="#E4E7EC" stroke-width="2"/>
+  <line x1="700" y1="88" x2="700" y2="250" stroke="#E4E7EC" stroke-width="2"/>
+  <line x1="1050" y1="88" x2="1050" y2="250" stroke="#E4E7EC" stroke-width="2"/>
+
+  <text x="52" y="126" class="label">관심도</text>
+  <text x="52" y="188" class="value">65.8K</text>
+  <text x="52" y="224" class="small">스타</text>
+
+  <text x="402" y="126" class="label">확장·재사용</text>
+  <text x="402" y="188" class="value">4.7K</text>
+  <text x="402" y="224" class="small">포크</text>
+
+  <text x="752" y="126" class="label">사용자 피드백</text>
+  <text x="752" y="188" class="value">904</text>
+  <text x="752" y="224" class="small">공개 이슈</text>
+
+  <text x="1102" y="126" class="label">코드 검토</text>
+  <text x="1102" y="188" class="value">86</text>
+  <text x="1102" y="224" class="small">진행 중인 변경 제안</text>
+
+  <rect x="52" y="282" width="1296" height="1" fill="#D0D5DD"/>
+  <text x="52" y="326" class="label">최근 릴리즈</text>
+  <line x1="260" y1="347" x2="1280" y2="347" stroke="#B2C7F9" stroke-width="4"/>
+
+  <circle cx="300" cy="347" r="11" fill="#155EEF"/>
+  <text x="300" y="382" text-anchor="middle" class="date">8월 25일</text>
+  <text x="300" y="406" text-anchor="middle" class="version">2.122.0</text>
+
+  <circle cx="600" cy="347" r="11" fill="#155EEF"/>
+  <text x="600" y="382" text-anchor="middle" class="date">8월 26일</text>
+  <text x="600" y="406" text-anchor="middle" class="version">2.123.0</text>
+
+  <circle cx="900" cy="347" r="11" fill="#155EEF"/>
+  <text x="900" y="382" text-anchor="middle" class="date">8월 28일</text>
+  <text x="900" y="406" text-anchor="middle" class="version">2.123.1</text>
+
+  <circle cx="1200" cy="347" r="14" fill="#0B1F44" stroke="#B8F34A" stroke-width="5"/>
+  <text x="1200" y="382" text-anchor="middle" class="date">8월 31일</text>
+  <text x="1200" y="406" text-anchor="middle" class="version">2.124.0</text>
+</svg>
