@@ -983,6 +983,17 @@
   const relocated = deck.slides.splice(30, 5);
   deck.slides.splice(35, 0, ...relocated);
 
+  // 35페이지(EVALUATION PLAN) 뒤에 사용자 편의 기능(스킬·실행 과정·운영) 섹션 표지를
+  // 15페이지 챕터 표지와 동일한 디자인으로 추가한다.
+  const userConvDivider = (() => {
+    const s = clone(slide(20));
+    setElementText(s.elements.find((e) => e.name === 'div-title-20'), '사용자 편의 기능');
+    setElementText(s.elements.find((e) => e.name === 'div-sub-20'), '검증된 스킬 재사용 · 실행 과정 공개 · 팀 단위 운영');
+    setElementText(s.elements.find((e) => e.name === 'div-key-20'), 'SKILL · EXECUTION · OPERATIONS');
+    return s;
+  })();
+  deck.slides.splice(35, 0, userConvDivider);
+
   deck.slides.forEach((item, index) => {
     item.number = index + 1;
     item.elements.forEach((element) => {
