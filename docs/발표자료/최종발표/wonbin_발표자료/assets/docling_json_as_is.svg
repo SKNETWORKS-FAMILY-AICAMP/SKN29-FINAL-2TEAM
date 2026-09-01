@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#F8FAFC"/>
+  <style>
+    text{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif;fill:#101828}
+    .code{font-family:Consolas,'Courier New',monospace;font-size:22px;fill:#D0D5DD}
+    .key{fill:#8FB5FF}.val{fill:#B8F34A}.muted{fill:#98A2B3}
+    .label{font-size:20px;font-weight:800;fill:#155EEF}.title{font-size:42px;font-weight:800;letter-spacing:-1.5px}
+    .body{font-size:22px;fill:#475467}.big{font-size:42px;font-weight:800}.small{font-size:17px;fill:#667085}
+  </style>
+
+  <text x="70" y="72" class="label">DOCLINGDOCUMENT · 실제 파싱 결과</text>
+  <text x="70" y="128" class="title">PDF의 내용뿐 아니라 문서 구조와 위치까지 함께 저장됩니다</text>
+  <text x="70" y="168" class="body">실제 28쪽 기업분석 PDF 파싱 결과를 발표용으로 축약한 화면</text>
+
+  <rect x="70" y="215" width="700" height="600" rx="20" fill="#0D1628"/>
+  <circle cx="108" cy="250" r="7" fill="#F97066"/><circle cx="133" cy="250" r="7" fill="#FEC84B"/><circle cx="158" cy="250" r="7" fill="#32D583"/>
+  <text x="690" y="257" text-anchor="end" class="muted" font-size="17">기본 JSON 결과</text>
+
+  <text x="105" y="310" class="code">{</text>
+  <text x="135" y="350" class="code"><tspan class="key">"schema_name"</tspan>: <tspan class="val">"DoclingDocument"</tspan>,</text>
+  <text x="135" y="390" class="code"><tspan class="key">"version"</tspan>: <tspan class="val">"1.10.0"</tspan>,</text>
+  <text x="135" y="430" class="code"><tspan class="key">"origin"</tspan>: {</text>
+  <text x="170" y="470" class="code"><tspan class="key">"mimetype"</tspan>: <tspan class="val">"application/pdf"</tspan></text>
+  <text x="135" y="510" class="code">},</text>
+  <text x="135" y="550" class="code"><tspan class="key">"body.children"</tspan>: <tspan class="val">[참조 308개]</tspan>,</text>
+  <text x="135" y="590" class="code"><tspan class="key">"texts"</tspan>: <tspan class="val">[객체 804개]</tspan>,</text>
+  <text x="135" y="630" class="code"><tspan class="key">"tables"</tspan>: <tspan class="val">[객체 19개]</tspan>,</text>
+  <text x="135" y="670" class="code"><tspan class="key">"pictures"</tspan>: <tspan class="val">[객체 41개]</tspan>,</text>
+  <text x="135" y="710" class="code"><tspan class="key">"groups"</tspan>: <tspan class="val">[객체 70개]</tspan>,</text>
+  <text x="135" y="750" class="code"><tspan class="key">"pages"</tspan>: <tspan class="val">{1 ... 28}</tspan></text>
+  <text x="105" y="790" class="code">}</text>
+
+  <path d="M770 330 C820 330 820 300 865 300" fill="none" stroke="#B2C7F9" stroke-width="3"/>
+  <path d="M770 545 C820 545 820 440 865 440" fill="none" stroke="#B2C7F9" stroke-width="3"/>
+  <path d="M770 590 C820 590 820 585 865 585" fill="none" stroke="#B2C7F9" stroke-width="3"/>
+  <path d="M770 630 C820 630 820 675 865 675" fill="none" stroke="#B2C7F9" stroke-width="3"/>
+  <path d="M770 670 C820 670 820 765 865 765" fill="none" stroke="#B2C7F9" stroke-width="3"/>
+
+  <rect x="865" y="225" width="665" height="150" rx="17" fill="#FFFFFF" stroke="#D0D5DD" stroke-width="2"/>
+  <rect x="865" y="225" width="10" height="150" rx="5" fill="#155EEF"/>
+  <text x="905" y="266" class="label">문서 정보</text>
+  <text x="905" y="317" class="big">PDF · 28쪽</text>
+  <text x="1150" y="317" class="body">파일 정보와 페이지 크기·번호 저장</text>
+  <text x="905" y="350" class="small">원본: 64829120260601095426.pdf</text>
+
+  <rect x="865" y="395" width="665" height="130" rx="17" fill="#FFFFFF" stroke="#D0D5DD" stroke-width="2"/>
+  <rect x="865" y="395" width="10" height="130" rx="5" fill="#7F56D9"/>
+  <text x="905" y="438" class="label" fill="#7F56D9">읽기 구조</text>
+  <text x="905" y="482" class="big">308개 연결</text>
+  <text x="1165" y="482" class="body">글·표·그림이 나타나는 순서</text>
+
+  <rect x="865" y="545" width="665" height="80" rx="15" fill="#FFFFFF" stroke="#D0D5DD" stroke-width="2"/>
+  <rect x="865" y="545" width="10" height="80" rx="5" fill="#12B76A"/>
+  <text x="900" y="577" class="label" fill="#12B76A">텍스트</text>
+  <text x="900" y="609" font-size="25" font-weight="800">804개</text>
+  <text x="1045" y="574" class="small">역할 label · 원문 text/orig · 페이지 page_no · 원문 좌표 bbox</text>
+  <text x="1045" y="605" class="small">실제 예: section_header · 1쪽 · “엘에이티 … 에너지 인프라 장비사”</text>
+
+  <rect x="865" y="635" width="665" height="80" rx="15" fill="#FFFFFF" stroke="#D0D5DD" stroke-width="2"/>
+  <rect x="865" y="635" width="10" height="80" rx="5" fill="#F79009"/>
+  <text x="900" y="667" class="label" fill="#F79009">표</text>
+  <text x="900" y="699" font-size="25" font-weight="800">19개</text>
+  <text x="1045" y="664" class="small">행 num_rows · 열 num_cols · 셀 table_cells · 페이지·좌표</text>
+  <text x="1045" y="695" class="small">실제 예: 2쪽 · 14행 × 6열 · 셀 83개</text>
+
+  <rect x="865" y="725" width="665" height="90" rx="15" fill="#FFFFFF" stroke="#D0D5DD" stroke-width="2"/>
+  <rect x="865" y="725" width="10" height="90" rx="5" fill="#06AED4"/>
+  <text x="900" y="760" class="label" fill="#06AED4">그림</text>
+  <text x="900" y="795" font-size="25" font-weight="800">41개</text>
+  <text x="1045" y="757" class="small">분류 predicted_classes · 신뢰도 confidence · 캡션 · 페이지·좌표</text>
+  <text x="1045" y="790" class="small">실제 예: logo · 신뢰도 99.1% · 1쪽 · bbox 위치</text>
+
+  <text x="70" y="863" class="small">핵심: 단순 텍스트 추출 결과가 아니라, 각 요소의 역할·순서·위치를 가진 공통 문서 객체</text>
+</svg>
