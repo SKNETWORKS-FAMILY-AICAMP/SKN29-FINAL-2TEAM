@@ -124,8 +124,9 @@ def _is_inside_picture(item, document) -> bool:
 # 밀도 계산의 "문맥"으로 쓸 라벨. 실제 읽기 흐름에 텍스트로 존재하는 것만 포함한다
 # (표/그림 자체는 제외 — 그 안의 캡션은 label="caption"으로 별도로 이미 잡힌다).
 _CONTEXT_LABELS = {"text", "list_item", "section_header", "caption", "footnote"}
-# 이 중 승격 대상(헤딩 후보)이 될 수 있는 것만 따로 표시한다.
-_CANDIDATE_LABELS = {"text", "list_item"}
+# 실제 연구 범위에 맞춰 잘못 분류된 whole-element list item만 헤딩
+# 후보로 삼는다. 일반 text는 밀도 문맥에는 참여하지만 승격 대상이 아니다.
+_CANDIDATE_LABELS = {"list_item"}
 
 
 def _raw_layout_match(hbox, page) -> tuple[str | None, float | None]:
@@ -393,11 +394,11 @@ _STRUCTURAL_RAW_LABELS = {"key_value_region", "key_value_area"}
 def apply_promotions(
     document: Any, promoted_items: list[dict]
 ) -> tuple[list[dict], list[dict]]:
-    """Apply only schema-safe, validated text promotions.
+    """Apply only schema-safe, validated whole-list-item promotions.
 
-    Density-only ``list_item`` promotion stays shadow-only.  A promoted text is
-    replaced with ``SectionHeaderItem`` while retaining its ref, parent,
-    children, provenance, text, formatting, comments, and metadata.
+    A promoted ``list_item`` is replaced with ``SectionHeaderItem`` while
+    retaining its ref, parent, children, provenance, text, formatting,
+    comments, and metadata.  Ordinary ``text`` items are not candidates.
     """
     from docling_core.types.doc.document import DoclingDocument, SectionHeaderItem
     from docling_core.types.doc.labels import DocItemLabel
@@ -408,8 +409,8 @@ def apply_promotions(
     for promoted in promoted_items:
         ref = str(promoted.get("self_ref") or "")
         raw_label = str(promoted.get("raw_layout_label") or "").lower()
-        if promoted.get("label") != "text":
-            skipped.append({"self_ref": ref, "reason": "LIST_ITEM_SHADOW_ONLY"})
+        if promoted.get("label") != "list_item":
+            skipped.append({"self_ref": ref, "reason": "NOT_LIST_ITEM_CANDIDATE"})
             continue
         if raw_label in _STRUCTURAL_RAW_LABELS:
             skipped.append({"self_ref": ref, "reason": "KEY_VALUE_STRUCTURE_GUARD"})
@@ -475,7 +476,8 @@ def promote_headings_by_density(
         "candidate_count": len(candidates),
         "applied_count": len(applied),
         "skipped_count": len(skipped),
-        "list_item_density_only_policy": "shadow",
+        "heading_candidate_policy": "list_item_only",
+        "list_item_density_only_policy": "apply",
         "applied": applied,
         "skipped": skipped,
     }
