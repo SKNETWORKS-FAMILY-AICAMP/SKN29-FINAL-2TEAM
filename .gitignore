@@ -18,7 +18,9 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 db.sqlite3
-media/
+# Django MEDIA_ROOT (config/settings/base.py: BASE_DIR / "media"). 앞의 `/` 로
+# 저장소 루트에 고정한다 — 빼면 docs/발표자료/**/media/ 의 이미지까지 무시된다.
+/media/
 staticfiles/
 .pytest_cache/
 
