@@ -15,3 +15,8 @@ pytest_tmp_rotation/
 **/.pytest_cache/
 .pnpm-store/
 **/node_modules/
+
+# 발표자료·시연영상·산출물. 앱은 런타임에 참조하지 않는다. 추적 파일만 171MB라
+# 두면 매 빌드 컨텍스트·이미지에 그대로 실려 빌드가 느려진다(로컬은 미추적
+# 녹화 원본까지 포함돼 GB 단위).
+docs/
