@@ -14,6 +14,12 @@ name: Deploy to EC2
 on:
   push:
     branches: [main]
+    # 문서만 바뀐 push 는 빌드·테스트·배포를 통째로 건너뛴다. 앱은 docs/ 를
+    # 서빙하지 않으므로 다음 실제 배포 때 함께 올라간다. 급하면 Actions 탭의
+    # "Run workflow"(workflow_dispatch)로 수동 배포할 수 있다.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 # 배포가 겹치면 서버에서 docker compose 가 서로를 밟는다. 줄을 세우고,
@@ -48,11 +54,29 @@ jobs:
           npm audit --audit-level=high
           npm run build
 
+      - name: Buildx 준비
+        uses: docker/setup-buildx-action@v3
+
+      - name: 백엔드 이미지 빌드
+        # `docker compose build` 는 BuildKit 기본 빌더라 type=gha 캐시를 못 읽는다.
+        # docker-container 빌더로 여기서 미리 빌드해 레이어를 GHA 캐시에 얹고,
+        # compose 가 쓰는 이름(<프로젝트>-<서비스> = skn29-final-2team-web)으로
+        # 로컬에 적재한다. 아래 `docker compose run web …` 은 이 이미지를 그대로
+        # 쓴다 — 이미지가 있으면 다시 빌드하지 않는다. requirements/ 와 Dockerfile
+        # 이 그대로면 apt·pip 레이어가 캐시에서 나와 이 단계가 몇 초로 끝난다.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          tags: skn29-final-2team-web:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: 백엔드 테스트 환경 준비
         run: |
           cp .env.example .env
           docker compose -f infra/docker/docker-compose.yml up -d --wait db
-          docker compose -f infra/docker/docker-compose.yml build web
 
       - name: Django 전체 회귀 테스트
         run: |
