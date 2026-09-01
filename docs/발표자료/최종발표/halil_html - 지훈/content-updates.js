@@ -666,64 +666,78 @@
     return s;
   })();
 
-  // 17페이지도 16페이지와 동일한 공통 양식 위에 Agent Builder 흐름을 네이티브로 재구성한다.
+  // 17페이지: 공통 양식 위에, 원본 Agent Builder 그래프(단계 흐름 + 화살표)를 다듬어 옮긴다. 문구는 원문 유지.
+  const topText = (name, bbox, text, size, color, bold = false) => {
+    const el = textElement(name, bbox, text, size, color, bold, 'left');
+    el.textStyle.verticalAlignment = 'top';
+    return el;
+  };
   deepAgentSlides[1] = (() => {
     const s = clone(slide(16));
     removeContentArea(s);
-    s.elements = s.elements.filter((e) => e.name !== 'sub-16');
     setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
     setElementText(s.elements.find((e) => e.name === 'section-16'), 'AGENT BUILDER');
     setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'AGENT BUILDER');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), '업무 정의부터 실행까지');
-    s.elements.push({ kind: 'shape', geometry: 'line', bbox: [175, 330, 930, 0], lineColor: '#B8C8DD', lineWidth: 3, name: 's17-flow-axis' });
-    const steps = [
-      ['01', '업무 정의', '에이전트 이름 · 설명\n지시사항 · 사용할 모델'],
-      ['02', '실행 자원 연결', '내장 Tool · 기업 MCP Tool\n서브 에이전트'],
-      ['03', 'Version 발행', '저장할 때마다 새 Version 생성\n기존 대화 · 상위 Agent는 이전 Version 참조'],
-      ['04', 'Chat 실행', '활성화한 Agent를 선택해\n실제 요청으로 사용'],
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '에이전트 생성 파이프라인');
+    setElementText(s.elements.find((e) => e.name === 'sub-16'), '업무 담당자가 역할과 실행 자원을 정의하고, Version을 발행해 Chat 실행까지 이어간다.');
+    const cards = [
+      ['01', '업무 정의', ['에이전트 이름', '에이전트 설명', '지시사항 (프롬프트)', '사용할 모델']],
+      ['02', '실행 자원 연결', ['내장 Tool', '기업 MCP Tool', '서브 에이전트']],
+      ['03', 'Version 발행', ['저장할 때마다 새 Version 생성', '기존 대화 · 상위 Agent는', '이전 Version 그대로 참조']],
+      ['04', 'Chat 실행', ['활성화한 Agent를 선택해', '실제 요청으로 사용']],
     ];
-    steps.forEach((step, i) => {
-      const center = 175 + i * 310;
-      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [center, 312, 0, 36], lineColor: '#2878D1', lineWidth: 6, name: `s17-tick-${i}` });
-      s.elements.push(textElement(`s17-no-${i}`, [center - 44, 232, 88, 30], step[0], 16, '#2878D1', true, 'center'));
-      s.elements.push(textElement(`s17-title-${i}`, [center - 150, 270, 300, 34], step[1], 21, '#101728', true, 'center'));
-      s.elements.push(textElement(`s17-body-${i}`, [center - 150, 360, 300, 112], step[2], 15, '#52657D', false, 'center'));
+    const BW = 266;
+    cards.forEach((c, i) => {
+      const x = 56 + i * 300;
+      s.elements.push(
+        { kind: 'shape', geometry: 'roundRect', bbox: [x, 218, BW, 92], fillColor: '#FFFFFF', lineColor: '#D3DBE6', lineWidth: 1, name: `s17-box-${i}` },
+        textElement(`s17-no-${i}`, [x + 22, 234, BW - 44, 20], c[0], 13, '#2878D1', true),
+        textElement(`s17-title-${i}`, [x + 22, 256, BW - 44, 30], c[1], 18, '#101728', true),
+      );
+      c[2].forEach((b, j) => {
+        s.elements.push(topText(`s17-b-${i}-${j}`, [x + 8, 330 + j * 30, BW + 20, 28], '·  ' + b, 13.5, '#52657D'));
+      });
+      if (i < 3) s.elements.push(textElement(`s17-arw-${i}`, [x + BW, 246, 34, 36], '→', 24, '#8FA0B5', false, 'center'));
     });
-    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's17-note-band' });
-    s.elements.push(textElement('s17-note-label', [94, 526, 170, 54], 'KEY POINT', 13, '#2878D1', true));
-    s.elements.push(textElement('s17-note-copy', [274, 526, 910, 54], 'Builder에서 고르는 기업 Tool과 모델은 담당자가 서버 주소·인증 정보를 직접 입력하지 않습니다', 17, '#101728', true));
+    s.elements.push({ kind: 'shape', geometry: 'roundRect', bbox: [72, 512, 1136, 74], fillColor: '#EAF1FB', lineColor: '#D5E2F4', lineWidth: 1, name: 's17-note-band' });
+    s.elements.push(textElement('s17-note', [96, 512, 1088, 74], 'Builder에서 고르는 기업 Tool과 모델은 현업 담당자가 직접 서버 주소와 인증 정보를 입력하는 방식이 아니다.', 15, '#0C3F91', true, 'center'));
     s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
     return s;
   })();
 
-  // 18페이지: 전체 요청 파이프라인을 공통 양식 위에 네이티브 6단계 타임라인으로 재구성한다.
+  // 18페이지: 공통 양식 위에, 원본 요청 파이프라인 그래프(6단계 흐름)를 하나의 스트립으로 다듬어 옮긴다.
   deepAgentSlides[2] = (() => {
     const s = clone(slide(16));
     removeContentArea(s);
-    s.elements = s.elements.filter((e) => e.name !== 'sub-16');
     setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
     setElementText(s.elements.find((e) => e.name === 'section-16'), 'REQUEST PIPELINE');
     setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'REQUEST PIPELINE');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), '요청 도착부터 실행까지 전체 파이프라인');
-    s.elements.push({ kind: 'shape', geometry: 'line', bbox: [110, 330, 1060, 0], lineColor: '#B8C8DD', lineWidth: 3, name: 's18-flow-axis' });
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '요청 도착부터 실행까지 파이프라인');
+    setElementText(s.elements.find((e) => e.name === 'sub-16'), '요청 하나가 도착해서 답변 완료 · 승인 대기 · 오류 중 하나로 끝나기까지의 전체 경로.');
     const steps = [
       ['01', '요청 도착', '세션 · 사용자 확인'],
       ['02', '입력 전처리', '민감정보 가리기'],
       ['03', '가드레일 검사', '방금 등록한 그 검사'],
       ['04', '대화 저장', '통과한 원문만'],
-      ['05', 'Runtime 조립', '설정을 읽어\n그래프 생성'],
-      ['06', '실행', '판단 · 도구 · 위임 반복'],
+      ['05', 'Runtime 조립', '설정을 읽어 그래프 생성'],
+      ['06', '실행', '판단 → 도구 · 위임 반복'],
     ];
-    steps.forEach((step, i) => {
-      const center = 110 + i * 212;
-      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [center, 312, 0, 36], lineColor: '#2878D1', lineWidth: 6, name: `s18-tick-${i}` });
-      s.elements.push(textElement(`s18-no-${i}`, [center - 44, 236, 88, 28], step[0], 15, '#2878D1', true, 'center'));
-      s.elements.push(textElement(`s18-title-${i}`, [center - 104, 272, 208, 32], step[1], 18, '#101728', true, 'center'));
-      s.elements.push(textElement(`s18-body-${i}`, [center - 104, 360, 208, 96], step[2], 14, '#52657D', false, 'center'));
+    const SX = 56;
+    const SW = 1168;
+    const CW = SW / 6;
+    s.elements.push({ kind: 'shape', geometry: 'roundRect', bbox: [SX, 250, SW, 200], fillColor: '#FFFFFF', lineColor: '#DDE3EC', lineWidth: 1, name: 's18-strip' });
+    steps.forEach((st, i) => {
+      const cx = SX + i * CW;
+      if (i > 0) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [cx, 274, 0, 152], lineColor: '#E7EBF1', lineWidth: 1, name: `s18-div-${i}` });
+      s.elements.push(
+        textElement(`s18-no-${i}`, [cx + 18, 274, CW - 40, 22], st[0], 13, '#2878D1', true),
+        textElement(`s18-title-${i}`, [cx + 18, 300, CW - 40, 28], st[1], 15.5, '#101728', true),
+        topText(`s18-body-${i}`, [cx + 18, 336, CW - 34, 96], st[2], 12.5, '#52657D'),
+      );
+      if (i < 5) s.elements.push(textElement(`s18-arw-${i}`, [cx + CW - 18, 388, 36, 34], '→', 22, '#4E5E78', true, 'center'));
     });
-    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's18-note-band' });
-    s.elements.push(textElement('s18-note-label', [94, 526, 170, 54], 'GUARDRAIL', 13, '#2878D1', true));
-    s.elements.push(textElement('s18-note-copy', [274, 526, 910, 54], '가드레일 검사에 실패하면 대화 저장 이전에 요청이 종료되고, 대화 이력에도 남지 않습니다', 17, '#101728', true));
+    s.elements.push({ kind: 'shape', geometry: 'roundRect', bbox: [72, 486, 1136, 76], fillColor: '#FBEEEE', lineColor: '#F0D9D7', lineWidth: 1, name: 's18-note-band' });
+    s.elements.push(textElement('s18-note', [96, 486, 1088, 76], '가드레일 검사 실패 시 — 대화 저장 이전에 요청이 그 자리에서 끝난다. 대화 이력에 남지 않는다.', 15, '#B4433B', true, 'center'));
     s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
     return s;
   })();
@@ -822,35 +836,36 @@
       ...evalBand(1, '#EEF8F4', '02', '기준선 · V2', '어떻게 공정하게 잴까', '비교 가능한 판정 계약을\n고정하고 오류를 보완'),
       ...evalBand(2, '#F5F0E8', '03', '확장 검증 · V3', '환경이 커져도 유지될까', '101개 문서 환경에서\n같은 시험을 재실행해\n회귀 · 운영 한계 확인'),
     );
-    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 'ev21-note-band' });
-    s.elements.push(textElement('ev21-note', [94, 512, 1090, 82], '세 버전은 점수 비교가 아니라 평가 방법론의 발전 과정으로 봐 주세요', 17, '#0C3F91', true, 'center'));
     return s;
   })();
 
   evaluationSlides[1] = (() => {
-    const s = evalBase('SMOKE TEST · V1', '기본 동작 10가지, 재검증까지 10/10 통과', '복합 워크플로에 들어가기 전, 가장 기본적인 동작이 작동하는지부터 확인했습니다.');
+    const s = evalBase('SMOKE TEST · V1', '기본 동작 10가지, 재검증까지 포함해 10/10 최종 통과', '복합 workflow에 들어가기 전, 가장 기본적인 동작 10가지가 최소한 작동하는지부터 확인했다.');
     s.elements.push(
-      textElement('ev22-stat', [70, 236, 380, 110], '10 / 10', 66, '#2878D1', true),
-      textElement('ev22-stat-copy', [78, 348, 380, 56], '재검증 포함\n최종 통과율 100%', 17, '#101728', true),
-      { kind: 'shape', geometry: 'line', bbox: [474, 220, 0, 400], lineColor: '#D9DEE8', lineWidth: 1, name: 'ev22-divider' },
+      textElement('ev22-stat-label', [78, 220, 380, 24], '최종 결과', 14, '#6C7482', true),
+      textElement('ev22-stat', [70, 244, 380, 96], '10/10', 60, '#2878D1', true),
+      textElement('ev22-stat-copy', [78, 342, 380, 48], '재검증 포함 최종 통과율 100%', 15, '#101728', true),
+      { kind: 'shape', geometry: 'line', bbox: [456, 210, 0, 396], lineColor: '#D9DEE8', lineWidth: 1, name: 'ev22-divider' },
+      textElement('ev22-list-label', [490, 196, 400, 24], '통과 10건', 13, '#6C7482', true),
     );
     const items = [
-      '기본 대화 · 한 문장으로 답변',
-      '프로젝트 목록 조회',
-      '팀원 목록 조회',
-      '문서 목록 조회',
-      '정보 없는 문서 · 정직하게 답변',
-      '모호한 요청 · 실행 전 되물음',
-      '권한 밖 요청 차단',
-      '승인 후에만 실행',
-      '거절 시 저장 없이 취소',
-      '서브에이전트 위임 처리',
+      ['기본 대화', '도구 없이 한 문장으로 답변'],
+      ['프로젝트 목록 조회', 'project_list 1회만 호출'],
+      ['팀원 목록 조회', 'people_list 1회만 호출'],
+      ['문서 목록 조회', '검색 대신 document_list 사용'],
+      ['정보 없는 문서 질문', '추측하지 않고 정직하게 답변'],
+      ['모호한 요청', '바로 실행하지 않고 되물음'],
+      ['권한 밖 요청 차단', '팀장 전용 기능을 일반 팀원이 시도'],
+      ['승인 후 실행', '승인 전 미저장, 승인 후에만 실행'],
+      ['거절 시 취소', '거절하면 저장 없이 취소'],
+      ['서브에이전트 위임', '복합 문서 조사를 위임해 처리'],
     ];
-    items.forEach((t, i) => {
-      const x = 480 + (i < 5 ? 0 : 1) * 370;
-      const y = 224 + (i % 5) * 80;
-      s.elements.push(textElement(`ev22-n-${i}`, [x, y, 28, 40], String(i + 1), 17, '#2878D1', true, 'right'));
-      s.elements.push(textElement(`ev22-t-${i}`, [x + 40, y, 320, 40], t, 16, '#101728', false, 'left'));
+    items.forEach((it, i) => {
+      const x = 490 + (i < 5 ? 0 : 1) * 366;
+      const y = 226 + (i % 5) * 78;
+      s.elements.push(textElement(`ev22-n-${i}`, [x, y, 24, 22], String(i + 1), 14, '#2878D1', true, 'right'));
+      s.elements.push(textElement(`ev22-t-${i}`, [x + 34, y, 300, 22], it[0], 15, '#101728', true, 'left'));
+      s.elements.push(textElement(`ev22-d-${i}`, [x + 34, y + 24, 320, 40], it[1], 12.5, '#52657D', false, 'left'));
     });
     return s;
   })();
@@ -906,22 +921,20 @@
     const W = 568;
     const half = (rows, x, key) => {
       s.elements.push(
-        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW + rows.length * ROW], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `ev24-frame-${key}` },
-        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW], fillColor: '#EEF3FA', lineWidth: 0, name: `ev24-hbar-${key}` },
-        { kind: 'shape', geometry: 'line', bbox: [x, TOP + HROW, W, 0], lineColor: '#C9D3E0', lineWidth: 1, name: `ev24-hrule-${key}` },
-        textElement(`ev24-h1-${key}`, [x + 18, TOP, 60, HROW], 'ID', 12, '#5A6B85', true),
-        textElement(`ev24-h2-${key}`, [x + 84, TOP, 172, HROW], '평가 목적', 12, '#5A6B85', true),
-        textElement(`ev24-h3-${key}`, [x + 262, TOP, 292, HROW], '판정 초점', 12, '#5A6B85', true),
+        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW], fillColor: '#EEF1F6', lineWidth: 0, name: `ev24-hbar-${key}` },
+        { kind: 'shape', geometry: 'line', bbox: [x, TOP + HROW, W, 0], lineColor: '#C4CCDA', lineWidth: 1, name: `ev24-hrule-${key}` },
+        textElement(`ev24-h1-${key}`, [x + 18, TOP, 60, HROW], 'ID', 12, '#5B6980', true),
+        textElement(`ev24-h2-${key}`, [x + 84, TOP, 172, HROW], '평가 목적', 12, '#5B6980', true),
+        textElement(`ev24-h3-${key}`, [x + 262, TOP, 292, HROW], '판정 초점', 12, '#5B6980', true),
       );
       rows.forEach((r, i) => {
         const y = TOP + HROW + i * ROW;
-        if (i % 2) s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [x + 1, y, W - 2, ROW], fillColor: '#F6F8FC', lineWidth: 0, name: `ev24-rb-${key}-${i}` });
         s.elements.push(
           textElement(`ev24-a-${key}-${i}`, [x + 18, y, 60, ROW], r[0], 13, '#2E6FC7', true),
           textElement(`ev24-b-${key}-${i}`, [x + 84, y, 172, ROW], r[1], 13, '#101728'),
           textElement(`ev24-c-${key}-${i}`, [x + 262, y, 292, ROW], r[2], 12.5, '#52657D'),
         );
-        if (i < rows.length - 1) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 12, y + ROW, W - 24, 0], lineColor: '#EAEEF3', lineWidth: 1, name: `ev24-rl-${key}-${i}` });
+        if (i < rows.length - 1) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 8, y + ROW, W - 16, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `ev24-rl-${key}-${i}` });
       });
     };
     half(left, 56, 'L');
@@ -930,14 +943,32 @@
   })();
 
   evaluationSlides[4] = (() => {
-    const s = evalBase('JUDGMENT LAYERS', '판정 계약은 세 층으로 나눠 적용했습니다', '이진·정량은 전 시나리오 공통, 정성만 시나리오마다 다른 기준으로 LLM Judge가 판단합니다.');
-    s.elements.push(
-      ...evalBand(0, '#EEF3FA', '', 'BINARY · HARD GATE', '이진 판정', '일어났다 / 안 일어났다만 확인, 위반 시 즉시 탈락\n허용 도구 · 승인 · 금지 행동\n8종 · 전 시나리오 공통', 236, 268),
-      ...evalBand(1, '#EEF3FA', '', 'QUANTITATIVE', '정량 판정', '횟수를 세어 한도와 비교\n도구 호출 · 반복 · 중복 signature\n2종 공통 + 3종 조건부', 236, 268),
-      ...evalBand(2, '#EEF3FA', '', 'QUALITATIVE · LLM JUDGE', '정성 판정', '의미 · 완성도를 시나리오마다 다르게\n판단 유보 · 정직한 실패 · 근거 일치\n17종 · 시나리오별 상이', 236, 268),
-    );
-    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 536, 1136, 62], fillColor: '#EAF1FB', lineWidth: 0, name: 'ev25-note-band' });
-    s.elements.push(textElement('ev25-note', [94, 536, 1092, 62], '이진·정량은 전 시나리오에 같은 기준, 정성만 시나리오마다 다른 기준으로 LLM Judge가 판단합니다', 15, '#0C3F91', true, 'center'));
+    const s = evalBase('JUDGMENT LAYERS', '판정 계약은 세 층으로 나눠 적용했다', '과업 완수·안전성·정직한 실패·운영 효율을 시나리오로 고정하고, 서로 다른 판정 장치를 겹쳐 썼다.');
+    const layers = [
+      ['BINARY · HARD GATE', '이진 판정', '일어났다/안 일어났다만 본다. 위반 시 즉시 탈락.',
+        ['허용된 도구만 사용', '승인 없는 행동 없음', '금지 행동·경계 위반 없음'], '8종 · 전 시나리오 공통'],
+      ['QUANTITATIVE', '정량 판정', '횟수를 세어 기준과 비교한다.',
+        ['도구 호출 횟수 ≤ 한도', '동일 도구 반복 ≤ 한도', '중복 signature ≤ 한도'], '2종 공통 + 3종 조건부'],
+      ['QUALITATIVE · LLM JUDGE', '정성 판정', '의미와 완성도를 시나리오마다 다른 기준으로 본다.',
+        ['판단을 제대로 유보했는지', '실패를 정직하게 답했는지', '근거와 답변이 일치하는지'], '17종 · 시나리오별 상이'],
+    ];
+    layers.forEach((L, i) => {
+      const x = 72 + i * 390;
+      s.elements.push(
+        { kind: 'shape', geometry: 'rect', bbox: [x, 226, 356, 300], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `ev25-card-${i}` },
+        { kind: 'shape', geometry: 'rect', bbox: [x, 226, 356, 6], fillColor: '#2878D1', lineWidth: 0, name: `ev25-bar-${i}` },
+        textElement(`ev25-label-${i}`, [x + 22, 244, 312, 22], L[0], 12, '#5A6B85', true),
+        textElement(`ev25-title-${i}`, [x + 22, 270, 312, 30], L[1], 19, '#101728', true),
+        textElement(`ev25-lead-${i}`, [x + 22, 306, 312, 46], L[2], 12.5, '#45566B'),
+      );
+      L[3].forEach((b, j) => {
+        s.elements.push(textElement(`ev25-b-${i}-${j}`, [x + 22, 360 + j * 26, 312, 24], '– ' + b, 12.5, '#45566B'));
+      });
+      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 22, 446, 312, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `ev25-crule-${i}` });
+      s.elements.push(textElement(`ev25-count-${i}`, [x + 22, 456, 312, 24], L[4], 12.5, '#2878D1', true));
+    });
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 544, 1136, 58], fillColor: '#EAF1FB', lineWidth: 0, name: 'ev25-note-band' });
+    s.elements.push(textElement('ev25-note', [94, 544, 1092, 58], '이진·정량은 모든 시나리오에 같은 기준, 정성만 시나리오마다 다른 기준으로 LLM Judge가 판단한다.', 15, '#0C3F91', true, 'center'));
     return s;
   })();
 
