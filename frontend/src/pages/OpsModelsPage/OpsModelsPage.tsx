@@ -193,16 +193,20 @@ export default function OpsModelsPage() {
             </select>
           </div>
           <div className={styles.fieldGroup}>
-            <label htmlFor="model-image-input">입력 기능</label>
-            <label>
-              <input
-                id="model-image-input"
-                type="checkbox"
-                checked={supportsImageInput}
-                onChange={(event) => setSupportsImageInput(event.target.checked)}
-              />{' '}
-              이미지 입력 지원
-            </label>
+            {/* 체크박스라 `htmlFor` 로 묶을 하나가 없다 — 묶음에 이름을 준다(팀 상세
+                「연결 실패 시」와 같은 짜임). `.radioRow` 로 감싸지 않으면 텍스트 칸용
+                `.fieldGroup input` 이 걸려 체크박스가 폭 100%·높이 40px 상자로 부푼다. */}
+            <span id="model-image-input-label">입력 기능</span>
+            <div className={styles.radioRow} aria-labelledby="model-image-input-label">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={supportsImageInput}
+                  onChange={(event) => setSupportsImageInput(event.target.checked)}
+                />
+                이미지 입력 지원
+              </label>
+            </div>
           </div>
 
           <div className={styles.fieldGroup}>
