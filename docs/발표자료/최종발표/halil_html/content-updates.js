@@ -150,11 +150,13 @@
   byName(3, 'row-text-3-2', '프로젝트 수행 절차 및 방법');
   byName(3, 'row-text-3-3', '프로젝트 수행 결과');
   byName(3, 'row-text-3-4', '자체 평가 의견');
+  removeNames(3, ['section-3']);
+  byName(3, 'signal-label-3', '목차');
 
   // 도입부는 시장 근거 → 선도 사례 → 운영 전환 간극 → HALIL 범위 → 사용자 흐름으로 전개한다.
   byName(4, 'div-title-4', '프로젝트 개요');
-  byName(4, 'div-sub-4', '시장 변화 · 제품화 기준 · 프로젝트 검증 범위');
-  byName(4, 'div-key-4', 'WHY NOW · MARKET SIGNAL · PROJECT SCOPE');
+  byName(4, 'div-sub-4', 'AX 시장의 변화에서 출발해 우리가 주목한 문제와 해결 방향을 설명합니다.');
+  byName(4, 'div-key-4', '시장 변화 · 프로젝트 출발 · 문제 정의 · 해결 방향');
 
   [5, 6, 7, 8].forEach((number) => {
     const element = slide(number)?.elements.find((item) => item.name === `context-${number}`);
@@ -162,29 +164,27 @@
   });
   byName(10, 'context-9', 'halil   ·   01 프로젝트 개요');
 
-  byName(5, 'section-5', 'WHY NOW');
-  byName(5, 'title-5', 'Agent 도입은 빠르지만, 운영 규모화는 아직 초기입니다');
-  byName(5, 'sub-5', '같은 조사 안에서도 “실험”과 “실제 확장” 사이에 뚜렷한 간극이 나타납니다.');
+  removeNames(5, ['section-5']);
+  byName(5, 'title-5', 'AI Agent 도입은 늘지만, 실제 업무 적용은 아직 초기입니다');
+  byName(5, 'sub-5', '도입을 검토·실험하는 기업은 빠르게 늘지만, 실제 업무로 확장한 기업과의 간극이 뚜렷합니다.');
   removeContentArea(slide(5));
-  slide(5).elements.push(textElement('market-label-left', [74, 220, 470, 28], '도입 신호 · McKinsey 2025', 14, '#2878D1', true));
-  slide(5).elements.push(textElement('market-stat-left', [70, 252, 190, 92], '62%', 68, '#2878D1', true));
-  slide(5).elements.push(textElement('market-copy-left', [250, 258, 300, 78], 'AI Agent를\n실험하거나 확장 중', 22, '#101728', true));
-  slide(5).elements.push(textElement('market-arrow', [565, 264, 140, 66], '→', 46, '#A6B4C7', false, 'center'));
-  slide(5).elements.push(textElement('market-label-right', [730, 220, 470, 28], '운영 신호 · McKinsey 2025', 14, '#17845E', true));
-  slide(5).elements.push(textElement('market-stat-right', [726, 252, 190, 92], '23%', 68, '#17845E', true));
-  slide(5).elements.push(textElement('market-copy-right', [906, 258, 300, 78], '조직 내 최소 한 기능에서\nAgent 시스템을 확장', 22, '#101728', true));
-  slide(5).elements.push({ kind: 'shape', geometry: 'line', bbox: [70, 372, 1138, 0], lineColor: '#D3DCE8', lineWidth: 2, name: 'market-divider' });
-  slide(5).elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 416, 1136, 100], fillColor: '#EAF1FB', lineWidth: 0, name: 'market-ms-band' });
-  slide(5).elements.push(textElement('market-ms-stat', [98, 430, 170, 70], '81%', 46, '#0C3F91', true));
-  slide(5).elements.push(textElement('market-ms-copy', [274, 430, 900, 70], '리더는 향후 12–18개월 안에 Agent가 자사 AI 전략에\n중간 이상 수준으로 통합될 것으로 예상', 20, '#101728', true));
-  slide(5).elements.push(textElement('market-takeaway', [80, 536, 1120, 38], 'WHY NOW  ·  시연 가능한 Agent보다 반복 운영 가능한 체계가 필요한 시점', 18, '#0C3F91', true, 'center'));
-  slide(5).elements.push(textElement('market-source', [74, 592, 1136, 20], '출처: McKinsey State of AI 2025 (n=1,993) · Microsoft Work Trend Index 2025 (n=31,000, 31개국)', 10, '#7B8492'));
-  byName(5, 'signal-label-5', 'WHY NOW');
-  slide(5).sources = ['https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai', 'https://www.microsoft.com/en-us/worklab/work-trend-index/2025-the-year-the-frontier-firm-is-born'];
+  slide(5).elements.push(textElement('market-label-left', [74, 236, 460, 28], '검토·실험 · McKinsey 2025', 14, '#2878D1', true));
+  slide(5).elements.push(textElement('market-stat-left', [70, 268, 200, 96], '62%', 72, '#2878D1', true));
+  slide(5).elements.push(textElement('market-copy-left', [258, 280, 300, 80], 'AI Agent 도입을\n검토·실험 중인 기업', 21, '#101728', true));
+  slide(5).elements.push(textElement('market-arrow', [590, 284, 110, 60], '→', 44, '#A6B4C7', false, 'center'));
+  slide(5).elements.push(textElement('market-gap-label', [560, 372, 172, 24], '실험 ↔ 규모화 간극', 13, '#D86F28', true, 'center'));
+  slide(5).elements.push(textElement('market-label-right', [726, 236, 460, 28], '확장 운영 · McKinsey 2025', 14, '#17845E', true));
+  slide(5).elements.push(textElement('market-stat-right', [722, 268, 200, 96], '23%', 72, '#17845E', true));
+  slide(5).elements.push(textElement('market-copy-right', [910, 280, 300, 80], '한 개 이상 업무 기능에서\n확장 운영 중인 기업', 21, '#101728', true));
+  slide(5).elements.push({ kind: 'shape', geometry: 'line', bbox: [70, 410, 1138, 0], lineColor: '#D3DCE8', lineWidth: 2, name: 'market-divider' });
+  slide(5).elements.push(textElement('market-takeaway', [90, 452, 1100, 84], '관심과 실험은 빠르게 늘고 있지만,\n실제 업무로 확장한 기업은 아직 일부입니다.', 22, '#0C3F91', true, 'center'));
+  slide(5).elements.push(textElement('market-source', [74, 596, 1136, 20], '출처: McKinsey Global Survey on the state of AI, 2025 (n=1,993 · 105개국)', 10, '#7B8492'));
+  byName(5, 'signal-label-5', '시장 변화');
+  slide(5).sources = ['https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai'];
 
-  byName(6, 'section-6', 'MARKET SIGNAL');
-  byName(6, 'title-6', '시장 선도 서비스는 지식·구성·거버넌스를 함께 제공합니다');
-  byName(6, 'sub-6', '제품별 강점은 다르지만, 기업용 Agent가 갖춰야 할 운영 요건은 수렴하고 있습니다.');
+  removeNames(6, ['section-6']);
+  byName(6, 'title-6', '먼저 나선 서비스들은 같은 방향으로 수렴합니다');
+  byName(6, 'sub-6', '제품별 강점은 다르지만, 기업용 Agent가 갖춰야 할 요건은 지식 연결·업무 도구·사람 통제로 모입니다.');
   removeContentArea(slide(6));
   slide(6).elements.push(textElement('market-case-head-0', [74, 214, 190, 30], '시장 사례', 13, '#6E7A90', true));
   slide(6).elements.push(textElement('market-case-head-1', [292, 214, 270, 30], '지식 · 맥락', 13, '#6E7A90', true));
@@ -200,79 +200,70 @@
   slide(6).elements.push(textElement('copilot-context', [292, 394, 270, 72], 'Knowledge Source와\nConnector 연결', 17, '#101728', true));
   slide(6).elements.push(textElement('copilot-builder', [594, 394, 270, 72], 'Agent 제작·배포와\n환경별 생명주기 관리', 17, '#101728', true));
   slide(6).elements.push(textElement('copilot-governance', [896, 394, 290, 72], 'DLP·인증·환경 정책과\n사용·보안 관측', 17, '#101728', true));
-  slide(6).elements.push(textElement('market-case-takeaway', [74, 516, 1134, 50], '제품화 기준  =  조직 데이터에 근거하고 · 실행 범위를 통제하며 · 운영 상태를 관측한다', 18, '#0C3F91', true, 'center'));
+  slide(6).elements.push(textElement('market-case-takeaway', [74, 516, 1134, 50], '시장이 수렴하는 공통 방향  =  조직 지식을 연결하고 · 업무 도구로 실행하며 · 사람이 통제한다', 18, '#0C3F91', true, 'center'));
   slide(6).elements.push(textElement('market-case-source', [74, 592, 1136, 20], '출처: Glean Agent Builder · Microsoft Copilot Studio 공식 제품·거버넌스 문서', 10, '#7B8492'));
-  byName(6, 'signal-label-6', 'MARKET SIGNAL');
+  byName(6, 'signal-label-6', '선도 서비스');
   slide(6).sources = ['https://www.glean.com/ai-agent-builder', 'https://learn.microsoft.com/en-us/microsoft-copilot-studio/security-and-governance'];
 
-  byName(10, 'section-9', 'SCALING GAP');
-  byName(10, 'title-9', '시장의 공백은 실험과 규모화 사이의 운영 전환입니다');
-  byName(10, 'sub-9', '시장 수치와 선도 서비스 기능을 종합해, 프로젝트가 검증할 전환 조건을 정의했습니다.');
+  removeNames(10, ['section-9']);
+  byName(10, 'title-9', 'AX 흐름에서 시작한 HALIL');
+  byName(10, 'sub-9', '‘다중 에이전트 기반 업무 활용 플랫폼’이라는 대주제에서 기업 업무에 필요한 방향을 구체화했습니다.');
   removeContentArea(slide(10));
-  slide(10).elements.push(textElement('gap-left-label', [76, 220, 260, 26], 'EXPERIMENT', 14, '#2878D1', true));
-  slide(10).elements.push(textElement('gap-left-title', [74, 250, 260, 56], '62% 도입 신호', 28, '#101728', true));
-  slide(10).elements.push({ kind: 'shape', geometry: 'line', bbox: [356, 278, 228, 0], lineColor: '#A6B4C7', lineWidth: 2, name: 'gap-transition-left' });
-  slide(10).elements.push(textElement('gap-transition', [584, 250, 112, 56], '운영 전환', 18, '#52657D', true, 'center'));
-  slide(10).elements.push({ kind: 'shape', geometry: 'line', bbox: [696, 278, 228, 0], lineColor: '#A6B4C7', lineWidth: 2, name: 'gap-transition-right' });
-  slide(10).elements.push(textElement('gap-right-label', [944, 220, 260, 26], 'SCALE', 14, '#17845E', true, 'right'));
-  slide(10).elements.push(textElement('gap-right-title', [944, 250, 260, 56], '23% 실제 확장', 28, '#101728', true, 'right'));
-  slide(10).elements.push(textElement('gap-condition-head', [74, 334, 1134, 30], '운영 전환에 필요한 세 조건', 16, '#6E7A90', true));
-  [['01', 'TRUSTED CONTEXT', '업무 문서를 권한과 출처가 유지되는 근거로 연결'], ['02', 'CONTROLLED EXECUTION', 'Agent 구성·도구·승인 경계를 실제 실행에 연결'], ['03', 'VERIFIABLE OPERATION', '실행 이력·평가·관측으로 결과를 다시 검증']].forEach((row, index) => {
-    const y = 374 + (index * 58);
-    slide(10).elements.push({ kind: 'shape', geometry: 'line', bbox: [74, y + 50, 1134, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `gap-rule-${index}` });
-    slide(10).elements.push(textElement(`gap-no-${index}`, [74, y, 58, 44], row[0], 18, '#2878D1', true));
-    slide(10).elements.push(textElement(`gap-label-${index}`, [142, y, 270, 44], row[1], 17, '#101728', true));
-    slide(10).elements.push(textElement(`gap-copy-${index}`, [424, y, 784, 44], row[2], 17, '#52657D'));
+  slide(10).elements.push(textElement('origin-left-label', [74, 226, 470, 28], '처음 받은 프로젝트 대주제', 14, '#6E7A90', true));
+  slide(10).elements.push(panel('origin-topic-card', [72, 260, 470, 300], '#EEF4FC', '#2878D1'));
+  slide(10).elements.push(textElement('origin-topic-text', [100, 300, 414, 140], '다중 에이전트 기반\n업무 활용 플랫폼', 30, '#0C3F91', true));
+  slide(10).elements.push(textElement('origin-topic-sub', [100, 452, 414, 96], '시장에서 확인된 AX·Agent 흐름을 실제 기업 업무 환경에서 확인해 보자는 출발점', 15, '#52657D'));
+  slide(10).elements.push(textElement('origin-right-label', [604, 226, 604, 28], 'HALIL로 구체화한 방향', 14, '#6E7A90', true));
+  [
+    ['기업 업무에 적용', '범용 데모가 아니라 회사가 실제로 겪는 업무에 초점'],
+    ['비개발자도 구성', '업무를 아는 사람이 직접 Agent를 만들고 공유'],
+    ['아직 출발 단계', '기능·성과 이전에 방향을 잡고 검증하는 단계'],
+  ].forEach((row, index) => {
+    const y = 260 + (index * 104);
+    slide(10).elements.push(panel(`origin-dir-${index}`, [604, y, 604, 92], '#FFFFFF', '#D9DEE8'));
+    slide(10).elements.push(textElement(`origin-dir-title-${index}`, [626, y + 16, 560, 30], row[0], 18, '#101728', true));
+    slide(10).elements.push(textElement(`origin-dir-body-${index}`, [626, y + 50, 560, 30], row[1], 14, '#52657D'));
   });
-  slide(10).elements.push(textElement('gap-note', [74, 568, 1134, 30], '프로젝트 해석: 새로운 기능의 발명보다 이 세 조건을 한 흐름에서 검증하는 데 초점을 둡니다.', 15, '#D86F28', true, 'center'));
-  slide(10).elements.push(textElement('gap-source', [74, 606, 1136, 18], '근거: McKinsey State of AI 2025 · Glean 및 Microsoft 공식 제품 문서 종합', 10, '#7B8492'));
-  byName(10, 'signal-label-9', 'SCALING GAP');
-  slide(10).sources = ['https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai', 'https://www.glean.com/ai-agent-builder', 'https://learn.microsoft.com/en-us/microsoft-copilot-studio/security-and-governance'];
+  slide(10).elements.push(textElement('origin-market-note', [74, 578, 1134, 22], '참고: 앞서 본 선도 서비스의 공통 방향을 프로젝트의 출발 기준으로 삼았습니다.', 11, '#7B8492', false, 'center'));
+  byName(10, 'signal-label-9', '프로젝트 출발');
+  slide(10).sources = [];
 
-  byName(7, 'section-7', 'HALIL SCOPE');
-  byName(7, 'title-7', 'HALIL은 운영 전환의 세 영역을 하나의 흐름으로 구현했습니다');
-  byName(7, 'sub-7', '문서 근거화·Agent 운영·실행 검증을 프로젝트 범위에서 연결하고 검증합니다.');
+  removeNames(7, ['section-7']);
+  byName(7, 'title-7', '기업 업무의 두 가지 문제에 주목했습니다');
+  byName(7, 'sub-7', '정보는 여러 곳에 흩어져 있고, 업무 방식은 개인의 경험에 머물러 있습니다.');
   removeContentArea(slide(7));
-  const halilBands = [
-    { x: 72, fill: '#EAF1FB', no: '01', label: 'DOCUMENT', title: '문서 근거화', body: '비정형 문서를\n검색 가능한 근거로' },
-    { x: 450, fill: '#EEF8F4', no: '02', label: 'AGENT OPS', title: 'Agent 운영', body: '구성·버전·도구를\n실제 실행 흐름으로' },
-    { x: 828, fill: '#F5F0E8', no: '03', label: 'VALIDATION', title: '실행 검증', body: '승인·이력·평가로\n결과를 다시 확인' },
-  ];
-  halilBands.forEach((item, index) => {
-    slide(7).elements.push({ kind: 'shape', geometry: 'rect', bbox: [item.x, 238, 356, 236], fillColor: item.fill, lineWidth: 0, name: `halil-band-${index}` });
-    slide(7).elements.push(textElement(`halil-band-no-${index}`, [item.x + 24, 258, 64, 34], item.no, 18, '#2878D1', true));
-    slide(7).elements.push(textElement(`halil-band-label-${index}`, [item.x + 92, 258, 232, 34], item.label, 13, '#6E7A90', true));
-    slide(7).elements.push(textElement(`halil-band-title-${index}`, [item.x + 24, 318, 308, 48], item.title, 25, '#101728', true));
-    slide(7).elements.push(textElement(`halil-band-body-${index}`, [item.x + 24, 378, 308, 70], item.body, 18, '#52657D'));
-    if (index < 2) slide(7).elements.push(textElement(`halil-band-arrow-${index}`, [item.x + 344, 320, 44, 54], '→', 28, '#2878D1', true, 'center'));
-  });
-  slide(7).elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 506, 1134, 70], fillColor: '#0C3F91', lineWidth: 0, name: 'halil-scope-band' });
-  slide(7).elements.push(textElement('halil-scope-copy', [94, 516, 1090, 50], 'HALIL의 차별점  ·  세 기능의 보유가 아니라 근거 → 실행 → 검증이 끊기지 않는 흐름', 19, '#FFFFFF', true, 'center'));
-  byName(7, 'signal-label-7', 'HALIL SCOPE');
+  slide(7).elements.push(panel('problem-1', [72, 226, 560, 322], '#FFFFFF', '#D9DEE8'));
+  slide(7).elements.push(textElement('problem-1-no', [96, 250, 200, 28], '문제 1', 15, '#2878D1', true));
+  slide(7).elements.push(textElement('problem-1-title', [96, 286, 512, 40], '흩어진 정보와 작업 환경', 24, '#101728', true));
+  slide(7).elements.push(textElement('problem-1-body', [96, 344, 512, 176], '문서·웹·업무 시스템이 여러 곳에 분산되어\n필요한 정보를 한 번에 확인하고\n활용하기 어렵습니다.', 17, '#52657D'));
+  slide(7).elements.push(panel('problem-2', [648, 226, 560, 322], '#FFFFFF', '#D9DEE8'));
+  slide(7).elements.push(textElement('problem-2-no', [672, 250, 200, 28], '문제 2', 15, '#2878D1', true));
+  slide(7).elements.push(textElement('problem-2-title', [672, 286, 512, 40], '개인에게 머무는 업무 노하우', 24, '#101728', true));
+  slide(7).elements.push(textElement('problem-2-body', [672, 344, 512, 176], '업무 절차와 경험이 개인의 암묵지로 남아\n공유하기 어렵고, 특히 신규 구성원은\n업무를 익히는 데 더 많은 시간이 필요합니다.', 17, '#52657D'));
+  slide(7).elements.push(textElement('problem-note', [74, 566, 1134, 30], 'HALIL은 이 두 문제를 각각 정보의 연결과 업무 방식의 재사용으로 해결하려 했습니다.', 15, '#0C3F91', true, 'center'));
+  byName(7, 'signal-label-7', '문제 정의');
 
-  byName(8, 'section-8', 'OBJECTIVE & USER FLOW');
-  byName(8, 'title-8', '문서 연결부터 승인 실행까지 하나의 사용자 흐름으로 검증합니다');
-  byName(8, 'sub-8', '비개발자가 업무 문서를 근거로 Agent를 구성하고 안전하게 실행하는 전 과정을 확인합니다.');
+  removeNames(8, ['section-8']);
+  byName(8, 'title-8', '정보는 연결, 업무 방식은 스킬로');
+  byName(8, 'sub-8', '앞의 두 문제를 각각 정보 연결과 스킬화로 해결합니다.');
   removeContentArea(slide(8));
-  slide(8).elements.push({ kind: 'shape', geometry: 'line', bbox: [118, 344, 1038, 0], lineColor: '#B8C8DD', lineWidth: 3, name: 'flow-axis' });
-  const flowSteps = [
-    ['01', '문서 연결', '업무 문서를\n프로젝트 근거로'],
-    ['02', 'Agent 구성', '역할·지시문·\n도구 범위 설정'],
-    ['03', '근거 답변', '원문 근거와\n작업 초안 확인'],
-    ['04', '승인 실행', '변경 작업은\n사람 승인 후 실행'],
-    ['05', '결과 검증', '이력·평가로\n동작을 재확인'],
-  ];
-  flowSteps.forEach((step, index) => {
-    const center = 138 + (index * 250);
-    slide(8).elements.push({ kind: 'shape', geometry: 'line', bbox: [center, 326, 0, 36], lineColor: '#2878D1', lineWidth: 6, name: `flow-tick-${index}` });
-    slide(8).elements.push(textElement(`flow-no-${index}`, [center - 44, 240, 88, 30], step[0], 16, '#2878D1', true, 'center'));
-    slide(8).elements.push(textElement(`flow-title-${index}`, [center - 94, 278, 188, 38], step[1], 21, '#101728', true, 'center'));
-    slide(8).elements.push(textElement(`flow-body-${index}`, [center - 102, 378, 204, 70], step[2], 16, '#52657D', false, 'center'));
+  slide(8).elements.push(textElement('sol-head-0', [94, 214, 260, 24], '문제', 12, '#6E7A90', true));
+  slide(8).elements.push(textElement('sol-head-1', [392, 214, 430, 24], 'HALIL의 해결 방향', 12, '#6E7A90', true));
+  slide(8).elements.push(textElement('sol-head-2', [840, 214, 366, 24], '기대 변화', 12, '#6E7A90', true));
+  [
+    ['흩어진 정보와 도구', 'Chat에서 문서·웹·업무 도구를 연결', '검색부터 결과 생성까지 한 흐름', '#EEF4FC'],
+    ['개인에게 머무는 노하우', '반복 업무 절차를 스킬로 생성·공유', '팀원이 같은 방식으로 재사용', '#F4F6F9'],
+  ].forEach((row, index) => {
+    const y = 244 + (index * 116);
+    slide(8).elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, y, 1136, 104], fillColor: row[3], lineWidth: 0, name: `sol-row-${index}` });
+    slide(8).elements.push(textElement(`sol-p-${index}`, [94, y + 18, 284, 68], row[0], 18, '#101728', true));
+    slide(8).elements.push(textElement(`sol-s-${index}`, [392, y + 18, 430, 68], row[1], 17, '#2878D1', true));
+    slide(8).elements.push(textElement(`sol-c-${index}`, [840, y + 18, 366, 68], row[2], 16, '#52657D'));
   });
-  slide(8).elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 500, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 'objective-band' });
-  slide(8).elements.push(textElement('objective-label', [94, 514, 170, 52], 'PROJECT\nOBJECTIVE', 13, '#2878D1', true));
-  slide(8).elements.push(textElement('objective-copy', [274, 514, 910, 52], '업무 문서 기반 Agent의 구성·근거 답변·승인 실행·결과 검증을 하나의 플랫폼에서 연결', 19, '#101728', true));
-  byName(8, 'signal-label-8', 'OBJECTIVE & USER FLOW');
+  slide(8).elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 484, 1136, 58], fillColor: '#0C3F91', lineWidth: 0, name: 'sol-scope-band' });
+  slide(8).elements.push(textElement('sol-scope', [94, 496, 1092, 34], 'HALIL이 연결하는 세 영역  ·  문서 근거화  →  Agent 운영  →  실행 검증', 17, '#FFFFFF', true, 'center'));
+  slide(8).elements.push(textElement('sol-closing', [74, 556, 1134, 30], '흩어진 정보와 개인의 업무 방식을 하나의 업무 흐름으로 연결한 플랫폼이 HALIL입니다.', 15, '#52657D', false, 'center'));
+  byName(8, 'signal-label-8', '해결 방향');
 
   // 숫자 중심 설명을 구현 흐름 중심으로 정리한다.
   replaceExact(14, 'Builder · 도구 32종\nRuntime · Streaming\nMemory · 버전 관리', 'Builder · Runtime\nStreaming · Memory\n버전 관리');
@@ -512,7 +503,7 @@
   byName(47, 'sub-47', '채팅 → 에이전트 → 프로젝트 → 문서 → 설정·스킬 순서의 연속 시연');
   removeNames(47, ['demo-frame-47', 'play-47', 'play-icon-47']);
   slide(47).elements.push(panel('demo-video-frame', [60, 214, 1160, 382], '#071426', '#26364B'));
-  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], '../halil_프로젝트_운영_AI_시연영상_v11_피드백반영.mp4'));
+  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], '../halil_프로젝트_운영_AI_시연영상_v14_피드백반영.mp4'));
 
   // 공식 규칙 평가를 먼저 보여 주고, 정량·정성 지표를 보조로 배치한다.
   byName(48, 'title-48', '플랫폼 규칙을 먼저 통과한 뒤 응답 품질을 측정합니다');
