@@ -788,6 +788,158 @@
     sources: ['../Jihun_발표준비/halil_eval_deck.html'],
   }));
 
+  // 21~25페이지: 평가 방법론(halil_eval_deck 2~6)을 16~20과 동일한 공통 양식으로 네이티브 재구성한다.
+  const evalBase = (section, title, sub) => {
+    const s = clone(slide(16));
+    removeContentArea(s);
+    setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
+    setElementText(s.elements.find((e) => e.name === 'section-16'), section);
+    setElementText(s.elements.find((e) => e.name === 'signal-label-16'), section);
+    setElementText(s.elements.find((e) => e.name === 'title-16'), title);
+    if (sub) setElementText(s.elements.find((e) => e.name === 'sub-16'), sub);
+    else s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    s.sources = ['../Jihun_발표준비/halil_eval_deck.html'];
+    return s;
+  };
+  const evalBand = (i, fill, no, label, title, body, top = 240, h = 244) => {
+    const x = 72 + i * 390;
+    const els = [{ kind: 'shape', geometry: 'rect', bbox: [x, top, 356, h], fillColor: fill, lineWidth: 0, name: `evb-band-${i}` }];
+    if (no) {
+      els.push(textElement(`evb-no-${i}`, [x + 24, top + 20, 64, 30], no, 18, '#2878D1', true));
+      els.push(textElement(`evb-label-${i}`, [x + 92, top + 22, 240, 28], label, 13, '#6E7A90', true));
+    } else {
+      els.push(textElement(`evb-label-${i}`, [x + 24, top + 20, 308, 28], label, 13, '#6E7A90', true));
+    }
+    els.push(textElement(`evb-title-${i}`, [x + 24, top + 60, 308, 44], title, 21, '#101728', true));
+    els.push(textElement(`evb-body-${i}`, [x + 24, top + 116, 308, h - 136], body, 14, '#52657D'));
+    return els;
+  };
+
+  evaluationSlides[0] = (() => {
+    const s = evalBase('EVALUATION JOURNEY', '평가는 세 단계로 발전했습니다', '점수 비교가 아니라, 평가 방법 자체가 정교해진 과정입니다.');
+    s.elements.push(
+      ...evalBand(0, '#EAF1FB', '01', '탐색 · V1', '무엇을 평가할까', '실제 업무 흐름으로\n평가 데이터와 판정 방식을\n직접 설계'),
+      ...evalBand(1, '#EEF8F4', '02', '기준선 · V2', '어떻게 공정하게 잴까', '비교 가능한 판정 계약을\n고정하고 오류를 보완'),
+      ...evalBand(2, '#F5F0E8', '03', '확장 검증 · V3', '환경이 커져도 유지될까', '101개 문서 환경에서\n같은 시험을 재실행해\n회귀 · 운영 한계 확인'),
+    );
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 'ev21-note-band' });
+    s.elements.push(textElement('ev21-note', [94, 512, 1090, 82], '세 버전은 점수 비교가 아니라 평가 방법론의 발전 과정으로 봐 주세요', 17, '#0C3F91', true, 'center'));
+    return s;
+  })();
+
+  evaluationSlides[1] = (() => {
+    const s = evalBase('SMOKE TEST · V1', '기본 동작 10가지, 재검증까지 10/10 통과', '복합 워크플로에 들어가기 전, 가장 기본적인 동작이 작동하는지부터 확인했습니다.');
+    s.elements.push(
+      textElement('ev22-stat', [70, 236, 380, 110], '10 / 10', 66, '#2878D1', true),
+      textElement('ev22-stat-copy', [78, 348, 380, 56], '재검증 포함\n최종 통과율 100%', 17, '#101728', true),
+      { kind: 'shape', geometry: 'line', bbox: [474, 220, 0, 400], lineColor: '#D9DEE8', lineWidth: 1, name: 'ev22-divider' },
+    );
+    const items = [
+      '기본 대화 · 도구 없이 한 문장 답변',
+      '프로젝트 목록 조회',
+      '팀원 목록 조회',
+      '문서 목록 조회',
+      '정보 없는 문서 질문 · 정직하게 답변',
+      '모호한 요청 · 실행 전 되물음',
+      '권한 밖 요청 차단',
+      '승인 후에만 실행',
+      '거절 시 저장 없이 취소',
+      '서브에이전트 위임 처리',
+    ];
+    items.forEach((t, i) => {
+      const x = 496 + (i < 5 ? 0 : 1) * 356;
+      const y = 226 + (i % 5) * 78;
+      s.elements.push(textElement(`ev22-n-${i}`, [x, y, 24, 34], String(i + 1), 14, '#2878D1', true, 'right'));
+      s.elements.push(textElement(`ev22-t-${i}`, [x + 34, y, 300, 34], t, 13.5, '#101728', false, 'left'));
+    });
+    return s;
+  })();
+
+  evaluationSlides[2] = (() => {
+    const s = evalBase('V2 BASELINE', '평가 대상과 판정 기준을 고정했습니다', 'Candidate와 판정 기준을 모두 고정해, 재현 가능한 공식 평가로 다시 설계했습니다.');
+    s.elements.push(
+      textElement('ev23-stat', [70, 232, 400, 108], '91.7%', 64, '#2878D1', true),
+      textElement('ev23-stat-copy', [78, 338, 800, 28], '44/48 통과  ·  Core 32/36  ·  Expansion 12/12', 16, '#52657D'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 388, 1136, 0], lineColor: '#D9DEE8', lineWidth: 2, name: 'ev23-divider' },
+      textElement('ev23-fail-head', [72, 402, 600, 26], '실패 4회  ·  S01 3회 + S06 1회', 14, '#D05252', true),
+    );
+    const cards = [
+      { x: 72, id: 'S01 · 프로젝트 현황', rate: '0/3 · 전량 실패', why: '필수 사실과 근거를 답변에 담지 못함' },
+      { x: 652, id: 'S06 · 판단 유보', rate: '2/3', why: '확인되지 않은 범위를 사실처럼 단정' },
+    ];
+    cards.forEach((c, i) => {
+      s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [c.x, 438, 556, 150], fillColor: '#FBEEEE', lineWidth: 0, name: `ev23-card-${i}` });
+      s.elements.push(textElement(`ev23-id-${i}`, [c.x + 24, 456, 508, 30], c.id, 18, '#D05252', true));
+      s.elements.push(textElement(`ev23-rate-${i}`, [c.x + 24, 492, 508, 26], c.rate, 15, '#101728', true));
+      s.elements.push(textElement(`ev23-why-${i}`, [c.x + 24, 522, 508, 50], c.why, 15, '#52657D'));
+    });
+    return s;
+  })();
+
+  evaluationSlides[3] = (() => {
+    const s = evalBase('SCENARIO MAP', '시나리오별 판정 초점', 'Q&A에서 특정 시나리오가 언급될 때 근거로 활용하는 정리표입니다.');
+    const left = [
+      ['S01', '프로젝트 상태', '필수 사실·근거'],
+      ['S02', '담당 후보', '기술·부하·불확실성'],
+      ['S03', 'Action Item', '문서·Jira·Task 교차'],
+      ['S04', '인젝션', '금지 행동·canary'],
+      ['S05A', 'Cross-scope', '허용 범위 격리'],
+      ['S05B', '민감정보', '비밀값 미노출'],
+      ['S06', '판단 유보', '미확인 사실 단정 금지'],
+      ['S07', 'HITL 거절', '승인 전 쓰기 금지'],
+      ['S09A', '일시 실패', 'retry·근거 보존'],
+    ];
+    const right = [
+      ['S09B', '지속 실패', '정직한 실패 응답'],
+      ['S10', '메모리 격리', '세션·계정 경계'],
+      ['S11', 'Child 위임', '도구·권한 경계'],
+      ['D01', '표 문서', '핵심 값 복원'],
+      ['D02', '이미지', '흐름·세부 근거'],
+      ['D03-04', '다문서 결합', '모델·복구 값 결합'],
+      ['D05', '광범위 검색', '유사 문서 혼합 방지'],
+      ['D06', '오류 복구', '값·checksum'],
+      ['S08', '승인 payload', 'DESIGN_ONLY / 미실행'],
+    ];
+    const TOP = 198;
+    const HROW = 36;
+    const ROW = 42;
+    const W = 568;
+    const half = (rows, x, key) => {
+      s.elements.push(
+        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW + rows.length * ROW], fillColor: '#FFFFFF', lineColor: '#C9D3E0', lineWidth: 1, name: `ev24-frame-${key}` },
+        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW], fillColor: '#0C3F91', lineWidth: 0, name: `ev24-hbar-${key}` },
+        textElement(`ev24-h1-${key}`, [x + 16, TOP, 62, HROW], 'ID', 12, '#FFFFFF', true),
+        textElement(`ev24-h2-${key}`, [x + 86, TOP, 172, HROW], '평가 목적', 12, '#FFFFFF', true),
+        textElement(`ev24-h3-${key}`, [x + 266, TOP, 288, HROW], '판정 초점', 12, '#FFFFFF', true),
+      );
+      rows.forEach((r, i) => {
+        const y = TOP + HROW + i * ROW;
+        s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [x + 1, y, W - 2, ROW], fillColor: i % 2 ? '#FFFFFF' : '#EBF1FA', lineWidth: 0, name: `ev24-rb-${key}-${i}` });
+        s.elements.push(
+          { kind: 'shape', geometry: 'line', bbox: [x + 1, y + ROW, W - 2, 0], lineColor: '#DEE4EC', lineWidth: 1, name: `ev24-rl-${key}-${i}` },
+          textElement(`ev24-a-${key}-${i}`, [x + 16, y, 62, ROW], r[0], 13, '#0C3F91', true),
+          textElement(`ev24-b-${key}-${i}`, [x + 86, y, 172, ROW], r[1], 13, '#101728'),
+          textElement(`ev24-c-${key}-${i}`, [x + 266, y, 288, ROW], r[2], 12.5, '#52657D'),
+        );
+      });
+      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 80, TOP + HROW, 0, rows.length * ROW], lineColor: '#DEE4EC', lineWidth: 1, name: `ev24-vl1-${key}` });
+      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 260, TOP + HROW, 0, rows.length * ROW], lineColor: '#DEE4EC', lineWidth: 1, name: `ev24-vl2-${key}` });
+    };
+    half(left, 56, 'L');
+    half(right, 656, 'R');
+    return s;
+  })();
+
+  evaluationSlides[4] = (() => {
+    const s = evalBase('JUDGMENT LAYERS', '판정 계약은 세 층으로 나눠 적용했습니다', '이진·정량은 전 시나리오 공통, 정성만 시나리오마다 다른 기준으로 LLM Judge가 판단합니다.');
+    s.elements.push(
+      ...evalBand(0, '#EAF1FB', '', 'BINARY · HARD GATE', '이진 판정', '일어났다 / 안 일어났다만 확인\n위반 시 즉시 탈락\n허용 도구 · 승인 · 금지 행동\n8종 · 전 시나리오 공통', 232, 300),
+      ...evalBand(1, '#EEF8F4', '', 'QUANTITATIVE', '정량 판정', '횟수를 세어 한도와 비교\n도구 호출 · 반복 · 중복 signature\n2종 공통 + 3종 조건부', 232, 300),
+      ...evalBand(2, '#F5F0E8', '', 'QUALITATIVE · LLM JUDGE', '정성 판정', '의미 · 완성도를\n시나리오마다 다른 기준으로\n판단 유보 · 정직한 실패 · 근거 일치\n17종 · 시나리오별 상이', 232, 300),
+    );
+    return s;
+  })();
+
   const deepAgentMovedSourceSlides = [4, 5, 6];
   const deepAgentMovedSlides = deepAgentMovedSourceSlides.map((sourceSlide) => ({
     background: '#FFFFFF',
@@ -825,6 +977,11 @@
     sources: ['../Jihun_발표준비/deep_agent_deck.html'],
   }));
   deck.slides.push(appendixDivider, ...appendixSlides);
+
+  // 31~35페이지(Deep Agent 이동본 3장 + PRODUCT EVIDENCE·PROJECT 2장)를
+  // DEMO FLOW(41페이지) 바로 앞으로 옮긴다.
+  const relocated = deck.slides.splice(30, 5);
+  deck.slides.splice(35, 0, ...relocated);
 
   deck.slides.forEach((item, index) => {
     item.number = index + 1;
