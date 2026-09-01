@@ -1391,6 +1391,28 @@
     });
   })();
 
+  // ===================================================================
+  // 최종 편집 패스 8 — 15p(패스2에서 만든 'CORE TECHNOLOGY' 전환 슬라이드)를
+  //   halil_html_agent_v2 16p(AGENT LIFECYCLE: 에이전트 생성과 사용자 질의 요청)로 교체.
+  //   (agent-v2-lifecycle-data.js 필요)
+  // ===================================================================
+  (() => {
+    const s16 = window.HALIL_AGENTV2_S16;
+    if (!s16 || !Array.isArray(s16.elements)) { console.warn('[패스8] HALIL_AGENTV2_S16 미로드 — agent-v2-lifecycle-data.js 확인'); return; }
+    const at = deck.slides.findIndex((s) => s.elements.some((e) => e.name === 'frm-q'));
+    if (at < 0) { console.warn('[패스8] 핵심기술 전환 슬라이드를 찾지 못함'); return; }
+    deck.slides.splice(at, 1, clone(s16));
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
   function byNameFor(targetSlide, name, value, options) {
     setElementText(targetSlide.elements.find((element) => element.name === name), value, options);
   }

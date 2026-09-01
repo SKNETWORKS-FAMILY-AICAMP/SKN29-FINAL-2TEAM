@@ -12,10 +12,11 @@ import { fileURLToPath } from 'node:url';
 // 패스5: halil_html_ops_4pages(운영 콘솔 4장)를 "스킬 사용 전후 비교" 뒤에 네이티브로 추가 → 42장.
 // 패스6: halil_html_agent_v2 21~27p(평가 섹션 7장)로 빈 '플랫폼 평가' 자리표시자를 교체 → 48장.
 // 패스7: '사용자 편의 기능' 챕터 표지 + 지훈 '등록 검증' 이미지 슬라이드 삭제 → 46장.
+// 패스8: 15p(CORE TECHNOLOGY 전환)를 agent_v2 16p(AGENT LIFECYCLE)로 교체.
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ctx = vm.createContext({ window: {}, console });
-for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'content-updates.js']) {
+for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'content-updates.js']) {
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx);
 }
 const slides = ctx.window.HALIL_DECK.slides;
@@ -80,7 +81,8 @@ assert.equal(
 );
 
 // --- Agent 상세 3장 ---
-assert.deepEqual([15, 16, 17].map(sigOf), ['CORE TECHNOLOGY', 'AGENT HARNESS', 'AGENT RUNTIME'], '15~17 Agent 상세');
+assert.deepEqual([15, 16, 17].map(sigOf), ['AGENT LIFECYCLE', 'AGENT HARNESS', 'AGENT RUNTIME'], '15~17 Agent 상세');
+assert.equal(titleOf(15), '에이전트 생성과 사용자 질의 요청', '15는 agent_v2 16p로 교체됨');
 
 // --- 원빈 파싱: 18~31 ---
 const wonbin = slides.slice(17, 31);
