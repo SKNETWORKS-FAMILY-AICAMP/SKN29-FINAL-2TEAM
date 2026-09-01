@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 // 패스6: halil_html_agent_v2 21~27p(평가 섹션 7장)로 빈 '플랫폼 평가' 자리표시자를 교체 → 48장.
 // 패스7: '사용자 편의 기능' 챕터 표지 + 지훈 '등록 검증' 이미지 슬라이드 삭제 → 46장.
 // 패스8: 15p(CORE TECHNOLOGY 전환)를 agent_v2 16p(AGENT LIFECYCLE)로 교체.
+// 패스9: 40p('스킬 사용 전후 비교' 풀블리드 이미지)를 통합 디자인 네이티브 슬라이드로 재구성 (표 영역만 이미지로 유지).
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ctx = vm.createContext({ window: {}, console });
@@ -119,8 +120,18 @@ assert.ok(slides.slice(31, 38).every((s) => {
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
 assert.equal(sigOf(39), 'DEMO RESULT', '39는 DEMO RESULT');
-assert.equal((slides[39].elements[0] || {}).media, 'jihun-skill-compare.png', '40은 지훈 스킬 사용 전후 비교 이미지');
-assert.ok(slides[39].elements.every((e) => e.kind === 'image'), '40은 이미지 전용 슬라이드');
+// 패스9: 40p는 네이티브 재구성 (표는 잘라낸 이미지로만 유지)
+assert.equal(titleOf(40), '스킬 사용 전후 비교', '40은 스킬 사용 전후 비교 (네이티브)');
+assert.equal(sigOf(40), 'SKILL COMPARISON', '40 섹션 라벨');
+assert.equal(
+  (slides[39].elements.find((e) => e.name === 'sc-table') || {}).media, 'skill-compare-table.png',
+  '40은 잘라낸 표 이미지를 프레임 안에 배치',
+);
+assert.ok(
+  !slides[39].elements.some((e) => e.name === 'jihun-skill-compare'),
+  '40에 풀블리드 원본 이미지는 없어야 한다',
+);
+assert.ok(slides[39].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '40 타이틀 요소');
 assert.deepEqual(
   [41, 42, 43, 44].map(titleOf),
   ['운영 상태 통합 관리', '연결 서비스·모델 구성', '커스텀 도구·가드레일 관리', '실행 현황·도구 사용 추적'],

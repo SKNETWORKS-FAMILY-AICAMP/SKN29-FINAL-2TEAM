@@ -1413,6 +1413,52 @@
     });
   })();
 
+  // ===================================================================
+  // 최종 편집 패스 9 — '스킬 사용 전후 비교' 풀블리드 이미지 슬라이드를
+  //   통합 덱 디자인(표준 헤더·타이틀·범례 + 흰 프레임)으로 재구성.
+  //   ※ 표 자체와 표 색은 손대지 않음 — 원본 캡처에서 표 영역만 잘라 그대로 배치.
+  // ===================================================================
+  (() => {
+    const at = deck.slides.findIndex((s) => s.elements.some((e) => e.name === 'jihun-skill-compare'));
+    if (at < 0) { console.warn('[패스9] 스킬 비교 이미지 슬라이드를 찾지 못함'); return; }
+    const chrome = (n) => [
+      { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 5], fillColor: '#F8C944', lineWidth: 0, name: `top-accent-${n}` },
+      { kind: 'shape', geometry: 'line', bbox: [56, 38, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `top-rule-${n}` },
+      textElement(`context-${n}`, [58, 48, 416, 28], 'halil   ·   04 프로젝트 수행 결과', 13, '#0A1020'),
+      textElement(`section-${n}`, [504, 51, 420, 22], 'SKILL COMPARISON', 12, '#6C7482'),
+      textElement(`page-${n}`, [1160, 50, 62, 22], String(n), 12, '#6C7482', false, 'right'),
+      { kind: 'shape', geometry: 'rect', bbox: [58, 660, 78, 4], fillColor: '#2878D1', lineWidth: 0, name: `signal-${n}` },
+      textElement(`signal-label-${n}`, [150, 651, 470, 22], 'SKILL COMPARISON', 12, '#6C7482'),
+      imageElement('sc-logo-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
+      imageElement('sc-logo-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
+    ];
+    deck.slides.splice(at, 1, {
+      background: '#F7F6F1',
+      elements: [
+        ...chrome(40),
+        textElement('title-40', [58, 92, 860, 58], '스킬 사용 전후 비교', 34, '#0A1020', true),
+        textElement('sub-40', [60, 158, 720, 26], '300회 구성 · 5개 스킬 × 10개 업무 × 3회 반복 × 2가지 방법', 13, '#6C7482'),
+        textElement('sc-stat-label', [740, 148, 480, 18], '결과 요구사항 충족', 11, '#7B8492', false, 'right'),
+        textElement('sc-stat', [740, 166, 480, 32], '274 / 300  ·  91.3%', 20, '#2878D1', true, 'right'),
+        textElement('sc-lg-0', [72, 202, 1140, 24], '·  사용자 입력 토큰 — 사용자가 직접 작성한 요청의 길이', 13, '#52657D'),
+        textElement('sc-lg-1', [72, 228, 1140, 24], '·  실제 모델 입력 토큰 — 저장된 Skill 지침까지 포함해 모델이 읽은 전체 길이', 13, '#52657D'),
+        textElement('sc-lg-2', [72, 254, 1140, 24], '·  결과 품질 — 필수 내용·표현·의미 기준을 모두 지킨 실행 수와 비율', 13, '#52657D'),
+        panel('sc-table-frame', [113, 286, 1054, 360], '#FFFFFF', '#D9DEE8'),
+        imageElement('sc-table', [121, 294, 1038, 344], 'skill-compare-table.png', 'contain'),
+      ],
+      sources: ['docs/발표자료/최종발표/Jihun_발표준비/deep_agent_deck.html (slide 8) — 표 영역만 사용'],
+    });
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
   function byNameFor(targetSlide, name, value, options) {
     setElementText(targetSlide.elements.find((element) => element.name === name), value, options);
   }
