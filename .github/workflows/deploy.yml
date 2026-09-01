@@ -71,7 +71,10 @@ jobs:
           tags: skn29-final-2team-web:latest
           load: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # mode=min — 최종 레이어만 export. mode=max 는 중간 레이어까지 올려
+          # export 가 ~45s 걸리는데 절감분(warm ~22s)을 먹었다. 이 Dockerfile 은
+          # 단일 스테이지라 min 으로도 apt·pip 레이어가 캐시된다.
+          cache-to: type=gha,mode=min
 
       - name: 백엔드 테스트 환경 준비
         run: |
