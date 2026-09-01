@@ -688,12 +688,91 @@
       s.elements.push(textElement(`s17-no-${i}`, [center - 44, 232, 88, 30], step[0], 16, '#2878D1', true, 'center'));
       s.elements.push(textElement(`s17-title-${i}`, [center - 150, 270, 300, 34], step[1], 21, '#101728', true, 'center'));
       s.elements.push(textElement(`s17-body-${i}`, [center - 150, 360, 300, 112], step[2], 15, '#52657D', false, 'center'));
-      if (i < steps.length - 1) s.elements.push(textElement(`s17-arrow-${i}`, [center + 135, 306, 40, 40], '→', 22, '#A6B4C7', false, 'center'));
     });
     s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's17-note-band' });
     s.elements.push(textElement('s17-note-label', [94, 526, 170, 54], 'KEY POINT', 13, '#2878D1', true));
     s.elements.push(textElement('s17-note-copy', [274, 526, 910, 54], 'Builder에서 고르는 기업 Tool과 모델은 담당자가 서버 주소·인증 정보를 직접 입력하지 않습니다', 17, '#101728', true));
     s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
+    return s;
+  })();
+
+  // 18페이지: 전체 요청 파이프라인을 공통 양식 위에 네이티브 6단계 타임라인으로 재구성한다.
+  deepAgentSlides[2] = (() => {
+    const s = clone(slide(16));
+    removeContentArea(s);
+    s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
+    setElementText(s.elements.find((e) => e.name === 'section-16'), 'REQUEST PIPELINE');
+    setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'REQUEST PIPELINE');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '요청 도착부터 실행까지 전체 파이프라인');
+    s.elements.push({ kind: 'shape', geometry: 'line', bbox: [110, 330, 1060, 0], lineColor: '#B8C8DD', lineWidth: 3, name: 's18-flow-axis' });
+    const steps = [
+      ['01', '요청 도착', '세션 · 사용자 확인'],
+      ['02', '입력 전처리', '민감정보 가리기'],
+      ['03', '가드레일 검사', '방금 등록한 그 검사'],
+      ['04', '대화 저장', '통과한 원문만'],
+      ['05', 'Runtime 조립', '설정을 읽어\n그래프 생성'],
+      ['06', '실행', '판단 · 도구 · 위임 반복'],
+    ];
+    steps.forEach((step, i) => {
+      const center = 110 + i * 212;
+      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [center, 312, 0, 36], lineColor: '#2878D1', lineWidth: 6, name: `s18-tick-${i}` });
+      s.elements.push(textElement(`s18-no-${i}`, [center - 44, 236, 88, 28], step[0], 15, '#2878D1', true, 'center'));
+      s.elements.push(textElement(`s18-title-${i}`, [center - 104, 272, 208, 32], step[1], 18, '#101728', true, 'center'));
+      s.elements.push(textElement(`s18-body-${i}`, [center - 104, 360, 208, 96], step[2], 14, '#52657D', false, 'center'));
+    });
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's18-note-band' });
+    s.elements.push(textElement('s18-note-label', [94, 526, 170, 54], 'GUARDRAIL', 13, '#2878D1', true));
+    s.elements.push(textElement('s18-note-copy', [274, 526, 910, 54], '가드레일 검사에 실패하면 대화 저장 이전에 요청이 종료되고, 대화 이력에도 남지 않습니다', 17, '#101728', true));
+    s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
+    return s;
+  })();
+
+  // 19페이지: Deep Agent 하네스 개념을 공통 양식 위에 3단 밴드(7페이지 방식)로 재구성한다.
+  deepAgentSlides[3] = (() => {
+    const s = clone(slide(16));
+    removeContentArea(s);
+    setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
+    setElementText(s.elements.find((e) => e.name === 'section-16'), 'AGENT HARNESS');
+    setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'AGENT HARNESS');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), 'Deep Agent는 에이전트 실행 하네스입니다');
+    setElementText(s.elements.find((e) => e.name === 'sub-16'), 'Codex · Claude Code처럼, Deep Agent도 에이전트를 실제로 실행시키는 프레임워크입니다.');
+    const bands = [
+      { x: 72, fill: '#EAF1FB', no: '01', label: 'BUILDER', title: '에이전트 생성·수정', body: '업무에 맞는\n실행 구성을 선택' },
+      { x: 462, fill: '#EEF8F4', no: '+', label: '확장점', title: 'Tool · Sub Agent', body: '도구와 서브에이전트를\nAgent에 연결' },
+      { x: 852, fill: '#F5F0E8', no: '02', label: 'RUNTIME', title: '실행 그래프 재조립', body: '변경된 구성이\n다음 실행에 반영' },
+    ];
+    bands.forEach((b, i) => {
+      s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [b.x, 252, 356, 214], fillColor: b.fill, lineWidth: 0, name: `s19-band-${i}` });
+      s.elements.push(textElement(`s19-no-${i}`, [b.x + 24, 272, 64, 32], b.no, 18, '#2878D1', true));
+      s.elements.push(textElement(`s19-label-${i}`, [b.x + 92, 274, 240, 30], b.label, 13, '#6E7A90', true));
+      s.elements.push(textElement(`s19-title-${i}`, [b.x + 24, 320, 308, 40], b.title, 22, '#101728', true));
+      s.elements.push(textElement(`s19-body-${i}`, [b.x + 24, 372, 308, 72], b.body, 16, '#52657D'));
+    });
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 500, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's19-note-band' });
+    s.elements.push(textElement('s19-note-copy', [94, 500, 1090, 82], 'halil은 Deep Agent 하네스 위에 제품을 얹어, 구성 변경이 다음 실행에 그대로 반영되도록 했습니다', 17, '#0C3F91', true, 'center'));
+    s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
+    return s;
+  })();
+
+  // 20페이지: Deep Agent 실행 구조 도면을 공통 양식 위에 잘림 없이 배치한다(13페이지 다이어그램 방식).
+  deepAgentSlides[4] = (() => {
+    const s = clone(slide(16));
+    removeContentArea(s);
+    s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
+    setElementText(s.elements.find((e) => e.name === 'section-16'), 'AGENT RUNTIME');
+    setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'AGENT RUNTIME');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), 'Deep Agent 실행 구조 전체 도면');
+    s.elements.push({
+      kind: 'shape', geometry: 'rect', bbox: [150, 180, 980, 462],
+      fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: 's20-canvas',
+    });
+    s.elements.push(imageElement(
+      's20-diagram', [160, 190, 960, 442],
+      '../../Jihun_발표준비/deep_agents/assets/deep_agent.png', 'contain',
+    ));
+    s.sources = ['../Jihun_발표준비/deep_agents/assets/deep_agent.png'];
     return s;
   })();
 
