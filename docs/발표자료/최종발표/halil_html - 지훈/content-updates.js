@@ -803,15 +803,15 @@
   };
   const evalBand = (i, fill, no, label, title, body, top = 240, h = 244) => {
     const x = 72 + i * 390;
-    const els = [{ kind: 'shape', geometry: 'rect', bbox: [x, top, 356, h], fillColor: fill, lineWidth: 0, name: `evb-band-${i}` }];
+    const els = [{ kind: 'shape', geometry: 'rect', bbox: [x, top, 356, h], fillColor: fill, lineColor: '#DCE3EC', lineWidth: 1, name: `evb-band-${i}` }];
     if (no) {
       els.push(textElement(`evb-no-${i}`, [x + 24, top + 20, 64, 30], no, 18, '#2878D1', true));
-      els.push(textElement(`evb-label-${i}`, [x + 92, top + 22, 240, 28], label, 13, '#6E7A90', true));
+      els.push(textElement(`evb-label-${i}`, [x + 92, top + 22, 240, 28], label, 13, '#5A6B85', true));
     } else {
-      els.push(textElement(`evb-label-${i}`, [x + 24, top + 20, 308, 28], label, 13, '#6E7A90', true));
+      els.push(textElement(`evb-label-${i}`, [x + 24, top + 20, 308, 28], label, 13, '#5A6B85', true));
     }
-    els.push(textElement(`evb-title-${i}`, [x + 24, top + 60, 308, 44], title, 21, '#101728', true));
-    els.push(textElement(`evb-body-${i}`, [x + 24, top + 116, 308, h - 136], body, 14, '#52657D'));
+    els.push(textElement(`evb-title-${i}`, [x + 24, top + 58, 308, 44], title, 21, '#101728', true));
+    els.push(textElement(`evb-body-${i}`, [x + 24, top + 114, 308, h - 134], body, 15, '#45566B'));
     return els;
   };
 
@@ -835,11 +835,11 @@
       { kind: 'shape', geometry: 'line', bbox: [474, 220, 0, 400], lineColor: '#D9DEE8', lineWidth: 1, name: 'ev22-divider' },
     );
     const items = [
-      '기본 대화 · 도구 없이 한 문장 답변',
+      '기본 대화 · 한 문장으로 답변',
       '프로젝트 목록 조회',
       '팀원 목록 조회',
       '문서 목록 조회',
-      '정보 없는 문서 질문 · 정직하게 답변',
+      '정보 없는 문서 · 정직하게 답변',
       '모호한 요청 · 실행 전 되물음',
       '권한 밖 요청 차단',
       '승인 후에만 실행',
@@ -847,10 +847,10 @@
       '서브에이전트 위임 처리',
     ];
     items.forEach((t, i) => {
-      const x = 496 + (i < 5 ? 0 : 1) * 356;
-      const y = 226 + (i % 5) * 78;
-      s.elements.push(textElement(`ev22-n-${i}`, [x, y, 24, 34], String(i + 1), 14, '#2878D1', true, 'right'));
-      s.elements.push(textElement(`ev22-t-${i}`, [x + 34, y, 300, 34], t, 13.5, '#101728', false, 'left'));
+      const x = 480 + (i < 5 ? 0 : 1) * 370;
+      const y = 224 + (i % 5) * 80;
+      s.elements.push(textElement(`ev22-n-${i}`, [x, y, 28, 40], String(i + 1), 17, '#2878D1', true, 'right'));
+      s.elements.push(textElement(`ev22-t-${i}`, [x + 40, y, 320, 40], t, 16, '#101728', false, 'left'));
     });
     return s;
   })();
@@ -906,24 +906,23 @@
     const W = 568;
     const half = (rows, x, key) => {
       s.elements.push(
-        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW + rows.length * ROW], fillColor: '#FFFFFF', lineColor: '#C9D3E0', lineWidth: 1, name: `ev24-frame-${key}` },
-        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW], fillColor: '#0C3F91', lineWidth: 0, name: `ev24-hbar-${key}` },
-        textElement(`ev24-h1-${key}`, [x + 16, TOP, 62, HROW], 'ID', 12, '#FFFFFF', true),
-        textElement(`ev24-h2-${key}`, [x + 86, TOP, 172, HROW], '평가 목적', 12, '#FFFFFF', true),
-        textElement(`ev24-h3-${key}`, [x + 266, TOP, 288, HROW], '판정 초점', 12, '#FFFFFF', true),
+        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW + rows.length * ROW], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `ev24-frame-${key}` },
+        { kind: 'shape', geometry: 'rect', bbox: [x, TOP, W, HROW], fillColor: '#EEF3FA', lineWidth: 0, name: `ev24-hbar-${key}` },
+        { kind: 'shape', geometry: 'line', bbox: [x, TOP + HROW, W, 0], lineColor: '#C9D3E0', lineWidth: 1, name: `ev24-hrule-${key}` },
+        textElement(`ev24-h1-${key}`, [x + 18, TOP, 60, HROW], 'ID', 12, '#5A6B85', true),
+        textElement(`ev24-h2-${key}`, [x + 84, TOP, 172, HROW], '평가 목적', 12, '#5A6B85', true),
+        textElement(`ev24-h3-${key}`, [x + 262, TOP, 292, HROW], '판정 초점', 12, '#5A6B85', true),
       );
       rows.forEach((r, i) => {
         const y = TOP + HROW + i * ROW;
-        s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [x + 1, y, W - 2, ROW], fillColor: i % 2 ? '#FFFFFF' : '#EBF1FA', lineWidth: 0, name: `ev24-rb-${key}-${i}` });
+        if (i % 2) s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [x + 1, y, W - 2, ROW], fillColor: '#F6F8FC', lineWidth: 0, name: `ev24-rb-${key}-${i}` });
         s.elements.push(
-          { kind: 'shape', geometry: 'line', bbox: [x + 1, y + ROW, W - 2, 0], lineColor: '#DEE4EC', lineWidth: 1, name: `ev24-rl-${key}-${i}` },
-          textElement(`ev24-a-${key}-${i}`, [x + 16, y, 62, ROW], r[0], 13, '#0C3F91', true),
-          textElement(`ev24-b-${key}-${i}`, [x + 86, y, 172, ROW], r[1], 13, '#101728'),
-          textElement(`ev24-c-${key}-${i}`, [x + 266, y, 288, ROW], r[2], 12.5, '#52657D'),
+          textElement(`ev24-a-${key}-${i}`, [x + 18, y, 60, ROW], r[0], 13, '#2E6FC7', true),
+          textElement(`ev24-b-${key}-${i}`, [x + 84, y, 172, ROW], r[1], 13, '#101728'),
+          textElement(`ev24-c-${key}-${i}`, [x + 262, y, 292, ROW], r[2], 12.5, '#52657D'),
         );
+        if (i < rows.length - 1) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 12, y + ROW, W - 24, 0], lineColor: '#EAEEF3', lineWidth: 1, name: `ev24-rl-${key}-${i}` });
       });
-      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 80, TOP + HROW, 0, rows.length * ROW], lineColor: '#DEE4EC', lineWidth: 1, name: `ev24-vl1-${key}` });
-      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [x + 260, TOP + HROW, 0, rows.length * ROW], lineColor: '#DEE4EC', lineWidth: 1, name: `ev24-vl2-${key}` });
     };
     half(left, 56, 'L');
     half(right, 656, 'R');
@@ -933,10 +932,12 @@
   evaluationSlides[4] = (() => {
     const s = evalBase('JUDGMENT LAYERS', '판정 계약은 세 층으로 나눠 적용했습니다', '이진·정량은 전 시나리오 공통, 정성만 시나리오마다 다른 기준으로 LLM Judge가 판단합니다.');
     s.elements.push(
-      ...evalBand(0, '#EAF1FB', '', 'BINARY · HARD GATE', '이진 판정', '일어났다 / 안 일어났다만 확인\n위반 시 즉시 탈락\n허용 도구 · 승인 · 금지 행동\n8종 · 전 시나리오 공통', 232, 300),
-      ...evalBand(1, '#EEF8F4', '', 'QUANTITATIVE', '정량 판정', '횟수를 세어 한도와 비교\n도구 호출 · 반복 · 중복 signature\n2종 공통 + 3종 조건부', 232, 300),
-      ...evalBand(2, '#F5F0E8', '', 'QUALITATIVE · LLM JUDGE', '정성 판정', '의미 · 완성도를\n시나리오마다 다른 기준으로\n판단 유보 · 정직한 실패 · 근거 일치\n17종 · 시나리오별 상이', 232, 300),
+      ...evalBand(0, '#EEF3FA', '', 'BINARY · HARD GATE', '이진 판정', '일어났다 / 안 일어났다만 확인, 위반 시 즉시 탈락\n허용 도구 · 승인 · 금지 행동\n8종 · 전 시나리오 공통', 236, 268),
+      ...evalBand(1, '#EEF3FA', '', 'QUANTITATIVE', '정량 판정', '횟수를 세어 한도와 비교\n도구 호출 · 반복 · 중복 signature\n2종 공통 + 3종 조건부', 236, 268),
+      ...evalBand(2, '#EEF3FA', '', 'QUALITATIVE · LLM JUDGE', '정성 판정', '의미 · 완성도를 시나리오마다 다르게\n판단 유보 · 정직한 실패 · 근거 일치\n17종 · 시나리오별 상이', 236, 268),
     );
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 536, 1136, 62], fillColor: '#EAF1FB', lineWidth: 0, name: 'ev25-note-band' });
+    s.elements.push(textElement('ev25-note', [94, 536, 1092, 62], '이진·정량은 전 시나리오에 같은 기준, 정성만 시나리오마다 다른 기준으로 LLM Judge가 판단합니다', 15, '#0C3F91', true, 'center'));
     return s;
   })();
 
@@ -952,6 +953,79 @@
     }],
     sources: ['../Jihun_발표준비/deep_agent_deck.html'],
   }));
+
+  // 사용자 편의 기능 · 스킬 3장(deep_agent_deck 4~6)을 공통 양식 위에 원본 화면 캡처와 함께 재구성한다.
+  const SKA = '../../Jihun_발표준비/deep_agents/assets/';
+  const daShot = (name, bbox, file) => ([
+    imageElement(name, bbox, SKA + file, 'contain'),
+    { kind: 'shape', geometry: 'rect', bbox, lineColor: '#C9D3E0', lineWidth: 1, name: name + '-frame' },
+  ]);
+  const daSlimNote = (s, text) => {
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 600, 1136, 48], fillColor: '#EAF1FB', lineWidth: 0, name: 'da-slimnote-band' });
+    s.elements.push(textElement('da-slimnote', [94, 600, 1092, 48], text, 14.5, '#0C3F91', true, 'center'));
+  };
+
+  deepAgentMovedSlides[0] = (() => {
+    const s = evalBase('SKILL', '검증한 Skill만 등록해 반복 업무에 재사용');
+    s.elements.push(
+      textElement('s37-cap-l', [92, 198, 600, 22], '새 스킬 등록 화면', 16, '#6C7482', true),
+      ...daShot('s37-img-register', [92, 224, 600, 362], 'skill-register.png'),
+      textElement('s37-cap-r', [744, 198, 464, 22], '/스킬이름 직접 호출', 16, '#6C7482', true),
+      ...daShot('s37-img-slash', [744, 224, 430, 207], 'skill-slash.png'),
+      textElement('s37-points', [744, 452, 464, 130],
+        '향후 요청·업무 상황을 보고 자동 선택하도록 개선', 14.5, '#52657D'),
+    );
+    s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
+    return s;
+  })();
+
+  deepAgentMovedSlides[1] = (() => {
+    const s = evalBase('SKILL PROCESS', '필요한 요청과 불필요한 요청을 검증한 뒤 등록');
+    s.elements.push(
+      textElement('s38-cap', [72, 198, 620, 22], '스킬 검증 상세 화면', 16, '#6C7482', true),
+      ...daShot('s38-img', [72, 224, 620, 368], 'skill-validate.png'),
+    );
+    const steps = [
+      ['01', '스킬 설명', '만들 스킬 내용을 한 문장으로 정의'],
+      ['02', '검증 환경 준비', '실제 환경과 분리된 곳에 테스트 케이스 준비'],
+      ['03', '동작 확인', '필요한 요청·불필요한 요청을 각각 테스트'],
+      ['04', '스킬 등록', '검증을 통과한 스킬만 개인 스킬로 게시'],
+    ];
+    steps.forEach((step, i) => {
+      const y = 226 + i * 92;
+      s.elements.push(
+        textElement(`s38-no-${i}`, [740, y, 36, 26], step[0], 14, '#2878D1', true),
+        textElement(`s38-title-${i}`, [784, y, 424, 26], step[1], 17, '#101728', true),
+        textElement(`s38-body-${i}`, [740, y + 30, 468, 44], step[2], 13.5, '#52657D'),
+      );
+      if (i < 3) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [740, y + 80, 468, 0], lineColor: '#E4E9F0', lineWidth: 1, name: `s38-rule-${i}` });
+    });
+    daSlimNote(s, '등록된 스킬은 이후 여러 요청에 영향을 주므로, 잘못 실행되지 않는지 먼저 확인합니다');
+    s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
+    return s;
+  })();
+
+  deepAgentMovedSlides[2] = (() => {
+    const s = evalBase('TEAM SKILL', '개인이 만든 업무 방식을 팀이 같은 절차로 실행',);
+    s.elements.push(
+      textElement('s39-cap', [360, 190, 560, 22], '팀 스킬 공유 화면', 16, '#6C7482', true),
+      ...daShot('s39-img', [360, 214, 560, 252], 'skill-team-share.png'),
+    );
+    const fx = [
+      ['업무 표준화', '팀원이 같은 절차와 기준으로 업무를 처리'],
+      ['중복 작업 감소', '이미 검증한 방식을 각자 다시 만들지 않음'],
+      ['담당자 의존도 완화', '담당자가 바뀌어도 저장된 업무 절차 유지'],
+    ];
+    fx.forEach((f, i) => {
+      const x = 72 + i * 390;
+      s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [x, 500, 356, 116], fillColor: '#EEF3FA', lineWidth: 0, name: `s39-fx-${i}` });
+      s.elements.push(textElement(`s39-fx-t-${i}`, [x + 22, 514, 312, 28], f[0], 17, '#0C3F91', true));
+      s.elements.push(textElement(`s39-fx-b-${i}`, [x + 22, 546, 312, 56], f[1], 13.5, '#52657D'));
+    });
+    s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
+    return s;
+  })();
+
   deck.slides.splice(15, 0, ...deepAgentSlides, ...evaluationSlides, ...deepAgentMovedSlides);
 
   const appendixDivider = {
