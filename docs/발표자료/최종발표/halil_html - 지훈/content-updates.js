@@ -986,9 +986,9 @@
   }));
 
   // 사용자 편의 기능 · 스킬 3장(deep_agent_deck 4~6)을 공통 양식 위에 원본 화면 캡처와 함께 재구성한다.
-  const SKA = '../../Jihun_발표준비/deep_agents/assets/';
+  // 스킬 화면 캡처는 halil_html - 지훈/media 로 복사해 두고 여기서 불러온다.
   const daShot = (name, bbox, file) => ([
-    imageElement(name, bbox, SKA + file, 'contain'),
+    imageElement(name, bbox, file, 'contain'),
     { kind: 'shape', geometry: 'rect', bbox, lineColor: '#C9D3E0', lineWidth: 1, name: name + '-frame' },
   ]);
   const daSlimNote = (s, text) => {
