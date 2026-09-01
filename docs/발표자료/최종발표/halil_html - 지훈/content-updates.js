@@ -646,6 +646,7 @@
     const s = clone(slide(16));
     removeContentArea(s);
     s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
     setElementText(s.elements.find((e) => e.name === 'section-16'), 'AGENT LIFECYCLE');
     setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'AGENT LIFECYCLE');
     setElementText(s.elements.find((e) => e.name === 'title-16'), '에이전트 생성과 사용자 질의 요청');
@@ -662,6 +663,37 @@
       textElement('s16-flow-arrow', [570, 398, 140, 52], '→', 40, '#A6B4C7', false, 'center'),
     );
     s.sources = ['../../halil_html/media/Agent-create.png', '../../halil_html/media/Agent-query.png'];
+    return s;
+  })();
+
+  // 17페이지도 16페이지와 동일한 공통 양식 위에 Agent Builder 흐름을 네이티브로 재구성한다.
+  deepAgentSlides[1] = (() => {
+    const s = clone(slide(16));
+    removeContentArea(s);
+    s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    setElementText(s.elements.find((e) => e.name === 'context-16'), 'halil   ·   04 프로젝트 수행 결과');
+    setElementText(s.elements.find((e) => e.name === 'section-16'), 'AGENT BUILDER');
+    setElementText(s.elements.find((e) => e.name === 'signal-label-16'), 'AGENT BUILDER');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '업무 정의부터 실행까지');
+    s.elements.push({ kind: 'shape', geometry: 'line', bbox: [175, 330, 930, 0], lineColor: '#B8C8DD', lineWidth: 3, name: 's17-flow-axis' });
+    const steps = [
+      ['01', '업무 정의', '에이전트 이름 · 설명\n지시사항 · 사용할 모델'],
+      ['02', '실행 자원 연결', '내장 Tool · 기업 MCP Tool\n서브 에이전트'],
+      ['03', 'Version 발행', '저장할 때마다 새 Version 생성\n기존 대화 · 상위 Agent는 이전 Version 참조'],
+      ['04', 'Chat 실행', '활성화한 Agent를 선택해\n실제 요청으로 사용'],
+    ];
+    steps.forEach((step, i) => {
+      const center = 175 + i * 310;
+      s.elements.push({ kind: 'shape', geometry: 'line', bbox: [center, 312, 0, 36], lineColor: '#2878D1', lineWidth: 6, name: `s17-tick-${i}` });
+      s.elements.push(textElement(`s17-no-${i}`, [center - 44, 232, 88, 30], step[0], 16, '#2878D1', true, 'center'));
+      s.elements.push(textElement(`s17-title-${i}`, [center - 150, 270, 300, 34], step[1], 21, '#101728', true, 'center'));
+      s.elements.push(textElement(`s17-body-${i}`, [center - 150, 360, 300, 112], step[2], 15, '#52657D', false, 'center'));
+      if (i < steps.length - 1) s.elements.push(textElement(`s17-arrow-${i}`, [center + 135, 306, 40, 40], '→', 22, '#A6B4C7', false, 'center'));
+    });
+    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 512, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's17-note-band' });
+    s.elements.push(textElement('s17-note-label', [94, 526, 170, 54], 'KEY POINT', 13, '#2878D1', true));
+    s.elements.push(textElement('s17-note-copy', [274, 526, 910, 54], 'Builder에서 고르는 기업 Tool과 모델은 담당자가 서버 주소·인증 정보를 직접 입력하지 않습니다', 17, '#101728', true));
+    s.sources = ['../Jihun_발표준비/deep_agent_deck.html'];
     return s;
   })();
 
