@@ -890,6 +890,507 @@
     });
   })();
 
+  // ===================================================================
+  // 최종 편집 패스 1 — 삭제 지시만 반영 (합치기·문구수정·지훈 데크 이관은 이후 패스)
+  //   렌더 순서에 의존하지 않도록 제목 텍스트 시그니처로 매칭한다.
+  //   · 현재 렌더 기준 삭제: 14 / 16 17 18 / 20 / 24~32 / 50 51 52 53 54 55
+  //   · 현재 49p(EVALUATION PLAN)는 슬라이드 골격만 남기고 본문을 비운다.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+
+    // 49p → '플랫폼 평가' 골격만 남긴 빈 슬라이드 (수치는 이후 직접 채움)
+    const evalPlan = deck.slides.find(
+      (s) => titleOf(s) === norm('플랫폼 규칙을 먼저 통과한 뒤 응답 품질을 측정합니다'),
+    );
+    if (evalPlan) {
+      removeContentArea(evalPlan);
+      setElementText(evalPlan.elements.find((e) => e.name === 'title-48'), '플랫폼 평가');
+      setElementText(evalPlan.elements.find((e) => e.name === 'sub-48'), '');
+      setElementText(evalPlan.elements.find((e) => e.name === 'section-48'), 'EVALUATION');
+      setElementText(evalPlan.elements.find((e) => e.name === 'signal-label-48'), 'EVALUATION');
+      evalPlan.sources = [];
+    }
+
+    const drop = new Set([
+      '배포 구성',
+      'Deep Agent는 계획·위임·기억을 하나의 실행 루프로 연결합니다',
+      '새 Agent는 정의·연결·버전 저장을 거쳐 Graph에 조립됩니다',
+      'Query는 Graph 조립부터 근거 응답까지 통제된 순서로 실행됩니다',
+      '에이전트 생성 파이프라인',
+      '실행 과정을 숨기지 않고 단계별로 보여줍니다',
+      'Versioning은 개발·검증·운영 설정을 분리합니다',
+      '쓰기 호출별 승인·편집·거절',
+      '쓰기 전에 멈추고, 같은 작업은 한 번만 실행합니다',
+      '기준 문서가 프로젝트의 검색 범위를 결정합니다',
+      'Docling을 선택했지만, 비정형 PDF는 그대로 쓰기 어려웠습니다',
+      'Docling 기본 결과를 단계별 게이트로 보정합니다',
+      '읽기 순서 보정은 문서 구조를 실제 순서로 복원합니다',
+      '이미지는 설명과 메타데이터로 검색 문맥에 연결합니다',
+      '평가는 기준선을 쌓고 실패를 다음 실행에 반영했습니다',
+      '성공률보다 실패 원인이 다음 개선점을 만들었습니다',
+      'Skill은 명시적으로 호출하고, 검증된 절차만 재사용합니다',
+      '자연어 한 문장으로 Skill 초안을 시작합니다',
+      '검증된 Skill은 개인·팀 카탈로그에서 관리합니다',
+      '현재 동작과 다음 개선을 분리해 설명합니다',
+    ].map(norm));
+
+    const before = deck.slides.length;
+    deck.slides = deck.slides.filter((s) => !drop.has(titleOf(s)));
+    const removed = before - deck.slides.length;
+    if (removed !== drop.size) {
+      console.warn(`[삭제 패스] 예상 ${drop.size}장 중 ${removed}장만 제거됨 — 제목 시그니처 불일치 확인`);
+    }
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 2 — 합치기 · 문구 수정 (지훈 presentation.html 이관은 제외)
+  //   렌더 순서에 의존하지 않도록 제목 텍스트로 슬라이드를 찾는다.
+  //   A 4+7 합치기 / B 6+8 합치기 / C 5p But / D 11p 회색 제거
+  //   E 04장 진입 영상+구조 재노출 / F 15p 핵심기술 전환 / G 17p 문구 / H 16p 삭제·아키텍처 통합
+  //   I 왜 파서 / J layout 근거 / K 결과 제목 / L 검증+4문제 합치기 / M 네 보완 레이어
+  //   N 읽기순서 레이어 라벨 / O 제목 오분류 / P 표 게이트 수치 %화 / Q 청킹+임베딩 합치기
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    const find = (t) => deck.slides.find((s) => titleOf(s) === norm(t));
+    const drop = (t) => { const s = find(t); if (s) deck.slides.splice(deck.slides.indexOf(s), 1); };
+    const set = (s, name, value, opt) => setElementText(s && s.elements.find((e) => e.name === name), value, opt);
+    const purge = (s, names) => { const k = new Set(names); s.elements = s.elements.filter((e) => !k.has(e.name)); };
+    const bandEl = (name, bbox, fill) => ({ kind: 'shape', geometry: 'rect', bbox, fillColor: fill, lineWidth: 0, name });
+    const hline = (name, x, y, w, color = '#D3DCE8') => ({ kind: 'shape', geometry: 'line', bbox: [x, y, w, 0], lineColor: color, lineWidth: 1, name });
+
+    // ---- A. 시장 변화(4p) + 문제 정의(7p) 합치기 ----
+    (() => {
+      const s = find('AI Agent 도입은 늘지만, 실제 업무 적용은 아직 초기입니다');
+      if (!s) return;
+      removeContentArea(s);
+      set(s, 'title-5', '시장은 AX로 가고 있지만, 두 가지 문제가 발목을 잡습니다');
+      set(s, 'sub-5', '도입·실험은 빠르게 늘지만 실제 업무 확장은 더딥니다. 그 사이에 기업 현장의 두 문제가 있습니다.');
+      set(s, 'signal-label-5', '시장 변화 · 문제 정의');
+      s.elements.push(
+        textElement('mm-stat-l', [74, 210, 210, 80], '62%', 58, '#2878D1', true),
+        textElement('mm-copy-l', [292, 228, 300, 60], 'AI Agent 도입을\n검토·실험 중', 16, '#101728', true),
+        textElement('mm-arrow', [600, 220, 90, 60], '→', 40, '#A6B4C7', false, 'center'),
+        textElement('mm-stat-r', [706, 210, 210, 80], '23%', 58, '#17845E', true),
+        textElement('mm-copy-r', [924, 228, 300, 60], '한 개 이상 업무에서\n확장 운영 중', 16, '#101728', true),
+        textElement('mm-src', [74, 298, 1000, 18], '출처: McKinsey Global Survey on the state of AI, 2025', 10, '#7B8492'),
+        hline('mm-div', 70, 338, 1138),
+        panel('mm-p1', [72, 356, 560, 196], '#FFFFFF', '#D9DEE8'),
+        textElement('mm-p1-no', [96, 372, 200, 24], '문제 1', 14, '#2878D1', true),
+        textElement('mm-p1-t', [96, 400, 512, 32], '흩어진 정보와 작업 환경', 21, '#101728', true),
+        textElement('mm-p1-b', [96, 442, 512, 96], '문서·웹·업무 시스템이 여러 곳에 분산되어\n필요한 정보를 한 번에 활용하기 어렵습니다.', 15, '#52657D'),
+        panel('mm-p2', [648, 356, 560, 196], '#FFFFFF', '#D9DEE8'),
+        textElement('mm-p2-no', [672, 372, 200, 24], '문제 2', 14, '#2878D1', true),
+        textElement('mm-p2-t', [672, 400, 512, 32], '개인에게 머무는 업무 노하우', 21, '#101728', true),
+        textElement('mm-p2-b', [672, 442, 512, 96], '업무 절차와 경험이 개인의 암묵지로 남아\n공유가 어렵고 신규 구성원의 학습이 오래 걸립니다.', 15, '#52657D'),
+        bandEl('mm-bridge-bg', [72, 566, 1136, 50], '#0C3F91'),
+        textElement('mm-bridge', [94, 566, 1092, 50], '시장은 AX로 가는데 이 두 문제가 실제 적용을 늦춥니다 — 그래서 이를 가능하게 하는 플랫폼을 만들고자 했습니다.', 14.5, '#FFFFFF', true, 'center'),
+      );
+    })();
+    drop('기업 업무의 두 가지 문제에 주목했습니다');
+
+    // ---- B. 프로젝트 출발(6p) + 해결 방향(8p) 합치기 ----
+    (() => {
+      const s = find('AX 흐름에서 시작한 HALIL');
+      if (!s) return;
+      removeContentArea(s);
+      set(s, 'title-9', '두 문제를 HALIL은 이렇게 해결하려 했습니다');
+      set(s, 'sub-9', '흩어진 정보는 연결로, 개인의 암묵지는 누구나 만드는 에이전트로 풉니다.');
+      set(s, 'signal-label-9', '해결 방향');
+      s.elements.push(
+        textElement('sx-h0', [94, 200, 300, 24], '문제', 12, '#6E7A90', true),
+        textElement('sx-h1', [420, 200, 430, 24], 'HALIL의 해결', 12, '#6E7A90', true),
+        textElement('sx-h2', [880, 200, 330, 24], '방식', 12, '#6E7A90', true),
+        bandEl('sx-r0', [72, 232, 1136, 150], '#EEF4FC'),
+        textElement('sx-p0', [94, 254, 300, 110], '흩어진 정보', 20, '#101728', true),
+        textElement('sx-s0', [420, 254, 440, 110], '커넥터와 MCP로 연결', 19, '#2878D1', true),
+        textElement('sx-c0', [880, 254, 330, 110], '문서·웹·업무 도구를 한 곳에서 검색·활용', 14.5, '#52657D'),
+        bandEl('sx-r1', [72, 396, 1136, 178], '#F4F6F9'),
+        textElement('sx-p1', [94, 418, 300, 150], '개인 암묵지', 20, '#101728', true),
+        textElement('sx-s1', [420, 418, 440, 150], '누구나 만드는 에이전트', 19, '#2878D1', true),
+        textElement('sx-c1', [880, 418, 330, 150], '커넥터·MCP로 데이터 소스를 받아, 개발자·비개발자 모두 자신의 노하우를 담은 에이전트를 만들고 결과를 확인', 14.5, '#52657D'),
+        textElement('sx-close', [74, 586, 1134, 28], '흩어진 정보와 개인의 업무 방식을 하나의 업무 흐름으로 연결한 플랫폼이 HALIL입니다.', 13.5, '#52657D', false, 'center'),
+      );
+    })();
+    drop('정보는 연결, 업무 방식은 스킬로');
+
+    // ---- C. 선도 서비스(5p) — GLEAN·Copilot도 겨냥, "But" ----
+    (() => {
+      const s = find('먼저 나선 서비스들은 같은 방향으로 수렴합니다');
+      if (s) set(s, 'market-case-takeaway',
+        'GLEAN · Copilot Studio 같은 서비스도 같은 문제를 겨냥합니다\n다만 우리는 기업 현장의 실제 업무를, 비개발자가 직접 만들고 검증하는 데 집중했습니다', { fontSize: 16 });
+    })();
+
+    // ---- D. 구현 과정(11p) — 회색 상세 텍스트 제거 ----
+    (() => {
+      const s = find('설계에서 운영 검증까지의 구현 과정');
+      if (s) purge(s, ['sub-14', 'time-detail-14-0', 'time-detail-14-1', 'time-detail-14-2', 'time-detail-14-3', 'time-detail-14-4', 'time-detail-14-5']);
+    })();
+
+    // ---- E. 04장 진입: 시연 영상 + 시스템 구조 재노출 ----
+    (() => {
+      const dIdx = deck.slides.findIndex((s) => titleOf(s) === '프로젝트 수행 결과' && s.elements.some((e) => /^div-title-/.test(e.name || '')));
+      if (dIdx < 0) return;
+      const videoSlide = {
+        background: '#F7F6F1',
+        elements: [
+          textElement('demo2-title', [58, 60, 1160, 40], '먼저, 완성된 플랫폼 시연을 보시겠습니다', 22, '#0A1020', true),
+          panel('demo2-frame', [60, 120, 1160, 486], '#071426', '#26364B'),
+          videoElement('demo2-player', [66, 126, 1148, 474], '../halil_프로젝트_운영_AI_시연영상_v14_피드백반영.mp4'),
+        ],
+        sources: ['../halil_프로젝트_운영_AI_시연영상_v14_피드백반영.mp4'],
+      };
+      const archSlide = clone(find('UI부터 실행·통제까지 연결된 시스템 구조'));
+      if (archSlide) set(archSlide, 'context-16', 'halil   ·   04 프로젝트 수행 결과');
+      deck.slides.splice(dIdx + 1, 0, ...(archSlide ? [videoSlide, archSlide] : [videoSlide]));
+    })();
+
+    // ---- F. AGENT LIFECYCLE(15p) → 핵심 기술 전환 슬라이드 ----
+    (() => {
+      const s = find('에이전트 생성과 사용자 질의 요청');
+      if (!s) return;
+      purge(s, ['s16-create-name', 's16-query-name', 's16-create-img', 's16-query-img', 's16-create-frame', 's16-query-frame', 's16-flow-label', 's16-flow-arrow']);
+      set(s, 'title-16', '이제, 이 흐름을 가능하게 한 핵심 기술입니다');
+      set(s, 'section-16', 'CORE TECHNOLOGY');
+      set(s, 'signal-label-16', 'CORE TECHNOLOGY');
+      s.elements.push(
+        textElement('frm-lead', [80, 236, 1120, 110], '방금 보신 것처럼, HALIL은 문서와 도구를 연결하고 · Agent를 만들고 · 실제 업무 요청을 수행합니다.', 21, '#20283A'),
+        panel('frm-q-bg', [80, 388, 1120, 168], '#EEF4FC', '#2878D1'),
+        textElement('frm-q', [112, 412, 1056, 120], 'Agent가 Tool을 선택하고 실행하고, 실패하면 다시 판단하고,\n필요하면 다른 Agent에게 위임하는 이 흐름 — 누가 관리하는가?', 20, '#0C3F91', true),
+      );
+    })();
+
+    // ---- G. AGENT HARNESS(17p) 문구 ----
+    (() => {
+      const s = find('Deep Agent는 에이전트 실행 하네스입니다');
+      if (s) set(s, 's19-note-copy', '이 판단–실행–재시도 흐름을 관리하는 구조가 Agent Harness이며, 프로젝트에서는 LangChain Deep Agents를 활용했습니다.');
+    })();
+
+    // ---- H. REQUEST PIPELINE(16p) 삭제 → AGENT RUNTIME(18p)에 아키텍처 통합 ----
+    drop('요청 도착부터 실행까지 파이프라인');
+    (() => {
+      const s = find('Deep Agent 실행 구조 전체 도면');
+      if (!s) return;
+      const c = s.elements.find((e) => e.name === 's20-canvas');
+      const d = s.elements.find((e) => e.name === 's20-diagram');
+      if (c) c.bbox = [150, 214, 980, 428];
+      if (d) d.bbox = [160, 224, 960, 408];
+      s.elements.push(textElement('rt-cap', [58, 158, 1160, 44],
+        'Agent Harness / Deep Agent — 판단·실행·재시도·위임을 관리하는 이 구조가 플랫폼의 핵심 뼈대입니다.', 14.5, '#52657D', false, 'center'));
+    })();
+
+    // ---- I. WHY DOCLING(19p) — 파서를 쓰는 이유로 재프레이밍 ----
+    (() => {
+      const s = find('왜 도클링인가');
+      if (!s) return;
+      set(s, 'title-2', '엔터프라이즈가 파서를 쓰는 이유');
+      set(s, 'sub-2', '다양한 형식의 문서를 검색 가능한 구조로 바꾸려면 파서가 필요합니다. 그중 커뮤니티가 가장 큰 프로젝트가 Docling입니다.');
+    })();
+
+    // ---- J. BASE PIPELINE(20p) — Layout 단계 집중 근거 ----
+    (() => {
+      const s = find('PDF는 12단계를 거쳐 DoclingDocument가 됩니다');
+      if (!s) return;
+      const pl = s.elements.find((e) => e.name === 'plabel-3');
+      if (pl) pl.bbox = [58, 516, 1100, 20];
+      s.elements.push(
+        panel('bp-note-bg', [58, 542, 1160, 72], '#FFF4E6', '#F0D9B8'),
+        textElement('bp-note', [80, 548, 1120, 60],
+          '집중한 단계는 Layout입니다. Docling Layout 모델은 논문·정형 문서로 학습돼 형식이 다양한 문서에서는 정확도가 떨어집니다. 기업 문서는 정형만 있지 않기에 자유도가 높은 브로슈어 문서로 개선했습니다.',
+          13, '#8A5A1A', false, 'center'),
+      );
+    })();
+
+    // ---- K. PARSED RESULT(21p) 제목 ----
+    (() => { const s = find('실제 파싱 결과 예시'); if (s) set(s, 'title-4', 'Docling 기본 파이프라인의 실제 결과'); })();
+
+    // ---- L. VALIDATION(22p) + FOUR ISSUES(23p) 합치기 ----
+    (() => {
+      const s = find('206개 문서로 파싱 정확도를 검증했습니다');
+      if (!s) return;
+      removeContentArea(s);
+      set(s, 'title-5', '206개 문서로 검증해 보니, Docling만으로는 부족했습니다');
+      set(s, 'section-5', 'VALIDATION · ISSUES');
+      set(s, 'foot-5', 'VALIDATION · ISSUES');
+      s.elements.push(textElement('vi-lead', [60, 200, 1160, 44],
+        '정형 문서는 안정적이었지만 브로슈어형 PDF에서 정확도가 크게 낮아졌고, 네 가지 문제가 반복됐습니다.', 15, '#20283A'));
+      [
+        ['01', '제목 미검출', 'section_header 인식 실패로 섹션 경계가 사라지고 맥락이 뒤섞입니다'],
+        ['02', '읽기 순서 오류', '문장 연결이 끊겨 원래 의미와 다른 결과가 만들어집니다'],
+        ['03', '표 오검출 · 구조 붕괴', '표가 아닌 디자인을 표로 오인하거나 행·열·셀 관계가 손상됩니다'],
+        ['04', '이미지 설명 부족', '검색에 활용할 수 있는 이미지 설명 정보가 없습니다'],
+      ].forEach((r, i) => {
+        const y = 262 + i * 76;
+        s.elements.push(
+          hline(`vi-div-${i}`, 60, y - 12, 1160, '#E1E6EE'),
+          textElement(`vi-no-${i}`, [60, y, 56, 28], r[0], 18, '#2878D1', true),
+          textElement(`vi-t-${i}`, [128, y - 2, 320, 34], r[1], 19, '#0A1020', true),
+          textElement(`vi-d-${i}`, [456, y, 760, 40], r[2], 14, '#20283A'),
+        );
+      });
+      s.elements.push(textElement('vi-ref', [60, 590, 1160, 20],
+        '참고: DocLayNet(arXiv:2206.01062) · ICDAR 2023 — 형식 다양성을 문서 변환의 핵심 난제로 정의', 10, '#8792A6', false, 'center'));
+    })();
+    drop('문서 파싱 결과에서 확인된 네 가지 문제');
+
+    // ---- M. LAYER DESIGN(24p) — 오른쪽 항목을 네 개 보완 레이어로 ----
+    (() => {
+      const s = find('네 개의 보완 레이어');
+      if (!s) return;
+      purge(s, ['pn-7-0', 'pt-7-0', 'pd-7-0', 'pn-7-1', 'pt-7-1', 'pd-7-1', 'pn-7-2', 'pt-7-2', 'pd-7-2']);
+      [
+        ['01', '읽기 순서 보완', '화면 좌표를 비교해 인접 요소의 뒤바뀐 순서만 교정합니다'],
+        ['02', '제목 추출 보완', 'list_item을 조건부로 section_header로 승격해 섹션 경계를 복원합니다'],
+        ['03', '표 판별 (Table Gate)', '표가 아닌 디자인을 규칙으로 걸러 오검출을 제거합니다'],
+        ['04', '이미지 설명 보완', 'VLM과 문맥 우선순위로 검색용 이미지 설명을 생성합니다'],
+      ].forEach((r, i) => {
+        const y = 198 + i * 100;
+        s.elements.push(
+          textElement(`ld-no-${i}`, [534, y, 40, 28], r[0], 18, '#2878D1', true),
+          textElement(`ld-t-${i}`, [578, y, 560, 28], r[1], 18, '#0A1020', true),
+          textElement(`ld-d-${i}`, [578, y + 32, 560, 48], r[2], 13.5, '#20283A'),
+        );
+      });
+    })();
+
+    // ---- N. 읽기 순서 사례(25p) — 보완 레이어 라벨 ----
+    (() => {
+      const s = find('읽기 순서가 뒤바뀐 실제 사례');
+      if (s) { set(s, 'section-8', 'LAYER 01 · READING ORDER'); set(s, 'foot-8', 'LAYER 01 · READING ORDER'); }
+    })();
+
+    // ---- O. 제목 추출(26·27p) — 오분류 프레이밍 ----
+    (() => {
+      const s = find('한화 브로슈어에서 확인된 오분류');
+      if (s) { set(s, 'section-10', 'HEADING · 오분류 사례'); set(s, 'foot-10', 'HEADING · 오분류 사례'); }
+    })();
+    (() => {
+      const s = find('list_item을 section_header로 승격하는 조건');
+      if (s) { set(s, 'title-11', '제목 오분류를 바로잡는 승격 조건'); set(s, 'section-11', 'HEADING · 보정 로직'); set(s, 'foot-11', 'HEADING · 보정 로직'); }
+    })();
+
+    // ---- P. 표 게이트 사례(29p) — 건수를 %로 ----
+    (() => {
+      const s = find('표로 오인식된 비표 사례');
+      if (!s) return;
+      set(s, 'sv-12-0', '100%'); set(s, 'sl-12-0', '전체 TableItem 대조 (28,885건)');
+      set(s, 'sv-12-1', '0.46%'); set(s, 'sl-12-1', '확실한 비표로 확정 제거 (134건)');
+      set(s, 'sv-12-2', '0%'); set(s, 'sl-12-2', '실제 표를 잘못 제거 (0건)');
+    })();
+
+    // ---- Q. CHUNKING 직렬화(33p) + 임베딩(34p) 합치기 ----
+    (() => {
+      const s = find('계층 구조를 유지한 채 직렬화합니다');
+      if (!s) return;
+      removeContentArea(s);
+      set(s, 'title-16', '계층 구조를 유지해 직렬화하고 EmbeddingGemma로 임베딩합니다');
+      set(s, 'sub-16', '파싱 데이터를 일직선으로 직렬화한 뒤, 같은 tokenizer로 자르고 임베딩합니다');
+      set(s, 'section-16', 'CHUNKING · 임베딩');
+      set(s, 'foot-16', 'CHUNKING · 임베딩');
+      s.elements.push(
+        textElement('ck-s-h', [58, 202, 700, 24], '직렬화', 15, '#2878D1', true),
+        textElement('ck-s-b', [58, 232, 1160, 170],
+          '텍스트·표·목록·제목은 Docling 기본 시리얼라이저를 그대로 사용하고, 그림만 커스텀 시리얼라이저를 만들었습니다. 승인된 VLM 설명이 있으면 그 설명 텍스트만 임베딩 대상으로 쓰고, 없으면 Docling 기본 그림·메타데이터 시리얼라이저로 대체합니다.',
+          14, '#20283A'),
+        hline('ck-div', 58, 420, 1160, '#E1E6EE'),
+        textElement('ck-e-h', [58, 432, 700, 24], '임베딩', 15, '#2878D1', true),
+        textElement('ck-v-0', [58, 466, 362, 30], 'embeddinggemma-300m', 17, '#2878D1', true),
+        textElement('ck-l-0', [58, 500, 362, 44], '임베딩 모델', 13, '#6C7482'),
+        textElement('ck-v-1', [445, 466, 362, 30], '768차원', 17, '#2878D1', true),
+        textElement('ck-l-1', [445, 500, 362, 44], '임베딩 벡터 크기', 13, '#6C7482'),
+        textElement('ck-v-2', [831, 466, 362, 30], '512 토큰', 17, '#2878D1', true),
+        textElement('ck-l-2', [831, 500, 362, 44], '청크 상한 (모델 최대 2,048토큰 중 보수적 설정)', 13, '#6C7482'),
+        textElement('ck-note', [58, 574, 1160, 24],
+          '토큰 계산에도 임베딩과 같은 모델의 tokenizer를 사용합니다 — 자를 때와 임베딩할 때 기준이 다르면 상한이 무의미해지기 때문입니다.', 10.5, '#8792A6', false, 'center'),
+      );
+    })();
+    drop('EmbeddingGemma로 토큰을 계산하고 임베딩합니다');
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 3 — 5·6p 순서 교체, 34~40p·43·44p 삭제
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    const at = (t) => deck.slides.findIndex((s) => titleOf(s) === norm(t));
+
+    // 5p(선도 서비스) ↔ 6p(HALIL 해결) 순서 교체
+    const a = at('먼저 나선 서비스들은 같은 방향으로 수렴합니다');
+    const b = at('두 문제를 HALIL은 이렇게 해결하려 했습니다');
+    if (a >= 0 && b >= 0) {
+      const tmp = deck.slides[a];
+      deck.slides[a] = deck.slides[b];
+      deck.slides[b] = tmp;
+    }
+
+    // 34~40p(스킬 3장 + 운영·보안·확장 + 시연 흐름), 43·44p(향후 과제·자체 평가) 삭제
+    const dropSet = new Set([
+      '검증한 Skill만 등록해 반복 업무에 재사용',
+      '필요한 요청과 불필요한 요청을 검증한 뒤 등록',
+      '개인이 만든 업무 방식을 팀이 같은 절차로 실행',
+      '운영 정책과 실행 이력을 제품과 분리해 관리합니다',
+      '제품과 운영의 통제 경계',
+      '연동과 확장 지점',
+      '시연은 구성·근거·승인의 한 흐름으로 진행합니다',
+      '다음 단계는 근거 정밀도·라우팅·운영 검증입니다',
+      '강점은 연결성, 남은 과제는 검증 범위입니다',
+    ].map(norm));
+    const before = deck.slides.length;
+    deck.slides = deck.slides.filter((s) => !dropSet.has(titleOf(s)));
+    if (before - deck.slides.length !== dropSet.size) {
+      console.warn(`[패스3] 예상 ${dropSet.size}장 중 ${before - deck.slides.length}장만 삭제됨 — 제목 시그니처 확인`);
+    }
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 4 — 지훈 presentation.html 49·50p(= deep_agent_deck 7·8:
+  //   "등록 검증" · "스킬 사용 전후 비교")를 34p(DEMO RESULT) 뒤에 이미지로 추가.
+  //   원본이 별도 HTML/CSS 프레임워크라 렌더 그대로 캡처해 full-bleed 이미지로 삽입.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    const at = deck.slides.findIndex((s) => titleOf(s) === norm('전체 기능은 실제 시연 영상으로 확인합니다'));
+    if (at < 0) { console.warn('[패스4] DEMO RESULT 슬라이드를 찾지 못함'); return; }
+    const shot = (name, media) => ({
+      background: '#F7F6F1',
+      elements: [imageElement(name, [0, 0, 1280, 720], media, 'contain')],
+      sources: ['docs/발표자료/최종발표/halil_html - 지훈/presentation.html (49·50p)',
+        'docs/발표자료/최종발표/Jihun_발표준비/deep_agent_deck.html (slide 7·8)'],
+    });
+    deck.slides.splice(at + 1, 0,
+      shot('jihun-skill-eval', 'jihun-skill-eval.png'),
+      shot('jihun-skill-compare', 'jihun-skill-compare.png'),
+    );
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 5 — halil_html_ops_4pages(운영 콘솔 4장, 동일 스키마)를
+  //   36p("스킬 사용 전후 비교") 뒤에 네이티브로 추가. (ops-4pages-data.js 필요)
+  // ===================================================================
+  (() => {
+    const src = window.HALIL_OPS_SLIDES;
+    if (!Array.isArray(src) || !src.length) { console.warn('[패스5] HALIL_OPS_SLIDES 미로드 — ops-4pages-data.js 확인'); return; }
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    let at = deck.slides.findIndex((s) => s.elements.some((e) => e.name === 'jihun-skill-compare'));
+    if (at < 0) at = deck.slides.findIndex((s) => titleOf(s) === norm('전체 기능은 실제 시연 영상으로 확인합니다')) + 2;
+    if (at < 1) { console.warn('[패스5] 삽입 기준 슬라이드를 찾지 못함'); return; }
+    deck.slides.splice(at + 1, 0, ...src.map((s) => clone(s)));
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 6 — halil_html_agent_v2 21~27p(평가 섹션 7장, 동일 스키마)로
+  //   비어 있던 '플랫폼 평가' 자리표시자(패스1의 title-48 슬라이드)를 교체.
+  //   (agent-v2-eval-data.js 필요)
+  // ===================================================================
+  (() => {
+    const src = window.HALIL_AGENTV2_SLIDES;
+    if (!Array.isArray(src) || !src.length) { console.warn('[패스6] HALIL_AGENTV2_SLIDES 미로드 — agent-v2-eval-data.js 확인'); return; }
+    const at = deck.slides.findIndex((s) => s.elements.some((e) => e.name === 'title-48'));
+    if (at < 0) { console.warn('[패스6] 플랫폼 평가 자리표시자를 찾지 못함'); return; }
+    deck.slides.splice(at, 1, ...src.map((s) => clone(s)));
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 7 — '사용자 편의 기능' 챕터 표지(내용 슬라이드는 패스3에서 삭제됨)
+  //   와 지훈 '등록 검증' 이미지 슬라이드 삭제.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const before = deck.slides.length;
+    deck.slides = deck.slides.filter((s) => {
+      const isConvDivider = s.elements.some((e) => /^div-title-/.test(e.name || '') && norm(e.text) === '사용자 편의 기능');
+      const isSkillEvalImg = s.elements.some((e) => e.name === 'jihun-skill-eval');
+      return !isConvDivider && !isSkillEvalImg;
+    });
+    if (before - deck.slides.length !== 2) {
+      console.warn(`[패스7] 예상 2장 중 ${before - deck.slides.length}장만 삭제됨`);
+    }
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
   function byNameFor(targetSlide, name, value, options) {
     setElementText(targetSlide.elements.find((element) => element.name === name), value, options);
   }
