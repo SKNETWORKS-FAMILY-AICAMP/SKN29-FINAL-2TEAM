@@ -71,3 +71,8 @@ ml_label.log
 
 # pptx 를 뜯어보는 도구가 파일마다 남기는 검사 기록. 원본 pptx 에서 다시 만든다.
 *.inspect.ndjson
+
+# 브라우저 화면 녹화 원본 (Chrome 녹화 기능이 만드는 `... - Chrome YYYY-MM-DD HH-MM-SS.mp4`
+# 파일명 패턴). 편집한 시연 영상은 docs/발표자료/최종발표/ 에 커밋하지만, 수백 MB 짜리
+# 원본 녹화는 로컬에만 둔다.
+*- Chrome ????-??-?? ??-??-??.mp4
