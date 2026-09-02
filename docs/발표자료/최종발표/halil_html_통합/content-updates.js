@@ -1548,6 +1548,26 @@
   })();
 
   // ===================================================================
+  // 최종 편집 패스 10.6 — 개요 4·5·6p 를 juneok(프로젝트개요_v4) 재설계 본문으로 교체.
+  //   4=AI Agent 도입과 업무 확장 / 5=시장과 선도 서비스 / 6=플랫폼 방향(HALIL).
+  //   크롬은 내 덱 것 유지(패스11), 제목은 juneok 것으로.
+  // ===================================================================
+  (() => {
+    const O = window.HALIL_JUNEOK_OVERVIEW;
+    if (!O) { console.warn('[juneok 개요 이식] HALIL_JUNEOK_OVERVIEW 미로드 — juneok-overview.js 확인'); return; }
+    const KEEP = /^(top-accent|top-rule|context-|section-|page-|title-|accent-|ctx-logo|inst-logo|signal-|foot-)/;
+    [4, 5, 6].forEach((pg) => {
+      const j = O[pg];
+      const s = deck.slides[pg - 1]; // 1~6p 는 재배치 대상이 아님 → 인덱스 고정
+      if (!s || !j || !Array.isArray(j.els)) { console.warn(`[juneok 개요 이식] ${pg}p 대상/데이터 없음`); return; }
+      s.background = j.bg || s.background;
+      s.elements = s.elements.filter((e) => KEEP.test(e.name || '')).concat(clone(j.els));
+      const t = s.elements.find((e) => /^title-/.test(e.name || ''));
+      if (t) setElementText(t, j.title);
+    });
+  })();
+
+  // ===================================================================
   // 최종 편집 패스 11 — 전 내용 장표의 상단·하단 크롬 통일.
   //   · 좌측 context: wonbin → 'halil · 04 프로젝트 수행 결과'
   //   · 중앙 section: 한글 라벨 + 중앙정렬(bbox [430,51,420,22]), 없으면 생성
@@ -1720,9 +1740,7 @@
   (() => {
     const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
     const REWRITE = {
-      '시장은 AX로 가고 있지만, 두 가지 문제가 발목을 잡습니다': '시장 변화와 두 문제',
-      '두 문제를 HALIL은 이렇게 해결하려 했습니다': 'HALIL의 해결 방향',
-      '먼저 나선 서비스들은 같은 방향으로 수렴합니다': '선도 서비스의 공통 방향',
+      // 개요 4·5·6p 제목은 패스10.6(juneok 재설계 이식)에서 확정 — 여기서 손대지 않음
       '설계에서 운영 검증까지의 구현 과정': '구현 과정 6단계',
       '화면·실행·검색·검증을 하나의 흐름으로': '시스템 흐름 한눈에',
       'UI부터 실행·통제까지 연결된 시스템 구조': '전체 시스템 구조',

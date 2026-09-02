@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ctx = vm.createContext({ window: {}, console });
-for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'juyeon-slides.js', 'docling20.js', 'content-updates.js']) {
+for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'juyeon-slides.js', 'juneok-overview.js', 'docling20.js', 'content-updates.js']) {
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx);
 }
 const slides = ctx.window.HALIL_DECK.slides;
@@ -69,16 +69,16 @@ for (const t of [
 
 // --- 패스2 합치기 + 패스14 축약 제목 존재 ---
 for (const t of [
-  '시장 변화와 두 문제',
-  'HALIL의 해결 방향',
+  'AI Agent 도입과 업무 확장',
+  'AI Agent 시장과 선도 서비스',
   '검증 결과, Docling의 한계',
   '직렬화와 임베딩',
 ]) assert.ok(has(t), `합치기 결과 제목이 없음: ${t}`);
 
-// --- 패스3: 5·6p 순서 교체 (제목은 패스14 축약) ---
-assert.equal(titleOf(4), '시장 변화와 두 문제', '4는 시장+문제');
-assert.equal(titleOf(5), 'HALIL의 해결 방향', '5는 HALIL 해결 (구 6p)');
-assert.equal(titleOf(6), '선도 서비스의 공통 방향', '6은 선도 서비스 (구 5p)');
+// --- 패스10.6: 개요 4·5·6p 를 juneok(프로젝트개요_v4) 재설계 본문으로 교체 ---
+assert.equal(titleOf(4), 'AI Agent 도입과 업무 확장', '4는 도입·업무 확장 (juneok)');
+assert.equal(titleOf(5), 'AI Agent 시장과 선도 서비스', '5는 시장·선도 서비스 (juneok)');
+assert.equal(titleOf(6), '기업 Agent 플랫폼, HALIL', '6은 플랫폼 방향 (juneok)');
 
 // --- 04장 진입: 챕터 표지 → 시연 영상 → 시스템 구조 재노출 ---
 assert.equal(titleOf(12), '프로젝트 수행 결과', '12는 04 챕터 표지');
