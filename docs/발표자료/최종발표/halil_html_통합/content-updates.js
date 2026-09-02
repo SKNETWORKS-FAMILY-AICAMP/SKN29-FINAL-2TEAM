@@ -1786,19 +1786,33 @@
         s.elements.push(imageElement(`ctx-logo-${i + 1}`, [58, 51, 34, 16], 'halil-logo.png', 'contain'));
       }
     });
+    // 챕터 표지에도 좌상단 halil 워드마크 (밝은 배경 → 원본 색).
+    deck.slides.forEach((s, i) => {
+      if (!s.elements.some((e) => /^div-title-/.test(e.name || ''))) return;
+      if (s.elements.some((e) => e.name === 'cover-logo')) return;
+      s.elements.push(imageElement(`cover-logo-${i + 1}`, [64, 44, 46, 22], 'halil-logo.png', 'contain'));
+    });
   })();
 
   // ===================================================================
   // 최종 편집 패스 16.5 — 마지막 Q&A 장표 단순화 + '감사합니다' 장표 추가.
   // ===================================================================
   (() => {
-    // 다크 배경이라 흰 받침 대신 로고를 흰색 실루엣으로 처리한다.
-    const DARK_LOGO = 'brightness(0) invert(1)';
+    // 기관 로고는 원본 색을 유지하고 아담한 라운드 흰 배지 위에 얹는다.
+    const badge = (n) => ({ kind: 'shape', geometry: 'roundRect', bbox: [1006, 642, 228, 36], fillColor: '#FFFFFF', lineWidth: 0, name: n });
+    const instLogos = (aName, bName) => [
+      imageElement(aName, [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
+      imageElement(bName, [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
+    ];
+    const DARK_LOGO = 'brightness(0) invert(1)'; // halil 워드마크(제품 브랜드)는 다크 배경에서 화이트 리버스
+
     const qa = deck.slides.find((s) => s.elements.some((e) => e.name === 'closing-qa'));
     if (qa) {
-      qa.elements = qa.elements.filter((e) => /^(closing-top|그림 |inst-logo-)/.test(e.name || ''));
-      qa.elements.forEach((e) => { if (e.kind === 'image') e.filter = DARK_LOGO; });
+      qa.elements = qa.elements.filter((e) => e.name === 'closing-top');
       qa.elements.push(
+        imageElement('qa-halil-logo', [58, 48, 42, 20], 'halil-logo.png', 'contain', DARK_LOGO),
+        badge('qa-inst-badge'),
+        ...instLogos('qa-inst-a', 'qa-inst-b'),
         textElement('qa-big', [0, 262, 1280, 170], 'Q&A', 120, '#F8C944', true, 'center'),
         textElement('qa-brand', [0, 600, 1280, 30], 'halil · 프로젝트 운영 Agent Platform', 14, '#6E7A90', false, 'center'),
       );
@@ -1807,11 +1821,12 @@
       background: '#071426',
       elements: [
         { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 7], fillColor: '#F8C944', lineWidth: 0, name: 'thanks-top' },
+        imageElement('thanks-halil-logo', [58, 48, 42, 20], 'halil-logo.png', 'contain', DARK_LOGO),
         textElement('thanks-big', [0, 236, 1280, 170], '감사합니다', 110, '#FFFFFF', true, 'center'),
         textElement('thanks-team', [0, 420, 1280, 34], 'TEAM 2 · HALIL', 20, '#F8C944', true, 'center'),
         textElement('thanks-brand', [0, 460, 1280, 30], '프로젝트 운영 Agent Platform', 15, '#94A5BA', false, 'center'),
-        imageElement('thanks-logo-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain', DARK_LOGO),
-        imageElement('thanks-logo-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain', DARK_LOGO),
+        badge('thanks-inst-badge'),
+        ...instLogos('thanks-logo-a', 'thanks-logo-b'),
       ],
     };
     deck.slides.push(thanks);
