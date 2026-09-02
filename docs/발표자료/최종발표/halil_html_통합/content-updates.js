@@ -1849,4 +1849,27 @@
       if (!hasB) s.elements.push(imageElement(`inst-logo-b-${i + 1}`, BOX_B.slice(), 'image3.png', 'contain'));
     });
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 17 — 20p 를 팀원 전달 인터랙티브(DoclingDocument 구조화)로 재구성.
+  //   레이아웃·동작은 docling20.js. 여기선 골격만: 크롬 유지 + 제목 교체 + html 요소 1개.
+  //   index.html 이 kind:'html' 을 in-document 로 주입하고 HALIL_DOCLING20.init 로 ←→ 동작 연결.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) => {
+      const t = sl.elements.find((e) => /^title-/.test(e.name || ''));
+      return t && norm(t.text) === '기본 파이프라인 결과';
+    });
+    if (!s) { console.warn('[패스17] 20p 슬라이드를 찾지 못함'); return; }
+    const KEEP = /^(top-accent|top-rule|context-|page-|title-|accent-|ctx-logo|inst-logo)/;
+    s.elements = s.elements.filter((e) => KEEP.test(e.name || ''));
+    setElementText(s.elements.find((e) => /^title-/.test(e.name || '')), '문서를 읽기 순서와 요소별 구조로 저장합니다');
+    if (window.HALIL_DOCLING20) {
+      s.elements.push({ kind: 'html', name: 'dl20', bbox: [40, 156, 1200, 500], html: window.HALIL_DOCLING20.HTML });
+      s.doclingInteractive = true;
+    } else {
+      console.warn('[패스17] HALIL_DOCLING20 미로드 — docling20.js 확인');
+    }
+  })();
 })();

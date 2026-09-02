@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ctx = vm.createContext({ window: {}, console });
-for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'juyeon-slides.js', 'content-updates.js']) {
+for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'juyeon-slides.js', 'docling20.js', 'content-updates.js']) {
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx);
 }
 const slides = ctx.window.HALIL_DECK.slides;
@@ -35,7 +35,15 @@ assert.deepEqual(
   Array.from({ length: 47 }, (_, i) => i + 1),
   '재배치 후 번호는 1~47 연속',
 );
-assert.equal(slides.filter((s) => s.elements.some((e) => e.kind === 'html')).length, 0, 'iframe 슬라이드는 없어야 한다');
+// 패스17: 20p 만 kind:'html'(in-document 주입, iframe 아님) 1개 허용.
+(() => {
+  const htmlSlides = slides.filter((s) => s.elements.some((e) => e.kind === 'html'));
+  assert.equal(htmlSlides.length, 1, 'kind:html 슬라이드는 20p 하나뿐');
+  const s = htmlSlides[0];
+  assert.equal(titleOf(slides.indexOf(s) + 1), '문서를 읽기 순서와 요소별 구조로 저장합니다', '20p 는 DoclingDocument 인터랙티브');
+  assert.ok(s.doclingInteractive === true && s.elements.some((e) => e.name === 'dl20'), '20p 에 dl20 요소 + doclingInteractive 플래그');
+  assert.ok(s.elements.some((e) => /^context-/.test(e.name || '')) && s.elements.some((e) => /^ctx-logo/.test(e.name || '')), '20p 크롬(context·로고) 유지');
+})();
 
 // --- 사라져야 하는 원본 제목 (패스1·2·3 누적) ---
 for (const t of [
