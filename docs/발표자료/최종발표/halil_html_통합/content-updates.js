@@ -1905,4 +1905,21 @@
       console.warn('[패스17] HALIL_DOCLING20 미로드 — docling20.js 확인');
     }
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 18 — 전 장표 하단 푸터를 더 아래로 내림.
+  //   기관 로고(image2/image3) top 647 → 680, 좌하단 파란 강조선 top 660 → 693
+  //   (둘의 세로 중심 관계는 그대로: delta +33).
+  // ===================================================================
+  (() => {
+    deck.slides.forEach((s) => {
+      s.elements.forEach((e) => {
+        if (e.kind === 'image' && (e.media === 'image2.png' || e.media === 'image3.png')) {
+          e.bbox = [e.bbox[0], 680, e.bbox[2], e.bbox[3]];
+        } else if (/^accent-/.test(e.name || '')) {
+          e.bbox = [e.bbox[0], 693, e.bbox[2], e.bbox[3]];
+        }
+      });
+    });
+  })();
 })();
