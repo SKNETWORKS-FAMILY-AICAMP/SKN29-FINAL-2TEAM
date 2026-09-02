@@ -28,13 +28,14 @@ const titleOf = (n) => norm((slides[n - 1].elements.find((e) => /^(title-|div-ti
 const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
-// --- 전체 규모 --- (46장 + 패스16.5 '감사합니다' 1장 = 47장)
-assert.equal(slides.length, 47, '46장 + 감사합니다 1장 = 47장');
+// --- 전체 규모 --- (47장 - 패스27 '이미지 설명의 세 문제' 삭제 = 46장)
+assert.equal(slides.length, 46, '47장 - 이미지 설명의 세 문제 1장 = 46장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 47 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~47 연속',
+  Array.from({ length: 46 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~46 연속',
 );
+assert.ok(!slides.some((_, i) => titleOf(i + 1) === '이미지 설명의 세 문제'), '29p(세 문제)는 삭제됨');
 // 패스17: 20p 만 kind:'html'(in-document 주입, iframe 아님) 1개 허용.
 (() => {
   const htmlSlides = slides.filter((s) => s.elements.some((e) => e.kind === 'html'));
@@ -99,20 +100,19 @@ assert.equal(
 // --- Agent 상세 3장 (패스13 juyeon + 패스14 축약 제목) ---
 assert.deepEqual([15, 16, 17].map(titleOf), ['Agent 생성과 질의 요청', 'Deep Agent Harness', 'Deep Agent 실행 구조'], '15~17 제목');
 
-// --- 원빈 파싱: 18~31 (패스11: context 헤더를 halil 04로 통일) ---
-const wonbin = slides.slice(17, 31);
-assert.equal(wonbin.length, 14, '18~31이 원빈 파싱 14장');
+// --- 원빈 파싱: 18~30 (패스27 로 '이미지 설명의 세 문제' 1장 삭제 → 13장) ---
+const wonbin = slides.slice(17, 30);
+assert.equal(wonbin.length, 13, '18~30이 원빈 파싱 13장 (세 문제 삭제)');
 wonbin.forEach((s, i) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
   assert.ok((c?.text || '').includes('04 프로젝트 수행 결과'), `원빈 ${18 + i}장 컨텍스트 헤더는 halil 04로 통일`);
 });
 
-// --- 표 게이트 수치 %  ---
+// --- 27p 표 오인식 사례: 합성 격자 예시로 재구성 (수치 sv-12-* 는 삭제됨) ---
 (() => {
   const s = slides.find((_, i) => titleOf(i + 1) === '표 오인식 사례');
   assert.ok(s, '표 게이트 사례 슬라이드 존재');
-  const vals = s.elements.filter((e) => /^sv-12-/.test(e.name || '')).map((e) => norm(e.text)).join(' · ');
-  assert.equal(vals, '100% · 0.46% · 0%', '표 게이트 대표 수치는 %');
+  assert.ok(!s.elements.some((e) => /^sv-12-/.test(e.name || '')), '27p 하단 수치(sv-12-*)는 제거됨');
 })();
 
 // --- 패스6: 빈 '플랫폼 평가' 자리표시자가 agent_v2 평가 7장으로 교체됨 ---
@@ -121,11 +121,11 @@ assert.ok(
   '빈 플랫폼 평가 자리표시자(title-48)는 더 이상 없어야 한다',
 );
 assert.deepEqual(
-  [32, 33, 34, 35, 36, 37, 38].map(titleOf),
+  [31, 32, 33, 34, 35, 36, 37].map(titleOf),
   ['판정 체계', '플랫폼 평가', '기능 작동 평가', '평가 대상과 기준', '시나리오별 판정 초점', '시나리오 운영 평가', '운영 평가 실패 사례'],
-  '32~38은 평가 섹션 7장 (패스13 juyeon 제목 + 패스14 축약)',
+  '31~37은 평가 섹션 7장 (세 문제 삭제로 1p 당겨짐)',
 );
-assert.ok(slides.slice(31, 38).every((s) => {
+assert.ok(slides.slice(30, 37).every((s) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
   return (c?.text || '').includes('04 프로젝트 수행 결과');
 }), '평가 7장 context 헤더는 04 프로젝트 수행 결과');
@@ -133,25 +133,25 @@ assert.ok(slides.slice(31, 38).every((s) => {
 // --- 꼬리(패스7 이후): DEMO RESULT → 지훈 '스킬 사용 전후 비교' 1장 → 운영 콘솔 4장 → 자체 평가 표지 → 클로징 ---
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
-assert.equal(titleOf(39), '전체 기능 시연 영상', '39는 시연 영상 슬라이드');
-// 패스10.5: 40p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
-assert.equal(titleOf(40), '스킬 사용 전후 비교', '40은 스킬 사용 전후 비교 (네이티브)');
+assert.equal(titleOf(38), '전체 기능 시연 영상', '38는 시연 영상 슬라이드');
+// 패스10.5: 39p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
+assert.equal(titleOf(39), '스킬 사용 전후 비교', '39는 스킬 사용 전후 비교 (네이티브)');
 assert.ok(
-  slides[39].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[39].elements.some((e) => e.name === 'sc-t-tot-4'),
-  '40은 juyeon 네이티브 표 셀(sc-t-*)로 구성',
+  slides[38].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[38].elements.some((e) => e.name === 'sc-t-tot-4'),
+  '39는 juyeon 네이티브 표 셀(sc-t-*)로 구성',
 );
 assert.ok(
-  !slides[39].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
-  '40에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
+  !slides[38].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
+  '39에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
 );
-assert.ok(slides[39].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '40 타이틀 요소');
+assert.ok(slides[38].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '39 타이틀 요소');
 assert.deepEqual(
-  [41, 42, 43, 44].map(titleOf),
+  [40, 41, 42, 43].map(titleOf),
   ['운영 상태 통합 관리', '연결 서비스·모델 구성', '커스텀 도구·가드레일 관리', '실행 현황·도구 사용 추적'],
-  '41~44는 운영 콘솔 4장',
+  '40~43은 운영 콘솔 4장',
 );
-assert.equal(titleOf(45), '자체 평가 의견', '45는 05 챕터 표지');
-assert.ok(slides[45].elements.some((e) => (e.text || '').includes('Q&A')), '46은 클로징/Q&A 슬라이드');
+assert.equal(titleOf(44), '자체 평가 의견', '44는 05 챕터 표지');
+assert.ok(slides[44].elements.some((e) => (e.text || '').includes('Q&A')), '45는 클로징/Q&A 슬라이드');
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
 const missing = [];

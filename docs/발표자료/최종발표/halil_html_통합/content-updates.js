@@ -2123,46 +2123,46 @@
     s.elements = s.elements.filter((e) => e.name !== 'diag-13');
 
     const CX = 640;
-    const rrect = (name, bbox, fill, lc, lw = 1.5) => ({ kind: 'shape', geometry: 'roundRect', bbox, fillColor: fill, lineColor: lc, lineWidth: lw, name });
-    const ln = (name, bbox) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: '#9AA0A6', lineWidth: 1.5, name });
-    const dn = (name, x, y) => textElement(name, [x - 12, y, 24, 20], '↓', 15, '#9AA0A6', true, 'center');
+    const rrect = (name, bbox, fill, lc, lw = 1.4) => ({ kind: 'shape', geometry: 'roundRect', bbox, fillColor: fill, lineColor: lc, lineWidth: lw, name });
+    const ln = (name, bbox) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: '#8892A3', lineWidth: 1.8, name });
+    const dn = (name, x, y) => textElement(name, [x - 11, y, 22, 16], '▼', 12, '#5B6676', true, 'center');
     const els = [];
 
-    // 1) 입력
-    els.push(rrect('tg-in', [CX - 140, 190, 280, 52], '#EFEEE9', '#BDB8AC'));
-    els.push(textElement('tg-in-t', [CX - 140, 190, 280, 52], 'TableItem 입력', 14, '#3A3A3A', true, 'center'));
-    els.push(dn('tg-a0', CX, 246));
+    // 1) 입력 (24·26·30p 와 동일 팔레트)
+    els.push(rrect('tg-in', [CX - 140, 190, 280, 52], '#F2F4F7', '#B9C0CC'));
+    els.push(textElement('tg-in-t', [CX - 140, 190, 280, 52], 'TableItem 입력', 14, '#3A4658', true, 'center'));
+    els.push(ln('tg-l0', [CX, 244, 0, 20]), dn('tg-a0', CX, 256));
 
     // 2) 비표 패턴 확인 컨테이너 + 6개 규칙
-    els.push(rrect('tg-cont', [190, 274, 900, 160], '#FBFAF6', '#D8D3C6', 1));
-    els.push(textElement('tg-cont-h', [190, 284, 900, 22], '비표 패턴 확인 (6개 규칙)', 13, '#6B4A1F', true, 'center'));
+    els.push(rrect('tg-cont', [190, 274, 900, 160], '#FBFCFE', '#D8DEE8', 1));
+    els.push(textElement('tg-cont-h', [190, 284, 900, 22], '비표 패턴 확인 (6개 규칙)', 13, '#123D7A', true, 'center'));
     ['점선 목차', '제목·페이지목록', '단일 셀조각', '불릿 텍스트', '서술문 조각', '전폭 페이지목록']
       .forEach((t, i) => {
         const x = 214 + (i % 3) * 290, y = 318 + Math.floor(i / 3) * 56;
-        els.push(rrect(`tg-r${i}`, [x, y, 270, 42], '#FBEEDD', '#E6B579', 1.2));
-        els.push(textElement(`tg-rt${i}`, [x, y, 270, 42], t, 12, '#7A4A1F', false, 'center'));
+        els.push(rrect(`tg-r${i}`, [x, y, 270, 42], '#F5F7FB', '#CDD6E4', 1.2));
+        els.push(textElement(`tg-rt${i}`, [x, y, 270, 42], t, 12, '#1A2740', false, 'center'));
       });
 
     // 3) 분기 (컨테이너 → REJECT / PASS)
-    els.push(ln('tg-f-v0', [CX, 434, 0, 18]));
-    els.push(ln('tg-f-h', [475, 452, 330, 0]));
-    els.push(ln('tg-f-vl', [475, 452, 0, 16]));
-    els.push(ln('tg-f-vr', [805, 452, 0, 16]));
+    els.push(ln('tg-f-v0', [CX, 434, 0, 16]));
+    els.push(ln('tg-f-h', [475, 450, 330, 0]));
+    els.push(ln('tg-f-vl', [475, 450, 0, 12]), dn('tg-fa-l', 475, 452));
+    els.push(ln('tg-f-vr', [805, 450, 0, 12]), dn('tg-fa-r', 805, 452));
 
-    els.push(rrect('tg-rej', [325, 470, 300, 66], '#FBECEC', '#DFA3A3'));
+    els.push(rrect('tg-rej', [325, 470, 300, 66], '#FDECEC', '#DC5B5B'));
     els.push(textElement('tg-rej-t', [325, 478, 300, 24], 'REJECT', 15, '#B23A3A', true, 'center'));
-    els.push(textElement('tg-rej-s', [325, 506, 300, 18], '해당 → 비표 제외', 11, '#A05A5A', false, 'center'));
+    els.push(textElement('tg-rej-s', [325, 506, 300, 18], '해당 → 비표 제외', 11, '#B23A3A', false, 'center'));
 
-    els.push(rrect('tg-pass', [655, 470, 300, 66], '#EAF3E4', '#9FC58A'));
-    els.push(textElement('tg-pass-t', [655, 478, 300, 24], 'PASS', 15, '#3E7A34', true, 'center'));
-    els.push(textElement('tg-pass-s', [655, 506, 300, 18], '미해당 → 표 유지', 11, '#5A8A4E', false, 'center'));
+    els.push(rrect('tg-pass', [655, 470, 300, 66], '#E7F4EC', '#3FA46B'));
+    els.push(textElement('tg-pass-t', [655, 478, 300, 24], 'PASS', 15, '#17603C', true, 'center'));
+    els.push(textElement('tg-pass-s', [655, 506, 300, 18], '미해당 → 표 유지', 11, '#17603C', false, 'center'));
 
     // 4) PASS → 저장 (엘보)
-    els.push(ln('tg-e-v', [805, 536, 0, 18]));
-    els.push(ln('tg-e-h', [CX, 554, 165, 0]));
-    els.push(dn('tg-a2', CX, 554));
-    els.push(rrect('tg-out', [CX - 140, 572, 280, 52], '#EFEEE9', '#BDB8AC'));
-    els.push(textElement('tg-out-t', [CX - 140, 572, 280, 52], '보완된 표 정보 저장', 13.5, '#3A3A3A', true, 'center'));
+    els.push(ln('tg-e-v', [805, 536, 0, 16]));
+    els.push(ln('tg-e-h', [CX, 552, 165, 0]));
+    els.push(ln('tg-e-v2', [CX, 552, 0, 16]), dn('tg-a2', CX, 558));
+    els.push(rrect('tg-out', [CX - 140, 576, 280, 52], '#F2F4F7', '#B9C0CC'));
+    els.push(textElement('tg-out-t', [CX - 140, 576, 280, 52], '보완된 표 정보 저장', 13.5, '#3A4658', true, 'center'));
 
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
     s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
@@ -2224,7 +2224,10 @@
       st.textContent = '.el[title^="lp-t-"] .text-inner,.el[title^="lp-t-"] .text-inner p{line-height:12px}'
         + '.el[title*="-nt"] .text-inner,.el[title*="-nt"] .text-inner p,.el[title*="-nt"] .text-inner span,'
         + '.el[title*="-lb"] .text-inner,.el[title*="-lb"] .text-inner p,.el[title*="-lb"] .text-inner span,'
-        + '.el[title*="-tag"] .text-inner,.el[title*="-tag"] .text-inner p,.el[title*="-tag"] .text-inner span{line-height:1}';
+        + '.el[title*="-tag"] .text-inner,.el[title*="-tag"] .text-inner p,.el[title*="-tag"] .text-inner span{line-height:1}'
+        + '.el[title^="ro24-"] .text-inner p,.el[title^="hd26-"] .text-inner p,.el[title^="im30-"] .text-inner p,.el[title^="idp-"] .text-inner p,'
+        + '.el[title^="ro24-"] .text-inner span,.el[title^="hd26-"] .text-inner span,.el[title^="im30-"] .text-inner span,.el[title^="idp-"] .text-inner span{line-height:16px}'
+        + '.el[title^="idpL-"] .text-inner p,.el[title^="idpL-"] .text-inner span{line-height:15px}';
       document.head.appendChild(st);
     }
   })();
@@ -2240,7 +2243,12 @@
     if (!s) { console.warn('[패스23] 23p(ro_*.png) 슬라이드를 찾지 못함'); return; }
     s.elements = s.elements.filter((e) => !['imgb-8', 'imga-8'].includes(e.name || ''));
 
-    const FRAG = ['이 보고서의 검증 범위는', '지속가능경영 성과 데이터와', '내부 검토 프로세스를', '포함합니다'];
+    const FRAG = [
+      '검증 범위는 2024년 보고 기간 전체입니다.',
+      '먼저 성과 데이터를 수집합니다.',
+      '다음으로 내부 검토 절차를 점검합니다.',
+      '마지막으로 근거의 신뢰성을 확인합니다.',
+    ];
     const dot = (name, bbox, fill) => ({ kind: 'shape', geometry: 'ellipse', bbox, fillColor: fill, lineColor: fill, lineWidth: 1, name });
     const ln = (name, bbox) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: '#E1E6EE', lineWidth: 1, name });
 
@@ -2254,121 +2262,407 @@
     lab('bl-8', 'BEFORE · Docling이 매긴 읽기 순서', 58);
     lab('al-8', 'AFTER · 좌표 재비교로 보정', 658);
 
-    const PANW = 560, PY = 222, PANH = 372, RY = PY + 46, RP = 52;
+    const PANW = 560, PY = 222, PANH = 372, RY = PY + 44, RP = 46;
     const side = (x, order, accent, verdict, vColor, resultTxt) => {
       const els = [];
       const pf = x === 58 ? 'b' : 'a';
       els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, PY, PANW, PANH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `ro-${pf}-pan` });
-      els.push(textElement(`ro-${pf}-h`, [x + 24, PY + 14, PANW - 48, 18], '원문 4줄 (위 → 아래)', 11, '#6E7A90'));
+      els.push(textElement(`ro-${pf}-h`, [x + 24, PY + 12, PANW - 48, 18], '원문 4줄 (위 → 아래)', 11, '#6E7A90'));
       FRAG.forEach((frag, i) => {
         const y = RY + i * RP;
         const n = order[i];
         const swapped = accent && n !== i + 1;
-        if (swapped) els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x + 16, y - 8, PANW - 32, 46], fillColor: '#FDECEC', lineColor: '#F6D5D5', lineWidth: 1, name: `ro-${pf}-hl${i}` });
-        els.push(dot(`ro-${pf}-n${i}`, [x + 24, y, 30, 30], swapped ? '#DC5B5B' : accent ? '#9AA4B2' : '#2878D1'));
-        els.push(textElement(`ro-${pf}-nt${i}`, [x + 24, y, 30, 30], String(n), 14, '#FFFFFF', true, 'center'));
-        els.push(textElement(`ro-${pf}-l${i}`, [x + 68, y, PANW - 100, 30], frag, 14, '#0A1020'));
+        if (swapped) els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x + 16, y - 7, PANW - 32, 40], fillColor: '#FDECEC', lineColor: '#F6D5D5', lineWidth: 1, name: `ro-${pf}-hl${i}` });
+        els.push(dot(`ro-${pf}-n${i}`, [x + 24, y, 28, 28], swapped ? '#DC5B5B' : accent ? '#9AA4B2' : '#2878D1'));
+        els.push(textElement(`ro-${pf}-nt${i}`, [x + 24, y, 28, 28], String(n), 13, '#FFFFFF', true, 'center'));
+        els.push(textElement(`ro-${pf}-l${i}`, [x + 66, y, PANW - 96, 28], frag, 13.5, '#0A1020'));
       });
-      els.push(ln(`ro-${pf}-div`, [x + 24, PY + 264, PANW - 48, 0]));
-      els.push(textElement(`ro-${pf}-sl`, [x + 24, PY + 276, 120, 16], '읽은 순서', 10.5, '#6E7A90'));
-      els.push(textElement(`ro-${pf}-sq`, [x + 24, PY + 294, PANW - 48, 24], order.join('   →   '), 18, vColor, true));
-      els.push(textElement(`ro-${pf}-rs`, [x + 24, PY + 328, PANW - 48, 18], resultTxt, 10.5, '#52657D'));
-      els.push(textElement(`ro-${pf}-vd`, [x + 24, PY + 350, PANW - 48, 16], verdict, 12, vColor, true));
+      els.push(ln(`ro-${pf}-div`, [x + 24, PY + 228, PANW - 48, 0]));
+      els.push(textElement(`ro-${pf}-sl`, [x + 24, PY + 240, 120, 16], '읽은 순서', 10.5, '#6E7A90'));
+      els.push(textElement(`ro-${pf}-sq`, [x + 24, PY + 258, PANW - 48, 24], order.join('   →   '), 18, vColor, true));
+      els.push(textElement(`ro-${pf}-rs`, [x + 24, PY + 292, PANW - 48, 18], resultTxt, 10.5, '#52657D'));
+      els.push(textElement(`ro-${pf}-vd`, [x + 24, PY + 314, PANW - 48, 16], verdict, 12, vColor, true));
       return els;
     };
 
     s.elements.push(
-      ...side(58, [1, 3, 2, 4], true, '→ 문장이 끊겨 의미가 뒤엉킵니다', '#B23A3A',
-        '결과: “검증 범위는 · 내부 검토 프로세스를 · 지속가능경영 성과 데이터와 · 포함합니다”'),
+      ...side(58, [1, 3, 2, 4], true, '→ 절차 순서가 뒤바뀌어 내용이 어긋납니다', '#B23A3A',
+        '결과: “다음으로 …” 문장이 “먼저 …” 앞에 와 단계 순서가 뒤집힙니다.'),
       ...side(658, [1, 2, 3, 4], false, '→ 원래 문장 순서로 복원', '#17845E',
-        '결과: “검증 범위는 · 지속가능경영 성과 데이터와 · 내부 검토 프로세스를 · 포함합니다”'),
+        '결과: 먼저 → 다음으로 → 마지막으로, 단계 순서가 그대로 유지됩니다.'),
     );
   })();
 
   // ===================================================================
-  // 최종 편집 패스 24 — 25p('제목 오분류 사례') 합성 네이티브 BEFORE/AFTER.
-  //   같은 문서 블록에 대해 Docling 라벨(BEFORE) vs 보정 라벨(AFTER) 을 비교.
+  // 최종 편집 패스 24 — 25p('제목 오분류 사례') 합성 네이티브 (원문 vs Docling 파싱).
+  //   좌: 사람 눈에 제목/본문 위계가 뚜렷한 원문.
+  //   우: Docling 파싱 결과 — 같은 형식인데 위 제목은 text 로 분류돼 제목 지위를 잃음.
   // ===================================================================
   (() => {
     const s = deck.slides.find((sl) =>
       sl.elements.some((e) => e.kind === 'image' && /^hanwha_(doc|layout)\.png$/.test(e.media || '')));
     if (!s) { console.warn('[패스24] 25p(hanwha_*.png) 슬라이드를 찾지 못함'); return; }
-    s.elements = s.elements.filter((e) => !['img1-10', 'img2-10'].includes(e.name || ''));
+    s.elements = s.elements.filter((e) => !['img1-10', 'img2-10', 'l1-10', 'l2-10'].includes(e.name || ''));
 
-    const ROWS = [
-      ['Asia-Pacific', true], ['Shanghai · 200233 New Caohejing Rd', false],
-      ['Tel +86.21.5427.1155', false], ['Europe', true],
-      ['Berlin · 10115 Chausseestrasse', false],
+    const PANW = 560, PY = 214, PANH = 380;
+    // 6줄 공통 y (좌·우 패널이 같은 높이에서 매칭되도록)
+    const RY = [PY + 46, PY + 92, PY + 128, PY + 190, PY + 236, PY + 272];
+    const BODY = [
+      '상하이·톈진·베트남 3개 사무소 운영 · 주소와 연락처는 아래 정리',
+      '지역 담당자와 대표 전화는 사내 인트라넷에서도 확인 가능',
+      '베를린·뮌헨 2개 사무소 운영 · 주소와 연락처는 아래 정리',
+      '지역 담당자와 대표 전화는 사내 인트라넷에서도 확인 가능',
     ];
-    const lab = (nm, text, x) => {
-      const e = s.elements.find((el) => el.name === nm);
-      if (!e) return; e.bbox = [x, 198, 560, 20];
-      setElementText(e, text, { fontSize: 13, bold: true });
-    };
-    lab('l1-10', 'BEFORE · Docling 레이아웃 라벨', 58);
-    lab('l2-10', 'AFTER · 보정 후 라벨', 658);
+    const HEAD_A = '아시아·태평양 지역 현황', HEAD_B = '유럽 지역 현황';
+    const els = [];
 
-    const PANW = 560, PY = 222, PANH = 372;
-    const pill = (name, bbox, txt, bg, bd, tc) => [
-      { kind: 'shape', geometry: 'roundRect', bbox, fillColor: bg, lineColor: bd, lineWidth: 1, name },
-      textElement(`${name}-t`, bbox, txt, 10, tc, true, 'center'),
-    ];
-    const side = (x, headingLabel, verdict, vColor, resultTxt) => {
-      const els = [];
-      const pf = x === 58 ? 'b' : 'a';
-      const bad = headingLabel === 'text';
-      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, PY, PANW, PANH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `hd-${pf}-pan` });
-      ROWS.forEach(([txt, isHead], i) => {
-        const y = PY + 24 + i * 46;
-        if (isHead && bad) els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x + 14, y - 6, PANW - 28, 40], fillColor: '#FDECEC', lineColor: '#F6D5D5', lineWidth: 1, name: `hd-${pf}-hl${i}` });
-        const lbl = isHead ? headingLabel : 'text';
-        const red = isHead && bad;
-        const grn = isHead && !bad;
-        els.push(...pill(`hd-${pf}-lb${i}`, [x + 20, y, 122, 26],
-          lbl, red ? '#FDECEC' : grn ? '#E7F4EC' : '#F1F3F6',
-          red ? '#DC5B5B' : grn ? '#17845E' : '#DBE0E8',
-          red ? '#B23A3A' : grn ? '#17845E' : '#8A93A3'));
-        els.push(textElement(`hd-${pf}-l${i}`, [x + 156, y, PANW - 180, 26], txt, isHead ? 14 : 12.5, isHead ? '#0A1020' : '#52657D', isHead));
-      });
-      els.push({ kind: 'shape', geometry: 'line', bbox: [x + 22, PY + 268, PANW - 44, 0], lineColor: '#E1E6EE', lineWidth: 1, name: `hd-${pf}-div` });
-      els.push(textElement(`hd-${pf}-rs`, [x + 22, PY + 284, PANW - 44, 40], resultTxt, 11, '#52657D'));
-      els.push(textElement(`hd-${pf}-vd`, [x + 22, PY + 336, PANW - 44, 16], verdict, 12, vColor, true));
-      return els;
-    };
-    s.elements.push(
-      ...side(58, 'text', '→ 지역 구분이 사라집니다', '#B23A3A',
-        '결과: 섹션 경계가 없어 “Asia-Pacific” 검색에 “Europe” 주소까지 함께 반환됩니다.'),
-      ...side(658, 'section_header', '→ 섹션 경계 복원', '#17845E',
-        '결과: 지역별 섹션으로 분리돼 해당 지역 정보만 정확히 검색됩니다.'),
+    // ---- 좌: 원문 (제목 크고 굵게, 본문 작고 들여쓰기) ----
+    els.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [58, PY, PANW, PANH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: 'hd-l-pan' },
+      textElement('hd-l-h', [58 + 24, PY + 14, PANW - 48, 16], '원문 — 제목·본문 위계가 뚜렷', 11, '#6E7A90'),
+      textElement('hd-l-h0', [58 + 28, RY[0], PANW - 56, 28], HEAD_A, 18, '#0A1020', true),
+      { kind: 'shape', geometry: 'line', bbox: [58 + 28, RY[0] + 30, 260, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'hd-l-u0' },
+      textElement('hd-l-b0', [58 + 44, RY[1], PANW - 84, 24], BODY[0], 12, '#52657D'),
+      textElement('hd-l-b1', [58 + 44, RY[2], PANW - 84, 24], BODY[1], 12, '#52657D'),
+      textElement('hd-l-h1', [58 + 28, RY[3], PANW - 56, 28], HEAD_B, 18, '#0A1020', true),
+      { kind: 'shape', geometry: 'line', bbox: [58 + 28, RY[3] + 30, 200, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'hd-l-u1' },
+      textElement('hd-l-b2', [58 + 44, RY[4], PANW - 84, 24], BODY[2], 12, '#52657D'),
+      textElement('hd-l-b3', [58 + 44, RY[5], PANW - 84, 24], BODY[3], 12, '#52657D'),
+      textElement('hd-l-cap', [58 + 28, PY + PANH - 40, PANW - 56, 24],
+        '→ 굵기·크기로 “제목 2개”가 한눈에 구분됩니다', 12, '#17845E', true),
     );
+
+    // ---- 우: Docling 파싱 결과 (블록별 label) ----
+    const X = 658;
+    const pill = (name, y, txt, bg, bd, tc) => [
+      { kind: 'shape', geometry: 'roundRect', bbox: [X + 22, y + 3, 122, 22], fillColor: bg, lineColor: bd, lineWidth: 1, name },
+      textElement(`${name}-t`, [X + 22, y + 3, 122, 22], txt, 10, tc, true, 'center'),
+    ];
+    els.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [X, PY, PANW, PANH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: 'hd-r-pan' },
+      textElement('hd-r-h', [X + 24, PY + 14, PANW - 48, 16], 'Docling 파싱 결과 — 블록별 label', 11, '#6E7A90'),
+    );
+    // 위 제목: list_item 으로 분류(오류) → 본문과 같은 평범한 스타일로 렌더
+    els.push({ kind: 'shape', geometry: 'roundRect', bbox: [X + 14, RY[0] - 6, PANW - 28, 34], fillColor: '#FDECEC', lineColor: '#F6D5D5', lineWidth: 1, name: 'hd-r-hl0' });
+    els.push(...pill('hd-r-lb0', RY[0], 'list_item', '#FDECEC', '#DC5B5B', '#B23A3A'));
+    els.push(textElement('hd-r-t0', [X + 156, RY[0], PANW - 186, 24], `• ${HEAD_A}`, 12, '#52657D'));
+    els.push(textElement('hd-r-n0', [X + 156, RY[0] + 24, PANW - 186, 16], '제목인데 목록 항목(list_item)으로 분류됨', 9.5, '#B23A3A'));
+    // 본문 2줄
+    els.push(...pill('hd-r-lb1', RY[1], 'text', '#F1F3F6', '#DBE0E8', '#8A93A3'));
+    els.push(textElement('hd-r-t1', [X + 156, RY[1], PANW - 186, 24], BODY[0], 11, '#52657D'));
+    els.push(...pill('hd-r-lb2', RY[2], 'text', '#F1F3F6', '#DBE0E8', '#8A93A3'));
+    els.push(textElement('hd-r-t2', [X + 156, RY[2], PANW - 186, 24], BODY[1], 11, '#52657D'));
+    // 아래 제목: section_header 로 정상 → 굵게
+    els.push(...pill('hd-r-lb3', RY[3], 'section_header', '#E7F4EC', '#17845E', '#17845E'));
+    els.push(textElement('hd-r-t3', [X + 156, RY[3], PANW - 186, 24], HEAD_B, 14, '#0A1020', true));
+    els.push(...pill('hd-r-lb4', RY[4], 'text', '#F1F3F6', '#DBE0E8', '#8A93A3'));
+    els.push(textElement('hd-r-t4', [X + 156, RY[4], PANW - 186, 24], BODY[2], 11, '#52657D'));
+    els.push(...pill('hd-r-lb5', RY[5], 'text', '#F1F3F6', '#DBE0E8', '#8A93A3'));
+    els.push(textElement('hd-r-t5', [X + 156, RY[5], PANW - 186, 24], BODY[3], 11, '#52657D'));
+    els.push({ kind: 'shape', geometry: 'line', bbox: [X + 24, PY + PANH - 58, PANW - 48, 0], lineColor: '#E1E6EE', lineWidth: 1, name: 'hd-r-div' });
+    els.push(textElement('hd-r-cap', [X + 28, PY + PANH - 44, PANW - 56, 24],
+      '→ 같은 형식인데 위 제목만 list_item 으로 분류돼 제목 지위를 잃습니다', 12, '#B23A3A', true));
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
   })();
 
   // ===================================================================
-  // 최종 편집 패스 25 — 27p('표 오인식 사례') 합성 네이티브 (목차줄 → 표 오검출) + 기존 통계 유지.
+  // 최종 편집 패스 25 — 27p('표 오인식 사례') 합성 네이티브.
+  //   격자처럼 보이는 비(非)표 패턴 3가지를 각각 예시로 (원본 table_grid_examples.png 참고).
+  //   하단 통계(sv-12-*, sl-12-*)는 삭제.
   // ===================================================================
   (() => {
     const s = deck.slides.find((sl) =>
       sl.elements.some((e) => e.kind === 'image' && e.media === 'table_grid_examples.png'));
     if (!s) { console.warn('[패스25] 27p(table_grid_examples.png) 슬라이드를 찾지 못함'); return; }
-    s.elements = s.elements.filter((e) => e.name !== 'img-12');
+    s.elements = s.elements.filter((e) => !/^(img-12|sv-12-|sl-12-)/.test(e.name || ''));
 
-    const PX = 140, PW = 1000, PY = 214, PH = 236;
-    const els = [
-      { kind: 'shape', geometry: 'roundRect', bbox: [PX, PY, PW, PH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: 'tm-pan' },
-      textElement('tm-h', [PX + 26, PY + 16, PW - 52, 18],
-        "Docling 판정: 아래 3줄을 각각 table (1행 2열) 로 인식 — 실제는 목차 텍스트", 11.5, '#B23A3A', true),
-    ];
-    [['환경경영 조직운영 체계', '28'], ['자원순환 및 폐기물 관리', '34'], ['기후변화 대응 (TCFD)', '17']]
-      .forEach(([title, pg], i) => {
-        const y = PY + 50 + i * 50;
-        const bx = PX + 28, bw = PW - 56;
-        els.push({ kind: 'shape', geometry: 'roundRect', bbox: [bx, y, bw, 40], fillColor: '#FFFBFB', lineColor: '#E3A9A9', lineWidth: 1.4, name: `tm-r${i}` });
-        els.push({ kind: 'shape', geometry: 'line', bbox: [bx + bw - 150, y + 5, 0, 30], lineColor: '#E3A9A9', lineWidth: 1.2, name: `tm-rv${i}` });
-        els.push(textElement(`tm-rt${i}`, [bx + 20, y, bw - 200, 40], `${title}   ·······················`, 13, '#0A1020'));
-        els.push(textElement(`tm-rp${i}`, [bx + bw - 150, y, 150, 40], pg, 13, '#0A1020', true, 'center'));
+    const RED = '#E04B4B', REDT = '#B23A3A';
+    const line = (name, bbox, color, w) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: color, lineWidth: w, name });
+    const CY = 212, CW = 372, CH = 234, GAP = 22;
+    const XS = [58, 58 + CW + GAP, 58 + 2 * (CW + GAP)]; // 58, 452, 846
+    const GX = 20, GW = CW - 40, GY = CY + 44; // 카드 안 격자 좌표
+
+    const els = [textElement('tm-head', [58, 190, 1160, 18],
+      'Docling 이 “표”로 오검출한 격자형 목차 3가지 — 실제로는 모두 텍스트', 12, '#52657D', true)];
+
+    // 붉은 표 격자: 외곽 + 행 구분선 + 지정 열 구분선
+    const grid = (p, x, gh, rows, colXs) => {
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [x + GX, GY, GW, gh], fillColor: 'transparent', lineColor: RED, lineWidth: 1.4, name: `${p}-gb` });
+      for (let r = 1; r < rows; r++) els.push(line(`${p}-gh${r}`, [x + GX, GY + Math.round(r * gh / rows), GW, 0], RED, 1));
+      colXs.forEach((cx, k) => els.push(line(`${p}-gv${k}`, [x + GX + cx, GY, 0, gh], RED, 1)));
+    };
+    const card = (x, tag, verdict, truth, drawInner) => {
+      const p = `tm${XS.indexOf(x)}`;
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `${p}-pan` });
+      els.push(
+        { kind: 'shape', geometry: 'roundRect', bbox: [x + 18, CY + 13, 128, 20], fillColor: '#F1F3F6', lineColor: '#DBE0E8', lineWidth: 1, name: `${p}-tag` },
+        textElement(`${p}-tag-t`, [x + 18, CY + 13, 128, 20], tag, 10, '#52657D', true, 'center'),
+      );
+      drawInner(x, p);
+      els.push(line(`${p}-div`, [x + 18, CY + CH - 54, CW - 36, 0], '#E1E6EE', 1));
+      els.push(textElement(`${p}-vd`, [x + 18, CY + CH - 44, CW - 36, 18], verdict, 11.5, REDT, true));
+      els.push(textElement(`${p}-cs`, [x + 18, CY + CH - 24, CW - 36, 16], truth, 9.5, '#6E7A90'));
+    };
+    const rowT = (p, x, i, y, h, txt, tx, tw, al) =>
+      els.push(textElement(`${p}-${i}`, [x + GX + tx, y, tw, h], txt, 10, '#1A2230', false, al || 'left'));
+
+    // 패턴 1 — 점선 리더 + 우측 정렬 페이지 번호 → 2열 표로 오검출
+    card(XS[0], '점선 리더 목차', 'Docling: table · 5 × 2', '실제: 점 리더로 이어진 5줄 목차 텍스트', (x, p) => {
+      const rows = 5, gh = 108, pcol = GW - 46, rh = gh / rows;
+      grid(p, x, gh, rows, [pcol]);
+      [['6. 지적재산권 등 보유 현황', '852'], ['7. 핵심 연구인력 현황', '857'],
+        ['8. 연구개발 진행 현황', '859'], ['9. 지적재산권 보유 현황', '865'],
+        ['10. 주요 종속회사 현황', '867']].forEach(([t, pg], i) => {
+        const y = GY + i * rh;
+        rowT(p, x, `l${i}`, y, rh, `${t}  ································`, 10, pcol - 18);
+        rowT(p, x, `p${i}`, y, rh, pg, pcol, 46, 'center');
       });
-    els.push(textElement('tm-cap', [PX + 26, PY + PH - 26, PW - 52, 18],
-      '점선 리더 + 우측 페이지 번호 패턴이 1행 2열 표로 오검출됩니다.', 11, '#6E7A90', false, 'center'));
+    });
+
+    // 패턴 2 — 라벨·번호 열이 좌우로 반복 정렬 → 4열 표로 오검출
+    card(XS[1], '다단 정렬 목차', 'Docling: table · 4 × 4', '실제: 3단으로 편집된 목차 (라벨 + 페이지)', (x, p) => {
+      const rows = 4, gh = 96, rh = gh / rows;
+      const c1 = Math.round(GW * 0.36), c2 = Math.round(GW * 0.52), c3 = Math.round(GW * 0.88);
+      grid(p, x, gh, rows, [c1, c2, c3]);
+      [['Our Company', '04', 'Planet', '10'], ['회사소개', '05', '추진체계', '11'],
+        ['Principle', '61', 'Facts & Figures', '65'], ['윤리경영', '63', '사업부문', '72']]
+        .forEach((r, i) => {
+          const y = GY + i * rh;
+          rowT(p, x, `a${i}`, y, rh, r[0], 8, c1 - 12);
+          rowT(p, x, `b${i}`, y, rh, r[1], c1, c2 - c1, 'center');
+          rowT(p, x, `c${i}`, y, rh, r[2], c2 + 6, c3 - c2 - 8);
+          rowT(p, x, `d${i}`, y, rh, r[3], c3, GW - c3, 'center');
+        });
+    });
+
+    // 패턴 3 — 항목마다 가로 구분선 → 5행 표로 오검출
+    card(XS[2], '행 구분선 목차', 'Docling: table · 5 × 2', '실제: 항목 사이 장식용 구분선이 있는 목차', (x, p) => {
+      const rows = 5, gh = 108, pcol = GW - 46, rh = gh / rows;
+      grid(p, x, gh, rows, [pcol]);
+      [['기후변화 대응(TCFD)', '17'], ['환경경영 조직운영 체계', '28'], ['자원순환', '29'],
+        ['제품책임', '34'], ['사업장 운영', '38']].forEach(([t, pg], i) => {
+        const y = GY + i * rh;
+        rowT(p, x, `l${i}`, y, rh, t, 10, pcol - 18);
+        rowT(p, x, `p${i}`, y, rh, pg, pcol, 46, 'center');
+      });
+    });
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 26 — 24·26·30p 로직 다이어그램(mermaid SVG)을 네이티브 flow 로.
+  //   공통 구조: 입력 → 판정 → 4개 기준(분기) → [제외] → 실행 → [품질검사] → 저장.
+  // ===================================================================
+  (() => {
+    const LC = '#8892A3'; // 커넥터
+    const vl = (nm, x, y, h) => ({ kind: 'shape', geometry: 'line', bbox: [x, y, 0, h], lineColor: LC, lineWidth: 1.8, name: nm });
+    const hl = (nm, x, y, w) => ({ kind: 'shape', geometry: 'line', bbox: [x, y, w, 0], lineColor: LC, lineWidth: 1.8, name: nm });
+    const arw = (nm, x, y) => textElement(nm, [x - 11, y, 22, 16], '▼', 12, '#5B6676', true, 'center');
+    const KIND = {
+      io: ['#F2F4F7', '#B9C0CC', '#3A4658'],
+      decide: ['#EAF2FF', '#8FB4EF', '#123D7A'],
+      crit: ['#F5F7FB', '#CDD6E4', '#1A2740'],
+      filter: ['#FFF6E9', '#EAD3A8', '#7A5A1E'],
+      act: ['#E7F4EC', '#3FA46B', '#17603C'],
+    };
+    const box = (nm, bbox, txt, kind, fs) => {
+      const [f, l, t] = KIND[kind];
+      return [
+        { kind: 'shape', geometry: 'roundRect', bbox, fillColor: f, lineColor: l, lineWidth: 1.4, name: nm },
+        textElement(`${nm}-t`, bbox, txt, fs || 13, t, kind !== 'crit', 'center'),
+      ];
+    };
+
+    // 공통 빌더: 세로 flow. steps = [{txt,kind,h}], crits = [4 라벨]
+    const build = (pfx, cx, top, boxW, crit, layout) => {
+      const els = [];
+      const { critCols, critW, critH, gap } = layout;
+      let y = top;
+      const step = (txt, kind, w, h) => {
+        els.push(...box(`${pfx}-${step.n = (step.n || 0) + 1}`, [cx - w / 2, y, w, h], txt, kind));
+        y += h;
+      };
+      const LH = layout.linkH || 20;
+      const link = (h = LH) => {
+        const n = link.n = (link.n || 0) + 1;
+        els.push(vl(`${pfx}-v${n}`, cx, y, h - 6));           // 선은 박스 6px 앞에서 멈춤
+        els.push(arw(`${pfx}-a${n}`, cx, y + h - 16));         // 삼각형은 선 끝 + 박스 위 여백에
+        y += h;
+      };
+
+      step(layout.inTxt, 'io', boxW, layout.ioH || 48);
+      link();
+      step(layout.decideTxt, 'decide', layout.decideW || boxW - 20, layout.decideH || 40);
+
+      // 분기: 판정 → 4 기준
+      const rows = Math.ceil(4 / critCols);
+      const totalW = critCols * critW + (critCols - 1) * gap;
+      const cx0 = cx - totalW / 2;
+      const critTop = y + 26;
+      els.push(vl(`${pfx}-fanv`, cx, y, 14), hl(`${pfx}-fanh`, cx0 + critW / 2, y + 14, totalW - critW));
+      crit.forEach((c, i) => {
+        const col = i % critCols, row = Math.floor(i / critCols);
+        const bx = cx0 + col * (critW + gap), by = critTop + row * (critH + 16);
+        if (row === 0) els.push(vl(`${pfx}-cv${i}`, bx + critW / 2, y + 14, 12));
+        els.push(...box(`${pfx}-c${i}`, [bx, by, critW, critH], c, 'crit', 12));
+      });
+      y = critTop + rows * critH + (rows - 1) * 16;
+      // 수렴 (선 → 버스 → 아래로 → 삼각형)
+      const conv = y + 14;
+      crit.slice(0, critCols).forEach((_, i) => els.push(vl(`${pfx}-uv${i}`, cx0 + i * (critW + gap) + critW / 2, y, 14)));
+      els.push(hl(`${pfx}-convh`, cx0 + critW / 2, conv, totalW - critW));
+      els.push(vl(`${pfx}-convv`, cx, conv, 16), arw(`${pfx}-conva`, cx, conv + 8));
+      y = conv + 24;
+
+      (layout.after || []).forEach(([txt, kind, w, h]) => { step(txt, kind, w || boxW, h || 42); link(); });
+      // 마지막 link 제거용: after 가 있으면 이미 link 붙음. 없으면 여기서.
+      if (!(layout.after || []).length) link();
+      step(layout.saveTxt, 'io', boxW - 10, layout.saveH || 42);
+      return els;
+    };
+
+    // ---- 24p ----
+    (() => {
+      const s = deck.slides.find((sl) => sl.elements.some((e) => e.media === 'diagram_reading_order.svg'));
+      if (!s) return;
+      s.elements = s.elements.filter((e) => e.name !== 'diag-9');
+      s.elements.push(...build('ro24', 640, 216, 340,
+        ['같은 내용 묶음', '좌우 정렬이 유사함', '상하 위치·현재 순서 불일치', '사이에 다른 요소 없음'],
+        {
+          inTxt: 'DoclingDocument · 인접한 문서 요소 비교', ioH: 50, linkH: 32, decideH: 46, saveH: 48,
+          decideTxt: '순서 교환 기준 확인', decideW: 300,
+          critCols: 4, critW: 279, critH: 58, gap: 16,
+          after: [['두 요소의 읽기 순서 교환', 'act', 340, 52]],
+          saveTxt: '보완된 읽기 순서 저장',
+        }));
+    })();
+
+    // ---- 26p ----
+    (() => {
+      const s = deck.slides.find((sl) => sl.elements.some((e) => e.media === 'diagram_heading.svg'));
+      if (!s) return;
+      s.elements = s.elements.filter((e) => !['diag-11', 'ref-11'].includes(e.name || ''));
+      s.elements.push(...build('hd26', 640, 208, 320,
+        ['짧은 문구', '주변 본문보다 큰 글자', '위쪽에 충분한 여백', '위·아래 텍스트 밀도'],
+        {
+          inTxt: '텍스트·목록 요소에서 제목 후보 선택', ioH: 48, linkH: 30, decideH: 44, saveH: 46,
+          decideTxt: '승격 기준 확인', decideW: 280,
+          critCols: 4, critW: 279, critH: 52, gap: 16,
+          after: [
+            ['제목이 아닌 요소 제외 (표·캡션·페이지 번호)', 'filter', 440, 48],
+            ['section_header 로 승격', 'act', 280, 46],
+          ],
+          saveTxt: '보완된 제목 정보 저장',
+        }));
+    })();
+
+    // ---- 30p → 패스28 에서 SVG(image_description_pipeline_flow) 기준으로 전면 재구성 (여기선 손대지 않음) ----
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 27 — 29p('이미지 설명의 세 문제') 슬라이드 자체 삭제 후 전체 재번호.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const i = deck.slides.findIndex((s) =>
+      s.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '이미지 설명의 세 문제'));
+    if (i < 0) { console.warn('[패스27] 29p(이미지 설명의 세 문제) 슬라이드를 찾지 못함'); return; }
+    deck.slides.splice(i, 1);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 28 — '이미지 설명 개선' 슬라이드를 image_description_pipeline_flow.svg
+  //   구조대로 네이티브 재구성 (입력 → 생성 대상 판정 → 유형별 라우팅 → VLM 생성 →
+  //   품질 게이트 → 저장/폐기). 기존 좌측 4단계 리스트(sd/stt/st-15-*)도 제거.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '이미지 설명 개선'));
+    if (!s) { console.warn('[패스28] 이미지 설명 개선 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !/^(diag-15|im30-|sd-15-|stt-15-|st-15-)/.test(e.name || '')
+      && e.media !== 'diagram_image.svg');
+
+    const K = {
+      io: ['#F2F4F7', '#B9C0CC', '#3A4658'],
+      dec: ['#EAF2FF', '#8FB4EF', '#123D7A'],
+      route: ['#FFF6E9', '#EAD3A8', '#7A5A1E'],
+      no: ['#FDECEC', '#DC5B5B', '#B23A3A'],
+      yes: ['#E7F4EC', '#3FA46B', '#17603C'],
+    };
+    const els = [];
+    const box = (nm, x, y, w, h, kind, title, sub) => {
+      const [f, l, t] = K[kind];
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, y, w, h], fillColor: f, lineColor: l, lineWidth: 1.4, name: nm });
+      els.push(textElement(`${nm}-t`, [x, sub ? y + 6 : y, w, sub ? 20 : h], title, 12.5, t, true, 'center'));
+      if (sub) els.push(textElement(`${nm}-s`, [x + 6, y + 25, w - 12, 16], sub, 9.5, t, false, 'center'));
+    };
+    const vl = (nm, x, y, h) => els.push({ kind: 'shape', geometry: 'line', bbox: [x, y, 0, h], lineColor: '#8892A3', lineWidth: 1.8, name: nm });
+    const hl = (nm, x, y, w) => els.push({ kind: 'shape', geometry: 'line', bbox: [x, y, w, 0], lineColor: '#8892A3', lineWidth: 1.8, name: nm });
+    const ar = (nm, x, y) => els.push(textElement(nm, [x - 11, y, 22, 16], '▼', 12, '#5B6676', true, 'center'));
+
+    // ===== 좌측: 스크립트 기반 설명 (우측 흐름도와 세로 중앙 맞춤) =====
+    const LX = 58, LW = 528, LTOP = 224;
+    els.push(textElement('idpL-h1', [LX, LTOP, LW, 18], '기존 이미지 설명의 문제', 13, '#B23A3A', true));
+    [
+      ['할루시네이션', '이미지·문맥에 없는 내용을 근거 없이 지어냅니다'],
+      ['무효 응답 저장', '설명 거부·같은 문장 무한 반복이 그대로 저장됩니다'],
+      ['무의미 이미지', '로고·아이콘처럼 정보 없는 그림도 설명을 만듭니다'],
+    ].forEach(([t, d], i) => {
+      const y = LTOP + 28 + i * 44;
+      els.push({ kind: 'shape', geometry: 'ellipse', bbox: [LX, y + 4, 7, 7], fillColor: '#DC5B5B', lineColor: '#DC5B5B', lineWidth: 1, name: `idpL-pb${i}` });
+      els.push(textElement(`idpL-pt${i}`, [LX + 18, y, LW - 18, 18], t, 12.5, '#0A1020', true));
+      els.push(textElement(`idpL-pd${i}`, [LX + 18, y + 19, LW - 18, 18], d, 10.5, '#52657D'));
+    });
+    els.push({ kind: 'shape', geometry: 'line', bbox: [LX, LTOP + 166, LW, 0], lineColor: '#E1E6EE', lineWidth: 1, name: 'idpL-div' });
+    els.push(textElement('idpL-h2', [LX, LTOP + 178, LW, 18], '해결 — 3단계로 보완', 13, '#17603C', true));
+    [
+      ['01', '생성 대상 선별', '차트·도면은 정보를 담지만 로고·아이콘은 아닙니다. 카테고리로 설명 생성 여부를 먼저 판단합니다.'],
+      ['02', '유형별 프롬프트 매칭', '차트는 축·단위, 도면은 치수·장치·부품명. 분류에 맞춰 VLM이 주로 볼 정보를 지시문으로 나눕니다.'],
+      ['03', '환각 검증', 'VLM 결과에 환각이 있으면 한 번 더 검증하는 단계를 거쳐 최종 이미지 요약을 확정합니다.'],
+    ].forEach(([n, t, d], i) => {
+      const y = LTOP + 206 + i * 68;
+      els.push(textElement(`idpL-sn${i}`, [LX, y, 26, 18], n, 12, '#2878D1', true));
+      els.push(textElement(`idpL-st${i}`, [LX + 34, y, LW - 34, 18], t, 12.5, '#0A1020', true));
+      els.push(textElement(`idpL-sd${i}`, [LX + 34, y + 20, LW - 34, 40], d, 10.5, '#52657D'));
+    });
+
+    // ===== 우측: 파이프라인 흐름도 (SVG 구조) =====
+    const CX = 936;
+    box('idp-in', CX - 110, 198, 220, 34, 'io', 'PictureItem 입력');
+    vl('idp-v1', CX, 232, 6); ar('idp-a1', CX, 232);
+    box('idp-dec1', CX - 140, 244, 280, 44, 'dec', '생성 대상인가?', '카테고리(면적·분류)로 판단');
+    vl('idp-f1v', CX, 288, 8); hl('idp-f1h', 820, 296, 232);
+    vl('idp-f1l', 820, 296, 6); ar('idp-f1la', 820, 298);
+    vl('idp-f1r', 1052, 296, 6); ar('idp-f1ra', 1052, 298);
+    box('idp-no1', 720, 308, 200, 44, 'no', '제외', '로고·아이콘 등');
+    box('idp-yes1', 952, 308, 200, 44, 'yes', '대상', '차트·도면 등');
+    vl('idp-e1v', 1052, 352, 10); hl('idp-e1h', CX, 362, 116);
+    vl('idp-e1d', CX, 362, 10); ar('idp-e1a', CX, 368);
+    box('idp-route', CX - 175, 378, 350, 46, 'route', '유형별 프롬프트 라우팅', '차트=축·단위 / 도면=치수·부품명 …');
+    vl('idp-v2', CX, 424, 8); ar('idp-a2', CX, 426);
+    box('idp-vlm', CX - 110, 438, 220, 34, 'io', 'VLM 설명 생성');
+    vl('idp-v3', CX, 472, 8); ar('idp-a3', CX, 474);
+    box('idp-dec2', CX - 140, 486, 280, 44, 'dec', '품질 게이트', '환각·반복·거부 응답 검사');
+    vl('idp-f2v', CX, 530, 8); hl('idp-f2h', 820, 538, 232);
+    vl('idp-f2l', 820, 538, 6); ar('idp-f2la', 820, 540);
+    vl('idp-f2r', 1052, 538, 6); ar('idp-f2ra', 1052, 540);
+    box('idp-no2', 720, 550, 200, 42, 'no', '폐기', '저장 안 함');
+    box('idp-yes2', 952, 550, 200, 42, 'yes', '저장', '설명 확정');
+    vl('idp-e2v', 1052, 592, 10); hl('idp-e2h', CX, 602, 116);
+    vl('idp-e2d', CX, 602, 8); ar('idp-e2a', CX, 606);
+    box('idp-out', CX - 130, 616, 260, 36, 'io', '검증된 이미지 설명 저장');
+
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
     s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
   })();
