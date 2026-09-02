@@ -1762,4 +1762,20 @@
       s.elements = s.elements.filter((e) => !RM.test(e.name || ''));
     });
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 16 — 직업능력심사평가원·고용노동부 로고가 빠진 장표에 추가.
+  //   (Agent·파싱·평가 섹션은 다른 소스 덱에서 와서 우하단 기관 로고가 없었음)
+  //   기존 장표와 동일 위치·크기.
+  // ===================================================================
+  (() => {
+    const BOX_A = [1019.56, 647, 78.89, 25];
+    const BOX_B = [1138.95, 647, 84.09, 25];
+    deck.slides.forEach((s, i) => {
+      const hasA = s.elements.some((e) => e.kind === 'image' && e.media === 'image2.png');
+      const hasB = s.elements.some((e) => e.kind === 'image' && e.media === 'image3.png');
+      if (!hasA) s.elements.push(imageElement(`inst-logo-a-${i + 1}`, BOX_A.slice(), 'image2.png', 'contain'));
+      if (!hasB) s.elements.push(imageElement(`inst-logo-b-${i + 1}`, BOX_B.slice(), 'image3.png', 'contain'));
+    });
+  })();
 })();
