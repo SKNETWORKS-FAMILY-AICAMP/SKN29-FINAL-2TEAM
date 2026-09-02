@@ -2611,55 +2611,58 @@
     const hl = (nm, x, y, w) => els.push({ kind: 'shape', geometry: 'line', bbox: [x, y, w, 0], lineColor: '#8892A3', lineWidth: 1.8, name: nm });
     const ar = (nm, x, y) => els.push(textElement(nm, [x - 11, y, 22, 16], '▼', 12, '#5B6676', true, 'center'));
 
-    // ===== 좌측: 스크립트 기반 설명 (우측 흐름도와 세로 중앙 맞춤) =====
-    const LX = 58, LW = 528, LTOP = 224;
-    els.push(textElement('idpL-h1', [LX, LTOP, LW, 18], '기존 이미지 설명의 문제', 13, '#B23A3A', true));
+    // ===== 좌·우를 하나의 중앙 그룹으로 (21·22p 참고). 좌: 설명 / 우: 흐름도 =====
+    const LX = 236, LW = 384, LTOP = 222;
+    els.push(textElement('idpL-h1', [LX, LTOP, LW, 20], '기존 이미지 설명의 문제', 14, '#B23A3A', true));
     [
-      ['할루시네이션', '이미지·문맥에 없는 내용을 근거 없이 지어냅니다'],
-      ['무효 응답 저장', '설명 거부·같은 문장 무한 반복이 그대로 저장됩니다'],
-      ['무의미 이미지', '로고·아이콘처럼 정보 없는 그림도 설명을 만듭니다'],
+      ['할루시네이션', '이미지·문맥에 없는 내용을 지어냄'],
+      ['무효 응답 저장', '거부·무한 반복 응답이 그대로 저장'],
+      ['무의미 이미지', '로고·아이콘 등에도 설명 생성'],
     ].forEach(([t, d], i) => {
-      const y = LTOP + 28 + i * 44;
-      els.push({ kind: 'shape', geometry: 'ellipse', bbox: [LX, y + 4, 7, 7], fillColor: '#DC5B5B', lineColor: '#DC5B5B', lineWidth: 1, name: `idpL-pb${i}` });
-      els.push(textElement(`idpL-pt${i}`, [LX + 18, y, LW - 18, 18], t, 12.5, '#0A1020', true));
-      els.push(textElement(`idpL-pd${i}`, [LX + 18, y + 19, LW - 18, 18], d, 10.5, '#52657D'));
+      const y = LTOP + 34 + i * 54;
+      els.push({ kind: 'shape', geometry: 'ellipse', bbox: [LX, y + 5, 8, 8], fillColor: '#DC5B5B', lineColor: '#DC5B5B', lineWidth: 1, name: `idpL-pb${i}` });
+      els.push(textElement(`idpL-pt${i}`, [LX + 22, y, LW - 22, 20], t, 13.5, '#0A1020', true));
+      els.push(textElement(`idpL-pd${i}`, [LX + 22, y + 21, LW - 22, 18], d, 11.5, '#52657D'));
     });
-    els.push({ kind: 'shape', geometry: 'line', bbox: [LX, LTOP + 166, LW, 0], lineColor: '#E1E6EE', lineWidth: 1, name: 'idpL-div' });
-    els.push(textElement('idpL-h2', [LX, LTOP + 178, LW, 18], '해결 — 3단계로 보완', 13, '#17603C', true));
+    els.push({ kind: 'shape', geometry: 'line', bbox: [LX, LTOP + 194, LW, 0], lineColor: '#E1E6EE', lineWidth: 1, name: 'idpL-div' });
+    els.push(textElement('idpL-h2', [LX, LTOP + 210, LW, 20], '해결 — 3단계 보완', 14, '#17603C', true));
     [
-      ['01', '생성 대상 선별', '차트·도면은 정보를 담지만 로고·아이콘은 아닙니다. 카테고리로 설명 생성 여부를 먼저 판단합니다.'],
-      ['02', '유형별 프롬프트 매칭', '차트는 축·단위, 도면은 치수·장치·부품명. 분류에 맞춰 VLM이 주로 볼 정보를 지시문으로 나눕니다.'],
-      ['03', '환각 검증', 'VLM 결과에 환각이 있으면 한 번 더 검증하는 단계를 거쳐 최종 이미지 요약을 확정합니다.'],
+      ['1', '생성 대상 선별', '카테고리로 설명 생성 여부 판단'],
+      ['2', '유형별 프롬프트 매칭', '유형에 맞는 VLM 지시문 매칭'],
+      ['3', '환각 검증', '환각 있으면 재검증 후 요약 확정'],
     ].forEach(([n, t, d], i) => {
-      const y = LTOP + 206 + i * 68;
-      els.push(textElement(`idpL-sn${i}`, [LX, y, 26, 18], n, 12, '#2878D1', true));
-      els.push(textElement(`idpL-st${i}`, [LX + 34, y, LW - 34, 18], t, 12.5, '#0A1020', true));
-      els.push(textElement(`idpL-sd${i}`, [LX + 34, y + 20, LW - 34, 40], d, 10.5, '#52657D'));
+      const y = LTOP + 244 + i * 60;
+      els.push({ kind: 'shape', geometry: 'ellipse', bbox: [LX, y + 1, 24, 24], fillColor: '#2878D1', lineColor: '#2878D1', lineWidth: 1, name: `idpL-sb${i}` });
+      els.push(textElement(`idpL-sn${i}`, [LX, y + 1, 24, 24], n, 13, '#FFFFFF', true, 'center'));
+      els.push(textElement(`idpL-st${i}`, [LX + 38, y, LW - 38, 22], t, 14, '#0A1020', true));
+      els.push(textElement(`idpL-sd${i}`, [LX + 38, y + 23, LW - 38, 18], d, 11.5, '#52657D'));
     });
 
-    // ===== 우측: 파이프라인 흐름도 (SVG 구조) =====
-    const CX = 936;
+    // ===== 우측: 파이프라인 흐름도 (SVG 구조) — 좌측 그룹 바로 옆에 붙임 =====
+    const DX = LX + LW + 44;
+    const CX = DX + 185;
+    const FL = DX + 90, FR = DX + 280;
     box('idp-in', CX - 110, 198, 220, 34, 'io', 'PictureItem 입력');
     vl('idp-v1', CX, 232, 6); ar('idp-a1', CX, 232);
-    box('idp-dec1', CX - 140, 244, 280, 44, 'dec', '생성 대상인가?', '카테고리(면적·분류)로 판단');
-    vl('idp-f1v', CX, 288, 8); hl('idp-f1h', 820, 296, 232);
-    vl('idp-f1l', 820, 296, 6); ar('idp-f1la', 820, 298);
-    vl('idp-f1r', 1052, 296, 6); ar('idp-f1ra', 1052, 298);
-    box('idp-no1', 720, 308, 200, 44, 'no', '제외', '로고·아이콘 등');
-    box('idp-yes1', 952, 308, 200, 44, 'yes', '대상', '차트·도면 등');
-    vl('idp-e1v', 1052, 352, 10); hl('idp-e1h', CX, 362, 116);
+    box('idp-dec1', CX - 135, 244, 270, 44, 'dec', '생성 대상인가?', '카테고리(면적·분류)로 판단');
+    vl('idp-f1v', CX, 288, 8); hl('idp-f1h', FL, 296, FR - FL);
+    vl('idp-f1l', FL, 296, 6); ar('idp-f1la', FL, 298);
+    vl('idp-f1r', FR, 296, 6); ar('idp-f1ra', FR, 298);
+    box('idp-no1', FL - 90, 308, 180, 44, 'no', '제외', '로고·아이콘 등');
+    box('idp-yes1', FR - 90, 308, 180, 44, 'yes', '대상', '차트·도면 등');
+    vl('idp-e1v', FR, 352, 10); hl('idp-e1h', CX, 362, FR - CX);
     vl('idp-e1d', CX, 362, 10); ar('idp-e1a', CX, 368);
-    box('idp-route', CX - 175, 378, 350, 46, 'route', '유형별 프롬프트 라우팅', '차트=축·단위 / 도면=치수·부품명 …');
+    box('idp-route', CX - 185, 378, 370, 46, 'route', '유형별 프롬프트 라우팅', '차트=축·단위 / 도면=치수·부품명 …');
     vl('idp-v2', CX, 424, 8); ar('idp-a2', CX, 426);
     box('idp-vlm', CX - 110, 438, 220, 34, 'io', 'VLM 설명 생성');
     vl('idp-v3', CX, 472, 8); ar('idp-a3', CX, 474);
-    box('idp-dec2', CX - 140, 486, 280, 44, 'dec', '품질 게이트', '환각·반복·거부 응답 검사');
-    vl('idp-f2v', CX, 530, 8); hl('idp-f2h', 820, 538, 232);
-    vl('idp-f2l', 820, 538, 6); ar('idp-f2la', 820, 540);
-    vl('idp-f2r', 1052, 538, 6); ar('idp-f2ra', 1052, 540);
-    box('idp-no2', 720, 550, 200, 42, 'no', '폐기', '저장 안 함');
-    box('idp-yes2', 952, 550, 200, 42, 'yes', '저장', '설명 확정');
-    vl('idp-e2v', 1052, 592, 10); hl('idp-e2h', CX, 602, 116);
+    box('idp-dec2', CX - 135, 486, 270, 44, 'dec', '품질 게이트', '환각·반복·거부 응답 검사');
+    vl('idp-f2v', CX, 530, 8); hl('idp-f2h', FL, 538, FR - FL);
+    vl('idp-f2l', FL, 538, 6); ar('idp-f2la', FL, 540);
+    vl('idp-f2r', FR, 538, 6); ar('idp-f2ra', FR, 540);
+    box('idp-no2', FL - 90, 550, 180, 42, 'no', '폐기', '저장 안 함');
+    box('idp-yes2', FR - 90, 550, 180, 42, 'yes', '저장', '설명 확정');
+    vl('idp-e2v', FR, 592, 10); hl('idp-e2h', CX, 602, FR - CX);
     vl('idp-e2d', CX, 602, 8); ar('idp-e2a', CX, 606);
     box('idp-out', CX - 130, 616, 260, 36, 'io', '검증된 이미지 설명 저장');
 
