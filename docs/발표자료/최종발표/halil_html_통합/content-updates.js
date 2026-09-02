@@ -1866,7 +1866,7 @@
     s.elements = s.elements.filter((e) => KEEP.test(e.name || ''));
     setElementText(s.elements.find((e) => /^title-/.test(e.name || '')), '문서를 읽기 순서와 요소별 구조로 저장합니다');
     if (window.HALIL_DOCLING20) {
-      s.elements.push({ kind: 'html', name: 'dl20', bbox: [40, 156, 1200, 500], html: window.HALIL_DOCLING20.HTML });
+      s.elements.push({ kind: 'html', name: 'dl20', bbox: [34, 146, 1212, 512], html: window.HALIL_DOCLING20.HTML });
       s.doclingInteractive = true;
     } else {
       console.warn('[패스17] HALIL_DOCLING20 미로드 — docling20.js 확인');
