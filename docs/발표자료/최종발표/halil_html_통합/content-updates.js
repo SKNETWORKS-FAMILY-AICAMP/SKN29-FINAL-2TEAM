@@ -1274,21 +1274,25 @@
       set(s, 'sub-16', '파싱 데이터를 일직선으로 직렬화한 뒤, 같은 tokenizer로 자르고 임베딩합니다');
       set(s, 'section-16', 'CHUNKING · 임베딩');
       set(s, 'foot-16', 'CHUNKING · 임베딩');
+      const EW = 362, EG = [58, 58 + EW + 24, 58 + 2 * (EW + 24)]; // 임베딩 3열
       s.elements.push(
-        textElement('ck-s-h', [58, 202, 700, 24], '직렬화', 15, '#2878D1', true),
-        textElement('ck-s-b', [58, 232, 1160, 170],
+        textElement('ck-s-h', [58, 232, 700, 24], '직렬화', 15, '#2878D1', true),
+        textElement('ck-s-b', [58, 266, 1124, 66],
           '텍스트·표·목록·제목은 Docling 기본 시리얼라이저를 그대로 사용하고, 그림만 커스텀 시리얼라이저를 만들었습니다. 승인된 VLM 설명이 있으면 그 설명 텍스트만 임베딩 대상으로 쓰고, 없으면 Docling 기본 그림·메타데이터 시리얼라이저로 대체합니다.',
-          14, '#20283A'),
-        hline('ck-div', 58, 420, 1160, '#E1E6EE'),
-        textElement('ck-e-h', [58, 432, 700, 24], '임베딩', 15, '#2878D1', true),
-        textElement('ck-v-0', [58, 466, 362, 30], 'embeddinggemma-300m', 17, '#2878D1', true),
-        textElement('ck-l-0', [58, 500, 362, 44], '임베딩 모델', 13, '#6C7482'),
-        textElement('ck-v-1', [445, 466, 362, 30], '768차원', 17, '#2878D1', true),
-        textElement('ck-l-1', [445, 500, 362, 44], '임베딩 벡터 크기', 13, '#6C7482'),
-        textElement('ck-v-2', [831, 466, 362, 30], '512 토큰', 17, '#2878D1', true),
-        textElement('ck-l-2', [831, 500, 362, 44], '청크 상한 (모델 최대 2,048토큰 중 보수적 설정)', 13, '#6C7482'),
-        textElement('ck-note', [58, 574, 1160, 24],
-          '토큰 계산에도 임베딩과 같은 모델의 tokenizer를 사용합니다 — 자를 때와 임베딩할 때 기준이 다르면 상한이 무의미해지기 때문입니다.', 10.5, '#8792A6', false, 'center'),
+          15, '#20283A', false, 'left'),
+        hline('ck-div', 58, 360, 1124, '#E1E6EE'),
+        textElement('ck-e-h', [58, 384, 700, 24], '임베딩', 15, '#2878D1', true),
+        panel('ck-c-0', [EG[0], 424, EW, 120], '#F5F7FA', '#E4E8EF'),
+        panel('ck-c-1', [EG[1], 424, EW, 120], '#F5F7FA', '#E4E8EF'),
+        panel('ck-c-2', [EG[2], 424, EW, 120], '#F5F7FA', '#E4E8EF'),
+        textElement('ck-v-0', [EG[0] + 22, 446, EW - 44, 30], 'embeddinggemma-300m', 18, '#2878D1', true),
+        textElement('ck-l-0', [EG[0] + 22, 482, EW - 44, 50], '임베딩 모델', 12.5, '#6C7482'),
+        textElement('ck-v-1', [EG[1] + 22, 446, EW - 44, 30], '768차원', 18, '#2878D1', true),
+        textElement('ck-l-1', [EG[1] + 22, 482, EW - 44, 50], '임베딩 벡터 크기', 12.5, '#6C7482'),
+        textElement('ck-v-2', [EG[2] + 22, 446, EW - 44, 30], '512 토큰', 18, '#2878D1', true),
+        textElement('ck-l-2', [EG[2] + 22, 482, EW - 44, 50], '청크 상한 (모델 최대 2,048토큰 중 보수적 설정)', 12.5, '#6C7482'),
+        textElement('ck-note', [58, 566, 1124, 24],
+          '토큰 계산에도 임베딩과 같은 모델의 tokenizer를 사용합니다 — 자를 때와 임베딩할 때 기준이 다르면 상한이 무의미해지기 때문입니다.', 11, '#8792A6', false, 'center'),
       );
     })();
     drop('EmbeddingGemma로 토큰을 계산하고 임베딩합니다');
@@ -2634,5 +2638,23 @@
 
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
     s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 29 — '전체 기능 시연 영상' 슬라이드 삭제 후 전체 재번호.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titles = ['전체 기능 시연 영상', '전체 기능은 실제 시연 영상으로 확인합니다'];
+    const i = deck.slides.findIndex((s) =>
+      s.elements.some((e) => /^title-/.test(e.name || '') && titles.includes(norm(e.text))));
+    if (i < 0) { console.warn('[패스29] 전체 기능 시연 영상 슬라이드를 찾지 못함'); return; }
+    deck.slides.splice(i, 1);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
   })();
 })();

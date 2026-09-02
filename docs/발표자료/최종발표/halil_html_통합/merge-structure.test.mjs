@@ -28,14 +28,15 @@ const titleOf = (n) => norm((slides[n - 1].elements.find((e) => /^(title-|div-ti
 const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
-// --- 전체 규모 --- (47장 - 패스27 '이미지 설명의 세 문제' 삭제 = 46장)
-assert.equal(slides.length, 46, '47장 - 이미지 설명의 세 문제 1장 = 46장');
+// --- 전체 규모 --- (47장 - 패스27 '세 문제' - 패스29 '시연 영상' = 45장)
+assert.equal(slides.length, 45, '47장 - 이미지 설명의 세 문제 - 전체 기능 시연 영상 = 45장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 46 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~46 연속',
+  Array.from({ length: 45 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~45 연속',
 );
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '이미지 설명의 세 문제'), '29p(세 문제)는 삭제됨');
+assert.ok(!slides.some((_, i) => titleOf(i + 1) === '전체 기능 시연 영상'), "'전체 기능 시연 영상'은 삭제됨");
 // 패스17: 20p 만 kind:'html'(in-document 주입, iframe 아님) 1개 허용.
 (() => {
   const htmlSlides = slides.filter((s) => s.elements.some((e) => e.kind === 'html'));
@@ -130,28 +131,27 @@ assert.ok(slides.slice(30, 37).every((s) => {
   return (c?.text || '').includes('04 프로젝트 수행 결과');
 }), '평가 7장 context 헤더는 04 프로젝트 수행 결과');
 
-// --- 꼬리(패스7 이후): DEMO RESULT → 지훈 '스킬 사용 전후 비교' 1장 → 운영 콘솔 4장 → 자체 평가 표지 → 클로징 ---
+// --- 꼬리(패스7·29 이후): DEMO RESULT → 지훈 '스킬 사용 전후 비교' 1장 → 운영 콘솔 4장 → 자체 평가 표지 → 클로징 ---
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
-assert.equal(titleOf(38), '전체 기능 시연 영상', '38는 시연 영상 슬라이드');
-// 패스10.5: 39p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
-assert.equal(titleOf(39), '스킬 사용 전후 비교', '39는 스킬 사용 전후 비교 (네이티브)');
+// 패스10.5: 38p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
+assert.equal(titleOf(38), '스킬 사용 전후 비교', '38은 스킬 사용 전후 비교 (네이티브, 시연 영상 삭제로 1p 당겨짐)');
 assert.ok(
-  slides[38].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[38].elements.some((e) => e.name === 'sc-t-tot-4'),
-  '39는 juyeon 네이티브 표 셀(sc-t-*)로 구성',
+  slides[37].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[37].elements.some((e) => e.name === 'sc-t-tot-4'),
+  '38은 juyeon 네이티브 표 셀(sc-t-*)로 구성',
 );
 assert.ok(
-  !slides[38].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
-  '39에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
+  !slides[37].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
+  '38에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
 );
-assert.ok(slides[38].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '39 타이틀 요소');
+assert.ok(slides[37].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '38 타이틀 요소');
 assert.deepEqual(
-  [40, 41, 42, 43].map(titleOf),
+  [39, 40, 41, 42].map(titleOf),
   ['운영 상태 통합 관리', '연결 서비스·모델 구성', '커스텀 도구·가드레일 관리', '실행 현황·도구 사용 추적'],
-  '40~43은 운영 콘솔 4장',
+  '39~42는 운영 콘솔 4장',
 );
-assert.equal(titleOf(44), '자체 평가 의견', '44는 05 챕터 표지');
-assert.ok(slides[44].elements.some((e) => (e.text || '').includes('Q&A')), '45는 클로징/Q&A 슬라이드');
+assert.equal(titleOf(43), '자체 평가 의견', '43은 05 챕터 표지');
+assert.ok(slides[43].elements.some((e) => (e.text || '').includes('Q&A')), '44는 클로징/Q&A 슬라이드');
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
 const missing = [];
