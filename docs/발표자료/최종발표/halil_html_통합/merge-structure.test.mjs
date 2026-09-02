@@ -28,12 +28,12 @@ const titleOf = (n) => norm((slides[n - 1].elements.find((e) => /^(title-|div-ti
 const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
-// --- 전체 규모 --- (47장 - 패스27 '세 문제' - 패스29 '시연 영상' = 45장)
-assert.equal(slides.length, 45, '47장 - 이미지 설명의 세 문제 - 전체 기능 시연 영상 = 45장');
+// --- 전체 규모 --- (47 - 패스27 '세 문제' - 패스29 '시연 영상' + 패스30 'Future Work' = 46장)
+assert.equal(slides.length, 46, '47 - 세 문제 - 시연 영상 + Future Work = 46장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 45 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~45 연속',
+  Array.from({ length: 46 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~46 연속',
 );
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '이미지 설명의 세 문제'), '29p(세 문제)는 삭제됨');
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '전체 기능 시연 영상'), "'전체 기능 시연 영상'은 삭제됨");
@@ -151,7 +151,12 @@ assert.deepEqual(
   '39~42는 운영 콘솔 4장',
 );
 assert.equal(titleOf(43), '자체 평가 의견', '43은 05 챕터 표지');
-assert.ok(slides[43].elements.some((e) => (e.text || '').includes('Q&A')), '44는 클로징/Q&A 슬라이드');
+assert.equal(titleOf(44), 'Future Work', '44는 개선 계획 표 (juyeon 패스30 이식)');
+assert.ok(
+  slides[43].elements.some((e) => e.name === 'fw-hbar') && [0, 1, 2].every((i) => slides[43].elements.some((e) => e.name === `fw-area-${i}`)),
+  '44는 Future Work 표(fw-*) 3행으로 구성',
+);
+assert.ok(slides[44].elements.some((e) => (e.text || '').includes('Q&A')), '45는 클로징/Q&A 슬라이드');
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
 const missing = [];

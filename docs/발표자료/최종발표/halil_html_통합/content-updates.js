@@ -2657,4 +2657,93 @@
       });
     });
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 30 — FUTURE WORK: '자체 평가 의견'(05장 표지) 뒤에 개선 계획 표 1장 추가.
+  //   juyeon 브랜치(56e61b38)의 패스14 를 통합 덱 크롬·표 스타일(35p)에 맞춰 이식.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
+    const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
+    if (baseIdx < 0 || atIdx < 0) { console.warn('[패스30] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
+    if (deck.slides.some((s) => titleOf(s) === 'Future Work')) return;
+
+    const s = clone(deck.slides[baseIdx]);
+    s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
+    setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), 'Future Work');
+    s.sources = ['docs/설계 및 구현/3_중간발표 이후/작업기록/ (Parsing · Hybrid Search · Agent 개선 계획)'];
+
+    const COLS = [
+      { x: 56, w: 130, h: '영역' },
+      { x: 186, w: 360, h: '현재 한계' },
+      { x: 546, w: 430, h: '개선 방향' },
+      { x: 976, w: 248, h: '기대 효과' },
+    ];
+    const HY = 200, HH = 40, RY = HY + HH, rowH = 132;
+    const ROWS = [
+      {
+        area: 'Parsing', accent: '#2878D1', effClr: '#2878D1',
+        limitKey: '읽기 순서 보정이 동일 parent 내 인접 요소에 한정',
+        limitSub: '제목·표 구조 복원에도 미해결 사례가 남음',
+        bullets: ['parent·섹션 단위 읽기 순서 재구성', '폰트 스타일까지 반영한 제목 판별', '표 셀 구조·병합 범위 자동 복원'],
+        effect: '문서 구조 정보의\n정확성·완결성 향상',
+      },
+      {
+        area: 'Hybrid\nSearch', accent: '#168A86', effClr: '#17845E',
+        limitKey: 'Top-20 결과만으로 충분한 근거를 보장하지 못함',
+        limitSub: '검색 결과와 답변 생성 사이에 정보 누락 발생',
+        bullets: ['별도 reranker 적용', '핵심 근거 정보 보존', 'Agent 전달 인터페이스 보완 (누락 방지)'],
+        effect: '근거 품질 향상 및\n정보 누락 최소화',
+      },
+      {
+        area: 'Agent', accent: '#22375C', effClr: '#7A5CB0',
+        limitKey: '검색에 성공해도 최종 답변 완결성이 부족',
+        limitSub: '반복될수록 답변이 짧아지고 핵심 문장이 누락',
+        bullets: ['표·이미지 등 구조 정보 보존', '답변 전 필수 사실 커버리지 검증', '호출 예산·종료 기준 강화'],
+        effect: '답변 완결성 향상,\n불필요한 반복 검색 감소',
+      },
+    ];
+    const tableBottom = RY + rowH * ROWS.length;
+
+    s.elements.push(
+      { kind: 'shape', geometry: 'rect', bbox: [56, HY - 3, 1168, 3], fillColor: '#101728', lineWidth: 0, name: 'fw-htop' },
+      { kind: 'shape', geometry: 'rect', bbox: [56, HY, 1168, HH], fillColor: '#E7EBF0', lineWidth: 0, name: 'fw-hbar' },
+    );
+    COLS.forEach((c, i) => s.elements.push(
+      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 13, '#101728', true),
+    ));
+    [186, 546, 976].forEach((x, i) => s.elements.push(
+      { kind: 'shape', geometry: 'line', bbox: [x, HY, 0, tableBottom - HY], lineColor: '#E7EBF1', lineWidth: 1, name: `fw-vl-${i}` },
+    ));
+
+    ROWS.forEach((r, ri) => {
+      const y = RY + rowH * ri;
+      s.elements.push(
+        { kind: 'shape', geometry: 'rect', bbox: [66, y + 22, 4, 44], fillColor: r.accent, lineWidth: 0, name: `fw-acc-${ri}` },
+        textElement(`fw-area-${ri}`, [82, y + 20, 100, 62], r.area, 15, '#101728', true),
+        textElement(`fw-limk-${ri}`, [202, y + 18, 330, 44], r.limitKey, 13, '#101728', true),
+        textElement(`fw-lims-${ri}`, [202, y + 62, 330, 40], r.limitSub, 11.5, '#5B6577'),
+        textElement(`fw-bul-${ri}`, [562, y + 18, 400, rowH - 32], r.bullets.map((b) => `•  ${b}`).join('\n'), 12.5, '#20283A'),
+        { kind: 'shape', geometry: 'ellipse', bbox: [992, y + 50, 26, 26], fillColor: r.effClr, lineWidth: 0, name: `fw-eff-ic-${ri}` },
+        textElement(`fw-eff-ar-${ri}`, [992, y + 51, 26, 26], '→', 13, '#FFFFFF', true, 'center'),
+        textElement(`fw-eff-${ri}`, [1028, y + 34, 188, 64], r.effect, 12.5, r.effClr, true),
+      );
+      if (ri > 0) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [56, y, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `fw-rl-${ri}` });
+    });
+    s.elements.push({ kind: 'shape', geometry: 'line', bbox: [56, tableBottom, 1168, 0], lineColor: '#101728', lineWidth: 1, name: 'fw-rl-bot' });
+
+    deck.slides.splice(atIdx + 1, 0, s);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
 })();
