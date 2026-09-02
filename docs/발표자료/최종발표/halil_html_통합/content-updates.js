@@ -2368,86 +2368,52 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 25 — 27p('표 오인식 사례') 합성 네이티브.
-  //   격자처럼 보이는 비(非)표 패턴 3가지를 각각 예시로 (원본 table_grid_examples.png 참고).
-  //   하단 통계(sv-12-*, sl-12-*)는 삭제.
+  // 최종 편집 패스 25 — 27p('표 오인식 사례') 실제 오검출 문서 3건.
+  //   격자·다단 정렬 편집 때문에 Docling 이 TableItem 으로 추출하는 실제 목차/목록.
+  //   각 이미지에 붉은 표 박스 오버레이 + 판정/실제 캡션. 하단 통계(sv-12-*, sl-12-*)는 삭제.
   // ===================================================================
   (() => {
     const s = deck.slides.find((sl) =>
       sl.elements.some((e) => e.kind === 'image' && e.media === 'table_grid_examples.png'));
     if (!s) { console.warn('[패스25] 27p(table_grid_examples.png) 슬라이드를 찾지 못함'); return; }
-    s.elements = s.elements.filter((e) => !/^(img-12|sv-12-|sl-12-)/.test(e.name || ''));
+    s.elements = s.elements.filter((e) => !/^(img-12|sv-12-|sl-12-|tm\d)/.test(e.name || ''));
 
     const RED = '#E04B4B', REDT = '#B23A3A';
     const line = (name, bbox, color, w) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: color, lineWidth: w, name });
-    const CY = 212, CW = 372, CH = 234, GAP = 22;
-    const XS = [58, 58 + CW + GAP, 58 + 2 * (CW + GAP)]; // 58, 452, 846
-    const GX = 20, GW = CW - 40, GY = CY + 44; // 카드 안 격자 좌표
+    const CW = 392, GAP = 16, CY = 208;
+    const XS = [50, 50 + CW + GAP, 50 + 2 * (CW + GAP)]; // 50, 458, 866
+    const FW = 356, FTOP = CY + 56;                      // 이미지 프레임(폭 고정, 높이는 원본 비율)
+    const CH = 56 + Math.round(FW / (922 / 607)) + 42;   // 카드 높이 = 가장 큰 이미지 기준으로 고정
 
-    const els = [textElement('tm-head', [58, 190, 1160, 18],
-      'Docling 이 “표”로 오검출한 격자형 목차 3가지 — 실제로는 모두 텍스트', 12, '#52657D', true)];
+    const els = [];
 
-    // 붉은 표 격자: 외곽 + 행 구분선 + 지정 열 구분선
-    const grid = (p, x, gh, rows, colXs) => {
-      els.push({ kind: 'shape', geometry: 'rect', bbox: [x + GX, GY, GW, gh], fillColor: 'transparent', lineColor: RED, lineWidth: 1.4, name: `${p}-gb` });
-      for (let r = 1; r < rows; r++) els.push(line(`${p}-gh${r}`, [x + GX, GY + Math.round(r * gh / rows), GW, 0], RED, 1));
-      colXs.forEach((cx, k) => els.push(line(`${p}-gv${k}`, [x + GX + cx, GY, 0, gh], RED, 1)));
-    };
-    const card = (x, tag, verdict, truth, drawInner) => {
+    // media 는 흰 여백을 잘라낸 상태 → 프레임을 원본 비율에 정확히 맞춰 붉은 테두리가 콘텐츠에 밀착.
+    // 카드 높이는 3장 모두 동일, 이미지 프레임만 원본 비율대로.
+    const card = (x, tag, media, ar) => {
       const p = `tm${XS.indexOf(x)}`;
+      const fh = Math.round(FW / ar);
       els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `${p}-pan` });
       els.push(
-        { kind: 'shape', geometry: 'roundRect', bbox: [x + 18, CY + 13, 128, 20], fillColor: '#F1F3F6', lineColor: '#DBE0E8', lineWidth: 1, name: `${p}-tag` },
-        textElement(`${p}-tag-t`, [x + 18, CY + 13, 128, 20], tag, 10, '#52657D', true, 'center'),
+        { kind: 'shape', geometry: 'roundRect', bbox: [x + 18, CY + 14, 200, 22], fillColor: '#F1F3F6', lineColor: '#DBE0E8', lineWidth: 1, name: `${p}-tag` },
+        textElement(`${p}-tag-t`, [x + 18, CY + 14, 200, 22], tag, 10, '#52657D', true, 'center'),
       );
-      drawInner(x, p);
-      els.push(line(`${p}-div`, [x + 18, CY + CH - 54, CW - 36, 0], '#E1E6EE', 1));
-      els.push(textElement(`${p}-vd`, [x + 18, CY + CH - 44, CW - 36, 18], verdict, 11.5, REDT, true));
-      els.push(textElement(`${p}-cs`, [x + 18, CY + CH - 24, CW - 36, 16], truth, 9.5, '#6E7A90'));
+      // 프레임 = Docling 이 표(TableItem) 하나로 잡은 영역 → 콘텐츠에 밀착한 붉은 테두리
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [x + 18, FTOP, FW, fh], fillColor: '#FFFFFF', lineColor: RED, lineWidth: 2, name: `${p}-fr` });
+      els.push(imageElement(`${p}-img`, [x + 18, FTOP, FW, fh], media, 'fill'));
+      els.push(
+        { kind: 'shape', geometry: 'rect', bbox: [x + 18 + FW - 66, FTOP - 15, 66, 15], fillColor: RED, lineWidth: 0, name: `${p}-btag` },
+        textElement(`${p}-btag-t`, [x + 18 + FW - 66, FTOP - 15, 66, 15], 'TableItem', 8.5, '#FFFFFF', true, 'center'),
+      );
+      els.push(textElement(`${p}-vd`, [x + 18, FTOP + fh + 12, CW - 36, 16], '→ 표(TableItem) 하나로 추출됨', 11, REDT, true));
     };
-    const rowT = (p, x, i, y, h, txt, tx, tw, al) =>
-      els.push(textElement(`${p}-${i}`, [x + GX + tx, y, tw, h], txt, 10, '#1A2230', false, al || 'left'));
 
-    // 패턴 1 — 점선 리더 + 우측 정렬 페이지 번호 → 2열 표로 오검출
-    card(XS[0], '점선 리더 목차', 'Docling: table · 5 × 2', '실제: 점 리더로 이어진 5줄 목차 텍스트', (x, p) => {
-      const rows = 5, gh = 108, pcol = GW - 46, rh = gh / rows;
-      grid(p, x, gh, rows, [pcol]);
-      [['6. 지적재산권 등 보유 현황', '852'], ['7. 핵심 연구인력 현황', '857'],
-        ['8. 연구개발 진행 현황', '859'], ['9. 지적재산권 보유 현황', '865'],
-        ['10. 주요 종속회사 현황', '867']].forEach(([t, pg], i) => {
-        const y = GY + i * rh;
-        rowT(p, x, `l${i}`, y, rh, `${t}  ································`, 10, pcol - 18);
-        rowT(p, x, `p${i}`, y, rh, pg, pcol, 46, 'center');
-      });
-    });
+    card(XS[0], 'IR 보고서 목차', 'table_error_1.png', 1106 / 510);
+    card(XS[1], 'ESG 보고서 목차', 'table_error_2.png', 922 / 607);
+    card(XS[2], '지속가능경영보고서 · 목록', 'table_error_3.png', 580 / 240);
 
-    // 패턴 2 — 라벨·번호 열이 좌우로 반복 정렬 → 4열 표로 오검출
-    card(XS[1], '다단 정렬 목차', 'Docling: table · 4 × 4', '실제: 3단으로 편집된 목차 (라벨 + 페이지)', (x, p) => {
-      const rows = 4, gh = 96, rh = gh / rows;
-      const c1 = Math.round(GW * 0.36), c2 = Math.round(GW * 0.52), c3 = Math.round(GW * 0.88);
-      grid(p, x, gh, rows, [c1, c2, c3]);
-      [['Our Company', '04', 'Planet', '10'], ['회사소개', '05', '추진체계', '11'],
-        ['Principle', '61', 'Facts & Figures', '65'], ['윤리경영', '63', '사업부문', '72']]
-        .forEach((r, i) => {
-          const y = GY + i * rh;
-          rowT(p, x, `a${i}`, y, rh, r[0], 8, c1 - 12);
-          rowT(p, x, `b${i}`, y, rh, r[1], c1, c2 - c1, 'center');
-          rowT(p, x, `c${i}`, y, rh, r[2], c2 + 6, c3 - c2 - 8);
-          rowT(p, x, `d${i}`, y, rh, r[3], c3, GW - c3, 'center');
-        });
-    });
-
-    // 패턴 3 — 항목마다 가로 구분선 → 5행 표로 오검출
-    card(XS[2], '행 구분선 목차', 'Docling: table · 5 × 2', '실제: 항목 사이 장식용 구분선이 있는 목차', (x, p) => {
-      const rows = 5, gh = 108, pcol = GW - 46, rh = gh / rows;
-      grid(p, x, gh, rows, [pcol]);
-      [['기후변화 대응(TCFD)', '17'], ['환경경영 조직운영 체계', '28'], ['자원순환', '29'],
-        ['제품책임', '34'], ['사업장 운영', '38']].forEach(([t, pg], i) => {
-        const y = GY + i * rh;
-        rowT(p, x, `l${i}`, y, rh, t, 10, pcol - 18);
-        rowT(p, x, `p${i}`, y, rh, pg, pcol, 46, 'center');
-      });
-    });
+    els.push({ kind: 'shape', geometry: 'roundRect', bbox: [300, 600, 680, 40], fillColor: '#FBF3F3', lineColor: '#EBC9C9', lineWidth: 1, name: 'tm-note' });
+    els.push(textElement('tm-note-t', [300, 600, 680, 40],
+      '공통 원인 — 셀 경계선이 없어도, 열이 격자처럼 정렬된 좌표만으로 Docling 이 표로 판정', 11.5, '#8A3B3B', true, 'center'));
 
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
     s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
