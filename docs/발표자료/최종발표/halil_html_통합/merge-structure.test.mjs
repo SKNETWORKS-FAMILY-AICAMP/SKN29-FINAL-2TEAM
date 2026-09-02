@@ -121,16 +121,16 @@ assert.ok(slides.slice(31, 38).every((s) => {
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
 assert.equal(sigOf(39), '시연 결과', '39는 시연 결과 (패스11: 라벨 한글화)');
-// 패스9: 40p는 네이티브 재구성 (표는 잘라낸 이미지로만 유지)
+// 패스10.5: 40p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
 assert.equal(titleOf(40), '스킬 사용 전후 비교', '40은 스킬 사용 전후 비교 (네이티브)');
 assert.equal(sigOf(40), '스킬 사용 비교', '40 섹션 라벨 (패스11: 한글화)');
-assert.equal(
-  (slides[39].elements.find((e) => e.name === 'sc-table') || {}).media, 'skill-compare-table.png',
-  '40은 잘라낸 표 이미지를 프레임 안에 배치',
+assert.ok(
+  slides[39].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[39].elements.some((e) => e.name === 'sc-t-tot-4'),
+  '40은 juyeon 네이티브 표 셀(sc-t-*)로 구성',
 );
 assert.ok(
-  !slides[39].elements.some((e) => e.name === 'jihun-skill-compare'),
-  '40에 풀블리드 원본 이미지는 없어야 한다',
+  !slides[39].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
+  '40에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
 );
 assert.ok(slides[39].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '40 타이틀 요소');
 assert.deepEqual(

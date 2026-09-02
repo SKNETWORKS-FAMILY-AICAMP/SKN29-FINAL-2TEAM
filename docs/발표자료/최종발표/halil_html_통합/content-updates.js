@@ -1516,20 +1516,33 @@
 
   // ===================================================================
   // 최종 편집 패스 10.5 — juyeon 변형 덱(halil_html_통합__에이전트_0902)의
-  //   16·33·34p 본문을 그대로 이식(카드 라운드·구분선·34p 우측 열 레이아웃).
+  //   15·16·17·32·33·34·35·36·37·38·40p 본문을 그대로 이식.
   //   크롬·제목은 내 덱 것을 유지(패스11 크롬 통일, 패스13 제목이 뒤에서 처리).
+  //   대상 슬라이드는 이식 시점의 현재 제목으로 매칭한다.
   // ===================================================================
   (() => {
     const J = window.HALIL_JUYEON_SLIDES;
     if (!J) { console.warn('[juyeon 이식] HALIL_JUYEON_SLIDES 미로드 — juyeon-slides.js 확인'); return; }
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
     const KEEP = /^(top-accent|top-rule|context-|section-|page-|signal-|signal-label-|foot-|title-|div-)/;
-    [
-      ['16', (s) => s.elements.some((e) => e.name === 's19-band-0')],
-      ['33', (s) => s.elements.some((e) => e.name === 'ev21-card-0')],
-      ['34', (s) => s.elements.some((e) => e.name === 'ev22-stat')],
-    ].forEach(([key, match]) => {
-      const s = deck.slides.find(match);
-      if (!s || !Array.isArray(J[key])) { console.warn(`[juyeon 이식] ${key}p 대상/데이터 없음`); return; }
+    const MAP = {
+      '에이전트 생성과 사용자 질의 요청': '15',
+      'Deep Agent는 에이전트 실행 하네스입니다': '16',
+      'Deep Agent 실행 구조 전체 도면': '17',
+      '판정 계약은 세 층으로 나눠 적용했다': '32',
+      '플랫폼 평가': '33',
+      '기본 동작 10가지, 재검증까지 포함해 10/10 최종 통과': '34',
+      '평가 대상과 판정 기준을 고정했습니다': '35',
+      '시나리오별 판정 초점': '36',
+      '안전성은 유지, 운영 품질은 다음 보완 과제': '37',
+      '검색은 성공, 답변 복원은 실패했다': '38',
+      '스킬 사용 전후 비교': '40',
+    };
+    Object.entries(MAP).forEach(([title, key]) => {
+      const s = deck.slides.find((sl) => sl.elements.some(
+        (e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text) === title,
+      ));
+      if (!s || !Array.isArray(J[key])) { console.warn(`[juyeon 이식] ${key}p("${title}") 대상/데이터 없음`); return; }
       s.elements = s.elements.filter((e) => KEEP.test(e.name || '')).concat(clone(J[key]));
     });
   })();
