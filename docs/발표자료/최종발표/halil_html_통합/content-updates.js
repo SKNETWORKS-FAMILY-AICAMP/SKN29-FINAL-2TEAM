@@ -1764,6 +1764,35 @@
   })();
 
   // ===================================================================
+  // 최종 편집 패스 16.5 — 마지막 Q&A 장표 단순화 + '감사합니다' 장표 추가.
+  // ===================================================================
+  (() => {
+    const qa = deck.slides.find((s) => s.elements.some((e) => e.name === 'closing-qa'));
+    if (qa) {
+      qa.elements = qa.elements.filter((e) => /^(closing-top|institution-logo-plate|그림 |inst-logo-)/.test(e.name || ''));
+      qa.elements.push(
+        textElement('qa-big', [0, 232, 1280, 170], 'Q&A', 120, '#F8C944', true, 'center'),
+        textElement('qa-sub', [0, 410, 1280, 40], '궁금한 점을 자유롭게 나눠 주세요', 20, '#94A5BA', false, 'center'),
+        textElement('qa-brand', [0, 600, 1280, 30], 'halil · 프로젝트 운영 Agent Platform', 14, '#6E7A90', false, 'center'),
+      );
+    }
+    const thanks = {
+      background: '#071426',
+      elements: [
+        { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 7], fillColor: '#F8C944', lineWidth: 0, name: 'thanks-top' },
+        textElement('thanks-big', [0, 236, 1280, 170], '감사합니다', 110, '#FFFFFF', true, 'center'),
+        textElement('thanks-team', [0, 420, 1280, 34], 'TEAM 2 · HALIL', 20, '#F8C944', true, 'center'),
+        textElement('thanks-brand', [0, 460, 1280, 30], '프로젝트 운영 Agent Platform', 15, '#94A5BA', false, 'center'),
+        { kind: 'shape', geometry: 'roundRect', bbox: [982, 640, 242, 38], fillColor: '#FFFFFF', lineWidth: 0, name: 'institution-logo-plate' },
+        imageElement('thanks-logo-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
+        imageElement('thanks-logo-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
+      ],
+    };
+    deck.slides.push(thanks);
+    deck.slides.forEach((item, index) => { item.number = index + 1; });
+  })();
+
+  // ===================================================================
   // 최종 편집 패스 16 — 직업능력심사평가원·고용노동부 로고가 빠진 장표에 추가.
   //   (Agent·파싱·평가 섹션은 다른 소스 덱에서 와서 우하단 기관 로고가 없었음)
   //   기존 장표와 동일 위치·크기.

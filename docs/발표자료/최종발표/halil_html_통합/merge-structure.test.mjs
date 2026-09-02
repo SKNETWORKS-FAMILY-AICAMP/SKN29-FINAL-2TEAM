@@ -28,12 +28,12 @@ const titleOf = (n) => norm((slides[n - 1].elements.find((e) => /^(title-|div-ti
 const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
-// --- 전체 규모 ---
-assert.equal(slides.length, 46, '48 − 패스7 삭제 2장 = 46장');
+// --- 전체 규모 --- (46장 + 패스16.5 '감사합니다' 1장 = 47장)
+assert.equal(slides.length, 47, '46장 + 감사합니다 1장 = 47장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 46 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~46 연속',
+  Array.from({ length: 47 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~47 연속',
 );
 assert.equal(slides.filter((s) => s.elements.some((e) => e.kind === 'html')).length, 0, 'iframe 슬라이드는 없어야 한다');
 
