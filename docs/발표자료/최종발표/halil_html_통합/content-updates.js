@@ -1710,4 +1710,31 @@
     const s40 = deck.slides.find((s) => s.elements.some((e) => e.name === 'title-40'));
     if (s40) s40.elements = s40.elements.filter((e) => e.name !== 'sc-stat' && e.name !== 'sc-stat-label');
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 14 — 내용 장표 제목 통일.
+  //   · 폰트 40px · 볼드 · #0A1020 · bbox [58,92,1160,58] 로 통일 (챕터 표지 div-title 은 제외)
+  //   · '~습니다/~했다' 서술형 → 명사구 (juyeon 작업 페이지 스타일)
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const REWRITE = {
+      '시장은 AX로 가고 있지만, 두 가지 문제가 발목을 잡습니다': 'AX 시장 확대와 기업 현장의 두 문제',
+      '두 문제를 HALIL은 이렇게 해결하려 했습니다': 'HALIL의 두 문제 해결 방향',
+      '먼저 나선 서비스들은 같은 방향으로 수렴합니다': '선도 서비스들의 공통 방향',
+      'PDF는 12단계를 거쳐 DoclingDocument가 됩니다': 'PDF → DoclingDocument, 12단계 파이프라인',
+      '206개 문서로 검증해 보니, Docling만으로는 부족했습니다': '206개 문서 검증 — Docling만으로는 부족',
+      '인접 요소 좌표 비교로 순서를 보정합니다': '인접 요소 좌표 비교 기반 순서 보정',
+      'Qwen2.5-VL과 문맥 우선순위로 해결했습니다': 'Qwen2.5-VL · 문맥 우선순위 기반 해결',
+      '계층 구조를 유지해 직렬화하고 EmbeddingGemma로 임베딩합니다': '계층 구조 직렬화 + EmbeddingGemma 임베딩',
+      '전체 기능은 실제 시연 영상으로 확인합니다': '전체 기능 시연 영상',
+    };
+    deck.slides.forEach((s) => {
+      const t = s.elements.find((e) => /^title-/.test(e.name || '') && norm(e.text));
+      if (!t) return; // div-title-*(챕터 표지)는 제외
+      const next = REWRITE[norm(t.text)] || norm(t.text);
+      setElementText(t, next, { fontSize: 40, bold: true, color: '#0A1020' });
+      t.bbox = [58, 92, 1160, 58];
+    });
+  })();
 })();
