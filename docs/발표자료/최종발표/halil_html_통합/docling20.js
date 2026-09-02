@@ -4,10 +4,10 @@
 (() => {
   const CSS = `
 #dl20{position:absolute;inset:0;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#101828}
-#dl20 .stage{position:absolute;inset:0;display:grid;grid-template-columns:344px 408px 1fr;gap:38px;align-items:start}
+#dl20 .stage{position:absolute;inset:0;display:grid;grid-template-columns:410px 366px 1fr;gap:34px;align-items:start}
 #dl20 .section-label{height:24px;margin-bottom:12px;color:#667085;font-size:13px;font-weight:850;letter-spacing:.10em}
 #dl20 .paper-area{position:relative}
-#dl20 .paper{position:relative;width:336px;height:470px;padding:26px 28px 26px;background:#fff;border:1px solid #cbd5e1}
+#dl20 .paper{position:relative;width:372px;height:472px;padding:28px 30px 26px;background:#fff;border:1px solid #cbd5e1}
 #dl20 .paper::before{content:"PDF · 1 PAGE";position:absolute;right:14px;top:11px;color:#98a2b3;font-size:8px;font-weight:800;letter-spacing:.12em}
 #dl20 .doc-item{position:relative;border:2px solid transparent;transition:.22s ease;cursor:pointer}
 #dl20 .doc-item::before{content:attr(data-order);position:absolute;left:-42px;top:50%;width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#d0d5dd;color:#fff;font-size:13px;font-weight:900;transform:translateY(-50%);transition:.22s ease}
@@ -32,7 +32,7 @@
 #dl20 .paper.intro .doc-item{border-color:transparent;background:transparent;box-shadow:none;opacity:1}
 #dl20 .paper.intro .doc-item::before,#dl20 .paper.intro .doc-item::after{opacity:0}
 #dl20 .tree-area{position:relative}
-#dl20 .code-pane{position:relative;height:470px;padding:18px 24px;border-radius:16px;background:#0c172a;color:#d7e1f3;font-family:Consolas,"Courier New",monospace;overflow:hidden}
+#dl20 .code-pane{position:relative;padding:20px 22px 24px;border-radius:16px;background:#0c172a;color:#d7e1f3;font-family:Consolas,"Courier New",monospace;overflow:hidden}
 #dl20 .tree-area.intro .code-pane>*{opacity:.12}
 #dl20 .tree-area.intro .code-pane{background:#16233a}
 #dl20 .intro-message{display:none;position:absolute;left:34px;right:34px;top:186px;z-index:2;color:#fff;text-align:center;font-size:25px;font-weight:900;letter-spacing:-.03em}
@@ -45,15 +45,15 @@
 #dl20 .schema{margin-bottom:11px;color:#b8f34a;font-size:15.5px;font-weight:800}
 #dl20 .tree-key{margin-bottom:6px;color:#c9bbff;font-size:14.5px;font-weight:800}
 #dl20 .refs{margin-left:10px;padding-left:18px;border-left:1px solid #42516d}
-#dl20 .ref{position:relative;width:100%;margin:0 0 6px;padding:8px 12px;border:0;border-radius:7px;background:#15233b;color:#bac7dc;text-align:left;font:12.5px/1.35 Consolas,monospace;cursor:pointer;transition:.2s ease}
+#dl20 .ref{position:relative;width:100%;margin:0 0 8px;padding:9px 12px;border:0;border-radius:7px;background:#15233b;color:#bac7dc;text-align:left;font:12.5px/1.4 Consolas,monospace;cursor:pointer;transition:.2s ease}
 #dl20 .ref::before{content:"";position:absolute;left:-19px;top:50%;width:18px;border-top:1px solid #42516d}
 #dl20 .ref b{display:inline-grid;place-items:center;width:22px;height:22px;margin-right:8px;border-radius:50%;background:#40516f;color:#fff;font-size:12px}
 #dl20 .ref.active{background:#203b73;color:#fff;box-shadow:inset 3px 0 0 #7aa2ff}
 #dl20 .ref.active b{background:#155eef}
-#dl20 .read-flow{margin:11px 0 13px 30px;color:#c9bbff;font:750 12.5px/1.4 "Malgun Gothic",sans-serif}
+#dl20 .read-flow{margin:13px 0 16px 30px;color:#c9bbff;font:750 12.5px/1.4 "Malgun Gothic",sans-serif}
 #dl20 .read-flow strong{margin-right:7px;color:#fff;font:850 13px/1 Consolas,monospace}
-#dl20 .arrays{padding-top:10px;border-top:1px solid #35445f}
-#dl20 .array{padding:5px 0;color:#aebbd0;font-size:12.5px}
+#dl20 .arrays{padding-top:12px;border-top:1px solid #35445f}
+#dl20 .array{padding:6px 0;color:#aebbd0;font-size:12.5px}
 #dl20 .array .t{color:#83c5ff}#dl20 .array .tb{color:#ffc46b}#dl20 .array .p{color:#72dbea}
 #dl20 .detail-area{position:relative;min-width:0}
 #dl20 .detail-head{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:15px;border-bottom:2px solid #101828}
