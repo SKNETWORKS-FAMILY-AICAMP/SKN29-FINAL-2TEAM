@@ -1753,13 +1753,19 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 15 — 상단 라벨(section-*)·하단 라벨(signal 선·signal-label-*·foot-*) 전면 삭제.
-  //   제목이 짧아지며 라벨과 겹치므로 라벨 계열을 없앤다. context(좌상단 breadcrumb)·page(우상단 번호)는 유지.
+  // 최종 편집 패스 15 — 상단·하단 '텍스트 라벨'만 삭제(section-*·signal-label-*·foot-*).
+  //   좌하단 파란 강조선은 밋밋함 방지를 위해 살리되, 위치를 [58,660,78,4]로 통일.
+  //   context(좌상단 breadcrumb)·page(우상단 번호)는 유지.
   // ===================================================================
   (() => {
     const RM = /^(section-|signal-\d|signal-label-|foot-)/;
-    deck.slides.forEach((s) => {
+    deck.slides.forEach((s, i) => {
       s.elements = s.elements.filter((e) => !RM.test(e.name || ''));
+      // 표준 내용 장표(title-* 보유, 챕터 표지 아님)에 파란 강조선 재부여
+      const isContent = s.elements.some((e) => /^title-/.test(e.name || ''));
+      if (isContent) {
+        s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [58, 660, 78, 4], fillColor: '#2878D1', lineWidth: 0, name: `accent-${i + 1}` });
+      }
     });
   })();
 
