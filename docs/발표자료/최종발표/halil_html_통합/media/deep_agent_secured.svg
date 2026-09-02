@@ -2,21 +2,21 @@
   <title>Deep Agent 실행 구조 + 요청 보안 가드레일</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#4a4a4a"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#52657D"/>
     </marker>
   </defs>
 
   <style>
-    .bx      { fill:#EBE4D5; stroke:#C6B896; stroke-width:1; }
-    .blab    { font-weight:700; font-size:21px; fill:#1f1f1f; text-anchor:middle; }
-    .cont    { fill:#F4F5F7; stroke:#E2E4E8; stroke-width:1; }
-    .inner   { fill:#ffffff; stroke:#E4E4E4; stroke-width:1; }
-    .clab    { font-size:16px; fill:#7c7c7c; text-anchor:middle; }
-    .dot     { fill:none; stroke:#B3A98C; stroke-width:1.4; stroke-dasharray:2 4; }
-    .blackbx { fill:#101010; stroke:#101010; }
+    .bx      { fill:#EEF4FC; stroke:#C2D5EC; stroke-width:1; }
+    .blab    { font-weight:700; font-size:21px; fill:#0A1020; text-anchor:middle; }
+    .cont    { fill:#F4F6F9; stroke:#D9DEE8; stroke-width:1; }
+    .inner   { fill:#ffffff; stroke:#D9DEE8; stroke-width:1; }
+    .clab    { font-size:16px; fill:#6E7A90; text-anchor:middle; }
+    .dot     { fill:none; stroke:#A9BED6; stroke-width:1.4; stroke-dasharray:2 4; }
+    .blackbx { fill:#0C3F91; stroke:#0C3F91; }
     .wlab    { font-weight:700; font-size:24px; fill:#ffffff; text-anchor:middle; }
-    .wsub    { font-size:17px; fill:#e8e8e8; text-anchor:middle; }
-    .flow    { fill:none; stroke:#4a4a4a; stroke-width:1.6; }
+    .wsub    { font-size:17px; fill:#C9D6EA; text-anchor:middle; }
+    .flow    { fill:none; stroke:#52657D; stroke-width:1.6; }
   </style>
 
   <!-- 요청 보안 가드레일 -->
