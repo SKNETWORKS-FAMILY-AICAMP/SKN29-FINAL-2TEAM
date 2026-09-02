@@ -57,6 +57,7 @@
         if (only && i + 1 !== only) return;
         const page = document.createElement('div');
         page.className = 'page';
+        page._slide = slide;
         page.style.background = slide.background;
         slide.elements.forEach(e => page.appendChild(make(e)));
         // 인쇄본: 재생 불가한 영상은 포스터 프레임 + 컨트롤 숨김으로 정지 이미지 대체.
@@ -68,12 +69,14 @@
         document.body.appendChild(page);
       });
 
-      // 인터랙티브 20p 는 인쇄본에선 인트로(기본) 상태로 고정.
-      document.querySelectorAll('.page').forEach((pg, i) => {
-        const slide = deck.slides[i];
+      // 인터랙티브 20p 는 인쇄본에선 인트로(기본) 상태로 고정. ?dl=N 으로 검증용 상태 지정.
+      const dl = new URLSearchParams(location.search).has('dl')
+        ? +new URLSearchParams(location.search).get('dl') : -1;
+      document.querySelectorAll('.page').forEach((pg) => {
+        const slide = pg._slide;
         if (slide && slide.doclingInteractive && window.HALIL_DOCLING20) {
           const root = pg.querySelector('#dl20');
-          if (root) HALIL_DOCLING20.init(root, -1, () => {});
+          if (root) HALIL_DOCLING20.init(root, dl, () => {});
         }
       });
 

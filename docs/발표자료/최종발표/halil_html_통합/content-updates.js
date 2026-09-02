@@ -1549,15 +1549,16 @@
 
   // ===================================================================
   // 최종 편집 패스 10.6 — 개요 4·5·6p 를 juneok(프로젝트개요_v4) 재설계 본문으로 교체.
-  //   4=AI Agent 도입과 업무 확장 / 5=시장과 선도 서비스 / 6=플랫폼 방향(HALIL).
-  //   크롬은 내 덱 것 유지(패스11), 제목은 juneok 것으로.
+  //   4=AI Agent 도입과 업무 확장 / 5=플랫폼 방향(HALIL) / 6=시장과 선도 서비스.
+  //   (5·6p 는 순서를 뒤집어 배치 — SRC 맵 참고). 크롬은 내 덱 것 유지(패스11), 제목은 juneok 것으로.
   // ===================================================================
   (() => {
     const O = window.HALIL_JUNEOK_OVERVIEW;
     if (!O) { console.warn('[juneok 개요 이식] HALIL_JUNEOK_OVERVIEW 미로드 — juneok-overview.js 확인'); return; }
     const KEEP = /^(top-accent|top-rule|context-|section-|page-|title-|accent-|ctx-logo|inst-logo|signal-|foot-)/;
+    const SRC = { 4: 4, 5: 6, 6: 5 }; // 물리 페이지 → juneok 원본 슬라이드
     [4, 5, 6].forEach((pg) => {
-      const j = O[pg];
+      const j = O[SRC[pg]];
       const s = deck.slides[pg - 1]; // 1~6p 는 재배치 대상이 아님 → 인덱스 고정
       if (!s || !j || !Array.isArray(j.els)) { console.warn(`[juneok 개요 이식] ${pg}p 대상/데이터 없음`); return; }
       s.background = j.bg || s.background;
@@ -1664,11 +1665,11 @@
     });
 
     if (p14) {
-      // 다이어그램 종이 배경을 덱 크림색으로 리컬러한 이미지를 써서, 흰 프레임 없이 슬라이드에 자연스럽게 얹는다.
+      // 가독성 높인 v2 다이어그램(상단 제목 문구는 크롭 제거)으로 교체. 흰 프레임 없이 크림 배경에 얹는다.
       p14.background = '#F7F6F1';
       p14.elements = p14.elements.filter((e) => e.name !== 'architecture-canvas' && e.name !== 'sub-16');
       const img = p14.elements.find((e) => e.name === 'architecture-diagram');
-      if (img) { img.media = 'Architecture-diagram-cream.png'; img.bbox = [40, 150, 1200, 486]; }
+      if (img) { img.media = 'Architecture-v2-cream.png'; img.bbox = [40, 158, 1200, 510]; img.fit = 'contain'; }
     }
 
     if (p11) {
@@ -1899,7 +1900,7 @@
     s.elements = s.elements.filter((e) => KEEP.test(e.name || ''));
     setElementText(s.elements.find((e) => /^title-/.test(e.name || '')), '문서를 읽기 순서와 요소별 구조로 저장합니다');
     if (window.HALIL_DOCLING20) {
-      s.elements.push({ kind: 'html', name: 'dl20', bbox: [34, 152, 1212, 474], html: window.HALIL_DOCLING20.HTML });
+      s.elements.push({ kind: 'html', name: 'dl20', bbox: [34, 178, 1212, 474], html: window.HALIL_DOCLING20.HTML });
       s.doclingInteractive = true;
     } else {
       console.warn('[패스17] HALIL_DOCLING20 미로드 — docling20.js 확인');
@@ -1922,5 +1923,133 @@
         }
       });
     });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 19 — 18p('파서가 필요한 이유') 의 github_activity.svg 이미지를
+  //   덱 공통 스타일(카드 없이 크림 위, 파란 대형 수치 + #E1E6EE 구분선 + 하단 노트 밴드)로 재구성.
+  //   참고: 21p(vi-*), 19p(bp-note) 컨벤션.
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => e.kind === 'image' && e.media === 'github_activity.svg'));
+    if (!s) { console.warn('[패스19] 18p(github_activity.svg) 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => e.name !== 'img-2');
+
+    const line = (name, bbox, color, wpx) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: color, lineWidth: wpx, name });
+    const dot = (name, bbox, fill, stroke, sw) => ({ kind: 'shape', geometry: 'ellipse', bbox, fillColor: fill, lineColor: stroke, lineWidth: sw, name });
+
+    // 좌측 정렬선은 제목(title-*, x=58)에 통일, 전 폭 1160(58~1218).
+    const L = 58, W = 1160, R = L + W; // 1218
+    const els = [
+      textElement('s18n-kick', [L, 190, 800, 24], '도클링 깃허브 활동 지표', 13, '#52657D', true),
+      textElement('s18n-asof', [L, 190, W, 24], '2026.09.01 확인', 11.5, '#6E7A90', false, 'right'),
+      line('s18n-div-top', [L, 238, W, 0], '#E1E6EE', 1),
+    ];
+
+    // 4개 지표 — 카드 없이 크림 위, 대형 수치는 덱 시그니처 블루(#2878D1). 컬럼 등간격.
+    const cw = W / 4; // 290
+    const cols = [
+      ['관심도', '65.8K', '스타'],
+      ['확장·재사용', '4.7K', '포크'],
+      ['사용자 피드백', '904', '공개 이슈'],
+      ['코드 검토', '86', '진행 중인 변경 제안'],
+    ];
+    cols.forEach(([label, value, unit], i) => {
+      const x = L + i * cw;
+      els.push(textElement(`s18n-l${i}`, [x, 262, cw - 20, 24], label, 13, '#52657D', true));
+      els.push(textElement(`s18n-v${i}`, [x, 288, cw - 12, 58], value, 46, '#2878D1', true));
+      els.push(textElement(`s18n-u${i}`, [x, 350, cw - 20, 22], unit, 12, '#6E7A90'));
+      if (i > 0) els.push(line(`s18n-vd${i}`, [x - 22, 258, 0, 118], '#E1E6EE', 1));
+    });
+
+    els.push(line('s18n-div-mid', [L, 400, W, 0], '#E1E6EE', 1));
+    els.push(textElement('s18n-relhead', [L, 420, 220, 24], '최근 릴리즈', 13, '#52657D', true));
+
+    // 릴리즈 타임라인 — 노드를 위쪽 4개 지표 컬럼 중앙에 맞춰 좌우 대칭 배치.
+    const dw = 150; // 날짜/버전 라벨 폭
+    const nodeX = cols.map((_, i) => L + i * cw + cw / 2); // 203, 493, 783, 1073
+    els.push(line('s18n-tl', [nodeX[0] - 40, 468, nodeX[3] - nodeX[0] + 80, 0], '#C7D6EE', 3));
+    const rel = [['8월 25일', '2.122.0'], ['8월 26일', '2.123.0'], ['8월 28일', '2.123.1'], ['8월 31일', '2.124.0']];
+    rel.forEach(([date, ver], i) => {
+      const cx = nodeX[i];
+      const last = i === rel.length - 1;
+      els.push(last
+        ? dot('s18n-n3', [cx - 9, 460, 18, 18], '#0C3F91', '#F8C944', 3)
+        : dot(`s18n-n${i}`, [cx - 6, 463, 12, 12], '#2878D1', '#2878D1', 1));
+      els.push(textElement(`s18n-d${i}`, [cx - dw / 2, 486, dw, 20], date, 12, '#0A1020', true, 'center'));
+      els.push(textElement(`s18n-r${i}`, [cx - dw / 2, 510, dw, 16], ver, 11, '#2878D1', false, 'center'));
+    });
+
+    // 하단 결론 문장 → 19p 와 같은 크림 노트 밴드로 (문구 키우고 수직 가운데).
+    els.push(panel('s18n-note-bg', [L, 554, W, 66], '#FFF4E6', '#F0D9B8'));
+    const cap = s.elements.find((e) => e.name === 'cap-2');
+    if (cap) {
+      cap.bbox = [L + 24, 554, W - 48, 66];
+      setElementText(cap, cap.text, { fontSize: 15.5, bold: true, color: '#173F7A', alignment: 'center' });
+      (cap.textStyle || (cap.textStyle = {})).verticalAlignment = 'middle';
+    }
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 20 — 19p('12단계 파싱 파이프라인') 의 mermaid SVG 3장(pipeline_row1~3)을
+  //   네이티브 카드(3행×4단계 + 번호 + 행내 화살표)로 재구성. 핵심 단계는 강조.
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => e.kind === 'image' && /^pipeline_row/.test(e.media || '')));
+    if (!s) { console.warn('[패스20] 19p(pipeline_row*.svg) 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !['pr1-3', 'pr2-3', 'pr3-3', 'plabel-3'].includes(e.name || ''));
+
+    const L = 58, W = 1160, GAP = 22, CW = 273, CH = 96;
+    const xs = [0, 1, 2, 3].map((i) => L + i * (CW + GAP));
+    const rowY = [194, 316, 438];
+
+    const steps = [
+      ['PDF Backend', '페이지 이미지와 내장 텍스트 추출'],
+      ['Page Pre-processing', '페이지 이미지와 텍스트 정보 준비'],
+      ['Layout Detection', '제목·본문·목록·표·그림 영역 찾기'],
+      ['OCR 실행', '찾아낸 영역의 한국어·영어 글자 인식'],
+      ['Text Cell Merge', 'PDF 내장 텍스트와 OCR 결과 결합'],
+      ['Layout Post-processing', '텍스트를 영역에 배치하고 중복 제거'],
+      ['TableFormer', '표의 행·열·셀 구조 복원'],
+      ['Page Assemble', '텍스트·표·그림 요소 생성'],
+      ['ReadingOrderModel', '읽기 순서와 캡션 관계 결정'],
+      ['HeadingHierarchyModel', '제목과 소제목의 계층 정리'],
+      ['Picture Crop·Classification', '그림 영역을 잘라 유형 분류'],
+      ['DoclingDocument', '하나의 공통 문서 구조'],
+    ];
+    const HOT = new Set([0, 2, 3, 6, 8, 10]); // 01·03·04·07·09·11 강조
+
+    const els = [];
+    steps.forEach(([en, ko], i) => {
+      const r = Math.floor(i / 4), c = i % 4;
+      const x = xs[c], y = rowY[r];
+      const hot = HOT.has(i);
+      const card = panel(`s19n-c${i}`, [x, y, CW, CH], hot ? '#CFE1FA' : '#F1F4FA', hot ? '#1E6FD0' : '#DCE3EE');
+      if (hot) card.lineWidth = 2;
+      els.push(card);
+      els.push(textElement(`s19n-n${i}`, [x + 18, y + 12, 60, 18], String(i + 1).padStart(2, '0'), 11.5, hot ? '#0C3F91' : '#2878D1', true));
+      els.push(textElement(`s19n-t${i}`, [x + 18, y + 30, CW - 34, 22], en, 12, '#0A1020', true));
+      els.push(textElement(`s19n-s${i}`, [x + 18, y + 52, CW - 32, 38], ko, 10.5, hot ? '#3A4C64' : '#52657D'));
+      if (c < 3) els.push(textElement(`s19n-a${i}`, [x + CW, y + 32, GAP + 2, 30], '→', 16, '#2878D1', true, 'center'));
+    });
+
+    // 하단 노트 밴드 — 문구 교체 후 재배치
+    const noteBg = s.elements.find((e) => e.name === 'bp-note-bg');
+    if (noteBg) noteBg.bbox = [L, 552, W, 66];
+    const note = s.elements.find((e) => e.name === 'bp-note');
+    if (note) {
+      note.bbox = [L + 22, 552, W - 44, 66]; // 18p 노트 밴드와 동일 규격·폰트
+      setElementText(note, 'DOCX · PPTX · Markdown 등의 문서는 형식별 PipeLine 을 거쳐 같은 DoclingDocument 형식으로 생성 됩니다.',
+        { fontSize: 15.5, bold: true, color: '#173F7A', alignment: 'center' });
+      (note.textStyle || (note.textStyle = {})).verticalAlignment = 'middle';
+    }
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
   })();
 })();

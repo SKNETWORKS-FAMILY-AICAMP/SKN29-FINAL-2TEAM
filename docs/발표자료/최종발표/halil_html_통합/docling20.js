@@ -12,17 +12,15 @@
 #dl20 .doc-item{position:relative;border:2px solid transparent;transition:.22s ease;cursor:pointer}
 #dl20 .doc-item::before{content:attr(data-order);position:absolute;left:-38px;top:50%;width:24px;height:24px;display:grid;place-items:center;border-radius:50%;background:#d0d5dd;color:#fff;font-size:12px;font-weight:900;transform:translateY(-50%);transition:.22s ease}
 #dl20 .doc-item::after{content:"";position:absolute;left:-14px;top:50%;width:12px;border-top:2px solid #d0d5dd;transition:.22s ease}
-#dl20 .doc-title{margin:4px 0 14px;padding:6px 8px;color:#172033;font-size:18px;font-weight:900;letter-spacing:-.04em}
-#dl20 .doc-copy{margin:0 0 15px;padding:7px 8px;color:#475467;font-size:11.5px;line-height:1.6}
+#dl20 .doc-title{margin:2px 0 10px;padding:6px 8px;color:#172033;font-size:18px;font-weight:900;letter-spacing:-.04em}
+#dl20 .doc-copy{margin:0 0 10px;padding:7px 8px;color:#475467;font-size:11.5px;line-height:1.6}
 #dl20 .doc-copy strong{color:#155eef}
-#dl20 .doc-table{margin-bottom:15px;padding:4px}
+#dl20 .doc-table{margin-bottom:12px;padding:4px}
 #dl20 table{width:100%;border-collapse:collapse;font-size:10.5px;text-align:center}
 #dl20 th{padding:6px 4px;background:#eef4ff;color:#344054;font-weight:850;border:1px solid #b8c8e8}
 #dl20 td{padding:6px 4px;color:#475467;border:1px solid #ccd5e3}
-#dl20 .doc-picture{position:relative;height:104px;overflow:hidden;background:
-  radial-gradient(circle at 22% 30%,#b8f34a 0 3px,transparent 4px) 0 0/24px 24px,
-  radial-gradient(circle at 22% 30%,#b8f34a 0 3px,transparent 4px) 12px 12px/24px 24px,
-  linear-gradient(135deg,#0891a8,#06a9c7)}
+#dl20 .doc-picture{position:relative;height:168px;overflow:visible;background:#e9eef5}
+#dl20 .doc-picture img{width:100%;height:100%;object-fit:contain;object-position:center}
 #dl20 .doc-picture .caption{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;background:#101828c9;color:#fff;font-size:10px;font-weight:700}
 #dl20 .doc-page{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#98a2b3;font-size:9px}
 #dl20 .doc-item.active{border-color:#155eef;background:#eef4ff;box-shadow:0 0 0 4px #155eef12}
@@ -91,7 +89,8 @@
         </table>
       </div>
       <div class="doc-item doc-picture" data-order="4" data-index="3">
-        <div class="caption">그림 1 · 브랜드 그래픽 패턴</div>
+        <img src="media/business_performance_chart.png" alt="분기별 매출 증가를 나타내는 막대 및 추세 차트">
+        <div class="caption">그림 1 · 분기별 매출 성장 추이</div>
       </div>
       <div class="doc-page">1</div>
     </div>
@@ -144,9 +143,9 @@
       ['prov.bbox', '<span class="coord">[34, 193, 316, 306]</span> · 표 전체 좌표'],
     ] },
     { type: 'PICTURE', path: '#/pictures/0', summary: '이미지의 위치뿐 아니라 <strong>유형과 자연어 설명</strong>을 저장해 이미지도 검색 대상으로 만듭니다.', fields: [
-      ['classification', '<strong>graphic</strong> · 신뢰도 0.97 <span class="enrichment">분류 옵션</span>'],
-      ['description', '“청록색 배경 위에 연두색 점이 배열된 그래픽” <span class="enrichment">설명 옵션</span>'],
-      ['captions', '“그림 1 · 브랜드 그래픽 패턴” · 연결 캡션'],
+      ['classification', '<strong>bar_chart</strong> · 신뢰도 0.97 <span class="enrichment">분류 옵션</span>'],
+      ['description', '“분기별 매출이 지속적으로 증가하는 추세를 나타낸 막대 차트” <span class="enrichment">설명 옵션</span>'],
+      ['captions', '“그림 1 · 분기별 매출 성장 추이” · 연결 캡션'],
       ['prov', 'page_no <strong>1</strong> · <span class="coord">bbox [34, 329, 316, 495]</span>'],
     ] },
   ];
