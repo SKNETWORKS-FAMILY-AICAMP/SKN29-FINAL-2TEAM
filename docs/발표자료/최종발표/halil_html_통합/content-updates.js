@@ -1565,6 +1565,21 @@
       const t = s.elements.find((e) => /^title-/.test(e.name || ''));
       if (t) setElementText(t, j.title);
     });
+
+    // 4p 미세 조정
+    const s4 = deck.slides[3];
+    if (s4) {
+      const g = (name) => s4.elements.find((e) => e.name === name);
+      // ① '개별 업무 영역 기준 10% 이하' 쌍을 페이지 정중앙(x=640)으로
+      const lbl = g('metric-note-label'); if (lbl) lbl.bbox = [366, 278, 282, 28];
+      const val = g('metric-note-value'); if (val) val.bbox = [664, 272, 190, 38];
+      // ② '업무 확장의 핵심 과제' 위 구분선 (juneok 원본 divider-4 복원)
+      if (!g('divider-4')) {
+        const anchor = g('problem-kicker');
+        const idx = anchor ? s4.elements.indexOf(anchor) : s4.elements.length;
+        s4.elements.splice(idx, 0, { kind: 'shape', geometry: 'line', bbox: [72, 344, 1136, 0], lineColor: '#D3DCE8', lineWidth: 1, name: 'divider-4' });
+      }
+    }
   })();
 
   // ===================================================================
