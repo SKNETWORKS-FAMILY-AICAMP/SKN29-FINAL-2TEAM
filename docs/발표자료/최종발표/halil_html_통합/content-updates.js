@@ -1786,11 +1786,14 @@
         s.elements.push(imageElement(`ctx-logo-${i + 1}`, [58, 51, 34, 16], 'halil-logo.png', 'contain'));
       }
     });
-    // 챕터 표지에도 좌상단 halil 워드마크 (밝은 배경 → 원본 색).
+    // 챕터 표지 좌상단 halil 워드마크 — 크기는 다른 장표와 동일(34×16),
+    // x 는 큰 챕터 번호(div-no, x=64)에 맞춰 세로로 정렬.
     deck.slides.forEach((s, i) => {
       if (!s.elements.some((e) => /^div-title-/.test(e.name || ''))) return;
-      if (s.elements.some((e) => e.name === 'cover-logo')) return;
-      s.elements.push(imageElement(`cover-logo-${i + 1}`, [64, 44, 46, 22], 'halil-logo.png', 'contain'));
+      if (s.elements.some((e) => /^cover-logo/.test(e.name || ''))) return;
+      const no = s.elements.find((e) => /^div-no-/.test(e.name || ''));
+      const x = no ? no.bbox[0] : 64;
+      s.elements.push(imageElement(`cover-logo-${i + 1}`, [x, 46, 34, 16], 'halil-logo.png', 'contain'));
     });
   })();
 
@@ -1803,7 +1806,7 @@
     const chrome = () => [
       { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 5], fillColor: '#F8C944', lineWidth: 0, name: 'cl-top' },
       { kind: 'shape', geometry: 'rect', bbox: [0, 0, 18, 720], fillColor: '#2878D1', lineWidth: 0, name: 'cl-side' },
-      imageElement('cl-halil-logo', [58, 46, 44, 21], 'halil-logo.png', 'contain'),
+      imageElement('cl-halil-logo', [58, 51, 34, 16], 'halil-logo.png', 'contain'),
       imageElement('cl-inst-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
       imageElement('cl-inst-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
     ];
