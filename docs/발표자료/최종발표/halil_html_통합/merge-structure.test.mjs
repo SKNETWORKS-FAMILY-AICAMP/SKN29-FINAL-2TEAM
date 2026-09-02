@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ctx = vm.createContext({ window: {}, console });
-for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'content-updates.js']) {
+for (const f of ['deck-data.js', 'wonbin-deck-data.js', 'ops-4pages-data.js', 'agent-v2-eval-data.js', 'agent-v2-lifecycle-data.js', 'juyeon-slides.js', 'content-updates.js']) {
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx);
 }
 const slides = ctx.window.HALIL_DECK.slides;

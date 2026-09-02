@@ -1515,6 +1515,26 @@
   })();
 
   // ===================================================================
+  // 최종 편집 패스 10.5 — juyeon 변형 덱(halil_html_통합__에이전트_0902)의
+  //   16·33·34p 본문을 그대로 이식(카드 라운드·구분선·34p 우측 열 레이아웃).
+  //   크롬·제목은 내 덱 것을 유지(패스11 크롬 통일, 패스13 제목이 뒤에서 처리).
+  // ===================================================================
+  (() => {
+    const J = window.HALIL_JUYEON_SLIDES;
+    if (!J) { console.warn('[juyeon 이식] HALIL_JUYEON_SLIDES 미로드 — juyeon-slides.js 확인'); return; }
+    const KEEP = /^(top-accent|top-rule|context-|section-|page-|signal-|signal-label-|foot-|title-|div-)/;
+    [
+      ['16', (s) => s.elements.some((e) => e.name === 's19-band-0')],
+      ['33', (s) => s.elements.some((e) => e.name === 'ev21-card-0')],
+      ['34', (s) => s.elements.some((e) => e.name === 'ev22-stat')],
+    ].forEach(([key, match]) => {
+      const s = deck.slides.find(match);
+      if (!s || !Array.isArray(J[key])) { console.warn(`[juyeon 이식] ${key}p 대상/데이터 없음`); return; }
+      s.elements = s.elements.filter((e) => KEEP.test(e.name || '')).concat(clone(J[key]));
+    });
+  })();
+
+  // ===================================================================
   // 최종 편집 패스 11 — 전 내용 장표의 상단·하단 크롬 통일.
   //   · 좌측 context: wonbin → 'halil · 04 프로젝트 수행 결과'
   //   · 중앙 section: 한글 라벨 + 중앙정렬(bbox [430,51,420,22]), 없으면 생성
