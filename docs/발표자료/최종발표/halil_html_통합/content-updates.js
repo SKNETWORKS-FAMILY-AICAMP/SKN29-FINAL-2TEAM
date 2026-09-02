@@ -2856,7 +2856,7 @@
       s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
       setElementText(s.elements.find((e) => e.name === 'context-16'), `·   부록 A · ${k + 1} / 8`);
       setElementText(s.elements.find((e) => e.name === 'title-16'), title);
-      s.elements.push(imageElement(`apx-img-${k + 1}`, [54, 172, 1172, 472], `appendix_a_0${k + 1}.png`, 'contain'));
+      s.elements.push(imageElement(`apx-img-${k + 1}`, [56, 158, 1168, 500], `appendix_a_0${k + 1}.png`, 'contain'));
       s.sources = ['부록/07_에이전트_발표_부록_A_슬라이드.html'];
       return s;
     });
