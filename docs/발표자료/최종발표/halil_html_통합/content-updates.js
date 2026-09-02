@@ -2829,4 +2829,36 @@
       });
     });
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 33 — '감사합니다' 뒤에 부록 A (07_에이전트_발표_부록_A_슬라이드.html)
+  //   8장을 풀블리드 이미지로 삽입. 이미지는 부록 HTML 을 1280×720 로 캡처한 것.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    if (deck.slides.some((s) => s.elements.some((e) => e.name === 'apx-1'))) return;
+    let at = deck.slides.findIndex((s) => titleOf(s) === '감사합니다');
+    if (at < 0) at = deck.slides.length - 1;
+
+    const apx = [];
+    for (let i = 1; i <= 8; i++) {
+      apx.push({
+        background: '#FBFAF7',
+        elements: [imageElement(`apx-${i}`, [0, 0, 1280, 720], `appendix_a_0${i}.png`, 'fill')],
+        sources: ['부록/07_에이전트_발표_부록_A_슬라이드.html'],
+      });
+    }
+    deck.slides.splice(at + 1, 0, ...apx);
+
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
 })();

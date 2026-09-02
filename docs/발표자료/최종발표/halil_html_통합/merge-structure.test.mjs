@@ -28,12 +28,12 @@ const titleOf = (n) => norm((slides[n - 1].elements.find((e) => /^(title-|div-ti
 const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
-// --- 전체 규모 --- (46 + 서브 표지 4장 + '문서 처리 파이프라인 평가' 1장 = 51장)
-assert.equal(slides.length, 51, '46 + 04-1~04-4 + 문서 처리 파이프라인 평가 = 51장');
+// --- 전체 규모 --- (51 + 부록 A 8장 = 59장)
+assert.equal(slides.length, 59, '51 + 부록 A(07_에이전트_발표_부록) 8장 = 59장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 51 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~51 연속',
+  Array.from({ length: 59 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~59 연속',
 );
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '이미지 설명의 세 문제'), '29p(세 문제)는 삭제됨');
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '전체 기능 시연 영상'), "'전체 기능 시연 영상'은 삭제됨");
@@ -172,6 +172,15 @@ assert.ok(
   '49는 Future Work 표(fw-*) 3행으로 구성',
 );
 assert.ok(slides[49].elements.some((e) => (e.text || '').includes('Q&A')), '50은 클로징/Q&A 슬라이드');
+assert.ok(slides[50].elements.some((e) => norm(e.text) === '감사합니다'), '51은 클로징 인사');
+// --- 패스33: '감사합니다' 뒤 부록 A 8장 (풀블리드 이미지) ---
+for (let i = 1; i <= 8; i++) {
+  const s = slides[50 + i];
+  assert.ok(
+    s.elements.length === 1 && s.elements[0].name === `apx-${i}` && s.elements[0].media === `appendix_a_0${i}.png`,
+    `${51 + i}은 부록 A-0${i} 풀블리드 이미지`,
+  );
+}
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
 const missing = [];
