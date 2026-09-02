@@ -1153,45 +1153,91 @@
       set(s, 'title-5', '206개 문서로 검증해 보니, Docling만으로는 부족했습니다');
       set(s, 'section-5', 'VALIDATION · ISSUES');
       set(s, 'foot-5', 'VALIDATION · ISSUES');
-      s.elements.push(textElement('vi-lead', [60, 200, 1160, 44],
-        '정형 문서는 안정적이었지만 브로슈어형 PDF에서 정확도가 크게 낮아졌고, 네 가지 문제가 반복됐습니다.', 15, '#20283A'));
+      // 이미지(좌) + 목록(우) 그룹을 슬라이드 가로 중앙에 배치.
+      const IW = 348, IH = 428, LW = 512, GAP = 76;
+      const GX = 58 + (1160 - (IW + GAP + LW)) / 2; // 그룹 좌측 시작
+      const LX = GX + IW + GAP;                     // 목록 좌측 시작
+      const IY = 214;
+
+      s.elements.push(textElement('vi-lead', [GX, 178, 1160 - (GX - 58) * 2, 22],
+        '정형 문서는 안정적이었지만 브로슈어형 PDF에서 정확도가 크게 낮아졌고, 네 가지 문제가 반복됐습니다.', 13.5, '#20283A'));
+
+      // 좌측: 실제 검증에 쓴 브로슈어형 PDF (좌측 절반 크롭) — 복잡한 다단·혼합 레이아웃 예시
+      s.elements.push(
+        { kind: 'shape', geometry: 'rect', bbox: [GX - 1, IY - 1, IW + 2, IH + 2], fillColor: 'transparent', lineColor: '#C9D3E0', lineWidth: 1, name: 'vi-img-frame' },
+        imageElement('vi-img', [GX, IY, IW, IH], 'pdf_sample_left.png', 'cover'),
+        textElement('vi-img-cap', [GX, IY + IH + 6, IW + 40, 18], '검증에 사용한 브로슈어형 PDF 예시 (한화파워)', 10, '#8792A6'),
+      );
+
+      // 우측: 네 가지 문제 목록 (번호 + 제목 한 줄, 설명 아래 줄)
       [
-        ['01', '제목 미검출', 'section_header 인식 실패로 섹션 경계가 사라지고 맥락이 뒤섞입니다'],
-        ['02', '읽기 순서 오류', '문장 연결이 끊겨 원래 의미와 다른 결과가 만들어집니다'],
-        ['03', '표 오검출 · 구조 붕괴', '표가 아닌 디자인을 표로 오인하거나 행·열·셀 관계가 손상됩니다'],
-        ['04', '이미지 설명 부족', '검색에 활용할 수 있는 이미지 설명 정보가 없습니다'],
+        ['01', '읽기 순서 오류', '문장을 잘못된 순서로 연결해 원래 의미와 다른 결과가 됩니다'],
+        ['02', '제목 미검출', '제목이 다른 문서 요소로 분류돼 섹션 경계가 사라집니다'],
+        ['03', '표 오검출 및 구조 붕괴', '표가 아닌 영역을 표로 인식하거나 행·열·셀 관계가 깨집니다'],
+        ['04', '이미지 설명 부족', '이미지의 의미가 검색 데이터에 충분히 반영되지 않습니다'],
       ].forEach((r, i) => {
-        const y = 262 + i * 76;
+        const y = 236 + i * 106;
         s.elements.push(
-          hline(`vi-div-${i}`, 60, y - 12, 1160, '#E1E6EE'),
-          textElement(`vi-no-${i}`, [60, y, 56, 28], r[0], 18, '#2878D1', true),
-          textElement(`vi-t-${i}`, [128, y - 2, 320, 34], r[1], 19, '#0A1020', true),
-          textElement(`vi-d-${i}`, [456, y, 760, 40], r[2], 14, '#20283A'),
+          hline(`vi-div-${i}`, LX, y - 20, LW, '#E1E6EE'),
+          textElement(`vi-no-${i}`, [LX, y, 46, 26], r[0], 17, '#2878D1', true),
+          textElement(`vi-t-${i}`, [LX + 48, y - 2, LW - 48, 28], r[1], 18, '#0A1020', true),
+          textElement(`vi-d-${i}`, [LX + 48, y + 30, LW - 48, 44], r[2], 13.5, '#52657D'),
         );
       });
-      s.elements.push(textElement('vi-ref', [60, 590, 1160, 20],
-        '참고: DocLayNet(arXiv:2206.01062) · ICDAR 2023 — 형식 다양성을 문서 변환의 핵심 난제로 정의', 10, '#8792A6', false, 'center'));
     })();
     drop('문서 파싱 결과에서 확인된 네 가지 문제');
 
-    // ---- M. LAYER DESIGN(24p) — 오른쪽 항목을 네 개 보완 레이어로 ----
+    // ---- M. LAYER DESIGN(22p) — 21p 와 반대 배치: 설명(좌) + 네이티브 다이어그램(우) ----
     (() => {
       const s = find('네 개의 보완 레이어');
       if (!s) return;
       purge(s, ['pn-7-0', 'pt-7-0', 'pd-7-0', 'pn-7-1', 'pt-7-1', 'pd-7-1', 'pn-7-2', 'pt-7-2', 'pd-7-2']);
+      s.elements = s.elements.filter((e) => e.name !== 'img-7'); // diagram_layers_overview.svg 제거
+
+      // 그룹(설명+다이어그램)을 가로 중앙에 배치. 21p 와 좌우만 반대.
+      const LW = 480, DW = 400, GAP = 60;
+      const LX = 58 + (1160 - (LW + GAP + DW)) / 2; // 설명 좌측
+      const DX = LX + LW + GAP;                     // 다이어그램 좌측
+
+      // 좌측: 설명 목록 — 21p(vi-*) 와 동일 양식
       [
         ['01', '읽기 순서 보완', '화면 좌표를 비교해 인접 요소의 뒤바뀐 순서만 교정합니다'],
         ['02', '제목 추출 보완', 'list_item을 조건부로 section_header로 승격해 섹션 경계를 복원합니다'],
         ['03', '표 판별 (Table Gate)', '표가 아닌 디자인을 규칙으로 걸러 오검출을 제거합니다'],
         ['04', '이미지 설명 보완', 'VLM과 문맥 우선순위로 검색용 이미지 설명을 생성합니다'],
       ].forEach((r, i) => {
-        const y = 198 + i * 100;
+        const y = 236 + i * 106;
         s.elements.push(
-          textElement(`ld-no-${i}`, [534, y, 40, 28], r[0], 18, '#2878D1', true),
-          textElement(`ld-t-${i}`, [578, y, 560, 28], r[1], 18, '#0A1020', true),
-          textElement(`ld-d-${i}`, [578, y + 32, 560, 48], r[2], 13.5, '#20283A'),
+          hline(`ld-div-${i}`, LX, y - 20, LW, '#E1E6EE'),
+          textElement(`ld-no-${i}`, [LX, y, 46, 26], r[0], 17, '#2878D1', true),
+          textElement(`ld-t-${i}`, [LX + 48, y - 2, LW - 48, 28], r[1], 18, '#0A1020', true),
+          textElement(`ld-d-${i}`, [LX + 48, y + 30, LW - 48, 44], r[2], 13.5, '#52657D'),
         );
       });
+
+      // 우측: 보완 파이프라인 네이티브 다이어그램 (DoclingDocument → 4레이어 → 최종)
+      const box = (name, y, h, title, sub, fill, lc) => {
+        s.elements.push({ kind: 'shape', geometry: 'roundRect', bbox: [DX, y, DW, h], fillColor: fill, lineColor: lc, lineWidth: 1.5, name });
+        s.elements.push(textElement(`${name}-t`, [DX + 16, sub ? y + 8 : y, DW - 32, sub ? 22 : h], title, 13.5, '#0A1020', true, 'center'));
+        if (sub) s.elements.push(textElement(`${name}-s`, [DX + 16, y + 30, DW - 32, 18], sub, 10.5, '#52657D', false, 'center'));
+      };
+      const arrow = (i, y) => s.elements.push(textElement(`dg-a${i}`, [DX + DW / 2 - 12, y, 24, 20], '↓', 15, '#98A2B3', true, 'center'));
+
+      s.elements.push(textElement('dg-kick', [DX, 186, DW, 20], '보완 파이프라인', 12, '#52657D', true));
+      let y = 214;
+      box('dg-head', y, 54, 'DoclingDocument', 'Docling 변환 직후', '#F2F4F7', '#667085'); y += 54;
+      const layers = [
+        ['dg-l0', '읽기 순서 보완', '#EAF2FF', '#155EEF'],
+        ['dg-l1', '제목 추출 보완', '#F4EBFF', '#7F56D9'],
+        ['dg-l2', '표 판별 (Table Gate)', '#FFF4E5', '#F79009'],
+        ['dg-l3', '이미지 설명 보완', '#E6F9FB', '#06AED4'],
+      ];
+      layers.forEach(([nm, t, fill, lc], i) => {
+        arrow(i, y + 4); y += 26;
+        box(nm, y, 44, t, '', fill, lc); y += 44;
+      });
+      arrow(4, y + 4); y += 26;
+      box('dg-foot', y, 54, '최종 DoclingDocument', '네 보완이 모두 반영됨', '#F2F4F7', '#667085');
     })();
 
     // ---- N. 읽기 순서 사례(25p) — 보완 레이어 라벨 ----
@@ -1926,9 +1972,10 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 19 — 18p('파서가 필요한 이유') 의 github_activity.svg 이미지를
-  //   덱 공통 스타일(카드 없이 크림 위, 파란 대형 수치 + #E1E6EE 구분선 + 하단 노트 밴드)로 재구성.
-  //   참고: 21p(vi-*), 19p(bp-note) 컨벤션.
+  // 최종 편집 패스 19 — 18p('파서가 필요한 이유') 재구성.
+  //   A. 파서가 필요한 이유 3가지 (제목이 요구하는 설명) — 컴팩트 패널.
+  //   B. 도클링 채택 근거 — 깃허브 활동 지표 + 릴리즈 타임라인 (github_activity.svg 대체).
+  //   하단: 크림 노트 밴드. 덱 팔레트/컨벤션(21p vi-*, 19p bp-note).
   // ===================================================================
   (() => {
     const s = deck.slides.find((sl) =>
@@ -1939,16 +1986,30 @@
     const line = (name, bbox, color, wpx) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: color, lineWidth: wpx, name });
     const dot = (name, bbox, fill, stroke, sw) => ({ kind: 'shape', geometry: 'ellipse', bbox, fillColor: fill, lineColor: stroke, lineWidth: sw, name });
 
-    // 좌측 정렬선은 제목(title-*, x=58)에 통일, 전 폭 1160(58~1218).
     const L = 58, W = 1160, R = L + W; // 1218
-    const els = [
-      textElement('s18n-kick', [L, 190, 800, 24], '도클링 깃허브 활동 지표', 13, '#52657D', true),
-      textElement('s18n-asof', [L, 190, W, 24], '2026.09.01 확인', 11.5, '#6E7A90', false, 'right'),
-      line('s18n-div-top', [L, 238, W, 0], '#E1E6EE', 1),
-    ];
+    const els = [];
 
-    // 4개 지표 — 카드 없이 크림 위, 대형 수치는 덱 시그니처 블루(#2878D1). 컬럼 등간격.
-    const cw = W / 4; // 290
+    // ---- A. 파서가 필요한 이유 ----
+    els.push(textElement('s18n-whyhead', [L, 182, 900, 22], '왜 문서 파서가 필요한가', 13, '#52657D', true));
+    const rw = (W - 40) / 3; // 373.3
+    const reasons = [
+      ['다양한 문서 형식', '기업 문서는 PDF · DOCX · 엑셀 등 형식이 제각각입니다'],
+      ['단순 텍스트 추출의 한계', '표·이미지·레이아웃 구조가 사라져 RAG 정확도가 떨어집니다'],
+      ['구조까지 보존하는 파서', '표·이미지·페이지 좌표를 유지한 채 추출해야 합니다'],
+    ];
+    reasons.forEach(([t, b], i) => {
+      const x = L + i * (rw + 20), y = 208, h = 104;
+      els.push(panel(`s18n-rp${i}`, [x, y, rw, h], '#F1F4FA', '#DCE3EE'));
+      els.push(textElement(`s18n-rn${i}`, [x + 18, y + 14, 40, 16], String(i + 1).padStart(2, '0'), 11, '#2878D1', true));
+      els.push(textElement(`s18n-rt${i}`, [x + 18, y + 32, rw - 32, 22], t, 13.5, '#0A1020', true));
+      els.push(textElement(`s18n-rb${i}`, [x + 18, y + 56, rw - 28, 40], b, 11, '#52657D'));
+    });
+
+    // ---- B. 도클링 채택 근거 (깃허브 활동) ----
+    els.push(line('s18n-div-mid', [L, 336, W, 0], '#E1E6EE', 1));
+    els.push(textElement('s18n-kick', [L, 350, 900, 22], '도클링을 택한 이유 · 깃허브 활동', 13, '#52657D', true));
+
+    const cw = W / 4;
     const cols = [
       ['관심도', '65.8K', '스타'],
       ['확장·재사용', '4.7K', '포크'],
@@ -1957,36 +2018,34 @@
     ];
     cols.forEach(([label, value, unit], i) => {
       const x = L + i * cw;
-      els.push(textElement(`s18n-l${i}`, [x, 262, cw - 20, 24], label, 13, '#52657D', true));
-      els.push(textElement(`s18n-v${i}`, [x, 288, cw - 12, 58], value, 46, '#2878D1', true));
-      els.push(textElement(`s18n-u${i}`, [x, 350, cw - 20, 22], unit, 12, '#6E7A90'));
-      if (i > 0) els.push(line(`s18n-vd${i}`, [x - 22, 258, 0, 118], '#E1E6EE', 1));
+      els.push(textElement(`s18n-l${i}`, [x, 378, cw - 20, 20], label, 12, '#52657D', true));
+      els.push(textElement(`s18n-v${i}`, [x, 398, cw - 12, 44], value, 30, '#2878D1', true));
+      els.push(textElement(`s18n-u${i}`, [x, 440, cw - 20, 18], unit, 10.5, '#6E7A90'));
+      if (i > 0) els.push(line(`s18n-vd${i}`, [x - 22, 374, 0, 86], '#E1E6EE', 1));
     });
 
-    els.push(line('s18n-div-mid', [L, 400, W, 0], '#E1E6EE', 1));
-    els.push(textElement('s18n-relhead', [L, 420, 220, 24], '최근 릴리즈', 13, '#52657D', true));
-
-    // 릴리즈 타임라인 — 노드를 위쪽 4개 지표 컬럼 중앙에 맞춰 좌우 대칭 배치.
-    const dw = 150; // 날짜/버전 라벨 폭
-    const nodeX = cols.map((_, i) => L + i * cw + cw / 2); // 203, 493, 783, 1073
-    els.push(line('s18n-tl', [nodeX[0] - 40, 468, nodeX[3] - nodeX[0] + 80, 0], '#C7D6EE', 3));
+    els.push(textElement('s18n-relhead', [L, 470, 220, 20], '최근 릴리즈', 12, '#52657D', true));
+    const dw = 150;
+    const nodeX = cols.map((_, i) => L + i * cw + cw / 2);
+    els.push(line('s18n-tl', [nodeX[0] - 40, 508, nodeX[3] - nodeX[0] + 80, 0], '#C7D6EE', 3));
     const rel = [['8월 25일', '2.122.0'], ['8월 26일', '2.123.0'], ['8월 28일', '2.123.1'], ['8월 31일', '2.124.0']];
     rel.forEach(([date, ver], i) => {
       const cx = nodeX[i];
       const last = i === rel.length - 1;
       els.push(last
-        ? dot('s18n-n3', [cx - 9, 460, 18, 18], '#0C3F91', '#F8C944', 3)
-        : dot(`s18n-n${i}`, [cx - 6, 463, 12, 12], '#2878D1', '#2878D1', 1));
-      els.push(textElement(`s18n-d${i}`, [cx - dw / 2, 486, dw, 20], date, 12, '#0A1020', true, 'center'));
-      els.push(textElement(`s18n-r${i}`, [cx - dw / 2, 510, dw, 16], ver, 11, '#2878D1', false, 'center'));
+        ? dot('s18n-n3', [cx - 8, 501, 16, 16], '#0C3F91', '#F8C944', 3)
+        : dot(`s18n-n${i}`, [cx - 5, 504, 10, 10], '#2878D1', '#2878D1', 1));
+      els.push(textElement(`s18n-d${i}`, [cx - dw / 2, 522, dw, 18], date, 11, '#0A1020', true, 'center'));
+      els.push(textElement(`s18n-r${i}`, [cx - dw / 2, 542, dw, 14], ver, 10, '#2878D1', false, 'center'));
     });
 
-    // 하단 결론 문장 → 19p 와 같은 크림 노트 밴드로 (문구 키우고 수직 가운데).
-    els.push(panel('s18n-note-bg', [L, 554, W, 66], '#FFF4E6', '#F0D9B8'));
+    // ---- 하단 노트 밴드 ----
+    els.push(panel('s18n-note-bg', [L, 566, W, 56], '#FFF4E6', '#F0D9B8'));
     const cap = s.elements.find((e) => e.name === 'cap-2');
     if (cap) {
-      cap.bbox = [L + 24, 554, W - 48, 66];
-      setElementText(cap, cap.text, { fontSize: 15.5, bold: true, color: '#173F7A', alignment: 'center' });
+      cap.bbox = [L + 24, 566, W - 48, 56];
+      setElementText(cap, '도클링은 오픈소스라 비용 없이 자체 인프라에 통합할 수 있고, 활발한 업데이트와 피드백으로 확장성·유지보수에 적합합니다.',
+        { fontSize: 14.5, bold: true, color: '#173F7A', alignment: 'center' });
       (cap.textStyle || (cap.textStyle = {})).verticalAlignment = 'middle';
     }
 
