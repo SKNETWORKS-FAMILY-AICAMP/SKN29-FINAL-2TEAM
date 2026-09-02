@@ -104,45 +104,27 @@
     return { kind: 'video', bbox, name, media, controls: true };
   }
 
-  // 표지는 흰색 카드 없이 reverse wordmark와 투명 mark만 사용한다.
-  removeNames(1, ['cover-brand', 'cover-product-brand-plate', 'cover-product-favicon', 'cover-product-logo', 'institution-logo-plate']);
-  slide(1).elements.push(imageElement(
-    'cover-product-mark-contour',
-    [57, 103, 56, 56],
-    'halil-mark.png',
-    'contain',
-    'brightness(0) invert(1)'
-  ));
-  slide(1).elements.push(imageElement(
-    'cover-product-mark',
-    [58, 104, 54, 54],
-    'halil-mark.png',
-    'contain'
-  ));
-  slide(1).elements.push(imageElement(
-    'cover-product-logo-contour-bg',
-    [122, 100, 182, 63],
-    'halil-logo.png',
-    'contain',
-    'brightness(0) invert(1)'
-  ));
-  slide(1).elements.push(imageElement(
-    'cover-product-logo-contour',
-    [124, 101, 178, 61],
-    'halil-logo.png',
-    'contain'
-  ));
+  // 표지: 좌상단 브랜드 마크·로고와 부제 문구 없이 배경 이미지의 워드마크만 사용한다.
+  removeNames(1, ['cover-brand', 'cover-product-brand-plate', 'cover-product-favicon', 'cover-product-logo', 'institution-logo-plate', 'cover-title']);
+  byName(1, 'cover-formal', '프로젝트 운영을 위한\nAI Agent 플랫폼');
+  // 첫 줄(수식어)은 제품명 줄보다 작게 — 56 → 41.
+  (() => {
+    const lead = slide(1).elements.find((e) => e.name === 'cover-formal')?.paragraphs?.[0];
+    if (lead) { lead.resolvedTextStyle.fontSize = 41; lead.runs[0].fontSize = 41; }
+  })();
+  // 기관 로고(직업능력심사평가원·고용노동부)는 좌하단 팀원 이름 아래로 옮긴다.
   const coverInstitutionA = slide(1).elements.find((element) => element.name === '그림 194');
   const coverInstitutionB = slide(1).elements.find((element) => element.name === '그림 195');
   if (coverInstitutionA) {
-    coverInstitutionA.bbox = [985, 642, 105, 33];
+    coverInstitutionA.bbox = [62, 586, 95, 30];
     coverInstitutionA.filter = 'brightness(1.55)';
   }
   if (coverInstitutionB) {
-    coverInstitutionB.bbox = [1105, 642, 112, 33];
+    coverInstitutionB.bbox = [173, 586, 101, 30];
     coverInstitutionB.filter = 'brightness(2.1)';
   }
-  slide(1).sources = ['frontend/src/assets/mark.png', 'frontend/src/assets/logo.png'];
+  // 팀원 순서는 '프로젝트 팀 구성 및 역할' 장표와 동일하게 맞춘다.
+  byName(1, 'cover-members', '임준 · 김지훈 · 임준억 · 성주연 · 최원빈  |  멘토 김유진');
 
   // 목차는 왼쪽 번호 열을 사용하므로 제목에서는 중복 번호를 제거한다.
   byName(3, 'row-text-3-0', '프로젝트 개요');
@@ -150,13 +132,46 @@
   byName(3, 'row-text-3-2', '프로젝트 수행 절차 및 방법');
   byName(3, 'row-text-3-3', '프로젝트 수행 결과');
   byName(3, 'row-text-3-4', '자체 평가 의견');
-  removeNames(3, ['section-3']);
+  removeNames(3, ['section-3', 'sub-3']);
   byName(3, 'signal-label-3', '목차');
+  // 좌측 쏠림 완화 — 제목과 목록을 슬라이드 가로 중앙으로 모으고, 부제 삭제분만큼 목록을 위로 당겨 세로 균형을 맞춘다.
+  byName(3, 'title-3', '목차', { alignment: 'center' });
+  {
+    const tocLeft = 320;      // 번호 열 시작
+    const tocTextLeft = 398;  // 항목 텍스트 시작
+    const tocWidth = 640;     // 구분선 폭 (중앙: 320 → 960)
+    const firstRuleY = 182;   // 첫 구분선 y (기존 214 → 위로)
+    const rowPitch = 84;      // 행 간격 (기존 72 → 늘려 세로 여백 균등 배분)
+    for (let i = 0; i < 5; i += 1) {
+      const ruleY = firstRuleY + rowPitch * i;
+      const rule = slide(3).elements.find((e) => e.name === `row-rule-3-${i}`);
+      if (rule) rule.bbox = [tocLeft, ruleY, tocWidth, rule.bbox[3]];
+      const no = slide(3).elements.find((e) => e.name === `row-no-3-${i}`);
+      if (no) no.bbox = [tocLeft, ruleY + 18, no.bbox[2], no.bbox[3]];
+      const txt = slide(3).elements.find((e) => e.name === `row-text-3-${i}`);
+      if (txt) txt.bbox = [tocTextLeft, ruleY + 14, tocLeft + tocWidth - tocTextLeft, txt.bbox[3]];
+    }
+  }
 
   // 도입부는 시장 근거 → 선도 사례 → 운영 전환 간극 → HALIL 범위 → 사용자 흐름으로 전개한다.
   byName(4, 'div-title-4', '프로젝트 개요');
-  byName(4, 'div-sub-4', 'AX 시장의 변화에서 출발해 우리가 주목한 문제와 해결 방향을 설명합니다.');
   byName(4, 'div-key-4', '시장 변화 · 프로젝트 출발 · 문제 정의 · 해결 방향');
+
+  // 챕터 표지 5장(01~05) — 소제목(div-sub)·하단 마커(div-key) 삭제, 구분선(div-line)은 유지.
+  //   제목은 키우고(68 → 84) 슬라이드 정중앙(가로·세로)으로 옮긴다. 번호·구분선·페이지는 그대로.
+  [4, 12, 15, 20, 51].forEach((n) => {
+    removeNames(n, [`div-sub-${n}`, `div-key-${n}`]);
+    const title = slide(n).elements.find((e) => e.name === `div-title-${n}`);
+    if (!title) return;
+    title.bbox = [62, 300, 1156, 120];
+    title.textStyle.verticalAlignment = 'middle';
+    title.textStyle.alignment = 'center';
+    title.paragraphs.forEach((p) => {
+      p.resolvedTextStyle.fontSize = 84;
+      p.resolvedTextStyle.alignment = 'center';
+      p.runs.forEach((r) => { r.fontSize = 84; });
+    });
+  });
 
   [5, 6, 7, 8].forEach((number) => {
     const element = slide(number)?.elements.find((item) => item.name === `context-${number}`);
@@ -269,6 +284,14 @@
   replaceExact(14, 'Builder · 도구 32종\nRuntime · Streaming\nMemory · 버전 관리', 'Builder · Runtime\nStreaming · Memory\n버전 관리');
   replaceExact(14, 'side_effect 메타 15개\nHITL · 멱등 · 동시성\nSkill 12×3 검증', '쓰기 작업 승인 경계\nHITL · 멱등 · 동시성\nSkill 검증 흐름');
   replaceExact(14, '검색 37 · Agent 36\n최종 파싱 단위 검증\n배포 · 시연 준비', '검색·Agent DEV 평가\n파싱 보정 검증\n배포 · 시연 준비');
+  // 구현 과정 타임라인 — 중앙 바 기준 위·아래 간격을 대칭으로 (기존 위 96 / 아래 22 → 각 38).
+  for (let i = 0; i < 6; i += 1) {
+    const numberY = i % 2 === 0 ? 278 : 426; // 짝수 = 바 위, 홀수 = 바 아래
+    const num = slide(14).elements.find((e) => e.name === `time-14-${i}`);
+    if (num) num.bbox = [num.bbox[0], numberY, num.bbox[2], num.bbox[3]];
+    const lab = slide(14).elements.find((e) => e.name === `time-label-14-${i}`);
+    if (lab) lab.bbox = [lab.bbox[0], numberY + 32, lab.bbox[2], lab.bbox[3]];
+  }
 
   // 13페이지는 공통 양식을 유지하고 최신 아키텍처 다이어그램만 본문에 배치한다.
   slide(16).background = '#F7F6F1';
@@ -1023,10 +1046,10 @@
         textElement('sx-p0', [94, 254, 300, 110], '흩어진 정보', 20, '#101728', true),
         textElement('sx-s0', [420, 254, 440, 110], '커넥터와 MCP로 연결', 19, '#2878D1', true),
         textElement('sx-c0', [880, 254, 330, 110], '문서·웹·업무 도구를 한 곳에서 검색·활용', 14.5, '#52657D'),
-        bandEl('sx-r1', [72, 396, 1136, 178], '#F4F6F9'),
-        textElement('sx-p1', [94, 418, 300, 150], '개인 암묵지', 20, '#101728', true),
-        textElement('sx-s1', [420, 418, 440, 150], '누구나 만드는 에이전트', 19, '#2878D1', true),
-        textElement('sx-c1', [880, 418, 330, 150], '커넥터·MCP로 데이터 소스를 받아, 개발자·비개발자 모두 자신의 노하우를 담은 에이전트를 만들고 결과를 확인', 14.5, '#52657D'),
+        bandEl('sx-r1', [72, 410, 1136, 150], '#F4F6F9'),
+        textElement('sx-p1', [94, 432, 300, 110], '개인 암묵지', 20, '#101728', true),
+        textElement('sx-s1', [420, 432, 440, 110], '누구나 만드는 에이전트', 19, '#2878D1', true),
+        textElement('sx-c1', [880, 432, 330, 110], '커넥터·MCP로 데이터 소스를 받아, 개발자·비개발자 모두 자신의 노하우를 담은 에이전트를 만들고 결과를 확인', 14.5, '#52657D'),
         textElement('sx-close', [74, 586, 1134, 28], '흩어진 정보와 개인의 업무 방식을 하나의 업무 흐름으로 연결한 플랫폼이 HALIL입니다.', 13.5, '#52657D', false, 'center'),
       );
     })();
@@ -1462,4 +1485,160 @@
   function byNameFor(targetSlide, name, value, options) {
     setElementText(targetSlide.elements.find((element) => element.name === name), value, options);
   }
+
+  // ===================================================================
+  // 최종 편집 패스 10 — '설계에서 운영 검증까지의 구현 과정'(SCHEDULE 타임라인)을
+  //   02장 팀 구성 뒤 → 03장 '프로젝트 수행 절차 및 방법' 챕터 표지 바로 뒤로 이동.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const isCh03Cover = (s) => s.elements.some(
+      (e) => /^div-title-/.test(e.name || '') && norm(e.text) === '프로젝트 수행 절차 및 방법',
+    );
+    const from = deck.slides.findIndex((s) => s.elements.some((e) => e.name === 'phase-band-14-0'));
+    if (from < 0) { console.warn('[패스10] 구현 과정 타임라인 슬라이드를 찾지 못함'); return; }
+    if (deck.slides.findIndex(isCh03Cover) < 0) { console.warn('[패스10] 03장 챕터 표지를 찾지 못함'); return; }
+
+    const [moved] = deck.slides.splice(from, 1);
+    deck.slides.splice(deck.slides.findIndex(isCh03Cover) + 1, 0, moved);
+    // 챕터가 바뀌었으므로 컨텍스트 헤더를 03장으로 교정.
+    byNameFor(moved, 'context-14', 'halil   ·   03 프로젝트 수행 절차 및 방법');
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 11 — 전 내용 장표의 상단·하단 크롬 통일.
+  //   · 좌측 context: wonbin → 'halil · 04 프로젝트 수행 결과'
+  //   · 중앙 section: 한글 라벨 + 중앙정렬(bbox [430,51,420,22]), 없으면 생성
+  //   · 하단 signal-label: 중앙 라벨과 동일 텍스트, 파란 선이 있는 장표에 없으면 생성
+  //   (재번호가 모두 끝난 뒤라 페이지 번호로 매핑)
+  // ===================================================================
+  (() => {
+    const LABEL = {
+      2: '목차', 4: '시장 변화', 5: '해결 방향', 6: '선도 서비스',
+      8: '팀 구성', 10: '구현 과정', 11: '시스템 구조', 14: '시스템 구조',
+      15: '에이전트 생애주기', 16: '에이전트 하네스', 17: '에이전트 런타임',
+      18: '파서 선택', 19: '기본 파이프라인', 20: '파싱 결과', 21: '검증 · 문제',
+      22: '보완 레이어', 23: '읽기 순서 · 사례', 24: '읽기 순서 · 로직',
+      25: '제목 추출 · 사례', 26: '제목 추출 · 로직', 27: '표 판별 · 사례', 28: '표 판별 · 로직',
+      29: '이미지 설명 · 문제', 30: '이미지 설명 · 해결', 31: '청킹 · 임베딩',
+      32: '판정 계층', 33: '플랫폼 평가', 34: '스모크 테스트 · V1', 35: 'V2 기준선',
+      36: '시나리오 맵', 37: '평가 결과', 38: 'V3 실패 분석', 39: '시연 결과', 40: '스킬 사용 비교',
+      41: '플랫폼 운영', 42: '연결 환경', 43: '실행 통제', 44: '운영 모니터링',
+    };
+    // 상단 크롬 3요소(context·section·page)는 같은 세로 박스 + 세로 중앙정렬으로 baseline 을 맞춘다.
+    const CY = 44;
+    const CH = 30;
+    const vmid = (el) => {
+      if (!el) return;
+      el.bbox = [el.bbox[0], CY, el.bbox[2], CH];
+      (el.textStyle || (el.textStyle = {})).verticalAlignment = 'middle';
+    };
+
+    deck.slides.forEach((s, i) => {
+      const label = LABEL[i + 1];
+      if (!label) return;
+      const findEl = (re) => s.elements.find((e) => re.test(e.name || ''));
+
+      const ctx = findEl(/^context-/);
+      if (ctx && /^\s*wonbin/.test(String(ctx.text || ''))) {
+        setElementText(ctx, 'halil   ·   04 프로젝트 수행 결과');
+      }
+      vmid(ctx);
+      vmid(findEl(/^page-/));
+
+      let sec = findEl(/^section-/);
+      if (sec) {
+        setElementText(sec, label, { alignment: 'center', fontSize: 13 });
+      } else {
+        sec = textElement(`section-u${i + 1}`, [430, CY, 420, CH], label, 13, '#6C7482', true, 'center');
+        s.elements.push(sec);
+      }
+      sec.bbox = [430, CY, 420, CH];
+      vmid(sec);
+
+      // 하단 라벨 — halil 장표는 signal-label-*, wonbin 장표는 foot-* 를 쓴다. 둘 다 인식해 중복 생성 방지.
+      const foot = findEl(/^(signal-label-|foot-)/);
+      if (foot) {
+        setElementText(foot, label);
+        foot.bbox = [150, 651, 470, 22];
+      } else if (findEl(/^signal-\d/)) {
+        s.elements.push(textElement(`signal-label-u${i + 1}`, [150, 651, 470, 22], label, 12, '#6C7482', true, 'left'));
+      }
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 12 — 시스템 구조 장표 분리.
+  //   · 11p(03장): 상세 이미지 → 네이티브 단순화 다이어그램 (6개 존 + 주요 흐름).
+  //   · 14p(04장): 상세 이미지 유지하되 흰 프레임 제거 + 크림 배경으로 이음새 제거.
+  //   · 부제목(제목 아래 한 줄, sub-*)은 전 장표에서 삭제.
+  // ===================================================================
+  (() => {
+    const ctxText = (s) => (s.elements.find((e) => /^context-/.test(e.name || '')) || {}).text || '';
+    const hasArch = (s) => s.elements.some((e) => e.name === 'architecture-diagram');
+    const p11 = deck.slides.find((s) => hasArch(s) && ctxText(s).includes('03'));
+    const p14 = deck.slides.find((s) => hasArch(s) && ctxText(s).includes('04'));
+
+    // 제목 아래 부제목 한 줄은 전 장표에서 제거.
+    deck.slides.forEach((s) => {
+      s.elements = s.elements.filter((e) => !/^sub-\d+$/.test(e.name || ''));
+    });
+
+    if (p14) {
+      // 다이어그램 종이 배경을 덱 크림색으로 리컬러한 이미지를 써서, 흰 프레임 없이 슬라이드에 자연스럽게 얹는다.
+      p14.background = '#F7F6F1';
+      p14.elements = p14.elements.filter((e) => e.name !== 'architecture-canvas' && e.name !== 'sub-16');
+      const img = p14.elements.find((e) => e.name === 'architecture-diagram');
+      if (img) { img.media = 'Architecture-diagram-cream.png'; img.bbox = [40, 150, 1200, 486]; }
+    }
+
+    if (p11) {
+      p11.elements = p11.elements.filter((e) => !['architecture-canvas', 'architecture-diagram'].includes(e.name));
+      byNameFor(p11, 'title-16', '화면·실행·검색·검증을 하나의 흐름으로');
+
+      // 상단: 요청이 지나는 4개 영역 (Agent Runtime = 핵심, 강조)
+      const zones = [
+        ['사용자 화면', '채팅 · 빌더 · 프로젝트\n운영자 콘솔', 'ic-ux.svg', false],
+        ['API · 서비스', 'Django 5 · 인증 / 팀 권한\n문서 · 업무 인테이크', 'ic-api.svg', false],
+        ['Agent Runtime', '도구 · 서브에이전트 조립·실행\nHITL 승인 · Skills · Memory', 'ic-agent.svg', true],
+        ['외부 연동', 'Drive · Jira · MCP\nOpenAI / Anthropic · Guardrails', 'ic-link.svg', false],
+      ];
+      zones.forEach(([t, b, ic, core], i) => {
+        const x = 64 + i * 296;
+        p11.elements.push(panel(`arc11-z${i}`, [x, 196, 264, 162], core ? '#E8F1FC' : '#FFFFFF', core ? '#2878D1' : '#D9DEE8'));
+        p11.elements.push(imageElement(`arc11-zi${i}`, [x + 22, 220, 26, 26], ic, 'contain'));
+        p11.elements.push(textElement(`arc11-zt${i}`, [x + 56, 220, 190, 26], t, 16, '#0A1020', true));
+        const body = textElement(`arc11-zb${i}`, [x + 22, 258, 224, 84], b, 12.5, '#3A4658');
+        p11.elements.push(body);
+        if (i < 3) p11.elements.push(textElement(`arc11-ar${i}`, [x + 264, 262, 32, 30], '→', 26, '#2878D1', true, 'center'));
+      });
+
+      // 하단: 흐름을 받쳐 주는 두 프로세스
+      const supp = [
+        ['arc11-skill', '스킬 검증 워커', 'Queue → 검사 → 시험 실행 → 발행\nHTTP와 분리된 상시 프로세스', 64, 'ic-shield.svg'],
+        ['arc11-doc', '문서 인덱싱 · 검색', 'Docling 파싱 · 청킹 · 768D 임베딩\n→ pgvector → Hybrid Search', 656, 'ic-search.svg'],
+      ];
+      supp.forEach(([nm, t, b, x, ic]) => {
+        p11.elements.push(panel(nm, [x, 378, 560, 120], '#F4F6F9', '#D9DEE8'));
+        p11.elements.push(imageElement(`${nm}-i`, [x + 26, 398, 24, 24], ic, 'contain'));
+        p11.elements.push(textElement(`${nm}-t`, [x + 58, 398, 476, 24], t, 15, '#0A1020', true));
+        p11.elements.push(textElement(`${nm}-b`, [x + 26, 434, 508, 50], b, 12.5, '#3A4658'));
+      });
+
+      p11.elements.push(panel('arc11-infra', [64, 522, 1152, 62], '#0C3F91', '#0C3F91'));
+      p11.elements.push(imageElement('arc11-infra-i', [92, 541, 24, 24], 'ic-infra.svg', 'contain'));
+      p11.elements.push(textElement('arc11-infra-t', [128, 522, 1024, 62],
+        '인프라   ·   EC2 · Docker Compose   ·   RDS PostgreSQL 17 + pgvector   ·   S3 Object Storage   ·   RunPod Serverless GPU',
+        12.5, '#FFFFFF', true, 'center'));
+    }
+  })();
 })();

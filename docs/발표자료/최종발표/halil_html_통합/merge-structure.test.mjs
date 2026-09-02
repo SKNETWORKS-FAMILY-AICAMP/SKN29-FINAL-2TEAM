@@ -75,22 +75,23 @@ assert.equal(titleOf(6), '먼저 나선 서비스들은 같은 방향으로 수�
 // --- 04장 진입: 챕터 표지 → 시연 영상 → 시스템 구조 재노출 ---
 assert.equal(titleOf(12), '프로젝트 수행 결과', '12는 04 챕터 표지');
 assert.ok(slides[12].elements.some((e) => e.kind === 'video' && /시연영상/.test(e.media || '')), '13은 시연 영상');
-assert.equal(titleOf(14), 'UI부터 실행·통제까지 연결된 시스템 구조', '14는 시스템 구조 재노출');
-assert.equal(
-  slides.filter((_, i) => titleOf(i + 1) === 'UI부터 실행·통제까지 연결된 시스템 구조').length, 2,
-  '시스템 구조 슬라이드는 두 번 등장',
-);
+assert.equal(titleOf(14), 'UI부터 실행·통제까지 연결된 시스템 구조', '14는 시스템 구조 상세(이미지) 재노출');
+// 패스12: 11p(03장)은 네이티브 단순화 개요, 14p(04장)은 상세 이미지 — 제목·구성이 다르다.
+assert.equal(titleOf(11), '화면·실행·검색·검증을 하나의 흐름으로', '11은 시스템 구조 단순화 개요');
+assert.ok(slides[10].elements.some((e) => e.name === 'arc11-z0'), '11은 네이티브 단순화 다이어그램(arc11-*)');
+assert.ok(!slides[10].elements.some((e) => e.name === 'architecture-diagram'), '11에 상세 이미지는 없다');
+assert.ok(slides[13].elements.some((e) => e.name === 'architecture-diagram'), '14는 상세 아키텍처 이미지 유지');
 
-// --- Agent 상세 3장 ---
-assert.deepEqual([15, 16, 17].map(sigOf), ['AGENT LIFECYCLE', 'AGENT HARNESS', 'AGENT RUNTIME'], '15~17 Agent 상세');
+// --- Agent 상세 3장 (패스11: 섹션 라벨 한글화) ---
+assert.deepEqual([15, 16, 17].map(sigOf), ['에이전트 생애주기', '에이전트 하네스', '에이전트 런타임'], '15~17 Agent 상세');
 assert.equal(titleOf(15), '에이전트 생성과 사용자 질의 요청', '15는 agent_v2 16p로 교체됨');
 
-// --- 원빈 파싱: 18~31 ---
+// --- 원빈 파싱: 18~31 (패스11: context 헤더를 halil 04로 통일) ---
 const wonbin = slides.slice(17, 31);
 assert.equal(wonbin.length, 14, '18~31이 원빈 파싱 14장');
 wonbin.forEach((s, i) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
-  assert.ok((c?.text || '').includes('wonbin'), `원빈 ${18 + i}장은 wonbin 컨텍스트 헤더`);
+  assert.ok((c?.text || '').includes('04 프로젝트 수행 결과'), `원빈 ${18 + i}장 컨텍스트 헤더는 halil 04로 통일`);
 });
 
 // --- 표 게이트 수치 %  ---
@@ -108,8 +109,8 @@ assert.ok(
 );
 assert.deepEqual(
   [32, 33, 34, 35, 36, 37, 38].map(sigOf),
-  ['JUDGMENT LAYERS', 'PLATFORM EVALUATION', 'SMOKE TEST · V1', 'V2 BASELINE', 'SCENARIO MAP', 'EVALUATION RESULT', 'V3 FAILURE ANALYSIS'],
-  '32~38은 agent_v2 평가 섹션 7장',
+  ['판정 계층', '플랫폼 평가', '스모크 테스트 · V1', 'V2 기준선', '시나리오 맵', '평가 결과', 'V3 실패 분석'],
+  '32~38은 agent_v2 평가 섹션 7장 (패스11: 라벨 한글화)',
 );
 assert.ok(slides.slice(31, 38).every((s) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
@@ -119,10 +120,10 @@ assert.ok(slides.slice(31, 38).every((s) => {
 // --- 꼬리(패스7 이후): DEMO RESULT → 지훈 '스킬 사용 전후 비교' 1장 → 운영 콘솔 4장 → 자체 평가 표지 → 클로징 ---
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
-assert.equal(sigOf(39), 'DEMO RESULT', '39는 DEMO RESULT');
+assert.equal(sigOf(39), '시연 결과', '39는 시연 결과 (패스11: 라벨 한글화)');
 // 패스9: 40p는 네이티브 재구성 (표는 잘라낸 이미지로만 유지)
 assert.equal(titleOf(40), '스킬 사용 전후 비교', '40은 스킬 사용 전후 비교 (네이티브)');
-assert.equal(sigOf(40), 'SKILL COMPARISON', '40 섹션 라벨');
+assert.equal(sigOf(40), '스킬 사용 비교', '40 섹션 라벨 (패스11: 한글화)');
 assert.equal(
   (slides[39].elements.find((e) => e.name === 'sc-table') || {}).media, 'skill-compare-table.png',
   '40은 잘라낸 표 이미지를 프레임 안에 배치',
