@@ -86,7 +86,7 @@
     .mwcol.w{background:#fff;border:1px solid #ececec;box-shadow:0 6px 16px rgba(30,41,59,.06)}
     .mwcol.w .mwhead{font-size:16px;padding:10px 12px;line-height:1.25}
     .mwcol.w .mwsub{font-size:13px;font-weight:800;color:#3b6fd4;margin-top:10px;text-align:left;letter-spacing:0}
-    .mwcol.w .mwitem{margin-top:16px}
+    .mwcol.w .mwitem{margin-top:12px}
     .mwcol.w .mwitem b{font-size:17px}
     .mwcol.w .mwitem span{font-size:14.5px;color:#495264}
     .mwcol.w .mwitem em{font-size:14px}
@@ -97,6 +97,29 @@
     .fstep b{font-size:16px;font-weight:800}
     .fstep span{font-size:12.5px;font-weight:800;color:#3b6fd4;margin-top:5px}
     .fstep.plain b{font-size:18px}
+    .mwcol.w .mworigin{margin-top:9px;display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:-.01em}
+    .mwcol.w .mworigin.team{background:#e6f0ff;color:#1f5fc0;border:1px solid #b7d2f4}
+    .mwcol.w .mworigin.ext{background:#f0f1f3;color:#5b6472;border:1px solid #dbdee3}
+    .mwcol.w code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:#eef1f6;padding:1px 5px;border-radius:5px}
+    .mwcol.w.lite{padding:22px 26px 24px}
+    .mwcol.w.lite .mwhead{font-size:17px;padding:11px 12px}
+    .mwcol.w.lite .mwitem{margin-top:22px}
+    .mwcol.w.lite .mwitem b{font-size:19px}
+    .mwcol.w.lite .mwitem span{font-size:15.5px;color:#48566a;line-height:1.55}
+    .mwcol.w .mwpill{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+    .mwcol.w .mwpill i{font-style:normal;font-weight:800;font-size:12.5px;padding:4px 11px;border-radius:999px;background:#eef2f8;color:#41506a}
+
+    /* 부록 · 직접 구현 코드 */
+    .codewrap{display:grid;grid-template-columns:1fr 1fr;gap:26px;height:472px}
+    .codecol{display:flex;flex-direction:column;min-width:0}
+    .codecol h3{margin:0;font-size:18px;font-weight:800;color:#1c2434;letter-spacing:-.02em}
+    .codecol .cref{margin:4px 0 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#6b7480;word-break:break-all}
+    .codecol .cref b{color:#2f6fc4;font-weight:700}
+    .codecol pre{flex:1;margin:0;background:#0f1b2d;border:1px solid #24334c;border-radius:10px;padding:13px 15px;overflow:hidden;color:#dbe6f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;line-height:1.62;white-space:pre-wrap;word-break:break-word;tab-size:2}
+    .codecol pre .c{color:#7f93ad}
+    .codecol pre .k{color:#8fd0ff}
+    .codecol .cdesc{margin-top:10px;font-size:12px;line-height:1.5;color:#48566a;word-break:keep-all}
+    .codecol .cdesc b{color:#1c2434;font-weight:800}
 
     /* Slide 1 · complete pipeline */
     .pipeline{padding-top:4px}.zone-row{display:grid;grid-template-columns:1.1fr 3.35fr 1.15fr;gap:12px;margin:0 0 10px}.zone{height:31px;padding:7px 12px;border-radius:5px;font-size:12px;line-height:1;font-weight:850;text-align:center;letter-spacing:.02em}.zone.outside{color:#9a4d17;background:var(--orange-soft);border:1px solid #efc49e}.zone.assembly{color:#276494;background:var(--blue-soft);border:1px solid #bdd4ec}.zone.inside{color:#126649;background:var(--green-soft);border:1px solid #b9dfcd}
@@ -305,7 +328,7 @@
               <div class="mwhead">모델 호출 전</div>
               <div class="mwitem"><b>SensitiveInputMask</b><span>과거 발화까지 재마스킹</span></div>
               <div class="mwitem"><b>PatchToolCalls</b><span>끊긴 도구 호출 복구</span></div>
-              <div class="mwitem"><b>PII (입력)</b><span>카드·IP·MAC</span></div>
+              <div class="mwitem"><b>PII</b><span>카드·IP·MAC</span></div>
               <div class="mwitem"><b>ModelCallLimit</b><span>호출 수 확인</span></div>
             </div>
             <div class="mwcol" style="left:574px;top:56px;width:274px;height:324px">
@@ -320,7 +343,7 @@
             <div class="mwcol" style="left:870px;top:56px;width:220px;height:324px">
               <div class="mwhead">모델 응답 후</div>
               <div class="mwitem"><b>HumanInTheLoop</b><span>변경 도구 중단·승인</span></div>
-              <div class="mwitem"><b>PII (출력·도구 결과)</b><span>redact</span></div>
+              <div class="mwitem"><b>PII</b><span>카드·IP·MAC</span></div>
               <div class="mwitem"><b>Filesystem</b><span>큰 결과 오프로딩</span></div>
               <div class="mwitem"><b>TodoList</b><span>병렬 write_todos 거부</span></div>
               <div class="mwitem"><b>ToolCallLimit</b><span>상한 집계</span></div>
@@ -334,47 +357,47 @@
       <article class="slide" data-slide="4" aria-labelledby="title-4">
         <div class="slide-head">
           <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-05</span></div>
-          <h1 id="title-4">입력 보호</h1>
+          <h1 id="title-4">보안과 가드레일</h1>
         </div>
         <div class="content">
           <div class="dflow">
-            <svg viewBox="0 0 1172 448" aria-hidden="true">
+            <svg viewBox="0 0 1172 456" aria-hidden="true">
               <defs><marker id="fp5" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#6b7480"/></marker></defs>
               <g fill="none" stroke="#6b7480" stroke-width="2.5">
-                <path d="M125,50 V72" marker-end="url(#fp5)"/>
-                <path d="M125,132 V154" marker-end="url(#fp5)"/>
-                <path d="M125,214 V236" marker-end="url(#fp5)"/>
-                <path d="M125,296 V318" marker-end="url(#fp5)"/>
+                <path d="M125,52 V95" marker-end="url(#fp5)"/>
+                <path d="M125,157 V200" marker-end="url(#fp5)"/>
+                <path d="M125,262 V305" marker-end="url(#fp5)"/>
+                <path d="M125,367 V410" marker-end="url(#fp5)"/>
               </g>
             </svg>
 
             <div class="fstep plain" style="left:45px;top:12px;width:160px;height:38px"><b>질의</b></div>
-            <div class="fstep" style="left:20px;top:76px;width:210px;height:56px"><b>입구 검사</b><span>SensitiveInputMask · PII</span></div>
-            <div class="fstep" style="left:10px;top:158px;width:230px;height:56px"><b>외부 가드레일 검사</b><span>외부 가드레일</span></div>
-            <div class="fstep" style="left:20px;top:240px;width:210px;height:56px"><b>Root 모델 호출</b><span>SensitiveInputMask · PII</span></div>
-            <div class="fstep plain" style="left:45px;top:322px;width:160px;height:38px"><b>답변</b></div>
+            <div class="fstep" style="left:20px;top:99px;width:210px;height:56px"><b>입구 검사</b><span>민감정보</span></div>
+            <div class="fstep" style="left:10px;top:204px;width:230px;height:56px"><b>외부 가드레일 검사</b><span>외부 가드레일</span></div>
+            <div class="fstep" style="left:20px;top:309px;width:210px;height:56px"><b>Root 모델 호출</b><span>민감정보 · 개인정보</span></div>
+            <div class="fstep plain" style="left:45px;top:414px;width:160px;height:38px"><b>답변</b></div>
 
-            <div class="mwcol w" style="left:266px;top:4px;width:448px;height:224px">
-              <div class="mwhead">SensitiveInputMaskMiddleware</div>
-              <div class="mwsub">작동 위치 — 입구 검사 · Root 모델 호출 직전(재검사)</div>
-              <div class="mwitem"><b>credential</b><span>sk-… · AKIA… · password=…</span><em class="stop">요청 거부(400) — DB·가드레일·모델 미도달</em></div>
-              <div class="mwitem"><b>authority</b><span>"관리자 비밀번호" · "루트 계정" · "내부 접속 정보"</span><em class="stop">요청 거부(400) — 별도 안내 문구</em></div>
+            <div class="mwcol w" style="left:266px;top:4px;width:448px;height:228px">
+              <div class="mwhead">민감정보 미들웨어</div>
+              <div class="mworigin team">직접 구현</div>
+              <div class="mwitem"><b>credential · authority</b><span>sk-·** ·비밀번호 등 자격증명, "관리자 비밀번호"·"루트 계정" 요구</span><em class="stop">요청 거부 (400) — 저장·가드레일·모델에 닿지 않음</em></div>
+              <div class="mwitem"><b>주민번호 · 카드번호 · 휴대폰</b><em>[가려짐]로 마스킹 후 통과</em></div>
             </div>
 
-            <div class="mwcol w" style="left:722px;top:4px;width:434px;height:224px">
-              <div class="mwhead">PIIMiddleware</div>
-              <div class="mwsub">작동 위치 — 진입점 · 모델 앞뒤 (입력·출력·도구 결과)</div>
-              <div class="mwitem"><b>진입점 (그래프 밖)</b><span>주민번호 · 카드번호 · 휴대폰</span><em>[가려짐]로 치환 후 통과</em></div>
-              <div class="mwitem"><b>그래프 안 (모델 앞뒤)</b><span>credit_card · ip · mac_address 만 redact</span><em>email·url은 오탐 많아 끔 · 거부 없이 가리기만</em></div>
+            <div class="mwcol w" style="left:722px;top:4px;width:434px;height:228px">
+              <div class="mwhead">개인정보 미들웨어</div>
+              <div class="mworigin ext">langchain</div>
+              <div class="mwitem"><b>credit_card · ip · mac_address</b><em>입력 · 모델 출력 · 도구 결과에 모두 마스킹</em></div>
+              <div class="mwitem"><b>email · url</b><em>정상 메일·문서 링크 오탐 많아 끔</em></div>
             </div>
 
-            <div class="mwcol w" style="left:266px;top:246px;width:890px;height:198px">
-              <div class="mwhead">외부 가드레일 &nbsp;—&nbsp; 작동 위치: 그래프 시작 전 · 팀이 연결한 공급자 1개</div>
+            <div class="mwcol w" style="left:266px;top:238px;width:890px;height:214px">
+              <div class="mwhead">외부 가드레일</div>
               <table class="gtbl">
                 <thead><tr><th>공급자</th><th>검사 항목</th><th>고객이 등록하는 것</th><th>차단 기준</th></tr></thead>
                 <tbody>
-                  <tr><td>OpenAI Guardrails</td><td>유해 표현·탈옥 시도 (위저드에서 선택)</td><td>검사 설정 + OpenAI 키</td><td>켠 항목 중 하나라도 걸림</td></tr>
-                  <tr><td>Azure Content Safety</td><td>혐오·자해·성적·폭력 + 차단 단어</td><td>리소스 주소 + 키</td><td>심각도 '중간' 이상 또는 차단 단어</td></tr>
+                  <tr><td>OpenAI Guardrails</td><td>유해 표현·탈옥 시도</td><td>검사 설정 + OpenAI 키</td><td>켠 항목 중 하나라도 걸림</td></tr>
+                  <tr><td>Azure Content Safety</td><td>혐오·자해·성적·폭력·금지어</td><td>리소스 주소 + 키</td><td>심각도 중간 이상 · 금지어</td></tr>
                   <tr><td>AWS Bedrock Guardrails</td><td>콘솔에서 정한 금지 주제·필터</td><td>가드레일 ID·리전 + 자격증명</td><td>가드레일이 '개입' 판정</td></tr>
                 </tbody>
               </table>
@@ -382,11 +405,147 @@
           </div>
         </div>
         <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-05</span></div>
-        <aside hidden class="notes">입력 보호는 두 미들웨어와 외부 가드레일로 나뉩니다. SensitiveInputMaskMiddleware는 credential(sk-, AKIA, password= 형태)과 authority(관리자 비밀번호·루트 계정·내부 접속 정보 서술)를 잡아 요청을 거부합니다 — 살아 있는 키가 로그·백업에 남는 것을 막고, 권한 요청은 마스킹하면 모델이 빈칸을 채워달라 되묻기 때문입니다. PIIMiddleware는 진입점에서 주민번호·카드·휴대폰을 가린 값으로 치환해 통과시키고, 그래프 안에서는 카드번호·IP·MAC 세 가지만 redact하되 입력뿐 아니라 모델 출력과 도구 결과에도 겁니다. 외부 가드레일은 그래프 시작 전에 팀이 연결한 공급자 하나를 호출합니다. OpenAI는 위저드에서 켠 유해 표현·탈옥 항목을 하나라도 걸리면, Azure는 혐오·자해·성적·폭력과 차단 단어를 심각도 중간 이상으로, Bedrock은 콘솔에서 정한 금지 주제를 개입 판정으로 차단합니다.</aside>
+        <aside hidden class="notes">입력 보호는 두 미들웨어와 외부 가드레일로 나뉩니다. 민감정보미들웨어는 halil 플랫폼이 직접 구현한 것으로, credential(sk-·AKIA·password= 형태)과 authority('관리자 비밀번호'·'루트 계정' 류)를 잡아 요청을 거부하고, 주민번호·카드번호·휴대폰은 [가려짐]으로 마스킹해 통과시킵니다. 이 처리는 입구 검사와 Root 모델 호출 직전에 동작합니다. langgraph의 개인정보미들웨어는 오픈소스 라이브러리가 기본 제공하는 컴포넌트로, credit_card·ip·mac_address만 redact하며 입력뿐 아니라 모델 출력과 도구 결과에도 겁니다(email·url은 정상 메일·문서 링크 오탐이 많아 끔). 이 미들웨어는 모델 호출 앞뒤에서만 동작하고 입구 검사에는 관여하지 않습니다. 외부 가드레일은 그래프 시작 전에 팀이 연결한 공급자 하나를 호출합니다. OpenAI는 위저드에서 켠 유해 표현·탈옥 항목을 하나라도 걸리면, Azure는 혐오·자해·성적·폭력과 금지어를 심각도 중간 이상으로, Bedrock은 콘솔에서 정한 금지 주제를 개입 판정으로 차단합니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="5" aria-labelledby="title-5">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-06</span></div>
+          <h1 id="title-5">Todo 미들웨어</h1>
+        </div>
+        <div class="content">
+          <div class="dflow">
+            <div class="mwcol w lite" style="left:20px;top:28px;width:520px;height:398px">
+              <div class="mwhead">사용하는 이유</div>
+              <div class="mwitem"><b>무엇을 막나</b><span>여러 단계로 나뉜 작업에서 Root가 앞서 정한 순서를 잊고 일부 단계를 건너뛰는 것</span></div>
+              <div class="mwitem"><b>어떻게</b><span>할 일을 목록으로 적어 두고, 끝낸 항목을 하나씩 체크하며 끝까지 진행한다</span></div>
+            </div>
+
+            <div class="mwcol w lite" style="left:560px;top:28px;width:596px;height:398px">
+              <div class="mwhead">미들웨어가 하는 일</div>
+              <div class="mwitem"><b>계획 도구 + 안내문</b><span>계획을 적는 도구를 붙이고, "단계가 많으면 먼저 계획을 세워라"를 프롬프트에 넣는다</span></div>
+              <div class="mwitem"><b>부를 때마다 전체 교체</b><span>계획 목록을 통째로 새로 쓴다 — 항목만 부분 수정하는 방식이 아니다</span></div>
+              <div class="mwitem"><b>한 턴에 한 번만</b><span>병렬 호출은 미들웨어가 막아 최신 계획 하나만 유지된다</span></div>
+              <div class="mwpill"><i>단순한 작업이면 계획 없이 바로 진행</i></div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-06</span></div>
+        <aside hidden class="notes">Todo 미들웨어는 Root가 다단계 작업에서 계획을 세우고 유지하도록 돕습니다. 왜 필요하냐면, 단계가 여러 개인 작업에서는 모델이 앞서 정한 순서를 잊고 일부를 건너뛰기 쉬운데, 계획을 목록으로 적어 두고 끝낸 항목을 체크하며 진행하면 긴 반복 안에서도 순서가 유지되기 때문입니다. 미들웨어가 하는 일은 세 가지입니다. 계획을 적는 도구를 붙이고 "단계가 많으면 먼저 계획을 세워라"라는 안내문을 시스템 프롬프트에 넣습니다. 계획을 부를 때마다 목록 전체를 새 값으로 교체합니다(항목만 부분 수정하는 방식이 아닙니다). 그리고 한 턴에 두 번 부르는 병렬 호출은 막아 항상 최신 계획 하나만 유지합니다. 단순한 작업이면 계획 없이 바로 진행해도 됩니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="6" aria-labelledby="title-6">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">직접 구현 코드</span><span class="page">A-07</span></div>
+          <h1 id="title-6">직접 구현한 코드 — 파싱 · 에이전트</h1>
+        </div>
+        <div class="content">
+          <div class="codewrap">
+            <div class="codecol">
+              <h3>파싱 — 4단 보완 레이어 스텝퍼</h3>
+              <div class="cref"><b>runpod_worker/pipeline.py:699-727</b> · _apply_final_parse_layers()</div>
+              <pre>document, reading_order_audit = postprocess_docling_document(
+    result.document,
+    policy="validated-local-v1",
+)
+result.document = document
+
+# 읽기 순서·이미지 설명은 실패해도 문서를 살린다.
+try:
+    heading_audit = promote_headings_by_density(result)
+except Exception as exc:  # fail-open (heading)
+    heading_audit = { "outcome": "PRESERVED", "applied_count": 0,
+        "failure_reason": f"HEADING_PROMOTION_FAILED: {type(exc).__name__}: {exc}" }
+
+try:
+    table_audit = apply_table_gate(result.document)
+except Exception as exc:  # fail-open (table gate)
+    table_audit = { "outcome": "PRESERVED",
+        "failure_reason": f"TABLE_GATE_FAILED: {type(exc).__name__}: {exc}" }</pre>
+              <div class="cdesc">Docling 변환 결과 위에 <b>읽기순서 → 제목 → 표 → 이미지설명</b> 4개 보완 레이어를 검증된 고정 순서로 얹고, 각 레이어는 <b>try/except fail-open</b> — 하나가 터져도 문서를 죽이지 않고 <b>PRESERVED</b> + 실패 사유만 audit에 남긴다.</div>
+            </div>
+            <div class="codecol">
+              <h3>에이전트 — Deep Agent 그래프 조립</h3>
+              <div class="cref"><b>services/agent_runtime/factory.py:716-734</b> · AgentRuntimeFactory.build()</div>
+              <pre>return (
+    create_root_graph(
+        model=model,
+        system_prompt=self.prompt_assembler.assemble_root(
+            agent_prompt=definition.system_prompt
+        ),
+        tools=langchain_tools,
+        subagents=[gp_spec, *compiled_children],
+        middleware=root_middleware,
+        fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
+        interrupt_on=interrupt_on,
+        **root_kwargs,   # backend / store / memory / skills / checkpointer
+    ),
+    resolved_model,
+    child_resolved_models,
+)</pre>
+              <div class="cdesc">저장된 Agent 정의를 실행 가능한 LangGraph로 조립하는 최종 지점 — 공통 Scaffold 프롬프트 + Agent별 프롬프트, 도구, 서브에이전트(항상 붙는 GP + 팀 child), 미들웨어, HITL 승인 대상(<b>interrupt_on</b>)을 한 번에 묶고 실제 사용 모델도 함께 반환한다.</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">직접 구현 코드</span><span>A-07</span></div>
+        <aside hidden class="notes">우리가 직접 작성한 코드임을 보여주는 화면입니다. 왼쪽은 파싱 보완 레이어 스텝퍼로, Docling 원본 변환 위에 읽기순서·제목·표·이미지설명 네 개 보완을 검증된 고정 순서로 얹되 각 단계를 try/except로 감싸 fail-open 합니다. 오른쪽은 저장된 Agent 정의를 LangGraph로 조립하는 factory.build()의 반환부로, 프롬프트·도구·서브에이전트·미들웨어·HITL 대상을 한데 묶습니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="7" aria-labelledby="title-7">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">직접 구현 코드</span><span class="page">A-08</span></div>
+          <h1 id="title-7">직접 구현한 코드 — MCP · Tool 호출</h1>
+        </div>
+        <div class="content">
+          <div class="codewrap">
+            <div class="codecol">
+              <h3>MCP — JSON-RPC tools/call 클라이언트</h3>
+              <div class="cref"><b>services/mcp/client.py:66-85</b> · call_tool()</div>
+              <pre>def call_tool(
+    *, endpoint_url: str, auth_token: str | None,
+    name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    security.recheck(endpoint_url)
+    result = _rpc(endpoint_url, auth_token, "tools/call",
+        {"name": name, "arguments": arguments})
+
+    # 도구 실패는 HTTP 오류가 아니라 결과의 isError 로 온다.
+    if result.get("isError"):
+        raise McpError("validation",
+            _text_of(result) or f"{name} 실행이 거부됐습니다.")
+
+    # structuredContent 가 있으면 그것이 정본, 없으면 text 병합.
+    if isinstance(result.get("structuredContent"), dict):
+        return result["structuredContent"]
+    return {"content": _text_of(result)}</pre>
+              <div class="cdesc">공식 SDK 없이 필요한 세 메서드만 직접 구현한 MCP 클라이언트 — 매 호출 전 <b>security.recheck()</b>로 SSRF 재검증, 전송 실패와 도구 로직 실패(<b>isError</b>)를 서로 다른 error_code로 매핑, 응답은 <b>structuredContent</b> 우선.</div>
+            </div>
+            <div class="codecol">
+              <h3>Tool 호출 — 실행 시점 권한 검사 + 컨텍스트 주입</h3>
+              <div class="cref"><b>services/agent_runtime/factory.py:195-213</b> · _to_langchain_tool() 내부 _run()</div>
+              <pre>def _run(**kwargs: Any) -> Any:
+    langchain_tool_call_id = kwargs.pop(_TOOL_CALL_ID_KWARG, None)
+
+    if not runtime_policy.is_tool_allowed_for_role(
+        side_effect=tool.side_effect, account_role=context.role
+    ):
+        # 목록에서 숨기지 않는다 — 실행하려 할 때만 막는다.
+        raise ToolException(
+            f"'{context.role}' 역할은 '{tool.ref}' 도구 실행 권한이 없습니다."
+        )
+    ...
+    resolved = inject_runtime_context(tool, kwargs, context)
+    result = _call_tool_handler(tool, resolved)</pre>
+              <div class="cdesc">모델이 낸 tool call이 실제로 실행되는 단일 관문 — 도구는 역할과 무관하게 항상 노출하고 권한은 실행 시점에만 검사, 통과하면 서버가 <b>account_id·team_id</b>를 주입하고 읽기 도구만 일시 오류 시 재시도한다.</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">직접 구현 코드</span><span>A-08</span></div>
+        <aside hidden class="notes">왼쪽은 공식 SDK 없이 initialize·tools/list·tools/call 세 메서드만 직접 구현한 MCP 클라이언트로, 매 호출 전 SSRF를 재검증하고 전송 실패와 도구 실패(isError)를 구분해 서로 다른 error_code로 매핑합니다. 오른쪽은 모델이 낸 tool call이 실행되는 단일 관문으로, 도구는 항상 노출하되 권한은 실행 시점에만 검사하고 이후 서버가 account_id·team_id를 주입하며 읽기 도구만 재시도합니다.</aside>
       </article>
     </div></div></section>
     <div class="progress" id="progress"></div>
-    <nav class="bar bottom"><button class="btn" id="first" title="처음">⇤</button><button class="btn" id="prev" title="이전">←</button><div class="counter"><strong id="now">1</strong> / <span id="total">5</span></div><button class="btn" id="next" title="다음">→</button><button class="btn" id="last" title="마지막">⇥</button></nav>
+    <nav class="bar bottom"><button class="btn" id="first" title="처음">⇤</button><button class="btn" id="prev" title="이전">←</button><div class="counter"><strong id="now">1</strong> / <span id="total">8</span></div><button class="btn" id="next" title="다음">→</button><button class="btn" id="last" title="마지막">⇥</button></nav>
   </main>
   <aside class="drawer" id="drawer" aria-label="전체 슬라이드"></aside>
   <script>
