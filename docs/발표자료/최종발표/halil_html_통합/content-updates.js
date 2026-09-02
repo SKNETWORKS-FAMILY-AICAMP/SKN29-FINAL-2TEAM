@@ -1075,9 +1075,16 @@
       const videoSlide = {
         background: '#F7F6F1',
         elements: [
-          textElement('demo2-title', [58, 60, 1160, 40], '먼저, 완성된 플랫폼 시연을 보시겠습니다', 22, '#0A1020', true),
-          panel('demo2-frame', [60, 120, 1160, 486], '#071426', '#26364B'),
-          videoElement('demo2-player', [66, 126, 1148, 474], '../halil_프로젝트_운영_AI_시연영상_v14_피드백반영.mp4'),
+          { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 5], fillColor: '#F8C944', lineWidth: 0, name: 'top-accent-16' },
+          { kind: 'shape', geometry: 'straightConnector1', bbox: [56, 38, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'top-rule-16' },
+          textElement('context-16', [96, 44, 378, 30], 'halil   ·   04 프로젝트 수행 결과', 13, '#0A1020', true),
+          textElement('page-16', [1160, 44, 62, 30], '13', 13, '#6C7482', true, 'right'),
+          textElement('title-16', [58, 92, 1160, 58], '플랫폼 시연 영상', 40, '#0A1020', true),
+          panel('demo2-frame', [60, 166, 1160, 486], '#071426', '#26364B'),
+          videoElement('demo2-player', [66, 172, 1148, 474], '../halil_프로젝트_운영_AI_시연영상_v14_피드백반영.mp4'),
+          { kind: 'shape', geometry: 'rect', bbox: [58, 693, 78, 4], fillColor: '#2878D1', lineWidth: 0, name: 'accent-16' },
+          { kind: 'image', bbox: [1019.56, 680, 78.89, 25], media: 'image2.png', name: 'inst-logo-a-13' },
+          { kind: 'image', bbox: [1138.95, 680, 84.09, 25], media: 'image3.png', name: 'inst-logo-b-13' },
         ],
         sources: ['../halil_프로젝트_운영_AI_시연영상_v14_피드백반영.mp4'],
       };
@@ -2739,6 +2746,53 @@
     s.elements.push({ kind: 'shape', geometry: 'line', bbox: [56, tableBottom, 1168, 0], lineColor: '#101728', lineWidth: 1, name: 'fw-rl-bot' });
 
     deck.slides.splice(atIdx + 1, 0, s);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 31 — 04장을 4개 소구간으로 나누는 서브 표지 슬라이드 추가.
+  //   04-1 Agent(전체 시스템 구조 뒤) · 04-2 문서 처리(Deep Agent 실행 구조 뒤) ·
+  //   04-3 플랫폼 평가(직렬화와 임베딩 뒤) · 04-4 운영자 콘솔(스킬 사용 전후 비교 뒤).
+  //   스타일: 01~05 챕터 표지(div-*)와 동일, 번호만 04-N.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    const subDivider = (no, title, tag) => ({
+      background: '#E8EEF6',
+      elements: [
+        { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 5], fillColor: '#F8C944', lineWidth: 0, name: `top-accent-${tag}` },
+        { kind: 'shape', geometry: 'rect', bbox: [0, 693, 18, 720], fillColor: '#2878D1', lineWidth: 0, name: `accent-${tag}` },
+        { kind: 'image', bbox: [64, 46, 34, 16], media: 'halil-logo.png', name: `cover-logo-${tag}` },
+        textElement(`div-no-${tag}`, [64, 72, 640, 150], no, 88, '#2878D1', true),
+        textElement(`div-title-${tag}`, [62, 300, 1156, 120], title, 84, '#0A1020', true, 'center'),
+        { kind: 'shape', geometry: 'straightConnector1', bbox: [66, 566, 1120, 0], lineColor: '#BAC8DB', lineWidth: 1, name: `div-line-${tag}` },
+        textElement(`div-page-${tag}`, [1140, 595, 50, 28], '00', 15, '#6C7482', true, 'right'),
+        { kind: 'image', bbox: [1019.56, 680, 78.89, 25], media: 'image2.png', name: `inst-logo-a-${tag}` },
+        { kind: 'image', bbox: [1138.95, 680, 84.09, 25], media: 'image3.png', name: `inst-logo-b-${tag}` },
+      ],
+    });
+    const PLAN = [
+      ['전체 시스템 구조', '04-1', 'Agent', 's041'],
+      ['Deep Agent 실행 구조', '04-2', '문서 처리', 's042'],
+      ['직렬화와 임베딩', '04-3', '플랫폼 평가', 's043'],
+      ['스킬 사용 전후 비교', '04-4', '운영자 콘솔', 's044'],
+    ];
+    PLAN.forEach(([anchor, no, title, tag]) => {
+      if (deck.slides.some((s) => s.elements.some((e) => e.name === `div-no-${tag}`))) return;
+      const i = deck.slides.findIndex((s) => titleOf(s) === norm(anchor));
+      if (i < 0) { console.warn(`[패스31] 앵커('${anchor}')를 찾지 못함`); return; }
+      deck.slides.splice(i + 1, 0, subDivider(no, title, tag));
+    });
+
     deck.slides.forEach((item, idx) => {
       item.number = idx + 1;
       item.elements.forEach((e) => {

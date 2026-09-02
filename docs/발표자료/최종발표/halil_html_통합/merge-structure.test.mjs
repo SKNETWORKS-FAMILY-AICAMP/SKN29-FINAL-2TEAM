@@ -28,12 +28,12 @@ const titleOf = (n) => norm((slides[n - 1].elements.find((e) => /^(title-|div-ti
 const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
-// --- 전체 규모 --- (47 - 패스27 '세 문제' - 패스29 '시연 영상' + 패스30 'Future Work' = 46장)
-assert.equal(slides.length, 46, '47 - 세 문제 - 시연 영상 + Future Work = 46장');
+// --- 전체 규모 --- (46 + 패스31 04장 서브 표지 4장 = 50장)
+assert.equal(slides.length, 50, '46 + 04-1~04-4 서브 표지 4장 = 50장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 46 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~46 연속',
+  Array.from({ length: 50 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~50 연속',
 );
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '이미지 설명의 세 문제'), '29p(세 문제)는 삭제됨');
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '전체 기능 시연 영상'), "'전체 기능 시연 영상'은 삭제됨");
@@ -82,10 +82,19 @@ assert.equal(titleOf(4), 'AI Agent 도입과 업무 확장', '4는 도입·업�
 assert.equal(titleOf(5), 'AI Agent 시장과 선도 서비스', '5는 시장·선도 서비스 (juneok)');
 assert.equal(titleOf(6), '기업 Agent 플랫폼, HALIL', '6은 플랫폼 방향 (juneok)');
 
-// --- 04장 진입: 챕터 표지 → 시연 영상 → 시스템 구조 재노출 ---
+// --- 04장 진입: 챕터 표지 → 시연 영상(표준 크롬) → 시스템 구조 재노출 ---
 assert.equal(titleOf(12), '프로젝트 수행 결과', '12는 04 챕터 표지');
 assert.ok(slides[12].elements.some((e) => e.kind === 'video' && /시연영상/.test(e.media || '')), '13은 시연 영상');
+assert.equal(titleOf(13), '플랫폼 시연 영상', '13은 표준 크롬 + 영상 (문구 삭제)');
+assert.ok(!slides[12].elements.some((e) => e.name === 'demo2-title'), '13에 옛 demo2-title 문구는 없어야 한다');
 assert.equal(titleOf(14), '전체 시스템 구조', '14는 시스템 구조 상세(이미지) 재노출');
+// --- 패스31: 04장 서브 표지 4장 (04-1~04-4) ---
+assert.deepEqual([15, 19, 33, 42].map(titleOf), ['Agent', '문서 처리', '플랫폼 평가', '운영자 콘솔'], '15·19·33·42는 04-1~04-4 서브 표지');
+assert.deepEqual(
+  [15, 19, 33, 42].map((n) => norm(slides[n - 1].elements.find((e) => /^div-no-/.test(e.name || '')).text)),
+  ['04-1', '04-2', '04-3', '04-4'],
+  '서브 표지 번호는 04-1~04-4',
+);
 // 패스12: 11p(03장)은 네이티브 단순화 개요, 14p(04장)은 상세 이미지 — 제목·구성이 다르다.
 assert.equal(titleOf(11), '시스템 흐름 한눈에', '11은 시스템 구조 단순화 개요');
 assert.ok(slides[10].elements.some((e) => e.name === 'arc11-z0'), '11은 네이티브 단순화 다이어그램(arc11-*)');
@@ -98,15 +107,15 @@ assert.equal(
   0, 'section·signal·signal-label·foot 라벨은 전부 삭제됨',
 );
 
-// --- Agent 상세 3장 (패스13 juyeon + 패스14 축약 제목) ---
-assert.deepEqual([15, 16, 17].map(titleOf), ['Agent 생성과 질의 요청', 'Deep Agent Harness', 'Deep Agent 실행 구조'], '15~17 제목');
+// --- Agent 상세 3장 (04-1 서브 표지 뒤) ---
+assert.deepEqual([16, 17, 18].map(titleOf), ['Agent 생성과 질의 요청', 'Deep Agent Harness', 'Deep Agent 실행 구조'], '16~18 제목');
 
-// --- 원빈 파싱: 18~30 (패스27 로 '이미지 설명의 세 문제' 1장 삭제 → 13장) ---
-const wonbin = slides.slice(17, 30);
-assert.equal(wonbin.length, 13, '18~30이 원빈 파싱 13장 (세 문제 삭제)');
+// --- 원빈 파싱: 20~32 (패스27 '세 문제' 삭제 + 패스31 서브 표지 2장 앞당김 → 13장) ---
+const wonbin = slides.slice(19, 32);
+assert.equal(wonbin.length, 13, '20~32가 원빈 파싱 13장');
 wonbin.forEach((s, i) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
-  assert.ok((c?.text || '').includes('04 프로젝트 수행 결과'), `원빈 ${18 + i}장 컨텍스트 헤더는 halil 04로 통일`);
+  assert.ok((c?.text || '').includes('04 프로젝트 수행 결과'), `원빈 ${20 + i}장 컨텍스트 헤더는 halil 04로 통일`);
 });
 
 // --- 27p 표 오인식 사례: 합성 격자 예시로 재구성 (수치 sv-12-* 는 삭제됨) ---
@@ -122,11 +131,11 @@ assert.ok(
   '빈 플랫폼 평가 자리표시자(title-48)는 더 이상 없어야 한다',
 );
 assert.deepEqual(
-  [31, 32, 33, 34, 35, 36, 37].map(titleOf),
+  [34, 35, 36, 37, 38, 39, 40].map(titleOf),
   ['판정 체계', '플랫폼 평가', '기능 작동 평가', '평가 대상과 기준', '시나리오별 판정 초점', '시나리오 운영 평가', '운영 평가 실패 사례'],
-  '31~37은 평가 섹션 7장 (세 문제 삭제로 1p 당겨짐)',
+  '34~40은 평가 섹션 7장 (04-3 서브 표지 뒤)',
 );
-assert.ok(slides.slice(30, 37).every((s) => {
+assert.ok(slides.slice(33, 40).every((s) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
   return (c?.text || '').includes('04 프로젝트 수행 결과');
 }), '평가 7장 context 헤더는 04 프로젝트 수행 결과');
@@ -134,29 +143,29 @@ assert.ok(slides.slice(30, 37).every((s) => {
 // --- 꼬리(패스7·29 이후): DEMO RESULT → 지훈 '스킬 사용 전후 비교' 1장 → 운영 콘솔 4장 → 자체 평가 표지 → 클로징 ---
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
-// 패스10.5: 38p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
-assert.equal(titleOf(38), '스킬 사용 전후 비교', '38은 스킬 사용 전후 비교 (네이티브, 시연 영상 삭제로 1p 당겨짐)');
+// 패스10.5: 41p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
+assert.equal(titleOf(41), '스킬 사용 전후 비교', '41은 스킬 사용 전후 비교 (네이티브)');
 assert.ok(
-  slides[37].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[37].elements.some((e) => e.name === 'sc-t-tot-4'),
-  '38은 juyeon 네이티브 표 셀(sc-t-*)로 구성',
+  slides[40].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[40].elements.some((e) => e.name === 'sc-t-tot-4'),
+  '41은 juyeon 네이티브 표 셀(sc-t-*)로 구성',
 );
 assert.ok(
-  !slides[37].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
-  '38에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
+  !slides[40].elements.some((e) => e.name === 'sc-table' || e.name === 'jihun-skill-compare'),
+  '41에 표 이미지(sc-table)·풀블리드 원본은 없어야 한다',
 );
-assert.ok(slides[37].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '38 타이틀 요소');
+assert.ok(slides[40].elements.some((e) => e.name === 'title-40' && norm(e.text) === '스킬 사용 전후 비교'), '41 타이틀 요소');
 assert.deepEqual(
-  [39, 40, 41, 42].map(titleOf),
+  [43, 44, 45, 46].map(titleOf),
   ['운영 상태 통합 관리', '연결 서비스·모델 구성', '커스텀 도구·가드레일 관리', '실행 현황·도구 사용 추적'],
-  '39~42는 운영 콘솔 4장',
+  '43~46은 운영 콘솔 4장 (04-4 서브 표지 뒤)',
 );
-assert.equal(titleOf(43), '자체 평가 의견', '43은 05 챕터 표지');
-assert.equal(titleOf(44), 'Future Work', '44는 개선 계획 표 (juyeon 패스30 이식)');
+assert.equal(titleOf(47), '자체 평가 의견', '47은 05 챕터 표지');
+assert.equal(titleOf(48), 'Future Work', '48은 개선 계획 표 (juyeon 패스30 이식)');
 assert.ok(
-  slides[43].elements.some((e) => e.name === 'fw-hbar') && [0, 1, 2].every((i) => slides[43].elements.some((e) => e.name === `fw-area-${i}`)),
-  '44는 Future Work 표(fw-*) 3행으로 구성',
+  slides[47].elements.some((e) => e.name === 'fw-hbar') && [0, 1, 2].every((i) => slides[47].elements.some((e) => e.name === `fw-area-${i}`)),
+  '48은 Future Work 표(fw-*) 3행으로 구성',
 );
-assert.ok(slides[44].elements.some((e) => (e.text || '').includes('Q&A')), '45는 클로징/Q&A 슬라이드');
+assert.ok(slides[48].elements.some((e) => (e.text || '').includes('Q&A')), '49는 클로징/Q&A 슬라이드');
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
 const missing = [];
