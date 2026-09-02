@@ -2831,8 +2831,9 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 33 — '감사합니다' 뒤에 부록 A (07_에이전트_발표_부록_A_슬라이드.html)
-  //   8장을 풀블리드 이미지로 삽입. 이미지는 부록 HTML 을 1280×720 로 캡처한 것.
+  // 최종 편집 패스 33 — '감사합니다' 뒤에 부록 A 8장 삽입.
+  //   통합 덱 표준 크롬(크롬만 클론) + title-16(부록 h1) + 본문은
+  //   부록 HTML 의 .content 영역만 1172×472 로 캡처한 이미지.
   // ===================================================================
   (() => {
     const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
@@ -2840,18 +2841,25 @@
       const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
       return t ? norm(t.text) : '';
     };
-    if (deck.slides.some((s) => s.elements.some((e) => e.name === 'apx-1'))) return;
-    let at = deck.slides.findIndex((s) => titleOf(s) === '감사합니다');
+    if (deck.slides.some((s) => s.elements.some((e) => e.name === 'apx-img-1'))) return;
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
+    let at = deck.slides.findIndex((s) => s.elements.some((e) => norm(e.text) === '감사합니다'));
+    if (baseIdx < 0) { console.warn('[패스33] 기준 슬라이드(판정 체계)를 찾지 못함'); return; }
     if (at < 0) at = deck.slides.length - 1;
 
-    const apx = [];
-    for (let i = 1; i <= 8; i++) {
-      apx.push({
-        background: '#FBFAF7',
-        elements: [imageElement(`apx-${i}`, [0, 0, 1280, 720], `appendix_a_0${i}.png`, 'fill')],
-        sources: ['부록/07_에이전트_발표_부록_A_슬라이드.html'],
-      });
-    }
+    const TITLES = [
+      '시스템 처리 흐름도', '그래프 조립', 'Root 반복 루프', '미들웨어가 붙는 지점',
+      '보안과 가드레일', 'Todo 미들웨어', '직접 구현한 코드 — 파싱·에이전트', '직접 구현한 코드 — MCP·Tool 호출',
+    ];
+    const apx = TITLES.map((title, k) => {
+      const s = clone(deck.slides[baseIdx]);
+      s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
+      setElementText(s.elements.find((e) => e.name === 'context-16'), `·   부록 A · ${k + 1} / 8`);
+      setElementText(s.elements.find((e) => e.name === 'title-16'), title);
+      s.elements.push(imageElement(`apx-img-${k + 1}`, [54, 172, 1172, 472], `appendix_a_0${k + 1}.png`, 'contain'));
+      s.sources = ['부록/07_에이전트_발표_부록_A_슬라이드.html'];
+      return s;
+    });
     deck.slides.splice(at + 1, 0, ...apx);
 
     deck.slides.forEach((item, idx) => {

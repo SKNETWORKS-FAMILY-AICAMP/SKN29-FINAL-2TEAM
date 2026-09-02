@@ -173,13 +173,14 @@ assert.ok(
 );
 assert.ok(slides[49].elements.some((e) => (e.text || '').includes('Q&A')), '50은 클로징/Q&A 슬라이드');
 assert.ok(slides[50].elements.some((e) => norm(e.text) === '감사합니다'), '51은 클로징 인사');
-// --- 패스33: '감사합니다' 뒤 부록 A 8장 (풀블리드 이미지) ---
+// --- 패스33: '감사합니다' 뒤 부록 A 8장 (표준 크롬 + title + .content 캡처 이미지) ---
+const apxTitles = ['시스템 처리 흐름도', '그래프 조립', 'Root 반복 루프', '미들웨어가 붙는 지점',
+  '보안과 가드레일', 'Todo 미들웨어', '직접 구현한 코드 — 파싱·에이전트', '직접 구현한 코드 — MCP·Tool 호출'];
 for (let i = 1; i <= 8; i++) {
   const s = slides[50 + i];
-  assert.ok(
-    s.elements.length === 1 && s.elements[0].name === `apx-${i}` && s.elements[0].media === `appendix_a_0${i}.png`,
-    `${51 + i}은 부록 A-0${i} 풀블리드 이미지`,
-  );
+  assert.equal(titleOf(51 + i), apxTitles[i - 1], `${51 + i}은 부록 A-${i} (${apxTitles[i - 1]})`);
+  assert.ok(s.elements.some((e) => e.name === `apx-img-${i}` && e.media === `appendix_a_0${i}.png`), `${51 + i}에 부록 본문 이미지`);
+  assert.ok(s.elements.some((e) => e.name === 'title-16') && s.elements.some((e) => /^context-/.test(e.name || '')), `${51 + i}은 표준 크롬`);
 }
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
