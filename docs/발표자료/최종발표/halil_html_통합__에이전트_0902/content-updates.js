@@ -1834,4 +1834,110 @@
   function byNameFor(targetSlide, name, value, options) {
     setElementText(targetSlide.elements.find((element) => element.name === name), value, options);
   }
+
+  // ===================================================================
+  // 최종 편집 패스 14 — FUTURE WORK: '자체 평가 의견'(45p) 뒤에 개선 계획 표 1장 추가.
+  //   디자인: 32p(판정 체계) 크롬 + 36p(시나리오별 판정 초점) 표 스타일.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === norm('판정 체계'));
+    if (baseIdx < 0) { console.warn('[패스14] 기준 슬라이드(판정 체계)를 찾지 못함'); return; }
+    const s = clone(deck.slides[baseIdx]);
+
+    const keep = new Set(['top-accent-16', 'top-rule-16', 'context-16', 'section-16', 'page-16',
+      'title-16', 'signal-16', 'signal-label-16', '그림 375', '그림 376']);
+    s.elements = s.elements.filter((e) => keep.has(e.name));
+    const put = (name, val) => setElementText(s.elements.find((e) => e.name === name), val);
+    put('context-16', 'halil   ·   05 자체 평가 의견');
+    put('section-16', 'FUTURE WORK');
+    put('signal-label-16', 'FUTURE WORK');
+    put('title-16', 'Future Work');
+    s.sources = ['docs/설계 및 구현/3_중간발표 이후/작업기록/ (Parsing · Hybrid Search · Agent 개선 계획)'];
+
+    const box = (name, bbox, fill, geo = 'rect') => ({ kind: 'shape', geometry: geo, bbox, fillColor: fill, lineWidth: 0, name });
+    const hline = (name, bbox, lc = '#D9DEE8') => ({ kind: 'shape', geometry: 'line', bbox, lineColor: lc, lineWidth: 1, name });
+
+    const cols = [
+      { x: 56,  w: 128, h: '영역' },
+      { x: 184, w: 350, h: '현재 한계' },
+      { x: 534, w: 430, h: '개선 방향' },
+      { x: 964, w: 260, h: '기대 효과' },
+    ];
+    const HY = 186, HH = 46, rowH = 136;
+    const rows = [
+      {
+        area: 'Parsing', accent: '#2878D1',
+        limitKey: '읽기 순서 오류가 동일 parent 내 인접 요소에 한정',
+        limitSub: '제목·표 구조 복원에도 미해결 사례 존재',
+        head: '문서 전체 구조 이해 기반 복원',
+        bullets: ['parent·섹션 단위 읽기 순서 재구성', '폰트 스타일 포함 제목 판별', '표 셀 구조·병합 범위 자동 복원'],
+        effect: '문서 구조 정보의\n정확성·완결성 향상',
+        effectColor: '#2878D1',
+      },
+      {
+        area: 'Hybrid\nSearch', accent: '#168A86',
+        limitKey: 'Top-20 결과만으로 충분한 근거 미보장',
+        limitSub: '검색 결과와 답변 생성 사이 정보 누락 발생',
+        head: '검색 결과 품질·전달 과정 강화',
+        bullets: ['별도 reranker 적용', '핵심 근거 정보 보존', 'Agent 전달 인터페이스 보완 (누락 방지)'],
+        effect: '근거 품질 향상 및\n정보 누락 최소화',
+        effectColor: '#17845E',
+      },
+      {
+        area: 'Agent', accent: '#22375C',
+        limitKey: '검색 성공해도 최종 답변 완결성 부족',
+        limitSub: '반복 시 답변이 짧아지고 핵심 문장 누락',
+        head: '답변 완결성·실행 효율 강화',
+        bullets: ['표·이미지 등 구조 정보 보존', '답변 전 필수 사실 커버리지 검증', '호출 예산·종료 기준 강화'],
+        effect: '답변 완결성 향상,\n불필요한 반복 검색 감소',
+        effectColor: '#7A5CB0',
+      },
+    ];
+    const tableBottom = HY + HH + rowH * rows.length;
+
+    s.elements.push(
+      box('fw-hbar', [56, HY, 1168, HH], '#E7EBF0'),
+    );
+    cols.forEach((c, i) => s.elements.push(
+      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 20, HH], c.h, 18, '#101728', true),
+    ));
+    [184, 534, 964].forEach((x, i) => s.elements.push(
+      { kind: 'shape', geometry: 'line', bbox: [x, HY, 0, tableBottom - HY], lineColor: '#E7EBF1', lineWidth: 1, name: `fw-vl-${i}` },
+    ));
+
+    rows.forEach((r, ri) => {
+      const y = HY + HH + rowH * ri;
+      const effClr = r.effectColor || r.accent;
+      s.elements.push(
+        box(`fw-acc-${ri}`, [72, y + 26, 5, 40], r.accent),
+        textElement(`fw-area-${ri}`, [88, y + 22, 100, 62], r.area, 21, '#101728', true),
+        textElement(`fw-limk-${ri}`, [200, y + 16, 322, 64], r.limitKey, 19, '#101728', true),
+        textElement(`fw-lims-${ri}`, [200, y + 78, 322, 50], r.limitSub, 16, '#101728'),
+        textElement(`fw-head-${ri}`, [550, y + 14, 400, 30], r.head, 19, '#101728', true),
+        textElement(`fw-bul-${ri}`, [550, y + 48, 400, rowH - 60], r.bullets.map((b) => `•  ${b}`).join('\n'), 18, '#101728'),
+        { kind: 'shape', geometry: 'ellipse', bbox: [986, y + 51, 32, 32], fillColor: effClr, lineWidth: 0, name: `fw-eff-ic-${ri}` },
+        textElement(`fw-eff-ar-${ri}`, [986, y + 53, 32, 32], '→', 16, '#FFFFFF', true, 'center'),
+        textElement(`fw-eff-${ri}`, [1028, y + 28, 192, 78], r.effect, 18, effClr, true),
+      );
+      if (ri > 0) s.elements.push(hline(`fw-rl-${ri}`, [56, y, 1168, 0]));
+    });
+    s.elements.push(hline('fw-rl-bot', [56, tableBottom, 1168, 0]));
+
+    const at = deck.slides.findIndex((sl) => titleOf(sl) === norm('자체 평가 의견'));
+    deck.slides.splice(at >= 0 ? at + 1 : deck.slides.length, 0, s);
+
+    deck.slides.forEach((item, index) => {
+      item.number = index + 1;
+      item.elements.forEach((element) => {
+        if (/^(page-|div-page-)/.test(element.name || '')) {
+          setElementText(element, String(index + 1).padStart(2, '0'));
+        }
+      });
+    });
+  })();
 })();

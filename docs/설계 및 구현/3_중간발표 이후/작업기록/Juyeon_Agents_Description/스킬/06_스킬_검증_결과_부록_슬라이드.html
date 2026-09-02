@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>스킬 검증 결과 부록 슬라이드</title>
+  <style>
+    :root {
+      --navy:#123e49; --teal:#16766e; --mint:#dcece7; --lime:#b9dc62;
+      --paper:#f5f4ef; --white:#ffffff; --ink:#16262b; --muted:#637378;
+      --line:#d4ddda; --warn:#ad5535; --good:#0d6d54; --soft:#e8eeec;
+    }
+    * { box-sizing:border-box; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; background:#dfe5e3; color:var(--ink); font-family:Pretendard,"Noto Sans KR","Apple SD Gothic Neo",Arial,sans-serif; }
+    body { display:grid; place-items:center; }
+    .deck { position:relative; width:1600px; height:900px; transform:scale(var(--scale,1)); transform-origin:center; }
+    .slide { position:absolute; inset:0; display:none; width:1600px; height:900px; padding:48px 68px 40px; overflow:hidden; background:var(--paper); box-shadow:0 20px 60px rgba(15,42,48,.18); }
+    .slide.active { display:block; }
+    .slide::after { content:""; position:absolute; width:300px; height:300px; right:-155px; top:-190px; border:60px solid rgba(185,220,98,.22); border-radius:50%; pointer-events:none; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:36px; height:74px; padding-bottom:17px; border-bottom:3px solid var(--navy); }
+    h1 { margin:0; color:var(--navy); font-size:50px; line-height:1; letter-spacing:-.045em; white-space:nowrap; }
+    .option { margin:0 34px 3px 0; color:var(--teal); font-size:22px; line-height:1; font-weight:900; white-space:nowrap; }
+    .page-mark { position:absolute; left:68px; right:68px; bottom:17px; display:flex; justify-content:space-between; color:#78878b; font-size:13px; }
+    .test-strip { display:grid; grid-template-columns:1fr 1fr; margin:17px 0 15px; border-top:1px solid #bfd0cb; border-bottom:1px solid #bfd0cb; background:var(--mint); }
+    .test-strip.three { grid-template-columns:1fr 1fr 1fr; }
+    .test { min-height:82px; padding:12px 20px 11px; font-size:17px; line-height:1.36; }
+    .test + .test { border-left:1px solid #bfd0cb; }
+    .test b { display:block; margin-bottom:3px; color:var(--navy); font-size:21px; }
+    .test strong { color:var(--teal); }
+    .section-title { display:flex; align-items:baseline; justify-content:space-between; gap:24px; margin:0 0 8px; }
+    .section-title h2 { margin:0; color:var(--navy); font-size:25px; letter-spacing:-.025em; }
+    .section-title p { margin:0; color:var(--muted); font-size:15px; }
+    .table-wrap { border-top:4px solid var(--navy); border-bottom:1px solid var(--line); background:var(--white); }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th { padding:8px 10px; background:#e6ecea; color:#3c5056; font-size:17px; line-height:1.25; font-weight:850; text-align:center; vertical-align:middle; }
+    td { padding:8px 10px; border-top:1px solid var(--line); font-size:19px; line-height:1.18; text-align:center; vertical-align:middle; }
+    th:first-child,td:first-child { padding-left:16px; text-align:left; font-weight:800; }
+    .good { color:var(--good); font-weight:900; }
+    .warn { color:var(--warn); font-weight:900; }
+    .muted { color:var(--muted); }
+    td small { display:block; margin-top:2px; color:var(--muted); font-size:14px; font-weight:650; line-height:1.22; }
+    .compact th { height:48px; font-size:15px; }
+    .compact td { height:43px; padding-top:5px; padding-bottom:5px; font-size:17px; }
+    .compact td small { font-size:12px; }
+    .combined-grid { display:grid; grid-template-columns:.96fr 1.34fr; gap:22px; align-items:start; }
+    .registration th:first-child,.registration td:first-child { width:34%; }
+    .registration th:not(:first-child) { width:22%; }
+    .combined-registration th:first-child,.combined-registration td:first-child { width:36%; }
+    .combined-registration th:not(:first-child) { width:21.33%; }
+    .comparison th:first-child,.comparison td:first-child { width:21%; }
+    .comparison th:nth-child(2),.comparison td:nth-child(2) { width:25%; }
+    .comparison th:nth-child(3),.comparison td:nth-child(3) { width:27%; }
+    .comparison th:nth-child(4),.comparison td:nth-child(4) { width:27%; }
+    .cell-lines { font-size:16px; line-height:1.28; }
+    .cell-lines span { display:block; }
+    .cell-lines strong { font-size:16px; }
+    .kpi-line { display:flex; align-items:center; justify-content:space-between; gap:22px; margin-top:11px; padding-top:10px; border-top:1px solid var(--line); }
+    .kpi-line p { margin:0; color:#40545a; font-size:16px; }
+    .kpi { display:flex; align-items:baseline; gap:10px; color:var(--navy); white-space:nowrap; }
+    .kpi span { color:var(--muted); font-size:15px; font-weight:750; }
+    .kpi b { font-size:28px; }
+    .kpi em { color:var(--teal); font-size:21px; font-style:normal; font-weight:900; }
+    .definition-grid { display:grid; grid-template-columns:1fr 1fr 1fr; margin:17px 0 14px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--white); }
+    .definition { min-height:108px; padding:13px 20px 12px; }
+    .definition + .definition { border-left:1px solid var(--line); }
+    .definition b { display:block; margin-bottom:5px; color:var(--navy); font-size:21px; }
+    .definition p { margin:0; color:#42565c; font-size:16px; line-height:1.42; }
+    .definition strong { color:var(--teal); }
+    .method-band { display:flex; align-items:center; justify-content:space-between; gap:24px; margin:14px 0; padding:12px 20px; background:var(--mint); border-top:1px solid #bfd0cb; border-bottom:1px solid #bfd0cb; }
+    .method-band p { margin:0; color:#3f5359; font-size:18px; line-height:1.35; }
+    .method-band b { color:var(--navy); }
+    .method-band strong { color:var(--teal); }
+    .registration-large th { height:58px; font-size:18px; }
+    .registration-large td { height:58px; font-size:21px; }
+    .reading-note { margin:11px 0 0; color:var(--muted); font-size:15px; line-height:1.42; }
+    .reading-note b { color:var(--ink); }
+    .comparison-intro { display:grid; grid-template-columns:1fr 1fr; margin:17px 0 12px; border-top:1px solid #bfd0cb; border-bottom:1px solid #bfd0cb; background:var(--mint); }
+    .comparison-intro .test { min-height:83px; }
+    .metric-defs { display:grid; grid-template-columns:1fr 1fr 1fr; margin-bottom:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .metric-def { padding:9px 18px 8px; font-size:15px; line-height:1.35; }
+    .metric-def + .metric-def { border-left:1px solid var(--line); }
+    .metric-def b { display:block; margin-bottom:2px; color:var(--navy); font-size:18px; }
+    .comparison-large th { height:58px; font-size:18px; }
+    .comparison-large td { height:68px; font-size:18px; }
+    .comparison-large tr.total td { background:#edf3f1; border-top:2px solid #aec3bd; font-weight:850; }
+    .comparison-large .cell-lines { font-size:17px; }
+    .comparison-large .cell-lines strong { font-size:17px; }
+    @media print {
+      @page { size:16in 9in; margin:0; }
+      html,body { display:block; overflow:visible; background:white; }
+      .deck { width:auto; height:auto; transform:none!important; }
+      .slide { position:relative; display:block!important; box-shadow:none; page-break-after:always; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="스킬 검증 결과 발표 자료">
+    <section class="slide active" data-slide="1" aria-labelledby="slide-1-title">
+      <header>
+        <h1 id="slide-1-title">스킬 검증 결과</h1>
+        <p class="option">한 페이지 통합안</p>
+      </header>
+
+      <div class="test-strip">
+        <div class="test"><b>등록 검증 · 180회</b>스킬마다 필요한 요청 6개와 불필요한 요청 6개를 <strong>각각 3회</strong> 실행<br>5개 × (6개 + 6개) × 3회</div>
+        <div class="test"><b>사용 전후 비교 · 300회</b>같은 10개 업무를 <strong>‘매번 상세 지시’와 ‘저장한 스킬 사용’</strong>으로 각각 3회 실행<br>5개 × 10개 × 3회 × 2가지 방법</div>
+      </div>
+
+      <div class="combined-grid">
+        <div>
+          <div class="section-title"><h2>등록 검증</h2><p>요청 선택은 반복 실행 기준</p></div>
+          <div class="table-wrap">
+            <table class="compact combined-registration">
+              <thead><tr><th>스킬</th><th>필요한 요청<br>선택</th><th>불필요한 요청<br>오선택</th><th>답변 기준<br>충족</th></tr></thead>
+              <tbody>
+                <tr><td>업무 진행 보고 메일</td><td>18/18</td><td class="warn">3/18</td><td>8/8</td></tr>
+                <tr><td>기획 메모 정리</td><td>18/18</td><td>0/18</td><td>9/9</td></tr>
+                <tr><td>문장 작성·번역</td><td>18/18</td><td>0/18</td><td>9/9</td></tr>
+                <tr><td>제안서 작성</td><td>18/18</td><td>0/18</td><td>6/7</td></tr>
+                <tr><td>경쟁사 분석</td><td>18/18</td><td>0/18</td><td>8/9</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title"><h2>스킬 사용 전후 비교</h2><p>각 스킬·방법별 30회</p></div>
+          <div class="table-wrap">
+            <table class="compact comparison">
+              <thead><tr><th>스킬</th><th>사용자 입력 토큰</th><th>실제 모델 입력 토큰</th><th>결과 품질</th></tr></thead>
+              <tbody>
+                <tr><td>업무 진행 보고 메일</td><td class="cell-lines"><span>상세 119.5 · 스킬 56.5</span><strong class="good">52.7% 감소</strong></td><td class="cell-lines"><span>상세 5,468.5 · 스킬 5,853.5</span><strong>7.0% 증가</strong></td><td class="cell-lines"><span>25/30 · 30/30</span><strong class="good">+16.7%포인트</strong></td></tr>
+                <tr><td>기획 메모 정리</td><td class="cell-lines"><span>상세 105.5 · 스킬 42.5</span><strong class="good">59.7% 감소</strong></td><td class="cell-lines"><span>상세 5,454.5 · 스킬 5,763.5</span><strong>5.7% 증가</strong></td><td class="cell-lines"><span>28/30 · 28/30</span><strong>0.0%포인트</strong></td></tr>
+                <tr><td>문장 작성·번역</td><td class="cell-lines"><span>상세 116.5 · 스킬 34.0</span><strong class="good">70.8% 감소</strong></td><td class="cell-lines"><span>상세 5,465.5 · 스킬 5,883.0</span><strong>7.6% 증가</strong></td><td class="cell-lines"><span>29/30 · 30/30</span><strong class="good">+3.3%포인트</strong></td></tr>
+                <tr><td>제안서 작성</td><td class="cell-lines"><span>상세 140.5 · 스킬 59.0</span><strong class="good">58.0% 감소</strong></td><td class="cell-lines"><span>상세 5,489.5 · 스킬 5,976.0</span><strong>8.9% 증가</strong></td><td class="cell-lines"><span>28/30 · 27/30</span><strong class="warn">−3.3%포인트</strong></td></tr>
+                <tr><td>경쟁사 분석</td><td class="cell-lines"><span>상세 140.5 · 스킬 69.0</span><strong class="good">50.9% 감소</strong></td><td class="cell-lines"><span>상세 5,489.5 · 스킬 6,096.0</span><strong>11.0% 증가</strong></td><td class="cell-lines"><span>24/30 · 25/30</span><strong class="good">+3.3%포인트</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-line">
+        <p>결과 품질은 필수 내용·표현·의미 기준을 모두 지킨 실행의 비율입니다.</p>
+        <div class="kpi"><span>사용 전후 비교 결과 요구사항 충족</span><b>274/300</b><em>91.3%</em></div>
+      </div>
+      <div class="page-mark"><span>스킬 검증 · 통합 구성</span><span>1 / 3</span></div>
+    </section>
+
+    <section class="slide" data-slide="2" aria-labelledby="slide-2-title">
+      <header>
+        <h1 id="slide-2-title">등록 검증</h1>
+        <p class="option">두 페이지 분리안 · 1</p>
+      </header>
+
+      <div class="definition-grid" aria-label="등록 검증 항목 설명">
+        <div class="definition"><b>필요한 요청 선택</b><p>이 스킬을 써야 하는 요청 6개를 3회씩 실행해, 스킬이 선택된 횟수<br><strong>18회 중 선택 횟수</strong></p></div>
+        <div class="definition"><b>불필요한 요청 오선택</b><p>이 스킬을 쓰면 안 되는 요청 6개를 3회씩 실행해, 잘못 선택된 횟수<br><strong>18회 중 오선택 횟수</strong></p></div>
+        <div class="definition"><b>최종 답변 기준 충족</b><p>실제 답변이 형식·사실·업무 범위 등 미리 정한 기준을 지킨 개수<br><strong>반복 횟수가 아닌 확인 항목 수</strong></p></div>
+      </div>
+
+      <div class="method-band">
+        <p><b>테스트 방법</b> · 필요한 요청 18회 + 불필요한 요청 18회 · <strong>스킬당 36회, 총 180회</strong></p>
+        <p><b>등록 결과</b> · <strong>5개 모두 등록</strong></p>
+      </div>
+
+      <div class="table-wrap">
+        <table class="registration registration-large">
+          <thead><tr><th>스킬</th><th>필요한 요청<br>선택</th><th>불필요한 요청<br>오선택</th><th>최종 답변<br>기준 충족</th></tr></thead>
+          <tbody>
+            <tr><td>업무 진행 보고 메일</td><td>18/18</td><td class="warn">3/18</td><td>8/8</td></tr>
+            <tr><td>기획 메모 정리</td><td>18/18</td><td>0/18</td><td>9/9</td></tr>
+            <tr><td>문장 작성·번역</td><td>18/18</td><td>0/18</td><td>9/9</td></tr>
+            <tr><td>제안서 작성</td><td>18/18</td><td>0/18</td><td>6/7</td></tr>
+            <tr><td>경쟁사 분석</td><td>18/18</td><td>0/18</td><td>8/9</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="reading-note"><b>읽는 법:</b> 업무 진행 보고 메일의 3/18은 ‘쓰면 안 되는 요청’ 18회 중 3회에 스킬이 잘못 선택됐다는 뜻입니다. 답변 기준의 분모는 각 스킬에서 확인한 세부 기준 수이므로 18이 아닙니다.</p>
+      <div class="page-mark"><span>스킬 검증 · 분리 구성</span><span>2 / 3</span></div>
+    </section>
+
+    <section class="slide" data-slide="3" aria-labelledby="slide-3-title">
+      <header>
+        <h1 id="slide-3-title">스킬 사용 전후 비교</h1>
+        <p class="option">두 페이지 분리안 · 2</p>
+      </header>
+
+      <div class="comparison-intro" aria-label="300회 비교 방법">
+        <div class="test"><b>비교한 두 가지 방법</b><strong>매번 상세하게 지시</strong>: 형식·내용·주의사항까지 매번 작성<br><strong>저장한 스킬 사용</strong>: 업무 내용만 쓰고 저장된 지침 적용</div>
+        <div class="test"><b>300회 구성</b>5개 스킬 × 10개 업무 × 3회 반복 × 2가지 방법<br><strong>요구사항 충족 274/300회 · 91.3%</strong></div>
+      </div>
+
+      <div class="metric-defs" aria-label="비교 항목 설명">
+        <div class="metric-def"><b>사용자 입력 토큰</b>사용자가 직접 작성한 요청의 길이</div>
+        <div class="metric-def"><b>실제 모델 입력 토큰</b>저장된 스킬 지침까지 포함해 모델이 읽은 전체 길이</div>
+        <div class="metric-def"><b>결과 품질</b>필수 내용·표현·의미 기준을 모두 지킨 실행 수와 비율</div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="comparison comparison-large">
+          <thead><tr><th>스킬</th><th>사용자 입력 토큰<br><span class="muted">상세 지시 · 스킬 사용 · 변화</span></th><th>실제 모델 입력 토큰<br><span class="muted">상세 지시 · 스킬 사용 · 변화</span></th><th>결과 품질<br><span class="muted">상세 지시 · 스킬 사용 · 변화</span></th></tr></thead>
+          <tbody>
+            <tr><td>업무 진행 보고 메일</td><td class="cell-lines"><span>119.5 · 56.5</span><strong class="good">52.7% 감소</strong></td><td class="cell-lines"><span>5,468.5 · 5,853.5</span><strong>7.0% 증가</strong></td><td class="cell-lines"><span>25/30(83.3%) · 30/30(100%)</span><strong class="good">+16.7%포인트</strong></td></tr>
+            <tr><td>기획 메모 정리</td><td class="cell-lines"><span>105.5 · 42.5</span><strong class="good">59.7% 감소</strong></td><td class="cell-lines"><span>5,454.5 · 5,763.5</span><strong>5.7% 증가</strong></td><td class="cell-lines"><span>28/30(93.3%) · 28/30(93.3%)</span><strong>0.0%포인트</strong></td></tr>
+            <tr><td>문장 작성·번역</td><td class="cell-lines"><span>116.5 · 34.0</span><strong class="good">70.8% 감소</strong></td><td class="cell-lines"><span>5,465.5 · 5,883.0</span><strong>7.6% 증가</strong></td><td class="cell-lines"><span>29/30(96.7%) · 30/30(100%)</span><strong class="good">+3.3%포인트</strong></td></tr>
+            <tr><td>제안서 작성</td><td class="cell-lines"><span>140.5 · 59.0</span><strong class="good">58.0% 감소</strong></td><td class="cell-lines"><span>5,489.5 · 5,976.0</span><strong>8.9% 증가</strong></td><td class="cell-lines"><span>28/30(93.3%) · 27/30(90.0%)</span><strong class="warn">−3.3%포인트</strong></td></tr>
+            <tr><td>경쟁사 분석</td><td class="cell-lines"><span>140.5 · 69.0</span><strong class="good">50.9% 감소</strong></td><td class="cell-lines"><span>5,489.5 · 6,096.0</span><strong>11.0% 증가</strong></td><td class="cell-lines"><span>24/30(80.0%) · 25/30(83.3%)</span><strong class="good">+3.3%포인트</strong></td></tr>
+            <tr class="total"><td>전체 결과 품질</td><td class="muted">—</td><td class="muted">—</td><td class="cell-lines"><span>134/150(89.3%) · 140/150(93.3%)</span><strong class="good">+4.0%포인트</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="page-mark"><span>스킬 검증 · 분리 구성</span><span>3 / 3</span></div>
+    </section>
+  </main>
+
+  <script>
+    const slides=Array.from(document.querySelectorAll(".slide"));
+    let current=0;
+    function fitDeck(){const scale=Math.min(window.innerWidth/1600,window.innerHeight/900);document.documentElement.style.setProperty("--scale",String(scale));}
+    function showSlide(index,updateHash=true){current=(index+slides.length)%slides.length;slides.forEach((slide,i)=>slide.classList.toggle("active",i===current));if(updateHash)location.hash=`slide-${current+1}`;}
+    window.addEventListener("keydown",event=>{if(["ArrowRight","PageDown"," "].includes(event.key))showSlide(current+1);if(["ArrowLeft","PageUp"].includes(event.key))showSlide(current-1);});
+    window.addEventListener("click",()=>showSlide(current+1));
+    window.addEventListener("hashchange",()=>{const page=Number((location.hash.match(/slide-(\d+)/)||[])[1]);if(Number.isFinite(page)&&page>0)showSlide(page-1,false);});
+    window.addEventListener("resize",fitDeck);
+    const requested=Number((location.hash.match(/slide-(\d+)/)||[])[1]);
+    fitDeck();showSlide(Number.isFinite(requested)&&requested>0?requested-1:0);
+  </script>
+</body>
+</html>

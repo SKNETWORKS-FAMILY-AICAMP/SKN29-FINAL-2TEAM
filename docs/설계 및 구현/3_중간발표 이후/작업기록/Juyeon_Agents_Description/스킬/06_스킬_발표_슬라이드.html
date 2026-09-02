@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>halil Skill 발표</title>
+  <style>
+    :root{
+      --viewer:#07111f;--viewer-panel:#0d1a2c;--viewer-line:#26364b;
+      --paper:#fbfaf7;--ink:#101728;--body:#52657d;--muted:#7b8798;
+      --blue:#2878d1;--blue-soft:#eef4fc;--green:#17845e;--red:#d05252;
+      --gold:#e1b94e;--line:#d9dee8;--white:#fff;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{overflow:hidden;background:radial-gradient(circle at 50% 0,#132b4a 0,#07111f 52%);font-family:Pretendard,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;color:#edf4ff}
+    button{font:inherit;color:inherit}
+    .app{height:100dvh;display:grid;grid-template-rows:52px minmax(0,1fr) 58px}
+    .bar{display:flex;align-items:center;gap:10px;padding:0 16px;background:rgba(9,21,38,.94);backdrop-filter:blur(16px);z-index:10}
+    .top{border-bottom:1px solid var(--viewer-line)}
+    .bottom{justify-content:center;border-top:1px solid var(--viewer-line)}
+    .app-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:650}
+    .btn{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--viewer-line);border-radius:9px;background:#122238;cursor:pointer}
+    .btn:hover{background:#1b3150}.btn:focus-visible{outline:2px solid #368cff}
+    .stage{position:relative;min-height:0;overflow:hidden}
+    .viewport{position:absolute;inset:14px;overflow:hidden}
+    .canvas{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0;background:var(--paper);box-shadow:0 22px 80px rgba(0,0,0,.5);overflow:hidden;color:var(--ink)}
+    .slide{position:absolute;inset:0;display:none;padding:34px 54px 36px;background:var(--paper);border-top:4px solid var(--gold);overflow:hidden}
+    .slide.active{display:block}
+    .slide-head{height:104px;border-top:1px solid #d8d8d3;padding-top:12px}
+    .meta{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;color:#3f4654;font-size:10px;font-weight:700}
+    .meta .section{justify-self:center;color:#6c7481;letter-spacing:.08em}.meta .page{justify-self:end;color:#6c7481}
+    h1{margin:24px 0 0;font-size:34px;line-height:1.12;letter-spacing:-.045em;white-space:nowrap;color:var(--ink)}
+    .content{height:472px;margin-top:13px}
+    .footer{position:absolute;left:58px;right:58px;bottom:27px;display:flex;align-items:center;justify-content:space-between;color:#6f7b8c;font-size:10px}
+    .footer-label{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.04em}.footer-label::before{content:"";width:62px;height:4px;background:var(--blue)}
+    .progress{position:fixed;left:0;bottom:57px;height:2px;background:#368cff;z-index:11;transition:width .2s}
+    .counter{min-width:76px;text-align:center;color:#94a5ba;font-size:13px;font-variant-numeric:tabular-nums}.counter strong{color:#edf4ff}
+
+    /* Slide 1 */
+    .screens-only{display:grid;grid-template-columns:minmax(0,66fr) minmax(0,34fr);gap:42px;align-items:start;padding-top:8px}
+    .screen-panel{min-width:0}
+    .screen-title{margin:0 0 12px;padding-left:12px;border-left:4px solid var(--blue);font-size:21px;line-height:1.2;font-weight:850;color:var(--ink)}
+    .screen-image{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 22px rgba(36,51,74,.09)}
+    .primary-image{width:100%;height:420px;object-fit:cover;object-position:center}
+    .future-improvement{margin:14px 0 0;padding:11px 2px 0;border-top:2px solid var(--green);color:var(--body);font-size:16px;line-height:1.4}
+    .future-improvement b{margin-right:12px;color:var(--green);font-size:17px}
+
+    /* Slide 2 */
+    .process-grid{display:grid;grid-template-columns:minmax(0,66fr) minmax(0,34fr);gap:42px;align-items:start;padding-top:8px}
+    .process-shot{min-width:0}
+    .process-shot img{display:block;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 22px rgba(36,51,74,.09)}
+    .process-side{min-width:0}
+    .process-title{margin:0 0 12px;padding-left:12px;border-left:5px solid var(--blue);font-size:24px;line-height:1.2;font-weight:900;color:var(--ink)}
+    .flow-list{display:grid;grid-template-rows:82px 16px 82px 16px 82px 16px 82px;margin:0;padding:0;list-style:none}
+    .flow-block{height:82px;padding:10px 15px;border:1px solid var(--line);border-radius:7px;background:#fff}
+    .flow-list .no{display:inline-block;width:26px;color:var(--blue);font-size:11px;font-weight:900;vertical-align:top}.flow-list b{font-size:18px;line-height:1.2}.flow-detail{display:block;margin:7px 0 0 26px;color:var(--body);font-size:14px;line-height:1.28;white-space:pre-line}
+    .flow-arrow{color:var(--blue);font-size:20px;line-height:16px;font-weight:900;text-align:center}
+
+    /* Slide 3 */
+    .share-grid{display:grid;grid-template-columns:64% 1fr;gap:44px;align-items:start;padding-top:22px}
+    .share-shot{height:420px;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden}
+    .share-shot img{width:100%;height:100%;object-fit:contain;object-position:center}
+    .effect-title{margin:0 0 18px;color:var(--blue);font-size:15px;font-weight:800;letter-spacing:.03em}
+    .effect{padding:16px 8px 18px;border-top:3px solid var(--blue)}
+    .effect:nth-of-type(3){border-color:#4c8ecf}.effect:nth-of-type(4){border-color:var(--green)}
+    .effect b{display:block;font-size:20px}.effect span{display:block;margin-top:7px;color:var(--body);font-size:14px;line-height:1.45}
+
+    /* Appendix common */
+    .appendix-head{display:block;position:relative}
+    .appendix-head>div:first-child{width:100%}
+    .headline-kpi{position:absolute;right:0;top:25px;text-align:right;white-space:nowrap}.headline-kpi span{display:block;color:var(--muted);font-size:11px;font-weight:700}.headline-kpi b{display:inline-block;margin-top:4px;font-size:23px}.headline-kpi em{margin-left:7px;color:var(--blue);font-size:16px;font-style:normal;font-weight:850}
+    .method-line{display:flex;justify-content:space-between;gap:22px;padding:10px 14px;border-top:1px solid #c9d7e7;border-bottom:1px solid #c9d7e7;background:var(--blue-soft);color:#3d526b;font-size:13px;line-height:1.35}
+    .method-line b{color:var(--ink)}.method-line strong{color:var(--blue)}
+    .metric-bullets{display:grid;gap:5px;margin:11px 0 12px;padding:0;list-style:none;color:var(--body);font-size:13px}
+    .metric-bullets li{white-space:nowrap}.metric-bullets li::before{content:"•";margin-right:8px;color:var(--blue);font-weight:900}.metric-bullets b{color:var(--ink)}
+    .table-wrap{border-top:3px solid var(--ink);background:#fff}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}
+    th{padding:8px 10px;background:#eef1f4;color:#3b4656;font-size:13px;line-height:1.25;font-weight:800;text-align:center}
+    td{padding:7px 10px;border-top:1px solid var(--line);font-size:15px;line-height:1.18;text-align:center;vertical-align:middle}
+    th:first-child,td:first-child{text-align:left;font-weight:750}
+    .warn{color:var(--red);font-weight:850}.good{color:var(--green);font-weight:850}.dim{color:var(--muted)}
+    td small{display:block;margin-top:2px;color:var(--muted);font-size:11px;font-weight:650}
+
+    /* Slide 4 */
+    .registration-table th:first-child,.registration-table td:first-child{width:34%}.registration-table th:not(:first-child){width:22%}
+    .registration-method{font-size:15px}
+    .registration-bullets{gap:6px;margin:12px 0;font-size:15px}
+    .registration-table th{height:39px}.registration-table td{height:39px;font-size:15px}
+    .failure-note{margin-top:10px;padding:9px 13px;border-left:4px solid var(--red);background:#fff4f1;color:#4d5868;font-size:14px;line-height:1.4}
+    .failure-note p{margin:0}.failure-note p+p{margin-top:3px}.failure-note b{color:var(--ink)}.failure-note strong{color:var(--red)}
+
+    /* Slide 5 */
+    .comparison-method{margin-bottom:8px;font-size:15px}
+    .comparison-method span:last-child{text-align:right}
+    .comparison-bullets{margin-top:12px;margin-bottom:12px;gap:6px;font-size:15px}
+    .comparison-table col.skill{width:22%}.comparison-table col.metric{width:13%}
+    .comparison-table th{height:29px;padding:5px 6px;font-size:12px}.comparison-table thead tr:first-child th{background:#e7ebf0;font-size:13px}.comparison-table td{height:39px;padding:4px 6px;font-size:13px}
+    .comparison-table td small{font-size:10px}.comparison-table td:first-child{font-size:13px}
+    .comparison-table tr.total td{background:#eef4fc;border-top:2px solid #b5c9e1;font-weight:800}
+    .comparison-table .delta{color:var(--muted);font-size:10px;font-weight:750}
+    .comparison-table .total small{color:var(--blue);font-size:10px}
+    .proposal-note{margin-top:7px;padding:9px 13px;border-left:4px solid var(--red);background:#fff4f1;color:#4d5868;font-size:14px;line-height:1.4}
+    .proposal-note b{color:var(--ink)}
+
+    .drawer{position:fixed;z-index:20;inset:52px 0 58px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));align-content:start;gap:14px;padding:20px;overflow:auto;background:rgba(5,13,25,.98);visibility:hidden;opacity:0;transition:.15s}.drawer.open{visibility:visible;opacity:1}
+    .thumb{padding:0;border:2px solid transparent;border-radius:6px;overflow:hidden;background:#fff;cursor:pointer}.thumb.active{border-color:#368cff}.thumb-preview{position:relative;aspect-ratio:16/9;background:var(--paper);color:var(--ink);display:grid;place-items:center}.thumb-preview b{font-size:16px}.thumb span{display:block;padding:7px 9px;background:#122036;color:#94a5ba;font-size:12px;text-align:left}
+    @media(max-width:680px){.viewport{inset:6px}.drawer{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px}}
+    :fullscreen .app{grid-template-rows:0 minmax(0,1fr) 0}:fullscreen .bar{visibility:hidden}:fullscreen .viewport{inset:0}:fullscreen .progress{bottom:0}
+    @media print{@page{size:16in 9in;margin:0}html,body{height:auto;overflow:visible;background:#fff}.app{display:block;height:auto}.bar,.drawer,.progress{display:none!important}.stage,.viewport,.canvas{position:static;width:1280px;height:auto;overflow:visible;transform:none!important}.slide{position:relative;display:block!important;width:1280px;height:720px;page-break-after:always}}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="bar top"><div class="app-title">halil 프로젝트 운영 Agent Platform</div><button class="btn" id="grid" title="전체 슬라이드">▦</button><button class="btn" id="full" title="전체 화면">⛶</button></header>
+    <section class="stage"><div class="viewport" id="viewport"><div class="canvas" id="canvas" role="img" aria-label="Skill 발표 슬라이드">
+
+      <article class="slide active" data-slide="1" aria-labelledby="title-1">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 04 프로젝트 수행 결과</span><span class="section">SKILL</span><span class="page">01</span></div>
+          <h1 id="title-1">검증한 Skill만 등록해 반복 업무에 재사용합니다</h1>
+        </div>
+        <div class="content screens-only">
+          <section class="screen-panel">
+            <h2 class="screen-title">스킬 등록 화면</h2>
+            <img class="screen-image primary-image" src="image/새스킬_등록_화면.png" alt="새 스킬 등록 화면">
+          </section>
+          <section class="screen-panel">
+            <h2 class="screen-title">/스킬이름으로 직접 호출</h2>
+            <img class="screen-image" src="image/명시적_스킬_사용_화면.png" alt="슬래시 명령으로 스킬을 직접 호출하는 화면">
+            <p class="future-improvement"><b>향후 개선</b> 요청과 업무 상황을 보고 자동 선택</p>
+          </section>
+        </div>
+        <div class="footer"><span class="footer-label">SKILL VALIDATION</span><span>01</span></div>
+        <aside hidden class="notes">스킬 등록 화면에서 보시다시피 저희는 어떤 업무를 스킬로 만들지 한 문장으로 입력할 수 있고, 채팅창에서는 /스킬이름으로 등록된 스킬을 직접 호출할 수 있습니다. 향후에는 요청과 업무 상황을 보고 필요한 스킬을 자동으로 선택하도록 개선할 예정입니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="2" aria-labelledby="title-2">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 04 프로젝트 수행 결과</span><span class="section">SKILL</span><span class="page">02</span></div>
+          <h1 id="title-2">필요한 요청과 불필요한 요청을 확인한 뒤 등록합니다</h1>
+        </div>
+        <div class="content process-grid">
+          <section class="process-shot"><h2 class="screen-title">스킬 검증 화면</h2><img class="primary-image" src="image/스킬_검증_상세.png" alt="스킬 검증 상세 화면"></section>
+          <section class="process-side">
+            <h2 class="process-title">스킬 등록 과정</h2>
+            <ol class="flow-list">
+              <li><div class="flow-block"><span class="no">01</span><b>사용자 스킬 설명</b><span class="flow-detail">스킬 내용 정의<br></span></div></li>
+              <li class="flow-arrow" aria-hidden="true">↓</li>
+              <li><div class="flow-block"><span class="no">02</span><b>검증 환경 준비</b><span class="flow-detail">테스트 케이스 준비</span></div></li>
+              <li class="flow-arrow" aria-hidden="true">↓</li>
+              <li><div class="flow-block"><span class="no">03</span><b>요청별 동작 확인</b><span class="flow-detail">긍정·부정 요청 테스트<br></span></div></li>
+              <li class="flow-arrow" aria-hidden="true">↓</li>
+              <li><div class="flow-block"><span class="no">04</span><b>통과한 스킬 등록</b><span class="flow-detail">개인 스킬로 게시</span></div></li>
+            </ol>
+          </section>
+        </div>
+        <div class="footer"><span class="footer-label">SKILL PROCESS</span><span>02</span></div>
+        <aside hidden class="notes">스킬 등록 과정을 자세히 보시면 먼저 사용자가 어떤 스킬을 만들지 문장을 입력합니다. 한 문장이어도 됩니다. 그다음 바로 등록하는 게 아니라, 이 스킬이 필요한 요청에서는 제대로 실행되고 필요하지 않은 요청에서는 잘못 실행되지 않는지를 확인합니다. 한 번 등록된 스킬은 이후 여러 사용자 요청에 영향을 줄 수 있기 때문에, 잘못 실행되면 오히려 답변 품질을 떨어뜨릴 수 있습니다. 그래서 실제 환경과 분리된 검증 환경에서 먼저 테스트하고, 검증을 통과한 스킬만 최종 등록하도록 했습니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="3" aria-labelledby="title-3">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 04 프로젝트 수행 결과</span><span class="section">TEAM SKILL</span><span class="page">03</span></div>
+          <h1 id="title-3">개인이 만든 업무 방식을 팀이 같은 절차로 실행합니다</h1>
+        </div>
+        <div class="content share-grid">
+          <section>
+            <div class="share-shot"><img src="image/팀스킬_공유_화면.png" alt="팀 스킬 공유 화면"></div>
+          </section>
+          <section>
+            <p class="effect-title">팀 공유 효과</p>
+            <div class="effect"><b>업무 표준화</b><span>팀원이 같은 절차와 기준으로 업무를 처리</span></div>
+            <div class="effect"><b>중복 작업 감소</b><span>이미 검증한 방식을 각자 다시 만들 필요가 없음</span></div>
+            <div class="effect"><b>담당자 의존도 완화</b><span>담당자가 바뀌어도 저장된 업무 절차를 그대로 유지</span></div>
+          </section>
+        </div>
+        <div class="footer"><span class="footer-label">TEAM SKILL</span><span>03</span></div>
+        <aside hidden class="notes">개인화에서 끝내지 않고, 검증을 통과한 스킬은 팀에 공유할 수 있습니다. 한 사람이 만든 업무 진행 보고 메일 스킬을 팀원이 가져와 같은 양식으로 쓰면 업무 방식이 맞춰지고 중복 작업과 담당자 의존이 줄어듭니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="4" aria-labelledby="title-4">
+        <div class="slide-head appendix-head">
+          <div>
+            <div class="meta"><span>halil · 부록</span><span class="section">SKILL EVALUATION</span><span class="page">04</span></div>
+            <h1 id="title-4">등록 검증</h1>
+          </div>
+          
+        </div>
+        <div class="content">
+          <div class="method-line registration-method"><span><b>테스트 방법</b> · 필요한 요청 6개 + 불필요한 요청 6개를 각각 3회 실행</span><span><strong>스킬당 36회 · 총 180회</strong></span></div>
+          <ul class="metric-bullets registration-bullets">
+            <li><b>필요한 요청 선택</b> — 스킬을 써야 하는 요청 18회 중 스킬이 선택된 횟수</li>
+            <li><b>불필요한 요청 오선택</b> — 스킬을 쓰면 안 되는 요청 18회 중 잘못 선택된 횟수</li>
+            <li><b>최종 답변 기준 충족</b> — 형식·사실·업무 범위 등 미리 정한 기준을 지킨 개수</li>
+          </ul>
+          <div class="table-wrap">
+            <table class="registration-table">
+              <thead><tr><th>스킬</th><th>필요한 요청<br>선택</th><th>불필요한 요청<br>오선택</th><th>최종 답변<br>기준 충족</th></tr></thead>
+              <tbody>
+                <tr><td>업무 진행 보고 메일</td><td>18/18</td><td class="warn">3/18</td><td>8/8</td></tr>
+                <tr><td>기획 메모 정리</td><td>18/18</td><td>0/18</td><td>9/9</td></tr>
+                <tr><td>문장 작성·번역</td><td>18/18</td><td>0/18</td><td>9/9</td></tr>
+                <tr><td>제안서 작성</td><td>18/18</td><td>0/18</td><td>6/7</td></tr>
+                <tr><td>경쟁사 분석</td><td>18/18</td><td>0/18</td><td>8/9</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="failure-note">
+            <p><b>오선택 질문</b> · “고객사에 보낼 프로젝트 진행 상황 안내 메일을 작성해줘. 외부 고객이 이해하기 쉽게 설명하고 문의 방법도 넣어줘.”</p>
+            <p><b>개선 방향</b> · <strong>내부 상사·책임자 보고 전용</strong>임을 명시하고 외부 고객 안내 요청은 제외하도록 선택 기준을 보완</p>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">SKILL EVALUATION</span><span>04</span></div>
+        <aside hidden class="notes">스킬마다 써야 하는 요청 6개와 쓰면 안 되는 요청 6개를 만들고 각각 3회 실행했습니다. 필요한 요청 선택과 불필요한 요청 오선택은 18회 반복 기준이며, 최종 답변 기준 충족은 실제 답변이 세부 기준을 지킨 개수입니다. 검증 결과 5개 스킬을 모두 등록했습니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="5" aria-labelledby="title-5">
+        <div class="slide-head appendix-head">
+          <div>
+            <div class="meta"><span>halil · 부록</span><span class="section">SKILL COMPARISON</span><span class="page">05</span></div>
+            <h1 id="title-5">스킬 사용 전후 비교</h1>
+          </div>
+          <div class="headline-kpi"><span>결과 요구사항 충족</span><b>274/300</b><em>91.3%</em></div>
+        </div>
+        <div class="content">
+          <div class="method-line comparison-method"><span><b>300회 구성</b> · 5개 스킬 × 10개 업무 × 3회 반복 × 2가지 방법</span><span><strong>상세 지시 150회 / 스킬 사용 150회</strong></span></div>
+          <ul class="metric-bullets comparison-bullets">
+            <li><b>사용자 입력 토큰</b> — 사용자가 직접 작성한 요청의 길이</li>
+            <li><b>실제 모델 입력 토큰</b> — 저장된 Skill 지침까지 포함해 모델이 읽은 전체 길이</li>
+            <li><b>결과 품질</b> — 필수 내용·표현·의미 기준을 모두 지킨 실행 수와 비율</li>
+          </ul>
+          <div class="table-wrap">
+            <table class="comparison-table">
+              <colgroup><col class="skill"><col class="metric"><col class="metric"><col class="metric"><col class="metric"><col class="metric"><col class="metric"></colgroup>
+              <thead>
+                <tr><th rowspan="2">스킬</th><th colspan="2">사용자 입력 토큰</th><th colspan="2">실제 모델 입력 토큰</th><th colspan="2">결과 품질</th></tr>
+                <tr><th>상세 지시</th><th>스킬 사용</th><th>상세 지시</th><th>스킬 사용</th><th>상세 지시</th><th>스킬 사용</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>업무 진행 보고 메일</td><td>119.5</td><td class="good">56.5<small class="delta">(−52.7%)</small></td><td>5,468.5</td><td>5,853.5<small class="delta">(+7.0%)</small></td><td>25/30</td><td class="good">30/30</td></tr>
+                <tr><td>기획 메모 정리</td><td>105.5</td><td class="good">42.5<small class="delta">(−59.7%)</small></td><td>5,454.5</td><td>5,763.5<small class="delta">(+5.7%)</small></td><td>28/30</td><td>28/30</td></tr>
+                <tr><td>문장 작성·번역</td><td>116.5</td><td class="good">34.0<small class="delta">(−70.8%)</small></td><td>5,465.5</td><td>5,883.0<small class="delta">(+7.6%)</small></td><td>29/30</td><td class="good">30/30</td></tr>
+                <tr><td>제안서 작성</td><td>140.5</td><td class="good">59.0<small class="delta">(−58.0%)</small></td><td>5,489.5</td><td>5,976.0<small class="delta">(+8.9%)</small></td><td>28/30</td><td class="warn">27/30</td></tr>
+                <tr><td>경쟁사 분석</td><td>140.5</td><td class="good">69.0<small class="delta">(−50.9%)</small></td><td>5,489.5</td><td>6,096.0<small class="delta">(+11.0%)</small></td><td>24/30</td><td class="good">25/30</td></tr>
+                <tr class="total"><td>전체 결과 품질</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td>134/150<small>(89.3%)</small></td><td class="good">140/150<small>(93.3%)</small></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="proposal-note"><b>제안서 품질이 1건 낮아진 이유</b> · 내용은 반영했지만 원문의 ‘5천 명’을 ‘5,000명’으로 바꿔 써, 정확한 숫자 표기 검사에서 미충족 처리됐습니다.</div>
+        </div>
+        <div class="footer"><span class="footer-label">SKILL COMPARISON</span><span>05</span></div>
+        <aside hidden class="notes">같은 업무 10개를 매번 상세하게 지시하는 방법과 저장한 스킬을 사용하는 방법으로 각각 3회씩 실행해 총 300회를 비교했습니다. 스킬을 사용하면 사용자가 작성하는 입력은 절반 이상 줄고, 저장된 지침 때문에 실제 모델 입력은 늘었습니다. 전체 결과 품질은 89.3%에서 93.3%로 4.0%포인트 높아졌습니다. 제안서는 한 건 낮아졌는데, 내용 누락이 아니라 원문의 ‘5천 명’을 ‘5,000명’으로 바꿔 써 정확한 숫자 표기 검사에서 미충족 처리된 경우입니다.</aside>
+      </article>
+    </div></div></section>
+    <div class="progress" id="progress"></div>
+    <nav class="bar bottom"><button class="btn" id="first" title="처음">⇤</button><button class="btn" id="prev" title="이전">←</button><div class="counter"><strong id="now">1</strong> / <span id="total">5</span></div><button class="btn" id="next" title="다음">→</button><button class="btn" id="last" title="마지막">⇥</button></nav>
+  </main>
+  <aside class="drawer" id="drawer" aria-label="전체 슬라이드"></aside>
+  <script>
+    (()=>{
+      const slides=[...document.querySelectorAll('.slide')],canvas=document.getElementById('canvas'),viewport=document.getElementById('viewport'),drawer=document.getElementById('drawer');
+      let current=Math.min(slides.length,Math.max(1,+(location.hash.match(/slide=(\d+)/)||[])[1]||1));
+      function fit(){const r=viewport.getBoundingClientRect(),s=Math.min(r.width/1280,r.height/720)*.995;canvas.style.left=`${Math.max(0,(r.width-1280*s)/2)}px`;canvas.style.top=`${Math.max(0,(r.height-720*s)/2)}px`;canvas.style.transform=`scale(${s})`;}
+      function draw(n,hash=true){current=Math.min(slides.length,Math.max(1,n));slides.forEach((s,i)=>s.classList.toggle('active',i===current-1));document.getElementById('now').textContent=current;document.getElementById('progress').style.width=`${current/slides.length*100}%`;[...document.querySelectorAll('.thumb')].forEach((t,i)=>t.classList.toggle('active',i===current-1));if(hash)history.replaceState(null,'',`#slide=${current}`);fit();}
+      slides.forEach((slide,i)=>{const b=document.createElement('button');b.className='thumb';const p=document.createElement('div');p.className='thumb-preview';const title=document.createElement('b');title.textContent=slide.querySelector('h1').textContent;p.append(title);const label=document.createElement('span');label.textContent=`슬라이드 ${i+1}`;b.append(p,label);b.onclick=()=>{draw(i+1);drawer.classList.remove('open')};drawer.append(b);});
+      document.getElementById('grid').onclick=()=>drawer.classList.toggle('open');document.getElementById('full').onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();document.getElementById('prev').onclick=()=>draw(current-1);document.getElementById('next').onclick=()=>draw(current+1);document.getElementById('first').onclick=()=>draw(1);document.getElementById('last').onclick=()=>draw(slides.length);
+      addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key))draw(current+1);if(['ArrowLeft','PageUp'].includes(e.key))draw(current-1);if(e.key==='Home')draw(1);if(e.key==='End')draw(slides.length);if(e.key==='Escape')drawer.classList.remove('open')});addEventListener('resize',fit);addEventListener('hashchange',()=>draw(+(location.hash.match(/slide=(\d+)/)||[])[1]||1,false));
+      draw(current,false);
+    })();
+  </script>
+</body>
+</html>

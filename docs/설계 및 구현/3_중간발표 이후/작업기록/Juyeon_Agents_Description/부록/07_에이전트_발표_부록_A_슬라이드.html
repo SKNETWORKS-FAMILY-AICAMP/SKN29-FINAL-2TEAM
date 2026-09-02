@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>halil Agent 발표 · 부록 A</title>
+  <style>
+    :root{
+      --viewer:#07111f;--viewer-panel:#0d1a2c;--viewer-line:#26364b;
+      --paper:#fbfaf7;--ink:#101728;--body:#52657d;--muted:#7b8798;
+      --blue:#2878d1;--blue-soft:#eef4fc;--teal:#168a86;--teal-soft:#e8f5f3;
+      --orange:#d77732;--orange-soft:#fff3e8;--purple:#7658b6;--purple-soft:#f2eefb;
+      --green:#17845e;--green-soft:#eaf6f0;--gold:#e1b94e;--line:#d9dee8;--white:#fff;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{overflow:hidden;background:radial-gradient(circle at 50% 0,#132b4a 0,#07111f 52%);font-family:Pretendard,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;color:#edf4ff}
+    button{font:inherit;color:inherit}
+    .app{height:100dvh;display:grid;grid-template-rows:52px minmax(0,1fr) 58px}
+    .bar{display:flex;align-items:center;gap:10px;padding:0 16px;background:rgba(9,21,38,.94);backdrop-filter:blur(16px);z-index:10}
+    .top{border-bottom:1px solid var(--viewer-line)}
+    .bottom{justify-content:center;border-top:1px solid var(--viewer-line)}
+    .app-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:650}
+    .btn{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--viewer-line);border-radius:9px;background:#122238;cursor:pointer}
+    .btn:hover{background:#1b3150}.btn:focus-visible{outline:2px solid #368cff}
+    .stage{position:relative;min-height:0;overflow:hidden}.viewport{position:absolute;inset:14px;overflow:hidden}
+    .canvas{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0;background:var(--paper);box-shadow:0 22px 80px rgba(0,0,0,.5);overflow:hidden;color:var(--ink)}
+    .slide{position:absolute;inset:0;display:none;padding:34px 54px 36px;background:var(--paper);border-top:4px solid var(--gold);overflow:hidden}.slide.active{display:block}
+    .slide-head{height:104px;border-top:1px solid #d8d8d3;padding-top:12px}.meta{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;color:#3f4654;font-size:10px;font-weight:700}.meta .section{justify-self:center;color:#6c7481;letter-spacing:.08em}.meta .page{justify-self:end;color:#6c7481}
+    h1{margin:24px 0 0;font-size:34px;line-height:1.12;letter-spacing:-.045em;white-space:nowrap;color:var(--ink)}
+    .content{height:472px;margin-top:13px}.footer{position:absolute;left:58px;right:58px;bottom:27px;display:flex;align-items:center;justify-content:space-between;color:#6f7b8c;font-size:10px}.footer-label{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.04em}.footer-label::before{content:"";width:62px;height:4px;background:var(--blue)}
+    .progress{position:fixed;left:0;bottom:57px;height:2px;background:#368cff;z-index:11;transition:width .2s}.counter{min-width:76px;text-align:center;color:#94a5ba;font-size:13px;font-variant-numeric:tabular-nums}.counter strong{color:#edf4ff}
+
+    /* Slide 0 · 시스템 처리 흐름도 */
+    .flowsub{margin:8px 0 0;font-size:18px;color:#6b7280;font-weight:600;letter-spacing:-.01em}
+    .flowwrap{position:relative;height:420px;margin-top:12px}
+    .flowwrap svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+    .fnode{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:16px;padding:10px 14px;background:#fff;border:1px solid #ececec;box-shadow:0 8px 20px rgba(30,41,59,.07);font-size:19px;font-weight:700;line-height:1.24;letter-spacing:-.02em;color:#1c2434;word-break:keep-all}
+    .fnode.accent{background:#e9f1fd;border:1.5px solid #aecbf1}
+    .fnode.end{border-radius:999px}
+    .fcyl-label{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;font-size:19px;font-weight:700;color:#1c2434;letter-spacing:-.02em}
+    .floop-label{position:absolute;font-size:14px;font-weight:700;color:#8a93a3}
+
+    /* Slide 1 · 그래프 조립 */
+    .gtrack{display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr;align-items:stretch;height:300px;margin-top:60px}
+    .garrow{display:grid;place-items:center;color:#3b6fd4;font-size:28px;font-weight:800}
+    .gcard{display:flex;flex-direction:column;justify-content:center;background:#fff;border:1px solid #ececec;border-radius:18px;box-shadow:0 8px 20px rgba(30,41,59,.07);padding:24px 26px}
+    .gcard .gnum{font-size:13px;font-weight:800;color:#3b6fd4;letter-spacing:.08em}
+    .gcard h3{margin:5px 0 14px;font-size:24px;font-weight:800;color:#1c2434;letter-spacing:-.02em}
+    .gcard ul{margin:0;padding:0;list-style:none}
+    .gcard li{position:relative;padding-left:17px;margin-top:11px;font-size:15.5px;line-height:1.42;color:#495264;word-break:keep-all}
+    .gcard li:first-child{margin-top:0}
+    .gcard li::before{content:"";position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:#9db8e0}
+
+    /* Slide 2 · Root 반복 루프 (세로 흐름 그래프) */
+    .dflow{position:relative;height:448px;margin-top:12px}
+    .dflow svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+    .dcontainer{position:absolute;background:#fff;border:1px solid #ececec;border-radius:18px;box-shadow:0 8px 20px rgba(30,41,59,.06)}
+    .dnode{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 20px;background:#eaeef7;border:1px solid #d6def0;border-radius:10px;font-size:16px;font-weight:700;color:#1c2434;letter-spacing:-.02em;line-height:1.22;word-break:keep-all}
+    .dnode.lg{font-size:18px}
+    .dnode.opt{font-size:14px;padding:0 6px;line-height:1.2}
+    .dnode.add{border-style:dashed;border-color:#a9c0e8}
+    .dplus{position:absolute;top:-8px;right:-8px;min-width:16px;height:16px;padding:0 3px;border-radius:9px;background:#31488a;color:#fff;font-size:11px;font-weight:800;font-style:normal;display:flex;align-items:center;justify-content:center;line-height:1}
+    .dnavy{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#31488a;border-radius:12px;color:#fff}
+    .dnavy b{font-size:20px;font-weight:800;letter-spacing:-.02em}
+    .dnavy span{margin-top:3px;font-size:13px;color:#c9d5ef}
+    .dlabel{position:absolute;font-size:14px;font-weight:800;color:#5b6473;letter-spacing:.02em}
+    .dcontainer.soft{background:#eef2f8;border-color:#e2e8f2;box-shadow:none}
+    .dnode.col{flex-direction:column;padding:9px 12px}
+    .dnode.col b{font-size:15px;font-weight:800}
+    .dnode.col small{margin-top:3px;font-size:11px;font-weight:600;color:#6b7480;line-height:1.3}
+    .mwcol{position:absolute;background:#eef2f8;border:1px solid #e2e8f2;border-radius:14px;padding:12px 12px 14px}
+    .mwhead{background:#31488a;color:#fff;border-radius:8px;padding:8px 6px;text-align:center;font-size:14px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+    .mwsub{margin-top:8px;font-size:10px;font-weight:800;color:#6b7480;letter-spacing:.04em;text-align:center}
+    .mwitem{margin-top:12px;line-height:1.26;word-break:keep-all}
+    .mwitem b{display:block;font-size:13px;font-weight:800;color:#1c2434}
+    .mwitem span{display:block;margin-top:1px;font-size:11px;font-weight:600;color:#9aa3b0}
+    .mwtag{display:inline-block;margin-right:5px;padding:0 4px;border-radius:4px;background:#dbe3f2;color:#3a5290;font-size:9px;font-weight:800;font-style:normal;vertical-align:1px}
+    .mwitem em{display:block;margin-top:3px;font-size:10.5px;font-weight:800;color:#31488a;font-style:normal;line-height:1.32}
+    .mwitem em.stop{color:#b23b3b}
+    .gtbl{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}
+    .gtbl th{background:#dbe3f2;color:#31488a;font-weight:800;padding:8px 12px;text-align:left;border:1px solid #cdd8ec;white-space:nowrap}
+    .gtbl td{padding:8px 12px;border:1px solid #dee3ed;color:#3a4658;font-weight:600;line-height:1.35;vertical-align:top}
+    .gtbl td:first-child{font-weight:800;color:#1c2434;white-space:nowrap;background:#f4f6fb}
+    .gtbl td:last-child{color:#b23b3b;font-weight:800}
+    .mwcol.w{background:#fff;border:1px solid #ececec;box-shadow:0 6px 16px rgba(30,41,59,.06)}
+    .mwcol.w .mwhead{font-size:16px;padding:10px 12px;line-height:1.25}
+    .mwcol.w .mwsub{font-size:13px;font-weight:800;color:#3b6fd4;margin-top:10px;text-align:left;letter-spacing:0}
+    .mwcol.w .mwitem{margin-top:12px}
+    .mwcol.w .mwitem b{font-size:17px}
+    .mwcol.w .mwitem span{font-size:14.5px;color:#495264}
+    .mwcol.w .mwitem em{font-size:14px}
+    .mwcol.w .gtbl{font-size:13px;margin-top:13px}
+    .mwcol.w .gtbl th{font-size:13px;padding:8px 11px}
+    .mwcol.w .gtbl td{padding:8px 11px}
+    .fstep{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#fff;border:1px solid #ececec;border-radius:12px;box-shadow:0 6px 16px rgba(30,41,59,.06);color:#1c2434;letter-spacing:-.02em;line-height:1.2;word-break:keep-all;padding:6px 10px}
+    .fstep b{font-size:16px;font-weight:800}
+    .fstep span{font-size:12.5px;font-weight:800;color:#3b6fd4;margin-top:5px}
+    .fstep.plain b{font-size:18px}
+    .mwcol.w .mworigin{margin-top:9px;display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:-.01em}
+    .mwcol.w .mworigin.team{background:#e6f0ff;color:#1f5fc0;border:1px solid #b7d2f4}
+    .mwcol.w .mworigin.ext{background:#f0f1f3;color:#5b6472;border:1px solid #dbdee3}
+    .mwcol.w code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:#eef1f6;padding:1px 5px;border-radius:5px}
+    .mwcol.w.lite{padding:22px 26px 24px}
+    .mwcol.w.lite .mwhead{font-size:17px;padding:11px 12px}
+    .mwcol.w.lite .mwitem{margin-top:22px}
+    .mwcol.w.lite .mwitem b{font-size:19px}
+    .mwcol.w.lite .mwitem span{font-size:15.5px;color:#48566a;line-height:1.55}
+    .mwcol.w .mwpill{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+    .mwcol.w .mwpill i{font-style:normal;font-weight:800;font-size:12.5px;padding:4px 11px;border-radius:999px;background:#eef2f8;color:#41506a}
+
+    /* 부록 · 직접 구현 코드 */
+    .codewrap{display:grid;grid-template-columns:1fr 1fr;gap:26px;height:472px}
+    .codecol{display:flex;flex-direction:column;min-width:0}
+    .codecol h3{margin:0;font-size:18px;font-weight:800;color:#1c2434;letter-spacing:-.02em}
+    .codecol .cref{margin:4px 0 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#6b7480;word-break:break-all}
+    .codecol .cref b{color:#2f6fc4;font-weight:700}
+    .codecol pre{flex:1;margin:0;background:#0f1b2d;border:1px solid #24334c;border-radius:10px;padding:13px 15px;overflow:hidden;color:#dbe6f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;line-height:1.62;white-space:pre-wrap;word-break:break-word;tab-size:2}
+    .codecol pre .c{color:#7f93ad}
+    .codecol pre .k{color:#8fd0ff}
+    .codecol .cdesc{margin-top:10px;font-size:12px;line-height:1.5;color:#48566a;word-break:keep-all}
+    .codecol .cdesc b{color:#1c2434;font-weight:800}
+
+    /* Slide 1 · complete pipeline */
+    .pipeline{padding-top:4px}.zone-row{display:grid;grid-template-columns:1.1fr 3.35fr 1.15fr;gap:12px;margin:0 0 10px}.zone{height:31px;padding:7px 12px;border-radius:5px;font-size:12px;line-height:1;font-weight:850;text-align:center;letter-spacing:.02em}.zone.outside{color:#9a4d17;background:var(--orange-soft);border:1px solid #efc49e}.zone.assembly{color:#276494;background:var(--blue-soft);border:1px solid #bdd4ec}.zone.inside{color:#126649;background:var(--green-soft);border:1px solid #b9dfcd}
+    .pipe-row{display:grid;grid-template-columns:1.15fr 28px 1.15fr 28px 1.25fr 28px 1.3fr 28px 1.2fr;align-items:stretch;height:309px}.pipe-arrow{display:grid;place-items:center;color:var(--blue);font-size:26px;font-weight:950}.pipe-card{position:relative;padding:16px 15px 13px;border:1px solid var(--line);border-top-width:5px;border-radius:8px;background:var(--white);box-shadow:0 6px 18px rgba(36,51,74,.07)}.pipe-card.orange{border-top-color:var(--orange)}.pipe-card.blue{border-top-color:var(--blue)}.pipe-card.teal{border-top-color:var(--teal)}.pipe-card.purple{border-top-color:var(--purple)}.pipe-card.green{border-top-color:var(--green)}
+    .step-no{display:block;margin-bottom:7px;color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.08em}.pipe-card h2{margin:0 0 6px;font-size:19px;line-height:1.12;letter-spacing:-.025em}.code-name{display:block;margin-bottom:13px;color:var(--body);font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pipe-card ul{margin:0;padding:0;list-style:none}.pipe-card li{position:relative;margin-top:9px;padding-left:11px;color:var(--body);font-size:12px;line-height:1.27}.pipe-card li::before{content:"";position:absolute;left:0;top:6px;width:4px;height:4px;border-radius:50%;background:currentColor}.pipe-card li b{color:var(--ink);font-weight:800}
+    .loop-mark{position:absolute;left:14px;right:14px;bottom:12px;padding:8px 8px;border-radius:5px;background:var(--green-soft);color:#276b53;font-size:11px;line-height:1.25;text-align:center;font-weight:800}
+    .pipeline-note{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;margin-top:13px;padding:11px 14px;border-left:4px solid var(--blue);background:#f4f7fb;color:var(--body);font-size:13px;line-height:1.35}.pipeline-note b{color:var(--ink)}.pipeline-note strong{color:var(--blue)}
+
+    /* Slide 2 · loader/factory */
+    .build-flow{display:grid;grid-template-columns:1fr 52px 1.45fr;gap:0;height:448px;padding-top:6px}.build-arrow{display:grid;place-items:center;color:var(--blue);font-size:30px;font-weight:950}.build-panel{border:1px solid var(--line);border-top:5px solid var(--blue);border-radius:8px;background:#fff;overflow:hidden}.build-panel.loader{border-top-color:var(--teal)}.panel-title{display:flex;align-items:baseline;justify-content:space-between;padding:14px 17px 12px;border-bottom:1px solid var(--line)}.panel-title h2{margin:0;font-size:21px;letter-spacing:-.025em}.panel-title code{color:var(--muted);font-size:10px}.panel-body{display:grid;height:349px}.loader .panel-body{grid-template-rows:1fr 1.1fr .84fr}.factory .panel-body{grid-template-rows:.8fr 1.35fr 1fr}.slice{padding:12px 17px;border-bottom:1px solid var(--line)}.slice:last-child{border-bottom:0}.slice-label{display:block;margin-bottom:7px;color:var(--blue);font-size:10px;font-weight:900;letter-spacing:.09em}.loader .slice-label{color:var(--teal)}.slice h3{margin:0 0 5px;font-size:15px}.slice p{margin:0;color:var(--body);font-size:12px;line-height:1.4}.tag-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.tag{padding:4px 7px;border-radius:4px;background:var(--blue-soft);color:#2e658f;font-size:10px;font-weight:750}.loader .tag{background:var(--teal-soft);color:#286b68}.return-band{height:43px;padding:12px 16px;background:#f1f5f8;color:#3f556a;font-size:12px;font-weight:800}.return-band code{color:var(--ink)}
+    .factory-seq{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:7px}.seq{padding:8px 7px;border:1px solid #cfdae6;border-radius:5px;background:#f8fafc;text-align:center}.seq b{display:block;color:var(--ink);font-size:11px}.seq span{display:block;margin-top:4px;color:var(--body);font-size:9px;line-height:1.25}.factory-output{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:7px}.output-pill{padding:7px 5px;border-radius:5px;background:var(--purple-soft);color:#62489b;font-size:10px;line-height:1.2;text-align:center;font-weight:800}
+
+    /* Slide 3 · create_deep_agent internals */
+    .deep-layout{display:grid;grid-template-columns:242px 32px 1fr 32px 210px;align-items:stretch;height:442px;padding-top:5px}.deep-arrow{display:grid;place-items:center;color:var(--blue);font-size:26px;font-weight:950}.input-box,.output-box{padding:15px 14px;border:1px solid var(--line);border-top:5px solid var(--teal);border-radius:8px;background:#fff}.output-box{border-top-color:var(--green)}.input-box h2,.output-box h2{margin:0 0 11px;font-size:19px}.input-group{margin-top:11px}.input-group b{display:block;margin-bottom:5px;color:var(--teal);font-size:10px;letter-spacing:.08em}.input-group p{margin:0;color:var(--body);font-size:11px;line-height:1.42}.deep-core{padding:12px 13px;border:1px solid #bfd1e4;border-top:5px solid var(--blue);border-radius:8px;background:#fff}.core-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}.core-head h2{margin:0;font-size:19px}.core-head span{color:var(--muted);font-size:10px}.core-stack{display:grid;grid-template-rows:69px 132px 91px 66px;gap:6px}.core-step{padding:9px 11px;border-radius:6px;border:1px solid #d6e0ea;background:#f8fafc}.core-step h3{margin:0 0 6px;font-size:13px}.core-step p{margin:0;color:var(--body);font-size:10px;line-height:1.28}.mini-stack{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}.mini{padding:7px 3px;border-radius:4px;background:var(--blue-soft);color:#315f8a;font-size:9px;line-height:1.15;text-align:center;font-weight:800}.custom-stack{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.custom{padding:6px 3px;border-radius:4px;background:var(--orange-soft);color:#8b541f;font-size:8.5px;line-height:1.15;text-align:center;font-weight:800}.tail-stack{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.tail{padding:6px 3px;border-radius:4px;background:var(--purple-soft);color:#634a98;font-size:9px;line-height:1.15;text-align:center;font-weight:800}
+    .output-box p{margin:0;color:var(--body);font-size:11px;line-height:1.42}.result-icon{display:grid;place-items:center;width:58px;height:58px;margin:11px auto 13px;border:4px solid #a9d7c2;border-radius:50%;background:var(--green-soft);color:var(--green);font-size:25px;font-weight:950}.result-list{margin:0;padding:0;list-style:none}.result-list li{margin-top:9px;padding-left:12px;position:relative;color:var(--body);font-size:11px;line-height:1.3}.result-list li::before{content:"";position:absolute;left:0;top:5px;width:5px;height:5px;border-radius:50%;background:var(--green)}.not-run{margin-top:16px;padding:9px;border-left:3px solid var(--orange);background:var(--orange-soft);color:#7a4a20;font-size:10px;line-height:1.35;font-weight:800}
+
+    .drawer{position:fixed;z-index:20;inset:52px 0 58px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));align-content:start;gap:14px;padding:20px;overflow:auto;background:rgba(5,13,25,.98);visibility:hidden;opacity:0;transition:.15s}.drawer.open{visibility:visible;opacity:1}.thumb{padding:0;border:2px solid transparent;border-radius:6px;overflow:hidden;background:#fff;cursor:pointer}.thumb.active{border-color:#368cff}.thumb-preview{position:relative;aspect-ratio:16/9;background:var(--paper);color:var(--ink);display:grid;place-items:center}.thumb-preview b{padding:14px;font-size:14px;text-align:center}.thumb span{display:block;padding:7px 9px;background:#122036;color:#94a5ba;font-size:12px;text-align:left}
+    @media(max-width:680px){.viewport{inset:6px}.drawer{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px}}
+    :fullscreen .app{grid-template-rows:0 minmax(0,1fr) 0}:fullscreen .bar{visibility:hidden}:fullscreen .viewport{inset:0}:fullscreen .progress{bottom:0}
+    @media print{@page{size:16in 9in;margin:0}html,body{height:auto;overflow:visible;background:#fff}.app{display:block;height:auto}.bar,.drawer,.progress{display:none!important}.stage,.viewport,.canvas{position:static;width:1280px;height:auto;overflow:visible;transform:none!important}.slide{position:relative;display:block!important;width:1280px;height:720px;page-break-after:always}}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="bar top"><div class="app-title">halil 프로젝트 운영 Agent Platform · 부록 A</div><button class="btn" id="grid" title="전체 슬라이드">▦</button><button class="btn" id="full" title="전체 화면">⛶</button></header>
+    <section class="stage"><div class="viewport" id="viewport"><div class="canvas" id="canvas" role="img" aria-label="에이전트 요청 실행 파이프라인 부록 슬라이드">
+
+      <article class="slide active" data-slide="0" aria-labelledby="title-0">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-01</span></div>
+          <h1 id="title-0">시스템 처리 흐름도</h1>
+        </div>
+        <div class="content">
+          <p class="flowsub">권한 · 보안 정보 요청 처리 및 대화 흐름</p>
+          <div class="flowwrap">
+            <svg viewBox="0 0 1172 420" aria-hidden="true">
+              <defs>
+                <marker id="fa" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b6fd4"/></marker>
+              </defs>
+              <g fill="none" stroke="#3b6fd4" stroke-width="2.5">
+                <path d="M75,132 V166" marker-end="url(#fa)"/>
+                <path d="M150,212 H176" marker-end="url(#fa)"/>
+                <path d="M326,212 H348"/>
+                <path d="M348,212 V94 H384" marker-end="url(#fa)"/>
+                <path d="M348,212 V342 H384" marker-end="url(#fa)"/>
+                <path d="M524,94 H552" marker-end="url(#fa)"/>
+                <path d="M688,94 H708 V212"/>
+                <path d="M564,342 H708 V212"/>
+                <path d="M708,212 H728" marker-end="url(#fa)"/>
+                <path d="M852,212 H880" marker-end="url(#fa)"/>
+                <path d="M996,212 H1012" marker-end="url(#fa)"/>
+                <path d="M1086,256 V298" marker-end="url(#fa)"/>
+              </g>
+              <g fill="#f4f5f7" stroke="#9aa2ae" stroke-width="1.5">
+                <path d="M730,178 V246 a60,13 0 0,0 120,0 V178"/>
+                <ellipse cx="790" cy="178" rx="60" ry="13"/>
+              </g>
+              <path d="M1086,168 V24 H444 V50" fill="none" stroke="#9fb9e2" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#fa)"/>
+            </svg>
+
+            <div class="fnode" style="left:0;top:56px;width:150px;height:76px">사용자 질의</div>
+            <div class="fnode" style="left:0;top:168px;width:150px;height:88px">API 키·비밀번호 형태 감지</div>
+            <div class="fnode" style="left:176px;top:168px;width:150px;height:88px">권한·보안 정보 요구 감지</div>
+            <div class="fnode" style="left:384px;top:52px;width:140px;height:84px">외부 가드레일</div>
+            <div class="fnode" style="left:552px;top:52px;width:136px;height:84px">가드레일 통과</div>
+            <div class="fnode" style="left:384px;top:300px;width:180px;height:84px">컨텍스트 및 에이전트 준비</div>
+            <div class="fcyl-label" style="left:730px;top:172px;width:120px;height:80px">대화 DB 저장</div>
+            <div class="fnode" style="left:880px;top:168px;width:116px;height:88px">그래프 조립</div>
+            <div class="fnode accent" style="left:1012px;top:168px;width:160px;height:88px">root 반복 루프</div>
+            <div class="fnode end" style="left:1036px;top:300px;width:100px;height:76px">답변</div>
+
+            <div class="floop-label" style="left:636px;top:4px">답변 전까지 루프 반복</div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-01</span></div>
+        <aside hidden class="notes">한 요청은 사용자 질의에서 시작해 왼쪽에서 오른쪽으로 흐릅니다. 먼저 API 키·비밀번호 형태와 관리자·루트 같은 권한·보안 정보 요구를 감지해, 걸리면 저장도 실행도 하지 않고 요청을 거부합니다. 통과하면 두 갈래가 병렬로 돕니다. 위쪽은 외부 가드레일이 민감정보·정책·위협도를 검사해 통과 판정을 내리고, 아래쪽은 컨텍스트와 에이전트를 준비합니다. 두 갈래 모두 대화 DB에 요청·응답·메타를 저장한 뒤 합류해 그래프를 조립하고, root 반복 루프가 반복 처리하다가 답변이 준비되면 응답하고, 아직이면 루프 상단의 점선을 따라 다시 반복합니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="1" aria-labelledby="title-1">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-02</span></div>
+          <h1 id="title-1">그래프 조립</h1>
+        </div>
+        <div class="content">
+          <div class="gtrack">
+            <section class="gcard">
+              <div class="gnum">STEP 1</div>
+              <h3>버전 읽기</h3>
+              <ul>
+                <li>세션에 고정된 에이전트 버전을 불러온다</li>
+                <li>역할 · 모델명 · 반복 한도</li>
+                <li>도구 목록 · 서브에이전트 목록</li>
+              </ul>
+            </section>
+            <div class="garrow">→</div>
+            <section class="gcard">
+              <div class="gnum">STEP 2</div>
+              <h3>부품 구성</h3>
+              <ul>
+                <li>모델 엔드포인트 해석 → 모델 객체 생성</li>
+                <li>부모 상속(GP) · 서브에이전트 그래프 컴파일</li>
+                <li>프롬프트 · 툴 · 미들웨어 · 메모리</li>
+              </ul>
+            </section>
+            <div class="garrow">→</div>
+            <section class="gcard">
+              <div class="gnum">STEP 3</div>
+              <h3>상태 복원</h3>
+              <ul>
+                <li>새 대화면 빈 상태로 시작</li>
+                <li>이어가면 이전 대화 · 할 일 · 중단 위치 복원</li>
+                <li>개인 기억을 시스템 컨텍스트에 주입</li>
+              </ul>
+            </section>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-02</span></div>
+        <aside hidden class="notes">그래프 조립은 세 단계입니다. 먼저 이 세션에 고정된 에이전트 버전을 읽어 역할·모델·반복 한도, 도구 목록, 서브에이전트 목록을 확인합니다. 다음으로 부품을 구성합니다. 팀 모델 엔드포인트를 해석해 모델 객체를 만들고, 부모의 도구 일부를 물려받는 GP와 서브에이전트 그래프를 컴파일하고, 프롬프트·툴·미들웨어·메모리를 하나의 실행 그래프로 묶습니다. 마지막으로 새 대화면 빈 상태를, 이어가는 대화면 이전 메시지·할 일·중단 위치를 복원하고 개인 기억을 시스템 컨텍스트에 주입합니다. 그래프 자체는 저장하지 않고 요청마다 이 세 단계로 새로 만듭니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="2" aria-labelledby="title-2">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-03</span></div>
+          <h1 id="title-2">Root 반복 루프</h1>
+        </div>
+        <div class="content">
+          <div class="dflow">
+            <svg viewBox="0 0 1172 448" aria-hidden="true">
+              <defs>
+                <marker id="fd" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#6b7480"/></marker>
+              </defs>
+              <g fill="none" stroke="#6b7480" stroke-width="2.5">
+                <path d="M586,32 V56" marker-end="url(#fd)"/>
+                <path d="M586,152 V174"/>
+                <path d="M141,174 H1029"/>
+                <path d="M141,174 V206" marker-end="url(#fd)"/>
+                <path d="M289,174 V206" marker-end="url(#fd)"/>
+                <path d="M437,174 V206" marker-end="url(#fd)"/>
+                <path d="M585,174 V206" marker-end="url(#fd)"/>
+                <path d="M733,174 V206" marker-end="url(#fd)"/>
+                <path d="M881,174 V206" marker-end="url(#fd)"/>
+                <path d="M1029,174 V206" marker-end="url(#fd)"/>
+                <path d="M586,284 V320" marker-end="url(#fd)"/>
+                <path d="M586,360 V382"/>
+                <path d="M586,382 H460 V400" marker-end="url(#fd)"/>
+                <path d="M586,382 H700 V400" marker-end="url(#fd)"/>
+              </g>
+              <path d="M486,342 H28 V123 H446" fill="none" stroke="#a9b3c0" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#fd)"/>
+            </svg>
+
+            <div class="dcontainer" style="left:56px;top:60px;width:1060px;height:224px"></div>
+            <div class="dlabel" style="left:78px;top:72px">Root 반복 루프 · 매 턴 아래에서 하나 이상 선택</div>
+            <div class="dlabel" style="left:846px;top:72px;color:#8a94a3;font-weight:700">＋ 팀이 추가 가능</div>
+            <div class="dlabel" style="left:44px;top:102px;color:#8a94a3;font-weight:700">답이 부족하면 다시 판단</div>
+
+            <div class="dnode lg" style="left:511px;top:0px;width:150px;height:32px">질의</div>
+            <div class="dnavy" style="left:446px;top:94px;width:280px;height:58px"><b>Root 판단 루프</b><span>직접 답변 · 도구 호출 · 위임</span></div>
+
+            <div class="dnode opt add" style="left:72px;top:212px;width:138px;height:50px">도구 선택<i class="dplus">＋</i></div>
+            <div class="dnode opt add" style="left:220px;top:212px;width:138px;height:50px">스킬<i class="dplus">＋</i></div>
+            <div class="dnode opt" style="left:368px;top:212px;width:138px;height:50px">Todo</div>
+            <div class="dnode opt" style="left:516px;top:212px;width:138px;height:50px">메모리</div>
+            <div class="dnode opt" style="left:664px;top:212px;width:138px;height:50px">컨텍스트 오프로딩</div>
+            <div class="dnode opt" style="left:812px;top:212px;width:138px;height:50px">부모 상속 에이전트</div>
+            <div class="dnode opt add" style="left:960px;top:212px;width:138px;height:50px">서브 에이전트<i class="dplus">＋</i></div>
+
+            <div class="dnode lg" style="left:486px;top:324px;width:200px;height:36px">결과를 대화에 추가</div>
+            <div class="dnode" style="left:380px;top:402px;width:160px;height:30px">최종 답변</div>
+            <div class="dnode" style="left:565px;top:402px;width:270px;height:30px">호출 한도 초과 시 종료</div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-03</span></div>
+        <aside hidden class="notes">Root 반복 루프입니다. 질의가 들어오면 Root 판단 루프가 시작됩니다. Root는 매 턴 직접 답변, 도구 호출, 위임 중 하나를 스스로 정합니다 — 앞단 분류기는 없습니다. 구체적으로는 Todo 갱신, 스킬 본문 로드, 도구 선택, 메모리 읽기·쓰기, 컨텍스트 오프로딩(가상 파일), 부모 상속 에이전트나 서브 에이전트로의 위임 중 하나 이상을 고릅니다. 스킬·도구·서브 에이전트는 팀이 추가할 수 있는 부분입니다. 실행 결과를 대화에 추가한 뒤, 질의에 맞는 답이 안 나오거나 아직 부족하면 다시 Root 판단 루프로 돌아갑니다. 충분히 답할 수 있으면 최종 답변으로 끝나고, 모델이나 도구 호출 한도를 넘으면 부분 결과를 정리하지 않고 강제 종료합니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="3" aria-labelledby="title-3">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-04</span></div>
+          <h1 id="title-3">미들웨어가 붙는 지점</h1>
+        </div>
+        <div class="content">
+          <div class="dflow">
+            <svg viewBox="0 0 1172 448" aria-hidden="true">
+              <defs>
+                <marker id="fm" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#6b7480"/></marker>
+              </defs>
+              <g fill="none" stroke="#6b7480" stroke-width="2">
+                <path d="M64,84 H122" marker-end="url(#fm)"/>
+                <path d="M308,84 H330" marker-end="url(#fm)"/>
+                <path d="M552,84 H574" marker-end="url(#fm)"/>
+                <path d="M848,84 H870" marker-end="url(#fm)"/>
+                <path d="M1090,84 H1124" marker-end="url(#fm)"/>
+              </g>
+              <path d="M980,60 V34 H441 V56" fill="none" stroke="#a9b3c0" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#fm)"/>
+            </svg>
+
+            <div class="dlabel" style="left:28px;top:76px">요청</div>
+            <div class="dlabel" style="left:1128px;top:76px">결과</div>
+            <div class="dlabel" style="left:648px;top:18px;color:#8a94a3;font-weight:700">도구 실행 후 다음 모델 호출</div>
+
+            <div class="mwcol" style="left:122px;top:56px;width:186px;height:324px">
+              <div class="mwhead">실행 시작 전</div>
+              <div class="mwitem"><b>SkillCatalogRefresh</b><span>방금 등록된 스킬 반영</span></div>
+            </div>
+            <div class="mwcol" style="left:330px;top:56px;width:222px;height:324px">
+              <div class="mwhead">모델 호출 전</div>
+              <div class="mwitem"><b>SensitiveInputMask</b><span>과거 발화까지 재마스킹</span></div>
+              <div class="mwitem"><b>PatchToolCalls</b><span>끊긴 도구 호출 복구</span></div>
+              <div class="mwitem"><b>PII</b><span>카드·IP·MAC</span></div>
+              <div class="mwitem"><b>ModelCallLimit</b><span>호출 수 확인</span></div>
+            </div>
+            <div class="mwcol" style="left:574px;top:56px;width:274px;height:324px">
+              <div class="mwhead">모델·도구 호출 감쌈</div>
+              <div class="mwitem"><b><i class="mwtag">model</i>Summarization</b><span>오래된 대화 요약</span></div>
+              <div class="mwitem"><b><i class="mwtag">model</i>Memory·Skills</b><span>컨텍스트 주입</span></div>
+              <div class="mwitem"><b><i class="mwtag">model</i>ToolExclusion</b><span>제외 도구 숨김</span></div>
+              <div class="mwitem"><b><i class="mwtag">tool</i>McpToolCallTimeout</b><span>480초 상한</span></div>
+              <div class="mwitem"><b><i class="mwtag">tool</i>BuiltinWriteLock</b><span>프로젝트 쓰기 직렬화</span></div>
+              <div class="mwitem"><b><i class="mwtag">tool</i>MemoryWriteGuard·Lock</b><span>기억 저장 재검사</span></div>
+            </div>
+            <div class="mwcol" style="left:870px;top:56px;width:220px;height:324px">
+              <div class="mwhead">모델 응답 후</div>
+              <div class="mwitem"><b>HumanInTheLoop</b><span>변경 도구 중단·승인</span></div>
+              <div class="mwitem"><b>PII</b><span>카드·IP·MAC</span></div>
+              <div class="mwitem"><b>Filesystem</b><span>큰 결과 오프로딩</span></div>
+              <div class="mwitem"><b>TodoList</b><span>병렬 write_todos 거부</span></div>
+              <div class="mwitem"><b>ToolCallLimit</b><span>상한 집계</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-04</span></div>
+        <aside hidden class="notes">미들웨어는 실행 훅마다 붙습니다. before_agent(실행당 1회)에서는 방금 등록된 스킬을 이번 실행 카탈로그에 반영합니다. before_model(매 모델 호출 전)에서는 과거 발화까지 다시 마스킹하고, 끊긴 도구 호출 형식을 복구하고, 입력의 카드·IP·MAC을 가리고, 모델 호출 수 상한을 확인합니다. wrap_model_call과 wrap_tool_call은 호출을 감쌉니다 — 모델 쪽은 오래된 대화 요약, 개인 기억·스킬 주입, 제외 도구 숨김이고, 도구 쪽은 MCP 480초 상한, 같은 프로젝트 쓰기 직렬화, 개인 기억 저장 전 재검사와 파일 단위 직렬화입니다. after_model(모델 응답 후)에서는 변경 도구면 그래프를 멈추고 승인받고, 출력과 도구 결과의 개인정보를 가리고, 큰 결과를 파일로 빼고, 병렬 write_todos를 거부하고, 도구 호출 상한을 집계합니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="4" aria-labelledby="title-4">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-05</span></div>
+          <h1 id="title-4">보안과 가드레일</h1>
+        </div>
+        <div class="content">
+          <div class="dflow">
+            <svg viewBox="0 0 1172 456" aria-hidden="true">
+              <defs><marker id="fp5" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#6b7480"/></marker></defs>
+              <g fill="none" stroke="#6b7480" stroke-width="2.5">
+                <path d="M125,52 V95" marker-end="url(#fp5)"/>
+                <path d="M125,157 V200" marker-end="url(#fp5)"/>
+                <path d="M125,262 V305" marker-end="url(#fp5)"/>
+                <path d="M125,367 V410" marker-end="url(#fp5)"/>
+              </g>
+            </svg>
+
+            <div class="fstep plain" style="left:45px;top:12px;width:160px;height:38px"><b>질의</b></div>
+            <div class="fstep" style="left:20px;top:99px;width:210px;height:56px"><b>입구 검사</b><span>민감정보</span></div>
+            <div class="fstep" style="left:10px;top:204px;width:230px;height:56px"><b>외부 가드레일 검사</b><span>외부 가드레일</span></div>
+            <div class="fstep" style="left:20px;top:309px;width:210px;height:56px"><b>Root 모델 호출</b><span>민감정보 · 개인정보</span></div>
+            <div class="fstep plain" style="left:45px;top:414px;width:160px;height:38px"><b>답변</b></div>
+
+            <div class="mwcol w" style="left:266px;top:4px;width:448px;height:228px">
+              <div class="mwhead">민감정보 미들웨어</div>
+              <div class="mworigin team">직접 구현</div>
+              <div class="mwitem"><b>credential · authority</b><span>sk-·** ·비밀번호 등 자격증명, "관리자 비밀번호"·"루트 계정" 요구</span><em class="stop">요청 거부 (400) — 저장·가드레일·모델에 닿지 않음</em></div>
+              <div class="mwitem"><b>주민번호 · 카드번호 · 휴대폰</b><em>[가려짐]로 마스킹 후 통과</em></div>
+            </div>
+
+            <div class="mwcol w" style="left:722px;top:4px;width:434px;height:228px">
+              <div class="mwhead">개인정보 미들웨어</div>
+              <div class="mworigin ext">langchain</div>
+              <div class="mwitem"><b>credit_card · ip · mac_address</b><em>입력 · 모델 출력 · 도구 결과에 모두 마스킹</em></div>
+              <div class="mwitem"><b>email · url</b><em>정상 메일·문서 링크 오탐 많아 끔</em></div>
+            </div>
+
+            <div class="mwcol w" style="left:266px;top:238px;width:890px;height:214px">
+              <div class="mwhead">외부 가드레일</div>
+              <table class="gtbl">
+                <thead><tr><th>공급자</th><th>검사 항목</th><th>고객이 등록하는 것</th><th>차단 기준</th></tr></thead>
+                <tbody>
+                  <tr><td>OpenAI Guardrails</td><td>유해 표현·탈옥 시도</td><td>검사 설정 + OpenAI 키</td><td>켠 항목 중 하나라도 걸림</td></tr>
+                  <tr><td>Azure Content Safety</td><td>혐오·자해·성적·폭력·금지어</td><td>리소스 주소 + 키</td><td>심각도 중간 이상 · 금지어</td></tr>
+                  <tr><td>AWS Bedrock Guardrails</td><td>콘솔에서 정한 금지 주제·필터</td><td>가드레일 ID·리전 + 자격증명</td><td>가드레일이 '개입' 판정</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-05</span></div>
+        <aside hidden class="notes">입력 보호는 두 미들웨어와 외부 가드레일로 나뉩니다. 민감정보미들웨어는 halil 플랫폼이 직접 구현한 것으로, credential(sk-·AKIA·password= 형태)과 authority('관리자 비밀번호'·'루트 계정' 류)를 잡아 요청을 거부하고, 주민번호·카드번호·휴대폰은 [가려짐]으로 마스킹해 통과시킵니다. 이 처리는 입구 검사와 Root 모델 호출 직전에 동작합니다. langgraph의 개인정보미들웨어는 오픈소스 라이브러리가 기본 제공하는 컴포넌트로, credit_card·ip·mac_address만 redact하며 입력뿐 아니라 모델 출력과 도구 결과에도 겁니다(email·url은 정상 메일·문서 링크 오탐이 많아 끔). 이 미들웨어는 모델 호출 앞뒤에서만 동작하고 입구 검사에는 관여하지 않습니다. 외부 가드레일은 그래프 시작 전에 팀이 연결한 공급자 하나를 호출합니다. OpenAI는 위저드에서 켠 유해 표현·탈옥 항목을 하나라도 걸리면, Azure는 혐오·자해·성적·폭력과 금지어를 심각도 중간 이상으로, Bedrock은 콘솔에서 정한 금지 주제를 개입 판정으로 차단합니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="5" aria-labelledby="title-5">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">PLATFORM EVALUATION</span><span class="page">A-06</span></div>
+          <h1 id="title-5">Todo 미들웨어</h1>
+        </div>
+        <div class="content">
+          <div class="dflow">
+            <div class="mwcol w lite" style="left:20px;top:28px;width:520px;height:398px">
+              <div class="mwhead">사용하는 이유</div>
+              <div class="mwitem"><b>무엇을 막나</b><span>여러 단계로 나뉜 작업에서 Root가 앞서 정한 순서를 잊고 일부 단계를 건너뛰는 것</span></div>
+              <div class="mwitem"><b>어떻게</b><span>할 일을 목록으로 적어 두고, 끝낸 항목을 하나씩 체크하며 끝까지 진행한다</span></div>
+            </div>
+
+            <div class="mwcol w lite" style="left:560px;top:28px;width:596px;height:398px">
+              <div class="mwhead">미들웨어가 하는 일</div>
+              <div class="mwitem"><b>계획 도구 + 안내문</b><span>계획을 적는 도구를 붙이고, "단계가 많으면 먼저 계획을 세워라"를 프롬프트에 넣는다</span></div>
+              <div class="mwitem"><b>부를 때마다 전체 교체</b><span>계획 목록을 통째로 새로 쓴다 — 항목만 부분 수정하는 방식이 아니다</span></div>
+              <div class="mwitem"><b>한 턴에 한 번만</b><span>병렬 호출은 미들웨어가 막아 최신 계획 하나만 유지된다</span></div>
+              <div class="mwpill"><i>단순한 작업이면 계획 없이 바로 진행</i></div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">PLATFORM EVALUATION</span><span>A-06</span></div>
+        <aside hidden class="notes">Todo 미들웨어는 Root가 다단계 작업에서 계획을 세우고 유지하도록 돕습니다. 왜 필요하냐면, 단계가 여러 개인 작업에서는 모델이 앞서 정한 순서를 잊고 일부를 건너뛰기 쉬운데, 계획을 목록으로 적어 두고 끝낸 항목을 체크하며 진행하면 긴 반복 안에서도 순서가 유지되기 때문입니다. 미들웨어가 하는 일은 세 가지입니다. 계획을 적는 도구를 붙이고 "단계가 많으면 먼저 계획을 세워라"라는 안내문을 시스템 프롬프트에 넣습니다. 계획을 부를 때마다 목록 전체를 새 값으로 교체합니다(항목만 부분 수정하는 방식이 아닙니다). 그리고 한 턴에 두 번 부르는 병렬 호출은 막아 항상 최신 계획 하나만 유지합니다. 단순한 작업이면 계획 없이 바로 진행해도 됩니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="6" aria-labelledby="title-6">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">직접 구현 코드</span><span class="page">A-07</span></div>
+          <h1 id="title-6">직접 구현한 코드 — 파싱 · 에이전트</h1>
+        </div>
+        <div class="content">
+          <div class="codewrap">
+            <div class="codecol">
+              <h3>파싱 — 4단 보완 레이어 스텝퍼</h3>
+              <div class="cref"><b>runpod_worker/pipeline.py:699-727</b> · _apply_final_parse_layers()</div>
+              <pre>document, reading_order_audit = postprocess_docling_document(
+    result.document,
+    policy="validated-local-v1",
+)
+result.document = document
+
+# 읽기 순서·이미지 설명은 실패해도 문서를 살린다.
+try:
+    heading_audit = promote_headings_by_density(result)
+except Exception as exc:  # fail-open (heading)
+    heading_audit = { "outcome": "PRESERVED", "applied_count": 0,
+        "failure_reason": f"HEADING_PROMOTION_FAILED: {type(exc).__name__}: {exc}" }
+
+try:
+    table_audit = apply_table_gate(result.document)
+except Exception as exc:  # fail-open (table gate)
+    table_audit = { "outcome": "PRESERVED",
+        "failure_reason": f"TABLE_GATE_FAILED: {type(exc).__name__}: {exc}" }</pre>
+              <div class="cdesc">Docling 변환 결과 위에 <b>읽기순서 → 제목 → 표 → 이미지설명</b> 4개 보완 레이어를 검증된 고정 순서로 얹고, 각 레이어는 <b>try/except fail-open</b> — 하나가 터져도 문서를 죽이지 않고 <b>PRESERVED</b> + 실패 사유만 audit에 남긴다.</div>
+            </div>
+            <div class="codecol">
+              <h3>에이전트 — Deep Agent 그래프 조립</h3>
+              <div class="cref"><b>services/agent_runtime/factory.py:716-734</b> · AgentRuntimeFactory.build()</div>
+              <pre>return (
+    create_root_graph(
+        model=model,
+        system_prompt=self.prompt_assembler.assemble_root(
+            agent_prompt=definition.system_prompt
+        ),
+        tools=langchain_tools,
+        subagents=[gp_spec, *compiled_children],
+        middleware=root_middleware,
+        fs_excluded_tools=self.runtime_policy.excluded_builtin_tools,
+        interrupt_on=interrupt_on,
+        **root_kwargs,   # backend / store / memory / skills / checkpointer
+    ),
+    resolved_model,
+    child_resolved_models,
+)</pre>
+              <div class="cdesc">저장된 Agent 정의를 실행 가능한 LangGraph로 조립하는 최종 지점 — 공통 Scaffold 프롬프트 + Agent별 프롬프트, 도구, 서브에이전트(항상 붙는 GP + 팀 child), 미들웨어, HITL 승인 대상(<b>interrupt_on</b>)을 한 번에 묶고 실제 사용 모델도 함께 반환한다.</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">직접 구현 코드</span><span>A-07</span></div>
+        <aside hidden class="notes">우리가 직접 작성한 코드임을 보여주는 화면입니다. 왼쪽은 파싱 보완 레이어 스텝퍼로, Docling 원본 변환 위에 읽기순서·제목·표·이미지설명 네 개 보완을 검증된 고정 순서로 얹되 각 단계를 try/except로 감싸 fail-open 합니다. 오른쪽은 저장된 Agent 정의를 LangGraph로 조립하는 factory.build()의 반환부로, 프롬프트·도구·서브에이전트·미들웨어·HITL 대상을 한데 묶습니다.</aside>
+      </article>
+
+      <article class="slide" data-slide="7" aria-labelledby="title-7">
+        <div class="slide-head">
+          <div class="meta"><span>halil · 부록</span><span class="section">직접 구현 코드</span><span class="page">A-08</span></div>
+          <h1 id="title-7">직접 구현한 코드 — MCP · Tool 호출</h1>
+        </div>
+        <div class="content">
+          <div class="codewrap">
+            <div class="codecol">
+              <h3>MCP — JSON-RPC tools/call 클라이언트</h3>
+              <div class="cref"><b>services/mcp/client.py:66-85</b> · call_tool()</div>
+              <pre>def call_tool(
+    *, endpoint_url: str, auth_token: str | None,
+    name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    security.recheck(endpoint_url)
+    result = _rpc(endpoint_url, auth_token, "tools/call",
+        {"name": name, "arguments": arguments})
+
+    # 도구 실패는 HTTP 오류가 아니라 결과의 isError 로 온다.
+    if result.get("isError"):
+        raise McpError("validation",
+            _text_of(result) or f"{name} 실행이 거부됐습니다.")
+
+    # structuredContent 가 있으면 그것이 정본, 없으면 text 병합.
+    if isinstance(result.get("structuredContent"), dict):
+        return result["structuredContent"]
+    return {"content": _text_of(result)}</pre>
+              <div class="cdesc">공식 SDK 없이 필요한 세 메서드만 직접 구현한 MCP 클라이언트 — 매 호출 전 <b>security.recheck()</b>로 SSRF 재검증, 전송 실패와 도구 로직 실패(<b>isError</b>)를 서로 다른 error_code로 매핑, 응답은 <b>structuredContent</b> 우선.</div>
+            </div>
+            <div class="codecol">
+              <h3>Tool 호출 — 실행 시점 권한 검사 + 컨텍스트 주입</h3>
+              <div class="cref"><b>services/agent_runtime/factory.py:195-213</b> · _to_langchain_tool() 내부 _run()</div>
+              <pre>def _run(**kwargs: Any) -> Any:
+    langchain_tool_call_id = kwargs.pop(_TOOL_CALL_ID_KWARG, None)
+
+    if not runtime_policy.is_tool_allowed_for_role(
+        side_effect=tool.side_effect, account_role=context.role
+    ):
+        # 목록에서 숨기지 않는다 — 실행하려 할 때만 막는다.
+        raise ToolException(
+            f"'{context.role}' 역할은 '{tool.ref}' 도구 실행 권한이 없습니다."
+        )
+    ...
+    resolved = inject_runtime_context(tool, kwargs, context)
+    result = _call_tool_handler(tool, resolved)</pre>
+              <div class="cdesc">모델이 낸 tool call이 실제로 실행되는 단일 관문 — 도구는 역할과 무관하게 항상 노출하고 권한은 실행 시점에만 검사, 통과하면 서버가 <b>account_id·team_id</b>를 주입하고 읽기 도구만 일시 오류 시 재시도한다.</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span class="footer-label">직접 구현 코드</span><span>A-08</span></div>
+        <aside hidden class="notes">왼쪽은 공식 SDK 없이 initialize·tools/list·tools/call 세 메서드만 직접 구현한 MCP 클라이언트로, 매 호출 전 SSRF를 재검증하고 전송 실패와 도구 실패(isError)를 구분해 서로 다른 error_code로 매핑합니다. 오른쪽은 모델이 낸 tool call이 실행되는 단일 관문으로, 도구는 항상 노출하되 권한은 실행 시점에만 검사하고 이후 서버가 account_id·team_id를 주입하며 읽기 도구만 재시도합니다.</aside>
+      </article>
+    </div></div></section>
+    <div class="progress" id="progress"></div>
+    <nav class="bar bottom"><button class="btn" id="first" title="처음">⇤</button><button class="btn" id="prev" title="이전">←</button><div class="counter"><strong id="now">1</strong> / <span id="total">8</span></div><button class="btn" id="next" title="다음">→</button><button class="btn" id="last" title="마지막">⇥</button></nav>
+  </main>
+  <aside class="drawer" id="drawer" aria-label="전체 슬라이드"></aside>
+  <script>
+    (()=>{
+      const slides=[...document.querySelectorAll('.slide')],canvas=document.getElementById('canvas'),viewport=document.getElementById('viewport'),drawer=document.getElementById('drawer');
+      let current=Math.min(slides.length,Math.max(1,+(location.hash.match(/slide=(\d+)/)||[])[1]||1));
+      function fit(){const r=viewport.getBoundingClientRect(),s=Math.min(r.width/1280,r.height/720)*.995;canvas.style.left=`${Math.max(0,(r.width-1280*s)/2)}px`;canvas.style.top=`${Math.max(0,(r.height-720*s)/2)}px`;canvas.style.transform=`scale(${s})`;}
+      function draw(n,hash=true){current=Math.min(slides.length,Math.max(1,n));slides.forEach((s,i)=>s.classList.toggle('active',i===current-1));document.getElementById('now').textContent=current;document.getElementById('progress').style.width=`${current/slides.length*100}%`;[...document.querySelectorAll('.thumb')].forEach((t,i)=>t.classList.toggle('active',i===current-1));if(hash)history.replaceState(null,'',`#slide=${current}`);fit();}
+      slides.forEach((slide,i)=>{const b=document.createElement('button');b.className='thumb';const p=document.createElement('div');p.className='thumb-preview';const title=document.createElement('b');title.textContent=slide.querySelector('h1').textContent;p.append(title);const label=document.createElement('span');label.textContent=`슬라이드 ${i+1}`;b.append(p,label);b.onclick=()=>{draw(i+1);drawer.classList.remove('open')};drawer.append(b);});
+      document.getElementById('grid').onclick=()=>drawer.classList.toggle('open');document.getElementById('full').onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();document.getElementById('prev').onclick=()=>draw(current-1);document.getElementById('next').onclick=()=>draw(current+1);document.getElementById('first').onclick=()=>draw(1);document.getElementById('last').onclick=()=>draw(slides.length);
+      addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key))draw(current+1);if(['ArrowLeft','PageUp'].includes(e.key))draw(current-1);if(e.key==='Home')draw(1);if(e.key==='End')draw(slides.length);if(e.key==='Escape')drawer.classList.remove('open')});addEventListener('resize',fit);addEventListener('hashchange',()=>draw(+(location.hash.match(/slide=(\d+)/)||[])[1]||1,false));
+      draw(current,false);
+    })();
+  </script>
+</body>
+</html>
