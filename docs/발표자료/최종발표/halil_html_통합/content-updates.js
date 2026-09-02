@@ -1798,35 +1798,32 @@
   // 최종 편집 패스 16.5 — 마지막 Q&A 장표 단순화 + '감사합니다' 장표 추가.
   // ===================================================================
   (() => {
-    // 기관 로고는 원본 색을 유지하고 아담한 라운드 흰 배지 위에 얹는다.
-    const badge = (n) => ({ kind: 'shape', geometry: 'roundRect', bbox: [1006, 642, 228, 36], fillColor: '#FFFFFF', lineWidth: 0, name: n });
-    const instLogos = (aName, bName) => [
-      imageElement(aName, [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
-      imageElement(bName, [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
+    // 마감 2장도 본문과 같은 밝은 배경 → 모든 로고를 원본 색 그대로(실루엣·배지 없이).
+    const BG = '#F7F6F1';
+    const chrome = () => [
+      { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 5], fillColor: '#F8C944', lineWidth: 0, name: 'cl-top' },
+      { kind: 'shape', geometry: 'rect', bbox: [0, 0, 18, 720], fillColor: '#2878D1', lineWidth: 0, name: 'cl-side' },
+      imageElement('cl-halil-logo', [58, 46, 44, 21], 'halil-logo.png', 'contain'),
+      imageElement('cl-inst-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
+      imageElement('cl-inst-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
     ];
-    const DARK_LOGO = 'brightness(0) invert(1)'; // halil 워드마크(제품 브랜드)는 다크 배경에서 화이트 리버스
 
     const qa = deck.slides.find((s) => s.elements.some((e) => e.name === 'closing-qa'));
     if (qa) {
-      qa.elements = qa.elements.filter((e) => e.name === 'closing-top');
-      qa.elements.push(
-        imageElement('qa-halil-logo', [58, 48, 42, 20], 'halil-logo.png', 'contain', DARK_LOGO),
-        badge('qa-inst-badge'),
-        ...instLogos('qa-inst-a', 'qa-inst-b'),
-        textElement('qa-big', [0, 262, 1280, 170], 'Q&A', 120, '#F8C944', true, 'center'),
+      qa.background = BG;
+      qa.elements = [
+        ...chrome(),
+        textElement('qa-big', [0, 250, 1280, 180], 'Q&A', 128, '#0C3F91', true, 'center'),
         textElement('qa-brand', [0, 600, 1280, 30], 'halil · 프로젝트 운영 Agent Platform', 14, '#6E7A90', false, 'center'),
-      );
+      ];
     }
     const thanks = {
-      background: '#071426',
+      background: BG,
       elements: [
-        { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 7], fillColor: '#F8C944', lineWidth: 0, name: 'thanks-top' },
-        imageElement('thanks-halil-logo', [58, 48, 42, 20], 'halil-logo.png', 'contain', DARK_LOGO),
-        textElement('thanks-big', [0, 236, 1280, 170], '감사합니다', 110, '#FFFFFF', true, 'center'),
-        textElement('thanks-team', [0, 420, 1280, 34], 'TEAM 2 · HALIL', 20, '#F8C944', true, 'center'),
-        textElement('thanks-brand', [0, 460, 1280, 30], '프로젝트 운영 Agent Platform', 15, '#94A5BA', false, 'center'),
-        badge('thanks-inst-badge'),
-        ...instLogos('thanks-logo-a', 'thanks-logo-b'),
+        ...chrome(),
+        textElement('thanks-big', [0, 232, 1280, 180], '감사합니다', 118, '#0A1020', true, 'center'),
+        textElement('thanks-team', [0, 424, 1280, 34], 'TEAM 2 · HALIL', 20, '#2878D1', true, 'center'),
+        textElement('thanks-brand', [0, 464, 1280, 30], '프로젝트 운영 Agent Platform', 15, '#6E7A90', false, 'center'),
       ],
     };
     deck.slides.push(thanks);
