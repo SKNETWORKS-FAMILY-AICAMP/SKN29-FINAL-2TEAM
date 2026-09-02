@@ -759,16 +759,23 @@
       setElementText(s.elements.find((e) => e.name === 'title-16'), 'Deep Agent는 에이전트 실행 하네스입니다');
       setElementText(s.elements.find((e) => e.name === 'sub-16'), 'Codex · Claude Code처럼, Deep Agent도 에이전트를 실제로 실행시키는 프레임워크입니다.');
       const bands = [
-        { x: 72, fill: '#EAF1FB', no: '01', label: 'BUILDER', title: '에이전트 생성·수정', body: '업무에 맞는\n실행 구성을 선택' },
-        { x: 462, fill: '#EEF8F4', no: '+', label: '확장점', title: 'Tool · Sub Agent', body: '도구와 서브에이전트를\nAgent에 연결' },
-        { x: 852, fill: '#F5F0E8', no: '02', label: 'RUNTIME', title: '실행 그래프 재조립', body: '변경된 구성이\n다음 실행에 반영' },
+        { x: 72,  bg: '#E9EDF6', rl: '#C6CFDF', ac: '#3E5C8A', lc: '#2C4A78', no: '01', label: 'BUILDER',
+          title: '에이전트 생성·수정', body: '업무에 맞는 실행 구성을 선택' },
+        { x: 462, bg: '#E9F1EB', rl: '#C6DACE', ac: '#3E8E6E', lc: '#2F7A5C', no: '+', label: '확장점',
+          title: 'Tool · Sub Agent', body: '도구와 서브에이전트를 Agent에 연결' },
+        { x: 852, bg: '#F6EEE2', rl: '#E2D3BC', ac: '#C68A3E', lc: '#B0762C', no: '02', label: 'RUNTIME',
+          title: '실행 그래프 재조립', body: '변경된 구성이 다음 실행에 반영' },
       ];
       bands.forEach((b, i) => {
-        s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [b.x, 252, 356, 214], fillColor: b.fill, lineWidth: 0, name: `s19-band-${i}` });
-        s.elements.push(textElement(`s19-no-${i}`, [b.x + 24, 272, 64, 32], b.no, 18, '#2878D1', true));
-        s.elements.push(textElement(`s19-label-${i}`, [b.x + 92, 274, 240, 30], b.label, 13, '#6E7A90', true));
-        s.elements.push(textElement(`s19-title-${i}`, [b.x + 24, 320, 308, 40], b.title, 22, '#101728', true));
-        s.elements.push(textElement(`s19-body-${i}`, [b.x + 24, 372, 308, 72], b.body, 16, '#52657D'));
+        const x = b.x;
+        s.elements.push(
+          { kind: 'shape', geometry: 'roundRect', bbox: [x, 252, 356, 214], fillColor: b.bg, lineWidth: 0, name: `s19-band-${i}` },
+          textElement(`s19-no-${i}`, [x + 28, 278, 120, 32], b.no, 22, b.ac, true),
+          textElement(`s19-label-${i}`, [x + 28, 312, 260, 20], b.label, 12, b.lc, true),
+          { kind: 'shape', geometry: 'line', bbox: [x + 28, 346, 300, 0], lineColor: b.rl, lineWidth: 1, name: `s19-rule-${i}` },
+          textElement(`s19-title-${i}`, [x + 28, 364, 300, 34], b.title, 21, '#101728', true),
+          textElement(`s19-body-${i}`, [x + 28, 408, 300, 28], b.body, 14.5, '#52657D'),
+        );
       });
       s.elements.push({ kind: 'shape', geometry: 'rect', bbox: [72, 500, 1134, 82], fillColor: '#EAF1FB', lineWidth: 0, name: 's19-note-band' });
       s.elements.push(textElement('s19-note-copy', [94, 500, 1090, 82], 'halil은 Deep Agent 하네스 위에 제품을 얹어, 구성 변경이 다음 실행에 그대로 반영되도록 했습니다', 17, '#0C3F91', true, 'center'));
@@ -1421,14 +1428,21 @@
   (() => {
     const at = deck.slides.findIndex((s) => s.elements.some((e) => e.name === 'jihun-skill-compare'));
     if (at < 0) { console.warn('[패스9] 스킬 비교 이미지 슬라이드를 찾지 못함'); return; }
+    // 헤더 텍스트는 다른 평가 슬라이드(context-16 등)와 동일하게 상단정렬·인셋0으로 맞춘다
+    const hx = (name, bbox, text, size, color, align = 'left') => {
+      const e = textElement(name, bbox, text, size, color, true, align);
+      e.textStyle.verticalAlignment = 'top';
+      e.textStyle.insets = { top: 0, right: 0, bottom: 0, left: 0 };
+      return e;
+    };
     const chrome = (n) => [
       { kind: 'shape', geometry: 'rect', bbox: [0, 0, 1280, 5], fillColor: '#F8C944', lineWidth: 0, name: `top-accent-${n}` },
       { kind: 'shape', geometry: 'line', bbox: [56, 38, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `top-rule-${n}` },
-      textElement(`context-${n}`, [58, 48, 416, 28], 'halil   ·   04 프로젝트 수행 결과', 13, '#0A1020', true),
-      textElement(`section-${n}`, [504, 51, 420, 22], 'SKILL COMPARISON', 11, '#6C7482', true),
-      textElement(`page-${n}`, [1160, 50, 62, 22], String(n), 13, '#6C7482', true, 'right'),
+      hx(`context-${n}`, [58, 48, 416, 28], 'halil   ·   04 프로젝트 수행 결과', 13, '#0A1020'),
+      hx(`section-${n}`, [504, 51, 420, 22], 'SKILL COMPARISON', 11, '#6C7482'),
+      hx(`page-${n}`, [1160, 50, 62, 22], String(n), 13, '#6C7482', 'right'),
       { kind: 'shape', geometry: 'rect', bbox: [58, 660, 78, 4], fillColor: '#2878D1', lineWidth: 0, name: `signal-${n}` },
-      textElement(`signal-label-${n}`, [150, 651, 470, 22], 'SKILL COMPARISON', 12, '#6C7482', true),
+      hx(`signal-label-${n}`, [150, 651, 470, 22], 'SKILL COMPARISON', 12, '#6C7482'),
       imageElement('sc-logo-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
       imageElement('sc-logo-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
     ];
@@ -1498,8 +1512,8 @@
     [['—', 'dim'], ['—', 'dim'], ['—', 'dim'], ['—', 'dim'], ['134/150', null, '(89.3%)'], ['140/150', 'good', '(93.3%)']].forEach(([t, c, s], k) => {
       if (s) {
         table.push(
-          textElement(`sc-t-tot-${k}`, [cx(k) - 74, totY + 3, 148, 19], t, 13, cellColor(c), true, 'center'),
-          textElement(`sc-t-tots-${k}`, [cx(k) - 74, totY + 21, 148, 13], s, 10, '#2878D1', false, 'center'),
+          textElement(`sc-t-tot-${k}`, [cx(k) - 74, totY + 1, 148, 18], t, 13, cellColor(c), true, 'center'),
+          textElement(`sc-t-tots-${k}`, [cx(k) - 74, totY + 21, 148, 18], s, 13, '#2878D1', true, 'center'),
         );
       } else {
         table.push(textElement(`sc-t-tot-${k}`, [cx(k) - 74, totY, 148, 42], t, 13, cellColor(c), false, 'center'));
@@ -1518,8 +1532,6 @@
         ...chrome(40),
         textElement('title-40', [58, 92, 1160, 58], '스킬 사용 전후 비교', 40, '#0A1020', true),
         textElement('sub-40', [60, 158, 1080, 34], '300회 구성 · 5개 스킬 × 10개 업무 × 3회 반복 × 2가지 방법', 18, '#6C7482'),
-        textElement('sc-stat-label', [740, 150, 480, 18], '스킬 사용 후 결과', 11, '#7B8492', false, 'right'),
-        textElement('sc-stat', [740, 168, 480, 32], '93.3%', 20, '#2878D1', true, 'right'),
         ...legend,
         ...table,
       ],
@@ -1555,6 +1567,12 @@
     const shiftY = (s, re, dy) => s.elements.forEach((e) => { if (re.test(e.name || '') && e.bbox) e.bbox = [e.bbox[0], e.bbox[1] + dy, e.bbox[2], e.bbox[3]]; });
     const drop = (s, names) => { const k = new Set(names); s.elements = s.elements.filter((e) => !k.has(e.name)); };
 
+    // ---- 평가 섹션(구 33~38p) 부제목(sub-16) 일괄 삭제 ----
+    ['플랫폼 평가', '기본 동작 10가지', '평가 대상과 판정 기준을 고정', '시나리오별 판정 초점', '안전성은 유지', '답변 복원은 실패'].forEach((t) => {
+      const s = find(t);
+      if (s) s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+    });
+
     // ---- 구 33p · 플랫폼 평가 (두 큰 카드의 파랑·초록만 흰 카드로) ----
     (() => {
       const s = find('플랫폼 평가');
@@ -1572,22 +1590,21 @@
       set(s, 'section-16', '기능 작동 평가');
       set(s, 'signal-label-16', '기능 작동 평가');
       set(s, 'title-16', '기능작동 평가');
-      set(s, 'sub-16', '복합 workflow 수행 전 기본 동작 10건 총 100회 모두 통과');
-      const subEl = s.elements.find((e) => e.name === 'sub-16');
-      if (subEl && subEl.paragraphs && subEl.paragraphs[0] && subEl.paragraphs[0].runs) {
-        const base = subEl.paragraphs[0].runs[0];
-        subEl.paragraphs[0].runs = [
-          { ...base, index: 1, text: '복합 workflow 수행 전 기본 동작 10건 총 ', bold: false },
-          { ...base, index: 2, text: '100회 모두 통과', bold: true, color: '#101728' },
-        ];
-      }
-      s.elements = s.elements.filter((e) => !/^ev22-(stat|divider|n-|t-|d-|kpi)/.test(e.name || ''));
+      s.elements = s.elements.filter((e) => e.name !== 'sub-16' && !/^ev22-(stat|divider|n-|t-|d-|kpi|c-|hrule)/.test(e.name || ''));
       const navy = '#22375C';
-      const lb = s.elements.find((e) => e.name === 'ev22-list-label');
-      if (lb) { lb.bbox = [72, 202, 460, 26]; setElementText(lb, '기본 동작 통과 10건', { fontSize: 17, color: navy, bold: true }); }
+      // 왼쪽 · 최종 결과 스탯
       s.elements.push(
-        { kind: 'shape', geometry: 'rect', bbox: [72, 236, 384, 3], fillColor: navy, lineWidth: 0, name: 'ev22-hrule-a' },
-        { kind: 'shape', geometry: 'rect', bbox: [456, 237, 752, 1], fillColor: '#D0D6E0', lineWidth: 0, name: 'ev22-hrule-b' },
+        textElement('ev22-stat-label', [72, 236, 380, 24], '최종 결과', 14, '#6C7482', true),
+        textElement('ev22-stat', [64, 262, 400, 98], '10/10', 60, '#2878D1', true),
+        textElement('ev22-stat-copy', [72, 372, 400, 26], '재검증 포함 최종 통과율 100%', 15, '#101728', true),
+        { kind: 'shape', geometry: 'line', bbox: [472, 188, 0, 424], lineColor: '#D9DEE8', lineWidth: 1, name: 'ev22-divider' },
+      );
+      // 오른쪽 · 통과 10건 목록 (디자인 유지, 위치만 우측으로)
+      const lb = s.elements.find((e) => e.name === 'ev22-list-label');
+      if (lb) { lb.bbox = [508, 196, 400, 26]; setElementText(lb, '기본 동작 통과 10건', { fontSize: 17, color: navy, bold: true }); }
+      s.elements.push(
+        { kind: 'shape', geometry: 'rect', bbox: [508, 230, 240, 3], fillColor: navy, lineWidth: 0, name: 'ev22-hrule-a' },
+        { kind: 'shape', geometry: 'rect', bbox: [764, 231, 444, 1], fillColor: '#D0D6E0', lineWidth: 0, name: 'ev22-hrule-b' },
       );
       const items = [
         ['기본 대화', '도구 없이 한 문장으로 답변'],
@@ -1602,8 +1619,8 @@
         ['서브에이전트 위임', '복합 문서 조사를 위임해 처리'],
       ];
       items.forEach(([t, d], i) => {
-        const x = i < 5 ? 72 : 662;
-        const tw = i < 5 ? 530 : 500;
+        const x = i < 5 ? 508 : 866;
+        const tw = i < 5 ? 300 : 306;
         const y = 262 + (i % 5) * 76;
         s.elements.push(
           { kind: 'shape', geometry: 'ellipse', bbox: [x, y - 2, 26, 26], fillColor: navy, lineWidth: 0, name: `ev22-c-${i}` },
@@ -1741,7 +1758,7 @@
     const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ev25-card-0'));
     if (!s) { console.warn('[패스11] 32p JUDGMENT LAYERS 슬라이드를 찾지 못함'); return; }
     setElementText(s.elements.find((e) => e.name === 'title-16'), '판정 체계');
-    s.elements = s.elements.filter((e) => !/^ev25-/.test(e.name || ''));
+    s.elements = s.elements.filter((e) => e.name !== 'sub-16' && !/^ev25-/.test(e.name || ''));
 
     const cardY = 200;
     const cardH = 342;
@@ -1790,6 +1807,28 @@
     const player = s.elements.find((e) => e.name === 'demo-video-player');
     if (frame) frame.bbox = [60, 188, 1160, 430];
     if (player) player.bbox = [66, 194, 1148, 418];
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 13 — 15p·16p 제목/문구를 'Agent' 표기로 통일.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const byTitle = (t) => deck.slides.find((s) => {
+      const e = s.elements.find((x) => /^title-/.test(x.name || '') && x.text);
+      return e && norm(e.text) === norm(t);
+    });
+    const put = (s, name, val) => setElementText(s && s.elements.find((e) => e.name === name), val);
+
+    const s15 = byTitle('에이전트 생성과 사용자 질의 요청');
+    if (s15) {
+      put(s15, 'title-16', 'Agent 생성과 질의 요청');
+      put(s15, 's16-create-name', 'Agent 생성');
+      put(s15, 's16-query-name', 'Agent에 질의 요청');
+    }
+
+    const s16 = byTitle('Deep Agent는 에이전트 실행 하네스입니다');
+    if (s16) put(s16, 'title-16', 'Deep Agent: Agent를 실행하는 Harness');
   })();
 
   function byNameFor(targetSlide, name, value, options) {
