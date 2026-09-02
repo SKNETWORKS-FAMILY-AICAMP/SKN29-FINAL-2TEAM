@@ -1767,12 +1767,14 @@
   // 최종 편집 패스 16.5 — 마지막 Q&A 장표 단순화 + '감사합니다' 장표 추가.
   // ===================================================================
   (() => {
+    // 다크 배경이라 흰 받침 대신 로고를 흰색 실루엣으로 처리한다.
+    const DARK_LOGO = 'brightness(0) invert(1)';
     const qa = deck.slides.find((s) => s.elements.some((e) => e.name === 'closing-qa'));
     if (qa) {
-      qa.elements = qa.elements.filter((e) => /^(closing-top|institution-logo-plate|그림 |inst-logo-)/.test(e.name || ''));
+      qa.elements = qa.elements.filter((e) => /^(closing-top|그림 |inst-logo-)/.test(e.name || ''));
+      qa.elements.forEach((e) => { if (e.kind === 'image') e.filter = DARK_LOGO; });
       qa.elements.push(
-        textElement('qa-big', [0, 232, 1280, 170], 'Q&A', 120, '#F8C944', true, 'center'),
-        textElement('qa-sub', [0, 410, 1280, 40], '궁금한 점을 자유롭게 나눠 주세요', 20, '#94A5BA', false, 'center'),
+        textElement('qa-big', [0, 262, 1280, 170], 'Q&A', 120, '#F8C944', true, 'center'),
         textElement('qa-brand', [0, 600, 1280, 30], 'halil · 프로젝트 운영 Agent Platform', 14, '#6E7A90', false, 'center'),
       );
     }
@@ -1783,9 +1785,8 @@
         textElement('thanks-big', [0, 236, 1280, 170], '감사합니다', 110, '#FFFFFF', true, 'center'),
         textElement('thanks-team', [0, 420, 1280, 34], 'TEAM 2 · HALIL', 20, '#F8C944', true, 'center'),
         textElement('thanks-brand', [0, 460, 1280, 30], '프로젝트 운영 Agent Platform', 15, '#94A5BA', false, 'center'),
-        { kind: 'shape', geometry: 'roundRect', bbox: [982, 640, 242, 38], fillColor: '#FFFFFF', lineWidth: 0, name: 'institution-logo-plate' },
-        imageElement('thanks-logo-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain'),
-        imageElement('thanks-logo-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain'),
+        imageElement('thanks-logo-a', [1019.56, 647, 78.89, 25], 'image2.png', 'contain', DARK_LOGO),
+        imageElement('thanks-logo-b', [1138.95, 647, 84.09, 25], 'image3.png', 'contain', DARK_LOGO),
       ],
     };
     deck.slides.push(thanks);
