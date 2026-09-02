@@ -1595,14 +1595,14 @@
 
   // ===================================================================
   // 최종 편집 패스 10.6 — 개요 4·5·6p 를 juneok(프로젝트개요_v4) 재설계 본문으로 교체.
-  //   4=AI Agent 도입과 업무 확장 / 5=플랫폼 방향(HALIL) / 6=시장과 선도 서비스.
-  //   (5·6p 는 순서를 뒤집어 배치 — SRC 맵 참고). 크롬은 내 덱 것 유지(패스11), 제목은 juneok 것으로.
+  //   4=AI Agent 도입과 업무 확장 / 5=시장과 선도 서비스 / 6=플랫폼 방향(HALIL).
+  //   크롬은 내 덱 것 유지(패스11), 제목은 juneok 것으로.
   // ===================================================================
   (() => {
     const O = window.HALIL_JUNEOK_OVERVIEW;
     if (!O) { console.warn('[juneok 개요 이식] HALIL_JUNEOK_OVERVIEW 미로드 — juneok-overview.js 확인'); return; }
     const KEEP = /^(top-accent|top-rule|context-|section-|page-|title-|accent-|ctx-logo|inst-logo|signal-|foot-)/;
-    const SRC = { 4: 4, 5: 6, 6: 5 }; // 물리 페이지 → juneok 원본 슬라이드
+    const SRC = { 4: 4, 5: 5, 6: 6 }; // 물리 페이지 → juneok 원본 슬라이드
     [4, 5, 6].forEach((pg) => {
       const j = O[SRC[pg]];
       const s = deck.slides[pg - 1]; // 1~6p 는 재배치 대상이 아님 → 인덱스 고정
@@ -2108,6 +2108,267 @@
       (note.textStyle || (note.textStyle = {})).verticalAlignment = 'middle';
     }
 
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 21 — 28p('표 판별 기준') diagram_table.svg 를
+  //   Table Gate 플로우차트(전달 이미지 기준)로 네이티브 재구성.
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => e.kind === 'image' && e.media === 'diagram_table.svg'));
+    if (!s) { console.warn('[패스21] 28p(diagram_table.svg) 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => e.name !== 'diag-13');
+
+    const CX = 640;
+    const rrect = (name, bbox, fill, lc, lw = 1.5) => ({ kind: 'shape', geometry: 'roundRect', bbox, fillColor: fill, lineColor: lc, lineWidth: lw, name });
+    const ln = (name, bbox) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: '#9AA0A6', lineWidth: 1.5, name });
+    const dn = (name, x, y) => textElement(name, [x - 12, y, 24, 20], '↓', 15, '#9AA0A6', true, 'center');
+    const els = [];
+
+    // 1) 입력
+    els.push(rrect('tg-in', [CX - 140, 190, 280, 52], '#EFEEE9', '#BDB8AC'));
+    els.push(textElement('tg-in-t', [CX - 140, 190, 280, 52], 'TableItem 입력', 14, '#3A3A3A', true, 'center'));
+    els.push(dn('tg-a0', CX, 246));
+
+    // 2) 비표 패턴 확인 컨테이너 + 6개 규칙
+    els.push(rrect('tg-cont', [190, 274, 900, 160], '#FBFAF6', '#D8D3C6', 1));
+    els.push(textElement('tg-cont-h', [190, 284, 900, 22], '비표 패턴 확인 (6개 규칙)', 13, '#6B4A1F', true, 'center'));
+    ['점선 목차', '제목·페이지목록', '단일 셀조각', '불릿 텍스트', '서술문 조각', '전폭 페이지목록']
+      .forEach((t, i) => {
+        const x = 214 + (i % 3) * 290, y = 318 + Math.floor(i / 3) * 56;
+        els.push(rrect(`tg-r${i}`, [x, y, 270, 42], '#FBEEDD', '#E6B579', 1.2));
+        els.push(textElement(`tg-rt${i}`, [x, y, 270, 42], t, 12, '#7A4A1F', false, 'center'));
+      });
+
+    // 3) 분기 (컨테이너 → REJECT / PASS)
+    els.push(ln('tg-f-v0', [CX, 434, 0, 18]));
+    els.push(ln('tg-f-h', [475, 452, 330, 0]));
+    els.push(ln('tg-f-vl', [475, 452, 0, 16]));
+    els.push(ln('tg-f-vr', [805, 452, 0, 16]));
+
+    els.push(rrect('tg-rej', [325, 470, 300, 66], '#FBECEC', '#DFA3A3'));
+    els.push(textElement('tg-rej-t', [325, 478, 300, 24], 'REJECT', 15, '#B23A3A', true, 'center'));
+    els.push(textElement('tg-rej-s', [325, 506, 300, 18], '해당 → 비표 제외', 11, '#A05A5A', false, 'center'));
+
+    els.push(rrect('tg-pass', [655, 470, 300, 66], '#EAF3E4', '#9FC58A'));
+    els.push(textElement('tg-pass-t', [655, 478, 300, 24], 'PASS', 15, '#3E7A34', true, 'center'));
+    els.push(textElement('tg-pass-s', [655, 506, 300, 18], '미해당 → 표 유지', 11, '#5A8A4E', false, 'center'));
+
+    // 4) PASS → 저장 (엘보)
+    els.push(ln('tg-e-v', [805, 536, 0, 18]));
+    els.push(ln('tg-e-h', [CX, 554, 165, 0]));
+    els.push(dn('tg-a2', CX, 554));
+    els.push(rrect('tg-out', [CX - 140, 572, 280, 52], '#EFEEE9', '#BDB8AC'));
+    els.push(textElement('tg-out-t', [CX - 140, 572, 280, 52], '보완된 표 정보 저장', 13.5, '#3A3A3A', true, 'center'));
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 22 — 23~30p(보완 레이어 4개 상세) 에 진행 표시 스텝퍼 추가.
+  //   22p 의 네 레이어 색상과 맞춰, 현재 설명 중인 레이어를 강조해 청중이 위치를 알 수 있게.
+  // ===================================================================
+  (() => {
+    const LAYER = {
+      '읽기 순서 오류 사례': 0, '읽기 순서 보정 로직': 0,
+      '제목 오분류 사례': 1, '제목 승격 조건': 1,
+      '표 오인식 사례': 2, '표 판별 기준': 2,
+      '이미지 설명의 세 문제': 3, '이미지 설명 개선': 3,
+    };
+    const LABEL = ['읽기 순서', '제목 추출', '표 판별', '이미지 설명'];
+    const COLOR = ['#155EEF', '#7F56D9', '#F79009', '#06AED4'];
+    const LIGHT = ['#EAF2FF', '#F4EBFF', '#FFF4E5', '#E6F9FB'];
+    const DARK = ['#0B1F44', '#3E1C76', '#7A2E0E', '#064E5B'];
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+
+    deck.slides.forEach((s) => {
+      const t = s.elements.find((e) => /^title-/.test(e.name || '') && norm(e.text));
+      if (!t) return;
+      const cur = LAYER[norm(t.text)];
+      if (cur === undefined) return;
+
+      const els = [];
+      const PW = 152, PITCH = 160, X0 = 58, Y = 152, H = 26;
+      for (let k = 0; k < 4; k++) {
+        const x = X0 + k * PITCH;
+        const on = k === cur;
+        els.push({
+          kind: 'shape', geometry: 'roundRect', bbox: [x, Y, PW, H],
+          fillColor: on ? LIGHT[k] : '#F4F5F7', lineColor: on ? COLOR[k] : '#E1E4EA',
+          lineWidth: on ? 1.5 : 1, name: `lp-box-${k}`,
+        });
+        const te = textElement(`lp-t-${k}`, [x, Y, PW, H], `${k + 1}  ${LABEL[k]}`,
+          11, on ? DARK[k] : '#9AA1AD', on, 'center');
+        te.textStyle.insets = { top: 0, right: 6, bottom: 0, left: 6 };
+        els.push(te);
+      }
+      const at = s.elements.indexOf(t);
+      s.elements.splice(at + 1, 0, ...els);
+
+      // 스텝퍼와 본문이 붙지 않도록 본문 요소를 아래로 밀어 최소 y 확보 (스텝퍼 하단 178 + 여백 30).
+      const CHROME = /^(top-|top-rule|context-|page-|title-|accent-|ctx-logo|inst-logo|lp-)/;
+      const body = s.elements.filter((e) => e.bbox && !CHROME.test(e.name || ''));
+      const minY = Math.min(...body.map((e) => e.bbox[1]));
+      const dy = Math.max(0, 208 - minY);
+      if (dy) body.forEach((e) => { e.bbox = [e.bbox[0], e.bbox[1] + dy, e.bbox[2], e.bbox[3]]; });
+    });
+
+    // 스텝퍼 라벨: 한글 line-height(normal≈1.7) 탓에 글자가 박스 상단으로 쏠림 →
+    // line-height 를 1 로 눌러 flex 세로 중앙정렬이 실제 글자에 맞도록 강제.
+    if (typeof document !== 'undefined') {
+      const st = document.createElement('style');
+      st.textContent = '.el[title^="lp-t-"] .text-inner,.el[title^="lp-t-"] .text-inner p{line-height:12px}'
+        + '.el[title*="-nt"] .text-inner,.el[title*="-nt"] .text-inner p,.el[title*="-nt"] .text-inner span,'
+        + '.el[title*="-lb"] .text-inner,.el[title*="-lb"] .text-inner p,.el[title*="-lb"] .text-inner span,'
+        + '.el[title*="-tag"] .text-inner,.el[title*="-tag"] .text-inner p,.el[title*="-tag"] .text-inner span{line-height:1}';
+      document.head.appendChild(st);
+    }
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 23 — 23p('읽기 순서 오류 사례') 를 합성 네이티브 BEFORE/AFTER 로.
+  //   실제 문서 스크린샷(ro_before/after.png) 대신, 같은 4줄이 순서만 뒤바뀌어
+  //   문장 의미가 깨지는 과정을 명확히 보여준다.
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => e.kind === 'image' && /^ro_(before|after)\.png$/.test(e.media || '')));
+    if (!s) { console.warn('[패스23] 23p(ro_*.png) 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !['imgb-8', 'imga-8'].includes(e.name || ''));
+
+    const FRAG = ['이 보고서의 검증 범위는', '지속가능경영 성과 데이터와', '내부 검토 프로세스를', '포함합니다'];
+    const dot = (name, bbox, fill) => ({ kind: 'shape', geometry: 'ellipse', bbox, fillColor: fill, lineColor: fill, lineWidth: 1, name });
+    const ln = (name, bbox) => ({ kind: 'shape', geometry: 'line', bbox, lineColor: '#E1E6EE', lineWidth: 1, name });
+
+    // 헤더 라벨 재작성 + 패널 위로 살짝 띄우기
+    const lab = (nm, text, x) => {
+      const e = s.elements.find((el) => el.name === nm);
+      if (!e) return;
+      e.bbox = [x, 198, 560, 20];
+      setElementText(e, text, { fontSize: 13, bold: true });
+    };
+    lab('bl-8', 'BEFORE · Docling이 매긴 읽기 순서', 58);
+    lab('al-8', 'AFTER · 좌표 재비교로 보정', 658);
+
+    const PANW = 560, PY = 222, PANH = 372, RY = PY + 46, RP = 52;
+    const side = (x, order, accent, verdict, vColor, resultTxt) => {
+      const els = [];
+      const pf = x === 58 ? 'b' : 'a';
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, PY, PANW, PANH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `ro-${pf}-pan` });
+      els.push(textElement(`ro-${pf}-h`, [x + 24, PY + 14, PANW - 48, 18], '원문 4줄 (위 → 아래)', 11, '#6E7A90'));
+      FRAG.forEach((frag, i) => {
+        const y = RY + i * RP;
+        const n = order[i];
+        const swapped = accent && n !== i + 1;
+        if (swapped) els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x + 16, y - 8, PANW - 32, 46], fillColor: '#FDECEC', lineColor: '#F6D5D5', lineWidth: 1, name: `ro-${pf}-hl${i}` });
+        els.push(dot(`ro-${pf}-n${i}`, [x + 24, y, 30, 30], swapped ? '#DC5B5B' : accent ? '#9AA4B2' : '#2878D1'));
+        els.push(textElement(`ro-${pf}-nt${i}`, [x + 24, y, 30, 30], String(n), 14, '#FFFFFF', true, 'center'));
+        els.push(textElement(`ro-${pf}-l${i}`, [x + 68, y, PANW - 100, 30], frag, 14, '#0A1020'));
+      });
+      els.push(ln(`ro-${pf}-div`, [x + 24, PY + 264, PANW - 48, 0]));
+      els.push(textElement(`ro-${pf}-sl`, [x + 24, PY + 276, 120, 16], '읽은 순서', 10.5, '#6E7A90'));
+      els.push(textElement(`ro-${pf}-sq`, [x + 24, PY + 294, PANW - 48, 24], order.join('   →   '), 18, vColor, true));
+      els.push(textElement(`ro-${pf}-rs`, [x + 24, PY + 328, PANW - 48, 18], resultTxt, 10.5, '#52657D'));
+      els.push(textElement(`ro-${pf}-vd`, [x + 24, PY + 350, PANW - 48, 16], verdict, 12, vColor, true));
+      return els;
+    };
+
+    s.elements.push(
+      ...side(58, [1, 3, 2, 4], true, '→ 문장이 끊겨 의미가 뒤엉킵니다', '#B23A3A',
+        '결과: “검증 범위는 · 내부 검토 프로세스를 · 지속가능경영 성과 데이터와 · 포함합니다”'),
+      ...side(658, [1, 2, 3, 4], false, '→ 원래 문장 순서로 복원', '#17845E',
+        '결과: “검증 범위는 · 지속가능경영 성과 데이터와 · 내부 검토 프로세스를 · 포함합니다”'),
+    );
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 24 — 25p('제목 오분류 사례') 합성 네이티브 BEFORE/AFTER.
+  //   같은 문서 블록에 대해 Docling 라벨(BEFORE) vs 보정 라벨(AFTER) 을 비교.
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => e.kind === 'image' && /^hanwha_(doc|layout)\.png$/.test(e.media || '')));
+    if (!s) { console.warn('[패스24] 25p(hanwha_*.png) 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !['img1-10', 'img2-10'].includes(e.name || ''));
+
+    const ROWS = [
+      ['Asia-Pacific', true], ['Shanghai · 200233 New Caohejing Rd', false],
+      ['Tel +86.21.5427.1155', false], ['Europe', true],
+      ['Berlin · 10115 Chausseestrasse', false],
+    ];
+    const lab = (nm, text, x) => {
+      const e = s.elements.find((el) => el.name === nm);
+      if (!e) return; e.bbox = [x, 198, 560, 20];
+      setElementText(e, text, { fontSize: 13, bold: true });
+    };
+    lab('l1-10', 'BEFORE · Docling 레이아웃 라벨', 58);
+    lab('l2-10', 'AFTER · 보정 후 라벨', 658);
+
+    const PANW = 560, PY = 222, PANH = 372;
+    const pill = (name, bbox, txt, bg, bd, tc) => [
+      { kind: 'shape', geometry: 'roundRect', bbox, fillColor: bg, lineColor: bd, lineWidth: 1, name },
+      textElement(`${name}-t`, bbox, txt, 10, tc, true, 'center'),
+    ];
+    const side = (x, headingLabel, verdict, vColor, resultTxt) => {
+      const els = [];
+      const pf = x === 58 ? 'b' : 'a';
+      const bad = headingLabel === 'text';
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, PY, PANW, PANH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: `hd-${pf}-pan` });
+      ROWS.forEach(([txt, isHead], i) => {
+        const y = PY + 24 + i * 46;
+        if (isHead && bad) els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x + 14, y - 6, PANW - 28, 40], fillColor: '#FDECEC', lineColor: '#F6D5D5', lineWidth: 1, name: `hd-${pf}-hl${i}` });
+        const lbl = isHead ? headingLabel : 'text';
+        const red = isHead && bad;
+        const grn = isHead && !bad;
+        els.push(...pill(`hd-${pf}-lb${i}`, [x + 20, y, 122, 26],
+          lbl, red ? '#FDECEC' : grn ? '#E7F4EC' : '#F1F3F6',
+          red ? '#DC5B5B' : grn ? '#17845E' : '#DBE0E8',
+          red ? '#B23A3A' : grn ? '#17845E' : '#8A93A3'));
+        els.push(textElement(`hd-${pf}-l${i}`, [x + 156, y, PANW - 180, 26], txt, isHead ? 14 : 12.5, isHead ? '#0A1020' : '#52657D', isHead));
+      });
+      els.push({ kind: 'shape', geometry: 'line', bbox: [x + 22, PY + 268, PANW - 44, 0], lineColor: '#E1E6EE', lineWidth: 1, name: `hd-${pf}-div` });
+      els.push(textElement(`hd-${pf}-rs`, [x + 22, PY + 284, PANW - 44, 40], resultTxt, 11, '#52657D'));
+      els.push(textElement(`hd-${pf}-vd`, [x + 22, PY + 336, PANW - 44, 16], verdict, 12, vColor, true));
+      return els;
+    };
+    s.elements.push(
+      ...side(58, 'text', '→ 지역 구분이 사라집니다', '#B23A3A',
+        '결과: 섹션 경계가 없어 “Asia-Pacific” 검색에 “Europe” 주소까지 함께 반환됩니다.'),
+      ...side(658, 'section_header', '→ 섹션 경계 복원', '#17845E',
+        '결과: 지역별 섹션으로 분리돼 해당 지역 정보만 정확히 검색됩니다.'),
+    );
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 25 — 27p('표 오인식 사례') 합성 네이티브 (목차줄 → 표 오검출) + 기존 통계 유지.
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => e.kind === 'image' && e.media === 'table_grid_examples.png'));
+    if (!s) { console.warn('[패스25] 27p(table_grid_examples.png) 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => e.name !== 'img-12');
+
+    const PX = 140, PW = 1000, PY = 214, PH = 236;
+    const els = [
+      { kind: 'shape', geometry: 'roundRect', bbox: [PX, PY, PW, PH], fillColor: '#FFFFFF', lineColor: '#D9DEE8', lineWidth: 1, name: 'tm-pan' },
+      textElement('tm-h', [PX + 26, PY + 16, PW - 52, 18],
+        "Docling 판정: 아래 3줄을 각각 table (1행 2열) 로 인식 — 실제는 목차 텍스트", 11.5, '#B23A3A', true),
+    ];
+    [['환경경영 조직운영 체계', '28'], ['자원순환 및 폐기물 관리', '34'], ['기후변화 대응 (TCFD)', '17']]
+      .forEach(([title, pg], i) => {
+        const y = PY + 50 + i * 50;
+        const bx = PX + 28, bw = PW - 56;
+        els.push({ kind: 'shape', geometry: 'roundRect', bbox: [bx, y, bw, 40], fillColor: '#FFFBFB', lineColor: '#E3A9A9', lineWidth: 1.4, name: `tm-r${i}` });
+        els.push({ kind: 'shape', geometry: 'line', bbox: [bx + bw - 150, y + 5, 0, 30], lineColor: '#E3A9A9', lineWidth: 1.2, name: `tm-rv${i}` });
+        els.push(textElement(`tm-rt${i}`, [bx + 20, y, bw - 200, 40], `${title}   ·······················`, 13, '#0A1020'));
+        els.push(textElement(`tm-rp${i}`, [bx + bw - 150, y, 150, 40], pg, 13, '#0A1020', true, 'center'));
+      });
+    els.push(textElement('tm-cap', [PX + 26, PY + PH - 26, PW - 52, 18],
+      '점선 리더 + 우측 페이지 번호 패턴이 1행 2열 표로 오검출됩니다.', 11, '#6E7A90', false, 'center'));
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
     s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
   })();

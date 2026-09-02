@@ -77,8 +77,8 @@ for (const t of [
 
 // --- 패스10.6: 개요 4·5·6p 를 juneok(프로젝트개요_v4) 재설계 본문으로 교체 ---
 assert.equal(titleOf(4), 'AI Agent 도입과 업무 확장', '4는 도입·업무 확장 (juneok)');
-assert.equal(titleOf(5), '기업 Agent 플랫폼, HALIL', '5는 플랫폼 방향 (juneok, 5·6 순서 뒤집음)');
-assert.equal(titleOf(6), 'AI Agent 시장과 선도 서비스', '6은 시장·선도 서비스 (juneok, 5·6 순서 뒤집음)');
+assert.equal(titleOf(5), 'AI Agent 시장과 선도 서비스', '5는 시장·선도 서비스 (juneok)');
+assert.equal(titleOf(6), '기업 Agent 플랫폼, HALIL', '6은 플랫폼 방향 (juneok)');
 
 // --- 04장 진입: 챕터 표지 → 시연 영상 → 시스템 구조 재노출 ---
 assert.equal(titleOf(12), '프로젝트 수행 결과', '12는 04 챕터 표지');
