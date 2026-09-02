@@ -1770,6 +1770,23 @@
   })();
 
   // ===================================================================
+  // 최종 편집 패스 15.5 — 좌상단 breadcrumb 의 'halil' 텍스트를 워드마크 로고로 교체.
+  //   "halil · 04 …" → [halil-logo.png] · 04 …
+  // ===================================================================
+  (() => {
+    deck.slides.forEach((s, i) => {
+      const ctx = s.elements.find((e) => /^context-/.test(e.name || ''));
+      if (!ctx) return;
+      const rest = String(ctx.text || '').replace(/^\s*halil\s*[·]?\s*/, '').trim();
+      setElementText(ctx, `·   ${rest}`);
+      ctx.bbox = [116, 44, 360, 30];
+      if (!s.elements.some((e) => e.name === 'ctx-logo')) {
+        s.elements.push(imageElement(`ctx-logo-${i + 1}`, [58, 47, 46, 22], 'halil-logo.png', 'contain'));
+      }
+    });
+  })();
+
+  // ===================================================================
   // 최종 편집 패스 16.5 — 마지막 Q&A 장표 단순화 + '감사합니다' 장표 추가.
   // ===================================================================
   (() => {
