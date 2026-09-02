@@ -59,32 +59,37 @@ for (const t of [
   '다음 단계는 근거 정밀도·라우팅·운영 검증입니다', '강점은 연결성, 남은 과제는 검증 범위입니다',
 ]) assert.ok(!has(t), `사라져야 하는 제목이 남아 있음: ${t}`);
 
-// --- 패스2 합치기 + 패스14 명사구 리라이트 결과 제목 존재 ---
+// --- 패스2 합치기 + 패스14 축약 제목 존재 ---
 for (const t of [
-  'AX 시장 확대와 기업 현장의 두 문제',
-  'HALIL의 두 문제 해결 방향',
-  '206개 문서 검증 — Docling만으로는 부족',
-  '계층 구조 직렬화 + EmbeddingGemma 임베딩',
+  '시장 변화와 두 문제',
+  'HALIL의 해결 방향',
+  '검증 결과, Docling의 한계',
+  '직렬화와 임베딩',
 ]) assert.ok(has(t), `합치기 결과 제목이 없음: ${t}`);
 
-// --- 패스3: 5·6p 순서 교체 (제목은 패스14 명사구) ---
-assert.equal(titleOf(4), 'AX 시장 확대와 기업 현장의 두 문제', '4는 시장+문제');
-assert.equal(titleOf(5), 'HALIL의 두 문제 해결 방향', '5는 HALIL 해결 (구 6p)');
-assert.equal(titleOf(6), '선도 서비스들의 공통 방향', '6은 선도 서비스 (구 5p)');
+// --- 패스3: 5·6p 순서 교체 (제목은 패스14 축약) ---
+assert.equal(titleOf(4), '시장 변화와 두 문제', '4는 시장+문제');
+assert.equal(titleOf(5), 'HALIL의 해결 방향', '5는 HALIL 해결 (구 6p)');
+assert.equal(titleOf(6), '선도 서비스의 공통 방향', '6은 선도 서비스 (구 5p)');
 
 // --- 04장 진입: 챕터 표지 → 시연 영상 → 시스템 구조 재노출 ---
 assert.equal(titleOf(12), '프로젝트 수행 결과', '12는 04 챕터 표지');
 assert.ok(slides[12].elements.some((e) => e.kind === 'video' && /시연영상/.test(e.media || '')), '13은 시연 영상');
-assert.equal(titleOf(14), 'UI부터 실행·통제까지 연결된 시스템 구조', '14는 시스템 구조 상세(이미지) 재노출');
+assert.equal(titleOf(14), '전체 시스템 구조', '14는 시스템 구조 상세(이미지) 재노출');
 // 패스12: 11p(03장)은 네이티브 단순화 개요, 14p(04장)은 상세 이미지 — 제목·구성이 다르다.
-assert.equal(titleOf(11), '화면·실행·검색·검증을 하나의 흐름으로', '11은 시스템 구조 단순화 개요');
+assert.equal(titleOf(11), '시스템 흐름 한눈에', '11은 시스템 구조 단순화 개요');
 assert.ok(slides[10].elements.some((e) => e.name === 'arc11-z0'), '11은 네이티브 단순화 다이어그램(arc11-*)');
 assert.ok(!slides[10].elements.some((e) => e.name === 'architecture-diagram'), '11에 상세 이미지는 없다');
 assert.ok(slides[13].elements.some((e) => e.name === 'architecture-diagram'), '14는 상세 아키텍처 이미지 유지');
 
-// --- Agent 상세 3장 (패스11: 섹션 라벨 한글화) ---
-assert.deepEqual([15, 16, 17].map(sigOf), ['에이전트 생애주기', '에이전트 하네스', '에이전트 런타임'], '15~17 Agent 상세');
-assert.equal(titleOf(15), 'Agent 생성과 질의 요청', '15는 agent_v2 16p로 교체됨 (패스13: juyeon 제목)');
+// --- 패스15: 상단(section)·하단(signal 선·signal-label·foot) 라벨 전면 삭제 ---
+assert.equal(
+  slides.filter((s) => s.elements.some((e) => /^(section-|signal-\d|signal-label-|foot-)/.test(e.name || ''))).length,
+  0, 'section·signal·signal-label·foot 라벨은 전부 삭제됨',
+);
+
+// --- Agent 상세 3장 (패스13 juyeon + 패스14 축약 제목) ---
+assert.deepEqual([15, 16, 17].map(titleOf), ['Agent 생성과 질의 요청', 'Deep Agent Harness', 'Deep Agent 실행 구조'], '15~17 제목');
 
 // --- 원빈 파싱: 18~31 (패스11: context 헤더를 halil 04로 통일) ---
 const wonbin = slides.slice(17, 31);
@@ -96,7 +101,7 @@ wonbin.forEach((s, i) => {
 
 // --- 표 게이트 수치 %  ---
 (() => {
-  const s = slides.find((_, i) => titleOf(i + 1) === '표로 오인식된 비표 사례');
+  const s = slides.find((_, i) => titleOf(i + 1) === '표 오인식 사례');
   assert.ok(s, '표 게이트 사례 슬라이드 존재');
   const vals = s.elements.filter((e) => /^sv-12-/.test(e.name || '')).map((e) => norm(e.text)).join(' · ');
   assert.equal(vals, '100% · 0.46% · 0%', '표 게이트 대표 수치는 %');
@@ -108,9 +113,9 @@ assert.ok(
   '빈 플랫폼 평가 자리표시자(title-48)는 더 이상 없어야 한다',
 );
 assert.deepEqual(
-  [32, 33, 34, 35, 36, 37, 38].map(sigOf),
-  ['판정 계층', '플랫폼 평가', '기능 작동 평가', '시나리오 운영 평가', '시나리오 운영 평가', '시나리오 운영 평가', '시나리오 운영 평가'],
-  '32~38은 agent_v2 평가 섹션 7장 (패스11 한글화 + juyeon 재편: 34=기능 작동 평가 / 35~38=시나리오 운영 평가)',
+  [32, 33, 34, 35, 36, 37, 38].map(titleOf),
+  ['판정 체계', '플랫폼 평가', '기능 작동 평가', '평가 대상과 기준', '시나리오별 판정 초점', '시나리오 운영 평가', '운영 평가 실패 사례'],
+  '32~38은 평가 섹션 7장 (패스13 juyeon 제목 + 패스14 축약)',
 );
 assert.ok(slides.slice(31, 38).every((s) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));
@@ -120,10 +125,9 @@ assert.ok(slides.slice(31, 38).every((s) => {
 // --- 꼬리(패스7 이후): DEMO RESULT → 지훈 '스킬 사용 전후 비교' 1장 → 운영 콘솔 4장 → 자체 평가 표지 → 클로징 ---
 assert.ok(!has('사용자 편의 기능'), "'사용자 편의 기능' 표지는 삭제됨");
 assert.ok(!slides.some((s) => s.elements.some((e) => e.name === 'jihun-skill-eval')), "지훈 '등록 검증' 이미지 슬라이드는 삭제됨");
-assert.equal(sigOf(39), '시연 결과', '39는 시연 결과 (패스11: 라벨 한글화)');
+assert.equal(titleOf(39), '전체 기능 시연 영상', '39는 시연 영상 슬라이드');
 // 패스10.5: 40p는 juyeon 변형본의 완전 네이티브 표(sc-t-*)로 교체 (이미지 크롭 아님)
 assert.equal(titleOf(40), '스킬 사용 전후 비교', '40은 스킬 사용 전후 비교 (네이티브)');
-assert.equal(sigOf(40), '스킬 사용 비교', '40 섹션 라벨 (패스11: 한글화)');
 assert.ok(
   slides[39].elements.some((e) => e.name === 'sc-t-c-0-0') && slides[39].elements.some((e) => e.name === 'sc-t-tot-4'),
   '40은 juyeon 네이티브 표 셀(sc-t-*)로 구성',
@@ -138,7 +142,6 @@ assert.deepEqual(
   ['운영 상태 통합 관리', '연결 서비스·모델 구성', '커스텀 도구·가드레일 관리', '실행 현황·도구 사용 추적'],
   '41~44는 운영 콘솔 4장',
 );
-assert.deepEqual([41, 42, 43, 44].map(sigOf), ['플랫폼 운영', '연결 환경', '실행 통제', '운영 모니터링'], '41~44 운영 콘솔 섹션 라벨');
 assert.equal(titleOf(45), '자체 평가 의견', '45는 05 챕터 표지');
 assert.ok(slides[45].elements.some((e) => (e.text || '').includes('Q&A')), '46은 클로징/Q&A 슬라이드');
 
