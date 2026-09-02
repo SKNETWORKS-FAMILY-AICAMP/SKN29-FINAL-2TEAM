@@ -2800,4 +2800,33 @@
       });
     });
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 32 — '직렬화와 임베딩' 뒤에 '문서 처리 파이프라인 평가' 빈 슬라이드
+  //   (표준 크롬 + 제목만, 본문은 이후 추가 예정).
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    if (deck.slides.some((s) => titleOf(s) === '문서 처리 파이프라인 평가')) return;
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
+    const atIdx = deck.slides.findIndex((s) => titleOf(s) === '직렬화와 임베딩');
+    if (baseIdx < 0 || atIdx < 0) { console.warn('[패스32] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
+
+    const s = clone(deck.slides[baseIdx]);
+    s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '문서 처리 파이프라인 평가');
+    s.sources = [];
+
+    deck.slides.splice(atIdx + 1, 0, s);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
 })();
