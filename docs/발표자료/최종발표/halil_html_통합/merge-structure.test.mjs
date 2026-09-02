@@ -84,7 +84,7 @@ assert.ok(slides[13].elements.some((e) => e.name === 'architecture-diagram'), '1
 
 // --- Agent 상세 3장 (패스11: 섹션 라벨 한글화) ---
 assert.deepEqual([15, 16, 17].map(sigOf), ['에이전트 생애주기', '에이전트 하네스', '에이전트 런타임'], '15~17 Agent 상세');
-assert.equal(titleOf(15), '에이전트 생성과 사용자 질의 요청', '15는 agent_v2 16p로 교체됨');
+assert.equal(titleOf(15), 'Agent 생성과 질의 요청', '15는 agent_v2 16p로 교체됨 (패스13: juyeon 제목)');
 
 // --- 원빈 파싱: 18~31 (패스11: context 헤더를 halil 04로 통일) ---
 const wonbin = slides.slice(17, 31);
@@ -109,8 +109,8 @@ assert.ok(
 );
 assert.deepEqual(
   [32, 33, 34, 35, 36, 37, 38].map(sigOf),
-  ['판정 계층', '플랫폼 평가', '스모크 테스트 · V1', 'V2 기준선', '시나리오 맵', '평가 결과', 'V3 실패 분석'],
-  '32~38은 agent_v2 평가 섹션 7장 (패스11: 라벨 한글화)',
+  ['판정 계층', '플랫폼 평가', '기능 작동 평가', '시나리오 운영 평가', '시나리오 운영 평가', '시나리오 운영 평가', '시나리오 운영 평가'],
+  '32~38은 agent_v2 평가 섹션 7장 (패스11 한글화 + juyeon 재편: 34=기능 작동 평가 / 35~38=시나리오 운영 평가)',
 );
 assert.ok(slides.slice(31, 38).every((s) => {
   const c = s.elements.find((e) => /^context-/.test(e.name || ''));

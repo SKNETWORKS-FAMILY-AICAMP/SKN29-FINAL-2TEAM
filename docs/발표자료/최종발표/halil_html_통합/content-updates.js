@@ -1530,8 +1530,10 @@
       22: '보완 레이어', 23: '읽기 순서 · 사례', 24: '읽기 순서 · 로직',
       25: '제목 추출 · 사례', 26: '제목 추출 · 로직', 27: '표 판별 · 사례', 28: '표 판별 · 로직',
       29: '이미지 설명 · 문제', 30: '이미지 설명 · 해결', 31: '청킹 · 임베딩',
-      32: '판정 계층', 33: '플랫폼 평가', 34: '스모크 테스트 · V1', 35: 'V2 기준선',
-      36: '시나리오 맵', 37: '평가 결과', 38: 'V3 실패 분석', 39: '시연 결과', 40: '스킬 사용 비교',
+      32: '판정 계층', 33: '플랫폼 평가',
+      // 평가 섹션은 juyeon 재편안대로 2그룹: 기능 작동 평가(34) / 시나리오 운영 평가(35~38).
+      34: '기능 작동 평가', 35: '시나리오 운영 평가', 36: '시나리오 운영 평가',
+      37: '시나리오 운영 평가', 38: '시나리오 운영 평가', 39: '시연 결과', 40: '스킬 사용 비교',
       41: '플랫폼 운영', 42: '연결 환경', 43: '실행 통제', 44: '운영 모니터링',
     };
     // 상단 크롬 3요소(context·section·page)는 같은 세로 박스 + 세로 중앙정렬으로 baseline 을 맞춘다.
@@ -1640,5 +1642,39 @@
         '인프라   ·   EC2 · Docker Compose   ·   RDS PostgreSQL 17 + pgvector   ·   S3 Object Storage   ·   RunPod Serverless GPU',
         12.5, '#FFFFFF', true, 'center'));
     }
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 13 — juyeon 측 제목 수정 반영 (15·16·17·32·34·35·37·38p).
+  //   섹션 라벨은 패스11(전 장표 한글 통일 + 평가 2그룹 재편)이 담당하므로 여기선 제목만.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const byTitle = (t) => deck.slides.find((s) => {
+      const e = s.elements.find((x) => /^(title-|div-title-)/.test(x.name || '') && x.text);
+      return e && norm(e.text) === norm(t);
+    });
+    const retitle = (from, to) => {
+      const s = byTitle(from);
+      if (s) setElementText(s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && e.text), to);
+    };
+
+    retitle('에이전트 생성과 사용자 질의 요청', 'Agent 생성과 질의 요청');
+    const s15 = byTitle('Agent 생성과 질의 요청');
+    if (s15) {
+      setElementText(s15.elements.find((e) => e.name === 's16-create-name'), 'Agent 생성');
+      setElementText(s15.elements.find((e) => e.name === 's16-query-name'), 'Agent에 질의 요청');
+    }
+    retitle('Deep Agent는 에이전트 실행 하네스입니다', 'Deep Agent: Agent를 실행하는 Harness');
+    retitle('Deep Agent 실행 구조 전체 도면', 'Deep Agent 실행 구조');
+    retitle('판정 계약은 세 층으로 나눠 적용했다', '판정 체계');
+    retitle('기본 동작 10가지, 재검증까지 포함해 10/10 최종 통과', '기능 작동 평가');
+    retitle('평가 대상과 판정 기준을 고정했습니다', '평가 대상 및 판정 기준 고정');
+    retitle('안전성은 유지, 운영 품질은 다음 보완 과제', '시나리오 운영 평가');
+    retitle('검색은 성공, 답변 복원은 실패했다', '시나리오 운영 평가 실패 사례');
+
+    // 40p — juyeon 처럼 상단 결과 콜아웃(sc-stat) 제거 (표에 수치가 이미 있음)
+    const s40 = deck.slides.find((s) => s.elements.some((e) => e.name === 'title-40'));
+    if (s40) s40.elements = s40.elements.filter((e) => e.name !== 'sc-stat' && e.name !== 'sc-stat-label');
   })();
 })();
