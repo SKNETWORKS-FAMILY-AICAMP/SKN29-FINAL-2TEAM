@@ -1778,8 +1778,10 @@
       const ctx = s.elements.find((e) => /^context-/.test(e.name || ''));
       if (!ctx) return;
       const rest = String(ctx.text || '').replace(/^\s*halil\s*[·]?\s*/, '').trim();
-      setElementText(ctx, `·   ${rest}`);
+      setElementText(ctx, `·   ${rest}`, { fontSize: 13, bold: true, color: '#0A1020' });
       ctx.bbox = [96, 44, 378, 30];
+      (ctx.textStyle || (ctx.textStyle = {})).insets = { top: 0, right: 0, bottom: 0, left: 0 };
+      ctx.textStyle.verticalAlignment = 'middle';
       if (!s.elements.some((e) => e.name === 'ctx-logo')) {
         s.elements.push(imageElement(`ctx-logo-${i + 1}`, [58, 51, 34, 16], 'halil-logo.png', 'contain'));
       }
