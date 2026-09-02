@@ -1779,9 +1779,9 @@
       if (!ctx) return;
       const rest = String(ctx.text || '').replace(/^\s*halil\s*[·]?\s*/, '').trim();
       setElementText(ctx, `·   ${rest}`);
-      ctx.bbox = [116, 44, 360, 30];
+      ctx.bbox = [96, 44, 378, 30];
       if (!s.elements.some((e) => e.name === 'ctx-logo')) {
-        s.elements.push(imageElement(`ctx-logo-${i + 1}`, [58, 47, 46, 22], 'halil-logo.png', 'contain'));
+        s.elements.push(imageElement(`ctx-logo-${i + 1}`, [58, 51, 34, 16], 'halil-logo.png', 'contain'));
       }
     });
   })();
