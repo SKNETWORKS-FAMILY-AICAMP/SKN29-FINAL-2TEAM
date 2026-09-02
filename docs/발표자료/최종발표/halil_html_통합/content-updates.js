@@ -1697,6 +1697,7 @@
     if (s15) {
       setElementText(s15.elements.find((e) => e.name === 's16-create-name'), 'Agent 생성');
       setElementText(s15.elements.find((e) => e.name === 's16-query-name'), 'Agent에 질의 요청');
+      s15.elements.forEach((e) => { if (/^s16-(create|query)-frame$/.test(e.name || '')) e.lineColor = '#1A1A1A'; });
     }
     retitle('Deep Agent는 에이전트 실행 하네스입니다', 'Deep Agent: Agent를 실행하는 Harness');
     retitle('Deep Agent 실행 구조 전체 도면', 'Deep Agent 실행 구조');
