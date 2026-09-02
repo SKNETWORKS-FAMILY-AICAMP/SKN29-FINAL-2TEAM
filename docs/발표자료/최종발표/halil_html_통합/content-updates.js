@@ -1706,9 +1706,9 @@
 
       p11.elements.push(panel('arc11-infra', [64, 522, 1152, 62], '#0C3F91', '#0C3F91'));
       p11.elements.push(imageElement('arc11-infra-i', [92, 541, 24, 24], 'ic-infra.svg', 'contain'));
-      p11.elements.push(textElement('arc11-infra-t', [128, 522, 1024, 62],
+      p11.elements.push(textElement('arc11-infra-t', [104, 522, 1072, 62],
         '인프라   ·   EC2 · Docker Compose   ·   RDS PostgreSQL 17 + pgvector   ·   S3 Object Storage   ·   RunPod Serverless GPU',
-        12.5, '#FFFFFF', true, 'center'));
+        15, '#FFFFFF', true, 'center'));
     }
   })();
 
