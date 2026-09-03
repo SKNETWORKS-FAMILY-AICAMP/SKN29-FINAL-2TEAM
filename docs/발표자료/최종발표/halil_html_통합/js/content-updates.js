@@ -3120,7 +3120,7 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "핵심 과제 → HALIL 해결" 슬라이드 추가.
+  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "우리가 푼 세 가지 과제" 슬라이드 추가.
   //   4p 의 업무 확장 핵심 과제 3개를 플랫폼이 어떻게 풀었는지.
   // ===================================================================
   (() => {
@@ -3129,7 +3129,7 @@
       const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
       return t ? norm(t.text) : '';
     };
-    if (deck.slides.some((s) => titleOf(s) === '업무 확장의 핵심 과제 → HALIL의 해결')) return;
+    if (deck.slides.some((s) => titleOf(s) === '우리가 푼 세 가지 과제')) return;
     const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
     const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
     if (baseIdx < 0 || atIdx < 0) { console.warn('[패스38] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
@@ -3137,7 +3137,7 @@
     const s = clone(deck.slides[baseIdx]);
     s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
     setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), '업무 확장의 핵심 과제 → HALIL의 해결');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '우리가 푼 세 가지 과제');
     s.sources = [];
 
     const els = [];

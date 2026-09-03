@@ -166,8 +166,8 @@ assert.deepEqual(
   '44~47은 운영 콘솔 4장 (04-4 서브 표지 뒤)',
 );
 assert.equal(titleOf(48), '자체 평가 의견', '48은 05 챕터 표지');
-// --- 패스38: '자체 평가 의견' 뒤 "업무 확장의 핵심 과제 → HALIL의 해결" 1장 ---
-assert.equal(titleOf(49), '업무 확장의 핵심 과제 → HALIL의 해결', '49는 4p 핵심 과제 3개 해결 슬라이드');
+// --- 패스38: '자체 평가 의견' 뒤 "우리가 푼 세 가지 과제" 1장 ---
+assert.equal(titleOf(49), '우리가 푼 세 가지 과제', '49는 4p 핵심 과제 3개 해결 슬라이드');
 assert.ok(
   [0, 1, 2].every((c) => slides[48].elements.some((e) => e.name === `pv${c}-pan`)) && slides[48].elements.some((e) => e.name === 'pv-hl'),
   '49는 과제 3행(pv0~2) + 헤드라인(pv-hl)으로 구성',

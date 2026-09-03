@@ -284,6 +284,7 @@
   replaceExact(14, 'Builder · 도구 32종\nRuntime · Streaming\nMemory · 버전 관리', 'Builder · Runtime\nStreaming · Memory\n버전 관리');
   replaceExact(14, 'side_effect 메타 15개\nHITL · 멱등 · 동시성\nSkill 12×3 검증', '쓰기 작업 승인 경계\nHITL · 멱등 · 동시성\nSkill 검증 흐름');
   replaceExact(14, '검색 37 · Agent 36\n최종 파싱 단위 검증\n배포 · 시연 준비', '검색·Agent DEV 평가\n파싱 보정 검증\n배포 · 시연 준비');
+  replaceExact(14, '승인·통제·Skills', '에이전트 기능 구현');
   // 구현 과정 타임라인 — 중앙 바 기준 위·아래 간격을 대칭으로 (기존 위 96 / 아래 22 → 각 38).
   for (let i = 0; i < 6; i += 1) {
     const numberY = i % 2 === 0 ? 278 : 426; // 짝수 = 바 위, 홀수 = 바 아래
@@ -526,7 +527,7 @@
   byName(47, 'sub-47', '채팅 → 에이전트 → 프로젝트 → 문서 → 설정·스킬 순서의 연속 시연');
   removeNames(47, ['demo-frame-47', 'play-47', 'play-icon-47']);
   slide(47).elements.push(panel('demo-video-frame', [60, 214, 1160, 382], '#071426', '#26364B'));
-  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], '../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'));
+  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], 'media/halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'));
 
   // 공식 규칙 평가를 먼저 보여 주고, 정량·정성 지표를 보조로 배치한다.
   byName(48, 'title-48', '플랫폼 규칙을 먼저 통과한 뒤 응답 품질을 측정합니다');
@@ -1081,12 +1082,12 @@
           textElement('page-16', [1160, 44, 62, 30], '13', 13, '#6C7482', true, 'right'),
           textElement('title-16', [58, 92, 1160, 58], '플랫폼 시연 영상', 40, '#0A1020', true),
           panel('demo2-frame', [60, 166, 1160, 486], '#071426', '#26364B'),
-          videoElement('demo2-player', [66, 172, 1148, 474], '../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'),
+          videoElement('demo2-player', [66, 172, 1148, 474], 'media/halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'),
           { kind: 'shape', geometry: 'rect', bbox: [58, 693, 78, 4], fillColor: '#2878D1', lineWidth: 0, name: 'accent-16' },
           { kind: 'image', bbox: [1019.56, 680, 78.89, 25], media: 'image2.png', name: 'inst-logo-a-13' },
           { kind: 'image', bbox: [1138.95, 680, 84.09, 25], media: 'image3.png', name: 'inst-logo-b-13' },
         ],
-        sources: ['../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'],
+        sources: ['media/halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'],
       };
       const archSlide = clone(find('UI부터 실행·통제까지 연결된 시스템 구조'));
       if (archSlide) set(archSlide, 'context-16', 'halil   ·   04 프로젝트 수행 결과');
@@ -2678,12 +2679,12 @@
     const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
     const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
     if (baseIdx < 0 || atIdx < 0) { console.warn('[패스30] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
-    if (deck.slides.some((s) => titleOf(s) === 'Future Work')) return;
+    if (deck.slides.some((s) => titleOf(s) === '향후 과제')) return;
 
     const s = clone(deck.slides[baseIdx]);
     s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
     setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), 'Future Work');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '향후 과제');
     s.sources = ['docs/설계 및 구현/3_중간발표 이후/작업기록/ (Parsing · Hybrid Search · Agent 개선 계획)'];
 
     const COLS = [
@@ -2723,7 +2724,7 @@
       { kind: 'shape', geometry: 'rect', bbox: [56, HY, 1168, HH], fillColor: '#E7EBF0', lineWidth: 0, name: 'fw-hbar' },
     );
     COLS.forEach((c, i) => s.elements.push(
-      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 13, '#101728', true),
+      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 14, '#101728', true),
     ));
     [186, 546, 976].forEach((x, i) => s.elements.push(
       { kind: 'shape', geometry: 'line', bbox: [x, HY, 0, tableBottom - HY], lineColor: '#E7EBF1', lineWidth: 1, name: `fw-vl-${i}` },
@@ -2733,13 +2734,13 @@
       const y = RY + rowH * ri;
       s.elements.push(
         { kind: 'shape', geometry: 'rect', bbox: [66, y + 22, 4, 44], fillColor: r.accent, lineWidth: 0, name: `fw-acc-${ri}` },
-        textElement(`fw-area-${ri}`, [82, y + 20, 100, 62], r.area, 15, '#101728', true),
-        textElement(`fw-limk-${ri}`, [202, y + 18, 330, 44], r.limitKey, 13, '#101728', true),
-        textElement(`fw-lims-${ri}`, [202, y + 62, 330, 40], r.limitSub, 11.5, '#5B6577'),
-        textElement(`fw-bul-${ri}`, [562, y + 18, 400, rowH - 32], r.bullets.map((b) => `•  ${b}`).join('\n'), 12.5, '#20283A'),
+        textElement(`fw-area-${ri}`, [82, y + 18, 104, 62], r.area, 17, '#101728', true),
+        textElement(`fw-limk-${ri}`, [202, y + 16, 336, 46], r.limitKey, 14.5, '#101728', true),
+        textElement(`fw-lims-${ri}`, [202, y + 64, 336, 40], r.limitSub, 12.5, '#5B6577'),
+        textElement(`fw-bul-${ri}`, [562, y + 16, 404, rowH - 30], r.bullets.map((b) => `•  ${b}`).join('\n'), 13.5, '#20283A'),
         { kind: 'shape', geometry: 'ellipse', bbox: [992, y + 50, 26, 26], fillColor: r.effClr, lineWidth: 0, name: `fw-eff-ic-${ri}` },
-        textElement(`fw-eff-ar-${ri}`, [992, y + 51, 26, 26], '→', 13, '#FFFFFF', true, 'center'),
-        textElement(`fw-eff-${ri}`, [1028, y + 34, 188, 64], r.effect, 12.5, r.effClr, true),
+        textElement(`fw-eff-ar-${ri}`, [992, y + 50, 26, 26], '→', 14, '#FFFFFF', true, 'center'),
+        textElement(`fw-eff-${ri}`, [1028, y + 32, 192, 68], r.effect, 13.5, r.effClr, true),
       );
       if (ri > 0) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [56, y, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `fw-rl-${ri}` });
     });
@@ -2784,7 +2785,7 @@
       ['전체 시스템 구조', '04-1', 'Agent', 's041'],
       ['Deep Agent 실행 구조', '04-2', '문서 처리', 's042'],
       ['직렬화와 임베딩', '04-3', '플랫폼 평가', 's043'],
-      ['스킬 사용 전후 비교', '04-4', '운영자 콘솔', 's044'],
+      ['스킬 사용 전후 비교', '04-4', '운영 ・ 통제', 's044'],
     ];
     PLAN.forEach(([anchor, no, title, tag]) => {
       if (deck.slides.some((s) => s.elements.some((e) => e.name === `div-no-${tag}`))) return;
@@ -2870,16 +2871,321 @@
     });
   })();
 
-  // ---- 최종: 운영자 콘솔 상세 4장(44~47p)만 남기고 나머지 전부 삭제 ----
+  // ===================================================================
+  // 최종 편집 패스 34 — '문서 처리 파이프라인 평가' 슬라이드 본문 채우기.
+  //   4개 보완 레이어(읽기순서·제목·표·이미지)의 hold-out 검증 수치를 2×2 표로.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '문서 처리 파이프라인 평가'));
+    if (!s) { console.warn('[패스34] 문서 처리 파이프라인 평가 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => e.name === 'dpe-sub')) return;
+
+    const COLOR = ['#155EEF', '#7F56D9', '#F79009', '#06AED4'];
+    const DARK = ['#0B1F44', '#3E1C76', '#7A2E0E', '#064E5B'];
+    const LIGHT = ['#EAF2FF', '#F4EBFF', '#FFF4E5', '#E6F9FB'];
+    const GRN = '#17845E', RED = '#B23A3A';
+    const els = [];
+    els.push(textElement('dpe-sub', [58, 150, 1160, 20],
+      '4개 보완 레이어를 hold-out 문서로 각각 검증 — 실제 데이터 손상(오보정) 0건을 유지하며 오류 교정', 12, '#52657D', true));
+
+    // quad: 카드 + 제목 + 헤드라인 + 표(+ 각주)
+    const quad = (qi, x, y, w, h, li, title, headline, headers, colW, rows, foot) => {
+      const p = `dpe${qi}`;
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, y, w, h], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [x, y + 16, 4, 22], fillColor: COLOR[li], lineWidth: 0, name: `${p}-acc` });
+      els.push(textElement(`${p}-h`, [x + 18, y + 11, w - 36, 22], title, 13.5, DARK[li], true));
+      els.push(textElement(`${p}-hl`, [x + 18, y + 34, w - 36, 16], headline, 9.5, '#52657D', true));
+      const tx = x + 16, tw = w - 32;
+      let ty = y + 56;
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [tx, ty, tw, 22], fillColor: '#EEF1F5', lineWidth: 0, name: `${p}-hb` });
+      let cx = tx;
+      headers.forEach((hh, ci) => {
+        els.push(textElement(`${p}-hc${ci}`, [cx + 5, ty, colW[ci] - 10, 22], hh, 8.5, '#3A4658', true, ci === 0 ? 'left' : 'center'));
+        cx += colW[ci];
+      });
+      const rh = 33;
+      rows.forEach((r, ri) => {
+        const ry = ty + 22 + ri * rh;
+        if (r.hl) els.push({ kind: 'shape', geometry: 'rect', bbox: [tx, ry, tw, rh], fillColor: r.hl, lineWidth: 0, name: `${p}-rhl${ri}` });
+        els.push({ kind: 'shape', geometry: 'line', bbox: [tx, ry + rh, tw, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-rl${ri}` });
+        let rcx = tx;
+        r.cells.forEach((c, ci) => {
+          const cc = typeof c === 'string' ? { t: c } : c;
+          const first = ci === 0;
+          els.push(textElement(`${p}-c${ri}-${ci}`, [rcx + 5, ry, colW[ci] - 10, rh], cc.t,
+            first ? 9.5 : 10, cc.c || (first ? '#20283A' : '#37414F'), first ? true : !!cc.b, first ? 'left' : 'center'));
+          rcx += colW[ci];
+        });
+      });
+      if (foot) els.push(textElement(`${p}-ft`, [x + 18, ty + 22 + rows.length * rh + 8, w - 36, 26], foot, 8.5, '#8A93A3'));
+    };
+
+    const g = (t) => ({ t, c: GRN, b: true });
+    const QY1 = 178, QY2 = 422, QW = 576, QH = 232, QXL = 56, QXR = 648;
+
+    quad(1, QXL, QY1, QW, QH, 0, '읽기 순서 복원', '복원 성공률 0% → 100% · 오복원 0건',
+      ['구분', '검증 오류', '정상 복원', '오복원', '잔존', '성공률'],
+      [120, 88, 88, 70, 70, 108],
+      [
+        { cells: ['기본 Docling', '60건', '0건', '–', '60건', '0%'] },
+        { cells: [{ t: '읽기 순서 보정', c: DARK[0], b: true }, '60건', g('60건'), g('0건'), g('0건'), g('100%')], hl: LIGHT[0] },
+      ],
+      '※ 부록 A 인접 요소의 국소 역전 재현율 — 전체 읽기 순서 오류 재현율은 아님');
+
+    quad(2, QXR, QY1, QW, QH, 1, '제목 추출 보완', 'F1 0 → 46.7% (정밀도 77.8% · 재현율 33.3%)',
+      ['구분', '정확', '오승격', '미검출', '정밀도', '재현율', 'F1'],
+      [104, 60, 66, 66, 78, 78, 92],
+      [
+        { cells: ['기본 Docling', '0건', '0건', '21건', '0%', '0%', '0%'] },
+        { cells: [{ t: '제목 추출 보완', c: DARK[1], b: true }, g('7건'), { t: '2건', c: RED, b: true }, '14건', g('77.8%'), '33.3%', g('46.7%')], hl: LIGHT[1] },
+      ],
+      '※ 공개 문서 5개 · 19p · list_item 122건 전수 라벨링 · 실제 제목 21건');
+
+    quad(3, QXL, QY2, QW, QH, 2, '표 판별 · 비표 오탐 게이트', '실제 표 오제거 0건 — 규칙 미해당 시 통과(fail-open)',
+      ['평가 문서 (held-out)', '표', '비표(오염률)', '게이트 검출', 'FN'],
+      [210, 46, 108, 96, 84],
+      [
+        { cells: ['현대모비스 지속가능경영보고서 (167p)', '217', '17건 (7.8%)', '0 / 17', '0'] },
+        { cells: ['041_디지털헬스케어 보안모델 (34p)', '43', '0건 (0%)', '–', '0'] },
+        { cells: ['011_공공분야 가명정보 안내서 (38p)', '21', '1건 (4.8%)', '1 / 1', '0'] },
+      ],
+      '※ 게이트 검출 = 알려진 비표 중 제외 판정 비율 · FN = 실제 표 오제거');
+
+    quad(4, QXR, QY2, QW, QH, 3, '이미지 설명 품질', '믿고 쓸 수 있는 설명 48.5% → 63.2%',
+      ['지표', 'Before', 'After', '개선'],
+      [244, 98, 98, 104],
+      [
+        { cells: ['이미지–설명 유사도 (5점)', { t: '3.60', c: RED }, g('4.07'), g('▲ 0.47')] },
+        { cells: ['신뢰 가능 설명 비율', { t: '48.5%', c: RED }, g('63.2%'), g('▲ 14.7%p')] },
+        { cells: ['허위 서술(환각) 비율', { t: '35.3%', c: RED }, g('30.9%'), g('▼ 4.4%p')] },
+      ],
+      '※ 신뢰 가능 = 정확 + 무환각 + 고득점 모두 만족 · 환각 비율은 낮을수록 좋음');
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 35 — 운영 콘솔 4장 재구성 (juyeon b02a6b07 이식).
+  //   흰 프레임 제거 · 새 고해상 스크린샷(ops_01~04) · 1px 회색 테두리 ·
+  //   40·41p 좌우 2분할 · 42p 중앙 1장 + 단일 캡션.
+  // ===================================================================
+  (() => {
+    const BORDER = '#B7BEC9';
+    const findSlide = (elName) => deck.slides.find((sl) => sl.elements.some((e) => e.name === elName));
+    const border = (bbox, name) => ({ kind: 'shape', geometry: 'rect', bbox: bbox.slice(), lineColor: BORDER, lineWidth: 1, name });
+    const swap = (s, elName, media, bbox) => {
+      const e = s.elements.find((x) => x.name === elName);
+      if (!e) { console.warn(`[패스35] ${elName} 요소를 찾지 못함`); return; }
+      e.media = media; e.bbox = bbox.slice(); e.fit = 'fill';
+      s.elements.push(border(bbox, `${elName}-border`));
+    };
+
+    // 스크린샷 뒤 흰/둥근 프레임 전부 제거 (운영 콘솔 4장)
+    deck.slides.forEach((sl) => {
+      if (sl.elements.some((e) => /^ops-.*-frame$/.test(e.name || ''))) {
+        sl.elements = sl.elements.filter((e) => !/^ops-.*-frame$/.test(e.name || ''));
+      }
+    });
+
+    // 1) 운영 상태 통합 관리 — ops_01 크게 1장, 캡션 위로
+    (() => {
+      const s = findSlide('ops-overview');
+      if (!s) { console.warn('[패스35] ops-overview 슬라이드 없음'); return; }
+      ['caption-1', 'caption-1-line'].forEach((n) => {
+        const e = s.elements.find((x) => x.name === n);
+        if (e) e.bbox = [e.bbox[0], e.bbox[1] - 14, e.bbox[2], e.bbox[3]];
+      });
+      swap(s, 'ops-overview', 'ops_01.png', [282, 190, 716, 474]);
+    })();
+
+    // 2) 연결 서비스·모델 구성 — 좌 ops_02-1 / 우 ops_02-2
+    (() => {
+      const s = findSlide('ops-connectors');
+      if (!s) { console.warn('[패스35] ops-connectors 슬라이드 없음'); return; }
+      swap(s, 'ops-connectors', 'ops_02-1.png', [56, 206, 574, 352]);
+      swap(s, 'ops-models', 'ops_02-2.png', [650, 206, 574, 352]);
+    })();
+
+    // 3) 커스텀 도구·가드레일 관리 — 좌 ops_03-1 / 우 ops_03-2
+    (() => {
+      const s = findSlide('ops-tools');
+      if (!s) { console.warn('[패스35] ops-tools 슬라이드 없음'); return; }
+      swap(s, 'ops-tools', 'ops_03-1.png', [56, 206, 574, 352]);
+      swap(s, 'ops-guardrails', 'ops_03-2.png', [650, 206, 574, 352]);
+    })();
+
+    // 4) 실행 현황·도구 사용 추적 — 중앙 1장 + 단일 캡션
+    (() => {
+      const s = findSlide('ops-usage');
+      if (!s) { console.warn('[패스35] ops-usage 슬라이드 없음'); return; }
+      s.elements = s.elements.filter((e) => !/^(ops-tool-usage|caption-4-)/.test(e.name || ''));
+      const src = deck.slides.flatMap((x) => x.elements).find((e) => e.name === 'caption-1');
+      const srcTick = deck.slides.flatMap((x) => x.elements).find((e) => e.name === 'caption-1-line');
+      if (src && srcTick) {
+        const tick = clone(srcTick); tick.name = 'caption-4-line';
+        const cap = clone(src); cap.name = 'caption-4';
+        setElementText(cap, '팀・모델・도구별 사용 현황');
+        s.elements.push(tick, cap);
+      }
+      swap(s, 'ops-usage', 'ops_04.png', [313, 190, 654, 471]);
+    })();
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 36 — 21p(12단계 파싱 파이프라인) 카드 디자인 순화 (juyeon _0903 이식).
+  //   진한 파랑 강조 카드(#CFE1FA)를 은은한 파랑 + 굵은 테두리로, 단계명·번호 글자 확대.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '12단계 파싱 파이프라인'));
+    if (!s) { console.warn('[패스36] 12단계 파싱 파이프라인 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => (e.fillColor || '').toUpperCase() === '#E8F1FC')) return;
+    s.elements.forEach((e) => {
+      if ((e.fillColor || '').toUpperCase() === '#CFE1FA') {
+        e.fillColor = '#E8F1FC'; e.lineColor = '#5E93D6'; e.lineWidth = 2;
+      }
+    });
+    const bump = (rx, size, widen) => s.elements.forEach((e) => {
+      if (!rx.test(e.name || '')) return;
+      if (e.textStyle) e.textStyle.fontSize = size;
+      (e.paragraphs || []).forEach((p) => {
+        if (p.resolvedTextStyle) p.resolvedTextStyle.fontSize = size;
+        (p.runs || []).forEach((r) => { r.fontSize = size; });
+      });
+      if (widen) e.bbox = [e.bbox[0], e.bbox[1], widen, e.bbox[3]];
+    });
+    bump(/^s19n-t\d+$/, 14, 245);
+    bump(/^s19n-n\d+$/, 12.5);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 37 — 32p(직렬화와 임베딩) 본문을 juyeon _0903 레이아웃과 동일하게 재구성.
+  //   직렬화 = 요소/방식 표, 임베딩 = 3카드(512토큰 카드 보조설명 2줄), 하단 tokenizer 콜아웃 밴드.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '직렬화와 임베딩'));
+    if (!s) { console.warn('[패스37] 직렬화와 임베딩 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => e.name === 'dz-t-hbg')) return;
+    // 기존 본문(ck-*, dz-*) 제거, 크롬만 유지
+    s.elements = s.elements.filter((e) => !/^(ck-|dz-)/.test(e.name || ''));
+
+    const els = [];
+    els.push(textElement('ck-s-h', [72, 198, 500, 26], '직렬화', 16, '#2878D1', true));
+    // 직렬화 표
+    els.push(
+      { kind: 'shape', geometry: 'rect', bbox: [72, 228, 1136, 3], fillColor: '#101728', lineWidth: 0, name: 'dz-t-top' },
+      { kind: 'shape', geometry: 'rect', bbox: [72, 231, 1136, 28], fillColor: '#E7EBF0', lineWidth: 0, name: 'dz-t-hbg' },
+      textElement('dz-t-h0', [88, 231, 190, 28], '요소', 13, '#3B4656', true),
+      textElement('dz-t-h1', [292, 231, 916, 28], '직렬화 방식', 13, '#3B4656', true),
+      { kind: 'shape', geometry: 'line', bbox: [72, 259, 1136, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'dz-t-hrule' },
+      textElement('dz-t-s0', [88, 259, 190, 32], '표 · 목록 · 제목', 13, '#101728', true),
+      textElement('dz-t-c0', [292, 259, 916, 32], 'Docling 기본 시리얼라이저를 그대로 사용', 13, '#101728'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 291, 1136, 0], lineColor: '#E7EBF1', lineWidth: 1, name: 'dz-t-rl1' },
+      textElement('dz-t-s1', [88, 289, 190, 70], '그림', 13, '#101728', true),
+      textElement('dz-t-c1a', [292, 295, 916, 20], '커스텀 시리얼라이저', 13, '#101728', true),
+      textElement('dz-t-c1o', [292, 319, 126, 20], '승인된 VLM 설명 O', 12.5, '#17845E', true),
+      textElement('dz-t-c1ot', [420, 319, 788, 20], '→  그 설명 텍스트만 임베딩 대상으로 사용', 12.5, '#45566B'),
+      textElement('dz-t-c1x', [292, 341, 126, 20], '승인된 VLM 설명 X', 12.5, '#D05252', true),
+      textElement('dz-t-c1xt', [420, 341, 788, 20], '→  Docling 기본 그림·메타데이터 시리얼라이저로 대체', 12.5, '#45566B'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 365, 1136, 0], lineColor: '#101728', lineWidth: 1, name: 'dz-t-bot' },
+    );
+    // 임베딩 카드
+    els.push(textElement('ck-e-h', [72, 380, 500, 26], '임베딩', 16, '#2878D1', true));
+    const card = (i, x, v, l, l2) => {
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, 410, 360, 94], fillColor: '#FFFFFF', lineColor: '#E3E8EF', lineWidth: 1, name: `ck-card-${i}` });
+      els.push(textElement(`ck-v-${i}`, [x + 24, l2 ? 424 : 428, 312, 28], v, 18, '#2878D1', true));
+      els.push(textElement(`ck-l-${i}`, [x + 24, l2 ? 452 : 460, 312, 22], l, 13, '#6C7482'));
+      if (l2) els.push(textElement(`ck-l-${i}b`, [x + 24, 474, 312, 20], l2, 11, '#9AA3B0'));
+    };
+    card(0, 72, 'embeddinggemma-300m', '임베딩 모델');
+    card(1, 460, '768차원', '임베딩 벡터 크기');
+    card(2, 848, '512 토큰', '청크 상한', '(모델 최대 2,048토큰 중 보수적 설정)');
+    // 하단 tokenizer 콜아웃 밴드 (juyeon _0903 "1페이지" 리디자인)
+    const y = 532, h = 68;
+    els.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [72, y, 1136, h], fillColor: '#EEF3FB', lineColor: '#DBE5F5', lineWidth: 1, name: 'ck-note-band' },
+      { kind: 'shape', geometry: 'rect', bbox: [72, y, 5, h], fillColor: '#2878D1', lineWidth: 0, name: 'ck-note-accent' },
+      textElement('ck-note', [100, y + 12, 1064, 24], '토큰 수는 임베딩에 사용하는 모델의 tokenizer로 계산', 15.5, '#1B2436', true),
+      textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676'),
+    );
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "우리가 푼 세 가지 과제" 슬라이드 추가.
+  //   4p 의 업무 확장 핵심 과제 3개를 플랫폼이 어떻게 풀었는지.
+  // ===================================================================
   (() => {
     const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
     const titleOf = (s) => {
       const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
       return t ? norm(t.text) : '';
     };
-    const start = deck.slides.findIndex((s) => titleOf(s) === '운영 상태 통합 관리');
-    if (start < 0) { console.warn('[최종 축소] 44p(운영 상태 통합 관리)를 찾지 못함'); return; }
-    deck.slides = deck.slides.slice(start, start + 4);
+    if (deck.slides.some((s) => titleOf(s) === 'HALIL이 해결한 과제')) return;
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
+    const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
+    if (baseIdx < 0 || atIdx < 0) { console.warn('[패스38] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
+
+    const s = clone(deck.slides[baseIdx]);
+    s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
+    setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), 'HALIL이 해결한 과제');
+    s.sources = [];
+
+    const CARDS = [
+      {
+        clr: '#155EEF', no: '01', task: '분산된 정보와 업무 도구',
+        bullets: ['통합 검색으로 필요한 정보를 빠르게 탐색', 'MCP 커넥터로 외부 도구를 하나로 연결', '문서 · 도구를 하나의 업무 흐름으로 통합'],
+        arrow: '정보 연결로 업무 흐름을 끊김 없이 통합',
+      },
+      {
+        clr: '#17845E', no: '02', task: '개인에게 머무는 업무 방식',
+        bullets: ['업무 방식을 스킬로 표준화', 'Agent가 조직 내에서 생성 · 공유 · 재사용', '조직 지식 자산으로 축적하고 확산'],
+        arrow: '개인 경험을 조직 지식으로 전환 · 확산',
+      },
+      {
+        clr: '#7A5CB0', no: '03', task: '조직 차원의 운영 통제',
+        bullets: ['역할 · 권한 기반 접근 통제', 'HITL 승인으로 중요한 의사결정 보호', '운영 로그 · 감사로 투명성 확보'],
+        arrow: '권한 · 이력 중심의 안전하고 투명한 운영',
+      },
+    ];
+    const els = [];
+    const CW = 372, CH = 496, CY = 168, GAP = 26;
+    CARDS.forEach((c, ci) => {
+      const x = 56 + ci * (CW + GAP);
+      const p = `pv${ci}`;
+      els.push(
+        { kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#E4E8EF', lineWidth: 1, name: `${p}-pan` },
+        { kind: 'shape', geometry: 'roundRect', bbox: [x + 24, CY + 24, 40, 40], fillColor: c.clr, lineWidth: 0, name: `${p}-nobg` },
+        textElement(`${p}-no`, [x + 24, CY + 24, 40, 40], c.no, 17, '#FFFFFF', true, 'center'),
+        textElement(`${p}-task`, [x + 76, CY + 26, CW - 100, 38], c.task, 19, '#0A1020', true),
+        { kind: 'shape', geometry: 'line', bbox: [x + 24, CY + 98, CW - 48, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-div1` },
+        textElement(`${p}-slh`, [x + 24, CY + 118, CW - 48, 26], 'HALIL의 해결', 15.5, c.clr, true),
+      );
+      c.bullets.forEach((b, bi) => {
+        const by = CY + 162 + bi * 44;
+        els.push(
+          { kind: 'shape', geometry: 'ellipse', bbox: [x + 27, by + 15, 7, 7], fillColor: c.clr, lineWidth: 0, name: `${p}-dot${bi}` },
+          textElement(`${p}-b${bi}`, [x + 46, by, CW - 70, 36], b, 14.5, '#37414F'),
+        );
+      });
+      els.push(
+        { kind: 'shape', geometry: 'line', bbox: [x + 24, CY + 404, CW - 48, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-div2` },
+        textElement(`${p}-arrow`, [x + 24, CY + 422, CW - 48, 58], `→  ${c.arrow}`, 15.5, c.clr, true),
+      );
+    });
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+    deck.slides.splice(atIdx + 1, 0, s);
     deck.slides.forEach((item, idx) => {
       item.number = idx + 1;
       item.elements.forEach((e) => {
@@ -2888,136 +3194,14 @@
     });
   })();
 
-  // ---- 맨 앞: _0902 31페이지(직렬화와 임베딩)를 손대지 않고 그대로 삽입 ----
+  // ===================================================================
+  // 최종 편집 패스 39 — 41p(운영 평가 실패 사례) 좌측 회귀 예시(ev27-regr-*) 삭제.
+  // ===================================================================
   (() => {
-    if (!window.HALIL_SLIDE31) { console.warn('[31p 삽입] window.HALIL_SLIDE31 없음 (slide31-embed.js 로드 확인)'); return; }
-    deck.slides.unshift(clone(window.HALIL_SLIDE31));
-  })();
-
-  // ---- 2번째: halil_html_통합 21페이지(12단계 파싱 파이프라인) 삽입 + 강조 카드 색 조정 ----
-  (() => {
-    if (!window.HALIL_SLIDE21) { console.warn('[21p 삽입] window.HALIL_SLIDE21 없음 (slide21-embed.js 로드 확인)'); return; }
-    const s = clone(window.HALIL_SLIDE21);
-    // 강조 카드(진한 파랑 채움 #CFE1FA)를 은은한 파랑 + 굵은 테두리로 순화
-    s.elements.forEach((e) => {
-      if ((e.fillColor || '').toUpperCase() === '#CFE1FA') {
-        e.fillColor = '#E8F1FC';
-        e.lineColor = '#5E93D6';
-        e.lineWidth = 2;
-      }
-    });
-    // 카드 볼드 글씨(단계명·번호)가 너무 작아 키운다
-    const bump = (rx, size, widen) => {
-      s.elements.forEach((e) => {
-        if (!rx.test(e.name || '')) return;
-        if (e.textStyle) e.textStyle.fontSize = size;
-        (e.paragraphs || []).forEach((p) => {
-          if (p.resolvedTextStyle) p.resolvedTextStyle.fontSize = size;
-          (p.runs || []).forEach((r) => { r.fontSize = size; });
-        });
-        if (widen) e.bbox = [e.bbox[0], e.bbox[1], widen, e.bbox[3]];
-      });
-    };
-    bump(/^s19n-t\d+$/, 14, 245);
-    bump(/^s19n-n\d+$/, 12.5);
-    deck.slides.splice(1, 0, s);
-  })();
-
-  // ---- 1페이지: 하단 tokenizer 안내 문구 교체 + 콜아웃 리디자인 ----
-  (() => {
-    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ck-note'));
-    if (!s) { console.warn('[1p 문구 교체] ck-note를 찾지 못함'); return; }
-    s.elements = s.elements.filter((e) => !/^ck-note/.test(e.name || ''));
-    const y = 532; const h = 68;
-    s.elements.push(
-      { kind: 'shape', geometry: 'roundRect', bbox: [72, y, 1136, h], fillColor: '#EEF3FB', lineColor: '#DBE5F5', lineWidth: 1, name: 'ck-note-band' },
-      { kind: 'shape', geometry: 'rect', bbox: [72, y, 5, h], fillColor: '#2878D1', lineWidth: 0, name: 'ck-note-accent' },
-      textElement('ck-note', [100, y + 12, 1064, 24], '토큰 수는 임베딩에 사용하는 모델의 tokenizer로 계산', 15.5, '#1B2436', true, 'left'),
-      textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676', false, 'left'),
-    );
-  })();
-
-  // ---- 2페이지(운영 상태 통합 관리) 이미지를 ops_01 로 교체 ----
-  (() => {
-    const img = deck.slides.flatMap((s) => s.elements).find((e) => e.name === 'ops-overview');
-    if (!img) { console.warn('[2p 이미지 교체] ops-overview 요소를 찾지 못함'); return; }
-    img.media = 'ops_01.png';
-  })();
-
-  // ---- 운영자 콘솔 페이지: 스크린샷 뒤 흰 프레임 전부 제거 + 2페이지 이미지 확대 ----
-  (() => {
-    deck.slides.forEach((s) => {
-      s.elements = s.elements.filter((e) => !/^ops-.*-frame$/.test(e.name || ''));
-    });
-    const img = deck.slides.flatMap((s) => s.elements).find((e) => e.name === 'ops-overview');
-    if (img) img.bbox = [282, 190, 716, 474];
-  })();
-
-  // ---- 2페이지: 캡션 위로 이동 + 사진에 1px 회색 테두리 ----
-  (() => {
-    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ops-overview'));
-    if (!s) return;
-    const up = (name, dy) => { const e = s.elements.find((x) => x.name === name); if (e) e.bbox = [e.bbox[0], e.bbox[1] - dy, e.bbox[2], e.bbox[3]]; };
-    up('caption-1', 14);
-    up('caption-1-line', 14);
-    const img = s.elements.find((e) => e.name === 'ops-overview');
-    if (img) {
-      img.fit = 'fill';
-      s.elements.push({ kind: 'shape', geometry: 'rect', bbox: img.bbox.slice(), lineColor: '#B7BEC9', lineWidth: 1, name: 'ops-overview-border' });
-    }
-  })();
-
-  // ---- 3페이지: 왼쪽 ops_02-1 · 오른쪽 ops_02-2 로 교체 + 1px 회색 테두리 ----
-  (() => {
-    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ops-connectors'));
-    if (!s) { console.warn('[3p 이미지 교체] ops-connectors 슬라이드를 찾지 못함'); return; }
-    const set = (name, media, bbox) => {
-      const e = s.elements.find((x) => x.name === name);
-      if (!e) return;
-      e.media = media; e.bbox = bbox.slice(); e.fit = 'fill';
-      s.elements.push({ kind: 'shape', geometry: 'rect', bbox: bbox.slice(), lineColor: '#B7BEC9', lineWidth: 1, name: `${name}-border` });
-    };
-    set('ops-connectors', 'ops_02-1.png', [56, 206, 574, 352]);
-    set('ops-models', 'ops_02-2.png', [650, 206, 574, 352]);
-  })();
-
-  // ---- 4페이지: 왼쪽 ops_03-1 · 오른쪽 ops_03-2 로 교체 + 1px 회색 테두리 ----
-  (() => {
-    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ops-tools'));
-    if (!s) { console.warn('[4p 이미지 교체] ops-tools 슬라이드를 찾지 못함'); return; }
-    const set = (name, media, bbox) => {
-      const e = s.elements.find((x) => x.name === name);
-      if (!e) return;
-      e.media = media; e.bbox = bbox.slice(); e.fit = 'fill';
-      s.elements.push({ kind: 'shape', geometry: 'rect', bbox: bbox.slice(), lineColor: '#B7BEC9', lineWidth: 1, name: `${name}-border` });
-    };
-    set('ops-tools', 'ops_03-1.png', [56, 206, 574, 352]);
-    set('ops-guardrails', 'ops_03-2.png', [650, 206, 574, 352]);
-  })();
-
-  // ---- 5페이지: 사진 1장(ops_04)으로 합치기 + 캡션 1개 + 1px 회색 테두리 ----
-  (() => {
-    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ops-usage'));
-    if (!s) { console.warn('[5p] ops-usage 슬라이드를 찾지 못함'); return; }
-    const title = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || ''));
-    if (title) setElementText(title, '실행 현황·도구 사용 추적');
-    // 오른쪽 이미지 + 두 컬럼 캡션/틱 제거
-    s.elements = s.elements.filter((e) => !/^(ops-tool-usage|caption-4)/.test(e.name || ''));
-
-    // 2페이지 캡션("팀 · 계정 …")과 같은 위치·스타일로 캡션 1개 추가
-    const src = deck.slides.flatMap((x) => x.elements).find((e) => e.name === 'caption-1');
-    const srcTick = deck.slides.flatMap((x) => x.elements).find((e) => e.name === 'caption-1-line');
-    if (src && srcTick) {
-      const tick = clone(srcTick); tick.name = 'caption-4-line';
-      const cap = clone(src); cap.name = 'caption-4';
-      setElementText(cap, '팀・모델・도구별 사용 현황');
-      s.elements.push(tick, cap);
-    }
-
-    // 왼쪽 이미지를 가운데 큰 1장으로
-    const box = [313, 190, 654, 471];
-    const img = s.elements.find((e) => e.name === 'ops-usage');
-    img.media = 'ops_04.png'; img.bbox = box.slice(); img.fit = 'fill';
-    s.elements.push({ kind: 'shape', geometry: 'rect', bbox: box.slice(), lineColor: '#B7BEC9', lineWidth: 1, name: 'ops-usage-border' });
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '운영 평가 실패 사례'));
+    if (!s) { console.warn('[패스39] 운영 평가 실패 사례 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !/^ev27-regr-/.test(e.name || ''));
   })();
 })();
