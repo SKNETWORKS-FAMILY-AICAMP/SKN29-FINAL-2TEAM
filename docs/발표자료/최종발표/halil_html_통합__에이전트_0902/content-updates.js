@@ -1208,25 +1208,56 @@
       const s = find('계층 구조를 유지한 채 직렬화합니다');
       if (!s) return;
       removeContentArea(s);
-      set(s, 'title-16', '계층 구조를 유지해 직렬화하고 EmbeddingGemma로 임베딩합니다');
-      set(s, 'sub-16', '파싱 데이터를 일직선으로 직렬화한 뒤, 같은 tokenizer로 자르고 임베딩합니다');
+      s.elements = s.elements.filter((e) => e.name !== 'sub-16');
+      set(s, 'title-16', '직렬화와 임베딩');
       set(s, 'section-16', 'CHUNKING · 임베딩');
       set(s, 'foot-16', 'CHUNKING · 임베딩');
+
+      const ckCard = (name, x) => ({ kind: 'shape', geometry: 'roundRect', bbox: [x, 410, 360, 94], fillColor: '#FFFFFF', lineColor: '#E3E8EF', lineWidth: 1, name });
+      const ckX = [72, 460, 848];
+      const dzInk = '#101728'; const dzHdc = '#3B4656';
+
       s.elements.push(
-        textElement('ck-s-h', [58, 202, 700, 24], '직렬화', 15, '#2878D1', true),
-        textElement('ck-s-b', [58, 232, 1160, 170],
-          '텍스트·표·목록·제목은 Docling 기본 시리얼라이저를 그대로 사용하고, 그림만 커스텀 시리얼라이저를 만들었습니다. 승인된 VLM 설명이 있으면 그 설명 텍스트만 임베딩 대상으로 쓰고, 없으면 Docling 기본 그림·메타데이터 시리얼라이저로 대체합니다.',
-          14, '#20283A'),
-        hline('ck-div', 58, 420, 1160, '#E1E6EE'),
-        textElement('ck-e-h', [58, 432, 700, 24], '임베딩', 15, '#2878D1', true),
-        textElement('ck-v-0', [58, 466, 362, 30], 'embeddinggemma-300m', 17, '#2878D1', true),
-        textElement('ck-l-0', [58, 500, 362, 44], '임베딩 모델', 13, '#6C7482'),
-        textElement('ck-v-1', [445, 466, 362, 30], '768차원', 17, '#2878D1', true),
-        textElement('ck-l-1', [445, 500, 362, 44], '임베딩 벡터 크기', 13, '#6C7482'),
-        textElement('ck-v-2', [831, 466, 362, 30], '512 토큰', 17, '#2878D1', true),
-        textElement('ck-l-2', [831, 500, 362, 44], '청크 상한 (모델 최대 2,048토큰 중 보수적 설정)', 13, '#6C7482'),
-        textElement('ck-note', [58, 574, 1160, 24],
-          '토큰 계산에도 임베딩과 같은 모델의 tokenizer를 사용합니다 — 자를 때와 임베딩할 때 기준이 다르면 상한이 무의미해지기 때문입니다.', 10.5, '#8792A6', false, 'center'),
+        textElement('ck-s-h', [72, 198, 500, 26], '직렬화', 16, '#2878D1', true),
+
+        // 직렬화 표 (40p 표 디자인 참고)
+        { kind: 'shape', geometry: 'rect', bbox: [72, 228, 1136, 3], fillColor: dzInk, lineWidth: 0, name: 'dz-t-top' },
+        { kind: 'shape', geometry: 'rect', bbox: [72, 231, 1136, 28], fillColor: '#E7EBF0', lineWidth: 0, name: 'dz-t-hbg' },
+        textElement('dz-t-h0', [88, 231, 190, 28], '요소', 13, dzHdc, true, 'left'),
+        textElement('dz-t-h1', [292, 231, 916, 28], '직렬화 방식', 13, dzHdc, true, 'left'),
+        { kind: 'shape', geometry: 'line', bbox: [72, 259, 1136, 0], lineColor: '#C9CFDA', lineWidth: 1, name: 'dz-t-hrule' },
+
+        textElement('dz-t-s0', [88, 259, 190, 32], '표 · 목록 · 제목', 13, dzInk, true, 'left'),
+        textElement('dz-t-c0', [292, 259, 916, 32], 'Docling 기본 시리얼라이저를 그대로 사용', 13, dzInk, false, 'left'),
+        { kind: 'shape', geometry: 'line', bbox: [72, 291, 1136, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'dz-t-rl1' },
+
+        textElement('dz-t-s1', [88, 289, 190, 70], '그림', 13, dzInk, true, 'left'),
+        textElement('dz-t-c1a', [292, 295, 916, 20], '커스텀 시리얼라이저', 13, dzInk, true, 'left'),
+        textElement('dz-t-c1o', [292, 319, 126, 20], '승인된 VLM 설명 O', 12.5, '#17845E', true, 'left'),
+        textElement('dz-t-c1ot', [420, 319, 788, 20], '→  그 설명 텍스트만 임베딩 대상으로 사용', 12.5, '#45566B', false, 'left'),
+        textElement('dz-t-c1x', [292, 341, 126, 20], '승인된 VLM 설명 X', 12.5, '#D05252', true, 'left'),
+        textElement('dz-t-c1xt', [420, 341, 788, 20], '→  Docling 기본 그림·메타데이터 시리얼라이저로 대체', 12.5, '#45566B', false, 'left'),
+        { kind: 'shape', geometry: 'line', bbox: [72, 365, 1136, 0], lineColor: '#C9CFDA', lineWidth: 1, name: 'dz-t-bot' },
+
+        textElement('ck-e-h', [72, 380, 500, 26], '임베딩', 16, '#2878D1', true),
+
+        ckCard('ck-card-0', ckX[0]),
+        textElement('ck-v-0', [ckX[0] + 24, 428, 312, 28], 'embeddinggemma-300m', 18, '#2878D1', true),
+        textElement('ck-l-0', [ckX[0] + 24, 460, 312, 22], '임베딩 모델', 13, '#6C7482'),
+
+        ckCard('ck-card-1', ckX[1]),
+        textElement('ck-v-1', [ckX[1] + 24, 428, 312, 28], '768차원', 18, '#2878D1', true),
+        textElement('ck-l-1', [ckX[1] + 24, 460, 312, 22], '임베딩 벡터 크기', 13, '#6C7482'),
+
+        ckCard('ck-card-2', ckX[2]),
+        textElement('ck-v-2', [ckX[2] + 24, 424, 312, 28], '512 토큰', 18, '#2878D1', true),
+        textElement('ck-l-2', [ckX[2] + 24, 452, 312, 22], '청크 상한', 13, '#6C7482'),
+        textElement('ck-l-2b', [ckX[2] + 24, 474, 312, 20], '(모델 최대 2,048토큰 중 보수적 설정)', 11, '#9AA3B0'),
+
+        { kind: 'shape', geometry: 'roundRect', bbox: [72, 540, 1136, 52], fillColor: '#F1F3F8', lineColor: '#E2E6EF', lineWidth: 1, name: 'ck-note-band' },
+        textElement('ck-note', [98, 540, 1084, 52],
+          '토큰 계산에도 임베딩과 같은 모델의 tokenizer를 사용합니다 — 자를 때와 임베딩할 때 기준이 다르면 상한이 무의미해지기 때문입니다.',
+          12.5, '#5A6577'),
       );
     })();
     drop('EmbeddingGemma로 토큰을 계산하고 임베딩합니다');
