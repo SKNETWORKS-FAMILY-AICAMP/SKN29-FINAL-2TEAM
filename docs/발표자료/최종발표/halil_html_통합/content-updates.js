@@ -2965,4 +2965,71 @@
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
     s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 35 — 운영 콘솔 4장 재구성 (juyeon b02a6b07 이식).
+  //   흰 프레임 제거 · 새 고해상 스크린샷(ops_01~04) · 1px 회색 테두리 ·
+  //   40·41p 좌우 2분할 · 42p 중앙 1장 + 단일 캡션.
+  // ===================================================================
+  (() => {
+    const BORDER = '#B7BEC9';
+    const findSlide = (elName) => deck.slides.find((sl) => sl.elements.some((e) => e.name === elName));
+    const border = (bbox, name) => ({ kind: 'shape', geometry: 'rect', bbox: bbox.slice(), lineColor: BORDER, lineWidth: 1, name });
+    const swap = (s, elName, media, bbox) => {
+      const e = s.elements.find((x) => x.name === elName);
+      if (!e) { console.warn(`[패스35] ${elName} 요소를 찾지 못함`); return; }
+      e.media = media; e.bbox = bbox.slice(); e.fit = 'fill';
+      s.elements.push(border(bbox, `${elName}-border`));
+    };
+
+    // 스크린샷 뒤 흰/둥근 프레임 전부 제거 (운영 콘솔 4장)
+    deck.slides.forEach((sl) => {
+      if (sl.elements.some((e) => /^ops-.*-frame$/.test(e.name || ''))) {
+        sl.elements = sl.elements.filter((e) => !/^ops-.*-frame$/.test(e.name || ''));
+      }
+    });
+
+    // 1) 운영 상태 통합 관리 — ops_01 크게 1장, 캡션 위로
+    (() => {
+      const s = findSlide('ops-overview');
+      if (!s) { console.warn('[패스35] ops-overview 슬라이드 없음'); return; }
+      ['caption-1', 'caption-1-line'].forEach((n) => {
+        const e = s.elements.find((x) => x.name === n);
+        if (e) e.bbox = [e.bbox[0], e.bbox[1] - 14, e.bbox[2], e.bbox[3]];
+      });
+      swap(s, 'ops-overview', 'ops_01.png', [282, 190, 716, 474]);
+    })();
+
+    // 2) 연결 서비스·모델 구성 — 좌 ops_02-1 / 우 ops_02-2
+    (() => {
+      const s = findSlide('ops-connectors');
+      if (!s) { console.warn('[패스35] ops-connectors 슬라이드 없음'); return; }
+      swap(s, 'ops-connectors', 'ops_02-1.png', [56, 206, 574, 352]);
+      swap(s, 'ops-models', 'ops_02-2.png', [650, 206, 574, 352]);
+    })();
+
+    // 3) 커스텀 도구·가드레일 관리 — 좌 ops_03-1 / 우 ops_03-2
+    (() => {
+      const s = findSlide('ops-tools');
+      if (!s) { console.warn('[패스35] ops-tools 슬라이드 없음'); return; }
+      swap(s, 'ops-tools', 'ops_03-1.png', [56, 206, 574, 352]);
+      swap(s, 'ops-guardrails', 'ops_03-2.png', [650, 206, 574, 352]);
+    })();
+
+    // 4) 실행 현황·도구 사용 추적 — 중앙 1장 + 단일 캡션
+    (() => {
+      const s = findSlide('ops-usage');
+      if (!s) { console.warn('[패스35] ops-usage 슬라이드 없음'); return; }
+      s.elements = s.elements.filter((e) => !/^(ops-tool-usage|caption-4-)/.test(e.name || ''));
+      const src = deck.slides.flatMap((x) => x.elements).find((e) => e.name === 'caption-1');
+      const srcTick = deck.slides.flatMap((x) => x.elements).find((e) => e.name === 'caption-1-line');
+      if (src && srcTick) {
+        const tick = clone(srcTick); tick.name = 'caption-4-line';
+        const cap = clone(src); cap.name = 'caption-4';
+        setElementText(cap, '팀・모델・도구별 사용 현황');
+        s.elements.push(tick, cap);
+      }
+      swap(s, 'ops-usage', 'ops_04.png', [313, 190, 654, 471]);
+    })();
+  })();
 })();
