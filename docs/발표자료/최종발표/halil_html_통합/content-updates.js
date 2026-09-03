@@ -3032,4 +3032,49 @@
       swap(s, 'ops-usage', 'ops_04.png', [313, 190, 654, 471]);
     })();
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 36 — 21p(12단계 파싱 파이프라인) 카드 디자인 순화 (juyeon _0903 이식).
+  //   진한 파랑 강조 카드(#CFE1FA)를 은은한 파랑 + 굵은 테두리로, 단계명·번호 글자 확대.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '12단계 파싱 파이프라인'));
+    if (!s) { console.warn('[패스36] 12단계 파싱 파이프라인 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => (e.fillColor || '').toUpperCase() === '#E8F1FC')) return;
+    s.elements.forEach((e) => {
+      if ((e.fillColor || '').toUpperCase() === '#CFE1FA') {
+        e.fillColor = '#E8F1FC'; e.lineColor = '#5E93D6'; e.lineWidth = 2;
+      }
+    });
+    const bump = (rx, size, widen) => s.elements.forEach((e) => {
+      if (!rx.test(e.name || '')) return;
+      if (e.textStyle) e.textStyle.fontSize = size;
+      (e.paragraphs || []).forEach((p) => {
+        if (p.resolvedTextStyle) p.resolvedTextStyle.fontSize = size;
+        (p.runs || []).forEach((r) => { r.fontSize = size; });
+      });
+      if (widen) e.bbox = [e.bbox[0], e.bbox[1], widen, e.bbox[3]];
+    });
+    bump(/^s19n-t\d+$/, 14, 245);
+    bump(/^s19n-n\d+$/, 12.5);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 37 — 32p(직렬화와 임베딩) 하단 tokenizer 안내를 콜아웃 밴드로 (juyeon _0903 이식).
+  // ===================================================================
+  (() => {
+    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ck-note'));
+    if (!s) { console.warn('[패스37] ck-note 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => e.name === 'ck-note-band')) return;
+    s.elements = s.elements.filter((e) => !/^ck-note/.test(e.name || ''));
+    const y = 560, h = 64;
+    s.elements.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [72, y, 1136, h], fillColor: '#EEF3FB', lineColor: '#DBE5F5', lineWidth: 1, name: 'ck-note-band' },
+      { kind: 'shape', geometry: 'rect', bbox: [72, y, 5, h], fillColor: '#2878D1', lineWidth: 0, name: 'ck-note-accent' },
+      textElement('ck-note', [100, y + 12, 1064, 24], '토큰 수는 임베딩에 사용하는 모델의 tokenizer로 계산', 15.5, '#1B2436', true, 'left'),
+      textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676', false, 'left'),
+    );
+  })();
 })();
