@@ -95,11 +95,11 @@ assert.deepEqual(
   ['04-1', '04-2', '04-3', '04-4'],
   '서브 표지 번호는 04-1~04-4',
 );
-// --- 패스32: '직렬화와 임베딩' 뒤 '문서 처리 파이프라인 평가' 빈 슬라이드(제목+크롬만) ---
-assert.equal(titleOf(33), '문서 처리 파이프라인 평가', '33은 문서 처리 파이프라인 평가 (본문 이후 추가 예정)');
+// --- 패스32+34: '직렬화와 임베딩' 뒤 '문서 처리 파이프라인 평가' + 4레이어 검증 2×2 표(패스34) ---
+assert.equal(titleOf(33), '문서 처리 파이프라인 평가', '33은 문서 처리 파이프라인 평가');
 assert.ok(
-  slides[32].elements.every((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || '')),
-  '33은 표준 크롬 요소만 (본문 없음)',
+  slides[32].elements.some((e) => e.name === 'dpe-sub') && [1, 2, 3, 4].every((q) => slides[32].elements.some((e) => e.name === `dpe${q}-pan`)),
+  '33은 4개 레이어 검증 카드(dpe1~4)로 구성',
 );
 // 패스12: 11p(03장)은 네이티브 단순화 개요, 14p(04장)은 상세 이미지 — 제목·구성이 다르다.
 assert.equal(titleOf(11), '시스템 흐름 한눈에', '11은 시스템 구조 단순화 개요');

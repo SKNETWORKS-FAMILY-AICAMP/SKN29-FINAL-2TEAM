@@ -2869,4 +2869,100 @@
       });
     });
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 34 — '문서 처리 파이프라인 평가' 슬라이드 본문 채우기.
+  //   4개 보완 레이어(읽기순서·제목·표·이미지)의 hold-out 검증 수치를 2×2 표로.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '문서 처리 파이프라인 평가'));
+    if (!s) { console.warn('[패스34] 문서 처리 파이프라인 평가 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => e.name === 'dpe-sub')) return;
+
+    const COLOR = ['#155EEF', '#7F56D9', '#F79009', '#06AED4'];
+    const DARK = ['#0B1F44', '#3E1C76', '#7A2E0E', '#064E5B'];
+    const LIGHT = ['#EAF2FF', '#F4EBFF', '#FFF4E5', '#E6F9FB'];
+    const GRN = '#17845E', RED = '#B23A3A';
+    const els = [];
+    els.push(textElement('dpe-sub', [58, 150, 1160, 20],
+      '4개 보완 레이어를 hold-out 문서로 각각 검증 — 실제 데이터 손상(오보정) 0건을 유지하며 오류 교정', 12, '#52657D', true));
+
+    // quad: 카드 + 제목 + 헤드라인 + 표(+ 각주)
+    const quad = (qi, x, y, w, h, li, title, headline, headers, colW, rows, foot) => {
+      const p = `dpe${qi}`;
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, y, w, h], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [x, y + 16, 4, 22], fillColor: COLOR[li], lineWidth: 0, name: `${p}-acc` });
+      els.push(textElement(`${p}-h`, [x + 18, y + 11, w - 36, 22], title, 13.5, DARK[li], true));
+      els.push(textElement(`${p}-hl`, [x + 18, y + 34, w - 36, 16], headline, 9.5, '#52657D', true));
+      const tx = x + 16, tw = w - 32;
+      let ty = y + 56;
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [tx, ty, tw, 22], fillColor: '#EEF1F5', lineWidth: 0, name: `${p}-hb` });
+      let cx = tx;
+      headers.forEach((hh, ci) => {
+        els.push(textElement(`${p}-hc${ci}`, [cx + 5, ty, colW[ci] - 10, 22], hh, 8.5, '#3A4658', true, ci === 0 ? 'left' : 'center'));
+        cx += colW[ci];
+      });
+      const rh = 33;
+      rows.forEach((r, ri) => {
+        const ry = ty + 22 + ri * rh;
+        if (r.hl) els.push({ kind: 'shape', geometry: 'rect', bbox: [tx, ry, tw, rh], fillColor: r.hl, lineWidth: 0, name: `${p}-rhl${ri}` });
+        els.push({ kind: 'shape', geometry: 'line', bbox: [tx, ry + rh, tw, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-rl${ri}` });
+        let rcx = tx;
+        r.cells.forEach((c, ci) => {
+          const cc = typeof c === 'string' ? { t: c } : c;
+          const first = ci === 0;
+          els.push(textElement(`${p}-c${ri}-${ci}`, [rcx + 5, ry, colW[ci] - 10, rh], cc.t,
+            first ? 9.5 : 10, cc.c || (first ? '#20283A' : '#37414F'), first ? true : !!cc.b, first ? 'left' : 'center'));
+          rcx += colW[ci];
+        });
+      });
+      if (foot) els.push(textElement(`${p}-ft`, [x + 18, ty + 22 + rows.length * rh + 8, w - 36, 26], foot, 8.5, '#8A93A3'));
+    };
+
+    const g = (t) => ({ t, c: GRN, b: true });
+    const QY1 = 178, QY2 = 422, QW = 576, QH = 232, QXL = 56, QXR = 648;
+
+    quad(1, QXL, QY1, QW, QH, 0, '읽기 순서 복원', '복원 성공률 0% → 100% · 오복원 0건',
+      ['구분', '검증 오류', '정상 복원', '오복원', '잔존', '성공률'],
+      [120, 88, 88, 70, 70, 108],
+      [
+        { cells: ['기본 Docling', '60건', '0건', '–', '60건', '0%'] },
+        { cells: [{ t: '읽기 순서 보정', c: DARK[0], b: true }, '60건', g('60건'), g('0건'), g('0건'), g('100%')], hl: LIGHT[0] },
+      ],
+      '※ 부록 A 인접 요소의 국소 역전 재현율 — 전체 읽기 순서 오류 재현율은 아님');
+
+    quad(2, QXR, QY1, QW, QH, 1, '제목 추출 보완', 'F1 0 → 46.7% (정밀도 77.8% · 재현율 33.3%)',
+      ['구분', '정확', '오승격', '미검출', '정밀도', '재현율', 'F1'],
+      [104, 60, 66, 66, 78, 78, 92],
+      [
+        { cells: ['기본 Docling', '0건', '0건', '21건', '0%', '0%', '0%'] },
+        { cells: [{ t: '제목 추출 보완', c: DARK[1], b: true }, g('7건'), { t: '2건', c: RED, b: true }, '14건', g('77.8%'), '33.3%', g('46.7%')], hl: LIGHT[1] },
+      ],
+      '※ 공개 문서 5개 · 19p · list_item 122건 전수 라벨링 · 실제 제목 21건');
+
+    quad(3, QXL, QY2, QW, QH, 2, '표 판별 · 비표 오탐 게이트', '실제 표 오제거 0건 — 규칙 미해당 시 통과(fail-open)',
+      ['평가 문서 (held-out)', '표', '비표(오염률)', '게이트 검출', 'FN'],
+      [210, 46, 108, 96, 84],
+      [
+        { cells: ['현대모비스 지속가능경영보고서 (167p)', '217', '17건 (7.8%)', '0 / 17', '0'] },
+        { cells: ['041_디지털헬스케어 보안모델 (34p)', '43', '0건 (0%)', '–', '0'] },
+        { cells: ['011_공공분야 가명정보 안내서 (38p)', '21', '1건 (4.8%)', '1 / 1', '0'] },
+      ],
+      '※ 게이트 검출 = 알려진 비표 중 제외 판정 비율 · FN = 실제 표 오제거');
+
+    quad(4, QXR, QY2, QW, QH, 3, '이미지 설명 품질', '믿고 쓸 수 있는 설명 48.5% → 63.2%',
+      ['지표', 'Before', 'After', '개선'],
+      [244, 98, 98, 104],
+      [
+        { cells: ['이미지–설명 유사도 (5점)', { t: '3.60', c: RED }, g('4.07'), g('▲ 0.47')] },
+        { cells: ['신뢰 가능 설명 비율', { t: '48.5%', c: RED }, g('63.2%'), g('▲ 14.7%p')] },
+        { cells: ['허위 서술(환각) 비율', { t: '35.3%', c: RED }, g('30.9%'), g('▼ 4.4%p')] },
+      ],
+      '※ 신뢰 가능 = 정확 + 무환각 + 고득점 모두 만족 · 환각 비율은 낮을수록 좋음');
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
 })();
