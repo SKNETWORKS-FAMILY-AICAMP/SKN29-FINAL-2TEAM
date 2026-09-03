@@ -3077,4 +3077,82 @@
       textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676', false, 'left'),
     );
   })();
+
+  // ===================================================================
+  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "플랫폼으로서의 HALIL" 슬라이드 추가.
+  //   무엇을 만들었나 / 어디에 쓰나 / 어떻게 확장되나 3블록.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    if (deck.slides.some((s) => titleOf(s) === '플랫폼으로서의 HALIL — 무엇을 만들었나')) return;
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
+    const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
+    if (baseIdx < 0 || atIdx < 0) { console.warn('[패스38] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
+
+    const s = clone(deck.slides[baseIdx]);
+    s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
+    setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '플랫폼으로서의 HALIL — 무엇을 만들었나');
+    s.sources = [];
+
+    const els = [];
+    // 헤드라인 밴드
+    els.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [56, 160, 1168, 52], fillColor: '#EEF4FC', lineColor: '#CBDDF4', lineWidth: 1, name: 'pv-hl-bg' },
+      { kind: 'shape', geometry: 'rect', bbox: [56, 160, 5, 52], fillColor: '#2878D1', lineWidth: 0, name: 'pv-hl-acc' },
+      textElement('pv-hl', [82, 160, 1120, 52], '특정 업무용 봇이 아니라, 팀이 자기 업무를 Agent·스킬로 만들어 쓰는 플랫폼', 16, '#0C3F91', true),
+    );
+
+    const COL = [
+      { bar: '#155EEF', dark: '#0B1F44', title: '무엇을 만들었나', items: [
+        ['문서·도구·Agent·스킬을 하나의 업무 흐름으로 묶은 팀 단위 Agent 운영 플랫폼', true],
+        ['파싱 보완 4레이어 — 읽기 순서·제목·표·이미지'],
+        ['Deep Agent 하네스 — 판단·실행·재시도·위임'],
+        ['하이브리드 검색 — 벡터 + 키워드'],
+        ['운영 콘솔 — 팀·계정·연결·가드레일·사용 현황'],
+      ] },
+      { bar: '#17845E', dark: '#0F3D2C', title: '어디에 쓰나', items: [
+        ['규정·보고서 문서 QA'],
+        ['담당자·리소스 추천'],
+        ['문서 종합·초안 작성'],
+        ['사내 지식 검색'],
+        ['반복 업무의 스킬화'],
+        ['→ 도메인 무관: 문서와 도구만 연결하면 동작', true],
+      ] },
+      { bar: '#7A5CB0', dark: '#3E1C76', title: '어떻게 확장되나', items: [
+        ['MCP 커넥터로 새 도구·데이터 소스 추가'],
+        ['OpenAI 호환이면 모델 자유 교체'],
+        ['스킬·Agent를 조직 안에서 생성·공유·재사용'],
+        ['가드레일·권한으로 안전하게 개방'],
+        ['→ 새 팀·새 업무에 그대로 확장', true],
+      ] },
+    ];
+    const CW = 376, GAP = 20, CY = 232, CH = 396;
+    COL.forEach((c, ci) => {
+      const x = 56 + ci * (CW + GAP);
+      const p = `pv${ci}`;
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [x, CY + 18, 4, 24], fillColor: c.bar, lineWidth: 0, name: `${p}-acc` });
+      els.push(textElement(`${p}-h`, [x + 18, CY + 14, CW - 36, 24], c.title, 15, c.dark, true));
+      c.items.forEach(([txt, strong], i) => {
+        const y = CY + 56 + i * 54;
+        els.push({ kind: 'shape', geometry: 'ellipse', bbox: [x + 18, y + 6, 6, 6], fillColor: c.bar, lineColor: c.bar, lineWidth: 1, name: `${p}-d${i}` });
+        els.push(textElement(`${p}-t${i}`, [x + 32, y, CW - 50, 46], txt, 11.5, strong ? c.dark : '#37414F', !!strong));
+      });
+    });
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+    deck.slides.splice(atIdx + 1, 0, s);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
 })();

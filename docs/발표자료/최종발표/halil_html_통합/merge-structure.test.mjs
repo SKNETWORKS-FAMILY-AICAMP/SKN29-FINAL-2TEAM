@@ -29,11 +29,11 @@ const allTitles = new Set(slides.map((_, i) => titleOf(i + 1)));
 const has = (t) => allTitles.has(norm(t));
 
 // --- 전체 규모 --- (51 + 부록 A 8장 = 59장)
-assert.equal(slides.length, 59, '51 + 부록 A(07_에이전트_발표_부록) 8장 = 59장');
+assert.equal(slides.length, 60, '51 + 부록 A 8장 + 플랫폼으로서의 HALIL 1장 = 60장');
 assert.deepEqual(
   Array.from(slides, (s) => s.number),
-  Array.from({ length: 59 }, (_, i) => i + 1),
-  '재배치 후 번호는 1~59 연속',
+  Array.from({ length: 60 }, (_, i) => i + 1),
+  '재배치 후 번호는 1~60 연속',
 );
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '이미지 설명의 세 문제'), '29p(세 문제)는 삭제됨');
 assert.ok(!slides.some((_, i) => titleOf(i + 1) === '전체 기능 시연 영상'), "'전체 기능 시연 영상'은 삭제됨");
@@ -166,21 +166,27 @@ assert.deepEqual(
   '44~47은 운영 콘솔 4장 (04-4 서브 표지 뒤)',
 );
 assert.equal(titleOf(48), '자체 평가 의견', '48은 05 챕터 표지');
-assert.equal(titleOf(49), 'Future Work', '49는 개선 계획 표 (juyeon 패스30 이식)');
+// --- 패스38: '자체 평가 의견' 뒤 "플랫폼으로서의 HALIL" 1장 ---
+assert.equal(titleOf(49), '플랫폼으로서의 HALIL — 무엇을 만들었나', '49는 플랫폼/확장성 슬라이드');
 assert.ok(
-  slides[48].elements.some((e) => e.name === 'fw-hbar') && [0, 1, 2].every((i) => slides[48].elements.some((e) => e.name === `fw-area-${i}`)),
-  '49는 Future Work 표(fw-*) 3행으로 구성',
+  [0, 1, 2].every((c) => slides[48].elements.some((e) => e.name === `pv${c}-pan`)) && slides[48].elements.some((e) => e.name === 'pv-hl'),
+  '49는 3블록(pv0~2) + 헤드라인(pv-hl)으로 구성',
 );
-assert.ok(slides[49].elements.some((e) => (e.text || '').includes('Q&A')), '50은 클로징/Q&A 슬라이드');
-assert.ok(slides[50].elements.some((e) => norm(e.text) === '감사합니다'), '51은 클로징 인사');
+assert.equal(titleOf(50), 'Future Work', '50은 개선 계획 표 (juyeon 패스30 이식)');
+assert.ok(
+  slides[49].elements.some((e) => e.name === 'fw-hbar') && [0, 1, 2].every((i) => slides[49].elements.some((e) => e.name === `fw-area-${i}`)),
+  '50은 Future Work 표(fw-*) 3행으로 구성',
+);
+assert.ok(slides[50].elements.some((e) => (e.text || '').includes('Q&A')), '51은 클로징/Q&A 슬라이드');
+assert.ok(slides[51].elements.some((e) => norm(e.text) === '감사합니다'), '52는 클로징 인사');
 // --- 패스33: '감사합니다' 뒤 부록 A 8장 (표준 크롬 + title + .content 캡처 이미지) ---
 const apxTitles = ['시스템 처리 흐름도', '그래프 조립', 'Root 반복 루프', '미들웨어가 붙는 지점',
   '보안과 가드레일', 'Todo 미들웨어', '직접 구현한 코드 — 파싱·에이전트', '직접 구현한 코드 — MCP·Tool 호출'];
 for (let i = 1; i <= 8; i++) {
-  const s = slides[50 + i];
-  assert.equal(titleOf(51 + i), apxTitles[i - 1], `${51 + i}은 부록 A-${i} (${apxTitles[i - 1]})`);
-  assert.ok(s.elements.some((e) => e.name === `apx-img-${i}` && e.media === `appendix_a_0${i}.png`), `${51 + i}에 부록 본문 이미지`);
-  assert.ok(s.elements.some((e) => e.name === 'title-16') && s.elements.some((e) => /^context-/.test(e.name || '')), `${51 + i}은 표준 크롬`);
+  const s = slides[51 + i];
+  assert.equal(titleOf(52 + i), apxTitles[i - 1], `${52 + i}은 부록 A-${i} (${apxTitles[i - 1]})`);
+  assert.ok(s.elements.some((e) => e.name === `apx-img-${i}` && e.media === `appendix_a_0${i}.png`), `${52 + i}에 부록 본문 이미지`);
+  assert.ok(s.elements.some((e) => e.name === 'title-16') && s.elements.some((e) => /^context-/.test(e.name || '')), `${52 + i}은 표준 크롬`);
 }
 
 // --- 이미지·비디오 참조 파일이 폴더 안에서 해결되는가 ---
