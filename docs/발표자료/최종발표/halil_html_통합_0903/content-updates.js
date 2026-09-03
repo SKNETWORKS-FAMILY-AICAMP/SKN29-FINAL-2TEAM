@@ -2894,6 +2894,35 @@
     deck.slides.unshift(clone(window.HALIL_SLIDE31));
   })();
 
+  // ---- 2번째: halil_html_통합 21페이지(12단계 파싱 파이프라인) 삽입 + 강조 카드 색 조정 ----
+  (() => {
+    if (!window.HALIL_SLIDE21) { console.warn('[21p 삽입] window.HALIL_SLIDE21 없음 (slide21-embed.js 로드 확인)'); return; }
+    const s = clone(window.HALIL_SLIDE21);
+    // 강조 카드(진한 파랑 채움 #CFE1FA)를 은은한 파랑 + 굵은 테두리로 순화
+    s.elements.forEach((e) => {
+      if ((e.fillColor || '').toUpperCase() === '#CFE1FA') {
+        e.fillColor = '#E8F1FC';
+        e.lineColor = '#5E93D6';
+        e.lineWidth = 2;
+      }
+    });
+    // 카드 볼드 글씨(단계명·번호)가 너무 작아 키운다
+    const bump = (rx, size, widen) => {
+      s.elements.forEach((e) => {
+        if (!rx.test(e.name || '')) return;
+        if (e.textStyle) e.textStyle.fontSize = size;
+        (e.paragraphs || []).forEach((p) => {
+          if (p.resolvedTextStyle) p.resolvedTextStyle.fontSize = size;
+          (p.runs || []).forEach((r) => { r.fontSize = size; });
+        });
+        if (widen) e.bbox = [e.bbox[0], e.bbox[1], widen, e.bbox[3]];
+      });
+    };
+    bump(/^s19n-t\d+$/, 14, 245);
+    bump(/^s19n-n\d+$/, 12.5);
+    deck.slides.splice(1, 0, s);
+  })();
+
   // ---- 1페이지: 하단 tokenizer 안내 문구 교체 + 콜아웃 리디자인 ----
   (() => {
     const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ck-note'));
@@ -2915,9 +2944,9 @@
     img.media = 'ops_01.png';
   })();
 
-  // ---- 2~5페이지: 스크린샷 뒤 흰 프레임 전부 제거 + 2페이지 이미지 확대 ----
+  // ---- 운영자 콘솔 페이지: 스크린샷 뒤 흰 프레임 전부 제거 + 2페이지 이미지 확대 ----
   (() => {
-    deck.slides.slice(1, 5).forEach((s) => {
+    deck.slides.forEach((s) => {
       s.elements = s.elements.filter((e) => !/^ops-.*-frame$/.test(e.name || ''));
     });
     const img = deck.slides.flatMap((s) => s.elements).find((e) => e.name === 'ops-overview');
