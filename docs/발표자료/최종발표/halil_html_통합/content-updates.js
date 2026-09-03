@@ -284,6 +284,7 @@
   replaceExact(14, 'Builder · 도구 32종\nRuntime · Streaming\nMemory · 버전 관리', 'Builder · Runtime\nStreaming · Memory\n버전 관리');
   replaceExact(14, 'side_effect 메타 15개\nHITL · 멱등 · 동시성\nSkill 12×3 검증', '쓰기 작업 승인 경계\nHITL · 멱등 · 동시성\nSkill 검증 흐름');
   replaceExact(14, '검색 37 · Agent 36\n최종 파싱 단위 검증\n배포 · 시연 준비', '검색·Agent DEV 평가\n파싱 보정 검증\n배포 · 시연 준비');
+  replaceExact(14, '승인·통제·Skills', '에이전트 기능 구현');
   // 구현 과정 타임라인 — 중앙 바 기준 위·아래 간격을 대칭으로 (기존 위 96 / 아래 22 → 각 38).
   for (let i = 0; i < 6; i += 1) {
     const numberY = i % 2 === 0 ? 278 : 426; // 짝수 = 바 위, 홀수 = 바 아래
@@ -2678,12 +2679,12 @@
     const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
     const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
     if (baseIdx < 0 || atIdx < 0) { console.warn('[패스30] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
-    if (deck.slides.some((s) => titleOf(s) === 'Future Work')) return;
+    if (deck.slides.some((s) => titleOf(s) === '향후 과제')) return;
 
     const s = clone(deck.slides[baseIdx]);
     s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
     setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), 'Future Work');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '향후 과제');
     s.sources = ['docs/설계 및 구현/3_중간발표 이후/작업기록/ (Parsing · Hybrid Search · Agent 개선 계획)'];
 
     const COLS = [
@@ -2723,7 +2724,7 @@
       { kind: 'shape', geometry: 'rect', bbox: [56, HY, 1168, HH], fillColor: '#E7EBF0', lineWidth: 0, name: 'fw-hbar' },
     );
     COLS.forEach((c, i) => s.elements.push(
-      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 13, '#101728', true),
+      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 14, '#101728', true),
     ));
     [186, 546, 976].forEach((x, i) => s.elements.push(
       { kind: 'shape', geometry: 'line', bbox: [x, HY, 0, tableBottom - HY], lineColor: '#E7EBF1', lineWidth: 1, name: `fw-vl-${i}` },
@@ -2733,13 +2734,13 @@
       const y = RY + rowH * ri;
       s.elements.push(
         { kind: 'shape', geometry: 'rect', bbox: [66, y + 22, 4, 44], fillColor: r.accent, lineWidth: 0, name: `fw-acc-${ri}` },
-        textElement(`fw-area-${ri}`, [82, y + 20, 100, 62], r.area, 15, '#101728', true),
-        textElement(`fw-limk-${ri}`, [202, y + 18, 330, 44], r.limitKey, 13, '#101728', true),
-        textElement(`fw-lims-${ri}`, [202, y + 62, 330, 40], r.limitSub, 11.5, '#5B6577'),
-        textElement(`fw-bul-${ri}`, [562, y + 18, 400, rowH - 32], r.bullets.map((b) => `•  ${b}`).join('\n'), 12.5, '#20283A'),
+        textElement(`fw-area-${ri}`, [82, y + 18, 104, 62], r.area, 17, '#101728', true),
+        textElement(`fw-limk-${ri}`, [202, y + 16, 336, 46], r.limitKey, 14.5, '#101728', true),
+        textElement(`fw-lims-${ri}`, [202, y + 64, 336, 40], r.limitSub, 12.5, '#5B6577'),
+        textElement(`fw-bul-${ri}`, [562, y + 16, 404, rowH - 30], r.bullets.map((b) => `•  ${b}`).join('\n'), 13.5, '#20283A'),
         { kind: 'shape', geometry: 'ellipse', bbox: [992, y + 50, 26, 26], fillColor: r.effClr, lineWidth: 0, name: `fw-eff-ic-${ri}` },
-        textElement(`fw-eff-ar-${ri}`, [992, y + 51, 26, 26], '→', 13, '#FFFFFF', true, 'center'),
-        textElement(`fw-eff-${ri}`, [1028, y + 34, 188, 64], r.effect, 12.5, r.effClr, true),
+        textElement(`fw-eff-ar-${ri}`, [992, y + 50, 26, 26], '→', 14, '#FFFFFF', true, 'center'),
+        textElement(`fw-eff-${ri}`, [1028, y + 32, 192, 68], r.effect, 13.5, r.effClr, true),
       );
       if (ri > 0) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [56, y, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `fw-rl-${ri}` });
     });
@@ -3031,5 +3032,177 @@
       }
       swap(s, 'ops-usage', 'ops_04.png', [313, 190, 654, 471]);
     })();
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 36 — 21p(12단계 파싱 파이프라인) 카드 디자인 순화 (juyeon _0903 이식).
+  //   진한 파랑 강조 카드(#CFE1FA)를 은은한 파랑 + 굵은 테두리로, 단계명·번호 글자 확대.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '12단계 파싱 파이프라인'));
+    if (!s) { console.warn('[패스36] 12단계 파싱 파이프라인 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => (e.fillColor || '').toUpperCase() === '#E8F1FC')) return;
+    s.elements.forEach((e) => {
+      if ((e.fillColor || '').toUpperCase() === '#CFE1FA') {
+        e.fillColor = '#E8F1FC'; e.lineColor = '#5E93D6'; e.lineWidth = 2;
+      }
+    });
+    const bump = (rx, size, widen) => s.elements.forEach((e) => {
+      if (!rx.test(e.name || '')) return;
+      if (e.textStyle) e.textStyle.fontSize = size;
+      (e.paragraphs || []).forEach((p) => {
+        if (p.resolvedTextStyle) p.resolvedTextStyle.fontSize = size;
+        (p.runs || []).forEach((r) => { r.fontSize = size; });
+      });
+      if (widen) e.bbox = [e.bbox[0], e.bbox[1], widen, e.bbox[3]];
+    });
+    bump(/^s19n-t\d+$/, 14, 245);
+    bump(/^s19n-n\d+$/, 12.5);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 37 — 32p(직렬화와 임베딩) 본문을 juyeon _0903 레이아웃과 동일하게 재구성.
+  //   직렬화 = 요소/방식 표, 임베딩 = 3카드(512토큰 카드 보조설명 2줄), 하단 tokenizer 콜아웃 밴드.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '직렬화와 임베딩'));
+    if (!s) { console.warn('[패스37] 직렬화와 임베딩 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => e.name === 'dz-t-hbg')) return;
+    // 기존 본문(ck-*, dz-*) 제거, 크롬만 유지
+    s.elements = s.elements.filter((e) => !/^(ck-|dz-)/.test(e.name || ''));
+
+    const els = [];
+    els.push(textElement('ck-s-h', [72, 198, 500, 26], '직렬화', 16, '#2878D1', true));
+    // 직렬화 표
+    els.push(
+      { kind: 'shape', geometry: 'rect', bbox: [72, 228, 1136, 3], fillColor: '#101728', lineWidth: 0, name: 'dz-t-top' },
+      { kind: 'shape', geometry: 'rect', bbox: [72, 231, 1136, 28], fillColor: '#E7EBF0', lineWidth: 0, name: 'dz-t-hbg' },
+      textElement('dz-t-h0', [88, 231, 190, 28], '요소', 13, '#3B4656', true),
+      textElement('dz-t-h1', [292, 231, 916, 28], '직렬화 방식', 13, '#3B4656', true),
+      { kind: 'shape', geometry: 'line', bbox: [72, 259, 1136, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'dz-t-hrule' },
+      textElement('dz-t-s0', [88, 259, 190, 32], '표 · 목록 · 제목', 13, '#101728', true),
+      textElement('dz-t-c0', [292, 259, 916, 32], 'Docling 기본 시리얼라이저를 그대로 사용', 13, '#101728'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 291, 1136, 0], lineColor: '#E7EBF1', lineWidth: 1, name: 'dz-t-rl1' },
+      textElement('dz-t-s1', [88, 289, 190, 70], '그림', 13, '#101728', true),
+      textElement('dz-t-c1a', [292, 295, 916, 20], '커스텀 시리얼라이저', 13, '#101728', true),
+      textElement('dz-t-c1o', [292, 319, 126, 20], '승인된 VLM 설명 O', 12.5, '#17845E', true),
+      textElement('dz-t-c1ot', [420, 319, 788, 20], '→  그 설명 텍스트만 임베딩 대상으로 사용', 12.5, '#45566B'),
+      textElement('dz-t-c1x', [292, 341, 126, 20], '승인된 VLM 설명 X', 12.5, '#D05252', true),
+      textElement('dz-t-c1xt', [420, 341, 788, 20], '→  Docling 기본 그림·메타데이터 시리얼라이저로 대체', 12.5, '#45566B'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 365, 1136, 0], lineColor: '#101728', lineWidth: 1, name: 'dz-t-bot' },
+    );
+    // 임베딩 카드
+    els.push(textElement('ck-e-h', [72, 380, 500, 26], '임베딩', 16, '#2878D1', true));
+    const card = (i, x, v, l, l2) => {
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, 410, 360, 94], fillColor: '#FFFFFF', lineColor: '#E3E8EF', lineWidth: 1, name: `ck-card-${i}` });
+      els.push(textElement(`ck-v-${i}`, [x + 24, l2 ? 424 : 428, 312, 28], v, 18, '#2878D1', true));
+      els.push(textElement(`ck-l-${i}`, [x + 24, l2 ? 452 : 460, 312, 22], l, 13, '#6C7482'));
+      if (l2) els.push(textElement(`ck-l-${i}b`, [x + 24, 474, 312, 20], l2, 11, '#9AA3B0'));
+    };
+    card(0, 72, 'embeddinggemma-300m', '임베딩 모델');
+    card(1, 460, '768차원', '임베딩 벡터 크기');
+    card(2, 848, '512 토큰', '청크 상한', '(모델 최대 2,048토큰 중 보수적 설정)');
+    // 하단 tokenizer 콜아웃 밴드 (juyeon _0903 "1페이지" 리디자인)
+    const y = 532, h = 68;
+    els.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [72, y, 1136, h], fillColor: '#EEF3FB', lineColor: '#DBE5F5', lineWidth: 1, name: 'ck-note-band' },
+      { kind: 'shape', geometry: 'rect', bbox: [72, y, 5, h], fillColor: '#2878D1', lineWidth: 0, name: 'ck-note-accent' },
+      textElement('ck-note', [100, y + 12, 1064, 24], '토큰 수는 임베딩에 사용하는 모델의 tokenizer로 계산', 15.5, '#1B2436', true),
+      textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676'),
+    );
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "핵심 과제 → HALIL 해결" 슬라이드 추가.
+  //   4p 의 업무 확장 핵심 과제 3개를 플랫폼이 어떻게 풀었는지.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const titleOf = (s) => {
+      const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
+      return t ? norm(t.text) : '';
+    };
+    if (deck.slides.some((s) => titleOf(s) === '업무 확장의 핵심 과제 → HALIL의 해결')) return;
+    const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
+    const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
+    if (baseIdx < 0 || atIdx < 0) { console.warn('[패스38] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
+
+    const s = clone(deck.slides[baseIdx]);
+    s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
+    setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '업무 확장의 핵심 과제 → HALIL의 해결');
+    s.sources = [];
+
+    const els = [];
+    els.push(
+      { kind: 'shape', geometry: 'roundRect', bbox: [56, 160, 1168, 46], fillColor: '#EEF4FC', lineColor: '#CBDDF4', lineWidth: 1, name: 'pv-hl-bg' },
+      { kind: 'shape', geometry: 'rect', bbox: [56, 160, 5, 46], fillColor: '#2878D1', lineWidth: 0, name: 'pv-hl-acc' },
+      textElement('pv-hl', [82, 160, 1120, 46], '4페이지에서 짚은 세 과제 — 정보 분산 · 개인화된 업무 방식 · 운영 통제 — 를 하나의 플랫폼으로 해결', 15.5, '#0C3F91', true),
+    );
+
+    const ROWS = [
+      {
+        bar: '#155EEF', no: '01', task: '분산된 정보와 업무 도구',
+        problem: '문서·업무 시스템이 여러 환경에 흩어져 있음',
+        sol: ['Docling 파싱 + 하이브리드 검색으로 흩어진 문서를 검색 가능한 지식으로',
+          'MCP 커넥터로 Google Drive·Jira 등 외부 도구를 한 업무 흐름에 연결'],
+      },
+      {
+        bar: '#17845E', no: '02', task: '개인에게 머무는 업무 방식',
+        problem: '업무 절차·경험을 공유·재사용하기 어려움',
+        sol: ['업무 방식을 스킬로 저장하고, Agent를 조직 안에서 생성·공유·재사용',
+          '상세 지시 없이도 결과 품질 유지 — 89% → 93%, 입력 토큰 최대 −70%'],
+      },
+      {
+        bar: '#7A5CB0', no: '03', task: '조직 차원의 운영 통제',
+        problem: '권한·승인·실행 이력 관리가 필요',
+        sol: ['가드레일·역할 권한·HITL 승인으로 안전하게 실행',
+          '운영 콘솔에서 팀·연결·사용 현황·감사 로그를 통합 관리'],
+      },
+    ];
+    const RY0 = 222, RP = 150, RH = 136, LX = 56, SPLIT = 486;
+    ROWS.forEach((r, ri) => {
+      const y = RY0 + ri * RP;
+      const p = `pv${ri}`;
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [LX, y, 1168, RH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [LX, y, 6, RH], fillColor: r.bar, lineWidth: 0, name: `${p}-bar` });
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [LX + 22, y + 20, 34, 34], fillColor: r.bar, lineWidth: 0, name: `${p}-nobg` });
+      els.push(textElement(`${p}-no`, [LX + 22, y + 20, 34, 34], r.no, 14, '#FFFFFF', true, 'center'));
+      els.push(textElement(`${p}-task`, [LX + 68, y + 18, SPLIT - LX - 90, 26], r.task, 15.5, '#0A1020', true));
+      els.push(textElement(`${p}-prob`, [LX + 68, y + 50, SPLIT - LX - 90, 66], r.problem, 12, '#5B6577'));
+      els.push({ kind: 'shape', geometry: 'line', bbox: [SPLIT, y + 18, 0, RH - 36], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-split` });
+      els.push(textElement(`${p}-sl-h`, [SPLIT + 26, y + 16, 120, 20], 'HALIL', 11, r.bar, true));
+      r.sol.forEach((t, si) => els.push(
+        textElement(`${p}-sl${si}`, [SPLIT + 26, y + 40 + si * 38, 1168 - SPLIT - 48, 36], `•  ${t}`, 12.5, '#37414F'),
+      ));
+    });
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
+    deck.slides.splice(atIdx + 1, 0, s);
+    deck.slides.forEach((item, idx) => {
+      item.number = idx + 1;
+      item.elements.forEach((e) => {
+        if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
+      });
+    });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 39 — 41p(운영 평가 실패 사례) 좌측 회귀 예시(ev27-regr-*) 삭제.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '운영 평가 실패 사례'));
+    if (!s) { console.warn('[패스39] 운영 평가 실패 사례 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !/^ev27-regr-/.test(e.name || ''));
   })();
 })();

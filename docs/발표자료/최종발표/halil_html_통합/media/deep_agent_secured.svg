@@ -46,12 +46,6 @@
     <text class="blab" x="1117" y="181">task 도구</text>
   </g>
 
-  <!-- wrap / delegate labels -->
-  <text class="clab" x="163"   y="226">감싸서 실행</text>
-  <text class="clab" x="401.5" y="226">감싸서 실행</text>
-  <text class="clab" x="640"   y="226">감싸서 실행</text>
-  <text class="clab" x="878.5" y="226">감싸서 실행</text>
-  <text class="clab" x="1117"  y="226">위임</text>
 
   <!-- dotted connectors -->
   <path class="dot" d="M163,194   C163,220 211,224 211,244"/>
