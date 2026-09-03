@@ -527,7 +527,7 @@
   byName(47, 'sub-47', '채팅 → 에이전트 → 프로젝트 → 문서 → 설정·스킬 순서의 연속 시연');
   removeNames(47, ['demo-frame-47', 'play-47', 'play-icon-47']);
   slide(47).elements.push(panel('demo-video-frame', [60, 214, 1160, 382], '#071426', '#26364B'));
-  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], '../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'));
+  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], 'media/halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'));
 
   // 공식 규칙 평가를 먼저 보여 주고, 정량·정성 지표를 보조로 배치한다.
   byName(48, 'title-48', '플랫폼 규칙을 먼저 통과한 뒤 응답 품질을 측정합니다');
@@ -1082,12 +1082,12 @@
           textElement('page-16', [1160, 44, 62, 30], '13', 13, '#6C7482', true, 'right'),
           textElement('title-16', [58, 92, 1160, 58], '플랫폼 시연 영상', 40, '#0A1020', true),
           panel('demo2-frame', [60, 166, 1160, 486], '#071426', '#26364B'),
-          videoElement('demo2-player', [66, 172, 1148, 474], '../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'),
+          videoElement('demo2-player', [66, 172, 1148, 474], 'media/halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'),
           { kind: 'shape', geometry: 'rect', bbox: [58, 693, 78, 4], fillColor: '#2878D1', lineWidth: 0, name: 'accent-16' },
           { kind: 'image', bbox: [1019.56, 680, 78.89, 25], media: 'image2.png', name: 'inst-logo-a-13' },
           { kind: 'image', bbox: [1138.95, 680, 84.09, 25], media: 'image3.png', name: 'inst-logo-b-13' },
         ],
-        sources: ['../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'],
+        sources: ['media/halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'],
       };
       const archSlide = clone(find('UI부터 실행·통제까지 연결된 시스템 구조'));
       if (archSlide) set(archSlide, 'context-16', 'halil   ·   04 프로젝트 수행 결과');
