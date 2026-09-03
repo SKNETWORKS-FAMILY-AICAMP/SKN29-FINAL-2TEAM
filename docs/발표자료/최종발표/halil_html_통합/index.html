@@ -9,15 +9,15 @@
 </head>
 <body>
   <main class="app"><header class="bar top"><div class="title">halil 최종 발표 (통합본)</div><button class="btn" id="grid" title="전체 슬라이드">▦</button><button class="btn" id="full" title="전체 화면">⛶</button></header><section class="stage"><div class="viewport" id="viewport"><div class="canvas" id="canvas" role="img"></div></div></section><div class="progress" id="progress"></div><nav class="bar bottom"><button class="btn" id="first" title="처음">⇤</button><button class="btn" id="prev" title="이전">←</button><div class="counter"><strong id="now">1</strong> / <span id="total">68</span></div><button class="btn" id="next" title="다음">→</button><button class="btn" id="last" title="마지막">⇥</button></nav></main><aside class="drawer" id="drawer"></aside>
-  <script src="deck-data.js"></script>
-  <script src="wonbin-deck-data.js"></script>
-  <script src="ops-4pages-data.js"></script>
-  <script src="agent-v2-eval-data.js"></script>
-  <script src="agent-v2-lifecycle-data.js"></script>
-  <script src="juyeon-slides.js"></script>
-  <script src="juneok-overview.js"></script>
-  <script src="docling20.js"></script>
-  <script src="content-updates.js"></script>
+  <script src="js/deck-data.js"></script>
+  <script src="js/wonbin-deck-data.js"></script>
+  <script src="js/ops-4pages-data.js"></script>
+  <script src="js/agent-v2-eval-data.js"></script>
+  <script src="js/agent-v2-lifecycle-data.js"></script>
+  <script src="js/juyeon-slides.js"></script>
+  <script src="js/juneok-overview.js"></script>
+  <script src="js/docling20.js"></script>
+  <script src="js/content-updates.js"></script>
   <script>
     (()=>{const deck=window.HALIL_DECK,canvas=document.getElementById('canvas'),viewport=document.getElementById('viewport'),drawer=document.getElementById('drawer');let current=Math.min(deck.slides.length,Math.max(1,+(location.hash.match(/slide=(\d+)/)||[])[1]||1));const px=n=>`${n||0}px`,color=v=>v&&v.startsWith('#')?v:(v==='tx1'?'#0a1020':v||'transparent');
     if(window.HALIL_DOCLING20){const st=document.createElement('style');st.textContent=HALIL_DOCLING20.CSS;document.head.appendChild(st)}
