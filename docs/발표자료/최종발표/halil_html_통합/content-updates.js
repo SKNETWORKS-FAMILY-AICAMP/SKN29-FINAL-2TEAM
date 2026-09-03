@@ -3062,20 +3062,60 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 37 — 32p(직렬화와 임베딩) 하단 tokenizer 안내를 콜아웃 밴드로 (juyeon _0903 이식).
+  // 최종 편집 패스 37 — 32p(직렬화와 임베딩) 본문을 juyeon _0903 레이아웃과 동일하게 재구성.
+  //   직렬화 = 요소/방식 표, 임베딩 = 3카드(512토큰 카드 보조설명 2줄), 하단 tokenizer 콜아웃 밴드.
   // ===================================================================
   (() => {
-    const s = deck.slides.find((sl) => sl.elements.some((e) => e.name === 'ck-note'));
-    if (!s) { console.warn('[패스37] ck-note 슬라이드를 찾지 못함'); return; }
-    if (s.elements.some((e) => e.name === 'ck-note-band')) return;
-    s.elements = s.elements.filter((e) => !/^ck-note/.test(e.name || ''));
-    const y = 560, h = 64;
-    s.elements.push(
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '직렬화와 임베딩'));
+    if (!s) { console.warn('[패스37] 직렬화와 임베딩 슬라이드를 찾지 못함'); return; }
+    if (s.elements.some((e) => e.name === 'dz-t-hbg')) return;
+    // 기존 본문(ck-*, dz-*) 제거, 크롬만 유지
+    s.elements = s.elements.filter((e) => !/^(ck-|dz-)/.test(e.name || ''));
+
+    const els = [];
+    els.push(textElement('ck-s-h', [72, 198, 500, 26], '직렬화', 16, '#2878D1', true));
+    // 직렬화 표
+    els.push(
+      { kind: 'shape', geometry: 'rect', bbox: [72, 228, 1136, 3], fillColor: '#101728', lineWidth: 0, name: 'dz-t-top' },
+      { kind: 'shape', geometry: 'rect', bbox: [72, 231, 1136, 28], fillColor: '#E7EBF0', lineWidth: 0, name: 'dz-t-hbg' },
+      textElement('dz-t-h0', [88, 231, 190, 28], '요소', 13, '#3B4656', true),
+      textElement('dz-t-h1', [292, 231, 916, 28], '직렬화 방식', 13, '#3B4656', true),
+      { kind: 'shape', geometry: 'line', bbox: [72, 259, 1136, 0], lineColor: '#D9DEE8', lineWidth: 1, name: 'dz-t-hrule' },
+      textElement('dz-t-s0', [88, 259, 190, 32], '표 · 목록 · 제목', 13, '#101728', true),
+      textElement('dz-t-c0', [292, 259, 916, 32], 'Docling 기본 시리얼라이저를 그대로 사용', 13, '#101728'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 291, 1136, 0], lineColor: '#E7EBF1', lineWidth: 1, name: 'dz-t-rl1' },
+      textElement('dz-t-s1', [88, 289, 190, 70], '그림', 13, '#101728', true),
+      textElement('dz-t-c1a', [292, 295, 916, 20], '커스텀 시리얼라이저', 13, '#101728', true),
+      textElement('dz-t-c1o', [292, 319, 126, 20], '승인된 VLM 설명 O', 12.5, '#17845E', true),
+      textElement('dz-t-c1ot', [420, 319, 788, 20], '→  그 설명 텍스트만 임베딩 대상으로 사용', 12.5, '#45566B'),
+      textElement('dz-t-c1x', [292, 341, 126, 20], '승인된 VLM 설명 X', 12.5, '#D05252', true),
+      textElement('dz-t-c1xt', [420, 341, 788, 20], '→  Docling 기본 그림·메타데이터 시리얼라이저로 대체', 12.5, '#45566B'),
+      { kind: 'shape', geometry: 'line', bbox: [72, 365, 1136, 0], lineColor: '#101728', lineWidth: 1, name: 'dz-t-bot' },
+    );
+    // 임베딩 카드
+    els.push(textElement('ck-e-h', [72, 380, 500, 26], '임베딩', 16, '#2878D1', true));
+    const card = (i, x, v, l, l2) => {
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, 410, 360, 94], fillColor: '#FFFFFF', lineColor: '#E3E8EF', lineWidth: 1, name: `ck-card-${i}` });
+      els.push(textElement(`ck-v-${i}`, [x + 24, l2 ? 424 : 428, 312, 28], v, 18, '#2878D1', true));
+      els.push(textElement(`ck-l-${i}`, [x + 24, l2 ? 452 : 460, 312, 22], l, 13, '#6C7482'));
+      if (l2) els.push(textElement(`ck-l-${i}b`, [x + 24, 474, 312, 20], l2, 11, '#9AA3B0'));
+    };
+    card(0, 72, 'embeddinggemma-300m', '임베딩 모델');
+    card(1, 460, '768차원', '임베딩 벡터 크기');
+    card(2, 848, '512 토큰', '청크 상한', '(모델 최대 2,048토큰 중 보수적 설정)');
+    // 하단 tokenizer 콜아웃 밴드 (juyeon _0903 "1페이지" 리디자인)
+    const y = 532, h = 68;
+    els.push(
       { kind: 'shape', geometry: 'roundRect', bbox: [72, y, 1136, h], fillColor: '#EEF3FB', lineColor: '#DBE5F5', lineWidth: 1, name: 'ck-note-band' },
       { kind: 'shape', geometry: 'rect', bbox: [72, y, 5, h], fillColor: '#2878D1', lineWidth: 0, name: 'ck-note-accent' },
-      textElement('ck-note', [100, y + 12, 1064, 24], '토큰 수는 임베딩에 사용하는 모델의 tokenizer로 계산', 15.5, '#1B2436', true, 'left'),
-      textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676', false, 'left'),
+      textElement('ck-note', [100, y + 12, 1064, 24], '토큰 수는 임베딩에 사용하는 모델의 tokenizer로 계산', 15.5, '#1B2436', true),
+      textElement('ck-note-2', [100, y + 38, 1064, 22], '→  분할 기준과 임베딩 기준을 동일하게 맞추기 위해', 14, '#5B6676'),
     );
+
+    const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
+    s.elements.splice(at < 0 ? s.elements.length : at + 1, 0, ...els);
   })();
 
   // ===================================================================
@@ -3109,7 +3149,7 @@
 
     const COL = [
       { bar: '#155EEF', dark: '#0B1F44', title: '무엇을 만들었나', items: [
-        ['문서·도구·Agent·스킬을 하나의 업무 흐름으로 묶은 팀 단위 Agent 운영 플랫폼', true],
+        ['문서·도구·Agent·스킬을 하나의 업무 흐름으로 묶은 플랫폼', true],
         ['파싱 보완 4레이어 — 읽기 순서·제목·표·이미지'],
         ['Deep Agent 하네스 — 판단·실행·재시도·위임'],
         ['하이브리드 검색 — 벡터 + 키워드'],
@@ -3121,27 +3161,27 @@
         ['문서 종합·초안 작성'],
         ['사내 지식 검색'],
         ['반복 업무의 스킬화'],
-        ['→ 도메인 무관: 문서와 도구만 연결하면 동작', true],
+        ['도메인 무관 — 문서와 도구만 연결하면 동작', true],
       ] },
       { bar: '#7A5CB0', dark: '#3E1C76', title: '어떻게 확장되나', items: [
         ['MCP 커넥터로 새 도구·데이터 소스 추가'],
         ['OpenAI 호환이면 모델 자유 교체'],
-        ['스킬·Agent를 조직 안에서 생성·공유·재사용'],
+        ['스킬·Agent를 조직 안에서 공유·재사용'],
         ['가드레일·권한으로 안전하게 개방'],
-        ['→ 새 팀·새 업무에 그대로 확장', true],
+        ['새 팀·새 업무에 그대로 확장', true],
       ] },
     ];
-    const CW = 376, GAP = 20, CY = 232, CH = 396;
+    const CW = 376, GAP = 20, CY = 234, CH = 360, RH = 44, Y0 = CY + 62;
     COL.forEach((c, ci) => {
       const x = 56 + ci * (CW + GAP);
       const p = `pv${ci}`;
       els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
-      els.push({ kind: 'shape', geometry: 'rect', bbox: [x, CY + 18, 4, 24], fillColor: c.bar, lineWidth: 0, name: `${p}-acc` });
-      els.push(textElement(`${p}-h`, [x + 18, CY + 14, CW - 36, 24], c.title, 15, c.dark, true));
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [x, CY + 16, 4, 24], fillColor: c.bar, lineWidth: 0, name: `${p}-acc` });
+      els.push(textElement(`${p}-h`, [x + 20, CY + 12, CW - 40, 26], c.title, 15, c.dark, true));
+      els.push({ kind: 'shape', geometry: 'line', bbox: [x + 20, CY + 46, CW - 40, 0], lineColor: '#EAEDF2', lineWidth: 1, name: `${p}-hr` });
       c.items.forEach(([txt, strong], i) => {
-        const y = CY + 56 + i * 54;
-        els.push({ kind: 'shape', geometry: 'ellipse', bbox: [x + 18, y + 6, 6, 6], fillColor: c.bar, lineColor: c.bar, lineWidth: 1, name: `${p}-d${i}` });
-        els.push(textElement(`${p}-t${i}`, [x + 32, y, CW - 50, 46], txt, 11.5, strong ? c.dark : '#37414F', !!strong));
+        const y = Y0 + i * RH;
+        els.push(textElement(`${p}-t${i}`, [x + 20, y, CW - 40, RH], `${strong ? '→' : '•'}   ${txt}`, 11.5, strong ? c.dark : '#37414F', !!strong));
       });
     });
 
