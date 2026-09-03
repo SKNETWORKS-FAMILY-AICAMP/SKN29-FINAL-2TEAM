@@ -3120,8 +3120,8 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "플랫폼으로서의 HALIL" 슬라이드 추가.
-  //   무엇을 만들었나 / 어디에 쓰나 / 어떻게 확장되나 3블록.
+  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "핵심 과제 → HALIL 해결" 슬라이드 추가.
+  //   4p 의 업무 확장 핵심 과제 3개를 플랫폼이 어떻게 풀었는지.
   // ===================================================================
   (() => {
     const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
@@ -3129,7 +3129,7 @@
       const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
       return t ? norm(t.text) : '';
     };
-    if (deck.slides.some((s) => titleOf(s) === '플랫폼으로서의 HALIL — 무엇을 만들었나')) return;
+    if (deck.slides.some((s) => titleOf(s) === '업무 확장의 핵심 과제 → HALIL의 해결')) return;
     const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
     const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
     if (baseIdx < 0 || atIdx < 0) { console.warn('[패스38] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
@@ -3137,53 +3137,51 @@
     const s = clone(deck.slides[baseIdx]);
     s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
     setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), '플랫폼으로서의 HALIL — 무엇을 만들었나');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '업무 확장의 핵심 과제 → HALIL의 해결');
     s.sources = [];
 
     const els = [];
-    // 헤드라인 밴드
     els.push(
-      { kind: 'shape', geometry: 'roundRect', bbox: [56, 160, 1168, 52], fillColor: '#EEF4FC', lineColor: '#CBDDF4', lineWidth: 1, name: 'pv-hl-bg' },
-      { kind: 'shape', geometry: 'rect', bbox: [56, 160, 5, 52], fillColor: '#2878D1', lineWidth: 0, name: 'pv-hl-acc' },
-      textElement('pv-hl', [82, 160, 1120, 52], '특정 업무용 봇이 아니라, 팀이 자기 업무를 Agent·스킬로 만들어 쓰는 플랫폼', 17.5, '#0C3F91', true),
+      { kind: 'shape', geometry: 'roundRect', bbox: [56, 160, 1168, 46], fillColor: '#EEF4FC', lineColor: '#CBDDF4', lineWidth: 1, name: 'pv-hl-bg' },
+      { kind: 'shape', geometry: 'rect', bbox: [56, 160, 5, 46], fillColor: '#2878D1', lineWidth: 0, name: 'pv-hl-acc' },
+      textElement('pv-hl', [82, 160, 1120, 46], '4페이지에서 짚은 세 과제 — 정보 분산 · 개인화된 업무 방식 · 운영 통제 — 를 하나의 플랫폼으로 해결', 15.5, '#0C3F91', true),
     );
 
-    const COL = [
-      { bar: '#155EEF', dark: '#0B1F44', title: '무엇을 만들었나', items: [
-        ['문서·도구·Agent·스킬을 하나의 업무 흐름으로 묶은 플랫폼', true],
-        ['파싱 보완 4레이어 — 읽기 순서·제목·표·이미지'],
-        ['Deep Agent 하네스 — 판단·실행·재시도·위임'],
-        ['하이브리드 검색 — 벡터 + 키워드'],
-        ['운영 콘솔 — 팀·계정·연결·가드레일·사용 현황'],
-      ] },
-      { bar: '#17845E', dark: '#0F3D2C', title: '어디에 쓰나', items: [
-        ['규정·보고서 문서 QA'],
-        ['담당자·리소스 추천'],
-        ['문서 종합·초안 작성'],
-        ['사내 지식 검색'],
-        ['반복 업무의 스킬화'],
-        ['도메인 무관 — 문서와 도구만 연결하면 동작', true],
-      ] },
-      { bar: '#7A5CB0', dark: '#3E1C76', title: '어떻게 확장되나', items: [
-        ['MCP 커넥터로 새 도구·데이터 소스 추가'],
-        ['OpenAI 호환이면 모델 자유 교체'],
-        ['스킬·Agent를 조직 안에서 공유·재사용'],
-        ['가드레일·권한으로 안전하게 개방'],
-        ['새 팀·새 업무에 그대로 확장', true],
-      ] },
+    const ROWS = [
+      {
+        bar: '#155EEF', no: '01', task: '분산된 정보와 업무 도구',
+        problem: '문서·업무 시스템이 여러 환경에 흩어져 있음',
+        sol: ['Docling 파싱 + 하이브리드 검색으로 흩어진 문서를 검색 가능한 지식으로',
+          'MCP 커넥터로 Google Drive·Jira 등 외부 도구를 한 업무 흐름에 연결'],
+      },
+      {
+        bar: '#17845E', no: '02', task: '개인에게 머무는 업무 방식',
+        problem: '업무 절차·경험을 공유·재사용하기 어려움',
+        sol: ['업무 방식을 스킬로 저장하고, Agent를 조직 안에서 생성·공유·재사용',
+          '상세 지시 없이도 결과 품질 유지 — 89% → 93%, 입력 토큰 최대 −70%'],
+      },
+      {
+        bar: '#7A5CB0', no: '03', task: '조직 차원의 운영 통제',
+        problem: '권한·승인·실행 이력 관리가 필요',
+        sol: ['가드레일·역할 권한·HITL 승인으로 안전하게 실행',
+          '운영 콘솔에서 팀·연결·사용 현황·감사 로그를 통합 관리'],
+      },
     ];
-    const CW = 376, GAP = 20, CY = 232, CH = 372, RH = 48, Y0 = CY + 66;
-    COL.forEach((c, ci) => {
-      const x = 56 + ci * (CW + GAP);
-      const p = `pv${ci}`;
-      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
-      els.push({ kind: 'shape', geometry: 'rect', bbox: [x, CY + 16, 4, 24], fillColor: c.bar, lineWidth: 0, name: `${p}-acc` });
-      els.push(textElement(`${p}-h`, [x + 20, CY + 12, CW - 40, 26], c.title, 16.5, c.dark, true));
-      els.push({ kind: 'shape', geometry: 'line', bbox: [x + 20, CY + 46, CW - 40, 0], lineColor: '#EAEDF2', lineWidth: 1, name: `${p}-hr` });
-      c.items.forEach(([txt, strong], i) => {
-        const y = Y0 + i * RH;
-        els.push(textElement(`${p}-t${i}`, [x + 20, y, CW - 40, RH], `${strong ? '→' : '•'}   ${txt}`, 13, strong ? c.dark : '#37414F', !!strong));
-      });
+    const RY0 = 222, RP = 150, RH = 136, LX = 56, SPLIT = 486;
+    ROWS.forEach((r, ri) => {
+      const y = RY0 + ri * RP;
+      const p = `pv${ri}`;
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [LX, y, 1168, RH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
+      els.push({ kind: 'shape', geometry: 'rect', bbox: [LX, y, 6, RH], fillColor: r.bar, lineWidth: 0, name: `${p}-bar` });
+      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [LX + 22, y + 20, 34, 34], fillColor: r.bar, lineWidth: 0, name: `${p}-nobg` });
+      els.push(textElement(`${p}-no`, [LX + 22, y + 20, 34, 34], r.no, 14, '#FFFFFF', true, 'center'));
+      els.push(textElement(`${p}-task`, [LX + 68, y + 18, SPLIT - LX - 90, 26], r.task, 15.5, '#0A1020', true));
+      els.push(textElement(`${p}-prob`, [LX + 68, y + 50, SPLIT - LX - 90, 66], r.problem, 12, '#5B6577'));
+      els.push({ kind: 'shape', geometry: 'line', bbox: [SPLIT, y + 18, 0, RH - 36], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-split` });
+      els.push(textElement(`${p}-sl-h`, [SPLIT + 26, y + 16, 120, 20], 'HALIL', 11, r.bar, true));
+      r.sol.forEach((t, si) => els.push(
+        textElement(`${p}-sl${si}`, [SPLIT + 26, y + 40 + si * 38, 1168 - SPLIT - 48, 36], `•  ${t}`, 12.5, '#37414F'),
+      ));
     });
 
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));
@@ -3195,5 +3193,16 @@
         if (/^(page-|div-page-)/.test(e.name || '')) setElementText(e, String(idx + 1).padStart(2, '0'));
       });
     });
+  })();
+
+  // ===================================================================
+  // 최종 편집 패스 39 — 41p(운영 평가 실패 사례) 좌측 회귀 예시(ev27-regr-*) 삭제.
+  // ===================================================================
+  (() => {
+    const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+    const s = deck.slides.find((sl) =>
+      sl.elements.some((e) => /^title-/.test(e.name || '') && norm(e.text) === '운영 평가 실패 사례'));
+    if (!s) { console.warn('[패스39] 운영 평가 실패 사례 슬라이드를 찾지 못함'); return; }
+    s.elements = s.elements.filter((e) => !/^ev27-regr-/.test(e.name || ''));
   })();
 })();
