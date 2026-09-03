@@ -172,7 +172,7 @@ assert.ok(
   [0, 1, 2].every((c) => slides[48].elements.some((e) => e.name === `pv${c}-pan`)) && slides[48].elements.some((e) => e.name === 'pv-hl'),
   '49는 3블록(pv0~2) + 헤드라인(pv-hl)으로 구성',
 );
-assert.equal(titleOf(50), 'Future Work', '50은 개선 계획 표 (juyeon 패스30 이식)');
+assert.equal(titleOf(50), '향후 과제', '50은 개선 계획 표 (juyeon 패스30 이식)');
 assert.ok(
   slides[49].elements.some((e) => e.name === 'fw-hbar') && [0, 1, 2].every((i) => slides[49].elements.some((e) => e.name === `fw-area-${i}`)),
   '50은 Future Work 표(fw-*) 3행으로 구성',

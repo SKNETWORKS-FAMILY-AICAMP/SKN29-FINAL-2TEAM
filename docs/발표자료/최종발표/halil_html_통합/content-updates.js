@@ -284,6 +284,7 @@
   replaceExact(14, 'Builder · 도구 32종\nRuntime · Streaming\nMemory · 버전 관리', 'Builder · Runtime\nStreaming · Memory\n버전 관리');
   replaceExact(14, 'side_effect 메타 15개\nHITL · 멱등 · 동시성\nSkill 12×3 검증', '쓰기 작업 승인 경계\nHITL · 멱등 · 동시성\nSkill 검증 흐름');
   replaceExact(14, '검색 37 · Agent 36\n최종 파싱 단위 검증\n배포 · 시연 준비', '검색·Agent DEV 평가\n파싱 보정 검증\n배포 · 시연 준비');
+  replaceExact(14, '승인·통제·Skills', '에이전트 기능 구현');
   // 구현 과정 타임라인 — 중앙 바 기준 위·아래 간격을 대칭으로 (기존 위 96 / 아래 22 → 각 38).
   for (let i = 0; i < 6; i += 1) {
     const numberY = i % 2 === 0 ? 278 : 426; // 짝수 = 바 위, 홀수 = 바 아래
@@ -2678,12 +2679,12 @@
     const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
     const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
     if (baseIdx < 0 || atIdx < 0) { console.warn('[패스30] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
-    if (deck.slides.some((s) => titleOf(s) === 'Future Work')) return;
+    if (deck.slides.some((s) => titleOf(s) === '향후 과제')) return;
 
     const s = clone(deck.slides[baseIdx]);
     s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
     setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), 'Future Work');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), '향후 과제');
     s.sources = ['docs/설계 및 구현/3_중간발표 이후/작업기록/ (Parsing · Hybrid Search · Agent 개선 계획)'];
 
     const COLS = [
@@ -2723,7 +2724,7 @@
       { kind: 'shape', geometry: 'rect', bbox: [56, HY, 1168, HH], fillColor: '#E7EBF0', lineWidth: 0, name: 'fw-hbar' },
     );
     COLS.forEach((c, i) => s.elements.push(
-      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 13, '#101728', true),
+      textElement(`fw-h-${i}`, [c.x + 16, HY, c.w - 24, HH], c.h, 14, '#101728', true),
     ));
     [186, 546, 976].forEach((x, i) => s.elements.push(
       { kind: 'shape', geometry: 'line', bbox: [x, HY, 0, tableBottom - HY], lineColor: '#E7EBF1', lineWidth: 1, name: `fw-vl-${i}` },
@@ -2733,13 +2734,13 @@
       const y = RY + rowH * ri;
       s.elements.push(
         { kind: 'shape', geometry: 'rect', bbox: [66, y + 22, 4, 44], fillColor: r.accent, lineWidth: 0, name: `fw-acc-${ri}` },
-        textElement(`fw-area-${ri}`, [82, y + 20, 100, 62], r.area, 15, '#101728', true),
-        textElement(`fw-limk-${ri}`, [202, y + 18, 330, 44], r.limitKey, 13, '#101728', true),
-        textElement(`fw-lims-${ri}`, [202, y + 62, 330, 40], r.limitSub, 11.5, '#5B6577'),
-        textElement(`fw-bul-${ri}`, [562, y + 18, 400, rowH - 32], r.bullets.map((b) => `•  ${b}`).join('\n'), 12.5, '#20283A'),
+        textElement(`fw-area-${ri}`, [82, y + 18, 104, 62], r.area, 17, '#101728', true),
+        textElement(`fw-limk-${ri}`, [202, y + 16, 336, 46], r.limitKey, 14.5, '#101728', true),
+        textElement(`fw-lims-${ri}`, [202, y + 64, 336, 40], r.limitSub, 12.5, '#5B6577'),
+        textElement(`fw-bul-${ri}`, [562, y + 16, 404, rowH - 30], r.bullets.map((b) => `•  ${b}`).join('\n'), 13.5, '#20283A'),
         { kind: 'shape', geometry: 'ellipse', bbox: [992, y + 50, 26, 26], fillColor: r.effClr, lineWidth: 0, name: `fw-eff-ic-${ri}` },
-        textElement(`fw-eff-ar-${ri}`, [992, y + 51, 26, 26], '→', 13, '#FFFFFF', true, 'center'),
-        textElement(`fw-eff-${ri}`, [1028, y + 34, 188, 64], r.effect, 12.5, r.effClr, true),
+        textElement(`fw-eff-ar-${ri}`, [992, y + 50, 26, 26], '→', 14, '#FFFFFF', true, 'center'),
+        textElement(`fw-eff-${ri}`, [1028, y + 32, 192, 68], r.effect, 13.5, r.effClr, true),
       );
       if (ri > 0) s.elements.push({ kind: 'shape', geometry: 'line', bbox: [56, y, 1168, 0], lineColor: '#D9DEE8', lineWidth: 1, name: `fw-rl-${ri}` });
     });
@@ -3144,7 +3145,7 @@
     els.push(
       { kind: 'shape', geometry: 'roundRect', bbox: [56, 160, 1168, 52], fillColor: '#EEF4FC', lineColor: '#CBDDF4', lineWidth: 1, name: 'pv-hl-bg' },
       { kind: 'shape', geometry: 'rect', bbox: [56, 160, 5, 52], fillColor: '#2878D1', lineWidth: 0, name: 'pv-hl-acc' },
-      textElement('pv-hl', [82, 160, 1120, 52], '특정 업무용 봇이 아니라, 팀이 자기 업무를 Agent·스킬로 만들어 쓰는 플랫폼', 16, '#0C3F91', true),
+      textElement('pv-hl', [82, 160, 1120, 52], '특정 업무용 봇이 아니라, 팀이 자기 업무를 Agent·스킬로 만들어 쓰는 플랫폼', 17.5, '#0C3F91', true),
     );
 
     const COL = [
@@ -3171,17 +3172,17 @@
         ['새 팀·새 업무에 그대로 확장', true],
       ] },
     ];
-    const CW = 376, GAP = 20, CY = 234, CH = 360, RH = 44, Y0 = CY + 62;
+    const CW = 376, GAP = 20, CY = 232, CH = 372, RH = 48, Y0 = CY + 66;
     COL.forEach((c, ci) => {
       const x = 56 + ci * (CW + GAP);
       const p = `pv${ci}`;
       els.push({ kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
       els.push({ kind: 'shape', geometry: 'rect', bbox: [x, CY + 16, 4, 24], fillColor: c.bar, lineWidth: 0, name: `${p}-acc` });
-      els.push(textElement(`${p}-h`, [x + 20, CY + 12, CW - 40, 26], c.title, 15, c.dark, true));
+      els.push(textElement(`${p}-h`, [x + 20, CY + 12, CW - 40, 26], c.title, 16.5, c.dark, true));
       els.push({ kind: 'shape', geometry: 'line', bbox: [x + 20, CY + 46, CW - 40, 0], lineColor: '#EAEDF2', lineWidth: 1, name: `${p}-hr` });
       c.items.forEach(([txt, strong], i) => {
         const y = Y0 + i * RH;
-        els.push(textElement(`${p}-t${i}`, [x + 20, y, CW - 40, RH], `${strong ? '→' : '•'}   ${txt}`, 11.5, strong ? c.dark : '#37414F', !!strong));
+        els.push(textElement(`${p}-t${i}`, [x + 20, y, CW - 40, RH], `${strong ? '→' : '•'}   ${txt}`, 13, strong ? c.dark : '#37414F', !!strong));
       });
     });
 
