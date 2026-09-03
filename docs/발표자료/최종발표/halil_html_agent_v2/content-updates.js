@@ -512,7 +512,7 @@
   byName(47, 'sub-47', '채팅 → 에이전트 → 프로젝트 → 문서 → 설정·스킬 순서의 연속 시연');
   removeNames(47, ['demo-frame-47', 'play-47', 'play-icon-47']);
   slide(47).elements.push(panel('demo-video-frame', [60, 214, 1160, 382], '#071426', '#26364B'));
-  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], '../halil_프로젝트_운영_AI_시연영상_v10_정확한설명_자막동기화.mp4'));
+  slide(47).elements.push(videoElement('demo-video-player', [66, 220, 1148, 370], '../halil_프로젝트_운영_AI_시연영상_v21_챕터카드_자막.mp4'));
 
   // 공식 규칙 평가를 먼저 보여 주고, 정량·정성 지표를 보조로 배치한다.
   byName(48, 'title-48', '플랫폼 규칙을 먼저 통과한 뒤 응답 품질을 측정합니다');
