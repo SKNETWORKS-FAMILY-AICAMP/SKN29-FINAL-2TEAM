@@ -3120,8 +3120,8 @@
   })();
 
   // ===================================================================
-  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "핵심 과제 → HALIL 해결" 슬라이드 추가.
-  //   4p 의 업무 확장 핵심 과제 3개를 플랫폼이 어떻게 풀었는지.
+  // 최종 편집 패스 38 — '자체 평가 의견'(05장) 뒤에 "HALIL이 해결한 과제" 슬라이드 추가.
+  //   4p 의 업무 확장 핵심 과제 3개를 세로 3카드로 (juyeon _주연 디자인).
   // ===================================================================
   (() => {
     const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim();
@@ -3129,7 +3129,7 @@
       const t = s.elements.find((e) => /^(title-|div-title-)/.test(e.name || '') && norm(e.text));
       return t ? norm(t.text) : '';
     };
-    if (deck.slides.some((s) => titleOf(s) === '업무 확장의 핵심 과제 → HALIL의 해결')) return;
+    if (deck.slides.some((s) => titleOf(s) === 'HALIL이 해결한 과제')) return;
     const baseIdx = deck.slides.findIndex((s) => titleOf(s) === '판정 체계');
     const atIdx = deck.slides.findIndex((s) => titleOf(s) === '자체 평가 의견');
     if (baseIdx < 0 || atIdx < 0) { console.warn('[패스38] 기준/삽입 위치 슬라이드를 찾지 못함'); return; }
@@ -3137,51 +3137,50 @@
     const s = clone(deck.slides[baseIdx]);
     s.elements = s.elements.filter((e) => /^(top-accent-|top-rule-|context-|page-|title-|accent-|ctx-logo|inst-logo)/.test(e.name || ''));
     setElementText(s.elements.find((e) => e.name === 'context-16'), '·   05 자체 평가 의견');
-    setElementText(s.elements.find((e) => e.name === 'title-16'), '업무 확장의 핵심 과제 → HALIL의 해결');
+    setElementText(s.elements.find((e) => e.name === 'title-16'), 'HALIL이 해결한 과제');
     s.sources = [];
 
-    const els = [];
-    els.push(
-      { kind: 'shape', geometry: 'roundRect', bbox: [56, 160, 1168, 46], fillColor: '#EEF4FC', lineColor: '#CBDDF4', lineWidth: 1, name: 'pv-hl-bg' },
-      { kind: 'shape', geometry: 'rect', bbox: [56, 160, 5, 46], fillColor: '#2878D1', lineWidth: 0, name: 'pv-hl-acc' },
-      textElement('pv-hl', [82, 160, 1120, 46], '4페이지에서 짚은 세 과제 — 정보 분산 · 개인화된 업무 방식 · 운영 통제 — 를 하나의 플랫폼으로 해결', 15.5, '#0C3F91', true),
-    );
-
-    const ROWS = [
+    const CARDS = [
       {
-        bar: '#155EEF', no: '01', task: '분산된 정보와 업무 도구',
-        problem: '문서·업무 시스템이 여러 환경에 흩어져 있음',
-        sol: ['Docling 파싱 + 하이브리드 검색으로 흩어진 문서를 검색 가능한 지식으로',
-          'MCP 커넥터로 Google Drive·Jira 등 외부 도구를 한 업무 흐름에 연결'],
+        clr: '#155EEF', no: '01', task: '분산된 정보와 업무 도구',
+        bullets: ['통합 검색으로 필요한 정보를 빠르게 탐색', 'MCP 커넥터로 외부 도구를 하나로 연결', '문서 · 도구를 하나의 업무 흐름으로 통합'],
+        arrow: '정보 연결로 업무 흐름을 끊김 없이 통합',
       },
       {
-        bar: '#17845E', no: '02', task: '개인에게 머무는 업무 방식',
-        problem: '업무 절차·경험을 공유·재사용하기 어려움',
-        sol: ['업무 방식을 스킬로 저장하고, Agent를 조직 안에서 생성·공유·재사용',
-          '상세 지시 없이도 결과 품질 유지 — 89% → 93%, 입력 토큰 최대 −70%'],
+        clr: '#17845E', no: '02', task: '개인에게 머무는 업무 방식',
+        bullets: ['업무 방식을 스킬로 표준화', 'Agent가 조직 내에서 생성 · 공유 · 재사용', '조직 지식 자산으로 축적하고 확산'],
+        arrow: '개인 경험을 조직 지식으로 전환 · 확산',
       },
       {
-        bar: '#7A5CB0', no: '03', task: '조직 차원의 운영 통제',
-        problem: '권한·승인·실행 이력 관리가 필요',
-        sol: ['가드레일·역할 권한·HITL 승인으로 안전하게 실행',
-          '운영 콘솔에서 팀·연결·사용 현황·감사 로그를 통합 관리'],
+        clr: '#7A5CB0', no: '03', task: '조직 차원의 운영 통제',
+        bullets: ['역할 · 권한 기반 접근 통제', 'HITL 승인으로 중요한 의사결정 보호', '운영 로그 · 감사로 투명성 확보'],
+        arrow: '권한 · 이력 중심의 안전하고 투명한 운영',
       },
     ];
-    const RY0 = 222, RP = 150, RH = 136, LX = 56, SPLIT = 486;
-    ROWS.forEach((r, ri) => {
-      const y = RY0 + ri * RP;
-      const p = `pv${ri}`;
-      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [LX, y, 1168, RH], fillColor: '#FFFFFF', lineColor: '#DCE1E9', lineWidth: 1, name: `${p}-pan` });
-      els.push({ kind: 'shape', geometry: 'rect', bbox: [LX, y, 6, RH], fillColor: r.bar, lineWidth: 0, name: `${p}-bar` });
-      els.push({ kind: 'shape', geometry: 'roundRect', bbox: [LX + 22, y + 20, 34, 34], fillColor: r.bar, lineWidth: 0, name: `${p}-nobg` });
-      els.push(textElement(`${p}-no`, [LX + 22, y + 20, 34, 34], r.no, 14, '#FFFFFF', true, 'center'));
-      els.push(textElement(`${p}-task`, [LX + 68, y + 18, SPLIT - LX - 90, 26], r.task, 15.5, '#0A1020', true));
-      els.push(textElement(`${p}-prob`, [LX + 68, y + 50, SPLIT - LX - 90, 66], r.problem, 12, '#5B6577'));
-      els.push({ kind: 'shape', geometry: 'line', bbox: [SPLIT, y + 18, 0, RH - 36], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-split` });
-      els.push(textElement(`${p}-sl-h`, [SPLIT + 26, y + 16, 120, 20], 'HALIL', 11, r.bar, true));
-      r.sol.forEach((t, si) => els.push(
-        textElement(`${p}-sl${si}`, [SPLIT + 26, y + 40 + si * 38, 1168 - SPLIT - 48, 36], `•  ${t}`, 12.5, '#37414F'),
-      ));
+    const els = [];
+    const CW = 372, CH = 496, CY = 168, GAP = 26;
+    CARDS.forEach((c, ci) => {
+      const x = 56 + ci * (CW + GAP);
+      const p = `pv${ci}`;
+      els.push(
+        { kind: 'shape', geometry: 'roundRect', bbox: [x, CY, CW, CH], fillColor: '#FFFFFF', lineColor: '#E4E8EF', lineWidth: 1, name: `${p}-pan` },
+        { kind: 'shape', geometry: 'roundRect', bbox: [x + 24, CY + 24, 40, 40], fillColor: c.clr, lineWidth: 0, name: `${p}-nobg` },
+        textElement(`${p}-no`, [x + 24, CY + 24, 40, 40], c.no, 17, '#FFFFFF', true, 'center'),
+        textElement(`${p}-task`, [x + 76, CY + 26, CW - 100, 38], c.task, 19, '#0A1020', true),
+        { kind: 'shape', geometry: 'line', bbox: [x + 24, CY + 98, CW - 48, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-div1` },
+        textElement(`${p}-slh`, [x + 24, CY + 118, CW - 48, 26], 'HALIL의 해결', 15.5, c.clr, true),
+      );
+      c.bullets.forEach((b, bi) => {
+        const by = CY + 162 + bi * 44;
+        els.push(
+          { kind: 'shape', geometry: 'ellipse', bbox: [x + 27, by + 15, 7, 7], fillColor: c.clr, lineWidth: 0, name: `${p}-dot${bi}` },
+          textElement(`${p}-b${bi}`, [x + 46, by, CW - 70, 36], b, 14.5, '#37414F'),
+        );
+      });
+      els.push(
+        { kind: 'shape', geometry: 'line', bbox: [x + 24, CY + 404, CW - 48, 0], lineColor: '#E7EBF1', lineWidth: 1, name: `${p}-div2` },
+        textElement(`${p}-arrow`, [x + 24, CY + 422, CW - 48, 58], `→  ${c.arrow}`, 15.5, c.clr, true),
+      );
     });
 
     const at = s.elements.findIndex((e) => /^title-/.test(e.name || ''));

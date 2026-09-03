@@ -166,11 +166,11 @@ assert.deepEqual(
   '44~47은 운영 콘솔 4장 (04-4 서브 표지 뒤)',
 );
 assert.equal(titleOf(48), '자체 평가 의견', '48은 05 챕터 표지');
-// --- 패스38: '자체 평가 의견' 뒤 "업무 확장의 핵심 과제 → HALIL의 해결" 1장 ---
-assert.equal(titleOf(49), '업무 확장의 핵심 과제 → HALIL의 해결', '49는 4p 핵심 과제 3개 해결 슬라이드');
+// --- 패스38: '자체 평가 의견' 뒤 "HALIL이 해결한 과제" 1장 (juyeon _주연 세로 3카드) ---
+assert.equal(titleOf(49), 'HALIL이 해결한 과제', '49는 4p 핵심 과제 3개 해결 슬라이드');
 assert.ok(
-  [0, 1, 2].every((c) => slides[48].elements.some((e) => e.name === `pv${c}-pan`)) && slides[48].elements.some((e) => e.name === 'pv-hl'),
-  '49는 과제 3행(pv0~2) + 헤드라인(pv-hl)으로 구성',
+  [0, 1, 2].every((c) => slides[48].elements.some((e) => e.name === `pv${c}-pan`) && slides[48].elements.some((e) => e.name === `pv${c}-arrow`)),
+  '49는 과제 3카드(pv0~2, 각 요약 화살표)로 구성',
 );
 assert.equal(titleOf(50), '향후 과제', '50은 개선 계획 표 (juyeon 패스30 이식)');
 assert.ok(
