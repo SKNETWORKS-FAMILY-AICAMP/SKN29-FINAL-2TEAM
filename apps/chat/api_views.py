@@ -1060,6 +1060,15 @@ def _name_session(
 
     if final is None or final["type"] == EVENT_ERROR:
         return None
+    # **두 번째 답부터는 제목을 짓지 않는다**(2026-09-14). 제목은 첫 답에만 붙는데
+    # (`rename_if_first_answer`), 그 확인이 OpenAI 호출 뒤에 있어서 매 턴 1.6~2.4초씩
+    # 버릴 제목을 지었다 — 그동안 스트림이 안 닫혀 화면의 답도 그만큼 늦게 끝났다.
+    try:
+        if not ChatSessionRepository.is_first_answer(session_id=session_id, account_id=account_id):
+            return None
+    except (RepositoryError, psycopg.Error):
+        logger.exception("첫 답인지 확인하지 못했습니다: session=%s", session_id)
+        return None
     title = suggest_title(question=question, answer=final.get("text") or "")
     if not title:
         return None

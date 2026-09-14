@@ -1915,6 +1915,26 @@ class ChatSessionRepository:
                 return cursor.fetchone()
 
     @staticmethod
+    def is_first_answer(*, session_id: str, account_id: str) -> bool:
+        """방금 적재한 답이 이 대화의 첫 답인가. `rename_if_first_answer` 와 같은 기준이다.
+
+        제목을 짓는 OpenAI 호출 **앞에서** 본다. 뒤에서만 보면 두 번째 답부터
+        쓰지도 않을 제목을 매번 짓는다(2026-09-14).
+        """
+
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                _require_session(cursor, session_id=session_id, account_id=account_id)
+                cursor.execute(
+                    """
+                    SELECT count(*) AS n FROM chat_message
+                    WHERE session_id::text = %s AND role = 'agent'
+                    """,
+                    (session_id,),
+                )
+                return cursor.fetchone()["n"] == 1
+
+    @staticmethod
     def rename_if_first_answer(*, session_id: str, account_id: str, title: str) -> bool:
         """**첫 답이 끝났을 때 한 번만** 제목을 바꾼다. 바꿨으면 True.
 

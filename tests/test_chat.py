@@ -805,11 +805,13 @@ class ChatSessionTitleTests(SimpleTestCase):
         """대화가 길어질 때마다 제목이 바뀌면 사이드바에서 찾던 것이 사라진다."""
 
         sessions.get.return_value = SESSION
-        sessions.rename_if_first_answer.return_value = False
+        sessions.is_first_answer.return_value = False
         title.return_value = "다른 이름"
         _mock_new_engine(build_executor, [{"type": "result", "text": "네.", "complete": True}])
 
         self.assertEqual([e["type"] for e in ndjson(self._post(accounts))], ["result"])
+        # 버릴 제목을 짓느라 스트림이 늦게 닫히지 않게, 제목 호출 자체를 안 한다(2026-09-14).
+        title.assert_not_called()
 
     def test_실패한_실행에는_이름을_안_짓는다(self, sessions, _messages, accounts, title, build_executor):
         """오류로 끝난 대화를 그럴듯한 이름으로 덮으면 무엇이 실패했는지 가려진다."""
