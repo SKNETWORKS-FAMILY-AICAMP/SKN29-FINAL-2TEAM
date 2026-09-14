@@ -28,3 +28,16 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # https 로 들어오는 POST 는 Origin 이 여기 없으면 CSRF 검사에서 막힌다.
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])  # noqa: F405
+
+# 우리 코드(apps·services)의 INFO 로그를 컨테이너 로그로 내보낸다. 설정이 없으면
+# 파이썬 기본값이라 WARNING 이상만 나와서, 응답 시간 계측 같은 INFO 가 서버에서
+# 보이지 않았다(2026-09-14). 라이브러리 로그 수준은 건드리지 않는다.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "apps": {"handlers": ["console"], "level": "INFO"},
+        "services": {"handlers": ["console"], "level": "INFO"},
+    },
+}

@@ -78,6 +78,22 @@ class VerdictTests(SimpleTestCase):
         events.record.assert_not_called()
 
     @patch("services.guardrails.input_check.check")
+    def test_검사에_걸린_시간을_남긴다(self, called, repo, _events):
+        """2026-09-14 — 호출마다 4~13초로 흔들렸는데 서버 기록으로는 잴 수 없었다."""
+
+        repo.for_team.return_value = provider()
+        called.return_value = GuardrailVerdict(blocked=False)
+
+        with self.assertLogs("services.guardrails.input_check", level="INFO") as logs:
+            check_user_input("안녕하세요", team_id="TE001")
+
+        self.assertEqual(len(logs.records), 1)
+        self.assertRegex(
+            logs.output[0],
+            r"가드레일 검사 \d+\.\d초: provider=GP001 kind=AZURE_CONTENT_SAFETY blocked=False",
+        )
+
+    @patch("services.guardrails.input_check.check")
     def test_막히면_기록에_남기고_사유를_준다(self, called, repo, events):
         repo.for_team.return_value = provider()
         called.return_value = GuardrailVerdict(blocked=True, detail={"category": "Hate", "severity": 6})

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -84,6 +85,7 @@ def check_user_input(
 
     credential = _credential(provider["provider_id"])
 
+    started = time.monotonic()
     try:
         verdict = check(
             kind=provider["kind"],
@@ -100,9 +102,19 @@ def check_user_input(
         # **어느 쪽이든 기록은 남긴다.** 지금까지는 로그 한 줄이 전부라, 검사가
         # 통째로 빠져도 운영자 콘솔은 마지막 「연결 확인」 결과인 「연결됨」을
         # 계속 보여줬다(2026-08-20 PM 지적).
-        logger.warning("가드레일 호출 실패: provider=%s", provider["provider_id"])
+        logger.warning(
+            "가드레일 호출 실패: provider=%s (%.1f초)", provider["provider_id"], time.monotonic() - started
+        )
         return _unavailable(provider, exc, account_id=account_id, team_id=team_id, session_id=session_id)
 
+    # 응답 시간 계측(2026-09-14) — 호출마다 4~13초로 흔들려 제한 시간(12초)에 닿았다.
+    logger.info(
+        "가드레일 검사 %.1f초: provider=%s kind=%s blocked=%s",
+        time.monotonic() - started,
+        provider["provider_id"],
+        provider["kind"],
+        verdict.blocked,
+    )
     if not verdict.blocked:
         return InputGuardOutcome()
 

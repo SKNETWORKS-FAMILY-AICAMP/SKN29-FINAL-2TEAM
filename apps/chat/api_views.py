@@ -8,6 +8,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import time
 import uuid
 from typing import Any
 
@@ -319,6 +320,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             # 그 아래 준비 작업(이력 조회·컨텍스트 구성·에이전트 정의 해석)도
             # DB 를 여러 번 탄다. 순서대로 하면 둘이 더해진다 — 검사를 먼저
             # 띄워 두고 준비가 끝난 자리에서 합류한다.
+            guard_submitted = time.monotonic()
             guard_check = _GUARDRAIL_POOL.submit(
                 check_user_input,
                 text,
@@ -359,6 +361,7 @@ class ChatMessageAPIView(AuthenticatedAPIView):
             # 없다. **막힌 발화는 저장하지 않는다** — 아래 "질문이 사라진 대화는
             # 복구할 방법이 없다"는 이유는 보낸 발화에 대한 것이고, 여기서는
             # 애초에 보내지지 않았다. 그래서 저장이 이 아래에 있다.
+            guard_waited = time.monotonic()
             try:
                 guard = guard_check.result(timeout=GUARDRAIL_WAIT_SECONDS)
             except TimeoutError:
@@ -371,6 +374,15 @@ class ChatMessageAPIView(AuthenticatedAPIView):
                     account_id=account_id,
                     session_id=str(session_id),
                 )
+            # 응답 시간 계측(2026-09-14). 「보내고 발화 저장까지」가 턴마다 4~13초로
+            # 흔들렸는데, 준비 작업과 가드레일 중 무엇 때문인지 서버 기록으로 가를 수
+            # 없었다. 가드레일 호출 자체의 시간은 `check_user_input` 이 따로 남긴다.
+            logger.info(
+                "채팅 입력 검사: 준비 %.1f초, 가드레일 대기 %.1f초 (session=%s)",
+                guard_waited - guard_submitted,
+                time.monotonic() - guard_waited,
+                session_id,
+            )
             if guard.blocked:
                 return Response({"detail": guard.blocked_reason}, status=status.HTTP_400_BAD_REQUEST)
 
