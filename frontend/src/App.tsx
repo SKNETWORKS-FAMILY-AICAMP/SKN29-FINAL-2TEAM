@@ -143,7 +143,7 @@ function App() {
   return (
     <ToastProvider>
       <RouteMeta />
-      <AppErrorBoundary key={location.pathname}>
+      <AppErrorBoundary resetKey={location.pathname}>
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
           <Route path={PATHS.landing} element={<LandingPage />} />

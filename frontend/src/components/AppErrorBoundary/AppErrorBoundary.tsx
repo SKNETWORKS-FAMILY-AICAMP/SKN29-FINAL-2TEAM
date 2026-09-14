@@ -4,6 +4,13 @@ import styles from './AppErrorBoundary.module.css';
 
 interface Props {
   children: ReactNode;
+  /**
+   * 이 값이 바뀌면 떠 있던 오류 화면을 걷는다. `key` 로 넘기면 **오류가 없을 때도**
+   * 아래 화면 전체가 새로 만들어진다 — 새 대화의 첫 발화가 주소를 `/chat` →
+   * `/chat/:id` 로 바꾸는 순간 ChatPage 가 다시 마운트돼 스트림이 끊기고 빈 화면으로
+   * 돌아갔다(2026-09-14 운영).
+   */
+  resetKey?: string;
 }
 
 interface State {
@@ -31,6 +38,12 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('화면 렌더링 오류', error, info.componentStack);
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
+    }
   }
 
   render() {
