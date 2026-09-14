@@ -21,35 +21,59 @@
 `.setup()`(멱등이지만 DDL을 두 번 겹쳐 실행)까지 경합하면서 500으로 죽는
 사례를 봤다. 잠금을 아주 짧게만 쥔다 — 최초 연결 뒤로는 `_store is not None`
 검사에서 즉시 반환되어 락을 아예 안 거친다.
+
+**끊긴 연결은 버리고 다시 연다 (2026-09-14)** — 이 싱글턴은 연결 하나를 계속
+쥔다. RDS 쪽에서 한 번 끊기자(`the connection is lost`) 그 뒤 모든 요청이
+`the connection is closed` 로 실패해, **재시작 전까지** 채팅(`AgentBuildError`)과
+스킬 목록(503)이 전부 죽었다. psycopg 는 끊긴 연결을 `closed`/`broken` 으로
+알리므로 꺼낼 때마다 보고, 죽었으면 새로 연결한다. 조용히 끊긴 경우는 그 연결을
+처음 쓰는 요청 하나가 실패해야 드러난다 — 그 다음 요청부터 살아난다.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langgraph.store.postgres import PostgresStore
 
+logger = logging.getLogger(__name__)
+
 _store: Any = None
-#: `PostgresStore.from_conn_string()`가 돌려주는 컨텍스트 매니저. `__exit__`를
-#: 부를 일이 생기면(프로세스 종료 훅 등) 여기서 꺼내 쓴다 — 지금은 아무도
-#: 안 부른다(위 docstring의 "치명적이진 않지만" 부분).
+#: `PostgresStore.from_conn_string()`가 돌려주는 컨텍스트 매니저. 끊긴 연결을
+#: 버릴 때만 `__exit__`를 부른다 — 프로세스 종료 때는 여전히 아무도 안 부른다
+#: (위 docstring의 "치명적이진 않지만" 부분).
 _store_cm: Any = None
 #: 최초 연결 경합을 막는 락. 연결된 뒤에는 안 거친다(아래 이중 검사).
 _store_lock = threading.Lock()
 
 
+def _usable(store: Any) -> bool:
+    """쥐고 있는 연결이 살아 있는가. psycopg 가 끊긴 연결을 `closed`/`broken` 으로 알린다."""
+    conn = getattr(store, "conn", None)
+    return not (getattr(conn, "closed", False) or getattr(conn, "broken", False))
+
+
 def get_memory_store() -> "PostgresStore":
     """프로세스 전역 `PostgresStore`. 최초 호출에서만 실제로 연결하고 스키마를 만든다."""
     global _store, _store_cm
-    if _store is not None:
+    if _store is not None and _usable(_store):
         return _store
 
     with _store_lock:
         # 락을 기다리는 동안 다른 스레드가 이미 만들었을 수 있다 — 이중 검사.
         if _store is not None:
-            return _store
+            if _usable(_store):
+                return _store
+            logger.warning("LangGraph Store 연결이 끊겨 다시 연결합니다")
+            try:
+                _store_cm.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001 - 이미 끊긴 연결을 닫다 나는 오류는 의미가 없다
+                pass
+            _store = None
+            _store_cm = None
 
         # 지연 import — langgraph.store.postgres는 psycopg 커넥션 풀·langgraph
         # 전체를 끌고 들어온다. 이 패키지의 다른 모듈들과 같은 이유로(compat/,

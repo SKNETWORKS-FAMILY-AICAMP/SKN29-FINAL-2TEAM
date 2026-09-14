@@ -21,9 +21,17 @@ from django.test import SimpleTestCase
 import services.agent_runtime.memory.store as store_module
 
 
+class _FakeConn:
+    """psycopg `Connection` 의 상태 속성만 흉내낸다."""
+
+    closed = False
+    broken = False
+
+
 class _FakeStore:
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
+        self.conn = _FakeConn()
 
     def setup(self) -> None:
         self._calls.append("setup")
@@ -40,6 +48,7 @@ class _FakeConnCM:
         return _FakeStore(self._calls)
 
     def __exit__(self, *exc_info: object) -> None:
+        self._calls.append("exit")
         return None
 
 
@@ -107,6 +116,32 @@ class MemoryStoreLockTests(SimpleTestCase):
         self.assertEqual(calls, ["enter", "setup"])
         self.assertEqual(len(results), worker_count)
         self.assertEqual(len({id(store) for store in results}), 1)
+
+    def test_끊긴_연결이면_버리고_다시_연결한다(self) -> None:
+        """2026-09-14 운영 장애 — 한 번 끊긴 연결을 싱글턴이 재시작 전까지 계속 돌려줬다."""
+        calls: list[str] = []
+        import langgraph.store.postgres as postgres_module
+
+        with patch.object(
+            postgres_module.PostgresStore,
+            "from_conn_string",
+            side_effect=lambda *_args, **_kwargs: _FakeConnCM(calls),
+        ), self.settings(RAW_DATABASE_URL="postgresql://fake/for-test"):
+            first = store_module.get_memory_store()
+            self.assertIs(store_module.get_memory_store(), first)  # 살아 있으면 그대로 쓴다
+
+            first.conn.closed = True
+            second = store_module.get_memory_store()
+
+            second.conn.broken = True
+            third = store_module.get_memory_store()
+
+        self.assertIsNot(second, first)
+        self.assertIsNot(third, second)
+        self.assertEqual(
+            calls,
+            ["enter", "setup", "exit", "enter", "setup", "exit", "enter", "setup"],
+        )
 
     def test_runtime_store_uses_the_same_postgres_singleton(self) -> None:
         sentinel = object()

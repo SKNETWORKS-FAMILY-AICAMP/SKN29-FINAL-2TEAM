@@ -14,15 +14,24 @@ from __future__ import annotations
 
 import threading
 import time
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
 import services.agent_runtime.checkpoint.checkpointer as checkpointer_module
 
 
+class _FakeConn:
+    """psycopg `Connection` 의 상태 속성만 흉내낸다."""
+
+    closed = False
+    broken = False
+
+
 class _FakeCheckpointer:
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
+        self.conn = _FakeConn()
 
     def setup(self) -> None:
         self._calls.append("setup")
@@ -39,6 +48,7 @@ class _FakeConnCM:
         return _FakeCheckpointer(self._calls)
 
     def __exit__(self, *exc_info: object) -> None:
+        self._calls.append("exit")
         return None
 
 
@@ -105,3 +115,22 @@ class CheckpointerLockTests(SimpleTestCase):
         self.assertEqual(calls, ["enter", "setup"])
         self.assertEqual(len(results), worker_count)
         self.assertEqual(len({id(checkpointer) for checkpointer in results}), 1)
+
+    def test_끊긴_연결이면_버리고_다시_연결한다(self) -> None:
+        """2026-09-14 운영 장애(`memory/store.py` 쪽)와 같은 형태를 막는다."""
+        calls: list[str] = []
+        import langgraph.checkpoint.postgres as postgres_module
+
+        with patch.object(
+            postgres_module.PostgresSaver,
+            "from_conn_string",
+            side_effect=lambda *_args, **_kwargs: _FakeConnCM(calls),
+        ), self.settings(RAW_DATABASE_URL="postgresql://fake/for-test"):
+            first = checkpointer_module.get_checkpointer()
+            self.assertIs(checkpointer_module.get_checkpointer(), first)  # 살아 있으면 그대로 쓴다
+
+            first.conn.closed = True
+            second = checkpointer_module.get_checkpointer()
+
+        self.assertIsNot(second, first)
+        self.assertEqual(calls, ["enter", "setup", "exit", "enter", "setup"])
